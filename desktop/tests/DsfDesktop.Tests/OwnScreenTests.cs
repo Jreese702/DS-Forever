@@ -79,8 +79,8 @@ namespace DsfDesktop.Tests
 
         /// <summary>
         /// the user's PC 2026-11-17: Apollo's SudoVDA there but disabled in Windows (CM_PROB_DISABLED) read as "no driver", so Desktop
-        /// offered to install a third one, in a modal box on the PC during the Thor's sign-in. Now: no offer, one line naming the fix,
-        /// and the question (when one is due) waits until no Thor is connected or streaming
+        /// offered to install a third one, in a modal box on the PC during the Thor's sign-in. Now: no offer, one line naming the fix
+        /// (0.2.37: no question box at all; the window's Turn on, ScreenSetupTests)
         /// </summary>
         [Test]
         public static void ADisabledSudoVdaIsNamedNeverOffered()
@@ -95,11 +95,8 @@ namespace DsfDesktop.Tests
             A.Eq((ScreenPlan.FallbackNote, (string)null), ScreenPlan.NoDriverLine(true, false), "as before without one");
             A.Eq((ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen), ScreenPlan.NoDriverLine(false, false));
             A.True(ScreenPlan.EnableSudoVda.Length <= 60, "terse");
-            A.Eq(ScreenPlan.EnableSudoVda, char.ToUpperInvariant(ScreenPlan.ThorScreenDisabled[0]) + ScreenPlan.ThorScreenDisabled.Substring(1), "an older Thor capitalises the why");
-            A.False(ScreenPlan.AskNow(true, true, false), "a Thor connected: not now");
-            A.False(ScreenPlan.AskNow(true, false, true), "streaming: not now");
-            A.True(ScreenPlan.AskNow(true, false, false), "the Thor gone: asked");
-            A.False(ScreenPlan.AskNow(false, false, false));
+            // 0.2.37: the Thor never gets the Device Manager line; headless it gets the one "set it up in Desktop" word
+            A.Eq(ScreenPlan.ProblemNeedsScreen, ScreenPlan.ThorWord(ScreenPlan.ProblemScreenDisabled));
             A.True(SudoVda.HasId("ROOT\\SudoMaker\\SudoVDA\0\0"), "its hardware id, any case");
             A.False(SudoVda.HasId("root\\parsec\\vdd\0\0"), "Parsec's adapter is not ours to use");
             A.False(SudoVda.HasId(null));

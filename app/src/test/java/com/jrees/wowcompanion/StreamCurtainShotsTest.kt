@@ -75,6 +75,30 @@ class StreamCurtainShotsTest {
     }
 
     /**
+     * Quiet by default (the user's ruling 2026-11-18): a headless PC is the Thor's ONE terse line, in English, Spanish and French.
+     *   VSCREEN_SHOTS_DIR=<dir> PARTY_ART_ROOT=<root> gradlew :app:testModernDebugUnitTest --tests "*StreamCurtainShotsTest*"
+     */
+    @Test fun headlessShots() {
+        val d = System.getenv("VSCREEN_SHOTS_DIR")?.let { File(it) } ?: return
+        d.mkdirs()
+        System.getenv("PARTY_ART_ROOT")?.let { root ->
+            ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, File(root))
+        }
+        val pc = PcWow(state = "stopped", screen = "none", bnet = "signed_in")
+        val why = StreamCurtain.reason("needs_screen", "pc needs a virtual screen: set it up in Desktop")
+        shot("H1_headless_en", 1.0f, false, pc, why, dir = d)
+        for (l in listOf("es", "fr")) {
+            val f = listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json")).first { it.canRead() }
+            Tr.load(l, f.readText())
+        }
+        val keep = Tr.choice()
+        val app = RuntimeEnvironment.getApplication()
+        try {
+            for (l in listOf("es", "fr")) { Tr.setChoice(app, l); shot("H1_headless_$l", 1.0f, false, pc, why, dir = d) }
+        } finally { Tr.setChoice(app, keep) }
+    }
+
+    /**
      * Desktop 0.2.36 updates the PC game itself (the user's ruling 2026-11-18): the bar with "64 / 127 MB" and Cancel (B), Blizzard's
      * updater busy, installing, the new data loading, and failures with Retry (A).
      *   PATCH_SHOTS_DIR=<dir> PARTY_ART_ROOT=<root> gradlew :app:testModernDebugUnitTest --tests "*StreamCurtainShotsTest*"
@@ -127,8 +151,8 @@ class StreamCurtainShotsTest {
         val c = StreamCurtain.decide(false, true, pc, pcWhy = StreamCurtain.reason("ports_taken", "pc busy: its streaming ports are taken")) as StreamCurtain.Shows.Curtain
         assertEquals("PC busy: its streaming ports are taken", c.line)
         for (line in listOf(StreamCurtain.WAITING, StreamCurtain.BUSY_SUNSHINE, StreamCurtain.BUSY_PROGRAM, StreamCurtain.BUSY_LISTENING,
-                StreamCurtain.BUSY_STOPPED, StreamCurtain.BUSY_PORTS, StreamCurtain.NEEDS_SCREEN, StreamCurtain.NO_SCREEN, StreamCurtain.CONNECT_FAILED,
-                StreamCurtain.SCREEN_DISABLED, StreamCurtain.NEEDS_YOU, StreamCurtain.PC_GAME_OUTDATED, StreamCurtain.RETRY, StreamCurtain.PC_GAME_REPAIR,
+                StreamCurtain.BUSY_STOPPED, StreamCurtain.BUSY_PORTS, StreamCurtain.NEEDS_SCREEN, StreamCurtain.CONNECT_FAILED,
+                StreamCurtain.NEEDS_YOU, StreamCurtain.PC_GAME_OUTDATED, StreamCurtain.RETRY, StreamCurtain.PC_GAME_REPAIR,
                 "WoW can't reach its servers (309)", "PC game needs an update (70938 -> 70959)",
                 com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, "DS Forever Desktop hasn't said its streaming port."))
             for (l in listOf("es", "fr")) assertNotEquals("$line ($l)", line, Tr.t(line, l))

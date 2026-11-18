@@ -124,8 +124,8 @@ class StreamPortsTest {
         assertEquals("", StreamCurtain.reason("", "pc busy: another program has the streaming ports"))
         // Desktop 0.2.31's words
         assertEquals("PC busy: its streaming ports are taken", StreamCurtain.reason("ports_taken", "pc busy: its streaming ports are taken"))
-        assertEquals("PC needs a virtual screen: see Desktop", StreamCurtain.reason("needs_screen", "pc needs a virtual screen: see Desktop"))
-        assertEquals("PC has no screen on", StreamCurtain.reason("no_screen", "pc has no screen on"))
+        assertEquals("PC needs a virtual screen: set it up in Desktop", StreamCurtain.reason("needs_screen", "pc needs a virtual screen: see Desktop"))
+        assertEquals("PC needs a virtual screen: set it up in Desktop", StreamCurtain.reason("no_screen", "pc has no screen on"))
         assertEquals(StreamCurtain.BUSY_LISTENING, StreamCurtain.reason("not_listening", ""))
         assertEquals(StreamCurtain.BUSY_STOPPED, StreamCurtain.reason("exited", "pc busy: the streaming host stopped"))
         assertEquals("PC busy: something new", StreamCurtain.reason("later", "pc busy: something new"))

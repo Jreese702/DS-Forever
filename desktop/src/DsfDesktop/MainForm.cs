@@ -51,6 +51,20 @@ namespace DsfDesktop.Ui
         readonly Toggle startWindows = new Toggle("Start with Windows"), startWow = new Toggle("Start WoW when streaming"),
             matchStream = new Toggle("Match PC screen to stream"), ownScreen = new Toggle("Stream on its own screen");
         readonly LinkLabel testPage = new LinkLabel();
+        // the virtual screen's setup (0.2.37, quiet by default): only with "Stream on its own screen" on or no screen on
+        readonly Card vsCard = new Card("Virtual screen");
+        readonly StatusLine vsDriver = new StatusLine("Driver");
+        readonly GoldButton vsTurnOn = new GoldButton("Turn on", primary: true), vsInstall = new GoldButton("Install driver", primary: true),
+            vsTest = new GoldButton("Test virtual screen");
+        readonly Note vsFixNote = new Note("", 9f, Theme.TextDim), vsResult = new Note("", 9.25f, Theme.Gold),
+            vsSignInNote = new Note(DsfDesktop.Sunshine.ScreenSetup.SignInNote, 9f, Theme.TextDim);
+        readonly Toggle vsStartAtSignIn = new Toggle(DsfDesktop.Sunshine.ScreenSetup.StartAtSignIn);
+        TableLayoutPanel grid;
+        /// <summary>the section's row height, and how much the window grew for it (given back when it hides)</summary>
+        const int VsRowHeight = 190;
+        static readonly Size BaseMin = new Size(940, 700);
+        int vsGrew;
+        bool vsRunning;
         readonly Timer tick = new Timer { Interval = 1000 };
 
         public MainForm(Func<ViewState> state, IDesktopActions act)
@@ -63,16 +77,17 @@ namespace DsfDesktop.Ui
             BackColor = Theme.Ink;
             AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = new Size(1060, 760);
-            MinimumSize = new Size(940, 700);
+            MinimumSize = BaseMin;
             StartPosition = FormStartPosition.CenterScreen;
             DoubleBuffered = true;
 
-            var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(10, 6, 10, 0), BackColor = Theme.Ink };
+            grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Padding = new Padding(10, 6, 10, 0), BackColor = Theme.Ink };
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48));
             // 57 / 43 (was 54 / 46): the pairing card's code boxes + Other network; the Streaming card had ~60 px spare
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 57));
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 43));
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
 
             // Pairing
             code.AutoSize = true;
@@ -148,6 +163,9 @@ namespace DsfDesktop.Ui
             grid.Controls.Add(thorCard, 1, 0);
             grid.Controls.Add(streamCard, 0, 1);
             grid.Controls.Add(gameCard, 1, 1);
+            BuildVirtualScreen();
+            grid.Controls.Add(vsCard, 0, 2);
+            grid.SetColumnSpan(vsCard, 2);
 
             var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(22, 6, 18, 0), BackColor = Theme.Ink };
             footer.Controls.Add(startWindows);
@@ -176,6 +194,89 @@ namespace DsfDesktop.Ui
                 if (act != null && act.AskForFolderOnce()) BeginInvoke((Action)AskFolder);
             };
             VisibleChanged += (s, e) => act?.ThorWatching(Visible);
+        }
+
+        /// <summary>the Virtual screen section: the driver and its one fix on the left, the headless check's sign-in on the right</summary>
+        void BuildVirtualScreen()
+        {
+            vsCard.Visible = false;
+            vsCard.Padding = new Padding(20, 50, 20, 8);
+            var cols = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0) };
+            cols.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
+            cols.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
+            var left = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0) };
+            var right = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(12, 0, 0, 0) };
+            vsDriver.Margin = new Padding(0, 0, 0, 2);
+            vsDriver.Dock = DockStyle.None;   // in a flow column Top would take the widest sibling's width, not the column's
+            left.Controls.Add(vsDriver);
+            // the one fix's button with its note beside it (what it does, said plainly), the last result under them
+            var buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0) };
+            foreach (var b in new[] { vsTurnOn, vsInstall, vsTest }) buttons.Controls.Add(b);
+            vsFixNote.Margin = new Padding(4, 6, 0, 0);
+            buttons.Controls.Add(vsFixNote);
+            left.Controls.Add(buttons);
+            vsResult.Margin = new Padding(0, 4, 0, 0);
+            left.Controls.Add(vsResult);
+            var head = new Note("Headless check", 9.5f, Theme.Bronze) { Font = Theme.Head(10.5f), Margin = new Padding(0, 2, 0, 4) };
+            right.Controls.Add(head);
+            vsStartAtSignIn.Margin = new Padding(0, 0, 0, 4);
+            right.Controls.Add(vsStartAtSignIn);
+            right.Controls.Add(vsSignInNote);
+            // the notes wrap at their column's width (a Note can't know it before the column is laid out)
+            left.Resize += (s, e) =>
+            {
+                int w = Math.Max(120, left.ClientSize.Width - 8);
+                vsResult.MaximumSize = new Size(w, 0);
+                vsDriver.Width = w;
+                vsFixNote.MaximumSize = new Size(Math.Max(120, w - 170), 0);
+            };
+            right.Resize += (s, e) => { vsSignInNote.MaximumSize = new Size(Math.Max(120, right.ClientSize.Width - 8), 0); };
+            cols.Controls.Add(left, 0, 0);
+            cols.Controls.Add(right, 1, 0);
+            vsCard.Body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            vsCard.Add(cols);
+            cols.Margin = new Padding(0);
+        }
+
+        /// <summary>a button of the section: on a worker (Windows' admin prompt, winget, our screen made and removed), then a fresh look</summary>
+        async void VsRun(GoldButton b, Func<string> run, string busy)
+        {
+            if (act == null) return;
+            if (vsRunning) return;
+            vsRunning = true;
+            var was = b.Text;
+            vsTurnOn.Enabled = vsInstall.Enabled = vsTest.Enabled = false;
+            b.Text = busy;
+            try { await System.Threading.Tasks.Task.Run(run); }
+            catch (Exception ex) { DsfDesktop.Log.I("virtual screen: " + ex.Message); }
+            finally { b.Text = was; vsRunning = false; Pull(); }
+        }
+
+        /// <summary>the section shown or hidden: its row, and the window taller by it (given back when it goes) when the screen has room</summary>
+        void ShowVirtualScreen(bool on)
+        {
+            if (vsCard.Visible == on) return;
+            vsCard.Visible = on;
+            grid.RowStyles[2].Height = on ? VsRowHeight : 0;
+            var area = Screen.FromControl(this).WorkingArea;
+            if (on)
+            {
+                if (WindowState == FormWindowState.Normal)
+                {
+                    int room = Math.Max(0, area.Bottom - Bottom);
+                    vsGrew = Math.Min(VsRowHeight, room + Math.Max(0, Top - area.Top));
+                    if (vsGrew > room) Top = Math.Max(area.Top, Top - (vsGrew - room));
+                    Height += vsGrew;
+                }
+                // the cards keep their room (never shrunk under the section), as far as the screen allows
+                MinimumSize = new Size(BaseMin.Width, Math.Min(BaseMin.Height + VsRowHeight, Math.Max(BaseMin.Height, area.Height)));
+            }
+            else
+            {
+                MinimumSize = BaseMin;
+                if (WindowState == FormWindowState.Normal && vsGrew > 0) Height -= vsGrew;
+                vsGrew = 0;
+            }
         }
 
         void Wire()
@@ -235,7 +336,18 @@ namespace DsfDesktop.Ui
             };
             startWow.CheckedChanged += (s, e) => { if (!applying) act?.SetStartWow(startWow.Checked); };
             matchStream.CheckedChanged += (s, e) => { if (!applying) act?.SetMatchStream(matchStream.Checked); };
-            ownScreen.CheckedChanged += (s, e) => { if (!applying) act?.SetOwnScreen(ownScreen.Checked); };
+            ownScreen.CheckedChanged += (s, e) => { if (!applying) { act?.SetOwnScreen(ownScreen.Checked); Pull(); } };
+            vsTurnOn.Click += (s, e) => VsRun(vsTurnOn, () => act.TurnOnSudoVda(), "Turning on...");
+            vsInstall.Click += (s, e) => VsRun(vsInstall, () => act.InstallVirtualScreen(), "Starting...");
+            vsTest.Click += (s, e) => VsRun(vsTest, () => act.TestOwnScreen(), "Testing...");
+            // the same HKCU Run entry as "Start with Windows" (off by default; only the player's click sets it)
+            vsStartAtSignIn.CheckedChanged += (s, e) =>
+            {
+                if (applying || act == null) return;
+                try { act.SetStartWithWindows(vsStartAtSignIn.Checked); }
+                catch (Exception ex) { MessageBox.Show(this, "Couldn't change " + DsfDesktop.Sunshine.ScreenSetup.StartAtSignIn + ": " + ex.Message, Text); }
+                Pull();
+            };
             testPage.LinkClicked += (s, e) => { if (v.BridgePort > 0) Process.Start("http://localhost:" + v.BridgePort + "/test"); };
         }
 
@@ -309,9 +421,34 @@ namespace DsfDesktop.Ui
             startWow.Checked = s.StartWow;
             matchStream.Checked = s.MatchStream;
             ownScreen.Checked = s.OwnScreen;
+            ApplyVirtualScreen(s);
             ResumeLayout(true);
             foreach (Control c in new Control[] { pairCard, thorCard }) c.Invalidate();
             applying = false;
+        }
+
+        void ApplyVirtualScreen(ViewState s)
+        {
+            var vs = s.VScreen ?? new VScreenView();
+            var P = DsfDesktop.Sunshine.ScreenSetup.Panel.Hidden;
+            ShowVirtualScreen(vs.Panel != P);
+            if (vs.Panel == P) return;
+            vsCard.Tag2 = DsfDesktop.Sunshine.ScreenSetup.Why(!vs.Headless);
+            var p = vs.Panel;
+            var dot = p == DsfDesktop.Sunshine.ScreenSetup.Panel.Ready ? Theme.Ok : p == DsfDesktop.Sunshine.ScreenSetup.Panel.Checking
+                || p == DsfDesktop.Sunshine.ScreenSetup.Panel.Installing ? Theme.Gold : Theme.Warn;
+            vsDriver.Set(DsfDesktop.Sunshine.ScreenSetup.Line(p), dot);
+            vsTurnOn.Visible = p == DsfDesktop.Sunshine.ScreenSetup.Panel.TurnOn;
+            vsInstall.Visible = p == DsfDesktop.Sunshine.ScreenSetup.Panel.Offer;
+            vsTest.Visible = p == DsfDesktop.Sunshine.ScreenSetup.Panel.Ready;
+            vsTurnOn.Enabled = vsInstall.Enabled = vsTest.Enabled = !vs.Busy && !vsRunning;
+            vsFixNote.Text = p == DsfDesktop.Sunshine.ScreenSetup.Panel.TurnOn ? DsfDesktop.Sunshine.ScreenSetup.TurnOnNote
+                : p == DsfDesktop.Sunshine.ScreenSetup.Panel.Offer ? DsfDesktop.Sunshine.ScreenSetup.OfferNote : "";
+            vsFixNote.Visible = vsFixNote.Text.Length > 0;
+            vsResult.Text = vs.Result ?? "";
+            vsResult.Visible = vsResult.Text.Length > 0;
+            vsStartAtSignIn.Checked = s.StartWithWindows;
+            vsCard.Invalidate();
         }
 
         // a dark title bar to match (Windows 10 20H1+ / 11), and on 11 the caption in the header's colour

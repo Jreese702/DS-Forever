@@ -44,7 +44,6 @@ namespace DsfDesktop.Ui
                 bool updating = ctl.UpdateLine.StartsWith("Updating to");
                 if (updating && !said) { said = true; icon.ShowBalloonTip(3000, "DS Forever Desktop", ctl.UpdateLine, ToolTipIcon.None); }
                 if (ctl.StartPendingUpdate()) { hover.Stop(); Quit(); return; }
-                if (ctl.TakeScreenOffer()) AskScreen();
                 if (!updating) said = false;
                 var t = updating ? "updating" : ctl.Stream == App.StreamState.Streaming ? "streaming to your Thor" : (ctl.Bridge?.Sessions().Count ?? 0) > 0 ? "your Thor is connected" : "ready";
                 icon.Text = "DS Forever Desktop: " + t;
@@ -63,21 +62,8 @@ namespace DsfDesktop.Ui
             }));
         }
 
-        /// <summary>F6 / Part 2: no virtual display driver (a headless PC, or the stream's own screen): asked once; only a yes installs
-        /// (Windows asks for admin itself, once)</summary>
-        void AskScreen()
-        {
-            ShowForm();
-            var why = ctl.ScreenOfferHeadless ? "No screen is on at this PC, so there is nothing to stream.\n\n"
-                : "The stream gets its own screen, so WoW leaves your desktop. That needs a virtual screen.\n\n";
-            var yes = MessageBox.Show(form,
-                why + "Install a virtual screen? (Virtual Display Driver: free, open source, MIT.) Windows asks for admin to install it.",
-                "DS Forever Desktop", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
-            DsfDesktop.Log.I("virtual screen: install " + (yes ? "accepted" : "declined"));
-            if (!yes) return;
-            var err = ctl.InstallVirtualScreen();
-            if (err != null) MessageBox.Show(form, err, "DS Forever Desktop");
-        }
+        // 0.2.37 (the user's ruling 2026-11-18 "Yes, quiet by default"): no virtual-screen question box any more; the setup is a
+        // section of the window (MainForm's Virtual screen), shown only with "Stream on its own screen" on or no screen on
 
         void ShowForm()
         {

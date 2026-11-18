@@ -198,10 +198,12 @@ class StreamCurtainTest {
         assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.SIGN_IN, r), StreamCurtain.decide(true, true, pc))
         assertEquals("Sign in to Battle.net", StreamCurtain.SIGN_IN)
         assertTrue(!StreamCurtain.NEEDS_YOU.contains("PC"))
-        assertEquals("Desktop 0.2.33 headless with a disabled SudoVDA", StreamCurtain.SCREEN_DISABLED,
+        // quiet by default (the user's ruling 2026-11-18): every headless word is the one line; Desktop's window has the setup
+        assertEquals("Desktop 0.2.33 headless with a disabled SudoVDA", StreamCurtain.NEEDS_SCREEN,
             StreamCurtain.reason("screen_disabled", "enable SudoMaker display adapter in Device Manager"))
-        assertEquals("an older Thor's fallback reads the same", StreamCurtain.SCREEN_DISABLED,
-            StreamCurtain.reason("some_new_word", "enable SudoMaker display adapter in Device Manager"))
+        assertEquals(StreamCurtain.NEEDS_SCREEN, StreamCurtain.reason("no_screen", "pc has no screen on"))
+        assertEquals(StreamCurtain.NEEDS_SCREEN, StreamCurtain.reason("needs_screen", "pc needs a virtual screen: set it up in Desktop"))
+        assertEquals("PC needs a virtual screen: set it up in Desktop", StreamCurtain.NEEDS_SCREEN)
     }
 
     /** the user's PC 2026-11-18 06:20 ("it just keeps restarting saying no servers available") and the ruling "Stop and show it":

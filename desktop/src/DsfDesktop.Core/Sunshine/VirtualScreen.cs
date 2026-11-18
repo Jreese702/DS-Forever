@@ -14,8 +14,10 @@ namespace DsfDesktop.Sunshine
     /// <summary>
     /// What to do about the screen our Sunshine streams. F6 (0.2.31, the user's pick 2026-11-17 "Use one if installed, else offer
     /// ours"): a headless PC whose only screen is Apollo's per-session virtual one. Part 2 (0.2.32, the user's pick 2026-11-17
-    /// "Sunshine + own virtual screen"): with "Stream on its own screen" on (the default), EVERY PC streams our own virtual screen at
-    /// the Thor's mode; off = the 0.2.31 headless-only rule. Pure.
+    /// "Sunshine + own virtual screen"): with "Stream on its own screen" on, EVERY PC streams our own virtual screen at the Thor's
+    /// mode; off = the 0.2.31 headless-only rule. QUIET BY DEFAULT (0.2.37, the user's ruling 2026-11-18 "Yes, quiet by default"):
+    /// the setting is off unless the player turns it on; with a monitor on and it off nothing about drivers is looked for, asked or
+    /// said; the setup lives in Desktop's window (<see cref="ScreenSetup"/>), never a pop-up. Pure.
     /// </summary>
     public static class ScreenPlan
     {
@@ -71,14 +73,30 @@ namespace DsfDesktop.Sunshine
             sudoVdaDisabled ? (EnableSudoVda, hasScreen ? null : ProblemScreenDisabled)
             : hasScreen ? (FallbackNote, (string)null) : (Install, ProblemNeedsScreen);
 
-        /// <summary>the install question waits while a Thor is connected or streaming: its window and modal box took the PC's front
-        /// from WoW during the sign-in (the user's PC 2026-11-17 22:53, 13 "Windows kept another window in front")</summary>
-        public static bool AskNow(bool pending, bool thorConnected, bool streaming) => pending && !thorConnected && !streaming;
+        /// <summary>a driver is looked for (and the window's setup shown) only when the player turned "Stream on its own screen" on or
+        /// no screen is on (quiet by default: a PC with a monitor and the setting off never hears about drivers)</summary>
+        public static bool Looks(bool ownOn, bool hasScreen) => ownOn || !hasScreen;
+
+        /// <summary>the Thor's status line for one of the PC's screen lines, null = not for the Thor: only the progress lines of a
+        /// screen being made go there; a driver's absence is the window's (headless: the welcome's problem word says it, <see cref="ThorWord"/>)</summary>
+        public static string ThorStatus(string line) => line == Making || line == MakingOwn || line == Ready ? line : null;
+
+        /// <summary>the welcome's problem word as the Thor gets it: every headless screen problem is the one terse line
+        /// (<see cref="ProblemNeedsScreen"/>, set up in Desktop); other words as they are</summary>
+        public static string ThorWord(string problem) =>
+            problem == ProblemNoScreen || problem == ProblemScreenDisabled ? ProblemNeedsScreen : problem;
+
+        /// <summary>the start's "neighbours:" word for SudoVDA: [interfaceUp] = its control device answers; [problem] =
+        /// <see cref="SudoVda.AdapterProblem"/> (0.2.37: a disabled adapter read "not installed")</summary>
+        public static string SudoVdaWord(bool interfaceUp, int? problem) =>
+            interfaceUp ? "installed" : problem == SudoVda.ProblemDisabled ? "installed, turned off in Windows"
+            : problem.HasValue && problem.Value != 0 ? "installed, device problem " + problem.Value
+            : problem.HasValue ? "installed, no control device" : "not installed";
 
         /// <summary>the PC's and the Thor's terse lines</summary>
         public const string Making = "No screen: making one";
         public const string Ready = "Virtual screen ready";
-        public const string Install = "Install needed";
+        public const string Install = "Needs a virtual screen";
         public const string Failed = "No screen: couldn't make one";
         /// <summary>own screen on, a real one there: making ours</summary>
         public const string MakingOwn = "Making the stream's own screen";
@@ -89,12 +107,13 @@ namespace DsfDesktop.Sunshine
         public const string NeedsVirtual = "PC needs a virtual screen";
         /// <summary>the welcome's sunshine.problem words (the Thor's curtain)</summary>
         public const string ProblemNeedsScreen = "needs_screen", ProblemNoScreen = "no_screen";
-        public const string ThorNeedsScreen = "pc needs a virtual screen: see Desktop", ThorNoScreen = "pc has no screen on";
-        /// <summary>SudoVDA (Apollo's driver) is there but disabled in Windows (<see cref="SudoVda.Disabled"/>): no install is offered,
-        /// the player enables it; Desktop never does. The PC's and the Thor's line, and (headless) the welcome's problem word</summary>
-        public const string EnableSudoVda = "Enable SudoMaker display adapter in Device Manager";
+        /// <summary>the Thor's one line for a headless PC (never asks for anything the Thor can do: the setup is Desktop's window)</summary>
+        public const string ThorNeedsScreen = "pc needs a virtual screen: set it up in Desktop";
+        /// <summary>SudoVDA (Apollo's driver) is there but disabled in Windows (<see cref="SudoVda.Disabled"/>): no install is offered;
+        /// the window's Turn on (<see cref="SudoVdaTurnOn"/>, the player's click and Windows' admin prompt). The PC's line, and
+        /// (headless) the window's problem word (the Thor gets <see cref="ProblemNeedsScreen"/>)</summary>
+        public const string EnableSudoVda = "SudoMaker display adapter is turned off";
         public const string ProblemScreenDisabled = "screen_disabled";
-        public const string ThorScreenDisabled = "enable SudoMaker display adapter in Device Manager";
 
         /// <summary>the Thor's stream mode as SudoVDA's: 1920x1080 at 60 unless the Thor said otherwise; sane bounds</summary>
         public static (int w, int h, int hz) Mode(int w, int h, int fps)
@@ -186,6 +205,34 @@ namespace DsfDesktop.Sunshine
                     if (!HasId(Encoding.Unicode.GetString(buf))) continue;
                     if (CM_Get_DevNode_Status(out _, out uint problem, dev.DevInst, 0) != 0) return null;
                     return (int)problem;
+                }
+                return null;
+            }
+            catch (Exception) { return null; }
+            finally { SetupDiDestroyDeviceInfoList(set); }
+        }
+
+        /// <summary>
+        /// The SudoVDA adapter's device instance id (e.g. ROOT\DISPLAY\0000), found by its hardware id <see cref="HardwareId"/> among
+        /// the Display adapters, read only; null = no such adapter. What the window's Turn on gives pnputil (<see cref="SudoVdaTurnOn"/>)
+        /// </summary>
+        public static string AdapterInstanceId()
+        {
+            var g = DisplayClass;
+            var set = SetupDiGetClassDevs(ref g, IntPtr.Zero, IntPtr.Zero, 0x2 /* DIGCF_PRESENT */);
+            if (set == IntPtr.Zero || set == new IntPtr(-1)) return null;
+            try
+            {
+                var buf = new byte[4096];
+                for (int i = 0; i < 64; i++)
+                {
+                    var dev = new SP_DEVINFO_DATA { cbSize = Marshal.SizeOf(typeof(SP_DEVINFO_DATA)) };
+                    if (!SetupDiEnumDeviceInfo(set, i, ref dev)) break;
+                    Array.Clear(buf, 0, buf.Length);
+                    if (!SetupDiGetDeviceRegistryProperty(set, ref dev, 1 /* SPDRP_HARDWAREID */, out _, buf, buf.Length, out _)) continue;
+                    if (!HasId(Encoding.Unicode.GetString(buf))) continue;
+                    var id = new StringBuilder(512);
+                    return SetupDiGetDeviceInstanceId(set, ref dev, id, id.Capacity, out _) ? id.ToString() : null;
                 }
                 return null;
             }
@@ -308,6 +355,8 @@ namespace DsfDesktop.Sunshine
         [DllImport("setupapi.dll", SetLastError = true)] static extern bool SetupDiEnumDeviceInfo(IntPtr set, int index, ref SP_DEVINFO_DATA d);
         [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "SetupDiGetDeviceRegistryPropertyW")]
         static extern bool SetupDiGetDeviceRegistryProperty(IntPtr set, ref SP_DEVINFO_DATA d, int property, out int regType, byte[] buf, int size, out int need);
+        [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "SetupDiGetDeviceInstanceIdW")]
+        static extern bool SetupDiGetDeviceInstanceId(IntPtr set, ref SP_DEVINFO_DATA d, StringBuilder id, int size, out int need);
         [DllImport("cfgmgr32.dll")] static extern int CM_Get_DevNode_Status(out uint status, out uint problem, uint devInst, int flags);
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         struct DISPLAYCONFIG_SOURCE_DEVICE_NAME
