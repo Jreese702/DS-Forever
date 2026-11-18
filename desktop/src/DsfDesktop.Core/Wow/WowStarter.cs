@@ -115,11 +115,13 @@ namespace DsfDesktop.Wow
             this.now = now ?? (() => DateTime.UtcNow);
         }
 
-        public static string StartProcess(LaunchPlan p)
+        public static string StartProcess(LaunchPlan p, WowConfigKeep keep = null)
         {
             try
             {
-                WowConfig.Ensure(Path.Combine(p.WorkDir ?? "", "WTF", "Config.wtf"));
+                var cfg = Path.Combine(p.WorkDir ?? "", "WTF", "Config.wtf");
+                keep?.RecordWindow(cfg);   // the player's window, before a session's WoW saves the stream's
+                WowConfig.Ensure(cfg, keep);
                 // through the shell: the game must not inherit Desktop's handles (2026-10-30: a crashed Wow.exe kept the bridge port 48210)
                 Process.Start(new ProcessStartInfo(p.Exe, p.Args) { WorkingDirectory = p.WorkDir, UseShellExecute = true })?.Dispose();
                 return null;

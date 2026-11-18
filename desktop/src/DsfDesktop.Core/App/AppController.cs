@@ -82,6 +82,9 @@ namespace DsfDesktop.App
             SaveSettings();
             Devices = new DeviceStore(paths.Devices);
             MakeStarter();
+            ConfigKeep = new WowConfigKeep(Path.Combine(paths.DataDir, "wowconfig"), WowWindow.ProcessRunning,
+                () => Stream == StreamState.Streaming || Starter.State == WowState.Starting);
+            ScreenKeep = new DisplayKeep(Path.Combine(paths.DataDir, "display_keep.json"), new VddScreen.Native());
             MakeSupervisor();
             var adbPath = DsfDesktop.Thor.AdbProcess.Locate(paths.AppDir);
             this.Thor = new DsfDesktop.Thor.ThorManager(adbPath != null ? new DsfDesktop.Thor.AdbProcess(adbPath) : null, new DsfDesktop.Thor.ReleaseFeed(), Path.Combine(paths.DataDir, "apk"));
@@ -1605,6 +1608,7 @@ namespace DsfDesktop.App
                     }
                     else SetStream(StreamState.Unknown);
                     try { DisplayTick(); } catch (Exception e) { Log.I("display tick: " + e.Message); }
+                    try { KeepTick(); } catch (Exception e) { Log.I("keep tick: " + e.Message); }
                     CheckCapture();
                 }
             }
@@ -1612,6 +1616,7 @@ namespace DsfDesktop.App
             // every 2 s, beside CheckCapture's tick (outside its try: a serverinfo that throws doesn't skip it)
             if (tickN % 2 == 1) try { CheckInput(); } catch (Exception e) { Log.I("input check: " + e.Message); }
             try { Starter.Tick(); } catch (Exception) { }
+            try { ConfigKeep?.Tick(); } catch (Exception) { }
             try { WowTick(); } catch (Exception e) { Log.I("wow tick: " + e.Message); }
             if (ThorWatching && DateTime.UtcNow - thorPolledAt > TimeSpan.FromSeconds(3) && !Thor.Busy)
             {
@@ -1681,6 +1686,21 @@ namespace DsfDesktop.App
         // ---------------------------------------------------------------- starting WoW, and the monitor Sunshine captures
 
         public WowStarter Starter { get; private set; }
+        /// <summary>the player's own controller settings, put back once a DS Forever session is over (WowConfigKeep)</summary>
+        WowConfigKeep ConfigKeep;
+        /// <summary>the PC monitor's own mode, put back after a stream if Sunshine's revert didn't (DisplayKeep)</summary>
+        DisplayKeep ScreenKeep;
+
+        /// <summary>after a stream, the player's own settings back: the monitor's mode (every 2 s), WoW's controller and window lines</summary>
+        void KeepTick()
+        {
+            var streaming = Stream == StreamState.Streaming;
+            var list = SunshineDisplays();
+            var cap = sessionOutput == null && list.Count > 0 ? list.FirstOrDefault(d => d.DisplayName == Displays.Captured(list, CurrentOutput)) : null;
+            ScreenKeep?.Tick(streaming, cap != null && !cap.Virtual ? cap.DisplayName : null, MatchStreamNow);
+            var dir = FlavorDirOrNull;
+            if (streaming && dir != null) ConfigKeep?.RecordWindow(Path.Combine(dir, "WTF", "Config.wtf"));
+        }
 
         /// <summary>the USB install of DS Forever on the Thor (the Thor card)</summary>
         public DsfDesktop.Thor.ThorManager Thor { get; private set; }
@@ -1699,7 +1719,7 @@ namespace DsfDesktop.App
                 windowUp: WowUp,
                 processUp: WowWindow.ProcessRunning,
                 plan: () => WowLaunch.Plan(Wow, DateTime.Now, WowLaunch.FindBattleNet()),
-                start: p => { BeforeStart(p); return WowStarter.StartProcess(p); });
+                start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep); });
             Starter.Changed += (state, why) =>
             {
                 if (Supervisor != null) PublishWow(force: true);

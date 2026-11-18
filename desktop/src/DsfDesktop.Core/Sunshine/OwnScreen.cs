@@ -645,7 +645,7 @@ namespace DsfDesktop.Sunshine
         }
 
         /// <summary>ChangeDisplaySettingsEx / EnumDisplaySettings (user32; no admin)</summary>
-        sealed class Native : IVddWindows
+        internal sealed class Native : IVddWindows
         {
             [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
             struct DEVMODE
