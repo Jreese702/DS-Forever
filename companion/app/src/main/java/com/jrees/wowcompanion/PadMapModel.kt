@@ -167,11 +167,10 @@ object PadMapModel {
      *  [held] (m160 review) our own macros kept because the player put them on an action slot (the doc's `h`, absent = 0) */
     data class SrGone(val macros: Int, val buttons: Int, val kept: Int, val pending: Boolean, val held: Int = 0)
 
-    /** m165 B: PET FOLLOW: [on] the app's word the add-on holds (its setting for this character AND Home with nothing of its own open),
-     *  [cls] a pet class (the row is offered), [pet] a live pet out, [bound] B is the router's for it now */
-    /** m165 B: pet follow / m172 SMART PET: [on] the app's word (Smart pet on), [bfree] with Home free for B (`bf`), [sp] the attack
-     *  half armed (`sp`) */
-    data class PetB(val on: Boolean, val cls: Boolean, val pet: Boolean, val bound: Boolean, val bfree: Boolean = false, val sp: Boolean = false)
+    /** m165 / m174 B: PET RECALL: [on] the app's word the add-on holds (this character's B: pet recall), [cls] a pet class (the row is
+     *  offered), [pet] a live pet out, [bound] B is the router's for it now, [bfree] with Home free for B (`bf`). (m172's `sp`, the
+     *  attack half, is gone: an older add-on's is ignored) */
+    data class PetB(val on: Boolean, val cls: Boolean, val pet: Boolean, val bound: Boolean, val bfree: Boolean = false)
 
     /** p12: an "extra" answer also names what was put: [idx] (1-based in the Extra list), [kind], [what] (a command key or an id), [name] */
     data class Ack(val op: String, val ok: Boolean, val why: String?, val storage: Int?, val idx: Int? = null, val kind: String? = null,
@@ -310,7 +309,7 @@ object PadMapModel {
             },
             // m165: B's pet follow (the add-on leaves out every false)
             petB = m.optJSONObject("pf")?.let { o -> PetB(o.optBoolean("on", false), o.optBoolean("cls", false), o.optBoolean("pet", false), o.optBoolean("b", false),
-                o.optBoolean("bf", false), o.optBoolean("sp", false)) },
+                o.optBoolean("bf", false)) },
         )
     }
 

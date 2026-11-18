@@ -87,7 +87,7 @@ class SettingsTabsTest {
                 "Player frame", "Target frame", "Controller UI", "Buffs", "XP bar",
                 // hub61: the damage meter, the Cooldown Manager and its four parts
                 "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"),
-            G.BUTTONS to listOf("ABXY location", "Button glyphs", "Smart pet"),           // 2026-11-17: Smart pet (was B: pet follow), a pet class only
+            G.BUTTONS to listOf("ABXY location", "Button glyphs", "B: pet recall"),       // 2026-11-18: B: pet recall (was Smart pet / B: pet follow), a pet class only
             G.WHEELS to listOf("Pause menu: open", "Pause menu: pick", "Start over game windows", "Item wheel: open", "Item wheel: pick", "Spell wheel: open",
                 "Spell wheel: pick", "Left class radial: open", "Left class radial: pick", "Right class radial: open", "Right class radial: pick"),
             G.SMART_Y to listOf("Smart Y"),
@@ -160,7 +160,7 @@ class SettingsTabsTest {
             listOf("Windows ID") +
             // the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet
             // attacking"): Controller > Buttons
-            listOf("Smart pet") +                       // 2026-11-17: the one Smart pet row replaces B: pet follow
+            listOf("B: pet recall") +                   // 2026-11-18: B: pet recall (was Smart pet, its attack half gone)
             // the user's pick 2026-11-16 (voice to text): General > Look > Voice typing
             listOf("Voice typing") +
             // the user, 2026-11-16 ("we could make the per languege downloads part of the addons folder"): Add-ons > Voice
@@ -318,7 +318,7 @@ class SettingsTabsTest {
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
         // hub61: every Top screen block is GameUiSection's tiles now (Edit layout too; Polestar's included)
         assertEquals(emptyList<B>(), SettingsTabs.viewBlocks(T.TOP))
-        assertEquals(listOf(B.CONTROLLER, B.SMART_PET, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),
+        assertEquals(listOf(B.CONTROLLER, B.PET_RECALL, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),
             SettingsTabs.viewBlocks(T.CONTROLLER))
         // only the wheels keep a sub-heading of their own inside their group
         assertEquals(setOf(B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT), B.values().filter { it.subHead }.toSet())

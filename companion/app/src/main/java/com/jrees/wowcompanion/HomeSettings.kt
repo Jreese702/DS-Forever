@@ -137,23 +137,23 @@ object HomeSettings {
         set(v) { if (v != pauseOverGame) { prefs?.edit()?.putBoolean("pauseOverGame", v)?.apply(); for (l in listeners) l() } }
 
     /**
-     * SMART PET (the user, 2026-11-17: "to be clear I think this should just be a smart pet feature that includes both of those settings
-     * in one"; SmartPet): PER CHARACTER ([who] = "Name-Realm", GameUi.character), OFF BY DEFAULT (the user's pick; the row shows only for
-     * a pet class); no character known = the default. It replaces "B: pet follow" (2026-11-16, on by default): a character with that
-     * SAVED keeps it ("petFollowB.<who>"); nothing saved = Off. B: pet follow saved only a value other than its default (On), so in
-     * practice only an Off it ever had (or an On after an Off) carries over
+     * B: PET RECALL (the user, 2026-11-18: "I like the pet recall but I think we need to remove the pet smart attack, its obnoxious"; the
+     * pick: ON by default for pet classes, a player's saved choice kept; PetRecall): PER CHARACTER ([who] = "Name-Realm",
+     * GameUi.character), the row shows only for a pet class; no character known = Off (nothing to tell). A character's SAVED choice is
+     * kept as it was made: 2026-11-17's Smart pet ("smartPet.<who>", the same key on), else 2026-11-16's B: pet follow
+     * ("petFollowB.<who>"); nothing saved = ON
      */
-    fun smartPet(who: String?): Boolean {
+    fun petRecall(who: String?): Boolean {
         val k = who ?: return false
         val p = prefs ?: return false
-        if (p.contains("smartPet.$k")) return p.getBoolean("smartPet.$k", false)
-        if (p.contains("petFollowB.$k")) return p.getBoolean("petFollowB.$k", false)
-        return false
+        if (p.contains("smartPet.$k")) return p.getBoolean("smartPet.$k", true)
+        if (p.contains("petFollowB.$k")) return p.getBoolean("petFollowB.$k", true)
+        return true
     }
-    fun setSmartPet(who: String?, on: Boolean) {
+    fun setPetRecall(who: String?, on: Boolean) {
         val k = who ?: return
         val p = prefs ?: return
-        if (p.contains("smartPet.$k") && on == smartPet(k)) return
+        if (p.contains("smartPet.$k") && on == petRecall(k)) return
         p.edit().putBoolean("smartPet.$k", on).apply()                 // always its own key: a choice the user made is kept as made
         for (l in listeners) l()
     }

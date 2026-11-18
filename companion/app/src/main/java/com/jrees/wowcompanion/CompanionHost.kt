@@ -3132,9 +3132,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // backlog (its `_gt` stamp after the game's start: a host that came up mid-game); an older run's says nothing about now
                 if (current || padmapOfThisRun(msg.optLong("_gt", -1L))) { padmapRunAt = System.currentTimeMillis(); runStart = it.start }
                 if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
-                // Smart pet (PadMap m165 / m172), told when it differs - for THIS padmap's character (the review: GameUi.character is
+                // B: pet recall (PadMap m165 / m174), told when it differs - for THIS padmap's character (the review: GameUi.character is
                 // set further down, so a first padmap after a start / a character switch read the default or the last character's setting)
-                if (current) { petBNow = it.petB; petBWho = SmartPet.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
+                if (current) { petBNow = it.petB; petBWho = PetRecall.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 // PadMap m160: the Smart Range clean-up's counts (the problem report's line), one log line when they change
@@ -3682,10 +3682,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  whenever a current padmap says another (PauseOver), and at once on a change (HomeSettings' listener) */
     private var pauseOverSentAt = 0L
     /**
-     * SMART PET (the user, 2026-11-17: "to be clear I think this should just be a smart pet feature that includes both of those settings
-     * in one"; SmartPet, PadMap m172 / Book b67; it replaces 2026-11-16's B: pet follow): the add-on holds the app's word - this
+     * B: PET RECALL (the user, 2026-11-18: "I like the pet recall but I think we need to remove the pet smart attack, its obnoxious";
+     * PetRecall, PadMap m174 / Book b68; was 2026-11-17's Smart pet, its attack half gone): the add-on holds the app's word - this
      * character's setting, and whether Home has nothing of its own open that B closes (a module full screen, the buff list, the tool, the
-     * report's notice: B's half only then) - told by padtab 39 then 36 / 37 / 0 whenever the last CURRENT padmap disagrees ([petBNow]: its
+     * report's notice: only the fight's give-back B then) - told by padtab 39 then 36 / 37 / 0 whenever the last CURRENT padmap disagrees ([petBNow]: its
      * `pf`; null = an add-on without it, never told). Rooms, wheels, pop-ups and game windows hold the controller themselves (the router
      * stands aside in the add-on): no tell for them, so no taps on a room change
      */
@@ -3698,13 +3698,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val pf = petBNow ?: return
         val who = petBWho ?: return
         val homeFree = !homeView.bClosesSomething() && !(::reportNotice.isInitialized && reportNotice.asking)
-        val want = SmartPet.want(HomeSettings.smartPet(who), pf, homeFree)
+        val want = PetRecall.want(HomeSettings.petRecall(who), pf, homeFree)
         val now = SystemClock.elapsedRealtime()
-        if (!SmartPet.needsTell(want, pf, petBSent, petBSentAt, now, GameInput.live())) return
-        val sent = padTabTap(SmartPet.cells(want))
+        if (!PetRecall.needsTell(want, pf, petBSent, petBSentAt, now, GameInput.live())) return
+        val sent = padTabTap(PetRecall.cells(want))
         if (sent) { petBSent = want; petBSentAt = now }
-        val w = when (want) { SmartPet.BOTH -> "on"; SmartPet.ATTACK -> "on (Home busy: attack only)"; else -> "off" }
-        Log.i("WCHOME", "smart pet: $w told ($why)${if (sent) "" else ": not sent"}")
+        val w = when (want) { PetRecall.ON -> "on"; PetRecall.BUSY -> "on (Home busy: the fight's give-back B only)"; else -> "off" }
+        Log.i("WCHOME", "pet recall: $w told ($why)${if (sent) "" else ": not sent"}")
     }
     private fun pauseOverTell(m: PadMapModel.Map?, why: String) {
         val game = HomeSettings.pauseOverGame

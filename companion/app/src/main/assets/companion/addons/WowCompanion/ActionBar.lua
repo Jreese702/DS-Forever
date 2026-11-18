@@ -7,6 +7,9 @@
 -- each from its own PLAYER_SWING (type 0 / 1); one hand = one swing as before; Auto Shot unchanged. A haste change (UNIT_ATTACK_SPEED)
 -- rescales a running swing; a hand swapped mid-fight (WEAPON_SLOT_CHANGED / PLAYER_EQUIPMENT_CHANGED 16 / 17) restarts its swing at
 -- the weapon now held, an off hand left with no weapon drops its swing. Plain reads only. At "SWING-BEGIN".
+-- cb12 PET RECALL ONLY (the user, 2026-11-18: "I like the pet recall but I think we need to remove the pet smart attack, its obnoxious"): cb11's Smart pet
+-- casts are gone - the tap-to-cast bar, the class wheels and the touch-cast cells cast a harmful spell as the plain spell again (no
+-- /petattack text, no WC.padMap.smartPetCast / smartPetCmd, no WC.spResync); exactly cb10's cells. Nothing was ever saved.
 -- nbar4 THE 11-16 TEST BUILD MERGE: the macro-GCD nbar3 (PadMap m165) and feat/big-layout's nbar3 (the bar in the layout editor) both kept.
 -- nbar3 (PadMap m165; the user, 2026-11-16: "when using show tooltip on a macro it doesn't actually show the GCD when using it"): a
 -- player's macro on the In combat layer is drawn as the spell it would cast now (its picture, its cooldown / GCD sweep by that spell's
@@ -22,11 +25,6 @@
 -- "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the bar stands at the stock bar's centre and scale as before, PLUS the layout's offset (dx, dy 1080-line
 -- pixels) and size (s %) - TapPad pad22 WC.lay.get("nbar"), per character; no entry = the stock spot. NB.lay is the piece Hub's editor
 -- gathers (its anchor the bar's centre). The stock bar itself is the game's and is never moved.
--- cb11 SMART PET (PadMap m172; the user, 2026-11-17: "to be clear I think this should just be a smart pet feature that includes both of
--- those settings in one"): with this character's Smart pet on, a HARMFUL spell (not a pet's) on our touch cells - the tap-to-cast bar,
--- the class wheels, the touch-cast cells - is cast through a macro of its own that sends the pet first (WC.padMap.smartPetCast: the
--- soft enemy targeted, "/petattack [pet,harm,nodead]", "/cast <spell>"), and the bar's Start Attack command sends it too
--- (WC.padMap.smartPetCmd). Built out of combat (the cells' signatures carry it); a change re-syncs them (WC.spResync). Nothing saved.
 -- cb1 (GitHub #43, the tap-to-cast bar): one secure pad row "castbar" (12 spell cells + the Spellbook's pick), the character's own
 -- slots (WowCompanionSpellsDB.castBar[name-realm]), a fight's edits queued to its end; documents "castbar" / "castcd". At "THE TAP-TO-CAST BAR".
 -- cb2 (1.0.30 code 1454): the row "castbar" only once the character's bar has a spell (bmv4 kept on a full pad); the Spellbook's pick on padtab 39 + 19.
@@ -824,13 +822,6 @@ local function gfSetup()
 end
 WC.gameWheelShut = { col = GF_COL, setup = gfSetup, v = GWV }
 -- GAMEWHEEL-END
--- cb11: Smart pet's cast text for a spell cell (nil = the plain spell cell: Smart pet off, not harmful, a pet's spell)
-local function spCast(id)
-    local pm = WC.padMap
-    if type(pm) ~= "table" or type(pm.smartPetCast) ~= "function" then return nil end
-    local ok, t = pcall(pm.smartPetCast, id)
-    return (ok and type(t) == "string") and t or nil
-end
 local function crInit(btn, col)
     local w = CR.want[col]
     btn:SetAttribute("type", w and w.type or nil)
@@ -852,9 +843,7 @@ local function crSync(ca)
         for _, e in ipairs(rad and rad.e or {}) do
             local col = crCellOf(side, e)
             local w
-            local sp = e.k == "spell" and e.id and spCast(e.id) or nil      -- cb11: Smart pet's cast
-            if sp then w = { type = "macro", macrotext = sp, sig = "s" .. e.id .. "p" }
-            elseif e.k == "spell" and e.id then w = { type = "spell", spell = e.id, sig = "s" .. e.id }
+            if e.k == "spell" and e.id then w = { type = "spell", spell = e.id, sig = "s" .. e.id }
             elseif (e.k == "petcmd" or e.k == "petspell") and e.slot then w = { type = "pet", action = e.slot, sig = "p" .. e.slot } end
             if w then want[col] = w; parts[#parts + 1] = col .. "=" .. w.sig end
             if e.k == "petspell" and e.n and side == "r" then
@@ -934,7 +923,7 @@ end
 -- queue as the Spellbook's toggles always did. The document says each slot's kind (`k`, none = a spell, as before), its name (`n`, not
 -- for a spell: the app has the book), an item's count (`ct`, `cons` = 1 for a consumable) and `any` = 1 (this bar takes every kind).
 do
-local CBV = "cb11"     -- cb11 SMART PET (header); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
+local CBV = "cb12"     -- cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 8, 8, 2   -- cb6: 8 slots (cells 0-7), the pick cell 8
 local CB_OLD_N = 12                      -- cb3: the slots a cb1 / cb2 store may hold (cb6: migrated to the first 8)
@@ -1074,13 +1063,6 @@ CB.at = function(slot) local v = cbView(); return cbKeep(v[slot]) end           
 
 -- cb9: what a thing is called and looks like (read live; nil when the game does not say it plainly)
 local function cbNum(fn) local v = SN(fn); if cbId(v) then return v end end
--- cb11: Smart pet's cast text for a spell cell (the block's own: it runs alone in tools/test_cast_bar.py); nil = the plain spell cell
-local function cbSpCast(id)
-    local pm = WC.padMap
-    if type(pm) ~= "table" or type(pm.smartPetCast) ~= "function" then return nil end
-    local ok, t = pcall(pm.smartPetCast, id)
-    return (ok and type(t) == "string") and t or nil
-end
 local function cbCmd(key)
     local pm = WC.padMap
     if type(pm) ~= "table" or type(pm.castBarCmd) ~= "function" then return nil end
@@ -1114,11 +1096,6 @@ local function cbLine(e)
         return m and m.sp and ("/cast " .. m.sp) or nil
     elseif e.k == "command" then
         local c = cbCmd(e.key)
-        local pm = WC.padMap                                            -- cb11: Start Attack sends the pet (Smart pet)
-        if c and type(pm) == "table" and type(pm.smartPetCmd) == "function" then
-            local ok, b = pcall(pm.smartPetCmd, c.key, c.body)
-            if ok and type(b) == "string" then return b end
-        end
         return c and c.body or nil
     end
     return nil
@@ -1129,9 +1106,7 @@ local function cbInit(btn, col)
     local w = CB.want[col]
     local e = w and w.e
     local typ, spell, item, mt = nil, nil, nil, nil
-    if e and e.k == "spell" and w.sp then
-        typ, mt = "macro", w.sp                                         -- cb11: Smart pet's cast (the pet first)
-    elseif e and e.k == "spell" then
+    if e and e.k == "spell" then
         typ, spell = "spell", e.id
         local fn = rawget(WC, "spellsPetName")                         -- cb10: a pet's spell, by its name
         local okn, pn = false, nil
@@ -1158,7 +1133,6 @@ end
 local function cbSig(e, line)
     if e.k == "command" then return "c" .. e.key .. "|" .. (line or "") end
     if e.k == "mount" then return "m" .. e.id .. "|" .. (line or "") end
-    if e.k == "spell" and line then return "s" .. e.id .. "|" .. line end      -- cb11: Smart pet's cast
     return e.k:sub(1, 1) .. e.id
 end
 -- (re)build the row when the stored slots changed; out of combat only. cb2: no row is registered for an empty bar (the row once
@@ -1173,9 +1147,8 @@ function CB.sync()
         local e = slots[i]
         if e then
             local line = (e.k == "mount" or e.k == "command") and cbLine(e) or nil
-            local sp = e.k == "spell" and cbSpCast(e.id) or nil          -- cb11
-            local sig = cbSig(e, line or sp)
-            want[i - 1] = { e = e, line = line, sp = sp, sig = sig }
+            local sig = cbSig(e, line)
+            want[i - 1] = { e = e, line = line, sig = sig }
             parts[#parts + 1] = (i - 1) .. "=" .. sig
         end
     end
@@ -1468,7 +1441,6 @@ local function tcInit(btn, col)
     local w = TC.want[col]
     btn:SetAttribute("type", w and w.type or nil)
     btn:SetAttribute("action", w and w.action or nil)
-    btn:SetAttribute("macrotext", w and w.macrotext or nil)                 -- cb11: Smart pet's cast
     TC.frozen[col] = w and w.sig or nil
 end
 local function tcSync(layers)
@@ -1481,9 +1453,6 @@ local function tcSync(layers)
             if d and s and s > 0 and d.k ~= "" and d.k ~= "fixed" then
                 local col = (li - 1) * 8 + p - 1
                 local w = (d.k == "pet") and { type = "pet", action = s, sig = "p" .. s } or { type = "action", action = s, sig = "a" .. s }
-                -- cb11 SMART PET: a harmful spell on the slot is cast by Smart pet's text (the pet first); everything else the slot itself
-                local sp = d.k == "spell" and num(d.id) and spCast(num(d.id)) or nil
-                if sp then w = { type = "macro", macrotext = sp, sig = "a" .. s .. "p" .. num(d.id) } end
                 want[col] = w
             end
         end
@@ -2091,15 +2060,6 @@ function WC.collectActionBar()
         hud = hud,
     }
 end
-
--- cb11: Smart pet's word changed (PadMap's OV.spResync, out of combat): the cast bar, the class wheels and the touch-cast cells again
--- (buildHud runs their syncs; each builds only when its signature moved)
-WC.spResync = type(WC.spResync) == "table" and WC.spResync or {}
-table.insert(WC.spResync, function()
-    pcall(CB.sync)
-    if type(CB.send) == "function" then pcall(CB.send) end
-    pcall(buildHud)
-end)
 
 -- A layout event Core.lua does not know about: re-snapshot only if OUR layout changed, so that
 -- legacy-row churn is not flushed on these events.

@@ -134,8 +134,8 @@ OURS_B = "CLICK WowCompanionFaceB:LeftButton"
 BACK_PRESS = ['GPTop7+', 'GPTop7-']            # Forever's Back: its down and up edges, as the router's native press makes them
 
 # ---------------------------------------------------------------- (0) the versions
-check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 173 and 'local BV = "b67"' in SRC["book"],
-      "PadMap m173 or later, Book b67 (Smart pet: one B does both)")
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 174 and 'local BV = "b68"' in SRC["book"],
+      "PadMap m174 or later, Book b68 (B: pet recall; m173 one B does both)")
 check("One B does both" in SRC["padmap"] and "Off as picked" in SRC["padmap"], "m173: PadMap's header note quotes the user's picks (2026-11-17)")
 check("I want a pet class specific option where pressing B in the out of combat home menu basically stops the pet attacking" in SRC["padmap"]
       and "basically stops the pet attacking" in SRC["book"], "both header notes quote the user")
@@ -147,9 +147,9 @@ check('SecureCmdOptionParse("[nocombat,@pet' not in SRC["padmap"]
       "m171: the snippet's check is OUR layout rule (rest) and a live pet, never the game's [nocombat]; the game's own /petfollow")
 check(SRC["padmap"].count('SecureCmdOptionParse("[@pettarget,exists,nodead] 1") == "1" then petf') == 2,
       "m165 review: and only while the pet is at something (a live pet target; m173: the give-back's check too)")
-check('(self:GetAttribute("wc-petf") or self:GetAttribute("wc-spet")) and SecureCmdOptionParse' in SRC["padmap"]
+check('(self:GetAttribute("wc-petf") or self:GetAttribute("wc-prc")) and SecureCmdOptionParse' in SRC["padmap"]
       and SRC["padmap"].count('self:SetAttribute("macrotext", (petf or "") .. bmacro)') == 1,
-      "m173: the give-back adds Pet Follow only with Smart pet's word, inside the snippet, petf .. bmacro")
+      "m173 / m174: the give-back adds Pet Follow only with pet recall's word, inside the snippet, petf .. bmacro")
 
 # ---------------------------------------------------------------- (1) before the app's word: B exactly as before
 W = world()
@@ -399,13 +399,18 @@ FIX["pf_warrior"] = pfdoc(world(cls="WARRIOR", pet=False))
 NP = world(pet=False)
 tell(NP, True)
 FIX["pf_hunter_on_no_pet"] = pfdoc(NP)
-# m172 SMART PET: 0 = on with Home busy (the pet's attack only: B not carried, no bf)
+# m174 B: PET RECALL: 0 = on with Home busy (only the fight's give-back B recalls: B not carried, no bf)
 BZ = world()
 tell(BZ, True)
 padtab(BZ, 39, 0)
 settle(BZ)
 FIX["pf_hunter_on_busy"] = pfdoc(BZ)
-check(bkey(BZ) is None, "m172: 0 (Smart pet on, Home busy): B not carried for Pet Follow (the game's own B)", bkey(BZ))
+check(bkey(BZ) is None, "m174: 0 (pet recall on, Home busy): B not carried for Pet Follow (the game's own B)", bkey(BZ))
+BZ.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.5)')
+r = press(BZ, "PAD2")
+check(lines(r) == ['/petfollow', '/stopattack'], "m174: 0 (Home busy): the fight's first B still recalls (m173 as before, was wc-spet)", lines(r))
+BZ.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+settle(BZ)
 os.makedirs(FIXDIR, exist_ok=True)
 stale = []
 for name, text in sorted(FIX.items()):
@@ -416,12 +421,12 @@ for name, text in sorted(FIX.items()):
             fh.write(text)
     elif old != text:
         stale.append(name)
-check(json.loads(FIX["pf_hunter_on"])["m"]["pf"] == {"on": True, "bf": True, "cls": True, "pet": True, "b": True, "sp": True}
+check(json.loads(FIX["pf_hunter_on"])["m"]["pf"] == {"on": True, "bf": True, "cls": True, "pet": True, "b": True}
       and json.loads(FIX["pf_hunter_no_word"])["m"]["pf"] == {"cls": True, "pet": True}
-      and json.loads(FIX["pf_hunter_on_no_pet"])["m"]["pf"] == {"on": True, "bf": True, "cls": True, "sp": True}
-      and json.loads(FIX["pf_hunter_on_busy"])["m"]["pf"] == {"on": True, "cls": True, "pet": True, "sp": True}
+      and json.loads(FIX["pf_hunter_on_no_pet"])["m"]["pf"] == {"on": True, "bf": True, "cls": True}
+      and json.loads(FIX["pf_hunter_on_busy"])["m"]["pf"] == {"on": True, "cls": True, "pet": True}
       and json.loads(FIX["pf_warrior"])["m"]["pf"] in ([], {}),
-      "the fixtures' pf (m172: bf / sp): told on / no word / no pet / Home busy / a Warrior", FIX)
+      "the fixtures' pf (m174: bf, no sp): told on / no word / no pet / Home busy / a Warrior", FIX)
 check(not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX), stale)
 
 print("%d passed, %d failed" % (passes, fails))

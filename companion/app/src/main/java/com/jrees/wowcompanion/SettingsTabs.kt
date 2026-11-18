@@ -118,8 +118,9 @@ object SettingsTabs {
         CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs")),
         // the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet
         // attacking"): B on Home's rest, per character; shown only for a pet class. 2026-11-17 ("to be clear I think this should just be a
-        // smart pet feature that includes both of those settings in one"): the one Smart pet row (SmartPet) replaces B: pet follow
-        SMART_PET(Group.BUTTONS, "Pet", listOf(SmartPet.ROW_ID)),
+        // smart pet feature that includes both of those settings in one"): the one Smart pet row replaces B: pet follow. 2026-11-18 ("I
+        // like the pet recall but I think we need to remove the pet smart attack, its obnoxious"): the row is "B: pet recall" (PetRecall)
+        PET_RECALL(Group.BUTTONS, "Pet", listOf(PetRecall.ROW_ID)),
         // f-radial-settings (1.0.9, the user: "better organize each radial setting into categories so its clear what each one is"): a
         // sub-heading per wheel, naming the button that opens it
         // the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): Start over a game window, Our wheel / Game's wheel

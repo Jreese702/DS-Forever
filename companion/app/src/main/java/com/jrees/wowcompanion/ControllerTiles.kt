@@ -49,7 +49,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     /** the tiles this group shows now, in order (fixed per character: the add-on's word never reflows them) */
     fun slots(): List<Slot> = when (group) {
         SettingsTabs.Group.BUTTONS -> listOfNotNull(Slot(ControllerPictures.ABXY), Slot(ControllerPictures.GLYPHS),
-            Slot(ControllerPictures.PET_B).takeIf { SmartPet.shown(hub.petB()) }, Slot(ControllerPictures.SMART_Y, wide = true))
+            Slot(ControllerPictures.PET_B).takeIf { PetRecall.shown(hub.petB()) }, Slot(ControllerPictures.SMART_Y, wide = true))
         // one tile per wheel block (SettingsTabs.Block: a later radial adds a tile, not a redesign)
         SettingsTabs.Group.WHEELS -> SettingsTabs.blocks(SettingsTabs.Group.WHEELS).mapNotNull { WHEELS[it] }.map { Slot(it) }
         SettingsTabs.Group.COMBAT -> listOfNotNull(Slot(GameUi.PMODE_ID),
@@ -66,7 +66,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     fun value(id: String): String = when (id) {
         ControllerPictures.ABXY -> CastSettings.abxyLocation.label
         ControllerPictures.GLYPHS -> CastSettings.buttonLayout.label
-        ControllerPictures.PET_B -> onOff(HomeSettings.smartPet(GameUi.character))
+        ControllerPictures.PET_B -> onOff(HomeSettings.petRecall(GameUi.character))
         ControllerPictures.SMART_Y -> hub.smartDoc()?.let { onOff(it.on) } ?: WAIT
         ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state?.let { onOff(it.on) } ?: WAIT
         GameUi.SHOT_ID -> if (rowOf(id) == null) WAIT else GameUi.SHOT_WORDS[GameUi.shotMode().coerceIn(0, 2)]
@@ -78,7 +78,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     fun lines(id: String): List<Line> = when (id) {
         ControllerPictures.ABXY -> listOf(Line(id, null, LOCATIONS.map { it.label }, LOCATIONS.indexOf(CastSettings.abxyLocation)))
         ControllerPictures.GLYPHS -> listOf(Line(id, null, LAYOUTS.map { it.label }, LAYOUTS.indexOf(CastSettings.buttonLayout)))
-        ControllerPictures.PET_B -> listOf(onOffLine(id, HomeSettings.smartPet(GameUi.character), GameUi.character != null))
+        ControllerPictures.PET_B -> listOf(onOffLine(id, HomeSettings.petRecall(GameUi.character), GameUi.character != null))
         ControllerPictures.SMART_Y -> hub.smartDoc().let { d -> listOf(onOffLine(id, d?.on == true, d != null), Line(LIST, null, listOf("List"), -1)) }
         ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state.let { s -> listOf(onOffLine(id, s?.on == true, s != null && !s.paused).let {
             if (s == null || s.paused) Line(it.key, null, it.words, -1, false, it.modes) else it }) }
@@ -110,7 +110,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
 
     /** the picture is dimmed: the choice is Off, or the game has not said */
     fun dimmed(id: String): Boolean = waiting(id) || when (id) {
-        ControllerPictures.PET_B -> !HomeSettings.smartPet(GameUi.character)
+        ControllerPictures.PET_B -> !HomeSettings.petRecall(GameUi.character)
         ControllerPictures.SMART_Y -> hub.smartDoc()?.on != true
         ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state?.let { !it.on || it.paused } ?: true
         GameUi.SHOT_ID -> GameUi.shotMode() == 0
@@ -144,7 +144,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
                 ControllerPictures.ABXY -> LOCATIONS.getOrNull(k)?.let { if (CastSettings.abxyLocation != it) { glideFrom = CastSettings.faceSwap
                     glideAt = SystemClock.uptimeMillis(); CastSettings.abxyLocation = it } }
                 ControllerPictures.GLYPHS -> LAYOUTS.getOrNull(k)?.let { if (CastSettings.buttonLayout != it) CastSettings.buttonLayout = it }
-                ControllerPictures.PET_B -> HomeSettings.setSmartPet(GameUi.character, k == 0)
+                ControllerPictures.PET_B -> HomeSettings.setPetRecall(GameUi.character, k == 0)
                 ControllerPictures.SMART_Y -> hub.smartDoc()?.let { d -> val on = k == 0; if (d.on != on) smartSend(SmartYModel.toggleTaps(d, on)) }
                 ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state?.let { s -> if (!s.paused) HomeAttackSwitch.turn(context, k == 0) }
                 GameUi.SHOT_ID -> if (GameUi.shotThree()) GameUi.setShotMode(k) else GameUi.setSwitch(GameUi.SW_SHOT, k == 0)
@@ -205,7 +205,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         return when (id) {
             ControllerPictures.ABXY -> ControllerPictures.Look(nintendo = CastSettings.faceSwap, prevNintendo = if (glide < 1f) glideFrom else CastSettings.faceSwap,
                 glide = glide, t = t)
-            ControllerPictures.PET_B -> ControllerPictures.Look(on = HomeSettings.smartPet(GameUi.character), t = t)
+            ControllerPictures.PET_B -> ControllerPictures.Look(on = HomeSettings.petRecall(GameUi.character), t = t)
             ControllerPictures.SMART_Y -> ControllerPictures.Look(on = d?.on ?: true, t = t,
                 smartIcons = d?.let { doc -> doc.rows.indices.mapNotNull { SmartYModel.icons(doc, it).firstOrNull() } } ?: emptyList(),
                 smartDim = d?.let { doc -> doc.rows.mapIndexed { r, row -> r >= doc.max || (row.isBuff && row.ids.any { NoMana.has(it) }) } } ?: emptyList())
@@ -561,7 +561,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         private val ANIMATED = WHEEL_IDS + setOf(ControllerPictures.PET_B, ControllerPictures.ATTACK_CAST, GameUi.SHOT_ID)
 
         val NAMES: Map<String, String> = mapOf(
-            ControllerPictures.ABXY to "ABXY location", ControllerPictures.GLYPHS to "Button glyphs", ControllerPictures.PET_B to SmartPet.ROW_ID,
+            ControllerPictures.ABXY to "ABXY location", ControllerPictures.GLYPHS to "Button glyphs", ControllerPictures.PET_B to PetRecall.ROW_ID,
             ControllerPictures.SMART_Y to "Smart Y", ControllerPictures.PAUSE to "Pause menu", ControllerPictures.ITEM to "Item wheel",
             ControllerPictures.SPELL to "Spell wheel", ControllerPictures.CLASS_L to "Left class wheel", ControllerPictures.CLASS_R to "Right class wheel",
             GameUi.PMODE_ID to "Party mode", GameUi.SRES_ID to "Smart Res", GameUi.ATK_ID to "Start attack on hostile target",

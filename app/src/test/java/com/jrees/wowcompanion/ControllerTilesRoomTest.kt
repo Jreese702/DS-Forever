@@ -321,7 +321,7 @@ class ControllerTilesRoomTest {
         assertEquals(View.GONE, r.smartYPage.visibility)
     }
 
-    /** Smart pet (was B: pet follow; the 1.0.34 merge) only for a pet class; its choice is the old row's, per character */
+    /** B: pet recall (was Smart pet / B: pet follow; 2026-11-18 the attack half gone) only for a pet class; ON by default, per character */
     @Test fun petFollowOnlyForAPetClass() {
         val r = room()
         val b = partOf(r, "abxy")
@@ -329,11 +329,14 @@ class ControllerTilesRoomTest {
         pet = PadMapModel.PetB(on = true, cls = true, pet = true, bound = true); GameUi.character = "Sample-Realm"
         b.refresh(); lay(r)
         assertTrue("petb" in b.tileIds())
+        assertTrue("on by default (the user's pick, 2026-11-18)", HomeSettings.petRecall("Sample-Realm"))
+        assertEquals("On", b.value("petb"))
+        assertEquals("B: pet recall", b.name("petb"))
         b.press("petb", "petb", 1)
-        assertFalse(HomeSettings.smartPet("Sample-Realm"))
+        assertFalse(HomeSettings.petRecall("Sample-Realm"))
         assertEquals("Off", b.value("petb"))
         b.press("petb", "petb", 0)
-        assertTrue(HomeSettings.smartPet("Sample-Realm"))
+        assertTrue(HomeSettings.petRecall("Sample-Realm"))
     }
 
     /** every tile has a picture of its own, with the kit and without (our drawing stands in) */
@@ -395,7 +398,7 @@ class ControllerTilesRoomTest {
         scroll(0)
         open("abxy"); shot("ctl_5_band_abxy")
         close(); open("glyphs"); shot("ctl_6_band_glyphs")
-        close(); open("petb"); shot("ctl_7_band_pet_follow")
+        close(); open("petb"); shot("ctl_7_band_pet_recall")
         close(); open("smarty"); shot("ctl_8_band_smart_y")
         close(); open("pause"); shot("ctl_10_band_pause")
         close(); open("item"); shot("ctl_11_band_item_wheel")

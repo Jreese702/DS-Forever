@@ -44,8 +44,8 @@ object SettingsPreview {
         val castCombatHide: Boolean = true,
         // the user's pick 2026-11-13: Start over game windows, false = Our wheel (the default), true = Game's wheel
         val pauseOverGame: Boolean = false,
-        // the user, 2026-11-17: Smart pet (this character's; off by default; it replaces B: pet follow)
-        val smartPet: Boolean = false,
+        // the user, 2026-11-18: B: pet recall (this character's; on by default; was Smart pet, its attack half gone)
+        val petRecall: Boolean = true,
         // the user, 2026-11-16: hold to talk on the DS toolbar's Chat (this character's; off by default) and its On release
         // (false = Show, then A sends; true = Send straight away)
         val holdTalk: Boolean = false, val talkSendNow: Boolean = false,
@@ -124,7 +124,7 @@ object SettingsPreview {
             "DS WoW toolbar" -> toolbar(c, r, s.toolbar == true)
             "ABXY location" -> abxy(c, r, s, prev, sinceMs, glyph)
             "Button glyphs" -> glyphSets(c, r, s.glyphSet, glyph)
-            SmartPet.ROW_ID -> petFollow(c, r, s.smartPet, t, glyph, s.glyphSet)
+            PetRecall.ROW_ID -> petFollow(c, r, s.petRecall, t, glyph, s.glyphSet)
             HomeSettingsSection.TALK_ROW -> holdTalk(c, r, s.holdTalk, false, t, glyph, s.glyphSet)
             HomeSettingsSection.RELEASE_ROW -> holdTalk(c, r, true, s.talkSendNow, t, glyph, s.glyphSet, release = true)
             "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
@@ -1281,8 +1281,6 @@ object SettingsPreview {
         val gy = r.bottom - 60f
         glyph.draw(c, "b", set, r.left + 60f, gy, if (pressed) 58f else 48f)
         text(c, if (on) "Pet Follow" else "B's own action", r.left + 100f, gy + 7f, 19f, if (pressed) GOLD else DIMC, Paint.Align.LEFT)
-        // Smart pet's other half (2026-11-17): your attack on the enemy sends the pet again
-        if (on && back == 0f) text(c, "your attack sends it", r.centerX(), cy - 44f, 18f, GOLD)
     }
 
     /** Smart Res: a tap on a dead member's plate casts the res (On: its soft green edge while armed); a tap only (Off) */

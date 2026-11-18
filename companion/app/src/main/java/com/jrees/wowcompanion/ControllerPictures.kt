@@ -160,7 +160,7 @@ object ControllerPictures {
         for ((i, k) in listOf("a", "b", "x", "y").withIndex()) glyph(c, k, 46f + i * 41.5f, 56f, 36f)
     }
 
-    /** Smart pet (was B: pet follow; the 1.0.34 merge) - the B glyph; your pet (its icon) at an enemy (Off) or walking back after you (On, the trail behind it) */
+    /** B: pet recall (was Smart pet / B: pet follow; 2026-11-18 the attack half gone) - the B glyph; your pet (its icon) at an enemy (Off) or walking back after you (On, the trail behind it) */
     private fun petFollow(c: Canvas, look: Look) {
         val k = if (look.t > 0f) ((look.t % 3f) / 1.4f).coerceIn(0f, 1f) else 1f
         val back = if (look.on) k else 0f

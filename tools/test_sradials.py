@@ -125,7 +125,7 @@ check(ok is True, "the same spell on a second radial shares its cell", ok)
 # ---------------------------------------------------------------- 3. the document
 W.execute('runTimers(NOW + 5); %s.emit(true)' % SR)
 d = last(W, 'sradial')
-check(d is not None and d.get('v') == 'q6' and isinstance(d['r'].get('list'), list), "the sradial document has the list", d and d.get('v'))
+check(d is not None and d.get('v') == 'q7' and isinstance(d['r'].get('list'), list), "the sradial document has the list", d and d.get('v'))
 lst = d['r']['list']
 check([x['u'] for x in lst] == [1, 2, 3, 4, 5, 6] and [i['id'] for i in lst[0]['items']] == [403, 331],
       "each radial by slot, its items in order", [x['u'] for x in lst])
@@ -230,15 +230,14 @@ check(lua_list(W6.eval(SR + '.slots()')) == n_slots, "a pick older than 2 s: the
 W6.execute('WowCompanion.pad.rows.padtab.handler(nil, 39); WowCompanion.pad.rows.padtab.handler(nil, 11)')
 check(len(lua_list(W6.eval(SR + '.slots()'))) == len(n_slots) + 1, "39 then 11 (fresh): New", lua_list(W6.eval(SR + '.slots()')))
 
-# ---------------------------------------------------------------- q6 SMART PET (PadMap m172, Radial r24; the user, 2026-11-17: "to be clear I
-# think this should just be a smart pet feature that includes both of those settings in one"): a harmful spell's cell casts through Smart
-# pet's text while this character's Smart pet is on; a helpful one stays the plain spell; off again = the plain cells
-SPT = "/target [noexists][dead] softenemy\n/petattack [pet,harm,nodead]\n/cast Lightning Bolt"
+# ---------------------------------------------------------------- q7 PET RECALL ONLY (PadMap m174, Radial r25; the user, 2026-11-18: "I like
+# the pet recall but I think we need to remove the pet smart attack, its obnoxious"): q6's Smart pet casts are gone - with pet recall on
+# (the word 37 / 0, a Hunter) a harmful spell's cell is still the plain spell, exactly as with it off
 W7 = world(pre='CLASS = "HUNTER"; C_Spell.IsSpellHarmful = function(s) return s == 403 or s == "Lightning Bolt" end')
 W7.execute(SR + '.put(1, 1, 403); ' + SR + '.put(1, 2, 331); runTimers(NOW + 5); ' + SR + '.emit(true)')
 
 
-def q6cell(L, sid):
+def q7cell(L, sid):
     d = last(L, 'sradial')
     col = None
     for it in d['r']['list'][0]['items']:
@@ -250,25 +249,17 @@ def q6cell(L, sid):
     return (a['type'], a['spell'], a['macrotext'])
 
 
-check(q6cell(W7, 403) == ("spell", 403, None) and q6cell(W7, 331) == ("spell", 331, None), "q6: Smart pet off: the plain spell cells",
-      (q6cell(W7, 403), q6cell(W7, 331)))
-W7.execute('WowCompanion.padMap.smartPet(true, false); runTimers(NOW + 1)')
-check(q6cell(W7, 403) == ("macro", None, SPT), "q6: Smart pet on: the harmful spell's cell casts through Smart pet's text", q6cell(W7, 403))
-check(q6cell(W7, 331) == ("spell", 331, None), "q6: a helpful spell's cell stays the plain spell", q6cell(W7, 331))
-W7.execute('WowCompanion.padMap.smartPet(false, false); runTimers(NOW + 1)')
-check(q6cell(W7, 403) == ("spell", 403, None), "q6: off again: the plain cell back", q6cell(W7, 403))
-# q6 (review): a cell's Smart pet text that moves with the word unchanged (a lower rank's text came in: PadMap gave the plain cell first,
-# then the exact rank's text) builds the cells again
-W8 = world(pre='CLASS = "HUNTER"; C_Spell.IsSpellHarmful = function(s) return s == 403 or s == "Lightning Bolt" end')
-W8.execute(SR + '.put(1, 1, 403); runTimers(NOW + 5); ' + SR + '.emit(true)')
-W8.execute('WowCompanion.padMap.smartPet(true, false); runTimers(NOW + 1)')
-W8.execute('local pm = WowCompanion.padMap; local orig = pm.smartPetCast; pm.smartPetCast = function(id, n) if id == 403 then return nil end return orig(id, n) end; '
-           + SR + '.emit(true)')
-check(q6cell(W8, 403) == ("spell", 403, None), "q6: no Smart pet text yet (a rank text loading): the plain exact-rank cell", q6cell(W8, 403))
-RK = "/target [noexists][dead] softenemy\n/petattack [pet,harm,nodead]\n/cast Lightning Bolt(Rank 2)"
-W8.execute('WowCompanion.padMap.smartPetCast = function(id) if id == 403 then return "' + RK.replace("\n", "\\n") + '" end end; '
-           + SR + '.emit(true)')
-check(q6cell(W8, 403) == ("macro", None, RK), "q6: the text in (the word unchanged): the cell is built again with it", q6cell(W8, 403))
+check(q7cell(W7, 403) == ("spell", 403, None) and q7cell(W7, 331) == ("spell", 331, None), "q7: pet recall off: the plain spell cells",
+      (q7cell(W7, 403), q7cell(W7, 331)))
+for on, bf in ((True, False), (True, True)):
+    W7.execute('WowCompanion.padMap.petRecall(%s, %s); runTimers(NOW + 1); %s.emit(true)' % (str(on).lower(), str(bf).lower(), SR))
+    check(q7cell(W7, 403) == ("spell", 403, None) and q7cell(W7, 331) == ("spell", 331, None),
+          "q7: pet recall on (bfree %s): still the plain spell cells (no /petattack cast)" % bf, (q7cell(W7, 403), q7cell(W7, 331)))
+check(W7.eval('WowCompanion.padMap.smartPetCast') is None and W7.eval('WowCompanion.padMap.smartPetOn') is None
+      and W7.eval('WowCompanion.padMap.smartPetCmd') is None and W7.eval('WowCompanion.spResync') is None,
+      "q7: no smartPetCast / smartPetOn / smartPetCmd hook, no WC.spResync")
+RADC = re.sub(r'--[^\n]*', '', open(os.path.join(ADDONS, "WowCompanionSpells", "Radial.lua"), encoding="utf-8").read())
+check("/petattack" not in RADC and "smartPet" not in RADC and "spResync" not in RADC, "q7: Radial.lua's code has no /petattack, no smartPet hook, no spResync")
 
 print("\n%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
