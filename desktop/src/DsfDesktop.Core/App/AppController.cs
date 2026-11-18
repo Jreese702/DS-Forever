@@ -1583,9 +1583,8 @@ namespace DsfDesktop.App
                 bool ok = SignedIn(LastScreen) && WowWindow.IsForeground();
                 s["ok"] = ok;
                 if (!ok) s["why"] = Supervisor.NeedsYou ? WowFlow.NeedsYouText
-                    : Supervisor.StoppedFor == WowAction.Stopped ? WowFlow.ConnectFailedText
-                    : Supervisor.StoppedFor == WowAction.Outdated ? WowFlow.OutdatedText
-                    : Starter.State == WowState.Starting ? "starting WoW" : (Starter.Why ?? "WoW isn't signed in yet");
+                    : WowFlow.StopText(Supervisor.StoppedFor) ?? StopNow()
+                    ?? (Starter.State == WowState.Starting ? "starting WoW" : (Starter.Why ?? "WoW isn't signed in yet"));
                 return s;
             }
             CheckCapture();
@@ -1828,7 +1827,15 @@ namespace DsfDesktop.App
                 bnet: () => LastBnet = BnetNow(),
                 startBnet: () => WowProbe.StartBattleNet(WowLaunch.FindBattleNet()),
                 showBnetSignIn: () => WowWindow.FocusHandle(WowProbe.Bnet().Login),
-                startWow: () => { Starter.Ensure(); return Starter.State == WowState.StartFailed ? Starter.Why : null; },
+                startWow: () =>
+                {
+                    // the install read again right before the start (the Agent dropped the wowf row at 06:32 on 2026-11-18): a missing
+                    // row is added back from Desktop's copy when it fits; still missing, or outdated = no start (the judge's Step 0)
+                    var g = GameCheckNow(beforeStart: true);
+                    if (g == GameCheck.NeedsRepair) return WowFlow.RepairText;
+                    if (g == GameCheck.Outdated) return WowFlow.OutdatedText;
+                    Starter.Ensure(); return Starter.State == WowState.StartFailed ? Starter.Why : null;
+                },
                 startPending: () => Starter.State == WowState.Starting,
                 closeWow: CloseForRestart,
                 focusWow: () => { CheckCapture(); return FocusWow(); },
@@ -1845,6 +1852,7 @@ namespace DsfDesktop.App
                          : a == WowAction.NeedsYou ? WowFlow.NeedsYouText
                          : a == WowAction.Stopped ? WowFlow.ConnectFailedText
                          : a == WowAction.Outdated ? WowFlow.OutdatedText
+                         : a == WowAction.Repair ? WowFlow.RepairText
                          : a == WowAction.Crashed ? (detail == "update" ? WowFlow.UpdateText : WowFlow.CrashText) : null;
                 if (text != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = text });
                 PublishWow(force: true);
@@ -1856,14 +1864,22 @@ namespace DsfDesktop.App
         static readonly HttpClient Patch = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
 
         GameVersionCheck gameCheck;
+        BuildInfoKeeper rowKeeper;
         readonly object gameGate = new object();
 
+        /// <summary>_forever_'s Wow.exe's own version (read only), null = no such exe</summary>
+        string ForeverExeVersion() =>
+            Wow != null ? BuildInfoFile.ExeVersion(Path.Combine(Wow.FlavorDir(WowFlavors.Forever), "Wow.exe")) : null;
+
         /// <summary>the PC's WoW Forever against Blizzard's version (the user's PC 2026-11-18: 70938 installed, 70959 current, so
-        /// "no servers available"): Unknown when there is no install or no answer (offline never blocks a start)</summary>
-        GameCheck GameNow()
+        /// "no servers available"): Unknown when there is no install or no answer (offline never blocks a start); NeedsRepair when
+        /// Wow.exe is there and its .build.info row is not (0.2.35). [beforeStart] = the install read again now</summary>
+        GameCheck GameCheckNow(bool beforeStart = false)
         {
             lock (gameGate)
                 if (gameCheck == null)
+                {
+                    rowKeeper = new BuildInfoKeeper(() => Wow?.Root, Path.Combine(Paths.DataDir, "patch", "wowf_row.json"), "wowf");
                     gameCheck = new GameVersionCheck(
                         rows: () => Wow != null ? BuildInfo.Read(Wow.Root) : new List<BuildInfoRow>(),
                         fetch: url =>
@@ -1871,8 +1887,52 @@ namespace DsfDesktop.App
                             try { using (var r = Patch.GetAsync(url).Result) return r.IsSuccessStatusCode ? r.Content.ReadAsStringAsync().Result : null; }
                             catch (Exception) { return null; }
                         },
-                        product: "wowf");
-            return gameCheck.Poll();
+                        product: "wowf",
+                        exeVersion: ForeverExeVersion,
+                        repair: v => rowKeeper.Repair(v),
+                        remember: v => rowKeeper.Remember(v));
+                }
+            return beforeStart ? gameCheck.PollNow() : gameCheck.Poll();
+        }
+
+        /// <summary>the supervisor's check (it only runs while a stream wants WoW)</summary>
+        GameCheck GameNow() => GameCheckNow();
+
+        /// <summary>the check for the "wow" message: asked only while a Thor is connected (0.2.34 asked Blizzard every 5 minutes with
+        /// no Thor at all); otherwise the last state, nothing read or asked</summary>
+        GameCheck GameForThor()
+        {
+            bool thorHere = Bridge != null && Bridge.Sessions().Count > 0;
+            if (thorHere) return GameCheckNow();
+            lock (gameGate) return gameCheck?.Peek() ?? GameCheck.Unknown;
+        }
+
+        /// <summary>why Desktop is stopped now for the Thor (a 309, an outdated or broken PC game), null = not stopped</summary>
+        string StopNow()
+        {
+            bool failed;
+            lock (loginLog) failed = loginLog.ConnectFailed;
+            if (SignedIn(LastScreen)) return null;
+            var g = GameForThor();
+            return g == GameCheck.NeedsRepair ? WowFlow.RepairText : g == GameCheck.Outdated ? WowFlow.OutdatedText
+                 : failed ? WowFlow.ConnectFailedText : null;
+        }
+
+        DateTime legacyRetryAt = DateTime.MinValue;
+
+        /// <summary>
+        /// A Thor signed in. An older one (1487: no "wow_stop" in its hello) has no Retry button and never sends "wow_retry", so after
+        /// a 309 with WoW closed it said "Starting WoW on your PC" for ever (the 0.2.34 review): its reconnect counts as its Retry
+        /// while Desktop is stopped, once per WowFlow.LegacyRetryEveryS at most. A Thor that shows the stop is never retried
+        /// for: its player presses Retry.
+        /// </summary>
+        void OnThorHello(BridgeSession s)
+        {
+            if (s == null || s.KnowsStop || !Settings.StartWowOnStream || Supervisor == null) return;
+            if (!WowFlow.LegacyReconnectRetries(Supervisor.StoppedFor != null || StopNow() != null, (DateTime.UtcNow - legacyRetryAt).TotalSeconds)) return;
+            legacyRetryAt = DateTime.UtcNow;
+            Log.I("bridge: an older Thor (no Retry button) reconnected while stopped: that counts as its Retry");
+            Task.Run(() => WowRetry());
         }
 
         /// <summary>
@@ -1882,9 +1942,16 @@ namespace DsfDesktop.App
         /// </summary>
         public void WowRetry()
         {
+            // one start per press: a press while the last one's restart or start is still under way is that same one (0.2.35)
+            if (Supervisor != null && Supervisor.Busy)
+            {
+                Log.I("bridge: the Thor's Retry while WoW is being started: that one counts");
+                PublishWow(force: true);
+                return;
+            }
             Log.I("bridge: the Thor's Retry: WoW once more");
             lock (loginLog) loginLog.ClearFailure();
-            GameNow();
+            GameCheckNow();
             gameCheck?.Refresh();
             needsYouAt = DateTime.MinValue;
             if (Settings.StartWowOnStream && Supervisor != null) Supervisor.Retry();
@@ -1921,17 +1988,18 @@ namespace DsfDesktop.App
                 // WoW's own code with it: the screen switch after the error clears login_error, this stays until Retry
                 d["connect_code"] = LoginLog.ConnectFailedCode;
             }
-            // the PC game older than Blizzard's (the user's ruling 2026-11-18): WoW is not started; the Thor says the two versions
-            var g = GameNow();
-            if (g == GameCheck.Outdated && gameCheck != null)
+            // the PC game older than Blizzard's (the user's ruling 2026-11-18): WoW is not started; the Thor says the two versions.
+            // Asked only while a Thor is connected (0.2.35)
+            var g = GameForThor();
+            if ((g == GameCheck.Outdated || g == GameCheck.NeedsRepair) && gameCheck != null)
             {
-                d["pc_game"] = "outdated";
+                d["pc_game"] = g == GameCheck.Outdated ? "outdated" : "repair";
                 d["game_installed"] = gameCheck.Installed ?? "";
                 d["game_current"] = gameCheck.Current ?? "";
             }
-            // 0.2.34: Desktop stopped and waits for the Thor's Retry ("wow_retry"): a server error or an outdated game while WoW is
-            // not signed in. An older Thor ignores it (and shows the line it knows)
-            if ((connectFailed || g == GameCheck.Outdated) && !SignedIn(LastScreen)) d["stopped"] = true;
+            // 0.2.34: Desktop stopped and waits for the Thor's Retry ("wow_retry"): a server error or an outdated (0.2.35: or broken)
+            // game while WoW is not signed in. 0.2.35: the words an older Thor (1487) shows too (WowFlow.StopWords)
+            WowFlow.StopWords(d, connectFailed, g, SignedIn(LastScreen));
             return WithInput(d);
         }
 
@@ -1949,7 +2017,7 @@ namespace DsfDesktop.App
             // Thor is here the PC game is checked against Blizzard's version too (WowInfo says it; the supervisor never starts an
             // outdated game)
             bool thorHere = Bridge != null && Bridge.Sessions().Count > 0;
-            if (thorHere) GameNow();
+            if (thorHere) GameCheckNow();
             if (Supervisor.Active) Supervisor.Step();
             FocusRetry();
             PublishWow(force: false);
@@ -2130,6 +2198,7 @@ namespace DsfDesktop.App
                     Bridge = new BridgeServer(this, cert, Settings.BridgePort + i, Loopback ? IPAddress.Loopback : IPAddress.Any);
                     Bridge.SessionsChanged += Fire;
                     Bridge.ThorConnected += () => RequestUpdateCheck("a Thor connected");
+                    Bridge.ThorHello += OnThorHello;
                     Bridge.ThorAddonSet += OnThorAddonSet;
                     Bridge.Start();
                     BridgeStatus = "listening on port " + Bridge.Port;

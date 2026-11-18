@@ -5,9 +5,11 @@ using System.Threading.Tasks;
 
 namespace DsfDesktop.Wow
 {
-    /// <summary>the PC game against Blizzard's current version: Unknown = not known (no install row, offline, no answer: never
-    /// blocks a start), Checking = Blizzard's answer is on its way (the first check of a run, or the Thor's Retry)</summary>
-    public enum GameCheck { Unknown, Checking, Current, Outdated }
+    /// <summary>the PC game against Blizzard's current version: Unknown = not known (no WoW Forever here, offline, no answer: never
+    /// blocks a start), Checking = Blizzard's answer is on its way (the first check of a run, or the Thor's Retry). NeedsRepair (0.2.35,
+    /// the judge's Step 0) = _forever_\Wow.exe is there but .build.info has no wowf row (the Agent dropped it, 2026-11-18 06:32) or
+    /// a row of another build than Wow.exe's own: never started</summary>
+    public enum GameCheck { Unknown, Checking, Current, Outdated, NeedsRepair }
 
     /// <summary>
     /// Is the PC's WoW Forever older than Blizzard's? (the user's PC 2026-11-18 06:20: .build.info said "us ... wowf 1.60.1.70938"
@@ -92,24 +94,64 @@ namespace DsfDesktop.Wow
         readonly string product;
         readonly object gate = new object();
 
+        readonly Func<string> exeVersion;
+        readonly Func<string, bool> repair;
+        readonly Action<string> remember;
+
         DateTime localAt = DateTime.MinValue, remoteAt = DateTime.MinValue;
         BuildInfoRow local;
+        string exe;
+        bool needsRepair;
         string remote;
         bool remoteOk, fetching;
         string remoteRegion;
+        GameCheck last = GameCheck.Unknown;
 
         /// <param name="rows">the install's .build.info rows (empty = no install found)</param>
         /// <param name="fetch">url -> the body, null = no answer (offline, a timeout, an error); may block (it runs in [run])</param>
+        /// <param name="exeVersion">the game exe's own version (Wow.exe's FileVersionInfo, read only): null = no exe, "" = unreadable</param>
+        /// <param name="repair">the row is missing: add Desktop's copy back for this exe version (BuildInfoKeeper.Repair); true = written</param>
+        /// <param name="remember">the row is there and is the exe's build: Desktop's copy is refreshed (BuildInfoKeeper.Remember)</param>
         public GameVersionCheck(Func<List<BuildInfoRow>> rows, Func<string, string> fetch, string product = "wowf",
-                                Func<DateTime> now = null, Action<Action> run = null)
+                                Func<DateTime> now = null, Action<Action> run = null, Func<string> exeVersion = null,
+                                Func<string, bool> repair = null, Action<string> remember = null)
         {
             this.rows = rows; this.fetch = fetch; this.product = product;
             this.now = now ?? (() => DateTime.UtcNow);
             this.run = run ?? (a => Task.Run(a));
+            this.exeVersion = exeVersion; this.repair = repair; this.remember = remember;
         }
 
-        /// <summary>the installed version ("1.60.1.70938"), null = not known</summary>
-        public string Installed { get { lock (gate) return local?.Version; } }
+        /// <summary>the installed version ("1.60.1.70938"): the row's, else Wow.exe's own; null = not known</summary>
+        public string Installed { get { lock (gate) return local?.Version ?? (string.IsNullOrEmpty(exe) ? null : exe); } }
+
+        /// <summary>the last state <see cref="Poll"/> gave, without reading or asking anything (no Thor here: nothing is checked)</summary>
+        public GameCheck Peek() { lock (gate) return last; }
+
+        /// <summary>.build.info and Wow.exe read again now (before every start: the Agent may have changed the row since)</summary>
+        public GameCheck PollNow()
+        {
+            lock (gate) localAt = DateTime.MinValue;
+            return Poll();
+        }
+
+        /// <summary>the install's row and exe read (the row added back when it is missing and Desktop's copy fits); under [gate]</summary>
+        void ReadLocal()
+        {
+            try { local = GameVersion.Installed(rows(), product); } catch (Exception) { local = null; }
+            try { exe = exeVersion?.Invoke(); } catch (Exception) { exe = ""; }
+            if (GameVersion.Build(exe) > 0 && local == null && repair != null)
+            {
+                bool wrote = false;
+                try { wrote = repair(exe); } catch (Exception) { wrote = false; }
+                if (wrote) try { local = GameVersion.Installed(rows(), product); } catch (Exception) { local = null; }
+            }
+            // Wow.exe there and no row (or a row of another build: never overwritten, the Agent may be mid-update) = needs repair
+            int eb = GameVersion.Build(exe);
+            needsRepair = exe != null && (local == null || (eb > 0 && GameVersion.Build(local.Version) != eb));
+            if (exe != null && local != null && !needsRepair && eb > 0)
+                try { remember?.Invoke(exe); } catch (Exception) { }
+        }
         /// <summary>Blizzard's version for the install's region, null = not known</summary>
         public string Current { get { lock (gate) return remoteOk ? remote : null; } }
 
@@ -132,9 +174,10 @@ namespace DsfDesktop.Wow
                 if ((t - localAt).TotalSeconds >= LocalS)
                 {
                     localAt = t;
-                    try { local = GameVersion.Installed(rows(), product); } catch (Exception) { local = null; }
+                    ReadLocal();
                 }
-                if (local == null || GameVersion.Build(local.Version) <= 0) return GameCheck.Unknown;
+                if (needsRepair) return last = GameCheck.NeedsRepair;
+                if (local == null || GameVersion.Build(local.Version) <= 0) return last = GameCheck.Unknown;
                 region = GameVersion.Region(local.Branch);
                 if (region != remoteRegion) { remoteRegion = region; remoteAt = DateTime.MinValue; remoteOk = false; remote = null; }
                 double age = (t - remoteAt).TotalSeconds;
@@ -170,6 +213,7 @@ namespace DsfDesktop.Wow
                         state = !remoteOk ? GameCheck.Unknown
                               : GameVersion.Outdated(local?.Version, remote) ? GameCheck.Outdated : GameCheck.Current;
             }
+            lock (gate) last = state;
             return state;
         }
     }

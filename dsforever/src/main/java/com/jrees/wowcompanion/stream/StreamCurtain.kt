@@ -84,6 +84,9 @@ object StreamCurtain {
      *  itself; until then Retry checks again). Never "on the PC" */
     const val PC_GAME_OUTDATED = "PC game needs an update"
     const val PC_GAME_OUTDATED_FROM_TO = "PC game needs an update (%s -> %s)"
+    /** Desktop 0.2.35: the PC's game has lost its install record (.build.info's row; the Agent dropped it 2026-11-18), so WoW is not
+     *  started. Never "on the PC" */
+    const val PC_GAME_REPAIR = "PC game needs a repair"
     /** the line under a stop: the player's one action */
     const val RETRY = "Retry (A)"
 
@@ -97,6 +100,7 @@ object StreamCurtain {
      */
     fun stopLine(pc: PcWow?): String? {
         if (pc == null || !pc.stopped || pc.signedIn) return null
+        if (pc.pcGame == "repair") return PC_GAME_REPAIR
         if (pc.pcGame == "outdated") {
             val have = build(pc.gameInstalled); val need = build(pc.gameCurrent)
             return if (have.isNotEmpty() && need.isNotEmpty()) PC_GAME_OUTDATED_FROM_TO.replaceFirst("%s", have).replaceFirst("%s", need)

@@ -132,12 +132,15 @@ object BridgeProtocol {
      *  own update at once when the Thor is ahead (the user, 2026-11-13: "we need this shit to have an auto update feature") */
     @Volatile var addonSet: Int = 0
 
+    /** "wow_stop": this Thor shows Desktop's stop ([PcWow.stopped]) with its own Retry. Desktop 0.2.35 counts an older Thor's
+     *  reconnect (none: Thor 1487, which has no Retry) as its Retry instead */
     fun hello(deviceId: String, token: String): String =
-        JSONObject().put("t", "hello").put("proto", PROTO).put("device_id", deviceId).put("token", token)
+        JSONObject().put("t", "hello").put("proto", PROTO).put("device_id", deviceId).put("token", token).put("wow_stop", true)
             .apply { if (addonSet > 0) put("addon_set", addonSet) }.toString()
 
     fun pairHello(deviceId: String, name: String): String =
-        JSONObject().put("t", "pair_hello").put("proto", PROTO).put("device_id", deviceId).put("name", name).put("stream", true).toString()
+        JSONObject().put("t", "pair_hello").put("proto", PROTO).put("device_id", deviceId).put("name", name).put("stream", true)
+            .put("wow_stop", true).toString()
 
     fun pairProof(proof: String): String = JSONObject().put("t", "pair_proof").put("proof", proof).toString()
 

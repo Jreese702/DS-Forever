@@ -181,6 +181,21 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   `game_current` (full versions) and `stopped` = `true`; the Thor: "PC game needs an update (70938 -> 70959)" with "Retry (A)",
   which checks again (`wow_retry`). No answer (offline) never blocks a start; a first check under way holds the start a few
   seconds at most. Desktop patching the game itself (from Blizzard's CDN, no Battle.net) comes later.
+- **[0.2.35] One start per press; an older Thor.** A `wow_retry` while the last one's restart or start is still under way is that
+  same one (dropped); the press's own client closing again without a server error is "Press Play in Battle.net", never a second
+  start. A Retry not answered yet goes when the Thor disconnects or a new connect begins. The Thor says **`"wow_stop": true`** in
+  `hello` / `pair_hello` when it shows the stop with its own Retry. An older Thor (none; Thor 1487) reads neither `stopped` nor
+  `pc_game`, so while Desktop is stopped with WoW not running the `wow` message also says `state` = `start_failed` ("WoW didn't
+  start", not "Starting WoW" for ever) and the reason as `why`; WoW at its login keeps `running`. That older Thor's reconnect counts
+  as its Retry while Desktop is stopped, at most once every 2 minutes. Blizzard's version is asked only while a Thor is connected
+  (or a stream wants WoW). The start timeout's `why` is "no WoW window after 180 s" (never "sign in on the PC").
+- **[0.2.35] A missing install record.** `_forever_\Wow.exe` there but no `wowf` row in `.build.info` (the Agent dropped it on the
+  user's PC, 2026-11-18 06:32), or a row of another build than Wow.exe's own version (FileVersionInfo's text, read only) = WoW is NOT
+  started: `pc_game` = `repair`, `game_installed` = Wow.exe's version, `stopped` = `true`; the Thor: "PC game needs a repair" with
+  "Retry (A)". Desktop keeps its own copy of the last good row (`<data>\patch\wowf_row.json`, saved when the row's Version is
+  Wow.exe's); whenever it reads the install (every 10 s while a Thor is connected, and again right before every start), a MISSING row is added back from that copy when it is for Wow.exe's build (the file's other lines
+  byte for byte, its line ending kept, `.build.info.dsf-bak` beside it). A row that is there is never replaced. Never `.product.db`,
+  never the CASC store.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.

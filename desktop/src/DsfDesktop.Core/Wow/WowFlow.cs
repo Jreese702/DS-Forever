@@ -12,8 +12,10 @@ namespace DsfDesktop.Wow
     /// <summary>what to do now, for a stream that wants WoW (the user, 2026-10-28)</summary>
     /// <remarks>[Stopped] = a server error (a 309) during the sign-in: nothing starts again by itself, the Thor shows it with a Retry
     /// (the user's ruling 2026-11-18, "Stop and show it"). [Outdated] = the PC's game is older than Blizzard's current version: WoW is
-    /// not started (the user's ruling 2026-11-18: Desktop patches it itself; until that lands, the Thor's Retry checks again)</remarks>
-    public enum WowAction { Wait, StartBattleNet, ShowBattleNetSignIn, StartWow, RestartWow, Focus, NeedsYou, Crashed, Stopped, Outdated }
+    /// not started (the user's ruling 2026-11-18: Desktop patches it itself; until that lands, the Thor's Retry checks again).
+    /// [Repair] (0.2.35) = Wow.exe is there but the game's install record (.build.info's wowf row) is missing or of another build:
+    /// WoW is not started (a client without its row can't find its data)</remarks>
+    public enum WowAction { Wait, StartBattleNet, ShowBattleNetSignIn, StartWow, RestartWow, Focus, NeedsYou, Crashed, Stopped, Outdated, Repair }
 
     /// <summary>
     /// What the game wrote, as far as signing in goes. WoW's General.log is block-buffered (~48 KiB): on the PC, a client at the
@@ -268,7 +270,9 @@ namespace DsfDesktop.Wow
             bool notIn = screen == WowScreen.None || screen == WowScreen.Login;
             // a server error during the sign-in: stop and show it, never a start by ourselves
             if (failed && notIn) return WowAction.Stopped;
-            // an outdated PC game is never started (it can't reach the servers); a check under way is waited for
+            // an outdated PC game is never started (it can't reach the servers), nor one without its install record; a check under
+            // way is waited for
+            if (game == GameCheck.NeedsRepair && notIn) return WowAction.Repair;
             if (game == GameCheck.Outdated && notIn) return WowAction.Outdated;
             if (game == GameCheck.Checking && notIn) return WowAction.Wait;
             // BATTLE.NET FIRST, as up to 0.2.7 (the user, 2026-11-17: "we had it clipping the Battlenet screen before"): the PC's app
@@ -369,5 +373,37 @@ namespace DsfDesktop.Wow
         /// <summary>the status line while the PC's game is older than Blizzard's version (<see cref="WowAction.Outdated"/>). Never "on
         /// the PC" (the user's ruling 2026-11-18)</summary>
         public const string OutdatedText = "PC game needs an update";
+
+        /// <summary>the status line while the game's install record is missing (<see cref="WowAction.Repair"/>). Never "on the PC"</summary>
+        public const string RepairText = "PC game needs a repair";
+
+        /// <summary>the stop's one line for the Thor (a 309, an outdated or broken PC game), null = not stopped</summary>
+        public static string StopText(WowAction? a) =>
+            a == WowAction.Stopped ? ConnectFailedText : a == WowAction.Outdated ? OutdatedText : a == WowAction.Repair ? RepairText : null;
+
+        /// <summary>
+        /// The "wow" message while Desktop is stopped ([connectFailed] = a 309 stands; [game] = the PC game's check; [signedIn] = WoW
+        /// is at character select or in the world, never stopped then): "stopped" true for a Thor with its Retry (0.2.34), and for an
+        /// older Thor (1487), which reads neither "stopped" nor "pc_game" and said "Starting WoW on your PC" for ever (the 0.2.34
+        /// review), the words it does show: with WoW not running, state "start_failed" ("WoW didn't start"), and the reason as "why".
+        /// WoW running at its login keeps "running": 1487 then shows WoW's own screen with its 309 line. A Thor that reads "stopped"
+        /// shows its own red row first, whatever the state. true = stopped.
+        /// </summary>
+        public static bool StopWords(System.Collections.Generic.Dictionary<string, object> d, bool connectFailed, GameCheck game, bool signedIn)
+        {
+            bool broken = game == GameCheck.NeedsRepair, old = game == GameCheck.Outdated;
+            if (signedIn || !(connectFailed || broken || old)) return false;
+            d["stopped"] = true;
+            if (!(d.TryGetValue("state", out var st) && (st as string) == WowStarter.Word(WowState.Running)))
+                d["state"] = WowStarter.Word(WowState.StartFailed);
+            d["why"] = broken ? RepairText : old ? OutdatedText : ConnectFailedText;
+            return true;
+        }
+
+        /// <summary>an older Thor's reconnect (no "wow_stop" in its hello: it has no Retry) counts as its Retry: only while Desktop is
+        /// stopped ([stopped]), and once per <see cref="LegacyRetryEveryS"/> at most ([sinceLastS] = since the last one)</summary>
+        public static bool LegacyReconnectRetries(bool stopped, double sinceLastS) => stopped && sinceLastS >= LegacyRetryEveryS;
+
+        public const double LegacyRetryEveryS = 120;
     }
 }

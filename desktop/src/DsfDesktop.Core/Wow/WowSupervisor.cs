@@ -78,7 +78,10 @@ namespace DsfDesktop.Wow
         {
             lock (gate)
             {
-                active = true; NeedsYou = false; restarting = false; Crash = null; StoppedFor = null;
+                // a restart under way keeps its flag (it clears it when it is done): a connect never starts a second one beside it.
+                // A Retry not answered by an earlier connect is not carried into this one (0.2.35: it was, and a later connect that
+                // found WoW at its login restarted it unasked)
+                active = true; NeedsYou = false; Crash = null; StoppedFor = null; retry = false;
                 bnetWaitSince = null; bnetGaveUp = false;
                 var s = screen();
                 Tries = s == WowScreen.Login || s == WowScreen.SigningIn || s == WowScreen.Starting ? 1 : 0;
@@ -93,19 +96,33 @@ namespace DsfDesktop.Wow
         /// screen is restarted once (its new run asks the Thor for the login again: AppController.BeforeStart), a closed one started;
         /// Battle.net's sign-in still comes first while it is signed out, and an outdated game is still never started.
         /// </summary>
-        public void Retry()
+        /// <remarks>0.2.35: ONE start per press. A press while a restart or a start is under way is not a second one (0.2.34 cleared
+        /// the restart's flag, so a second press during its close could run a second close/start beside it): it is dropped, false.
+        /// Tries starts at 1, so the press's own client closing again without a server error is "Press Play in Battle.net", never a
+        /// second start (0.2.34 set 0, and Decide's tries &lt; 2 started it twice)</remarks>
+        public bool Retry()
         {
             lock (gate)
             {
-                active = true; NeedsYou = false; restarting = false; StoppedFor = null; retry = true;
+                if (Busy)
+                {
+                    Log.I("stream wants WoW: the Thor's Retry while a " + (restarting ? "restart" : "start") + " is under way: that one counts");
+                    return false;
+                }
+                active = true; NeedsYou = false; StoppedFor = null; retry = true;
                 bnetWaitSince = null; bnetGaveUp = false;
-                Tries = 0;
+                Tries = 1;
                 Last = WowAction.Wait;
             }
             Step();
+            return true;
         }
 
-        public void Disconnect() { lock (gate) active = false; }
+        /// <summary>a restart (close, then start) or a start is under way: a Retry now is not another one</summary>
+        public bool Busy { get { lock (gate) return restarting || startPending(); } }
+
+        /// <summary>the Thor left: nothing goes on for it, and a Retry it pressed and that was not answered yet goes too</summary>
+        public void Disconnect() { lock (gate) { active = false; retry = false; } }
 
         /// <summary>a healthy client runs again (the player updated and started it): the crash is behind us</summary>
         public void CrashOver() { lock (gate) Crash = null; }
@@ -182,10 +199,11 @@ namespace DsfDesktop.Wow
                         break;
                     case WowAction.Stopped:
                     case WowAction.Outdated:
+                    case WowAction.Repair:
                         // stop and show it: the Thor shows the error (or the versions) with a Retry; nothing more by ourselves
                         active = false; retry = false;
                         StoppedFor = a;
-                        Set(a, a == WowAction.Stopped ? WowFlow.ConnectFailedText : WowFlow.OutdatedText);
+                        Set(a, WowFlow.StopText(a));
                         break;
                     case WowAction.NeedsYou:
                         active = false; retry = false;

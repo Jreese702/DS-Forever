@@ -251,6 +251,24 @@ class StreamCurtainTest {
         assertEquals("abc", StreamCurtain.build("abc"))
     }
 
+    /** Desktop 0.2.35: _forever_'s Wow.exe is there but .build.info lost its wowf row (the Agent dropped it, 2026-11-18 06:32): WoW
+     *  is not started; the Thor says so with Retry. The state "start_failed" Desktop adds for an older Thor never hides the red row */
+    @Test fun aBrokenPcGameSaysRepair() {
+        val o = JSONObject().put("t", "wow").put("state", "start_failed").put("why", "PC game needs a repair").put("screen", "none")
+            .put("bnet", "signed_in").put("pc_game", "repair").put("game_installed", "1.60.1.70938").put("stopped", true)
+        val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
+        val c = curtain(StreamCurtain.decide(true, true, pc))
+        assertTrue(c.retry)
+        assertEquals(StreamCurtain.PC_GAME_REPAIR, c.rows.last().label)
+        assertEquals(SetupFlow.Mark.BAD, c.rows.last().mark)
+        assertEquals("Retry (A)", c.line)
+        assertEquals("a repair wins over a server error", StreamCurtain.PC_GAME_REPAIR,
+            StreamCurtain.stopLine(pc.copy(connectFailed = true, connectCode = "309")))
+        // a stopped 309 with WoW closed, as Desktop 0.2.35 sends it (start_failed for Thor 1487): this Thor's red row and Retry
+        val s = pc.copy(pcGame = "", connectFailed = true, connectCode = "309")
+        assertEquals("WoW can't reach its servers (309)", curtain(StreamCurtain.decide(true, true, s)).rows.last().label)
+    }
+
     /** the stop's lines in es / fr (templates with the code and the versions) */
     @Test fun theStopLinesAreTranslated() {
         val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n")
@@ -264,6 +282,8 @@ class StreamCurtainTest {
         assertEquals("Jeu du PC à mettre à jour (70938 -> 70959)", t("PC game needs an update (70938 -> 70959)", "fr"))
         assertEquals("Juego del PC sin actualizar", t(StreamCurtain.PC_GAME_OUTDATED, "es"))
         assertEquals("Reintentar (A)", t(StreamCurtain.RETRY, "es"))
+        assertEquals("Juego del PC por reparar", t(StreamCurtain.PC_GAME_REPAIR, "es"))
+        assertEquals("Jeu du PC à réparer", t(StreamCurtain.PC_GAME_REPAIR, "fr"))
         assertEquals("Réessayer (A)", t(StreamCurtain.RETRY, "fr"))
         assertEquals("WoW no puede conectar con sus servidores", t(StreamCurtain.CONNECT_FAILED, "es"))
     }
