@@ -22,6 +22,13 @@ object LauncherHooks {
     @Volatile var cleanExit: ((why: String, done: (forceNeeded: Boolean) -> Unit) -> Unit)? = null
     /** the clean exit's last route line ("clean exit (safe close): ..."), for the safe close's "done" line */
     @Volatile var lastCleanExit: String = ""
+    /**
+     * feat/pause-power (the user, 2026-11-18: "we need a way to close the game from the app in game"): DS FOREVER CLOSES - its task
+     * finished (every activity of it, Streaming's too), the game's environment shut down on the way (MainActivity.onDestroy), the
+     * process ended once no task is left. [force] = the game did not exit by itself: the old close of it first. Set by the launcher's
+     * MainActivity; null = no launcher (nothing closes)
+     */
+    @Volatile var quitApp: ((force: Boolean) -> Unit)? = null
     /** the container's graphics profile as the launcher picked it (the problem report's GPU / driver line), "" = not known yet */
     @Volatile var gpuLine: String = ""
     /** the launch's last step and its result ("preparing the container", "booting", "launch failed: ..."), "" = no launch yet */

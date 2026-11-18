@@ -18,7 +18,8 @@ import org.json.JSONObject
  * INPUT, all read here while open (its own PadInput, as the consumables wheel): a stick lights a slice, letting it go OR A picks (the
  * user 2026-10-09, "A picks too", as our other wheels); B closes (on Emotes: back to the main page); LB / RB the pages; the right
  * stick's click drops the pick; D-pad Up = Emotes, Down = Sit / Stand (both on the release; Sit closes the wheel as an emote does,
- * [HomePauseModel.SIT]); Start closes. A finger works too.
+ * [HomePauseModel.SIT]); Start closes. A finger works too. Y (or a tap on the top-right corner's power button) asks "Close DS Forever?"
+ * ([PausePower]; feat/pause-power, the user 2026-11-18): A closes DS Forever (and WoW, on the PC too while streaming), B goes back.
  *
  * THE CONTROLLER: while open it holds the guest "radial" (the consumables wheel's; never both open: the router only sends "pause" when
  * no guest holds), so the game acts on none of it; Quests q34 adds Start to that guest's keys.
@@ -50,6 +51,18 @@ class HomePauseView(
     var onPick: (HomePauseModel.Slice) -> Unit = {}
     /** pk1: Polestar's Skip / Previous can be pressed now (the Map's state, read at each open and each frame) */
     var polestar: () -> Pair<Boolean, Boolean> = { false to false }
+    /** feat/pause-power: a stream runs (the prompt's line says the PC closes and is put back) */
+    var streaming: () -> Boolean = { false }
+    /** feat/pause-power: why the power button can't be used now (a fight), null = it can */
+    var powerRefusal: () -> String? = { null }
+    /** feat/pause-power: Close confirmed: the host runs [PausePower.Sequence] (the prompt stays, saying the close runs) */
+    var onPower: () -> Unit = {}
+    private val power = PausePower.Flow()
+    /** a finger held on the power button; on the prompt's Cancel or Close (UiKit.POWER_*), -1 none */
+    private var powerDown = false
+    private var powerPressed = -1
+    /** the prompt's line, fixed when it opened (a stream ending meanwhile doesn't change the question asked) */
+    private var powerStream = false
 
     private val flow = HomePauseModel.Flow()
     private var openedAt = 0L
@@ -117,6 +130,8 @@ class HomePauseView(
             if (strip.height > 0) (a[1] - b[1]).toFloat() - strip.translationY else 0f
         }
         openByStart = byStart
+        UiKit.pauseRoomy = true                                             // feat/pause-power: Home's controller goes up, the wheel grows
+        power.reset(); powerDown = false; powerPressed = -1
         LatLog.mark("wheel", "pause open")
         flow.reset(); flow.holdOpen = !HomeSettings.pauseTap; flow.pickA = HomeSettings.pausePickA      // its own pair (the user, 2026-10-09)
         psState()
@@ -151,6 +166,8 @@ class HomePauseView(
      */
     fun close(why: String = "?") {
         if (!isOpen || closingFrom >= 0f) return
+        if (power.state == PausePower.State.CLOSING) { Log.i(TAG, "pause: not closed ($why): DS Forever is closing"); return }
+        power.reset(); powerDown = false; powerPressed = -1
         // test26 (tracking: "add a WCLOG line for every pause-look state change"): CLOSING, and what closed it
         Log.i("WCLOG", "pause: CLOSING ($why)")
         // f-one-disc: the wheel's hub glides back down onto the bar (none from the Game Menu: its stage has no hub)
@@ -174,6 +191,8 @@ class HomePauseView(
     /** the app leaves the screen: gone at once, the hold freed */
     fun shut() {
         if (!isOpen) return
+        if (power.state == PausePower.State.CLOSING) return            // DS Forever is closing: the prompt stays until it has gone
+        power.reset(); powerDown = false; powerPressed = -1
         guestTap(GuestPad.cells(questsPad(), GUEST, hold = false))
         after = null
         pressedAt = 0L; glideAt = 0L
@@ -301,7 +320,7 @@ class HomePauseView(
 
     private fun pads(l: Boolean, r: Boolean) {
         post {
-            if (live() && gm == null) {
+            if (live() && gm == null && !power.busy) {
                 if (l && !lb && flow.turn(-1)) invalidate()
                 if (r && !rb && flow.turn(+1)) invalidate()
             }
@@ -329,6 +348,17 @@ class HomePauseView(
         held = h
         fun pressed(slot: Int) = PadInput.isHeld(down, slot)
         fun released(slot: Int) = PadInput.isHeld(up, slot)
+        // feat/pause-power: THE PROMPT holds the pad while it shows: A = Close, B = back to the wheel (one step), Start = the wheel's
+        // close; while the close runs nothing answers
+        if (power.busy) {
+            when {
+                power.state == PausePower.State.CLOSING -> {}
+                pressed(PadInput.SLOT_FACE_BOTTOM) -> powerAct(power.confirm(), "A")
+                pressed(PadInput.SLOT_FACE_RIGHT) -> powerAct(power.cancel(), "B")
+                pressed(PadInput.SLOT_START) -> { power.reset(); close("Start (the power prompt)") }
+            }
+            invalidate(); return
+        }
         gm?.let { m ->
             // THE GAME MENU: D-pad up / down move (wrapping), A presses, B returns to the game (on the countdown: B = Cancel, the game's)
             when {
@@ -342,6 +372,8 @@ class HomePauseView(
         }
         when {
             pressed(PadInput.SLOT_START) -> { close("Start"); return }
+            // feat/pause-power: Y = the power button (its glyph on the button's corner)
+            pressed(PadInput.SLOT_FACE_TOP) -> { powerAct(power.press(powerRefusal()), "Y"); return }
             pressed(PadInput.SLOT_FACE_RIGHT) -> { if (flow.b() == HomePauseModel.Act.Close) pressHub() else invalidate(); return }
             pressed(PadInput.SLOT_RSTICK) -> { flow.cancel(); invalidate() }
             pressed(PadInput.SLOT_FACE_BOTTOM) -> act(flow.a())
@@ -357,6 +389,7 @@ class HomePauseView(
 
     private fun vector(st: Int, x: Double, y: Double) {
         if (gm != null) return                     // the Game Menu: the D-pad moves, the sticks do nothing (the game's)
+        if (power.busy) return                     // feat/pause-power: the prompt: the sticks aim nothing
         // either stick aims (the consumables wheel's rule, the user: "they can both aim"); only the stick that aims can let go
         val m = kotlin.math.hypot(x, y)
         if (aimStick != st) {
@@ -379,6 +412,30 @@ class HomePauseView(
         }
         invalidate()
     }
+
+    /** feat/pause-power: what the power button / its prompt did */
+    private fun powerAct(a: PausePower.Act, how: String) {
+        when (a) {
+            PausePower.Act.None -> {}
+            PausePower.Act.Asked -> {
+                powerStream = runCatching { streaming() }.getOrDefault(false)
+                line = null
+                Log.i("WCLOG", "pause: power prompt OPEN ($how; ${if (powerStream) "streaming" else "local"})")
+            }
+            PausePower.Act.Cancelled -> Log.i("WCLOG", "pause: power prompt CANCELLED ($how)")
+            PausePower.Act.Confirmed -> { Log.i("WCLOG", "pause: power prompt CLOSE ($how): DS Forever closes"); onPower() }
+            is PausePower.Act.Refused -> { Log.i("WCLOG", "pause: power refused (${a.line})"); say(a.line) }
+        }
+        invalidate()
+    }
+
+    /** the preview / tests only: the prompt up ([closing] = the close under way), as Y would open it */
+    fun previewPower(streamingNow: Boolean, closing: Boolean = false) {
+        power.reset(); power.press(null); powerStream = streamingNow
+        if (closing) power.confirm()
+        invalidate()
+    }
+    val powerState get() = power.state
 
     private fun pick(s: HomePauseModel.Slice) {
         Log.i(TAG, "pause: pick ${s.key}${s.cmd?.let { " ($it)" } ?: ""}")
@@ -634,6 +691,12 @@ class HomePauseView(
         val moving = UiKit.pauseRadial(c, screen, disc, size, slices(), flow.page, flow.pointed, flow.heldOption, tt, hubDown(), line,
             lineAlpha = lineAlpha, pickGlyph = flow.pickA, left = HomePauseModel.TRACKPAD_WORD, right = HomePauseModel.KEYBOARD_WORD,
             hubGold = hubGold())
+        // feat/pause-power: the power button in the top-right corner, in with the top row (440 .. 600 of the open); its prompt over all
+        // (the prompt dims the stage; the button stays bright over it, in its gold box, while its prompt is up)
+        if (power.busy) UiKit.pausePowerPrompt(c, screen, PausePower.context(powerStream),
+            closing = if (power.state == PausePower.State.CLOSING) PausePower.closing(powerStream) else null, pressed = powerPressed)
+        UiKit.pausePower(c, screen, ((tt - 440f) / 160f).coerceIn(0f, 1f), down = powerDown, lit = power.busy)
+        if (power.state == PausePower.State.CLOSING) postInvalidateDelayed(50L)       // the spinner turns
         // the open runs to its end whatever the kit says (its "moving" covers the wheel only, the panels slide too)
         if (moving || tt < UiKit.PAUSE_OPEN_MS || closingFrom >= 0f || hubPressAt != 0L || hubHeldAt != 0L || line != null) postInvalidateOnAnimation()
     }
@@ -668,6 +731,28 @@ class HomePauseView(
                     invalidate()
                 }
                 MotionEvent.ACTION_CANCEL -> { gmPressed = -1; invalidate() }
+            }
+            return true
+        }
+        // feat/pause-power: THE PROMPT takes every touch while it shows (Cancel / Close / outside = Cancel); the button opens it
+        val scr = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        if (power.busy) {
+            val hit = UiKit.pausePowerPromptHit(scr, e.x, e.y)
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { powerPressed = if (hit >= 0 && power.asking) hit else -1; invalidate() }
+                MotionEvent.ACTION_MOVE -> if (powerPressed >= 0 && hit != powerPressed) { powerPressed = -1; invalidate() }
+                MotionEvent.ACTION_UP -> { powerPressed = -1; powerAct(power.touch(hit), "touch") }
+                MotionEvent.ACTION_CANCEL -> { powerPressed = -1; invalidate() }
+            }
+            return true
+        }
+        val onPower = UiKit.pausePowerHit(scr, e.x, e.y)
+        if (powerDown || (onPower && e.actionMasked == MotionEvent.ACTION_DOWN)) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { powerDown = true; invalidate() }
+                MotionEvent.ACTION_MOVE -> if (!onPower) { powerDown = false; invalidate() }
+                MotionEvent.ACTION_UP -> { powerDown = false; if (onPower) powerAct(power.press(powerRefusal()), "touch") else invalidate() }
+                MotionEvent.ACTION_CANCEL -> { powerDown = false; invalidate() }
             }
             return true
         }

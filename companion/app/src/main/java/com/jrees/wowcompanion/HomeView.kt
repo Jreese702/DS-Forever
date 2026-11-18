@@ -2157,13 +2157,18 @@ class HomeView(
     /** [sidePx] > 0 (1.0.19, the LB picture; the user: "I donw want the sides to slide ALL of the way out, just enough to make space for
      *  the selections"): the side parts move only that far, eased, a little dimmed; the controller bars as the pause has them */
     private var pauseSide = 0f
-    fun pauseSlide(t: Float, sidePx: Float = 0f) {
-        if (t == pauseT && sidePx == pauseSide) return
-        pauseT = t; pauseSide = sidePx
+    private var pauseUp = false
+    /** [barsUp] (feat/pause-power: the PAUSE menu's; the user, 2026-11-18: "I want the pause radial to also push the top controller bar
+     *  up out of the way so that it can be a bit larger"): the controller slides up off the screen on the kit's PAUSE_TOP curve, the
+     *  reverse bringing it back down; false = the target radial's / the LB picture's rule below */
+    fun pauseSlide(t: Float, sidePx: Float = 0f, barsUp: Boolean = false) {
+        if (t == pauseT && sidePx == pauseSide && barsUp == pauseUp) return
+        pauseT = t; pauseSide = sidePx; pauseUp = barsUp
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
-        // only stepping back to [pauseBarsDim] (the title row lies over its lower half); elsewhere its old slide
-        pauseTop = if (UiKit.pauseBarsBottom > 0f) floatArrayOf(0f, 0f, 1f - (1f - pauseBarsDim) * (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f))
+        // only stepping back to [pauseBarsDim] (the title row lies over its lower half); elsewhere its old slide. The pause menu itself
+        // pushes it up since feat/pause-power ([barsUp]); the target radial keeps the f-pause-bars rule
+        pauseTop = if (UiKit.pauseBarsBottom > 0f && !barsUp) floatArrayOf(0f, 0f, 1f - (1f - pauseBarsDim) * (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f))
             else UiKit.pauseOut(UiKit.PAUSE_TOP, t, screen)
         val left = UiKit.pauseOut(UiKit.PAUSE_LEFT, t, screen)
         pauseMap = UiKit.pauseOut(UiKit.PAUSE_MAP, t, screen)

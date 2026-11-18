@@ -345,6 +345,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onWelcome = { w -> main.post { welcomed(w) } },
                 onSunshine = { m -> main.post { sunshineSaid(m) } },
                 onPcTest = { m -> pcTestSaid(m) },
+                onSessionEnd = { m -> main.post { sessionSaid(m) } },
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
                 savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } },
                 gameAccount = { gameAccount() },
@@ -466,6 +467,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
      * (the bridge too) and remembered. None: the curtain says why ([Route.unreachable]) and it tries again by the policy.
      */
     private fun connect() {
+        if (ending != null) return                           // feat/pause-power: the clean disconnect runs: no new stream
         val h = host ?: return show(Screen.PAIRING)
         if (session != null || !surfaceReady || routing || testSession != null) return
         main.removeCallbacks(retryTick)
@@ -600,6 +602,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         DsForeverScreen.current?.signInClose = { boardByHand = false; boardShut = true; applyCurtain() }
         SetupBridge.openPcKeyboard = { boardByHand = true; boardShut = false; applyCurtain() }
         SetupBridge.exitStream = { main.post { stopStream("menu"); back() } }
+        // feat/pause-power: THE CLEAN DISCONNECT (the pause menu's power button; the waiting screen's Exit game): the PC's WoW closes
+        // and the PC is put back by Desktop, then the stream and the bridge stop
+        SetupBridge.endSession = { why, asked, done -> main.post { endSession(why, asked, done) } }
+        SetupBridge.endStream = { main.post { endSession("the menu's Exit game", false) { back() } } }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -610,6 +616,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun onEnded(error: Int, notPaired: Boolean, message: String) {
+        // feat/pause-power: the clean disconnect stopped it: no diagnosis, no retry
+        if (ending != null) { teardown(); Log.i(TAG, "stream ended ($error) for the clean disconnect"); return }
         val wasStreaming = screen == Screen.STREAMING
         val mode = session?.mode
         val failedStage = session?.failedStage.orEmpty()
@@ -716,6 +724,63 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         worker.execute { if (bridge?.wowRetry() != true) Log.i(TAG, "PC: Retry not sent (no bridge connection)") }
     }
 
+    // ---------------------------------------------------------------- the clean disconnect (feat/pause-power)
+
+    /** the clean disconnect under way ([SessionEnd]) and what runs once it is decided */
+    private var ending: SessionEnd? = null
+    private var endThen: ((com.jrees.wowcompanion.PausePower.Ended) -> Unit)? = null
+
+    /**
+     * The user, 2026-11-18: "When streaming this should also close wow on the PC and revert everything back and be the clean way to
+     * disconnect". "end_session" to Desktop (it closes the PC's WoW - the game's own Exit Game first when [quitAsked] - and puts the PC
+     * back), the picture stopped at once (after the Exit Game tap has gone down the stream: the PC's desktop never shows on the top
+     * screen as WoW closes), "Closing WoW on your PC" on the top screen; Desktop's answer (or [SessionEnd]'s time) ends it: the bridge
+     * disconnects, then [then].
+     */
+    private fun endSession(why: String, quitAsked: Boolean, then: (com.jrees.wowcompanion.PausePower.Ended) -> Unit) {
+        if (ending != null) { Log.i(TAG, "clean disconnect ($why): already under way"); return }
+        val e = SessionEnd(System.currentTimeMillis())
+        ending = e; endThen = then
+        Log.i(TAG, "clean disconnect ($why): Desktop closes WoW and puts the PC back" + if (quitAsked) " (the game's own Exit Game asked first)" else "")
+        worker.execute {
+            val sent = bridge?.endSession(quitAsked) == true
+            main.post {
+                e.sent(sent)
+                Log.i(TAG, "clean disconnect: end_session ${if (sent) "sent" else "NOT sent (no bridge connection): the stream stops only"}")
+                endTick.run()
+            }
+        }
+        main.postDelayed({
+            if (ending !== e) return@postDelayed
+            stopStream("the clean disconnect")
+            show(Screen.CONNECTING)
+            status.show(com.jrees.wowcompanion.Tr.t(com.jrees.wowcompanion.PausePower.CLOSING_STREAM) + "\u2026", "", "", withButtons = false)
+        }, if (quitAsked) SessionEnd.QUIT_TAP_SETTLE_MS else 0L)
+    }
+
+    private val endTick: Runnable = object : Runnable {
+        override fun run() {
+            val e = ending ?: return
+            main.removeCallbacks(this)
+            val r = e.check(System.currentTimeMillis()) ?: run { main.postDelayed(this, 250L); return }
+            ending = null
+            Log.i(TAG, "clean disconnect: " + if (r.answered) "Desktop: WoW ${r.wow}, put back ${r.putBack}${if (r.why.isNotEmpty()) " (${r.why})" else ""}"
+                else "ended without Desktop's word (${r.why})")
+            stopStream("the clean disconnect ended")
+            bridge?.stop()                                   // the bridge disconnects before DS Forever / Streaming goes
+            val then = endThen; endThen = null
+            then?.invoke(r)
+        }
+    }
+
+    /** Desktop's session_ending / session_ended */
+    private fun sessionSaid(m: BridgeMsg.SessionEnd) {
+        val e = ending ?: return
+        Log.i(TAG, "clean disconnect: Desktop " + if (m.done) "ended the session" else "is closing WoW")
+        e.said(m)
+        endTick.run()
+    }
+
     private fun stopStream(why: String) {
         session?.let { Log.i(TAG, "stopping the stream: $why"); it.stop() }
         teardown()
@@ -727,6 +792,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         streamFps = 0
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
+        SetupBridge.endSession = null; SetupBridge.endStream = null
         boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null

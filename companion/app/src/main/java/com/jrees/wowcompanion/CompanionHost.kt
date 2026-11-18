@@ -866,7 +866,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         StartMenu.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); NativeLogin.logEvent("sign-in: Auto login ${if (on) "on" else "off"} (the Menu)"); if (!on) NativeLogin.clear() }
         StartMenu.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
         StartMenu.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
-        StartMenu.onExit = { (SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
+        // feat/pause-power: Exit game while streaming = the clean disconnect (the PC's WoW closes, the PC put back), then the chooser
+        StartMenu.onExit = { (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
         StartMenu.canForget = { HomeLoginStore.has(this) }
         StartMenu.onForgetLogin = { HomeLoginStore.clear(this); NativeLogin.logEvent("sign-in: the saved login forgotten (the Menu)"); NativeLogin.clear() }
         StartMenu.canRestart = { LauncherHooks.gameUp() }
@@ -1097,7 +1098,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // #540: Home's B watch leaves a B alone while one of these overlays has it (and just after it closed one: overlayClosed)
         homeView.overlayOpen = { radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || barSelect.open }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
-        pauseView.onSlide = { t -> pauseSlideAll(t) }
+        pauseView.onSlide = { t -> slideBarsUp = true; pauseSlideAll(t) }          // feat/pause-power: Home's controller goes up
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button
         // gets pressed"): the same quick time; input is already the room's / Home's (the wheel is gone in the B frame)
         pauseView.onClose = { from ->
@@ -1127,6 +1128,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         pauseView.onPick = { s -> pausePick(s) }
+        // feat/pause-power: THE POWER BUTTON (the user, 2026-11-18): its prompt's line, a fight's refusal, and Close = [PausePower.Sequence]
+        pauseView.streaming = { SetupBridge.endSession != null }
+        pauseView.powerRefusal = { if (homeView.inFight()) PausePower.FIGHT_LINE else null }
+        pauseView.onPower = { powerOff.run() }
         pauseView.polestar = { mapView.polestarCanSkip() to mapView.polestarCanPrev() }      // pk1: its Skip / Previous step slices
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
@@ -1147,7 +1152,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         castView.onTouchCast = { cell -> TapBridge.tap(this, questsPad, "tcast", cell) { why -> Log.i("WCLOG", "touch cast refused ($why)") } }
         // the context menus' icons (the raid markers too) asked for early, so the phone's icon harvest has them before a wheel opens
         ui.postDelayed({ runCatching { MenuIcons.prefetch() } }, 8_000L)
-        targetRadial.onSlide = { t -> pauseSlideAll(t) }
+        targetRadial.onSlide = { t -> slideBarsUp = false; pauseSlideAll(t) }      // the controller stays (f-pause-bars)
         targetRadial.onClose = { from -> pauseView.onClose(from) }
         targetRadial.barsBottom = { pauseView.barsBottom?.invoke() ?: 0f }
         targetRadial.onDo = { d, name -> targetDo(d, name) }
@@ -3870,8 +3875,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         lbView.lb(lbAloneNow && free)
     }
 
+    /** feat/pause-power: the pause menu pushes Home's controller up (set at its open); the target radial keeps it (set at its open) */
+    private var slideBarsUp = false
     private fun pauseSlideAll(t: Float) {
-        homeView.pauseSlide(t)
+        homeView.pauseSlide(t, barsUp = slideBarsUp)
         // THE ROOM STEPS BACK (the user 2026-10-09: "the Pause screen needs to be pushing the other menus off screen"; UI Art's motion:
         // a full-screen room does not slide - alpha 1 -> 0 and scale 1 -> 0.96 about its centre over the first half of the open,
         // FastOutLinearIn; t = 0 puts it back at once). Home keeps its own slide-off (separate panels)
@@ -4948,6 +4955,35 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // "1, 34, 1" lost its second digit, the add-on never had all seven and never asked Polestar (RouteWaypoint spaces its digits too)
         TapBridge.tapsSpaced(this, pad, cols.map { PolestarNav.ROW to it }, 120L) { why ->
             mapView.polestar.lost(); Log.i("WCMAP", "polestar: tap failed: $why") }       // (ps4: the row's word said again)
+    }
+
+    /**
+     * feat/pause-power: CLOSE DS FOREVER from the pause menu's power button ([PausePower.Sequence]): Local = the safe close's clean exit
+     * then the app; Streaming = the game's own Exit Game tapped over the stream, Desktop's end_session, then the app
+     */
+    private val powerOff by lazy {
+        PausePower.Sequence(
+            streaming = { SetupBridge.endSession != null },
+            gameUp = { LauncherHooks.gameUp() },
+            cleanExit = { LauncherHooks.cleanExit },
+            quitTap = { quitTapOverStream() },
+            endSession = { SetupBridge.endSession },
+            quitApp = { force ->
+                ui.post {
+                    val q = LauncherHooks.quitApp
+                    if (q == null) Log.i("WCSETUP", "power: no launcher to close (the companion app alone): nothing closes") else q(force)
+                }
+            },
+            log = { Log.i("WCSETUP", it) },
+        )
+    }
+
+    /** streaming: the game's own Exit Game (Spells' secure gamemenu row) tapped over the stream, as the clean exit taps it locally:
+     *  true = asked (Desktop waits for it before closing the window); never in a fight or at the login screen (CleanExit's route) */
+    private fun quitTapOverStream(): Boolean {
+        val route = CleanExit.route(lastAddonAt, SystemClock.elapsedRealtime(), homeView.inFight(), CleanExit.quitCol(lastGameMenu))
+        if (route !is CleanExit.Route.Quit) { Log.i("WCSETUP", "power: no Exit Game tap over the stream (${(route as CleanExit.Route.Force).why})"); return false }
+        return TapBridge.tap(this, questsPad, GameMenuModel.ROW, route.col) { r -> Log.i("WCSETUP", "power: Exit Game tap refused ($r)") }
     }
 
     private fun cleanExit(why: String, done: (Boolean) -> Unit) {

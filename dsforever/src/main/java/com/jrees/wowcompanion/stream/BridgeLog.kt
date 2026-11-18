@@ -53,6 +53,8 @@ class BridgeLog(
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     /** the Thor's clock on the documents' `_gt` scale ([PcClock]; the tests pass a fixed one) */
     wall: () -> Long = { com.jrees.wowcompanion.GameInput.wallYearMs() },
+    /** feat/pause-power: Desktop's answers to [endSession] */
+    private val onSessionEnd: (BridgeMsg.SessionEnd) -> Unit = {},
 ) : LogSource {
     /** issue #414: the PC's stamps onto the Thor's clock (a PC in another time zone was never "current") */
     val clock = PcClock(wall)
@@ -101,6 +103,8 @@ class BridgeLog(
     fun wowRetry(): Boolean = try { conn?.send(BridgeProtocol.wowRetry()); conn != null } catch (_: Throwable) { false }
     /** the player's Cancel (B) on Desktop's update of the PC game */
     fun patchCancel(): Boolean = try { conn?.send(BridgeProtocol.patchCancel()); conn != null } catch (_: Throwable) { false }
+    /** feat/pause-power: the clean disconnect: Desktop closes the PC's WoW and puts the PC back ([SessionEnd]); false = no connection */
+    fun endSession(quitAsked: Boolean): Boolean = try { val c = conn; c?.send(BridgeProtocol.endSession(quitAsked)); c != null } catch (_: Throwable) { false }
 
     /** the "sv_write" this connection sent (its tables' text: the base once Desktop answers written / same) */
     @Volatile private var svSent: JSONObject? = null
@@ -190,6 +194,7 @@ class BridgeLog(
                     runCatching { com.jrees.wowcompanion.SvSync.onWritten(d, m.o, svSent) { svLog(it) } }
                     svSent = null
                 }
+                is BridgeMsg.SessionEnd -> onSessionEnd(m)
                 is BridgeMsg.Unpaired -> { onAuthLost("revoked"); return End.AUTH_LOST }
                 // the user's pick 2026-11-17 ("Ask the Thor again"): WoW closed itself on the PC and starts again; the saved login once
                 // more, only down this connection and only while the auto sign-in is on (savedLogin is null otherwise)
