@@ -250,6 +250,20 @@ class RestorePolicy {
         return tapBoot == s.boot && now - tapAt < HOLD_MS
     }
 
+    /** fix/1492-feedback: the load whose unanswered restore was already said ([unanswered]) */
+    private var saidBoot = -1L
+
+    /**
+     * fix/1492-feedback (test 1492 streamed: "ui:34" twice, no answer, then the switches one by one): true ONCE per load when this
+     * load's restore taps are all spent and the add-on never answered - the caller notes it (the tap log) and the switches go as one batch
+     */
+    fun unanswered(r: HubRestore?, s: HubState?, now: Long): Boolean {
+        if (r == null || s == null || r.n > 0 || r.q) return false
+        if (tapBoot != s.boot || tries < MAX_TRIES || now - tapAt < HOLD_MS || saidBoot == s.boot) return false
+        saidBoot = s.boot
+        return true
+    }
+
     companion object {
         const val MAX_TRIES = 2            // the tap, and one more
         const val HOLD_MS = 3_000L         // the answer rides the next flush (the switch taps wait 1.5 s for theirs)

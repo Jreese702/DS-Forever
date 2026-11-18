@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad22"     -- pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad23"     -- pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -223,11 +223,28 @@ end
 pad.fits = fits
 
 -- a press of a plain cell, by a click or by the key channel: once per tap (REPEAT), a flash, the row's handler
+-- pad23: the last presses, "row:col" (the row's name), newest last; read by Hub's document (rx) so the app can log where its taps landed
+pad.rx = { n = 0, last = {} }
+local function landed(row, col)
+    local r = pad.byRow[row]
+    local L = pad.rx
+    L.n = L.n + 1
+    L.last[#L.last + 1] = tostring(r and r.name or row) .. ":" .. tostring(col)
+    if #L.last > 8 then table.remove(L.last, 1) end
+end
+pad.landed = landed
+function pad.rxDoc()
+    local L = pad.rx
+    if L.n == 0 then return nil end
+    return { n = L.n, last = table.concat(L.last, " ") }
+end
+
 local function pressCell(btn, row, col)
     local t = clock()
     if btn.pressedAt and t - btn.pressedAt < REPEAT then return false end   -- the tap's second press
     btn.pressedAt = t
     flash(btn)
+    pcall(landed, row, col)
     fire(row, col)
     return true
 end
@@ -340,6 +357,7 @@ local function secureCell(r, col)
         elseif early then
             return                                                      -- it ran on the press
         end
+        pcall(landed, row.row, c)                                         -- pad23: once per tap, as the plain cells
         if type(row.onClick) == "function" then pcall(row.onClick, c) end   -- once per tap
     end)
     r.cells[col] = btn
@@ -727,11 +745,27 @@ function pad.describe()
         end
     end
     local g = pad.geom
+    -- pad23: a described row whose first cell does not stand where the grid says (its real top, game px from the screen's top, read
+    -- off the frame): `off` lists it, so a tap that never lands can be told from a row that moved. Read only; normally absent
+    local off
+    local top = SN(function() return UIParent:GetTop() end)
+    for name, idx in pairs(rows) do
+        local r = pad.rows[name]
+        local b = r and r.cells and r.cells[0]
+        local bt = b and SN(function() return b:GetTop() end)
+        if top and bt then
+            local real = (top - bt) * pad.info.sy
+            if math.abs(real - (g.y + idx * CELL_H)) > 0.5 then
+                off = off or {}
+                off[name] = math.floor(real * 10 + 0.5) / 10
+            end
+        end
+    end
     -- popupTop: where the game's dialogs start, in the same game pixels, so any reader can check the grid's bottom
     -- (y + rows * ch) stays above them at whatever UI scale the player picks
     return { v = PADV, x = g.x, y = g.y, cw = CELL_W, ch = CELL_H, cols = COLS,
              popupTop = math.floor(POPUP_TOP_UNITS * pad.info.sy * 10 + 0.5) / 10,
-             pw = g.pw, ph = g.ph, rows = rows, sizes = sizes, keys = keysDescribe() }
+             pw = g.pw, ph = g.ph, rows = rows, sizes = sizes, keys = keysDescribe(), off = off }
 end
 
 local f = CreateFrame("Frame")

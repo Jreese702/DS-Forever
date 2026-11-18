@@ -2,6 +2,7 @@ package com.jrees.wowcompanion
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import org.json.JSONObject
 
 /**
@@ -330,6 +331,45 @@ object GameUi {
         SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; SW_NPF -> s.npf; else -> s.prd }
     /** PR #533: the game's answer to a tap of [p] - its word and its `set` flag (an answered tap moves one of them) */
     fun swSig(s: Sw?, p: String): Any? = s?.let { swWord(it, p) to it.set[p] }
+    /** fix/1492-feedback: the add-on's last press count said ([landedNote]) and the last `off` line written */
+    private var rxN = -1
+    private var offSaid = ""
+    /**
+     * fix/1492-feedback (test 1492 streamed: the "ui" row's restore and layout taps never answered, the "uisw" row's did): WHERE THE
+     * TAPS LANDED, in the tap log beside the taps sent - Hub hub69's `rx` (TapPad pad23's last presses, "row:col") whenever its count
+     * moves, and pad23's `off` (rows whose cells do not stand where the grid says) when it changes. Logged only; nothing decided on it.
+     */
+    private fun landedNote(rx: JSONObject?, off: JSONObject?, current: Boolean) {
+        if (!current) return
+        val n = rx?.optInt("n", -1) ?: -1
+        if (n >= 0 && n != rxN) {
+            rxN = n
+            TapBridge.note("landed n=$n: ${rx?.optString("last").orEmpty().take(160)}")
+        }
+        val o = off?.let { j -> j.keys().asSequence().sorted().joinToString(" ") { k -> "$k@${j.opt(k)}" } }.orEmpty()
+        if (o != offSaid) { offSaid = o; if (o.isNotEmpty()) TapBridge.note("pad rows not where described: $o") }
+    }
+    /** fix/1492-feedback: the gap between the switch taps of one batch (each its own cell; TapPad's 0.25 s guard is per cell) */
+    const val SW_GAP_MS = 60L
+    /** a batch's most switches (every part there is) */
+    const val SW_BATCH_MAX = 24
+    /**
+     * fix/1492-feedback (test 1492: ~16 "uisw" taps spread over 3 s at the stream's start): EVERY switch to tap now, in [swNextSkip]'s
+     * order - each part whose word differs from the choice (or not had since the /reload), not parked ([skip]), [due] (TapBackoff) -
+     * as (part, absolute column). Pure.
+     */
+    fun swBatch(s: Sw, skip: Set<String>, due: (String) -> Boolean, want: (String) -> Boolean): List<Pair<String, Int>> {
+        val out = ArrayList<Pair<String, Int>>()
+        val seen = HashSet(skip)
+        while (out.size < SW_BATCH_MAX) {
+            val (p, on) = swNextSkip(s, seen, want) ?: break
+            seen += p
+            if (!due(p)) continue
+            val c = swCol(s, p, on) ?: continue
+            if (c >= 0) out += p to c
+        }
+        return out
+    }
     /** [swNext] without the parts in [skip] (PR #533: switches the game never answers, parked by [TapBackoff]). With every waiting
      *  part parked this is null, and the HUD steps / meters may go meanwhile; a parked part comes back by itself for its one probe */
     fun swNextSkip(s: Sw, skip: Set<String>, want: (String) -> Boolean): Pair<String, Boolean>? =
@@ -708,6 +748,7 @@ object GameUi {
                           if (e.has("why")) e.optString("why") else null))
         }
         pad = h.optJSONObject("pad")
+        landedNote(h.optJSONObject("rx"), pad?.optJSONObject("off"), current)
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         // hub67: the one-tap memory (absent from an older add-on set: no restore tap, nothing held)
@@ -787,6 +828,10 @@ object GameUi {
             return
         }
         if (restore.holding(r, s, now)) { last = UiStep.Wait("Restoring this character's top screen"); return }
+        if (restore.unanswered(r, s, now)) {
+            Log.i("WCHUB", "restore: no answer to the \"ui\" tap; the switches go as one batch")
+            TapBridge.note("restore: no answer to ui:${r?.col} (${RestorePolicy.MAX_TRIES} taps); the switches go as one batch")
+        }
         val step = policy.step(s, room.name, visible, live, now, helloAt + GameUiPolicy.SETTLE_MS)
         if (step is UiStep.Tap && !GameInput.tap(ctx, pad, ROW, step.mask)) {
             last = UiStep.Wait("The game has not published its tap pad")
@@ -807,12 +852,17 @@ object GameUi {
                 val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
                 if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
                     now >= helloAt + GameUiPolicy.SETTLE_MS) {
-                    // one tap, the next only after this part's own answer (its word / set) or 1.5 s; after 3 unanswered taps one
-                    // probe every 30 s (TapBackoff). s.n (every tap on the row) no longer stands in for this part's answer
-                    val part = next!!.first
-                    if (swBack.due(part, now)) {
-                        swBack.tapped(part, swSig(sws, part), now); swTapAt = now
-                        GameInput.tap(ctx, pad, sws.row, swCol)
+                    // fix/1492-feedback (the user, 2026-11-18, test 1492: "when opening the stream, it looked like it was doing a lot of
+                    // clicks again"): every switch that differs goes in ONE batch ([swBatch], [SW_GAP_MS] apart: the whole set in about
+                    // a second, never one per answer spread over seconds); each part still waits for its own answer (its word / set)
+                    // or 1.5 s before it is tapped again, and after 3 unanswered taps one probe every 30 s (TapBackoff). The add-on keeps
+                    // every switch that took (hub67), so the next login is the one restore tap
+                    val batch = swBatch(sws, swBack.parked(now), { p -> swBack.due(p, now) }) { p -> swWant(p) }
+                    if (batch.isNotEmpty()) {
+                        for ((part, _) in batch) swBack.tapped(part, swSig(sws, part), now)
+                        swTapAt = now
+                        if (batch.size > 1) Log.i("WCHUB", "switches: ${batch.size} in one batch")
+                        GameInput.taps(ctx, pad, batch.map { sws.row to it.second }, SW_GAP_MS)
                     }
                 }
                 else if (hudOn() && hudStepWanted()) {
