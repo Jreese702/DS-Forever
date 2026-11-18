@@ -91,7 +91,7 @@ object GameUi {
 
     // ------------------------------------------------------------------ split-hud: the controller UI, the buffs, the XP bar
 
-    /** the hub document's `hs` (Hub.lua hs1): each part's word ("on" / "off" / "ride"), each part hidden now, the bit, the columns;
+    /** the hub document's `hs` (Hub.lua hs2): each part's word ("on" / "off" / "ride"), each part hidden now, the bit, the columns;
      *  null = an add-on set before the split (the controller tile alone, the bit as before) */
     data class Hs(val words: Map<String, String>, val hidden: Map<String, Boolean>, val bit: Boolean, val n: Int, val cols: Map<String, Int>)
     @Volatile private var hs: Hs? = null
@@ -548,8 +548,9 @@ object GameUi {
     const val GAME_OFF_NOTE = "Off in the game's Options"
     /** the row "lay" (LayoutModel.ROW) */
     const val MT_ROW = "lay"
-    /** the "lay" document is CLOSED (the add-on takes the meters' columns only then) */
-    @Volatile var layOpen: () -> Boolean = { LayoutModel.Live.doc?.open == true }
+    /** the "lay" document is OPEN, or the layout editor wants it open / did within LayoutModel.EDITOR_HOLD_MS (the add-on takes the
+     *  meters' and the parts' columns only while closed; a word retried after an open would be an editor command) */
+    @Volatile var layOpen: () -> Boolean = { LayoutModel.Live.editorBusy(LayoutModel.Live.clock()) }
 
     fun mtFrom(o: JSONObject?): Mt? = o?.let { m ->
         fun ob(k: String) = if (m.has(k) && !m.isNull(k)) m.optBoolean(k) else null

@@ -433,6 +433,7 @@ d = last_full(L)
 check(d["open"] is True and d["grid"] is False and d["chars"] == ["Other-Realm"], "g. Open without the grid (38); the other character listed",
       (d["open"], d["grid"], d["chars"]))
 fixture(L, "lay_copy")
+L.execute('advance(2.1)')                                         # (hub64: a cell 24-32 inside HS_GRACE_S of the open is dropped)
 cell(L, 24)
 d = last_full(L)
 check(d["dirty"] is True and piece(d, "hud")["dx"] == 10 and piece(d, "hud")["s"] == 120 and piece(d, "compass")["dy"] == 30
@@ -916,6 +917,7 @@ ease(L5)
 check(gpts(L5, "GamepadMainActionBarFrame") == ("BOTTOM", "BOTTOM", 0, 110), "n. Reset (34): the controller bar at the game's place")
 L5.execute('WowCompanionDB.lay["%s"]["g.FocusFrame"] = { dx = 5, dy = 5, s = 100 }' % WHO)   # (a frame not shown now: still dropped)
 check(fresh(L5)["gset"] is True, "n. gset: offsets of the game's frames exist")
+L5.execute('advance(2.1)')                                        # (hub64: past HS_GRACE_S of the open)
 cell(L5, 29)
 ease(L5)
 check(gpts(L5, "PlayerFrame") == ("TOPLEFT", "TOPLEFT", 268, -850) and L5.eval('PlayerFrame._scale') == 1
@@ -1128,9 +1130,10 @@ check(lua_errors(L7, errs7) == [] and int(L7.eval('#VIOL')) == 0, "o. clean (sto
 # ================================================================ p. hub63 split-hud: the buffs, the controller UI and the XP bar apart
 # The user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both". The three rode ONE layout bit (1, "hud"),
 # so they were hidden together and the layout editor (it lists a frame only while it is visible) listed them together. Now each part
-# has a word on "lay" while the editor is closed (columns 24-32: on / off / ride), kept in WowCompanionDB.hudsplit; unset = ride = the
+# has a word on "lay" while the editor is closed (columns 24-32: on / off / ride), hub64: for this session only (never saved); unset = ride = the
 # old element exactly. Proven: the old behaviour with no word; each word on its own (the editor lists the parts that are shown, each
-# movable alone); the element's hidden() is the bit; a word applied in a fight with no breach; stored words at login without the app;
+# movable alone); the element's hidden() is the bit; a word applied in a fight with no breach; hub64: a login without the app shows every
+# part (nothing saved); a word that lands just after an open is dropped uncounted (never Copy from / Reset / Smaller);
 # the game re-anchoring the buffs (StatusTrayManager) or the XP bar (its layout update) gets our offset back; alpha only.
 QUOTE4 = '"we need to split out the Buffs controller UI and XP bar" -> "Both"'
 check(int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 63 and TXT["hub"].count(QUOTE4) >= 3,
@@ -1182,7 +1185,7 @@ L8.execute('tick(0.5); advance(0.1)')
 hold(L8)
 h = hubdoc(L8)
 hs = h.get("hs") or {}
-check(hs.get("v") == "hs1" and hs.get("c") is None and hs.get("b") is None and hs.get("x") is None and hs.get("bit") is None
+check(hs.get("v") == "hs2" and hs.get("c") is None and hs.get("b") is None and hs.get("x") is None and hs.get("bit") is None
       and hs.get("cols") == {"C_ON": 24, "C_OFF": 25, "C_RIDE": 26, "B_ON": 27, "B_OFF": 28, "B_RIDE": 29, "X_ON": 30, "X_OFF": 31, "X_RIDE": 32},
       "p. the hub document's hs at login: no word (all three ride the bit), the columns", hs)
 check(shown3(L8) == {"c": True, "b": True, "x": True} and listed3(L8) == {"c": True, "b": True, "x": True},
@@ -1202,8 +1205,9 @@ check(shown3(L8) == {"c": True, "b": False, "x": True} and alpha(L8, "DebuffFram
       "p. B_OFF (28): the buffs (and debuffs) hidden, the controller UI and the XP bar stay", shown3(L8))
 check(listed3(L8) == {"c": True, "b": False, "x": True}, "p. ... the editor lists the controller bar and the XP bar, not the buffs", listed3(L8))
 fixture(L8, "lay_split_nobuffs")
-check(L8.eval('WowCompanionDB.hudsplit.b') == "off" and hubdoc(L8)["hs"].get("b") == "off" and hubdoc(L8)["hs"].get("bh") is True,
-      "p. ... kept in WowCompanionDB.hudsplit, the document says so")
+check(L8.eval('WowCompanion.hub.hs.words.b') == "off" and hubdoc(L8)["hs"].get("b") == "off" and hubdoc(L8)["hs"].get("bh") is True
+      and L8.eval('type(WowCompanionDB) == "table" and WowCompanionDB.hudsplit or nil') is None,
+      "p. ... kept for this session (HS.words, never WowCompanionDB), the document says so")
 hud = [e for e in hubdoc(L8)["els"] if e["id"] == "hud"][0]
 check(hud["hidden"] is False, "p. ... the element still reports the bit (shown): a word never moves the layout", hud)
 cell(L8, 24)                                                            # C_ON
@@ -1214,7 +1218,7 @@ cell(L8, 30)                                                            # X_ON
 check(shown3(L8) == {"c": True, "b": False, "x": True} and listed3(L8) == {"c": True, "b": False, "x": True},
       "p. X_ON (30): the XP bar back while the bit holds", shown3(L8))
 cell(L8, 29)                                                            # B_RIDE: follows the bit (set)
-check(shown3(L8) == {"c": True, "b": False, "x": True} and L8.eval('WowCompanionDB.hudsplit.b') is None, "p. B_RIDE (29): the word gone, the bit decides")
+check(shown3(L8) == {"c": True, "b": False, "x": True} and L8.eval('WowCompanion.hub.hs.words.b') is None, "p. B_RIDE (29): the word gone, the bit decides")
 layout(L8, 0)
 check(shown3(L8) == {"c": True, "b": True, "x": True}, "p. ... bit 0: the buffs back")
 check(listed3(L8) == {"c": True, "b": True, "x": True}, "p. ... all three listed, three pieces")
@@ -1240,6 +1244,24 @@ L8.execute('IN_SECURE = true; BuffFrame:ClearAllPointsBase(); BuffFrame:SetPoint
 L8.execute('tick(0.5); advance(0.01)')
 check(gpts(L8, "BuffFrame") == ("TOPRIGHT", "TOPRIGHT", b1[2] + 35, b1[3] + 1),
       "p. the game re-anchoring the buffs (the tray manager): its new place read as the base, our offset back on", (gpts(L8, "BuffFrame"), b1))
+# hub64 (the review): a part's word sent on a stale "closed" document lands just after an open - columns 24-32 are the editor's Copy from
+# (24-28) / Reset game (29) / Reach (30-31) / Smaller (32) then: inside HS_GRACE_S it is dropped and NOT counted (the editor's own tap
+# comes again after RETRY_MS), so the draft never changes
+L8.execute('advance(3.1)')
+cell(L8, 38)                                                            # the editor opens
+d0 = fresh(L8)
+w0 = L8.eval('WowCompanion.hub.hs.words.b')
+for col in (27, 29, 32):
+    cell(L8, col)
+d = fresh(L8)
+check(d0["open"] and d["open"] and d["cells"] == d0["cells"] and d.get("hsDrop") == 3 and not d.get("dirty") and d.get("gset") == d0.get("gset")
+      and d.get("sel") == d0.get("sel") and L8.eval('WowCompanion.hub.hs.words.b') == w0,
+      "p. a word just after the open (27 / 29 / 32): dropped, uncounted, the draft unchanged", (d0.get("cells"), d.get("cells"), d.get("hsDrop"), d.get("dirty")))
+L8.execute('advance(2.1)')
+cell(L8, 30)                                                            # past the grace: the editor's own Reach off
+d = fresh(L8)
+check(d["cells"] == d0["cells"] + 1 and d.get("hsDrop") == 3, "p. ... past HS_GRACE_S the editor's cell counts again", (d.get("cells"), d0.get("cells")))
+cell(L8, 39)                                                            # closed (nothing saved)
 # a word in a fight: alpha only, no breach
 viol8 = int(L8.eval('#VIOL'))
 L8.execute('advance(3.1); fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
@@ -1250,12 +1272,14 @@ L8.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.1)')
 L8.execute('MainStatusTrackingBarContainer:SetAlpha(1); BuffFrame:SetAlpha(1); WowCompanion.hub.ridersCheck()')
 check(alpha(L8, "MainStatusTrackingBarContainer") == 0 and alpha(L8, "BuffFrame") == 1, "p. the riders' check zeroes the hidden XP bar, leaves the shown buffs")
 check(lua_errors(L8, errs8) == [] and int(L8.eval('#VIOL')) == 0, "p. clean", (lua_errors(L8, errs8)[:3], int(L8.eval('#VIOL'))))
-# stored words at a login, without the app: applied at the login's snapshot
+# hub64: a login (or a /reload) without the app: nothing saved, every part shown - the old element's Off (hidden only while the companion
+# is on this screen); a WowCompanionDB.hudsplit an earlier test build left is never read
 L9, errs9 = world(GAMEPRE + 'WowCompanionDB = WowCompanionDB or {}; WowCompanionDB.hudsplit = { b = "off" }\n')
 L9.execute(GAMEPOST + SPLITPOST)
 L9.execute('pcall(WowCompanion.nbarSet, false)')
-L9.execute('WowCompanion.snapshot("heartbeat"); advance(0.1)')
-check(shown3(L9) == {"c": True, "b": False, "x": True}, "p. a login with a stored word: the buffs hidden without the app", shown3(L9))
+L9.execute('WowCompanion.snapshot("login"); WowCompanion.snapshot("heartbeat"); advance(0.1)')
+check(shown3(L9) == {"c": True, "b": True, "x": True} and L9.eval('WowCompanion.hub.hs.words.b') is None,
+      "p. a login without the app: every part shown, no word (nothing saved)", shown3(L9))
 L10, errs10 = world(GAMEPRE)
 L10.execute(GAMEPOST + SPLITPOST)
 L10.execute('pcall(WowCompanion.nbarSet, false)')

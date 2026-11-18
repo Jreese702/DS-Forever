@@ -79,12 +79,12 @@ object UiElements {
  * parts, each its own tile with its own mode - the controller UI (the element's own id, its saved mode and its Nintendo choice), the
  * game's buffs (with the debuffs and the durability figure Home draws between them) and the XP bar. The five layout bits are all held
  * and the pad has no free row, so the parts SHARE bit 1: the bit carries one mode's rule (the "riding" mode), and each part tells the
- * add-on (Hub.lua hs1, a word per part on the layout editor's row "lay" while that editor is closed) whether it follows the bit ("ride")
+ * add-on (Hub.lua hs2, a word per part on the layout editor's row "lay" while that editor is closed) whether it follows the bit ("ride")
  * or stands on its own ("on" / "off"). Words change only when a choice does, which is only in the Settings room - where the row is.
  *
  *   riding     Dynamic if a part is Dynamic, else Off if a part is Off, else On (Nintendo counts as On: the stock bar's own switch)
  *   a word     the part's mode IS the riding one: "ride"; else On: "on"; else (Off beside a Dynamic part): "off" - hidden while
- *              the add-on holds it, as the damage meter's Off
+ *              the add-on holds it (this session only: a login without the app shows it, the old Off)
  * An unset word is "ride" (the add-on's default), so three parts with one mode - every player before the split, and every player
  * until a tile is tapped (each new part's mode comes from the old element's) - need no word at all, and the bit is exactly the old one.
  */

@@ -63,6 +63,8 @@ object LayoutModel {
     const val GLIDE_PX_S = 520.0
     /** an open / close the add-on did not take is asked again after this */
     const val OPEN_RETRY_MS = 1500L
+    /** split-hud: GameUi's words on "lay" wait this long after the editor last wanted to be open (Live.editorBusy) */
+    const val EDITOR_HOLD_MS = 2000L
     /** the commands that act on the add-on's SELECTED piece (sent only once it is the picked one) */
     val PIECE_CELLS = setOf(C_SMALLER, C_BIGGER, C_RESET)
 
@@ -329,8 +331,10 @@ object LayoutModel {
         /** the Copy from character list, its row */
         var list = false
         var listSel = 0
-        /** the editor should be open in the add-on (the page shows) */
+        /** the editor should be open in the add-on (the page shows); split-hud: wanting it marks [Live.markEditor] (GameUi holds the
+         *  parts' and meters' taps on the same row then, so none lands after the open as an editor command) */
         var wantOpen = false
+            set(v) { field = v; if (v) Live.markEditor() }
         private var lastSpot: Pair<Double, Double>? = null
         private var lastSpotAt = Long.MIN_VALUE / 4
         /** the add-on's spot / cell counters when the last one went (its answer moves them past) */
@@ -476,6 +480,7 @@ object LayoutModel {
          * a fight (the add-on takes no spot then) or before the row is on the pad.
          */
         fun next(now: Long): Send? {
+            if (wantOpen || doc?.open == true) Live.markEditor()
             val d = doc ?: return null
             if (!d.ready) return null
             // a command first (Save before the close that follows it); one for the picked piece only once the add-on has it selected.
@@ -555,8 +560,19 @@ object LayoutModel {
             for (l in listeners.toList()) l()
         }
         fun onChange(l: () -> Unit) { listeners.add(l) }
+        /** split-hud (the review): the wall clock for [editorBusy] (tests set their own) */
+        @Volatile var clock: () -> Long = { System.currentTimeMillis() }
+        @Volatile private var editorAt = Long.MIN_VALUE / 4
+        /** the editor wants to be open, or is sending (its open, its close): marked on every pump */
+        fun markEditor() { editorAt = clock() }
+        /**
+         * the editor is open or on its way, or was within [EDITOR_HOLD_MS] at wall time [now]: columns 24-32 of "lay" are its Copy from /
+         * Reset game / Reach / Smaller then, so GameUi sends no part's (or meter's) word - a word retried just after an open would read
+         * as one of them (the add-on drops one inside HS_GRACE_S of the open as well)
+         */
+        fun editorBusy(now: Long): Boolean = doc?.open == true || now - editorAt < EDITOR_HOLD_MS
         /** the Settings row shows: the add-on set has the editor (a "lay" document came) */
         fun available(): Boolean = doc?.row != null
-        fun clearForTest() { doc = null }
+        fun clearForTest() { doc = null; editorAt = Long.MIN_VALUE / 4; clock = { System.currentTimeMillis() } }
     }
 }
