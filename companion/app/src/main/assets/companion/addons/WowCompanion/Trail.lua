@@ -5143,6 +5143,14 @@ end
 -- puts its alpha back INSIDE the engine - no SetAlpha call to hook - so only the next frame's OnUpdate caught it. Now every filler is
 -- post-hooked too: every method of the tooltip type named Set... (not SetAlpha: that one has its own rule), Show, ClearLines, AddLine,
 -- AddDoubleLine, AppendText - each tooltip is held at 0 the moment it is (re)filled, before the frame draws.
+-- tt5 (#476, a player on 1.0.33: "im also seeing a tooltip for buffs appear in the top right corner when a buff is activated, and can
+-- make it reappear when hovering over it with mouse"; the user approved the fix 2026-11-18 for test build 1489): with the game's
+-- tooltips ON, Hub's riders hide the game's buffs by ALPHA only (BuffFrame / DebuffFrame at 0, top right), so the controller-mode auto
+-- tooltip at every buff gained (BuffFrameTooltip, anchored to the invisible buff) and the hover on the invisible buff (GameTooltip owned by
+-- its button) still drew there - tt4 held them only with tooltips off. Now, WHILE Hub hides the game's buffs (hub66 WC.gameBuffsHidden),
+-- the tooltips OF those buffs are held at 0 whatever the setting: BuffFrameTooltip, the consolidated list, and any tooltip whose owner
+-- lies inside BuffFrame / DebuffFrame / DeadlyDebuffFrame (GetOwner / GetParent reads). The game's buffs shown: nothing changes; a frame
+-- held this way gets its alpha back at its next show. Every other tooltip follows the setting as before. Alpha only, no CVar.
 -- tt4 (the user, 2026-11-16: "tooltips for buffs are still popping up on the top screen even though they are off"). Two holes, read in
 -- this client's own UI source (Blizzard_BuffFrame, Blizzard_AuraContainer, Blizzard_UnitFrame):
 --   1. THE BUFF'S OWN TOOLTIP FRAME. In controller mode the game pops a tooltip up for 4 s at every buff gained or refreshed
@@ -5172,7 +5180,7 @@ end
 --   strata: hovering the consolidation button while the game's buffs are shown). Both are adopted by name / path like the rest, and
 --   an adopted frame is held by its own hooks whatever its type (the type check guards the SHARED table only). stats() also says how
 --   the target frame's shield lies (tm: "anchor" / "rect"), since that container's size is a secret value (secretwrap at its layout).
-WC.tips = { V = "tt4", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
+WC.tips = { V = "tt5", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
                                   "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "NamePlateTooltip", "GameNoHeaderTooltip",
                                   "BuffFrameTooltip", "GameSmallHeaderTooltip", "PartyMemberBuffTooltip" },
             -- review of tt4: tooltips with no global name, by their path from one
@@ -5199,9 +5207,43 @@ do
         if ok and type(n) == "string" and plain(n) then return n end
         return "?"
     end
+    -- tt5 (#476): a tooltip of the game's buffs while Hub hides them (alpha 0): BuffFrameTooltip, the consolidated list, or any tooltip
+    -- whose owner lies inside the buff frames (reads only: GetOwner / GetParent, a few steps up)
+    T.BUFF_ROOTS = { "BuffFrame", "DebuffFrame", "DeadlyDebuffFrame" }
+    function T.buffTip(fr)
+        if not (type(WC.gameBuffsHidden) == "function" and WC.gameBuffsHidden() == true) then return false end
+        if rawequal(fr, _G.BuffFrameTooltip) then return true end
+        local bf = _G.BuffFrame
+        local cb = type(bf) == "table" and type(bf.ConsolidatedBuffs) == "table" and bf.ConsolidatedBuffs.Tooltip or nil
+        if cb ~= nil and rawequal(fr, cb) then return true end
+        if type(fr.GetOwner) ~= "function" then return false end
+        local okO, o = pcall(fr.GetOwner, fr)
+        for _ = 1, 8 do
+            if not okO or type(o) ~= "table" then return false end
+            for _, n in ipairs(T.BUFF_ROOTS) do if _G[n] ~= nil and rawequal(o, _G[n]) then return true end end
+            if type(o.GetParent) ~= "function" then return false end
+            okO, o = pcall(o.GetParent, o)
+        end
+        return false
+    end
+    -- held now: the tooltips setting, or (tt5) a tooltip of the hidden game buffs
+    function T.holds(fr)
+        if T.on then return true end
+        local ok, r = pcall(T.buffTip, fr)
+        return ok and r == true
+    end
     -- the hold itself: alpha 0, nothing else. `why` counts a catch (the tooltip was drawn above 0 when the hold came)
     local function zero(fr, why)
-        if not T.on or T.busy then return end
+        if T.busy then return end
+        if not T.holds(fr) then
+            -- tt5: a frame held for the hidden buffs gets its alpha back at its next show once they are shown (tooltips on)
+            if T.buffHeld and T.buffHeld[fr] and not T.on then
+                T.buffHeld[fr] = nil
+                T.busy = true; pcall(fr.SetAlpha, fr, 1); T.busy = false
+            end
+            return
+        end
+        if not T.on then T.buffHeld = T.buffHeld or setmetatable({}, { __mode = "k" }); T.buffHeld[fr] = true end
         if why then
             local ok, a = pcall(fr.GetAlpha, fr)
             if ok and type(a) == "number" and plain(a) and a > 0 then
@@ -5215,7 +5257,7 @@ do
     end
     -- tt2: a GameTooltip-type frame, at a filler or at any SetAlpha above 0 (a guard: our own SetAlpha(0) comes back through the hook)
     local function hold(fr, a, why)
-        if not T.on or T.busy then return end
+        if T.busy or not T.holds(fr) then return end
         if type(a) == "number" and plain(a) and a <= 0 then return end   -- (a secret alpha is held: never compared)
         if not T.adopted[fr] then
             -- only a TOOLTIP (the hooked methods are its type's; a shared table must never dim any other frame). An adopted frame

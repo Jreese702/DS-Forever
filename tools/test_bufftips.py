@@ -97,6 +97,7 @@ local Frame = {}
 function Frame:GetObjectType() return self.kind end
 function Frame:IsForbidden() return self.forbidden == true end
 function Frame:GetName() return self.name end
+function Frame:GetParent() return self.parent end
 function Frame:IsShown() return self.shown == true end
 function Frame:IsVisible()
     local o = self
@@ -262,6 +263,8 @@ function BUILD()
     CBTN.scripts.OnEnter = function(self) CBT:Show() end
     CBTN.scripts.OnLeave = function(self) CBT:Hide() end
     WowCompanion = { isPlain = function(v) return not issecretvalue(v) end }
+    -- tt5: Hub's word on its riders (hub66 WC.gameBuffsHidden): the game's buffs hidden by alpha (the model: BuffFrame's alpha 0)
+    WowCompanion.gameBuffsHidden = function() return BuffFrame.alpha == 0 end
     WowCompanionDB = {}
 end
 
@@ -374,11 +377,18 @@ def scenario(code, mode, sealed, fails, label):
     L.execute('EVENT("PLAYER_LOGIN"); EVENT("PLAYER_ENTERING_WORLD")')
     late = mode == "late"
 
-    # --- tooltips ON (the game's): the model reproduces all three popups
+    # --- tooltips ON (the game's). tt5 (#476, a player on 1.0.33: "im also seeing a tooltip for buffs appear in the top right corner
+    # when a buff is activated, and can make it reappear when hovering over it with mouse"): while Hub hides the game's buffs (alpha 0)
+    # their tooltips are held too - the auto tooltip at a buff gained and the hover on the invisible buff - whatever the tooltip setting
     at(-100, -100); L.execute("RESET(); GAIN()"); G.RUN(5)
-    chk("tooltips on: a buff gained pops BuffFrameTooltip up for its 4 s (%d frames)" % drawn("BuffFrameTooltip"), drawn("BuffFrameTooltip") >= 100)
+    n, k = drawn("BuffFrameTooltip"), fills("BuffFrameTooltip")
+    chk("tooltips on, buffs hidden: a buff gained - BuffFrameTooltip held at 0 (%d frames drawn, %d fills)" % (n, k), n <= (k if late else 0))
     at(970, 535); L.execute("RESET()"); G.RUN(1)
-    chk("tooltips on: hovering the invisible buff draws GameTooltip (%d frames)" % drawn("GameTooltip"), drawn("GameTooltip") >= 25)
+    n, k = drawn("GameTooltip"), fills("GameTooltip")
+    chk("tooltips on, buffs hidden: hovering the invisible buff - GameTooltip held at 0 (%d frames drawn, %d fills)" % (n, k), n <= (k if late else 0))
+    at(940, 535); L.execute("RESET()"); G.RUN(1)
+    chk("tooltips on, buffs hidden: the invisible consolidation button's list held at 0 (%d frames)" % drawn("ConsolidatedBuffs.Tooltip"),
+        drawn("ConsolidatedBuffs.Tooltip") == 0)
     at(720, 270); L.execute("RESET()"); G.RUN(1)
     chk("tooltips on: hovering the invisible target's buff draws AuraButtonTooltip (%d frames)" % drawn("AuraButtonTooltip"),
         drawn("AuraButtonTooltip") >= 25)
@@ -387,7 +397,14 @@ def scenario(code, mode, sealed, fails, label):
     chk("tooltips on: hovering the invisible pet frame draws PartyMemberBuffTooltip (%d frames)" % drawn("PartyMemberBuffTooltip"),
         drawn("PartyMemberBuffTooltip") >= 25)
     at(-100, -100); G.RUN(0.2)
+    # the game's buffs SHOWN (Hub's tile On): the game's own tooltips as the game draws them
     L.execute("BuffFrame.alpha = 1")
+    at(-100, -100); L.execute("RESET(); GAIN()"); G.RUN(5)
+    chk("tooltips on, buffs shown: a buff gained pops BuffFrameTooltip up for its 4 s (%d frames)" % drawn("BuffFrameTooltip"),
+        drawn("BuffFrameTooltip") >= 100)
+    at(970, 535); L.execute("RESET()"); G.RUN(1)
+    chk("tooltips on, buffs shown: hovering the buff draws GameTooltip (%d frames)" % drawn("GameTooltip"), drawn("GameTooltip") >= 25)
+    at(-100, -100); G.RUN(0.2)
     at(940, 535); L.execute("RESET()"); G.RUN(1)
     chk("tooltips on: the game's buffs shown, the consolidation button's list draws (%d frames)" % drawn("ConsolidatedBuffs.Tooltip"),
         drawn("ConsolidatedBuffs.Tooltip") >= 25)
@@ -456,8 +473,14 @@ def scenario(code, mode, sealed, fails, label):
 
     # --- tooltips ON again: alpha and hover back
     T.set(False)
+    at(-100, -100); L.execute("RESET(); GAIN()"); G.RUN(5)
+    n, k = drawn("BuffFrameTooltip"), fills("BuffFrameTooltip")
+    chk("on again, buffs hidden: the invisible buff's auto tooltip still held (tt5: %d frames drawn, %d fills)" % (n, k), n <= (k if late else 0))
+    L.execute("BuffFrame.alpha = 1")
     at(-100, -100); L.execute("RESET(); GAIN()"); G.RUN(1)
-    chk("on again: the buff's tooltip draws again (%d frames)" % drawn("BuffFrameTooltip"), drawn("BuffFrameTooltip") >= 25)
+    chk("on again, buffs shown: the buff's tooltip draws again (%d frames)" % drawn("BuffFrameTooltip"), drawn("BuffFrameTooltip") >= 25)
+    G.RUN(5)
+    L.execute("BuffFrame.alpha = 0")
     at(720, 270); L.execute("RESET(); ENTERS = 0"); G.RUN(1)
     chk("on again: the target's buff has its hover and tooltip back (%d frames)" % drawn("AuraButtonTooltip"), drawn("AuraButtonTooltip") >= 25)
     at(-100, -100); G.RUN(0.2)
@@ -477,7 +500,7 @@ def scenario(code, mode, sealed, fails, label):
     errs = [G.ERRS[i] for i in range(1, len(G.ERRS) + 1)]
     chk("no forbidden object touched, no error (%s)" % (errs[:3] or "none"), not errs)
     allowed = {"SetAlpha", "GetAlpha", "IsShown", "IsVisible", "GetObjectType", "IsForbidden", "GetName", "HookScript", "GetRect",
-               "GetEffectiveScale"}
+               "GetEffectiveScale", "GetOwner", "GetParent"}
     calls = dict(G.ADDON_CALLS.items())
     bad = sorted(k for k in calls if k not in allowed)
     chk("on the game's frames only reads, SetAlpha and HookScript (%s)" % (bad or sorted(calls)), not bad)
