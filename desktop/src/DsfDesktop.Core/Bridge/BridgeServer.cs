@@ -57,6 +57,11 @@ namespace DsfDesktop.Bridge
         /// game): the PC's WoW closes ([quitAsked] = the game's own Exit Game was tapped over the stream first) and the PC is put back;
         /// {"wow": closed | none | left, "put_back": bool, "why"}. Answered "session_ending" at once, then "session_ended" with this</summary>
         Dictionary<string, object> EndSession(bool quitAsked);
+        /// <summary>the Thor's "addons_want" (its managed add-ons' pins and wants, its imported add-ons' file lists, which folders are on):
+        /// Desktop installs / updates the same on the PC in the background (PcAddons); [session] = where its "addon_file_get" requests go</summary>
+        void AddonsWant(Dictionary<string, object> m, BridgeSession session);
+        /// <summary>the Thor's "addon_file" / "addon_file_err" answer to an "addon_file_get"</summary>
+        void AddonFile(Dictionary<string, object> m);
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -454,6 +459,9 @@ namespace DsfDesktop.Bridge
                             var sa = s;
                             Task.Run(() => sa.Enqueue(With("addons", host.AddonsInstall())));
                             break;
+                        case "addons_want": host.AddonsWant(m, s); break;
+                        case "addon_file":
+                        case "addon_file_err": host.AddonFile(m); break;
                         case "stream_mode": host.StreamMode(Num(m, "w"), Num(m, "h"), Num(m, "fps")); break;
                         case "host_check":
                             var sh = s;

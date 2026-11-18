@@ -87,6 +87,9 @@ namespace DsfDesktop.Tests
             EndAsked = quitAsked; EndSessions++;
             return new Dictionary<string, object> { ["wow"] = "closed", ["put_back"] = true, ["why"] = "" };
         }
+        public volatile int AddonsWants, AddonFiles;
+        public void AddonsWant(Dictionary<string, object> m, BridgeSession session) { AddonsWants++; }
+        public void AddonFile(Dictionary<string, object> m) { AddonFiles++; }
         public void Dispose() => T.Dispose();
     }
 

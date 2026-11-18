@@ -352,9 +352,29 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 streamMode = { playable().let { Triple(it.width, it.height, it.fps) } },
                 // settings follow (2026-11-18): our kept tables to and from the PC, only down a pinned wss connection (as the login)
                 svDir = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings") else null }).also { bridge = it }
+                    android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings") else null },
+                // the Thor's add-ons for the PC (the user, 2026-11-18: "My desktop seems to be missing the required addons"): what DS Forever
+                // manages (pins + wants), the imported ones (their files: only down a pinned wss connection) and their on / off
+                addonsWant = { pcAddonsWant(h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) },
+                importedFiles = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) pcImported() else null to emptySet() }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
+
+    /** "addons_want" for Desktop; the imported add-ons only with [pinned] (their files cross only a pinned wss connection) */
+    private fun pcAddonsWant(pinned: Boolean): org.json.JSONObject? = runCatching {
+        com.jrees.wowcompanion.ThirdPartyAddons.init(activity)
+        val root = com.jrees.wowcompanion.LauncherHooks.flavorRoot()
+        val state = java.io.File(activity.filesDir, "dsforever/addons")
+        val acct = runCatching { com.jrees.wowcompanion.SvSync.accountFile(java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings")).takeIf { it.isFile }?.readText()?.trim() }.getOrNull().orEmpty()
+        com.jrees.wowcompanion.PcAddonsWant.build(root, state, acct,
+            importedFolders = if (pinned) com.jrees.wowcompanion.ImportedAddons.list().map { it.folder } else emptyList())
+    }.onFailure { Log.w(TAG, "pc add-ons: ${it.javaClass.simpleName}") }.getOrNull()
+
+    private fun pcImported(): Pair<java.io.File?, Set<String>> = runCatching {
+        val root = com.jrees.wowcompanion.LauncherHooks.flavorRoot()
+        root?.let { java.io.File(it, "Interface/AddOns") } to com.jrees.wowcompanion.ImportedAddons.list().map { it.folder }.toSet()
+    }.getOrDefault(null to emptySet())
 
     /**
      * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"), as Settings > Game account says:

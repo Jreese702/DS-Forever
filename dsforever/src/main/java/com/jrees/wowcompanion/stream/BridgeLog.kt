@@ -55,6 +55,10 @@ class BridgeLog(
     wall: () -> Long = { com.jrees.wowcompanion.GameInput.wallYearMs() },
     /** feat/pause-power: Desktop's answers to [endSession] */
     private val onSessionEnd: (BridgeMsg.SessionEnd) -> Unit = {},
+    /** the Thor's add-ons for the PC (2026-11-18): the "addons_want" to send at each welcome (built off this thread; null = none) */
+    private val addonsWant: (() -> JSONObject?)? = null,
+    /** the game's AddOns folder and the imported add-ons' names, for Desktop's "addon_file_get" (null = no game folder) */
+    private val importedFiles: () -> Pair<java.io.File?, Set<String>> = { null to emptySet() },
 ) : LogSource {
     /** issue #414: the PC's stamps onto the Thor's clock (a PC in another time zone was never "current") */
     val clock = PcClock(wall)
@@ -157,6 +161,11 @@ class BridgeLog(
                     if (!m.wowRunning) c.send(BridgeProtocol.addonsInstall())
                     // settings follow (2026-11-18): our tables to the PC BEFORE its WoW starts (never while it runs: it reads them at login)
                     if (!m.wowRunning) svDir()?.let { d -> runCatching { svSent = null; c.send(com.jrees.wowcompanion.SvSync.readRequest(d).toString()) } }
+                    // the Thor's add-ons for the PC (the user, 2026-11-18): every connect, WoW running or not (Desktop moves nothing under a
+                    // running WoW: it does it at its next start). Built on its own thread: the imported add-ons' files are hashed
+                    addonsWant?.let { build -> Thread({
+                        runCatching { build()?.let { c.send(it.toString()) } }.onFailure { svLog("pc add-ons: list not sent (${it.javaClass.simpleName})") }
+                    }, "addons-want").apply { isDaemon = true; start() } }
                     c.send(BridgeProtocol.focus())
                     streamMode()?.let { (w, h, fps) -> c.send(BridgeProtocol.streamMode(w, h, fps)) }
                 }
@@ -195,6 +204,14 @@ class BridgeLog(
                     svSent = null
                 }
                 is BridgeMsg.SessionEnd -> onSessionEnd(m)
+                is BridgeMsg.AddonsPc -> {
+                    com.jrees.wowcompanion.PcAddonsWant.statusLine(m.o)?.let { onStatus(it) }
+                    if (m.o.optString("state") == "done") svLog("pc add-ons: ${m.o.optString("line").take(300)}")
+                }
+                is BridgeMsg.AddonFileGet -> runCatching {
+                    val (addons, names) = importedFiles()
+                    c.send(com.jrees.wowcompanion.PcAddonsWant.serve(m.o, addons, names).toString())
+                }
                 is BridgeMsg.Unpaired -> { onAuthLost("revoked"); return End.AUTH_LOST }
                 // the user's pick 2026-11-17 ("Ask the Thor again"): WoW closed itself on the PC and starts again; the saved login once
                 // more, only down this connection and only while the auto sign-in is on (savedLogin is null otherwise)
