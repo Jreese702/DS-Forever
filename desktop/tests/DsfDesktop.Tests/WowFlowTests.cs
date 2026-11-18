@@ -101,8 +101,10 @@ namespace DsfDesktop.Tests
             /// <summary>where a freshly started client goes</summary>
             public WowScreen FreshGoesTo = WowScreen.Starting;
             public string Crash;
-            /// <summary>LoginLog.RegionRefusals</summary>
+            /// <summary>LoginLog.ConnectFailures</summary>
             public int Refusals;
+            /// <summary>WowSupervisor's loginAfterFailure: the client stayed at its login after the 309, signed in by login.txt</summary>
+            public bool LoginAfter;
 
             public WowSupervisor Make(Func<DateTime> now = null) => new WowSupervisor(
                 screen: () => Screen, bnet: () => Bnet,
@@ -112,7 +114,8 @@ namespace DsfDesktop.Tests
                 startPending: () => Pending,
                 closeWow: () => { Did.Add("close"); Screen = WowScreen.None; return null; },
                 focusWow: () => { Did.Add("focus"); return null; },
-                now: now, run: a => a(), crash: () => Crash, regionRefusals: () => Refusals);
+                now: now, run: a => a(), crash: () => Crash, connectFailures: () => Refusals,
+                loginAfterFailure: () => LoginAfter);
         }
 
         /// <summary>
@@ -160,6 +163,53 @@ namespace DsfDesktop.Tests
             // a connect with no refusal waiting starts the count over
             pc2.Screen = WowScreen.Login; s2.Connect();
             A.Eq(0, s2.RegionTries);
+        }
+
+        /// <summary>
+        /// reviewers 2026-11-17 (0.2.33 draft): the user's 22:58 run, a 309 with Battle.net signed in, and WoW closes itself after the
+        /// supervisor had put it in front and stopped: the new connect starts it again (the draft read that 309 as "realm unreachable"
+        /// and nothing started WoW: "Starting WoW on your PC" for ever)
+        /// </summary>
+        [Test]
+        public static void A309ThatClosedWowAfterTheFocusStartsItAgain()
+        {
+            var pc = new Pc { Screen = WowScreen.Login };
+            var s = pc.Make();
+            s.Connect();
+            A.Eq("focus", string.Join(",", pc.Did)); A.False(s.Active);
+            pc.Refusals = 1; pc.Screen = WowScreen.None;
+            A.True(s.RegionRetryPending, "every 309 counts: AppController.WowTick wants WoW again");
+            s.Connect();
+            A.Eq("focus,start", string.Join(",", pc.Did), "started again at its region screen");
+            A.Eq(1, s.RegionTries); A.False(s.RegionRetryPending);
+        }
+
+        /// <summary>
+        /// reviewers 2026-11-17: the user's 22:57 run, a 309 and WoW STAYS at its login screen, its login.txt already read and deleted:
+        /// with Battle.net signed out its sign-in comes first (on the Thor), then the client is restarted so the new run asks the Thor
+        /// for the login again; never while WoW sits at the region screen or for a client the player signed in by hand
+        /// </summary>
+        [Test]
+        public static void A309AtTheLoginRestartsWowForTheThorsLogin()
+        {
+            A.Eq(WowAction.RestartWow, WowFlow.Decide(BnetState.SignedIn, WowScreen.Login, 1, false, regionRetry: true, loginAfterFailure: true));
+            A.Eq(WowAction.Focus, WowFlow.Decide(BnetState.SignedIn, WowScreen.Login, 1, false, regionRetry: true, loginAfterFailure: false),
+                "the region screen (or a hand sign-in): the player picks there");
+            A.Eq(WowAction.Focus, WowFlow.Decide(BnetState.SignedIn, WowScreen.Login, 1, false, regionRetry: false, loginAfterFailure: true),
+                "the region starts used up: no restart loop");
+            A.Eq(WowAction.ShowBattleNetSignIn, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.Login, 1, false, true, true),
+                "Battle.net signed out: its sign-in first");
+            var pc = new Pc { Screen = WowScreen.Login, Bnet = BnetState.SignInNeeded };
+            var s = pc.Make();
+            pc.Refusals = 1; pc.LoginAfter = true;
+            s.Connect();
+            A.Eq("signin", string.Join(",", pc.Did)); A.True(s.Active, "waits for the Battle.net sign-in");
+            pc.Bnet = BnetState.SignedIn; s.Step();
+            A.Eq("signin,close,start", string.Join(",", pc.Did), "signed in: the client restarted");
+            A.Eq(1, s.Tries, "the one retry is not used"); A.Eq(1, s.RegionTries);
+            A.False(s.RegionRetryPending, "answered");
+            pc.Screen = WowScreen.Login; pc.LoginAfter = true; s.Step();
+            A.Eq("signin,close,start,focus", string.Join(",", pc.Did), "no new 309: never restarted again");
         }
 
         [Test]
@@ -560,80 +610,78 @@ namespace DsfDesktop.Tests
         const string Fatal309 = "11/17 22:57:11.785  [N][Connection] Fatal login error received result=\" (309)\"";
 
         /// <summary>
-        /// the user's PC 2026-11-17 22:57 and 22:58 ("saying that its a region error when its not"): one region on offer, district 2 asked,
-        /// back to the login, 309. Nothing to refuse: the realm was out of reach, never "Region refused"
+        /// the user's PC 2026-11-17 22:57 and 22:58 ("saying that its a region error when its not"): the region screen, district 2
+        /// asked, back to the login, 309. Its "subRegionCount" (1) is Battle.net's sub-region count, not the region screen's list, and
+        /// nothing else in the log tells a refused district from an unreachable realm (reviewers 2026-11-17): every 309 is one neutral
+        /// ConnectFailed, counted for the region start, whatever the count says
         /// </summary>
         [Test]
-        public static void A309WithOneRegionIsNoRegionRefusal()
+        public static void Every309IsOneNeutralConnectFailure()
         {
             var l = Log(LoginScreen, Glue0, OneRegion, LoginScreen, PickScreen, District, BackToLogin, Fatal309);
             A.Eq("309", l.Error);
-            A.False(l.RegionRefused, "one region: nothing was refused");
-            A.True(l.RealmUnreachable, "the realm was out of reach");
-            A.Eq(0, l.RegionRefusals, "no region start for it");
+            A.True(l.ConnectFailed);
+            A.Eq(1, l.ConnectFailures, "counted: the client starts again at its region screen");
+            A.True(l.BackAtLoginAfterFailure, "it stayed at its login (22:57)");
             A.Eq(WowScreen.Login, WowFlow.Classify(true, 200, 0, 0, l, null));
-            l.Line(Glue0);
-            A.False(l.RealmUnreachable, "a new sign-in starts clean");
-            A.False(Log(LoginScreen, Fatal309).RegionRefused, "a 309 with no district asked is no refusal either");
-            A.True(Log(LoginScreen, Fatal309).RealmUnreachable);
-            var c = Log(LoginScreen, Glue0, OneRegion, PickScreen, District, BackToLogin, Fatal309);
-            c.Reset();
-            A.False(c.RegionRefused, "nothing carried into the next client");
-            A.False(c.RealmUnreachable);
-            A.Eq("WoW can't reach its servers", WowFlow.RealmUnreachableText);
+            var two = Log(LoginScreen, Glue0, TwoRegions, PickScreen, District, Fatal309);
+            A.True(two.ConnectFailed, "a count of 2 reads the same: the count is no region list");
+            A.False(two.BackAtLoginAfterFailure, "still at the region screen: the player picks there");
+            A.True(Log(LoginScreen, Fatal309).ConnectFailed, "a 309 with no region pick in the log (block-buffered) counts too");
+            A.Eq("WoW can't reach its servers", WowFlow.ConnectFailedText);
+            A.False(WowFlow.ConnectFailedText.Contains("egion"), "never 'Region refused' (the user 2026-11-17)");
         }
 
         /// <summary>
-        /// a REAL refusal (the user's pick 2026-11-17: the region "should be changable"): more than one region on offer, a district asked,
-        /// 309. It is said to the Thor while WoW's own region screen waits; it stays through the screen switching back to the login or the
-        /// region pick, and goes once a character select shows or a new client runs much later
+        /// the user's pick 2026-11-17 (the region "should be changable"): a 309 is said to the Thor while WoW's own screens wait; it
+        /// stays through the screen switching back to the login or the region pick, and goes once a character select shows or a new
+        /// client runs much later
         /// </summary>
         [Test]
-        public static void ARefusedRegionIsSaidUntilTheSignInGoesOn()
+        public static void A309IsSaidUntilTheSignInGoesOn()
         {
-            var l = Log(LoginScreen, Glue0, TwoRegions, PickScreen);
-            A.False(l.RegionRefused, "the pick itself is not a refusal");
+            var l = Log(LoginScreen, Glue0, OneRegion, PickScreen);
+            A.False(l.ConnectFailed, "the pick itself is no failure");
             l.Line(District); l.Line(BackToLogin); l.Line(Fatal309);
-            A.True(l.RegionRefused, "two regions, one asked for, 309");
-            A.False(l.RealmUnreachable);
-            A.Eq(1, l.RegionRefusals, "counted, though the screen was already back at the login when the 309 came");
+            A.True(l.ConnectFailed);
+            A.Eq(1, l.ConnectFailures, "counted, though the screen was already back at the login when the 309 came");
             l.Line(PickScreen);
-            A.True(l.RegionRefused, "back at the region screen: still said");
+            A.True(l.ConnectFailed, "back at the region screen: still said");
+            A.False(l.BackAtLoginAfterFailure);
             A.Eq(null, l.Error, "the error itself is cleared by the screen switch as before");
             l.Line(LoginScreen);
-            A.True(l.RegionRefused, "the login screen: still said");
+            A.True(l.ConnectFailed, "the login screen: still said");
+            A.True(l.BackAtLoginAfterFailure);
             l.Line(Fatal308);
-            A.False(l.RegionRefused, "another refusal is not the region's");
+            A.False(l.ConnectFailed, "another error is no 309");
             l.Line(Fatal309);
             l.Line(CharSelect);
-            A.False(l.RegionRefused, "character select: the region was taken");
+            A.False(l.ConnectFailed, "character select: a region was taken");
             // WoW closes itself after a 309 and Desktop starts it once more: the restarted client's screens still say it
             var now = new DateTime(2026, 11, 17, 14, 16, 8, DateTimeKind.Utc);
             l.Now = () => now;
             l.Line(Fatal309);
-            A.True(l.RegionRefused);
+            A.True(l.ConnectFailed);
             now = now.AddSeconds(20);
             l.Reset();
-            A.True(l.RegionRefused, "the restarted client (its log emptied) still shows the refusal");
+            A.True(l.ConnectFailed, "the restarted client (its log emptied) still shows it");
             A.Eq(null, l.Error, "the rest of the run is forgotten");
             l.Line(LoginScreen);
             l.Line(PickScreen);
-            A.True(l.RegionRefused, "the restarted client's region screen: said");
+            A.True(l.ConnectFailed, "the restarted client's region screen: said");
             l.Line(CharSelect);
-            A.False(l.RegionRefused, "another region taken: gone");
-            l.Line(Glue0); l.Line(TwoRegions); l.Line(District); l.Line(Fatal309);
-            A.True(l.RegionRefused);
+            A.False(l.ConnectFailed, "a region taken: gone");
+            l.Line(Glue0); l.Line(District); l.Line(Fatal309);
+            A.True(l.ConnectFailed);
             now = now.AddSeconds(LoginLog.RegionCarryS);
             l.Reset();
-            A.False(l.RegionRefused, "a client started much later is a new try");
-            A.Eq("Region refused: pick another region", WowFlow.RegionRefusedText);
+            A.False(l.ConnectFailed, "a client started much later is a new try");
             var c = new LoginLog();
             c.Line(LoginScreen); A.True(c.AtSignInScreens);
-            c.Line(Fatal309); A.Eq(0, c.RegionRefusals, "a 309 with no region pick is no refusal");
-            c.Line(Glue0); c.Line(TwoRegions); c.Line(PickScreen); A.True(c.AtSignInScreens, "the region screen is still the sign-in");
-            c.Line(District); c.Line(Fatal309); A.Eq(1, c.RegionRefusals);
-            c.Line(Fatal308); A.Eq(1, c.RegionRefusals, "another error is no region refusal");
-            c.Reset(); A.Eq(1, c.RegionRefusals, "a new client run keeps the count");
+            c.Line(Glue0); c.Line(PickScreen); A.True(c.AtSignInScreens, "the region screen is still the sign-in");
+            c.Line(District); c.Line(Fatal309); A.Eq(1, c.ConnectFailures);
+            c.Line(Fatal308); A.Eq(1, c.ConnectFailures, "another error is no 309");
+            c.Reset(); A.Eq(1, c.ConnectFailures, "a new client run keeps the count");
             c.Line(CharSelect); A.False(c.AtSignInScreens);
         }
 

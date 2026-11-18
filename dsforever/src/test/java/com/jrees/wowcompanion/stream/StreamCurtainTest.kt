@@ -166,33 +166,25 @@ class StreamCurtainTest {
         assertEquals(BridgeMsg.LoginAgain, BridgeProtocol.parse("""{"t":"login_again"}"""))
     }
 
-    /** the user's pick 2026-11-17 (region): WoW's own region screen shows, with one short line, while the refused region waits */
-    @Test fun aRefusedRegionIsSaidOverWowsOwnScreen() {
+    /** a 309 (the user's PC 2026-11-17 22:57, "saying that its a region error when its not"): one neutral line over WoW's own screen,
+     *  "WoW can't reach its servers", whether Desktop 0.2.33 says "connect" "failed" or 0.2.31 / 0.2.32 said "region" "refused";
+     *  never "Region refused" */
+    @Test fun a309SaysOneNeutralLine() {
         val o = JSONObject().put("t", "wow").put("state", "running").put("screen", "login").put("focused", true).put("bnet", "signed_in")
-            .put("login_error", "309").put("region", "refused")
+            .put("login_error", "309").put("connect", "failed")
         val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
-        assertTrue(pc.regionRefused)
-        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, pc))
-        assertEquals("Region refused: pick another region", StreamCurtain.streamLine(pc))
-        assertEquals("the stream not up yet: still connecting", "Connecting to your PC", curtain(StreamCurtain.decide(false, true, pc)).line)
-        assertEquals("", StreamCurtain.streamLine(pc.copy(regionRefused = false)))
-        assertEquals("a region taken: no line", "", StreamCurtain.streamLine(pc.copy(screen = "charselect")))
-        assertEquals("WoW closed: no line", "", StreamCurtain.streamLine(pc.copy(screen = "none")))
-        assertTrue(!PcWow.of(JSONObject().put("state", "running"))!!.regionRefused)
-    }
-
-    /** the user's PC 2026-11-17 22:57 ("saying that its a region error when its not"): Desktop 0.2.33 says a 309 with one region on
-     *  offer as realm="unreachable", never region="refused"; the Thor says the servers, not the region */
-    @Test fun aRealmOutOfReachIsNoRegionRefusal() {
-        val o = JSONObject().put("t", "wow").put("state", "running").put("screen", "login").put("focused", true).put("bnet", "signed_in")
-            .put("login_error", "309").put("realm", "unreachable")
-        val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
-        assertTrue(pc.realmUnreachable); assertTrue(!pc.regionRefused)
+        assertTrue(pc.connectFailed)
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, pc))
         assertEquals("WoW can't reach its servers", StreamCurtain.streamLine(pc))
-        assertTrue(StreamCurtain.streamLine(pc) != StreamCurtain.REGION_REFUSED)
-        assertEquals("a region refusal still wins", StreamCurtain.REGION_REFUSED, StreamCurtain.streamLine(pc.copy(regionRefused = true)))
-        assertEquals("signed in: no line", "", StreamCurtain.streamLine(pc.copy(screen = "charselect")))
+        assertTrue(!StreamCurtain.streamLine(pc).contains("Region"))
+        assertEquals("the stream not up yet: still connecting", "Connecting to your PC", curtain(StreamCurtain.decide(false, true, pc)).line)
+        assertEquals("", StreamCurtain.streamLine(pc.copy(connectFailed = false)))
+        assertEquals("a region taken: no line", "", StreamCurtain.streamLine(pc.copy(screen = "charselect")))
+        assertEquals("WoW closed: no line", "", StreamCurtain.streamLine(pc.copy(screen = "none")))
+        assertTrue(!PcWow.of(JSONObject().put("state", "running"))!!.connectFailed)
+        val old = JSONObject().put("t", "wow").put("state", "running").put("screen", "login").put("login_error", "309").put("region", "refused")
+        val oldPc = (BridgeProtocol.parse(old.toString()) as BridgeMsg.Wow).pc!!
+        assertEquals("an older Desktop's region word reads the same, neutrally", StreamCurtain.CONNECT_FAILED, StreamCurtain.streamLine(oldPc))
     }
 
     /** the Battle.net sign-in on the Thor, back with Desktop 0.2.33 (0.2.8 to 0.2.32 always said bnet "unknown"): a signed-out PC

@@ -27,7 +27,6 @@ namespace DsfDesktop.Wow
     {
         static readonly Regex Screen = new Regex("\\[Lua\\] Switching to screen=\"([^\"]+)\"", RegexOptions.Compiled);
         static readonly Regex Fatal = new Regex("Fatal login error received result=\"([^\"]*)\"", RegexOptions.Compiled);
-        static readonly Regex SubRegionCount = new Regex("subRegionCount=\"(\\d+)\"", RegexOptions.Compiled);
 
         /// <summary>the last screen the log named, null = none yet in this client run</summary>
         public string LastScreen { get; private set; }
@@ -43,61 +42,56 @@ namespace DsfDesktop.Wow
         /// </summary>
         public const string RegionScreen = "SuperDistrictUI";
 
-        /// <summary>the game's "Fatal login error (309)": it could not connect to the realm of the district it asked for. A region
-        /// refusal ONLY when the player had regions to pick from (<see cref="RegionRefused"/>); with one region on offer (the user's PC
-        /// 2026-11-17 22:57 and 22:58: subRegionCount="1", district 2 asked, then 309) it is <see cref="RealmUnreachable"/></summary>
-        public const string RegionRefusedCode = "309";
-
-        /// <summary>the regions the game's sub-region list offered in this sign-in (its "subRegionCount"), null = not said yet</summary>
-        public int? SubRegions { get; private set; }
-
-        /// <summary>the game asked to connect to a district's realm ("super district realm connection requested") in this sign-in</summary>
-        public bool DistrictAsked { get; private set; }
+        /// <summary>
+        /// The game's "Fatal login error (309)" (the user's PC 2026-11-17 22:57 and 22:58: Battle.net's logon OK, the region screen,
+        /// superDistrictID="2" asked, then 309). WHAT THE LOG DOES NOT SAY: whether the district was refused or its realm was out of
+        /// reach. Its "subRegionCount" is Battle.net's sub-region count (1 for almost every account), not the region screen's list
+        /// (the super districts, which log no count), so nothing in the log tells the two apart. Desktop therefore says ONE neutral
+        /// thing to the Thor (login_error "309", "connect" "failed": "WoW can't reach its servers") and never "Region refused".
+        /// </summary>
+        public const string ConnectFailedCode = "309";
 
         /// <summary>
-        /// A 309 that is NOT a refused region: the game could not reach its realm (the user, 2026-11-17: "its failing to find servers
-        /// and saying that its a region error when its not"). Until the next sign-in starts or the client gets past its login. The Thor
-        /// hears realm="unreachable" plus login_error, never region="refused".
+        /// A 309 (<see cref="ConnectFailedCode"/>) and no character select since. WoW may close itself after it (22:58) or stay at its
+        /// login screen (22:57); either way the supervisor starts the client again (AppController.WowTick, WowFlow.Decide's
+        /// [regionRetry]) so the player picks a region again on WoW's own screen (the user's pick 2026-11-17: "it shouldnt auto pick it
+        /// should be changable"): Desktop never picks or saves a region. Unlike <see cref="Error"/>, a screen switch back to the login
+        /// or the region screen keeps it.
         /// </summary>
-        public bool RealmUnreachable { get; private set; }
+        public bool ConnectFailed { get; private set; }
+
+        /// <summary>when <see cref="ConnectFailed"/> last turned on (<see cref="Now"/>'s clock), null = never in this Desktop run</summary>
+        public DateTime? ConnectFailedAt { get; private set; }
 
         /// <summary>
-        /// The game refused the region picked on its own region screen (<see cref="RegionScreen"/>; "Fatal login error (309)") and no
-        /// character select since. The player picks again on WoW's screen (the user's pick 2026-11-17: "it shouldnt auto pick it should
-        /// be changable, just it changing shouldnt lock it in"): Desktop never picks or saves a region, it only says so to the Thor.
-        /// Unlike <see cref="Error"/>, a screen switch back to the login or the region screen keeps it.
+        /// The 309s seen in this Desktop run, never reset: each one lets the supervisor start the client again without using up its one
+        /// retry (WowSupervisor), so the player can always pick a region again (capped by WowFlow.RegionRetryMax per connect)
         /// </summary>
-        public bool RegionRefused { get; private set; }
-
-        /// <summary>when <see cref="RegionRefused"/> last turned on (<see cref="Now"/>'s clock), null = never in this Desktop run</summary>
-        public DateTime? RegionRefusedAt { get; private set; }
-
-        /// <summary>
-        /// Refusals of a region the player picked on WoW's own region screen (a 309 while <see cref="RegionScreen"/> was the last
-        /// screen), counted for this Desktop run and never reset: each one lets the supervisor start the self-closed client again
-        /// without using up its one retry (WowSupervisor), so the player can always pick another region
-        /// </summary>
-        public int RegionRefusals { get; private set; }
+        public int ConnectFailures { get; private set; }
 
         /// <summary>the client's log is at the login or region screen (its sign-in is not over, whatever its connections say)</summary>
         public bool AtSignInScreens => LastScreen == LoginScreen || LastScreen == RegionScreen;
 
-        /// <summary>the clock for <see cref="RegionRefusedAt"/> (UTC; a test sets its own)</summary>
+        /// <summary>the client stayed at its own login screen (AccountLogin, not the region pick) after a 309: nothing is typed there
+        /// any more (login.txt was read and deleted), so a new client run is what brings the Thor's login back</summary>
+        public bool BackAtLoginAfterFailure => ConnectFailed && LastScreen == LoginScreen;
+
+        /// <summary>the clock for <see cref="ConnectFailedAt"/> (UTC; a test sets its own)</summary>
         public Func<DateTime> Now = () => DateTime.UtcNow;
 
         /// <summary>
-        /// How long a refused region outlasts its client: WoW closes itself after a 309 (the user's PC 2026-11-17) and Desktop starts
+        /// How long a 309 outlasts its client: WoW may close itself after it (the user's PC 2026-11-17) and Desktop starts
         /// it once more (WowFlow.Decide), so the line belongs on the NEXT client's login and region screens too. Never longer than
         /// this: a client started much later is a new try, not the refused one.
         /// </summary>
         public const double RegionCarryS = 300;
 
-        /// <summary>a new client run (the log was emptied): nothing is known any more, except a region refused within
-        /// <see cref="RegionCarryS"/> (its client closed itself; the restarted one shows the same region screen)</summary>
+        /// <summary>a new client run (the log was emptied): nothing is known any more, except a 309 within <see cref="RegionCarryS"/>
+        /// (its client closed itself; the restarted one shows the same region screen)</summary>
         public void Reset()
         {
-            LastScreen = null; Error = null; SignInStarted = false; SubRegions = null; DistrictAsked = false; RealmUnreachable = false;
-            RegionRefused = RegionRefused && RegionRefusedAt.HasValue && (Now() - RegionRefusedAt.Value).TotalSeconds < RegionCarryS;
+            LastScreen = null; Error = null; SignInStarted = false;
+            ConnectFailed = ConnectFailed && ConnectFailedAt.HasValue && (Now() - ConnectFailedAt.Value).TotalSeconds < RegionCarryS;
         }
 
         public void Line(string line)
@@ -112,30 +106,19 @@ namespace DsfDesktop.Wow
                     // a new login screen starts clean; any other screen means the sign-in is behind us
                     Error = null;
                     if (LastScreen == LoginScreen) SignInStarted = false;
-                    else if (LastScreen != RegionScreen) { RegionRefused = false; RealmUnreachable = false; }   // past the login
+                    else if (LastScreen != RegionScreen) ConnectFailed = false;     // past the login: a region was taken
                 }
                 return;
             }
             if (line.IndexOf("[Connection]", StringComparison.Ordinal) < 0) return;
-            if (line.IndexOf("Glue login started", StringComparison.Ordinal) >= 0)
-            {
-                SignInStarted = true; Error = null; SubRegions = null; DistrictAsked = false; RealmUnreachable = false;
-                return;
-            }
-            var sr = SubRegionCount.Match(line);
-            if (sr.Success && int.TryParse(sr.Groups[1].Value, out int n)) { SubRegions = n; return; }
-            if (line.IndexOf("super district realm connection requested", StringComparison.OrdinalIgnoreCase) >= 0) { DistrictAsked = true; return; }
+            if (line.IndexOf("Glue login started", StringComparison.Ordinal) >= 0) { SignInStarted = true; Error = null; return; }
             var f = Fatal.Match(line);
             if (f.Success)
             {
                 Error = Short(f.Groups[1].Value); SignInStarted = false;
-                bool is309 = Error == RegionRefusedCode;
-                // a refused region needs a region the player could pick: a district asked for while more than one region was on
-                // offer. Every other 309 is the realm out of reach (the user's PC 2026-11-17: one region, so nothing to refuse; the
-                // 0.2.31 rule read every 309 as a refusal, from one run)
-                RegionRefused = is309 && DistrictAsked && SubRegions.HasValue && SubRegions.Value > 1;
-                RealmUnreachable = is309 && !RegionRefused;
-                if (RegionRefused) { RegionRefusedAt = Now(); RegionRefusals++; }
+                // every 309 alike: the log has no word that tells a refused district from an unreachable realm (see ConnectFailedCode)
+                ConnectFailed = Error == ConnectFailedCode;
+                if (ConnectFailed) { ConnectFailedAt = Now(); ConnectFailures++; }
             }
         }
 
@@ -266,12 +249,17 @@ namespace DsfDesktop.Wow
         /// No WoW = start it; WoW at its login screen = bring it to the front, the player signs in there (the user's pick 2026-10-31,
         /// as in Local; a restart would only clear what they typed); signed in = bring it to the front. [tries] = clients started
         /// during this connect (a client found at the login screen counts as the first); from 2, a client that closed itself needs
-        /// the player. Battle.net first (see the body; restored 2026-11-17 after 0.2.8 took it out). [busy] = a start is under way. [regionRetry] = the client
-        /// closed itself after a region the player picked was refused (309) and the region starts are not used up
-        /// (<see cref="RegionRetryMax"/>): it starts again whatever [tries] says, so the player picks another region on WoW's screen
-        /// (the user's pick 2026-11-17: the region "should be changable")
+        /// the player. Battle.net first (see the body; restored 2026-11-17 after 0.2.8 took it out). [busy] = a start is under way.
+        /// [regionRetry] = a 309 (<see cref="LoginLog.ConnectFailed"/>) not answered by a start yet and the region starts are not used
+        /// up (<see cref="RegionRetryMax"/>): a client that closed itself starts again whatever [tries] says, so the player picks a
+        /// region again on WoW's screen (the user's pick 2026-11-17: the region "should be changable"). [loginAfterFailure] = the
+        /// client stayed at its own login screen after that 309 (<see cref="LoginLog.BackAtLoginAfterFailure"/>; the user's PC
+        /// 2026-11-17 22:57) and its run was signed in by the Thor's login.txt: it is restarted, so the new run asks the Thor for the
+        /// login again (nothing is typed in the old one: its login.txt is gone). Never while WoW sits at the region screen (the
+        /// player picks there)
         /// </summary>
-        public static WowAction Decide(BnetState bnet, WowScreen screen, int tries, bool busy, bool regionRetry = false)
+        public static WowAction Decide(BnetState bnet, WowScreen screen, int tries, bool busy, bool regionRetry = false,
+                                       bool loginAfterFailure = false)
         {
             if (busy) return WowAction.Wait;
             // signed in: Battle.net never holds a game that is in
@@ -292,12 +280,12 @@ namespace DsfDesktop.Wow
                 case WowScreen.None: return tries < 2 || regionRetry ? WowAction.StartWow : WowAction.NeedsYou;
                 case WowScreen.Starting:
                 case WowScreen.SigningIn: return WowAction.Wait;
-                default: return WowAction.Focus;   // the login screen, character select, the world
+                case WowScreen.Login: return regionRetry && loginAfterFailure ? WowAction.RestartWow : WowAction.Focus;
+                default: return WowAction.Focus;   // character select, the world
             }
         }
 
-        /// <summary>starts after refused regions per connect: each needs a new refusal of a region picked on WoW's screen; the cap
-        /// only stops a loop should WoW ever refuse without the player's pick</summary>
+        /// <summary>starts after 309s per connect: each needs a new 309; the cap stops a loop should every sign-in end in one</summary>
         public const int RegionRetryMax = 5;
 
         public static string Word(WowScreen s)
@@ -364,15 +352,14 @@ namespace DsfDesktop.Wow
         public const string UpdateText = "Update WoW in Battle.net";
         public const string CrashText = "WoW crashed on your PC";
 
-        /// <summary>the Thor's line while WoW's region screen waits after a refused region (<see cref="LoginLog.RegionRefused"/>)</summary>
-        public const string RegionRefusedText = "Region refused: pick another region";
 
         /// <summary>the message for the player when the one retry did not get WoW signed in: Battle.net's window is shown on the Thor
         /// (AppController.ShowRectNow), so its Play is pressed through the stream. Never "on the PC" (the user, 2026-11-17: "signing in
         /// on the PC wont always be an option")</summary>
         public const string NeedsYouText = "Press Play in Battle.net";
 
-        /// <summary>the Thor's line while WoW waits at its login after a 309 that was no region refusal (<see cref="LoginLog.RealmUnreachable"/>)</summary>
-        public const string RealmUnreachableText = "WoW can't reach its servers";
+        /// <summary>the Thor's one line after a 309 (<see cref="LoginLog.ConnectFailed"/>; the wire's "connect" "failed"): neutral,
+        /// because the log cannot tell a refused district from an unreachable realm</summary>
+        public const string ConnectFailedText = "WoW can't reach its servers";
     }
 }

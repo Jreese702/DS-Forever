@@ -20,7 +20,8 @@ namespace DsfDesktop.Wow
         readonly Func<string> focusWow;
         readonly Func<DateTime> now;
         readonly Func<string> crash;
-        readonly Func<int> regionRefusals;
+        readonly Func<int> connectFailures;
+        readonly Func<bool> loginAfterFailure;
         readonly Action<Action> run;
         readonly object gate = new object();
 
@@ -36,14 +37,14 @@ namespace DsfDesktop.Wow
 
         /// <summary>clients that have tried to sign in during this connect (see Decide)</summary>
         public int Tries { get; private set; }
-        /// <summary>starts after refused regions (WowFlow.RegionRetryMax); they never count as <see cref="Tries"/>. Kept across the
-        /// connects a refusal brings (AppController wants WoW again for it), from 0 again on a connect with no refusal waiting</summary>
+        /// <summary>starts after 309s (WowFlow.RegionRetryMax); they never count as <see cref="Tries"/>. Kept across the connects a
+        /// 309 brings (AppController wants WoW again for it), from 0 again on a connect with no 309 waiting</summary>
         public int RegionTries { get; private set; }
-        /// <summary>the region refusals (LoginLog.RegionRefusals) already answered by a start</summary>
+        /// <summary>the 309s (LoginLog.ConnectFailures) already answered by a start</summary>
         int regionAnswered;
 
-        /// <summary>a refused region pick not answered by a start yet, and the region starts are not used up</summary>
-        public bool RegionRetryPending { get { lock (gate) return RegionPending(regionRefusals()); } }
+        /// <summary>a 309 not answered by a start yet, and the region starts are not used up</summary>
+        public bool RegionRetryPending { get { lock (gate) return RegionPending(connectFailures()); } }
         bool RegionPending(int refusals) => refusals > regionAnswered && RegionTries < WowFlow.RegionRetryMax;
         public WowAction Last { get; private set; } = WowAction.Wait;
         /// <summary>the one retry is spent and WoW is still not signed in</summary>
@@ -58,12 +59,16 @@ namespace DsfDesktop.Wow
         /// <param name="startPending">a start is under way (the starter waits for the new client's window)</param>
         /// <param name="closeWow">closes the old client (gracefully, then only if still at the login screen by force); blocking; null = gone</param>
         /// <param name="run">how a blocking restart runs (a background task; the tests run it inline)</param>
-        /// <param name="regionRefusals">LoginLog.RegionRefusals: a new one = the client closed itself after a refused region pick</param>
+        /// <param name="connectFailures">LoginLog.ConnectFailures: a new one = a 309 (the client closed itself, or stayed at its login)</param>
+        /// <param name="loginAfterFailure">the client stayed at its own login screen after the 309, and its run was signed in by the
+        /// Thor's login.txt (WowFlow.Decide's [loginAfterFailure]): it is restarted so the new run asks the Thor again</param>
         public WowSupervisor(Func<WowScreen> screen, Func<BnetState> bnet, Func<string> startBnet, Func<string> showBnetSignIn,
                              Func<string> startWow, Func<bool> startPending, Func<string> closeWow, Func<string> focusWow,
-                             Func<DateTime> now = null, Action<Action> run = null, Func<string> crash = null, Func<int> regionRefusals = null)
+                             Func<DateTime> now = null, Action<Action> run = null, Func<string> crash = null, Func<int> connectFailures = null,
+                             Func<bool> loginAfterFailure = null)
         {
-            this.regionRefusals = regionRefusals ?? (() => 0);
+            this.connectFailures = connectFailures ?? (() => 0);
+            this.loginAfterFailure = loginAfterFailure ?? (() => false);
             this.screen = screen; this.bnet = bnet; this.startBnet = startBnet; this.showBnetSignIn = showBnetSignIn;
             this.startWow = startWow; this.startPending = startPending; this.closeWow = closeWow; this.focusWow = focusWow;
             this.now = now ?? (() => DateTime.UtcNow);
@@ -80,7 +85,7 @@ namespace DsfDesktop.Wow
                 bnetWaitSince = null; bnetGaveUp = false;
                 var s = screen();
                 Tries = s == WowScreen.Login || s == WowScreen.SigningIn || s == WowScreen.Starting ? 1 : 0;
-                if (regionRefusals() <= regionAnswered) RegionTries = 0;
+                if (connectFailures() <= regionAnswered) RegionTries = 0;
                 Last = WowAction.Wait;
             }
             Step();
@@ -125,11 +130,12 @@ namespace DsfDesktop.Wow
                         b = BnetState.Unknown;
                     }
                 }
-                // a client that closed itself after a refused region pick starts again without using up the one retry: the player
-                // picks another region on WoW's own screen (the user's pick 2026-11-17)
-                var refusals = regionRefusals();
+                // after a 309 the client starts again (it closed itself) or is restarted (it stayed at its login, signed in by
+                // login.txt) without using up the one retry: the player picks a region again on WoW's own screen (the user's pick
+                // 2026-11-17)
+                var refusals = connectFailures();
                 bool regionRetry = RegionPending(refusals);
-                var a = WowFlow.Decide(b, s, Tries, restarting || startPending(), regionRetry);
+                var a = WowFlow.Decide(b, s, Tries, restarting || startPending(), regionRetry, regionRetry && loginAfterFailure());
                 switch (a)
                 {
                     case WowAction.Wait:
@@ -149,7 +155,8 @@ namespace DsfDesktop.Wow
                         Set(a, startWow());
                         break;
                     case WowAction.RestartWow:
-                        Tries++;
+                        if (regionRetry) { RegionTries++; regionAnswered = refusals; }
+                        else Tries++;
                         restarting = true;
                         Set(a, null);
                         run(() =>

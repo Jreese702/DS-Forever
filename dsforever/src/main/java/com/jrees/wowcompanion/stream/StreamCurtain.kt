@@ -73,12 +73,9 @@ object StreamCurtain {
 
     /** the stream's start holds: Desktop said to wait and the wait is not over */
     fun holds(wait: String, waitedMs: Long): Boolean = wait.isNotEmpty() && waitedMs < PC_WAIT_MS
-    /** Desktop 0.2.31: the game refused the region picked on its own region screen (309); the player picks again there (the user's
-     *  pick 2026-11-17: "it shouldnt auto pick it should be changable") */
-    const val REGION_REFUSED = "Region refused: pick another region"
-    /** Desktop 0.2.33: a 309 that was no region refusal (one region on offer): WoW could not reach its realm (the user, 2026-11-17:
-     *  "its failing to find servers and saying that its a region error when its not") */
-    const val REALM_UNREACHABLE = "WoW can't reach its servers"
+    /** a 309 at WoW's sign-in ([PcWow.connectFailed]): one neutral line, never "Region refused" (the user, 2026-11-17: "saying that
+     *  its a region error when its not"); the player picks a region again on WoW's own screen */
+    const val CONNECT_FAILED = "WoW can't reach its servers"
     /** Desktop 0.2.33: the PC's SudoVDA (Apollo's virtual display driver) is there but disabled in Windows: the player enables it */
     const val SCREEN_DISABLED = "Enable SudoMaker display adapter in Device Manager"
 
@@ -110,14 +107,8 @@ object StreamCurtain {
     /** WoW is up and between its login screen and character select */
     fun atLogin(pc: PcWow?) = pc != null && (pc.screen == "login" || pc.screen == "signing_in")
 
-    /** the line over the stream while WoW's own screens wait for the player ("" = none): a refused region, until another is taken;
-     *  a realm out of reach (Desktop 0.2.33 says "region" only for a real refusal) */
-    fun streamLine(pc: PcWow?): String = when {
-        pc == null || !atLogin(pc) -> ""
-        pc.regionRefused -> REGION_REFUSED
-        pc.realmUnreachable -> REALM_UNREACHABLE
-        else -> ""
-    }
+    /** the line over the stream while WoW's own screens wait for the player ("" = none): a 309, until a region is taken */
+    fun streamLine(pc: PcWow?): String = if (pc != null && atLogin(pc) && pc.connectFailed) CONNECT_FAILED else ""
 
     /**
      * [connected] = the stream is up (Moonlight's picture arrived); [bridged] = this PC has DS Forever Desktop's bridge (Sunshine

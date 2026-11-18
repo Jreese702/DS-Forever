@@ -1830,7 +1830,8 @@ namespace DsfDesktop.App
                 closeWow: CloseForRestart,
                 focusWow: () => { CheckCapture(); return FocusWow(); },
                 crash: CrashNow,
-                regionRefusals: () => { lock (loginLog) return loginLog.RegionRefusals; });
+                connectFailures: () => { lock (loginLog) return loginLog.ConnectFailures; },
+                loginAfterFailure: LoginAfterFailure);
             Supervisor.Changed += (a, detail) =>
             {
                 if (a == WowAction.NeedsYou) needsYouAt = DateTime.UtcNow;
@@ -1845,12 +1846,22 @@ namespace DsfDesktop.App
             };
         }
 
+        /// <summary>the client stayed at its own login screen after a 309 and its run was signed in by the Thor's login.txt (the user's
+        /// PC 2026-11-17 22:57: the file was read and deleted, so nothing is typed there any more): a restart brings the login back</summary>
+        bool LoginAfterFailure()
+        {
+            bool back;
+            lock (loginLog) back = loginLog.BackAtLoginAfterFailure;
+            if (!back) return false;
+            lock (loginGate) return loginRunPid.HasValue;
+        }
+
         /// <summary>the game and Battle.net for the Thor (the "wow" message, the welcome's wow): its curtain lifts on charselect / world + focused</summary>
         public Dictionary<string, object> WowInfo()
         {
             string err;
-            bool regionRefused, realmUnreachable;
-            lock (loginLog) { err = loginLog.Error; regionRefused = loginLog.RegionRefused; realmUnreachable = loginLog.RealmUnreachable; }
+            bool connectFailed;
+            lock (loginLog) { err = loginLog.Error; connectFailed = loginLog.ConnectFailed; }
             var d = new Dictionary<string, object>
             {
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State),
@@ -1866,11 +1877,10 @@ namespace DsfDesktop.App
             if (show != null) d["show"] = show;
             if (Starter.Why != null) d["why"] = Starter.Why;
             if (err != null) d["login_error"] = err;
-            // WoW's region screen waits after a refused region: the Thor says "Region refused: pick another region"; the player picks
-            // on WoW's own screen (Desktop never picks or saves one)
-            if (regionRefused) d["region"] = "refused";
-            // a 309 that was no region refusal: the realm was out of reach (an older Thor ignores it)
-            else if (realmUnreachable) d["realm"] = "unreachable";
+            // a 309 (LoginLog.ConnectFailed): the Thor says one neutral line, "WoW can't reach its servers"; the player picks a region
+            // again on WoW's own screen (Desktop never picks or saves one). Never "region" "refused" any more (0.2.31 and 0.2.32): the
+            // log cannot tell a refused district from an unreachable realm, and the user's 309 was no region error (2026-11-17)
+            if (connectFailed) d["connect"] = "failed";
             return WithInput(d);
         }
 
@@ -1883,24 +1893,16 @@ namespace DsfDesktop.App
             if (Supervisor.Crash != null && LastScreen != WowScreen.None)
                 using (var p = WowWindow.FindAny(FlavorDirOrNull))
                     if (p != null && p.Id != crashedPid && !WowProbe.FatalErrorShown(p.Id)) Supervisor.CrashOver();
-            // WoW closed itself after a refused region pick (309), maybe after the supervisor had already put it in front and stopped:
-            // a Thor still wants it, so it starts again at WoW's own region screen (the user's pick 2026-11-17: "it should be changable")
-            bool regionRefused, realmUnreachable;
-            lock (loginLog) { regionRefused = loginLog.RegionRefused; realmUnreachable = loginLog.RealmUnreachable; }
+            // a 309 (LoginLog.ConnectFailed), maybe after the supervisor had already put WoW in front and stopped: a Thor still wants
+            // it, so the client starts again at WoW's own region screen (the user's pick 2026-11-17: "it should be changable"). WoW
+            // closed itself (22:58) = started again; it stayed at its login with its login.txt used up (22:57) = restarted, and the new
+            // run asks the Thor for the login. Battle.net signed out: its sign-in comes up on the Thor first (WowFlow.Decide)
+            bool connectFailed;
+            lock (loginLog) connectFailed = loginLog.ConnectFailed;
             bool thorHere = Bridge != null && Bridge.Sessions().Count > 0;
-            if (!realmUnreachable) realmBnetAsked = false;
-            if (!Supervisor.Active && LastScreen == WowScreen.None && regionRefused && Settings.StartWowOnStream
-                && thorHere && Supervisor.RegionRetryPending)
-                Want("its client closed after a refused region");
-            // WoW couldn't reach its realm (309, no region refused) while the PC's Battle.net is signed out or not running (the user,
-            // 2026-11-17: "my battlenet is not logged in so its failing to find servers"): Battle.net's sign-in comes up on the Thor,
-            // once per such error
-            else if (!Supervisor.Active && realmUnreachable && !realmBnetAsked && Settings.StartWowOnStream && thorHere
-                     && (LastBnet == BnetState.SignInNeeded || LastBnet == BnetState.NotRunning) && !SignedIn(LastScreen))
-            {
-                realmBnetAsked = true;
-                Want("its realm was out of reach with Battle.net signed out");
-            }
+            if (!Supervisor.Active && connectFailed && Settings.StartWowOnStream && thorHere && Supervisor.RegionRetryPending
+                && (LastScreen == WowScreen.None || (LastScreen == WowScreen.Login && LoginAfterFailure())))
+                Want(LastScreen == WowScreen.None ? "its client closed after a 309" : "its client stayed at its login after a 309");
             else if (Supervisor.Active) Supervisor.Step();
             FocusRetry();
             PublishWow(force: false);
@@ -1911,9 +1913,6 @@ namespace DsfDesktop.App
         int focusTries;
         DateTime nextFocus = DateTime.MinValue;
         int focusBusy;
-
-        /// <summary>a 309 with Battle.net signed out already brought Battle.net's sign-in up (WowTick); again only after a new error</summary>
-        bool realmBnetAsked;
 
         void FocusRetry()
         {

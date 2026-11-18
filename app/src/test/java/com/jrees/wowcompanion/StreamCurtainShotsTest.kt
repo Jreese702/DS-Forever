@@ -84,8 +84,8 @@ class StreamCurtainShotsTest {
         val c = StreamCurtain.decide(false, true, pc, pcWhy = StreamCurtain.reason("ports_taken", "pc busy: its streaming ports are taken")) as StreamCurtain.Shows.Curtain
         assertEquals("PC busy: its streaming ports are taken", c.line)
         for (line in listOf(StreamCurtain.WAITING, StreamCurtain.BUSY_SUNSHINE, StreamCurtain.BUSY_PROGRAM, StreamCurtain.BUSY_LISTENING,
-                StreamCurtain.BUSY_STOPPED, StreamCurtain.BUSY_PORTS, StreamCurtain.NEEDS_SCREEN, StreamCurtain.NO_SCREEN, StreamCurtain.REGION_REFUSED,
-                StreamCurtain.REALM_UNREACHABLE, StreamCurtain.SCREEN_DISABLED, StreamCurtain.NEEDS_YOU,
+                StreamCurtain.BUSY_STOPPED, StreamCurtain.BUSY_PORTS, StreamCurtain.NEEDS_SCREEN, StreamCurtain.NO_SCREEN, StreamCurtain.CONNECT_FAILED,
+                StreamCurtain.SCREEN_DISABLED, StreamCurtain.NEEDS_YOU,
                 com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, "DS Forever Desktop hasn't said its streaming port."))
             for (l in listOf("es", "fr")) assertNotEquals("$line ($l)", line, Tr.t(line, l))
         assertEquals("PC ocupado: sus puertos de streaming están ocupados", Tr.t(c.line, "es"))

@@ -1161,7 +1161,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         /** Backspaces before each box is typed (the box may hold what the player started) */
         const val CLEAR_KEYS = 16
         private val SIGN_IN_LINES = setOf(StreamCurtain.SIGN_IN, StreamCurtain.NEEDS_YOU, StreamCurtain.UPDATE, StreamCurtain.CRASHED,
-            StreamCurtain.REGION_REFUSED, StreamCurtain.REALM_UNREACHABLE)
+            StreamCurtain.CONNECT_FAILED)
     }
 }
 

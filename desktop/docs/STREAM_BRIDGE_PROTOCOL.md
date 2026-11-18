@@ -151,9 +151,16 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   login screen): Battle.net not running = started (WoW waits up to 90 s for it, then starts without it); signed out = its sign-in
   window in front on the streamed monitor, with `show`, until signed in; then WoW starts plainly (no `-launcherlogin`). WoW is not
   pulled to the front over Battle.net's sign-in. `needs_you`'s `status` is now "Press Play in Battle.net".
-- **[0.2.33] `region` vs `realm`.** `region` = `refused` only for a real refusal: a 309 after a district was asked for while the game
-  offered more than one region. Any other 309 (one region on offer: the user's PC 2026-11-17) is `realm` = `unreachable` plus
-  `login_error` `309`; with Battle.net signed out or not running, Desktop then brings Battle.net's sign-in up on the Thor once.
+- **[0.2.33] A 309 is one neutral `connect` = `failed`.** 0.2.31 and 0.2.32 sent `region` = `refused` for WoW's "Fatal login
+  error (309)" after its region (super district) screen. The game's log does not say whether the district was refused or its realm
+  was out of reach: its `subRegionCount` is Battle.net's sub-region count (1 on the user's PC 2026-11-17 22:57 and 22:58, though the
+  region screen offered districts and `superDistrictID` 2 was asked for), and the district list logs no count. So from 0.2.33 every
+  309 is `login_error` `309` plus `connect` = `failed` (the Thor: "WoW can't reach its servers"; a newer Thor reads an older
+  Desktop's `region` = `refused` the same way), and `region` is never sent. After a 309 Desktop starts WoW again for a connected
+  Thor without using its one retry, at most `RegionRetryMax` (5) times per connect: WoW closed itself = started again; WoW stayed at
+  its own login screen (not the region screen) with its `login.txt` used up = restarted, so the new run asks the Thor
+  (`login_again`) for the login. With the PC's Battle.net signed out, its sign-in comes up on the Thor first. Whether a signed-out
+  PC Battle.net causes the 309 is not known (WoW's own Glue logon had succeeded before it).
 - **[0.2.33] A disabled SudoVDA.** Apollo's SudoVDA adapter present but disabled in Windows reads as there, not missing: no install
   is offered; the `status` line (and, headless, `sunshine.problem` `screen_disabled` with its `why`) is "Enable SudoMaker display
   adapter in Device Manager". Desktop never enables a device. The one-time install question waits until no Thor is connected or
