@@ -43,6 +43,9 @@ namespace DsfDesktop.Bridge
         Dictionary<string, object> PcTest();
         /// <summary>the Thor's Retry by hand ("screen_retry"): our virtual screen's tries start over after it gave up</summary>
         void ScreenRetry();
+        /// <summary>the Thor's Retry after Desktop stopped ("wow_retry"; the wow message's "stopped": a server error or an outdated
+        /// PC game): WoW is started, or restarted at its login screen, once per press (the user's ruling 2026-11-18)</summary>
+        void WowRetry();
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -440,6 +443,7 @@ namespace DsfDesktop.Bridge
                             Task.Run(() => { var r = With("host_check_result", host.HostCheck()); r["t"] = "host_check_result"; sh.Enqueue(r); });
                             break;
                         case "screen_retry": host.ScreenRetry(); break;
+                        case "wow_retry": Task.Run(() => host.WowRetry()); break;
                         case "pc_test":
                             var sp = s;
                             Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });

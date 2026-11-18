@@ -76,8 +76,8 @@ namespace DsfDesktop.Tests
             A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.Login, 1, false), "at the login screen: the player signs in, never a restart");
             A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.Login, 2, false));
             A.Eq(WowAction.NeedsYou, WowFlow.Decide(ok, WowScreen.None, 2, false), "the fresh one closed itself: stop");
-            A.Eq(WowAction.StartWow, WowFlow.Decide(ok, WowScreen.None, 2, false, regionRetry: true), "it closed after a refused region: the player picks again");
-            A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.None, 2, true, regionRetry: true), "a start under way still waits");
+            A.Eq(WowAction.StartWow, WowFlow.Decide(ok, WowScreen.None, 2, false, retry: true), "the Thor's Retry: started whatever the tries say");
+            A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.None, 2, true, retry: true), "a start under way still waits");
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Starting, 1, false));
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.SigningIn, 1, false), "Blizzard's queue: never restart it");
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Login, 0, true), "a start is under way");
@@ -101,10 +101,10 @@ namespace DsfDesktop.Tests
             /// <summary>where a freshly started client goes</summary>
             public WowScreen FreshGoesTo = WowScreen.Starting;
             public string Crash;
-            /// <summary>LoginLog.ConnectFailures</summary>
-            public int Refusals;
-            /// <summary>WowSupervisor's loginAfterFailure: the client stayed at its login after the 309, signed in by login.txt</summary>
-            public bool LoginAfter;
+            /// <summary>LoginLog.ConnectFailed: a server error (a 309) stands</summary>
+            public bool Failed;
+            /// <summary>GameVersionCheck.Poll</summary>
+            public GameCheck Game = GameCheck.Unknown;
 
             public WowSupervisor Make(Func<DateTime> now = null) => new WowSupervisor(
                 screen: () => Screen, bnet: () => Bnet,
@@ -114,102 +114,191 @@ namespace DsfDesktop.Tests
                 startPending: () => Pending,
                 closeWow: () => { Did.Add("close"); Screen = WowScreen.None; return null; },
                 focusWow: () => { Did.Add("focus"); return null; },
-                now: now, run: a => a(), crash: () => Crash, connectFailures: () => Refusals,
-                loginAfterFailure: () => LoginAfter);
+                now: now, run: a => a(), crash: () => Crash, failed: () => Failed, game: () => Game);
         }
 
         /// <summary>
-        /// the user's pick 2026-11-17 (region "should be changable"): WoW closes itself after every refused region (309), and every such
-        /// close starts it again at its region screen without using up the one retry, so a second or third refusal never ends in
-        /// "Sign-in needs you"; a client that closes with no refusal still does, and the region starts are capped
+        /// the user's PC 2026-11-18 06:20 ("it just keeps restarting saying no servers available"): 0.2.33 restarted WoW every ~20 s
+        /// after each 309. The user's ruling "Stop and show it": a server error during the sign-in stops the supervisor, whether WoW
+        /// stayed at its login (22:57) or closed itself (22:58); nothing is started or restarted by itself, however often it steps or
+        /// the Thor reconnects
         /// </summary>
         [Test]
-        public static void ARefusedRegionNeverUsesUpTheRetry()
+        public static void A309StopsAndNothingRestartsWow()
         {
-            var pc = new Pc { Screen = WowScreen.None, FreshGoesTo = WowScreen.SigningIn };    // the region screen reads as signing in
+            var ok = BnetState.SignedIn;
+            A.Eq(WowAction.Stopped, WowFlow.Decide(ok, WowScreen.Login, 1, false, failed: true), "at its login after the 309: stop");
+            A.Eq(WowAction.Stopped, WowFlow.Decide(ok, WowScreen.None, 0, false, failed: true), "closed itself after it: stop, no start");
+            A.Eq(WowAction.Stopped, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.Login, 1, false, failed: true), "Battle.net signed out: still stop first");
+            A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.SigningIn, 1, false, failed: true), "a sign-in under way is never cut");
+            A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.CharSelect, 1, false, failed: true), "signed in after all: in front");
+            var pc = new Pc { Screen = WowScreen.None, FreshGoesTo = WowScreen.SigningIn };
             var s = pc.Make();
             s.Connect();
-            A.Eq("start", string.Join(",", pc.Did)); A.Eq(1, s.Tries);
-            A.False(s.RegionRetryPending);
-            pc.Refusals = 1; pc.Screen = WowScreen.None; s.Step();
-            A.Eq("start,start", string.Join(",", pc.Did), "refused, closed itself: started again");
-            A.Eq(1, s.Tries, "the one retry is still there"); A.Eq(1, s.RegionTries);
-            pc.Refusals = 2; pc.Screen = WowScreen.None; s.Step();
-            A.Eq("start,start,start", string.Join(",", pc.Did), "a second refusal: started again too");
-            A.False(s.NeedsYou); A.Eq(1, s.Tries);
-            // the third refusal comes after the supervisor put WoW in front and stopped (309 = the login screen): AppController
-            // wants WoW again for it, and the new connect keeps the count
-            pc.Screen = WowScreen.Login; s.Step(); A.False(s.Active);
-            pc.Refusals = 3; pc.Screen = WowScreen.None;
-            A.True(s.RegionRetryPending, "a refusal not answered yet");
+            A.Eq("start", string.Join(",", pc.Did));
+            // the 309: WoW back at its login with Blizzard's error
+            pc.Failed = true; pc.Screen = WowScreen.Login;
+            s.Step();
+            A.False(s.Active, "stopped"); A.Eq(WowAction.Stopped, s.StoppedFor); A.Eq(WowAction.Stopped, s.Last);
+            for (int i = 0; i < 20; i++) s.Step();
+            // the Thor reconnects (a bridge flap) and asks for WoW again: still nothing
+            s.Connect(); s.Connect();
+            A.Eq(WowAction.Stopped, s.StoppedFor);
+            // WoW closes itself after it (22:58): never started again by itself
+            pc.Screen = WowScreen.None; s.Connect();
+            for (int i = 0; i < 20; i++) s.Step();
+            A.Eq("start", string.Join(",", pc.Did), "one start in all: no restart loop");
+            A.False(s.NeedsYou, "the error is said, not 'Press Play'");
+        }
+
+        /// <summary>
+        /// the user's ruling 2026-11-18: the Thor shows WoW's error with a Retry that restarts WoW ONCE per press. At its login the
+        /// client is closed and started (its new run asks the Thor for the login again: AppController.BeforeStart); a closed one is
+        /// started; a second 309 stops again; Battle.net signed out still has its sign-in first
+        /// </summary>
+        [Test]
+        public static void TheThorsRetryRestartsWowOncePerPress()
+        {
+            var pc = new Pc { Screen = WowScreen.Login, FreshGoesTo = WowScreen.SigningIn, Failed = true };
+            var s = pc.Make();
             s.Connect();
-            A.Eq(4, pc.Did.FindAll(d => d == "start").Count); A.Eq(3, s.RegionTries, "kept across the connect it brought");
-            A.False(s.RegionRetryPending, "answered");
-            // no refusal: the client closing is the old rule (a connect at no client has two starts, then the player)
-            pc.Screen = WowScreen.None; s.Step();
-            A.Eq(5, pc.Did.FindAll(d => d == "start").Count); A.Eq(1, s.Tries);
-            pc.Screen = WowScreen.None; s.Step();
-            A.Eq(6, pc.Did.FindAll(d => d == "start").Count); A.Eq(2, s.Tries);
-            pc.Screen = WowScreen.None; s.Step();
-            A.True(s.NeedsYou, "closed with no refusal, the retry spent: the player");
-            // the cap: refusals WoW might make on its own never loop the game
-            var pc2 = new Pc { Screen = WowScreen.None, FreshGoesTo = WowScreen.SigningIn };
+            A.Eq("", string.Join(",", pc.Did), "stopped: nothing done"); A.Eq(WowAction.Stopped, s.StoppedFor);
+            // Retry (AppController.WowRetry cleared the failure first)
+            pc.Failed = false;
+            s.Retry();
+            A.Eq("close,start", string.Join(",", pc.Did), "restarted once"); A.False(s.RetryPending, "answered");
+            A.Eq(null, s.StoppedFor);
+            // the same 309 again: stop, no second restart
+            pc.Screen = WowScreen.Login; pc.Failed = true; s.Step();
+            A.Eq(WowAction.Stopped, s.StoppedFor);
+            for (int i = 0; i < 10; i++) s.Step();
+            A.Eq("close,start", string.Join(",", pc.Did));
+            // the next press: once more
+            pc.Failed = false; s.Retry();
+            A.Eq("close,start,close,start", string.Join(",", pc.Did));
+            // signed in this time: in front, and a later login screen is the player's (never restarted for an old press)
+            pc.Screen = WowScreen.CharSelect; s.Step();
+            A.Eq("close,start,close,start,focus", string.Join(",", pc.Did));
+            pc.Screen = WowScreen.Login; s.Connect();
+            A.Eq("close,start,close,start,focus,focus", string.Join(",", pc.Did));
+
+            // WoW closed itself after the 309: Retry starts it
+            var pc2 = new Pc { Screen = WowScreen.None, Failed = true };
             var s2 = pc2.Make();
             s2.Connect();
-            for (int i = 1; i <= WowFlow.RegionRetryMax + 2; i++) { pc2.Refusals = i; pc2.Screen = WowScreen.None; s2.Step(); }
-            A.Eq(WowFlow.RegionRetryMax, s2.RegionTries);
-            A.True(s2.NeedsYou, "past the cap the old rule stands");
-            A.False(s2.RegionRetryPending, "the player is asked: nothing waits");
-            // a connect with no refusal waiting starts the count over
-            pc2.Screen = WowScreen.Login; s2.Connect();
-            A.Eq(0, s2.RegionTries);
+            A.Eq("", string.Join(",", pc2.Did));
+            pc2.Failed = false; s2.Retry();
+            A.Eq("start", string.Join(",", pc2.Did));
+
+            // Battle.net signed out: its sign-in on the Thor first, then the one restart
+            var pc3 = new Pc { Screen = WowScreen.Login, Bnet = BnetState.SignInNeeded, Failed = true };
+            var s3 = pc3.Make();
+            s3.Connect();
+            pc3.Failed = false; s3.Retry();
+            A.Eq("signin", string.Join(",", pc3.Did)); A.True(s3.RetryPending, "waits for the sign-in");
+            pc3.Bnet = BnetState.SignedIn; s3.Step();
+            A.Eq("signin,close,start", string.Join(",", pc3.Did));
+            A.False(s3.RetryPending);
         }
 
         /// <summary>
-        /// reviewers 2026-11-17 (0.2.33 draft): the user's 22:58 run, a 309 with Battle.net signed in, and WoW closes itself after the
-        /// supervisor had put it in front and stopped: the new connect starts it again (the draft read that 309 as "realm unreachable"
-        /// and nothing started WoW: "Starting WoW on your PC" for ever)
+        /// the user's PC 2026-11-18: .build.info 1.60.1.70938, Blizzard's us 1.60.1.70959 (Battle.net signed out, nothing patched it).
+        /// The ruling: an outdated PC game is never started (Desktop will patch it itself; until then the Thor's Retry checks again);
+        /// a check under way is waited for, no answer (offline) never blocks
         /// </summary>
         [Test]
-        public static void A309ThatClosedWowAfterTheFocusStartsItAgain()
+        public static void AnOutdatedPcGameIsNeverStarted()
         {
-            var pc = new Pc { Screen = WowScreen.Login };
+            var ok = BnetState.SignedIn;
+            A.Eq(WowAction.Outdated, WowFlow.Decide(ok, WowScreen.None, 0, false, game: GameCheck.Outdated));
+            A.Eq(WowAction.Outdated, WowFlow.Decide(BnetState.NotRunning, WowScreen.None, 0, false, game: GameCheck.Outdated), "no Battle.net needed to say so");
+            A.Eq(WowAction.Outdated, WowFlow.Decide(ok, WowScreen.Login, 1, false, retry: true, game: GameCheck.Outdated), "a Retry never restarts an outdated game");
+            A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.None, 0, false, game: GameCheck.Checking), "Blizzard's answer on its way");
+            A.Eq(WowAction.StartWow, WowFlow.Decide(ok, WowScreen.None, 0, false, game: GameCheck.Unknown), "offline: never blocks");
+            A.Eq(WowAction.StartWow, WowFlow.Decide(ok, WowScreen.None, 0, false, game: GameCheck.Current));
+            A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.World, 0, false, game: GameCheck.Outdated), "in the world: left alone");
+            var pc = new Pc { Screen = WowScreen.None, Game = GameCheck.Checking };
             var s = pc.Make();
             s.Connect();
-            A.Eq("focus", string.Join(",", pc.Did)); A.False(s.Active);
-            pc.Refusals = 1; pc.Screen = WowScreen.None;
-            A.True(s.RegionRetryPending, "every 309 counts: AppController.WowTick wants WoW again");
-            s.Connect();
-            A.Eq("focus,start", string.Join(",", pc.Did), "started again at its region screen");
-            A.Eq(1, s.RegionTries); A.False(s.RegionRetryPending);
+            A.Eq("", string.Join(",", pc.Did)); A.True(s.Active, "waits for the check");
+            pc.Game = GameCheck.Outdated; s.Step();
+            A.Eq("", string.Join(",", pc.Did)); A.Eq(WowAction.Outdated, s.StoppedFor); A.False(s.Active);
+            s.Retry();
+            A.Eq("", string.Join(",", pc.Did), "still outdated: still not started");
+            pc.Game = GameCheck.Current; s.Retry();
+            A.Eq("start", string.Join(",", pc.Did), "up to date (patched): started");
+            A.Eq("PC game needs an update", WowFlow.OutdatedText);
+            A.False(WowFlow.OutdatedText.IndexOf("on the PC", StringComparison.OrdinalIgnoreCase) >= 0, "never 'on the PC' (the ruling)");
         }
 
-        /// <summary>
-        /// reviewers 2026-11-17: the user's 22:57 run, a 309 and WoW STAYS at its login screen, its login.txt already read and deleted:
-        /// with Battle.net signed out its sign-in comes first (on the Thor), then the client is restarted so the new run asks the Thor
-        /// for the login again; never while WoW sits at the region screen or for a client the player signed in by hand
-        /// </summary>
+        const string BuildInfoText =
+            "Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|CDN Key!HEX:16|Install Key!HEX:16|IM Size!DEC:4|CDN Path!STRING:0|CDN Hosts!STRING:0|CDN Servers!STRING:0|Tags!STRING:0|Armadillo!STRING:0|Last Activated!STRING:0|Version!STRING:0|KeyRing!HEX:16|Product!STRING:0\n" +
+            "us|1|bc49|96be|||tpr/wow|level3.blizzard.com us.cdn.blizzard.com|http://level3.blizzard.com/?maxhosts=8|Windows x86_64 US? enUS speech?|||12.1.5.70783|3ca5|wow\n" +
+            "us|1|3627|96be|||tpr/wow|level3.blizzard.com us.cdn.blizzard.com|http://level3.blizzard.com/?maxhosts=8|Windows x86_64 US? enUS speech?|||1.60.1.70938||wowf\n";
+        const string VersionsText =
+            "Region!STRING:0|BuildConfig!HEX:16|CDNConfig!HEX:16|KeyRing!HEX:16|BuildId!DEC:4|VersionsName!String:0|ProductConfig!HEX:16\n" +
+            "## seqn = 4143682\n" +
+            "us|ad88|4831||70959|1.60.1.70959|0d21\n" +
+            "eu|ad88|4831||70959|1.60.1.70959|0d21\n" +
+            "kr|3627|4831||70938|1.60.1.70938|0d21\n";
+
+        /// <summary>the two tables as the user's PC and Blizzard's patch server gave them 2026-11-18</summary>
         [Test]
-        public static void A309AtTheLoginRestartsWowForTheThorsLogin()
+        public static void ReadsTheInstalledAndBlizzardsVersions()
         {
-            A.Eq(WowAction.RestartWow, WowFlow.Decide(BnetState.SignedIn, WowScreen.Login, 1, false, regionRetry: true, loginAfterFailure: true));
-            A.Eq(WowAction.Focus, WowFlow.Decide(BnetState.SignedIn, WowScreen.Login, 1, false, regionRetry: true, loginAfterFailure: false),
-                "the region screen (or a hand sign-in): the player picks there");
-            A.Eq(WowAction.Focus, WowFlow.Decide(BnetState.SignedIn, WowScreen.Login, 1, false, regionRetry: false, loginAfterFailure: true),
-                "the region starts used up: no restart loop");
-            A.Eq(WowAction.ShowBattleNetSignIn, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.Login, 1, false, true, true),
-                "Battle.net signed out: its sign-in first");
-            var pc = new Pc { Screen = WowScreen.Login, Bnet = BnetState.SignInNeeded };
-            var s = pc.Make();
-            pc.Refusals = 1; pc.LoginAfter = true;
-            s.Connect();
-            A.Eq("signin", string.Join(",", pc.Did)); A.True(s.Active, "waits for the Battle.net sign-in");
-            pc.Bnet = BnetState.SignedIn; s.Step();
-            A.Eq("signin,close,start", string.Join(",", pc.Did), "signed in: the client restarted");
-            A.Eq(1, s.Tries, "the one retry is not used"); A.Eq(1, s.RegionTries);
-            A.False(s.RegionRetryPending, "answered");
-            pc.Screen = WowScreen.Login; pc.LoginAfter = true; s.Step();
-            A.Eq("signin,close,start,focus", string.Join(",", pc.Did), "no new 309: never restarted again");
+            var row = GameVersion.Installed(BuildInfo.Parse(BuildInfoText), "wowf");
+            A.Eq("1.60.1.70938", row.Version); A.Eq("us", row.Branch);
+            A.Eq("1.60.1.70959", GameVersion.Current(VersionsText, "us"));
+            A.Eq("1.60.1.70938", GameVersion.Current(VersionsText, "kr"));
+            A.Eq("1.60.1.70959", GameVersion.Current(VersionsText, "elsewhere"), "an unknown region reads us");
+            A.Eq(null, GameVersion.Current("", "us")); A.Eq(null, GameVersion.Current("<html>nope</html>", "us"));
+            A.Eq("http://us.patch.battle.net:1119/wowf/versions", GameVersion.VersionsUrl("us", "wowf"));
+            A.Eq("http://eu.patch.battle.net:1119/wowf/versions", GameVersion.VersionsUrl("EU", "wowf"));
+            A.True(GameVersion.Outdated("1.60.1.70938", "1.60.1.70959"));
+            A.False(GameVersion.Outdated("1.60.1.70959", "1.60.1.70959"));
+            A.False(GameVersion.Outdated("1.60.1.70960", "1.60.1.70959"), "newer than Blizzard's (a PTR): never outdated");
+            A.False(GameVersion.Outdated("", "1.60.1.70959")); A.False(GameVersion.Outdated("1.60.1.70938", null));
+            A.Eq("70938", GameVersion.Short("1.60.1.70938"));
+            A.Eq(null, GameVersion.Installed(BuildInfo.Parse(BuildInfoText), "wow_classic"));
+        }
+
+        /// <summary>the live check: Blizzard asked in the background at most every 5 minutes (offline again after 1), the install read
+        /// again so a patch shows at once, the Thor's Retry asks again now; no answer never blocks</summary>
+        [Test]
+        public static void TheVersionCheckCachesAndNeverBlocks()
+        {
+            var now = new DateTime(2026, 11, 18, 6, 20, 0, DateTimeKind.Utc);
+            string body = VersionsText; var urls = new List<string>();
+            var queued = new List<Action>();
+            var rows = BuildInfo.Parse(BuildInfoText);
+            var c = new GameVersionCheck(() => rows, u => { urls.Add(u); return body; }, "wowf", () => now, a => queued.Add(a));
+            A.Eq(GameCheck.Checking, c.Poll(), "the first answer is on its way");
+            A.Eq(GameCheck.Checking, c.Poll(), "asked once");
+            A.Eq(0, urls.Count); queued[0](); queued.Clear();
+            A.Eq("http://us.patch.battle.net:1119/wowf/versions", urls[0]);
+            A.Eq(GameCheck.Outdated, c.Poll()); A.Eq("1.60.1.70938", c.Installed); A.Eq("1.60.1.70959", c.Current);
+            now = now.AddSeconds(GameVersionCheck.CacheS - 1);
+            A.Eq(GameCheck.Outdated, c.Poll()); A.Eq(0, queued.Count, "cached");
+            // the player's game was patched: .build.info shows it at once (read again every few seconds)
+            rows = BuildInfo.Parse(BuildInfoText.Replace("1.60.1.70938", "1.60.1.70959"));
+            now = now.AddSeconds(GameVersionCheck.LocalS);
+            A.Eq(GameCheck.Current, c.Poll());
+            foreach (var q in queued.ToList()) q(); queued.Clear();
+            // offline: never blocks, asked again after a minute
+            body = null;
+            c.Refresh();
+            A.Eq(GameCheck.Checking, c.Poll());
+            foreach (var q in queued.ToList()) q(); queued.Clear();
+            A.Eq(GameCheck.Unknown, c.Poll(), "no answer: unknown, a start goes ahead");
+            now = now.AddSeconds(GameVersionCheck.OfflineS);
+            c.Poll(); A.Eq(1, queued.Count, "asked again after a minute");
+            // no install row: unknown, nothing asked
+            var none = new GameVersionCheck(() => new List<BuildInfoRow>(), u => { urls.Add(u); return body; }, "wowf", () => now, a => a());
+            int n = urls.Count;
+            A.Eq(GameCheck.Unknown, none.Poll()); A.Eq(n, urls.Count);
+            // run inline (no queue): the answer comes with the first poll
+            var inline = new GameVersionCheck(() => BuildInfo.Parse(BuildInfoText), u => VersionsText, "wowf", () => now, a => a());
+            A.Eq(GameCheck.Outdated, inline.Poll());
         }
 
         [Test]
@@ -613,7 +702,7 @@ namespace DsfDesktop.Tests
         /// the user's PC 2026-11-17 22:57 and 22:58 ("saying that its a region error when its not"): the region screen, district 2
         /// asked, back to the login, 309. Its "subRegionCount" (1) is Battle.net's sub-region count, not the region screen's list, and
         /// nothing else in the log tells a refused district from an unreachable realm (reviewers 2026-11-17): every 309 is one neutral
-        /// ConnectFailed, counted for the region start, whatever the count says
+        /// ConnectFailed, whatever the count says
         /// </summary>
         [Test]
         public static void Every309IsOneNeutralConnectFailure()
@@ -621,12 +710,12 @@ namespace DsfDesktop.Tests
             var l = Log(LoginScreen, Glue0, OneRegion, LoginScreen, PickScreen, District, BackToLogin, Fatal309);
             A.Eq("309", l.Error);
             A.True(l.ConnectFailed);
-            A.Eq(1, l.ConnectFailures, "counted: the client starts again at its region screen");
-            A.True(l.BackAtLoginAfterFailure, "it stayed at its login (22:57)");
+            A.Eq(1, l.ConnectFailures, "counted");
             A.Eq(WowScreen.Login, WowFlow.Classify(true, 200, 0, 0, l, null));
             var two = Log(LoginScreen, Glue0, TwoRegions, PickScreen, District, Fatal309);
             A.True(two.ConnectFailed, "a count of 2 reads the same: the count is no region list");
-            A.False(two.BackAtLoginAfterFailure, "still at the region screen: the player picks there");
+            two.ClearFailure();
+            A.False(two.ConnectFailed, "the Thor's Retry answers it"); A.Eq(null, two.Error);
             A.True(Log(LoginScreen, Fatal309).ConnectFailed, "a 309 with no region pick in the log (block-buffered) counts too");
             A.Eq("WoW can't reach its servers", WowFlow.ConnectFailedText);
             A.False(WowFlow.ConnectFailedText.Contains("egion"), "never 'Region refused' (the user 2026-11-17)");
@@ -647,11 +736,9 @@ namespace DsfDesktop.Tests
             A.Eq(1, l.ConnectFailures, "counted, though the screen was already back at the login when the 309 came");
             l.Line(PickScreen);
             A.True(l.ConnectFailed, "back at the region screen: still said");
-            A.False(l.BackAtLoginAfterFailure);
             A.Eq(null, l.Error, "the error itself is cleared by the screen switch as before");
             l.Line(LoginScreen);
             A.True(l.ConnectFailed, "the login screen: still said");
-            A.True(l.BackAtLoginAfterFailure);
             l.Line(Fatal308);
             A.False(l.ConnectFailed, "another error is no 309");
             l.Line(Fatal309);

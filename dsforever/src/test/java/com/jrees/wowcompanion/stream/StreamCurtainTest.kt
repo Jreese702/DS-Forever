@@ -203,4 +203,68 @@ class StreamCurtainTest {
         assertEquals("an older Thor's fallback reads the same", StreamCurtain.SCREEN_DISABLED,
             StreamCurtain.reason("some_new_word", "enable SudoMaker display adapter in Device Manager"))
     }
+
+    /** the user's PC 2026-11-18 06:20 ("it just keeps restarting saying no servers available") and the ruling "Stop and show it":
+     *  Desktop 0.2.34 stops after a server error and says so ("stopped"); the Thor shows WoW's error with its code and a Retry, stream
+     *  or not; signed in after all = no stop; an older Desktop (no "stopped") keeps the one neutral line over the stream */
+    @Test fun aServerErrorStopsWithARetry() {
+        val o = JSONObject().put("t", "wow").put("state", "running").put("screen", "login").put("focused", true).put("bnet", "signed_in")
+            .put("connect", "failed").put("connect_code", "309").put("stopped", true)
+        val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
+        assertTrue(pc.stopped); assertEquals("309", pc.connectCode)
+        val c = curtain(StreamCurtain.decide(true, true, pc))
+        assertTrue("A / a tap is its Retry", c.retry)
+        assertEquals("WoW can't reach its servers (309)", c.rows.last().label)
+        assertEquals(SetupFlow.Mark.BAD, c.rows.last().mark)
+        assertEquals("Retry (A)", c.line)
+        assertTrue("never on the PC", c.rows.none { it.label.contains("on the PC") } && !c.line.contains("on the PC"))
+        assertTrue("before the stream's picture too", curtain(StreamCurtain.decide(false, true, pc)).retry)
+        assertTrue("WoW closed itself after it", curtain(StreamCurtain.decide(true, true, pc.copy(screen = "none", state = "stopped"))).retry)
+        assertEquals("the code from login_error when Desktop sent none", "WoW can't reach its servers (308)",
+            StreamCurtain.stopLine(pc.copy(connectCode = "", loginError = "308")))
+        assertEquals(StreamCurtain.CONNECT_FAILED, StreamCurtain.stopLine(pc.copy(connectCode = "", loginError = "")))
+        assertEquals("signed in after all: no stop", StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, pc.copy(screen = "charselect")))
+        // an older Desktop restarts by itself: no Retry, the line over WoW's own screen as before
+        val old = pc.copy(stopped = false)
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, old))
+        assertEquals(StreamCurtain.CONNECT_FAILED, StreamCurtain.streamLine(old))
+        assertEquals("wow_retry", JSONObject(BridgeProtocol.wowRetry()).getString("t"))
+        assertTrue(!curtain(StreamCurtain.decide(true, true, PcWow(state = "starting", screen = "none", bnet = "signed_in"))).retry)
+    }
+
+    /** the user's PC 2026-11-18: WoW Forever 1.60.1.70938 against Blizzard's 1.60.1.70959. Desktop 0.2.34 does not start it and says
+     *  both versions; the Thor: "PC game needs an update (70938 -> 70959)" with Retry (it checks again) */
+    @Test fun anOutdatedPcGameSaysBothVersions() {
+        val o = JSONObject().put("t", "wow").put("state", "stopped").put("screen", "none").put("bnet", "signin_needed")
+            .put("pc_game", "outdated").put("game_installed", "1.60.1.70938").put("game_current", "1.60.1.70959").put("stopped", true)
+        val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
+        assertEquals("outdated", pc.pcGame)
+        val c = curtain(StreamCurtain.decide(true, true, pc))
+        assertTrue(c.retry)
+        assertEquals("PC game needs an update (70938 -> 70959)", c.rows.last().label)
+        assertEquals("Retry (A)", c.line)
+        assertEquals("versions not said: the short line", StreamCurtain.PC_GAME_OUTDATED,
+            StreamCurtain.stopLine(pc.copy(gameInstalled = "", gameCurrent = "")))
+        assertEquals("outdated wins over a server error", "PC game needs an update (70938 -> 70959)",
+            StreamCurtain.stopLine(pc.copy(connectFailed = true, connectCode = "309")))
+        assertEquals("70938", StreamCurtain.build("1.60.1.70938"))
+        assertEquals("abc", StreamCurtain.build("abc"))
+    }
+
+    /** the stop's lines in es / fr (templates with the code and the versions) */
+    @Test fun theStopLinesAreTranslated() {
+        val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n")
+            .map { java.io.File(it) }.first { it.isDirectory }
+        com.jrees.wowcompanion.Tr.load("es", java.io.File(dir, "es.json").readText())
+        com.jrees.wowcompanion.Tr.load("fr", java.io.File(dir, "fr.json").readText())
+        val t = { s: String, l: String -> com.jrees.wowcompanion.Tr.t(s, l) }
+        assertEquals("WoW no conecta con sus servidores (309)", t("WoW can't reach its servers (309)", "es"))
+        assertEquals("WoW ne joint pas ses serveurs (309)", t("WoW can't reach its servers (309)", "fr"))
+        assertEquals("Juego del PC sin actualizar (70938 -> 70959)", t("PC game needs an update (70938 -> 70959)", "es"))
+        assertEquals("Jeu du PC à mettre à jour (70938 -> 70959)", t("PC game needs an update (70938 -> 70959)", "fr"))
+        assertEquals("Juego del PC sin actualizar", t(StreamCurtain.PC_GAME_OUTDATED, "es"))
+        assertEquals("Reintentar (A)", t(StreamCurtain.RETRY, "es"))
+        assertEquals("Réessayer (A)", t(StreamCurtain.RETRY, "fr"))
+        assertEquals("WoW no puede conectar con sus servidores", t(StreamCurtain.CONNECT_FAILED, "es"))
+    }
 }

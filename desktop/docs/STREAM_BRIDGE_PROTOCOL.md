@@ -165,6 +165,22 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   is offered; the `status` line (and, headless, `sunshine.problem` `screen_disabled` with its `why`) is "Enable SudoMaker display
   adapter in Device Manager". Desktop never enables a device. The one-time install question waits until no Thor is connected or
   streaming.
+- **[0.2.34] Stop and show it (the user's ruling 2026-11-18; 0.2.33 restarted WoW every ~20 s while Blizzard said "no servers
+  available").** The 0.2.33 restarts after a 309 are gone (WoW closed itself = started again; WoW back at its login after a
+  `login.txt` run = restarted, `RegionRetryMax`). After a server error the supervisor stops; the `wow` message keeps `connect` =
+  `failed`, adds `connect_code` (WoW's own code, `309`: `login_error` goes with the next screen switch) and `stopped` = `true` while
+  WoW is not signed in. The Thor shows the error in red ("WoW can't reach its servers (309)") with "Retry (A)" (A or a tap; nothing
+  else of the pad reaches the PC meanwhile) and sends **`{"t":"wow_retry"}`**: Desktop clears the error, asks Blizzard's version
+  again, then starts WoW, or restarts it at its login screen, ONCE per press (the new run asks the Thor for the login again,
+  `login_again`, as before; with the PC's Battle.net signed out its sign-in comes first). An older Thor app ignores `stopped`
+  and shows the 0.2.33 line over WoW's screen; an older Desktop ignores `wow_retry` (it never says `stopped`).
+- **[0.2.34] An outdated PC game.** Before WoW is started (and every tick while a Thor is connected) Desktop compares the active
+  `wowf` row of `<WoW>/.build.info` (its `Version`; its `Branch` = the region) with Blizzard's patch server
+  (`http://<region>.patch.battle.net:1119/wowf/versions`, `VersionsName` of that region; cached 5 minutes, 1 minute after no answer,
+  read in the background). Older = WoW is NOT started; the `wow` message says `pc_game` = `outdated`, `game_installed`,
+  `game_current` (full versions) and `stopped` = `true`; the Thor: "PC game needs an update (70938 -> 70959)" with "Retry (A)",
+  which checks again (`wow_retry`). No answer (offline) never blocks a start; a first check under way holds the start a few
+  seconds at most. Desktop patching the game itself (from Blizzard's CDN, no Battle.net) comes later.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.

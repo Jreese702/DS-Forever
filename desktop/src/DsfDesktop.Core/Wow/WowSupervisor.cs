@@ -20,8 +20,8 @@ namespace DsfDesktop.Wow
         readonly Func<string> focusWow;
         readonly Func<DateTime> now;
         readonly Func<string> crash;
-        readonly Func<int> connectFailures;
-        readonly Func<bool> loginAfterFailure;
+        readonly Func<bool> failed;
+        readonly Func<GameCheck> game;
         readonly Action<Action> run;
         readonly object gate = new object();
 
@@ -37,15 +37,13 @@ namespace DsfDesktop.Wow
 
         /// <summary>clients that have tried to sign in during this connect (see Decide)</summary>
         public int Tries { get; private set; }
-        /// <summary>starts after 309s (WowFlow.RegionRetryMax); they never count as <see cref="Tries"/>. Kept across the connects a
-        /// 309 brings (AppController wants WoW again for it), from 0 again on a connect with no 309 waiting</summary>
-        public int RegionTries { get; private set; }
-        /// <summary>the 309s (LoginLog.ConnectFailures) already answered by a start</summary>
-        int regionAnswered;
-
-        /// <summary>a 309 not answered by a start yet, and the region starts are not used up</summary>
-        public bool RegionRetryPending { get { lock (gate) return RegionPending(connectFailures()); } }
-        bool RegionPending(int refusals) => refusals > regionAnswered && RegionTries < WowFlow.RegionRetryMax;
+        /// <summary>the Thor's Retry (<see cref="Retry"/>) not answered by a start yet: WoW is started, or restarted at its login
+        /// screen, ONCE for it</summary>
+        public bool RetryPending { get { lock (gate) return retry; } }
+        bool retry;
+        /// <summary>stopped for a server error (<see cref="WowAction.Stopped"/>) or an outdated PC game (<see cref="WowAction.Outdated"/>):
+        /// the Thor's Retry is what goes on; null = not stopped</summary>
+        public WowAction? StoppedFor { get; private set; }
         public WowAction Last { get; private set; } = WowAction.Wait;
         /// <summary>the one retry is spent and WoW is still not signed in</summary>
         public bool NeedsYou { get; private set; }
@@ -59,16 +57,15 @@ namespace DsfDesktop.Wow
         /// <param name="startPending">a start is under way (the starter waits for the new client's window)</param>
         /// <param name="closeWow">closes the old client (gracefully, then only if still at the login screen by force); blocking; null = gone</param>
         /// <param name="run">how a blocking restart runs (a background task; the tests run it inline)</param>
-        /// <param name="connectFailures">LoginLog.ConnectFailures: a new one = a 309 (the client closed itself, or stayed at its login)</param>
-        /// <param name="loginAfterFailure">the client stayed at its own login screen after the 309, and its run was signed in by the
-        /// Thor's login.txt (WowFlow.Decide's [loginAfterFailure]): it is restarted so the new run asks the Thor again</param>
+        /// <param name="failed">a server error stands (LoginLog.ConnectFailed): stop, the Thor shows it with a Retry (WowFlow.Decide)</param>
+        /// <param name="game">the PC game against Blizzard's version (GameVersionCheck.Poll): outdated = WoW is not started</param>
         public WowSupervisor(Func<WowScreen> screen, Func<BnetState> bnet, Func<string> startBnet, Func<string> showBnetSignIn,
                              Func<string> startWow, Func<bool> startPending, Func<string> closeWow, Func<string> focusWow,
-                             Func<DateTime> now = null, Action<Action> run = null, Func<string> crash = null, Func<int> connectFailures = null,
-                             Func<bool> loginAfterFailure = null)
+                             Func<DateTime> now = null, Action<Action> run = null, Func<string> crash = null, Func<bool> failed = null,
+                             Func<GameCheck> game = null)
         {
-            this.connectFailures = connectFailures ?? (() => 0);
-            this.loginAfterFailure = loginAfterFailure ?? (() => false);
+            this.failed = failed ?? (() => false);
+            this.game = game ?? (() => GameCheck.Unknown);
             this.screen = screen; this.bnet = bnet; this.startBnet = startBnet; this.showBnetSignIn = showBnetSignIn;
             this.startWow = startWow; this.startPending = startPending; this.closeWow = closeWow; this.focusWow = focusWow;
             this.now = now ?? (() => DateTime.UtcNow);
@@ -81,11 +78,28 @@ namespace DsfDesktop.Wow
         {
             lock (gate)
             {
-                active = true; NeedsYou = false; restarting = false; Crash = null;
+                active = true; NeedsYou = false; restarting = false; Crash = null; StoppedFor = null;
                 bnetWaitSince = null; bnetGaveUp = false;
                 var s = screen();
                 Tries = s == WowScreen.Login || s == WowScreen.SigningIn || s == WowScreen.Starting ? 1 : 0;
-                if (connectFailures() <= regionAnswered) RegionTries = 0;
+                Last = WowAction.Wait;
+            }
+            Step();
+        }
+
+        /// <summary>
+        /// The Thor's Retry after a stop (the user's ruling 2026-11-18, "Stop and show it": Retry restarts WoW once per press). The
+        /// caller has cleared the failure (LoginLog.ClearFailure) and asked Blizzard's version again first. A client at its login
+        /// screen is restarted once (its new run asks the Thor for the login again: AppController.BeforeStart), a closed one started;
+        /// Battle.net's sign-in still comes first while it is signed out, and an outdated game is still never started.
+        /// </summary>
+        public void Retry()
+        {
+            lock (gate)
+            {
+                active = true; NeedsYou = false; restarting = false; StoppedFor = null; retry = true;
+                bnetWaitSince = null; bnetGaveUp = false;
+                Tries = 0;
                 Last = WowAction.Wait;
             }
             Step();
@@ -130,12 +144,8 @@ namespace DsfDesktop.Wow
                         b = BnetState.Unknown;
                     }
                 }
-                // after a 309 the client starts again (it closed itself) or is restarted (it stayed at its login, signed in by
-                // login.txt) without using up the one retry: the player picks a region again on WoW's own screen (the user's pick
-                // 2026-11-17)
-                var refusals = connectFailures();
-                bool regionRetry = RegionPending(refusals);
-                var a = WowFlow.Decide(b, s, Tries, restarting || startPending(), regionRetry, regionRetry && loginAfterFailure());
+                // a server error stops here (never a start by ourselves: the user's ruling 2026-11-18); the Thor's Retry starts WoW once
+                var a = WowFlow.Decide(b, s, Tries, restarting || startPending(), failed(), retry, game());
                 switch (a)
                 {
                     case WowAction.Wait:
@@ -150,13 +160,11 @@ namespace DsfDesktop.Wow
                         if (Last != a) Set(a, showBnetSignIn());
                         break;
                     case WowAction.StartWow:
-                        if (regionRetry) { RegionTries++; regionAnswered = refusals; }
-                        else Tries++;
+                        Tries++; retry = false;
                         Set(a, startWow());
                         break;
                     case WowAction.RestartWow:
-                        if (regionRetry) { RegionTries++; regionAnswered = refusals; }
-                        else Tries++;
+                        Tries++; retry = false;
                         restarting = true;
                         Set(a, null);
                         run(() =>
@@ -169,13 +177,18 @@ namespace DsfDesktop.Wow
                         });
                         break;
                     case WowAction.Focus:
-                        active = false;
-                        if (s == WowScreen.CharSelect || s == WowScreen.World) { RegionTries = 0; regionAnswered = refusals; }   // signed in
+                        active = false; retry = false;
                         Set(a, focusWow());
                         break;
+                    case WowAction.Stopped:
+                    case WowAction.Outdated:
+                        // stop and show it: the Thor shows the error (or the versions) with a Retry; nothing more by ourselves
+                        active = false; retry = false;
+                        StoppedFor = a;
+                        Set(a, a == WowAction.Stopped ? WowFlow.ConnectFailedText : WowFlow.OutdatedText);
+                        break;
                     case WowAction.NeedsYou:
-                        active = false;
-                        regionAnswered = refusals;      // the player is asked: no refusal so far starts WoW again
+                        active = false; retry = false;
                         NeedsYou = true;
                         Set(a, WowFlow.NeedsYouText);
                         break;

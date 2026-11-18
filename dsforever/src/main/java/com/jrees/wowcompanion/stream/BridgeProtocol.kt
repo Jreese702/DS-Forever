@@ -26,7 +26,17 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                  val input: String = "",
                  /** a 309 at WoW's sign-in: Desktop 0.2.33's "connect" "failed", or 0.2.31 / 0.2.32's "region" "refused" (the same
                   *  309, read neutrally: its log can't tell a refused district from an unreachable realm, the user 2026-11-17) */
-                 val connectFailed: Boolean = false) {
+                 val connectFailed: Boolean = false,
+                 /** Desktop 0.2.34: it STOPPED and waits for the player's Retry ([BridgeProtocol.wowRetry]): a server error, or an
+                  *  outdated PC game, while WoW is not signed in (the user's ruling 2026-11-18, "Stop and show it"); false = an older
+                  *  Desktop, which restarts by itself */
+                 val stopped: Boolean = false,
+                 /** Desktop 0.2.34: WoW's own code with [connectFailed] ("309"; login_error goes with the next screen switch) */
+                 val connectCode: String = "",
+                 /** Desktop 0.2.34: "outdated" = the PC's game is older than Blizzard's ([gameInstalled] -> [gameCurrent]); "" = fine */
+                 val pcGame: String = "",
+                 val gameInstalled: String = "",
+                 val gameCurrent: String = "") {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -35,7 +45,9 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
             PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
                 if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
                 it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"),
-                it.optString("connect") == "failed" || it.optString("region") == "refused")
+                it.optString("connect") == "failed" || it.optString("region") == "refused",
+                it.optBoolean("stopped"), it.optString("connect_code"), it.optString("pc_game"), it.optString("game_installed"),
+                it.optString("game_current"))
         }
 
         /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */
@@ -151,6 +163,8 @@ object BridgeProtocol {
     fun pcTest(): String = JSONObject().put("t", "pc_test").toString()
     /** Desktop 0.2.32: the player's Retry by hand: Desktop's own virtual screen starts its tries over (it gives up after 3) */
     fun screenRetry(): String = JSONObject().put("t", "screen_retry").toString()
+    /** Desktop 0.2.34: the player's Retry after Desktop stopped ([PcWow.stopped]): WoW once more (restarted at its login, or started) */
+    fun wowRetry(): String = JSONObject().put("t", "wow_retry").toString()
     /**
      * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"): [ask] = Settings > Game account "Ask
      * each time" (nothing is sent to remember); [list] = the Thor's Config.wtf accountList with its "!" pick

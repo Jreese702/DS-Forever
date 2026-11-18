@@ -1582,7 +1582,10 @@ namespace DsfDesktop.App
                 var s = WowInfo();
                 bool ok = SignedIn(LastScreen) && WowWindow.IsForeground();
                 s["ok"] = ok;
-                if (!ok) s["why"] = Supervisor.NeedsYou ? WowFlow.NeedsYouText : Starter.State == WowState.Starting ? "starting WoW" : (Starter.Why ?? "WoW isn't signed in yet");
+                if (!ok) s["why"] = Supervisor.NeedsYou ? WowFlow.NeedsYouText
+                    : Supervisor.StoppedFor == WowAction.Stopped ? WowFlow.ConnectFailedText
+                    : Supervisor.StoppedFor == WowAction.Outdated ? WowFlow.OutdatedText
+                    : Starter.State == WowState.Starting ? "starting WoW" : (Starter.Why ?? "WoW isn't signed in yet");
                 return s;
             }
             CheckCapture();
@@ -1830,8 +1833,8 @@ namespace DsfDesktop.App
                 closeWow: CloseForRestart,
                 focusWow: () => { CheckCapture(); return FocusWow(); },
                 crash: CrashNow,
-                connectFailures: () => { lock (loginLog) return loginLog.ConnectFailures; },
-                loginAfterFailure: LoginAfterFailure);
+                failed: () => { lock (loginLog) return loginLog.ConnectFailed; },
+                game: GameNow);
             Supervisor.Changed += (a, detail) =>
             {
                 if (a == WowAction.NeedsYou) needsYouAt = DateTime.UtcNow;
@@ -1840,20 +1843,52 @@ namespace DsfDesktop.App
                          : a == WowAction.ShowBattleNetSignIn ? "Sign in to Battle.net"
                          : a == WowAction.RestartWow ? "WoW was at its login screen: starting it again…"
                          : a == WowAction.NeedsYou ? WowFlow.NeedsYouText
+                         : a == WowAction.Stopped ? WowFlow.ConnectFailedText
+                         : a == WowAction.Outdated ? WowFlow.OutdatedText
                          : a == WowAction.Crashed ? (detail == "update" ? WowFlow.UpdateText : WowFlow.CrashText) : null;
                 if (text != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = text });
                 PublishWow(force: true);
             };
         }
 
-        /// <summary>the client stayed at its own login screen after a 309 and its run was signed in by the Thor's login.txt (the user's
-        /// PC 2026-11-17 22:57: the file was read and deleted, so nothing is typed there any more): a restart brings the login back</summary>
-        bool LoginAfterFailure()
+        /// <summary>Blizzard's patch server (plain HTTP on 1119, as the Thor's own updater reads it): a few seconds at most, never on
+        /// the tick (GameVersionCheck runs it in the background)</summary>
+        static readonly HttpClient Patch = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+
+        GameVersionCheck gameCheck;
+        readonly object gameGate = new object();
+
+        /// <summary>the PC's WoW Forever against Blizzard's version (the user's PC 2026-11-18: 70938 installed, 70959 current, so
+        /// "no servers available"): Unknown when there is no install or no answer (offline never blocks a start)</summary>
+        GameCheck GameNow()
         {
-            bool back;
-            lock (loginLog) back = loginLog.BackAtLoginAfterFailure;
-            if (!back) return false;
-            lock (loginGate) return loginRunPid.HasValue;
+            lock (gameGate)
+                if (gameCheck == null)
+                    gameCheck = new GameVersionCheck(
+                        rows: () => Wow != null ? BuildInfo.Read(Wow.Root) : new List<BuildInfoRow>(),
+                        fetch: url =>
+                        {
+                            try { using (var r = Patch.GetAsync(url).Result) return r.IsSuccessStatusCode ? r.Content.ReadAsStringAsync().Result : null; }
+                            catch (Exception) { return null; }
+                        },
+                        product: "wowf");
+            return gameCheck.Poll();
+        }
+
+        /// <summary>
+        /// The Thor's Retry ("wow_retry") after a stop (the user's ruling 2026-11-18, "Stop and show it"): the server error is
+        /// answered and Blizzard's version asked again; then WoW is started, or restarted at its login screen, ONCE for this press
+        /// (WowSupervisor.Retry; its new run asks the Thor for the login again, BeforeStart). An outdated game is still not started.
+        /// </summary>
+        public void WowRetry()
+        {
+            Log.I("bridge: the Thor's Retry: WoW once more");
+            lock (loginLog) loginLog.ClearFailure();
+            GameNow();
+            gameCheck?.Refresh();
+            needsYouAt = DateTime.MinValue;
+            if (Settings.StartWowOnStream && Supervisor != null) Supervisor.Retry();
+            PublishWow(force: true);
         }
 
         /// <summary>the game and Battle.net for the Thor (the "wow" message, the welcome's wow): its curtain lifts on charselect / world + focused</summary>
@@ -1880,7 +1915,23 @@ namespace DsfDesktop.App
             // a 309 (LoginLog.ConnectFailed): the Thor says one neutral line, "WoW can't reach its servers"; the player picks a region
             // again on WoW's own screen (Desktop never picks or saves one). Never "region" "refused" any more (0.2.31 and 0.2.32): the
             // log cannot tell a refused district from an unreachable realm, and the user's 309 was no region error (2026-11-17)
-            if (connectFailed) d["connect"] = "failed";
+            if (connectFailed)
+            {
+                d["connect"] = "failed";
+                // WoW's own code with it: the screen switch after the error clears login_error, this stays until Retry
+                d["connect_code"] = LoginLog.ConnectFailedCode;
+            }
+            // the PC game older than Blizzard's (the user's ruling 2026-11-18): WoW is not started; the Thor says the two versions
+            var g = GameNow();
+            if (g == GameCheck.Outdated && gameCheck != null)
+            {
+                d["pc_game"] = "outdated";
+                d["game_installed"] = gameCheck.Installed ?? "";
+                d["game_current"] = gameCheck.Current ?? "";
+            }
+            // 0.2.34: Desktop stopped and waits for the Thor's Retry ("wow_retry"): a server error or an outdated game while WoW is
+            // not signed in. An older Thor ignores it (and shows the line it knows)
+            if ((connectFailed || g == GameCheck.Outdated) && !SignedIn(LastScreen)) d["stopped"] = true;
             return WithInput(d);
         }
 
@@ -1893,17 +1944,13 @@ namespace DsfDesktop.App
             if (Supervisor.Crash != null && LastScreen != WowScreen.None)
                 using (var p = WowWindow.FindAny(FlavorDirOrNull))
                     if (p != null && p.Id != crashedPid && !WowProbe.FatalErrorShown(p.Id)) Supervisor.CrashOver();
-            // a 309 (LoginLog.ConnectFailed), maybe after the supervisor had already put WoW in front and stopped: a Thor still wants
-            // it, so the client starts again at WoW's own region screen (the user's pick 2026-11-17: "it should be changable"). WoW
-            // closed itself (22:58) = started again; it stayed at its login with its login.txt used up (22:57) = restarted, and the new
-            // run asks the Thor for the login. Battle.net signed out: its sign-in comes up on the Thor first (WowFlow.Decide)
-            bool connectFailed;
-            lock (loginLog) connectFailed = loginLog.ConnectFailed;
+            // a 309 (LoginLog.ConnectFailed) starts nothing any more (the user's ruling 2026-11-18, "Stop and show it": 0.2.33
+            // restarted WoW every ~20 s while Blizzard said "no servers available"): the Thor shows it with a Retry (WowRetry). While a
+            // Thor is here the PC game is checked against Blizzard's version too (WowInfo says it; the supervisor never starts an
+            // outdated game)
             bool thorHere = Bridge != null && Bridge.Sessions().Count > 0;
-            if (!Supervisor.Active && connectFailed && Settings.StartWowOnStream && thorHere && Supervisor.RegionRetryPending
-                && (LastScreen == WowScreen.None || (LastScreen == WowScreen.Login && LoginAfterFailure())))
-                Want(LastScreen == WowScreen.None ? "its client closed after a 309" : "its client stayed at its login after a 309");
-            else if (Supervisor.Active) Supervisor.Step();
+            if (thorHere) GameNow();
+            if (Supervisor.Active) Supervisor.Step();
             FocusRetry();
             PublishWow(force: false);
         }

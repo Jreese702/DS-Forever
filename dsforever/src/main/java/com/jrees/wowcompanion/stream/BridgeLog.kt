@@ -95,6 +95,9 @@ class BridgeLog(
     /** the player's Retry: Desktop's own virtual screen tries again (it stops after 3 failures); false = no connection right now */
     fun screenRetry(): Boolean = try { conn?.send(BridgeProtocol.screenRetry()); conn != null } catch (_: Throwable) { false }
 
+    /** the player's Retry after Desktop stopped (a server error, an outdated PC game): WoW once more; false = no connection now */
+    fun wowRetry(): Boolean = try { conn?.send(BridgeProtocol.wowRetry()); conn != null } catch (_: Throwable) { false }
+
     /** how a session ended */
     enum class End { DROPPED, AUTH_LOST, STOPPED }
 

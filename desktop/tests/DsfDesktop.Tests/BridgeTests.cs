@@ -30,6 +30,8 @@ namespace DsfDesktop.Tests
         public int HostChecks;
         public int PcTests, ScreenRetries;
         public void ScreenRetry() { ScreenRetries++; }
+        public volatile int WowRetries;
+        public void WowRetry() { WowRetries++; }
         public Dictionary<string, object> PcTest()
         {
             PcTests++;
@@ -647,6 +649,26 @@ namespace DsfDesktop.Tests
                 c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
                 c.Until("pc_test_result");
                 A.Eq(1, h.ScreenRetries);
+            }
+        }
+
+        /// <summary>the user's ruling 2026-11-18 ("Stop and show it"): the Thor's Retry after Desktop stopped reaches the host, once
+        /// per press</summary>
+        [Test]
+        public static void TheThorsWowRetryReachesTheHost()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8e", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "wow_retry" });
+                c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
+                c.Until("pc_test_result");
+                var until = DateTime.UtcNow.AddSeconds(3);
+                while (h.WowRetries == 0 && DateTime.UtcNow < until) System.Threading.Thread.Sleep(20);
+                A.Eq(1, h.WowRetries);
             }
         }
     }

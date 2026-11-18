@@ -22,7 +22,9 @@ object StreamCurtain {
 
     sealed class Shows {
         /** the curtain: the box's rows and its gold status line */
-        data class Curtain(val rows: List<SetupFlow.Check>, val line: String) : Shows()
+        data class Curtain(val rows: List<SetupFlow.Check>, val line: String,
+                           /** Desktop stopped and waits for the player's Retry (A, or a tap): [BridgeProtocol.wowRetry] */
+                           val retry: Boolean = false) : Shows()
         /** ONLY Battle.net's window out of the stream ([show]: x, y, w, h as shares of the PC's screen), black round it, with [line] small
          *  at the top (the user, 2026-10-30: "I kind of expected a simple sign in window for bnet to appear on the top screen. I dont
          *  really want to see my desktop screen for any reason until the game is launched and logging in") */
@@ -76,6 +78,37 @@ object StreamCurtain {
     /** a 309 at WoW's sign-in ([PcWow.connectFailed]): one neutral line, never "Region refused" (the user, 2026-11-17: "saying that
      *  its a region error when its not"); the player picks a region again on WoW's own screen */
     const val CONNECT_FAILED = "WoW can't reach its servers"
+    /** WoW's code with it (Desktop 0.2.34): "WoW can't reach its servers (309)" */
+    const val CONNECT_FAILED_CODE = "WoW can't reach its servers (%s)"
+    /** Desktop 0.2.34: the PC's game is older than Blizzard's, so WoW is not started (the user's ruling 2026-11-18: Desktop patches it
+     *  itself; until then Retry checks again). Never "on the PC" */
+    const val PC_GAME_OUTDATED = "PC game needs an update"
+    const val PC_GAME_OUTDATED_FROM_TO = "PC game needs an update (%s -> %s)"
+    /** the line under a stop: the player's one action */
+    const val RETRY = "Retry (A)"
+
+    /** a version's build number ("1.60.1.70938" -> "70938"); the whole of it when it has none */
+    fun build(v: String): String = v.trim().substringAfterLast('.').takeIf { b -> b.isNotEmpty() && b.all { it.isDigit() } } ?: v.trim()
+
+    /**
+     * Desktop 0.2.34 stopped (the user's ruling 2026-11-18, "Stop and show it"; 0.2.33 restarted WoW every ~20 s while Blizzard said
+     * "no servers available"): what it stopped for, as the curtain's red row; null = not stopped (or signed in after all, or an older
+     * Desktop that restarts by itself)
+     */
+    fun stopLine(pc: PcWow?): String? {
+        if (pc == null || !pc.stopped || pc.signedIn) return null
+        if (pc.pcGame == "outdated") {
+            val have = build(pc.gameInstalled); val need = build(pc.gameCurrent)
+            return if (have.isNotEmpty() && need.isNotEmpty()) PC_GAME_OUTDATED_FROM_TO.replaceFirst("%s", have).replaceFirst("%s", need)
+                else PC_GAME_OUTDATED
+        }
+        if (pc.connectFailed) {
+            val code = pc.connectCode.ifEmpty { pc.loginError }
+            return if (code.isNotEmpty()) CONNECT_FAILED_CODE.replace("%s", code) else CONNECT_FAILED
+        }
+        return null
+    }
+
     /** Desktop 0.2.33: the PC's SudoVDA (Apollo's virtual display driver) is there but disabled in Windows: the player enables it */
     const val SCREEN_DISABLED = "Enable SudoMaker display adapter in Device Manager"
 
@@ -131,6 +164,8 @@ object StreamCurtain {
         // user, 2026-11-13); and while its Sunshine ports aren't known yet, the wait says so
         if (!connected && pcWhy.isNotEmpty()) return curtain(listOf(row(found, true)), pcWhy)
         if (!connected && waiting) return curtain(listOf(row(found, true)), WAITING)
+        // Desktop stopped (a server error, an outdated PC game): the reason in red and the player's Retry, stream or not
+        stopLine(pc)?.let { return Shows.Curtain(listOf(row(found, true), SetupFlow.Check(it, SetupFlow.Mark.BAD)), RETRY, retry = true) }
         // WoW itself is up and refused the sign-in: the whole of WoW, its own message and its buttons (the user, 2026-10-30: "why doesn't
         // it show the full wow window when it shows this login error?"), not Battle.net's window
         if (connected && atLogin(pc) && pc.loginError.isNotEmpty() && pc.needsYou && pc.crash.isEmpty() && pc.bnet != "signin_needed")

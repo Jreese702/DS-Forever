@@ -366,6 +366,8 @@
 "Press Play in Battle.net": "Appuyez sur Jouer dans Battle.net",
 "WoW can't reach its servers": "WoW n'arrive pas à joindre ses serveurs",
 "Enable SudoMaker display adapter in Device Manager": "Activez l'adaptateur d'affichage SudoMaker dans le Gestionnaire de périphériques",
+"PC game needs an update": "Jeu du PC à mettre à jour",
+"Retry (A)": "Réessayer (A)",
 "120 fps: 30+ Mbps": "120 i/s : 30+ Mbps",
 "DS Forever Desktop hasn't said its streaming port.": "DS Forever Desktop n'a pas indiqué son port de streaming.",
 "Stay": "Garder",
@@ -2364,6 +2366,8 @@
 "Other languages · %s": "Autres langues · %s",
 "%s fps": "%s fps",
 "%s fps, set in the launcher's menu": "%s fps, réglé dans le menu du lanceur",
-"Route data %s / %s": "Données d'itinéraire %s / %s"
+"Route data %s / %s": "Données d'itinéraire %s / %s",
+"WoW can't reach its servers (%s)": "WoW ne joint pas ses serveurs (%s)",
+"PC game needs an update (%s -> %s)": "Jeu du PC à mettre à jour (%s -> %s)"
 }
 }
