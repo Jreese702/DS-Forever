@@ -720,19 +720,34 @@ class MapOtherContinentShotsTest {
             val bad = ArrayList<String>()
             var minLand = 100
             val lands = StringBuilder()
+            var painted = 0
             fun frame(label: String) {
                 settle(1)
                 val bm = draw(r.home)
                 val s = landStats(r, bm)
                 val land = 100 * s[0] / s[1].coerceAtLeast(1)
+                // A PAINTING STILL DECODING (the 1.0.34 test 1488 integration: Painted Kalimdor 21% against the 40% bar in a full run on a busy
+                // PC, 57-72% alone and in two quiet full runs - the frames are not waited for, so how many land before the room's decoder
+                // does is the PC's speed): a frame drawn while the room still has a picture in flight shows fe0213e8's stand-in (the depth
+                // fields' land, Terrain's ~17-21%) and is held to Terrain's bar; one with every picture in to the painting's
+                val decoding = !terrain && r.room.picturesPending > 0
+                if (!terrain && !decoding) painted++
                 if (land < minLand) { minLand = land; worst.setLength(0); worst.append("$label zoom ${st(r)[2]} land $land%") }
                 if (strip != null) shots.add(Bitmap.createScaledBitmap(bm, W / 4, 1080 / 4, true))
-                lands.append(" $land")
-                if (land < landFloor(terrain)) bad.add("$label (zoom ${st(r)[2]}) $land%")
+                lands.append(" $land").append(if (decoding) "d" else "")
+                if (land < landFloor(terrain || decoding)) bad.add("$label (zoom ${st(r)[2]}) $land%${if (decoding) " (decoding)" else ""}")
+            }
+            /** the pictures in flight land (the decoder's posts), then the frame: the painting itself is held to its own bar at least here */
+            fun landed(label: String) {
+                val until = System.currentTimeMillis() + 15_000L
+                while (r.room.picturesPending > 0 && System.currentTimeMillis() < until) { Thread.sleep(10); ShadowLooper.idleMainLooper() }
+                if (!terrain) assertEquals("$pn: $label: the room's pictures decoded", 0, r.room.picturesPending)
+                frame(label)
             }
             for (i in 0 until 12) { key(r.home, "PADLSHOULDER"); for (k in 0 until 3) frame("out $i.$k") }
             assertEquals("$pn: down to the floor", st(r)[3], st(r)[2], 0.001f)
             for (k in 0 until 4) { Thread.sleep(40); frame("floor $k") }
+            landed("floor landed")
             // a pan at the floor
             val px = mf("panX").getFloat(r.map)
             for (k in 0 until 4) { mf("panX").setFloat(r.map, px + 0.4f * (k + 1)); r.map.invalidate(); frame("pan $k") }
@@ -741,7 +756,9 @@ class MapOtherContinentShotsTest {
             // back in to the zone (its pictures let go there), then out again
             for (i in 0 until 12) { key(r.home, "PADRSHOULDER"); frame("in $i") }
             for (k in 0 until 3) { Thread.sleep(40); frame("zone $k") }
+            landed("zone landed")
             for (i in 0 until 12) { key(r.home, "PADLSHOULDER"); for (k in 0 until 2) frame("out again $i.$k") }
+            if (!terrain) assertTrue("$pn: frames held to the painting's own bar ($painted)", painted >= 2)
             println("WFL $pn: ${shots.size} frames, least land: $worst")
             println("WFL $pn per frame:$lands")
             if (strip != null && shots.isNotEmpty()) {

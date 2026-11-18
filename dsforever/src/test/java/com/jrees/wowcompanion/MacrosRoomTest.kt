@@ -190,6 +190,20 @@ class MacrosRoomTest {
         assertEquals("Heal, else me", MacrosModel.presetWord("heal")); assertEquals("Friend or foe", MacrosModel.presetWord("fof"))
     }
 
+    /** Spells s17 BLANK (the user, 2026-11-18: "I need a blank template option on macros to just start a fresh new blank template"): the
+     *  first tile is Blank (the default icon, no lines); after it an empty macro's editor carries no tiles: name, icon, + Line, More */
+    @Test fun blankIsTheFirstTileAndLeavesABlankEditor() {
+        val e = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ef":"t1","mac":{"n":"New Macro","i":134400,"lines":[]},
+            "tiles":[{"ic":[134400],"k":"blank","t":""},{"ic":[136052],"k":"heal","t":"#showtooltip"}]}}""")
+        assertEquals(listOf("blank", "heal"), e.tiles.map { it.key }); assertEquals(listOf(134400), e.tiles[0].icons); assertEquals("", e.tiles[0].text)
+        assertEquals("Blank", MacrosModel.presetWord("blank"))
+        val empty = MacrosModel.Mac("New Macro", 134400, emptyList(), 0, emptySet(), more = false)
+        assertEquals(listOf("name", "icon", "t1", "t2", "add", "more"), MacrosModel.editRows(empty, tiles = e.tiles.size))
+        val blank = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ef":"add","mac":{"n":"New Macro","i":134400,"lines":[]},"ls":[]}}""")
+        assertTrue(blank.tiles.isEmpty()); assertEquals("add", blank.ef)
+        assertEquals(listOf("name", "icon", "add", "more"), MacrosModel.editRows(empty, tiles = blank.tiles.size))
+    }
+
     @Test fun theChipsWords() {
         // D5's units: the controller's targets; party1..4 = "Party" + its number; a typed name is the player's text (no word)
         assertEquals("Target", MacrosModel.unitWord(null)); assertEquals("Soft enemy", MacrosModel.unitWord("softenemy"))

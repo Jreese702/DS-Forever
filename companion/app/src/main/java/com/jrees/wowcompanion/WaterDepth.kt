@@ -282,7 +282,8 @@ object WaterDepth {
 
     /** the tests: build / read continent [cont]'s field now on this thread */
     fun fieldNow(cont: Int): Field? {
-        synchronized(this) { fields[cont]?.let { return it } }
+        // (as [field]: a field of another minimap build - another art root, a test before - is not this one's)
+        synchronized(this) { fields[cont]?.let { f -> val st = TerrainOverview.stampNow(); if (st == null || f.stamp == st) return f; fields.remove(cont) } }
         val f = runCatching { load(cont) ?: build(cont) }.getOrNull()
         synchronized(this) { if (f != null) fields[cont] = f else none.add(cont) }
         return f

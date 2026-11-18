@@ -108,6 +108,10 @@ class MacrosShotsTest {
         // focused line's X Remove hint, its ask (Cancel / Remove), More with Insert below (the line it goes under marked)
         for (n in listOf("edit_xremove", "edit_remove_ask", "edit_more_insert"))
             if (File(out, "docs/$n.json").isFile) roomShot(n)
+        // Spells s17 BLANK (the user, 2026-11-18: "I need a blank template option on macros to just start a fresh new blank template"): Blank
+        // first in an empty macro's tiles and in More > Presets, the blank editor after it, its preview and Replace ask on a macro with lines
+        for (n in listOf("edit_empty_blank_focus", "edit_blank", "preset_blank", "preset_blank_replace"))
+            if (File(out, "docs/$n.json").isFile) roomShot(n)
         // (Spells s10 review) a bind of a name two macros share, refused ("Name taken"); the row made but not placed ("No pad row")
         for (n in listOf("taken", "norow")) if (File(out, "docs/$n.json").isFile) roomShot(n)
         // (Spells s13; the user, 2026-11-16: "also things like my pet attack are missing from the spells options.") the pick list with a

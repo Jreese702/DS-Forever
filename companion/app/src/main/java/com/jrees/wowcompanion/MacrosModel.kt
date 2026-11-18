@@ -389,7 +389,7 @@ object MacrosModel {
     fun presetWord(k: String): String = when (k) {
         "heal" -> "Heal, else me"; "fof" -> "Friend or foe"; "int" -> "Focus interrupt"; "focus" -> "Set focus"; "atk" -> "Attack + spell"
         "petatk" -> "Pet attack + spell"; "seq" -> "Sequence"; "form" -> "Leave form + spell"; "trink" -> "Trinket + spell"
-        "mo" -> "Mouseover heal"; else -> "Preset"
+        "mo" -> "Mouseover heal"; "blank" -> "Blank"; else -> "Preset"
     }
     /** a soft warning's word (amber; Done still writes) */
     fun warnWord(w: String?): String? = when (w) { "book" -> "Not in book"; "bags" -> "Not in bags or worn"; "else" -> "No else"; else -> null }

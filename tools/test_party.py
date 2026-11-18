@@ -1914,7 +1914,8 @@ hits = [(p, ln) for (p, ln) in hits if not ((p == r'\bPlaceAction\b' and ln == '
 MACRO_ROOM_LINES = {
     (r'\bCreateMacro\b', 'local ok, ni = CALL(function() return CreateMacro(name, MR.ICON, "", st.tab == "c") end)'),
     (r'\bEditMacro\b', 'local ok, ni = CALL(function() return EditMacro(i, name) end)'),
-    (r'\bEditMacro\b', 'local ok = CALL(function() return EditMacro(i, nil, nil, nb) end)'),
+    # (Spells s17 Blank: the one body write carries Blank's default icon in the same EditMacro; nil for every other body write)
+    (r'\bEditMacro\b', 'local ok = CALL(function() return EditMacro(i, nil, icon, nb) end)'),
     # Spells s14 (the macro builder v2, the user 2026-11-16: the recipes "make no sense"): the editor's Icon chip, the player's own pick,
     # ONE EditMacro(i, nil, icon) behind the same guard (MR.setIcon; tools/test_macro_room.py aa)
     (r'\bEditMacro\b', 'local ok = CALL(function() return EditMacro(i, nil, icon) end)'),

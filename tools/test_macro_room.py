@@ -339,7 +339,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s16"' in SRC["spells"] and 'local BV = "b68"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
+check('local SV = "s17"' in SRC["spells"] and 'local BV = "b68"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
       "a. the versions: Spells s14, Book b65, PadMap m166")
 check('s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room\'s recipes "make no sense"' in SRC["spells"],
       "a. Spells s14's header note quotes the user")
@@ -360,9 +360,9 @@ guarded = all(re.search(r'canWrite\(\)', fn) for fn in re.findall(r'function MR\
 check(guarded and len(re.findall(r'function MR\.(?:writeBody|setIcon|delete)\(', BLOCK)) == 3
       and 'local why = MR.canWrite()\n    if why then MR.ack(k.name, false, why)' in BLOCK,
       "a. every write is behind the one guard (the keyboard's Done, the one body write, the icon, Delete)")
-bodyCalls = re.findall(r'EditMacro\(i, nil, nil, ([a-z]+)\)', code)
+bodyCalls = re.findall(r'EditMacro\(i, nil, icon, ([a-z]+)\)', code)   # s17: the body write carries Blank's icon (nil otherwise)
 check(bodyCalls == ["nb"] and code.count("MR.writeBody(") >= 6,
-      "a. s14: every line change (Done, Remove, Move, a preset, a typed line) goes through MR.writeBody's ONE EditMacro",
+      "a. s14: every line change (Done, Remove, Move, a preset, s17 Blank, a typed line) goes through MR.writeBody's ONE EditMacro",
       (bodyCalls, code.count("MR.writeBody(")))
 check(re.search(r'SetCVar|C_CVar\.Set', code) is None and 'GetCVar("SoftTargetFriend")' in code,
       "a. s14: the soft-friend CVar is READ only (never written)")
@@ -1078,13 +1078,15 @@ L = opened([("Alpha", ""), ("Beta", "/wave")], CHAR)
 press(L, "PAD1")
 d = mdoc(L)
 tk = [t.get('k') for t in d.get('tiles') or []]
-check(tk == ['heal', 'fof', 'focus', 'atk', 'mo'],
-      "o. a Shaman's tiles in the table's order: Heal, Friend or foe, Set focus, Attack + spell ...", tk)
+check(tk == ['blank', 'heal', 'fof', 'focus', 'atk', 'mo'],
+      "o. a Shaman's tiles in the table's order: (s17) Blank FIRST, Heal, Friend or foe, Set focus, Attack + spell ...", tk)
 check('int' not in tk and 'petatk' not in tk and 'form' not in tk and 'trink' not in tk,
       "o. no interrupt in the book, no pet, no forms, no trinket with a use: those tiles are not shown", tk)
 check('seq' not in tk, "o. one harmful spell only: no Sequence (2+ needed)", tk)
 check(tk[-1] == 'mo' and len(tk) <= 8, "o. Mouseover heal LAST (room left), at most 8", tk)
-t0 = d['tiles'][0]
+tb = d['tiles'][0]
+check(tb.get('k') == 'blank' and tb.get('t') == '' and tb.get('ic') == [134400], "o. (s17) Blank: no lines, the default icon's picture", tb)
+t0 = d['tiles'][tk.index('heal')]
 check(t0.get('t') == '#showtooltip\n/cast [help,nodead][@player] Healing Wave' and t0.get('ic') == [130331],
       "o. Heal, else me: '#showtooltip' + '[help,nodead][@player]', the book's helpful spell picked", t0)
 atk = d['tiles'][tk.index('atk')]
@@ -1108,7 +1110,7 @@ press(L, "PAD2"); press(L, "PADDRIGHT"); press(L, "PAD1")
 check(mdoc(L).get('mac', {}).get('n') == 'Beta' and mdoc(L).get('tiles') is None, "o. Beta (a line): no tiles in its editor")
 more(L, 'pre')
 check(mdoc(L).get('mode') == 'pre' and len(mdoc(L).get('tiles') or []) >= 4, "o. More > Presets: the tiles view")
-tap(L, 2); tap(L, "a")
+tap(L, [t.get('k') for t in mdoc(L).get('tiles')].index('focus')); tap(L, "a")
 check(mdoc(L).get('mode') == 'ps' and mdoc(L)['ps']['k'] == 'focus', "o. Set focus's preview", mdoc(L).get('ps'))
 L.execute('MLOG = {}')
 sel(L)
@@ -1130,7 +1132,7 @@ check(mdoc(L).get('mode') == 'grid', "o. B: the grid")
 L = opened([("Alpha", "")], CHAR, macros='BOOK = { 403, 8042 }; WORN[13] = 9001; NFORMS = 1; CLASS = "DRUID"')
 press(L, "PAD1")
 tk = [t.get('k') for t in mdoc(L).get('tiles') or []]
-check(tk == ['int', 'focus', 'atk', 'seq', 'form', 'trink'], "o. Lightning Bolt + Earth Shock, a Druid with a form, a trinket with a use: "
+check(tk == ['blank', 'int', 'focus', 'atk', 'seq', 'form', 'trink'], "o. (s17 Blank first) Lightning Bolt + Earth Shock, a Druid with a form, a trinket with a use: "
       "Focus interrupt (Earth Shock), Set focus, Attack, Sequence, Leave form, Trinket; no heal tiles", tk)
 tiles = {t['k']: t for t in mdoc(L)['tiles']}
 check(tiles['int']['t'] == '/stopcasting\n/cast [@focus,harm,nodead][] Earth Shock', "o. Focus interrupt: /stopcasting then the focus' interrupt, a plain else")
@@ -1142,6 +1144,56 @@ press(L, "PAD1")
 tk = [t.get('k') for t in mdoc(L).get('tiles') or []]
 check('petatk' in tk, "o. a Hunter: Pet attack + spell", tk)
 check(clean(L) == {}, "o. clean", clean(L))
+
+# ================================================================ o2. (s17) BLANK (the user, 2026-11-18: "I need a blank template option on
+# macros to just start a fresh new blank template"): Blank first; on an empty macro A on it writes nothing and the editor goes blank (no
+# tiles, the glow on + Line, More offers Presets); on a macro with lines its Done asks Replace, the A = ONE EditMacro (no lines, the default icon)
+L = opened([("Alpha", ""), ("Beta", "/wave\n/cheer")], CHAR)
+press(L, "PAD1")
+d = mdoc(L)
+check(d.get('mac', {}).get('n') == 'Alpha' and (d.get('tiles') or [{}])[0].get('k') == 'blank', "o2. Alpha (empty): Blank the first tile", d.get('tiles'))
+L.execute('MLOG = {}')
+L.execute(COMBAT_ON)
+tap(L, 2); tap(L, "a")
+check(mdoc(L).get('note') == 'combat' and mlog(L) == [] and mdoc(L).get('tiles'), "o2. Blank in a fight: refused 'combat', the tiles stay",
+      mdoc(L).get('note'))
+L.execute(COMBAT_OFF)
+tap(L, 2); tap(L, "a")
+d = mdoc(L)
+check(mlog(L) == [] and d.get('mode') == 'edit' and not d.get('tiles') and d.get('ls') == [] and d.get('ef') == 'add',
+      "o2. Blank on an empty macro: nothing written, no tiles, no lines, the glow on + Line", (mlog(L), d.get('mode'), d.get('ef')))
+more(L, 'pre')
+check(mdoc(L).get('mode') == 'pre' and (mdoc(L).get('tiles') or [{}])[0].get('k') == 'blank', "o2. a blank macro's More: Presets again")
+press(L, "PAD2")
+check(mdoc(L).get('mode') == 'edit' and not mdoc(L).get('tiles'), "o2. B from Presets: still blank")
+# a custom icon on an empty macro: Blank puts the default back (ONE EditMacro, no body)
+L.execute('GENM[1].icon = 136048')
+L.execute('MLOG = {}')
+more(L, 'pre')
+tap(L, 0); tap(L, "a", allow=True)
+check(mlog(L) == ['edit %d nil nil' % L.eval('GetMacroIndexByName("Alpha")')] and L.eval('(select(2, GetMacroInfo(GetMacroIndexByName("Alpha"))))') == 134400,
+      "o2. Blank on an empty macro with its own icon: ONE write, the icon only, back to the default", mlog(L))
+press(L, "PAD2")
+# Beta (lines): More > Presets > Blank: its preview, Done ASKS, the ask's A empties it (default icon, the name kept)
+L.execute('GENM[2].icon = 136048')
+press(L, "PADDRIGHT"); press(L, "PAD1")
+check(mdoc(L).get('mac', {}).get('n') == 'Beta', "o2. Beta's editor", mdoc(L).get('mac'))
+more(L, 'pre')
+tap(L, 0); tap(L, "a")
+check(mdoc(L).get('mode') == 'ps' and mdoc(L)['ps']['k'] == 'blank' and mdoc(L)['ps'].get('t') == '', "o2. Blank's preview: no lines",
+      mdoc(L).get('ps'))
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == [] and (mdoc(L).get('ps') or {}).get('arm') is True, "o2. Done on a macro with lines: it asks (Cancel / Replace)", mlog(L))
+L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
+bi = L.eval('GetMacroIndexByName("Beta")')
+d = mdoc(L)
+check(mlog(L) == ['edit %d nil ' % bi] and L.eval('mbody("Beta")') == '' and L.eval('(select(2, GetMacroInfo(GetMacroIndexByName("Beta"))))') == 134400
+      and d.get('mode') == 'edit' and d.get('mac', {}).get('n') == 'Beta' and not d.get('tiles') and d.get('ef') == 'add',
+      "o2. the ask's A: ONE EditMacro - no lines, the default icon, the name kept; the blank editor", (mlog(L), d.get('ef')))
+check(L.eval('OUTSIDE and #OUTSIDE') == 0, "o2. every write inside the player's own press")
+press(L, "PAD2")
+check(clean(L) == {}, "o2. clean", clean(L))
 
 # ================================================================ p. (review) the `wx` cell before the game's macro UI loaded
 L = opened(GEN, CHAR)
@@ -1971,10 +2023,17 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     LE.execute(ICONS); LE.execute('iconize()')
     press(LE, "PAD1"); press(LE, "PADDDOWN")
     dump(LE, "edit_empty")
-    press(LE, "PAD1")
+    press(LE, "PADDRIGHT"); press(LE, "PAD1")                          # (s17: Blank is the first tile; Heal the second)
     dump(LE, "preset")
     press(LE, "PAD2"); press(LE, "PADDUP"); press(LE, "PADDRIGHT"); press(LE, "PAD1")
     dump(LE, "icon")
+    # s17 BLANK: A on the first tile of an empty macro - the blank editor (no tiles, the glow on + Line)
+    LK = opened([("New Macro", "")], [], macros='BOOK = { 403, 331, 324, 8042 }; WORN[13] = 9001')
+    LK.execute(ICONS); LK.execute('iconize()')
+    press(LK, "PAD1"); press(LK, "PADDDOWN")
+    dump(LK, "edit_empty_blank_focus")
+    press(LK, "PAD1")
+    dump(LK, "edit_blank")
     LR = opened([("Alpha", "/cast Healing Wave(Rank 2)")], [], macros=RANKBOOK.replace("Rango", "Rank"))
     LR.execute(ICONS)
     press(LR, "PAD1"); press(LR, "PADDDOWN"); press(LR, "PAD1"); chip(LR, 'rank')
@@ -1983,8 +2042,11 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     LP.execute(ICONS)
     press(LP, "PAD1"); more(LP, 'pre')
     dump(LP, "presets")
-    tap(LP, 0); tap(LP, "a"); sel(LP)
+    tap(LP, 1); tap(LP, "a"); sel(LP)
     dump(LP, "preset_replace")
+    press(LP, "PAD2"); press(LP, "PAD2")
+    tap(LP, 0); tap(LP, "a"); dump(LP, "preset_blank")               # s17: Blank's preview on a macro with lines, then its ask
+    sel(LP); dump(LP, "preset_blank_replace")
     L2 = opened(SHOT, [])
     L2.execute(ICONS); L2.execute('iconize()')
     press(L2, "PADDRIGHT"); press(L2, "PAD3")
