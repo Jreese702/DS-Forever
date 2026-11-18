@@ -326,6 +326,17 @@ sees the PC there.
     `{"t":"sv_written","results":[{"var","state":"written"|"same"|"changed"|"refused"|"running"|"none"|"failed"}]}`. `written` /
     `same` = the PC holds the table: the Thor's base for its later three-way merges of the PC's live `svkeep` documents.
   - A start waits up to 6 s for a `sv_write` still owed.
+- `{"t":"end_session","quit_asked":true|false}` *(Desktop 0.2.39, feat/pause-power; the user 2026-11-18: "When streaming this
+  should also close wow on the PC and revert everything back and be the clean way to disconnect")* — the Thor's clean disconnect (its
+  pause menu's power button, its waiting screen's Exit game). Answered `{"t":"session_ending"}` at once, then
+  `{"t":"session_ended","wow":"closed"|"none"|"left","put_back":bool,"why"}`. Desktop lets the supervisor go (WoW is not started
+  again), closes ONLY the `_forever_` client (path match; never retail or an unreadable one): with `quit_asked` (the Thor tapped the
+  game's own Exit Game over the stream) its exit is waited for up to 30 s, then its window's close (WM_CLOSE, as its X) up to 20 s,
+  ended only if it stays (10 s); its login.txt goes; the controller mode and WoW's window keys go back at once (WowConfigKeep, no
+  30 s grace, still never while a WoW runs and only once Config.wtf has settled); the monitor's mode is looked at as soon as the
+  stream has gone (DisplayKeep, no 20 s grace). Desktop stays running. The Thor stops the picture right after sending (after a
+  0.6 s settle for its Exit Game tap), waits for `session_ended` (5 s for `session_ending`: an older Desktop ignores the word; 90 s
+  at most), disconnects the bridge, then closes DS Forever (the power button) or goes back to the chooser (Exit game).
 
 ## 8. What the Thor tells the player
 

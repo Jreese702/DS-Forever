@@ -1351,6 +1351,69 @@ namespace DsfDesktop.App
             catch (Exception e) { Log.I("closing WoW after the stream: " + e.Message); }
         }
 
+        // ---------------------------------------------------------------- the Thor's clean disconnect (feat/pause-power)
+
+        readonly object endGate = new object();
+
+        /// <summary>
+        /// THE CLEAN DISCONNECT (the user, 2026-11-18: "When streaming this should also close wow on the PC and revert everything back and
+        /// be the clean way to disconnect"): the Thor's "end_session". WoW is not started again for this session (the supervisor lets
+        /// go, the 5-minute close is not needed), the streamed WoW closes (<see cref="SessionEnd"/>: the game's own Exit Game waited out
+        /// when the Thor tapped it, then its window's close, ended only if it stays), its login.txt goes, the player's controller mode
+        /// and WoW's window keys go back at once (<see cref="WowConfigKeep.PutBackNow"/>), and the monitor's mode is looked at as soon as
+        /// the stream has gone (<see cref="DisplayKeep.EndNow"/>) instead of after the 30 / 20 s graces. Desktop itself stays up (tray).
+        /// </summary>
+        public Dictionary<string, object> EndSession(bool quitAsked)
+        {
+            lock (endGate)
+            {
+                Log.I("session end: the Thor's clean disconnect" + (quitAsked ? " (it asked the game's own Exit Game first)" : ""));
+                Supervisor?.Disconnect();
+                thorWasHere = false; streamEndedAt = null;
+                var dir = FlavorDirOrNull;
+                var procs = new Dictionary<int, System.Diagnostics.Process>();
+                SessionEnd.Close c;
+                try
+                {
+                    c = SessionEnd.CloseWow(dir,
+                        list: () =>
+                        {
+                            var l = new List<WowProc>();
+                            foreach (var n in new[] { "Wow", "WowB", "WowT", "WowClassic", "WowClassicB", "WowClassicT" })
+                            {
+                                System.Diagnostics.Process[] ps;
+                                try { ps = System.Diagnostics.Process.GetProcessesByName(n); } catch (Exception) { continue; }
+                                foreach (var x in ps)
+                                {
+                                    string path = null;
+                                    try { path = x.MainModule?.FileName; } catch (Exception) { }
+                                    procs[x.Id] = x;
+                                    l.Add(new WowProc { Pid = x.Id, Path = path });
+                                }
+                            }
+                            return l;
+                        },
+                        quitAsked: quitAsked,
+                        closeWindow: pid => { if (procs.TryGetValue(pid, out var x)) x.CloseMainWindow(); },
+                        waitExit: (pid, ms) => !procs.TryGetValue(pid, out var x) || x.WaitForExit(ms),
+                        kill: pid =>
+                        {
+                            if (!procs.TryGetValue(pid, out var x)) return true;
+                            try { x.Kill(); return true; } catch (Exception e) { Log.I("session end: couldn't end WoW: " + e.Message); return false; }
+                        });
+                }
+                finally { foreach (var x in procs.Values) x.Dispose(); }
+                Log.I("session end: WoW " + c.Wow + (c.How.Length > 0 ? " (" + c.How + ")" : "") + (c.Why.Length > 0 ? ": " + c.Why : ""));
+                if (dir != null) lock (loginGate) if (loginFileAt.HasValue) { WowLoginFile.Delete(dir); loginFileAt = null; }
+                bool back = c.Wow != "left" && (ConfigKeep?.PutBackNow() ?? true);
+                ScreenKeep?.EndNow();
+                Log.I("session end: " + (back ? "controller mode and WoW's window put back" : "the put-back waits (the usual rule)") +
+                      "; the monitor is looked at once the stream has gone");
+                PublishWow(force: true);
+                return new Dictionary<string, object> { ["wow"] = c.Wow, ["put_back"] = back, ["why"] = c.Why };
+            }
+        }
+
         // ---------------------------------------------------------------- Desktop's own update (DesktopUpdate, UpdateGate)
 
         DsfDesktop.Thor.DesktopUpdate update;
