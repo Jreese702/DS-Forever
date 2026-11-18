@@ -11,11 +11,16 @@ import java.io.File
  * The add-on (PadMap m51) sends each of OUR saved tables as Lua source (`svkeep`: var, n = settings count, lua) when it changes; the
  * app keeps the latest per table in Documents/DS Forever/settings/<var>.json (an uninstall keeps it; the previous one as .bak). BEFORE
  * the game starts (NativeLogin.prepare: the client is not running) it writes OUR OWN file WTF/Account/<account>/SavedVariables/
- * <AddOn>.lua from it - only when the game has nothing newer (its own file is older than the kept one) and never an empty table. The
- * game then loads everything itself at login. Nothing of the game's own (bars, bindings, other add-ons' files) is ever touched.
+ * <AddOn>.lua from it - PER ENTRY ([fold], the fix of 2026-11-18): the game file's own value of an entry stays unless the kept one is a
+ * genuine newer change of it, an empty or much thinner kept value never wins, and nothing (the add-on's skipped keys included) is ever
+ * dropped. The game then loads everything itself at login. Nothing of the game's own (bars, bindings, other add-ons' files) is touched.
+ * WHY (the 11-18 hunter case): before build 1489 the PC's `svkeep` documents, while streaming, REPLACED the kept copy whole, so the kept
+ * copy held the PC's thin hunter (no fight spells) while the Thor's game file held the real one; the old rule ("the kept copy is newer:
+ * it wins every conflict") would have written those empty fight spells over the game file at the next Local start.
  * SETTINGS FOLLOW (the user's pick 2026-11-18; build 1489: our tables only, WoW's own sync left to the game): while streaming, the PC's documents are MERGED per entry into
  * the kept copy (SvSync.fromPc; never [store]: a whole-table replace), and the kept copy reaches the PC at a stream session's start
- * (SvSync, Desktop's WowSvSync). [beforeStart] keeps the game file's own entries ([withGameOnly]) and records the account folder's hash.
+ * (SvSync, Desktop's WowSvSync) after the Thor's own game file is folded in ([foldGameIn]). [beforeStart] records the account folder's
+ * hash, the game's WTF path and the base (the table the game starts with).
  * Pure (java.io + org.json): dsforever's WowSwitchTest / SvSyncTest run it.
  */
 object SvKeep {
@@ -51,49 +56,177 @@ object SvKeep {
     /** the file's text, as the game writes it */
     fun fileText(d: Doc): String = "\n${d.variable} = ${d.lua}\n"
 
-    /** what to do with OUR file [target] before the game starts: null = write it, else why not */
-    fun skipWhy(target: File, d: Doc?): String? = when {
-        d == null -> "nothing kept"
-        d.n == 0 -> "the kept one is empty"
-        target.isFile && target.lastModified() > d.savedAt -> "the game's own is newer"
-        target.isFile && target.readText() == fileText(d) -> "already the same"
-        else -> null
-    }
-
     /** the kept file of table [variable] in [keptDir] */
     fun keptFile(keptDir: File, variable: String) = File(keptDir, "$variable.json")
 
+    /** the game file's table as the game last STARTED with it (what [beforeStart] wrote or found): [fold]'s per-entry base */
+    fun gameBaseFile(keptDir: File, variable: String) = File(keptDir, "$variable.game.json")
+
+    /** the game's WTF folder [beforeStart] last saw (a path, no account name): the stream's sync folds the Thor's game file in too */
+    fun gameWtfFile(keptDir: File) = File(keptDir, "game.wtf")
+
+    /** a kept copy made from the PC's table alone (the Thor had none): the next start trusts none of its entries over the game's */
+    fun fromPcMark(keptDir: File, variable: String) = File(keptDir, "$variable.json.frompc")
+
+    /** the game file's text when OUR write made it ([fileText]: one line, the add-on's own order); the game's own save is many lines */
+    fun isOurs(text: String, variable: String, t: Map<Any, Any>): Boolean =
+        runCatching { text == "\n$variable = ${SvLua.ser(t)}\n" }.getOrDefault(false)
+
+    /** what [fold] did (counts only: an entry's key is a character name, never logged) */
+    data class Fold(val table: Map<Any, Any>, val fromKept: Int, val added: Int, val refused: Int)
+
     /**
-     * BEFORE THE GAME STARTS (the client not running): for each of our tables, OUR file under the game's [wtf] from the one kept in
-     * [keptDir], by [skipWhy]'s rules; the replaced file goes to [backupDir]. Every outcome is one [log] line.
+     * THE HARD SAFETY RULE (the user, 2026-11-18: "whatever you do please dont delete my current hunters settings on local"; the 12:29
+     * stream sent the PC a thin hunter, and the next start would have put the kept copy's EMPTY fight spells over the game file's).
+     * The game's own table [game] (all of it, the add-on's skipped keys too) with the kept copy [kept]'s entries in, PER ENTRY (a table's
+     * own keys and, one level down, each character's store, as [SvMerge]). The game file's value stays unless the kept value is a
+     * GENUINE newer change of that entry:
+     *  - an entry only the kept copy has comes in; one only the game has stays (nothing is ever dropped; skipped keys stay the game's);
+     *  - a kept value that is empty, or holds less than half the game's settings, never wins (a lost / reset / thin copy);
+     *  - with a [base] (the table the game last started with): the kept value wins only when the kept entry changed since and the
+     *    game's did not; both changed: the newer table ([keptAt] vs the game file's time [gameAt]); the kept one unchanged: the game's;
+     *  - with NO base (never seen, or the kept copy came from the PC alone): the game's value wins every conflict.
+     * Pure.
      */
-    fun beforeStart(wtf: File, keptDir: File, backupDir: File, log: (String) -> Unit) {
-        val sv = savedVariablesDir(wtf)
-        if (sv == null) { log("settings backup: no WTF/Account/*/SavedVariables yet: nothing written"); return }
-        // settings follow (2026-11-18): the account folder's HASH (never its name) for the PC's sync to find the same account (SvSync)
-        sv.parentFile?.name?.let { a -> runCatching { keptDir.mkdirs(); SvSync.accountFile(keptDir).writeText(SvSync.accountHash(a)) } }
-        for ((variable, name) in FILES) {
-            val kept = fromJson(runCatching { keptFile(keptDir, variable).takeIf { it.isFile }?.readText() }.getOrNull())
-            val target = File(sv, name)
-            val d = kept?.let { withGameOnly(target, it) }
-            val why = skipWhy(target, d)
-            if (why != null) { log("settings backup: $name not written ($why)"); continue }
+    fun fold(game: Map<Any, Any>, gameAt: Long, kept: Map<Any, Any>, keptAt: Long, base: Map<Any, Any>?, skip: Set<String>): Fold {
+        var fromKept = 0; var added = 0; var refused = 0
+        fun unit(g: Any?, k: Any?, b: Any?): Any? {
+            if (k == null) return g
+            if (g == null) { added++; return k }
+            if (SvMerge.same(g, k)) return g
+            val gl = SvLua.leaves(g); val kl = SvLua.leaves(k)
+            if (gl > 0 && (kl == 0 || (gl >= 4 && kl * 2 < gl))) { refused++; return g }
+            if (base == null) return g
+            val kChanged = b == null || !SvMerge.same(k, b)
+            val gChanged = b == null || !SvMerge.same(g, b)
+            val takeKept = kChanged && (!gChanged || keptAt > gameAt)
+            if (takeKept) fromKept++
+            return if (takeKept) k else g
+        }
+        val out = LinkedHashMap<Any, Any>()
+        for (key in LinkedHashSet<Any>(game.keys + kept.keys)) {
+            val g = game[key]; val k = kept[key]; val b = base?.get(key)
+            if (key in skip) { g?.let { out[key] = it }; continue }
+            val v: Any? = if (g is Map<*, *> && k is Map<*, *> && !SvMerge.isList(g) && !SvMerge.isList(k)) {
+                @Suppress("UNCHECKED_CAST") val gm = g as Map<Any, Any>
+                @Suppress("UNCHECKED_CAST") val km = k as Map<Any, Any>
+                val bm = b as? Map<*, *>
+                val sub = LinkedHashMap<Any, Any>()
+                for (k2 in LinkedHashSet<Any>(gm.keys + km.keys)) unit(gm[k2], km[k2], bm?.get(k2))?.let { sub[k2] = it }
+                sub
+            } else unit(g, k, b)
+            if (v != null) out[key] = v
+        }
+        return Fold(out, fromKept, added, refused)
+    }
+
+    private fun readKept(keptDir: File, variable: String): Doc? =
+        fromJson(runCatching { keptFile(keptDir, variable).takeIf { it.isFile }?.readText() }.getOrNull())
+
+    private fun writeDoc(f: File, d: Doc) {
+        f.parentFile?.mkdirs()
+        val tmp = File(f.path + ".part")
+        tmp.writeText(toJson(d))
+        if (f.exists() && !f.delete()) { tmp.delete(); error("could not replace ${f.name}") }
+        check(tmp.renameTo(f)) { "could not write ${f.name}" }
+    }
+
+    /** the kept copy of [variable] set to [table] (a dated backup first: no backup, no change); keeps its time [at] */
+    private fun setKept(keptDir: File, variable: String, table: Map<Any, Any>, at: Long, now: Long): Boolean {
+        val f = keptFile(keptDir, variable)
+        if (!SvBackup.dated(f, File(keptDir, SvBackup.DIR), now)) return false
+        return runCatching { writeDoc(f, Doc(variable, SvLua.leaves(table), SvLua.ser(table), at)); true }.getOrDefault(false)
+    }
+
+    /**
+     * ONE of our tables: the game's own file [target] and the kept copy folded ([fold]); the kept copy becomes the full picture (so a
+     * stream's sync sends the PC everything the Thor has). [backupDir] non-null = BEFORE THE GAME STARTS: the game file is written too
+     * when it changes (the old one to [backupDir], and the very first one kept for good in sync-backups), and the base recorded.
+     * A game file that does not read whole is never written over (and nothing else changes). One [log] line per outcome. Pure.
+     */
+    fun foldOne(target: File, keptDir: File, variable: String, backupDir: File?, now: Long, log: (String) -> Unit) {
+        val name = target.name
+        val skip = SvLua.SKIP[variable].orEmpty()
+        val kept = readKept(keptDir, variable)
+        val keptT = kept?.takeIf { it.n > 0 }?.let { runCatching { SvLua.parse(it.lua) }.getOrNull() }
+        val mark = fromPcMark(keptDir, variable)
+        if (!target.isFile) {
+            if (keptT == null || backupDir == null) { if (backupDir != null) log("settings backup: $name not written (nothing kept)"); return }
             log("settings backup kept before sync")
-            log(runCatching { write(target, d!!, backupDir) }.getOrElse { "settings backup: $name NOT written (${it.message})" })
+            log(runCatching { write(target, Doc(variable, SvLua.leaves(keptT), SvLua.ser(keptT), now), backupDir) }
+                .onSuccess { runCatching { writeDoc(gameBaseFile(keptDir, variable), Doc(variable, 0, SvLua.ser(keptT), now)); mark.delete() } }
+                .getOrElse { "settings backup: $name NOT written (${it.message})" })
+            return
+        }
+        val text = runCatching { target.readText() }.getOrNull()
+        val game = text?.let { runCatching { SvLua.parse(it, variable) }.getOrNull() }
+        if (game == null) { log("settings backup: $name not written (the game's own file does not read whole: left as it is)"); return }
+        val gameAt = target.lastModified()
+        if (keptT == null) {
+            // nothing (or nothing usable) kept: the kept copy starts as the game's own settings; the game file is not touched
+            val own = SvLua.withoutSkipped(variable, game)
+            if (SvLua.leaves(own) > 0 && kept?.lua != SvLua.ser(own)) setKept(keptDir, variable, own, gameAt, now)
+            if (backupDir != null) {
+                runCatching { writeDoc(gameBaseFile(keptDir, variable), Doc(variable, 0, SvLua.ser(game), now)) }
+                log("settings backup: $name not written (nothing kept: the game's own kept)")
+            }
+            return
+        }
+        // the base: the table the game last started with; none recorded yet (an update to this build) -> the game file itself when OUR
+        // write made it (the game never saved since); a kept copy made from the PC alone -> none (the game's win every conflict)
+        val recorded = runCatching { fromJson(gameBaseFile(keptDir, variable).readText())?.let { SvLua.parse(it.lua) } }.getOrNull()
+        val base = when {
+            mark.exists() -> null
+            recorded != null -> recorded
+            isOurs(text, variable, game) -> game
+            else -> null
+        }
+        val keptAt = kept?.savedAt ?: 0L
+        val f = fold(game, gameAt, keptT, keptAt, base, skip)
+        val m = f.table
+        val counts = "${f.fromKept} from the kept copy, ${f.added} added, ${f.refused} refused" + if (base == null) " (no base: the game's own win)" else ""
+        if (backupDir != null) {
+            if (!SvMerge.same(m, game)) {
+                // the very first game file this build replaces stays for good (never rotated): the user's "never delete" net
+                runCatching { File(keptDir, SvBackup.DIR).let { d -> d.mkdirs(); File(d, "$name.before-fold").takeIf { !it.exists() }?.let { target.copyTo(it) } } }
+                log("settings backup kept before sync")
+                val line = runCatching { write(target, Doc(variable, SvLua.leaves(m), SvLua.ser(m), now), backupDir) }
+                    .getOrElse { log("settings backup: $name NOT written (${it.message})"); return }
+                log("$line: $counts")
+            } else log("settings backup: $name not written (the game's own is complete: $counts)")
+            runCatching { writeDoc(gameBaseFile(keptDir, variable), Doc(variable, 0, SvLua.ser(m), now)); mark.delete() }
+        }
+        val keptNew = SvLua.withoutSkipped(variable, m)
+        if (!SvMerge.same(keptNew, keptT)) {
+            if (setKept(keptDir, variable, keptNew, keptAt, now)) log("settings backup: kept $variable with the game's own entries ($counts)")
+            else log("settings backup: $variable kept copy not changed (no backup)")
         }
     }
 
     /**
-     * THE HARD SAFETY RULE (the user, 2026-11-18: "dont delete my current hunters settings on local"): the kept copy [d] goes in WITH the
-     * entries only the game's own file [target] holds (a character, a store: [SvMerge] with the kept copy winning every conflict), so
-     * the write never drops anything the game had. A game file that does not read whole: [d] as it is (the write as before). Pure.
+     * BEFORE THE GAME STARTS (the client not running): for each of our tables, OUR file under the game's [wtf] folded with the one kept in
+     * [keptDir] ([foldOne]: per entry, the game's own values kept unless the kept one is a genuine newer change); the replaced file goes
+     * to [backupDir]. Every outcome is one [log] line.
      */
-    fun withGameOnly(target: File, d: Doc): Doc {
-        if (!target.isFile) return d
-        val game = runCatching { SvLua.withoutSkipped(d.variable, SvLua.parse(target.readText(), d.variable)) }.getOrNull() ?: return d
-        val kept = runCatching { SvLua.parse(d.lua) }.getOrNull() ?: return d
-        val m = SvMerge.merge(kept, game, null)
-        return if (m.added == 0) d else Doc(d.variable, SvLua.leaves(m.table), SvLua.ser(m.table), d.savedAt)
+    fun beforeStart(wtf: File, keptDir: File, backupDir: File, now: Long = System.currentTimeMillis(), log: (String) -> Unit) {
+        val sv = savedVariablesDir(wtf)
+        if (sv == null) { log("settings backup: no WTF/Account/*/SavedVariables yet: nothing written"); return }
+        // settings follow (2026-11-18): the account folder's HASH (never its name) for the PC's sync to find the same account (SvSync)
+        sv.parentFile?.name?.let { a -> runCatching { keptDir.mkdirs(); SvSync.accountFile(keptDir).writeText(SvSync.accountHash(a)) } }
+        runCatching { gameWtfFile(keptDir).writeText(wtf.absolutePath) }
+        for ((variable, name) in FILES) foldOne(File(sv, name), keptDir, variable, backupDir, now, log)
+    }
+
+    /**
+     * THE STREAM'S SYNC (and a PC table with no kept copy): the Thor's own game file folded into the kept copy first ([foldOne] without
+     * the game write), so the PC is sent the Thor's FULL settings, never a thin kept copy. Only [variable] when given. Nothing when the
+     * game's folder was never seen.
+     */
+    fun foldGameIn(keptDir: File, now: Long, log: (String) -> Unit, variable: String? = null) {
+        val wtf = runCatching { gameWtfFile(keptDir).takeIf { it.isFile }?.readText()?.trim() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { File(it) } ?: return
+        val sv = savedVariablesDir(wtf) ?: return
+        for ((v, name) in FILES) if (variable == null || v == variable)
+            runCatching { foldOne(File(sv, name), keptDir, v, null, now, log) }.onFailure { log("settings sync: $v: the Thor's game file not folded in (${it.message})") }
     }
 
     /** the marker in the new client's WTF folder: the beta's settings were carried across (once) */
@@ -154,7 +287,7 @@ object SvKeep {
         tmp.writeText(fileText(d))
         if (target.exists() && !target.delete()) { tmp.delete(); error("could not replace ${target.name}") }
         check(tmp.renameTo(target)) { "could not write ${target.name}" }
-        target.setLastModified(d.savedAt)            // OUR write carries the kept copy's time: "newer" stays the game's own clean exit
+        target.setLastModified(d.savedAt)            // OUR write carries the start's time: a later clean exit of the game is newer
         return "settings backup: wrote ${target.name} (${d.n} settings)"
     }
 }

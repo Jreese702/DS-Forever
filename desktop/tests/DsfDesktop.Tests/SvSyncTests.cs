@@ -64,7 +64,7 @@ namespace DsfDesktop.Tests
                 A.Eq("written", WowSvSync.Write(acct, "WowCompanionDB", "{[\"a\"]=2,[\"b\"]=3}", 2, db.Str("hash"), now));
                 A.Eq("\nWowCompanionDB = {[\"a\"]=2,[\"b\"]=3}\n", File.ReadAllText(Path.Combine(sv, "WowCompanion.lua")));
                 A.Eq(now, File.GetLastWriteTimeUtc(Path.Combine(sv, "WowCompanion.lua")));
-                var baks = Directory.GetFiles(Path.Combine(sv, WowSvSync.BackupDir));
+                var baks = Directory.GetFiles(Path.Combine(sv, WowSvSync.BackupDir), "*.bak");
                 A.Eq(1, baks.Length, "a dated backup before the write");
                 A.Eq("\nWowCompanionDB = {\n[\"a\"] = 1,\n}\n", File.ReadAllText(baks[0]));
                 // a missing file: written when it is still missing
@@ -83,6 +83,10 @@ namespace DsfDesktop.Tests
                     A.Eq("written", WowSvSync.Write(acct, "WowCompanionDB", "{[\"a\"]=" + (10 + i) + "}", 1, hh, now.AddSeconds(i + 1)));
                 }
                 A.Eq(5, Directory.GetFiles(Path.Combine(sv, WowSvSync.BackupDir), "WowCompanion.lua.*.bak").Length);
+                // the settings fix (2026-11-18): the PC's own file before the FIRST sync write stays for good, never rotated or replaced
+                var first = Path.Combine(sv, WowSvSync.BackupDir, "WowCompanion.lua" + WowSvSync.PreSync);
+                A.Eq("\nWowCompanionDB = {\n[\"a\"] = 1,\n}\n", File.ReadAllText(first), "the PC's file before the first sync, kept for good");
+                A.False(File.Exists(Path.Combine(sv, WowSvSync.BackupDir, "WowCompanionSpells.lua" + WowSvSync.PreSync)), "a file that was not there: nothing to keep");
             }
         }
 
