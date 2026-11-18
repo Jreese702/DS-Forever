@@ -387,7 +387,16 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         val x = box.l + GameUiTiles.WELL_PAD + 2f
         val maxW = box.w - 2f * GameUiTiles.WELL_PAD - 4f
         pName.color = if (wait) Theme.textDim else Theme.text
-        c.drawText(fitText(pName, Tr.t(name(id)), maxW, NAME_SIZE, NAME_MIN), x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
+        val nameY = box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f
+        val two = if (badge(id) != null) twoLines(pName, Tr.t(name(id)), maxW) else null
+        if (two != null) {
+            // the user 2026-11-17 ("It needs to say on hostile target", picked "Full name on two lines"): a name too long for
+            // one line takes two; the value line gives way (the corner badge already shows the state)
+            c.drawText(two.first, x, nameY - 6f, pName)
+            c.drawText(two.second, x, nameY + 18f, pName)
+            return
+        }
+        c.drawText(fitText(pName, Tr.t(name(id)), maxW, NAME_SIZE, NAME_MIN), x, nameY, pName)
         pValue.color = if (wait || dimmed(id)) Theme.textDim else Theme.gold
         c.drawText(fitText(pValue, valueWords(id), maxW, 22f, 18f), x, box.b - 12f, pValue)
     }
@@ -401,6 +410,26 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         tilePath.reset()
         tilePath.addRoundRect(RectF(r.left + w / 2f, r.top + w / 2f, r.right - w / 2f, r.bottom - w / 2f), 9f, 9f, Path.Direction.CW)
         UiKit.ringEdge(c, tilePath, w, lit = lit)
+    }
+
+    /**
+     * [s] on two lines when it will not fit on one at [NAME_MIN] and has a space: the split nearest the middle, each line fitted
+     * at the same size (shrunk to [TWO_MIN], then cut with an ellipsis). Null = one line is enough. Leaves [p] at the size used.
+     */
+    internal fun twoLines(p: Paint, s: String, maxW: Float): Pair<String, String>? {
+        p.textSize = NAME_MIN
+        if (p.measureText(s) <= maxW || !s.contains(' ')) return null
+        val spaces = s.indices.filter { s[it] == ' ' }
+        val cut = spaces.minByOrNull { kotlin.math.abs(it - s.length / 2) }!!
+        val a = s.substring(0, cut).trim(); val b = s.substring(cut + 1).trim()
+        p.textSize = TWO_SIZE
+        while ((p.measureText(a) > maxW || p.measureText(b) > maxW) && p.textSize > TWO_MIN) p.textSize -= 1f
+        fun cutTo(t: String): String {
+            if (p.measureText(t) <= maxW) return t
+            val n = p.breakText(t, true, (maxW - p.measureText("…")).coerceAtLeast(0f), null)
+            return t.substring(0, n).trimEnd() + "…"
+        }
+        return cutTo(a) to cutTo(b)
     }
 
     private fun fitText(p: Paint, s: String, maxW: Float, size: Float, min: Float): String {
@@ -503,6 +532,9 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         const val SLOP = 24f
         const val NAME_SIZE = 25f
         const val NAME_MIN = 18f
+        /** a two-line name's size range (the user 2026-11-17, "Start attack on hostile target") */
+        const val TWO_SIZE = 23f
+        const val TWO_MIN = 18f
         const val SEG_SIZE = 27f
         const val WAIT = "..."
         const val LIST = "list"; const val OPEN = "open"; const val PICK = "pick"; const val OVER = "over"
@@ -532,7 +564,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
             ControllerPictures.ABXY to "ABXY location", ControllerPictures.GLYPHS to "Button glyphs", ControllerPictures.PET_B to SmartPet.ROW_ID,
             ControllerPictures.SMART_Y to "Smart Y", ControllerPictures.PAUSE to "Pause menu", ControllerPictures.ITEM to "Item wheel",
             ControllerPictures.SPELL to "Spell wheel", ControllerPictures.CLASS_L to "Left class wheel", ControllerPictures.CLASS_R to "Right class wheel",
-            GameUi.PMODE_ID to "Party mode", GameUi.SRES_ID to "Smart Res", GameUi.ATK_ID to "Start attack",
+            GameUi.PMODE_ID to "Party mode", GameUi.SRES_ID to "Smart Res", GameUi.ATK_ID to "Start attack on hostile target",
             ControllerPictures.ATTACK_CAST to "Attack on cast", GameUi.SHOT_ID to "Auto Shot")
 
         /** the Controller tab's part for group [g] (Smart Y's own group is gone: its tile is in Buttons), null = none */
