@@ -10,23 +10,31 @@ import android.view.View
  * [TIMEOUT_MS] at most. [accept] is the TOUCH gate: false while that key waits, so a second tap is ignored. A controller's repeats
  * can only be gated where the key lands (the add-on). Main thread.
  */
-class PressWait(private val host: View) {
+class PressWait internal constructor(
+    private val redraw: () -> Unit,
+    private val nextFrame: () -> Unit,
+    private val later: (Long, () -> Unit) -> Unit,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
+    constructor(host: View) : this({ host.invalidate() }, { host.postInvalidateOnAnimation() },
+        { ms, f -> host.postDelayed({ f() }, ms) })
+
     private class W(val cmd: String?, val until: Long)
     private val waits = HashMap<String, W>()
 
     /** [key] waits from now: for [cmd]'s answer when given, else for the next answer of any command */
     fun begin(key: String, cmd: String? = null) {
         if (key.isEmpty()) return
-        waits[key] = W(cmd, System.currentTimeMillis() + TIMEOUT_MS)
-        host.postInvalidateOnAnimation()
-        host.postDelayed({ host.invalidate() }, TIMEOUT_MS + 20L)
+        waits[key] = W(cmd, now() + TIMEOUT_MS)
+        nextFrame()
+        later(TIMEOUT_MS + 20L) { redraw() }
     }
 
     /** the game answered [cmd]: its waits end, and every wait that did not know its command */
     fun answered(cmd: String?) {
         if (waits.isEmpty()) return
         waits.entries.removeAll { (_, w) -> w.cmd == null || w.cmd == cmd }
-        host.invalidate()
+        redraw()
     }
 
     /** the game refused [cmd]: the wait ends the same way, with no flash of its own */
@@ -35,19 +43,20 @@ class PressWait(private val host: View) {
     /** true while [key] waits (asks the host for the next frame, so the spinner turns) */
     fun isWaiting(key: String): Boolean {
         val w = waits[key] ?: return false
-        if (System.currentTimeMillis() >= w.until) { waits.remove(key); return false }
-        host.postInvalidateOnAnimation()
+        if (now() >= w.until) { waits.remove(key); return false }
+        nextFrame()
         return true
     }
 
-    /** the keys waiting now */
-    fun keys(): List<String> = waits.keys.filter { isWaiting(it) }
+    /** the keys waiting now. #521 (ConcurrentModificationException, 1.0.0-1.0.34): [isWaiting] removes an expired key, so the
+     *  filter walks a COPY of the keys, never the live key set it shrinks */
+    fun keys(): List<String> = waits.keys.toList().filter { isWaiting(it) }
 
     /** the touch gate: false while [key] waits */
     fun accept(key: String): Boolean = !isWaiting(key)
 
     /** everything ends (the window changed or closed) */
-    fun clear() { if (waits.isNotEmpty()) { waits.clear(); host.invalidate() } }
+    fun clear() { if (waits.isNotEmpty()) { waits.clear(); redraw() } }
 
     companion object {
         const val TIMEOUT_MS = 2_000L
