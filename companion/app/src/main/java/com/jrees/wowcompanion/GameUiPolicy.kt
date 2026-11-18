@@ -166,7 +166,7 @@ data class HubState(
  * as the layout: after the loading screen settles, a reply waited for, the ask tried once more, then slowly while still silent.
  */
 class CastBarPolicy(
-    /** the row's Show / Hide columns: the cast bar's (hub11) by default; HUD mode's are [HUD_SHOW] / [HUD_HIDE] (hub13) */
+    /** the row's Show / Hide columns: the cast bar's (hub11) by default; HUD mode's were 34 / 35 (hub13; 34 is [RESTORE] since hub67) */
     private val colShow: Int = COL_SHOW, private val colHide: Int = COL_HIDE) {
     private var tapCol = -1
     private var tapBoot = -1L
@@ -197,12 +197,62 @@ class CastBarPolicy(
     companion object {
         const val COL_SHOW = 32            // Hub.lua CB_SHOW / CB_HIDE: past the 32 layouts, inside the row's 40 columns
         const val COL_HIDE = 33
-        const val HUD_SHOW = 34            // hub13: HUD mode, the player / target frames
-        const val HUD_HIDE = 35
+        /** hub67 (external PR #532 reworked; the user, 2026-11-18: "so we cant do this on a session basis, that way if it launches on
+         *  desktop not through the thor my DS forever shit doesnt take over?" -> "Yes, build it"): the app's ONE restore tap at connect /
+         *  login - the add-on puts this character's kept switches, layout and cast bar back ([RestorePolicy]). Was HUD_SHOW (hub13),
+         *  untapped since hub17's own switches */
+        const val RESTORE = 34
+        const val HUD_HIDE = 35            // hub13: HUD mode's bundle hide (untapped since hub17; Hub.lua keeps it)
         const val HUD_LOWER = 36           // hub15: HUD mode's Height, one step a tap
         const val HUD_HIGHER = 37
         const val HUD_HDEF = 38            // back to Interact's default place
         const val HUD_SEL = 39             // hub16: which setting 36 / 37 / 38 move (height -> width -> scale; height again 4 s after)
+    }
+}
+
+/** hub67: the hub document's `rst` - the restore column, restores done since the add-on's load ([n]: 0 = not yet this boot), one held
+ *  for a fight's end ([q]); null = an add-on set without the one-tap memory (no tap, nothing held) */
+data class HubRestore(val col: Int, val n: Int, val q: Boolean)
+
+/**
+ * hub67 ONE-TAP MEMORY (external PR #532 by mummigast, reworked; the user, 2026-11-18: "so we cant do this on a session basis, that way
+ * if it launches on desktop not through the thor my DS forever shit doesnt take over?" -> "Yes, build it"). Hub.lua keeps each
+ * character's top-screen switches, layout mask and cast bar (WowCompanionDB) but NEVER applies them by itself at login - WoW started on
+ * the PC without the app shows the normal UI. The app sends ONE restore tap ("ui" column [CastBarPolicy.RESTORE]) per load (the hub
+ * document's boot), after the loading screen settles and before any other top-screen tap; the other taps wait for its answer (rst.n
+ * above 0) at most [HOLD_MS], then compare the game's words with the app's own per-character choices and tap only what still differs
+ * (normally nothing). A lost tap is sent once more ([MAX_TRIES]); past that the usual compare-and-tap heals everything as before. A
+ * restore held for a fight's end ([HubRestore.q]) holds nothing here: the app's own taps are kept by the add-on, so the late restore
+ * puts back the same choices.
+ */
+class RestorePolicy {
+    private var tapBoot = -1L
+    private var tapAt = 0L
+    private var tries = 0
+
+    /** a current hello (a login / reload): the next load gets its tap */
+    fun freshLogin() { tapBoot = -1L; tries = 0 }
+
+    /** the column to tap now, or null; the tap is recorded here */
+    fun step(r: HubRestore?, s: HubState?, live: Boolean, now: Long, settleUntil: Long = 0L): Int? {
+        if (r == null || r.col < 0 || s == null || !live || !s.current || !s.hasRow || now < settleUntil) return null
+        if (r.n > 0 || r.q) return null
+        if (tapBoot != s.boot) tries = 0
+        if (tries >= MAX_TRIES) return null
+        if (tapBoot == s.boot && now - tapAt < HOLD_MS) return null
+        tapBoot = s.boot; tapAt = now; tries += 1
+        return r.col
+    }
+
+    /** the other top-screen taps wait: this load's restore tap is sent and not answered yet (at most [HOLD_MS] after the last try) */
+    fun holding(r: HubRestore?, s: HubState?, now: Long): Boolean {
+        if (r == null || s == null || r.n > 0 || r.q) return false
+        return tapBoot == s.boot && now - tapAt < HOLD_MS
+    }
+
+    companion object {
+        const val MAX_TRIES = 2            // the tap, and one more
+        const val HOLD_MS = 3_000L         // the answer rides the next flush (the switch taps wait 1.5 s for theirs)
     }
 }
 

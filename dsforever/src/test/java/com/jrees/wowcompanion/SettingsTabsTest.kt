@@ -231,7 +231,7 @@ class SettingsTabsTest {
         assertEquals("hudheight", GameUi.HUD_H_ID); assertEquals("hudwidth", GameUi.HUD_W_ID); assertEquals("hudscale", GameUi.HUD_S_ID)
         assertEquals("compass", GameUiSection.COMPASS_ID); assertEquals("compasscam", GameUiSection.COMPASS_CAM_ID)
         assertEquals("hidetips", GameUiSection.TIPS_ID); assertEquals("aggrorings", GameUiSection.RINGS_ID)
-        assertEquals(listOf(32, 33, 34, 35, 36, 37, 38, 39), listOf(CastBarPolicy.COL_SHOW, CastBarPolicy.COL_HIDE, CastBarPolicy.HUD_SHOW,
+        assertEquals(listOf(32, 33, 34, 35, 36, 37, 38, 39), listOf(CastBarPolicy.COL_SHOW, CastBarPolicy.COL_HIDE, CastBarPolicy.RESTORE,
             CastBarPolicy.HUD_HIDE, CastBarPolicy.HUD_LOWER, CastBarPolicy.HUD_HIGHER, CastBarPolicy.HUD_HDEF, CastBarPolicy.HUD_SEL))
         assertEquals(listOf("off", "low", "high"), Settings.AVOID_DANGER)
         // Top screen > Game windows: the approved order, by the rows' own ids
