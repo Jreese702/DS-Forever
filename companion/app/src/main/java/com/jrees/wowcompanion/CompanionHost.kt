@@ -2889,7 +2889,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     strip.postDelayed({ if (!guestShown(gid)) refree(gid, "hold ok") }, 400L)
                 if (op == "pmenurun") {
                     // every menu run's answer in the log (the user: Trade "doesn't work" - its answer was nowhere to be read)
-                    Log.i("WCHOME", "menu run: ${if (msg.optBoolean("ok")) "done" else "refused (${msg.optString("why")})"}")
+                    // q66: whom a run named (Invite / Uninvite / Add Friend: the full Name-Realm the game was given), so a lost invite is readable
+                    val to = msg.optString("to", "").let { if (it.isEmpty()) "" else " ($it)" }
+                    Log.i("WCHOME", "menu run: ${if (msg.optBoolean("ok")) "done$to" else "refused (${msg.optString("why")})"}")
                     mapView.onPlayerMenuRan(msg)
                 }
                 when (gid) {
