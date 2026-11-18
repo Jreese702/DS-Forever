@@ -77,3 +77,8 @@
 # (Java_com_jrees_wowcompanion_WhisperNative_*); R8 must keep the class and every native under its own name (apk_jni_check.py checks it)
 -keep class com.jrees.wowcompanion.WhisperNative { native <methods>; }
 -keepclasseswithmembernames,includedescriptorclasses class com.jrees.wowcompanion.WhisperNative { native <methods>; }
+
+# Test build 1489 (#56): libdsf-heap.so binds NativeHeap.purge by its JNI name (Java_com_jrees_wowcompanion_NativeHeap_purge); R8 must
+# keep the class and its native under their own names
+-keep class com.jrees.wowcompanion.NativeHeap { native <methods>; }
+-keepclasseswithmembernames,includedescriptorclasses class com.jrees.wowcompanion.NativeHeap { native <methods>; }

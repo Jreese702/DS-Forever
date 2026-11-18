@@ -57,7 +57,7 @@ class MemRelief2Test {
     @Test fun theRunsStopsAsOneAnswer() {
         assertFalse(ArtHarvest.letGo(stopping = false, yieldBg = false, bgPhase = true, gameActive = false))
         assertTrue("the game up or launching: the background lets go", ArtHarvest.letGo(false, false, bgPhase = true, gameActive = true))
-        assertFalse("the art before Play never pauses for the game (Play waits for it)", ArtHarvest.letGo(false, false, bgPhase = false, gameActive = true))
+        assertTrue("test build 1489 (#361): the art before Play lets go for the game too", ArtHarvest.letGo(false, false, bgPhase = false, gameActive = true))
         assertTrue("a required step due: the background gives way", ArtHarvest.letGo(false, yieldBg = true, bgPhase = true, gameActive = false))
         assertFalse(ArtHarvest.letGo(false, yieldBg = true, bgPhase = false, gameActive = false))
         assertTrue("the game update: always", ArtHarvest.letGo(stopping = true, yieldBg = false, bgPhase = false, gameActive = false))

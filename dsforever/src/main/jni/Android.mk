@@ -64,3 +64,14 @@ LOCAL_STATIC_LIBRARIES := dsf-opus dsf-crypto
 LOCAL_LDFLAGS += -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384
 LOCAL_BRANCH_PROTECTION := standard
 include $(BUILD_SHARED_LIBRARY)
+
+# test build 1489 (#56): libdsf-heap.so, the allocator's free pages handed back at each memory relief (NativeHeap.kt). No
+# prebuilt inputs; a build without this ndkBuild (no streaming prebuilts) has no purge and nothing else changes
+include $(CLEAR_VARS)
+LOCAL_PATH := $(MY_LOCAL_PATH)
+LOCAL_MODULE := dsf-heap
+LOCAL_SRC_FILES := dsf/dsf_heap.c
+LOCAL_CFLAGS := -O2
+LOCAL_LDFLAGS += -Wl,-z,max-page-size=16384
+LOCAL_BRANCH_PROTECTION := standard
+include $(BUILD_SHARED_LIBRARY)

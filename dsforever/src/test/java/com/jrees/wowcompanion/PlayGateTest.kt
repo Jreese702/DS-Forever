@@ -52,13 +52,11 @@ class PlayGateTest {
     // ------------------------------------------------------------------ the art harvest
 
     @Test fun backgroundArtPausesWhileTheGameRunsOnEveryTier() {
-        assertTrue(PlayGate.artMustPause(backgroundPhase = true, gameActive = true))
-        assertFalse(PlayGate.artMustPause(backgroundPhase = true, gameActive = false))
-        // the art before Play (Play waits for it) is never paused by this
-        assertFalse(PlayGate.artMustPause(backgroundPhase = false, gameActive = true))
-        assertFalse(PlayGate.artMayOpen(gameUp = true, launching = false, beforePlayDue = false))
-        assertFalse(PlayGate.artMayOpen(gameUp = true, launching = false, beforePlayDue = true))     // a required icon asked for in game
-        assertTrue(PlayGate.artMayOpen(gameUp = false, launching = false, beforePlayDue = false))
+        assertTrue(PlayGate.artMustPause(gameActive = true))
+        assertFalse(PlayGate.artMustPause(gameActive = false))
+        // test build 1489 (#361): one answer for the art before Play and the background (ArtStopAtPlayTest)
+        assertFalse(PlayGate.artMayOpen(gameActive = true))                     // a required icon asked for in game too
+        assertTrue(PlayGate.artMayOpen(gameActive = false))
     }
 
     // ------------------------------------------------------------------ review of this fix (2026-11-11)
@@ -74,7 +72,7 @@ class PlayGateTest {
         TapSinks.wire(PlayMode.STREAM, null, Sink("stream"))
         assertTrue(PlayGate.streamingNow())
         assertFalse(PlayGate.gameActiveNow())
-        assertFalse(PlayGate.artMustPause(backgroundPhase = true, gameActive = PlayGate.gameActiveNow()))
+        assertFalse(PlayGate.artMustPause(gameActive = PlayGate.gameActiveNow()))
         assertNull(PlayGate.indoorWait(PlayGate.streamingNow(), artRunning = false, gameActive = PlayGate.gameActiveNow(),
             playedThisRun = true, quiet = false))
         // the local game's attach (attachGame): the same "game up" is a game on this Thor
@@ -86,16 +84,14 @@ class PlayGateTest {
 
     /** a step's report from GameFiles.prefetch's pool threads never throws there (#138); the worker's own report pauses */
     @Test fun thePauseIsOnlyThrownOnTheWorkerThread() {
-        assertFalse(PlayGate.artMustPause(backgroundPhase = true, gameActive = true, onWorker = false))
-        assertTrue(PlayGate.artMustPause(backgroundPhase = true, gameActive = true, onWorker = true))
+        assertFalse(PlayGate.artMustPause(gameActive = true, onWorker = false))
+        assertTrue(PlayGate.artMustPause(gameActive = true, onWorker = true))
     }
 
-    /** a launch that reached "booting" and never brought the game screen up, then Play again: its art before Play is not held back */
+    /** a launch that reached "booting" and never brought the game screen up, then Play again: Play's own wait is not held back -
+     *  test build 1489 (#361): the window holds every step, so the launcher's screen back in front / a new Play ends it outright */
     @Test fun aLaunchWindowNeverHoldsBackTheArtBeforePlay() {
-        assertTrue(PlayGate.artMayOpen(gameUp = false, launching = true, beforePlayDue = true))
-        // only the background art waits out a launch
-        assertFalse(PlayGate.artMayOpen(gameUp = false, launching = true, beforePlayDue = false))
-        // and the launcher's screen back in front / a new Play ends the window outright
+        assertFalse(PlayGate.artMayOpen(gameActive = PlayGate.launching("booting the game (container 3)", 1_000L, 0L, 2_000L)))
         LauncherHooks.launchState = "booting the game (container 3)"; LauncherHooks.launchAtMs = System.currentTimeMillis() - 1_000
         assertTrue(PlayGate.launchingNow())
         assertTrue(PlayGate.gameActiveNow())

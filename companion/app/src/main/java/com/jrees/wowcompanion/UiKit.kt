@@ -122,13 +122,35 @@ object UiKit {
 
     /** a kit texture by the short name `extract_kit.py` writes, or null when it is not on the device */
     fun tex(name: String): Bitmap? {
-        texCache[name]?.let { return it }
-        if (name == CMD_PTT_ART) return pttArt()?.also { texCache[name] = it }
+        texCache[name]?.let { texUsed[name] = SystemClock.uptimeMillis(); return it }
+        if (name == CMD_PTT_ART) return pttArt()?.also { keepTex(name, it) }
         if (!retry(name)) return null
         val f = ArtHarvest.file("ui/kit/$name.png")          // the harvested kit (app-private), else the pushed one
         val bmp = (if (f.canRead()) BitmapFactory.decodeFile(f.path) else null)?.let { themed(name, it) }
-        if (bmp != null) { texCache[name] = bmp; missing.remove(name) }
+        if (bmp != null) { keepTex(name, bmp); missing.remove(name) }
         return bmp
+    }
+
+    /**
+     * THE KIT'S PICTURES CAPPED WHILE THE GAME RUNS (test build 1489, the user's pick 2026-11-18, #56): the 1.0.33 / 1.0.34 reports'
+     * "kit" with the game up, median 17 MB, p90 37, max 43 - every room's pictures, once drawn, stayed for the session. While the game
+     * is up or launching ([PlayGate.gameActiveNow]) a new picture lets the ones not drawn for [KIT_IDLE_MS] go, least recently drawn
+     * first, until the cache is under [LowMemCuts.KIT_GAME_CAP] (a picture drawn in the last half minute always stays: no re-reading
+     * per frame); the relief's trim ([MemWatch.onTrim] "kit") does the same. A room opened again reads its pictures again. Main thread.
+     */
+    private val texUsed = HashMap<String, Long>()
+
+    private fun keepTex(name: String, bmp: Bitmap) {
+        texCache[name] = bmp; texUsed[name] = SystemClock.uptimeMillis()
+        if (runCatching { PlayGate.gameActiveNow() }.getOrDefault(false)) capKit()
+    }
+
+    /** the cap now: what it let go, bytes */
+    private fun capKit(): Long {
+        val gone = LowMemCuts.kitOverCap(texCache.mapValues { it.value.byteCount.toLong() }, texUsed, SystemClock.uptimeMillis())
+        var b = 0L
+        for (n in gone) { texCache.remove(n)?.let { b += it.byteCount.toLong() }; texUsed.remove(n) }
+        return b
     }
 
     /**
@@ -7548,6 +7570,8 @@ object UiKit {
     private val fonts = HashMap<String, Typeface>()
     private val texCache = HashMap<String, Bitmap>()
     init { MemWatch.source("kit") { texCache.values.sumOf { it.byteCount.toLong() } + castCache.values.sumOf { it.byteCount.toLong() } } }
+    // test build 1489 (#56): the relief's let-go (game start, world, loading screens) caps the kit while the game runs
+    init { MemWatch.onTrim("kit") { _ -> if (runCatching { PlayGate.gameActiveNow() }.getOrDefault(false)) capKit() else 0L } }
     private val tileCache = HashMap<String, Array<Bitmap>>()
     private val missing = HashMap<String, Long>()
 
@@ -7628,6 +7652,6 @@ object UiKit {
 
     @Synchronized
     private fun forget() {
-        fonts.clear(); texCache.clear(); tileCache.clear(); missing.clear(); tabEdges.clear(); glyphInk.clear()
+        fonts.clear(); texCache.clear(); texUsed.clear(); tileCache.clear(); missing.clear(); tabEdges.clear(); glyphInk.clear()
     }
 }

@@ -361,6 +361,9 @@ object ArtHarvest {
         // nor gives way to a required step it could not run anyway (the game is up); once the game closes both stops are back
         val active = PlayGate.gameActiveNow()
         val beside = besideNow(active)
+        // test build 1489 (#361, the user's approval 2026-11-18: "stop ALL art work hard at Play"): EVERY step, before Play too, and
+        // the pause before the required step's yield, so a step stopped with the game up always gets the pause's relief
+        if (PlayGate.artMustPause(active, onWorker = Thread.currentThread() === worker, beside = beside)) throw PausedForGame()
         if (yieldBg && bgPhase && !beside) throw YieldToRequired()
         // 1.0.17 (the user's pick for the 8 / 12 GB Thors: "Pause while playing, always"): the background art waits while the game runs
         // 2026-11-08 (the native heap profile: the open game files are ~500 MB, and this wait held them through the whole session on
@@ -368,18 +371,41 @@ object ArtHarvest {
         // 2026-11-11 (issues #94 / #86 / #104 / #63: safepathzones and allicons ran beside the game on the 16 GB Thor Max too, java
         // 250-550 MB on top of a 3-4 GB game): EVERY tier, and the launch's own window ([PlayGate])
         // review of this fix, 2026-11-11: only on the worker thread (a step's report from GameFiles.prefetch's pool threads must not throw
-        // there: #138's uncaught PausedForGame) - the worker's next report pauses it
-        if (PlayGate.artMustPause(bgPhase, active, onWorker = Thread.currentThread() === worker, beside = beside)) throw PausedForGame()
+        // there: #138's uncaught PausedForGame) - the worker's next report pauses it (the check itself is above)
     }
 
     /** memory relief 2: [checkStop] on the run's own thread only (Job.checkpoint: a step's pool threads never throw it) */
     private fun checkpoint() { if (Thread.currentThread() === worker) checkStop() }
     /** memory relief 2: the run is asked to let go of the game files now (any thread; Job.letGoAsked) */
     private fun letGoAsked(): Boolean = PlayGate.gameActiveNow().let { active -> letGo(stopping, yieldBg, bgPhase, active, besideNow(active)) }
-    /** [checkStop]'s three stops as one answer: the update, a required step due (background only), the game up or launching
-     *  (background only); [beside] = the world map building beside the game ([besideNow]): neither of the last two. Pure (the tests) */
+    /** [checkStop]'s three stops as one answer: the update, a required step due (background only), the game up, launching or held by
+     *  Play (every step, test build 1489); [beside] = the world map building beside the game ([besideNow]): neither of the last two.
+     *  Pure (the tests) */
     internal fun letGo(stopping: Boolean, yieldBg: Boolean, bgPhase: Boolean, gameActive: Boolean, beside: Boolean = false): Boolean =
-        stopping || (bgPhase && !beside && (yieldBg || gameActive))
+        stopping || (!beside && (gameActive || (bgPhase && yieldBg)))
+
+    /** the worker has the game files open, or may open them: alive and not parked for the game. Pure (the tests) */
+    internal fun holdsGameFiles(alive: Boolean, parked: Boolean): Boolean = alive && !parked
+
+    /**
+     * PLAY'S HARD STOP (test build 1489, the user's approval 2026-11-18, #361 / #56): the launcher calls this right before the container
+     * starts, after [LauncherHooks.holdForPlay]. Every step is already asked to stop at its next file ([PlayGate.held]); this waits up to
+     * [waitMs] for the worker to have let go of the game files (parked for the game or ended) so the game never starts beside them.
+     * True = let go (or nothing ran); false = still ending (it stops at its next file: logged, the launch goes on).
+     */
+    fun letGoForPlay(waitMs: Long = 20_000L): Boolean {
+        val t0 = System.currentTimeMillis()
+        fun holds() = synchronized(waiters) { worker }.let { w -> holdsGameFiles(w?.isAlive == true, parkedForGame) }
+        if (!holds()) return true
+        val step = currentStep ?: "-"
+        Log.i(TAG, "harvest: Play - the art lets go of the game files (step $step)")
+        while (holds() && System.currentTimeMillis() - t0 < waitMs) runCatching { Thread.sleep(100) }
+        val ok = !holds()
+        val l = "art at Play: ${if (ok) "let go" else "still ending"} after ${System.currentTimeMillis() - t0} ms (step $step)"
+        if (ok) Log.i(TAG, "harvest: $l") else Log.w(TAG, "harvest: $l")
+        runCatching { MemWatch.note(l) }
+        return ok
+    }
 
     // ------------------------------------------------------------------ the world map beside the game (the Thor Max only)
 
@@ -513,7 +539,8 @@ object ArtHarvest {
                         if (besideLeft) Log.i(TAG, "harvest: the world map goes on beside the game once it is in the world, " +
                             "${PlayGate.BESIDE_CALM_MS / 1000} s after its last load")
                         try {
-                            while (PlayGate.gameActiveNow() && !stopping && !yieldBg && !besideDue(besideLeft)) Thread.sleep(3_000)
+                            // test build 1489 (#361): a required step asked for in game (a new icon) waits for the close too
+                            while (PlayGate.gameActiveNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)
                         } finally { parkedForGame = false }
                         if (!stopping && !yieldBg && PlayGate.gameActiveNow()) { Log.i(TAG, "harvest: back to the world map beside the game"); continue }
                         Log.i(TAG, "harvest: the game is closed, the background art goes on")
@@ -587,9 +614,9 @@ object ArtHarvest {
         }
         // 2026-11-11 (issue #108 cluster): a run that would open the game files while the game is up or launching (a required icon asked
         // for in game, the worker's next pass) waits outside them for the game to close; the art before Play never meets this (Play waits)
-        // review of this fix (2026-11-11): the launch window alone never holds back a run with before-Play steps (Play waits for it)
-        if (!PlayGate.artMayOpen(gameUp = !PlayGate.streamingNow() && LauncherHooks.gameUp(), launching = PlayGate.launchingNow(),
-                beforePlayDue = first.isNotEmpty())) {
+        // test build 1489 (#361): the launch window and Play's hold too, with before-Play steps due or not (Play ends any old window
+        // before its own wait, so that wait is never held)
+        if (!PlayGate.artMayOpen(gameActive = PlayGate.gameActiveNow())) {
             // the user's pick, 2026-11-16: on the Thor Max the world map alone builds beside the game ([besidePass]); the rest waits
             val beside = later.firstOrNull { it.id == PlayGate.BESIDE_STEP }
             if (beside != null && besideDue(true)) throw PausedForGame(if (besidePass(ctx, beside)) "${beside.id} (built beside the game)" else null)

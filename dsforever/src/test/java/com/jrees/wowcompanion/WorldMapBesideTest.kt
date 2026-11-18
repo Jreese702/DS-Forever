@@ -75,10 +75,9 @@ class WorldMapBesideTest {
     }
 
     @Test fun theBackgroundPauseBendsOnlyForTheBesidePass() {
-        assertTrue(PlayGate.artMustPause(backgroundPhase = true, gameActive = true))
-        assertFalse(PlayGate.artMustPause(backgroundPhase = true, gameActive = true, beside = true))
-        assertTrue("on the worker only, as before", PlayGate.artMustPause(true, true, onWorker = true, beside = false))
-        assertFalse(PlayGate.artMustPause(backgroundPhase = false, gameActive = true, beside = false))
+        assertTrue(PlayGate.artMustPause(gameActive = true))
+        assertFalse(PlayGate.artMustPause(gameActive = true, beside = true))
+        assertTrue("on the worker only, as before", PlayGate.artMustPause(true, onWorker = true, beside = false))
         // the stops as one answer: the beside pass neither lets go for the game nor for a required step it could not run in game
         assertFalse(ArtHarvest.letGo(stopping = false, yieldBg = false, bgPhase = true, gameActive = true, beside = true))
         assertFalse(ArtHarvest.letGo(stopping = false, yieldBg = true, bgPhase = true, gameActive = true, beside = true))
@@ -213,7 +212,7 @@ class WorldMapBesideTest {
 
     @Test fun everyOtherStepStillPausesAndTheReliefStays() {
         val stop = fn("private fun checkStop() {")
-        assertTrue(stop.contains("PlayGate.artMustPause(bgPhase, active, onWorker = Thread.currentThread() === worker, beside = beside)"))
+        assertTrue(stop.contains("PlayGate.artMustPause(active, onWorker = Thread.currentThread() === worker, beside = beside)"))
         assertTrue(stop.contains("if (yieldBg && bgPhase && !beside) throw YieldToRequired()"))
         // beside only inside the pass, only for the world map, only while the live rule says so
         assertTrue(harvest.contains("active && besideOn && (currentStep ?: PlayGate.BESIDE_STEP) == PlayGate.BESIDE_STEP && PlayGate.besideNow(PlayGate.BESIDE_STEP)"))
@@ -222,7 +221,7 @@ class WorldMapBesideTest {
         val pause = harvest.indexOf("} catch (e: PausedForGame) {")
         val handler = harvest.substring(pause, harvest.indexOf("} catch (e: YieldToRequired) {", pause))
         assertTrue(handler.contains("if (openedFiles) MemWatch.relieve(\"art let go: \$step, \$lag\", collectNow = true)"))
-        assertTrue(handler.contains("while (PlayGate.gameActiveNow() && !stopping && !yieldBg && !besideDue(besideLeft)) Thread.sleep(3_000)"))
+        assertTrue(handler.contains("while (PlayGate.gameActiveNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)"))
         assertTrue(handler.indexOf("MemWatch.relieve(") < handler.indexOf("besideDue(besideLeft)"))
         assertTrue(handler.contains("Log.i(TAG, \"harvest: back to the world map beside the game\"); continue"))
         assertTrue(harvest.contains("private fun besideLeft(ctx: Context): Boolean = DeviceTier.besideModel() &&"))

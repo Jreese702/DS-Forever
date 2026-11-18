@@ -56,7 +56,23 @@ object DeviceTier {
      */
     const val BESIDE_MB = 15_000L
     fun besideModel(mb: Long, lighter: Boolean): Boolean = mb >= BESIDE_MB && !lighter
+    // test build 1489 (the user's pick 2026-11-18): this one exception stays - the 8 / 12 GB Thors never build art while playing
     fun besideModel(): Boolean = besideModel(totalMb, runCatching { Settings.lighterMode }.getOrDefault(false))
+
+    /**
+     * LOW-MEMORY GRAPHICS BY MODEL (the user's approval 2026-11-18, #56; Settings.lowMemGraphics while the player never picked): on for
+     * the 8 GB Thors (Base, Lite) and the 12 GB Pro ([lowMemory]), off for the 16 GB Thor Max (the earlier ruling) and an unknown RAM
+     */
+    fun lowMemGraphicsDefault(mb: Long): Boolean = lowMemory(mb)
+
+    /**
+     * THE 8 GB THORS (Base, Lite; test build 1489, the user's pick 2026-11-18): Low-memory graphics also lowers view distance,
+     * particle / spell density and shadows there (GameConfigWtf.LOW_MEMORY_8GB). Android counts 7191 MB (and 7700 on one report);
+     * never while the RAM is unknown, never the 12 GB Pro (11265 MB).
+     */
+    const val EIGHT_GB_MB = 9_500L
+    fun eightGb(mb: Long, lite: Boolean = false): Boolean = mb in 1 until EIGHT_GB_MB || (lite && mb > 0)
+    fun eightGb(): Boolean = eightGb(totalMb, runCatching { isLite() }.getOrDefault(false))
 
     /**
      * HOME'S MAP AT FULL DETAIL (the user, 2026-11-17: "I am slightly concerned about the map turning into a memory sink, if it does we

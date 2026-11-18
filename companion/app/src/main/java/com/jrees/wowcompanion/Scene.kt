@@ -34,7 +34,8 @@ import android.os.SystemClock
 object Scene {
 
     // ---------------------------------------------------------------- the decoded pictures (main thread)
-    private val pics = HashMap<Int, Bitmap>()
+    // test build 1489 (#56): least recently asked first - the reveal draws at most 3 passes at once, so [MAX_HELD] stay decoded
+    private val pics = LinkedHashMap<Int, Bitmap>(16, 0.75f, true)
     private val missingAt = HashMap<Int, Long>()
     /** the pictures' bytes held now (MemWatch's "scenes"; written on the main thread, read on WCMEM's) */
     @Volatile var held = 0L
@@ -45,6 +46,15 @@ object Scene {
     const val TRIM_IDLE_MS = 2_000L
     /** a missing picture is looked for again after this long (a kit built while the app runs) */
     private const val MISSING_MS = 5_000L
+
+    /**
+     * TEST BUILD 1489 (the user's pick 2026-11-18, #56: "loading-screen pictures decoded at bottom-screen size and lower colour depth
+     * (RGB_565 where no alpha), released the moment the loading screen ends"): the 1.0.33 / 1.0.34 reports held all eight while the game
+     * booted ("scenes 41", 8 x 1240 x 1080 x 4 B). Now at most [MAX_HELD] stay decoded (the reveal draws three passes at once), each at
+     * no more than the bottom screen's size ([sampleFor]) and in RGB_565 (2 B a pixel: Android keeps ARGB_8888 for a picture with
+     * alpha), and they go as the game reaches the world or a loading screen ends ([loadingOver]): 41 -> at most ~11 MB. The rules:
+     * LowMemCuts (MAX_HELD = LowMemCuts.SCENE_MAX_HELD).
+     */
 
     /** the pictures may go: some are held and none was asked for [idleMs] (pure: the tests) */
     fun mayGo(nowMs: Long, askedAtMs: Long, heldBytes: Long, idleMs: Long): Boolean =
@@ -58,13 +68,42 @@ object Scene {
         pics[fid]?.let { return it }
         missingAt[fid]?.let { if (now - it < MISSING_MS) return null }
         val f = ArtHarvest.file("ui/kit/scene_$fid.png")
-        val b = if (f.canRead()) runCatching { BitmapFactory.decodeFile(f.path) }.getOrNull() else null
+        val b = if (f.canRead()) runCatching { decode(f.path) }.getOrNull() else null
         if (b == null) { missingAt[fid] = now; return null }
         missingAt.remove(fid)
         pics[fid] = b
         held += b.byteCount.toLong()
+        // the least recently asked beyond the cap go (a pass that comes back decodes its picture again)
+        for (k in LowMemCuts.overCap(pics.keys.toList())) pics.remove(k)?.let { held -= it.byteCount.toLong() }
         return b
     }
+
+    /** [path] at no more than the bottom screen's size, RGB_565 where it has no alpha */
+    private fun decode(path: String): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        val o = BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.RGB_565
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) inSampleSize = LowMemCuts.sampleFor(bounds.outWidth, bounds.outHeight)
+        }
+        return BitmapFactory.decodeFile(path, o)
+    }
+
+    /**
+     * The game reached the world, or a loading screen in it ended (GameLife): the start screen that drew the pictures closes on the
+     * same document, so they go [LOADING_OVER_MS] later unless a page asked for one since ([mayGo]). Any thread.
+     */
+    fun loadingOver(why: String) {
+        runCatching {
+            main.postDelayed({
+                if (mayGo(SystemClock.uptimeMillis(), askedAt, held, LOADING_OVER_MS - 100L)) {
+                    val b = letGo()
+                    MemWatch.note("loading pictures let go (${(b + (1 shl 19)) shr 20} MB): $why")
+                }
+            }, LOADING_OVER_MS)
+        }
+    }
+    const val LOADING_OVER_MS = 600L
 
     /** every decoded picture goes (their bytes); main thread. A draw that comes later decodes its own again */
     fun letGo(): Long {

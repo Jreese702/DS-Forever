@@ -112,6 +112,7 @@ object GameLife {
         // (no collection then: #250 and #254 were killed 8 s and 7 s after this). [WORLD_RELIEF_MS] later they go, and the one collection
         // frees them
         MemWatch.relieve("world", WORLD_RELIEF_MS)
+        runCatching { Scene.loadingOver("the world is up") }       // test build 1489 (#56): the loading pictures go at once
     }
     /** the world relief's wait: past Scene's [Scene.TRIM_IDLE_MS] after the start screen closes, well before the reports' first kills */
     const val WORLD_RELIEF_MS = Scene.TRIM_IDLE_MS + 500L
@@ -140,6 +141,7 @@ object GameLife {
         loadingAt = 0L; loadEndAt = now
         val l = "loading screen $loads over after ${minutes((now - at).coerceAtLeast(0L))}"
         MemWatch.note(l)
+        runCatching { Scene.loadingOver("loading screen $loads over") }
         return l
     }
     /** the loading screens seen in the world in this game run, and when the one up now came (0 = none up) */
