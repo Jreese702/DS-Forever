@@ -39,6 +39,9 @@ class MapRareDragonTest {
     private fun art(root: File?) {
         val f = ArtHarvest::class.java.getDeclaredField("rootDir"); f.isAccessible = true; f.set(null, root)
         UiKit.root = UiKit.root
+        // (the full suite, 2026-11-18: another class's made-up minimap - Eastern Kingdoms' tiles solid red - stayed loaded and filled
+        // Home's map red under the rares; the tiles and terrain are read again from this root)
+        MinimapTiles.refresh(); TerrainOverview.refresh()
     }
 
     @After fun noArt() = art(null)
