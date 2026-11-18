@@ -1536,17 +1536,17 @@ fun XServerScreen(
             if (isGamepad) {
                 val winHandler = xServerView!!.getxServer().winHandler
                 if (it.event.action == KeyEvent.ACTION_DOWN && it.event.repeatCount == 0 &&
-                    ControllerManager.getInstance().noteGamepadButton(it.event.device.id)
+                    ControllerManager.getInstance().noteGamepadButton(it.event.deviceId)
                 ) {
                     winHandler.refreshControllerMappingsForHotplug()
                 }
-                val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.device.id)
+                val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.deviceId)
                 // 1.0.29 key lag ("insane input lag on my face buttons"): the press's event time -> the game's handler, rate-limited
                 com.jrees.wowcompanion.KeyLag.atGame(it.event)
                 if (assignedSlot > 0) {
                     handled = winHandler.onKeyEvent(it.event)
                 } else {
-                    winHandler.setCurrentController(it.event.device.id)
+                    winHandler.setCurrentController(it.event.deviceId)
                     handled = physicalControllerHandler?.onKeyEvent(it.event) == true
                     if (!handled) handled = PluviaApp.inputControlsView?.onKeyEvent(it.event) == true
                     // Final fallback to WinHandler passthrough
@@ -1600,11 +1600,11 @@ fun XServerScreen(
             if (isGamepad && it.event != null) {
                 val winHandler = xServerView!!.getxServer().winHandler
                 ControllerManager.getInstance().noteGamepadActivity(it.event)
-                val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.device.id)
+                val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.deviceId)
                 if (assignedSlot > 0) {
                     handled = winHandler.onGenericMotionEvent(it.event)
                 } else {
-                    winHandler.setCurrentController(it.event.device.id)
+                    winHandler.setCurrentController(it.event.deviceId)
                     handled = physicalControllerHandler?.onGenericMotionEvent(it.event!!) == true
                     if (!handled) handled = PluviaApp.inputControlsView?.onGenericMotionEvent(it.event) == true
                     // Final fallback to WinHandler passthrough
