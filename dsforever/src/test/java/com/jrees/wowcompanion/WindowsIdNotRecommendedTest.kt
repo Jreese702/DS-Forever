@@ -43,10 +43,10 @@ class WindowsIdNotRecommendedTest {
     }
 
     @Test fun itsRowSaysNothingOfTheSignIn() {
-        // the row's own line is "From the next game start"; nothing on it claims it helps a refused sign-in
-        val view = File(src, "SettingsView.kt").readText()
-        val row = view.substringAfter("private fun drawWindowsId(").substringBefore("\n    }")
-        assertTrue(row, "Tr.t(\"From the next game start\")" in row)
+        // the beautify pass (2026-11-17): the row is General's compact row (GeneralTiles), its label and segments only; nothing drawn
+        // for it claims it helps a refused sign-in
+        val row = File(src, "GeneralTiles.kt").readLines().filter { "Row.WINDOWS_ID" in it }.joinToString("\n")
+        assertTrue(row, row.isNotEmpty())
         for (w in listOf("BLZ", "14400", "sign-in", "Sign-in", "Battle.net", "disconnected")) assertFalse("the row: $w", w in row)
         // no translated line pairs it with the sign-in either
         for (l in listOf("es", "fr")) {

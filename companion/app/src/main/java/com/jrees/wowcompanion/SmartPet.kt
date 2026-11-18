@@ -72,8 +72,4 @@ object SmartPet {
         if (!live || pf == null || held(pf) == want) return false
         return lastSent != want || lastSentAt == 0L || now - lastSentAt >= RESEND_MS
     }
-
-    /** the "What it does" picture's title and words */
-    fun caption(on: Boolean): List<String> = if (on) listOf("B calls your pet back.", "Attack or cast a harmful spell:", "it attacks your target.")
-        else listOf("Your pet is left alone.")
 }

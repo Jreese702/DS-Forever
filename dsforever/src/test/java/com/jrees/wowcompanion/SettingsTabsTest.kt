@@ -57,8 +57,10 @@ class SettingsTabsTest {
         assertEquals(listOf("Buttons", "Wheels", "Smart Y", "Combat helpers"), SettingsTabs.groups(T.CONTROLLER).map { it.heading })
         // QuestTrail: not installed. First the Import button's headless group (the user, 2026-11-16: "Import addons should be a single
         // button at the top of the list"; its heading is never drawn)
-        assertEquals(listOf("Import add-ons", "Polestar", "Spoken", "Manners", "Imported"), SettingsTabs.groups(T.ADDONS).map { it.heading })
-        assertEquals(listOf("Frames", "Memory", "Indoor maps", "Streaming"), SettingsTabs.groups(T.PERFORMANCE).map { it.heading })
+        // the beautify pass (2026-11-17): the third-party add-ons are ONE headless group of picture cards (AddonTiles)
+        assertEquals(listOf("Import add-ons", "Add-ons", "Imported"), SettingsTabs.groups(T.ADDONS).map { it.heading })
+        // beautify (critic C6): Performance is ONE headless group, its tiles and the Stream settings row
+        assertEquals(listOf("Performance"), SettingsTabs.groups(T.PERFORMANCE).map { it.heading })
         for (g in G.values()) assertTrue("${g.heading} has blocks", B.values().any { it.group == g })
     }
 
@@ -82,30 +84,29 @@ class SettingsTabsTest {
             G.PARTY to listOf("DS party frames", "Party frames"),
             G.NAVIGATION to listOf("Compass bar", "Compass follows the camera", "World markers", "Polestar on the top screen"),
             G.WINDOWS to listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Cast bar",
-                "Player frame", "Target frame", "Controller bars, buffs and XP"),
+                "Player frame", "Target frame", "Controller UI", "Buffs", "XP bar",
+                // hub61: the damage meter, the Cooldown Manager and its four parts
+                "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"),
             G.BUTTONS to listOf("ABXY location", "Button glyphs", "Smart pet"),           // 2026-11-17: Smart pet (was B: pet follow), a pet class only
             G.WHEELS to listOf("Pause menu: open", "Pause menu: pick", "Start over game windows", "Item wheel: open", "Item wheel: pick", "Spell wheel: open",
                 "Spell wheel: pick", "Left class radial: open", "Left class radial: pick", "Right class radial: open", "Right class radial: pick"),
             G.SMART_Y to listOf("Smart Y"),
             G.COMBAT to listOf("Party mode", "Smart Res", "Start attack on hostile target", "Start the attack when a spell is cast", "Combat Auto Shot"),
-            G.POLESTAR to ThirdPartyAddons.POLESTAR.rowWords() + "Quest tracking",
-            G.SPOKEN to ThirdPartyAddons.SPOKEN.rowWords(),
-            G.QUESTTRAIL to ThirdPartyAddons.QUESTTRAIL.rowWords(),
-            G.MANNERS to ThirdPartyAddons.MANNERS.rowWords(),
+            G.CARDS to ThirdPartyAddons.POLESTAR.rowWords() + "Quest tracking" + ThirdPartyAddons.SPOKEN.rowWords() +
+                ThirdPartyAddons.MANNERS.rowWords() + ThirdPartyAddons.QUESTTRAIL.rowWords(),
             G.VOICE to listOf("Voice: English · 60 MB", "Voice: English · 148 MB", "Voice: other languages · 60 MB", "Voice: other languages · 148 MB"),
             // the user, 2026-11-16: "maybe we just do an import addons button then?"; then "Import addons should be a single button at
             // the top of the list": the button is its own headless group, first; Imported keeps only the list (rows named by the add-ons)
             G.IMPORT to listOf("Import add-ons"),
             G.IMPORTED to emptyList<String>(),
-            G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game"),
-            G.MEMORY to listOf("Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out"),
-            G.INDOOR to listOf("Build in the background", "Progress", "Route data"),
-            G.STREAMING to listOf("Stream settings"))
+            G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game",
+                "Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out", "Build in the background", "Progress", "Route data",
+                "Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
         val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
-            T.ADDONS to listOf(G.IMPORT, G.POLESTAR, G.SPOKEN, G.QUESTTRAIL, G.MANNERS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES, G.MEMORY, G.INDOOR, G.STREAMING))
+            T.ADDONS to listOf(G.IMPORT, G.CARDS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
         // who draws the rows that left their old view: Home's section still draws its attack row, GameUiSection the Top screen rows
         assertEquals(SettingsTabs.Drawer.HOME, B.ATTACK_CAST.drawer)
@@ -113,7 +114,8 @@ class SettingsTabsTest {
         assertEquals(SettingsTabs.Drawer.GAME_UI, B.COMPANION.drawer)
         // 2026-11-16 (the tiles): Polestar's top-screen row is Navigation's third tile, drawn by Navigation's GameUiSection part
         assertEquals(SettingsTabs.Drawer.GAME_UI, B.POLESTAR_TOP.drawer)
-        assertEquals(SettingsTabs.Drawer.VIEW, B.QUEST_TRACKING.drawer)
+        // the beautify pass (2026-11-17): Polestar's card draws it (its guide line, the same PolestarGuide choice)
+        assertEquals(SettingsTabs.Drawer.ADDONS, B.QUEST_TRACKING.drawer)
     }
 
     /**
@@ -166,10 +168,14 @@ class SettingsTabsTest {
             // the user, 2026-11-16 ("maybe we just do an import addons button then?"): Add-ons > Imported
             listOf("Import add-ons") +
             // the user, 2026-11-16 (hold to talk on the DS toolbar's Chat): Bottom screen > Home, under the toolbar
-            listOf("Hold to talk", "On release")
+            listOf("Hold to talk", "On release") +
+            // hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager"): Top screen > Game windows
+            listOf("Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars")
         val now = B.values().flatMap { it.rows }
+        // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
+        val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")
         // the layout editor (the user, 2026-11-16): HUD height and HUD scale are its page's now (its own row "Edit layout" opens it)
-        assertEquals((before - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
+        assertEquals((split - setOf("HUD height", "HUD scale") + "Edit layout").toSet(), now.toSet())
         assertEquals("a row in two places", now.size, now.toSet().size)
     }
 
@@ -190,15 +196,23 @@ class SettingsTabsTest {
 
     /** the user's pick: showing a tab opens its FIRST group, the rest folded */
     @Test fun firstGroupOpenOnShow() {
-        // (a headless group - Add-ons' Import button - is never folded: open with the first group that has a heading)
+        // (a headless group - Add-ons' Import button and its picture cards - is never folded: open with the first group that has a heading)
         for (t in T.values()) if (t.folds) assertEquals(t.label, SettingsTabs.groups(t).filter { it.headless }.toSet() +
-            SettingsTabs.groups(t).first { !it.headless }, SettingsTabs.openOnShow(t))
+            listOfNotNull(SettingsTabs.groups(t).firstOrNull { !it.headless }), SettingsTabs.openOnShow(t))
         // the user, 2026-11-12: "the general tab doesnt need the folding sections": every General group always open
         assertEquals(false, T.GENERAL.folds)
         assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
         // the user's pick 2026-11-16 (the design's "five headings with no folding on this tab"): Top screen's tiles never fold either
         assertEquals(false, T.TOP.folds)
-        assertEquals(T.values().filter { it != T.GENERAL && it != T.TOP }, T.values().filter { it.folds })
+        // beautify pick 5 (the user, 2026-11-17: tiled tabs do not fold, Add-ons folds only Voice / Imported): Add-ons is the one
+        // folding tab, and only its headed groups fold
+        assertEquals(listOf(T.ADDONS), T.values().filter { it.folds })
+        assertEquals(setOf(G.FRAMES), SettingsTabs.openOnShow(T.PERFORMANCE))
+        for (t in listOf(T.BOTTOM, T.CONTROLLER, T.PERFORMANCE)) {
+            assertEquals(t.label, SettingsTabs.groups(t).toSet(), SettingsTabs.openOnShow(t))
+            for (g in SettingsTabs.groups(t)) assertEquals(g.name, false, SettingsTabs.folds(g))
+        }
+        assertEquals(setOf(G.VOICE, G.IMPORTED), G.values().filter { SettingsTabs.folds(it) }.toSet())
         // the layout editor's group first (feat/big-layout's pick), and with the tiles' no-folding tab (feat/big-uimenus) every group opens
         assertEquals(setOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), SettingsTabs.openOnShow(T.TOP))
         assertEquals(G.LAYOUT, SettingsTabs.groups(T.TOP).first())
@@ -221,18 +235,22 @@ class SettingsTabsTest {
             CastBarPolicy.HUD_HIDE, CastBarPolicy.HUD_LOWER, CastBarPolicy.HUD_HIGHER, CastBarPolicy.HUD_HDEF, CastBarPolicy.HUD_SEL))
         assertEquals(listOf("off", "low", "high"), Settings.AVOID_DANGER)
         // Top screen > Game windows: the approved order, by the rows' own ids
-        assertEquals(listOf("minimap", "tracker", "chat", "dialogs", "loot", "hidetips", "castbar", GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud"),
+        assertEquals(listOf("minimap", "tracker", "chat", "dialogs", "loot", "hidetips", "castbar", GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud",
+            "buffs", "xp",                                           // split-hud: the controller UI's riders right after it
+            GameUi.DMG_ID, GameUi.CDM_ID),                           // hub61: the meters after the controller bars
             GameUiSection.WINDOWS_ORDER)
     }
 
     /** 1.0.9 Add-ons: every third-party add-on has its group there, its rows its own (title, modules, options) */
     @Test fun addOnsHaveTheirOwnGroups() {
+        val cards = if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_POLESTAR, B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)
+            else listOf(B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)
         val shown = listOf(B.IMPORT) +                         // "a single button at the top of the list" (2026-11-16)
-            (if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_POLESTAR, B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)
-            else listOf(B.QUEST_TRACKING, B.ADDON_SPOKEN, B.ADDON_MANNERS)) +
+            cards +                                            // the picture cards (the beautify pass, 2026-11-17)
             B.IMPORTED                                         // the player's own imports (2026-11-16), last
         assertEquals(shown, SettingsTabs.blocks(T.ADDONS))
-        assertEquals(shown, SettingsTabs.viewBlocks(T.ADDONS))
+        assertEquals(listOf(B.IMPORT, B.IMPORTED), SettingsTabs.viewBlocks(T.ADDONS))
+        for (b in cards) { assertEquals(G.CARDS, b.group); assertEquals(SettingsTabs.Drawer.ADDONS, b.drawer) }
         for (a in ThirdPartyAddons.ALL) assertTrue(a.title, SettingsTabs.Block.values().any { SettingsTabs.addonOf(it) == a })
         assertEquals(listOf("Spoken", "Spoken: Quests", "Spoken: Zones", "Spoken: Books", "Stop speech on B, Decline or close",
             "Stop speech on Accept"), B.ADDON_SPOKEN.rows)
@@ -255,9 +273,9 @@ class SettingsTabsTest {
             // after Manners, before Imported (the player's own add-ons stay last: feat/addons-import)
             val bs = SettingsTabs.blocks(T.ADDONS)
             assertEquals(listOf(B.ADDON_MANNERS, B.ADDON_VOICE, B.IMPORTED), bs.takeLast(3))
-            assertEquals(listOf(G.MANNERS, G.VOICE, G.IMPORTED), SettingsTabs.groups(T.ADDONS).takeLast(3))
-            assertEquals(setOf(G.IMPORT, SettingsTabs.groups(T.ADDONS)[1]), SettingsTabs.openOnShow(T.ADDONS))
-            assertTrue(G.VOICE !in SettingsTabs.openOnShow(T.ADDONS))
+            assertEquals(listOf(G.CARDS, G.VOICE, G.IMPORTED), SettingsTabs.groups(T.ADDONS).takeLast(3))
+            // Import and the cards (headless, 2026-11-17) open, and the first group with a heading: Voice (the user's "first open" pick)
+            assertEquals(setOf(G.IMPORT, G.CARDS, G.VOICE), SettingsTabs.openOnShow(T.ADDONS))
         } finally { VoiceModels.offered = was }
     }
 
@@ -272,14 +290,15 @@ class SettingsTabsTest {
         assertEquals(listOf(B.IMPORT), SettingsTabs.blocks(G.IMPORT))
         assertEquals(listOf("Import add-ons"), B.IMPORT.rows)
         assertEquals(SettingsTabs.Drawer.VIEW, B.IMPORT.drawer)
-        assertEquals(listOf(G.IMPORT), G.values().filter { it.headless })
+        // (beautify: Add-ons' cards and Performance's one group are headless too, their tiles under no heading)
+        assertEquals(listOf(G.IMPORT, G.CARDS, G.FRAMES), G.values().filter { it.headless })
         assertEquals(G.IMPORTED, SettingsTabs.groups(T.ADDONS).last())
         assertTrue("the old Import row is gone from Imported", B.IMPORTED.rows.isEmpty())
         val open = SettingsTabs.openOnShow(T.ADDONS)
         assertTrue(G.IMPORT in open)
-        assertEquals(2, open.size)
-        // without its rows (none here) the headless group is not "the first group": the first headed group with rows opens
-        assertEquals(setOf(SettingsTabs.groups(T.ADDONS)[1]), SettingsTabs.openOnShow(T.ADDONS) { it != G.IMPORT })
+        // the cards (2026-11-17): headless and always open with it, and the first group with a heading as on every folding tab
+        assertEquals(setOf(G.IMPORT, G.CARDS) + SettingsTabs.groups(T.ADDONS).first { !it.headless }, open)
+        assertEquals(setOf(G.CARDS) + SettingsTabs.groups(T.ADDONS).first { !it.headless }, SettingsTabs.openOnShow(T.ADDONS) { it != G.IMPORT })
     }
 
     @Test fun everyRowIsInExactlyOneGroup() {
@@ -297,8 +316,8 @@ class SettingsTabsTest {
         // 11-16: Voice typing under the language (the user's pick: app-wide, like Language)
         assertEquals(listOf(B.THEME, B.LANGUAGE, B.VOICE, B.SCREENS, B.ACCOUNT, B.GAME_ACCOUNT, B.WINDOWS_ID, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
-        // the layout editor's row (its page's Open); the rest, Polestar's included: GameUiSection's tiles
-        assertEquals(listOf(B.LAYOUT), SettingsTabs.viewBlocks(T.TOP))
+        // hub61: every Top screen block is GameUiSection's tiles now (Edit layout too; Polestar's included)
+        assertEquals(emptyList<B>(), SettingsTabs.viewBlocks(T.TOP))
         assertEquals(listOf(B.CONTROLLER, B.SMART_PET, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),
             SettingsTabs.viewBlocks(T.CONTROLLER))
         // only the wheels keep a sub-heading of their own inside their group
@@ -315,7 +334,6 @@ class SettingsTabsTest {
             // the user's pick 2026-11-13: the pause menu's third row, Start over game windows (Our wheel / Game's wheel)
             assertEquals(if (b == B.PAUSE_WHEEL) 3 else 2, b.rows.size)
             assertTrue(b.rows[0].endsWith(": open") && b.rows[1].endsWith(": pick"))
-            for (r in b.rows) assertTrue("$r has a picture", SettingsPreview.has(r))
         }
     }
 
@@ -330,91 +348,27 @@ class SettingsTabsTest {
     }
 }
 
-/** f-settings-tabs phase 2: the "What it does" pictures belong to bottom-screen rows (the user's rule: none on the top screen's Show/Hide) */
+/** the Top screen's tiles and their pictures (the "What it does" panel's own registry went with the panel: every tab is tiles) */
 class SettingsPreviewRowsTest {
-    private val allRows = SettingsTabs.Block.values().flatMap { b -> b.rows.map { it to b.tab } }.toMap()
-
-    @Test fun everyPictureIsARowOfABottomScreenTab() {
-        for (id in SettingsPreview.ROWS.keys) {
-            val tab = allRows[id]
-            assertTrue("$id is not a Settings row", tab != null)
-            assertTrue("$id is on $tab", tab != SettingsTabs.Tab.TOP)
-        }
-    }
-
-    /** the panel stays off the Top screen tab (a row there with a "What it does" picture would show it and squeeze the tile grid) */
-    @Test fun noPictureOnTheTopScreensShowHide() =
-        assertTrue(SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }.none { SettingsPreview.has(it) })
-
     /** 2026-11-16 (the user: "VISUAL overhaul of UI menus (picture beside each game-UI element option)"): every Top screen tile has its
      *  picture, in the tiles' own registry (GameUiTiles.PICTURED, which TilePictures draws), and every Top screen row is a tile or a row
      *  of a tile's band, each once (19 tiles + 8 band rows = the tab's 27 rows) */
     @Test fun everyTopTileHasAPicture() {
         val missing = GameUiTiles.ALL.filter { it !in GameUiTiles.PICTURED }
         assertTrue("Top screen tiles with no picture: $missing", missing.isEmpty())
-        assertEquals(19, GameUiTiles.ALL.size)
+        assertEquals(24, GameUiTiles.ALL.size)                       // hub61: + Damage meter, Cooldown Manager, Edit layout; split-hud: + Buffs, XP bar
         val word = TopWords.WORD
         val shown = GameUiTiles.ALL + GameUiTiles.EXTRAS.values.flatten()
         assertEquals("each once", shown.size, shown.toSet().size)
-        // (the layout editor's "Edit layout" is SettingsView's row, not a tile; HUD height / scale moved into the editor)
-        val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP && it != SettingsTabs.Block.LAYOUT }.flatMap { it.rows }
-        assertEquals(25, topRows.size)
+        // (hub61: "Edit layout" is a tile now, the meters and the Cooldown Manager's four parts rows; HUD height / scale in the editor)
+        val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }
+        assertEquals(34, topRows.size)
         assertEquals(topRows.toSet(), shown.map { word.getValue(it) }.toSet())
         // and group by group: a group's tiles and their bands' rows are that group's rows
         for ((g, ids) in GameUiTiles.TILES) {
             val rows = SettingsTabs.Block.values().filter { it.group == g }.flatMap { it.rows }.toSet()
             assertEquals(g.heading, rows, (ids + ids.flatMap { GameUiTiles.EXTRAS[it] ?: emptyList() }).map { word.getValue(it) }.toSet())
         }
-    }
-
-    /** 2026-11-13 (the user: "a lot of these new options and settings need visuals to accompany them in the settings menus"): every
-     *  Bottom screen row has its picture (a new row there needs one), and the Controller tab's combat helpers have theirs */
-    @Test fun everyBottomScreenRowHasAPicture() {
-        val missing = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.BOTTOM }.flatMap { it.rows }.filter { !SettingsPreview.has(it) }
-        assertTrue("Bottom screen rows with no picture: $missing", missing.isEmpty())
-        for (r in listOf("Smart Y", "Party mode", "Smart Res", "Start attack on hostile target", "Combat Auto Shot"))
-            assertTrue("$r has a picture", SettingsPreview.has(r))
-    }
-
-    /** every value of the new rows has its title and words (the panel shows the one chosen) */
-    @Test fun theNewRowsWordsFollowTheValue() {
-        for (side in 0..3) assertTrue(SettingsPreview.caption("Tap-to-cast bar", SettingsPreview.State(castBar = side)).isNotEmpty())
-        assertEquals("Tap-to-cast bar: Both", SettingsPreview.title("Tap-to-cast bar", SettingsPreview.State(castBar = 3)))
-        // the bar in a fight: Hide (the default) / Stay, each with its own words
-        assertEquals("Cast bar in combat: Hide", SettingsPreview.title("In combat", SettingsPreview.State()))
-        assertEquals("Cast bar in combat: Stay", SettingsPreview.title("In combat", SettingsPreview.State(castCombatHide = false)))
-        assertTrue(SettingsPreview.caption("In combat", SettingsPreview.State()) != SettingsPreview.caption("In combat", SettingsPreview.State(castCombatHide = false)))
-        assertEquals("Ammo: Off", SettingsPreview.title("Ammo", SettingsPreview.State(clockAmmo = false)))
-        // 2026-11-13 (the user: "just list our total gold under the battery (still give it a toggle)"): the Gold row's picture is the gold line
-        assertEquals("Gold: On", SettingsPreview.title("Gold", SettingsPreview.State(clockGold = true)))
-        assertEquals("Gold: Off", SettingsPreview.title("Gold", SettingsPreview.State(clockGold = false)))
-        assertTrue(SettingsPreview.caption("Gold", SettingsPreview.State(clockGold = true)).first().contains("under the battery"))
-        assertEquals(listOf("No gold under the battery."), SettingsPreview.caption("Gold", SettingsPreview.State(clockGold = false)))
-        assertEquals("Combat Auto Shot: Smart", SettingsPreview.title("Combat Auto Shot", SettingsPreview.State(autoShot = 2)))
-        assertEquals("Smart Y: -", SettingsPreview.title("Smart Y", SettingsPreview.State()))
-        for (y in listOf(null, true, false)) for (sh in 0..2) for (b in listOf(true, false)) {
-            val s = SettingsPreview.State(smartY = y, autoShot = sh, clockHearth = b, clockTeleport = b, clockGold = b, clockBags = b,
-                clockAmmo = b, worldMapAll = b, partyMode = b, smartRes = b, attackHostile = b, castCombatHide = b)
-            for (id in SettingsPreview.ROWS.keys) {
-                assertTrue(id, SettingsPreview.title(id, s).length in 3..40)
-                assertTrue(id, SettingsPreview.caption(id, s).isNotEmpty() && SettingsPreview.caption(id, s).all { it.length <= 46 })
-            }
-        }
-    }
-
-    @Test fun everyPictureHasATitleAndWords() {
-        val s = SettingsPreview.State(startAttack = true, toolbar = true)
-        for (id in SettingsPreview.ROWS.keys) {
-            assertTrue(id, SettingsPreview.title(id, s).length in 3..40)
-            assertTrue(id, SettingsPreview.caption(id, s).isNotEmpty() && SettingsPreview.caption(id, s).all { it.length <= 46 })
-        }
-    }
-
-    @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair; 2026-11-13: + 12, + the cast bar's In combat
-        assertEquals(43, SettingsPreview.ROWS.size)                     // 2026-11-13: + Start over game windows; 2026-11-16: + B: pet follow, + hold to talk's two
-        assertTrue(SettingsPreview.animated("Start over game windows"))
-        assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
-        assertTrue(SettingsPreview.animated("In combat"))                // the bar fading out in a fight
     }
 }
 
@@ -427,7 +381,9 @@ object TopWords {
         GameUiSection.COMPASS_CAM_ID to "Compass follows the camera", GameUi.WM_ID to "World markers", GameUiTiles.PS_ID to "Polestar on the top screen",
         "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window", "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window",
         GameUiSection.TIPS_ID to "Game tooltips", GameUi.CASTBAR_ID to "Cast bar", GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame",
-        "hud" to "Controller bars, buffs and XP")
+        "hud" to "Controller UI", HudSplit.BUFFS_ID to "Buffs", HudSplit.XP_ID to "XP bar", GameUi.DMG_ID to "Damage meter", GameUi.CDM_ID to "Cooldown Manager",
+        GameUi.CDM_ESS_ID to "Essential", GameUi.CDM_UTIL_ID to "Utility", GameUi.CDM_BICON_ID to "Buff icons", GameUi.CDM_BBAR_ID to "Buff bars",
+        GameUiTiles.LAYOUT_ID to "Edit layout")
 }
 
 /** test40 ("the tabs seem way too small for the text of each one"): every tab as wide as its label, a strip that scrolls when too wide */

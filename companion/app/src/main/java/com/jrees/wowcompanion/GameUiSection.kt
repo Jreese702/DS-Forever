@@ -63,7 +63,9 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
      * of its own) - Top screen's [HUD] / [TARGET] / [PARTY] / [NAVIGATION] / [WINDOWS], Controller > Combat helpers' [COMBAT] and
      * [AUTO_SHOT], General > Help's [COMPANION] status. The rows, their ids, taps and channels are the ones they had.
      */
-    enum class Part { ALL, HUD, TARGET, PARTY, NAVIGATION, WINDOWS, COMBAT, AUTO_SHOT, COMPANION }
+    enum class Part { ALL, HUD, TARGET, PARTY, NAVIGATION, WINDOWS, COMBAT, AUTO_SHOT, COMPANION,
+        /** hub61: Top screen > Layout's one tile, "Edit layout" (its A opens the layout editor's page) */
+        LAYOUT }
     private val hasUi get() = part != Part.COMPANION
     private val hasStatus get() = part == Part.ALL || part == Part.COMPANION
     /** a group's part: no title, its rows under the room's heading */
@@ -72,7 +74,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
     /** the room's group this part draws (Top screen's five), null for the others */
     private val group: SettingsTabs.Group? = when (part) {
         Part.HUD -> SettingsTabs.Group.HUD; Part.TARGET -> SettingsTabs.Group.TARGET; Part.PARTY -> SettingsTabs.Group.PARTY
-        Part.NAVIGATION -> SettingsTabs.Group.NAVIGATION; Part.WINDOWS -> SettingsTabs.Group.WINDOWS; else -> null
+        Part.NAVIGATION -> SettingsTabs.Group.NAVIGATION; Part.WINDOWS -> SettingsTabs.Group.WINDOWS
+        Part.LAYOUT -> SettingsTabs.Group.LAYOUT; else -> null
     }
     /**
      * THE TILES (the user, 2026-11-16: "VISUAL overhaul of UI menus (picture beside each game-UI element option)"; the design's picks,
@@ -82,6 +85,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
      * their rows.
      */
     val tiled: Boolean get() = GameUiTiles.tiled(group)
+    /** hub61: the Edit layout tile pressed (A or a tap): the host opens the layout editor's page (SettingsView.onEditLayout's) */
+    var onEditLayout: (() -> Unit)? = null
     /** a tile's band opened (or moved to another tile): the room closes any other part's band and brings the cursor and the band in view */
     var onOpen: ((GameUiSection) -> Unit)? = null
 
@@ -149,9 +154,13 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
     /** Polestar is in use (the guide on and its core installed): Navigation keeps a tile for it (the add-on rules it in or out) */
     private fun polestarInUse(): Boolean = Settings.polestarGuide == PolestarGuide.ON && ThirdPartyAddons.coreInstalled(ThirdPartyAddons.POLESTAR)
 
+    /** hub61: the layout editor's tile: there once the add-on set has the editor (a "lay" document came), a page to open (no choice) */
+    private fun layoutRow(): GameUi.Row? = if (!LayoutModel.Live.available()) null
+        else GameUi.Row(GameUiTiles.LAYOUT_ID, "Edit layout", null, UiMode.ON, true, false, "")
+
     /** a tile's or a band row's row now, by its id: an element's even before the game reports it (known = false); null = not reported */
     private fun rowOf(id: String): GameUi.Row? = when (id) {
-        "minimap", "hud", "tracker", "chat", "dialogs" -> GameUi.elementRow(id)
+        "minimap", "hud", "tracker", "chat", "dialogs", HudSplit.BUFFS_ID, HudSplit.XP_ID -> GameUi.elementRow(id)
         LOOT_ID -> lootRow(); COMPASS_ID -> compassRow(); COMPASS_CAM_ID -> compassCamRow(); TIPS_ID -> tipsRow(); RINGS_ID -> ringsRow()
         GameUiTiles.PS_ID -> polestarRow()
         GameUi.CASTBAR_ID -> GameUi.castBarRow(); GameUi.HUD_ID -> GameUi.hudRow(); GameUi.PET_ID -> GameUi.petRow()
@@ -160,6 +169,10 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         GameUi.NP_ID -> GameUi.nameplatesRow(); GameUi.NPF_ID -> GameUi.friendlyPlatesRow()
         GameUi.UFP_ID -> GameUi.ufPartyRow(); GameUi.PARTY_ID -> GameUi.partyRow()
         GameUi.WM_ID -> GameUi.worldMarkersRow(); GameUi.PLAYER_ID -> GameUi.playerRow(); GameUi.TARGET_ID -> GameUi.targetRow()
+        // hub61: the damage meter, the Cooldown Manager and its parts, Edit layout
+        GameUi.DMG_ID -> GameUi.dmgRow(); GameUi.CDM_ID -> GameUi.cdmRow()
+        GameUi.CDM_ESS_ID, GameUi.CDM_UTIL_ID, GameUi.CDM_BICON_ID, GameUi.CDM_BBAR_ID -> GameUi.cdmPartRow(id)
+        GameUiTiles.LAYOUT_ID -> layoutRow()
         else -> null
     }
     private fun allRows(): List<GameUi.Row> = when (part) {
@@ -172,13 +185,15 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         // 2026-11-16 (the tiles): Polestar's own frame is Navigation's third tile (it was SettingsView's row)
         Part.NAVIGATION -> listOfNotNull(compassRow(), compassCamRow(), GameUi.worldMarkersRow(), polestarRow())
         // the game's own windows, in the approved order (the game's elements by their ids; the controller bars last)
-        Part.WINDOWS -> (GameUi.rows() + listOfNotNull(lootRow(), tipsRow(), GameUi.castBarRow(), GameUi.playerRow(), GameUi.targetRow()))
+        Part.WINDOWS -> (GameUi.rows() + listOfNotNull(lootRow(), tipsRow(), GameUi.castBarRow(), GameUi.playerRow(), GameUi.targetRow(),
+                GameUi.dmgRow(), GameUi.cdmRow()))
             .sortedBy { r -> WINDOWS_ORDER.indexOf(r.id).let { if (it < 0) WINDOWS_ORDER.size else it } }
         // Party mode out of Experimental, on by default (the user, 2026-11-12)
         // hub47 Smart Res under Party mode (the user, 2026-11-13: "an enable smart res toggle setting for party mode")
         Part.COMBAT -> listOfNotNull(GameUi.partyModeRow(), GameUi.smartResRow(), GameUi.attackRow())
         Part.AUTO_SHOT -> listOfNotNull(GameUi.autoShotRow())
         Part.COMPANION -> emptyList()
+        Part.LAYOUT -> listOfNotNull(layoutRow())
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     }
     /** the row drawn at ([x], [y]), by its words (the Settings room's "What it does" panel follows it), or null */
@@ -227,6 +242,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         RingsSwitch.onChange { post { refresh() } }
         // Navigation's Polestar tile comes and goes with Polestar (the guide's setting, its install)
         if (part == Part.NAVIGATION) { Settings.onChange { post { refresh() } }; ThirdPartyAddons.onChange { post { refresh() } } }
+        // hub61: the Edit layout tile comes with the editor's first document (its picture follows the pieces)
+        if (part == Part.LAYOUT) LayoutModel.Live.onChange { post { refresh() } }
         if (hasStatus) StatusLine.onChange = { post { invalidate() } }
     }
 
@@ -269,7 +286,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
 
     /** this part has rows to draw now (the room hides a group whose parts have none: the switches come with the add-on's word). The
      *  tiles: always (a fixed slot list; a tile the game has not reported yet is a dim "..." one) */
-    fun hasContent(): Boolean = !hasUi || part == Part.ALL || (if (tiled) slots().isNotEmpty() else allRows().isNotEmpty())
+    fun hasContent(): Boolean = !hasUi || part == Part.ALL || (if (part == Part.LAYOUT) LayoutModel.Live.available()
+        else if (tiled) slots().isNotEmpty() else allRows().isNotEmpty())
     /** the rows came or went (the room shows / hides the group's heading) */
     var onContent: (() -> Unit)? = null
 
@@ -377,6 +395,10 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
             GameUi.NPF_ID -> GameUi.setSwitch(GameUi.SW_NPF, m == UiMode.ON)
             // hub31: the switch says "hidden": On = Polestar's windows shown
             GameUiTiles.PS_ID -> GameUi.setSwitch(GameUi.SW_PS, m != UiMode.ON)
+            // hub61: the meters (per character; the add-on keeps its own copy)
+            GameUi.DMG_ID -> GameUi.setDmg(m)
+            GameUi.CDM_ID -> GameUi.setCdm(m == UiMode.ON)
+            GameUi.CDM_ESS_ID, GameUi.CDM_UTIL_ID, GameUi.CDM_BICON_ID, GameUi.CDM_BBAR_ID -> GameUi.setCdmPart(GameUi.CDM_PARTS.indexOf(id), m == UiMode.ON)
             else -> GameUi.setMode(id, m)
         }
     }
@@ -391,7 +413,9 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
 
     /** the choices a tile's own line offers: the game's elements their modes (the minimap's While tracking, the bars' Nintendo), the
      *  rest On / Off */
-    private fun modesOf(id: String): List<UiMode> = if (UiElements.of(id) != null) UiElements.modesFor(id) else listOf(UiMode.ON, UiMode.OFF)
+    private fun modesOf(id: String): List<UiMode> = if (UiElements.of(id) != null || id in HudSplit.EXTRA) UiElements.modesFor(id)
+        else if (id == GameUi.DMG_ID) listOf(UiMode.ON, UiMode.OFF, UiMode.DYNAMIC)          // hub61: Dynamic = a fight and 15 s after
+        else listOf(UiMode.ON, UiMode.OFF)
 
     /** one line of a band: the tile's own choices ([modes]), or a band row's ([words]), the chosen one ([chosen], -1 = none lit) */
     private class BandRow(val key: String, val label: String?, val value: String?, val words: List<String>, val modes: List<UiMode>?,
@@ -446,6 +470,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
                     if (k >= 0) { bandPress(l.rows[i], k); refresh(); return true }
                 }
                 val i = l.grid.tiles.indexOfFirst { it.contains(e.x, e.y) }
+                // hub61: Edit layout opens its page (no band)
+                if (i >= 0 && l.slots[i] == GameUiTiles.LAYOUT_ID) { if (rowOf(GameUiTiles.LAYOUT_ID) != null) onEditLayout?.invoke(); return true }
                 if (i >= 0) {
                     val id = l.slots[i]
                     selected = if (selected == id) null else id
@@ -490,7 +516,9 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
 
     /** what [id]'s picture shows besides the element: the choices that change its look (now, as chosen) */
     private fun look(id: String, r: GameUi.Row?) = TilePictures.Look(mode = r?.mode ?: UiMode.ON, pet = GameUi.swWant(GameUi.SW_PET),
-        hpText = GameUi.hpText(), tot = GameUi.swWant(GameUi.SW_UFTOT), aggro = RingsSwitch.state?.show ?: true, cls = GameUi.playerClass)
+        hpText = GameUi.hpText(), tot = GameUi.swWant(GameUi.SW_UFTOT), aggro = RingsSwitch.state?.show ?: true, cls = GameUi.playerClass,
+        // hub61: the HUD's width and the compass's camera (the bands' lines: the picture follows them), the Cooldown Manager's parts
+        width = GameUi.hudWidthFactor(), cam = CompassSwitch.state?.cam == true, cdm = GameUi.cdmParts())
 
     /** the picture (our glyph where it has none), dimmed when the choice is Off or the game has not reported the element */
     private fun picture(c: Canvas, id: String, r: GameUi.Row?, well: RectF) {
@@ -516,7 +544,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         pFill.color = if (open) Theme.selected else Theme.raised
         c.drawRoundRect(rect, 10f, 10f, pFill)
         picture(c, id, r, GameUiTiles.well(box).rect())
-        TilePictures.badge(c, GameUiTiles.badgeBox(box).rect(), GameUiTiles.badge(r))
+        // (Edit layout is a page to open, not a choice: no badge, "Open" for its word)
+        if (id != GameUiTiles.LAYOUT_ID) TilePictures.badge(c, GameUiTiles.badgeBox(box).rect(), GameUiTiles.badge(r))
         edge(c, rect, open)
         val waiting = r == null || !r.known
         val x = box.l + GameUiTiles.WELL_PAD + 2f
@@ -526,7 +555,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         c.drawText(name, x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
         if (r != null) {
             pValue.color = if (waiting || r.mode == UiMode.OFF) Theme.textDim else Theme.gold
-            c.drawText(fitText(pValue, Tr.t(word(r.mode)), maxW, 22f, 18f), x, box.b - 12f, pValue)
+            c.drawText(fitText(pValue, Tr.t(if (id == GameUiTiles.LAYOUT_ID) "Open" else word(r.mode)), maxW, 22f, 18f), x, box.b - 12f, pValue)
         }
     }
 
@@ -630,7 +659,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
 
     override fun onDraw(c: Canvas) {
         fonts()
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         rowBoxes.clear(); segBoxes.clear(); stepBoxes.clear()
         if (tiled) { drawTiles(c); return }
         var y = 0f
@@ -827,7 +856,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         return when (r.mode) {
             UiMode.ON -> "The game keeps it on the top screen."
             UiMode.OFF -> "Hidden while the companion is on this screen."
-            UiMode.DYNAMIC -> if (UiElements.of(r.id)?.onHome == true)
+            UiMode.DYNAMIC -> if (UiElements.of(r.id)?.onHome == true || r.id in HudSplit.EXTRA)
                 "Hidden only while the $room room or Home is showing." else "Hidden only while the $room room is showing."
             UiMode.TRACKING -> "Shown while Find Herbs, Minerals or Treasure is on."
             UiMode.NINTENDO -> "DS Forever's bar replaces the game's on the top screen: the layer you hold, Nintendo buttons, cooldowns."
@@ -954,7 +983,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         const val STATUS_ROW_H = STATUS_TOP + ROW_H
         /** Top screen > Game windows' order (the user's approved list): the game's elements and our switches by id */
         val WINDOWS_ORDER = listOf("minimap", "tracker", "chat", "dialogs", LOOT_ID, TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID,
-            GameUi.TARGET_ID, "hud")
+            GameUi.TARGET_ID, "hud", HudSplit.BUFFS_ID, HudSplit.XP_ID, GameUi.DMG_ID, GameUi.CDM_ID)
         const val SLOP = 24f
         /** a tile's name: Friz 25, shrunk to fit down to 18, then cut */
         const val NAME_SIZE = 25f

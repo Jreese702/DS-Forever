@@ -141,11 +141,9 @@ class SmartPetTest {
         assertEquals(listOf(SmartPet.ROW_ID), SettingsTabs.Block.SMART_PET.rows)
         assertEquals(SettingsTabs.Tab.CONTROLLER, SettingsTabs.Block.SMART_PET.tab)
         assertTrue("no separate B: pet follow row any more", SettingsTabs.Block.values().none { b -> b.rows.any { it == "B: pet follow" } })
-        assertTrue(SettingsPreview.has(SmartPet.ROW_ID) && SettingsPreview.animated(SmartPet.ROW_ID))
-        assertEquals("Smart pet: Off", SettingsPreview.title(SmartPet.ROW_ID, SettingsPreview.State()))
-        assertEquals("Smart pet: On", SettingsPreview.title(SmartPet.ROW_ID, SettingsPreview.State(smartPet = true)))
-        assertTrue(SettingsPreview.caption(SmartPet.ROW_ID, SettingsPreview.State()) !=
-            SettingsPreview.caption(SmartPet.ROW_ID, SettingsPreview.State(smartPet = true)))
+        // the 1.0.34 merge (feat/beautify: every tab is picture tiles, the "What it does" panel gone): Smart pet is the Controller
+        // tab's pet tile
+        assertEquals(SmartPet.ROW_ID, ControllerTiles.NAMES[ControllerPictures.PET_B])
     }
 
     @Test fun theWordsTranslate() {
@@ -153,7 +151,7 @@ class SmartPetTest {
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
         val words = listOf(SmartPet.ROW_ID, SettingsTabs.Block.SMART_PET.heading, SmartPet.line(true), SmartPet.line(false),
-            "Smart pet: On", "Smart pet: Off") + SmartPet.caption(true) + SmartPet.caption(false) +
+            "Smart pet: On", "Smart pet: Off") +
             listOf("you", "your pet follows", "your pet attacks", "Pet Follow", "B's own action", "your attack sends it")
         for (l in listOf("es", "fr")) for (w in words) assertTrue("$l: $w", Tr.t(w, l) != w)
         assertNotNull(SmartPet.SEGMENTS.map { Tr.t(it, "es") })

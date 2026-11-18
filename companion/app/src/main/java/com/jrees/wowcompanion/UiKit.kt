@@ -994,12 +994,26 @@ object UiKit {
     fun header(c: Canvas, width: Float, title: String, note: String? = null, height: Float = 62f) {
         pFlat.style = Paint.Style.FILL; pFlat.color = Theme.panel
         c.drawRect(0f, 0f, width, height, pFlat)
-        pFlat.color = Theme.bronzeDim
-        c.drawRect(0f, height - 1.5f, width, height, pFlat)
+        headerRule(c, width, height)
         val pt = titlePaint(height * 0.8f)
         c.drawText(Tr.t(title), 24f, height * 0.8f, pt)
         if (note != null)
             c.drawText(Tr.t(note), 24f + pt.measureText(title) + 22f, height * 0.74f, bodyPaint(height * 0.4f, Theme.dim))
+    }
+
+    /**
+     * The header's bottom rule. Classic: its 1.5 px bronzeDim hairline, as always. Any other theme (beautify 8.4): the kit's section band
+     * (recoloured in the theme's metal) laid thin along the bar's foot, so a black OLED header still ends on a metal edge
+     */
+    private fun headerRule(c: Canvas, width: Float, height: Float) {
+        val band = if (Theme.classic) null else tex("section_band")
+        if (band == null) {
+            pFlat.style = Paint.Style.FILL; pFlat.color = Theme.bronzeDim
+            c.drawRect(0f, height - 1.5f, width, height, pFlat); return
+        }
+        // the band's middle third (its bright metal line) stretched across, 6 px tall, its centre on the bar's foot
+        val src = Rect(band.width / 3, 0, band.width * 2 / 3, band.height)
+        c.drawBitmap(band, src, RectF(0f, height - 3f, width, height + 3f), pBmp)
     }
 
     /** the hairline between two panes or two sections */
@@ -1122,7 +1136,7 @@ object UiKit {
     /** the stone strip the buttons stand in, along the bottom of [inner]. Returns its rectangle. */
     fun strip(c: Canvas, inner: RectF, height: Float = STRIP): RectF {
         val s = RectF(inner.left - 8f, inner.bottom - height, inner.right + 8f, inner.bottom + 6f)
-        ground(c, s, "ground_rock", 0.32f)
+        ground(c, s, "ground_rock", 0.32f, vig = false)
         pFlat.style = Paint.Style.FILL; pFlat.color = metal(Color.rgb(96, 80, 50))
         c.drawRect(s.left, s.top, s.right, s.top + 2f, pFlat)
         pFlat.color = Color.BLACK
@@ -4159,14 +4173,19 @@ object UiKit {
         c.drawBitmap(b, Rect(0, b.height - cap, b.width, b.height), RectF(r.left, r.bottom - capPx, r.right, r.bottom), pBmp)
     }
 
-    /** a pane's ground over [r]: the list's (left) or the detail's ([right]) */
-    fun pane(c: Canvas, r: RectF, right: Boolean = false) {
-        val b = if (Theme.cur.oled) null else tex(if (right) "pane_right" else "pane_left")
+    /**
+     * a pane's ground over [r]: the list's (left) or the detail's ([right]), at [light] (Chat's log: dimmer, readability first). On OLED
+     * too (beautify 8.4, the user 2026-11-17: "the background on some of the OLED themes look lifeless, like the macro and friend room, I
+     * do really like having the background image there"): the art at the theme's pane light under its vignette, never plain black
+     */
+    fun pane(c: Canvas, r: RectF, right: Boolean = false, light: Float = 1f) {
+        val b = tex(if (right) "pane_right" else "pane_left")
         if (b == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = if (right) Theme.panel else Theme.ink
             c.drawRect(r, pFlat); return
         }
-        c.drawBitmap(b, null, r, litPaint())
+        c.drawBitmap(b, null, r, litPaint(light, if (right) "pane_right" else "pane_left", b))
+        vignette(c, r)
     }
 
     /** the game's divider between the two panes, down from [top] to [bottom], centred on [x] */
@@ -5989,10 +6008,11 @@ object UiKit {
 
     /** the ground of the Overview ([page] false) or of a crafting page, over [r] */
     fun professionGround(c: Canvas, r: RectF, page: Boolean) {
-        // OLED: the Overview's stone goes black; a crafting page is paper and stays
-        val b = if (!page && Theme.cur.oled) null else tex(if (page) "prof_ground_page" else "prof_ground")
+        // OLED keeps the Overview's stone at its pane light (beautify 8.4); a crafting page is paper and stays as it is
+        val b = tex(if (page) "prof_ground_page" else "prof_ground")
         if (b == null) { pFlat.style = Paint.Style.FILL; pFlat.color = Theme.ink; c.drawRect(r, pFlat); return }
-        c.drawBitmap(b, null, r, if (page) pLit else litPaint())
+        c.drawBitmap(b, null, r, if (page) pLit else litPaint(1f, "prof_ground", b))
+        if (!page) vignette(c, r)
     }
 
     /**
@@ -6487,7 +6507,7 @@ object UiKit {
             val w = minOf(b.width.toFloat(), r.width() / k)
             c.drawBitmap(b, Rect(0, 0, w.toInt(), b.height), RectF(r.left, r.top, r.left + w * k, r.bottom), pBmp)
             pFlat.color = Color.argb(((1f - light) * 255).toInt().coerceIn(0, 255), 0, 0, 0)
-        } else pFlat.color = Color.rgb(12, 10, 9)
+        } else { pane(c, r); return }       // no class picture yet (waiting for the game): the kit's pane, never a flat slab (beautify)
         c.drawRect(r, pFlat)
     }
 
@@ -6574,7 +6594,8 @@ object UiKit {
         val pn = bodyPaint(25f, if (active) Color.WHITE else Theme.gold)
         c.drawText(Tr.t(TextUtils.ellipsize(name, pn, r.right - 12f - tx, TextUtils.TruncateAt.END).toString()), tx,
             r.centerY() - 12f - (pn.ascent() + pn.descent()) / 2f, pn)
-        val pp = bodyPaint(19f, Theme.dim)
+        // the lit tab is light on Dark Silver: dim grey points vanished on it (contact sheet 11-17), so the lit tab reads near-white
+        val pp = bodyPaint(19f, if (active) Color.rgb(236, 230, 218) else Theme.dim)
         c.drawText(Tr.t(if (points == 1) "1 point" else "$points points"), tx, r.centerY() + 16f - (pp.ascent() + pp.descent()) / 2f, pp)
     }
 
@@ -7271,37 +7292,156 @@ object UiKit {
         c.drawBitmap(b, Rect(cap, 0, b.width - cap, b.height), RectF(r.left + cw - 0.5f, r.top, r.right - cw + 0.5f, r.bottom), pBmp)
     }
 
-    /** a texture tiled over [r], darkened to [light] (1 = as it is) */
-    private fun ground(c: Canvas, r: RectF, name: String, light: Float) {
+    /** a texture tiled over [r], darkened to [light] (1 = as it is); [vig] = the theme's vignette over it (a room's ground, not a strip) */
+    private fun ground(c: Canvas, r: RectF, name: String, light: Float, vig: Boolean = true) {
         val t = Theme.cur
-        // OLED (the user, 2026-11-12: "I personally want an oled theme"): no stone, the page's pure black
-        val b = if (t.groundLight <= 0f) null else tex(name)
+        // OLED keeps its stone (beautify 8, the user 2026-11-17: "I do really like having the background image there"): drawn dark,
+        // its blackest values crushed to true #000 (groundMatrix), never a plain black slab
+        val b = tex(name)
         if (b == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = Theme.ink
             c.drawRect(r, pFlat); return
         }
         val p = Paint(Paint.FILTER_BITMAP_FLAG)
         p.shader = android.graphics.BitmapShader(b, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
-        p.colorFilter = ColorMatrixColorFilter(groundMatrix(light))
+        p.colorFilter = ColorMatrixColorFilter(groundMatrix(t, light * t.stoneLight, artStats(name, b)))
         c.drawRect(r, p)
+        if (vig) vignette(c, r, t)
     }
 
-    /** [light] as the theme draws its grounds: Classic exactly [light]; a Dark theme dims (groundLight) and greys (groundSat) the stone */
-    private fun groundMatrix(light: Float): ColorMatrix {
+    /**
+     * A ROOM'S GROUND, for a room that has no art of its own ([RoomGround]: Settings, the Controller room): [name] (a kit ground, tiled)
+     * at [light] x the theme's stone light, under the vignette. Returns false when the picture is not on the device (the caller's ink stays).
+     */
+    fun roomGround(c: Canvas, r: RectF, name: String, light: Float, pane: Boolean = false): Boolean {
         val t = Theme.cur
-        val k = light * t.groundLight
-        return ColorMatrix().apply {
-            if (t.groundSat != 1f) { setSaturation(t.groundSat); postConcat(ColorMatrix().apply { setScale(k, k, k, 1f) }) }
-            else setScale(k, k, k, 1f)
-        }
+        val b = tex(name) ?: return false
+        val p = Paint(Paint.FILTER_BITMAP_FLAG)
+        p.shader = android.graphics.BitmapShader(b, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
+        p.colorFilter = ColorMatrixColorFilter(groundMatrix(t, light * (if (pane) t.paneLight else t.stoneLight), artStats(name, b)))
+        c.drawRect(r, p)
+        vignette(c, r, t)
+        return true
     }
+
+    /**
+     * THE ONE GROUND MATRIX (beautify 8.2): the art's saturation ([ThemeSpec.artSat]) first, then its light [k]. Classic and the Dark
+     * family: a plain scale (Classic exactly [k], as always).
+     *
+     * OLED, with the picture's own measure [st] (review fix, 2026-11-17: the design's fixed `in * k * 1.08 - 8` - and a crush on the
+     * art's scale after it - still left the Macros / Social list pane, the Calendar, Bags and the Settings rock reading as #000: the kit's
+     * pane_left is very dark art, its median 9 of 255 and its texture a few levels deep; the rock is flat, 44..49): per picture, its
+     * darkest tenth ([ArtStats.p10], at most half its median: a flat stone keeps its grey) lands on true #000 (those pixels stay off) and the gain spreads what is left so its median sits at
+     * `median * k + OLED_FLOOR * k` (the art's own light plus a floor), the gain at most [OLED_GAIN_MAX]. So a dark picture keeps a
+     * visible texture over black, and every OLED room reads as its picture, darkened, never a black slab. Without [st]: the design's
+     * fixed curve.
+     */
+    fun groundMatrix(t: ThemeSpec, k: Float, st: ArtStats? = null): ColorMatrix = ColorMatrix().apply {
+        val kk: Float; val off: Float
+        if (t.oled && st != null) {
+            val floor = minOf(st.p10, st.med * 0.5f)
+            val target = st.med * k + OLED_FLOOR * k
+            kk = (target / (st.med - floor).coerceAtLeast(1f)).coerceIn(0f, OLED_GAIN_MAX)
+            off = -floor * kk
+        } else if (t.oled) { kk = k * 1.08f; off = -8f * k }
+        else { kk = k; off = 0f }
+        val scale = ColorMatrix(floatArrayOf(kk, 0f, 0f, 0f, off, 0f, kk, 0f, 0f, off, 0f, 0f, kk, 0f, off, 0f, 0f, 0f, 1f, 0f))
+        reset()
+        if (t.artSat != 1f) setSaturation(t.artSat)
+        artTint(t)?.let { postConcat(it) }
+        postConcat(scale)
+    }
+
+    /**
+     * THE GROUND'S TINT (review fix 2026-11-17: every theme's rooms stood on the same brown art, so the maker's Ground pick and the
+     * premade themes' grounds - Cool, Rose, Moss, Dusk - only reached the plates and could not be told apart, in the rooms or in the
+     * gallery): the art, after [ThemeSpec.artSat], pulled [ART_TINT] of the way to its own light in the theme's ground hue (its
+     * [ThemeSpec.picks]' tint; a Neutral tint = plain grey), its light kept. Classic: none, the art exactly as harvested.
+     */
+    fun artTint(t: ThemeSpec): ColorMatrix? {
+        val p = t.picks ?: return null
+        if (t.id == ThemePresets.CLASSIC.id) return null
+        val col = ThemeMaker.hsl(p.tintHue, (p.tintSat * 2.4f).coerceAtMost(0.7f), 0.5f)
+        val r = Color.red(col) / 255f; val g = Color.green(col) / 255f; val b = Color.blue(col) / 255f
+        val lum = (0.299f * r + 0.587f * g + 0.114f * b).coerceAtLeast(0.05f)
+        val f = floatArrayOf(r / lum, g / lum, b / lum)
+        val w = ART_TINT
+        val l = floatArrayOf(0.299f, 0.587f, 0.114f)
+        val m = FloatArray(20)
+        for (i in 0..2) for (j in 0..2) m[i * 5 + j] = (if (i == j) 1f - w else 0f) + w * f[i] * l[j]
+        m[18] = 1f
+        return ColorMatrix(m)
+    }
+
+    /** how far a theme's ground art is pulled to its ground hue ([artTint]) */
+    const val ART_TINT = 0.5f
+
+    /** the OLED floor (out of 255, times the call's light): what a ground's median gets on top of its own light */
+    const val OLED_FLOOR = 8f
+    const val OLED_GAIN_MAX = 4f
+
+    /** a picture's light, measured once: the luminance (0..255) of its darkest tenth and its median */
+    class ArtStats(val p10: Float, val med: Float)
+    private val statsCache = HashMap<String, Pair<Bitmap, ArtStats>>()
+
+    /** [b]'s measure, cached per kit [name] while the same picture is loaded (about 4,000 samples on a grid) */
+    fun artStats(name: String, b: Bitmap): ArtStats {
+        statsCache[name]?.let { if (it.first === b) return it.second }
+        val step = maxOf(1, Math.sqrt(b.width.toDouble() * b.height / 4096.0).toInt())
+        val ls = ArrayList<Float>()
+        var y = step / 2
+        while (y < b.height) {
+            var x = step / 2
+            while (x < b.width) {
+                val px = b.getPixel(x, y)
+                if (Color.alpha(px) > 128) ls.add(0.299f * Color.red(px) + 0.587f * Color.green(px) + 0.114f * Color.blue(px))
+                x += step
+            }
+            y += step
+        }
+        val st = if (ls.isEmpty()) ArtStats(0f, 0f) else { ls.sort(); ArtStats(ls[ls.size / 10], ls[ls.size / 2]) }
+        statsCache[name] = b to st
+        return st
+    }
+
+    private val vigCache = HashMap<String, android.graphics.RadialGradient>()
+    private val pVig = Paint()
+
+    /**
+     * THE VIGNETTE (beautify 8.2): over [r], clear in the middle, from 55 % of the half-diagonal fading to the page's ink at
+     * [ThemeSpec.vignette] in the corners, so a ground's edges sink into the page and the eye stays on the content. One cached gradient
+     * per rectangle size and theme.
+     */
+    fun vignette(c: Canvas, r: RectF, t: ThemeSpec = Theme.cur) {
+        if (t.vignette <= 0f || r.width() < 2f || r.height() < 2f) return
+        val a = (t.vignette * 255f).toInt().coerceIn(0, 255)
+        val ink = t.ink and 0xFFFFFF
+        val key = "${r.width().toInt()}x${r.height().toInt()}/$ink/$a"
+        val g = vigCache.getOrPut(key) {
+            if (vigCache.size > 24) vigCache.clear()
+            val rad = Math.hypot(r.width() / 2.0, r.height() / 2.0).toFloat()
+            android.graphics.RadialGradient(0f, 0f, rad, intArrayOf(ink, ink, ink or (a shl 24)), floatArrayOf(0f, 0.55f, 1f),
+                Shader.TileMode.CLAMP)
+        }
+        val m = android.graphics.Matrix(); m.setTranslate(r.centerX(), r.centerY())
+        g.setLocalMatrix(m)
+        pVig.shader = g
+        c.drawRect(r, pVig)
+        pVig.shader = null
+    }
+
     private var litFor: ThemeSpec? = null
+    private var litK = 1f
+    private var litName: String? = null
     private val pLitTheme = Paint(Paint.FILTER_BITMAP_FLAG)
-    /** the panes' 1.5x lift ([pLit]) as the theme draws its grounds (Classic: [pLit] itself) */
-    private fun litPaint(): Paint {
+    /** the panes' 1.5x lift ([pLit]) as the theme draws its pane [name] ([b]), times [k] (Classic at 1: [pLit] itself) */
+    private fun litPaint(k: Float, name: String, b: Bitmap): Paint {
         val t = Theme.cur
-        if (t === ThemePresets.CLASSIC) return pLit
-        if (litFor !== t) { litFor = t; pLitTheme.colorFilter = ColorMatrixColorFilter(groundMatrix(1.5f)) }
+        if (t === ThemePresets.CLASSIC && k == 1f) return pLit
+        if (litFor !== t || litK != k || litName != name) {
+            litFor = t; litK = k; litName = name
+            pLitTheme.colorFilter = ColorMatrixColorFilter(groundMatrix(t, 1.5f * k * t.paneLight, artStats(name, b)))
+        }
         return pLitTheme
     }
 

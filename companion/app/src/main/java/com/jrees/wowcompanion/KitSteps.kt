@@ -37,7 +37,10 @@ object KitSteps {
         // 5 (the user, 2026-11-17: "the Skull above mobs is confusing, I think we need to scrap that, we do however need to add the
         // dragon Icon for an Elite and a silver one for rare spawns"): elite_gold + elite_silver (the game's nameplates-icon-elite-gold /
         // -silver) for the Settings room's Target bar / Enemy nameplates pictures
-        override val version = 5
+        // 6 (the user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other
+        // picture options"): dmg_bg / dmg_header / dmg_bar_bg / dmg_bar_edge and cdm_icon_overlay / cdm_icon_mask / cdm_bar / cdm_bar_bg /
+        // cdm_bar_pip (the game's damagemeters-* and ui-hud-cooldownmanager-* atlas members) for Settings > Top screen's two new pictures
+        override val version = 6
         override val beforePlay = true
         override val weight = 900      // the weights are shares of the bar: on the PC kit 15 s, cast 0.5 s, icons ~5 s (4 threads, PNG for WebP); the phone unmeasured
         override fun run(job: ArtHarvest.Job) {

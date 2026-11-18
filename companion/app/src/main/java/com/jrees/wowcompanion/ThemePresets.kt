@@ -6,8 +6,8 @@ package com.jrees.wowcompanion
  *
  * A preset is a set of chrome colours ([ThemeSpec]) plus how the harvested art's metal is recoloured ([Metal]). Plain ARGB ints, no
  * Android calls, so the model is tested off-device. Classic Bronze holds exactly the colours the app always had (it is the default).
- * OLED presets put pure black (#000000) under every large surface and drop the rock / marble textures; Dark presets keep the textures,
- * dimmed and cooled. The game's own colours (item quality, class, quest difficulty, parchment ink) are not here: they never change.
+ * OLED presets put pure black (#000000) under every large surface and draw the rooms' art dark over it (beautify 8, 2026-11-17: never
+ * plain black); Dark presets keep the textures, dimmed and cooled. The game's own colours (item quality, class, quest difficulty, parchment ink) are not here: they never change.
  */
 data class ThemeSpec(
     val id: String,
@@ -23,15 +23,24 @@ data class ThemeSpec(
     val focus: Int, val soft: Int,
     /** the words on the game's RED cloth buttons: gold on red is the game's own; a pink or ice accent on red clashes, so its own */
     val btnLabel: Int,
-    /** how bright the rock / marble / pane grounds are drawn (1 = as harvested; 0 = not drawn: the page's ink, OLED) */
-    val groundLight: Float,
+    /**
+     * HOW THE ROOMS' ART IS DRAWN (beautify 8.1; the user, 2026-11-17: "the background on some of the OLED themes look lifeless, like the
+     * macro and friend room, I do really like having the background image there"): [stoneLight] = the rock / marble grounds' light,
+     * [paneLight] = the list / detail panes' (pane_left / pane_right, prof_ground, the Settings and Controller grounds); 1 = as harvested.
+     * OLED no longer means "no art": it is drawn dark and its blackest values crushed to true #000 ([UiKit.groundMatrix])
+     */
+    val stoneLight: Float, val paneLight: Float,
     /** the grounds' saturation (1 = as harvested; 0 = grey stone) */
-    val groundSat: Float,
+    val artSat: Float,
+    /** the edge darkness over a ground (0 = none .. 1 = the page's ink in the corners) */
+    val vignette: Float,
+    /** ink = field = panel = #000 (the OLED family); it no longer drops the art */
+    val oled: Boolean,
     /** the harvested art's metal recoloured, null = as harvested (bronze) */
     val metal: Metal?,
-) {
-    val oled: Boolean get() = groundLight == 0f
-}
+    /** the theme maker's picks this theme lies nearest (the maker starts from the theme in use: beautify 9.6) */
+    val picks: ThemeMaker.Picks? = null,
+)
 
 /**
  * The art's metal recoloured, keeping its shading: a pixel whose hue lies in the bronze / gold band (about 20..56 degrees, soft edges)
@@ -115,77 +124,121 @@ data class Metal(val hue: Float, val sat: Float, val gain: Float, val curve: Flo
 object ThemePresets {
     private fun c(hex: Long) = hex.toInt()
 
-    // the metals
-    private val GOLD = Metal(hue = 46f, sat = 1.45f, gain = 1.3f, curve = 0.92f)
-    private val SILVER = Metal(hue = 215f, sat = 0.07f, gain = 1.12f, curve = 0.88f)
-    private val ROSE_GOLD = Metal(hue = 12f, sat = 0.62f, gain = 1.12f, curve = 0.95f)
-    private val ROSE = Metal(hue = 330f, sat = 0.55f, gain = 1.1f, curve = 0.92f)
-    private val FROST = Metal(hue = 205f, sat = 0.32f, gain = 1.14f, curve = 0.9f)
+    // the metals (the maker's Metal row holds them all)
+    private val GOLD = ThemeMaker.METAL_GOLD
+    private val SILVER = ThemeMaker.METAL_SILVER
+    private val ROSE_GOLD = ThemeMaker.METAL_ROSE_GOLD
+    private val ROSE = ThemeMaker.METAL_ROSE
+    private val FROST = ThemeMaker.METAL_FROST
+
+    // the art levels (beautify 8.2): Classic as harvested; the Dark family dimmed; the OLED family dark with its blacks crushed.
+    // OLED: THE USER'S PICK 9 (2026-11-17), "Medium" = stone 0.30 / pane 0.40 (the design's three were 0.22 / 0.30, 0.30 / 0.40 and
+    // 0.40 / 0.50; the build had run at 0.55 / 0.60 meanwhile). With UiKit.groundMatrix's per-picture floor the panes' texture still
+    // shows over black at this level (the pick 9 sheet renders all six levels side by side)
+    const val OLED_STONE = 0.30f
+    const val OLED_PANE = 0.40f
+    private const val OLED_SAT = 0.85f
+    private const val OLED_VIG = 0.80f
+    private const val DARK_VIG = 0.35f
+    private fun p(accent: Long, metal: String, tint: Int, shade: Int, text: Long, oled: Boolean, art: ThemeMaker.Art = ThemeMaker.Art.MID) =
+        ThemeMaker.Picks(c(accent), metal, ThemeMaker.TINTS[tint].hue, ThemeMaker.TINTS[tint].sat, ThemeMaker.SHADES[shade].l, c(text), oled, art)
 
     val CLASSIC = ThemeSpec("classic", "Classic Bronze",
         ink = c(0xFF0E0B08), field = c(0xFF141009), panel = c(0xFF17120C), raised = c(0xFF1B1610), selected = c(0xFF2E2411),
         accent = c(0xFFFFD100), edge = c(0xFFC8AA6E), edgeDim = c(0xFF4A3A1C),
         text = c(0xFFE8DCC0), textDim = c(0xFFB3A48A), dim = c(0xFF8F8168), warn = c(0xFFD99A4E),
-        focus = c(0xFFFFD100), soft = c(0xFFE2AA50), btnLabel = c(0xFFFFD100), groundLight = 1f, groundSat = 1f, metal = null)
+        focus = c(0xFFFFD100), soft = c(0xFFE2AA50), btnLabel = c(0xFFFFD100),
+        stoneLight = 1f, paneLight = 1f, artSat = 1f, vignette = 0f, oled = false, metal = null,
+        picks = p(0xFFFFD100, "bronze", 0, 1, 0xFFE8DCC0, false, ThemeMaker.Art.HIGH))
 
+    // THE PRESET REVIEW (beautify 9.7, 2026-11-17): every OLED preset's raised / selected lifted off black (its tiles floated with no
+    // plate), its art back at stone 0.40 / pane 0.60 under a 0.8 vignette; OLED Gold's words set apart from its headings, OLED Silver's
+    // accent off pure white (the brightest thing everywhere), OLED Frost's edge bluer; Dark Gold less muddy, Dark Silver no longer grey
     val OLED_BRONZE = ThemeSpec("oled_bronze", "OLED Bronze",
-        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF100C08), selected = c(0xFF2C2210),
+        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF18120B), selected = c(0xFF33270F),
         accent = c(0xFFFFD100), edge = c(0xFFC8AA6E), edgeDim = c(0xFF4A3A1C),
         text = c(0xFFE8DCC0), textDim = c(0xFFB3A48A), dim = c(0xFF8F8168), warn = c(0xFFD99A4E),
-        focus = c(0xFFFFD100), soft = c(0xFFE2AA50), btnLabel = c(0xFFFFD100), groundLight = 0f, groundSat = 1f, metal = null)
+        focus = c(0xFFFFD100), soft = c(0xFFE2AA50), btnLabel = c(0xFFFFD100),
+        stoneLight = OLED_STONE, paneLight = OLED_PANE, artSat = OLED_SAT, vignette = OLED_VIG, oled = true, metal = null,
+        picks = p(0xFFFFD100, "bronze", 0, 1, 0xFFE8DCC0, true))
 
     val OLED_GOLD = ThemeSpec("oled_gold", "OLED Gold",
-        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF110E05), selected = c(0xFF2F2507),
+        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF17130A), selected = c(0xFF2F2507),
         accent = c(0xFFFFE27A), edge = c(0xFFF2CC52), edgeDim = c(0xFF6A5414),
-        text = c(0xFFE6DDC6), textDim = c(0xFFC4B690), dim = c(0xFF9C8D68), warn = c(0xFFE0A050),
-        focus = c(0xFFFFE680), soft = c(0xFFFFD45C), btnLabel = c(0xFFFFD100), groundLight = 0f, groundSat = 1f, metal = GOLD)
+        text = c(0xFFDCD3BE), textDim = c(0xFFC4B690), dim = c(0xFF9C8D68), warn = c(0xFFE0A050),
+        focus = c(0xFFFFE680), soft = c(0xFFFFD45C), btnLabel = c(0xFFFFD100),
+        stoneLight = OLED_STONE, paneLight = OLED_PANE, artSat = OLED_SAT, vignette = OLED_VIG, oled = true, metal = GOLD,
+        picks = p(0xFFFFE27A, "gold", 0, 1, 0xFFE8DCC0, true))
 
     val OLED_SILVER = ThemeSpec("oled_silver", "OLED Silver",
-        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF0E0F11), selected = c(0xFF24272C),
-        accent = c(0xFFFFFFFF), edge = c(0xFFB8BFC9), edgeDim = c(0xFF3D424A),
+        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF15171A), selected = c(0xFF2C3139),
+        accent = c(0xFFF4F8FF), edge = c(0xFFB8BFC9), edgeDim = c(0xFF3D424A),
         text = c(0xFFCDD2D9), textDim = c(0xFFA3A9B2), dim = c(0xFF878D96), warn = c(0xFFE0A860),
-        focus = c(0xFFF2F5FA), soft = c(0xFFC8D0DC), btnLabel = c(0xFFFFFFFF), groundLight = 0f, groundSat = 1f, metal = SILVER)
+        focus = c(0xFFF2F5FA), soft = c(0xFFC8D0DC), btnLabel = c(0xFFFFFFFF),
+        stoneLight = OLED_STONE, paneLight = OLED_PANE, artSat = OLED_SAT, vignette = OLED_VIG, oled = true, metal = SILVER,
+        picks = p(0xFFF4F8FF, "silver", 2, 1, 0xFFE4EDF4, true))
 
     // the user's "pink and silver": a pink accent; its borders Dark Rose's (the user, 2026-11-12: "the OLED rose should have the same
     // home border colors as dark rose", "its that second color pallet"): Dark Rose's edge, edgeDim and rose metal
     val OLED_ROSE = ThemeSpec("oled_rose", "OLED Rose",
-        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF110C0F), selected = c(0xFF331A28),
+        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF1A1217), selected = c(0xFF3A1D2E),
         accent = c(0xFFFF8CC6), edge = c(0xFFD9A3BE), edgeDim = c(0xFF55334A),
         text = c(0xFFF0E6EB), textDim = c(0xFFC4B5BD), dim = c(0xFF9C8C95), warn = c(0xFFE0A860),
-        focus = c(0xFFFF8CC6), soft = c(0xFFF0A0C8), btnLabel = c(0xFFFFE3F1), groundLight = 0f, groundSat = 1f, metal = ROSE)
+        focus = c(0xFFFF8CC6), soft = c(0xFFF0A0C8), btnLabel = c(0xFFFFE3F1),
+        stoneLight = OLED_STONE, paneLight = OLED_PANE, artSat = OLED_SAT, vignette = OLED_VIG, oled = true, metal = ROSE,
+        picks = p(0xFFFF8CC6, "rose", 3, 1, 0xFFF0E6EB, true))
 
     val OLED_ROSE_GOLD = ThemeSpec("oled_rose_gold", "OLED Rose Gold",
-        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF120D0B), selected = c(0xFF331F19),
+        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF1A130F), selected = c(0xFF331F19),
         accent = c(0xFFF7B9A6), edge = c(0xFFDDA48F), edgeDim = c(0xFF563A30),
         text = c(0xFFF2E4DE), textDim = c(0xFFC7B2A9), dim = c(0xFF9E8A82), warn = c(0xFFE0A050),
-        focus = c(0xFFFFC2B0), soft = c(0xFFE8A890), btnLabel = c(0xFFFFE6DC), groundLight = 0f, groundSat = 1f, metal = ROSE_GOLD)
+        focus = c(0xFFFFC2B0), soft = c(0xFFE8A890), btnLabel = c(0xFFFFE6DC),
+        stoneLight = OLED_STONE, paneLight = OLED_PANE, artSat = OLED_SAT, vignette = OLED_VIG, oled = true, metal = ROSE_GOLD,
+        picks = p(0xFFF7B9A6, "rose_gold", 0, 1, 0xFFF0E6EB, true))
 
     val OLED_FROST = ThemeSpec("oled_frost", "OLED Frost",
-        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF0B0E11), selected = c(0xFF182632),
-        accent = c(0xFF96D4FF), edge = c(0xFFB4C6D6), edgeDim = c(0xFF33414E),
+        ink = c(0xFF000000), field = c(0xFF000000), panel = c(0xFF000000), raised = c(0xFF12171C), selected = c(0xFF182632),
+        accent = c(0xFF96D4FF), edge = c(0xFFA8CBE6), edgeDim = c(0xFF33414E),
         text = c(0xFFE4EDF4), textDim = c(0xFFAFC0CD), dim = c(0xFF8698A7), warn = c(0xFFE0A860),
-        focus = c(0xFFB8E4FF), soft = c(0xFF90C8F0), btnLabel = c(0xFFEEF8FF), groundLight = 0f, groundSat = 1f, metal = FROST)
+        focus = c(0xFFB8E4FF), soft = c(0xFF90C8F0), btnLabel = c(0xFFEEF8FF),
+        stoneLight = OLED_STONE, paneLight = OLED_PANE, artSat = OLED_SAT, vignette = OLED_VIG, oled = true, metal = FROST,
+        picks = p(0xFF96D4FF, "frost", 2, 1, 0xFFE4EDF4, true))
 
     val DARK_GOLD = ThemeSpec("dark_gold", "Dark Gold",
         ink = c(0xFF0B0A08), field = c(0xFF0F0D0A), panel = c(0xFF12100C), raised = c(0xFF19160F), selected = c(0xFF2E2510),
         accent = c(0xFFFFE27A), edge = c(0xFFF2CC52), edgeDim = c(0xFF6A5414),
         text = c(0xFFE6DDC6), textDim = c(0xFFC2B48E), dim = c(0xFF9C8D68), warn = c(0xFFE0A050),
-        focus = c(0xFFFFE680), soft = c(0xFFFFD45C), btnLabel = c(0xFFFFD100), groundLight = 0.6f, groundSat = 0.6f, metal = GOLD)
+        focus = c(0xFFFFE680), soft = c(0xFFFFD45C), btnLabel = c(0xFFFFD100),
+        stoneLight = 0.6f, paneLight = 0.6f, artSat = 0.75f, vignette = DARK_VIG, oled = false, metal = GOLD,
+        picks = p(0xFFFFE27A, "gold", 0, 1, 0xFFE8DCC0, false))
 
     val DARK_SILVER = ThemeSpec("dark_silver", "Dark Silver",
-        ink = c(0xFF0C0D0F), field = c(0xFF101113), panel = c(0xFF131417), raised = c(0xFF1A1C1F), selected = c(0xFF2B2F35),
+        ink = c(0xFF0B0D10), field = c(0xFF101113), panel = c(0xFF131417), raised = c(0xFF1A1C1F), selected = c(0xFF2B2F35),
         accent = c(0xFFFFFFFF), edge = c(0xFFB8BFC9), edgeDim = c(0xFF3D424A),
         text = c(0xFFCDD2D9), textDim = c(0xFFA3A9B2), dim = c(0xFF878D96), warn = c(0xFFE0A860),
-        focus = c(0xFFF2F5FA), soft = c(0xFFC8D0DC), btnLabel = c(0xFFFFFFFF), groundLight = 0.7f, groundSat = 0f, metal = SILVER)
+        focus = c(0xFFF2F5FA), soft = c(0xFFC8D0DC), btnLabel = c(0xFFFFFFFF),
+        stoneLight = 0.7f, paneLight = 0.7f, artSat = 0.15f, vignette = DARK_VIG, oled = false, metal = SILVER,
+        picks = p(0xFFF4F8FF, "silver", 2, 1, 0xFFE4EDF4, false))
 
     val DARK_ROSE = ThemeSpec("dark_rose", "Dark Rose",
         ink = c(0xFF0F0B0D), field = c(0xFF130E11), panel = c(0xFF171114), raised = c(0xFF1E161A), selected = c(0xFF3A2030),
         accent = c(0xFFFF9AD0), edge = c(0xFFD9A3BE), edgeDim = c(0xFF55334A),
         text = c(0xFFF0E4EA), textDim = c(0xFFC6B3BD), dim = c(0xFF9E8B95), warn = c(0xFFE0A860),
-        focus = c(0xFFFF9AD0), soft = c(0xFFF0A8CC), btnLabel = c(0xFFFFE3F1), groundLight = 0.6f, groundSat = 0.25f, metal = ROSE)
+        focus = c(0xFFFF9AD0), soft = c(0xFFF0A8CC), btnLabel = c(0xFFFFE3F1),
+        stoneLight = 0.6f, paneLight = 0.6f, artSat = 0.25f, vignette = DARK_VIG, oled = false, metal = ROSE,
+        picks = p(0xFFFF8CC6, "rose", 3, 1, 0xFFF0E6EB, false))
 
-    /** the picker's order: the default first, the OLED family, then the Dark family */
-    val ALL = listOf(CLASSIC, OLED_BRONZE, OLED_GOLD, OLED_SILVER, OLED_ROSE, OLED_ROSE_GOLD, OLED_FROST, DARK_GOLD, DARK_SILVER, DARK_ROSE)
+    // TWO NEW PREMADES (beautify 9.7, user pick 7, recommended: the gallery's colours span more than warm / pink / ice), built through
+    // the maker so they pass the same guard as a custom theme; OLED Jade keeps the OLED family's art level
+    val OLED_JADE = ThemeMaker.spec(ThemeMaker.Picks(c(0xFF7FE0A8), "jade", 140f, 0.25f, 0.045f, c(0xFFE2EEE6), true, ThemeMaker.Art.MID),
+        "oled_jade", "OLED Jade").copy(stoneLight = OLED_STONE, paneLight = OLED_PANE)
+
+    val DARK_VIOLET = ThemeMaker.spec(ThemeMaker.Picks(c(0xFFC7A0FF), "violet", 265f, 0.25f, 0.05f, c(0xFFF0F0F0), false, ThemeMaker.Art.MID),
+        "dark_violet", "Dark Violet")
+
+    /** the picker's order: the default first, the OLED family, then the Dark family (a saved custom theme is [Theme.all]'s, last) */
+    val ALL = listOf(CLASSIC, OLED_BRONZE, OLED_GOLD, OLED_SILVER, OLED_ROSE, OLED_ROSE_GOLD, OLED_FROST, OLED_JADE,
+        DARK_GOLD, DARK_SILVER, DARK_ROSE, DARK_VIOLET)
 
     /**
      * THE ART WHOSE METAL A THEME RECOLOURS (kit names, extract_kit.py's): frames, borders, tabs, rings, the focus frames, the book's

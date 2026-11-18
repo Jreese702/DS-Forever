@@ -886,7 +886,7 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
         tabs(c, w, tabsX)
         val s = state
         val pane = RectF(0f, 68f, right, h)
-        if (s == null) { say(c, pane, "Waiting for the game."); return }
+        if (s == null) { say(c, pane, "Waiting for the game"); return }   // no full stop: every room's waiting line reads the same
         if (refused(c, pane, s)) return
         val v = listingView(s)
         if (v == ListingView.LOCKED) { locked(c, s); return }

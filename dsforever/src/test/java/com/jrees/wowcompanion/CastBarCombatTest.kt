@@ -133,11 +133,6 @@ class CastBarCombatTest {
         val hs = src("HomeSettings.kt")
         assertTrue(hs.contains("row(c, y + GAP, \"In combat\""))
         assertTrue(hs.indexOf("\"Tap-to-cast bar\", listOf(") < hs.indexOf("\"In combat\", listOf("))
-        assertTrue(SettingsPreview.has("In combat"))
-        assertEquals("Cast bar in combat: Hide", SettingsPreview.title("In combat", SettingsPreview.State()))
-        assertEquals("Cast bar in combat: Stay", SettingsPreview.title("In combat", SettingsPreview.State(castCombatHide = false)))
-        assertTrue(SettingsPreview.caption("In combat", SettingsPreview.State()).first().contains("slides"))
-        assertTrue(SettingsPreview.caption("In combat", SettingsPreview.State(castCombatHide = false)).first().contains("stays"))
     }
 
     @Test fun theWordsAreInSpanishAndFrench() {

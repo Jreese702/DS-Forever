@@ -8,42 +8,31 @@ import android.view.View
 import android.view.ViewConfiguration
 
 /**
- * The Settings room's own rows: game actions, the map, the controller options, chat, frame generation and the indoor maps.
+ * THE SETTINGS ROOM'S WIRING AND ITS LAST OWN ROWS. Since the beautify pass (2026-11-17; the user: "I REALLY REALLY love what you did
+ * with the top screen settings menu with the pictures and want to do something similar to the other menus") every tab is picture tiles
+ * drawn by its own part (GeneralTilesView, BottomTilesView, GameUiSection, ControllerTiles, AddonTiles, PerformanceTiles). This view is:
  *
- * TABS (board f-settings-tabs, 2026-10-15): the room shows one tab at a time ([SettingsTabs]); this view draws the blocks of the
- * current [tab] that are its own ([SettingsTabs.VIEW_BLOCKS]: Game on System, Map and Chat on Rooms, Controller on Controller,
- * Frames and Indoor maps on Performance) and nothing else: every hit box of a block not drawn is EMPTY, so nothing off the tab can
- * be pressed. The title and the tab row are the room's ([SettingsTabBar]). The view MEASURES ITS OWN HEIGHT, so the room's scroll
- * scrolls the page and nothing here scrolls.
+ * - THE HOST'S WIRING HUB (the one CompanionHost builds and SettingsRoom takes): the login, the report, the DLL picker, Restart, the
+ *   layout editor, the add-on settings and import pickers, Smart Y's padmap and taps. The tiles call these through it. The hub itself is
+ *   never drawn.
+ * - ITS SLICES ([slice]): the rows that are still lists, each a slice drawing ONLY its blocks ([LIVE]): Add-ons' Import button, its
+ *   Voice and Imported lists, and the Smart Y list (Controller > Smart Y > List, the sub-page: it moved AS IS, by the user's 11-11
+ *   ruling). Every other block is a tile part's; the old row code for them is gone.
  *
- * Reload is TWO taps (tap, then "tap again" within 3 s). A reload mid-fight costs the player
- * several seconds of a frozen UI, and the bottom screen is exactly where a stray thumb lands.
- * It is still one game action per touch: the first tap only arms the button.
- *
- * The page is taller than the room, so it scrolls with a vertical drag. Controls therefore fire
- * on the finger LIFTING, and only when the finger stayed within the system touch slop of where
- * it landed: a drag never presses anything. The page is drawn in screen coordinates (content y
- * minus [scroll]), so every hit box recorded by the last draw matches what the finger touches.
+ * A slice MEASURES ITS OWN HEIGHT and never scrolls (the room's scroll does). Controls fire on the finger LIFTING, and only when the
+ * finger stayed within the system touch slop of where it landed: a drag of the room's scroll never presses anything.
  */
-class SettingsView(context: Context, private val onReload: () -> Unit) : View(context) {
+class SettingsView(context: Context, val onReload: () -> Unit) : View(context) {
 
-    /** the tab shown, for a view that draws a whole tab ([only] null: each block under its own heading, as before the six tabs) */
-    var tab: SettingsTabs.Tab = SettingsTabs.Tab.GENERAL
-        set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
     /**
-     * THE SIX TABS' FOLDING GROUPS (the user's approved layout, 2026-11-12): the room draws each group's SettingsView rows with a SLICE
-     * of this view ([slice]) that draws ONLY [only]'s blocks (no block heading: the group's folding heading is the room's, except a
-     * [SettingsTabs.Block.subHead] block's own sub-heading, the wheels'). A slice takes its host's wiring ([hub]: the logins, the
-     * report, the picker, Smart Y's taps ...), and the host's invalidate / requestLayout / partyChanged / onSmartAck reach every slice.
+     * THE SIX TABS' GROUPS: the room draws each group's list rows with a SLICE of this view ([slice]) that draws ONLY [only]'s blocks. A
+     * slice takes its host's wiring ([hub]), and the host's invalidate / requestLayout / partyChanged / onSmartAck reach every slice.
+     * The host (null) draws nothing.
      */
     var only: Set<SettingsTabs.Block>? = null
         set(v) { field = v; requestLayout(); invalidate() }
     private fun blocksHere(): List<SettingsTabs.Block> =
-        only?.let { o -> SettingsTabs.Block.values().filter { it in o && SettingsTabs.shown(it) } } ?: SettingsTabs.viewBlocks(tab)
-    /** a block's own heading is drawn: every block in a whole-tab view; in a slice only a sub-headed one (the wheels) */
-    private fun headed(b: SettingsTabs.Block): Boolean = only == null || b.subHead
-    /** this view has something to draw on [t] (a whole-tab view) */
-    fun hasBlocks(t: SettingsTabs.Tab): Boolean = SettingsTabs.viewBlocks(t).isNotEmpty()
+        only?.let { o -> SettingsTabs.Block.values().filter { it in o && it in LIVE && SettingsTabs.shown(it) } } ?: emptyList()
 
     /** the view whose wiring this slice uses (null = its own: the host's view) */
     private var hub: SettingsView? = null
@@ -55,8 +44,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         s.only = blocks
         (slices ?: ArrayList<SettingsView>().also { slices = it }).add(s)
     }
-    /** the slices made from this view (the room's) */
-    fun sliceViews(): List<SettingsView> = slices?.toList() ?: emptyList()
 
     override fun invalidate() { super.invalidate(); slices?.forEach { it.invalidate() } }
     override fun postInvalidate() { super.postInvalidate(); slices?.forEach { it.postInvalidate() } }
@@ -64,33 +51,23 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
-    private val pTitle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 44f; color = Theme.gold; typeface = Typeface.DEFAULT_BOLD
-    }
-    private val pSection by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold } }   // a heading, in Morpheus
-    private val pSubHead by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = Theme.gold } }   // a wheel's sub-heading inside its group
     private val pLabel by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text } }
     private val pSub by themed { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim } }
-    private val pBtn = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 27f; textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
-    }
     private val pValue = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 30f; textAlign = Paint.Align.CENTER; color = Theme.text
     }
 
-    // hit boxes, in SCREEN coordinates as of the last draw
-    private var btnReload = RectF()
-    private var btnLogin = RectF()
+    // ---------------------------------------------------------------- the host's wiring (the tiles call it through the hub)
 
     /**
      * THE SAVED BATTLE.NET LOGIN, CHANGED HERE (the user 2026-10-08: "Change saved login" moves to Settings; the start screen's row
      * shows only when needed). [loginRow] = the row is there (the host sets it once); [loginSaved] = a login is saved; [onLogin] opens
-     * the host's login prompt.
+     * the host's login prompt. General's Account tiles draw it.
      */
     var loginRow = false
         get() = hub?.loginRow ?: field
         set(v) { if (field != v) { field = v; requestLayout(); invalidate(); onContent?.invoke() } }
-    /** a row that decides whether a group shows came or went (the login row): the room shows / hides the group */
+    /** a row that decides whether a group shows came or went (the login row, a list's rows): the room shows / hides the group */
     var onContent: (() -> Unit)? = null
     var loginSaved: () -> Boolean = { false }
         get() = hub?.loginSaved ?: field
@@ -103,232 +80,75 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         get() = hub?.onReportSendNow ?: field
     var onReportOpenSaved: () -> Unit = {}
         get() = hub?.onReportOpenSaved ?: field
-    private var btnReport = RectF()
-    private var btnStream = RectF()
-    private var btnReportDismiss = RectF()
-    private var btnMiniMinus = RectF(); private var btnMiniPlus = RectF()
-    private var btnMiniInMinus = RectF(); private var btnMiniInPlus = RectF()
-    private val segLayout = Array(LAYOUTS.size) { RectF() }
-    private val segLocation = Array(LOCATIONS.size) { RectF() }
-    private val segChat = Array(CHAT_INPUTS.size) { RectF() }
-    private val segQt = Array(2) { RectF() }                          // Vanilla / Polestar (the user, 2026-11-12: SafePath, QuestTrail gone)
-    private val segGuide = Array(2) { RectF() }                       // Add-ons > Polestar quest guide On / Off (2026-11-12)
-    private var btnGuidePending = RectF()                             // its Restart game / Try again
-    private val segDanger = Array(3) { RectF() }
-    private val segFog = Array(2) { RectF() }
-    private val segVoice = Array(Voice.Mode.values().size) { RectF() }  // 2026-11-16: Settings > General > Look > Voice typing
-    private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
-    private val segTheme = Array(Theme.presets.size) { RectF() }    // 2026-11-12: Settings > System > Theme (one tile a preset)
-    private val segLight = Array(2) { RectF() }
-    private val segHomeMap = Array(2) { RectF() }                     // 2026-11-17: Settings > Performance > Home map: full detail
-    private val segHomeStyle = Array(2) { RectF() }                   // 2026-11-17: Settings > Performance > Map style when zoomed out
-    private val segLowGfx = Array(2) { RectF() }                      // 2026-11-08: Settings > System > Low-memory graphics                       // 1.0.17: Settings > Performance > Lighter mode
-    private val segGameAcct = Array(2) { RectF() }                    // #47: Settings > General > Game account, Ask each time / Remembered
-    private val segSwap = Array(2) { RectF() }                        // #232: Settings > General > Swap screens, On / Off
-    private var btnSwapRestart = RectF()                              // its Restart DS Forever (the choice applies from a start)
-    /** the user, 2026-11-14 ("build it"): General > Account > Windows ID, Per install / Original; its "Restart the game" while the running
-     *  game started with the other one ([measuredWinIdRestart]: the measure's answer, the draw asks for a new layout when it changed) */
-    private val segWinId = Array(2) { RectF() }
-    private var btnWinIdRestart = RectF()
-    private var measuredWinIdRestart = false
-    /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
-    private val segIndoor = Array(2) { RectF() }
-    /**
-     * Map > Indoor maps' PROGRESS (board f-map-tracker): ready / total, the building now, the deferred count (IndoorProgress.line);
-     * "Deferred (n)" opens the list of deferred buildings and their reasons in place, under the row. [progress] = the bake's last
-     * status, re-read when the bake says it changed (IndoorSchedulerStep.onChange) and when the view is shown.
-     */
-    private var btnDeferred = RectF()
-    /** Route data's "Review paths" (b-safepath-review): the host opens SafePath's review over this room */
-    private var btnRouteReview = RectF()
     /** Top screen > Layout > Edit layout (the layout editor; the user, 2026-11-16): the host opens its page over this room */
-    private var btnLayout = RectF()
     var onEditLayout: () -> Unit = {}
         get() = hub?.onEditLayout ?: field
-    var onRouteReview: () -> Unit = {}
-        get() = hub?.onRouteReview ?: field
-    private var deferredOpen = false
-    private var progress: IndoorScheduler.Status? = null
-    private val LIST_LINE = 38f
-    private val progressListener: () -> Unit = {
-        val s = IndoorSchedulerStep.status(context)
-        post {
-            val grew = (progress?.list?.size ?: 0) != (s?.list?.size ?: 0)
-            progress = s
-            if (grew && deferredOpen) requestLayout()
-            invalidate()
-        }
-    }
-    /** the open deferred list's height (0 when closed or empty) */
-    private fun deferredListH(): Float {
-        val n = progress?.list?.size ?: 0
-        return if (deferredOpen && n > 0) 12f + n * LIST_LINE else 0f
-    }
-    /** the wheels' two settings (Home's HomeSettings.radialTap / radialPickA; the user 2026-10-09) */
-    private val segOpen = Array(2) { RectF() }
-    private val segPick = Array(2) { RectF() }
-    /** the spell wheel's own pair (HomeSettings.spellTap / spellPickA; f-radial-settings) */
-    private val segSpellOpen = Array(2) { RectF() }
-    /** the class radials' pairs (HomeSettings.classTapL / classPickAL, ...R; f-radial-settings) */
-    private val segClassLOpen = Array(2) { RectF() }
-    private val segClassLPick = Array(2) { RectF() }
-    private val segClassROpen = Array(2) { RectF() }
-    private val segClassRPick = Array(2) { RectF() }
-    private val segSpellPick = Array(2) { RectF() }
-    /** the pause wheel's own pair (HomeSettings.pauseTap / pausePickA; the user 2026-10-09) */
-    private val segPauseOpen = Array(2) { RectF() }
-    private val segPausePick = Array(2) { RectF() }
-    /** the user's pick 2026-11-13: Start over game windows (HomeSettings.pauseOverGame): Our wheel / Game's wheel */
-    private val segPauseOver = Array(2) { RectF() }
-    /** the user, 2026-11-17: Smart pet (HomeSettings.smartPet, per character; it replaces B: pet follow): Off / On; a pet class only (SmartPet) */
-    private val segPetB = Array(2) { RectF() }
-
     /**
-     * FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll and its settings (FrameGen; applied at the next game start).
-     * [onChooseDll] opens the host's file picker ON THIS (bottom) SCREEN; [gameRunning] = the game is up: the Settings room is reachable
-     * only then (v1.0.4 test: "I only have the setting with the game open"), so Choose works with it up and everything applies at
-     * the next game start.
+     * FRAME GENERATION (board f-frame-gen): [onChooseDll] opens the host's file picker ON THIS (bottom) SCREEN; [gameRunning] = the
+     * game is up; [onRestart] = "Restart the game" (the launcher's restart: close, wait, Play again; SetupBridge.restartGame)
      */
     var onChooseDll: () -> Unit = {}
         get() = hub?.onChooseDll ?: field
     var gameRunning: () -> Boolean = { false }
         get() = hub?.gameRunning ?: field
-    /** "Restart the game" (the launcher's restart: close, wait, Play again; SetupBridge.restartGame) */
     var onRestart: () -> Unit = {}
         get() = hub?.onRestart ?: field
-    private var btnDll = RectF()
-    private var btnRestart = RectF()
-    /** the frame-generation rows the last measure counted ([fgRows]) */
-    private var measuredFg = -1
-    private val segFg = Array(2) { RectF() }
-    private val segMult = Array(FrameGen.MULTIPLIERS.size) { RectF() }
-    private var btnFlowMinus = RectF(); private var btnFlowPlus = RectF()
-    private val segPerf = Array(2) { RectF() }
-    /** Frame generation > Frame limit: 40 / 60 / Off (FrameGen.fpsLimit; board n-fps-40) */
-    private val segLimit = Array(FrameGen.LIMITS.size) { RectF() }
+    /** an add-on's own settings, on the bottom screen (Manners' / QuestTrail's): the host leaves Settings and asks the game to open them */
+    var onAddonSettings: (ThirdPartyAddons.Addon) -> Unit = {}
+        get() = hub?.onAddonSettings ?: field
 
-    /** INERT since the rework: the D-pad row moved to Home's section ("DS WoW toolbar"). Kept so an old host's wiring compiles. */
-    var dpadState: () -> PadMapModel.Dpad? = { null }
-    var onDpad: (Boolean) -> Unit = {}
-
-    private var reloadArmedAt = 0L          // first tap time; 0 = not armed
-    private var reloadSentAt = 0L
     private val ARM_MS = 3000L
 
-    // ---- scrolling
-    private var scroll = 0f                 // px of content above the top edge
-    private var contentH = 0f               // measured by the last draw (the layout never changes)
-    private var drawnScroll = 0f            // the scroll the hit boxes were recorded at
+    // ---- the finger: a press on lift, never after a drag
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private var activeId = -1               // pointer being tracked; -1 = none
     private var downX = 0f; private var downY = 0f
-    private var lastY = 0f
-    private var dragging = false            // the finger left the slop circle: this gesture scrolls
+    private var dragging = false            // the finger left the slop circle: this gesture is the room's scroll
     private var tapVoid = false             // a second finger came down: this gesture is no tap
 
-    private val castListener: () -> Unit = { postInvalidate() }
-
-    /** Settings > Add-ons (1.0.9): each module's check box and each option's On / Off, as last drawn ("<addon>.<id>") */
-    private val addonModuleBoxes = LinkedHashMap<String, RectF>()
-    private val addonOptionSegs = LinkedHashMap<String, Array<RectF>>()
-
     init {
+        // the stores the room's parts read (this view is built first, as the host's hub: each init here once, as before the tiles)
         Theme.init(context)
         Theme.onChange { postInvalidate() }
         ThirdPartyAddons.init(context)
-        ThirdPartyAddons.onChange { postInvalidate() }
         VoiceModels.init(context)
         VoiceModels.onChange { postInvalidate() }
         ImportedAddons.init(context)
         ImportedAddons.onChange { post { requestLayout(); invalidate() } }   // the worker's thread: the card's rows come and go
         Settings.onChange { postInvalidate() }
         ReportFlow.init(context)
-        ReportFlow.onChange { postInvalidate() }
-        HomeSettings.onChange { postInvalidate() }          // the wheels' two settings (also switched from the Controller DS tab)
         FrameGen.init(context)
-        FrameGen.onChange { post { requestLayout(); invalidate() } }   // a pick finishes on a background thread; rows may come or go
-        WindowsId.onChange { post { requestLayout(); invalidate() } }  // a game start (the launcher's thread): the restart row may come or go
         CastSettings.init(context)
     }
 
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        CastSettings.onChange(castListener)
-        IndoorSchedulerStep.onChange(progressListener)
-        progress = runCatching { IndoorSchedulerStep.status(context) }.getOrNull()
-        requestLayout()
-        postInvalidate()                     // a value may have changed while detached
-    }
-
-    override fun onDetachedFromWindow() {
-        CastSettings.removeOnChange(castListener)
-        IndoorSchedulerStep.offChange(progressListener)
-        super.onDetachedFromWindow()
-    }
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        scroll = clampScroll(scroll)
-    }
-
-    private fun maxScroll(): Float = (contentH - height).coerceAtLeast(0f)
-    private fun clampScroll(s: Float): Float = s.coerceIn(0f, maxScroll())
-
     /**
-     * The controller's targets (Home's Settings cursor, LATER item 5; the map session's OK): every button as drawn, in reading
-     * order. Read-only: the cursor presses a button with a touch at its centre, so this view's own logic decides.
+     * The controller's targets: every button as drawn, in reading order. Read-only: the cursor presses a button with a touch at its
+     * centre, so this view's own logic decides.
      */
     fun focusTargets(): List<RectF> =
-        (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
-            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segTheme.toList() + segLang.toList() + segVoice.toList() + segSwap.toList() + listOf(btnSwapRestart) + segGameAcct.toList() + segWinId.toList() + listOf(btnWinIdRestart) + segLight.toList() + segLowGfx.toList() + segHomeMap.toList() + segHomeStyle.toList() + segLocation.toList() + segLayout.toList() + segPetB.toList() + segPauseOpen.toList() + segPausePick.toList() + segPauseOver.toList() + segOpen.toList() + segPick.toList() +
-            // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
-            // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
-            segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
-            segClassRPick.toList() +
-            segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() +
-            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred, btnRouteReview, btnLayout) + addonFocus() + sbHits.map { it.first })
+        (importFocus() + VoiceModels.Model.values().mapNotNull { voiceModelBtn[it] } + sbHits.map { it.first })
             .filter { !it.isEmpty }.map { RectF(it) }.let { controls ->
-                // ... and a row with nothing to press (an add-on's greyed module before its install, a status line) is still a stop:
-                // the cursor walks every row it can see, A there does nothing
+                // ... and a row with nothing to press (an import card's row) is still a stop: the cursor walks every row it can see,
+                // A there does nothing
                 controls + rowHits.map { it.first }.filter { row -> !row.isEmpty && controls.none { row.contains(it.centerX(), it.centerY()) } }
                     .map { RectF(it) }
             }
 
-    /** [r] is the Reload game UI button (the cursor never starts there: the room's one destructive control) */
-    fun isReload(r: RectF): Boolean = !btnReload.isEmpty && r == btnReload
-
-    /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
-    private fun addonFocus(): List<RectF> = importFocus() + segGuide.toList() + listOf(btnGuidePending, addonRestart) + addonCoreBtn.values.toList() + addonSettingsBtn.values.toList() + addonModuleBoxes.values.toList() +
-        addonOptionSegs.values.flatMap { it.toList() } + VoiceModels.Model.values().mapNotNull { voiceModelBtn[it] }
-
-    /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
+    /** the rows as last drawn, with their words */
     private val rowHits = ArrayList<Pair<RectF, String>>()
 
     /** the row at ([x], [y]) in this view, by its words; null = none */
     fun rowAt(x: Float, y: Float): String? = rowHits.firstOrNull { it.first.contains(x, y) }?.second
 
-    /** every hit box empty: a block not drawn on this tab presses nothing */
+    /** every hit box empty: a block not drawn presses nothing */
     private fun clearBoxes() {
         rowHits.clear(); sbHits.clear()
-        addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
         btnImport.setEmpty(); btnImportInstall.setEmpty(); btnImportCancel.setEmpty(); importRemove.clear(); importUnqueue.clear()
-        btnGuidePending.setEmpty(); for (r in segGuide) r.setEmpty()
         voiceModelBtn.clear()
-        for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
-                         btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart, btnSwapRestart, btnWinIdRestart,
-                         btnLayout)) r.setEmpty()
-        for (a in listOf(segIndoor, segLocation, segLayout, segPetB, segPauseOpen, segPausePick, segPauseOver, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segVoice, segTheme, segLight, segLowGfx, segHomeMap, segHomeStyle, segGameAcct, segSwap, segWinId,
-                         segLimit, segFg, segMult, segPerf))
-            for (r in a) r.setEmpty()
     }
 
     /** the part's height, laid out exactly as onDraw lays it out (the room's scroll asks; nothing here scrolls) */
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-        // the Frame rows counted HERE (the draw compares its own count with this one and asks for a new layout when a row came or went)
-        measuredFg = fgRows().size
-        measuredWinIdRestart = winIdRestart()
         val h = Math.round(layoutHeight())
         // a part shrunk to nothing is never drawn again (a 0 px child is skipped): its last boxes must not stay pressable
         if (h == 0) clearBoxes()
@@ -341,92 +161,37 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun layoutHeight(): Float {
         val blocks = drawnBlocks()
         if (blocks.isEmpty()) return 0f
-        var h = topPad()
+        var h = SLICE_PAD
         for ((i, b) in blocks.withIndex()) {
-            if (i > 0) h += gap()
-            if (headed(b)) h += headGap()
+            if (i > 0) h += BLOCK_GAP
             h += blockHeight(b)
         }
-        return h + bottomPad()
+        return h + SLICE_PAD
     }
 
-    /** the blocks drawn now (a block with nothing to show - no login row, Polestar's top-screen row while it is not in use - none) */
+    /** the blocks drawn now (a block with nothing to show - an empty Imported list - none) */
     private fun drawnBlocks(): List<SettingsTabs.Block> = blocksHere().filter { blockHeight(it) > 0f }
-    // a whole-tab view keeps the page's measured spacing; a slice sits under its group's heading, its rows 10 px apart as in a block
-    private fun topPad() = if (only == null) TOP_PAD else SLICE_PAD
-    private fun bottomPad() = if (only == null) BOTTOM_PAD else SLICE_PAD
-    private fun gap() = if (only == null) SECTION_GAP else 10f
-    /** a block heading's room above its first row (its baseline 12 px above that row) */
-    private fun headGap() = if (only == null) 16f else 52f
 
     /** a block's rows' height (from its first row's top to its last row's bottom), laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
-        SettingsTabs.Block.LANGUAGE -> ROW_H
-        SettingsTabs.Block.VOICE -> ROW_H
-        // #232: only with a second screen; Restart under it while the saved choice is not the one in use
-        SettingsTabs.Block.SCREENS -> if (!ScreenSwap.offered) 0f else ROW_H + (if (swapPending() == ScreenSwap.Pending.NONE) 0f else 10f + ROW_H)
-        SettingsTabs.Block.THEME -> themeGridH()
-        SettingsTabs.Block.LIGHTER -> ROW_H + 10f + ROW_H + 10f + ROW_H + 10f + ROW_H
-        SettingsTabs.Block.ACCOUNT -> if (loginRow) ROW_H else 0f
-        SettingsTabs.Block.GAME_ACCOUNT -> ROW_H
-        SettingsTabs.Block.WINDOWS_ID -> if (winIdRestart()) ROW_H + 10f + ROW_H else ROW_H
-        SettingsTabs.Block.HELP -> ROW_H + 10f + ROW_H
-        SettingsTabs.Block.STREAMING -> ROW_H
-        // the layout editor: once the add-on set has it (its "lay" document came)
-        SettingsTabs.Block.LAYOUT -> if (LayoutModel.Live.available()) ROW_H else 0f
-        // zoom out, zoom in, World map (Quest tracking moved to Add-ons > Polestar, 2026-11-12)
-        SettingsTabs.Block.MAP -> 3 * ROW_H + 2 * 10f
-        SettingsTabs.Block.QUEST_TRACKING -> ROW_H
-        SettingsTabs.Block.INDOOR -> ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
-        SettingsTabs.Block.CONTROLLER -> ROW_H + 10f + ROW_H
-        SettingsTabs.Block.SMART_PET -> if (SmartPet.shown(petB())) ROW_H else 0f          // a pet class only
-        SettingsTabs.Block.PAUSE_WHEEL -> ROW_H + 10f + ROW_H + 10f + ROW_H             // + Start over game windows
-        SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
-        SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> ROW_H + 10f + ROW_H
-        SettingsTabs.Block.CHAT -> ROW_H
-        SettingsTabs.Block.FRAMES -> fgHeight()
         SettingsTabs.Block.SMART_Y -> sbLines().size.let { n -> n * ROW_H + (n - 1) * 10f } + pbHeight()
         SettingsTabs.Block.ADDON_VOICE -> VoiceModels.Model.values().size.let { n -> n * ROW_H + (n - 1) * 10f }
         SettingsTabs.Block.IMPORT -> importHeight()
         SettingsTabs.Block.IMPORTED -> importedRows().let { n -> if (n == 0) 0f else n * ROW_H + (n - 1) * 10f }
-        else -> SettingsTabs.addonOf(b)?.let { a -> val n = addonRows(a); n * ROW_H + (n - 1) * 10f } ?: 0f
-    }
-
-    /** the Frame generation section's rows now (FrameGen.rows: the DLL row alone until one is set; Restart when it would change something) */
-    private fun fgRows(): List<FrameGen.Row> = listOf(FrameGen.Row.LIMIT) + FrameGen.rows(FrameGen.hasDll(),
-        FrameGen.showRestart(gameRunning(), SetupBridge.restarting, FrameGen.launched, FrameGen.current()) ||
-            (gameRunning() && !SetupBridge.restarting && FrameGen.limitNeedsRestart(FrameGen.launchedLimit, FrameGen.fpsLimit)))
-
-    /** Windows ID's "Restart the game" row shows (the running game started with the other identity, no restart under way) */
-    private fun winIdRestart(): Boolean =
-        WindowsId.showRestart(gameRunning(), SetupBridge.restarting, WindowsId.launched, Settings.windowsId)
-
-    private fun fgHeight(): Float {
-        val n = fgRows().size                     // no side effect: the draw path asks this too ([measuredFg] is onMeasure's)
-        return n * ROW_H + (n - 1) * 10f
+        else -> 0f
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 activeId = e.getPointerId(0)
-                downX = e.x; downY = e.y; lastY = e.y
+                downX = e.x; downY = e.y
                 dragging = false; tapVoid = false
             }
             MotionEvent.ACTION_POINTER_DOWN -> tapVoid = true
             MotionEvent.ACTION_MOVE -> {
                 val i = e.findPointerIndex(activeId)
-                if (i < 0) return true
-                val x = e.getX(i); val y = e.getY(i)
-                if (!dragging && Math.hypot((x - downX).toDouble(), (y - downY).toDouble()) >= touchSlop) {
-                    dragging = true
-                    lastY = y                // scroll from here: no jump by the slop distance
-                }
-                if (dragging) {
-                    val s = clampScroll(scroll - (y - lastY))
-                    lastY = y
-                    if (s != scroll) { scroll = s; invalidate() }
-                }
+                if (i >= 0 && Math.hypot((e.getX(i) - downX).toDouble(), (e.getY(i) - downY).toDouble()) >= touchSlop) dragging = true
             }
             MotionEvent.ACTION_POINTER_UP -> {
                 // the tracked finger lifted while another stays down: end this gesture here
@@ -436,711 +201,44 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val isTap = activeId == e.getPointerId(0) && !dragging && !tapVoid &&
                     Math.hypot((e.x - downX).toDouble(), (e.y - downY).toDouble()) < touchSlop
                 activeId = -1; dragging = false
-                // a tap never scrolls, so this shift is 0 unless a frame is still pending after a drag.
-                // isShown: firing on LIFT means a finger held here while another finger switched rooms
-                // on the strip would otherwise press a control on a page that is no longer on screen.
-                if (isTap && isShown) tap(downX, downY + (scroll - drawnScroll))
+                // isShown: firing on LIFT means a finger held here while another finger switched rooms on the strip would otherwise
+                // press a control on a page that is no longer on screen
+                if (isTap && isShown) tap(downX, downY)
             }
             MotionEvent.ACTION_CANCEL -> { activeId = -1; dragging = false }
         }
         return true
     }
 
-    /** one control press at screen point ([x], [y]); only ever called for a finger that did not drag */
+    /** one control press at ([x], [y]); only ever called for a finger that did not drag */
     private fun tap(x: Float, y: Float) {
-        val now = SystemClock.elapsedRealtime()
         sbHits.firstOrNull { it.first.contains(x, y) }?.let { it.second(); requestLayout(); invalidate(); return }
-        when {
-            loginRow && btnLogin.contains(x, y) -> onLogin()
-            btnReport.contains(x, y) -> when {
-                ReportFlow.pending != null -> onReportOpenSaved()
-                DiagLog.recording() -> onReportSendNow()
-                else -> onReport()
-            }
-            btnReportDismiss.contains(x, y) -> ReportFlow.clearPending()
-            btnStream.contains(x, y) -> SetupBridge.openStreamSettings?.invoke()
-            btnReload.contains(x, y) -> {
-                if (reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS) {
-                    reloadArmedAt = 0L; reloadSentAt = now
-                    onReload()
-                } else {
-                    reloadArmedAt = now
-                    postDelayed({ invalidate() }, ARM_MS + 50)   // disarm visibly
-                }
-            }
-            btnMiniMinus.contains(x, y) -> Settings.minimapYd = Settings.stepYd(Settings.minimapYd, -1)
-            btnMiniPlus.contains(x, y) -> Settings.minimapYd = Settings.stepYd(Settings.minimapYd, +1)
-            btnMiniInMinus.contains(x, y) -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, -1)
-            btnMiniInPlus.contains(x, y) -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, +1)
-            segIndoor[0].contains(x, y) -> { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() }
-            segIndoor[1].contains(x, y) -> Settings.indoorBuild = false
-            btnDeferred.contains(x, y) -> { deferredOpen = !deferredOpen; requestLayout(); invalidate() }
-            btnRouteReview.contains(x, y) -> onRouteReview()
-            btnLayout.contains(x, y) -> onEditLayout()
-            segPauseOpen[0].contains(x, y) -> HomeSettings.pauseTap = true
-            segPauseOpen[1].contains(x, y) -> HomeSettings.pauseTap = false
-            segPausePick[0].contains(x, y) -> HomeSettings.pausePickA = true
-            segPausePick[1].contains(x, y) -> HomeSettings.pausePickA = false
-            segPetB[0].contains(x, y) -> HomeSettings.setSmartPet(GameUi.character, false)
-            segPetB[1].contains(x, y) -> HomeSettings.setSmartPet(GameUi.character, true)
-            segPauseOver[0].contains(x, y) -> HomeSettings.pauseOverGame = false
-            segPauseOver[1].contains(x, y) -> HomeSettings.pauseOverGame = true
-            segOpen[0].contains(x, y) -> HomeSettings.radialTap = true
-            segOpen[1].contains(x, y) -> HomeSettings.radialTap = false
-            segPick[0].contains(x, y) -> HomeSettings.radialPickA = true
-            segPick[1].contains(x, y) -> HomeSettings.radialPickA = false
-            segSpellOpen[0].contains(x, y) -> HomeSettings.spellTap = true
-            segSpellOpen[1].contains(x, y) -> HomeSettings.spellTap = false
-            segSpellPick[0].contains(x, y) -> HomeSettings.spellPickA = true
-            segSpellPick[1].contains(x, y) -> HomeSettings.spellPickA = false
-            segClassLOpen[0].contains(x, y) -> HomeSettings.classTapL = true
-            segClassLOpen[1].contains(x, y) -> HomeSettings.classTapL = false
-            segClassLPick[0].contains(x, y) -> HomeSettings.classPickAL = true
-            segClassLPick[1].contains(x, y) -> HomeSettings.classPickAL = false
-            segClassROpen[0].contains(x, y) -> HomeSettings.classTapR = true
-            segClassROpen[1].contains(x, y) -> HomeSettings.classTapR = false
-            segClassRPick[0].contains(x, y) -> HomeSettings.classPickAR = true
-            segClassRPick[1].contains(x, y) -> HomeSettings.classPickAR = false
-            addonTap(x, y) -> {}
-            btnDll.contains(x, y) -> onChooseDll()
-            btnRestart.contains(x, y) -> { btnRestart = RectF(); onRestart() }
-            btnWinIdRestart.contains(x, y) -> { btnWinIdRestart = RectF(); onRestart() }
-            segFg[0].contains(x, y) -> FrameGen.enabled = false
-            segFg[1].contains(x, y) -> if (FrameGen.hasDll()) FrameGen.enabled = true
-            btnFlowMinus.contains(x, y) -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, -1)
-            btnFlowPlus.contains(x, y) -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, +1)
-            segLimit.any { it.contains(x, y) } -> FrameGen.askLimit(FrameGen.LIMITS[segLimit.indexOfFirst { it.contains(x, y) }])
-            segPerf[0].contains(x, y) -> FrameGen.performance = true
-            segPerf[1].contains(x, y) -> FrameGen.performance = false
-            else -> {
-                val mi = segMult.indexOfFirst { it.contains(x, y) }
-                if (mi >= 0) { FrameGen.multiplier = FrameGen.MULTIPLIERS[mi]; invalidate(); return }
-                val ci = segChat.indexOfFirst { it.contains(x, y) }
-                val qi = segQt.indexOfFirst { it.contains(x, y) }
-                val di = segDanger.indexOfFirst { it.contains(x, y) }
-                val fi = segFog.indexOfFirst { it.contains(x, y) }
-                for ((k, segs) in segPq.withIndex()) {
-                    val pi = segs.indexOfFirst { it.contains(x, y) }
-                    if (pi >= 0) { PolestarQol.set(GameUi.character, listOf(PolestarQol.QUEST, PolestarQol.VENDOR, PolestarQol.REPAIR)[k], pi == 0); invalidate(); return }
-                }
-                // #232: On / Off saved (it applies from a start: the Restart row comes or goes, so the slice is measured again)
-                val swi = segSwap.indexOfFirst { it.contains(x, y) }
-                if (swi >= 0) {
-                    Settings.swapScreens = swi == 0
-                    DiagLog.event("app", "Swap screens set ${if (swi == 0) "on" else "off"} (in use: ${ScreenSwap.inUseNow})")
-                    requestLayout(); invalidate(); return
-                }
-                if (!btnSwapRestart.isEmpty && btnSwapRestart.contains(x, y)) { btnSwapRestart = RectF(); ScreenSwap.restart?.invoke(); invalidate(); return }
-                val lti = segLight.indexOfFirst { it.contains(x, y) }
-                if (lti >= 0) { Settings.lighterMode = lti == 0; invalidate(); return }
-                val gai = segGameAcct.indexOfFirst { it.contains(x, y) }
-                if (gai >= 0) { Settings.gameAccountAsk = gai == 0; invalidate(); return }
-                val wii = segWinId.indexOfFirst { it.contains(x, y) }
-                if (wii >= 0) { Settings.windowsId = WindowsId.VALUES[wii]; requestLayout(); invalidate(); return }   // the restart row may come or go
-                val lgx = segLowGfx.indexOfFirst { it.contains(x, y) }
-                if (lgx >= 0) { Settings.lowMemGraphics = lgx == 0; invalidate(); return }
-                val hmi = segHomeMap.indexOfFirst { it.contains(x, y) }
-                if (hmi >= 0) { Settings.homeMapFull = hmi == 0; invalidate(); return }
-                val hsi = segHomeStyle.indexOfFirst { it.contains(x, y) }
-                if (hsi >= 0) { Settings.homeMapTerrain = hsi == 0; invalidate(); return }
-                val thi = segTheme.indexOfFirst { it.contains(x, y) }
-                if (thi >= 0) { Theme.use(Theme.presets[thi].id); invalidate(); return }
-                val vti = segVoice.indexOfFirst { it.contains(x, y) }
-                if (vti >= 0) {
-                    Settings.voiceTyping = Voice.Mode.values()[vti]
-                    DiagLog.event("voice", "Voice typing set ${Settings.voiceTyping.key}")
-                    invalidate(); return
-                }
-                val lgi = segLang.indexOfFirst { it.contains(x, y) }
-                if (lgi >= 0) { Tr.setChoice(context, Tr.LANGS[lgi].code); invalidate(); return }
-                if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
-                if (di >= 0) { invalidate(); return }          // SafePath's danger row: never drawn since SafePath left the options
-                if (qi >= 0 && !Settings.ROUTE_MODES_ON && qi != 0) { invalidate(); return }   // held back for 1.0.9
-                if (qi >= 0) {
-                    // the user, 2026-11-12: Vanilla / Polestar is the Polestar quest guide's own choice (PolestarGuide): the add-on
-                    // goes in (downloaded first when it is not here) or out at the next start with the game closed
-                    PolestarGuide.set(Settings.QUEST_TRACKING[qi] == "polestar")
-                    invalidate()
-                }
-                else if (ci >= 0) { if (Settings.chatDefaultInput != CHAT_INPUTS[ci]) Settings.chatDefaultInput = CHAT_INPUTS[ci] }
-                else {
-                    val oi = segLocation.indexOfFirst { it.contains(x, y) }
-                    if (oi >= 0) { if (CastSettings.abxyLocation != LOCATIONS[oi]) CastSettings.abxyLocation = LOCATIONS[oi]; invalidate(); return }
-                    val li = segLayout.indexOfFirst { it.contains(x, y) }
-                    if (li < 0) return
-                    if (CastSettings.buttonLayout != LAYOUTS[li]) CastSettings.buttonLayout = LAYOUTS[li]
-                }
-            }
-        }
+        if (voiceModelTap(x, y) || importTap(x, y)) { invalidate(); return }
         invalidate()
     }
 
-    /** the game's type (UI art, fonts step). Set where the paints are USED: the kit can reach the
-     *  device after this view is built, and a paint keeps the font it was given. */
+    /** the game's type (UI art, fonts step). Set where the paints are USED: the kit can reach the device after this view is built, and a
+     *  paint keeps the font it was given. */
     private fun fonts() {
-        UiKit.asTitle(pTitle)
-        UiKit.asTitle(pSection); UiKit.asTitle(pSubHead); UiKit.asBody(pLabel); UiKit.asBody(pSub); UiKit.asBody(pBtn)
-        UiKit.asNumber(pValue)
+        UiKit.asBody(pLabel); UiKit.asBody(pSub); UiKit.asNumber(pValue)
     }
 
     override fun onDraw(c: Canvas) {
         fonts()
-        val w = width.toFloat()
-        scroll = clampScroll(scroll)
-        drawnScroll = scroll
-        c.drawColor(Theme.ink)
+        // no page ink: the room's RoomGround.settings (the dimmed rock) shows through (beautify 8.4)
         clearBoxes()
-        var y = topPad() - scroll      // everything below is laid out in screen coordinates
+        var y = SLICE_PAD
         for ((i, b) in drawnBlocks().withIndex()) {
-            if (i > 0) y += gap()
-            // the block's heading (its words are the tab data's; in a slice only a sub-headed block's), then its rows; each draw
-            // returns its last row's bottom
-            if (headed(b)) {
-                c.drawText(Tr.t(b.heading), PAD_X, y + headGap() - 12f, if (only == null) pSection else pSubHead)
-                y += headGap()
-            }
+            if (i > 0) y += BLOCK_GAP
+            // each draw returns its last row's bottom
             y = when (b) {
-                SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
-                SettingsTabs.Block.VOICE -> drawVoice(c, y)
-                SettingsTabs.Block.SCREENS -> drawScreens(c, y)
-                SettingsTabs.Block.THEME -> drawTheme(c, y)
-                SettingsTabs.Block.LIGHTER -> drawLighter(c, y)
-                SettingsTabs.Block.ACCOUNT -> drawAccount(c, y)
-                SettingsTabs.Block.GAME_ACCOUNT -> drawGameAccount(c, y)
-                SettingsTabs.Block.WINDOWS_ID -> drawWindowsId(c, y)
-                SettingsTabs.Block.HELP -> drawHelp(c, y)
-                SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
-                SettingsTabs.Block.LAYOUT -> drawLayout(c, y)
-                SettingsTabs.Block.MAP -> drawMap(c, y)
-                SettingsTabs.Block.QUEST_TRACKING -> { drawQuestTrackingRow(c, y); y + ROW_H }
-                SettingsTabs.Block.INDOOR -> drawIndoor(c, y)
-                SettingsTabs.Block.CONTROLLER -> drawController(c, y)
-                SettingsTabs.Block.SMART_PET -> drawPetB(c, y)
-                SettingsTabs.Block.PAUSE_WHEEL -> drawWheel(c, y, "Pause menu", "Press Start to open; it stays until B.",
-                    "Hold Start; letting go closes it.", HomeSettings.pauseTap, HomeSettings.pausePickA, segPauseOpen, segPausePick)
-                    .let { bottom -> drawPauseOver(c, bottom + 10f) }
-                SettingsTabs.Block.ITEM_WHEEL -> drawWheel(c, y, "Item wheel", "Press D-pad Up to open; it stays until B.",
-                    "Hold D-pad Up; letting go closes it.", HomeSettings.radialTap, HomeSettings.radialPickA, segOpen, segPick)
-                SettingsTabs.Block.SPELL_WHEEL -> drawWheel(c, y, "Spell wheel", "Press its button to open; it stays until B.",
-                    "Hold its button; letting go closes it.", HomeSettings.spellTap, HomeSettings.spellPickA, segSpellOpen, segSpellPick)
-                SettingsTabs.Block.CLASS_LEFT -> drawWheel(c, y, "Left class radial", "Press LB + LT to open; it stays until B.",
-                    "Hold LB + LT; letting go closes it.", HomeSettings.classTapL, HomeSettings.classPickAL, segClassLOpen, segClassLPick)
-                SettingsTabs.Block.CLASS_RIGHT -> drawWheel(c, y, "Right class radial", "Press RB + RT to open; it stays until B.",
-                    "Hold RB + RT; letting go closes it.", HomeSettings.classTapR, HomeSettings.classPickAR, segClassROpen, segClassRPick)
-                SettingsTabs.Block.CHAT -> drawChat(c, y)
-                SettingsTabs.Block.FRAMES -> drawFrames(c, y)
                 SettingsTabs.Block.SMART_Y -> drawSmartY(c, y)
                 SettingsTabs.Block.ADDON_VOICE -> drawVoiceModels(c, y)
                 SettingsTabs.Block.IMPORT -> drawImport(c, y)
                 SettingsTabs.Block.IMPORTED -> drawImported(c, y)
-                else -> SettingsTabs.addonOf(b)?.let { drawAddon(c, y, it) } ?: y
+                else -> y
             }
         }
-        y += bottomPad()
-
-        val h = Math.round(y + scroll).toFloat()   // back to content coordinates (no float drift)
-        if (h != contentH) {
-            contentH = h
-            if (clampScroll(scroll) != scroll) invalidate()
-        }
-
-        // a slim thumb in the right margin, only when the page overflows the room
-        val max = maxScroll()
-        if (max > 0f) {
-            val vh = height.toFloat()
-            val th = maxOf(60f, vh * vh / contentH)
-            val ty = (vh - th) * (scroll / max)
-            pFill.color = Theme.bronze          // bronzeDim on ink measured ~1.8:1: invisible
-            c.drawRoundRect(w - 10f, ty + 6f, w - 5f, ty + th - 6f, 3f, 3f, pFill)
-        }
-    }
-
-    /** the segmented controls' common width (the longest glyph-set name) */
-    private fun segW(): Float {
-        pBtn.textSize = SEG_TEXT
-        var w = SEG_MIN_W
-        for (t in LAYOUT_LABELS) w = maxOf(w, pBtn.measureText(t) + SEG_PAD)
-        pBtn.textSize = 27f
-        return w
-    }
-
-    // ---- THEME (System; the user, 2026-11-12: "an oled theme, but different color variations for menus like pink and silver or gold
-    // instead of the classic bronze"): one tile a preset, five across, each drawn in its own colours (its ground, its edge, its name in
-    // its accent) so the tile IS the preview; a tap applies it at once, everywhere (Theme.use). The chosen one is the one lit tile.
-    private val themeCols = 5
-    private val themeTileH = 112f
-    private val themeGap = 12f
-    private fun themeGridH(): Float {
-        val rows = (Theme.presets.size + themeCols - 1) / themeCols
-        return rows * themeTileH + (rows - 1) * themeGap
-    }
-    private val pThemeName = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
-    private val pThemeFill = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    private fun drawTheme(c: Canvas, top: Float): Float {
-        val left = 16f; val right = width - 16f
-        val tw = (right - left - (themeCols - 1) * themeGap) / themeCols
-        for ((i, t) in Theme.presets.withIndex()) {
-            val col = i % themeCols; val rw = i / themeCols
-            val r = RectF(left + col * (tw + themeGap), top + rw * (themeTileH + themeGap),
-                left + col * (tw + themeGap) + tw, top + rw * (themeTileH + themeGap) + themeTileH)
-            segTheme[i].set(r)
-            rowHits.add(RectF(r) to "Theme")
-            val chosen = t === Theme.cur
-            // the one in use is the ONE bright tile (review, 2026-11-12: every tile in its full accent hid the chosen one): its focus
-            // light round it, its edge full and heavy, its band in its selected colour, its name in its accent; the others' edges
-            // half-faded and their names in their dim words
-            if (chosen) UiKit.glow(c, RectF(r.left - 10f, r.top - 10f, r.right + 10f, r.bottom + 10f), t.focus, 0.55f)
-            // its ground; the band its rows stand on; its edge
-            pThemeFill.style = Paint.Style.FILL; pThemeFill.color = t.ink
-            c.drawRoundRect(r, 10f, 10f, pThemeFill)
-            pThemeFill.color = if (chosen) t.selected else t.raised
-            c.drawRoundRect(RectF(r.left + 12f, r.bottom - 40f, r.right - 12f, r.bottom - 14f), 6f, 6f, pThemeFill)
-            // three marks: its accent, its edge, its words' colour
-            for ((k, mc) in listOf(t.accent, t.edge, t.text).withIndex()) {
-                pThemeFill.color = mc
-                c.drawCircle(r.left + 30f + k * 24f, r.bottom - 27f, 7f, pThemeFill)
-            }
-            pThemeFill.style = Paint.Style.STROKE
-            if (chosen) {
-                pThemeFill.strokeWidth = 6f; pThemeFill.color = t.focus
-                c.drawRoundRect(RectF(r.left + 3f, r.top + 3f, r.right - 3f, r.bottom - 3f), 10f, 10f, pThemeFill)
-            } else {
-                pThemeFill.strokeWidth = 2f; pThemeFill.color = (t.edge and 0xFFFFFF) or (0x70 shl 24)
-                c.drawRoundRect(RectF(r.left + 1f, r.top + 1f, r.right - 1f, r.bottom - 1f), 10f, 10f, pThemeFill)
-            }
-            pThemeFill.style = Paint.Style.FILL
-            UiKit.asBody(pThemeName)
-            pThemeName.textSize = 25f; pThemeName.color = if (chosen) t.accent else t.textDim
-            c.drawText(Tr.t(fit(pThemeName, t.name, tw - 16f)), r.centerX(), r.top + 44f, pThemeName)
-            if (chosen) {
-                // the game's tick, in the theme's metal (it is the theme in use: UiKit recolours the kit's tick) (the cursor keeps the focus box)
-                val tick = UiKit.tex("check_tick")
-                val tr = RectF(r.right - 46f, r.bottom - 46f, r.right - 10f, r.bottom - 10f)
-                if (tick != null) c.drawBitmap(tick, null, tr, null)
-                else { pThemeFill.color = t.focus; c.drawCircle(tr.centerX(), tr.centerY(), 9f, pThemeFill) }
-            }
-        }
-        return top + themeGridH()
-    }
-
-    // ---- GAME (System): Reload, the saved login, the problem report
-    /** 2026-11-07: Automatic (the Thor's language), English, Español, Français - the start screen and the login first */
-    private fun drawLanguage(c: Canvas, top: Float): Float {
-        val segW = segW()
-        row(c, top, Tr.t("Language"), Tr.t("The language of DS Forever's screens"), enabled = true) { box ->
-            val n = Tr.LANGS.size
-            val b = RectF(box.right - 16f - segW * n, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, Tr.LANGS.map { if (it.code == "auto") Tr.t("Automatic") else it.label }, Tr.LANGS.indexOfFirst { it.code == Tr.choice() }, segLang)
-            b
-        }
-        return top + ROW_H
-    }
-
-    /**
-     * VOICE TYPING (the user's pick 2026-11-16: "On the Thor only by default. Online is used only after you pick it once"): This device
-     * (the default), Online, Off. App-wide, like Language
-     */
-    private fun drawVoice(c: Canvas, top: Float): Float {
-        val segW = segW()
-        // offline voice in this build but nothing can listen until a voice is downloaded: the row says where (Settings > Add-ons)
-        val sub = if (Settings.voiceTyping != Voice.Mode.OFF && voiceNeedsModel()) "Download a voice in Add-ons" else "X in a text box listens"
-        row(c, top, Tr.t("Voice typing"), Tr.t(sub), enabled = true) { box ->
-            val n = Voice.Mode.values().size
-            val b = RectF(box.right - 16f - segW * n, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, Voice.Mode.values().map { Tr.t(it.label) }, Settings.voiceTyping.ordinal, segVoice)
-            b
-        }
-        return top + ROW_H
-    }
-
-    /** the voice sheet would offer a model's download now ([Voice.Avail.NEED_MODEL]), asked at most every 2 s (it lists the services) */
-    private fun voiceNeedsModel(): Boolean {
-        if (!VoiceModels.offered()) return false
-        val now = SystemClock.elapsedRealtime()
-        if (now - voiceAvailAt > 2000L) {
-            voiceAvailAt = now
-            voiceNeeds = runCatching { VoiceEngine.avail(context, Settings.voiceTyping) == Voice.Avail.NEED_MODEL }.getOrDefault(false)
-        }
-        return voiceNeeds
-    }
-    private var voiceAvailAt = -10_000L
-    private var voiceNeeds = false
-
-    /** #232: the Restart row's state now (ScreenSwap.pending: the saved choice against the one this run uses) */
-    private fun swapPending(): ScreenSwap.Pending =
-        ScreenSwap.pending(Settings.swapScreens, ScreenSwap.inUseNow, gameRunning(), ScreenSwap.restart != null)
-
-    /**
-     * GitHub #232 SWAP SCREENS (the user, 2026-11-14: "build it"): On / Off (Off, the default = the Thor's arrangement). Shown only
-     * with a second screen ([ScreenSwap.offered]). The choice applies from a start, so a change brings "Restart DS Forever" under it:
-     * its Restart button with no game, only "After the game closes" while the game runs (a restart would end it)
-     */
-    private fun drawScreens(c: Canvas, top: Float): Float {
-        btnSwapRestart = RectF()
-        if (!ScreenSwap.offered) { for (r in segSwap) r.setEmpty(); return top }
-        val segW = segW()
-        row(c, top, "Swap screens", "The game and DS Forever trade screens", enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf(Tr.t("On"), Tr.t("Off")), if (Settings.swapScreens) 0 else 1, segSwap)
-            b
-        }
-        val pending = swapPending()
-        if (pending == ScreenSwap.Pending.NONE) return top + ROW_H
-        val t2 = top + ROW_H + 10f
-        val now = pending == ScreenSwap.Pending.RESTART
-        val hit = row(c, t2, "Restart DS Forever", if (now) "To swap the screens" else "After the game closes", enabled = now) { box ->
-            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            UiKit.button(c, b, "Restart", if (now) UiKit.Button.UP else UiKit.Button.DISABLED)
-            b
-        }
-        if (now) btnSwapRestart = hit
-        return t2 + ROW_H
-    }
-
-    /** 1.0.17: Lighter mode On / Off (off by default; the 8 / 12 GB Thors are always lighter: DeviceTier) */
-    private fun drawLighter(c: Canvas, top: Float): Float {
-        val segW = segW()
-        val small = DeviceTier.smallModel()
-        val words = if (small) "Always on for this Thor model: art and indoor maps build while the game is closed"
-                    else "Art and indoor maps build only while the game is closed (more memory for the game)"
-        row(c, top, Tr.t("Lighter mode"), Tr.t(words), enabled = !small) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf(Tr.t("On"), Tr.t("Off")), if (small || Settings.lighterMode) 0 else 1, segLight)
-            b
-        }
-        if (small) for (r in segLight) r.setEmpty()                       // nothing to change: the model decides
-        // Low-memory graphics: the game's smaller textures (on by default for this model / with Lighter mode); next game start
-        val t2 = top + ROW_H + 10f
-        row(c, t2, Tr.t("Low-memory graphics"), Tr.t("Smaller game textures, so Android does not close the game for memory. From the next game start"), enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf(Tr.t("On"), Tr.t("Off")), if (Settings.lowMemGraphics) 0 else 1, segLowGfx)
-            b
-        }
-        // 2026-11-17 (the user: "turn this into a Thor based toggle"): Home's map zooming out to the whole world (on by default on the Thor Max)
-        val t3 = t2 + ROW_H + 10f
-        row(c, t3, Tr.t("Home map: full detail"), Tr.t("Zoom out to the whole world. Uses more memory"), enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf(Tr.t("On"), Tr.t("Off")), if (Settings.homeMapFull) 0 else 1, segHomeMap)
-            b
-        }
-        // 2026-11-17 (the user: "kept it as high fidelity there or made it an option toggle"): past the zone, the terrain or the painted map
-        val t4 = t3 + ROW_H + 10f
-        row(c, t4, Tr.t("Map style when zoomed out"), Tr.t("Home map past the zone"), enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf(Tr.t("Terrain"), Tr.t("Painted")), if (Settings.homeMapTerrain) 0 else 1, segHomeStyle)
-            b
-        }
-        return t4 + ROW_H
-    }
-
-    /** General > Account: the saved Battle.net login (the host sets [loginRow]) */
-    private fun drawAccount(c: Canvas, top: Float): Float {
-        if (!loginRow) { btnLogin = RectF(); return top }
-        val saved = loginSaved()
-        btnLogin = row(c, top, "Battle.net login",
-            if (saved) "Saved. The game signs in with it by itself." else "Not saved: save it to sign in by itself.",
-            enabled = true) { box ->
-            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            UiKit.button(c, b, if (saved) "Change" else "Save", UiKit.Button.UP)
-            b
-        }
-        return top + ROW_H
-    }
-
-    /**
-     * General > Account > Game account (#47): Ask each time / Remembered (Settings.gameAccountAsk). Ask = the game's own account picker
-     * at every start (GameConfigWtf clears its remembered pick); never an account name on the row
-     */
-    private fun drawGameAccount(c: Canvas, top: Float): Float {
-        val labels = listOf(Tr.t("Ask each time"), Tr.t("Remembered"))
-        val sw = segW()
-        pBtn.textSize = SEG_TEXT
-        val w = maxOf(sw, labels.maxOf { pBtn.measureText(it) } + SEG_PAD)
-        pBtn.textSize = 27f
-        row(c, top, "Game account", Tr.t("From the next game start"), enabled = true) { box ->
-            val b = RectF(box.right - 16f - w * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, labels, if (Settings.gameAccountAsk) 0 else 1, segGameAcct)
-            b
-        }
-        return top + ROW_H
-    }
-
-    /**
-     * General > Account > Windows ID (the user, 2026-11-14: "build it"; the BLZ51914400 wave): Per install (the default) / Original
-     * (Settings.windowsId; WindowsId says what differs), from the next game start. While the running game started with the other one,
-     * "Restart the game" under it (the launcher's restart, as Frames' row). Never an identity value on the page.
-     */
-    private fun drawWindowsId(c: Canvas, top: Float): Float {
-        val restart = winIdRestart()
-        if (restart != measuredWinIdRestart) requestLayout()       // the restart row came or went: the room's scroll needs the new height
-        val labels = WindowsId.SEGMENTS.map { Tr.t(it) }
-        val sw = segW()
-        pBtn.textSize = SEG_TEXT
-        val w = maxOf(sw, labels.maxOf { pBtn.measureText(it) } + SEG_PAD)
-        pBtn.textSize = 27f
-        row(c, top, WindowsId.ROW_ID, Tr.t("From the next game start"), enabled = true) { box ->
-            val b = RectF(box.right - 16f - w * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, labels, WindowsId.VALUES.indexOf(Settings.windowsId), segWinId)
-            b
-        }
-        btnWinIdRestart = RectF()
-        if (!restart) return top + ROW_H
-        val t2 = top + ROW_H + 10f
-        btnWinIdRestart = row(c, t2, "Restart the game", Tr.t(WindowsId.RESTART_LINE), enabled = true) { box ->
-            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            UiKit.button(c, b, "Restart", UiKit.Button.UP)
-            b
-        }
-        return t2 + ROW_H
-    }
-
-    /** General > Help: the problem report, then Reload game UI (the companion's status under them is GameUiSection's) */
-    private fun drawHelp(c: Canvas, top: Float): Float {
-        var y = top
-        // "Send a problem report" (board f-problem-report): "Send report" while Record 5 minutes runs (stop + send), the time left on the
-        // row; a report saved by itself shows its note with Open issue / Dismiss until one is pressed
-        val rec = DiagLog.recording()
-        val left = DiagLog.recordLeftMs() / 1000
-        val saved = ReportFlow.pending
-        btnReportDismiss = RectF()
-        btnReport = row(c, y, saved?.let { ReportFlow.noteTitle(it) } ?: "Problem report",
-            when {
-                saved != null && saved.sent > 0 -> "Open the issue to see it."
-                saved != null -> "Open the GitHub issue to post it (the file is in Documents/DS Forever/reports)."
-                rec -> "Recording… %d:%02d left. Send it when the problem happened.".format(left / 60, left % 60)
-                ReportFlow.description.isNotBlank() -> "Your unsent report is kept: Send to finish it."
-                else -> "Say what happened; DS Forever adds its logs, without names or logins."
-            }, enabled = true) { box ->
-            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            UiKit.button(c, b, when { saved != null -> "Open issue"; rec -> "Send report"; else -> "Send" }, UiKit.Button.UP)
-            if (saved != null) {
-                btnReportDismiss = RectF(b.left - 16f - 200f, b.top, b.left - 16f, b.bottom)
-                UiKit.button(c, btnReportDismiss, "Dismiss", UiKit.Button.UP)
-                btnReportDismiss
-            } else b
-        }
-        if (saved != null) { val d = btnReportDismiss; btnReport = RectF(d.right + 16f, d.top, d.right + 16f + 244f, d.bottom) }
-        if (rec) postInvalidateDelayed(1000)
-        y += ROW_H + 10f
-        val now = SystemClock.elapsedRealtime()
-        val armed = reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS
-        val sent = reloadSentAt != 0L && now - reloadSentAt < 2500L
-        if (sent) postInvalidateDelayed(300)
-        btnReload = row(c, y, "Reload game UI",
-            if (sent) "Sent -- the game UI should restart now" else "Reloads the game's UI. Tap twice to confirm.",
-            enabled = true) { box ->
-            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            // the game's red button; armed = held down, and it says what the second tap does
-            UiKit.button(c, b, if (armed) "Tap again" else "Reload", if (armed) UiKit.Button.DOWN else UiKit.Button.UP)
-            b
-        }
-        return y + ROW_H
-    }
-
-    /** Top screen > Layout: the one row that opens the layout editor's page (LayoutView) */
-    private fun drawLayout(c: Canvas, top: Float): Float {
-        btnLayout = row(c, top, "Edit layout", "Move and size the top screen's pieces.", enabled = true) { b ->
-            val r = RectF(b.right - 260f, b.centerY() - 34f, b.right - 16f, b.centerY() + 34f)
-            UiKit.button(c, r, "Open", UiKit.Button.UP)
-            r
-        }
-        return top + ROW_H
-    }
-
-    // ---- MAP (Rooms): the small map's two widths
-    private fun drawStreaming(c: Canvas, top: Float): Float {
-        val y = top
-        val on = SetupBridge.openStreamSettings != null
-        val box = row(c, y, "Stream settings", if (on) "Resolution, frame rate, bit rate and sound." else "While streaming.", enabled = on) { b ->
-            val r = RectF(b.right - 260f, b.centerY() - 34f, b.right - 16f, b.centerY() + 34f)
-            UiKit.button(c, r, "Open", if (on) UiKit.Button.UP else UiKit.Button.DISABLED)
-            r
-        }
-        btnStream = if (on) box else RectF()
-        return y + ROW_H
-    }
-
-    /** the Quest tracking row at [y] (Settings > Map): Vanilla / Polestar, the Polestar quest guide's own choice (the user, 2026-11-12;
-     *  the Add-ons tab's Polestar block switches the same choice with its On / Off) */
-    private fun drawQuestTrackingRow(c: Canvas, y: Float) {
-        // QUEST TRACKING (the user, 2026-10-17): what the map's line, arrows and pin follow
-        pBtn.textSize = SEG_TEXT
-        var qtW = SEG_MIN_W
-        for (t in QT_LABELS) qtW = maxOf(qtW, pBtn.measureText(t) + SEG_PAD)
-        pBtn.textSize = 27f
-        // Polestar / QuestTrail: what the add-on itself is doing, from the Add-ons registry (version, size, download / install)
-        fun addonWord(a: ThirdPartyAddons.Addon, what: String): String {
-            val st = ThirdPartyAddons.status(a, "core")
-            val state = when (st.kind) {
-                ThirdPartyAddons.Kind.INSTALLED -> "installed"
-                ThirdPartyAddons.Kind.NONE -> "not installed (${ThirdPartyAddons.size(a.core.mb)})"
-                else -> st.line.ifEmpty { "not installed" }
-            }
-            return "${a.title} ${a.version}: $state · $what"        // the state first: a long line is cut at its end
-        }
-        // the user, 2026-11-12: two choices, Vanilla and Polestar (SafePath and QuestTrail are no longer options)
-        val sub = when (Settings.questTracking) {
-            "polestar" -> addonWord(ThirdPartyAddons.POLESTAR, "walking routes")
-            else -> "The game's own way: the line points straight at the quest"
-        }
-        row(c, y, "Quest tracking", sub, enabled = true) { box ->
-            // never more than two thirds of the row, the label and its line keep the rest
-            val bw = minOf(qtW * QT_LABELS.size, box.width() * 0.66f)
-            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            qtSegmented(c, b, Settings.QUEST_TRACKING.indexOf(Settings.questTracking))
-            b
-        }
-    }
-
-    private fun drawMap(c: Canvas, top: Float): Float {
-        var y = top
-        // the map always frames itself now (the user, 2026-10-02: "remove the dynamic map toggle, as I REALLY love the way that it
-        // currently works"; the greyed-out Indoor / Outdoor widths went with it); the small map's width is split in two ("split
-        // the minimap default zoom toggle into an indoor and outdoor"), the +/- on the small map step the one in use
-        var boxes = stepperRow(c, y, "Minimap zoom outdoors", "Width of the small map on Home outside",
-                               Settings.minimapYd, true)
-        btnMiniMinus = boxes.first; btnMiniPlus = boxes.second
-        y += ROW_H + 10f
-        boxes = stepperRow(c, y, "Minimap zoom indoors", "Width of the small map on Home inside buildings",
-                           Settings.minimapIndoorYd, true)
-        btnMiniInMinus = boxes.first; btnMiniInPlus = boxes.second
-        // Quest tracking moved to Add-ons > Polestar (the six tabs, 2026-11-12: [SettingsTabs.Block.QUEST_TRACKING])
-        y += ROW_H + 10f
-        // WORLD MAP (b-seamless-map; the user: "Give an option in settings"): the stitched continent, every zone or only the explored
-        val all = Settings.worldMapFog == "all"
-        row(c, y, "World map", if (all) "The Map room's continents show every zone, revealed" else "The Map room's continents show what you have explored",
-            enabled = true) { box ->
-            val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
-            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("Show all", "Explored only"), if (all) 0 else 1, segFog)
-            b
-        }
-        // the "SafePath network" row went with SafePath (the user, 2026-11-12: "remove safe path ... from the options"); ShippedNets stays
-        return y + ROW_H
-    }
-
-    // ---- INDOOR MAPS (Performance): the background building's switch and its progress
-    private fun drawIndoor(c: Canvas, top: Float): Float {
-        var y = top
-        // the indoor maps' background building (the user's pick after the walking stutters: only standing still, and a switch)
-        val indoorOn = Settings.indoorBuild
-        pBtn.textSize = SEG_TEXT
-        val indoorW = maxOf(SEG_MIN_W, pBtn.measureText("Off") + SEG_PAD)
-        pBtn.textSize = 27f
-        row(c, y, "Build in the background",
-            if (indoorOn) "Only while you stand still and the device is cool." else "Off: nothing is built; ready maps still show.",
-            enabled = true) { box ->
-            val b = RectF(box.right - 16f - indoorW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("On", "Off"), if (indoorOn) 0 else 1, segIndoor)
-            b
-        }
-        y += ROW_H + 10f
-        // the progress (f-map-tracker): ready / total, the building now, what was deferred; the list opens in place
-        val prog = progress
-        val nDef = prog?.list?.size ?: 0
-        btnDeferred = RectF()
-        row(c, y, "Progress", IndoorProgress.line(prog, indoorOn), enabled = true) { box ->
-            if (nDef == 0) RectF(box.right, box.centerY(), box.right, box.centerY())
-            else {
-                val label = if (deferredOpen) "Hide" else "Deferred ($nDef)"
-                val w = maxOf(200f, pBtn.measureText(label) + 60f)
-                val b = RectF(box.right - 16f - w, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                UiKit.button(c, b, label, UiKit.Button.UP)
-                btnDeferred = b
-                b
-            }
-        }
-        y += ROW_H
-        if (deferredOpen && nDef > 0 && prog != null) {
-            val lb = RectF(16f, y + 4f, width - 16f, y + deferredListH())
-            pFill.color = Theme.raised
-            c.drawRoundRect(lb, 8f, 8f, pFill)
-            pSub.color = Theme.textDim
-            for ((i, line) in prog.list.withIndex())
-                c.drawText(Tr.t(fit(pSub, line, lb.width() - 44f)), lb.left + 22f, lb.top + 8f + (i + 1) * LIST_LINE - 10f, pSub)
-            y += deferredListH()
-        }
-        // the route's data from the game files (b-route-data-all: terrain and buildings for every zone, made before Play)
-        y += 10f
-        // "Review paths" (SafePath's network review, b-safepath-review) went with SafePath (the user, 2026-11-12); the data's line stays
-        row(c, y, "Route data", Terrain.coverageLine(), enabled = true) { box ->
-            RectF(box.right - 16f, box.centerY(), box.right - 16f, box.centerY())
-        }
-        if (Terrain.coverageNow()?.let { it.optInt("zones") < it.optInt("total") } != false) postInvalidateDelayed(3_000L)
-        y += ROW_H
-        return y
-    }
-
-    // ---- CONTROLLER: ABXY location, the glyphs, the wheels
-    private fun drawController(c: Canvas, top: Float): Float {
-        var y = top
-        val layout = CastSettings.buttonLayout
-        val segW = segW()
-        // f-abxy-split (the user 2026-10-15): WHERE A / B / X / Y sit (the mapping), then which PICTURES they wear; any combination
-        row(c, y, "ABXY location", abxyLine(CastSettings.faceSwap),
-            enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * LOCATIONS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, LOCATION_LABELS, LOCATIONS.indexOf(CastSettings.abxyLocation), segLocation)
-            b
-        }
-        y += ROW_H + 10f
-        row(c, y, "Button glyphs", "The button pictures shown everywhere", enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * LAYOUTS.size, box.centerY() - 34f,
-                          box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, LAYOUT_LABELS, LAYOUTS.indexOf(layout), segLayout)
-            b
-        }
-        return y + ROW_H
-    }
-
-    /**
-     * THE WHEELS (the user 2026-10-09: "2 settings per radial. Tap VS hold and A to select vs release select"), a pair per wheel under
-     * its own heading (f-radial-settings, 1.0.9: "better organize each radial setting into categories so its clear what each one is"):
-     * [name]: open ([tap]: Tap / Hold, its two lines), pick ([pickA]: A / Release). App-wide, the same for every character
-     */
-    private fun drawWheel(c: Canvas, top: Float, name: String, tapLine: String, holdLine: String, tap: Boolean, pickA: Boolean,
-                          segOpenBoxes: Array<RectF>, segPickBoxes: Array<RectF>): Float {
-        var y = top
-        val segW = segW()
-        row(c, y, "$name: open", if (tap) tapLine else holdLine, enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("Tap", "Hold"), if (tap) 0 else 1, segOpenBoxes)
-            b
-        }
-        y += ROW_H + 10f
-        row(c, y, "$name: pick", if (pickA) "Aim with the stick, ${Glyphs.name("a")} picks." else "Aim, let the stick go to pick.",
-            enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("A", "Release"), if (pickA) 0 else 1, segPickBoxes)
-            b
-        }
-        return y + ROW_H
-    }
-
-    /** the user, 2026-11-17 ("to be clear I think this should just be a smart pet feature that includes both of those settings in one"):
-     *  this character's Smart pet, Off / On (SmartPet; drawn only for a pet class: [blockHeight]) */
-    private fun drawPetB(c: Canvas, top: Float): Float {
-        val on = HomeSettings.smartPet(GameUi.character)
-        val segW = segW()
-        row(c, top, SmartPet.ROW_ID, SmartPet.line(on), enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, SmartPet.SEGMENTS, if (on) 1 else 0, segPetB)
-            b
-        }
-        return top + ROW_H
-    }
-
-    /** the user's pick 2026-11-13 ("Make it a setting toggle defaulted to our wheel"): Start with a game window open */
-    private fun drawPauseOver(c: Canvas, top: Float): Float {
-        val game = HomeSettings.pauseOverGame
-        val segW = segW()
-        row(c, top, PauseOver.ROW_ID, PauseOver.line(game), enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, PauseOver.SEGMENTS, if (game) 1 else 0, segPauseOver)
-            b
-        }
-        return top + ROW_H
     }
 
     // ---- SMART Y (Spells' PadMap m62; the user: "logic rows, with the bottom row being an Add button ... on a single row I need to be
@@ -1482,283 +580,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return y + ROW_H
     }
 
-    // ---- CHAT (Rooms): what opens in the message first (the user on b121)
-    private fun drawChat(c: Canvas, top: Float): Float {
-        var y = top
-        pBtn.textSize = SEG_TEXT
-        var chatW = SEG_MIN_W
-        for (t in CHAT_INPUT_LABELS) chatW = maxOf(chatW, pBtn.measureText(t) + SEG_PAD)
-        pBtn.textSize = 27f
-        row(c, y, "Message input", "What opens when you go into the message", enabled = true) { box ->
-            val b = RectF(box.right - 16f - chatW * CHAT_INPUTS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, CHAT_INPUT_LABELS, CHAT_INPUTS.indexOf(Settings.chatDefaultInput), segChat)
-            b
-        }
-        return y + ROW_H
-    }
-
-    // ---- FRAME LIMIT AND GENERATION (Performance; board f-frame-gen, n-fps-40): the player's own Lossless.dll, never shipped with
-    // the app; Off = launches as always. Only the limit and the DLL rows until one is set; "Restart the game" while the running game
-    // started with other settings (the user's request)
-    private fun drawFrames(c: Canvas, top: Float): Float {
-        var y = top
-        // ---- FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll, never shipped with the app; Off = launches as always.
-        // Only the DLL row until one is set; "Restart the game" while the running game started with other settings (the user's request)
-        val segW = segW()
-        val hasDll = FrameGen.hasDll()
-        val up = gameRunning()
-        val fg = fgRows()
-        if (fg.size != measuredFg) requestLayout()        // a row came or went: the room's scroll needs the new height
-        btnDll = RectF(); btnFlowMinus = RectF(); btnFlowPlus = RectF(); btnRestart = RectF()
-        for (r in segFg + segMult + segPerf + segLimit) r.setEmpty()   // hidden rows press nothing
-        val on = FrameGen.enabled && hasDll
-        val later = if (up) "Applies when the game restarts." else "Applies at the next game start."
-        for ((i, r) in fg.withIndex()) {
-            if (i > 0) y += ROW_H + 10f
-            when (r) {
-                FrameGen.Row.LIMIT -> {
-                    val lim = FrameGen.fpsLimit
-                    // the launcher's own limiter (its quick menu shows the same value); another value from there shows as it is
-                    val what = when {
-                        FrameGen.limitNote && lim == FrameGen.LIMIT_MIGRATED -> "Set to 40 for battery and heat; change it here. "
-                        lim <= 0 -> "No limit. "
-                        lim in FrameGen.LIMITS -> "At most $lim frames a second: cooler, longer on battery. "
-                        else -> "$lim frames a second (set in the launcher's menu). "
-                    }
-                    row(c, y, "Frame limit", what + later, enabled = true) { box ->
-                        val b = RectF(box.right - 16f - segW * FrameGen.LIMITS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                        segmented(c, b, FrameGen.LIMITS.map { FrameGen.limitLabel(it) }, FrameGen.LIMITS.indexOf(lim), segLimit)
-                        b
-                    }
-                }
-                FrameGen.Row.DLL -> btnDll = row(c, y, "Lossless.dll: ${if (hasDll) "found" else "not set"}",
-                    when {
-                        FrameGen.lastPick.isNotEmpty() -> FrameGen.lastPick + if (up && hasDll) ". $later" else ""
-                        hasDll -> "Your own copy, kept in DS Forever's private storage."
-                        else -> "Choose your own copy (from Lossless Scaling on your PC)."
-                    }, enabled = true) { box ->
-                    val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                    UiKit.button(c, b, "Choose", UiKit.Button.UP)
-                    b
-                }
-                FrameGen.Row.ON_OFF -> row(c, y, "Frame generation", (if (on) "On. " else "Off. ") + later, enabled = true) { box ->
-                    val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                    segmented(c, b, listOf("Off", "On"), if (on) 1 else 0, segFg)
-                    b
-                }
-                FrameGen.Row.MULTIPLIER -> {
-                    val mult = FrameGen.multiplier
-                    val base = FrameGen.fpsLimit.takeIf { it > 0 } ?: 40
-                    row(c, y, "Multiplier", "Frames shown per game frame ($base fps x$mult = ${base * mult})", enabled = on) { box ->
-                        val b = RectF(box.right - 16f - segW * FrameGen.MULTIPLIERS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                        segmented(c, b, FrameGen.MULTIPLIERS.map { "${it}x" }, FrameGen.MULTIPLIERS.indexOf(mult), segMult)
-                        b
-                    }
-                }
-                FrameGen.Row.FLOW -> row(c, y, "Flow scale", "Lower is faster, higher is sharper", enabled = on) { box ->
-                    val cy = box.centerY()
-                    btnFlowPlus = RectF(box.right - 16f - 76f, cy - 34f, box.right - 16f, cy + 34f)
-                    btnFlowMinus = RectF(btnFlowPlus.left - 150f - 76f, cy - 34f, btnFlowPlus.left - 150f, cy + 34f)
-                    val f = FrameGen.flowScale
-                    UiKit.square(c, "minus", btnFlowMinus.centerX(), btnFlowMinus.centerY(), 84f,
-                        if (on && f > FrameGen.FLOW_MIN) UiKit.Button.UP else UiKit.Button.DISABLED)
-                    UiKit.square(c, "plus", btnFlowPlus.centerX(), btnFlowPlus.centerY(), 84f,
-                        if (on && f < FrameGen.FLOW_MAX) UiKit.Button.UP else UiKit.Button.DISABLED)
-                    pValue.color = if (on) Theme.text else Theme.dim
-                    c.drawText(Tr.t(FrameGen.flowLabel(f)), (btnFlowMinus.right + btnFlowPlus.left) / 2f, cy + 11f, pValue)
-                    btnFlowMinus
-                }
-                FrameGen.Row.PERFORMANCE -> row(c, y, "Performance mode", "The lighter model: less heat, a little less smooth", enabled = on) { box ->
-                    val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                    segmented(c, b, listOf("On", "Off"), if (FrameGen.performance) 0 else 1, segPerf)
-                    b
-                }
-                FrameGen.Row.RESTART -> btnRestart = row(c, y, "Restart the game", "To use the new frame limit and frame generation settings", enabled = true) { box ->
-                    val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                    UiKit.button(c, b, "Restart", UiKit.Button.UP)
-                    b
-                }
-            }
-        }
-        return y + ROW_H
-    }
-
-    /**
-     * ONE THIRD-PARTY ADD-ON (Settings > Add-ons, 1.0.9; the user on Spoken: modules opt-in, nothing downloaded by default, the size
-     * shown first, the stop rules a setting): its own row (what it is, by whom, its licence, its pinned version), a row per module
-     * with the game's check box and the size switching it on would download, then the companion's options for it.
-     */
-    /** the rows an add-on's block shows now: its own row; its modules and options only once it is installed (the user, test40:
-     *  "The settings under spoken shouldn't show until after it's installed") */
-    private fun addonRows(a: ThirdPartyAddons.Addon): Int = if (a.base) guideRows() else
-        1 + (if (ThirdPartyAddons.coreInstalled(a)) a.modules.size + a.options.size + (if (a.settings != null) 1 else 0) +
-            (if (a.id == ThirdPartyAddons.POLESTAR.id) polestarRows() else 0) else 0)
-
-    /** pq1 / hub31 (the user, 2026-11-11: the Polestar settings "under the polestar addons tab"): the top screen, then the three
-     *  automation switches (off by default). 2026-11-12: the Quest tracking row is the guide's own On / Off now ([drawGuide]) */
-    private fun polestarRows(): Int = 3          // the top screen's row is under Top screen > Navigation since the six tabs
-    private val segPq = Array(3) { Array(2) { RectF() } }
-
-    // ---- THE POLESTAR QUEST GUIDE (the user, 2026-11-12: "If they say no let's add a toggle in settings to turn it on and off")
-    private fun guideOn(): Boolean = Settings.polestarGuide == PolestarGuide.ON
-    /** what waits on the game: a failed move (Try again), or a change that needs the game started again (Restart game); null = none */
-    private fun guidePending(): String? {
-        val a = ThirdPartyAddons.POLESTAR
-        val k = ThirdPartyAddons.status(a, "core").kind
-        return when {
-            ThirdPartyAddons.coreWanted(a) && ThirdPartyAddons.anyFailed(a) -> "retry"
-            gameRunning() && (k == ThirdPartyAddons.Kind.DOWNLOADED || k == ThirdPartyAddons.Kind.REMOVING) -> "restart"
-            else -> null
-        }
-    }
-    /** the guide's rows: its On / Off, the pending row, then (on and installed) Polestar's own settings */
-    private fun guideRows(): Int = 1 + (if (guidePending() != null) 1 else 0) +
-        (if (guideOn() && ThirdPartyAddons.coreInstalled(ThirdPartyAddons.POLESTAR)) polestarRows() else 0)
-
-    private fun drawGuide(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
-        var y = top
-        if (addonRows(a) != addonDrawnRows[a.id]) { addonDrawnRows[a.id] = addonRows(a); requestLayout() }
-        val st = ThirdPartyAddons.status(a, "core")
-        if (st.kind == ThirdPartyAddons.Kind.DOWNLOADING || st.kind == ThirdPartyAddons.Kind.WAITING_WIFI) postInvalidateDelayed(1000)
-        val on = guideOn()
-        val sub = when {
-            Settings.polestarGuide == null -> "${a.what}. By ${a.by}, ${a.license}."
-            st.kind == ThirdPartyAddons.Kind.INSTALLED -> if (on) "In use. Version ${a.version}. By ${a.by}, ${a.license}." else st.line
-            st.kind == ThirdPartyAddons.Kind.DOWNLOADING && st.pct >= 0 -> "${st.line} (${st.pct}%)"
-            st.kind == ThirdPartyAddons.Kind.NONE -> if (on) "Waiting to download" else "Off. By ${a.by}, ${a.license}."
-            else -> st.line
-        }
-        row(c, y, "Polestar quest guide", sub, enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW() * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("On", "Off"), if (on) 0 else if (Settings.polestarGuide == PolestarGuide.OFF) 1 else -1, segGuide)
-            b
-        }
-        guidePending()?.let { p ->
-            y += ROW_H + 10f
-            val going = SystemClock.elapsedRealtime() - addonRestartAt < 60_000L
-            val (label, line, btn) = if (p == "retry")
-                Triple("Polestar did not go in", ThirdPartyAddons.failedWhy(a, "core") ?: "", "Try again")
-            else Triple("Restart the game", if (on) "Polestar loads when the game starts again" else "Polestar unloads when the game starts again",
-                if (going) "Restarting..." else "Restart game")
-            btnGuidePending = row(c, y, label, line, enabled = true) { box ->
-                val r = RectF(box.right - 16f - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                val down = p == "restart" && going
-                UiKit.button(c, r, btn, if (down) UiKit.Button.DOWN else UiKit.Button.UP)
-                if (down) { postInvalidateDelayed(1000); RectF(r.left, r.top, r.left, r.top) } else r
-            }
-        }
-        if (on && ThirdPartyAddons.coreInstalled(a)) y = drawPolestarRows(c, y)
-        return y + ROW_H
-    }
-
-    private fun drawPolestarRows(c: Canvas, top: Float): Float {
-        var y = top
-        val who = GameUi.character
-        val rows = listOf(
-            Triple(PolestarQol.QUEST, "Auto quest", "Polestar accepts and turns in guide quests" to "You accept and turn in quests yourself"),
-            Triple(PolestarQol.VENDOR, "Auto vendor", "Polestar sells grey items and buys what a step needs" to "You sell and buy yourself"),
-            Triple(PolestarQol.REPAIR, "Auto repair", "Polestar repairs at vendors" to "You repair yourself"))
-        for ((i, r) in rows.withIndex()) {
-            y += ROW_H + 10f
-            val on = PolestarQol.on(who, r.first)
-            row(c, y, r.second, PolestarQol.line(who, r.first, r.third.first, r.third.second), enabled = who != null) { box ->
-                val b = RectF(box.right - 16f - segW() * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                segmented(c, b, listOf("On", "Off"), if (on) 0 else 1, segPq[i])
-                b
-            }
-        }
-        return y
-    }
-
-    /** an add-on's own settings, on the bottom screen (QuestTrail's): the host leaves Settings and asks the game to open them */
-    var onAddonSettings: (ThirdPartyAddons.Addon) -> Unit = {}
-        get() = hub?.onAddonSettings ?: field
-    private val addonSettingsBtn = HashMap<String, RectF>()
-
-    private fun drawAddon(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
-        if (a.base) return drawGuide(c, top, a)
-        var y = top
-        val K = ThirdPartyAddons.Kind.INSTALLED            // (the kinds read below, by name)
-        val core = ThirdPartyAddons.status(a, "core")
-        val installed = ThirdPartyAddons.coreInstalled(a)
-        val wanted = ThirdPartyAddons.coreWanted(a)
-        if (addonRows(a) != addonDrawnRows[a.id]) { addonDrawnRows[a.id] = addonRows(a); requestLayout() }
-        if (core.kind == ThirdPartyAddons.Kind.DOWNLOADING || core.kind == ThirdPartyAddons.Kind.WAITING_WIFI) postInvalidateDelayed(1000)
-        // ---- the add-on's own row: what it is; Install / Uninstall (the user: "an option here to install it in the first place"; the
-        // questing ones too, test40: "Install from Add-ons"); once in, its state (in use or not, for one Map's Quest tracking uses)
-        val who = "${a.what}. By ${a.by}, ${a.license}."
-        val sub = when {
-            core.kind == ThirdPartyAddons.Kind.NONE -> "$who ${ThirdPartyAddons.size(a.core.mb)}."
-            core.kind == K && a.inUse != null -> "${core.line}. Version ${a.version}."
-            core.kind == K -> "$who Version ${a.version}."
-            else -> core.line
-        }
-        val label = if (installed || wanted) a.title else "Install ${a.title}"
-        val btn = row(c, y, label, sub, enabled = true) { box ->
-            val bw = 260f
-            val r = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            val armedOut = addonArmed == "${a.id}.uninstall" && SystemClock.elapsedRealtime() - addonArmedAt < ARM_MS
-            when {
-                // something of it is downloaded and waits for the game to start again: the launcher's own Restart, right here
-                a.pkgs().any { (k, _) -> ThirdPartyAddons.status(a, k).kind == ThirdPartyAddons.Kind.DOWNLOADED } && gameRunning() -> {
-                    // pressed: the game exits by its own Exit Game first (up to ~20 s outside a rested area): said, so it is not "nothing"
-                    val going = SystemClock.elapsedRealtime() - addonRestartAt < 60_000L
-                    UiKit.button(c, r, if (going) "Restarting..." else "Restart game", if (going) UiKit.Button.DOWN else UiKit.Button.UP)
-                    if (!going) addonRestart = r else postInvalidateDelayed(1000)
-                    RectF(r.left, r.top, r.left, r.top)
-                }
-                // #135 (2026-11-11): a move that failed at a start is not tried again on every Play; here it is, at the next start
-                wanted && ThirdPartyAddons.anyFailed(a) -> { UiKit.button(c, r, "Try again", UiKit.Button.UP); r }
-                core.kind == ThirdPartyAddons.Kind.DOWNLOADING -> { if (core.pct >= 0) progressBar(c, r, core.pct); RectF(r.left, r.top, r.left, r.top) }
-                installed && wanted -> { UiKit.button(c, r, if (armedOut) "Tap again" else "Uninstall", if (armedOut) UiKit.Button.DOWN else UiKit.Button.UP); r }
-                installed -> { UiKit.button(c, r, "Keep it", UiKit.Button.UP); r }                 // moving out at the next start
-                wanted -> { UiKit.button(c, r, "Cancel", UiKit.Button.UP); r }                     // waiting: Wi-Fi, room, a failure
-                else -> { UiKit.button(c, r, "Install", UiKit.Button.UP); r }
-            }
-        }
-        addonCoreBtn[a.id] = btn
-        if (!installed) return y + ROW_H
-        // ---- its modules and our options for it: only once it is installed
-        for (m in a.modules) {
-            y += ROW_H + 10f
-            val on = ThirdPartyAddons.moduleOn(a, m)
-            val st = ThirdPartyAddons.status(a, m.id)
-            if (st.kind == ThirdPartyAddons.Kind.DOWNLOADING || st.kind == ThirdPartyAddons.Kind.WAITING_WIFI) postInvalidateDelayed(1000)
-            val line = if (on) "${m.what}. ${st.line}." else "${m.what}. ${ThirdPartyAddons.size(m.pkg.mb)} download."
-            val box = row(c, y, m.title, line, enabled = true) { box ->
-                val r = RectF(box.right - 16f - 96f, box.centerY() - 40f, box.right - 16f, box.centerY() + 40f)
-                if (on && st.kind == ThirdPartyAddons.Kind.DOWNLOADING && st.pct >= 0) progressBar(c, RectF(r.left - 220f, r.top + 12f, r.left - 20f, r.bottom - 12f), st.pct)
-                UiKit.check(c, r.right - 38f, r.centerY(), 76f, on)
-                r
-            }
-            addonModuleBoxes["${a.id}.${m.id}"] = box
-        }
-        val segW = segW()
-        for (o in a.options) {
-            y += ROW_H + 10f
-            val on = ThirdPartyAddons.option(a, o)
-            val segs = Array(2) { RectF() }
-            row(c, y, o.title, if (on) o.on else o.off, enabled = true) { box ->
-                val r = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                segmented(c, r, listOf("On", "Off"), if (on) 0 else 1, segs)
-                r
-            }
-            addonOptionSegs["${a.id}.${o.id}"] = segs
-        }
-        // its own settings view (QuestTrail's options pages, mirrored), only with the game up
-        a.settings?.let { label ->
-            y += ROW_H + 10f
-            val up = gameRunning()
-            addonSettingsBtn[a.id] = row(c, y, label, if (up) "Its options here, on the bottom screen" else "Open with the game running", enabled = up) { box ->
-                val r = RectF(box.right - 16f - 220f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                UiKit.button(c, r, "Open", if (up) UiKit.Button.UP else UiKit.Button.DISABLED)
-                if (up) r else RectF(r.left, r.top, r.left, r.top)
-            }
-        }
-        return y + ROW_H
-    }
-    private val addonDrawnRows = HashMap<String, Int>()
-
     // ---- ADD-ONS > VOICE (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): offline voice's
     // model files (small and full of each kind: the user's pick "Offer both"), in the add-on rows' look - each its size, its state (Not downloaded / Downloading n% / Ready) and Download / Delete
     // (twice, as Uninstall). App files ([VoiceModels]), never the game's AddOns folder; a download only on this press.
@@ -1770,7 +591,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             if (i > 0) y += ROW_H + 10f
             val st = VoiceModels.state(m)
             if (st is VoiceModels.State.Downloading || st == VoiceModels.State.Checking) postInvalidateDelayed(1000)
-            val sub = "${Tr.t(VoiceModels.line(m, st))}. ${Tr.t(m.what)}"
+            // labels only (the user, terse page text: "labels and icons only"): the state word, no sentence after it
+            val sub = Tr.t(VoiceModels.line(m, st))
             voiceModelBtn[m] = row(c, y, m.label, sub, enabled = true) { box ->
                 val r = RectF(box.right - 16f - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
                 val armed = addonArmed == "voice.${m.id}" && SystemClock.elapsedRealtime() - addonArmedAt < ARM_MS
@@ -1987,52 +809,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         c.drawText(Tr.t(if (pct >= 0) "$pct%" else "..."), r.centerX(), r.centerY() + 10f, pValue)
     }
 
-    private val addonCoreBtn = HashMap<String, RectF>()
-    private var addonRestart = RectF()
-    private var addonRestartAt = -60_000L
     private var addonArmed: String? = null
     private var addonArmedAt = 0L
-
-    /** a press on an Add-ons control; true = it was one */
-    private fun addonTap(x: Float, y: Float): Boolean {
-        if (voiceModelTap(x, y)) return true
-        if (importTap(x, y)) return true
-        if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { addonRestartAt = SystemClock.elapsedRealtime(); onRestart(); return true }
-        // 2026-11-12: the Polestar quest guide's On / Off, and its Restart game / Try again
-        segGuide.indexOfFirst { !it.isEmpty && it.contains(x, y) }.takeIf { it >= 0 }?.let { PolestarGuide.set(it == 0); invalidate(); return true }
-        if (!btnGuidePending.isEmpty && btnGuidePending.contains(x, y)) {
-            if (guidePending() == "retry") ThirdPartyAddons.retry(ThirdPartyAddons.POLESTAR)
-            else { addonRestartAt = SystemClock.elapsedRealtime(); onRestart() }
-            invalidate(); return true
-        }
-        for (a in ThirdPartyAddons.ALL) {
-            if (addonSettingsBtn[a.id]?.let { !it.isEmpty && it.contains(x, y) } == true) { onAddonSettings(a); return true }
-            addonCoreBtn[a.id]?.takeIf { !it.isEmpty && it.contains(x, y) }?.let {
-                val installed = ThirdPartyAddons.coreInstalled(a)
-                val wanted = ThirdPartyAddons.coreWanted(a)
-                if (wanted && ThirdPartyAddons.anyFailed(a)) { ThirdPartyAddons.retry(a); return true }      // its Try again (#135)
-                if (installed && wanted) {
-                    // Uninstall: twice, as Reload (its folders go to the backup at the next start, never deleted)
-                    val now = SystemClock.elapsedRealtime()
-                    if (addonArmed == "${a.id}.uninstall" && now - addonArmedAt < ARM_MS) { addonArmed = null; ThirdPartyAddons.setCore(a, false) }
-                    else { addonArmed = "${a.id}.uninstall"; addonArmedAt = now; postDelayed({ invalidate() }, ARM_MS + 50) }
-                } else ThirdPartyAddons.setCore(a, !wanted)
-                return true
-            }
-            for (m in a.modules) if (addonModuleBoxes["${a.id}.${m.id}"]?.contains(x, y) == true) {
-                ThirdPartyAddons.setModule(a, m, !ThirdPartyAddons.moduleOn(a, m)); return true
-            }
-            for (o in a.options) addonOptionSegs["${a.id}.${o.id}"]?.let { s ->
-                if (s[0].contains(x, y)) { ThirdPartyAddons.setOption(a, o, true); return true }
-                if (s[1].contains(x, y)) { ThirdPartyAddons.setOption(a, o, false); return true }
-            }
-        }
-        return false
-    }
-
-    // 96, not 104: with three sections the page came to 1024 px in a ~970 px room, and the last row
-    // sat cut off at the bottom looking like a layout bug. At 96 it all fits (~960); the scrolling
-    // stays for whatever section comes next.
     private val ROW_H = 96f
     /** Party mode's sub-section: from the last Smart Y row's foot to its first row (the heading and its line between; P5) */
     private val PB_HEAD = 88f
@@ -2055,74 +833,6 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return hit
     }
 
-    private fun stepperRow(c: Canvas, top: Float, label: String, sub: String, yd: Int,
-                           enabled: Boolean): Pair<RectF, RectF> {
-        var minus = RectF(); var plus = RectF()
-        row(c, top, label, sub, enabled) { box ->
-            val cy = box.centerY()
-            plus = RectF(box.right - 16f - 76f, cy - 34f, box.right - 16f, cy + 34f)
-            minus = RectF(plus.left - 150f - 76f, cy - 34f, plus.left - 150f, cy + 34f)
-            // the game's red squares; the hit boxes stay the 76 x 68 they were. Each greys at its end of the zoom steps, as the
-            // small map's own +/- do (UI Art's look at integ-b41: "+" did nothing at 1600 yd without looking it)
-            val steps = Settings.ZOOM_STEPS_YD
-            val stMinus = if (enabled && yd > steps.first()) UiKit.Button.UP else UiKit.Button.DISABLED
-            val stPlus = if (enabled && yd < steps.last()) UiKit.Button.UP else UiKit.Button.DISABLED
-            UiKit.square(c, "minus", minus.centerX(), minus.centerY(), 84f, stMinus)
-            UiKit.square(c, "plus", plus.centerX(), plus.centerY(), 84f, stPlus)
-            pValue.color = if (enabled) Theme.text else Theme.dim
-            c.drawText(Tr.t("$yd yd"), (minus.right + plus.left) / 2f, cy + 11f, pValue)
-            minus
-        }
-        return Pair(minus, plus)
-    }
-
-    /** on / off is the game's check box (user pick 2026-09-28), at the right end of the box that stays the hit box */
-    private fun toggle(c: Canvas, b: RectF, on: Boolean) {
-        UiKit.check(c, b.right - 38f, b.centerY(), 76f, on)
-    }
-
-    /**
-     * One of several, filling [b]: the game's red button for each choice, the [sel]ected one lit.
-     * Each segment's hit box is written into [out] (same order as [labels]); the hit boxes are
-     * the equal segments they always were, the buttons are drawn 6 px taller than them.
-     */
-    private fun segmented(c: Canvas, b: RectF, labels: List<String>, sel: Int, out: Array<RectF>) {
-        val w = b.width() / labels.size
-        for (i in labels.indices) {
-            out[i].set(b.left + i * w, b.top, b.left + (i + 1) * w, b.bottom)
-            UiKit.choice(c, RectF(out[i].left + 2f, b.top - 6f, out[i].right - 2f, b.bottom + 6f), labels[i], i == sel,
-                textSize = SEG_TEXT)
-        }
-    }
-
-    /** the add-on behind Quest tracking's segment [i] (QuestTrail, Polestar), or null (Vanilla) */
-    private fun qtAddon(i: Int): ThirdPartyAddons.Addon? = when (Settings.QUEST_TRACKING.getOrNull(i)) {
-        "polestar" -> ThirdPartyAddons.POLESTAR; else -> null }
-
-    /**
-     * Quest tracking's three segments (the user: Polestar / QuestTrail installed from Settings > Add-ons; the picker "offers the
-     * installed ones" and marks the others): an add-on not installed is drawn greyed with "not installed" (or "installing" once
-     * asked) under its name; it can still be chosen, which installs it ([qtAddon], ThirdPartyAddons.install).
-     */
-    private fun qtSegmented(c: Canvas, b: RectF, sel: Int) {
-        val w = b.width() / QT_LABELS.size
-        for (i in QT_LABELS.indices) {
-            segQt[i].set(b.left + i * w, b.top, b.left + (i + 1) * w, b.bottom)
-            val r = RectF(segQt[i].left + 2f, b.top - 6f, segQt[i].right - 2f, b.bottom + 6f)
-            if (!Settings.ROUTE_MODES_ON && i != 0) {        // held back for 1.0.9: drawn greyed, not choosable
-                UiKit.choice(c, r, QT_LABELS[i], false, enabled = false, textSize = SEG_TEXT); continue
-            }
-            val a = qtAddon(i)
-            if (a == null || ThirdPartyAddons.coreInstalled(a)) { UiKit.choice(c, r, QT_LABELS[i], i == sel, textSize = SEG_TEXT); continue }
-            val asked = ThirdPartyAddons.status(a, "core").kind != ThirdPartyAddons.Kind.NONE
-            UiKit.choice(c, r, "", i == sel, enabled = i == sel, textSize = SEG_TEXT)
-            val p1 = UiKit.bodyPaint(SEG_TEXT - 2f, if (i == sel) Theme.text else Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            val p2 = UiKit.bodyPaint(15f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(QT_LABELS[i]), r.centerX(), r.centerY() - 2f, p1)
-            c.drawText(Tr.t(if (asked) "installing" else "not installed"), r.centerX(), r.centerY() + 20f, p2)
-        }
-    }
-
     /** [s] cut to [maxW] px with an ellipsis, or unchanged when it fits */
     private fun fit(p: Paint, s: String, maxW: Float): String {
         if (p.measureText(s) <= maxW) return s
@@ -2131,28 +841,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
 
     companion object {
-        private val LAYOUTS = CastSettings.ButtonLayout.values().toList()
-        private val LAYOUT_LABELS = LAYOUTS.map { it.label }
-        private val LOCATIONS = CastSettings.AbxyLocation.values().toList()
-        private val LOCATION_LABELS = LOCATIONS.map { it.label }
-        /** where each face action sits, in the chosen set's words ("A right, B bottom, ..." / "Cross right, Circle bottom, ...") */
-        fun abxyLine(swap: Boolean, layout: CastSettings.ButtonLayout = CastSettings.buttonLayout): String {
-            fun n(a: String) = Glyphs.name(a, layout)
-            return if (swap) "${n("a")} right, ${n("b")} bottom, ${n("x")} top, ${n("y")} left"
-                else "${n("a")} bottom, ${n("b")} right, ${n("x")} left, ${n("y")} top"
-        }
-        private val CHAT_INPUTS = listOf("quick", "keys")
-        private val CHAT_INPUT_LABELS = listOf("Quick chat", "Keyboard")
-        private val QT_LABELS = listOf("Vanilla", "Polestar")          // the user, 2026-11-12: SafePath and QuestTrail removed
+        /** the blocks a slice draws (every other block is a tile part's: General, Bottom screen, Top screen, Controller, the add-on
+         *  cards, Performance) */
+        val LIVE = setOf(SettingsTabs.Block.SMART_Y, SettingsTabs.Block.IMPORT, SettingsTabs.Block.ADDON_VOICE, SettingsTabs.Block.IMPORTED)
         private const val SEG_TEXT = 24f
-        private const val SEG_PAD = 36f      // text-to-edge room inside a segment, both sides
-        private const val SEG_MIN_W = 120f
-        // SPACING, measured against the signed-off picture on the emulator (2026-10-06): a row's bottom to the next heading's top
-        // is 60 px everywhere; a heading's cap top is ~26 px above its baseline, which is drawn 4 px below the section's y
-        private const val SECTION_GAP = 82f  // row bottom -> the next section's y (its heading baseline 86 below: cap top +60)
-        private const val TOP_PAD = 48f      // the page's top -> its first heading's y (the tab bar stands above the page)
-        private const val PAD_X = 28f
-        private const val BOTTOM_PAD = 56f   // REST's end -> Game UI's first heading: 60 (it was 28)
         private const val SLICE_PAD = 8f     // a slice's top and foot: its group's heading above, the next part below
+        private const val BLOCK_GAP = 10f    // between two blocks of one slice
     }
 }

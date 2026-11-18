@@ -29,8 +29,15 @@ object GameUiTiles {
     /** Polestar's own frame on the top screen (hub31; it was SettingsView's row): Navigation's third tile */
     const val PS_ID = "polestartop"
 
-    /** the tiles of each Top screen group, in order (the Game windows' order is the user's approved one) */
+    /** hub61 (the beautify design 7, the user, 2026-11-17): the layout editor's row as a tile ("Edit layout": its A opens LayoutView,
+     *  no band), the Layout group's one */
+    const val LAYOUT_ID = "layout"
+
+    /** the tiles of each Top screen group, in order (the Game windows' order is the user's approved one; the damage meter and the
+     *  Cooldown Manager after the controller bars, the user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make
+     *  sure that its consistent with the other picture options") */
     val TILES: Map<SettingsTabs.Group, List<String>> = linkedMapOf(
+        SettingsTabs.Group.LAYOUT to listOf(LAYOUT_ID),
         SettingsTabs.Group.HUD to listOf(GameUi.HUD_ID),
         SettingsTabs.Group.TARGET to listOf(GameUi.UFT_ID, GameUi.NP_ID, GameUi.NPF_ID),
         SettingsTabs.Group.PARTY to listOf(GameUi.UFP_ID, GameUi.PARTY_ID),
@@ -43,7 +50,9 @@ object GameUiTiles {
         GameUi.HUD_ID to listOf(GameUi.PET_ID, GameUi.HUD_W_ID),
         GameUi.UFT_ID to listOf(GameUi.UFHP_ID, GameUi.UFTOT_ID),
         GameUi.NP_ID to listOf(GameUiSection.RINGS_ID),
-        GameUiSection.COMPASS_ID to listOf(GameUiSection.COMPASS_CAM_ID))
+        GameUiSection.COMPASS_ID to listOf(GameUiSection.COMPASS_CAM_ID),
+        // hub61: the Cooldown Manager's four parts (each only while the tile is On)
+        GameUi.CDM_ID to GameUi.CDM_PARTS)
 
     /** a tile's name (display only: the rows' own words stay the data the tests key on) */
     val NAMES: Map<String, String> = mapOf(
@@ -51,21 +60,27 @@ object GameUiTiles {
         GameUi.UFP_ID to "DS party frames", GameUi.PARTY_ID to "Party frames", GameUiSection.COMPASS_ID to "Compass bar",
         GameUi.WM_ID to "World markers", PS_ID to "Polestar", "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window",
         "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window", GameUiSection.TIPS_ID to "Tooltips", GameUi.CASTBAR_ID to "Cast bar",
-        GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame", "hud" to "Controller bars")
+        GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame", "hud" to "Controller UI",
+        // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): the old tile's riders, tiles of their own
+        HudSplit.BUFFS_ID to "Buffs", HudSplit.XP_ID to "XP bar",
+        GameUi.DMG_ID to "Damage meter", GameUi.CDM_ID to "Cooldown Manager", LAYOUT_ID to "Edit layout")
 
     /** a band row's label (short: the tile above names the element) */
     val EXTRA_NAMES: Map<String, String> = mapOf(
         GameUi.PET_ID to "Pet bar", GameUi.HUD_H_ID to "Height", GameUi.HUD_W_ID to "Width", GameUi.HUD_S_ID to "Scale",
         GameUi.UFHP_ID to "Health text", GameUi.UFTOT_ID to "Target of target", GameUiSection.RINGS_ID to "Aggro tint",
-        GameUiSection.COMPASS_CAM_ID to "Follows the camera")
+        GameUiSection.COMPASS_CAM_ID to "Follows the camera",
+        GameUi.CDM_ESS_ID to "Essential", GameUi.CDM_UTIL_ID to "Utility", GameUi.CDM_BICON_ID to "Buff icons", GameUi.CDM_BBAR_ID to "Buff bars")
 
     /** THE TILES' PICTURES' REGISTRY (TilePictures draws each; its own registry, not SettingsPreview.ROWS: that one shows the "What it
      *  does" panel beside the page, which would squeeze the grid): every tile has one */
     val PICTURED: Set<String> = setOf(GameUi.HUD_ID, GameUi.UFT_ID, GameUi.NP_ID, GameUi.NPF_ID, GameUi.UFP_ID, GameUi.PARTY_ID,
         GameUiSection.COMPASS_ID, GameUi.WM_ID, PS_ID, "minimap", "tracker", "chat", "dialogs", GameUiSection.LOOT_ID,
-        GameUiSection.TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud")
+        GameUiSection.TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud", HudSplit.BUFFS_ID, HudSplit.XP_ID,
+        GameUi.DMG_ID, GameUi.CDM_ID, LAYOUT_ID)
 
-    /** every tile, every group (19 with Polestar in use) */
+    /** every tile, every group (24 with Polestar in use: 19 + the damage meter, the Cooldown Manager, Edit layout, and split-hud's
+     *  Buffs and XP bar) */
     val ALL: List<String> get() = TILES.values.flatten()
 
     /** the groups drawn as tiles (the Top screen tab's) */
@@ -77,10 +92,12 @@ object GameUiTiles {
     // ---------------------------------------------------------------- the badge
 
     /** the 36 px mark on a tile: its mode, or the game's state when it differs from the choice */
-    enum class Badge { ON, OFF, DYNAMIC, TRACKING, NINTENDO, SENT, REFUSED, WAITING }
+    enum class Badge { ON, OFF, DYNAMIC, TRACKING, NINTENDO, SENT, REFUSED, WAITING,
+        /** hub61: the game's own option is off (the kit's alert_gear: one sign, one meaning - not WAITING's dots); the choice waits */
+        GAME_OFF }
 
     /** the game's elements (Hub.lua's layout bits): their notes say the game's state */
-    private val ELEMENTS = setOf("minimap", "hud", "tracker", "chat", "dialogs")
+    private val ELEMENTS = setOf("minimap", "hud", "tracker", "chat", "dialogs", HudSplit.BUFFS_ID, HudSplit.XP_ID)
     /** an element's notes when the game shows what was chosen */
     private val STEADY = setOf("Hidden now", "On the top screen now", "DS Forever's bar on the top screen now")
     /** a switch's notes while the game has not caught up with the choice */
@@ -93,6 +110,7 @@ object GameUiTiles {
     fun badge(r: GameUi.Row?): Badge = when {
         r == null || !r.known || r.note == "The game does not offer this yet" -> Badge.WAITING
         r.note.startsWith("The game refused") -> Badge.REFUSED
+        r.note == GameUi.GAME_OFF_NOTE -> Badge.GAME_OFF
         r.note in PENDING -> Badge.SENT
         r.id in ELEMENTS && r.note !in STEADY -> Badge.SENT
         else -> when (r.mode) {
@@ -102,7 +120,7 @@ object GameUiTiles {
     }
 
     /** the picture is dimmed: the choice is Off, or the game has not reported the element */
-    fun dimmed(r: GameUi.Row?): Boolean = r == null || !r.known || r.mode == UiMode.OFF
+    fun dimmed(r: GameUi.Row?): Boolean = r == null || !r.known || r.mode == UiMode.OFF || r.note == GameUi.GAME_OFF_NOTE
 
     // ---------------------------------------------------------------- the grid
 

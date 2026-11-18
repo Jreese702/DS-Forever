@@ -12,6 +12,13 @@ import java.io.File
  * bar's band, the badges, the grid (5 columns of 232 x 184 on the room's 1240 px page), the band's boxes (the picture left, the
  * choices at the 110 px touch floor, one status line), every band fitting on one screen with its tile, and the TGA reader on our own
  * Media files.
+ *
+ * hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other
+ * picture options"): 22 tiles - Game windows' Damage meter and Cooldown Manager (its four parts in its band), the Layout group's Edit
+ * layout tile; the GAME_OFF badge (the game's own option off); the meters' one tap on the layout editor's row ([GameUi.mtCol]).
+ *
+ * split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both"): 24 tiles - the old Controller
+ * bars tile is Controller UI, Buffs and XP bar, each with its picture (HudSplitTest: the words and the tap).
  */
 private typealias TG = SettingsTabs.Group
 private typealias TB = GameUiTiles.Badge
@@ -20,11 +27,24 @@ class GameUiTilesTest {
 
     // ---------------------------------------------------------------- the tiles
 
-    @Test fun nineteenTilesInTheirGroups() {
-        assertEquals(listOf(TG.HUD, TG.TARGET, TG.PARTY, TG.NAVIGATION, TG.WINDOWS), GameUiTiles.TILES.keys.toList())
-        assertEquals(listOf(1, 3, 2, 3, 10), GameUiTiles.TILES.values.map { it.size })
-        assertEquals(19, GameUiTiles.ALL.size)
-        assertEquals(19, GameUiTiles.ALL.toSet().size)
+    @Test fun twentyTwoTilesInTheirGroups() {
+        // hub61: Edit layout first (the Layout group), the damage meter and the Cooldown Manager after the controller bars
+        assertEquals(listOf(TG.LAYOUT, TG.HUD, TG.TARGET, TG.PARTY, TG.NAVIGATION, TG.WINDOWS), GameUiTiles.TILES.keys.toList())
+        assertEquals(listOf(1, 1, 3, 2, 3, 14), GameUiTiles.TILES.values.map { it.size })
+        assertEquals(24, GameUiTiles.ALL.size)
+        assertEquals(24, GameUiTiles.ALL.toSet().size)
+        assertEquals(23, GameUiTiles.TILES.keys.sumOf { GameUiTiles.slots(it, polestar = false).size })
+        assertEquals(listOf("hud", HudSplit.BUFFS_ID, HudSplit.XP_ID, GameUi.DMG_ID, GameUi.CDM_ID), GameUiTiles.TILES.getValue(TG.WINDOWS).takeLast(5))
+        // split-hud: the three tiles' names
+        assertEquals(listOf("Controller UI", "Buffs", "XP bar"), HudSplit.PARTS.map { GameUiTiles.NAMES.getValue(it) })
+        assertEquals(listOf(GameUiTiles.LAYOUT_ID), GameUiTiles.TILES.getValue(TG.LAYOUT))
+        // Game windows: 5 + 5 + 4 on the room's page
+        assertEquals(3, GameUiTiles.grid(14, 1240f, -1, 0f).tiles.map { it.t }.distinct().size)
+        // the Cooldown Manager's band: its four parts (each only while the tile is On: GameUiTilesRoomTest)
+        assertEquals(GameUi.CDM_PARTS, GameUiTiles.EXTRAS.getValue(GameUi.CDM_ID))
+        assertEquals(listOf("Essential", "Utility", "Buff icons", "Buff bars"), GameUi.CDM_PARTS.map { GameUiTiles.EXTRA_NAMES.getValue(it) })
+        // every tile has its picture
+        assertEquals(GameUiTiles.ALL.toSet(), GameUiTiles.PICTURED)
         // the Game windows in the user's approved order
         assertEquals(GameUiSection.WINDOWS_ORDER, GameUiTiles.TILES.getValue(TG.WINDOWS))
         // the user's pick (2A): the Pet bar in the Resource bar's band, with the width stepper (height and scale: the layout editor's)
@@ -36,8 +56,8 @@ class GameUiTilesTest {
         // every tile and band row has its short name
         for (id in GameUiTiles.ALL) assertTrue(id, !GameUiTiles.NAMES[id].isNullOrBlank())
         for (id in GameUiTiles.EXTRAS.values.flatten()) assertTrue(id, !GameUiTiles.EXTRA_NAMES[id].isNullOrBlank())
-        // only Top screen's groups are tiles (its Layout group excepted: the editor's one row, SettingsView's)
-        for (g in TG.values()) assertEquals(g.heading, g.tab == SettingsTabs.Tab.TOP && g != TG.LAYOUT, GameUiTiles.tiled(g))
+        // only Top screen's groups are tiles (hub61: its Layout group too, the Edit layout tile)
+        for (g in TG.values()) assertEquals(g.heading, g.tab == SettingsTabs.Tab.TOP, GameUiTiles.tiled(g))
         assertTrue(!GameUiTiles.tiled(null))
     }
 
@@ -57,6 +77,10 @@ class GameUiTilesTest {
         assertEquals(TB.WAITING, GameUiTiles.badge(null))
         assertEquals("the game has not reported the element", TB.WAITING, GameUiTiles.badge(row("chat", UiMode.ON, "Waiting for the game", known = false)))
         assertEquals(TB.WAITING, GameUiTiles.badge(row("hud", UiMode.NINTENDO, "The game does not offer this yet")))
+        // split-hud: the buffs and the XP bar are the game's elements' kind (their notes say the game's state)
+        assertEquals(TB.WAITING, GameUiTiles.badge(row(HudSplit.BUFFS_ID, UiMode.OFF, "The game does not offer this yet")))
+        assertEquals(TB.SENT, GameUiTiles.badge(row(HudSplit.XP_ID, UiMode.OFF, "Waiting for the game")))
+        assertEquals(TB.DYNAMIC, GameUiTiles.badge(row(HudSplit.BUFFS_ID, UiMode.DYNAMIC, "On the top screen now")))
         // an element: the game's word
         assertEquals(TB.OFF, GameUiTiles.badge(row("chat", UiMode.OFF, "Hidden now")))
         assertEquals(TB.ON, GameUiTiles.badge(row("chat", UiMode.ON, "On the top screen now")))
@@ -79,6 +103,40 @@ class GameUiTilesTest {
         assertTrue(GameUiTiles.dimmed(row(GameUi.WM_ID, UiMode.OFF, "Off")))
         assertTrue(!GameUiTiles.dimmed(row(GameUi.NPF_ID, UiMode.ON, "Sent")))
         assertTrue(!GameUiTiles.dimmed(row("minimap", UiMode.DYNAMIC, "Hidden now")))
+        // hub61: the game's own option off - its own sign (the kit's alert_gear), never WAITING's dots; the picture dimmed, the choice kept
+        assertEquals(TB.GAME_OFF, GameUiTiles.badge(row(GameUi.DMG_ID, UiMode.DYNAMIC, GameUi.GAME_OFF_NOTE)))
+        assertEquals(TB.GAME_OFF, GameUiTiles.badge(row(GameUi.CDM_ID, UiMode.ON, GameUi.GAME_OFF_NOTE)))
+        assertTrue(GameUiTiles.dimmed(row(GameUi.CDM_ID, UiMode.ON, GameUi.GAME_OFF_NOTE)))
+        assertEquals(TB.DYNAMIC, GameUiTiles.badge(row(GameUi.DMG_ID, UiMode.DYNAMIC, "Hidden now")))
+        assertEquals("a press held for the fight", TB.SENT, GameUiTiles.badge(row(GameUi.CDM_ID, UiMode.OFF, "Changes when combat ends")))
+        assertEquals(TB.WAITING, GameUiTiles.badge(row(GameUi.DMG_ID, UiMode.ON, "The game does not offer this yet")))
+    }
+
+    // ---------------------------------------------------------------- hub61: the meters' one tap
+
+    private fun mtDoc(d: String = "on", c: Boolean = true, p: Int = 15) = GameUi.mtFrom(org.json.JSONObject()
+        .put("v", "mt1").put("d", d).put("c", c).put("p", p).put("df", true).put("cf", true).put("dok", true).put("n", 4)
+        .put("cols", org.json.JSONObject().put("DMG_OFF", 0).put("DMG_ON", 1).put("DMG_DYN", 2).put("CDM_OFF", 3).put("CDM_ON", 4).put("PARTS", 8)))!!
+
+    /** only a choice MADE here is sent, the first that differs (damage meter, the tile, the parts' mask), on the add-on's own columns */
+    @Test fun theMetersTapOnlyWhatWasChosen() {
+        val m = mtDoc()
+        assertNull("nothing chosen: nothing sent (the game's own stands)", GameUi.mtCol(m, null, null, null))
+        assertNull("chosen as it is", GameUi.mtCol(m, UiMode.ON, true, 15))
+        assertEquals(0, GameUi.mtCol(m, UiMode.OFF, null, null))
+        assertEquals(2, GameUi.mtCol(m, UiMode.DYNAMIC, null, null))
+        assertEquals(1, GameUi.mtCol(mtDoc(d = "dyn"), UiMode.ON, null, null))
+        assertEquals(3, GameUi.mtCol(m, null, false, null))
+        assertEquals(4, GameUi.mtCol(mtDoc(c = false), null, true, null))
+        assertEquals("the mask on 8 + mask", 8 + 0b0101, GameUi.mtCol(m, null, null, 0b0101))
+        assertEquals("the damage meter first", 0, GameUi.mtCol(m, UiMode.OFF, false, 0))
+        // an add-on set without the columns: nothing
+        val bare = GameUi.mtFrom(org.json.JSONObject().put("d", "on"))!!
+        assertNull(GameUi.mtCol(bare, UiMode.OFF, false, 1))
+        // the document read: the game's options (absent = not read), the frames, a press held for the fight
+        val g = GameUi.mtFrom(org.json.JSONObject().put("d", "off").put("dset", true).put("dok", false).put("q", true).put("p", 31))!!
+        assertEquals(false, g.dok); assertNull(g.dav); assertTrue(g.q); assertTrue(g.dset); assertEquals(15, g.p)
+        assertNull(GameUi.mtFrom(null))
     }
 
     // ---------------------------------------------------------------- the grid
@@ -188,7 +246,11 @@ class GameUiTilesTest {
     @Test fun everyTileWordIsTranslated() {
         val words = GameUiTiles.NAMES.values + GameUiTiles.EXTRA_NAMES.values +
             listOf("On", "Off", "Dynamic", "Tracking", "Nintendo", "Lower", "Default", "Higher", "Narrower", "Wider", "Smaller", "Larger",
-                "Percent", "Total", "Waiting for the game", "Sent", "Hidden now", "On the top screen now")
+                "Percent", "Total", "Waiting for the game", "Sent", "Hidden now", "On the top screen now",
+                // hub61 (scratchpad i18n/topmeters.json until the integrator merges it into es / fr)
+                "Open", GameUi.GAME_OFF_NOTE, "Changes when combat ends", "The game does not offer this yet",
+                // split-hud: the three tiles' rows and the editor's XP bar piece
+                "Controller UI", "Buffs", "XP bar")
         for (l in listOf("es", "fr")) {
             val f = listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
                 .first { it.canRead() }

@@ -20,8 +20,9 @@ import kotlin.math.sin
  * do not, nor rows whose words say it all. Our own drawing (no game art): shapes in Theme's colours, the button pictures through
  * [Glyph] (the app gives UiKit.pad, so they are the chosen set's).
  *
- * Pure drawing on android.graphics: [draw] paints row [id]'s preview into [r] for time [tMs]; the panel view calls it each frame
- * while [animated], once otherwise. Keyed by the row's own words (SettingsTabs' rows).
+ * Pure drawing on android.graphics: [draw] paints row [id]'s preview into [r] for time [tMs]. Keyed by the row's own words
+ * (SettingsTabs' rows). The panel beside the rows is gone (the beautify pass, 2026-11-17: every tab is picture tiles); Bottom screen's
+ * tiles still draw these pictures where a crop of the real Home is not ready (BottomPictures).
  */
 object SettingsPreview {
     /** the setting values the pictures show (the panel snapshots them from the settings objects) */
@@ -70,137 +71,6 @@ object SettingsPreview {
     /** a button picture: [action] "a" "b" "x" "y" "start" "select", in glyph set [set] (0 Nintendo, 1 Xbox, 2 PlayStation), centred, [size] px */
     fun interface Glyph { fun draw(c: Canvas, action: String, set: Int, cx: Float, cy: Float, size: Float) }
 
-    /** the rows with a picture, in the tabs' order; the value says whether it moves */
-    val ROWS: Map<String, Boolean> = linkedMapOf(
-        "Controller on Home" to false, "Combat layout" to true, "Swing timer" to true, "Focused quest" to false,
-        "Hearthstone" to false, "Class teleport" to false, "Gold" to false, "Free bag slots" to false, "Ammo" to false,
-        "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false,
-        HomeSettingsSection.TALK_ROW to true, HomeSettingsSection.RELEASE_ROW to true, "Tap-to-cast bar" to false, "In combat" to true,
-        "ABXY location" to true, "Button glyphs" to false, SmartPet.ROW_ID to true,
-        "Pause menu: open" to true, "Pause menu: pick" to true, PauseOver.ROW_ID to true, "Item wheel: open" to true, "Item wheel: pick" to true,
-        "Spell wheel: open" to true, "Spell wheel: pick" to true,
-        "Left class radial: open" to true, "Left class radial: pick" to true, "Right class radial: open" to true, "Right class radial: pick" to true,
-        "Smart Y" to true, "Party mode" to true, "Smart Res" to true, "Start attack on hostile target" to true, "Combat Auto Shot" to true,
-        "Minimap zoom outdoors" to false, "Minimap zoom indoors" to false, "World map" to false, "Message input" to false,
-        "Frame limit" to true, "Frame generation" to true, "Multiplier" to true, "Flow scale" to true, "Build in the background" to true)
-
-    fun has(id: String?): Boolean = id != null && id in ROWS
-    fun animated(id: String?): Boolean = ROWS[id] == true
-
-    /** the picture's title: the row and its value now */
-    fun title(id: String, s: State): String = when (id) {
-        "Controller on Home" -> if (s.diamonds) "Diamonds" else "Thin row"
-        "Combat layout" -> if (s.combatGrow) "Grow" else "Same size"
-        "Swing timer" -> onOff(s.swing)
-        "Focused quest" -> if (s.questOverMap) "Above Minimap" else "Above Chat"
-        "Start the attack when a spell is cast" -> s.startAttack?.let { onOff(it) } ?: "-"
-        "DS WoW toolbar" -> s.toolbar?.let { onOff(it) } ?: "-"
-        HomeSettingsSection.TALK_ROW -> onOff(s.holdTalk)
-        HomeSettingsSection.RELEASE_ROW -> if (s.talkSendNow) "Send now" else "Show, A sends"
-        "ABXY location" -> if (s.abxyNintendo) "Nintendo" else "Xbox"
-        "Button glyphs" -> SET_NAMES[s.glyphSet.coerceIn(0, 2)]
-        SmartPet.ROW_ID -> SmartPet.SEGMENTS[if (s.smartPet) 1 else 0]
-        "Pause menu: open" -> if (s.pauseTap) "Tap" else "Hold"
-        "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) "Tap" else "Hold"
-        "Pause menu: pick" -> if (s.pausePickA) "A" else "Release"
-        PauseOver.ROW_ID -> PauseOver.SEGMENTS[if (s.pauseOverGame) 1 else 0]
-        "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> if (pickAOf(id, s)) "A" else "Release"
-        "Minimap zoom outdoors" -> "${s.miniOutYd} yd"
-        "Minimap zoom indoors" -> "${s.miniInYd} yd"
-        "Message input" -> if (s.quickChat) "Quick chat" else "Keyboard"
-        "Frame limit" -> if (s.fpsLimit > 0) "${s.fpsLimit}" else "Off"
-        "Frame generation" -> onOff(s.frameGen)
-        "Multiplier" -> "${s.multiplier}x"
-        "Flow scale" -> "${Math.round(s.flow * 100)}%"
-        "Build in the background" -> onOff(s.indoorBuild)
-        "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo" -> onOff(extraOn(id, s))
-        "Tap-to-cast bar" -> SIDE_WORDS[s.castBar.coerceIn(0, 3)]
-        "In combat" -> if (s.castCombatHide) "Hide" else "Stay"
-        "World map" -> if (s.worldMapAll) "Show all" else "Explored only"
-        "Smart Y" -> s.smartY?.let { onOff(it) } ?: "-"
-        "Party mode" -> onOff(s.partyMode)
-        "Smart Res" -> onOff(s.smartRes)
-        "Start attack on hostile target" -> onOff(s.attackHostile)
-        "Combat Auto Shot" -> SHOT_NAMES[s.autoShot.coerceIn(0, 2)]
-        else -> ""
-    }.let { v -> val n = SHORT[id] ?: id; if (v.isEmpty()) n else "$n: $v" }
-
-    /** a row's name in the picture's title when the row's own words are too long for the panel */
-    private val SHORT = mapOf(PauseOver.ROW_ID to "Over game windows", "In combat" to "Cast bar in combat", "Start the attack when a spell is cast" to "Start the attack", "Start attack on hostile target" to "Start attack")
-
-    /** two or three short lines under the picture */
-    fun caption(id: String, s: State): List<String> = when (id) {
-        "Controller on Home" -> if (s.diamonds) listOf("Home shows your buttons as the four", "diamonds, as on the controller.")
-            else listOf("Home shows your buttons in one thin row;", "in a fight the diamonds take over.")
-        "Combat layout" -> if (s.combatGrow) listOf("In a fight the controller grows", "so the buttons are easier to read.")
-            else listOf("In a fight the controller keeps", "its size and place.")
-        "Swing timer" -> if (s.swing) listOf("A thin line under your buttons fills", "with each auto-attack swing, in a fight.")
-            else listOf("No swing line. The cast bar stays.")
-        "Focused quest" -> listOf("Where the quest you focus shows on Home:", if (s.questOverMap) "over the minimap." else "at the top of the chat.")
-        "Start the attack when a spell is cast" -> if (s.startAttack == true) listOf("A harmful spell from your controller", "also starts your auto-attack.")
-            else listOf("Spells do not start your auto-attack;", "start it yourself.")
-        "DS WoW toolbar" -> if (s.toolbar == true) listOf("The plain D-pad opens the map, chat,", "the bar and the wheel.")
-            else listOf("The D-pad keeps your own slots.")
-        HomeSettingsSection.TALK_ROW -> if (s.holdTalk) listOf("Hold D-pad Left and speak;", "the words go to your last chat.")
-            else listOf("D-pad Left opens Chat.")
-        HomeSettingsSection.RELEASE_ROW -> if (s.talkSendNow) listOf("Your words go as soon as you let go.")
-            else listOf("Your words show: A sends them,", "B drops them.")
-        "ABXY location" -> listOf("Which face button does what (for button", "mods). The pictures follow \"Button glyphs\".")
-        "Button glyphs" -> listOf("The button pictures shown everywhere.", "Where they sit is \"ABXY location\".")
-        "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) listOf("A press opens the wheel;", "it stays open until you pick or press B.")
-            else listOf("Hold the button: the wheel is open", "while you hold it, and closes when you let go.")
-        PauseOver.ROW_ID -> PauseOver.caption(s.pauseOverGame)
-        "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> if (pickAOf(id, s)) listOf("Aim with the stick, then press A to pick.")
-            else listOf("Aim with the stick; letting go of", "the stick picks what it points at.")
-        "Minimap zoom outdoors" -> listOf("How many yards across Home's small map", "shows outside.")
-        "Minimap zoom indoors" -> listOf("How many yards across Home's small map", "shows inside buildings.")
-        "Message input" -> if (s.quickChat) listOf("Going into a message opens the", "quick-chat phrases first.")
-            else listOf("Going into a message opens the", "keyboard first.")
-        "Frame limit" -> if (s.fpsLimit > 0) listOf("Each dot is a frame the game draws:", "fewer frames run cooler and last longer.")
-            else listOf("No limit: the game draws as many", "frames as it can (warmer).")
-        "Frame generation" -> if (s.frameGen) listOf("Filled: the game's frames. Rings: frames", "made between them, for smoother motion.")
-            else listOf("Only the game's own frames.")
-        "Multiplier" -> listOf("Frames shown for each game frame:", "${s.multiplier}x = ${s.multiplier - 1} made between each pair.")
-        "Flow scale" -> listOf("How much detail the made frames keep:", "lower is faster, higher is sharper.")
-        "Build in the background" -> if (s.indoorBuild) listOf("Indoor maps are built while you stand", "still and the device is cool; walking pauses.")
-            else listOf("Nothing is built; ready maps still show.")
-        "Hearthstone" -> if (s.clockHearth) listOf("Your Hearthstone in the row under the", "clock; it glows when ready.")
-            else listOf("No Hearthstone in the row.", "The others space out evenly.")
-        "Class teleport" -> if (s.clockTeleport) listOf("Your class teleport in the row,", "once your character knows it.")
-            else listOf("No class teleport in the row.", "The others space out evenly.")
-        "Gold" -> if (s.clockGold) listOf("Your total gold under the battery:", "gold, silver and copper.")
-            else listOf("No gold under the battery.")
-        "Free bag slots" -> if (s.clockBags) listOf("How many bag slots are free,", "in the row under the clock.")
-            else listOf("No bag count in the row.", "The others space out evenly.")
-        "Ammo" -> if (s.clockAmmo) listOf("Your equipped ammo and its count,", "while you have some.")
-            else listOf("No ammo in the row.", "The others space out evenly.")
-        "Tap-to-cast bar" -> when (s.castBar) {
-            1 -> listOf("Four spells under the chat;", "swipe for more.")
-            2 -> listOf("Four spells under the minimap;", "swipe left for more.")
-            3 -> listOf("Eight spells in one bar under both;", "one tap casts each.")
-            else -> listOf("No tap-to-cast bar on Home.") }
-        "In combat" -> if (s.castCombatHide) listOf("In a fight the tap-to-cast bar slides", "down; chat and map take its room.")
-            else listOf("In a fight the tap-to-cast bar stays,", "one tap casts each.")
-        "World map" -> if (s.worldMapAll) listOf("The Map room's continents show", "every zone, revealed.")
-            else listOf("The Map room's continents show only", "what you have explored.")
-        "Smart Y" -> when (s.smartY) {
-            null -> listOf("Needs the game running.")
-            true -> listOf("Out of combat, nothing targeted:", "Y casts from your list, top first.")
-            false -> listOf("Y keeps its own action.") }
-        "Party mode" -> if (s.partyMode) listOf("Select turns Party mode on:", "your party's plates on Home.")
-            else listOf("Select does not turn Party mode on.")
-        "Smart Res" -> if (s.smartRes) listOf("A tap on a dead member casts your", "res (not in a fight).")
-            else listOf("A tap on a dead member does not res.")
-        "Start attack on hostile target" -> if (s.attackHostile) listOf("Targeting an enemy starts", "your auto-attack.")
-            else listOf("Targeting an enemy does not start", "your auto-attack.")
-        SmartPet.ROW_ID -> SmartPet.caption(s.smartPet)
-        "Combat Auto Shot" -> when (s.autoShot) {
-            0 -> listOf("No Auto Shot in a fight.")
-            2 -> listOf("As On, but off for a plain attack", "you start yourself.")
-            else -> listOf("In a fight: Auto Shot at range,", "auto attack up close.") }
-        else -> emptyList()
-    }
-
     // ------------------------------------------------------------------ drawing
 
     private val SET_NAMES = listOf("Nintendo", "Xbox", "PlayStation")
@@ -214,7 +84,6 @@ object SettingsPreview {
     private val MULTIPLIERS = listOf(2, 3, 4)
     private const val FLOW_MIN = 0.25f
     private const val FLOW_MAX = 1.0f
-    private fun onOff(b: Boolean) = if (b) "On" else "Off"
     private fun tapOf(id: String, s: State) = when {
         id.startsWith("Pause") -> s.pauseTap; id.startsWith("Spell") -> s.spellTap
         id.startsWith("Left class") -> s.classTapL; id.startsWith("Right class") -> s.classTapR; else -> s.radialTap }

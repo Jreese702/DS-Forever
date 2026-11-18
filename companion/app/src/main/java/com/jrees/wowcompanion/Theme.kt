@@ -50,14 +50,25 @@ object Theme {
     private var prefs: android.content.SharedPreferences? = null
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
-    /** all presets, in the picker's order */
+    /** the premade presets, in the picker's order (a fixed list: the old picker sized its tiles by it) */
     val presets: List<ThemeSpec> get() = ThemePresets.ALL
-    fun byId(id: String?): ThemeSpec? = ThemePresets.ALL.firstOrNull { it.id == id }
+
+    /**
+     * THE CUSTOM THEME (the user, 2026-11-17: "lets add a custom theme maker where people can choose their pallets with an oled toggle"):
+     * ONE slot per device (prefs "settings", key "theme_custom", ThemeMaker's JSON line), id "custom"; null until the maker's Use saved one
+     */
+    @Volatile var custom: ThemeSpec? = null
+        private set
+
+    /** every theme there is: the premades, then the custom one once saved (the gallery's list) */
+    val all: List<ThemeSpec> get() = custom?.let { ThemePresets.ALL + it } ?: ThemePresets.ALL
+    fun byId(id: String?): ThemeSpec? = all.firstOrNull { it.id == id }
 
     /** reads the saved preset (once per process; [reread] = read it again, the off-device test's fresh app) */
     fun init(c: android.content.Context, reread: Boolean = false) {
         if (prefs != null && !reread) return
         prefs = c.applicationContext.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+        custom = ThemeMaker.decode(prefs?.getString(KEY_CUSTOM, null))?.let { ThemeMaker.spec(it) }
         val saved = byId(prefs?.getString(KEY, null)) ?: ThemePresets.CLASSIC
         if (saved !== cur) { cur = saved; UiKit.dropThemed() }
     }
@@ -73,9 +84,32 @@ object Theme {
         for (l in listeners) runCatching { l() }
     }
 
+    /**
+     * The theme maker's Use (its ONE write): [p] saved in the custom slot, then the custom theme in use. A premade picked in the gallery
+     * never comes here, so it never overwrites the slot.
+     */
+    fun saveCustom(p: ThemeMaker.Picks) {
+        custom = ThemeMaker.spec(p)
+        prefs?.edit()?.putString(KEY_CUSTOM, ThemeMaker.encode(p))?.apply()
+        use(ThemeMaker.ID)
+    }
+
+    /**
+     * [block] drawn in [spec] without using it: [cur] swapped for the length of one synchronous draw (main thread), nothing saved, no
+     * listener told; the recoloured metal art is dropped before and after, so neither theme keeps the other's. The maker's live
+     * preview and a picture of another theme draw through this; the player's theme is back when it returns.
+     */
+    fun <T> preview(spec: ThemeSpec, block: () -> T): T {
+        val was = cur
+        if (spec === was) return block()
+        cur = spec; UiKit.dropThemed()
+        try { return block() } finally { cur = was; UiKit.dropThemed() }
+    }
+
     fun onChange(l: () -> Unit) { listeners.add(l) }
     fun removeListener(l: () -> Unit) { listeners.remove(l) }
     private const val KEY = "theme"
+    private const val KEY_CUSTOM = "theme_custom"
 
     val flight = Color.parseColor("#7FC4E8")
     val ok = Color.parseColor("#8FC47A")

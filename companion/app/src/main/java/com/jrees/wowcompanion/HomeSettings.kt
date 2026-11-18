@@ -576,7 +576,7 @@ class HomeSettingsSection(context: Context,
 
     override fun onDraw(c: Canvas) {
         UiKit.asTitle(pSection); UiKit.asBody(pLabel); UiKit.asBody(pSub)
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         lay(c)
     }
 

@@ -16,10 +16,13 @@ import android.content.SharedPreferences
 object SettingsTabs {
     /** [folds] false = its groups are always open, plain headings (the user, 2026-11-12: "the general tab doesnt need the folding
      *  sections"). Top screen too since its tiles (the user, 2026-11-16: "VISUAL overhaul of UI menus"; the design's pick, accepted the
-     *  same day: "The five headings with no folding on this tab", which changes the 11-12 fold ruling for this tab only) */
+     *  same day: "The five headings with no folding on this tab", which changes the 11-12 fold ruling for this tab only). The beautify
+     *  pass's pick 5 (the user, 2026-11-17, the recommended answer: "tiled tabs (Bottom, Controller, Performance, like Top) do not fold;
+     *  Add-ons folds only Voice / Imported"): every tab of picture tiles is always open; Add-ons is the one tab that still folds, and
+     *  only its two lists (its Import button and its cards are headless) */
     enum class Tab(val label: String, val hidden: Boolean = false, val folds: Boolean = true) {
-        GENERAL("General", folds = false), BOTTOM("Bottom screen"), TOP("Top screen", folds = false), CONTROLLER("Controller"), ADDONS("Add-ons"),
-        PERFORMANCE("Performance")
+        GENERAL("General", folds = false), BOTTOM("Bottom screen", folds = false), TOP("Top screen", folds = false),
+        CONTROLLER("Controller", folds = false), ADDONS("Add-ons"), PERFORMANCE("Performance", folds = false)
     }
 
     /** the tabs the room shows, in order (a hidden one is never on the row, never stepped onto) */
@@ -41,19 +44,23 @@ object SettingsTabs {
         COMBAT(Tab.CONTROLLER, "Combat helpers"),
         // the user, 2026-11-16: "Import addons should be a single button at the top of the list": first on the tab, no heading
         IMPORT(Tab.ADDONS, "Import add-ons", headless = true),
-        POLESTAR(Tab.ADDONS, "Polestar"), SPOKEN(Tab.ADDONS, "Spoken"), QUESTTRAIL(Tab.ADDONS, "QuestTrail"), MANNERS(Tab.ADDONS, "Manners"),
+        // the beautify pass (2026-11-17, the design's section 5): the third-party add-ons are ONE row of picture cards (AddonTiles), a
+        // group with no heading, always open; it was one folding group each (Polestar, Spoken, QuestTrail, Manners)
+        CARDS(Tab.ADDONS, "Add-ons", headless = true),
         // offline voice's model files (the user, 2026-11-16: "we could make the per languege downloads part of the addons folder"): app
         // files, never the game's AddOns; after Manners, so Polestar's group still opens first
         VOICE(Tab.ADDONS, "Voice"),
         // the player's own add-ons (the user, 2026-11-16: "maybe we just do an import addons button then?"): the list, last; its Import
         // button is IMPORT's, at the top
         IMPORTED(Tab.ADDONS, "Imported"),
-        FRAMES(Tab.PERFORMANCE, "Frames"), MEMORY(Tab.PERFORMANCE, "Memory"), INDOOR(Tab.PERFORMANCE, "Indoor maps"),
-        STREAMING(Tab.PERFORMANCE, "Streaming"),
+        // beautify (the design's critic C6: "Performance one headless row of exactly 5 columns ... No group headers on this tab"): ONE
+        // headless group for the tab's tiles and its Stream settings row (Memory, Indoor maps and Streaming were groups of their own)
+        FRAMES(Tab.PERFORMANCE, "Performance", headless = true),
     }
 
-    /** who draws a block: SettingsView, Home's section (HomeSettingsSection) or a GameUiSection part */
-    enum class Drawer { VIEW, HOME, GAME_UI }
+    /** who draws a block: SettingsView, Home's section (HomeSettingsSection), a GameUiSection part, Add-ons' cards (AddonTiles), or
+     *  the Performance tab's picture tiles (TILES: PerformanceTiles, one part for the tab's every block) */
+    enum class Drawer { VIEW, HOME, GAME_UI, ADDONS, TILES }
 
     /** the order within a group is this enum's order; [subHead] = the block keeps its own sub-heading inside its group (the wheels) */
     enum class Block(val group: Group, val heading: String, val rows: List<String>, val drawer: Drawer = Drawer.VIEW,
@@ -90,7 +97,8 @@ object SettingsTabs {
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)
         // the layout editor's one row: its own page (LayoutView); shown once the add-on set has the editor (a "lay" document came)
-        LAYOUT(Group.LAYOUT, "Layout", listOf("Edit layout")),
+        // hub61 (the beautify design 7): drawn as a tile by GameUiSection's LAYOUT part ("Edit layout": A opens the page, no band)
+        LAYOUT(Group.LAYOUT, "Layout", listOf("Edit layout"), Drawer.GAME_UI),
         // HUD height and HUD scale moved into the layout editor (the design's pick); the width stays a row
         HUD(Group.HUD, "Your HUD", listOf("Resource bar", "Pet bar", "HUD width"), Drawer.GAME_UI),
         TARGET(Group.TARGET, "Target", listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates", "Friendly plates"),
@@ -101,7 +109,11 @@ object SettingsTabs {
         // tiles): Navigation's third tile, drawn by Navigation's GameUiSection part (it was SettingsView's row)
         POLESTAR_TOP(Group.NAVIGATION, "Polestar on the top screen", listOf("Polestar on the top screen"), Drawer.GAME_UI),
         GAME_UI(Group.WINDOWS, "Game windows", listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
-            "Game tooltips", "Cast bar", "Player frame", "Target frame", "Controller bars, buffs and XP"), Drawer.GAME_UI),
+            "Game tooltips", "Cast bar", "Player frame", "Target frame",
+            // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): three tiles where one was
+            "Controller UI", "Buffs", "XP bar",
+            // hub61: the damage meter, the Cooldown Manager and its four parts (its band's lines)
+            "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"), Drawer.GAME_UI),
         // ---- Controller
         CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs")),
         // the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet
@@ -127,11 +139,13 @@ object SettingsTabs {
         // Import (a .zip through Android's picker): ONE full-width button first on the tab (so first in this enum's Add-ons part), its status line and confirm card under it
         // (the user, 2026-11-16: "Import addons should be a single button at the top of the list"; SettingsView.drawImport)
         IMPORT(Group.IMPORT, "Import add-ons", listOf("Import add-ons")),
-        ADDON_POLESTAR(Group.POLESTAR, "Polestar", ThirdPartyAddons.POLESTAR.rowWords()),
-        QUEST_TRACKING(Group.POLESTAR, "Quest tracking", listOf("Quest tracking")),
-        ADDON_SPOKEN(Group.SPOKEN, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
-        ADDON_QUESTTRAIL(Group.QUESTTRAIL, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
-        ADDON_MANNERS(Group.MANNERS, "Manners", ThirdPartyAddons.MANNERS.rowWords()),
+        // the cards (2026-11-17): Polestar, Spoken, Manners, then QuestTrail (only while a copy is there: last, so it never leaves a hole);
+        // Quest tracking is Polestar's card's guide line (the same PolestarGuide choice)
+        ADDON_POLESTAR(Group.CARDS, "Polestar", ThirdPartyAddons.POLESTAR.rowWords(), Drawer.ADDONS),
+        QUEST_TRACKING(Group.CARDS, "Quest tracking", listOf("Quest tracking"), Drawer.ADDONS),
+        ADDON_SPOKEN(Group.CARDS, "Spoken", ThirdPartyAddons.SPOKEN.rowWords(), Drawer.ADDONS),
+        ADDON_MANNERS(Group.CARDS, "Manners", ThirdPartyAddons.MANNERS.rowWords(), Drawer.ADDONS),
+        ADDON_QUESTTRAIL(Group.CARDS, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords(), Drawer.ADDONS),
         // offline voice (VoiceModels): English, and every other language in one file, each small and full ("Voice: English · 60 MB");
         // shown only in a build with libdsfwhisper.so
         ADDON_VOICE(Group.VOICE, "Voice", VoiceModels.Model.values().map { it.label }),
@@ -139,11 +153,11 @@ object SettingsTabs {
         IMPORTED(Group.IMPORTED, "Imported", emptyList()),
         // ---- Performance
         FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
-            "Flow scale", "Performance mode", "Restart the game")),
+            "Flow scale", "Performance mode", "Restart the game"), Drawer.TILES),
         // 1.0.17 (the user's pick "A setting, off by default"): the lighter behaviour on any Thor
-        LIGHTER(Group.MEMORY, "Lighter mode", listOf("Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out")),
-        INDOOR(Group.INDOOR, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
-        STREAMING(Group.STREAMING, "Streaming", listOf("Stream settings"));
+        LIGHTER(Group.FRAMES, "Lighter mode", listOf("Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out"), Drawer.TILES),
+        INDOOR(Group.FRAMES, "Indoor maps", listOf("Build in the background", "Progress", "Route data"), Drawer.TILES),
+        STREAMING(Group.FRAMES, "Streaming", listOf("Stream settings"), Drawer.TILES);
 
         val tab: Tab get() = group.tab
     }

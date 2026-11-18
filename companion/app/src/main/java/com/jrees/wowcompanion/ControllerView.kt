@@ -310,7 +310,8 @@ class ControllerView(
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        c.drawColor(Theme.ink)
+        // feat/beautify (themes 8.4): the room stands on RoomGround.controller (the rock), not a flat page
+        RoomGround.controller(c, android.graphics.RectF(0f, 0f, w, h))
         UiKit.header(c, w, "Controller")
         val now = SystemClock.uptimeMillis()
         val note = when {

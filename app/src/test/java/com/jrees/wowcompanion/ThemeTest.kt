@@ -41,6 +41,25 @@ class ThemeTest {
         assertEquals(ThemePresets.CLASSIC, Theme.cur)
     }
 
+    /** the custom slot (beautify 9.5): per device, read back at the next start; a broken line is no theme (Classic), never a crash */
+    @Test fun customSlotIsReadBack() {
+        prefs().edit().clear().commit()
+        Theme.init(app, reread = true)
+        assertEquals(null, Theme.custom)
+        assertEquals(ThemePresets.ALL, Theme.all)
+        val p = ThemeMaker.Picks(0xFF7FE0A8.toInt(), "jade", 140f, 0.25f, 0.045f, 0xFFE4EDF4.toInt(), true, ThemeMaker.Art.HIGH)
+        prefs().edit().putString("theme_custom", ThemeMaker.encode(p)).putString("theme", "custom").commit()
+        Theme.init(app, reread = true)
+        assertEquals("custom", Theme.cur.id)
+        assertEquals(ThemeMaker.spec(p), Theme.cur)
+        prefs().edit().putString("theme_custom", "{broken").commit()
+        Theme.init(app, reread = true)
+        assertEquals(ThemePresets.CLASSIC, Theme.cur)
+        assertEquals(null, Theme.custom)
+        prefs().edit().clear().commit()
+        Theme.init(app, reread = true)
+    }
+
     @Test fun tokensFollowTheThemeAndGameGoldStays() {
         Theme.init(app, reread = true)
         for (t in Theme.presets) {

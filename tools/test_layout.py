@@ -42,6 +42,14 @@ Proven here:
      pieces (fake frames of the client's shape: Edit Mode systems with their ...Base methods, the controller bar no system, a
      protected one in a fight queued to its end, the game's layout update and Edit Mode exit re-applying ours, Reset game UI; never a
      plain system method, never a C_EditMode call).
+  o  hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other
+     picture options"): the game's damage meter and its four Cooldown Manager viewers hidden by alpha 0 + EnableMouse(false) only (the
+     hide switches, never Hide / Show / a CVar), the press on "lay" while the editor is closed, per character, Dynamic's 15 s linger
+     (cancelled by a new fight), a press in a fight held to its end, Edit Mode's opacity / layout update re-asserted, the game's Edit
+     Mode shown = all shown, the game's options only read (the hub document's mt), a stored choice applied at login without the app.
+  p  hub63 (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both"): the controller UI, the buffs and
+     the XP bar each with its own word on "lay" while the editor is closed (on / off / ride the layout bit), no word = the old element,
+     the editor listing and moving each part alone, the game re-anchoring the buffs re-applied, a word in a fight with no breach.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -200,9 +208,9 @@ for k, v in TXT.items():
     e = comp(v, k)
     check(e is None, "a. Lua 5.1 compiles %s" % FILES[k], e or '')
 check('local PADV = "pad22"' in TXT["tappad"] and 'WC.prd = { V = "prd19"' in TXT["trail"] and int(re.search(r'WC\.compass = \{ V = "cp(\d+)" \}', TXT["trail"]).group(1)) >= 43
-      and int(re.search(r'local NB = \{ V = "nbar(\d+)"', TXT["actionbar"]).group(1)) >= 4 and 'local CHATV = "chat42"' in TXT["chat"] and int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 57
+      and int(re.search(r'local NB = \{ V = "nbar(\d+)"', TXT["actionbar"]).group(1)) >= 4 and 'local CHATV = "chat42"' in TXT["chat"] and int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 59
       and int(re.search(r'V = "uf(\d+)" \}', TXT["hub"]).group(1)) >= 24 and 'V = "lay1"' in TXT["hub"],
-      "a. the versions: TapPad pad22, Trail prd19 / cp43 (or later), ActionBar nbar4 (or later: nbar5 the split swing lines), Chat chat42 (the toast glow veil + notice flash), Hub hub57 (hub56 + the Polestar step binds; editor lay1, uf24): the 11-16 merge")
+      "a. the versions: TapPad pad22, Trail prd19 / cp43 (or later), ActionBar nbar4 (or later: nbar5 the split swing lines), Chat chat42 (the toast glow veil + notice flash), Hub hub59+ (hub58 + the game's own UI; editor lay1, uf24): the 11-16 merge")
 check(all(QUOTE in TXT[k] for k in TXT), "a. each changed file's header note quotes the user", [k for k in TXT if QUOTE not in TXT[k]])
 check(TXT["trail"].count(QUOTE) >= 2, "a. Trail: both notes (prd18, cp41) quote the user")
 ED = TXT["hub"][TXT["hub"].index("-- ==================================================================== hub55 THE TOP-SCREEN LAYOUT EDITOR"):]
@@ -425,6 +433,7 @@ d = last_full(L)
 check(d["open"] is True and d["grid"] is False and d["chars"] == ["Other-Realm"], "g. Open without the grid (38); the other character listed",
       (d["open"], d["grid"], d["chars"]))
 fixture(L, "lay_copy")
+L.execute('advance(2.1)')                                         # (hub64: a cell 24-32 inside HS_GRACE_S of the open is dropped)
 cell(L, 24)
 d = last_full(L)
 check(d["dirty"] is True and piece(d, "hud")["dx"] == 10 and piece(d, "hud")["s"] == 120 and piece(d, "compass")["dy"] == 30
@@ -908,6 +917,7 @@ ease(L5)
 check(gpts(L5, "GamepadMainActionBarFrame") == ("BOTTOM", "BOTTOM", 0, 110), "n. Reset (34): the controller bar at the game's place")
 L5.execute('WowCompanionDB.lay["%s"]["g.FocusFrame"] = { dx = 5, dy = 5, s = 100 }' % WHO)   # (a frame not shown now: still dropped)
 check(fresh(L5)["gset"] is True, "n. gset: offsets of the game's frames exist")
+L5.execute('advance(2.1)')                                        # (hub64: past HS_GRACE_S of the open)
 cell(L5, 29)
 ease(L5)
 check(gpts(L5, "PlayerFrame") == ("TOPLEFT", "TOPLEFT", 268, -850) and L5.eval('PlayerFrame._scale') == 1
@@ -922,6 +932,361 @@ check(list(L5.eval('PLAIN').values()) == [] and list(L5.eval('EMSPY').values()) 
 check(lua_errors(L5, errs5) == [] and int(L5.eval('#VIOL')) == 0 and int(L5.eval('#SPY')) == 0, "n. clean",
       (lua_errors(L5, errs5)[:3], int(L5.eval('#VIOL')), int(L5.eval('#SPY'))))
 
+# ================================================================ o. hub61: the damage meter and the Cooldown Manager (Settings > Top)
+# The user, 2026-11-17: "DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other picture
+# options". The game's DamageMeter (its session window a child) and the four CooldownViewer frames, faked in the client's shape: Edit Mode
+# systems whose opacity setting puts their alpha back (UpdateSystemSettingOpacity); the viewers' mouse is protected in a fight here (the
+# strict world's rule for the secure half). Proven: alpha 0 + EnableMouse(false) only (never Hide / Show, never a CVar written); the
+# player's press on the "lay" row while the editor is closed (and NOT while it is open); per character in WowCompanionDB.meters; Dynamic
+# up in a fight and down LINGER_S after it (cancelled by a new fight); a press in a fight held to its end; Edit Mode's opacity and its
+# layout update re-asserted; the game's Edit Mode shown = everything shown; the game's options only read (the hub document's mt).
+QUOTE3 = '"DPS meters and also the cooldown manager ... we need to make sure that its consistent with the other picture options"'
+MSRC = TXT["hub"][TXT["hub"].index("-- ==================================================================== hub61 THE DAMAGE METER"):
+                  TXT["hub"].index("-- ==================================================================== hub55 THE TOP-SCREEN LAYOUT EDITOR")]
+mcode = "\n".join(re.sub(r'--.*$', '', ln) for ln in MSRC.splitlines())
+mbad = [w for w in (":Hide(", ":Show(", "SetShown", "SetCVar", "C_CVar.SetCVar", "CooldownViewerSettings", "ShowUIPanel", "HideUIPanel",
+                    "EnterEditMode", "ExitEditMode", "OpenToCategory", "Settings.Open", "C_EditMode", "SetBinding") if w in mcode]
+check(mbad == [], "o. the meters' block never hides / shows a frame, writes a CVar, opens the game's Settings, Cooldown settings or Edit Mode", mbad)
+check(int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 61 and TXT["hub"].count(QUOTE3) >= 2,
+      "o. Hub hub61+, its notes (the version line and the block) quote the user")
+
+METERPRE = r'''
+CVARS = { damageMeterEnabled = true, cooldownViewerEnabled = true }
+C_CVar = { GetCVarBool = function(n) return CVARS[n] end }
+DMAV, CDAV = true, true
+C_DamageMeter = { IsDamageMeterAvailable = function() return DMAV end }
+C_CooldownViewer = { IsCooldownViewerAvailable = function() return CDAV end }
+SHOWHIDE = {}
+function mkmeter(name, alpha, secure)
+    local f = CreateFrame("Frame", name, UIParent)
+    f._alpha, f._mouse, f._sec = alpha or 1, true, secure
+    f.IsMouseEnabled = function(self) return self._mouse end
+    f.EnableMouse = function(self, on)
+        if COMBAT and self._sec then VIOL[#VIOL + 1] = "EnableMouse " .. name; error("ADDON_ACTION_BLOCKED EnableMouse") end
+        self._mouse = on and true or false
+    end
+    f.Show = function(self) SHOWHIDE[#SHOWHIDE + 1] = "Show " .. name end
+    f.Hide = function(self) SHOWHIDE[#SHOWHIDE + 1] = "Hide " .. name end
+    f.SetShown = function(self) SHOWHIDE[#SHOWHIDE + 1] = "SetShown " .. name end
+    return f
+end
+mkmeter("DamageMeter")
+mkmeter("DamageMeterSessionWindow1")
+DamageMeter.GetChildren = function() return DamageMeterSessionWindow1 end
+for i, n in ipairs({ "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
+    local v = mkmeter(n, i == 2 and 0.6 or 1, true)
+    v.opacity = v._alpha
+    -- the game's own refresh (editmodesystemtemplates: self:SetAlpha(opacity / 100))
+    v.UpdateSystemSettingOpacity = function(self) self:SetAlpha(self.opacity) end
+end
+'''
+VIEWERS = ["EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer"]
+
+
+def mt(L):
+    d = [x for x in wowstub.docs(L, 0, "hub") if isinstance(x.get("hub"), dict)]
+    return d[-1]["hub"].get("mt") if d else None
+
+
+def mfresh(L):
+    L.execute('WowCompanion.meters.emit()')
+    return mt(L)
+
+
+def alpha(L, n):
+    return round(float(L.eval('%s:GetAlpha()' % n)), 3)
+
+
+def mouse(L, n):
+    return L.eval('%s._mouse' % n)
+
+
+L6, errs6 = world(METERPRE)
+L6.execute('WowCompanion.meters.emit()')
+d = mt(L6)
+check(d is not None and d.get("v") == "mt1" and d.get("d") == "on" and d.get("dset") is None and d.get("c") is True and d.get("p") == 15
+      and d.get("dok") is True and d.get("dav") is True and d.get("df") is True and d.get("cok") is True and d.get("cav") is True
+      and d.get("cf") is True and d.get("cols", {}).get("PARTS") == 8,
+      "o. the hub document's mt at login: nothing chosen (the game's own), the options and frames read", d)
+check(all(alpha(L6, n) == (0.6 if n == "UtilityCooldownViewer" else 1) for n in ["DamageMeter"] + VIEWERS) and mouse(L6, "DamageMeter") is True,
+      "o. nothing chosen: no frame touched (leave no trace)")
+# the layout editor OPEN: cell 0 selects its first piece, the meters unchanged
+hold(L6)
+cell(L6, 37)
+check(last(L6)["open"] is True, "o. (the editor open)")
+cell(L6, 0)
+check(alpha(L6, "DamageMeter") == 1 and mfresh(L6).get("dset") is None, "o. editor open: column 0 is its piece select, the meters unchanged")
+cell(L6, 39)
+check(last(L6)["open"] is False, "o. (the editor closed)")
+# hub62 (the review, 11-17): a select the app sent on its last "open" document, arriving just after a close, is never a meter press
+cell(L6, 0)
+check(alpha(L6, "DamageMeter") == 1 and mfresh(L6).get("dset") is None and last(L6).get("mtDrop") == 1,
+      "o. hub62: column 0 at once after the app's Close: dropped (mtDrop), the meters unchanged", last(L6).get("mtDrop"))
+# the add-on's OWN close (the game's Edit Mode opening; the Settings room gone): the same grace
+for how, close in (("the game's Edit Mode", 'EditModeManagerFrame = mkwin("EditModeManagerFrame", true); tick(0.25)'),
+                   ("the room let go", 'local c = WowCompanion.capture; RAWSTATE6 = c.state; c.state = function() return { holder = "pad:home" } end; '
+                                       'for _ = 1, 6 do tick(0.25); advance(0.25) end')):
+    L6.execute('advance(3.1)')
+    cell(L6, 37)
+    check(last(L6)["open"] is True, "o. (open again: %s)" % how)
+    L6.execute(close)
+    check(last(L6)["open"] is False, "o. (closed by the add-on: %s)" % how, last(L6).get("why"))
+    if how == "the room let go":
+        L6.execute('WowCompanion.capture.state = RAWSTATE6')
+    else:
+        L6.execute('EditModeManagerFrame:Hide(); advance(0.01)')
+    for col in (0, 2, 3, 8 + 5):                                       # the late selects: Off, Dynamic, CDM Off, a parts mask
+        cell(L6, col)
+    d = mfresh(L6)
+    check(alpha(L6, "DamageMeter") == 1 and [alpha(L6, n) for n in VIEWERS] == [1, 0.6, 1, 1] and d.get("dset") is None
+          and d.get("cset") is None and d.get("pset") is None and L6.eval('WowCompanionDB.meters and WowCompanionDB.meters["%s"]' % WHO) is None,
+          "o. hub62: late selects after the add-on's own close (%s): all dropped, nothing saved, nothing hidden" % how, d)
+L6.execute('advance(3.1)')
+# Damage meter Off / On (the grace over: the app's tap again, GameUi.mtStep's 1.5 s)
+check(cell(L6, 0), "o. the lay row's cell 0 is on the pad while the Settings room holds")
+check(alpha(L6, "DamageMeter") == 0 and mouse(L6, "DamageMeter") is False and mouse(L6, "DamageMeterSessionWindow1") is False,
+      "o. Off (0): alpha 0, the mouse off (its session window's too)", (alpha(L6, "DamageMeter"), mouse(L6, "DamageMeter")))
+st = L6.eval('WowCompanionDB.meters["%s"]' % WHO)
+check(st is not None and st.d == "off", "o. ... kept per character in WowCompanionDB.meters[name-realm]")
+d = mfresh(L6)
+check(d.get("d") == "off" and d.get("dset") is True and d.get("n") == 1, "o. ... the document says so", d)
+cell(L6, 1)
+check(alpha(L6, "DamageMeter") == 1 and mouse(L6, "DamageMeter") is True and mouse(L6, "DamageMeterSessionWindow1") is True,
+      "o. On (1): its alpha and mouse back")
+# Dynamic: a fight and LINGER_S after it
+cell(L6, 2)
+check(alpha(L6, "DamageMeter") == 0 and mouse(L6, "DamageMeter") is False, "o. Dynamic (2) out of a fight: hidden")
+viol6 = int(L6.eval('#VIOL'))
+L6.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.1)')
+check(alpha(L6, "DamageMeter") == 1 and mouse(L6, "DamageMeter") is False, "o. a fight starts: shown (alpha), the mouse stays off")
+L6.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(14)')
+check(alpha(L6, "DamageMeter") == 1, "o. the fight's end: still shown for the read (14 s)")
+L6.execute('advance(1.5)')
+check(alpha(L6, "DamageMeter") == 0, "o. ... and hidden 15 s after it")
+L6.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(1); COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(10)')
+L6.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(10)')
+check(alpha(L6, "DamageMeter") == 1, "o. a new fight inside the 15 s: the old linger's end does not hide it")
+L6.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(10)')
+check(alpha(L6, "DamageMeter") == 1, "o. ... its own 15 s count from its own end")
+L6.execute('advance(6)')
+check(alpha(L6, "DamageMeter") == 0 and int(L6.eval('#VIOL')) == viol6, "o. ... then hidden; no breach through the fights")
+# the Cooldown Manager: off, on (each viewer's own alpha back), the parts' mask
+cell(L6, 3)
+check(all(alpha(L6, n) == 0 for n in VIEWERS) and all(mouse(L6, n) is False for n in VIEWERS), "o. Cooldown Manager Off (3): the four viewers at alpha 0, no mouse")
+cell(L6, 4)
+check([alpha(L6, n) for n in VIEWERS] == [1, 0.6, 1, 1] and all(mouse(L6, n) is True for n in VIEWERS),
+      "o. On (4): each viewer's own alpha back (Utility's 60 % opacity kept)", [alpha(L6, n) for n in VIEWERS])
+cell(L6, 8 + 1 + 4)
+check([alpha(L6, n) for n in VIEWERS] == [1, 0, 1, 0], "o. the parts (8 + 0b0101): Essential and Buff icons shown, Utility and Buff bars hidden",
+      [alpha(L6, n) for n in VIEWERS])
+d = mfresh(L6)
+check(d.get("p") == 5 and d.get("pset") is True and d.get("c") is True, "o. ... the document's p", d)
+# Edit Mode's opacity refresh and its layout update: ours back on; the opacity it set is the one given back later
+L6.execute('UtilityCooldownViewer.opacity = 0.8; UtilityCooldownViewer:UpdateSystemSettingOpacity()')
+check(alpha(L6, "UtilityCooldownViewer") == 0, "o. Edit Mode's opacity refresh on a hidden viewer: 0 again at once (post-hook)")
+L6.execute('BuffBarCooldownViewer:SetAlpha(1); fire("EDIT_MODE_LAYOUTS_UPDATED"); advance(0.01)')
+check(alpha(L6, "BuffBarCooldownViewer") == 0, "o. EDIT_MODE_LAYOUTS_UPDATED: 0 again (deferred a frame)")
+L6.execute('DamageMeter:SetAlpha(1); tick(1)')
+check(alpha(L6, "DamageMeter") == 0, "o. the 1 s look: a hidden frame given its alpha back goes to 0 again")
+# the game's own Edit Mode shown: everything shown while the player places it; hidden again when it closes
+L6.execute('EditModeManagerFrame = mkwin("EditModeManagerFrame", false); WowCompanion.meters.emHooked = false; WowCompanion.meters.hook()')
+L6.execute('EditModeManagerFrame:Show(); advance(0.01)')
+check([alpha(L6, n) for n in ["DamageMeter"] + VIEWERS] == [1, 1, 0.8, 1, 1], "o. the game's Edit Mode shown: all shown (Utility at its new 80 %)",
+      [alpha(L6, n) for n in ["DamageMeter"] + VIEWERS])
+L6.execute('EditModeManagerFrame:Hide(); advance(0.01)')
+check([alpha(L6, n) for n in ["DamageMeter"] + VIEWERS] == [0, 1, 0, 1, 0], "o. ... closed: hidden again as chosen",
+      [alpha(L6, n) for n in ["DamageMeter"] + VIEWERS])
+cell(L6, 8 + 15)
+check([alpha(L6, n) for n in VIEWERS] == [1, 0.8, 1, 1], "o. all four parts again: Utility at the opacity Edit Mode gave it")
+# a press in a fight: held to its end ("Changes when combat ends"), nothing breached
+viol6 = int(L6.eval('#VIOL'))
+L6.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.1)')
+cell(L6, 3)
+d = mfresh(L6)
+check(all(alpha(L6, n) > 0 for n in VIEWERS) and d.get("q") is True and d.get("c") is False,
+      "o. Off pressed in a fight: saved, held (q), the viewers as they were", d.get("q"))
+L6.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.1)')
+check(all(alpha(L6, n) == 0 for n in VIEWERS) and mfresh(L6).get("q") is None and int(L6.eval('#VIOL')) == viol6,
+      "o. the fight's end: it goes on; no breach")
+# the game's option off: only read and reported
+L6.execute('CVARS.damageMeterEnabled = false; DMAV = false; fire("CVAR_UPDATE")')
+d = mfresh(L6)
+check(d.get("dok") is False and d.get("dav") is False and d.get("d") == "dyn", "o. the game's option off: dok / dav false, the choice kept", d)
+check(list(L6.eval('SHOWHIDE').values()) == [] and int(L6.eval('#SPY')) == 0, "o. never a Hide / Show / SetShown of theirs, no spied call (SetCVar...)",
+      (list(L6.eval('SHOWHIDE').values())[:3], int(L6.eval('#SPY'))))
+check(lua_errors(L6, errs6) == [] and int(L6.eval('#VIOL')) == 0, "o. clean", (lua_errors(L6, errs6)[:3], int(L6.eval('#VIOL'))))
+# a login with a stored choice: applied without the app (a /reload, a login on another day)
+L7, errs7 = world(METERPRE + 'WowCompanionDB.meters = { ["%s"] = { d = "off", c = true, p = 3 } }\n' % WHO)
+check(alpha(L7, "DamageMeter") == 0 and [alpha(L7, n) for n in VIEWERS] == [1, 0.6, 0, 0],
+      "o. a login with a stored choice: the damage meter off, Buff icons / Buff bars off, at once (no app needed)",
+      (alpha(L7, "DamageMeter"), [alpha(L7, n) for n in VIEWERS]))
+L7.execute('WowCompanion.meters.emit()')
+d = mt(L7)
+check(d.get("d") == "off" and d.get("dset") is True and d.get("p") == 3, "o. ... its document", d)
+L7.execute('WHO = "Other"; WowCompanion.meters.load(); WowCompanion.meters.apply()')
+check(alpha(L7, "DamageMeter") == 1 and [alpha(L7, n) for n in VIEWERS] == [1, 0.6, 1, 1], "o. another character: its own (none: all back)")
+check(lua_errors(L7, errs7) == [] and int(L7.eval('#VIOL')) == 0, "o. clean (stored)", lua_errors(L7, errs7)[:3])
+
+# ================================================================ p. hub63 split-hud: the buffs, the controller UI and the XP bar apart
+# The user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both". The three rode ONE layout bit (1, "hud"),
+# so they were hidden together and the layout editor (it lists a frame only while it is visible) listed them together. Now each part
+# has a word on "lay" while the editor is closed (columns 24-32: on / off / ride), hub64: for this session only (never saved); unset = ride = the
+# old element exactly. Proven: the old behaviour with no word; each word on its own (the editor lists the parts that are shown, each
+# movable alone); the element's hidden() is the bit; a word applied in a fight with no breach; hub64: a login without the app shows every
+# part (nothing saved); a word that lands just after an open is dropped uncounted (never Copy from / Reset / Smaller);
+# the game re-anchoring the buffs (StatusTrayManager) or the XP bar (its layout update) gets our offset back; alpha only.
+QUOTE4 = '"we need to split out the Buffs controller UI and XP bar" -> "Both"'
+check(int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 63 and TXT["hub"].count(QUOTE4) >= 3,
+      "p. Hub hub63+, its notes (the version line, the header, the blocks) quote the user")
+HSRC = TXT["hub"][TXT["hub"].index("-- ---------------------------------------------------------------- hub63 the parts"):
+                  TXT["hub"].index("-- ---------------------------------------------------------------- the game's cast bar (hub11)")]
+HSRC += TXT["hub"][TXT["hub"].index("-- ==================================================================== hub63 SPLIT-HUD"):
+                   TXT["hub"].index("-- ==================================================================== hub61 THE DAMAGE METER")]
+hcode = "\n".join(re.sub(r'--.*$', '', ln) for ln in HSRC.splitlines())
+hbad = [w for w in (":Hide(", ":Show(", "SetShown", "SetCVar", "ShowUIPanel", "HideUIPanel", "EnterEditMode", "ExitEditMode",
+                    "SetParent", "C_EditMode", "SetBinding", "SetPoint", "ClearAllPoints") if w in hcode]
+check(hbad == [], "p. the split's code never hides / shows / re-parents / moves a frame, writes a CVar or opens a game window", hbad)
+
+SPLITPOST = r'''
+geo("GamepadPersistentInputLegend", 600, 30, false, true, { "BOTTOM", "BOTTOM", 0, 60 })
+geo("DebuffFrame", 300, 40, true, false, { "TOPRIGHT", "TOPRIGHT", -240, -90 })
+geo("MainStatusTrackingBarContainer", 500, 14, true, false, { "BOTTOM", "BOTTOM", 0, 0 })
+geo("SecondaryStatusTrackingBarContainer", 500, 10, true, false, { "BOTTOM", "BOTTOM", 0, 17 })
+'''
+PARTS = {"c": "GamepadMainActionBarFrame", "b": "BuffFrame", "x": "MainStatusTrackingBarContainer"}
+
+
+def hubdoc(L):
+    L.execute('WowCompanion.meters.emit()')
+    d = [x for x in wowstub.docs(L, 0, "hub") if isinstance(x.get("hub"), dict)]
+    return d[-1]["hub"] if d else {}
+
+
+def shown3(L):
+    return {k: alpha(L, v) > 0 for k, v in PARTS.items()}
+
+
+def listed3(L):
+    L.execute('tick(0.5)')
+    d = fresh(L)
+    on = {p["id"] for p in d["p"] if p.get("g") and p["on"]}
+    return {k: ("g." + v) in on for k, v in PARTS.items()}
+
+
+def layout(L, mask):
+    L.eval('hwTap')("ui", mask)
+    L.execute('advance(0.3)')
+
+
+L8, errs8 = world(GAMEPRE)
+L8.execute(GAMEPOST + SPLITPOST)
+L8.execute('pcall(WowCompanion.nbarSet, false)')                        # the stock controller bar (the Nintendo bar keeps it at 0)
+L8.execute('tick(0.5); advance(0.1)')
+hold(L8)
+h = hubdoc(L8)
+hs = h.get("hs") or {}
+check(hs.get("v") == "hs2" and hs.get("c") is None and hs.get("b") is None and hs.get("x") is None and hs.get("bit") is None
+      and hs.get("cols") == {"C_ON": 24, "C_OFF": 25, "C_RIDE": 26, "B_ON": 27, "B_OFF": 28, "B_RIDE": 29, "X_ON": 30, "X_OFF": 31, "X_RIDE": 32},
+      "p. the hub document's hs at login: no word (all three ride the bit), the columns", hs)
+check(shown3(L8) == {"c": True, "b": True, "x": True} and listed3(L8) == {"c": True, "b": True, "x": True},
+      "p. nothing hidden: all three shown and listed in the editor")
+# NO WORD = THE OLD ELEMENT: the bit hides all three together, and shows them together
+layout(L8, 2)
+check(shown3(L8) == {"c": False, "b": False, "x": False} and alpha(L8, "DebuffFrame") == 0 and alpha(L8, "SecondaryStatusTrackingBarContainer") == 0
+      and alpha(L8, "GamepadPersistentInputLegend") == 0, "p. no word: bit 1 hides the controller UI, the buffs + debuffs and both XP containers", shown3(L8))
+hud = [e for e in hubdoc(L8)["els"] if e["id"] == "hud"][0]
+check(hud["hidden"] is True and hubdoc(L8)["hs"].get("bit") is True, "p. ... the element reports hidden (the bit)", hud)
+check(listed3(L8) == {"c": False, "b": False, "x": False}, "p. ... (all three out of the editor's list: why they read as one piece before)")
+layout(L8, 0)
+check(shown3(L8) == {"c": True, "b": True, "x": True} and alpha(L8, "DebuffFrame") == 1, "p. ... and bit 0 shows all three")
+# THE WORDS: only on "lay" while the editor is closed (the meters' row, past their columns)
+check(cell(L8, 28), "p. (the lay row's cell 28 is on the pad while the Settings room holds)")
+check(shown3(L8) == {"c": True, "b": False, "x": True} and alpha(L8, "DebuffFrame") == 0,
+      "p. B_OFF (28): the buffs (and debuffs) hidden, the controller UI and the XP bar stay", shown3(L8))
+check(listed3(L8) == {"c": True, "b": False, "x": True}, "p. ... the editor lists the controller bar and the XP bar, not the buffs", listed3(L8))
+fixture(L8, "lay_split_nobuffs")
+check(L8.eval('WowCompanion.hub.hs.words.b') == "off" and hubdoc(L8)["hs"].get("b") == "off" and hubdoc(L8)["hs"].get("bh") is True
+      and L8.eval('type(WowCompanionDB) == "table" and WowCompanionDB.hudsplit or nil') is None,
+      "p. ... kept for this session (HS.words, never WowCompanionDB), the document says so")
+hud = [e for e in hubdoc(L8)["els"] if e["id"] == "hud"][0]
+check(hud["hidden"] is False, "p. ... the element still reports the bit (shown): a word never moves the layout", hud)
+cell(L8, 24)                                                            # C_ON
+layout(L8, 2)
+check(shown3(L8) == {"c": True, "b": False, "x": False}, "p. C_ON (24) + the bit: the controller UI stays, the XP bar (riding) goes", shown3(L8))
+check(listed3(L8) == {"c": True, "b": False, "x": False}, "p. ... the controller bar listed alone", listed3(L8))
+cell(L8, 30)                                                            # X_ON
+check(shown3(L8) == {"c": True, "b": False, "x": True} and listed3(L8) == {"c": True, "b": False, "x": True},
+      "p. X_ON (30): the XP bar back while the bit holds", shown3(L8))
+cell(L8, 29)                                                            # B_RIDE: follows the bit (set)
+check(shown3(L8) == {"c": True, "b": False, "x": True} and L8.eval('WowCompanion.hub.hs.words.b') is None, "p. B_RIDE (29): the word gone, the bit decides")
+layout(L8, 0)
+check(shown3(L8) == {"c": True, "b": True, "x": True}, "p. ... bit 0: the buffs back")
+check(listed3(L8) == {"c": True, "b": True, "x": True}, "p. ... all three listed, three pieces")
+fixture(L8, "lay_split")
+cell(L8, 25)                                                            # C_OFF
+check(shown3(L8) == {"c": False, "b": True, "x": True} and listed3(L8) == {"c": False, "b": True, "x": True},
+      "p. C_OFF (25): the controller UI alone hidden; buffs and XP bar listed, each its own piece", shown3(L8))
+# each piece moves alone (the editor open: the buffs selected and moved, the XP bar not)
+cell(L8, 37)
+d = fresh(L8)
+bcol = piece(d, "g.BuffFrame").get("c")
+x0 = gpts(L8, "MainStatusTrackingBarContainer")
+cell(L8, bcol)
+catch(L8, 1200, 400)
+ease(L8)
+check(gpts(L8, "BuffFrame") != ("TOPRIGHT", "TOPRIGHT", -240, -14) and gpts(L8, "MainStatusTrackingBarContainer") == x0,
+      "p. the buffs moved on their own (the XP bar where it was)", (gpts(L8, "BuffFrame"), x0))
+cell(L8, 36)
+cell(L8, 39)
+b1 = gpts(L8, "BuffFrame")
+# the game re-anchors the buffs (StatusTrayManager.UpdateTrayAndBuffFrameLayout, its default place) and the XP bar (its layout update)
+L8.execute('IN_SECURE = true; BuffFrame:ClearAllPointsBase(); BuffFrame:SetPointBase("TOPRIGHT", UIParent, "TOPRIGHT", -205, -13); IN_SECURE = false')
+L8.execute('tick(0.5); advance(0.01)')
+check(gpts(L8, "BuffFrame") == ("TOPRIGHT", "TOPRIGHT", b1[2] + 35, b1[3] + 1),
+      "p. the game re-anchoring the buffs (the tray manager): its new place read as the base, our offset back on", (gpts(L8, "BuffFrame"), b1))
+# hub64 (the review): a part's word sent on a stale "closed" document lands just after an open - columns 24-32 are the editor's Copy from
+# (24-28) / Reset game (29) / Reach (30-31) / Smaller (32) then: inside HS_GRACE_S it is dropped and NOT counted (the editor's own tap
+# comes again after RETRY_MS), so the draft never changes
+L8.execute('advance(3.1)')
+cell(L8, 38)                                                            # the editor opens
+d0 = fresh(L8)
+w0 = L8.eval('WowCompanion.hub.hs.words.b')
+for col in (27, 29, 32):
+    cell(L8, col)
+d = fresh(L8)
+check(d0["open"] and d["open"] and d["cells"] == d0["cells"] and d.get("hsDrop") == 3 and not d.get("dirty") and d.get("gset") == d0.get("gset")
+      and d.get("sel") == d0.get("sel") and L8.eval('WowCompanion.hub.hs.words.b') == w0,
+      "p. a word just after the open (27 / 29 / 32): dropped, uncounted, the draft unchanged", (d0.get("cells"), d.get("cells"), d.get("hsDrop"), d.get("dirty")))
+L8.execute('advance(2.1)')
+cell(L8, 30)                                                            # past the grace: the editor's own Reach off
+d = fresh(L8)
+check(d["cells"] == d0["cells"] + 1 and d.get("hsDrop") == 3, "p. ... past HS_GRACE_S the editor's cell counts again", (d.get("cells"), d0.get("cells")))
+cell(L8, 39)                                                            # closed (nothing saved)
+# a word in a fight: alpha only, no breach
+viol8 = int(L8.eval('#VIOL'))
+L8.execute('advance(3.1); fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+cell(L8, 31)                                                            # X_OFF in a fight
+check(alpha(L8, "MainStatusTrackingBarContainer") == 0 and int(L8.eval('#VIOL')) == viol8, "p. X_OFF in a fight: hidden at once (alpha), no breach")
+L8.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.1)')
+# the game gives a hidden rider its alpha back (a level-up's flash): only a hidden group's frame is zeroed again
+L8.execute('MainStatusTrackingBarContainer:SetAlpha(1); BuffFrame:SetAlpha(1); WowCompanion.hub.ridersCheck()')
+check(alpha(L8, "MainStatusTrackingBarContainer") == 0 and alpha(L8, "BuffFrame") == 1, "p. the riders' check zeroes the hidden XP bar, leaves the shown buffs")
+check(lua_errors(L8, errs8) == [] and int(L8.eval('#VIOL')) == 0, "p. clean", (lua_errors(L8, errs8)[:3], int(L8.eval('#VIOL'))))
+# hub64: a login (or a /reload) without the app: nothing saved, every part shown - the old element's Off (hidden only while the companion
+# is on this screen); a WowCompanionDB.hudsplit an earlier test build left is never read
+L9, errs9 = world(GAMEPRE + 'WowCompanionDB = WowCompanionDB or {}; WowCompanionDB.hudsplit = { b = "off" }\n')
+L9.execute(GAMEPOST + SPLITPOST)
+L9.execute('pcall(WowCompanion.nbarSet, false)')
+L9.execute('WowCompanion.snapshot("login"); WowCompanion.snapshot("heartbeat"); advance(0.1)')
+check(shown3(L9) == {"c": True, "b": True, "x": True} and L9.eval('WowCompanion.hub.hs.words.b') is None,
+      "p. a login without the app: every part shown, no word (nothing saved)", shown3(L9))
+L10, errs10 = world(GAMEPRE)
+L10.execute(GAMEPOST + SPLITPOST)
+L10.execute('pcall(WowCompanion.nbarSet, false)')
+L10.execute('WowCompanion.hudHide(); WowCompanion.snapshot("heartbeat"); advance(0.1)')
+check(alpha(L10, "GamepadMainActionBarFrame") == 0, "p. no word: the heartbeat never touches a part (/wchud hide stays)")
+check(lua_errors(L9, errs9) == [] and lua_errors(L10, errs10) == [], "p. clean (stored)", (lua_errors(L9, errs9)[:3], lua_errors(L10, errs10)[:3]))
+
 # ================================================================ the fixtures (the app's LayoutModelTest / LayoutShotsTest read them)
 os.makedirs(FIXDIR, exist_ok=True)
 stale = []
@@ -933,7 +1298,7 @@ for name, text in sorted(FIX.items()):
             fh.write(text)
     elif old != text:
         stale.append(name)
-check(len(FIX) == 11 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
+check(len(FIX) == 13 and not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX),
       stale[:4])
 
 print("%s (%d pass, %d fail)" % ("ALL PASS" if fails == 0 else "FAILURES", passes, fails))

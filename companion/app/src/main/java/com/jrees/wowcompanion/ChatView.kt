@@ -358,6 +358,10 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         logBox.addView(newest, FrameLayout.LayoutParams(TOUCH, TOUCH, Gravity.BOTTOM or Gravity.END).apply {
             rightMargin = 18; bottomMargin = 14
         })
+        // the log's ground (beautify 8.4; the user, 2026-11-17: "I do really like having the background image there"): the list pane's
+        // art at 0.6 of the theme's pane light, readability first (OLED: dark, its blacks crushed to #000); drawn as it draws, so a
+        // theme change follows with no copy
+        logBox.background = UiKit.background { cv, r -> UiKit.pane(cv, r, light = 0.6f) }
         addView(logBox, lp(MATCH, 0, 1f))
 
         // ---- the message bar: just the field (the types went to the top; no Send by the bar: the user, "its redundant")

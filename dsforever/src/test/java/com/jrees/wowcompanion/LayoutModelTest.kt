@@ -163,6 +163,50 @@ class LayoutModelTest {
         assertTrue(d.gset)
     }
 
+    /** split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both"): the add-on's real
+     *  documents (tools/test_layout.py p.) - the controller bar, the buffs and the XP bar three pieces, each listed while it is shown,
+     *  each its own column; the buffs hidden by their tile leave the controller bar and the XP bar listed */
+    @Test fun theBuffsTheControllerBarAndTheXpBarAreThreePieces() {
+        val t = LayoutModel.tiles(doc("lay_split")).filter { it.game }
+        val three = listOf("g.GamepadMainActionBarFrame", "g.BuffFrame", "g.MainStatusTrackingBarContainer")
+        for (id in three) assertTrue(id, t.any { it.id == id })
+        assertEquals("each its own select column", 3, t.filter { it.id in three }.map { it.col }.toSet().size)
+        assertEquals(listOf("Controller bar", "Buffs", "XP bar"), three.map { LayoutModel.labelOf(it) })
+        assertEquals(listOf("Action bars", "Game UI", "Game UI"), three.map { id -> LayoutModel.groupOf(t.first { it.id == id }).label })
+        val nb = LayoutModel.tiles(doc("lay_split_nobuffs")).map { it.id }
+        assertTrue("the controller bar stays listed", "g.GamepadMainActionBarFrame" in nb)
+        assertTrue("the XP bar stays listed", "g.MainStatusTrackingBarContainer" in nb)
+        assertFalse("the hidden buffs are no tile", "g.BuffFrame" in nb || "g.DebuffFrame" in nb)
+    }
+
+    /** split-hud (the review): a part's word on "lay" (columns 24-32) must never go out once the editor wants to be open - there those
+     *  columns are Copy from / Reset game / Reach / Smaller. GameUi.layOpen is Live.editorBusy: busy from the moment the page wants the
+     *  editor open (before any "open" document), while it is open, and EDITOR_HOLD_MS after the last pump that wanted it */
+    @Test fun thePartsWordsWaitWhileTheEditorOpens() {
+        LayoutModel.Live.clearForTest()
+        var t = 1_000_000L
+        LayoutModel.Live.clock = { t }
+        try {
+            LayoutModel.Live.note(fx("lay_closed"))
+            assertFalse("closed, no editor wanted: the words may go", LayoutModel.Live.editorBusy(t))
+            assertFalse("GameUi's gate is the same", GameUi.layOpen())
+            val e = LayoutModel.Editor()
+            e.wantOpen = true                                     // the page opens: its open cell is not even sent yet
+            assertTrue("the page wants the editor: held at once", LayoutModel.Live.editorBusy(t))
+            assertTrue("... GameUi holds its words", GameUi.layOpen())
+            e.onDoc(doc("lay_closed"))
+            assertNotNull("the open cell goes", e.next(t))
+            t += LayoutModel.EDITOR_HOLD_MS - 1
+            assertTrue("the document still says closed (the open on its way): still held", LayoutModel.Live.editorBusy(t))
+            e.next(t)                                             // the pump keeps marking while the page wants the editor
+            t += LayoutModel.EDITOR_HOLD_MS - 1
+            assertTrue(LayoutModel.Live.editorBusy(t))
+            e.leave()
+            t += LayoutModel.EDITOR_HOLD_MS
+            assertFalse("the page gone and the hold over: the words go again", LayoutModel.Live.editorBusy(t))
+        } finally { LayoutModel.Live.clearForTest() }
+    }
+
     @Test fun aChangeInAFightSaysItWaits() {
         val q = doc("lay_queued")
         assertEquals(1, q.queued)
