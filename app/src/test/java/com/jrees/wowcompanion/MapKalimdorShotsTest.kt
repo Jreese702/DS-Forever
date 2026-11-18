@@ -180,6 +180,8 @@ class MapKalimdorShotsTest {
 
     private fun rig(terrain: Boolean, minimapK: Boolean = true, buffs: Boolean = true, zone: Int = 1411, extra: Boolean = false): Rig {
         zoneId = zone; this.extra = extra
+        // the user 2026-11-17: "Untracked should be toggle off by default in the filters" - these tests switch it on themselves
+        app.getSharedPreferences("mapfilters", android.content.Context.MODE_PRIVATE).edit().putBoolean(QuestLayers.Layer.OTHER.key, true).commit()
         if (frameDelayWas == null) frameDelayWas = org.robolectric.shadows.ShadowChoreographer.getFrameDelay()
         org.robolectric.shadows.ShadowChoreographer.setPaused(true)
         org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
@@ -535,7 +537,7 @@ class MapKalimdorShotsTest {
             roomFrames()
             assertEquals("Untracked quest objectives off: none", emptyList<Int>(), room.greyQuests())
             shot("room_untracked_filtered", bm)
-        } finally { prefs.edit().remove(QuestLayers.Layer.OTHER.key).commit() }
+        } finally { prefs.edit().putBoolean(QuestLayers.Layer.OTHER.key, true).commit() }
         room.onHidden()
     }
 

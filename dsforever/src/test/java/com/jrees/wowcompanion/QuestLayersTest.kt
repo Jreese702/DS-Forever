@@ -11,9 +11,9 @@ class QuestLayersTest {
         val kept = HashMap<String, Boolean>()
         val l = QuestLayers({ k, d -> kept[k] ?: d }, { k, v -> kept[k] = v })
         val on = QuestLayers.Layer.values().filter { l.on(it) }.map { it.name }
-        assertEquals(listOf("AVAILABLE", "TRACKED", "OTHER", "TURN_INS", "DAILY", "SMALL", "TRAVEL"), on)     // low-level off; danger off; travel on (b-travel-layer)
+        assertEquals(listOf("AVAILABLE", "TRACKED", "TURN_INS", "DAILY", "SMALL", "TRAVEL"), on)     // low-level off; danger off; travel on (b-travel-layer); untracked off (the user 2026-11-17)
         l.toggle(QuestLayers.Layer.LOW); assertTrue(l.on(QuestLayers.Layer.LOW))
-        l.toggle(QuestLayers.Layer.OTHER); assertFalse(l.on(QuestLayers.Layer.OTHER))
+        l.toggle(QuestLayers.Layer.OTHER); assertTrue(l.on(QuestLayers.Layer.OTHER))
     }
 
     @Test fun theSmallMapShowsOnlyNearbyGiversAndTheTrackedQuests() {
