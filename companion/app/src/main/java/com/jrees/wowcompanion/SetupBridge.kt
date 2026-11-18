@@ -20,6 +20,11 @@ object SetupBridge {
 
     /** the launcher's own actions (the folder picker, settings, Play, the updates, a game restart) */
     @Volatile var launcherActions: ((SetupFlow.Action) -> Unit)? = null
+    /**
+     * the Menu's region card asks (the user, 2026-11-17: "Switch to EU?"): would switching to the region downloads another build?
+     * true = yes, false = this install is that build, null = not known (no network). Set by the launcher; blocking: off the main thread
+     */
+    @Volatile var regionCheck: ((code: String) -> Boolean?)? = null
     /** the companion's login form (HomeLoginPrompt) */
     @Volatile var openLoginForm: (() -> Unit)? = null
     /** the launcher re-reads what changed outside it (a login saved on the bottom screen) */

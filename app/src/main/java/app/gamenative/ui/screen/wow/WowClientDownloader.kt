@@ -138,7 +138,7 @@ object WowClientDownloader {
         val cdns = runCatching { fetchText("${patchUrlFor(product)}/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
         val cdnsRow = remoteRow(cdns, "Name", rowRegion, row["Branch"])
 
-        val isOutdated = localVersion != remoteVersion || (remoteBuildKey.isNotBlank() && localBuildKey != remoteBuildKey)
+        val isOutdated = needsDownload(localVersion, localBuildKey, remoteVersion, remoteBuildKey)
         Timber.i("checkVersion: ${product.code} region=$rowRegion (Branch ${row["Branch"]}) localVersion=$localVersion, " +
             "remoteVersion=$remoteVersion, isOutdated=$isOutdated")
         return VersionCheckResult(
@@ -155,6 +155,72 @@ object WowClientDownloader {
             region = rowRegion,
         )
     }
+
+    /** a remote build is another than the install's: its version differs, or its BuildConfig (when the row names one). Pure */
+    internal fun needsDownload(localVersion: String, localBuildKey: String, remoteVersion: String, remoteBuildKey: String): Boolean =
+        localVersion != remoteVersion || (remoteBuildKey.isNotBlank() && localBuildKey != remoteBuildKey)
+
+    /**
+     * THE REGION CARD'S LINE (the user, 2026-11-17: "Switch to EU?" says what happens first): would switching the install whose
+     * .build.info row is [local] to the region [target] download another build? [versions] = the patch server's versions rows. The
+     * same row the check and the update take ([remoteRow]: the pick, else the install's own Branch). true = a new build downloads,
+     * false = this install is that build already, null = no usable row. Pure
+     */
+    internal fun regionNeedsDownload(local: Map<String, String>, versions: List<Map<String, String>>, target: String): Boolean? {
+        val remote = remoteRow(versions, "Region", target, local["Branch"]) ?: return null
+        val version = remote["VersionsName"] ?: remote["VersionName"] ?: remote["Version"] ?: return null
+        return needsDownload(local["Version"].orEmpty(), local["Build Key"].orEmpty(), version, remote["BuildConfig"].orEmpty())
+    }
+
+    /** [regionNeedsDownload] for the game folder [gameRoot] (one small fetch of the patch server's versions); null = not known. Off the main thread */
+    fun regionNeedsDownload(gameRoot: File, target: String): Boolean? = runCatching {
+        val choice = activeBuild(gameRoot)
+        val product = choice.product ?: return null
+        val versions = fetchText("${patchUrlFor(product)}/versions") ?: return null
+        regionNeedsDownload(choice.row, parsePsv(versions), target)
+    }.getOrNull()
+
+    /**
+     * THE MENU'S REGION CHECK AFTER THE LAUNCHER IS GONE (WoWForeverScreen's onDispose): the game screen's Menu asks while the game runs,
+     * so the check stays set, bound to the install at [path] as it was when the launcher left. [check] for tests.
+     */
+    internal fun keptRegionCheck(path: String, check: (File, String) -> Boolean? = { r, c -> regionNeedsDownload(r, c) }): (String) -> Boolean? {
+        val root = File(path)
+        return { code -> check(root, code) }
+    }
+
+    /**
+     * A STOPPED UPDATE (the user, 2026-11-17: a region switched by mistake started another build's download, with no way out): thrown
+     * when [updateGame]'s stop is asked. The old client is untouched (its files are only replaced at the end, all together) and the
+     * downloaded parts are deleted; configs and index files already fetched stay (new files beside the old ones, used by nothing yet).
+     */
+    class UpdateStopped : IOException("The update was stopped")
+
+    /**
+     * THE CLIENT'S FILES, STAGED (the user, 2026-11-17): each of [pending] is written beside its file ([temp]) by [write] (which
+     * verifies it), [stopped] asked before each one; a stop deletes every temp written and throws [UpdateStopped], the old files
+     * untouched. Returns the temp -> file moves, in [pending]'s order (the exe last), for [commit]. Any other failure keeps the temps
+     * (a temp already whole is used again by the next try: no second download of the exe on a slow link).
+     */
+    internal fun <T> stage(pending: List<T>, temp: (T) -> File, dest: (T) -> File, stopped: () -> Boolean, write: (T, File) -> Unit): List<Pair<File, File>> {
+        val moves = ArrayList<Pair<File, File>>()
+        try {
+            for (entry in pending) {
+                if (stopped()) throw UpdateStopped()
+                val t = temp(entry)
+                write(entry, t)
+                moves += t to dest(entry)
+            }
+        } catch (e: UpdateStopped) {
+            moves.forEach { it.first.delete() }
+            pending.forEach { temp(it).delete() }
+            throw e
+        }
+        return moves
+    }
+
+    /** the staged files over the old ones, in order (the exe last: it makes the folder run this client) */
+    internal fun commit(moves: List<Pair<File, File>>) = moves.forEach { (t, d) -> WowSwitch.move(t, d) }
 
     /** what [switchToLaunch] did */
     sealed class Switch {
@@ -202,7 +268,7 @@ object WowClientDownloader {
             )
             WowSwitch.replace(buildInfo, WowSwitch.withLaunchRow(text, remote).toByteArray())
         }
-        updateGame(gameRoot, target, status)
+        updateGame(gameRoot, target, onStatus = status)
         check(WowProduct.choose(gameRoot, today)?.product == WowProduct.LAUNCH) { "the World of Warcraft: Forever client is not complete" }
         Switch.Done(target.remoteVersion)
     }
@@ -267,9 +333,12 @@ object WowClientDownloader {
         sync(gameRoot, target, fresh = true, onStatus)
     }
 
-    fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: (String) -> Unit) = sync(gameRoot, target, fresh = false, onStatus)
+    /** [stopped]: asked between files; true = stop ([UpdateStopped]; the old install as it was, nothing of it deleted) */
+    fun updateGame(gameRoot: File, target: VersionCheckResult, stopped: () -> Boolean = { false }, onStatus: (String) -> Unit) =
+        sync(gameRoot, target, fresh = false, onStatus, stopped)
 
-    private fun sync(gameRoot: File, target: VersionCheckResult, fresh: Boolean, onStatus: (String) -> Unit) {
+    private fun sync(gameRoot: File, target: VersionCheckResult, fresh: Boolean, onStatus: (String) -> Unit, stopped: () -> Boolean = { false }) {
+        if (stopped()) throw UpdateStopped()
         val cdn = Cdn(
             hosts = target.remoteCdnHosts.ifEmpty { DEFAULT_CDN_HOSTS },
             path = target.remoteCdnPath.ifEmpty { DEFAULT_CDN_PATH },
@@ -283,15 +352,25 @@ object WowClientDownloader {
 
         val buildConfig = parseConfig(String(buildConfigRaw))
         val cdnConfig = cdnConfigRaw?.let { parseConfig(String(it)) }
-        syncClient(
+        // the client's files staged beside the old ones, then the index files (new files, used by nothing yet): a stop in either
+        // leaves the old client whole. Only then, all at once, the files moved over and .build.info rewritten (no stop from there)
+        val moves = syncClient(
             gameRoot = gameRoot,
             product = target.product,
             cdn = cdn,
             buildConfig = buildConfig,
             archives = lazy { cdnConfig?.let { ArchiveLocator(cdn, gameRoot, it.getValue("archives")) } },
             onStatus = onStatus,
+            stopped = stopped,
         )
-        cdnConfig?.let { syncIndices(gameRoot, cdn, it, onStatus) }
+        try {
+            cdnConfig?.let { syncIndices(gameRoot, cdn, it, onStatus, stopped) }
+            if (stopped()) throw UpdateStopped()
+        } catch (e: UpdateStopped) {
+            moves.forEach { it.first.delete() }
+            throw e
+        }
+        commit(moves)
 
         onStatus("Updating build information...")
         if (fresh) WowSwitch.replace(File(gameRoot, BUILD_INFO), WowSwitch.freshBuildInfo(WowSwitch.Remote(
@@ -308,11 +387,11 @@ object WowClientDownloader {
             "Incompatible game product: ${row["Product"]}. Expected ${WowProduct.values().joinToString(" or ") { it.code }}."
         }
         val latest = checkVersion(gameRoot, region)
-        if (latest != null && latest.remoteBuildConfig.isNotBlank()) return updateGame(gameRoot, latest, onStatus)
+        if (latest != null && latest.remoteBuildConfig.isNotBlank()) return updateGame(gameRoot, latest, onStatus = onStatus)
 
         val cdn = Cdn(hosts = splitHosts(row.getValue("CDN Hosts")), path = row.getValue("CDN Path"))
         onStatus("Reading build ${row["Version"].orEmpty()} manifest...")
-        syncClient(
+        commit(syncClient(
             gameRoot = gameRoot,
             product = product,
             cdn = cdn,
@@ -321,9 +400,10 @@ object WowClientDownloader {
                 ArchiveLocator(cdn, gameRoot, parseConfig(String(cdn.require("config", row.getValue("CDN Key")))).getValue("archives"))
             },
             onStatus = onStatus,
-        )
+        ))
     }
 
+    /** the client's changed files, staged ([stage]): the temp -> file moves for [commit], the exe last; empty = nothing to change */
     private fun syncClient(
         gameRoot: File,
         product: WowProduct,
@@ -331,7 +411,8 @@ object WowClientDownloader {
         buildConfig: Map<String, List<String>>,
         archives: Lazy<ArchiveLocator?>,
         onStatus: (String) -> Unit,
-    ) {
+        stopped: () -> Boolean = { false },
+    ): List<Pair<File, File>> {
         // the install manifest through a file too (issue #70): only its decoded table is held, to be parsed
         val installEncoded = File(gameRoot, "Data/.install.blte")
         val install = try {
@@ -345,50 +426,68 @@ object WowClientDownloader {
 
         val clientDir = File(gameRoot, product.flavorDir)
         // the exe LAST: it is what makes the folder run this client (WowProduct.choose), so a stop before it leaves the old one running
-        var pending = files.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
+        val pending = files.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
             .sortedBy { it.relativePath.equals(product.exeName, ignoreCase = true) }
-        if (pending.isEmpty()) return
+        if (pending.isEmpty()) return emptyList()
+        val dest = { e: InstallEntry -> File(clientDir, e.relativePath) }
+        val temp = { e: InstallEntry -> dest(e).let { d -> File(d.parentFile, "${d.name}.download") } }
 
         // the same file in the other client's folder (the beta's DLLs at the switch) is copied, not downloaded
         val copies = pending.mapNotNull { entry ->
             WowProduct.values().filter { it != product }.map { File(gameRoot, "${it.flavorDir}/${entry.relativePath}") }
                 .firstOrNull { md5Hex(it) == entry.ckey }?.let { entry to it }
         }
-        copies.forEachIndexed { index, (entry, from) ->
-            onStatus("Copying ${entry.name} (${index + 1}/${copies.size})...")
-            val dest = File(clientDir, entry.relativePath)
-            dest.parentFile?.mkdirs()
-            val temp = File(dest.parentFile, "${dest.name}.download")
-            from.copyTo(temp, overwrite = true)
-            if (md5Hex(temp) == entry.ckey) WowSwitch.move(temp, dest) else temp.delete()
-        }
-        pending = pending.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
-        if (pending.isEmpty()) return
+        val copied = HashSet<InstallEntry>()
+        val copyMoves = stage(copies, { temp(it.first) }, { dest(it.first) }, stopped) { (entry, from), t ->
+            onStatus("Copying ${entry.name} (${copied.size + 1}/${copies.size})...")
+            t.parentFile?.mkdirs()
+            from.copyTo(t, overwrite = true)
+            // a copy that does not match is downloaded instead
+            if (md5Hex(t) == entry.ckey) copied += entry else t.delete()
+        }.filter { it.first.isFile }
+        val downloads = pending.filter { it !in copied }
+        if (downloads.isEmpty()) return order(copyMoves, pending, dest)
 
-        onStatus("Looking up client files...")
-        val ekeys = EncodingLookup(cdn, buildConfig.getValue("encoding")[1]).find(pending.map { it.ckey }.toSet())
-        pending.forEachIndexed { index, entry ->
-            onStatus("Downloading ${entry.name} (${index + 1}/${pending.size})...")
-            val ekey = ekeys[entry.ckey] ?: throw IOException("${entry.name} is missing from the encoding table")
-            // issue #70 (2026-11-11): the encoded client file (the exe is ~68 MB) streams to a file beside it and is decoded
-            // from there, never one byte array (the OOM at ResponseBody.bytes() <- Cdn.fetch <- syncClient, Java heap 507/512 MB)
-            val dest = File(clientDir, entry.relativePath)
-            dest.parentFile?.mkdirs()
-            val encoded = File(dest.parentFile, "${dest.name}.blte")
-            try {
-                if (!cdn.fetchTo("data", ekey, encoded) && archives.value?.readTo(ekey, encoded) != true) {
-                    throw IOException("${entry.name} not found on the CDN")
+        try {
+            onStatus("Looking up client files...")
+            if (stopped()) throw UpdateStopped()
+            val ekeys = EncodingLookup(cdn, buildConfig.getValue("encoding")[1]).find(downloads.map { it.ckey }.toSet())
+            var n = 0
+            val moves = stage(downloads, temp, dest, stopped) { entry, t ->
+                onStatus("Downloading ${entry.name} (${++n}/${downloads.size})...")
+                // a whole temp from a try that failed later (the index files, a lost link) is this file already
+                if (t.isFile && md5Hex(t) == entry.ckey) return@stage
+                val ekey = ekeys[entry.ckey] ?: throw IOException("${entry.name} is missing from the encoding table")
+                // issue #70 (2026-11-11): the encoded client file (the exe is ~68 MB) streams to a file beside it and is decoded
+                // from there, never one byte array (the OOM at ResponseBody.bytes() <- Cdn.fetch <- syncClient, Java heap 507/512 MB)
+                val d = dest(entry)
+                d.parentFile?.mkdirs()
+                val encoded = File(d.parentFile, "${d.name}.blte")
+                try {
+                    if (!cdn.fetchTo("data", ekey, encoded) && archives.value?.readTo(ekey, encoded) != true) {
+                        throw IOException("${entry.name} not found on the CDN")
+                    }
+                    writeVerified(t, entry, encoded)
+                } finally {
+                    encoded.delete()
                 }
-                writeVerified(dest, entry, encoded)
-            } finally {
-                encoded.delete()
             }
+            return order(copyMoves + moves, pending, dest)
+        } catch (e: UpdateStopped) {
+            copyMoves.forEach { it.first.delete() }
+            throw e
         }
     }
 
-    private fun writeVerified(dest: File, entry: InstallEntry, encoded: File) {
-        dest.parentFile?.mkdirs()
-        val temp = File(dest.parentFile, "${dest.name}.download")
+    /** [moves] in [pending]'s order (the exe last) */
+    private fun order(moves: List<Pair<File, File>>, pending: List<InstallEntry>, dest: (InstallEntry) -> File): List<Pair<File, File>> {
+        val rank = pending.withIndex().associate { (i, e) -> dest(e).path to i }
+        return moves.sortedBy { rank[it.second.path] ?: Int.MAX_VALUE }
+    }
+
+    /** [entry] decoded from [encoded] into [temp], checked against its md5 (a mismatch deletes it); [temp] is moved over later ([commit]) */
+    private fun writeVerified(temp: File, entry: InstallEntry, encoded: File) {
+        temp.parentFile?.mkdirs()
         val digest = MessageDigest.getInstance("MD5")
         encoded.inputStream().buffered(CdnStream.BUF).use { input ->
             DigestOutputStream(temp.outputStream().buffered(), digest).use { blteDecode(input, it) }
@@ -397,14 +496,13 @@ object WowClientDownloader {
             temp.delete()
             throw IOException("Checksum mismatch for ${entry.name}")
         }
-        WowSwitch.move(temp, dest)
     }
 
     private fun saveConfig(gameRoot: File, key: String, bytes: ByteArray) {
         WowSwitch.replace(File(gameRoot, "Data/config/${key.substring(0, 2)}/${key.substring(2, 4)}/$key"), bytes)
     }
 
-    private fun syncIndices(gameRoot: File, cdn: Cdn, cdnConfig: Map<String, List<String>>, onStatus: (String) -> Unit) {
+    private fun syncIndices(gameRoot: File, cdn: Cdn, cdnConfig: Map<String, List<String>>, onStatus: (String) -> Unit, stopped: () -> Boolean = { false }) {
         val indicesDir = File(gameRoot, "Data/indices")
         indicesDir.mkdirs()
         val required = listOf("archives", "patch-archives").flatMap { cdnConfig[it].orEmpty() } +
@@ -412,6 +510,7 @@ object WowClientDownloader {
         // a kept index that is not its name's (a sign-in page saved by an older build, a cut file) is fetched again
         val missing = required.distinct().filter { !indexFileOk(File(indicesDir, "$it.index"), it) }
         missing.forEachIndexed { index, hash ->
+            if (stopped()) throw UpdateStopped()
             onStatus("Syncing index archive (${index + 1}/${missing.size})...")
             cdn.indexTo(hash, File(indicesDir, "$hash.index"))
         }

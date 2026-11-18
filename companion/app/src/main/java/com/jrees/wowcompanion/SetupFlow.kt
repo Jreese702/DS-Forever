@@ -75,6 +75,10 @@ object SetupFlow {
         val busy: String? = null,
         /** the game's own update is running ([busy] is its step's line) */
         val updating: Boolean = false,
+        /** the running update came from a region switch (the user, 2026-11-17): that region's name; the page offers Stop. Null = none */
+        val regionSwitch: String? = null,
+        /** Stop was pressed: the update ends at the next file */
+        val stopping: Boolean = false,
         val signIn: SignIn = SignIn.NONE,
         /** "Restart the game to sign in" applied in this sign-in: its button stays until past the login screen */
         val restartOffered: Boolean = false,
@@ -112,7 +116,10 @@ object SetupFlow {
         /** the saved report's note: open its GitHub issue, or dismiss it */
         REPORT_OPEN, REPORT_DISMISS,
         /** 2026-11-12 (the user: "give a prompt asking players if they want to use the new polestar quest guide integration"): Yes / No */
-        POLESTAR_YES, POLESTAR_NO
+        POLESTAR_YES, POLESTAR_NO,
+        /** the region's download (the user, 2026-11-17: "downloading a new build" after a region picked by mistake): stop it, the old
+         *  install kept and the region before it put back */
+        STOP_UPDATE
     }
     data class Button(val label: String, val action: Action, val enabled: Boolean = true)
     data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>)
@@ -162,6 +169,19 @@ object SetupFlow {
      */
     /** STOP_ART (2026-11-04, was WAIT_ART): an art run is stopped and the update goes at once (the art is built again after it) */
     enum class UpdateGate { GO, STOP_ART, WAIT_LAUNCH, BUSY, NO_STORAGE, NO_VERSION }
+
+    /**
+     * THE REGION SWITCH'S STOP (the user, 2026-11-17; verifier: a Stop during the art run's stop was wiped, a queued switch had none).
+     * NOW = nothing is running (the switch waits in the queue): stopped at once, the region put back. FLAG = something runs (the art
+     * run's stop or the download): the stop flag is set and every next step reads it, the start of the download too. NONE = no Stop.
+     */
+    enum class StopRoute { NONE, NOW, FLAG }
+    fun stopRoute(regionSwitch: Boolean, updating: Boolean, queued: Boolean, stopping: Boolean): StopRoute = when {
+        !regionSwitch || stopping -> StopRoute.NONE
+        updating -> StopRoute.FLAG
+        queued -> StopRoute.NOW
+        else -> StopRoute.NONE
+    }
 
     fun updateGate(hasVersion: Boolean, updating: Boolean, launching: Boolean, harvesting: Boolean, storage: Boolean): UpdateGate = when {
         updating -> UpdateGate.BUSY
@@ -293,6 +313,9 @@ object SetupFlow {
             i.lastCrash != null -> Prompt("lastcrash", LastRun.TITLE, LastRun.text(i.lastCrash),
                 listOf(Button("Send report", Action.CRASH_SEND), Button("Not now", Action.CRASH_DISMISS)))
             i.progress != null -> Prompt("progress", i.progress.title, i.progress.text, emptyList())
+            // a region's build downloading or queued (the Menu's Switch): what it is, and the one way out (the old install is kept)
+            i.regionSwitch != null && (i.updating || i.busy != null) -> Prompt("region", "Switching to ${i.regionSwitch}", "",
+                listOf(Button(if (i.stopping) "Stopping..." else "Stop", Action.STOP_UPDATE, !i.stopping)))
             !i.folderFound || i.wrongGame -> Prompt("folder", "Where is WoW Forever?",
                 if (i.wrongGame) "The folder ${i.path} holds ${i.product.ifEmpty { "another game" }}, not WoW Forever. Choose the WoW Forever folder: the one with .build.info and Data."
                 else "Install it (250 MB now, up to 50 GB as you play), or choose the folder with .build.info and Data.",

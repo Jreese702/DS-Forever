@@ -40,6 +40,8 @@ object GameRegion {
     private const val KEY = "region"
     private const val KEY_BY = "region_by"
     private const val KEY_AT = "region_at"
+    private const val KEY_PEND_FROM = "pending_from"     // "" = no choice made before the switch
+    private const val KEY_PEND_TO = "pending_to"
 
     /** the region the player chose, or null when none was chosen (the install's own region stands) */
     fun chosen(ctx: Context): String? =
@@ -48,6 +50,8 @@ object GameRegion {
     /** where the choice was made: the login prompt's Region row, or the Start menu's Region button (one press steps to the next) */
     const val BY_PROMPT = "the login prompt"
     const val BY_MENU = "the Start menu"
+    /** the setup page's Stop on a region's download (the user, 2026-11-17): the region before the switch back */
+    const val BY_STOP = "Stop on the region's download"
     /** the verify pass (#248): saved with the prompt's Region row as it was pre-filled (the choice, the folder's portal or the device's
      *  country), so a report tells an untouched default from a pick */
     const val BY_PROMPT_PREFILLED = "the login prompt, row as pre-filled"
@@ -62,12 +66,86 @@ object GameRegion {
         val was = chosen(ctx)
         val e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, code)
         if (was != code) e.putString(KEY_BY, by).putLong(KEY_AT, System.currentTimeMillis())
+        if (was != code) {
+            // the region IN EFFECT before this save: the choice, else what the prompt pre-fills (the folder's portal / .build.info
+            // Branch, else the device's country). A first save of the pre-filled row is no switch (reviewer, 2026-11-17)
+            val inEffect = was ?: runCatching { current(ctx, GameFiles.gameRoot(ctx)) }.getOrNull()
+            val next = nextPending(pendingRaw(ctx), was, code, by, inEffect)
+            if (next == null) e.remove(KEY_PEND_FROM).remove(KEY_PEND_TO)
+            else e.putString(KEY_PEND_FROM, next.from ?: "").putString(KEY_PEND_TO, next.to)
+        }
         e.apply()
         if (was != code) {
             runCatching { NativeLogin.logEvent("region: ${was ?: "none chosen"} -> $code" + if (by.isNotEmpty()) " ($by)" else "") }
+            lastChange = Change(was, code, by)
             listeners.forEach { runCatching { it(code) } }
         }
     }
+
+    /** a change: [from] the choice before it (null = none made), [to] the new one, [by] where it was made */
+    data class Change(val from: String?, val to: String, val by: String)
+
+    /** the last change [choose] made (this run), read by the listeners: the launcher's Stop puts [Change.from] back */
+    @Volatile var lastChange: Change? = null
+        private set
+
+    /**
+     * BACK TO HOW IT WAS (the user, 2026-11-17: a region switched by mistake): [from] chosen again, or with no choice made before
+     * (null) the choice forgotten, so the install's own region stands again. The listeners hear it as any change.
+     */
+    fun restore(ctx: Context, from: String?, by: String = BY_STOP) {
+        if (from != null) return choose(ctx, from, by)
+        val was = chosen(ctx) ?: return
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove(KEY_BY).remove(KEY_AT)
+            .remove(KEY_PEND_FROM).remove(KEY_PEND_TO).apply()
+        runCatching { NativeLogin.logEvent("region: $was -> none chosen ($by)") }
+        val back = current(ctx)
+        lastChange = Change(was, back, by)
+        listeners.forEach { runCatching { it(back) } }
+    }
+
+    /**
+     * A SWITCH NOT YET SETTLED (verifier, 2026-11-17): a region picked in the game screen's Menu while the launcher was not up (it is
+     * gone while the game runs) reached no listener, so its download started later with no Stop. The switch is kept on disk until the
+     * launcher settles it ([settle]: its build is in, or there was nothing to download); [pending] gives it back to a launcher that
+     * starts later (even after an app restart). Null when the choice is not that switch's region any more.
+     */
+    fun pending(ctx: Context): Change? {
+        val raw = pendingRaw(ctx) ?: return null
+        if (raw.to != chosen(ctx)) return null
+        return raw.copy(by = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_BY, null) ?: "")
+    }
+
+    /** the launcher is done with the switch: its build is installed, or it was this install's build already */
+    fun settle(ctx: Context) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PEND_FROM).remove(KEY_PEND_TO).apply()
+    }
+
+    private fun pendingRaw(ctx: Context): Change? {
+        val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val to = p.getString(KEY_PEND_TO, null) ?: return null
+        return Change(p.getString(KEY_PEND_FROM, "")?.ifEmpty { null }, to, "")
+    }
+
+    /**
+     * The switch kept after a change [was] -> [code] made by [by], with [pending] the one kept before. A Stop's way back keeps none; a
+     * second pick before the first settled keeps the FIRST region as the way back (US -> EU -> Korea: Stop goes back to US), and picking
+     * that first region again is no switch at all. [inEffect]: the region in effect before the change, [current] (the choice, else the
+     * install's own region the prompt pre-fills; defaults to [was]): a save that keeps it is no switch, so a first-time player saving the
+     * login prompt's pre-filled row (none -> us on a US install) never labels a normal patch "Switching to US" nor restarts a stopped
+     * build (reviewer, 2026-11-17). [Change.from] stays the saved choice ([was]), what a Stop puts back ([restore]). Pure.
+     */
+    fun nextPending(pending: Change?, was: String?, code: String, by: String, inEffect: String? = was): Change? {
+        if (by == BY_STOP) return null
+        if (pending != null && pending.to == was) return if (pending.from == code) null else Change(pending.from, code, "")
+        return if (code == (was ?: inEffect)) null else Change(was, code, "")
+    }
+
+    /**
+     * THE LAUNCHER'S LISTENER (WoWForeverScreen): the switch a change to [code] made, kept on disk; null for a save that switched nothing
+     * (the region in effect kept), which must neither offer Stop nor restart a stopped build
+     */
+    fun switchFor(ctx: Context, code: String): Change? = pending(ctx)?.takeIf { it.to == code }
 
     /** who made the current choice and when (epoch ms; 0 = before this was kept), or null with no choice made */
     fun choiceSource(ctx: Context): Pair<String, Long>? {

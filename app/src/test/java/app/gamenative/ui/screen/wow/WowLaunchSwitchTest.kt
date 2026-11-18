@@ -194,7 +194,10 @@ class WowLaunchSwitchTest {
         assertTrue(WowProduct.parse(info).any { it["Product"] == "wowf" })        // the row is there...
         assertFalse(File(root, "_forever_/Wow-arm64.exe").exists())               // ...the exe is not: the beta still runs
         assertEquals(WowProduct.BETA, WowProduct.of(root, closed))
-        assertEquals("a shared dll", File(root, "_forever_/shared.dll").readText())
+        // 2026-11-17 (a stoppable region update): the client's files are staged and moved over only all together, so a failure
+        // leaves none of them in place; the verified copy waits beside it for the next try
+        assertFalse(File(root, "_forever_/shared.dll").exists())
+        assertEquals("a shared dll", File(root, "_forever_/shared.dll.download").readText())
         // what a kill mid-write leaves: temp files only
         File(root, "_forever_/Wow-arm64.exe.download").writeText("half an exe")
         File(root, ".build.info.tmp").writeText("half a build info")

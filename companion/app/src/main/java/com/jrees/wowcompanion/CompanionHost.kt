@@ -717,7 +717,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             else if (SetupBridge.keyboardOpen && PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) {
                 NativeLogin.logEvent("sign-in: keyboard closed (B)"); SetupBridge.keyboard(false)
             }
-            else if (startView.menuOpen && PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) startView.menuOpen = false     // B: the menu shuts
+            // B: one step back out of the region list / card (no change), else the menu shuts
+            else if (startView.menuOpen && PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) { if (StartMenu.back()) startView.invalidate() else startView.menuOpen = false }
             else if (::setupPanel.isInitialized && !loginPrompt.isOpen && setupPanel.pad(down)) Unit      // the setup's pop-up (Track C)
             // b-login-a-input: not in the game (its login screen): A goes to the game, never to our login row / form
             else if (startView.visibility == View.VISIBLE && startView.login != StartView.Login.NONE && !loginPrompt.isOpen && !startView.menuOpen &&
@@ -835,7 +836,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the Menu's Region: read once (Config.wtf on disk), then the choice; GameConfigWtf.ensure writes it as the portal at the next start
         var regionNow: String? = null
         StartMenu.region = { GameRegion.chosen(this) ?: regionNow ?: runCatching { GameRegion.current(this, GameFiles.gameRoot(this)) }.getOrDefault("us").also { regionNow = it } }
-        StartMenu.onRegion = { code -> GameRegion.choose(this, code, GameRegion.BY_MENU); regionNow = code }
+        // (the choice is read first by StartMenu.region: regionNow stays the folder's own, for a Stop that forgets the choice again)
+        StartMenu.onRegion = { code -> GameRegion.choose(this, code, GameRegion.BY_MENU) }
+        // the region card's second line (the user, 2026-11-17): the launcher compares that region's build with the install's
+        StartMenu.regionPreview = { code, answer ->
+            val check = SetupBridge.regionCheck
+            if (check == null) answer(RegionPicker.Preview.UNKNOWN)
+            else Thread({
+                val r = runCatching { check(code) }.getOrNull()
+                ui.post { answer(when (r) { true -> RegionPicker.Preview.DOWNLOAD; false -> RegionPicker.Preview.INSTALL; null -> RegionPicker.Preview.UNKNOWN }) }
+            }, "region-card").apply { isDaemon = true }.start()
+        }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()

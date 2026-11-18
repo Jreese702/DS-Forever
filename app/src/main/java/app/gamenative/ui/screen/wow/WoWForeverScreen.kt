@@ -151,6 +151,10 @@ fun WoWForeverScreen(
     // the art is being built again for the build an update just brought (the Game art row says so until it is ready)
     var artRebuild by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
+    // THE REGION'S DOWNLOAD (the user, 2026-11-17): the switch that started the running check / update (from -> to), and its Stop
+    var regionSwitch by remember { mutableStateOf<com.jrees.wowcompanion.GameRegion.Change?>(null) }
+    val updateStop = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    var stopping by remember { mutableStateOf(false) }
     // DS Forever's self-update (Track C): the startup check's answer; the release when one is newer
     var appCheck by remember { mutableStateOf<com.jrees.wowcompanion.AppUpdate.Check?>(null) }
     val appUpdate = (appCheck as? com.jrees.wowcompanion.AppUpdate.Check.Available)?.release
@@ -234,6 +238,8 @@ fun WoWForeverScreen(
         val region = com.jrees.wowcompanion.GameRegion.chosen(context)
         versionStatus = withContext(Dispatchers.IO) { WowClientDownloader.checkVersion(File(gamePath), region) }
         isCheckingVersion = false
+        // the switched-to region is this install's build already: nothing downloads, nothing to stop
+        if (versionStatus?.isOutdated == false && !isUpdating) { regionSwitch = null; com.jrees.wowcompanion.GameRegion.settle(context) }
     }
 
     fun checkVersionStatus() {
@@ -670,7 +676,22 @@ fun WoWForeverScreen(
         }
     }
 
+    /**
+     * A STOP BEFORE ANY FILE MOVED (verifier, 2026-11-17): Stop pressed while the art run was being stopped for the update, or while the
+     * update waited in the queue. Nothing was downloaded: the queue emptied, the region before the switch put back, the art started
+     * again (the update had stopped it). The stopped build does not start by itself (autoUpdatedFor still holds it)
+     */
+    fun stopBeforeDownload() {
+        val sw = regionSwitch
+        regionSwitch = null; updateQueued = false; stopping = false; updateStop.set(false); isUpdating = false; errorMessage = null
+        setupLog("update: stopped before the download; nothing changed" + (sw?.let { "; region back to ${it.from ?: "none chosen"}" } ?: ""))
+        if (sw != null) com.jrees.wowcompanion.GameRegion.restore(context, sw.from)
+        harvestArt(retry = true)
+    }
+
     fun performUpdate() {
+        // a Stop pressed before the download began (the art run's stop, the queue) wins: never wiped by the start below
+        if (updateStop.get()) { stopBeforeDownload(); return }
         // never silent (the user, 2026-10-28: A on Update did nothing while a background art step ran): go, queue, or say why not
         val gate = com.jrees.wowcompanion.SetupFlow.updateGate(versionStatus != null, isUpdating, isLaunching, isHarvesting, files.hasStorageAccess)
         val line = com.jrees.wowcompanion.SetupFlow.updateGateLine(gate, -1)
@@ -685,7 +706,9 @@ fun WoWForeverScreen(
                 scope.launch {
                     val stopped = withContext(Dispatchers.IO) { com.jrees.wowcompanion.ArtHarvest.stopForUpdate() }
                     isUpdating = false
-                    if (stopped) { isHarvesting = false; artFailed = null; artProgress = 0f; performUpdate() }
+                    if (stopped) { isHarvesting = false; artFailed = null; artProgress = 0f }
+                    if (updateStop.get()) stopBeforeDownload()       // Stop pressed while the art run ended
+                    else if (stopped) performUpdate()
                     else { setupLog("update: the art run is still ending; queued"); updateQueued = true }
                 }
                 return
@@ -700,6 +723,7 @@ fun WoWForeverScreen(
         }
         val target = versionStatus ?: return
         isUpdating = true
+        stopping = false
         updateStatusText = "Connecting to Blizzard CDN..."
         errorMessage = null
         scope.launch {
@@ -707,11 +731,13 @@ fun WoWForeverScreen(
                 withContext(Dispatchers.IO) {
                     // the screen first (BgThreads, 2026-11-07): the update's downloads and decodes yield to the loading animations
                     com.jrees.wowcompanion.BgThreads.lowered {
-                        WowClientDownloader.updateGame(File(gamePath), target) { msg ->
-                            scope.launch(Dispatchers.Main) { updateStatusText = msg }
+                        WowClientDownloader.updateGame(File(gamePath), target, stopped = { updateStop.get() }) { msg ->
+                            scope.launch(Dispatchers.Main) { if (!updateStop.get()) updateStatusText = msg }
                         }
                     }
                 }
+                regionSwitch = null; updateStop.set(false)
+                com.jrees.wowcompanion.GameRegion.settle(context)
                 checkFiles()
                 versionStatus = versionStatus?.copy(isOutdated = false, localVersion = target.remoteVersion)
                 isUpdating = false
@@ -722,7 +748,17 @@ fun WoWForeverScreen(
                 setupLog("update: done (${target.remoteVersion})")
                 // only in Local: in the start-up chooser's route the chooser comes once the checks pass (the user's order, 2026-10-28)
                 if (com.jrees.wowcompanion.StartMode.showsLocal(com.jrees.wowcompanion.ModeBridge.route)) launchGame()
+            } catch (e: WowClientDownloader.UpdateStopped) {
+                // Stop (the user, 2026-11-17): the old install as it was; the region before the switch put back, so the check finds
+                // the install's own build again (autoUpdatedFor keeps the stopped build from starting by itself)
+                val sw = regionSwitch
+                regionSwitch = null; stopping = false; updateStop.set(false); isUpdating = false; errorMessage = null
+                setupLog("update: stopped (${target.remoteVersion}); the old install kept" + (sw?.let { "; region back to ${it.from ?: "none chosen"}" } ?: ""))
+                if (sw != null) com.jrees.wowcompanion.GameRegion.restore(context, sw.from)
+                // the art the update stopped (STOP_ART) starts again, for the install's own build (verifier, 2026-11-17)
+                harvestArt(retry = true)
             } catch (e: Exception) {
+                regionSwitch = null; stopping = false; updateStop.set(false)
                 Timber.e(e, "Error updating game")
                 setupLog("update: failed: ${e.message}")
                 if (e.isPermissionDenied()) denyStorageAccess()
@@ -749,8 +785,21 @@ fun WoWForeverScreen(
     // checked at once (and then updated by itself as any new build is); during an update the check waits for its end
     var regionRecheck by remember { mutableStateOf(false) }
     DisposableEffect(Unit) {
+        // a switch made while this screen was gone (the game screen's Menu; verifier, 2026-11-17): its download gets its Stop too
+        com.jrees.wowcompanion.GameRegion.pending(context)?.let { sw ->
+            setupLog("region: ${sw.to} picked earlier (${sw.by.ifEmpty { "?" }}); its download can be stopped")
+            regionSwitch = sw
+        }
         val l: (String) -> Unit = { code ->
-            scope.launch(Dispatchers.Main) { setupLog("region: $code picked; checking its build"); regionRecheck = true }
+            // the switch kept on disk (none after a Stop's way back): the FIRST region before it is where Stop goes back to
+            val change = com.jrees.wowcompanion.GameRegion.switchFor(context, code)
+            scope.launch(Dispatchers.Main) {
+                setupLog("region: $code picked; checking its build")
+                regionSwitch = change
+                // a switch on purpose may start a build that was stopped before (once per build otherwise)
+                if (regionSwitch != null) autoUpdatedFor = null
+                regionRecheck = true
+            }
         }
         com.jrees.wowcompanion.GameRegion.listeners.add(l)
         onDispose { com.jrees.wowcompanion.GameRegion.listeners.remove(l) }
@@ -874,6 +923,9 @@ fun WoWForeverScreen(
         iconsLine = com.jrees.wowcompanion.AllIcons.line(com.jrees.wowcompanion.ArtHarvest.state is com.jrees.wowcompanion.ArtHarvest.State.Ready),
         maps = mapsReady,
         updating = isUpdating,
+        // while it downloads AND while it waits in the queue (a launch's end, an art run's end): Stop either way (verifier, 2026-11-17)
+        regionSwitch = regionSwitch?.let { sw -> com.jrees.wowcompanion.GameRegion.ALL.firstOrNull { it.code == sw.to }?.label }?.takeIf { isUpdating || updateQueued },
+        stopping = stopping,
         busy = when {
             isUpdating -> updateStatusText
             updateQueued -> com.jrees.wowcompanion.SetupFlow.updateGateLine(
@@ -894,6 +946,16 @@ fun WoWForeverScreen(
             com.jrees.wowcompanion.SetupFlow.Action.SKIP_LOGIN -> loginSkipped = true
             com.jrees.wowcompanion.SetupFlow.Action.RETRY_ART -> harvestArt(retry = true)
             com.jrees.wowcompanion.SetupFlow.Action.UPDATE_GAME -> performUpdate()
+            com.jrees.wowcompanion.SetupFlow.Action.STOP_UPDATE -> when (com.jrees.wowcompanion.SetupFlow.stopRoute(regionSwitch != null, isUpdating, updateQueued, stopping)) {
+                // queued, nothing running: stopped at once (the queue never starts it afterwards)
+                com.jrees.wowcompanion.SetupFlow.StopRoute.NOW -> { setupLog("update: stop pressed (queued)"); stopBeforeDownload() }
+                // running (the art run's stop or the download): the flag is read by both, and by performUpdate's start
+                com.jrees.wowcompanion.SetupFlow.StopRoute.FLAG -> {
+                    setupLog("update: stop pressed")
+                    stopping = true; updateStop.set(true); updateStatusText = "Stopping..."
+                }
+                com.jrees.wowcompanion.SetupFlow.StopRoute.NONE -> Unit
+            }
             com.jrees.wowcompanion.SetupFlow.Action.UPDATE_APP -> performAppUpdate()
             com.jrees.wowcompanion.SetupFlow.Action.LATER_APP -> {
                 appUpdateLater = true
@@ -917,6 +979,7 @@ fun WoWForeverScreen(
         }
     }
     val onSetupRefresh by rememberUpdatedState { checkFiles() }
+    val currentGamePath by rememberUpdatedState { gamePath }
     DisposableEffect(Unit) {
         // "Restart the game to sign in" (M3) is pressed while the game runs, when this screen is gone. TEST4: the top stuck "Starting
         // game" - the old route set shouldAutoLaunch, which this screen consumed the moment it came back, seconds into the old Wine
@@ -967,6 +1030,8 @@ fun WoWForeverScreen(
             if (ce == null) close() else ce("menu") { force -> if (force) close() }
         }
         com.jrees.wowcompanion.SetupBridge.launcherActions = { a -> scope.launch(Dispatchers.Main) { onSetupAction(a) } }
+        // the Menu's region card: does that region's build differ from this install's (one small fetch; the card's thread)
+        com.jrees.wowcompanion.SetupBridge.regionCheck = { code -> WowClientDownloader.regionNeedsDownload(File(currentGamePath()), code) }
         com.jrees.wowcompanion.SetupBridge.launcherRefresh = { scope.launch(Dispatchers.Main) { onSetupRefresh() } }
         // the pad belongs to the bottom screen's buttons while this screen is up (the top shows checks only)
         // the start-up chooser's panel first while it shows (it is composed over this screen's checks since 2026-10-28), then the
@@ -980,6 +1045,8 @@ fun WoWForeverScreen(
             PluviaApp.events.off<AndroidEvent.MotionEvent, Boolean>(motion)
             com.jrees.wowcompanion.SetupBridge.launcherActions = null
             com.jrees.wowcompanion.SetupBridge.launcherRefresh = null
+            // the game screen's Menu asks too while the game runs (this screen is gone then): the same install, its path kept
+            com.jrees.wowcompanion.SetupBridge.regionCheck = WowClientDownloader.keptRegionCheck(currentGamePath())
         }
     }
 
