@@ -4,8 +4,15 @@
 // called, and opens a GitHub issue in the project's repository with a bot token kept as a Worker SECRET (never in git, never in the
 // APK). It answers {"number": N, "url": "..."}.
 //
+// A KNOWN CRASH TYPE (src/trackers.js; the user, 2026-11-18: "Comment on the tracker") opens no issue: it adds a short comment to
+// its tracker issue (#56 low-memory kills, #153 "stopped responding", #472 the libcasc art crash, #237 BLZ51914400, #165 the
+// captcha / authenticator disconnect), at most one per device per tracker a day and a few per tracker an hour; over that it is only
+// counted (the next comment says how many). The answer is then the tracker's number, plus "tracker" and "commented".
+//
 // Abuse: the app's key (APP_KEY) ships inside the APK, so anyone can extract it; it only keeps casual traffic out. The real limits are
 // here: a size cap, a strict shape, a per-address and a global rate limit, and every issue carries the "player-report" label.
+
+import { classify, buildComment } from "./trackers.js";
 
 export const LIMITS = {
   maxBytes: 200_000,          // the whole request
@@ -14,8 +21,11 @@ export const LIMITS = {
   maxLogs: 150_000,           // logs.txt
   maxDiag: 45_000,            // diagnostics.txt (the app's start-up diagnostics, StartupDiag; optional: older apps send none)
   perIpPerHour: 5,
-  globalPerDay: 100,
+  globalPerDay: 100,          // what reaches GitHub (new issues and tracker comments); a report only counted does not count here
   issueBody: 65_536,          // GitHub's body limit (characters)
+  // the tracker comments (src/trackers.js): one per device per tracker a day, a few per tracker an hour; the rest only counted
+  perDevicePerTrackerPerDay: 1,
+  perTrackerPerHour: 4,
 };
 
 const VERSION = /^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?(?: \(\d+\))?$/;
@@ -104,20 +114,70 @@ export function buildIssue(r) {
   return { title, body, comment, labels: ["player-report"] };
 }
 
-/** per address per hour and for everyone per day, in a KV namespace (soft limits: KV is eventually consistent) */
-export async function rateLimit(kv, ip, now = Date.now()) {
+const num = (x) => parseInt(x || "0", 10);
+
+/** per address per hour (every report), in a KV namespace (soft limits: KV is eventually consistent) */
+export async function ipLimit(kv, ip, now = Date.now()) {
   if (!kv) return null;
-  const hour = Math.floor(now / 3_600_000), day = Math.floor(now / 86_400_000);
-  const ipKey = `ip:${ip}:${hour}`, allKey = `all:${day}`;
-  const [ipN, allN] = await Promise.all([kv.get(ipKey), kv.get(allKey)]).then((v) => v.map((x) => parseInt(x || "0", 10)));
+  const ipKey = `ip:${ip}:${Math.floor(now / 3_600_000)}`;
+  const ipN = num(await kv.get(ipKey));
   if (ipN >= LIMITS.perIpPerHour) return "too many reports from this address; try again in an hour";
-  if (allN >= LIMITS.globalPerDay) return "too many reports today; try again tomorrow";
-  await Promise.all([
-    kv.put(ipKey, String(ipN + 1), { expirationTtl: 7_200 }),
-    kv.put(allKey, String(allN + 1), { expirationTtl: 172_800 }),
-  ]);
+  await kv.put(ipKey, String(ipN + 1), { expirationTtl: 7_200 });
   return null;
 }
+
+/** for everyone per day: what reaches GitHub */
+export async function globalLimit(kv, now = Date.now()) {
+  if (!kv) return null;
+  const allKey = `all:${Math.floor(now / 86_400_000)}`;
+  const allN = num(await kv.get(allKey));
+  if (allN >= LIMITS.globalPerDay) return "too many reports today; try again tomorrow";
+  await kv.put(allKey, String(allN + 1), { expirationTtl: 172_800 });
+  return null;
+}
+
+/** both, as before (the address first) */
+export async function rateLimit(kv, ip, now = Date.now()) {
+  return (await ipLimit(kv, ip, now)) || (await globalLimit(kv, now));
+}
+
+/** the device as far as the receiver can tell (its address and model), hashed: no address is kept in a tracker key */
+export async function deviceKey(ip, device) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${ip}|${device}`));
+  return [...new Uint8Array(bytes)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * MAY THIS REPORT COMMENT ON ITS TRACKER? null = yes; else why not (it is then only counted). Nothing is written here: [noteComment]
+ * after the comment is made, [noteCounted] when it is not.
+ */
+export async function trackerLimit(kv, issue, dev, now = Date.now()) {
+  if (!kv) return null;
+  const day = Math.floor(now / 86_400_000), hour = Math.floor(now / 3_600_000);
+  const [devN, hourN] = await Promise.all([kv.get(`td:${issue}:${dev}:${day}`), kv.get(`th:${issue}:${hour}`)]).then((v) => v.map(num));
+  if (devN >= LIMITS.perDevicePerTrackerPerDay) return "this device's report of this today is already on the tracker";
+  if (hourN >= LIMITS.perTrackerPerHour) return "the tracker had enough comments this hour";
+  return null;
+}
+
+export async function noteComment(kv, issue, dev, now = Date.now()) {
+  if (!kv) return;
+  const day = Math.floor(now / 86_400_000), hour = Math.floor(now / 3_600_000);
+  const [devN, hourN] = await Promise.all([kv.get(`td:${issue}:${dev}:${day}`), kv.get(`th:${issue}:${hour}`)]).then((v) => v.map(num));
+  await Promise.all([
+    kv.put(`td:${issue}:${dev}:${day}`, String(devN + 1), { expirationTtl: 172_800 }),
+    kv.put(`th:${issue}:${hour}`, String(hourN + 1), { expirationTtl: 7_200 }),
+    kv.put(`tp:${issue}`, "0", { expirationTtl: 2_592_000 }),
+  ]);
+}
+
+/** a report of a known type counted without a comment (the next comment says how many) */
+export async function noteCounted(kv, issue) {
+  if (!kv) return;
+  await kv.put(`tp:${issue}`, String(num(await kv.get(`tp:${issue}`)) + 1), { expirationTtl: 2_592_000 });
+}
+
+const pending = async (kv, issue) => (kv ? num(await kv.get(`tp:${issue}`)) : 0);
 
 async function github(env, path, payload) {
   const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}${path}`, {
@@ -159,8 +219,16 @@ export async function handle(request, env, now = Date.now()) {
   const { report, errors } = validate(body);
   if (errors) return json(400, { error: errors.join("; ") });
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-  const limited = await rateLimit(env.LIMITS, ip, now);
+  const limited = await ipLimit(env.LIMITS, ip, now);
   if (limited) return json(429, { error: limited });
+  // a known crash type: a comment on its tracker (or only counted); TRACKERS = "off" in wrangler.toml's [vars] turns this off
+  const known = env.TRACKERS === "off" ? null : classify(report);
+  if (known) {
+    const done = await toTracker(env, report, known, ip, now);
+    if (done) return done;               // else the comment could not be made: the report opens its own issue, as before
+  }
+  const busy = known ? null : await globalLimit(env.LIMITS, now);   // a failed tracker comment was already counted there
+  if (busy) return json(429, { error: busy });
   const issue = buildIssue(report);
   try {
     const made = await github(env, "/issues", { title: issue.title, body: issue.body, labels: issue.labels });
@@ -168,6 +236,31 @@ export async function handle(request, env, now = Date.now()) {
     return json(201, { number: made.number, url: made.html_url });
   } catch (e) {
     return json(502, { error: `the issue could not be made (${e.message})` });
+  }
+}
+
+/**
+ * A KNOWN TYPE'S REPORT ON ITS TRACKER: a short comment, or - over a limit - only counted. Either way the app hears the tracker's
+ * number, so every app version shows "Report sent: issue #N" (ReportUpload.parse needs a number above 0). null = the comment failed
+ * (a locked or deleted tracker, GitHub down): the caller opens an issue instead, so no report is lost.
+ */
+async function toTracker(env, report, t, ip, now) {
+  const kv = env.LIMITS;
+  const issueUrl = `https://github.com/${env.GITHUB_REPO}/issues/${t.issue}`;
+  const dev = await deviceKey(ip, report.device);
+  const why = (await trackerLimit(kv, t.issue, dev, now)) || (await globalLimit(kv, now));
+  if (why) {
+    await noteCounted(kv, t.issue);
+    console.log(`tracker #${t.issue} (${t.id}): counted, ${why}`);
+    return json(200, { number: t.issue, url: issueUrl, tracker: t.id, commented: false });
+  }
+  try {
+    const made = await github(env, `/issues/${t.issue}/comments`, { body: buildComment(report, t, safe, await pending(kv, t.issue)) });
+    await noteComment(kv, t.issue, dev, now);
+    return json(201, { number: t.issue, url: made.html_url || issueUrl, tracker: t.id, commented: true });
+  } catch (e) {
+    console.log(`tracker #${t.issue} (${t.id}): comment failed (${e.message}); opening an issue instead`);
+    return null;
   }
 }
 
