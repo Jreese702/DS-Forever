@@ -771,6 +771,13 @@ namespace DsfDesktop.App
 
         public const string MatchSkippedLine = "Screen not matched: Apollo is streaming";
 
+        /// <summary>fix/1492-feedback: the stream's "match screen" log line. Pure</summary>
+        public static string MatchLine(bool matched, bool ownScreen, int w, int h, int fps) =>
+            ownScreen ? "match screen: the stream is on our own screen (made at the Thor's " + w + "x" + h + "@" + fps + ")"
+            : matched ? "match screen: Sunshine sets the PC's screen to the Thor's " + w + "x" + h + "@" + fps + " for this stream (back " +
+                        DsfDesktop.Sunshine.SunshineConfig.RevertDelayMs / 1000 + " s after it ends)"
+            : "match screen: off (the PC's screen stays as it is; the stream is scaled)";
+
         /// <summary>the Thor's status line when the player's Match is stood down for Apollo's session</summary>
         void PublishMatchSkipped() => Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = MatchSkippedLine });
 
@@ -1806,6 +1813,10 @@ namespace DsfDesktop.App
                 Log.I("match screen: skipped for this stream (Apollo is streaming)");
                 PublishMatchSkipped();
             }
+            // fix/1492-feedback: the match is Sunshine's own (its dd_* options): said for every stream, so the log shows it (test 1492's
+            // log had no "match screen" line at all, though Sunshine had switched the monitor to 1920x1080@120 at 15:07:46)
+            else if (s == StreamState.Streaming && was != StreamState.Streaming)
+                Log.I(MatchLine(matchWritten, sessionOutput != null, thorW, thorH, thorFps));
             if (s == StreamState.Streaming && was != StreamState.Streaming)
                 Task.Run(() =>
                 {
@@ -1882,13 +1893,29 @@ namespace DsfDesktop.App
         /// <summary>a WoW window is up (any flavor)</summary>
         public bool WowUp() => WowWindow.Find(FlavorDirOrNull) != null;
 
+        /// <summary>
+        /// fix/1492-feedback: the screen a stream's WoW starts on - the Thor's mode when "Match PC screen to stream" is written into our
+        /// Sunshine (it switches the captured monitor to it as the Thor's launch comes in: 1920x1080@120 at 15:07:46 in test 1492),
+        /// maximized only on our own virtual screen (made at the nearest offered mode), null when no stream wants WoW (the player's own
+        /// window stays: WoW started from the tray, or no match and no own screen)
+        /// </summary>
+        (int? w, int? h)? StreamWindow()
+        {
+            bool streamSession = Stream == StreamState.Streaming || (Bridge != null && Bridge.Sessions().Count > 0);
+            return StreamWindowFor(streamSession, sessionOutput != null, matchWritten, thorW, thorH);
+        }
+
+        /// <summary>[StreamWindow]'s rule. Pure</summary>
+        public static (int? w, int? h)? StreamWindowFor(bool streamSession, bool ownScreen, bool matched, int w, int h) =>
+            !streamSession ? null : ownScreen ? ((int?)null, (int?)null) : matched ? ((int?)w, (int?)h) : ((int? w, int? h)?)null;
+
         void MakeStarter()
         {
             Starter = new WowStarter(
                 windowUp: WowUp,
                 processUp: WowWindow.ProcessRunning,
                 plan: () => WowLaunch.Plan(Wow, DateTime.Now, WowLaunch.FindBattleNet()),
-                start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep); });
+                start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep, StreamWindow); });
             Starter.Changed += (state, why) =>
             {
                 if (Supervisor != null) PublishWow(force: true);
