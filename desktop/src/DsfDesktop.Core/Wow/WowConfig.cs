@@ -10,7 +10,7 @@ namespace DsfDesktop.Wow
     /// </summary>
     public static class WowConfig
     {
-        static readonly string[] Keys = { "GamePadEnable", "InputDeviceInterfaceStyle" };
+        public static readonly string[] Keys = { "GamePadEnable", "InputDeviceInterfaceStyle" };
 
         /// <summary>[text] with both settings on; unchanged when they already are</summary>
         public static string Apply(string text)
@@ -27,8 +27,9 @@ namespace DsfDesktop.Wow
             return string.Join(nl, lines) + nl;
         }
 
-        /// <summary>a game never started has no file yet; failing here never stops the game starting</summary>
-        public static void Ensure(string path)
+        /// <summary>a game never started has no file yet; failing here never stops the game starting. [keep] records the player's
+        /// own lines first, to be put back once the session is over (WowConfigKeep)</summary>
+        public static void Ensure(string path, WowConfigKeep keep = null)
         {
             try
             {
@@ -36,6 +37,7 @@ namespace DsfDesktop.Wow
                 var was = File.ReadAllText(path);
                 var now = Apply(was);
                 if (now == was) return;
+                keep?.Record(path, was, now);
                 File.WriteAllText(path, now);
                 Log.I("WoW config: controller on");
             }
