@@ -144,6 +144,20 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   that does not sign in gives `needs_you` true and a `status` "Sign-in needs you on the PC's Battle.net", and no new attempt for 2
   minutes. The Thor keeps its loading curtain over the stream until `screen` is `charselect` / `world` and `focused` (an older
   Desktop without `screen`: `focused` alone), and lifts it only for Battle.net's sign-in while `bnet` is `signin_needed`.
+- **[0.2.33] Battle.net's sign-in on the Thor again (the user, 2026-11-17: "we had it clipping the Battlenet screen before").**
+  0.2.8 to 0.2.32 sent `bnet` = `unknown` always and never started Battle.net, so the Thor's clipped sign-in (its `show` rectangle,
+  the zoom, the saved login typed after `bnet_ready`) could not happen. From 0.2.33 `bnet` is the PC's real state again, except
+  that `signin_needed` is never sent while WoW is at character select or in the world. On a connect, before WoW starts (and at WoW's
+  login screen): Battle.net not running = started (WoW waits up to 90 s for it, then starts without it); signed out = its sign-in
+  window in front on the streamed monitor, with `show`, until signed in; then WoW starts plainly (no `-launcherlogin`). WoW is not
+  pulled to the front over Battle.net's sign-in. `needs_you`'s `status` is now "Press Play in Battle.net".
+- **[0.2.33] `region` vs `realm`.** `region` = `refused` only for a real refusal: a 309 after a district was asked for while the game
+  offered more than one region. Any other 309 (one region on offer: the user's PC 2026-11-17) is `realm` = `unreachable` plus
+  `login_error` `309`; with Battle.net signed out or not running, Desktop then brings Battle.net's sign-in up on the Thor once.
+- **[0.2.33] A disabled SudoVDA.** Apollo's SudoVDA adapter present but disabled in Windows reads as there, not missing: no install
+  is offered; the `status` line (and, headless, `sunshine.problem` `screen_disabled` with its `why`) is "Enable SudoMaker display
+  adapter in Device Manager". Desktop never enables a device. The one-time install question waits until no Thor is connected or
+  streaming.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.

@@ -180,4 +180,35 @@ class StreamCurtainTest {
         assertEquals("WoW closed: no line", "", StreamCurtain.streamLine(pc.copy(screen = "none")))
         assertTrue(!PcWow.of(JSONObject().put("state", "running"))!!.regionRefused)
     }
+
+    /** the user's PC 2026-11-17 22:57 ("saying that its a region error when its not"): Desktop 0.2.33 says a 309 with one region on
+     *  offer as realm="unreachable", never region="refused"; the Thor says the servers, not the region */
+    @Test fun aRealmOutOfReachIsNoRegionRefusal() {
+        val o = JSONObject().put("t", "wow").put("state", "running").put("screen", "login").put("focused", true).put("bnet", "signed_in")
+            .put("login_error", "309").put("realm", "unreachable")
+        val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
+        assertTrue(pc.realmUnreachable); assertTrue(!pc.regionRefused)
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, pc))
+        assertEquals("WoW can't reach its servers", StreamCurtain.streamLine(pc))
+        assertTrue(StreamCurtain.streamLine(pc) != StreamCurtain.REGION_REFUSED)
+        assertEquals("a region refusal still wins", StreamCurtain.REGION_REFUSED, StreamCurtain.streamLine(pc.copy(regionRefused = true)))
+        assertEquals("signed in: no line", "", StreamCurtain.streamLine(pc.copy(screen = "charselect")))
+    }
+
+    /** the Battle.net sign-in on the Thor, back with Desktop 0.2.33 (0.2.8 to 0.2.32 always said bnet "unknown"): a signed-out PC
+     *  Battle.net and its window's rectangle = that window alone with "Sign in to Battle.net", even while WoW sits at its login; the
+     *  spent retry never says "on the PC" */
+    @Test fun aSignedOutBattleNetIsSignedInFromTheThor() {
+        val r = listOf(0.3f, 0.2f, 0.4f, 0.5f)
+        val o = JSONObject().put("t", "wow").put("state", "running").put("screen", "login").put("focused", false)
+            .put("bnet", "signin_needed").put("show", "0.3,0.2,0.4,0.5")
+        val pc = (BridgeProtocol.parse(o.toString()) as BridgeMsg.Wow).pc!!
+        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.SIGN_IN, r), StreamCurtain.decide(true, true, pc))
+        assertEquals("Sign in to Battle.net", StreamCurtain.SIGN_IN)
+        assertTrue(!StreamCurtain.NEEDS_YOU.contains("PC"))
+        assertEquals("Desktop 0.2.33 headless with a disabled SudoVDA", StreamCurtain.SCREEN_DISABLED,
+            StreamCurtain.reason("screen_disabled", "enable SudoMaker display adapter in Device Manager"))
+        assertEquals("an older Thor's fallback reads the same", StreamCurtain.SCREEN_DISABLED,
+            StreamCurtain.reason("some_new_word", "enable SudoMaker display adapter in Device Manager"))
+    }
 }

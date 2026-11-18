@@ -52,7 +52,8 @@ namespace DsfDesktop.App
         public string HostWhy => Sunshine != null && Sunshine.Exited ? "pc busy: the streaming host stopped"
             : HealProblem == ProblemNotResponding ? WhyNotResponding : HealProblem == ProblemRestarting ? WhyRestarting
             : Ports?.Problem != null ? Ports.ThorWhy : ScreenProblem == ScreenPlan.ProblemNeedsScreen ? ScreenPlan.ThorNeedsScreen
-            : ScreenProblem == ScreenPlan.ProblemNoScreen ? ScreenPlan.ThorNoScreen : "";
+            : ScreenProblem == ScreenPlan.ProblemNoScreen ? ScreenPlan.ThorNoScreen
+            : ScreenProblem == ScreenPlan.ProblemScreenDisabled ? ScreenPlan.ThorScreenDisabled : "";
 
         public event Action Changed;
 
@@ -826,7 +827,17 @@ namespace DsfDesktop.App
         }
 
         /// <summary>the install question, once: true when the window should ask it now</summary>
-        public bool TakeScreenOffer() { if (!screenOffer) return false; screenOffer = false; return true; }
+        public bool TakeScreenOffer()
+        {
+            // never while a Thor is connected or streaming (ScreenPlan.AskNow): asked once it has gone
+            if (!ScreenPlan.AskNow(screenOffer, (Bridge?.Sessions().Count ?? 0) > 0, StreamLive())) return false;
+            screenOffer = false;
+            Log.I("virtual screen: asking now (no Thor connected)");
+            return true;
+        }
+
+        /// <summary>SudoVDA's adapter is in Windows but disabled (SudoVda.Disabled, surveyed with the drivers)</summary>
+        bool sudoVdaDisabled;
 
         /// <summary>the install question is for a PC with no screen on (else: for the stream's own screen)</summary>
         public bool ScreenOfferHeadless => screenOfferHeadless;
@@ -967,10 +978,20 @@ namespace DsfDesktop.App
             bool thorWants = life.ThorWants(now, thor, streaming);
             // an old screen WoW hadn't left yet (RetireOldScreen): tried again, never in a loop (OldScreen.MaxTries)
             if (now >= retireAt) { retireAt = DateTime.MaxValue; Task.Run(() => RetireOldScreen()); }
-            if (now - driversAt > TimeSpan.FromSeconds(30)) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
+            if (now - driversAt > TimeSpan.FromSeconds(30))
+            {
+                driversAt = now;
+                (driverInstalled, driverUsable) = life.Survey();
+                // Apollo's SudoVDA disabled in Windows reads as "not installed" (no active interface): it is there, so nothing is
+                // offered and the line names the fix (read only: Desktop never enables a device)
+                bool was = sudoVdaDisabled;
+                sudoVdaDisabled = !driverUsable && SudoVda.Disabled();
+                if (sudoVdaDisabled != was) Log.I("virtual screen: SudoVDA adapter " + (sudoVdaDisabled ? "found disabled in Windows" : "no longer disabled"));
+                if (sudoVdaDisabled) screenOffer = false;
+            }
             bool hasScreen = Displays.HasScreen(win, life.GdiName);
             // a driver that is there but can't be used (the player's own VDD monitor): nothing to offer
-            bool offered = Settings.VirtualScreenOffered || driverInstalled;
+            bool offered = ScreenPlan.Offered(Settings.VirtualScreenOffered, driverInstalled, sudoVdaDisabled);
             var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, driverUsable, thorWants, offered, (thorW, thorH, thorFps), streaming,
                                           sunshineOnOurs: sessionOutput != null, thorHere: thor || streaming);
             switch (step)
@@ -1008,11 +1029,15 @@ namespace DsfDesktop.App
                     else Say(ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen);
                     break;
                 case ScreenPlan.Step.NeedsInstall:
-                    Say(ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen);
+                    { var (l, pr) = ScreenPlan.NoDriverLine(false, sudoVdaDisabled); Say(l, pr); }
                     break;
                 case ScreenPlan.Step.Fallback:
-                    // today's behaviour: Sunshine captures a real screen; one line says why
-                    if (ScreenLine != ScreenPlan.FallbackFailed) Say(driverUsable ? ScreenPlan.FallbackFailed : ScreenPlan.FallbackNote, null);
+                    // today's behaviour: Sunshine captures a real screen; one line says why (a disabled SudoVDA: how to enable it)
+                    if (ScreenLine != ScreenPlan.FallbackFailed)
+                    {
+                        if (driverUsable) Say(ScreenPlan.FallbackFailed, null);
+                        else { var (l, pr) = ScreenPlan.NoDriverLine(true, sudoVdaDisabled); Say(l, pr); }
+                    }
                     break;
             }
             return false;
@@ -1337,6 +1362,9 @@ namespace DsfDesktop.App
         /// back after it was missing, a client restart, a path or flavor switch; local time); null while nothing of the file is read</summary>
         DateTime? loginLogAt;
         bool loginFileSwept;
+        /// <summary>the last login.txt went unread (its 5 minutes ran out with no client: the player was signing in to Battle.net
+        /// first): the next start asks the Thor for the login again, as after a closed run</summary>
+        bool loginFileUnread;
         /// <summary>the client run the login.txt was written for: the first Wow.exe seen after the write (WowFlow.LoginRunOver); kept
         /// after the file went, until the next start asked the Thor again, the run signed in, or the Thor left</summary>
         int? loginRunPid;
@@ -1358,7 +1386,7 @@ namespace DsfDesktop.App
                 if (s == WowScreen.None && gameAccountList != null) RememberGameAccount(dir);
                 if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(s)) return;
                 var why = WowLoginFile.Write(dir, email, password);
-                if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; loginRunSettled = false; }
+                if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; loginRunSettled = false; loginFileUnread = false; }
                 Log.I("login file: " + (why ?? "written"));
             }
         }
@@ -1397,8 +1425,8 @@ namespace DsfDesktop.App
                         loginFileAt = null;
                         Log.I("login file: deleted (its client closed)");
                     }
-                    ask = WowFlow.LoginAgainWanted(loginFileAt.HasValue, over, Bridge != null && Bridge.Sessions().Count > 0);
-                    if (ask) loginRunPid = null;
+                    ask = WowFlow.LoginAgainWanted(loginFileAt.HasValue, over || loginFileUnread, Bridge != null && Bridge.Sessions().Count > 0);
+                    if (ask) { loginRunPid = null; loginFileUnread = false; }
                 }
                 catch (Exception e) { Log.I("before start: " + e.GetType().Name); return; }
             }
@@ -1425,7 +1453,7 @@ namespace DsfDesktop.App
                 if (!loginFileSwept) { loginFileSwept = true; if (!loginFileAt.HasValue) WowLoginFile.Delete(dir); }   // a crash's leftover
                 var thorHere = Bridge != null && Bridge.Sessions().Count > 0;
                 // the Thor left: nothing to ask again, and its game account is not kept (an account name)
-                if (!thorHere) { loginRunPid = null; gameAccountList = null; }
+                if (!thorHere) { loginRunPid = null; gameAccountList = null; loginFileUnread = false; }
                 int? pidNow = null;
                 if (loginFileAt.HasValue || loginRunPid.HasValue)
                     using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
@@ -1454,6 +1482,8 @@ namespace DsfDesktop.App
                 if (why == null) return;
                 WowLoginFile.Delete(dir);
                 loginFileAt = null;
+                // no client ever came for it (Battle.net's sign-in first): the next start asks the Thor again
+                loginFileUnread = thorHere && !pidNow.HasValue && !loginRunPid.HasValue;
                 Log.I("login file: deleted (" + why + ")");
             }
             catch (Exception e) { Log.I("login file: " + e.GetType().Name); }
@@ -1681,7 +1711,7 @@ namespace DsfDesktop.App
         {
             var sv = Supervisor;
             if (sv == null) return null;
-            bool wanted = LastBnet == BnetState.SignInNeeded || sv.Crash != null || sv.NeedsYou;
+            bool wanted = WowFlow.BnetSignInPending(LastBnet, LastScreen) || sv.Crash != null || sv.NeedsYou;
             if (!wanted) return null;
             var b = WowProbe.Bnet();
             var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
@@ -1819,14 +1849,16 @@ namespace DsfDesktop.App
         public Dictionary<string, object> WowInfo()
         {
             string err;
-            bool regionRefused;
-            lock (loginLog) { err = loginLog.Error; regionRefused = loginLog.RegionRefused; }
+            bool regionRefused, realmUnreachable;
+            lock (loginLog) { err = loginLog.Error; regionRefused = loginLog.RegionRefused; realmUnreachable = loginLog.RealmUnreachable; }
             var d = new Dictionary<string, object>
             {
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State),
                 ["screen"] = WowFlow.Word(LastScreen),
                 ["focused"] = WowWindow.IsForeground(),
-                ["bnet"] = WowFlow.Word(BnetState.Unknown),
+                // the PC's Battle.net again (0.2.8 to 0.2.32 said "unknown" always, so the Thor never showed its sign-in window):
+                // "signin_needed" + "show" = the Thor shows Battle.net's window alone and types the saved login into it
+                ["bnet"] = WowFlow.ThorBnet(LastBnet, LastScreen),
                 ["needs_you"] = Supervisor?.NeedsYou ?? false,
             };
             if (Supervisor?.Crash != null) d["crash"] = Supervisor.Crash;
@@ -1837,6 +1869,8 @@ namespace DsfDesktop.App
             // WoW's region screen waits after a refused region: the Thor says "Region refused: pick another region"; the player picks
             // on WoW's own screen (Desktop never picks or saves one)
             if (regionRefused) d["region"] = "refused";
+            // a 309 that was no region refusal: the realm was out of reach (an older Thor ignores it)
+            else if (realmUnreachable) d["realm"] = "unreachable";
             return WithInput(d);
         }
 
@@ -1851,11 +1885,22 @@ namespace DsfDesktop.App
                     if (p != null && p.Id != crashedPid && !WowProbe.FatalErrorShown(p.Id)) Supervisor.CrashOver();
             // WoW closed itself after a refused region pick (309), maybe after the supervisor had already put it in front and stopped:
             // a Thor still wants it, so it starts again at WoW's own region screen (the user's pick 2026-11-17: "it should be changable")
-            bool regionRefused;
-            lock (loginLog) regionRefused = loginLog.RegionRefused;
+            bool regionRefused, realmUnreachable;
+            lock (loginLog) { regionRefused = loginLog.RegionRefused; realmUnreachable = loginLog.RealmUnreachable; }
+            bool thorHere = Bridge != null && Bridge.Sessions().Count > 0;
+            if (!realmUnreachable) realmBnetAsked = false;
             if (!Supervisor.Active && LastScreen == WowScreen.None && regionRefused && Settings.StartWowOnStream
-                && Bridge != null && Bridge.Sessions().Count > 0 && Supervisor.RegionRetryPending)
+                && thorHere && Supervisor.RegionRetryPending)
                 Want("its client closed after a refused region");
+            // WoW couldn't reach its realm (309, no region refused) while the PC's Battle.net is signed out or not running (the user,
+            // 2026-11-17: "my battlenet is not logged in so its failing to find servers"): Battle.net's sign-in comes up on the Thor,
+            // once per such error
+            else if (!Supervisor.Active && realmUnreachable && !realmBnetAsked && Settings.StartWowOnStream && thorHere
+                     && (LastBnet == BnetState.SignInNeeded || LastBnet == BnetState.NotRunning) && !SignedIn(LastScreen))
+            {
+                realmBnetAsked = true;
+                Want("its realm was out of reach with Battle.net signed out");
+            }
             else if (Supervisor.Active) Supervisor.Step();
             FocusRetry();
             PublishWow(force: false);
@@ -1867,9 +1912,14 @@ namespace DsfDesktop.App
         DateTime nextFocus = DateTime.MinValue;
         int focusBusy;
 
+        /// <summary>a 309 with Battle.net signed out already brought Battle.net's sign-in up (WowTick); again only after a new error</summary>
+        bool realmBnetAsked;
+
         void FocusRetry()
         {
             if (Bridge == null || Bridge.Sessions().Count == 0 || LastScreen == WowScreen.None) { focusTries = 0; return; }
+            // Battle.net's sign-in is the player's step (the Thor shows that window alone): WoW is never pulled over it
+            if (WowFlow.BnetSignInPending(LastBnet, LastScreen)) return;
             if (!WowFlow.FocusRetryWanted(LastScreen, WowWindow.IsForeground(), focusTries, DateTime.UtcNow >= nextFocus)) return;
             if (Interlocked.CompareExchange(ref focusBusy, 1, 0) != 0) return;
             focusTries++;
@@ -2218,7 +2268,7 @@ namespace DsfDesktop.App
                 // running / starting / stopped / start_failed (+ why): "Starting WoW on your PC..." on the Thor
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State), ["why"] = Starter.Why,
                 // where it is and what Battle.net needs (0.2.1): the Thor keeps its curtain until charselect / world + focused
-                ["screen"] = WowFlow.Word(LastScreen), ["bnet"] = WowFlow.Word(BnetState.Unknown), ["needs_you"] = Supervisor?.NeedsYou ?? false,
+                ["screen"] = WowFlow.Word(LastScreen), ["bnet"] = WowFlow.ThorBnet(LastBnet, LastScreen), ["needs_you"] = Supervisor?.NeedsYou ?? false,
             }),
             ["pairing_open"] = !Codes.Locked,
         };

@@ -5,7 +5,7 @@ namespace DsfDesktop.Wow
 {
     /// <summary>
     /// A stream wants WoW (the Thor connected): apply <see cref="WowFlow.Decide"/> every tick until the game is signed in and in
-    /// front, or the one retry is spent ("Sign-in needs you on the PC's Battle.net"). The pieces are injected so tests drive it
+    /// front, or the one retry is spent ("Press Play in Battle.net", shown on the Thor). The pieces are injected so tests drive it
     /// without a game, Battle.net or a clock.
     /// </summary>
     public sealed class WowSupervisor
@@ -26,6 +26,13 @@ namespace DsfDesktop.Wow
 
         bool active, restarting;
         DateTime bnetStartedAt = DateTime.MinValue;
+        /// <summary>when this connect first waited for Battle.net to start (null = not yet)</summary>
+        DateTime? bnetWaitSince;
+        bool bnetGaveUp;
+
+        /// <summary>how long a connect waits for the PC's Battle.net to come up (not running / starting) before WoW starts without it.
+        /// Its sign-in window never times out: the player is signing in</summary>
+        public const double BnetGiveUpS = 90;
 
         /// <summary>clients that have tried to sign in during this connect (see Decide)</summary>
         public int Tries { get; private set; }
@@ -70,6 +77,7 @@ namespace DsfDesktop.Wow
             lock (gate)
             {
                 active = true; NeedsYou = false; restarting = false; Crash = null;
+                bnetWaitSince = null; bnetGaveUp = false;
                 var s = screen();
                 Tries = s == WowScreen.Login || s == WowScreen.SigningIn || s == WowScreen.Starting ? 1 : 0;
                 if (regionRefusals() <= regionAnswered) RegionTries = 0;
@@ -107,6 +115,16 @@ namespace DsfDesktop.Wow
                 }
                 var b = bnet();
                 var s = screen();
+                // Battle.net that never comes up must not hold WoW for ever: after BnetGiveUpS, WoW's own login only
+                if (b == BnetState.NotRunning || b == BnetState.Starting)
+                {
+                    if (!bnetWaitSince.HasValue) bnetWaitSince = now();
+                    if ((now() - bnetWaitSince.Value).TotalSeconds >= BnetGiveUpS)
+                    {
+                        if (!bnetGaveUp) { bnetGaveUp = true; Log.I("stream wants WoW: Battle.net didn't come up in " + (int)BnetGiveUpS + " s: WoW starts without it"); }
+                        b = BnetState.Unknown;
+                    }
+                }
                 // a client that closed itself after a refused region pick starts again without using up the one retry: the player
                 // picks another region on WoW's own screen (the user's pick 2026-11-17)
                 var refusals = regionRefusals();

@@ -81,8 +81,15 @@ namespace DsfDesktop.Tests
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Starting, 1, false));
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.SigningIn, 1, false), "Blizzard's queue: never restart it");
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Login, 0, true), "a start is under way");
-            A.Eq(WowAction.StartWow, WowFlow.Decide(BnetState.NotRunning, WowScreen.None, 0, false), "Battle.net plays no part");
-            A.Eq(WowAction.StartWow, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.None, 0, false));
+            // Battle.net first again (the user, 2026-11-17: "we had it clipping the Battlenet screen before")
+            A.Eq(WowAction.StartBattleNet, WowFlow.Decide(BnetState.NotRunning, WowScreen.None, 0, false), "not running: started first");
+            A.Eq(WowAction.Wait, WowFlow.Decide(BnetState.Starting, WowScreen.None, 0, false), "coming up: wait for it");
+            A.Eq(WowAction.ShowBattleNetSignIn, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.None, 0, false), "signed out: its sign-in, on the Thor");
+            A.Eq(WowAction.ShowBattleNetSignIn, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.Login, 1, false), "WoW at its login and Battle.net signed out");
+            A.Eq(WowAction.Wait, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.SigningIn, 1, false), "a sign-in under way is never interrupted");
+            A.Eq(WowAction.Focus, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.CharSelect, 1, false), "signed in: never held for Battle.net");
+            A.Eq(WowAction.StartWow, WowFlow.Decide(BnetState.Unknown, WowScreen.None, 0, false), "no Battle.net on this PC: WoW's own login");
+            A.Eq(WowAction.Wait, WowFlow.Decide(BnetState.NotRunning, WowScreen.None, 0, true), "busy still waits");
         }
 
         sealed class Pc
@@ -97,7 +104,7 @@ namespace DsfDesktop.Tests
             /// <summary>LoginLog.RegionRefusals</summary>
             public int Refusals;
 
-            public WowSupervisor Make() => new WowSupervisor(
+            public WowSupervisor Make(Func<DateTime> now = null) => new WowSupervisor(
                 screen: () => Screen, bnet: () => Bnet,
                 startBnet: () => { Did.Add("bnet"); return null; },
                 showBnetSignIn: () => { Did.Add("signin"); return null; },
@@ -105,7 +112,7 @@ namespace DsfDesktop.Tests
                 startPending: () => Pending,
                 closeWow: () => { Did.Add("close"); Screen = WowScreen.None; return null; },
                 focusWow: () => { Did.Add("focus"); return null; },
-                run: a => a(), crash: () => Crash, regionRefusals: () => Refusals);
+                now: now, run: a => a(), crash: () => Crash, regionRefusals: () => Refusals);
         }
 
         /// <summary>
@@ -455,12 +462,61 @@ namespace DsfDesktop.Tests
             A.Eq("focus", string.Join(",", pc.Did)); A.Eq(0, s.Tries);
         }
 
+        /// <summary>
+        /// the Battle.net sign-in on the Thor, as up to 0.2.7 (taken out by 0.2.8, 8e10f536): not running = started; signed out = its
+        /// sign-in in front (the Thor shows it alone and types the saved login); signed in = WoW starts (plainly); a Battle.net that never
+        /// comes up holds WoW for BnetGiveUpS at the most
+        /// </summary>
         [Test]
-        public static void BattleNetPlaysNoPart()
+        public static void BattleNetSignsInFirst()
         {
+            var t = new DateTime(2026, 11, 17, 23, 0, 0, DateTimeKind.Utc);
             var pc = new Pc { Screen = WowScreen.None, Bnet = BnetState.NotRunning };
-            pc.Make().Connect();
-            A.Eq("start", string.Join(",", pc.Did), "signed out or closed, WoW still starts");
+            var s = pc.Make(() => t);
+            s.Connect();
+            A.Eq("bnet", string.Join(",", pc.Did), "not running: Battle.net starts, WoW waits");
+            pc.Bnet = BnetState.Starting; t = t.AddSeconds(10); s.Step();
+            A.Eq("bnet", string.Join(",", pc.Did), "coming up: nothing more");
+            pc.Bnet = BnetState.SignInNeeded; t = t.AddSeconds(10); s.Step(); s.Step();
+            A.Eq("bnet,signin", string.Join(",", pc.Did), "signed out: its sign-in in front, once");
+            t = t.AddMinutes(10); s.Step();
+            A.Eq("bnet,signin", string.Join(",", pc.Did), "the sign-in never times out: the player is on it");
+            A.True(s.Active);
+            pc.Bnet = BnetState.SignedIn; s.Step();
+            A.Eq("bnet,signin,start", string.Join(",", pc.Did), "signed in: WoW starts");
+            A.Eq(1, s.Tries);
+
+            // a Battle.net that never comes up: WoW starts without it after BnetGiveUpS
+            var t2 = t;
+            var pc2 = new Pc { Screen = WowScreen.None, Bnet = BnetState.NotRunning };
+            var s2 = pc2.Make(() => t2);
+            s2.Connect();
+            t2 = t2.AddSeconds(WowSupervisor.BnetGiveUpS - 1); s2.Step();
+            A.False(pc2.Did.Contains("start"), "still waiting (Battle.net asked again each half minute)");
+            A.True(pc2.Did.Count <= 4, "never a tight loop");
+            t2 = t2.AddSeconds(2); s2.Step();
+            A.Eq("start", pc2.Did[pc2.Did.Count - 1], "gave up on Battle.net: WoW's own login");
+
+            // no Battle.net on the PC at all: as 0.2.8
+            var pc3 = new Pc { Screen = WowScreen.None, Bnet = BnetState.Unknown };
+            pc3.Make().Connect();
+            A.Eq("start", string.Join(",", pc3.Did));
+        }
+
+        /// <summary>the Thor's "bnet": signin_needed only while WoW is not signed in (StreamCurtain shows Battle.net's window alone for it)</summary>
+        [Test]
+        public static void TheThorHearsBattleNetAgain()
+        {
+            A.Eq("signin_needed", WowFlow.ThorBnet(BnetState.SignInNeeded, WowScreen.None));
+            A.Eq("signin_needed", WowFlow.ThorBnet(BnetState.SignInNeeded, WowScreen.Login));
+            A.Eq("unknown", WowFlow.ThorBnet(BnetState.SignInNeeded, WowScreen.World), "a game in the world is never hidden behind Battle.net");
+            A.Eq("unknown", WowFlow.ThorBnet(BnetState.SignInNeeded, WowScreen.CharSelect));
+            A.Eq("not_running", WowFlow.ThorBnet(BnetState.NotRunning, WowScreen.None));
+            A.Eq("signed_in", WowFlow.ThorBnet(BnetState.SignedIn, WowScreen.Login));
+            A.True(WowFlow.BnetSignInPending(BnetState.SignInNeeded, WowScreen.Login));
+            A.False(WowFlow.BnetSignInPending(BnetState.SignInNeeded, WowScreen.World));
+            A.False(WowFlow.BnetSignInPending(BnetState.SignedIn, WowScreen.Login));
+            A.False(WowFlow.NeedsYouText.Contains("PC"), "never 'sign in on the PC' (the user, 2026-11-17)");
         }
 
         /// <summary>the welcome's "lan": home networks only, never Tailscale (the user, 2026-10-28: "Yes, Wi-Fi first")</summary>
@@ -495,21 +551,53 @@ namespace DsfDesktop.Tests
             if (firstV6 >= 0) A.True(System.Linq.Enumerable.All(System.Linq.Enumerable.Skip(all, firstV6), a => ((string)a).Contains(":")), "IPv4 first");
         }
 
+        const string Glue0 = "11/17 22:53:45.161  [N][Connection] Glue login started loginType=\"(enum)0\" launcherPortal=\"nullopt\"";
+        const string OneRegion = "11/17 22:57:09.652  [N][Connection] Battle.net subregion list received code=\"ERROR_OK (0)\" realmListRequestToken=\"0\" isCurrentToken=\"true\" subRegionCount=\"1\"";
+        const string TwoRegions = "11/17 22:57:09.652  [N][Connection] Battle.net subregion list received code=\"ERROR_OK (0)\" realmListRequestToken=\"0\" isCurrentToken=\"true\" subRegionCount=\"2\"";
+        const string PickScreen = "11/17 22:57:10.471  [N][Lua] Switching to screen=\"SuperDistrictUI\" (from \"login\")";
+        const string District = "11/17 22:57:11.436  [N][Connection] Battle.net super district realm connection requested superDistrictID=\"2\"";
+        const string BackToLogin = "11/17 22:57:11.436  [N][Lua] Switching to screen=\"AccountLogin\" (from \"superdistrict\")";
+        const string Fatal309 = "11/17 22:57:11.785  [N][Connection] Fatal login error received result=\" (309)\"";
+
         /// <summary>
-        /// the user's pick 2026-11-17 (region): a refused region (309) is said to the Thor while WoW's own region screen waits; it stays
-        /// through the screen switching back to the login or the region pick, and goes once a character select shows or a new client runs
+        /// the user's PC 2026-11-17 22:57 and 22:58 ("saying that its a region error when its not"): one region on offer, district 2 asked,
+        /// back to the login, 309. Nothing to refuse: the realm was out of reach, never "Region refused"
+        /// </summary>
+        [Test]
+        public static void A309WithOneRegionIsNoRegionRefusal()
+        {
+            var l = Log(LoginScreen, Glue0, OneRegion, LoginScreen, PickScreen, District, BackToLogin, Fatal309);
+            A.Eq("309", l.Error);
+            A.False(l.RegionRefused, "one region: nothing was refused");
+            A.True(l.RealmUnreachable, "the realm was out of reach");
+            A.Eq(0, l.RegionRefusals, "no region start for it");
+            A.Eq(WowScreen.Login, WowFlow.Classify(true, 200, 0, 0, l, null));
+            l.Line(Glue0);
+            A.False(l.RealmUnreachable, "a new sign-in starts clean");
+            A.False(Log(LoginScreen, Fatal309).RegionRefused, "a 309 with no district asked is no refusal either");
+            A.True(Log(LoginScreen, Fatal309).RealmUnreachable);
+            var c = Log(LoginScreen, Glue0, OneRegion, PickScreen, District, BackToLogin, Fatal309);
+            c.Reset();
+            A.False(c.RegionRefused, "nothing carried into the next client");
+            A.False(c.RealmUnreachable);
+            A.Eq("WoW can't reach its servers", WowFlow.RealmUnreachableText);
+        }
+
+        /// <summary>
+        /// a REAL refusal (the user's pick 2026-11-17: the region "should be changable"): more than one region on offer, a district asked,
+        /// 309. It is said to the Thor while WoW's own region screen waits; it stays through the screen switching back to the login or the
+        /// region pick, and goes once a character select shows or a new client runs much later
         /// </summary>
         [Test]
         public static void ARefusedRegionIsSaidUntilTheSignInGoesOn()
         {
-            const string Pick = "11/17 14:15:48.916  [N][Lua] Switching to screen=\"SuperDistrictUI\" (from \"login\")";
-            const string Fatal309 = "11/17 14:16:07.625  [N][Connection] Fatal login error received result=\" (309)\"";
-            var l = new LoginLog();
-            l.Line(Pick);
+            var l = Log(LoginScreen, Glue0, TwoRegions, PickScreen);
             A.False(l.RegionRefused, "the pick itself is not a refusal");
-            l.Line(Fatal309);
-            A.True(l.RegionRefused, "309");
-            l.Line(Pick);
+            l.Line(District); l.Line(BackToLogin); l.Line(Fatal309);
+            A.True(l.RegionRefused, "two regions, one asked for, 309");
+            A.False(l.RealmUnreachable);
+            A.Eq(1, l.RegionRefusals, "counted, though the screen was already back at the login when the 309 came");
+            l.Line(PickScreen);
             A.True(l.RegionRefused, "back at the region screen: still said");
             A.Eq(null, l.Error, "the error itself is cleared by the screen switch as before");
             l.Line(LoginScreen);
@@ -523,26 +611,27 @@ namespace DsfDesktop.Tests
             var now = new DateTime(2026, 11, 17, 14, 16, 8, DateTimeKind.Utc);
             l.Now = () => now;
             l.Line(Fatal309);
+            A.True(l.RegionRefused);
             now = now.AddSeconds(20);
             l.Reset();
             A.True(l.RegionRefused, "the restarted client (its log emptied) still shows the refusal");
             A.Eq(null, l.Error, "the rest of the run is forgotten");
             l.Line(LoginScreen);
-            l.Line(Pick);
+            l.Line(PickScreen);
             A.True(l.RegionRefused, "the restarted client's region screen: said");
             l.Line(CharSelect);
             A.False(l.RegionRefused, "another region taken: gone");
-            l.Line(Fatal309);
+            l.Line(Glue0); l.Line(TwoRegions); l.Line(District); l.Line(Fatal309);
+            A.True(l.RegionRefused);
             now = now.AddSeconds(LoginLog.RegionCarryS);
             l.Reset();
             A.False(l.RegionRefused, "a client started much later is a new try");
             A.Eq("Region refused: pick another region", WowFlow.RegionRefusedText);
-            // a refusal counts as the player's region pick only on WoW's region screen (the supervisor starts WoW again for it)
             var c = new LoginLog();
             c.Line(LoginScreen); A.True(c.AtSignInScreens);
-            c.Line(Fatal309); A.Eq(0, c.RegionRefusals, "a 309 at the login screen is no pick");
-            c.Line(Pick); A.True(c.AtSignInScreens, "the region screen is still the sign-in");
-            c.Line(Fatal309); A.Eq(1, c.RegionRefusals);
+            c.Line(Fatal309); A.Eq(0, c.RegionRefusals, "a 309 with no region pick is no refusal");
+            c.Line(Glue0); c.Line(TwoRegions); c.Line(PickScreen); A.True(c.AtSignInScreens, "the region screen is still the sign-in");
+            c.Line(District); c.Line(Fatal309); A.Eq(1, c.RegionRefusals);
             c.Line(Fatal308); A.Eq(1, c.RegionRefusals, "another error is no region refusal");
             c.Reset(); A.Eq(1, c.RegionRefusals, "a new client run keeps the count");
             c.Line(CharSelect); A.False(c.AtSignInScreens);

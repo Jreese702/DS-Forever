@@ -34,7 +34,9 @@ object StreamCurtain {
     const val SIGN_IN = "Sign in to Battle.net"
     const val SIGNING_IN = "Signing in to Battle.net"
     const val LOOKING = "Looking for your PC"
-    const val NEEDS_YOU = "Sign-in needs you on the PC's Battle.net"
+    /** Desktop's one retry is spent: Battle.net's window is shown alone, so Play is pressed through the stream. Never "on the PC" (the
+     *  user, 2026-11-17: "signing in on the PC wont always be an option") */
+    const val NEEDS_YOU = "Press Play in Battle.net"
     /** WoW crashed on the PC because its files are older than the game's data (the user's PC 2026-10-29: a black stream behind it) */
     const val UPDATE = "Update WoW in Battle.net"
     const val CRASHED = "WoW crashed on your PC"
@@ -74,6 +76,11 @@ object StreamCurtain {
     /** Desktop 0.2.31: the game refused the region picked on its own region screen (309); the player picks again there (the user's
      *  pick 2026-11-17: "it shouldnt auto pick it should be changable") */
     const val REGION_REFUSED = "Region refused: pick another region"
+    /** Desktop 0.2.33: a 309 that was no region refusal (one region on offer): WoW could not reach its realm (the user, 2026-11-17:
+     *  "its failing to find servers and saying that its a region error when its not") */
+    const val REALM_UNREACHABLE = "WoW can't reach its servers"
+    /** Desktop 0.2.33: the PC's SudoVDA (Apollo's virtual display driver) is there but disabled in Windows: the player enables it */
+    const val SCREEN_DISABLED = "Enable SudoMaker display adapter in Device Manager"
 
     /**
      * Desktop 0.2.27's reason streaming can't work (the welcome's sunshine.problem / sunshine.why: the user's PC 2026-11-13, another
@@ -90,6 +97,7 @@ object StreamCurtain {
         "not_responding" -> HOST_DOWN
         "needs_screen" -> NEEDS_SCREEN
         "no_screen" -> NO_SCREEN
+        "screen_disabled" -> SCREEN_DISABLED
         else -> why.trim().let { w -> when {
             w.isEmpty() -> ""
             w.startsWith("pc busy: another Sunshine", ignoreCase = true) -> ""
@@ -102,8 +110,14 @@ object StreamCurtain {
     /** WoW is up and between its login screen and character select */
     fun atLogin(pc: PcWow?) = pc != null && (pc.screen == "login" || pc.screen == "signing_in")
 
-    /** the line over the stream while WoW's own screens wait for the player ("" = none): a refused region, until another is taken */
-    fun streamLine(pc: PcWow?): String = if (pc != null && pc.regionRefused && atLogin(pc)) REGION_REFUSED else ""
+    /** the line over the stream while WoW's own screens wait for the player ("" = none): a refused region, until another is taken;
+     *  a realm out of reach (Desktop 0.2.33 says "region" only for a real refusal) */
+    fun streamLine(pc: PcWow?): String = when {
+        pc == null || !atLogin(pc) -> ""
+        pc.regionRefused -> REGION_REFUSED
+        pc.realmUnreachable -> REALM_UNREACHABLE
+        else -> ""
+    }
 
     /**
      * [connected] = the stream is up (Moonlight's picture arrived); [bridged] = this PC has DS Forever Desktop's bridge (Sunshine

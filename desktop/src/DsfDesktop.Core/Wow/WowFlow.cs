@@ -27,6 +27,7 @@ namespace DsfDesktop.Wow
     {
         static readonly Regex Screen = new Regex("\\[Lua\\] Switching to screen=\"([^\"]+)\"", RegexOptions.Compiled);
         static readonly Regex Fatal = new Regex("Fatal login error received result=\"([^\"]*)\"", RegexOptions.Compiled);
+        static readonly Regex SubRegionCount = new Regex("subRegionCount=\"(\\d+)\"", RegexOptions.Compiled);
 
         /// <summary>the last screen the log named, null = none yet in this client run</summary>
         public string LastScreen { get; private set; }
@@ -42,8 +43,23 @@ namespace DsfDesktop.Wow
         /// </summary>
         public const string RegionScreen = "SuperDistrictUI";
 
-        /// <summary>the game's refusal of the region the player picked on its region screen (309, the user's PC 2026-11-17)</summary>
+        /// <summary>the game's "Fatal login error (309)": it could not connect to the realm of the district it asked for. A region
+        /// refusal ONLY when the player had regions to pick from (<see cref="RegionRefused"/>); with one region on offer (the user's PC
+        /// 2026-11-17 22:57 and 22:58: subRegionCount="1", district 2 asked, then 309) it is <see cref="RealmUnreachable"/></summary>
         public const string RegionRefusedCode = "309";
+
+        /// <summary>the regions the game's sub-region list offered in this sign-in (its "subRegionCount"), null = not said yet</summary>
+        public int? SubRegions { get; private set; }
+
+        /// <summary>the game asked to connect to a district's realm ("super district realm connection requested") in this sign-in</summary>
+        public bool DistrictAsked { get; private set; }
+
+        /// <summary>
+        /// A 309 that is NOT a refused region: the game could not reach its realm (the user, 2026-11-17: "its failing to find servers
+        /// and saying that its a region error when its not"). Until the next sign-in starts or the client gets past its login. The Thor
+        /// hears realm="unreachable" plus login_error, never region="refused".
+        /// </summary>
+        public bool RealmUnreachable { get; private set; }
 
         /// <summary>
         /// The game refused the region picked on its own region screen (<see cref="RegionScreen"/>; "Fatal login error (309)") and no
@@ -80,7 +96,7 @@ namespace DsfDesktop.Wow
         /// <see cref="RegionCarryS"/> (its client closed itself; the restarted one shows the same region screen)</summary>
         public void Reset()
         {
-            LastScreen = null; Error = null; SignInStarted = false;
+            LastScreen = null; Error = null; SignInStarted = false; SubRegions = null; DistrictAsked = false; RealmUnreachable = false;
             RegionRefused = RegionRefused && RegionRefusedAt.HasValue && (Now() - RegionRefusedAt.Value).TotalSeconds < RegionCarryS;
         }
 
@@ -96,17 +112,30 @@ namespace DsfDesktop.Wow
                     // a new login screen starts clean; any other screen means the sign-in is behind us
                     Error = null;
                     if (LastScreen == LoginScreen) SignInStarted = false;
-                    else if (LastScreen != RegionScreen) RegionRefused = false;     // past the login: the region was taken
+                    else if (LastScreen != RegionScreen) { RegionRefused = false; RealmUnreachable = false; }   // past the login
                 }
                 return;
             }
             if (line.IndexOf("[Connection]", StringComparison.Ordinal) < 0) return;
-            if (line.IndexOf("Glue login started", StringComparison.Ordinal) >= 0) { SignInStarted = true; Error = null; return; }
+            if (line.IndexOf("Glue login started", StringComparison.Ordinal) >= 0)
+            {
+                SignInStarted = true; Error = null; SubRegions = null; DistrictAsked = false; RealmUnreachable = false;
+                return;
+            }
+            var sr = SubRegionCount.Match(line);
+            if (sr.Success && int.TryParse(sr.Groups[1].Value, out int n)) { SubRegions = n; return; }
+            if (line.IndexOf("super district realm connection requested", StringComparison.OrdinalIgnoreCase) >= 0) { DistrictAsked = true; return; }
             var f = Fatal.Match(line);
             if (f.Success)
             {
-                Error = Short(f.Groups[1].Value); SignInStarted = false; RegionRefused = Error == RegionRefusedCode;
-                if (RegionRefused) { RegionRefusedAt = Now(); if (LastScreen == RegionScreen) RegionRefusals++; }
+                Error = Short(f.Groups[1].Value); SignInStarted = false;
+                bool is309 = Error == RegionRefusedCode;
+                // a refused region needs a region the player could pick: a district asked for while more than one region was on
+                // offer. Every other 309 is the realm out of reach (the user's PC 2026-11-17: one region, so nothing to refuse; the
+                // 0.2.31 rule read every 309 as a refusal, from one run)
+                RegionRefused = is309 && DistrictAsked && SubRegions.HasValue && SubRegions.Value > 1;
+                RealmUnreachable = is309 && !RegionRefused;
+                if (RegionRefused) { RegionRefusedAt = Now(); RegionRefusals++; }
             }
         }
 
@@ -237,7 +266,7 @@ namespace DsfDesktop.Wow
         /// No WoW = start it; WoW at its login screen = bring it to the front, the player signs in there (the user's pick 2026-10-31,
         /// as in Local; a restart would only clear what they typed); signed in = bring it to the front. [tries] = clients started
         /// during this connect (a client found at the login screen counts as the first); from 2, a client that closed itself needs
-        /// the player. Battle.net plays no part: WoW starts without it. [busy] = a start is under way. [regionRetry] = the client
+        /// the player. Battle.net first (see the body; restored 2026-11-17 after 0.2.8 took it out). [busy] = a start is under way. [regionRetry] = the client
         /// closed itself after a region the player picked was refused (309) and the region starts are not used up
         /// (<see cref="RegionRetryMax"/>): it starts again whatever [tries] says, so the player picks another region on WoW's screen
         /// (the user's pick 2026-11-17: the region "should be changable")
@@ -245,6 +274,19 @@ namespace DsfDesktop.Wow
         public static WowAction Decide(BnetState bnet, WowScreen screen, int tries, bool busy, bool regionRetry = false)
         {
             if (busy) return WowAction.Wait;
+            // signed in: Battle.net never holds a game that is in
+            if (screen == WowScreen.CharSelect || screen == WowScreen.World) return WowAction.Focus;
+            // BATTLE.NET FIRST, as up to 0.2.7 (the user, 2026-11-17: "we had it clipping the Battlenet screen before"): the PC's app
+            // not running = start it; signed out = its sign-in window in front, which the Thor shows alone (bnet "signin_needed" plus
+            // the "show" rectangle) and types the saved login into. A sign-in under way in WoW is never interrupted. WoW itself still
+            // starts plainly (WowLaunch.Plan: never -launcherlogin, the 308 loop of 0.2.7). Unknown = no Battle.net on this PC, or the
+            // supervisor gave up waiting for it (WowSupervisor.BnetGiveUpS): WoW's own login only
+            if (screen != WowScreen.SigningIn)
+            {
+                if (bnet == BnetState.NotRunning) return WowAction.StartBattleNet;
+                if (bnet == BnetState.Starting) return WowAction.Wait;
+                if (bnet == BnetState.SignInNeeded) return WowAction.ShowBattleNetSignIn;
+            }
             switch (screen)
             {
                 case WowScreen.None: return tries < 2 || regionRetry ? WowAction.StartWow : WowAction.NeedsYou;
@@ -270,6 +312,18 @@ namespace DsfDesktop.Wow
                 default: return "none";
             }
         }
+
+        /// <summary>
+        /// Battle.net as the Thor hears it: "signin_needed" lifts its curtain onto Battle.net's window alone (StreamCurtain), so it is
+        /// only said while WoW is NOT signed in; a game at character select or in the world is never hidden behind Battle.net.
+        /// (0.2.8 to 0.2.32 always said "unknown", which is what took the Thor's Battle.net sign-in away.)
+        /// </summary>
+        public static string ThorBnet(BnetState s, WowScreen screen) =>
+            s == BnetState.SignInNeeded && (screen == WowScreen.CharSelect || screen == WowScreen.World) ? Word(BnetState.Unknown) : Word(s);
+
+        /// <summary>Battle.net's sign-in is the step the player is on: it is signed out and WoW is not signed in</summary>
+        public static bool BnetSignInPending(BnetState s, WowScreen screen) =>
+            s == BnetState.SignInNeeded && screen != WowScreen.CharSelect && screen != WowScreen.World;
 
         public static string Word(BnetState s)
         {
@@ -313,7 +367,12 @@ namespace DsfDesktop.Wow
         /// <summary>the Thor's line while WoW's region screen waits after a refused region (<see cref="LoginLog.RegionRefused"/>)</summary>
         public const string RegionRefusedText = "Region refused: pick another region";
 
-        /// <summary>the message for the player when the one retry did not get WoW signed in</summary>
-        public const string NeedsYouText = "Sign-in needs you on the PC's Battle.net";
+        /// <summary>the message for the player when the one retry did not get WoW signed in: Battle.net's window is shown on the Thor
+        /// (AppController.ShowRectNow), so its Play is pressed through the stream. Never "on the PC" (the user, 2026-11-17: "signing in
+        /// on the PC wont always be an option")</summary>
+        public const string NeedsYouText = "Press Play in Battle.net";
+
+        /// <summary>the Thor's line while WoW waits at its login after a 309 that was no region refusal (<see cref="LoginLog.RealmUnreachable"/>)</summary>
+        public const string RealmUnreachableText = "WoW can't reach its servers";
     }
 }

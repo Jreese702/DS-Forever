@@ -25,7 +25,9 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                   *  window doesn't fill the streamed monitor); "" = fine, or an older Desktop */
                  val input: String = "",
                  /** Desktop 0.2.31: the game refused the region picked on its own region screen (309) and waits there for another pick */
-                 val regionRefused: Boolean = false) {
+                 val regionRefused: Boolean = false,
+                 /** Desktop 0.2.33: a 309 that was no region refusal: WoW could not reach its realm */
+                 val realmUnreachable: Boolean = false) {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -34,7 +36,7 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
             PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
                 if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
                 it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"),
-                it.optString("region") == "refused")
+                it.optString("region") == "refused", it.optString("realm") == "unreachable")
         }
 
         /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */
