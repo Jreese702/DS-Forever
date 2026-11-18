@@ -389,6 +389,9 @@ class MapKalimdorShotsTest {
         assertEquals("down to the floor", st(r)[3], st(r)[2], 0.001f)
         assertTrue(st(r)[6] == 1f)
         assertEquals(0, r.room.backdropCanvas)
+        // fix/map-other-continent (review): a land with no terrain that is neither under the view nor the player's (Zephras Isle: no
+        // minimap at all) is not painted on the world zoom-out (the painted pictures stay unread there)
+        assertEquals("no land painted (${r.map.paintedConts})", 0, r.map.paintedConts)
         shot("home_terrain_world", world)
         // back in to the zone: let go at once
         for (i in 0 until 12) key(r.home, "PADRSHOULDER")
@@ -404,7 +407,8 @@ class MapKalimdorShotsTest {
             val q = TerrainOverview.TILE / 2
             val hp = k.getPixel((HOLE.first % 2) * q + q / 2, (HOLE.second % 2) * q + q / 2)
             assertNotEquals("Kalimdor's missing ADT is not Eastern Kingdoms' tile", TILE_EK, hp)
-            val near = listOf(16, 8, 0).all { sh -> kotlin.math.abs(((hp shr sh) and 0xFF) - ((TerrainOverview.SEA shr sh) and 0xFF)) <= 16 }
+            // (water depth, 2026-11-17: the sea is repainted by its distance to land: a teal-to-navy water colour, blue over red)
+            val near = Color.blue(hp) > Color.red(hp) + 30 && Color.green(hp) > Color.red(hp) + 20
             assertTrue("... it is the sea (${Integer.toHexString(hp)})", near)
             var red = 0
             for (y in 0 until H step 4) for (x in 0 until W step 4) if (bm2.getPixel(x, y) == TILE_EK) red++

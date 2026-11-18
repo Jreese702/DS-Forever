@@ -81,7 +81,7 @@ class HomeMapNoteTest {
         val v = File(src, "MapView.kt").readText()
         val grid = v.indexOf("// no tiles for this map (yet): keep the old grid so the field is not a blank slab")
         val shown = v.indexOf("val tilesShown = HomeMapNote.terrainShown(terrain, drew || worldDrew, allAbsent && !worldDrew, artNote != null)")
-        val note = v.indexOf("artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null")
+        val note = v.indexOf("artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT")
         assertTrue("what the terrain drew decides it", shown in 1 until note)
         // a tile drawn, or one not looked for yet, keeps the field "drawn"
         assertTrue(v.contains("?.let { c.drawBitmap(it, null, tileDst, pArt); drew = true }"))

@@ -48,6 +48,10 @@ class MapView(context: Context) : View(context) {
     private val SMALL_TILES_MAX = 320
     // Terrain style zoomed out: at most this many TerrainOverview pictures a continent per frame (the level keeps it near the screen's)
     private val TERRAIN_TILES_MAX = 400
+    // the water (the user, 2026-11-17: "I dont love it being one shade of teal. Can we give the water depth?"): every terrain picture's
+    // water is repainted by its distance to land when it is decoded (WaterDepth); the sea where no ADT is is the continent's depth field's
+    // own picture over WaterDepth.DEEP. No filter at draw time
+    private val seaDst = RectF()
 
     // ZOOM. In WoW the minimap is just the world map zoomed in with the same markers on it,
     // so this is one map with a zoom level rather than two different views. zoom 1 = whole
@@ -5521,6 +5525,11 @@ class MapView(context: Context) : View(context) {
         fun picture(key: String, client: View, make: () -> Bitmap?): Bitmap? = null
         /** picture [key] if the cache holds it (nothing asked) */
         fun peek(key: String): Bitmap? = null
+        /** the game continent whose box on map [zone]'s root (the world) holds the first of [at] (points in [zone]'s 0..1) that lies in
+         *  one (the smallest box wins: an island in a continent's), [SEA] (on the world, but in no box: the sea between), or null (no art
+         *  set, a root with no continents) */
+        fun aim(zone: Int, at: List<FloatArray>): Int? = null
+        companion object { const val SEA = -1 }
     }
     var worldArt: WorldArt? = null
     /** a touch on the open map's field (not the list, a button or a pop-out): Home's map controls page */
@@ -5744,6 +5753,9 @@ class MapView(context: Context) : View(context) {
     private fun drawTerrainOut(c: Canvas, wa: WorldArt, mapId: Int, rT: PoiStore.Rect, left: Float, top: Float, fw: Float, fh: Float,
                                cxView: Float, cyView: Float, halfX: Float, halfY: Float): Boolean {
         val places = wa.places(mapId) ?: return false
+        // (review 2, 2026-11-17: zoomed in just off the other continent's coast the minimap's own water - near-black, (0, 4, 8) - and the
+        // deep sea filled 92% of the field: the black screen again. Now every picture's water is repainted by depth when it is made, and
+        // the sea is WaterDepth's navy-teal, never black)
         if (TerrainOverview.dir == null) TerrainOverview.dir = context.cacheDir
         val conts = ArrayList<DoubleArray>(places.size + 1)
         // this zone's continent by its own rect: u = (left - wy) / width, v = (top - wx) / height; its box (the world's) from its place
@@ -5758,16 +5770,40 @@ class MapView(context: Context) : View(context) {
         conts.sortByDescending { size[it[0].toInt()] ?: 0 }
         c.save()
         c.clipRect(left, top, left + fw, top + fh)
-        pFill.color = TerrainOverview.SEA
+        pFill.color = WaterDepth.DEEP
         c.drawRect(left, top, left + fw, top + fh, pFill)
         val u0 = cxView - halfX; val v0 = cyView - halfY
         val pxU = fw / (2f * halfX); val pxV = fh / (2f * halfY)
         fun sxU(u: Double) = (left + (u - u0) * pxU).toFloat()
         fun syV(v: Double) = (top + (v - v0) * pxV).toFloat()
         val adt = MinimapTiles.ADT
+        // the sea round each continent's ADTs by depth first (WaterDepth's field: a coast's gradient runs on past the last picture into
+        // the deep colour), NOT cut to its box: a box can end a few hundred yards off a coast, and the shallows' glow stopped there in a
+        // straight line (the world zoom-out); the pictures of every land then go over all the seas
         for (p in conts) {
             val cont = p[0].toInt()
             if (!TerrainOverview.has(cont)) continue
+            val f = WaterDepth.field(cont, this) ?: continue
+            val sb = f.sea ?: continue
+            val au = p[1]; val bu = p[2]; val av = p[3]; val bv = p[4]
+            seaDst.set(sxU(au + bu * (32 - f.c0) * adt), syV(av + bv * (32 - f.r0) * adt),
+                sxU(au + bu * (32 - f.c0 - f.w / WaterDepth.FIELD_PX) * adt), syV(av + bv * (32 - f.r0 - f.h / WaterDepth.FIELD_PX) * adt))
+            seaDst.sort()
+            c.drawBitmap(sb, null, seaDst, pTerrain); seaPictures++
+        }
+        for (p in conts) {
+            val cont = p[0].toInt()
+            if (!TerrainOverview.has(cont)) {
+                // 2026-11-17 ("zooming in on the other continent the screen goes black"): the continent under the view, or the player's,
+                // with no terrain built on the phone yet is its own painted picture (the Map room's art, cut to its box), never the bare
+                // sea. Only those two (review: every land with no terrain - Zephras Isle has no minimap at all - put the painted pictures
+                // on every world zoom-out, +11 MB in the room's shared cache, and the island as a framed sheet on the terrain)
+                if (p.size >= 9 && (cont == terrainAim || cont == rT.continent)) {
+                    otherClip.set(maxOf(left, sxU(p[5])), maxOf(top, syV(p[6])), minOf(left + fw, sxU(p[7])), minOf(top + fh, syV(p[8])))
+                    if (otherClip.width() > 0f && otherClip.height() > 0f && wa.paint(c, mapId, worldZr, otherClip, this)) paintedConts++
+                }
+                continue
+            }
             val au = p[1]; val bu = p[2]; val av = p[3]; val bv = p[4]
             c.save()
             if (p.size >= 9) c.clipRect(sxU(p[5]), syV(p[6]), sxU(p[7]), syV(p[8]))     // its box on the world
@@ -5805,11 +5841,43 @@ class MapView(context: Context) : View(context) {
                     up++
                 }
             }
+            // ANOTHER continent seen close (past level 1's own px an ADT): its own minimap tiles over its levels, as the player's
+            // continent's close tiles (which go through this map's own rect: the loop in onDraw); from its own folder only
+            if (cont != rT.continent && adtPx > TerrainOverview.TILE / 2f && MinimapTiles.has(cont)) {
+                val tc0 = maxOf(0, floor(colA).toInt()); val tc1 = minOf(63, floor(colB).toInt())
+                val tr0 = maxOf(0, floor(rowA).toInt()); val tr1 = minOf(63, floor(rowB).toInt())
+                val nT = (tc1 - tc0 + 1) * (tr1 - tr0 + 1)
+                if (tc1 >= tc0 && tr1 >= tr0 && nT in 1..SMALL_TILES_MAX) {
+                    val sample = if (nT <= QUARTER_TILES_MAX) 4 else 8
+                    val full = 2.0 * halfX / kotlin.math.abs(bu) <= TILE_MAX_YD
+                    for (row in tr0..tr1) for (col in tc0..tc1) {
+                        terrainDst.set(sxU(au + bu * (32 - col) * adt) - 0.5f, syV(av + bv * (32 - row) * adt) - 0.5f,
+                            sxU(au + bu * (31 - col) * adt) + 0.5f, syV(av + bv * (31 - row) * adt) + 0.5f)
+                        terrainDst.sort()
+                        MinimapTiles.get(cont, col, row, sample) { invalidate() }?.let { c.drawBitmap(it, null, terrainDst, pTerrain); otherTiles++ }
+                        if (full) MinimapTiles.get(cont, col, row) { invalidate() }?.let { c.drawBitmap(it, null, terrainDst, pTerrain); otherTiles++ }
+                    }
+                }
+            }
             c.restore()
         }
         c.restore()
         return true
     }
+    private val otherClip = RectF()
+    /** this frame's continent under the view (WorldArt.aim; [WorldArt.SEA], or MIN_VALUE = not known) */
+    private var terrainAim = Int.MIN_VALUE
+    /** the tests: this frame's continents painted for want of terrain, and another continent's close minimap tiles drawn */
+    var paintedConts = 0
+        private set
+    var otherTiles = 0
+        private set
+    /** the tests: this frame's depth-field sea pictures drawn (WaterDepth: the gradient past the last tile, no edge at the boxes) */
+    var seaPictures = 0
+        private set
+    /** the tests: the continent under the view is not the player's this frame (its art, not the player's close tiles) */
+    var otherContDrawn = false
+        private set
 
     /** the art's share over the minimap tiles at zoom [z]: none at the whole zone and closer, all of it from half the zone out */
     private fun worldShare(z: Float): Float { val t = ((1f - z) / 0.5f).coerceIn(0f, 1f); return t * t * (3f - 2f * t) }
@@ -7203,28 +7271,54 @@ class MapView(context: Context) : View(context) {
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
         // HOME'S MAP ZOOMED OUT (2026-11-17): past the zone the Map room's art lies under everything (WorldArt: the room's own renderer and
         // pictures), the zone's 0..1 on it through this projection; the tiles fade out over it down to half the zone, then are not drawn
-        worldDrew = false; terrainDrew = false
-        if (!compact && !morphOn && zoom < 0.999f && worldFull()) worldArt?.let { wa ->
+        worldDrew = false; terrainDrew = false; paintedConts = 0; otherTiles = 0; seaPictures = 0
+        // THE CONTINENT UNDER THE VIEW (the user, 2026-11-17: "when zooming out and then zooming in on the other continent the screen goes
+        // black"): the close tiles below are only the PLAYER's continent's, through the player's zone rect, so zoomed back in over the
+        // other continent nothing was drawn. There the art stays on at any zoom (its terrain if built, else its painted picture and zone
+        // art), the player's tiles are not drawn, and its pictures are not freed until the view is back on the player's continent.
+        // Which continent: the one whose box holds the view's middle (what fills the field), else the controls' cursor.
+        val rA = rect
+        val aimCont = if (!compact && !morphOn && rA != null && rA.valid && worldFull()) worldArt?.aim(m.optInt("mapID", 0),
+            if (controls) listOf(floatArrayOf(cxView, cyView), floatArrayOf(curU, curV)) else listOf(floatArrayOf(cxView, cyView))) else null
+        // (review: also the sea between the boxes - nobody's: the art stays on there too, under the player's own tiles, so the field is
+        // never the bare grid and the pictures are not freed and read again on each crossing)
+        val offOwn = aimCont != null && rA != null && aimCont != rA.continent
+        val otherCont = offOwn && aimCont!! >= 0
+        otherContDrawn = otherCont
+        terrainAim = aimCont ?: Int.MIN_VALUE
+        if (!compact && !morphOn && (zoom < 0.999f || offOwn) && worldFull()) worldArt?.let { wa ->
             worldZr.set(sx(0.0), sy(0.0), sx(1.0), sy(1.0)); worldClip.set(left, top, left + fw, top + fh)
             worldAsked = true
-            // Terrain (the default): the minimap's terrain all the way out; the painted art only where there is none for this continent
+            // Terrain (the default): the minimap's terrain all the way out; the painted art only where there is none for this continent.
+            // The style is for zoomed OUT: at the zone's width and closer over another continent its own terrain and close tiles, as on
+            // the player's own (review: Painted stayed on the upscaled painting there)
             val rt = rect
-            val tIdx = if (worldTerrain() && rt != null && rt.valid) TerrainOverview.index(this) else emptyMap()
-            if (tIdx == null) {
+            // (review 2: over the open sea between the boxes at the zone's width and closer the terrain is only its deep sea - a dark
+            // field that looks the same as the black screen the user reported; the sea has no terrain of its own, so it is the painted
+            // world's sea there, as the per-continent rule's fallback. Zoomed out the terrain's sea stays: the lands are in view)
+            // (water depth, 2026-11-17: Terrain's sea is now WaterDepth's navy-teal, not a dark field, and the gradient off each coast runs
+            // into it: in Terrain the sea between stays the terrain's, no switch to the painting at the boxes' edges; Painted as it was)
+            val seaPainted = aimCont == WorldArt.SEA && zoom >= 0.999f && !worldTerrain()
+            val styleT = (worldTerrain() && !seaPainted) || (otherCont && zoom >= 0.999f)
+            val tIdx = if (styleT && rt != null && rt.valid) TerrainOverview.index(this) else emptyMap()
+            if (tIdx == null && !worldTerrain()) {
+                // Painted, the index still being read for the close view of another continent: its painting meanwhile
+            } else if (tIdx == null) {
                 // the minimap index is being read (a moment, once): the sea, not the painted art for a frame
-                pFill.color = TerrainOverview.SEA; c.drawRect(left, top, left + fw, top + fh, pFill)
+                pFill.color = WaterDepth.DEEP; c.drawRect(left, top, left + fw, top + fh, pFill)
                 terrainDrew = true; worldDrew = true
-            } else if (rt != null && tIdx[rt.continent]?.isNotEmpty() == true) {
+            } else if (rt != null && ((worldTerrain() && !seaPainted && tIdx[rt.continent]?.isNotEmpty() == true) || aimCont?.let { tIdx[it] }?.isNotEmpty() == true)) {
+                // the other continent seen at the zone's width and closer: its water a sea colour (the player's own keeps its look)
                 terrainDrew = drawTerrainOut(c, wa, m.optInt("mapID", 0), rt, left, top, fw, fh, cxView, cyView, halfX, halfY)
                 worldDrew = terrainDrew
             }
             if (!terrainDrew) worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)
         }
         // the user's pick (2026-11-17, "Free on zoom-in"): back on the zone, the big pictures go at once (the next zoom-out reads them again)
-        else if (!compact && !morphOn && zoom >= 0.999f && worldAsked) { worldAsked = false; worldArt?.release() }
-        val tileShare = if (worldDrew && !terrainDrew) 1f - worldShare(zoom) else 1f
+        else if (!compact && !morphOn && zoom >= 0.999f && !offOwn && worldAsked) { worldAsked = false; worldArt?.release() }
+        val tileShare = if (otherCont) 0f else if (worldDrew && !terrainDrew) 1f - worldShare(zoom) else 1f
         val rT = rect
-        var terrain = (worldDrew && tileShare <= 0.001f) || terrainDrew
+        var terrain = (worldDrew && (tileShare <= 0.001f || offOwn)) || terrainDrew
         var drew = false; var allAbsent = true           // a tile drawn this frame; every tile here looked for and not on the device
         if (rT != null && rT.valid && MinimapTiles.has(rT.continent) && tileShare > 0.001f) {
             val adt = MinimapTiles.ADT
@@ -7240,6 +7334,19 @@ class MapView(context: Context) : View(context) {
                 pArt.alpha = (255 * tileShare).toInt().coerceIn(0, 255)
                 c.save()
                 c.clipRect(left, top, left + fw, top + fh)
+                // nothing of the world under them: the sea where this continent has no ADT is its depth field's (WaterDepth), over the
+                // deep colour, so a coast's gradient does not stop at the last tile (only once the field is built: before, the old ground)
+                if (!worldDrew) WaterDepth.field(rT.continent, this)?.let { f ->
+                    pFill.color = WaterDepth.DEEP; pFill.alpha = pArt.alpha
+                    c.drawRect(left, top, left + fw, top + fh, pFill)
+                    pFill.alpha = 255
+                    f.sea?.let { sb ->
+                        seaDst.set(sx(rT.nx((32 - f.c0) * adt)), sy(rT.ny((32 - f.r0) * adt)),
+                            sx(rT.nx((32 - f.c0 - f.w / WaterDepth.FIELD_PX) * adt)), sy(rT.ny((32 - f.r0 - f.h / WaterDepth.FIELD_PX) * adt)))
+                        seaDst.sort()
+                        c.drawBitmap(sb, null, seaDst, pArt); seaPictures++
+                    }
+                }
                 for (row in r0..r1) for (col in c0..c1) {
                     // half a pixel of overlap so filtered neighbours never show a hairline between them
                     tileDst.set(sx(rT.nx((32 - col) * adt)) - 0.5f, sy(rT.ny((32 - row) * adt)) - 0.5f,
@@ -7263,7 +7370,8 @@ class MapView(context: Context) : View(context) {
         // pictures not made yet (the background art builds them while the game is closed): said in the Map room's words, under the markers
         // (review: also over this continent's folder with no tile here yet - the step part-way - not only with no folder at all)
         val tilesShown = HomeMapNote.terrainShown(terrain, drew || worldDrew, allAbsent && !worldDrew, artNote != null)
-        artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null
+        artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT
+            else if (HomeMapNote.otherShows(morphOn, offOwn, worldDrew)) HomeMapNote.NOT_BUILT else null
         // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
         artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it
