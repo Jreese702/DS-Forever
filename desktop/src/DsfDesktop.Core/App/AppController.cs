@@ -12,6 +12,7 @@ using DsfDesktop.GameLog;
 using DsfDesktop.Pairing;
 using DsfDesktop.Sunshine;
 using DsfDesktop.Wow;
+using DsfDesktop.Wow.Patch;
 
 namespace DsfDesktop.App
 {
@@ -105,6 +106,8 @@ namespace DsfDesktop.App
             running = true;
             Log.I("DS Forever Desktop starting; data " + Paths.DataDir);
             LocateWow();
+            // an install of the self-patcher cut short by a crash is undone before anything reads the game (0.2.36)
+            try { var r = EnsurePatcher()?.Recover(); if (r != null) Log.I("game patch: " + r); } catch (Exception e) { Log.I("game patch: recovery: " + e.Message); }
             StartBridge();
             StartSunshine();
             StartMdns();
@@ -1831,6 +1834,8 @@ namespace DsfDesktop.App
                 {
                     // the install read again right before the start (the Agent dropped the wowf row at 06:32 on 2026-11-18): a missing
                     // row is added back from Desktop's copy when it fits; still missing, or outdated = no start (the judge's Step 0)
+                    // never beside the self-patcher (0.2.36): it replaces the client's files
+                    if (patcher?.Busy == true) return "the game is being updated";
                     var g = GameCheckNow(beforeStart: true);
                     if (g == GameCheck.NeedsRepair) return WowFlow.RepairText;
                     if (g == GameCheck.Outdated) return WowFlow.OutdatedText;
@@ -1928,6 +1933,8 @@ namespace DsfDesktop.App
         /// </summary>
         void OnThorHello(BridgeSession s)
         {
+            // a Thor connected: the self-patcher may try once by itself again (0.2.36: one automatic attempt per connect)
+            if (s != null) patchFlow?.Connect();
             if (s == null || s.KnowsStop || !Settings.StartWowOnStream || Supervisor == null) return;
             if (!WowFlow.LegacyReconnectRetries(Supervisor.StoppedFor != null || StopNow() != null, (DateTime.UtcNow - legacyRetryAt).TotalSeconds)) return;
             legacyRetryAt = DateTime.UtcNow;
@@ -1942,6 +1949,9 @@ namespace DsfDesktop.App
         /// </summary>
         public void WowRetry()
         {
+            // the self-patcher's Retry first (0.2.36): a failed or cancelled patch, or a game that still needs one, gets ONE more
+            // attempt per press; WoW starts by itself once it is done (PatchFlow's afterDone)
+            if (EnsurePatcher() != null && patchFlow.Retry()) { PublishWow(force: true); return; }
             // one start per press: a press while the last one's restart or start is still under way is that same one (0.2.35)
             if (Supervisor != null && Supervisor.Busy)
             {
@@ -1955,6 +1965,79 @@ namespace DsfDesktop.App
             gameCheck?.Refresh();
             needsYouAt = DateTime.MinValue;
             if (Settings.StartWowOnStream && Supervisor != null) Supervisor.Retry();
+            PublishWow(force: true);
+        }
+
+        // ---------------------------------------------------------------- the self-patcher (0.2.36, the user's rulings 2026-11-18)
+
+        PcGamePatcher patcher;
+        PatchFlow patchFlow;
+        string patcherRoot;
+        bool loginSeen, crashSeen;
+
+        /// <summary>the PC game's own updater for the install found (null = no WoW Forever here); made again when the folder changes</summary>
+        PcGamePatcher EnsurePatcher()
+        {
+            lock (gameGate)
+            {
+                var root = Wow?.Root;
+                if (root == null || !Directory.Exists(Path.Combine(root, WowFlavors.Forever))) return null;
+                if (patcher != null && (patcherRoot == root || patcher.Busy)) return patcher;
+                var forever = Path.Combine(root, WowFlavors.Forever);
+                patcherRoot = root;
+                var made = new PcGamePatcher(new PatchEnv
+                {
+                    Root = root,
+                    Flavor = WowFlavors.Forever,
+                    Product = "wowf",
+                    FetchText = url =>
+                    {
+                        try { using (var r = Patch.GetAsync(url).Result) return r.IsSuccessStatusCode ? r.Content.ReadAsStringAsync().Result : null; }
+                        catch (Exception) { return null; }
+                    },
+                    WowRunning = () => WowWindow.RunningIn(forever),
+                    AgentBusy = () => AgentWatch.Busy(root, "wowf", DateTime.UtcNow, AgentWatch.DefaultAgentDir, out var why) ? why : null,
+                    JournalPath = Path.Combine(Paths.DataDir, "patch", "journal.json"),
+                    SavedRowPath = Path.Combine(Paths.DataDir, "patch", "wowf_row.json"),
+                });
+                made.Changed += () => PublishWow(force: false);
+                patchFlow = new PatchFlow(() => made.Status, why => made.Start(why), () => made.Cancel(), GameForThor, AfterPatch);
+                patcher = made;
+                return patcher;
+            }
+        }
+
+        /// <summary>a patch is done: the game read again, then WoW started ONCE (as the Thor's Retry starts it)</summary>
+        void AfterPatch()
+        {
+            Log.I("game patch: done: WoW once on the new build");
+            gameCheck?.Refresh();
+            needsYouAt = DateTime.MinValue;
+            if (Settings.StartWowOnStream && Supervisor != null && Bridge != null && Bridge.Sessions().Count > 0) Supervisor.Retry();
+            PublishWow(force: true);
+        }
+
+        /// <summary>every tick: the patch by itself when the game needs one (once per connect), and its first start watched: a good
+        /// login removes the backup (one backup until then, the user's ruling); a crash brings the old client back</summary>
+        void PatchTick(bool thorHere)
+        {
+            var p = EnsurePatcher();
+            if (p == null) return;
+            patchFlow.Tick(thorHere && Settings.StartWowOnStream);
+            bool signedIn = SignedIn(LastScreen);
+            if (signedIn && !loginSeen && !p.Busy && p.AwaitingLogin != null) Task.Run(() => p.GoodLogin(ForeverExeVersion()));
+            loginSeen = signedIn;
+            bool crashed = Supervisor?.Crash != null;
+            if (crashed && !crashSeen && !p.Busy && p.AwaitingLogin != null)
+                Task.Run(() => { if (p.RestoreOld("WoW " + Supervisor?.Crash + " on its first start")) { gameCheck?.Refresh(); PublishWow(force: true); } });
+            crashSeen = crashed;
+        }
+
+        /// <summary>the Thor's Cancel (B) on the game update's bar ("pc_patch_cancel")</summary>
+        public void PatchCancel()
+        {
+            bool asked = EnsurePatcher() != null && patchFlow.Cancel();
+            Log.I("bridge: the Thor's Cancel on the game update" + (asked ? "" : ": nothing to cancel"));
             PublishWow(force: true);
         }
 
@@ -2000,6 +2083,14 @@ namespace DsfDesktop.App
             // 0.2.34: Desktop stopped and waits for the Thor's Retry ("wow_retry"): a server error or an outdated (0.2.35: or broken)
             // game while WoW is not signed in. 0.2.35: the words an older Thor (1487) shows too (WowFlow.StopWords)
             WowFlow.StopWords(d, connectFailed, g, SignedIn(LastScreen));
+            // the self-patcher (0.2.36): the Thor's bar, its rows and Cancel (B) / Retry (A); an older Thor (no bar) hears its line as "why"
+            var ps = patcher?.Status;
+            var pw = PatchFlow.Words(ps, starting: Starter.State == WowState.Starting || LastScreen == WowScreen.Starting);
+            if (pw != null)
+            {
+                d["pc_patch"] = pw;
+                d["why"] = PatchFlow.Line(ps);
+            }
             return WithInput(d);
         }
 
@@ -2018,6 +2109,7 @@ namespace DsfDesktop.App
             // outdated game)
             bool thorHere = Bridge != null && Bridge.Sessions().Count > 0;
             if (thorHere) GameCheckNow();
+            PatchTick(thorHere);
             if (Supervisor.Active) Supervisor.Step();
             FocusRetry();
             PublishWow(force: false);
@@ -2044,7 +2136,8 @@ namespace DsfDesktop.App
         void PublishWow(bool force)
         {
             var w = WowInfo();
-            var key = string.Join("|", w.OrderBy(kv => kv.Key).Select(kv => kv.Key + "=" + kv.Value));
+            // a nested value (pc_patch) by its JSON: its progress is a change
+            var key = string.Join("|", w.OrderBy(kv => kv.Key).Select(kv => kv.Key + "=" + (kv.Value is Dictionary<string, object> nd ? Json.Write(nd) : kv.Value)));
             if (!force && key == lastWowKey) return;
             lastWowKey = key;
             var msg = new Dictionary<string, object> { ["t"] = "wow" };

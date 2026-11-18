@@ -32,6 +32,8 @@ namespace DsfDesktop.Tests
         public void ScreenRetry() { ScreenRetries++; }
         public volatile int WowRetries;
         public void WowRetry() { WowRetries++; }
+        public int PatchCancels;
+        public void PatchCancel() { PatchCancels++; }
         public Dictionary<string, object> PcTest()
         {
             PcTests++;

@@ -76,6 +76,66 @@ namespace DsfDesktop.Wow
             return (endsWithNl ? text : text + nl) + row + (endsWithNl ? nl : "");
         }
 
+        /// <summary>the columns another product's row holds for itself, emptied when it is the template of a new row</summary>
+        public static readonly string[] OwnColumns = { "Build Key", "CDN Key", "Install Key", "IM Size", "Version", "KeyRing", "Armadillo", "Last Activated" };
+
+        /// <summary>
+        /// THE PATCH'S LAST STEP (Desktop 0.2.36's self-patcher): [text] with [product]'s row set to [set] (column name -> value; a blank
+        /// value never replaces one: an empty CDN Servers crashes the client at start). A missing row is made from [templateHeader] +
+        /// [templateLine] (Desktop's copy of the last good row, else another product's row: its Tags and CDN columns; that product's own
+        /// columns emptied), Active 1. Every other line byte for byte, the file's line ending kept. null = not done (no header, or the
+        /// row would lack a needed value).
+        /// </summary>
+        public static string Upsert(string text, string product, IDictionary<string, string> set, string templateHeader = null, string templateLine = null)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            var parts = text.Split('\n');
+            var header = parts[0].TrimEnd('\r');
+            var cols = Columns(header);
+            int iProduct = cols.IndexOf("Product"), iActive = cols.IndexOf("Active");
+            if (iProduct < 0 || cols.Count < 2) return null;
+            int at = -1;
+            for (int i = 1; i < parts.Length; i++)
+            {
+                var l = parts[i].TrimEnd('\r');
+                if (l.Trim().Length == 0 || Field(l, iProduct) != product) continue;
+                if (at < 0 || (Field(l, iActive) == "1" && Field(parts[at].TrimEnd('\r'), iActive) != "1")) at = i;
+            }
+            Dictionary<string, string> row;
+            if (at >= 0) row = Values(header, parts[at].TrimEnd('\r'));
+            else
+            {
+                row = cols.ToDictionary(c => c, c => "", StringComparer.Ordinal);
+                if (!string.IsNullOrEmpty(templateHeader) && !string.IsNullOrEmpty(templateLine))
+                {
+                    var t = Values(templateHeader, templateLine);
+                    bool other = !t.TryGetValue("Product", out var tp) || tp.Trim() != product;
+                    foreach (var c in cols)
+                        if (t.TryGetValue(c, out var v) && !(other && OwnColumns.Contains(c))) row[c] = v;
+                }
+                row["Active"] = "1";
+                row["Product"] = product;
+            }
+            foreach (var kv in set)
+                if (row.ContainsKey(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)) row[kv.Key] = kv.Value;
+            if (set.TryGetValue("Branch", out var region) && !string.IsNullOrWhiteSpace(region) && row.ContainsKey("Tags"))
+                row["Tags"] = RegionTags(row["Tags"], region);
+            foreach (var n in Needed) if (!row.TryGetValue(n, out var v) || v.Trim().Length == 0) return null;
+            var line = string.Join("|", cols.Select(c => row[c]));
+            if (at >= 0)
+            {
+                parts[at] = line + (parts[at].EndsWith("\r") ? "\r" : "");
+                return string.Join("\n", parts);
+            }
+            string nl = text.Contains("\r\n") ? "\r\n" : "\n";
+            bool endsWithNl = text.EndsWith("\n");
+            return (endsWithNl ? text : text + nl) + line + (endsWithNl ? nl : "");
+        }
+
+        /// <summary>Tags with its region tag ("US?", "EU?", "KR?", "TW?", "CN?") made [region]'s (the Thor's regionTags)</summary>
+        public static string RegionTags(string tags, string region) =>
+            Regex.Replace(tags ?? "", @"(?<=^|[ :])(US|EU|KR|TW|CN)\?(?=$|[ :])", region.Trim().ToUpperInvariant() + "?");
+
         /// <summary>the version in an exe's file version text ("1.60.1.70938"; the numeric parts of Wow.exe's version resource are not
         /// it: measured 2026-11-18 on the user's 70938 Wow.exe, FileMajorPart 160 / FileBuildPart 7093), null = none</summary>
         public static string VersionIn(string fileVersion)
@@ -194,6 +254,7 @@ namespace DsfDesktop.Wow
                 // the Agent may have written meanwhile: only over the text this row was added to
                 if (ReadShared(path) != text) { File.Delete(tmp); Log.I("game record: .build.info changed meanwhile: not written"); return false; }
                 File.Replace(tmp, path, path + ".dsf-bak");
+                Patch.AgentWatch.Mine(path);
                 Log.I("game record: the " + product + " row was missing: added back from Desktop's copy (" + saved.Item3 + ")");
                 return true;
             }

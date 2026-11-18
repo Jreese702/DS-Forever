@@ -196,6 +196,22 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   Wow.exe's); whenever it reads the install (every 10 s while a Thor is connected, and again right before every start), a MISSING row is added back from that copy when it is for Wow.exe's build (the file's other lines
   byte for byte, its line ending kept, `.build.info.dsf-bak` beside it). A row that is there is never replaced. Never `.product.db`,
   never the CASC store.
+- **[0.2.36] Desktop patches the PC game itself.** An outdated game (or one missing its install record) is patched from Blizzard's
+  CDN with no Battle.net, BY ITSELF as soon as Desktop sees it while a Thor is connected: one automatic attempt per Thor connect,
+  then one attempt per `wow_retry`. The method is the Thor's own updater's (the build's install manifest picked by the row's tags,
+  each changed `_forever_` file checked by its MD5); it writes only the configs in `Data/config`, missing `Data/indices/*.index`, the
+  changed `_forever_` files (Utils first, `Wow.exe` last; a file of the same content key in another flavor folder is COPIED) and the
+  `wowf` row of `.build.info` (last, read again right before). Never `Data/data`, never `.product.db`. It waits (up to 5 minutes)
+  while the Battle.net Agent is at work on the folder, never patches under a running WoW, and keeps ONE backup of the replaced
+  files (`_forever_\.dsf-backup\<old build>`) until the first login on the new build reaches character select, then deletes it; a
+  first start that crashes puts the old files back. A Desktop killed mid-install undoes it at its next start (its journal,
+  `<data>\patch\journal.json`). The `wow` message carries **`pc_patch`**: `{"state": checking | waiting | downloading | installing
+  | loading | failed | cancelled, "from": "70938", "to": "70959", "done": bytes, "total": bytes, "file", "file_no", "files",
+  "code", "need_mb", "eta_s"}` (`waiting` + `code` `agent` = Blizzard's updater is busy; `loading` = done, the new client starts;
+  `failed` codes: `no_answer`, `missing`, `checksum`, `space` (+ `need_mb`), `busy` (WoW running or a file in use), `agent_busy`,
+  `no_write`, `format`, `new_failed`, `error`). The Thor shows a bar ("Updating the game 70938 -> 70959", "64 / 127 MB") with
+  "Cancel (B)", which sends **`{"t":"pc_patch_cancel"}`** (refused once installing began: it is short), and a failure as a red row
+  with "Retry (A)" (`wow_retry`). An older Thor (no bar) gets the patch's line as `why`. The patch over, WoW is started once.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.

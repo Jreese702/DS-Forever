@@ -46,6 +46,8 @@ namespace DsfDesktop.Bridge
         /// <summary>the Thor's Retry after Desktop stopped ("wow_retry"; the wow message's "stopped": a server error or an outdated
         /// PC game): WoW is started, or restarted at its login screen, once per press (the user's ruling 2026-11-18)</summary>
         void WowRetry();
+        /// <summary>the Thor's Cancel (B) on the game update's bar ("pc_patch_cancel", Desktop 0.2.36's self-patcher)</summary>
+        void PatchCancel();
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -450,6 +452,7 @@ namespace DsfDesktop.Bridge
                             break;
                         case "screen_retry": host.ScreenRetry(); break;
                         case "wow_retry": Task.Run(() => host.WowRetry()); break;
+                        case "pc_patch_cancel": Task.Run(() => host.PatchCancel()); break;
                         case "pc_test":
                             var sp = s;
                             Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });
