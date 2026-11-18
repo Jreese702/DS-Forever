@@ -6,6 +6,7 @@ compatibility_date = "2024-09-23"
 
 [vars]
 GITHUB_REPO = "Jreese702/DS-Forever"
+# TRACKERS = "off"   # optional: known crash types open their own issue again instead of commenting on their tracker (src/trackers.js)
 # APP_KEY = ""   # optional: the same value as the app's dsfReportKey (it ships in the APK, so it only filters casual traffic)
 
 # the rate limits' counters (README step 3 makes the namespace and puts its id here)

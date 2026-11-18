@@ -4,9 +4,27 @@ A small Cloudflare Worker that turns DS Forever's in-game "Send report" into a G
 
 - The app sends the report it already **redacted on the device** (no logins, BattleTags, names or chat). The receiver scrubs it once more (e-mails, BattleTags, IP addresses).
 - The issue's title carries the app version, and its body has a collapsed **Diagnostics** section: the app's start-up diagnostics (device, game folder, art, start-up stages, its own log; optional `diag`, 45 000 characters at most).
-- `POST /report` checks the size (200 KB at most), the shape and the version. It limits each address to 5 reports an hour and everyone to 100 a day, opens an issue labelled `player-report` in `Jreese702/DS-Forever`, and answers `{"number": N, "url": "..."}`.
+- `POST /report` checks the size (200 KB at most), the shape and the version. It limits each address to 5 reports an hour and everyone to 100 a day, and either comments on a known crash type's tracker issue (below) or opens an issue labelled `player-report` in `Jreese702/DS-Forever`, and answers `{"number": N, "url": "..."}`.
 - The GitHub token is a **Worker secret**. It is never in git and never in the APK.
 - `APP_KEY` (optional) ships inside the APK, so anyone can extract it. It only keeps casual traffic out. The real protection is the limits above, plus the label, which lets you filter or bulk-close the issues.
+
+## Known crash types go to their tracker issue
+
+Most automatic crash reports are the same crash again. A report whose signature is a known type (`src/trackers.js`) opens no new issue. Instead it adds a short comment to that type's tracker issue:
+
+| Signature | Tracker | Matched by |
+|---|---|---|
+| `low-memory-kill` | #56 | the automatic report "Android closed DS Forever because the device ran low on memory" |
+| `anr` | #153 | the automatic report "DS Forever stopped responding" |
+| `libcasc-native-crash` | #472 | the automatic report "DS Forever crashed (native code)" whose newest crash record's crashing thread is in `libcasc.so` |
+| `blz51914400-sign-in` | #237 | a short typed report (300 characters at most, not recorded in detail) naming BLZ51914400 |
+| `captcha-authenticator-disconnect` | #165 | a short typed report about a captcha or authenticator that ends in a disconnect, an error or no way in |
+
+- Every other report (an unknown type, a long description, a report recorded in detail) opens its own issue as before.
+- The comment holds the version, add-on set, device model, RAM tier (8 / 12 / 16 GB, from the diagnostics), the signature, the player's words and up to 12 key lines (the memory exits, the ANR's main thread, or the native crash's frames). It never includes logs.txt, report.txt or the full diagnostics, and it goes through the same scrub as an issue.
+- Limits: one comment per device per tracker per day (the device is a hash of its address and model; no address is stored in these keys), and 4 comments per tracker per hour. Over a limit the report is only counted, and the next comment says how many were counted. Counted reports do not use up the 100-a-day budget. The 5-an-hour limit per address still applies to every report.
+- The app is told the tracker's number either way, so every app version shows "Report sent: issue #56". If the comment fails (for example, the tracker is locked or deleted), the report opens its own issue, so nothing is lost.
+- To change a tracker, edit `TRACKERS` in `src/trackers.js` and deploy. To turn the routing off without a code change, set `TRACKERS = "off"` under `[vars]` in `wrangler.toml` and deploy.
 
 ## Setup (once, by the project owner)
 
