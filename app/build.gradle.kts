@@ -1,5 +1,6 @@
 import java.util.Properties
 import java.io.FileInputStream
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
@@ -192,7 +193,24 @@ android {
 
 }
 
+// Browser login's helper (the user, 2026-11-18: built FROM SOURCE, never upstream's prebuilt exe): git-ignored like upstream, made by
+// tools/wow-session-bridge/build_dsf.sh. Every APK's assets need exactly the recorded from-source bytes (wow-session-bridge.sha256).
+val sessionBridgeExe = file("src/main/assets/wow-session-bridge.exe")
+val sessionBridgeSha = rootProject.file("tools/wow-session-bridge/wow-session-bridge.sha256")
+val checkSessionBridge = tasks.register("checkSessionBridge") {
+    val exe = sessionBridgeExe
+    val shaFile = sessionBridgeSha
+    inputs.file(shaFile)
+    doLast {
+        require(exe.isFile) { "Missing ${exe.path}: run tools/wow-session-bridge/build_dsf.sh (Git Bash) to build the browser-login helper from source" }
+        val expected = shaFile.readText().trim().substringBefore(' ')
+        val actual = MessageDigest.getInstance("SHA-256").digest(exe.readBytes()).joinToString("") { "%02x".format(it) }
+        require(actual == expected) { "${exe.name} is $actual, not the from-source build $expected: run tools/wow-session-bridge/build_dsf.sh" }
+    }
+}
+
 tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("Assets") && !name.contains("Test")) dependsOn(checkSessionBridge)
     if (name == "preModernReleaseBuild") {
         doFirst {
             require(listOf("WC_KEYSTORE", "WC_KEYSTORE_PASS", "WC_KEY_ALIAS", "WC_KEY_PASS").all {

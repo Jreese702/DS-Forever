@@ -36,3 +36,32 @@ public builds need no game installation or private test corpus.
 Public version1.0.0/code1000 is distinct from the accepted private2.2.2/code222
 artifact. It requires its own exact-checksum installation/publication approval.
 No main merge, push, publication or device operation is implied by this file.
+
+## Browser login helper (wow-session-bridge.exe), 2026-11-18
+
+Source: `tools/wow-session-bridge/` = WoW Forever for Android
+(jaredgei/wow-forever-android) at v2.4.5, commit
+aba66f9c54bf16b4b7440af2e452232f8fc2caea, every file byte-identical to
+upstream's blob (git hash-object checked), plus DS Forever's `build_dsf.sh`
+and `wow-session-bridge.sha256`. Upstream's prebuilt helper (8e7585fb, later
+dropped by upstream in 1f2446b) is NOT used, run or copied.
+
+Toolchain: LLVM-MinGW 20261104 (Clang 23.1.5, ARM64 Windows UCRT), official
+release https://github.com/mstorsjo/llvm-mingw/releases/tag/20261104:
+- llvm-mingw-20261104-ucrt-x86_64.zip (Windows host, used by build_dsf.sh
+  under Git Bash): SHA-256
+  552191b5754c49a5a20723276a6fc56541ea1922c4c50b7b669022333fc1b40f
+  (matches GitHub's published asset digest).
+- llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz (upstream's pin in its
+  release workflow): SHA-256
+  919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
+  (matches upstream's pin and GitHub's digest); cross-check build in WSL.
+
+Output: `app/src/main/assets/wow-session-bridge.exe` (git-ignored, as
+upstream), 0098d642a594d5a541537c3c1a96b5bc317227efb961267d5c3b8cc740d3af51.
+The Windows build, a repeat Windows build and the Linux/WSL build with
+upstream's pinned toolchain are byte-identical, and equal to the hash
+upstream's own v2.4.5 release CI printed for this source (run 44308379224,
+head aba66f9c). The portable C protocol tests (`test.sh`) pass. The app build
+refuses any helper with other bytes (`checkSessionBridge`, app/build.gradle.kts).
+Rebuild: `sh tools/wow-session-bridge/build_dsf.sh` (Git Bash).
