@@ -111,7 +111,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         view.addView(curtainView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         overlay = FrameLayout(activity)
         view.addView(overlay, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        pairing = PairingView(activity, onPair = { pair(it) }, onBack = { back() }, onQuality = { openQuality() }, onPcStep = { stepPc(it) })
+        pairing = PairingView(activity, onPair = { pair(it) }, onBack = { back() }, onQuality = { openQuality() }, onPcStep = { stepPc(it) }, onAddress = { askAddress() })
         status = StatusView(activity, onRetry = { retryNow(byHand = true) }, onPairAgain = { show(Screen.PAIRING) }, onQuality = { openQuality() }, onBack = { back() })
         overlay.centered(pairing, 640f)
         overlay.centered(status, 760f)
@@ -267,7 +267,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         host = store.host()
         // the companion on the bottom screen, reading the PC's log through the bridge (Local is untouched: PlayModes defaults to it)
         applyMode()
-        discovery = Discovery(activity, preferSubnet = { NetProbe.subnet(activity) }) { pcs -> found = pcs; onFound() }.also { it.start() }
+        discovery = Discovery(activity, preferSubnet = { NetProbe.subnet(activity) }) { pcs -> seenPcs = pcs; found = withManual(pcs); onFound() }.also { it.start() }
         watchNetwork()
         if (!MoonBridge.loaded) { problem("Streaming isn't in this build", "This DS Forever was built without Moonlight's core.", auto = false); return }
         if (host == null) show(Screen.PAIRING) else { show(Screen.CONNECTING); status.show("Connecting to ${host!!.name}…", "", "", withButtons = false); connect() }
@@ -736,6 +736,67 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         })
     }
 
+    // A PC typed in by address, for a Thor on a VPN (WireGuard, Tailscale...) or another subnet where the mDNS advert cannot reach.
+    // Desktop answers GET /v1/info on its bridge port with what the advert's TXT would carry (name, id, Sunshine port, TLS fingerprint).
+    private var seenPcs: List<FoundPc> = emptyList()
+    private var manualPc: FoundPc? = null
+
+    private fun withManual(pcs: List<FoundPc>): List<FoundPc> {
+        val m = manualPc ?: return pcs
+        return if (pcs.any { it.address == m.address || (m.desktopId.isNotEmpty() && it.desktopId == m.desktopId) }) pcs else listOf(m) + pcs
+    }
+
+    private fun askAddress() {
+        val prefs = activity.getSharedPreferences(HostStore.PREFS, android.content.Context.MODE_PRIVATE)
+        val edit = android.widget.EditText(activity).apply {
+            setSingleLine(); hint = "192.168.1.10  or  192.168.1.10:48210"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setText(prefs.getString(KEY_MANUAL_ADDR, "")); setSelection(text.length)
+        }
+        android.app.AlertDialog.Builder(activity).setTitle("PC address").setView(edit)
+            .setPositiveButton("Find") { _, _ ->
+                val a = edit.text.toString().trim()
+                if (a.isNotEmpty()) { prefs.edit().putString(KEY_MANUAL_ADDR, a).apply(); lookUp(a) }
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun lookUp(typed: String) {
+        val hostPart = typed.substringBefore(':').trim()
+        val port = typed.substringAfter(':', "").trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: MANUAL_PORT
+        if (!Regex("""^\d{1,3}(\.\d{1,3}){3}$""").matches(hostPart) || hostPart.split('.').any { it.toInt() > 255 }) {
+            pairing.setMessage("Type the PC's IPv4 address, like 192.168.1.10"); return
+        }
+        pairing.setMessage("Looking for the PC at $hostPart…")
+        worker.execute {
+            val pc = try {
+                val c = java.net.URL("http://$hostPart:$port/v1/info").openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 4000; c.readTimeout = 4000
+                try {
+                    if (c.responseCode != 200) null else {
+                        val o = org.json.JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+                        val sun = o.optJSONObject("sunshine")?.optInt("http_port", 0) ?: 0
+                        val txt = buildMap {
+                            put("pc", o.optString("pc_name")); put("id", o.optString("host_id"))
+                            if (sun > 0) put("sunshine", sun.toString())
+                            if (o.optBoolean("tls")) { put("tls", "1"); put("fp", o.optString("fp")) }
+                        }
+                        val bp = o.optInt("bridge_port", port).takeIf { it in 1..65535 } ?: port
+                        FoundPcs.merge(listOf(Advert(FoundPcs.DSFOREVER, o.optString("pc_name").ifBlank { hostPart }, hostPart, bp, txt))).firstOrNull()
+                    }
+                } finally { c.disconnect() }
+            } catch (t: Throwable) { Log.w(TAG, "manual PC $hostPart:$port: ${t.javaClass.simpleName}"); null }
+            main.post {
+                if (pc == null) { pairing.setMessage("No DS Forever Desktop answered at $hostPart:$port"); return@post }
+                manualPc = pc
+                found = withManual(seenPcs)
+                pcIndex = found.indexOfFirst { it.address == pc.address }.coerceAtLeast(0)
+                pairing.setMessage("")
+                onFound()
+            }
+        }
+    }
+
     private fun stepPc(by: Int) { if (found.isNotEmpty()) { pcIndex = ((pcIndex + by) % found.size + found.size) % found.size; showPc() } }
 
     private fun pair(code: String) {
@@ -1148,6 +1209,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     companion object {
+        const val KEY_MANUAL_ADDR = "manual_pc_address"
+        const val MANUAL_PORT = 48210
         const val TAG = "DSFSTREAM"
         /** a zoomed window fills this share of the screen at most, and is magnified at most [ZOOM_MAX] x */
         const val ZOOM_FILL = 0.92f
