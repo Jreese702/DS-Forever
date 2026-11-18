@@ -44,6 +44,14 @@ object MinimapTiles {
         MemWatch.source("minimap") { synchronized(this) { cache.values.sumOf { it.byteCount.toLong() } + small.values.sumOf { it.byteCount.toLong() } } }
     }
     private val pending = HashSet<Long>()
+    /** tiles repainted before their continent's depth field was ready (WaterDepth): dropped when it is, so they are made again */
+    private val provisional = HashSet<Long>()
+    init {
+        WaterDepth.listen { cont -> main.post {
+            val it = provisional.iterator()
+            while (it.hasNext()) { val k = it.next(); if ((k ushr 32).toInt() == cont) { cache.remove(k); small.remove(k); it.remove() } }
+        } }
+    }
     private val missing = HashSet<Long>()
     private val contOk = HashMap<Int, Boolean>()
 
@@ -104,12 +112,16 @@ object MinimapTiles {
         exec.execute {
             val bmp = try {
                 if (f.canRead()) BitmapFactory.decodeFile(f.path,
-                    BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = sample })
+                    BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = sample; inMutable = true })
                 else null
             } catch (t: Throwable) { null }
+            // the water by its depth (WaterDepth), once, here: never per frame
+            val final = bmp == null || runCatching { WaterDepth.recolour(bmp, cont, col.toDouble(), row.toDouble(), 1.0) }.getOrDefault(true)
             main.post {
                 pending.remove(k)
-                if (bmp != null) c[k] = bmp else missing.add(k)
+                // (made provisional, and the field landed meanwhile: not kept, the next frame makes it again)
+                if (bmp != null && !final && WaterDepth.ready(cont)) { ready(); return@post }
+                if (bmp != null) { c[k] = bmp; if (!final) provisional.add(k) } else missing.add(k)
                 ready()
             }
         }

@@ -84,7 +84,12 @@ object TerrainOverview {
         } finally { loading = false }
     }
     /** the minimap step made more (MinimapTiles.refresh): read the index again */
-    fun refresh() { idx = null; stamp = null }
+    fun refresh() { idx = null; stamp = null; WaterDepth.refresh() }
+    /** this minimap build's stamp (null: no index read yet) */
+    fun stampNow(): String? = stamp
+
+    /** continent [cont] has ADT ([col], [row]) */
+    fun hasAdt(cont: Int, col: Int, row: Int): Boolean = index()?.get(cont)?.contains(k(col, row)) == true
 
     /** continent [cont] has terrain to draw */
     fun has(cont: Int): Boolean = index()?.get(cont)?.isNotEmpty() == true
@@ -97,8 +102,9 @@ object TerrainOverview {
         return false
     }
 
-    /** the picture's key in the room's cache */
-    fun key(cont: Int, level: Int, oc: Int, or: Int) = "tov:$cont/$level/${oc}_$or"
+    /** the picture's key in the room's cache (WaterDepth: made before the continent's depth field was ready = provisional, kept apart, so
+     *  the final one is made when it is) */
+    fun key(cont: Int, level: Int, oc: Int, or: Int) = "tov:$cont/$level/${oc}_$or" + if (WaterDepth.ready(cont)) "" else "~"
 
     /** where the pictures are kept (the app's cache folder, CompanionHost / MapView set it) */
     @Volatile var dir: File? = null
@@ -110,20 +116,28 @@ object TerrainOverview {
     }
 
     /**
-     * Level [level]'s picture ([oc], [or]) of continent [cont]: from the disk, else made (and kept). Off the UI thread (the room's reader).
-     * Null = the continent has nothing there.
+     * Level [level]'s picture ([oc], [or]) of continent [cont] with its water repainted by depth (WaterDepth). Off the UI thread (the room's
+     * reader). Null = the continent has nothing there.
      */
     fun make(cont: Int, level: Int, oc: Int, or: Int): Bitmap? {
+        val b = makeRaw(cont, level, oc, or) ?: return null
+        val n = span(level)
+        WaterDepth.recolour(b, cont, (oc * n).toDouble(), (or * n).toDouble(), n.toDouble())
+        return b
+    }
+
+    /** the picture as the minimap draws it (mutable): from the disk, else made (and kept); the disk copy is never repainted */
+    fun makeRaw(cont: Int, level: Int, oc: Int, or: Int): Bitmap? {
         if (!has(cont, level, oc, or)) return null
         stamp?.let { if (swept != it) { swept = it; sweepOld() } }
         val f = file(cont, level, oc, or)
         if (f != null && f.isFile) runCatching {
-            BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 })
+            BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inMutable = true })
         }.getOrNull()?.let { return it }
         val b = build(cont, level, oc, or) ?: return null
         if (f != null) runCatching {
             f.parentFile?.mkdirs()
-            val tmp = File(f.path + ".tmp")
+            val tmp = File(f.path + ".tmp" + Thread.currentThread().id)     // the depth field's thread may make the same one
             tmp.outputStream().use { @Suppress("DEPRECATION") b.compress(Bitmap.CompressFormat.WEBP, 85, it) }
             if (!tmp.renameTo(f)) tmp.delete()
         }
@@ -155,7 +169,7 @@ object TerrainOverview {
             val h = TILE / 2
             val dst = Rect()
             for (dc in 0..1) for (dr in 0..1) {
-                val b = make(cont, level - 1, oc * 2 + dc, or * 2 + dr) ?: continue
+                val b = makeRaw(cont, level - 1, oc * 2 + dc, or * 2 + dr) ?: continue
                 dst.set(dc * h, dr * h, dc * h + h, dr * h + h)
                 c.drawBitmap(b, null, dst, pDraw); b.recycle(); got++
             }

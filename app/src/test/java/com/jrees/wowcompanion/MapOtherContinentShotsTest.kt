@@ -427,10 +427,11 @@ class MapOtherContinentShotsTest {
             shot("moc_sea_${if (terrain) "terrain" else "painted"}_z1", bm)
             assertFalse("the sea is nobody's continent", r.map.otherContDrawn)
             assertEquals("the art drew over the sea", 1f, st(r)[4])
-            // (review 2: Terrain's own deep sea filled the whole field there - near-black, the same look as the black screen; the sea
-            // has no terrain, so it is the painted world's sea in both styles)
-            assertEquals("the painted sea, not the terrain's ($terrain)", 0f, st(r)[6])
-            assertTrue("the painted sea, not a black field ($terrain, $dark% dark)", dark < 50)
+            // (review 2: Terrain's own deep sea filled the whole field there - near-black, the same look as the black screen. Water depth,
+            // 2026-11-17: Terrain's sea is WaterDepth's navy-teal now, the coasts' gradients running into it, so in Terrain the sea between
+            // is the terrain's - no switch to the painting at the boxes' edges; Painted keeps the painted sea)
+            assertEquals("Terrain: the terrain's sea; Painted: the painted sea ($terrain)", if (terrain) 1f else 0f, st(r)[6])
+            assertTrue("a sea, not a black field ($terrain, $dark% dark)", dark < 50)
             assertTrue("not freed crossing the sea", r.room.backdropInUse && r.room.pictureBytes > 0L)
             assertNull("no note", mf("artNote").get(r.map))
             tearDown()
@@ -532,5 +533,96 @@ class MapOtherContinentShotsTest {
         val de = look("ek_player_back_on_elwynn")
         assertTrue("Eastern Kingdoms drawn, not black ($de% dark)", de < 50)
         room.onHidden()
+    }
+
+    // ---------------------------------------------------------------- water with depth (the user, 2026-11-17: "I dont love it being one
+    // shade of teal. Can we give the water depth?"; the pick "Shore-to-deep gradient", every continent, zoomed in and out, Terrain style)
+
+    /** [shallow, deep, dark, all] over the map's field right of the quest list */
+    private fun waterStats(r: Rig, bm: Bitmap): IntArray {
+        val loc = IntArray(2); r.map.getLocationInWindow(loc)
+        val s = IntArray(4)
+        for (y in loc[1] + 10 until loc[1] + r.map.height - 10 step 5) for (x in loc[0] + r.map.width / 3 until loc[0] + r.map.width - 10 step 5) {
+            if (x !in 0 until bm.width || y !in 0 until bm.height) continue
+            val p = bm.getPixel(x, y)
+            val R = Color.red(p); val G = Color.green(p); val B = Color.blue(p)
+            if (G >= 130 && B >= 120 && R < G - 30) s[0]++
+            if (kotlin.math.abs(R - Color.red(WaterDepth.DEEP)) <= 14 && kotlin.math.abs(G - Color.green(WaterDepth.DEEP)) <= 14 &&
+                kotlin.math.abs(B - Color.blue(WaterDepth.DEEP)) <= 14) s[1]++
+            if (maxOf(R, G, B) < 32) s[2]++
+            s[3]++
+        }
+        return s
+    }
+    @Suppress("UNCHECKED_CAST")
+    private fun memSource(name: String): Long = (MemWatch::class.java.getDeclaredField("sources").apply { isAccessible = true }.get(MemWatch)
+        as Map<String, () -> Long>)[name]?.invoke() ?: -1L
+
+    /** frames until the close tiles' loads are in (MinimapTiles' own reader; the full tiles over the small ones) */
+    private fun tilesIn(r: Rig): Bitmap {
+        val pending = MinimapTiles::class.java.getDeclaredField("pending").apply { isAccessible = true }.get(MinimapTiles) as Set<*>
+        var bm = draw(r.home)
+        for (i in 0 until 150) { Thread.sleep(20); settle(2); bm = draw(r.home); if (pending.isEmpty() && i > 10) break }
+        return bm
+    }
+
+    @Test fun water_depth_from_both_continents() {
+        val dir = out?.let { File(it, "map-water-depth") }
+        fun save(name: String, bm: Bitmap) { val d = dir ?: return; d.mkdirs(); File(d, "$name.png").outputStream().use { bm.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        val report = StringBuilder()
+        fun note(l: String) { println("WDM $l"); report.append(l).append('\n') }
+        fun mb(b: Long) = "%.2f MB".format(b / 1048576.0)
+        for (player in listOf(1411, 1429)) {
+            val r = rig(terrain = true, zone = player)
+            val pn = if (player == 1411) "kalimdor_player" else "ek_player"
+            // the fields first (built once per minimap build, then read from the disk): the shots are the final look
+            WaterDepth.fieldNow(0); WaterDepth.fieldNow(1)
+            key(r.home, "PADDRIGHT")
+            fun spot(zone: Int, u: Float, v: Float): FloatArray? =
+                r.room.model.placeOn(zone, 947)?.let { floatArrayOf(it[0] + (it[2] - it[0]) * u, it[1] + (it[3] - it[1]) * v) }
+            val spots = listOf(
+                Triple("durotar_coast", spot(1411, 0.80f, 0.45f), listOf(1f)),
+                Triple("durotar_coast", spot(1411, 0.70f, 0.45f), listOf(3f)),
+                Triple("elwynn_lake", spot(1429, 0.73f, 0.49f), listOf(1f)),
+                Triple("westfall_coast", spot(1436, 0.20f, 0.50f), listOf(1f)))
+            for ((name, p, zooms) in spots) for (z in zooms) {
+                if (p == null) continue
+                viewAt(r, z, p)
+                frames(r, 8000L)
+                val bm = tilesIn(r)
+                val w = waterStats(r, bm)
+                val dark = 100 * w[2] / w[3].coerceAtLeast(1)
+                note("$pn $name z$z: shallow ${100 * w[0] / w[3].coerceAtLeast(1)}%, deep ${100 * w[1] / w[3].coerceAtLeast(1)}%, dark $dark%, " +
+                    "terrain ${st(r)[6] == 1f}, other ${r.map.otherContDrawn}")
+                save("${pn}_${name}_z${z.toInt()}", bm)
+                assertTrue("$pn $name z$z: no dark field ($dark%)", dark < 10)
+                if (realArt != null && name != "elwynn_lake") {
+                    assertTrue("$pn $name z$z: shallows at the coast", w[0] > 0)
+                    if (z <= 1f && name == "durotar_coast") assertTrue("$pn $name z$z: deep further out", w[1] > 0)
+                }
+                if (realArt != null && name == "elwynn_lake") assertTrue("$pn $name: the lake's shallows", w[0] > 0)
+            }
+            // the open sea between the continents, zoomed out to half the zone
+            viewAt(r, 0.5f, seaBetween(r))
+            val sea = frames(r, 8000L)
+            val ws = waterStats(r, sea)
+            note("$pn open sea z0.5: deep ${100 * ws[1] / ws[3].coerceAtLeast(1)}%, dark ${100 * ws[2] / ws[3].coerceAtLeast(1)}%, terrain ${st(r)[6] == 1f}")
+            save("${pn}_open_sea_z0.5", sea)
+            assertTrue("$pn open sea: the deep colour", ws[1] * 2 > ws[3])
+            // the world floor
+            for (i in 0 until 12) key(r.home, "PADLSHOULDER")
+            val world = frames(r, if (realArt != null) 20_000L else 6_000L)
+            assertEquals("down to the floor", st(r)[3], st(r)[2], 0.001f)
+            save("${pn}_world_floor", world)
+            // nothing per frame: no repaint, no filter on any paint (the markers, route, discs drawn as before)
+            val n0 = WaterDepth.repaints
+            for (i in 0 until 10) draw(r.home)
+            assertEquals("no repaint in a frame", n0, WaterDepth.repaints)
+            for (f in listOf("pTerrain", "pArt")) assertNull("$f has no colour filter", (mf(f).get(r.map) as Paint).colorFilter)
+            note("$pn memory: WaterDepth ${mb(WaterDepth.bytes())} (fields + sea pictures + scratch), minimap tiles ${mb(memSource("minimap"))}, " +
+                "room cache ${mb(r.room.pictureBytes)} (cap 72 MB, unchanged)")
+            tearDown()
+        }
+        dir?.let { it.mkdirs(); File(it, "memory.txt").writeText(report.toString()) }
     }
 }
