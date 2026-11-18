@@ -103,6 +103,15 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L, private val
          * screen turned that into "Waiting for the world." while the game was still downloading at its login screen. So without a read, never
          * while the game is downloading before its login screen ([downloadingNow], NativeLogin.downloading).
          */
+        /**
+         * the seconds since the game's start for [trafficIsSignIn]'s grace: from the game screen ([gameStartSec]), or in browser login
+         * from the helper's start of the game ([browserStartSec], after the sign-in page; 0 = not started yet = -1, not up). Pure.
+         */
+        fun sinceStartS(nowSec: Long, gameStartSec: Long, browserStartSec: Long): Long {
+            val from = maxOf(gameStartSec, browserStartSec)
+            return if (gameStartSec > 0 && from > 0) nowSec - from else -1L
+        }
+
         fun trafficIsSignIn(consumed: Boolean, active: Boolean, windowSeen: Boolean, expiredUnread: Boolean, sinceStartS: Long, graceS: Long,
                             downloadAtRead: Boolean = false, downloadingNow: Boolean = false): Boolean = when {
             consumed -> !downloadAtRead

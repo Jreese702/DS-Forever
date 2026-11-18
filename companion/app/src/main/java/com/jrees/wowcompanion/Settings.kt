@@ -247,6 +247,15 @@ object Settings {
         get() = WindowsId.sanitize(prefs?.getString(WindowsId.KEY, null))
         set(v) { val s = WindowsId.sanitize(v); if (s != windowsId) { prefs?.edit()?.putString(WindowsId.KEY, s)?.apply(); changed() } }
 
+    /**
+     * BROWSER LOGIN (the user, 2026-11-18: upstream v2.4.5's Browser login, opt-in): Off (the default) = the saved login's private
+     * login.txt; On = Blizzard's own sign-in page on the bottom screen, no login.txt. From the next game start. See [BrowserLogin]; the
+     * launcher reads it at each start (BattleNetBrowserLogin).
+     */
+    var browserLogin: Boolean
+        get() = prefs?.getBoolean(BrowserLogin.KEY, false) ?: false
+        set(v) { if (v != browserLogin) { prefs?.edit()?.putBoolean(BrowserLogin.KEY, v)?.apply(); changed() } }
+
     /** what the last game start used (the launcher writes it; the report reads it): (mode, time ms, applied ok); null = none yet */
     var windowsIdRan: Triple<String, Long, Boolean>?
         get() = prefs?.takeIf { it.contains(WindowsId.KEY_RAN) }?.let { p ->

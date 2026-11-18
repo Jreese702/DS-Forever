@@ -159,6 +159,8 @@ object StartupDiag {
         "Before the login screen: ${runCatching { NativeLogin.preLoginLine() }.getOrElse { "? (${it.message})" }}",
         // the user, 2026-11-14 ("build it", the BLZ51914400 wave): which Windows identity the game started with (the mode, never a value)
         line { Settings.init(ctx); windowsIdLine() },
+        // the user, 2026-11-18 (Browser login, opt-in): the choice and which way this run's start signed in (states only)
+        line { Settings.init(ctx); BrowserLogin.reportLine(Settings.browserLogin, BrowserLogin.launched) },
     )
 
     /** the report's Windows ID line: the choice, this run's game start or the last recorded one */

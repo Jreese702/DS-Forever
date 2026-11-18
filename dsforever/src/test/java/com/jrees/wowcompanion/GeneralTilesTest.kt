@@ -66,8 +66,9 @@ class GeneralTilesTest {
 
     @Test fun compactRowsPerGroup() {
         assertEquals(listOf(Row.LANGUAGE), GeneralTiles.rows(SettingsTabs.Group.LOOK, true, false))
-        assertEquals(listOf(Row.LOGIN, Row.GAME_ACCOUNT, Row.WINDOWS_ID), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, true, false))
-        assertEquals(listOf(Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.WINDOWS_RESTART), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, false, true))
+        // the user, 2026-11-18: Browser login under Windows ID (the same Restart row under both)
+        assertEquals(listOf(Row.LOGIN, Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, true, false))
+        assertEquals(listOf(Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN, Row.WINDOWS_RESTART), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, false, true))
         assertEquals(listOf(Row.REPORT, Row.RELOAD, Row.STATUS), GeneralTiles.rows(SettingsTabs.Group.HELP, true, false))
         assertTrue(GeneralTiles.rows(SettingsTabs.Group.HUD, true, true).isEmpty())
         // every General row word of the six-tab data is a compact row or a tile (Theme, Swap screens, Voice typing; Restart DS Forever

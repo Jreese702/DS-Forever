@@ -2166,7 +2166,19 @@
 "Testing": "Test en cours",
 "Other network": "Autre réseau",
 "PC not found": "PC introuvable",
-"Check the Other network code.": "Vérifiez le code Autre réseau."
+"Check the Other network code.": "Vérifiez le code Autre réseau.",
+"Browser login": "Connexion par navigateur",
+"Sign in with Blizzard's page": "Se connecter sur la page de Blizzard",
+"Sign-in refused (BLZ51914400)": "Connexion refusée (BLZ51914400)",
+"Starting browser login…": "Démarrage de la connexion par navigateur…",
+"Completing sign-in…": "Finalisation de la connexion…",
+"Browser login timed out.": "La connexion par navigateur a expiré.",
+"Browser login could not start the game.": "La connexion par navigateur n'a pas pu lancer le jeu.",
+"Battle.net returned an unsupported sign-in address.": "Battle.net a renvoyé une adresse de connexion non prise en charge.",
+"Sign-in tried to open an unsupported address. Cancel and try again.": "La connexion a tenté d'ouvrir une adresse non prise en charge. Annulez et réessayez.",
+"The sign-in page's secure connection could not be verified.": "La connexion sécurisée de la page de connexion n'a pas pu être vérifiée.",
+"The sign-in page could not load. Check your connection and try again.": "La page de connexion n'a pas pu se charger. Vérifiez votre connexion et réessayez.",
+"Battle.net could not complete this sign-in page. Try again later.": "Battle.net n'a pas pu terminer cette page de connexion. Réessayez plus tard."
 },
 "templates": {
 "Switch to %s?": "Passer à %s ?",
