@@ -280,7 +280,20 @@ object Voice {
      * What Whisper wrote, as the box can take it: its non-speech tags ("[BLANK_AUDIO]", "[Music]", "(laughs)", "*coughs*") dropped,
      * then [clean]. Only tags: words in brackets are rare in chat, and Whisper writes these for silence and noise.
      */
-    fun whisperClean(s: String, max: Int): String = clean(s.replace(WHISPER_TAG, " "), max)
+    fun whisperClean(s: String, max: Int): String = clean(dropRepeat(s.replace(WHISPER_TAG, " ")), max)
+
+    /**
+     * ptt-speed: the words said twice over ("Let's go kill the boss in the cave. Let's go kill the boss in the cave.") are said once.
+     * Whisper's known slip with a short encoder window (whisper_jni.cpp's audioCtx; the PC bench saw it with a 256 window, the shipped
+     * margin and floor did not): only an exact repeat of the whole line (3+ words each time, case and punctuation aside) is cut, never a part.
+     */
+    fun dropRepeat(s: String): String {
+        val w = s.trim().split(' ', '\t', '\n').filter { it.isNotEmpty() }
+        if (w.size < 6 || w.size % 2 != 0) return s
+        fun norm(l: List<String>) = l.joinToString(" ") { it.lowercase().filter { c -> c.isLetterOrDigit() || c == '\'' } }
+        val h = w.size / 2
+        return if (norm(w.subList(0, h)) == norm(w.subList(h, w.size))) w.subList(0, h).joinToString(" ") else s
+    }
 
     private val WHISPER_TAG = Regex("\\[[^\\]]*]|\\([^)]*\\)|\\*[^*]*\\*")
 

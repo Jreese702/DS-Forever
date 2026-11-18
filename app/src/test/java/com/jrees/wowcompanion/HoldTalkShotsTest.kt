@@ -154,6 +154,54 @@ class HoldTalkShotsTest {
         assertFalse("no command cell", taps.any { it.first == "chcmd" })
     }
 
+    /** ptt-speed (the user, 2026-11-18: "I see the message on screen and push A and there's a solid 5-6 seconds before it shows up in
+     *  chat"): the waiting line's letters go into the buffer before A, never its Send; A then taps no letter, only the check and Send */
+    @Test fun aWaitingLineIsTypedBeforeAAndOnlySentOnA() {
+        live()
+        val v = chat()
+        set(v, "type", "SAY"); call(v, "applyType")
+        call(v, "setTyped", "draft")
+        taps.clear()
+        assertTrue(v.talkPrefill("on my way", "PARTY" to ""))
+        assertTrue("the party type tapped", ("chq" to ChatStream.TYPES.getValue("PARTY")) in taps)
+        assertTrue("the letters typed", ChatStream.cellOf('w')!! in taps)
+        assertFalse("never the Send cell before A", ("chq" to ChatStream.SEND) in taps)
+        assertFalse("no check before A", ("chq" to ChatStream.BODY) in taps)
+        // the add-on answers the type tap while the line waits
+        v.onDoc(JSONObject().put("type", "chatq").put("op", "type").put("ok", true).put("ty", "PARTY")); idle()
+        // A: no letter goes again, only the check, then Send
+        taps.clear()
+        var result: Pair<Boolean, String>? = null
+        assertTrue(v.talkSend("on my way", "PARTY" to "") { ok, why -> result = ok to why })
+        assertEquals("only the check after A", listOf("chq" to ChatStream.BODY), taps.toList())
+        answerCheck(v, "on my way", "PARTY")
+        assertEquals(listOf("chq" to ChatStream.BODY, "chq" to ChatStream.SEND), taps.toList())
+        answerSend(v, "PARTY")
+        assertEquals(true to "", result)
+        assertEquals("the composer keeps its type", "SAY", get<String>(v, "type"))
+        assertEquals("... and its draft", "draft", get<String>(v, "typed"))
+        assertTrue(v.talkTimes().contains("retypes=0"))
+    }
+
+    @Test fun aDroppedPrefilledLineGivesTheDraftBackUnsent() {
+        live()
+        val v = chat()
+        set(v, "type", "SAY"); call(v, "applyType")
+        call(v, "setTyped", "draft")
+        taps.clear()
+        assertTrue(v.talkPrefill("lol", "PARTY" to ""))
+        v.talkUnfill()
+        assertFalse("nothing sent", ("chq" to ChatStream.SEND) in taps)
+        assertEquals("SAY", get<String>(v, "type"))
+        assertEquals("draft", get<String>(v, "typed"))
+        assertTrue("Say tapped back", ("chq" to ChatStream.TYPES.getValue("SAY")) in taps)
+        // the composer's own send still sends its draft
+        taps.clear()
+        call(v, "doSend")
+        answerCheck(v, "draft", "SAY")
+        assertTrue(("chq" to ChatStream.SEND) in taps)
+    }
+
     @Test fun nothingGoesWhileTheGameIsNotThere() {
         GameInput.gate.restart()                                     // no game documents: not live
         val v = chat()

@@ -1060,7 +1060,9 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         if (body.isBlank()) { done(false, HoldTalk.NOT_HEARD); return false }
         if (!GameInput.live()) { done(false, "Waiting for the game"); return false }
         if (stream.sending || talkDone != null) { done(false, "Sending…"); return false }
-        talkKept = Triple(type, whisperName, typed)
+        // a pre-filled line ([talkPrefill]) already kept the composer's own type and draft
+        if (talkKept == null) talkKept = Triple(type, whisperName, typed)
+        talkFilled = false
         val (usedT, usedW) = to ?: usedNow()
         talkTo = usedT to usedW
         type = usedT
@@ -1071,6 +1073,42 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         if (!stream.send()) { talkEnd(false, "The game is not ready"); return false }
         return true
     }
+
+    /** the words of a waiting line are in the add-on's buffer ([talkPrefill]), not sent */
+    private var talkFilled = false
+
+    /**
+     * ptt-speed (the user, 2026-11-18: "I see the message on screen and push A and there's a solid 5-6 seconds before it shows up in
+     * chat"): the add-on's buffer takes one pad tap per character, [ChatStream.BATCH_GAP_MS] apart, so a 35-letter line was ~5 s of taps
+     * AFTER A. While the line waits for A ("Show, then A sends") its words, type and target are typed into the buffer already; A then only
+     * checks and sends. NOTHING IS SENT HERE: the add-on sends only on its Send cell (23), which only [talkSend] taps, on A. The
+     * composer's own type and draft are kept as [talkSend] keeps them and come back with [talkUnfill] (the line dropped) or after the
+     * send. Again on a tab change ([to]: the panel's tab); only what differs is tapped. False = nothing typed (the game not there, a send
+     * on its way).
+     */
+    fun talkPrefill(text: String, to: Pair<String, String>? = null): Boolean {
+        val body = HoldTalk.body(text)
+        if (body.isBlank() || !GameInput.live() || stream.sending || talkDone != null) return false
+        if (talkKept == null) talkKept = Triple(type, whisperName, typed)
+        val (usedT, usedW) = to ?: usedNow()
+        type = usedT
+        if (type == "WHISPER") whisperName = usedW
+        talkFilled = true
+        tellType()
+        return stream.setBody(body)
+    }
+
+    /** the pre-filled line went unsent (B, its time ran out, the room changed): the composer's type and draft back in the buffer */
+    fun talkUnfill() {
+        if (!talkFilled || talkDone != null) return
+        talkFilled = false
+        talkKept?.let { (t, w, draft) -> type = t; whisperName = w; tellType(); stream.setBody(draft); head.invalidate(); showTyped() }
+        talkKept = null
+    }
+
+    /** the last send's timing (ms, never the words) for the host's DiagLog line */
+    fun talkTimes(): String = "letters_left_ms=${stream.lastQueuedMs} check_ms=${stream.lastCheckMs} send_ms=${stream.lastSendMs} " +
+        "retypes=${stream.lastRetypes}"
 
     /** a hold-to-talk send's answer: the composer's type and draft back, the host told */
     private fun talkEnd(ok: Boolean, why: String) {

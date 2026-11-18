@@ -47,6 +47,18 @@ std::string jniSafe(const std::string& s) {
     return out;
 }
 
+// ptt-speed: the encoder's window from the clip, not whisper's whole 30 s (1500 = 30 s, 50 a second). A push-to-talk clip is a few
+// seconds, so encoding 30 s was most of the time (PC bench, base.en q5_1, 4 threads: ~570 ms -> ~160 ms a clip). whisper.cpp's caveat:
+// too short a window can repeat or drop words, so the clip's own length gets a MARGIN and a FLOOR, sized on the bench (8 clips, 2-12 s,
+// all four models: the same words as the full window; a 256 floor repeated one sentence, 384 changed a word in the 12 s clip).
+// 0 = the full window (a clip near 30 s).
+int audioCtx(int samples) {
+    const int kFull = 1500, kMargin = 192, kFloor = 448;
+    long long c = (static_cast<long long>(samples) * 50 + 15999) / 16000 + kMargin;
+    if (c < kFloor) c = kFloor;
+    return c >= kFull ? 0 : static_cast<int>(c);
+}
+
 }  // namespace
 
 extern "C" {
@@ -62,7 +74,9 @@ JNIEXPORT jlong JNICALL Java_com_jrees_wowcompanion_WhisperNative_load(JNIEnv* e
     if (p.empty()) return 0;
     whisper_context_params cp = whisper_context_default_params();
     cp.use_gpu = false;
-    cp.flash_attn = false;
+    // ptt-speed (the user, 2026-11-18: "the time between sending a PTT from voice and it actually sending in chat seems really high"):
+    // flash attention on the CPU backend (ggml_flash_attn_ext, f16 on NEON): the PC bench ran the same clips ~1.4x faster, the words the same
+    cp.flash_attn = true;
     whisper_context* ctx = whisper_init_from_file_with_params(p.c_str(), cp);
     if (ctx == nullptr) return 0;
     Handle* h = new Handle();
@@ -103,6 +117,7 @@ JNIEXPORT jstring JNICALL Java_com_jrees_wowcompanion_WhisperNative_transcribe(J
     fp.suppress_blank = true;
     fp.suppress_nst = true;
     fp.initial_prompt = initial.empty() ? nullptr : initial.c_str();
+    fp.audio_ctx = audioCtx(n);
     fp.abort_callback = aborted;
     fp.abort_callback_user_data = h;
 

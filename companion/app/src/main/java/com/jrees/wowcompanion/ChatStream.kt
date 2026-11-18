@@ -108,6 +108,16 @@ class ChatStream(
     private var quickAt = 0L
     val sending: Boolean get() = step != Step.NONE
 
+    // ---- ptt-speed timing of the last send (the user, 2026-11-18: "I see the message on screen and push A and there's a solid 5-6
+    // seconds before it shows up in chat"): ms, never the words. [lastCheckMs] = the check (15) handed over -> its matching answer
+    // (the letters still queued in front of it included), [lastSendMs] = Send (23) handed over -> the add-on's "sent", [lastRetypes]
+    // = full re-types after a check that did not match, [lastQueuedMs] = how long the letters still had to land when send() came
+    var lastCheckMs = -1L; private set
+    var lastSendMs = -1L; private set
+    var lastRetypes = 0; private set
+    var lastQueuedMs = 0L; private set
+    private var checkStart = 0L
+
     /**
      * Hands [cells] over, in order, clear of every cell's repeat guard (0.25 s). Only the least times are counted ([BATCH_GAP_MS]
      * inside a batch, [REST_MS] between batches; S3: the launcher's taps cost nothing more), since a queue may only add to them. A
@@ -255,6 +265,7 @@ class ChatStream(
     fun send(): Boolean {
         if (sending || body.isBlank()) return false
         tries = 0
+        lastCheckMs = -1L; lastSendMs = -1L; lastRetypes = 0; lastQueuedMs = copyLeftMs(); checkStart = now()
         return check()
     }
 
@@ -303,17 +314,19 @@ class ChatStream(
                     // chat32: a /command runs from the add-on's command cell (as the game's chat box would run it), never Send
                     val command = !field && body.startsWith("/")
                     if (command && !h.cmd) { step = Step.NONE; onEvent(Event.Refused("Commands can't be sent during a fight")); return }
-                    step = Step.SEND; stepAt = now()
+                    step = Step.SEND; stepAt = now(); lastCheckMs = stepAt - checkStart
                     if (!go(listOf(if (command) "chcmd" to 0 else "chq" to SEND))) { step = Step.NONE; onEvent(Event.Refused("The game is not ready")) }
                 } else if (++tries > 2) {
                     step = Step.NONE
                     onEvent(Event.Refused("The add-on did not get all the letters"))
                 } else {
+                    lastRetypes++
                     resync(); check()
                 }
             }
             step == Step.SEND && h.op == "send" -> {
                 step = Step.NONE
+                lastSendMs = now() - stepAt
                 if (h.ok) {
                     body = ""
                     onEvent(Event.Sent)

@@ -1869,12 +1869,21 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the hold's microphone could not listen (no model / the microphone off): the slot's microphone shows dimmed with the note */
     private var talkNoVoice = false
     private var talkSendTry = 0
+    /** ptt-speed: the waiting line's words are typed into the add-on's buffer already (ChatView.talkPrefill; nothing sent) */
+    private var talkPrefilled = false
+    /** ptt-speed timing (uptime ms; 0 = not yet): the release, the words back, the send asked (A, or the release), for ONE DiagLog line
+     *  when the send's answer comes (the timing only, never the words) */
+    private var talkReleasedAt = 0L
+    private var talkWordsAt = 0L
+    private var talkSendAt = 0L
     private val talkTick = object : Runnable {
         override fun run() {
             ui.removeCallbacks(this)
             // the reader stopped mid-press: Left's release would never come
             if (!DirectPad.healthy && (holdTalk.st == HoldTalk.St.PENDING || holdTalk.st == HoldTalk.St.HELD)) { talkReset("reader down"); return }
             talkAct(holdTalk.tick(SystemClock.uptimeMillis()), "tick")
+            // the chat guest came after the line showed: the words go into the buffer now
+            if (holdTalk.st == HoldTalk.St.LINE && !talkPrefilled) talkPrefill()
             if (holdTalk.st != HoldTalk.St.IDLE) ui.postDelayed(this, TALK_TICK_MS)
         }
     }
@@ -1923,6 +1932,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.i("WCHOME", "push to talk: a hold already runs (${holdTalk.st})"); return
         }
         Log.i("WCHOME", "push to talk: ${src.first} held, ${now - src.second} ms after its press")
+        // ptt-speed: the bound button is a hold's (a tap does nothing), so the model starts loading now, under the hold's first 350 ms
+        talkEngine.preload()
         talkNoVoice = false
         ui.removeCallbacks(talkTick)
         ui.postDelayed(talkTick, (src.second + HoldTalk.HOLD_MS - now).coerceAtLeast(0L))
@@ -1941,15 +1952,36 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (room == Room.HOME) show(Room.CHAT)
             }
             HoldTalk.Out.LISTEN -> talkListen()
-            HoldTalk.Out.STOP -> { Log.i("WCHOME", "hold to talk: released, working the words out"); talkEngine.stop() }
+            HoldTalk.Out.STOP -> {
+                Log.i("WCHOME", "hold to talk: released, working the words out")
+                talkReleasedAt = SystemClock.uptimeMillis(); talkWordsAt = 0L; talkSendAt = 0L
+                talkEngine.stop()
+            }
             HoldTalk.Out.CANCEL -> { Log.i("WCHOME", "hold to talk: given up ($why)"); talkEngine.cancel(); talkFree() }
-            HoldTalk.Out.SHOW -> Log.i("WCHOME", "hold to talk: the words shown, A sends")
-            HoldTalk.Out.SEND -> { talkSendTry = 0; talkSend() }
+            HoldTalk.Out.SHOW -> {
+                Log.i("WCHOME", "hold to talk: the words shown, A sends")
+                talkWordsAt = SystemClock.uptimeMillis()
+                talkPrefilled = false
+                talkPrefill()
+            }
+            HoldTalk.Out.SEND -> {
+                val now = SystemClock.uptimeMillis()
+                if (talkWordsAt == 0L) talkWordsAt = now               // "Send straight away": the words and the send are one moment
+                talkSendAt = now
+                talkSendTry = 0; talkSend()
+            }
             HoldTalk.Out.DROP -> { Log.i("WCHOME", "hold to talk: the line went ($why), nothing sent"); talkFree() }
-            HoldTalk.Out.NOTE -> { Log.i("WCHOME", "hold to talk: ${if (holdTalk.noteSent) "sent" else "note: ${holdTalk.note}"}"); talkFree() }
+            HoldTalk.Out.NOTE -> {
+                Log.i("WCHOME", "hold to talk: ${if (holdTalk.noteSent) "sent" else "note: ${holdTalk.note}"}")
+                if (talkSendAt != 0L) talkTiming(holdTalk.noteSent)
+                talkFree()
+            }
             // LB / RB, D-pad Up / Down: the pop-up's previous / next chat, round past the ends (the user, 2026-11-17: "Wrap around")
-            HoldTalk.Out.TAB_L, HoldTalk.Out.TAB_R -> if (talkTabs.step(if (o == HoldTalk.Out.TAB_L) -1 else 1))
+            HoldTalk.Out.TAB_L, HoldTalk.Out.TAB_R -> if (talkTabs.step(if (o == HoldTalk.Out.TAB_L) -1 else 1)) {
                 Log.i("WCHOME", "hold to talk: chat ${talkTabs.now()?.key}")
+                // a pre-filled line follows its tab (the type, a whisper's person: only what differs is tapped)
+                if (holdTalk.st == HoldTalk.St.LINE && talkPrefilled) talkPrefill()
+            }
             // push to talk's tap (hub58): nothing happens; the chat guest the Hub held in the click goes back
             HoldTalk.Out.FREE -> { Log.i("WCHOME", "push to talk: a tap ($why), nothing"); talkFree() }
         }
@@ -1999,8 +2031,33 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
     private val TALK_SEND_TRIES = 10
 
+    /**
+     * ptt-speed (the user, 2026-11-18: "I see the message on screen and push A and there's a solid 5-6 seconds before it shows up in
+     * chat"): the waiting line's words go into the add-on's buffer while the player reads them, one tap a letter as before, so A has
+     * only the check and the ONE send tap left. Nothing is sent before A (the add-on sends only on its Send cell, which only A's
+     * [talkSend] taps); "On release" off still needs A. Only while the chat guest is ours (Chat.lua takes the letters only then);
+     * else the tick tries again.
+     */
+    private fun talkPrefill() {
+        if (holdTalk.st != HoldTalk.St.LINE || capHolder != "pad:chat") return
+        talkPrefilled = chatView.talkPrefill(holdTalk.words, talkTabs.now()?.let { it.key to it.whisper })
+    }
+
+    /** ONE DiagLog line per hold-to-talk send: where the time went (ms; never the words) */
+    private fun talkTiming(ok: Boolean) {
+        val now = SystemClock.uptimeMillis()
+        fun gap(a: Long, b: Long) = if (a == 0L || b == 0L) -1L else b - a
+        DiagLog.event("voice", "ptt timing ${if (ok) "sent" else "refused"} mode=${if (holdTalk.sendNow) "release" else "line"} " +
+            "chars=${holdTalk.words.length} prefilled=$talkPrefilled release_to_words=${gap(talkReleasedAt, talkWordsAt)} " +
+            "words_to_send=${gap(talkWordsAt, talkSendAt)} send_to_sent=${gap(talkSendAt, now)} guest_waits=$talkSendTry " +
+            "${chatView.talkTimes()} total=${gap(talkReleasedAt, now)}")
+        talkReleasedAt = 0L; talkWordsAt = 0L; talkSendAt = 0L
+    }
+
     /** the hold is over: the chat guest goes back (the Chat room keeps its own when it is on screen) */
     private fun talkFree() {
+        // a pre-filled line that was not sent: the composer's own draft and type back in the add-on's buffer
+        if (talkPrefilled) { talkPrefilled = false; chatView.talkUnfill() }
         if (room == Room.CHAT) return
         guestTap(GuestPad.cells(questsPad, "chat", hold = false))
     }

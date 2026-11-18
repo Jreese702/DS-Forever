@@ -39,13 +39,22 @@ class WhisperEngine(context: Context,
         val s = ++session
         stopAsked = false
         val prompt = hints.take(PROMPT_NAMES).joinToString(", ").take(PROMPT_CHARS).ifBlank { null }
-        // the model loads while the player speaks
+        // the model loads while the player speaks; a hold keeps it warm longer (ptt-speed: [PTT_IDLE_MS])
+        if (held) warmMs = PTT_IDLE_MS
         work.execute { if (s == session) runCatching { loaded(pick.first) } }
         val t = Thread({ record(s, pick, prompt, sink) }, "voice-rec")
         recorder = t
         t.start()
         DiagLog.event("voice", "offline listen model=${pick.first.id} lang=${pick.second}")
         return true
+    }
+
+    /** ptt-speed: the model starts loading at the push-to-talk press (the hold starts [HoldTalk.HOLD_MS] later), so a cold load
+     *  overlaps the hold and the talking; nothing is recorded */
+    fun preload() {
+        val pick = Voice.whisperModel(Tr.lang(), on()) ?: return
+        if (held) warmMs = PTT_IDLE_MS
+        work.execute { runCatching { loaded(pick.first) } }
     }
 
     /** A: the recording stops now, the words are worked out */
@@ -115,12 +124,19 @@ class WhisperEngine(context: Context,
         if (n == 0) { post(s) { sink.error(Voice.E_NO_MATCH) }; return }
         post(s) { sink.working() }
         val count = n
-        work.execute { transcribe(s, pick, pcm, count, prompt, sink) }
+        val recEnd = android.os.SystemClock.uptimeMillis()
+        work.execute { transcribe(s, pick, pcm, count, prompt, sink, recEnd) }
     }
 
-    private fun transcribe(s: Int, pick: Pair<VoiceModels.Model, String>, pcm: ShortArray, n: Int, prompt: String?, sink: VoiceEngine.Sink) {
+    private fun transcribe(s: Int, pick: Pair<VoiceModels.Model, String>, pcm: ShortArray, n: Int, prompt: String?, sink: VoiceEngine.Sink,
+                           recEnd: Long) {
         if (!live(s)) return
+        // ptt-speed timing: how long the words waited behind the work thread (the model's load started at the press), then a load here
+        val waited = android.os.SystemClock.uptimeMillis() - recEnd
+        val warm = synchronized(lock) { handle != 0L && handleModel == pick.first }
+        val l0 = android.os.SystemClock.uptimeMillis()
         val h = runCatching { loaded(pick.first) }.getOrDefault(0L)
+        val loadMs = android.os.SystemClock.uptimeMillis() - l0
         if (h == 0L) {
             VoiceModels.distrust(pick.first)
             DiagLog.event("voice", "offline model ${pick.first.id} did not load")
@@ -134,7 +150,10 @@ class WhisperEngine(context: Context,
         idleLater()
         if (!live(s)) return
         val words = text?.let { Voice.whisperClean(it, 4000) }
-        DiagLog.event("voice", "offline words ms=${lastUsed - t0} audio_ms=${n * 1000L / RATE} chars=${words?.length ?: -1}")
+        // the timing only, never the words: ms = whisper_full, wait = release -> start (a load started at the press finishing),
+        // load = a load here (0 + warm = the model was loaded already)
+        DiagLog.event("voice", "offline words ms=${lastUsed - t0} audio_ms=${n * 1000L / RATE} chars=${words?.length ?: -1} " +
+            "wait_ms=$waited load_ms=$loadMs ${if (warm) "warm" else "cold"} threads=$THREADS")
         when {
             text == null -> post(s) { sink.error(Voice.E_SERVER) }
             words.isNullOrEmpty() -> post(s) { sink.error(Voice.E_NO_MATCH) }
@@ -149,6 +168,12 @@ class WhisperEngine(context: Context,
         const val PROMPT_CHARS = 200
         /** the model stays loaded this long after its last use */
         const val IDLE_MS = 60_000L
+        /** ptt-speed (the user, 2026-11-18: "the time between sending a PTT from voice and it actually sending in chat seems really
+         *  high"): after a hold to talk the model stays loaded this long, so the next PTT pays no load. Android's running-low warning
+         *  still frees it at once while idle ([hookTrim]) */
+        const val PTT_IDLE_MS = 5 * 60_000L
+        /** how long the model stays loaded after its last use now ([IDLE_MS], or [PTT_IDLE_MS] once a hold used it) */
+        @Volatile internal var warmMs = IDLE_MS
 
         /** offline voice's state now: the library and which model files are ready */
         fun on(): Voice.WhisperOn = Voice.WhisperOn(WhisperNative.available,
@@ -170,10 +195,11 @@ class WhisperEngine(context: Context,
             synchronized(lock) { if (handle != 0L && handleModel == m) return handle }
             freeNow()
             if (!VoiceModels.ready(m)) return 0L
+            val t0 = android.os.SystemClock.uptimeMillis()
             val h = WhisperNative.load(VoiceModels.fileOf(m).absolutePath)
             synchronized(lock) { handle = h; handleModel = if (h != 0L) m else null }
             lastUsed = android.os.SystemClock.uptimeMillis()
-            if (h != 0L) { hookTrim(); idleLater(); DiagLog.event("voice", "offline model ${m.id} loaded") }
+            if (h != 0L) { hookTrim(); idleLater(); DiagLog.event("voice", "offline model ${m.id} loaded ms=${lastUsed - t0}") }
             return h
         }
 
@@ -182,17 +208,18 @@ class WhisperEngine(context: Context,
             if (h == 0L) return 0L
             runCatching { WhisperNative.free(h) }
             DiagLog.event("voice", "offline model freed")
+            warmMs = IDLE_MS
             return MODEL_BYTES
         }
 
         private const val MODEL_BYTES = 300L * 1024 * 1024
 
         private val idle = Runnable {
-            if (android.os.SystemClock.uptimeMillis() - lastUsed >= IDLE_MS && !running) work.execute { if (!running) freeNow() }
+            if (android.os.SystemClock.uptimeMillis() - lastUsed >= warmMs && !running) work.execute { if (!running) freeNow() }
             else idleLater()
         }
 
-        private fun idleLater() { main.removeCallbacks(idle); main.postDelayed(idle, IDLE_MS) }
+        private fun idleLater() { main.removeCallbacks(idle); main.postDelayed(idle, warmMs) }
 
         /** the model goes now (the host went away: [Voice.stopAll]'s caller; Android running low) */
         fun release() { if (!running) work.execute { if (!running) freeNow() } }

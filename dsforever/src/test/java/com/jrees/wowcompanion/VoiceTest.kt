@@ -25,6 +25,17 @@ class VoiceTest {
 
     // ---------------------------------------------------------------- the setting and the glyph
 
+    /** ptt-speed: Whisper's whole-line repeat (a short encoder window's slip) is said once; a part said twice is kept */
+    @Test fun aLineSaidTwiceOverIsSaidOnce() {
+        assertEquals("Let's go kill the boss in the cave.",
+            Voice.whisperClean(" Let's go kill the boss in the cave. Let's go kill the boss in the cave.", 255))
+        assertEquals("a short cheer is kept", "go go go go", Voice.whisperClean("go go go go", 255))
+        assertEquals("help me help me", Voice.whisperClean("help me help me", 255))
+        assertEquals("no no", Voice.whisperClean("no no", 255))
+        assertEquals("help me help me please", Voice.whisperClean("help me help me please", 255))
+        assertEquals("on my way", Voice.whisperClean(" on my way", 255))
+    }
+
     @Test fun theSettingDefaultsToThisDevice() {
         assertEquals(Mode.DEVICE, Mode.of(null))
         assertEquals(Mode.DEVICE, Mode.of("nonsense"))
