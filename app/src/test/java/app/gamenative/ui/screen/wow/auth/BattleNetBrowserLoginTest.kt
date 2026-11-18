@@ -32,7 +32,9 @@ import java.net.Socket
 @Config(application = Application::class, sdk = [34])
 class BattleNetBrowserLoginTest {
     @get:Rule
-    val temporaryFolder = TemporaryFolder()
+    // DS Forever: the drives string drops the temp path's drive letter, so the folder must sit on the working directory's drive
+    // (the system temp folder is on C:, so a worktree on E: read it as E:\Users\..., missing); the module's build folder always is.
+    val temporaryFolder = TemporaryFolder(File("build/tmp/auth-tests").absoluteFile.apply { mkdirs() })
 
     @Before
     fun reset() {
