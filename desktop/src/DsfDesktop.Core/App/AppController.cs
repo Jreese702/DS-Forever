@@ -22,7 +22,7 @@ namespace DsfDesktop.App
     /// Everything Desktop does, without UI: the WoW folder and the log it follows, the bridge and its mDNS name, the bundled Sunshine
     /// (config, login, process, pairing), the add-ons, and "Focus WoW" when a stream starts. The window and tray only read this.
     /// </summary>
-    public sealed class AppController : IBridgeHost, IDisposable
+    public sealed partial class AppController : IBridgeHost, IDisposable
     {
         public readonly AppPaths Paths;
         public readonly AppSettings Settings;
@@ -133,6 +133,8 @@ namespace DsfDesktop.App
             // adopted by the screen plan and detached once no Thor wants it
             if (Settings.VddAttached) Task.Run(() => RemoveLeftoverVdd());
             if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
+            // the Thor's add-ons on the PC (QuestieDB first, then the last Thor's list): kept up to date at every start, WoW not running
+            if (Settings.AutoAddons) PcAddonsAtStart();
             Fire();
         }
 
@@ -202,7 +204,7 @@ namespace DsfDesktop.App
             Settings.WowRoot = root;
             SaveSettings();
             LocateWow();
-            if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
+            if (Settings.AutoAddons) { Task.Run(() => AddonsAuto()); PcAddonsAtStart(); }
             return true;
         }
 
@@ -1653,6 +1655,8 @@ namespace DsfDesktop.App
         /// </summary>
         void BeforeStart(LaunchPlan p)
         {
+            // the Thor's add-ons in before WoW reads AddOns (a missing QuestieDB holds the start up to PcWaitS)
+            try { if (Settings.AutoAddons) PcBeforeStart(); } catch (Exception e) { Log.I("pc add-ons: " + e.GetType().Name); }
             try { SvBeforeStart(p?.Flavor != null && Wow != null ? Wow.FlavorDir(p.Flavor) : FlavorDirOrNull); }
             catch (Exception e) { Log.I("settings sync: " + e.GetType().Name); }
             bool ask;
