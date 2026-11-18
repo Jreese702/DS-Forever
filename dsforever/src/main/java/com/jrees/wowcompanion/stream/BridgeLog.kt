@@ -95,6 +95,11 @@ class BridgeLog(
     /** the player's Retry: Desktop's own virtual screen tries again (it stops after 3 failures); false = no connection right now */
     fun screenRetry(): Boolean = try { conn?.send(BridgeProtocol.screenRetry()); conn != null } catch (_: Throwable) { false }
 
+    /** the player's Retry after Desktop stopped (a server error, an outdated PC game): WoW once more; false = no connection now */
+    fun wowRetry(): Boolean = try { conn?.send(BridgeProtocol.wowRetry()); conn != null } catch (_: Throwable) { false }
+    /** the player's Cancel (B) on Desktop's update of the PC game */
+    fun patchCancel(): Boolean = try { conn?.send(BridgeProtocol.patchCancel()); conn != null } catch (_: Throwable) { false }
+
     /** how a session ended */
     enum class End { DROPPED, AUTH_LOST, STOPPED }
 
@@ -163,7 +168,10 @@ class BridgeLog(
                 is BridgeMsg.Wow -> {
                     onWow(m.state, m.why)
                     onPc(m.pc ?: PcWow(m.state, m.why))
-                    BridgeProtocol.wowText(m.state, m.why).takeIf { it.isNotEmpty() }?.let { onStatus("PC: $it") }
+                    // Desktop's stop and its game update say themselves on the curtain (a red row with Retry, the bar): no status line
+                    // over them (it read "WoW didn't start: Updating the game ...", rewritten every 500 ms)
+                    if (m.pc?.patch == null && m.pc?.stopped != true)
+                        BridgeProtocol.wowText(m.state, m.why).takeIf { it.isNotEmpty() }?.let { onStatus("PC: $it") }
                 }
                 is BridgeMsg.Unpaired -> { onAuthLost("revoked"); return End.AUTH_LOST }
                 // the user's pick 2026-11-17 ("Ask the Thor again"): WoW closed itself on the PC and starts again; the saved login once

@@ -28,15 +28,15 @@ import java.io.File
 class StreamCurtainShotsTest {
     private val out: File? = System.getenv("LOADING_SHOTS_DIR")?.let { File(it) }
 
-    private fun shot(name: String, t: Float, connected: Boolean, pc: PcWow?, pcWhy: String = "") {
-        val d = out ?: return
+    private fun shot(name: String, t: Float, connected: Boolean, pc: PcWow?, pcWhy: String = "", dir: File? = out) {
+        val d = dir ?: return
         LoadingScene.pin(t, 11L, 1)
         val shows = StreamCurtain.decide(connected, true, pc, pcWhy = pcWhy)
         val b = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         when (shows) {
             is StreamCurtain.Shows.Curtain -> {
-                val v = LoadingTopView(RuntimeEnvironment.getApplication()).apply { curtain = { shows.rows to shows.line } }
+                val v = LoadingTopView(RuntimeEnvironment.getApplication()).apply { curtain = { shows.rows to shows.line }; curtainBars = { shows.bars } }
                 v.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY))
                 v.layout(0, 0, 1920, 1080)
                 v.draw(c)
@@ -74,6 +74,49 @@ class StreamCurtainShotsTest {
         shot("S8_pc_busy", 1.0f, false, PcWow(state = "running", screen = "charselect", bnet = "signed_in"), StreamCurtain.BUSY_PORTS)
     }
 
+    /**
+     * Desktop 0.2.36 updates the PC game itself (the user's ruling 2026-11-18): the bar with "64 / 127 MB" and Cancel (B), Blizzard's
+     * updater busy, installing, the new data loading, and failures with Retry (A).
+     *   PATCH_SHOTS_DIR=<dir> PARTY_ART_ROOT=<root> gradlew :app:testModernDebugUnitTest --tests "*StreamCurtainShotsTest*"
+     */
+    @Test fun patchShots() {
+        val d = System.getenv("PATCH_SHOTS_DIR")?.let { File(it) } ?: return
+        d.mkdirs()
+        System.getenv("PARTY_ART_ROOT")?.let { root ->
+            ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, File(root))
+        }
+        val pc = PcWow(state = "start_failed", screen = "none", bnet = "signed_in", stopped = true, pcGame = "outdated",
+            gameInstalled = "1.60.1.70938", gameCurrent = "1.60.1.70959")
+        fun p(state: String, done: Long = 0, code: String = "", need: Long = 0) =
+            pc.copy(patch = com.jrees.wowcompanion.stream.PcPatch(state, "70938", "70959", done, 127_425_344L, code, need))
+        shot("P1_checking", 1.0f, true, p("checking"), dir = d)
+        shot("P2_downloading_64of127", 1.6f, true, p("downloading", 64_000_000L), dir = d)
+        shot("P3_downloading_not_connected", 2.0f, false, p("downloading", 12_000_000L), dir = d)
+        shot("P4_blizzard_updater_busy", 2.4f, true, p("waiting", code = "agent"), dir = d)
+        shot("P5_installing", 2.8f, true, p("installing", 127_425_344L), dir = d)
+        shot("P6_loading_new_data", 3.2f, true, pc.copy(stopped = false, pcGame = "", state = "starting",
+            patch = com.jrees.wowcompanion.stream.PcPatch("loading", "70938", "70959")), dir = d)
+        shot("F1_no_answer", 3.6f, true, p("failed", code = "no_answer"), dir = d)
+        shot("F2_not_enough_space", 4.0f, true, p("failed", code = "space", need = 1153), dir = d)
+        shot("F3_cancelled", 4.4f, true, p("cancelled", 40_000_000L, code = "cancelled"), dir = d)
+        shot("F4_agent_busy", 4.8f, true, p("failed", code = "agent_busy"), dir = d)
+        shot("F5_new_game_didnt_start", 5.2f, true, p("failed", code = "new_failed"), dir = d)
+        // Spanish and French: the same bar
+        for (l in listOf("es", "fr")) {
+            val f = listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json")).first { it.canRead() }
+            Tr.load(l, f.readText())
+        }
+        val keep = Tr.choice()
+        val app = RuntimeEnvironment.getApplication()
+        try {
+            for (l in listOf("es", "fr")) {
+                Tr.setChoice(app, l)
+                shot("L_${l}_downloading", 1.6f, true, p("downloading", 64_000_000L), dir = d)
+                shot("L_${l}_failed_space", 4.0f, true, p("failed", code = "space", need = 1153), dir = d)
+            }
+        } finally { Tr.setChoice(app, keep) }
+    }
+
     /** the user, 2026-11-13: another Sunshine on the PC's stock ports; the curtain says why (es / fr too) instead of "PC found" for ever */
     @Test fun theCurtainSaysWhyThePcIsBusyInEveryLanguage() {
         for (l in listOf("es", "fr")) {
@@ -84,7 +127,9 @@ class StreamCurtainShotsTest {
         val c = StreamCurtain.decide(false, true, pc, pcWhy = StreamCurtain.reason("ports_taken", "pc busy: its streaming ports are taken")) as StreamCurtain.Shows.Curtain
         assertEquals("PC busy: its streaming ports are taken", c.line)
         for (line in listOf(StreamCurtain.WAITING, StreamCurtain.BUSY_SUNSHINE, StreamCurtain.BUSY_PROGRAM, StreamCurtain.BUSY_LISTENING,
-                StreamCurtain.BUSY_STOPPED, StreamCurtain.BUSY_PORTS, StreamCurtain.NEEDS_SCREEN, StreamCurtain.NO_SCREEN, StreamCurtain.REGION_REFUSED,
+                StreamCurtain.BUSY_STOPPED, StreamCurtain.BUSY_PORTS, StreamCurtain.NEEDS_SCREEN, StreamCurtain.NO_SCREEN, StreamCurtain.CONNECT_FAILED,
+                StreamCurtain.SCREEN_DISABLED, StreamCurtain.NEEDS_YOU, StreamCurtain.PC_GAME_OUTDATED, StreamCurtain.RETRY, StreamCurtain.PC_GAME_REPAIR,
+                "WoW can't reach its servers (309)", "PC game needs an update (70938 -> 70959)",
                 com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, "DS Forever Desktop hasn't said its streaming port."))
             for (l in listOf("es", "fr")) assertNotEquals("$line ($l)", line, Tr.t(line, l))
         assertEquals("PC ocupado: sus puertos de streaming están ocupados", Tr.t(c.line, "es"))

@@ -124,7 +124,7 @@ namespace DsfDesktop.Tests
             f.Now = f.Now.AddMinutes(4);
             s.Tick();
             A.Eq(WowState.StartFailed, s.State);
-            A.True(s.Why.Contains("sign in"), s.Why);
+            A.True(s.Why.Contains("no WoW window") && !s.Why.Contains("on the PC"), s.Why);   // never "sign in on the PC" (ruling 2026-11-18)
             s.Ensure();
             A.Eq(2, f.Starts, "after a failure the next stream tries again");
 

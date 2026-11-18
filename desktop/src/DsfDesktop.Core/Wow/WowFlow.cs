@@ -10,7 +10,12 @@ namespace DsfDesktop.Wow
     public enum BnetState { Unknown, NotRunning, Starting, SignInNeeded, SignedIn }
 
     /// <summary>what to do now, for a stream that wants WoW (the user, 2026-10-28)</summary>
-    public enum WowAction { Wait, StartBattleNet, ShowBattleNetSignIn, StartWow, RestartWow, Focus, NeedsYou, Crashed }
+    /// <remarks>[Stopped] = a server error (a 309) during the sign-in: nothing starts again by itself, the Thor shows it with a Retry
+    /// (the user's ruling 2026-11-18, "Stop and show it"). [Outdated] = the PC's game is older than Blizzard's current version: WoW is
+    /// not started (the user's ruling 2026-11-18: Desktop patches it itself; until that lands, the Thor's Retry checks again).
+    /// [Repair] (0.2.35) = Wow.exe is there but the game's install record (.build.info's wowf row) is missing or of another build:
+    /// WoW is not started (a client without its row can't find its data)</remarks>
+    public enum WowAction { Wait, StartBattleNet, ShowBattleNetSignIn, StartWow, RestartWow, Focus, NeedsYou, Crashed, Stopped, Outdated, Repair }
 
     /// <summary>
     /// What the game wrote, as far as signing in goes. WoW's General.log is block-buffered (~48 KiB): on the PC, a client at the
@@ -42,46 +47,55 @@ namespace DsfDesktop.Wow
         /// </summary>
         public const string RegionScreen = "SuperDistrictUI";
 
-        /// <summary>the game's refusal of the region the player picked on its region screen (309, the user's PC 2026-11-17)</summary>
-        public const string RegionRefusedCode = "309";
+        /// <summary>
+        /// The game's "Fatal login error (309)" (the user's PC 2026-11-17 22:57 and 22:58: Battle.net's logon OK, the region screen,
+        /// superDistrictID="2" asked, then 309). WHAT THE LOG DOES NOT SAY: whether the district was refused or its realm was out of
+        /// reach. Its "subRegionCount" is Battle.net's sub-region count (1 for almost every account), not the region screen's list
+        /// (the super districts, which log no count), so nothing in the log tells the two apart. Desktop therefore says ONE neutral
+        /// thing to the Thor (login_error "309", "connect" "failed": "WoW can't reach its servers") and never "Region refused".
+        /// </summary>
+        public const string ConnectFailedCode = "309";
 
         /// <summary>
-        /// The game refused the region picked on its own region screen (<see cref="RegionScreen"/>; "Fatal login error (309)") and no
-        /// character select since. The player picks again on WoW's screen (the user's pick 2026-11-17: "it shouldnt auto pick it should
-        /// be changable, just it changing shouldnt lock it in"): Desktop never picks or saves a region, it only says so to the Thor.
-        /// Unlike <see cref="Error"/>, a screen switch back to the login or the region screen keeps it.
+        /// A 309 (<see cref="ConnectFailedCode"/>) and no character select since. WoW may close itself after it (22:58) or stay at its
+        /// login screen (22:57). From 0.2.34 nothing starts it again by itself (the user's ruling 2026-11-18, "Stop and show it": 0.2.33
+        /// restarted WoW every ~20 s while Blizzard said "no servers available"): the supervisor stops (WowAction.Stopped) and the Thor
+        /// shows the error with a Retry, which starts WoW once per press (<see cref="ClearFailure"/>). Desktop never picks or saves a
+        /// region. Unlike <see cref="Error"/>, a screen switch back to the login or the region screen keeps it.
         /// </summary>
-        public bool RegionRefused { get; private set; }
+        public bool ConnectFailed { get; private set; }
 
-        /// <summary>when <see cref="RegionRefused"/> last turned on (<see cref="Now"/>'s clock), null = never in this Desktop run</summary>
-        public DateTime? RegionRefusedAt { get; private set; }
+        /// <summary>when <see cref="ConnectFailed"/> last turned on (<see cref="Now"/>'s clock), null = never in this Desktop run</summary>
+        public DateTime? ConnectFailedAt { get; private set; }
 
         /// <summary>
-        /// Refusals of a region the player picked on WoW's own region screen (a 309 while <see cref="RegionScreen"/> was the last
-        /// screen), counted for this Desktop run and never reset: each one lets the supervisor start the self-closed client again
-        /// without using up its one retry (WowSupervisor), so the player can always pick another region
+        /// The 309s seen in this Desktop run, never reset (for the log and the tests; nothing starts WoW for one)
         /// </summary>
-        public int RegionRefusals { get; private set; }
+        public int ConnectFailures { get; private set; }
 
         /// <summary>the client's log is at the login or region screen (its sign-in is not over, whatever its connections say)</summary>
         public bool AtSignInScreens => LastScreen == LoginScreen || LastScreen == RegionScreen;
 
-        /// <summary>the clock for <see cref="RegionRefusedAt"/> (UTC; a test sets its own)</summary>
+        /// <summary>the Thor's Retry (the user's ruling 2026-11-18, "Stop and show it"): the 309 is answered; WoW is started again
+        /// once for it (WowSupervisor.Retry), so what is known of the failed sign-in goes</summary>
+        public void ClearFailure() { ConnectFailed = false; ConnectFailedAt = null; Error = null; }
+
+        /// <summary>the clock for <see cref="ConnectFailedAt"/> (UTC; a test sets its own)</summary>
         public Func<DateTime> Now = () => DateTime.UtcNow;
 
         /// <summary>
-        /// How long a refused region outlasts its client: WoW closes itself after a 309 (the user's PC 2026-11-17) and Desktop starts
-        /// it once more (WowFlow.Decide), so the line belongs on the NEXT client's login and region screens too. Never longer than
-        /// this: a client started much later is a new try, not the refused one.
+        /// How long a 309 outlasts its client: WoW may close itself after it (the user's PC 2026-11-17); a client started soon after
+        /// by anything but the Thor's Retry (which clears it: <see cref="ClearFailure"/>) is the same failed try. Never longer than
+        /// this: a client started much later is a new try.
         /// </summary>
         public const double RegionCarryS = 300;
 
-        /// <summary>a new client run (the log was emptied): nothing is known any more, except a region refused within
-        /// <see cref="RegionCarryS"/> (its client closed itself; the restarted one shows the same region screen)</summary>
+        /// <summary>a new client run (the log was emptied): nothing is known any more, except a 309 within <see cref="RegionCarryS"/>
+        /// (its client closed itself; the restarted one shows the same region screen)</summary>
         public void Reset()
         {
             LastScreen = null; Error = null; SignInStarted = false;
-            RegionRefused = RegionRefused && RegionRefusedAt.HasValue && (Now() - RegionRefusedAt.Value).TotalSeconds < RegionCarryS;
+            ConnectFailed = ConnectFailed && ConnectFailedAt.HasValue && (Now() - ConnectFailedAt.Value).TotalSeconds < RegionCarryS;
         }
 
         public void Line(string line)
@@ -96,7 +110,7 @@ namespace DsfDesktop.Wow
                     // a new login screen starts clean; any other screen means the sign-in is behind us
                     Error = null;
                     if (LastScreen == LoginScreen) SignInStarted = false;
-                    else if (LastScreen != RegionScreen) RegionRefused = false;     // past the login: the region was taken
+                    else if (LastScreen != RegionScreen) ConnectFailed = false;     // past the login: a region was taken
                 }
                 return;
             }
@@ -105,8 +119,10 @@ namespace DsfDesktop.Wow
             var f = Fatal.Match(line);
             if (f.Success)
             {
-                Error = Short(f.Groups[1].Value); SignInStarted = false; RegionRefused = Error == RegionRefusedCode;
-                if (RegionRefused) { RegionRefusedAt = Now(); if (LastScreen == RegionScreen) RegionRefusals++; }
+                Error = Short(f.Groups[1].Value); SignInStarted = false;
+                // every 309 alike: the log has no word that tells a refused district from an unreachable realm (see ConnectFailedCode)
+                ConnectFailed = Error == ConnectFailedCode;
+                if (ConnectFailed) { ConnectFailedAt = Now(); ConnectFailures++; }
             }
         }
 
@@ -237,26 +253,48 @@ namespace DsfDesktop.Wow
         /// No WoW = start it; WoW at its login screen = bring it to the front, the player signs in there (the user's pick 2026-10-31,
         /// as in Local; a restart would only clear what they typed); signed in = bring it to the front. [tries] = clients started
         /// during this connect (a client found at the login screen counts as the first); from 2, a client that closed itself needs
-        /// the player. Battle.net plays no part: WoW starts without it. [busy] = a start is under way. [regionRetry] = the client
-        /// closed itself after a region the player picked was refused (309) and the region starts are not used up
-        /// (<see cref="RegionRetryMax"/>): it starts again whatever [tries] says, so the player picks another region on WoW's screen
-        /// (the user's pick 2026-11-17: the region "should be changable")
+        /// the player. Battle.net first (see the body; restored 2026-11-17 after 0.2.8 took it out). [busy] = a start is under way.
+        /// [failed] = a server error stands (<see cref="LoginLog.ConnectFailed"/>): STOP (the user's ruling 2026-11-18, "Stop and show
+        /// it"; 0.2.33 restarted WoW every ~20 s): nothing is started or restarted, the Thor shows the error with a Retry.
+        /// [retry] = the Thor's Retry was pressed and not answered yet: a client at its login screen is restarted ONCE (its new run
+        /// asks the Thor for the login again, BeforeStart), a closed one is started. [game] = the PC game against Blizzard's version
+        /// (<see cref="GameVersionCheck"/>): outdated = WoW is not started (<see cref="WowAction.Outdated"/>); being checked = wait
+        /// for the answer (a few seconds at most: offline never blocks).
         /// </summary>
-        public static WowAction Decide(BnetState bnet, WowScreen screen, int tries, bool busy, bool regionRetry = false)
+        public static WowAction Decide(BnetState bnet, WowScreen screen, int tries, bool busy, bool failed = false, bool retry = false,
+                                       GameCheck game = GameCheck.Unknown)
         {
             if (busy) return WowAction.Wait;
+            // signed in: Battle.net never holds a game that is in
+            if (screen == WowScreen.CharSelect || screen == WowScreen.World) return WowAction.Focus;
+            bool notIn = screen == WowScreen.None || screen == WowScreen.Login;
+            // a server error during the sign-in: stop and show it, never a start by ourselves
+            if (failed && notIn) return WowAction.Stopped;
+            // an outdated PC game is never started (it can't reach the servers), nor one without its install record; a check under
+            // way is waited for
+            if (game == GameCheck.NeedsRepair && notIn) return WowAction.Repair;
+            if (game == GameCheck.Outdated && notIn) return WowAction.Outdated;
+            if (game == GameCheck.Checking && notIn) return WowAction.Wait;
+            // BATTLE.NET FIRST, as up to 0.2.7 (the user, 2026-11-17: "we had it clipping the Battlenet screen before"): the PC's app
+            // not running = start it; signed out = its sign-in window in front, which the Thor shows alone (bnet "signin_needed" plus
+            // the "show" rectangle) and types the saved login into. A sign-in under way in WoW is never interrupted. WoW itself still
+            // starts plainly (WowLaunch.Plan: never -launcherlogin, the 308 loop of 0.2.7). Unknown = no Battle.net on this PC, or the
+            // supervisor gave up waiting for it (WowSupervisor.BnetGiveUpS): WoW's own login only
+            if (screen != WowScreen.SigningIn)
+            {
+                if (bnet == BnetState.NotRunning) return WowAction.StartBattleNet;
+                if (bnet == BnetState.Starting) return WowAction.Wait;
+                if (bnet == BnetState.SignInNeeded) return WowAction.ShowBattleNetSignIn;
+            }
             switch (screen)
             {
-                case WowScreen.None: return tries < 2 || regionRetry ? WowAction.StartWow : WowAction.NeedsYou;
+                case WowScreen.None: return tries < 2 || retry ? WowAction.StartWow : WowAction.NeedsYou;
                 case WowScreen.Starting:
                 case WowScreen.SigningIn: return WowAction.Wait;
-                default: return WowAction.Focus;   // the login screen, character select, the world
+                case WowScreen.Login: return retry ? WowAction.RestartWow : WowAction.Focus;
+                default: return WowAction.Focus;   // character select, the world
             }
         }
-
-        /// <summary>starts after refused regions per connect: each needs a new refusal of a region picked on WoW's screen; the cap
-        /// only stops a loop should WoW ever refuse without the player's pick</summary>
-        public const int RegionRetryMax = 5;
 
         public static string Word(WowScreen s)
         {
@@ -270,6 +308,18 @@ namespace DsfDesktop.Wow
                 default: return "none";
             }
         }
+
+        /// <summary>
+        /// Battle.net as the Thor hears it: "signin_needed" lifts its curtain onto Battle.net's window alone (StreamCurtain), so it is
+        /// only said while WoW is NOT signed in; a game at character select or in the world is never hidden behind Battle.net.
+        /// (0.2.8 to 0.2.32 always said "unknown", which is what took the Thor's Battle.net sign-in away.)
+        /// </summary>
+        public static string ThorBnet(BnetState s, WowScreen screen) =>
+            s == BnetState.SignInNeeded && (screen == WowScreen.CharSelect || screen == WowScreen.World) ? Word(BnetState.Unknown) : Word(s);
+
+        /// <summary>Battle.net's sign-in is the step the player is on: it is signed out and WoW is not signed in</summary>
+        public static bool BnetSignInPending(BnetState s, WowScreen screen) =>
+            s == BnetState.SignInNeeded && screen != WowScreen.CharSelect && screen != WowScreen.World;
 
         public static string Word(BnetState s)
         {
@@ -310,10 +360,50 @@ namespace DsfDesktop.Wow
         public const string UpdateText = "Update WoW in Battle.net";
         public const string CrashText = "WoW crashed on your PC";
 
-        /// <summary>the Thor's line while WoW's region screen waits after a refused region (<see cref="LoginLog.RegionRefused"/>)</summary>
-        public const string RegionRefusedText = "Region refused: pick another region";
 
-        /// <summary>the message for the player when the one retry did not get WoW signed in</summary>
-        public const string NeedsYouText = "Sign-in needs you on the PC's Battle.net";
+        /// <summary>the message for the player when the one retry did not get WoW signed in: Battle.net's window is shown on the Thor
+        /// (AppController.ShowRectNow), so its Play is pressed through the stream. Never "on the PC" (the user, 2026-11-17: "signing in
+        /// on the PC wont always be an option")</summary>
+        public const string NeedsYouText = "Press Play in Battle.net";
+
+        /// <summary>the Thor's one line after a 309 (<see cref="LoginLog.ConnectFailed"/>; the wire's "connect" "failed"): neutral,
+        /// because the log cannot tell a refused district from an unreachable realm</summary>
+        public const string ConnectFailedText = "WoW can't reach its servers";
+
+        /// <summary>the status line while the PC's game is older than Blizzard's version (<see cref="WowAction.Outdated"/>). Never "on
+        /// the PC" (the user's ruling 2026-11-18)</summary>
+        public const string OutdatedText = "PC game needs an update";
+
+        /// <summary>the status line while the game's install record is missing (<see cref="WowAction.Repair"/>). Never "on the PC"</summary>
+        public const string RepairText = "PC game needs a repair";
+
+        /// <summary>the stop's one line for the Thor (a 309, an outdated or broken PC game), null = not stopped</summary>
+        public static string StopText(WowAction? a) =>
+            a == WowAction.Stopped ? ConnectFailedText : a == WowAction.Outdated ? OutdatedText : a == WowAction.Repair ? RepairText : null;
+
+        /// <summary>
+        /// The "wow" message while Desktop is stopped ([connectFailed] = a 309 stands; [game] = the PC game's check; [signedIn] = WoW
+        /// is at character select or in the world, never stopped then): "stopped" true for a Thor with its Retry (0.2.34), and for an
+        /// older Thor (1487), which reads neither "stopped" nor "pc_game" and said "Starting WoW on your PC" for ever (the 0.2.34
+        /// review), the words it does show: with WoW not running, state "start_failed" ("WoW didn't start"), and the reason as "why".
+        /// WoW running at its login keeps "running": 1487 then shows WoW's own screen with its 309 line. A Thor that reads "stopped"
+        /// shows its own red row first, whatever the state. true = stopped.
+        /// </summary>
+        public static bool StopWords(System.Collections.Generic.Dictionary<string, object> d, bool connectFailed, GameCheck game, bool signedIn)
+        {
+            bool broken = game == GameCheck.NeedsRepair, old = game == GameCheck.Outdated;
+            if (signedIn || !(connectFailed || broken || old)) return false;
+            d["stopped"] = true;
+            if (!(d.TryGetValue("state", out var st) && (st as string) == WowStarter.Word(WowState.Running)))
+                d["state"] = WowStarter.Word(WowState.StartFailed);
+            d["why"] = broken ? RepairText : old ? OutdatedText : ConnectFailedText;
+            return true;
+        }
+
+        /// <summary>an older Thor's reconnect (no "wow_stop" in its hello: it has no Retry) counts as its Retry: only while Desktop is
+        /// stopped ([stopped]), and once per <see cref="LegacyRetryEveryS"/> at most ([sinceLastS] = since the last one)</summary>
+        public static bool LegacyReconnectRetries(bool stopped, double sinceLastS) => stopped && sinceLastS >= LegacyRetryEveryS;
+
+        public const double LegacyRetryEveryS = 120;
     }
 }

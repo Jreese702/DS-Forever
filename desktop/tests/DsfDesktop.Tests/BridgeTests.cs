@@ -30,6 +30,10 @@ namespace DsfDesktop.Tests
         public int HostChecks;
         public int PcTests, ScreenRetries;
         public void ScreenRetry() { ScreenRetries++; }
+        public volatile int WowRetries;
+        public void WowRetry() { WowRetries++; }
+        public int PatchCancels;
+        public void PatchCancel() { PatchCancels++; }
         public Dictionary<string, object> PcTest()
         {
             PcTests++;
@@ -647,6 +651,56 @@ namespace DsfDesktop.Tests
                 c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
                 c.Until("pc_test_result");
                 A.Eq(1, h.ScreenRetries);
+            }
+        }
+
+        /// <summary>the user's ruling 2026-11-18 ("Stop and show it"): the Thor's Retry after Desktop stopped reaches the host, once
+        /// per press</summary>
+        [Test]
+        public static void TheThorsWowRetryReachesTheHost()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8e", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "wow_retry" });
+                c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
+                c.Until("pc_test_result");
+                var until = DateTime.UtcNow.AddSeconds(3);
+                while (h.WowRetries == 0 && DateTime.UtcNow < until) System.Threading.Thread.Sleep(20);
+                A.Eq(1, h.WowRetries);
+            }
+        }
+
+        /// <summary>0.2.35: a Thor that shows Desktop's stop says "wow_stop" in its hello; an older one (1487) says nothing, so its
+        /// reconnect can count as its Retry (AppController.OnThorHello)</summary>
+        [Test]
+        public static void TheHelloSaysWhetherTheThorShowsTheStop()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            {
+                var seen = new System.Collections.Concurrent.ConcurrentQueue<bool>();
+                s.ThorHello += x => seen.Enqueue(x.KnowsStop);
+                var token = h.Devices.Issue("thor-1", "Thor");
+                using (var c = new Client(s.Port))
+                {
+                    c.Send(Hello("thor-1", token));      // Thor 1487
+                    c.Until("backlog_end");
+                }
+                using (var c = new Client(s.Port))
+                {
+                    var hello = Hello("thor-1", token);
+                    hello["wow_stop"] = true;
+                    c.Send(hello);
+                    c.Until("backlog_end");
+                    A.True(s.Sessions().Any(x => x.KnowsStop), "the live session knows it");
+                }
+                var until = DateTime.UtcNow.AddSeconds(3);
+                while (seen.Count < 2 && DateTime.UtcNow < until) Thread.Sleep(20);
+                A.Eq("False,True", string.Join(",", seen.OrderBy(x => x)));
             }
         }
     }

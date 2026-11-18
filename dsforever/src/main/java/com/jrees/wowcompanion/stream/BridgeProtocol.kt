@@ -24,8 +24,21 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                  /** issues #304 / #357: why the taps can't reach WoW on the PC: "elevated" (run as administrator) | "not_filling" (WoW's
                   *  window doesn't fill the streamed monitor); "" = fine, or an older Desktop */
                  val input: String = "",
-                 /** Desktop 0.2.31: the game refused the region picked on its own region screen (309) and waits there for another pick */
-                 val regionRefused: Boolean = false) {
+                 /** a 309 at WoW's sign-in: Desktop 0.2.33's "connect" "failed", or 0.2.31 / 0.2.32's "region" "refused" (the same
+                  *  309, read neutrally: its log can't tell a refused district from an unreachable realm, the user 2026-11-17) */
+                 val connectFailed: Boolean = false,
+                 /** Desktop 0.2.34: it STOPPED and waits for the player's Retry ([BridgeProtocol.wowRetry]): a server error, or an
+                  *  outdated PC game, while WoW is not signed in (the user's ruling 2026-11-18, "Stop and show it"); false = an older
+                  *  Desktop, which restarts by itself */
+                 val stopped: Boolean = false,
+                 /** Desktop 0.2.34: WoW's own code with [connectFailed] ("309"; login_error goes with the next screen switch) */
+                 val connectCode: String = "",
+                 /** Desktop 0.2.34: "outdated" = the PC's game is older than Blizzard's ([gameInstalled] -> [gameCurrent]); "" = fine */
+                 val pcGame: String = "",
+                 val gameInstalled: String = "",
+                 val gameCurrent: String = "",
+                 /** Desktop 0.2.36: its own update of the PC game (the bar, Cancel (B), a failure with Retry (A)); null = none */
+                 val patch: PcPatch? = null) {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -34,13 +47,37 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
             PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
                 if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
                 it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"),
-                it.optString("region") == "refused")
+                it.optString("connect") == "failed" || it.optString("region") == "refused",
+                it.optBoolean("stopped"), it.optString("connect_code"), it.optString("pc_game"), it.optString("game_installed"),
+                it.optString("game_current"), PcPatch.of(it.optJSONObject("pc_patch")))
         }
 
         /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */
         fun rect(s: String): List<Float> {
             val v = s.split(',').mapNotNull { it.trim().toFloatOrNull() }
             return if (v.size == 4 && v[2] > 0.01f && v[3] > 0.01f && v.all { it in 0f..1f }) v else emptyList()
+        }
+    }
+}
+
+/**
+ * DESKTOP 0.2.36 UPDATES THE PC GAME ITSELF (the user's ruling 2026-11-18: Blizzard's CDN, no Battle.net, starting by itself): the
+ * wow message's pc_patch. [state] = "checking" | "waiting" (Blizzard's updater busy: [code] "agent") | "downloading" | "installing" |
+ * "loading" (done, the new client starts) | "failed" ([code]) | "cancelled"; [from] / [to] = build numbers; [done] / [total] = bytes.
+ */
+data class PcPatch(val state: String, val from: String = "", val to: String = "", val done: Long = 0L, val total: Long = 0L,
+                   val code: String = "", val needMb: Long = 0L, val file: String = "", val fileNo: Int = 0, val files: Int = 0) {
+    /** under way: the bar and Cancel (B) */
+    val running get() = state == "checking" || state == "waiting" || state == "downloading" || state == "installing"
+    /** stopped: a red row and Retry (A) */
+    val stopped get() = state == "failed" || state == "cancelled"
+
+    companion object {
+        fun of(o: JSONObject?): PcPatch? = o?.let {
+            val s = it.optString("state")
+            if (s.isEmpty() || s == "idle") null
+            else PcPatch(s, it.optString("from"), it.optString("to"), it.optLong("done"), it.optLong("total"), it.optString("code"),
+                it.optLong("need_mb"), it.optString("file"), it.optInt("file_no"), it.optInt("files"))
         }
     }
 }
@@ -119,12 +156,15 @@ object BridgeProtocol {
      *  own update at once when the Thor is ahead (the user, 2026-11-13: "we need this shit to have an auto update feature") */
     @Volatile var addonSet: Int = 0
 
+    /** "wow_stop": this Thor shows Desktop's stop ([PcWow.stopped]) with its own Retry. Desktop 0.2.35 counts an older Thor's
+     *  reconnect (none: Thor 1487, which has no Retry) as its Retry instead */
     fun hello(deviceId: String, token: String): String =
-        JSONObject().put("t", "hello").put("proto", PROTO).put("device_id", deviceId).put("token", token)
+        JSONObject().put("t", "hello").put("proto", PROTO).put("device_id", deviceId).put("token", token).put("wow_stop", true)
             .apply { if (addonSet > 0) put("addon_set", addonSet) }.toString()
 
     fun pairHello(deviceId: String, name: String): String =
-        JSONObject().put("t", "pair_hello").put("proto", PROTO).put("device_id", deviceId).put("name", name).put("stream", true).toString()
+        JSONObject().put("t", "pair_hello").put("proto", PROTO).put("device_id", deviceId).put("name", name).put("stream", true)
+            .put("wow_stop", true).toString()
 
     fun pairProof(proof: String): String = JSONObject().put("t", "pair_proof").put("proof", proof).toString()
 
@@ -150,6 +190,10 @@ object BridgeProtocol {
     fun pcTest(): String = JSONObject().put("t", "pc_test").toString()
     /** Desktop 0.2.32: the player's Retry by hand: Desktop's own virtual screen starts its tries over (it gives up after 3) */
     fun screenRetry(): String = JSONObject().put("t", "screen_retry").toString()
+    /** Desktop 0.2.34: the player's Retry after Desktop stopped ([PcWow.stopped]): WoW once more (restarted at its login, or started) */
+    fun wowRetry(): String = JSONObject().put("t", "wow_retry").toString()
+    /** Desktop 0.2.36: the player's Cancel (B) on the PC game's update bar ([PcPatch.running]) */
+    fun patchCancel(): String = JSONObject().put("t", "pc_patch_cancel").toString()
     /**
      * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"): [ask] = Settings > Game account "Ask
      * each time" (nothing is sent to remember); [list] = the Thor's Config.wtf accountList with its "!" pick
@@ -230,7 +274,9 @@ object BridgeProtocol {
     /** what the top screen says for WoW's state on the PC ("" = nothing to show) */
     fun wowText(state: String, why: String): String = when (state) {
         "starting" -> "Starting WoW on your PC…"
-        "start_failed" -> "WoW didn't start${if (why.isNotEmpty()) ": $why" else ""}. If Battle.net is waiting for you to sign in, sign in on the PC."
+        // never "sign in on the PC" (the user's ruling 2026-11-18: never tell the player to act on the PC; Battle.net's sign-in is
+        // shown on the Thor when it is the step, and Desktop 0.2.35+ sends start_failed for stops and its own game update too)
+        "start_failed" -> "WoW didn't start${if (why.isNotEmpty()) ": $why" else ""}"
         else -> ""
     }
 

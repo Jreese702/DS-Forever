@@ -22,7 +22,13 @@ object StreamCurtain {
 
     sealed class Shows {
         /** the curtain: the box's rows and its gold status line */
-        data class Curtain(val rows: List<SetupFlow.Check>, val line: String) : Shows()
+        data class Curtain(val rows: List<SetupFlow.Check>, val line: String,
+                           /** Desktop stopped and waits for the player's Retry (A, or a tap): [BridgeProtocol.wowRetry] */
+                           val retry: Boolean = false,
+                           /** the rows' bars, row by row (0..1, [SetupFlow.BAR_MOVING], null = none): the PC game's update */
+                           val bars: List<Float?> = emptyList(),
+                           /** Desktop's update of the PC game runs: B is its Cancel ([BridgeProtocol.patchCancel]) */
+                           val cancel: Boolean = false) : Shows()
         /** ONLY Battle.net's window out of the stream ([show]: x, y, w, h as shares of the PC's screen), black round it, with [line] small
          *  at the top (the user, 2026-10-30: "I kind of expected a simple sign in window for bnet to appear on the top screen. I dont
          *  really want to see my desktop screen for any reason until the game is launched and logging in") */
@@ -34,7 +40,9 @@ object StreamCurtain {
     const val SIGN_IN = "Sign in to Battle.net"
     const val SIGNING_IN = "Signing in to Battle.net"
     const val LOOKING = "Looking for your PC"
-    const val NEEDS_YOU = "Sign-in needs you on the PC's Battle.net"
+    /** Desktop's one retry is spent: Battle.net's window is shown alone, so Play is pressed through the stream. Never "on the PC" (the
+     *  user, 2026-11-17: "signing in on the PC wont always be an option") */
+    const val NEEDS_YOU = "Press Play in Battle.net"
     /** WoW crashed on the PC because its files are older than the game's data (the user's PC 2026-10-29: a black stream behind it) */
     const val UPDATE = "Update WoW in Battle.net"
     const val CRASHED = "WoW crashed on your PC"
@@ -71,9 +79,112 @@ object StreamCurtain {
 
     /** the stream's start holds: Desktop said to wait and the wait is not over */
     fun holds(wait: String, waitedMs: Long): Boolean = wait.isNotEmpty() && waitedMs < PC_WAIT_MS
-    /** Desktop 0.2.31: the game refused the region picked on its own region screen (309); the player picks again there (the user's
-     *  pick 2026-11-17: "it shouldnt auto pick it should be changable") */
-    const val REGION_REFUSED = "Region refused: pick another region"
+    /** a 309 at WoW's sign-in ([PcWow.connectFailed]): one neutral line, never "Region refused" (the user, 2026-11-17: "saying that
+     *  its a region error when its not"); the player picks a region again on WoW's own screen */
+    const val CONNECT_FAILED = "WoW can't reach its servers"
+    /** WoW's code with it (Desktop 0.2.34): "WoW can't reach its servers (309)" */
+    const val CONNECT_FAILED_CODE = "WoW can't reach its servers (%s)"
+    /** Desktop 0.2.34: the PC's game is older than Blizzard's, so WoW is not started (the user's ruling 2026-11-18: Desktop patches it
+     *  itself; until then Retry checks again). Never "on the PC" */
+    const val PC_GAME_OUTDATED = "PC game needs an update"
+    const val PC_GAME_OUTDATED_FROM_TO = "PC game needs an update (%s -> %s)"
+    /** Desktop 0.2.35: the PC's game has lost its install record (.build.info's row; the Agent dropped it 2026-11-18), so WoW is not
+     *  started. Never "on the PC" */
+    const val PC_GAME_REPAIR = "PC game needs a repair"
+    /** the line under a stop: the player's one action */
+    const val RETRY = "Retry (A)"
+    /** the line under Desktop's update of the PC game (Desktop 0.2.36): the player's one action */
+    const val CANCEL = "Cancel (B)"
+
+    /** DESKTOP 0.2.36 UPDATES THE PC GAME ITSELF (the user's ruling 2026-11-18): its rows. Never "on the PC" */
+    const val PATCH = "Updating the game"
+    const val PATCH_FROM_TO = "Updating the game %s -> %s"
+    const val PATCH_MB = "%s / %s MB"
+    const val PATCH_CHECKING = "Checking..."
+    const val PATCH_WAITING = "Blizzard's updater is busy, waiting..."
+    const val PATCH_INSTALLING = "Installing..."
+    const val PATCH_LOADING = "Loading new game data..."
+    const val PATCH_CANCELLED = "Update cancelled"
+    const val PATCH_FAILED = "Update failed"
+    const val PATCH_NO_ANSWER = "Update failed: no answer"
+    const val PATCH_MISSING = "Update failed: file missing"
+    const val PATCH_CHECKSUM = "Update failed: bad file"
+    const val PATCH_BUSY = "Update failed: game busy"
+    const val PATCH_AGENT_BUSY = "Blizzard's updater is busy"
+    const val PATCH_NO_WRITE = "Update failed: folder read-only"
+    const val PATCH_NEW_FAILED = "New game didn't start"
+    const val PATCH_SPACE = "Not enough space"
+    const val PATCH_SPACE_MB = "Not enough space (%s MB)"
+
+    /** a failed update's red row, by Desktop's code */
+    fun patchFailure(p: PcPatch): String = if (p.state == "cancelled") PATCH_CANCELLED else when (p.code) {
+        "no_answer" -> PATCH_NO_ANSWER
+        "missing" -> PATCH_MISSING
+        "checksum" -> PATCH_CHECKSUM
+        "busy" -> PATCH_BUSY
+        "agent_busy" -> PATCH_AGENT_BUSY
+        "no_write" -> PATCH_NO_WRITE
+        "new_failed" -> PATCH_NEW_FAILED
+        "space" -> if (p.needMb > 0) PATCH_SPACE_MB.replace("%s", p.needMb.toString()) else PATCH_SPACE
+        else -> PATCH_FAILED
+    }
+
+    /** "Updating the game 70938 -> 70959" (or without the builds while they are not known) */
+    fun patchTitle(p: PcPatch): String =
+        if (p.from.isNotEmpty() && p.to.isNotEmpty() && p.from != p.to) PATCH_FROM_TO.replaceFirst("%s", p.from).replaceFirst("%s", p.to) else PATCH
+
+    /** "64 / 127 MB" */
+    fun patchMb(p: PcPatch): String = PATCH_MB.replaceFirst("%s", (p.done / 1_000_000).toString()).replaceFirst("%s", (p.total / 1_000_000).toString())
+
+    /**
+     * The curtain for Desktop's update of the PC game; null = no update to show. Under way: the title with its bar, the MB so far,
+     * and "Cancel (B)" (none once installing: it is short and can't stop half way); done: the new client loading its data; stopped:
+     * the reason in red and "Retry (A)" (one more attempt per press).
+     */
+    fun patchShows(found: SetupFlow.Check, p: PcPatch?): Shows.Curtain? {
+        if (p == null) return null
+        val wait = SetupFlow.Mark.WAIT
+        return when {
+            p.stopped -> Shows.Curtain(listOf(found, SetupFlow.Check(patchFailure(p), SetupFlow.Mark.BAD)), RETRY, retry = true)
+            p.state == "loading" -> Shows.Curtain(listOf(found, SetupFlow.Check(patchTitle(p), SetupFlow.Mark.OK)), PATCH_LOADING,
+                bars = listOf(null, SetupFlow.BAR_MOVING))
+            p.state == "installing" -> Shows.Curtain(listOf(found, SetupFlow.Check(patchTitle(p), wait)), PATCH_INSTALLING,
+                bars = listOf(null, SetupFlow.BAR_MOVING))
+            p.state == "waiting" -> Shows.Curtain(listOf(found, SetupFlow.Check(PATCH_WAITING, wait)), CANCEL,
+                bars = listOf(null, SetupFlow.BAR_MOVING), cancel = true)
+            p.state == "downloading" && p.total > 0 -> Shows.Curtain(listOf(found, SetupFlow.Check(patchTitle(p), wait), SetupFlow.Check(patchMb(p), wait)),
+                CANCEL, bars = listOf(null, (p.done.toFloat() / p.total).coerceIn(0f, 1f), null), cancel = true)
+            p.running -> Shows.Curtain(listOf(found, SetupFlow.Check(patchTitle(p), wait), SetupFlow.Check(PATCH_CHECKING, wait)), CANCEL,
+                bars = listOf(null, SetupFlow.BAR_MOVING, null), cancel = true)
+            else -> null
+        }
+    }
+
+    /** a version's build number ("1.60.1.70938" -> "70938"); the whole of it when it has none */
+    fun build(v: String): String = v.trim().substringAfterLast('.').takeIf { b -> b.isNotEmpty() && b.all { it.isDigit() } } ?: v.trim()
+
+    /**
+     * Desktop 0.2.34 stopped (the user's ruling 2026-11-18, "Stop and show it"; 0.2.33 restarted WoW every ~20 s while Blizzard said
+     * "no servers available"): what it stopped for, as the curtain's red row; null = not stopped (or signed in after all, or an older
+     * Desktop that restarts by itself)
+     */
+    fun stopLine(pc: PcWow?): String? {
+        if (pc == null || !pc.stopped || pc.signedIn) return null
+        if (pc.pcGame == "repair") return PC_GAME_REPAIR
+        if (pc.pcGame == "outdated") {
+            val have = build(pc.gameInstalled); val need = build(pc.gameCurrent)
+            return if (have.isNotEmpty() && need.isNotEmpty()) PC_GAME_OUTDATED_FROM_TO.replaceFirst("%s", have).replaceFirst("%s", need)
+                else PC_GAME_OUTDATED
+        }
+        if (pc.connectFailed) {
+            val code = pc.connectCode.ifEmpty { pc.loginError }
+            return if (code.isNotEmpty()) CONNECT_FAILED_CODE.replace("%s", code) else CONNECT_FAILED
+        }
+        return null
+    }
+
+    /** Desktop 0.2.33: the PC's SudoVDA (Apollo's virtual display driver) is there but disabled in Windows: the player enables it */
+    const val SCREEN_DISABLED = "Enable SudoMaker display adapter in Device Manager"
 
     /**
      * Desktop 0.2.27's reason streaming can't work (the welcome's sunshine.problem / sunshine.why: the user's PC 2026-11-13, another
@@ -90,6 +201,7 @@ object StreamCurtain {
         "not_responding" -> HOST_DOWN
         "needs_screen" -> NEEDS_SCREEN
         "no_screen" -> NO_SCREEN
+        "screen_disabled" -> SCREEN_DISABLED
         else -> why.trim().let { w -> when {
             w.isEmpty() -> ""
             w.startsWith("pc busy: another Sunshine", ignoreCase = true) -> ""
@@ -102,8 +214,8 @@ object StreamCurtain {
     /** WoW is up and between its login screen and character select */
     fun atLogin(pc: PcWow?) = pc != null && (pc.screen == "login" || pc.screen == "signing_in")
 
-    /** the line over the stream while WoW's own screens wait for the player ("" = none): a refused region, until another is taken */
-    fun streamLine(pc: PcWow?): String = if (pc != null && pc.regionRefused && atLogin(pc)) REGION_REFUSED else ""
+    /** the line over the stream while WoW's own screens wait for the player ("" = none): a 309, until a region is taken */
+    fun streamLine(pc: PcWow?): String = if (pc != null && atLogin(pc) && pc.connectFailed) CONNECT_FAILED else ""
 
     /**
      * [connected] = the stream is up (Moonlight's picture arrived); [bridged] = this PC has DS Forever Desktop's bridge (Sunshine
@@ -126,6 +238,10 @@ object StreamCurtain {
         // user, 2026-11-13); and while its Sunshine ports aren't known yet, the wait says so
         if (!connected && pcWhy.isNotEmpty()) return curtain(listOf(row(found, true)), pcWhy)
         if (!connected && waiting) return curtain(listOf(row(found, true)), WAITING)
+        // Desktop 0.2.36 updates the PC game: its bar and Cancel (B), or why it stopped and Retry (A), stream or not
+        if (!pc.signedIn) patchShows(row(found, true), pc.patch)?.let { return it }
+        // Desktop stopped (a server error, an outdated PC game): the reason in red and the player's Retry, stream or not
+        stopLine(pc)?.let { return Shows.Curtain(listOf(row(found, true), SetupFlow.Check(it, SetupFlow.Mark.BAD)), RETRY, retry = true) }
         // WoW itself is up and refused the sign-in: the whole of WoW, its own message and its buttons (the user, 2026-10-30: "why doesn't
         // it show the full wow window when it shows this login error?"), not Battle.net's window
         if (connected && atLogin(pc) && pc.loginError.isNotEmpty() && pc.needsYou && pc.crash.isEmpty() && pc.bnet != "signin_needed")

@@ -280,10 +280,12 @@ class StreamPartsTest {
         val hello = JSONObject(BridgeProtocol.hello("c1", "tok"))
         assertEquals("hello", hello.getString("t")); assertEquals("c1", hello.getString("device_id")); assertEquals("tok", hello.getString("token"))
         assertFalse(hello.has("addon_set"))                                   // unknown set: not sent
+        assertTrue("it shows Desktop's stop with its Retry (Desktop 0.2.35)", hello.getBoolean("wow_stop"))
         BridgeProtocol.addonSet = 391
         try { assertEquals(391, JSONObject(BridgeProtocol.hello("c1", "tok")).getInt("addon_set")) } finally { BridgeProtocol.addonSet = 0 }
         val ph = JSONObject(BridgeProtocol.pairHello("c1", "AYN Thor"))
         assertEquals("pair_hello", ph.getString("t")); assertEquals("AYN Thor", ph.getString("name")); assertTrue(ph.getBoolean("stream"))
+        assertTrue(ph.getBoolean("wow_stop"))
         // the proof as Desktop's PairingCodes.Proof computes it: HMAC-SHA256(code, "dsf-pair-v1|nonce|device"), lower-case hex
         val mac = javax.crypto.Mac.getInstance("HmacSHA256").apply { init(javax.crypto.spec.SecretKeySpec("123456".toByteArray(), "HmacSHA256")) }
         val want = mac.doFinal("dsf-pair-v1|abc|c1".toByteArray()).joinToString("") { "%02x".format(it) }

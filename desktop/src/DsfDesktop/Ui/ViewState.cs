@@ -119,6 +119,7 @@ namespace DsfDesktop.Ui
             if (c.ScreenProblem != null && pr?.Problem == null && c.HostProblem != "exited")
             {
                 v.HostHint = c.ScreenProblem == DsfDesktop.Sunshine.ScreenPlan.ProblemNeedsScreen ? "No screen is on. Install a virtual screen, or turn a monitor on."
+                    : c.ScreenProblem == DsfDesktop.Sunshine.ScreenPlan.ProblemScreenDisabled ? "No screen is on. " + DsfDesktop.Sunshine.ScreenPlan.EnableSudoVda + ", or turn a monitor on."
                     : "No screen is on. Turn a monitor on.";
                 v.HostDot = Theme.Warn;
             }

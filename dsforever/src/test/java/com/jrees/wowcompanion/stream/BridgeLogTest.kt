@@ -58,6 +58,22 @@ class BridgeLogTest {
         assertFalse(c.sent.any { JSONObject(it).optString("t") == "stream_mode" })
     }
 
+    /** Desktop's stop and its game update say themselves on the curtain: no "PC: WoW didn't start: ..." status line over them,
+     *  and never "sign in on the PC" (the user's ruling 2026-11-18) */
+    @Test fun aStopOrTheGameUpdateWritesNoStatusLine() {
+        val docs = ArrayList<JSONObject>(); val status = ArrayList<String>()
+        val patch = JSONObject().put("t", "wow").put("state", "starting").put("why", "Updating the game 70938 -> 70959 (64 / 127 MB)")
+            .put("screen", "none").put("pc_patch", JSONObject().put("state", "downloading").put("from", "70938").put("to", "70959")
+                .put("done", 64000000L).put("total", 127000000L)).toString()
+        val stop = JSONObject().put("t", "wow").put("state", "start_failed").put("why", "PC game needs a repair").put("screen", "none")
+            .put("stopped", true).toString()
+        val plain = JSONObject().put("t", "wow").put("state", "start_failed").put("why", "no window").put("screen", "none").toString()
+        bridge(listOf(Script(listOf(welcome, patch, stop, plain))), docs, status).runHere()
+        assertFalse(status.toString(), status.any { it.contains("Updating") || it.contains("repair") })
+        assertTrue(status.toString(), status.contains("PC: WoW didn't start: no window"))
+        assertFalse(status.toString(), status.any { it.contains("on the PC") })
+    }
+
     /** Desktop 0.2.31 makes a virtual screen for a headless PC at the Thor's stream mode: sent after the welcome's focus */
     @Test fun theStreamModeFollowsTheWelcome() {
         val c = Script(listOf(welcome))

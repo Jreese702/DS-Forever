@@ -144,6 +144,80 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   that does not sign in gives `needs_you` true and a `status` "Sign-in needs you on the PC's Battle.net", and no new attempt for 2
   minutes. The Thor keeps its loading curtain over the stream until `screen` is `charselect` / `world` and `focused` (an older
   Desktop without `screen`: `focused` alone), and lifts it only for Battle.net's sign-in while `bnet` is `signin_needed`.
+- **[0.2.33] Battle.net's sign-in on the Thor again (the user, 2026-11-17: "we had it clipping the Battlenet screen before").**
+  0.2.8 to 0.2.32 sent `bnet` = `unknown` always and never started Battle.net, so the Thor's clipped sign-in (its `show` rectangle,
+  the zoom, the saved login typed after `bnet_ready`) could not happen. From 0.2.33 `bnet` is the PC's real state again, except
+  that `signin_needed` is never sent while WoW is at character select or in the world. On a connect, before WoW starts (and at WoW's
+  login screen): Battle.net not running = started (WoW waits up to 90 s for it, then starts without it); signed out = its sign-in
+  window in front on the streamed monitor, with `show`, until signed in; then WoW starts plainly (no `-launcherlogin`). WoW is not
+  pulled to the front over Battle.net's sign-in. `needs_you`'s `status` is now "Press Play in Battle.net".
+- **[0.2.33] A 309 is one neutral `connect` = `failed`.** 0.2.31 and 0.2.32 sent `region` = `refused` for WoW's "Fatal login
+  error (309)" after its region (super district) screen. The game's log does not say whether the district was refused or its realm
+  was out of reach: its `subRegionCount` is Battle.net's sub-region count (1 on the user's PC 2026-11-17 22:57 and 22:58, though the
+  region screen offered districts and `superDistrictID` 2 was asked for), and the district list logs no count. So from 0.2.33 every
+  309 is `login_error` `309` plus `connect` = `failed` (the Thor: "WoW can't reach its servers"; a newer Thor reads an older
+  Desktop's `region` = `refused` the same way), and `region` is never sent. After a 309 Desktop starts WoW again for a connected
+  Thor without using its one retry, at most `RegionRetryMax` (5) times per connect: WoW closed itself = started again; WoW stayed at
+  its own login screen (not the region screen) with its `login.txt` used up = restarted, so the new run asks the Thor
+  (`login_again`) for the login. With the PC's Battle.net signed out, its sign-in comes up on the Thor first. Whether a signed-out
+  PC Battle.net causes the 309 is not known (WoW's own Glue logon had succeeded before it).
+- **[0.2.33] A disabled SudoVDA.** Apollo's SudoVDA adapter present but disabled in Windows reads as there, not missing: no install
+  is offered; the `status` line (and, headless, `sunshine.problem` `screen_disabled` with its `why`) is "Enable SudoMaker display
+  adapter in Device Manager". Desktop never enables a device. The one-time install question waits until no Thor is connected or
+  streaming.
+- **[0.2.34] Stop and show it (the user's ruling 2026-11-18; 0.2.33 restarted WoW every ~20 s while Blizzard said "no servers
+  available").** The 0.2.33 restarts after a 309 are gone (WoW closed itself = started again; WoW back at its login after a
+  `login.txt` run = restarted, `RegionRetryMax`). After a server error the supervisor stops; the `wow` message keeps `connect` =
+  `failed`, adds `connect_code` (WoW's own code, `309`: `login_error` goes with the next screen switch) and `stopped` = `true` while
+  WoW is not signed in. The Thor shows the error in red ("WoW can't reach its servers (309)") with "Retry (A)" (A or a tap; nothing
+  else of the pad reaches the PC meanwhile) and sends **`{"t":"wow_retry"}`**: Desktop clears the error, asks Blizzard's version
+  again, then starts WoW, or restarts it at its login screen, ONCE per press (the new run asks the Thor for the login again,
+  `login_again`, as before; with the PC's Battle.net signed out its sign-in comes first). An older Thor app ignores `stopped`
+  and shows the 0.2.33 line over WoW's screen; an older Desktop ignores `wow_retry` (it never says `stopped`).
+- **[0.2.34] An outdated PC game.** Before WoW is started (and every tick while a Thor is connected) Desktop compares the active
+  `wowf` row of `<WoW>/.build.info` (its `Version`; its `Branch` = the region) with Blizzard's patch server
+  (`http://<region>.patch.battle.net:1119/wowf/versions`, `VersionsName` of that region; cached 5 minutes, 1 minute after no answer,
+  read in the background). Older = WoW is NOT started; the `wow` message says `pc_game` = `outdated`, `game_installed`,
+  `game_current` (full versions) and `stopped` = `true`; the Thor: "PC game needs an update (70938 -> 70959)" with "Retry (A)",
+  which checks again (`wow_retry`). No answer (offline) never blocks a start; a first check under way holds the start a few
+  seconds at most. Desktop patching the game itself (from Blizzard's CDN, no Battle.net) comes later.
+- **[0.2.35] One start per press; an older Thor.** A `wow_retry` while the last one's restart or start is still under way is that
+  same one (dropped); the press's own client closing again without a server error is "Press Play in Battle.net", never a second
+  start. A Retry not answered yet goes when the Thor disconnects or a new connect begins. The Thor says **`"wow_stop": true`** in
+  `hello` / `pair_hello` when it shows the stop with its own Retry. An older Thor (none; Thor 1487) reads neither `stopped` nor
+  `pc_game`, so while Desktop is stopped with WoW not running the `wow` message also says `state` = `start_failed` ("WoW didn't
+  start", not "Starting WoW" for ever) and the reason as `why`; WoW at its login keeps `running`. That older Thor's reconnect counts
+  as its Retry while Desktop is stopped, at most once every 2 minutes. Blizzard's version is asked only while a Thor is connected
+  (or a stream wants WoW). The start timeout's `why` is "no WoW window after 180 s" (never "sign in on the PC").
+- **[0.2.35] A missing install record.** `_forever_\Wow.exe` there but no `wowf` row in `.build.info` (the Agent dropped it on the
+  user's PC, 2026-11-18 06:32), or a row of another build than Wow.exe's own version (FileVersionInfo's text, read only) = WoW is NOT
+  started: `pc_game` = `repair`, `game_installed` = Wow.exe's version, `stopped` = `true`; the Thor: "PC game needs a repair" with
+  "Retry (A)". Desktop keeps its own copy of the last good row (`<data>\patch\wowf_row.json`, saved when the row's Version is
+  Wow.exe's); whenever it reads the install (every 10 s while a Thor is connected, and again right before every start), a MISSING row is added back from that copy when it is for Wow.exe's build (the file's other lines
+  byte for byte, its line ending kept, `.build.info.dsf-bak` beside it). A row that is there is never replaced. Never `.product.db`,
+  never the CASC store.
+- **[0.2.36] Desktop patches the PC game itself.** An outdated game (or one missing its install record) is patched from Blizzard's
+  CDN with no Battle.net, BY ITSELF as soon as Desktop sees it while a Thor is connected: one automatic attempt per Thor connect,
+  then one attempt per `wow_retry`. The method is the Thor's own updater's (the build's install manifest picked by the row's tags,
+  each changed `_forever_` file checked by its MD5); it writes only the configs in `Data/config`, missing `Data/indices/*.index`, the
+  changed `_forever_` files (Utils first, `Wow.exe` last; a file of the same content key in another flavor folder is COPIED) and the
+  `wowf` row of `.build.info` (last, read again right before). Never `Data/data`, never `.product.db`. It waits (up to 5 minutes)
+  while the Battle.net Agent is at work on the folder, never patches under a running WoW, and keeps ONE backup of the replaced
+  files (`_forever_\.dsf-backup\<old build>`) until the first login on the new build reaches character select, then deletes it; a
+  first start that crashes puts the old files back. A Desktop killed mid-install undoes it at its next start (its journal,
+  `<data>\patch\journal.json`). The `wow` message carries **`pc_patch`**: `{"state": checking | waiting | downloading | installing
+  | loading | failed | cancelled, "from": "70938", "to": "70959", "done": bytes, "total": bytes, "file", "file_no", "files",
+  "code", "need_mb", "eta_s"}` (`waiting` + `code` `agent` = Blizzard's updater is busy; `loading` = done, the new client starts;
+  `failed` codes: `no_answer`, `missing`, `checksum`, `space` (+ `need_mb`), `busy` (WoW running or a file in use), `agent_busy`,
+  `no_write`, `format`, `new_failed`, `error`). The Thor shows a bar ("Updating the game 70938 -> 70959", "64 / 127 MB") with
+  "Cancel (B)", which sends **`{"t":"pc_patch_cancel"}`** (refused once installing began: it is short), and a failure as a red row
+  with "Retry (A)" (`wow_retry`). An older Thor (no bar) gets the patch's line as `why`. The patch over, WoW is started once.
+  While it runs (and the new client loads) `state` is `starting`, never `start_failed` (1487 put "sign in on the PC" next to a
+  `start_failed`); a failed or cancelled patch stays a stop. A WoW open at its login is CLOSED by the attempt (never one signed
+  in); none starts by itself while WoW is signed in. The Agent is asked again right before the install. Any put-back follows what
+  is on disk (a half-done `File.Replace`, a crash right after a swap); one that can't finish keeps its journal for the next try.
+  A patch while an install still waits for its first login folds into it (the one backup kept). A failed or cancelled `pc_patch`
+  goes once the game is current by another route.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.
