@@ -770,14 +770,48 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun stepPc(by: Int) { if (found.isNotEmpty()) { pcIndex = ((pcIndex + by) % found.size + found.size) % found.size; showPc() } }
 
     private fun pair(code: String) {
+        // the PC's address inside the code (PairCode; the user's pick 2026-11-18): a PC mDNS can't see is dialled there
+        val parsed = PairCode.parse(code)
+        if (parsed != null && parsed.hasAddress) { pairByAddress(code, parsed); return }
         val pc = selectedPc() ?: run { pairing.setMessage("No PC found yet: is DS Forever Desktop running, on the same Wi-Fi?"); return }
         if (!pc.hasBridge) { pairPlain(pc); return }
+        pairWith(pc, code)
+    }
+
+    private fun pairWith(pc: FoundPc, code: String) {
         pairing.busy = true
         pairing.setMessage("")
         worker.execute {
             val id = store.identity()
             val flow = StreamPairing(RealPairSteps(id, store.clientId())) { s -> main.post { pairState(s) } }
             flow.pairWithCode(pc, code, NetProbe.subnet(activity))
+        }
+    }
+
+    /** a code with the PC's address: the PC mDNS found there, else Desktop's /v1/info at that address (all asked at once), else the
+     *  picked PC; nothing = "PC not reachable at ..." */
+    private fun pairByAddress(code: String, parsed: PairCode.Parsed) {
+        val seen = found; val picked = selectedPc()
+        pairing.busy = true
+        pairing.setMessage("")
+        worker.execute {
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(parsed.addresses.size.coerceIn(1, 2))
+            val asks = parsed.addresses.associateWith { a -> pool.submit<String?> { NetProbe.bridgeInfo(a, parsed.bridgePort, PAIR_INFO_MS) } }
+            val t = try {
+                PairCode.target(parsed, seen, picked) { a ->
+                    try { asks[a]?.get(PAIR_INFO_MS * 3L, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) { null }
+                }
+            } finally { pool.shutdownNow() }
+            main.post {
+                when (t) {
+                    is PairCode.Target.Use -> {
+                        if (t.byCode) Log.i(TAG, "pairing: ${t.pc.name} at the code's address ${t.pc.address}:${t.pc.bridgePort}")
+                        if (!t.pc.hasBridge) { pairing.busy = false; pairPlain(t.pc) } else pairWith(t.pc, code)
+                    }
+                    is PairCode.Target.NotReachable -> { pairing.busy = false; pairing.setMessage(com.jrees.wowcompanion.Tr.t(PairCode.notReachable(t.addresses))) }
+                    PairCode.Target.NoPc -> { pairing.busy = false; pairing.setMessage("No PC found yet: is DS Forever Desktop running, on the same Wi-Fi?") }
+                }
+            }
         }
     }
 
@@ -1192,6 +1226,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     companion object {
         const val TAG = "DSFSTREAM"
+        /** the wait for /v1/info at a pairing code's address (a VPN's first packet can be slow) */
+        const val PAIR_INFO_MS = 2_500
         /** a zoomed window fills this share of the screen at most, and is magnified at most [ZOOM_MAX] x */
         const val ZOOM_FILL = 0.92f
         const val ZOOM_MAX = 3f

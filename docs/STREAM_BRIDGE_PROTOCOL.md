@@ -56,6 +56,41 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
    If Moonlight paired but `pair_stream` never came (15 s), the Thor keeps the pairing (Moonlight's own PAIRED is the proof).
 8. The Thor remembers: address, Sunshine's ports and certificate (from the handshake), the bridge port, `token`, `host_id`, `pc_name`.
 
+### 3a. The PC's address inside the code (Desktop 0.2.37; the user's pick 2026-11-18)
+
+A Thor that can't see the `_dsforever` advert (another subnet, a guest / mesh Wi-Fi that drops multicast, Tailscale / WireGuard)
+pairs by typing the code alone: Desktop's code is the 6-digit secret followed by the PC's address, digits only (the Thor's keypad).
+Desktop shows it as `482 913 · 100 2790` (the secret, then the address part in threes; a last four instead of a lone digit).
+
+    code  = secret (6 digits, as above) + tail
+    tail  = "" (no address known, or an older Desktop) | entry+ check
+    entry = 1 + 5 digits: 192.168.0.0/16 (the offset in the range) | 2 + 8: 10.0.0.0/8 | 3 + 7: 172.16.0.0/12
+          | 4 + 7: 100.64.0.0/10 (Tailscale) | 5 + 10: any IPv4 | 6 + 5: the bridge port when it is not 48210 (at most once)
+          | 0, 7, 8, 9: reserved (the Thor refuses the code)
+    check = Damm's check digit over the tail's entries (never over the secret)
+
+Desktop carries at most two addresses: the home network's IPv4 on the interface with a default gateway (not a Hyper-V / WSL switch),
+then the first Tailscale IPv4. Examples: LAN 192.168.1.23 = `482 913 · 100 2790` (13 digits); with Tailscale 100.71.133.93 too =
+`482 913 · 100 279 404 928 933` (21). Vectors: `PairAddressTests.cs` (Desktop) and `PairCodeTest.kt` (Thor).
+
+The Thor: a code with an address pairs with the PC mDNS found at one of its addresses; else it asks `GET /v1/info` at each address
+(at once, 2.5 s) and pairs with the first Desktop answer exactly as with an advert (its `fp` must then match the wss certificate);
+else with the PC picked on the screen; else it says "PC not reachable at <addresses>". A typo in the address part is refused before
+anything is dialled (the check digit catches every single wrong digit and every swap of neighbours).
+
+**Trust is unchanged.** The address is only where to dial, as an mDNS answer is (unauthenticated in both cases). The proof is keyed by
+the 6 secret digits alone (step 3), so the code's strength and the bridge's attempt limits are what they were; the address digits are
+public facts about the PC and add nothing to guess. A program at a wrong or spoofed address is in the place a spoofed advert is
+today, with the same checks: its certificate must be the one its `/v1/info` names; another Desktop there answers `wrong_code`. What
+it can get is the Thor's HMAC over its own nonce, which, as today, a 6-digit secret can't protect from an offline search (why the
+code is single-use, lives 10 minutes and shows each new device in Desktop's list; a PAKE would close it). Over Tailscale the address
+is better than an advert: Tailscale itself binds 100.x to the PC's node key. After pairing, every route is pinned (the bridge's
+certificate, Sunshine's certificate), so a later impostor at that address fails the pin.
+Compatibility: an older Thor types the first 6 digits (Desktop's hint says so) and pairs by mDNS as before; a new Thor with an older
+Desktop gets a 6-digit code and pairs as before. The Thor remembers the address it paired at (`Route.after`), and the welcome's
+`lan` / `tailscale` lists fill in the other routes, so reconnects need no mDNS; `AddressPolicy` still moves to the home LAN when mDNS
+sees the PC there.
+
 ## 4. A session (every connection after pairing)
 
 1. Thor → `{"t":"hello","proto":1,"device_id":"<id>","token":"<token>"}` (the first frame).

@@ -21,6 +21,8 @@ namespace DsfDesktop.Ui
 
         // pairing
         readonly Label code = new Label();
+        /// <summary>the code's address part ("100 2790", PairAddress) on its own line under the secret and New code</summary>
+        readonly Label codeTail = new Label();
         readonly Note codeHint = new Note();
         readonly GoldButton newCode = new GoldButton("New code");
         readonly DeviceList devices = new DeviceList();
@@ -80,6 +82,13 @@ namespace DsfDesktop.Ui
             newCode.Margin = new Padding(0, 20, 0, 0);
             codeRow.Controls.Add(newCode);
             pairCard.Add(codeRow);
+            codeTail.AutoSize = true;
+            codeTail.Font = Theme.Head(30f);
+            codeTail.ForeColor = Theme.Gold;
+            codeTail.BackColor = Color.Transparent;
+            codeTail.Margin = new Padding(0, 0, 0, 4);
+            codeTail.Visible = false;
+            pairCard.Add(codeTail);
             pairCard.Add(codeHint);
             pairCard.Add(new Note("Paired devices", 9.5f, Theme.Bronze) { Font = Theme.Head(10.5f), Margin = new Padding(0, 6, 0, 0) });
             pairCard.Add(devices);
@@ -246,8 +255,12 @@ namespace DsfDesktop.Ui
             if (header != null && s.Update != shownUpdate) { shownUpdate = s.Update; header.Invalidate(); }
             applying = true;
             SuspendLayout();
-            code.Text = s.Code;
+            // "482 913 · 100 2790": the secret beside New code, the PC's address part on its own line under it (PairAddress)
+            var cut = s.CodeLocked ? -1 : (s.Code ?? "").IndexOf(" · ", StringComparison.Ordinal);
+            code.Text = cut >= 0 ? s.Code.Substring(0, cut) : s.Code;
             code.Font = s.CodeLocked ? Theme.Head(24f) : Theme.Head(38f);
+            codeTail.Text = cut >= 0 ? s.Code.Substring(cut + 3) : "";
+            codeTail.Visible = cut >= 0;
             codeHint.Text = s.CodeHint;
             devices.SetRows(s.Devices);
             remove.Enabled = devices.SelectedId != null;

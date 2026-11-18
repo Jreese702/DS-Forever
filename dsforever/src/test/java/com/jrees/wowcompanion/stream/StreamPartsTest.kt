@@ -19,7 +19,9 @@ class StreamPartsTest {
         assertEquals(CodeEntry.Check.Ok("123456"), CodeEntry.validate("123-456"))
         assertEquals(CodeEntry.Check.Empty, CodeEntry.validate("   "))
         assertEquals(CodeEntry.Check.TooShort, CodeEntry.validate("12345"))
-        assertEquals(CodeEntry.Check.TooLong, CodeEntry.validate("1234567"))
+        // a 7th digit is the start of the PC's address part (PairCode): one Desktop never makes is refused, never cut off
+        assertEquals(CodeEntry.Check.BadAddress, CodeEntry.validate("1234567"))
+        assertEquals(CodeEntry.Check.TooLong, CodeEntry.validate("1".repeat(PairCode.MAX + 1)))
         assertEquals(CodeEntry.Check.NotDigits, CodeEntry.validate("12a456"))
         assertEquals(CodeEntry.Check.NotDigits, CodeEntry.validate("12.456"))
         assertNull(CodeEntry.message(CodeEntry.Check.Ok("123456")))
@@ -51,7 +53,7 @@ class StreamPartsTest {
         e.left(); e.left()                            // stops at the first box
         assertEquals(0, e.cursor)
         repeat(10) { e.right() }
-        assertEquals(5, e.cursor)
+        assertEquals(6, e.cursor)                     // past the boxes: the address part's empty slot, no further
         assertTrue(e.fill("000 111")); assertEquals("000111", e.code)
         assertFalse(e.fill("12")); assertEquals("000111", e.code)
     }

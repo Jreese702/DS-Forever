@@ -2383,6 +2383,7 @@
 "PC game needs an update (%s -> %s)": "Jeu du PC à mettre à jour (%s -> %s)",
 "Updating the game %s -> %s": "Mise à jour du jeu %s -> %s",
 "%s / %s MB": "%s / %s Mo",
-"Not enough space (%s MB)": "Espace insuffisant (%s Mo)"
+"Not enough space (%s MB)": "Espace insuffisant (%s Mo)",
+"PC not reachable at %s": "PC injoignable à %s"
 }
 }

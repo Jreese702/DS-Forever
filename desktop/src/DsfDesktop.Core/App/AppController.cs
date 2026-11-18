@@ -2546,6 +2546,56 @@ namespace DsfDesktop.App
             return v4;
         }
 
+        /// <summary>
+        /// The addresses the pairing code carries (<see cref="PairAddress"/>): the home network's IPv4 on the interface with a default
+        /// gateway (not a Hyper-V / WSL / VirtualBox switch, which have none; else the first home-network address), then the first
+        /// Tailscale IPv4. Empty when the bridge listens on loopback only.
+        /// </summary>
+        public static List<IPAddress> PairAddresses()
+        {
+            var res = new List<IPAddress>();
+            if (Loopback) return res;
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback ||
+                        ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Tunnel) continue;
+                    var ip = ni.GetIPProperties();
+                    if (!ip.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any))) continue;
+                    var a = ip.UnicastAddresses.Select(u => u.Address)
+                        .FirstOrDefault(x => x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && IsLan(x.GetAddressBytes()));
+                    if (a != null) { res.Add(a); break; }
+                }
+            }
+            catch (Exception) { }
+            if (res.Count == 0 && LanAddresses().FirstOrDefault() is string lan && IPAddress.TryParse(lan, out var la)) res.Add(la);
+            var ts = TailscaleAddresses().OfType<string>().Select(s => IPAddress.TryParse(s, out var t) ? t : null)
+                .FirstOrDefault(t => t != null && t.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+            if (ts != null) res.Add(ts);
+            return res;
+        }
+
+        string pairTail = "";
+        DateTime pairTailUtc = DateTime.MinValue;
+
+        /// <summary>the pairing code as the window shows it: the secret + the PC's addresses (looked up again every 5 s: a new
+        /// DHCP lease or Tailscale going up shows in the next code line)</summary>
+        public string PairCodeDisplay
+        {
+            get
+            {
+                var now = DateTime.UtcNow;
+                if (now - pairTailUtc > TimeSpan.FromSeconds(5))
+                {
+                    try { pairTail = PairAddress.Encode(PairAddresses(), Bridge?.Port ?? PairAddress.DefaultBridgePort); } catch (Exception) { pairTail = ""; }
+                    pairTailUtc = now;
+                }
+                return PairAddress.Display(Codes.Current, pairTail);
+            }
+        }
+
         /// <summary>Tailscale's ranges: 100.64.0.0/10 and fd7a:115c:a1e0::/48</summary>
         public static bool IsTailscale(byte[] b) =>
             (b.Length == 4 && b[0] == 100 && b[1] >= 64 && b[1] <= 127) ||

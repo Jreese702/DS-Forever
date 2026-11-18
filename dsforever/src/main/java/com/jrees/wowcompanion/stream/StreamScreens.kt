@@ -47,13 +47,18 @@ internal object StreamLook {
 }
 
 /**
- * "ENTER THE CODE SHOWN IN DS FOREVER DESKTOP": six boxes, a touch number pad, the PC it pairs with. The controller: D-pad up / down
- * turns the selected digit, left / right moves, A = Pair, B = back, X = delete, LB / RB = the previous / next PC found.
+ * "ENTER THE CODE SHOWN IN DS FOREVER DESKTOP": six boxes for the secret, under them the code's address digits as they are typed
+ * ([PairCode]: Desktop 0.2.37 shows "482 913 · 100 2790"), a touch number pad, the PC it pairs with. The controller: D-pad up / down
+ * turns the selected digit, left / right moves (right past the boxes reaches the address digits), A = Pair, B = back, X = delete,
+ * LB / RB = the previous / next PC found. Stream quality and Back stand beside the pad: under it the panel was taller than the top
+ * screen (about 500 of 468 dp) and their row was squeezed flat (the layout fix from PR #534).
  */
-internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, private val onBack: () -> Unit,
-                           private val onQuality: () -> Unit, private val onPcStep: (Int) -> Unit) : LinearLayout(ctx) {
+class PairingView(ctx: Context, private val onPair: (String) -> Unit, private val onBack: () -> Unit,
+                  private val onQuality: () -> Unit, private val onPcStep: (Int) -> Unit) : LinearLayout(ctx) {
     val entry = CodeEntry()
-    private val boxes = List(CodeEntry.LENGTH) { StreamLook.text(ctx, 34f, bold = true) }
+    private val boxes = List(CodeEntry.LENGTH) { StreamLook.text(ctx, 32f, bold = true) }
+    /** the address digits, grouped as Desktop shows them; the selected one gold and underlined */
+    private val tailLine = StreamLook.text(ctx, 22f, StreamLook.INK, bold = true)
     private val pcLine = StreamLook.text(ctx, 16f, StreamLook.DIM)
     private val message = StreamLook.text(ctx, 16f, StreamLook.BAD)
     private val title = StreamLook.text(ctx, 24f, StreamLook.GOLD, bold = true)
@@ -63,25 +68,46 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
     init {
         orientation = VERTICAL; gravity = Gravity.CENTER
         background = StreamLook.rounded(StreamLook.PANEL, StreamLook.dp(ctx, 18f).toFloat())
-        val p = StreamLook.dp(ctx, 22f); setPadding(p, p, p, p)
+        val p = StreamLook.dp(ctx, 16f); setPadding(p, p, p, p)
         title.text = "Enter the code shown in DS Forever Desktop"
         addView(title)
         addView(pcLine)
-        val boxRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER }
+        // top-aligned: a vertically centred row puts a box with unequal margins half its margin gap lower, past the row's edge (the
+        // bottom stroke was cut)
+        val boxRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP }
         boxes.forEachIndexed { i, b ->
             b.setOnClickListener { entry.select(i); refresh() }
-            boxRow.addView(b, LayoutParams(StreamLook.dp(ctx, 52f), StreamLook.dp(ctx, 66f)).apply {
-                setMargins(StreamLook.dp(ctx, if (i == 3) 18f else 5f), StreamLook.dp(ctx, 14f), StreamLook.dp(ctx, 5f), StreamLook.dp(ctx, 10f))
+            boxRow.addView(b, LayoutParams(StreamLook.dp(ctx, 50f), StreamLook.dp(ctx, 60f)).apply {
+                setMargins(StreamLook.dp(ctx, if (i == 3) 18f else 5f), StreamLook.dp(ctx, 10f), StreamLook.dp(ctx, 5f), StreamLook.dp(ctx, 2f))
             })
         }
         addView(boxRow)
-        // the touch pad: 1-9, then delete / 0 / pair
-        for (r in 0 until 3) addView(StreamLook.row(ctx, *Array(3) { c -> digitKey(ctx, r * 3 + c + 1) }))
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
+        tailLine.minHeight = StreamLook.dp(ctx, 30f)
+        tailLine.setOnClickListener { entry.select(CodeEntry.LENGTH + entry.tail.size); refresh() }
+        addView(tailLine, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        // the touch pad: 1-9, then delete / 0 / pair; Stream quality and Back in a column beside it
+        val pad = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.CENTER }
+        for (r in 0 until 3) pad.addView(keyRow(ctx, *Array(3) { c -> digitKey(ctx, r * 3 + c + 1) }))
+        pad.addView(keyRow(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
             StreamLook.button(ctx, "Pair  (A)") { submit() }))
+        val side = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.CENTER }
+        for (b in listOf(StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "Back (B)") { onBack() }))
+            side.addView(b, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                setMargins(StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 6f), StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 6f)) })
+        val body = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER }
+        body.addView(pad)
+        body.addView(side, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = StreamLook.dp(ctx, 16f) })
+        addView(body)
         addView(message)
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "Back (B)") { onBack() }))
         refresh()
+    }
+
+    /** the pad's rows: [StreamLook.row] with tighter gaps (four rows + the code must fit the top screen's 468 dp) */
+    private fun keyRow(ctx: Context, vararg v: View) = LinearLayout(ctx).apply {
+        orientation = HORIZONTAL; gravity = Gravity.CENTER
+        for (x in v) addView(x, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            setMargins(StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 4f), StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 4f))
+        })
     }
 
     private fun digitKey(ctx: Context, d: Int) = StreamLook.button(ctx, "  $d  ") { if (!busy) { entry.type(d); message.text = ""; refresh() } }
@@ -92,8 +118,11 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
 
     private fun submit() {
         if (busy) return
+        val typed = entry.digits.filter { it >= 0 }.joinToString("") + entry.tail.joinToString("")
+        val check = CodeEntry.validate(typed)
         val code = entry.code
-        if (code == null) { message.text = CodeEntry.message(CodeEntry.validate(entry.digits.filter { it >= 0 }.joinToString(""))) ?: ""; return }
+        if (code == null) { message.text = CodeEntry.message(if (check is CodeEntry.Check.Ok) CodeEntry.Check.TooShort else check) ?: ""; return }
+        if (check !is CodeEntry.Check.Ok) { message.text = CodeEntry.message(check) ?: ""; return }
         onPair(code)
     }
 
@@ -104,6 +133,25 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
             b.background = StreamLook.rounded(StreamLook.BOX, StreamLook.dp(context, 10f).toFloat(),
                 StreamLook.dp(context, if (i == entry.cursor) 3f else 1f), if (i == entry.cursor) StreamLook.GOLD else StreamLook.DIM)
         }
+        tailLine.text = tailText(entry.tail, entry.cursor - CodeEntry.LENGTH)
+    }
+
+    /** the address digits in Desktop's groups ("100 2790"); [sel] = the selected one (== size: the empty slot, drawn "_") */
+    private fun tailText(tail: List<Int>, sel: Int): CharSequence {
+        val chars = tail.map { '0' + it } + if (sel == tail.size) listOf('_') else emptyList()
+        if (chars.isEmpty()) return ""
+        val grouped = PairCode.groups(String(chars.toCharArray()))
+        val out = android.text.SpannableString(grouped)
+        if (sel in chars.indices) {
+            var seen = -1
+            var at = -1
+            for ((i, c) in grouped.withIndex()) if (c != ' ') { seen++; if (seen == sel) { at = i; break } }
+            if (at >= 0) {
+                out.setSpan(android.text.style.ForegroundColorSpan(StreamLook.GOLD), at, at + 1, 0)
+                out.setSpan(android.text.style.UnderlineSpan(), at, at + 1, 0)
+            }
+        }
+        return out
     }
 
     /** a controller key while this screen shows; true = used */
