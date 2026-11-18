@@ -6,8 +6,9 @@ package com.jrees.wowcompanion
  * (#108: CascNative.open +630 MB native in 5 s, killed the same second) and baked beside a 3.5-4 GB game (#100, #128: app native
  * 500-1100 MB); the background art ran beside it too (#94 safepathzones, java 250-415 MB; #86 / #104 allicons ~550 MB). Only the 8 / 12 GB
  * models ("lighter mode") held them back. Now every tier does: the background art and the indoor maps wait OUTSIDE the game files while
- * the game is up or being launched, and go on once it has closed. The art before Play is untouched (Play waits for it, so the game is
- * never up while it runs). Pure: the off-device tests drive it (PlayGateTest).
+ * the game is up or being launched, and go on once it has closed. Test build 1489 (#361, 2026-11-18): the art before Play too (a
+ * required icon asked for in game ran beside the game), and Play holds every step from its press ([held]). Pure: the off-device tests
+ * drive it (PlayGateTest, ArtStopAtPlayTest).
  */
 internal object PlayGate {
     /** a launch that never brought the game up (it hung, or the launcher went away) stops counting after this */
@@ -19,8 +20,17 @@ internal object PlayGate {
      * [gameStartSec]: when the game screen last came up, in whole seconds (a launch not older than that is over: the screen
      * comes up within the same second as the last step).
      */
-    fun gameActive(gameUp: Boolean, launchState: String, launchAtMs: Long, gameStartSec: Long, nowMs: Long): Boolean =
-        gameUp || launching(launchState, launchAtMs, gameStartSec, nowMs)
+    fun gameActive(gameUp: Boolean, launchState: String, launchAtMs: Long, gameStartSec: Long, nowMs: Long, holdAtMs: Long = 0L): Boolean =
+        gameUp || launching(launchState, launchAtMs, gameStartSec, nowMs) || held(holdAtMs, launchAtMs, gameStartSec, nowMs)
+
+    /**
+     * PLAY HOLDS THE ART (test build 1489, the user's approval 2026-11-18, #361 / #56: "stop ALL art work hard at Play"): from the press
+     * ([LauncherHooks.holdForPlay], once the art before Play is done) until the launch's first step takes over ([launching], or its
+     * failure ends it), or the game screen came up ([gameStartSec]: then gameUp decides); never past [LAUNCH_WINDOW_MS]. It bridges the
+     * seconds between Play and "preparing the container" (the add-ons, the build info), when the background art used to go on.
+     */
+    fun held(holdAtMs: Long, launchAtMs: Long, gameStartSec: Long, nowMs: Long): Boolean =
+        holdAtMs > 0L && launchAtMs < holdAtMs && gameStartSec < holdAtMs / 1000L && nowMs - holdAtMs in 0L until LAUNCH_WINDOW_MS
 
     fun launching(launchState: String, launchAtMs: Long, gameStartSec: Long, nowMs: Long): Boolean =
         launchAtMs > 0L && (launchState.startsWith("preparing") || launchState.startsWith("booting")) &&
@@ -32,22 +42,26 @@ internal object PlayGate {
      * the indoor maps go on then (as before on the Thor Max; 1.0.22's "indoor maps stuck" while streaming).
      */
     fun gameActiveNow(): Boolean = localGameActive(streamingNow(), LauncherHooks.gameUp(), LauncherHooks.launchState,
-        LauncherHooks.launchAtMs, LauncherHooks.gameStartSec, System.currentTimeMillis())
+        LauncherHooks.launchAtMs, LauncherHooks.gameStartSec, System.currentTimeMillis(), LauncherHooks.playHoldAtMs)
 
     /** [gameActive] for the game on THIS device: false while [streaming] (the game is on the PC) */
-    fun localGameActive(streaming: Boolean, gameUp: Boolean, launchState: String, launchAtMs: Long, gameStartSec: Long, nowMs: Long): Boolean =
-        !streaming && gameActive(gameUp, launchState, launchAtMs, gameStartSec, nowMs)
+    fun localGameActive(streaming: Boolean, gameUp: Boolean, launchState: String, launchAtMs: Long, gameStartSec: Long, nowMs: Long,
+                        holdAtMs: Long = 0L): Boolean =
+        !streaming && gameActive(gameUp, launchState, launchAtMs, gameStartSec, nowMs, holdAtMs)
 
     /** the companion's taps go to the stream (StreamKeys): the game runs on the PC */
     fun streamingNow(): Boolean = (InputSink.sink as? TapSink)?.route == "stream"
 
     /**
-     * A background art step running now leaves the run (the game files close) and the worker waits outside them. [onWorker]: only on
-     * the harvest's own worker thread (review of this fix, 2026-11-11: a step's progress report also comes from GameFiles.prefetch's
+     * An art step running now leaves the run (the game files close) and the worker waits outside them. [onWorker]: only on the
+     * harvest's own worker thread (review of this fix, 2026-11-11: a step's progress report also comes from GameFiles.prefetch's
      * "art-fetch" pool threads, where an uncaught throw ends the process - #138; the worker's next report pauses it instead).
+     * Test build 1489 (the user's approval 2026-11-18, #361: "art icons" - a before-Play step - built beside a game that was up, native
+     * heap 582 MB, until Android killed both): EVERY step, the art before Play too. Play's own wait for that art is never held: Play
+     * ends any old launch window first (LauncherHooks.endLaunchWindow) and holds the art only once its wait is over.
      */
-    fun artMustPause(backgroundPhase: Boolean, gameActive: Boolean, onWorker: Boolean = true, beside: Boolean = false): Boolean =
-        backgroundPhase && gameActive && onWorker && !beside
+    fun artMustPause(gameActive: Boolean, onWorker: Boolean = true, beside: Boolean = false): Boolean =
+        gameActive && onWorker && !beside
 
     // ------------------------------------------------------------------ the world map beside the game, on the Thor Max only
 
@@ -81,14 +95,13 @@ internal object PlayGate {
         GameLife.loadingNow, GameLife.calmMs(System.currentTimeMillis()), MemWatch.pressureSince(GameLife.startedAtMs))
 
     /**
-     * A new art run (or the next pass of the worker) while the game is up: it does not open the game files at all (a required step
-     * asked for in game, e.g. a new icon, is built once the game has closed, not beside it). [gameUp]: the game screen itself;
-     * [launching]: only the launch window ([launching]); [beforePlayDue]: the run has before-Play steps. Review of this fix,
-     * 2026-11-11: a launch window alone never holds back the before-Play art - Play's own wait for it would sit at "Preparing your
-     * game art..." (a launch that reached "booting" and never brought the game screen up, then Play again within the window).
+     * A new art run (or the next pass of the worker) while the game is up, launching or held by Play ([gameActiveNow]): it does not
+     * open the game files at all (a required step asked for in game, e.g. a new icon, is built once the game has closed, not beside
+     * it). Test build 1489 (#361): the launch window holds back the art before Play too. 2026-11-11's worry (a launch that reached
+     * "booting" and never came up, then Play again, would sit at "Preparing your game art...") is met by Play itself: it ends any old
+     * window (LauncherHooks.endLaunchWindow) before its wait, as does the launcher's screen back in front.
      */
-    fun artMayOpen(gameUp: Boolean, launching: Boolean, beforePlayDue: Boolean): Boolean =
-        !gameUp && !(launching && !beforePlayDue)
+    fun artMayOpen(gameActive: Boolean): Boolean = !gameActive
 
     /** the launch window right now (false while streaming) */
     fun launchingNow(): Boolean = !streamingNow() && launching(LauncherHooks.launchState, LauncherHooks.launchAtMs,

@@ -327,6 +327,10 @@ fun WoWForeverScreen(
                     PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
                     return@launch
                 }
+                // PLAY'S HARD STOP (test build 1489, the user's approval 2026-11-18, #361 / #56): the art before Play is done; from here
+                // every art step (the background art, a required icon, the indoor maps) lets go of the game files and waits for the game
+                // to close (PlayGate.held until the launch's first step takes over; the launch window and the game screen after it)
+                com.jrees.wowcompanion.LauncherHooks.holdForPlay()
                 // THE ADD-ONS INSTALLED FROM SETTINGS > ADD-ONS (test45: the restart's own Play went straight to the launch and the
                 // downloaded packages never went in; the start step runs once per launcher screen): what is downloaded goes in HERE, right
                 // before the game starts, on EVERY launch route (Play, the restart's Play, the auto-launch). Nothing is fetched here, and a
@@ -345,6 +349,9 @@ fun WoWForeverScreen(
                     // links; the client crashes at start without them). Never stops the launch
                     step("Checking game files...")
                     WowClientDownloader.repairBuildInfo(File(gamePath), versionStatus)
+                    // #361: the game never starts beside open game files (a step lets go within one file; a stuck one is logged)
+                    step("Pausing the game art...")
+                    com.jrees.wowcompanion.ArtHarvest.letGoForPlay()
                 }
                 com.jrees.wowcompanion.LauncherHooks.launchEvent("preparing the container (${gpu.label}, by $by)")
                 val containerId = withContext(Dispatchers.IO) {

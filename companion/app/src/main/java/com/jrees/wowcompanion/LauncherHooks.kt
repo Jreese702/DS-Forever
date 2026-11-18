@@ -36,5 +36,13 @@ object LauncherHooks {
      * screen went, or never came up: the container failed, the player backed out) or Play starts a new launch. Ends [PlayGate]'s launch
      * window; [launchState] stays for the problem report
      */
-    fun endLaunchWindow() { launchAtMs = 0L }
+    fun endLaunchWindow() { launchAtMs = 0L; playHoldAtMs = 0L }
+
+    /** when Play held the art ([holdForPlay], epoch ms), 0 = no hold: [PlayGate.held] */
+    @Volatile var playHoldAtMs = 0L
+    /**
+     * PLAY HOLDS THE ART (test build 1489, #361 / #56): Play's wait for the art before Play is over and the game starts next - every
+     * art step lets go of the game files now and waits for the game to close ([PlayGate.held] until the launch's first step takes over)
+     */
+    fun holdForPlay() { playHoldAtMs = System.currentTimeMillis() }
 }

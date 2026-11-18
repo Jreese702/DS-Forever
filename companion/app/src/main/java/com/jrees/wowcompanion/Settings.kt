@@ -206,7 +206,8 @@ object Settings {
      * LOW_MEMORY_GRAPHICS). Unset = on for the 8 GB and 12 GB Thors and with Lighter mode (DeviceTier.lowMemory), off otherwise.
      */
     var lowMemGraphics: Boolean
-        get() = prefs?.takeIf { it.contains("lowMemGraphics") }?.getBoolean("lowMemGraphics", false) ?: DeviceTier.lowMemory()
+        get() = prefs?.takeIf { it.contains("lowMemGraphics") }?.getBoolean("lowMemGraphics", false)
+            ?: (DeviceTier.lowMemGraphicsDefault(DeviceTier.totalMb) || lighterMode)
         set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
 
     /**
