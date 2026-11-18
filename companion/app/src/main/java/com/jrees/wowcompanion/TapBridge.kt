@@ -59,6 +59,10 @@ object TapBridge {
         runCatching { tapLog.add("${java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $what") }
     }
 
+    /** fix/1492-feedback: a note in the tap log beside the taps (where they landed, a restore that got no answer): the file survives a
+     *  rolled logcat (test 1492's WC lines were gone by the time the log was read) */
+    fun note(line: String) = tapHistory("# $line")
+
     /** the L1 key channel: OFF since the Alt+F4 closes (2026-10-09), see the batch send below */
     private const val KEYS_ON = false
 

@@ -624,7 +624,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         SetupBridge.exitStream = { main.post { stopStream("menu"); back() } }
         // feat/pause-power: THE CLEAN DISCONNECT (the pause menu's power button; the waiting screen's Exit game): the PC's WoW closes
         // and the PC is put back by Desktop, then the stream and the bridge stop
-        SetupBridge.endSession = { why, asked, done -> main.post { endSession(why, asked, done) } }
+        SetupBridge.endSession = { why, asked, done -> main.post { endSession(why, asked, closeOnAck = true, then = done) } }
         SetupBridge.endStream = { main.post { endSession("the menu's Exit game", false) { back() } } }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
@@ -757,9 +757,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
      * screen as WoW closes), "Closing WoW on your PC" on the top screen; Desktop's answer (or [SessionEnd]'s time) ends it: the bridge
      * disconnects, then [then].
      */
-    private fun endSession(why: String, quitAsked: Boolean, then: (com.jrees.wowcompanion.PausePower.Ended) -> Unit) {
+    private fun endSession(why: String, quitAsked: Boolean, closeOnAck: Boolean = false, then: (com.jrees.wowcompanion.PausePower.Ended) -> Unit) {
         if (ending != null) { Log.i(TAG, "clean disconnect ($why): already under way"); return }
-        val e = SessionEnd(System.currentTimeMillis())
+        // fix/1492-feedback: the power button's end goes on Desktop's "session_ending" ([SessionEnd.closeOnAck]): DS Forever closes
+        // while Desktop waits out the game's own Exit Game countdown on the PC
+        val e = SessionEnd(System.currentTimeMillis(), closeOnAck = closeOnAck)
         ending = e; endThen = then
         Log.i(TAG, "clean disconnect ($why): Desktop closes WoW and puts the PC back" + if (quitAsked) " (the game's own Exit Game asked first)" else "")
         worker.execute {

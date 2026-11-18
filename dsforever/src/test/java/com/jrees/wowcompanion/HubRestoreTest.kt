@@ -89,4 +89,46 @@ class HubRestoreTest {
         // without the restore (`set` empty, e.g. an older add-on set) every part is tapped, as before
         assertEquals(GameUi.SW_PLAYER to false, GameUi.swNext(s.copy(set = emptyMap())) { p -> want[p] ?: false })
     }
+
+    // ---------------------------------------------------------------- fix/1492-feedback (the user, 2026-11-18, test 1492 streamed:
+    // "it looked like it was doing a lot of clicks again and also the UI didnt hide")
+
+    @Test fun anUnansweredRestoreIsSaidOncePerLoad() {
+        val p = RestorePolicy()
+        p.step(rst(), hub(), true, now = 0); p.step(rst(), hub(), true, now = 3_100)
+        assertFalse("its second try still waits", p.unanswered(rst(), hub(), now = 5_000))
+        assertTrue(p.unanswered(rst(), hub(), now = 6_200))
+        assertFalse("once", p.unanswered(rst(), hub(), now = 9_000))
+        assertFalse("answered is never unanswered", RestorePolicy().also { it.step(rst(), hub(), true, 0) }.unanswered(rst(n = 1), hub(n = 1), 9_000))
+    }
+
+    private val cols = mapOf("PLAYER_SHOW" to 0, "PLAYER_HIDE" to 1, "TARGET_SHOW" to 2, "TARGET_HIDE" to 3, "NP_OFF" to 4, "NP_ON" to 5,
+        "PRD_OFF" to 6, "PRD_ON" to 7)
+
+    @Test fun everySwitchThatDiffersGoesInOneBatch() {
+        val s = GameUi.Sw("uisw", cols, player = true, target = true, np = false, prd = false, set = emptyMap())
+        val want = mapOf(GameUi.SW_PLAYER to false, GameUi.SW_TARGET to false, GameUi.SW_NP to true, GameUi.SW_PRD to true)
+        val b = GameUi.swBatch(s, emptySet(), { true }) { p -> want[p] ?: false }
+        assertEquals(listOf(GameUi.SW_PLAYER to 1, GameUi.SW_TARGET to 3, GameUi.SW_NP to 5, GameUi.SW_PRD to 7), b)
+        // a parked part sits out, one waiting for its own answer too; the others still go
+        val b2 = GameUi.swBatch(s, setOf(GameUi.SW_PLAYER), { p -> p != GameUi.SW_NP }) { p -> want[p] ?: false }
+        assertEquals(listOf(GameUi.SW_TARGET to 3, GameUi.SW_PRD to 7), b2)
+        // after the restore (words as chosen, `set`): nothing
+        val done = s.copy(player = false, target = false, np = true, prd = true, set = want.keys.associateWith { true })
+        assertTrue(GameUi.swBatch(done, emptySet(), { true }) { p -> want[p] ?: false }.isEmpty())
+        assertTrue("the batch's taps are spaced past nothing: each its own cell", GameUi.SW_GAP_MS in 1L..120L)
+    }
+
+    /** the Thor's kept switches and layout (hubSw / hubLy, per character) reach the PC at a stream's start: the Thor's win */
+    @Test fun theKeptSwitchesTravelWithTheSettingsSync() {
+        val thor = SvLua.parse("""{["hubLy"]={["Rutger-Mograine"]={["cb"]=true,["mask"]=31}},["hubSw"]={["Rutger-Mograine"]={["0"]=1,["1"]=3}},["x"]=1}""")
+        val pc = SvLua.parse("""{["hubSw"]={["Other-Realm"]={["0"]=0}},["x"]=1}""")
+        val m = SvMerge.merge(thor, pc, null).table
+        @Suppress("UNCHECKED_CAST") val sw = m["hubSw"] as Map<Any, Any>
+        assertTrue("this character's switches go to the PC", sw.containsKey("Rutger-Mograine"))
+        assertTrue("the PC's other character stays", sw.containsKey("Other-Realm"))
+        @Suppress("UNCHECKED_CAST") val ly = m["hubLy"] as Map<Any, Any>
+        assertTrue(ly.containsKey("Rutger-Mograine"))
+        assertFalse("not a skipped key", "hubSw" in SvLua.SKIP["WowCompanionDB"].orEmpty() || "hubLy" in SvLua.SKIP["WowCompanionDB"].orEmpty())
+    }
 }

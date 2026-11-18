@@ -115,13 +115,18 @@ namespace DsfDesktop.Wow
             this.now = now ?? (() => DateTime.UtcNow);
         }
 
-        public static string StartProcess(LaunchPlan p, WowConfigKeep keep = null)
+        /// <summary>[window] (fix/1492-feedback): the stream's screen when Desktop knows it - (w, h) with the monitor matched to the Thor's
+        /// mode, (null, null) = only maximized (our own virtual screen), null = no stream window (the player's own window stays)</summary>
+        public static string StartProcess(LaunchPlan p, WowConfigKeep keep = null, Func<(int? w, int? h)?> window = null)
         {
             try
             {
                 var cfg = Path.Combine(p.WorkDir ?? "", "WTF", "Config.wtf");
                 keep?.RecordWindow(cfg);   // the player's window, before a session's WoW saves the stream's
                 WowConfig.Ensure(cfg, keep);
+                var win = window?.Invoke();
+                if (win.HasValue) WowConfig.EnsureWindow(cfg, keep, win.Value.w, win.Value.h);
+                try { if (File.Exists(cfg)) Log.I("WoW config: UI scale " + WowConfig.UiScaleWord(File.ReadAllText(cfg))); } catch (Exception) { }
                 // through the shell: the game must not inherit Desktop's handles (2026-10-30: a crashed Wow.exe kept the bridge port 48210)
                 Process.Start(new ProcessStartInfo(p.Exe, p.Args) { WorkingDirectory = p.WorkDir, UseShellExecute = true })?.Dispose();
                 return null;

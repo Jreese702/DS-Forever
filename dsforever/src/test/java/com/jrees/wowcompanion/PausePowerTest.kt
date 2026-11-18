@@ -134,6 +134,54 @@ class PausePowerTest {
         assertEquals("no bridge connection", gone.check(1L)!!.why)
     }
 
+    /** fix/1492-feedback (the user, 2026-11-18, test 1492: "closing from the power button didn't close the app"): the power button's
+     *  end goes on Desktop's "session_ending" (Desktop then waits out the game's own 20 s Exit Game on the PC by itself) */
+    @Test fun thePowerButtonsEndGoesOnDesktopsAck() {
+        val e = SessionEnd(0L, closeOnAck = true); e.sent(true)
+        assertNull("nothing heard yet", e.check(500L))
+        e.said(BridgeMsg.SessionEnd(done = false))
+        assertNull("the Exit Game tap still going down the stream", e.check(SessionEnd.ACK_CLOSE_MS - 1))
+        val r = e.check(SessionEnd.ACK_CLOSE_MS)!!
+        assertTrue("Desktop heard: answered", r.answered)
+        assertEquals("closing", r.wow)
+        // test 1492's timing: Desktop's session_ended came 20 s after its ack - the power button no longer waits for it
+        assertTrue(SessionEnd.ACK_CLOSE_MS < 20_000L)
+        val old = SessionEnd(0L); old.sent(true); old.said(BridgeMsg.SessionEnd(done = false))
+        assertNull("the waiting screen's Exit game still waits for Desktop's word", old.check(20_000L))
+        val noAck = SessionEnd(0L, closeOnAck = true); noAck.sent(true)
+        assertFalse("no ack: an older Desktop, as before", noAck.check(SessionEnd.ACK_MS)!!.answered)
+    }
+
+    @Test fun thePowerRouteAsksForTheEarlyEndAndTheExitGameDoesNot() {
+        val top = File(listOf("src/main/java/com/jrees/wowcompanion/stream/StreamTop.kt", "dsforever/src/main/java/com/jrees/wowcompanion/stream/StreamTop.kt")
+            .first { File(it).isFile }).readText()
+        assertTrue(top.contains("SetupBridge.endSession = { why, asked, done -> main.post { endSession(why, asked, closeOnAck = true, then = done) } }"))
+        assertTrue(top.contains("SetupBridge.endStream = { main.post { endSession(\"the menu's Exit game\", false) { back() } } }"))
+    }
+
+    /** fix/1492-feedback: the close's hard fallback - the process ends 5 s after the close if it is still up, on its own thread,
+     *  standing down for a DS Forever opened again */
+    @Test fun theCloseHasAHardFallback() {
+        val main = File(listOf("../app/src/main/java/app/gamenative/MainActivity.kt", "app/src/main/java/app/gamenative/MainActivity.kt")
+            .first { File(it).isFile }).readText()
+        val quit = main.substringAfter("LauncherHooks.quitApp = { force ->").substringBefore("setContent {")
+        assertTrue(quit.contains("closeFallback(if (force) 1_500L else 0L)"))
+        val fb = main.substringAfter("private fun closeFallback(").substringBefore("companion object")
+        assertTrue("every task of ours", fb.contains("appTasks?.forEach { runCatching { it.finishAndRemoveTask() } }"))
+        assertTrue("the bottom screen", fb.contains("DsForeverScreen.current?.stop()"))
+        assertTrue("the environment", fb.contains("PluviaApp.shutdownEnvironment()"))
+        assertTrue("our own exit's mark first", fb.indexOf("LastRun.ownExit(app)") in 0 until fb.indexOf("killProcess"))
+        assertTrue("stands down for a new start", fb.contains("if (createdGen != gen)"))
+        assertTrue("its own thread", fb.contains("isDaemon = true"))
+        assertEquals(5_000L, Regex("CLOSE_FALLBACK_MS = ([0-9_]+)L").find(main)!!.groupValues[1].replace("_", "").toLong())
+    }
+
+    @Test fun thePowerButtonIsOneAndAHalfTimesBigger() {
+        assertEquals("1.5 x the 1492 button's 78", 78f * 1.5f, UiKit.POWER_SIZE)
+        val kit = File(src, "UiKit.kt").readText()
+        assertTrue("still the top-right corner", kit.contains("return RectF(screen.right - m - sz, screen.top + m, screen.right - m, screen.top + m + sz)"))
+    }
+
     @Test fun theBridgeWords() {
         val o = JSONObject(BridgeProtocol.endSession(true))
         assertEquals("end_session", o.getString("t"))

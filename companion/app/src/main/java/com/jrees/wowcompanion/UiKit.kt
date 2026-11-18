@@ -5663,7 +5663,8 @@ object UiKit {
     // the colour of the red square buttons' marks, the layout's Y glyph on its lower-left corner (the pad's route, as closeX's B), the gold
     // box while its prompt is up. The prompt: the kit's dialog over a dimmed stage, the question, one context line, Cancel (B) / Close (A).
 
-    private const val POWER_SIZE = 78f
+    // fix/1492-feedback (the user, 2026-11-18, test 1492: "the button is a little bit too small"): 1.5x (78 -> 117), still the corner's
+    const val POWER_SIZE = 117f
     private const val POWER_MARGIN = 16f
     /** [pausePowerPromptHit]: Cancel, Close */
     const val POWER_CANCEL = 0
@@ -5712,7 +5713,7 @@ object UiKit {
     fun pausePower(c: Canvas, screen: RectF, alpha: Float = 1f, down: Boolean = false, lit: Boolean = false, glyph: Boolean = true) {
         if (alpha <= 0f) return
         val r = pausePowerBox(screen)
-        val l = c.saveLayerAlpha(RectF(r.left - 40f, r.top - 20f, r.right + 20f, r.bottom + 40f), (255 * alpha.coerceIn(0f, 1f)).toInt())
+        val l = c.saveLayerAlpha(RectF(r.left - 60f, r.top - 20f, r.right + 20f, r.bottom + 60f), (255 * alpha.coerceIn(0f, 1f)).toInt())
         if (lit) focus(c, r)
         pressed(c, r, down) {
             buttonPlate(c, r, if (down) Button.DOWN else Button.UP)
