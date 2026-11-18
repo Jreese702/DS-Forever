@@ -212,6 +212,12 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   `no_write`, `format`, `new_failed`, `error`). The Thor shows a bar ("Updating the game 70938 -> 70959", "64 / 127 MB") with
   "Cancel (B)", which sends **`{"t":"pc_patch_cancel"}`** (refused once installing began: it is short), and a failure as a red row
   with "Retry (A)" (`wow_retry`). An older Thor (no bar) gets the patch's line as `why`. The patch over, WoW is started once.
+  While it runs (and the new client loads) `state` is `starting`, never `start_failed` (1487 put "sign in on the PC" next to a
+  `start_failed`); a failed or cancelled patch stays a stop. A WoW open at its login is CLOSED by the attempt (never one signed
+  in); none starts by itself while WoW is signed in. The Agent is asked again right before the install. Any put-back follows what
+  is on disk (a half-done `File.Replace`, a crash right after a swap); one that can't finish keeps its journal for the next try.
+  A patch while an install still waits for its first login folds into it (the one backup kept). A failed or cancelled `pc_patch`
+  goes once the game is current by another route.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.

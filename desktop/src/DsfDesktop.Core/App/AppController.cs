@@ -1973,7 +1973,7 @@ namespace DsfDesktop.App
         PcGamePatcher patcher;
         PatchFlow patchFlow;
         string patcherRoot;
-        bool loginSeen, crashSeen;
+        bool loginSeen;
 
         /// <summary>the PC game's own updater for the install found (null = no WoW Forever here); made again when the folder changes</summary>
         PcGamePatcher EnsurePatcher()
@@ -1996,6 +1996,9 @@ namespace DsfDesktop.App
                         catch (Exception) { return null; }
                     },
                     WowRunning = () => WowWindow.RunningIn(forever),
+                    // the outdated client open at its login (the user's 11-18 06:20 case: no servers) is closed BY THE ATTEMPT (auto or
+                    // Retry), as the supervisor's restart closes it; a signed-in one never (the 0.2.36 review: "game busy" for ever)
+                    CloseWow = () => SignedIn(ScreenNow()) ? "WoW is signed in" : CloseForRestart(),
                     AgentBusy = () => AgentWatch.Busy(root, "wowf", DateTime.UtcNow, AgentWatch.DefaultAgentDir, out var why) ? why : null,
                     JournalPath = Path.Combine(Paths.DataDir, "patch", "journal.json"),
                     SavedRowPath = Path.Combine(Paths.DataDir, "patch", "wowf_row.json"),
@@ -2023,17 +2026,30 @@ namespace DsfDesktop.App
         {
             var p = EnsurePatcher();
             if (p == null) return;
-            patchFlow.Tick(thorHere && Settings.StartWowOnStream);
+            // never by itself while WoW is signed in (the servers took that client: nothing to close it for, and its failure would sit
+            // under the player's login later)
+            patchFlow.Tick(thorHere && Settings.StartWowOnStream && !SignedIn(LastScreen));
+            // a failed or cancelled attempt is not shown any more once the game is current by another route (the 0.2.36 review: the
+            // stale "Update failed ... Retry (A)" over WoW's login); a new client's failed first start stays until a press
+            var ps = p.Status;
+            if ((ps.State == PatchState.Failed || ps.State == PatchState.Cancelled) && ps.Code != "new_failed" && GameForThor() == GameCheck.Current) p.Reset();
             // the first start watched only while Desktop follows WoW Forever (a retail login is not the patched client's)
             bool forever = Flavor == WowFlavors.Forever;
             bool signedIn = forever && SignedIn(LastScreen);
             if (signedIn && !loginSeen && !p.Busy && p.AwaitingLogin != null) Task.Run(() => p.GoodLogin(ForeverExeVersion()));
             loginSeen = signedIn;
+            // a crash on the first start: the old client back once the crashed one is gone (RestoreOld waits for it); asked again
+            // while it stays (one at a time), so a client still closing never leaves the new build in place
             bool crashed = forever && Supervisor?.Crash != null;
-            if (crashed && !crashSeen && !p.Busy && p.AwaitingLogin != null)
-                Task.Run(() => { if (p.RestoreOld("WoW " + Supervisor?.Crash + " on its first start")) { gameCheck?.Refresh(); PublishWow(force: true); } });
-            crashSeen = crashed;
+            if (crashed && !p.Busy && p.AwaitingLogin != null && Interlocked.CompareExchange(ref restoring, 1, 0) == 0)
+                Task.Run(() =>
+                {
+                    try { if (p.RestoreOld("WoW " + Supervisor?.Crash + " on its first start")) { gameCheck?.Refresh(); PublishWow(force: true); } }
+                    finally { Interlocked.Exchange(ref restoring, 0); }
+                });
         }
+
+        int restoring;
 
         /// <summary>the Thor's Cancel (B) on the game update's bar ("pc_patch_cancel")</summary>
         public void PatchCancel()
@@ -2092,6 +2108,10 @@ namespace DsfDesktop.App
             {
                 d["pc_patch"] = pw;
                 d["why"] = PatchFlow.Line(ps);
+                // while it patches (and the new client loads) WoW IS being started: "starting", never "start_failed" (an older Thor,
+                // 1487, put "WoW didn't start: ... sign in on the PC" in its status line for that, rewritten every 500 ms; it says
+                // "Starting WoW on your PC" now, without the bar). A failed or cancelled patch stays a stop
+                if (ps.Busy || ps.State == PatchState.Done) d["state"] = WowStarter.Word(WowState.Starting);
             }
             return WithInput(d);
         }

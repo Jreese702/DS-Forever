@@ -348,6 +348,225 @@ namespace DsfDesktop.Tests
             }
         }
 
+        /// <summary>File.Replace half way (ERROR_UNABLE_TO_MOVE_REPLACEMENT_2: the old Wow.exe already the backup, the new one not moved
+        /// in, an antivirus scan of the staged exe): the old Wow.exe back, no journal left, and a Retry finishes it (the 0.2.36 review)</summary>
+        [Test]
+        public static void AReplaceThatFailsHalfWayPutsTheOldFileBack()
+        {
+            using (var g = new Game(withRow: true))
+            {
+                g.Env.Swap = (a, b, c) =>
+                {
+                    if (b.EndsWith("Wow.exe"))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(c));
+                        File.Move(b, c);   // what ReplaceFile did before it failed
+                        throw new IOException("Unable to move the replacement file to the file to be replaced (1177)");
+                    }
+                    PatchEnv.DefaultSwap(a, b, c);
+                };
+                var r = new PcGamePatcher(g.Env).RunNow();
+                A.Eq(PatchState.Failed, r.State);
+                A.True(File.Exists(g.F("Wow.exe")), "Wow.exe is there again");
+                A.True(g.AllOld(), "the old client whole");
+                A.Eq(g.BuildInfoText, File.ReadAllText(g.T.P(".build.info")));
+                A.False(File.Exists(g.Env.JournalPath), "every file put back: no journal");
+                g.Env.Swap = PatchEnv.DefaultSwap;
+                var again = new PcGamePatcher(g.Env).RunNow();
+                A.Eq(PatchState.Done, again.State, again.Why);
+                A.True(g.AllNew());
+                A.Eq(Md5(g.Old["Wow.exe"]), Hex.Md5File(g.F(Path.Combine(".dsf-backup", "70938", "Wow.exe"))), "the ONE backup holds the old Wow.exe");
+            }
+        }
+
+        /// <summary>Desktop killed (or the PC reset) right AFTER swap n, before the journal said so: the next start puts it back too</summary>
+        [Test]
+        public static void ACrashRightAfterASwapIsUndoneToo()
+        {
+            for (int at = 1; at <= 5; at++)
+            {
+                using (var g = new Game(withRow: true))
+                using (var snap = new Tmp())
+                {
+                    int n = 0;
+                    g.Env.Swap = (a, b, c) =>
+                    {
+                        PatchEnv.DefaultSwap(a, b, c);
+                        if (++n == at) { CopyTree(g.T.Dir, snap.Dir); throw new Crash(); }
+                    };
+                    A.Eq(PatchState.Failed, new PcGamePatcher(g.Env).RunNow().State);
+                    foreach (var d in Directory.GetDirectories(g.T.Dir)) Directory.Delete(d, true);
+                    foreach (var f in Directory.GetFiles(g.T.Dir)) File.Delete(f);
+                    CopyTree(snap.Dir, g.T.Dir);
+                    var why = new PcGamePatcher(g.Env).Recover();
+                    A.True(why != null && why.Contains("undone"), why);
+                    A.True(g.AllOld(), "the old client whole after a crash right after swap " + at);
+                    A.False(File.Exists(g.Env.JournalPath));
+                }
+            }
+            // the same cut, but the NEXT TRY finds it (no Desktop restart in between): undone first, then patched
+            using (var g = new Game(withRow: true))
+            using (var snap = new Tmp())
+            {
+                int n = 0;
+                g.Env.Swap = (a, b, c) => { PatchEnv.DefaultSwap(a, b, c); if (++n == 3) { CopyTree(g.T.Dir, snap.Dir); throw new Crash(); } };
+                A.Eq(PatchState.Failed, new PcGamePatcher(g.Env).RunNow().State);
+                foreach (var d in Directory.GetDirectories(g.T.Dir)) Directory.Delete(d, true);
+                foreach (var f in Directory.GetFiles(g.T.Dir)) File.Delete(f);
+                CopyTree(snap.Dir, g.T.Dir);
+                A.True(File.Exists(g.Env.JournalPath));
+                g.Env.Swap = PatchEnv.DefaultSwap;
+                A.Eq(PatchState.Done, new PcGamePatcher(g.Env).RunNow().State);
+                A.True(g.AllNew());
+                A.Eq(Md5(g.Old["Wow.exe"]), Hex.Md5File(g.F(Path.Combine(".dsf-backup", "70938", "Wow.exe"))));
+            }
+        }
+
+        /// <summary>a put-back that can't finish (the backup held open): the journal STAYS, nothing is lost; the next start ends it</summary>
+        [Test]
+        public static void APutBackThatFailsKeepsItsJournal()
+        {
+            using (var g = new Game(withRow: true))
+            {
+                var p = new PcGamePatcher(g.Env);
+                A.Eq(PatchState.Done, p.RunNow().State);
+                var bak = g.F(Path.Combine(".dsf-backup", "70938", "Wow.exe"));
+                using (new FileStream(bak, FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    A.True(p.RestoreOld("crash"));
+                    A.Eq("new_failed", p.Status.Code);
+                    A.True(File.Exists(g.Env.JournalPath), "the journal kept");
+                    A.Null(p.AwaitingLogin, "not waiting for a login any more: it is being undone");
+                    A.True(File.Exists(bak), "the old Wow.exe still in its backup");
+                }
+                var why = new PcGamePatcher(g.Env).Recover();
+                A.True(why != null && why.Contains("undone"), why);
+                A.True(g.AllOld(), "the old client whole");
+                A.Eq(g.BuildInfoText, File.ReadAllText(g.T.P(".build.info")));
+                A.False(File.Exists(g.Env.JournalPath));
+            }
+        }
+
+        /// <summary>the crash is seen while the crashed client still shows its Fatal Error: the old client goes back only once it is gone</summary>
+        [Test]
+        public static void TheOldClientGoesBackOnlyOnceTheCrashedOneIsGone()
+        {
+            using (var g = new Game(withRow: true))
+            {
+                var p = new PcGamePatcher(g.Env);
+                A.Eq(PatchState.Done, p.RunNow().State);
+                g.Env.WowExitWaitS = 5;
+                g.Env.WowRunning = () => true;
+                A.False(p.RestoreOld("crash"), "WoW still open: nothing moved");
+                A.True(g.AllNew());
+                A.Eq("1.60.1.70959", p.AwaitingLogin);
+                int asks = 0;
+                g.Env.WowRunning = () => ++asks <= 2;
+                A.True(p.RestoreOld("crash"));
+                A.True(g.AllOld());
+            }
+        }
+
+        /// <summary>a patch while an install still waits for its first good login (the Agent dropped the row again): folded in, the ONE
+        /// backup (the client before it) kept, and a failed first start still brings that client back</summary>
+        [Test]
+        public static void APatchBeforeTheFirstLoginKeepsTheOneBackup()
+        {
+            using (var g = new Game(withRow: true))
+            {
+                var p = new PcGamePatcher(g.Env);
+                A.Eq(PatchState.Done, p.RunNow().State);
+                // the Agent drops the wowf row (06:32 on 2026-11-18) and reverts one file
+                var text = File.ReadAllText(g.T.P(".build.info"));
+                File.WriteAllText(g.T.P(".build.info"), text.Replace(g.Row() + "\n", ""));
+                File.WriteAllBytes(g.F("wow_loader.dll"), Bytes("agent-wrote", 500));
+                var r = new PcGamePatcher(g.Env).RunNow();
+                A.Eq(PatchState.Done, r.State, r.Why);
+                A.True(g.AllNew());
+                A.True(g.Row() != null, "the row back");
+                var bak = g.F(Path.Combine(".dsf-backup", "70938"));
+                A.Eq(Md5(g.Old["Wow.exe"]), Hex.Md5File(Path.Combine(bak, "Wow.exe")), "the backup of the client before both kept");
+                A.Eq(Md5(g.Old["wow_loader.dll"]), Hex.Md5File(Path.Combine(bak, "wow_loader.dll")), "never backed up again over the original");
+                A.Eq(1, Directory.GetDirectories(g.F(".dsf-backup")).Length, "one backup");
+                A.Eq("1.60.1.70959", p.AwaitingLogin);
+                A.True(p.RestoreOld("crash"));
+                A.True(g.AllOld(), "the client from before both");
+                A.Eq(g.BuildInfoText, File.ReadAllText(g.T.P(".build.info")));
+            }
+        }
+
+        /// <summary>the outdated client open at its login (the user's 11-18 06:20 case): the attempt closes it and patches, one press;
+        /// a signed-in one is never closed</summary>
+        [Test]
+        public static void WowOpenAtItsLoginIsClosedAndPatchedInOnePress()
+        {
+            using (var g = new Game(withRow: true))
+            {
+                bool open = true; int closes = 0;
+                g.Env.WowRunning = () => open;
+                g.Env.CloseWow = () => { closes++; open = false; return null; };
+                var r = new PcGamePatcher(g.Env).RunNow();
+                A.Eq(PatchState.Done, r.State, r.Code + " " + r.Why);
+                A.Eq(1, closes);
+                A.True(g.AllNew());
+            }
+            using (var g = new Game(withRow: true))
+            {
+                g.Env.WowRunning = () => true;
+                g.Env.CloseWow = () => "WoW is signed in";
+                var r = new PcGamePatcher(g.Env).RunNow();
+                A.Eq("busy", r.Code);
+                A.True(g.AllOld());
+            }
+        }
+
+        /// <summary>the Agent asked again right before the install (it may start mid-download): waited for, never patched beside</summary>
+        [Test]
+        public static void TheAgentIsAskedAgainBeforeTheInstall()
+        {
+            using (var g = new Game())
+            {
+                int asks = 0;
+                g.Env.AgentBusy = () => { asks++; return asks >= 2 && asks <= 3 ? "its log has an operation on wowf under way" : null; };
+                var p = new PcGamePatcher(g.Env);
+                var states = new List<PatchState>();
+                p.Changed += () => { var s = p.Status.State; if (states.Count == 0 || states.Last() != s) states.Add(s); };
+                A.Eq(PatchState.Done, p.RunNow().State);
+                A.Eq("Checking,Downloading,Waiting,Downloading,Installing,Done", string.Join(",", states));
+            }
+            using (var g = new Game())
+            {
+                int asks = 0;
+                g.Env.AgentBusy = () => ++asks >= 2 ? "it wrote the game's records in the last 120 s" : null;
+                g.Env.AgentWaitS = 20;
+                var r = new PcGamePatcher(g.Env).RunNow();
+                A.Eq("agent_busy", r.Code);
+                A.True(g.AllOld(), "nothing swapped beside it");
+                A.Eq(0, g.Swaps.Count);
+            }
+        }
+
+        /// <summary>the NEW file held open (antivirus scanning the freshly written Wow.exe): waited for, then "busy", the old game left</summary>
+        [Test]
+        public static void AStagedFileHeldOpenIsWaitedFor()
+        {
+            using (var g = new Game())
+            {
+                g.Env.LockWaitS = 3;
+                FileStream held = null;
+                var p = new PcGamePatcher(g.Env);
+                p.Changed += () =>
+                {
+                    if (p.Status.State == PatchState.Installing && held == null)
+                        held = new FileStream(g.F(Path.Combine(".dsf-patch", "70959", "Wow.exe")), FileMode.Open, FileAccess.Read, FileShare.None);
+                };
+                try { A.Eq("busy", p.RunNow().Code); }
+                finally { held?.Dispose(); }
+                A.Eq(0, g.Swaps.Count);
+                A.True(g.AllOld());
+            }
+        }
+
         [Test]
         public static void TheAgentAtWorkIsWaitedForThenRetried()
         {
