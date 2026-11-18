@@ -50,6 +50,9 @@ object MinimapTiles {
      * neighbours decoded - made a close tile land later, and a tile-sized black block stood where it would be for a moment on opening
      * the map or panning). Decoded on its own thread, so the stand-ins of a whole view come at once, ahead of the repaints; dropped
      * when the repainted tile lands (32 KB / 8 KB each, only while loading). The full-size tile needs none: its small one is under it.
+     * OCEAN ONLY (2026-11-17): only until the continent's depth field is ready - after that the field's picture under the tiles is the
+     * continent itself (its land the art's, its ocean by depth), and a stand-in's raw ocean (Kalimdor's near-black) was a black square
+     * for a moment on every zoom (the zoom-sequence test's frames).
      */
     private val quick = Executors.newSingleThreadExecutor()
     private val standIn = HashMap<Long, Bitmap>()
@@ -117,10 +120,11 @@ object MinimapTiles {
         val c = if (sample == 1) cache else small
         c[k]?.let { return it }
         if (k in missing) return null
-        if (k in pending) return standIn[k]
+        val stand = !WaterDepth.ready(cont)
+        if (k in pending) return if (stand) standIn[k] else null
         pending.add(k)
         val f = file(cont, col, row)
-        if (sample > 1 && k !in standIn) quick.execute {
+        if (stand && sample > 1 && k !in standIn) quick.execute {
             val raw = try {
                 if (f.canRead()) BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = sample })
                 else null
@@ -145,6 +149,6 @@ object MinimapTiles {
                 ready()
             }
         }
-        return standIn[k]
+        return if (stand) standIn[k] else null
     }
 }

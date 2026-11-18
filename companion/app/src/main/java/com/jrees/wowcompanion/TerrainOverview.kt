@@ -105,6 +105,8 @@ object TerrainOverview {
     /** the picture's key in the room's cache (WaterDepth: made before the continent's depth field was ready = provisional, kept apart, so
      *  the final one is made when it is) */
     fun key(cont: Int, level: Int, oc: Int, or: Int) = "tov:$cont/$level/${oc}_$or" + if (WaterDepth.ready(cont)) "" else "~"
+    /** the same picture's other key (made before / after the field): a stand-in while this one is made */
+    fun keyOther(cont: Int, level: Int, oc: Int, or: Int) = "tov:$cont/$level/${oc}_$or" + if (WaterDepth.ready(cont)) "~" else ""
 
     /** where the pictures are kept (the app's cache folder, CompanionHost / MapView set it) */
     @Volatile var dir: File? = null

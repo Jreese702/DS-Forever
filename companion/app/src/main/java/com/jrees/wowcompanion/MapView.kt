@@ -48,9 +48,10 @@ class MapView(context: Context) : View(context) {
     private val SMALL_TILES_MAX = 320
     // Terrain style zoomed out: at most this many TerrainOverview pictures a continent per frame (the level keeps it near the screen's)
     private val TERRAIN_TILES_MAX = 400
-    // the water (the user, 2026-11-17: "I dont love it being one shade of teal. Can we give the water depth?"): every terrain picture's
-    // water is repainted by its distance to land when it is decoded (WaterDepth); the sea where no ADT is is the continent's depth field's
-    // own picture over WaterDepth.DEEP. No filter at draw time
+    // the water (the user, 2026-11-17: "I dont love it being one shade of teal. Can we give the water depth?"): the OCEAN's water in every
+    // terrain picture is repainted by its distance to land when it is decoded (WaterDepth; lakes, rivers, city canals keep the game's art -
+    // "The water in stormwind looks AWFUL"); under the pictures the continent's depth field's own picture (the continent at 8 px an ADT,
+    // its ocean by depth) over WaterDepth.DEEP. No filter at draw time
     private val seaDst = RectF()
 
     // ZOOM. In WoW the minimap is just the world map zoomed in with the same markers on it,
@@ -5827,19 +5828,15 @@ class MapView(context: Context) : View(context) {
                 terrainDst.set(sxU(au + bu * wyW) - 0.5f, syV(av + bv * wxN) - 0.5f, sxU(au + bu * wyE) + 0.5f, syV(av + bv * wxS) + 0.5f)
                 terrainDst.sort()
                 val b = wa.picture(TerrainOverview.key(cont, level, oc, or), this) { TerrainOverview.make(cont, level, oc, or) }
-                if (b != null) { c.drawBitmap(b, null, terrainDst, pTerrain); continue }
-                // not made yet: the nearest coarser level the cache holds, its part
-                var up = level + 1
-                while (up <= TerrainOverview.LEVEL_MAX) {
-                    val k = 1 shl (up - level)
-                    val cb = wa.peek(TerrainOverview.key(cont, up, oc / k, or / k))
-                    if (cb != null) {
-                        val part = TerrainOverview.TILE / k
-                        terrainSrc.set((oc % k) * part, (or % k) * part, (oc % k) * part + part, (or % k) * part + part)
-                        c.drawBitmap(cb, terrainSrc, terrainDst, pTerrain); break
-                    }
-                    up++
-                }
+                if (b != null) { c.drawBitmap(b, null, terrainDst, pTerrain); terrainPictures++; continue }
+                // THE ZOOM-OUT GLITCH (the user, 2026-11-17: "When zoomed out all of the way on the map the land masses glitch and disappear
+                // and all I see is teal in the shape of the land"): zooming OUT, each coarser level is still being made (or was let go on
+                // the last zoom-in) when it is first wanted, and the fallback looked only for a COARSER one - none in the cache on the way
+                // out - so only the depth field's sea picture showed, its land cells the shallows' teal. Now: the same picture made
+                // before / after the field (its other key), the nearest coarser level, then the finer level's four (what the way out
+                // has in the cache); under all of them the sea picture is the continent itself (its land the art's: WaterDepth.sea)
+                if (terrainFallback(c, wa, cont, level, oc, or)) terrainFallbacks++
+
             }
             // ANOTHER continent seen close (past level 1's own px an ADT): its own minimap tiles over its levels, as the player's
             // continent's close tiles (which go through this map's own rect: the loop in onDraw); from its own folder only
@@ -5864,6 +5861,38 @@ class MapView(context: Context) : View(context) {
         c.restore()
         return true
     }
+    /** a terrain picture not made yet: the nearest the cache holds instead ([drawTerrainOut]); true = something drawn */
+    private fun terrainFallback(c: Canvas, wa: WorldArt, cont: Int, level: Int, oc: Int, or: Int): Boolean {
+        fun peek(l: Int, x: Int, y: Int): Bitmap? = wa.peek(TerrainOverview.key(cont, l, x, y)) ?: wa.peek(TerrainOverview.keyOther(cont, l, x, y))
+        peek(level, oc, or)?.let { c.drawBitmap(it, null, terrainDst, pTerrain); return true }
+        var up = level + 1
+        while (up <= TerrainOverview.LEVEL_MAX) {
+            val k = 1 shl (up - level)
+            val cb = peek(up, oc / k, or / k)
+            if (cb != null) {
+                val part = TerrainOverview.TILE / k
+                terrainSrc.set((oc % k) * part, (or % k) * part, (oc % k) * part + part, (or % k) * part + part)
+                c.drawBitmap(cb, terrainSrc, terrainDst, pTerrain); return true
+            }
+            up++
+        }
+        if (level <= TerrainOverview.LEVEL_MIN) return false
+        // the finer level's four quarters (half a pixel of overlap as the pictures have)
+        var any = false
+        val l = terrainDst.left; val t = terrainDst.top; val hw = terrainDst.width() / 2f; val hh = terrainDst.height() / 2f
+        for (dc in 0..1) for (dr in 0..1) {
+            val fb = peek(level - 1, oc * 2 + dc, or * 2 + dr) ?: continue
+            terrainQuarter.set(l + dc * hw, t + dr * hh, l + (dc + 1) * hw, t + (dr + 1) * hh)
+            c.drawBitmap(fb, null, terrainQuarter, pTerrain); any = true
+        }
+        return any
+    }
+    private val terrainQuarter = RectF()
+    /** the tests: this frame's terrain pictures drawn as wanted, and those drawn from another level / key while it is made */
+    var terrainPictures = 0
+        private set
+    var terrainFallbacks = 0
+        private set
     private val otherClip = RectF()
     /** this frame's continent under the view (WorldArt.aim; [WorldArt.SEA], or MIN_VALUE = not known) */
     private var terrainAim = Int.MIN_VALUE
@@ -7271,7 +7300,7 @@ class MapView(context: Context) : View(context) {
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
         // HOME'S MAP ZOOMED OUT (2026-11-17): past the zone the Map room's art lies under everything (WorldArt: the room's own renderer and
         // pictures), the zone's 0..1 on it through this projection; the tiles fade out over it down to half the zone, then are not drawn
-        worldDrew = false; terrainDrew = false; paintedConts = 0; otherTiles = 0; seaPictures = 0
+        worldDrew = false; terrainDrew = false; paintedConts = 0; otherTiles = 0; seaPictures = 0; terrainPictures = 0; terrainFallbacks = 0
         // THE CONTINENT UNDER THE VIEW (the user, 2026-11-17: "when zooming out and then zooming in on the other continent the screen goes
         // black"): the close tiles below are only the PLAYER's continent's, through the player's zone rect, so zoomed back in over the
         // other continent nothing was drawn. There the art stays on at any zoom (its terrain if built, else its painted picture and zone

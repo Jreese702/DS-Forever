@@ -132,11 +132,10 @@ class WaterDepthTest {
 
     @Test fun no_seams_at_tile_borders_deep_far_out_shallow_at_the_coast() {
         setRoot(madeUp(), File("build/tmp/wd-cache-m").absoluteFile.also { it.deleteRecursively() })
-        // provisional (no field yet): tile 32 (all water, its west edge 0.3 ADT = 160 yd from the coast in tile 31) does not know the land
-        // across its border: deep at its edge, tile 31 mid-teal at its own: the seam this all exists for (the test can see one)
+        // no field (none to be had): which water is the ocean is not known - the art as it is (ocean only, 2026-11-17)
         WaterDepth::class.java.getDeclaredField("none").apply { isAccessible = true }.let { @Suppress("UNCHECKED_CAST") (it.get(WaterDepth) as MutableSet<Int>).add(1) }
-        val p31 = tile(1, 31, 32)!!; val p32 = tile(1, 32, 32)!!
-        val provisionalSeam = seam(p31, p32)
+        val p31 = tile(1, 31, 32)!!
+        assertEquals("no field: nothing repainted", raw(1, 31, 32).getPixel(420, 256), p31.getPixel(420, 256))
         WaterDepth::class.java.getDeclaredField("none").apply { isAccessible = true }.let { (it.get(WaterDepth) as MutableSet<*>).clear() }
         // the field
         val f = WaterDepth.fieldNow(1)
@@ -149,8 +148,7 @@ class WaterDepthTest {
         val n1 = tile(1, 32, 32)!!; val n2 = tile(1, 32, 33)!!
         var ns = 0
         for (x in 8 until 504 step 8) ns = maxOf(ns, diff(n1.getPixel(x, 511), n2.getPixel(x, 0)))
-        println("WD seams: provisional $provisionalSeam; final 31|32 $s1, 32|33 $s2, 33|34 $s3, row 32|33 $ns")
-        assertTrue("a seam without the field (the test sees one: $provisionalSeam)", provisionalSeam > 12)
+        println("WD seams: final 31|32 $s1, 32|33 $s2, 33|34 $s3, row 32|33 $ns")
         assertTrue("no seam 31|32 ($s1)", s1 <= 6)
         assertTrue("no seam 32|33 ($s2)", s2 <= 6)
         assertTrue("no seam 33|34 ($s3)", s3 <= 6)
@@ -170,7 +168,7 @@ class WaterDepthTest {
         assertTrue("the field's distance at tile 32's west edge (~160 yd: $yd)", yd in 120f..210f)
     }
 
-    @Test fun land_stays_solid_dark_woods_rock_crevices_and_a_lake_gets_shallows() {
+    @Test fun land_stays_solid_dark_woods_rock_crevices_and_a_lake_is_the_art() {
         setRoot(madeUp(), File("build/tmp/wd-cache-m2").absoluteFile.also { it.deleteRecursively() })
         WaterDepth.fieldNow(1)
         val r = raw(1, 29, 30); val t = tile(1, 29, 30)!!
@@ -180,16 +178,16 @@ class WaterDepthTest {
         var crev = 0
         for (i in 0 until 6) for (y in 310 until 470 step 10) if (t.getPixel(301 + i * 30, y) != r.getPixel(301 + i * 30, y)) crev++
         assertEquals("no crevice pixel repainted", 0, crev)
-        // the lake (inside land, 70 px = 73 yd radius): repainted, a shallow turquoise, its shore lighter
-        val mid = t.getPixel(128, 384)
-        assertTrue("the lake is repainted (${Integer.toHexString(mid)})", mid != r.getPixel(128, 384) && Color.green(mid) >= 120)
-        // tiny ponds may stay all shallow, but it is not the deep colour
-        assertTrue("the lake is not the deep colour", diff(mid, WaterDepth.DEEP) > 40)
+        // the lake (inside land, 70 px = 73 yd radius): not the ocean - the game's own colours (the user, 2026-11-17: "I don't know why
+        // we painted any of the actual maps and not just only the surrounding ocean")
+        var lake = 0
+        for (y in 320 until 450 step 4) for (x in 64 until 192 step 4) if (t.getPixel(x, y) != r.getPixel(x, y)) lake++
+        assertEquals("the lake is the art's", 0, lake)
     }
 
     /** review of 1.0.34 test 1485: blue roofs read as teal water became turquoise pools with a shoreline (Goldshire). A roof stays the
-     *  art's; a lake whose shallows are as light still gets its depth */
-    @Test fun blue_roofs_stay_buildings_a_light_shallowed_lake_is_water() {
+     *  art's; and (ocean only) a lake with light shallows too */
+    @Test fun blue_roofs_and_a_light_shallowed_lake_stay_the_art() {
         setRoot(madeUp(), File("build/tmp/wd-cache-m4").absoluteFile.also { it.deleteRecursively() })
         WaterDepth.fieldNow(1)
         for (sample in listOf(1, 4)) {
@@ -200,14 +198,15 @@ class WaterDepthTest {
             for (y in 100 / sample until 154 / sample) for (x in 100 / sample until 180 / sample) { all++; if (t.getPixel(x, y) != r.getPixel(x, y)) changed++ }
             assertEquals("sample $sample: the blue roof is untouched ($changed of $all px repainted)", 0, changed)
             val mid = t.getPixel(360 / sample, 360 / sample); val rim = t.getPixel(360 / sample, 280 / sample)
-            assertTrue("sample $sample: the lake is repainted (${Integer.toHexString(mid)})", mid != r.getPixel(360 / sample, 360 / sample))
-            assertTrue("sample $sample: its light shallows too (${Integer.toHexString(rim)})", rim != r.getPixel(360 / sample, 280 / sample))
+            assertEquals("sample $sample: the lake is the art's", r.getPixel(360 / sample, 360 / sample), mid)
+            assertEquals("sample $sample: its light shallows too", r.getPixel(360 / sample, 280 / sample), rim)
         }
     }
 
     /** the same on the real minimap (MK_ART_ROOT): Goldshire's roofs (Elwynn (31, 49)) and Stormwind's ((30, 48)) stay the art's;
-     *  Loch Modan's lake ((38, 42)), its light shallows with it, is water */
-    @Test fun real_blue_roofs_stay_lakes_repainted() {
+     *  OCEAN ONLY (the user, 2026-11-17: "The water in stormwind looks AWFUL"): Stormwind's canals and Loch Modan's lake ((38, 42)) are
+     *  the game's own art, every pixel; the harbour's open sea west of the city ((29, 48)) still has its depth */
+    @Test fun real_blue_roofs_city_canals_and_lakes_stay_the_art() {
         if (realArt == null) return
         setRoot(File(realArt), File("build/tmp/wd-cache-r").absoluteFile)
         WaterDepth.fieldNow(0)
@@ -220,12 +219,45 @@ class WaterDepthTest {
             assertTrue("($col, $row) has blue roofs ($roof px)", roof > 200)
             assertTrue("($col, $row): the blue roofs stay buildings ($kept of $roof px kept)", kept * 100 >= roof * 97)
         }
-        val r = raw(0, 38, 42); val t = tile(0, 38, 42)!!
-        var lake = 0; var painted = 0
-        for (y in 0 until 512 step 2) for (x in 0 until 512 step 2) { val p = r.getPixel(x, y)
-            if (WaterDepth.tealW(Color.red(p), Color.green(p), Color.blue(p)) >= 0.9f) { lake++; if (t.getPixel(x, y) != p) painted++ } }
-        println("WD Loch Modan: $painted of $lake teal px repainted")
-        assertTrue("Loch Modan's lake is water ($painted of $lake)", lake > 1000 && painted * 100 >= lake * 95)
+        fun teal(name: String, col: Int, row: Int): IntArray {
+            val r = raw(0, col, row); val t = tile(0, col, row)!!
+            var water = 0; var painted = 0; var all = 0
+            for (y in 0 until 512 step 2) for (x in 0 until 512 step 2) { val p = r.getPixel(x, y); all++; if (t.getPixel(x, y) != p) painted++
+                if (WaterDepth.waterW(Color.red(p), Color.green(p), Color.blue(p)) >= 0.9f) water++ }
+            println("WD $name ($col, $row): $water water px, $painted of $all px repainted")
+            return intArrayOf(water, painted)
+        }
+        val loch = teal("Loch Modan", 38, 42)
+        assertTrue("Loch Modan has its lake (${loch[0]})", loch[0] > 1000)
+        assertEquals("Loch Modan's lake is the art's", 0, loch[1])
+        // the city's canals: Stormwind's tiles east of the harbour, every pixel the art's
+        for ((col, row) in listOf(30 to 47, 31 to 47, 30 to 48, 31 to 48)) {
+            val c = teal("Stormwind", col, row)
+            assertEquals("Stormwind ($col, $row): the canals are the art's", 0, c[1])
+        }
+        val harbour = teal("Stormwind harbour", 29, 48)
+        assertTrue("the harbour's open sea keeps its depth (${harbour[1]} px repainted)", harbour[1] > 1000)
+    }
+
+    /** OCEAN ONLY (the user, 2026-11-17): the field's ocean is the water joined to the open sea through a wide channel. A 40 x 30 field:
+     *  land from x = 12, the open sea west of it (x < 4 has no ADT); a bay (wide mouth) is ocean; a canal joined to the sea by a 2-cell
+     *  gap, a lake and a city's ring of water are not */
+    @Test fun the_ocean_is_the_water_joined_to_the_open_sea_through_a_wide_channel() {
+        val w = 40; val h = 30
+        val d = ByteArray(w * h) { if (it % w < 12) 0xFF.toByte() else 0 }
+        fun water(x0: Int, y0: Int, x1: Int, y1: Int) { for (y in y0..y1) for (x in x0..x1) d[y * w + x] = 0xFF.toByte() }
+        water(12, 2, 20, 9)          // a bay: 8 cells wide at its mouth
+        water(12, 15, 13, 16)        // a 2-cell gap ...
+        water(14, 13, 30, 18)        // ... into a canal basin
+        water(25, 22, 32, 27)        // a lake
+        val o = WaterDepth.oceanMask(d, w, h) { x, _ -> x < 4 }
+        fun at(x: Int, y: Int) = o[y * w + x]
+        assertTrue("the open sea", at(1, 1) && at(8, 20))
+        assertTrue("the coast's own water (grown back)", at(11, 20))
+        assertTrue("the bay", at(17, 5) && at(20, 9))
+        assertFalse("the canal basin past a narrow gap", at(22, 15))
+        assertFalse("the lake", at(28, 25))
+        assertFalse("land", at(25, 5))
     }
 
     @Test fun repaint_once_scratch_reused_and_memory_small() {
@@ -360,6 +392,11 @@ class WaterDepthTest {
         val k = WaterDepth.fieldNow(1); val e = WaterDepth.fieldNow(0)
         println("WD fields: Kalimdor ${k?.w}x${k?.h} ${k?.bytes} B, Eastern Kingdoms ${e?.w}x${e?.h} ${e?.bytes} B, ${(System.nanoTime() - t0) / 1_000_000} ms; all ${WaterDepth.bytes()} B")
         region("durotar_coast", 1, 40, 47, 27, 36, 4)
+        // ocean only (the user, 2026-11-17: "The water in stormwind looks AWFUL"): the city's canals and harbour-side water, Elwynn's
+        // and Loch Modan's lakes as the game draws them
+        region("stormwind_s2", 0, 29, 32, 46, 49, 2)
+        region("stormwind_s1", 0, 30, 31, 47, 48, 1)
+        region("loch_modan_s2", 0, 36, 40, 40, 43, 2)
         region("westfall_coast", 0, 25, 31, 49, 55, 4)
         region("elwynn_lakes", 0, 29, 36, 47, 51, 4)
         region("ashenvale", 1, 28, 40, 18, 28, 8)

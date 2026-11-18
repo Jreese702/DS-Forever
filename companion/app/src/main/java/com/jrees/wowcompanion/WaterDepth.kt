@@ -10,6 +10,16 @@ import java.lang.ref.WeakReference
 import java.util.concurrent.Executors
 
 /**
+ * OCEAN ONLY (the user, 2026-11-17, on 1.0.34 test 1485: "The water in stormwind looks AWFUL I don't know why we painted any of the actual
+ * maps and not just only the surrounding ocean"): only the OPEN SEA round and between the continents gets the depth. A continent's
+ * [Field] holds the ocean alone ([oceanMask]: its water eroded by [OCEAN_ERODE] cells, flooded from the ADTs the continent lacks, grown
+ * back) - lakes, rivers, Stormwind's canals, Loch Modan, Blackrock's black are land to it - and a repaint changes only water near the
+ * field's ocean that is joined to it; with no field (yet) nothing is repainted. Every other pixel is the game's own art.
+ * And the field's sea picture is the continent itself at 8 px an ADT (its land and lakes the art's colour, the ocean by depth): it lies
+ * under the terrain pictures and the tiles, so a picture still being made shows the land, never the shallows' teal in its shape (the
+ * zoom-out glitch: "When zoomed out all of the way on the map the land masses glitch and disappear and all I see is teal in the shape of
+ * the land").
+ *
  * WATER WITH DEPTH ON HOME'S TERRAIN (the user, 2026-11-17: "I dont love it being one shade of teal. Can we give the water depth?"; the
  * pick: "Shore-to-deep gradient" - light turquoise shallows hugging every coast, fading to a deep navy-teal further out, a soft bright
  * line at the shoreline; every continent, zoomed in and out).
@@ -192,6 +202,12 @@ object WaterDepth {
             return a * (1 - fy) + b * fy
         }
         val nearBytes: Long get() = near.size * 8L
+        /** the field's cell at ADT point ([x], [y]) is the open sea (outside the field: the open sea) */
+        fun ocean(x: Double, y: Double): Boolean {
+            val gx = kotlin.math.floor((x - c0) * FIELD_PX).toInt(); val gy = kotlin.math.floor((y - r0) * FIELD_PX).toInt()
+            if (gx < 0 || gy < 0 || gx >= w || gy >= h) return true
+            return d[gy * w + gx].toInt() != 0
+        }
         /** the distance to land (yd) at ADT units ([x] = col, [y] = row, fractional); far outside the field */
         fun yd(x: Double, y: Double): Float {
             val gx = (x - c0) * FIELD_PX - 0.5; val gy = (y - r0) * FIELD_PX - 0.5
@@ -209,10 +225,12 @@ object WaterDepth {
     const val FAR = 1.0e6f
     /** black water counts within this many field cells (100 yd) of the field's water */
     const val NEAR_CELLS = 3
+    /** the ocean's channels: water more than this many cells (33 yd each) from land on every side carries the open sea ([oceanMask]) */
+    const val OCEAN_ERODE = 2
     private const val SEA = 0xFF.toByte()
     private const val BLACK_WATER = 0xFE.toByte()
     /** the field's disk copy's version (a new classification = made again) */
-    private const val VERSION = 14
+    private const val VERSION = 15
 
     private val exec = Executors.newSingleThreadExecutor { Thread(it, "waterdepth").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
     private val fields = object : LinkedHashMap<Int, Field>(8, 0.75f, true) {
@@ -289,7 +307,11 @@ object WaterDepth {
                 val c0 = inp.readInt(); val r0 = inp.readInt(); val w = inp.readInt(); val h = inp.readInt()
                 if (c0 != bb[0] || r0 != bb[1] || w != bb[2] || h != bb[3]) return@use null
                 val d = ByteArray(w * h); inp.readFully(d)
-                Field(cont, c0, r0, w, h, d, stamp).also { it.sea = sea(it) }
+                // (its sea picture - the land in it is the art's - kept beside it; none: made again with the field)
+                val sea = seaFile(cont, stamp)?.takeIf { it.isFile }?.let { sf -> android.graphics.BitmapFactory.decodeFile(sf.path,
+                    android.graphics.BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }) } ?: return@use null
+                if (sea.width != w / 2 || sea.height != h / 2) { sea.recycle(); return@use null }
+                Field(cont, c0, r0, w, h, d, stamp).also { it.sea = sea }
             }
         }.getOrNull()
     }
@@ -302,10 +324,13 @@ object WaterDepth {
         val d = ByteArray(w * h)
         java.util.Arrays.fill(d, 0xFF.toByte())
         val core = ByteArray(w * h)
+        // (the art's own colour per cell: the sea picture's land - the continent itself, never the shallows' teal in its shape)
+        val art = IntArray(w * h)
         val n = TerrainOverview.span(FIELD_LEVEL)
         val tile = TerrainOverview.TILE
         val row = IntArray(tile)
         val wt = FloatArray(tile * tile)
+        val pix = IntArray(tile * tile)
         var any = false
         for (oc in 0 until 64 / n) for (or in 0 until 64 / n) {
             if (!TerrainOverview.has(cont, FIELD_LEVEL, oc, or)) continue
@@ -315,6 +340,7 @@ object WaterDepth {
                 b.getPixels(row, 0, tile, 0, py, tile, 1)
                 for (px in 0 until tile) {
                     val p = row[px]
+                    pix[py * tile + px] = p
                     val r = (p shr 16) and 0xFF; val g = (p shr 8) and 0xFF; val bl = p and 0xFF
                     val tw = tealW(r, g, bl)
                     // (black-led water negative: it must reach the open sea, below)
@@ -339,6 +365,7 @@ object WaterDepth {
                     if (TerrainOverview.hasAdt(cont, col, rw)) d[gy * w + gx] = if (wet < k - 1) 0 else if (black * 2 > k) BLACK_WATER else 0xFF.toByte()
                     // (the pixel's own reading, kept apart for the thin-land opening below: 1 = land)
                     if (TerrainOverview.hasAdt(cont, col, rw) && kotlin.math.abs(wt[py * tile + px]) < 0.5f) core[gy * w + gx] = 1
+                    if (TerrainOverview.hasAdt(cont, col, rw)) art[gy * w + gx] = pix[py * tile + px]
                 }
             }
         }
@@ -355,21 +382,14 @@ object WaterDepth {
             for (yy in maxOf(0, y - 1)..minOf(h - 1, y + 1)) { for (xx in maxOf(0, x - 1)..minOf(w - 1, x + 1)) if (core[yy * w + xx].toInt() == 2) { near = true; break }; if (near) break }
             if (!near) d[i] = BLACK_WATER          // (water if it touches the sea: the flood below)
         }
-        // black water is water only where it reaches the open sea (the ADTs the continent lacks, the margin, any teal water): Blackrock
-        // Mountain's black is land. Sweeps until nothing changes
-        var changed = true; var sweeps = 0
-        while (changed && sweeps++ < 400) {
-            changed = false
-            for (pass in 0..1) for (j in 0 until w * h) {
-                val i = if (pass == 0) j else w * h - 1 - j
-                if (d[i] != BLACK_WATER) continue
-                val x = i % w; val y = i / w
-                if ((x > 0 && d[i - 1] == SEA) || (x < w - 1 && d[i + 1] == SEA) || (y > 0 && d[i - w] == SEA) || (y < h - 1 && d[i + w] == SEA)) {
-                    d[i] = SEA; changed = true
-                }
-            }
-        }
-        for (i in 0 until w * h) if (d[i] == BLACK_WATER) d[i] = 0
+        // OCEAN ONLY (the user, 2026-11-17: "The water in stormwind looks AWFUL I don't know why we painted any of the actual maps and not
+        // just only the surrounding ocean"): the field's water is the OPEN SEA only - water joined to the sea where the continent has no
+        // ADT through water at least [OCEAN_ERODE] cells from land on every side (a channel ~165 yd wide or more). Stormwind's canals, its
+        // lakes, Loch Modan, rivers, Blackrock's black: not joined so (or only through a gap narrower than that) - land to the field, so
+        // the repaint leaves them as the game draws them. The joined core grown back over the water it came from, by [OCEAN_ERODE] + 1
+        // cells: the ocean reaches its coast again, but not up a narrow inlet past that
+        val ocean = oceanMask(d, w, h) { x, y -> !TerrainOverview.hasAdt(cont, c0 + x / FIELD_PX, r0 + y / FIELD_PX) }
+        for (i in 0 until w * h) d[i] = if (ocean[i]) SEA else 0
         chamferBytes(d, w, h)
         file(cont, stamp)?.let { f ->
             runCatching {
@@ -379,7 +399,57 @@ object WaterDepth {
                 if (!tmp.renameTo(f)) tmp.delete()
             }
         }
-        return Field(cont, c0, r0, w, h, d, stamp).also { it.sea = sea(it) }
+        return Field(cont, c0, r0, w, h, d, stamp).also { f -> f.sea = sea(f, art); f.sea?.let { saveSea(cont, stamp, it) } }
+    }
+
+    /**
+     * The ocean of a field's water ([d]: 0 = land, anything else water): eroded by [OCEAN_ERODE] cells (a 3-4 chamfer), the core flooded
+     * (4-connected) from the cells where [open] (no ADT: the open sea), then grown back over the water by [OCEAN_ERODE] + 1 cells
+     * (8-connected steps, through water only). Pure (the tests).
+     */
+    fun oceanMask(d: ByteArray, w: Int, h: Int, open: (Int, Int) -> Boolean): BooleanArray {
+        val n = w * h
+        val e = ByteArray(n) { if (d[it].toInt() != 0) 0xFF.toByte() else 0 }
+        chamferBytes(e, w, h)
+        val core = BooleanArray(n) { (e[it].toInt() and 0xFF) > 3 * OCEAN_ERODE }
+        val ocean = BooleanArray(n)
+        val q = IntArray(n)
+        var head = 0; var tail = 0
+        for (i in 0 until n) if (core[i] && open(i % w, i / w)) { ocean[i] = true; q[tail++] = i }
+        while (head < tail) {
+            val i = q[head++]; val x = i % w; val y = i / w
+            if (x > 0 && core[i - 1] && !ocean[i - 1]) { ocean[i - 1] = true; q[tail++] = i - 1 }
+            if (x < w - 1 && core[i + 1] && !ocean[i + 1]) { ocean[i + 1] = true; q[tail++] = i + 1 }
+            if (y > 0 && core[i - w] && !ocean[i - w]) { ocean[i - w] = true; q[tail++] = i - w }
+            if (y < h - 1 && core[i + w] && !ocean[i + w]) { ocean[i + w] = true; q[tail++] = i + w }
+        }
+        // grown back: rings of 8-connected steps over the water (the queue reused: the last ring, then the next one after it)
+        var r0 = 0; var r1 = tail
+        for (step in 0..OCEAN_ERODE) {
+            tail = 0
+            val ring = q.copyOfRange(r0, r1)
+            for (i in ring) {
+                val x = i % w; val y = i / w
+                for (yy in maxOf(0, y - 1)..minOf(h - 1, y + 1)) for (xx in maxOf(0, x - 1)..minOf(w - 1, x + 1)) {
+                    val j = yy * w + xx
+                    if (!ocean[j] && d[j].toInt() != 0) { ocean[j] = true; q[tail++] = j }
+                }
+            }
+            r0 = 0; r1 = tail
+            if (tail == 0) break
+        }
+        return ocean
+    }
+
+    private fun seaFile(cont: Int, stamp: String): File? = file(cont, stamp)?.let { File(it.path.removeSuffix(".bin") + "-sea.png") }
+    private fun saveSea(cont: Int, stamp: String, b: Bitmap) {
+        val f = seaFile(cont, stamp) ?: return
+        runCatching {
+            f.parentFile?.mkdirs()
+            val tmp = File(f.path + ".tmp" + Thread.currentThread().id)
+            tmp.outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            if (!tmp.renameTo(f)) tmp.delete()
+        }
     }
 
     /** [a]'s 1s opened by a 3 x 3 square: those kept are 2 (an erosion, then grown back by a cell) */
@@ -426,15 +496,25 @@ object WaterDepth {
         }
     }
 
-    /** the field's sea picture: its water colour at 8 px an ADT (its land cells' too: under the tiles, seen only where none is drawn) */
-    private fun sea(f: Field): Bitmap? = runCatching {
+    /** the field's picture of its continent at 8 px an ADT: the ocean by its depth, every other cell (land, and the water that is not the
+     *  ocean: lakes, canals) the art's own colour. Under the tiles: the sea past the last ADT, and the continent itself wherever a terrain
+     *  picture is not there yet (the zoom-out glitch, 2026-11-17: "all I see is teal in the shape of the land" - its land cells were the
+     *  shallows' colour, shown alone while the coarser pictures were still being made) */
+    private fun sea(f: Field, art: IntArray): Bitmap? = runCatching {
         val sw = f.w / 2; val sh = f.h / 2
         val b = Bitmap.createBitmap(sw, sh, Bitmap.Config.RGB_565)
         val line = IntArray(sw)
         for (y in 0 until sh) {
             for (x in 0 until sw) {
-                val yd = f.yd(f.c0 + (x + 0.5) * 2.0 / FIELD_PX, f.r0 + (y + 0.5) * 2.0 / FIELD_PX)
-                line[x] = dither(colour(yd), x, y)
+                var r = 0; var g = 0; var bl = 0; var land = 0
+                for (yy in 0..1) for (xx in 0..1) {
+                    val cx = 2 * x + xx; val cy = 2 * y + yy
+                    val i = cy * f.w + cx
+                    val c = if (f.d[i].toInt() == 0) { land++; art[i] } else colour(f.yd(f.c0 + (cx + 0.5) / FIELD_PX, f.r0 + (cy + 0.5) / FIELD_PX))
+                    r += (c shr 16) and 0xFF; g += (c shr 8) and 0xFF; bl += c and 0xFF
+                }
+                val c = Color.rgb(r / 4, g / 4, bl / 4)
+                line[x] = if (land == 0 && c == DEEP) c else dither(c, x, y)
             }
             b.setPixels(line, 0, sw, 0, y, sw, 1)
         }
@@ -455,13 +535,14 @@ object WaterDepth {
     /** per cell: [KIND_NONE] / [KIND_BRIGHT] / [KIND_DARK] water, [KIND_ROOF] (bright teal that is not water: [BRIGHT_S]); the flood's queue */
     private var gKind: ByteArray? = null
     private var gQueue: IntArray? = null
+    private var gSeen: BooleanArray? = null
     private const val KIND_NONE: Byte = 0
     private const val KIND_BRIGHT: Byte = 1
     private const val KIND_DARK: Byte = 2
     private const val KIND_SEEN = 4
     private const val KIND_ROOF: Byte = 8
     private fun scratchBytes(): Long = listOf(gBlack, gTeal, gMask, gLine, gRamp, gShare, gBlur).sumOf { (it?.size ?: 0) * 4L } + (band?.size ?: 0) * 4L +
-        (gRows?.size ?: 0) * 4L + (gKind?.size ?: 0) + (gQueue?.size ?: 0) * 4L
+        (gRows?.size ?: 0) * 4L + (gKind?.size ?: 0) + (gQueue?.size ?: 0) * 4L + (gSeen?.size ?: 0)
     /** a cell's kind from its mean colour and readings ([BRIGHT_S]) */
     private fun kind(r: Int, g: Int, b: Int, tw: Float, mw: Float): Byte =
         if (mw < 0.5f) KIND_NONE else if (tw >= 0.5f && r + g + b >= BRIGHT_S && darkSeaW(r, g, b) < 0.5f) KIND_BRIGHT else KIND_DARK
@@ -512,6 +593,9 @@ object WaterDepth {
         val final = field != null || cont in none
         lastFinal = final; lastWater = 0
         if (!b.isMutable) return final
+        // OCEAN ONLY: which water is the open sea only the field knows - none (yet): the art as it is (a provisional picture is made
+        // again when the field lands; a continent with no field keeps the game's water)
+        if (field == null) return final
         val W = b.width; val H = b.height
         val gw = minOf(W, GRID_MAX); val cp = W / gw; val gh = H / cp
         if (gw <= 0 || gh <= 0) return final
@@ -597,11 +681,32 @@ object WaterDepth {
         // a cell's ADT position (its middle)
         fun ax(i: Int) = x0 + ((i % GW) - MG + 0.5) * cellA
         fun ay(i: Int) = y0 + ((i / GW) - MG + 0.5) * cellA
-        for (i in 0 until n) {
-            // dark water only where the field has water near (Blackrock Mountain's black is land; no field yet: as read)
-            if (m[i] > 0f && tea[i] < 0.5f && field != null) m[i] *= field.waterNear(ax(i), ay(i))
-            sh[i] = m[i]
+        // OCEAN ONLY (the user, 2026-11-17: "The water in stormwind looks AWFUL I don't know why we painted any of the actual maps and not
+        // just only the surrounding ocean"): water - teal or dark - only where the field has OCEAN near (its water is the open sea alone:
+        // Stormwind's canals, lakes, rivers, Blackrock's black are land to it), and only a piece of water (8-connected, the margin's cells
+        // too) that holds a cell of the field's ocean: a lake or a canal a few yards from the sea, not joined to it, keeps the game's art
+        for (i in 0 until n) if (m[i] > 0f) m[i] *= field.waterNear(ax(i), ay(i))
+        run {
+            val q = gQueue?.takeIf { it.size >= n } ?: IntArray(maxOf(n, gMin)).also { gQueue = it }
+            val seen = gSeen?.takeIf { it.size >= n } ?: BooleanArray(maxOf(n, gMin)).also { gSeen = it }
+            java.util.Arrays.fill(seen, 0, n, false)
+            for (s0 in 0 until n) {
+                if (m[s0] <= 0f || seen[s0]) continue
+                var head = 0; var tail = 0; var sea = false
+                q[tail++] = s0; seen[s0] = true
+                while (head < tail) {
+                    val i = q[head++]
+                    if (!sea && field.ocean(ax(i), ay(i))) sea = true
+                    val x = i % GW; val y = i / GW
+                    for (yy in maxOf(0, y - 1)..minOf(GH - 1, y + 1)) for (xx in maxOf(0, x - 1)..minOf(GW - 1, x + 1)) {
+                        val j = yy * GW + xx
+                        if (m[j] > 0f && !seen[j]) { seen[j] = true; q[tail++] = j }
+                    }
+                }
+                if (!sea) for (k in 0 until tail) m[q[k]] = 0f
+            }
         }
+        for (i in 0 until n) sh[i] = m[i]
         // the dark water's share smoothed over FRINGE_YD (review 3: Kalimdor's coastal fringe - seabed fading from green to black in
         // clumps - read cell by cell left a blocky staircase of dark land and flat water; smoothed, the fringe's edge follows the coast
         // and blends). Teal water keeps its own cells (a river a few cells wide stays). Coarse pictures: a cell is wider than that, none

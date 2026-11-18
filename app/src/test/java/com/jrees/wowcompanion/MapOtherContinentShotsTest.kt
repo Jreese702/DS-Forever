@@ -567,7 +567,7 @@ class MapOtherContinentShotsTest {
     }
 
     @Test fun water_depth_from_both_continents() {
-        val dir = out?.let { File(it, "map-water-depth") }
+        val dir = out?.let { File(it, "ocean-only") }
         fun save(name: String, bm: Bitmap) { val d = dir ?: return; d.mkdirs(); File(d, "$name.png").outputStream().use { bm.compress(Bitmap.CompressFormat.PNG, 100, it) } }
         val report = StringBuilder()
         fun note(l: String) { println("WDM $l"); report.append(l).append('\n') }
@@ -584,7 +584,10 @@ class MapOtherContinentShotsTest {
                 Triple("durotar_coast", spot(1411, 0.80f, 0.45f), listOf(1f)),
                 Triple("durotar_coast", spot(1411, 0.70f, 0.45f), listOf(3f)),
                 Triple("elwynn_lake", spot(1429, 0.73f, 0.49f), listOf(1f)),
-                Triple("westfall_coast", spot(1436, 0.20f, 0.50f), listOf(1f)))
+                Triple("westfall_coast", spot(1436, 0.20f, 0.50f), listOf(1f)),
+                // ocean only (the user, 2026-11-17: "The water in stormwind looks AWFUL"): the city's canals and Loch Modan as the game draws them
+                Triple("stormwind", spot(1453, 0.55f, 0.55f), listOf(1f, 3f)),
+                Triple("loch_modan", spot(1432, 0.50f, 0.45f), listOf(1f)))
             for ((name, p, zooms) in spots) for (z in zooms) {
                 if (p == null) continue
                 viewAt(r, z, p)
@@ -599,11 +602,19 @@ class MapOtherContinentShotsTest {
                 // (review 3: the gradient past the last tile is the depth field's sea picture, drawn in both ways in - the player's own
                 // close tiles and the other continent's terrain - so it never ends on the tiles' edge in the flat fill)
                 if (realArt != null && name == "durotar_coast") assertTrue("$pn $name z$z: the sea picture under the tiles", r.map.seaPictures > 0)
-                if (realArt != null && name != "elwynn_lake") {
+                if (realArt != null && name.endsWith("_coast")) {
                     assertTrue("$pn $name z$z: shallows at the coast", w[0] > 0)
                     if (z <= 1f && name == "durotar_coast") assertTrue("$pn $name z$z: deep further out", w[1] > 0)
                 }
-                if (realArt != null && name == "elwynn_lake") assertTrue("$pn $name: the lake's shallows", w[0] > 0)
+                // (ocean only, 2026-11-17: Elwynn's lakes keep the game's own colours - no turquoise shallows inland)
+                if (realArt != null && name == "loch_modan") {
+                    // (the loch round the controls' cursor - the view's right edge is the Wetlands' real coast, rightly with shallows)
+                    var sh = 0; var all = 0
+                    for (y in 330 until 610 step 4) for (x in 420 until 680 step 4) { val p = bm.getPixel(x, y); all++
+                        if (Color.green(p) >= 130 && Color.blue(p) >= 120 && Color.red(p) < Color.green(p) - 30) sh++ }
+                    assertTrue("$pn $name: the loch is the art's, no turquoise shallows ($sh of $all)", sh * 100 < all)
+                }
+                if (realArt != null && name == "elwynn_lake") assertTrue("$pn $name: the lake is the art's, no shallows (${w[0]})", w[0] * 200 < w[3])
             }
             // the open sea between the continents, zoomed out to half the zone
             viewAt(r, 0.5f, seaBetween(r))
@@ -627,5 +638,76 @@ class MapOtherContinentShotsTest {
             tearDown()
         }
         dir?.let { it.mkdirs(); File(it, "memory.txt").writeText(report.toString()) }
+    }
+
+    // ---------------------------------------------------------------- the world floor's land never vanishes (the user, 2026-11-17: "When
+    // zoomed out all of the way on the map the land masses glitch and disappear and all I see is teal in the shape of the land")
+
+    /** [land, all] over the map's field right of the quest list: a pixel that is not water by its colour - not the depth palette's ramp
+     *  (blue and green well over red), not near-black, not the deep fill */
+    private fun landStats(r: Rig, bm: Bitmap): IntArray {
+        val loc = IntArray(2); r.map.getLocationInWindow(loc)
+        val s = IntArray(2)
+        for (y in loc[1] + 10 until loc[1] + r.map.height - 10 step 7) for (x in loc[0] + r.map.width / 3 until loc[0] + r.map.width - 10 step 7) {
+            if (x !in 0 until bm.width || y !in 0 until bm.height) continue
+            val p = bm.getPixel(x, y)
+            val R = Color.red(p); val G = Color.green(p); val B = Color.blue(p)
+            val water = (G > R + 22 && B > R + 22) || maxOf(R, G, B) < 32
+            if (!water) s[0]++
+            s[1]++
+        }
+        return s
+    }
+
+    /** every frame of a short zoom sequence: out to the world floor step by step (no wait for the pictures), a pan there, back in to the
+     *  zone and out to the floor again; each frame must show land (a picture still being made or let go on the zoom-in shows the coarser
+     *  one, the finer one, or the depth field's picture of the continent - its land, never the shallows' teal in the land's shape) */
+    @Test fun the_world_floor_always_shows_the_land() {
+        val strip = out?.let { File(it, "ocean-only") }
+        val failures = ArrayList<String>()
+        for (terrain in listOf(true, false)) for (player in listOf(1411, 1429)) {
+            val r = rig(terrain = terrain, zone = player)
+            val pn = (if (player == 1411) "kalimdor_player" else "ek_player") + if (terrain) "_terrain" else "_painted"
+            // (the fields are on the disk by then on the phone: read now, as the app does at its first zoom-out)
+            WaterDepth.fieldNow(0); WaterDepth.fieldNow(1)
+            key(r.home, "PADDRIGHT")
+            val shots = ArrayList<Bitmap>()
+            val worst = StringBuilder()
+            val bad = ArrayList<String>()
+            var minLand = 100
+            fun frame(label: String) {
+                settle(1)
+                val bm = draw(r.home)
+                val s = landStats(r, bm)
+                val land = 100 * s[0] / s[1].coerceAtLeast(1)
+                if (land < minLand) { minLand = land; worst.setLength(0); worst.append("$label zoom ${st(r)[2]} land $land%") }
+                if (strip != null) shots.add(Bitmap.createScaledBitmap(bm, W / 4, 1080 / 4, true))
+                if (land < 8) bad.add("$label (zoom ${st(r)[2]}) $land%")
+            }
+            for (i in 0 until 12) { key(r.home, "PADLSHOULDER"); for (k in 0 until 3) frame("out $i.$k") }
+            assertEquals("$pn: down to the floor", st(r)[3], st(r)[2], 0.001f)
+            for (k in 0 until 4) { Thread.sleep(40); frame("floor $k") }
+            // a pan at the floor
+            val px = mf("panX").getFloat(r.map)
+            for (k in 0 until 4) { mf("panX").setFloat(r.map, px + 0.4f * (k + 1)); r.map.invalidate(); frame("pan $k") }
+            // (and back: zooming in over the open sea would be a sea, rightly)
+            mf("panX").setFloat(r.map, px); r.map.invalidate(); frame("pan back")
+            // back in to the zone (its pictures let go there), then out again
+            for (i in 0 until 12) { key(r.home, "PADRSHOULDER"); frame("in $i") }
+            for (k in 0 until 3) { Thread.sleep(40); frame("zone $k") }
+            for (i in 0 until 12) { key(r.home, "PADLSHOULDER"); for (k in 0 until 2) frame("out again $i.$k") }
+            println("WFL $pn: ${shots.size} frames, least land: $worst")
+            if (strip != null && shots.isNotEmpty()) {
+                val cols = 8; val tw = W / 4; val th = 1080 / 4
+                val sheet = Bitmap.createBitmap(cols * tw, ((shots.size + cols - 1) / cols) * th, Bitmap.Config.ARGB_8888)
+                val c = Canvas(sheet)
+                shots.forEachIndexed { i, b -> c.drawBitmap(b, ((i % cols) * tw).toFloat(), ((i / cols) * th).toFloat(), null) }
+                strip.mkdirs()
+                File(strip, "zoom_sequence_$pn.png").outputStream().use { sheet.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            }
+            if (bad.isNotEmpty()) failures.add("$pn: ${bad.size} frames: $bad")
+            tearDown()
+        }
+        assertTrue("land on screen in every frame (under 8% of the field: $failures)", failures.isEmpty())
     }
 }
