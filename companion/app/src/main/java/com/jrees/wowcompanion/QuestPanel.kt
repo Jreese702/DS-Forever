@@ -10,9 +10,14 @@ import kotlin.math.min
 
 /**
  * THE QUEST PANEL (the map module's Y panel, shared with the Map room: b-maproom-quests; the user on test61: "Selecting a quest with A
- * opens that quest in the quest panel"): a quest's title, level, objectives and description in a scrolling box with Share / Abandon /
- * Close, the cursor able to go into it (Right; Up / Down scroll the text, then the buttons; Left / B back out). Moved out of MapView
- * as it was; the view hosts it ([Host]: its quests document, its notes, its tap-pad actions, its redraw).
+ * opens that quest in the quest panel"): a quest's title, level, objectives and description in a scrolling box with its actions, the
+ * cursor able to go into the text (Right; Up / Down scroll it; Left / B back out). Moved out of MapView as it was; the view hosts it
+ * ([Host]: its quests document, its notes, its tap-pad actions, its redraw).
+ * THE ACTIONS ARE BUTTONS WITH THEIR GLYPHS (the user, 2026-11-17: "when opening quests in this menu in general them not having the
+ * buttons or glyphs on their options is also confusing- a button is not needed for close as B will close it, but share abandon and track
+ * should each have buttons with the glyphs on them (A for track I dont care for the others)"): Track / Untrack = A, Share = X, Abandon =
+ * Y, pressed from the text, or with the cursor on the quest itself (an untracked quest's row; in the Map room its disc too); elsewhere
+ * A / X / Y stay the list's and the buttons wear no glyph. No Close button (B closes). Abandon's question: Cancel = B, Abandon = A.
  */
 class QuestPanel(private val host: Host) {
     interface Host {
@@ -27,7 +32,19 @@ class QuestPanel(private val host: Host) {
         /** the panel changed: the view syncs its hints and redraws */
         fun changed()
         fun redrawIn(ms: Long)
+        /** Track (on) / Untrack (off) through the game's tracker (the host's tap-pad route) */
+        fun track(id: Int, on: Boolean)
+        /** the buttons wear their controller glyphs (the host holds the controller; the glyphs follow Settings' BUTTON GLYPHS) */
+        fun glyphs(): Boolean
+        /**
+         * the controller's cursor is on this quest itself while it is in the list / on the map, so A / X / Y may be the panel's (review of
+         * 2026-11-17: on any other row, a tracked quest's row, a tab header, the portrait or the Polestar row they stay the list's own)
+         */
+        fun padOnQuest(id: Int): Boolean
     }
+    /** the tests: the glyphs the last frame's buttons wore, in order */
+    var lastGlyphs: List<String> = emptyList()
+        private set
     private val cGold = Color.parseColor("#FFD100")
     private val cDim = Color.parseColor("#8F8168")
     private fun ellipsize(p: Paint, t: String, w: Float): String {
@@ -54,31 +71,39 @@ class QuestPanel(private val host: Host) {
 
 
     var focus = -1
-    fun buttons(): List<String> = if (armedNow()) listOf("cancel", "abandon!") else listOf("share", "abandon", "close")
+    fun buttons(): List<String> = if (armedNow()) listOf("cancel", "abandon!") else listOf("track", "share", "abandon")
     fun armedNow(): Boolean = armedId != 0 && armedId == id && android.os.SystemClock.elapsedRealtime() - armedAt < ARM_MS
 
-    /** one key while the panel is open: true = the panel took it (the cursor is in the box, or the key moves it in / closes) */
+    /** A / X / Y are the panel's: the cursor is in its text, or on its own quest in the list / on the map ([Host.padOnQuest]) */
+    fun padHere(): Boolean = id != 0 && (focus >= 0 || host.padOnQuest(id))
+
+    /**
+     * one key while the panel is open: true = the panel took it. A / X / Y press its buttons while [padHere] (Abandon's question: A
+     * Abandon, B Cancel, whatever the cursor is on); else they are the list's. On the list: Right goes into the text, B closes the
+     * panel, the rest is the list's (the panel follows it); in the text: Up / Down scroll it, Left / B back out.
+     */
     fun key(k: String): Boolean {
+        val armed = armedNow()
+        if (armed) when (k) {
+            "PAD1" -> { act("abandon!"); return true }
+            "PAD2" -> { act("cancel"); return true }
+            "PAD3", "PAD4" -> { host.changed(); return true }
+        } else if (padHere()) when (k) {
+            "PAD1" -> { act("track"); return true }
+            "PAD3" -> { act("share"); return true }
+            "PAD4" -> { act("abandon"); return true }
+        }
         if (focus < 0) {
-            // the cursor is on the list: Right goes into the box, B closes the panel; the rest is the list's (the panel follows it)
             when (k) {
                 "PADDRIGHT" -> { focus = 0; host.changed(); return true }
                 "PAD2" -> { close(); host.changed(); return true }
             }
             return false
         }
-        val buttons = buttons()
-        if (armedNow() && focus > buttons.size) focus = buttons.size
-        val moreText = contentH - scroll > viewH + 1f
         when (k) {
-            "PAD2" -> if (armedNow()) armedId = 0 else focus = -1
-            "PADDLEFT" -> focus = if (focus <= 1) -1 else focus - 1
-            "PADDRIGHT" -> if (focus in 1 until buttons.size) focus++
-            "PADDUP" -> if (focus == 0) scroll = (scroll - 90f).coerceAtLeast(0f) else focus = 0
-            "PADDDOWN" -> if (focus == 0) {
-                if (moreText) scroll = (scroll + 90f).coerceAtMost(max(0f, contentH - viewH)) else focus = 1
-            }
-            "PAD1" -> if (focus >= 1) act(buttons[focus - 1])
+            "PAD2", "PADDLEFT" -> focus = -1
+            "PADDUP" -> scroll = (scroll - 90f).coerceAtLeast(0f)
+            "PADDDOWN" -> scroll = (scroll + 90f).coerceAtMost(max(0f, contentH - viewH))
         }
         host.changed()
         return true
@@ -88,6 +113,7 @@ class QuestPanel(private val host: Host) {
         val id = id
         if (id == 0) return
         when (act) {
+            "track" -> host.track(id, !host.tracked(id))
             "share" -> {
                 val q = host.quest(id) ?: return
                 if (!host.party()) { host.note("You are not in a party."); return }          // the game's ERR_QUEST_PUSH_NOT_IN_PARTY_S
@@ -149,7 +175,7 @@ class QuestPanel(private val host: Host) {
         val tl = wrap(q.optString("title", "Quest"), UiKit.bodyPaint(32f, host.colour(q)), tw); tl.draw(c); y += tl.height + 8f
         val meta = listOfNotNull(if (q.has("lv")) "Level ${q.optInt("lv")}" else null, q.optString("zone", "").ifEmpty { null },
             if (q.optInt("grp", 0) > 1) "Group ${q.optInt("grp")}" else null,
-            if (host.tracked(id)) "Tracked" else "Not tracked").joinToString("  ·  ")
+            if (host.tracked(id)) "Tracked" else "Untracked").joinToString("  ·  ")    // the list's word (the user, 2026-11-17)
         c.drawText(Tr.t(ellipsize(UiKit.bodyPaint(22f, cDim), meta, tw)), 0f, y + 22f, UiKit.bodyPaint(22f, cDim)); y += 38f
         when {
             q.optBoolean("failed") -> { c.drawText(Tr.t("Failed"), 0f, y + 24f, UiKit.bodyPaint(25f, Color.rgb(230, 70, 50))); y += 38f }
@@ -188,37 +214,37 @@ class QuestPanel(private val host: Host) {
             val cue = RectF(inner.left, inner.top, inner.right, actTop - 14f)
             UiKit.moveArrowsUpDown(c, cue, up = false, down = true, size = 18f, width = 26f, around = true)
         }
-        // the buttons: Share, Abandon and Close (Cancel and Abandon while the game asks)
+        // the buttons: Track / Untrack (A), Share (X), Abandon (Y), each wearing its glyph (Cancel (B) and Abandon (A) while the game asks)
         val gap = 10f
         val nb = if (armed) 2 else 3
         val bw = (inner.width() - 2f * pad - gap * (nb - 1)) / nb
         val b1 = RectF(inner.left + pad, inner.bottom - btnH - 12f, inner.left + pad + bw, inner.bottom - 12f)
         val b2 = RectF(b1.right + gap, b1.top, b1.right + gap + bw, b1.bottom)
         val b3 = RectF(b2.right + gap, b1.top, b2.right + gap + bw, b1.bottom)
+        // the glyphs only where they are true: the question's always, the buttons' while A / X / Y are the panel's ([padHere])
+        val glyphs = host.glyphs() && (armed || padHere())
+        val drawn = ArrayList<String>(3)
+        // a button with its glyph while the host holds the controller (UiKit.pad follows Settings' BUTTON GLYPHS), else plain
+        fun btn(r: RectF, label: String, glyph: String, state: UiKit.Button, act: String) {
+            if (glyphs) { UiKit.button(c, r, label, glyph, state); drawn.add(glyph) } else UiKit.button(c, r, label, state)
+            hits.add(RectF(r) to act)
+        }
         if (armed) {
             val qp = UiKit.bodyPaint(25f, Theme.text)
             c.drawText(Tr.t(ellipsize(qp, "Abandon \"$armedTitle\"?", tw)), inner.left + pad, b1.top - 16f, qp)
-            UiKit.button(c, b1, "Cancel")
-            UiKit.button(c, b2, "Abandon")
-            hits.add(RectF(b1) to "cancel"); hits.add(RectF(b2) to "abandon!")
+            btn(b1, "Cancel", UiKit.backGlyph(), UiKit.Button.UP, "cancel")
+            btn(b2, "Abandon", "rev_a", UiKit.Button.UP, "abandon!")
         } else {
+            // Share greyed out of a party or when the quest cannot be shared, Abandon when it cannot be abandoned: a press still says why
             val shareOk = host.party() && q.optBoolean("push")
             val abandonOk = q.optBoolean("canAbandon", true)
-            val s1 = if (shareOk) UiKit.Button.UP else UiKit.Button.DISABLED
-            val s2 = if (abandonOk) UiKit.Button.UP else UiKit.Button.DISABLED
-            UiKit.button(c, b1, "Share", s1)
-            UiKit.button(c, b2, "Abandon", s2)
-            UiKit.button(c, b3, "Close")
-            hits.add(RectF(b1) to "share"); hits.add(RectF(b2) to "abandon"); hits.add(RectF(b3) to "close")
+            btn(b1, if (host.tracked(id)) "Untrack" else "Track", "rev_a", UiKit.Button.UP, "track")
+            btn(b2, "Share", "rev_x", if (shareOk) UiKit.Button.UP else UiKit.Button.DISABLED, "share")
+            btn(b3, "Abandon", "rev_y", if (abandonOk) UiKit.Button.UP else UiKit.Button.DISABLED, "abandon")
         }
-        // the cursor in the box: on the text (with its up / down arrows) or on a button
-        when {
-            focus == 0 -> {
-                val tb = RectF(inner.left + 4f, inner.top + 4f, inner.right - 4f, actTop - 10f)
-                UiKit.focus(c, tb)
-            }
-            focus >= 1 -> listOf(b1, b2, b3).getOrNull(focus - 1)?.let { UiKit.focus(c, it) }
-        }
+        lastGlyphs = drawn
+        // the cursor in the text (with its up / down arrows)
+        if (focus == 0) UiKit.focus(c, RectF(inner.left + 4f, inner.top + 4f, inner.right - 4f, actTop - 10f))
         if (armedId != 0 && !armed) { armedId = 0 }                   // the game's question ran out
         else if (armed) host.redrawIn(500)
     }

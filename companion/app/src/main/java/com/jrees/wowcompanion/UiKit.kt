@@ -24,6 +24,7 @@ import android.text.TextPaint
 import android.text.TextUtils
 import android.widget.TextView
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * The shared Classic look: the game's OWN fonts, buttons, parchment and borders, so that every
@@ -2669,7 +2670,10 @@ object UiKit {
                     /** Quests q64 (the user, 2026-11-17: "one thing that does make sense though on the home screen quests is showing the
                      *  Icon for if there is a usable quest Item that needs to be used for the quest"): the item the game's tracker shows
                      *  beside the quest; drawn only where [questCard] is asked to ([itemButton], Home) */
-                    val item: QuestItem? = null)
+                    val item: QuestItem? = null,
+                    /** a quest the tracker does not hold (Home's list, the user 2026-11-17: "its confusing on that its not tracked"): the
+                     *  map's grey disc in place of the number and a dim "Untracked" at the title row's end */
+                    val untracked: Boolean = false)
 
     /** the card's measures at scale 1 (the Map room's list: 400 px wide); Home draws it at [CARD_HOME_SCALE] */
     const val CARD_PAD = 12f
@@ -2736,14 +2740,22 @@ object UiKit {
             pFlat.style = Paint.Style.FILL; pFlat.color = Theme.gold
             c.drawRoundRect(RectF(box.left + 5f * s, box.top + 10f * s, box.left + 10f * s, box.bottom - 10f * s), 2.5f * s, 2.5f * s, pFlat)
         }
-        questDisc(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, if (q.turnIn) Quest.TURN_IN else Quest.PROGRESS, q.focused,
+        if (q.untracked && !q.turnIn) questDiscMuted(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, marker = false)
+        else questDisc(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, if (q.turnIn) Quest.TURN_IN else Quest.PROGRESS, q.focused,
             if (q.turnIn) null else q.number)
         val pt = bodyPaint(27f * s, q.colour)
         val title = q.title                             // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]"; its colour keeps the difficulty
         // q64: the quest's item at the card's right edge on the title row (the tracker's item button beside the quest; Home)
         val qi = if (itemButton) q.item else null
-        val iw = if (qi != null) CARD_ITEM * s + 12f * s else 0f
+        var iw = if (qi != null) CARD_ITEM * s + 12f * s else 0f
         if (qi != null) questItemButton(c, questItemBox(box, s), qi)
+        if (q.untracked) {
+            val tg = bodyPaint(20f * s, Theme.dim)
+            val word = Tr.t("Untracked")
+            val tw = tg.measureText(word)
+            c.drawText(word, box.right - pad - iw - tw, titleMid - (tg.ascent() + tg.descent()) / 2f, tg)
+            iw += tw + 12f * s
+        }
         c.drawText(Tr.t(TextUtils.ellipsize(title, pt, box.right - pad - tx - iw, TextUtils.TruncateAt.END).toString()), tx,
             titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
         var y = box.top + pad + CARD_TITLE * s
@@ -3501,12 +3513,14 @@ object UiKit {
                 pGlow.alpha = 255
             }
             c.drawBitmap(d, null, r, pBmp)
+            lastDiscPx = size * artFill(d, size)
             val p = numberPaint(size * 0.46f, MarkerArt.DISC_NUMBER, shadow = false).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
             c.drawText(Tr.t(number?.toString() ?: "!"), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             return
         }
         val disc = tex(if (focus) "poi_disc_focus" else "poi_disc")
         if (disc == null) {
+            lastDiscPx = size * 0.72f + 2.5f              // the circle and its 2.5 px rim
             pFlat.style = Paint.Style.FILL; pFlat.color = if (focus) Theme.gameGold else Color.rgb(70, 30, 20)
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f; pFlat.color = Theme.gameGold
@@ -3525,6 +3539,7 @@ object UiKit {
             pGlow.alpha = 255
         }
         c.drawBitmap(disc, null, r, pBmp)
+        lastDiscPx = size * artFill(disc, size)
         if (number != null) {
             val p = numberPaint(size * 0.46f, if (focus) Color.rgb(34, 22, 6) else Theme.gameGold, shadow = !focus)
                 .apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
@@ -3542,21 +3557,49 @@ object UiKit {
 
     /**
      * AN UNTRACKED QUEST'S DISC (the user, 2026-11-17: "I want these to have the full sized circles like the others that can be touched to
-     * open them, just keep them not yellow and without a number"): the yellow quest disc's own art (MarkerArt's, the focused quest's; else
-     * the kit's) at [size], in grey (saturation 0, a little darker: Theme.questGrey's grey, the trivial quests' colour), no number and no
-     * mark. Without the art: a Theme.questGrey disc.
+     * open them, just keep them not yellow and without a number"): a quest disc's own art at [size], in grey (saturation 0, a little
+     * darker: Theme.questGrey's grey, the trivial quests' colour), no number and no mark. Without the art: a Theme.questGrey disc.
+     * THE ART IS THE CIRCLE BESIDE IT (the user, 2026-11-17 again: "the scaling on the untracked quest spot goes wacky when zooming out, it
+     * does not stay the same as the other tracked circles"): the two disc pictures fill their boxes differently (the add-on's quest_disc.tga
+     * 94 %, the kit's poi_disc 64 %), so at one [size] they stood 1.46x apart. [marker] = false: the kit's poi_disc, the tracked circles'
+     * own (Home's map: its tracked quests are poi_disc but the focused one); true: the yellow marker's (MarkerArt's quest_disc.tga, else
+     * poi_disc_focus: the Map room, whose discs are all the yellow marker). Both draw the yellow marker's picture in grey (the light grey
+     * the user picked; poi_disc greyed is near black), Home's in a box shrunk so its solid part spans exactly poi_disc's at [size].
      */
-    fun questDiscMuted(c: Canvas, cx: Float, cy: Float, size: Float) {
-        val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
-        val disc = MarkerArt.discLoaded() ?: tex("poi_disc_focus")
+    fun questDiscMuted(c: Canvas, cx: Float, cy: Float, size: Float, marker: Boolean) {
+        // Home without the kit's poi_disc draws its tracked circles plain, so its grey disc is plain too (the fallback below)
+        val poi = if (marker) null else tex("poi_disc")
+        val disc = if (marker) MarkerArt.discLoaded() ?: tex("poi_disc_focus") else poi?.let { MarkerArt.discLoaded() ?: tex("poi_disc_focus") ?: it }
+        val s = if (disc != null && poi != null && poi !== disc) size * artFill(poi, size) / artFill(disc, size) else size
+        val r = RectF(cx - s / 2f, cy - s / 2f, cx + s / 2f, cy + s / 2f)
         if (disc == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = Theme.questGrey
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f; pFlat.color = Color.rgb(40, 40, 40)
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
+            lastDiscPx = size * 0.72f + 2.5f              // the circle and its 2.5 px rim
             return
         }
         c.drawBitmap(disc, null, r, pMuted)
+        lastDiscPx = s * artFill(disc, s)
+    }
+    /** the solid part of the last quest disc drawn, across, in px ([questDisc] / [questDiscMuted]: its art's own fill of the box) */
+    var lastDiscPx = 0f
+        private set
+    private val fills = java.util.WeakHashMap<Bitmap, HashMap<Int, Float>>()
+    /**
+     * how much of [b]'s width its solid part spans, 0..1, as DRAWN at [px] (shrunk with filtering, alpha > 32 across its middle row): a
+     * soft-edged picture loses more of its faint rim the smaller it is drawn, a hard-edged one does not, so one count from the full
+     * picture put Home's grey disc 3 px over the tracked circle. Read once per picture and size (to 2 px; the disc arts: ~94 % / ~72 %).
+     */
+    fun artFill(b: Bitmap, px: Float): Float = fills.getOrPut(b) { HashMap() }.getOrPut((px / 2f).roundToInt().coerceIn(4, 128)) {
+        val n = (px / 2f).roundToInt().coerceIn(4, 128) * 2
+        val bm = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+        Canvas(bm).drawBitmap(b, null, RectF(0f, 0f, n.toFloat(), n.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        var lo = n; var hi = -1
+        for (x in 0 until n) if (Color.alpha(bm.getPixel(x, n / 2)) > 32) { if (x < lo) lo = x; hi = x }
+        bm.recycle()
+        if (hi < lo) 1f else (hi - lo + 1).toFloat() / n
     }
     private val pMuted = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
         colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f); postConcat(ColorMatrix().apply { setScale(0.85f, 0.85f, 0.85f, 1f) }) })

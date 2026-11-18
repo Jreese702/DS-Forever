@@ -777,6 +777,13 @@ class WorldMapRoomView(context: Context) : View(context) {
         override fun abandonConfirm(id: Int) { confirmId = id; confirmAt = System.currentTimeMillis(); confirmAbandon() }
         override fun changed() { syncB(); invalidate() }
         override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
+        // A on the panel (the user, 2026-11-17: "A for track"): the room's own track toggle (its pending answer, its tap-pad route)
+        override fun track(id: Int, on: Boolean) { if (tracked(id) != on) toggleTrack(id) }
+        override fun glyphs(): Boolean = held
+        // the cursor on this untracked quest itself (its disc on the map, its row in the list): elsewhere, and on a tracked quest, A / X /
+        // Y stay the room's (A Track & focus / Open, X Track / the side bar, Y options / More actions)
+        override fun padOnQuest(id: Int): Boolean = logEntry(id)?.let { !trackedQ(it) } == true &&
+            ((region == MapRoomKeys.Region.MAP && hoverQuest == id && isZoneView()) || (region == MapRoomKeys.Region.LIST && selQuest == id))
     })
     private var travelDrawn: List<Pair<Travel.Point, FloatArray>> = emptyList()
     private fun drawTravel(c: Canvas) {
@@ -1714,7 +1721,7 @@ class WorldMapRoomView(context: Context) : View(context) {
                 val size = DISC_PX * (1f + (SEL_SCALE - 1f) * k)
                 withAlpha(c, cx, cy, size, fadeA) {
                     // the user's pick (2026-11-17, "Grey there too"): an untracked quest's objective is Home's grey disc, no number
-                    if (untrackedObj(q)) UiKit.questDiscMuted(c, cx, cy, size)
+                    if (untrackedObj(q)) UiKit.questDiscMuted(c, cx, cy, size, marker = true)
                     else UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
                         focus = true, glow = focused, number = if (q.done || n <= 0) null else n)
                     if (focused) {
@@ -1964,7 +1971,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             val x = sxc(lm.u); val y = syc(lm.v)
             if (x < canvasR.left || x > canvasR.right || y < canvasR.top || y > canvasR.bottom) continue
             withAlpha(c, x, y, DISC_PX, lm.a) {
-                if (untrackedObj(lm.m)) UiKit.questDiscMuted(c, x, y, DISC_PX)
+                if (untrackedObj(lm.m)) UiKit.questDiscMuted(c, x, y, DISC_PX, marker = true)
                 else UiKit.questDisc(c, x, y, DISC_PX, if (lm.m.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS, focus = true, glow = lm.m.id == focusQid)
             }
         }
@@ -2167,7 +2174,8 @@ class WorldMapRoomView(context: Context) : View(context) {
      */
     private fun drawQuestTip(c: Canvas) {
         // UI Art (round 3): by WHERE THE CURSOR IS - on the map always (the user approved it), in the list never (its row says it)
-        val id = if (region == MapRoomKeys.Region.MAP) hoverQuest else null
+        // ... and never while the quest panel shows that quest (the panel says it; review of 2026-11-17: a tip half under the panel)
+        val id = if (region == MapRoomKeys.Region.MAP) hoverQuest?.takeUnless { qp.isOpen && it == qp.id } else null
         val a = tipFade.alpha(id)
         if (tipFade.animating) postInvalidateOnAnimation()
         if (id == null || a <= 0) return
@@ -2218,7 +2226,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         val hs = rows.map { rowHeight(it) }
         // the cursor's row stays in view
         val total = hs.sum() + ROW_GAP * (hs.size - 1)
-        if (region == MapRoomKeys.Region.LIST && listIndex in hs.indices) {
+        if ((region == MapRoomKeys.Region.LIST || listReveal) && listIndex in hs.indices) {
+            listReveal = false
             var y0 = 0f
             for (i in 0 until listIndex) y0 += hs[i] + ROW_GAP
             val y1 = y0 + hs[listIndex]
@@ -2338,16 +2347,21 @@ class WorldMapRoomView(context: Context) : View(context) {
         // ONE gold box, wherever the pad is (UI Art): while this quest's options or Abandon's question are up, the pad is there and
         // the row shows the passive link (the game's quest-log glow, softer), as the map's hovered marker links its row
         val padAway = optQuest != 0 || confirmId != 0
-        val linked = (id == hoverQuest && region == MapRoomKeys.Region.MAP) || (padAway && (id == optQuest || id == confirmId))
+        // the open quest panel's quest is the owner too (A / a touch on its disc selects its row: the user, 2026-11-17)
+        val panelOwns = qp.isOpen && id == qp.id && region == MapRoomKeys.Region.MAP
+        val linked = (id == hoverQuest && region == MapRoomKeys.Region.MAP) || (padAway && (id == optQuest || id == confirmId)) || panelOwns
         if (region == MapRoomKeys.Region.LIST && i == listIndex && !padAway) UiKit.focus(c, row)
-        else if (linked && id != focusQid) {
+        else if (linked && (id != focusQid || panelOwns)) {
             dst.set(row.left, row.top - 4f, row.right, row.top + 40f)
             // the row that owns the open menu / question: the game's own HighlightTexture strength (full); the map's hover link softer
-            val owner = padAway && (id == optQuest || id == confirmId)
+            val owner = (padAway && (id == optQuest || id == confirmId)) || panelOwns
             UiKit.tex("qlog_quest_glow")?.let { pBmp.alpha = if (owner) 255 else LINK_ALPHA; c.drawBitmap(it, null, dst, pBmp); pBmp.alpha = 255 }
+                ?: run { if (owner) UiKit.selectedRow(c, dst) }        // no harvested glow: the kit's selected row (as the focused row's)
         }
         val n = numbers.indexOf(id) + 1
-        UiKit.questDisc(c, row.left + 26f, row.top + 26f, 40f, if (ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
+        // an untracked quest's row wears the map's grey disc, no number (the user, 2026-11-17: "its confusing on that its not tracked")
+        if (q != null && !ready && !trackedQ(q)) UiKit.questDiscMuted(c, row.left + 26f, row.top + 26f, 40f, marker = true)
+        else UiKit.questDisc(c, row.left + 26f, row.top + 26f, 40f, if (ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
             focus = id == focusQid, number = if (ready || n <= 0) null else n)
         val tl = titleLayout(id, titleW())
         c.save(); c.translate(row.left + 52f, row.top + 10f); tl.draw(c); c.restore()
@@ -2425,9 +2439,9 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun legendPrompts(): List<Prompt> {
         val back = Prompt(listOf(glyph("b")), "Back")
         // the quest panel (b-maproom-quests): its own keys
+        // (its buttons carry A / X / Y: the user, 2026-11-17)
         if (qp.isOpen) return if (qp.focus < 0) listOf(Prompt(listOf(glyph("right")), "Into the quest"), Prompt(listOf(glyph("b")), "Close"))
-            else if (qp.focus == 0) listOf(Prompt(listOf(glyph("up"), glyph("down")), "Scroll"), Prompt(listOf(glyph("b")), "Back"))
-            else listOf(Prompt(listOf(glyph("a")), "Press"), Prompt(listOf(glyph("b")), "Back"))
+            else listOf(Prompt(listOf(glyph("up"), glyph("down")), "Scroll"), Prompt(listOf(glyph("b")), "Back"))
         if (psOpen) return emptyList()              // pm1: the menu's own buttons carry their glyphs
         if (skipOpen) return listOf(Prompt(listOf(glyph("a")), "Select"), Prompt(listOf(glyph("b")), "Close"))
         if (confirmId != 0) return emptyList()      // the question's own buttons say A Yes / B No (UI Art: the clutter rule)
@@ -2848,7 +2862,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             MapRoomKeys.Do.ZoomOut -> { hereTarget = 0; fly((if (flying()) flyZ else zoom) / 1.6f, if (flying()) flyX else panX, if (flying()) flyY else panY) }
             is MapRoomKeys.Do.Open -> goTo(d.zone)
             MapRoomKeys.Do.ToggleSideBar -> toggleSideBar()
-            is MapRoomKeys.Do.OpenQuest -> qp.open(d.quest)
+            is MapRoomKeys.Do.OpenQuest -> { qp.open(d.quest); showInList(d.quest) }
             is MapRoomKeys.Do.TrackFocus -> trackFocus(d.quest)
             is MapRoomKeys.Do.ToggleTrack -> toggleTrack(d.quest)
             is MapRoomKeys.Do.ListMove -> moveQuest(d.d)
@@ -2858,6 +2872,19 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     private fun moveQuest(d: Int) = moveList(d)
+
+    /** A on a quest's disc (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the left menu"): its group opens
+     *  and the list's selection goes onto its row, brought into view; the cursor stays on the map (no follow: the map holds still) */
+    private fun showInList(id: Int) {
+        val z = logEntry(id)?.optString("zone", "")?.ifEmpty { MapQuestBook.OTHER } ?: return
+        if (!book.isOpen(z)) book.toggle(z)
+        val i = listRows().indexOfFirst { it is MapQuestBook.Row.Quest && it.id == id }
+        if (i < 0) return
+        listIndex = i
+        setListCursor(follow = false)
+        listReveal = true
+    }
+    private var listReveal = false               // the next list draw scrolls the selected row into view (the cursor on the map)
 
     // ---------------------------------------------------------------- pm1: the Polestar menu and the skip choice
     /** X can open the Polestar menu: the row is there and the menu can show (Polestar the tracker, answering) */
@@ -2957,6 +2984,11 @@ class WorldMapRoomView(context: Context) : View(context) {
             confirmHits.firstOrNull { it.first.contains(x, y) }?.let { (_, yes) -> if (yes) confirmAbandon() else confirmId = 0 }
             syncB(); invalidate(); return true
         }
+        if (qp.isOpen && qp.box.contains(x, y)) {
+            // the quest panel: its buttons act (Track / Share / Abandon, the question's Cancel / Abandon), the rest of it does nothing
+            qp.hits.firstOrNull { it.first.contains(x, y) }?.let { (_, act) -> qp.act(act) }
+            syncB(); invalidate(); return true
+        }
         if (optQuest != 0) {
             optHits.firstOrNull { it.first.contains(x, y) }?.let { (_, i) -> optSel = i; opts(optQuest).getOrNull(i)?.let { runOpt(it) } }
                 ?: run { optQuest = 0 }
@@ -3006,7 +3038,11 @@ class WorldMapRoomView(context: Context) : View(context) {
             keepOffLegend()
             updateHover()
             val hit = currentThing()
-            if (hit != null && hit == before) { if (hit < 0) goTo(-hit) else if (isZoneView()) trackFocus(hit) else goTo(hit) }
+            // an untracked quest's grey disc opens at once in the list and the panel, as A does (the user, 2026-11-17: "when clicking on
+            // one, it does not open to the quest in the left menu so its confusing on that its not tracked"), never tracking it
+            val grey = hit != null && hit > 0 && isZoneView() && hoverQuest == hit && logEntry(hit)?.let { !trackedQ(it) } == true
+            if (grey) { qp.open(hit!!); showInList(hit) }
+            else if (hit != null && hit == before) { if (hit < 0) goTo(-hit) else if (isZoneView()) trackFocus(hit) else goTo(hit) }
             syncB(); invalidate()
         }
         return true

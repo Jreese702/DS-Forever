@@ -119,6 +119,7 @@ class MapView(context: Context) : View(context) {
                 postInvalidate(); return true
             }
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+                if (fieldTouchHeld) { fieldTouchHeld = false; onFieldTouch?.invoke() }
                 // The field is 3:2, not square, so a pixel of drag is a DIFFERENT amount of map
                 // in x than in y. Dividing both by one number made the map slide diagonally
                 // when you dragged straight.
@@ -1725,8 +1726,10 @@ class MapView(context: Context) : View(context) {
                 }
             }
             // the map's own field (Home's module: the map controls page, the user 2026-11-17: "tapping in the map area should also change
-            // it to the map controls"); the touch goes on as before (a pan, a pinch, a bubble's focus)
-            onFieldTouch?.invoke()
+            // it to the map controls"); the touch goes on as before (a pan, a pinch, a bubble's focus). A touch on an untracked quest's
+            // disc waits: its tap shows the quest in the list (the Quests page), a pan from it is the field's after all (onScroll)
+            fieldTouchHeld = untrackedUnder(e.x, e.y)
+            if (!fieldTouchHeld) onFieldTouch?.invoke()
         }
         scaleDetector.onTouchEvent(e)
         tapDetector.onTouchEvent(e)
@@ -4057,6 +4060,7 @@ class MapView(context: Context) : View(context) {
     private var portrait: JSONObject? = null                      // the quests document's `me`: name, class file, class word
     private var ownHeaders: List<String> = emptyList()         // the log headers that are the player's class or professions
     private val openTabs = HashMap<String, Boolean>()
+    private var revealRow = 0                                  // a row the next layout brings into view (its tab's header with it when that fits)
     private var revealTab = 0                                  // a tab just opened: the next layout brings its section into view          // the tabs the player opened (all closed until then)
     private var listWhere: String? = null                      // the zone and subzone the tabs were sorted for
     private fun listKeys(): List<Int> = MapList.stops(items)
@@ -4087,6 +4091,30 @@ class MapView(context: Context) : View(context) {
         // expanding down off screen"): the list's next layout makes room for it (drawTracker)
         if (openTabs[z] == true) revealTab = key
         invalidate()
+    }
+
+    /** a quest of the log the tracker does not hold (once the tracker is known) */
+    private fun untrackedQuest(id: Int): Boolean = trackedKnown && id > 0 && !trackedNo.containsKey(id) && questById[id] != null
+
+    /**
+     * AN UNTRACKED QUEST'S DISC OPENS IT IN THE LIST (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the
+     * left menu so its confusing on that its not tracked"): its tab opens, the list's cursor goes onto its row (brought into view, its
+     * tab's header with it when that fits), its panel opens, and the host shows the list ([onListWanted]: Home's Quests page). The
+     * row wears the grey disc and "Untracked" ([cardFor]). Merged with the light blue row: that row.
+     */
+    private fun revealInList(id: Int) {
+        selectRow(id)
+        openPanel(id)
+        onListWanted?.invoke()
+        invalidate()
+    }
+
+    /** the list's cursor onto quest [id]'s row (its tab opened when it is untracked; merged with the light blue row: that row), in view */
+    private fun selectRow(id: Int) {
+        if (psMerged() == id) { cursor.touched(MapList.POLESTAR, listKeys()); revealRow = MapList.POLESTAR; return }
+        val z = untrackedLog.firstOrNull { it.optInt("id", 0) == id }?.optString("zone", "")?.ifEmpty { MapQuestBook.OTHER }
+        if (z != null && openTabs[z] != true) { openTabs[z] = true; rebuildItems() }
+        cursor.touched(id, listKeys()); revealRow = id
     }
 
     /**
@@ -4249,8 +4277,29 @@ class MapView(context: Context) : View(context) {
         override fun abandonConfirm(id: Int) { onAbandonConfirm?.invoke(id) }
         override fun changed() { syncB(); invalidate() }
         override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
+        override fun track(id: Int, on: Boolean) = panelTrack(id, on)
+        override fun glyphs(): Boolean = held || padHints
+        // the list's cursor on this untracked quest's own row: a tracked row keeps A Focus / X Untrack / Y Open, the other rows their own
+        override fun padOnQuest(id: Int): Boolean = cursor.shown && cursor.sel == id && !trackedNo.containsKey(id)
     })
     private var panelId: Int get() = qp.id; set(v) { qp.id = v }
+
+    /**
+     * THE PANEL'S TRACK / UNTRACK (A; the user, 2026-11-17: "A for track"): the game's tracker only (QuestPad's watch / unwatch, as the
+     * list's X), shown at once ([trackNow]). The panel stays on its quest, so the list's cursor, when it was on it, goes with it to its
+     * new place (up into the tracked quests, or down into its tab, opened) instead of holding the place as the list's own X does.
+     */
+    private fun panelTrack(id: Int, on: Boolean) {
+        val send = if (on) onTrackQuest else onUntrackQuest
+        if (send == null) { note(if (on) "Track is not on the tap pad yet" else "Untrack is not on the tap pad yet"); return }
+        val onIt = cursor.shown && PolestarMerge.key(cursor.sel, psMerged()) == id
+        val before = listKeys()
+        val beforeAt = items.indexOfFirst { it.key == id && it !is MapList.Item.Section }
+        send(id)
+        trackNow(id, on, false, before, beforeAt)
+        if (onIt) selectRow(id)
+        invalidate()
+    }
     private var armedId: Int get() = qp.armedId; set(v) { qp.armedId = v }
     private var panelScroll: Float get() = qp.scroll; set(v) { qp.scroll = v }
     private var panelContentH: Float get() = qp.contentH; set(v) { qp.contentH = v }
@@ -4269,9 +4318,9 @@ class MapView(context: Context) : View(context) {
     // ---- THE CURSOR IN THE QUEST BOX (the user's correction, 2026-10-17: "Right d pad was not literally supposed to show quest areas, I
     // meant that the cursor would move over onto the quest box to scroll the text or press buttons or whatever"). With the panel open
     // the cursor is on the LIST ([panelFocus] -1: the list moves as always, the panel showing the quest under it) until Right takes it
-    // INTO the box: 0 its text (Up / Down scroll it; Down at its end goes to the buttons), 1.. its buttons (Left / Right between them,
-    // A presses one, Up back to the text). Left from the text or the first button, or B, steps back out to the list; B on the list
-    // closes the panel.
+    // INTO the box: 0 its text (Up / Down scroll it). Left or B steps back out to the list; B on the list closes the panel. The buttons
+    // are pressed by their own glyphs (2026-11-17: Track A, Share X, Abandon Y; QuestPanel.key) from the text, or from the list with the
+    // cursor on the panel's own untracked row (any other row keeps the list's A / X / Y); no longer walked to.
     private var panelFocus: Int get() = qp.focus; set(v) { qp.focus = v }
     private fun panelKey(k: String): Boolean = qp.key(k)
     private fun panelAct(act: String) = qp.act(act)
@@ -5476,6 +5525,26 @@ class MapView(context: Context) : View(context) {
     var worldArt: WorldArt? = null
     /** a touch on the open map's field (not the list, a button or a pop-out): Home's map controls page */
     var onFieldTouch: (() -> Unit)? = null
+    /** a touch went down on an untracked quest's disc: the field's touch (the controls page) waits for a pan */
+    private var fieldTouchHeld = false
+    /** the bubble nearest ([x], [y]) within its touch is an untracked quest's (the tap test's own rule) */
+    private fun untrackedUnder(x: Float, y: Float): Boolean {
+        if (compact || onFocusQuest == null) return false
+        var best = -1; var bestD = BUBBLE_HIT * BUBBLE_HIT
+        for (i in 0 until bubbleN) {
+            val dx = bubbleXY[2 * i] - x; val dy = bubbleXY[2 * i + 1] - y
+            val d = dx * dx + dy * dy
+            if (d <= bestD) { bestD = d; best = i }
+        }
+        return best >= 0 && untrackedQuest(bubbleQ[best])
+    }
+    /** an untracked quest's disc was picked: it is shown in the list (Home's module goes to its Quests page) */
+    var onListWanted: (() -> Unit)? = null
+    /** the tests: the list's first drawn row and how many fit */
+    fun listWindow(): IntArray = intArrayOf(listFirst, listFits)
+    /** the tests: the list's rows (their keys, in order) and the selection */
+    fun listItemKeys(): List<Int> = items.map { it.key }
+    fun listSel(): Int = if (cursor.shown) cursor.sel else 0
     /**
      * Home's buffs page is on (HomeMapPages.BUFFS; the user, 2026-11-17: "when toggling over to buffs the cursor reappears on polestar
      * which is misleading"): the list's cursor, its bubble's ring and its hints are not drawn, as on the controls page; the selection is
@@ -5490,6 +5559,10 @@ class MapView(context: Context) : View(context) {
     /** the tests: untracked quests' discs drawn this frame */
     var untrackedDrawn = 0
         private set
+    /** the tests: each quest's disc drawn this frame, its solid part across in px (UiKit.lastDiscPx), and how many discs it had */
+    val discDrawn = HashMap<Int, Float>()
+    val discCount = HashMap<Int, Int>()
+    private fun discSeen(qid: Int) { discDrawn[qid] = UiKit.lastDiscPx; discCount[qid] = (discCount[qid] ?: 0) + 1 }
     var hintsDrawn = ""
         private set
     /** the list is not the page (the controls or the buffs): its cursor is not drawn */
@@ -5789,11 +5862,11 @@ class MapView(context: Context) : View(context) {
         if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
         if (stepChoice.open) { UiKit.hints(c, band.right - 24f, cy, glyph("a") to "Select", glyph("b") to "Close"); return }
         if (panelId != 0) {
+            // the panel's buttons carry A / X / Y (the user, 2026-11-17): the line says only the moves and B
             val hp = when {
-                armedId == panelId -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Cancel")
+                armedNow() -> arrayOf(glyph("b") to "Cancel")
                 panelFocus < 0 -> arrayOf(glyph("up") to "Select", glyph("right") to "Quest box", glyph("b") to "Close")
-                panelFocus == 0 -> arrayOf(glyph("up") to "Scroll", glyph("left") to "List", glyph("b") to "Back")
-                else -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Back")
+                else -> arrayOf(glyph("up") to "Scroll", glyph("left") to "List", glyph("b") to "Back")
             }
             UiKit.hints(c, band.right - 24f, cy, *hp); return
         }
@@ -5911,8 +5984,10 @@ class MapView(context: Context) : View(context) {
 
     /** a touch picked quest [id]: select it (highlighted at once) and focus it, as the list always did */
     private fun touchQuest(id: Int, q: JSONObject?) {
-        // an untracked quest's disc (2026-11-17): its panel, as Y on its row (focus needs it tracked: A there tracks and focuses)
-        if (trackedKnown && id > 0 && !trackedNo.containsKey(id) && questById[id] != null) { openPanel(id); invalidate(); return }
+        // an untracked quest's disc (2026-11-17): its panel, as Y on its row (focus needs it tracked: A there tracks and focuses), AND its
+        // row in the list (the user, 2026-11-17 again: "when clicking on one, it does not open to the quest in the left menu so its
+        // confusing on that its not tracked")
+        if (untrackedQuest(id)) { revealInList(id); return }
         cursor.touched(id, listKeys())
         listShow(id)
         revealSelected()
@@ -6221,7 +6296,8 @@ class MapView(context: Context) : View(context) {
         if (id != 0 && id == qtFocus()) qtStep?.words?.let { w -> objs.clear(); objs.add(w to false) }
         val card = UiKit.QuestCard(e.optString("title", ""), lv ?: 0, colour, objs,
             turnIn = e.optBoolean("ready") || e.optBoolean("done"), number = trackedNo[id], focused = id != 0 && id == shownFocus(),
-            item = QuestItem.parse(e))          // q64: the quest's usable item; Home's card shows it (the list's rows do not)
+            item = QuestItem.parse(e),          // q64: the quest's usable item; Home's card shows it (the list's rows do not)
+            untracked = untrackedQuest(id))     // the grey disc and "Untracked" (the user, 2026-11-17)
         cards[id] = card
         return card
     }
@@ -6439,6 +6515,23 @@ class MapView(context: Context) : View(context) {
         listMaxFirst = maxFirst
         // AN OPENED TAB SHIFTS UP: when its section (the tab and its quests) does not all fit below the list's present first row, the
         // list scrolls so the tab stands at the top, with as many of its quests under it as fit (the rows glide there)
+        // A ROW ASKED FOR ([revealInList]): in view, its tab's header above it when both fit, else the row as low as it can stand
+        if (revealRow != 0) {
+            val ri = list.indexOfFirst { it.key == revealRow && it !is MapList.Item.Section && it !is MapList.Item.PsHead }
+            if (ri >= 0) {
+                fun fitsTo(f: Int): Boolean {
+                    var hh = if (f > 0) lineO else 0f
+                    for (i in f..ri) hh += need(list[i])
+                    if (ri < n - 1) hh += lineO
+                    return y0 + hh <= yMax
+                }
+                if (listFirst > ri || !fitsTo(listFirst)) {
+                    val hi = (ri downTo 0).firstOrNull { list[it] is MapList.Item.Group } ?: -1
+                    listFirst = if (hi >= 0 && fitsTo(hi)) hi else { var f = ri; while (f > 0 && fitsTo(f - 1)) f--; f }
+                }
+            }
+            revealRow = 0; revealTab = 0
+        }
         if (revealTab != 0) {
             val hi = list.indexOfFirst { it is MapList.Item.Group && it.key == revealTab }
             if (hi >= 0) {
@@ -6638,7 +6731,8 @@ class MapView(context: Context) : View(context) {
     // out of the JSON and sort them again every frame. They are split into onDraw's draw passes
     // here, each list already sorted by y.
     /** [guess] = a "!" from the bundle's quest givers (not one the game listed to the player): off a capital's small map */
-    private class Marker(val x: Double, val y: Double, val shape: Int, val qid: Int = 0, val guess: Boolean = false)
+    /** [lead] = an untracked quest's QuestieDB spot nearest the player (its one disc and tap target; the others are ghost dots) */
+    private class Marker(val x: Double, val y: Double, val shape: Int, val qid: Int = 0, val guess: Boolean = false, val lead: Boolean = false)
     private val mkMid = ArrayList<Marker>()     // objectives, "!" (plain and daily), flight, vignettes
     private val mkTurnIn = ArrayList<Marker>()  // "?"
     private var turnInPx = FloatArray(0)        // the "?" screen centres, refilled each frame
@@ -6785,8 +6879,8 @@ class MapView(context: Context) : View(context) {
                     if (if (ready) !on(QuestLayers.Layer.TURN_INS) else !on(QuestLayers.Layer.OTHER)) continue
                     val pts = CursorRoute.goals(null, e, mapId)
                         .sortedBy { if (px.isNaN()) 0.0 else hypot(it[0] - px, it[1] - py) }.take(OTHER_SPOTS)
-                    for (p in pts) if (ready) mkTurnIn.add(Marker(p[0], p[1], SH_TURNIN, id, guess = true))
-                        else mkMid.add(Marker(p[0], p[1], SH_OBJ_OTHER, id, guess = true))
+                    for ((k, p) in pts.withIndex()) if (ready) mkTurnIn.add(Marker(p[0], p[1], SH_TURNIN, id, guess = true))
+                        else mkMid.add(Marker(p[0], p[1], SH_OBJ_OTHER, id, guess = true, lead = k == 0))
                 }
             }
             // Quests AVAILABLE to pick up on this map, at the giver (addon: GetAvailableQuestLines,
@@ -7650,7 +7744,7 @@ class MapView(context: Context) : View(context) {
             turnInPx[2 * i] = if (on) tx else Float.NaN; turnInPx[2 * i + 1] = if (on) ty else Float.NaN
         }
         val sameNpc2 = (QUEST_ICON_PX / 2f) * (QUEST_ICON_PX / 2f)
-        bubbleN = 0; untrackedDrawn = 0                                    // this frame's numbered bubbles, for the tap test
+        bubbleN = 0; untrackedDrawn = 0; discDrawn.clear(); discCount.clear()   // this frame's numbered bubbles, for the tap test
         for (lp in 0..1) for (s in qdbSpots) {         // QuestieDB's objective guesses (deriveQdb), under the game's marks; leads last
             if (s.turnIn || s.lead != (lp == 1)) continue
             val gx = sx(s.x); val gy = sy(s.y)
@@ -7676,8 +7770,21 @@ class MapView(context: Context) : View(context) {
             when (mk.shape) {
                 // an untracked quest's objective (the user, 2026-11-17): on the open map a full-size grey disc, no number, tappable (its
                 // panel) and under the controls' cursor (A); Home's small map keeps the dim dot. The filter's OTHER layer still hides it
-                SH_OBJ_OTHER -> if (compact) objDot(c, cxp, cyp, 0.5f) else {
-                    UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART)
+                // THE TRACKED CIRCLES' SIZE (the user, 2026-11-17 again: "the scaling on the untracked quest spot goes wacky when zooming
+                // out, it does not stay the same as the other tracked circles"): the grey disc is the tracked circle's own art (poi_disc,
+                // UiKit.questDiscMuted marker = false; it was the add-on's quest_disc.tga, 1.46x bigger at one size), and a quest's
+                // QuestieDB guesses follow the tracked quests' guess rule (drawQdbSpot): a ghost dot at every spot and ONE grey disc, at
+                // QDB_SCALE, on the spot nearest the player - its one tap target (three full discs had piled up as the view widened)
+                SH_OBJ_OTHER -> if (compact) objDot(c, cxp, cyp, 0.5f) else if (mk.guess) {
+                    UiKit.ghostDot(c, cxp, cyp)
+                    if (mk.lead) {
+                        UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART * QDB_SCALE, marker = false)
+                        discSeen(mk.qid)
+                        addBubble(cxp, cyp, mk.qid); untrackedDrawn++
+                    }
+                } else {
+                    UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART, marker = false)
+                    discSeen(mk.qid)
                     addBubble(cxp, cyp, mk.qid); untrackedDrawn++
                 }
                 SH_DUNGEON -> if (!compact) drawDungeon(c, cxp, cyp, dungeonNames[mk.qid] ?: "")
@@ -7700,6 +7807,7 @@ class MapView(context: Context) : View(context) {
                         // game's yellow focus disc. A white ring expands while a tap waits for the game's answer.
                         val focused = mk.qid == shownFocus()
                         UiKit.questDisc(c, cxp, cyp, BUBBLE_ART, focus = focused, number = no)
+                        discSeen(mk.qid)
                         val now = android.os.SystemClock.elapsedRealtime()
                         if (!morphOn && !focused && mk.qid == askedQid && now - askedAt < ASK_MS) {
                             val ph = ((now - askedAt) % 900L) / 900f

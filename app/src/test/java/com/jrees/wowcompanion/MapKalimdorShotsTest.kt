@@ -16,6 +16,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -126,13 +127,17 @@ class MapKalimdorShotsTest {
 
     private val ELWYNN = doubleArrayOf(0.0, -7939.583, -10254.166, 1535.4166, -1935.4166)
     private var zoneId = 1411
+    /** the untracked-quests cases (2026-11-17, second report): a tracked quest NOT focused (10) beside the untracked one, and an
+     *  untracked quest the game places nothing for, with three QuestieDB spots (11) */
+    private var extra = false
     private fun mapDoc(): JSONObject {
         val (name, r) = if (zoneId == 1429) "Elwynn Forest" to ELWYNN else "Durotar" to DUROTAR
         return JSONObject().put("ok", true).put("mapID", zoneId).put("zone", name).put("subzone", "")
         .put("x", 0.52).put("y", 0.44).put("facing", 2.4)
         .put("rect", JSONObject().put("c", r[0].toInt()).put("t", r[1]).put("b", r[2]).put("l", r[3]).put("r", r[4]))
         .put("quests", JSONArray().put(JSONObject().put("questID", 7).put("x", 0.55).put("y", 0.48).put("title", "Sarkoth"))
-            .put(JSONObject().put("questID", 8).put("x", 0.47).put("y", 0.50).put("title", "Vile Familiars")))
+            .put(JSONObject().put("questID", 8).put("x", 0.47).put("y", 0.50).put("title", "Vile Familiars"))
+            .apply { if (extra) put(JSONObject().put("questID", 10).put("x", 0.58).put("y", 0.41).put("title", "Galgar's Cactus Apple Surprise")) })
     }
 
     private fun questsDoc(): JSONObject {
@@ -142,7 +147,17 @@ class MapKalimdorShotsTest {
             .put(JSONObject().put("id", 9).put("title", "Lazy Peons").put("lv", 4).put("watch", 1).put("ready", true).put("done", true)
                 .put("zone", "Durotar"))
             .put(JSONObject().put("id", 8).put("title", "Vile Familiars").put("lv", 3).put("zone", "Durotar")
-                .put("obj", JSONArray().put(JSONObject().put("t", "Vile Familiar slain: 2/12")))))
+                .put("obj", JSONArray().put(JSONObject().put("t", "Vile Familiar slain: 2/12"))).put("canAbandon", true))
+            .apply { if (extra) {
+                put(JSONObject().put("id", 10).put("title", "Galgar's Cactus Apple Surprise").put("lv", 3).put("watch", 2).put("zone", "Durotar")
+                    .put("obj", JSONArray().put(JSONObject().put("t", "Cactus Apple: 3/10"))))
+                put(JSONObject().put("id", 11).put("title", "Thazz'ril's Pick").put("lv", 6).put("zone", "Valley of Trials")
+                    .put("obj", JSONArray().put(JSONObject().put("t", "Thazz'ril's Pick: 0/1")))
+                    .put("qdb", JSONObject().put("src", "qdb").put("obj", JSONArray()
+                        .put(JSONObject().put("m", 1411).put("i", 1).put("x", 0.50).put("y", 0.56))
+                        .put(JSONObject().put("m", 1411).put("i", 1).put("x", 0.515).put("y", 0.575))
+                        .put(JSONObject().put("m", 1411).put("i", 1).put("x", 0.49).put("y", 0.585)))))
+            } })
     }
 
     private class Rig(val home: HomeView, val map: MapView, val room: WorldMapRoomView)
@@ -163,8 +178,8 @@ class MapKalimdorShotsTest {
             .invoke(k.getField("INSTANCE").get(null), which, x, y)
     }
 
-    private fun rig(terrain: Boolean, minimapK: Boolean = true, buffs: Boolean = true, zone: Int = 1411): Rig {
-        zoneId = zone
+    private fun rig(terrain: Boolean, minimapK: Boolean = true, buffs: Boolean = true, zone: Int = 1411, extra: Boolean = false): Rig {
+        zoneId = zone; this.extra = extra
         if (frameDelayWas == null) frameDelayWas = org.robolectric.shadows.ShadowChoreographer.getFrameDelay()
         org.robolectric.shadows.ShadowChoreographer.setPaused(true)
         org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
@@ -514,6 +529,161 @@ class MapKalimdorShotsTest {
             assertEquals("Untracked quest objectives off: none", emptyList<Int>(), room.greyQuests())
             shot("room_untracked_filtered", bm)
         } finally { prefs.edit().remove(QuestLayers.Layer.OTHER.key).commit() }
+        room.onHidden()
+    }
+
+    // ---------------------------------------------------------------- 6. untracked quests, the second report (2026-11-17)
+    // THE USER: "the scaling on the untracked quest spot goes wacky when zooming out, it does not stay the same as the other tracked
+    // circles. when clicking on one, it does not open to the quest in the left menu so its confusing on that its not tracked"
+
+    /** the grey disc and an unfocused tracked circle beside it: the same drawn size at every zoom; a quest's QuestieDB spots one disc */
+    @Test fun untrackedDiscsKeepTheTrackedCirclesSizeAtEveryZoom() {
+        val r = rig(terrain = true, extra = true)
+        r.map.onFocusQuest = { }
+        r.map.update(mapDoc(), 0)
+        key(r.home, "PADDRIGHT")                                 // the map controls (the zoom keys)
+        for ((name, z) in listOf("1" to 1f, "0.4" to 0.4f, "floor" to -1f)) {
+            if (z > 0f) homeView(r, z, 0.5f, 0.5f) else { homeView(r, 0.4f, 0.5f, 0.5f); for (i in 0 until 10) key(r.home, "PADLSHOULDER") }
+            val bm = frames(r, 2500L)
+            val tracked = r.map.discDrawn[10]; val grey = r.map.discDrawn[8]
+            assertNotNull("zoom $name: the unfocused tracked circle drawn (${r.map.discDrawn})", tracked)
+            assertNotNull("zoom $name: the grey disc drawn (${r.map.discDrawn})", grey)
+            assertEquals("zoom $name: the grey disc the tracked circle's size", tracked!!, grey!!, 2f)
+            assertEquals("zoom $name: one disc for the quest with three QuestieDB spots (${r.map.discCount})", 1, r.map.discCount[11] ?: 0)
+            assertTrue("zoom $name: its guess disc no bigger than a tracked circle", (r.map.discDrawn[11] ?: 0f) <= tracked + 2f)
+            shot("home_untracked_equal_zoom_$name", bm)
+        }
+    }
+
+    private fun bubbleAt(r: Rig, qid: Int): FloatArray? {
+        val xy = mf("bubbleXY").get(r.map) as FloatArray; val q = mf("bubbleQ").get(r.map) as IntArray
+        val n = mf("bubbleN").getInt(r.map)
+        for (i in 0 until n) if (q[i] == qid) return floatArrayOf(xy[2 * i], xy[2 * i + 1])
+        return null
+    }
+    private fun tap(r: Rig, x: Float, y: Float) {
+        val t = android.os.SystemClock.uptimeMillis()
+        r.map.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
+        r.map.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t + 60, android.view.MotionEvent.ACTION_UP, x, y, 0))
+        settle(30)                                               // the double-tap wait: the single tap confirmed
+    }
+    private fun shownInList(r: Rig, qid: Int, how: String) {
+        draw(r.home)
+        assertEquals("$how: the Quests page", HomeMapPages.Page.QUESTS, r.home.mapPageNow())
+        assertEquals("$how: the quest selected in the list", qid, r.map.listSel())
+        val at = r.map.listItemKeys().indexOf(qid)
+        assertTrue("$how: its row in the list (its tab opened: ${r.map.listItemKeys()})", at >= 0)
+        val (first, fits) = r.map.listWindow().let { it[0] to it[1] }
+        assertTrue("$how: its row in view ($at in $first..${first + fits})", at >= first && at < first + fits)
+        assertTrue("$how: its panel open", r.map.panelOpen())
+    }
+
+    @Test fun tappingAnUntrackedDiscShowsItInTheList() {
+        val r = rig(terrain = true, extra = true)
+        r.map.onFocusQuest = { }
+        r.map.update(mapDoc(), 0)
+        key(r.home, "PADDRIGHT")
+        assertEquals(HomeMapPages.Page.CONTROLS, r.home.mapPageNow())
+        frames(r, 1500L)
+        val at = bubbleAt(r, 8)
+        assertNotNull("the grey disc is a tap target", at)
+        tap(r, at!![0], at[1])
+        shownInList(r, 8, "a tap")
+        shot("home_untracked_tap_list", frames(r, 2000L))
+        // the panel's A (the user: "A for track"): the game's tracker takes it; the panel and the list's cursor stay with the quest
+        val asked = ArrayList<Int>()
+        r.map.onTrackQuest = { asked.add(it) }
+        r.map.onTrackFocusQuest = { fail("the panel's A tracks, it does not focus") }
+        key(r.home, "PAD1")
+        assertEquals(listOf(8), asked)
+        draw(r.home)
+        assertTrue("the panel stays open", r.map.panelOpen())
+        assertEquals("the cursor went with the quest", 8, r.map.listSel())
+        assertTrue("... up into the tracked quests (${r.map.listItemKeys()})", r.map.listItemKeys().let { k -> k.indexOf(8) in 0 until k.indexOfFirst { MapList.isGroup(it) } })
+    }
+
+    @Test fun aOnAnUntrackedDiscShowsItInTheList() {
+        val r = rig(terrain = true, extra = true)
+        r.map.onFocusQuest = { }
+        r.map.update(mapDoc(), 0)
+        key(r.home, "PADDRIGHT")
+        mf("curU").setFloat(r.map, 0.47f); mf("curV").setFloat(r.map, 0.50f)
+        draw(r.home)
+        key(r.home, "PAD1")
+        shownInList(r, 8, "A")
+    }
+
+    @Test fun theMapRoomsAOnAGreyDiscSelectsItsRow() {
+        val r = rig(terrain = true)
+        val room = r.room
+        room.visibility = View.VISIBLE
+        room.layout(0, 0, W, H)
+        room.onShown()
+        val bm = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        for (i in 0 until 30) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); Thread.sleep(30); settle(2) }
+        WorldMapRoomView::class.java.getDeclaredMethod("select", Int::class.javaObjectType).apply { isAccessible = true }.invoke(room, 8)
+        assertEquals("the cursor on the grey disc", 8, rf("hoverQuest").get(room))
+        room.onPad(JSONObject().put("k", "PAD1").put("n", ++padN))
+        assertEquals("A selects its row in the list", 8, rf("selQuest").getInt(room))
+        val book = rf("book").get(room) as MapQuestBook
+        assertTrue("... its group open", book.isOpen("Durotar"))
+        for (i in 0 until 10) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); settle(2) }
+        shot("room_untracked_a_row", bm)
+        room.onHidden()
+    }
+
+    /** review of 2026-11-17: the open panel takes A / X / Y only on its own untracked row; a tracked row keeps the list's keys */
+    @Test fun withThePanelOpenATrackedRowKeepsTheListsKeys() {
+        val r = rig(terrain = true, extra = true)
+        r.map.onFocusQuest = { }
+        r.map.update(mapDoc(), 0)
+        key(r.home, "PADDRIGHT")
+        frames(r, 1500L)
+        val at = bubbleAt(r, 8)!!
+        tap(r, at[0], at[1])
+        shownInList(r, 8, "a tap")
+        val did = ArrayList<String>()
+        r.map.onUntrackQuest = { did.add("untrack $it") }
+        r.map.onTrackQuest = { did.add("track $it") }
+        r.map.onShareQuest = { did.add("share $it") }
+        r.map.onAbandonArm = { did.add("arm $it") }
+        for (i in 0 until 12) { if (r.map.listSel() == 10) break; key(r.home, "PADDUP"); draw(r.home) }
+        assertEquals("the cursor on the tracked quest 10", 10, r.map.listSel())
+        key(r.home, "PAD1"); draw(r.home)
+        key(r.home, "PAD4"); draw(r.home)
+        assertTrue("A / Y on a tracked row never untrack, share or arm Abandon ($did)", did.isEmpty())
+        for (i in 0 until 12) { if (r.map.listSel() == 8) break; key(r.home, "PADDDOWN"); draw(r.home) }
+        assertEquals(8, r.map.listSel())
+        if (!r.map.panelOpen()) key(r.home, "PAD4")
+        draw(r.home)
+        key(r.home, "PAD1")
+        assertEquals("back on its own untracked row A is the panel's Track", listOf("track 8"), did)
+    }
+
+    @Test fun theMapRoomsTouchOnAGreyDiscOpensItInTheList() {
+        val r = rig(terrain = true)
+        val room = r.room
+        room.visibility = View.VISIBLE
+        room.layout(0, 0, W, H)
+        room.onShown()
+        val bm = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        for (i in 0 until 30) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); Thread.sleep(30); settle(2) }
+        WorldMapRoomView::class.java.getDeclaredMethod("select", Int::class.javaObjectType).apply { isAccessible = true }.invoke(room, 8)
+        fun conv(n: String, v: Float) = WorldMapRoomView::class.java.getDeclaredMethod(n, Float::class.javaPrimitiveType).apply { isAccessible = true }.invoke(room, v) as Float
+        val x = conv("sxc", rf("ccx").getFloat(room)); val y = conv("syc", rf("ccy").getFloat(room))
+        // the cursor elsewhere first: ONE touch on the grey disc does it (no second touch, never Track & focus)
+        WorldMapRoomView::class.java.getDeclaredMethod("select", Int::class.javaObjectType).apply { isAccessible = true }.invoke(room, 10)
+        val t = android.os.SystemClock.uptimeMillis()
+        room.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
+        room.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t + 60, android.view.MotionEvent.ACTION_UP, x, y, 0))
+        settle(2)
+        assertEquals("the touch selects its row in the list", 8, rf("selQuest").getInt(room))
+        assertTrue("... never tracking it", (rf("trackPending").get(room) as Map<*, *>).isEmpty())
+        assertTrue("... its group open", (rf("book").get(room) as MapQuestBook).isOpen("Durotar"))
+        val qp = rf("qp").get(room) as QuestPanel
+        assertEquals("... and its panel open", 8, qp.id)
+        for (i in 0 until 10) { bm.eraseColor(Color.BLACK); room.layout(0, 0, W, H); room.draw(Canvas(bm)); settle(2) }
+        shot("room_untracked_touch_row", bm)
         room.onHidden()
     }
 
