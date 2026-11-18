@@ -43,6 +43,7 @@ class WaterDepthTest {
     private val DARK_GREEN = Color.rgb(19, 45, 16)
     private val GREY_ROCK = Color.rgb(70, 80, 85)
     private val LAKE = Color.rgb(24, 48, 58)
+    private val ROOF = Color.rgb(64, 96, 144)
     private val COAST = 31.7
 
     private fun setRoot(root: File, cache: File) {
@@ -54,7 +55,7 @@ class WaterDepthTest {
 
     /** the made-up continent 1 (ADTs 27..[lastCol] x 27..37) */
     private fun madeUp(lastCol: Int = 37): File {
-        val root = File("build/tmp/wd-art-v1-$lastCol").absoluteFile
+        val root = File("build/tmp/wd-art-v2-$lastCol").absoluteFile
         val dir = File(root, "minimap")
         if (!File(dir, "index.json").isFile) {
             val k = JSONArray()
@@ -74,6 +75,14 @@ class WaterDepthTest {
                     p.color = LAKE; c.drawCircle(128f, 384f, 70f, p)
                     p.color = Color.rgb(3, 3, 3)
                     for (i in 0 until 6) c.drawRect(300f + i * 30f, 300f, 303f + i * 30f, 480f, p)
+                }
+                if (col == 28 && row == 31) {
+                    // a blue-roofed house on the sand (Goldshire's Lion's Pride Inn, (64, 96, 128) .. (96, 128, 176)) with a shaded edge,
+                    // and a lake with light shallows round a dark middle (Loch Modan)
+                    p.color = ROOF; c.drawRect(100f, 100f, 180f, 150f, p)
+                    p.color = Color.rgb(40, 72, 104); c.drawRect(100f, 150f, 180f, 154f, p)
+                    p.color = Color.rgb(70, 110, 120); c.drawCircle(360f, 360f, 90f, p)
+                    p.color = LAKE; c.drawCircle(360f, 360f, 70f, p)
                 }
                 val f = File(dir, "1/${col}_$row.webp"); f.parentFile.mkdirs()
                 f.outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -176,6 +185,47 @@ class WaterDepthTest {
         assertTrue("the lake is repainted (${Integer.toHexString(mid)})", mid != r.getPixel(128, 384) && Color.green(mid) >= 120)
         // tiny ponds may stay all shallow, but it is not the deep colour
         assertTrue("the lake is not the deep colour", diff(mid, WaterDepth.DEEP) > 40)
+    }
+
+    /** review of 1.0.34 test 1485: blue roofs read as teal water became turquoise pools with a shoreline (Goldshire). A roof stays the
+     *  art's; a lake whose shallows are as light still gets its depth */
+    @Test fun blue_roofs_stay_buildings_a_light_shallowed_lake_is_water() {
+        setRoot(madeUp(), File("build/tmp/wd-cache-m4").absoluteFile.also { it.deleteRecursively() })
+        WaterDepth.fieldNow(1)
+        for (sample in listOf(1, 4)) {
+            val r = BitmapFactory.decodeFile(ArtHarvest.file("minimap/1/28_31.webp").path,
+                BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = sample })
+            val t = tile(1, 28, 31, sample)!!
+            var changed = 0; var all = 0
+            for (y in 100 / sample until 154 / sample) for (x in 100 / sample until 180 / sample) { all++; if (t.getPixel(x, y) != r.getPixel(x, y)) changed++ }
+            assertEquals("sample $sample: the blue roof is untouched ($changed of $all px repainted)", 0, changed)
+            val mid = t.getPixel(360 / sample, 360 / sample); val rim = t.getPixel(360 / sample, 280 / sample)
+            assertTrue("sample $sample: the lake is repainted (${Integer.toHexString(mid)})", mid != r.getPixel(360 / sample, 360 / sample))
+            assertTrue("sample $sample: its light shallows too (${Integer.toHexString(rim)})", rim != r.getPixel(360 / sample, 280 / sample))
+        }
+    }
+
+    /** the same on the real minimap (MK_ART_ROOT): Goldshire's roofs (Elwynn (31, 49)) and Stormwind's ((30, 48)) stay the art's;
+     *  Loch Modan's lake ((38, 42)), its light shallows with it, is water */
+    @Test fun real_blue_roofs_stay_lakes_repainted() {
+        if (realArt == null) return
+        setRoot(File(realArt), File("build/tmp/wd-cache-r").absoluteFile)
+        WaterDepth.fieldNow(0)
+        fun bright(p: Int) = Color.red(p) + Color.green(p) + Color.blue(p) >= 260 && Color.blue(p) > Color.red(p) + 40 && Color.blue(p) > Color.green(p)
+        for ((col, row) in listOf(31 to 49, 30 to 48)) {
+            val r = raw(0, col, row); val t = tile(0, col, row)!!
+            var roof = 0; var kept = 0
+            for (y in 0 until 512) for (x in 0 until 512) if (bright(r.getPixel(x, y))) { roof++; if (t.getPixel(x, y) == r.getPixel(x, y)) kept++ }
+            println("WD roofs ($col, $row): $kept of $roof bright-blue px kept")
+            assertTrue("($col, $row) has blue roofs ($roof px)", roof > 200)
+            assertTrue("($col, $row): the blue roofs stay buildings ($kept of $roof px kept)", kept * 100 >= roof * 97)
+        }
+        val r = raw(0, 38, 42); val t = tile(0, 38, 42)!!
+        var lake = 0; var painted = 0
+        for (y in 0 until 512 step 2) for (x in 0 until 512 step 2) { val p = r.getPixel(x, y)
+            if (WaterDepth.tealW(Color.red(p), Color.green(p), Color.blue(p)) >= 0.9f) { lake++; if (t.getPixel(x, y) != p) painted++ } }
+        println("WD Loch Modan: $painted of $lake teal px repainted")
+        assertTrue("Loch Modan's lake is water ($painted of $lake)", lake > 1000 && painted * 100 >= lake * 95)
     }
 
     @Test fun repaint_once_scratch_reused_and_memory_small() {

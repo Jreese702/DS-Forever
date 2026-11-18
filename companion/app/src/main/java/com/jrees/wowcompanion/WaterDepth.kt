@@ -34,6 +34,9 @@ import java.util.concurrent.Executors
  * thin land opened away and the world's edge strip repainted (three Kalimdor ADTs); "black water near the field's water" bilinear,
  * not per 33 yd cell.
  *
+ * REVIEW 4 (1.0.34 test 1485: Goldshire's blue roofs repainted as turquoise pools): bright teal is water only inside water that is
+ * mostly darker ([BRIGHT_S]); a small piece of all-bright "water" seen whole is a roof and keeps the art's colours.
+ *
  * Until a continent's field is built (the first time only: then it is read from the disk) pictures are made with their own distance
  * alone ("provisional": TerrainOverview keys them apart, MinimapTiles drops them when the field lands) and redrawn when it is ready.
  *
@@ -78,6 +81,16 @@ object WaterDepth {
     private const val FRINGE_YD = 10f
     /** land narrower than this (yd) in the water is water: a speck */
     private const val SPECK_YD = 6f
+    /** BLUE ROOFS ARE NOT WATER (review of 1.0.34 test 1485: Goldshire's Lion's Pride Inn, the farmhouses round it, Stormwind's and
+     *  Elwynn's blue roofs came out as turquoise pools with a shoreline). A cell's teal this bright (R+G+B of its mean; the minimap's
+     *  roofs (64, 96, 128) .. (96, 128, 176), its lakes and seas (16, 48, 48) .. (31, 65, 93), under 200 on all of Eastern Kingdoms)
+     *  is water only as part of water that is mostly darker ([ROOF_SHARE]): a lake's light shallows (Loch Modan) stay, a roof on the
+     *  grass - all bright, its shaded edge a sliver - goes back to the art. Only a piece of water no bigger than [ROOF_MAX_YD2] (the
+     *  biggest roof on both continents ~3200 yd2; Loch Modan's lake, about half light shallows, far more) and seen whole (not reaching
+     *  past the cells a repaint reads: a lake's corner is not judged by its corner) */
+    private const val BRIGHT_S = 220
+    private const val ROOF_SHARE = 0.5f
+    private const val ROOF_MAX_YD2 = 7000f
     /** the world's edge strip (yd) and how far from the field's land it must be to go (yd) */
     private const val EDGE_BAND_YD = 40f
     private const val EDGE_SEA_YD = 25f
@@ -439,7 +452,19 @@ object WaterDepth {
     private var gRamp: FloatArray? = null
     private var gShare: FloatArray? = null
     private var gBlur: FloatArray? = null
-    private fun scratchBytes(): Long = listOf(gBlack, gTeal, gMask, gLine, gRamp, gShare, gBlur).sumOf { (it?.size ?: 0) * 4L } + (band?.size ?: 0) * 4L + (gRows?.size ?: 0) * 4L
+    /** per cell: [KIND_NONE] / [KIND_BRIGHT] / [KIND_DARK] water, [KIND_ROOF] (bright teal that is not water: [BRIGHT_S]); the flood's queue */
+    private var gKind: ByteArray? = null
+    private var gQueue: IntArray? = null
+    private const val KIND_NONE: Byte = 0
+    private const val KIND_BRIGHT: Byte = 1
+    private const val KIND_DARK: Byte = 2
+    private const val KIND_SEEN = 4
+    private const val KIND_ROOF: Byte = 8
+    private fun scratchBytes(): Long = listOf(gBlack, gTeal, gMask, gLine, gRamp, gShare, gBlur).sumOf { (it?.size ?: 0) * 4L } + (band?.size ?: 0) * 4L +
+        (gRows?.size ?: 0) * 4L + (gKind?.size ?: 0) + (gQueue?.size ?: 0) * 4L
+    /** a cell's kind from its mean colour and readings ([BRIGHT_S]) */
+    private fun kind(r: Int, g: Int, b: Int, tw: Float, mw: Float): Byte =
+        if (mw < 0.5f) KIND_NONE else if (tw >= 0.5f && r + g + b >= BRIGHT_S && darkSeaW(r, g, b) < 0.5f) KIND_BRIGHT else KIND_DARK
 
     /** the tests: what the last repaint did ([0] water cells, [1] the field was used) */
     @Volatile var lastWater = 0
@@ -501,6 +526,8 @@ object WaterDepth {
         val m = grid(gMask).also { gMask = it }; val dl = grid(gLine).also { gLine = it }; val dr = grid(gRamp).also { gRamp = it }
         val sh = grid(gShare).also { gShare = it }; val bs = grid(gBlur).also { gBlur = it }
         java.util.Arrays.fill(blk, 0, n, 0f); java.util.Arrays.fill(tea, 0, n, 0f); java.util.Arrays.fill(m, 0, n, 0f)
+        val kd = gKind?.takeIf { it.size >= n } ?: ByteArray(maxOf(n, gMin)).also { gKind = it }
+        java.util.Arrays.fill(kd, 0, n, KIND_NONE)
         // pass A: each cell's mean colour, read: its teal share, and its water share (the larger reading: Westfall's sea mixes both
         // once in RGB_565, (8, 16, 16) teal and (0, 16, 8) black - their mean is water). By the mean, as the neighbours' cells are read
         // (decoded small: the same mean), so both sides of a border read alike
@@ -517,7 +544,7 @@ object WaterDepth {
         for (cy in 0 until gh) for (cx in 0 until gw) {
             val i = (cy + MG) * GW + cx + MG
             val r = (sh[i] + 0.5f).toInt(); val g = (bs[i] + 0.5f).toInt(); val bl = (dl[i] + 0.5f).toInt()
-            tea[i] = tealW(r, g, bl); m[i] = maxOf(darkSeaW(r, g, bl), tea[i])
+            tea[i] = tealW(r, g, bl); m[i] = maxOf(darkSeaW(r, g, bl), tea[i]); kd[i] = kind(r, g, bl, tea[i], m[i])
         }
         // the margin: the neighbours' cells, read as this picture's are (the mean of their cp x cp px); an ADT the continent lacks is open
         // sea; none to be had: the edge repeated
@@ -536,11 +563,34 @@ object WaterDepth {
                     var sr = 0; var sg = 0; var sb = 0
                     for (yy in 0 until cp) for (xx in 0 until cp) { val p = nbm.getPixel(px0 + xx, py0 + yy); sr += (p shr 16) and 0xFF; sg += (p shr 8) and 0xFF; sb += p and 0xFF }
                     val r = (sr * inv + 0.5f).toInt(); val g = (sg * inv + 0.5f).toInt(); val bl = (sb * inv + 0.5f).toInt()
-                    tea[i] = tealW(r, g, bl); m[i] = maxOf(darkSeaW(r, g, bl), tea[i])
-                } else if (nbr?.sea == true) { tea[i] = 0f; m[i] = 1f }
-                else { val j = (cy.coerceIn(0, gh - 1) + MG) * GW + cx.coerceIn(0, gw - 1) + MG; tea[i] = tea[j]; m[i] = m[j] }
+                    tea[i] = tealW(r, g, bl); m[i] = maxOf(darkSeaW(r, g, bl), tea[i]); kd[i] = kind(r, g, bl, tea[i], m[i])
+                } else if (nbr?.sea == true) { tea[i] = 0f; m[i] = 1f; kd[i] = KIND_DARK }
+                else { val j = (cy.coerceIn(0, gh - 1) + MG) * GW + cx.coerceIn(0, gw - 1) + MG; tea[i] = tea[j]; m[i] = m[j]; kd[i] = kd[j] }
             }
             nbm?.recycle()
+        }
+        // blue roofs ([BRIGHT_S]): each piece of water (8-connected, the margin's cells too, so both sides of a border decide alike) that
+        // is mostly bright teal is not water - its cells land, and pass B leaves their pixels as the art has them
+        run {
+            val cYd = (span * ADT_YD / gw).toFloat()
+            val maxCells = (ROOF_MAX_YD2 / (cYd * cYd)).toInt()
+            val q = gQueue?.takeIf { it.size >= n } ?: IntArray(maxOf(n, gMin)).also { gQueue = it }
+            for (s0 in 0 until n) {
+                if (kd[s0] != KIND_BRIGHT && kd[s0] != KIND_DARK) continue
+                var head = 0; var tail = 0; var dark = 0; var whole = true
+                q[tail++] = s0; kd[s0] = (kd[s0] + KIND_SEEN).toByte()
+                while (head < tail) {
+                    val i = q[head++]
+                    if (kd[i].toInt() == KIND_DARK + KIND_SEEN) dark++
+                    val x = i % GW; val y = i / GW
+                    if (x == 0 || y == 0 || x == GW - 1 || y == GH - 1) whole = false
+                    for (yy in maxOf(0, y - 1)..minOf(GH - 1, y + 1)) for (xx in maxOf(0, x - 1)..minOf(GW - 1, x + 1)) {
+                        val j = yy * GW + xx
+                        if (kd[j] == KIND_BRIGHT || kd[j] == KIND_DARK) { kd[j] = (kd[j] + KIND_SEEN).toByte(); q[tail++] = j }
+                    }
+                }
+                if (whole && tail <= maxCells && dark < ROOF_SHARE * tail) for (k in 0 until tail) { val i = q[k]; m[i] = 0f; tea[i] = 0f; kd[i] = KIND_ROOF }
+            }
         }
         val cellYd = (span * ADT_YD / gw).toFloat()
         val cellA = span / gw
@@ -636,6 +686,8 @@ object WaterDepth {
                 if (gate <= 0.01f) continue
                 val p = rows[x]
                 val r = (p shr 16) and 0xFF; val g = (p shr 8) and 0xFF; val bl = p and 0xFF
+                // (a blue roof's cell: the art's own)
+                if (kd[cy * GW + x / cp + MG] == KIND_ROOF) continue
                 val forced = tea[cy * GW + x / cp + MG] < 0f
                 val wpx = if (forced) gate else {
                     val share = lerp2(bs[a00], bs[a01], bs[a10], bs[a11], fx, fy).coerceIn(0f, 1f)
