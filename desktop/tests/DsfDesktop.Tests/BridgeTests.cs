@@ -11,6 +11,7 @@ using System.Threading;
 using DsfDesktop.Bridge;
 using DsfDesktop.GameLog;
 using DsfDesktop.Pairing;
+using DsfDesktop.Sunshine;
 using DsfDesktop.Wow;
 
 namespace DsfDesktop.Tests
@@ -26,6 +27,21 @@ namespace DsfDesktop.Tests
         public string InputWhy = "";      // the Thor's taps can't reach WoW (WowInput.ThorWhy; "" = no wow.input_why)
         public volatile int[] Mode;       // the Thor's stream_mode
         public void StreamMode(int w, int h, int fps) { Mode = new[] { w, h, fps }; }
+        public int HostChecks;
+        public int PcTests, ScreenRetries;
+        public void ScreenRetry() { ScreenRetries++; }
+        public Dictionary<string, object> PcTest()
+        {
+            PcTests++;
+            var r = new PcTestResult { At = DateTime.Now, Screen = "own", ScreenLine = "Own virtual screen 1920x1080@120", ScreenHz = 120, Pad = "vigem" };
+            r.Steps.Add(new TestStep { Id = "ports", Name = "Ports", State = TestState.Pass, Line = "All 6 ready (base 52989)" });
+            return r.ToMessage();
+        }
+        public Dictionary<string, object> HostCheck()
+        {
+            HostChecks++;
+            return new Dictionary<string, object> { ["t"] = "ignored", ["state"] = "restarting", ["sunshine"] = new Dictionary<string, object> { ["http_port"] = 53989 } };
+        }
         public FakeHost() { Devices = new DeviceStore(T.P("devices.json")); }
         public Dictionary<string, object> Info()
         {
@@ -539,6 +555,40 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void TheThorsHostCheckIsAnswered()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8b", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "host_check" });
+                var r = c.Until("host_check_result").Last();
+                A.Eq(1, h.HostChecks);
+                A.Eq("restarting", r.Str("state"));
+                A.True(Json.Write(r).Contains("53989"), Json.Write(r));
+            }
+        }
+
+        [Test]
+        public static void TheThorsPcTestIsAnswered()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8c", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
+                var r = c.Until("pc_test_result").Last();
+                A.Eq(1, h.PcTests);
+                A.Eq("own", r.Str("screen"));
+                A.True(Json.Write(r).Contains("All 6 ready"), Json.Write(r));
+            }
+        }
+
+        [Test]
         public static void UnpairRemovesTheDevice()
         {
             using (var h = new FakeHost())
@@ -550,6 +600,22 @@ namespace DsfDesktop.Tests
                 c.Send(new Dictionary<string, object> { ["t"] = "unpair" });
                 c.Until("unpaired");
                 A.False(h.Devices.Validate("thor-9", token));
+            }
+        }
+
+        [Test]
+        public static void TheThorsRetryStartsTheScreenTriesOver()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8d", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "screen_retry" });
+                c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
+                c.Until("pc_test_result");
+                A.Eq(1, h.ScreenRetries);
             }
         }
     }

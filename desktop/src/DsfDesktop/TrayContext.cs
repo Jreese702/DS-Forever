@@ -63,13 +63,15 @@ namespace DsfDesktop.Ui
             }));
         }
 
-        /// <summary>F6: a headless PC with no virtual display driver: asked once; only a yes installs (Windows asks for admin itself)</summary>
+        /// <summary>F6 / Part 2: no virtual display driver (a headless PC, or the stream's own screen): asked once; only a yes installs
+        /// (Windows asks for admin itself, once)</summary>
         void AskScreen()
         {
             ShowForm();
+            var why = ctl.ScreenOfferHeadless ? "No screen is on at this PC, so there is nothing to stream.\n\n"
+                : "The stream gets its own screen, so WoW leaves your desktop. That needs a virtual screen.\n\n";
             var yes = MessageBox.Show(form,
-                "No screen is on at this PC, so there is nothing to stream.\n\n" +
-                "Install a virtual screen? (Virtual Display Driver: free, open source, MIT.) Windows asks for admin to install it.",
+                why + "Install a virtual screen? (Virtual Display Driver: free, open source, MIT.) Windows asks for admin to install it.",
                 "DS Forever Desktop", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
             DsfDesktop.Log.I("virtual screen: install " + (yes ? "accepted" : "declined"));
             if (!yes) return;

@@ -41,6 +41,10 @@ class BridgeLog(
     private val savedLogin: () -> Pair<String, String>? = { null },
     /** the stream's mode (width, height, fps) for Desktop's virtual screen on a headless PC; null = not said */
     private val streamMode: () -> Triple<Int, Int, Int>? = { null },
+    /** Desktop 0.2.32: its Sunshine's ports again (it moved) or its answer to [askHostCheck] */
+    private val onSunshine: (BridgeMsg.Sunshine) -> Unit = {},
+    /** Desktop 0.2.32: its answer to [askPcTest] (Test connection) */
+    private val onPcTest: (BridgeMsg.PcTest) -> Unit = {},
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     /** the Thor's clock on the documents' `_gt` scale ([PcClock]; the tests pass a fixed one) */
@@ -79,6 +83,15 @@ class BridgeLog(
 
     /** "is Battle.net's sign-in in front, and where is its form?" (StreamSignIn); false = no connection right now */
     fun askBnetReady(): Boolean = try { conn?.send(BridgeProtocol.bnetReady()); conn != null } catch (_: Throwable) { false }
+
+    /** "check your streaming host" (RTSP timed out twice: [HostHeal]); false = no connection right now */
+    fun askHostCheck(): Boolean = try { conn?.send(BridgeProtocol.hostCheck()); conn != null } catch (_: Throwable) { false }
+
+    /** Test connection's PC half ([ConnTest]); false = no connection right now */
+    fun askPcTest(): Boolean = try { conn?.send(BridgeProtocol.pcTest()); conn != null } catch (_: Throwable) { false }
+
+    /** the player's Retry: Desktop's own virtual screen tries again (it stops after 3 failures); false = no connection right now */
+    fun screenRetry(): Boolean = try { conn?.send(BridgeProtocol.screenRetry()); conn != null } catch (_: Throwable) { false }
 
     /** how a session ended */
     enum class End { DROPPED, AUTH_LOST, STOPPED }
@@ -129,6 +142,8 @@ class BridgeLog(
                     streamMode()?.let { (w, h, fps) -> c.send(BridgeProtocol.streamMode(w, h, fps)) }
                 }
                 is BridgeMsg.Doc -> emit(m)
+                is BridgeMsg.Sunshine -> onSunshine(m)
+                is BridgeMsg.PcTest -> onPcTest(m)
                 is BridgeMsg.BacklogEnd -> clock.backlogEnd()
                 is BridgeMsg.Lines -> for (l in m.lines) docs.line(l)
                 is BridgeMsg.Gap -> { bridgeGaps++; onStatus("gap at seq ${m.seq} (expected ${m.expected})") }

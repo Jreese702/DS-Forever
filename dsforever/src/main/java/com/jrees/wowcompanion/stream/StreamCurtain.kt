@@ -52,6 +52,25 @@ object StreamCurtain {
     const val NO_SCREEN = "PC has no screen on"
     const val BUSY_LISTENING = "PC busy: its streaming host isn't listening"
     const val BUSY_STOPPED = "PC busy: its streaming host stopped"
+    /** Desktop 0.2.32's self-healing: restarting its host, or its tries spent ([HostHeal]'s words) */
+    const val HOST_RESTARTING = HostHeal.RESTARTING
+    const val HOST_DOWN = HostHeal.DOWN
+    /** Desktop 0.2.32's word before a stream starts (the welcome's / "sunshine"'s wait): the start waits, up to [PC_WAIT_MS] */
+    const val PC_SCREEN = "PC making its stream screen"
+    const val PC_STARTING = "PC streaming host starting"
+    /** the longest a start waits for Desktop's word (its screen: up to two host restarts of about 26 s each) */
+    const val PC_WAIT_MS = 90_000L
+
+    /** the curtain's line for Desktop's wait word ("" = none) */
+    fun waitLine(wait: String): String = when (wait) {
+        "screen" -> PC_SCREEN
+        "starting" -> PC_STARTING
+        "" -> ""
+        else -> PC_STARTING
+    }
+
+    /** the stream's start holds: Desktop said to wait and the wait is not over */
+    fun holds(wait: String, waitedMs: Long): Boolean = wait.isNotEmpty() && waitedMs < PC_WAIT_MS
 
     /**
      * Desktop 0.2.27's reason streaming can't work (the welcome's sunshine.problem / sunshine.why: the user's PC 2026-11-13, another
@@ -64,6 +83,8 @@ object StreamCurtain {
         "ports_taken" -> BUSY_PORTS
         "not_listening" -> BUSY_LISTENING
         "exited" -> BUSY_STOPPED
+        "restarting" -> HOST_RESTARTING
+        "not_responding" -> HOST_DOWN
         "needs_screen" -> NEEDS_SCREEN
         "no_screen" -> NO_SCREEN
         else -> why.trim().let { w -> when {

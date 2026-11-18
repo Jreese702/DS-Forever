@@ -217,6 +217,43 @@ namespace DsfDesktop.Sunshine
             }
         }
 
+        /// <summary>the PC's bound UDP sockets with their owner pids (IPv4 and IPv6); empty if the table can't be read</summary>
+        public static List<UdpRow> UdpBound()
+        {
+            var res = new List<UdpRow>();
+            // MIB_UDPROW_OWNER_PID: addr, port, pid (12 bytes); MIB_UDP6ROW_OWNER_PID: addr[16], scope, port, pid (28)
+            ReadUdp(2, 12, 4, 8, res);
+            ReadUdp(23, 28, 20, 24, res);
+            return res;
+        }
+
+        static void ReadUdp(int af, int rowSize, int portOff, int pidOff, List<UdpRow> res)
+        {
+            int len = 0;
+            GetExtendedUdpTable(IntPtr.Zero, ref len, false, af, 1 /* UDP_TABLE_OWNER_PID */, 0);
+            for (int attempt = 0; attempt < 3 && len > 0; attempt++)
+            {
+                var buf = Marshal.AllocHGlobal(len);
+                try
+                {
+                    uint rc = GetExtendedUdpTable(buf, ref len, false, af, 1, 0);
+                    if (rc == 122) continue;
+                    if (rc != 0) return;
+                    int n = Marshal.ReadInt32(buf);
+                    for (int i = 0; i < n; i++)
+                    {
+                        int at = 4 + i * rowSize;
+                        if (at + rowSize > len) break;
+                        uint p = (uint)Marshal.ReadInt32(buf, at + portOff);
+                        res.Add(new UdpRow((int)(((p & 0xff) << 8) | ((p >> 8) & 0xff)), Marshal.ReadInt32(buf, at + pidOff)));
+                    }
+                    return;
+                }
+                catch (Exception) { return; }
+                finally { Marshal.FreeHGlobal(buf); }
+            }
+        }
+
         /// <summary>a pid's name and full path; the path is null for a process this user can't open (a SYSTEM service)</summary>
         public static ProcInfo Who(int pid)
         {
@@ -265,6 +302,8 @@ namespace DsfDesktop.Sunshine
 
         [DllImport("iphlpapi.dll", SetLastError = true)]
         static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool sort, int af, int tableClass, int reserved);
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        static extern uint GetExtendedUdpTable(IntPtr table, ref int size, bool sort, int af, int tableClass, int reserved);
         [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder name, ref int size);

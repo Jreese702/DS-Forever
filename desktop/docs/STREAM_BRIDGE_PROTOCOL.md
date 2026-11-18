@@ -103,6 +103,23 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 
 - `{"t":"status","text":"..."}` — a line for the companion's status bar.
 - `{"t":"stream","state":"started"|"stopped"|"unknown"}` — Sunshine's own state.
+- `{"t":"sunshine","sunshine":{...}}` *(Desktop 0.2.32)* — the welcome's `sunshine` object again, sent when Desktop moved its
+  Sunshine to a new base port (Windows reserved one of its ports, or another program holds one), and whenever its `wait` changes.
+  The Thor dials the new ports.
+- `sunshine.wait` *(Desktop 0.2.32, in the welcome and every `sunshine` / `host_check_result`)* — what a stream's start waits for:
+  `"screen"` = Desktop is making (or would make, for this Thor) its own virtual screen, each make a Sunshine restart; `"starting"`
+  = its Sunshine is starting (it probes its encoders before it binds any port, about 26 s) or a heal is restarting it; `""` = go.
+  The Thor holds its stream start while it is set, 90 s at most, and its curtain says "PC making its stream screen" / "PC
+  streaming host starting". An older Desktop never sends it (go).
+- `{"t":"host_check_result","state":"ok"|"restarting"|"failed"|"streaming","sunshine":{...}}` *(Desktop 0.2.32)* — the answer to
+  `host_check`; after `restarting` a second one follows with `ok` (every port open again) or `failed` (3 tries spent; the last
+  try moves the base when none has yet). `streaming` = a stream session is up (our sunshine holds its UDP ports), not just
+  Sunshine's BUSY (an app launched). An `ok` found at once is the only answer (no second message). Nothing is judged before the
+  restarted Sunshine has started (its ports bound, or a "Couldn't bind" / "Configuration UI available" line, or 90 s), so the
+  answer can take up to about 105 s; a Thor that gave up still takes a later `ok` as one more try.
+- `{"t":"pc_test_result","steps":[{"id","name","state":"pass"|"fail"|"skip"|"not_run","line","fix"}],"screen":"own"|"real"|"none","screen_line":"...","screen_hz":N,"pad":"vigem"|"missing"|"unknown"}`
+  *(Desktop 0.2.32)* — the answer to `pc_test`: the PC's checks in order (ports, rtsp, encoder, screen, controller), stopped at
+  the first failure; `screen` = what a stream gets, `screen_hz` its top refresh (0 = unknown). No names; IPs cut to a.b.x.x.
 - `{"t":"focus_result","ok":bool,"why":"..."}` — the answer to `focus`.
 - **[S3] Starting WoW.** Desktop starts WoW Forever when a stream starts (Sunshine reports a client streaming) or the Thor sends
   `focus`, and WoW isn't running, unless the user turned off "Start WoW when streaming" (default on). It uses Battle.net's own launch
@@ -143,7 +160,25 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `{"t":"ping","id":"..."}` → `{"t":"pong","id":"..."}` (optional; WebSocket pings do the keep-alive).
 - `{"t":"unpair"}` → `{"t":"unpaired"}`, then close: the device is removed from Desktop.
 - `{"t":"stream_mode","w":1920,"h":1080,"fps":60}` *(Desktop 0.2.31)* — the Thor's stream mode, sent after each welcome. On a PC with
-  no screen on, a virtual screen Desktop makes through an installed SudoVDA takes this mode. No answer.
+  no screen on, a virtual screen Desktop makes through an installed SudoVDA takes this mode. No answer. *(0.2.32, "Stream on its
+  own screen", default on)* Every PC: while a Thor is connected or streaming, Desktop makes OUR virtual screen at this mode
+  (SudoVDA if installed; else the Virtual Display Driver's monitor, attached at the nearest mode it offers; else, after the one-time
+  install question, the real screen with the `status` "Streaming your screen: no virtual screen driver"), points its Sunshine's
+  `output_name` at it and moves WoW onto it; 60 s after the last Thor/stream it is removed and WoW goes back to its monitor. Never
+  made or removed mid-stream on a PC with a real screen. Apollo's screens and a VDD monitor the player keeps on are never touched.
+  `status` lines: "Making the stream's own screen", "Virtual screen ready", "Streaming your screen: virtual screen failed".
+- `{"t":"host_check"}` *(Desktop 0.2.32)* — the Thor's RTSP timed out twice while HTTP answered: Desktop checks its Sunshine's whole
+  port set (TCP base-5 / base / base+21 listening by our sunshine.exe, RTSP answering a connect, the UDP base+9..11 free and outside
+  Windows' excluded ranges, no "Couldn't bind" in its log) and, when no stream is live, restarts it or moves it to a new base. Never
+  touches another Sunshine or Apollo. Answer: `host_check_result`.
+- `{"t":"pc_test"}` *(Desktop 0.2.32)* — the Thor's Test connection: Desktop runs the same checks as its window's Test button
+  (our Sunshine's ports listening and free, a TCP connect to RTSP, a video encoder in its log since its start, our own virtual screen
+  made and removed again when none is there and no stream is live, else the real screen, and ViGEmBus). Logged to desktop.log and
+  last_test.txt. Answer: `pc_test_result`.
+- `{"t":"screen_retry"}` *(Desktop 0.2.32)* — the player pressed Retry on the Thor's problem screen: Desktop's own virtual screen
+  starts its tries over. It gives up after 3 failed makes (or screens its Sunshine didn't list) in a Thor session - a real screen is
+  streamed, or a headless PC says "PC needs a virtual screen" (`problem` "needs_screen") - and tries again only when the Thor
+  reconnects, on this message, or on a Test. No answer.
 - `{"t":"addons_status"}` / `{"t":"addons_install"}` → `{"t":"addons",...}` (Desktop's add-on install; not used by the Thor yet).
 
 ## 8. What the Thor tells the player

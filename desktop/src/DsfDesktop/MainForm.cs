@@ -36,6 +36,7 @@ namespace DsfDesktop.Ui
         readonly StatusLine host = new StatusLine("Streaming host"), stream = new StatusLine("Stream"), wow = new StatusLine("WoW on this PC"),
                             monitor = new StatusLine("Streamed monitor"), link = new StatusLine("Companion link");
         readonly GoldButton focus = new GoldButton("Focus WoW");
+        readonly GoldButton test = new GoldButton("Test");
         readonly Note hostHint = new Note("", 9.25f, Theme.Warn);
         readonly GoldButton services = new GoldButton("Open Services");
         // game + add-ons
@@ -44,7 +45,7 @@ namespace DsfDesktop.Ui
         readonly GoldButton addonsBtn = new GoldButton("Install / update add-ons"), folderBtn = new GoldButton("Choose WoW folder...");
         // footer
         readonly Toggle startWindows = new Toggle("Start with Windows"), startWow = new Toggle("Start WoW when streaming"),
-            matchStream = new Toggle("Match PC screen to stream");
+            matchStream = new Toggle("Match PC screen to stream"), ownScreen = new Toggle("Stream on its own screen");
         readonly LinkLabel testPage = new LinkLabel();
         readonly Timer tick = new Timer { Interval = 1000 };
 
@@ -108,6 +109,7 @@ namespace DsfDesktop.Ui
             streamCard.Add(hostHint);
             var sb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 8, 0, 0) };
             sb.Controls.Add(focus);
+            sb.Controls.Add(test);
             sb.Controls.Add(services);
             streamCard.Add(sb);
 
@@ -129,6 +131,7 @@ namespace DsfDesktop.Ui
             footer.Controls.Add(startWindows);
             footer.Controls.Add(startWow);
             footer.Controls.Add(matchStream);
+            footer.Controls.Add(ownScreen);
             testPage.Text = "Bridge test page";
             testPage.AutoSize = true;
             testPage.LinkColor = Theme.SoftGold;
@@ -187,6 +190,19 @@ namespace DsfDesktop.Ui
             };
             services.Click += (s, e) => act?.OpenServices();
             focus.Click += (s, e) => { var why = act?.FocusWow(); if (why != null) MessageBox.Show(this, why, Text); };
+            test.Click += async (s, e) =>
+            {
+                if (act == null) return;
+                test.Enabled = false;
+                test.Text = "Testing...";
+                try
+                {
+                    var lines = await System.Threading.Tasks.Task.Run(() => act.RunTest());
+                    MessageBox.Show(this, string.Join(Environment.NewLine, lines), "Test");
+                }
+                catch (Exception ex) { MessageBox.Show(this, "The test failed: " + ex.Message, "Test"); }
+                finally { test.Text = "Test"; test.Enabled = true; }
+            };
             addonsBtn.Click += (s, e) => { if (act != null) { MessageBox.Show(this, act.InstallAddons(), Text); Pull(); } };
             folderBtn.Click += (s, e) => AskFolder();
             startWindows.CheckedChanged += (s, e) =>
@@ -197,6 +213,7 @@ namespace DsfDesktop.Ui
             };
             startWow.CheckedChanged += (s, e) => { if (!applying) act?.SetStartWow(startWow.Checked); };
             matchStream.CheckedChanged += (s, e) => { if (!applying) act?.SetMatchStream(matchStream.Checked); };
+            ownScreen.CheckedChanged += (s, e) => { if (!applying) act?.SetOwnScreen(ownScreen.Checked); };
             testPage.LinkClicked += (s, e) => { if (v.BridgePort > 0) Process.Start("http://localhost:" + v.BridgePort + "/test"); };
         }
 
@@ -263,6 +280,7 @@ namespace DsfDesktop.Ui
             startWindows.Checked = s.StartWithWindows;
             startWow.Checked = s.StartWow;
             matchStream.Checked = s.MatchStream;
+            ownScreen.Checked = s.OwnScreen;
             ResumeLayout(true);
             foreach (Control c in new Control[] { pairCard, thorCard }) c.Invalidate();
             applying = false;

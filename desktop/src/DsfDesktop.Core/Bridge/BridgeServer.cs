@@ -35,6 +35,13 @@ namespace DsfDesktop.Bridge
         Dictionary<string, object> AddonsInstall();
         /// <summary>the Thor's stream mode ("stream_mode": w, h, fps): a virtual screen Desktop makes for a headless PC takes it</summary>
         void StreamMode(int w, int h, int fps);
+        /// <summary>the Thor's "host_check" (its RTSP timed out while HTTP answered): check our streaming host's whole port set and
+        /// heal it when no stream is live; {"state": ok | restarting | failed | streaming, "sunshine": {...}}</summary>
+        Dictionary<string, object> HostCheck();
+        /// <summary>the Thor's "pc_test" (its Test connection): the PC's checks, answered as {"t":"pc_test_result", ...}</summary>
+        Dictionary<string, object> PcTest();
+        /// <summary>the Thor's Retry by hand ("screen_retry"): our virtual screen's tries start over after it gave up</summary>
+        void ScreenRetry();
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -425,6 +432,15 @@ namespace DsfDesktop.Bridge
                             Task.Run(() => sa.Enqueue(With("addons", host.AddonsInstall())));
                             break;
                         case "stream_mode": host.StreamMode(Num(m, "w"), Num(m, "h"), Num(m, "fps")); break;
+                        case "host_check":
+                            var sh = s;
+                            Task.Run(() => { var r = With("host_check_result", host.HostCheck()); r["t"] = "host_check_result"; sh.Enqueue(r); });
+                            break;
+                        case "screen_retry": host.ScreenRetry(); break;
+                        case "pc_test":
+                            var sp = s;
+                            Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });
+                            break;
                         case "unpair":
                             host.Devices.Remove(s.DeviceId);
                             s.Enqueue(new Dictionary<string, object> { ["t"] = "unpaired" });

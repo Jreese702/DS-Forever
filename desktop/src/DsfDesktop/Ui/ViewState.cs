@@ -36,7 +36,7 @@ namespace DsfDesktop.Ui
         public string ThorProgress = "";
         public bool ThorBusy;
 
-        public bool StartWithWindows, StartWow, MatchStream;
+        public bool StartWithWindows, StartWow, MatchStream, OwnScreen;
         public int BridgePort;
     }
 
@@ -51,11 +51,15 @@ namespace DsfDesktop.Ui
         void SetStartWithWindows(bool on);
         void SetStartWow(bool on);
         void SetMatchStream(bool on);
+        /// <summary>"Stream on its own screen" On/Off</summary>
+        void SetOwnScreen(bool on);
         Task<string> ThorInstall();
         Task<string> ThorInstallFile(string apk);
         void ThorWatching(bool on);
         void OpenServices();
         bool AskForFolderOnce();
+        /// <summary>the PC's half of Test connection: its lines for the window</summary>
+        System.Collections.Generic.List<string> RunTest();
     }
 
     static class ViewBuilder
@@ -96,6 +100,13 @@ namespace DsfDesktop.Ui
                 v.Host = "stopped on its own: " + sh.LastStatus;
                 v.HostHint = "It restarts by itself. If it keeps stopping, restart DS Forever Desktop.";
                 v.HostDot = Theme.Bad;
+            }
+            else if (c.HealProblem != null)
+            {
+                // the self-healing (HostHealer): restarting ours, or its tries spent
+                v.Host = c.HealLine;
+                v.HostHint = c.HealHint;
+                v.HostDot = c.HealProblem == AppController.ProblemNotResponding ? Theme.Bad : Theme.Warn;
             }
             else if (pr != null && pr.Problem != null)
             {
@@ -144,6 +155,7 @@ namespace DsfDesktop.Ui
             try { v.StartWithWindows = AutoStart.IsOn(); } catch (Exception) { }
             v.StartWow = c.Settings.StartWowOnStream;
             v.MatchStream = c.Settings.MatchStreamResolution;
+            v.OwnScreen = c.Settings.OwnScreen;
             return v;
         }
     }
@@ -160,6 +172,8 @@ namespace DsfDesktop.Ui
         public void SetStartWithWindows(bool on) => AutoStart.Set(on, c.Paths.Exe);
         public void SetStartWow(bool on) { c.Settings.StartWowOnStream = on; c.SaveSettings(); }
         public void SetMatchStream(bool on) => c.SetMatchStream(on);
+        public void SetOwnScreen(bool on) => c.SetOwnScreen(on);
+        public System.Collections.Generic.List<string> RunTest() => c.RunPcTest("the window").Lines();
         public Task<string> ThorInstall() => c.Thor.InstallLatest();
         public Task<string> ThorInstallFile(string apk) => c.Thor.InstallLocal(apk);
         public void ThorWatching(bool on) => c.ThorWatching = on;
