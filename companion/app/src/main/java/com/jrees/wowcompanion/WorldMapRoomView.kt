@@ -408,7 +408,9 @@ class WorldMapRoomView(context: Context) : View(context) {
         val info = model.maps[id] ?: return
         val base = bmp("$id/base")
         if (base == null) {
-            if (id == canvas) { pFill.color = Color.rgb(196, 168, 116); c.drawRect(sxc(p.left), syc(p.top), sxc(p.right), syc(p.bottom), pFill) }
+            // (Home's backdrop: none - its own stand-in lies under the painting until the picture lands, MapView.drawPaintedStandIn; a
+            // parchment square there was the world with no land, the review of 5f9835a1)
+            if (id == canvas && !painting) { pFill.color = Color.rgb(196, 168, 116); c.drawRect(sxc(p.left), syc(p.top), sxc(p.right), syc(p.bottom), pFill) }
             return
         }
         dst.set(sxc(p.left), syc(p.top), sxc(p.right), syc(p.bottom))
@@ -590,7 +592,7 @@ class WorldMapRoomView(context: Context) : View(context) {
      * (the art set is not built or not read yet, the zone has no place in it, the Map room itself is on screen): Home keeps its own
      * ground. Main thread, from Home's onDraw.
      */
-    fun paintBackdrop(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View): Boolean {
+    fun paintBackdrop(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View, under: ((RectF) -> Unit)? = null): Boolean {
         if (!artReady || roomOn || painting || backdropPaused || !model.maps.containsKey(zone)) return false
         if (zr.width() <= 0f || zr.height() <= 0f || clip.width() <= 0f || clip.height() <= 0f) return false
         val cv = model.canvasFor(zone)
@@ -616,6 +618,16 @@ class WorldMapRoomView(context: Context) : View(context) {
             // 2026-11-17 (Kalimdor -> Eastern Kingdoms' sea, Home's map too): the continent is the one under Home's view (its middle)
             ccx = panX; ccy = panY
             relayer()                                        // a continent seen whole and less: the world's canvas (as the room)
+            // (review of 5f9835a1: the world's painting was first asked for on the frame the view reached the world - parchment, no land,
+            // until it was decoded; again on each zoom-out after a zoom-in let it go): a continent seen at under 1.5 x its frame - a press
+            // or two from the world - asks for the world's picture ahead
+            if (zoom < 1.5f && model.isLand(canvas)) model.parentOf(canvas)?.takeIf { w -> model.assignsOf(w).isNotEmpty() && !seamless(w) }
+                ?.let { w -> bmp("$w/base") }
+            if (under != null) {
+                // the canvas's own frame on the screen, cut to the field (Home's stand-in under the painting: MapView.drawPaintedStandIn)
+                underR.set(sxc(UNIT_R.left), syc(UNIT_R.top), sxc(UNIT_R.right), syc(UNIT_R.bottom))
+                if (underR.intersect(clip)) under(underR)
+            }
             c.save(); c.clipRect(clip)
             drawArt(c)
             c.restore()
@@ -627,6 +639,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         return true
     }
 
+    private val underR = RectF()
     /** the canvas Home's last backdrop was drawn on (the tests: a continent, or the world) */
     var backdropCanvas = 0
         private set
@@ -648,6 +661,8 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** Home's map module's way to this room's art (CompanionHost hands it to MapView) */
     val homeArt: MapView.WorldArt = object : MapView.WorldArt {
         override fun paint(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View) = paintBackdrop(c, zone, zr, clip, client)
+        override fun paintUnder(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View, under: (RectF) -> Unit) =
+            paintBackdrop(c, zone, zr, clip, client, under)
         override fun root(zone: Int) = backdropRoot(zone)
         override fun done() = backdropDone()
         override fun release() = backdropRelease()

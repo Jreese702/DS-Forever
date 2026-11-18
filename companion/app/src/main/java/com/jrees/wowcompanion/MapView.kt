@@ -5513,6 +5513,9 @@ class MapView(context: Context) : View(context) {
     interface WorldArt {
         /** paint the art with map [zone]'s 0..1 at [zr] inside [clip]; false = nothing painted (this map keeps its own ground) */
         fun paint(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View): Boolean
+        /** [paint], calling [under] with the painting's own frame on the screen (its canvas: the world's or a continent's, cut to [clip])
+         *  just before it is drawn - what lies under the painting there and nowhere else ([drawPaintedStandIn]) */
+        fun paintUnder(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View, under: (RectF) -> Unit): Boolean = paint(c, zone, zr, clip, client)
         /** map [zone]'s place on its root (the world, else its continent) as left, top, right, bottom of that root, or null */
         fun root(zone: Int): FloatArray?
         /** the map stopped asking (Home's module closed): the art's memory rules take over */
@@ -5753,22 +5756,7 @@ class MapView(context: Context) : View(context) {
      */
     private fun drawTerrainOut(c: Canvas, wa: WorldArt, mapId: Int, rT: PoiStore.Rect, left: Float, top: Float, fw: Float, fh: Float,
                                cxView: Float, cyView: Float, halfX: Float, halfY: Float): Boolean {
-        val places = wa.places(mapId) ?: return false
-        // (review 2, 2026-11-17: zoomed in just off the other continent's coast the minimap's own water - near-black, (0, 4, 8) - and the
-        // deep sea filled 92% of the field: the black screen again. Now every picture's water is repainted by depth when it is made, and
-        // the sea is WaterDepth's navy-teal, never black)
-        if (TerrainOverview.dir == null) TerrainOverview.dir = context.cacheDir
-        val conts = ArrayList<DoubleArray>(places.size + 1)
-        // this zone's continent by its own rect: u = (left - wy) / width, v = (top - wx) / height; its box (the world's) from its place
-        val own = places.firstOrNull { it.size >= 9 && it[0].toInt() == rT.continent }
-        conts.add(doubleArrayOf(rT.continent.toDouble(), rT.left / rT.width, -1.0 / rT.width, rT.top / rT.height, -1.0 / rT.height) +
-            (own?.copyOfRange(5, 9) ?: DoubleArray(0)))
-        for (p in places) if (p.size >= 5 && p[0].toInt() != rT.continent && p[2] != 0.0 && p[4] != 0.0) conts.add(p)
-        // the largest land first, the smallest over it (an island inside a continent's frame: feat/map-skyborn's "smallest box wins"); a
-        // land's size by its yards (|1 / bu| x |1 / bv| of its map's ADT grid is the same scale for all: the world's yards)
-        val size = HashMap<Int, Int>()
-        for (p in conts) size[p[0].toInt()] = TerrainOverview.index()?.get(p[0].toInt())?.size ?: 0
-        conts.sortByDescending { size[it[0].toInt()] ?: 0 }
+        val conts = contsOut(wa, mapId, rT) ?: return false
         c.save()
         c.clipRect(left, top, left + fw, top + fh)
         pFill.color = WaterDepth.DEEP
@@ -5781,17 +5769,7 @@ class MapView(context: Context) : View(context) {
         // the sea round each continent's ADTs by depth first (WaterDepth's field: a coast's gradient runs on past the last picture into
         // the deep colour), NOT cut to its box: a box can end a few hundred yards off a coast, and the shallows' glow stopped there in a
         // straight line (the world zoom-out); the pictures of every land then go over all the seas
-        for (p in conts) {
-            val cont = p[0].toInt()
-            if (!TerrainOverview.has(cont)) continue
-            val f = WaterDepth.field(cont, this) ?: continue
-            val sb = f.sea ?: continue
-            val au = p[1]; val bu = p[2]; val av = p[3]; val bv = p[4]
-            seaDst.set(sxU(au + bu * (32 - f.c0) * adt), syV(av + bv * (32 - f.r0) * adt),
-                sxU(au + bu * (32 - f.c0 - f.w / WaterDepth.FIELD_PX) * adt), syV(av + bv * (32 - f.r0 - f.h / WaterDepth.FIELD_PX) * adt))
-            seaDst.sort()
-            c.drawBitmap(sb, null, seaDst, pTerrain); seaPictures++
-        }
+        drawSeaPictures(c, conts, left, top, u0.toDouble(), v0.toDouble(), pxU, pxV) { cont -> WaterDepth.field(cont, this) }
         for (p in conts) {
             val cont = p[0].toInt()
             if (!TerrainOverview.has(cont)) {
@@ -5861,6 +5839,73 @@ class MapView(context: Context) : View(context) {
         c.restore()
         return true
     }
+    /** the continents to draw zoomed out ([drawTerrainOut], [drawPaintedStandIn]): [continent, au, bu, av, bv, (box l, t, r, b)] - u = au +
+     *  bu * world Y, v = av + bv * world X on this map - the largest land first; null = no places (the art set not read) */
+    private fun contsOut(wa: WorldArt, mapId: Int, rT: PoiStore.Rect): List<DoubleArray>? {
+        val places = wa.places(mapId) ?: return null
+        // (review 2, 2026-11-17: zoomed in just off the other continent's coast the minimap's own water - near-black, (0, 4, 8) - and the
+        // deep sea filled 92% of the field: the black screen again. Now every picture's water is repainted by depth when it is made, and
+        // the sea is WaterDepth's navy-teal, never black)
+        if (TerrainOverview.dir == null) TerrainOverview.dir = context.cacheDir
+        val conts = ArrayList<DoubleArray>(places.size + 1)
+        // this zone's continent by its own rect: u = (left - wy) / width, v = (top - wx) / height; its box (the world's) from its place
+        val own = places.firstOrNull { it.size >= 9 && it[0].toInt() == rT.continent }
+        conts.add(doubleArrayOf(rT.continent.toDouble(), rT.left / rT.width, -1.0 / rT.width, rT.top / rT.height, -1.0 / rT.height) +
+            (own?.copyOfRange(5, 9) ?: DoubleArray(0)))
+        for (p in places) if (p.size >= 5 && p[0].toInt() != rT.continent && p[2] != 0.0 && p[4] != 0.0) conts.add(p)
+        // the largest land first, the smallest over it (an island inside a continent's frame: feat/map-skyborn's "smallest box wins"); a
+        // land's size by its yards (|1 / bu| x |1 / bv| of its map's ADT grid is the same scale for all: the world's yards)
+        val size = HashMap<Int, Int>()
+        for (p in conts) size[p[0].toInt()] = TerrainOverview.index()?.get(p[0].toInt())?.size ?: 0
+        conts.sortByDescending { size[it[0].toInt()] ?: 0 }
+        return conts
+    }
+
+    /** each continent's depth-field picture (WaterDepth: the continent itself at 8 px an ADT, its ocean by depth) at its place on the
+     *  field, not cut to its box; [fieldOf] = the field to use for a continent (null = none) */
+    private fun drawSeaPictures(c: Canvas, conts: List<DoubleArray>, left: Float, top: Float, u0: Double, v0: Double, pxU: Float, pxV: Float,
+                                fieldOf: (Int) -> WaterDepth.Field?) {
+        val adt = MinimapTiles.ADT
+        fun sxU(u: Double) = (left + (u - u0) * pxU).toFloat()
+        fun syV(v: Double) = (top + (v - v0) * pxV).toFloat()
+        for (p in conts) {
+            val cont = p[0].toInt()
+            if (!TerrainOverview.has(cont)) continue
+            val f = fieldOf(cont) ?: continue
+            val sb = f.sea ?: continue
+            val au = p[1]; val bu = p[2]; val av = p[3]; val bv = p[4]
+            seaDst.set(sxU(au + bu * (32 - f.c0) * adt), syV(av + bv * (32 - f.r0) * adt),
+                sxU(au + bu * (32 - f.c0 - f.w / WaterDepth.FIELD_PX) * adt), syV(av + bv * (32 - f.r0 - f.h / WaterDepth.FIELD_PX) * adt))
+            seaDst.sort()
+            c.drawBitmap(sb, null, seaDst, pTerrain); seaPictures++
+        }
+    }
+
+    /**
+     * PAINTED, ITS PICTURES STILL BEING DECODED (review of 5f9835a1; the user, 2026-11-17: "When zoomed out all of the way on the map the
+     * land masses glitch and disappear"): the Map room's art decodes each picture on first use - the world's painting when the view first
+     * reaches the world, a continent's on the first frame past the zone, all again after a zoom-in let them go - and until it landed the
+     * room drew a plain parchment square (the world: no continents, up to 16 frames of the zoom-sequence test), black (Eastern Kingdoms'
+     * first frame out: a patch of close tiles) or a stepped patchwork (Kalimdor: zones' art over parchment). Under the painting now: the
+     * continents' depth-field pictures (the land in its true shape and the minimap's colours, its ocean by depth: the player's continent's
+     * is in memory for the tiles' repaint anyway; another continent's only if its field is already built - none is made for this); the
+     * painting covers them wherever it has landed (the room leaves out its parchment square while it paints Home's backdrop). Drawn by the
+     * room ([WorldArt.paintUnder]) inside the painting's frame only.
+     */
+    private fun drawPaintedStandIn(c: Canvas, wa: WorldArt, mapId: Int, rT: PoiStore.Rect, frame: RectF, cxView: Float, cyView: Float,
+                                   halfX: Float, halfY: Float, left: Float, top: Float, fw: Float, fh: Float) {
+        if (frame.width() <= 0f || frame.height() <= 0f) return
+        val conts = contsOut(wa, mapId, rT) ?: return
+        c.save()
+        // (only inside the painting's own frame: past it the field stays as the painting leaves it - the depth pictures' ocean showed
+        // there as navy strips along a continent's painted edge)
+        c.clipRect(frame)
+        drawSeaPictures(c, conts, left, top, (cxView - halfX).toDouble(), (cyView - halfY).toDouble(), fw / (2f * halfX), fh / (2f * halfY)) { cont ->
+            if (cont == rT.continent) WaterDepth.field(cont, this) else WaterDepth.peek(cont)
+        }
+        c.restore()
+    }
+
     /** a terrain picture not made yet: the nearest the cache holds instead ([drawTerrainOut]); true = something drawn */
     private fun terrainFallback(c: Canvas, wa: WorldArt, cont: Int, level: Int, oc: Int, or: Int): Boolean {
         fun peek(l: Int, x: Int, y: Int): Bitmap? = wa.peek(TerrainOverview.key(cont, l, x, y)) ?: wa.peek(TerrainOverview.keyOther(cont, l, x, y))
@@ -7341,7 +7386,9 @@ class MapView(context: Context) : View(context) {
                 terrainDrew = drawTerrainOut(c, wa, m.optInt("mapID", 0), rt, left, top, fw, fh, cxView, cyView, halfX, halfY)
                 worldDrew = terrainDrew
             }
-            if (!terrainDrew) worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)
+            if (!terrainDrew) worldDrew = wa.paintUnder(c, m.optInt("mapID", 0), worldZr, worldClip, this) { frame ->
+                if (rt != null && rt.valid) drawPaintedStandIn(c, wa, m.optInt("mapID", 0), rt, frame, cxView, cyView, halfX, halfY, left, top, fw, fh)
+            }
         }
         // the user's pick (2026-11-17, "Free on zoom-in"): back on the zone, the big pictures go at once (the next zoom-out reads them again)
         else if (!compact && !morphOn && zoom >= 0.999f && !offOwn && worldAsked) { worldAsked = false; worldArt?.release() }

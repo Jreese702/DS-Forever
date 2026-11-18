@@ -258,6 +258,8 @@ object WaterDepth {
         if (building.add(cont)) exec.execute { finish(cont, runCatching { load(cont) ?: build(cont) }.getOrNull()) }
         return null
     }
+    /** continent [cont]'s field if it is built (this build's), never starting one: MapView's Painted stand-in for another continent */
+    @Synchronized fun peek(cont: Int): Field? = fields[cont]?.takeIf { f -> TerrainOverview.stampNow().let { it == null || f.stamp == it } }
     /** pictures made now are final (the field is there, or there will be none) */
     @Synchronized fun ready(cont: Int): Boolean = field(cont) != null || cont in none
 

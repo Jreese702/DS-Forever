@@ -643,20 +643,64 @@ class MapOtherContinentShotsTest {
     // ---------------------------------------------------------------- the world floor's land never vanishes (the user, 2026-11-17: "When
     // zoomed out all of the way on the map the land masses glitch and disappear and all I see is teal in the shape of the land")
 
-    /** [land, all] over the map's field right of the quest list: a pixel that is not water by its colour - not the depth palette's ramp
-     *  (blue and green well over red), not near-black, not the deep fill */
+    /**
+     * [land, all] over the map's field right of the quest list: a pixel that is not water by its colour - not the depth palette's ramp
+     * (blue and green well over red), not near-black, not the deep fill - AND lies in art, not in a uniform fill. (Review of 5f9835a1:
+     * counted by colour alone, the Painted world's plain parchment square - the room's stand-in while its picture was decoded - scored
+     * ~100% land with no land on screen.) The field is cut in blocks of 6 x 6 samples (42 px); a block whose samples all lie within 3 of
+     * each other in R, G and B is a fill (parchment, black, a flat colour) and none of its pixels count as land; the parchment's own
+     * colour never counts either.
+     */
     private fun landStats(r: Rig, bm: Bitmap): IntArray {
         val loc = IntArray(2); r.map.getLocationInWindow(loc)
+        val xs = (loc[0] + r.map.width / 3 until loc[0] + r.map.width - 10 step 7).filter { it in 0 until bm.width }
+        val ys = (loc[1] + 10 until loc[1] + r.map.height - 10 step 7).filter { it in 0 until bm.height }
+        val px = Array(ys.size) { j -> IntArray(xs.size) { i -> bm.getPixel(xs[i], ys[j]) } }
         val s = IntArray(2)
-        for (y in loc[1] + 10 until loc[1] + r.map.height - 10 step 7) for (x in loc[0] + r.map.width / 3 until loc[0] + r.map.width - 10 step 7) {
-            if (x !in 0 until bm.width || y !in 0 until bm.height) continue
-            val p = bm.getPixel(x, y)
-            val R = Color.red(p); val G = Color.green(p); val B = Color.blue(p)
-            val water = (G > R + 22 && B > R + 22) || maxOf(R, G, B) < 32
-            if (!water) s[0]++
-            s[1]++
+        val B = 6
+        for (bj in ys.indices step B) for (bi in xs.indices step B) {
+            val lo = intArrayOf(255, 255, 255); val hi = intArrayOf(0, 0, 0)
+            for (j in bj until minOf(bj + B, ys.size)) for (i in bi until minOf(bi + B, xs.size)) {
+                val p = px[j][i]
+                val ch = intArrayOf(Color.red(p), Color.green(p), Color.blue(p))
+                for (k in 0..2) { lo[k] = minOf(lo[k], ch[k]); hi[k] = maxOf(hi[k], ch[k]) }
+            }
+            val fill = (0..2).all { hi[it] - lo[it] <= 3 }
+            for (j in bj until minOf(bj + B, ys.size)) for (i in bi until minOf(bi + B, xs.size)) {
+                val p = px[j][i]
+                val R = Color.red(p); val G = Color.green(p); val Bl = Color.blue(p)
+                val water = (G > R + 22 && Bl > R + 22) || maxOf(R, G, Bl) < 32
+                if (!water && !fill && p != PARCHMENT) s[0]++
+                s[1]++
+            }
         }
         return s
+    }
+    /** the least land a frame may show (real art at the world floor: Terrain ~17-21% - its sea is the depth ramp -, Painted ~57-72% - the
+     *  painting's sea is parchment; the review's failures: the parchment square 0%, Eastern Kingdoms' first frame out black with a patch of
+     *  close tiles ~30%); the made-up art is solid colours, so there it only has to be some */
+    private fun landFloor(terrain: Boolean) = if (realArt == null) 5 else if (terrain) 12 else 40
+    /** the room's parchment fill (WorldMapRoomView.drawPicture, a canvas whose picture is not decoded yet) */
+    private val PARCHMENT = Color.rgb(196, 168, 116)
+
+    @Test fun land_stats_reject_a_uniform_fill() {
+        val r = rig(terrain = true)
+        fun shot(fill: (Canvas) -> Unit): Bitmap {
+            val bm = Bitmap.createBitmap(W, 1080, Bitmap.Config.ARGB_8888); fill(Canvas(bm)); return bm
+        }
+        // the parchment square, a flat land colour, black: no land
+        for (col in listOf(PARCHMENT, Color.rgb(150, 120, 70), Color.BLACK)) {
+            val s = landStats(r, shot { it.drawColor(col) })
+            assertEquals("a uniform fill ${Integer.toHexString(col)} is no land", 0, s[0])
+        }
+        // textured land (a fine checker of two land colours): land
+        val s = landStats(r, shot { c ->
+            c.drawColor(Color.rgb(150, 120, 70))
+            val p = Paint().apply { color = Color.rgb(120, 140, 60) }
+            for (y in 0 until 1080 step 10) for (x in (if (y / 10 % 2 == 0) 0 else 10) until W step 20) c.drawRect(x.toFloat(), y.toFloat(), x + 10f, y + 10f, p)
+        })
+        assertTrue("textured land counts (${s[0]} of ${s[1]})", s[0] * 10 > s[1] * 9)
+        tearDown()
     }
 
     /** every frame of a short zoom sequence: out to the world floor step by step (no wait for the pictures), a pan there, back in to the
@@ -675,6 +719,7 @@ class MapOtherContinentShotsTest {
             val worst = StringBuilder()
             val bad = ArrayList<String>()
             var minLand = 100
+            val lands = StringBuilder()
             fun frame(label: String) {
                 settle(1)
                 val bm = draw(r.home)
@@ -682,7 +727,8 @@ class MapOtherContinentShotsTest {
                 val land = 100 * s[0] / s[1].coerceAtLeast(1)
                 if (land < minLand) { minLand = land; worst.setLength(0); worst.append("$label zoom ${st(r)[2]} land $land%") }
                 if (strip != null) shots.add(Bitmap.createScaledBitmap(bm, W / 4, 1080 / 4, true))
-                if (land < 8) bad.add("$label (zoom ${st(r)[2]}) $land%")
+                lands.append(" $land")
+                if (land < landFloor(terrain)) bad.add("$label (zoom ${st(r)[2]}) $land%")
             }
             for (i in 0 until 12) { key(r.home, "PADLSHOULDER"); for (k in 0 until 3) frame("out $i.$k") }
             assertEquals("$pn: down to the floor", st(r)[3], st(r)[2], 0.001f)
@@ -697,6 +743,7 @@ class MapOtherContinentShotsTest {
             for (k in 0 until 3) { Thread.sleep(40); frame("zone $k") }
             for (i in 0 until 12) { key(r.home, "PADLSHOULDER"); for (k in 0 until 2) frame("out again $i.$k") }
             println("WFL $pn: ${shots.size} frames, least land: $worst")
+            println("WFL $pn per frame:$lands")
             if (strip != null && shots.isNotEmpty()) {
                 val cols = 8; val tw = W / 4; val th = 1080 / 4
                 val sheet = Bitmap.createBitmap(cols * tw, ((shots.size + cols - 1) / cols) * th, Bitmap.Config.ARGB_8888)
@@ -708,6 +755,6 @@ class MapOtherContinentShotsTest {
             if (bad.isNotEmpty()) failures.add("$pn: ${bad.size} frames: $bad")
             tearDown()
         }
-        assertTrue("land on screen in every frame (under 8% of the field: $failures)", failures.isEmpty())
+        assertTrue("land on screen in every frame (under ${landFloor(true)}% Terrain / ${landFloor(false)}% Painted of the field: $failures)", failures.isEmpty())
     }
 }
