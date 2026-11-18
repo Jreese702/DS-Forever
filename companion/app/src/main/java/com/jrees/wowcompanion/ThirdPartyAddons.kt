@@ -28,8 +28,10 @@ import java.util.concurrent.Executors
  *    its exact size and its pinned sha256; kept in the app's private storage until it is in;
  *  - it is MOVED IN only at a start with the game closed ([applyAtStart], from the launcher's dependency step): unpacked (each entry's
  *    CRC checked, no path outside) into a staging folder beside AddOns, each top-level folder with a .toc in, the old copy of each to
- *    the backup folder first (NEVER deleted), the zip then freed;
- *  - Uninstall (or a module switched off) moves its folders out to the same backup at that start; nothing is ever deleted.
+ *    the backup folder first, the zip then freed;
+ *  - Uninstall (or a module switched off) moves its folders out to the same backup at that start;
+ *  - the backup folder is capped by [AddonBackups] (the user's ruling 2026-11-18: "cap the add-on backups inside the game folders at
+ *    the NEWEST 2 PER ADD-ON"; none under a day old, never while the game runs); nothing else is ever deleted.
  *
  * The shape is general (Map's Polestar is the second one): an [Addon] has its [Addon.core] package, its [Module]s (each its own
  * package, switched on alone, only once the core is installed) and its [Option]s (our own settings for it). One registry line each;
@@ -476,11 +478,14 @@ object ThirdPartyAddons {
 
     private fun applyLocked(flavorRoot: File, fetchSmall: Boolean, by: String, onStep: (String) -> Unit): String {
         val lines = ArrayList<String>()
+        // the user's ruling 2026-11-18: the backups capped at the newest 2 per add-on (AddonBackups), before and after this step's moves
+        fun capBackups() = runCatching { AddonBackups.cap(flavorRoot) }.onFailure { log("add-ons: backups: ${it.message}") }
         if (DependencyAddons.gameRunning()) {
             val until = System.currentTimeMillis() + settleMs
             while (DependencyAddons.gameRunning() && System.currentTimeMillis() < until) Thread.sleep(100)
         }
         sweepStaging(flavorRoot)
+        capBackups()
         // the user, 2026-11-18 ("part of the DS forever startup should be maintaining/updating enabled addons"): an installed package whose
         // folder (or its .toc) was deleted from AddOns is not installed any more: downloaded again (or its kept zip) and moved in below
         repairMissing(flavorRoot)
@@ -544,6 +549,7 @@ object ThirdPartyAddons {
         runCatching { ImportedAddons.applyQueued(flavorRoot, onStep) }
             .onSuccess { it?.let { l -> lines.add(l) } }
             .onFailure { lines.add("imported add-ons skipped (${DependencyAddons.reasonOf(it)})"); log("add-ons: imported: ${it.message}") }
+        capBackups()
         log("add-ons ($by): " + lines.joinToString("; ").ifEmpty { "nothing to do" })
         changed()
         return lines.joinToString("; ")

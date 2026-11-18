@@ -528,5 +528,83 @@ namespace DsfDesktop.Tests
                 pc.CheckSpace(fl, 0, 2_400_000_000L);                                   // downloaded: only the unpack + margin
             }
         }
+
+        static string Stamp(DateTime utc) => utc.ToLocalTime().ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+
+        static string Bk(string iface, string name)
+        {
+            var d = Path.Combine(iface, PcAddons.Backup, name);
+            Directory.CreateDirectory(d);
+            File.WriteAllText(Path.Combine(d, "x.toc"), "## Version: 1\n");
+            return d;
+        }
+
+        /// <summary>the user's ruling 2026-11-18: "cap the add-on backups inside the game folders at the NEWEST 2 PER ADD-ON"</summary>
+        [Test]
+        public static void BackupsCappedAtTheNewestTwoPerAddOn()
+        {
+            using (var t = new Tmp())
+            {
+                var fl = Flavor(t);
+                var iface = Path.Combine(fl, "Interface");
+                var now = new DateTime(2026, 11, 18, 12, 0, 0, DateTimeKind.Utc);
+                var q1 = Bk(iface, "QuestieDB-1.1.1-" + Stamp(now.AddDays(-10)));
+                var q2 = Bk(iface, "QuestieDB-1.1.2-" + Stamp(now.AddDays(-5)));
+                var q3 = Bk(iface, "QuestieDB-1.1.3-" + Stamp(now.AddDays(-3)));
+                var q3b = Bk(iface, "QuestieDB-1.1.3-" + Stamp(now.AddDays(-3)) + "~2");
+                var p1 = Bk(iface, "Polestar-1.0-" + Stamp(now.AddDays(-9)));
+                var p2 = Bk(iface, "Polestar-1.1-" + Stamp(now.AddDays(-8)));
+                var n1 = Bk(iface, "Polestar_Nav-1.0-" + Stamp(now.AddDays(-9)));
+                var odd = Bk(iface, "my own stuff");                                    // not our shape: never touched
+                File.WriteAllText(Path.Combine(iface, PcAddons.Backup, "QuestieDB-1.0-20200101-000000"), "a file");
+                // WoW running: nothing at all
+                A.Eq(0, PcAddons.CapBackups(iface, now, () => true));
+                A.True(Directory.Exists(q1), "nothing while WoW runs");
+                A.Eq(2, PcAddons.CapBackups(iface, now, () => false));
+                A.False(Directory.Exists(q1), "oldest QuestieDB gone"); A.False(Directory.Exists(q2), "third QuestieDB gone");
+                A.True(Directory.Exists(q3) && Directory.Exists(q3b), "the newest 2 kept (the ~2 of the same second counts as newer)");
+                A.True(Directory.Exists(p1) && Directory.Exists(p2) && Directory.Exists(n1), "Polestar's 2 and Polestar_Nav's 1 kept");
+                A.True(Directory.Exists(odd), "another shape kept");
+                A.True(File.Exists(Path.Combine(iface, PcAddons.Backup, "QuestieDB-1.0-20200101-000000")), "a file is never deleted");
+                A.True(Directory.Exists(AddOns(fl)), "AddOns untouched");
+                // under 24 h old: kept even beyond the newest 2
+                var y1 = Bk(iface, "Manners-1-" + Stamp(now.AddHours(-23)));
+                var y2 = Bk(iface, "Manners-2-" + Stamp(now.AddHours(-2)));
+                var y3 = Bk(iface, "Manners-3-" + Stamp(now.AddHours(-1)));
+                var f1 = Bk(iface, "Manners-0-" + Stamp(now.AddDays(3)));                 // from the future: young
+                A.Eq(0, PcAddons.CapBackups(iface, now, () => false));
+                A.True(Directory.Exists(y1) && Directory.Exists(y2) && Directory.Exists(y3) && Directory.Exists(f1), "young ones kept");
+                A.Eq(2, PcAddons.CapBackups(iface, now.AddHours(30), () => false));
+                A.False(Directory.Exists(y1) || Directory.Exists(y2), "a day later the ones past the newest 2 go");
+                A.True(Directory.Exists(y3), "the newest real one kept");
+                A.True(Directory.Exists(f1), "the future one still young");
+                // WoW starts mid-way: stops at once
+                Bk(iface, "Spoken-1-" + Stamp(now.AddDays(-9))); Bk(iface, "Spoken-2-" + Stamp(now.AddDays(-8))); Bk(iface, "Spoken-3-" + Stamp(now.AddDays(-7)));
+                int calls = 0;
+                A.Eq(0, PcAddons.CapBackups(iface, now, () => ++calls > 1));
+                A.Eq(3, Directory.GetDirectories(Path.Combine(iface, PcAddons.Backup), "Spoken-*").Length, "none once WoW is up");
+            }
+        }
+
+        [Test]
+        public static void AnUpdateCapsTheBackupsAtTwo()
+        {
+            using (var t = new Tmp())
+            {
+                var fl = Flavor(t);
+                var iface = Path.Combine(fl, "Interface");
+                var now = new DateTime(2026, 11, 18, 10, 0, 0, DateTimeKind.Utc);
+                for (int i = 1; i <= 4; i++) Bk(iface, "QuestieDB-1.0." + i + "-" + Stamp(now.AddDays(-20 + i)));
+                var http = new FakeHttp();
+                var z1 = Zip(("QuestieDB/QuestieDB.toc", "## Version: 1.1.1\n"));
+                http.Text[Api + "/repos/Questie/QuestieDB/releases/latest"] = QuestieRelease("1.1.1", z1, "https://x/q.zip");
+                http.Files["https://x/q.zip"] = z1;
+                var pc = Make(t, http); pc.Now = () => now;
+                A.Eq("installed", pc.Run(fl, PcWant.QuestieOnly(), null).Of("QuestieDB").State);
+                var left = Directory.GetDirectories(Path.Combine(iface, PcAddons.Backup), "QuestieDB-*").Select(Path.GetFileName).OrderBy(x => x).ToArray();
+                A.Eq(2, left.Length, string.Join(",", left));
+                A.True(left[0].StartsWith("QuestieDB-1.0.3-") && left[1].StartsWith("QuestieDB-1.0.4-"), string.Join(",", left));
+            }
+        }
     }
 }

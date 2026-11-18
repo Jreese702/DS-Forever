@@ -29,7 +29,8 @@ namespace DsfDesktop.Wow
     ///    and sha256 checked, resumable.
     /// The rules on the PC: only folders Desktop itself put in are ever updated, disabled or moved out (its own state file); a folder of
     /// that name the player has there is "yours" and never touched; nothing is deleted (a replaced or removed copy goes to
-    /// Interface/AddOns-backup-dsforever, the Thor's own folder name); every package is unpacked into Interface/AddOns-staging-dsforever and
+    /// Interface/AddOns-backup-dsforever, the Thor's own folder name; the user's ruling 2026-11-18: "cap the add-on backups inside the
+    /// game folders at the NEWEST 2 PER ADD-ON" - <see cref="CapBackups"/>, nothing under a day old, never while WoW runs); every package is unpacked into Interface/AddOns-staging-dsforever and
     /// moved in folder by folder (same volume: a rename), every old copy put back on a failure; NOTHING moves while WoW runs on the PC
     /// (it is checked before every move: a later run - the next Thor connect, Desktop's next start, the next start of WoW - does it).
     /// The Thor's enabled / disabled state of those folders goes into the PC's AddOns.txt files (<see cref="AddonsTxt"/>), only for
@@ -149,6 +150,7 @@ namespace DsfDesktop.Wow
             var addons = Path.Combine(flavorDir, "Interface", "AddOns");
             try { Directory.CreateDirectory(addons); } catch (Exception e) { r.Add("add-ons", "failed", e.Message); return r; }
             SweepStaging(flavorDir);
+            try { CapBackups(Path.Combine(flavorDir, "Interface"), Now(), gameRunning); } catch (Exception e) { Log.I("pc add-ons: backups: " + e.Message); }
             want = want ?? PcWant.QuestieOnly();
             // 1. QuestieDB (the user: "questie especially"): wanted always, as on the Thor
             if (want.QuestieDb) Guard(r, "QuestieDB", () => QuestieDb(flavorDir, r, ct));
@@ -449,7 +451,7 @@ namespace DsfDesktop.Wow
             all = LoadState();
             Sub(all, Key(flavorDir))[sk] = e2;
             SaveState(all);
-            PruneBackups(iface, folders);
+            CapBackups(iface, Now(), gameRunning);
         }
 
         void MoveOut(string flavorDir, string sk, string name, PcResult r)
@@ -467,6 +469,7 @@ namespace DsfDesktop.Wow
             }
             st.Remove(sk);
             SaveState(all);
+            CapBackups(iface, Now(), gameRunning);
             r.Add(name, "removed", "moved to the backup");
             Log.I("pc add-ons: " + name + " moved to the backup (the Thor doesn't use it)");
         }
@@ -493,18 +496,50 @@ namespace DsfDesktop.Wow
             return b;
         }
 
-        /// <summary>Desktop's own backups of [folders]: the newest one of each kept (the PC's C: is small); never another name's</summary>
-        static void PruneBackups(string iface, List<string> folders)
+        /// <summary>
+        /// THE BACKUPS ARE CAPPED (the user's ruling 2026-11-18: "cap the add-on backups inside the game folders at the NEWEST 2 PER
+        /// ADD-ON"; it overrides the older "nothing is deleted" rule for these backups only). In Interface/AddOns-backup-dsforever, each
+        /// add-on folder's backups ("&lt;folder&gt;-&lt;version&gt;-&lt;yyyyMMdd-HHmmss&gt;[~n]", the stamp = when it was moved there): the newest
+        /// [BackupsKept] kept, the older ones deleted. Never one less than [BackupYoung] old (its stamp; a stamp in the future counts as
+        /// young), never while WoW runs (checked before each delete), never anything of another shape, never a file, never anything
+        /// outside that one backup folder. Returns how many went.
+        /// </summary>
+        public static int CapBackups(string iface, DateTime nowUtc, Func<bool> gameRunning)
         {
             var home = Path.Combine(iface, Backup);
-            if (!Directory.Exists(home)) return;
-            foreach (var f in folders)
+            if (!Directory.Exists(home) || gameRunning()) return 0;
+            var homeFull = Path.GetFullPath(home);
+            var groups = new Dictionary<string, List<(string dir, DateTime at, int n)>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var d in Directory.GetDirectories(home))
             {
-                var mine = Directory.GetDirectories(home, f + "-*").Where(d => Regex.IsMatch(Path.GetFileName(d), "^" + Regex.Escape(f) + @"-[A-Za-z0-9._-]+-\d{8}-\d{6}(~\d+)?$"))
-                    .OrderByDescending(d => Directory.GetCreationTimeUtc(d)).Skip(1).ToList();
-                foreach (var d in mine) try { Directory.Delete(d, true); } catch (Exception) { }
+                var m = BackupName.Match(Path.GetFileName(d));
+                if (!m.Success) continue;
+                if (!DateTime.TryParseExact(m.Groups[3].Value, "yyyyMMdd-HHmmss", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var at)) continue;
+                if ((new DirectoryInfo(d).Attributes & FileAttributes.ReparsePoint) != 0) continue;      // a link: never followed, never deleted
+                int n = m.Groups[4].Success ? int.Parse(m.Groups[4].Value, CultureInfo.InvariantCulture) : 1;
+                var f = m.Groups[1].Value;
+                if (!groups.TryGetValue(f, out var l)) groups[f] = l = new List<(string, DateTime, int)>();
+                l.Add((d, at.ToUniversalTime(), n));
             }
+            int gone = 0;
+            foreach (var kv in groups)
+                foreach (var b in kv.Value.OrderByDescending(x => x.at).ThenByDescending(x => x.n).Skip(BackupsKept))
+                {
+                    if (nowUtc - b.at < BackupYoung) continue;                       // under a day old (or from the future): kept
+                    if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(b.dir)), homeFull, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (gameRunning()) return gone;
+                    try { Directory.Delete(b.dir, true); gone++; Log.I("pc add-ons: old backup " + Path.GetFileName(b.dir) + " deleted (newest " + BackupsKept + " of " + kv.Key + " kept)"); }
+                    catch (Exception e) { Log.I("pc add-ons: old backup " + Path.GetFileName(b.dir) + ": " + e.Message); }
+                }
+            return gone;
         }
+
+        /// <summary>the user's ruling 2026-11-18: the newest 2 backups of each add-on, none deleted under a day old</summary>
+        public const int BackupsKept = 2;
+        public static readonly TimeSpan BackupYoung = TimeSpan.FromHours(24);
+        /// <summary>"&lt;folder&gt;-&lt;word&gt;-&lt;stamp&gt;[~n]": the folder = everything before the last word ([BackupWord] letters, digits,
+        /// '.', '_'; a version word with a '-' in it splits further in, so a group is only ever one add-on's backups or fewer)</summary>
+        static readonly Regex BackupName = new Regex(@"^(.+)-([A-Za-z0-9._]+)-(\d{8}-\d{6})(?:~(\d{1,6}))?$");
 
         public static string BackupWord(string v)
         {

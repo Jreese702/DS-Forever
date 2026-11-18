@@ -25,7 +25,8 @@ import java.util.Locale
  * Already capped elsewhere (left alone here): the logs' one .1 rotation (BgAppend), mem.log (CappedLog), General.prev / prev2 (LogTail),
  * crash reports (CrashLogs 10, crash_logs), sync-backups (SvBackup 5 per file), the update APK (one), add-on downloads (freed once in).
  * Never touched: Documents/WoW-AddOns-backup/shadow-* (the player's own game files moved out of the shadow) and the game folder's
- * AddOns-backup-dsforever (the "never deleted" add-on backups).
+ * AddOns-backup-dsforever (capped at the newest 2 per add-on by [AddonBackups] at the add-on step instead: the user's ruling
+ * 2026-11-18, "cap the add-on backups inside the game folders at the NEWEST 2 PER ADD-ON").
  * Pure ([run] on java.io): dsforever's AppTidyTest runs it in temp folders.
  */
 object AppTidy {
