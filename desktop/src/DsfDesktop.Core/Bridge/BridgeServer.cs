@@ -48,6 +48,11 @@ namespace DsfDesktop.Bridge
         void WowRetry();
         /// <summary>the Thor's Cancel (B) on the game update's bar ("pc_patch_cancel", Desktop 0.2.36's self-patcher)</summary>
         void PatchCancel();
+        /// <summary>settings follow (0.2.37): "sv_read" -> "sv_files": OUR two SavedVariables files of the account signing in (WowSvSync;
+        /// [acctHash] = the Thor's account folder's hash, never a name)</summary>
+        Dictionary<string, object> SvRead(string acctHash);
+        /// <summary>"sv_write" -> "sv_written": the Thor's merged tables written (WowSvSync.Write's rules), one result per table</summary>
+        Dictionary<string, object> SvWrite(string acctHash, List<Dictionary<string, object>> docs);
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -453,6 +458,18 @@ namespace DsfDesktop.Bridge
                         case "screen_retry": host.ScreenRetry(); break;
                         case "wow_retry": Task.Run(() => host.WowRetry()); break;
                         case "pc_patch_cancel": Task.Run(() => host.PatchCancel()); break;
+                        case "sv_read":
+                            var sr = s;
+                            var srAcct = m.Str("acct");
+                            Task.Run(() => sr.Enqueue(With("sv_files", host.SvRead(srAcct))));
+                            break;
+                        case "sv_write":
+                            var sw = s;
+                            var swAcct = m.Str("acct");
+                            var swDocs = (m.TryGetValue("docs", out var dv) && dv is object[] arr ? arr : new object[0])
+                                .OfType<Dictionary<string, object>>().ToList();
+                            Task.Run(() => sw.Enqueue(With("sv_written", host.SvWrite(swAcct, swDocs))));
+                            break;
                         case "pc_test":
                             var sp = s;
                             Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });

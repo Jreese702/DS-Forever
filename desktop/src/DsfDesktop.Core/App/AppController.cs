@@ -1478,6 +1478,68 @@ namespace DsfDesktop.App
             }
         }
 
+        // ---------------------------------------------------------------- settings follow (0.2.37; WowSvSync - our tables only: WoW's own sync CVars are left to the game, the user's ruling for build 1489)
+
+        /// <summary>a "sv_read" answered and its "sv_write" not yet here: a start waits a moment for it (BeforeStart)</summary>
+        DateTime? svPendingAt;
+        readonly object svGate = new object();
+        public const double SvWaitS = 6;
+
+        bool WowRunsNow() { try { return WowUp() || WowWindow.ProcessRunning(); } catch (Exception) { return true; } }
+
+        string SvAccountDir(string acctHash, out string why)
+        {
+            why = null;
+            var dir = FlavorDirOrNull;
+            if (dir == null) { why = "no WoW found"; return null; }
+            return WowSvSync.PickAccount(Path.Combine(dir, "WTF"), acctHash, gameAccountList, out why);
+        }
+
+        public Dictionary<string, object> SvRead(string acctHash)
+        {
+            lock (svGate)
+            {
+                if (WowRunsNow()) { Log.I("settings sync: WoW is running; not read"); return new Dictionary<string, object> { ["state"] = "running" }; }
+                var acct = SvAccountDir(acctHash, out var why);
+                if (acct == null) { Log.I("settings sync: nothing read (" + why + ")"); return new Dictionary<string, object> { ["state"] = "none", ["why"] = why }; }
+                svPendingAt = DateTime.UtcNow;
+                var files = WowSvSync.Read(acct);
+                Log.I("settings sync: read " + files.Count(f => f["exists"] is bool b && b) + " of our files for the Thor");
+                return new Dictionary<string, object> { ["state"] = "ok", ["acct"] = acctHash ?? "", ["files"] = files };
+            }
+        }
+
+        public Dictionary<string, object> SvWrite(string acctHash, List<Dictionary<string, object>> docs)
+        {
+            lock (svGate)
+            {
+                svPendingAt = null;
+                var results = new List<Dictionary<string, object>>();
+                var running = WowRunsNow();
+                var acct = running ? null : SvAccountDir(acctHash, out _);
+                foreach (var d in docs ?? new List<Dictionary<string, object>>())
+                {
+                    var v = d.Str("var");
+                    var state = running ? "running" : acct == null ? "none" : WowSvSync.Write(acct, v, d.Str("lua"), d.Long("n"), d.Str("if_hash"), DateTime.UtcNow);
+                    if (v == null || !WowSvSync.Files.ContainsKey(v)) { v = "?"; state = "refused"; }
+                    Log.I("settings sync: " + v + " " + state);
+                    results.Add(new Dictionary<string, object> { ["var"] = v, ["state"] = state });
+                }
+                return new Dictionary<string, object> { ["results"] = results };
+            }
+        }
+
+        /// <summary>just before a start: a sync under way is given a moment (its "sv_write" lands before WoW reads our files)</summary>
+        void SvBeforeStart(string flavorDir)
+        {
+            var until = DateTime.UtcNow.AddSeconds(SvWaitS);
+            while (DateTime.UtcNow < until)
+            {
+                lock (svGate) if (!svPendingAt.HasValue || (DateTime.UtcNow - svPendingAt.Value).TotalSeconds > SvWaitS) break;
+                System.Threading.Thread.Sleep(100);
+            }
+        }
+
         /// <summary>the Thor's remembered game account into the PC's Config.wtf (WowAccount: only that key, the PC's own pick wins); only
         /// while no client runs (WoW writes the file when it closes)</summary>
         void RememberGameAccount(string flavorDir)
@@ -1495,6 +1557,8 @@ namespace DsfDesktop.App
         /// </summary>
         void BeforeStart(LaunchPlan p)
         {
+            try { SvBeforeStart(p?.Flavor != null && Wow != null ? Wow.FlavorDir(p.Flavor) : FlavorDirOrNull); }
+            catch (Exception e) { Log.I("settings sync: " + e.GetType().Name); }
             bool ask;
             lock (loginGate)
             {
