@@ -46,6 +46,8 @@ class PluviaApp : Application() {
         // how the last run ended, when it was a crash / native crash / ANR / low-memory kill: a report the player can share
         Thread({ CrashLogs.recordLastExit(this) }, "crash-logs").apply { isDaemon = true; start() }
         PrefManager.init(this)
+        // the user's ruling 2026-11-18: old backups / dumps / reports past their caps go, in the background, never while the game runs
+        runCatching { com.jrees.wowcompanion.AppTidy.startInBackground(this) }
     }
 
     companion object {
