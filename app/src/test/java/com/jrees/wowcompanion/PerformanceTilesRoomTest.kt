@@ -132,7 +132,8 @@ class PerformanceTilesRoomTest {
 
     // ---------------------------------------------------------------- the tab
 
-    /** ONE headless group, ONE part (the tiles), no fold, no "What it does" panel; four tiles in one row of five columns */
+    /** ONE headless group, ONE part (the tiles), no fold, no "What it does" panel; four tiles in one row of five columns, then Stream
+     *  settings (always there: the user's ruling 2026-11-17) */
     @Test fun theTabIsOneHeadlessRowOfTiles() {
         val r = room()
         assertEquals(setOf(SettingsTabs.Group.FRAMES), r.open)
@@ -141,15 +142,16 @@ class PerformanceTilesRoomTest {
         assertEquals("no heading", View.GONE, gb.heading.visibility)
         assertTrue(gb.parts.single() === r.perf)
         val t = tiles(r)
-        assertEquals(listOf(PerformanceTileModel.LIMIT, PerformanceTileModel.FG, PerformanceTileModel.MEM, PerformanceTileModel.INDOOR), t.keys.toList())
-        assertEquals(1, t.values.map { it.top }.distinct().size)
+        assertEquals(listOf(PerformanceTileModel.LIMIT, PerformanceTileModel.FG, PerformanceTileModel.MEM, PerformanceTileModel.INDOOR,
+            PerformanceTileModel.STREAM), t.keys.toList())
+        assertEquals(1, t.values.take(4).map { it.top }.distinct().size)
         assertEquals(16f, t.getValue(PerformanceTileModel.LIMIT).left, 0.5f)
         assertEquals(W - 16f, t.getValue(PerformanceTileModel.INDOOR).right, 0.5f)
         assertEquals(2 * GameUiTiles.TILE_W + GameUiTiles.GAP, t.getValue(PerformanceTileModel.FG).width(), 0.5f)
-        // every tile is a stop; no Stream settings tile while streaming is off (it cannot act: not drawn, no stop)
+        // every tile is a stop, Stream settings too while streaming is off (Local: dimmed, A opens its one-line page)
         val stops = r.pad.targetBoxes()
         for ((id, b) in t) assertTrue("$id is a stop", stops.any { it == b })
-        assertEquals(4, stops.size)
+        assertEquals(5, stops.size)
         // another tab and back: the Performance band is closed
         open(r, PerformanceTileModel.MEM)
         r.show(SettingsTabs.Tab.GENERAL); r.show(SettingsTabs.Tab.PERFORMANCE); lay(r)
@@ -180,6 +182,49 @@ class PerformanceTilesRoomTest {
             assertEquals(1, opened)
             assertNull("no band", r.perf.openTile)
         } finally { SetupBridge.openStreamSettings = null }
+    }
+
+    /**
+     * the user's ruling, 2026-11-17 ("Stream settings tile: ALWAYS show it on the Performance tab; in Local mode (streaming not set up)
+     * it is dimmed, and A opens its page, which shows one terse line on how to set streaming up"): in Local the tile is a stop, A opens
+     * the one-line page over the tab body (no band, the stream's page not asked), B closes it and the cursor is back on the tile; the
+     * back chip closes it by touch; L / R close it and step the tab
+     */
+    @Test fun streamSettingsInLocalOpensTheHowToPage() {
+        SetupBridge.openStreamSettings = null
+        val r = room(); hold(r)
+        assertTrue(PerformanceTileModel.dimmed(PerformanceTileModel.STREAM, r.perf.state()))
+        assertEquals("Local", PerformanceTileModel.value(PerformanceTileModel.STREAM, r.perf.state()))
+        val st = tiles(r).getValue(PerformanceTileModel.STREAM)
+        press(r, "PADDDOWN")
+        repeat(3) { if (r.pad.focusBox() != st) press(r, "PADDDOWN") }
+        assertEquals(st, r.pad.focusBox())
+        press(r, "PAD1")
+        assertTrue("the page", r.streamHelp.isOpen)
+        assertNull("no band", r.perf.openTile)
+        // the pad's other presses do nothing while it shows
+        press(r, "PADDUP"); press(r, "PAD1")
+        assertTrue(r.streamHelp.isOpen)
+        press(r, "PAD2")
+        assertTrue(!r.streamHelp.isOpen)
+        assertEquals("B: back on the tile", st, r.pad.focusBox())
+        assertTrue(!r.pad.onTabRow)
+        // touch: a tap on the tile opens it, a tap on the back chip closes it
+        tap(r.perf, r.perf.tileBox(PerformanceTileModel.STREAM)!!.centerX(), r.perf.tileBox(PerformanceTileModel.STREAM)!!.centerY()); lay(r)
+        assertTrue(r.streamHelp.isOpen)
+        tap(r.streamHelp, StreamHelpHost.BACK.centerX(), StreamHelpHost.BACK.centerY()); lay(r)
+        assertTrue(!r.streamHelp.isOpen)
+        // L / R: it closes and the tab steps
+        press(r, "PADDDOWN"); repeat(3) { if (r.pad.focusBox() != st) press(r, "PADDDOWN") }; press(r, "PAD1")
+        assertTrue(r.streamHelp.isOpen)
+        press(r, "PADRSHOULDER")
+        assertTrue(!r.streamHelp.isOpen)
+        assertTrue(r.tab != SettingsTabs.Tab.PERFORMANCE)
+        // a tab shown afresh: never open
+        r.show(SettingsTabs.Tab.PERFORMANCE); r.perf.tileBox(PerformanceTileModel.STREAM)!!.let { b -> tap(r.perf, b.centerX(), b.centerY()) }; lay(r)
+        assertTrue(r.streamHelp.isOpen)
+        r.show(SettingsTabs.Tab.GENERAL); r.show(SettingsTabs.Tab.PERFORMANCE); lay(r)
+        assertTrue(!r.streamHelp.isOpen)
     }
 
     /** the cursor: Down from the tab row onto Frame limit, Right along the row; A opens the band and STAYS on the tile, Down into its
@@ -359,9 +404,20 @@ class PerformanceTilesRoomTest {
             open(r, PerformanceTileModel.MEM); shot("perf_22_${theme}_band_memory")
         }
         Theme.use("classic"); ThemeLive.repaint(r, Theme.prev, Theme.cur); lay(r)
-        // streaming set up: the Stream settings tile (the second row)
+        // the user's ruling 2026-11-17: Local (streaming not set up) - the tile dimmed, "Local"; A opens the one-line page
+        SetupBridge.openStreamSettings = null
+        r.perf.requestLayout(); close(); lay(r); shot("perf_23_stream_local")
+        r.openStreamHelp(); lay(r); shot("perf_24_stream_local_page")
+        for (l in listOf("es", "fr")) {
+            listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+                .firstOrNull { it.canRead() }?.let { Tr.load(l, it.readText()) }
+            Tr.setChoice(app, l); lay(r); shot("perf_24_stream_local_page_$l"); r.streamHelp.close(); lay(r); shot("perf_23_stream_local_$l")
+            r.openStreamHelp(); lay(r)
+        }
+        Tr.setChoice(app, "auto"); r.streamHelp.close()
+        // streaming set up: the Stream settings tile (the second row) lit, "Open"
         SetupBridge.openStreamSettings = { }
-        r.perf.requestLayout(); close(); lay(r); shot("perf_23_stream_on")
+        r.perf.requestLayout(); close(); lay(r); shot("perf_25_stream_on")
         SetupBridge.openStreamSettings = null
         // no kit on the phone yet: the drawn pictures (no map tiles, no bar art)
         r = room(kit = false)

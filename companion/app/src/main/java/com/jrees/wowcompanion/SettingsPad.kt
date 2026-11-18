@@ -41,6 +41,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     val smartYPage = SmartYPage(context, view)
     /** General's Theme tile opens themes' Theme maker here, over the tab body (feat/beautify: the host until core's SubPage) */
     val themeMaker = ThemeMakerHost(context) { pad.held }
+    /** Performance's Stream settings in Local (the user's ruling 2026-11-17): its one-line page on setting streaming up, over the tab body */
+    val streamHelp = StreamHelpHost(context)
     /** Add-ons' picture cards (the beautify pass, 2026-11-17): one band open in the room, B closes it as a tile's */
     val addonTiles = ArrayList<AddonTiles>()
     /** beautify: Settings > Performance's picture tiles (the tab's one part; its band closes with B like Top's) */
@@ -127,14 +129,17 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             ct.onOpen = { s -> closeOthers(s); pad.follow(s, s.selectionAnchor(), s.bandBox()) }
             ct.onSubPage = { openSmartY() }
         }
-        pad.subPageOpen = { smartYPage.visibility == View.VISIBLE || themeMaker.isOpen }
-        pad.subKey = { k -> themeMaker.key(k).also { if (!themeMaker.isOpen) pad.resyncB() } }
+        pad.subPageOpen = { smartYPage.visibility == View.VISIBLE || themeMaker.isOpen || streamHelp.isOpen }
+        pad.subKey = { k -> (themeMaker.key(k) || streamHelp.key(k)).also { if (!themeMaker.isOpen && !streamHelp.isOpen) pad.resyncB() } }
+        perf.onStreamHelp = { openStreamHelp() }
+        streamHelp.onClosed = { pad.resyncB(); pad.land(perf) { perf.tileBox(PerformanceTileModel.STREAM) } }
         themeMaker.onClosed = { pad.resyncB()
             generals.firstOrNull { GeneralTiles.THEME in it.tileIds() }?.let { t -> pad.land(t) { t.tileBox(GeneralTiles.THEME) } } }
         pad.subPageBack = { closeSmartY(anchor = true) }
         smartYPage.onBack = { closeSmartY(anchor = true) }
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         page.addView(themeMaker, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        page.addView(streamHelp, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         addView(body, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         scroll.setOnScrollChangeListener { _, _, _, _, _ -> pad.invalidate() }
@@ -241,6 +246,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         ctlTiles.forEach { it.closeSelection() }
         closeSmartY(anchor = false)
         themeMaker.visibility = View.GONE
+        streamHelp.visibility = View.GONE
         addonTiles.forEach { it.closeSelection() }
         perf.closeSelection()
         touched = false
@@ -281,6 +287,13 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         themeMaker.open()
         pad.resyncB()
         return true
+    }
+
+    /** Performance's Stream settings pressed in Local: its one-line page over the tab body (the tile's band stays closed) */
+    fun openStreamHelp() {
+        bandsClose()
+        streamHelp.open()
+        pad.resyncB()
     }
 
     private fun bandsClose() { gameUis.forEach { it.closeSelection() }; pad.bands.forEach { it.closeSelection() } }

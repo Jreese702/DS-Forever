@@ -15,8 +15,10 @@ import kotlin.math.min
  * three On / Off lines), Indoor maps - then Stream settings, a picture tile like the others (the user's pick, 2026-11-17: "Performance
  * 'Stream settings' becomes a picture tile like the others"; it was a compact row). The Top screen's tile language unchanged: a tap or A
  * on a tile opens ONE band under the row (the picture large, the tile's lines, one status line); B closes it, the cursor back on the
- * tile. Stream settings is a tile whose A opens its page, with no band (Top's Edit layout precedent), and it is there only while
- * streaming is set up (a slot that does not apply is not drawn, as Top's Layout tile before its add-on set).
+ * tile. Stream settings is a tile whose A opens its page, with no band (Top's Edit layout precedent). It is ALWAYS there (the user's
+ * ruling, 2026-11-17: "ALWAYS show it on the Performance tab; in Local mode (streaming not set up) it is dimmed, and A opens its page,
+ * which shows one terse line on how to set streaming up"): while streaming is set up A opens the stream's quality page
+ * (SetupBridge.openStreamSettings), in Local it is dimmed, its value word "Local", and A opens [StreamHelpHost]'s one-line page.
  *
  * The model, pure (no android.graphics), so the off-device tests measure it: the fixed slots, the lines each band carries NOW (a line
  * that cannot act is not drawn: Restart only while a change waits, Lossless.dll only while generation is on or before a copy is set,
@@ -39,8 +41,9 @@ object PerformanceTileModel {
     /** every slot: the first row, then Stream settings (the second row's first tile) */
     val ALL = SLOTS + Slot(STREAM)
 
-    /** the slots shown for [s]: Stream settings only while streaming is set up (its page exists only then) */
-    fun slots(s: State): List<Slot> = if (s.streamOn) ALL else SLOTS
+    /** the slots shown for [s]: every slot, always (the user's ruling 2026-11-17: Stream settings shows in Local too, dimmed) */
+    @Suppress("UNUSED_PARAMETER")
+    fun slots(s: State): List<Slot> = ALL
 
     /** a tile whose A opens a page instead of a band */
     fun opensPage(id: String): Boolean = id == STREAM
@@ -127,7 +130,7 @@ object PerformanceTileModel {
         FG -> when { !s.hasDll -> "Not set"; s.fgOn -> "${s.multiplier}x"; else -> "Off" }
         MEM -> when { s.lighter || s.lighterFixed -> "Lighter"; s.mapFull -> "Full map"; else -> "Zone map" }
         INDOOR -> when { !s.indoorOn -> "Off"; s.total > 0 -> "${s.ready} / ${s.total}"; else -> "On" }
-        STREAM -> "Open"
+        STREAM -> if (s.streamOn) "Open" else "Local"
         else -> ""
     }
 
@@ -141,8 +144,8 @@ object PerformanceTileModel {
         else -> null
     }
 
-    /** the picture dimmed: the choice is Off (frame generation, the indoor build) */
-    fun dimmed(id: String, s: State): Boolean = when (id) { FG -> !s.generating; INDOOR -> !s.indoorOn; else -> false }
+    /** the picture dimmed: the choice is Off (frame generation, the indoor build), Stream settings in Local (streaming not set up) */
+    fun dimmed(id: String, s: State): Boolean = when (id) { FG -> !s.generating; INDOOR -> !s.indoorOn; STREAM -> !s.streamOn; else -> false }
 
     /** the band's one status line: state only (never an explanation) */
     fun status(id: String, s: State): String = when (id) {
@@ -325,6 +328,8 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
 
     /** a tile's band opened (or moved): the room brings the cursor and the band in view */
     var onOpen: ((PerformanceTiles) -> Unit)? = null
+    /** Stream settings pressed in Local (streaming not set up): the room opens its one-line page ([StreamHelpHost]) */
+    var onStreamHelp: (() -> Unit)? = null
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
@@ -518,8 +523,9 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         val i = l.grid.tiles.indexOfFirst { it.contains(x, y) }
         if (i >= 0) {
             val id = l.slots[i].id
-            // a tile that opens a page (Stream settings): the page, no band (an open band closes first)
-            if (M.opensPage(id)) { closeSelection(); SetupBridge.openStreamSettings?.invoke(); return }
+            // a tile that opens a page (Stream settings): the page, no band (an open band closes first); the stream's quality page
+            // while streaming is set up, else (Local) the one line on how to set it up
+            if (M.opensPage(id)) { closeSelection(); SetupBridge.openStreamSettings?.invoke() ?: onStreamHelp?.invoke(); return }
             selected = if (selected == id) null else id
             deferredOpen = false
             requestLayout(); invalidate()

@@ -52,6 +52,17 @@ object GeneralPictures {
         path.reset(); path.addRoundRect(r, rad, rad, Path.Direction.CW)
         c.clipPath(path)
         pF.shader = null; pF.color = WORLD; c.drawRect(r, pF)
+        // the Theme tile: the real Home miniature in the theme in use (BottomPictures.themeHome), the drawn room until the game's first
+        // document ([themeWaiting]: the view pumps the crop queue)
+        if (id == GeneralTiles.THEME && ctx != null) {
+            val hb = runCatching { BottomPictures.themeHome(r.width().toInt(), r.height().toInt()) }.getOrNull()
+            themeWaiting = hb == null
+            if (hb != null) {
+                c.drawBitmap(hb, null, r, pB)
+                c.restoreToCount(save)
+                return true
+            }
+        }
         c.translate(r.centerX() - uw * k / 2f, r.centerY() - H * k / 2f)
         c.scale(k, k)
         runCatching {
@@ -66,15 +77,18 @@ object GeneralPictures {
         return true
     }
 
+    /** the last Theme tile drawn had no Home crop yet (the drawn mini room stood in): its view pumps BottomPictures' queue */
+    @Volatile var themeWaiting = false
+
     /** the world's stand-in colour (Top screen's wells: the game's world, not a theme token) */
     private val WORLD = Color.rgb(14, 16, 18)
 
     // ---------------------------------------------------------------- Theme
 
     /**
-     * The theme in use: a drawn mini room in its colours. (2026-11-17 review: a crop of our live Home showed the theme only as faint
-     * glyph tints and cut the map's header in half at 460 x 108; the drawn room shows the ground, the header, the rows, the cloth and
-     * the metal in every state, and needs no document.)
+     * The theme in use, before the game's first document: a drawn mini room in its colours (the ground, the header, the rows, the cloth
+     * and the metal). With a document the tile shows the REAL Home miniature instead (the user's ruling, 2026-11-17; [draw]): a crop of
+     * Home's whole width with the panes' header bars whole (the 2026-11-17 review's crop had cut the map's header in half).
      */
     private fun theme(c: Canvas) = miniRoom(c, RectF(0f, 0f, WIDE_W, H), Theme.cur)
 

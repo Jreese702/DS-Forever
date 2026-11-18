@@ -80,7 +80,8 @@ object BottomPictures {
         private var key: String? = null
         private var boxes: Map<String, RectF>? = null
         override fun frame(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Frame? {
-            val k = "$look/$fight/$toolbar"
+            // the theme in use too (General's Theme tile crops this render: a theme change must render Home again)
+            val k = "$look/$fight/$toolbar/${Theme.cur.id}/${Theme.cur.hashCode()}"
             val b = bmp ?: Bitmap.createBitmap(PreviewStage.W, PreviewStage.H, Bitmap.Config.ARGB_8888).also { bmp = it }
             if (k != key || boxes == null) {
                 key = k
@@ -178,6 +179,43 @@ object BottomPictures {
 
     init {
         MemWatch.onTrim("bottomTiles") { level -> if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) drop() else 0L }
+    }
+
+    // ---------------------------------------------------------------- General's Theme tile (the user's ruling, 2026-11-17)
+
+    /**
+     * General's Theme tile uses the REAL Home miniature (the user's ruling, 2026-11-17: "General's Theme tile uses the real Home miniature
+     * (the same renderer as the theme maker preview and Bottom tab tiles, with its reuse/free rules; the drawn mini room only as the
+     * before-first-data fallback)"): a crop of the 1x stage ([FullStage], PreviewStage.render in the theme in use, the player's look, no
+     * fight) made by this object's queue ([crop] / [pump]) into the large cache, so it is freed as the Bottom tiles' crops are (a
+     * running-low trim, the last viewer out of view: [shown]). The window is Home's whole width ([themeWindow]): the controller over the
+     * top of the minimap and chat panes, their header bars whole. null = not made yet (the caller pumps and draws the mini room).
+     */
+    fun themeHome(w: Int, h: Int, prio: Int = 0): Bitmap? {
+        if (w <= 0 || h <= 0) return null
+        val look = player()
+        return crop(themeKey(look, w, h), Shot(look, false, null, { b -> themeWindow(b, w / h.toFloat()) }, w, h), prio)
+    }
+
+    /** the Theme tile's crop is in the cache (the tile draws it at once) */
+    fun themeHomeReady(w: Int, h: Int): Boolean = (if (w > W) large else small)[themeKey(player(), w, h)] != null
+
+    /** the theme in use is in the key: a theme change makes a new crop (the old one ages out of the cache) */
+    private fun themeKey(look: HomeView.Companion.Look, w: Int, h: Int) = "theme|${Theme.cur.id}|${Theme.cur.hashCode()}|$look|${w}x$h"
+
+    /** the panes' header bars kept whole under the controller (Home's px below the map box's top) */
+    const val THEME_HEAD = 72f
+
+    /**
+     * the Theme tile's window ([aspect] = its width / height): Home's whole width, as tall as the aspect makes it, its foot [THEME_HEAD]
+     * under the panes' top (the 2026-11-17 review: a crop that cut the map's header in half read as no theme at all); null = no map box
+     * in the render
+     */
+    fun themeWindow(b: Map<String, RectF>, aspect: Float): RectF? {
+        val map = b["map"] ?: return null
+        val wh = HOME_W / aspect
+        val top = (map.top + THEME_HEAD - wh).coerceIn(0f, max(0f, homeH() - wh))
+        return RectF(0f, top, HOME_W, top + wh)
     }
 
     // ---------------------------------------------------------------- the windows (Home's px)
