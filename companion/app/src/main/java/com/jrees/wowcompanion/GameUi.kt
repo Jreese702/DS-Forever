@@ -44,8 +44,8 @@ object GameUi {
     /** hub55 (the layout editor; Trail prd18): the layout owns the HUD's height and scale - the tap loop leaves them alone (the width
      *  stays a row); false = an older add-on (the loop as before) */
     @Volatile var prdLay = false; private set
-    private var hudHTapAt = 0L
-    private var hudHTapN = -1
+    /** PR #533: the HUD height / width / scale step's own back-off (one key, [HUD_KEY]) */
+    private val hudBack = TapBackoff()
     /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
     @Volatile var character: String? = null
         set(v) { if (field != v) { field = v; playerClass = classFor(v); reconcile(); changed() } }    // Smart Res: the new character's class (its party document, before or after)
@@ -150,7 +150,7 @@ object GameUi {
 
     /** when the last CURRENT hello came (a login or a reload): the first hide waits for the loading screen (GameUiPolicy.SETTLE_MS) */
     @Volatile private var helloAt = 0L
-    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); hud.freshLogin() }
+    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); hud.freshLogin(); swBack.clear(); hudBack.clear() }
 
     /**
      * HUB17 THE HUD-MODE SPLIT (the user: the player frame, the target frame and the enemy nameplates on Top screen, the resource bar on
@@ -192,7 +192,8 @@ object GameUi {
                   val npf: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
-    private var swTapN = -1
+    /** PR #533 (mummigast): a switch the game never answers backs off and is parked, so the ones after it still go ([TapBackoff]) */
+    private val swBack = TapBackoff()
     /** parts: "player" / "target" shown (true) or hidden; "np" nameplates on; "prd" the resource bar on */
     const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"; const val SW_WM = "wm"
     const val SW_PARTY = "party"
@@ -321,10 +322,17 @@ object GameUi {
         else -> if (on) "PRD_ON" else "PRD_OFF"
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
-    fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR, SW_SRES, SW_NPF).firstOrNull { p ->
-            val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
-                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; SW_NPF -> s.npf; else -> s.prd }
+    fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? = swNextSkip(s, emptySet(), want)
+    /** the game's word for [p] in [s] */
+    fun swWord(s: Sw, p: String): Boolean? = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
+        SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; SW_NPF -> s.npf; else -> s.prd }
+    /** PR #533: the game's answer to a tap of [p] - its word and its `set` flag (an answered tap moves one of them) */
+    fun swSig(s: Sw?, p: String): Any? = s?.let { swWord(it, p) to it.set[p] }
+    /** [swNext] without the parts in [skip] (PR #533: switches the game never answers, parked by [TapBackoff]). With every waiting
+     *  part parked this is null, and the HUD steps / meters may go meanwhile; a parked part comes back by itself for its one probe */
+    fun swNextSkip(s: Sw, skip: Set<String>, want: (String) -> Boolean): Pair<String, Boolean>? =
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR, SW_SRES, SW_NPF).filter { it !in skip }.firstOrNull { p ->
+            val now = swWord(s, p)
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
             val chosen = p != SW_SHOT || character?.let { prefs?.contains("sw.$p.$it") } == true
             // hub28: while "In combat" is wanted (and the add-on knows it), the game's option follows the fight: not tapped
@@ -780,12 +788,17 @@ object GameUi {
             else if (character != null) {
                 // hub17: the split switches first, one absolute tap at a time on their own row, the next after the game's answer (or 1.5 s)
                 val sws = sw
-                val next = sws?.let { swNext(it) { p -> swWant(p) } }
+                // PR #533: a part the game answered since its last tap is forgotten; a parked one sits out its slow wait
+                swBack.answered { p -> swSig(sws, p) }
+                val next = sws?.let { swNextSkip(it, swBack.parked(now)) { p -> swWant(p) } }
                 val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
                 if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
                     now >= helloAt + GameUiPolicy.SETTLE_MS) {
-                    if (s.n != swTapN || now - swTapAt > 1500L) {
-                        swTapN = s.n; swTapAt = now
+                    // one tap, the next only after this part's own answer (its word / set) or 1.5 s; after 3 unanswered taps one
+                    // probe every 30 s (TapBackoff). s.n (every tap on the row) no longer stands in for this part's answer
+                    val part = next!!.first
+                    if (swBack.due(part, now)) {
+                        swBack.tapped(part, swSig(sws, part), now); swTapAt = now
                         GameInput.tap(ctx, pad, sws.row, swCol)
                     }
                 }
@@ -798,9 +811,12 @@ object GameUi {
                         "y" -> Want("y", prdY, hudHeight(), prdDef, prdStep); "w" -> Want("w", prdW, hudWidth(), wDef, wStep)
                         else -> Want("s", prdS, hudScale(), sDef, sStep) } }
                         .firstOrNull { it.cur != null && it.want != null && it.cur != it.want }
+                    // PR #533: answered = the selected setting or a value moved; 3 unanswered taps, then one every 30 s
+                    val hudSig = listOf(prdSel, prdY, prdW, prdS)
+                    hudBack.answered { hudSig }
                     if (todo != null && s != null && live && s.current && s.hasRow &&
-                        (s.n != hudHTapN || now - hudHTapAt > 1500L) && now >= helloAt + GameUiPolicy.SETTLE_MS) {
-                        hudHTapN = s.n; hudHTapAt = now
+                        hudBack.due(HUD_KEY, now) && now >= helloAt + GameUiPolicy.SETTLE_MS) {
+                        hudBack.tapped(HUD_KEY, hudSig, now)
                         val cur = todo.cur!!; val want = todo.want!!
                         val selNow = prdSel ?: "y"
                         // the default is one tap (col 38); otherwise one step toward the choice
@@ -877,4 +893,5 @@ object GameUi {
     private fun changed() { for (l in listeners) l() }
 
     private const val ROW = "ui"      // Hub.lua ROW
+    private const val HUD_KEY = "hud" // PR #533: hudBack's one key
 }
