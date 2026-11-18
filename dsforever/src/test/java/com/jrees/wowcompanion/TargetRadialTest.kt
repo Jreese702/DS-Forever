@@ -84,4 +84,15 @@ class TargetRadialTest {
         assertEquals(TargetRadial.Reads(sticks = true, buttons = true), TargetRadial.reads(TargetRadialView.Input.READ))
         assertEquals(TargetRadial.Reads(sticks = true, buttons = true), TargetRadial.reads(TargetRadialView.Input.HOLD))
     }
+
+    /** Quests q66: a Whisper from the wheels goes to the game's full name (fnm, "Name-Realm" for another realm) when the Chat room can
+     *  send it; a name it refuses ("First Last-Realm"), or no fnm (an add-on before q66), keeps the bare nm */
+    @Test fun whisperGoesToTheFullNameTheChatRoomCanSend() {
+        fun doc(nm: String, fnm: String?) = org.json.JSONObject().put("nm", nm).apply { if (fnm != null) put("fnm", fnm) }
+        assertEquals("Kaelis-Stormrage", TargetRadial.tellName(doc("Kaelis", "Kaelis-Stormrage")))
+        assertEquals("Kaelis", TargetRadial.tellName(doc("Kaelis", "Kaelis")))
+        assertEquals("Kaelis", TargetRadial.tellName(doc("Kaelis", null)))
+        assertEquals("Mylie Cyriss", TargetRadial.tellName(doc("Mylie Cyriss", "Mylie Cyriss-Stormrage")))
+        assertEquals("Kaelis", TargetRadial.name(doc("Kaelis", "Kaelis-Stormrage")))     // the title keeps the name
+    }
 }

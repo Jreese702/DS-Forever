@@ -1609,7 +1609,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 is PlayerMenu.Do.Run -> {
                     if (d.id >= 0) GuestPad.playerMenuRun(questsPad, d.id)?.let { TapBridge.taps(this, questsPad, it) { } }
                     // q49 ap = "whisper": the Chat room, replying to the member (as Social's Whisper opens it)
-                    if (d.app == "whisper" && menu.name.isNotEmpty()) { val n = menu.name; ui.post { show(Room.CHAT); chatView.whisperTo(n) } }
+                    if (d.app == "whisper" && menu.tell.isNotEmpty()) { val n = menu.tell; ui.post { show(Room.CHAT); chatView.whisperTo(n) } }
                 }
                 is PlayerMenu.Do.Secure -> TapBridge.taps(this, questsPad, listOf((if (d.row == "party") PartyModel.live.cfg?.pad?.row ?: "party" else d.row) to d.col)) { }
                 is PlayerMenu.Do.Refused -> Log.i("WCHOME", "party menu: ${d.why}")
