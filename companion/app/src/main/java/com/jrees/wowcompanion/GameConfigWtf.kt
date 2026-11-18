@@ -61,6 +61,48 @@ object GameConfigWtf {
     )
 
     /**
+     * LOW-MEMORY GRAPHICS ON THE 8 GB THORS (test build 1489, the user's pick 2026-11-18, #56: "Low-memory graphics on 8 GB Thors ONLY
+     * also lowers view distance, particle/spell density and shadows on top of today's texture settings ... only while the player's
+     * Low-memory graphics is on, and a player's own saved values for those keys must not be overwritten when they turn it off again"):
+     * written at every start while both hold ([ensure]'s lowMemory8). The keys and values are the PC client's (graphics menu cvars and
+     * the ones under them); NOT yet confirmed on this client (a device check owed: the game keeps a value it does not know as it is).
+     * What each key held before the first such start is kept beside Config.wtf ([LOW_MEMORY_8GB_SAVED]); at the first start without
+     * them, every key still at our value gets exactly that back (a key that was not in the file goes again), a key the player changed
+     * in the game since stays theirs, and the record goes.
+     */
+    val LOW_MEMORY_8GB = linkedMapOf(
+        "graphicsViewDistance" to "\"1\"",
+        "raidGraphicsViewDistance" to "\"1\"",
+        "farclip" to "\"800\"",
+        "horizonClip" to "\"800\"",
+        "RAIDfarclip" to "\"800\"",
+        "RAIDhorizonClip" to "\"800\"",
+        "graphicsParticleDensity" to "\"1\"",
+        "raidGraphicsParticleDensity" to "\"1\"",
+        "particleDensity" to "\"10\"",
+        "graphicsSpellDensity" to "\"0\"",
+        "raidGraphicsSpellDensity" to "\"0\"",
+        "graphicsShadowQuality" to "\"0\"",
+        "raidGraphicsShadowQuality" to "\"0\"",
+        "shadowMode" to "\"0\"",
+    )
+
+    /** what [LOW_MEMORY_8GB]'s keys held before DS Forever lowered them (WTF/, beside Config.wtf): "key<TAB>value", [ABSENT] = no line */
+    const val LOW_MEMORY_8GB_SAVED = ".dsf-low-memory-8gb-saved"
+    private const val ABSENT = "-"
+
+    /** the record's text for [saved] (pure: the tests) */
+    internal fun savedText(saved: Map<String, String?>): String = saved.entries.joinToString("") { (k, v) -> "$k\t${v ?: ABSENT}\n" }
+    /** [text] back as the record (pure: the tests); a line it cannot read is left out */
+    internal fun savedOf(text: String): LinkedHashMap<String, String?> = LinkedHashMap<String, String?>().apply {
+        for (l in text.lines()) {
+            val i = l.indexOf('\t'); if (i <= 0) continue
+            val v = l.substring(i + 1); put(l.substring(0, i), v.takeIf { it != ABSENT })
+        }
+    }
+    private fun low8Key(key: String): String? = LOW_MEMORY_8GB.keys.firstOrNull { it.equals(key, ignoreCase = true) }
+
+    /**
      * Rewritten at every start whatever the folder holds. #305 (1.0.32: "controls not working on bottom screen"; its pad said the game's
      * screen was 1542x1080 on the 1920x1080 top screen, so TapBridge refused every tap): the user's pick 2026-11-16, "force the game to
      * fill the top screen at EVERY start" - gxMaximize 1 and gxWindowedResolution the game screen's size ([ensure]'s screen). Both were
@@ -109,7 +151,8 @@ object GameConfigWtf {
      * the closed beta).
      */
     fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null, lowMemory: Boolean = false,
-               askAccount: Boolean = false, screen: String? = null): List<String> {
+               askAccount: Boolean = false, screen: String? = null, lowMemory8: Boolean = false): List<String> {
+        // [lowMemory8]: the Thor is an 8 GB model (DeviceTier.eightGb): with [lowMemory] on, [LOW_MEMORY_8GB] too
         // [region]: the player's choice (GameRegion; 2026-11-07, an EU account on a US-set device): it replaces any portal but the beta's
         // [lowMemory]: Settings.lowMemGraphics - the smaller textures over the defaults
         // [askAccount]: Settings.gameAccountAsk (#47) - the game's remembered game-account choice cleared ([forgetAccountChoice]);
@@ -117,9 +160,12 @@ object GameConfigWtf {
         // [screen]: #305, the size of the screen the game shows on ([screenSize]: the Thor's top screen, the game's own with Swap
         // screens), its gxWindowedResolution at every start; null or not "WxH" = 1920x1080
         val size = screen?.takeIf { SIZE.matches(it) }
-        val defaults = configDefaults(product, row, if (product.portal == null) region else null).let { d ->
+        val low8 = lowMemory && lowMemory8
+        val baseDefaults = configDefaults(product, row, if (product.portal == null) region else null)
+        val defaults = baseDefaults.let { d ->
             if (lowMemory || size != null) LinkedHashMap(d).apply {
                 if (lowMemory) putAll(LOW_MEMORY_GRAPHICS)
+                if (low8) putAll(LOW_MEMORY_8GB)
                 if (size != null) put("gxWindowedResolution", "\"$size\"")
             } else d
         }
@@ -132,7 +178,13 @@ object GameConfigWtf {
         val configWtf = File(flavorDir, "WTF/Config.wtf")
         val legacyDone = File(configWtf.parentFile, LEGACY_DONE)
         val lowOn = File(configWtf.parentFile, LOW_MEMORY_ON)
+        val saved8File = File(configWtf.parentFile, LOW_MEMORY_8GB_SAVED)
         if (!configWtf.exists()) {
+            // a new file's own values were the defaults (a key with none: no line)
+            if (low8) {
+                configWtf.parentFile?.mkdirs()
+                WowSwitch.replace(saved8File, savedText(LOW_MEMORY_8GB.keys.associateWith { baseDefaults[it] }).toByteArray())
+            }
             WowSwitch.replace(configWtf, (defaults.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n").toByteArray())
             markers(legacyDone, lowOn, lowMemory)
             return emptyList()                    // a new file remembers no account
@@ -144,17 +196,41 @@ object GameConfigWtf {
 
         val original = configWtf.readLines().filterNot { it.startsWith("SET ResampleSharpness", ignoreCase = true) }
         val (kept, cleared) = if (askAccount) forgetAccountChoice(original) else original to emptyList()
+        // test build 1489: the 8 GB keys' own values, kept once before the first start that lowers them; given back once it is off
+        val saved8 = if (saved8File.exists()) runCatching { savedOf(saved8File.readText()) }.getOrNull() ?: LinkedHashMap() else null
+        val restore8 = !low8 && saved8 != null
+        if (low8) {
+            val now = LinkedHashMap<String, String>()
+            for (line in kept) {
+                val parts = line.takeIf { it.startsWith("SET ", ignoreCase = true) }?.removePrefix("SET ")?.trim()?.split(" ", limit = 2)
+                if (parts?.size == 2) low8Key(parts[0])?.let { k -> if (k !in now) now[k] = parts[1] }
+            }
+            val rec = saved8 ?: LinkedHashMap()
+            var grew = false
+            for (k in LOW_MEMORY_8GB.keys) if (!rec.containsKey(k)) {
+                // the value this start would have left without the 8 GB keys (the old defaults' fix included)
+                rec[k] = now[k]?.let { if (legacyDue && LEGACY_CONFIG_VALUES[k] == it) baseDefaults[k] else it } ?: baseDefaults[k]
+                grew = true
+            }
+            // before Config.wtf: a stop between the two finds the record, never our values without one
+            if (grew || saved8 == null) WowSwitch.replace(saved8File, savedText(rec).toByteArray())
+        }
         val existingKeys = mutableSetOf<String>()
-        val updated = kept.map { line ->
+        val updated = kept.mapNotNull { line ->
             val parts = line.takeIf { it.startsWith("SET ", ignoreCase = true) }?.removePrefix("SET ")?.trim()?.split(" ", limit = 2)
-            if (parts?.size != 2) return@map line
+            if (parts?.size != 2) return@mapNotNull line
             val (key, value) = parts
             existingKeys.add(key)
             val forcedKey = FORCED_CONFIG_KEYS.firstOrNull { it.equals(key, ignoreCase = true) }
             val lowKey = if (lowMemory) LOW_MEMORY_GRAPHICS.keys.firstOrNull { it.equals(key, ignoreCase = true) } else null
+            val key8 = low8Key(key)
             when {
                 forcedKey != null && value != defaults.getValue(forcedKey) -> "SET $forcedKey ${defaults.getValue(forcedKey)}"
                 lowKey != null -> "SET $lowKey ${LOW_MEMORY_GRAPHICS.getValue(lowKey)}"
+                low8 && key8 != null -> "SET $key8 ${LOW_MEMORY_8GB.getValue(key8)}"
+                // off again: still at our value = the player's own value back exactly (no line before = none now); changed in game = theirs
+                restore8 && key8 != null && saved8!!.containsKey(key8) && value == LOW_MEMORY_8GB.getValue(key8) ->
+                    saved8[key8]?.let { "SET $key8 $it" }
                 legacyDue && LEGACY_CONFIG_VALUES[key] == value -> "SET $key ${defaults.getValue(key)}"
                 lowOff && LOW_MEMORY_GRAPHICS[key] == value -> "SET $key ${defaults.getValue(key)}"
                 key.equals("portal", ignoreCase = true) && product.portal == null && value in betaPortal -> "SET portal ${defaults.getValue("portal")}"
@@ -171,6 +247,7 @@ object GameConfigWtf {
         if (updated != original) {
             WowSwitch.replace(configWtf, (updated.joinToString("\n") + "\n").toByteArray())
         }
+        if (restore8) runCatching { saved8File.delete() }          // after Config.wtf: a stop between the two gives them back once more
         markers(legacyDone, lowOn, lowMemory)             // after Config.wtf: a stop between the two only runs the rewrite once more
         return cleared
     }

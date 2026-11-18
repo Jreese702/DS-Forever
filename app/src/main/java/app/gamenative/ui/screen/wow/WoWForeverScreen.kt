@@ -1198,7 +1198,9 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         Timber.i("Config.wtf: the game's window fills its screen (gxMaximize 1, gxWindowedResolution %s)", screen ?: "1920x1080: size unread")
         val accountCleared = com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row,
             com.jrees.wowcompanion.GameRegion.chosen(context), lowMemory = com.jrees.wowcompanion.Settings.lowMemGraphics,
-            askAccount = com.jrees.wowcompanion.Settings.gameAccountAsk, screen = screen)
+            askAccount = com.jrees.wowcompanion.Settings.gameAccountAsk, screen = screen,
+            // test build 1489 (#56): on the 8 GB Thors Low-memory graphics also lowers view distance, particles, spells and shadows
+            lowMemory8 = com.jrees.wowcompanion.DeviceTier.eightGb())
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) {
             Timber.i("Config.wtf game account: ask each time; cleared %s", accountCleared.joinToString(" ").ifEmpty { "nothing (no remembered choice)" })
         }

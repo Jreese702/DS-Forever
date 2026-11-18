@@ -2240,7 +2240,7 @@
 "In a fight, %s will cast %s instead of %s.": "En combat, %s lancera %s au lieu de %s.",
 "In combat: %s": "En combat : %s",
 "In the login queue: %s": "File d'attente de connexion : %s",
-"Indoor maps (builds while playing): %s": "Cartes d'intérieur (créées en jouant) : %s",
+"Indoor maps (builds while the game is closed): %s": "Cartes d'intérieur (créées quand le jeu est fermé) : %s",
 "Indoor maps in the background: %s": "Cartes d'intérieur en arrière-plan : %s",
 "Install %s": "Installer %s",
 "Installed, not in use: choose it in %s": "Installé, non utilisé : choisissez-le dans %s",

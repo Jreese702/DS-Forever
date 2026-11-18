@@ -6,7 +6,6 @@ import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
@@ -102,7 +101,6 @@ class WorldMapBesideTest {
     }
 
     @Test fun theLiveRuleFollowsTheGameTheThorAndAndroid() {
-        assumeTrue("off since test build 1489 (DeviceTier.BESIDE_ON)", DeviceTier.BESIDE_ON)
         setTotalMb(15_255L)
         val now = System.currentTimeMillis()
         GameLife.started(now - 10 * 60_000L)
@@ -145,7 +143,6 @@ class WorldMapBesideTest {
 
     /** review of the pick: a logout to the character list (or a /reload) is a pause point; the next world's load sends nothing */
     @Test fun aLogoutIsAPausePointUntilTheNextHello() {
-        assumeTrue("off since test build 1489 (DeviceTier.BESIDE_ON)", DeviceTier.BESIDE_ON)
         setTotalMb(15_255L)
         val now = System.currentTimeMillis()
         GameLife.started(now - 10 * 60_000L)

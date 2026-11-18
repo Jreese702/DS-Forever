@@ -11,7 +11,7 @@ import java.io.File
 /**
  * TEST BUILD 1489, THE #1 PLAYER PROBLEM (tracker #56, 189 reports; #361 beside it): Android's low-memory killer closes the game. The
  * user's approval, 2026-11-18: (1) every art step stops hard at Play - nothing builds while the game runs (the art before Play too, the
- * world map beside the game on the Thor Max too), it goes on once the game has closed; (2) Low-memory graphics on by default on the
+ * world map beside the game stays the 16 GB Thor Max's one exception: the user's pick 2026-11-18), it goes on once the game has closed; (2) Low-memory graphics on by default on the
  * 8 GB Thors, the 16 GB Thor Max off, a player's own saved choice kept. #361's WCMEM lines: "art icons" with "game up", native heap
  * 582 MB, for 17 s until the kill.
  */
@@ -87,11 +87,14 @@ class ArtStopAtPlayTest {
         assertFalse("the launcher back in front ends the hold", PlayGate.gameActiveNow())
     }
 
-    @Test fun theWorldMapNoLongerBuildsBesideTheGameOnTheThorMax() {
-        setTotalMb(15_255L)
-        assertFalse(DeviceTier.BESIDE_ON)
-        assertFalse("the live model: off (the pure rule kept for a later return)", DeviceTier.besideModel())
-        assertTrue(DeviceTier.besideModel(15_255L, lighter = false))
+    /** the user's pick 2026-11-18: the Thor Max keeps its one exception (the world map beside the game); 8 / 12 GB never */
+    @Test fun onlyTheThorMaxStillBuildsTheWorldMapBesideTheGame() {
+        setTotalMb(15_255L); assertTrue(DeviceTier.besideModel())
+        setTotalMb(11_265L); assertFalse(DeviceTier.besideModel())
+        setTotalMb(7_191L); assertFalse(DeviceTier.besideModel())
+        // and with the game up only the beside pass bends the pause
+        assertTrue(PlayGate.artMustPause(gameActive = true, beside = false))
+        assertFalse(PlayGate.artMustPause(gameActive = true, beside = true))
     }
 
     @Test fun theWorkerHoldsTheFilesUntilItParks() {

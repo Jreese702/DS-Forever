@@ -91,8 +91,10 @@ class WorldMapRoomView(context: Context) : View(context) {
         val b = bmps.size().toLong()
         if (b <= 0L) return@Runnable
         bmps.evictAll()
-        MemWatch.note(MapRoomLetGo.line(b))
+        MemWatch.note(MapRoomLetGo.line(b, letGoAfter))
     }
+    /** the wait the last close armed ([MapRoomLetGo.afterMs]) */
+    @Volatile private var letGoAfter = MapRoomLetGo.AFTER_MS
     /** the pictures held now, bytes (the tests; MemWatch's "worldroom") */
     val pictureBytes: Long get() = bmps.size().toLong()
     /** pictures being read / made now (the tests) */
@@ -1566,7 +1568,9 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     fun onHidden() {
         // memory relief 2: the pictures go [MapRoomLetGo.AFTER_MS] after the room is left (unless it is opened again before)
-        roomOn = false; letGoClock.removeCallbacks(letGoLater); letGoClock.postDelayed(letGoLater, MapRoomLetGo.AFTER_MS)
+        // test build 1489 (#56): with the game running they go right after the room closes ([MapRoomLetGo.afterMs])
+        letGoAfter = MapRoomLetGo.afterMs(runCatching { PlayGate.gameActiveNow() }.getOrDefault(false))
+        roomOn = false; letGoClock.removeCallbacks(letGoLater); letGoClock.postDelayed(letGoLater, letGoAfter)
         held = false
         closePsMenu(); stepChoice.close()                    // pm1: the add-on told the Polestar menu is closed
         holdAsk.hidden(); removeCallbacks(holdTick)     // the let-go itself is the hand-over's (touchedOut)
@@ -3198,8 +3202,16 @@ class WorldMapRoomView(context: Context) : View(context) {
 object MapRoomLetGo {
     /** how long after the room is left its pictures go */
     const val AFTER_MS = 60_000L
+    /**
+     * Test build 1489 (the user's pick 2026-11-18, #56: "release the Map room's pictures right after it closes"): the 1.0.33 / 1.0.34
+     * reports' "worldroom" with the game up reached 55 MB (72 in older ones) for the minute after a close. With the game running
+     * ([gameActive]) they go [GAME_AFTER_MS] after the close (a bounce straight back in keeps them); with it closed, the minute.
+     */
+    const val GAME_AFTER_MS = 2_000L
+    fun afterMs(gameActive: Boolean): Long = if (gameActive) GAME_AFTER_MS else AFTER_MS
     /** "map pictures let go (43 MB): the Map room left 60 s ago" */
-    fun line(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): the Map room left ${AFTER_MS / 1000} s ago"
+    fun line(bytes: Long, afterMs: Long = AFTER_MS): String =
+        "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): the Map room left ${afterMs / 1000} s ago"
     /** Home's map module zoomed out on the same pictures (2026-11-17): "map pictures let go (12 MB): Home's map closed 60 s ago" /
      *  "... Home's map closed (lighter memory)" (the 8 / 12 GB models and Lighter mode: at once) */
     fun zoneLine(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): Home's map back on its zone"

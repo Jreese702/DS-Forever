@@ -190,7 +190,13 @@ object MemWatch {
         runCatching {
             Handler(Looper.getMainLooper()).postDelayed({
                 val freed = letGo(RELIEF_LEVEL)
-                h.post { runCatching { val l = trimLine("relief ($why)", freed, collect(collectNow), psiNow()); Log.i(TAG, l); keep(l) } }
+                // test build 1489 (#56): after the let-go and the collection the allocator hands its free pages back (NativeHeap)
+                h.post { runCatching {
+                    val gc = collect(collectNow)
+                    val purge = NativeHeap.purgeLine()
+                    val l = trimLine("relief ($why)", freed, listOf(gc, purge).filter { it.isNotEmpty() }.joinToString("; "), psiNow())
+                    Log.i(TAG, l); keep(l)
+                } }
             }, delayMs.coerceAtLeast(0L))
         }
     }
