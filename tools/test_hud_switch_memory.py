@@ -1,0 +1,136 @@
+"""hub66 SWITCH MEMORY (WowCompanionHub/Hub.lua), off-device: Hub.lua under a stub game.
+
+    python tools/test_hud_switch_memory.py
+
+Checks: a switch tap that took is kept per character in WowCompanionDB.hubSw (one column per OFF/ON pair, the last one wins);
+an unknown column and Auto Shot (the game's own option) are not kept; a fresh load (a new Lua state = a login) with the saved table
+replays the switches at PLAYER_ENTERING_WORLD so the hub document says `set` from the start and the frames are as chosen; another
+character's switches are not replayed; in combat the replay waits for PLAYER_REGEN_ENABLED; a tap after the replay still wins and is
+kept. Needs lupa. Exit code 1 on any failure."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import test_compass as tc  # noqa: E402
+import test_hud_switches as th  # noqa: E402
+
+HUB = th.HUB
+
+EXTRA = r'''
+PLAYER_NAME, REALM = "Rutger", "Mograine"
+COMBAT = false
+function UnitName() return PLAYER_NAME end
+function GetRealmName() return REALM end
+function InCombatLockdown() return COMBAT end
+TIMERS = {}
+C_Timer = { After = function(s, fn) TIMERS[#TIMERS + 1] = fn end, NewTicker = function() return { Cancel = function() end } end }
+'''
+
+
+def boot(db=None, name="Rutger", combat=False):
+    """one 'login': a fresh Lua state, the saved table as the game would hand it over, PLAYER_LOGIN then PLAYER_ENTERING_WORLD"""
+    L = tc.lupa.LuaRuntime()
+    L.execute(th.STUB + EXTRA + r'''
+        MADE = {}
+        local base = CreateFrame
+        function CreateFrame(...) local f = base(...); MADE[#MADE + 1] = f; return f end
+    ''')
+    G = L.globals()
+    G.PLAYER_NAME = name
+    G.COMBAT = combat
+    if db is not None:
+        L.execute("WowCompanionDB = " + db)
+    L.execute(open(HUB, encoding="utf-8").read().replace("local ADDON = ...", "local ADDON = 'WowCompanionHub'", 1))
+    for ev in ("PLAYER_LOGIN", "PLAYER_ENTERING_WORLD"):
+        for i in range(1, len(G.MADE) + 1):
+            f = G.MADE[i]
+            if f.OnEvent:
+                f.OnEvent(f, ev)
+    return L, G
+
+
+def dump(L):
+    """WowCompanionDB.hubSw as a Lua literal, as SavedVariables would write it"""
+    return L.eval(r'''(function()
+        local out = { "{ hubSw = {" }
+        for k, m in pairs((WowCompanionDB or {}).hubSw or {}) do
+            out[#out + 1] = string.format("[%q] = {", k)
+            for p, c in pairs(m) do out[#out + 1] = string.format("[%q] = %d,", p, c) end
+            out[#out + 1] = "},"
+        end
+        out[#out + 1] = "} }"
+        return table.concat(out, " ")
+    end)()''')
+
+
+def main():
+    fails = []
+
+    def chk(name, ok):
+        print(("PASS " if ok else "FAIL ") + name)
+        if not ok:
+            fails.append(name)
+
+    def doc(L, G):
+        G.SENT = L.table()
+        G.ROWS.uisw(None, 99)
+        lst = [G.SENT[i] for i in range(1, len(G.SENT) + 1) if G.SENT[i].type == "hub"]
+        return lst[-1].hub if lst else None
+
+    # 1 a first login: nothing kept yet, nothing set
+    L, G = boot()
+    SW = G.WowCompanion.hub.SW
+    d = doc(L, G)
+    chk("1: first login, nothing kept: player switch not set (%s)" % (d.sw.set and d.sw.set.player), not (d.sw.set and d.sw.set.player))
+    # 2 the app's taps are kept per character, one column per pair, the last wins
+    for c in (SW.PLAYER_SHOW, SW.PLAYER_HIDE, SW.TARGET_HIDE, SW.NP_ON, SW.PRD_ON, SW.SHOT_ON):
+        G.ROWS.uisw(None, c)
+    G.ROWS.uisw(None, 99)
+    m = G.WowCompanionDB.hubSw["Rutger-Mograine"]
+    chk("2: kept per character: player pair = PLAYER_HIDE (%s)" % m["0"], m["0"] == SW.PLAYER_HIDE)
+    chk("2: target, nameplates, personal bar kept (%s %s %s)" % (m["1"], m["2"], m["3"]),
+        m["1"] == SW.TARGET_HIDE and m["2"] == SW.NP_ON and m["3"] == SW.PRD_ON)
+    chk("2: Auto Shot (game's own option) NOT kept (%s)" % m[str(SW.SHOT_ON // 2)], m[str(SW.SHOT_ON // 2)] is None)
+    chk("2: an unknown column (99) NOT kept (%s)" % m["49"], m["49"] is None)
+    saved = dump(L)
+    # 3 the next login replays them: set from the start, frames as chosen
+    L, G = boot(saved)
+    d = doc(L, G)
+    chk("3: next login: player + target hidden at once (alpha %s / %s)" % (G.PlayerFrame.alpha, G.TargetFrame.alpha),
+        G.PlayerFrame.alpha == 0 and G.TargetFrame.alpha == 0)
+    chk("3: the hub document says set for player, target, np, prd (%s %s %s %s)" % (d.sw.set.player, d.sw.set.target, d.sw.set.np, d.sw.set.prd),
+        d.sw.set.player and d.sw.set.target and d.sw.set.np and d.sw.set.prd)
+    chk("3: ... and the values (%s %s np %s prd %s)" % (d.sw.player, d.sw.target, d.sw.np, d.sw.prd),
+        d.sw.player == "hidden" and d.sw.target == "hidden" and d.sw.np is True and d.sw.prd is True)
+    chk("3: Auto Shot not replayed (shot set %s)" % d.sw.set.shot, not d.sw.set.shot)
+    # 4 a tap after the replay still wins and is kept
+    G.ROWS.uisw(None, SW.PLAYER_SHOW)
+    chk("4: a later tap wins (player alpha %s) and is kept (%s)" % (G.PlayerFrame.alpha, G.WowCompanionDB.hubSw["Rutger-Mograine"]["0"]),
+        G.PlayerFrame.alpha == 1 and G.WowCompanionDB.hubSw["Rutger-Mograine"]["0"] == SW.PLAYER_SHOW)
+    # 5 another character: not replayed
+    L, G = boot(saved, name="Bank Dea")
+    d = doc(L, G)
+    chk("5: another character: nothing replayed (player alpha %s, set %s)" % (G.PlayerFrame.alpha, d.sw.set and d.sw.set.player),
+        G.PlayerFrame.alpha == 1 and not (d.sw.set and d.sw.set.player))
+    # 6 login in combat: waits for the fight's end
+    L, G = boot(saved, combat=True)
+    chk("6: in combat: not replayed yet (player alpha %s)" % G.PlayerFrame.alpha, G.PlayerFrame.alpha == 1)
+    G.COMBAT = False
+    for i in range(1, len(G.MADE) + 1):
+        f = G.MADE[i]
+        if f.OnEvent:
+            f.OnEvent(f, "PLAYER_REGEN_ENABLED")
+    chk("6: after the fight: replayed (player alpha %s)" % G.PlayerFrame.alpha, G.PlayerFrame.alpha == 0)
+    # 7 a corrupt saved table never breaks the load
+    try:
+        L, G = boot('{ hubSw = { ["Rutger-Mograine"] = { ["0"] = "x", ["1"] = 99, ["5"] = 2 } } }')
+        chk("7: corrupt entries ignored, load fine (player alpha %s)" % G.PlayerFrame.alpha, G.PlayerFrame.alpha == 1)
+    except Exception as e:  # noqa: BLE001
+        chk("7: corrupt entries ignored (raised %s)" % e, False)
+
+    print("failed: %d" % len(fails))
+    sys.exit(1 if fails else 0)
+
+
+if __name__ == "__main__":
+    main()
