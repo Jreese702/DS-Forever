@@ -48,8 +48,4 @@ object PetFollowB {
         if (!live || pf == null || pf.on == want) return false
         return lastSent != want || lastSentAt == 0L || now - lastSentAt >= RESEND_MS
     }
-
-    /** the "What it does" picture's title and words */
-    fun caption(on: Boolean): List<String> = if (on) listOf("Home, out of combat, your pet attacking:", "B calls it back to follow you.")
-        else listOf("B keeps its own action.")
 }

@@ -239,21 +239,16 @@ class ClockShotsTest {
         ItemCd.reset()
     }
 
-    /** the Gold row's "What it does" picture at about the Settings panel's size (title, picture, words), On and Off */
+    /** the Gold row's picture (SettingsPreview's drawing, as Bottom screen's Clock band tile falls back to it), On and Off */
     private fun preview(gold: Boolean): Bitmap {
         val b = Bitmap.createBitmap(454, 640, Bitmap.Config.ARGB_8888)
         val c = Canvas(b); c.drawColor(Theme.ink)
         val s = SettingsPreview.State(clockGold = gold)
-        c.drawText(SettingsPreview.title("Gold", s), 18f, 40f, UiKit.bodyPaint(26f, Theme.gold))
-        val caps = SettingsPreview.caption("Gold", s)
-        val capTop = 640f - 20f - caps.size * 28f
         val glyph = SettingsPreview.Glyph { _, _, _, _, _, _ -> }
-        val pic = RectF(8f, 60f, 446f, capTop - 8f)
+        val pic = RectF(8f, 8f, 446f, 632f)
         c.save(); c.clipRect(pic)
         SettingsPreview.draw(c, pic, "Gold", s, 1000L, glyph)
         c.restore()
-        val pc = UiKit.bodyPaint(21f, Theme.textDim)
-        for ((i, line) in caps.withIndex()) c.drawText(line, 18f, capTop + 22f + i * 28f, pc)
         return b
     }
 

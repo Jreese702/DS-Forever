@@ -165,7 +165,6 @@ class WindowsIdTest {
         assertEquals(SettingsTabs.Drawer.VIEW, b.drawer)
         assertEquals(listOf("Windows ID"), b.rows)
         assertEquals(listOf("Battle.net login", "Game account", "Windows ID"), SettingsTabs.blocks(SettingsTabs.Group.ACCOUNT).flatMap { it.rows })
-        assertFalse("no picture: the words say it", SettingsPreview.has("Windows ID"))
         for (l in listOf("es", "fr")) {
             val f = listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json")).first { it.canRead() }
             Tr.load(l, f.readText(Charsets.UTF_8))

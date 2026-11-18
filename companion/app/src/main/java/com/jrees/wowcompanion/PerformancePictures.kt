@@ -30,6 +30,7 @@ import kotlin.math.sin
  * - Memory: Home's map module at the chosen detail, from the device's own minimap tiles (MinimapTiles, the art harvest's): Full detail
  *   zoomed out over many zones with the zone framed, Zone map the zone alone; a drawn map where there are no tiles.
  * - Indoor maps: a building's floor plan being built room by room, the build's own ready / total as a ring.
+ * - Stream settings: the PC's screen sending the game to the two-screen handheld, the signal's arcs between them in the accent.
  *
  * Animated pictures move only in the open band ([t] > 0); a tile draws frame 0. Sample fills only (no game values); the indoor ring and
  * the lane's rate are our own settings and our own bake's count.
@@ -60,6 +61,7 @@ object PerformancePictures {
                 PerformanceTileModel.FG -> if (s.hasDll) frameGen(c, w, s.generating, s.multiplier, t) else frameGen(c, w, true, 2, t)
                 PerformanceTileModel.MEM -> memory(c, w, s.mapFull, ready)
                 PerformanceTileModel.INDOOR -> indoor(c, w, s.indoorOn, if (s.total > 0) s.ready / s.total.toFloat() else 0f, t)
+                PerformanceTileModel.STREAM -> stream(c, w)
             }
         }
         c.restoreToCount(save)
@@ -354,6 +356,50 @@ object PerformancePictures {
         }
         val p = UiKit.numberPaint(17f, Theme.text, shadow = false).apply { textAlign = Paint.Align.CENTER }
         c.drawText("${Math.round(done * 100)}%", ringX, H / 2f + 6f, p)
+    }
+
+    // ---------------------------------------------------------------- Stream settings
+
+    /** the PC's screen (left) sending the game to the handheld's two screens (right), the signal's three arcs between, in the accent */
+    private fun stream(c: Canvas, w: Float) {
+        // the PC: a screen with the game's sky and ground, on its stand
+        val pc = RectF(14f, 16f, 14f + w * 0.38f, 74f)
+        pF.color = Color.rgb(18, 18, 22); c.drawRoundRect(RectF(pc.left - 4f, pc.top - 4f, pc.right + 4f, pc.bottom + 4f), 5f, 5f, pF)
+        screen(c, pc)
+        pF.color = Color.rgb(60, 58, 54)
+        c.drawRect(pc.centerX() - 4f, pc.bottom + 4f, pc.centerX() + 4f, pc.bottom + 16f, pF)
+        c.drawRoundRect(RectF(pc.centerX() - 20f, pc.bottom + 14f, pc.centerX() + 20f, pc.bottom + 19f), 2f, 2f, pF)
+        // the handheld: the game on the top screen, our Home's strip on the bottom one
+        val dw = w * 0.24f
+        val dx = w - 14f - dw
+        val top = RectF(dx, 12f, dx + dw, 12f + dw * 0.56f)
+        val bot = RectF(dx + dw * 0.08f, top.bottom + 10f, dx + dw * 0.92f, top.bottom + 10f + dw * 0.5f)
+        pF.color = Color.rgb(30, 30, 34)
+        c.drawRoundRect(RectF(top.left - 4f, top.top - 4f, top.right + 4f, top.bottom + 4f), 5f, 5f, pF)
+        c.drawRoundRect(RectF(bot.left - 4f, bot.top - 4f, bot.right + 4f, bot.bottom + 4f), 5f, 5f, pF)
+        screen(c, top)
+        pF.color = Color.rgb(24, 20, 14); c.drawRect(bot, pF)
+        pF.color = Theme.gold
+        for (i in 0..2) c.drawCircle(bot.left + bot.width() * (0.25f + 0.25f * i), bot.centerY(), 3f, pF)
+        // the signal: three arcs opening toward the handheld
+        val cx = pc.right + 10f
+        val cy = (pc.top + pc.bottom) / 2f
+        pS.strokeWidth = 3.2f
+        for (i in 0..2) {
+            val r = 12f + i * 11f
+            pS.color = withAlpha(Theme.gold, 1f - i * 0.25f)
+            c.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), -35f, 70f, false, pS)
+        }
+    }
+
+    /** a small picture of the game on a screen: sky over ground, a sun */
+    private fun screen(c: Canvas, r: RectF) {
+        pF.shader = LinearGradient(0f, r.top, 0f, r.bottom, intArrayOf(Color.rgb(70, 110, 150), Color.rgb(150, 170, 160), Color.rgb(60, 90, 40)),
+            floatArrayOf(0f, 0.55f, 0.56f), Shader.TileMode.CLAMP)
+        c.drawRect(r, pF)
+        pF.shader = null
+        pF.color = Color.rgb(250, 226, 150)
+        c.drawCircle(r.left + r.width() * 0.75f, r.top + r.height() * 0.28f, r.height() * 0.1f, pF)
     }
 
     private fun blend(a: Int, b: Int, k: Float): Int = Color.rgb(

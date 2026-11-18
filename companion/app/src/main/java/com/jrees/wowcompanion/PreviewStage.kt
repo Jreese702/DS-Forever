@@ -3,6 +3,7 @@ package com.jrees.wowcompanion
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.RectF
 import android.os.SystemClock
 import android.view.View
 import android.widget.FrameLayout
@@ -10,10 +11,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * THE SETTINGS PANEL'S LIVE MINIATURES (f-settings-previews; the user: "What ever happened to making our visual aids in the settings less
+ * THE SETTINGS ROOM'S LIVE MINIATURES (f-settings-previews; the user: "What ever happened to making our visual aids in the settings less
  * shitty?", then "Yes, this direction": real miniatures of our own bottom-screen views, drawn by the real view code). An OFFSCREEN Home of
  * its own - a HomeView with its own CastView, MapView and ChatView, exactly as CompanionHost builds the live one - fed COPIES of the latest
- * game documents, and drawn at a [HomeView.Companion.Look] into a cached half-size bitmap.
+ * game documents, and drawn at a [HomeView.Companion.Look] ([render]) into the caller's bitmap: Bottom screen's tiles crop it at 1x
+ * (BottomPictures), the Theme maker shows it in the draft theme (ThemeMakerPage.homeRender).
  *
  * NEVER THE GAME'S: the views are never attached to a window (so no controller reader ever starts: CastView starts its reader only while
  * attached and shown), they get no touch, their callbacks are no-ops, and every "pad" (the add-on's tap cells) is stripped from the copies,
@@ -37,7 +39,7 @@ object PreviewStage {
     /** something to show (the panel draws its own diagram until the game has sent a full document) */
     val ready get() = full != null
 
-    /** the map module's box in the last picture, as fractions of it (the minimap rows crop it), null = none yet */
+    /** the map module's box in the last picture, as fractions of it (the minimap tile's aspect), null = none yet */
     var mapBox: android.graphics.RectF? = null
         private set
 
@@ -68,62 +70,62 @@ object PreviewStage {
 
     private class Tree(val home: HomeView, val cast: CastView, val map: MapView)
     private var tree: Tree? = null
-    private val cache = HashMap<String, Bitmap>()
-    private var cachedAt = 0L
 
     /**
      * THE MINIATURES GO WHEN SETTINGS IS NOT ON SHOW (issue triage 2026-11-14, the 1.0.29 - 1.0.31 low-memory cluster; the user,
-     * 2026-11-13: "yes on the triage things"): each look's half-size Home is 1.2 MB and the cache was kept after the panel closed, for
-     * the rest of the run. At Android's running-low trims and at MemWatch's relief (the game starting, the world loading) they go
-     * unless Settings is the room on show; the panel draws them again when it opens. Main thread (MemWatch runs trims there).
+     * 2026-11-13: "yes on the triage things"): at Android's running-low trims and at MemWatch's relief (the game starting, the world
+     * loading) the pictures made from the stage go unless Settings is the room on show (each holder's own trim asks this).
      */
     fun cacheLetsGo(level: Int, room: String): Boolean =
         level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && room != Room.SETTINGS.name.lowercase()
-    init {
-        MemWatch.onTrim("preview") { level ->
-            if (!cacheLetsGo(level, MemWatch.room) || cache.isEmpty()) 0L
-            else cache.values.sumOf { it.byteCount.toLong() }.also { cache.clear(); cachedAt = 0L }
-        }
-    }
 
-    /** the width of a miniature; Home's own frame is 1240 x (1080 - the bar) */
-    private const val W = 1240
-    private val H get() = 1080 - Strip.HEIGHT
-    private const val SCALE = 0.5f
-    /** a cached picture is drawn again after this long (the game's documents keep coming; the panel need not follow every one) */
-    private const val STALE_MS = 3_000L
+    /** Home's own frame: 1240 x (1080 - the bar) */
+    const val W = 1240
+    val H get() = 1080 - Strip.HEIGHT
 
     /**
-     * Home at [look] (in a fight: [fight]), the half-size picture; null until the game has sent a full document. Cached per look and
-     * fight for [STALE_MS].
+     * Home at [look] (in a fight: [fight]; the DS toolbar on / off / as it is: [toolbar]) drawn into [into], scaled to its width
+     * (into.width / [W]: a 1240 px bitmap is Home at 1x), in theme [spec] (null = the theme in use: Theme.preview swaps it for this one
+     * synchronous draw, the live rooms never see it). Returns the modules' boxes in Home's px ("map", "chat", "controller"); null until the
+     * game has sent a full document (the caller's drawing stands in). Nothing is cached here: the caller keeps what it crops.
+     *
+     * The beautify pass (2026-11-17): this replaced the half-size cached Home (BottomPictures' controller crops were soft, a crop of a
+     * half-size render blown up into the band), and gives the Theme maker its real mini Home (the user's ask: "make the theme maker
+     * preview a real Home miniature").
      */
-    fun home(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean? = null): Bitmap? {
+    fun render(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?, into: Bitmap, spec: ThemeSpec? = null): Map<String, RectF>? {
         val f = full ?: return null
-        val now = SystemClock.uptimeMillis()
-        if (now - cachedAt > STALE_MS && gen != builtGen) { cache.clear(); cachedAt = now }
-        val key = "$look/$fight/$toolbar"
-        cache[key]?.let { return it }
         val t = tree ?: build(ctx).also { tree = it }
         builtGen = gen
         askDirty = true
-        val bmp = try {
-            HomeView.renderLook = look
+        val draw: () -> Map<String, RectF>? = {
             feed(t, f, fight, toolbar)
-            t.home.previewMapRect()?.let { m -> mapBox = android.graphics.RectF(m.left / W, m.top / H, m.right / W, m.bottom / H) }
-            val b = Bitmap.createBitmap((W * SCALE).toInt(), (H * SCALE).toInt(), Bitmap.Config.ARGB_8888)
-            val c = Canvas(b)
-            c.scale(SCALE, SCALE)
+            val m = t.home.previewMapRect()
+            if (m != null) mapBox = RectF(m.left / W, m.top / H, m.right / W, m.bottom / H)
+            into.eraseColor(0)
+            val c = Canvas(into)
+            val k = into.width / W.toFloat()
+            c.scale(k, k)
             t.home.draw(c)
-            b
+            m?.let { map ->
+                val chat = RectF(W - map.right, map.top, W - map.left, map.bottom)
+                mapOf("map" to RectF(map), "chat" to chat, "controller" to RectF(0f, 0f, W.toFloat(), map.top))
+            }
+        }
+        return try {
+            HomeView.renderLook = look
+            if (spec != null) Theme.preview(spec) { draw() } else draw()
         } catch (e: Throwable) {
             android.util.Log.w("WCHOME", "preview stage: ${e.javaClass.simpleName}: ${e.message}")
             null
         } finally {
             HomeView.renderLook = null
         }
-        if (bmp != null) cache[key] = bmp
-        return bmp
     }
+
+    /** the player's own look now (their rest, combat growth, quest place and swing line): the Theme maker's mini Home */
+    fun playerLook(): HomeView.Companion.Look =
+        HomeView.Companion.Look(HomeSettings.rest, HomeSettings.combatGrow, HomeSettings.questOverMap, HomeSettings.swingTimer)
 
     /** the stage's Home fed copies of the latest documents (no tap pad), [fight] or not, settled at [HomeView.renderLook] */
     private fun feed(t: Tree, f: JSONObject, fight: Boolean, toolbar: Boolean?) {
@@ -274,7 +276,7 @@ object PreviewStage {
         val t = tree ?: return
         t.home.onCastBar(CastStripModel.Live.bar ?: CastStripModel.Bar(
             (0 until CastStripModel.SLOTS).map { i -> CastStripModel.Slot(i, null, null, null, false) }, null, false, "", null))
-        cache.clear(); askDirty = true
+        askDirty = true
     }
 
     /** Home and the Home bar under it, at the picture's scale */

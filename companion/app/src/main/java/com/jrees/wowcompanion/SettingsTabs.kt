@@ -16,10 +16,13 @@ import android.content.SharedPreferences
 object SettingsTabs {
     /** [folds] false = its groups are always open, plain headings (the user, 2026-11-12: "the general tab doesnt need the folding
      *  sections"). Top screen too since its tiles (the user, 2026-11-16: "VISUAL overhaul of UI menus"; the design's pick, accepted the
-     *  same day: "The five headings with no folding on this tab", which changes the 11-12 fold ruling for this tab only) */
+     *  same day: "The five headings with no folding on this tab", which changes the 11-12 fold ruling for this tab only). The beautify
+     *  pass's pick 5 (the user, 2026-11-17, the recommended answer: "tiled tabs (Bottom, Controller, Performance, like Top) do not fold;
+     *  Add-ons folds only Voice / Imported"): every tab of picture tiles is always open; Add-ons is the one tab that still folds, and
+     *  only its two lists (its Import button and its cards are headless) */
     enum class Tab(val label: String, val hidden: Boolean = false, val folds: Boolean = true) {
-        GENERAL("General", folds = false), BOTTOM("Bottom screen"), TOP("Top screen", folds = false), CONTROLLER("Controller"), ADDONS("Add-ons"),
-        PERFORMANCE("Performance")
+        GENERAL("General", folds = false), BOTTOM("Bottom screen", folds = false), TOP("Top screen", folds = false),
+        CONTROLLER("Controller", folds = false), ADDONS("Add-ons"), PERFORMANCE("Performance", folds = false)
     }
 
     /** the tabs the room shows, in order (a hidden one is never on the row, never stepped onto) */

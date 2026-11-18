@@ -25,7 +25,7 @@ import org.robolectric.annotation.GraphicsMode
 class BottomTilesTest {
     private val app get() = RuntimeEnvironment.getApplication()
 
-    @After fun forget() { BottomPictures.drop(); BottomPictures.stage = BottomPictures.HalfStage }
+    @After fun forget() { BottomPictures.drop(); BottomPictures.stage = BottomPictures.FullStage }
 
     private fun bmp(w: Int = 216, h: Int = 108) = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
 

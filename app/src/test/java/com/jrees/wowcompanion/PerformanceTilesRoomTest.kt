@@ -140,14 +140,13 @@ class PerformanceTilesRoomTest {
         assertEquals(View.VISIBLE, gb.box.visibility)
         assertEquals("no heading", View.GONE, gb.heading.visibility)
         assertTrue(gb.parts.single() === r.perf)
-        assertEquals(View.GONE, r.preview.visibility)
         val t = tiles(r)
         assertEquals(listOf(PerformanceTileModel.LIMIT, PerformanceTileModel.FG, PerformanceTileModel.MEM, PerformanceTileModel.INDOOR), t.keys.toList())
         assertEquals(1, t.values.map { it.top }.distinct().size)
         assertEquals(16f, t.getValue(PerformanceTileModel.LIMIT).left, 0.5f)
         assertEquals(W - 16f, t.getValue(PerformanceTileModel.INDOOR).right, 0.5f)
         assertEquals(2 * GameUiTiles.TILE_W + GameUiTiles.GAP, t.getValue(PerformanceTileModel.FG).width(), 0.5f)
-        // every tile is a stop; the Stream settings row presses nothing while streaming is off (no stop)
+        // every tile is a stop; no Stream settings tile while streaming is off (it cannot act: not drawn, no stop)
         val stops = r.pad.targetBoxes()
         for ((id, b) in t) assertTrue("$id is a stop", stops.any { it == b })
         assertEquals(4, stops.size)
@@ -155,6 +154,32 @@ class PerformanceTilesRoomTest {
         open(r, PerformanceTileModel.MEM)
         r.show(SettingsTabs.Tab.GENERAL); r.show(SettingsTabs.Tab.PERFORMANCE); lay(r)
         assertNull(r.perf.openTile)
+    }
+
+    /**
+     * the user's pick, 2026-11-17 ("Performance 'Stream settings' becomes a picture tile like the others"): with streaming set up it is
+     * the second row's first tile, a cursor stop; A on it opens the stream page and no band
+     */
+    @Test fun streamSettingsTileOpensItsPage() {
+        var opened = 0
+        SetupBridge.openStreamSettings = { opened++ }
+        try {
+            val r = room(); hold(r)
+            r.perf.requestLayout(); lay(r)
+            assertEquals(listOf(PerformanceTileModel.LIMIT, PerformanceTileModel.FG, PerformanceTileModel.MEM, PerformanceTileModel.INDOOR,
+                PerformanceTileModel.STREAM), r.perf.tileIds())
+            val t = tiles(r)
+            val st = t.getValue(PerformanceTileModel.STREAM)
+            assertEquals(16f, st.left, 0.5f)
+            assertTrue(st.top > t.getValue(PerformanceTileModel.LIMIT).bottom)
+            assertTrue("a stop", r.pad.targetBoxes().any { it == st })
+            press(r, "PADDDOWN")
+            repeat(3) { if (r.pad.focusBox() != st) press(r, "PADDDOWN") }
+            assertEquals(st, r.pad.focusBox())
+            press(r, "PAD1")
+            assertEquals(1, opened)
+            assertNull("no band", r.perf.openTile)
+        } finally { SetupBridge.openStreamSettings = null }
     }
 
     /** the cursor: Down from the tab row onto Frame limit, Right along the row; A opens the band and STAYS on the tile, Down into its
@@ -334,9 +359,9 @@ class PerformanceTilesRoomTest {
             open(r, PerformanceTileModel.MEM); shot("perf_22_${theme}_band_memory")
         }
         Theme.use("classic"); ThemeLive.repaint(r, Theme.prev, Theme.cur); lay(r)
-        // streaming set up: the compact row's ONE button live
+        // streaming set up: the Stream settings tile (the second row)
         SetupBridge.openStreamSettings = { }
-        close(); lay(r); shot("perf_23_stream_on")
+        r.perf.requestLayout(); close(); lay(r); shot("perf_23_stream_on")
         SetupBridge.openStreamSettings = null
         // no kit on the phone yet: the drawn pictures (no map tiles, no bar art)
         r = room(kit = false)

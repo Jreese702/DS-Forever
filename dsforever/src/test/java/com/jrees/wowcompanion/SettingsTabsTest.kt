@@ -202,11 +202,15 @@ class SettingsTabsTest {
         assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
         // the user's pick 2026-11-16 (the design's "five headings with no folding on this tab"): Top screen's tiles never fold either
         assertEquals(false, T.TOP.folds)
-        // beautify: Performance keeps the 11-12 fold flag until the user's pick 5 (its one group is headless, so always open anyway)
-        assertEquals(true, T.PERFORMANCE.folds)
+        // beautify pick 5 (the user, 2026-11-17: tiled tabs do not fold, Add-ons folds only Voice / Imported): Add-ons is the one
+        // folding tab, and only its headed groups fold
+        assertEquals(listOf(T.ADDONS), T.values().filter { it.folds })
         assertEquals(setOf(G.FRAMES), SettingsTabs.openOnShow(T.PERFORMANCE))
-        assertEquals(false, SettingsTabs.folds(G.FRAMES))
-        assertEquals(T.values().filter { it != T.GENERAL && it != T.TOP }, T.values().filter { it.folds })
+        for (t in listOf(T.BOTTOM, T.CONTROLLER, T.PERFORMANCE)) {
+            assertEquals(t.label, SettingsTabs.groups(t).toSet(), SettingsTabs.openOnShow(t))
+            for (g in SettingsTabs.groups(t)) assertEquals(g.name, false, SettingsTabs.folds(g))
+        }
+        assertEquals(setOf(G.VOICE, G.IMPORTED), G.values().filter { SettingsTabs.folds(it) }.toSet())
         // the layout editor's group first (feat/big-layout's pick), and with the tiles' no-folding tab (feat/big-uimenus) every group opens
         assertEquals(setOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), SettingsTabs.openOnShow(T.TOP))
         assertEquals(G.LAYOUT, SettingsTabs.groups(T.TOP).first())
@@ -327,7 +331,6 @@ class SettingsTabsTest {
             // the user's pick 2026-11-13: the pause menu's third row, Start over game windows (Our wheel / Game's wheel)
             assertEquals(if (b == B.PAUSE_WHEEL) 3 else 2, b.rows.size)
             assertTrue(b.rows[0].endsWith(": open") && b.rows[1].endsWith(": pick"))
-            for (r in b.rows) assertTrue("$r has a picture", SettingsPreview.has(r))
         }
     }
 
@@ -342,22 +345,8 @@ class SettingsTabsTest {
     }
 }
 
-/** f-settings-tabs phase 2: the "What it does" pictures belong to bottom-screen rows (the user's rule: none on the top screen's Show/Hide) */
+/** the Top screen's tiles and their pictures (the "What it does" panel's own registry went with the panel: every tab is tiles) */
 class SettingsPreviewRowsTest {
-    private val allRows = SettingsTabs.Block.values().flatMap { b -> b.rows.map { it to b.tab } }.toMap()
-
-    @Test fun everyPictureIsARowOfABottomScreenTab() {
-        for (id in SettingsPreview.ROWS.keys) {
-            val tab = allRows[id]
-            assertTrue("$id is not a Settings row", tab != null)
-            assertTrue("$id is on $tab", tab != SettingsTabs.Tab.TOP)
-        }
-    }
-
-    /** the panel stays off the Top screen tab (a row there with a "What it does" picture would show it and squeeze the tile grid) */
-    @Test fun noPictureOnTheTopScreensShowHide() =
-        assertTrue(SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }.none { SettingsPreview.has(it) })
-
     /** 2026-11-16 (the user: "VISUAL overhaul of UI menus (picture beside each game-UI element option)"): every Top screen tile has its
      *  picture, in the tiles' own registry (GameUiTiles.PICTURED, which TilePictures draws), and every Top screen row is a tile or a row
      *  of a tile's band, each once (19 tiles + 8 band rows = the tab's 27 rows) */
@@ -377,56 +366,6 @@ class SettingsPreviewRowsTest {
             val rows = SettingsTabs.Block.values().filter { it.group == g }.flatMap { it.rows }.toSet()
             assertEquals(g.heading, rows, (ids + ids.flatMap { GameUiTiles.EXTRAS[it] ?: emptyList() }).map { word.getValue(it) }.toSet())
         }
-    }
-
-    /** 2026-11-13 (the user: "a lot of these new options and settings need visuals to accompany them in the settings menus"): every
-     *  Bottom screen row has its picture (a new row there needs one), and the Controller tab's combat helpers have theirs */
-    @Test fun everyBottomScreenRowHasAPicture() {
-        val missing = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.BOTTOM }.flatMap { it.rows }.filter { !SettingsPreview.has(it) }
-        assertTrue("Bottom screen rows with no picture: $missing", missing.isEmpty())
-        for (r in listOf("Smart Y", "Party mode", "Smart Res", "Start attack on hostile target", "Combat Auto Shot"))
-            assertTrue("$r has a picture", SettingsPreview.has(r))
-    }
-
-    /** every value of the new rows has its title and words (the panel shows the one chosen) */
-    @Test fun theNewRowsWordsFollowTheValue() {
-        for (side in 0..3) assertTrue(SettingsPreview.caption("Tap-to-cast bar", SettingsPreview.State(castBar = side)).isNotEmpty())
-        assertEquals("Tap-to-cast bar: Both", SettingsPreview.title("Tap-to-cast bar", SettingsPreview.State(castBar = 3)))
-        // the bar in a fight: Hide (the default) / Stay, each with its own words
-        assertEquals("Cast bar in combat: Hide", SettingsPreview.title("In combat", SettingsPreview.State()))
-        assertEquals("Cast bar in combat: Stay", SettingsPreview.title("In combat", SettingsPreview.State(castCombatHide = false)))
-        assertTrue(SettingsPreview.caption("In combat", SettingsPreview.State()) != SettingsPreview.caption("In combat", SettingsPreview.State(castCombatHide = false)))
-        assertEquals("Ammo: Off", SettingsPreview.title("Ammo", SettingsPreview.State(clockAmmo = false)))
-        // 2026-11-13 (the user: "just list our total gold under the battery (still give it a toggle)"): the Gold row's picture is the gold line
-        assertEquals("Gold: On", SettingsPreview.title("Gold", SettingsPreview.State(clockGold = true)))
-        assertEquals("Gold: Off", SettingsPreview.title("Gold", SettingsPreview.State(clockGold = false)))
-        assertTrue(SettingsPreview.caption("Gold", SettingsPreview.State(clockGold = true)).first().contains("under the battery"))
-        assertEquals(listOf("No gold under the battery."), SettingsPreview.caption("Gold", SettingsPreview.State(clockGold = false)))
-        assertEquals("Combat Auto Shot: Smart", SettingsPreview.title("Combat Auto Shot", SettingsPreview.State(autoShot = 2)))
-        assertEquals("Smart Y: -", SettingsPreview.title("Smart Y", SettingsPreview.State()))
-        for (y in listOf(null, true, false)) for (sh in 0..2) for (b in listOf(true, false)) {
-            val s = SettingsPreview.State(smartY = y, autoShot = sh, clockHearth = b, clockTeleport = b, clockGold = b, clockBags = b,
-                clockAmmo = b, worldMapAll = b, partyMode = b, smartRes = b, attackHostile = b, castCombatHide = b)
-            for (id in SettingsPreview.ROWS.keys) {
-                assertTrue(id, SettingsPreview.title(id, s).length in 3..40)
-                assertTrue(id, SettingsPreview.caption(id, s).isNotEmpty() && SettingsPreview.caption(id, s).all { it.length <= 46 })
-            }
-        }
-    }
-
-    @Test fun everyPictureHasATitleAndWords() {
-        val s = SettingsPreview.State(startAttack = true, toolbar = true)
-        for (id in SettingsPreview.ROWS.keys) {
-            assertTrue(id, SettingsPreview.title(id, s).length in 3..40)
-            assertTrue(id, SettingsPreview.caption(id, s).isNotEmpty() && SettingsPreview.caption(id, s).all { it.length <= 46 })
-        }
-    }
-
-    @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair; 2026-11-13: + 12, + the cast bar's In combat
-        assertEquals(43, SettingsPreview.ROWS.size)                     // 2026-11-13: + Start over game windows; 2026-11-16: + B: pet follow, + hold to talk's two
-        assertTrue(SettingsPreview.animated("Start over game windows"))
-        assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
-        assertTrue(SettingsPreview.animated("In combat"))                // the bar fading out in a fight
     }
 }
 

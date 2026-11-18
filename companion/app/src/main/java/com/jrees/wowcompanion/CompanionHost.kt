@@ -547,6 +547,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settings.pad.onLeave = { show(Room.HOME) }
         // feat/beautify: General's Theme tile opens themes' Theme maker (its premade gallery a step inside it)
         GeneralTiles.onOpenTheme = { settings.openThemeMaker() }
+        // the maker's live mini Home in the DRAFT theme (the beautify pass, 2026-11-17): the Settings stage's real Home (PreviewStage, the
+        // Bottom screen tiles' renderer) at the player's own look; before the game's first document the drawn mini room stands in
+        ThemeMakerPage.homeRender = { spec, b -> PreviewStage.render(this, PreviewStage.playerLook(), false, null, b, spec) != null }
         settingsRoom = settings
         // the DS WoW toolbar's switch lives in Home's Settings section since 2026-10-06 (renamed from "D-pad room bar")
         // issue #136 (2026-11-11): the row shows the player's pending choice at once (it showed the add-on's old word, "On", while the
@@ -928,7 +931,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the layout editor's page takes B itself (one step back, then out): the capture's B never leads Home while it shows
         settings.pad.overlayOpen = { ::layoutPage.isInitialized && layoutPage.isOpen }
         settingsView.onEditLayout = { if (::layoutPage.isInitialized && LauncherHooks.gameUp()) { layoutPage.open(); settings.pad.resyncB() } }
-        settingsView.onRouteReview = { if (::pathReview.isInitialized) pathReview.open() }
         if (LauncherHooks.pkg != null) {
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
             sweepTrigger()

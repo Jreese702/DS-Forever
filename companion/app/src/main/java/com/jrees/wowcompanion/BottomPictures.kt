@@ -70,25 +70,29 @@ object BottomPictures {
     interface Stage { fun frame(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Frame? }
 
     /**
-     * INTERIM (until the shared core's `PreviewStage.renderWith` + `boxes()` land - the design's section 1; bottom never edits
-     * PreviewStage): its half-size cached Home and the map module's box; the chat column is the map's mirror, the controller band
-     * everything above them. The integrator swaps this for the core's 1x render and its boxes.
+     * THE 1x STAGE (the design's section 3.1, critic C5: "Render at 1x into ONE reused 1240 x 1007 bitmap (about 5 MB, freed with the
+     * cache), crop, then drop"): PreviewStage.render at Home's own size into one bitmap kept for the last look asked, so the crops of one
+     * look come from one render. It replaced the half-size cached Home, whose controller crops were soft (a 202 px crop blown up into
+     * the band's 438). The bitmap goes with the crops ([drop]: a trim, Settings' Bottom screen out of view).
      */
-    object HalfStage : Stage {
+    object FullStage : Stage {
+        private var bmp: Bitmap? = null
+        private var key: String? = null
+        private var boxes: Map<String, RectF>? = null
         override fun frame(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Frame? {
-            val b = PreviewStage.home(ctx, look, fight, toolbar) ?: return null
-            // the stage's mapBox is its LAST render's: a picture handed back from its cache may be another look's (a cast bar on, the
-            // quest over the map), so each picture keeps the box it was drawn with (a picture seen first was just drawn)
-            val mb = boxOf.getOrPut(b) { PreviewStage.mapBox?.let { RectF(it) } ?: return null }
-            val w = HOME_W; val h = homeH()
-            val map = RectF(mb.left * w, mb.top * h, mb.right * w, mb.bottom * h)
-            val chat = RectF(w - map.right, map.top, w - map.left, map.bottom)
-            return Frame(b, b.width / w, mapOf("map" to map, "chat" to chat, "controller" to RectF(0f, 0f, w, map.top)))
+            val k = "$look/$fight/$toolbar"
+            val b = bmp ?: Bitmap.createBitmap(PreviewStage.W, PreviewStage.H, Bitmap.Config.ARGB_8888).also { bmp = it }
+            if (k != key || boxes == null) {
+                key = k
+                boxes = PreviewStage.render(ctx, look, fight, toolbar, b)
+            }
+            return boxes?.let { Frame(b, 1f, it) }
         }
+        /** the render goes (the next crop renders again: the game's documents moved on) */
+        fun stale() { key = null }
+        fun drop(): Long { val n = bmp?.byteCount?.toLong() ?: 0L; bmp = null; key = null; boxes = null; return n }
     }
-    var stage: Stage = HalfStage
-    /** each stage picture's map box (HalfStage), as long as the stage keeps the picture */
-    private val boxOf = java.util.WeakHashMap<Bitmap, RectF>()
+    var stage: Stage = FullStage
 
     const val HOME_W = 1240f
     fun homeH(): Float = 1080f - Strip.HEIGHT
@@ -139,6 +143,8 @@ object BottomPictures {
         val big = shot.w > W
         val f = try { stage.frame(ctx, shot.look, shot.fight, shot.toolbar) } catch (e: Throwable) { null }
         if (f == null) { pending.clear(); return false }                         // no game yet: the drawings stand in
+        // the queue emptied: the next ask renders Home again (its documents keep coming)
+        if (pending.isEmpty()) FullStage.stale()
         val win = shot.win(f.boxes)
         if (win == null) { failed += next.key; return pending.isNotEmpty() }
         val out = Bitmap.createBitmap(shot.w, shot.h, Bitmap.Config.ARGB_8888)
@@ -164,7 +170,7 @@ object BottomPictures {
     private val redone = HashSet<String>()
 
     /** every crop goes (a trim, Settings' Bottom screen out of view); the bytes let go */
-    fun drop(): Long { pending.clear(); failed.clear(); madeAt.clear(); redone.clear(); kb = null; worldArt.clear(); spotLooked = false; spotMemo = null; return small.clear() + large.clear() }
+    fun drop(): Long { pending.clear(); failed.clear(); madeAt.clear(); redone.clear(); kb = null; worldArt.clear(); spotLooked = false; spotMemo = null; return small.clear() + large.clear() + FullStage.drop() }
 
     private val viewers = HashSet<Int>()
     /** a Bottom screen tile view came into view ([on]) or went; the last one going drops the crops */

@@ -121,11 +121,6 @@ class PauseDupTest {
 
     @Test fun theRowAndItsPicture() {
         assertTrue(PauseOver.ROW_ID in SettingsTabs.Block.PAUSE_WHEEL.rows)
-        assertTrue(SettingsPreview.has(PauseOver.ROW_ID) && SettingsPreview.animated(PauseOver.ROW_ID))
-        assertEquals("Over game windows: Our wheel", SettingsPreview.title(PauseOver.ROW_ID, SettingsPreview.State()))
-        assertEquals("Over game windows: Game's wheel", SettingsPreview.title(PauseOver.ROW_ID, SettingsPreview.State(pauseOverGame = true)))
-        assertTrue(SettingsPreview.caption(PauseOver.ROW_ID, SettingsPreview.State(pauseOverGame = true)).last().contains("top screen"))
-        assertTrue(SettingsPreview.caption(PauseOver.ROW_ID, SettingsPreview.State()).last().contains("bottom screen"))
     }
 
     // ---------------------------------------------------------------- "Yes, protect": our add-on's "has been blocked" pop-up

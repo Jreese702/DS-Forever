@@ -69,10 +69,14 @@ class ThemeMakerTest {
         assertEquals(0xFFD100, rgb(t.btnLabel))                          // the game's gold on red
         assertNull(t.metal)
         val o = ThemeMaker.spec(p.copy(oled = true, art = ThemeMaker.Art.LOW))
-        assertEquals(0.45f, o.stoneLight); assertEquals(0.45f, o.paneLight); assertEquals(0.8f, o.vignette)
+        assertEquals(0.22f, o.stoneLight); assertEquals(0.30f, o.paneLight); assertEquals(0.8f, o.vignette)
         assertEquals(ThemeMaker.OLED_RAISED_L, ThemeMaker.toHsl(o.raised)[2], 0.006f)
         val hi = ThemeMaker.spec(p.copy(oled = true, art = ThemeMaker.Art.HIGH))
-        assertEquals(0.70f, hi.stoneLight); assertEquals(0.75f, hi.paneLight)
+        assertEquals(0.40f, hi.stoneLight); assertEquals(0.50f, hi.paneLight)
+        // the user's pick 9 (2026-11-17): "Medium" = stone 0.30 / pane 0.40, the maker's Mid and every OLED preset's
+        val mid = ThemeMaker.spec(p.copy(oled = true, art = ThemeMaker.Art.MID))
+        assertEquals(0.30f, mid.stoneLight); assertEquals(0.40f, mid.paneLight)
+        for (t in ThemePresets.ALL.filter { it.oled }) { assertEquals(t.id, 0.30f, t.stoneLight); assertEquals(t.id, 0.40f, t.paneLight) }
         // a metal pick carries its edge pair and its recolour
         val j = ThemeMaker.spec(p.copy(metal = "jade"))
         assertEquals(0x9FD6B8, rgb(j.edge)); assertEquals(0x2E4A3C, rgb(j.edgeDim)); assertNotNull(j.metal)

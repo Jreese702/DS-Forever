@@ -27,9 +27,4 @@ class ButtonNamesTest {
         assertEquals("L2" to "R2", SpellsModel.triggerNames(SpellsModel.PadStyle.SHP))
     }
 
-    @Test fun theAbxyLocationLineSpeaksTheChosenSet() {
-        assertEquals("A right, B bottom, X top, Y left", SettingsView.abxyLine(swap = true, layout = NINTENDO))
-        assertEquals("A bottom, B right, X left, Y top", SettingsView.abxyLine(swap = false, layout = XBOX))
-        assertEquals("Cross bottom, Circle right, Square left, Triangle top", SettingsView.abxyLine(swap = false, layout = PLAYSTATION))
-    }
 }

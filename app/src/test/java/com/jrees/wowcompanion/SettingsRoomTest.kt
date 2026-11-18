@@ -67,7 +67,7 @@ class SettingsRoomTest {
             assertTrue(t.label, groups.isNotEmpty())
             // General does not fold (the user, 2026-11-12): every group open. A headless group (Add-ons' Import button, the user
             // 2026-11-16) is always open, with the first group that has a heading
-            // (Performance: one headless group, no headed one - pick 5 open, the tab still folds)
+            // (beautify pick 5: only Add-ons folds; every tiled tab shows every group open)
             val want = if (t.folds) groups.filter { it.headless }.toSet() + listOfNotNull(groups.firstOrNull { !it.headless }) else groups.toSet()
             assertEquals(t.label, want, r.open)
             for (gb in r.groupBoxes) {
@@ -79,40 +79,60 @@ class SettingsRoomTest {
                 for (p in gb.parts) assertEquals("${gb.group} part", if (isOpen) View.VISIBLE else View.GONE, p.visibility)
             }
         }
-        // every time: a group opened, the tab left and shown again - only the first open
-        r.show(SettingsTabs.Tab.CONTROLLER); r.toggle(SettingsTabs.Group.WHEELS)
-        assertEquals(setOf(SettingsTabs.Group.BUTTONS, SettingsTabs.Group.WHEELS), r.open)
-        r.show(SettingsTabs.Tab.PERFORMANCE); r.show(SettingsTabs.Tab.CONTROLLER)
-        assertEquals(setOf(SettingsTabs.Group.BUTTONS), r.open)
+        // every time: a group folded by hand, the tab left and shown again - its first headed group open again (Add-ons, the one
+        // folding tab: pick 5)
+        withVoice {
+            val a = room()
+            a.show(SettingsTabs.Tab.ADDONS); lay(a)
+            assertTrue(SettingsTabs.Group.VOICE in a.open)
+            a.toggle(SettingsTabs.Group.VOICE)
+            assertTrue(SettingsTabs.Group.VOICE !in a.open)
+            a.show(SettingsTabs.Tab.PERFORMANCE); a.show(SettingsTabs.Tab.ADDONS)
+            assertTrue(SettingsTabs.Group.VOICE in a.open)
+        }
     }
 
-    // (beautify: Performance became one headless row of tiles, so the fold walk uses Controller's groups)
-    @Test fun aOnAHeadingFoldsAndOpensIt() {
+    /**
+     * BEAUTIFY PICK 5 (the user, 2026-11-17: tiled tabs - Bottom, Controller, Performance, like Top - do not fold): every group of a
+     * tiled tab open, no heading is a cursor stop, a tap or A on a heading folds nothing
+     */
+    @Test fun tiledTabsDoNotFold() {
         val r = room()
-        r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
-        val groups = SettingsTabs.groups(SettingsTabs.Tab.CONTROLLER).filter { r.hasRows(it) }
-        val first = groups[0]; val second = groups[1]
-        val heads = groups.map { g -> headBox(r, g) }
-        val targets = r.pad.targetBoxes()
-        for (h in heads) assertTrue("heading $h is a stop", targets.any { it == h })
-        // the cursor's first stop is the first heading; A folds it
-        press(r, "PADDDOWN")
-        assertEquals(heads[0], r.pad.focusBox())
+        for (t in listOf(SettingsTabs.Tab.BOTTOM, SettingsTabs.Tab.CONTROLLER, SettingsTabs.Tab.PERFORMANCE)) {
+            r.show(t); lay(r)
+            val groups = SettingsTabs.groups(t).filter { r.hasRows(it) }
+            assertEquals(t.label, groups.toSet(), r.open)
+            for (g in groups) assertTrue("$g shown", box(r, g).parts.all { it.visibility == View.VISIBLE })
+            assertEquals(t.label, 0, headingStops(r))
+            for (g in groups) { r.toggle(g); assertEquals("$g stays open", groups.toSet(), r.open) }
+        }
+    }
+
+    /** Add-ons' Voice / Imported in the room for a test (Voice is offered only in a build with the offline voice library) */
+    private fun withVoice(block: () -> Unit) {
+        val was = VoiceModels.offered
+        try { VoiceModels.offered = { true }; block() } finally { VoiceModels.offered = was }
+    }
+
+    // (beautify pick 5: Add-ons is the one tab that folds - its Voice list; the fold walk uses it)
+    @Test fun aOnAHeadingFoldsAndOpensIt() = withVoice {
+        val r = room()
+        r.show(SettingsTabs.Tab.ADDONS); lay(r)
+        val g = SettingsTabs.Group.VOICE
+        val head = headBox(r, g)
+        assertTrue("the Voice heading is a stop", r.pad.targetBoxes().any { it == head })
+        assertTrue(g in r.open)
+        // the cursor down to the heading; A folds it
+        repeat(12) { if (r.pad.focusBox() != head) press(r, "PADDDOWN") }
+        assertEquals(head, r.pad.focusBox())
         press(r, "PAD1")
-        assertTrue(first !in r.open)
-        assertTrue(box(r, first).parts.all { it.visibility == View.GONE })
-        assertTrue(!box(r, first).heading.open)
-        // down: the next heading; A opens it
-        press(r, "PADDDOWN")
-        assertEquals(headBox(r, second), r.pad.focusBox())
+        assertTrue(g !in r.open)
+        assertTrue(box(r, g).parts.all { it.visibility == View.GONE })
+        assertTrue(!box(r, g).heading.open)
+        // A again opens it
         press(r, "PAD1")
-        assertTrue(second in r.open && box(r, second).heading.open)
-        assertTrue(box(r, second).parts.all { it.visibility == View.VISIBLE })
-        // up: back on the first heading; A opens it again
-        press(r, "PADDUP")
-        assertEquals(headBox(r, first), r.pad.focusBox())
-        press(r, "PAD1")
-        assertTrue(first in r.open)
+        assertTrue(g in r.open && box(r, g).heading.open)
+        assertTrue(box(r, g).parts.all { it.visibility == View.VISIBLE })
     }
 
     /** the user, 2026-11-12: "the general tab doesnt need the folding sections": General's groups always open, no heading stops,
@@ -134,18 +154,18 @@ class SettingsRoomTest {
         assertTrue(groups.none { headBox(r, it) == f })
     }
 
-    @Test fun aTapOnAHeadingToggles() {
+    @Test fun aTapOnAHeadingToggles() = withVoice {
         val r = room()
-        r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
-        val mem = box(r, SettingsTabs.Group.WHEELS)
+        r.show(SettingsTabs.Tab.ADDONS); lay(r)
+        val mem = box(r, SettingsTabs.Group.VOICE)
         val h = mem.heading
         val down = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, 300f, 40f, 0)
         val up = android.view.MotionEvent.obtain(0, 40, android.view.MotionEvent.ACTION_UP, 300f, 40f, 0)
         h.dispatchTouchEvent(down); h.dispatchTouchEvent(up)
-        assertTrue(SettingsTabs.Group.WHEELS in r.open)
-        assertTrue(mem.parts.all { it.visibility == View.VISIBLE })
+        assertTrue(SettingsTabs.Group.VOICE !in r.open)
+        assertTrue(mem.parts.all { it.visibility == View.GONE })
         h.dispatchTouchEvent(down); h.dispatchTouchEvent(up)
-        assertTrue(SettingsTabs.Group.WHEELS !in r.open)
+        assertTrue(SettingsTabs.Group.VOICE in r.open)
     }
 
     /** every row of the data is drawn by a part of its own group (the rows a part draws now, by their words) */
@@ -195,16 +215,25 @@ class SettingsRoomTest {
         val loginBox = before.first()
         assertTrue(r.pad.targetBoxes().any { it.top >= headBox(r, SettingsTabs.Group.ACCOUNT).bottom && it.height() == loginBox.height() })
         val host = SettingsRoom::class.java.getDeclaredField("view").apply { isAccessible = true }.get(r) as SettingsView
-        // a slice of the login block alone (SettingsView's own rows, still used by its whole-tab view): the host takes the login row
-        // away, measured again it is 0 px with no stale box
+        // a slice of SettingsView's own list rows (Add-ons > Voice: one row per model while the build offers them): its rows go away,
+        // measured again it is 0 px with no stale box
+        withVoice {
+            val voiceOnly = host.slice(setOf(SettingsTabs.Block.ADDON_VOICE))
+            lay(voiceOnly)
+            assertEquals(VoiceModels.Model.values().size, voiceOnly.focusTargets().size)
+            VoiceModels.offered = { false }
+            voiceOnly.requestLayout()
+            voiceOnly.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080 - Strip.HEIGHT, View.MeasureSpec.EXACTLY))
+            voiceOnly.layout(0, 0, 1240, voiceOnly.measuredHeight)
+            assertEquals(0, voiceOnly.height)
+            assertTrue("no stale voice box", voiceOnly.focusTargets().isEmpty())
+        }
+        // the slices draw only their own list blocks: a slice of a tiled block (the login row is General's tiles now) draws nothing
         val loginOnly = host.slice(setOf(SettingsTabs.Block.ACCOUNT))
         lay(loginOnly)
-        assertEquals(1, loginOnly.focusTargets().size)
+        assertEquals(0, loginOnly.measuredHeight)
+        assertTrue(loginOnly.focusTargets().isEmpty())
         host.loginRow = false
-        loginOnly.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080 - Strip.HEIGHT, View.MeasureSpec.EXACTLY))
-        loginOnly.layout(0, 0, 1240, loginOnly.measuredHeight)
-        assertEquals(0, loginOnly.height)
-        assertTrue("no stale login box", loginOnly.focusTargets().isEmpty())
         // the room's Account group: the login row is gone, the Game account row stays (its group and heading with it)
         lay(r)
         val after = part.focusTargets()
@@ -215,16 +244,16 @@ class SettingsRoomTest {
     }
 
     /** 2: entering the room shows its tab afresh: the first group open, the rest folded, the page at its top */
-    @Test fun reEnteringTheRoomOpensTheFirstGroup() {
+    @Test fun reEnteringTheRoomOpensTheFirstGroup() = withVoice {
         val r = room()
-        r.show(SettingsTabs.Tab.CONTROLLER); lay(r)
-        r.toggle(SettingsTabs.Group.BUTTONS); r.toggle(SettingsTabs.Group.WHEELS); r.toggle(SettingsTabs.Group.COMBAT)
-        assertEquals(setOf(SettingsTabs.Group.WHEELS, SettingsTabs.Group.COMBAT), r.open)
+        r.show(SettingsTabs.Tab.ADDONS); lay(r)
+        r.toggle(SettingsTabs.Group.VOICE)
+        assertTrue(SettingsTabs.Group.VOICE !in r.open)
         r.pad.leave()
         r.pad.enter()
         lay(r)
-        assertEquals(SettingsTabs.Tab.CONTROLLER, r.tab)
-        assertEquals(setOf(SettingsTabs.Group.BUTTONS), r.open)
+        assertEquals(SettingsTabs.Tab.ADDONS, r.tab)
+        assertTrue(SettingsTabs.Group.VOICE in r.open)
     }
 
     /** 3: Polestar's "choose it in" names the row's new place, in all three languages */
@@ -350,7 +379,7 @@ class SettingsRoomTest {
         }
         for ((i, t) in SettingsTabs.visible.withIndex()) { r.show(t); shot("settings_${i + 1}_${t.name.lowercase()}") }
         // one tab with a second group opened: Controller with Wheels open as well as Buttons
-        r.show(SettingsTabs.Tab.CONTROLLER); r.toggle(SettingsTabs.Group.WHEELS); shot("settings_4b_controller_wheels_open")
+        r.show(SettingsTabs.Tab.CONTROLLER); shot("settings_4b_controller_all_open")
         // the six tabs in Spanish and French (all on the row, no scrolling)
         for (l in listOf("es", "fr")) {
             listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))

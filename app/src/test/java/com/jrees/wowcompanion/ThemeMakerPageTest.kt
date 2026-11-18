@@ -319,7 +319,7 @@ class ThemeMakerPageTest {
             }
         }
         Theme.use("classic")
-        // pick 9: OLED Bronze's art level, three side by side (stone / pane 0.45 / 0.45, 0.55 / 0.60 = default, 0.70 / 0.75)
+        // pick 9: OLED Bronze's art levels side by side
         pick9("macros") { MacrosView(app).apply { dryRun = true }.also { v ->
             System.getenv("MAKER_MACRO_DOCS")?.let { File(it, "grid.json") }?.takeIf { it.isFile }?.let { v.onDoc(JSONObject(it.readText()), live = false) } } }
         pick9("social") { SocialView(app).also { v ->
@@ -332,7 +332,8 @@ class ThemeMakerPageTest {
     }
 
     private fun pick9(name: String, make: () -> View) {
-        val levels = listOf(0.45f to 0.45f, 0.55f to 0.60f, 0.70f to 0.75f)
+        // the design's three (0.22 / 0.30, 0.30 / 0.40 = the user's "Medium" pick, 0.40 / 0.50) and the maker's Low / Mid / High
+        val levels = listOf(0.22f to 0.30f, 0.30f to 0.40f, 0.40f to 0.50f, 0.45f to 0.45f, 0.55f to 0.60f, 0.70f to 0.75f)
         val h = 1080 - Strip.HEIGHT
         val shots = levels.map { (s, pn) ->
             Theme.preview(ThemePresets.OLED_BRONZE.copy(stoneLight = s, paneLight = pn)) {
@@ -348,13 +349,14 @@ class ThemeMakerPageTest {
         }
         for ((i, b) in shots.withIndex()) save(b, "pick9_${name}_${i + 1}.png")
         // side by side at half size, each labelled with its levels
-        val sheet = Bitmap.createBitmap(3 * 620 + 4 * 12, h / 2 + 60, Bitmap.Config.ARGB_8888)
+        val sheet = Bitmap.createBitmap(levels.size * 620 + (levels.size + 1) * 12, h / 2 + 60, Bitmap.Config.ARGB_8888)
         val c = Canvas(sheet); c.drawColor(android.graphics.Color.rgb(40, 40, 40))
         val tp = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE; textSize = 26f }
         for ((i, b) in shots.withIndex()) {
             val x = 12 + i * (620 + 12)
             c.drawBitmap(b, null, android.graphics.Rect(x, 12, x + 620, 12 + h / 2), android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            c.drawText("stone ${levels[i].first} / pane ${levels[i].second}" + if (i == 1) " (default)" else "", x.toFloat(), (h / 2 + 46).toFloat(), tp)
+            val inUse = levels[i].first == ThemePresets.OLED_BRONZE.stoneLight && levels[i].second == ThemePresets.OLED_BRONZE.paneLight
+            c.drawText("stone ${levels[i].first} / pane ${levels[i].second}" + if (inUse) " (OLED presets)" else "", x.toFloat(), (h / 2 + 46).toFloat(), tp)
         }
         save(sheet, "pick9_${name}_sheet.png")
     }

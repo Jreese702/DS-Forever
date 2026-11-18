@@ -132,12 +132,11 @@ object ThemePresets {
     private val FROST = ThemeMaker.METAL_FROST
 
     // the art levels (beautify 8.2): Classic as harvested; the Dark family dimmed; the OLED family dark with its blacks crushed.
-    // OLED at stone 0.55 / pane 0.60, not the design's 0.22 / 0.30: the kit's panes are very dark art (pane_left's mean 15 / 9 / 3), and at
-    // 0.30 the Macros and Social lists rendered pure black, the look the user called lifeless; the stone at 0.40 still left the rock
-    // grounds (pop-ups, Bags, Settings) reading as #000 (review 2026-11-17). With UiKit.groundMatrix's per-picture floor (user pick 9
-    // shows 0.45 / 0.45, 0.55 / 0.60 and 0.70 / 0.75 side by side)
-    const val OLED_STONE = 0.55f
-    const val OLED_PANE = 0.60f
+    // OLED: THE USER'S PICK 9 (2026-11-17), "Medium" = stone 0.30 / pane 0.40 (the design's three were 0.22 / 0.30, 0.30 / 0.40 and
+    // 0.40 / 0.50; the build had run at 0.55 / 0.60 meanwhile). With UiKit.groundMatrix's per-picture floor the panes' texture still
+    // shows over black at this level (the pick 9 sheet renders all six levels side by side)
+    const val OLED_STONE = 0.30f
+    const val OLED_PANE = 0.40f
     private const val OLED_SAT = 0.85f
     private const val OLED_VIG = 0.80f
     private const val DARK_VIG = 0.35f
