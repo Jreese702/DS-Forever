@@ -29,8 +29,9 @@ namespace DsfDesktop.Bridge
         Dictionary<string, object> Focus();
         /// <summary>Battle.net's sign-in window in front and its form found, or why not (BnetForm); keys are never read or logged here</summary>
         Dictionary<string, object> BnetReady();
-        /// <summary>the Thor's saved login for WoW's login.txt; never logged</summary>
-        void LoginFile(string email, string password);
+        /// <summary>the Thor's saved login for WoW's login.txt; never logged. [accountList] = the Thor's remembered game account
+        /// (Config.wtf's accountList, "Game account: Remembered"; null = none, or "Ask each time"): never logged either</summary>
+        void LoginFile(string email, string password, string accountList);
         Dictionary<string, object> AddonsStatus();
         Dictionary<string, object> AddonsInstall();
         /// <summary>the Thor's stream mode ("stream_mode": w, h, fps): a virtual screen Desktop makes for a headless PC takes it</summary>
@@ -423,7 +424,9 @@ namespace DsfDesktop.Bridge
                         case "login_file":
                             var em = m.Str("email");
                             var pw = m.Str("password");
-                            Task.Run(() => host.LoginFile(em, pw));
+                            // "Ask each time" on the Thor: its game account is never written on the PC (the user's pick 2026-11-17)
+                            var al = m.Str("game_account") == "remember" ? m.Str("account_list") : null;
+                            Task.Run(() => host.LoginFile(em, pw, string.IsNullOrEmpty(al) ? null : al));
                             break;
                         case "addons_status": SawAddonSet(m); s.Enqueue(With("addons", host.AddonsStatus())); break;
                         case "addons_install":

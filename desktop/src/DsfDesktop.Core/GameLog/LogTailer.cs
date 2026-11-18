@@ -48,6 +48,11 @@ namespace DsfDesktop.GameLog
         public bool FileExists { get; private set; }
         /// <summary>every whole line as it is read (the sign-in lines: <see cref="DsfDesktop.Wow.LoginLog"/>), on the polling thread</summary>
         public Action<string> RawLine;
+        /// <summary>called inside <see cref="Poll"/>, before any of the file's lines are fed, whenever reading starts again from the file's
+        /// start (or its capped backlog): the first read, the file back after it was missing or its path changed, and a client restart.
+        /// A file found missing and made again later carries no <see cref="LogEventKind.Restart"/>, so this is the one sign that the
+        /// lines are the client now running (the 2026-11-17 review of "the auto sign in on streaming didnt work")</summary>
+        public Action Began;
 
         /// <summary>follow another file (LogFollow switched flavor): starts it like a fresh client, from its capped backlog</summary>
         public void SetPath(string p)
@@ -108,6 +113,7 @@ namespace DsfDesktop.GameLog
                     ResetAll();
                     ev.Add(new LogEvent { Kind = LogEventKind.Restart, Text = "client restarted, resyncing" });
                     lastStatus = null;
+                    Began?.Invoke();
                 }
                 identity = id;
                 if (newHead != null && head == null) head = newHead;
@@ -117,6 +123,7 @@ namespace DsfDesktop.GameLog
                     fresh = false;
                     if (len > MaxBacklog) { offset = len - MaxBacklog; skipToNewline = true; }
                     Say(ev, "reading the game's log");
+                    Began?.Invoke();
                 }
                 if (len == offset) return ev;
 

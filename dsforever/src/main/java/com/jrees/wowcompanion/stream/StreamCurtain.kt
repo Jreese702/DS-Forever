@@ -71,6 +71,9 @@ object StreamCurtain {
 
     /** the stream's start holds: Desktop said to wait and the wait is not over */
     fun holds(wait: String, waitedMs: Long): Boolean = wait.isNotEmpty() && waitedMs < PC_WAIT_MS
+    /** Desktop 0.2.31: the game refused the region picked on its own region screen (309); the player picks again there (the user's
+     *  pick 2026-11-17: "it shouldnt auto pick it should be changable") */
+    const val REGION_REFUSED = "Region refused: pick another region"
 
     /**
      * Desktop 0.2.27's reason streaming can't work (the welcome's sunshine.problem / sunshine.why: the user's PC 2026-11-13, another
@@ -98,6 +101,9 @@ object StreamCurtain {
 
     /** WoW is up and between its login screen and character select */
     fun atLogin(pc: PcWow?) = pc != null && (pc.screen == "login" || pc.screen == "signing_in")
+
+    /** the line over the stream while WoW's own screens wait for the player ("" = none): a refused region, until another is taken */
+    fun streamLine(pc: PcWow?): String = if (pc != null && pc.regionRefused && atLogin(pc)) REGION_REFUSED else ""
 
     /**
      * [connected] = the stream is up (Moonlight's picture arrived); [bridged] = this PC has DS Forever Desktop's bridge (Sunshine

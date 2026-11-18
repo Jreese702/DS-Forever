@@ -39,6 +39,8 @@ class BridgeLog(
     private val onBnetReady: (BnetFormAt?) -> Unit = {},
     /** the saved login (email, password), for WoW's login.txt on the PC */
     private val savedLogin: () -> Pair<String, String>? = { null },
+    /** the game account the PC's WoW remembers, sent with the saved login (null = not said) */
+    private val gameAccount: () -> BridgeProtocol.GameAccount? = { null },
     /** the stream's mode (width, height, fps) for Desktop's virtual screen on a headless PC; null = not said */
     private val streamMode: () -> Triple<Int, Int, Int>? = { null },
     /** Desktop 0.2.32: its Sunshine's ports again (it moved) or its answer to [askHostCheck] */
@@ -135,7 +137,7 @@ class BridgeLog(
                     onWow(m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, m.wowWhy)
                     onPc(m.pc?.let { if (it.state.isEmpty()) it.copy(state = if (m.wowRunning) "running" else "stopped") else it }
                         ?: PcWow(state = m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, why = m.wowWhy))
-                    if (tls && fingerprint.isNotEmpty()) savedLogin()?.let { c.send(BridgeProtocol.loginFile(it.first, it.second)) }
+                    sendLogin(c)
                     // the PC game gets Desktop's add-on set BEFORE it is started (never while it runs: its files are read at the start)
                     if (!m.wowRunning) c.send(BridgeProtocol.addonsInstall())
                     c.send(BridgeProtocol.focus())
@@ -164,6 +166,12 @@ class BridgeLog(
                     BridgeProtocol.wowText(m.state, m.why).takeIf { it.isNotEmpty() }?.let { onStatus("PC: $it") }
                 }
                 is BridgeMsg.Unpaired -> { onAuthLost("revoked"); return End.AUTH_LOST }
+                // the user's pick 2026-11-17 ("Ask the Thor again"): WoW closed itself on the PC and starts again; the saved login once
+                // more, only down this connection and only while the auto sign-in is on (savedLogin is null otherwise)
+                is BridgeMsg.LoginAgain -> {
+                    val sent = sendLogin(c)
+                    try { Log.i(TAG, "PC asked for the login again: " + if (sent) "sent" else "not sent (auto sign-in off, or no pinned connection)") } catch (_: Throwable) {}
+                }
                 is BridgeMsg.Error -> {
                     try { Log.w(TAG, "bridge error ${m.code}") } catch (_: Throwable) {}
                     if (m.code == "unauthorized" || m.code == "revoked") { onStatus("PC: pair again"); onAuthLost(m.code); return End.AUTH_LOST }
@@ -175,6 +183,16 @@ class BridgeLog(
         if (!running) return End.STOPPED
         return if (c.closeCode == BridgeProtocol.CLOSE_UNAUTHORIZED) { onAuthLost("unauthorized"); End.AUTH_LOST }
         else { onStatus("PC: connection lost, reconnecting"); End.DROPPED }
+    }
+
+    /** the saved login (and the game account to remember) for the PC's login.txt: only down a pinned wss connection; true = sent.
+     *  Nothing of it is logged */
+    private fun sendLogin(c: BridgeConn): Boolean {
+        if (!tls || fingerprint.isEmpty()) return false
+        val login = savedLogin() ?: return false
+        val account = try { gameAccount() } catch (_: Throwable) { null }
+        c.send(BridgeProtocol.loginFile(login.first, login.second, account))
+        return true
     }
 
     private fun emit(m: BridgeMsg.Doc) {

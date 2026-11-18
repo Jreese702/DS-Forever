@@ -20,6 +20,7 @@ namespace DsfDesktop.Wow
         readonly Func<string> focusWow;
         readonly Func<DateTime> now;
         readonly Func<string> crash;
+        readonly Func<int> regionRefusals;
         readonly Action<Action> run;
         readonly object gate = new object();
 
@@ -28,6 +29,15 @@ namespace DsfDesktop.Wow
 
         /// <summary>clients that have tried to sign in during this connect (see Decide)</summary>
         public int Tries { get; private set; }
+        /// <summary>starts after refused regions (WowFlow.RegionRetryMax); they never count as <see cref="Tries"/>. Kept across the
+        /// connects a refusal brings (AppController wants WoW again for it), from 0 again on a connect with no refusal waiting</summary>
+        public int RegionTries { get; private set; }
+        /// <summary>the region refusals (LoginLog.RegionRefusals) already answered by a start</summary>
+        int regionAnswered;
+
+        /// <summary>a refused region pick not answered by a start yet, and the region starts are not used up</summary>
+        public bool RegionRetryPending { get { lock (gate) return RegionPending(regionRefusals()); } }
+        bool RegionPending(int refusals) => refusals > regionAnswered && RegionTries < WowFlow.RegionRetryMax;
         public WowAction Last { get; private set; } = WowAction.Wait;
         /// <summary>the one retry is spent and WoW is still not signed in</summary>
         public bool NeedsYou { get; private set; }
@@ -41,10 +51,12 @@ namespace DsfDesktop.Wow
         /// <param name="startPending">a start is under way (the starter waits for the new client's window)</param>
         /// <param name="closeWow">closes the old client (gracefully, then only if still at the login screen by force); blocking; null = gone</param>
         /// <param name="run">how a blocking restart runs (a background task; the tests run it inline)</param>
+        /// <param name="regionRefusals">LoginLog.RegionRefusals: a new one = the client closed itself after a refused region pick</param>
         public WowSupervisor(Func<WowScreen> screen, Func<BnetState> bnet, Func<string> startBnet, Func<string> showBnetSignIn,
                              Func<string> startWow, Func<bool> startPending, Func<string> closeWow, Func<string> focusWow,
-                             Func<DateTime> now = null, Action<Action> run = null, Func<string> crash = null)
+                             Func<DateTime> now = null, Action<Action> run = null, Func<string> crash = null, Func<int> regionRefusals = null)
         {
+            this.regionRefusals = regionRefusals ?? (() => 0);
             this.screen = screen; this.bnet = bnet; this.startBnet = startBnet; this.showBnetSignIn = showBnetSignIn;
             this.startWow = startWow; this.startPending = startPending; this.closeWow = closeWow; this.focusWow = focusWow;
             this.now = now ?? (() => DateTime.UtcNow);
@@ -60,6 +72,7 @@ namespace DsfDesktop.Wow
                 active = true; NeedsYou = false; restarting = false; Crash = null;
                 var s = screen();
                 Tries = s == WowScreen.Login || s == WowScreen.SigningIn || s == WowScreen.Starting ? 1 : 0;
+                if (regionRefusals() <= regionAnswered) RegionTries = 0;
                 Last = WowAction.Wait;
             }
             Step();
@@ -94,7 +107,11 @@ namespace DsfDesktop.Wow
                 }
                 var b = bnet();
                 var s = screen();
-                var a = WowFlow.Decide(b, s, Tries, restarting || startPending());
+                // a client that closed itself after a refused region pick starts again without using up the one retry: the player
+                // picks another region on WoW's own screen (the user's pick 2026-11-17)
+                var refusals = regionRefusals();
+                bool regionRetry = RegionPending(refusals);
+                var a = WowFlow.Decide(b, s, Tries, restarting || startPending(), regionRetry);
                 switch (a)
                 {
                     case WowAction.Wait:
@@ -109,7 +126,8 @@ namespace DsfDesktop.Wow
                         if (Last != a) Set(a, showBnetSignIn());
                         break;
                     case WowAction.StartWow:
-                        Tries++;
+                        if (regionRetry) { RegionTries++; regionAnswered = refusals; }
+                        else Tries++;
                         Set(a, startWow());
                         break;
                     case WowAction.RestartWow:
@@ -127,10 +145,12 @@ namespace DsfDesktop.Wow
                         break;
                     case WowAction.Focus:
                         active = false;
+                        if (s == WowScreen.CharSelect || s == WowScreen.World) { RegionTries = 0; regionAnswered = refusals; }   // signed in
                         Set(a, focusWow());
                         break;
                     case WowAction.NeedsYou:
                         active = false;
+                        regionAnswered = refusals;      // the player is asked: no refusal so far starts WoW again
                         NeedsYou = true;
                         Set(a, WowFlow.NeedsYouText);
                         break;

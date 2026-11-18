@@ -166,9 +166,14 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (screen == Screen.CONNECTING) status.visibility = if (up) View.GONE else View.VISIBLE
         zoom(if (s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING) s.show else null)
         board(s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING)
+        val over = if (s === StreamCurtain.Shows.Stream && screen == Screen.STREAMING) StreamCurtain.streamLine(pc) else ""
         if (s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING) {
             main.removeCallbacks(hideBanner)
             banner.text = s.line; banner.visibility = View.VISIBLE; banner.bringToFront()
+        } else if (over.isNotEmpty()) {
+            // a refused region: WoW's own region screen shows, with the one line over it until another region is taken
+            main.removeCallbacks(hideBanner)
+            banner.text = over; banner.visibility = View.VISIBLE; banner.bringToFront()
         } else if (up || banner.text in SIGN_IN_LINES) banner.visibility = View.GONE
     }
 
@@ -309,8 +314,21 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onPcTest = { m -> pcTestSaid(m) },
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
                 savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } },
+                gameAccount = { gameAccount() },
                 streamMode = { playable().let { Triple(it.width, it.height, it.fps) } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
+    }
+
+    /**
+     * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"), as Settings > Game account says:
+     * "Ask each time" sends nothing to remember; "Remembered" sends the pick the Thor's own Config.wtf remembers, if any (an account
+     * name: never logged)
+     */
+    private fun gameAccount(): BridgeProtocol.GameAccount {
+        com.jrees.wowcompanion.Settings.init(activity)
+        if (com.jrees.wowcompanion.Settings.gameAccountAsk) return BridgeProtocol.GameAccount(ask = true)
+        val root = runCatching { com.jrees.wowcompanion.GameFiles.gameRoot(activity) }.getOrNull()
+        return BridgeProtocol.GameAccount(ask = false, list = root?.let { com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList(it) })
     }
 
     /** Desktop listed the PC's home-network addresses: the one on this Wi-Fi is tried first next time (Route); its Tailscale ones are
@@ -1142,7 +1160,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         const val RTSP_OFFSET = 21
         /** Backspaces before each box is typed (the box may hold what the player started) */
         const val CLEAR_KEYS = 16
-        private val SIGN_IN_LINES = setOf(StreamCurtain.SIGN_IN, StreamCurtain.NEEDS_YOU, StreamCurtain.UPDATE, StreamCurtain.CRASHED)
+        private val SIGN_IN_LINES = setOf(StreamCurtain.SIGN_IN, StreamCurtain.NEEDS_YOU, StreamCurtain.UPDATE, StreamCurtain.CRASHED,
+            StreamCurtain.REGION_REFUSED)
     }
 }
 
