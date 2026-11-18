@@ -45,17 +45,41 @@ namespace DsfDesktop.Sunshine
     }
 
     /// <summary>
+    /// "Match PC screen to stream" against Apollo (the user, 2026-11-18: "I would expect it to change the desktop resolution, and then
+    /// change it back once its complete"). Apollo installed as a service runs all the time; standing the match down whenever it ran
+    /// meant the PC was never matched. Now it stands down only while Apollo has a session up (<see cref="PortGuard.HostStreaming"/>):
+    /// two hosts changing one display setup at once revert each other. Apollo starting a session while ours streams matched is not
+    /// fought: ours keeps its match until its stream ends (a config change waits for that), and Apollo is never touched.
+    /// </summary>
+    public static class MatchScreen
+    {
+        /// <summary>the match our Sunshine's config is written with: [setting] = the player's Match, [apolloStreaming] = Apollo has a session up</summary>
+        public static bool Write(bool setting, bool apolloStreaming) => setting && !apolloStreaming;
+    }
+
+    /// <summary>
     /// Writes the headless Sunshine config. The choices, and why:
     ///  - system_tray = disabled, origin_web_ui_allowed = pc: the player never sees Sunshine; its API answers this PC only;
     ///  - encoder blank: Sunshine probes NVENC, AMF, Quick Sync (then software) itself, which is exactly "auto";
     ///  - hevc_mode = 0 / av1_mode = 0: advertise HEVC (and AV1) when the GPU can encode it; Moonlight then asks for HEVC by default.
     ///    Resolution, fps and bitrate (1080p60, ~20 Mbps) are the CLIENT's request in Moonlight's protocol (S2's defaults), not host config;
     ///  - leave no trace on the PC: install_steam_audio_drivers = disabled (no driver install), nvenc_opengl_vulkan_on_dxgi = disabled
-    ///    (no NVIDIA driver-profile edits), upnp = disabled (no router changes), no display-device changes (dd_configuration_option off);
+    ///    (no NVIDIA driver-profile edits), upnp = disabled (no router changes), no display-device changes unless the player keeps "Match PC screen to stream" on (then only the captured screen's mode, reverted after);
     ///  - every file (state, credentials, apps, cert, key, log) in our data dir.
     /// </summary>
     public static class SunshineConfig
     {
+        /// <summary>
+        /// "Match PC screen to stream" in Sunshine's own display-device options (the bundled v2026.914 build's names, from its web
+        /// config and locale): dd_configuration_option = ensure_active (the captured screen is switched on, no other screen is turned
+        /// off: ensure_only_display would blank the player's other monitors), dd_resolution_option / dd_refresh_rate_option = auto (the
+        /// Thor's own request: its launch sends mode=WxHxFPS with sops=1, which "auto" needs), dd_config_revert_on_disconnect = enabled
+        /// (back when the Thor goes, not only when the app closes), dd_config_revert_delay = <see cref="RevertDelayMs"/> (a Thor that
+        /// reconnects at once keeps the mode), dd_hdr_option = disabled (HDR left as the player has it: the Thor never asks for HDR).
+        /// With "Stream on its own screen" the captured screen (output_name) is our virtual one, so that is what is matched.
+        /// </summary>
+        public const int RevertDelayMs = 3000;
+
         static string P(string path) => path.Replace('\\', '/');
 
         public static string ConfText(SunshineLayout l, SunshineOptions o)
@@ -87,6 +111,8 @@ namespace DsfDesktop.Sunshine
                 kv.Add(new KeyValuePair<string, string>("dd_resolution_option", "auto"));
                 kv.Add(new KeyValuePair<string, string>("dd_refresh_rate_option", "auto"));
                 kv.Add(new KeyValuePair<string, string>("dd_config_revert_on_disconnect", "enabled"));
+                kv.Add(new KeyValuePair<string, string>("dd_config_revert_delay", RevertDelayMs.ToString()));
+                kv.Add(new KeyValuePair<string, string>("dd_hdr_option", "disabled"));
             }
             if (!string.IsNullOrWhiteSpace(o.Encoder)) kv.Add(new KeyValuePair<string, string>("encoder", o.Encoder.Trim()));
             if (!string.IsNullOrWhiteSpace(o.OutputName)) kv.Add(new KeyValuePair<string, string>("output_name", o.OutputName.Trim()));
