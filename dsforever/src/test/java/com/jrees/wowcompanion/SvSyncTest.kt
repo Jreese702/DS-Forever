@@ -187,7 +187,7 @@ class SvSyncTest {
         val t = SvLua.parse(game.readText(), "WowCompanionSpellsDB")
         assertEquals("Arcane Shot", t.sub("bind", hunter, "A"))
         assertEquals("Lightning Bolt", t.sub("bind", shaman, "A"))                            // the game's own entry not dropped
-        assertNull(t["keyProbe"])                                                              // not a setting: never carried
+        assertEquals(1L, t["keyProbe"])                                                        // the game's own skipped key: never dropped (11-18 fix)
         assertTrue(File(dir, "bak/WowCompanionSpells.lua").isFile)
         assertTrue(log.contains("settings backup kept before sync"))
         assertEquals(SvSync.accountHash("FAKEACCT"), SvSync.accountFile(kd).readText())       // a hash, never the name

@@ -21,7 +21,8 @@ namespace DsfDesktop.Wow
     ///    none, a terse log line). A folder name is never logged or sent;
     ///  - never while WoW runs; never an empty table; only when the file is still exactly what was read (its hash), so a game that saved
     ///    in between is never written over;
-    ///  - a dated backup first (SavedVariables/dsf-sync-backups, the newest five per file), then temp + replace.
+    ///  - a dated backup first (SavedVariables/dsf-sync-backups, the newest five per file; the file as it was before the FIRST sync
+    ///    write is kept there for good as &lt;file&gt;.presync), then temp + replace.
     /// </summary>
     public static class WowSvSync
     {
@@ -130,6 +131,7 @@ namespace DsfDesktop.Wow
                 var text = FileText(variable, lua);
                 if (exists && Encoding.UTF8.GetString(bytes) == text) return "same";
                 Directory.CreateDirectory(sv);
+                if (exists && !KeepFirst(path, Path.Combine(sv, BackupDir))) return "failed";
                 if (exists && !Backup(path, Path.Combine(sv, BackupDir), nowUtc)) return "failed";
                 File.WriteAllText(tmp, text, new UTF8Encoding(false));
                 if (exists) File.Replace(tmp, path, null); else File.Move(tmp, path);
@@ -137,6 +139,25 @@ namespace DsfDesktop.Wow
                 return "written";
             }
             catch (Exception) { try { if (File.Exists(tmp)) File.Delete(tmp); } catch (Exception) { } return "failed"; }
+        }
+
+        /// <summary>the suffix of the PC file as it was before the FIRST sync write, kept for good (never rotated, never replaced)</summary>
+        public const string PreSync = ".presync";
+
+        /// <summary>
+        /// the settings fix (2026-11-18, "dont delete my current hunters settings"): the PC's own file before the first sync ever wrote it,
+        /// once, in [dir] (the dated backups rotate after five writes; this one never goes). True = kept (or kept already)
+        /// </summary>
+        public static bool KeepFirst(string path, string dir)
+        {
+            try
+            {
+                Directory.CreateDirectory(dir);
+                var keep = Path.Combine(dir, Path.GetFileName(path) + PreSync);
+                if (!File.Exists(keep)) File.Copy(path, keep, false);
+                return true;
+            }
+            catch (Exception) { return false; }
         }
 
         /// <summary>a dated copy of [path] in [dir]; the newest <see cref="KeepBackups"/> of its name stay</summary>

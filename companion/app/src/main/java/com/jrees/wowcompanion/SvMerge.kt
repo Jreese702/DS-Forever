@@ -21,7 +21,9 @@ import java.util.Locale
  *    dropped (no deletion ever crosses). The entries carry no timestamps of their own, so "newer" is a THREE-WAY test against the BASE (the
  *    copy the PC was last confirmed to hold): only an entry the PC changed since then, while the Thor's is still the base's, is taken
  *    from the PC. With no base (the FIRST sync: the PC was never set up) and in every conflict the Thor's LOCAL entry wins.
- *  - A PC change that would drop more than half of an entry's settings is refused (a lost or reset PC file, not a player's edit).
+ *  - A PC change that empties an entry, or drops more than half of its settings, is refused (a lost or reset PC file, not an edit).
+ *  - Before the PC is sent anything, the Thor's OWN game file is folded into the kept copy ([SvKeep.foldGameIn]): the PC gets the
+ *    Thor's full settings, never a thin kept copy (the 11-18 hunter case), and the PC file's own skipped keys stay in its file.
  *  - A document that does not parse as a whole is not used at all (nothing written for that table).
  *  - Before every sync write a dated backup is kept beside the file (the last [SvBackup.KEEP]), and the Thor's kept copy as it was
  *    before the very first sync is kept for good ([SvBackup.PRESYNC]).
@@ -244,7 +246,7 @@ object SvMerge {
             if (same(l, r)) return l
             if (b != null && same(l, b) && !same(r, b)) {
                 val ll = SvLua.leaves(l); val rl = SvLua.leaves(r)
-                if (ll >= 4 && rl * 2 < ll) { refused++; return l }
+                if (ll > 0 && (rl == 0 || (ll >= 4 && rl * 2 < ll))) { refused++; return l }     // empty / much thinner: never
                 taken++; return r
             }
             return l
@@ -355,6 +357,8 @@ object SvSync {
     fun onFiles(keptDir: File, msg: JSONObject, now: Long = System.currentTimeMillis(), log: (String) -> Unit): JSONObject? {
         val state = msg.optString("state")
         if (state != "ok") { log("settings sync: the PC's files not read ($state)"); return null }
+        // the FULL picture first: the Thor's own game file folded into the kept copy (its entries win unless the kept one is newer)
+        SvKeep.foldGameIn(keptDir, now, log)
         val files = msg.optJSONArray("files") ?: JSONArray()
         val byVar = (0 until files.length()).mapNotNull { files.optJSONObject(it) }.associateBy { it.optString("var") }
         val out = JSONArray()
@@ -365,15 +369,19 @@ object SvSync {
             val f = byVar[variable]
             val text = f?.optString("text").orEmpty()
             val ifHash = f?.optString("hash").orEmpty()
-            val remote: Map<Any, Any>? = if (f == null || !f.optBoolean("exists", false)) emptyMap() else
-                runCatching { SvLua.withoutSkipped(variable, SvLua.parse(text, variable)) }.getOrNull()
-            if (remote == null) { log("settings sync: $variable: the PC's file does not read whole; nothing written"); continue }
+            val full: Map<Any, Any>? = if (f == null || !f.optBoolean("exists", false)) emptyMap() else
+                runCatching { SvLua.parse(text, variable) }.getOrNull()
+            val remote = full?.let { SvLua.withoutSkipped(variable, it) }
+            if (full == null || remote == null) { log("settings sync: $variable: the PC's file does not read whole; nothing written"); continue }
             val base = baseOf(keptDir, variable)
             val m = SvMerge.merge(localT, remote, base)
             log("settings sync: $variable from the PC: ${m.taken} changed, ${m.added} added, ${m.refused} refused" + if (base == null) " (first sync: the Thor's win)" else "")
             val doc = if (m.changed) keep(keptDir, variable, m.table, now, log) ?: continue else local
             if (doc.n == 0) continue
-            out.put(JSONObject().put("var", variable).put("n", doc.n).put("lua", doc.lua).put("if_hash", ifHash))
+            // the PC file's own keys the add-on never sends (crash-recovery state, learned cooldowns) stay in its file
+            val pcOwn = full.filterKeys { it in SvLua.SKIP[variable].orEmpty() }
+            val lua = if (pcOwn.isEmpty()) doc.lua else runCatching { SvLua.ser(LinkedHashMap(SvLua.parse(doc.lua)).apply { putAll(pcOwn) }) }.getOrDefault(doc.lua)
+            out.put(JSONObject().put("var", variable).put("n", doc.n).put("lua", lua).put("if_hash", ifHash))
         }
         // sent even with no table: Desktop's start waits for this answer, not for its time-out
         return JSONObject().put("t", "sv_write").put("v", 1).put("acct", msg.optString("acct")).put("docs", out)
@@ -391,7 +399,8 @@ object SvSync {
             log("settings sync: $variable on the PC: $st")
             val lua = luaOf[variable] ?: continue
             if (st == "written" || st == "same") {
-                writeBase(keptDir, variable, lua, now)
+                val own = runCatching { SvLua.ser(SvLua.withoutSkipped(variable, SvLua.parse(lua))) }.getOrDefault(lua)
+                writeBase(keptDir, variable, own, now)
                 trusted += variable
             }
         }
@@ -405,12 +414,18 @@ object SvSync {
     @Synchronized
     fun fromPc(keptDir: File, d: SvKeep.Doc, now: Long = System.currentTimeMillis(), log: (String) -> Unit) {
         val remote = runCatching { SvLua.parse(d.lua) }.getOrNull() ?: run { log("settings sync: ${d.variable} from the PC does not read; ignored"); return }
-        val local = kept(keptDir, d.variable)
+        var local = kept(keptDir, d.variable)
+        // no kept copy: the Thor's own game file is it first (when the game's folder is known), so the PC's table only ADDS to it
+        if (local == null) { SvKeep.foldGameIn(keptDir, now, log, d.variable); local = kept(keptDir, d.variable) }
         val localT = local?.let { runCatching { SvLua.parse(it.lua) }.getOrNull() }
         val trust = trusted(d.variable)
         if (local == null || localT == null) {
-            // nothing on the Thor yet: the PC's (non-empty) table becomes the first kept copy; nothing of the Thor's is lost
-            if (d.n > 0) keep(keptDir, d.variable, remote, now, log)?.let { log("settings sync: kept ${d.variable} from the PC (the Thor had none)") }
+            // nothing on the Thor at all: the PC's (non-empty) table becomes the first kept copy, MARKED (SvKeep.fromPcMark): the next
+            // Local start lets none of its entries replace the game file's own ones (it only adds what the game has not)
+            if (d.n > 0) keep(keptDir, d.variable, remote, now, log)?.let {
+                runCatching { SvKeep.fromPcMark(keptDir, d.variable).writeText("the PC's table, the Thor had none") }
+                log("settings sync: kept ${d.variable} from the PC (the Thor had none)")
+            }
             return
         }
         val m = SvMerge.merge(localT, remote, if (trust) baseOf(keptDir, d.variable) else null)

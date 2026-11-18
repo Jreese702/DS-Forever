@@ -3302,7 +3302,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the add-on's own saved tables (PadMap m51): kept in Documents/DS Forever for the write before the next game start
             // Streaming (settings follow, 2026-11-18): the PC's table is MERGED per entry into the Thor's kept copy (SvSync.fromPc), never
             // stored whole: it replaced the Thor's table before, and a PC without the Thor's characters would have dropped them
-            "svkeep" -> if (current && PlayModes.current == PlayMode.STREAM) SvKeep.parse(msg, System.currentTimeMillis())?.let { d ->
+            "svkeep" -> if (current && (msg.optString(SRC_KEY) == SRC_PC || PlayModes.current == PlayMode.STREAM)) SvKeep.parse(msg, System.currentTimeMillis())?.let { d ->
                 runCatching { SvSync.fromPc(svKeptDir(), d) { Log.i("WCSETUP", it) } }.onFailure { Log.w("WCSETUP", "settings sync: ${d.variable} NOT merged (${it.message})") }
             } else if (current) SvKeep.parse(msg, System.currentTimeMillis())?.let { d ->
                 if (LauncherHooks.gameStartSec != svRun) { svRun = LauncherHooks.gameStartSec; svArmed.clear(); svSeen.clear() }
@@ -3531,7 +3531,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }.getOrNull() else null
         val follow = if (BuildConfig.SHARE || LauncherHooks.pkg != null) listOfNotNull(log, shadowLog) else listOf(LogTail.DEFAULT_PATH, log)
         Log.i("WCLOG", "game log: $log (located ${game?.root ?: "none"}, share ${BuildConfig.SHARE}, mode ${PlayModes.current})")
-        val onMessage: (org.json.JSONObject) -> Unit = { msg -> ui.post { handleMessage(msg) } }
+        // each message carries WHERE it came from (the settings fix 2026-11-18): a PC document handled after a switch back to Local
+        // must never be taken for the Thor's own (before 1489 the PC's svkeep replaced the Thor's kept copy whole)
+        val onMessage: (org.json.JSONObject) -> Unit = { msg -> if (streaming) runCatching { msg.put(SRC_KEY, SRC_PC) }; ui.post { handleMessage(msg) } }
         val onStatus: (String) -> Unit = { s -> ui.post {
             status.text = s.take(110)
             // the other game started: is IT set up for the companion?
@@ -4999,6 +5001,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     companion object {
+        /** a message's source, set by [startTail] on everything the stream bridge delivers (the PC's add-ons) */
+        const val SRC_KEY = "_dsf_src"
+        const val SRC_PC = "pc"
         /** between two restored watches: the add-on's pick serves one action for 2 s, a pair is two taps */
         private const val WATCH_GAP_MS = 700L
         /** the router's "pause" after the app's own Start read is the same press (the doc arrives ~0.1-0.4 s later) */
