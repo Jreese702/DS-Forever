@@ -220,6 +220,17 @@ object Settings {
         set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); changed() } }
 
     /**
+     * SYNC GAME KEYBINDS & MACROS (settings follow, the user's pick 2026-11-18: "Ours + WoW's server sync"): true = WoW's own account-data
+     * sync CVars on ([GameSyncCvars]: synchronizeBindings, synchronizeConfig) in the Thor's Config.wtf before each start and, while
+     * streaming, the PC's (Desktop). OFF BY DEFAULT (the user's hard rule 2026-11-18, "dont delete my current hunters settings on
+     * local"): on a client that already has local bindings, turning sync on can let the server's older copy replace them at the next
+     * login. Off again = each key back to what it was before DS Forever turned it on.
+     */
+    var gameSync: Boolean
+        get() = prefs?.getBoolean("gameSync", false) ?: false
+        set(v) { if (v != gameSync) { prefs?.edit()?.putBoolean("gameSync", v)?.apply(); changed() } }
+
+    /**
      * SWAP SCREENS (GitHub #232; ScreenSwap): true = the game on the second screen, DS Forever on the main one (display 0). Off by
      * default (the Thor's arrangement). Applies from a start of DS Forever (ScreenSwap.inUse latches it per run). #384: a choice by
      * hand starts the unsettled-start count over (ScreenSwap.FAILS_PREF), so On after a fall-back gets its tries again.

@@ -1195,6 +1195,12 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) {
             Timber.i("Config.wtf game account: ask each time; cleared %s", accountCleared.joinToString(" ").ifEmpty { "nothing (no remembered choice)" })
         }
+        // settings follow (the user's pick 2026-11-18, "Ours + WoW's server sync"): WoW's own sync keys, only while Settings > General
+        // "Sync game keybinds & macros" is on (off by default); off again puts back what was there. Its own writer: never the stream's
+        runCatching {
+            Timber.i("Config.wtf %s", com.jrees.wowcompanion.GameSyncCvars.ensure(File(File(gameRoot, product.flavorDir), "WTF/Config.wtf"),
+                com.jrees.wowcompanion.Settings.gameSync))
+        }.onFailure { Timber.w("Config.wtf game sync: not written (%s)", it.javaClass.simpleName) }
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
         throw e

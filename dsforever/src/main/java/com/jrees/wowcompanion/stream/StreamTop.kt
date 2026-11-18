@@ -318,7 +318,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
                 savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } },
                 gameAccount = { gameAccount() },
-                streamMode = { playable().let { Triple(it.width, it.height, it.fps) } }).also { bridge = it }
+                streamMode = { playable().let { Triple(it.width, it.height, it.fps) } },
+                // settings follow (2026-11-18): our kept tables to and from the PC, only down a pinned wss connection (as the login)
+                svDir = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings") else null },
+                gameSync = { com.jrees.wowcompanion.Settings.gameSync }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 

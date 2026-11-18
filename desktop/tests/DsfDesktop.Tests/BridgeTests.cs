@@ -70,6 +70,17 @@ namespace DsfDesktop.Tests
         public Dictionary<string, object> Focus() => new Dictionary<string, object> { ["ok"] = false, ["why"] = "WoW isn't running" };
         public Dictionary<string, object> AddonsStatus() => new Dictionary<string, object> { ["state"] = "current" };
         public Dictionary<string, object> AddonsInstall() => new Dictionary<string, object> { ["state"] = "current", ["result"] = "ok" };
+        public volatile string SvAcct; public volatile int SvWrites; public bool? SvSync;
+        public Dictionary<string, object> SvRead(string acctHash, bool? gameSync)
+        {
+            SvAcct = acctHash; SvSync = gameSync;
+            return new Dictionary<string, object> { ["state"] = "ok", ["files"] = new List<Dictionary<string, object>>() };
+        }
+        public Dictionary<string, object> SvWrite(string acctHash, List<Dictionary<string, object>> docs, bool? gameSync)
+        {
+            SvWrites += docs.Count;
+            return new Dictionary<string, object> { ["results"] = docs.Select(d => new Dictionary<string, object> { ["var"] = d.Str("var"), ["state"] = "written" }).ToList() };
+        }
         public void Dispose() => T.Dispose();
     }
 
@@ -135,7 +146,7 @@ namespace DsfDesktop.Tests
         static readonly Tmp CertDir = new Tmp();
         static X509Certificate2 Cert() => cert ?? (cert = BridgeCert.LoadOrCreate(CertDir.Dir, "test"));
 
-        static BridgeServer Start(FakeHost h)
+        internal static BridgeServer Start(FakeHost h)
         {
             var s = new BridgeServer(h, Cert(), 0, IPAddress.Loopback) { WrongCodeDelay = TimeSpan.Zero };
             s.Start();
@@ -143,7 +154,7 @@ namespace DsfDesktop.Tests
         }
 
         /// <summary>the Thor's side of section 3 on an open client; returns pair_ok</summary>
-        static Dictionary<string, object> Pair(Client c, FakeHost h, string deviceId, bool stream = true)
+        internal static Dictionary<string, object> Pair(Client c, FakeHost h, string deviceId, bool stream = true)
         {
             c.Send(new Dictionary<string, object> { ["t"] = "pair_hello", ["proto"] = 1, ["device_id"] = deviceId, ["name"] = "AYN Thor", ["stream"] = stream });
             var ch = c.Next();

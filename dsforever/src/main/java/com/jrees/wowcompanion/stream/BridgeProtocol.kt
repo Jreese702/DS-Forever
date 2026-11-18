@@ -142,6 +142,10 @@ sealed class BridgeMsg {
     object Unpaired : BridgeMsg()
     /** Desktop 0.2.31 starts WoW again after a client of the last login.txt closed itself: send the saved login once more */
     object LoginAgain : BridgeMsg()
+    /** settings follow (2026-11-18): Desktop's answer to "sv_read" (our PC files as text) and to "sv_write" (each table's outcome); the
+     *  whole object goes to SvSync */
+    data class SvFiles(val o: JSONObject) : BridgeMsg()
+    data class SvWritten(val o: JSONObject) : BridgeMsg()
     data class Unknown(val t: String) : BridgeMsg()
 }
 
@@ -267,6 +271,8 @@ object BridgeProtocol {
                     BridgeMsg.PcTest.PcStep(it.optString("id"), it.optString("state"), it.optString("line"), it.optString("fix")) }
             }, o.optString("screen"), o.optString("screen_line"), o.optInt("screen_hz", 0), o.optString("pad"))
             "login_again" -> BridgeMsg.LoginAgain
+            "sv_files" -> BridgeMsg.SvFiles(o)
+            "sv_written" -> BridgeMsg.SvWritten(o)
             else -> BridgeMsg.Unknown(t)
         }
     }

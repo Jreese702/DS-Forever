@@ -204,12 +204,12 @@ class GeneralTilesRoomTest {
         assertEquals(listOf(GeneralTiles.THEME, GeneralTiles.SWAP, GeneralTiles.VOICE), look.tileIds())
         assertEquals(listOf(GeneralTiles.Row.LANGUAGE), look.rowIds())
         assertEquals(476f, look.tileBox(GeneralTiles.THEME)!!.width(), 0.01f)
-        assertEquals(listOf(GeneralTiles.Row.LOGIN, GeneralTiles.Row.GAME_ACCOUNT, GeneralTiles.Row.WINDOWS_ID), part(r, SettingsTabs.Group.ACCOUNT).rowIds())
+        assertEquals(listOf(GeneralTiles.Row.LOGIN, GeneralTiles.Row.GAME_ACCOUNT, GeneralTiles.Row.GAME_SYNC, GeneralTiles.Row.WINDOWS_ID), part(r, SettingsTabs.Group.ACCOUNT).rowIds())
         assertEquals(listOf(GeneralTiles.Row.REPORT, GeneralTiles.Row.RELOAD, GeneralTiles.Row.STATUS), part(r, SettingsTabs.Group.HELP).rowIds())
         // no group folds, no heading is a stop; every part is shown
         for (g in SettingsTabs.groups(SettingsTabs.Tab.GENERAL)) assertTrue(g in r.open)
         // compact rows are 88 px: the Account part is its three rows and the foot
-        assertEquals(4 + 3 * 88 + 16, part(r, SettingsTabs.Group.ACCOUNT).height)
+        assertEquals(4 + 4 * 88 + 16, part(r, SettingsTabs.Group.ACCOUNT).height)
         // a single-screen device: no Swap screens tile, the row closes up
         val single = part(room(swap = false), SettingsTabs.Group.LOOK)
         assertEquals(listOf(GeneralTiles.THEME, GeneralTiles.VOICE), single.tileIds())

@@ -50,16 +50,19 @@ object GeneralTiles {
     /** a tile's name (display words; Tr.t by the drawer) */
     val NAMES = mapOf(THEME to "Theme", SWAP to "Swap screens", VOICE to "Voice typing")
 
+    /** settings follow (2026-11-18): WoW's own keybind / settings sync row (Settings.gameSync; GameSyncCvars) */
+    const val SYNC_ROW = "Sync game keybinds & macros"
+
     /** the compact rows, in their groups' order */
     enum class Row(val label: String) {
-        LANGUAGE("Language"), LOGIN("Battle.net login"), GAME_ACCOUNT("Game account"), WINDOWS_ID(WindowsId.ROW_ID),
+        LANGUAGE("Language"), LOGIN("Battle.net login"), GAME_ACCOUNT("Game account"), GAME_SYNC(SYNC_ROW), WINDOWS_ID(WindowsId.ROW_ID),
         WINDOWS_RESTART("Restart the game"), REPORT("Problem report"), RELOAD("Reload game UI"), STATUS("Status")
     }
 
     /** [g]'s compact rows now: the login row only when the host has it; Restart the game only while the running game used the other ID */
     fun rows(g: SettingsTabs.Group, loginRow: Boolean, winIdRestart: Boolean): List<Row> = when (g) {
         SettingsTabs.Group.LOOK -> listOf(Row.LANGUAGE)
-        SettingsTabs.Group.ACCOUNT -> listOfNotNull(if (loginRow) Row.LOGIN else null, Row.GAME_ACCOUNT, Row.WINDOWS_ID,
+        SettingsTabs.Group.ACCOUNT -> listOfNotNull(if (loginRow) Row.LOGIN else null, Row.GAME_ACCOUNT, Row.GAME_SYNC, Row.WINDOWS_ID,
             if (winIdRestart) Row.WINDOWS_RESTART else null)
         SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS)
         else -> emptyList()
@@ -326,6 +329,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 GeneralTiles.Row.LOGIN -> out += Control(r, GeneralTiles.button(room).rect(), { host.onLogin() })
                 GeneralTiles.Row.GAME_ACCOUNT -> segs(room, GAME_ACCOUNT).forEachIndexed { k, b ->
                     out += Control(r, b, { Settings.gameAccountAsk = k == 0 }) }
+                GeneralTiles.Row.GAME_SYNC -> segs(room, OFF_ON).forEachIndexed { k, b ->
+                    out += Control(r, b, { Settings.gameSync = k == 1 }) }
                 GeneralTiles.Row.WINDOWS_ID -> segs(room, WindowsId.SEGMENTS).forEachIndexed { k, b ->
                     out += Control(r, b, { Settings.windowsId = WindowsId.VALUES[k] }) }
                 GeneralTiles.Row.WINDOWS_RESTART -> out += Control(r, GeneralTiles.button(room).rect(), { host.onRestart() })
@@ -511,6 +516,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         when (r) {
             GeneralTiles.Row.LANGUAGE -> seg(c, cs, Tr.LANGS.map { langWord(it) }, Tr.LANGS.indexOfFirst { it.code == Tr.choice() })
             GeneralTiles.Row.GAME_ACCOUNT -> seg(c, cs, GAME_ACCOUNT, if (Settings.gameAccountAsk) 0 else 1)
+            GeneralTiles.Row.GAME_SYNC -> seg(c, cs, OFF_ON, if (Settings.gameSync) 1 else 0)
             GeneralTiles.Row.WINDOWS_ID -> seg(c, cs, WindowsId.SEGMENTS, WindowsId.VALUES.indexOf(Settings.windowsId))
             GeneralTiles.Row.LOGIN -> UiKit.button(c, cs[0], if (host.loginSaved()) "Change" else "Save", UiKit.Button.UP)
             GeneralTiles.Row.WINDOWS_RESTART -> UiKit.button(c, cs[0], "Restart", UiKit.Button.UP)
@@ -692,5 +698,6 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         const val ARM_MS = 3000L
         const val SEG_TEXT = 24f
         val GAME_ACCOUNT = listOf("Ask each time", "Remembered")
+        val OFF_ON = listOf("Off", "On")
     }
 }

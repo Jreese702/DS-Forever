@@ -3252,7 +3252,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // Spells' m41 S1: the clean-up's plan for this character (the Controller room's DS tab; AGENT_LOG 2026-10-09); a state, so a
             // replayed one counts too (the last one wins)
             // the add-on's own saved tables (PadMap m51): kept in Documents/DS Forever for the write before the next game start
-            "svkeep" -> if (current) SvKeep.parse(msg, System.currentTimeMillis())?.let { d ->
+            // Streaming (settings follow, 2026-11-18): the PC's table is MERGED per entry into the Thor's kept copy (SvSync.fromPc), never
+            // stored whole: it replaced the Thor's table before, and a PC without the Thor's characters would have dropped them
+            "svkeep" -> if (current && PlayModes.current == PlayMode.STREAM) SvKeep.parse(msg, System.currentTimeMillis())?.let { d ->
+                runCatching { SvSync.fromPc(svKeptDir(), d) { Log.i("WCSETUP", it) } }.onFailure { Log.w("WCSETUP", "settings sync: ${d.variable} NOT merged (${it.message})") }
+            } else if (current) SvKeep.parse(msg, System.currentTimeMillis())?.let { d ->
                 if (LauncherHooks.gameStartSec != svRun) { svRun = LauncherHooks.gameStartSec; svArmed.clear(); svSeen.clear() }
                 if (svSeen.add(d.variable) && d.n > 0) svArmed += d.variable
                 val line = runCatching { SvKeep.store(svKeptDir(), d, d.variable in svArmed) }.getOrElse { "settings backup: NOT kept (${it.message})" }

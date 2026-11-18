@@ -47,6 +47,9 @@ class BridgeLog(
     private val onSunshine: (BridgeMsg.Sunshine) -> Unit = {},
     /** Desktop 0.2.32: its answer to [askPcTest] (Test connection) */
     private val onPcTest: (BridgeMsg.PcTest) -> Unit = {},
+    /** settings follow (2026-11-18): the Thor's kept settings folder (SvKeep / SvSync) and the game-sync switch; null = no sync */
+    private val svDir: () -> java.io.File? = { null },
+    private val gameSync: () -> Boolean = { false },
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     /** the Thor's clock on the documents' `_gt` scale ([PcClock]; the tests pass a fixed one) */
@@ -100,6 +103,10 @@ class BridgeLog(
     /** the player's Cancel (B) on Desktop's update of the PC game */
     fun patchCancel(): Boolean = try { conn?.send(BridgeProtocol.patchCancel()); conn != null } catch (_: Throwable) { false }
 
+    /** the "sv_write" this connection sent (its tables' text: the base once Desktop answers written / same) */
+    @Volatile private var svSent: JSONObject? = null
+    private fun svLog(line: String) { try { Log.i("WCSETUP", line) } catch (_: Throwable) {} }
+
     /** how a session ended */
     enum class End { DROPPED, AUTH_LOST, STOPPED }
 
@@ -145,6 +152,8 @@ class BridgeLog(
                     sendLogin(c)
                     // the PC game gets Desktop's add-on set BEFORE it is started (never while it runs: its files are read at the start)
                     if (!m.wowRunning) c.send(BridgeProtocol.addonsInstall())
+                    // settings follow (2026-11-18): our tables to the PC BEFORE its WoW starts (never while it runs: it reads them at login)
+                    if (!m.wowRunning) svDir()?.let { d -> runCatching { svSent = null; c.send(com.jrees.wowcompanion.SvSync.readRequest(d, gameSync()).toString()) } }
                     c.send(BridgeProtocol.focus())
                     streamMode()?.let { (w, h, fps) -> c.send(BridgeProtocol.streamMode(w, h, fps)) }
                 }
@@ -172,6 +181,15 @@ class BridgeLog(
                     // over them (it read "WoW didn't start: Updating the game ...", rewritten every 500 ms)
                     if (m.pc?.patch == null && m.pc?.stopped != true)
                         BridgeProtocol.wowText(m.state, m.why).takeIf { it.isNotEmpty() }?.let { onStatus("PC: $it") }
+                }
+                is BridgeMsg.SvFiles -> svDir()?.let { d ->
+                    val w = runCatching { com.jrees.wowcompanion.SvSync.onFiles(d, m.o) { svLog(it) } }.onFailure { svLog("settings sync: NOT merged (${it.javaClass.simpleName})") }.getOrNull()
+                    svSent = w
+                    if (w != null) c.send(w.put("game_sync", gameSync()).toString())
+                }
+                is BridgeMsg.SvWritten -> svDir()?.let { d ->
+                    runCatching { com.jrees.wowcompanion.SvSync.onWritten(d, m.o, svSent) { svLog(it) } }
+                    svSent = null
                 }
                 is BridgeMsg.Unpaired -> { onAuthLost("revoked"); return End.AUTH_LOST }
                 // the user's pick 2026-11-17 ("Ask the Thor again"): WoW closed itself on the PC and starts again; the saved login once

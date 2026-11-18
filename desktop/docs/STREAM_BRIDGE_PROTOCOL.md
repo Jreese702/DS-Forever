@@ -254,6 +254,25 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   streamed, or a headless PC says "PC needs a virtual screen" (`problem` "needs_screen") - and tries again only when the Thor
   reconnects, on this message, or on a Test. No answer.
 - `{"t":"addons_status"}` / `{"t":"addons_install"}` → `{"t":"addons",...}` (Desktop's add-on install; not used by the Thor yet).
+- **Settings follow** *(Desktop 0.2.37; the user's pick 2026-11-18, "Ours + WoW's server sync")* — DS Forever's OWN two saved tables
+  (WowCompanionDB, WowCompanionSpellsDB) between the Thor's kept copy (SvKeep) and the PC, only down a pinned wss connection, only while
+  WoW is not running on the PC. Merging is the Thor's alone (SvSync / SvMerge: per entry, the Thor's local entries win the first sync and
+  every conflict, nothing is ever dropped - the user's hard rule "dont delete my current hunters settings on local"); Desktop only reads
+  and writes the two files (WowSvSync).
+  - Thor → `{"t":"sv_read","v":1,"acct":"<sha-256 hex of the Thor's account folder name, lower-cased; never the name>","game_sync":bool}`
+    after a welcome with WoW not running. Desktop picks the account folder (the hash's, else the remembered game account's "!" pick
+    from login_file, else the only one; else none) and answers
+    `{"t":"sv_files","state":"ok"|"none"|"running","why","acct","files":[{"var","exists","text","hash":"<sha-256 of the file>","at"}]}`.
+  - Thor → `{"t":"sv_write","v":1,"acct","game_sync","docs":[{"var","n","lua":"{...}","if_hash"}]}` (sent after every `ok`, `docs`
+    possibly empty). Desktop writes `
+<var> = <lua>
+` only if the file's hash is still `if_hash` ("" = still missing), `n` > 0 and
+    the text is a bare table, a dated backup first (SavedVariables/dsf-sync-backups, the newest 5), temp + replace; it answers
+    `{"t":"sv_written","results":[{"var","state":"written"|"same"|"changed"|"refused"|"running"|"none"|"failed"}]}`. `written` /
+    `same` = the PC holds the table: the Thor's base for its later three-way merges of the PC's live `svkeep` documents.
+  - `game_sync` = the Thor's Settings > General "Sync game keybinds & macros" (off by default): Desktop sets synchronizeBindings /
+    synchronizeConfig to 1 in the PC's Config.wtf before WoW starts (the prior values recorded once in WTF/.dsf-sync-prior; off puts
+    them back). Never restored after a stream. A start waits up to 6 s for a `sv_write` still owed.
 
 ## 8. What the Thor tells the player
 

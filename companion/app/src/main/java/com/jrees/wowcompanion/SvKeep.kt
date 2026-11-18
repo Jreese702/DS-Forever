@@ -13,7 +13,10 @@ import java.io.File
  * the game starts (NativeLogin.prepare: the client is not running) it writes OUR OWN file WTF/Account/<account>/SavedVariables/
  * <AddOn>.lua from it - only when the game has nothing newer (its own file is older than the kept one) and never an empty table. The
  * game then loads everything itself at login. Nothing of the game's own (bars, bindings, other add-ons' files) is ever touched.
- * Pure (java.io + org.json): tools/setup_test runs it.
+ * SETTINGS FOLLOW (the user's pick 2026-11-18, "Ours + WoW's server sync"): while streaming, the PC's documents are MERGED per entry into
+ * the kept copy (SvSync.fromPc; never [store]: a whole-table replace), and the kept copy reaches the PC at a stream session's start
+ * (SvSync, Desktop's WowSvSync). [beforeStart] keeps the game file's own entries ([withGameOnly]) and records the account folder's hash.
+ * Pure (java.io + org.json): dsforever's WowSwitchTest / SvSyncTest run it.
  */
 object SvKeep {
     /** our saved tables and their add-on's file name */
@@ -67,13 +70,30 @@ object SvKeep {
     fun beforeStart(wtf: File, keptDir: File, backupDir: File, log: (String) -> Unit) {
         val sv = savedVariablesDir(wtf)
         if (sv == null) { log("settings backup: no WTF/Account/*/SavedVariables yet: nothing written"); return }
+        // settings follow (2026-11-18): the account folder's HASH (never its name) for the PC's sync to find the same account (SvSync)
+        sv.parentFile?.name?.let { a -> runCatching { keptDir.mkdirs(); SvSync.accountFile(keptDir).writeText(SvSync.accountHash(a)) } }
         for ((variable, name) in FILES) {
-            val d = fromJson(runCatching { keptFile(keptDir, variable).takeIf { it.isFile }?.readText() }.getOrNull())
+            val kept = fromJson(runCatching { keptFile(keptDir, variable).takeIf { it.isFile }?.readText() }.getOrNull())
             val target = File(sv, name)
+            val d = kept?.let { withGameOnly(target, it) }
             val why = skipWhy(target, d)
             if (why != null) { log("settings backup: $name not written ($why)"); continue }
+            log("settings backup kept before sync")
             log(runCatching { write(target, d!!, backupDir) }.getOrElse { "settings backup: $name NOT written (${it.message})" })
         }
+    }
+
+    /**
+     * THE HARD SAFETY RULE (the user, 2026-11-18: "dont delete my current hunters settings on local"): the kept copy [d] goes in WITH the
+     * entries only the game's own file [target] holds (a character, a store: [SvMerge] with the kept copy winning every conflict), so
+     * the write never drops anything the game had. A game file that does not read whole: [d] as it is (the write as before). Pure.
+     */
+    fun withGameOnly(target: File, d: Doc): Doc {
+        if (!target.isFile) return d
+        val game = runCatching { SvLua.withoutSkipped(d.variable, SvLua.parse(target.readText(), d.variable)) }.getOrNull() ?: return d
+        val kept = runCatching { SvLua.parse(d.lua) }.getOrNull() ?: return d
+        val m = SvMerge.merge(kept, game, null)
+        return if (m.added == 0) d else Doc(d.variable, SvLua.leaves(m.table), SvLua.ser(m.table), d.savedAt)
     }
 
     /** the marker in the new client's WTF folder: the beta's settings were carried across (once) */
