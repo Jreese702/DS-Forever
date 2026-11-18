@@ -6,7 +6,7 @@ namespace DsfDesktop.Sunshine
 {
     /// <summary>
     /// THE PC'S SCREEN MODE PUT BACK AFTER A STREAM (the user, 2026-11-18: "the PC resolution should also be restored after streaming is
-    /// done"). What changes it today: "Match PC screen to stream" (AppSettings.MatchStreamResolution, off while Apollo runs) writes our
+    /// done"). What changes it today: "Match PC screen to stream" (AppSettings.MatchStreamResolution, stood down only while Apollo streams) writes our
     /// Sunshine's display-device options (SunshineConfig: dd_configuration_option = ensure_active, dd_resolution_option and
     /// dd_refresh_rate_option = auto, dd_config_revert_on_disconnect = enabled), so Sunshine itself sets the captured monitor to the
     /// Thor's resolution and rate as a stream starts and reverts it when the client goes. Sunshine keeps that revert in its own state
@@ -19,8 +19,8 @@ namespace DsfDesktop.Sunshine
     ///  - once no stream has run for <see cref="Grace"/> (a Thor reconnecting keeps it), the monitor is looked at: back to the player's =
     ///    Sunshine did it (the record goes); still the stream's mode = put back here; anything else = the player's own pick, kept;
     ///  - a record left by a crash is looked at the same way after Desktop's next start;
-    ///  - only that one monitor's mode and place; never our own virtual screen (it goes away by itself), never with Match off or Apollo
-    ///    running (Apollo's display settings are its own).
+    ///  - only that one monitor's mode and place; never our own virtual screen (it goes away by itself), never with Match off or stood down for an
+    ///    Apollo session (Apollo's display settings are its own).
     /// </summary>
     public sealed class DisplayKeep
     {
@@ -65,7 +65,7 @@ namespace DsfDesktop.Sunshine
         }
 
         /// <summary>every couple of seconds: [streaming] now, [dev] the captured monitor ("\\.\DISPLAY1"; null = none, or our own
-        /// virtual screen), [match] Sunshine matches the screen to the stream (Match on, no Apollo)</summary>
+        /// virtual screen), [match] Sunshine matches the screen to the stream (the match in our running config: Match on and not stood down for Apollo)</summary>
         public void Tick(bool streaming, string dev, bool match)
         {
             lock (gate)

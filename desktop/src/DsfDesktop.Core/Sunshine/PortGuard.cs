@@ -46,7 +46,17 @@ namespace DsfDesktop.Sunshine
         public List<string> Neighbours = new List<string>();
         /// <summary>the names in [Neighbours] ("Apollo", "Sunshine")</summary>
         public List<string> Hosts = new List<string>();
+        /// <summary>the other streaming hosts as found: name, pid and the TCP ports it listens on (for <see cref="PortGuard.HostStreaming"/>)</summary>
+        public List<NeighbourHost> HostList = new List<NeighbourHost>();
         public bool Services;
+    }
+
+    /// <summary>another streaming host's process: "Apollo" / "Sunshine", its pid, every TCP port it listens on</summary>
+    public sealed class NeighbourHost
+    {
+        public string Name;
+        public int Pid;
+        public List<int> Ports = new List<int>();
     }
 
     /// <summary>
@@ -72,6 +82,32 @@ namespace DsfDesktop.Sunshine
             if (p.Path != null && p.Path.IndexOf(@"\Apollo\", StringComparison.OrdinalIgnoreCase) >= 0) return "Apollo";
             if (name != null && name.IndexOf("sunshine", StringComparison.OrdinalIgnoreCase) >= 0) return p.Path == null && apolloInstalled ? "Apollo" : "Sunshine";
             return null;
+        }
+
+        /// <summary>the stock GameStream base (HTTP): a host whose own base can't be read from its listeners is taken to be on it</summary>
+        public const int StockBase = 47989;
+
+        /// <summary>another host's base port from the TCP ports it listens on: the one with HTTPS (-5) and RTSP (+21) beside it, else the stock base</summary>
+        public static int HostBase(IEnumerable<int> ports)
+        {
+            var set = new HashSet<int>(ports ?? Enumerable.Empty<int>());
+            foreach (var b in set.OrderBy(p => p))
+                if (set.Contains(b - 5) && set.Contains(b + HostHealth.RtspOffset)) return b;
+            return StockBase;
+        }
+
+        /// <summary>
+        /// Another host (Apollo) is STREAMING now, not just running: its process holds one of its session UDP ports (video / control /
+        /// audio, base+9..11). Sunshine and its fork Apollo bind those only while a session is up (stream.cpp's broadcast context, made
+        /// at a session's start and dropped with the last one), the same signal ours is judged by (<see cref="HostHealth.SessionBound"/>).
+        /// Read-only: the system's UDP table; nothing of Apollo's is opened, asked or changed.
+        /// </summary>
+        public static bool HostStreaming(NeighbourHost h, IEnumerable<UdpRow> udp)
+        {
+            if (h == null || h.Pid <= 0 || udp == null) return false;
+            int b = HostBase(h.Ports);
+            var ports = PortPlanner.UdpOffsets.Select(o => b + o).ToArray();
+            return udp.Any(r => r.Pid == h.Pid && ports.Contains(r.Port));
         }
 
         public static int[] OurPorts(int basePort) => basePort > 0 ? PortPlanner.TcpOffsets.Select(o => basePort + o).OrderBy(p => p).ToArray() : new int[0];
@@ -149,6 +185,7 @@ namespace DsfDesktop.Sunshine
             {
                 var hn = HostName(Who(g.Key), apolloInstalled) ?? "Sunshine";
                 if (!rep.Hosts.Contains(hn)) rep.Hosts.Add(hn);
+                rep.HostList.Add(new NeighbourHost { Name = hn, Pid = g.Key, Ports = g.Select(r => r.Port).Distinct().OrderBy(p => p).ToList() });
                 rep.Neighbours.Add(hn + " pid " + g.Key + " (" + string.Join(", ", g.Select(r => r.Port).Distinct().OrderBy(p => p)) + ")");
             }
             if (rep.Hosts.Count > 0) rep.Info = string.Join(" and ", rep.Hosts) + " also runs on this PC (fine)";

@@ -409,7 +409,7 @@ namespace DsfDesktop.App
                 bool settled = up && HostStarted;
                 var r = PortGuard.Now(SunshinePort, sh?.Pid ?? -1, up, settled, SunshineLayout.ExeDir);
                 Ports = r;
-                SetApollo(r.Hosts.Contains("Apollo"));
+                SetApollo(r.Hosts.Contains("Apollo"), ApolloStreamingNow(r));
                 var key = (HostProblem ?? "") + "|" + string.Join(",", r.ForeignPorts);
                 if (when != null) Log.I("sunshine: ports " + when + ": " + r.Detail);
                 if (key == lastPortsKey) return;
@@ -715,30 +715,62 @@ namespace DsfDesktop.App
         }
 
         // no prep command: the portable Sunshine can't start ours (error 5, tracking 252f5ec7); the Thor's bridge "focus" covers it
-        void WriteSunshineConfig() => SunshineConfig.Write(SunshineLayout, new SunshineOptions
+        void WriteSunshineConfig()
         {
-            Port = SunshinePort, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName,
-            BindAddress = Loopback ? "127.0.0.1" : "", OutputName = CurrentOutput, MatchStream = MatchStreamNow,
-        });
+            bool match = MatchStreamNow;
+            SunshineConfig.Write(SunshineLayout, new SunshineOptions
+            {
+                Port = SunshinePort, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName,
+                BindAddress = Loopback ? "127.0.0.1" : "", OutputName = CurrentOutput, MatchStream = match,
+            });
+            matchWritten = match;
+        }
 
         /// <summary>the display id our Sunshine captures: our own virtual screen's for the session, else the remembered real one</summary>
         string CurrentOutput => sessionOutput ?? Settings.CaptureDevice;
 
-        /// <summary>"Match PC screen to stream" as written: off while Apollo runs (both change the display setup and revert each other)</summary>
-        bool MatchStreamNow => Settings.MatchStreamResolution && !apolloRunning;
+        /// <summary>"Match PC screen to stream" to write now: the player's setting, stood down only while Apollo has a session up (two
+        /// hosts changing the display setup at once revert each other). Apollo merely running (a service, always on the user's PC
+        /// 2026-11-18) no longer turns it off: that left the PC's resolution never matched.</summary>
+        bool MatchStreamNow => MatchScreen.Write(Settings.MatchStreamResolution, apolloStreaming);
 
-        volatile bool apolloRunning;
+        /// <summary>what our running Sunshine's config says (the last one written); a change waiting for a stream's end isn't in it yet</summary>
+        volatile bool matchWritten;
+        volatile bool apolloRunning, apolloStreaming;
+
+        /// <summary>Apollo has a session up now (<see cref="PortGuard.HostStreaming"/>: its session UDP ports bound); false when unreadable</summary>
+        static bool ApolloStreamingNow(PortReport r)
+        {
+            var apollo = r.HostList.Where(h => h.Name == "Apollo").ToList();
+            if (apollo.Count == 0) return false;
+            try
+            {
+                var udp = PortGuard.UdpBound();
+                return apollo.Any(h => PortGuard.HostStreaming(h, udp));
+            }
+            catch (Exception) { return false; }
+        }
         /// <summary>the config changed while a stream ran: written and restarted once the stream ends</summary>
         volatile bool configStale;
 
-        void SetApollo(bool on)
+        void SetApollo(bool on, bool streaming)
         {
-            if (on == apolloRunning) return;
-            apolloRunning = on;
-            if (!Settings.MatchStreamResolution) { Log.I("apollo: " + (on ? "running" : "gone")); return; }
-            Log.I(on ? "match screen: off while Apollo runs (both change the display setup)" : "match screen: back on (Apollo gone)");
+            streaming = on && streaming;
+            if (on != apolloRunning) { apolloRunning = on; Log.I("apollo: " + (on ? "running" : "gone")); }
+            if (streaming == apolloStreaming) return;
+            apolloStreaming = streaming;
+            if (!Settings.MatchStreamResolution) { Log.I("apollo: " + (streaming ? "streaming" : "not streaming")); return; }
+            // ours streaming with the match on: left as it is (never a fight over the display, never a restart mid-stream); ApplyConfig
+            // waits for our stream's end. Apollo's own config and display settings are never touched.
+            if (streaming && matchWritten && StreamLive()) Log.I("match screen: Apollo started streaming; ours keeps its match until our stream ends");
+            else Log.I(streaming ? "match screen: skipped while Apollo streams" : "match screen: on (Apollo not streaming)");
             ApplyConfig("match screen");
         }
+
+        public const string MatchSkippedLine = "Screen not matched: Apollo is streaming";
+
+        /// <summary>the Thor's status line when the player's Match is stood down for Apollo's session</summary>
+        void PublishMatchSkipped() => Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = MatchSkippedLine });
 
         /// <summary>writes the config and restarts ours now when idle, else after the stream</summary>
         void ApplyConfig(string why)
@@ -754,6 +786,7 @@ namespace DsfDesktop.App
         {
             Settings.MatchStreamResolution = on;
             SaveSettings();
+            if (on && apolloStreaming) Log.I("match screen: skipped while Apollo streams");
             WriteSunshineConfig();
             RestartSunshine();
         }
@@ -1701,6 +1734,11 @@ namespace DsfDesktop.App
             Log.I("stream: " + s);
             if (s != StreamState.Streaming && configStale) Task.Run(() => ApplyConfig("after the stream"));
             Bridge?.Publish(new Dictionary<string, object> { ["t"] = "stream", ["state"] = StreamWord });
+            if (s == StreamState.Streaming && was != StreamState.Streaming && Settings.MatchStreamResolution && !matchWritten && apolloStreaming)
+            {
+                Log.I("match screen: skipped for this stream (Apollo is streaming)");
+                PublishMatchSkipped();
+            }
             if (s == StreamState.Streaming && was != StreamState.Streaming)
                 Task.Run(() =>
                 {
@@ -1761,7 +1799,7 @@ namespace DsfDesktop.App
             var streaming = Stream == StreamState.Streaming;
             var list = SunshineDisplays();
             var cap = sessionOutput == null && list.Count > 0 ? list.FirstOrDefault(d => d.DisplayName == Displays.Captured(list, CurrentOutput)) : null;
-            ScreenKeep?.Tick(streaming, cap != null && !cap.Virtual ? cap.DisplayName : null, MatchStreamNow);
+            ScreenKeep?.Tick(streaming, cap != null && !cap.Virtual ? cap.DisplayName : null, matchWritten);
             var dir = FlavorDirOrNull;
             if (streaming && dir != null) ConfigKeep?.RecordWindow(Path.Combine(dir, "WTF", "Config.wtf"));
         }
