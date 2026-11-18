@@ -593,9 +593,12 @@ class MapOtherContinentShotsTest {
                 val w = waterStats(r, bm)
                 val dark = 100 * w[2] / w[3].coerceAtLeast(1)
                 note("$pn $name z$z: shallow ${100 * w[0] / w[3].coerceAtLeast(1)}%, deep ${100 * w[1] / w[3].coerceAtLeast(1)}%, dark $dark%, " +
-                    "terrain ${st(r)[6] == 1f}, other ${r.map.otherContDrawn}")
+                    "terrain ${st(r)[6] == 1f}, other ${r.map.otherContDrawn}, other tiles ${r.map.otherTiles}, sea pictures ${r.map.seaPictures}")
                 save("${pn}_${name}_z${z.toInt()}", bm)
                 assertTrue("$pn $name z$z: no dark field ($dark%)", dark < 10)
+                // (review 3: the gradient past the last tile is the depth field's sea picture, drawn in both ways in - the player's own
+                // close tiles and the other continent's terrain - so it never ends on the tiles' edge in the flat fill)
+                if (realArt != null && name == "durotar_coast") assertTrue("$pn $name z$z: the sea picture under the tiles", r.map.seaPictures > 0)
                 if (realArt != null && name != "elwynn_lake") {
                     assertTrue("$pn $name z$z: shallows at the coast", w[0] > 0)
                     if (z <= 1f && name == "durotar_coast") assertTrue("$pn $name z$z: deep further out", w[1] > 0)

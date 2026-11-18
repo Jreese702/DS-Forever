@@ -5693,7 +5693,7 @@ class MapView(context: Context) : View(context) {
             seaDst.set(sxU(au + bu * (32 - f.c0) * adt), syV(av + bv * (32 - f.r0) * adt),
                 sxU(au + bu * (32 - f.c0 - f.w / WaterDepth.FIELD_PX) * adt), syV(av + bv * (32 - f.r0 - f.h / WaterDepth.FIELD_PX) * adt))
             seaDst.sort()
-            c.drawBitmap(sb, null, seaDst, pTerrain)
+            c.drawBitmap(sb, null, seaDst, pTerrain); seaPictures++
         }
         for (p in conts) {
             val cont = p[0].toInt()
@@ -5775,6 +5775,9 @@ class MapView(context: Context) : View(context) {
     var paintedConts = 0
         private set
     var otherTiles = 0
+        private set
+    /** the tests: this frame's depth-field sea pictures drawn (WaterDepth: the gradient past the last tile, no edge at the boxes) */
+    var seaPictures = 0
         private set
     /** the tests: the continent under the view is not the player's this frame (its art, not the player's close tiles) */
     var otherContDrawn = false
@@ -7151,7 +7154,7 @@ class MapView(context: Context) : View(context) {
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
         // HOME'S MAP ZOOMED OUT (2026-11-17): past the zone the Map room's art lies under everything (WorldArt: the room's own renderer and
         // pictures), the zone's 0..1 on it through this projection; the tiles fade out over it down to half the zone, then are not drawn
-        worldDrew = false; terrainDrew = false; paintedConts = 0; otherTiles = 0
+        worldDrew = false; terrainDrew = false; paintedConts = 0; otherTiles = 0; seaPictures = 0
         // THE CONTINENT UNDER THE VIEW (the user, 2026-11-17: "when zooming out and then zooming in on the other continent the screen goes
         // black"): the close tiles below are only the PLAYER's continent's, through the player's zone rect, so zoomed back in over the
         // other continent nothing was drawn. There the art stays on at any zoom (its terrain if built, else its painted picture and zone
@@ -7224,7 +7227,7 @@ class MapView(context: Context) : View(context) {
                         seaDst.set(sx(rT.nx((32 - f.c0) * adt)), sy(rT.ny((32 - f.r0) * adt)),
                             sx(rT.nx((32 - f.c0 - f.w / WaterDepth.FIELD_PX) * adt)), sy(rT.ny((32 - f.r0 - f.h / WaterDepth.FIELD_PX) * adt)))
                         seaDst.sort()
-                        c.drawBitmap(sb, null, seaDst, pArt)
+                        c.drawBitmap(sb, null, seaDst, pArt); seaPictures++
                     }
                 }
                 for (row in r0..r1) for (col in c0..c1) {

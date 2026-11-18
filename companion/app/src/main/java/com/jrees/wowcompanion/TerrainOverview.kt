@@ -122,7 +122,13 @@ object TerrainOverview {
     fun make(cont: Int, level: Int, oc: Int, or: Int): Bitmap? {
         val b = makeRaw(cont, level, oc, or) ?: return null
         val n = span(level)
-        WaterDepth.recolour(b, cont, (oc * n).toDouble(), (or * n).toDouble(), n.toDouble())
+        // (its neighbours read past its edges, from their disk copies when made - none made yet: its own edge stands in)
+        WaterDepth.recolour(b, cont, (oc * n).toDouble(), (or * n).toDouble(), n.toDouble()) { dx, dy, _ ->
+            if (!has(cont, level, oc + dx, or + dy)) WaterDepth.Nb(null, true)
+            else WaterDepth.Nb(file(cont, level, oc + dx, or + dy)?.takeIf { it.isFile }?.let { f -> runCatching {
+                BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 })
+            }.getOrNull() }, false)
+        }
         return b
     }
 

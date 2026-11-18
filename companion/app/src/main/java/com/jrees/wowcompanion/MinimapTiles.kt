@@ -116,7 +116,7 @@ object MinimapTiles {
                 else null
             } catch (t: Throwable) { null }
             // the water by its depth (WaterDepth), once, here: never per frame
-            val final = bmp == null || runCatching { WaterDepth.recolour(bmp, cont, col.toDouble(), row.toDouble(), 1.0) }.getOrDefault(true)
+            val final = bmp == null || runCatching { WaterDepth.recolourTile(bmp, cont, col, row) }.getOrDefault(true)
             main.post {
                 pending.remove(k)
                 // (made provisional, and the field landed meanwhile: not kept, the next frame makes it again)
