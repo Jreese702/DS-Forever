@@ -365,7 +365,9 @@ class VoiceShotsTest {
             .put("tab_inbox", 7).put("tab_send", 8).put("close", 9)
         val send = JSONObject().put("to", "Mogra").put("subject", "").put("body", "Here are the bars you asked for.").put("price", 30)
             .put("max", 12).put("items", JSONArray())
-        val d = JSONObject().put("type", "interact").put("iv", "i161").put("mode", true)
+        // a live document (the clock LogTail stamps with): #536 keeps the field's keyboard only while the window really shows
+        val gn = InteractView::class.java.getDeclaredMethod("gameNow").apply { isAccessible = true }
+        val d = JSONObject().put("type", "interact").put("iv", "i161").put("mode", true).put("_gt", gn.invoke(InteractView(app)) as Long)
             .put("mail", JSONObject().put("tab", "send").put("money", 102345).put("send", send).put("act", act))
             .put("nav", JSONObject().put("on", true).put("cur", cur))
         if (kbd != null) d.put("kbd", kbd)
