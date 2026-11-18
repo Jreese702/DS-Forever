@@ -3767,9 +3767,17 @@ private fun setupXEnvironment(
         val wow64Mode = container.isWoW64Mode
         guestProgramLauncherComponent.setContainer(container)
         guestProgramLauncherComponent.setWineInfo(xServerState.value.wineInfo)
-        val gameExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " +
-            getWineStartCommand(context, appId, container, envVars, guestProgramLauncherComponent) +
+        val directCommand = getWineStartCommand(context, appId, container, envVars, guestProgramLauncherComponent) +
             (if (container.execArgs.isNotEmpty()) " " + container.execArgs else "")
+        // Browser login (upstream v2.4.5, opt-in; latched at Play by BattleNetBrowserLogin.beginRun): the ARM64 helper starts first in
+        // the same prefix, receives the Battle.net session over the authenticated loopback socket and then starts the game itself with
+        // -launcherlogin -uid <product> -d3d11. The container's executable stays the game (window tracking).
+        val browserLogin = if (app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.thisRun) {
+            app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.start(context, container)
+        } else {
+            null
+        }
+        val gameExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " + (browserLogin?.command ?: directCommand)
         guestProgramLauncherComponent.guestExecutable = gameExecutable
         guestProgramLauncherComponent.isWoW64Mode = wow64Mode
         // Set steam type for selecting appropriate box64rc
@@ -3895,6 +3903,8 @@ private fun setupXEnvironment(
     guestProgramLauncherComponent.envVars = EnvVars().apply { putAll(envVars) }
 
     val gameTerminationCallback = Callback<Int> { status ->
+        // browser login: record the status for this launch before error handling or screen cleanup cancels sign-in
+        browserLogin?.onExit?.invoke(status)
         com.jrees.wowcompanion.GameLife.ended(status)          // issue #12: how the game ended, in DS Forever's own log
         if (status != 0) {
             Timber.e("Guest program terminated with status: $status")
@@ -3935,6 +3945,7 @@ private fun setupXEnvironment(
     try {
         environment.startEnvironmentComponents()
     } catch (e: Exception) {
+        app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.cancel()
         Timber.e(e, "Failed to start environment components, cleaning up")
         try {
             environment.stopEnvironmentComponents()

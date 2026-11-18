@@ -280,6 +280,8 @@ fun PluviaMain(
             DisposableEffect(Unit) {
                 val clearSplash: (AndroidEvent.ClearBootingSplash) -> Unit = { initialSplash = false }
                 val forceClose: (AndroidEvent.ForceCloseApp) -> Unit = {
+                    // browser login (upstream v2.4.5): the attempt goes with the game screen; a failure's words stay on show
+                    app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.cancel(preserveFailure = true)
                     initialSplash = false
                     preLaunchJob?.cancel()
                     preLaunchJob = null
@@ -298,6 +300,7 @@ fun PluviaMain(
                     visible = state.showBootingSplash || initialSplash,
                     text = if (state.showBootingSplash) state.bootingSplashText else "Booting into World of Warcraft...",
                     onAbort = {
+                        app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.cancel()
                         initialSplash = false
                         preLaunchJob?.cancel()
                         preLaunchJob = null
@@ -385,6 +388,7 @@ fun PluviaMain(
                             viewModel.onWindowMapped(context, window, state.launchedAppId)
                         },
                         onExit = { onComplete ->
+                            app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.cancel(preserveFailure = true)
                             viewModel.exitApp(context, state.launchedAppId, onComplete)
                         },
                         onGameLaunchError = { error ->
@@ -422,6 +426,8 @@ fun PluviaMain(
                 }
             }
 
+            // browser login (upstream v2.4.5, opt-in): its page on the bottom screen, or here without one
+            app.gamenative.ui.screen.wow.auth.BattleNetBrowserLoginHost()
         }
     }
 }

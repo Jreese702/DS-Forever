@@ -1253,7 +1253,11 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     val containerManager = ContainerManager(context)
     // DS Forever: the native sign-in (the user's "(a) Private folder"): Wine's G: is a private shadow of the game folder holding this
     // run's login.txt (deleted on the client's read). If the shadow fails, the shared folder WITHOUT a login file (no fallback)
-    val wineRoot = com.jrees.wowcompanion.NativeLogin.prepare(context, gameRoot, product.flavorDir) ?: gameRoot
+    // Browser login (the user, 2026-11-18: upstream v2.4.5's, opt-in): latched for this start; then the shadow holds NO login.txt and
+    // the helper signs the game in with a Battle.net session from Blizzard's own page (BattleNetBrowserLogin, XServerScreen)
+    val browser = app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.beginRun(context, com.jrees.wowcompanion.SetupBridge.seeding)
+    Timber.i("Sign-in this start: %s", if (browser) "browser login (no login.txt)" else "saved login")
+    val wineRoot = com.jrees.wowcompanion.NativeLogin.prepare(context, gameRoot, product.flavorDir, browser) ?: gameRoot
     val config = containerConfig(wineRoot, gpu, "G:\\${product.flavorDir}\\${arm64Exe.name}")
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {

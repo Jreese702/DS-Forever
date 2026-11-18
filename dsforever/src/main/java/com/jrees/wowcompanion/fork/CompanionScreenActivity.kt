@@ -70,6 +70,7 @@ class CompanionScreenActivity : Activity(), HostShell {
             it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         board(s.boardWanted)
+        s.pageWanted?.let { page(it) }
         // #232 review: a Back that reaches this window (it holds the focus while a text field types) never closes it. onBackPressed
         // below covers Android 13-15; from Android 16 an app targeting API 36 gets no onBackPressed and the system would finish it
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) runCatching {
@@ -102,6 +103,7 @@ class CompanionScreenActivity : Activity(), HostShell {
     override fun onDestroy() {
         host?.onDestroy(); host = null
         board = null
+        pageSlot.drop()
         screen?.released(this)
         super.onDestroy()
     }
@@ -126,11 +128,15 @@ class CompanionScreenActivity : Activity(), HostShell {
     }
     fun boardPress(button: String) { board?.press(button) }
 
+    /** browser login's page over the whole screen ([DsForeverScreen.browserPage]): this task holds the focus while it shows */
+    private val pageSlot by lazy { BottomPageSlot({ v -> addContentView(v, BottomPageSlot.FILL) }, { typer.typing }, { on -> typer.focusable(on) }) }
+    fun page(make: ((android.content.Context) -> View)?) { if (host != null) pageSlot.show(this, make) }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         // #230: timed as the Presentation's touches (the bottom window's)
         val start = SystemClock.uptimeMillis()
         try {
-            if (host != null) typer.touch(ev)
+            if (host != null && !pageSlot.up) typer.touch(ev)
             return super.dispatchTouchEvent(ev)
         } finally {
             runCatching { com.jrees.wowcompanion.TouchLag.note(com.jrees.wowcompanion.TouchLag.BOTTOM, ev.actionMasked, ev.eventTime, start, SystemClock.uptimeMillis()) }
