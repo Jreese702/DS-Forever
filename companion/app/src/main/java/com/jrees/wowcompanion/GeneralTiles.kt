@@ -53,14 +53,17 @@ object GeneralTiles {
     /** the compact rows, in their groups' order */
     enum class Row(val label: String) {
         LANGUAGE("Language"), LOGIN("Battle.net login"), GAME_ACCOUNT("Game account"), WINDOWS_ID(WindowsId.ROW_ID),
+        // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start
+        BROWSER_LOGIN(BrowserLogin.ROW_ID),
         WINDOWS_RESTART("Restart the game"), REPORT("Problem report"), RELOAD("Reload game UI"), STATUS("Status")
     }
 
-    /** [g]'s compact rows now: the login row only when the host has it; Restart the game only while the running game used the other ID */
+    /** [g]'s compact rows now: the login row only when the host has it; Restart the game only while the running game used the other ID
+     *  or signed in the other way (Browser login) */
     fun rows(g: SettingsTabs.Group, loginRow: Boolean, winIdRestart: Boolean): List<Row> = when (g) {
         SettingsTabs.Group.LOOK -> listOf(Row.LANGUAGE)
         SettingsTabs.Group.ACCOUNT -> listOfNotNull(if (loginRow) Row.LOGIN else null, Row.GAME_ACCOUNT, Row.WINDOWS_ID,
-            if (winIdRestart) Row.WINDOWS_RESTART else null)
+            Row.BROWSER_LOGIN, if (winIdRestart) Row.WINDOWS_RESTART else null)
         SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS)
         else -> emptyList()
     }
@@ -208,6 +211,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         ReportFlow.init(context)
         ReportFlow.onChange { postInvalidate() }
         WindowsId.onChange { post { relayout() } }
+        BrowserLogin.onChange { post { relayout() } }
         if (group == SettingsTabs.Group.HELP) StatusLine.onChange = { post { invalidate() } }
     }
 
@@ -235,7 +239,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
     private fun slots(): List<GeneralTiles.Slot> = if (group == SettingsTabs.Group.LOOK) GeneralTiles.slots(ScreenSwap.offered) else emptyList()
     private fun rows(): List<GeneralTiles.Row> = GeneralTiles.rows(group, host.loginRow, winIdRestart())
 
-    private fun winIdRestart(): Boolean = WindowsId.showRestart(host.gameRunning(), SetupBridge.restarting, WindowsId.launched, Settings.windowsId)
+    private fun winIdRestart(): Boolean = WindowsId.showRestart(host.gameRunning(), SetupBridge.restarting, WindowsId.launched, Settings.windowsId) ||
+        BrowserLogin.showRestart(host.gameRunning(), SetupBridge.restarting, BrowserLogin.launched, Settings.browserLogin)
     private fun swapPending(): ScreenSwap.Pending =
         ScreenSwap.pending(Settings.swapScreens, ScreenSwap.inUseNow, host.gameRunning(), ScreenSwap.restart != null)
 
@@ -328,6 +333,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                     out += Control(r, b, { Settings.gameAccountAsk = k == 0 }) }
                 GeneralTiles.Row.WINDOWS_ID -> segs(room, WindowsId.SEGMENTS).forEachIndexed { k, b ->
                     out += Control(r, b, { Settings.windowsId = WindowsId.VALUES[k] }) }
+                GeneralTiles.Row.BROWSER_LOGIN -> segs(room, BrowserLogin.SEGMENTS).forEachIndexed { k, b ->
+                    out += Control(r, b, { Settings.browserLogin = k == 1 }) }
                 GeneralTiles.Row.WINDOWS_RESTART -> out += Control(r, GeneralTiles.button(room).rect(), { host.onRestart() })
                 GeneralTiles.Row.REPORT -> out += Control(r, GeneralTiles.button(room).rect(), { reportPress() })
                 GeneralTiles.Row.RELOAD -> out += Control(r, GeneralTiles.button(room).rect(), { reloadPress() }, reload = true)
@@ -513,6 +520,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             GeneralTiles.Row.GAME_ACCOUNT -> seg(c, cs, GAME_ACCOUNT, if (Settings.gameAccountAsk) 0 else 1)
             GeneralTiles.Row.WINDOWS_ID -> seg(c, cs, WindowsId.SEGMENTS, WindowsId.VALUES.indexOf(Settings.windowsId))
             GeneralTiles.Row.LOGIN -> UiKit.button(c, cs[0], if (host.loginSaved()) "Change" else "Save", UiKit.Button.UP)
+            GeneralTiles.Row.BROWSER_LOGIN -> seg(c, cs, BrowserLogin.SEGMENTS, if (Settings.browserLogin) 1 else 0)
             GeneralTiles.Row.WINDOWS_RESTART -> UiKit.button(c, cs[0], "Restart", UiKit.Button.UP)
             GeneralTiles.Row.REPORT -> {
                 val rec = DiagLog.recording()

@@ -2196,7 +2196,19 @@
 "Testing": "Probando",
 "Other network": "Otra red",
 "PC not found": "PC no encontrado",
-"Check the Other network code.": "Revisa el código de Otra red."
+"Check the Other network code.": "Revisa el código de Otra red.",
+"Browser login": "Inicio de sesión en navegador",
+"Sign in with Blizzard's page": "Iniciar sesión en la página de Blizzard",
+"Sign-in refused (BLZ51914400)": "Inicio de sesión rechazado (BLZ51914400)",
+"Starting browser login…": "Iniciando sesión en navegador…",
+"Completing sign-in…": "Completando el inicio de sesión…",
+"Browser login timed out.": "Se agotó el tiempo del inicio de sesión en navegador.",
+"Browser login could not start the game.": "El inicio de sesión en navegador no pudo iniciar el juego.",
+"Battle.net returned an unsupported sign-in address.": "Battle.net devolvió una dirección de inicio de sesión no admitida.",
+"Sign-in tried to open an unsupported address. Cancel and try again.": "El inicio de sesión intentó abrir una dirección no admitida. Cancela y vuelve a intentarlo.",
+"The sign-in page's secure connection could not be verified.": "No se pudo verificar la conexión segura de la página de inicio de sesión.",
+"The sign-in page could not load. Check your connection and try again.": "La página de inicio de sesión no se pudo cargar. Comprueba tu conexión y vuelve a intentarlo.",
+"Battle.net could not complete this sign-in page. Try again later.": "Battle.net no pudo completar esta página de inicio de sesión. Inténtalo más tarde."
 },
 "templates": {
 "Switch to %s?": "¿Cambiar a %s?",

@@ -42,6 +42,40 @@ object NativeLogin {
     /** this run's file was written again when the game's window appeared (once per client run) */
     @Volatile private var windowArmed = false
 
+    /**
+     * BROWSER LOGIN THIS RUN (the user, 2026-11-18: upstream v2.4.5's Browser login, opt-in; [BrowserLogin]): the launcher latched it at
+     * Play ([prepare]'s browser). Then NO login.txt is ever written in this run - not at Play, not when the game's window appears
+     * ([gameWindowUp]), not for a return to the login screen ([rearm]) - and one left in the shadow is deleted: the helper refuses to
+     * start the game while one exists (the client prefers login.txt to the launcher session).
+     */
+    @Volatile var browserMode = false; private set
+    /**
+     * THE BROWSER PAGE'S TIME (browser login): from Play until the helper has started the game with its session ([browserGameStarted]),
+     * the game's client is not running yet and the traffic under the launcher's uid is the sign-in page's (the WebView's network runs in
+     * this process). The traffic watchers stand down meanwhile ([onTraffic]: no "past the login screen", no download, no sign-in
+     * check samples), and the no-file grace counts from the game's real start ([holdEndSec]).
+     */
+    @Volatile var browserHold = false; private set
+    /** when the helper started the game (epoch s; 0 = not this run): the no-file grace's start in browser mode */
+    @Volatile private var holdEndSec = 0L
+
+    /** browser login: the helper started the game with the Battle.net session; the watchers follow the client from here. Any thread. */
+    fun browserGameStarted() {
+        if (!browserHold) return
+        holdEndSec = System.currentTimeMillis() / 1000
+        browserHold = false
+        logEvent("browser login: the game started with the Battle.net session")
+        changed()
+    }
+
+    /** browser login: the attempt ended without starting the game (cancelled, failed, timed out). Any thread. */
+    fun browserStopped(why: String) {
+        if (!browserHold) return
+        browserHold = false
+        logEvent("browser login: stopped ($why)")
+        changed()
+    }
+
     /** a login.txt was written for this client run and not consumed yet */
     @Volatile var active = false; private set
     /** the client read this run's login.txt (the native sign-in is under way) */
@@ -168,8 +202,9 @@ object NativeLogin {
      * Returns the folder Wine's G: should point at. Any failure falls back to... nothing: the caller gets null and keeps the shared
      * folder WITHOUT a login file (no automatic fallback to shared storage, the user's rule).
      */
-    fun prepare(ctx: Context, gameRoot: File, flavor: String): File? = try {
+    fun prepare(ctx: Context, gameRoot: File, flavor: String, browser: Boolean = false): File? = try {
         clear()
+        browserMode = browser; browserHold = browser; holdEndSec = 0L
         consumed = false; firstReadAt = 0L; pastLogin = false; pastLoginAt = 0L; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
@@ -209,7 +244,9 @@ object NativeLogin {
         File(gameRoot, flavor).listFiles()?.forEach { e -> if (e.name != FILE) link(e, File(fl, e.name)) }
         flavorDir = fl
         shadowIfaceLine().takeIf { !it.endsWith(": link") }?.let { logEvent(it); Log.w(TAG, it) }
-        val login = HomeLoginStore.forAutoLogin(ctx)
+        // browser login: never a login.txt this run (removeLinks above deleted any stray one; checked again here)
+        val login = savedFor(ctx)
+        if (browser) File(fl, FILE).let { f -> if (f.exists() && !Files.isSymbolicLink(f.toPath())) f.delete() }
         if (login != null) {
             val f = File(fl, FILE)
             f.writeText("${login.email}\n${login.password}\n")
@@ -221,11 +258,17 @@ object NativeLogin {
         } else { watch(fl); Log.i(TAG, "no saved login: the game's own login screen") }
         // the sign-in triage (2026-11-16, #399 / #424): which of the reasons for no file (states only)
         logEvent("client run starts (login.txt ${if (active) "written at Play" else "not written: " +
-            HomeLogin.noFileWhy(HomeLoginStore.has(ctx), HomeLoginStore.autoLogin(ctx), SetupBridge.seeding)})")
+            if (browser) "browser login" else HomeLogin.noFileWhy(HomeLoginStore.has(ctx), HomeLoginStore.autoLogin(ctx), SetupBridge.seeding)})")
         root
     } catch (t: Throwable) {
         Log.w(TAG, "shadow folder failed: ${t.message}"); clear(); null
     }
+
+    /**
+     * THE ONE WAY TO THE SAVED LOGIN FOR A login.txt (Play, the game's window, a return to the login screen): none in browser login
+     * ([browserMode]); the store is not even opened then. Every write of this file reads its login here.
+     */
+    private fun savedFor(ctx: Context): HomeLoginStore.Login? = BrowserLogin.loginFor(browserMode) { HomeLoginStore.forAutoLogin(ctx) }
 
     /**
      * WHEN IT GOES (measured 2026-10-08 22:08, the first device test): the client opens login.txt the moment its login screen appears
@@ -278,12 +321,15 @@ object NativeLogin {
      */
     private const val NO_FILE_GRACE_S = 60L
     // the sign-in triage (2026-11-16, #312 / #313 / #296 / #399): with no read file, not while the game downloads before its login screen
+    // browser login: the grace counts from the helper's start of the game ([holdEndSec]), not the game screen's (the page came first)
     private fun signInTraffic(): Boolean = PreLoginTraffic.trafficIsSignIn(consumed, active, windowSeen, expiredUnread,
-        if (LauncherHooks.gameStartSec > 0) System.currentTimeMillis() / 1000 - LauncherHooks.gameStartSec else -1L, NO_FILE_GRACE_S,
+        PreLoginTraffic.sinceStartS(System.currentTimeMillis() / 1000, LauncherHooks.gameStartSec, if (browserMode) holdEndSec else 0L), NO_FILE_GRACE_S,
         downloadAtRead, downloadingNow = downloading)
 
     /** one second's received bytes of the game (the launcher's traffic loop): only [pastLogin]; the delete is [AFTER_READ_MS]'s */
     fun onTraffic(rxBytes: Long, txBytes: Long = -1L) {
+        // browser login: the sign-in page's traffic (the client is not running yet) is no sign-in, download or past-the-login-screen
+        if (browserHold) return
         // the login triage: a heavy second before this run's read makes that read a downloading one ([downloadAtRead])
         if (firstReadAt == 0L && rxBytes >= PAST_LOGIN_BYTES) lastHeavyAt = System.currentTimeMillis()
         // the verify pass (#271 20:22:41): a heavy second right AFTER the read is not the sign-in either; the run's traffic stops counting
@@ -395,7 +441,7 @@ object NativeLogin {
         val fl = flavorDir ?: return
         val ctx = appCtx ?: return
         outOfWorld = true
-        val login = HomeLoginStore.forAutoLogin(ctx) ?: run { logEvent("out of the world ($why); no saved login, nothing written"); return }
+        val login = savedFor(ctx) ?: run { logEvent("out of the world ($why); ${if (browserMode) "browser login" else "no saved login"}, nothing written"); return }
         try {
             val f = File(fl, FILE)
             f.writeText("${login.email}\n${login.password}\n")
@@ -431,7 +477,7 @@ object NativeLogin {
         windowArmed = true
         val ctx = appCtx ?: return@post
         val fl = flavorDir ?: return@post
-        val login = HomeLoginStore.forAutoLogin(ctx) ?: return@post
+        val login = savedFor(ctx) ?: return@post            // browser login: never a login.txt
         main.removeCallbacks(timeout)
         try {
             val f = File(fl, FILE)
@@ -479,6 +525,7 @@ object NativeLogin {
     /** the game screen went: the file goes and the watching stops */
     fun end(ctx: Context? = null) {
         outOfWorld = false
+        browserStopped("the game screen went")
         if (downloading) { downloading = false; changed() }
         clear(ctx)
         observer?.stopWatching(); observer = null

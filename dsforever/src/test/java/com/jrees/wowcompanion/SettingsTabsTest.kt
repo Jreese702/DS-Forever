@@ -69,7 +69,7 @@ class SettingsTabsTest {
         val want: Map<G, List<String>> = mapOf(
             G.LOOK to listOf("Theme", "Language", "Voice typing", "Swap screens", "Restart DS Forever"),     // 11-16: Voice typing     // #232: Swap screens (only with a second screen)
             // the user, 2026-11-14 ("build it"): Windows ID under Game account
-            G.ACCOUNT to listOf("Battle.net login", "Game account", "Windows ID"),
+            G.ACCOUNT to listOf("Battle.net login", "Game account", "Windows ID", "Browser login"),
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
@@ -170,7 +170,9 @@ class SettingsTabsTest {
             // the user, 2026-11-16 (hold to talk on the DS toolbar's Chat): Bottom screen > Home, under the toolbar
             listOf("Hold to talk", "On release") +
             // hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager"): Top screen > Game windows
-            listOf("Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars")
+            listOf("Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars") +
+            // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): General > Account, under Windows ID
+            listOf("Browser login")
         val now = B.values().flatMap { it.rows }
         // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
         val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")
@@ -314,7 +316,7 @@ class SettingsTabsTest {
     @Test fun settingsViewDrawsItsOwnBlocksOnly() {
         // #232: Swap screens under the language (SettingsView draws it, only with a second screen); Windows ID under Game account
         // 11-16: Voice typing under the language (the user's pick: app-wide, like Language)
-        assertEquals(listOf(B.THEME, B.LANGUAGE, B.VOICE, B.SCREENS, B.ACCOUNT, B.GAME_ACCOUNT, B.WINDOWS_ID, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
+        assertEquals(listOf(B.THEME, B.LANGUAGE, B.VOICE, B.SCREENS, B.ACCOUNT, B.GAME_ACCOUNT, B.WINDOWS_ID, B.BROWSER_LOGIN, B.HELP), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection)
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
         // hub61: every Top screen block is GameUiSection's tiles now (Edit layout too; Polestar's included)
         assertEquals(emptyList<B>(), SettingsTabs.viewBlocks(T.TOP))

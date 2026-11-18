@@ -112,3 +112,6 @@ __pycache__/
 # Streaming mode (S2): moonlight-android's prebuilt OpenSSL / Opus, copied by tools/stream/vendor_moonlight.sh
 dsforever/src/main/jni/prebuilt/
 dsforever/.cxx/
+
+# Browser login helper: built from source by tools/wow-session-bridge/build_dsf.sh (checked against wow-session-bridge.sha256), never committed
+app/src/main/assets/wow-session-bridge.exe

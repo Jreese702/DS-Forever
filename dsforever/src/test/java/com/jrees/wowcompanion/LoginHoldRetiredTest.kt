@@ -96,7 +96,8 @@ class LoginHoldRetiredTest {
         assertTrue(world, "if (active && consumed && !outOfWorld) { logEvent(\"login.txt: in the world, deleting\"); clear() }" in world)
         val end = native.substringAfter("fun end(ctx: Context? = null) {").substringBefore("logEvent(\"client run ends\")")
         assertTrue(end, "clear(ctx)" in end)
-        val prepare = native.substringAfter("fun prepare(ctx: Context, gameRoot: File, flavor: String): File? = try {").substringBefore("consumed = false")
+        // 2026-11-18: prepare takes this start's browser-login latch (BrowserLoginTest)
+        val prepare = native.substringAfter("fun prepare(ctx: Context, gameRoot: File, flavor: String, browser: Boolean = false): File? = try {").substringBefore("consumed = false")
         assertTrue(prepare, "clear()" in prepare)
         // the root probe's realm connection (CompanionHost) and the Menu's Forget login / Auto login off, unchanged
         val host = File(src, "CompanionHost.kt").readText()

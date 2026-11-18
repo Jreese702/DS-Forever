@@ -141,6 +141,25 @@ class DsForeverScreen(private val context: Context) {
     internal var boardWanted = false
         private set
 
+    /**
+     * BROWSER LOGIN'S PAGE ON THE BOTTOM SCREEN (the user, 2026-11-18: "open Blizzard's sign-in page on the Thor's BOTTOM screen (touch +
+     * keyboard there; top stays the game)"): [make] builds the page (Blizzard's sign-in page, or the sign-in's status) for the bottom
+     * window's own context; it covers the whole bottom screen and the window holds the focus while it shows, so the page's fields take
+     * the keyboard. A new bottom window (a display change, Swap screens) builds it again with [make]; null = the page goes and the focus
+     * goes back to the game. False = no bottom screen now (the caller shows the page on the game's screen instead). Main thread.
+     */
+    fun browserPage(make: ((Context) -> View)?): Boolean {
+        pageWanted = make
+        val w = shown ?: return false
+        w.page(make)
+        return true
+    }
+    /** the browser-login page wanted on the bottom screen (a new bottom window puts it up too) */
+    internal var pageWanted: ((Context) -> View)? = null
+        private set
+    /** a bottom window is up now (the Presentation or the Swap screens activity) */
+    val bottomUp: Boolean get() = shown != null
+
     /** the game screen went: no input until the next one */
     fun detachGame() {
         if (!gameOn) return
@@ -241,7 +260,7 @@ class DsForeverScreen(private val context: Context) {
             return
         }
         val target = all.first { it.displayId == pick.id }
-        shown = try { HostPresentation(context, target) { rebuild() }.also { it.show(); it.board(boardWanted) } } catch (t: Throwable) {
+        shown = try { HostPresentation(context, target) { rebuild() }.also { it.show(); it.board(boardWanted); pageWanted?.let { m -> it.page(m) } } } catch (t: Throwable) {
             Log.w(TAG, "presentation: ${t.message}")
             com.jrees.wowcompanion.DiagLog.event("app", "bottom screen failed to open on display ${target.displayId}: ${t.javaClass.simpleName}")   // #147
             null
@@ -268,6 +287,7 @@ class DsForeverScreen(private val context: Context) {
         override val typing: Boolean get() = activity?.typing == true
         override fun board(on: Boolean) { activity?.board(on) }
         override fun boardPress(button: String) { activity?.boardPress(button) }
+        override fun page(make: ((Context) -> View)?) { activity?.page(make) }
         override fun close() { closed = true; activity?.finish(); activity = null }
     }
 
@@ -655,6 +675,8 @@ internal interface BottomWindow {
     /** Streaming's Battle.net keyboard over the whole screen */
     fun board(on: Boolean)
     fun boardPress(button: String)
+    /** browser login's page over the whole screen ([DsForeverScreen.browserPage]); null = gone */
+    fun page(make: ((Context) -> View)?)
     fun close()
 }
 
@@ -709,6 +731,34 @@ internal class BottomTyping(private val ctx: Context, private val window: () -> 
     }
 }
 
+/**
+ * BROWSER LOGIN'S PAGE IN A BOTTOM WINDOW (the user, 2026-11-18; [DsForeverScreen.browserPage]): one full-screen view over the window's
+ * content ([add]); while it shows the window is FOCUSABLE ([focusable] true: Blizzard's fields take the keyboard on this screen), and
+ * when it goes the focus goes back to the game ([focusable] false). The window's touch rule ([BottomTyping.touch]) stands aside while
+ * it is [up] (a touch outside an EditText must not give the focus back mid-sign-in). Main thread.
+ */
+class BottomPageSlot(private val add: (View) -> Unit, private val typing: () -> Boolean, private val focusable: (Boolean) -> Unit) {
+    var view: View? = null
+        private set
+    val up: Boolean get() = view != null
+
+    /** [make]'s page for [ctx] in place of the one shown; null = none */
+    fun show(ctx: Context, make: ((Context) -> View)?) {
+        val had = up
+        drop()
+        view = make?.invoke(ctx)?.also(add)
+        if (up && !typing()) focusable(true)
+        else if (!up && had && typing()) focusable(false)
+    }
+
+    /** the page off its window (the window goes: its own onStop gives the focus back) */
+    fun drop() { view?.let { (it.parent as? ViewGroup)?.removeView(it) }; view = null }
+
+    companion object {
+        val FILL get() = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    }
+}
+
 /** the bottom screen's window: hosts the shared [CompanionHost] exactly as the app's MainActivity does */
 private class HostPresentation(outer: Context, display: Display, private val onRecreate: () -> Unit) : Presentation(outer, display), HostShell,
     BottomWindow {
@@ -725,6 +775,10 @@ private class HostPresentation(outer: Context, display: Display, private val onR
         } else if (!on) { board?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }; board = null }
     }
     override fun boardPress(button: String) { board?.press(button) }
+
+    /** browser login's page ([DsForeverScreen.browserPage]): over everything, and this window holds the focus while it shows */
+    private val pageSlot = BottomPageSlot({ v -> addContentView(v, BottomPageSlot.FILL) }, { typer.typing }, { on -> typer.focusable(on) })
+    override fun page(make: ((Context) -> View)?) = pageSlot.show(context, make)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -751,7 +805,8 @@ private class HostPresentation(outer: Context, display: Display, private val onR
     }
 
     private fun dispatchTouchEventTimed(ev: MotionEvent): Boolean {
-        typer.touch(ev)
+        // browser login's page holds the focus for its own fields (a touch outside an EditText must not give it back to the game)
+        if (!pageSlot.up) typer.touch(ev)
         return super.dispatchTouchEvent(ev)
     }
 
@@ -771,6 +826,7 @@ private class HostPresentation(outer: Context, display: Display, private val onR
 
     override fun onStop() {
         if (typing) typer.focusable(false)
+        pageSlot.drop()
         host?.let { it.onStop(); it.onDestroy() }
         host = null
         super.onStop()

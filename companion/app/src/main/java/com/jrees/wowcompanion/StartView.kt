@@ -31,7 +31,9 @@ class StartView(context: Context) : View(context) {
      * the login prompts"). Only while the game's login screen is up: FIRST = no saved login, one "Battle.net login" button; SAVED =
      * [gear][Login]. The row sits under the swirl ("On the companion's waiting screen") and goes with the login screen.
      */
-    enum class Login { NONE, FIRST, SAVED }
+    // BROWSER (the user, 2026-11-18): after a BLZ51914400 refusal, one "Sign in with Blizzard's page" button (BrowserLogin.offer): touch
+    // only, as FIRST with the game up; it turns Browser login on and restarts the game ([onBrowserLogin])
+    enum class Login { NONE, FIRST, SAVED, BROWSER }
 
     var login = Login.NONE
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -73,6 +75,8 @@ class StartView(context: Context) : View(context) {
 
     /** a press of the row: true = the gear (touch only) or FIRST's one button (touch or A), false = Login (touch or A) */
     var onLoginButton: ((gear: Boolean) -> Unit)? = null
+    /** BROWSER's one button pressed (touch only) */
+    var onBrowserLogin: (() -> Unit)? = null
 
     private val area = RectF()
     private val hits = ArrayList<Pair<RectF, Int>>()
@@ -135,6 +139,13 @@ class StartView(context: Context) : View(context) {
             }
             return
         }
+        if (login == Login.BROWSER) {
+            // touch only (the game has the pad's A at its login screen); as wide as FIRST's button in the one app
+            val r = RectF(cx - BROWSER_W / 2f, top, cx + BROWSER_W / 2f, top + BUTTON_H)
+            UiKit.button(c, r, BrowserLogin.OFFER_BUTTON, if (pressed == CURSOR_BROWSER) UiKit.Button.DOWN else UiKit.Button.UP)
+            hits += r to CURSOR_BROWSER
+            return
+        }
         if (login == Login.FIRST) {
             val r = RectF(cx - firstW / 2f, top, cx + firstW / 2f, top + BUTTON_H)
             // the one button, with the A that presses it (no gold box on this row: the user, 2026-10-05)
@@ -189,7 +200,7 @@ class StartView(context: Context) : View(context) {
      */
     fun padA() {
         when (login) {
-            Login.NONE -> {}
+            Login.NONE, Login.BROWSER -> {}
             Login.FIRST -> onLoginButton?.invoke(true)
             Login.SAVED -> if (!loginBusy) onLoginButton?.invoke(false)
         }
@@ -213,6 +224,7 @@ class StartView(context: Context) : View(context) {
                     CURSOR_KEYS -> SetupBridge.openPcKeyboard?.invoke()
                     CURSOR_HOW -> onHow?.invoke()
                     CURSOR_GEAR -> onLoginButton?.invoke(true)
+                    CURSOR_BROWSER -> onBrowserLogin?.invoke()
                     else -> if (!loginBusy) onLoginButton?.invoke(false)
                 }
             }
@@ -230,6 +242,9 @@ class StartView(context: Context) : View(context) {
         const val CURSOR_REPORT = 2
         const val CURSOR_KEYS = 3
         const val CURSOR_HOW = 4
+        const val CURSOR_BROWSER = 5
+        /** BROWSER's one button (its words are longer than FIRST's) */
+        const val BROWSER_W = 620f
         /** the add-ons' card in the line's panel: the title's and the text's sizes, the smallest either shrinks to, the text's lines;
          *  the How button's width (ReportNotice's) */
         const val CARD_TITLE = 30f

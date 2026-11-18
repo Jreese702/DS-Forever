@@ -450,6 +450,32 @@ application and covered by its GPL-3.0 licence.
 **Sound**: [Source](https://pixabay.com/sound-effects/film-special-effects-achievement-badge-pop-sound-1-547860/)
 
 
+## Browser login (WoW Forever for Android) and Scuffle browser authentication
+
+DS Forever's opt-in Browser login (Settings > General > Account) is ported from
+WoW Forever for Android (https://github.com/jaredgei/wow-forever-android,
+v2.4.5, commit `aba66f9c54bf16b4b7440af2e452232f8fc2caea`, GPL-3.0): the
+experimental Battle.net browser session login by Demineo04 (commit `8e7585fb`,
+PR #87), the device fixes by marcocastignoli (commit `4f683281`, PR #95), the
+Wine launch exit status (PR #93) and the unquoted launch arguments (`f7875f91`).
+`tools/wow-session-bridge/` is upstream's helper source, unchanged apart from
+DS Forever's `build_dsf.sh` and `wow-session-bridge.sha256`.
+
+The browser-login protocol and Windows session handoff are adapted from
+[nyrda/scuffle](https://github.com/nyrda/scuffle), commit
+`5efccb44777bba7e28e70ef782564b713e7373b5`, copyright (c) 2026 nyrda, MIT license.
+`tools/wow-session-bridge/device_id.c` and `device_id.h` are copied unchanged
+(apart from upstream's ARM64 branch in `device_id.c`).
+The complete MIT notice is in `tools/wow-session-bridge/LICENSE.scuffle` and is
+also bundled in the APK at `assets/LICENSE.scuffle`.
+
+`assets/wow-session-bridge.exe` is built from that source by DS Forever
+(`tools/wow-session-bridge/build_dsf.sh`), never taken prebuilt, with
+LLVM-MinGW 20261104 (https://github.com/mstorsjo/llvm-mingw; LLVM is
+Apache-2.0 WITH LLVM-exception, the statically linked mingw-w64 runtime is
+under its own permissive licences). Its SHA-256 is recorded in
+`tools/wow-session-bridge/wow-session-bridge.sha256` and SOURCE_PROVENANCE.md.
+
 ## Samsung Performance SDK
 
 This project bundles `app/src/main/lib/perfsdk-v1.0.0.jar`, the Samsung Performance SDK

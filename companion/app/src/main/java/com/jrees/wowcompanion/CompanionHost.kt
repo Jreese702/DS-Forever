@@ -889,6 +889,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }, "region-card").apply { isDaemon = true }.start()
         }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
+        // the BLZ51914400 offer (the user, 2026-11-18): Browser login on, then the launcher's restart (the game's own Exit Game first)
+        startView.onBrowserLogin = {
+            Settings.browserLogin = true
+            NativeLogin.logEvent("sign-in: Browser login turned on from the BLZ51914400 offer; restarting the game")
+            startView.login = StartView.Login.NONE
+            val restart = SetupBridge.restartGame
+            if (restart == null) Log.w("WCSETUP", "browser login offer: no launcher hook, nothing restarts")
+            else { restartNotice(); restart() }
+        }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()
             NativeLogin.logEvent("sign-in: login saved (the login form)")
@@ -4172,6 +4181,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun nativeRow(s: HomeLogin.State): Pair<StartView.Login, String>? = when {
         s.realm || NativeLogin.pastLogin -> null
+        // the user, 2026-11-18: a BLZ51914400 refusal offers Browser login (one button: it turns it on and restarts the game)
+        BrowserLogin.offer(s.phase == HomeLogin.Phase.FAILED, s.reason, Settings.browserLogin || NativeLogin.browserMode, SetupBridge.restarting) ->
+            StartView.Login.BROWSER to BrowserLogin.OFFER_LINE
+        // browser login: no saved-login row (the sign-in is Blizzard's page on this screen, BattleNetBrowserLogin)
+        NativeLogin.browserMode -> null
         // 2026-11-07 (the user: "the sign in prompts are still appearing ... if I dont push anything fast enough"): no authenticator,
         // failure or "not signed in yet" lines either - account select read as "not signed in"; the Menu and Keyboard are the way
         !HomeLoginStore.has(this) -> StartView.Login.FIRST to "Save it once and the game signs in by itself."

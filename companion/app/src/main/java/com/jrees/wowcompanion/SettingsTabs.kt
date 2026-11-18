@@ -80,6 +80,9 @@ object SettingsTabs {
         // the user, 2026-11-14 ("build it", the BLZ51914400 wave): Per install / Original, from the next game start; while the running game
         // started with the other one, a "Restart the game" row under it (Frames' words: the same launcher restart, so not listed again)
         WINDOWS_ID(Group.ACCOUNT, WindowsId.ROW_ID, listOf(WindowsId.ROW_ID)),
+        // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start; the same "Restart the game"
+        // row under Windows ID while the running game signed in the other way
+        BROWSER_LOGIN(Group.ACCOUNT, BrowserLogin.ROW_ID, listOf(BrowserLogin.ROW_ID)),
         HELP(Group.HELP, "Help", listOf("Problem report", "Reload game UI")),
         COMPANION(Group.HELP, "Companion", listOf("Status"), Drawer.GAME_UI),
         // ---- Bottom screen (the old Home tab)
