@@ -110,7 +110,7 @@ nrows0 = int(L.eval('WowCompanion.pad.nrows'))
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "cb2: an empty bar at the login registers NO castbar row")
 d = last(L, "castbar")
 check(d is not None and d.get("pick") is None and d.get("nopad") == 1 and d.get("pp") == [39, 19] and d.get("e") in ([], {})
-      and d.get("v") == "cb10" and d.get("n") == N, "the first document: an empty bar, no pick cell (nopad), the padtab pick 39 then 19", d)
+      and d.get("v") == "cb11" and d.get("n") == N, "the first document: an empty bar, no pick cell (nopad), the padtab pick 39 then 19", d)
 check(L.eval('WowCompanion.pad.describe().rows.castbar') is None, "describe() has no castbar row yet")
 L.execute('WowCompanion.castBar.sync(); fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 5)')
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "a sync / fight's end with an empty bar: still no row")
@@ -378,6 +378,40 @@ check(not re.search(r'\b(SetBinding|SaveBindings|CreateMacro|EditMacro|SetCVar|P
       "the block calls none of them")
 check(AB.count('pad.secureRow, "castbar"') == 1 and AB.replace(BLOCK, '').count('secureRow, "castbar"') == 0,
       "the row is built in the block only")
+# ================================================================ cb11 SMART PET (PadMap m172; the user, 2026-11-17: "to be clear I think this should
+# just be a smart pet feature that includes both of those settings in one"): a harmful spell's cell casts through Smart pet's text while it
+# is on (WC.padMap.smartPetCast), the Start Attack command's line sends the pet (smartPetCmd); off = the plain cells, as before
+SPT = "/target [noexists][dead] softenemy\n/petattack [pet,harm,nodead]\n/cast Lightning Bolt"
+SPSTUB = r'''
+SPON = false
+SPT = "/target [noexists][dead] softenemy\n/petattack [pet,harm,nodead]\n/cast Lightning Bolt"
+WowCompanion.padMap = {
+    smartPetCast = function(id) if SPON and id == 403 then return SPT end end,
+    smartPetCmd = function(k, b) if SPON and k == "STARTATTACK" then return "/petattack [pet,harm,nodead]\n" .. b end return b end,
+    castBarCmd = function(k) if k == "STARTATTACK" then return { key = k, n = "Start Attack", i = 1, body = "/startattack" } end end,
+}
+'''
+P = boot(["safety", "tappad"], pre=PRE + SPSTUB)
+load_block(P)
+P.execute('fire("PLAYER_LOGIN"); fire("PLAYER_ENTERING_WORLD", true, false); WowCompanion.pad.layout(); runTimers(NOW + 5)')
+P.execute('WowCompanionSpellsDB.castBar = { ["Korvash-Realm"] = { [1] = { k = "spell", id = 403 }, [2] = { k = "spell", id = 331 }, '
+          '[3] = { k = "command", key = "STARTATTACK" } } }; WowCompanion.castBar.sync(); runTimers(NOW + 1)')
+
+
+def cell(i, k):
+    return P.eval('WowCompanion.pad.rows.castbar.cells[%d].a["%s"]' % (i, k))
+
+
+check(cell(0, "type") == "spell" and cell(0, "spell") == 403 and cell(0, "macrotext") is None and cell(2, "macrotext") == "/startattack",
+      "cb11: Smart pet off: the plain cells (a spell cell, the command's own line), as before", (cell(0, "type"), cell(2, "macrotext")))
+P.execute('SPON = true; WowCompanion.castBar.sync(); runTimers(NOW + 1)')
+check(cell(0, "type") == "macro" and cell(0, "macrotext") == SPT and cell(0, "spell") is None,
+      "cb11: Smart pet on: a harmful spell's cell casts through Smart pet's text (the pet first)", (cell(0, "type"), cell(0, "macrotext")))
+check(cell(1, "type") == "spell" and cell(1, "spell") == 331, "cb11: a helpful spell's cell stays the plain spell", (cell(1, "type"), cell(1, "spell")))
+check(cell(2, "macrotext") == "/petattack [pet,harm,nodead]\n/startattack", "cb11: the Start Attack cell sends the pet", cell(2, "macrotext"))
+P.execute('SPON = false; WowCompanion.castBar.sync(); runTimers(NOW + 1)')
+check(cell(0, "type") == "spell" and cell(0, "spell") == 403 and cell(2, "macrotext") == "/startattack", "cb11: off again: the plain cells back",
+      (cell(0, "type"), cell(2, "macrotext")))
 CL = boot([])
 check(CL.eval('function(s) local f, e = loadstring(s, "ActionBar.lua"); return e end')(AB) is None,
       "ActionBar.lua compiles as Lua 5.1 (200 locals, 60 upvalues)")

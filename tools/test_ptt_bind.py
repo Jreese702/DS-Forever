@@ -39,7 +39,7 @@ def check(ok, name, got=''):
 
 
 # ================================================================ 1. the tags
-check('local PV = "m171"' in PADMAP and PADMAP.count(QUOTE) >= 2, "1: PadMap says m170, its notes quote the user's picks")
+check(int(PADMAP.split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and PADMAP.count(QUOTE) >= 2, "1: PadMap says m170, its notes quote the user's picks")
 check(int(re.search(r'local HV = "hub(\d+)"', HUB).group(1)) >= 58 and HUB.count(QUOTE) >= 2, "1: Hub says hub58+ (hub59 after the 11-17 merge), its notes quote the user's picks")
 comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); return e end')
 for name, src in (("PadMap.lua", PADMAP), ("Hub.lua", HUB)):

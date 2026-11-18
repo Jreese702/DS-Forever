@@ -15,7 +15,8 @@ to stop (following or Stay-parked: no live pet target): no Pet Follow, Back as b
 window open: B is theirs; (6) a fight: the first B is the fight's give-back + stop attack; m171 (the user, 2026-11-17: our "Out of
 combat" rule, not the game's): with the bars given back (our out-of-combat layout) B runs Pet Follow even though the game is still in
 combat (an attacking pet keeps its owner in combat), then stop attack + clear target; nothing protected from insecure code, Pet Follow
-after the fight; (7) the fight layout out of combat (an attack running): the first B is the give-
+after the fight; (6b) m173 (the user, 2026-11-17: "One B does both"): Smart pet on, the first B in a fight (the give-back) runs Pet
+Follow too, then stops the attack; Smart pet off (or no live pet target, a dead pet): the give-back alone, unchanged; (7) the fight layout out of combat (an attack running): the first B is the give-
 back, the next one (the rest layout) adds Pet Follow; (8) a trigger held: the layer's button, no Pet Follow; (9) Party mode: its own B;
 (10) a non-pet class: never (a Mage's / Priest's pet bar included, the review); (11) the word in a fight: kept, the binding at the fight's end; (12) no trace (no spied call, no snippet error).
 Needs lupa. Exit code 1 on any failure."""
@@ -133,17 +134,22 @@ OURS_B = "CLICK WowCompanionFaceB:LeftButton"
 BACK_PRESS = ['GPTop7+', 'GPTop7-']            # Forever's Back: its down and up edges, as the router's native press makes them
 
 # ---------------------------------------------------------------- (0) the versions
-check('local PV = "m171"' in SRC["padmap"] and 'local BV = "b66"' in SRC["book"], "PadMap m171, Book b66")
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 173 and 'local BV = "b67"' in SRC["book"],
+      "PadMap m173 or later, Book b67 (Smart pet: one B does both)")
+check("One B does both" in SRC["padmap"] and "Off as picked" in SRC["padmap"], "m173: PadMap's header note quotes the user's picks (2026-11-17)")
 check("I want a pet class specific option where pressing B in the out of combat home menu basically stops the pet attacking" in SRC["padmap"]
       and "basically stops the pet attacking" in SRC["book"], "both header notes quote the user")
 check("the pet follow on b does not work out of combat, I wonder if we made this as an actual out of combat function" in SRC["padmap"],
       "m171: PadMap's header note quotes the user (2026-11-17)")
 check('SecureCmdOptionParse("[nocombat,@pet' not in SRC["padmap"]
-      and SRC["padmap"].count('SecureCmdOptionParse("[@pet,exists,nodead] 1") == "1"') == 1
-      and SRC["padmap"].count('petf = "/petfollow\\n"') == 1,
+      and SRC["padmap"].count('SecureCmdOptionParse("[@pet,exists,nodead] 1") == "1"') == 2
+      and SRC["padmap"].count('petf = "/petfollow\\n"') == 2,
       "m171: the snippet's check is OUR layout rule (rest) and a live pet, never the game's [nocombat]; the game's own /petfollow")
-check(SRC["padmap"].count('SecureCmdOptionParse("[@pettarget,exists,nodead] 1") == "1" then petf') == 1,
-      "m165 review: and only while the pet is at something (a live pet target)")
+check(SRC["padmap"].count('SecureCmdOptionParse("[@pettarget,exists,nodead] 1") == "1" then petf') == 2,
+      "m165 review: and only while the pet is at something (a live pet target; m173: the give-back's check too)")
+check('(self:GetAttribute("wc-petf") or self:GetAttribute("wc-spet")) and SecureCmdOptionParse' in SRC["padmap"]
+      and SRC["padmap"].count('self:SetAttribute("macrotext", (petf or "") .. bmacro)') == 1,
+      "m173: the give-back adds Pet Follow only with Smart pet's word, inside the snippet, petf .. bmacro")
 
 # ---------------------------------------------------------------- (1) before the app's word: B exactly as before
 W = world()
@@ -264,8 +270,10 @@ check(F.eval('WowCompanionFaceB.a["wc-state"]') == "fight", "the game's combat: 
       F.eval('WowCompanionFaceB.a["wc-state"]'))
 n0 = nsent(F)
 r = press(F, "PAD2")
-check(lines(r) == ['/stopattack'], "in a fight the first B (the fight layout) gives back and stops the attack (the fight's rule), no Pet Follow yet",
-      lines(r))
+# m173 (the user, 2026-11-17: "One B does both"): Smart pet on, the first B in a fight (the give-back) runs Pet Follow too, then stops the attack
+check(lines(r) == ['/petfollow', '/stopattack'],
+      "m173: Smart pet on, in a fight the first B gives back, runs Pet Follow AND stops the attack (one B does both)", lines(r))
+check(F.eval('WowCompanionCombatFace5.a["wc-given"]') is True, "m173: that first B still gives the bars back", F.eval('WowCompanionCombatFace5.a["wc-given"]'))
 r = press(F, "PAD2")
 # m171 (the user, 2026-11-17: "the pet follow on b does not work out of combat ... our 'Out of combat' rule that basically changes the
 # action bar size and combat mode"): the bars given back = OUR out-of-combat layout, whatever the game's combat says (an attacking pet
@@ -294,13 +302,40 @@ r = press(F, "PAD2")
 check(lines(r)[:1] == ['/petfollow'] and lines(r)[-2:] == BACK_PRESS, "after the fight: Pet Follow, then Forever's Back", lines(r))
 check(clean(F) == {}, "the fight: no lockdown breach, no spied call, no snippet error", clean(F))
 
+# ---------------------------------------------------------------- (6b) m173: the give-back B with Smart pet off / a pet with nothing to stop
+G = world(pre='UNITS.target = { name = "Kobold", alive = true, foe = true }')
+G.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.5)')
+r = press(G, "PAD2")
+check(lines(r) == ['/stopattack'], "m173: Smart pet off (no word), in a fight the first B: give-back + stop attack only (unchanged)", lines(r))
+r = press(G, "PAD2")
+check('/petfollow' not in lines(r), "m173: Smart pet off: no Pet Follow on the next B either (unchanged)", lines(r))
+G.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+settle(G)
+tell(G, True)
+tell(G, False)
+G.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.5)')
+r = press(G, "PAD2")
+check(lines(r) == ['/stopattack'], "m173: Smart pet told on then off: the first B in a fight is the give-back + stop attack only", lines(r))
+H = world(pre='UNITS.target = { name = "Kobold", alive = true, foe = true }', at=False)
+tell(H, True)
+H.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.5)')
+r = press(H, "PAD2")
+check(lines(r) == ['/stopattack'], "m173: Smart pet on, the pet at nothing (no pet target): the first B in a fight leaves it alone", lines(r))
+H.execute('UNITS.pettarget = { name = "Kobold", alive = true, foe = true }; UNITS.pet.alive = false')
+H.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+settle(H)
+H.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; advance(0.5)')
+r = press(H, "PAD2")
+check('/petfollow' not in lines(r), "m173: Smart pet on, a dead pet: no Pet Follow on the give-back", lines(r))
+check(clean(G) == {} and clean(H) == {}, "m173: the give-back cases: clean", (clean(G), clean(H)))
+
 # ---------------------------------------------------------------- (7) the fight layout out of combat (an attack started, no fight yet)
 A = world(pre='UNITS.target = { name = "Kobold", alive = true, foe = true }')
 tell(A, True)
 A.execute('fire("PLAYER_ENTER_COMBAT"); advance(0.3)')
 check(A.eval('WowCompanionFaceB.a["wc-pre"]') is True, "an attack running out of combat: the controller grown (wc-pre)", A.eval('WowCompanionFaceB.a["wc-pre"]'))
 r = press(A, "PAD2")
-check(lines(r) == ['/stopattack'], "the fight layout's first B: the give-back + stop attack (as before), no Pet Follow", lines(r))
+check(lines(r) == ['/petfollow', '/stopattack'], "m173: the fight layout's first B (Smart pet on): the give-back + Pet Follow + stop attack", lines(r))
 r = press(A, "PAD2")
 check(lines(r) == ['/petfollow', '/stopattack', '/cleartarget'],
       "the next B (the rest layout, out of combat): Pet Follow, then B's own clear target (as before)", lines(r))
@@ -345,7 +380,7 @@ for cls in ("MAGE", "PRIEST"):
 W2 = world()
 check(bkey(W2) is None and pf(W2).get('on') is None, "a new game session: off until the app says it again", (bkey(W2), pf(W2)))
 
-for L in (W, V, N, S, R, F, A, P, X, M, W2):
+for L in (W, V, N, S, R, F, G, H, A, P, X, M, W2):
     check(L.eval('#SPY') == 0 and L.eval('#SNIPERR') == 0, "no spied call, no snippet error", (L.eval('SPY[1]'), L.eval('SNIPERR[1]')))
 
 # ---------------------------------------------------------------- the fixtures the app's PetFollowBTest reads (dsforever/src/test/resources/
@@ -364,6 +399,13 @@ FIX["pf_warrior"] = pfdoc(world(cls="WARRIOR", pet=False))
 NP = world(pet=False)
 tell(NP, True)
 FIX["pf_hunter_on_no_pet"] = pfdoc(NP)
+# m172 SMART PET: 0 = on with Home busy (the pet's attack only: B not carried, no bf)
+BZ = world()
+tell(BZ, True)
+padtab(BZ, 39, 0)
+settle(BZ)
+FIX["pf_hunter_on_busy"] = pfdoc(BZ)
+check(bkey(BZ) is None, "m172: 0 (Smart pet on, Home busy): B not carried for Pet Follow (the game's own B)", bkey(BZ))
 os.makedirs(FIXDIR, exist_ok=True)
 stale = []
 for name, text in sorted(FIX.items()):
@@ -374,11 +416,12 @@ for name, text in sorted(FIX.items()):
             fh.write(text)
     elif old != text:
         stale.append(name)
-check(json.loads(FIX["pf_hunter_on"])["m"]["pf"] == {"on": True, "cls": True, "pet": True, "b": True}
+check(json.loads(FIX["pf_hunter_on"])["m"]["pf"] == {"on": True, "bf": True, "cls": True, "pet": True, "b": True, "sp": True}
       and json.loads(FIX["pf_hunter_no_word"])["m"]["pf"] == {"cls": True, "pet": True}
-      and json.loads(FIX["pf_hunter_on_no_pet"])["m"]["pf"] == {"on": True, "cls": True}
+      and json.loads(FIX["pf_hunter_on_no_pet"])["m"]["pf"] == {"on": True, "bf": True, "cls": True, "sp": True}
+      and json.loads(FIX["pf_hunter_on_busy"])["m"]["pf"] == {"on": True, "cls": True, "pet": True, "sp": True}
       and json.loads(FIX["pf_warrior"])["m"]["pf"] in ([], {}),
-      "the fixtures' pf: told on / no word / no pet / a Warrior", FIX)
+      "the fixtures' pf (m172: bf / sp): told on / no word / no pet / Home busy / a Warrior", FIX)
 check(not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX), stale)
 
 print("%d passed, %d failed" % (passes, fails))

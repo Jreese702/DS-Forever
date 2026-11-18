@@ -137,15 +137,24 @@ object HomeSettings {
         set(v) { if (v != pauseOverGame) { prefs?.edit()?.putBoolean("pauseOverGame", v)?.apply(); for (l in listeners) l() } }
 
     /**
-     * B: PET FOLLOW (the user, 2026-11-16: "I want a pet class specific option where pressing B in the out of combat home menu basically
-     * stops the pet attacking"; PetFollowB): PER CHARACTER ([who] = "Name-Realm", GameUi.character), ON BY DEFAULT (the row shows only
-     * for a pet class); no character known = the default
+     * SMART PET (the user, 2026-11-17: "to be clear I think this should just be a smart pet feature that includes both of those settings
+     * in one"; SmartPet): PER CHARACTER ([who] = "Name-Realm", GameUi.character), OFF BY DEFAULT (the user's pick; the row shows only for
+     * a pet class); no character known = the default. It replaces "B: pet follow" (2026-11-16, on by default): a character with that
+     * SAVED keeps it ("petFollowB.<who>"); nothing saved = Off. B: pet follow saved only a value other than its default (On), so in
+     * practice only an Off it ever had (or an On after an Off) carries over
      */
-    fun petFollowB(who: String?): Boolean = who?.let { prefs?.getBoolean("petFollowB.$it", true) } ?: true
-    fun setPetFollowB(who: String?, on: Boolean) {
+    fun smartPet(who: String?): Boolean {
+        val k = who ?: return false
+        val p = prefs ?: return false
+        if (p.contains("smartPet.$k")) return p.getBoolean("smartPet.$k", false)
+        if (p.contains("petFollowB.$k")) return p.getBoolean("petFollowB.$k", false)
+        return false
+    }
+    fun setSmartPet(who: String?, on: Boolean) {
         val k = who ?: return
-        if (on == petFollowB(k)) return
-        prefs?.edit()?.putBoolean("petFollowB.$k", on)?.apply()
+        val p = prefs ?: return
+        if (p.contains("smartPet.$k") && on == smartPet(k)) return
+        p.edit().putBoolean("smartPet.$k", on).apply()                 // always its own key: a choice the user made is kept as made
         for (l in listeners) l()
     }
 

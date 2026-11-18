@@ -43,8 +43,8 @@ object SettingsPreview {
         val castCombatHide: Boolean = true,
         // the user's pick 2026-11-13: Start over game windows, false = Our wheel (the default), true = Game's wheel
         val pauseOverGame: Boolean = false,
-        // the user, 2026-11-16: B: pet follow (this character's; on by default)
-        val petFollowB: Boolean = true,
+        // the user, 2026-11-17: Smart pet (this character's; off by default; it replaces B: pet follow)
+        val smartPet: Boolean = false,
         // the user, 2026-11-16: hold to talk on the DS toolbar's Chat (this character's; off by default) and its On release
         // (false = Show, then A sends; true = Send straight away)
         val holdTalk: Boolean = false, val talkSendNow: Boolean = false,
@@ -76,7 +76,7 @@ object SettingsPreview {
         "Hearthstone" to false, "Class teleport" to false, "Gold" to false, "Free bag slots" to false, "Ammo" to false,
         "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false,
         HomeSettingsSection.TALK_ROW to true, HomeSettingsSection.RELEASE_ROW to true, "Tap-to-cast bar" to false, "In combat" to true,
-        "ABXY location" to true, "Button glyphs" to false, PetFollowB.ROW_ID to true,
+        "ABXY location" to true, "Button glyphs" to false, SmartPet.ROW_ID to true,
         "Pause menu: open" to true, "Pause menu: pick" to true, PauseOver.ROW_ID to true, "Item wheel: open" to true, "Item wheel: pick" to true,
         "Spell wheel: open" to true, "Spell wheel: pick" to true,
         "Left class radial: open" to true, "Left class radial: pick" to true, "Right class radial: open" to true, "Right class radial: pick" to true,
@@ -99,7 +99,7 @@ object SettingsPreview {
         HomeSettingsSection.RELEASE_ROW -> if (s.talkSendNow) "Send now" else "Show, A sends"
         "ABXY location" -> if (s.abxyNintendo) "Nintendo" else "Xbox"
         "Button glyphs" -> SET_NAMES[s.glyphSet.coerceIn(0, 2)]
-        PetFollowB.ROW_ID -> PetFollowB.SEGMENTS[if (s.petFollowB) 1 else 0]
+        SmartPet.ROW_ID -> SmartPet.SEGMENTS[if (s.smartPet) 1 else 0]
         "Pause menu: open" -> if (s.pauseTap) "Tap" else "Hold"
         "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) "Tap" else "Hold"
         "Pause menu: pick" -> if (s.pausePickA) "A" else "Release"
@@ -193,7 +193,7 @@ object SettingsPreview {
             else listOf("A tap on a dead member does not res.")
         "Start attack on hostile target" -> if (s.attackHostile) listOf("Targeting an enemy starts", "your auto-attack.")
             else listOf("Targeting an enemy does not start", "your auto-attack.")
-        PetFollowB.ROW_ID -> PetFollowB.caption(s.petFollowB)
+        SmartPet.ROW_ID -> SmartPet.caption(s.smartPet)
         "Combat Auto Shot" -> when (s.autoShot) {
             0 -> listOf("No Auto Shot in a fight.")
             2 -> listOf("As On, but off for a plain attack", "you start yourself.")
@@ -255,7 +255,7 @@ object SettingsPreview {
             "DS WoW toolbar" -> toolbar(c, r, s.toolbar == true)
             "ABXY location" -> abxy(c, r, s, prev, sinceMs, glyph)
             "Button glyphs" -> glyphSets(c, r, s.glyphSet, glyph)
-            PetFollowB.ROW_ID -> petFollow(c, r, s.petFollowB, t, glyph, s.glyphSet)
+            SmartPet.ROW_ID -> petFollow(c, r, s.smartPet, t, glyph, s.glyphSet)
             HomeSettingsSection.TALK_ROW -> holdTalk(c, r, s.holdTalk, false, t, glyph, s.glyphSet)
             HomeSettingsSection.RELEASE_ROW -> holdTalk(c, r, true, s.talkSendNow, t, glyph, s.glyphSet, release = true)
             "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
@@ -1412,6 +1412,8 @@ object SettingsPreview {
         val gy = r.bottom - 60f
         glyph.draw(c, "b", set, r.left + 60f, gy, if (pressed) 58f else 48f)
         text(c, if (on) "Pet Follow" else "B's own action", r.left + 100f, gy + 7f, 19f, if (pressed) GOLD else DIMC, Paint.Align.LEFT)
+        // Smart pet's other half (2026-11-17): your attack on the enemy sends the pet again
+        if (on && back == 0f) text(c, "your attack sends it", r.centerX(), cy - 44f, 18f, GOLD)
     }
 
     /** Smart Res: a tap on a dead member's plate casts the res (On: its soft green edge while armed); a tap only (Off) */
