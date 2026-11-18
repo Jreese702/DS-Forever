@@ -146,6 +146,10 @@ sealed class BridgeMsg {
      *  whole object goes to SvSync */
     data class SvFiles(val o: JSONObject) : BridgeMsg()
     data class SvWritten(val o: JSONObject) : BridgeMsg()
+    /** the Thor's add-ons on the PC (2026-11-18): Desktop's run ("addons_pc": working with its progress, or done with each item) */
+    data class AddonsPc(val o: JSONObject) : BridgeMsg()
+    /** Desktop asks for one part of an imported add-on's file ("addon_file_get"); answered by PcAddonsWant.serve */
+    data class AddonFileGet(val o: JSONObject) : BridgeMsg()
     /**
      * feat/pause-power: Desktop's answers to "end_session": [done] false = "session_ending" (it heard, the close runs), true =
      * "session_ended": [wow] = closed | none (no PC WoW of ours was open) | left (it would not close: [why]), [putBack] = the PC's
@@ -282,6 +286,8 @@ object BridgeProtocol {
             "login_again" -> BridgeMsg.LoginAgain
             "sv_files" -> BridgeMsg.SvFiles(o)
             "sv_written" -> BridgeMsg.SvWritten(o)
+            "addons_pc" -> BridgeMsg.AddonsPc(o)
+            "addon_file_get" -> BridgeMsg.AddonFileGet(o)
             "session_ending" -> BridgeMsg.SessionEnd(done = false)
             "session_ended" -> BridgeMsg.SessionEnd(done = true, wow = o.optString("wow"), putBack = o.optBoolean("put_back"), why = o.optString("why"))
             else -> BridgeMsg.Unknown(t)

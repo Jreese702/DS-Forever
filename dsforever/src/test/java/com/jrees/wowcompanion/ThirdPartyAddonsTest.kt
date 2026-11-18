@@ -565,4 +565,30 @@ class ThirdPartyAddonsTest {
         assertFalse(File(addons, "TestA").exists())
         assertTrue(File(game, "Interface/AddOns-backup-dsforever").listFiles()!!.any { it.name.startsWith("TestA-1.0-") })
     }
+
+    /** the user, 2026-11-18 ("part of the DS forever startup should be maintaining/updating enabled addons"): a wanted package whose
+     *  folder was deleted from AddOns is installed again at the next start; one not wanted is left alone */
+    @Test fun aDeletedFolderIsInstalledAgainAtTheNextStart() {
+        val a = addon(zipBytes); ThirdPartyAddons.ALL = listOf(a)
+        choices["t.core"] = true
+        ThirdPartyAddons.applyAtStart(game)
+        assertTrue(ThirdPartyAddons.coreInstalled(a))
+        assertEquals(listOf("TestA", "TestB"), ThirdPartyAddons.folders(a, "core").sorted())
+        File(addons, "TestB").deleteRecursively()
+        File(addons, "Theirs").mkdirs(); File(addons, "Theirs/Theirs.toc").writeText("## Version: 1\n")
+        val again = ThirdPartyAddons.applyAtStart(game)
+        assertTrue(again, again.contains("Test 1.0 installed"))
+        assertTrue("back in", File(addons, "TestB/TestB.toc").isFile)
+        assertTrue("the player's own untouched", File(addons, "Theirs/Theirs.toc").isFile)
+        // whole: nothing downloaded again
+        val before = served
+        ThirdPartyAddons.applyAtStart(game)
+        assertEquals(before, served)
+        // switched off and deleted: never put back (it moves out to the backup instead)
+        choices["t.core"] = false
+        File(addons, "TestA").deleteRecursively()
+        ThirdPartyAddons.applyAtStart(game)
+        assertFalse(File(addons, "TestA").exists())
+        assertEquals(before, served)
+    }
 }
