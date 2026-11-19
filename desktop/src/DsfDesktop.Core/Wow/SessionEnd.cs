@@ -28,13 +28,16 @@ namespace DsfDesktop.Wow
             public string How = "";
         }
 
+        public const string LeftAlone = "left alone (not started for a stream)";
+
         public const int SelfWaitMs = 30000;
         public const int CloseWaitMs = 20000;
         public const int KillWaitMs = 10000;
 
         public static Close CloseWow(string foreverDir, Func<IList<WowProc>> list, bool quitAsked, Action<int> closeWindow,
                                      Func<int, int, bool> waitExit, Func<int, bool> kill,
-                                     int selfWaitMs = SelfWaitMs, int closeWaitMs = CloseWaitMs, int killWaitMs = KillWaitMs)
+                                     int selfWaitMs = SelfWaitMs, int closeWaitMs = CloseWaitMs, int killWaitMs = KillWaitMs,
+                                     Func<int, bool> ours = null)
         {
             var dir = (foreverDir ?? "").TrimEnd('\\', '/');
             if (dir.Length == 0) return new Close { Wow = "none", Why = "no WoW folder" };
@@ -44,6 +47,18 @@ namespace DsfDesktop.Wow
             var unread = ps.Count(p => string.IsNullOrEmpty(p.Path));
             if (mine.Count == 0)
                 return new Close { Wow = unread > 0 ? "left" : "none", Why = unread > 0 ? "a WoW whose folder can't be read is open: not closed" : "" };
+            // THE PLAYER'S OWN WOW IS NEVER CLOSED (the user's ruling 2026-11-19, "Never close my own WoW"): only a client Desktop started
+            // for a stream ([ours]: StreamWowMark, same pid and start time). Started on the PC, or already running when the stream
+            // attached = left alone, even on the power button's clean disconnect
+            int ownLeft = 0;
+            if (ours != null)
+            {
+                var own = mine.Where(p => !ours(p.Pid)).ToList();
+                foreach (var p in own) Log.I("session end: WoW pid " + p.Pid + " left alone (not started for a stream)");
+                mine = mine.Where(p => ours(p.Pid)).ToList();
+                if (mine.Count == 0) return new Close { Wow = "left", Why = LeftAlone };
+                ownLeft = own.Count;
+            }
             var r = new Close { Wow = "closed" };
             foreach (var p in mine)
             {
@@ -60,6 +75,7 @@ namespace DsfDesktop.Wow
                 r.How = Worst(r.How, "ended");
             }
             if (unread > 0) r.Why = "another WoW whose folder can't be read stays open";
+            if (ownLeft > 0) r.Why = (r.Why.Length > 0 ? r.Why + "; " : "") + "another WoW " + LeftAlone;
             return r;
         }
 

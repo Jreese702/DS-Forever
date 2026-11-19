@@ -1397,7 +1397,7 @@ namespace DsfDesktop.App
                     {
                         if (p == null) return;
                         if (!StreamWowMark.Matches(StreamWowMark.Read(Paths.DataDir), p.Id, StartUtcOrNull(p)))
-                        { Log.I("WoW: pid " + armed + " is no longer the stream's WoW; left open"); return; }
+                        { Log.I("WoW: pid " + armed + " " + SessionEnd.LeftAlone); return; }
                         Log.I("WoW: no stream for 5 minutes, closing it (pid " + p.Id + ", the stream's WoW from before Desktop's restart)");
                         p.CloseMainWindow();
                     }
@@ -1406,6 +1406,9 @@ namespace DsfDesktop.App
                 using (var p = WowWindow.FindAny(FlavorDirOrNull))
                 {
                     if (p == null) return;
+                    // never the player's own (the user's ruling 2026-11-19): only the WoW Desktop started for a stream
+                    if (!StreamWowMark.Matches(StreamWowMark.Read(Paths.DataDir), p.Id, StartUtcOrNull(p)))
+                    { Log.I("WoW: no stream for 5 minutes; pid " + p.Id + " " + SessionEnd.LeftAlone); return; }
                     Log.I("WoW: no stream for 5 minutes, closing it (pid " + p.Id + ")");
                     p.CloseMainWindow();
                 }
@@ -1430,7 +1433,7 @@ namespace DsfDesktop.App
                 var start = p != null ? StartUtcOrNull(p) : null;
                 if (!StreamWowMark.ArmAtStart(thor, streaming, pid, start, mark))
                 {
-                    if (p != null && !thor && !streaming) Log.I("WoW: running at Desktop's start but not one a stream started (pid " + p.Id + "); left alone");
+                    if (p != null && !thor && !streaming) Log.I("WoW: running at Desktop's start, pid " + p.Id + " " + SessionEnd.LeftAlone);
                     return;
                 }
                 thorWasHere = true;
@@ -1526,12 +1529,15 @@ namespace DsfDesktop.App
                         {
                             if (!procs.TryGetValue(pid, out var x)) return true;
                             try { x.Kill(); return true; } catch (Exception e) { Log.I("session end: couldn't end WoW: " + e.Message); return false; }
-                        });
+                        },
+                        ours: pid => { var m = StreamWowMark.Read(Paths.DataDir); return procs.TryGetValue(pid, out var x) && StreamWowMark.Matches(m, pid, StartUtcOrNull(x)); });
                 }
                 finally { foreach (var x in procs.Values) x.Dispose(); }
                 Log.I("session end: WoW " + c.Wow + (c.How.Length > 0 ? " (" + c.How + ")" : "") + (c.Why.Length > 0 ? ": " + c.Why : ""));
                 if (dir != null) lock (loginGate) if (loginFileAt.HasValue) { WowLoginFile.Delete(dir); loginFileAt = null; }
-                bool back = c.Wow != "left" && (ConfigKeep?.PutBackNow() ?? true);
+                // the put-back always (a WoW left alone: PutBackNow waits for it, never writes under a running client; the usual
+                // put-back follows once it closes)
+                bool back = ConfigKeep?.PutBackNow() ?? true;
                 ScreenKeep?.EndNow();
                 Log.I("session end: " + (back ? "controller mode and WoW's window put back" : "the put-back waits (the usual rule)") +
                       "; the monitor is looked at once the stream has gone");
