@@ -96,6 +96,9 @@ class SettingsView(context: Context, val onReload: () -> Unit) : View(context) {
     /** an add-on's own settings, on the bottom screen (Manners' / QuestTrail's): the host leaves Settings and asks the game to open them */
     var onAddonSettings: (ThirdPartyAddons.Addon) -> Unit = {}
         get() = hub?.onAddonSettings ?: field
+    /** General > Help > Support the Project (SupportLink): the host opens [url] in the browser as its other links; false = no browser */
+    var onOpenUrl: (String) -> Boolean = { false }
+        get() = hub?.onOpenUrl ?: field
 
     private val ARM_MS = 3000L
 

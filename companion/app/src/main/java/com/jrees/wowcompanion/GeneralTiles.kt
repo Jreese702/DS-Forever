@@ -55,7 +55,9 @@ object GeneralTiles {
         LANGUAGE("Language"), LOGIN("Battle.net login"), GAME_ACCOUNT("Game account"), WINDOWS_ID(WindowsId.ROW_ID),
         // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start
         BROWSER_LOGIN(BrowserLogin.ROW_ID),
-        WINDOWS_RESTART("Restart the game"), REPORT("Problem report"), RELOAD("Reload game UI"), STATUS("Status")
+        WINDOWS_RESTART("Restart the game"), REPORT("Problem report"), RELOAD("Reload game UI"), STATUS("Status"),
+        // the user, 2026-11-19: "just a simple button at the bottom that says 'Support the Project'" (SupportLink): the tab's last row
+        SUPPORT(SupportLink.ROW_ID)
     }
 
     /** [g]'s compact rows now: the login row only when the host has it; Restart the game only while the running game used the other ID
@@ -64,7 +66,7 @@ object GeneralTiles {
         SettingsTabs.Group.LOOK -> listOf(Row.LANGUAGE)
         SettingsTabs.Group.ACCOUNT -> listOfNotNull(if (loginRow) Row.LOGIN else null, Row.GAME_ACCOUNT, Row.WINDOWS_ID,
             Row.BROWSER_LOGIN, if (winIdRestart) Row.WINDOWS_RESTART else null)
-        SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS)
+        SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS, Row.SUPPORT)
         else -> emptyList()
     }
 
@@ -166,6 +168,10 @@ object GeneralTiles {
         return (0 until n).map { k -> GameUiTiles.Box(l + k * w, t, l + (k + 1) * w, t + CONTROL_H) }
     }
 
+    /** a row that is ONE button across it (Support the Project): from the label's x to the control room's right end, [CONTROL_H] tall */
+    fun wideButton(row: GameUiTiles.Box) =
+        GameUiTiles.Box(row.l + LABEL_X, row.cy - CONTROL_H / 2f, row.r - 16f, row.cy + CONTROL_H / 2f)
+
     /** one button right-aligned in [room] */
     fun button(room: GameUiTiles.Box, w: Float = BUTTON_W) =
         GameUiTiles.Box(room.r - w, room.cy - CONTROL_H / 2f, room.r, room.cy + CONTROL_H / 2f)
@@ -202,6 +208,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
      *  is Dismiss for THAT report only; a later saved report starts at Open issue again (2026-11-17 review: a flag never reset let a
      *  new report be dismissed unseen) */
     private var reportTriedAt = 0L
+    /** when Support the Project last found no browser (its button says so for [SupportLink.NOTE_MS]); 0 = never */
+    private var supportFailedAt = 0L
     private var voiceAvailAt = -10_000L
     private var voiceNeeds = false
 
@@ -340,6 +348,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 GeneralTiles.Row.RELOAD -> out += Control(r, GeneralTiles.button(room).rect(), { reloadPress() }, reload = true)
                 // read-only: a stop so the cursor reaches the page's last row (A there does nothing)
                 GeneralTiles.Row.STATUS -> out += Control(r, box.rect(), {})
+                GeneralTiles.Row.SUPPORT -> out += Control(r, GeneralTiles.wideButton(box).rect(), { supportPress() })
             }
         }
         return out
@@ -460,6 +469,17 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         }
     }
 
+    /** Support the Project: the host opens the Ko-fi page in the browser; none = the button says so for a few seconds */
+    private fun supportPress() {
+        if (host.onOpenUrl(SupportLink.URL)) { supportFailedAt = 0L; return }
+        supportFailedAt = SystemClock.elapsedRealtime()
+        postDelayed({ invalidate() }, SupportLink.NOTE_MS + 50)
+    }
+
+    /** the Support the Project button's words now (the tests) */
+    fun supportWord(): String =
+        if (supportFailedAt != 0L && SystemClock.elapsedRealtime() - supportFailedAt < SupportLink.NOTE_MS) SupportLink.NO_BROWSER else SupportLink.ROW_ID
+
     private fun reloadPress() {
         val now = SystemClock.elapsedRealtime()
         if (reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS) {
@@ -494,6 +514,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             val room = GeneralTiles.controlRoom(box)
             val lw = room.l - box.l - GeneralTiles.LABEL_X - 16f
             val cs = ctl.filter { it.row == r }.map { it.box }
+            // a row that is one button (Support the Project) has no label beside it: its words are on the button
+            if (r == GeneralTiles.Row.SUPPORT) { UiKit.button(c, cs[0], supportWord(), UiKit.Button.UP); continue }
             c.drawText(fitText(pLabel, label(r), lw, 28f, 20f), box.l + GeneralTiles.LABEL_X, box.cy + 10f, pLabel)
             drawControl(c, r, box, room, cs)
         }
@@ -544,6 +566,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 c.drawText(fitText(pValue, say, room.w - 8f, 26f, 20f), room.r - 8f, box.cy + 9f, pValue)
                 pValue.textAlign = Paint.Align.LEFT; pValue.textSize = 22f
             }
+            GeneralTiles.Row.SUPPORT -> {}                     // drawn in onDraw: the whole row is its button
         }
     }
 

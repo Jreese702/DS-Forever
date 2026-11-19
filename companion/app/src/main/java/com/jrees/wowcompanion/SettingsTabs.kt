@@ -85,6 +85,9 @@ object SettingsTabs {
         BROWSER_LOGIN(Group.ACCOUNT, BrowserLogin.ROW_ID, listOf(BrowserLogin.ROW_ID)),
         HELP(Group.HELP, "Help", listOf("Problem report", "Reload game UI")),
         COMPANION(Group.HELP, "Companion", listOf("Status"), Drawer.GAME_UI),
+        // the user, 2026-11-19 ("add a link to my Kofi to the bottom of the General tab. just a simple button at the bottom that says
+        // 'Support the Project'"): the tab's LAST row, one full-width button opening SupportLink.URL in the browser
+        SUPPORT(Group.HELP, "Support", listOf(SupportLink.ROW_ID)),
         // ---- Bottom screen (the old Home tab)
         HOME_SECTION(Group.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer",
             // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
