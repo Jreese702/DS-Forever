@@ -192,6 +192,7 @@ class QuestsView(
         psMenu.fight = { fight() }
         psMenu.onSkip = { prev -> onPolestarSkip?.invoke(prev) == true }
         psMenu.note = { note(it, false) }
+        psMenu.log = { android.util.Log.i("WCMAP", it) }       // fix/desk-click-switch: its frames held back / resumed
     }
 
     // ---------------------------------------------------------------- input from MainActivity

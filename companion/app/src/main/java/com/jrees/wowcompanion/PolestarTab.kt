@@ -652,6 +652,10 @@ object PolestarTab {
     const val WAIT_MS = 3_000L
     /** the app says the tab is open again this often (the add-on forgets it after 60 s) */
     const val KEEP_MS = 20_000L
+    /** fix/desk-click-switch: this many frames in a row with no answer hold the menu's own frames back ([PolestarMenu.quiet]) */
+    const val QUIET_AFTER = 2
+    /** the longest such wait */
+    const val QUIET_MAX_MS = 120_000L
     /** a step's goals are asked when the selection rests this long (a read, not a game action) */
     const val REST_MS = 600L
     /** a step's goals described this long ago are asked again on rest */

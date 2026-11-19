@@ -26,4 +26,15 @@ class DefaultFocusPushTest {
         assertEquals(0, p.tick(7, 0, DefaultFocusPush.RETRY_MS - 1))
         assertEquals(7, p.tick(7, 0, DefaultFocusPush.RETRY_MS))
     }
+
+    /** fix/desk-click-switch: never an endless retry (test 1497: a push every 30 s the game never took) */
+    @Test fun aPushTheGameNeverTakesIsGivenUpAfterThreeAndSaidOnce() {
+        val p = DefaultFocusPush()
+        val said = ArrayList<Int>(); p.onGiveUp = { said += it }
+        val r = DefaultFocusPush.RETRY_MS
+        assertEquals(7, p.tick(7, 0, 0)); assertEquals(7, p.tick(7, 0, r)); assertEquals(7, p.tick(7, 0, 2 * r))
+        assertEquals(0, p.tick(7, 0, 3 * r)); assertEquals(0, p.tick(7, 0, 10 * r))
+        assertEquals(listOf(7), said)
+        assertEquals("another quest still goes", 9, p.tick(9, 0, 10 * r))
+    }
 }
