@@ -1392,7 +1392,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             castStartMs = Double.NaN
         }
         // feat/wk-itemcast: a cast that began, moved, ended or flashed redraws the rooms' bar (its cast band, [drawRoomCast])
-        if (wasStart.compareTo(castStartMs) != 0 || wasEnd.compareTo(castEndMs) != 0 || wasFlash != flashAtMs) onCastState?.invoke()
+        if (wasStart.compareTo(castStartMs) != 0 || wasEnd.compareTo(castEndMs) != 0 || wasFlash != flashAtMs) { onCastState?.invoke(); onInfoShrink?.invoke() }
         val bu = ji(o.opt("bu"), 1) != 0
         if (bu != barsUsable) { barsUsable = bu; setLayer(computeLayer()) }
         liveF = o.optJSONObject("F")
@@ -1606,7 +1606,16 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         setLayer(computeLayer())
         invalidate()
         if (trig) onTriggers?.invoke(lt, rt)
+        onInfoShrink?.invoke()
     }
+
+    /**
+     * feat/home-info-block (the user, 2026-11-19: "these (block, battery gold and menu choices) need to fill out that space and shrink
+     * when a cast bar pops up or L+R"): Home's centre info block is small now - a cast (its bar, its prediction or its finish) shows,
+     * LB + RB are held (the shortcuts layer) or ZL + ZR are (their join in the middle). [onInfoShrink] = something here may have changed it.
+     */
+    fun infoShrink(now: Long = SystemClock.elapsedRealtime()): Boolean = castShowing(now) || (padLb && padRb) || (padLt && padRt)
+    var onInfoShrink: (() -> Unit)? = null
 
     /** feat/clock-extras-v2: where Home's clock band goes (CastBarPlace.clockSpot) in this view's px; null = not the diamonds band */
     fun clockSpot(): FloatArray? =
@@ -1722,6 +1731,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (ct > 0) predPressAt = now                                     // the latency line, predicted or not
         if (!CastPredict.start(ct, casting, usable)) return
         predOn = true; predStartMs = now.toDouble(); predEndMs = now.toDouble() + ct
+        onInfoShrink?.invoke()
         android.util.Log.i("WCLOG", "cast predict: start (layer $li, slot ${src + 1}, ${ct} ms${if (fb != null) ", fight spell" else ""})")
         invalidate()
     }
@@ -3427,6 +3437,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (ctMs > 0) predPressAt = now
         if (!CastPredict.start(ctMs, casting, true)) return false
         predOn = true; predStartMs = now.toDouble(); predEndMs = now.toDouble() + ctMs
+        onInfoShrink?.invoke()
         invalidate()
         return true
     }

@@ -946,8 +946,8 @@ object SettingsPreview {
     private fun bandItem(k: ClockBand.Kind): UiKit.BandItem = when (k) {
         ClockBand.Kind.HEARTH -> UiKit.BandItem.Icon(Icons.get(ItemCd.hearthIcon), "", glow = true)
         ClockBand.Kind.TELEPORT -> UiKit.BandItem.Icon(ItemCd.teleport?.let { Icons.get(it.icon) } ?: swirlIcon, "12:04", cooling = true)
-        ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), "14")
-        ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(arrowIcon, "812")
+        ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), "52/80")
+        ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(arrowIcon, "812/1000")
     }
 
     /**

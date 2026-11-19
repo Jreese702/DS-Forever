@@ -2949,7 +2949,7 @@ object UiKit {
     /** one item of THE EXTRAS ROW (ClockBand; feat/clock-extras-v2): an icon over its value (the clock and the gold line stay clockChip) */
     sealed class BandItem {
         /** an icon over its short value ("" = the icon alone); [cooling] = the icon dimmed; [glow] = the soft ready halo (the Hearthstone) */
-        class Icon(val icon: Bitmap?, val value: String, val cooling: Boolean = false, val glow: Boolean = false) : BandItem()
+        class Icon(val icon: Bitmap?, val value: String, val cooling: Boolean = false, val glow: Boolean = false, val out: Boolean = false) : BandItem()
     }
 
     private const val BAND_VALUE = 18f
@@ -2986,11 +2986,73 @@ object UiKit {
             when (it) {
                 is BandItem.Icon -> {
                     bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, alpha)
-                    if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, pv)
+                    if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, if (it.out) bandOut(pv) else pv)
                 }
             }
             c.restore()
         }
+    }
+
+    /** feat/home-info-block: a value at its OUT tone (no ammo left, the bags full): the battery's low red, same size and shadow */
+    private val OUT_RED = Color.rgb(210, 50, 40)
+    private fun bandOut(pv: Paint): Paint = Paint(pv).apply { color = OUT_RED; alpha = pv.alpha }
+
+    /** the clock chip's size at scale 1 (as [clockChip] covers it): (width, height from its top) */
+    fun clockChipSize(time: String, battery: Int, gold: Long?): FloatArray {
+        val pt = numberPaint(32f, Theme.text); val pp = numberPaint(21f, Theme.textDim)
+        val row = 28f + 3f + 9f + pp.measureText("$battery%")
+        var w = maxOf(pt.measureText(time), row) + 2f * 20f
+        if (gold != null) w = maxOf(w, coinsWidth(gold, goldPaint()) + 2f * 20f)
+        return floatArrayOf(w, ClockBand.chipBottom(gold != null) - ClockBand.CHIP_TOP)
+    }
+
+    /** an extras cell's width at scale 1 (the icon over its value: the wider of the two), as the grown row scales it */
+    fun clockCellGrown(it: BandItem): Float = bandWidth(it, bandPaint(255))
+
+    /**
+     * THE CENTRE INFO BLOCK (feat/home-info-block; the user, 2026-11-19: "these (block, battery gold and menu choices) need to fill out
+     * that space and shrink when a cast bar pops up or L+R"): the clock chip from [chipTop] centred on [cx] and the extras row in
+     * [spot], between today's SMALL look ([clockChip] + [clockBand], [g] = 0) and the GROWN one ([ClockBand.grow], [g] = 1): every
+     * piece's place and size eased between the two, so the block scales smoothly. [rowAlpha] = the row's own fade (the triggers).
+     */
+    fun clockBlock(c: Canvas, cx: Float, chipTop: Float, time: String, battery: Int, charging: Boolean, gold: Long?, spot: FloatArray?,
+                   items: List<BandItem>, g: Float, rowAlpha: Int = 255, chipAlpha: Int = 255) {
+        val floor = chipTop - ClockBand.CHIP_TOP + ClockBand.chipBottom(gold != null) + ClockBand.CHIP_PAD
+        val grown = if (g > 0.001f && spot != null) clockGrown(spot, chipTop, time, battery, gold, items) else null
+        val e = if (grown == null) 0f else g.coerceIn(0f, 1f)
+        if (chipAlpha > 0) {
+            val s = 1f + (grown?.let { it.chip - 1f } ?: 0f) * e
+            c.save(); c.scale(s, s, cx, chipTop)
+            clockChip(c, cx, chipTop, time, battery, charging, chipAlpha, gold)
+            c.restore()
+        }
+        if (spot == null || items.isEmpty() || rowAlpha <= 0) return
+        if (grown == null || e <= 0f) { clockBand(c, spot, items, floor, rowAlpha); return }
+        val pv = bandPaint(rowAlpha)
+        val small = clockBandBoxes(spot, items, floor)
+        for ((i, it) in items.withIndex()) {
+            // a plain scale: today's cell (icon over its value) from its place and size today to its grown place and size
+            val sb = small[i]
+            val w = bandWidth(it, pv)
+            val k0 = sb.height() / ClockBand.CELL_H
+            val k = k0 + (grown.rowScale - k0) * e
+            val left = sb.left + (grown.lefts[i] - sb.left) * e
+            val top = sb.top + (grown.rowTop - sb.top) * e
+            c.save(); c.translate(left, top); c.scale(k, k)
+            when (it) {
+                is BandItem.Icon -> {
+                    bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, rowAlpha)
+                    if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, if (it.out) bandOut(pv) else pv)
+                }
+            }
+            c.restore()
+        }
+    }
+
+    /** the grown layout for these pieces ([ClockBand.grow] with their measured sizes) */
+    fun clockGrown(spot: FloatArray, chipTop: Float, time: String, battery: Int, gold: Long?, items: List<BandItem>): ClockBand.Grown? {
+        val cs = clockChipSize(time, battery, gold)
+        return ClockBand.grow(spot, chipTop, cs[0], cs[1], FloatArray(items.size) { clockCellGrown(items[it]) })
     }
 
     /** the extras row's placement, its fit to the band's height and its top (shared by [clockBand] and [clockBandBoxes]) */

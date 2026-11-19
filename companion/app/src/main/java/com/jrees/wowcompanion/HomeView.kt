@@ -240,6 +240,8 @@ class HomeView(
         castView.onClassRadial = { open -> classLayerShow(open) }             // f-class-radial: the mirror over Home
         castView.onClassStick = { if (classOpen) classLayer.invalidate() }      // b-class-radial-stick: the pointed slice follows
         castView.onTriggers = { lt, rt -> trigHold(lt || rt) }                  // feat/clock-extras-v2: the clock band fades under a trigger
+        castView.onInfoShrink = { infoCheck() }                                 // feat/home-info-block: a cast / L+R makes the block small
+        infoCheck(instant = true)
         // ARRIVING MID-FIGHT (the user, 2026-10-01: "going back home by what ever means, engages the combat transition at that time"):
         // the takeover was already on while Home was hidden, so Home lands at its rest and the combat transition PLAYS from there
         if (flow.takeover) {
@@ -268,6 +270,7 @@ class HomeView(
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
             castView.onClassRadial = null; castView.onClassStick = null; classLayerShow(false)   // the Cast room draws its own radial
             castView.onTriggers = null; trigHold(false)
+            castView.onInfoShrink = null
             castView.groundPainter = null; castView.triggerStrip = false; redShown = false
             castView.partyStrip = false
         }
@@ -1093,13 +1096,12 @@ class HomeView(
         // r20 THE CLOCK EXTRAS' gold and free bag slots (the user's picks 2026-11-13): from the bags the app already gets
         msg.optJSONObject("bags")?.let { bg ->
             val g = if (bg.has("money")) bg.optLong("money") else null
-            val f = if (bg.has("freeGeneral")) bg.optInt("freeGeneral") else if (bg.has("free")) bg.optInt("free") else -1
-            if (g != goldCopper || f != bagFree) { goldCopper = g; bagFree = f; invalidate() }
-            // feat/clock-extras-v2: the equipped ammo (slot 0's icon + count, plain data); a bags doc without `equipped` keeps what was said
-            bg.optJSONObject("equipped")?.let { eq ->
-                val a = ClockBand.ammo(eq)
-                if (a?.icon != ammo?.icon || a?.count != ammo?.count) { ammo = a; invalidate() }
-            }
+            // feat/home-info-block (the user, 2026-11-19: "a number out of total available"): the bags USED / total, the ammo / its room
+            val b = ClockBand.bags(bg) ?: bagCount
+            if (g != goldCopper || b != bagCount) { goldCopper = g; bagCount = b; invalidate() }
+            // the ammo (worn + what the quiver or the bags hold of it); a bags doc without `equipped` keeps what was said; 0 stays shown
+            val a = ClockBand.ammo(bg, ammo)
+            if (a != ammo) { ammo = a; invalidate() }
         }
         val fight = HomeCombat.fromFull(msg)?.also { grow.noteFight(it, current, now) }
         val attack = HomeGrow.fromFull(msg)?.also { grow.noteAttack(it, current, now) }
@@ -1110,9 +1112,30 @@ class HomeView(
 
     /** r20: the purse in copper (null = not said yet) and the free slots in the bags that take anything (-1 = not said yet) */
     private var goldCopper: Long? = null
-    private var bagFree = -1
-    /** feat/clock-extras-v2: the equipped ammo (null = none in the slot / not said) */
+    /** feat/home-info-block: the bags used / total (null = not said yet) */
+    private var bagCount: ClockBand.Bags? = null
+    /** feat/clock-extras-v2: the ammo (null = a character with no ammo use / not said); feat/home-info-block: 0 shows, out of its room */
     private var ammo: ClockBand.Ammo? = null
+
+    /**
+     * feat/home-info-block: THE BLOCK'S GROW (0 = today's small block, 1 = grown into the empty space; ClockBand.grow), linear here,
+     * eased on Motion's curve where drawn. Small while CastView.infoShrink (a cast, LB + RB, ZL + ZR); [infoCheck] on each change.
+     */
+    private var infoGrown = true
+    private var infoFrom = 1f
+    private var infoAt = 0L
+    private val infoCurve = Motion.curve()
+    private fun infoLinear(now: Long): Float = ClockBand.growStep(infoFrom, infoGrown, now - infoAt)
+    private fun infoG(now: Long): Float = infoCurve.getInterpolation(infoLinear(now))
+    private val infoRecheck = Runnable { infoCheck() }
+    private fun infoCheck(instant: Boolean = false) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val grown = !castView.infoShrink(now)
+        if (instant) { infoGrown = grown; infoFrom = if (grown) 1f else 0f; infoAt = now; invalidate(); return }
+        if (grown == infoGrown) return
+        infoFrom = infoLinear(now); infoGrown = grown; infoAt = now
+        invalidate()
+    }
 
     /**
      * THE EXTRAS ROW's items (feat/clock-extras-v2; the user's picks 2026-11-13, each by its own Bottom > Home row), in ClockBand's
@@ -1124,7 +1147,7 @@ class HomeView(
     private fun bandItems(): List<UiKit.BandItem> {
         val hs = HomeSettings.clockHearth && ItemCd.hearthHave != false
         val tp = ItemCd.teleport.takeIf { HomeSettings.clockTeleport }
-        val bags = HomeSettings.clockBags && bagFree >= 0
+        val bags = HomeSettings.clockBags && bagCount != null
         val am = ammo.takeIf { HomeSettings.clockAmmo }
         return ClockBand.kinds(hs, tp != null, bags, am != null).map { k ->
             when (k) {
@@ -1137,8 +1160,9 @@ class HomeView(
                     val l = ItemCd.teleportLeft()
                     UiKit.BandItem.Icon(Icons.get(tp!!.icon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || ItemCd.teleportDim())
                 }
-                ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), bagFree.toString())        // the backpack's icon
-                ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(Icons.get(am!!.icon), ClockBand.count(am.count))
+                ClockBand.Kind.BAGS -> bagCount!!.let { b ->                                             // the backpack's icon, used / total
+                    UiKit.BandItem.Icon(Icons.get(VendorSlots.BAG_ICON), ClockBand.outOf(b.used, b.total), out = b.full) }
+                ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(Icons.get(am!!.icon), ClockBand.outOf(am.count, am.of), cooling = am.empty, out = am.empty)
             }
         }
     }
@@ -2260,27 +2284,33 @@ class HomeView(
         // at the top center between the controls, right under it, a battery Icon with my current system charge").
         // not before the controller layout has come: the Cast view's "Waiting" stands there (UI Art, seen on its emulator)
         if (pauseSave >= 0) { c.restoreToCount(pauseSave); c.save(); c.translate(pauseTop[0], pauseTop[1]) }
-        if (clockA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0) now[Part.BARS]?.let { b ->
-            val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
-            UiKit.clockChip(c, b.centerX(), b.top + 10f, clockText, batteryPct, charging, gold = chipGold())
-            if (save >= 0) c.restoreToCount(save)
-        }
         // THE EXTRAS ROW (feat/clock-extras-v2): the extras turned on in ONE row where the ZL + ZR join shows (CastBarPlace.clockSpot),
-        // under the clock chip, faded out while a trigger is held (the chip is not), under the chip's own combat / pause fades too
+        // under the clock chip, faded out while a trigger is held (the chip is not), under the chip's own combat / pause fades too.
+        // feat/home-info-block: the chip and the row are ONE block that grows into the empty column (UiKit.clockBlock) and is small
+        // again while a cast shows or L+R is held (CastView.infoShrink)
         val tNow = android.os.SystemClock.elapsedRealtime()
         val trigA = trigVis(tNow)
         if (trigA != (if (trigHeld) 0f else 1f)) postInvalidateOnAnimation()
+        val lin = infoLinear(tNow)
+        if (lin != (if (infoGrown) 1f else 0f)) postInvalidateOnAnimation()
+        // a cast's finish ends with no event: look again while small for a cast
+        if (!infoGrown) { removeCallbacks(infoRecheck); postDelayed(infoRecheck, 100L) }
+        val g = infoCurve.getInterpolation(lin)
+        val chipOn = clockA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0
         val bandA = clockA * trigA
-        if (bandA > 0.01f && barsSeen && castView.parent === barsSlot) now[Part.BARS]?.let { b ->
-            val items = bandItems()
-            if (items.isNotEmpty()) castView.clockSpot()?.let { spot ->
+        val rowOn = bandA > 0.01f && barsSeen && castView.parent === barsSlot
+        if (chipOn || rowOn) now[Part.BARS]?.let { b ->
+            // the items even while the triggers fade the row out: the block's grown size counts them (no jump as the row fades)
+            val items = if (barsSeen && castView.parent === barsSlot) bandItems() else emptyList()
+            val spot = if (castView.parent === barsSlot) castView.clockSpot()?.also { spot ->
                 for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
-                val save = if (bandA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (bandA * 255).toInt()) else -1
-                UiKit.clockBand(c, spot, items, b.top + ClockBand.chipBottom(chipGold() != null) + ClockBand.CHIP_PAD)
-                // the mm:ss counts (as the auras' times); nothing ticks otherwise
-                if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
-                if (save >= 0) c.restoreToCount(save)
-            }
+            } else null
+            val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
+            UiKit.clockBlock(c, b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, chipGold(), spot, items, g,
+                rowAlpha = if (rowOn) (trigA * 255).toInt() else 0, chipAlpha = if (chipOn) 255 else 0)
+            if (save >= 0) c.restoreToCount(save)
+            // the mm:ss counts (as the auras' times); nothing ticks otherwise
+            if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
         }
         // HOLD TO TALK's line (HoldTalk, the user 2026-11-16): under the toolbar's D-pad, over the page (the band is only as tall as its
         // buttons); with the band's own pause slide

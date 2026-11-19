@@ -136,6 +136,14 @@ class ClockShotsTest {
         ShadowSystemClock.advanceBy(Duration.ofMillis(400))
     }
 
+    /** feat/home-info-block: LB + RB held (the block small, today's size), the grow's ease run out */
+    private fun shoulders(p: Page) {
+        val m = CastView::class.java.getDeclaredMethod("onPad", Boolean::class.java, Boolean::class.java, Boolean::class.java, Boolean::class.java)
+        m.isAccessible = true
+        m.invoke(p.cast, false, false, true, true)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(400))
+    }
+
     private fun items(hearth: Boolean, tele: Boolean, gold: Boolean, bags: Boolean, ammo: Boolean) {
         HomeSettings.init(app)
         HomeSettings.clockHearth = hearth; HomeSettings.clockTeleport = tele; HomeSettings.clockGold = gold; HomeSettings.clockBags = bags
@@ -168,6 +176,8 @@ class ClockShotsTest {
             items(true, true, gold, true, true); hearth(true)
             val p = page(); feed(p, true)
             if (held) triggers(p, true, true)
+            // feat/home-info-block: the block is today's size only while small (ZL + ZR above, else LB + RB held): HomeInfoBlockTest
+            else shoulders(p)
             lay(p.home, 1240, 1080 - Strip.HEIGHT)
             val rec = Rec(Bitmap.createBitmap(1240, 1080, Bitmap.Config.ARGB_8888))
             p.home.draw(rec)
@@ -209,6 +219,7 @@ class ClockShotsTest {
         for (gold in listOf(false, true)) {
             items(true, true, gold, true, true); hearth(true)
             val p = page(); feed(p, true)
+            shoulders(p)                                                      // feat/home-info-block: today's size (small)
             lay(p.home, 1240, 1080 - Strip.HEIGHT)
             val rec = Rec(Bitmap.createBitmap(1240, 1080, Bitmap.Config.ARGB_8888))
             p.home.draw(rec)
