@@ -71,4 +71,36 @@ class LoadGateTest {
         val hello = 500_000L                            // a hello whose own end has not come yet would be loading; this one
         assertEquals(hello + settle, g.settleAt(hello + 10L, hello, settle, after))   // never started one (no start): hello rule
     }
+
+    // the order guard (PR #567's review): the login's load off read BEFORE its hello must not start a loading screen that never ends
+    @Test fun aLoadEndReadBeforeItsHelloStartsNoLoadingScreen() {
+        val g = LoadGate().apply { reports = true }
+        val hello = 100_000L
+        g.end(hello - 200L)                              // LOADING_SCREEN_DISABLED read first (no start seen: the login's own)
+        g.hello(hello)                                   // then PLAYER_LOGIN's hello
+        assertFalse(g.loading(hello + 1_000L))
+        assertEquals(hello + settle, g.settleAt(hello + 1_000L, hello, settle, after))   // the old 3 s, never the 60 s cap
+    }
+
+    @Test fun anOldLoadEndDoesNotStopTheNextLoginsGate() {
+        val g = LoadGate().apply { reports = true }
+        g.start(1_000L); g.end(5_000L)                   // a zone, long ago
+        val hello = 5_000L + LoadGate.ORDER_MS           // a /reload well after it: its loading screen is up
+        g.hello(hello)
+        assertTrue(g.loading(hello + 5_000L))
+        g.end(hello + 8_000L)
+        assertEquals(hello + 9_000L, g.settleAt(hello + 8_100L, hello, settle, after))
+    }
+
+    @Test fun aNormalLoginInOrderStillWaitsForItsEnd() {
+        val g = LoadGate().apply { reports = true }
+        val hello = 100_000L
+        g.hello(hello)                                   // hello first (PLAYER_LOGIN), the load off after (LOADING_SCREEN_DISABLED)
+        g.end(hello + 2_000L)
+        assertEquals(hello + settle, g.settleAt(hello + 2_100L, hello, settle, after))   // a quick load: the old 3 s
+        g.hello(hello + 60_000L)                         // a /reload a minute later
+        assertTrue(g.loading(hello + 65_000L))
+        g.end(hello + 66_000L)
+        assertEquals(hello + 67_000L, g.settleAt(hello + 66_100L, hello + 60_000L, settle, after))
+    }
 }

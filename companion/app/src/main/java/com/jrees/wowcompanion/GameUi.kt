@@ -886,7 +886,8 @@ object GameUi {
         // fix/stream-row-offset (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"): on the stream the pad's
         // calibration strip is tapped first (twice; TapCal), and this object's own taps wait for its answer (at most TapCal.WAIT_MS)
         // feat/desktop-clicks: not when Desktop clicks the pad (an exact pixel: nothing to measure)
-        if (live && s?.current == true && DeskClicks.route() == DeskClicks.Route.STREAM_TOUCH) {
+        // LoadGate: the strip's taps wait out the loading screen too (a strip tap under it is lost and spends one of TapCal's tries)
+        if (live && s?.current == true && now >= settleAt() && DeskClicks.route() == DeskClicks.Route.STREAM_TOUCH) {
             val cal = TapCal.wanted(pad, true, now)
             if (cal != null) {
                 if (TapBridge.calibrate(ctx, pad, cal)) { last = UiStep.Wait("Measuring where the stream's taps land"); return }
