@@ -724,7 +724,7 @@ class InteractView(context: Context) : View(context) {
             }
             Kind.TRAINER -> {
                 for (sv in arr(d.optJSONObject("trainer"), "services"))
-                    if (sv.optString("cat") != "header") out.add(Entry("train ${sv.optInt("i")}", slotOf(sv), sv, K_TRAIN))
+                    if (sv.optString("cat") != "header") out.add(Entry(trCmd(sv), slotOf(sv), sv, K_TRAIN))
             }
             Kind.TAXI -> {
                 for (n in arr(d.optJSONObject("taxi"), "nodes")) out.add(Entry("taxi ${n.optInt("i")}", slotOf(n), n, K_TAXI))
@@ -787,20 +787,31 @@ class InteractView(context: Context) : View(context) {
      * selection event lands first). The first count seen (a replay, a new window) is only remembered.
      */
     private var petTrainSeen: Int? = null
+    private var petDropSeen: Int? = null
     private fun petTrainSync(msg: JSONObject, current: Boolean) {
         val tr = msg.optJSONObject("trainer")
-        if (tr == null) { petTrainSeen = null; return }
+        if (tr == null) { petTrainSeen = null; petDropSeen = null; return }
+        // Interact i170: a counted press the add-on dropped (the list changed, the game kept its own selection, a timeout ...): its reason
+        val dn = tr.optInt("ptwn", 0)
+        val dwas = petDropSeen
+        petDropSeen = dn
+        if (current && dwas != null && dn > dwas) str(tr, "ptw")?.let { note(it, false) }
         val n = tr.optInt("ptc", 0)
         val was = petTrainSeen
         petTrainSeen = n
         if (!current || was == null || n <= was || !tr.optBoolean("pet") || dryRun) return
+        // i170: only a press whose row the add-on found (ptr 1) is tapped; the add-on refuses the rest (the old select-then-Train
+        // bought the game window's OWN selection). The Train cell is armed by the add-on only after the game took the row's selection.
+        if (tr.optInt("ptr", 0) != 1) return
         val pad = msg.optJSONObject("pad")
-        if (tr.optInt("ptr", 0) == 1) {
-            // i142: the game's own row click first (its selection, by its own code), then its Train button
-            postDelayed({ TapBridge.tap(context, pad, "itrain", 1) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
-            postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS + PET_ROW_MS)
-        } else postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
+        // i142: the game's own row click first (its selection, by its own code), then its Train button
+        postDelayed({ TapBridge.tap(context, pad, "itrain", 1) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
+        postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS + PET_ROW_MS)
     }
+
+    /** Interact i170: a trainer service's command and cursor id, "train <i> <k>" (k = the add-on's identity of the service: its index
+     *  moves when the list changes); an add-on before i170 sends no k: "train <i>" */
+    private fun trCmd(sv: JSONObject) = "train ${sv.optInt("i")}" + (str(sv, "k")?.let { " $it" } ?: "")
 
     private var qtModeTapAt = 0L
     private fun qtModeSync(msg: JSONObject) {
@@ -1674,7 +1685,7 @@ class InteractView(context: Context) : View(context) {
         val rows = ArrayList<TRow>()
         var y = 4f
         if (step > 0) services.firstOrNull { it.optInt("i") == step && it.optString("cat") != "header" }?.let {
-            rows.add(TRow("train $step", y, 0f, lw, it, false)); y += 132f
+            rows.add(TRow(trCmd(it), y, 0f, lw, it, false)); y += 132f
         }
         var col = 0; var folded = false
         for (sv in services) {
@@ -1686,7 +1697,7 @@ class InteractView(context: Context) : View(context) {
                 continue
             }
             if (sv.optInt("i") == step || folded) continue
-            rows.add(TRow("train ${sv.optInt("i")}", y, col * (cw + 14f), cw, sv, false))
+            rows.add(TRow(trCmd(sv), y, col * (cw + 14f), cw, sv, false))
             if (col == 1) { y += 132f; col = 0 } else col = 1
         }
         if (col == 1) y += 132f
