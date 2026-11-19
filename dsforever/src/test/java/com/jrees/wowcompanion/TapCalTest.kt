@@ -140,6 +140,11 @@ class TapCalTest {
         TapCal.aimed(listOf(TapCal.Aim("ui", 34, top(51), 2.0, 115.5, 1_000)))
         val note = TapCal.landed("uisw", 34, 113.0, 1_200)
         assertEquals("tap landed off: ui:34 (rows y 114.0-116.0, aimed 115.5) pressed uisw:34 seen at y 113.0", note)
+        // fix/stream-row-center: a neighbour-row miss keeps the fit (measuring again gives the same two whole pixels)...
+        assertNotNull("a near miss keeps the fit", TapCal.current(pad(n = 2, p = seen)))
+        // ...a press seen more than a row off drops it
+        TapCal.aimed(listOf(TapCal.Aim("ui", 35, top(51), 2.0, 115.5, 1_000)))
+        assertNotNull(TapCal.landed("gamemenu", 35, 89.0, 1_300))
         assertNull("the fit is dropped: measured again", TapCal.current(pad(n = 2, p = seen)))
         TapCal.aimed(listOf(TapCal.Aim("ui", 34, top(51), 2.0, 115.5, 2_000)))
         assertNull("said once per 30 s", TapCal.landed("uisw", 34, 113.0, 2_100))
