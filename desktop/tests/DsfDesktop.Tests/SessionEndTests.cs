@@ -27,6 +27,8 @@ namespace DsfDesktop.Tests
             public readonly Dictionary<int, string> Goes = new Dictionary<int, string>();
             public readonly HashSet<int> Asked = new HashSet<int>();
             public readonly HashSet<int> Killed = new HashSet<int>();
+            /// <summary>the pids a stream started (StreamWowMark); null = no marker check (the older tests)</summary>
+            public HashSet<int> Ours;
             public SessionEnd.Close Run(bool quitAsked) => SessionEnd.CloseWow(Forever, () => Procs.ToList(), quitAsked,
                 closeWindow: pid => { Did.Add("close " + pid); Asked.Add(pid); },
                 waitExit: (pid, ms) =>
@@ -35,7 +37,63 @@ namespace DsfDesktop.Tests
                     var g = Goes.TryGetValue(pid, out var x) ? x : "window";
                     return g == "exit" || (g == "window" && Asked.Contains(pid)) || Killed.Contains(pid);
                 },
-                kill: pid => { Did.Add("kill " + pid); if (Goes.TryGetValue(pid, out var g) && g == "never") return false; Killed.Add(pid); return true; });
+                kill: pid => { Did.Add("kill " + pid); if (Goes.TryGetValue(pid, out var g) && g == "never") return false; Killed.Add(pid); return true; },
+                ours: Ours == null ? (Func<int, bool>)null : pid => Ours.Contains(pid));
+        }
+
+        // ------------------------------------------------------------ "Never close my own WoW" (the user's ruling 2026-11-19)
+
+        [Test]
+        public static void ThePlayersOwnWowIsNeverClosedEvenByThePowerButton()
+        {
+            foreach (var quit in new[] { false, true })
+            {
+                var pc = new Pcs { Ours = new HashSet<int>() };
+                pc.Procs.Add(new WowProc { Pid = 20, Path = Forever + @"\Wow.exe" });
+                pc.Goes[20] = "kill";
+                var r = pc.Run(quit);
+                A.Eq("left", r.Wow, "started on the PC / already running when the stream attached (quit " + quit + ")");
+                A.Eq(SessionEnd.LeftAlone, r.Why);
+                A.Eq(0, pc.Did.Count, "no wait, no window close, no kill");
+            }
+        }
+
+        [Test]
+        public static void TheStreamsWowStillClosesAndAnOwnOneBesideItStays()
+        {
+            var pc = new Pcs { Ours = new HashSet<int> { 21 } };
+            pc.Procs.Add(new WowProc { Pid = 20, Path = Forever + @"\Wow.exe" });
+            pc.Procs.Add(new WowProc { Pid = 21, Path = Forever + @"\Wow.exe" });
+            pc.Goes[21] = "exit";
+            var r = pc.Run(true);
+            A.Eq("closed", r.Wow);
+            A.Eq("exit", r.How);
+            A.Eq("wait 21 30", string.Join(",", pc.Did), "only the marked one; 20 untouched");
+            A.True(r.Why.Contains(SessionEnd.LeftAlone), "the other said: " + r.Why);
+        }
+
+        [Test]
+        public static void TheMarkerDecidesWhichIsOurs()
+        {
+            // the same check AppController's 5-minute close and session end use: the marker's pid AND start time
+            var start = new DateTime(2026, 11, 19, 11, 0, 0, DateTimeKind.Utc);
+            using (var t = new Tmp())
+            {
+                StreamWowMark.Write(t.Dir, 20, start);
+                Func<int, DateTime, bool> ours = (pid, st) => StreamWowMark.Matches(StreamWowMark.Read(t.Dir), pid, st);
+                A.True(ours(20, start));
+                A.False(ours(20, start.AddMinutes(30)), "the player's WoW on the same pid later");
+                var pc = new Pcs();
+                pc.Procs.Add(new WowProc { Pid = 20, Path = Forever + @"\Wow.exe" });
+                var r = SessionEnd.CloseWow(Forever, () => pc.Procs.ToList(), false, _ => pc.Did.Add("close"), (_, __) => true, _ => true,
+                    ours: pid => ours(pid, start.AddMinutes(30)));
+                A.Eq("left", r.Wow);
+                A.Eq(0, pc.Did.Count);
+                StreamWowMark.Clear(t.Dir);
+                r = SessionEnd.CloseWow(Forever, () => pc.Procs.ToList(), false, _ => pc.Did.Add("close"), (_, __) => true, _ => true,
+                    ours: pid => ours(pid, start));
+                A.Eq("left", r.Wow, "no marker: nothing is ours");
+            }
         }
 
         [Test]

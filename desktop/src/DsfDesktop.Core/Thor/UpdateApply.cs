@@ -107,10 +107,35 @@ namespace DsfDesktop.Thor
         /// Carries the plan out: every replaced or removed file is first moved to app\.dsf-old\&lt;stamp&gt;\ (a rename, which works even
         /// on a running exe), then the new one copied in. Anything failing puts every file back. null = done, else why not.
         /// </summary>
-        public static string Execute(string next, string app, List<SwapOp> ops, Action<string> log = null)
+        /// <summary>how long, in all, a swap waits out files another process holds without delete sharing (a closing Desktop, an
+        /// `--event` run from Sunshine's prep commands): 0.2.44's helper failed 46 ms after it began (2026-11-19 11:07:38)</summary>
+        public static readonly TimeSpan LockWait = TimeSpan.FromSeconds(10);
+
+        /// <summary>ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION</summary>
+        public static bool IsSharingViolation(Exception e) =>
+            e is IOException && !(e is FileNotFoundException) && !(e is DirectoryNotFoundException)
+            && ((e.HResult & 0xFFFF) == 32 || (e.HResult & 0xFFFF) == 33);
+
+        /// <summary>[act] again every 250 ms while it hits a sharing violation and [deadline] is ahead; anything else throws at once</summary>
+        static void Retry(Action act, string rel, DateTime deadline, Action<string> log)
+        {
+            int tries = 0;
+            while (true)
+            {
+                try { act(); if (tries > 0) log?.Invoke(rel + " free after " + tries + " retr" + (tries == 1 ? "y" : "ies")); return; }
+                catch (Exception e) when (IsSharingViolation(e) && DateTime.UtcNow < deadline)
+                {
+                    if (tries++ == 0) log?.Invoke(rel + " is in use, waiting (" + e.Message.Trim() + ")");
+                    Thread.Sleep(250);
+                }
+            }
+        }
+
+        public static string Execute(string next, string app, List<SwapOp> ops, Action<string> log = null, TimeSpan? lockWait = null)
         {
             var backup = Path.Combine(app, OldDir, DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
             var done = new List<SwapOp>();
+            var deadline = DateTime.UtcNow + (lockWait ?? LockWait);
             try
             {
                 foreach (var op in ops)
@@ -121,13 +146,13 @@ namespace DsfDesktop.Thor
                     {
                         var aside = Path.Combine(backup, op.Rel);
                         Directory.CreateDirectory(Path.GetDirectoryName(aside));
-                        File.Move(dst, aside);
+                        Retry(() => File.Move(dst, aside), op.Rel, deadline, log);
                     }
                     done.Add(op);
                     if (op.Kind != SwapKind.Remove)
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(dst));
-                        File.Copy(Path.Combine(next, op.Rel), dst, true);
+                        Retry(() => File.Copy(Path.Combine(next, op.Rel), dst, true), op.Rel, deadline, log);
                     }
                 }
                 var shipped = ops.Where(o => o.Kind != SwapKind.Remove).Select(o => o.Rel).ToList();
@@ -173,12 +198,14 @@ namespace DsfDesktop.Thor
         public string Writable;              // null = the app folder takes files, else why not
         public bool Streaming;
         public bool WowFromDesktop;          // WoW started for (or kept open by) a Thor session
+        public bool WowRunning;              // any WoW client at all (the player's own too; after a Desktop restart a stream's WoW is no longer "from Desktop")
         public double IdleForS;              // how long neither has been true
         public string FailedVersion;         // the last helper run failed on this version...
         public double FailedAgoS = double.MaxValue;   // ...this long ago
     }
 
-    /// <summary>when a ready update may go in (pure): never during a stream or while Desktop's WoW is up; a minute of quiet first</summary>
+    /// <summary>when a ready update may go in (pure): never during a stream or while any WoW is up (as its status line says: "when no
+    /// stream is on and WoW is closed"); a minute of quiet first</summary>
     public static class UpdateGate
     {
         public const double QuietS = 60, RetryAfterFailS = 6 * 3600;
@@ -192,7 +219,7 @@ namespace DsfDesktop.Thor
             if (i.FailedVersion != null && Versions.Compare(i.FailedVersion, v) == 0 && i.FailedAgoS < RetryAfterFailS)
                 return (false, "update to " + v + " failed, retrying later");
             if (i.Streaming) return (false, v + " ready: after the stream");
-            if (i.WowFromDesktop) return (false, v + " ready: once WoW closes");
+            if (i.WowFromDesktop || i.WowRunning) return (false, v + " ready: once WoW closes");
             if (i.IdleForS < QuietS) return (false, v + " ready");
             return (true, "Updating to " + v);
         }
@@ -251,8 +278,9 @@ namespace DsfDesktop.Thor
                 return 2;
             }
             Log.I("update helper: waiting for Desktop (pid " + pid + ") to close");
-            WaitExit(pid, 120);
+            Log.I("update helper: " + WaitExit(pid, 120));
             WaitForAppProcesses(app, 30);
+            WaitForOtherDesktops(app, 10);
             var why = SwapPlan.CanWrite(app);
             if (why == null)
             {
@@ -273,12 +301,49 @@ namespace DsfDesktop.Thor
             return why == null ? 0 : 1;
         }
 
-        static void WaitExit(int pid, int seconds)
+        /// <summary>the old Desktop fully gone: Process.WaitForExit (its handle signalled), then until the pid itself has left the
+        /// process list (its files released). A line for the log</summary>
+        static string WaitExit(int pid, int seconds)
         {
-            if (pid <= 0) return;
-            try { using (var p = Process.GetProcessById(pid)) p.WaitForExit(seconds * 1000); }
-            catch (ArgumentException) { }   // already gone
-            catch (Exception) { }
+            if (pid <= 0) return "no pid to wait for";
+            var t0 = DateTime.UtcNow;
+            try
+            {
+                using (var p = Process.GetProcessById(pid))
+                {
+                    if (!p.WaitForExit(seconds * 1000)) return "pid " + pid + " still running after " + seconds + " s";
+                    p.WaitForExit();   // the async output/exit events done too
+                }
+            }
+            catch (ArgumentException) { return "pid " + pid + " already gone"; }
+            catch (Exception e) { Log.I("update helper: wait on pid " + pid + ": " + e.Message + "; polling it instead"); }
+            var until = DateTime.UtcNow.AddSeconds(Math.Min(seconds, 10));
+            while (DateTime.UtcNow < until)
+            {
+                try { using (Process.GetProcessById(pid)) { } }
+                catch (ArgumentException) { return "pid " + pid + " exited (" + (int)(DateTime.UtcNow - t0).TotalMilliseconds + " ms)"; }
+                catch (Exception) { }
+                Thread.Sleep(100);
+            }
+            return "pid " + pid + " exited, still listed after " + (int)(DateTime.UtcNow - t0).TotalMilliseconds + " ms";
+        }
+
+        /// <summary>any OTHER DsForeverDesktop.exe run from the app folder (Sunshine's `--event` prep runs load DsfDesktop.Core.dll from
+        /// there too) is waited for, never ended; the swap's own retry covers what is left</summary>
+        static void WaitForOtherDesktops(string app, int seconds)
+        {
+            var root = Path.GetFullPath(app).TrimEnd('\\') + "\\";
+            int me = Process.GetCurrentProcess().Id;
+            var until = DateTime.UtcNow.AddSeconds(seconds);
+            bool said = false;
+            while (true)
+            {
+                var others = Processes(root).Where(x => x.pid != me && x.name.Equals(Exe, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (others.Count == 0) return;
+                if (!said) { Log.I("update helper: waiting for " + Exe + " pid " + string.Join(", ", others.Select(o => o.pid)) + " from the app folder"); said = true; }
+                if (DateTime.UtcNow > until) { Log.I("update helper: still running after " + seconds + " s; swapping anyway"); return; }
+                Thread.Sleep(250);
+            }
         }
 
         /// <summary>Desktop's own processes left in the folder: sunshine.exe is waited for, then ended (it would hold the streaming ports
