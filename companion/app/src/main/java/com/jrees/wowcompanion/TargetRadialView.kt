@@ -89,6 +89,8 @@ class TargetRadialView(
     private val noBox = RectF()
     /** the rename pop-up (Quests q69): the keyboard the host lends ([kb]), the name being typed, the add-on's borrowed field */
     var kb: ChatKeyboard? = null
+    /** the rename's board, for the host to lay over the wheel: no voice (a pet's name, as the macros' names: VoiceBoardsTest) */
+    fun makeKeyboard(): ChatKeyboard = ChatKeyboard(context, swap = false).apply { visibility = GONE }.also { kb = it }
     /** the spaced taps a typed field needs (the host's TapBridge.tapsSpaced on the game's pad) */
     var tapSpaced: (List<Pair<String, Int>>, Long) -> Boolean = { _, _ -> false }
     private var renaming = false

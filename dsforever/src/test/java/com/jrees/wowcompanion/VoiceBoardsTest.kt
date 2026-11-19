@@ -35,7 +35,7 @@ class VoiceBoardsTest {
         val want = mapOf(
             "ChatView.kt" to true, "BagsView.kt" to true, "CompanionHost.kt" to true, "PadTabPage.kt" to true, "ReportPage.kt" to true,
             "ProfessionsView.kt" to true,
-            "MacrosView.kt" to false, "TypeTool.kt" to false, "PreviewStage.kt" to false, "StreamSignIn.kt" to false,
+            "MacrosView.kt" to false, "TargetRadialView.kt" to false, "TypeTool.kt" to false, "PreviewStage.kt" to false, "StreamSignIn.kt" to false,
         )
         assertEquals("every construction is accounted for: ${c.keys}", want.keys, c.keys)
         for ((file, voice) in want) {
