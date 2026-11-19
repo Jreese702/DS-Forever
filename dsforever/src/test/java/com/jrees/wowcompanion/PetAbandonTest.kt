@@ -63,4 +63,39 @@ class PetAbandonTest {
         assertFalse(w.holds(2_000L + PopupHold.GRACE_MS))
         assertFalse(PopupHold.holdsKey(holding = false, keyCode = android.view.KeyEvent.KEYCODE_BUTTON_A, down = true, wheel = w.holds(9_000L)))
     }
+
+    /**
+     * fix/abandon-runs (the user on test 1505: "Nothing after Yes"; taps.log party:35, then qact:26 qact:26 and no answer): id 63's two
+     * digits are ONE cell twice, and TapPad's 0.25 s REPEAT guard dropped the second. The qact row is spaced now: the second 26 waits
+     * TapSpacing.MIN_MS behind the first, in the batch and across batches; a pair of different digits never waits.
+     */
+    @Test fun theRunsRepeatedDigitIsSpaced() {
+        assertTrue(GuestPad.ROW in TapSpacing.ROWS)
+        val pad = org.json.JSONObject("""{"rows":{"qact":{}}}""")
+        val cells = GuestPad.playerMenuRun(pad, 63)!!
+        assertEquals(listOf("qact" to 26, "qact" to 26), cells)
+        val at = TapSpacing.offsets(cells, 0L)
+        assertTrue("the second 26 waits for the guard (${at[1]} ms)", at[1] - at[0] >= TapSpacing.MIN_MS)
+        assertTrue(TapSpacing.MIN_MS > 250L)
+        // every same-digit id (0, 9, ..., 63: Uninvite / Promote / Rename at those places too) is spaced; others go at once
+        for (id in 0..63) {
+            val c = GuestPad.playerMenuRun(pad, id)!!
+            val o = TapSpacing.offsets(c, 0L)
+            if (c[0] == c[1]) assertTrue("id $id", o[1] - o[0] >= TapSpacing.MIN_MS) else assertEquals("id $id", 0L, o[1] - o[0])
+        }
+        // a second run right behind the first (another batch): its first 26 waits too, never dropped
+        val clock = TapSpacing.Clock()
+        TapSpacing.ran(clock, 10_000L, cells, 0L)
+        assertTrue(TapSpacing.lead(clock, 10_050L, cells, 0L) > 0L)
+    }
+
+    /** fix/abandon-runs: a refused run is said, naming the entry while the run is fresh; never silent */
+    @Test fun aRefusalIsShownWithItsReason() {
+        assertEquals("Release: In combat", PlayerMenu.refusalLine("Release", 1_000L, 1_500L, "In combat"))
+        assertEquals("Release: Another pet", PlayerMenu.refusalLine("Release", 1_000L, 1_000L + PlayerMenu.RUN_NAME_MS, "Another pet"))
+        assertEquals("Menu gone", PlayerMenu.refusalLine("Release", 1_000L, 1_001L + PlayerMenu.RUN_NAME_MS, "Menu gone"))
+        assertEquals("Tap lost", PlayerMenu.refusalLine(null, 0L, 10L, "Tap lost"))
+        assertEquals("Release: The game did not do it", PlayerMenu.refusalLine("Release", 1_000L, 1_100L, ""))
+        assertEquals("Cannot abandon", PlayerMenu.refusalLine("  ", 1_000L, 1_100L, " Cannot abandon "))
+    }
 }

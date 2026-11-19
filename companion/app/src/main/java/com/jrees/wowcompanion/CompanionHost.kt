@@ -1710,7 +1710,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             val menu = homeView.partyMenu
             when (d) {
                 is PlayerMenu.Do.Run -> {
-                    if (d.id >= 0) GuestPad.playerMenuRun(questsPad, d.id)?.let { TapBridge.taps(this, questsPad, it) { } }
+                    menuRun(d)
                     // q49 ap = "whisper": the Chat room, replying to the member (as Social's Whisper opens it)
                     if (d.app == "whisper" && menu.tell.isNotEmpty()) { val n = menu.tell; ui.post { show(Room.CHAT); chatView.whisperTo(n) } }
                 }
@@ -1723,11 +1723,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
     }
 
+    /** the last wheel / party-menu run sent: its label and when, so its refusal can name it (fix/abandon-runs) */
+    private var runText: String? = null
+    private var runAt = 0L
+
+    /** a wheel's / Party mode menu's run: its two digit taps (a repeated digit spaced by TapBridge: TapSpacing.ROWS), remembered so
+     *  the add-on's refusal ("menu run: refused") is SHOWN, never silent (the user on test 1505: Abandon Pet "Nothing after Yes") */
+    private fun menuRun(d: PlayerMenu.Do.Run) {
+        if (d.id < 0) return
+        val cells = GuestPad.playerMenuRun(questsPad, d.id)
+        if (cells == null) { Log.i("WCHOME", "menu run ${d.id}: no qact row"); ui.post { if (::pauseView.isInitialized) pauseView.note("Couldn't reach the game") }; return }
+        runText = d.text; runAt = SystemClock.uptimeMillis()
+        Log.i("WCHOME", "menu run ${d.id} (${d.text}): ${cells.joinToString(" ") { "${it.first}:${it.second}" }}")
+        TapBridge.taps(this, questsPad, cells) { w ->
+            Log.i("WCHOME", "menu run not sent: $w")
+            ui.post { if (::pauseView.isInitialized) pauseView.note("Couldn't reach the game") }
+        }
+    }
+
     /** the target radial's / its list's pick: the portrait menu's routes (digit taps; a secure cell: Inspect, Set Focus; Whisper = Chat) */
     private fun targetDo(d: PlayerMenu.Do, name: String) {
         when (d) {
             is PlayerMenu.Do.Run -> {
-                if (d.id >= 0) GuestPad.playerMenuRun(questsPad, d.id)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "target radial: run not sent: $w") } }
+                menuRun(d)
                 if (d.app == "whisper" && name.isNotEmpty()) ui.post { show(Room.CHAT); chatView.whisperTo(name) }
             }
             is PlayerMenu.Do.Secure -> TapBridge.taps(this, questsPad, listOf(d.row to d.col)) { w -> Log.i("WCHOME", "target radial: cell not sent: $w") }
@@ -1747,7 +1765,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         targetRadial.open("party", if (viaPad) TargetRadialView.Input.KEYS else TargetRadialView.Input.READ, name, { d, who ->
             when (d) {
                 is PlayerMenu.Do.Run -> {
-                    if (d.id >= 0) GuestPad.playerMenuRun(questsPad, d.id)?.let { TapBridge.taps(this, questsPad, it) { } }
+                    menuRun(d)
                     if (d.app == "whisper" && who.isNotEmpty()) ui.post { show(Room.CHAT); chatView.whisperTo(who) }
                 }
                 is PlayerMenu.Do.Secure -> TapBridge.taps(this, questsPad, listOf((if (d.row == "party") PartyModel.live.cfg?.pad?.row ?: "party" else d.row) to d.col)) { }
@@ -2997,7 +3015,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // q66: whom a run named (Invite / Uninvite / Add Friend: the full Name-Realm the game was given), so a lost invite is readable
                     val to = msg.optString("to", "").let { if (it.isEmpty()) "" else " ($it)" }
                     Log.i("WCHOME", "menu run: ${if (msg.optBoolean("ok")) "done$to" else "refused (${msg.optString("why")})"}")
-                    mapView.onPlayerMenuRan(msg)
+                    // fix/abandon-runs: a refusal is shown - on the Map's menu when that is up, else the wheel's line where the game's red
+                    // line stands (pauseView.note: any room), naming the entry ("Release: In combat")
+                    if (!mapView.onPlayerMenuRan(msg) && !msg.optBoolean("ok") && ::pauseView.isInitialized) {
+                        val line = PlayerMenu.refusalLine(runText, runAt, SystemClock.uptimeMillis(), msg.optString("why", ""))
+                        ui.post { pauseView.note(line) }
+                    }
                 }
                 when (gid) {
                     "settings" -> settings.pad.onGuestAck(msg)

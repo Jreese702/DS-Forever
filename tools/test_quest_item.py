@@ -231,7 +231,7 @@ check('si' not in byId(collect(L))[33], "a link that is not a string: no item")
 check(int(L.eval('SELECTS')) == 0 and int(L.eval('USES')) == 0, "nothing selected, nothing used", (L.eval('SELECTS'), L.eval('USES')))
 
 src = open(QUESTS, encoding='utf-8').read()
-check('local QV = "q69"' in src and "showing the Icon for if there is a usable quest Item" in src, "Quests.lua says q69, q64's note quoting the user kept")
+check('local QV = "q70"' in src and "showing the Icon for if there is a usable quest Item" in src, "Quests.lua says q70, q64's note quoting the user kept")
 check("q63 THE QUEST'S REWARDS" in src, "q63's note kept below it")
 mark = "-- ---------------------------------------------------------------- q64 THE QUEST'S ITEM"
 part = src[src.index(mark):src.index("-- q63: THE REWARD ITEMS' TOOLTIPS")] if mark in src else ""

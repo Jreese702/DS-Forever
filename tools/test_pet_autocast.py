@@ -60,7 +60,7 @@ end
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q69"' in SRC["quests"], "Quests says q69 (q65 kept below it)")
+check('local QV = "q70"' in SRC["quests"], "Quests says q70 (q65 kept below it)")
 check('the user, 2026-11-16: "hunters need to be able to visually see when their pets abilities are active like growl' in SRC["quests"],
       "the q62 header quotes the user")
 

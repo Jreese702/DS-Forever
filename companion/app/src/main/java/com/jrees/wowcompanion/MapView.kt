@@ -4210,9 +4210,12 @@ class MapView(context: Context) : View(context) {
         postInvalidate()
     }
 
-    /** the game's answer to a run (guestack op "pmenurun"): only a refusal is said */
-    fun onPlayerMenuRan(msg: JSONObject) {
-        if (!msg.optBoolean("ok")) note(msg.optString("why", "").ifEmpty { "The game did not do it" })
+    /** the game's answer to a run (guestack op "pmenurun"): only a refusal is said; true = said here (the Map's own menu is up),
+     *  else the host says it (fix/abandon-runs: a wheel's refusal was said on a Map nobody saw) */
+    fun onPlayerMenuRan(msg: JSONObject): Boolean {
+        if (msg.optBoolean("ok") || !pmenu.open) return false
+        note(msg.optString("why", "").ifEmpty { "The game did not do it" })
+        return true
     }
 
     /**

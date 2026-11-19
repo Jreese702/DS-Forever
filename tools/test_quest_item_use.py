@@ -133,7 +133,7 @@ spy = list(Q.eval('SPY').values())
 check(not [s for s in spy if s in ("CreateMacro", "EditMacro", "SetBinding", "SaveBindings", "SetCVar", "PlaceAction")], "no macro, binding or CVar", spy)
 
 src = SRC["quests"]
-check('local QV = "q69"' in src and "make the quest item usable by tap out of combat" in src, "Quests.lua says q69, q65 quoting the user")
+check('local QV = "q70"' in src and "make the quest item usable by tap out of combat" in src, "Quests.lua says q70, q65 quoting the user")
 
 print("ALL PASS" if fails == 0 else ("%d FAILED" % fails))
 sys.exit(1 if fails else 0)
