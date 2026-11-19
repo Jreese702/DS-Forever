@@ -1141,8 +1141,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         // Quests q69: the pet's Rename types on its own keyboard (Chat's borrowed field, as the Macros room's), over the wheel
-        targetRadialKb = ChatKeyboard(this, swap = false).apply { visibility = View.GONE }
-        targetRadial.kb = targetRadialKb
+        targetRadialKb = targetRadial.makeKeyboard()
         targetRadial.tapSpaced = { cells, gap -> TapBridge.tapsSpaced(this, questsPad, cells, gap) { w -> Log.i("WCHOME", "context radial: rename taps: $w") } }
         // 1.0.18 (the user: "When holding LB i want the bottom screen to shift around like when opening a radial ... the players bar with
         // the A button glyph ... a cross layout of the other 4 party members with the dpad glyphs ... We are just visualizing it"): on
