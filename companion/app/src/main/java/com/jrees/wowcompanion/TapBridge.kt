@@ -316,6 +316,8 @@ object TapBridge {
             val b = synchronized(sent) { sent[id] } ?: continue
             send(ctx, pad, b.cells, b.gapMs, {}, retry = true)
         }
+        // fix/desk-click-switch: a batch Desktop cut short (it lost WoW's window mid-batch): its unpressed cells once more, never again
+        for ((id, cells) in DeskClicks.takePartials()) send(ctx, pad, cells, synchronized(sent) { sent[id]?.gapMs } ?: 120L, {}, retry = true)
         for (id in TapCal.takeRetries()) {
             val b = synchronized(sent) { sent[id] } ?: continue
             val what = b.cells.joinToString(" ") { "${it.first}:${it.second}" }

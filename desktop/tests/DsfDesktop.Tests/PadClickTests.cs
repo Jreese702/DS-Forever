@@ -33,6 +33,8 @@ namespace DsfDesktop.Tests
             public string Focus(IntPtr h) { Calls.Add("focus"); if (FocusWorks) Fg = true; return FocusWorks ? null : "kept"; }
             public bool Streaming() => Stream;
             public double IdleSeconds() => Idle;
+            public bool PcBusy;
+            public bool PcInUse() => PcBusy;
             public IList<Displays.RECT> Monitors() => Mons;
             public bool GetCursor(out int x, out int y) { x = Cx; y = Cy; return true; }
             public bool SetCursor(int x, int y) { Calls.Add("set " + x + "," + y); Cx = x; Cy = y; if (WarpAfterSet) { Cx = 960; Cy = 429; } return true; }
@@ -134,10 +136,10 @@ namespace DsfDesktop.Tests
         public static void NotInFrontNotStreamingOrStaleRefuses()
         {
             var os = new FakeOs { Fg = false, FocusWorks = false };
-            A.Eq("not_foreground", RunOne(os, Msg(1, "post", false, 10.5, 15.5, 0)).Str("why"));
-            A.Eq("focus", string.Join("|", os.Calls), "brought forward once, nothing clicked");
+            A.Eq("not_foreground", RunOne(os, Msg(1, "input", false, 10.5, 15.5, 0)).Str("why"));
+            A.Eq("focus", string.Join("|", os.Calls), "a real click: brought forward once, nothing clicked");
             var os2 = new FakeOs { Fg = false, FocusWorks = true };
-            A.Eq("done", RunOne(os2, Msg(2, "post", false, 10.5, 15.5, 0)).Str("state"), "in front after the focus: clicked");
+            A.Eq("done", RunOne(os2, Msg(2, "input", false, 10.5, 15.5, 0)).Str("state"), "in front after the focus: clicked");
             var os3 = new FakeOs { Stream = false };
             A.Eq("not_streaming", RunOne(os3, Msg(3, "post", false, 10.5, 15.5, 0)).Str("why"));
             var os4 = new FakeOs { Hwnd = IntPtr.Zero };
@@ -199,6 +201,117 @@ namespace DsfDesktop.Tests
             }
             A.True(got.Contains("9:no_taps"), "a batch with no taps refused at once");
             A.Eq("1:done,2:done,3:done", string.Join(",", got.Where(g => g != "9:no_taps")), "the rest in order");
+        }
+
+        /// <summary>0.2.43 (the user, 2026-11-19: "it just takes the cursor straight back to my game"): a posted click never needs the front</summary>
+        [Test]
+        public static void PostedClicksReachWowBehindAnotherWindowAndNeverFocusIt()
+        {
+            var os = new FakeOs { Fg = false, FocusWorks = true };
+            var r = RunOne(os, Msg(1, "post", false, 10.5, 15.5, 0, 20.5, 15.5, 0));
+            A.Eq("done", r.Str("state")); A.Eq(2L, r.Long("n"));
+            A.False(os.Calls.Contains("focus"), "never brought forward");
+            A.False(os.Calls.Any(c => c.StartsWith("set")), "the real cursor never moved");
+            A.False(os.Fg, "the PC user's window stays in front");
+        }
+
+        [Test]
+        public static void NoRealClickOrParkWhileThePcIsInUse()
+        {
+            var os = new FakeOs { PcBusy = true, Fg = false };
+            A.Eq("pc_in_use", RunOne(os, Msg(1, "input", false, 10.5, 15.5, 0)).Str("why"));
+            A.Eq(0, os.Calls.Count, "no focus, no cursor, no button");
+            var os2 = new FakeOs { PcBusy = true, Cx = 500, Cy = 500 };
+            A.Eq("done", RunOne(os2, Msg(2, "post", true, 10.5, 15.5, 0)).Str("state"), "a posted click still goes");
+            A.False(os2.Calls.Any(c => c.StartsWith("set")), "no park while the PC is in use");
+            // a real batch: the PC user starts using the PC halfway: the rest is cut (the Thor sends it once more)
+            var os3 = new FakeOs();
+            var c = new PadClicker(os3) { Log = null };
+            var taps = PadClick.Parse(Msg(3, "input", false, 10.5, 15.5, 0, 20.5, 15.5, 0), out var pw, out var ph, out _);
+            os3.Calls.Clear();
+            var b = new PadBatch { Id = 3, Mode = "input", Pw = pw, Ph = ph, Taps = taps, At = os3.T };
+            // the first click flips the PC to busy (as a physical key would)
+            var r = new PadClicker(new BusyAfterFirst(os3)) { Log = null }.Run(b);
+            A.Eq("partial", r.Str("state")); A.Eq("pc_in_use", r.Str("why")); A.Eq(1L, r.Long("n"));
+        }
+
+        sealed class BusyAfterFirst : IPadClickOs
+        {
+            readonly FakeOs o; int ups;
+            public BusyAfterFirst(FakeOs o) { this.o = o; }
+            public IntPtr WowWindow() => o.WowWindow();
+            public Displays.RECT? Client(IntPtr h) => o.Client(h);
+            public bool IsForeground(IntPtr h) => o.IsForeground(h);
+            public string Focus(IntPtr h) => o.Focus(h);
+            public bool Streaming() => o.Streaming();
+            public double IdleSeconds() => o.IdleSeconds();
+            public bool PcInUse() => ups > 0;
+            public IList<Displays.RECT> Monitors() => o.Monitors();
+            public bool GetCursor(out int x, out int y) => o.GetCursor(out x, out y);
+            public bool SetCursor(int x, int y) => o.SetCursor(x, y);
+            public bool Post(IntPtr h, int msg, IntPtr w, IntPtr l) => o.Post(h, msg, w, l);
+            public bool Button(bool down) { if (!down) ups++; return o.Button(down); }
+            public void Sleep(int ms) => o.Sleep(ms);
+            public DateTime Now() => o.Now();
+        }
+
+        [Test]
+        public static void AWindowThatOnlyMovedKeepsTheBatchAResizedOneCutsIt()
+        {
+            var os = new MovingOs();
+            var taps = PadClick.Parse(Msg(1, "input", false, 10.5, 15.5, 0, 20.5, 15.5, 0), out var pw, out var ph, out _);
+            var r = new PadClicker(os) { Log = null }.Run(new PadBatch { Id = 1, Mode = "input", Pw = pw, Ph = ph, Taps = taps, At = os.T });
+            A.Eq("done", r.Str("state"), "moved, not resized: both pressed");
+            A.True(os.Calls.Contains("set 120,115"), "the second aimed at the window's new place (100,100 + 20,15)");
+            var os2 = new MovingOs { Resize = true };
+            var r2 = new PadClicker(os2) { Log = null }.Run(new PadBatch { Id = 2, Mode = "post", Pw = pw, Ph = ph, Taps = taps, At = os2.T });
+            A.Eq("partial", r2.Str("state")); A.Eq("moved", r2.Str("why")); A.Eq(1L, r2.Long("n"));
+        }
+
+        sealed class MovingOs : IPadClickOs
+        {
+            public readonly List<string> Calls = new List<string>();
+            public DateTime T = new DateTime(2026, 11, 18, 20, 0, 0, DateTimeKind.Utc);
+            public bool Resize; int asks; int cx = 3000, cy = 500;
+            public IntPtr WowWindow() => (IntPtr)0x1234;
+            public Displays.RECT? Client(IntPtr h)
+            {
+                asks++;
+                if (asks == 1) return new Displays.RECT { Left = 0, Top = 0, Right = 1920, Bottom = 1080 };
+                return Resize ? new Displays.RECT { Left = 0, Top = 0, Right = 1280, Bottom = 720 } : new Displays.RECT { Left = 100, Top = 100, Right = 2020, Bottom = 1180 };
+            }
+            public bool IsForeground(IntPtr h) => true;
+            public string Focus(IntPtr h) => null;
+            public bool Streaming() => true;
+            public double IdleSeconds() => 60;
+            public bool PcInUse() => false;
+            public IList<Displays.RECT> Monitors() => new List<Displays.RECT>();
+            public bool GetCursor(out int x, out int y) { x = cx; y = cy; return true; }
+            public bool SetCursor(int x, int y) { Calls.Add("set " + x + "," + y); cx = x; cy = y; return true; }
+            public bool Post(IntPtr h, int msg, IntPtr w, IntPtr l) { Calls.Add("post"); return true; }
+            public bool Button(bool down) { Calls.Add(down ? "btn down" : "btn up"); return true; }
+            public void Sleep(int ms) { T = T.AddMilliseconds(ms); }
+            public DateTime Now() => T;
+        }
+
+        /// <summary>0.2.43: only the PC's OWN keyboard / mouse holds Desktop back; Sunshine's (and our) injected input never does</summary>
+        [Test]
+        public static void ThePcIsInUseOnlyAfterPhysicalInputForTenSeconds()
+        {
+            var g = new PcUseGate();
+            var t = new DateTime(2026, 11, 19, 1, 0, 0, DateTimeKind.Utc);
+            A.False(g.InUse(t), "nothing yet");
+            A.True(g.MayFocus(t, wowInFront: false), "a quiet PC: WoW may come forward");
+            g.Note(injected: true, t);
+            A.False(g.InUse(t.AddSeconds(1)), "Sunshine's injected input (no device) never counts");
+            g.Note(injected: false, t.AddSeconds(2));
+            A.True(g.InUse(t.AddSeconds(3)), "a real key / mouse: in use");
+            A.False(g.MayFocus(t.AddSeconds(3), wowInFront: false), "never over the PC user's window");
+            A.True(g.MayFocus(t.AddSeconds(3), wowInFront: true), "WoW already in front: fine");
+            A.True(g.InUse(t.AddSeconds(11.9)), "still within 10 s");
+            A.False(g.InUse(t.AddSeconds(12.1)), "quiet again after 10 s: resumes");
+            g.Note(injected: true, t.AddSeconds(13));
+            A.False(g.InUse(t.AddSeconds(13)), "injected input does not restart it");
         }
 
         // ---- the one real Win32 check: posted mouse messages carry the client point (a message-only window of this test; never WoW)

@@ -28,8 +28,10 @@ namespace DsfDesktop.Wow
     ///    covers and where WoW keeps its hidden cursor in controller play), only while nobody has touched the PC for <see cref="IdleS"/>.
     ///    Sunshine v2026.914 has no setting to leave the cursor out of the capture (only the client's Ctrl+Alt+Shift+N toggle, which
     ///    needs Alt: never sent, the key-chord rule), so keeping the cursor off the streamed screen is the way.
-    /// SAFETY: only from a paired, pinned wss session (BridgeServer); only the _forever_ client's own window (path match); only while it
-    /// is the foreground window (brought forward once, as Focus WoW does) and a stream runs; every point inside the client rect or the
+    /// SAFETY: only from a paired, pinned wss session (BridgeServer); only the _forever_ client's own window (path match); only while a
+    /// stream runs. 0.2.43 (the user, 2026-11-19: "it just takes the cursor straight back to my game"): a posted click never needs WoW in
+    /// front and never brings it there; a real click needs it in front (brought forward once) and is refused while the PC's own user is
+    /// busy (PcUse: physical input in the last 10 s), as is a park; every outcome is one log line. Every point inside the client rect or the
     /// whole batch is refused before anything is clicked; one batch at a time, in order; at most <see cref="MaxPerSecond"/> clicks a
     /// second; a batch that waited too long in the queue is dropped (its moment has passed). Terse log lines, no names.
     /// </summary>
@@ -47,6 +49,11 @@ namespace DsfDesktop.Wow
         public const int RestoreMs = 16;
         /// <summary>after a batch (the touch path's tail rest)</summary>
         public const int TailMs = 30;
+        /// <summary>"input": the cursor rests on the pixel this long before the press (0.2.43: the game sees the move, leaving its
+        /// controller cursor, before the button)</summary>
+        public const int MoveSettleMs = 16;
+        /// <summary>after a park, before the first posted click (the game has seen the cursor go)</summary>
+        public const int ParkSettleMs = 50;
 
         public const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, MK_LBUTTON = 0x0001;
 
@@ -126,6 +133,8 @@ namespace DsfDesktop.Wow
         string Focus(IntPtr h);
         bool Streaming();
         double IdleSeconds();
+        /// <summary>0.2.43: someone used the PC's own keyboard or mouse lately (PcUse: physical input only, never Sunshine's)</summary>
+        bool PcInUse();
         IList<Displays.RECT> Monitors();
         bool GetCursor(out int x, out int y);
         bool SetCursor(int x, int y);
@@ -214,10 +223,18 @@ namespace DsfDesktop.Wow
             if (!os.Streaming()) return Refuse(b, "not_streaming");
             var h = os.WowWindow();
             if (h == IntPtr.Zero) return Refuse(b, "no_wow");
-            if (!os.IsForeground(h))
+            bool input = b.Mode == "input";
+            // 0.2.43 (the user, 2026-11-19: "do the quiet clicks keep the real cursor free? ... it just takes the cursor straight back to
+            // my game"): a POSTED click goes to WoW's window wherever it stands - never brought to the front for it; the real cursor and
+            // the keyboard stay the PC user's. Only a real click needs WoW in front, and never while the PC's own user is busy
+            if (input)
             {
-                var fw = os.Focus(h);
-                if (fw != null || !os.IsForeground(h)) return Refuse(b, "not_foreground");
+                if (os.PcInUse()) return Refuse(b, "pc_in_use");
+                if (!os.IsForeground(h))
+                {
+                    var fw = os.Focus(h);
+                    if (fw != null || !os.IsForeground(h)) return Refuse(b, "not_foreground");
+                }
             }
             var c = os.Client(h);
             if (c == null || c.Value.W <= 0 || c.Value.H <= 0) return Refuse(b, "no_client");
@@ -232,32 +249,50 @@ namespace DsfDesktop.Wow
             // the rate: at most MaxPerSecond clicks in any second
             while (recent.Count > 0 && (now - recent.Peek()).TotalSeconds >= 1) recent.Dequeue();
             if (recent.Count + pts.Count > PadClick.MaxPerSecond) return Refuse(b, "rate");
-            if (b.Park) Park(cl, b);
+            // the park: only before a posted batch (a real click puts the cursor back where it was anyway), never inside one, never
+            // while the PC is in use
+            if (b.Park && !input && !os.PcInUse() && Park(cl, b)) os.Sleep(PadClick.ParkSettleMs);
             int n = 0;
             for (int i = 0; i < pts.Count; i++)
             {
                 if (b.Taps[i].WaitMs > 0) os.Sleep(b.Taps[i].WaitMs);
-                // the window can go (or lose the front) between taps: checked before each one
-                if (i > 0 && (!os.IsForeground(h) || os.Client(h) is Displays.RECT c2 && (c2.Left != cl.Left || c2.Top != cl.Top || c2.W != cl.W || c2.H != cl.H)))
-                    return Done(b, "partial", "moved", n);
-                bool ok = b.Mode == "input" ? Real(h, cl, pts[i][0], pts[i][1]) : Posted(h, pts[i][0], pts[i][1]);
-                if (!ok) return Done(b, n == 0 ? "failed" : "partial", b.Mode == "input" ? "input_refused" : "post_refused", n);
+                // between taps: the window gone or resized (its client points mean other pixels now) cuts the batch; a window that only
+                // moved keeps its client points (a real click aims at the new place); a real click also needs it still in front
+                if (i > 0)
+                {
+                    var c2 = os.Client(h);
+                    if (c2 == null || c2.Value.W != cl.W || c2.Value.H != cl.H) return Done(b, "partial", "moved", n, now);
+                    cl = c2.Value;
+                    if (input && !os.IsForeground(h)) return Done(b, "partial", "lost_front", n, now);
+                    if (input && os.PcInUse()) return Done(b, "partial", "pc_in_use", n, now);
+                }
+                bool ok = input ? Real(h, cl, pts[i][0], pts[i][1]) : Posted(h, pts[i][0], pts[i][1]);
+                if (!ok) return Done(b, n == 0 ? "failed" : "partial", input ? "input_refused" : "post_refused", n, now);
                 n++; Clicks++;
                 recent.Enqueue(os.Now());
             }
             os.Sleep(PadClick.TailMs);
-            return Done(b, "done", null, n);
+            return Done(b, "done", null, n, now);
         }
+
+        string lastRefusal;
+        DateTime lastRefusalAt;
 
         Dictionary<string, object> Refuse(PadBatch b, string why)
         {
-            Log?.Invoke("pad click: batch " + b.Id + " refused (" + why + ")");
+            // one terse line per batch; the same refusal again within 10 s is not repeated (a busy PC refuses many in a row)
+            var t = os.Now();
+            if (why != lastRefusal || (t - lastRefusalAt).TotalSeconds >= 10)
+                Log?.Invoke("pad click: batch " + b.Id + " " + b.Mode + " refused (" + why + ")" + (why == "pc_in_use" ? ": PC in use, nothing pressed" : ""));
+            lastRefusal = why; lastRefusalAt = t;
             return Result(b.Id, "refused", why, b.Mode, 0);
         }
 
-        Dictionary<string, object> Done(PadBatch b, string state, string why, int n)
+        Dictionary<string, object> Done(PadBatch b, string state, string why, int n, DateTime start)
         {
-            if (state != "done") Log?.Invoke("pad click: batch " + b.Id + " " + state + " (" + why + ", " + n + " of " + b.Taps.Count + ")");
+            // 0.2.43: every batch's outcome, one terse line (0.2.42's log had almost none)
+            Log?.Invoke("pad click: batch " + b.Id + " " + b.Mode + " " + state + (why != null ? " (" + why + ")" : "") + " " + n + "/" + b.Taps.Count +
+                        " " + (int)(os.Now() - start).TotalMilliseconds + " ms");
             return Result(b.Id, state, why, b.Mode, n);
         }
 
@@ -279,6 +314,7 @@ namespace DsfDesktop.Wow
             if (!os.SetCursor(sx, sy)) return false;
             // the game may warp its cursor (its freelook park): only a cursor on the pixel is pressed
             if (!os.GetCursor(out var nx, out var ny) || nx != sx || ny != sy) { if (had) os.SetCursor(ox, oy); return false; }
+            os.Sleep(PadClick.MoveSettleMs);
             if (!os.Button(true)) { if (had) os.SetCursor(ox, oy); return false; }
             os.Sleep(PadClick.HoldMs);
             os.Button(false);
@@ -288,15 +324,17 @@ namespace DsfDesktop.Wow
         }
 
         /// <summary>a real cursor resting on WoW's client goes off the stream first (only while the PC is idle)</summary>
-        void Park(Displays.RECT cl, PadBatch b)
+        bool Park(Displays.RECT cl, PadBatch b)
         {
-            if (!os.GetCursor(out var x, out var y) || !PadClick.Inside(cl, x, y)) return;
-            if (os.IdleSeconds() < PadClick.IdleS) return;
+            if (!os.GetCursor(out var x, out var y) || !PadClick.Inside(cl, x, y)) return false;
+            if (os.IdleSeconds() < PadClick.IdleS) return false;
             int[] sink = null;
             if (b.Sink != null && PadClick.ToClient(b.Sink[0], b.Sink[1], b.Pw, b.Ph, cl.W, cl.H, out var kx, out var ky)) sink = new[] { cl.Left + kx, cl.Top + ky };
             var p = PadClick.ParkPoint(cl, os.Monitors(), sink);
-            if (p == null || (p[0] == x && p[1] == y)) return;
-            if (os.SetCursor(p[0], p[1])) Log?.Invoke("pad click: cursor parked " + (PadClick.Inside(cl, p[0], p[1]) ? "on the game's park point" : "off the streamed screen"));
+            if (p == null || (p[0] == x && p[1] == y)) return false;
+            if (!os.SetCursor(p[0], p[1])) return false;
+            Log?.Invoke("pad click: cursor parked " + (PadClick.Inside(cl, p[0], p[1]) ? "on the game's park point" : "off the streamed screen"));
+            return true;
         }
 
         public void Dispose() { try { queue.CompleteAdding(); } catch (Exception) { } }
@@ -331,6 +369,7 @@ namespace DsfDesktop.Wow
         public string Focus(IntPtr h) => DsfDesktop.Wow.WowWindow.FocusHandle(h);
         public bool Streaming() => streaming();
         public double IdleSeconds() => DsfDesktop.Wow.WowWindow.PcIdleSeconds();
+        public bool PcInUse() => PcUse.InUse();
 
         public IList<Displays.RECT> Monitors()
         {

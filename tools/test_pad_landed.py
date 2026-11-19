@@ -25,7 +25,8 @@ L, errs = boot_world(strict=False)
 check(not errs, "the world loads (%s)" % "; ".join(errs)[:200])
 TAPPAD = open(os.path.join(ADDONS, "WowCompanion", "TapPad.lua"), encoding="utf-8").read()
 HUB = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
-check(("local PADV = \"pad24\"" in TAPPAD and "pad23 WHERE A TAP LANDED" in TAPPAD) and "local HV = \"hub69\"" in HUB, "a. TapPad pad24 (pad23 kept in its note), Hub hub69")
+check(("local PADV = \"pad24\"" in TAPPAD and "pad23 WHERE A TAP LANDED" in TAPPAD) and "local HV = \"hub70\"" in HUB and "hub69 WHERE THE TAPS LANDED" in HUB, "a. TapPad pad24 (pad23 kept in its note), Hub hub70 (hub69 kept)")
+check("so why is it still clicking all over after that then?" in HUB, "a. hub70's note quotes the user")
 check("it looked like it was doing a lot of clicks again and also the UI didnt hide" in TAPPAD
       and "it looked like it was doing a lot of clicks again and also the UI didnt hide" in HUB, "a. both notes quote the user")
 
@@ -54,6 +55,19 @@ check(d.n == 10 and d.last == " ".join("uisw:%d" % c for c in range(2, 10)), "c.
 doc = L.eval('(function() local out; local s = WowCompanion.send; WowCompanion.send = function(x) out = x end; '
              'local ok = pcall(WowCompanion.snapshot, "manual"); WowCompanion.send = s; return out end)()')
 check("rx = WC.pad and type(WC.pad.rxDoc)" in HUB and "doc.shotlog, doc.rx = nil, nil" in HUB, "d. hub's document: rx, out of the change key")
+
+# hub70: when the count moved, one small "padrx" document of its own; nothing while it stands still
+def rx_tick():
+    return L.eval('(function() local out = {}; local s = WowCompanion.send; WowCompanion.send = function(x) out[#out + 1] = x end; '
+                  'local ok, r = pcall(WowCompanion.hub.rxTick); WowCompanion.send = s; return { ok = ok, r = r, n = #out, x = out[1] } end)()')
+t = rx_tick()
+check(t.ok and t.r is True and t.n == 1 and '"type":"padrx"' in (t.x or "") and '"n":10' in (t.x or ""), "d. hub70: the ring's word on its own (%s)" % (t.x and t.x[:80]))
+t = rx_tick()
+check(t.ok and t.r is False and t.n == 0, "d. hub70: nothing again while the count stands")
+press("ui", 31)
+t = rx_tick()
+check(t.ok and t.r is True and '"n":11' in (t.x or ""), "d. hub70: the next press, at once")
+
 
 # the stub has no GetTop: a frame's top from its TOPLEFT point (UIParent's own top = its height)
 L.execute('''function Frame:SetPoint(...) self._pts = { ... } end

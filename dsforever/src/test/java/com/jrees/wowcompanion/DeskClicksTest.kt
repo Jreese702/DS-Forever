@@ -64,7 +64,7 @@ class DeskClicksTest {
         val fails = ArrayList<String>()
         assertTrue(DeskClicks.send(1, listOf("pnav" to 2), listOf(1115.5 to 15.5), listOf(0L), 1920.0, 1080.0, true, false, 1000L) { fails += it })
         assertEquals(1, w.sent.size)
-        assertNull(DeskClicks.onResult(JSONObject().put("id", 1).put("state", "done").put("n", 1)))
+        assertNull(DeskClicks.onResult(JSONObject().put("id", 1).put("state", "done").put("n", 1), now = 1000L))
         assertTrue(DeskClicks.send(2, listOf("pnav" to 2), listOf(1115.5 to 15.5), listOf(0L), 1920.0, 1080.0, true, false, 1000L) { fails += it })
         val note = DeskClicks.onResult(JSONObject().put("id", 2).put("state", "refused").put("why", "not_foreground").put("n", 0))
         assertTrue(note!!, note.contains("refused (not_foreground)"))
@@ -75,7 +75,7 @@ class DeskClicksTest {
 
     private fun sendDone(w: Wire, id: Long, at: Long, cells: List<Pair<String, Int>>? = listOf("pnav" to 2)) {
         DeskClicks.send(id, cells, listOf(1115.5 to 15.5), listOf(0L), 1920.0, 1080.0, true, false, at) {}
-        DeskClicks.onResult(JSONObject().put("id", id).put("state", "done").put("n", 1))
+        DeskClicks.onResult(JSONObject().put("id", id).put("state", "done").put("n", 1), now = at)
     }
 
     @Test fun postedClicksTheGameNeverSeesSwitchToRealOnesAndTheLastGoesAgain() {
@@ -113,5 +113,70 @@ class DeskClicksTest {
         sendDone(w, 3, 1_000L); sendDone(w, 4, 1_000L)
         assertTrue(DeskClicks.check(10_000L, false).isEmpty())
         assertEquals("post", DeskClicks.mode)
+    }
+
+    /** fix/desk-click-switch, test 1497 (01:03:40-45): the posted presses were in the ring's first report, a second after the app gave up */
+    @Test fun aLateReportOfPostedPressesKeepsPostsAndAnEarlySwitchIsUndone() {
+        val w = Wire(); DeskClicks.link = w
+        sendDone(w, 1, 1_000L, listOf("party" to 22)); sendDone(w, 2, 1_100L, listOf("padtab" to 39, "padtab" to 30))
+        sendDone(w, 3, 3_000L, listOf("pnav" to 15, "pnav" to 22))
+        // a heartbeat with nothing new, 3.6 s after the first two: no word yet of the later batch, nothing has moved past them
+        val notes = DeskClicks.check(4_700L, true)
+        assertEquals("input", DeskClicks.mode)                                       // (only time could judge them: two misses)
+        assertTrue(notes.toString(), notes.last().contains("real clicks from now"))
+        // the report comes: the third (posted) batch's presses were seen - posts for good, and the switch is undone
+        assertEquals("desktop clicks: a posted press was seen after all (pnav:15); quiet posted clicks from now", DeskClicks.landed("pnav", 15, 5_000L))
+        assertEquals("post", DeskClicks.mode); assertTrue(DeskClicks.postSeen)
+        sendDone(w, 4, 6_000L)
+        assertEquals("post", w.sent.last().getString("mode"))
+        DeskClicks.check(20_000L, true)
+        assertEquals("post", DeskClicks.mode)
+    }
+
+    @Test fun aBatchIsJudgedOnlyOnceTheRingMovedPastItOrTimeRanOut() {
+        val w = Wire(); DeskClicks.link = w
+        sendDone(w, 1, 1_000L, listOf("qact" to 18)); sendDone(w, 2, 1_200L, listOf("qact" to 9))
+        assertTrue("too soon, nothing later seen", DeskClicks.check(1_500L, true).isEmpty())
+        DeskClicks.landed("qact", 9, 1_600L)                                         // the ring moved past batch 1
+        assertEquals(listOf("desktop click not seen (post): qact:18"), DeskClicks.check(1_700L, true))   // (posting proven: no miss counted)
+        assertEquals("post", DeskClicks.mode)
+    }
+
+    @Test fun repeatedCellsAreMatchedOldestFirst() {
+        val w = Wire(); DeskClicks.link = w
+        sendDone(w, 1, 1_000L, listOf("qact" to 8)); sendDone(w, 2, 1_100L, listOf("qact" to 8))
+        DeskClicks.landed("qact", 8, 1_500L)
+        // the newer one is still waiting for its word: the older one was seen
+        assertTrue(DeskClicks.check(2_000L, true).isEmpty())
+        assertEquals(listOf("desktop click not seen (post): qact:8"), DeskClicks.check(6_000L, true))
+    }
+
+    @Test fun aRingThatMovedMoreThanItListsLeavesTheOlderBatchesUnknown() {
+        val w = Wire(); DeskClicks.link = w
+        sendDone(w, 1, 1_000L, listOf("qact" to 18)); sendDone(w, 2, 1_100L, listOf("qact" to 9))
+        DeskClicks.ringGap(3, 2_000L)
+        assertTrue(DeskClicks.check(10_000L, true).isEmpty())
+        assertEquals("post", DeskClicks.mode)
+    }
+
+    @Test fun aPartialBatchsRestGoesOnceMore() {
+        val w = Wire(); DeskClicks.link = w
+        val cells = listOf("pnav" to 38, "pnav" to 12, "pnav" to 15, "pnav" to 17)
+        DeskClicks.send(5, cells, List(4) { 1.0 to 1.0 }, List(4) { 0L }, 1920.0, 1080.0, true, false, 1_000L) {}
+        val note = DeskClicks.onResult(JSONObject().put("id", 5).put("state", "partial").put("why", "moved").put("n", 2), now = 1_200L)
+        assertTrue(note!!, note.endsWith("2 pressed, the rest sent again"))
+        assertEquals(listOf(5L to listOf("pnav" to 15, "pnav" to 17)), DeskClicks.takePartials())
+        assertTrue(DeskClicks.takePartials().isEmpty())
+        DeskClicks.send(6, cells, List(4) { 1.0 to 1.0 }, List(4) { 0L }, 1920.0, 1080.0, true, true, 2_000L) {}
+        DeskClicks.onResult(JSONObject().put("id", 6).put("state", "partial").put("why", "moved").put("n", 1), now = 2_100L)
+        assertTrue("a retry is never retried", DeskClicks.takePartials().isEmpty())
+    }
+
+    @Test fun aCountThatFellIsANewClientAndEveryPressIsNew() {
+        assertEquals(12, GameUi.freshPresses(40, 12))                  // the Thor's own client said 40; the PC's fresh one says 12
+        assertEquals(12, GameUi.freshPresses(-1, 12))
+        assertEquals(1, GameUi.freshPresses(12, 13))
+        assertEquals(0, GameUi.freshPresses(13, 13))
+        assertEquals(0, GameUi.freshPresses(5, 0))
     }
 }

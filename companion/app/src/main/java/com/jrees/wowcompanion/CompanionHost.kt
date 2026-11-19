@@ -3091,6 +3091,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "dialogpad" -> if (current) android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
             "hub" -> GameUi.onHub(msg, current)
+            "padrx" -> GameUi.onPadRx(msg, current)           // fix/desk-click-switch: Hub hub70, a press's word at once
             // the layout editor (Hub hub55): its document, CURRENT or replayed (a replay only shows; the page taps only while it is open)
             "lay" -> LayoutModel.Live.note(msg)
             // hub22: a new hostile target with Start attack on: the secure /startattack cell (a live document only, never a replay)
