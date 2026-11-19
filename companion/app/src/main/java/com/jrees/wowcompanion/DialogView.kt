@@ -463,12 +463,13 @@ class DialogView(context: Context) : View(context) {
         val every = life.optInt("every", 5).coerceIn(2, 30) * 1000L
         val now = System.currentTimeMillis()
         val fresh = drawnSig != lifeSig
-        if (!fresh && now - lifeAt < every) return
-        if (now - lifeAt < MIN_LIFE_GAP_MS) return
+        // fix/stream-cursor: on a stream (Desktop posts the pad's clicks) the sign is ONE tap per newly drawn set, never the periodic one
+        val pick = LifeSign.pick(fresh, now - lifeAt, every, DeskClicks.route() == DeskClicks.Route.DESKTOP, col, life.optInt("stay", -1))
+            ?: return
         drawnSig = lifeSig
         lifeAt = now
-        if (dryRun) { lastSent = "alive"; return }
-        TapBridge.tap(context, d.optJSONObject("pad"), "iact", col) { }
+        if (dryRun) { lastSent = if (pick.second) "stay" else "alive"; return }
+        TapBridge.tap(context, d.optJSONObject("pad"), "iact", pick.first) { }
     }
 
     // ---------------------------------------------------------------- actions
@@ -1381,5 +1382,22 @@ class DialogView(context: Context) : View(context) {
         const val REFUSE_POKE_MS = 150L
         /** the game's Disenchant spell icon (INV_Enchant_Disenchant): the Disenchant roll's button */
         const val DISENCHANT_ICON = 132878
+    }
+}
+
+/**
+ * fix/stream-cursor (the user, 2026-11-19, streaming 1.0.36: "the cursor keeps randomly showing on the game"; taps.log: `iact:1 (desktop
+ * post)` every 5 s under the "Resurrect now?" dialog). The sign of life that keeps a dialog off the top screen (Dialogs.lua) was a pad
+ * click every `life.every` s, and on a stream every posted click is a cursor the PC's WoW draws. With Desktop clicking ([desk]) the sign
+ * is ONE tap per newly drawn set of dialogs: the add-on's `stay` cell (Dialogs d35: that dialog stays off the top screen until it goes or
+ * a real mouse moves), else the plain `alive` once. Local is unchanged (a sign at once, then every [everyMs]). Pure: the column to tap and
+ * whether it is the stay cell, or null = nothing now.
+ */
+object LifeSign {
+    fun pick(fresh: Boolean, sinceMs: Long, everyMs: Long, desk: Boolean, aliveCol: Int, stayCol: Int): Pair<Int, Boolean>? {
+        if (!fresh && (desk || sinceMs < everyMs)) return null
+        if (sinceMs < DialogView.MIN_LIFE_GAP_MS) return null
+        if (desk && stayCol >= 0) return stayCol to true
+        return if (aliveCol >= 0) aliveCol to false else null
     }
 }
