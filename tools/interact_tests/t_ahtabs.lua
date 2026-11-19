@@ -115,6 +115,7 @@ chk("L with an item in the form: Buy", AH.tab == "browse", AH.tab)
 press("PADRSHOULDER"); d = tick()
 chk("R back: Sell", AH.tab == "sell", AH.tab)
 
+local favCols
 -- THE CELL BUDGET, the worst case seen: the search's filters open (its level range and Clear), then the tabs walked three times
 AH.search.open = true
 pcall(ACT.ahfilters, "on")
@@ -126,9 +127,23 @@ for round = 1, 3 do
     chk("round " .. round .. " " .. t .. ": Reset has a cell", d.auction.act.reset ~= nil)
     chk("round " .. round .. " " .. t .. ": Post has a cell", d.auction.act.spost ~= nil)
     chk("round " .. round .. " " .. t .. ": the durations and Buyout only have cells", d.auction.act.sd_1 ~= nil and d.auction.act.sd_3 ~= nil and d.auction.act.sbo ~= nil)
+    -- i172 merged on i171 (code 1504): the favourites' star (isell, after the form's 14) and Favorites (ipick, before the categories)
+    chk("round " .. round .. " " .. t .. ": the star and Favorites have cells", d.auction.act.fav ~= nil and d.auction.act.favs ~= nil)
+    favCols = favCols or { d.auction.act.fav, d.auction.act.favs }
+    chk("round " .. round .. " " .. t .. ": their columns never moved", d.auction.act.fav == favCols[1] and d.auction.act.favs == favCols[2])
+    local function used(ns) local n = 0; for _ in pairs((P.ns[ns] or { byKey = {} }).byKey) do n = n + 1 end; return n end
+    chk("round " .. round .. " " .. t .. ": isell and ipick within 40", used("isell") <= 40 and used("ipick") <= 40, used("isell") .. "/" .. used("ipick"))
+    -- the buttons the AH holds never collide: Select (the star) on Buy only, Start (Post) on Sell with an item only, L / R everywhere
+    local x = N.npcExtra or {}
+    chk("round " .. round .. " " .. t .. ": L / R held", x.PADLSHOULDER == true and x.PADRSHOULDER == true)
+    if t == "browse" then chk("round " .. round .. " browse: Select held for the star, Start not", x.PADBACK == true and not x.PADFORWARD)
+    elseif t == "sell" then chk("round " .. round .. " sell: Start held for Post, Select not", x.PADFORWARD == true and not x.PADBACK)
+    else chk("round " .. round .. " owned: neither Select nor Start", not x.PADBACK and not x.PADFORWARD) end
   end
 end
 chk("Reset's column never moved", (function() local c = P.ns.iact.byKey["ahreset"]; return c ~= nil end)())
+chk("the star is isell's 15th fixed cell (after the form's 14)", P.ns.isell.byKey["ahfav"] == 14, P.ns.isell.byKey["ahfav"])
+chk("Favorites is ipick's first cell", P.ns.ipick.byKey["ahcat fav"] == 0, P.ns.ipick.byKey["ahcat fav"])
 chk("the form's cells are on isell", P.ns.isell and P.ns.isell.byKey["ahspost"] ~= nil and not P.ns.iact.byKey["ahspost"])
 
 -- the confirm: A on its Post posts (the cursor starts there), B keeps the form

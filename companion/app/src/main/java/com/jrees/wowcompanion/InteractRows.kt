@@ -5,7 +5,7 @@ object InteractRows {
     fun of(cmd: String): String = when (cmd.substringBefore(' ')) {
         "opt", "take", "turnin", "pick", "trhead", "ahcat", "ahsfold" -> "ipick"
         "buy", "train", "pet", "mail", "ahres", "ahrow", "taxi", "bkdo", "loot" -> "ibuy"
-        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach", "ahsitem" -> "isell"
+        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach", "ahsitem", "ahfav" -> "isell"
         // Interact i171: the AH Sell form's 14 cells live on isell (iact ran out of columns: the confirm's Post and Reset drew grey)
         "ahsqty", "ahsedit", "ahsdur", "ahsbo", "ahspost" -> "isell"
         "lookbag", "ahfilter", "look" -> "ipick"
