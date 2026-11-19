@@ -343,11 +343,34 @@ object GameUi {
         if (!current) return
         val n = rx?.optInt("n", -1) ?: -1
         if (n >= 0 && n != rxN) {
+            // fix/stream-row-offset (pad24): each new press with where the game saw it, against what the app meant ([TapCal.landed])
+            val fresh = if (rxN in 0 until n) n - rxN else 0
             rxN = n
             TapBridge.note("landed n=$n: ${rx?.optString("last").orEmpty().take(160)}")
+            if (fresh > 0) for (line in landedChecks(rx?.optString("last").orEmpty(), rx?.optString("at").orEmpty(), fresh, System.currentTimeMillis()))
+                TapBridge.note(line)
         }
         val o = off?.let { j -> j.keys().asSequence().sorted().joinToString(" ") { k -> "$k@${j.opt(k)}" } }.orEmpty()
         if (o != offSaid) { offSaid = o; if (o.isNotEmpty()) TapBridge.note("pad rows not where described: $o") }
+    }
+    /**
+     * fix/stream-row-offset: the [fresh] newest presses of the ring ("row:col" in [last], "x,y" or "-" in [at], newest last) checked
+     * against the taps the app meant ([TapCal.landed]): the tap log's notes. Pure but for TapCal's memory of the taps sent.
+     */
+    fun landedChecks(last: String, at: String, fresh: Int, now: Long): List<String> {
+        val names = last.split(' ').filter { it.isNotEmpty() }
+        val seen = at.split(' ').filter { it.isNotEmpty() }
+        val out = ArrayList<String>()
+        val from = (names.size - fresh).coerceAtLeast(0)
+        for (i in from until names.size) {
+            val nc = names[i]; val cut = nc.lastIndexOf(':')
+            if (cut <= 0) continue
+            val col = nc.substring(cut + 1).toIntOrNull() ?: continue
+            // `at` is as long as `last` (pad24); an older add-on has none: no seen y
+            val sy = if (seen.size == names.size) seen[i].split(',').getOrNull(1)?.toDoubleOrNull() else null
+            TapCal.landed(nc.substring(0, cut), col, sy, now)?.let { out += it }
+        }
+        return out
     }
     /** fix/1492-feedback: the gap between the switch taps of one batch (each its own cell; TapPad's 0.25 s guard is per cell) */
     const val SW_GAP_MS = 60L
@@ -748,6 +771,9 @@ object GameUi {
                           if (e.has("why")) e.optString("why") else null))
         }
         pad = h.optJSONObject("pad")
+        // fix/stream-row-offset: the load the stream's measured fit is for, and a strip measurement whose answer this document carries
+        if (h.has("boot")) TapCal.boot = h.optLong("boot", 0L)
+        if (current) TapCal.settle(pad, System.currentTimeMillis())?.let { line -> Log.i("WCHUB", line); TapBridge.note(line) }
         landedNote(h.optJSONObject("rx"), pad?.optJSONObject("off"), current)
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
@@ -821,6 +847,16 @@ object GameUi {
         val s = state?.let { if (live) it else it.copy(current = false) }
         // hub67: this load's ONE restore tap goes before any other top-screen tap; the others wait for its answer (at most 3 s), then
         // tap only what still differs from this character's choices
+        // fix/stream-row-offset (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"): on the stream the pad's
+        // calibration strip is tapped first (twice; TapCal), and this object's own taps wait for its answer (at most TapCal.WAIT_MS)
+        if (live && s?.current == true && PlayGate.streamingNow()) {
+            val cal = TapCal.wanted(pad, true, now)
+            if (cal != null) {
+                if (TapBridge.calibrate(ctx, pad, cal)) { last = UiStep.Wait("Measuring where the stream's taps land"); return }
+                TapCal.cancel()
+            }
+            if (TapCal.busy(now)) { last = UiStep.Wait("Measuring where the stream's taps land"); return }
+        }
         val r = rst
         val rcol = restore.step(r, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
         if (rcol != null) {

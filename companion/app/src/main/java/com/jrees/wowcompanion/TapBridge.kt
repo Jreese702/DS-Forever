@@ -179,7 +179,14 @@ object TapBridge {
     }
 
     /** display-pixel centre of cell [op, col], or null when the pad does not describe it */
-    fun cellCentre(ctx: Context, pad: JSONObject?, op: String, col: Int): PointF? {
+    fun cellCentre(ctx: Context, pad: JSONObject?, op: String, col: Int): PointF? = cellAim(ctx, pad, op, col)?.first
+
+    /**
+     * Cell [op, col]'s tap: its display point and what was meant (the row's top and height, the game y aimed at), or null.
+     * fix/stream-row-offset: the row's top is the add-on's own word - pad23's `off` (where its cells really stand) when it names the
+     * row, else the grid (y + row x ch); on the stream the aim goes through [TapCal]'s measured fit (none in Local: as before).
+     */
+    private fun cellAim(ctx: Context, pad: JSONObject?, op: String, col: Int): Pair<PointF, TapCal.Aim>? {
         if (pad == null) return null
         val rows = pad.optJSONObject("rows") ?: return null
         if (!rows.has(op)) return null
@@ -187,10 +194,31 @@ object TapBridge {
         val cw = pad.optDouble("cw", 0.0); val ch = pad.optDouble("ch", 0.0)
         if (row < 0 || cw <= 0 || ch <= 0) return null
         if (col < 0 || col >= pad.optInt("cols", 0)) return null
+        val real = pad.optJSONObject("off")?.let { o -> if (o.has(op)) o.optDouble(op, Double.NaN).takeIf { !it.isNaN() } else null }
+        val top = real ?: (pad.optDouble("y", 0.0) + row * ch)
         // 1.0.21 (streaming, measured on the PC: a row's centre is a PIXEL BOUNDARY - 2-game-px rows - and Windows' absolute mouse maps
         // over 0..height-1, so the click fell on the row above): half a game pixel past the centre, inside the cell's lower pixel
-        return gamePoint(ctx, pad, pad.optDouble("x", 0.0) + (col + 0.5) * cw + 0.5, pad.optDouble("y", 0.0) + (row + 0.5) * ch + 0.5)
+        // (TapCal.cellY without a fit); with the stream's fit, the pixel the game sees nearest the row's centre
+        val gy = TapCal.cellY(top, ch, streamFit(pad))
+        val p = gamePoint(ctx, pad, pad.optDouble("x", 0.0) + (col + 0.5) * cw + 0.5, gy) ?: return null
+        return p to TapCal.Aim(op, col, top, ch, gy, System.currentTimeMillis())
     }
+
+    /** fix/stream-row-offset: the measured fit while the taps go to the PC (TapCal), else null */
+    private fun streamFit(pad: JSONObject?): TapCal.Fit? = if (PlayGate.streamingNow()) TapCal.current(pad) else null
+
+    /**
+     * fix/stream-row-offset: THE STRIP TAPS ([TapCal.wanted]'s game points, aimed as they are: no fit). The same live gate, quiet pad
+     * and worker as every tap; never keys. Each press only tells the add-on where the game saw it.
+     */
+    fun calibrate(ctx: Context, pad: JSONObject?, pts: List<Pair<Double, Double>>, onFail: (String) -> Unit = {}): Boolean {
+        val now = System.currentTimeMillis()
+        if (pts.isEmpty() || !GameInput.live(now)) { onFail("not live"); return false }
+        val ds = pts.map { (gx, gy) -> gamePoint(ctx, pad, gx, gy) ?: run { onFail("no trusted geometry for the strip"); return false } }
+        return clicks(ds, null, CAL_GAP_MS, "calib", null, onFail)
+    }
+    /** between the two strip taps */
+    private const val CAL_GAP_MS = 150L
 
     /** display pixel of game px ([gx], [gy]) (the pad's px: its pw x ph, top-left), or null (no trusted geometry) */
     private fun gamePoint(ctx: Context, pad: JSONObject?, gx: Double, gy: Double): PointF? {
@@ -254,7 +282,9 @@ object TapBridge {
     fun tapGame(ctx: Context, pad: JSONObject?, gx: Double, gy: Double, what: String, onFail: (String) -> Unit = {}): Boolean {
         val now = System.currentTimeMillis()
         if (!GameInput.live(now)) { onFail("${GameInput.gate.why(now) ?: "The game is not live"}: nothing was sent"); return false }
-        val c = gamePoint(ctx, pad, gx, gy) ?: run { onFail("no trusted geometry for $what"); return false }
+        // fix/stream-row-offset: on the stream the point goes through the measured fit (TapCal) too
+        val c = gamePoint(ctx, pad, gx, TapCal.pointY(gy, streamFit(pad)).coerceIn(0.0, pad?.optDouble("ph", gy) ?: gy))
+            ?: run { onFail("no trusted geometry for $what"); return false }
         return clicks(listOf(c), null, 0L, what, null, onFail)
     }
 
@@ -298,7 +328,9 @@ object TapBridge {
         val keysOff = if (pad?.optJSONObject("keys") != null) when {
             !KEYS_ON -> "off"; !inLauncher -> "no launcher"; GameInput.typing -> "typing"
             TapKeys.session(pad) != keySession -> "no handshake"; else -> "a cell without keys" } else null
-        val pts = cells.map { (op, col) -> cellCentre(ctx, pad, op, col) ?: return false }
+        val aimsOf = cells.map { (op, col) -> cellAim(ctx, pad, op, col) ?: return false }
+        TapCal.aimed(aimsOf.map { it.second })              // fix/stream-row-offset: what each tap meant, for where it lands
+        val pts = aimsOf.map { it.first }
         return clicks(pts, cells, gapMs, cells.joinToString(" ") { "${it.first}:${it.second}" }, keysOff, onFail)
     }
 
