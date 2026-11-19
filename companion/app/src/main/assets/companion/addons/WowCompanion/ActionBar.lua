@@ -1852,7 +1852,12 @@ local function noteCast(event)
         castNow = { k = ch and "h" or "c", s = math.floor(st + 0.5) / 1000, e = math.floor(en + 0.5) / 1000 }
         if S(function() return select(ch and 7 or 8, fn("player")) end) == true then castNow.n = 1 end
         -- f-cast-name: the cast's name and icon (UnitCastingInfo / UnitChannelInfo's 1st and 3rd returns; plain for "player")
-        castNow.nm = realStr(S(function() return (fn("player")) end))
+        -- the bar shows the cast's DISPLAY text (2nd return), as the game's own cast bar does: a quest container's
+        -- "Opening - No Text" has an empty display text, so the bar stays blank (the user, 2026-11-19); the
+        -- internal name is only the fallback when no display text is given at all (nil)
+        local tx = S(function() return select(2, fn("player")) end)
+        if type(tx) == "string" then castNow.nm = realStr(tx)
+        else castNow.nm = realStr(S(function() return (fn("player")) end)) end
         castNow.i = SN(function() return select(3, fn("player")) end)
         castEnd = nil
     elseif not castNow then
