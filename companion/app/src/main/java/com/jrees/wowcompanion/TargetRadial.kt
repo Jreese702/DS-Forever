@@ -20,28 +20,29 @@ object TargetRadial {
     }
     val ROOT = Page()
 
-    /** the words a pick that asks first says (an entry's `cf`, e.g. Quests q68's "Abandon Rex? Permanent."): the Bags ask's A / B */
-    fun askLine(confirm: String): String = "$confirm A yes, B no"
-
     /**
-     * A PICK THAT ASKS FIRST (an entry with `cf`): the first pick of a slice arms it, a second pick of the SAME slice within [windowMs]
-     * does it (A again = yes); B while armed cancels (no), the wheel staying open. Pure (the clock is the caller's).
+     * A PICK THAT ASKS FIRST (an entry with `cf`: Abandon Pet's "Abandon Rex? Permanent.", Uninvite's, Promote's, Reset's) opens a REAL
+     * Yes / No pop-up over the wheel (the user on test 1502: "this needs to have a real yes no buttons pop up and a should not jump on that
+     * prompt"; it was a line "A yes, B no" and the second A jumped). Its two lines: the question, then what follows it (terse).
      */
-    class Ask(private val windowMs: Long) {
-        private var key: String? = null
-        private var at = 0L
-        /** true = armed and still in its window */
-        fun armed(now: Long): Boolean = key != null && now - at <= windowMs
-        /** a pick of [label] at [now]: true = do it now; false = it asks (armed, or armed again for another slice / after the window) */
-        fun pick(label: String, now: Long): Boolean {
-            if (key == label && now - at <= windowMs) { key = null; return true }
-            key = label; at = now
-            return false
-        }
-        /** B at [now]: true = an open ask was cancelled (nothing else happens); false = none was open */
-        fun cancel(now: Long): Boolean { val was = armed(now); key = null; return was }
-        fun clear() { key = null }
+    fun confirmLines(cf: String): Pair<String, String?> {
+        val t = cf.trim()
+        val q = t.indexOf("? ")
+        return if (q in 1 until t.length - 2) t.substring(0, q + 1) to t.substring(q + 2).trim() else t to null
     }
+
+    /** what a press does while the Yes / No pop-up is up: A = Yes, B = No, every other press nothing (held from the game: PopupHold.Wheel) */
+    enum class Answer { YES, NO, NONE }
+    fun answer(k: String): Answer = when (k) { "PAD1" -> Answer.YES; "PAD2" -> Answer.NO; else -> Answer.NONE }
+
+    /** Quests q69: the pet's Rename (`ap` "rename") opens the app's keyboard pop-up; the game's own rename takes at most 12 letters
+     *  (StaticPopupDialogs RENAME_PET maxLetters) */
+    const val RENAME_MAX = 12
+    /** Quests q69's fixed run id that closes the rename field (cancel): never a menu entry's (two base-8 digits reach 63; the menu's
+     *  entries stop at 61, 63 is Abandon Pet's) */
+    const val RENAME_OFF_ID = 62
+    /** a greyed pick says why: the entry's own word (`wy`, e.g. "Can't rename this pet"), else the wheel's */
+    fun greyWhy(e: PlayerMenu.Entry): String = e.why ?: "Not available here"
 
     /** what the wheel's own controller reader takes for its opener's [input]. HOLD / READ: the sticks and the buttons. KEYS (Party
      *  mode: the PartyPad hands the presses in by `key`): the sticks only, so no press counts twice (the user, 2026-11-16: "the control

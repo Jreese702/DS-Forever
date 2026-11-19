@@ -1338,7 +1338,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         }
         if (gamepad && StreamPad.isPadKey(e.keyCode)) {
             // one of our pop-ups asks (the sign-in's, the report notice): A, B and the D-pad do nothing for the game
-            if (PopupHold.holdsKey(SetupBridge.holdsGamePad(), e.keyCode, down)) return true
+            if (PopupHold.holdsKey(SetupBridge.holdsGamePad(), e.keyCode, down, SetupBridge.wheelHolds())) return true
             if (e.repeatCount > 0) return true
             if (pad.key(e.keyCode, down)) sendPad()
             return true

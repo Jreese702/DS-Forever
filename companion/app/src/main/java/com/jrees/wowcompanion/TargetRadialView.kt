@@ -6,6 +6,8 @@ import android.graphics.PointF
 import android.graphics.RectF
 import android.os.SystemClock
 import android.util.Log
+import android.graphics.Color
+import android.graphics.Paint
 import android.view.MotionEvent
 import android.view.View
 import org.json.JSONObject
@@ -39,8 +41,12 @@ import org.json.JSONObject
  * action as in the Macros room and Bags. A toggle the add-on cannot do now (a fight changed the pet: no cell names its spell) says
  * "Not in combat"; a pet gone or dead "Not available here".
  *
- * A PICK ([open]'s onDo): a menu entry runs as the opener's menu ran it (digit taps or a secure cell); one with a question (Promote,
- * Uninvite) asks by a second pick.
+ * A PICK ([open]'s onDo): a menu entry runs as the opener's menu ran it (digit taps or a secure cell). One with a question (Abandon
+ * Pet, Promote, Uninvite: its `cf`) opens a REAL Yes / No pop-up over the wheel (the user on test 1502: "this needs to have a real yes no
+ * buttons pop up and a should not jump on that prompt"): A or a touch on Yes does it, B or a touch on No goes back to the wheel; the
+ * pet's Rename (Quests q69) opens the app's keyboard pop-up with the pet's name, Done (Start, or the board's Done) renames, B cancels.
+ * While either is up [PopupHold.wheel] holds every pad button from the game (whoever opened the wheel: with Party mode off nothing else
+ * held the pad, and the A jumped), and the wheel reads the presses itself on every opener (KEYS too: the PartyPad gets none meanwhile).
  */
 class TargetRadialView(
     context: Context,
@@ -77,8 +83,33 @@ class TargetRadialView(
     private val mag = DoubleArray(2)
     private var line: String? = null
     private var lineAt = 0L
-    /** a pick that asks first: armed by its first pick, done by a second within [CONFIRM_MS]; B cancels it (Quests q68 Abandon Pet) */
-    private val ask = TargetRadial.Ask(CONFIRM_MS)
+    /** the Yes / No pop-up's slice (an entry with `cf`), while it is up */
+    private var asking: TargetRadial.Slice? = null
+    private val yesBox = RectF()
+    private val noBox = RectF()
+    /** the rename pop-up (Quests q69): the keyboard the host lends ([kb]), the name being typed, the add-on's borrowed field */
+    var kb: ChatKeyboard? = null
+    /** the spaced taps a typed field needs (the host's TapBridge.tapsSpaced on the game's pad) */
+    var tapSpaced: (List<Pair<String, Int>>, Long) -> Boolean = { _, _ -> false }
+    private var renaming = false
+    private var renameText = ""
+    private var renameLine: String? = null
+    private val renameStream by lazy {
+        ChatStream({ cells, gap -> tapSpaced(cells, gap) }, field = true, maxLen = TargetRadial.RENAME_MAX).apply {
+            onEvent = { ev -> post {
+                when (ev) {
+                    is ChatStream.Event.Sent -> if (renaming) { Log.i(TAG, "context radial: renamed"); endRename(); close("renamed") }
+                    is ChatStream.Event.Refused -> if (renaming) { renameLine = ev.why.replaceFirstChar { it.uppercase() }; invalidate() }
+                    else -> {}
+                }
+            } }
+        }
+    }
+    private val renameTick = object : Runnable {
+        override fun run() { renameStream.tick(); if (renameStream.sending && renaming) postDelayed(this, 500L) }
+    }
+    /** a pop-up of the wheel's is up (Yes / No, or the rename keyboard) */
+    val popUp get() = asking != null || renaming
     private var lastActAt = 0L
     private var slidT = 0f
     private var holdTry = 0
@@ -143,7 +174,7 @@ class TargetRadialView(
             if (strip.height > 0) (a[1] - b[1]).toFloat() - strip.translationY else 0f
         }
         openedAt = SystemClock.uptimeMillis()
-        pointed = -1; line = null; ask.clear(); aimStick = -1
+        pointed = -1; line = null; asking = null; aimStick = -1
         held = 0; seeded = false
         strip.homeLifted = true
         visibility = VISIBLE
@@ -155,7 +186,9 @@ class TargetRadialView(
         if (rd.sticks) reader = PadInput(
             onPad = { _, _, _, _ -> },
             onStatus = { ok, m -> if (!ok) Log.i(TAG, "context radial: controller reader: $m") },
-            onButtons = { h -> if (rd.buttons) post { buttons(h) } },
+            // a pop-up of the wheel's (Yes / No, rename) reads the buttons itself on EVERY opener: PopupHold.wheel holds them from the
+            // game, so Party mode's PartyPad hears none meanwhile; otherwise the state is kept current, so no press counts twice
+            onButtons = { h -> post { if (rd.buttons || popUp) buttons(h) else { held = h; seeded = true } } },
             onStickVector = { st, x, y -> post {
                 mag[st.coerceIn(0, 1)] = kotlin.math.hypot(x.toDouble(), y.toDouble())
                 if (isOpen) vector(st, x.toDouble(), -y.toDouble()) else stickCheck()
@@ -168,6 +201,8 @@ class TargetRadialView(
     fun close(why: String) {
         if (!isOpen) return
         Log.i("WCLOG", "context radial: CLOSED ($opener, $why)")
+        if (renaming) cancelRename(back = false)
+        if (asking != null) { asking = null; popDown() }
         openedAt = 0L
         val from = slidT; slidT = 0f
         strip.homeLifted = false
@@ -247,6 +282,7 @@ class TargetRadialView(
             pressed(PadInput.SLOT_DPAD_LEFT, h) -> "PADDLEFT"
             pressed(PadInput.SLOT_DPAD_UP, h) -> "PADDUP"
             pressed(PadInput.SLOT_DPAD_DOWN, h) -> "PADDDOWN"
+            pressed(PadInput.SLOT_START, h) -> "PADFORWARD"             // q69: the rename keyboard's Done (nothing else on the wheel)
             else -> null
         }
         held = h
@@ -256,6 +292,17 @@ class TargetRadialView(
     /** one press, the game's key names (the reader's, or the PartyPad's `key` for Party mode) */
     fun key(k: String) {
         if (!isOpen) return
+        // the Yes / No pop-up: A yes, B no, nothing else (every press is held from the game meanwhile)
+        asking?.let { s ->
+            when (TargetRadial.answer(k)) {
+                TargetRadial.Answer.YES -> yes(s)
+                TargetRadial.Answer.NO -> no()
+                TargetRadial.Answer.NONE -> {}
+            }
+            return
+        }
+        // the rename keyboard: its own keys (B closes it, Start / its Done renames)
+        if (renaming) { kb?.press(k); invalidate(); return }
         when (k) {
             "PAD2" -> back()
             "PAD4" -> close("Y")
@@ -270,8 +317,6 @@ class TargetRadialView(
 
     /** B: the wheel before (More / a sub-menu), or closed from the first */
     private fun back() {
-        // q68: B while a pick asks (Abandon Pet's "Permanent.") = No: the ask ends, the wheel stays
-        if (ask.cancel(SystemClock.uptimeMillis())) { line = null; invalidate(); return }
         if (pages.isEmpty()) { close("B"); return }
         pages.removeAt(pages.size - 1)
         pointed = -1; line = null
@@ -307,15 +352,20 @@ class TargetRadialView(
         s.next?.let { p ->
             // More / a sub-menu: the next wheel (B comes back)
             if (!s.enabled) { say("Not available here"); return }
-            pages += p; pointed = -1; line = null; ask.clear()
+            pages += p; pointed = -1; line = null
             relayout(); invalidate()
             return
         }
         val e = s.entry ?: return
-        if (!e.enabled) { say("Not available here"); return }
-        if (e.confirm != null) {
-            if (!ask.pick(s.label, SystemClock.uptimeMillis())) { say(TargetRadial.askLine(e.confirm)); return }
-        }
+        if (!e.enabled) { say(TargetRadial.greyWhy(e)); return }
+        if (e.confirm != null) { openAsk(s); return }
+        if (e.app == "rename") { startRename(e); return }
+        run(s)
+    }
+
+    /** the slice's entry runs and the wheel closes (a plain pick, or the Yes of its pop-up) */
+    private fun run(s: TargetRadial.Slice) {
+        val e = s.entry ?: return
         val act = when {
             e.secure != null -> PlayerMenu.Do.Secure(e.secure, e.text, e.secureRow)
             e.id != null -> PlayerMenu.Do.Run(e.id, e.text, e.app)
@@ -326,6 +376,122 @@ class TargetRadialView(
         val run = doAct; val who = tell.ifEmpty { name }
         close("picked ${s.label}")
         run(act, who)
+    }
+
+    // ------------------------------------------------------------------------------------------------ the pop-ups (Yes / No, rename)
+
+    /** the pad is held from the game from now (PopupHold.wheel) */
+    private fun popUpHold() { PopupHold.wheel.up() }
+    /** ... until [PopupHold.GRACE_MS] after now: the press that answered may still be on its way to the game (the hold race) */
+    private fun popDown() { if (!popUp) PopupHold.wheel.down(SystemClock.uptimeMillis()) }
+
+    /** an entry with `cf`: its Yes / No pop-up over the wheel (the pad held from the game) */
+    private fun openAsk(s: TargetRadial.Slice) {
+        Log.i(TAG, "context radial: ask ${s.label}")
+        asking = s; line = null
+        popUpHold()
+        invalidate()
+    }
+
+    private fun yes(s: TargetRadial.Slice) {
+        Log.i(TAG, "context radial: ask ${s.label}: yes")
+        asking = null; popDown()
+        run(s)
+    }
+
+    private fun no() {
+        Log.i(TAG, "context radial: ask ${asking?.label}: no")
+        asking = null; popDown()
+        invalidate()
+    }
+
+    /**
+     * Quests q69 THE PET'S RENAME (the user on test 1502: "renaming my pet is still grayed out"): the entry runs (the add-on opens Chat's
+     * borrowed field with the pet's name, WC.chatField), the app's keyboard comes up with that name, every press held from the game;
+     * Done hands the typed name to the add-on, which renames as the game's PETRENAMECONFIRM OnAccept does (C_PetInfo.PetRename). B: the
+     * field closes (run id [TargetRadial.RENAME_OFF_ID]) and the wheel is back.
+     */
+    private fun startRename(e: PlayerMenu.Entry) {
+        val id = e.id ?: run { say("Not available here"); return }
+        val k = kb ?: run { say("Not available here"); return }
+        Log.i(TAG, "context radial: rename $name")
+        renaming = true; renameLine = null
+        renameText = renameStream.clean(name, TargetRadial.RENAME_MAX)
+        popUpHold()
+        lastActAt = SystemClock.uptimeMillis()
+        doAct(PlayerMenu.Do.Run(id, e.text, e.app), name)
+        renameStream.startField(renameText)
+        k.sendWord = "Done"
+        k.text = { renameText }
+        k.onText = { t -> renameText = renameStream.clean(t, TargetRadial.RENAME_MAX); renameStream.setBody(renameText); renameLine = null; invalidate() }
+        k.onSend = {
+            if (renameText.isBlank()) { renameLine = "Type a name"; invalidate() }
+            else if (renameStream.send()) { removeCallbacks(renameTick); postDelayed(renameTick, 500L) }
+        }
+        k.onClose = { cancelRename(back = true) }
+        k.open(); k.visibility = VISIBLE; k.bringToFront()
+        invalidate()
+    }
+
+    /** B / its close: the add-on's field closes; [back] = the wheel stays (else the wheel is closing) */
+    private fun cancelRename(back: Boolean) {
+        if (!renaming) return
+        Log.i(TAG, "context radial: rename cancelled")
+        GuestPad.playerMenuRun(questsPad(), TargetRadial.RENAME_OFF_ID)?.let { guestTap(it) }
+        endRename()
+        if (back) invalidate()
+    }
+
+    private fun endRename() {
+        renaming = false; renameLine = null
+        removeCallbacks(renameTick)
+        kb?.let { it.visibility = GONE; it.onSend = {}; it.onClose = {}; it.onText = {} }
+        popDown()
+    }
+
+    /** Chat.lua's answers ({"type":"chatt"}) while the rename field is open: its check and its hand-over */
+    fun onChatAnswer(msg: JSONObject) {
+        if (!renaming || msg.optString("type") != "chatt") return
+        renameStream.heard(ChatStream.Heard("chatt", msg.optString("op"), msg.optBoolean("ok"),
+            if (msg.has("why")) msg.optString("why") else null, msg.optString("ty", ""),
+            msg.optInt("len", -1), msg.optInt("h", -1), msg.optInt("tlen", -1), msg.optInt("th", -1), msg.optString("into")))
+    }
+
+    /** a pop-up of the wheel's is up: Start is its own (the rename's Done; the Yes / No ignores it), never the pause wheel's */
+    fun ownsStart(): Boolean = isOpen && popUp
+
+    /** the Yes / No pop-up: the game's dialog box, the question and what follows it, Yes (A) and No (B) */
+    private fun drawAsk(c: Canvas, s: TargetRadial.Slice) {
+        val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        UiKit.cover(c, screen)
+        val (q, more) = TargetRadial.confirmLines(s.entry?.confirm ?: s.label)
+        val w = minOf(900f, width - 60f); val h = if (more != null) 330f else 280f
+        val box = RectF(width / 2f - w / 2f, height * 0.30f - h / 2f, width / 2f + w / 2f, height * 0.30f + h / 2f)
+        val inn = UiKit.dialog(c, box)
+        val tp = UiKit.bodyPaint(36f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+        c.drawText(Tr.t(q), inn.centerX(), inn.top + 56f, tp)
+        if (more != null) c.drawText(Tr.t(more), inn.centerX(), inn.top + 106f, UiKit.bodyPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
+        val bw = 300f; val bh = 100f
+        yesBox.set(inn.centerX() - 14f - bw, box.bottom - 36f - bh, inn.centerX() - 14f, box.bottom - 36f)
+        noBox.set(inn.centerX() + 14f, yesBox.top, inn.centerX() + 14f + bw, yesBox.bottom)
+        UiKit.button(c, yesBox, "Yes", "rev_a")
+        UiKit.button(c, noBox, "No", UiKit.backGlyph())
+    }
+
+    /** the rename pop-up over the wheel: its title, the name being typed with the caret, why the game said no; the keyboard under it */
+    private fun drawRename(c: Canvas) {
+        val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        UiKit.cover(c, screen)
+        val kh = kb?.let { if (it.height > 0) it.height.toFloat() else ChatKeyboard.fullHeight().toFloat() } ?: 0f
+        val w = minOf(900f, width - 60f)
+        val bottom = (height - kh - 24f).coerceAtLeast(240f)
+        val box = RectF(width / 2f - w / 2f, bottom - 230f, width / 2f + w / 2f, bottom)
+        val inn = UiKit.dialog(c, box)
+        c.drawText(Tr.t("Rename $name"), inn.centerX(), inn.top + 50f, UiKit.bodyPaint(34f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        val caret = if ((SystemClock.uptimeMillis() / 500L) % 2L == 0L) "|" else " "
+        c.drawText(renameText + caret, inn.centerX(), inn.top + 112f, UiKit.bodyPaint(34f, Color.WHITE, shadow = false).apply { textAlign = Paint.Align.CENTER })
+        renameLine?.let { c.drawText(Tr.t(it), inn.centerX(), inn.top + 160f, UiKit.bodyPaint(26f, Theme.unusable).apply { textAlign = Paint.Align.CENTER }) }
+        postInvalidateDelayed(500L)
     }
 
     /**
@@ -390,6 +556,8 @@ class TargetRadialView(
         UiKit.autoCastLive = false
         val moving = UiKit.pauseRadial(c, screen, disc, size, kitSlices(), -1, pointed, -1, t, 0f, line, lineAlpha = lineAlpha,
             pickGlyph = true, up = null, down = null, left = null, right = null, title = title())
+        asking?.let { drawAsk(c, it) }
+        if (renaming) drawRename(c)
         if (moving || t < UiKit.PAUSE_OPEN_MS || line != null) postInvalidateOnAnimation()
         // q62: the autocast shine marches (and a toggle waits for the game's answer): ~30 frames a second
         else if (UiKit.autoCastLive || PetAuto.waiting(SystemClock.uptimeMillis())) postInvalidateDelayed(33L)
@@ -397,6 +565,16 @@ class TargetRadialView(
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (!isOpen) return false
+        // a pop-up takes every touch: Yes / No on its buttons (the rename's keyboard is a view of its own over this one)
+        if (popUp) {
+            if (e.actionMasked == MotionEvent.ACTION_UP) asking?.let { s ->
+                when {
+                    yesBox.contains(e.x, e.y) -> yes(s)
+                    noBox.contains(e.x, e.y) -> no()
+                }
+            }
+            return true
+        }
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -429,7 +607,6 @@ class TargetRadialView(
     companion object {
         const val TAG = "WCHOME"
         const val GUEST = "radial"
-        const val CONFIRM_MS = 4_000L
         /** q62: a finger held this long on a pet ability toggles its autocast (the class wheel's CLASS_LONG_MS) */
         const val LONG_MS = 450L
 

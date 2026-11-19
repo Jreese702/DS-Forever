@@ -83,7 +83,10 @@ object SetupBridge {
     fun blockGameA(): Boolean = holdsGamePad()
 
     /** a pop-up of ours asks for a press with the game up: A, B and the D-pad are held back from the game (PopupHold) */
-    fun holdsGamePad(): Boolean = PopupHold.holds(signIn, LauncherHooks.gameUp(), loginFormOpen, noticeAsking)
+    fun holdsGamePad(): Boolean = PopupHold.holds(signIn, LauncherHooks.gameUp(), loginFormOpen, noticeAsking) || wheelHolds()
+
+    /** the context wheel's Yes / No or rename pop-up is up (PopupHold.Wheel): A, B, X, Y, the D-pad, the shoulders, Start, Select held */
+    fun wheelHolds(): Boolean = PopupHold.wheel.holds(android.os.SystemClock.uptimeMillis())
 
     /** the report's notice on Home asks for a press (Open issue / OK): the game's A is held back meanwhile (board f-problem-report) */
     @Volatile var noticeAsking = false

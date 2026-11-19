@@ -22,7 +22,9 @@ class PlayerMenu(private val runs: Boolean = RUNS, private val greyKeys: Set<Str
     data class Entry(val text: String, val id: Int?, val enabled: Boolean, val checked: Boolean?, val title: Boolean, val sub: List<Entry>?,
                      val confirm: String? = null, val secure: Int? = null, val secureRow: String = "pfocus", val app: String? = null,
                      val key: String? = null, val icon: Int? = null, val auto: Int? = null, val autoSlot: Int? = null,
-                     val autoCell: Int? = null)
+                     val autoCell: Int? = null,
+                     /** Quests q69: why a greyed entry is greyed, said when it is picked (`wy`: "Can't rename this pet", "Not in combat") */
+                     val why: String? = null)
 
     sealed class Do {
         object None : Do()
@@ -173,7 +175,7 @@ class PlayerMenu(private val runs: Boolean = RUNS, private val greyKeys: Set<Str
                     o.optString("scr", "").ifEmpty { "pfocus" }, o.optString("ap", "").ifEmpty { null }, k,
                     o.optInt("ic", 0).takeIf { it > 0 },
                     if (o.has("au")) o.optInt("au").coerceIn(0, 1) else null, o.optInt("as", 0).takeIf { it in 1..10 },
-                    if (o.has("ac")) o.optInt("ac") else null))
+                    if (o.has("ac")) o.optInt("ac") else null, o.optString("wy", "").ifEmpty { null }))
             }
             return out
         }
