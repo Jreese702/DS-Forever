@@ -34,6 +34,9 @@ object GameInput {
     @Volatile var typing = false
         private set
 
+    /** a loading screen is up: no top-screen taps ([LoadGate]) */
+    val load = LoadGate()
+
     /** where refusals and failures are shown (the hub's status line); called on any thread */
     @Volatile var onStatus: (String) -> Unit = {}
 
