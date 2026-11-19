@@ -53,6 +53,13 @@ class CombatKeepHost(
         }.onFailure { log("NOT saved for ${b.who} (${it.message})") }
     }
 
+    /** Reset skills (ResetRun) took [who]'s backup away (null = every character's): nothing of it is put back or remembered this run */
+    fun resetDone(who: String?) {
+        if (who == null) written.clear() else written.remove(who)
+        restoring = restoring?.takeIf { who != null && it.who != who }
+        if (who != null) checked += who
+    }
+
     /** every padmap; only CURRENT ones count */
     fun onMap(map: PadMapModel.Map, current: Boolean) {
         if (!current) return

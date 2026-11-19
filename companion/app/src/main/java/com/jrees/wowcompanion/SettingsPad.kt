@@ -43,6 +43,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     val themeMaker = ThemeMakerHost(context) { pad.held }
     /** Performance's Stream settings in Local (the user's ruling 2026-11-17): its one-line page on setting streaming up, over the tab body */
     val streamHelp = StreamHelpHost(context)
+    /** General > Reset's Yes / No pop-up (2026-11-19): over the whole room, holding the pad from the game while it asks */
+    val resetAsk = ResetAskHost(context)
     /** Add-ons' picture cards (the beautify pass, 2026-11-17): one band open in the room, B closes it as a tile's */
     val addonTiles = ArrayList<AddonTiles>()
     /** beautify: Settings > Performance's picture tiles (the tab's one part; its band closes with B like Top's) */
@@ -129,8 +131,19 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             ct.onOpen = { s -> closeOthers(s); pad.follow(s, s.selectionAnchor(), s.bandBox()) }
             ct.onSubPage = { openSmartY() }
         }
-        pad.subPageOpen = { smartYPage.visibility == View.VISIBLE || themeMaker.isOpen || streamHelp.isOpen }
-        pad.subKey = { k -> (themeMaker.key(k) || streamHelp.key(k)).also { if (!themeMaker.isOpen && !streamHelp.isOpen) pad.resyncB() } }
+        pad.subPageOpen = { smartYPage.visibility == View.VISIBLE || themeMaker.isOpen || streamHelp.isOpen || resetAsk.isOpen }
+        // the reset's pop-up first: while it asks every press is its own (A yes, B no), nothing under it moves
+        pad.subKey = { k -> (resetAsk.key(k) || themeMaker.key(k) || streamHelp.key(k)).also {
+            if (!themeMaker.isOpen && !streamHelp.isOpen && !resetAsk.isOpen) pad.resyncB() } }
+        view.onResetAsk = { b, who -> bandsClose(); resetAsk.open(b, who); pad.invalidate() }
+        resetAsk.onYes = { b, all -> view.onReset(b, all); generals.forEach { it.invalidate() } }
+        resetAsk.onClosed = { b ->
+            pad.resyncB()
+            generals.firstOrNull { it.group == SettingsTabs.Group.RESET }?.let { t ->
+                val row = GeneralTiles.Row.values().first { GeneralTiles.resetOf(it) == b }
+                pad.land(t) { t.controlBoxes(row).firstOrNull() }
+            }
+        }
         perf.onStreamHelp = { openStreamHelp() }
         streamHelp.onClosed = { pad.resyncB(); pad.land(perf) { perf.tileBox(PerformanceTileModel.STREAM) } }
         themeMaker.onClosed = { pad.resyncB()
@@ -140,6 +153,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         page.addView(themeMaker, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         page.addView(streamHelp, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        page.addView(resetAsk, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         addView(body, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         scroll.setOnScrollChangeListener { _, _, _, _, _ -> pad.invalidate() }
@@ -247,6 +261,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         closeSmartY(anchor = false)
         themeMaker.visibility = View.GONE
         streamHelp.visibility = View.GONE
+        if (resetAsk.isOpen) resetAsk.cancel()
         addonTiles.forEach { it.closeSelection() }
         perf.closeSelection()
         touched = false
@@ -375,7 +390,7 @@ class SettingsFoldHeading(context: Context, val group: SettingsTabs.Group, priva
         UiKit.asTitle(pHead)
         // feat/beautify (themes 8.4): no page ink - the room's RoomGround.settings (the dimmed rock) shows through
         val cy = H / 2f
-        val folds = group.tab.folds
+        val folds = SettingsTabs.folds(group)              // General's Reset folds on a tab that does not
         val sign = if (folds) UiKit.tex(if (open) "list_minus" else "list_plus") else null
         if (!folds) {
             // General: a plain heading, no fold sign

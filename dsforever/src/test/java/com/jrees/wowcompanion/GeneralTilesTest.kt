@@ -68,7 +68,8 @@ class GeneralTilesTest {
     @Test fun supportTheProjectButton() {
         assertEquals("https://ko-fi.com/yeslander", SupportLink.URL)
         assertEquals("Support the Project", Row.SUPPORT.label)
-        assertEquals(Row.SUPPORT, GeneralTiles.rows(SettingsTabs.Group.HELP, true, true).last())
+        assertEquals(listOf(Row.SUPPORT), GeneralTiles.rows(SettingsTabs.Group.SUPPORT, true, true))
+        assertEquals(SettingsTabs.Group.SUPPORT, SettingsTabs.groups(SettingsTabs.Tab.GENERAL).last())
         assertEquals(SettingsTabs.Block.SUPPORT, SettingsTabs.blocks(SettingsTabs.Tab.GENERAL).last())
         val row = GeneralTiles.rowBox(400f, 1240f)
         val b = GeneralTiles.wideButton(row)
@@ -82,7 +83,12 @@ class GeneralTilesTest {
         assertEquals(listOf(Row.LOGIN, Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, true, false))
         assertEquals(listOf(Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN, Row.WINDOWS_RESTART), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, false, true))
         // the user, 2026-11-19: Support the Project, the tab's last row
-        assertEquals(listOf(Row.REPORT, Row.RELOAD, Row.STATUS, Row.SUPPORT), GeneralTiles.rows(SettingsTabs.Group.HELP, true, false))
+        assertEquals(listOf(Row.REPORT, Row.RELOAD, Row.STATUS), GeneralTiles.rows(SettingsTabs.Group.HELP, true, false))
+        // 2026-11-19: General > Reset, four one-button rows, each its button
+        assertEquals(listOf(Row.RESET_SETTINGS, Row.RESET_LAYOUTS, Row.RESET_SKILLS, Row.RESET_ALL), GeneralTiles.rows(SettingsTabs.Group.RESET, true, false))
+        assertEquals(ResetPlan.Button.values().toList(), GeneralTiles.rows(SettingsTabs.Group.RESET, true, false).map { GeneralTiles.resetOf(it) })
+        assertTrue(GeneralTiles.rows(SettingsTabs.Group.RESET, true, false).all { GeneralTiles.wide(it) })
+        for (b in ResetPlan.Button.values()) assertEquals(SettingsTabs.resetLabel(b), Row.values().first { GeneralTiles.resetOf(it) == b }.label)
         assertTrue(GeneralTiles.rows(SettingsTabs.Group.HUD, true, true).isEmpty())
         // every General row word of the six-tab data is a compact row or a tile (Theme, Swap screens, Voice typing; Restart DS Forever
         // is Swap screens' band line; Companion's status is the Status row)

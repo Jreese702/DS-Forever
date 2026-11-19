@@ -99,6 +99,21 @@ class SettingsView(context: Context, val onReload: () -> Unit) : View(context) {
     /** General > Help > Support the Project (SupportLink): the host opens [url] in the browser as its other links; false = no browser */
     var onOpenUrl: (String) -> Boolean = { false }
         get() = hub?.onOpenUrl ?: field
+    /** General > Reset (ResetPlan, 2026-11-19): the room opens the button's Yes / No pop-up ([whoKnown]: a character to reset) */
+    var onResetAsk: (ResetPlan.Button, Boolean) -> Unit = { _, _ -> }
+        get() = hub?.onResetAsk ?: field
+    /** the pop-up's Yes: the host runs the reset (ResetFlow), [all] = every character */
+    var onReset: (ResetPlan.Button, Boolean) -> Unit = { _, _ -> }
+        get() = hub?.onReset ?: field
+    /** the character playing now (or last played), "Name-Realm"; null = none known */
+    var resetWho: () -> String? = { null }
+        get() = hub?.resetWho ?: field
+    /** a reset's word on its button now (ResetFlow.word), null = its own name */
+    var resetWord: (ResetPlan.Button) -> String? = { null }
+        get() = hub?.resetWord ?: field
+    /** a reset is under way (its answer awaited) */
+    var resetBusy: () -> Boolean = { false }
+        get() = hub?.resetBusy ?: field
 
     private val ARM_MS = 3000L
 

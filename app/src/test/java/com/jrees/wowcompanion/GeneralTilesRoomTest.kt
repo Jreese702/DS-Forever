@@ -205,9 +205,9 @@ class GeneralTilesRoomTest {
         assertEquals(listOf(GeneralTiles.Row.LANGUAGE), look.rowIds())
         assertEquals(476f, look.tileBox(GeneralTiles.THEME)!!.width(), 0.01f)
         assertEquals(listOf(GeneralTiles.Row.LOGIN, GeneralTiles.Row.GAME_ACCOUNT, GeneralTiles.Row.WINDOWS_ID, GeneralTiles.Row.BROWSER_LOGIN), part(r, SettingsTabs.Group.ACCOUNT).rowIds())
-        assertEquals(listOf(GeneralTiles.Row.REPORT, GeneralTiles.Row.RELOAD, GeneralTiles.Row.STATUS, GeneralTiles.Row.SUPPORT), part(r, SettingsTabs.Group.HELP).rowIds())
-        // no group folds, no heading is a stop; every part is shown
-        for (g in SettingsTabs.groups(SettingsTabs.Tab.GENERAL)) assertTrue(g in r.open)
+        assertEquals(listOf(GeneralTiles.Row.REPORT, GeneralTiles.Row.RELOAD, GeneralTiles.Row.STATUS), part(r, SettingsTabs.Group.HELP).rowIds())
+        // no group folds, no heading is a stop; every part is shown - but Reset (2026-11-19: it folds on its own, shown folded)
+        for (g in SettingsTabs.groups(SettingsTabs.Tab.GENERAL)) assertEquals(g.name, g != SettingsTabs.Group.RESET, g in r.open)
         // compact rows are 88 px: the Account part is its four rows (Browser login under Windows ID, 2026-11-18) and the foot
         assertEquals(4 + 4 * 88 + 16, part(r, SettingsTabs.Group.ACCOUNT).height)
         // a single-screen device: no Swap screens tile, the row closes up
@@ -340,9 +340,10 @@ class GeneralTilesRoomTest {
         val urls = ArrayList<String>()
         var browser = true
         host.onOpenUrl = { u -> urls += u; browser }
-        val help = part(r, SettingsTabs.Group.HELP)
-        assertEquals(GeneralTiles.Row.SUPPORT, help.rowIds().last())
-        assertEquals(SettingsTabs.Group.HELP, SettingsTabs.groups(SettingsTabs.Tab.GENERAL).last())
+        // 2026-11-19: its own headless group, the page's last (Reset folds above it)
+        val help = part(r, SettingsTabs.Group.SUPPORT)
+        assertEquals(listOf(GeneralTiles.Row.SUPPORT), help.rowIds())
+        assertEquals(SettingsTabs.Group.SUPPORT, SettingsTabs.groups(SettingsTabs.Tab.GENERAL).last())
         val b = help.controlBoxes(GeneralTiles.Row.SUPPORT).single()
         assertEquals("the page's last stop", b, help.focusTargets().last())
         assertTrue("one button across the row", b.width() > W * 0.8f)

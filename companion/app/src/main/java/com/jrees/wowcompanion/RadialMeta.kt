@@ -34,6 +34,8 @@ object RadialMeta {
     }
 
     fun onChange(l: () -> Unit) { listeners += l }
+    /** a reset (ResetRun) changed the saved list: read again */
+    fun reload() { all = runCatching { JSONObject(prefs?.getString("all", "{}") ?: "{}") }.getOrDefault(JSONObject()); changed() }
     private fun changed() { for (l in listeners.toList()) runCatching { l() } }
 
     /** the radial slot a bar command opens (DSSRADIAL = 1, DSSRADIAL<n> = n), or null for any other command */

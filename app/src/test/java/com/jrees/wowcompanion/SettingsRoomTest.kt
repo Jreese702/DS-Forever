@@ -68,7 +68,8 @@ class SettingsRoomTest {
             // General does not fold (the user, 2026-11-12): every group open. A headless group (Add-ons' Import button, the user
             // 2026-11-16) is always open, with the first group that has a heading
             // (beautify pick 5: only Add-ons folds; every tiled tab shows every group open)
-            val want = if (t.folds) groups.filter { it.headless }.toSet() + listOfNotNull(groups.firstOrNull { !it.headless }) else groups.toSet()
+            val want = if (t.folds) groups.filter { it.headless }.toSet() + listOfNotNull(groups.firstOrNull { !it.headless })
+                else groups.filter { !it.foldsAlone }.toSet()          // 2026-11-19: General's Reset shows folded
             assertEquals(t.label, want, r.open)
             for (gb in r.groupBoxes) {
                 val onTab = gb.group in groups
@@ -137,11 +138,15 @@ class SettingsRoomTest {
 
     /** the user, 2026-11-12: "the general tab doesnt need the folding sections": General's groups always open, no heading stops,
      *  a tap or toggle on a heading does nothing */
+    private fun targetsHaveResetHeading(r: SettingsRoom) = r.pad.targetBoxes().any { it == headBox(r, SettingsTabs.Group.RESET) }
+
     @Test fun generalDoesNotFold() {
         val r = room()
         r.show(SettingsTabs.Tab.GENERAL); lay(r)
-        val groups = SettingsTabs.groups(SettingsTabs.Tab.GENERAL).filter { r.hasRows(it) }
+        // 2026-11-19: every group but Reset, which folds on its own (shown folded, its heading a stop)
+        val groups = SettingsTabs.groups(SettingsTabs.Tab.GENERAL).filter { r.hasRows(it) && !it.foldsAlone }
         assertEquals(groups.toSet(), r.open)
+        assertTrue(targetsHaveResetHeading(r))
         for (g in groups) assertTrue(box(r, g).parts.all { it.visibility == View.VISIBLE })
         val targets = r.pad.targetBoxes()
         for (g in groups) assertTrue("no stop on $g's heading", targets.none { it == headBox(r, g) })
@@ -241,7 +246,7 @@ class SettingsRoomTest {
         assertEquals(6, after.size)
         assertTrue("no stale login box", after.none { it == loginBox })
         assertEquals(View.VISIBLE, box(r, SettingsTabs.Group.ACCOUNT).box.visibility)
-        assertEquals("no stops on General headings", 0, headingStops(r))
+        assertEquals("no stops on General headings but Reset's (it folds)", 1, headingStops(r))
     }
 
     /** 2: entering the room shows its tab afresh: the first group open, the rest folded, the page at its top */

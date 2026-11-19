@@ -148,7 +148,11 @@ object SvKeep {
         val name = target.name
         val skip = SvLua.SKIP[variable].orEmpty()
         val kept = readKept(keptDir, variable)
-        val keptT = kept?.takeIf { it.n > 0 }?.let { runCatching { SvLua.parse(it.lua) }.getOrNull() }
+        // a reset's marks (SvReset, 2026-11-19): the kept copy's entries a reset took away (its old value, or a copy older than the reset)
+        // leave the fold as if the kept copy had none; the game file's the same, below
+        val resets = SvReset.read(keptDir)
+        val keptRaw = kept?.takeIf { it.n > 0 }?.let { runCatching { SvLua.parse(it.lua) }.getOrNull() }
+        val keptT = keptRaw?.let { if (resets.isEmpty()) it else SvReset.strip(variable, it, resets, kept.savedAt).first }
         val mark = fromPcMark(keptDir, variable)
         if (!target.isFile) {
             if (keptT == null || backupDir == null) { if (backupDir != null) log("settings backup: $name not written (nothing kept)"); return }
@@ -159,16 +163,22 @@ object SvKeep {
             return
         }
         val text = runCatching { target.readText() }.getOrNull()
-        val game = text?.let { runCatching { SvLua.parse(it, variable) }.getOrNull() }
-        if (game == null) { log("settings backup: $name not written (the game's own file does not read whole: left as it is)"); return }
+        val gameRaw = text?.let { runCatching { SvLua.parse(it, variable) }.getOrNull() }
+        if (gameRaw == null) { log("settings backup: $name not written (the game's own file does not read whole: left as it is)"); return }
         val gameAt = target.lastModified()
+        // SvReset: the game file's entries a reset took away (a file older than the reset, or the old value itself) are not the game's
+        val (game, resetOut) = if (resets.isEmpty()) gameRaw to 0 else SvReset.strip(variable, gameRaw, resets, gameAt)
+        if (resetOut > 0) log("settings backup: $name: $resetOut reset entries left out")
         if (keptT == null) {
-            // nothing (or nothing usable) kept: the kept copy starts as the game's own settings; the game file is not touched
+            // nothing (or nothing usable) kept: the kept copy starts as the game's own settings; the game file is not touched (but for
+            // the entries a reset took away: the file written without them before the game starts)
             val own = SvLua.withoutSkipped(variable, game)
             if (SvLua.leaves(own) > 0 && kept?.lua != SvLua.ser(own)) setKept(keptDir, variable, own, gameAt, now)
             if (backupDir != null) {
+                if (resetOut > 0) runCatching { log(write(target, Doc(variable, SvLua.leaves(game), SvLua.ser(game), now), backupDir)) }
+                    .onFailure { log("settings backup: $name NOT written (${it.message})") }
                 runCatching { writeDoc(gameBaseFile(keptDir, variable), Doc(variable, 0, SvLua.ser(game), now)) }
-                log("settings backup: $name not written (nothing kept: the game's own kept)")
+                if (resetOut == 0) log("settings backup: $name not written (nothing kept: the game's own kept)")
             }
             return
         }
@@ -178,7 +188,7 @@ object SvKeep {
         val base = when {
             mark.exists() -> null
             recorded != null -> recorded
-            isOurs(text, variable, game) -> game
+            isOurs(text, variable, gameRaw) -> gameRaw
             else -> null
         }
         val keptAt = kept?.savedAt ?: 0L
@@ -186,7 +196,7 @@ object SvKeep {
         val m = f.table
         val counts = "${f.fromKept} from the kept copy, ${f.added} added, ${f.refused} refused" + if (base == null) " (no base: the game's own win)" else ""
         if (backupDir != null) {
-            if (!SvMerge.same(m, game)) {
+            if (!SvMerge.same(m, gameRaw)) {
                 // the very first game file this build replaces stays for good (never rotated): the user's "never delete" net
                 runCatching { File(keptDir, SvBackup.DIR).let { d -> d.mkdirs(); File(d, "$name.before-fold").takeIf { !it.exists() }?.let { target.copyTo(it) } } }
                 log("settings backup kept before sync")
@@ -197,7 +207,7 @@ object SvKeep {
             runCatching { writeDoc(gameBaseFile(keptDir, variable), Doc(variable, 0, SvLua.ser(m), now)); mark.delete() }
         }
         val keptNew = SvLua.withoutSkipped(variable, m)
-        if (!SvMerge.same(keptNew, keptT)) {
+        if (!SvMerge.same(keptNew, keptRaw)) {
             if (setKept(keptDir, variable, keptNew, keptAt, now)) log("settings backup: kept $variable with the game's own entries ($counts)")
             else log("settings backup: $variable kept copy not changed (no backup)")
         }
@@ -267,6 +277,8 @@ object SvKeep {
 
     /** the kept copy of [d] in [keptDir] (the previous one as .bak), unless [keep] says no; one line for the log */
     fun store(keptDir: File, d: Doc, armed: Boolean): String {
+        // SvReset: a reset value the live game still holds after the grace is the player's own again (or the reset never reached it)
+        if (SvReset.file(keptDir).isFile) runCatching { SvReset.retire(keptDir, d.variable, SvLua.parse(d.lua), d.savedAt) }
         val f = keptFile(keptDir, d.variable)
         val old = fromJson(runCatching { f.takeIf { it.isFile }?.readText() }.getOrNull())
         if (!keep(old, d, armed)) return "settings backup: kept ${d.variable} (${old?.n} settings; the store is empty at login)"

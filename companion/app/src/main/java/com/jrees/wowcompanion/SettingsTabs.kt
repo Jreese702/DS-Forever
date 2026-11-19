@@ -31,8 +31,13 @@ object SettingsTabs {
     /** a heading that folds (the user's pick: a tab opens with its FIRST group open, the rest folded). [headless] = a group with NO
      *  heading: nothing to fold, no heading stop, always open (Add-ons' Import button: the user, 2026-11-16, "Import addons should be a
      *  single button at the top of the list"); the first group that opens is then the first one WITH a heading */
-    enum class Group(val tab: Tab, val heading: String, val headless: Boolean = false) {
+    enum class Group(val tab: Tab, val heading: String, val headless: Boolean = false, val foldsAlone: Boolean = false) {
         LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
+        // the user's pick, 2026-11-19 ("reset to defaults buttons, split into four"): a FOLDING group on a tab that does not fold, just
+        // above Support the Project; it shows folded (four destructive buttons stay out of the way until asked for)
+        RESET(Tab.GENERAL, "Reset", foldsAlone = true),
+        // Support the Project stays the page's last row: a group of its own with no heading, under Reset
+        SUPPORT(Tab.GENERAL, "Support", headless = true),
         // GitHub #43 cb3 (the user, 2026-11-13: "the tap to cast bar should get its own bottom screen section"): its own group
         HOME(Tab.BOTTOM, "Home"), CAST_BAR(Tab.BOTTOM, "Tap-to-cast bar"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
         // the layout editor (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI
@@ -87,7 +92,9 @@ object SettingsTabs {
         COMPANION(Group.HELP, "Companion", listOf("Status"), Drawer.GAME_UI),
         // the user, 2026-11-19 ("add a link to my Kofi to the bottom of the General tab. just a simple button at the bottom that says
         // 'Support the Project'"): the tab's LAST row, one full-width button opening SupportLink.URL in the browser
-        SUPPORT(Group.HELP, "Support", listOf(SupportLink.ROW_ID)),
+        // 2026-11-19: Reset to defaults (ResetPlan) - four buttons, each asks first (ResetAskHost)
+        RESET(Group.RESET, "Reset", listOf("Reset settings", "Reset layouts", "Reset skills", "Reset everything")),
+        SUPPORT(Group.SUPPORT, "Support", listOf(SupportLink.ROW_ID)),
         // ---- Bottom screen (the old Home tab)
         HOME_SECTION(Group.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer",
             // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
@@ -188,11 +195,18 @@ object SettingsTabs {
         // a tab that does not fold opens every group WITH ROWS (11-16 merge: Top screen's Layout group has none until the add-on set
         // sends its first "lay" document; the tiles' groups always have their fixed slots); a folding one its headless groups (never
         // folded: Add-ons' Import button) and its first group with a heading
-        if (!tab.folds) groups(tab).filter(hasRows).toSet()
+        // a group that folds on its own (General's Reset) shows folded
+        if (!tab.folds) groups(tab).filter(hasRows).filter { !it.foldsAlone }.toSet()
         else groups(tab).filter(hasRows).let { gs -> gs.filter { it.headless }.toSet() + gs.filter { !it.headless }.take(1) }
 
     /** [g] folds (a tap / A on its heading opens or folds it): a folding tab's group with a heading */
-    fun folds(g: Group): Boolean = g.tab.folds && !g.headless
+    fun folds(g: Group): Boolean = (g.tab.folds || g.foldsAlone) && !g.headless
+
+    /** a Reset button's words (General > Reset) */
+    fun resetLabel(b: ResetPlan.Button): String = when (b) {
+        ResetPlan.Button.SETTINGS -> "Reset settings"; ResetPlan.Button.LAYOUTS -> "Reset layouts"
+        ResetPlan.Button.SKILLS -> "Reset skills"; ResetPlan.Button.EVERYTHING -> "Reset everything"
+    }
 
     /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */

@@ -136,6 +136,8 @@ object FrameGen {
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
     private fun changed() { for (l in listeners.toList()) l() }
+    /** Reset settings (ResetRun) removed saved values: the rows read them again */
+    fun resetDone() = changed()
 
     /** the private copy (null before [init]); exists only after a good pick */
     fun dllFile(): File? = dir?.let { File(it, DLL_NAME) }
