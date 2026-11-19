@@ -22,6 +22,20 @@ import kotlin.math.floor
  * where the game saw those presses and fits seen = a x aim + b; every later cell (and game point) is aimed through the fit. A press the
  * add-on reports on another row than the one the app meant is noted in the tap log (terse) and drops the fit, so it is measured again.
  * Local (the launcher) is unchanged: no strip taps, no fit.
+ *
+ * fix/stream-row-center (the user, 2026-11-18, test 1495 streamed: "I'm trying to sync my polestar up to where I'm actually at and its
+ * saying polestar did not answer"): THE ROW'S CENTRE, AND A NUDGE WHERE IT STILL MISSES. Test 1495's landings (taps.log 18:38-18:40):
+ * the game sees each press on a WHOLE pixel (the strip: aimed 16.5/119.5, seen 16.0/118.0), so a 2-px row has exactly ONE pixel of its
+ * own - its centre (top + 1); the two edge pixels are shared with the neighbours, and which of the two buttons takes a press there is
+ * the game's frame order. Every miss of 1495 was seen exactly ON a row edge: pnav (14-16) aimed 15.5 seen 16.0 = chq's, every time;
+ * iact (52-54) aimed 53.5 seen 52.0 = ipick's; mapw (94-96) aimed 96.5 seen 96.0 (mapw's, by luck). And the stream's map is a
+ * staircase, not a line (15.5 -> 16 but 53.5 -> 52 and 96.5 -> 96: the touch's whole-pixel steps on the way to the PC), so no
+ * two-point fit can say on which side of a pixel edge one row's aim falls. So: (1) the aim is the inverse of the fit at the row's
+ * centre pixel, unsnapped ([cellY]: (centre - b) / a; the fit was taken with pixel-centre aims, so that IS the centre pixel's middle -
+ * the old floor + 0.5 re-snap could only move it toward an edge); (2) where a stream tap is still seen off its row's centre, that
+ * row's aim is NUDGED half a row toward it ([nudge], kept for the app's life, per row and top), and a tap that pressed ANOTHER row
+ * is sent again once with the nudge ([takeRetries], the whole batch: Polestar's pin digits are one sequence). A near miss no longer
+ * drops the fit (a new measurement gives the same two whole pixels); a press seen more than a row off still does. Local unchanged.
  */
 object TapCal {
     /** the strip as the pad document describes it, in game px; [seen] = where the game saw its last presses (oldest first) */
@@ -34,7 +48,9 @@ object TapCal {
     }
 
     /** one tap the app sent on a cell: what it meant and where it aimed */
-    data class Aim(val op: String, val col: Int, val top: Double, val ch: Double, val aimY: Double, val at: Long)
+    data class Aim(val op: String, val col: Int, val top: Double, val ch: Double, val aimY: Double, val at: Long,
+                   /** fix/stream-row-center: its batch (TapBridge; 0 = none), sent to the stream, a retry, the nudge it carried */
+                   val batch: Long = 0L, val stream: Boolean = false, val retry: Boolean = false, val nudge: Double = 0.0)
 
     private data class Pending(val key: String, val n0: Int, val at: Long, val aimY: List<Double>)
 
@@ -54,6 +70,11 @@ object TapCal {
     private var gaveUpSaid = ""
     private val aims = ArrayDeque<Aim>()
     private val noteAt = HashMap<String, Long>()
+    /** fix/stream-row-center: the stream's learned nudge per row ("op@top"), game px added to the aim */
+    private val nudges = HashMap<String, Double>()
+    /** fix/stream-row-center: batches to send once more (their nudge learned), oldest first; every batch ever queued */
+    private val retries = LinkedHashSet<Long>()
+    private val retried = HashSet<Long>()
 
     // ------------------------------------------------------------------------------------------------------------ pure
 
@@ -94,11 +115,20 @@ object TapCal {
 
     /**
      * Where to aim (game y) for a cell whose row starts at game y [top], [ch] tall. Without a fit: the cell's lower pixel (1.0.21, as
-     * before). With one: the centre of the pixel whose press the game sees nearest the row's centre - within half a pixel x a of it
-     * whether the PC's cursor lands on whole pixels or not (an identity fit gives the same point as no fit).
+     * before). With one (fix/stream-row-center): the exact inverse of the fit at the row's centre pixel, (top + ch/2 - b) / a. The fit
+     * maps a pixel-CENTRE aim (the strip's x.5 taps) to the whole pixel the game saw, so this is the middle of the aims that land on the
+     * row's centre pixel, as far as two whole pixels can tell (an identity PC, seen = floor(aim), gives the same point as no fit). No
+     * re-snap to x.5: that only moved the aim toward a pixel edge (test 1495's pnav: 15.49 -> 15.5).
      */
     fun cellY(top: Double, ch: Double, f: Fit?): Double =
-        if (f == null) top + ch / 2 + 0.5 else floor((top + ch / 2 - f.b) / f.a) + 0.5
+        if (f == null) top + ch / 2 + 0.5 else (top + ch / 2 - f.b) / f.a
+
+    /** fix/stream-row-center: the stream's learned nudge for row [op] standing at [top] (0 = none) */
+    @Synchronized fun nudge(op: String, top: Double): Double = nudges[nkey(op, top)] ?: 0.0
+    private fun nkey(op: String, top: Double) = op + "@" + fmt(top)
+
+    /** fix/stream-row-center: the batches whose taps pressed another row and are to go once more (nudged); forgets them */
+    @Synchronized fun takeRetries(): List<Long> { val l = retries.toList(); retries.clear(); return l }
 
     /** where to aim for a game point (a game control's own box, a layout spot) */
     fun pointY(gy: Double, f: Fit?): Double = if (f == null) gy else (gy - f.b) / f.a
@@ -167,24 +197,52 @@ object TapCal {
 
     /**
      * The add-on says a press landed on [name]:[col], seen at game y [seenY]. A note when the latest tap on that column was meant for
-     * another row (or the press was seen outside the row it named), else null. A miss while a fit is in use drops it (measured again).
+     * another row (or the press was seen outside the row it named), else null.
+     *
+     * fix/stream-row-center: a STREAM tap ([Aim.stream]) seen off its row's centre pixel (an edge pixel is shared with the neighbour)
+     * nudges that row's aim half a row toward the centre - once per lesson: only a tap aimed with the row's CURRENT nudge teaches, so
+     * the rest of its batch and taps already in flight do not pile on (the nudge stays within one row height). A tap that pressed
+     * another row has its batch queued to go once more with the new nudge ([takeRetries]; never a retry's retry, never a batch twice).
+     * The fit is dropped (measured again) only for a press on another row seen more than a row off its centre, or with no seen y (as
+     * before). Local taps: the note only, as before.
      */
     @Synchronized fun landed(name: String, col: Int, seenY: Double?, now: Long): String? {
         val a = aims.lastOrNull { it.col == col && now - it.at <= AIM_KEEP_MS } ?: return null
-        val off = a.op != name || (seenY != null && (seenY < a.top || seenY >= a.top + a.ch))
-        if (!off) return null
-        if (a.op != name) fit = null
+        val centre = a.top + a.ch / 2
+        val edge = seenY != null && abs(seenY - centre) >= a.ch / 4               // on (or past) a shared edge pixel, not the centre one
+        val wrongRow = a.op != name
+        val off = wrongRow || (seenY != null && (seenY < a.top || seenY >= a.top + a.ch))
+        if (!off && !(a.stream && edge)) return null
+        if (wrongRow && (seenY == null || abs(seenY - centre) > a.ch * 1.5)) fit = null
+        var learned: String? = null
+        if (a.stream && seenY != null && edge) {
+            val k = nkey(a.op, a.top)
+            val cur = nudges[k] ?: 0.0
+            if (abs(a.nudge - cur) < 1e-9) {
+                val next = (cur + if (seenY > centre) -a.ch / 2 else a.ch / 2).coerceIn(-a.ch, a.ch)
+                if (abs(next - cur) > 1e-9) {
+                    nudges[k] = next
+                    val again = wrongRow && !a.retry && a.batch != 0L && retried.add(a.batch)
+                    if (again) retries.add(a.batch)
+                    learned = "${a.op} aim nudged ${if (next >= 0) "+" else "-"}${fmt(abs(next))}" + (if (again) ", sent again" else "")
+                }
+            }
+        }
+        if (!off) return learned?.let {
+            "tap on a row edge: ${a.op}:$col (rows y ${fmt(a.top)}-${fmt(a.top + a.ch)}, aimed ${fmt(a.aimY)}) seen at y ${fmt(seenY!!)}; $it"
+        }
         val k = a.op + ">" + name
         val last = noteAt[k]
-        if (last != null && now - last < NOTE_EVERY_MS) return null
+        if (learned == null && last != null && now - last < NOTE_EVERY_MS) return null
         noteAt[k] = now
         return "tap landed off: ${a.op}:$col (rows y ${fmt(a.top)}-${fmt(a.top + a.ch)}, aimed ${fmt(a.aimY)}) pressed $name:$col" +
-            (seenY?.let { " seen at y ${fmt(it)}" } ?: "")
+            (seenY?.let { " seen at y ${fmt(it)}" } ?: "") + (learned?.let { "; $it" } ?: "")
     }
 
     /** tests: forget everything */
     @Synchronized fun reset() {
         fit = null; boot = 0L; pend = null; tries = 0; triesKey = ""; gaveUpSaid = ""; aims.clear(); noteAt.clear()
+        nudges.clear(); retries.clear(); retried.clear()
     }
 
     private fun fmt(v: Double) = "%.1f".format(java.util.Locale.ROOT, v)

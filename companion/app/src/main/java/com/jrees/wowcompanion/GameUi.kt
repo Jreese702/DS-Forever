@@ -775,6 +775,8 @@ object GameUi {
         if (h.has("boot")) TapCal.boot = h.optLong("boot", 0L)
         if (current) TapCal.settle(pad, System.currentTimeMillis())?.let { line -> Log.i("WCHUB", line); TapBridge.note(line) }
         landedNote(h.optJSONObject("rx"), pad?.optJSONObject("off"), current)
+        // fix/stream-row-center: a stream batch that pressed another row goes once more, its row's aim nudged (TapCal.landed)
+        if (current) appCtx?.let { TapBridge.retryMissed(it, pad) }
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         // hub67: the one-tap memory (absent from an older add-on set: no restore tap, nothing held)

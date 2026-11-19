@@ -186,7 +186,7 @@ object TapBridge {
      * fix/stream-row-offset: the row's top is the add-on's own word - pad23's `off` (where its cells really stand) when it names the
      * row, else the grid (y + row x ch); on the stream the aim goes through [TapCal]'s measured fit (none in Local: as before).
      */
-    private fun cellAim(ctx: Context, pad: JSONObject?, op: String, col: Int): Pair<PointF, TapCal.Aim>? {
+    private fun cellAim(ctx: Context, pad: JSONObject?, op: String, col: Int, batch: Long = 0L, retry: Boolean = false): Pair<PointF, TapCal.Aim>? {
         if (pad == null) return null
         val rows = pad.optJSONObject("rows") ?: return null
         if (!rows.has(op)) return null
@@ -199,9 +199,12 @@ object TapBridge {
         // 1.0.21 (streaming, measured on the PC: a row's centre is a PIXEL BOUNDARY - 2-game-px rows - and Windows' absolute mouse maps
         // over 0..height-1, so the click fell on the row above): half a game pixel past the centre, inside the cell's lower pixel
         // (TapCal.cellY without a fit); with the stream's fit, the pixel the game sees nearest the row's centre
-        val gy = TapCal.cellY(top, ch, streamFit(pad))
+        // fix/stream-row-center: on the stream, plus the row's learned nudge (TapCal.landed: half a row toward its centre pixel)
+        val stream = PlayGate.streamingNow()
+        val nudge = if (stream) TapCal.nudge(op, top) else 0.0
+        val gy = TapCal.cellY(top, ch, if (stream) TapCal.current(pad) else null) + nudge
         val p = gamePoint(ctx, pad, pad.optDouble("x", 0.0) + (col + 0.5) * cw + 0.5, gy) ?: return null
-        return p to TapCal.Aim(op, col, top, ch, gy, System.currentTimeMillis())
+        return p to TapCal.Aim(op, col, top, ch, gy, System.currentTimeMillis(), batch, stream, retry, nudge)
     }
 
     /** fix/stream-row-offset: the measured fit while the taps go to the PC (TapCal), else null */
@@ -288,7 +291,29 @@ object TapBridge {
         return clicks(listOf(c), null, 0L, what, null, onFail)
     }
 
-    private fun send(ctx: Context, pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long, onFail: (String) -> Unit): Boolean {
+    /** fix/stream-row-center: the cell batches sent lately (id -> cells, gap), for [retryMissed]; the newest 16 */
+    private class Sent(val cells: List<Pair<String, Int>>, val gapMs: Long)
+    private val sent = object : LinkedHashMap<Long, Sent>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Sent>?) = size > 16
+    }
+    private var batchSeq = 0L
+
+    /**
+     * fix/stream-row-center: the stream batches whose taps pressed ANOTHER row ([TapCal.takeRetries], their row's nudge now learned)
+     * go once more, whole and in order, through the same gate as any batch (a retry is never retried). GameUi calls it after each hub
+     * document's landings. Nothing on Local (TapCal never queues a Local tap).
+     */
+    fun retryMissed(ctx: Context, pad: JSONObject?) {
+        for (id in TapCal.takeRetries()) {
+            val b = synchronized(sent) { sent[id] } ?: continue
+            val what = b.cells.joinToString(" ") { "${it.first}:${it.second}" }
+            note("sent again (nudged): $what")
+            send(ctx, pad, b.cells, b.gapMs, {}, retry = true)
+        }
+    }
+
+    private fun send(ctx: Context, pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long, onFail: (String) -> Unit,
+                     retry: Boolean = false): Boolean {
         if (cells.isEmpty()) return false
         val now = System.currentTimeMillis()
         if (!GameInput.live(now)) {
@@ -328,7 +353,9 @@ object TapBridge {
         val keysOff = if (pad?.optJSONObject("keys") != null) when {
             !KEYS_ON -> "off"; !inLauncher -> "no launcher"; GameInput.typing -> "typing"
             TapKeys.session(pad) != keySession -> "no handshake"; else -> "a cell without keys" } else null
-        val aimsOf = cells.map { (op, col) -> cellAim(ctx, pad, op, col) ?: return false }
+        val id = synchronized(sent) { ++batchSeq }
+        val aimsOf = cells.map { (op, col) -> cellAim(ctx, pad, op, col, id, retry) ?: return false }
+        synchronized(sent) { sent[id] = Sent(cells, gapMs) }
         TapCal.aimed(aimsOf.map { it.second })              // fix/stream-row-offset: what each tap meant, for where it lands
         val pts = aimsOf.map { it.first }
         return clicks(pts, cells, gapMs, cells.joinToString(" ") { "${it.first}:${it.second}" }, keysOff, onFail)
