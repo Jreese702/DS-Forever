@@ -871,7 +871,7 @@ class InteractView(context: Context) : View(context) {
     private fun rowOf(cmd: String) = when (cmd.substringBefore(' ')) {
         "opt", "take", "turnin", "pick", "trhead", "ahcat", "ahsfold" -> "ipick"
         "buy", "train", "pet", "mail", "ahres", "ahrow", "taxi", "bkdo", "loot" -> "ibuy"
-        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach", "ahsitem" -> "isell"
+        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach", "ahsitem", "ahfav" -> "isell"
         "lookbag", "ahfilter", "look" -> "ipick"
         "tradein" -> "ibuy"
         "tradeout", "tradepick" -> "isell"
@@ -884,8 +884,9 @@ class InteractView(context: Context) : View(context) {
     /**
      * One tap on the pad: [cmd] is what the addon will run and what its reply will echo.
      * [count] > 1 (a vendor purchase only) sends the count's own cell first, from the same touch.
+     * [pick] > 0 (i172, the auction house's star on a result row) sends the count cell pick-1 first ALWAYS (row 1 too): the row it names.
      */
-    private fun send(cmd: String, slot: Int, count: Int = 1) {
+    private fun send(cmd: String, slot: Int, count: Int = 1, pick: Int = 0) {
         val now = System.currentTimeMillis()
         blocked(now)?.let { note(it, false); return }
         if (slot < 0) { note("The game gave this no tap cell", false); return }
@@ -894,9 +895,9 @@ class InteractView(context: Context) : View(context) {
             note(if (count > 1) "Preview: qty $count, then $cmd" else "Preview: $cmd", true)
             return
         }
-        if (count > 1) {
+        if (count > 1 || pick > 0) {
             // same serial worker as the purchase, so the count always lands first
-            val sent = TapBridge.tap(context, doc?.optJSONObject("pad"), "iqty", count - 1) { why ->
+            val sent = TapBridge.tap(context, doc?.optJSONObject("pad"), "iqty", (if (pick > 0) pick else count) - 1) { why ->
                 post { pendingCmd = null; note(why, false) }
             }
             if (!sent) { note("The game cannot take a quantity yet: reload the game UI", false); return }
@@ -1048,6 +1049,11 @@ class InteractView(context: Context) : View(context) {
                 send(parts[0], parts[1].toInt())
             }
             hit.startsWith("why:") -> note(hit.substring(4), false)
+            hit.startsWith("fav:") -> {
+                // i172: a result row's star: the row's number through the count cell, then the star's cell ("fav:<row>|<col>")
+                val parts = hit.substring(4).split('|')
+                send("ahfav", parts[1].toInt(), pick = parts[0].toInt())
+            }
             hit.startsWith("voice:") -> {
                 // i161: the field opens (its own cell, as A) and the app opens its voice page on it
                 val parts = hit.substring(6).split('|')
@@ -3450,7 +3456,16 @@ class InteractView(context: Context) : View(context) {
         val rcol = act?.let { slotOf(it, "reset") } ?: -1
         stripButton(c, resetB, "Reset", if (rcol >= 0) "act:ahreset|$rcol" else "why:The game gave this no tap cell", rcol >= 0,
             pendingCmd == "ahreset", "rev_y".takeIf { au.optJSONObject("item") == null }, id = "ahreset")
-        val cat = RectF(catP.left, resetB.bottom + 6f, catP.right, catP.bottom)
+        // i172 (the user 2026-11-19: "I should be able to see my favorites list"): Favorites under Reset, the game's star button over its
+        // categories (grey with no favourites); the favourites list shown = selected
+        val favB = RectF(catP.left + 8f, resetB.bottom + 6f, catP.right - 8f, resetB.bottom + 68f)
+        val favCol = act?.let { slotOf(it, "favs") } ?: -1
+        val hasFav = au.optBoolean("hasFav")
+        UiKit.ahNav(c, favB, "Favorites", 0, au.optBoolean("fav"), inset = 36f)
+        UiKit.favStar(c, favB.left + 34f, favB.centerY() - 2f, 34f, hasFav, if (hasFav) 255 else 110)
+        hits.add(favB to if (favCol >= 0) "act:ahcat fav|$favCol" else "why:The game gave this no tap cell")
+        if (cur == "ahcat fav") UiKit.focus(c, favB)
+        val cat = RectF(catP.left, favB.bottom + 6f, catP.right, catP.bottom)
         val cats = arr(au, "cats")
         viewB = cat; contentB = cats.size * 68f + 16f
         val ci = cats.indexOfFirst { "ahcat ${it.optString("i")}" == cur }
@@ -3484,8 +3499,9 @@ class InteractView(context: Context) : View(context) {
             // ---- a commodity: the game's CommoditiesBuyFrame and its price tiers
             val bf = RectF(rx0, ry0, rx0 + 450f, by1)
             UiKit.ahPanel(c, bf, "ah_bg_commodities")
-            UiKit.ahItemHeader(c, RectF(bf.left + 10f, bf.top + 10f, bf.right - 10f, bf.top + 120f), itemIcon(item),
-                item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
+            val hd = RectF(bf.left + 10f, bf.top + 10f, bf.right - 10f, bf.top + 120f)
+            UiKit.ahItemHeader(c, hd, itemIcon(item), item.optString("name", ""), Theme.quality(item.optInt("q", 1)), rightRoom = 56f)
+            favHeader(c, hd, item, act)
             val rows = arr(item, "rows")
             val q = au.optInt("qty", 1)
             var avail = 0
@@ -3531,16 +3547,18 @@ class InteractView(context: Context) : View(context) {
             c.restore()
             val be = entry("ahbuy")
             val ok = be != null && be.slot >= 0 && avail > 0 && total <= purse
-            UiKit.hints(c, bx - 280f, cy, UiKit.backGlyph() to "Back")
+            val hx = UiKit.hints(c, bx - 280f, cy, "rev_rtrigger" to "Favorite", UiKit.backGlyph() to "Back")
             stripButton(c, RectF(bx - 260f, cy - 55f, bx, cy + 56f), "Buy Now", "go", ok, busy && pendingCmd == "ahbuy", "rev_a")
             goCmd = be.takeIf { ok }
             if (!ok) goWhy = if (total > purse) "Not enough money" else "Nothing to buy"
-            resultLine(c, inner.left + 24f, bx - 420f, cy, now)
+            resultLine(c, inner.left + 24f, min(bx - 420f, hx - 24f), cy, now)
             if (buy != null && (buy.optBoolean("armed") || buy.optBoolean("waiting")))
                 box = { ahBox(c, r, item, buy.optInt("qty", q), buy.optLong("total", total), buy.optBoolean("waiting"), be, act) }
         } else if (item != null) {
             // ---- an item: its listings (Buyout, Bid, Time Left); yours dimmed
-            UiKit.ahItemHeader(c, RectF(rx0, ry0, rx1, ry0 + 110f), itemIcon(item), item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
+            val hd = RectF(rx0, ry0, rx1, ry0 + 110f)
+            UiKit.ahItemHeader(c, hd, itemIcon(item), item.optString("name", ""), Theme.quality(item.optInt("q", 1)), rightRoom = 56f)
+            favHeader(c, hd, item, act)
             val list = RectF(rx0, ry0 + 120f, rx1, by1)
             UiKit.ahPanel(c, list, "ah_bg_item_market")
             sortHeads(c, list.top + 30f, au, "item", listOf(Head("Buyout", list.left + 24f, "Buyout"),
@@ -3569,7 +3587,7 @@ class InteractView(context: Context) : View(context) {
             val pe = pick?.let { entry(it) }
             val price = pe?.o?.optLong("price", 0) ?: 0L
             val ok = pe != null && pe.slot >= 0 && price > 0 && !pe.o.optBoolean("mine") && price <= purse
-            UiKit.hints(c, bx - 280f, cy, UiKit.backGlyph() to "Back")
+            val hx = UiKit.hints(c, bx - 280f, cy, "rev_rtrigger" to "Favorite", UiKit.backGlyph() to "Back")
             stripButton(c, RectF(bx - 260f, cy - 55f, bx, cy + 56f), "Buy Now", "go", ok, busy && pendingCmd == pe?.cmd, "rev_a")
             goCmd = pe.takeIf { ok }
             if (!ok) goWhy = when {
@@ -3579,7 +3597,7 @@ class InteractView(context: Context) : View(context) {
                 price > purse -> "Not enough money"
                 else -> "The game gave this no tap cell"
             }
-            resultLine(c, inner.left + 24f, bx - 420f, cy, now)
+            resultLine(c, inner.left + 24f, min(bx - 420f, hx - 24f), cy, now)
             if (buy != null && buy.optString("kind") == "item" && buy.optBoolean("armed")) {
                 val be = entry("ahrow ${buy.optInt("row")}")
                 box = { ahBox(c, r, item, max(1, buy.optInt("qty", 1)), buy.optLong("total", 0), false, be, act) }
@@ -3590,10 +3608,11 @@ class InteractView(context: Context) : View(context) {
             UiKit.ahPanel(c, res, "ah_bg_index")
             // the game's columns: Price, Name, the category's level column (Item Level for weapons and armour), Available
             val lvlWord = if (au.has("levelWord")) au.optString("levelWord") else null
-            sortHeads(c, res.top + 30f, au, "browse", listOfNotNull(Head("Name", res.left + 100f, "Name"),
+            sortHeads(c, res.top + 30f, au, "browse", listOfNotNull(Head("Name", res.left + 128f, "Name"),
                 lvlWord?.let { Head(it, -(res.right - 400f), "Level") },
                 Head("Price", -(res.right - 190f), "Price"), Head("Available", -(res.right - 24f), null)))
             val rows = arr(au, "results")
+            val favCell = act?.let { slotOf(it, "fav") } ?: -1
             val view = RectF(res.left, res.top + 58f, res.right, res.bottom - 4f)
             viewA = view; contentA = rows.size * 84f
             scrollA = scrollA.coerceIn(0f, max(0f, contentA - view.height()))
@@ -3605,8 +3624,9 @@ class InteractView(context: Context) : View(context) {
                 val row = RectF(res.left + 8f, ry, res.right - 8f, ry + 78f)
                 UiKit.ahRowGround(c, row, k % 2 == 1)
                 UiKit.slot(c, itemIcon(l), row.left + 14f, row.top + 10f, 58f)
+                UiKit.favStar(c, row.left + 100f, row.centerY(), 34f, l.optBoolean("fav"))         // i172: the game's favourite column
                 val np = UiKit.bodyPaint(26f, Theme.quality(l.optInt("q", 1)))
-                c.drawText(Tr.t(fit(np, l.optString("name", ""), row.width() - (if (lvlWord != null) 560f else 400f))), row.left + 92f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
+                c.drawText(Tr.t(fit(np, l.optString("name", ""), row.width() - (if (lvlWord != null) 596f else 436f))), row.left + 128f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
                 if (lvlWord != null && l.optInt("lvl", 0) > 0) {
                     val lp = UiKit.numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
                     c.drawText(Tr.t(l.optInt("lvl").toString()), row.right - 400f, row.centerY() - (lp.ascent() + lp.descent()) / 2f, lp)
@@ -3615,16 +3635,23 @@ class InteractView(context: Context) : View(context) {
                 val ap = UiKit.numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
                 c.drawText(Tr.t(l.optInt("count", 0).toString()), row.right - 16f, row.centerY() - (ap.ascent() + ap.descent()) / 2f, ap)
                 hits.add(RectF(row.left, max(row.top, view.top), row.right, min(row.bottom, view.bottom)) to "do:ahres ${l.optInt("i")}")
+                // i172: a finger on the star turns it (the row's number rides the count cell: rows past its 40 take RT)
+                val li = l.optInt("i")
+                hits.add(RectF(row.left + 74f, max(row.top, view.top), row.left + 126f, min(row.bottom, view.bottom)) to when {
+                    favCell < 0 -> "why:The game gave this no tap cell"
+                    li !in 1..FAV_PICK_MAX -> "why:Press ${Glyphs.name("rtrigger")}"
+                    else -> "fav:$li|$favCell" })
                 if (cur == "ahres ${l.optInt("i")}") { UiKit.focus(c, row); tipRowY = row.top }
             }
             c.restore()
             if (rows.isEmpty()) {
                 val searched = (au.optJSONArray("path")?.length() ?: 0) > 0 || au.optJSONObject("search")?.optString("text").orEmpty().isNotEmpty()
-                val words = if (searched) "Nothing found" else "Choose a category, or search"
+                val words = if (au.optBoolean("fav")) "No favorites" else if (searched) "Nothing found" else "Choose a category, or search"
                 c.drawText(Tr.t(words), res.left + 30f, view.top + 50f, UiKit.bodyPaint(26f, Theme.dim))
             }
-            resultLine(c, inner.left + 24f, bx - 300f, cy, now)
-            UiKit.hints(c, inner.right - 16f, cy, "rev_a" to "Open", UiKit.backGlyph() to "Back")
+            // i172: RT = the star of the row under the cursor
+            val hx = UiKit.hints(c, inner.right - 16f, cy, "rev_a" to "Open", "rev_rtrigger" to "Favorite", UiKit.backGlyph() to "Back")
+            resultLine(c, inner.left + 24f, min(bx - 300f, hx - 24f), cy, now)
         }
         // ---- THE TOOLTIP (user, 2026-09-30: "we need tool tips in the ah"), as at the vendor: two thirds of a half, over
         // the half away from the cursor (the categories), level with the cursor's row; X held: Currently Equipped on the
@@ -3643,6 +3670,14 @@ class InteractView(context: Context) : View(context) {
         UiKit.windowFrame(c, r, name, UiKit.tex("mm_auctioneer"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
         box?.invoke()
         au.optJSONObject("search")?.let { sr -> if (sr.optBoolean("open")) filterList(c, r, sr, act) }
+    }
+
+    /** i172: the item opened's favourite star at its header's right (the game's ItemDisplay.FavoriteButton); a finger turns it */
+    private fun favHeader(c: Canvas, hd: RectF, item: JSONObject, act: JSONObject?) {
+        val cx = hd.right - 44f
+        UiKit.favStar(c, cx, hd.centerY(), 40f, item.optBoolean("fav"))
+        val col = act?.let { slotOf(it, "fav") } ?: -1
+        hits.add(RectF(cx - 40f, hd.top, cx + 40f, hd.bottom) to if (col >= 0) "act:ahfav|$col" else "why:The game gave this no tap cell")
     }
 
     /** a column header: its words, where they stand (negative = right-aligned at -x), the game's sort it stands for (null = none) */
@@ -5343,6 +5378,8 @@ class InteractView(context: Context) : View(context) {
         /** a finger on a field's microphone: its voice page when the field opens this soon after */
         const val VOICE_WANT_MS = 4000L
         const val SPK_EVERY_MS = 3_000L
+        /** i172: the auction rows a finger can star (the add-on's iqty cells name rows 1..40, QTY_MAX); past it, RT */
+        const val FAV_PICK_MAX = 40
         const val PAPER_GOLD = 2            // UI Art's gold selection look; the user's pick replaces it
         const val CLOSE_B_LOOK = 1
         const val TIP_STEP = 90f                // px the tooltip stack moves per right-stick step
