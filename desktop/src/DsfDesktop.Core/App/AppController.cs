@@ -1373,17 +1373,36 @@ namespace DsfDesktop.App
         /// </summary>
         DateTime? streamEndedAt;
         bool thorWasHere;
+        /// <summary>the 5-minute close armed at Desktop's start for this marked stream WoW (StreamWowMark); 0 = the usual close</summary>
+        int restartArmedPid;
+        bool restartLooked;
 
         void CloseAfterStream()
         {
             try
             {
-                if (Bridge != null && Bridge.Sessions().Count > 0) { thorWasHere = true; streamEndedAt = null; return; }
+                if (!restartLooked) { restartLooked = true; ArmAfterRestart(); }
+                if (Bridge != null && Bridge.Sessions().Count > 0) { thorWasHere = true; streamEndedAt = null; restartArmedPid = 0; return; }
                 if (!thorWasHere) return;
                 if (!streamEndedAt.HasValue) streamEndedAt = DateTime.UtcNow;
                 if (!WowFlow.CloseAfterStream((DateTime.UtcNow - streamEndedAt.Value).TotalSeconds, WowWindow.PcIdleSeconds())) return;
                 thorWasHere = false; streamEndedAt = null;
                 Supervisor?.Disconnect();
+                var armed = restartArmedPid;
+                restartArmedPid = 0;
+                if (armed > 0)
+                {
+                    // armed at Desktop's start: only that very process, checked again now (never a WoW the player started on the PC)
+                    using (var p = ProcessOrNull(armed))
+                    {
+                        if (p == null) return;
+                        if (!StreamWowMark.Matches(StreamWowMark.Read(Paths.DataDir), p.Id, StartUtcOrNull(p)))
+                        { Log.I("WoW: pid " + armed + " is no longer the stream's WoW; left open"); return; }
+                        Log.I("WoW: no stream for 5 minutes, closing it (pid " + p.Id + ", the stream's WoW from before Desktop's restart)");
+                        p.CloseMainWindow();
+                    }
+                    return;
+                }
                 using (var p = WowWindow.FindAny(FlavorDirOrNull))
                 {
                     if (p == null) return;
@@ -1392,6 +1411,70 @@ namespace DsfDesktop.App
                 }
             }
             catch (Exception e) { Log.I("closing WoW after the stream: " + e.Message); }
+        }
+
+        /// <summary>
+        /// At Desktop's start (its first tick): a WoW that a stream started (StreamWowMark: same pid AND process start time) still running
+        /// with no Thor and no stream gets the usual 5-minute close, as if the Thor had just left. A Thor connecting meanwhile cancels it
+        /// (CloseAfterStream). Any other WoW (the player's own on the PC) is left alone.
+        /// </summary>
+        void ArmAfterRestart()
+        {
+            var mark = StreamWowMark.Read(Paths.DataDir);
+            if (mark == null) return;
+            bool thor = Bridge != null && Bridge.Sessions().Count > 0;
+            bool streaming = Stream == StreamState.Streaming;
+            using (var p = WowWindow.FindAny(FlavorDirOrNull))
+            {
+                int? pid = p?.Id;
+                var start = p != null ? StartUtcOrNull(p) : null;
+                if (!StreamWowMark.ArmAtStart(thor, streaming, pid, start, mark))
+                {
+                    if (p != null && !thor && !streaming) Log.I("WoW: running at Desktop's start but not one a stream started (pid " + p.Id + "); left alone");
+                    return;
+                }
+                thorWasHere = true;
+                streamEndedAt = DateTime.UtcNow;
+                restartArmedPid = p.Id;
+                Log.I("WoW: the stream's WoW is still open after Desktop's restart (pid " + p.Id + "); it closes after 5 minutes with no stream");
+            }
+        }
+
+        /// <summary>
+        /// Desktop starting WoW FOR A STREAM ("started Wow.exe" / through Battle.net, while a Thor is connected or a stream runs) is
+        /// remembered once its window is up: the client's pid and start time (StreamWowMark). WoW started from the tray, or found already
+        /// running ("the game is loading"), is never marked.
+        /// </summary>
+        bool markPending;
+
+        void MarkStreamWow(WowState state, string why)
+        {
+            if (state == WowState.Starting)
+            {
+                if (why != null && why.StartsWith("started ", StringComparison.Ordinal))
+                    markPending = Stream == StreamState.Streaming || (Bridge != null && Bridge.Sessions().Count > 0);
+                return;
+            }
+            if (state != WowState.Running) { markPending = false; return; }
+            if (!markPending) return;
+            markPending = false;
+            using (var p = WowWindow.FindAny(FlavorDirOrNull))
+            {
+                var start = p != null ? StartUtcOrNull(p) : null;
+                if (p == null || !start.HasValue) { Log.I("stream WoW marker: no WoW process to mark"); return; }
+                Log.I(StreamWowMark.Write(Paths.DataDir, p.Id, start.Value)
+                    ? "stream WoW marker: pid " + p.Id + " (Desktop started it for a stream)" : "stream WoW marker: not written");
+            }
+        }
+
+        static System.Diagnostics.Process ProcessOrNull(int pid)
+        {
+            try { return System.Diagnostics.Process.GetProcessById(pid); } catch (Exception) { return null; }
+        }
+
+        static DateTime? StartUtcOrNull(System.Diagnostics.Process p)
+        {
+            try { return p.StartTime.ToUniversalTime(); } catch (Exception) { return null; }
         }
 
         // ---------------------------------------------------------------- the Thor's clean disconnect (feat/pause-power)
@@ -1520,13 +1603,16 @@ namespace DsfDesktop.App
                 nextUpdateCheck = DateTime.UtcNow.AddSeconds(DsfDesktop.Thor.DesktopUpdate.CheckEveryS);
                 Task.Run(() => u.Check(Version, CancellationToken.None));
             }
-            bool streaming = Stream == StreamState.Streaming, wow = false;
+            bool streaming = Stream == StreamState.Streaming, wow = false, wowRunning = false;
             try { wow = WowFromDesktop(); } catch (Exception) { }
-            if (streaming || wow) quietSince = DateTime.UtcNow;
+            // ANY WoW client (fix/desk-idle-close: after a Desktop restart the stream's WoW no longer counted as Desktop's, and 0.2.44
+            // went in at 11:07:37 with WoW up)
+            try { wowRunning = WowWindow.ProcessRunning(); } catch (Exception) { wowRunning = true; }
+            if (streaming || wow || wowRunning) quietSince = DateTime.UtcNow;
             var last = lastResult;
             var gate = new DsfDesktop.Thor.GateInput
             {
-                ReadyVersion = u.ReadyVersion, Writable = appWritable, Streaming = streaming, WowFromDesktop = wow,
+                ReadyVersion = u.ReadyVersion, Writable = appWritable, Streaming = streaming, WowFromDesktop = wow, WowRunning = wowRunning,
                 IdleForS = (DateTime.UtcNow - quietSince).TotalSeconds,
                 FailedVersion = last.HasValue && !last.Value.ok ? last.Value.version : null,
                 FailedAgoS = last.HasValue ? (DateTime.UtcNow - last.Value.at).TotalSeconds : double.MaxValue,
@@ -1935,6 +2021,7 @@ namespace DsfDesktop.App
                 start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep, StreamWindow, StreamUiScale); });
             Starter.Changed += (state, why) =>
             {
+                try { MarkStreamWow(state, why); } catch (Exception e) { Log.I("stream WoW marker: " + e.Message); }
                 if (Supervisor != null) PublishWow(force: true);
                 else
                 {
