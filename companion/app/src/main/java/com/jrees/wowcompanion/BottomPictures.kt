@@ -581,8 +581,8 @@ object BottomPictures {
         val items = ArrayList<UiKit.BandItem>()
         if (HomeSettings.clockHearth) items += UiKit.BandItem.Icon(Icons.get(ItemCd.HEARTH_ICON), "", glow = true)
         if (HomeSettings.clockTeleport) items += UiKit.BandItem.Icon(Icons.get(TELEPORT_ICON), "")
-        if (HomeSettings.clockBags) items += UiKit.BandItem.Icon(Icons.get(BAG_ICON), "14")
-        if (HomeSettings.clockAmmo) items += UiKit.BandItem.Icon(Icons.get(AMMO_ICON), "812")
+        if (HomeSettings.clockBags) items += UiKit.BandItem.Icon(Icons.get(BAG_ICON), "52/80")
+        if (HomeSettings.clockAmmo) items += UiKit.BandItem.Icon(Icons.get(AMMO_ICON), "812/1000")
         val floor = 6f + ClockBand.chipBottom(gold) + ClockBand.CHIP_PAD
         // the row 1.6x Home's size here (the tile is small), centred under the chip
         c.save(); c.translate(cx, floor); c.scale(1.6f, 1.6f); c.translate(-cx, -floor)
