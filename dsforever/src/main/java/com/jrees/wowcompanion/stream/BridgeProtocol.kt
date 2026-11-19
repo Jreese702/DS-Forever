@@ -102,7 +102,10 @@ sealed class BridgeMsg {
                        val gtNow: Long = -1L,
                        /** Desktop 0.2.32: what the stream's start waits for ("screen" = its own virtual screen being made, "starting" = its
                         *  streaming host starting; "" = go, or an older Desktop) */
-                       val sunWait: String = "") : BridgeMsg()
+                       val sunWait: String = "",
+                       /** Desktop 0.2.42: what it does beyond v1 ("pad_click": Desktop clicks the pad; "polestar_sync": Polestar's files
+                        *  follow); empty from an older Desktop (the stream's touch path stays) */
+                       val caps: List<String> = emptyList()) : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
@@ -146,6 +149,11 @@ sealed class BridgeMsg {
      *  whole object goes to SvSync */
     data class SvFiles(val o: JSONObject) : BridgeMsg()
     data class SvWritten(val o: JSONObject) : BridgeMsg()
+    /** Desktop 0.2.42: its answer to a "pad_click" batch (DeskClicks) */
+    data class PadClickResult(val o: JSONObject) : BridgeMsg()
+    /** Desktop 0.2.42: Polestar's files ("ps_files") and its write's answer ("ps_written") (PsSync) */
+    data class PsFiles(val o: JSONObject) : BridgeMsg()
+    data class PsWritten(val o: JSONObject) : BridgeMsg()
     /** the Thor's add-ons on the PC (2026-11-18): Desktop's run ("addons_pc": working with its progress, or done with each item) */
     data class AddonsPc(val o: JSONObject) : BridgeMsg()
     /** Desktop asks for one part of an imported add-on's file ("addon_file_get"); answered by PcAddonsWant.serve */
@@ -253,7 +261,7 @@ object BridgeProtocol {
                 PcWow.of(o.optJSONObject("wow")),
                 strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")), o.optString("pad_driver"),
                 sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(),
-                o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty())
+                o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty(), strings(o.optJSONArray("caps")))
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))
@@ -289,6 +297,9 @@ object BridgeProtocol {
             "login_again" -> BridgeMsg.LoginAgain
             "sv_files" -> BridgeMsg.SvFiles(o)
             "sv_written" -> BridgeMsg.SvWritten(o)
+            "pad_click_result" -> BridgeMsg.PadClickResult(o)
+            "ps_files" -> BridgeMsg.PsFiles(o)
+            "ps_written" -> BridgeMsg.PsWritten(o)
             "addons_pc" -> BridgeMsg.AddonsPc(o)
             "addon_file_get" -> BridgeMsg.AddonFileGet(o)
             "session_ending" -> BridgeMsg.SessionEnd(done = false)

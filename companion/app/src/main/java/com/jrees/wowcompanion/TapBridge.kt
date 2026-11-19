@@ -285,6 +285,12 @@ object TapBridge {
     fun tapGame(ctx: Context, pad: JSONObject?, gx: Double, gy: Double, what: String, onFail: (String) -> Unit = {}): Boolean {
         val now = System.currentTimeMillis()
         if (!GameInput.live(now)) { onFail("${GameInput.gate.why(now) ?: "The game is not live"}: nothing was sent"); return false }
+        // feat/desktop-clicks: streaming with Desktop clicking, the game point goes to Desktop as it is (no fit, no video touch)
+        if (DeskClicks.route() == DeskClicks.Route.DESKTOP) {
+            val p = DeskClicks.gamePoint(pad, gx, gy) ?: run { onFail("no trusted geometry for $what"); return false }
+            val id = synchronized(sent) { ++batchSeq }
+            return deskClicks(id, pad, listOf(p), null, 0L, what, false, onFail)
+        }
         // fix/stream-row-offset: on the stream the point goes through the measured fit (TapCal) too
         val c = gamePoint(ctx, pad, gx, TapCal.pointY(gy, streamFit(pad)).coerceIn(0.0, pad?.optDouble("ph", gy) ?: gy))
             ?: run { onFail("no trusted geometry for $what"); return false }
@@ -304,6 +310,12 @@ object TapBridge {
      * document's landings. Nothing on Local (TapCal never queues a Local tap).
      */
     fun retryMissed(ctx: Context, pad: JSONObject?) {
+        // feat/desktop-clicks: Desktop's posted clicks the game never saw (DeskClicks.check): the last one once more, now as real clicks
+        for (line in DeskClicks.check(System.currentTimeMillis(), pad?.optJSONObject("calib") != null)) note(line)
+        for (id in DeskClicks.takeResends()) {
+            val b = synchronized(sent) { sent[id] } ?: continue
+            send(ctx, pad, b.cells, b.gapMs, {}, retry = true)
+        }
         for (id in TapCal.takeRetries()) {
             val b = synchronized(sent) { sent[id] } ?: continue
             val what = b.cells.joinToString(" ") { "${it.first}:${it.second}" }
@@ -354,11 +366,49 @@ object TapBridge {
             !KEYS_ON -> "off"; !inLauncher -> "no launcher"; GameInput.typing -> "typing"
             TapKeys.session(pad) != keySession -> "no handshake"; else -> "a cell without keys" } else null
         val id = synchronized(sent) { ++batchSeq }
+        // feat/desktop-clicks (the user's pick 2026-11-18, "Desktop clicks on the PC"): streaming with a Desktop that clicks, the batch
+        // goes to Desktop in the pad's own game px (DeskClicks), never as a touch over the video; Local and an older Desktop as before
+        if (DeskClicks.route() == DeskClicks.Route.DESKTOP) {
+            val cs = cells.map { (op, col) -> DeskClicks.cellPoint(pad, op, col) ?: run {
+                Log.w(TAG, "refused $op:$col: the pad does not describe it"); onFail("no trusted geometry for $op:$col"); return false } }
+            synchronized(sent) { sent[id] = Sent(cells, gapMs) }
+            val at = System.currentTimeMillis()
+            TapCal.aimed(cells.mapIndexed { i, (op, col) -> TapCal.Aim(op, col, cs[i].top, cs[i].ch, cs[i].gy, at, id, false, retry, 0.0, desk = true) })
+            return deskClicks(id, pad, cs.map { it.gx to it.gy }, cells, gapMs, cells.joinToString(" ") { "${it.first}:${it.second}" }, retry, onFail)
+        }
         val aimsOf = cells.map { (op, col) -> cellAim(ctx, pad, op, col, id, retry) ?: return false }
         synchronized(sent) { sent[id] = Sent(cells, gapMs) }
         TapCal.aimed(aimsOf.map { it.second })              // fix/stream-row-offset: what each tap meant, for where it lands
         val pts = aimsOf.map { it.first }
         return clicks(pts, cells, gapMs, cells.joinToString(" ") { "${it.first}:${it.second}" }, keysOff, onFail)
+    }
+
+    /**
+     * feat/desktop-clicks: batch [id] ([pts] in the pad's game px; [cells] = its pad cells, null = game points) to Desktop, in one
+     * message, after the same quiet pad and on the same worker as the shell's batches (so the order holds), with TapSpacing's lead
+     * and in-batch spacing as each tap's wait. Desktop answers on the bridge (DeskClicks.onResult: a refusal reaches [onFail]).
+     */
+    private fun deskClicks(id: Long, pad: JSONObject?, pts: List<Pair<Double, Double>>, cells: List<Pair<String, Int>>?, gapMs: Long,
+                           what: String, retry: Boolean, onFail: (String) -> Unit): Boolean {
+        val pw = pad?.optDouble("pw", 0.0) ?: 0.0; val ph = pad?.optDouble("ph", 0.0) ?: 0.0
+        val at = TapSpacing.offsets(cells, gapMs, pts.size)
+        val queuedAt = SystemClock.uptimeMillis()
+        watchPad()
+        if (Looper.myLooper() == Looper.getMainLooper()) syncPad(queuedAt)
+        val heldAtQueue = heldNow
+        worker.execute {
+            val waited = settle(queuedAt)
+            Log.i(TAG, "quiet pad: $what waited $waited ms (held at queue $heldAtQueue) desktop ${DeskClicks.mode}")
+            val start = SystemClock.uptimeMillis()
+            val lead = TapSpacing.lead(spacing, start, cells, gapMs)
+            val waits = pts.indices.map { i -> if (i == 0) lead else at[i] - at[i - 1] }
+            tapHistory("$what (desktop ${DeskClicks.mode}${if (retry) ", again" else ""})")
+            val ok = DeskClicks.send(id, cells, pts, waits, pw, ph, park = !InputSink.trackpadOn, retry = retry,
+                now = System.currentTimeMillis(), onFail = onFail)
+            TapSpacing.ran(spacing, start + lead + (at.lastOrNull() ?: 0L) + 80L, cells, gapMs)
+            if (!ok) onFail("The PC's connection dropped: nothing was sent")
+        }
+        return true
     }
 
     /** pk3: when the spaced cells were last tapped, for [TapSpacing] (the shell's thread only) */

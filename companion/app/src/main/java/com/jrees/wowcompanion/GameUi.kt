@@ -368,6 +368,7 @@ object GameUi {
             val col = nc.substring(cut + 1).toIntOrNull() ?: continue
             // `at` is as long as `last` (pad24); an older add-on has none: no seen y
             val sy = if (seen.size == names.size) seen[i].split(',').getOrNull(1)?.toDoubleOrNull() else null
+            DeskClicks.landed(nc.substring(0, cut), col, now)            // feat/desktop-clicks: a posted click the game saw
             TapCal.landed(nc.substring(0, cut), col, sy, now)?.let { out += it }
         }
         return out
@@ -851,7 +852,8 @@ object GameUi {
         // tap only what still differs from this character's choices
         // fix/stream-row-offset (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"): on the stream the pad's
         // calibration strip is tapped first (twice; TapCal), and this object's own taps wait for its answer (at most TapCal.WAIT_MS)
-        if (live && s?.current == true && PlayGate.streamingNow()) {
+        // feat/desktop-clicks: not when Desktop clicks the pad (an exact pixel: nothing to measure)
+        if (live && s?.current == true && DeskClicks.route() == DeskClicks.Route.STREAM_TOUCH) {
             val cal = TapCal.wanted(pad, true, now)
             if (cal != null) {
                 if (TapBridge.calibrate(ctx, pad, cal)) { last = UiStep.Wait("Measuring where the stream's taps land"); return }
