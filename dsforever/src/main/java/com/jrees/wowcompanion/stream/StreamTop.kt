@@ -358,9 +358,18 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 addonsWant = { pcAddonsWant(h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) },
                 importedFiles = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) pcImported() else null to emptySet() },
                 // the user's ruling 2026-11-18: the PC's stream WoW at this Thor's own UI scale (Desktop puts the PC's back after)
-                uiScale = { thorUiScale() }).also { bridge = it }
+                uiScale = { thorUiScale() },
+                // Polestar progress follows (the user's pick 2026-11-18): the Thor game's Polestar.lua files, only down a pinned wss connection
+                polestar = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) polestarCtx() else null }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
+
+    /** PsSync's Thor side: the game's WTF folder (null = no game folder yet), its bases + backups beside our kept settings */
+    private fun polestarCtx(): com.jrees.wowcompanion.PsSync.Ctx? = runCatching {
+        val root = com.jrees.wowcompanion.LauncherHooks.flavorRoot() ?: return null
+        com.jrees.wowcompanion.PsSync.Ctx(java.io.File(root, "WTF"), java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings"), gameRunning = { com.jrees.wowcompanion.LauncherHooks.gameUp() })
+    }.getOrNull()
 
     /** "addons_want" for Desktop; the imported add-ons only with [pinned] (their files cross only a pinned wss connection) */
     private fun pcAddonsWant(pinned: Boolean): org.json.JSONObject? = runCatching {

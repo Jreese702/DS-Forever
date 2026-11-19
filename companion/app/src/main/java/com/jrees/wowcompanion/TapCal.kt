@@ -50,7 +50,9 @@ object TapCal {
     /** one tap the app sent on a cell: what it meant and where it aimed */
     data class Aim(val op: String, val col: Int, val top: Double, val ch: Double, val aimY: Double, val at: Long,
                    /** fix/stream-row-center: its batch (TapBridge; 0 = none), sent to the stream, a retry, the nudge it carried */
-                   val batch: Long = 0L, val stream: Boolean = false, val retry: Boolean = false, val nudge: Double = 0.0)
+                   val batch: Long = 0L, val stream: Boolean = false, val retry: Boolean = false, val nudge: Double = 0.0,
+                   /** feat/desktop-clicks: Desktop clicked it on the PC (DeskClicks): an exact pixel, so a miss is only ever noted */
+                   val desk: Boolean = false)
 
     private data class Pending(val key: String, val n0: Int, val at: Long, val aimY: List<Double>)
 
@@ -236,7 +238,7 @@ object TapCal {
         if (learned == null && last != null && now - last < NOTE_EVERY_MS) return null
         noteAt[k] = now
         return "tap landed off: ${a.op}:$col (rows y ${fmt(a.top)}-${fmt(a.top + a.ch)}, aimed ${fmt(a.aimY)}) pressed $name:$col" +
-            (seenY?.let { " seen at y ${fmt(it)}" } ?: "") + (learned?.let { "; $it" } ?: "")
+            (seenY?.let { " seen at y ${fmt(it)}" } ?: "") + (learned?.let { "; $it" } ?: "") + (if (a.desk) " (desktop click)" else "")
     }
 
     /** tests: forget everything */

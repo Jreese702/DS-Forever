@@ -88,8 +88,12 @@ object InputSink {
         }
     }
 
+    /** feat/desktop-clicks: the Trackpad tab is open (its pointer drawn): Desktop leaves the PC's cursor where the player put it */
+    @Volatile var trackpadOn = false
+
     /** the trackpad's pointer drawn on the top screen (on while the Trackpad tab is open) */
     fun gamePointer(on: Boolean) {
+        trackpadOn = on
         val s = sink
         if (s == null) { tlog("trackpad: pointer ${if (on) "on" else "off"} -> sink none"); return }
         gameIo.execute {

@@ -359,6 +359,35 @@ sees the PC there.
   stream has gone (DisplayKeep, no 20 s grace). Desktop stays running. The Thor stops the picture right after sending (after a
   0.6 s settle for its Exit Game tap), waits for `session_ended` (5 s for `session_ending`: an older Desktop ignores the word; 90 s
   at most), disconnects the bridge, then closes DS Forever (the power button) or goes back to the chooser (Exit game).
+- **Desktop clicks the pad** *(Desktop 0.2.42; the user's pick 2026-11-18 "Desktop clicks on the PC", and "the cursor is also visible for
+  all of the clicks unlike when playing on the thor which is really distracting")*. The welcome (and `/v1/info`) carries
+  `"caps":["pad_click","polestar_sync"]`; a Thor that sees `pad_click` on a pinned wss connection presses the add-on's hidden TapPad cells
+  through Desktop instead of a touch over the video (that path landed +/- 1 px off on 2-px rows). An older Desktop (no `caps`): the old touch path.
+  - Thor → `{"t":"pad_click","id":n,"mode":"post"|"input","park":bool,"pw":W,"ph":H,"sink":[x,y],"taps":[{"x","y","w"}]}`: the pad's own
+    game px (GetPhysicalScreenSize, top-left; the Thor aims at the row's centre pixel's middle), `w` = ms before that tap (the batch's
+    spacing), `sink` = the game's freelook park point, `park` = the Thor's Trackpad is not open.
+  - Desktop → `{"t":"pad_click_result","id","state":"done"|"partial"|"refused"|"failed","why","mode","n"}`. `why`: `not_pinned` (plain
+    ws: never clicked), `not_streaming`, `no_wow` (the `_forever_` client, path match), `not_foreground` (brought forward once, still
+    not), `no_client`, `outside` (a point outside the client rect: the whole batch refused before any click), `rate` (over 25 clicks a
+    second), `stale` (queued over 2.5 s), `busy` (16 batches queued), `moved`, `post_refused` / `input_refused`.
+  - Client pixel = floor(g * client / p) each way. `post`: WM_MOUSEMOVE + WM_LBUTTONDOWN / UP posted to WoW's window with that client
+    point - the real cursor never moves. `input`: SetCursorPos to the pixel (exact; checked before the press), SendInput left down /
+    up 16 ms apart, the cursor back 16 ms later. `park`: a real cursor resting inside WoW's client while the PC has been idle 3 s goes
+    off the stream first (another monitor's middle, else the `sink` point). One batch at a time, in order.
+  - The Thor starts with `post` and checks each batch against the add-on's own press ring (Hub's `rx`); while no posted press has
+    ever been seen, two posted batches unseen after 3.5 s switch it to `input` for the app's life (the last one sent again once).
+    Sunshine v2026.914 has no setting to leave the cursor out of its capture (only the client's Ctrl+Alt+Shift+N toggle: Alt is never sent).
+- **Polestar progress follows** *(Desktop 0.2.42; the user's pick 2026-11-18)* — Polestar's own tables (its .toc: SavedVariables
+  PolestarDB, SavedVariablesPerCharacter PolestarCharDB; both files Polestar.lua) with the same rules as Settings follow, only down a
+  pinned wss connection, only while WoW is not running on the side written.
+  - Thor → `{"t":"ps_read","v":1,"acct"}` (after `sv_read`, and again when the PC's WoW stops). Desktop →
+    `{"t":"ps_files","state":"ok"|"none"|"running","acct","files":[{"key","var","exists","hash","text"|"big"}]}`: key `acct` =
+    WTF/Account/<account>/SavedVariables/Polestar.lua, `c:<sha-256 of "realm/character" lower-cased>` = each existing character folder's
+    (no name crosses). Texts up to 1.6 MB a message; a file past it is listed `big` (not synced).
+  - Thor (PsSync: per entry, its local entries win the first sync and every conflict, a thinner or empty entry never wins on either
+    side, dated backups + a presync copy on the Thor) → `{"t":"ps_write","v":1,"acct","docs":[{"key","var","n","lua","if_hash"}]}`;
+    Desktop writes only an existing character folder's file, only if its hash is still `if_hash`, backups first (dsf-sync-backups, the
+    newest five, `.presync` kept for good) and answers `{"t":"ps_written","results":[{"key","state":"written"|"same"|"changed"|"refused"|"running"|"none"|"failed"}]}`.
 
 ## 8. What the Thor tells the player
 

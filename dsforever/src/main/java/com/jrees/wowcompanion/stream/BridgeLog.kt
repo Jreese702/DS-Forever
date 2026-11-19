@@ -61,6 +61,8 @@ class BridgeLog(
     private val importedFiles: () -> Pair<java.io.File?, Set<String>> = { null to emptySet() },
     /** this Thor's own UI scale lines for the hello (the user's ruling 2026-11-18; null = none: the PC's stays) */
     private val uiScale: () -> Map<String, String>? = { null },
+    /** Polestar progress follows (the user's pick 2026-11-18; Desktop 0.2.42): the Thor's game folder for PsSync; null = no sync */
+    private val polestar: () -> com.jrees.wowcompanion.PsSync.Ctx? = { null },
 ) : LogSource {
     /** issue #414: the PC's stamps onto the Thor's clock (a PC in another time zone was never "current") */
     val clock = PcClock(wall)
@@ -86,6 +88,7 @@ class BridgeLog(
 
     override fun stop() {
         running = false
+        dropDeskLink()
         try { conn?.close(1000) } catch (_: Throwable) {}
         thread?.interrupt()
     }
@@ -112,6 +115,23 @@ class BridgeLog(
     /** feat/pause-power: the clean disconnect: Desktop closes the PC's WoW and puts the PC back ([SessionEnd]); false = no connection */
     fun endSession(quitAsked: Boolean): Boolean = try { val c = conn; c?.send(BridgeProtocol.endSession(quitAsked)); c != null } catch (_: Throwable) { false }
 
+    /** feat/desktop-clicks: this connection's link for DeskClicks (Desktop clicks the pad), while it is up */
+    @Volatile private var deskLink: com.jrees.wowcompanion.DeskClicks.Link? = null
+    private fun dropDeskLink() {
+        val l = deskLink ?: return
+        deskLink = null
+        if (com.jrees.wowcompanion.DeskClicks.link === l) com.jrees.wowcompanion.DeskClicks.link = null
+    }
+    /** the welcome's caps and the PC's WoW as last said (Polestar's files come back when it stops) */
+    @Volatile private var caps: List<String> = emptyList()
+    @Volatile private var pcWow = ""
+    /** Polestar progress follows: "ps_read" (only down a pinned wss connection, only to a Desktop that says polestar_sync) */
+    private fun psRead(c: BridgeConn) {
+        if (!tls || fingerprint.isEmpty() || "polestar_sync" !in caps) return
+        val ctx = runCatching { polestar() }.getOrNull() ?: return
+        runCatching { com.jrees.wowcompanion.PsSync.readRequest(ctx)?.let { c.send(it.toString()) } }
+    }
+
     /** the "sv_write" this connection sent (its tables' text: the base once Desktop answers written / same) */
     @Volatile private var svSent: JSONObject? = null
     private fun svLog(line: String) { try { Log.i("WCSETUP", line) } catch (_: Throwable) {} }
@@ -129,7 +149,7 @@ class BridgeLog(
             } catch (t: Throwable) {
                 if (running) onStatus("PC: bridge unreachable (${t.message ?: t.javaClass.simpleName})")
                 End.DROPPED
-            } finally { conn = null }
+            } finally { conn = null; dropDeskLink() }
             if (end != End.DROPPED || !running) break
             // a session that got as far as the welcome worked: the next wait starts short again
             if (welcomed) tries = 0
@@ -150,6 +170,17 @@ class BridgeLog(
             when (val m = BridgeProtocol.parse(text) ?: continue) {
                 is BridgeMsg.Welcome -> {
                     welcomed = true
+                    caps = m.caps
+                    pcWow = m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }
+                    // feat/desktop-clicks (the user's pick 2026-11-18, "Desktop clicks on the PC"): a Desktop that clicks the pad, down a
+                    // pinned wss connection, takes the stream's pad presses (DeskClicks); else (an older Desktop) the touch over the video
+                    dropDeskLink()
+                    if (tls && fingerprint.isNotEmpty() && "pad_click" in m.caps) {
+                        val l = com.jrees.wowcompanion.DeskClicks.Link { t -> runCatching { c.send(t) }.isSuccess }
+                        deskLink = l
+                        com.jrees.wowcompanion.DeskClicks.link = l
+                    }
+                    try { Log.i(TAG, "desktop clicks: " + if (deskLink != null) "on" else "off (the touch path)") } catch (_: Throwable) {}
                     clock.welcome(m.gtNow)
                     onWelcome(m)
                     // a new connection replays the backlog: half-assembled documents of the old one would only glue onto it
@@ -163,6 +194,8 @@ class BridgeLog(
                     if (!m.wowRunning) c.send(BridgeProtocol.addonsInstall())
                     // settings follow (2026-11-18): our tables to the PC BEFORE its WoW starts (never while it runs: it reads them at login)
                     if (!m.wowRunning) svDir()?.let { d -> runCatching { svSent = null; c.send(com.jrees.wowcompanion.SvSync.readRequest(d).toString()) } }
+                    // Polestar progress follows (2026-11-18): its files both ways BEFORE the PC's WoW starts
+                    if (!m.wowRunning) psRead(c)
                     // the Thor's add-ons for the PC (the user, 2026-11-18): every connect, WoW running or not (Desktop moves nothing under a
                     // running WoW: it does it at its next start). Built on its own thread: the imported add-ons' files are hashed
                     addonsWant?.let { build -> Thread({
@@ -189,6 +222,9 @@ class BridgeLog(
                     if (!m.ok && m.why.isNotEmpty()) onStatus("PC: ${m.why}")
                 }
                 is BridgeMsg.Wow -> {
+                    // Polestar progress follows: the PC's WoW closed, so its progress comes back to the Thor (and the Thor's goes over)
+                    if (m.state == "stopped" && pcWow == "running") psRead(c)
+                    if (m.state.isNotEmpty()) pcWow = m.state
                     onWow(m.state, m.why)
                     onPc(m.pc ?: PcWow(m.state, m.why))
                     // Desktop's stop and its game update say themselves on the curtain (a red row with Retry, the bar): no status line
@@ -206,6 +242,14 @@ class BridgeLog(
                     svSent = null
                 }
                 is BridgeMsg.SessionEnd -> onSessionEnd(m)
+                is BridgeMsg.PadClickResult -> com.jrees.wowcompanion.DeskClicks.onResult(m.o)?.let { com.jrees.wowcompanion.TapBridge.note(it) }
+                is BridgeMsg.PsFiles -> runCatching { polestar() }.getOrNull()?.let { ctx ->
+                    runCatching { com.jrees.wowcompanion.PsSync.onFiles(ctx, m.o) { svLog(it) }.forEach { c.send(it.toString()) } }
+                        .onFailure { svLog("polestar sync: NOT merged (${it.javaClass.simpleName})") }
+                }
+                is BridgeMsg.PsWritten -> runCatching { polestar() }.getOrNull()?.let { ctx ->
+                    runCatching { com.jrees.wowcompanion.PsSync.onWritten(ctx, m.o) { svLog(it) } }
+                }
                 is BridgeMsg.AddonsPc -> {
                     com.jrees.wowcompanion.PcAddonsWant.statusLine(m.o)?.let { onStatus(it) }
                     if (m.o.optString("state") == "done") svLog("pc add-ons: ${m.o.optString("line").take(300)}")

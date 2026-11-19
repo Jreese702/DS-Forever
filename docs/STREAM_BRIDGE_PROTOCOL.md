@@ -166,6 +166,9 @@ sees the PC there.
     `{"t":"sv_written","results":[{"var","state":"written"|"same"|"changed"|"refused"|"running"|"none"|"failed"}]}`. `written` /
     `same` = the PC holds the table: the Thor's base for its later three-way merges of the PC's live `svkeep` documents.
   - A start waits up to 6 s for a `sv_write` still owed.
+- `pad_click` / `pad_click_result` and `ps_read` / `ps_files` / `ps_write` / `ps_written` *(Desktop 0.2.42, welcome `caps`)*: Desktop
+  clicks the pad's cells while streaming, and Polestar's own saved tables follow; described in desktop/docs/STREAM_BRIDGE_PROTOCOL.md
+  section 7.
 
 ## 8. What the Thor tells the player
 
