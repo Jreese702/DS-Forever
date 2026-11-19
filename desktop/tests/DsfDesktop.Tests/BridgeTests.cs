@@ -90,6 +90,12 @@ namespace DsfDesktop.Tests
         public volatile int AddonsWants, AddonFiles;
         public void AddonsWant(Dictionary<string, object> m, BridgeSession session) { AddonsWants++; }
         public void AddonFile(Dictionary<string, object> m) { AddonFiles++; }
+        public volatile int PadClicks, PsReads, PsWrites;
+        public void PadClick(Dictionary<string, object> m, Action<Dictionary<string, object>> done)
+        { PadClicks++; done(new Dictionary<string, object> { ["id"] = m.Long("id"), ["state"] = "done", ["n"] = 1, ["mode"] = "post" }); }
+        public Dictionary<string, object> PsRead(string acctHash) { PsReads++; return new Dictionary<string, object> { ["state"] = "none", ["why"] = "test" }; }
+        public Dictionary<string, object> PsWrite(string acctHash, List<Dictionary<string, object>> docs)
+        { PsWrites += docs.Count; return new Dictionary<string, object> { ["results"] = new object[0] }; }
         public void Dispose() => T.Dispose();
     }
 
