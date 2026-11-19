@@ -20,4 +20,18 @@ object InteractFieldKbd {
 
     /** an open keyboard stays at a refresh: on Mail / the auction house only, and only while the window shows */
     fun stays(mailOrAuction: Boolean, shown: Boolean): Boolean = mailOrAuction && shown
+
+    /**
+     * i167 (the user 2026-11-19: "if I press b to go back without entering a gold amount it breaks everything"): B closes the keyboard and
+     * taps the add-on's "kbd off"; a document the add-on wrote BEFORE that tap still names the field, and it opened the keyboard again
+     * (a second B was then needed, and the B's release reached the window's own Back). A field [closed] [ageMs] ago is not reopened
+     * by a document naming it for [REOPEN_GUARD_MS]; a document without the field ends the guard (the caller clears [closed]).
+     */
+    fun justClosed(name: String, closed: String?, ageMs: Long): Boolean =
+        closed != null && name == closed && ageMs in 0 until REOPEN_GUARD_MS
+
+    /** i167: the auction house's red Search while one of its own boxes is typed: the typed text is handed over first (not dropped) */
+    fun searchCommits(open: String?): Boolean = open == "ahtext" || open == "ahmin" || open == "ahmax"
+
+    const val REOPEN_GUARD_MS = 3_000L
 }

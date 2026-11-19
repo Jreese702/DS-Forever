@@ -6,7 +6,7 @@ A. TapPad pad25 under tools/wowstub.py (the REAL TapPad.lua with the world files
    under the hardware cursor (gxCursor not "0") nothing is drawn blank, as pad14.
 B. Dialogs d35 under test_quest_start.py's stub: the stream's ONE `stay` keeps a dialog off the top screen past LIFE with no further
    sign; a real mouse (pad.humanAt) brings it back; a new dialog in that frame needs its own sign; plain `alive` still lapses after LIFE.
-C. Interact i167: the iact "stay" cell (asked for last), ACT.stay, no answer of its own.
+C. Interact i167s (i169 since the 1501 merge): the iact "stay" cell (asked for last), ACT.stay, no answer of its own.
 Needs lupa. Exit code 1 on any failure."""
 import os
 import sys
@@ -184,7 +184,7 @@ check(D.eval('P2.alpha') == 1, "B. alive (Local): back on top once LIFE has pass
 
 # ---------------------------------------------------------------------------------------------------------------- C. Interact i167
 INTERACT = open(os.path.join(ADDONS, "WowCompanionInteract", "Interact.lua"), encoding="utf-8").read()
-check('local IV = "i167"' in INTERACT, "C. Interact i167")
+check('local IV = "i169"' in INTERACT and "i167s (fix/stream-cursor" in INTERACT, "C. Interact i169 (i167s, the stay cell, kept in the 1501 merge)")
 check('slot("iact", "stay")\n    local ok, d = pcall(pad.describe)' in INTERACT, "C. the stay cell is asked for last (no column above moves)")
 check("function ACT.stay()" in INTERACT and 'w[1] == "stay"' in INTERACT, "C. ACT.stay, no answer of its own")
 
