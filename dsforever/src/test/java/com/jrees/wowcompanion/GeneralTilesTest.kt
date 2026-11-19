@@ -64,12 +64,25 @@ class GeneralTilesTest {
         assertTrue(b.lines.all { l -> l.buttons.all { it.h >= GameUiTiles.LINE_H } })
     }
 
+    /** the user, 2026-11-19: Support the Project, ONE button across the tab's last row, opening the Ko-fi page */
+    @Test fun supportTheProjectButton() {
+        assertEquals("https://ko-fi.com/yeslander", SupportLink.URL)
+        assertEquals("Support the Project", Row.SUPPORT.label)
+        assertEquals(Row.SUPPORT, GeneralTiles.rows(SettingsTabs.Group.HELP, true, true).last())
+        assertEquals(SettingsTabs.Block.SUPPORT, SettingsTabs.blocks(SettingsTabs.Tab.GENERAL).last())
+        val row = GeneralTiles.rowBox(400f, 1240f)
+        val b = GeneralTiles.wideButton(row)
+        assertEquals(row.l + GeneralTiles.LABEL_X, b.l, 0.01f); assertEquals(row.r - 16f, b.r, 0.01f)
+        assertEquals(GeneralTiles.CONTROL_H, b.h, 0.01f); assertEquals(row.cy, b.cy, 0.01f)
+    }
+
     @Test fun compactRowsPerGroup() {
         assertEquals(listOf(Row.LANGUAGE), GeneralTiles.rows(SettingsTabs.Group.LOOK, true, false))
         // the user, 2026-11-18: Browser login under Windows ID (the same Restart row under both)
         assertEquals(listOf(Row.LOGIN, Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, true, false))
         assertEquals(listOf(Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN, Row.WINDOWS_RESTART), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, false, true))
-        assertEquals(listOf(Row.REPORT, Row.RELOAD, Row.STATUS), GeneralTiles.rows(SettingsTabs.Group.HELP, true, false))
+        // the user, 2026-11-19: Support the Project, the tab's last row
+        assertEquals(listOf(Row.REPORT, Row.RELOAD, Row.STATUS, Row.SUPPORT), GeneralTiles.rows(SettingsTabs.Group.HELP, true, false))
         assertTrue(GeneralTiles.rows(SettingsTabs.Group.HUD, true, true).isEmpty())
         // every General row word of the six-tab data is a compact row or a tile (Theme, Swap screens, Voice typing; Restart DS Forever
         // is Swap screens' band line; Companion's status is the Status row)

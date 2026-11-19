@@ -205,7 +205,7 @@ class GeneralTilesRoomTest {
         assertEquals(listOf(GeneralTiles.Row.LANGUAGE), look.rowIds())
         assertEquals(476f, look.tileBox(GeneralTiles.THEME)!!.width(), 0.01f)
         assertEquals(listOf(GeneralTiles.Row.LOGIN, GeneralTiles.Row.GAME_ACCOUNT, GeneralTiles.Row.WINDOWS_ID, GeneralTiles.Row.BROWSER_LOGIN), part(r, SettingsTabs.Group.ACCOUNT).rowIds())
-        assertEquals(listOf(GeneralTiles.Row.REPORT, GeneralTiles.Row.RELOAD, GeneralTiles.Row.STATUS), part(r, SettingsTabs.Group.HELP).rowIds())
+        assertEquals(listOf(GeneralTiles.Row.REPORT, GeneralTiles.Row.RELOAD, GeneralTiles.Row.STATUS, GeneralTiles.Row.SUPPORT), part(r, SettingsTabs.Group.HELP).rowIds())
         // no group folds, no heading is a stop; every part is shown
         for (g in SettingsTabs.groups(SettingsTabs.Tab.GENERAL)) assertTrue(g in r.open)
         // compact rows are 88 px: the Account part is its four rows (Browser login under Windows ID, 2026-11-18) and the foot
@@ -331,6 +331,48 @@ class GeneralTilesRoomTest {
             assertEquals("Send", help.reportWord())
             assertEquals(Tr.t("Problem report"), help.reportLabel())
         } finally { ReportFlow.clearPending() }
+    }
+
+    /** the user, 2026-11-19: "just a simple button at the bottom that says 'Support the Project'": the tab's LAST stop, one button across
+     *  the row; touch or A opens the Ko-fi page through the host's link opener; no browser = the button says so for a few seconds */
+    @Test fun supportTheProjectIsTheLastButtonAndOpensKofi() {
+        val r = room()
+        val urls = ArrayList<String>()
+        var browser = true
+        host.onOpenUrl = { u -> urls += u; browser }
+        val help = part(r, SettingsTabs.Group.HELP)
+        assertEquals(GeneralTiles.Row.SUPPORT, help.rowIds().last())
+        assertEquals(SettingsTabs.Group.HELP, SettingsTabs.groups(SettingsTabs.Tab.GENERAL).last())
+        val b = help.controlBoxes(GeneralTiles.Row.SUPPORT).single()
+        assertEquals("the page's last stop", b, help.focusTargets().last())
+        assertTrue("one button across the row", b.width() > W * 0.8f)
+        assertEquals(SupportLink.ROW_ID, help.supportWord())
+        // touch
+        tap(r, help, b)
+        assertEquals(listOf("https://ko-fi.com/yeslander"), urls)
+        assertEquals(SupportLink.ROW_ID, help.supportWord())
+        // no browser: the note on the button
+        browser = false
+        tap(r, help, b)
+        assertEquals(2, urls.size)
+        assertEquals(SupportLink.NO_BROWSER, help.supportWord())
+        browser = true
+        // the controller: Down walks to it (the page's last stop), A opens the page
+        hold(r)
+        press(r, "PADDDOWN")
+        val want = inPage(r, help, b)
+        repeat(40) { if (r.pad.focusBox() != want) press(r, "PADDDOWN") }
+        assertEquals(want, r.pad.focusBox())
+        press(r, "PAD1")
+        assertEquals(3, urls.size)
+        assertEquals(SupportLink.URL, urls.last())
+        // its words in Spanish and French (Tr, menus only)
+        for ((l, w) in listOf("es" to "Apoya el proyecto", "fr" to "Soutenir le projet")) {
+            listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+                .first { it.canRead() }.let { Tr.load(l, it.readText()) }
+            Tr.setChoice(app, l)
+            assertEquals(w, Tr.t(SupportLink.ROW_ID))
+        }
     }
 
     @Test fun accountAndHelpRows() {

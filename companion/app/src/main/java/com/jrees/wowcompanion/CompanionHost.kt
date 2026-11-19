@@ -987,6 +987,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         settingsView.onReportSendNow = { DiagLog.stopRecording(); sendReport(ReportFlow.description.ifBlank { "(sent from Settings while recording)" }) }
         settingsView.onReportOpenSaved = { openSavedReport() }
+        // General > Support the Project (the user, 2026-11-19): the Ko-fi page, opened as the report's issue opens (openUrlOnTop)
+        settingsView.onOpenUrl = { url -> openUrlOnTop(url).also { DiagLog.event("app", "support link opened: $it") } }
         settings.pad.padOverride = { k ->
             (::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true }) ||
                 (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true }) ||
