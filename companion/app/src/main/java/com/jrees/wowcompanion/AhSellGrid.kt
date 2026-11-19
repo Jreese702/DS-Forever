@@ -44,6 +44,9 @@ object AhSellGrid {
         return out
     }
 
+    /** i168: Start is the Sell form's Post (never the pause wheel) while the add-on holds the pad, the Sell tab is open and an item is in it */
+    fun ownsStart(padHeld: Boolean, tab: String, hasItem: Boolean): Boolean = padHeld && tab == "sell" && hasItem
+
     fun height(cells: List<Cell>): Float = (cells.maxOfOrNull { it.box.bottom } ?: 0f) + 8f
 
     /** the scroll that keeps [box] in a view [viewH] tall, moved as little as possible from [scroll] (never back to the top) */

@@ -394,7 +394,16 @@ class InteractView(context: Context) : View(context) {
     }
 
     /** the keyboard is up: Start is its Done (the host asks before the pause wheel takes Start) */
-    fun ownsStart(): Boolean = kbField != null && visibility == VISIBLE
+    fun ownsStart(): Boolean = (kbField != null && visibility == VISIBLE) || sellOwnsStart()
+
+    /** i168: the auction house's Sell form with an item in it: Start is its Post (the add-on keeps Start then), never the pause wheel */
+    private fun sellOwnsStart(): Boolean {
+        if (visibility != VISIBLE || kind != Kind.AUCTION) return false
+        val d = doc ?: return false
+        val au = d.optJSONObject("auction") ?: return false
+        return AhSellGrid.ownsStart(d.optJSONObject("nav")?.optBoolean("on") == true, au.optString("tab"),
+            au.optJSONObject("sell")?.optJSONObject("item") != null)
+    }
 
     private var kbRepeat: String? = null
     private val kbTick = object : Runnable {
@@ -3172,7 +3181,7 @@ class InteractView(context: Context) : View(context) {
         if (item == null) {
             val lay = layout("Choose an item from your bags to sell it", UiKit.bodyPaint(27f, Theme.dim), (f.width() - 60f).toInt(), 6f)
             drawLayout(c, lay, f.left + 30f, f.top + 80f)
-            stripButton(c, postB, "Post", "why:Choose an item to sell", false, false, "rev_x", id = "ahspost")
+            stripButton(c, postB, "Post", "why:Choose an item to sell", false, false, POST_GLYPH, id = "ahspost")
         } else {
             val commodity = item.optBoolean("commodity")
             UiKit.ahItemHeader(c, RectF(f.left + 10f, f.top + 10f, f.right - 10f, f.top + 120f), itemIcon(item),
@@ -3184,9 +3193,9 @@ class InteractView(context: Context) : View(context) {
             if (mx > 1) {
                 val qy = y + 40f
                 c.drawText(Tr.t("Quantity"), f.left + 24f, qy + 10f, lab)
-                UiKit.square(c, "minus", f.left + 236f, qy, 72f, if (q > 1) UiKit.Button.UP else UiKit.Button.DISABLED, null)
+                UiKit.square(c, "minus", f.left + 236f, qy, 72f, if (q > 1) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_x".takeIf { gl })
                 c.drawText(Tr.t(q.toString()), f.left + 313f, qy + 12f, UiKit.numberPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
-                UiKit.square(c, "plus", f.left + 390f, qy, 72f, if (q < mx) UiKit.Button.UP else UiKit.Button.DISABLED, null, glyphRight = true)
+                UiKit.square(c, "plus", f.left + 390f, qy, 72f, if (q < mx) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_y".takeIf { gl }, glyphRight = true)
                 if (q > 1) hits.add(RectF(f.left + 192f, qy - 44f, f.left + 280f, qy + 44f) to hitOf("ahsqty less", "sq_less"))
                 if (q < mx) hits.add(RectF(f.left + 346f, qy - 44f, f.left + 434f, qy + 44f) to hitOf("ahsqty more", "sq_more"))
                 hits.add(RectF(f.left + 282f, qy - 40f, f.left + 344f, qy + 40f) to hitOf("ahsqty max", "sq_max"))
@@ -3245,9 +3254,9 @@ class InteractView(context: Context) : View(context) {
             c.drawText(Tr.t("Total Price"), f.left + 24f, y + 10f, lab)
             UiKit.money(c, sl.optLong("total", 0), f.right - 24f, y, 30f, fromRight = true)
             val canPost = why == null && st != "posting" && st != "warn"
-            // i167: X is Post (A stays for the fields); the cursor may rest on it while it is greyed
+            // i168: Start is Post (the user's pick "Start / Menu"; X / Y stay the quantity, A the fields); the cursor may rest on it greyed
             stripButton(c, postB, "Post", if (canPost) hitOf("ahspost", "spost") else "why:${why ?: "One moment"}", canPost,
-                pendingCmd == "ahspost", "rev_x", id = "ahspost")
+                pendingCmd == "ahspost", POST_GLYPH, id = "ahspost")
             // ---- the listings now, on the right (the game's own search for this item)
             val rows = arr(sl, "listings")
             UiKit.ahHeader(c, mk.left + 10f, mk.right - 10f, mk.top + 30f,
@@ -3302,7 +3311,7 @@ class InteractView(context: Context) : View(context) {
                 (durs?.optString(sl.optInt("dur", 2) - 1) ?: "") to Theme.dim), money,
                 // i167: the confirm's Post is its own touch key (the strip's Post waits for its answer under the same command)
                 "Post", hitOf("ahspost", "spost").let { if (it.startsWith("act:")) "$it|confirm" else it }, act?.let { slotOf(it, "back") }?.takeIf { it >= 0 }?.let { "act:ahback|$it" } ?: "why:Press ${Glyphs.name("b")}",
-                yesGlyph = "rev_x")
+                yesGlyph = POST_GLYPH)
         }
     }
 
@@ -5334,6 +5343,8 @@ class InteractView(context: Context) : View(context) {
         const val TRUST_GAP_MS = 6_000L       // and the least time between two of them
         const val LIVE_MS = 25_000L       // actions need a document this recent
         const val PENDING_TIMEOUT_MS = 8_000L
+        /** i168: the Sell form's Post is Start (the kit's Start / Menu glyph, as DialogView draws PADFORWARD) */
+        const val POST_GLYPH = "rev_plus"
         const val PENDING_FOLD_MS = 1_500L    // no document at all this long after an action: the window folds away
         const val PRESS_MIN_MS = 160L         // a press stays visibly DOWN at least this long
         private val PAD_FACES = setOf("PAD1", "PAD2", "PAD3", "PAD4")

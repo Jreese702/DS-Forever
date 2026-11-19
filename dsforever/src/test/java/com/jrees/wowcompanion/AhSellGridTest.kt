@@ -36,6 +36,13 @@ class AhSellGridTest {
         assertEquals("above: just enough", 496f, AhSellGrid.follow(b, 700f, 200f), 0.01f)
     }
 
+    @Test fun startIsPostOnlyWithAnItemInTheSellForm() {
+        assertTrue(AhSellGrid.ownsStart(padHeld = true, tab = "sell", hasItem = true))
+        assertFalse("no item: Start is the pause wheel as everywhere", AhSellGrid.ownsStart(true, "sell", false))
+        assertFalse("the Buy tab", AhSellGrid.ownsStart(true, "browse", true))
+        assertFalse("the pad not held (the game's)", AhSellGrid.ownsStart(false, "sell", true))
+    }
+
     @Test fun theKeyboardsBDoesNotReopenItsField() {
         assertTrue("a document still naming the field B closed a moment ago", InteractFieldKbd.justClosed("ahspg", "ahspg", 200L))
         assertFalse("another field opens", InteractFieldKbd.justClosed("ahsps", "ahspg", 200L))
