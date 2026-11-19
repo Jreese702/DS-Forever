@@ -77,9 +77,8 @@ class TargetRadialView(
     private val mag = DoubleArray(2)
     private var line: String? = null
     private var lineAt = 0L
-    /** a pick that asks first: armed by its first pick, done by a second within [CONFIRM_MS] */
-    private var armedKey: String? = null
-    private var armedAt = 0L
+    /** a pick that asks first: armed by its first pick, done by a second within [CONFIRM_MS]; B cancels it (Quests q68 Abandon Pet) */
+    private val ask = TargetRadial.Ask(CONFIRM_MS)
     private var lastActAt = 0L
     private var slidT = 0f
     private var holdTry = 0
@@ -144,7 +143,7 @@ class TargetRadialView(
             if (strip.height > 0) (a[1] - b[1]).toFloat() - strip.translationY else 0f
         }
         openedAt = SystemClock.uptimeMillis()
-        pointed = -1; line = null; armedKey = null; aimStick = -1
+        pointed = -1; line = null; ask.clear(); aimStick = -1
         held = 0; seeded = false
         strip.homeLifted = true
         visibility = VISIBLE
@@ -271,6 +270,8 @@ class TargetRadialView(
 
     /** B: the wheel before (More / a sub-menu), or closed from the first */
     private fun back() {
+        // q68: B while a pick asks (Abandon Pet's "Permanent.") = No: the ask ends, the wheel stays
+        if (ask.cancel(SystemClock.uptimeMillis())) { line = null; invalidate(); return }
         if (pages.isEmpty()) { close("B"); return }
         pages.removeAt(pages.size - 1)
         pointed = -1; line = null
@@ -306,16 +307,14 @@ class TargetRadialView(
         s.next?.let { p ->
             // More / a sub-menu: the next wheel (B comes back)
             if (!s.enabled) { say("Not available here"); return }
-            pages += p; pointed = -1; line = null; armedKey = null
+            pages += p; pointed = -1; line = null; ask.clear()
             relayout(); invalidate()
             return
         }
         val e = s.entry ?: return
         if (!e.enabled) { say("Not available here"); return }
         if (e.confirm != null) {
-            val now = SystemClock.uptimeMillis()
-            if (armedKey != s.label || now - armedAt > CONFIRM_MS) { armedKey = s.label; armedAt = now; say("${e.confirm} Pick it again"); return }
-            armedKey = null
+            if (!ask.pick(s.label, SystemClock.uptimeMillis())) { say(TargetRadial.askLine(e.confirm)); return }
         }
         val act = when {
             e.secure != null -> PlayerMenu.Do.Secure(e.secure, e.text, e.secureRow)
