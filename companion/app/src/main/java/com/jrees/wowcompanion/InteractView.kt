@@ -788,14 +788,26 @@ class InteractView(context: Context) : View(context) {
      */
     private var petTrainSeen: Int? = null
     private var petDropSeen: Int? = null
+    private var petScrollSeen: Int? = null
     private fun petTrainSync(msg: JSONObject, current: Boolean) {
         val tr = msg.optJSONObject("trainer")
-        if (tr == null) { petTrainSeen = null; petDropSeen = null; return }
+        if (tr == null) { petTrainSeen = null; petDropSeen = null; petScrollSeen = null; return }
         // Interact i170: a counted press the add-on dropped (the list changed, the game kept its own selection, a timeout ...): its reason
         val dn = tr.optInt("ptwn", 0)
         val dwas = petDropSeen
         petDropSeen = dn
         if (current && dwas != null && dn > dwas) str(tr, "ptw")?.let { note(it, false) }
+        // Interact i170b: a service off the game's visible page - the add-on asks for ONE real click on the game's own scroll arrow or
+        // track (trainer.pts: its point in game px; ptsn counts the asks). The game's scroll bar acts on a real mouse-down, so its own
+        // code scrolls (no taint); local and stream alike through tapGame. The add-on looks again and asks for the next (at most 8)
+        val sn = tr.optInt("ptsn", 0)
+        val swas = petScrollSeen
+        petScrollSeen = sn
+        val pts = tr.optJSONObject("pts")
+        if (current && swas != null && sn > swas && pts != null && pts.optInt("n") == sn && tr.optBoolean("pet") && !dryRun
+            && pts.has("x") && pts.has("y"))
+            TapBridge.tapGame(context, msg.optJSONObject("pad"), pts.optDouble("x"), pts.optDouble("y"),
+                "the game's trainer scroll (${pts.optString("step")} ${pts.optString("dir")})") { why -> post { note(why, false) } }
         val n = tr.optInt("ptc", 0)
         val was = petTrainSeen
         petTrainSeen = n

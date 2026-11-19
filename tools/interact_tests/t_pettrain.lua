@@ -159,14 +159,89 @@ tapRow()
 chk("i170: the game's Train button off: never armed", CELL[0].a.type == nil and N.ptWant == nil)
 TRAIN_ON = true
 
--- ---- cause 1b: off the game's visible page: refused, no select from our code, nothing counted
+-- ---- cause 1b (i170b): off the game's visible page: the game's OWN list is scrolled there by the app's real clicks, then trained
+-- timers of delay d, run once each (a timer set while running waits for the next call); the clock moves on by dt first
+local function runTimers(d, dt)
+    GAME.t = GAME.t + (dt or 0)
+    local due, keep = {}, {}
+    for _, t in ipairs(TIMERS) do if math.abs(t.d - d) < 1e-6 then due[#due + 1] = t else keep[#keep + 1] = t end end
+    TIMERS = keep
+    for _, t in ipairs(due) do t.fn() end
+    return #due
+end
+-- the screen: UI 1000 x 500 units, physical 2000 x 1000 px (2 px a unit); the game's scroll bar beside the list
+GetPhysicalScreenSize = function() return 2000, 1000 end
+local function box(l, t, w, h) return { GetLeft = function() return l end, GetTop = function() return t end, GetWidth = function() return w end,
+    GetHeight = function() return h end, GetEffectiveScale = function() return 1 end, IsShown = function() return true end } end
+rawset(_G, "UIParent", { GetWidth = function() return 1000 end, GetHeight = function() return 500 end, GetEffectiveScale = function() return 1 end,
+    GetChildren = function() end })
+local THUMB = box(300, 390, 8, 20)                     -- near the top of the track: the list scrolled to its start
+ClassTrainerFrame.ScrollBox.GetLeft, ClassTrainerFrame.ScrollBox.GetTop = function() return 100 end, function() return 400 end
+ClassTrainerFrame.ScrollBox.GetWidth, ClassTrainerFrame.ScrollBox.GetHeight = function() return 200 end, function() return 165 end
+ClassTrainerFrame.ScrollBox.GetEffectiveScale, ClassTrainerFrame.ScrollBox.IsShown = function() return 1 end, function() return true end
+ClassTrainerFrame.ScrollBar = { Back = box(300, 400, 8, 8), Forward = box(300, 243, 8, 8), Track = box(300, 392, 8, 140) }
+ClassTrainerFrame.ScrollBar.Track.Thumb = THUMB
+ClassTrainerFrame.skillIndexToDisplayIndex = setmetatable({}, { __index = function(_, k) return k end })
+local SAVED = SVC
+SVC = {}
+for k = 1, 12 do SVC[k] = { "Skill" .. k, "available", "Rank 1" } end
+local function page(first) for r = 1, 3 do ROWS[r].sk = first + r - 1 end end
+page(1)
 GAME.t = 3400
+TIMERS = {}
 local ptc0, nsel = N.ptc, #SELECTED
-ROWS[2].shown = false
-ok, why = ACT.train(tostring(g2.i), g2.k)
-chk("i170 cause 1: no shown row: refused with its reason (" .. tostring(why) .. ")", ok == false and type(why) == "string" and why:find("page") ~= nil)
-chk("i170 cause 1: and never the old SelectTrainerService + Train (no select, not counted, Train disarmed)", #SELECTED == nsel and N.ptc == ptc0 and CELL[0].a.type == nil)
-ROWS[2].shown = nil
+doc = build()
+local s10 = svcOf(doc, "Skill10", "Rank 1")
+ok, why = ACT.train(tostring(s10.i), s10.k)
+local pts = build().trainer.pts
+chk("i170b: off the page: the press goes on (" .. tostring(why) .. ")", ok == true)
+chk("i170b: never the old select from our code, not yet counted for the row taps", #SELECTED == nsel and N.ptc == ptc0 and CELL[0].a.type == nil)
+chk("i170b: the document asks for a scroll click: down, 7 rows, on the track below the thumb",
+    pts and pts.dir == "down" and pts.rows == 7 and pts.step == "track" and pts.x == 608 and pts.y > 2 * (500 - 370) and pts.y < 2 * (500 - 252)
+    and pts.n == build().trainer.ptsn)
+chk("i170b: the arrow, track and list boxes are in it (game px, top-left)", pts and pts.arrow and pts.arrow.y == 514 and pts.track and pts.list
+    and pts.list.x == 200 and pts.list.y == 200)
+chk("i170b: the shield over the hidden window lets the app's click through meanwhile", WowCompanion.shieldPassing[ClassTrainerFrame] == true)
+-- the app's track click scrolls one page (3 rows here); the add-on looks again at its next tick
+local n0 = pts.n
+page(4); runTimers(N.PT_TICK, 0.15)
+pts = build().trainer.pts
+chk("i170b: the list moved: the next click asked at once", pts and pts.n == n0 + 1 and pts.dir == "down")
+page(7); runTimers(N.PT_TICK, 0.15)
+pts = build().trainer.pts
+chk("i170b: 1 row left: the arrow this time", pts and pts.step == "arrow" and pts.rows == 1 and pts.x == 608 and pts.y == 2 * (500 - 243) + 8)
+page(8); runTimers(N.PT_TICK, 0.15)
+chk("i170b: the row on the page: the row phase (counted, its row the target, the shield back, no scroll asked)",
+    N.ptc == ptc0 + 1 and CELL[1].a.clickbutton == ROWS[3] and N.ptWant and not N.ptWant.scroll and build().trainer.pts == nil
+    and WowCompanion.shieldPassing[ClassTrainerFrame] == nil)
+local nb2 = #BOUGHT
+tapRow(); tapTrain()
+chk("i170b: and the scrolled-to service is the one bought", BOUGHT[#BOUGHT] == 10 and #BOUGHT == nb2 + 1)
+-- up: the row above the page
+GAME.t = 3420
+page(8)
+local s2 = svcOf(doc, "Skill2", "Rank 1")
+ACT.train(tostring(s2.i), s2.k)
+pts = build().trainer.pts
+chk("i170b: above the page: up (6 rows)", pts and pts.dir == "up" and pts.rows == 6)
+N.ptDrop(nil)
+-- a click that never moves the list: asked again after PT_RETAP, at most PT_STEPS clicks, then a short note
+GAME.t = 3440
+page(1)
+ACT.train(tostring(s10.i), s10.k)
+local asks = 1
+for _ = 1, 40 do
+    if not N.ptWant then break end
+    local before = N.ptsn
+    runTimers(N.PT_TICK, 0.2)
+    if N.ptsn ~= before then asks = asks + 1 end
+end
+chk("i170b: a list that never moves: " .. asks .. " clicks, then dropped with a short note", asks == N.PT_STEPS and N.ptWant == nil
+    and N.ptw == "Couldn't reach it in the game's list" and WowCompanion.shieldPassing[ClassTrainerFrame] == nil)
+SVC = SAVED
+ROWS[1].sk, ROWS[2].sk, ROWS[3].sk = 1, 2, 3
+ClassTrainerFrame.skillIndexToDisplayIndex = nil
+TIMERS = {}
 
 -- ---- cause 4: the game's window values tainted (an add-on rebuilt its list inside its own call): refused before a forbidden Train
 TAINT.displayIndex = true
@@ -178,11 +253,11 @@ TAINT.displayIndex = nil
 -- ---- cause 5: a doubled press, and a lost tap
 GAME.t = 3500
 TIMERS = {}
+local ptc5 = N.ptc
 ok = ACT.train(tostring(g2.i), g2.k)
 local ok2, why2 = ACT.train(tostring(g2.i), g2.k)
-chk("i170 cause 5: a second press while one is on its way is refused (" .. tostring(why2) .. ")", ok == true and ok2 == false and N.ptc == ptc0 + 1)
-local fired = false
-for _, t in ipairs(TIMERS) do if t.d == N.PT_TTL then t.fn(); fired = true end end
+chk("i170 cause 5: a second press while one is on its way is refused (" .. tostring(why2) .. ")", ok == true and ok2 == false and N.ptc == ptc5 + 1)
+local fired = runTimers(N.PT_TTL, N.PT_TTL) > 0
 chk("i170: a press whose taps never came times out (dropped, said why)", fired and N.ptWant == nil and N.ptw ~= nil)
 GAME.t = 3600
 ok = ACT.train(tostring(g2.i), g2.k)
