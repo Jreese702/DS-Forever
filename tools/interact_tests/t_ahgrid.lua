@@ -1,4 +1,4 @@
--- i166 (ah-post-grid, the user 2026-11-19: "We need to seriously improve the ah experience"): the Sell tab's grid with a folding header
+-- i167 (ah-post-grid, the user 2026-11-19: "We need to seriously improve the ah experience"): the Sell tab's grid with a folding header
 -- per bag; picking an item puts the cursor on Post; X is Post; after a post the form clears at once and the cursor goes back to the
 -- item's cell (or the nearest left), never the top; the throttle is looked at again; a B that closed the keyboard is not also a step
 -- back; a second press on the selected category goes up a level; Reset; the item rows' tooltips; the mailbox's Open All.
