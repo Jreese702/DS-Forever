@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad24"     -- pad24 THE STREAM'S TAPS MEASURED (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"; pad23's ring proved every "ui" tap (row 51, aimed y 115.5) pressed "uisw" (row 50) and every "pnav" tap (row 1, y 15.5) pressed "chq" (row 2) while the rows between were right: on the PC the game sees a press about 2 % closer to y ~65 than the app aims it): THE CALIBRATION STRIP, one plain press-only Button of ours, CAL_W game px wide, CAL_GAP left of the grid, over the band's full placed height, that does nothing but keep where the game saw each press (GetCursorPosition, read only; describe()'s `calib`: its box, the count and the last 4 "x,y" in game px), so the app taps it twice (top and bottom) and aims every tap through what it measured; the ring of presses also keeps where each was seen (rxDoc `at`, beside `last`); the catcher's band zone takes the strip in; nothing else changed; pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad25"     -- pad25 NO CURSOR FROM OUR OWN PRESSES (the user, 2026-11-19, streaming 1.0.36: "the cursor keeps randomly showing on the game"; the Thor's taps.log: every press Desktop posts moves the game's own cursor to the cell, and pad13's rule showed it again on that move - ResetCursor - until it had rested a second at the park): a press of ours (a cell, the calibration strip, the layout catcher) ARMS the blank cursor at once; the moves a press explains (to the cell and the game's park, within PRESS_WIN of it, or back to the park spot it learned) keep it blank wherever it rests, over the world or a window; the first move nothing of ours explains (a real mouse, the trackpad, a touch on the top screen) disarms it and is kept as pad.humanAt (Dialogs d35 reads it); an item on the cursor or a spell aiming shows it, and it is still only under the game's own cursor drawing (pad14's soft()); nothing saved, no setting changed; pad24 THE STREAM'S TAPS MEASURED (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"; pad23's ring proved every "ui" tap (row 51, aimed y 115.5) pressed "uisw" (row 50) and every "pnav" tap (row 1, y 15.5) pressed "chq" (row 2) while the rows between were right: on the PC the game sees a press about 2 % closer to y ~65 than the app aims it): THE CALIBRATION STRIP, one plain press-only Button of ours, CAL_W game px wide, CAL_GAP left of the grid, over the band's full placed height, that does nothing but keep where the game saw each press (GetCursorPosition, read only; describe()'s `calib`: its box, the count and the last 4 "x,y" in game px), so the app taps it twice (top and bottom) and aims every tap through what it measured; the ring of presses also keeps where each was seen (rxDoc `at`, beside `last`); the catcher's band zone takes the strip in; nothing else changed; pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -262,6 +262,7 @@ end
 pad.cal = { n = 0, p = {}, btn = nil }
 local function calPress()
     local c = pad.cal
+    pad.pressT = clock()                                             -- pad25: our press: the cursor stays blank
     local x, y = cursorPx()
     if not x then return end
     local t = clock()
@@ -305,6 +306,7 @@ end
 
 local function pressCell(btn, row, col)
     local t = clock()
+    pad.pressT = t                                                   -- pad25: our press (also its second): the cursor stays blank
     if btn.pressedAt and t - btn.pressedAt < REPEAT then return false end   -- the tap's second press
     btn.pressedAt = t
     flash(btn)
@@ -412,6 +414,7 @@ local function secureCell(r, col)
     -- A POST-hook, never SetScript: replacing OnClick would replace the secure action itself.
     btn:HookScript("OnClick", function(self, button, down)
         local early = row.onPress and not hasAction(self, button)       -- pad6b: no secure action -> the press, as a plain cell
+        pad.pressT = clock()                                            -- pad25: our press (down and up): the cursor stays blank
         if down then
             flash(self)
             if not early then return end
@@ -924,12 +927,59 @@ do
             WC.send(WC.encode(out))
         end)
     end)
-    f:SetScript("OnUpdate", function(_, el)
+    -- pad25 (the user, 2026-11-19, streaming: "the cursor keeps randomly showing on the game"): OUR OWN PRESSES never show it. A press
+    -- of ours (pad.pressT: a cell, the calibration strip, the layout catcher) ARMS the blank cursor; a move within PRESS_WIN of a press
+    -- (to the cell, the game's park after it) or back to the park spot learned (PARK_PX) is ours and keeps it blank wherever it rests;
+    -- the first other move is a real mouse (the PC's user, the trackpad, a touch on the top screen): disarmed, pad.humanAt = then.
+    -- While armed it is looked at every frame (the game resets it over a unit), otherwise as pad13 (every 0.1 s).
+    local PRESS_WIN, PARK_PX, HUMAN_S = 1.5, 2, 0.15
+    local armed, armedAt, parkX, parkY, mx, my, pending = false, nil, nil, nil, nil, nil, nil
+    pad.humanAt = nil
+    local function track()
+        local x, y = GetCursorPosition()
+        x, y = plainNum(x), plainNum(y)
+        if not x or not y then return end
+        local c = clock()                                              -- pad.pressT's clock
+        local pt = type(pad.pressT) == "number" and pad.pressT or nil
+        if pt and pt ~= armedAt then armedAt = pt; armed = true end
+        if mx and (math.abs(x - mx) > 1 or math.abs(y - my) > 1) then
+            if pt and c - pt <= PRESS_WIN then
+                parkX, parkY, pending = x, y, nil                          -- the press's own moves: the last is where the game parks it
+            elseif not (parkX and math.abs(x - parkX) <= PARK_PX and math.abs(y - parkY) <= PARK_PX) then
+                pending = pending or c                                     -- nothing of ours explains it (yet)
+            end
+        end
+        mx, my = x, y
+        -- a posted press's move may reach the game a frame before the press itself: a move is a real mouse only when no press of
+        -- ours follows it within HUMAN_S
+        if pending then
+            if pt and pt >= pending then pending = nil
+            elseif c - pending > HUMAN_S then
+                pending = nil
+                armed = false
+                pad.humanAt = GetTime()                                    -- Dialogs d35 compares it with its own GetTime()
+            end
+        end
+    end
+    local function busy()
+        if type(GetCursorInfo) == "function" and GetCursorInfo() ~= nil then return true end
+        return type(SpellIsTargeting) == "function" and SpellIsTargeting() == true
+    end
+    pad.cursorArmed = function() return armed end
+    local function look(_, el)
         acc = acc + el
-        if acc < 0.1 then return end
+        if not armed and acc < 0.1 and pad.pressT == armedAt then return end   -- a new press of ours is looked at in its own frame
         acc = 0
-        local ok, p = pcall(parked)
-        p = ok and p == true and soft()
+        pcall(track)
+        local p
+        if armed then
+            local okB, b = pcall(busy)
+            p = not (okB and b) and soft()
+        else
+            local ok, q = pcall(parked)
+            p = ok and q == true and soft()
+            if p then local x, y = GetCursorPosition(); parkX, parkY = plainNum(x), plainNum(y) end   -- pad13's rest: the park spot
+        end
         if p then
             pcall(SetCursor, BLANK)                                    -- again each look: the game resets it over a unit or an object
             hidden = true
@@ -937,7 +987,9 @@ do
             pcall(ResetCursor)
             hidden = false
         end
-    end)
+    end
+    f:SetScript("OnUpdate", look)
+    pad.cursorLook = look                                              -- for the harness (tools/test_stream_cursor.py)
 end
 
 -- ---------------------------------------------------------------- pad15 OUR ADD-ONS SWITCHED BACK ON (the Thor's log, 2026-11-04: on a
@@ -1114,6 +1166,7 @@ do
     end
     -- one press on the catcher: the guard, the zones, the reach, then the editor's handler with the spot
     function L.press()
+        pad.pressT = clock()                                             -- pad25: the editor's tap is ours: the cursor stays blank
         local x, y = L.cursor()
         if not x then L.refused = L.refused + 1; return false, "cursor" end
         local t = clock()
