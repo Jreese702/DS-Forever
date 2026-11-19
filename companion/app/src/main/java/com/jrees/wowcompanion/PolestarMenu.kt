@@ -30,6 +30,8 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
      */
     private var unanswered = 0
     private var lostAt = 0L
+    /** the player pressed in the menu (the host: the stream's Polestar hand-off is theirs from now on) */
+    var onPress: () -> Unit = {}
     /** one terse log line (the host: Log.i) */
     var log: (String) -> Unit = {}
     /** the menu's own frames are held back now (none of the last frames was answered) */
@@ -163,6 +165,7 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
 
     /** one press [k] while the menu shows */
     fun press(k: String, now: Long = System.currentTimeMillis()): Out {
+        onPress()
         val g = book.guide
         when (val d = cur.key(k, rows(), picks(), book.route, detail(), g, fight())) {
             PolestarTab.Do.Nothing, PolestarTab.Do.GoalsIn -> {}

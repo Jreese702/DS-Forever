@@ -168,13 +168,10 @@ class PolestarTabShotsTest {
         key(v, "PADRSHOULDER")
         assertEquals(1, tab(v))
         assertEquals("entered again: the shown step", "s:4", cur(v).sel)
-        // the Done fold: up to it, A opens it
+        // fix/desk-click-switch: every step is listed (no Done fold): up from the shown step is the done step before it
         key(v, "PADDUP")
-        assertEquals("done", cur(v).sel)
-        shot(v, "04_done_fold")
-        key(v, "PAD1")
-        assertTrue(cur(v).foldOpen)
-        shot(v, "05_done_fold_open")
+        assertEquals("s:3", cur(v).sel)
+        shot(v, "04_done_steps_listed")
         // B: Home (the list is the last step back); the room's leave asked
         var left = false
         v.onLeave = { left = true }
@@ -204,7 +201,7 @@ class PolestarTabShotsTest {
         art()
         val v = room()
         toPolestar(v)
-        repeat(2) { key(v, "PADDUP") }
+        while (cur(v).sel?.startsWith("s:") == true) key(v, "PADDUP")   // (every step listed: past the done ones)
         assertEquals("guide", cur(v).sel)
         shot(v, "08_guide_row")
         key(v, "PAD1")
@@ -264,7 +261,7 @@ class PolestarTabShotsTest {
         assertEquals(PolestarTab.View.LIST, cur(v).view)
         val f = room(fight = true)
         toPolestar(f)
-        repeat(2) { key(f, "PADDUP") }
+        while (cur(f).sel?.startsWith("s:") == true) key(f, "PADDUP")
         assertEquals("guide", cur(f).sel)
         shot(f, "16_fight_change_guide_grey")
         key(f, "PAD1")
@@ -278,7 +275,7 @@ class PolestarTabShotsTest {
         shot(n, "17_no_guide")
         val o = room(guide(st = "dddluuuuuuuuuuuu") { it.put("ol", true).put("ot", "Westfall").put("oi", 4) })
         toPolestar(o)
-        key(o, "PADDUP"); key(o, "PADDUP")
+        while (cur(o).sel?.startsWith("s:") == true) key(o, "PADDUP")
         assertEquals("n:OUTLEVEL", cur(o).sel)
         shot(o, "18_outlevelled_notice")
     }

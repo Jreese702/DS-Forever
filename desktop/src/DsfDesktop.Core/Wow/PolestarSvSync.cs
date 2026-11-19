@@ -69,6 +69,9 @@ namespace DsfDesktop.Wow
                     if (fi.Exists)
                     {
                         d["exists"] = true;
+                        // 0.2.43: when the PC's file was last written (Unix ms, UTC): the Thor lets the newer side win a conflict (its own
+                        // file is only as fresh as its game's last clean exit)
+                        d["mtime"] = (long)(fi.LastWriteTimeUtc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
                         if (fi.Length > MaxFile || total + fi.Length > MaxTotal) { d["hash"] = "big"; d["big"] = true; }
                         else
                         {

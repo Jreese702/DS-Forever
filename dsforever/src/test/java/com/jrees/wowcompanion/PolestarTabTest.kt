@@ -109,25 +109,27 @@ class PolestarTabTest {
         assertEquals(PolestarTab.Do.Picker, PolestarTab.noteDo(PolestarTab.Notice.NO_GUIDE, none))
     }
 
-    @Test fun theRowsFoldTheDoneStepsBeforeTheLiveOne() {
+    /** fix/desk-click-switch (the user, 2026-11-19: "when opening it I STILL cant see all of the steps") */
+    @Test fun theRowsListEveryStepOfTheGuide() {
         val rows = PolestarTab.rows(g(), foldOpen = false)
         assertEquals("guide", rows[0].key)
-        assertEquals(PolestarTab.Row.DoneFold(3, false), rows[1])
-        assertEquals((4..12).map { "s:$it" }, rows.filterIsInstance<PolestarTab.Row.Step>().map { it.key })
-        assertTrue((rows[2] as PolestarTab.Row.Step).shown && (rows[2] as PolestarTab.Row.Step).live)
+        assertEquals((1..12).map { "s:$it" }, rows.filterIsInstance<PolestarTab.Row.Step>().map { it.key })
+        assertFalse(rows.any { it is PolestarTab.Row.DoneFold })
+        val four = rows.first { it.key == "s:4" } as PolestarTab.Row.Step
+        assertTrue(four.shown && four.live)
+        assertEquals('d', (rows.first { it.key == "s:1" } as PolestarTab.Row.Step).status)
         assertEquals("reset", rows.last().key)
-        val open = PolestarTab.rows(g(), foldOpen = true)
-        assertEquals((1..12).map { "s:$it" }, open.filterIsInstance<PolestarTab.Row.Step>().map { it.key })
-        // looking back at step 2: only step 1 folds, 2..12 in the list (2 shown, 4 the live one)
+        assertEquals("s:4", PolestarTab.landing(rows))
+        // looking back at step 2: every step still listed, the cursor lands on the shown one
         val back = PolestarTab.rows(g(guide(s = 2)), false)
-        assertEquals(PolestarTab.Row.DoneFold(1, false), back[2])           // (after the guide row and its "away" notice)
+        assertEquals((1..12).map { "s:$it" }, back.filterIsInstance<PolestarTab.Row.Step>().map { it.key })
         assertEquals("s:2", PolestarTab.landing(back))
-        // steps not for this character are left out; a guide done folds every step
+        // steps not for this character are listed too (dim), in their place
         val na = PolestarTab.rows(g(guide(st = "ddnluuuuunuu")), false)
-        assertEquals(PolestarTab.Row.DoneFold(2, false), na[1])
-        assertFalse(na.any { it.key == "s:10" })
+        assertEquals('n', (na.first { it.key == "s:10" } as PolestarTab.Row.Step).status)
+        assertEquals((1..12).map { "s:$it" }, na.filterIsInstance<PolestarTab.Row.Step>().map { it.key })
         val done = PolestarTab.rows(g(guide(s = null, l = null, st = "dddddddddddd") { it.put("cp", true) }), false)
-        assertEquals(listOf("guide", "n:COMPLETE", "done", "reset"), done.map { it.key })
+        assertEquals(listOf("guide", "n:COMPLETE") + (1..12).map { "s:$it" } + "reset", done.map { it.key })
         // no guide: the guide row and its notice only
         val none = PolestarTab.rows(PolestarTab.Guide.parse(JSONObject().put("type", "pguide").put("have", true).put("none", true)), false)
         assertEquals(listOf("guide", "n:NO_GUIDE"), none.map { it.key })
@@ -158,11 +160,11 @@ class PolestarTabTest {
         c.select("s:7")
         c.refresh(PolestarTab.rows(g(guide(s = 11, l = 5)), false), 10, 11)
         assertEquals("s:7", c.sel)
-        // a step that folded away hands the cursor to the fold (it is in there), never back to the top
+        // a step that is done meanwhile stays listed (fix/desk-click-switch: every step shows): the cursor stays on it
         c.select("s:5")
         val later = g(guide(s = 8, l = 8, st = "dddddddluuuu"))
         c.refresh(PolestarTab.rows(later, false), 11, 8)
-        assertEquals("done", c.sel)
+        assertEquals("s:5", c.sel)
         // a notice that went (Back answered) gives its place to the guide row's next notice, else the guide row
         c.select("n:AWAY")
         c.refresh(PolestarTab.rows(g(), false))
@@ -186,11 +188,12 @@ class PolestarTabTest {
         assertEquals(PolestarTab.Do.Nothing, k("PAD3"))
         assertEquals(PolestarTab.Do.Nothing, k("PAD4"))
         assertEquals("in a fight too (D3)", PolestarTab.Do.Look(5), k("PAD1", fight = true))
-        // up to the fold, the guide row: A Change guide (refused in a fight), X / Y there too; Up from it: the tab row
+        // up past the done steps (every step listed: fix/desk-click-switch) to the guide row: A Change guide (refused in a fight),
+        // X / Y there too; Up from it: the tab row
         k("PADDUP"); k("PADDUP")
-        assertEquals("done", c.sel)
-        assertEquals(PolestarTab.Do.Fold, k("PAD1"))
-        k("PADDUP")
+        assertEquals("s:3", c.sel)
+        assertEquals(PolestarTab.Do.Look(3), k("PAD1"))
+        k("PADDUP"); k("PADDUP"); k("PADDUP")
         assertEquals("guide", c.sel)
         assertEquals(PolestarTab.Do.Picker, k("PAD1"))
         assertEquals(PolestarTab.Do.Refused(PolestarTab.FIGHT_LINE), k("PAD1", fight = true))

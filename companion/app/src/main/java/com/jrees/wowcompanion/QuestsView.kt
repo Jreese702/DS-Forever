@@ -459,7 +459,9 @@ class QuestsView(
                 if (!dragging && abs(e.y - downY) > 18f) { dragging = true; if (pressed.isNotEmpty()) { pressed = ""; invalidate() } }
                 if (dragging) {
                     val dy = lastY - e.y
-                    if (dragList) listScroll += dy else detailScroll += dy
+                    // fix/desk-click-switch: on the Polestar tab a drag scrolls the guide's steps (it moved the hidden quest list)
+                    if (tab == 1 && psShows()) psPane.scrollBy(dy, psCur.view)
+                    else if (dragList) listScroll += dy else detailScroll += dy
                     invalidate()
                 }
                 lastY = e.y
