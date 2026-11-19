@@ -167,13 +167,16 @@ class ClockBandTest {
         assertFalse(ClockBand.hearthGlow(false, 0.0, false))                  // not in the bags
     }
 
-    @Test fun ammoShowsOnlyWithAmmoInTheSlot() {
+    @Test fun ammoShowsForAPlayerWhoUsesAmmoEvenAtZero() {
+        // feat/home-info-block (the user 2026-11-19: "I dont see it at all when im empty"): the ammo is read from the bags document's
+        // `equipped`; 0 still shows; a character with no ammo slot item, no quiver and no AmmoNeeded gets no cell
         assertNull(ClockBand.ammo(null))
-        assertNull(ClockBand.ammo(JSONObject("""{"slots":[]}""")))            // no ammo slot item (a caster, a warrior with none)
-        assertNull(ClockBand.ammo(JSONObject("""{"ammo":{"id":2512,"icon":132382,"count":0}}""")))
-        val a = ClockBand.ammo(JSONObject("""{"ammo":{"id":2512,"icon":132382,"count":1843},"ammoNeeded":true}"""))
+        assertNull(ClockBand.ammo(JSONObject("""{"equipped":{}}""")))                     // a caster, a warrior with none
+        val zero = ClockBand.ammo(JSONObject("""{"equipped":{"ammo":{"id":2512,"icon":132382,"count":0}}}"""))
+        assertNotNull(zero); assertEquals(0, zero!!.count); assertTrue(zero.empty)
+        val a = ClockBand.ammo(JSONObject("""{"equipped":{"ammo":{"id":2512,"icon":132382,"count":1843},"ammoNeeded":true}}"""))
         assertNotNull(a)
-        assertEquals(132382, a!!.icon); assertEquals(1843, a.count)
+        assertEquals(132382, a!!.icon); assertEquals(1843, a.count); assertEquals(0, a.of)    // no quiver / pouch: the count alone
         assertEquals("1843", ClockBand.count(1843)); assertEquals("12k", ClockBand.count(12_400))
     }
 

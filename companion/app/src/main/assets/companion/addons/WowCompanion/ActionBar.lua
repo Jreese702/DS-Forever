@@ -1856,6 +1856,9 @@ local function noteCast(event)
         -- "Opening - No Text" has an empty display text, so the bar stays blank (the user, 2026-11-19); the
         -- internal name is only the fallback when no display text is given at all (nil)
         local tx = S(function() return select(2, fn("player")) end)
+        -- 1504 merge: S answers its ABSENT / THREW sentinel (a one-byte string) for a nil or a throw, never nil itself, so those
+        -- count as "no display text" here (the name fallback); an empty "" (and a secret) stay blank
+        if tx == WC.ABSENT or tx == WC.THREW then tx = nil end
         if type(tx) == "string" then castNow.nm = realStr(tx)
         else castNow.nm = realStr(S(function() return (fn("player")) end)) end
         castNow.i = SN(function() return select(3, fn("player")) end)
