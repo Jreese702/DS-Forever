@@ -868,16 +868,7 @@ class InteractView(context: Context) : View(context) {
         TapBridge.tap(context, msg.optJSONObject("pad"), "iact", col) { }
     }
 
-    private fun rowOf(cmd: String) = when (cmd.substringBefore(' ')) {
-        "opt", "take", "turnin", "pick", "trhead", "ahcat", "ahsfold" -> "ipick"
-        "buy", "train", "pet", "mail", "ahres", "ahrow", "taxi", "bkdo", "loot" -> "ibuy"
-        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach", "ahsitem" -> "isell"
-        "lookbag", "ahfilter", "look" -> "ipick"
-        "tradein" -> "ibuy"
-        "tradeout", "tradepick" -> "isell"
-        "mailattach", "ahcancel" -> "ibuy"
-        else -> "iact"
-    }
+    private fun rowOf(cmd: String) = InteractRows.of(cmd)
 
     private var lastTapAt = 0L
 
@@ -3104,7 +3095,7 @@ class InteractView(context: Context) : View(context) {
      * Accept ([yesHit]: A) and Cancel ([noHit]: B). Nothing under it takes a touch meanwhile.
      */
     private fun ahConfirm(c: Canvas, r: RectF, title: String, lines: List<Pair<String, Int>>, money: List<Pair<String, Long>>,
-                          yesWord: String, yesHit: String, noHit: String, yesGlyph: String = "rev_a") {
+                          yesWord: String, yesHit: String, noHit: String, yesGlyph: String = "rev_a", yesOn: Boolean = !yesHit.startsWith("why:")) {
         hits.clear()
         UiKit.cover(c, r)
         val w = 960f
@@ -3127,7 +3118,7 @@ class InteractView(context: Context) : View(context) {
         val bw = 330f; val bh = 104f
         val yes = RectF(inn.centerX() - 14f - bw, d.bottom - 40f - bh, inn.centerX() - 14f, d.bottom - 40f)
         val no = RectF(inn.centerX() + 14f, yes.top, inn.centerX() + 14f + bw, yes.bottom)
-        stripButton(c, yes, yesWord, yesHit, !yesHit.startsWith("why:"), pendingCmd != null, yesGlyph, always = true)
+        stripButton(c, yes, yesWord, yesHit, yesOn, pendingCmd != null, yesGlyph, always = true)
         stripButton(c, no, "Cancel", noHit, true, false, UiKit.backGlyph(), always = true)
     }
 
@@ -3211,14 +3202,14 @@ class InteractView(context: Context) : View(context) {
                 item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
             var y = f.top + 140f
             val gl = cur != null
-            // Quantity: X / Y (- / +), A or a touch on the number = the game's Max
+            // Quantity: Y / X (- / +; Interact i171, the user's ruling: Y is the left button on the Nintendo layout), A or a touch on the number = the game's Max
             val q = sl.optInt("qty", 1); val mx = sl.optInt("max", 1)
             if (mx > 1) {
                 val qy = y + 40f
                 c.drawText(Tr.t("Quantity"), f.left + 24f, qy + 10f, lab)
-                UiKit.square(c, "minus", f.left + 236f, qy, 72f, if (q > 1) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_x".takeIf { gl })
+                UiKit.square(c, "minus", f.left + 236f, qy, 72f, if (q > 1) UiKit.Button.UP else UiKit.Button.DISABLED, AhQty.LESS_GLYPH.takeIf { gl })
                 c.drawText(Tr.t(q.toString()), f.left + 313f, qy + 12f, UiKit.numberPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
-                UiKit.square(c, "plus", f.left + 390f, qy, 72f, if (q < mx) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_y".takeIf { gl }, glyphRight = true)
+                UiKit.square(c, "plus", f.left + 390f, qy, 72f, if (q < mx) UiKit.Button.UP else UiKit.Button.DISABLED, AhQty.MORE_GLYPH.takeIf { gl }, glyphRight = true)
                 if (q > 1) hits.add(RectF(f.left + 192f, qy - 44f, f.left + 280f, qy + 44f) to hitOf("ahsqty less", "sq_less"))
                 if (q < mx) hits.add(RectF(f.left + 346f, qy - 44f, f.left + 434f, qy + 44f) to hitOf("ahsqty more", "sq_more"))
                 hits.add(RectF(f.left + 282f, qy - 40f, f.left + 344f, qy + 40f) to hitOf("ahsqty max", "sq_max"))
@@ -3334,7 +3325,10 @@ class InteractView(context: Context) : View(context) {
                 (durs?.optString(sl.optInt("dur", 2) - 1) ?: "") to Theme.dim), money,
                 // i167: the confirm's Post is its own touch key (the strip's Post waits for its answer under the same command)
                 "Post", hitOf("ahspost", "spost").let { if (it.startsWith("act:")) "$it|confirm" else it }, act?.let { slotOf(it, "back") }?.takeIf { it >= 0 }?.let { "act:ahback|$it" } ?: "why:Press ${Glyphs.name("b")}",
-                yesGlyph = POST_GLYPH)
+                // the user on 1502: "the second post button prompt is staying grayed out, it should just be colored" and "should also
+                // prompt with A": the confirm's Post is always the coloured red button while it is up (the add-on armed it, so it can
+                // post), with A's glyph - A posts (the cursor starts on it), Start still posts quietly, B cancels
+                yesGlyph = "rev_a", yesOn = true)
         }
     }
 
@@ -3448,7 +3442,9 @@ class InteractView(context: Context) : View(context) {
         // category back to the window's start
         val resetB = RectF(catP.left + 8f, catP.top + 6f, catP.right - 8f, catP.top + 66f)
         val rcol = act?.let { slotOf(it, "reset") } ?: -1
-        stripButton(c, resetB, "Reset", if (rcol >= 0) "act:ahreset|$rcol" else "why:The game gave this no tap cell", rcol >= 0,
+        // i171 (the user on 1502: Reset "graying out for some reason" - its cell was lost to the iact budget): always coloured; nothing
+        // to reset is a harmless no-op
+        stripButton(c, resetB, "Reset", if (rcol >= 0) "act:ahreset|$rcol" else "why:The game gave this no tap cell", true,
             pendingCmd == "ahreset", "rev_y".takeIf { au.optJSONObject("item") == null }, id = "ahreset")
         val cat = RectF(catP.left, resetB.bottom + 6f, catP.right, catP.bottom)
         val cats = arr(au, "cats")
@@ -3501,9 +3497,9 @@ class InteractView(context: Context) : View(context) {
             c.drawText(Tr.t("Quantity"), bf.left + 30f, qy + 10f, lp)
             val canLess = q > 1; val canMore = q < avail
             val gl = cur != null
-            UiKit.square(c, "minus", bf.left + 236f, qy, 76f, if (canLess) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_x".takeIf { gl })
+            UiKit.square(c, "minus", bf.left + 236f, qy, 76f, if (canLess) UiKit.Button.UP else UiKit.Button.DISABLED, AhQty.LESS_GLYPH.takeIf { gl })
             c.drawText(Tr.t(q.toString()), bf.left + 313f, qy + 12f, UiKit.numberPaint(34f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
-            UiKit.square(c, "plus", bf.left + 390f, qy, 76f, if (canMore) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_y".takeIf { gl }, glyphRight = true)
+            UiKit.square(c, "plus", bf.left + 390f, qy, 76f, if (canMore) UiKit.Button.UP else UiKit.Button.DISABLED, AhQty.MORE_GLYPH.takeIf { gl }, glyphRight = true)
             act?.let { slotOf(it, "less") }?.let { if (it >= 0 && canLess) hits.add(RectF(bf.left + 190f, qy - 46f, bf.left + 282f, qy + 46f) to "act:ahqty less|$it") }
             act?.let { slotOf(it, "more") }?.let { if (it >= 0 && canMore) hits.add(RectF(bf.left + 344f, qy - 46f, bf.left + 436f, qy + 46f) to "act:ahqty more|$it") }
             c.drawText(Tr.t("Unit Price"), bf.left + 30f, qy + 110f, lp)
