@@ -1,6 +1,6 @@
 -- i172 (feat/ah-favorites, the user 2026-11-19: "I should be able to see my favorites list to star in the AH, and also be able to set
 -- favorites on things"): Favorites under Reset (C_AuctionHouse.SearchForFavorites), the star on every result and on the item opened
--- (C_AuctionHouse.SetFavoriteItem(itemKey, not IsFavoriteItem)), RT on the controller, a finger's row through the iqty cell, the two
+-- (C_AuctionHouse.SetFavoriteItem(itemKey, not IsFavoriteItem)), Select on the controller (i172b), a finger's row through the iqty cell, the two
 -- cells kept on every tab, and the pad rows' use at the auction house.
 local N, ACT, ON, build, AH, padPress = __N, __ACT, __ON, __build, __AH, __padPress
 local out = {}
@@ -57,24 +57,27 @@ chk("the cursor starts on the first category, not Reset nor Favorites", N.cur ==
 local ok, why = ACT.ahcat("fav")
 chk("Favorites with none: refused, nothing asked", ok == false and why == "No favorites" and #calls == 0, why)
 
--- browse a category; star its second result by the controller's RT
+-- browse a category; star its second result by the controller's Select
 ACT.ahcat("1")
 d = build()
 chk("a category's results, none starred", #d.auction.results == 3 and not d.auction.results[2].fav)
-chk("RT is kept from the game on Browse", N.npcExtra.PADRTRIGGER == true)
+chk("Select is kept from the game on Browse, RT is not", N.npcExtra.PADBACK == true and not N.npcExtra.PADRTRIGGER)
 N.cur = "ahres 2"
-padPress("PADRTRIGGER", true, "frame"); padPress("PADRTRIGGER", false, "frame")
-chk("RT on a row: SetFavoriteItem(its key, true)", last() == "set 102 true", last())
+padPress("PADBACK", true, "frame"); padPress("PADBACK", false, "frame")
+chk("Select on a row: SetFavoriteItem(its key, true)", last() == "set 102 true", last())
 d = build()
 chk("the row shows its star", d.auction.results[2].fav == true and not d.auction.results[1].fav)
 chk("hasFav on", d.auction.hasFav == true)
 N.busy = nil
-padPress("PADRTRIGGER", true, "frame"); padPress("PADRTRIGGER", false, "frame")
-chk("RT again: the star off", last() == "set 102 false" and FAV[102] == nil, last())
+padPress("PADBACK", true, "frame"); padPress("PADBACK", false, "frame")
+local barSent = 0
+for _, m in ipairs(SENT) do if type(m) == "table" and m.type == "cappad" and m.room == "bar" then barSent = barSent + 1 end end
+chk("the bar's Select listener stands aside (not bound, no cappad) while the AH keeps Select", not N.bar.bound and barSent == 0, barSent)
+chk("Select again: the star off", last() == "set 102 false" and FAV[102] == nil, last())
 N.cur = "ahcat 1"
 local n0 = #calls
-padPress("PADRTRIGGER", true, "frame"); padPress("PADRTRIGGER", false, "frame")
-chk("RT on a category: nothing", #calls == n0)
+padPress("PADBACK", true, "frame"); padPress("PADBACK", false, "frame")
+chk("Select on a category: nothing", #calls == n0)
 
 -- a finger: the iqty cell names the row (k-1 = row k), then the star's cell
 ACT.qty("3"); ACT.ahfav()
@@ -100,13 +103,13 @@ ok, why = ACT.ahfav("2")
 chk("unavailable: refused", ok == false and why == "Favorites unavailable", why)
 AHS.avail = true
 
--- the item opened: RT and the header's star use its key
+-- the item opened: Select and the header's star use its key
 ACT.ahres("2")
 d = build()
 chk("the item opened carries its star (off)", d.auction.item and not d.auction.item.fav)
 N.busy = nil
-padPress("PADRTRIGGER", true, "frame"); padPress("PADRTRIGGER", false, "frame")
-chk("RT in the item: SetFavoriteItem(the item's key, true)", last() == "set 102 true", last())
+padPress("PADBACK", true, "frame"); padPress("PADBACK", false, "frame")
+chk("Select in the item: SetFavoriteItem(the item's key, true)", last() == "set 102 true", last())
 d = build()
 chk("the item's star on", d.auction.item.fav == true)
 ACT.ahfav()
@@ -157,15 +160,41 @@ chk("Browse: iact within 40", asked.iact <= 40, asked.iact)
 local favCol, favsCol = d.auction.act.fav, d.auction.act.favs
 ACT.ahtab("sell"); d = build()
 chk("Sell: both cells kept, same columns", d.auction.act.fav == favCol and d.auction.act.favs == favsCol)
-chk("Sell: RT is not kept (the game's)", not N.npcExtra.PADRTRIGGER)
+chk("Sell: Select is not kept (the game's)", not N.npcExtra.PADBACK)
 ACT.ahtab("owned"); d = build()
 chk("Auctions: both cells kept", d.auction.act.fav == favCol and d.auction.act.favs == favsCol)
-padPress("PADRTRIGGER", true, "frame"); padPress("PADRTRIGGER", false, "frame")
-chk("RT on Auctions: nothing", last() == "browse", last())
+padPress("PADBACK", true, "frame"); padPress("PADBACK", false, "frame")
+chk("Select on Auctions: nothing", last() == "browse", last())
 ACT.ahtab("browse"); d = build()
-chk("Browse again: RT kept", N.npcExtra.PADRTRIGGER == true)
+chk("Browse again: Select kept", N.npcExtra.PADBACK == true)
 ON.AUCTION_HOUSE_CLOSED()
+FAV = {}
 ON.AUCTION_HOUSE_SHOW()
-chk("a new window: no Favorites shown", AH.fav == nil)
-chk("the version is i172 or later", tonumber(WowCompanion.interactIV:match("^i(%d+)$")) >= 172, WowCompanion.interactIV)
+chk("a new window with no favourites: plain Browse", AH.fav == nil and AH.results == nil)
+ON.AUCTION_HOUSE_CLOSED()
+FAV = { [102] = true }
+ON.AUCTION_HOUSE_SHOW()
+d = build()
+chk("a new window with favourites: opens on them (SearchForFavorites)", AH.fav == true and last() == "favorites 2" and #d.auction.results == 1
+    and d.auction.results[1].id == 102, last())
+chk("the cursor on Favorites", N.cur == "ahcat fav", N.cur)
+ON.AUCTION_HOUSE_CLOSED()
+AHS.ready = false
+n0 = #calls
+ON.AUCTION_HOUSE_SHOW()
+chk("throttle busy at open: Favorites waits, nothing asked", AH.fav == true and AH.favWait == true and #calls == n0)
+AHS.ready = true
+ON.AUCTION_HOUSE_THROTTLED_SYSTEM_READY()
+chk("throttle ready: the Favorites search goes once", last() == "favorites 2" and #calls == n0 + 1 and AH.favWait == nil, last())
+ON.AUCTION_HOUSE_THROTTLED_SYSTEM_READY()
+chk("and only once", #calls == n0 + 1)
+ON.AUCTION_HOUSE_CLOSED()
+AHS.ready = false
+ON.AUCTION_HOUSE_SHOW()
+ACT.ahback()                 -- B out of the waiting Favorites
+AHS.ready = true
+n0 = #calls
+ON.AUCTION_HOUSE_THROTTLED_SYSTEM_READY()
+chk("B meanwhile: the late Favorites search never runs", #calls == n0 and AH.fav == nil)
+chk("the version is i172 or later (i172b)", tonumber(WowCompanion.interactIV:match("^i(%d+)$")) >= 172, WowCompanion.interactIV)
 return table.concat(out, "\n")
