@@ -148,6 +148,39 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var lastBook: SpellsModel.Book? = null
     /** m62: the latest padmap (Settings' Smart Y section reads its Smart buffs) */
     private var lastPadMap: PadMapModel.Map? = null
+
+    /** General > Reset: the character playing now, else the one the radials' kept lists last belonged to (the game not up yet) */
+    private fun resetWho(): String? = GameUi.character?.takeIf { it.isNotEmpty() }
+        ?: getSharedPreferences("wc_radial", MODE_PRIVATE).getString("who", null)?.takeIf { ResetPlan.isCharKey(it) }
+
+    private val resetRun by lazy {
+        ResetRun({ getSharedPreferences(it, MODE_PRIVATE) }, svKeptDir(),
+            java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "DS Forever/combat")) { Log.i("WCSETUP", it) }
+    }
+    private val resetFlow by lazy {
+        ResetFlow(
+            live = { LauncherHooks.gameUp() && GameInput.live() },
+            gameUp = { LauncherHooks.gameUp() },
+            tap = { col -> TapBridge.tap(this, questsPad, HomePauseModel.ROW, col) { why -> Log.i("WCSETUP", "settings reset: tap refused ($why)") } },
+            apply = { b, all -> resetApply(b, all) },
+            reload = { if (GameInput.reload()) reloadStarted() },
+            clock = { SystemClock.elapsedRealtime() },
+            log = { Log.i("WCSETUP", it) })
+    }
+
+    /** the app's half of a reset, then every room reads its values again */
+    private fun resetApply(b: ResetPlan.Button, all: Boolean): ResetRun.Result {
+        val who = resetWho()
+        // the Thor's own game runs only in Local (streaming, the PC's does: the Thor's Config.wtf can be written now)
+        val localGame = LauncherHooks.gameUp() && PlayModes.current != PlayMode.STREAM
+        val r = resetRun.run(b, who, all, localGame)
+        val kinds = b.kinds
+        if (ResetPlan.Kind.SETTINGS in kinds) { Theme.use("classic"); Tr.setChoice(this, "auto"); Settings.resetDone(); FrameGen.resetDone() }
+        HomeSettings.resetDone(); GameUi.resetDone()
+        if (ResetPlan.Kind.SKILLS in kinds) { RadialMeta.reload(); if (::combatKeep.isInitialized) combatKeep.resetDone(if (all) null else who) }
+        if (ResetPlan.Kind.LAYOUTS in kinds && ::settings.isInitialized) settings.homeSection.dpadChanged()
+        return r
+    }
     private var lastGameMenu: JSONObject? = null
     private var lastAddonAt = 0L
     private var gmAckAt = 0L          // the game menu row's last answer (Radial.lua r12 "gmack") and its cell
@@ -989,6 +1022,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onReportOpenSaved = { openSavedReport() }
         // General > Support the Project (the user, 2026-11-19): the Ko-fi page, opened as the report's issue opens (openUrlOnTop)
         settingsView.onOpenUrl = { url -> openUrlOnTop(url).also { DiagLog.event("app", "support link opened: $it") } }
+        // General > Reset (the user, 2026-11-19: "reset to defaults buttons, split into four"; ResetPlan / ResetRun / ResetFlow): the
+        // pop-up's Yes runs it - the add-on's half first while the game takes taps (the pause row's 20-27), then the app's, then Reload
+        settingsView.onReset = { b, all -> resetFlow.start(b, all); settingsView.invalidate() }
+        settingsView.resetWho = { resetWho() }
+        settingsView.resetWord = { b -> resetFlow.word(b) }
+        settingsView.resetBusy = { resetFlow.busy }
         settings.pad.padOverride = { k ->
             (::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true }) ||
                 (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true }) ||
@@ -3331,6 +3370,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val line = runCatching { SvKeep.store(svKeptDir(), d, d.variable in svArmed) }.getOrElse { "settings backup: NOT kept (${it.message})" }
                 if (line.isNotEmpty()) Log.i("WCSETUP", line)
             }
+            // PadMap m175: the add-on's half of a Settings > General reset answered (ResetFlow: then the app's half and Reload)
+            "dsfreset" -> if (current) ui.post { resetFlow.onAck(msg.optInt("col", -1), msg.optBoolean("ok", false), msg.optString("why").ifEmpty { null })
+                if (::settingsView.isInitialized) settingsView.invalidate() }
             "padclean" -> {
                 // m45: PadMap's automatic removal of our own old DS macros (no UI): one line per character
                 if (msg.optString("why") == "auto") Log.i("WCSETUP", "padclean: removed ${msg.optInt("removed")} old DS macros (auto; " +

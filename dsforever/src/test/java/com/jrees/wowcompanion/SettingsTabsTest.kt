@@ -1,6 +1,7 @@
 package com.jrees.wowcompanion
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -48,7 +49,8 @@ class SettingsTabsTest {
 
     /** every group in its tab, in the approved order (QuestTrail's only while a copy is installed, as before) */
     @Test fun groupsInTheApprovedOrder() {
-        assertEquals(listOf("Look", "Account", "Help"), SettingsTabs.groups(T.GENERAL).map { it.heading })
+        // 2026-11-19: Reset (folds on its own) above Support the Project (a headless group, the page's last row)
+        assertEquals(listOf("Look", "Account", "Help", "Reset", "Support"), SettingsTabs.groups(T.GENERAL).map { it.heading })
         // GitHub #43 cb3 (the user: "the tap to cast bar should get its own bottom screen section")
         assertEquals(listOf("Home", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
         // the layout editor (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI
@@ -70,7 +72,10 @@ class SettingsTabsTest {
             G.LOOK to listOf("Theme", "Language", "Voice typing", "Swap screens", "Restart DS Forever"),     // 11-16: Voice typing     // #232: Swap screens (only with a second screen)
             // the user, 2026-11-14 ("build it"): Windows ID under Game account
             G.ACCOUNT to listOf("Battle.net login", "Game account", "Windows ID", "Browser login"),
-            G.HELP to listOf("Problem report", "Reload game UI", "Status", "Support the Project"),   // 2026-11-19: Support the Project last
+            G.HELP to listOf("Problem report", "Reload game UI", "Status"),
+            // 2026-11-19: Reset to defaults, four buttons; Support the Project last, under them
+            G.RESET to listOf("Reset settings", "Reset layouts", "Reset skills", "Reset everything"),
+            G.SUPPORT to listOf("Support the Project"),
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
                 "Free bag slots", "Ammo", "DS WoW toolbar", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk
@@ -104,7 +109,7 @@ class SettingsTabsTest {
                 "Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
-        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
+        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP, G.RESET, G.SUPPORT), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
             T.ADDONS to listOf(G.IMPORT, G.CARDS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
@@ -174,7 +179,9 @@ class SettingsTabsTest {
             // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): General > Account, under Windows ID
             listOf("Browser login") +
             // the user, 2026-11-19 ("a simple button at the bottom that says 'Support the Project'"): General > Help, last
-            listOf("Support the Project")
+            listOf("Support the Project") +
+            // the user, 2026-11-19 ("reset to defaults buttons, split into four"): General > Reset
+            listOf("Reset settings", "Reset layouts", "Reset skills", "Reset everything")
         val now = B.values().flatMap { it.rows }
         // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
         val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")
@@ -205,7 +212,10 @@ class SettingsTabsTest {
             listOfNotNull(SettingsTabs.groups(t).firstOrNull { !it.headless }), SettingsTabs.openOnShow(t))
         // the user, 2026-11-12: "the general tab doesnt need the folding sections": every General group always open
         assertEquals(false, T.GENERAL.folds)
-        assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP), SettingsTabs.openOnShow(T.GENERAL))
+        // ... but Reset (2026-11-19: a folding group on it): it shows folded; Support the Project (headless) open
+        assertEquals(setOf(G.LOOK, G.ACCOUNT, G.HELP, G.SUPPORT), SettingsTabs.openOnShow(T.GENERAL))
+        assertTrue(SettingsTabs.folds(G.RESET))
+        assertFalse(SettingsTabs.folds(G.HELP)); assertFalse(SettingsTabs.folds(G.SUPPORT))
         // the user's pick 2026-11-16 (the design's "five headings with no folding on this tab"): Top screen's tiles never fold either
         assertEquals(false, T.TOP.folds)
         // beautify pick 5 (the user, 2026-11-17: tiled tabs do not fold, Add-ons folds only Voice / Imported): Add-ons is the one
@@ -216,7 +226,7 @@ class SettingsTabsTest {
             assertEquals(t.label, SettingsTabs.groups(t).toSet(), SettingsTabs.openOnShow(t))
             for (g in SettingsTabs.groups(t)) assertEquals(g.name, false, SettingsTabs.folds(g))
         }
-        assertEquals(setOf(G.VOICE, G.IMPORTED), G.values().filter { SettingsTabs.folds(it) }.toSet())
+        assertEquals(setOf(G.RESET, G.VOICE, G.IMPORTED), G.values().filter { SettingsTabs.folds(it) }.toSet())   // + General's Reset (2026-11-19)
         // the layout editor's group first (feat/big-layout's pick), and with the tiles' no-folding tab (feat/big-uimenus) every group opens
         assertEquals(setOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), SettingsTabs.openOnShow(T.TOP))
         assertEquals(G.LAYOUT, SettingsTabs.groups(T.TOP).first())
@@ -295,7 +305,7 @@ class SettingsTabsTest {
         assertEquals(listOf("Import add-ons"), B.IMPORT.rows)
         assertEquals(SettingsTabs.Drawer.VIEW, B.IMPORT.drawer)
         // (beautify: Add-ons' cards and Performance's one group are headless too, their tiles under no heading)
-        assertEquals(listOf(G.IMPORT, G.CARDS, G.FRAMES), G.values().filter { it.headless })
+        assertEquals(listOf(G.SUPPORT, G.IMPORT, G.CARDS, G.FRAMES), G.values().filter { it.headless })
         assertEquals(G.IMPORTED, SettingsTabs.groups(T.ADDONS).last())
         assertTrue("the old Import row is gone from Imported", B.IMPORTED.rows.isEmpty())
         val open = SettingsTabs.openOnShow(T.ADDONS)
@@ -318,7 +328,7 @@ class SettingsTabsTest {
     @Test fun settingsViewDrawsItsOwnBlocksOnly() {
         // #232: Swap screens under the language (SettingsView draws it, only with a second screen); Windows ID under Game account
         // 11-16: Voice typing under the language (the user's pick: app-wide, like Language)
-        assertEquals(listOf(B.THEME, B.LANGUAGE, B.VOICE, B.SCREENS, B.ACCOUNT, B.GAME_ACCOUNT, B.WINDOWS_ID, B.BROWSER_LOGIN, B.HELP, B.SUPPORT), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection); 11-19: Support the Project last
+        assertEquals(listOf(B.THEME, B.LANGUAGE, B.VOICE, B.SCREENS, B.ACCOUNT, B.GAME_ACCOUNT, B.WINDOWS_ID, B.BROWSER_LOGIN, B.HELP, B.RESET, B.SUPPORT), SettingsTabs.viewBlocks(T.GENERAL))   // + the status (GameUiSection); 11-19: Support the Project last
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.BOTTOM))                            // under Home's section
         // hub61: every Top screen block is GameUiSection's tiles now (Edit layout too; Polestar's included)
         assertEquals(emptyList<B>(), SettingsTabs.viewBlocks(T.TOP))
