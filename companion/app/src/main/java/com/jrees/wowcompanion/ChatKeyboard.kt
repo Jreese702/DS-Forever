@@ -194,7 +194,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
                 // the ONE send while the keyboard is up; faint while the game cannot take it or nothing is written
                 val can = sendEnabled && text().isNotBlank()
                 val layer = if (can) -1 else c.saveLayerAlpha(r.left - 2f, r.top - 2f, r.right + 2f, r.bottom + 2f, 110)
-                UiKit.keyCap(c, r, sendWord, LOOK, mod = true, glyph = "gen_forward", icon = "enter")
+                UiKit.keyCap(c, r, sendWord, LOOK, mod = true, glyph = Glyphs.start(), icon = "enter")
                 if (layer >= 0) c.restoreToCount(layer)
             }
         }

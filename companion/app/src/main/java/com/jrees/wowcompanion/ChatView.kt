@@ -1729,7 +1729,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             if (fa > 0) {
                 val layer = c.saveLayerAlpha(funnel.left - 60f, 0f, w, height.toFloat(), fa)
                 UiKit.tex(if (menuOpen) "map_filter_btn_down" else "map_filter_btn")?.let { c.drawBitmap(it, null, funnel, bmp) }
-                UiKit.pad(c, "gen_back", funnel.left - 28f, funnel.centerY(), 44f)
+                UiKit.pad(c, Glyphs.select(), funnel.left - 28f, funnel.centerY(), 44f)
                 if (unread.isNotEmpty()) { fill.color = Theme.gold; c.drawCircle(funnel.right - 6f, funnel.top + 8f, 7f, fill) }
                 c.restoreToCount(layer)
             }
@@ -1788,7 +1788,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             val r = RectF(10f, 10f, width - 10f, height - 10f)
             val can = sendEnabled && typed.isNotBlank()
             val layer = if (can) -1 else c.saveLayerAlpha(r.left, r.top, r.right, r.bottom, 110)
-            UiKit.keyCap(c, r, "Send", ChatKeyboard.LOOK, mod = true, glyph = "gen_forward", icon = "enter")
+            UiKit.keyCap(c, r, "Send", ChatKeyboard.LOOK, mod = true, glyph = Glyphs.start(), icon = "enter")
             if (layer >= 0) c.restoreToCount(layer)
             if (pad.focus == Focus.Send && !morphOn) UiKit.focus(c, r)
         }

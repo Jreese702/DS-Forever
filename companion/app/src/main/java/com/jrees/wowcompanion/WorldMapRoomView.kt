@@ -2218,7 +2218,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         else { pFill.color = Color.argb(230, 10, 8, 6); c.drawCircle(funnelR.centerX(), funnelR.centerY(), funnelR.width() / 2f, pFill) }
         // Select / View opens Show: (the game's own filter button; Start until the user's 2026-10-09 ruling made Start the pause wheel
         // in every room): its glyph just LEFT of the funnel, where the game's gamepad mode draws its own
-        UiKit.pad(c, "gen_back", funnelR.left - GLYPH_PX / 2f - 6f, funnelR.centerY(), GLYPH_PX)
+        UiKit.pad(c, Glyphs.select(), funnelR.left - GLYPH_PX / 2f - 6f, funnelR.centerY(), GLYPH_PX)
         // (the quest panel's toggle is gone: the user after b104, "remove the Y to open quest bar and keep it open")
     }
 

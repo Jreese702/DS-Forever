@@ -150,6 +150,17 @@ object Glyphs {
      *  without the up and down arrows"): the game's "up" glyph, its arrow cut off (UiKit.pad draws it below the arrow's 17 rows), else null */
     fun plainStick(name: String): String? = Regex("^gen_([lr])stick$").find(name)?.let { m -> "gen_${m.groupValues[1]}stickup" }
 
+    /**
+     * fix/filter-glyphs (the user, test 1504: "the filters on both the map and the chat both have a backwards arrow instead of the
+     * appropiate button glyph for my controller"): Select's glyph in the chosen set - Nintendo's Minus, Xbox's View, PlayStation's
+     * Share. Never the generic pad's gen_back (a back arrow, the same on every set).
+     */
+    fun select(layout: CastSettings.ButtonLayout = CastSettings.buttonLayout): String = PREFIX.getValue(layout) + "_" + keyOf("select", layout)
+
+    /** Start's glyph in the chosen set: Nintendo's Plus; the generic Start ("gen_forward") for the others, as ControllerPictures has it */
+    fun start(layout: CastSettings.ButtonLayout = CastSettings.buttonLayout): String =
+        if (layout == CastSettings.ButtonLayout.NINTENDO) "rev_plus" else "gen_forward"
+
     fun translate(name: String, layout: CastSettings.ButtonLayout): String {
         val us = name.indexOf('_')
         if (us <= 0) return name

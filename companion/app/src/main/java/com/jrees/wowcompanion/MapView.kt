@@ -8291,7 +8291,7 @@ class MapView(context: Context) : View(context) {
             // the game's own filter button (pressed while the panel is open), as the other rooms draw it, Select / View's glyph to its left
             val fb = UiKit.tex(if (filterOpen) "map_filter_btn_down" else "map_filter_btn")
             if (fb != null) c.drawBitmap(fb, null, btnFilter, pArt) else drawButton(c, btnFilterDraw, "≡", seed.isNotEmpty(), 1f)
-            UiKit.pad(c, "gen_back", btnFilter.left - 28f, btnFilter.centerY(), 44f)
+            UiKit.pad(c, Glyphs.select(), btnFilter.left - 28f, btnFilter.centerY(), 44f)
             // the storey spine stands on top of the plus button, its lowest storey nearest it
             val here = placeHere(m)
             if (here != null && here.levels.size > 1) {
