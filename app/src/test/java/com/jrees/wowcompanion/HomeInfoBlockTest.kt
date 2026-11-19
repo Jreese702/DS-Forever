@@ -66,9 +66,12 @@ class HomeInfoBlockTest {
         assertNotNull("empty ammo must still show", a)
         assertEquals(0, a!!.count)
         assertTrue(a.empty)
-        // no quiver: what the plain bags could hold of it (1 free slot, none holding it) x the 1000 stack
-        assertEquals(1000, a.of)
-        assertEquals("0/1000", ClockBand.outOf(a.count, a.of))
+        // no quiver (the user's ruling 2026-11-19): the count alone, "0"
+        assertEquals(0, a.of)
+        assertEquals("0", ClockBand.outOf(a.count, a.of))
+        // with a quiver: 0 out of what it holds
+        val q = ClockBand.ammo(doc(listOf(bag(0, 16, 1), bag(1, 1, 1, fam = 1)), ammo = arrows(0)))!!
+        assertEquals("0/1000", ClockBand.outOf(q.count, q.of))
     }
 
     /** the slot itself cleared when the last arrow went: still a 0 cell for a hunter (AmmoNeeded, a quiver or ammo seen before) */
@@ -80,7 +83,8 @@ class HomeInfoBlockTest {
         assertNotNull("ammo seen before: 0 shows when the slot clears", after)
         assertEquals(0, after!!.count)
         assertEquals(132382, after.icon)                                   // the arrows' own icon kept
-        assertEquals(3 * 1000, after.of)                                    // the stack seen before x the 3 free slots
+        assertEquals(0, after.of)                                           // no quiver: the count alone
+        assertEquals(1000, after.stack)                                     // the stack seen before kept
         val quiver = ClockBand.ammo(doc(listOf(bag(0, 16, 2), bag(1, 16, 16, fam = 1, icon = 134407))))
         assertNotNull(quiver); assertEquals(0, quiver!!.count); assertEquals(16 * VendorSlots.AMMO_STACK, quiver.of)
     }
@@ -94,17 +98,17 @@ class HomeInfoBlockTest {
         assertEquals(a, ClockBand.ammo(JSONObject().put("bags", JSONArray()), a))
     }
 
-    /** ammo capacity: a quiver = its slots x the stack; no quiver = (free plain slots + slots holding it) x the stack */
+    /** ammo capacity: a quiver = its slots x the stack; no quiver = no total (the count alone) */
     @Test fun ammoCapacity() {
         // a 16-slot quiver (fam 1), the 200 Classic stack said by the add-on: 264 / 3200
         val q = ClockBand.ammo(doc(listOf(bag(0, 16, 4), bag(4, 16, 14, fam = 1)), listOf(item(4, 2512, 200), item(4, 2512, 64)),
             ammo = arrows(264, stack = 200)))!!
         assertEquals(264, q.count); assertEquals(3200, q.of); assertEquals("264/3200", ClockBand.outOf(q.count, q.of))
-        // no quiver: 4 free + 1 slot holding the arrows, stack 1000 = 5000; profession / ammo bags never count as room
+        // no quiver (a profession bag is not one): the count alone, "264"
         val p = ClockBand.ammo(doc(listOf(bag(0, 16, 4), bag(1, 24, 10, fam = 32)), listOf(item(0, 2512, 264)), ammo = arrows(264)))!!
-        assertEquals(264, p.count); assertEquals(5000, p.of)
+        assertEquals(264, p.count); assertEquals(0, p.of); assertEquals("264", ClockBand.outOf(p.count, p.of))
         // the stack unread: the biggest stack seen, never under the Classic 200
-        val u = ClockBand.ammo(doc(listOf(bag(0, 16, 1)), listOf(item(0, 2512, 150)), ammo = arrows(150, stack = null)))!!
+        val u = ClockBand.ammo(doc(listOf(bag(0, 16, 1), bag(2, 2, 1, fam = 1)), listOf(item(2, 2512, 150)), ammo = arrows(150, stack = null)))!!
         assertEquals(2 * VendorSlots.AMMO_STACK, u.of)
         // the count unsaid: the stacks of it in the bags
         val c = ClockBand.ammo(doc(listOf(bag(0, 16, 1)), listOf(item(0, 2512, 1000), item(0, 2512, 30)),
@@ -183,7 +187,7 @@ class HomeInfoBlockTest {
         return Page(home, cast)
     }
 
-    /** the bags: 68 of 80 used; the arrows [ammo] of what the bags hold (12 free slots + the one holding them, stack 1000) */
+    /** the bags: 68 of 80 used; the arrows [ammo], no quiver (the count alone) */
     private fun feed(p: Page, ammo: Int) {
         val eq = JSONObject().put("slots", JSONArray()).put("ammoNeeded", true)
             .put("ammo", JSONObject().put("id", 2512).put("icon", 132382).put("count", ammo).put("stack", 1000))
@@ -245,20 +249,20 @@ class HomeInfoBlockTest {
 
     private fun settle(ms: Long = 400) { ShadowSystemClock.advanceBy(Duration.ofMillis(ms)); ShadowLooper.idleMainLooper() }
 
-    /** the figures on Home: "68/80" bags, "0/12k" ammo in red (the old row had no ammo cell at 0) */
+    /** the figures on Home: "68/80" bags, "0" ammo in red with no quiver (the old row had no ammo cell at 0) */
     @Test fun homeShowsOutOfFiguresAndZeroAmmo() {
         artRoot()
         val p = page(); feed(p, 0); settle()
         val r = record(p)
         val bagsT = r.texts.firstOrNull { it.text == "68/80" }
         assertNotNull("the bags as used / total", bagsT)
-        val ammoT = r.texts.firstOrNull { it.text == "0/12k" }
-        assertNotNull("the empty ammo still shows, out of its room", ammoT)
+        val ammoT = r.texts.firstOrNull { it.text == "0" }
+        assertNotNull("the empty ammo still shows (no quiver: the count alone)", ammoT)
         assertEquals("0 ammo in the out red", Color.rgb(210, 50, 40), ammoT!!.color or (0xFF shl 24))
         val p2 = page(); feed(p2, 264); settle()
         val r2 = record(p2)
-        // 264 arrows in one slot + 12 free slots, stack 1000
-        assertNotNull(r2.texts.firstOrNull { it.text == "264/13k" })
+        // 264 arrows, no quiver: the count alone
+        assertNotNull(r2.texts.firstOrNull { it.text == "264" })
         ItemCd.reset()
     }
 
@@ -308,7 +312,7 @@ class HomeInfoBlockTest {
             assertTrue("the row grows: ${g.rowScale}", g.rowScale > 1.1f)
             val boxes = ArrayList<RectF>(); boxes += chip
             for ((i, it) in items.withIndex()) boxes += RectF(g.lefts[i], g.rowTop, g.lefts[i] + UiKit.clockCellGrown(it) * g.rowScale,
-                g.rowTop + ClockBand.ICON * g.rowScale)
+                g.rowTop + ClockBand.CELL_H * g.rowScale)
             for (box in boxes) {
                 assertTrue("$box under the spot's bottom ${s[3]}", box.bottom <= s[3] + 0.01f)
                 assertTrue("$box inside the column", box.left >= s[0] - 0.01f && box.right <= s[2] + 0.01f)

@@ -2981,10 +2981,8 @@ object UiKit {
         return floatArrayOf(w, ClockBand.chipBottom(gold != null) - ClockBand.CHIP_TOP)
     }
 
-    /** an extras cell's GROWN width at scale 1: the icon, then its value beside it (ClockBand.SIDE_GAP); the icon alone with no value */
-    fun clockCellGrown(it: BandItem): Float = when (it) {
-        is BandItem.Icon -> ClockBand.ICON + if (it.value.isEmpty()) 0f else ClockBand.SIDE_GAP + bandPaint(255).measureText(it.value)
-    }
+    /** an extras cell's width at scale 1 (the icon over its value: the wider of the two), as the grown row scales it */
+    fun clockCellGrown(it: BandItem): Float = bandWidth(it, bandPaint(255))
 
     /**
      * THE CENTRE INFO BLOCK (feat/home-info-block; the user, 2026-11-19: "these (block, battery gold and menu choices) need to fill out
@@ -3008,35 +3006,21 @@ object UiKit {
         val pv = bandPaint(rowAlpha)
         val small = clockBandBoxes(spot, items, floor)
         for ((i, it) in items.withIndex()) {
+            // a plain scale: today's cell (icon over its value) from its place and size today to its grown place and size
             val sb = small[i]
-            val k0 = sb.height() / ClockBand.CELL_H                       // today's cell scale
-            val q = grown.rowScale
-            // the icon: today's top centre of the cell -> the grown cell's left
-            val is0 = ClockBand.ICON * k0; val is1 = ClockBand.ICON * q
-            val il0 = sb.centerX() - is0 / 2f; val il1 = grown.lefts[i]
-            val it0 = sb.top; val it1 = grown.rowTop
-            val isz = is0 + (is1 - is0) * e
-            val il = il0 + (il1 - il0) * e; val itop = it0 + (it1 - it0) * e
+            val w = bandWidth(it, pv)
+            val k0 = sb.height() / ClockBand.CELL_H
+            val k = k0 + (grown.rowScale - k0) * e
+            val left = sb.left + (grown.lefts[i] - sb.left) * e
+            val top = sb.top + (grown.rowTop - sb.top) * e
+            c.save(); c.translate(left, top); c.scale(k, k)
             when (it) {
                 is BandItem.Icon -> {
-                    c.save(); c.translate(il, itop); val ks = isz / ClockBand.ICON; c.scale(ks, ks)
-                    bandIcon(c, ClockBand.ICON / 2f, it.icon, it.cooling, it.glow, rowAlpha)
-                    c.restore()
-                    if (it.value.isNotEmpty()) {
-                        // the value, held to its icon as it moves: first out from under it to its right (the first half), then up
-                        // beside it (the second), so it never crosses an icon; its size eased from today's to the grown one
-                        val ts = BAND_VALUE * (k0 + (q - k0) * e)
-                        val p = Paint(if (it.out) bandOut(pv) else pv).apply { textAlign = Paint.Align.LEFT; textSize = ts }
-                        val ex = (2f * e).coerceAtMost(1f); val ey = (2f * e - 1f).coerceAtLeast(0f)
-                        val tw = p.measureText(it.value)
-                        val x0 = il + isz / 2f - tw / 2f
-                        val x1 = il + isz + ClockBand.SIDE_GAP * isz / ClockBand.ICON
-                        val base0 = itop + isz * BAND_BASE / ClockBand.ICON
-                        val base1 = itop + isz / 2f - (p.ascent() + p.descent()) / 2f
-                        c.drawText(Tr.t(it.value), x0 + (x1 - x0) * ex, base0 + (base1 - base0) * ey, p)
-                    }
+                    bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, rowAlpha)
+                    if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, if (it.out) bandOut(pv) else pv)
                 }
             }
+            c.restore()
         }
     }
 

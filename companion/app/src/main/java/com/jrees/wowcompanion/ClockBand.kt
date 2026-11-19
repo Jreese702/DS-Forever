@@ -97,15 +97,14 @@ object ClockBand {
      * space and shrink when a cast bar pops up or L+R"). Home's centre column between the D-pad and the faces is an hourglass: narrow
      * between the D-pad's Right and the faces' left button, wide over and under them. GROWN: the clock chip (time, battery, gold line)
      * scaled up from its top centre, as big as passes between the buttons beside it; the extras row along the column's wide bottom
-     * (just over the cast bar's strip), each cell the icon with its value BESIDE it (an "N/total" reads wider than an icon), as big as
-     * the bottom's width and the room under the chip allow. SMALL (a cast shows, LB + RB or ZL + ZR held): exactly today's chip and row.
+     * (just over the cast bar's strip), each cell today's icon over its value (the user, 2026-11-19: "I still want the numbers under the
+     * icons"), as big as the bottom's width and the room under the chip allow - a plain scale of today's cells. SMALL (a cast shows, LB + RB or ZL + ZR held): exactly today's chip and row.
      * [GROW_MS_IN] / [GROW_MS_OUT] on Motion's FastOutSlowIn (the combat grow's timing). Nothing ever stands on a button, the LB / RB
      * plates or the cast bar's strip: every size here is checked against the band's own button boxes (CastBarPlace.clockSpot).
      */
     const val CHIP_GROW_MAX = 1.5f
     const val ROW_GROW_MAX = 1.6f
-    /** a grown cell: the icon, this gap, the value (unscaled px, x the row's scale); the gap between cells at least [GROWN_GAP] */
-    const val SIDE_GAP = 6f
+    /** the gap between grown cells at least [GROWN_GAP] (unscaled px, x the row's scale) */
     const val GROWN_GAP = 14f
     /** the search's step (scale units) */
     private const val STEP = 0.02f
@@ -139,32 +138,27 @@ object ClockBand {
 
     /**
      * The grown layout in [spot] (CastBarPlace.clockSpot in Home px): the chip [chipW] x [chipH] at scale 1 from [chipTop], centred on the
-     * spot's centre x; [cells] = each extras cell's grown width at scale 1 (icon + [SIDE_GAP] + its value; the icon alone with no value).
-     * The row first, bottom-aligned on the spot's bottom (the widest place, over the cast bar's strip), as big as fits under the chip at
-     * its today's size; then the chip as big as fits over the row. null = not even today's sizes fit grown: stay small.
+     * spot's centre x; [cells] = each extras cell's width at scale 1 (the wider of the icon and its value; [CELL_H] high).
+     * One scale for both (each capped: [CHIP_GROW_MAX], [ROW_GROW_MAX]), the biggest that fits: the row bottom-aligned on the spot's
+     * bottom (over the cast bar's strip), the chip over it. null = not even today's sizes fit that way: stay small.
      */
     fun grow(spot: FloatArray, chipTop: Float, chipW: Float, chipH: Float, cells: FloatArray): Grown? {
         val cx = spot[4]; val bottom = spot[3]
         fun rowW(q: Float) = (cells.sum() + GROWN_GAP * (cells.size - 1).coerceAtLeast(0)) * q
-        var q = 0f; var rowTop = bottom
-        if (cells.isNotEmpty()) {
-            var t = ROW_GROW_MAX
-            while (t >= 1f - 1e-4f) {
-                val top = bottom - ICON * t
-                if (top >= chipTop + chipH + CHIP_PAD && fits(room(spot, top, bottom), cx, rowW(t))) { q = t; break }
-                t -= STEP
-            }
-            if (q == 0f) return null
-            rowTop = bottom - ICON * q
+        // ONE scale for both (each capped at its own most), the biggest that fits: the row bottom-aligned on the spot's bottom, the chip
+        // over it with the clearance between, neither on a button
+        var q = 0f; var chip = 0f; var rowTop = bottom
+        var t = maxOf(CHIP_GROW_MAX, ROW_GROW_MAX)
+        while (t >= 1f - 1e-4f) {
+            val s = minOf(t, CHIP_GROW_MAX); val r = minOf(t, ROW_GROW_MAX)
+            val cb = chipTop + chipH * s
+            val top = if (cells.isEmpty()) bottom else bottom - CELL_H * r
+            val ok = cb + (if (cells.isEmpty()) 0f else CHIP_PAD) <= top && fits(room(spot, chipTop, cb), cx, chipW * s) &&
+                (cells.isEmpty() || fits(room(spot, top, bottom), cx, rowW(r)))
+            if (ok) { chip = s; q = r; rowTop = top; break }
+            t -= STEP
         }
-        var s = CHIP_GROW_MAX
-        var chip = 0f
-        while (s >= 1f - 1e-4f) {
-            val b = chipTop + chipH * s
-            if (b + (if (cells.isEmpty()) 0f else CHIP_PAD) <= rowTop && fits(room(spot, chipTop, b), cx, chipW * s)) { chip = s; break }
-            s -= STEP
-        }
-        if (chip == 0f) chip = 1f
+        if (chip == 0f) return null
         val lefts = FloatArray(cells.size)
         if (cells.isNotEmpty()) {
             // equal gaps across the bottom's free span, as wide as there is room for (up to GAP_MAX), centred on the spot's centre
@@ -208,7 +202,7 @@ object ClockBand {
      *  - [count]: the worn ammo (inventory slot 0) the game counts (GetInventoryItemCount: every stack of it in the bags), else the
      *    stacks of that ammo in the item rows; 0 when the slot is empty. NEVER hidden at 0 (the old row hid at 0 and with no slot item).
      *  - [of]: a quiver / ammo pouch on the bag bar (its family has the arrows / bullets bit): their slots x the ammo's stack size;
-     *    none: what the plain bags could hold of it (their free slots + the slots that already hold it) x the stack size.
+     *    none: 0 = no total, the count alone ("264"; the user's ruling 2026-11-19: "/total" only while a quiver or pouch is worn).
      *    The stack: the worn ammo's `stack`, else the one seen before, else the biggest stack in the bags, else [VendorSlots.AMMO_STACK].
      * Shown for a player who uses ammo: ammo in the slot, a quiver / pouch, the game's AmmoNeeded, or ammo seen before ([last]);
      * a character who never had any (a Shaman) gets no ammo cell. [icon] 0 = the stand-in quiver ([VendorSlots.AMMO_ICON]).
@@ -237,13 +231,8 @@ object ClockBand {
         val stack = worn?.optInt("stack", 0)?.takeIf { it > 0 }
             ?: last?.stack?.takeIf { it > 0 && (id == 0 || last.id == id) }
             ?: maxOf(VendorSlots.AMMO_STACK, mine.maxOfOrNull { it.optInt("count", 0) } ?: 0)
-        val of = if (ammoBags.isNotEmpty()) ammoBags.sumOf { it.optInt("slots", 0) } * stack
-        else {
-            val plain = plainBags(entries).map { it.optInt("bag", -99) }.toSet()
-            val free = plainBags(entries).sumOf { it.optInt("free", 0).coerceAtLeast(0) }
-            val holding = mine.count { it.optInt("bag", -99) in plain }
-            (free + holding) * stack
-        }
+        // the user's ruling 2026-11-19: no quiver / pouch = the count alone ("264"); the total only while one is worn
+        val of = if (ammoBags.isNotEmpty()) ammoBags.sumOf { it.optInt("slots", 0) } * stack else 0
         val icon = worn?.optInt("icon", 0)?.takeIf { it > 0 }
             ?: ammoBags.firstNotNullOfOrNull { b -> b.optInt("icon", 0).takeIf { it > 0 } }
             ?: last?.icon?.takeIf { it > 0 } ?: VendorSlots.AMMO_ICON
@@ -283,10 +272,6 @@ object ClockBand {
 
     private fun bagRows(bags: JSONObject): List<JSONObject> =
         bags.optJSONArray("bags")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } } ?: emptyList()
-
-    /** the bags that take anything (family 0, not the reagent bag, the free count read): where ammo can go with no quiver */
-    private fun plainBags(rows: List<JSONObject>) =
-        rows.filter { it.has("fam") && it.optInt("fam", -1) == 0 && !it.optBoolean("reagent") && it.optInt("free", -1) >= 0 && it.optInt("slots", 0) > 0 }
 
     /** a count in a narrow cell: as is under 10000, then thousands ("12k") */
     fun count(n: Int): String = if (n >= 10000) "${n / 1000}k" else n.toString()
