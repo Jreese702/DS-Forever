@@ -491,7 +491,7 @@ object ControllerPictures {
     // ---------------------------------------------------------------- pieces
 
     /** the Start button's glyph in the chosen set (Nintendo's +; the generic Start for the others) */
-    private val START get() = if (CastSettings.buttonLayout == CastSettings.ButtonLayout.NINTENDO) "rev_plus" else "gen_forward"
+    private val START get() = Glyphs.start()
 
     /** a face button [action] ("a" "b" "x" "y") in the chosen glyph set (UiKit.pad), else a dark disc with its letter */
     fun glyph(c: Canvas, action: String, cx: Float, cy: Float, size: Float) = glyphOrWord(c, "rev_$action", Glyphs.name(action), cx, cy, size)
