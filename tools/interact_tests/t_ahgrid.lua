@@ -16,7 +16,8 @@ C_Container = {
   GetBagName = function(bag) return bag == 0 and "Backpack" or "Small Bag" end,
   GetContainerItemInfo = function(bag, s) local it = BAGS[bag] and BAGS[bag][s]; if it then
       return { itemID = it.id, iconFileID = 133, stackCount = it.n, quality = 1, hyperlink = "|cff|Hitem:" .. it.id .. "|h[" .. it.name .. "]|h|r" } end end,
-  GetContainerNumFreeSlots = function(bag) return GAME.free or 0, 0 end,
+  -- the mail tests: bag 0 general (GAME.free), bag 1 a herb bag (family 32, GAME.herbFree)
+  GetContainerNumFreeSlots = function(bag) if bag == 0 then return GAME.free or 0, 0 elseif bag == 1 then return GAME.herbFree or 0, 32 end return 0, 0 end,
 }
 local AHS = { ready = true, sent = 0 }
 AuctionCategories = { { name = "Weapons", subCategories = { { name = "Swords" } } }, { name = "Armor" } }
@@ -104,12 +105,13 @@ d, nv = nav()
 chk("ready: Post can go, the cursor still on it", d.auction.sell.why == nil and nv.cur == "ahspost", nv.cur)
 -- a finger's look kept from the Buy tab does not turn X into hold-to-compare here
 N.look = "ahres 1"
--- X = Post: press 1 the confirm, press 2 posts
-padPress("PAD3", true, "frame"); padPress("PAD3", false, "frame")
+-- i168: Start = Post: kept from the game while an item is in the form; press 1 the confirm, press 2 posts
+chk("Start is kept for the Sell form", N.npcExtra.PADFORWARD == true)
+padPress("PADFORWARD", true, "frame"); padPress("PADFORWARD", false, "frame")
 d, nv = nav()
-chk("X: the confirm (armed), the cursor on its Post", d.auction.sell.armed == true and nv.cur == "ahspost", nv.cur)
-padPress("PAD3", true, "frame"); padPress("PAD3", false, "frame")
-chk("X again: the game's PostCommodity", AHS.posted ~= nil and AHS.posted.loc.s == 3)
+chk("Start: the confirm (armed), the cursor on its Post", d.auction.sell.armed == true and nv.cur == "ahspost", nv.cur)
+padPress("PADFORWARD", true, "frame"); padPress("PADFORWARD", false, "frame")
+chk("Start again: the game's PostCommodity", AHS.posted ~= nil and AHS.posted.loc.s == 3)
 d, nv = nav()
 chk("posted: the form clears at once (no grey Post left)", d.auction.sell.item == nil and AH.sell == nil)
 chk("posted: the cursor back on the item's cell, not the top", nv.cur == "ahsitem 0 3 818", nv.cur)
@@ -134,12 +136,13 @@ chk("B: the form goes, the cursor on the cell", AH.sell == nil and nv.cur == "ah
 N.cur = "ahsitem 0 1 2589"; pcall(N.act); nav()
 N.cur = "ahsq"; nav()
 local q0 = AH.sell.qty
-N.move("left")
-chk("Left on Quantity: one less", AH.sell.qty == q0 - 1 and N.cur == "ahsq", AH.sell.qty)
-N.move("right")
-chk("Right on Quantity: one more", AH.sell.qty == q0, AH.sell.qty)
+padPress("PAD3", true, "frame"); padPress("PAD3", false, "frame")
+chk("X on the Sell tab: one less (the quantity, as before)", AH.sell.qty == q0 - 1, AH.sell.qty)
 padPress("PAD4", true, "frame"); padPress("PAD4", false, "frame")
-chk("Y on the Sell tab: no quantity change", AH.sell.qty == q0, AH.sell.qty)
+chk("Y: one more", AH.sell.qty == q0, AH.sell.qty)
+chk("X never posts", AH.sell ~= nil and not AH.sell.armedAt)
+N.move("left")
+chk("Left from Quantity: the grid (the chosen item)", N.cur == "ahsitem 0 1 2589", N.cur)
 
 -- THE KEYBOARD'S B: A on the gold box opens it; B closes it (the app taps "kbd off" on the press); the release is not a step back
 N.cur = "ahsedit pg"; pcall(N.act)
@@ -180,16 +183,20 @@ chk("ahres: GetItemKey with the required level", TIPS.key and TIPS.key[1] == 555
 chk("no data yet: the item asked for, a look again soon", tp and tp.none and AHS.asked == 555 and #timers == 1, AHS.asked)
 
 -- THE MAILBOX's Open All: money then items, one call a step, never a COD letter, stops when the bags are full
-local INBOX = { { money = 500, cod = 0, items = { "Linen" } }, { money = 0, cod = 300, items = { "Ore" } }, { money = 0, cod = 0, items = { "A", "B" } } }
+local INBOX = { { money = 500, cod = 0, items = { "Linen" } }, { money = 0, cod = 300, items = { "Ore" } }, { money = 0, cod = 0, items = { "A", "B" } },
+                { money = 0, cod = 0, items = { "Peacebloom" } } }
+C_Item.GetItemFamily = function(id) return id == 2447 and 32 or 0 end
 local calls = {}
 function GetInboxNumItems() return #INBOX end
 function GetInboxHeaderInfo(i) local m = INBOX[i]; if m then
     local n = 0; for _ in pairs(m.items) do n = n + 1 end
     return 1, nil, "x", "s", m.money, m.cod, 3, n, true, false, false, false, false, 1 end end
-function GetInboxItem(i, a) local m = INBOX[i]; local it = m and m.items[a]; if it then return it, 1, 1, 1, 1 end end
+function GetInboxItem(i, a) local m = INBOX[i]; local it = m and m.items[a]; if it then return it, (it == "Peacebloom") and 2447 or 1, 1, 1, 1 end end
 function GetInboxText() return "" end
 function TakeInboxMoney(i) calls[#calls + 1] = "money " .. i; INBOX[i].money = 0 end
-function TakeInboxItem(i, a) calls[#calls + 1] = "item " .. i .. " " .. a; INBOX[i].items[a] = nil; GAME.free = GAME.free - 1 end
+function TakeInboxItem(i, a) calls[#calls + 1] = "item " .. i .. " " .. a
+  if INBOX[i].items[a] == "Peacebloom" and (GAME.herbFree or 0) > 0 then GAME.herbFree = GAME.herbFree - 1 else GAME.free = GAME.free - 1 end
+  INBOX[i].items[a] = nil end
 MAIL.isOpen = function() return true end
 MAIL.tab, MAIL.open = "inbox", nil
 local oldIsOpen = nil
@@ -209,9 +216,12 @@ chk("the COD letter is skipped: the third letter's item", calls[3] == "item 3 1"
 runTimers()
 chk("bags full: it stops, nothing more taken, the game's words", #calls == 3 and MAIL.all == nil and MAIL.allMsg and MAIL.allMsg.ok == false, #calls)
 chk("the COD letter untouched", INBOX[2].items[1] == "Ore" and INBOX[2].cod == 300)
-GAME.free = 5
+GAME.free = 1
+GAME.herbFree = 1
 ACT.mailopenall()
 chk("again with room: the rest", calls[4] == "item 3 2", calls[4])
+runTimers()
+chk("general bags full but the herb fits the herb bag: taken", calls[5] == "item 4 1" and GAME.free == 0, calls[5])
 runTimers()
 chk("nothing left: it ends by itself", MAIL.all == nil, MAIL.all)
 ACT.mailopenall(); ACT.mailopenall()
