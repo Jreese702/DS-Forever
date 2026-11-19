@@ -184,7 +184,8 @@ check(D.eval('P2.alpha') == 1, "B. alive (Local): back on top once LIFE has pass
 
 # ---------------------------------------------------------------------------------------------------------------- C. Interact i167
 INTERACT = open(os.path.join(ADDONS, "WowCompanionInteract", "Interact.lua"), encoding="utf-8").read()
-check('local IV = "i169"' in INTERACT and "i167s (fix/stream-cursor" in INTERACT, "C. Interact i169 (i167s, the stay cell, kept in the 1501 merge)")
+_ivm = __import__('re').search(r'local IV = "i(\d+)"', INTERACT)   # 1502: i170 (pet trainer) on top of i169
+check(_ivm is not None and int(_ivm.group(1)) >= 169 and "i167s (fix/stream-cursor" in INTERACT, "C. Interact i169 or later (i167s, the stay cell, kept in the 1501 merge)")
 check('slot("iact", "stay")\n    local ok, d = pcall(pad.describe)' in INTERACT, "C. the stay cell is asked for last (no column above moves)")
 check("function ACT.stay()" in INTERACT and 'w[1] == "stay"' in INTERACT, "C. ACT.stay, no answer of its own")
 
