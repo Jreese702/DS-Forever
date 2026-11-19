@@ -25,9 +25,11 @@ class LifeSignTest {
         assertNull(LifeSign.pick(fresh = false, sinceMs = 600_000, everyMs = every, desk = true, aliveCol = 1, stayCol = 7))
     }
 
-    @Test fun streamWithAnOlderAddOnSaysAliveOnceOnly() {
+    @Test fun streamWithoutAStayCellKeepsThePlainSign() {
+        // an older add-on, or no free iact column: as before, or the dialog would be back on top LIFE s after its one sign
         assertEquals(1 to false, LifeSign.pick(fresh = true, sinceMs = 60_000, everyMs = every, desk = true, aliveCol = 1, stayCol = -1))
-        assertNull(LifeSign.pick(fresh = false, sinceMs = 60_000, everyMs = every, desk = true, aliveCol = 1, stayCol = -1))
+        assertNull(LifeSign.pick(fresh = false, sinceMs = 4_000, everyMs = every, desk = true, aliveCol = 1, stayCol = -1))
+        assertEquals(1 to false, LifeSign.pick(fresh = false, sinceMs = 5_000, everyMs = every, desk = true, aliveCol = 1, stayCol = -1))
     }
 
     @Test fun neverTwoSignsWithinASecond() {
