@@ -26,8 +26,39 @@ object PopupHold {
     fun holds(signIn: SetupFlow.SignIn, gameUp: Boolean, loginFormOpen: Boolean, noticeAsking: Boolean): Boolean =
         gameUp && !loginFormOpen && (noticeAsking || signIn in SIGN_IN_ASKS)
 
-    /** a key press the game must not get now ([holding] = [holds]); releases always pass */
-    fun holdsKey(holding: Boolean, keyCode: Int, down: Boolean): Boolean = holding && down && keyCode in HELD_KEYS
+    /** a key press the game must not get now ([holding] = [holds]); releases always pass. [wheel]: one of the context wheel's pop-ups
+     *  is up ([Wheel]): every face button, the D-pad, the shoulders, Start and Select are held ([WHEEL_KEYS]) */
+    fun holdsKey(holding: Boolean, keyCode: Int, down: Boolean, wheel: Boolean = false): Boolean =
+        down && ((holding && keyCode in HELD_KEYS) || (wheel && keyCode in WHEEL_KEYS))
+
+    /** the keys a wheel pop-up holds: its Yes / No and its keyboard use A, B, X, Y, the D-pad and Start; nothing of the pad reaches the game */
+    val WHEEL_KEYS = HELD_KEYS + setOf(
+        KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1,
+        KeyEvent.KEYCODE_BUTTON_START, KeyEvent.KEYCODE_BUTTON_SELECT,
+    )
+
+    /**
+     * THE CONTEXT WHEEL'S POP-UPS (the user on test 1502, Abandon Pet: "theres a text asking if you are sure and a for yes b for no, but
+     * pressing a jumps. this needs to have a real yes no buttons pop up and a should not jump on that prompt"): the wheel's Yes / No
+     * confirm and its rename keyboard ([TargetRadialView]) hold the pad from the game while they are up, whoever opened the wheel (the
+     * target wheel's guest hold, the portrait's map hold, Party mode's PartyPad - or, with Party mode off, nothing at all: that wheel only
+     * READ the pad, so the A went to the game too). THE HOLD RACE: the wheel reads the pad from getevent while the game's copy goes
+     * through Android's key dispatch; the press that answers the pop-up may be read first and close it before the dispatch asks, so the
+     * hold lasts [GRACE_MS] past the pop-up ([down]). Releases always pass (nothing sticks down in the game). Pure (the clock is the caller's).
+     */
+    class Wheel {
+        private var up = false
+        private var until = 0L
+        /** a pop-up is up from now */
+        fun up() { up = true }
+        /** it went at [now]: the hold stays [GRACE_MS] more */
+        fun down(now: Long) { if (up) { up = false; until = now + GRACE_MS } }
+        fun holds(now: Long): Boolean = up || now < until
+        val isUp get() = up
+    }
+    const val GRACE_MS = 500L
+    /** the one the app uses (main thread writes, the key dispatch reads) */
+    val wheel = Wheel()
 
     /** a D-pad sent as the hat axis (the Thor): held while it points anywhere; its return to centre always passes */
     fun holdsHat(holding: Boolean, hatX: Float, hatY: Float): Boolean = holding && (hatX != 0f || hatY != 0f)

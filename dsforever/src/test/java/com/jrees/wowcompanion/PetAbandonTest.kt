@@ -28,7 +28,8 @@ class PetAbandonTest {
         assertEquals(listOf("Feed Pet", "Dismiss Pet", "Abandon Pet", "Mend Pet"), root.filterNotNull().map { it.label })
         // the run's two digit taps: id 63 = cols 26, 26 (Quests 33 - digit)
         assertEquals(listOf(26, 26), PlayerMenu.digitCols(63))
-        assertEquals("Abandon Rex? Permanent. A yes, B no", TargetRadial.askLine(ab.confirm!!))
+        // 1503: the ask is a real Yes / No pop-up: the question, then what follows it
+        assertEquals("Abandon Rex?" to "Permanent.", TargetRadial.confirmLines(ab.confirm!!))
     }
 
     @Test fun aGreyedRowInAFight() {
@@ -36,30 +37,30 @@ class PetAbandonTest {
         assertFalse(PlayerMenu.parse(fight)[0].enabled)
     }
 
-    @Test fun aSecondPickOfTheSameSliceInTheWindowDoesIt() {
-        val ask = TargetRadial.Ask(4_000L)
-        assertFalse(ask.pick("Abandon Pet", 1_000L))          // first A: it asks
-        assertTrue(ask.armed(2_000L))
-        assertTrue(ask.pick("Abandon Pet", 2_000L))           // A again: yes
-        assertFalse(ask.armed(2_100L))
+    @Test fun thePopUpsAnswersAreAAndBOnly() {
+        // the user on test 1502: "pressing a jumps. this needs to have a real yes no buttons pop up and a should not jump on that prompt"
+        assertEquals(TargetRadial.Answer.YES, TargetRadial.answer("PAD1"))
+        assertEquals(TargetRadial.Answer.NO, TargetRadial.answer("PAD2"))
+        for (k in listOf("PAD3", "PAD4", "PADDUP", "PADDLEFT", "PADFORWARD")) assertEquals(k, TargetRadial.Answer.NONE, TargetRadial.answer(k))
+        // every cf entry of the wheel asks the same way (Uninvite, Promote: one line)
+        assertEquals("Uninvite?" to null, TargetRadial.confirmLines("Uninvite?"))
+        assertEquals("Promote to Party Leader?" to null, TargetRadial.confirmLines("Promote to Party Leader?"))
     }
 
-    @Test fun bCancelsTheAsk() {
-        val ask = TargetRadial.Ask(4_000L)
-        assertFalse(ask.pick("Abandon Pet", 1_000L))
-        assertTrue(ask.cancel(1_500L))                         // B: no (the wheel stays: back() returns before its own B)
-        assertFalse(ask.pick("Abandon Pet", 1_600L))          // the next A asks again, never does it
-        assertFalse(ask.cancel(9_000L))                        // an ask past its window: B is the wheel's own B again
-    }
-
-    @Test fun anotherSliceOrALatePickAsksAgain() {
-        val ask = TargetRadial.Ask(4_000L)
-        assertFalse(ask.pick("Abandon Pet", 1_000L))
-        assertFalse(ask.pick("Uninvite", 1_500L))             // another slice: it asks for that one
-        assertFalse(ask.pick("Abandon Pet", 2_000L))          // back to Abandon: asks again
-        assertFalse(ask.pick("Abandon Pet", 7_000L))          // past the window: asks again
-        assertTrue(ask.pick("Abandon Pet", 8_000L))
-        ask.clear()
-        assertFalse(ask.armed(8_100L))
+    @Test fun whileTheAskIsUpThePadIsHeldFromTheGame() {
+        val w = PopupHold.Wheel()
+        assertFalse(w.holds(1_000L))
+        w.up()
+        assertTrue(w.holds(1_000L))
+        for (k in listOf(android.view.KeyEvent.KEYCODE_BUTTON_A, android.view.KeyEvent.KEYCODE_BUTTON_B, android.view.KeyEvent.KEYCODE_DPAD_UP,
+                android.view.KeyEvent.KEYCODE_BUTTON_X, android.view.KeyEvent.KEYCODE_BUTTON_Y, android.view.KeyEvent.KEYCODE_BUTTON_START)) {
+            assertTrue(PopupHold.holdsKey(holding = false, keyCode = k, down = true, wheel = w.holds(1_500L)))   // no A jump, no B action
+            assertFalse(PopupHold.holdsKey(holding = false, keyCode = k, down = false, wheel = w.holds(1_500L)))  // a release passes
+        }
+        // THE HOLD RACE: the A that answered is read off getevent and closes the pop-up before Android's dispatch asks: still held
+        w.down(2_000L)
+        assertTrue(PopupHold.holdsKey(holding = false, keyCode = android.view.KeyEvent.KEYCODE_BUTTON_A, down = true, wheel = w.holds(2_000L + PopupHold.GRACE_MS - 1)))
+        assertFalse(w.holds(2_000L + PopupHold.GRACE_MS))
+        assertFalse(PopupHold.holdsKey(holding = false, keyCode = android.view.KeyEvent.KEYCODE_BUTTON_A, down = true, wheel = w.holds(9_000L)))
     }
 }

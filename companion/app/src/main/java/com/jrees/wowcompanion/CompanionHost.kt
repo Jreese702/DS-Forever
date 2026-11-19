@@ -108,6 +108,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private lateinit var pauseView: HomePauseView
     /** the TARGET radial (Y out of a fight with a target; PadMap m101 / Quests q51) */
     private lateinit var targetRadial: TargetRadialView
+    private lateinit var targetRadialKb: ChatKeyboard
     /** 1.0.18: LB held on Home pictures the game's party targeting (LbPartyView) */
     private lateinit var lbView: LbPartyView
     private fun tradOpen() = ::targetRadial.isInitialized && targetRadial.isOpen
@@ -1139,6 +1140,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         pauseView.polestar = { mapView.polestarCanSkip() to mapView.polestarCanPrev() }      // pk1: its Skip / Previous step slices
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
+        // Quests q69: the pet's Rename types on its own keyboard (Chat's borrowed field, as the Macros room's), over the wheel
+        targetRadialKb = ChatKeyboard(this, swap = false).apply { visibility = View.GONE }
+        targetRadial.kb = targetRadialKb
+        targetRadial.tapSpaced = { cells, gap -> TapBridge.tapsSpaced(this, questsPad, cells, gap) { w -> Log.i("WCHOME", "context radial: rename taps: $w") } }
         // 1.0.18 (the user: "When holding LB i want the bottom screen to shift around like when opening a radial ... the players bar with
         // the A button glyph ... a cross layout of the other 4 party members with the dpad glyphs ... We are just visualizing it"): on
         // Home, LB alone held (CastView's reader) slides Home's panels aside - Party mode's view with them - and shows the targeting
@@ -1217,6 +1222,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(targetRadial, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(targetRadialKb, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))
             addView(lbView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // the radial's pin picker: over the room only (the bar stays below it)
@@ -2824,6 +2831,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 chatView.onDoc(msg)      // Chat's rework: typed / quick chat answers, link tooltips
                 if (current && ::interactView.isInitialized) interactView.onChatAnswer(msg)     // 1.0.8: an NPC window's field (chat22)
                 if (current && ::macrosView.isInitialized) macrosView.onChatAnswer(msg)           // the Macros room's field (chat22)
+                if (current && tradOpen()) targetRadial.onChatAnswer(msg)                          // q69: the pet's rename field (chat22)
             }
             "quests" -> msg.optJSONObject("q")?.let {
                 it.optJSONObject("pad")?.let { p -> questsPad = p }
@@ -3777,6 +3785,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             chatView.onPad(JSONObject().put("type", "guestpad").put("id", "chat").put("k", "PADFORWARD").put("n", --directN)); return
         }
         if (room == Room.BAGS && bagsView.ownsStart()) return          // bagsView.onPadKey already had it (the unclaimed route)
+        if (tradOpen() && targetRadial.ownsStart()) return              // the context wheel's pop-up (rename's Done): its own reader had it
         if (::interactView.isInitialized && interactView.ownsStart()) return   // an NPC window's keyboard: its Done (onPadKey had it)
         if (room == Room.MACROS && macrosView.ownsStart()) return      // the Macros room's keyboard: its Done (onPadKey had it)
         if (room == Room.PROFESSIONS && professionsView.ownsStart()) return   // the search's keyboard: its Search (onPadKey had it)

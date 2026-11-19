@@ -1525,7 +1525,7 @@ fun XServerScreen(
                 false
             }
         } else if (isGamepad && com.jrees.wowcompanion.PopupHold.holdsKey(com.jrees.wowcompanion.SetupBridge.holdsGamePad(),
-                it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN)) {
+                it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN, com.jrees.wowcompanion.SetupBridge.wheelHolds())) {
             // DS FOREVER (p-auth-keyboard, then the user before 1.0.7: "When clicking on the pop up boxes, it shouldn't send inputs to the
             // game"): while one of our pop-ups asks (the sign-in's, the report's notice), A, B and the D-pad do nothing for the game. Only
             // presses: a release always passes, so nothing sticks down. DS Forever's own copy (PadFeed, above) still gets them
