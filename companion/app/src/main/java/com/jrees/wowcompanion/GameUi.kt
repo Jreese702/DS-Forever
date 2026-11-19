@@ -1016,6 +1016,8 @@ object GameUi {
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
     private fun changed() { for (l in listeners) l() }
+    /** a reset (ResetRun) removed saved switches: the game is told the defaults where it differs, the rows read them again */
+    fun resetDone() { runCatching { reconcile() }; changed() }
 
     private const val ROW = "ui"      // Hub.lua ROW
     private const val HUD_KEY = "hud" // PR #533: hudBack's one key

@@ -267,6 +267,8 @@ object HomeSettings {
         set(v) { if (v != clockAmmo) { prefs?.edit()?.putBoolean(KEY_CLOCK_AMMO, v)?.apply(); for (l in listeners) l() } }
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
+    /** a reset (ResetRun) removed saved values: every listener reads them again */
+    fun resetDone() { for (l in listeners) l() }
 
     /** cb2's On / Off Home row (read once for cb3's migration, then removed) */
     private const val KEY_CAST_STRIP = "castStrip"

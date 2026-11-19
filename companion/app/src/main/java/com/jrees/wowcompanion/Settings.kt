@@ -281,4 +281,6 @@ object Settings {
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
     private fun changed() { for (l in listeners) l() }
+    /** Reset settings (ResetRun) removed saved values: every room reads them again */
+    fun resetDone() = changed()
 }
