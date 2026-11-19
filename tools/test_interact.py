@@ -15,7 +15,7 @@ mt.__call = function() return dummy end
 dummy = setmetatable({}, mt)
 unpack = table.unpack
 loadstring = load
-SENT, ROWS, CELLS = {}, {}, {}
+SENT, ROWS, CELLS, SECROWS = {}, {}, {}, {}
 local cellN = 0
 -- the game's mail, as far as the tests need it
 GAME = { money = 100000, price = 30, items = {}, bags = {}, cursor = nil, sent = nil, cod = 0, sendMoney = 0 }
@@ -56,7 +56,9 @@ WowCompanion = {
   ABSENT = {}, SECRET = {}, THREW = {},
   pad = { op = function(name, ns, h) ROWS[name] = h; return {} end,
           slotFor = function(ns, key) if not CELLS[ns .. ":" .. key] then cellN = cellN + 1; CELLS[ns .. ":" .. key] = cellN end; return CELLS[ns .. ":" .. key] end,
-          retain = function() end, describe = function() return {} end },
+          retain = function() end, describe = function() return {} end,
+          -- i170 (t_pettrain.lua): a secure row's init and post-click, as TapPad hands them
+          secureRow = function(name, n, init, onClick) SECROWS[name] = { n = n, init = init, onClick = onClick }; return 1 end },
 }
 setmetatable(_G, { __index = function(_, k) return dummy end })
 -- the app's ChatStream, in short: a character's cell (ChatStream.cellOf)

@@ -285,7 +285,9 @@ for w in ("GuildBankFrame", "CharacterFrame", "MerchantFrame", "GossipFrame"):
     check(on(L), "... %s hides: taken" % w, note(L))
 check('take-orphan' not in SRC and 'ORPHAN_S' not in SRC, "bags-take4: no orphan take in Bags.lua")
 ISRC = open(os.path.join(ADDONS, 'WowCompanionInteract', 'Interact.lua'), encoding='utf-8').read()
-check('local IV = "i165"' in ISRC and 'npcOpen = N.lastOpen' not in ISRC, "bags-take4: Interact i166 taken out (IV back to i165)")
+# i170 (fix/pet-trainer) moved the IV on: what this guards is bags-take3's i166 change staying out (npcOpen), at i165 or later
+_ivm = __import__('re').search(r'local IV = "i(\d+)"', ISRC)
+check(_ivm is not None and int(_ivm.group(1)) >= 165 and 'npcOpen = N.lastOpen' not in ISRC, "bags-take4: Interact i166 taken out (IV i165 or later)")
 check('bags-take4' in SRC, "Bags.lua's header note for bags-take4")
 
 # 8. bags-take5: the device log's own order. 15:49:43 a vendor (Interact holds "npc"), its window goes with no MERCHANT_CLOSED seen;
