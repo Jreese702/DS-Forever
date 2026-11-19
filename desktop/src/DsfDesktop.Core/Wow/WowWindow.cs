@@ -115,6 +115,8 @@ namespace DsfDesktop.Wow
         public static string FocusHandle(IntPtr h)
         {
             if (h == IntPtr.Zero) return "no window";
+            // 0.2.43 (the user, 2026-11-19: "it just takes the cursor straight back to my game"): never over the PC user's own window
+            if (!PcUse.Gate.MayFocus(DateTime.UtcNow, GetForegroundWindow() == h)) return PcUse.InUseWhy;
             if (IsIconic(h)) ShowWindow(h, 9 /* SW_RESTORE */);
             if (SetForegroundWindow(h)) return null;
             var fg = GetForegroundWindow();

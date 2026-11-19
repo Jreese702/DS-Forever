@@ -339,17 +339,21 @@ object GameUi {
      * TAPS LANDED, in the tap log beside the taps sent - Hub hub69's `rx` (TapPad pad23's last presses, "row:col") whenever its count
      * moves, and pad23's `off` (rows whose cells do not stand where the grid says) when it changes. Logged only; nothing decided on it.
      */
-    private fun landedNote(rx: JSONObject?, off: JSONObject?, current: Boolean) {
+    private fun landedNote(rx: JSONObject?, off: JSONObject?, current: Boolean, offToo: Boolean = true) {
         if (!current) return
         val n = rx?.optInt("n", -1) ?: -1
         if (n >= 0 && n != rxN) {
             // fix/stream-row-offset (pad24): each new press with where the game saw it, against what the app meant ([TapCal.landed])
-            val fresh = if (rxN in 0 until n) n - rxN else 0
+            // fix/desk-click-switch (test 1497: the stream's first report, n=12 on the PC's fresh client after the Thor's own larger
+            // count, was taken as "nothing new", so the posted presses it listed were never matched): a count that went DOWN (another
+            // client, a /reload) or the first one heard counts every press since that client's start
+            val fresh = freshPresses(rxN, n)
             rxN = n
             TapBridge.note("landed n=$n: ${rx?.optString("last").orEmpty().take(160)}")
             if (fresh > 0) for (line in landedChecks(rx?.optString("last").orEmpty(), rx?.optString("at").orEmpty(), fresh, System.currentTimeMillis()))
                 TapBridge.note(line)
         }
+        if (!offToo) return
         val o = off?.let { j -> j.keys().asSequence().sorted().joinToString(" ") { k -> "$k@${j.opt(k)}" } }.orEmpty()
         if (o != offSaid) { offSaid = o; if (o.isNotEmpty()) TapBridge.note("pad rows not where described: $o") }
     }
@@ -357,18 +361,26 @@ object GameUi {
      * fix/stream-row-offset: the [fresh] newest presses of the ring ("row:col" in [last], "x,y" or "-" in [at], newest last) checked
      * against the taps the app meant ([TapCal.landed]): the tap log's notes. Pure but for TapCal's memory of the taps sent.
      */
+    /** fix/desk-click-switch: the presses new since count [before] (-1: none heard yet) at count [n]: a count that fell is a new client */
+    fun freshPresses(before: Int, n: Int): Int = when {
+        n <= 0 -> 0
+        before in 0..n -> n - before
+        else -> n
+    }
     fun landedChecks(last: String, at: String, fresh: Int, now: Long): List<String> {
         val names = last.split(' ').filter { it.isNotEmpty() }
         val seen = at.split(' ').filter { it.isNotEmpty() }
         val out = ArrayList<String>()
         val from = (names.size - fresh).coerceAtLeast(0)
+        // fix/desk-click-switch: more new presses than the ring lists = some never shown: the older batches are unknown, not unseen
+        DeskClicks.ringGap(fresh - names.size, now)
         for (i in from until names.size) {
             val nc = names[i]; val cut = nc.lastIndexOf(':')
             if (cut <= 0) continue
             val col = nc.substring(cut + 1).toIntOrNull() ?: continue
             // `at` is as long as `last` (pad24); an older add-on has none: no seen y
             val sy = if (seen.size == names.size) seen[i].split(',').getOrNull(1)?.toDoubleOrNull() else null
-            DeskClicks.landed(nc.substring(0, cut), col, now)            // feat/desktop-clicks: a posted click the game saw
+            DeskClicks.landed(nc.substring(0, cut), col, now)?.let { out += it }   // feat/desktop-clicks: a posted click the game saw
             TapCal.landed(nc.substring(0, cut), col, sy, now)?.let { out += it }
         }
         return out
@@ -758,6 +770,16 @@ object GameUi {
         return Row(CASTBAR_ID, "Cast bar", null, if (hide) UiMode.OFF else UiMode.ON, true, h, note)
     }
     const val CASTBAR_ID = "castbar"
+
+    /**
+     * fix/desk-click-switch (Hub hub70): the add-on's `padrx` document, sent when its press count moves (the hub document carries `rx`
+     * only as a ride-along, so a press's word could wait for the next heartbeat, 15 s). The same landing checks, then the retries.
+     */
+    fun onPadRx(msg: JSONObject, current: Boolean) {
+        if (!current) return
+        landedNote(msg.optJSONObject("rx"), null, current = true, offToo = false)
+        appCtx?.let { TapBridge.retryMissed(it, pad) }
+    }
 
     /** a `hub` document; [current] is GameInput.note()'s answer for it */
     fun onHub(msg: JSONObject, current: Boolean) {

@@ -172,11 +172,14 @@ class PolestarPane(private val invalidate: () -> Unit) {
     private fun drawList(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, f: Frame, g: PolestarTab.Guide) {
         val rows = f.rows
         val sel = f.cur.sel
-        // the selected row in view, with its arrows' gaps
+        // the selected row in view, with its arrows' gaps - fix/desk-click-switch (the user, 2026-11-19: "when opening it I STILL cant
+        // see all of the steps"): only when the selection moved or the list was not dragged, so a finger can scroll the whole guide
+        val follow = sel != followSel || !dragged
+        if (sel != followSel) { followSel = sel; dragged = false }
         var y = 0f
         for (r in rows) {
             val hh = rowH(r) + (if (r.key == sel) 2 * SEL_GAP else 0f)
-            if (r.key == sel && f.cur.view != PolestarTab.View.GOALS) {
+            if (follow && r.key == sel && f.cur.view != PolestarTab.View.GOALS) {
                 if (y < listScroll) listScroll = y
                 if (y + hh > listScroll + (y1 - y0)) listScroll = y + hh - (y1 - y0)
             }
@@ -244,7 +247,8 @@ class PolestarPane(private val invalidate: () -> Unit) {
                 ours(c, PolestarTab.fill(PolestarTab.DONE_N, r.count), box.left + 66f, box.centerY() + 9f, body(25f, Theme.textDim))
             }
             is PolestarTab.Row.Step -> {
-                val done = r.status == 'd' || r.status == 's'
+                // (a step not for this character, now listed too, reads as dim as a done one)
+                val done = r.status == 'd' || r.status == 's' || r.status == 'n'
                 val cx = box.left + 32f; val cy = box.centerY()
                 when {
                     r.shown -> diamond(c, cx, cy, 12f, fill = true, colour = PS_BLUE)
@@ -578,10 +582,12 @@ class PolestarPane(private val invalidate: () -> Unit) {
         if (f.fight) ours(c, PolestarTab.FIGHT_LINE, inner.left + 24f, bt - 12f, body(20f, Color.rgb(255, 90, 70)))
     }
 
-    /** a drag on the list scrolls it */
+    /** a drag on the list scrolls it (the selection no longer pulls it back until the selection moves) */
     fun scrollBy(dy: Float, view: PolestarTab.View) {
-        if (view == PolestarTab.View.PICKER || view == PolestarTab.View.PATH) pickScroll += dy else listScroll += dy
+        if (view == PolestarTab.View.PICKER || view == PolestarTab.View.PATH) pickScroll += dy else { listScroll += dy; dragged = true }
     }
+    private var followSel: String? = null
+    private var dragged = false
 
     companion object {
         val PS_BLUE = Color.rgb(120, 200, 255)

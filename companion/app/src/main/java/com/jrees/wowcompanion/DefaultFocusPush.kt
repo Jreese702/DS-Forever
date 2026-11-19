@@ -13,6 +13,9 @@ package com.jrees.wowcompanion
 class DefaultFocusPush {
     private val took = HashSet<Int>()
     private val sentAt = HashMap<Int, Long>()
+    private val sends = HashMap<Int, Int>()
+    /** fix/desk-click-switch: a quest given up on (MAX_SENDS pushes, never taken): said once (the host logs it) */
+    var onGiveUp: (Int) -> Unit = {}
 
     /** [defaultQid] the shown default (0: none), [gameQid] the game's own focus (0: none), at [nowMs]: the quest to focus, or 0 */
     fun tick(defaultQid: Int, gameQid: Int, nowMs: Long): Int {
@@ -20,6 +23,14 @@ class DefaultFocusPush {
         if (gameQid != 0 || defaultQid <= 0 || defaultQid in took) return 0
         val at = sentAt[defaultQid]
         if (at != null && nowMs - at < RETRY_MS) return 0
+        // fix/desk-click-switch (the user, 2026-11-19: "so why is it still clicking all over after that then?"): never an endless
+        // retry - after MAX_SENDS pushes the game never took, the quest is left alone for the session
+        val n = sends[defaultQid] ?: 0
+        if (n >= MAX_SENDS) {
+            if (n == MAX_SENDS) { sends[defaultQid] = n + 1; runCatching { onGiveUp(defaultQid) } }
+            return 0
+        }
+        sends[defaultQid] = n + 1
         sentAt[defaultQid] = nowMs
         return defaultQid
     }
@@ -33,5 +44,7 @@ class DefaultFocusPush {
 
     companion object {
         const val RETRY_MS = 30_000L
+        /** the pushes of one quest the game never took before it is left alone (the first and two retries) */
+        const val MAX_SENDS = 3
     }
 }

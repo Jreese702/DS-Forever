@@ -22,6 +22,21 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
     /** when the selection last moved (its goals are asked after REST_MS) */
     var selAt = 0L
     private var asked = ""                           // the step whose goals were asked last ("stamp:i")
+    /**
+     * fix/desk-click-switch (the user, 2026-11-19: "so why is it still clicking all over after that then?"; test 1497 sent the open
+     * frame, its resend, then both again every 20-30 s, none answered): the frames in a row that got no answer at all. From
+     * [PolestarTab.QUIET_AFTER] on, the menu's OWN frames (the keep-alive open, a resting step's goals) wait [quietMs] (doubling, capped)
+     * after the last give-up; any answer, or the player's press, ends it. One line in the log when it starts ([log]).
+     */
+    private var unanswered = 0
+    private var lostAt = 0L
+    /** the player pressed in the menu (the host: the stream's Polestar hand-off is theirs from now on) */
+    var onPress: () -> Unit = {}
+    /** one terse log line (the host: Log.i) */
+    var log: (String) -> Unit = {}
+    /** the menu's own frames are held back now (none of the last frames was answered) */
+    fun quiet(now: Long): Boolean = unanswered >= PolestarTab.QUIET_AFTER && now - lostAt < quietMs()
+    private fun quietMs(): Long = (PolestarTab.KEEP_MS shl (unanswered - PolestarTab.QUIET_AFTER).coerceIn(0, 3)).coerceAtMost(PolestarTab.QUIET_MAX_MS)
     private var askedAt = 0L
     /** the room the menu shows in now (null: none) - a new guide re-enters the cursor only while it shows */
     var shownIn: String? = null
@@ -60,6 +75,8 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
     }
 
     private fun answer(a: PolestarTab.Answer, now: Long) {
+        if (unanswered >= PolestarTab.QUIET_AFTER) log("polestar menu: answered again, its own frames resume")
+        unanswered = 0
         val after = send.onAnswer(a.op, a.ok, a.why, now)
         after.next?.let { tap(it) }
         if (!after.done && after.next != null) return                     // (garbled: sent once more)
@@ -88,6 +105,7 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
     fun open(now: Long, force: Boolean = false) {
         if (!force && openAt != 0L && now - openAt < PolestarTab.KEEP_MS) return
         if (send.busy && !force) return
+        if (!force && quiet(now)) return
         val keep = !force && openAt != 0L
         openAt = now
         frame(PolestarTab.OPEN, if (keep) PolestarTab.OPEN_KEEP else PolestarTab.OPEN_FRESH)
@@ -122,9 +140,14 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
     fun tick(now: Long, active: Boolean) {
         send.tick(now)?.let { after ->
             after.next?.let { tap(it) }
-            if (after.done && after.why == "lost") note(PolestarTab.LOST_LINE)
+            if (after.done && after.why == "lost") {
+                note(PolestarTab.LOST_LINE)
+                unanswered++; lostAt = now
+                if (unanswered == PolestarTab.QUIET_AFTER) log("polestar menu: $unanswered frames unanswered; its own frames wait ${quietMs() / 1000} s")
+            }
         }
         if (!active || !shows()) return
+        if (quiet(now)) return
         open(now)
         val st = selStep() ?: return
         val g = book.guide ?: return
@@ -142,6 +165,7 @@ class PolestarMenu(private val context: Context, private val pad: () -> JSONObje
 
     /** one press [k] while the menu shows */
     fun press(k: String, now: Long = System.currentTimeMillis()): Out {
+        onPress()
         val g = book.guide
         when (val d = cur.key(k, rows(), picks(), book.route, detail(), g, fight())) {
             PolestarTab.Do.Nothing, PolestarTab.Do.GoalsIn -> {}

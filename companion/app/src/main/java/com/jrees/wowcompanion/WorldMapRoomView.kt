@@ -3039,9 +3039,19 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     // ---------------------------------------------------------------- touch: the same things a finger can reach
+    private var psDownY = 0f; private var psLastY = 0f; private var psDragging = false
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (e.action == MotionEvent.ACTION_DOWN) { downAt = e.eventTime; return true }
+        if (e.action == MotionEvent.ACTION_DOWN) { downAt = e.eventTime; psDownY = e.y; psLastY = e.y; psDragging = false; return true }
+        // fix/desk-click-switch (the user, 2026-11-19: "when opening it I STILL cant see all of the steps"): the Polestar menu's list
+        // follows a finger; a drag is never a tap
+        if (e.action == MotionEvent.ACTION_MOVE && psOpen) {
+            if (!psDragging && kotlin.math.abs(e.y - psDownY) > 18f) psDragging = true
+            if (psDragging) { psMenu?.cur?.view?.let { psPane.scrollBy(psLastY - e.y, it) }; invalidate() }
+            psLastY = e.y
+            return true
+        }
         if (e.action != MotionEvent.ACTION_UP) return true
+        if (psOpen && psDragging) { psDragging = false; return true }
         val x = e.x; val y = e.y
         val long = e.eventTime - downAt >= LONG_PRESS_MS
         // pm1: the Polestar menu: a button presses its key, a row selects it, the header goes back to the map

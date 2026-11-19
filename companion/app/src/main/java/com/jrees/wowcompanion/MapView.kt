@@ -3895,7 +3895,7 @@ class MapView(context: Context) : View(context) {
     var onShownFocusChanged: (() -> Unit)? = null
     /** the host's way to make a quest the game's focus (Home's one focus path); the default focus is pushed through it */
     var onPushFocus: ((questId: Int) -> Boolean)? = null
-    private val focusPush = DefaultFocusPush()
+    private val focusPush = DefaultFocusPush().also { p -> p.onGiveUp = { q -> android.util.Log.i("WCMAP", "default focus $q: gave up after ${DefaultFocusPush.MAX_SENDS} pushes the game never took") } }
     private fun pushDefault() {
         // only while the game is live: a push refused as "Waiting for the game" would wait out RETRY_MS after the first document
         // (test18: refused every 30 s for 5 minutes, then pushed only by hand)

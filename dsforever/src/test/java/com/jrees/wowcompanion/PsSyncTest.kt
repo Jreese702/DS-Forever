@@ -124,4 +124,26 @@ class PsSyncTest {
         assertEquals("ps_read", PsSync.readRequest(ctx)!!.getString("t"))
         assertEquals(SvSync.accountHash("11111111#1"), PsSync.readRequest(ctx)!!.getString("acct"))
     }
+
+    /** fix/desk-click-switch (the user, 2026-11-19: Polestar on the PC "is still not on my step"): the newer file wins a conflict */
+    @Test fun aConflictGoesToTheNewerFileTheThorsOnlyWhenDesktopSaysNoTime() {
+        thorChar.writeText(charFile("{[\"tab\"]={[\"active\"]=\"old\"},[\"schema\"]=1}"))
+        thorChar.setLastModified(1_000_000L)
+        val pc = charFile("{[\"tab\"]={[\"active\"]=\"new\"},[\"schema\"]=1}")
+        val files = pcFiles(PsSync.ACCT to null, key to pc)
+        files.getJSONArray("files").getJSONObject(1).put("mtime", 2_000_000L)          // the PC's written later (a stale Thor file)
+        PsSync.onFiles(ctx, files, 3_000_000L) { log += it }
+        @Suppress("UNCHECKED_CAST") val tab = table(thorChar.readText())["tab"] as Map<Any, Any>
+        assertEquals("the PC's newer file wins", "new", tab["active"])
+        assertTrue(log.last(), log.last().contains("(1 newer on the PC)"))
+        // the Thor's file the newer: the Thor's wins, as before
+        val m = PsSync.merge(mapOf<Any, Any>("a" to mapOf<Any, Any>("x" to 1.0)), mapOf<Any, Any>("a" to mapOf<Any, Any>("x" to 2.0)), null, thorNewer = true)
+        assertEquals(mapOf<Any, Any>("x" to 1.0), m.table["a"])
+        val n = PsSync.merge(mapOf<Any, Any>("a" to mapOf<Any, Any>("x" to 1.0)), mapOf<Any, Any>("a" to mapOf<Any, Any>("x" to 2.0)), null, thorNewer = false)
+        assertEquals(mapOf<Any, Any>("x" to 2.0), n.table["a"])
+        // never a thinner side, even the newer one
+        val thinPc = PsSync.merge(mapOf<Any, Any>("a" to mapOf<Any, Any>("x" to 1.0, "y" to 1.0, "z" to 1.0, "w" to 1.0)), mapOf<Any, Any>("a" to mapOf<Any, Any>("x" to 2.0)), null, thorNewer = false)
+        @Suppress("UNCHECKED_CAST") val am = thinPc.table["a"] as Map<Any, Any>
+        assertEquals(1.0, am["y"])
+    }
 }

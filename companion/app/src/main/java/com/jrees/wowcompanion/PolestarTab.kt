@@ -312,9 +312,8 @@ object PolestarTab {
     }
 
     /**
-     * The list, top to bottom: the guide row, the notices, the done steps before the live one (and before the shown one) folded into
-     * one row (open while [foldOpen]), the live and upcoming steps (steps not for this character left out), Reset last. No guide: the
-     * guide row and its notice only.
+     * The list, top to bottom: the guide row, the notices, every step of the guide in order (done, live, upcoming, not for this
+     * character: the row says which), Reset last. No guide: the guide row and its notice only.
      */
     fun rows(g: Guide?, foldOpen: Boolean): List<Row> {
         if (g == null) return emptyList()
@@ -323,14 +322,11 @@ object PolestarTab {
         for (n in notices(g)) out.add(Row.Note(n))
         if (g.none) return out
         val n = g.count
-        val foldEnd = minOf(g.live ?: (n + 1), g.shown ?: (n + 1))
         val letters = (1..n).map { g.statusOf(it) ?: if (g.live != null && it < g.live) 'd' else 'u' }
-        val folded = (1 until foldEnd).filter { letters[it - 1] != 'n' }
-        if (folded.isNotEmpty()) {
-            out.add(Row.DoneFold(folded.size, foldOpen))
-            if (foldOpen) for (i in folded) out.add(Row.Step(i, letters[i - 1], i == g.shown, i == g.live))
-        }
-        for (i in foldEnd..n) if (letters[i - 1] != 'n') out.add(Row.Step(i, letters[i - 1], i == g.shown, i == g.live))
+        // fix/desk-click-switch (the user, 2026-11-19: "when opening it I STILL cant see all of the steps"): EVERY step of the guide, in
+        // order - the done ones were folded into one closed row and the steps not for this character were left out. [foldOpen] is kept
+        // for the callers; the fold row is no longer made
+        for (i in 1..n) out.add(Row.Step(i, letters[i - 1], i == g.shown, i == g.live))
         out.add(Row.ResetRow)
         return out
     }
@@ -652,6 +648,10 @@ object PolestarTab {
     const val WAIT_MS = 3_000L
     /** the app says the tab is open again this often (the add-on forgets it after 60 s) */
     const val KEEP_MS = 20_000L
+    /** fix/desk-click-switch: this many frames in a row with no answer hold the menu's own frames back ([PolestarMenu.quiet]) */
+    const val QUIET_AFTER = 2
+    /** the longest such wait */
+    const val QUIET_MAX_MS = 120_000L
     /** a step's goals are asked when the selection rests this long (a read, not a game action) */
     const val REST_MS = 600L
     /** a step's goals described this long ago are asked again on rest */

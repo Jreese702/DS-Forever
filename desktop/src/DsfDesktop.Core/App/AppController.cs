@@ -106,6 +106,7 @@ namespace DsfDesktop.App
         {
             running = true;
             Log.I("DS Forever Desktop starting; data " + Paths.DataDir);
+            PcUse.Start();                 // 0.2.43: the PC's own keyboard / mouse times (no focus while it is in use; pad clicks are only ever posted)
             LocateWow();
             // an install of the self-patcher cut short by a crash is undone before anything reads the game (0.2.36)
             // (the Agent asked once here; while it is at work the put-back goes on in the background, WoW not started meanwhile)
@@ -1839,7 +1840,8 @@ namespace DsfDesktop.App
         public string FocusWow()
         {
             var why = WowWindow.Focus(Wow != null && Flavor != null ? Wow.FlavorDir(Flavor) : null);
-            Log.I("focus WoW: " + (why ?? "done"));
+            // 0.2.43: someone is using the PC itself: WoW is left behind their window (tried again once the PC is quiet)
+            Log.I("focus WoW: " + (why == PcUse.InUseWhy ? "skipped, PC in use" : why ?? "done"));
             return why;
         }
 
@@ -2534,6 +2536,8 @@ namespace DsfDesktop.App
             if (Bridge == null || Bridge.Sessions().Count == 0 || LastScreen == WowScreen.None) { focusTries = 0; return; }
             // Battle.net's sign-in is the player's step (the Thor shows that window alone): WoW is never pulled over it
             if (WowFlow.BnetSignInPending(LastBnet, LastScreen)) return;
+            // 0.2.43: not while the PC's own user is busy (no try counted: it resumes once the PC is quiet)
+            if (PcUse.InUse() && !WowWindow.IsForeground()) return;
             if (!WowFlow.FocusRetryWanted(LastScreen, WowWindow.IsForeground(), focusTries, DateTime.UtcNow >= nextFocus)) return;
             if (Interlocked.CompareExchange(ref focusBusy, 1, 0) != 0) return;
             focusTries++;

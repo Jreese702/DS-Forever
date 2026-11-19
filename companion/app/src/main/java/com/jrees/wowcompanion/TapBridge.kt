@@ -310,12 +310,11 @@ object TapBridge {
      * document's landings. Nothing on Local (TapCal never queues a Local tap).
      */
     fun retryMissed(ctx: Context, pad: JSONObject?) {
-        // feat/desktop-clicks: Desktop's posted clicks the game never saw (DeskClicks.check): the last one once more, now as real clicks
+        // Desktop's posted clicks the game never saw (DeskClicks.check): one terse line, never a fallback or a resend (the user's
+        // ruling 2026-11-19, "Off once quiet clicks work")
         for (line in DeskClicks.check(System.currentTimeMillis(), pad?.optJSONObject("calib") != null)) note(line)
-        for (id in DeskClicks.takeResends()) {
-            val b = synchronized(sent) { sent[id] } ?: continue
-            send(ctx, pad, b.cells, b.gapMs, {}, retry = true)
-        }
+        // fix/desk-click-switch: a batch Desktop cut short (it lost WoW's window mid-batch): its unpressed cells once more, never again
+        for ((id, cells) in DeskClicks.takePartials()) send(ctx, pad, cells, synchronized(sent) { sent[id]?.gapMs } ?: 120L, {}, retry = true)
         for (id in TapCal.takeRetries()) {
             val b = synchronized(sent) { sent[id] } ?: continue
             val what = b.cells.joinToString(" ") { "${it.first}:${it.second}" }
@@ -403,7 +402,7 @@ object TapBridge {
             val lead = TapSpacing.lead(spacing, start, cells, gapMs)
             val waits = pts.indices.map { i -> if (i == 0) lead else at[i] - at[i - 1] }
             tapHistory("$what (desktop ${DeskClicks.mode}${if (retry) ", again" else ""})")
-            val ok = DeskClicks.send(id, cells, pts, waits, pw, ph, park = !InputSink.trackpadOn, retry = retry,
+            val ok = DeskClicks.send(id, cells, pts, waits, pw, ph, retry = retry,
                 now = System.currentTimeMillis(), onFail = onFail)
             TapSpacing.ran(spacing, start + lead + (at.lastOrNull() ?: 0L) + 80L, cells, gapMs)
             if (!ok) onFail("The PC's connection dropped: nothing was sent")

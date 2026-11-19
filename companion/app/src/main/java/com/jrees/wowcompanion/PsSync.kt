@@ -19,8 +19,9 @@ import java.util.Locale
  * PC's files ("ps_read" -> "ps_files"), merges each with its own game file and writes both sides ("ps_write" -> "ps_written"; its own
  * file directly), with the SAME SAFE RULES as our SvKeep / SvSync tables:
  *  - PER ENTRY ([merge]: a table's own keys and, one level down, each entry - manual[guideId], skipped[guideId], pins[guideId] ...);
- *    nothing is ever dropped; the Thor's entry wins the FIRST sync (no base) and every conflict; three-way against the base (what both
- *    sides were last confirmed to hold) an entry only the PC changed comes from the PC;
+ *    nothing is ever dropped; the NEWER file's entry wins the FIRST sync (no base) and every conflict (the Thor's when Desktop says no
+ *    file time: before 0.2.43); three-way against the base (what both sides were last confirmed to hold) an entry only the PC changed
+ *    comes from the PC;
  *  - NEVER EMPTY OR THINNER WINS, either way: an entry that is empty or holds less than half the other side's settings never replaces
  *    it (a lost / reset / never-saved file, not progress);
  *  - backups before every write: the Thor's file dated (sync-backups, the newest [SvBackup.KEEP]) and as it was before its first
@@ -78,7 +79,7 @@ object PsSync {
     /**
      * [local] (the Thor's) with [remote] (the PC's) in, by the rules above; [base] = what both last held (null = the first sync). Pure.
      */
-    fun merge(local: Map<Any, Any>, remote: Map<Any, Any>, base: Map<Any, Any>?): Result {
+    fun merge(local: Map<Any, Any>, remote: Map<Any, Any>, base: Map<Any, Any>?, thorNewer: Boolean = true): Result {
         var taken = 0; var added = 0; var refused = 0
         fun unit(l: Any?, r: Any?, b: Any?): Any? {
             if (r == null) return l
@@ -89,7 +90,10 @@ object PsSync {
                 taken++; return r
             }
             if (thin(l, r)) { refused++; return r }                // the Thor's is empty / much thinner: never wins
-            return l                                                        // the Thor changed it, or both did, or the first sync
+            // fix/desk-click-switch (the user, 2026-11-19: Polestar on the PC "is still not on my step"): both changed, or the first
+            // sync: the NEWER file wins (the Thor's is only as fresh as its game's last clean exit; Android kills WoW)
+            if (!thorNewer && !thin(r, l)) { taken++; return r }
+            return l                                                        // the Thor changed it (its file the newer), or both did
         }
         val out = LinkedHashMap<Any, Any>()
         for (k in LinkedHashSet<Any>(local.keys + remote.keys)) {
@@ -156,7 +160,7 @@ object PsSync {
         val arr = msg.optJSONArray("files") ?: JSONArray()
         val pc = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.associateBy { it.optString("key") }.filterKeys { it == ACCT || it.startsWith("c:") }
         val running = ctx.gameRunning()
-        var thorWrites = 0; var pcDocs = 0; var skipped = 0; var taken = 0; var added = 0; var refused = 0
+        var thorWrites = 0; var pcDocs = 0; var skipped = 0; var taken = 0; var added = 0; var refused = 0; var newerPc = 0
         val docs = ArrayList<JSONObject>()
         for (key in LinkedHashSet(thor.keys + pc.keys)) {
             val variable = varOf(key)
@@ -167,7 +171,11 @@ object PsSync {
             val local: Map<Any, Any>? = if (tf == null || !tf.isFile) emptyMap() else runCatching { SvLua.parse(tf.readText(), variable) }.getOrNull()
             if (remote == null || local == null) { skipped++; continue }              // a file that does not read whole: left alone
             if (remote.isEmpty() && local.isEmpty()) continue
-            val m = merge(local, remote, baseOf(ctx, key))
+            // Desktop 0.2.43 says when the PC's file was written; an older Desktop says nothing: the Thor's side wins as before
+            val pcAt = f?.optLong("mtime", 0L) ?: 0L
+            val thorNewer = pcAt <= 0L || tf == null || !tf.isFile || tf.lastModified() >= pcAt
+            if (!thorNewer) newerPc++
+            val m = merge(local, remote, baseOf(ctx, key), thorNewer)
             taken += m.taken; added += m.added; refused += m.refused
             if (SvLua.leaves(m.table) == 0) continue
             val lua = SvLua.ser(m.table)
@@ -184,7 +192,7 @@ object PsSync {
                 pcDocs++
             } else if (f != null && thorHolds) runCatching { writeAtomic(baseFile(ctx, key), lua) }
         }
-        log("polestar sync: ${thor.size} Thor / ${pc.size} PC files; $taken from the PC, $added added, $refused refused; $thorWrites written on the Thor, $pcDocs to the PC" +
+        log("polestar sync: ${thor.size} Thor / ${pc.size} PC files ($newerPc newer on the PC); $taken from the PC, $added added, $refused refused; $thorWrites written on the Thor, $pcDocs to the PC" +
             (if (skipped > 0) ", $skipped left alone (do not read whole)" else "") + if (running && thorWrites == 0) " (the Thor's game runs: nothing written here)" else "")
         // into messages Desktop can read
         val out = ArrayList<JSONObject>()

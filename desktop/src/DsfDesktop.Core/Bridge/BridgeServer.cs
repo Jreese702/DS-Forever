@@ -503,6 +503,11 @@ namespace DsfDesktop.Bridge
                             if (!sc.Tls) { sc.Enqueue(new Dictionary<string, object> { ["t"] = "pad_click_result", ["id"] = m.Long("id"), ["state"] = "refused", ["why"] = "not_pinned" }); break; }
                             host.PadClick(m, r => sc.Enqueue(With("pad_click_result", r)));
                             break;
+                        case "pad_click_unseen":
+                            // 0.2.43 (the user's ruling 2026-11-19, "Off once quiet clicks work"): the Thor saw posted presses stop
+                            // landing; one terse line, no fallback (nothing is clicked any other way)
+                            if (s.Tls) Log.I("pad click: posted presses not landing in the game (" + m.Long("n") + " batches unseen); no fallback");
+                            break;
                         case "ps_read":
                             var pr = s;
                             var prAcct = m.Str("acct");
