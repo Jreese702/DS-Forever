@@ -48,6 +48,12 @@ class LbPartyView(context: Context) : View(context) {
         invalidate()
     }
 
+    /** fix/lb-home-only: Home is no longer in front (a room, an Interact window, a wheel...): gone at once, no fade back */
+    fun drop() {
+        held = false; fromT = 0f; changedAt = SystemClock.uptimeMillis()
+        visibility = GONE
+    }
+
     /** the controller's held buttons (PadInput slots): a new press of a mapped button lights its bar */
     fun buttons(m: Int) {
         val down = m and mask.inv()
@@ -135,6 +141,10 @@ class LbPartyView(context: Context) : View(context) {
         /** 1.0.19: the column's bar width, and how far Home's sides move for it (the column with a margin, half each side) */
         const val COL_W = 300f
         const val SIDE_PX = 340f
+
+        /** fix/lb-home-only: the picture is up but Home is not in front ([onHome] false: a room; [covered]: the host's overlay gate,
+         *  CompanionHost.overlayUp, or the target radial) - it goes at once instead of fading */
+        fun dropNow(onHome: Boolean, covered: Boolean): Boolean = !onHome || covered
 
         private val SLOT_KEY = listOf(PadInput.SLOT_FACE_BOTTOM to "PAD1", PadInput.SLOT_DPAD_UP to "PADDUP", PadInput.SLOT_DPAD_RIGHT to "PADDRIGHT",
             PadInput.SLOT_DPAD_DOWN to "PADDDOWN", PadInput.SLOT_DPAD_LEFT to "PADDLEFT", PadInput.SLOT_FACE_RIGHT to "PAD2",
