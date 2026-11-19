@@ -1098,13 +1098,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.i("WCLOG", "class radial: $what capHolder=${capHolder.ifEmpty { "-" }} room=${room.name} pause=${pauseView.isOpen} " +
                 "wheel=${radialView.isOpen} tool=${homeView.toolWanted()} barCursor=${barSelect.open}")
         }
-        castView.overlayOpen = {
-            radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() ||
-                setupView.visibility == View.VISIBLE || loginPrompt.isOpen || barSelect.open ||
-                (::dialogView.isInitialized && dialogView.covers()) ||
-                (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || spellsOverlay.visibility == View.VISIBLE ||
-                (room == Room.HOME && homeView.flow.screen.full.let { it == HomeModule.CHAT || it == HomeModule.MAP })
-        }
+        castView.overlayOpen = { overlayUp() }
         // #540: Home's B watch leaves a B alone while one of these overlays has it (and just after it closed one: overlayClosed)
         homeView.overlayOpen = { radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || barSelect.open }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
@@ -1450,6 +1444,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // which room the app itself left, and when: a "B" release echoing this leave is not the player's B (HomeBack.isOwnLeave)
         if (r != was) { leftIds = HomeBack.leftOf(was.name, r.name); leftAt = SystemClock.uptimeMillis() }
         room = r
+        // fix/lb-home-only: a room opening while LB is held drops the LB picture at once
+        if (r != was && ::lbView.isInitialized && lbView.isShown2) lbEval()
         // Chat's cursor only where presses reach it: the Chat room, not Home's borrowed full-screen chat (chat session's switch)
         chatView.cursorOnShow = r == Room.CHAT
         if (enterProfessions) { enterProfessions = false; professionsView.post { professionsView.enter() } }
@@ -3877,14 +3873,37 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** LB alone held now (CastView's reader) */
     private var lbAloneNow = false
     /** the LB picture shows while LB alone is held and nothing else has the screen: only in the world (1.0.19: never over the start-up
-     *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy) */
+     *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy).
+     *  fix/lb-home-only (the user 2026-11-19: "Pressing LB in menus like the auction house shows the party selected. That should only
+     *  appear on the home menu"): Home must be in front - the class wheel's own gate ([overlayUp]: an Interact window (AH, vendor, mail,
+     *  bank, trainer, loot), a dialog, the spells pop-up, a wheel, the keyboard tool, the bar cursor, Home's full-screen chat / map).
+     *  A room or one of those coming up while LB is held drops the picture at once (no fade); what the room does with LB is its own */
     private fun lbEval() {
-        val free = room == Room.HOME && !holdTalk.takesPad && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen) &&
+        val free = room == Room.HOME && !holdTalk.takesPad && !overlayUp() && !tradOpen() &&
             // 1.0.21 (the user, streaming: "when I press L it didnt show the party member targetor"): GameLife only knows the Thor's own
             // game; a live add-on stream (Local or Streaming) counts too
             (GameLife.worldNow || GameInput.live(System.currentTimeMillis())) && (!::chooserPanel.isInitialized || chooserPanel.visibility != View.VISIBLE) && !homeView.classBusy()
+        if (lbView.isShown2 && LbPartyView.dropNow(room == Room.HOME, overlayUp() || tradOpen())) {
+            lbView.drop()
+            // Home's sides back at once, unless the pause wheel / target radial now owns that slide
+            if (!pauseView.isOpen && !tradOpen()) homeView.pauseSlide(0f, LbPartyView.SIDE_PX)
+            return
+        }
         lbView.lb(lbAloneNow && free)
+        ui.removeCallbacks(lbWatch)
+        if (lbView.isShown2) ui.postDelayed(lbWatch, LB_WATCH_MS)
     }
+    /** while the picture is up, Home's cover is looked at again (a room / window opening while LB is held has no shoulder change) */
+    private val lbWatch = Runnable { if (!shell.hostGone() && ::lbView.isInitialized) lbEval() }
+    private val LB_WATCH_MS = 100L
+
+    /** b-radial-exclusive: another overlay is up over Home (the class wheel's gate, CastView.overlayOpen; the LB picture's too) */
+    private fun overlayUp(): Boolean =
+        radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() ||
+            setupView.visibility == View.VISIBLE || loginPrompt.isOpen || barSelect.open ||
+            (::dialogView.isInitialized && dialogView.covers()) ||
+            (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || spellsOverlay.visibility == View.VISIBLE ||
+            (room == Room.HOME && homeView.flow.screen.full.let { it == HomeModule.CHAT || it == HomeModule.MAP })
 
     /** feat/pause-power: the pause menu pushes Home's controller up (set at its open); the target radial keeps it (set at its open) */
     private var slideBarsUp = false
