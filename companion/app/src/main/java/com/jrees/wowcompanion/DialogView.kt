@@ -1390,14 +1390,17 @@ class DialogView(context: Context) : View(context) {
  * post)` every 5 s under the "Resurrect now?" dialog). The sign of life that keeps a dialog off the top screen (Dialogs.lua) was a pad
  * click every `life.every` s, and on a stream every posted click is a cursor the PC's WoW draws. With Desktop clicking ([desk]) the sign
  * is ONE tap per newly drawn set of dialogs: the add-on's `stay` cell (Dialogs d35: that dialog stays off the top screen until it goes or
- * a real mouse moves), else the plain `alive` once. Local is unchanged (a sign at once, then every [everyMs]). Pure: the column to tap and
+ * a real mouse moves); with no stay cell the plain `alive` as before. Local is unchanged (a sign at once, then every [everyMs]). Pure: the column to tap and
  * whether it is the stay cell, or null = nothing now.
  */
 object LifeSign {
     fun pick(fresh: Boolean, sinceMs: Long, everyMs: Long, desk: Boolean, aliveCol: Int, stayCol: Int): Pair<Int, Boolean>? {
-        if (!fresh && (desk || sinceMs < everyMs)) return null
+        // no stay cell (an older add-on, or no free iact column: the add-on asks for it last): the plain sign as before, or the dialog
+        // would be back on the top screen LIFE s after its one sign
+        val once = desk && stayCol >= 0
+        if (!fresh && (once || sinceMs < everyMs)) return null
         if (sinceMs < DialogView.MIN_LIFE_GAP_MS) return null
-        if (desk && stayCol >= 0) return stayCol to true
+        if (once) return stayCol to true
         return if (aliveCol >= 0) aliveCol to false else null
     }
 }
