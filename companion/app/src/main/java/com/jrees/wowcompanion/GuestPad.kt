@@ -18,7 +18,8 @@ object GuestPad {
     /** Home's spec: the order is the column layout; never reorder it, new ids only go on the END (Quests.lua GUESTS) */
     val IDS = listOf("quests", "map", "settings", "chat", "bar", "home", "radial", "tool", "class")   // class: the class wheel's takeover (q44)   // tool: Home's Track Pad & Keyboard (q-tool)   // radial: the consumables radial (Quests.lua q15)
 
-    private const val ROW = "qact"
+    /** Quests' generic row (fix/abandon-runs: TapSpacing spaces it; a run id's two digit taps may be ONE cell twice) */
+    const val ROW = "qact"
     private const val LEAVE_B = 5
     private const val BNEXT_HOME = 6
     private const val BNEXT_BACK = 7

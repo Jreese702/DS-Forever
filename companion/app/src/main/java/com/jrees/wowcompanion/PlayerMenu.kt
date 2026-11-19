@@ -153,8 +153,21 @@ class PlayerMenu(private val runs: Boolean = RUNS, private val greyKeys: Set<Str
          */
         const val RUNS = true
 
-        /** an entry's id as the add-on's two digit taps: the first digit's column, then the second's (Quests.lua q41: 33 - digit) */
+        /** an entry's id as the add-on's two digit taps: the first digit's column, then the second's (Quests.lua q41: 33 - digit).
+         *  Equal digits (0, 9, ..., 63) tap one cell twice: TapBridge spaces them (TapSpacing.ROWS holds GuestPad.ROW), else TapPad's
+         *  0.25 s repeat guard drops the second and the run never starts (fix/abandon-runs, Quests q70) */
         fun digitCols(id: Int): List<Int> = listOf(33 - (id / 8) % 8, 33 - id % 8)
+
+        /** how long after a run its refusal still names the entry (Quests q70 answers within RUN_WAIT 2 s, a re-resolved run at once) */
+        const val RUN_NAME_MS = 5_000L
+
+        /** fix/abandon-runs (the user: Abandon Pet "Nothing after Yes"): a refused run's short note - the entry's label (when the run
+         *  went out less than [RUN_NAME_MS] ago) and the add-on's reason ("Release: In combat"); never silent */
+        fun refusalLine(text: String?, sentAt: Long, now: Long, why: String?): String {
+            val w = why?.trim().orEmpty().ifEmpty { "The game did not do it" }
+            val t = text?.trim().orEmpty()
+            return if (t.isEmpty() || now - sentAt > RUN_NAME_MS || now < sentAt) w else "$t: $w"
+        }
 
         /** Party mode's menu (q49 which = PARTY): Inspect is greyed (Blizzard's InspectUnit taints) */
         val PARTY_GREY = setOf("Inspect", "InspectUnit")

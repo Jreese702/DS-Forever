@@ -275,7 +275,7 @@ check(not [x for x in docs(L, n1) if x.get('type') == 'qrtip'], "an item already
 check(int(L.eval('SELECTS')) == 0, "still nothing selected", L.eval('SELECTS'))
 
 src = open(QUESTS, encoding='utf-8').read()
-check('local QV = "q69"' in src and "q63 THE QUEST'S REWARDS (the user, 2026-11-17: \"The quests don't show rewards at all anywhere\")" in src, "Quests.lua says q69, q63's note quoting the user kept")
+check('local QV = "q70"' in src and "q63 THE QUEST'S REWARDS (the user, 2026-11-17: \"The quests don't show rewards at all anywhere\")" in src, "Quests.lua says q70, q63's note quoting the user kept")
 body = src[src.index("-- ---------------------------------------------------------------- q63 THE QUEST'S REWARDS"):src.index("-- q38: the words")]
 check(not any(w in body for w in ("SelectQuestLogEntry(", "SetSelectedQuest(", "SetAbandonQuest", "CastSpell", "RunMacro", "SetBinding")),
       "the q63 reader calls nothing that selects or acts")

@@ -25,7 +25,12 @@ object TapSpacing {
      *  "bmv" (BagsMoveRoute: two quick taps on slots of ONE bag name it twice ~one batch apart; a dropped second name voids that tap) */
     val ROWS: Set<String> = setOf(PolestarNav.ROW, BagsMoveRoute.NAME_ROW, BagsMoveRoute.ROW,
         // the layout editor's row (Hub hub55): a size step tapped again right behind its answer
-        LayoutModel.ROW)
+        LayoutModel.ROW,
+        // fix/abandon-runs (the user on test 1505: Abandon Pet "Nothing after Yes"): Quests' "qact" row. A wheel / menu run is two
+        // digit taps (PlayerMenu.digitCols: 33 - digit), and an id whose digits match taps ONE cell twice - Abandon Pet's 63 is 26, 26;
+        // so are 0, 9, 18, 27, 36, 45, 54. The second fell in the 0.25 s guard, the run never started and nothing answered. Spaced
+        // here, in the batch and across batches (a guest's hold / free right behind the same cell too); only a repeat ever waits
+        GuestPad.ROW)
     /** the least rest a batch takes after its last tap (InputSink's TAIL_REST_MS 30; a shell's "sleep 0.08" is longer) */
     const val TAIL_MIN_MS = 30L
 

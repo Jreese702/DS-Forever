@@ -46,8 +46,8 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check('local QV = "q69"' in SRC["quests"] and "q68 ABANDON PET" in SRC["quests"] and "q67 THE 1489 TEST BUILD MERGE" in SRC["quests"],
-      "Quests says q69 (q68, q67 kept below it)")
+check("local QV = \"q70\"" in SRC["quests"] and "q70 THE WHEEL'S CONFIRMED RUNS LAND" in SRC["quests"] and "q68 ABANDON PET" in SRC["quests"] and "q67 THE 1489 TEST BUILD MERGE" in SRC["quests"],
+      "Quests says q70 (q68, q67 kept below it)")
 
 
 def read(unit, src):
@@ -121,10 +121,18 @@ read("pet", "party")
 Q.execute('UNITS.pet.guid = "Pet-0-1-1-1-9-CCCC"')
 check(run(63).get('ok') is False and Q.eval('ABANDONED') == 0, "the same name, another GUID: refused")
 Q.execute('UNITS.pet.guid = "Pet-0-1-1-1-1-AAAA"')
-# no menu read with Abandon (another unit's menu): id 63 runs nothing
+# q70: another unit's menu read since (the Yes was for THIS pet): id 63 still abandons the pet the pet menu named, checked again
 read("player", None)
 r = run(63)
-check(r.get('ok') is False and Q.eval('ABANDONED') == 0, "a menu without Abandon Pet: id 63 runs nothing", r)
+check(r.get('ok') is True and Q.eval('ABANDONED') == 1, "q70: another menu read since: id 63 resolves again from the pet the menu named", r)
+# ... and once done, or past ABANDON_TTL, id 63 runs nothing and SAYS so ("Menu gone")
+Q.execute('ABANDONED = 0')
+r = run(63)
+check(r.get('ok') is False and r.get('why') == "Menu gone" and Q.eval('ABANDONED') == 0, "q70: done once: a second 63 answers Menu gone", r)
+read("pet", "party")
+Q.execute('NOW = NOW + WowCompanion.pmenu.ABANDON_TTL + 1')
+r = run(63)
+check(r.get('ok') is False and r.get('why') == "Menu gone" and Q.eval('ABANDONED') == 0, "q70: past ABANDON_TTL: Menu gone, nothing abandoned", r)
 
 # 6. not a hunter's pet: no row (a taming quest's beast / a demon: PetCanBeAbandoned false; no pet bar; another class)
 Q.execute('CAN_ABANDON = false')
