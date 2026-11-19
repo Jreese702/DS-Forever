@@ -102,6 +102,8 @@ AHS.ready = true
 runTimers()
 d, nv = nav()
 chk("ready: Post can go, the cursor still on it", d.auction.sell.why == nil and nv.cur == "ahspost", nv.cur)
+-- a finger's look kept from the Buy tab does not turn X into hold-to-compare here
+N.look = "ahres 1"
 -- X = Post: press 1 the confirm, press 2 posts
 padPress("PAD3", true, "frame"); padPress("PAD3", false, "frame")
 d, nv = nav()

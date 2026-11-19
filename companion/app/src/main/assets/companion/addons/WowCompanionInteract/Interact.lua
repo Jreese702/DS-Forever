@@ -2582,6 +2582,8 @@ local function buildDoc()
         local key = (N.holding and N.mode and N.cur and N.canLook(N.cur)) and N.cur or N.look
         -- the auction house: an item opened shows its tooltip without a cursor too (a finger opens it at once)
         if not key and doc.auction and AH.key then key = "ahbuy" end
+        -- i167: the Sell tab draws no tooltip, and a finger's look kept from the Buy tab must not make X a hold-to-compare there (X is Post)
+        if doc.auction and AH.tab == "sell" then key = nil end
         if key ~= N.tsKey then N.ts, N.tsKey = 0, key end
         if key then doc.tip = N.tipOf(key) end
         -- the loot window compares AUTOMATICALLY (X is Loot All there): hold-X belongs to the other windows
