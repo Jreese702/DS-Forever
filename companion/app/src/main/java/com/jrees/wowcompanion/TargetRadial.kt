@@ -20,6 +20,29 @@ object TargetRadial {
     }
     val ROOT = Page()
 
+    /** the words a pick that asks first says (an entry's `cf`, e.g. Quests q68's "Abandon Rex? Permanent."): the Bags ask's A / B */
+    fun askLine(confirm: String): String = "$confirm A yes, B no"
+
+    /**
+     * A PICK THAT ASKS FIRST (an entry with `cf`): the first pick of a slice arms it, a second pick of the SAME slice within [windowMs]
+     * does it (A again = yes); B while armed cancels (no), the wheel staying open. Pure (the clock is the caller's).
+     */
+    class Ask(private val windowMs: Long) {
+        private var key: String? = null
+        private var at = 0L
+        /** true = armed and still in its window */
+        fun armed(now: Long): Boolean = key != null && now - at <= windowMs
+        /** a pick of [label] at [now]: true = do it now; false = it asks (armed, or armed again for another slice / after the window) */
+        fun pick(label: String, now: Long): Boolean {
+            if (key == label && now - at <= windowMs) { key = null; return true }
+            key = label; at = now
+            return false
+        }
+        /** B at [now]: true = an open ask was cancelled (nothing else happens); false = none was open */
+        fun cancel(now: Long): Boolean { val was = armed(now); key = null; return was }
+        fun clear() { key = null }
+    }
+
     /** what the wheel's own controller reader takes for its opener's [input]. HOLD / READ: the sticks and the buttons. KEYS (Party
      *  mode: the PartyPad hands the presses in by `key`): the sticks only, so no press counts twice (the user, 2026-11-16: "the control
      *  sticks arent working on the party inspect radials, they are still walking and looking around"; the add-on keeps both sticks
