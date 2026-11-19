@@ -2666,6 +2666,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (current && msg.optString("type") == "load") {
             if (!loadSeen) { loadSeen = true; Log.i("WCMEM", "loading screens: reported by the add-on (${msg.optString("v", "?")})") }
             GameLife.loadingScreen(msg.optBoolean("on", false))
+            // no top-screen taps under a loading screen (LoadGate: the login's restore tap was lost under its loading screen)
+            GameUi.loadReported()
+            System.currentTimeMillis().let { t -> if (msg.optBoolean("on", false)) GameInput.load.start(t) else GameInput.load.end(t) }
         }
         // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
         if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
