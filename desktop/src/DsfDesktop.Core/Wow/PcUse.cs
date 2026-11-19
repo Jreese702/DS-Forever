@@ -6,10 +6,11 @@ namespace DsfDesktop.Wow
 {
     /// <summary>
     /// THE PC'S OWN USER (the user, 2026-11-19: "do the quiet clicks keep the real cursor free? sometimes I try typing over here in claude
-    /// while you are testing and it just takes the cursor straight back to my game"; Desktop 0.2.43). Desktop never pulls WoW to the front,
-    /// parks the cursor or makes a real click while someone is using the PC itself: for <see cref="QuietS"/> after the last PHYSICAL key
+    /// while you are testing and it just takes the cursor straight back to my game"; Desktop 0.2.43). Desktop never pulls WoW to the front
+    /// while someone is using the PC itself (and pad clicks are only ever posted: never a real click or a cursor move, at any time): for
+    /// <see cref="QuietS"/> after the last PHYSICAL key
     /// or mouse input, and never over a window that isn't WoW in that time. Physical vs injected: Raw Input (RIDEV_INPUTSINK, a
-    /// message-only window of ours) names the device of each input; SendInput's - Sunshine's for the stream, ours for a real click - has
+    /// message-only window of ours) names the device of each input; SendInput's - Sunshine's for the stream - has
     /// none (hDevice == NULL), so only a real keyboard or mouse counts. Passive: it reads timestamps only, never what was typed, and
     /// adds no hook to anyone's input. The decision is <see cref="PcUseGate"/> (pure, tested).
     /// </summary>

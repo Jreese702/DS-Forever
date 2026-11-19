@@ -106,7 +106,7 @@ namespace DsfDesktop.App
         {
             running = true;
             Log.I("DS Forever Desktop starting; data " + Paths.DataDir);
-            PcUse.Start();                 // 0.2.43: the PC's own keyboard / mouse times (no focus, park or real click while it is in use)
+            PcUse.Start();                 // 0.2.43: the PC's own keyboard / mouse times (no focus while it is in use; pad clicks are only ever posted)
             LocateWow();
             // an install of the self-patcher cut short by a crash is undone before anything reads the game (0.2.36)
             // (the Agent asked once here; while it is at work the put-back goes on in the background, WoW not started meanwhile)

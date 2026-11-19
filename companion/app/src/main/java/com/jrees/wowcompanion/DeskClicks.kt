@@ -13,12 +13,12 @@ import org.json.JSONObject
  * the video is no longer used for the pad; it stays only for an older Desktop (no caps) - [route]. Local is unchanged.
  *
  * NO CURSOR ON THE STREAM (the user, 2026-11-18: "the cursor is also visible for all of the clicks unlike when playing on the thor which
- * is really distracting"): Desktop first POSTS the click to WoW's window ("post": the PC's real cursor never moves). Whether WoW's UI
- * takes a posted click can't be known before it is tried, so every batch is checked against the add-on's own press ring (Hub's `rx`,
- * TapPad pad23): one posted press seen = posting works for the app's life (even after real clicks were chosen: back to posts); [MISSES]
- * posted batches judged unseen (by sequence: [check]) while none was ever seen = WoW wants real input: "input" from then on (Desktop
- * moves the real cursor to the pixel, clicks, puts it back; never while the PC's own user is busy) and the last unseen batch is sent
- * once more. [park] (Trackpad not open) lets Desktop move a resting cursor off the streamed screen (Desktop keeps it away from batches).
+ * is really distracting"), and QUIET CLICKS ONLY (the user's ruling 2026-11-19: "Off once quiet clicks work"): Desktop only ever POSTS
+ * the click to WoW's window - never SendInput, never a cursor move, never WoW brought to the front; the PC's own user keeps control.
+ * There is no real-click fallback any more (fix/desk-click-switch removed the post -> input switch, its resends and its park). Every
+ * batch is still checked against the add-on's own press ring (Hub's `rx`, TapPad pad23) by sequence ([check]); when [MISSES] posted
+ * batches in a row go unseen, ONE terse line goes to the tap log and to Desktop's log ("pad_click_unseen") - nothing is pressed any
+ * other way - and it is said again only after a posted press has been seen once more.
  * A press that lands on another row than meant is still TapCal's note ("tap landed off ... (desktop click)"): it should not happen.
  * Pure but for [link] (BridgeLog sets it) and the tap log.
  */
@@ -36,15 +36,13 @@ object DeskClicks {
     const val VERIFY_MS = 3_500L
     const val MISSES = 2
     const val KEEP = 16
-    /** TapPad's freelook park point (PARK_X, PARK_Y): where Desktop parks a resting cursor on a one-screen PC (the add-on's sink) */
-    const val PARK_X = 0.5
-    const val PARK_Y = 214.5 / 540
-
-    @Volatile var mode = "post"
-        private set
+    /** always "post": quiet clicks only (the user's ruling 2026-11-19, "Off once quiet clicks work") */
+    const val mode = "post"
     @Volatile var postSeen = false
         private set
     private var misses = 0
+    /** the "not landing" line was said and no posted press has been seen since */
+    private var unseenSaid = false
 
     /** one cell's aim: game px (the pixel's middle) and its row (for TapCal's landing check) */
     data class Cell(val gx: Double, val gy: Double, val top: Double, val ch: Double)
@@ -78,13 +76,16 @@ object DeskClicks {
         return gx to gy
     }
 
-    /** the "pad_click" message (pure): [taps] = (game x, game y, ms before it) */
-    fun message(id: Long, mode: String, park: Boolean, pw: Double, ph: Double, taps: List<Triple<Double, Double, Long>>): JSONObject {
+    /** the "pad_click" message (pure): [taps] = (game x, game y, ms before it); always posted, never a park */
+    fun message(id: Long, pw: Double, ph: Double, taps: List<Triple<Double, Double, Long>>): JSONObject {
         val a = JSONArray()
         for ((x, y, w) in taps) a.put(JSONObject().put("x", r2(x)).put("y", r2(y)).put("w", w.coerceIn(0L, 1000L)))
-        return JSONObject().put("t", "pad_click").put("id", id).put("mode", mode).put("park", park).put("pw", pw).put("ph", ph)
-            .put("sink", JSONArray().put(r2(pw * PARK_X)).put(r2(ph * PARK_Y))).put("taps", a)
+        return JSONObject().put("t", "pad_click").put("id", id).put("mode", mode).put("park", false).put("pw", pw).put("ph", ph)
+            .put("taps", a)
     }
+
+    /** the one "posted presses not landing" note for Desktop's log (pure) */
+    fun unseenMessage(n: Int): JSONObject = JSONObject().put("t", "pad_click_unseen").put("n", n)
     private fun r2(v: Double) = Math.round(v * 100.0) / 100.0
 
     /**
@@ -95,7 +96,7 @@ object DeskClicks {
      * only once the ring shows a press of a LATER batch (it has moved past it) or, while nothing lands at all, once a report comes
      * [VERIFY_MS] after its press; a ring that moved by more presses than it lists ([ringGap]) leaves the older batches unknown.
      */
-    private class Batch(val id: Long, val at: Long, val mode: String, val cells: List<Pair<String, Int>>?, val retry: Boolean,
+    private class Batch(val id: Long, val at: Long, val cells: List<Pair<String, Int>>?, val retry: Boolean,
                         val onFail: (String) -> Unit) {
         val seen = HashSet<Int>()               // the indexes of its cells the ring showed
         val landed: Boolean get() = seen.isNotEmpty()
@@ -107,7 +108,6 @@ object DeskClicks {
     private val batches = object : LinkedHashMap<Long, Batch>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Batch>?) = size > KEEP
     }
-    private val resends = LinkedHashSet<Long>()
     /** partial batches' unpressed cells, sent once more ([takePartials]) */
     private val partials = ArrayList<Pair<Long, List<Pair<String, Int>>>>()
 
@@ -116,11 +116,10 @@ object DeskClicks {
      * against the ring, never sent again), [pts] their game px, [waits] the ms before each. False = no link (nothing sent).
      */
     fun send(id: Long, cells: List<Pair<String, Int>>?, pts: List<Pair<Double, Double>>, waits: List<Long>, pw: Double, ph: Double,
-             park: Boolean, retry: Boolean, now: Long, onFail: (String) -> Unit): Boolean {
+             retry: Boolean, now: Long, onFail: (String) -> Unit): Boolean {
         val l = link ?: return false
-        val m = mode
-        synchronized(this) { batches[id] = Batch(id, now, m, cells, retry, onFail) }
-        val msg = message(id, m, park, pw, ph, pts.mapIndexed { i, p -> Triple(p.first, p.second, waits.getOrElse(i) { 0L }) })
+        synchronized(this) { batches[id] = Batch(id, now, cells, retry, onFail) }
+        val msg = message(id, pw, ph, pts.mapIndexed { i, p -> Triple(p.first, p.second, waits.getOrElse(i) { 0L }) })
         val ok = runCatching { l.send(msg.toString()) }.getOrDefault(false)
         if (!ok) synchronized(this) { batches.remove(id) }
         return ok
@@ -149,20 +148,17 @@ object DeskClicks {
     }
 
     fun failText(why: String): String = when (why) {
-        "not_foreground" -> "WoW isn't in front on the PC: nothing was pressed"
         "not_streaming" -> "The PC isn't streaming: nothing was pressed"
         "no_wow" -> "WoW isn't running on the PC: nothing was pressed"
         "outside", "no_client" -> "The game's window on the PC doesn't fit the pad: nothing was pressed"
         "rate", "busy", "stale" -> "Too many presses at once: nothing was pressed"
         "not_pinned" -> "The PC's connection isn't secured: nothing was pressed"
-        "pc_in_use" -> "Someone is using the PC: nothing was pressed"
         else -> "The PC didn't press it" + if (why.isNotEmpty()) " ($why)" else ""
     }
 
     /**
      * the add-on saw a press of [op]:[col] (call in the ring's order, oldest first): the OLDEST recent batch holding that cell, not yet
-     * seen there, is seen. A posted one proves posting works: posts for good (the user, 2026-11-18: "the cursor is also visible for
-     * all of the clicks ... really distracting"), and back to posts if real clicks had been chosen. The tap log's note, or null.
+     * seen there, is seen - posting works (the misses start again; a later stop is said once more). The tap log's note, or null.
      */
     @Synchronized fun landed(op: String, col: Int, now: Long): String? {
         for (b in batches.values) {
@@ -171,12 +167,9 @@ object DeskClicks {
             val i = c.indices.firstOrNull { it !in b.seen && c[it] == (op to col) } ?: continue
             b.seen += i
             b.unknown = false
-            if (b.mode == "post") {
-                misses = 0
-                val wasInput = mode == "input"
-                postSeen = true; mode = "post"
-                if (wasInput) return "desktop clicks: a posted press was seen after all ($op:$col); quiet posted clicks from now"
-            }
+            misses = 0
+            postSeen = true
+            if (unseenSaid) { unseenSaid = false; return "desktop clicks: posted presses landing again ($op:$col)" }
             return null
         }
         return null
@@ -193,8 +186,9 @@ object DeskClicks {
 
     /**
      * After each current hub document ([verifiable] = the add-on reports its presses: pad24's strip is in the pad): the batches Desktop
-     * pressed ("done") that the ring has moved past, or that a report [VERIFY_MS] after their press still does not show. Only while NO
-     * posted press was ever seen do [MISSES] of them switch to "input" (the last one queued to go again: [takeResends]). The notes.
+     * pressed ("done") that the ring has moved past, or that a report [VERIFY_MS] after their press still does not show. [MISSES] in a
+     * row = posted presses are not landing: ONE line (the tap log, and Desktop's log through [link]), never a fallback, never a resend;
+     * said again only after a press was seen. The notes.
      */
     @Synchronized fun check(now: Long, verifiable: Boolean): List<String> {
         if (!verifiable) return emptyList()
@@ -205,24 +199,19 @@ object DeskClicks {
             val movedPast = list.subList(k + 1, list.size).any { it.landed }
             if (!movedPast && now - b.doneAt < VERIFY_MS) continue
             b.checked = true
-            val what = b.cells.joinToString(" ") { "${it.first}:${it.second}" }
-            if (b.mode == "post" && !postSeen) {
-                misses++
-                if (misses >= MISSES && mode == "post") {
-                    mode = "input"
-                    if (!b.retry) resends.add(b.id)
-                    out += "desktop clicks: $misses posted batches not seen by the game ($what); real clicks from now" + if (!b.retry) ", sent again" else ""
-                } else out += "desktop click not seen (posted): $what"
-            } else out += "desktop click not seen (${b.mode}): $what"
+            misses++
+            if (misses >= MISSES && !unseenSaid) {
+                unseenSaid = true
+                out += "desktop clicks: posted presses not landing ($misses batches unseen); no fallback"
+                link?.let { l -> runCatching { l.send(unseenMessage(misses).toString()) } }
+            }
         }
         return out
     }
 
-    /** the batches to send once more (as "input"); forgets them */
-    @Synchronized fun takeResends(): List<Long> { val l = resends.toList(); resends.clear(); return l }
     /** partial batches' unpressed cells, to send once more (as retries); forgets them */
     @Synchronized fun takePartials(): List<Pair<Long, List<Pair<String, Int>>>> { val l = partials.toList(); partials.clear(); return l }
 
     /** tests: forget everything */
-    @Synchronized fun reset() { link = null; mode = "post"; postSeen = false; misses = 0; batches.clear(); resends.clear(); partials.clear() }
+    @Synchronized fun reset() { link = null; postSeen = false; misses = 0; unseenSaid = false; batches.clear(); partials.clear() }
 }

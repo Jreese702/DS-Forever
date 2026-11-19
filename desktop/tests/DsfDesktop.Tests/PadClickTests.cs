@@ -10,8 +10,8 @@ using DsfDesktop.Wow;
 namespace DsfDesktop.Tests
 {
     /// <summary>
-    /// Desktop clicks the pad (0.2.42): the conversion with the PC's own numbers (WoW borderless 1920x1080 at 0,0, 96 DPI), clicks only
-    /// inside the client rect, the order of what goes to Windows in both modes, the gates. Every Windows call is a RECORDER here: no
+    /// Desktop clicks the pad (0.2.42; 0.2.43 quiet posted clicks only): the conversion with the PC's own numbers (WoW borderless
+    /// 1920x1080 at 0,0, 96 DPI), clicks only inside the client rect, the order of what goes to Windows, the gates. Every Windows call is a RECORDER here: no
     /// input ever reaches this PC. The one real Win32 test posts to a message-only window of the test's own (never WoW).
     /// </summary>
     public static class PadClickTests
@@ -21,23 +21,11 @@ namespace DsfDesktop.Tests
             public readonly List<string> Calls = new List<string>();
             public IntPtr Hwnd = (IntPtr)0x1234;
             public Displays.RECT Rect = new Displays.RECT { Left = 0, Top = 0, Right = 1920, Bottom = 1080 };
-            public bool Fg = true, FocusWorks = true, Stream = true;
-            public double Idle = 60;
-            public int Cx = 3000, Cy = 500;      // the real cursor: on the PC's other monitor
-            public List<Displays.RECT> Mons = new List<Displays.RECT> { new Displays.RECT { Left = 0, Top = 0, Right = 1920, Bottom = 1080 } };
+            public bool Stream = true;
             public DateTime T = new DateTime(2026, 11, 18, 20, 0, 0, DateTimeKind.Utc);
-            public bool WarpAfterSet;
             public IntPtr WowWindow() => Hwnd;
             public Displays.RECT? Client(IntPtr h) => h == Hwnd ? Rect : (Displays.RECT?)null;
-            public bool IsForeground(IntPtr h) => Fg;
-            public string Focus(IntPtr h) { Calls.Add("focus"); if (FocusWorks) Fg = true; return FocusWorks ? null : "kept"; }
             public bool Streaming() => Stream;
-            public double IdleSeconds() => Idle;
-            public bool PcBusy;
-            public bool PcInUse() => PcBusy;
-            public IList<Displays.RECT> Monitors() => Mons;
-            public bool GetCursor(out int x, out int y) { x = Cx; y = Cy; return true; }
-            public bool SetCursor(int x, int y) { Calls.Add("set " + x + "," + y); Cx = x; Cy = y; if (WarpAfterSet) { Cx = 960; Cy = 429; } return true; }
             public bool Post(IntPtr h, int msg, IntPtr w, IntPtr l)
             {
                 int v = l.ToInt32();
@@ -45,7 +33,6 @@ namespace DsfDesktop.Tests
                           " " + (v & 0xFFFF) + "," + ((v >> 16) & 0xFFFF));
                 return true;
             }
-            public bool Button(bool down) { Calls.Add(down ? "btn down" : "btn up"); return true; }
             public void Sleep(int ms) { T = T.AddMilliseconds(ms); }
             public DateTime Now() => T;
         }
@@ -64,8 +51,7 @@ namespace DsfDesktop.Tests
             var c = new PadClicker(os) { Log = null };
             var taps = PadClick.Parse(m, out var pw, out var ph, out var why);
             A.Null(why, "parsed");
-            return c.Run(new PadBatch { Id = (long)m["id"], Mode = (string)m["mode"], Park = (bool)m["park"], Pw = pw, Ph = ph,
-                Sink = new[] { 960.0, 429.0 }, Taps = taps, At = os.T });
+            return c.Run(new PadBatch { Id = (long)m["id"], Pw = pw, Ph = ph, Taps = taps, At = os.T });
         }
 
         [Test]
@@ -95,29 +81,7 @@ namespace DsfDesktop.Tests
             var r = RunOne(os, Msg(7, "post", true, 1169.5, 15.5, 0, 1169.5, 115.5, 120));
             A.Eq("done", r.Str("state")); A.Eq(2L, r.Long("n")); A.Eq("post", r.Str("mode"));
             A.Eq("move 1169,15|down 1169,15|up 1169,15|move 1169,115|down 1169,115|up 1169,115", string.Join("|", os.Calls));
-            A.Eq(3000, os.Cx, "the real cursor stayed on the other monitor");
-        }
-
-        [Test]
-        public static void RealClicksGoToTheExactPixelAndTheCursorGoesBack()
-        {
-            var os = new FakeOs { Mons = new List<Displays.RECT> { new Displays.RECT { Right = 1920, Bottom = 1080 }, new Displays.RECT { Left = 1920, Right = 3840, Bottom = 1080 } } };
-            var r = RunOne(os, Msg(8, "input", false, 1169.5, 53.5, 0));
-            A.Eq("done", r.Str("state"));
-            A.Eq("set 1169,53|btn down|btn up|set 3000,500", string.Join("|", os.Calls));
-            // a client not at 0,0 (a window on the second monitor): screen = client origin + client pixel
-            var os2 = new FakeOs { Rect = new Displays.RECT { Left = 1920, Top = 0, Right = 3840, Bottom = 1080 }, Cx = 100, Cy = 100 };
-            RunOne(os2, Msg(9, "input", false, 10.5, 15.5, 0));
-            A.Eq("set 1930,15|btn down|btn up|set 100,100", string.Join("|", os2.Calls));
-        }
-
-        [Test]
-        public static void AWarpedCursorIsNeverPressed()
-        {
-            var os = new FakeOs { WarpAfterSet = true };
-            var r = RunOne(os, Msg(10, "input", false, 1169.5, 15.5, 0));
-            A.Eq("failed", r.Str("state"));
-            A.False(os.Calls.Any(c => c.StartsWith("btn")), "no button when the game moved the cursor off the pixel");
+            A.False(os.Calls.Any(c => !c.StartsWith("move ") && !c.StartsWith("down ") && !c.StartsWith("up ")), "posted messages only");
         }
 
         [Test]
@@ -133,13 +97,8 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
-        public static void NotInFrontNotStreamingOrStaleRefuses()
+        public static void NotStreamingNoWowOrStaleRefuses()
         {
-            var os = new FakeOs { Fg = false, FocusWorks = false };
-            A.Eq("not_foreground", RunOne(os, Msg(1, "input", false, 10.5, 15.5, 0)).Str("why"));
-            A.Eq("focus", string.Join("|", os.Calls), "a real click: brought forward once, nothing clicked");
-            var os2 = new FakeOs { Fg = false, FocusWorks = true };
-            A.Eq("done", RunOne(os2, Msg(2, "input", false, 10.5, 15.5, 0)).Str("state"), "in front after the focus: clicked");
             var os3 = new FakeOs { Stream = false };
             A.Eq("not_streaming", RunOne(os3, Msg(3, "post", false, 10.5, 15.5, 0)).Str("why"));
             var os4 = new FakeOs { Hwnd = IntPtr.Zero };
@@ -168,26 +127,6 @@ namespace DsfDesktop.Tests
         static string Fail(object parsed, string why) { A.Null(parsed); return why; }
 
         [Test]
-        public static void ARestingCursorOnTheStreamIsParked()
-        {
-            // a second monitor: off the streamed screen
-            var os = new FakeOs { Cx = 500, Cy = 500, Mons = new List<Displays.RECT> { new Displays.RECT { Right = 1920, Bottom = 1080 }, new Displays.RECT { Left = 1920, Right = 3840, Bottom = 1080 } } };
-            RunOne(os, Msg(1, "post", true, 10.5, 15.5, 0));
-            A.Eq("set 2880,540", os.Calls[0], "onto the other monitor's middle");
-            // one screen only: the game's own park point (the add-on's sink covers it)
-            var os2 = new FakeOs { Cx = 500, Cy = 500 };
-            RunOne(os2, Msg(2, "post", true, 10.5, 15.5, 0));
-            A.Eq("set 960,429", os2.Calls[0]);
-            // someone is using the PC's mouse, or the Thor's Trackpad is open (park false): left where it is
-            var os3 = new FakeOs { Cx = 500, Cy = 500, Idle = 1 };
-            RunOne(os3, Msg(3, "post", true, 10.5, 15.5, 0));
-            A.False(os3.Calls.Any(c => c.StartsWith("set")), "not while the PC is in use");
-            var os4 = new FakeOs { Cx = 500, Cy = 500 };
-            RunOne(os4, Msg(4, "post", false, 10.5, 15.5, 0));
-            A.False(os4.Calls.Any(c => c.StartsWith("set")), "not while the Trackpad is open");
-        }
-
-        [Test]
         public static void TheQueueAnswersEveryBatchInOrder()
         {
             var os = new FakeOs();
@@ -207,62 +146,43 @@ namespace DsfDesktop.Tests
         [Test]
         public static void PostedClicksReachWowBehindAnotherWindowAndNeverFocusIt()
         {
-            var os = new FakeOs { Fg = false, FocusWorks = true };
+            // the interface has no focus, cursor or SendInput call at all: a batch is posted messages and nothing else
+            var os = new FakeOs();
             var r = RunOne(os, Msg(1, "post", false, 10.5, 15.5, 0, 20.5, 15.5, 0));
             A.Eq("done", r.Str("state")); A.Eq(2L, r.Long("n"));
-            A.False(os.Calls.Contains("focus"), "never brought forward");
-            A.False(os.Calls.Any(c => c.StartsWith("set")), "the real cursor never moved");
-            A.False(os.Fg, "the PC user's window stays in front");
+            A.Eq(6, os.Calls.Count, "move, down, up per tap");
         }
 
+        /// <summary>the user's ruling 2026-11-19, "Off once quiet clicks work": an older Thor's "input" / park request is posted all the same</summary>
         [Test]
-        public static void NoRealClickOrParkWhileThePcIsInUse()
+        public static void AnInputOrParkRequestIsPostedAllTheSame()
         {
-            var os = new FakeOs { PcBusy = true, Fg = false };
-            A.Eq("pc_in_use", RunOne(os, Msg(1, "input", false, 10.5, 15.5, 0)).Str("why"));
-            A.Eq(0, os.Calls.Count, "no focus, no cursor, no button");
-            var os2 = new FakeOs { PcBusy = true, Cx = 500, Cy = 500 };
-            A.Eq("done", RunOne(os2, Msg(2, "post", true, 10.5, 15.5, 0)).Str("state"), "a posted click still goes");
-            A.False(os2.Calls.Any(c => c.StartsWith("set")), "no park while the PC is in use");
-            // a real batch: the PC user starts using the PC halfway: the rest is cut (the Thor sends it once more)
-            var os3 = new FakeOs();
-            var c = new PadClicker(os3) { Log = null };
-            var taps = PadClick.Parse(Msg(3, "input", false, 10.5, 15.5, 0, 20.5, 15.5, 0), out var pw, out var ph, out _);
-            os3.Calls.Clear();
-            var b = new PadBatch { Id = 3, Mode = "input", Pw = pw, Ph = ph, Taps = taps, At = os3.T };
-            // the first click flips the PC to busy (as a physical key would)
-            var r = new PadClicker(new BusyAfterFirst(os3)) { Log = null }.Run(b);
-            A.Eq("partial", r.Str("state")); A.Eq("pc_in_use", r.Str("why")); A.Eq(1L, r.Long("n"));
-        }
-
-        sealed class BusyAfterFirst : IPadClickOs
-        {
-            readonly FakeOs o; int ups;
-            public BusyAfterFirst(FakeOs o) { this.o = o; }
-            public IntPtr WowWindow() => o.WowWindow();
-            public Displays.RECT? Client(IntPtr h) => o.Client(h);
-            public bool IsForeground(IntPtr h) => o.IsForeground(h);
-            public string Focus(IntPtr h) => o.Focus(h);
-            public bool Streaming() => o.Streaming();
-            public double IdleSeconds() => o.IdleSeconds();
-            public bool PcInUse() => ups > 0;
-            public IList<Displays.RECT> Monitors() => o.Monitors();
-            public bool GetCursor(out int x, out int y) => o.GetCursor(out x, out y);
-            public bool SetCursor(int x, int y) => o.SetCursor(x, y);
-            public bool Post(IntPtr h, int msg, IntPtr w, IntPtr l) => o.Post(h, msg, w, l);
-            public bool Button(bool down) { if (!down) ups++; return o.Button(down); }
-            public void Sleep(int ms) => o.Sleep(ms);
-            public DateTime Now() => o.Now();
+            var os = new FakeOs();
+            var got = new System.Collections.Concurrent.ConcurrentQueue<Dictionary<string, object>>();
+            using (var c = new PadClicker(os) { Log = null })
+            {
+                A.True(c.Enqueue(Msg(4, "input", true, 1169.5, 53.5, 0), r => got.Enqueue(r)));
+                var until = DateTime.UtcNow.AddSeconds(5);
+                while (got.Count < 1 && DateTime.UtcNow < until) Thread.Sleep(10);
+            }
+            A.True(got.TryDequeue(out var res), "answered");
+            A.Eq("done", res.Str("state")); A.Eq("post", res.Str("mode"));
+            A.Eq("move 1169,53|down 1169,53|up 1169,53", string.Join("|", os.Calls));
+            // the clicker's Windows half imports no real-input or cursor call
+            var names = typeof(Win32PadClickOs).GetMethods(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly).Select(mi => mi.Name).ToList();
+            A.True(names.Contains("PostMessage"), "posts");
+            A.False(names.Contains("SendInput") || names.Contains("SetCursorPos") || names.Contains("GetCursorPos"), "no SendInput / cursor import");
         }
 
         [Test]
         public static void AWindowThatOnlyMovedKeepsTheBatchAResizedOneCutsIt()
         {
             var os = new MovingOs();
-            var taps = PadClick.Parse(Msg(1, "input", false, 10.5, 15.5, 0, 20.5, 15.5, 0), out var pw, out var ph, out _);
-            var r = new PadClicker(os) { Log = null }.Run(new PadBatch { Id = 1, Mode = "input", Pw = pw, Ph = ph, Taps = taps, At = os.T });
-            A.Eq("done", r.Str("state"), "moved, not resized: both pressed");
-            A.True(os.Calls.Contains("set 120,115"), "the second aimed at the window's new place (100,100 + 20,15)");
+            var taps = PadClick.Parse(Msg(1, "post", false, 10.5, 15.5, 0, 20.5, 15.5, 0), out var pw, out var ph, out _);
+            var r = new PadClicker(os) { Log = null }.Run(new PadBatch { Id = 1, Pw = pw, Ph = ph, Taps = taps, At = os.T });
+            A.Eq("done", r.Str("state"), "moved, not resized: both pressed (client points)");
+            A.Eq(6, os.Calls.Count(c => c == "post"));
             var os2 = new MovingOs { Resize = true };
             var r2 = new PadClicker(os2) { Log = null }.Run(new PadBatch { Id = 2, Mode = "post", Pw = pw, Ph = ph, Taps = taps, At = os2.T });
             A.Eq("partial", r2.Str("state")); A.Eq("moved", r2.Str("why")); A.Eq(1L, r2.Long("n"));
@@ -272,7 +192,7 @@ namespace DsfDesktop.Tests
         {
             public readonly List<string> Calls = new List<string>();
             public DateTime T = new DateTime(2026, 11, 18, 20, 0, 0, DateTimeKind.Utc);
-            public bool Resize; int asks; int cx = 3000, cy = 500;
+            public bool Resize; int asks;
             public IntPtr WowWindow() => (IntPtr)0x1234;
             public Displays.RECT? Client(IntPtr h)
             {
@@ -280,16 +200,8 @@ namespace DsfDesktop.Tests
                 if (asks == 1) return new Displays.RECT { Left = 0, Top = 0, Right = 1920, Bottom = 1080 };
                 return Resize ? new Displays.RECT { Left = 0, Top = 0, Right = 1280, Bottom = 720 } : new Displays.RECT { Left = 100, Top = 100, Right = 2020, Bottom = 1180 };
             }
-            public bool IsForeground(IntPtr h) => true;
-            public string Focus(IntPtr h) => null;
             public bool Streaming() => true;
-            public double IdleSeconds() => 60;
-            public bool PcInUse() => false;
-            public IList<Displays.RECT> Monitors() => new List<Displays.RECT>();
-            public bool GetCursor(out int x, out int y) { x = cx; y = cy; return true; }
-            public bool SetCursor(int x, int y) { Calls.Add("set " + x + "," + y); cx = x; cy = y; return true; }
             public bool Post(IntPtr h, int msg, IntPtr w, IntPtr l) { Calls.Add("post"); return true; }
-            public bool Button(bool down) { Calls.Add(down ? "btn down" : "btn up"); return true; }
             public void Sleep(int ms) { T = T.AddMilliseconds(ms); }
             public DateTime Now() => T;
         }

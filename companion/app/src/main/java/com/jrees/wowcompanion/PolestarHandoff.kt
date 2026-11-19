@@ -10,7 +10,9 @@ import org.json.JSONObject
  * kept per character ([Saved], the host's prefs, keyed by name-realm like every character store) while playing Local, and at a stream
  * session's first current `pguide` from the PC (Polestar there, a guide loaded, out of a fight) the PC's Polestar is put on it ONCE
  * with the menu's own framed commands: CONTINUE the saved guide's tab when the PC shows another (its tabs come with an open menu),
- * then LOOK at the saved step (or BACK to the live one when that is where the player was). The user asked for this (an exception
+ * then LOOK at the saved step (or BACK to the live one when that is where the player was).
+ * USER RULING (2026-11-19, confirmed with "Off once quiet clicks work"): "Yes, auto-sync at start" - once per stream, after login (the
+ * PC's first current `pguide`, Polestar there), not in a fight, and the player's own menu press stops it. The user asked for this (an exception
  * to "only the player's press sends anything", like the default focus push); the player's own press in the menu first ends it; at
  * most [MAX_ACTS] frames a session; a step it can't reach is left to the player with one log line. Pure.
  */
