@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad23"     -- pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad24"     -- pad24 THE STREAM'S TAPS MEASURED (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"; pad23's ring proved every "ui" tap (row 51, aimed y 115.5) pressed "uisw" (row 50) and every "pnav" tap (row 1, y 15.5) pressed "chq" (row 2) while the rows between were right: on the PC the game sees a press about 2 % closer to y ~65 than the app aims it): THE CALIBRATION STRIP, one plain press-only Button of ours, CAL_W game px wide, CAL_GAP left of the grid, over the band's full placed height, that does nothing but keep where the game saw each press (GetCursorPosition, read only; describe()'s `calib`: its box, the count and the last 4 "x,y" in game px), so the app taps it twice (top and bottom) and aims every tap through what it measured; the ring of presses also keeps where each was seen (rxDoc `at`, beside `last`); the catcher's band zone takes the strip in; nothing else changed; pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -92,6 +92,8 @@ local PARK_X, PARK_Y = 0.5, 214.5 / 540   -- the freelook park point, as fractio
 local SINK = 10          -- game pixels across the stray-press sink, centred on the park point
 local SINK_POLL = 0.1    -- seconds between reads of the capture's holder (the sink's strata follows it)
 local TOP_GAP = 12       -- game pixels between the screen's top edge and the first row
+local CAL_W = 6          -- pad24: game pixels across the calibration strip (see THE STREAM'S TAPS MEASURED)
+local CAL_GAP = 6        -- pad24: game pixels between the strip and the grid's first column
 -- ROW HEIGHT (user rulings 2026-09-28: ~18:55 "thinner rows, 3 px"; ~21:10 "2 px rows now", before the first push, because the
 -- rooms' requests reached 27 rows, 31 with more bags). 16 rows of 6 px filled up, and rows 13+ reached down into the game's
 -- pop-up dialogs, which Blizzard anchors TOP at -135 UI units, centred right under this grid (89 game px at this device's 0.94
@@ -224,19 +226,81 @@ pad.fits = fits
 
 -- a press of a plain cell, by a click or by the key channel: once per tap (REPEAT), a flash, the row's handler
 -- pad23: the last presses, "row:col" (the row's name), newest last; read by Hub's document (rx) so the app can log where its taps landed
-pad.rx = { n = 0, last = {} }
+-- pad24: where the game sees the cursor now, in the pad's own game px (top-left, 0.1 px), or nil (read only; GetCursorPosition is in
+-- screen units, UIParent's effective scale turns it into UI units, the layout's sx / sy into game px)
+local function cursorPx()
+    local i = pad.info
+    if not i then return nil end
+    local ok, x, y = pcall(GetCursorPosition)
+    local okS, es = pcall(function() return UIParent:GetEffectiveScale() end)
+    local function n(v) return type(v) == "number" and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) and v == v and v or nil end
+    x, y, es = ok and n(x) or nil, ok and n(y) or nil, okS and n(es) or nil
+    if not x or not y or not es or es <= 0 then return nil end
+    return math.floor(x / es * i.sx * 10 + 0.5) / 10, math.floor((i.ph - y / es * i.sy) * 10 + 0.5) / 10
+end
+pad.cursorPx = cursorPx
+
+pad.rx = { n = 0, last = {}, at = {} }
 local function landed(row, col)
     local r = pad.byRow[row]
     local L = pad.rx
     L.n = L.n + 1
     L.last[#L.last + 1] = tostring(r and r.name or row) .. ":" .. tostring(col)
+    local x, y = cursorPx()                                       -- pad24: where the game saw this press ("-" = not readable)
+    L.at[#L.at + 1] = x and (x .. "," .. y) or "-"
     if #L.last > 8 then table.remove(L.last, 1) end
+    if #L.at > 8 then table.remove(L.at, 1) end
 end
 pad.landed = landed
 function pad.rxDoc()
     local L = pad.rx
     if L.n == 0 then return nil end
-    return { n = L.n, last = table.concat(L.last, " ") }
+    return { n = L.n, last = table.concat(L.last, " "), at = table.concat(L.at, " ") }
+end
+
+-- pad24 THE CALIBRATION STRIP (see THE STREAM'S TAPS MEASURED in the version note): a press on it only keeps where the game saw it
+pad.cal = { n = 0, p = {}, btn = nil }
+local function calPress()
+    local c = pad.cal
+    local x, y = cursorPx()
+    if not x then return end
+    local t = clock()
+    -- the Thor's one tap arrives as two presses ms apart: the same spot within 0.1 s is the same press
+    if c.lastAt and t - c.lastAt < 0.1 and c.lastY and math.abs(y - c.lastY) < 0.5 then return end
+    c.lastAt, c.lastY = t, y
+    c.n = c.n + 1
+    c.p[#c.p + 1] = x .. "," .. y
+    if #c.p > 4 then table.remove(c.p, 1) end
+    -- the answer goes out at once: the feeds re-publish the grid (describe()'s `calib` changed), as on a new layout
+    for _, fn in ipairs(pad.listeners) do pcall(fn) end
+end
+pad.calPress = calPress
+-- the strip's box in game px: CAL_GAP left of the grid, from the first row's top to the bottom of the last row that fits this layout
+local function calBox()
+    local g = pad.geom
+    if not g then return nil end
+    local n = 0
+    while n < ROWS_MAX and fits(n) do n = n + 1 end
+    if n == 0 then return nil end
+    return { x = g.x - CAL_GAP - CAL_W, y = g.y, w = CAL_W, h = n * CELL_H }
+end
+pad.calBox = calBox
+local function placeCal()
+    local i, b = pad.info, calBox()
+    local c = pad.cal
+    if not c.btn then
+        if not b then return end
+        c.btn = CreateFrame("Button", nil, UIParent)
+        c.btn:SetFrameStrata("TOOLTIP")
+        c.btn:EnableMouse(true)
+        c.btn:RegisterForClicks("AnyDown")                 -- the press, as the plain cells
+        c.btn:SetScript("OnClick", function() pcall(calPress) end)
+    end
+    if not b or not i then c.btn:Hide() return end
+    c.btn:SetSize(b.w / i.sx, b.h / i.sy)
+    c.btn:ClearAllPoints()
+    c.btn:SetPoint("TOPLEFT", UIParent, "TOPLEFT", b.x / i.sx, -b.y / i.sy)
+    c.btn:Show()
 end
 
 local function pressCell(btn, row, col)
@@ -727,6 +791,7 @@ function pad.layout()
     for _, r in pairs(pad.rows) do if not r.secure then makeRow(r) end end
     pad.buildSecure()
     pcall(placeSink)           -- the sink is a safety net: it must never be able to break the grid
+    pcall(placeCal)            -- pad24: the calibration strip, likewise
     if changed then for _, fn in ipairs(pad.listeners) do pcall(fn) end end
     return true
 end
@@ -761,11 +826,17 @@ function pad.describe()
             end
         end
     end
+    -- pad24: the calibration strip while it is up - its box, its press count and where the game saw its last presses ("x,y", newest last)
+    local cal
+    local cb, c = calBox(), pad.cal
+    if cb and c.btn and c.btn:IsShown() then
+        cal = { x = cb.x, y = cb.y, w = cb.w, h = cb.h, n = c.n, p = #c.p > 0 and table.concat(c.p, " ") or nil }
+    end
     -- popupTop: where the game's dialogs start, in the same game pixels, so any reader can check the grid's bottom
     -- (y + rows * ch) stays above them at whatever UI scale the player picks
     return { v = PADV, x = g.x, y = g.y, cw = CELL_W, ch = CELL_H, cols = COLS,
              popupTop = math.floor(POPUP_TOP_UNITS * pad.info.sy * 10 + 0.5) / 10,
-             pw = g.pw, ph = g.ph, rows = rows, sizes = sizes, keys = keysDescribe(), off = off }
+             pw = g.pw, ph = g.ph, rows = rows, sizes = sizes, keys = keysDescribe(), off = off, calib = cal }
 end
 
 local f = CreateFrame("Frame")
@@ -1007,8 +1078,12 @@ do
         if not g or not g.ph or g.ph <= 0 then return out end
         local k = 1080 / g.ph
         local rows = math.max(1, pad.nrows or 0)
-        out[#out + 1] = { x = (g.x - L.BAND_PAD) * k, y = (g.y - L.BAND_PAD) * k, w = (COLS * CELL_W + 2 * L.BAND_PAD) * k,
-                          h = (rows * CELL_H + 2 * L.BAND_PAD) * k, why = "pad" }
+        -- pad24: the band takes the calibration strip in (CAL_GAP + CAL_W left of the grid)
+        local cb = pad.calBox and pad.calBox()
+        local left = cb and (CAL_GAP + CAL_W) or 0
+        local hh = math.max(rows * CELL_H, cb and cb.h or 0)
+        out[#out + 1] = { x = (g.x - left - L.BAND_PAD) * k, y = (g.y - L.BAND_PAD) * k, w = (left + COLS * CELL_W + 2 * L.BAND_PAD) * k,
+                          h = (hh + 2 * L.BAND_PAD) * k, why = "pad" }
         out[#out + 1] = { x = (g.pw * PARK_X - SINK / 2) * k, y = (g.ph * PARK_Y - SINK / 2) * k, w = SINK * k, h = SINK * k, why = "sink" }
         return out
     end
