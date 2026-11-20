@@ -66,6 +66,8 @@ object PerformanceTileModel {
         val mapTerrain: Boolean = true,
         /** Low-memory graphics was changed in this visit (it applies from the next game start) */
         val lowGfxChanged: Boolean = false,
+        /** #56 G1: the video memory cap (Settings.vramCap) and whether it was changed in this visit (from the next game start) */
+        val vramCap: Boolean = true, val vramChanged: Boolean = false,
         /** [progress] the bake's phase only (the count is the tile's value and the ring, the deferred count its own line) */
         val indoorOn: Boolean = true, val ready: Int = 0, val total: Int = 0, val deferred: Int = 0, val progress: String = "",
         val terrain: String? = null,
@@ -95,6 +97,7 @@ object PerformanceTileModel {
     const val L_LIMIT = "limit"; const val L_RESTART = "restart"
     const val L_FG = "fg"; const val L_MULT = "mult"; const val L_FLOW = "flow"; const val L_PERF = "perf"; const val L_DLL = "dll"
     const val L_LIGHTER = "lighter"; const val L_LOWGFX = "lowgfx"; const val L_MAP = "homemap"; const val L_STYLE = "homestyle"
+    const val L_VRAM = "vram"
     const val L_BUILD = "build"; const val L_DEFERRED = "deferred"
     const val L_CODEC = "codec"; const val L_RES = "res"; const val L_FPS = "fps"; const val L_RATE = "rate"; const val L_SOUND = "sound"
     const val L_TOOLS = "tools"
@@ -130,6 +133,8 @@ object PerformanceTileModel {
             // 2026-11-17 (the user: "kept it as high fidelity there or made it an option toggle"): past the zone, the terrain or the
             // painted map (the 1.0.34 merge: the old row's two words, on the beautify tiles)
             add(Line(L_STYLE, "Map style when zoomed out", null, listOf("Terrain", "Painted"), if (s.mapTerrain) 0 else 1, Kind.CHOICE))
+            // #56 G1 (the user's approval 2026-11-19): the container's video memory cap, the last line (an advanced switch, on by default)
+            add(Line(L_VRAM, "Video memory cap", null, ON_OFF, if (s.vramCap) 0 else 1, Kind.CHOICE))
         }
         INDOOR -> buildList {
             add(Line(L_BUILD, "Build in the background", null, ON_OFF, if (s.indoorOn) 0 else 1, Kind.CHOICE))
@@ -197,6 +202,7 @@ object PerformanceTileModel {
         MEM -> when {
             s.lighterFixed -> "Lighter mode: always on for this Thor"
             s.lowGfxChanged -> "Low-memory graphics: from the next game start"
+            s.vramChanged -> "Video memory cap: from the next game start"
             else -> ""
         }
         INDOOR -> listOfNotNull(s.progress.takeIf { it.isNotEmpty() }, s.terrain).joinToString(" · ")
@@ -304,7 +310,9 @@ object PerformanceTileModel {
     /** the band's boxes for [lines] (GameUiTiles.band; a label widened while its buttons keep [BTN_MIN]; an action's one button
      *  [ACTION_W] wide after its label) */
     fun band(left: Float, top: Float, width: Float, lines: List<Line>): GameUiTiles.Band {
-        val b = if (lines.size == STACK || lines.size == STACK + 1) stacked(left, top, width, lines)
+        // #56 G1: Memory's five with the Video memory cap stack too (Frame generation's five keep Top's layout)
+        val b = if (lines.size == STACK || lines.size == STACK + 1 || (lines.size == STACK + 2 && lines.any { it.key == L_VRAM }))
+            stacked(left, top, width, lines)
             else GameUiTiles.band(left, top, width, lines.map { GameUiTiles.Line(it.key, it.words.size, it.label != null) })
         val out = b.lines.mapIndexed { i, lb ->
             val line = lines.getOrNull(i)
@@ -402,6 +410,8 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
     private var deferredOpen = false
     /** Low-memory graphics pressed this visit (its status line: from the next game start) */
     private var lowGfxChanged = false
+    /** Video memory cap pressed this visit (#56 G1) */
+    private var vramChanged = false
     private var progress: IndoorScheduler.Status? = null
     private var downX = 0f
     private var downY = 0f
@@ -464,6 +474,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             perfMode = FrameGen.performance, lastPick = FrameGen.lastPick, limitNote = FrameGen.limitNote,
             lighter = Settings.lighterMode, lighterFixed = DeviceTier.smallModel(), lowGfx = Settings.lowMemGraphics,
             mapFull = Settings.homeMapFull, mapTerrain = Settings.homeMapTerrain, lowGfxChanged = lowGfxChanged,
+            vramCap = Settings.vramCap, vramChanged = vramChanged,
             indoorOn = Settings.indoorBuild, ready = p?.ready ?: 0, total = p?.total ?: 0,
             deferred = if (p == null || p.list.isEmpty()) 0 else maxOf(p.deferred, p.list.size),
             progress = phase(p, Settings.indoorBuild),
@@ -629,6 +640,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             M.L_LOWGFX -> { Settings.lowMemGraphics = k == 0; lowGfxChanged = true }
             M.L_MAP -> Settings.homeMapFull = k == 0
             M.L_STYLE -> Settings.homeMapTerrain = k == 0
+            M.L_VRAM -> { Settings.vramCap = k == 0; vramChanged = true }
             M.L_BUILD -> if (k == 0) { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() } else Settings.indoorBuild = false
             M.L_DEFERRED -> deferredOpen = !deferredOpen
             M.L_CODEC, M.L_RES, M.L_FPS, M.L_RATE, M.L_SOUND, M.L_TOOLS -> streamPress(line.key, k)

@@ -211,6 +211,15 @@ object Settings {
         set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
 
     /**
+     * VIDEO MEMORY CAP (#56 G1, the user's approval 2026-11-19; Settings > Performance > Memory): our container tells the game a
+     * smaller video memory, by the Thor's RAM (GameVideoMemory.capMb). Our emulator's config, not a game setting. On by default;
+     * Off = the driver's own size, as before. From the next game start; Local play only.
+     */
+    var vramCap: Boolean
+        get() = prefs?.getBoolean("vramCap", true) ?: true
+        set(v) { if (v != vramCap) { prefs?.edit()?.putBoolean("vramCap", v)?.apply(); changed() } }
+
+    /**
      * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
      * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
      * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered":

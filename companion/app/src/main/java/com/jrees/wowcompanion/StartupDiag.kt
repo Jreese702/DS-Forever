@@ -197,6 +197,11 @@ object StartupDiag {
             val p = choice?.product ?: WowProduct.of(root)
             GameConfigWtf.reportLine(File(root, "${p.flavorDir}/WTF/Config.wtf").takeIf { it.isFile }?.readText())
         }.getOrElse { "? (${it.message})" }
+        // #56 G2: what the low-memory keys hold now (numbers only), so a report shows whether the game kept them
+        out += "Low-memory keys: " + runCatching {
+            val p = choice?.product ?: WowProduct.of(root)
+            GameConfigWtf.lowMemoryValues(File(root, "${p.flavorDir}/WTF/Config.wtf").takeIf { it.isFile }?.readText())
+        }.getOrElse { "? (${it.message})" }
         // the login triage (2026-11-13, #248): the portal the game signs in at beside the choice, the install's branch and the device
         out += runCatching {
             val src = GameRegion.choiceSource(ctx)

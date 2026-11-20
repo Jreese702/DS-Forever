@@ -186,14 +186,17 @@ class PerformanceTileModelTest {
         // the design's order (section 6: "Lighter mode, Low-memory graphics, Home map: full detail"); all three stacked beside the
         // picture, so no line needs to sit next to it first
         // the 1.0.34 merge: Map style when zoomed out (Terrain / Painted, Terrain by default) the fourth line
-        assertEquals(listOf(M.L_LIGHTER, M.L_LOWGFX, M.L_MAP, M.L_STYLE), lines.map { it.key })
-        assertEquals(listOf(0, 1, 0, 0), lines.map { it.chosen })
-        assertTrue(lines.dropLast(1).all { it.label != null && it.words == listOf("On", "Off") })
-        assertEquals(listOf("Terrain", "Painted"), lines.last().words)
-        assertEquals(1, M.lines(M.MEM, s.copy(mapTerrain = false)).last().chosen)
+        // #56 G1 (2026-11-19): the Video memory cap the last line, on by default
+        assertEquals(listOf(M.L_LIGHTER, M.L_LOWGFX, M.L_MAP, M.L_STYLE, M.L_VRAM), lines.map { it.key })
+        assertEquals(listOf(0, 1, 0, 0, 0), lines.map { it.chosen })
+        assertTrue(lines.filter { it.key != M.L_STYLE }.all { it.label != null && it.words == listOf("On", "Off") })
+        assertEquals(listOf("Terrain", "Painted"), lines.first { it.key == M.L_STYLE }.words)
+        assertEquals(1, M.lines(M.MEM, s.copy(mapTerrain = false)).first { it.key == M.L_STYLE }.chosen)
+        assertEquals(1, M.lines(M.MEM, s.copy(vramCap = false)).last().chosen)
+        assertEquals("Video memory cap: from the next game start", M.status(M.MEM, s.copy(vramChanged = true)))
         // the 8 / 12 GB Thors: Lighter mode is the model's, its line not drawn; the status line says so
         val fixed = s.copy(lighterFixed = true)
-        assertEquals(listOf(M.L_LOWGFX, M.L_MAP, M.L_STYLE), keys(M.MEM, fixed))
+        assertEquals(listOf(M.L_LOWGFX, M.L_MAP, M.L_STYLE, M.L_VRAM), keys(M.MEM, fixed))
         assertEquals("Lighter mode: always on for this Thor", M.status(M.MEM, fixed))
         assertEquals("Lighter", M.value(M.MEM, fixed))
         assertEquals("Full map", M.value(M.MEM, PerformanceTileModel.State(mapFull = true)))
@@ -287,7 +290,7 @@ class PerformanceTileModelTest {
      *  under the picture on the left), the picture centred on them; the long labels ("Home map: full detail") on one line */
     @Test fun aThreeLineBandStacksBesideThePicture() {
         val mem = M.band(16f, 0f, 1208f, M.lines(M.MEM, PerformanceTileModel.State()))
-        assertEquals(4, mem.lines.size)                 // the 1.0.34 merge: + Map style when zoomed out
+        assertEquals(5, mem.lines.size)                 // the 1.0.34 merge: + Map style when zoomed out; #56 G1: + Video memory cap
         val x = mem.lines.map { it.label!!.l }.distinct()
         assertEquals("one column", 1, x.size)
         assertTrue("beside the picture", x.single() > mem.picture.r)

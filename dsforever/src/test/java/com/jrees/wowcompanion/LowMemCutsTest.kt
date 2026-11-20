@@ -163,10 +163,10 @@ class LowMemCutsTest {
         assertEquals("\"2000\"", conf(root)["farclip"])
     }
 
-    @Test fun theTwelveGigabyteThorAndLowMemoryOffNeverGetTheExtras() {
+    @Test fun theSixteenGigabyteThorAndLowMemoryOffNeverGetTheExtras() {
         val root = playersFolder()
         val before = conf(root)
-        GameConfigWtf.ensure(root, WowProduct.LAUNCH, us, lowMemory = true, lowMemory8 = false)    // the 12 GB Pro
+        GameConfigWtf.ensure(root, WowProduct.LAUNCH, us, lowMemory = true, lowMemory8 = false)    // the 16 GB Max (from #56 G2 the 12 GB Pro gets the cuts)
         for (k in GameConfigWtf.LOW_MEMORY_8GB.keys) assertEquals(k, before[k], conf(root)[k])
         assertFalse(saved(root).exists())
         GameConfigWtf.ensure(root, WowProduct.LAUNCH, us, lowMemory = false, lowMemory8 = true)    // an 8 GB Thor, the setting off

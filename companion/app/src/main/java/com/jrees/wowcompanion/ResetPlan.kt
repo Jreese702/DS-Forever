@@ -29,7 +29,7 @@ package com.jrees.wowcompanion
  *                                 chatStyleSet2, cursorSoftSet (one-time moves, probes, calibrations: a reset would run them again)
  *
  * APP PREFERENCES (SharedPreferences files)
- *  settings     SETTINGS lighterMode, lowMemGraphics, homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
+ *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
  *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme
  *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
@@ -60,7 +60,7 @@ package com.jrees.wowcompanion
  *  NEVER the art / voice / add-on downloads, reports, logs, login (bnet_login.bin), maps and quest caches
  *
  * GAME SETTINGS (Config.wtf) - Reset settings gives back ONLY what DS Forever recorded an original for: Low-memory graphics on an 8 GB
- * Thor (view distance, particles, spells, shadows: GameConfigWtf.LOW_MEMORY_8GB_SAVED), each key still at DS Forever's value. Nothing
+ * or (#56 G2) 12 GB Thor (view distance, particles, spells, shadows: GameConfigWtf.LOW_MEMORY_8GB_SAVED), each key still at DS Forever's value. Nothing
  * else in the game is written (the leave-no-trace rule): the low-memory textures and the start's forced keys have no recorded original.
  */
 object ResetPlan {
@@ -121,7 +121,7 @@ object ResetPlan {
     private fun char(file: String, kind: Kind?, vararg prefixes: String) = prefixes.map { PrefKey(file, it, kind, perChar = true) }
 
     val PREFS: List<PrefKey> = listOf(
-        exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
+        exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
             "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme"),
         exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", "gameAccountAsk",
             "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",

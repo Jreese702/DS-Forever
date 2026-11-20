@@ -65,7 +65,12 @@ object GameConfigWtf {
      * also lowers view distance, particle/spell density and shadows on top of today's texture settings ... only while the player's
      * Low-memory graphics is on, and a player's own saved values for those keys must not be overwritten when they turn it off again"):
      * written at every start while both hold ([ensure]'s lowMemory8). The keys and values are the PC client's (graphics menu cvars and
-     * the ones under them); NOT yet confirmed on this client (a device check owed: the game keeps a value it does not know as it is).
+     * the ones under them). #56 G2 (2026-11-19): the names and ranges checked against Blizzard's own settings definitions
+     * (Blizzard_Settings_Shared GraphicsOverrides / Blizzard_SettingsDefinitions_Shared Graphics.lua): graphicsViewDistance and
+     * raidGraphicsViewDistance a 0-9 slider (1 = its second step), graphicsParticleDensity / raid 0-5 (0 = off, 1 = Low),
+     * graphicsSpellDensity / raid 0-2 (0 = Minimal), graphicsShadowQuality / raid 0-5 (0 = Low); the client writes these keys itself
+     * (the 12 / 16 GB reports' Config.wtf hold graphicsViewDistance, particleDensity, raidGraphicsParticleDensity, raidGraphicsSpellDensity
+     * that DS Forever never wrote there), so they are its own. Also on the 12 GB Pro from #56 G2 ([ensure]'s lowMemory8).
      * What each key held before the first such start is kept beside Config.wtf ([LOW_MEMORY_8GB_SAVED]); at the first start without
      * them, every key still at our value gets exactly that back (a key that was not in the file goes again), a key the player changed
      * in the game since stays theirs, and the record goes.
@@ -155,7 +160,8 @@ object GameConfigWtf {
      */
     fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null, lowMemory: Boolean = false,
                askAccount: Boolean = false, screen: String? = null, lowMemory8: Boolean = false): List<String> {
-        // [lowMemory8]: the Thor is an 8 GB model (DeviceTier.eightGb): with [lowMemory] on, [LOW_MEMORY_8GB] too
+        // [lowMemory8]: the Thor is an 8 GB or (#56 G2, 2026-11-19) 12 GB model (DeviceTier.lowMemCuts): with [lowMemory] on,
+        // [LOW_MEMORY_8GB] too (the name stays: its record file is on the players' devices)
         // [region]: the player's choice (GameRegion; 2026-11-07, an EU account on a US-set device): it replaces any portal but the beta's
         // [lowMemory]: Settings.lowMemGraphics - the smaller textures over the defaults
         // [askAccount]: Settings.gameAccountAsk (#47) - the game's remembered game-account choice cleared ([forgetAccountChoice]);
@@ -385,4 +391,23 @@ object GameConfigWtf {
             if (others.isEmpty()) "none" else others.take(REPORT_KEYS).joinToString(" ") + if (others.size > REPORT_KEYS) " (+${others.size - REPORT_KEYS})" else ""
     }
     private const val REPORT_KEYS = 60
+
+    /**
+     * #56 G2: THE LOW-MEMORY KEYS AS Config.wtf HOLDS THEM NOW, for the report ("graphicsTextureResolution 0, worldBaseMip 2, ...";
+     * "-" = no line): proof of what the game was really given (the game writes its live values back at a clean exit; a kill writes
+     * nothing). Only these graphics keys, plain numbers only (anything else reads "?"): never an account value. Pure.
+     */
+    fun lowMemoryValues(text: String?): String {
+        if (text == null) return "missing"
+        val now = HashMap<String, String>()
+        for (l in text.lineSequence()) {
+            val parts = l.trim().takeIf { it.startsWith("SET ", ignoreCase = true) }?.drop(4)?.trim()?.split(" ", limit = 2) ?: continue
+            if (parts.size == 2) now[parts[0].lowercase()] = parts[1].trim().trim('"')
+        }
+        return (LOW_MEMORY_GRAPHICS.keys + LOW_MEMORY_8GB.keys).distinct().joinToString(", ") { k ->
+            val v = now[k.lowercase()]
+            "$k ${when { v == null -> "-"; NUMBER.matches(v) -> v; else -> "?" }}"
+        }
+    }
+    private val NUMBER = Regex("^-?[0-9]{1,6}(\\.[0-9]{1,4})?$")
 }

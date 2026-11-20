@@ -1245,8 +1245,9 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         val accountCleared = com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row,
             com.jrees.wowcompanion.GameRegion.chosen(context), lowMemory = com.jrees.wowcompanion.Settings.lowMemGraphics,
             askAccount = com.jrees.wowcompanion.Settings.gameAccountAsk, screen = screen,
-            // test build 1489 (#56): on the 8 GB Thors Low-memory graphics also lowers view distance, particles, spells and shadows
-            lowMemory8 = com.jrees.wowcompanion.DeviceTier.eightGb())
+            // test build 1489 (#56): on the 8 GB Thors Low-memory graphics also lowers view distance, particles, spells and shadows;
+            // #56 G2 (the user's approval 2026-11-19): on the 12 GB Pro too (DeviceTier.lowMemCuts)
+            lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) {
             Timber.i("Config.wtf game account: ask each time; cleared %s", accountCleared.joinToString(" ").ifEmpty { "nothing (no remembered choice)" })
         }
@@ -1280,7 +1281,9 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     val browser = app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.beginRun(context, com.jrees.wowcompanion.SetupBridge.seeding)
     Timber.i("Sign-in this start: %s", if (browser) "browser login (no login.txt)" else "saved login")
     val wineRoot = com.jrees.wowcompanion.NativeLogin.prepare(context, gameRoot, product.flavorDir, browser) ?: gameRoot
-    val config = containerConfig(wineRoot, gpu, "G:\\${product.flavorDir}\\${arm64Exe.name}")
+    // #56 G1 + G3 (the user's approval 2026-11-19): our container's own video memory cap and BCn mode (GameVideoMemory), never a game CVar
+    val gfx = videoMemoryChoice(context)
+    val config = containerConfig(wineRoot, gpu, "G:\\${product.flavorDir}\\${arm64Exe.name}", gfx)
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
@@ -1307,11 +1310,31 @@ private fun gameScreenSize(context: Context): String? = runCatching {
     d?.mode?.let { com.jrees.wowcompanion.GameConfigWtf.screenSize(it.physicalWidth, it.physicalHeight) }
 }.getOrNull()
 
-private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: String): JSONObject {
+/** #56 G1 + G3: this launch's video memory cap and BCn emulation (GameVideoMemory), logged and kept for the WCMEM lines */
+private class VideoMemoryChoice(val env: String, val bcn: String)
+
+private fun videoMemoryChoice(context: Context): VideoMemoryChoice {
+    val G = com.jrees.wowcompanion.GameVideoMemory
+    val tier = com.jrees.wowcompanion.DeviceTier
+    val total = tier.totalMb
+    val cap = G.capMb(total, runCatching { tier.isLite() }.getOrDefault(false))
+    val on = com.jrees.wowcompanion.Settings.vramCap
+    // no Adreno read (an unreadable renderer) = the Wrapper's own "auto": BCn emulated only where the driver cannot sample it
+    val bcn = G.bcnEmulation(runCatching { GPUInformation.isAdrenoGPU(context) }.getOrDefault(false))
+    val line = G.line(cap, on, total, bcn)
+    Timber.i("Container graphics: %s", line)
+    com.jrees.wowcompanion.MemWatch.launchGfx = G.short(cap, on)
+    com.jrees.wowcompanion.MemWatch.note("launch: $line")
+    return VideoMemoryChoice(G.env(cap, on), bcn)
+}
+
+private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: String, gfx: VideoMemoryChoice): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
     val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144$samsungEnv " +
         // b-dxvk-load-crash: DXVK's own warnings into a private log (the container's vars come after DXVKHelper's "none")
-        com.jrees.wowcompanion.DxvkLogs.ENV
+        com.jrees.wowcompanion.DxvkLogs.ENV +
+        // #56 G1: DXVK's DXGI memory report capped (DXVK_CONFIG; the container's vars come after DXVKHelper's, so this one counts)
+        (if (gfx.env.isNotEmpty()) " " + gfx.env else "")
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
@@ -1319,7 +1342,7 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: Str
         put("envVars", envVars)
         put("graphicsDriver", "Wrapper")
         put("graphicsDriverVersion", gpu.driver)
-        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
+        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=${gfx.bcn},quality=high")
         put("displayRenderer", "vulkan")
         put("dxwrapper", "dxvk-$DXVK_VERSION-1")
         put("dxwrapperConfig", "version=$DXVK_VERSION-1")
