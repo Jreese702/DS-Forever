@@ -1,5 +1,5 @@
 """NO PARTIAL CHARACTER KEY (Safety k6 WC.charKey / WC.realmFix; PadMap m178, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p26,
-TapPad pad27, Trail prd21, Hub hub72, Map pq2), off-device: the REAL add-on files under tools/wowstub.py's stubbed game, Lua 5.1 as the game's.
+TapPad pad27, Trail prd21, Hub hub73, Map pq2), off-device: the REAL add-on files under tools/wowstub.py's stubbed game, Lua 5.1 as the game's.
 
     python tools/test_realm_key.py
 
@@ -168,8 +168,8 @@ check('WC.KERNEL = "k9"' in TEXT["safety"] and "function WC.charKey()" in TEXT["
       "0. Safety k9 (k6's, k7's and k8's notes kept): WC.charKey, its note quotes the user")
 check('local PV = "m179"' in TEXT["padmap"] and 'local CBV = "cb16"' in AB and 'local SV = "s18"' in TEXT["spells"]
       and 'local RV = "r27"' in TEXT["radial"] and 'local SRV = "q8"' in TEXT["radial"] and 'local PV = "p26"' in TEXT["prof"]
-      and 'local PADV = "pad27"' in TEXT["tappad"] and 'WC.prd = { V = "prd21"' in TEXT["trail"] and 'local HV = "hub72"' in TEXT["hub"]
-      and 'v = "pq2"' in TEXT["map"], "0. the tags: PadMap m179, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p26, TapPad pad27, Trail prd21, Hub hub72, Map pq2")
+      and 'local PADV = "pad27"' in TEXT["tappad"] and 'WC.prd = { V = "prd21"' in TEXT["trail"] and 'local HV = "hub73"' in TEXT["hub"]
+      and 'v = "pq2"' in TEXT["map"], "0. the tags: PadMap m179, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p26, TapPad pad27, Trail prd21, Hub hub73, Map pq2")
 # every per-character builder goes through WC.charKey: no file but Safety concatenates GetRealmName() into a key any more
 for k, s in list(TEXT.items()) + [("actionbar", AB)]:
     if k == "safety":
@@ -548,6 +548,37 @@ P4 = bags_world('REALM = ""\nWowCompanionDB = { bagBinds = { ["Korvash-Realm"] =
 P4.execute('fire("PLAYER_LOGIN"); BB.binds.PADRSHOULDER = 999; BB.save(); runTimers(NOW + 4000)')
 check(P4.eval('SER(WowCompanionDB.bagBinds)') == '{["Korvash-Realm"]={["PADBACK"]=6948}}', "p. no key all session: nothing saved, the real binds as stored")
 clean(P4, "p4")
+
+# ---------------------------------------------------------------- q. Hub's meters store (hub73 MT.sync): the key can come after PLAYER_LOGIN
+METERS = ('WowCompanionDB = { meters = { ["Korvash-Realm"] = { d = "off", c = false, p = 5 } }, '
+          'realmOf = { Korvash = { Realm = { s = "1", c = "SHAMAN" } } } }\n')
+check("function MT.sync()" in TEXT["hub"] and "if not MT.sync() then return end" in TEXT["hub"], "q. the tag: Hub hub73 MT.sync; MT.save writes only under the key it read")
+Q1 = boot(["safety", "hub"], pre=HELP + NOKEY + METERS)
+Q1.execute('fire("PLAYER_LOGIN")')
+check(Q1.eval('WowCompanion.meters.key') is None, "q. no key at PLAYER_LOGIN: nothing read")
+Q1.execute('REALM = "Realm"; WowCompanion.meters.cell(WowCompanion.meters.C.PARTS + 3)')
+check(Q1.eval('SER(WowCompanionDB.meters)') == '{["Korvash-Realm"]={["c"]=false,["d"]="off",["p"]=3}}',
+      "q. THE REVIEW'S PROBE: the key known later, one PARTS press: d and c KEPT, p = 3 (never {p=3} alone)", Q1.eval('SER(WowCompanionDB.meters)'))
+clean(Q1, "q1")
+Q2 = boot(["safety", "hub"], pre=HELP + NOKEY + METERS)
+Q2.execute('fire("PLAYER_LOGIN"); WowCompanion.meters.cell(WowCompanion.meters.C.DMG_DYN)')
+check(Q2.eval('SER(WowCompanionDB.meters)') == '{["Korvash-Realm"]={["c"]=false,["d"]="off",["p"]=5}}', "q. a press with no key: nothing written")
+Q2.execute('REALM = "Realm"; for _, t in ipairs(TICKERS) do t.fn() end')
+check(Q2.eval('WowCompanion.meters.key') == "Korvash-Realm" and Q2.eval('WowCompanion.meters.want.dmg') == "dyn"
+      and Q2.eval('WowCompanion.meters.want.parts') == 5 and Q2.eval('WowCompanion.meters.want.cdm') is False,
+      "q. ... the key known (1 s look): the real record read, only this session's press laid on top")
+Q2.execute('WowCompanion.meters.cell(WowCompanion.meters.C.CDM_ON)')
+check(Q2.eval('SER(WowCompanionDB.meters)') == '{["Korvash-Realm"]={["c"]=true,["d"]="dyn",["p"]=5}}',
+      "q. ... the next press saves the merged record", Q2.eval('SER(WowCompanionDB.meters)'))
+clean(Q2, "q2")
+Q3 = boot(["safety", "hub"], pre=HELP + 'REALM = ""\nWowCompanionDB = { meters = { ["Korvash-A"] = { d = "on" }, ["Korvash-B"] = { p = 2 } }, '
+          'realmOf = { Korvash = { A = { s = "1", c = "SHAMAN" } } } }\nWowCompanionSpellsDB = {}\n')
+Q3.execute('fire("PLAYER_LOGIN")')
+check(Q3.eval('WowCompanion.meters.key') == "Korvash-A", "q. a kept key at the login: its record read")
+Q3.execute('REALM = "B"; WowCompanion.meters.cell(WowCompanion.meters.C.DMG_OFF)')
+check(Q3.eval('SER(WowCompanionDB.meters)') == '{["Korvash-A"]={["d"]="on"},["Korvash-B"]={["d"]="off",["p"]=2}}',
+      "q. ... the key changes: B's record + this press only; A's record never written onto B, A untouched", Q3.eval('SER(WowCompanionDB.meters)'))
+clean(Q3, "q3")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
