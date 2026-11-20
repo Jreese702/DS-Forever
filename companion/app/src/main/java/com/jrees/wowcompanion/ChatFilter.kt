@@ -97,9 +97,15 @@ object ChatFilter {
 
     /** the character the padmap names now: its own ticks */
     fun character(name: String?) {
-        if (name.isNullOrEmpty() || name == who) return
-        who = name
-        load()
+        val n = name?.takeIf { it.isNotEmpty() }
+        if (n == who) return
+        who = n
+        // the k6 review (item 8): a realm-less session's "Name-" ticks fold into the real key (it wins; a missing one takes them)
+        if (n != null) RealmFix.foldJson(all, n)?.let { gone ->
+            RealmFix.keepRemoved?.invoke("chat_filter", gone.toString())
+            runCatching { store?.write(all.toString()) }
+        }
+        load()                                             // null (the k6 review, item 2: no realm yet): everything shows, nothing saved
         changed()
     }
 

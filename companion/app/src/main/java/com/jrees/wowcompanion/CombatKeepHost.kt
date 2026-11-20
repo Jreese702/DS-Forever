@@ -21,6 +21,8 @@ class CombatKeepHost(
     private val fighting: () -> Boolean,
 ) {
     private val checked = HashSet<String>()
+    /** the keys whose backup is another class's this run (Safety k7): nothing of theirs is touched */
+    private val otherClass = HashSet<String>()
     private var run = Long.MIN_VALUE
     private var restoring: CombatKeep.Backup? = null
     private var restoreUntil = 0L
@@ -49,8 +51,8 @@ class CombatKeepHost(
             tmp.writeText(json)
             if (!tmp.renameTo(f)) { f.delete(); check(tmp.renameTo(f)) { "rename" } }
             written[b.who] = json
-            log("wrote ${b.entries.size} entries for ${b.who}")
-        }.onFailure { log("NOT saved for ${b.who} (${it.message})") }
+            log("wrote ${b.entries.size} entries")                                    // the k6 review (item 10): never a name
+        }.onFailure { log("NOT saved (${it.message})") }
     }
 
     /** Reset skills (ResetRun) took [who]'s backup away (null = every character's): nothing of it is put back or remembered this run */
@@ -65,12 +67,12 @@ class CombatKeepHost(
         if (!current) return
         val who = CombatKeep.who(map) ?: return
         val r = LauncherHooks.gameStartSec
-        if (r != run) { run = r; checked.clear(); restoring = null; retried = false; armed = false }
+        if (r != run) { run = r; checked.clear(); otherClass.clear(); restoring = null; retried = false; armed = false }
         restoring?.let { b ->
             if (SystemClock.uptimeMillis() < restoreUntil) return              // nothing written while the restore's taps run
             val miss = CombatKeep.missing(b, map)
             restoring = null
-            if (miss.isEmpty()) { log("restored ${b.entries.size} for ${b.who}"); armed = true }
+            if (miss.isEmpty()) { log("restored ${b.entries.size}"); armed = true }
             else if (!retried && !fighting()) {
                 retried = true
                 log("restore left ${miss.size} not on (${miss.joinToString { "${it.set}/${it.pos} ${it.name}" }}): once more")
@@ -78,13 +80,18 @@ class CombatKeepHost(
                 return
             } else log("restore left ${miss.size} not on: the backup KEPT as it is (only additions are written this run)")
         }
+        if (who in otherClass) return
         if (who !in checked) {
+            val backup0 = read(who)
+            // Safety k7 (the k6 review, item 1): a backup written for another class is another character's (a same-name character on
+            // another realm): never restored, merged, written over or folded into; left as it is for this run
+            if (CombatKeep.otherClass(map, backup0)) { otherClass += who; log("the backup is another class's: left as it is (nothing restored or written)"); return }
             foldOrphans(who)
             val backup = read(who)
             if (CombatKeep.needsRestore(map, backup)) {
                 if (fighting() || !bookReady()) return                          // the next padmap tries again
                 checked += who
-                log("kept (store empty at login): ${backup!!.entries.size} entries of $who")
+                log("kept (store empty at login): ${backup!!.entries.size} entries")
                 start(backup, map)
                 return
             }
@@ -138,8 +145,8 @@ class CombatKeepHost(
     private fun start(backup: CombatKeep.Backup, map: PadMapModel.Map) {
         val plan = CombatKeep.plan(backup, map.page, column)
         if (plan.skipped.isNotEmpty()) log("no touch cell for ${plan.skipped.joinToString { it.name }}: not restored")
-        if (plan.batches.isEmpty()) { log("nothing to restore by touch for ${backup.who}"); return }
-        log("restoring ${plan.restored.size} of ${backup.who}")
+        if (plan.batches.isEmpty()) { log("nothing to restore by touch"); return }
+        log("restoring ${plan.restored.size}")
         restoring = backup
         restoreUntil = SystemClock.uptimeMillis() + plan.batches.size * GAP_MS + SETTLE_MS
         plan.batches.forEachIndexed { i, cells ->

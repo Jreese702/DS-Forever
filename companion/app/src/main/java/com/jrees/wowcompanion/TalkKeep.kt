@@ -39,8 +39,14 @@ object TalkKeep {
 
     /** the character the padmap names now: its own last used chat (Say when it has none) */
     fun character(name: String?) {
-        if (name.isNullOrEmpty() || name == who) return
-        who = name
+        val n = name?.takeIf { it.isNotEmpty() }
+        if (n == who) return
+        who = n
+        if (n != null) RealmFix.foldJson(all, n)?.let { gone ->           // the k6 review (item 8): the real key wins
+            RealmFix.keepRemoved?.invoke("chat_talk", gone.toString())
+            runCatching { store?.write(all.toString()) }
+        }
+        if (n == null) used = Used()                       // the k6 review (item 2): no realm yet = no character: Say, nothing saved
         load()
         changed()
     }

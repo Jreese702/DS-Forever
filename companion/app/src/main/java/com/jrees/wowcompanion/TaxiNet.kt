@@ -18,9 +18,11 @@ object TaxiNet {
         private var char: String? = null
         private var groups: MutableList<MutableSet<Int>> = ArrayList()
 
-        fun character(key: String) {
+        fun character(key: String?) {
             if (key == char) return
             char = key
+            // the k6 review (item 2): no realm yet = no character: no flights known, nothing saved
+            if (key == null) { groups = ArrayList(); return }
             groups = (store.get("g:$key") ?: "").split(';').filter { it.isNotBlank() }
                 .map { g -> g.split(',').mapNotNull { it.trim().toIntOrNull() }.toMutableSet() }
                 .filter { it.isNotEmpty() }.toMutableList()
@@ -52,7 +54,7 @@ object TaxiNet {
             override fun put(k: String, v: String?) { prefs.edit().apply { if (v == null) remove(k) else putString(k, v) }.apply() }
         })
     }
-    fun character(key: String) { model?.character(key) }
+    fun character(key: String?) { model?.character(key) }
     fun onTaxiNet(cur: Int, reach: List<Int>) { model?.onTaxiNet(cur, reach) }
     fun connected(a: Int, b: Int): Boolean = model?.connected(a, b) ?: false
     fun known(a: Int): Boolean = model?.known(a) ?: false

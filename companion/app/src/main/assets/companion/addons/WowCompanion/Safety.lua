@@ -239,7 +239,12 @@ WC.encode = encode
 -- (empty stores: the bars looked gone; the real "Name-Realm" ones were never touched). WC.charKey() at the end of this file is now the
 -- ONE builder of the name-realm key: nil until the realm is known (never a partial key); the realm the game gives, else the one this
 -- character already holds settings under; WC.realmFix folds the orphan stores away once, out of combat (the real key always wins).
-WC.KERNEL = "k6"
+-- k7 THE KEPT REALM IS THIS CHARACTER'S (the k6 review): a same-name character on another realm, the realm empty and no hint, resolved to
+-- the hunter's "Name-Realm" and wrote into its stores. A kept realm now needs evidence: WowCompanionDB.realmOf[name][realm] = { s = the
+-- home server's id (UnitGUID), c = the class token }, recorded at every live session; the server must match (another = refused), else
+-- the class (and the one realm left), nothing recorded = no key. A kept realm found before PLAYER_LOGIN is asked again then (both
+-- tables loaded); the fold is skipped while the name holds settings under two realms (the app's rule); its backup holds COPIES.
+WC.KERNEL = "k7"
 
 local function blocked(f)
     return not pcall(f)
@@ -356,7 +361,10 @@ end
 --   1. GetRealmName() (the game's own answer, "live"); remembered per name in WowCompanionDB.realmOf.
 --   2. the realm this name already holds settings under ("kept"): the remembered ones and the "Name-<realm>" keys of our two saved tables,
 --      when EXACTLY ONE realm fits (GetNormalizedRealmName / UnitFullName's realm, when the game gives one, picks among several); never a
---      guess between two characters of one name.
+--      guess between two characters of one name. k7: without the game's hint, only a realm with EVIDENCE that it is THIS character's
+--      (realmOf[name][realm] = { s = home server id, c = class }, recorded at the live sessions): the server id when both are known (one
+--      that matches picks it even among several; another one refuses it), else the class with that realm the only one left. A realm with
+--      no evidence (only our tables' keys) is no key: a same-name character on another realm never writes into this one's stores.
 --   3. none: nil (our tables looked through again at most every 2 s for the first 10 s - the saved tables load meanwhile -, then every
 --      30 s; GetRealmName itself is asked every call: a later live answer always wins).
 -- WC.realmFix: once per character and table, out of combat, the orphan keys of THIS character ("Name-", "Name-?", "Name-_", a marker) are
@@ -377,16 +385,37 @@ do
     local function norm(r) return (r:gsub("[%s%-'%.]", "")):lower() end
     local function now() local ok, t = CALL(GetTime); return (ok and type(t) == "number") and t or 0 end
     local function myName() return str(S(function() return UnitName("player") end)) end
-    local CK = { n = nil, r = nil, src = nil, missN = nil, missAt = nil, misses = 0 }
+    local CK = { n = nil, r = nil, src = nil, early = false, told = nil, missN = nil, missAt = nil, misses = 0, loggedIn = false }
     WC.ck = CK
 
+    -- k7 the character's own evidence (never logged): its home server's id (UnitGUID "Player-<server>-<id>") and its class token; nil =
+    -- not known now
+    local function myServer()
+        local g = str(S(function() return UnitGUID("player") end))
+        return g and g:match("^Player%-(%d+)%-") or nil
+    end
+    local function myClass()
+        local ok, _, token = CALL(UnitClass, "player")
+        if ok then return str(token) end
+    end
+    WC.myServer, WC.myClass = myServer, myClass
+
+    -- the game's realm [r] for [n]: realmOf[n][r] = { s = server id, c = class } (k6's `true` = no evidence yet), filled in as the game
+    -- gives them (the latest live answer: a deleted and remade character of that name and realm is the one there now)
     local function remember(n, r)
         local db = rawget(_G, "WowCompanionDB")
         if type(db) ~= "table" then return end
+        local tag = n .. "-" .. r
+        if CK.told == tag and type(db.realmOf) == "table" and type(db.realmOf[n]) == "table" and type(db.realmOf[n][r]) == "table" then return end
         if type(db.realmOf) ~= "table" then db.realmOf = {} end
         local m = db.realmOf[n]
         if type(m) ~= "table" then m = {}; db.realmOf[n] = m end
-        if m[r] ~= true then m[r] = true end
+        local e = m[r]
+        if type(e) ~= "table" then e = {}; m[r] = e end
+        local sid, cls = myServer(), myClass()
+        if sid and e.s ~= sid then e.s = sid end
+        if cls and e.c ~= cls then e.c = cls end
+        if e.s and e.c then CK.told = tag end
     end
 
     -- every realm name [n] holds settings under: the remembered ones and our tables' "n-<realm>" keys (two levels down)
@@ -423,11 +452,27 @@ do
         if ok then return realmOk(r) end
     end
 
+    WC.charKeyHint = function() return hint() and "present" or "none" end
+
+    -- k7: [r] against this character: "yes" (the recorded home server is this one's), "maybe" (no server to compare, the class matches),
+    -- "no" (another server or another class: a different character), nil (nothing recorded to compare)
+    local function evidence(n, r, sid, cls)
+        local db = rawget(_G, "WowCompanionDB")
+        local m = type(db) == "table" and type(db.realmOf) == "table" and db.realmOf[n] or nil
+        local e = type(m) == "table" and m[r] or nil
+        if type(e) ~= "table" then return nil end
+        if sid and type(e.s) == "string" then return e.s == sid and "yes" or "no" end
+        if cls and type(e.c) == "string" then return e.c == cls and "maybe" or "no" end
+        return nil
+    end
+    WC.realmEvidence = evidence
+
     local function resolve(n)
         local list = realmsOf(n)
         if #list == 0 then return nil end
         local h = hint()
         if h then
+            -- the game's own (normalized) realm: the one stored spelling that matches it IS this character's realm
             local hit
             for _, r in ipairs(list) do
                 if norm(r) == norm(h) then
@@ -437,7 +482,16 @@ do
             end
             return hit
         end
-        if #list == 1 then return list[1] end
+        local sid, cls = myServer(), myClass()
+        local yes, left = {}, {}
+        for _, r in ipairs(list) do
+            local ev = evidence(n, r, sid, cls)
+            if ev == "yes" then yes[#yes + 1] = r end
+            if ev ~= "no" then left[#left + 1] = { r, ev } end
+        end
+        if #yes == 1 then return yes[1] end
+        if #yes == 0 and #left == 1 and left[1][2] == "maybe" then return left[1][1] end
+        return nil                                                          -- no evidence, or two: never a guess
     end
 
     -- the character's key "Name-Realm", its name, its realm and where the realm came from ("live" / "kept"); nil = not known (yet)
@@ -455,7 +509,8 @@ do
         if CK.missN == n and CK.missAt and t - CK.missAt < ((CK.misses or 0) < 5 and 2 or 30) then return nil end
         local r = resolve(n)
         if r then
-            CK.n, CK.r, CK.src, CK.missN, CK.missAt, CK.misses = n, r, "kept", nil, nil, 0
+            -- k7: found before PLAYER_LOGIN (WowCompanionSpellsDB may not be loaded yet, nor the character's server id): asked again then
+            CK.n, CK.r, CK.src, CK.early, CK.missN, CK.missAt, CK.misses = n, r, "kept", not CK.loggedIn, nil, nil, 0
             return n .. "-" .. r, n, r, "kept"
         end
         if CK.missN ~= n then CK.misses = 0 end
@@ -466,6 +521,12 @@ do
     function WC.charKeySource()
         local k, _, _, src = WC.charKey()
         return k and src or "none"
+    end
+    -- k7 PLAYER_LOGIN: both saved tables are loaded and the character's server id is known; a kept realm found before is asked again
+    function WC.charKeyLogin()
+        CK.loggedIn = true
+        if CK.src == "kept" and CK.early then CK.n, CK.r, CK.src, CK.early = nil, nil, nil, false end
+        CK.missN, CK.missAt, CK.misses = nil, nil, 0
     end
     -- a key string that is one of [n]'s orphans ("n-", "n-?", "n-_", "n-" .. a marker)
     function WC.isOrphanKey(k, n)
@@ -490,6 +551,16 @@ do
         return v ~= nil and v ~= ""
     end
     RF.holds = holds
+    -- k7: a deep COPY (the backup must not share a table the live store keeps editing)
+    local function copy(v, d)
+        if type(v) ~= "table" then return v end
+        d = d or 0
+        if d > 20 then return nil end
+        local o = {}
+        for k, x in pairs(v) do o[k] = copy(x, d + 1) end
+        return o
+    end
+    RF.copy = copy
     local function fight() local ok, v = CALL(InCombatLockdown); return ok and v == true end
 
     -- one table [t] (at [path] in [var]): this character's orphans out, the real key kept or given the orphan's store; each into [items]
@@ -509,7 +580,7 @@ do
                     act = "adopted"
                 end
                 t[o] = nil
-                items[#items + 1] = { var = var, at = path, k = NAMED[suf] or "-marker", act = act, v = ov }
+                items[#items + 1] = { var = var, at = path, k = NAMED[suf] or "-marker", act = act, v = copy(ov) }
             end
         end
     end
@@ -538,6 +609,13 @@ do
         RF.pending = false
         local key, n = WC.charKey()
         if not key then return false end
+        -- k7: never a guess (the app's RealmFix.clean, the same rule): a name holding settings under two realms keeps its orphans as they
+        -- are (nothing reads them); done for this character
+        if #realmsOf(n) > 1 then
+            RF.skipped = true
+            for _, var in ipairs({ "WowCompanionDB", "WowCompanionSpellsDB" }) do if type(rawget(_G, var)) == "table" then RF.done[var] = key end end
+            return true
+        end
         local items, all = {}, true
         for _, var in ipairs({ "WowCompanionDB", "WowCompanionSpellsDB" }) do
             if RF.done[var] ~= key then
@@ -574,6 +652,7 @@ do
                 end)
             end
             f:SetScript("OnEvent", function(_, e)
+                if e == "PLAYER_LOGIN" then pcall(WC.charKeyLogin) end
                 if e == "PLAYER_REGEN_ENABLED" and not RF.pending then return end
                 local ok, d = pcall(RF.run)
                 if not (ok and d) and not RF.pending then again() end

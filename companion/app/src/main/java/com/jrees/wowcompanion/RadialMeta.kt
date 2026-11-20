@@ -24,7 +24,16 @@ object RadialMeta {
 
     /** the character now ("name-realm", CombatKeep.who from a current padmap); null = not known yet (nothing is saved then) */
     @Volatile var who: String? = null
-        set(v) { if (field != v) { field = v; changed() } }
+        set(v) {
+            if (field == v) return
+            field = v
+            // the k6 review (item 8): a realm-less session's "Name-" radial names fold into the real key (it wins)
+            if (v != null) RealmFix.foldJson(all, v)?.let { gone ->
+                RealmFix.keepRemoved?.invoke("radial_meta", gone.toString())
+                prefs?.edit()?.putString("all", all.toString())?.apply()
+            }
+            changed()
+        }
 
     fun init(c: Context) {
         if (prefs != null) return

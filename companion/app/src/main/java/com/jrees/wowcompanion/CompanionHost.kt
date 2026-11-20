@@ -146,9 +146,28 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // the user's "Both" ruling after test20: the In-combat backup and the clean exit
     private lateinit var combatKeep: CombatKeepHost
     private var lastBook: SpellsModel.Book? = null
-    /** the realm source last logged ("character key: realm ..."; only these words, never a name) */
+    /** the realm source last logged ("character key: realm ..., hint ..."; only these words, never a name) */
     private var realmSourceTold: String? = null
     private val REALM_SOURCES = setOf("live", "kept", "none")
+    private val REALM_HINTS = setOf("present", "none")
+    /** the character keys whose app preferences were folded this app life (RealmFix.foldPrefs: once each) */
+    private val prefsFolded = HashSet<String>()
+
+    /**
+     * the k6 review (item 8): the app's own per-character choices a realm-less session left under "Name-" fold into [ck] once per app
+     * life, before the stores below read them (the real key wins; a choice it lacks takes the orphan's; what goes is kept first in
+     * realm_fix_bak). Counts only in the log.
+     */
+    private fun foldPrefOrphans(ck: String) {
+        if (!prefsFolded.add(ck)) return
+        val bak = getSharedPreferences(RealmFix.PREF_BAK, MODE_PRIVATE)
+        var a = 0; var d = 0
+        for (f in RealmFix.PREF_FILES) runCatching {
+            val (x, y) = RealmFix.foldPrefs(getSharedPreferences(f, MODE_PRIVATE), f, ck, bak, System.currentTimeMillis())
+            a += x; d += y
+        }
+        if (a + d > 0) Log.i("WCSETUP", "app preferences: orphan keys folded ($a into the real key, $d dropped)")
+    }
     /** m62: the latest padmap (Settings' Smart Y section reads its Smart buffs) */
     private var lastPadMap: PadMapModel.Map? = null
 
@@ -502,6 +521,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // THE PRIVATE SHARE'S PICTURES (RuntimeArt): copied out once, BEFORE anything loads a picture - the readers remember a miss
         if (RuntimeArt.needed(this)) { unpacking = true; unpackFirst(); return }
         Settings.init(this)
+        // the k6 review (item 8): what a fold of the app's own per-character stores takes out is kept first (realm_fix_bak, 2 per store)
+        RealmFix.keepRemoved = { file, removed ->
+            runCatching { RealmFix.keepIn(getSharedPreferences(RealmFix.PREF_BAK, MODE_PRIVATE), file, removed, System.currentTimeMillis()) }
+        }
         Theme.init(this)                     // the saved theme (Settings > System > Theme), before any view copies a colour
         GameUi.init(this)
         PolestarQol.init(this)
@@ -3343,24 +3366,34 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (current && SmartRangeGone.note(it.srGone)) Log.i("WCSETUP", SmartRangeGone.line() ?: "")
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
                 if (current) mapView.qitemArmed = it.qitem?.id ?: 0          // ps4: the light blue row's Y glyph (PadMap m132)
-                if (current) { newSpellMap = it; CharKey.of(it.dpad?.name, it.dpad?.realm)?.let { k -> newSpellWho = k } }
+                // the k6 review (item 2): a character named with no realm (a switch, the realm not known) = no character: never the previous one's
+                if (current) { newSpellMap = it; CharKey.of(it.dpad?.name, it.dpad?.realm).let { k -> if (k != null || !it.dpad?.name.isNullOrEmpty()) newSpellWho = k } }
                 // the realm's source (the add-on's Safety k6: "live" = the game's, "kept" = the one the character holds settings under,
                 // "none" = not known: no per-character key), one line when it changes (no name)
-                if (current) it.dpad?.realmSource?.takeIf { s -> s in REALM_SOURCES }?.let { rs -> if (rs != realmSourceTold) { realmSourceTold = rs; Log.i("WCSETUP", "character key: realm $rs") } }
+                // Safety k7 / PadMap m179: and whether the game gave its realm hint ("present" / "none": a kept realm needs evidence otherwise)
+                if (current) it.dpad?.realmSource?.takeIf { s -> s in REALM_SOURCES }?.let { rs ->
+                    val line = "realm $rs" + (it.dpad?.realmHint?.takeIf { h -> h in REALM_HINTS }?.let { h -> ", hint $h" } ?: "")
+                    if (line != realmSourceTold) { realmSourceTold = line; Log.i("WCSETUP", "character key: $line") }
+                }
                 // the D-pad room bar (Spells' m24): the Settings row's state, and the once-per-character prompt
                 it.dpad?.let { d ->
                     // the 11-20 hunter (CharKey): every per-character store below only under the WHOLE key; no realm yet = none touched
                     val ck = CharKey.of(d.name, d.realm)
+                    // the k6 review (item 2): a character NAMED with no realm (rs "none": a switch to a character whose realm is not known)
+                    // is no character: every store below lets the previous one go (set to null), so nothing of the new one is saved under
+                    // the old key, and nothing of the old one shows on the new
+                    val named = ck != null || !d.name.isNullOrEmpty()
+                    if (current && ck != null) foldPrefOrphans(ck)                     // the k6 review (item 8): before the stores read them
                     // the character now: the wheels' kept lists of another character go (the per-character ruling)
-                    if (current && ck != null && ::radialView.isInitialized) radialView.character(ck)
+                    if (current && named && ::radialView.isInitialized) radialView.character(ck)
                     // r20: the Hearthstone's kept end time is the character's (per name-realm)
-                    if (current && ck != null) ItemCd.character(ck)
-                    if (current && ck != null) RadialMeta.who = ck     // the spell radials' own settings
-                    if (current && ck != null) QuestWatchKeep.character(ck)
-                    if (ck != null) TaxiNet.character(ck)
-                    if (current && ck != null) GameUi.character = ck     // hub13: HUD mode per character
+                    if (current && named) ItemCd.character(ck)
+                    if (current && named) RadialMeta.who = ck     // the spell radials' own settings
+                    if (current && named) QuestWatchKeep.character(ck)
+                    if (ck != null || (current && named)) TaxiNet.character(ck)
+                    if (current && named) GameUi.character = ck     // hub13: HUD mode per character
                     // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences"); hold to talk's last used chat too (TalkKeep)
-                    if (current && ck != null) ui.post { ChatFilter.character(ck); TalkKeep.character(ck) }
+                    if (current && named) ui.post { ChatFilter.character(ck); TalkKeep.character(ck) }
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state

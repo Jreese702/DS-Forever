@@ -1,5 +1,6 @@
 package com.jrees.wowcompanion
 
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -49,7 +50,7 @@ class RealmKeyTest {
     }
 
     private fun padmap(who: String) = PadMapModel.parse(JSONObject(
-        """{"type":"padmap","v":"m178","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"cols":{"on":1,"off":2},"who":$who}}}"""))!!
+        """{"type":"padmap","v":"m179","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"cols":{"on":1,"off":2},"who":$who}}}"""))!!
 
     @Test fun aPadmapWithNoRealmMakesNoKeyAnywhereInTheApp() {
         for (who in listOf("""{"n":"$name","r":"","rs":"none"}""", """{"n":"$name","rs":"none"}""", """{"n":"$name","r":"?"}""")) {
@@ -246,5 +247,235 @@ class RealmKeyTest {
         val left = bak.listFiles()!!.map { it.readText() }.sorted()
         assertEquals(listOf("3", "4"), left)
         assertTrue("no file: nothing to keep", RealmFix.backup(File(dir, "none.json"), bak, at1320))
+    }
+
+    // ================================================================ Safety k7: the k6 review's must-fix list (the app's side)
+
+    private class Prefs(val m: LinkedHashMap<String, Any?> = LinkedHashMap()) : android.content.SharedPreferences {
+        override fun getAll(): MutableMap<String, *> = LinkedHashMap(m)
+        override fun getString(k: String?, d: String?) = m[k] as? String ?: d
+        @Suppress("UNCHECKED_CAST")
+        override fun getStringSet(k: String?, d: MutableSet<String>?) = m[k] as? MutableSet<String> ?: d
+        override fun getInt(k: String?, d: Int) = m[k] as? Int ?: d
+        override fun getLong(k: String?, d: Long) = m[k] as? Long ?: d
+        override fun getFloat(k: String?, d: Float) = m[k] as? Float ?: d
+        override fun getBoolean(k: String?, d: Boolean) = m[k] as? Boolean ?: d
+        override fun contains(k: String?) = m.containsKey(k)
+        override fun registerOnSharedPreferenceChangeListener(l: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun unregisterOnSharedPreferenceChangeListener(l: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun edit(): android.content.SharedPreferences.Editor = object : android.content.SharedPreferences.Editor {
+            val put = LinkedHashMap<String, Any?>(); val rm = HashSet<String>()
+            override fun putString(k: String, v: String?) = apply { put[k] = v }
+            override fun putStringSet(k: String, v: MutableSet<String>?) = apply { put[k] = v }
+            override fun putInt(k: String, v: Int) = apply { put[k] = v }
+            override fun putLong(k: String, v: Long) = apply { put[k] = v }
+            override fun putFloat(k: String, v: Float) = apply { put[k] = v }
+            override fun putBoolean(k: String, v: Boolean) = apply { put[k] = v }
+            override fun remove(k: String) = apply { rm += k }
+            override fun clear() = apply { rm += m.keys }
+            override fun commit(): Boolean { for (k in rm) m.remove(k); m.putAll(put); return true }
+            override fun apply() { commit() }
+        }
+    }
+
+    private fun src(f: String): String {
+        val d = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
+            .map { File(it) }.first { it.isDirectory }
+        return File(d, f).readText()
+    }
+
+    /** item 1 (app side): a backup written for another class is another character's - never restored, merged into or written over */
+    @Test fun aSameNameCharacterOfAnotherClassNeverGetsTheHuntersCombatBackup() {
+        val m = PadMapModel.parse(JSONObject(
+            """{"type":"padmap","v":"m179","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"cols":{"on":1,"off":2},""" +
+            """"who":{"n":"$name","r":"Fake Realm 7 PvE","rs":"kept","rh":"none","c":"WARRIOR"}}}}"""))!!
+        assertEquals("WARRIOR", m.dpad!!.cls); assertEquals("none", m.dpad.realmHint)
+        val hunter = CombatKeep.Backup(real, listOf(e(1, 1, 3044, face = true)), "HUNTER")
+        assertEquals("the class rides the backup file", hunter, CombatKeep.fromJson(CombatKeep.toJson(hunter)))
+        assertNull("an older backup has none", CombatKeep.fromJson("""{"v":1,"who":"$real","entries":[]}""")!!.cls)
+        assertTrue(CombatKeep.otherClass(m, hunter))
+        assertFalse("the alt's empty store never restores the hunter's backup", CombatKeep.needsRestore(m, hunter))
+        assertFalse("an older backup (no class) or an older add-on (no class): not refused on that ground",
+            CombatKeep.otherClass(m, hunter.copy(cls = null)))
+        assertEquals("a merge carries the class the padmap says", "WARRIOR", CombatKeep.merge(null, m)!!.cls)
+        // the host: checked before anything (restore, fold, merge, write); never a name in its log lines
+        val host = src("CombatKeepHost.kt")
+        val onMap = host.substring(host.indexOf("fun onMap("), host.indexOf("private fun foldOrphans("))
+        assertTrue(onMap.indexOf("CombatKeep.otherClass(map, backup0)") in 0 until onMap.indexOf("foldOrphans(who)"))
+        assertTrue(onMap.contains("if (who in otherClass) return"))
+    }
+
+    /** item 2: a character named with no realm (a switch, rs "none") lets the previous character's key go in every app store */
+    @Test fun aCharacterWithNoRealmIsNeverThePreviousOne() {
+        val qs = HashMap<String, String>()
+        val qw = QuestWatchKeep.Model(object : QuestWatchKeep.Store {
+            override fun get(k: String) = qs[k]
+            override fun put(k: String, v: String?) { if (v == null) qs.remove(k) else qs[k] = v }
+        })
+        qw.character(real); qw.onQuests(listOf(QuestWatchKeep.Q(10, 1, true)), canAct = true)
+        assertEquals("10", qs["w:$real"])
+        qw.character(null)
+        assertEquals(emptyList<QuestWatchKeep.Q>(), qw.onQuests(listOf(QuestWatchKeep.Q(20, 1, true)), canAct = true))
+        qw.cleanEnd()
+        assertEquals("nothing of the new character under the hunter's key", "10", qs["w:$real"]); assertNull(qs["c:$real"])
+        val ts = HashMap<String, String>()
+        val tn = TaxiNet.Model(object : TaxiNet.Store {
+            override fun get(k: String) = ts[k]
+            override fun put(k: String, v: String?) { if (v == null) ts.remove(k) else ts[k] = v }
+        })
+        tn.character(real); tn.onTaxiNet(1, listOf(2)); assertTrue(tn.connected(1, 2))
+        tn.character(null)
+        assertFalse("the hunter's flights are not the new character's", tn.connected(1, 2))
+        tn.onTaxiNet(3, listOf(4))
+        assertEquals(setOf("1", "2"), ts["g:$real"]!!.split(",").toSet()); assertEquals(1, ts.size)
+        // the chat checklist and the last used chat
+        var chat: String? = null
+        ChatFilter.reset(); ChatFilter.init(object : ChatFilter.Store { override fun read() = chat; override fun write(s: String) { chat = s } })
+        ChatFilter.character(real); ChatFilter.toggle("loot")
+        assertFalse(ChatFilter.shows("loot"))
+        ChatFilter.character(null)
+        assertNull(ChatFilter.who); assertTrue("everything shows, nothing saved", ChatFilter.shows("loot"))
+        ChatFilter.toggle("xp")
+        assertFalse("nothing written under any name", chat!!.contains("xp"))
+        ChatFilter.reset()
+        var talk: String? = null
+        TalkKeep.reset(); TalkKeep.init(object : TalkKeep.Store { override fun read() = talk; override fun write(s: String) { talk = s } })
+        TalkKeep.character(real); TalkKeep.went(TalkKeep.Used("PARTY"))
+        TalkKeep.character(null)
+        assertNull(TalkKeep.who); assertEquals(TalkKeep.Used(), TalkKeep.used)
+        TalkKeep.went(TalkKeep.Used("GUILD"))
+        assertFalse(talk!!.contains("GUILD"))
+        TalkKeep.reset()
+        // the Hearthstone's kept end time
+        val ic = HashMap<String, String>()
+        ItemCd.reset(); ItemCd.store = object : ItemCd.Store {
+            override fun get(key: String) = ic[key]
+            override fun put(key: String, v: String?) { if (v == null) ic.remove(key) else ic[key] = v }
+        }
+        ItemCd.character(real, now = 0L)
+        ItemCd.onDoc(JSONObject("""{"type":"itemcd","who":"$real","t":{"123":{"d":30,"l":20}}}"""), true, now = 0L)
+        assertTrue(ItemCd.left(123, now = 0L) > 0.0)
+        ItemCd.character(null, now = 0L)
+        assertEquals("the hunter's countdowns are not the new character's", 0.0, ItemCd.left(123, now = 0L), 0.0)
+        ItemCd.reset(); ItemCd.store = null
+        // the host: a named character with no key sets every store to null (never left on the previous one)
+        val h = src("CompanionHost.kt")
+        val block = h.substring(h.indexOf("val ck = CharKey.of(d.name, d.realm)"), h.indexOf("lastDpad = d; settings.homeSection.dpadChanged()"))
+        assertTrue(block.contains("val named = ck != null || !d.name.isNullOrEmpty()"))
+        for (s in listOf("radialView.character(ck)", "ItemCd.character(ck)", "RadialMeta.who = ck", "QuestWatchKeep.character(ck)",
+                "TaxiNet.character(ck)", "GameUi.character = ck", "ChatFilter.character(ck)", "TalkKeep.character(ck)"))
+            assertTrue(s, block.contains(s))
+        assertFalse("no setter waits for a whole key only", block.contains("ck != null) GameUi.character"))
+        assertTrue(h.contains("if (k != null || !it.dpad?.name.isNullOrEmpty()) newSpellWho = k"))
+    }
+
+    /** item 3: a Reset with orphans present - its plan takes the orphans with it, and no fold brings an orphan's old value back */
+    @Test fun aResetIsNeverUndoneByAnOrphan() {
+        val castOld = t(1L to t("k" to "spell", "id" to 3044L))
+        val castOrphan = t(1L to t("k" to "spell", "id" to 1L))
+        val game = t("castBar" to t(real to castOld, "$name-?" to castOrphan), "dpad" to t(real to true, "$name-" to false))
+        // the plan: the real key's entries and its name's orphans (removed: never given the default)
+        val ts = ResetPlan.svTargets(setOf(ResetPlan.Kind.SKILLS, ResetPlan.Kind.LAYOUTS), real, false, mapOf(V to listOf(game)))
+        assertTrue(ts.contains(SvReset.Target(V, "castBar", real, null)))
+        assertTrue(ts.contains(SvReset.Target(V, "castBar", "$name-?", null)))
+        assertTrue("the orphan is removed, never set to the default", ts.contains(SvReset.Target(V, "dpad", "$name-", null)))
+        assertTrue(ts.contains(SvReset.Target(V, "dpad", real, true)))
+        // the name under two realms: its orphans are not this character's to reset (never a guess)
+        val two = LinkedHashMap(game).apply { put("fightBy", t("$name-Other Realm" to t(1L to 1L))) }
+        assertFalse(ResetPlan.svTargets(setOf(ResetPlan.Kind.SKILLS), real, false, mapOf(V to listOf(two))).any { CharKey.isOrphan(it.who) })
+        assertTrue("All characters: every orphan", ResetPlan.svTargets(setOf(ResetPlan.Kind.SKILLS), null, true, mapOf(V to listOf(two)))
+            .any { it.who == "$name-?" })
+        // the preferences: "<prefix>Name-" goes with the character
+        assertEquals(setOf("smartPet.$real", "smartPet.$name-"),
+            ResetPlan.prefKeys("home", setOf("smartPet.$real", "smartPet.$name-", "smartPet.Alt-R"), setOf(ResetPlan.Kind.SKILLS), real, false))
+        assertEquals("another realm in the file: its orphan left", setOf("smartPet.$real"),
+            ResetPlan.prefKeys("home", setOf("smartPet.$real", "smartPet.$name-", "smartPet.$name-Other"), setOf(ResetPlan.Kind.SKILLS), real, false))
+
+        // a reset made by an older plan (the real key only) with the orphan still in the game file: the next start does NOT adopt it
+        val keptAfter = t("dpad" to t(real to true))
+        setUpTheThor(game, keptAfter)
+        val resetAt = at1320
+        SvReset.write(kd, listOf(SvReset.Mark(V, "castBar", real, listOf(ser(castOld)), resetAt)))
+        SvKeep.beforeStart(wtf, kd, File(dir, "bak"), now = resetAt + 60_000L) { }
+        assertNull("the game file: the reset entry stays reset, the orphan dropped", gameNow().sub("castBar", real))
+        assertNull(keptNow().sub("castBar", real))
+        assertEquals(emptyList<String>(), orphans(gameNow()))
+        // the PC's realm-less copy after the reset: its orphan never comes in either
+        val pc = t("castBar" to t("$name-?" to castOrphan), "dpad" to t(real to true))
+        SvSync.fromPc(kd, SvKeep.Doc(V, SvLua.leaves(pc), SvLua.ser(pc), resetAt + 120_000L), resetAt + 120_000L) { }
+        assertNull("the PC's orphan never fills the reset entry", keptNow().sub("castBar", real))
+
+        // the In-combat backup: the reset takes the name's orphan files with the real one (backed up first)
+        val combat = File(dir, "combat").apply { mkdirs() }
+        val realF = File(combat, CombatKeep.fileName(real)).apply { writeText(CombatKeep.toJson(CombatKeep.Backup(real, listOf(e(1, 1, 3044, true))))) }
+        val orphanF = File(combat, "$name-_.json").apply { writeText("""{"v":1,"who":"$name-?","entries":[{"page":1,"set":2,"pos":3,"id":1978,"n":"S"}]}""") }
+        val prefs = HashMap<String, Prefs>()
+        val kd2 = File(dir, "kept2").apply { mkdirs() }
+        val r = ResetRun({ prefs.getOrPut(it) { Prefs() } }, kd2, combat) { }.run(ResetPlan.Button.SKILLS, real, false, gameRunning = false, now = resetAt)
+        assertEquals(2, r.combat)
+        assertFalse(realF.exists()); assertFalse("the orphan goes too: the next run's fold cannot make it the real backup", orphanF.exists())
+        assertEquals("both backed up first", 2, File(kd2, SvReset.BACKUP_DIR).listFiles()!!.count { it.name.startsWith("$name-") && it.name.endsWith(".bak") })
+        // another realm's backup of that name: the orphan is not this character's (left)
+        orphanF.writeText("""{"v":1,"who":"$name-?","entries":[]}"""); realF.writeText(CombatKeep.toJson(CombatKeep.Backup(real, emptyList())))
+        File(combat, CombatKeep.fileName("$name-Other Realm")).writeText("""{"v":1,"who":"$name-Other Realm","entries":[]}""")
+        ResetRun({ prefs.getOrPut(it) { Prefs() } }, kd2, combat) { }.run(ResetPlan.Button.SKILLS, real, false, gameRunning = false, now = resetAt + 1)
+        assertTrue(orphanF.exists()); assertFalse(realF.exists())
+    }
+
+    /** item 8: the app's own per-character choices a realm-less session left under "Name-" fold into the real key (it wins) */
+    @Test fun theAppsOwnChoicesFoldIntoTheRealKey() {
+        val home = Prefs(linkedMapOf("smartPet.$real" to true, "smartPet.$name-" to false, "holdTalk.$name-" to true, "rest" to "THIN",
+            "holdTalk.Ash-R" to false, "talkSendNow.$name-" to ""))
+        val bak = Prefs()
+        assertEquals("1 adopted (holdTalk), 2 dropped (the real smartPet wins; an empty one)", 1 to 2, RealmFix.foldPrefs(home, "home", real, bak, at1320))
+        assertEquals(mapOf("smartPet.$real" to true, "rest" to "THIN", "holdTalk.Ash-R" to false, "holdTalk.$real" to true), home.m)
+        val kept = JSONArray(bak.getString("home", null))
+        assertEquals(1, kept.length())
+        assertEquals("what went is kept with its type", false, kept.getJSONObject(0).getJSONObject("removed").getJSONObject("smartPet.$name-").get("v"))
+        assertEquals("idempotent", 0 to 0, RealmFix.foldPrefs(home, "home", real, bak, at1320 + 1))
+        // the name under another realm in a file: left as it is (never a guess)
+        val gameui = Prefs(linkedMapOf("sw.player.$name-" to true, "sw.player.$name-Other Realm" to false))
+        assertEquals(0 to 0, RealmFix.foldPrefs(gameui, "gameui", real, bak, at1320))
+        assertEquals(2, gameui.m.size)
+        // a name that only ENDS with this one is another character ("XHuntress-" is not "Huntress-")
+        assertTrue(RealmFix.prefPlan(mapOf("q.X$name-" to "1"), real).empty)
+        // the JSON stores (RadialMeta / ChatFilter / TalkKeep)
+        val all = JSONObject().put("$name-", JSONArray().put("loot")).put("Alt-R", JSONArray())
+        val gone = RealmFix.foldJson(all, real)!!
+        assertEquals(listOf("loot"), (0 until all.getJSONArray(real).length()).map { all.getJSONArray(real).getString(it) })
+        assertFalse(all.has("$name-")); assertTrue(gone.has("$name-"))
+        val both = JSONObject().put(real, JSONArray()).put("$name-", JSONArray().put("xp"))
+        RealmFix.foldJson(both, real)
+        assertEquals("the real key wins", 0, both.getJSONArray(real).length())
+        assertNull("another realm: nothing changed", RealmFix.foldJson(JSONObject().put("$name-", 1).put("$name-Other", 2), real))
+        // ChatFilter folds at its character switch
+        var chat: String? = JSONObject().put("$name-", JSONArray().put("loot")).toString()
+        ChatFilter.reset(); ChatFilter.init(object : ChatFilter.Store { override fun read() = chat; override fun write(s: String) { chat = s } })
+        ChatFilter.character(real)
+        assertFalse("the realm-less session's tick is the hunter's now", ChatFilter.shows("loot"))
+        assertFalse(JSONObject(chat!!).has("$name-"))
+        ChatFilter.reset()
+        // the host folds before the stores read, once per key, every per-character file
+        val h = src("CompanionHost.kt")
+        assertTrue(h.indexOf("if (current && ck != null) foldPrefOrphans(ck)") in 0 until h.indexOf("if (current && named) ItemCd.character(ck)"))
+        assertEquals(listOf("dpad", "home", "gameui", "wc_itemcd", "questwatch", "taxinet", "newspells", "polestar_qol"), RealmFix.PREF_FILES)
+    }
+
+    /** item 9: a saved table's own "word-" key is never taken for a character's orphan */
+    @Test fun aTablesOwnWordKeyIsNoOrphan() {
+        for (k in listOf("lay-", "v2-", "hub_x-", "pos-?", "2-")) assertFalse(k, CharKey.isOrphan(k))
+        assertTrue(CharKey.isOrphan("Ærwyn-")); assertTrue(CharKey.isOrphan("치유사-?"))
+        val m = t("lay-" to t("x" to 1L), "lay-Big" to t("y" to 2L), "store" to t("lay-" to 5L, "lay-Big" to 6L))
+        val r = RealmFix.clean(m, RealmFix.realmsByName(listOf(m)))
+        assertTrue(r.items.isEmpty()); assertEquals(1L, r.table.sub("lay-", "x"))
+    }
+
+    /** item 7 / 10: the diagnostic line says the hint; the In-combat backup's and the radials' log lines carry no character name */
+    @Test fun theLogsSayTheHintAndNeverAName() {
+        val h = src("CompanionHost.kt")
+        assertTrue(h.contains("\", hint \$h\"") && h.contains("REALM_HINTS = setOf(\"present\", \"none\")"))
+        val host = src("CombatKeepHost.kt")
+        for (bad in listOf("for \${b.who}", "of \$who\")", "of \${backup.who}", "for \${backup.who}")) assertFalse(bad, host.contains(bad))
+        assertFalse(src("HomeRadialView.kt").contains("radial: character \$key"))
     }
 }

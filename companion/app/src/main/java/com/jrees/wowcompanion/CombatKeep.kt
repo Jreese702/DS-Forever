@@ -21,11 +21,20 @@ import org.json.JSONObject
 object CombatKeep {
     /** one setting: [face] = a base X / Y / A fight spell (not per page: [page] 0), else the overlay fight spell of button [set]/[pos] on [page] */
     data class Entry(val page: Int, val set: Int, val pos: Int, val id: Int, val name: String, val face: Boolean)
-    data class Backup(val who: String, val entries: List<Entry>)
+    /** [cls] (Safety k7 / PadMap m179): the class token of the character it was written for, null = an older backup or not said */
+    data class Backup(val who: String, val entries: List<Entry>, val cls: String? = null)
 
     /** the character the add-on's padmap names (its name-realm key, as the add-on's own per-character stores), or null; null too while
      *  the realm is not known (the 11-20 hunter, [CharKey]: no "Name-?" backup is ever written, read or restored) */
     fun who(map: PadMapModel.Map): String? = CharKey.of(map.dpad?.name, map.dpad?.realm)
+
+    /** the k6 review (item 1): [backup] was written for ANOTHER character of this key (a same-name character on another realm the add-on
+     *  took for this one): both classes are known and differ. Then it is never restored nor written over (it is left as it is) */
+    fun otherClass(map: PadMapModel.Map, backup: Backup?): Boolean {
+        val now = map.dpad?.cls ?: return false
+        val was = backup?.cls ?: return false
+        return now != was
+    }
 
     /** what the add-on holds now: the faces' fight spells and the page on show's overlay fight spells (spells only, never an item) */
     fun current(map: PadMapModel.Map): List<Entry> {
@@ -47,8 +56,9 @@ object CombatKeep {
     /** the backup after this padmap: the page on show and the faces as the add-on says, every other page as it was */
     fun merge(old: Backup?, map: PadMapModel.Map): Backup? {
         val who = who(map) ?: return null
-        val kept = old?.takeIf { it.who == who }?.entries.orEmpty().filter { !it.face && it.page != map.page }
-        return Backup(who, (kept + current(map)).sortedWith(ORDER))
+        val mine = old?.takeIf { it.who == who }
+        val kept = mine?.entries.orEmpty().filter { !it.face && it.page != map.page }
+        return Backup(who, (kept + current(map)).sortedWith(ORDER), map.dpad?.cls ?: mine?.cls)
     }
 
     /**
@@ -66,7 +76,8 @@ object CombatKeep {
 
     /** the first padmap of a run: the add-on lost its store (a killed game never saved it) and the backup has it -> restore */
     fun needsRestore(map: PadMapModel.Map, backup: Backup?): Boolean =
-        backup != null && backup.who == who(map) && backup.entries.isNotEmpty() && current(map).isEmpty() && !map.combat && !map.fight
+        backup != null && backup.who == who(map) && !otherClass(map, backup) && backup.entries.isNotEmpty() && current(map).isEmpty() &&
+            !map.combat && !map.fight
 
     /** the taps that put [backup] back, one batch per setting (ONE put each) between the quiet enter and the leave; [column] = a spell's
      *  Bind column on the `spells` row (null = no touch cell: that setting is [Plan.skipped]); [page] = the page on show, picked back last */
@@ -102,7 +113,7 @@ object CombatKeep {
         return b.entries.filter { (it.face || it.page == map.page) && (Triple(it.set, it.pos, it.id) to it.face) !in now }
     }
 
-    fun toJson(b: Backup): String = JSONObject().put("v", 1).put("who", b.who).put("entries", JSONArray().apply {
+    fun toJson(b: Backup): String = JSONObject().put("v", 1).put("who", b.who).apply { if (b.cls != null) put("c", b.cls) }.put("entries", JSONArray().apply {
         for (e in b.entries) put(JSONObject().put("page", e.page).put("set", e.set).put("pos", e.pos).put("id", e.id).put("n", e.name)
             .apply { if (e.face) put("face", true) })
     }).toString()
@@ -121,7 +132,7 @@ object CombatKeep {
         // pair is dropped here (a restore would put it over the Melee one); a Range-only box ("r" alone) was that button's one spell
         val melee = rows.filter { it.second == "m" }.map { (e, _) -> Triple(e.page, e.set, e.pos) to e.face }.toSet()
         val es = rows.filter { (e, h) -> !(h == "r" && (Triple(e.page, e.set, e.pos) to e.face) in melee) }.map { it.first }
-        o.optString("who").takeIf { it.isNotEmpty() }?.let { Backup(it, es) }
+        o.optString("who").takeIf { it.isNotEmpty() }?.let { Backup(it, es, o.optString("c", "").takeIf { c -> c.isNotEmpty() }) }
     } catch (_: Throwable) { null }
 
     /** the backup's file name for a character: letters, digits, '-', '_' and spaces kept, anything else '_' */

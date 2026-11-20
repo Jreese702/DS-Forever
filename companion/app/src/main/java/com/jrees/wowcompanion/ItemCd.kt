@@ -145,7 +145,8 @@ object ItemCd {
     private fun hsKey(k: String) = "hs:$k"
 
     /** the character now ("name-realm", a current padmap): its kept Hearthstone end time counts until the game's own word comes */
-    fun character(key: String, now: Long = clock()) {
+    fun character(key: String?, now: Long = clock()) {
+        if (key == null) { if (noCharacter()) changed(); return }
         synchronized(this) {
             if (key == who) return
             val prev = who
@@ -160,6 +161,14 @@ object ItemCd {
             if (left > 0.0 && len > 0.0) at[HEARTH] = E(now + (left * 1000.0).toLong(), len)
         }
         changed()
+    }
+
+    /** the k6 review (item 2): a character named with no realm yet (a switch): the previous one's countdowns go, nothing is kept under
+     *  any name until the whole key comes; true = it changed */
+    @Synchronized private fun noCharacter(): Boolean {
+        if (who == null && liveWho == null) return false
+        at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON; who = null; liveWho = null
+        return true
     }
 
     private fun keepHearth(now: Long) {

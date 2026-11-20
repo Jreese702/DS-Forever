@@ -35,12 +35,20 @@ object CharKey {
         return i > 0 && of(k.substring(0, i), k.substring(i + 1)) == k
     }
 
-    /** a partial key a realm-less session made: a name, '-', then nothing / "?" / "_" / a marker */
+    /** a partial key a realm-less session made: a character's name, '-', then nothing / "?" / "_" / a marker. The k6 review (item 9):
+     *  only a name the game can give a character counts - letters only, never starting with a lower-case one - so a saved table's own
+     *  "word-" key ("lay-", "v2-") is never taken for one */
     fun isOrphan(key: Any?): Boolean {
         val k = key as? String ?: return false
         val i = k.indexOf('-')
-        if (i <= 0) return false
+        if (i <= 0 || !nameLike(k.substring(0, i))) return false
         val r = k.substring(i + 1)
         return r.isEmpty() || r == "?" || r == "_" || (r.length == 1 && r[0].isISOControl())
     }
+
+    /** a name the game gives a character: letters only, the first not lower-case (CJK / Hangul names have no case) */
+    fun nameLike(n: String): Boolean = n.isNotEmpty() && n.all { it.isLetter() } && !n[0].isLowerCase()
+
+    /** the orphan keys of [name] a realm-less session makes, in the add-on's order (WC.realmFix's SUFFIX): "Name-", "Name-?", "Name-_" */
+    fun orphansOf(name: String): List<String> = listOf("$name-", "$name-?", "$name-_")
 }

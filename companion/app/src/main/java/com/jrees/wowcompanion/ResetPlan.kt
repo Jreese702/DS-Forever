@@ -116,15 +116,29 @@ object ResetPlan {
      */
     fun svTargets(kinds: Set<Kind>, who: String?, all: Boolean, tables: Map<String, List<Map<Any, Any>>>): List<SvReset.Target> {
         val out = ArrayList<SvReset.Target>()
+        // the k6 review (item 3): the orphan keys a realm-less session left for this character ("Name-", "Name-?", "Name-_") go with it
+        // (removed, never given the default), so a later fold cannot bring their old values back; only while the name holds settings
+        // under this one realm (never a guess between two characters of one name). With [all]: every character's orphans.
+        val mine = orphanNameOf(who, tables.values.flatten())
         for (k in SV_KEYS) {
             if (k.kind !in kinds) continue
             if (!k.perChar) { out += SvReset.Target(k.variable, k.top, null, k.default); continue }
-            val chars = if (all) tables[k.variable].orEmpty().flatMap { t -> (t[k.top] as? Map<*, *>)?.keys.orEmpty().filterNotNull() }
-                .filter { isCharKey(it) }.map { it as String }.toSortedSet() + listOfNotNull(who)
+            val here = tables[k.variable].orEmpty().flatMap { t -> (t[k.top] as? Map<*, *>)?.keys.orEmpty().filterNotNull() }
+            val chars = if (all) here.filter { isCharKey(it) }.map { it as String }.toSortedSet() + listOfNotNull(who)
                 else listOfNotNull(who)
             for (c in chars.distinct()) out += SvReset.Target(k.variable, k.top, c, k.default)
+            val orphans = here.filter { CharKey.isOrphan(it) && (all || (mine != null && CharKey.nameOf(it) == mine)) }.map { it as String }.distinct()
+            for (o in orphans) out += SvReset.Target(k.variable, k.top, o, null)
         }
         return out
+    }
+
+    /** [who]'s name when its orphans may be reset with it: the name holds settings in [tables] under [who]'s realm only; else null */
+    fun orphanNameOf(who: String?, tables: List<Map<*, *>?>): String? {
+        val w = who?.takeIf { isCharKey(it) } ?: return null
+        val name = CharKey.nameOf(w) ?: return null
+        val rs = RealmFix.realmsByName(tables)[name].orEmpty()
+        return name.takeIf { rs.all { r -> "$name-$r" == w } }
     }
 
     /** one preference key's rule: an exact key, or a per-character key "<prefix><who>" (with [suffix] after it); [kind] null = never */
@@ -183,7 +197,10 @@ object ResetPlan {
             }
         // an account-wide per-element key ("mode.<element>") takes any rest; a character's only its own
         if (r.kind == Kind.SETTINGS) return rest.isNotEmpty()
-        return if (all) isCharKey(rest) else rest == who
+        // the k6 review (item 3): a realm-less session's "<prefix>Name-" is that character's too (prefKeys leaves it while the name has
+        // keys under another realm in the file)
+        return if (all) isCharKey(rest) || CharKey.isOrphan(rest)
+            else rest == who || (who != null && CharKey.isOrphan(rest) && CharKey.nameOf(rest) == CharKey.nameOf(who))
     }
 
     /** the rule [key] of [file] falls under (the most specific: an exact key first), or null = not listed */
@@ -199,12 +216,18 @@ object ResetPlan {
     /** the keys of [file] (now holding [keys]) a reset of [kinds] removes, for [who] (or every character with [all]) */
     fun prefKeys(file: String, keys: Set<String>, kinds: Set<Kind>, who: String?, all: Boolean): Set<String> {
         if (file in NEVER_FILES) return emptySet()
-        return keys.filter { k ->
+        val out = keys.filter { k ->
             val r = ruleOf(file, k) ?: return@filter false
             val kind = r.kind ?: return@filter false
             if (kind !in kinds) return@filter false
             if (r.perChar && kind != Kind.SETTINGS) matches(r, k, who, all) else true
         }.toSet()
+        // one character's reset: its name's orphans only while this file holds that name under its own realm alone (never a guess)
+        if (all || who == null || !isCharKey(who)) return out
+        val name = CharKey.nameOf(who) ?: return out
+        val other = keys.any { k -> val i = k.indexOf("$name-"); i >= 0 && (i == 0 || !k[i - 1].isLetterOrDigit()) &&
+            k.substring(i).let { w -> w != who && isCharKey(w) } }
+        return if (other) out.filterTo(LinkedHashSet()) { !it.endsWith("$name-") && !it.endsWith("$name-?") && !it.endsWith("$name-_") } else out
     }
 
     /** the preference files any reset may touch */

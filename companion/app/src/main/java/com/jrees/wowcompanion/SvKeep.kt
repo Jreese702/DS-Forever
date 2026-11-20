@@ -158,7 +158,9 @@ object SvKeep {
         val gamePeek = runCatching { target.takeIf { it.isFile }?.readText()?.let { SvLua.parse(it, variable) } }.getOrNull()
         val realms = RealmFix.realmsByName(listOf(gamePeek, keptT0))
         val keptT = keptT0?.let { k ->
-            val r = RealmFix.clean(k, realms, RealmFix.held(listOf(gamePeek)))
+            // the k6 review (item 3): a store the real key held BEFORE a reset (the raw kept copy, a reset mark) is held: a Reset is
+            // never undone by an orphan's old value
+            val r = RealmFix.clean(k, realms, RealmFix.held(listOf(gamePeek, keptRaw)) + RealmFix.resetHeld(resets, variable))
             when {
                 r.items.isEmpty() -> k
                 !RealmFix.backup(keptFile(keptDir, variable), File(keptDir, "${SvBackup.DIR}/${RealmFix.DIR}"), now) -> {
@@ -183,7 +185,7 @@ object SvKeep {
         val (game0, resetOut) = if (resets.isEmpty()) gameRaw to 0 else SvReset.strip(variable, gameRaw, resets, gameAt)
         // RealmFix: the game file's orphans folded too (the real key wins; a store the real key holds in the kept copy is never given
         // an orphan's); before a start the game file is then written without them (its old file to backupDir, and a realm-fix copy)
-        val game = RealmFix.clean(game0, realms, RealmFix.held(listOf(keptT0))).let { r ->
+        val game = RealmFix.clean(game0, realms, RealmFix.held(listOf(keptRaw, keptT0, gameRaw)) + RealmFix.resetHeld(resets, variable)).let { r ->
             when {
                 r.items.isEmpty() -> game0
                 backupDir != null && !RealmFix.backup(target, File(keptDir, "${SvBackup.DIR}/${RealmFix.DIR}"), now) -> {
