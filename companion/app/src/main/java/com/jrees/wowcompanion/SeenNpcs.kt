@@ -9,9 +9,10 @@ import org.json.JSONObject
  * is drawn only once DS Forever has SEEN it in the game:
  *   (a) its window opened (PoiHarvest, as before);
  *   (b) the game's soft target landed on it (the 10 Hz position document's soft: its creature id, within the gamepad's 20 yd);
- *   (c) a minimap dot names it (Map.lua's minimap probe, "mmprobe": a tracked town NPC's dot, its yards from the player).
+ *   (c) RETIRED (issue #87, Map.lua mp3): a minimap dot named it (the minimap probe). The game's minimap stopped answering it with
+ *       build 1.60.1.70862 and the probe is gone; sightings it stored ('p') are still read and kept.
  * QuestieDB stays the source of WHAT it is (kind, name, services), matched by its creature id, or for a probed dot by its name on
- * this map (the nearest of that name); it never places an NPC nobody has seen. A sighting within [SAME_YD] of QuestieDB's spot uses
+ * this map (the nearest of that name, (c)); it never places an NPC nobody has seen. A sighting within [SAME_YD] of QuestieDB's spot uses
  * QuestieDB's (exact); farther, the NPC is drawn where it was seen. World facts, not one character's: one store, in the app's files
  * (MapView keeps the file). Pure: tools/map_test.
  */
@@ -62,17 +63,6 @@ object SeenNpcs {
     /** where to draw seen NPC [s]: QuestieDB's spot ([dbNx], [dbNy]) when the sighting is within SAME_YD of it, else where seen */
     fun spot(dbNx: Double, dbNy: Double, s: Seen, ax: Double, ay: Double): DoubleArray =
         if (Math.hypot((dbNx - s.nx) * ax, (dbNy - s.ny) * ay) <= SAME_YD) doubleArrayOf(dbNx, dbNy) else doubleArrayOf(s.nx, s.ny)
-
-    /**
-     * A minimap dot's spot in a map's 0..1 (Map.lua mp1: [north] / [west] yards from the player at world ([wx] north, [wy] west))
-     * through the map's world rect (top / left world edges, [h] / [w] yards down / across).
-     */
-    fun dotSpot(wx: Double, wy: Double, north: Double, west: Double, top: Double, left: Double, h: Double, w: Double): DoubleArray =
-        doubleArrayOf((left - (wy + west)) / w, (top - (wx + north)) / h)
-
-    /** of [cands] (entry, nx, ny) with a probed dot's name, the one nearest the dot ([nx], [ny]); null when there is none */
-    fun nearest(cands: List<Triple<Int, Double, Double>>, nx: Double, ny: Double, ax: Double, ay: Double): Int? =
-        cands.minByOrNull { (_, x, y) -> Math.hypot((x - nx) * ax, (y - ny) * ay) }?.first
 
     // ---------------------------------------------------------------- the file (MapView reads and writes it)
     fun toJson(): String {

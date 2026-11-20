@@ -1006,7 +1006,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     private val zoneQuests = HashMap<Int, List<Mark>>()
     fun onQdbPins(d: JSONObject) { QdbPins.pins(d)?.let { qdbPins = it; if (isShown) invalidate() } }
 
-    /** the minimap probe's options to the add-on (Map.lua mp1: the pin lane's op digit 2, then the bits); Home's map keeps them */
+    /** the map's options to the add-on (Map.lua mp3: Sparkles; the pin lane's op digit 2, then the bits); Home's map keeps them */
     fun sendProbeOptions(bits: Int): Boolean = TapBridge.tapsSpaced(context, padDoc, MapRoomPad.optCells(bits), MapRoomPad.GAP_MS)
     fun onQdbNodes(d: JSONObject) { QdbPins.nodes(d)?.let { qdbNodes = it; if (isShown) invalidate() } }
 
@@ -1610,7 +1610,6 @@ class WorldMapRoomView(context: Context) : View(context) {
         Filter("services", "Vendors and trainers", false, true),
         Filter("herb", "Herbs", false, true),
         Filter("ore", "Ore", false, true),
-        Filter("chest", "Chests", false, true),
         Filter("rare", "Rares", false, true),
         Filter("guess", "QuestieDB guesses", false, true))
     // issues #91 / #85 / #77 sweep (2026-11-11): a key no filter has reads false, never NoSuchElementException from a tap
@@ -1933,9 +1932,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             if (on("herb")) layer(n.herb, UiKit.Spawn.HERB)
             if (on("ore")) layer(n.ore, UiKit.Spawn.ORE)
         }
-        // chests: only the ones Home's minimap probe SAW (SeenChests; b-ghost-chests), never QuestieDB's spawn spots
-        if (on("chest")) for (ch in SeenChests.on(playerMap, android.os.SystemClock.elapsedRealtime()))
-            UiKit.spawnSpot(c, sx(ch.nx.toFloat()), sy(ch.ny.toFloat()), UiKit.Spawn.CHEST, SPAWN_PX)
+        // chests: none (issue #87): only the minimap probe saw real ones (QuestieDB's spots mostly hold nothing), and it is gone
         if (on("rare")) qdbPins?.takeIf { it.m == playerMap }?.let { p ->
             for (r in p.rares) for (q in r.pts) UiKit.spawnSpot(c, sx(q[0].toFloat()), sy(q[1].toFloat()),
                 if (r.rank == 2) UiKit.Spawn.RARE_ELITE else UiKit.Spawn.RARE, if (r.rank == 2) 44f else 38f)

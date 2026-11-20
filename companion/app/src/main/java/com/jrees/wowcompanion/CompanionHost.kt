@@ -680,7 +680,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         Terrain.files.onLoaded { mapView.postInvalidate() }
         Terrain.buildings.onLoaded { mapView.postInvalidate() }
         Roads.files.onLoaded { mapView.postInvalidate() }
-        mapView.onProbeOptions = { bits -> worldMapRoom.sendProbeOptions(bits) }   // Map: the minimap probe's options to the add-on
+        mapView.onProbeOptions = { bits -> worldMapRoom.sendProbeOptions(bits) }   // Map: Sparkles to the add-on (Map.lua mp3)
         worldMapRoom.onLeave = { show(Room.HOME) }
         worldMapRoom.onFocusQuest = { id -> mapView.psRelease(); homeView.focusQuest(id) { } }
         worldMapRoom.onUntrackQuest = { id -> homeView.untrackQuest(id) { } }
@@ -2767,7 +2767,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "qdbnodes" -> { mapView.onQdbNodes(msg); worldMapRoom.onQdbNodes(msg) }
             "qdbavail" -> mapView.onQdbAvail(msg)            // Map: QuestieDB's available quests, Home's "!" layer (Quests' add-on)
             "qdbareas" -> mapView.onQdbAreas(msg)            // Map: QuestieDB's objective spawns, Home's quest areas (Quests' add-on)
-            "mmprobe" -> mapView.onMmProbe(msg)              // Map: the minimap probe (Map.lua mp1): live dots, seen NPCs, options
             "padkeytest" -> TapBridge.onKeyTest(msg, current)  // Quests: L1's handshake + sweep trace (TapPad pad10c)
             // the Map room's painted world map: what this character has explored (Map.lua mapexpl)
             "mapexpl" -> worldMapRoom.onMapExpl(msg)
