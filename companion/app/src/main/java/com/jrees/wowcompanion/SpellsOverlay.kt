@@ -343,6 +343,8 @@ class SpellsOverlay(
                 val p = UiKit.bodyPaint(26f, when { dim -> Theme.dim; lit -> Color.WHITE; else -> Theme.gold }).apply { textAlign = Paint.Align.CENTER }
                 val word = if (i == 0) "Controller" else "Tap to cast"
                 val tx = kr.centerX() - (if (i == 1 && fightLock) 14f else 0f)
+                val room = kr.width() - 20f - (if (i == 1 && fightLock) 36f else 0f)     // es / fr: smaller to fit the tab
+                while (p.textSize > 16f && p.measureText(Tr.t(word)) > room) p.textSize -= 1f
                 c.drawText(Tr.t(word), tx, kr.centerY() + 4f - (p.ascent() + p.descent()) / 2f, p)
                 if (i == 1 && fightLock) UiKit.tex("talent_lock")?.let { bm ->
                     val x = tx + p.measureText(Tr.t(word)) / 2f + 8f

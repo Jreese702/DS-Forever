@@ -450,6 +450,8 @@ class ControllerView(
             val word = SUB_NAMES[i]
             val lock = v == "cbfight" && !showOn()
             val tx = r.centerX() - (if (lock) 16f else 0f)
+            val room = r.width() - 24f - (if (lock) 40f else 0f)                 // es / fr: smaller to fit the tab, never past it
+            while (p.textSize > 16f && p.measureText(Tr.t(word)) > room) p.textSize -= 1f
             c.drawText(Tr.t(word), tx, r.centerY() + 6f - (p.ascent() + p.descent()) / 2f, p)
             if (lock) UiKit.tex("talent_lock")?.let { bm ->
                 val x = tx + p.measureText(Tr.t(word)) / 2f + 10f
@@ -468,16 +470,37 @@ class ControllerView(
             val r = swRect(i, sw.size)
             c.drawRoundRect(r, 8f, 8f, pPlate)
             val p = UiKit.bodyPaint(26f, if (t.col != null) Theme.text else Theme.dim)
-            UiKit.check(c, r.right - 42f, r.centerY(), 58f, t.on == true, enabled = t.col != null)
-            val word = Tr.t(t.label)
-            while (p.textSize > 18f && 20f + p.measureText(word) + 84f > r.width()) p.textSize -= 1f
-            // p55: three check boxes on In combat: a label still too long ends in "..." clear of the box (never under it)
-            val fit = TextUtils.ellipsize(word, TextPaint(p), r.width() - 20f - 84f, TextUtils.TruncateAt.END).toString()
-            c.save(); c.clipRect(r.left, r.top, r.right - 74f, r.bottom)              // never under the check box
-            c.drawText(fit, r.left + 20f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
-            c.restore()
+            // p55: three check boxes share In combat's row: a smaller box, and the label gets the whole width before it
+            val box = if (sw.size >= 3) 46f else 58f
+            val boxCx = r.right - 14f - box / 2f
+            UiKit.check(c, boxCx, r.centerY(), box, t.on == true, enabled = t.col != null)
+            drawSwitchLabel(c, Tr.t(t.label), RectF(r.left + 16f, r.top + 4f, boxCx - box / 2f - 8f, r.bottom - 4f), p)
         }
         if (k != null && k.focus == "switches") sw.indices.firstOrNull { it == k.sw - 1 }?.let { UiKit.focus(c, swRect(it, sw.size), onPaper = true) }
+    }
+
+    /** p55 (the coordinator's ask: never cut off): one line at 26 px down to 20, else two lines (a word that is too long for the
+     *  line on its own, or a third line, takes the font down further, to 15 px), centred in [r] */
+    private fun drawSwitchLabel(c: Canvas, word: String, r: RectF, p: Paint) {
+        val tw = r.width().coerceAtLeast(10f)
+        var size = 26f
+        while (size > 20f && p.apply { textSize = size }.measureText(word) > tw) size -= 1f
+        p.textSize = size
+        if (p.measureText(word) <= tw) {
+            c.drawText(word, r.left, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            return
+        }
+        var lay: StaticLayout
+        size = 22f
+        while (true) {
+            val tp = TextPaint(p).apply { textSize = size }
+            lay = StaticLayout.Builder.obtain(word, 0, word.length, tp, tw.toInt()).setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(0f, 0.92f).setIncludePad(false).build()
+            val widest = (0 until lay.lineCount).maxOfOrNull { lay.getLineWidth(it) } ?: 0f
+            if ((lay.lineCount <= 2 && widest <= tw + 0.5f && lay.height <= r.height()) || size <= 15f) break
+            size -= 1f
+        }
+        c.save(); c.translate(r.left, r.centerY() - lay.height / 2f); lay.draw(c); c.restore()
     }
 
     private fun padStyle(): SpellsModel.PadStyle = when (CastSettings.buttonLayout) {

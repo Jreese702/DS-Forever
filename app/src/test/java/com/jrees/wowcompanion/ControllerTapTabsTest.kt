@@ -345,6 +345,15 @@ class ControllerTapTabsTest {
         r = rig("padmap_combat")
         r.v.onPadTabCtl(from("combat", "subtabs", 1)); r.draw(); r.draw("after_03_in_combat_controller")
         r.v.onPadTabCtl(from("cbfight", "buttons", 3)); r.draw(); r.draw("after_04_in_combat_tap_to_cast_on")
+        // the three check boxes' words in Spanish and French (never cut off: one line, else two)
+        for (l in listOf("es", "fr")) {
+            listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+                .firstOrNull { it.canRead() }?.let { Tr.load(l, it.readText()) }
+            Tr.setChoice(app, l)
+            r.v.onPadTabCtl(from("combat", "switches", 1)); r.draw(); r.draw("after_03_in_combat_controller_$l")
+            r.v.onPadTabCtl(from("cbfight", "subtabs", 3)); r.draw(); r.draw("after_04_in_combat_tap_to_cast_on_$l")
+        }
+        Tr.setChoice(app, "auto")
         HomeSettings.castBarCombat = CastStripModel.Combat.HIDE
         CastStripModel.Live.set(CastStripModel.parse(JSONObject(barDoc.toString()).apply { remove("show") })!!)
         r.v.onPadTabCtl(from("cbfight", "subtabs", 3)); r.draw(); r.draw("after_05_in_combat_tap_to_cast_off")

@@ -2221,8 +2221,8 @@
 "Battle.net could not complete this sign-in page. Try again later.": "Battle.net n'a pas pu terminer cette page de connexion. Réessayez plus tard."
 },
 "templates": {
-"Tap slot %s": "Emplacement %s",
 "Tap slot %s, in combat": "Emplacement %s, en combat",
+"Tap slot %s": "Emplacement %s",
 "Empty: slot %s's own in fights": "Vide : en combat, celui de l’emplacement %s",
 "Switch to %s?": "Passer à %s ?",
 "Downloads the %s game": "Télécharge le jeu %s",

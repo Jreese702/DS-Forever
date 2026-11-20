@@ -2244,8 +2244,8 @@
 "Battle.net could not complete this sign-in page. Try again later.": "Battle.net no pudo completar esta página de inicio de sesión. Inténtalo más tarde."
 },
 "templates": {
-"Tap slot %s": "Espacio %s",
 "Tap slot %s, in combat": "Espacio %s, en combate",
+"Tap slot %s": "Espacio %s",
 "Empty: slot %s's own in fights": "Vacío: en combate, lo del espacio %s",
 "Switch to %s?": "¿Cambiar a %s?",
 "Downloads the %s game": "Descarga el juego de %s",
