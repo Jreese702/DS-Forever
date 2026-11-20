@@ -320,4 +320,82 @@ class ControllerTapTabsTest {
         p.tap(slot(p, 3))
         assertTrue("Bar in Party mode off: a finger puts nothing", p.cells.isEmpty())
     }
+
+    // ---------------------------------------------------------------- a finger's tab is the controller's tab (PadTabCtl p57, Book b72)
+
+    /** the user, 2026-11-20 ("when touching a tab in the controller menu and pressing down after it goes back to the last tab that was
+     *  open and goes down"): a finger on a situation tab sends its one padtab pick, and the add-on's answer and its Down keep the page
+     *  on the touched situation (tools/test_tab_touch.py proves the add-on half: Down = the touched situation's first row) */
+    @Test fun aFingerOnASituationThenDownStaysOnIt() {
+        val r = rig()
+        r.v.onPadTabCtl(ctl("normal", focus = "tabs"))
+        r.cells.clear()
+        r.tap(tabRect(r.v, 1))                                           // In combat
+        assertEquals(listOf(listOf(PadMapModel.ROW_PADTAB to 2)), r.cells)
+        assertEquals("combat", r.v.page().currentView())
+        r.v.onPadTabCtl(ctl("combat", focus = "tabs", extra = ""","note":"tab""""))       // the add-on's echo
+        r.v.onPadTabCtl(ctl("combat", focus = "switches", extra = ""","note":"to-switches""""))   // its Down
+        assertEquals("combat", r.v.page().currentView())
+    }
+
+    /** the bug's own place: a finger on the controller's CHOOSER tab (Spells / General / Professions / Extra / DS) only changed the app's
+     *  picture, the add-on's chooser stayed on its list, and Down went on there (the app then showed that list again, a row down). Now
+     *  the tab is told too (padtab 39, 38 then 5 + k) and the add-on's answer and Down stay on the touched list */
+    @Test fun aFingerOnAChooserTabTellsTheControllersChooser() {
+        val r = rig()
+        r.v.onPadTabCtl(ctl("normal", pos = 4, extra = ""","chooser":{"list":"spells","row":3}"""))
+        r.draw()
+        val page = r.v.page()
+        assertEquals("spells", page.chooserTab())
+        val gaps = PadTabPage::class.java.getDeclaredField("cGaps").apply { isAccessible = true }.get(page) as UiKit.TabGaps
+        val tabs = gaps.rects
+        assertEquals(ChooserTabs.ALL_TABS.size, tabs.size)
+        r.cells.clear()
+        r.tap(tabs[3])                                                   // Extra
+        assertEquals(listOf(CastStripModel.page2(9)), r.cells)
+        assertEquals(ChooserTabs.touchCells("extra"), r.cells.single())
+        assertEquals("extra", page.chooserTab())
+        // the add-on's answer (its list, row 1, the cursor on the tab), then its Down: Extra's first row, Extra still shown
+        r.v.onPadTabCtl(ctl("normal", pos = 4, extra = ""","chooser":{"list":"extra","row":1,"tabs":true},"note":"list""""))
+        r.v.onPadTabCtl(ctl("normal", pos = 4, extra = ""","chooser":{"list":"extra","row":1},"note":"to-rows""""))
+        assertEquals("extra", page.chooserTab())
+        // each tab its own code (6-10)
+        for ((k, key) in ChooserTabs.ALL_TABS.withIndex()) assertEquals(CastStripModel.page2(6 + k), ChooserTabs.touchCells(key))
+        assertEquals(null, ChooserTabs.touchCells("pbuff"))
+    }
+
+    /** the Spellbook room's tabs: a finger's tab is told to the add-on's book cursor (padtab 39, 38 then 10 + line; 35 Professions, 36
+     *  the pet's book), so the controller's Down goes on in THAT tab; nothing while the room does not hold the controller */
+    @Test fun aFingerOnASpellbookTabTellsTheBooksCursor() {
+        val cells = ArrayList<List<Pair<String, Int>>>()
+        val v = SpellbookView(app, onBind = { }, onPadTab = { c -> cells += c; true })
+        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
+        v.layout(0, 0, w, h)
+        val b = book()
+        v.update(b)
+        val tabs = SpellsModel.tabs(b)
+        assertTrue("the book has two tabs or more", tabs.size >= 2)
+        fun tabAt(i: Int) = RectF(36f + i * 124f, 66f, 36f + i * 124f + 116f, 166f)
+        fun line(key: String) = if (key == "pet") SpellsModel.PET_LINE else key.removePrefix("line:").toInt()
+        // not held: the finger's tab only
+        touch(v, tabAt(1).centerX(), tabAt(1).centerY())
+        assertTrue("not held: nothing sent", cells.isEmpty())
+        // held, on the book
+        v.onCtl(SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b72","ctl":{"on":true,"mode":"book","line":${line(tabs[0].key)},
+            "page":1,"idx":3}}"""))!!)
+        touch(v, tabAt(1).centerX(), tabAt(1).centerY())
+        assertEquals(listOf(CastStripModel.bookTabCells(line(tabs[1].key))), cells)
+        // the Bind box up: nothing
+        cells.clear()
+        v.onCtl(SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b72","ctl":{"on":true,"mode":"bind","bind":133,
+            "line":${line(tabs[0].key)},"page":1,"idx":1}}"""))!!)
+        touch(v, tabAt(1).centerX(), tabAt(1).centerY())
+        assertTrue("the Bind box up: nothing sent", cells.isEmpty())
+        // the codes: lines 1-24, Professions, the pet's book
+        assertEquals(CastStripModel.page2(11), CastStripModel.bookTabCells(1))
+        assertEquals(CastStripModel.page2(34), CastStripModel.bookTabCells(24))
+        assertEquals(CastStripModel.page2(35), CastStripModel.bookTabCells(100))
+        assertEquals(CastStripModel.page2(36), CastStripModel.bookTabCells(101))
+        assertEquals(null, CastStripModel.bookTabCells(25))
+    }
 }

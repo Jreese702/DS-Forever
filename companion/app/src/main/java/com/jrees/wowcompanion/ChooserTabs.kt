@@ -18,6 +18,12 @@ object ChooserTabs {
     val SPELL_TABS = listOf("spells", "general", "professions")
     val ALL_TABS = listOf("spells", "general", "professions", "extra", "dstool")
 
+    /** the user, 2026-11-20 ("when touching a tab in the controller menu and pressing down after it goes back to the last tab that was
+     *  open and goes down"): a finger on the controller's chooser tab [key] tells the add-on's chooser too - padtab 39, 38 then 5 + its
+     *  place in [ALL_TABS] (Book b72 / PadTabCtl p57: that list, its first row, the cursor on the tab); null = not a chooser tab */
+    fun touchCells(key: String): List<Pair<String, Int>>? =
+        ALL_TABS.indexOf(key).takeIf { it >= 0 }?.let { CastStripModel.page2(CastStripModel.P2_CHOOSER_TAB0 + it + 1) }
+
     /** [view] the room's tab ("normal", "combat", "radial", ...); [combatButton] the button carries a fight spell (WoW Defaults' Otherwise) */
     fun spellsOnly(view: String, combatButton: Boolean): Boolean = when (view) {
         "radial" -> true

@@ -2169,7 +2169,13 @@ class PadTabPage(
             if (y >= box.top + TABS_TOP - 8f && y <= box.top + TABS_TOP + 92f) {    // p14: the small icon tabs
                 // p11: the tab under the finger (its rect from the last frame)
                 val keys = chooserTabs(m)
-                cGaps.rects.indexOfFirst { x >= it.left && x <= it.right }.takeIf { it in keys.indices }?.let { takeOver(); tChooser = keys[it]; scroll = 0f }
+                // the user, 2026-11-20 ("when touching a tab in the controller menu and pressing down after it goes back to the last tab
+                // that was open and goes down"): the controller's chooser is told the tab too (PadTabCtl p57), so its next press goes on there
+                cGaps.rects.indexOfFirst { x >= it.left && x <= it.right }.takeIf { it in keys.indices }?.let {
+                    val held = ctlChooser() != null
+                    takeOver(); tChooser = keys[it]; scroll = 0f
+                    if (held) ChooserTabs.touchCells(keys[it])?.let { cells -> tap(cells) }
+                }
                 return
             }
             val pin = pinned(m)
