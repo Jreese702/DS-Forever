@@ -109,6 +109,10 @@ class PadTabPage(
         class Mount(val x: PadMapModel.Extra, val index: Int) : Thing()
         class Item(val x: PadMapModel.Extra, val index: Int) : Thing()
         class Header(val text: String) : Thing()
+        /** p58: Extra's folding category [key] (ChooserTabs.CATS), [open] or folded, [n] entries under it (not a choice: A folds it) */
+        class Cat(val key: String, val open: Boolean, val n: Int) : Thing()
+        /** p58: one of the player's saved macros ([index] 0-based in the padmap doc's `macs`: its touch page counts by it) */
+        class Macro(val x: PadMapModel.Mac, val index: Int) : Thing()
         class Binding(val b: PadMapModel.Bind, val index: Int) : Thing()   // m34: a game binding (Jump, Interact, Auto Run, Walk / Run)
         object Clear : Thing()
         object Uncombat : Thing()       // take a button's combat spell away (its Otherwise spell comes back)
@@ -145,6 +149,13 @@ class PadTabPage(
     // the row's end room for L / R badges (the chooser draws none: LB / RB are the room's tabs) - five tabs about 64 px wide, not 37
     private val cGaps = UiKit.TabGaps(vertical = false, gap = 40f, rest = 8f)
     private var tBox: Box? = null
+    /** p58: Extra's open categories as a finger left them (the add-on's `xo` wins once [foldUntil] has passed) */
+    private var openLocal: Set<String> = emptySet()
+    private var foldUntil = 0L
+    /** p58: the chooser tab a finger picked while the CONTROLLER's chooser is open (shown until the add-on's document agrees) */
+    private var cTabWant: String? = null
+    private var cTabUntil = 0L
+    private val tilePaints = BagsView.Paints()
     private var scroll = 0f
     private var scrollMax = 0f
     private var lastCtlRow: String? = null
@@ -709,7 +720,8 @@ class PadTabPage(
     private fun glyph(p: Int) = SpellsModel.combo(SpellsModel.PadSlot(0, 1, 1, p), style()).button
 
 
-    private fun chooserList(): String? = tChooser ?: ctl?.takeIf { it.on }?.chooser?.list
+    private fun chooserList(): String? = tChooser ?: ctl?.takeIf { it.on }?.chooser?.let { ch ->
+        cTabWant?.takeIf { SystemClock.uptimeMillis() < cTabUntil && it != ch.list } ?: ch.list.also { cTabWant = null } }
     private fun ctlChooser(): PadMapModel.Chooser? = if (tChooser != null) null else ctl?.takeIf { it.on }?.chooser
     private fun ctlBox(): PadMapModel.Box? = if (tBox != null) null else ctl?.takeIf { it.on }?.box
 
@@ -793,10 +805,11 @@ class PadTabPage(
     /** p35 (the user: "the Home bar button should have the normal swirl Icon"): a command's picture; Home Bar wears the bar's own swirl */
     private fun cmdIcon(c: PadMapModel.Command?) = PadMapModel.kitArt(c?.key)?.let { UiKit.tex(it) } ?: c?.let { Icons.get(it.icon) }     // p35 / m170: the kit's
 
-    private fun rowsOf(list: String, book: SpellsModel.Book?, m: PadMapModel.Map): List<Thing> {
+    private fun rowsOf(list0: String, book: SpellsModel.Book?, m: PadMapModel.Map): List<Thing> {
+        val list = if (list0 == "dstool") "extra" else list0                // p58: the DS tab is Extra's DS Forever category
         // p52 (PadMap m157): a stick lists what the eight list (p49's four-bindings list is gone)
-        if ((list != "extra" && list != "dstool") || onlySpells(m)) {
-            val which = if (list == "extra" || list == "dstool") "spells" else list
+        if ((list != "extra" && list != "macros") || onlySpells(m)) {
+            val which = if (list == "extra" || list == "macros") "spells" else list
             // the combat view leaves out the spells already on the button (the same spell in and out of a fight only spends a macro)
             val skip = if (fight()) PadMapModel.onButton(slotOf(m, shown(), pos)) else emptySet()
             val spells = book?.let { b -> SpellsModel.tabSpells(b, which).filter { (it.spellId ?: it.actionId) !in skip }.map { Thing.Spell(it) } }
@@ -804,23 +817,39 @@ class PadTabPage(
             // (m45 / p24: no "suggestion" row - the user: nothing is ever suggested; the add-on's chooser has none either, so rows line up)
             return spells
         }
-        // p12 (the user's picks 2026-10-07: the ready-made commands, "Any Item from a bag (mount hearthstone etc)"): the commands, then the mounts, then the bags'
-        // items, each group under its heading once there is more than one group
-        if (list == "dstool") return commandRows(m, true)                  // p34: the DS tab, its commands only
-        val cmds = commandRows(m, false)
-        if ((m.binds.isEmpty() || castBar()) && m.mounts.isEmpty() && m.items.isEmpty()) return cmds
-        val out = ArrayList<Thing>()
-        if (cmds.isNotEmpty()) { out += Thing.Header("Commands"); out += cmds }             // m40: none while paused
-        // m34: the game's bindings (the router points the button's key at them), then m33's mounts and items
-        // p53: the cast bar takes no game binding (a key, not a cast)
-        if (m.binds.isNotEmpty() && !castBar()) { out += Thing.Header("Controller"); m.binds.forEachIndexed { j, b -> out += Thing.Binding(b, m.commands.size + j) } }
+        if (list == "macros") return m.macs.mapIndexed { i, x -> Thing.Macro(x, i) }      // p58 (PadMap m177): the player's macros
+        // p12 (the user's picks 2026-10-07: the ready-made commands, "Any Item from a bag (mount hearthstone etc)") / p58: under FOLDING
+        // CATEGORIES (the AH's), each with entries: a header always, its entries while it is open (PadTabCtl CG.CATS, the same order)
+        val by = HashMap<String, List<Thing>>()
+        by["cmd"] = commandRows(m, false)                                    // m40: none while paused
+        by["ds"] = commandRows(m, true)                                      // p34: DS Forever's own (the old 5th tab)
+        // m34: the game's bindings (the router points the button's key at them); p53: the cast bar takes none (a key, not a cast)
+        by["bind"] = if (castBar()) emptyList() else m.binds.mapIndexed { j, b -> Thing.Binding(b, m.commands.size + j) }
         val n0 = m.commands.size + m.binds.size
-        if (m.mounts.isNotEmpty()) { out += Thing.Header("Mounts"); m.mounts.forEachIndexed { j, x -> out += Thing.Mount(x, n0 + j) } }
-        if (m.items.isNotEmpty()) {
-            out += Thing.Header("Items")
-            m.items.forEachIndexed { j, x -> out += Thing.Item(x, n0 + m.mounts.size + j) }
+        by["mount"] = m.mounts.mapIndexed { j, x -> Thing.Mount(x, n0 + j) }
+        by["item"] = m.items.mapIndexed { j, x -> Thing.Item(x, n0 + m.mounts.size + j) }
+        val open = openCats()
+        val out = ArrayList<Thing>()
+        for (k in ChooserTabs.CATS) {
+            val xs = by[k].orEmpty()
+            if (xs.isEmpty()) continue
+            out += Thing.Cat(k, k in open, xs.size)
+            if (k in open) out += xs
         }
         return out
+    }
+    /** p58: Extra's open categories: a finger's fold for [ECHO_MS], else the add-on's (`xo`), else the finger's */
+    private fun openCats(): Set<String> {
+        if (SystemClock.uptimeMillis() < foldUntil) return openLocal
+        return ctl?.takeIf { it.on }?.xo ?: openLocal
+    }
+    /** p58: a category opened / folded by touch: shown at once, and the add-on's list follows (padtab 39, 38 then 14 + k) */
+    private fun toggleCat(key: String) {
+        val now = openCats()
+        openLocal = if (key in now) now - key else now + key
+        foldUntil = SystemClock.uptimeMillis() + ECHO_MS
+        ChooserTabs.CATS.indexOf(key).takeIf { it >= 0 }?.let { tap(PadMapModel.foldCells(it + 1)) }
+        host.invalidate()
     }
     /** the row pinned under the list: "Clear combat spell" (combat view, a combat button), "Clear this button" (out of combat, filled) */
     private fun pinned(m: PadMapModel.Map): Thing? {
@@ -840,6 +869,8 @@ class PadTabPage(
         is Thing.Mount -> "m:" + t.x.id
         is Thing.Item -> "i:" + t.x.id
         is Thing.Header -> "h:" + t.text
+        is Thing.Cat -> "h:" + t.key
+        is Thing.Macro -> "mc:" + t.x.name
         is Thing.Binding -> t.b.key
         Thing.Clear -> "clear"
         Thing.Uncombat -> "uncombat"
@@ -852,6 +883,8 @@ class PadTabPage(
         is Thing.Mount -> t.x.name
         is Thing.Item -> t.x.name
         is Thing.Header -> t.text
+        is Thing.Cat -> ChooserTabs.catWord(t.key)
+        is Thing.Macro -> t.x.name
         is Thing.Binding -> t.b.name
         Thing.Clear -> "Clear"
         Thing.Uncombat, Thing.Unface -> "Clear combat spell"
@@ -864,9 +897,17 @@ class PadTabPage(
         "uncface" -> Thing.Unface
         "combat", "otherwise", "cface" -> book?.let { bk -> SpellsModel.tabSpells(bk).firstOrNull { idOf(Thing.Spell(it)) == b.what } }?.let { Thing.Spell(it) }
         "command" -> m.commands.indexOfFirst { it.key == b.what }.takeIf { it >= 0 }?.let { Thing.Command(PadMapModel.dress(m.commands[it]), it + 1) }
-        "mount", "item", "bind" -> rowsOf("extra", book, m).firstOrNull { idOf(it) == b.what }
+        "mount", "item", "bind" -> extraAll(book, m).firstOrNull { idOf(it) == b.what }
+        "macro" -> m.macs.indexOfFirst { it.name == b.what }.takeIf { it >= 0 }?.let { Thing.Macro(m.macs[it], it) }      // p58
         "spell", "rspell" -> book?.let { bk -> SpellsModel.tabSpells(bk).firstOrNull { idOf(Thing.Spell(it)) == b.what } }?.let { Thing.Spell(it) }
         else -> null
+    }
+
+    /** p58: every Extra entry, its categories all open (a controller box names one that may sit in a folded category) */
+    private fun extraAll(book: SpellsModel.Book?, m: PadMapModel.Map): List<Thing> {
+        val keep = openLocal; val until = foldUntil
+        openLocal = ChooserTabs.CATS.toSet(); foldUntil = Long.MAX_VALUE
+        try { return rowsOf("extra", book, m) } finally { openLocal = keep; foldUntil = until }
     }
 
     // ---------------------------------------------------------------- geometry (SPEC 3-6)
@@ -897,7 +938,7 @@ class PadTabPage(
         if (single) RectF(w / 2f - 190f, r.bottom - 161f, w / 2f + 190f, r.bottom - 50f)
         else RectF(w / 2f - 14f - 380f, r.bottom - 161f, w / 2f - 14f, r.bottom - 50f)
     private fun noRect(w: Float, r: RectF) = RectF(w / 2f + 14f, r.bottom - 161f, w / 2f + 14f + 380f, r.bottom - 50f)
-    private fun listTop(box: RectF) = box.top + TABS_TOP + 100f
+    private fun listTop(box: RectF) = box.top + TABS_TOP + 98f
     private fun clearTop(box: RectF) = box.bottom - 196f
     private fun listBottom(box: RectF, withClear: Boolean) = if (withClear) clearTop(box) - 8f else box.bottom - 112f
 
@@ -1902,96 +1943,101 @@ class PadTabPage(
         })
     }
 
+    /** p58: what the chooser shows now - the tab on show, its rows, grid or list, the list's view and every row's box in it */
+    private class Lay(val shown: String, val rows: List<Thing>, val grid: Boolean, val view: RectF, val boxes: List<ChooserGrid.Box>,
+                      val pin: Thing?)
+    private fun chooserLay(m: PadMapModel.Map, book: SpellsModel.Book?, list: String, w: Float, h: Float): Lay {
+        val box = chooserBox(w, h)
+        val inner = RectF(box.left + 10f, box.top + 10f, box.right - 10f, box.bottom - 10f)      // UiKit.menu's inside
+        val shown = (if (list == "dstool") "extra" else list).let { if ((it == "extra" || it == "macros") && onlySpells(m)) "spells" else it }
+        val rows = rowsOf(list, book, m)
+        val grid = shown in ChooserTabs.GRID_TABS
+        val pin = pinned(m)
+        val view = RectF(inner.left, listTop(box), inner.right, listBottom(box, pin != null))
+        val boxes = if (grid) ChooserGrid.grid(rows.size, view.width()) else ChooserGrid.list(rows.map { it is Thing.Cat }, view.width())
+        return Lay(shown, rows, grid, view, boxes, pin)
+    }
+
     private fun drawChooser(c: Canvas, m: PadMapModel.Map, book: SpellsModel.Book?, s: Int, list: String, w: Float, h: Float) {
         c.drawRect(SPLIT + 2f, 158f, w - 8f, h - 4f, PFILL)
         val box = chooserBox(w, h)
         val inner = UiKit.menu(c, box, solid = true)
-        val shownList = if ((list == "extra" || list == "dstool") && onlySpells(m)) "spells" else list
-        // p17 (the user 2026-10-07: "the "Combat spells" text and glyph at the top can be removed"): no header line in any chooser; the
-        // icon tabs say which list is open
-        // p11 / p14: the tabs, Spells | General | Professions | Extra, the game's SMALL ICON tabs (UI Art: the book's own language; the
-        // words cannot fit four in the narrow menu), the gaps (LB / RB while the controller holds) round the open one
+        val lay = chooserLay(m, book, list, w, h)
+        val rows = lay.rows
         val keys = chooserTabs(m)
-        val cur = keys.indexOf(shownList).coerceAtLeast(0)
-        val ccTabs = ctlChooser()?.tabs == true
+        val cur = keys.indexOf(lay.shown).coerceAtLeast(0)
+        val cc = ctlChooser()
+        val ccTabs = cc?.tabs == true
+        val sel = cc?.id?.takeIf { !ccTabs && cTabWant == null }              // p11: ONE gold box: on the tab row the rows show none
+        val selThing = sel?.let { id -> rows.firstOrNull { idOf(it) == id } ?: lay.pin?.takeIf { idOf(it) == id } }
+        // p58 THE HEADER LINE (the user: "the spell Icon matchs the spell and so we can put the name above the tabs"): the highlighted
+        // thing's name (the game's own words, untranslated) and its rank while ranks show; nothing highlighted = the open tab's word, dim
+        drawChooserHead(c, box, inner, selThing, lay.shown)
+        // p11 / p14: the tabs, the game's SMALL ICON tabs (UI Art: the book's own language), each square in its slot (p39)
         val classIcon = book?.lines?.firstOrNull { it.index == 1 }?.let { Icons.get(it.icon) }
-        // p39 (the user on 1428: "The icons for those 5 tabs look weird being narrowed"): each tab square in its slot, never 64 x 84
         val tr = cGaps.row(keys.size, inner.left + 8f - UiKit.TAB_END_W, inner.right - 8f + UiKit.TAB_END_W, box.top + TABS_TOP, 84f, 84f, cur, host)
             .map { PadDiamonds.rect(ChooserTabs.square(it.left, it.top, it.right, it.bottom)) }
         for (i in keys.indices) {
             val icon = when (keys[i]) {
                 "spells" -> UiKit.tex("ricon_spellbook"); "general" -> classIcon
                 "professions" -> UiKit.tex("ricon_professions")
-                "dstool" -> UiKit.tex("home_live_base")                     // p34: the DS swirl (the Home bar's own)
+                "macros" -> UiKit.tex("ricon_macros") ?: Icons.get(MACRO_ICON)       // p58: the Macros room's own, else the game's macro "?"
                 else -> UiKit.tex("ricon_controller")
             }
             UiKit.smallTab(c, tr[i], icon, i == cur, cursor = ccTabs && i == cur)
         }
-        // the game's gold arrows beside the open tab: D-pad Left / Right page these tabs (PadTabCtl p30; the user on 1.0.9-test19: "those
-        // control the tabs at the top of the screen and they should stay that way. Instead they should have the arrows side to side").
+        // the game's gold arrows beside the open tab: D-pad Left / Right page these tabs (PadTabCtl p30; p58: past a grid row's end too).
         // No L / R glyphs here: LB / RB stay the room's own tabs. Dimmer while the cursor is down in the list
         UiKit.moveArrows(c, tr[cur], left = cur > 0, right = cur < keys.size - 1, alpha = if (ccTabs) 255 else 150, words = false)
 
-        val rows = rowsOf(list, book, m)
-        val pin = pinned(m)
-        val withClear = pin != null
-        val top = listTop(box); val bottom = listBottom(box, withClear)
-        scrollMax = maxOf(0f, rows.size * ROW_H - (bottom - top))
-        // the controller's row, kept in sight when it moves
-        val cc = ctlChooser()
-        val sel = cc?.id?.takeIf { !cc.tabs }                    // p11: ONE gold box: on the tab row the rows show none
+        val view = lay.view
+        val content = ChooserGrid.height(lay.boxes)
+        scrollMax = maxOf(0f, content - view.height())
+        // the controller's place, kept in sight when it moves (AhSellGrid.follow: as little as possible)
         if (cc != null && sel != lastCtlRow) {
             val i = rows.indexOfFirst { idOf(it) == sel }
-            if (i >= 0) {
-                if (i * ROW_H < scroll) scroll = i * ROW_H
-                if ((i + 1) * ROW_H > scroll + (bottom - top)) scroll = (i + 1) * ROW_H - (bottom - top)
-            }
+            if (i >= 0) scroll = ChooserGrid.follow(lay.boxes[i], scroll, view.height())
         }
         lastCtlRow = sel
         scroll = scroll.coerceIn(0f, scrollMax)
-        c.save(); c.clipRect(inner.left, top, inner.right, bottom)
-        var y = top - scroll
-        for (t in rows) {
-            if (t is Thing.Header) {
-                if (y + ROW_H >= top && y <= bottom) {
-                    val ph = UiKit.bodyPaint(26f, Theme.gold)
-                    c.drawText(Tr.t(t.text), inner.left + 24f, y + ROW_H - 26f - (ph.ascent() + ph.descent()) / 2f, ph)
-                    UiKit.divider(c, inner.left + 16f, y + ROW_H - 8f, inner.right - 16f, y + ROW_H - 8f)
+        val dim = m.combat
+        c.save(); c.clipRect(view)
+        var curBox: RectF? = null
+        for ((i, t) in rows.withIndex()) {
+            val b = lay.boxes[i]
+            val rr = RectF(view.left + b.left, view.top + b.top - scroll, view.left + b.right, view.top + b.bottom - scroll)
+            if (rr.bottom < view.top || rr.top > view.bottom) continue
+            val on = sel != null && idOf(t) == sel
+            when {
+                lay.grid -> { drawTile(c, rr, t, dim); if (on) curBox = rr }
+                t is Thing.Cat -> drawCat(c, rr, t, on)
+                else -> {
+                    val made = t is Thing.Command && t.c.made
+                    UiKit.menuRow(c, rr, thingName(t), on, enabled = !dim && (t !is Thing.Binding || bindWhy(m) == null),
+                        mark = if (made) "icon_check" else null, size = ROW_TEXT)
+                    val icon = thingIcon(t)
+                    val ir = RectF(rr.left + 18f, rr.centerY() - 30f, rr.left + 78f, rr.centerY() + 30f)
+                    icon?.let {
+                        PBMP.alpha = if (dim) 110 else 255
+                        c.drawBitmap(it, null, ir, PBMP)
+                        PBMP.alpha = 255
+                    }
                 }
-                y += ROW_H
-                continue
             }
-            if (y + ROW_H >= top && y <= bottom) {
-                val rr = RectF(inner.left, y, inner.right, y + ROW_H)
-                val made = t is Thing.Command && t.c.made
-                UiKit.menuRow(c, rr, thingName(t), sel != null && idOf(t) == sel, enabled = !m.combat && (t !is Thing.Binding || bindWhy(m) == null),
-                    mark = if (made) "icon_check" else null, size = ROW_TEXT)
-                val icon = when (t) { is Thing.Spell -> Icons.get(t.e.icon); is Thing.Command -> cmdIcon(t.c)
-                    is Thing.Mount -> Icons.get(t.x.icon); is Thing.Item -> Icons.get(t.x.icon)
-                    is Thing.Binding -> bindIcon(t.b.key, t.b.icon)
-                    else -> null }
-                val ir = RectF(rr.left + 18f, rr.centerY() - 30f, rr.left + 78f, rr.centerY() + 30f)
-                icon?.let {
-                    PBMP.alpha = if (m.combat) 110 else 255
-                    c.drawBitmap(it, null, ir, PBMP)
-                    PBMP.alpha = 255
-                }
-                // #471 (the player: "I cannot see which rank my spells are when assigning them to my crossbars"): the rank on show
-                if (t is Thing.Spell) SpellRanks.of(t.e.spellId)?.let { rb -> UiKit.spellRank(c, ir, rb, alpha = if (m.combat) 110 else 255) }
-            }
-            y += ROW_H
         }
+        curBox?.let { UiKit.slotFocus(c, it) }                             // the AH Sell grid's gold box, over its neighbours
         c.restore()
         if (rows.isEmpty()) {
             val p = UiKit.bodyPaint(28f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(if (list != "extra" && list != "dstool") "No spell to put on a button yet" else "No commands"), box.centerX(), top + 60f, p)
+            c.drawText(Tr.t(when (lay.shown) { "extra" -> "No commands"; "macros" -> "No macros yet"; else -> "No spell to put on a button yet" }),
+                box.centerX(), view.top + 60f, p)
         }
-        if (withClear) {
+        val pin = lay.pin
+        if (pin != null) {
             val ct = clearTop(box)
             UiKit.divider(c, inner.left + 16f, ct - 4f, inner.right - 16f, ct - 4f)
-            UiKit.menuRow(c, RectF(inner.left, ct, inner.right, ct + ROW_H), thingName(if (pin == Thing.Uncombat || pin == Thing.Unface) pin else Thing.Clear)
-                .let { if (it == "Clear") (if (view == "radial") "Clear this slice" else if (castBar()) "Clear this slot" else "Clear this button") else it }, sel == idOf(pin!!), Theme.unusable,
-                art = "icon_redx", enabled = !m.combat, size = ROW_TEXT)
+            UiKit.menuRow(c, RectF(inner.left, ct, inner.right, ct + ROW_H), clearWord(pin), sel == idOf(pin), Theme.unusable,
+                art = "icon_redx", enabled = !dim, size = ROW_TEXT)
         }
         // m34 (UI Art): the controller resting on a DIM binding row says why, one short line over the hints (the game's greyed entries say it
         // in their tooltip)
@@ -2002,7 +2048,81 @@ class PadTabPage(
                     inner.left + 24f, box.bottom - 84f, pw)
             }
         }
-        UiKit.hints(c, box.right - 28f, box.bottom - 50f, glyph(8) to "Choose", glyph(7) to "Back")
+        // p58: on a category header A opens / folds it (the AH's), else A chooses
+        val aWord = if (selThing is Thing.Cat) (if (selThing.open) "Close" else "Open") else "Choose"
+        UiKit.hints(c, box.right - 28f, box.bottom - 50f, glyph(8) to aWord, glyph(7) to "Back")
+    }
+
+    /** the pinned row's words: "Clear this button / slot / slice", or "Clear combat spell" */
+    private fun clearWord(pin: Thing) = thingName(if (pin == Thing.Uncombat || pin == Thing.Unface) pin else Thing.Clear)
+        .let { if (it == "Clear") (if (view == "radial") "Clear this slice" else if (castBar()) "Clear this slot" else "Clear this button") else it }
+
+    /** a thing's picture (its icon; a command's kit art; a binding's) */
+    private fun thingIcon(t: Thing): Bitmap? = when (t) {
+        is Thing.Spell -> Icons.get(t.e.icon); is Thing.Command -> cmdIcon(t.c)
+        is Thing.Mount -> Icons.get(t.x.icon); is Thing.Item -> Icons.get(t.x.icon)
+        is Thing.Binding -> bindIcon(t.b.key, t.b.icon)
+        is Thing.Macro -> Icons.getOrUnknown(t.x.icon.takeIf { it > 0 } ?: MACRO_ICON)
+        else -> null
+    }
+
+    /** p58 THE HEADER LINE over the chooser's tabs: the highlighted thing's name, its rank words at the right (while ranks show) */
+    private fun drawChooserHead(c: Canvas, box: RectF, inner: RectF, t: Thing?, tab: String) {
+        val name = when (t) { null -> null; is Thing.Clear, Thing.Uncombat, Thing.Unface -> Tr.t(clearWord(t)); is Thing.Cat -> Tr.t(thingName(t)); else -> thingName(t) }
+        // the rank words only where the tile wears its badge: SpellRanks.of answers null while "Spell rank badges" is Off (the default)
+        val e = (t as? Thing.Spell)?.e
+        val hd = ChooserGrid.header(name, Tr.t(ChooserTabs.tabWord(tab)), e?.rank, rankShown = e != null && SpellRanks.of(e.spellId) != null)
+        val cy = box.top + HEAD_CY
+        val x0 = inner.left + 22f; val x1 = inner.right - 22f
+        val rp = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
+        val rw = hd.rank?.let { rp.measureText(it) + 18f } ?: 0f
+        val np = UiKit.bodyPaint(if (hd.dim) 28f else 32f, if (hd.dim) Theme.dim else Theme.gold)
+        val words = TextUtils.ellipsize(hd.text, TextPaint(np), x1 - x0 - rw, TextUtils.TruncateAt.END).toString()
+        c.drawText(words, x0, cy - (np.ascent() + np.descent()) / 2f, np)
+        hd.rank?.let { c.drawText(it, x1, cy - (rp.ascent() + rp.descent()) / 2f, rp) }
+        UiKit.divider(c, inner.left + 16f, box.top + HEAD_LINE_Y, inner.right - 16f, box.top + HEAD_LINE_Y)
+    }
+
+    /** p58: a grid tile - the Bags grid's empty-slot well, the icon in it (its rank badge while ranks show); a macro's name under it */
+    private fun drawTile(c: Canvas, r: RectF, t: Thing, dim: Boolean) {
+        BagsView.drawSlot(c, r, null, tilePaints)
+        val ir = RectF(r.left + 5f, r.top + 5f, r.right - 5f, r.bottom - 5f)
+        val icon = thingIcon(t) ?: Icons.getOrUnknown(null)
+        icon?.let {
+            PBMP.alpha = if (dim) 110 else 255
+            c.drawBitmap(it, null, ir, PBMP)
+            PBMP.alpha = 255
+        }
+        if (t is Thing.Spell) SpellRanks.of(t.e.spellId)?.let { rb -> UiKit.spellRank(c, ir, rb, alpha = if (dim) 110 else 255) }
+        if (t is Thing.Macro) {
+            // a macro's icon rarely says which one it is (many wear the "?"): its name on a dark band at the tile's foot
+            val band = RectF(ir.left, ir.bottom - 26f, ir.right, ir.bottom)
+            TILE_BAND.alpha = if (dim) 110 else 190
+            c.drawRect(band, TILE_BAND)
+            val p = UiKit.bodyPaint(17f, if (dim) Theme.dim else Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+            c.drawText(TextUtils.ellipsize(t.x.name, TextPaint(p), band.width() - 8f, TextUtils.TruncateAt.END).toString(),
+                band.centerX(), band.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        }
+    }
+
+    /** p58: an Extra category header, as the AH's folds: its triangle (right = folded, down = open), the word, the count; the cursor's gold box */
+    private fun drawCat(c: Canvas, r: RectF, t: Thing.Cat, on: Boolean) {
+        val rr = RectF(r.left + 6f, r.top, r.right - 6f, r.bottom)
+        UiKit.ahNav(c, rr, "", selected = false)                             // ONE gold box: an open header is told by its arrow, white words
+        val ax = rr.left + 30f; val ay = rr.centerY()
+        val path = android.graphics.Path()
+        if (!t.open) { path.moveTo(ax - 7f, ay - 11f); path.lineTo(ax + 8f, ay); path.lineTo(ax - 7f, ay + 11f) }
+        else { path.moveTo(ax - 11f, ay - 7f); path.lineTo(ax + 11f, ay - 7f); path.lineTo(ax, ay + 8f) }
+        path.close()
+        CAT_ARROW.color = Theme.gold
+        c.drawPath(path, CAT_ARROW)
+        val np = UiKit.bodyPaint(28f, if (t.open) Color.WHITE else Theme.gold)
+        val cp = UiKit.numberPaint(24f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
+        val n = t.n.toString()
+        val words = TextUtils.ellipsize(Tr.t(thingName(t)), TextPaint(np), rr.width() - 96f - cp.measureText(n), TextUtils.TruncateAt.END).toString()
+        c.drawText(words, rr.left + 54f, rr.centerY() - (np.ascent() + np.descent()) / 2f, np)
+        c.drawText(n, rr.right - 22f, rr.centerY() - (cp.ascent() + cp.descent()) / 2f, cp)
+        if (on) UiKit.focus(c, rr)
     }
 
     private fun drawBox(c: Canvas, m: PadMapModel.Map, book: SpellsModel.Book?, s: Int, w: Float) {
@@ -2165,26 +2285,27 @@ class PadTabPage(
                 tapLeft(x, y, h, m)
                 return
             }
-            val inner = RectF(box.left + 20f, box.top, box.right - 20f, box.bottom)
             if (y >= box.top + TABS_TOP - 8f && y <= box.top + TABS_TOP + 92f) {    // p14: the small icon tabs
                 // p11: the tab under the finger (its rect from the last frame)
                 val keys = chooserTabs(m)
                 // the user, 2026-11-20 ("when touching a tab in the controller menu and pressing down after it goes back to the last tab
-                // that was open and goes down"): the controller's chooser is told the tab too (PadTabCtl p57), so its next press goes on there
-                cGaps.rects.indexOfFirst { x >= it.left && x <= it.right }.takeIf { it in keys.indices }?.let {
-                    val held = ctlChooser() != null
-                    takeOver(); tChooser = keys[it]; scroll = 0f
-                    if (held) ChooserTabs.touchCells(keys[it])?.let { cells -> tap(cells) }
+                // that was open and goes down"): the controller's chooser is told the tab too (PadTabCtl p57), so its next press goes on
+                // there; p58: it stays the CONTROLLER's chooser (its gold box walks on), the finger's tab shown until the add-on agrees
+                cGaps.rects.indexOfFirst { x >= it.left && x <= it.right }.takeIf { it in keys.indices }?.let { i ->
+                    scroll = 0f
+                    val cells = if (tChooser == null && ctlChooser() != null) ChooserTabs.touchCells(keys[i]) else null
+                    if (cells != null) {
+                        cTabWant = keys[i]; cTabUntil = SystemClock.uptimeMillis() + ECHO_MS
+                        tap(cells)
+                    } else tChooser = keys[i]
                 }
                 return
             }
-            val pin = pinned(m)
-            val withClear = pin != null
-            if (pin != null && y >= clearTop(box) && y <= clearTop(box) + ROW_H) { choose(pin, m); return }
-            val top = listTop(box); val bottom = listBottom(box, withClear)
-            if (y in top..bottom) {
-                val i = ((y - top + scroll) / ROW_H).toInt()
-                rowsOf(list, book, m).getOrNull(i)?.let { choose(it, m) }
+            val lay = chooserLay(m, book, list, w, h)
+            if (lay.pin != null && y >= clearTop(box) && y <= clearTop(box) + ROW_H) { choose(lay.pin, m); return }
+            if (lay.view.contains(x, y)) {
+                val i = ChooserGrid.hit(lay.boxes, x - lay.view.left, y - lay.view.top + scroll)
+                lay.rows.getOrNull(i)?.let { choose(it, m) }
             }
             return
         }
@@ -2331,6 +2452,7 @@ class PadTabPage(
     /** a row chosen by touch: its box first (SPEC 6), or straight on */
     private fun choose(t: Thing, m: PadMapModel.Map) {
         if (t is Thing.Header) return                                       // p12: a heading is no choice
+        if (t is Thing.Cat) { toggleCat(t.key); return }                    // p58: a category opens / folds (no game action)
         if (t is Thing.Binding) bindWhy(m)?.let { say(it); return }          // m34: where the router cannot reach, said
         if (m.combat) { say(COMBAT); return }
         val k = boxFor(t, m, false)
@@ -2338,7 +2460,7 @@ class PadTabPage(
     }
 
     /** A whole-button thing (PadTabCtl act's `whole`): on the In combat tab it goes on the button's FIGHT LAYER only (PadMap m132) */
-    private fun whole(t: Thing) = t is Thing.Command || t is Thing.Binding || t is Thing.Mount || t is Thing.Item
+    private fun whole(t: Thing) = t is Thing.Command || t is Thing.Binding || t is Thing.Mount || t is Thing.Item || t is Thing.Macro
 
     private fun boxFor(t: Thing, m: PadMapModel.Map, afterReplace: Boolean): String? {
         if (t is Thing.Clear || t is Thing.Uncombat || t is Thing.Unface) return "clear"
@@ -2410,7 +2532,9 @@ class PadTabPage(
             is Thing.Mount -> { extraSent = t.x.id.toString(); tap(pre + layerPick(f, combatPick) + PadMapModel.extraCells(t.index)) }
             is Thing.Item -> { extraSent = t.x.id.toString(); tap(pre + layerPick(f, combatPick) + PadMapModel.extraCells(t.index)) }
             is Thing.Binding -> { extraSent = t.b.key; tap(pre + layerPick(f, combatPick) + PadMapModel.extraCells(t.index)) }
-            is Thing.Header -> {}
+            // p58 (Book b73): a macro by its page pick (padtab 39, 38 then 6 + page) and the "extra" row's column; the answer names it
+            is Thing.Macro -> { extraSent = t.x.name; tap(pre + layerPick(f, combatPick) + PadMapModel.macroCells(t.index)) }
+            is Thing.Header, is Thing.Cat -> {}
             Thing.Clear -> tap(pre + listOf(PadMapModel.ROW to PadMapModel.COL_CLEAR))
             Thing.Uncombat, Thing.Unface -> tap(pre + listOf(combatPick, PadMapModel.ROW to PadMapModel.COL_CLEAR))
                 ?: say("Use the controller: X on A, then the first row")
@@ -2448,7 +2572,12 @@ class PadTabPage(
         private const val WHEEL_CX = (8f + SPLIT) / 2f
         private const val ROW_H = 92f
         /** p17: the chooser's icon tabs from its top (the header line above them is gone) */
-        private const val TABS_TOP = 30f
+        private const val TABS_TOP = 78f
+        /** p58: the header line's middle and the rule under it, from the chooser's top */
+        private const val HEAD_CY = 40f
+        private const val HEAD_LINE_Y = 72f
+        /** p58: the game's macro question mark (INV_Misc_QuestionMark): a macro with no icon, the Macros tab without the kit's */
+        private const val MACRO_ICON = 134400
         /** every chooser row one size, Clear included; a long command name takes two lines (UI Art's menuRow `size`, PADTAB_SPEC 5) */
         private const val ROW_TEXT = 30f
         private const val SLOP = 18f
@@ -2492,6 +2621,8 @@ class PadTabPage(
         /** the base set's fixed face buttons (positions 5-8: the game's PAD3 / PAD4 / PAD2 / PAD1), the game's own pictures */
         private val FIXED_ART = arrayOf("fixed_interact", "fixed_inspect", "square_exit_up", "fixed_jump")
         private val PBMP = Paint(Paint.FILTER_BITMAP_FLAG)
+        private val TILE_BAND = Paint().apply { color = Color.BLACK }
+        private val CAT_ARROW = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         private val PFILL by themed { Paint().apply { color = if (Theme.classic) Color.rgb(18, 14, 9) else Theme.raised } }
         /** UI Art's "stays the same" dimming, ink 150 / 255 */
         private val PDIM = Paint().apply { color = Color.argb(150, 14, 10, 6) }

@@ -147,7 +147,7 @@ def ctl_doc(L):
 
 
 CLICK = "CLICK %s:LeftButton"
-check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p57"' in SRC["padtabctl"] and 'local BV = "b72"' in SRC["book"],
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p58"' in SRC["padtabctl"] and 'local BV = "b73"' in SRC["book"],
       "the versions: PadMap m157, PadTabCtl p52, Book b57")
 STK = "\n".join(l.split("--", 1)[0] for l in
                 SRC["padmap"].split('-- m150 STICK BUTTONS (GitHub #78)\n', 1)[1].split('\nWC.padMap = {', 1)[0].splitlines())
@@ -306,12 +306,13 @@ c = ctl_doc(R)
 check(c.get('chooser') and c['chooser'].get('list') == 'spells', "A on L3: the chooser opens on Spells (p49's Extra-only list is gone)",
       c.get('chooser'))
 seen = []
+R.execute('pp("PADDUP")')                                         # p58: the tab row pages the tabs (the grid walks its cells)
 for i in range(5):
     seen.append((ctl_doc(R).get('chooser') or {}).get('list'))
     if i < 4:
         R.execute('pp("PADDRIGHT")')
-check(seen[:5] == ["spells", "general", "professions", "extra", "dstool"], "all five tabs: Spells, General, Professions, Extra, DS", seen)
-R.execute('for _ = 1, 4 do pp("PADDLEFT") end')
+check(seen[:5] == ["spells", "general", "professions", "extra", "macros"], "all five tabs: Spells, General, Professions, Extra, Macros (p58)", seen)
+R.execute('for _ = 1, 4 do pp("PADDLEFT") end; pp("PADDDOWN")')
 check(ctl_doc(R)['chooser'].get('list') == 'spells' and ctl_doc(R)['chooser'].get('id') == 403, "back on Spells, row 1 = Lightning Bolt",
       ctl_doc(R)['chooser'])
 R.execute('pp("PAD1")')

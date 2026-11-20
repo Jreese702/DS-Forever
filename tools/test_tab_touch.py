@@ -7,7 +7,7 @@ back to the last tab that was open and goes down"; PadTabCtl p57, Book b72), off
 Proven here, each as "touch tab X, press Down: X's first row":
   a the Controller room's situation tabs (padtab 0 / 2 / 26 / 10): from the tab row, the chips, the controller, the bar - Down lands
     on the touched situation (its first row), never back on the tab the cursor was on;
-  b the Controller room's CHOOSER tabs (Spells / General / Professions / Extra / DS: padtab 39, 38 then 6-10): the chooser's list is the
+  b the Controller room's CHOOSER tabs (Spells / General / Professions / Extra / Macros (p58): padtab 39, 38 then 6-10): the chooser's list is the
     touched one, the cursor on its tab, Down = its first row (the bug: Down went on in the list the cursor held); a tab a spells-only
     chooser does not show takes nothing; no chooser open: nothing;
   c the Spellbook room's tabs (padtab 39, 38 then 10 + line, 35 Professions, 36 Pet): ctl.tab on the touched line, its first page, the
@@ -80,8 +80,9 @@ R.execute('WowCompanion.padTabCtl.touchPos(4)')
 press(R, "PAD1")                                              # A: the chooser, on Spells
 c = ctl(R)
 check((c.get('chooser') or {}).get('list') == 'spells', "b. A opens the chooser on Spells", c.get('chooser'))
-press(R, "PADDDOWN", "PADDDOWN")                              # the cursor two rows down Spells
-check((ctl(R).get('chooser') or {}).get('row') == 3, "b. ... the cursor on Spells' third row", ctl(R).get('chooser'))
+press(R, "PADDRIGHT", "PADDRIGHT")                            # p58: the grid - the cursor on Spells' third cell
+check((ctl(R).get('chooser') or {}).get('row') == 3 and (ctl(R).get('chooser') or {}).get('list') == 'spells',
+      "b. ... the cursor on Spells' third cell", ctl(R).get('chooser'))
 padtab(R, 39, 38, 9)                                          # a finger on Extra (CTABS 4)
 c = ctl(R).get('chooser') or {}
 check(c.get('list') == 'extra' and c.get('row') == 1 and c.get('tabs') is True,
@@ -93,7 +94,7 @@ check(c.get('list') == 'extra' and c.get('row') == 1 and not c.get('tabs'),
 press(R, "PADDDOWN")
 check((ctl(R).get('chooser') or {}).get('list') == 'extra' and (ctl(R).get('chooser') or {}).get('row') == 2,
       "b. Down again: Extra's second row", ctl(R).get('chooser'))
-for k, key in enumerate(("spells", "general", "professions", "extra", "dstool"), start=1):
+for k, key in enumerate(("spells", "general", "professions", "extra", "macros"), start=1):
     padtab(R, 39, 38, 5 + k)
     press(R, "PADDDOWN")
     c = ctl(R).get('chooser') or {}
@@ -159,8 +160,8 @@ if len(T) >= 2:
     check(B.eval('BK.ctl.tab') == t0, "c. the Controller room holding the controller: a book tab code changes nothing", B.eval('BK.ctl.tab'))
 
 # ================================================================ d. the tags
-check('local CV = "p57"' in SRC["padtabctl"] and "p57 A FINGER ON A CHOOSER TAB" in SRC["padtabctl"], "d. PadTabCtl p57 and its note")
-check('local BV = "b72"' in SRC["book"] and "b72 A FINGER ON A TAB MOVES THE CURSOR'S TAB TOO" in SRC["book"], "d. Book b72 and its note")
+check('local CV = "p58"' in SRC["padtabctl"] and "p57 A FINGER ON A CHOOSER TAB" in SRC["padtabctl"], "d. PadTabCtl p57 and its note")
+check('local BV = "b73"' in SRC["book"] and "b72 A FINGER ON A TAB MOVES THE CURSOR'S TAB TOO" in SRC["book"], "d. Book b72 and its note")
 
 print("\n%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -36,6 +36,7 @@ AB = open(os.path.join(ADDONS, "WowCompanion", "ActionBar.lua"), encoding="utf-8
 BLOCK = re.search(r'-- CASTBAR-BEGIN[^\n]*\n(.*?)-- CASTBAR-END', AB, re.S).group(1)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wowstub import GAME  # noqa: E402
+from chooser_nav import Nav  # noqa: E402
 PARTY = open(os.path.join(ROOT, "tools", "test_party.py"), encoding="utf-8").read()
 WORLD_HELPERS = re.search(r"\nWORLD_HELPERS = r'''(.*?)'''", PARTY, re.S).group(1)
 STICKS = open(os.path.join(ROOT, "tools", "test_stick_binds.py"), encoding="utf-8").read()
@@ -133,7 +134,7 @@ def clean(L, name):
           (L.eval('SPY[1]'), L.eval('VIOL[1]'), L.eval('SNIPERR[1]'), list(L.eval('ERRS').values())[:2]))
 
 
-check('local CV = "p57"' in SRC["padtabctl"] and 'local BV = "b72"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
+check('local CV = "p58"' in SRC["padtabctl"] and 'local BV = "b73"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
       and 'local CBV = "cb15"' in BLOCK, "the versions: PadTabCtl p55, Book b70, PadMap m172+, ActionBar cb14")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
@@ -174,17 +175,16 @@ W.execute('pp("PAD1")')
 c = ctl(W)
 check(c.get('chooser') and c['chooser'].get('list') == 'spells', "A on an empty slot: the chooser on Spells", c.get('chooser'))
 seen = []
+NAV = Nav(W, ctl)
+NAV.to_tabs()                                               # p57: the grid walks its cells; the tab row pages the tabs
 for i in range(5):
     seen.append((ctl(W).get('chooser') or {}).get('list'))
     if i < 4:
         W.execute('pp("PADDRIGHT")')
-check(seen == ["spells", "general", "professions", "extra", "dstool"], "all five tabs", seen)
-W.execute('pp("PADDLEFT")')                                  # Extra
-ids = []
-for i in range(60):
-    ch = ctl(W).get('chooser') or {}
-    ids.append(ch.get('id'))
-    W.execute('pp("PADDDOWN")')
+check(seen == ["spells", "general", "professions", "extra", "macros"], "all five tabs (p57: DS is Extra's category, Macros the 5th)", seen)
+W.execute('pp("PADDLEFT"); pp("PADDDOWN")')                  # Extra
+NAV.open_all()
+ids = NAV.rows()
 check(not any(x in ("JUMP", "INTERACTTARGET", "TOGGLEAUTORUN", "TOGGLERUN") for x in ids) and "TARGETNEARESTENEMY" in ids,
       "Extra lists the commands, mounts and items, not the game bindings (a key is no cast)", [x for x in ids if x][:6])
 W.execute('pp("PAD2"); pp("PAD1")')                       # B closes the chooser, A opens it again (Spells, row 1)
@@ -259,10 +259,7 @@ check(W.eval('RAN and RAN.kind') == "item" and W.eval('RAN and RAN.item') == "it
 
 # ================================================================ 4. Replace / Clear boxes, Move
 W.execute('WowCompanion.padTabCtl.touchPos(1); pp("PAD1")')
-for _ in range(3):
-    if (ctl(W).get('chooser') or {}).get('id') == 331:
-        break
-    W.execute('pp("PADDDOWN")')
+NAV.goto(331)
 W.execute('pp("PAD1")')
 check((ctl(W).get('box') or {}).get('kind') == 'replace' and store(W).get(1) == ('spell', 403),
       "a filled slot asks Replace first (nothing changed yet)", ctl(W).get('box'))
@@ -270,11 +267,7 @@ W.execute('pp("PAD1")')
 check(store(W).get(1) == ('spell', 331) and store(W).get(2) is None,
       "A: Healing Wave on slot 1 (off slot 2: one copy per bar)", store(W))
 W.execute('pp("PAD1")')
-for _ in range(80):
-    ch = ctl(W).get('chooser') or {}
-    if ch.get('id') == 'clear':
-        break
-    W.execute('pp("PADDDOWN")')
+NAV.goto('clear')
 W.execute('pp("PAD1")')
 check((ctl(W).get('box') or {}).get('kind') == 'clear', "Clear asks", ctl(W).get('box'))
 W.execute('pp("PAD1")')

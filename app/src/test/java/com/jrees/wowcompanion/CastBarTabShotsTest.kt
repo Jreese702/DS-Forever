@@ -145,10 +145,11 @@ class CastBarTabShotsTest {
         assertEquals("spells", r.v.page().chooserTab())
         assertEquals(ChooserTabs.ALL_TABS, ChooserTabs.keys(false))
         val r2 = rig()                                                  // the controller's chooser on Extra
-        r2.v.onPadTabCtl(ctl(8, ""","chooser":{"list":"extra","row":1,"id":"TARGETNEARESTENEMY"}"""))
+        // p58: Extra's categories all open (the add-on's `xo`)
+        r2.v.onPadTabCtl(ctl(8, ""","chooser":{"list":"extra","row":1,"id":"TARGETNEARESTENEMY"},"xo":"cmd,ds,bind,mount,item""""))
         val ids = r2.v.page().chooserRowIds(book())
         assertTrue("Extra lists the commands, mounts, items: $ids", ids.containsAll(listOf("TARGETNEARESTENEMY", "m:6", "i:118")))
-        assertFalse("no game binding on the cast bar: $ids", ids.any { it == "JUMP" || it == "TOGGLEAUTORUN" || it == "h:Controller" })
+        assertFalse("no game binding on the cast bar: $ids", ids.any { it == "JUMP" || it == "TOGGLEAUTORUN" || it == "h:bind" })
     }
 
     @Test fun moveIsTheEightsPickUp() {
