@@ -905,7 +905,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // feat/pause-power: Exit game while streaming = the clean disconnect (the PC's WoW closes, the PC put back), then the chooser
         StartMenu.onExit = { (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
         StartMenu.canForget = { HomeLoginStore.has(this) }
-        StartMenu.onForgetLogin = { HomeLoginStore.clear(this); NativeLogin.logEvent("sign-in: the saved login forgotten (the Menu)"); NativeLogin.clear() }
+        StartMenu.onForgetLogin = { HomeLoginStore.clear(this); Settings.forgetGameAccountPick(); NativeLogin.logEvent("sign-in: the saved login forgotten (the Menu)"); NativeLogin.clear() }
         StartMenu.canRestart = { LauncherHooks.gameUp() }
         StartMenu.onRestart = { settingsRest.onRestart() }
         StartMenu.canSwitch = { SetupBridge.exitStream != null || ModeBridge.canGoBack() }

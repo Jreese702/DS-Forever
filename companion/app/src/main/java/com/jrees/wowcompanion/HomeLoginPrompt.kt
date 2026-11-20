@@ -96,7 +96,10 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
         val why = HomeLogin.untypable(e)?.let { "Email: $it" } ?: HomeLogin.untypable(p)?.let { "Password: $it" }
         if (why != null) { error = why; panel.invalidate(); return }
         val login = HomeLoginStore.Login(e, p)
+        // A (2026-11-20): another Battle.net login has other game accounts: its pick is learned again (never compared or kept beyond here)
+        val otherLogin = HomeLoginStore.load(context)?.email?.equals(e, ignoreCase = true) == false
         if (!HomeLoginStore.save(context, login)) { error = "The login could not be saved on this device"; panel.invalidate(); return }
+        if (otherLogin) { Settings.init(context); Settings.forgetGameAccountPick() }
         // the game's portal at its next start (GameConfigWtf.ensure); the source says whether the player changed the pre-filled row
         GameRegion.choose(context, region, if (region == regionAtOpen) GameRegion.BY_PROMPT_PREFILLED else GameRegion.BY_PROMPT)
         close()

@@ -476,6 +476,17 @@ Apache-2.0 WITH LLVM-exception, the statically linked mingw-w64 runtime is
 under its own permissive licences). Its SHA-256 is recorded in
 `tools/wow-session-bridge/wow-session-bridge.sha256` and SOURCE_PROVENANCE.md.
 
+## Game-account pick and WORK_OPTIMS pre-write (WoW Foreverywhere)
+
+Two Config.wtf writes in `GameConfigWtf.kt` are ported from WoW Foreverywhere
+by YoruDev-Ryland (https://github.com/YoruDev-Ryland/WoWForeverywhere, GPL-3.0):
+- the game account marked "!" in `accountList` (commits `8f43e2ac62c3`,
+  `565629ef4809`, `432f4a1f1314`: `accountListLine`, `GameAccounts.clean`);
+  DS Forever learns the label from the game's own marker instead of a picker;
+- `ClientSettings_WORK_OPTIMS_BY_API_MASK` "16001,0xe,0x0,0x1ff" written
+  before the first start so the game skips its login-time graphics-device
+  rebuild (commit `5e36083895db`, fork issue #46).
+
 ## Samsung Performance SDK
 
 This project bundles `app/src/main/lib/perfsdk-v1.0.0.jar`, the Samsung Performance SDK

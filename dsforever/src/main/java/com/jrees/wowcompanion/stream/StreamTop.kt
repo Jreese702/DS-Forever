@@ -396,7 +396,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         com.jrees.wowcompanion.Settings.init(activity)
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) return BridgeProtocol.GameAccount(ask = true)
         val root = runCatching { com.jrees.wowcompanion.GameFiles.gameRoot(activity) }.getOrNull()
-        return BridgeProtocol.GameAccount(ask = false, list = root?.let { com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList(it) })
+        // A (the user's ruling 2026-11-20): the Thor's marked list, else the learned pick alone ("!WoW2|"); Desktop writes it into the
+        // PC's Config.wtf only where the PC remembers no pick of its own (WowAccount.Apply)
+        val list = root?.let { com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList(it) }
+            ?: com.jrees.wowcompanion.Settings.gameAccountPick?.let { com.jrees.wowcompanion.GameConfigWtf.accountListValue(null, it) }
+        return BridgeProtocol.GameAccount(ask = false, list = list)
     }
 
     /** this Thor's own UI scale lines (Config.wtf's useUiScale / uiScale, values only in the log); null = none, the PC's stays */

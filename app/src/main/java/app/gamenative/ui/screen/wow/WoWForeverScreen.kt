@@ -1242,14 +1242,27 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         // the size of the screen the game shows on, at every start
         val screen = gameScreenSize(context)
         Timber.i("Config.wtf: the game's window fills its screen (gxMaximize 1, gxWindowedResolution %s)", screen ?: "1920x1080: size unread")
-        val accountCleared = com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row,
+        // A (the user's ruling 2026-11-20): the game account the game itself marked after the last login, learned BEFORE anything is
+        // written (both routes: saved login and Browser login), kept as a label in the app's private settings; never logged
+        val learned = com.jrees.wowcompanion.GameConfigWtf.accountPickIn(gameRoot, product)
+        val pickBefore = com.jrees.wowcompanion.Settings.gameAccountPick
+        if (learned != null && learned != pickBefore) com.jrees.wowcompanion.Settings.gameAccountPick = learned
+        val ask = com.jrees.wowcompanion.Settings.gameAccountAsk
+        val pick = com.jrees.wowcompanion.Settings.gameAccountPick
+        val accountKeys = com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row,
             com.jrees.wowcompanion.GameRegion.chosen(context), lowMemory = com.jrees.wowcompanion.Settings.lowMemGraphics,
-            askAccount = com.jrees.wowcompanion.Settings.gameAccountAsk, screen = screen,
+            askAccount = ask, screen = screen,
             // test build 1489 (#56): on the 8 GB Thors Low-memory graphics also lowers view distance, particles, spells and shadows;
             // #56 G2 (the user's approval 2026-11-19): on the 12 GB Pro too (DeviceTier.lowMemCuts)
-            lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
-        if (com.jrees.wowcompanion.Settings.gameAccountAsk) {
-            Timber.i("Config.wtf game account: ask each time; cleared %s", accountCleared.joinToString(" ").ifEmpty { "nothing (no remembered choice)" })
+            // A: Remembered marks the learned pick "!" in accountList (ensure ignores it with Ask each time)
+            accountPick = pick, lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
+        val learnedWord = when { learned == null -> "none marked"; learned == pickBefore -> "same"; else -> "new" }
+        if (ask) {
+            Timber.i("Config.wtf game account: ask each time; cleared %s; pick %s (learned: %s)", accountKeys.joinToString(" ").ifEmpty { "nothing (no remembered choice)" },
+                if (pick != null) "set" else "unset", learnedWord)
+        } else {
+            Timber.i("Config.wtf game account: remembered; pick %s (learned: %s); %s", if (pick != null) "set" else "unset", learnedWord,
+                if (accountKeys.isEmpty()) "accountList unchanged" else "accountList marked")
         }
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)

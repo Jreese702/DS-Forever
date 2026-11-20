@@ -159,7 +159,10 @@ object GameConfigWtf {
      * the closed beta).
      */
     fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null, lowMemory: Boolean = false,
-               askAccount: Boolean = false, screen: String? = null, lowMemory8: Boolean = false): List<String> {
+               askAccount: Boolean = false, screen: String? = null, lowMemory8: Boolean = false, accountPick: String? = null): List<String> {
+        // [accountPick]: the user's ruling 2026-11-20 (A): with "Remembered" ([askAccount] false), the player's last-picked game account
+        // (Settings.gameAccountPick, learned by [accountPickIn]) marked "!" in accountList ([markAccount]); null or unusable = no write.
+        // Returns the NAMES of the account keys cleared (Ask) or marked (Remembered), never a value
         // [lowMemory8]: the Thor is an 8 GB or (#56 G2, 2026-11-19) 12 GB model (DeviceTier.lowMemCuts): with [lowMemory] on,
         // [LOW_MEMORY_8GB] too (the name stays: its record file is on the players' devices)
         // [region]: the player's choice (GameRegion; 2026-11-07, an EU account on a US-set device): it replaces any portal but the beta's
@@ -190,15 +193,25 @@ object GameConfigWtf {
         val legacyDone = File(configWtf.parentFile, LEGACY_DONE)
         val lowOn = File(configWtf.parentFile, LOW_MEMORY_ON)
         val saved8File = File(configWtf.parentFile, LOW_MEMORY_8GB_SAVED)
+        // B (the user's ruling 2026-11-20): the server's WORK_OPTIMS value, for the launch client only, only where Config.wtf has none
+        val workOptims = product.portal == null
+        val workOptimsFile = File(configWtf.parentFile, WORK_OPTIMS_SAVED)
+        val pick = if (askAccount) null else cleanAccountLabel(accountPick)
         if (!configWtf.exists()) {
             // a new file's own values were the defaults (a key with none: no line)
             if (low8) {
                 configWtf.parentFile?.mkdirs()
                 WowSwitch.replace(saved8File, savedText(LOW_MEMORY_8GB.keys.associateWith { baseDefaults[it] }).toByteArray())
             }
-            WowSwitch.replace(configWtf, (defaults.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n").toByteArray())
+            if (workOptims) {
+                configWtf.parentFile?.mkdirs()
+                WowSwitch.replace(workOptimsFile, savedText(mapOf(WORK_OPTIMS_KEY to null)).toByteArray())
+            }
+            val newLines = defaults.entries.map { "SET ${it.key} ${it.value}" } +
+                listOfNotNull(WORK_OPTIMS_LINE.takeIf { workOptims }, pick?.let { "SET $ACCOUNT_LIST \"${accountListValue(null, it)}\"" })
+            WowSwitch.replace(configWtf, (newLines.joinToString("\n") + "\n").toByteArray())
             markers(legacyDone, lowOn, lowMemory)
-            return emptyList()                    // a new file remembers no account
+            return if (pick != null) listOf(ACCOUNT_LIST) else emptyList()      // a new file remembers no account but the pick
         }
         val legacyDue = !legacyDone.exists()
         val lowOff = !lowMemory && lowOn.exists()       // the setting turned off since a start that wrote the smaller textures
@@ -206,7 +219,9 @@ object GameConfigWtf {
         val betaPortal = WowProduct.values().mapNotNull { it.portal }.map { "\"$it\"" }
 
         val original = configWtf.readLines().filterNot { it.startsWith("SET ResampleSharpness", ignoreCase = true) }
-        val (kept, cleared) = if (askAccount) forgetAccountChoice(original) else original to emptyList()
+        val (kept, cleared) = if (askAccount) forgetAccountChoice(original)
+            else if (pick != null) markAccount(original, pick).let { m -> m to (if (m != original) listOf(ACCOUNT_LIST) else emptyList()) }
+            else original to emptyList()
         // test build 1489: the 8 GB keys' own values, kept once before the first start that lowers them; given back once it is off
         val saved8 = if (saved8File.exists()) runCatching { savedOf(saved8File.readText()) }.getOrNull() ?: LinkedHashMap() else null
         val restore8 = !low8 && saved8 != null
@@ -253,7 +268,14 @@ object GameConfigWtf {
                 key.equals("agentUID", ignoreCase = true) && value in otherAgents -> "SET agentUID ${defaults.getValue("agentUID")}"
                 else -> line
             }
-        } + defaults.filterKeys { it !in existingKeys }.map { (k, v) -> "SET $k $v" }
+        } + defaults.filterKeys { it !in existingKeys }.map { (k, v) -> "SET $k $v" }.let { added ->
+            // B: only when missing - a value the game saved from the server is its own (newer than ours) and stays
+            if (workOptims && existingKeys.none { it.equals(WORK_OPTIMS_KEY, ignoreCase = true) }) {
+                // the record first (no line before = "-"): a stop between the two finds the record, never our line without one
+                if (!workOptimsFile.exists()) runCatching { WowSwitch.replace(workOptimsFile, savedText(mapOf(WORK_OPTIMS_KEY to null)).toByteArray()) }
+                added + WORK_OPTIMS_LINE
+            } else added
+        }
 
         if (updated != original) {
             WowSwitch.replace(configWtf, (updated.joinToString("\n") + "\n").toByteArray())
@@ -271,29 +293,60 @@ object GameConfigWtf {
 
     /**
      * RESET SETTINGS GIVES BACK WHAT DS FOREVER CHANGED (the user, 2026-11-19: "It ALSO restores only the game settings DS Forever itself
-     * changed, back to the player's saved originals ... Nothing else in the game is touched"): the ONE set DS Forever records the player's
-     * own values for is [LOW_MEMORY_8GB] ([LOW_MEMORY_8GB_SAVED]). Each of its keys still at DS Forever's value gets exactly the recorded
-     * value back (a key that had no line goes again); a key the player changed in the game since stays theirs; the record goes. No
-     * record = nothing written. Never while the game runs (the caller: [RESET_RESTORE] instead). Returns the keys given back.
+     * changed, back to the player's saved originals ... Nothing else in the game is touched"): the sets DS Forever records the player's
+     * own values for ([RECORDS]): [LOW_MEMORY_8GB] ([LOW_MEMORY_8GB_SAVED]) and, from 2026-11-20 (B), [WORK_OPTIMS_KEY] ([WORK_OPTIMS_SAVED]).
+     * Each key still at DS Forever's value gets exactly the recorded value back (a key that had no line goes again); a key the player
+     * or the game changed since stays theirs; the record goes. No record = nothing written. Never while the game runs (the caller:
+     * [RESET_RESTORE] instead). Returns the keys given back.
      */
     fun restoreOriginals(wtfDir: File): List<String> {
         val configWtf = File(wtfDir, "Config.wtf")
-        val saved8File = File(wtfDir, LOW_MEMORY_8GB_SAVED)
-        if (!saved8File.isFile || !configWtf.isFile) return emptyList()
-        val saved = runCatching { savedOf(saved8File.readText()) }.getOrNull() ?: return emptyList()
+        if (!configWtf.isFile) return emptyList()
+        val records = RECORDS.mapNotNull { (name, ours) ->
+            val f = File(wtfDir, name).takeIf { it.isFile } ?: return@mapNotNull null
+            runCatching { savedOf(f.readText()) }.getOrNull()?.let { Triple(f, ours, it) }
+        }
+        if (records.isEmpty()) return emptyList()
         val back = ArrayList<String>()
         val lines = configWtf.readLines()
         val updated = lines.mapNotNull { line ->
             val parts = line.takeIf { it.startsWith("SET ", ignoreCase = true) }?.removePrefix("SET ")?.trim()?.split(" ", limit = 2)
-            val key8 = parts?.takeIf { it.size == 2 }?.let { low8Key(it[0]) }
-            if (key8 == null || !saved.containsKey(key8) || parts[1] != LOW_MEMORY_8GB.getValue(key8)) return@mapNotNull line
-            back += key8
-            saved[key8]?.let { "SET $key8 $it" }
+            if (parts?.size != 2) return@mapNotNull line
+            for ((_, ours, saved) in records) {
+                val key = ours.keys.firstOrNull { it.equals(parts[0], ignoreCase = true) } ?: continue
+                if (!saved.containsKey(key) || parts[1] != ours.getValue(key)) return@mapNotNull line
+                back += key
+                return@mapNotNull saved[key]?.let { "SET $key $it" }
+            }
+            line
         }
         if (updated != lines) WowSwitch.replace(configWtf, (updated.joinToString("\n") + "\n").toByteArray())
-        runCatching { saved8File.delete() }          // after Config.wtf: a stop between the two gives them back once more
+        for ((f, _, _) in records) runCatching { f.delete() }          // after Config.wtf: a stop between the two gives them back once more
         return back
     }
+
+    /** a record of the player's own values is beside Config.wtf in [wtfDir] (Reset settings has something to give back) */
+    fun hasOriginals(wtfDir: File): Boolean = RECORDS.any { File(wtfDir, it.first).isFile }
+
+    /** the record files and the values DS Forever writes for their keys */
+    private val RECORDS: List<Pair<String, Map<String, String>>> get() = listOf(
+        LOW_MEMORY_8GB_SAVED to LOW_MEMORY_8GB, WORK_OPTIMS_SAVED to mapOf(WORK_OPTIMS_KEY to WORK_OPTIMS_VALUE))
+
+    /**
+     * B, THE SERVER'S WORK_OPTIMS VALUE BEFORE THE FIRST START (the user's ruling 2026-11-20; ported from WoW Foreverywhere, YoruDev-Ryland,
+     * commit 5e36083895db, GPL-3.0): since 2026-11-11 Blizzard's servers send WoW Forever the client setting
+     * ClientSettings_WORK_OPTIMS_BY_API_MASK. The first time the game gets it, it rebuilds its graphics device (gx.log "Triggering
+     * GxRestart due to WORK_OPTIMS being disabled", "Doing GxRestart. Reason:DeviceStateChanged") and only then saves it to Config.wtf;
+     * that rebuild is the one the frame-generation layer did not survive (LsfgVkManager's native-backend note) and it briefly holds
+     * two sets of GPU allocations at login. Config.wtf starting with the server's current value skips the rebuild. Written for the
+     * launch client only, and only where Config.wtf has no such line: a value the game saved from the server is newer than ours and
+     * stays. If Blizzard changes the value the game rebuilds once more and saves the new one (harmless). Local play only.
+     */
+    const val WORK_OPTIMS_KEY = "ClientSettings_WORK_OPTIMS_BY_API_MASK"
+    const val WORK_OPTIMS_VALUE = "\"16001,0xe,0x0,0x1ff\""
+    const val WORK_OPTIMS_LINE = "SET $WORK_OPTIMS_KEY $WORK_OPTIMS_VALUE"
+    /** B's record (WTF/, beside Config.wtf; [savedText]): the line was not there before DS Forever added it ("-") */
+    const val WORK_OPTIMS_SAVED = ".dsf-work-optims-saved"
 
     /** #293's two markers as this start leaves Config.wtf; a marker that cannot be written never stops Play */
     private fun markers(legacyDone: File, lowOn: File, lowMemory: Boolean) {
@@ -343,6 +396,60 @@ object GameConfigWtf {
     }.lastOrNull()?.takeIf { it.length <= 512 && it.none { c -> c == '"' || c == '\r' || c == '\n' } }
 
     /**
+     * A: THE GAME ACCOUNT PICKED AUTOMATICALLY (the user's ruling 2026-11-20; ported from WoW Foreverywhere, YoruDev-Ryland, commits
+     * 8f43e2ac62c3, 565629ef4809, 432f4a1f1314, GPL-3.0). Behind "Game account: Remembered" (#47) only:
+     *  - LEARNED, never typed: [accountPickIn] reads the name the game itself marked "!" in accountList (it writes Config.wtf after a
+     *    login, at its clean exit), read at the next Play before anything is written; kept as a LABEL only (WoW1, WoW2 or the account's
+     *    own name) in the app's private preferences (Settings.gameAccountPick). Never logged: the log says "set" / "unset".
+     *  - WRITTEN at every start with Remembered: [markAccount] puts the "!" on that label in accountList, the game's other names kept
+     *    (the label added when the game's list lacks it), as the fork does. "Ask each time" writes no pick (the marked list goes, as
+     *    before: [forgetAccountChoice]).
+     *  - NOT accountName (the Battle.net login's e-mail on these clients: see [ACCOUNT_CHOICE_KEYS]); no credential, never login.txt.
+     */
+    const val ACCOUNT_LIST = "accountList"
+    private const val MAX_LABEL = 64
+
+    /** [input] as a game-account label, or null when empty or it would break the accountList line (the fork's GameAccounts.clean). Pure */
+    fun cleanAccountLabel(input: String?): String? = input?.trim()?.takeIf { n ->
+        n.isNotEmpty() && n.length <= MAX_LABEL && !n.startsWith("!") && n.none { it == '|' || it == '"' || it.isISOControl() }
+    }
+
+    /** the names in an accountList value ("WoW1|!WoW2|", quotes or not), without the "!" marks. Pure */
+    internal fun accountNames(value: String?): List<String> =
+        value?.trim()?.trim('"')?.split('|')?.map { it.trim().removePrefix("!").trim() }?.filter { it.isNotEmpty() }.orEmpty()
+
+    /** [existing] (an accountList value, or null) with [account] marked "!", the others kept, [account] added when missing (the fork's
+     *  accountListLine). Pure */
+    fun accountListValue(existing: String?, account: String): String {
+        val names = accountNames(existing)
+        val all = if (names.any { it.equals(account, ignoreCase = true) }) names else names + account
+        return all.joinToString("") { (if (it.equals(account, ignoreCase = true)) "!" else "") + it + "|" }
+    }
+
+    /** [lines] with ONE accountList line marking [account] (where the first one was, else at the end); every other line as it was. Pure */
+    fun markAccount(lines: List<String>, account: String): List<String> {
+        val label = cleanAccountLabel(account) ?: return lines
+        fun valueOf(line: String): String? {
+            val parts = line.trim().takeIf { it.startsWith("SET ", ignoreCase = true) }?.drop(4)?.trim()?.split(" ", limit = 2) ?: return null
+            return if (parts[0].equals(ACCOUNT_LIST, ignoreCase = true)) parts.getOrElse(1) { "" } else null
+        }
+        val at = lines.indexOfFirst { valueOf(it) != null }
+        val want = "SET $ACCOUNT_LIST \"${accountListValue(if (at >= 0) lines.lastOrNull { valueOf(it) != null }?.let(::valueOf) else null, label)}\""
+        if (at < 0) return lines + want
+        if (lines.count { valueOf(it) != null } == 1 && lines[at] == want) return lines
+        return lines.filterIndexed { i, l -> i == at || valueOf(l) == null }.map { if (valueOf(it) != null) want else it }
+    }
+
+    /** the game account the game marked "!" in [lines]' accountList (the last such line), as a clean label; null = none. Pure */
+    fun accountPickIn(lines: List<String>): String? = rememberedAccountList(lines)?.split('|')
+        ?.firstOrNull { it.trim().startsWith("!") }?.trim()?.removePrefix("!")?.let(::cleanAccountLabel)
+
+    /** [accountPickIn] of [root]'s Config.wtf for [product]; null when none or unreadable */
+    fun accountPickIn(root: File, product: WowProduct): String? = runCatching {
+        File(File(root, product.flavorDir), "WTF/Config.wtf").takeIf { it.isFile }?.readLines()?.let(::accountPickIn)
+    }.getOrNull()
+
+    /**
      * THE THOR'S UI SCALE FOR THE PC'S STREAM (the user's ruling 2026-11-18: "while streaming, Desktop also sets WoW's UI scale to match
      * the Thor's and puts the PC's own back after the session"): the game's own UI scale keys in [lines] ([UI_SCALE_KEYS], the
      * last line of each, in that spelling), plain numbers only; null when Config.wtf has neither (the game's default: the PC is left
@@ -384,7 +491,7 @@ object GameConfigWtf {
         val keys = text.lineSequence().mapNotNull { l ->
             l.trim().takeIf { it.startsWith("SET ", ignoreCase = true) }?.drop(4)?.trim()?.split(" ", limit = 2)?.takeIf { it.size == 2 }
         }.toList()
-        val ours = (CONFIG_DEFAULTS.keys + LOW_MEMORY_GRAPHICS.keys + listOf("portal", "agentUID")).map { it.lowercase() }.toSet()
+        val ours = (CONFIG_DEFAULTS.keys + LOW_MEMORY_GRAPHICS.keys + listOf("portal", "agentUID", WORK_OPTIMS_KEY)).map { it.lowercase() }.toSet()
         val portal = keys.lastOrNull { it[0].equals("portal", ignoreCase = true) }?.get(1)?.trim('"') ?: "(none)"
         val others = keys.map { it[0] }.filter { it.lowercase() !in ours }.distinct()
         return "${keys.size} SET lines; portal $portal; not set by DS Forever: " +
