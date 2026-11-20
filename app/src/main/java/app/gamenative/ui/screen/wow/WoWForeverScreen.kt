@@ -137,6 +137,8 @@ fun WoWForeverScreen(
     var addonsProblem by remember { mutableStateOf<String?>(null) }
     /** a required-art failure's reason: the bottom's "Try again" (nothing retries by itself after a failure) */
     var artFailed by remember { mutableStateOf<String?>(null) }
+    /** issue #571: the game folder has never run (DataStaleness.firstRun, read from the folder at each checkFiles) */
+    var neverRun by remember { mutableStateOf(false) }
     /** the dependency add-ons' line (QuestieDB, M4); null = not checked in this launcher run */
     var dependencies by remember { mutableStateOf<String?>(null) }
     var versionStatus by remember { mutableStateOf<WowClientDownloader.VersionCheckResult?>(null) }
@@ -258,6 +260,7 @@ fun WoWForeverScreen(
     fun checkFiles(): Boolean {
         GamePath.save(context, gamePath)
         files = GamePath.status(context, gamePath)
+        neverRun = files.hasStorageAccess && runCatching { com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath)) }.getOrDefault(false)
         artReady = runCatching { com.jrees.wowcompanion.ArtHarvest.beforePlayReady(context) }.getOrDefault(false)
         refreshMaps()
         loginSaved = com.jrees.wowcompanion.HomeLoginStore.has(context)
@@ -284,6 +287,9 @@ fun WoWForeverScreen(
         statusText = READY_STATUS
     }
 
+    /** issue #571: [seedGame], declared below (launchGame sends a never-run folder to its first run) */
+    var seedFn: () -> Unit = {}
+
     /** [by] = who launches ("play": the bottom's Play / auto-launch, "restart": the restart's own) - the restart's log names it */
     fun launchGame(by: String = "play") {
         val restart = com.jrees.wowcompanion.SetupBridge.restarting
@@ -306,6 +312,14 @@ fun WoWForeverScreen(
         // refusing - test55: after the launch switch Play said "Game art is required before Play" and no harvest ran
         if (!artReady) Timber.i("WoWForeverScreen: Play by $by waits for the game art (not ready)")
         if (!files.hasStorageAccess) return                // the bottom asks for it
+        // ISSUE #571: a game folder that has never run (whichever path made it) gets its one-time first run here, whatever launched:
+        // the art cannot be built before it, and it is built after it (seedGame's RETRY_ART). The sign-in waits for the real Play
+        if (by != SEED_RUN && com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) {
+            com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: Play by $by on a game folder that has never run: its first run first " +
+                "(${com.jrees.wowcompanion.DataStaleness.traces(File(gamePath))})")
+            seedFn()
+            return
+        }
         // 2026-11-11 (review of the issue #108-cluster fix): a new Play = any earlier launch is over; its window must not hold back the
         // art before Play (PlayGate.artMayOpen), or Play would sit at "Preparing your game art..."
         com.jrees.wowcompanion.LauncherHooks.endLaunchWindow()
@@ -493,7 +507,10 @@ fun WoWForeverScreen(
         val root = File(gamePath)
         WoWLauncherState.seeding = true
         com.jrees.wowcompanion.SetupBridge.seeding = true
-        com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: starting the game once")
+        com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: starting the game once (${com.jrees.wowcompanion.DataStaleness.traces(root)})")
+        // issue #571: a never-run folder with no local indexes from another path (Choose a folder, a copy, an upstream install) is a
+        // streamed one, as a direct install's: marked so, the art fetches the build's tables and is not taken for an out-of-date folder
+        if (com.jrees.wowcompanion.DataStaleness.adoptStreamed(root)) com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: no local indexes: the folder is marked streamed")
         artFailed = null
         launchGame(by = SEED_RUN)
         CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
@@ -522,11 +539,14 @@ fun WoWForeverScreen(
         }
     }
 
+    seedFn = { seedGame() }
+
     fun harvestArt(retry: Boolean = false, force: Boolean = false) {
         // [force]: the launch switch's own start (the screen's flags may still be the old build's, or Play's)
         if (!force && (isLaunching || isUpdating || isHarvesting || files.isWrongGame || filesMissing)) return
-        if (com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) { if (retry || artFailed == null) seedGame(); return }
+        // issue #571: file access first, so an unreadable folder is never taken for one that has never run
         if (!files.hasStorageAccess) return
+        if (com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) { if (retry || artFailed == null) seedGame(); return }
         if (artFailed != null && !retry) return
         GamePath.save(context, gamePath)
         artFailed = null
@@ -883,6 +903,7 @@ fun WoWForeverScreen(
         storage = files.hasStorageAccess,
         loginSaved = loginSaved,
         loginSkipped = loginSkipped,
+        firstRun = neverRun && !filesMissing,
         art = when {
             artFailed != null -> com.jrees.wowcompanion.SetupFlow.Art.FAILED
             artReady -> com.jrees.wowcompanion.SetupFlow.Art.READY
@@ -972,7 +993,8 @@ fun WoWForeverScreen(
                 com.jrees.wowcompanion.DeviceTier.init(context)
                 // 2026-11-11 (issue #108 cluster): the background art waits for the game to close on EVERY model now (PlayGate),
                 // so the notice is for every model too
-                if (!artNoticeSeen && com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
+                // issue #571: a folder that has never run has no art yet: Play goes to its first run (launchGame), never the notice
+                if (!neverRun && !artNoticeSeen && com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
                 else launchGame()
             }
             com.jrees.wowcompanion.SetupFlow.Action.ART_NOTICE_PLAY -> { artNotice = false; artNoticeSeen = true; launchGame() }

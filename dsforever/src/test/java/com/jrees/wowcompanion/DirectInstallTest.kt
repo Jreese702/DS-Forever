@@ -24,14 +24,19 @@ class DirectInstallTest {
         assertNotNull(SetupFlow.installRefusal(SetupFlow.INSTALL_FREE_BYTES, true))
     }
 
-    @Test fun theFirstRunIsADirectInstallWithoutLocalIndexes() {
+    @Test fun theFirstRunIsAFolderWithoutAllItsLocalIndexes() {
         val root = java.nio.file.Files.createTempDirectory("direct").toFile()
         try {
             java.io.File(root, "Data/data").mkdirs()
-            assertTrue(!DataStaleness.firstRun(root))                     // a copied folder is never one
+            assertTrue(!DataStaleness.firstRun(root))                     // no .build.info (no access / no game): never one
+            java.io.File(root, ".build.info").writeText("Branch!STRING:0\nus\n")
+            // issue #571: with or without the direct install's marker (Choose a folder, a copy, an upstream install)
+            assertTrue(DataStaleness.firstRun(root))
             java.io.File(root, DataStaleness.STREAMED).writeText("")
             assertTrue(DataStaleness.firstRun(root))
             java.io.File(root, "Data/data/0000000001.idx").writeText("x")
+            assertTrue(DataStaleness.firstRun(root))                      // one bucket: a first run that stopped part-way
+            for (b in 1 until 16) java.io.File(root, "Data/data/%02x00000001.idx".format(b)).writeText("x")
             assertTrue(!DataStaleness.firstRun(root))                     // the game has run: the art can open it
         } finally { root.deleteRecursively() }
     }

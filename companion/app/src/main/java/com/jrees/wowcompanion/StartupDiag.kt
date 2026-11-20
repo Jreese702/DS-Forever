@@ -190,6 +190,8 @@ object StartupDiag {
             out += "  ${p.flavorDir}: exe ${exe.name} ${if (exe.isFile) "present (${mb(exe.length())}, ${stamp(exe.lastModified())})" else "missing"}"
         }
         out += "Data: ${dataSize(File(root, "Data"))}"
+        // issue #571: has the game run in this folder (its first run, read from the folder itself)?
+        out += "Game runs: " + runCatching { DataStaleness.traces(root) }.getOrElse { "? (${it.message})" }
         // issue #57: the keys a copied folder brings (names only)
         out += "Config.wtf: " + runCatching {
             val p = choice?.product ?: WowProduct.of(root)

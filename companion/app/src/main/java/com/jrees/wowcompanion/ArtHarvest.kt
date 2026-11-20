@@ -563,7 +563,9 @@ object ArtHarvest {
                         val requiredReady = runCatching {
                             GameFiles.activeBuild(GameFiles.gameRoot(app)) != null && !needsBeforePlay(app)
                         }.getOrDefault(false)
-                        set(State.Failed(e.message ?: "the game files could not be read", beforePlay = !requiredReady))
+                        // issue #571: on a folder that has never run, never a failure that holds Play (its first run comes first)
+                        val neverRan = runCatching { DataStaleness.firstRun(GameFiles.gameRoot(app)) }.getOrDefault(false)
+                        set(State.Failed(e.message ?: "the game files could not be read", beforePlay = !requiredReady && !neverRan))
                         beforePlayDone(requiredReady)
                     }
                     // the folder moved to another build while this run read the old one ([restart]): once more, on the new build
@@ -604,6 +606,15 @@ object ArtHarvest {
             onBeforePlayDone(false)
             return
         }
+        // issue #571: a game folder that has never run has no local indexes, so CascLib cannot open it ("loading index files 0/0",
+        // error 2). Not a failure that holds Play: the launcher's first run (seedGame; Play leads to it) makes them, then the art runs
+        val gr = GameFiles.gameRoot(ctx)
+        if (DataStaleness.firstRun(gr)) {
+            Log.i(TAG, "harvest: the game folder has not run yet (${DataStaleness.traces(gr)}); the art waits for its first run")
+            set(State.Failed(DataStaleness.FIRST_RUN_WHY, beforePlay = false))
+            onBeforePlayDone(false)
+            return
+        }
         val first = pending(ctx, beforePlay = true)
         val all = pending(ctx, beforePlay = false)
         // a before-Play step here is a degraded one trying its failed downloads again (queued): last, so it never holds the others up
@@ -634,7 +645,8 @@ object ArtHarvest {
             checkStop()                                            // an open the update stopped is not a failure
             val why = GameFiles.lastWhy ?: "the game files could not be read"
             Log.w(TAG, "harvest: $why")
-            set(State.Failed(why, beforePlay = first.isNotEmpty()))
+            // issue #571: the folder lost its indexes while this ran (or a first run is under way): not a hold on Play either
+            set(State.Failed(why, beforePlay = first.isNotEmpty() && !DataStaleness.firstRun(gr)))
             onBeforePlayDone(first.isEmpty())
             return
         }
