@@ -72,14 +72,18 @@ class StickButtonsPageTest {
         assertEquals("a controller cursor on R3", 10, ctl(10).pos)
     }
 
+    /** p56: the controller is drawn in SituationPage's 0.8 frame: a controller-local point to where the finger lands */
+    private fun onScreen(p: Pair<Float, Float>) = (SituationPage.CX + (p.first - SituationPage.CX) * SituationPage.CTL_S) to
+        (SituationPage.CTL_TOP + (p.second - SituationPage.LOCAL_TOP) * SituationPage.CTL_S)
+
     @Test fun aFingerOnL3PicksItByTheOneShotPick() {
         val r = Rig(map(empty), ctl(4))
-        val (lx, ly) = PadDiamonds.centre(PadMapModel.POS_L3, true)          // m155: the pair below the diamonds
+        val (lx, ly) = onScreen(PadDiamonds.centre(PadMapModel.POS_L3, true))  // m155: the pair below the diamonds (p56: in the 0.8 frame)
         r.tap(lx, ly)
         assertEquals(listOf(PadMapModel.stickCells(PadMapModel.POS_L3)), r.cells)
         assertEquals(listOf("talentn" to 38, "talents" to 15), PadMapModel.stickCells(PadMapModel.POS_L3))
         r.cells.clear()
-        val (rx, ry) = PadDiamonds.centre(PadMapModel.POS_R3, true)
+        val (rx, ry) = onScreen(PadDiamonds.centre(PadMapModel.POS_R3, true))
         r.tap(rx, ry)
         assertEquals(listOf(listOf("talentn" to 38, "talents" to 16)), r.cells)
     }
