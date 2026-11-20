@@ -90,13 +90,13 @@ class IndoorIdleTest {
         val s = FakeSignals()
         assertNull(IndoorScheduler.pauseReason(s))
         s.moving = true
-        assertEquals("player moving", IndoorScheduler.pauseReason(s))
+        assertEquals(PlayGate.PLAYER_MOVING, IndoorScheduler.pauseReason(s))
         s.hot = true
-        assertEquals("player moving", IndoorScheduler.pauseReason(s))   // the cheapest reason first
+        assertEquals(PlayGate.PLAYER_MOVING, IndoorScheduler.pauseReason(s))   // the cheapest reason first
         s.moving = false
-        assertEquals("device warm", IndoorScheduler.pauseReason(s))
+        assertEquals(PlayGate.DEVICE_WARM, IndoorScheduler.pauseReason(s))
         s.busy = true
-        assertEquals("game busy", IndoorScheduler.pauseReason(s))
+        assertEquals(PlayGate.GAME_BUSY, IndoorScheduler.pauseReason(s))
     }
 
     @Test fun aSignalsWithoutMovementNeverPausesForIt() {

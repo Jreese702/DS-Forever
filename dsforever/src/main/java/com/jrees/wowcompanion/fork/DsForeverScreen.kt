@@ -169,6 +169,8 @@ class DsForeverScreen(private val context: Context) {
         com.jrees.wowcompanion.NativeLogin.end(context)        // the native sign-in's backstop: never a login.txt after the game screen; the probe stops
         main.removeCallbacks(traffic)
         note("game screen gone")
+        // #568: the indoor maps may build from now on (once nobody looks at the launcher); a step that ended meanwhile starts again
+        runCatching { com.jrees.wowcompanion.IndoorSchedulerStep.gameClosed(context) }
         Log.i(TAG, "game detached")
     }
 

@@ -49,19 +49,27 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     fun readiness(ctx: Context): Readiness = readiness(status(ctx))
 
+    /**
+     * #568 / #573 (2026-11-20): the row says what is happening, tersely ("Building 120/1853", "120/1853 ready - Waiting: game running",
+     * "Builds when minimized or screen off"); it no longer reads "paused (game busy)" on the Ready screen with the game closed
+     */
     internal fun readiness(s: IndoorScheduler.Status?): Readiness {
         val head = "Indoor Maps (Optional)"
-        if (s == null) return Readiness("$head: built in the background after Play", false)
-        val count = if (s.total > 0) "${s.ready} / ${s.total} ready" else "starting"
-        val tail = when (s.phase) {
-            IndoorScheduler.Phase.CATALOGUE -> " - listing buildings"
-            IndoorScheduler.Phase.BAKING -> if (s.deferred > 0) " - ${s.deferred} to retry" else ""
-            IndoorScheduler.Phase.PAUSED -> " - paused (${s.note})"
-            IndoorScheduler.Phase.DONE -> ""
-            IndoorScheduler.Phase.DEFERRED, IndoorScheduler.Phase.STOPPED -> if (s.note.isEmpty()) "" else " - ${s.note}"
+        if (s == null) return Readiness("$head: ${cap(PlayGate.AFTER_PLAY)}", false)
+        val n = if (s.total > 0) "${s.ready}/${s.total}" else ""
+        val ready = if (n.isEmpty()) "" else "$n ready"
+        val text = when (s.phase) {
+            IndoorScheduler.Phase.CATALOGUE -> "Listing buildings"
+            IndoorScheduler.Phase.BAKING -> (if (n.isEmpty()) "Building" else "Building $n") + if (s.deferred > 0) " - ${s.deferred} to retry" else ""
+            IndoorScheduler.Phase.PAUSED -> listOf(ready, cap(s.note.ifEmpty { "paused" })).filter { it.isNotEmpty() }.joinToString(" - ")
+            IndoorScheduler.Phase.DONE -> ready.ifEmpty { "Ready" }
+            IndoorScheduler.Phase.DEFERRED, IndoorScheduler.Phase.STOPPED ->
+                listOf(ready, s.note).filter { it.isNotEmpty() }.joinToString(" - ").ifEmpty { "Stopped" }
         }
-        return Readiness("$head: $count$tail", s.phase == IndoorScheduler.Phase.DONE)
+        return Readiness("$head: $text", s.phase == IndoorScheduler.Phase.DONE)
     }
+
+    private fun cap(t: String) = t.replaceFirstChar { it.uppercaseChar() }
 
     private fun dataDir(ctx: Context) = File(ArtHarvest.root(ctx), "interiors_sched").also { it.mkdirs() }
 
@@ -114,12 +122,49 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     }
 
     /**
-     * The companion came up (with the launcher, before Play: CompanionHost.onCreate): (re)starts the step, which stopped when the
-     * companion last went away. The game's own start and end come from [LauncherHooks] (the game screen's attach / detach).
+     * WHO STARTS AND STOPS THE STEP (#568 / #573, 2026-11-20). Since 1.0.25 the bake may build only while nobody looks at DS Forever
+     * (after a game: the screen off or the launcher not in front, [AndroidSignals.quiet]), but exactly then the launcher hides the
+     * bottom screen (MainActivity's onPause / onStop / leave hint -> DsForeverScreen.hide -> CompanionHost.onDestroy), and that
+     * stopped the step; it came back only with the bottom screen, i.e. with the launcher in front again. The two never overlapped,
+     * so the indoor maps never built. Now the step belongs to the process, not to the bottom screen: the screen going away leaves it
+     * running (in-process, on its own low-priority thread, as the art harvest's worker; DS Forever has no service). It stops only
+     * for Settings' Off ([Signals.stop]), the app's own exit ([appExit]) and a game update ([ArtHarvest.restart]); the game's start
+     * makes it let go of everything at once ([PlayGate.gameActiveNow]: the game files and the generator closed, the thread waits with
+     * nothing open, never building while WoW runs). Pure: the tests drive [on].
      */
-    fun companionUp(context: Context) = start(context)
+    internal enum class Event { COMPANION_UP, COMPANION_GONE, GAME_CLOSED, APP_EXIT }
+    internal enum class Action { START, KEEP, STOP }
 
-    /** stop cleanly (the companion is closing): the bake ends at its next yield point; finished buildings are kept */
+    internal fun on(e: Event): Action = when (e) {
+        Event.COMPANION_UP, Event.GAME_CLOSED -> Action.START
+        Event.COMPANION_GONE -> Action.KEEP                  // #568: was a stop
+        Event.APP_EXIT -> Action.STOP
+    }
+
+    private fun handle(e: Event, context: Context?) {
+        when (on(e)) {
+            Action.START -> if (context != null && factory != null) start(context)
+            Action.STOP -> stop()
+            Action.KEEP -> Log.i(TAG, "interiors: ${e.name.lowercase()}, the step keeps running")
+        }
+    }
+
+    /**
+     * The companion came up (with the launcher, before Play: CompanionHost.onCreate): starts the step if it is not running (a running
+     * one goes on). The game's own start and end come from [LauncherHooks] (the game screen's attach / detach).
+     */
+    fun companionUp(context: Context) = handle(Event.COMPANION_UP, context)
+
+    /** the bottom screen went (CompanionHost.onDestroy: the launcher went to the background or the screen turned off): it goes on */
+    fun companionGone() = handle(Event.COMPANION_GONE, null)
+
+    /** the game screen went (DsForeverScreen.detachGame): a step that ended meanwhile starts again; a waiting one sees it itself */
+    fun gameClosed(context: Context) = handle(Event.GAME_CLOSED, context)
+
+    /** DS Forever closes for good (MainActivity, right before the process ends) */
+    fun appExit() = handle(Event.APP_EXIT, null)
+
+    /** stop cleanly: the bake ends at its next yield point; finished buildings are kept */
     fun stop() { stopping = true }
     override fun stopDetached() = stop()
 
@@ -180,13 +225,14 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     /** holding nothing, until it may build (true) or it never will this session / it was stopped (false) */
     private fun waitUntilItMayBuild(ctx: Context, signals: AndroidSignals): Boolean {
-        var said = false
+        var said: String? = null
         while (true) {
             if (stopping) return false
             if (!Settings.indoorBuild) { offInSettings(ctx); return false }
             val why = IndoorScheduler.pauseReason(signals) ?: return true
-            if (!said) {
-                said = true
+            // #568: each new reason shows (it kept the first: "game busy" on the Ready screen, still after the player had minimized)
+            if (why != said) {
+                said = why
                 val s = status
                 publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, why))
                 Log.i(TAG, "interiors: waiting ($why), the game files not open")
@@ -281,7 +327,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
          */
         private fun quiet(): Boolean = power?.isInteractive == false || !LauncherHooks.inFront()
 
-        override fun busy(): Boolean {
+        override fun busy(): Boolean = busyReason() != null
+
+        override fun busyReason(): String? {
             // 2026-11-07 (the user: the app "is sluggish as fuck before I ever press update"; the Thor's CPU: interiors-bake 74 % on the
             // start screen): no game yet = the player is on DS Forever's own screens before Play, so the bake waits
             // 1.0.22 (the user: "My indoor maps are not completing for some reason they have been stuck"): while STREAMING the game runs
@@ -291,7 +339,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             // "Pause while playing, always"); it builds once the game has closed, while nobody looks at the launcher screen ([quiet]).
             // An art run (icons too) still goes first - one that really works, not one parked for the game ([ArtHarvest.workingNow])
             return PlayGate.indoorWait(streaming(), ArtHarvest.workingNow(), PlayGate.gameActiveNow(),
-                playedThisRun = LauncherHooks.gameStartSec != 0L, quiet = quiet()) != null
+                playedThisRun = LauncherHooks.gameStartSec != 0L, quiet = quiet())
         }
 
         /** the player moved in the last few seconds while the game runs (before Play there is no player: never "moving") */

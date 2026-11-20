@@ -116,14 +116,28 @@ internal object PlayGate {
      * [artRunning] = an art run that is really working (one parked for the game does not count).
      */
     fun indoorWait(streaming: Boolean, artRunning: Boolean, gameActive: Boolean, playedThisRun: Boolean, quiet: Boolean = true): String? = when {
-        streaming -> if (artRunning) GAME_BUSY else null
+        streaming -> if (artRunning) ART_FIRST else null
         gameActive -> GAME_RUNNING
-        !playedThisRun -> GAME_BUSY
-        !quiet -> GAME_BUSY
-        artRunning -> GAME_BUSY
+        !playedThisRun -> AFTER_PLAY
+        !quiet -> IN_BACKGROUND
+        artRunning -> ART_FIRST
         else -> null
     }
 
-    const val GAME_RUNNING = "game running"
-    const val GAME_BUSY = "game busy"
+    /*
+     * #568 / #573 (2026-11-20): every wait used to read "game busy", also on the Ready screen with the game closed. Each reason now
+     * says what it waits for (Settings' row, the start checks' row and the log line show it as it is; terse, the user's page rule).
+     */
+    /** the game is up, launching or held by Play: nothing is open, nothing builds */
+    const val GAME_RUNNING = "waiting: game running"
+    /** no game yet in this run (the 2026-11-07 ruling: not on DS Forever's own screens before Play) */
+    const val AFTER_PLAY = "builds after you play"
+    /** after a game, DS Forever's launcher screen is in front (the 2026-11-11 review): it builds once minimized or the screen is off */
+    const val IN_BACKGROUND = "builds when minimized or screen off"
+    /** an art run that really works goes first */
+    const val ART_FIRST = "waiting: game art"
+    /** a [IndoorScheduler.Signals] that only says busy, no reason (the add-on's fight / loading word; the off-device fakes) */
+    const val GAME_BUSY = "waiting: game busy"
+    const val PLAYER_MOVING = "waiting: player moving"
+    const val DEVICE_WARM = "waiting: device warm"
 }

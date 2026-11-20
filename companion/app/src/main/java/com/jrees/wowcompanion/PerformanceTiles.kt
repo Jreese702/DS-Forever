@@ -483,7 +483,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         return when (s.phase) {
             IndoorScheduler.Phase.CATALOGUE -> "listing buildings"
             IndoorScheduler.Phase.BAKING -> if (s.now.isNotEmpty()) "building ${s.now}" else "building"
-            IndoorScheduler.Phase.PAUSED -> "paused: ${s.note.ifEmpty { "waiting" }}"
+            IndoorScheduler.Phase.PAUSED -> s.note.ifEmpty { "paused" }           // #568: the reason as it is
             IndoorScheduler.Phase.DONE -> "all built"
             IndoorScheduler.Phase.DEFERRED -> "finished"
             IndoorScheduler.Phase.STOPPED -> s.note.ifEmpty { "stopped" }
