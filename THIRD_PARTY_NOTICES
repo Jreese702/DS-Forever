@@ -487,6 +487,17 @@ by YoruDev-Ryland (https://github.com/YoruDev-Ryland/WoWForeverywhere, GPL-3.0):
   before the first start so the game skips its login-time graphics-device
   rebuild (commit `5e36083895db`, fork issue #46).
 
+## Upstream fixes: host name, keyboard, game-running service (WoW Forever for Android)
+
+Ported from WoW Forever for Android (https://github.com/jaredgei/wow-forever-android, GPL-3.0) on 2026-11-20:
+- `app/src/main/cpp/gamenative_dns_v4mapped.c` gethostbyname()/gethostbyname_r() host-name answers: v2.4.3, commit
+  `17c46d533d88e4bb7567a70e196e6be40b862635`, from PR #85 by Demineo04.
+- `com/winlator/xserver/Keyboard.java`, `InputDeviceManager.java`, `XServer.java`: no X auto-repeat for physical keys (v2.4.2,
+  commit `8607f984`), Shift keeps a key's identity (v2.4.6-rc3 `83cdbc93`, rc4 `9c4b577f`).
+- `app/src/main/java/app/gamenative/GameSessionService.kt`: the game-running foreground service (v2.4.4, commit `a3147360`), with
+  the fix from WoW Foreverywhere (https://github.com/YoruDev-Ryland/WoWForeverywhere, GPL-3.0) by YoruDev-Ryland, commit `3ed7cc9c`.
+  Its status-bar icon `app/src/main/res/drawable/ic_notification.xml` is Google's Material Symbols "sports_esports" (Apache-2.0).
+
 ## Samsung Performance SDK
 
 This project bundles `app/src/main/lib/perfsdk-v1.0.0.jar`, the Samsung Performance SDK

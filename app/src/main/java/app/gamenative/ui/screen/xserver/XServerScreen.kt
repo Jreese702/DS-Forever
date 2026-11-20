@@ -2310,6 +2310,13 @@ fun XServerScreen(
                                 onGameLaunchError,
                                 isOffline,
                             )
+                            // the game runs locally from here: a foreground service keeps it alive while another app is in front
+                            // (upstream v2.4.4); stopped by PluviaApp.shutdownEnvironment
+                            app.gamenative.GameSessionService.ensureStarted(context.applicationContext)
+                            // an exit that ran meanwhile (its shutdownEnvironment before this start) leaves no service behind
+                            if (isExiting.get() || PluviaApp.xEnvironment == null) {
+                                app.gamenative.GameSessionService.stop(context.applicationContext)
+                            }
 
                             if (!PluviaApp.isActivityInForeground && !neverSuspend) {
                                 PluviaApp.xEnvironment?.onPause()

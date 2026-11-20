@@ -112,6 +112,9 @@ class PluviaApp : Application() {
             radialMenuCoordinator = null
             keepAlive = false
             clearActiveSuspendState()
+            // the game-running foreground service ends with the game (every exit route comes through here)
+            runCatching { GameSessionService.stop(instance) }
+                .onFailure { Timber.e(it, "shutdownEnvironment: GameSessionService.stop") }
         }
 
         fun clearActiveSuspendState() {
