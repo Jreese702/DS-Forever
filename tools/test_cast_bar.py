@@ -112,7 +112,7 @@ nreg0 = int(L.eval(NREG))
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "cb2: an empty bar at the login registers NO castbar row")
 d = last(L, "castbar")
 check(d is not None and d.get("pick") is None and d.get("nopad") == 1 and d.get("pp") == [39, 19] and d.get("e") in ([], {})
-      and d.get("v") == "cb12" and d.get("n") == N, "the first document: an empty bar, no pick cell (nopad), the padtab pick 39 then 19", d)
+      and d.get("v") == "cb14" and d.get("n") == N, "the first document: an empty bar, no pick cell (nopad), the padtab pick 39 then 19", d)
 check(L.eval('WowCompanion.pad.describe().rows.castbar') is None, "describe() has no castbar row yet")
 L.execute('WowCompanion.castBar.sync(); fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 5)')
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "a sync / fight's end with an empty bar: still no row")
@@ -122,7 +122,7 @@ L.execute('QSOON = 0; WowCompanion.questsSoon = function() QSOON = QSOON + 1 end
 edit(L, 403)
 check(int(L.eval('QSOON')) == 1, "cb2b: the row registered mid-session asks for the quests document again once (Home's pad copy)", L.eval('QSOON'))
 row = L.eval('WowCompanion.pad.rows.castbar')
-check(row is not None and bool(row.secure) and int(row.n) == N + 1, "cb6: the first edit registers the row 'castbar': 9 secure cells (8 + the pick)", row and (row.secure, row.n))
+check(row is not None and bool(row.secure) and int(row.n) == 2 * N + 1, "cb6 / cb14: the first edit registers the row 'castbar': 17 secure cells (8 + the pick + the 8 fight cells)", row and (row.secure, row.n))
 # (TapPad pad26: a ranked row takes its own row - ORDER - so the pad's nrows need not grow; the count of rows does, by one)
 check(row is not None and int(row.row) < int(L.eval('WowCompanion.pad.nrows')) <= 56 and int(L.eval(NREG)) == nreg0 + 1
       and (L.eval('WowCompanion.pad.SLOT') is None or int(row.row) == int(L.eval('WowCompanion.pad.SLOT.castbar'))),

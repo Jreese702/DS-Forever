@@ -27,7 +27,7 @@ class CastBarCombatTest {
         assertEquals(HIDE, HomeSettings.castBarCombat)
         assertEquals(HIDE, CastStripModel.combatOf(null))
         assertEquals(HIDE, CastStripModel.combatOf("SOMETHING"))
-        assertEquals(listOf("Hide", "Stay"), CastStripModel.Combat.values().map { it.label })
+        assertEquals(listOf("Off", "On"), CastStripModel.Combat.values().map { it.label })      // cb14 (D5b): "Show in combat: Off | On"
     }
 
     @Test fun theChoiceIsSavedByName() {
@@ -129,10 +129,10 @@ class CastBarCombatTest {
     }
 
     @Test fun theRowAndItsPicture() {
-        assertEquals(listOf("Tap-to-cast bar", "In combat"), SettingsTabs.Block.CAST_BAR.rows)
+        assertEquals(listOf("Tap-to-cast bar", "Show in combat"), SettingsTabs.Block.CAST_BAR.rows)      // cb14 (D5b)
         val hs = src("HomeSettings.kt")
-        assertTrue(hs.contains("row(c, y + GAP, \"In combat\""))
-        assertTrue(hs.indexOf("\"Tap-to-cast bar\", listOf(") < hs.indexOf("\"In combat\", listOf("))
+        assertTrue(hs.contains("row(c, y + GAP, \"Show in combat\""))
+        assertTrue(hs.indexOf("\"Tap-to-cast bar\", listOf(") < hs.indexOf("\"Show in combat\", listOf("))
     }
 
     @Test fun theWordsAreInSpanishAndFrench() {
@@ -140,7 +140,8 @@ class CastBarCombatTest {
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
-            for (w in listOf("In combat", "Hide", "Stay", "Hide: the bar slides away in a fight.", "Cast bar in combat: Hide",
+            for (w in listOf("In combat", "Hide", "Stay", "Show in combat", "Off", "On", "Off: the bar slides away in a fight.", "Tap to cast",
+                "Turn on", "Hidden in fights", "Bar is off", "Show tap-to-cast", "Out of combat", "Controller", "Hide: the bar slides away in a fight.", "Cast bar in combat: Hide",
                 "Cast bar in combat: Stay", "In a fight the tap-to-cast bar slides", "down; chat and map take its room.",
                 "In a fight the tap-to-cast bar stays,", "one tap casts each.", "Hide: the bar slides away", "Stay: the bar stays",
                 "Eight spells in one bar under both;", "Eight spells, one tap each.",

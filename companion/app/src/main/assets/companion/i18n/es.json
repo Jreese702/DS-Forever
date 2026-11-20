@@ -1,5 +1,15 @@
 {
 "plain": {
+"Tap to cast": "Toque para lanzar",
+"Turn on": "Activar",
+"Hidden in fights": "Oculta en combate",
+"Bar is off": "La barra está desactivada",
+"Show in combat": "Mostrar en combate",
+"Show tap-to-cast": "Mostrar toque para lanzar",
+"Off: the bar slides away in a fight.": "Desactivado: la barra se desliza fuera en combate.",
+"Off: the bar slides away": "Desactivado: la barra se desliza fuera",
+"On: the bar stays": "Activado: la barra se queda",
+"L3 / R3: on the Out of combat tab": "L3 / R3: en la pestaña Fuera de combate",
 "Close DS Forever?": "¿Cerrar DS Forever?",
 "Closing DS Forever": "Cerrando DS Forever",
 "WoW closes too": "WoW también se cierra",
@@ -2234,6 +2244,9 @@
 "Battle.net could not complete this sign-in page. Try again later.": "Battle.net no pudo completar esta página de inicio de sesión. Inténtalo más tarde."
 },
 "templates": {
+"Tap slot %s, in combat": "Espacio %s, en combate",
+"Tap slot %s": "Espacio %s",
+"Empty: slot %s's own in fights": "Vacío: en combate, lo del espacio %s",
 "Switch to %s?": "¿Cambiar a %s?",
 "Downloads the %s game": "Descarga el juego de %s",
 "Switching to %s": "Cambiando a %s",

@@ -79,7 +79,7 @@ class SettingsTabsTest {
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
                 "Free bag slots", "Ammo", "DS WoW toolbar", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk
-            G.CAST_BAR to listOf("Tap-to-cast bar", "In combat"),
+            G.CAST_BAR to listOf("Tap-to-cast bar", "Show in combat"),     // cb14 (D5b): the row renamed
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
             // the layout editor's row; HUD height and HUD scale moved into its page (the width stays a row)
@@ -148,7 +148,8 @@ class SettingsTabsTest {
             // added since: GitHub #43's tap-to-cast bar (Bottom screen > Home; cb3: its own group, Bottom screen > Tap-to-cast bar)
             listOf("Tap-to-cast bar") +
             // the user 2026-11-13 ("a settings toggle to make them Hide/stay in combat"): Bottom screen > Tap-to-cast bar > In combat
-            listOf("In combat") +
+            // cb14 (the user, 2026-11-19, D5b): renamed "Show in combat" (the Controller room's In combat check box is the same setting)
+            listOf("Show in combat") +
             // new since the six tabs: General > Account > Game account (#47)
             listOf("Game account") +
             // added since: the clock extras (feat/item-cooldowns)

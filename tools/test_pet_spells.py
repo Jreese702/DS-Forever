@@ -333,8 +333,8 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap", "radial"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check('local SV = "s17"' in SRC["spells"] and 'local BV = "b68"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
-      and 'local RV = "r26"' in SRC["radial"] and 'local SRV = "q7"' in SRC["radial"] and 'local CBV = "cb12"' in CASTBAR,
+check('local SV = "s17"' in SRC["spells"] and 'local BV = "b70"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
+      and 'local RV = "r26"' in SRC["radial"] and 'local SRV = "q7"' in SRC["radial"] and 'local CBV = "cb14"' in CASTBAR,
       "the versions: Spells s10b, Book b63a, PadMap m163a (the review), Radial r21 / q5, ActionBar cb10")
 check(all('#234, the user: "build it"' in s for s in (SRC["spells"], SRC["book"], SRC["padmap"], SRC["radial"], CASTBAR)),
       "each changed file's header note quotes the user (#234: \"build it\")")

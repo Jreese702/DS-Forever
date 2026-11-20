@@ -10,12 +10,14 @@ package com.jrees.wowcompanion
  *
  * ADD-ON SAVED TABLES (WoW SavedVariables; the app keeps a copy, SvKeep, and the merges respect a reset's marks, SvReset)
  *  WowCompanionSpellsDB  SKILLS  (per char) faceBy, fightBy, formFightBy, cmdBy, binds, stickBy, attackBy, ccOff, lowPickBy, smartOn,
- *                                 smartBuffs, partyBy, radialPins, sradials (+ the legacy sradial it is rebuilt from), castBar
+ *                                 smartBuffs, partyBy, radialPins, sradials (+ the legacy sradial it is rebuilt from), castBar,
+ *                                 castBarFight (cb14: the tap-to-cast bar's in-combat layer, next to castBar)
  *                        LAYOUTS (per char) dpad (the DS WoW toolbar; back to its default ON, never "not asked": the prompt stays answered)
  *                        NEVER   formSlotsBy, smartModel, cdLearn, petSpellBy, petDeadBy (learned / remembered game facts); dpadZL,
  *                                 srGone, srBy, srMacros, genUse, fix181, keyProbe, aclOurs, aclReset1 (one-time clean-ups / probes: a
  *                                 reset would run them again); faceSwap, faceCd, combatFace (crash recovery / learned, never synced);
- *                                 macroRoom (the Macros room's last tab); attack (legacy shared record); padLayout, startOver, castBarTab
+ *                                 macroRoom (the Macros room's last tab); attack (legacy shared record); padLayout, startOver, castBarTab,
+ *                                 castBarShow (cb14: the add-on's copy of castBarCombat, home LAYOUTS)
  *                                 (the add-on's copies of app settings: the app tells them again from its own setting)
  *  WowCompanionDB        LAYOUTS (per char) lay, hubSw, hubLy, meters, prdY, prdS, prdW (the top screen remembers your look: the layout
  *                                 editor's pieces incl. the party block, the switch taps, the layout mask + cast bar hide, the meters, the HUD)
@@ -76,7 +78,7 @@ object ResetPlan {
 
     val SV_KEYS: List<SvKey> = listOf(
         *listOf("faceBy", "fightBy", "formFightBy", "cmdBy", "binds", "stickBy", "attackBy", "ccOff", "lowPickBy", "smartOn", "smartBuffs",
-            "partyBy", "radialPins", "sradials", "sradial", "castBar").map { SvKey(SPELLS, it, Kind.SKILLS, true) }.toTypedArray(),
+            "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight").map { SvKey(SPELLS, it, Kind.SKILLS, true) }.toTypedArray(),
         SvKey(SPELLS, "dpad", Kind.LAYOUTS, true, default = true),
         *listOf("lay", "hubSw", "hubLy", "meters", "prdY", "prdS", "prdW").map { SvKey(DB, it, Kind.LAYOUTS, true) }.toTypedArray(),
         SvKey(DB, "bagBinds", Kind.SKILLS, true),
@@ -87,7 +89,7 @@ object ResetPlan {
     val SV_NEVER: Map<String, Set<String>> = mapOf(
         SPELLS to setOf("formSlotsBy", "smartModel", "cdLearn", "petSpellBy", "petDeadBy", "dpadZL", "srGone", "srBy", "srMacros", "genUse",
             "fix181", "keyProbe", "aclOurs", "aclReset1", "faceSwap", "faceCd", "combatFace", "macroRoom", "attack", "padLayout", "startOver",
-            "castBarTab"),
+            "castBarTab", "castBarShow"),
         DB to setOf("pqol", "pskip", "npEnemies", "npFriends", "npFriendsOff", "npFriendsSet", "routeWp", "chatTop", "compassCal",
             "compassCam", "layV", "prdYv", "prdCurve", "camProbe", "calProbe", "qtDefaults", "chatStyleSet2", "cursorSoftSet"),
     )

@@ -630,7 +630,7 @@ class HomeSettingsSection(context: Context,
             sides.map { it.label }, sides.indexOf(HomeSettings.castBarSide), sides.map { sd -> { HomeSettings.castBarSide = sd } })
         // the bar in a fight (the user 2026-11-13: "a settings toggle to make them Hide/stay in combat"): Hide (the default) / Stay
         val modes = CastStripModel.Combat.values()
-        y = row(c, y + GAP, "In combat", listOf("Hide: the bar slides away in a fight."),
+        y = row(c, y + GAP, "Show in combat", listOf("Off: the bar slides away in a fight."),     // cb14 (D5b)
             modes.map { it.label }, modes.indexOf(HomeSettings.castBarCombat), modes.map { m -> { HomeSettings.castBarCombat = m } })
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),

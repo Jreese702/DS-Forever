@@ -147,7 +147,7 @@ def ctl_doc(L):
 
 
 CLICK = "CLICK %s:LeftButton"
-check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b68"' in SRC["book"],
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p55"' in SRC["padtabctl"] and 'local BV = "b70"' in SRC["book"],
       "the versions: PadMap m157, PadTabCtl p52, Book b57")
 STK = "\n".join(l.split("--", 1)[0] for l in
                 SRC["padmap"].split('-- m150 STICK BUTTONS (GitHub #78)\n', 1)[1].split('\nWC.padMap = {', 1)[0].splitlines())

@@ -114,7 +114,8 @@ object BottomTiles {
             val out = arrayListOf(Line(CASTBAR, null, sides.map { it.label }, sides.indexOf(HomeSettings.castBarSide)))
             if (HomeSettings.castBarSide != CastStripModel.Side.OFF) {
                 val m = CastStripModel.Combat.values()
-                out += Line("castcombat", "In combat", m.map { it.label }, m.indexOf(HomeSettings.castBarCombat))
+                // cb14 (D5b): the same setting as the Controller room's In combat > "Show tap-to-cast" check box (D4), its mirror here
+                out += Line("castcombat", "Show in combat", m.map { it.label }, m.indexOf(HomeSettings.castBarCombat))
             }
             out
         }

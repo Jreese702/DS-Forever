@@ -180,7 +180,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("book", "bags"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles " + os.path.basename(F[k]), e or '')
-check('local BV = "b68"' in SRC["book"] and "when doing bind to a button from bags it should open the normal spell binding menu" in SRC["book"],
+check('local BV = "b70"' in SRC["book"] and "when doing bind to a button from bags it should open the normal spell binding menu" in SRC["book"],
       "Book b59, its header note quotes the user")
 check("bags-bindbox1" in SRC["bags"] and "when doing bind to a button from bags it should open the normal spell binding menu" in SRC["bags"],
       "Bags bags-bindbox1, its header note quotes the user")
@@ -309,7 +309,7 @@ check(A.eval('HB.up()') is False and list(A.eval('DONE').values()) == ["result-c
       "7. the refusal's answer closes after 1.5 s and the box hands back (result-closed)", list(A.eval('DONE').values()))
 A.execute('DONE = {}; WowCompanion.spellsBindItem(6948, HOST); BK.ctl.bind.cb = true')
 A.execute('HB.press("PADDRIGHT")')                                     # (forced) the Cast bar tab's cursor moves: a report
-check(sctl(A).get('note') == "bind-cb" and sctl(A).get('bcb') is None, "7. an item's box never carries a Cast bar slot", sctl(A).get('bcb'))
+check(sctl(A).get('note') == "bind-cb" and sctl(A).get('bcb') == 2, "7. Book b70 (D8): an item's box carries the Tap to cast slot too", sctl(A).get('bcb'))
 A.execute('BK.ctl.bind.cb = nil')
 A.execute('HB.abort("taken")')
 c = sctl(A)

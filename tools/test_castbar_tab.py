@@ -133,29 +133,30 @@ def clean(L, name):
           (L.eval('SPY[1]'), L.eval('VIOL[1]'), L.eval('SNIPERR[1]'), list(L.eval('ERRS').values())[:2]))
 
 
-check('local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b68"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
-      and 'local CBV = "cb12"' in BLOCK, "the versions: PadTabCtl p53, Book b60, PadMap m159, ActionBar cb9")
+check('local CV = "p55"' in SRC["padtabctl"] and 'local BV = "b70"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
+      and 'local CBV = "cb14"' in BLOCK, "the versions: PadTabCtl p55, Book b70, PadMap m172+, ActionBar cb14")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
       and 'EditMacro' not in code and 'PlaceAction' not in code and 'SetCVar' not in code and 'PickupAction' not in code,
       "the cast bar code writes nothing of the player's (no binding, macro, bar slot or CVar)")
 
-# ================================================================ 1. the tab, shown only while the app's setting is on
+# ================================================================ 1. p55: the page is WoW Defaults > Tap to cast (no top tab; D1 / D2)
 W = boot()
 check(list(W.eval('ERRS').values()) == [], "the world loads", list(W.eval('ERRS').values())[:2])
 W.execute('WowCompanion.padTabCtl.enter("tabs")')
-padtab(W, 39, 29)
-check(ctl(W).get('view') == 'normal', "the setting off: padtab 39 then 29 does not open the tab", ctl(W).get('view'))
-W.execute('pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER")')
-check(ctl(W).get('view') != 'castbar', "RB never reaches it while hidden", ctl(W).get('view'))
-padtab(W, 39, 30)
-check(W.eval('WowCompanionSpellsDB.castBarTab') is True, "padtab 39 then 30: the setting on (kept)")
-W.execute('WowCompanion.padTabCtl.touchTab(1); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER")')
-check(ctl(W).get('view') == 'castbar', "with it on, RB steps onto the Cast bar tab (the last one)", ctl(W).get('view'))
+W.execute('pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER")')
+check(ctl(W).get('view') not in ('castbar', 'cbfight'), "p55 (D1): RB never steps onto a Tap to cast page (no top tab)", ctl(W).get('view'))
 padtab(W, 39, 31)
-check(ctl(W).get('view') == 'normal' and W.eval('WowCompanionSpellsDB.castBarTab') is None,
-      "padtab 39 then 31: off again, the tab on show goes back to WoW Defaults", ctl(W).get('view'))
-padtab(W, 39, 30, 39, 29)
+check(W.eval('WowCompanionSpellsDB.castBarTab') is False, "padtab 39 then 31: the bar Off (kept as told: false)")
+padtab(W, 39, 29)
+check(ctl(W).get('view') == 'castbar' and ctl(W).get('cboff') == 1 and ctl(W).get('top') == 'normal',
+      "p55 (D2): with the bar Off padtab 39 then 29 still opens the page (dimmed: cboff), under WoW Defaults", ctl(W))
+W.execute('WowCompanion.padTabCtl.touchPos(2); pp("PAD1")')
+c = ctl(W)
+check(not c.get('chooser') and c.get('note') == 'cb-turn-on' and c.get('cbon') == 1, "p55 (D2): A there = Turn on (counted), no chooser", c)
+padtab(W, 39, 30)
+check(W.eval('WowCompanionSpellsDB.castBarTab') is True and ctl(W).get('cboff') is None, "padtab 39 then 30: the setting on (kept)")
+padtab(W, 39, 29)
 c = ctl(W)
 check(c.get('view') == 'castbar' and c.get('focus') == 'buttons', "padtab 39 then 29: the Cast bar tab, the cursor on its slots", c)
 
@@ -166,7 +167,7 @@ check(ctl(W).get('pos') == 8, "Right walks the 8 slots and stops at 8", ctl(W).g
 W.execute('for _ = 1, 10 do pp("PADDLEFT") end')
 check(ctl(W).get('pos') == 1, "Left back to slot 1 and stops", ctl(W).get('pos'))
 W.execute('pp("PADDUP")')
-check(ctl(W).get('focus') == 'tabs', "Up = the tab row", ctl(W).get('focus'))
+check(ctl(W).get('focus') == 'subtabs', "Up = the sub-tab row (p55)", ctl(W).get('focus'))
 W.execute('pp("PADDDOWN")')
 check(ctl(W).get('focus') == 'buttons', "Down = the slots again")
 W.execute('pp("PAD1")')
@@ -237,7 +238,7 @@ if bi is not None:
     W.eval('WowCompanion.padTabCtl.touchExtra(%d)' % (bi % 40))
     check(store(W).get(8) is None and ctl(W).get('note') == 'cb-bind', "a game binding by touch is refused (cb-bind)", ctl(W).get('note'))
 e, d = bar(W)
-check(d.get('v') == 'cb12' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
+check(d.get('v') == 'cb14' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
 check(e[1].get('id') == 403 and 'k' not in e[1] and e[1].get('c') == 0, "slot 1: a spell as before (no k)", e[1])
 check(e[3].get('k') == 'command' and e[3].get('key') == 'TARGETNEARESTENEMY' and e[3].get('n') and e[3].get('i') == 132212 and e[3].get('c') == 2,
       "slot 3: kind command, key, name, icon, its cell", e[3])

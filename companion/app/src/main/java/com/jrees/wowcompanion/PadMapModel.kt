@@ -533,7 +533,18 @@ object PadMapModel {
         val pright: Int = 0,
         val pset: Int = 1,
         val ptouch: Int = 1,
-    )
+        /** p55 CONTROLLER | TAP TO CAST: the view's top tab ("normal" for WoW Defaults > Tap to cast, "combat" for In combat > Tap to
+         *  cast), the Show tap-to-cast presses ([cbsn]: the app flips castBarCombat once per count) and the bar-Off "Turn on" presses
+         *  ([cbon]), the add-on's copies of Show in combat ([cbShow]) and of the bar Off ([cbOff]) */
+        val top: String = "normal",
+        val cbsn: Int? = null,
+        val cbon: Int? = null,
+        val cbShow: Boolean = false,
+        val cbOff: Boolean = false,
+    ) {
+        /** p55: the In combat > Tap to cast page (the bar's in-combat layer) */
+        val cbFight: Boolean get() = view == "cbfight"
+    }
     /** the button Move carries: its set (1-4), its place (1-8), its bar page */
     data class Carry(val set: Int, val pos: Int, val page: Int)
 
@@ -555,7 +566,7 @@ object PadMapModel {
             box = bx?.let { b -> textOrNull(b, "kind")?.let { Box(it, textOrNull(b, "what"), textOrNull(b, "thing")) } },
             swap = c.optString("lay", "swap") != "plain",
             note = textOrNull(c, "note"),
-            view = when (c.optString("view", "normal")) { "combat" -> "combat"; "ds" -> "ds"; "radial" -> "radial"; "party" -> "party"; "castbar" -> "castbar"; else -> "normal" },
+            view = when (c.optString("view", "normal")) { "combat" -> "combat"; "ds" -> "ds"; "radial" -> "radial"; "party" -> "party"; "castbar" -> "castbar"; "cbfight" -> "cbfight"; else -> "normal" },
             tcur = c.optInt("tcur", 1).coerceIn(1, TABS.size),
             sw = c.optInt("sw", 1).coerceAtLeast(1),
             scur = c.optInt("scur", 2).coerceIn(2, 4),
@@ -578,13 +589,19 @@ object PadMapModel {
             revn = c.optInt("revn", 0),
             rev = textOrNull(c, "rev"),
             rdel = c.optBoolean("rdel", false),
+            top = when (c.optString("top", "")) { "combat" -> "combat"; "radial" -> "radial"; "party" -> "party"; "normal" -> "normal"; else -> topOf(c.optString("view", "normal")) },
+            cbsn = intOrNull(c, "cbsn"), cbon = intOrNull(c, "cbon"),
+            cbShow = c.optInt("cbs", 0) == 1, cbOff = c.optInt("cboff", 0) == 1,
         )
     }
+
+    /** p55: a view's top tab (the Tap to cast pages are sub-tabs of WoW Defaults / In combat) */
+    fun topOf(view: String): String = when (view) { "castbar", "ds" -> "normal"; "cbfight" -> "combat"; else -> view }
 
     /** A note the addon writes for a TOUCH pick or action (the app's own): the app's open chooser or box stays. Any other note is the
      *  controller's, and the controller wins. */
     fun touchNote(note: String?): Boolean = note == null || note.startsWith("touch-") || note in setOf(
-        "layout", "enter", "leave", "put", "cleared", "spell-not-in-book", "stays-back", "fixed", "cb-tab")      // p53: the bar setting
+        "layout", "enter", "leave", "put", "cleared", "spell-not-in-book", "stays-back", "fixed", "cb-tab", "cb-show")      // p53: the bar setting; p55: Show in combat
 
     /**
      * Where button [pos] (1-8) is DRAWN in its diamond: 0 left, 1 up, 2 right, 3 down. The D-pad's 1-4 are left / up / right / down; the face
@@ -668,9 +685,9 @@ object PadMapModel {
     const val ROW_EXTRA = "extra"
     fun extraCells(index: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 6 + (index / 40).coerceIn(0, 2), ROW_EXTRA to index % 40)
     /** the tab's index (1-4) by its name */
-    fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; else -> 1 }
+    fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; "cbfight" -> 7; else -> 1 }
     /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode; p53: the 6th, the Cast bar, opened by padtab 39 then 29) */
-    val TABS = listOf("normal", "ds", "combat", "radial", "party", "castbar")
+    val TABS = listOf("normal", "ds", "combat", "radial", "party", "castbar", "cbfight")      // p55: the 7th, In combat > Tap to cast
 
     /** The cells that put command [index] (1-based, the list's order): a pick first for 12 and up, then the ONE action */
     fun commandCells(index: Int): List<Pair<String, Int>> =

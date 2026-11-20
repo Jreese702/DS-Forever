@@ -82,6 +82,8 @@ object SpellsModel {
         val bindFight: Boolean = false,     // b37: the Bind box puts the spell on the In combat layout (b-bind-combat-toggle)
         val bindForm: Int? = null,          // b43: the In combat bind goes to this form's own set (its spell id); null = the caster's
         val bindCb: Int? = null,            // b56 (GitHub #43 cb3): the Bind box's Cast bar tab is shown, its cursor on this slot (1-8, cb6)
+        val bindCbFight: Boolean = false,   // b70: that tab is In combat + Tap to cast (the bar's in-combat layer)
+        val cbOn: Int? = null,              // b70: A on a Tap to cast tab with the bar Off, counted (the app turns the bar on)
         /** Book b59 (the user, 2026-11-13: "when doing bind to a button from bags it should open the normal spell binding menu"): the box
          *  is open for this BAG ITEM (hosted by the Bags room: `via` "bags"); null = a spell's box */
         val bindItem: BoxItem? = null,
@@ -120,6 +122,8 @@ object SpellsModel {
             binding = if (c.optString("mode") == "bind") c.optInt("bind", 0).takeIf { it > 0 } else null,
             bindForm = c.optInt("bform", 0).takeIf { it > 0 },
             bindCb = c.optInt("bcb", 0).takeIf { it in 1..CastStripModel.SLOTS },
+            bindCbFight = c.optInt("bcf", 0) == 1,
+            cbOn = if (c.has("cbon")) c.optInt("cbon", 0) else null,
             note = c.optString("note", "").takeIf { it.isNotEmpty() },
             mode = c.optString("mode", "book").ifEmpty { "book" },
             talentsPage = c.optString("pg", "book") == "talents",

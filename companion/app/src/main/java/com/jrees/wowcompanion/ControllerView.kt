@@ -48,6 +48,19 @@ import android.view.View
  * room open and every change, so its LB / RB step onto the tab only while it shows; a finger on the tab is padtab 39 then 29.
  * The one-time try prompt's Yes ([openOnCastBar], the user: "if they press yes on the prompt to try the tap to cast bar, we should
  * open them to the spell bind room that you are making so they can add spells to it"): the next open lands on that tab, slot 1.
+ * p55 CONTROLLER | TAP TO CAST (the user, 2026-11-19: "move the tap to cast bar in the controller room to make more sense. In the wow
+ * default room ... two tabs under it, one for controller and one for tap to cast bar. ... In the combat tab we have a controller tab and
+ * a tap to cast tab (in this one it should be under the check boxes though)"; the approved proposal D1-D10; PadTabCtl p55): FOUR top
+ * tabs again (the Cast bar tab is gone, D1); WoW Defaults and In combat each have a SUB-TAB row, Controller | Tap to cast ([SUBS]):
+ * WoW Defaults' right under the top tabs, In combat's under its check boxes; the page's left side stands [SUB_DY] lower under it. The
+ * sub-tab under the controller's cursor wears the gold arrows (landing opens, the add-on's rule); a finger's sub-tab is one pick
+ * (Controller: its padtab tab, Tap to cast: padtab 39 then 29 / 1). Each top tab remembers its sub-tab while the room is open ([subWant]
+ * and the add-on's `top`); a fresh open lands on WoW Defaults > Controller. In combat's THIRD check box, "Show tap-to-cast", IS
+ * HomeSettings.castBarCombat (D4: ticked = STAY), the same setting as Settings > Bottom screen's "Show in combat" row (D5b): a finger
+ * flips it here, the controller's A is counted by the add-on (`cbsn`) and flipped here; every change is told to the add-on (padtab 39
+ * then 2 / 3, [cbSetting]). Show off: In combat > Tap to cast is dimmed with a lock. The bar Off in Settings: both Tap to cast sub-tabs
+ * dimmed, their pages say "Bar is off" with "Turn on" (a finger, or the add-on's `cbon` count for the controller's A: D2). The try
+ * prompt's Yes opens WoW Defaults > Tap to cast, slot 1. B one level back (the add-on's), so B leads Home only from the top tabs.
  */
 class ControllerView(
     context: Context,
@@ -68,6 +81,8 @@ class ControllerView(
     private var flashUntil = 0L
     private var downSw = -1
     private var downTab = -1
+    /** p55: a finger down on sub-tab k */
+    private var downSub = -1
     /** m41 S1: the clean-up's plan for this character (PadMap's `padclean`); its button shows only while there is something */
     private var clean: PadMapModel.Clean? = null
     /** the box a finger opened: "cleanup" / "cleanshared" (the controller's own is [tabCtl]'s box of that kind) */
@@ -80,14 +95,17 @@ class ControllerView(
         CastSettings.init(context)
         HomeSettings.init(context)
         RadialMeta.init(context)
-        HomeSettings.onChange { post { cbSetting(false); invalidate() } }   // the radial's way (Hold / Tap); p53: the bar's setting
-        CastStripModel.Live.onChange { post { cbSetting(false); invalidate() } }    // p53: the Cast bar tab's slots
+        // p55: on the main looper, not the view's queue: a room view not attached (Home or Settings on show) still tells the add-on at
+        // once (Show in combat arms the bar's in-combat layer, the bar Off its pages)
+        HomeSettings.onChange { MAIN.post { cbSetting(false); invalidate() } }   // the radial's way (Hold / Tap); p53: the bar's setting
+        CastStripModel.Live.onChange { MAIN.post { cbSetting(false); invalidate() } }    // p53: the Cast bar tab's slots
     }
 
     private val page = PadTabPage(this, { cells -> onPadCells(cells) }, { e -> onBind(e) }, otherReader, cursorOnTabs = { false },
         cellsOf = { e -> book?.let { SpellsModel.bindCells(it, e) } },       // b-druid-forms-bind: Book b38's two taps
         // p34: the toolbar's four show on the bare D-pad as the switch SHOWS (a finger's flip at the tap)
-        toolbarShown = { map?.dpad?.let { swShown("dpad", it.want == true) } == true })
+        toolbarShown = { map?.dpad?.let { swShown("dpad", it.want == true) } == true },
+        onTurnOn = { turnOn() })                                            // p55 (D2)
     /** PARTY MODE's tab (PARTY_BUILD.md 4.4): the 5th tab, its own page */
     private val partyPage = PartyTabPage(this, { cells -> onPadCells(cells) }, { id ->
         book?.let { b -> SpellsModel.tabSpells(b).firstOrNull { it.spellId == id }?.let { SpellsModel.bindCells(b, it) } } })
@@ -102,7 +120,7 @@ class ControllerView(
 
     /** RC3 (Spells' condition, PadTabCtl.press's leaveB): not while its chooser, a box or a carried button is up (B cancels those) */
     override fun bLeadsHome(): Boolean = held && ctl?.mode == "book" &&
-        tabCtl?.let { it.on && (it.chooser != null || it.box != null || it.carry != null) } != true
+        tabCtl?.let { it.on && (it.chooser != null || it.box != null || it.carry != null || it.focus != "tabs") } != true   // p55: B one level back
 
     // ---------------------------------------------------------------- Home's calls
 
@@ -110,17 +128,19 @@ class ControllerView(
      *  older addon without the "croom" column: the Controller tab's own touch-open (the page lit, Down enters it). */
     fun enterRoom(): Boolean {
         val col = book?.win?.get("croom")
-        // p53: the bar's setting first (a no-action pick: the add-on's LB / RB step onto the Cast bar tab only while it shows)
-        val cbOn = cbTabOn()
-        val pre = CastStripModel.ctlSettingCells(cbOn)
-        // the try prompt's Yes: the Cast bar tab, slot 1, after the open (the room's own open route: B goes back as from any tab)
-        val toCb = col != null && castBarWanted && cbOn
+        // p53: the bar's setting first (a no-action pick); p55: Show in combat too (the add-on's lock of In combat > Tap to cast)
+        val cbOn = barOn()
+        val show = showOn()
+        val pre = CastStripModel.ctlSettingCells(cbOn) + CastStripModel.showCells(show)
+        // the try prompt's Yes: WoW Defaults > Tap to cast, slot 1, after the open (the room's own open route: B goes back as from any tab)
+        val toCb = col != null && castBarWanted && cbTabOn()
         val after = if (toCb) CastStripModel.ctlTabCells() + (PadMapModel.ROW to PadMapModel.colPos(1)) else emptyList()
         val cells = if (col != null) pre + ("spells" to col) + after
                     else (if (page.needsLayout()) listOf(page.layoutCell()) else emptyList()) + (PadMapModel.ROW to PadMapModel.COL_OPENED)
         val sent = onPadCells(cells)
-        if (sent && col != null) cbSent = cbOn
+        if (sent && col != null) { cbSent = cbOn; showSent = show }
         if (sent && col != null) castBarWanted = false                    // once: this open (on the tab when it shows)
+        if (sent && col != null) { subWant.clear(); lastCbsn = null; lastCbon = null }      // p55: a fresh open lands on Controller
         if (sent && col != null) page.showTabLocal(if (toCb) "castbar" else PadMapModel.TABS[0])      // p17: it opens on WoW Defaults, shown at the tap
         Log.i(TAG, "controller room enter: ${cells.last()} ${if (sent) "tapped" else "not sent"}")
         page.setActive(isShown)
@@ -142,16 +162,29 @@ class ControllerView(
     fun openOnCastBar() { castBarWanted = true }
     /** the Yes's open is still owed (tests) */
     val castBarOwed: Boolean get() = castBarWanted
-    /** p53: the Cast bar tab shows (Settings' bar not Off, the add-on's bar takes every kind) */
-    private fun cbTabOn(): Boolean = CastStripModel.ctlTab(HomeSettings.castBarSide, CastStripModel.Live.bar)
-    /** what the add-on was last told (null = nothing yet) */
+    /** p53: the Tap to cast sub-tabs are there (the add-on's bar takes every kind); p55 (D2): the bar Off no longer hides them */
+    private fun cbTabOn(): Boolean = CastStripModel.ctlTab(CastStripModel.Live.bar)
+    /** the bar is on in Settings (not Off) */
+    private fun barOn(): Boolean = !CastStripModel.barOff(HomeSettings.castBarSide)
+    /** p55 (D4): Show in combat = castBarCombat STAY */
+    private fun showOn(): Boolean = CastStripModel.showOf(HomeSettings.castBarCombat)
+    /** what the add-on was last told (null = nothing yet): the bar on, Show in combat */
     private var cbSent: Boolean? = null
-    /** p53: the setting to the add-on when it changed since it was last told ([force]: always) */
+    private var showSent: Boolean? = null
+    /** p53: the setting to the add-on when it changed since it was last told ([force]: always); p55: Show in combat too (39 then 2 / 3) */
     private fun cbSetting(force: Boolean) {
-        val on = cbTabOn()
-        if (!force && cbSent == on) return
-        if (onPadCells(CastStripModel.ctlSettingCells(on))) cbSent = on
+        val on = barOn()
+        if (force || cbSent != on) { if (onPadCells(CastStripModel.ctlSettingCells(on))) cbSent = on }
+        val show = showOn()
+        if (force || showSent != show) { if (onPadCells(CastStripModel.showCells(show))) showSent = show }
     }
+    /** p55 (D2): "Turn on" (a finger on the dimmed page, or the add-on's `cbon` for the controller's A): the bar on, both columns */
+    private fun turnOn() {
+        if (CastStripModel.barOff(HomeSettings.castBarSide)) HomeSettings.castBarSide = CastStripModel.turnOnSide
+    }
+    /** p55: the add-on's counts last seen (Show tap-to-cast presses, Turn on presses); null = none yet this open */
+    private var lastCbsn: Int? = null
+    private var lastCbon: Int? = null
 
     /** HOME'S ONE RULE FOR EVERY ROOM: let go of the shared capture exactly as leaving does, whatever this view's flags say. */
     fun freeAgain(): Boolean = leaveRoom()
@@ -188,7 +221,13 @@ class ControllerView(
     }
 
     fun onPadMap(m: PadMapModel.Map) { map = m; page.onMap(m); invalidate() }
-    fun onPadTabCtl(c: PadMapModel.Ctl) { tabCtl = c; page.onCtl(c); partyPage.onCtl(c); invalidate() }
+    fun onPadTabCtl(c: PadMapModel.Ctl) {
+        // p55: the controller's A on "Show tap-to-cast" (counted: the app's setting flips once per count) and on "Turn on"
+        c.cbsn?.let { n -> val was = lastCbsn; if (was != null && n > was) repeat(n - was) { HomeSettings.castBarCombat = CastStripModel.combatFor(!showOn()) }; lastCbsn = n }
+        c.cbon?.let { n -> val was = lastCbon; if (was != null && n > was) turnOn(); lastCbon = n }
+        if (c.on && SUBS.containsKey(c.top) && c.view in SUBS.getValue(c.top)) subWant[c.top] = c.view     // remembered while open
+        tabCtl = c; page.onCtl(c); partyPage.onCtl(c); invalidate()
+    }
     /** m41 S1: the clean-up's plan (at login, on the box's request, after a run) */
     fun onClean(c: PadMapModel.Clean) {
         clean = c
@@ -217,9 +256,32 @@ class ControllerView(
     // ---------------------------------------------------------------- the tabs and their switches
 
     private fun tab(): String = page.currentView()
+    /** p55: the top tab the page belongs to (the Tap to cast pages are sub-tabs) */
+    private fun topTab(): String = PadMapModel.topOf(tab())
     /** party_design.md B: the Party mode tab shows only while Party mode is allowed (QOL > Party, on by default; PadTabCtl p37 steps over it too) */
     private val TAB_VIEWS: List<String> get() = ALL_TAB_VIEWS.filter { v ->
-        when (v) { "party" -> GameUi.partyModeOn(); "castbar" -> cbTabOn(); else -> true } }              // p53: the Cast bar's own rule
+        when (v) { "party" -> GameUi.partyModeOn(); else -> true } }
+    /** p55: the sub-tab row of [top] (WoW Defaults / In combat, while the add-on's bar takes every kind), else none */
+    private fun subsOf(top: String): List<String>? = SUBS[top]?.takeIf { cbTabOn() }
+    /** p55: each top tab's sub-tab, remembered while the room is open (a finger's or the add-on's) */
+    private val subWant = HashMap<String, String>()
+    /** p55: the left page's content stands this much lower under the sub-tab row */
+    private fun leftDy(): Float = if (subsOf(topTab()) != null) SUB_DY else 0f
+    /** p55: sub-tab [i]'s rect under [top]: WoW Defaults' right under the top tabs, In combat's under its check boxes */
+    private fun subRect(i: Int, top: String): RectF {
+        val t = if (top == "combat") 280f else 174f
+        val l = SPLIT / 2f - 2f * SUB_W / 2f - SUB_GAP / 2f + i * (SUB_W + SUB_GAP)
+        return RectF(l, t, l + SUB_W, t + SUB_H)
+    }
+    /** p55: the taps that open [v] by touch (one pick; the add-on's echo follows) */
+    private fun viewCells(v: String): List<Pair<String, Int>> = when (v) {
+        "castbar" -> CastStripModel.ctlTabCells()                                // p53: padtab 39 then 29
+        "cbfight" -> CastStripModel.ctlFightCells()                              // p55: padtab 39 then 1
+        "party" -> PartyTaps.tab(PartyModel.live.cfg) ?: listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(PadMapModel.tabOf(v)))
+        else -> listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(PadMapModel.tabOf(v)))
+    }
+    /** p55: a sub-view dimmed: the bar Off (both Tap to cast pages), Show in combat off (In combat > Tap to cast, with a lock) */
+    private fun subDim(v: String): Boolean = (v == "castbar" || v == "cbfight") && !barOn() || (v == "cbfight" && !showOn())
     /** the page (tests) */
     fun page(): PadTabPage = page
     /** the tabs on show (tests: p53's Cast bar tab only while the bar is not Off) */
@@ -232,7 +294,7 @@ class ControllerView(
     private fun tabRect(i: Int, w: Float): RectF =
         gaps.row(TAB_NAMES.size, 0f, w, 76f, 70f, 260f, shownTab(tab()), this)[i]     // UI Art: four fit as words
     /** p34: a tab's place in the row the room SHOWS (the DS tab is gone: an old "ds" shows as WoW Defaults) */
-    private fun shownTab(view: String): Int = TAB_VIEWS.indexOf(view).coerceAtLeast(0)
+    private fun shownTab(view: String): Int = TAB_VIEWS.indexOf(PadMapModel.topOf(view)).coerceAtLeast(0)      // p55: a sub-view's top tab
     /** p34: the add-on's tab number (PadTabCtl's TABS, 1-based, the DS tab still counted) as a place in the shown row */
     private fun shownTcur(tcur: Int): Int = shownTab(PadMapModel.TABS.getOrElse(tcur - 1) { "normal" })
 
@@ -262,14 +324,16 @@ class ControllerView(
                 val dOn = d?.let { swShown("dpad", it.want == true) }
                 listOf(Sw("DS WoW toolbar", dOn, d?.let { if (dOn == true) it.colOff else it.colOn }, "dpad"))
             }
-            "combat" -> {
+            "combat", "cbfight" -> {
                 val cc = m?.faceCc?.let { swShown("cc", it) }
                 val sa = m?.attack
                 val saOn = sa?.let { swShown("sa", it.on) }
                 listOf(Sw("Combat controls", cc, cc?.let { if (it) m.faceCcColOff else m.faceCcColOn }, "cc"),
                        // b-start-attack-row (the user 2026-10-13): PAUSED in the add-on (m40) = greyed out, unticked, "coming back later"
                        if (sa?.paused == true) Sw("Start attack on cast", false, null, "sa", held = PAUSED_SAY)
-                       else Sw("Start attack on cast", saOn, sa?.let { if (saOn == true) it.colOff else it.colOn }, "sa"))
+                       else Sw("Start attack on cast", saOn, sa?.let { if (saOn == true) it.colOff else it.colOn }, "sa")) +
+                       // p55 (D4 / D5c): Show tap-to-cast IS castBarCombat (the app's own setting: no add-on column, [SHOW_COL])
+                       (if (cbTabOn()) listOf(Sw("Show tap-to-cast", showOn(), SHOW_COL, "cbshow")) else emptyList())
             }
             else -> emptyList()
         }
@@ -280,7 +344,8 @@ class ControllerView(
         val l0 = 40f; val r0 = SPLIT - 40f; val gap = 16f
         val each = if (n <= 1) 420f else (r0 - l0 - (n - 1) * gap) / n
         val l = l0 + i * (each + gap)
-        return RectF(l, 196f, l + each, 268f)
+        val dy = if (topTab() == "normal" && subsOf("normal") != null) SUB_DY else 0f      // p55: WoW Defaults' switch under its sub-tabs
+        return RectF(l, 196f + dy, l + each, 268f + dy)
     }
 
     private fun say(s: String) { flash = s; flashUntil = SystemClock.uptimeMillis() + 2500L; postDelayed({ invalidate() }, 2550L); invalidate() }
@@ -359,12 +424,44 @@ class ControllerView(
         UiKit.bookPage(c, RectF(8f, 158f, SPLIT, h - 4f))
         UiKit.bookPage(c, RectF(SPLIT, 158f, w - 8f, h - 4f), right = true)
         UiKit.bookFold(c, SPLIT, 166f, h - 12f)
+        page.leftDy = leftDy()                                              // p55: under the sub-tab row
         when (tab()) {
             "party" -> partyPage.draw(c, w, h, tabCtl)
             else -> page.draw(c, w, h, book)
         }
+        drawSubTabs(c, k)
         drawSwitches(c, k)
         if (cleanBoxShown()) drawCleanBox(c, w, h)
+    }
+
+    /** p55 THE SUB-TAB ROW (Controller | Tap to cast): the game's tab look, the lit one the page on show; the controller's cursor on it =
+     *  the gold arrows round the lit one (landing opens); Tap to cast dimmed while the bar is Off, In combat's with a lock while Show in
+     *  combat is off */
+    private fun drawSubTabs(c: Canvas, k: PadMapModel.Ctl?) {
+        val top = topTab()
+        val subs = subsOf(top) ?: return
+        if (page.chooserOpen()) return                                      // the chooser lies over the right page only, but keeps the eye there
+        for ((i, v) in subs.withIndex()) {
+            val r = subRect(i, top)
+            val lit = v == tab()
+            UiKit.tab(c, r, "", lit)
+            val dim = subDim(v)
+            val p = UiKit.bodyPaint(26f, when { dim -> Theme.dim; lit -> android.graphics.Color.WHITE; else -> Theme.gold }).apply { textAlign = Paint.Align.CENTER }
+            val word = SUB_NAMES[i]
+            val lock = v == "cbfight" && !showOn()
+            val tx = r.centerX() - (if (lock) 16f else 0f)
+            val room = r.width() - 24f - (if (lock) 40f else 0f)                 // es / fr: smaller to fit the tab, never past it
+            while (p.textSize > 16f && p.measureText(Tr.t(word)) > room) p.textSize -= 1f
+            c.drawText(Tr.t(word), tx, r.centerY() + 6f - (p.ascent() + p.descent()) / 2f, p)
+            if (lock) UiKit.tex("talent_lock")?.let { bm ->
+                val x = tx + p.measureText(Tr.t(word)) / 2f + 10f
+                c.drawBitmap(bm, null, RectF(x, r.centerY() - 12f, x + 20f, r.centerY() + 16f), PBMP)
+            }
+        }
+        if (k != null && k.focus == "subtabs") {
+            val i = subs.indexOf(tab()).coerceAtLeast(0)
+            UiKit.moveArrows(c, subRect(i, top), left = i > 0, right = i < subs.size - 1, words = false)
+        }
     }
 
     private fun drawSwitches(c: Canvas, k: PadMapModel.Ctl?) {
@@ -373,11 +470,37 @@ class ControllerView(
             val r = swRect(i, sw.size)
             c.drawRoundRect(r, 8f, 8f, pPlate)
             val p = UiKit.bodyPaint(26f, if (t.col != null) Theme.text else Theme.dim)
-            UiKit.check(c, r.right - 42f, r.centerY(), 58f, t.on == true, enabled = t.col != null)
-            while (p.textSize > 18f && 20f + p.measureText(t.label) + 84f > r.width()) p.textSize -= 1f
-            c.drawText(Tr.t(t.label), r.left + 20f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            // p55: three check boxes share In combat's row: a smaller box, and the label gets the whole width before it
+            val box = if (sw.size >= 3) 46f else 58f
+            val boxCx = r.right - 14f - box / 2f
+            UiKit.check(c, boxCx, r.centerY(), box, t.on == true, enabled = t.col != null)
+            drawSwitchLabel(c, Tr.t(t.label), RectF(r.left + 16f, r.top + 4f, boxCx - box / 2f - 8f, r.bottom - 4f), p)
         }
         if (k != null && k.focus == "switches") sw.indices.firstOrNull { it == k.sw - 1 }?.let { UiKit.focus(c, swRect(it, sw.size), onPaper = true) }
+    }
+
+    /** p55 (the coordinator's ask: never cut off): one line at 26 px down to 20, else two lines (a word that is too long for the
+     *  line on its own, or a third line, takes the font down further, to 15 px), centred in [r] */
+    private fun drawSwitchLabel(c: Canvas, word: String, r: RectF, p: Paint) {
+        val tw = r.width().coerceAtLeast(10f)
+        var size = 26f
+        while (size > 20f && p.apply { textSize = size }.measureText(word) > tw) size -= 1f
+        p.textSize = size
+        if (p.measureText(word) <= tw) {
+            c.drawText(word, r.left, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            return
+        }
+        var lay: StaticLayout
+        size = 22f
+        while (true) {
+            val tp = TextPaint(p).apply { textSize = size }
+            lay = StaticLayout.Builder.obtain(word, 0, word.length, tp, tw.toInt()).setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(0f, 0.92f).setIncludePad(false).build()
+            val widest = (0 until lay.lineCount).maxOfOrNull { lay.getLineWidth(it) } ?: 0f
+            if ((lay.lineCount <= 2 && widest <= tw + 0.5f && lay.height <= r.height()) || size <= 15f) break
+            size -= 1f
+        }
+        c.save(); c.translate(r.left, r.centerY() - lay.height / 2f); lay.draw(c); c.restore()
     }
 
     private fun padStyle(): SpellsModel.PadStyle = when (CastSettings.buttonLayout) {
@@ -421,7 +544,9 @@ class ControllerView(
             downTab = TAB_NAMES.indices.firstOrNull { tabRect(it, w).let { r -> RectF(r.left, 62f, r.right, 158f) }.contains(ev.x, ev.y) } ?: -1
             val sw = switches()
             downSw = sw.indices.firstOrNull { swRect(it, sw.size).let { r -> RectF(r.left, r.top - 8f, r.right, r.bottom + 8f) }.contains(ev.x, ev.y) } ?: -1
-            padDown = downTab < 0 && downSw < 0 && ev.y > 173f
+            // p55: a sub-tab (only while no chooser covers the eye's way: it closes first)
+            downSub = if (page.chooserOpen()) -1 else subsOf(topTab())?.indices?.firstOrNull { subRect(it, topTab()).contains(ev.x, ev.y) } ?: -1
+            padDown = downTab < 0 && downSw < 0 && downSub < 0 && ev.y > 173f
         }
         if (padDown && tab() == "party") {
             partyPage.onTouch(ev, tabCtl)
@@ -436,23 +561,37 @@ class ControllerView(
         if (ev.actionMasked != MotionEvent.ACTION_UP) return true
         // a tab: shown at once, the addon told (one padtab pick)
         if (downTab >= 0 && tabRect(downTab, w).let { r -> RectF(r.left, 62f, r.right, 158f) }.contains(ev.x, ev.y)) {
-            val v = TAB_VIEWS[downTab]
-            val n = PadMapModel.tabOf(v)                                    // p34: the add-on's tab number (the DS tab still counted)
+            val top = TAB_VIEWS[downTab]
+            // p55: a top tab opens its remembered sub-tab (a fresh open: Controller); the Party mode tab: partycfg's own column
+            val v = subWant[top]?.takeIf { subsOf(top)?.contains(it) == true } ?: top
             page.showTabLocal(v)
-            // the Party mode tab: partycfg's own column when it came (PartyTaps.tab), else Book b47's padtab 26
-            val cells = (if (v == "party") PartyTaps.tab(PartyModel.live.cfg) else null)
-                ?: if (v == "castbar") CastStripModel.ctlTabCells()                     // p53: padtab 39 then 29
-                else listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(n))
+            val cells = viewCells(v)
             val sent = onPadCells(cells)
-            Log.i(TAG, "tab '$v': padtab ${PadMapModel.colTab(n)} ${if (sent) "tapped" else "not sent"}")
+            Log.i(TAG, "tab '$v': ${cells.joinToString { "${it.first} ${it.second}" }} ${if (sent) "tapped" else "not sent"}")
             downTab = -1; invalidate(); return true
+        }
+        // p55: a sub-tab: shown at once, the add-on told (one pick)
+        if (downSub >= 0) {
+            val top = topTab()
+            val v = subsOf(top)?.getOrNull(downSub)
+            if (v != null && subRect(downSub, top).contains(ev.x, ev.y)) {
+                subWant[top] = v
+                page.showTabLocal(v)
+                val cells = viewCells(v)
+                val sent = onPadCells(cells)
+                Log.i(TAG, "sub-tab '$v': ${cells.joinToString { "${it.first} ${it.second}" }} ${if (sent) "tapped" else "not sent"}")
+            }
+            downSub = -1; invalidate(); return true
         }
         // a switch: ONE tap on its own column
         val sw = switches()
         if (downSw >= 0) {
             val t = sw.getOrNull(downSw)
             if (t != null && swRect(downSw, sw.size).contains(ev.x, ev.y)) {
-                if (t.col != null) {
+                if (t.key == "cbshow") {                                    // p55 (D4): the app's own setting (the add-on is told by cbSetting)
+                    HomeSettings.castBarCombat = CastStripModel.combatFor(!showOn())
+                    Log.i(TAG, "switch 'Show tap-to-cast' -> ${if (showOn()) "on" else "off"}")
+                } else if (t.col != null) {
                     val sent = onPadCells(listOf("spells" to t.col))
                     Log.i(TAG, "switch '${t.label}' -> ${if (t.on == true) "off" else "on"}: spells ${t.col} ${if (sent) "tapped" else "not sent"}")
                     if (sent && t.on != null && map?.combat == false) { swWant[t.key] = !t.on to SystemClock.uptimeMillis() + ECHO_MS; invalidate() }
@@ -572,10 +711,22 @@ class ControllerView(
         private const val PAUSED_SAY = "Start attack on cast is coming back later"
         private val TOGGLE_OPS = setOf("dpad-on", "dpad-off", "cc-on", "cc-off", "attack")
         private val PBMP = Paint(Paint.FILTER_BITMAP_FLAG)
+        private val MAIN = android.os.Handler(android.os.Looper.getMainLooper())
         /** p16 the room's tabs, in PadTabCtl's order; p34 (the user 2026-11-10: "consolidate the Controller menu"): the DS tab is gone (its
          *  switch on WoW Defaults, its four places on WoW Defaults' bare D-pad; the Item wheel's Tap / Hold in Settings > Controller) */
-        private val ALL_TAB_VIEWS = listOf("normal", "combat", "radial", "party", "castbar")
-        private val ALL_TAB_NAMES = listOf("WoW Defaults", "In combat", "Spell radial", "Party mode", "Cast bar")
+        /** p55 (D1): the Cast bar tab is gone from the top row: its page is WoW Defaults > Tap to cast */
+        private val ALL_TAB_VIEWS = listOf("normal", "combat", "radial", "party")
+        private val ALL_TAB_NAMES = listOf("WoW Defaults", "In combat", "Spell radial", "Party mode")
+        /** p55: the sub-tab pairs (Controller | Tap to cast) under WoW Defaults and In combat */
+        private val SUBS = mapOf("normal" to listOf("normal", "castbar"), "combat" to listOf("combat", "cbfight"))
+        private val SUB_NAMES = listOf("Controller", "Tap to cast")
+        /** p55: the sub-tab's size, the gap between the two, and how far the left page's content moves down under the row */
+        private const val SUB_W = 250f
+        private const val SUB_H = 50f
+        private const val SUB_GAP = 50f
+        const val SUB_DY = 56f
+        /** p55: the Show tap-to-cast switch has no add-on column (the app's own setting): any non-null value marks it switchable */
+        private const val SHOW_COL = -1
         /** the tab's word, measured for the swords' room (UiKit.tab's size) */
         private val PTABW by themed { UiKit.bodyPaint(28f, Theme.text) }
         /** the clean-up buttons' small lines stay this far from the Home bar's frame */
