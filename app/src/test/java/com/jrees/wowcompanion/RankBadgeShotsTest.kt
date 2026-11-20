@@ -231,6 +231,10 @@ class RankBadgeShotsTest {
     @Test fun theSettingOffHidesEveryBadge() {
         val b = book()
         SpellRanks.update(null)
+        // in the full suite an earlier class leaves the art root set and the controller kit loads off the main thread while this test
+        // draws (the first Home came out in the fallback frames, the next in the kit's): settle the art before the reference shots
+        var prev = homeShot(); bookShot(b); chooserShot(b)
+        for (i in 0 until 40) { settle(); val next = homeShot(); if (same(prev, next)) break; prev = next }
         val homeNone = homeShot(); val bookNone = bookShot(b); val chooserNone = chooserShot(b); val wheelNone = wheelShot()
         SpellRanks.update(b)
         HomeSettings.rankBadges = false
