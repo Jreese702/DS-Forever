@@ -405,6 +405,12 @@ object GameConfigWtf {
      *    (the label added when the game's list lacks it), as the fork does. "Ask each time" writes no pick (the marked list goes, as
      *    before: [forgetAccountChoice]).
      *  - NOT accountName (the Battle.net login's e-mail on these clients: see [ACCOUNT_CHOICE_KEYS]); no credential, never login.txt.
+     *  - WHAT THE MARK DOES (bug 2026-11-20, test 1513: the list showed with Remembered; GameAccountDiag's notes): the client reads the
+     *    "!" only on a TYPED login at its own screen with a saved login name (the account dropdown's preselection). The saved login
+     *    (login.txt: the client's kiosk auto-login) and Browser login (the helper clears GAME_ACCOUNT) never read it, so on DS Forever's
+     *    own sign-ins the game shows its list whatever this file holds. Each Play logs a "Game account:" line (GameAccountDiag).
+     *    So Play no longer writes the mark (the user's pick 2026-11-20; prepareLaunch passes no pick): the list the game did not write
+     *    may be what broke logins with BLZ51914400 (the fork's #62). [markAccount] stays for the tests and a later decision.
      */
     const val ACCOUNT_LIST = "accountList"
     private const val MAX_LABEL = 64

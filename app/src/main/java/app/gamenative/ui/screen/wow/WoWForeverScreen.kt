@@ -1232,6 +1232,8 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     // launch support: the client this folder runs (the beta or the launch client, from its .build.info), for every path below
     val choice = WowProduct.choose(gameRoot)
     val product = choice?.product ?: WowProduct.of(gameRoot)
+    // bug 2026-11-20: this start's game-account states, logged with the sign-in route once it is known (GameAccountDiag)
+    var accountPlay: com.jrees.wowcompanion.GameAccountDiag.Play? = null
     try {
         // 2026-11-07: the player's region (the login prompt's Region row) is the portal the game signs in to
         com.jrees.wowcompanion.DeviceTier.init(context); com.jrees.wowcompanion.Settings.init(context)
@@ -1246,6 +1248,8 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         // written (both routes: saved login and Browser login), kept as a label in the app's private settings; never logged
         val learned = com.jrees.wowcompanion.GameConfigWtf.accountPickIn(gameRoot, product)
         val pickBefore = com.jrees.wowcompanion.Settings.gameAccountPick
+        // bug 2026-11-20 (test 1513): the file's account keys as the game left them, before any write (states and counts only)
+        val shapeBefore = com.jrees.wowcompanion.GameAccountDiag.shape(com.jrees.wowcompanion.GameAccountDiag.configWtf(gameRoot, product))
         if (learned != null && learned != pickBefore) com.jrees.wowcompanion.Settings.gameAccountPick = learned
         val ask = com.jrees.wowcompanion.Settings.gameAccountAsk
         val pick = com.jrees.wowcompanion.Settings.gameAccountPick
@@ -1254,9 +1258,13 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
             askAccount = ask, screen = screen,
             // test build 1489 (#56): on the 8 GB Thors Low-memory graphics also lowers view distance, particles, spells and shadows;
             // #56 G2 (the user's approval 2026-11-19): on the 12 GB Pro too (DeviceTier.lowMemCuts)
-            // A: Remembered marks the learned pick "!" in accountList (ensure ignores it with Ask each time)
-            accountPick = pick, lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
+            // A: NO "!" written any more (the user's pick 2026-11-20 with "Controller picks the row"): the mark only serves a typed login
+            // with a saved login name, and a list the game did not write may be what broke logins with BLZ51914400 (the fork's #62).
+            // The pick is still LEARNED above from a mark the game wrote itself; Ask each time still clears a marked list
+            accountPick = null, lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
         val learnedWord = when { learned == null -> "none marked"; learned == pickBefore -> "same"; else -> "new" }
+        accountPlay = com.jrees.wowcompanion.GameAccountDiag.Play(ask, pick != null,
+            com.jrees.wowcompanion.GameAccountDiag.learned(learned, pickBefore), shapeBefore, !ask && accountKeys.isNotEmpty())
         if (ask) {
             Timber.i("Config.wtf game account: ask each time; cleared %s; pick %s (learned: %s)", accountKeys.joinToString(" ").ifEmpty { "nothing (no remembered choice)" },
                 if (pick != null) "set" else "unset", learnedWord)
@@ -1294,6 +1302,14 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     val browser = app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.beginRun(context, com.jrees.wowcompanion.SetupBridge.seeding)
     Timber.i("Sign-in this start: %s", if (browser) "browser login (no login.txt)" else "saved login")
     val wineRoot = com.jrees.wowcompanion.NativeLogin.prepare(context, gameRoot, product.flavorDir, browser) ?: gameRoot
+    // bug 2026-11-20: the "Game account:" line (logcat, the report's log, login.log, the report); never a label
+    accountPlay?.let { play ->
+        com.jrees.wowcompanion.GameAccountDiag.record(play, when {
+            browser -> com.jrees.wowcompanion.GameAccountDiag.Route.BROWSER
+            com.jrees.wowcompanion.NativeLogin.active -> com.jrees.wowcompanion.GameAccountDiag.Route.SAVED_LOGIN
+            else -> com.jrees.wowcompanion.GameAccountDiag.Route.OWN_SCREEN
+        })
+    }
     // #56 G1 + G3 (the user's approval 2026-11-19): our container's own video memory cap and BCn mode (GameVideoMemory), never a game CVar
     val gfx = videoMemoryChoice(context)
     val config = containerConfig(wineRoot, gpu, "G:\\${product.flavorDir}\\${arm64Exe.name}", gfx)

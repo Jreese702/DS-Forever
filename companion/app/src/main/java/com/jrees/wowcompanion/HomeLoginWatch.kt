@@ -57,6 +57,8 @@ class HomeLoginWatch(
 
     /** one line of either log: its trail line ([HomeLogin.trail]) to the sign-in log, once per client run */
     private fun trail(line: String) {
+        // the game's account list (the user's pick 2026-11-20): its count and timing only, once per client run (both logs carry it)
+        runCatching { GameAccountDiag.noteLog(line) }.getOrNull()?.let { NativeLogin.logEvent(it) }
         val t = HomeLogin.trail(line) ?: return
         if (!trailSeen.add(t)) return
         while (trailSeen.size > TRAIL_KEEP) trailSeen.remove(trailSeen.first())
@@ -127,7 +129,7 @@ class HomeLoginWatch(
         val size = b[2]
         if (p != path || pid != client) {                  // another game, or a new run of its client (its log starts empty)
             path = p; client = pid; carry = ""; state.reset(); clientSeenAt = android.os.SystemClock.elapsedRealtime(); outPolls = 0
-            connOffset = -1L; connCarry = ""; clientStartSec = b[6]; trailSeen.clear()
+            connOffset = -1L; connCarry = ""; clientStartSec = b[6]; trailSeen.clear(); GameAccountDiag.newRun()
             // A LOG OLDER THAN THIS CLIENT is the previous run's (2026-10-05 22:01, b46: the new client was seen ~5 s before it emptied
             // the log, the old in-world log was read, and "in the world" latched for the new run - no Login row): skipped, and it does
             // not count as size, until the client empties it (then everything in it is this run's)
