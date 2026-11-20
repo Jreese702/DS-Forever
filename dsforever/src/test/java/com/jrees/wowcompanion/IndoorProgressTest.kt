@@ -19,8 +19,8 @@ class IndoorProgressTest {
             IndoorProgress.line(st(IndoorScheduler.Phase.BAKING, deferred = 3, now = IndoorProgress.nowText(30.2)), true))
 
     @Test fun pausedSaysWhy() =
-        assertEquals("312 / 1460 ready · paused: player moving",
-            IndoorProgress.line(st(IndoorScheduler.Phase.PAUSED, note = "player moving"), true))
+        assertEquals("312 / 1460 ready · waiting: player moving",
+            IndoorProgress.line(st(IndoorScheduler.Phase.PAUSED, note = PlayGate.PLAYER_MOVING), true))
 
     @Test fun doneAndDeferredEnds() {
         assertEquals("1460 / 1460 ready · all built", IndoorProgress.line(st(IndoorScheduler.Phase.DONE, ready = 1460), true))

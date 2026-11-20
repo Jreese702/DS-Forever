@@ -34,7 +34,8 @@ internal object IndoorProgress {
         when (s.phase) {
             IndoorScheduler.Phase.CATALOGUE -> if (s.total > 0) parts.add("listing buildings")
             IndoorScheduler.Phase.BAKING -> parts.add(if (s.now.isNotEmpty()) "building ${s.now}" else "building")
-            IndoorScheduler.Phase.PAUSED -> parts.add("paused: ${s.note.ifEmpty { "waiting" }}")
+            // #568: the reason says it all ("waiting: game running", "builds when minimized or screen off")
+            IndoorScheduler.Phase.PAUSED -> parts.add(s.note.ifEmpty { "paused" })
             IndoorScheduler.Phase.DONE -> parts.add("all built")
             IndoorScheduler.Phase.DEFERRED -> parts.add("finished")
             IndoorScheduler.Phase.STOPPED -> parts.add(if (!buildOn) "off in Settings" else s.note.ifEmpty { "stopped" })

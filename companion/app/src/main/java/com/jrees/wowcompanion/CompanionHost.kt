@@ -486,7 +486,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         ArtHarvest.init(this)                     // the harvested art folder, before any view reads a picture (the art harvest, phase 1)
         ArtHarvest.onState(iconArtState)
-        // interiors (Track C): the optional background bake (re)starts with the companion; it waits out the game's own start
+        // interiors (Track C): the optional background bake starts with the companion (if it is not running already: it outlives this
+        // host, #568); it waits out the game's own start
         IndoorSchedulerStep.factory = IndoorGenerator.Factory { game ->
             game.loadClientKeys()
             NativeIndoorGenerator.factory.open(game)
@@ -3707,7 +3708,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ui.removeCallbacks(silenceTick)
         ArtHarvest.offState(iconArtState)
         ArtHarvest.offStepDone(mapArtDone)
-        IndoorSchedulerStep.stop()
+        // #568 / #573: NOT a stop - this host goes whenever the launcher goes to the background or the screen turns off, the only
+        // times the indoor maps may build after a game; the step lets go by itself when the game starts (IndoorSchedulerStep.on)
+        IndoorSchedulerStep.companionGone()
         ui.removeCallbacks(signInTick)
         NativeLogin.onTrafficSample = null
         SetupBridge.keyboard(false)

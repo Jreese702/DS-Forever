@@ -38,6 +38,8 @@ internal class IndoorScheduler(
         fun position(): IndoorBakeQueue.Position?
         /** the game is fighting / loading / starting: wait */
         fun busy(): Boolean
+        /** why [busy] holds it, shown as it is (#568: [PlayGate.indoorWait]'s reasons); null = not busy */
+        fun busyReason(): String? = if (busy()) PlayGate.GAME_BUSY else null
         /**
          * The game is up or being launched ([PlayGate], issue #108 cluster, 2026-11-11: the bake opened and held the game files beside
          * the game on the 16 GB Thor and Android killed DS Forever): the run lets the game files go AT ONCE, not after a long pause
@@ -104,11 +106,14 @@ internal class IndoorScheduler(
         }
         var paused = false
         var pausedAt = 0L
+        var said: String? = null
         while (true) {
             if (signals.stop()) throw IndoorGenerator.Stopped()
             if (signals.gameRunning()) { log("the game is running: the game files let go at once"); throw IndoorGenerator.Released() }
             val why = pauseReason(signals) ?: break
-            if (!paused) { paused = true; pausedAt = signals.now(); emit(status.copy(phase = Phase.PAUSED, note = why)); log("paused: $why") }
+            if (!paused) { paused = true; pausedAt = signals.now() }
+            // #568: a new reason shows at once (the row kept the first one: "game busy" after the player had minimized)
+            if (why != said) { said = why; emit(status.copy(phase = Phase.PAUSED, note = why)); log("paused: $why") }
             // 2026-11-08 (the native heap profile: the open game files are ~500 MB of index tables, held through every pause): a pause
             // longer than RELEASE_AFTER_MS lets them go; the step waits without them and opens them again when it may build
             if (signals.now() - pausedAt >= RELEASE_AFTER_MS) throw IndoorGenerator.Released()
@@ -264,10 +269,11 @@ internal class IndoorScheduler(
         /** why the bake waits now, the cheapest test first; null = it may go on */
         internal fun pauseReason(s: Signals): String? = when {
             s.gameRunning() -> PlayGate.GAME_RUNNING
-            s.busy() -> "game busy"
-            s.moving() -> "player moving"
-            s.hot() -> "device warm"
-            else -> null
+            else -> s.busyReason() ?: when {
+                s.moving() -> PlayGate.PLAYER_MOVING
+                s.hot() -> PlayGate.DEVICE_WARM
+                else -> null
+            }
         }
 
         const val MEMORY_EVERY_MS = 1_000L
