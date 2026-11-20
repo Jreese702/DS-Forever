@@ -116,7 +116,7 @@ WC.minimapIconsOff = false     -- what the last hide / show did to the markers (
 -- camelot's Skin.lua sets in both rotate modes. With the markers' icon scale beside it. A property setter, runtime only.
 -- KEEPING IT: the hub hides the minimap ONCE (Hub.lua's apply never asks again while it says hidden), and Skin.lua puts its own
 -- mask back on a rotateMinimap change, so while the hub's hide stands (not the death peek, not in combat) both are said again on
--- the quest / zone / POI / loading events, at combat's end and every REASSERT_S on the probe's frame. The map document carries
+-- the quest / zone / POI / loading events, at combat's end and every REASSERT_S on WC.mmp's frame. The map document carries
 -- mmk / mmi (the mask / icon scale taken) and mmf (the frame the hub hid) while hidden. In WC (Map.lua's main chunk is at Lua
 -- 5.1's 200-local limit).
 -- THE RIM ARC (b-minimap-edge-effect; the user, 1.0.8-test1, at a quest area's edge: "a subtle white, lattice-looking cloud arc"
@@ -1011,6 +1011,7 @@ function WC.collectMap()
             if okS and type(st) == "boolean" and WC.isPlain(st) and st then out.uwp.st = 1 end   -- proven plain first
         end
     end
+    out.mpo = WC.mmp and WC.mmp.opt or nil              -- mp3: the options taken (sparkles = 4), for the app to re-send after a reload
     -- THE GUARD'S FLAG (gp1): the gossip POI the game holds now, for Home's map, the Map room and the arrow (see WC.gpoi)
     pcall(WC.gpoi.collect, id, out)
     if plainId then traceNote(plainId, out.quests) end   -- the quest-area tracer's list
@@ -2163,7 +2164,7 @@ local function onDigit(col)
         pinClear()
         return mrAck("pin", true, nil, { cleared = true })
     end
-    if b[1] == 2 then                                      -- mp1: the map's minimap options (WC.mmp), the next digit their bits
+    if b[1] == 2 then                                      -- mp1 / mp3: the map's options (WC.mmp: sparkles), the next digit their bits
         if #b < 2 then return end
         w.buf = {}
         return WC.mmp.setOpt(b[2])
@@ -2323,311 +2324,27 @@ end
 WC.mapRoomCell = function(col) return mrOnCell(col) end   -- for tools/test_map_room.py
 
 
--- ================================================================ THE MINIMAP PROBE (mp1; "mmprobe" documents)
--- The user, 2026-10-12 (via tracking): "review and add the node logic from the tracking addon ... maybe it will have some logic
--- that we can learn from on seeing other things on the mini map". THE TECHNIQUE (learned from the Node Sight add-on; this is our
--- own code): the minimap answers a PRETEND mouse at any point - Minimap:UpdateMouseoverAtPoint, the controller cursor's own call,
--- live only while the minimap's soft cursor is on - with what its tooltip would say there (C_TooltipInfo.GetMinimapMouseover): the
--- NAMES of the dots under that point. Those are the herbs / ore of the player's own Find tracking and the town NPCs of the
--- minimap's tracking (repair, innkeeper, flight master...). A grid of points over the minimap is tried, a batch a frame; points
--- that name the same thing and touch are one dot; its offset from the minimap's middle, through C_Minimap.GetViewRadius (the yards
--- from the middle to the edge), is how far north / west of the player it stands. The app gets the names and the yards: the NPCs
--- it has SEEN (the user's "only NPCs actually seen") and the live herb / ore dots.
--- RULES: never in a fight; never while the minimap is hidden or the game itself is using its soft cursor; the soft cursor goes off
--- again in the SAME frame; every value must be plain (WC.isPlain), a secret one is dropped. Paced: a scan every PACE_MOVING s while
--- the player moves, slower standing still or finding nothing. The cost of each scan (debugprofilestop) rides in the document.
--- THE OPTIONS (the app's map filter; op digit 2 on the pin lane, onDigit): 1 the probe, 2 the Find Herbs / Find Minerals
--- AUTO-SWITCH, 4 SPARKLES (the soft-target icons over nearby herbs / ore / chests). The user, 2026-10-12: "its fine to change game
--- settings" FOR THIS FEATURE: each game setting changed is REMEMBERED and PUT BACK when the option goes off and at logout (so a
--- disabled add-on leaves the game as it was), unless the player changed it since; the Controller UI's own SoftTargetInteract is
--- left alone when it is on. Bars, bindings and macros are never touched.
+-- ================================================================ SPARKLES + THE HIDDEN MINIMAP'S TICK (WC.mmp, mp3)
+-- mp3 (issue #87, the user's ruling 2026-11-19: "accept that the live dots are gone"): THE MINIMAP PROBE IS REMOVED. Since game
+-- build 1.60.1.70862 (2026-11-08) the minimap answers the pretend mouse (Minimap:UpdateMouseoverAtPoint + C_TooltipInfo.
+-- GetMinimapMouseover) with zero-line tooltips, so its scans named nothing: the live herb / ore / chest dots, the probe's seen
+-- NPCs, the Find Herbs / Find Minerals auto-switch that rode its scans and the "mmprobe" document are gone (mp2's diagnostics with
+-- them; its "busy" check read Minimap:IsUsingSoftCursor, which this client does not have). The game's top-screen minimap is never
+-- forced on; players use the game's own minimap tracking (Find Herbs / Find Minerals). WHAT STAYS:
+--   SPARKLES (option bit 4; op digit 2 on the pin lane, onDigit): the soft-target icons over nearby herbs / ore / chests. The user,
+--   2026-10-12: "its fine to change game settings" FOR THIS FEATURE: each game setting changed is REMEMBERED and PUT BACK when the
+--   option goes off and at logout (so a disabled add-on leaves the game as it was), unless the player changed it since; the
+--   Controller UI's own SoftTargetInteract is left alone when it is on. Bars, bindings and macros are never touched. Bits 1 / 2 (the
+--   old probe / auto-switch) are read as nothing. The option rides the map snapshot as `mpo` (the app re-sends it after a reload).
+--   THE HIDDEN MINIMAP'S RE-ASSERT (WC.mmHide) on this frame's OnUpdate and its events.
 -- All of it lives in WC.mmp: Map.lua's main chunk is at Lua 5.1's 200-local limit (no new top-level local).
--- mp2 (issue #87, 1.0.21: "Can't see herbs on minimap. or maybe I'm missing somthing."): DIAGNOSTICS ONLY. Every report from 1.0.18 on
--- has d[0] in every reading (1.0.16: dots in 115 of 121), the cause unknown from the reports (the summary keeps numbers only): the
--- document now says why in numbers - wy, fh / fm (Find Herbs / Minerals on), dg (per scan: answers, secret drops, lines, names,
--- soft-cursor frames, batches that threw). A batch that throws is counted and skipped (sc.i moves on) instead of being retried.
 WC.mmp = {
-    V = "mp2",
-    WHY = { combat = 1, api = 2, hidden = 3, busy = 4 },
-    STEP = 8,                 -- minimap units between the points tried (a dot answers within ~15)
-    PER_FRAME = 60,           -- points tried in one frame
-    PACE_MOVING = 0.5, PACE_STILL = 2.0, PACE_EMPTY = 4.0, PACE_OFF = 5.0,
-    MOVED_YD = 2,             -- the player moved since the last scan
-    SEND_MIN = 2.0,           -- seconds between two documents (unless the dots changed a lot or the options did)
-    HEARTBEAT = 10.0,
-    MAX_DOTS = 60,
-    SWITCH_YD = 40,           -- yards walked between two Find switches
-    SWITCH_WAIT = 1.0,        -- the dots take a moment to change after a switch
-    FINDERS = { [2383] = "herbs", [2580] = "ore" },          -- Find Herbs, Find Minerals
-    FINDER_NAMES = { ["Find Herbs"] = "herbs", ["Find Minerals"] = "ore" },
+    V = "mp3",
+    SPARKLE_BIT = 4,
     SPARKLES = { { "SoftTargetIconGameObject", "1" }, { "SoftTargetInteractArc", "2" }, { "SoftTargetInteractRange", "30" } },
-    opt = 1,                  -- probe on, auto-switch off, sparkles off until the app says otherwise
-    wait = 3.0, still = 0, empty = 0, sentAt = -1000, sig = "", saved = {}, applied = {}, pend = false,
+    opt = 0,                  -- sparkles off until the app says otherwise
+    saved = {}, applied = {}, pend = false,
 }
-
-function WC.mmp.plain(v) return v ~= nil and WC.isPlain(v) end
-
-function WC.mmp.clean(t)
-    if type(t) ~= "string" or not WC.isPlain(t) then return nil end
-    t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", ""):gsub("^%s+", ""):gsub("%s+$", "")
-    if t == "" then return nil end
-    return t
-end
-
--- the minimap can be probed now: false + why
-function WC.mmp.can()
-    if type(InCombatLockdown) == "function" and InCombatLockdown() then return false, "combat" end
-    local M = _G.Minimap
-    if type(M) ~= "table" or type(M.UpdateMouseoverAtPoint) ~= "function" or type(M.SetUsingSoftCursor) ~= "function" then
-        return false, "api"
-    end
-    if type(C_TooltipInfo) ~= "table" or type(C_TooltipInfo.GetMinimapMouseover) ~= "function" then return false, "api" end
-    local okV, vis = pcall(M.IsVisible, M)
-    if not okV or vis ~= true then return false, "hidden" end
-    if type(M.IsUsingSoftCursor) == "function" then
-        local okU, using = pcall(M.IsUsingSoftCursor, M)
-        if okU and using == true then return false, "busy" end              -- the game's own cursor is on the minimap
-    end
-    return true
-end
-
-function WC.mmp.player()
-    local ok, wx, wy = CALL(UnitPosition, "player")
-    if ok and type(wx) == "number" and type(wy) == "number" and WC.isPlain(wx) and WC.isPlain(wy) then return wx, wy end
-end
-
--- the grid of points (minimap units from the bottom left) inside the minimap's circle, for this width
-function WC.mmp.grid(width)
-    local P = WC.mmp
-    if P.gridW == width and P.gridPts then return P.gridPts end
-    local pts, n = {}, math.floor(width / P.STEP)
-    for gx = 0, n do
-        for gy = 0, n do
-            local dx, dy = gx * P.STEP - width / 2, gy * P.STEP - width / 2
-            if dx * dx + dy * dy <= width * width / 4 then pts[#pts + 1] = gx * 1000 + gy end
-        end
-    end
-    P.gridW, P.gridPts = width, pts
-    return pts
-end
-
-function WC.mmp.start()
-    local P = WC.mmp
-    local ok, why = P.can()
-    if not ok then
-        P.why = why
-        P.wait = P.PACE_OFF
-        if why ~= P.lastWhy then P.lastWhy = why; P.send(true) end
-        return
-    end
-    P.why, P.lastWhy = nil, nil
-    if P.opt % 4 >= 2 and P.switch() then P.wait = P.SWITCH_WAIT; return end
-    local M = _G.Minimap
-    local okG, width, left, bottom, scale = pcall(function() return M:GetWidth(), M:GetLeft(), M:GetBottom(), M:GetEffectiveScale() end)
-    if not okG or type(width) ~= "number" or width <= 0 or type(left) ~= "number" or type(bottom) ~= "number" or type(scale) ~= "number" then
-        P.wait = P.PACE_OFF; return
-    end
-    local okR, radius = CALL(function() return C_Minimap.GetViewRadius() end)
-    if not okR or type(radius) ~= "number" or not WC.isPlain(radius) or radius <= 0 then P.wait = P.PACE_OFF; return end
-    local wx, wy = P.player()
-    local rot = false
-    local okC, r = CALL(function() return C_CVar.GetCVar("rotateMinimap") end)      -- a READ
-    if okC and (r == "1" or r == 1) then rot = true end
-    local facing = rot and SN(GetPlayerFacing) or 0
-    P.scan = { pts = P.grid(width), i = 1, hits = {}, width = width, left = left, bottom = bottom, scale = scale, radius = radius,
-               rot = rot, facing = facing or 0, wx = wx, wy = wy, m = plainNum(mapID()), cost = 0,
-               dg = { pd = 0, ps = 0, pl = 0, pt = 0, px = 0, pe = 0, cs = 0, fr = 0 } }
-end
-
--- one batch of points: the soft cursor on, the points, the soft cursor off - in this frame, whatever happens
-function WC.mmp.step()
-    local P, sc = WC.mmp, WC.mmp.scan
-    if type(InCombatLockdown) == "function" and InCombatLockdown() then P.scan = nil; P.wait = P.PACE_OFF; return end
-    local M = _G.Minimap
-    local t0 = (type(debugprofilestop) == "function") and debugprofilestop() or 0
-    local dg = sc.dg
-    pcall(M.SetUsingSoftCursor, M, true)
-    -- mp2 (issue #87): did the soft cursor take (the frames it read back on)?
-    dg.fr = dg.fr + 1
-    if type(M.IsUsingSoftCursor) == "function" then
-        local okU, using = pcall(M.IsUsingSoftCursor, M)
-        if okU and using == true then dg.cs = dg.cs + 1 end
-    end
-    local last = math.min(sc.i + P.PER_FRAME - 1, #sc.pts)
-    local okB = pcall(function()
-        for k = sc.i, last do
-            local key = sc.pts[k]
-            local x, y = math.floor(key / 1000) * P.STEP, key % 1000 * P.STEP
-            M:UpdateMouseoverAtPoint((sc.left + x) * sc.scale, (sc.bottom + y) * sc.scale)
-            local data = C_TooltipInfo.GetMinimapMouseover()
-            -- mp2 (issue #87): what each point answered, counted (pd any answer, ps dropped as secret, pl lines read, pt names kept,
-            -- px a line with no plain text)
-            local lines = nil
-            if data ~= nil then
-                dg.pd = dg.pd + 1
-                if type(data) == "table" and WC.isPlain(data) then lines = data.lines else dg.ps = dg.ps + 1 end
-            end
-            if lines ~= nil and not (type(lines) == "table" and WC.isPlain(lines)) then dg.ps = dg.ps + 1; lines = nil end
-            if lines then
-                dg.pl = dg.pl + 1
-                for _, line in ipairs(lines) do
-                    local name = P.clean(type(line) == "table" and line.leftText or nil)
-                    if name then
-                        dg.pt = dg.pt + 1
-                        local h = sc.hits[name]
-                        if not h then h = {}; sc.hits[name] = h end
-                        h[key] = true
-                    else
-                        dg.px = dg.px + 1
-                    end
-                end
-            end
-        end
-    end)
-    if not okB then dg.pe = dg.pe + 1 end         -- mp2: a batch that threw is counted and skipped (it never stalls the scan)
-    sc.i = last + 1
-    pcall(M.SetUsingSoftCursor, M, false)
-    if type(debugprofilestop) == "function" then sc.cost = sc.cost + (debugprofilestop() - t0) end
-    if sc.i > #sc.pts then P.finish() end
-end
-
--- the points of one name -> dots: touching points (8 around) are one dot, at their middle
-function WC.mmp.finish()
-    local P, sc = WC.mmp, WC.mmp.scan
-    P.scan = nil
-    local dots = {}
-    local half = sc.width / 2
-    local ypu = sc.radius / half                                  -- yards per minimap unit
-    local f = sc.facing or 0
-    for name, set in pairs(sc.hits) do
-        local seen = {}
-        for key in pairs(set) do
-            if not seen[key] then
-                local queue, n, sx, sy = { key }, 0, 0, 0
-                seen[key] = true
-                while #queue > 0 do
-                    local k = table.remove(queue)
-                    n = n + 1
-                    sx, sy = sx + math.floor(k / 1000), sy + k % 1000
-                    for _, d in ipairs({ -1001, -1000, -999, -1, 1, 999, 1000, 1001 }) do
-                        local o = k + d
-                        if set[o] and not seen[o] then seen[o] = true; queue[#queue + 1] = o end
-                    end
-                end
-                -- the dot's middle from the minimap's middle (x right, y up), in yards; up is north, or the facing when it rotates
-                local ux, uy = (sx / n) * P.STEP - half, (sy / n) * P.STEP - half
-                local fwdN, fwdW, rgtN, rgtW = 1, 0, 0, -1
-                if sc.rot then fwdN, fwdW, rgtN, rgtW = math.cos(f), math.sin(f), math.sin(f), -math.cos(f) end
-                local north = (uy * fwdN + ux * rgtN) * ypu
-                local west = (uy * fwdW + ux * rgtW) * ypu
-                dots[#dots + 1] = { t = name, n = math.floor(north * 10 + 0.5) / 10, w = math.floor(west * 10 + 0.5) / 10, c = n,
-                                    d2 = north * north + west * west }
-            end
-        end
-    end
-    table.sort(dots, function(a, b) return a.d2 < b.d2 end)
-    while #dots > P.MAX_DOTS do table.remove(dots) end
-    for _, d in ipairs(dots) do d.d2 = nil end
-    -- the pace: moving -> fast; standing still or finding nothing -> slower
-    local moved = true
-    if sc.wx and P.lastX then moved = (sc.wx - P.lastX) ^ 2 + (sc.wy - P.lastY) ^ 2 > P.MOVED_YD ^ 2 end
-    P.lastX, P.lastY = sc.wx, sc.wy
-    P.empty = (#dots == 0) and math.min(P.empty + 1, 10) or 0
-    P.wait = (#dots == 0 and P.empty >= 3) and P.PACE_EMPTY or (moved and P.PACE_MOVING or P.PACE_STILL)
-    P.switched = false                                             -- a scan has run since the last switch
-    P.dots, P.cost, P.np, P.m, P.r, P.dg = dots, sc.cost, #sc.pts, sc.m, sc.radius, sc.dg
-    P.send(false)
-end
-
--- the document: the dots (name, yards north / west of the player), the options, the cost; on a change, else every HEARTBEAT s
-function WC.mmp.send(force)
-    local P = WC.mmp
-    local t = (type(GetTime) == "function") and GetTime() or 0
-    local parts = {}
-    for _, d in ipairs(P.dots or {}) do parts[#parts + 1] = d.t .. math.floor(d.n / 3) .. ":" .. math.floor(d.w / 3) end
-    table.sort(parts)
-    local sig = P.opt .. "|" .. tostring(P.why) .. "|" .. table.concat(parts, ",")
-    if not force and sig == P.sig and t - P.sentAt < P.HEARTBEAT then return end
-    if not force and t - P.sentAt < P.SEND_MIN then return end
-    P.sig, P.sentAt = sig, t
-    pcall(function()
-        -- mp2 (issue #87): the why as a number too (wy: 1 combat, 2 api, 3 hidden, 4 busy), Find Herbs / Minerals (fh / fm: 1 on,
-        -- 0 listed but off, absent = not listed) and the last scan's counts (dg) - the report keeps numbers only, never the words
-        local ta = P.tracking()
-        WC.send(WC.encode({ type = "mmprobe", v = P.V, m = P.m, r = P.r and math.floor(P.r + 0.5) or nil, d = P.dots or {},
-            o = P.opt, why = P.why, wy = P.why and (P.WHY[P.why] or 9) or nil, fh = P.fh, fm = P.fm, dg = P.dg,
-            ms = P.cost and math.floor(P.cost * 10 + 0.5) / 10 or nil, np = P.np, ta = ta }))
-        WC.push()
-    end)
-end
-
--- the minimap's tracking types that are on (names), for the report "what the probe can see"
-function WC.mmp.tracking()
-    local P, out = WC.mmp, {}
-    P.fh, P.fm = nil, nil
-    if type(C_Minimap) ~= "table" or type(C_Minimap.GetNumTrackingTypes) ~= "function" then return out end
-    local okN, n = CALL(C_Minimap.GetNumTrackingTypes)
-    if not okN or type(n) ~= "number" or not WC.isPlain(n) then return out end
-    for i = 1, math.min(n, 40) do
-        local okI, a, b, c = CALL(C_Minimap.GetTrackingInfo, i)
-        local name, active, spell
-        if okI and type(a) == "table" then name, active, spell = a.name, a.active, a.spellID else name, active = a, c end
-        if active == true and type(name) == "string" and WC.isPlain(name) then out[#out + 1] = name end
-        -- mp2 (issue #87): Find Herbs / Find Minerals by spell or name, on (1) or off (0)
-        local kind = (spell ~= nil and WC.isPlain(spell) and P.FINDERS[spell]) or (type(name) == "string" and WC.isPlain(name) and P.FINDER_NAMES[name])
-        if kind and WC.isPlain(active) then
-            local v = (active == true) and 1 or 0
-            if kind == "herbs" then P.fh = math.max(P.fh or 0, v) else P.fm = math.max(P.fm or 0, v) end
-        end
-    end
-    return out
-end
-
--- ---------------------------------------------------------------- the Find Herbs / Find Minerals AUTO-SWITCH (option 2)
--- the active finder's kind, the other finder's index; nil unless exactly one of the two is on and the other is listed
-function WC.mmp.finders()
-    local P = WC.mmp
-    if type(C_Minimap) ~= "table" or type(C_Minimap.GetNumTrackingTypes) ~= "function" then return nil end
-    local okN, n = CALL(C_Minimap.GetNumTrackingTypes)
-    if not okN or type(n) ~= "number" or not WC.isPlain(n) then return nil end
-    local onKind, onIdx, offIdx, active = nil, nil, nil, 0
-    for i = 1, math.min(n, 40) do
-        local okI, a, b, c = CALL(C_Minimap.GetTrackingInfo, i)
-        local name, act, spell
-        if okI and type(a) == "table" then name, act, spell = a.name, a.active, a.spellID else name, act = a, c end
-        local kind = (WC.isPlain(spell) and P.FINDERS[spell]) or (type(name) == "string" and WC.isPlain(name) and P.FINDER_NAMES[name])
-        if kind then
-            if not WC.isPlain(act) then return nil end
-            if act == true then onKind, onIdx, active = kind, i, active + 1 else offIdx = i end
-        end
-    end
-    if active ~= 1 or not offIdx then return nil end
-    return onKind, onIdx, offIdx
-end
-
--- the other finder on, after SWITCH_YD walked and a scan since the last switch; true = it switched
-function WC.mmp.switch()
-    local P = WC.mmp
-    if P.switched then return false end
-    local kind, onIdx, offIdx = P.finders()
-    if not kind or type(C_Minimap.SetTracking) ~= "function" then return false end
-    if not P.switchFrom then P.switchFrom = onIdx end              -- remembered: put back when the option goes off
-    local wx, wy = P.player()
-    if not wx then return false end
-    if P.swX and (wx - P.swX) ^ 2 + (wy - P.swY) ^ 2 < P.SWITCH_YD ^ 2 then return false end
-    P.swX, P.swY = wx, wy
-    if not CALL(C_Minimap.SetTracking, offIdx, true) then return false end
-    P.switched = true
-    return true
-end
-
-function WC.mmp.switchBack()
-    local P = WC.mmp
-    local from = P.switchFrom
-    P.switchFrom, P.swX, P.swY = nil, nil, nil
-    if not from or (type(InCombatLockdown) == "function" and InCombatLockdown()) then return end
-    if type(C_Minimap) == "table" and type(C_Minimap.SetTracking) == "function" then CALL(C_Minimap.SetTracking, from, true) end
-end
 
 -- ---------------------------------------------------------------- SPARKLES (option 4): the soft-target settings, remembered
 function WC.mmp.same(a, b) return a == b or (tonumber(a) ~= nil and tonumber(a) == tonumber(b)) end
@@ -2673,27 +2390,19 @@ function WC.mmp.sparkles(on)
     end
 end
 
--- the options from the app (op digit 2 on the pin lane): bits 1 probe, 2 auto-switch, 4 sparkles
+-- the options from the app (op digit 2 on the pin lane): bit 4 sparkles (1 / 2, the removed probe's, are dropped)
 function WC.mmp.setOpt(bits)
     local P = WC.mmp
     if type(bits) ~= "number" or bits < 0 or bits > 7 then return mrAck("opt", false, "bad options") end
     local was = P.opt
-    P.opt = bits
-    if was % 4 >= 2 and bits % 4 < 2 then P.switchBack() end
-    if (was >= 4) ~= (bits >= 4) then P.sparkles(bits >= 4) end
-    if bits % 2 == 0 then P.scan = nil; P.dots = {} end
-    P.wait = 0.2
-    mrAck("opt", true, nil, { o = bits })
-    P.send(true)
+    P.opt = (bits >= P.SPARKLE_BIT) and P.SPARKLE_BIT or 0
+    if (was >= P.SPARKLE_BIT) ~= (P.opt >= P.SPARKLE_BIT) then P.sparkles(P.opt >= P.SPARKLE_BIT) end
+    mrAck("opt", true, nil, { o = P.opt })
+    snapshotSoon("options")                                        -- map.mpo: the app sees the option taken
 end
 
-function WC.mmp.tick(elapsed)
-    local P = WC.mmp
+function WC.mmp.tick()
     pcall(WC.mmHide.reassert, false)                               -- the hidden minimap's mask stays on (see WC.mmHide)
-    if P.opt % 2 == 0 then return end                              -- the probe is off (the auto-switch rides its scans)
-    if P.scan then return P.step() end
-    P.wait = P.wait - (type(elapsed) == "number" and elapsed or 0)
-    if P.wait <= 0 then P.start() end
 end
 
 function WC.mmp.init()
@@ -2703,7 +2412,7 @@ function WC.mmp.init()
     if not ok or not f then return end
     P.frame = f
     pcall(function()
-        f:SetScript("OnUpdate", function(_, el) pcall(WC.mmp.tick, el) end)
+        f:SetScript("OnUpdate", function() pcall(WC.mmp.tick) end)
         f:RegisterEvent("PLAYER_REGEN_ENABLED")
         f:RegisterEvent("PLAYER_LOGOUT")
         -- a quest's area changed: the hidden minimap's layers off again at once (WC.mmHide); a name this build lacks is skipped
@@ -2715,11 +2424,10 @@ function WC.mmp.init()
                 pcall(WC.mmHide.reassert, true)
             elseif event == "PLAYER_REGEN_ENABLED" then
                 pcall(WC.mmHide.reassert, true)                    -- combat held the re-assert back
-                if WC.mmp.pend then WC.mmp.sparkles(WC.mmp.opt >= 4) end
+                if WC.mmp.pend then WC.mmp.sparkles(WC.mmp.opt >= WC.mmp.SPARKLE_BIT) end
             elseif event == "PLAYER_LOGOUT" then
                 -- the game as it was: a disabled add-on (or a changed option) leaves nothing behind for the next session
                 WC.mmp.sparkles(false)
-                WC.mmp.switchBack()
             end
         end)
     end)
