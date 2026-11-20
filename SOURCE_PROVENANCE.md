@@ -65,3 +65,25 @@ upstream's own v2.4.5 release CI printed for this source (run 44308379224,
 head aba66f9c). The portable C protocol tests (`test.sh`) pass. The app build
 refuses any helper with other bytes (`checkSessionBridge`, app/build.gradle.kts).
 Rebuild: `sh tools/wow-session-bridge/build_dsf.sh` (Git Bash).
+
+## DNS shim (libgamenative_dns_v4mapped.so), 2026-11-20
+
+Source: `app/src/main/cpp/gamenative_dns_v4mapped.c`. The prebuilt
+`app/src/main/jniLibs/arm64-v8a/libgamenative_dns_v4mapped.so` is committed
+(not built by Gradle). The gethostbyname()/gethostbyname_r() overrides are
+from WoW Forever for Android v2.4.3, commit
+17c46d533d88e4bb7567a70e196e6be40b862635 (from jaredgei/wow-forever-android#85
+by @Demineo04), adapted to DS Forever's WOWFOREVER_HOSTNAME.
+
+Rebuild (Git Bash, NDK 27.2.12479018; the same command reproduces the
+previous committed .so byte-for-byte from its source,
+af9a7fd5dd986e26beb41903e075623b57afe57a3048831862b49e7e7b3f9e49):
+
+    T=$LOCALAPPDATA/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/windows-x86_64/bin
+    O=app/src/main/jniLibs/arm64-v8a/libgamenative_dns_v4mapped.so
+    $T/aarch64-linux-android26-clang -shared -O2 -fPIC -Wl,-z,max-page-size=16384 \
+        -o $O app/src/main/cpp/gamenative_dns_v4mapped.c -ldl
+    $T/llvm-strip --strip-unneeded $O
+
+Output: fe752fbd6a2584c37920698719f70c8c3f0f74566025da4ba4d781d88079a00e.
+Host test: `wsl -e sh tools/dns-shim/test.sh` (Linux/glibc, LD_PRELOAD).

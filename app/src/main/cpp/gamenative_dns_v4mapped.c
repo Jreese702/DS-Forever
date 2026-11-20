@@ -18,6 +18,12 @@
  * BLZ51914400 identity fix, issue #95), from dienstag0815's upstream PR
  * jaredgei/wow-forever-android#65, GPL-3.0.
  *
+ * gethostbyname() and gethostbyname_r() of that stable name answer the same
+ * address and report the stable name as h_name, so the name a caller looked
+ * up is the name it gets back (not the device's IP).  Every other lookup
+ * passes straight through.  From upstream v2.4.3, commit 17c46d53 (taken from
+ * jaredgei/wow-forever-android#85 by @Demineo04), GPL-3.0.
+ *
  * This shim is preloaded for every bionic launch.
  */
 
@@ -151,6 +157,9 @@ static int (*next_getaddrinfo)(const char *, const char *, const struct addrinfo
                                struct addrinfo **);
 static void (*next_freeaddrinfo)(struct addrinfo *);
 static int (*next_gethostname)(char *, size_t);
+static struct hostent *(*next_gethostbyname)(const char *);
+static int (*next_gethostbyname_r)(const char *, struct hostent *, char *, size_t,
+                                   struct hostent **, int *);
 static pthread_once_t resolver_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t mapped_results_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct mapped_result *mapped_results;
@@ -160,6 +169,8 @@ static void resolve_next_symbols(void)
     next_getaddrinfo = dlsym(RTLD_NEXT, "getaddrinfo");
     next_freeaddrinfo = dlsym(RTLD_NEXT, "freeaddrinfo");
     next_gethostname = dlsym(RTLD_NEXT, "gethostname");
+    next_gethostbyname = dlsym(RTLD_NEXT, "gethostbyname");
+    next_gethostbyname_r = dlsym(RTLD_NEXT, "gethostbyname_r");
 }
 
 static int network_getaddrinfo(const char *node, const char *service,
@@ -334,6 +345,99 @@ static int routable_address(char *address, size_t length)
 
 int getaddrinfo(const char *node, const char *service,
                 const struct addrinfo *hints, struct addrinfo **result);
+
+/*
+ * The stable host name isn't in DNS, so a lookup of it is answered with the
+ * routable address (else 127.0.0.1), as getaddrinfo() does above.  Returns
+ * [name] itself for any other name.
+ */
+static const char *local_name(const char *name, char *address, size_t length)
+{
+    const char *self = wow_hostname();
+
+    if (!name || !self || strcasecmp(name, self) != 0)
+        return name;
+    if (!routable_address(address, length))
+        snprintf(address, length, "127.0.0.1");
+    return address;
+}
+
+struct hostent *gethostbyname(const char *name)
+{
+    static __thread struct hostent local_host;
+    static __thread char local_hostname[NI_MAXHOST];
+    char address[INET_ADDRSTRLEN];
+    const char *resolved, *self;
+    struct hostent *host;
+    size_t self_length;
+
+    pthread_once(&resolver_once, resolve_next_symbols);
+    if (!next_gethostbyname)
+    {
+        h_errno = NO_RECOVERY;
+        return NULL;
+    }
+    resolved = local_name(name, address, sizeof(address));
+    host = next_gethostbyname(resolved);
+    if (!host || resolved == name) return host;
+
+    self = wow_hostname();
+    self_length = strlen(self) + 1;
+    if (self_length > sizeof(local_hostname))
+    {
+        h_errno = NO_RECOVERY;
+        errno = ERANGE;
+        return NULL;
+    }
+    /* Keep libc's hostent and its strings untouched.  The address and alias
+     * arrays keep the usual gethostbyname lifetime; only h_name differs. */
+    local_host = *host;
+    memcpy(local_hostname, self, self_length);
+    local_host.h_name = local_hostname;
+    DNS_LOG("gethostbyname(own host name) -> own address");
+    return &local_host;
+}
+
+int gethostbyname_r(const char *name, struct hostent *ret, char *buf,
+                    size_t buflen, struct hostent **result, int *h_errnop)
+{
+    char address[INET_ADDRSTRLEN];
+    const char *resolved, *self;
+    size_t self_length;
+    int status;
+
+    pthread_once(&resolver_once, resolve_next_symbols);
+    if (!next_gethostbyname_r)
+    {
+        *result = NULL;
+        *h_errnop = NO_RECOVERY;
+        return ENOSYS;
+    }
+    resolved = local_name(name, address, sizeof(address));
+    if (resolved == name)
+        return next_gethostbyname_r(name, ret, buf, buflen, result, h_errnop);
+
+    /* Reserve the stable name at the end of the caller's buffer, outside the
+     * space libc uses for the address, aliases and pointer arrays. */
+    self = wow_hostname();
+    self_length = strlen(self) + 1;
+    if (buflen < self_length)
+    {
+        *result = NULL;
+        *h_errnop = NETDB_INTERNAL;
+        errno = ERANGE;
+        return ERANGE;
+    }
+    status = next_gethostbyname_r(resolved, ret, buf, buflen - self_length,
+                                  result, h_errnop);
+    if (status == 0 && *result)
+    {
+        char *canonical = buf + buflen - self_length;
+        memcpy(canonical, self, self_length);
+        (*result)->h_name = canonical;
+    }
+    return status;
+}
 
 /*
  * getaddrinfo(WOWFOREVER_HOSTNAME): answer like the IP did before (routable
