@@ -99,7 +99,7 @@ class HomeEditShotsTest {
             .put("p", JSONObject().put("on", true).put("box", 1).put("fight", false).put("grp", true).put("sel", "bound").put("m", m))
     }
 
-    private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false): Page {
+    private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false, roomBar: Boolean = false): Page {
         art()
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app)
@@ -142,6 +142,15 @@ class HomeEditShotsTest {
             strip.editRibbon = v?.let { ev -> { c: Canvas, w: Float, top: Float, g0: Float, g1: Float -> ev.drawRibbon(c, w, top, g0, g1) } }
             strip.editTick = v != null
             strip.editTouch = v?.let { ev -> { x: Float, y: Float, up: Boolean -> ev.ribbonTouch(x, y, up) } }
+            // P4 (the host's wiring): the room bar's chrome and its rooms' row's touches
+            if (roomBar) {
+                strip.editBar = v?.let { ev -> { c: Canvas, layer: Int -> ev.drawBar(c, layer) } }
+                strip.editBarTouch = v?.let { ev -> { e: MotionEvent -> ev.barTouch(e) } }
+            }
+        }
+        if (roomBar) {
+            home.roomBar = strip
+            strip.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), 0L)
         }
         return Page(home, cast, strip, rooms)
     }
@@ -446,6 +455,169 @@ class HomeEditShotsTest {
             val c = Canvas(b); c.drawColor(Theme.ink); r.draw(c)
             File(d2, "00_settings_home_layout_tile.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
+    }
+
+    // ---------------------------------------------------------------- PHASE 4: the room bar (D3: reorder only; XP bar on / off)
+
+    /** the host's frame: Home's view reaches under the room bar's XP track (HomeView.trackInset), the bar drawn at the frame's foot */
+    private val HV = H + Strip.TRACKS
+    private fun drawStrip(p: Page, c: Canvas? = null) {
+        p.strip.measure(View.MeasureSpec.makeMeasureSpec(W, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(Strip.HEIGHT, View.MeasureSpec.EXACTLY))
+        p.strip.layout(0, 0, W, Strip.HEIGHT)
+        p.strip.draw(c ?: Canvas(Bitmap.createBitmap(W, Strip.HEIGHT, Bitmap.Config.ARGB_8888)))
+    }
+    private fun shot4(p: Page, name: String, settleFirst: Boolean = true) {
+        if (settleFirst) settle()
+        val d = out ?: run { drawStrip(p); return }
+        val b = Bitmap.createBitmap(W, 1080, Bitmap.Config.ARGB_8888)
+        for (pass in 0..1) {
+            setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
+            if (settleFirst) lay(p.home, W, HV)
+            val c = Canvas(b); c.drawColor(Theme.ink); p.home.draw(c)
+            c.translate(0f, H.toFloat()); drawStrip(p, c)
+            if (pass == 0 && settleFirst) { Thread.sleep(150); settle(10) }
+        }
+        File(d, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        shots += name to Bitmap.createScaledBitmap(b, W / 4, 1080 / 4, true)
+    }
+    private fun stripTouch(p: Page, action: Int, x: Float, y: Float): Boolean {
+        val e = MotionEvent.obtain(t0, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+        val r = p.strip.dispatchTouchEvent(e); e.recycle(); return r
+    }
+    private fun names(s: Strip) = s.order.map { it.name }
+
+    @Test fun roomBarTour() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), roomBar = true)
+        val home = p.home
+        home.forceLive = true
+        home.trackInset(Strip.TRACKS, animate = false)                     // the host's: the frame ends at the track's top
+        lay(home, W, HV)
+        HomeView::class.java.getDeclaredMethod("changed").apply { isAccessible = true }.invoke(home)   // onSizeChanged's post (not attached here)
+        settle(); lay(home, W, HV)
+        drawStrip(p)
+        assertEquals("the frame is still 935 over the track", H.toFloat(), boxes(home).getValue("MAP").bottom + UiKit.MODULE_GAP, 1f)
+        assertEquals(RoomBar.DEFAULT, names(p.strip))
+        shot4(p, "p4_00_home_classic")
+        // the cursor: from the map Down to the room bar (its gold edge, the golden box on its first room)
+        assertTrue(home.editOpen(EditStop.MAP)); settle()
+        shot4(p, "p4_01a_edit_bar_dimmed_tagged")
+        home.editKey("PADDDOWN"); settle()
+        val m = model(p)
+        assertEquals(EditStop.ROOMS, m.cursor)
+        shot4(p, "p4_01_bar_selected")
+        repeat(7) { home.editKey("PADDRIGHT") }
+        assertEquals("BAGS", m.draft.rooms[m.barSel])
+        shot4(p, "p4_02_cursor_on_bags")
+        // A: Bags lifted (1.03, the shadow, the gold arrows)
+        home.editKey("PAD1"); settle()
+        assertEquals(Room.BAGS, p.strip.liftRoom)
+        shot4(p, "p4_03_bags_lifted")
+        // Left: one place, a 120 ms glide (EDIT_STEP); caught halfway, then landed
+        home.editKey("PADDLEFT")
+        drawStrip(p)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(60))
+        shot4(p, "p4_04_bags_step_gliding", settleFirst = false)
+        settle()
+        assertEquals("the bar's order is the draft's at once (the touch boxes, the bar cursor)", "BAGS", names(p.strip)[6])
+        // Left again: over the disc into the left half
+        home.editKey("PADDLEFT"); settle()
+        assertEquals("BAGS", names(p.strip)[5])
+        shot4(p, "p4_05_bags_over_the_disc")
+        assertEquals("nothing written before Save", RoomBar.DEFAULT, HomeSettings.layout.rooms)
+        // A drops; X = the bar's menu: XP bar Show / Hide, Order Reset (final_08)
+        home.editKey("PAD1"); home.editKey("PAD3"); settle()
+        assertEquals(EditStop.ROOMS, m.menu)
+        shot4(p, "p4_06_room_bar_menu")
+        home.editKey("PADDRIGHT"); settle()                                // XP bar: Hide (the draft)
+        assertFalse(m.draft.xpBar)
+        assertTrue("edit mode keeps the track: its ribbon", HomeSettings.layout.xpBar)
+        shot4(p, "p4_07_menu_xp_hide")
+        home.editKey("PAD2"); settle()
+        // a FINGER carries Settings to the far left: lifted at once, the others make way after the 80 ms hover, the release lays it
+        val sx = p.strip.slotBox(11)!!.centerX(); val sy = p.strip.slotBox(11)!!.centerY()
+        t0 = android.os.SystemClock.uptimeMillis()
+        stripTouch(p, MotionEvent.ACTION_DOWN, sx, sy)
+        for (x in listOf(sx - 40f, sx - 200f, sx - 420f)) { stripTouch(p, MotionEvent.ACTION_MOVE, x, sy); settle(1) }
+        assertEquals("SETTINGS", m.barLifted)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(90))
+        home.editAct { it.dragTick(android.os.SystemClock.uptimeMillis()) }
+        drawStrip(p)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(110))
+        shot4(p, "p4_08_finger_carries_settings", settleFirst = false)
+        val x0 = p.strip.slotBox(0)!!.centerX()
+        stripTouch(p, MotionEvent.ACTION_MOVE, x0 + 4f, sy); settle(1)
+        stripTouch(p, MotionEvent.ACTION_UP, x0 + 4f, sy)
+        settle()
+        assertEquals("SETTINGS", names(p.strip)[0])
+        assertEquals("every room still on the bar (D3)", RoomBar.DEFAULT.toSet(), names(p.strip).toSet())
+        assertTrue("no room opened by the edit touches", p.rooms.isEmpty())
+        shot4(p, "p4_09_settings_far_left")
+        // a tap on the selected room: the bar's menu
+        val s0 = p.strip.slotBox(0)!!
+        stripTouch(p, MotionEvent.ACTION_DOWN, s0.centerX(), s0.centerY()); stripTouch(p, MotionEvent.ACTION_UP, s0.centerX(), s0.centerY())
+        assertEquals(EditStop.ROOMS, m.menu)
+        home.editKey("PAD2")
+        // Start: Save. The record keeps the order and the hidden track (per character); the host lays Home into the track's place
+        home.editKey("PADFORWARD"); settle()
+        assertFalse(home.editing)
+        assertEquals("SETTINGS", HomeSettings.layout.rooms[0])
+        assertEquals("BAGS", HomeSettings.layout.rooms[6])
+        assertFalse(HomeSettings.layout.xpBar)
+        // the host's trackSync (Home on screen, the record's track hidden): the track slides away, every part glides into its 34 px
+        p.strip.trackShown(false, Motion.MODULE_CLOSE)
+        home.trackInset(0, animate = true, ms = Motion.MODULE_CLOSE)
+        glideAt(home, 0.5f)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(100))
+        shot4(p, "p4_10_xp_track_going", settleFirst = false)
+        glideAt(home, 1f); settle()
+        assertEquals("Home's frame takes the track's 34 px", HV.toFloat(), boxes(home).getValue("MAP").bottom + UiKit.MODULE_GAP, 1f)
+        assertEquals(Strip.TRACKS.toFloat(), p.strip.trackGone, 0.01f)
+        shot4(p, "p4_11_saved_reordered_xp_hidden")
+        // a touch in the track's place is Home's (the strip lets it through), the disc keeps its own
+        assertFalse(stripTouch(p, MotionEvent.ACTION_DOWN, 200f, 10f))
+        assertTrue(stripTouch(p, MotionEvent.ACTION_DOWN, W / 2f, 40f))
+        // the bar cursor (HomeBarSelect) walks the bar as drawn: Settings first now
+        val sel = HomeBarSelect(app, p.strip, { null }) { _, _ -> }
+        @Suppress("UNCHECKED_CAST")
+        val order = HomeBarSelect::class.java.getDeclaredMethod("order").apply { isAccessible = true }.invoke(sel) as List<Room>
+        assertEquals(Room.SETTINGS, order.first())
+        assertEquals(names(p.strip), order.map { it.name })
+        contact4()
+    }
+
+    @Test fun roomBarDiscardPutsTheOrderBack() {
+        val p = page(HomeLayout(), roomBar = true)
+        p.home.forceLive = true
+        drawStrip(p)
+        assertTrue(p.home.editOpen(EditStop.MAP)); settle()
+        p.home.editKey("PADDDOWN"); settle()
+        assertEquals(EditStop.ROOMS, model(p).cursor)
+        p.home.editKey("PAD1"); p.home.editKey("PADDRIGHT"); p.home.editKey("PADDRIGHT"); p.home.editKey("PAD1"); settle()
+        assertEquals("MAP", names(p.strip)[2])
+        // B: Save / Discard / Keep editing; Discard: the order glides back, nothing written
+        p.home.editKey("PAD2"); p.home.editKey("PADDRIGHT"); p.home.editKey("PAD1"); settle()
+        assertFalse(p.home.editing)
+        assertEquals(RoomBar.DEFAULT, names(p.strip))
+        assertEquals(RoomBar.DEFAULT, HomeSettings.layout.rooms)
+        assertNull(p.strip.liftRoom)
+    }
+
+    /** the phase-4 states on one sheet (p4_overview.png) */
+    private fun contact4() {
+        val d = out ?: return
+        if (shots.isEmpty()) return
+        val cols = 4
+        val rows = (shots.size + cols - 1) / cols
+        val cw = W / 4; val ch = 1080 / 4 + 26
+        val b = Bitmap.createBitmap(cols * cw, rows * ch, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b); c.drawColor(android.graphics.Color.BLACK)
+        val tp = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE; textSize = 16f }
+        for ((i, s) in shots.withIndex()) {
+            val x = (i % cols) * cw; val y = (i / cols) * ch
+            c.drawBitmap(s.second, x.toFloat(), y.toFloat(), null)
+            c.drawText(s.first, x + 4f, y + 1080 / 4 + 19f, tp)
+        }
+        File(d, "p4_overview.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     /** the Layouts sheet's live pictures: the settings stage fed a game (PreviewStage) */

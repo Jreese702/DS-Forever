@@ -464,13 +464,13 @@ class HomeView(
         if (classLayer.parent == null) { if (!open) return; addView(classLayer) }   // added on first use: over everything
         val hint = classHint != null
         if (hint || !open) {
-            if (open) { classRect.set(0, 0, width, height); classLayer.animate().cancel(); classLayer.alpha = 1f
+            if (open) { classRect.set(0, 0, width, frameHi); classLayer.animate().cancel(); classLayer.alpha = 1f
                 classLayer.scaleX = 1f; classLayer.scaleY = 1f; classLayer.visibility = View.VISIBLE; requestLayout(); classLayer.invalidate(); return }
             if (!classOpen) { classLayer.visibility = View.GONE; return }
         }
         if (open == classOpen) { classLayer.invalidate(); return }
         classOpen = open
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h = frameH
         val g = UiKit.MODULE_GAP
         // 1.0.9 (the user: "make them appear on the right or left sides of the screen, and slide the whole chat away or back over top
         // when releasing, or the map if its the right rigger"): LB + LT takes the LEFT column's place (the chat slides off the left edge),
@@ -558,7 +558,7 @@ class HomeView(
      * neither column's), so the wheel sits above it
      */
     private fun wheelFit(places: Map<Part, RectF>) {
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h = frameH
         val g = UiKit.MODULE_GAP
         val s = ClassSlot.middle(w, h, places[Part.BARS]?.bottom ?: 0f, g, w * WHEEL_SLOT_MAX,
             bottom = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g))
@@ -612,8 +612,8 @@ class HomeView(
             }.also { wheelLayer = it; addView(it, 1) }                     // right over the bars (child 0), under every column
             l.visibility = if (v != null) View.VISIBLE else View.GONE
             if (v != null) {
-                l.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
-                l.layout(0, 0, width, height)
+                l.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(frameHi, MeasureSpec.EXACTLY))
+                l.layout(0, 0, width, frameHi)
                 l.invalidate()
             }
         }
@@ -1672,6 +1672,8 @@ class HomeView(
         val look = renderLook
         // P2: while edit mode runs (not parked by a fight), Home is laid with its draft: every change glides there
         var l = HomeLayoutRules.shown(look?.layout ?: editDraft() ?: HomeSettings.layout)
+            // P4: the room bar's fields are the bar's, not the page's (its order glides in the Strip; the XP track's place is [trackInset])
+            .copy(rooms = RoomBar.DEFAULT, xpBar = true)
         if (s != null) l = l.copy(rest = s.rest)
         if (look != null) {
             l = l.copy(fight = if (look.grow) HomeLayout.FightBand.GROW
@@ -1827,7 +1829,7 @@ class HomeView(
         // Home's own B reader only while a full-screen chat or map hides the bars (the Cast view's reader is stopped then);
         // everywhere else B comes through the Cast view's reader
         watchB((s.full == HomeModule.CHAT || s.full == HomeModule.MAP) && !s.takeover && lent(mapView))
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h = frameH
         anim?.cancel()
         if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
         val to = places(s, w, h)
@@ -2002,7 +2004,7 @@ class HomeView(
      * glide (CompanionHost.chatGlideStart) leaves from it when the pane's tap opens the room and lands on it when the room goes back Home.
      */
     fun chatPaneBox(): RectF? {
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h = frameH
         if (w <= 0f || h <= 0f) return null
         return places(flow.screen, w, h)[Part.CHAT]?.let { RectF(it) }
     }
@@ -2037,15 +2039,40 @@ class HomeView(
         post { apply(shown ?: flow.screen, animate = false) }
     }
 
+    /**
+     * MOVABLE HOME P4, THE XP TRACK'S PLACE (SPEC section 8: "Hide gives Home 34 px (Home only; every other room keeps 935 by ruling)").
+     * The host makes Home's view the content's height, which reaches under the room bar's XP track, and keeps [bottomInset] = the track's
+     * height while the track shows: Home's FRAME ([frameH]) ends at the track's top, as always. The record's XP bar hidden (and Home on
+     * screen, not editing: the ribbon needs the track) the inset goes to 0 and every part glides into the 34 px on the one motion
+     * ([trackInset]), as the track slides away under the rooms' row (Strip.trackShown). Off the host (the tests, PreviewStage) it is 0.
+     */
+    private var bottomInset = 0
+    /** Home's frame now: the view's height less the track's place */
+    private val frameH: Float get() = (height - bottomInset).toFloat()
+    private val frameHi: Int get() = height - bottomInset
+    private fun frameOf(hSpec: Int): Int = (MeasureSpec.getSize(hSpec) - bottomInset).coerceAtLeast(0)
+    /** the inset now (the host's checks) */
+    val trackInsetNow: Int get() = bottomInset
+    /** the track's place is Home's ([px] 0) or the track's ([px] = Strip.TRACKS): every part glides there ([animate]) on [ms] */
+    fun trackInset(px: Int, animate: Boolean, ms: Long = Motion.MODULE_OPEN) {
+        if (px == bottomInset) return
+        bottomInset = px
+        val s = shown ?: flow.screen
+        if (width <= 0 || height <= 0) { requestLayout(); return }
+        applyMs = ms
+        try { apply(s, animate = animate && live) } finally { applyMs = null }
+        requestLayout()
+    }
+
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
         if (typeWanted) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
+            MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         val cw = if (classRect.isEmpty) MeasureSpec.getSize(wSpec) else classRect.width()
-        val ch = if (classRect.isEmpty) MeasureSpec.getSize(hSpec) else classRect.height()
+        val ch = if (classRect.isEmpty) frameOf(hSpec) else classRect.height()
         classLayer.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
         wheelLayer?.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
+            MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val r = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
@@ -2053,7 +2080,7 @@ class HomeView(
                       MeasureSpec.makeMeasureSpec(max(1, r.height().toInt()), MeasureSpec.EXACTLY))
         }
         editView.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
+            MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
     }
 
     /**
@@ -2077,10 +2104,10 @@ class HomeView(
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        if (typeWanted) typeTool.layout(0, 0, r - l, b - t)                  // f-trackpad-keyboard: the whole page
+        if (typeWanted) typeTool.layout(0, 0, r - l, b - t - bottomInset)                  // f-trackpad-keyboard: the whole page
         // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
-        if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
-        wheelLayer?.layout(0, 0, r - l, b - t)                              // f-radial-behind: the whole page, under the columns
+        if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
+        wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
         PartyMenuView.place(laidChatRight, (r - l).toFloat()).let { m -> partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
         PartyMenuView.place(laidChatRight, (r - l).toFloat()).let { m -> targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
         for ((p, v) in views) {
@@ -2089,7 +2116,7 @@ class HomeView(
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             v.layout(x0, y0, max(x0 + 1, f.right.toInt()), max(y0 + 1, f.bottom.toInt()))
         }
-        editView.layout(0, 0, r - l, b - t)
+        editView.layout(0, 0, r - l, b - t - bottomInset)
         editDecor()
     }
 
@@ -2162,7 +2189,7 @@ class HomeView(
     fun pauseSlide(t: Float, sidePx: Float = 0f, barsUp: Boolean = false) {
         if (t == pauseT && sidePx == pauseSide && barsUp == pauseUp) return
         pauseT = t; pauseSide = sidePx; pauseUp = barsUp
-        val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val screen = RectF(0f, 0f, width.toFloat(), frameH)
         // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
         // only stepping back to [pauseBarsDim] (the title row lies over its lower half); elsewhere its old slide. The pause menu itself
         // pushes it up since feat/pause-power ([barsUp]); the target radial keeps the f-pause-bars rule
@@ -2319,6 +2346,7 @@ class HomeView(
         override fun slots(): List<HomeLayout?> = HomeLayoutStore.slots()
         override val stripH: Int get() = Strip.HEIGHT
         override val flash: Pair<EditStop, Long>? get() = editFlash
+        override fun bar(): Strip? = roomBar
     } }
     private val editView: HomeEditView by lazy { HomeEditView(context, editHost) }
     /** the host's Strip draws the ribbon through this */
@@ -2336,13 +2364,14 @@ class HomeView(
             return HomeLayoutRules.problems(l, st, HomeLayoutSolver.places(HomeLayoutRules.shown(l), st)).isEmpty()
         }
         override val w: Float get() = width.toFloat()
+        override fun barSlots(): List<Float> = roomBar?.slotCentres() ?: emptyList()
     }
 
     /** the page's state now, as [places] hands it to the solver (for a drop well and a drop's check) */
     private fun solveState(l: HomeLayout): HomeLayoutSolver.State {
         val p = party.party
         val partyIn = if (PARTY_MODULE && p != null) HomeLayoutSolver.Party(partyModeNow(flow.screen), p.view.size, p.viewPet) else null
-        return HomeLayoutSolver.State(width.toFloat(), height.toFloat(), UiKit.MODULE_GAP, takeover = flow.takeover,
+        return HomeLayoutSolver.State(width.toFloat(), frameH, UiKit.MODULE_GAP, takeover = flow.takeover,
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
             partyOn = partyOnHere(), castHidden = castHiddenNow())
     }
@@ -2434,6 +2463,7 @@ class HomeView(
         edit = null
         liveDraft = null
         editRoomBarSync()                                                 // the add-on's own `d` again (Save's mirror follows it)
+        editBarSync(Motion.MODULE_CLOSE)                                  // P4: the room bar's saved order (Discard glides it back)
         chromeModel = m
         editAway = false
         editGuest(false)
@@ -2490,9 +2520,26 @@ class HomeView(
             HomeEditModel.Fx.Lift -> liftTo(if (m?.lifted != null) 1f else 0f, m?.lifted)
         }
         m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
+        editBarSync(fx.lastOrNull { it is HomeEditModel.Fx.Relay }?.let { (it as HomeEditModel.Fx.Relay).ms } ?: Motion.MODULE_OPEN)
         editDecor()
         editView.invalidate()
         invalidate()
+    }
+
+    /**
+     * P4, THE ROOM BAR UNDER EDIT MODE ([roomBar], the host's Strip): its order is the draft's while edit mode is live (each change glides
+     * on [ms]: EDIT_STEP a controller step, MODULE_OPEN a change, MODULE_CLOSE a drop / put back), the saved record's otherwise (a fight's
+     * park, Discard: back on MODULE_CLOSE); the lifted room and a finger's carry ride along. Nothing is written before Save.
+     */
+    var roomBar: Strip? = null
+    private fun editBarSync(ms: Long) {
+        val b = roomBar ?: return
+        val m = edit?.takeIf { !it.parked }
+        b.showOrder(RoomBar.rooms((m?.draft ?: HomeSettings.layout).rooms), ms)
+        val lr = m?.barLifted?.let { n -> Room.values().firstOrNull { it.name == n } }
+        b.liftRoom = lr
+        b.liftX = m?.drag?.takeIf { it.stop == EditStop.ROOMS && lr != null }?.cx
+        b.invalidate()
     }
     private val dragTick = Runnable { edit?.let { m -> if (m.drag != null) editRun(m.dragTick(android.os.SystemClock.uptimeMillis())) } }
 
@@ -2533,7 +2580,7 @@ class HomeView(
         val fight = fightShown()
         if (fight && !m.parked) {
             m.park(); liveDraft = null
-            editRoomBarSync()
+            editRoomBarSync(); editBarSync(Motion.COMBAT_GROW)
             editGuest(false)
             settleAnim?.cancel(); settleK = 0f; liftTo(0f, null)
             chromeFade(0f, HomeEditModel.CHROME_IN)
@@ -2541,7 +2588,7 @@ class HomeView(
             if (relay) editRelay(Motion.COMBAT_GROW)
         } else if (!fight && m.parked && live) {
             m.resume(); liveDraft = m.draft
-            editRoomBarSync()
+            editRoomBarSync(); editBarSync(Motion.COMBAT_SHRINK)
             editGuest(true)
             chromeFade(1f, HomeEditModel.CHROME_IN)
             Log.i(TAG, "home edit: back (the fight ended)")
@@ -2552,7 +2599,7 @@ class HomeView(
     /** another room over Home: the draft waits (as for a fight); Home again: edit mode where it was */
     private fun editAwayPark() {
         val m = edit ?: return
-        if (!m.parked) { m.park(); liveDraft = null; editGuest(false) }
+        if (!m.parked) { m.park(); liveDraft = null; editGuest(false); editBarSync(0L) }
         editAway = true
         chromeAnim?.cancel(); chromeA = 0f
         onEditChrome?.invoke(null)
@@ -2567,6 +2614,7 @@ class HomeView(
         onEditChrome?.invoke(editView)
         chromeFade(1f, HomeEditModel.CHROME_IN)
         editRelay(Motion.MODULE_CLOSE)
+        editBarSync(Motion.MODULE_CLOSE)
     }
 
     private fun chromeFade(to: Float, ms: Long, end: (() -> Unit)? = null) {

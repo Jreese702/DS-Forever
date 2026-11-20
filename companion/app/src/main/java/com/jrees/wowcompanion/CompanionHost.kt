@@ -519,9 +519,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         strip = Strip(this) { pick -> if (pick == Room.HOME) swirlTouched() else pickRoom(pick) }
-        // the bar is Strip.BAR high; Home stands Strip.RISE over the room above it, so the strip overlaps the room by that much
+        // the bar is Strip.BAR high; Home stands Strip.RISE over the room above it, so the strip overlaps the room by that much.
+        // MOVABLE HOME P4 (SPEC section 8, "Hide gives Home 34 px (Home only; every other room keeps 935 by ruling)"): the bar also lies
+        // over the content's bottom TRACKS px - the XP track's place. Every room keeps its 935 (a bottom margin of TRACKS, below); Home's
+        // view reaches under the track and lays its frame above it (HomeView.trackInset) unless the record hides the track on Home
         root.addView(strip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Strip.HEIGHT)
-            .apply { topMargin = -Strip.RISE })
+            .apply { topMargin = -Strip.RISE - Strip.TRACKS })
         // the tracking bar in the bottom bar (UI Art's glue, listed in AGENT_LOG e8f3d1c): the numbers stay in the Character room
         CharacterBars.listen {
             strip.xp = CharacterBars.xp?.takeIf { it.show }?.let { Strip.Track(if (it.rested) "rested" else "xp", it.fill, if (it.rest > 0) it.restReach else 0f) }
@@ -763,7 +766,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         barSelect.roomNow = { room }        // Select's cursor starts on the room on screen (never on Home: the user's skip-Home rule)
         // the Home button's B follows Home's own state at once (a module full screen shows B; user 15:08)
-            homeView.onStateChanged = { discB("Home's state"); petBTell("Home's state"); if (::dialogView.isInitialized) dialogView.fightCheck() }     // B: pet follow follows Home's own state; loot-pop: a fight's end grows the rolls
+            homeView.onStateChanged = { discB("Home's state"); petBTell("Home's state"); if (::dialogView.isInitialized) dialogView.fightCheck(); trackSync() }     // B: pet follow follows Home's own state; loot-pop: a fight's end grows the rolls
         homeView.onBHome = { strip.homePressed() }
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
@@ -864,17 +867,25 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // small"): the small button at the right end of Home's map-name band opens the Calendar room, on the first touch in a fight too
         homeView.onCalendar = { if (room != Room.CALENDAR) show(Room.CALENDAR) }
         for (v in listOf<View>(homeView, mapView, worldMapRoom, questsView, castView, spellbookView, controllerView, talentsView, professionsView, groupFinderView, characterView, bagsView, chatView, socialView, calendarView, macrosView, settingsRoom)) {
+            // P4: every room ends at the XP track's top (935, the ruling); Home reaches under it (its frame: HomeView.trackInset)
             content.addView(v, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply { if (v !== homeView) bottomMargin = Strip.TRACKS })
             v.visibility = View.GONE
         }
+        homeView.trackInset(Strip.TRACKS, animate = false)
+        // P4: the room bar's order is the layout record's (per character, D5); edit mode drives it from its draft (HomeView.roomBar)
+        homeView.roomBar = strip
+        strip.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), 0L)
+        HomeSettings.onChange { ui.post { if (!shell.hostGone()) roomBarSync() } }
         // THE ROOM'S COMBAT CUE (Home; the user: "I want the room that I am in to flash red"): over every room, under the bar and every
         // overlay; it takes no touch
         roomCue = RoomCombatCue(this)
-        content.addView(roomCue, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        content.addView(roomCue, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            .apply { bottomMargin = Strip.TRACKS })                          // P4: the room's frame (Home's reaches lower with the track hidden: trackSync)
         // the user's decision 1 (2026-11-11): the game menu open at the pull keeps the game's pad, the bottom screen locked until it closes
         gameMenuLock = GameMenuLock(this)
-        content.addView(gameMenuLock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        content.addView(gameMenuLock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            .apply { bottomMargin = Strip.TRACKS })
 
         interactView = InteractView(this)
         // voice on its word boxes (Send Mail's Subject and letter, the auction house's search): InteractView says which per field
@@ -1156,13 +1167,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             strip.editRibbon = v?.let { ev -> { c: android.graphics.Canvas, w: Float, top: Float, g0: Float, g1: Float -> ev.drawRibbon(c, w, top, g0, g1) } }
             strip.editTick = v != null
             strip.editTouch = v?.let { ev -> { x: Float, y: Float, up: Boolean -> ev.ribbonTouch(x, y, up) } }
+            // P4: the room bar is a widget of edit mode (D3: reorder only): its chrome and its rooms' row's touches
+            strip.editBar = v?.let { ev -> { c: android.graphics.Canvas, layer: Int -> ev.drawBar(c, layer) } }
+            strip.editBarTouch = v?.let { ev -> { e: MotionEvent -> ev.barTouch(e) } }
         }
         homeView.editRibbonRedraw = { strip.invalidate() }
         homeView.onEditToolbar = { on -> dpadSet(on) }
         homeView.onEditPress = { key, k -> BottomTiles.press("", key, k, BottomTiles.Env(lastDpad, GameUi.character)) { on -> dpadSet(on) } }
         homeView.onEditSlots = { controllerView.openOnCastBar(); pickRoom(Room.CONTROLLER) }
         homeView.onEditFilters = { show(Room.CHAT); chatView.post { chatView.openFilters() } }
-        homeView.onEditChanged = { lbEval(); strip.invalidate() }
+        homeView.onEditChanged = { lbEval(); trackSync(); strip.invalidate() }
         BottomTiles.editHome = { editHome("Settings' Home layout tile") }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> slideBarsUp = true; pauseSlideAll(t) }          // feat/pause-power: Home's controller goes up
@@ -1521,6 +1535,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (mapIn) worldMapRoom.onShown()
         if (chatIn) { chatHold(0); chatView.post { chatView.onBackChanged(chatView.bLeadsHome()) } }
         strip.active = r
+        trackSync()                                                       // P4: the XP track's place (hidden on Home only)
         // ONE EXIT FEEDBACK for every room (the user 2026-10-09: "the B return animation is inconsistent across the rooms"): any room -> Home
         // plays the disc's press (the yellow flash) in the same frame, whichever route left (B, a room's own leave, the bar, a touch);
         // half the rooms' onLeave went Home without it
@@ -4135,9 +4150,37 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var roomAnimPic: android.widget.ImageView? = null
     private var roomAnimViews: List<View> = emptyList()
 
-    /** a room's place on the bottom bar, left to right (Room's order, the strip's; Home's disc between Group Finder and Character).
-     *  Chat has no place on the bar: it counts where it stands in Room's order (between Controller and Social) */
-    private fun barOrder(r: Room): Int = r.ordinal
+    /** a room's place on the bottom bar, left to right (the bar's ORDER since movable Home P4, the layout record's: RoomBar; Home's disc
+     *  in the middle). Chat has no place on the bar: it counts right after the bar room it follows in Room's order (Controller) */
+    private fun barOrder(r: Room): Int = RoomBar.position(r, strip.order.map { it.name })
+
+    /**
+     * MOVABLE HOME P4: the room bar follows the active record (another character's, Save, a reset) - its order glides (MODULE_OPEN); edit
+     * mode drives it from its draft meanwhile (HomeView.roomBar) - and the XP track's place ([trackSync]).
+     */
+    private fun roomBarSync() {
+        if (!homeView.editing) strip.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), Motion.MODULE_OPEN)
+        trackSync()
+    }
+
+    /**
+     * THE XP TRACK ON HOME (the record's XP bar; SPEC section 8): hidden only on Home, only while edit mode is not live (its ribbon is the
+     * track's place). Home's frame takes the 34 px and the track slides away under the rooms' row on the same motion; leaving Home it
+     * comes back with the room's push (MODULE_OPEN), coming Home it goes with it (MODULE_CLOSE).
+     */
+    private fun trackSync() {
+        if (!::strip.isInitialized || !::homeView.isInitialized) return
+        val hide = room == Room.HOME && !HomeSettings.layout.xpBar && !homeView.editing
+        val ms = if (room == Room.HOME) Motion.MODULE_CLOSE else Motion.MODULE_OPEN
+        strip.trackShown(!hide, ms)
+        homeView.trackInset(if (hide) 0 else Strip.TRACKS, animate = room == Room.HOME, ms = ms)
+        // the room's combat cue and the game-menu lock cover the frame shown: Home's, lower with the track hidden
+        val m = if (hide) 0 else Strip.TRACKS
+        for (v in listOf<View?>(if (::roomCue.isInitialized) roomCue else null, if (::gameMenuLock.isInitialized) gameMenuLock else null)) {
+            val lp = v?.layoutParams as? FrameLayout.LayoutParams ?: continue
+            if (lp.bottomMargin != m) { lp.bottomMargin = m; v.layoutParams = lp }
+        }
+    }
 
     private fun roomMotionStart(incoming: View, outgoing: View, from: Room, to: Room, outPicture: android.graphics.Bitmap?) {
         val leavingHome = from == Room.HOME

@@ -57,6 +57,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val stripH: Int
         /** a red pulse on a widget's edge (a refusal, a fight): the widget and when */
         val flash: Pair<EditStop, Long>?
+        /** phase 4: the room bar under Home (null = none: no Room bar stop) */
+        fun bar(): Strip? = null
     }
 
     init { isClickable = true }
@@ -119,6 +121,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val y0 = height.toFloat()
         out[EditStop.CHIP] = HomeLayoutSolver.Box(rib.chip.left, y0 + rib.chip.top, rib.chip.right, y0 + rib.chip.bottom)
         if (host.model?.plusShown == true) out[EditStop.PLUS] = HomeLayoutSolver.Box(rib.plus.left, y0 + rib.plus.top, rib.plus.right, y0 + rib.plus.bottom)
+        // phase 4: the room bar's rooms' row, under the ribbon (Down from the chip or the map; Left / Right there walk its rooms)
+        if (host.bar() != null) out[EditStop.ROOMS] = HomeLayoutSolver.Box(8f, y0 + Strip.TRACKS, (width.toFloat().takeIf { it > 0f } ?: 1240f) - 8f, y0 + Strip.BAR)
         return out
     }
 
@@ -391,6 +395,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             EditStop.CHAT -> col(map)
             EditStop.MAP -> col(chat)
             EditStop.QUEST -> col(cardHost)
+            EditStop.ROOMS -> RectF(g + 8f, max(top, h - g - wantH), w - g - 8f, h - g)
             EditStop.CAST -> castBoxes(p).let { bs ->
                 val bt = bs.minOfOrNull { it.top } ?: (h - g)
                 RectF(g + 100f, max(top, bt - g - wantH), w - g - 100f, bt - g)
@@ -420,6 +425,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             val btns = ArrayList<RectF>()
             when (r.kind) {
                 MenuRow.Kind.BUTTON -> {
+                    // a row named apart from its button (the room bar's "Order" [Reset]) shows its name as the other rows do
+                    if (r.label != r.words.first()) c.drawText(Tr.t(r.label), rr.left + 18f, rr.centerY() - (lp.ascent() + lp.descent()) / 2f, lp)
                     val b = RectF(rr.right - 300f, rr.top + 8f, rr.right - 10f, rr.bottom - 8f)
                     UiKit.button(c, b, r.words.first(), UiKit.okGlyph())
                     btns += b
@@ -685,10 +692,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.sheet == HomeEditModel.Sheet.LAYOUTS -> listOf(a to "Use", x to "Save here", b to "Back")
             m.sheet == HomeEditModel.Sheet.ADD -> listOf(a to "Add", b to "Back")
             m.menu != null -> listOf(a to "Change", b to "Back")
+            m.lifted == EditStop.ROOMS -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
             m.lifted != null -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
             m.cursor == EditStop.CHIP -> listOf(DPAD to "Layout", a to "Layouts", b to "Done")
             m.cursor == EditStop.PLUS -> listOf(a to "Add", b to "Done")
             m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width", b to "Done")
+            m.cursor == EditStop.ROOMS -> listOf(a to "Move", x to "Options", b to "Done")
             m.cursor == EditStop.BAND || m.cursor == EditStop.CLOCK ->
                 (if (m.cursor == EditStop.BAND) listOf(a to "Options", y to "Size") else listOf(a to "Options")) + (b to "Done")
             else -> listOf(a to "Move", x to "Options", y to "Size", b to "Done")
@@ -725,6 +734,88 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             else -> return false
         }
         invalidate()
+        return true
+    }
+
+    // ---------------------------------------------------------------- phase 4: the room bar (drawn by the Strip, in its px)
+
+    /**
+     * THE ROOM BAR'S CHROME (final_08; D3: reorder only), in two layers the Strip calls: 0 under the lifted room and the disc - not
+     * selected: the dim (black 70) and the dashed ink frame as every other widget; selected: a gold edge round the rooms' row (the bar is
+     * the widget); 1 over them - the golden box on the room under the bar's own cursor (lifted: round the carried picture, with the kit's
+     * gold arrows to the sides it can still go) and the "Room bar" tag. The chrome's fade rides [Host.chromeAlpha].
+     */
+    fun drawBar(c: Canvas, layer: Int) {
+        val m = host.model ?: return
+        val bar = host.bar() ?: return
+        val a = host.chromeAlpha
+        if (a <= 0.01f || m.parked) return
+        val row = bar.buttonsBox().apply { inset(4f, 4f) }
+        val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, bar.width.toFloat(), bar.height.toFloat(), (255 * a).toInt()) else -1
+        val sel = m.cursor == EditStop.ROOMS && m.menu == null && m.sheet == null && !m.prompt
+        val onBar = m.cursor == EditStop.ROOMS
+        if (layer == 0) {
+            if (!onBar) {
+                pFill.style = Paint.Style.FILL; pFill.color = Color.argb(DIM, 0, 0, 0)
+                c.drawRect(bar.buttonsBox(), pFill)
+                frame(c, row, light = false)
+            } else {
+                pLine.strokeWidth = 3f; pLine.color = Theme.focusA(210); pLine.pathEffect = null
+                c.drawRoundRect(row, UiKit.MODULE_R, UiKit.MODULE_R, pLine)
+            }
+        } else {
+            val room = m.draft.rooms.getOrNull(m.barSel)?.let { n -> Room.values().firstOrNull { it.name == n } }
+            if (onBar && room != null) bar.roomDrawn(room)?.let { b ->
+                val box = RectF(b).apply { inset(-10f, -8f) }
+                if (sel || m.lifted == EditStop.ROOMS) UiKit.focus(c, box)
+                if (m.lifted == EditStop.ROOMS && m.drag == null) {
+                    val i = m.draft.rooms.indexOf(room.name)
+                    UiKit.moveArrows(c, box, left = i > 0, right = i < m.draft.rooms.size - 1, words = false)
+                }
+            }
+            // the tag while the bar is not the widget picked (picked, its menu's title names it; the tag would hide a room)
+            if (!onBar) tag(c, row, EditStop.ROOMS.tag, false, Corner.BOTTOM_LEFT)
+        }
+        if (save >= 0) c.restoreToCount(save)
+    }
+
+    /** a finger on the rooms' row while editing (the Strip's px): a tap selects a room (the selected one: the bar's menu), a drag
+     *  carries it - the others make way after the hover, the drop settles it (the model's drag, its x the bar's) */
+    private var barDownX = 0f
+    private var barDownY = 0f
+    private var barDownSlot = -1
+    private var barDragging = false
+    fun barTouch(e: MotionEvent): Boolean {
+        val m = host.model ?: return false
+        val bar = host.bar() ?: return false
+        if (m.parked) return false
+        val x = e.x; val y = e.y
+        val now = SystemClock.uptimeMillis()
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                barDownX = x; barDownY = y; barDragging = false
+                barDownSlot = if (m.prompt || m.sheet != null) -1 else bar.slotAt(x, y)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val i = barDownSlot
+                if (!barDragging && i >= 0 && abs(x - barDownX) > HomeEditModel.DRAG_SLOP) {
+                    bar.slotBox(i)?.let { b ->
+                        barDragging = true
+                        host.run(m.barDragStart(i, barDownX, barDownY, HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom)))
+                    }
+                }
+                if (barDragging) host.run(m.dragMove(x, y, now, host.geo))
+            }
+            MotionEvent.ACTION_UP -> {
+                if (barDragging) { host.run(m.dragEnd(x, y, now, host.geo)); barDragging = false }
+                else if (m.prompt) {}
+                else if (m.sheet != null) m.closeSheet()
+                else if (barDownSlot >= 0 && abs(x - barDownX) <= TAP_SLOP && abs(y - barDownY) <= TAP_SLOP) host.run(m.barTap(barDownSlot))
+                barDownSlot = -1
+            }
+            MotionEvent.ACTION_CANCEL -> { if (barDragging) host.run(m.dragCancel()); barDragging = false; barDownSlot = -1 }
+        }
+        invalidate(); bar.invalidate()
         return true
     }
 

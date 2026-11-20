@@ -173,7 +173,8 @@ class TargetRadialView(
         UiKit.pauseStripTop = run {
             val a = IntArray(2); val b = IntArray(2)
             strip.getLocationOnScreen(a); getLocationOnScreen(b)
-            if (strip.height > 0) (a[1] - b[1]).toFloat() - strip.translationY else 0f
+            // P4: the XP track hidden on Home is Home's place, not the bar's: the bar starts under it
+            if (strip.height > 0) (a[1] - b[1]).toFloat() - strip.translationY + strip.trackGone else 0f
         }
         openedAt = SystemClock.uptimeMillis()
         pointed = -1; line = null; asking = null; aimStick = -1

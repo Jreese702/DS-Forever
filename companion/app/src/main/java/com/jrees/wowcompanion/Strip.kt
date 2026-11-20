@@ -210,13 +210,118 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     /** the ribbon took the finger's DOWN: its UP is the ribbon's too */
     private var ribbonDown = false
 
+    // ---------------------------------------------------------------- MOVABLE HOME P4: THE ROOM BAR (SPEC sections 2, 7, 8; final_08)
+
+    /**
+     * THE ORDER (the user's D3, 2026-11-20: "Reorder only; every room stays on the bar"): the rooms left to right, from the layout record
+     * ([HomeLayout.rooms] through [RoomBar]); the Home disc stays in the middle, [RoomBar.leftCount] rooms left of it. A new order GLIDES:
+     * each picture slides from where it was drawn to its new slot on the one curve ([showOrder]: MODULE_OPEN 240 a change, EDIT_STEP
+     * 120 a controller step, MODULE_CLOSE 200 a drop). The touch boxes and [place] are the new slots at once, so the bar cursor
+     * (HomeBarSelect), the D-pad commands and the rooms' push (CompanionHost.barOrder) follow the order the moment it is set.
+     */
+    var order: List<Room> = RoomBar.rooms(RoomBar.DEFAULT)
+        private set
+    private val orderFrom = HashMap<Room, Float>()
+    private var orderAt = 0L
+    private var orderMs = 0L
+    /** each room's picture's centre x as last drawn (a glide starts there) */
+    private val drawnX = HashMap<Room, Float>()
+    /** the pictures' size as last drawn */
+    private var iconNow = ICON
+
+    fun showOrder(o: List<Room>, ms: Long) {
+        if (o == order) return
+        orderFrom.clear(); orderFrom.putAll(drawnX)
+        order = o
+        orderAt = now(); orderMs = if (drawnX.isEmpty()) 0L else ms
+        invalidate()
+    }
+
+    /** the glide's progress now (1 = landed) */
+    private fun orderK(t: Long): Float = if (orderMs <= 0L) 1f else curve.getInterpolation(((t - orderAt).toFloat() / orderMs).coerceIn(0f, 1f))
+
+    /**
+     * EDIT MODE ON THE BAR: [liftRoom] = the room lifted (drawn over the bar and the disc at 1.03 with its shadow, LIFT 160 ms),
+     * [liftX] = its picture's centre while a finger carries it (null = at its slot, gliding there); [editBar] = the edit chrome, drawn
+     * by HomeEditView in two layers (0: under the lifted room and the disc - the dim, the dashed frame, the bar's gold; 1: over them -
+     * the room cursor, the arrows, the tag); [editBarTouch] = a finger on the rooms' row while editing (the edit chrome's: select, drag)
+     */
+    var liftRoom: Room? = null
+        set(v) { if (field != v) { if (v == null && field != null) { dropRoom = field; settle() } else dropRoom = null; field = v; liftAt = now(); invalidate() } }
+    var liftX: Float? = null
+        set(v) { if (field != v) { if (v == null && field != null) settle(); field = v; invalidate() } }
+    private var liftAt = 0L
+    /** the room dropped last (it settles under the shadow's fade) */
+    private var dropRoom: Room? = null
+    /** a carried picture lands from where it was drawn (MODULE_CLOSE) */
+    private fun settle() { orderFrom.clear(); orderFrom.putAll(drawnX); orderAt = now(); orderMs = Motion.MODULE_CLOSE }
+    fun liftK(): Float {
+        val k = curve.getInterpolation(((now() - liftAt).toFloat() / HomeEditModel.LIFT_MS).coerceIn(0f, 1f))
+        return if (liftRoom != null) k else 1f - k
+    }
+    var editBar: ((c: Canvas, layer: Int) -> Unit)? = null
+        set(v) { field = v; invalidate() }
+    var editBarTouch: ((MotionEvent) -> Boolean)? = null
+    private var barDown = false
+
+    /** where the rooms' row is (the Strip's px): under the tracking bar, the whole width */
+    fun buttonsBox(): RectF = RectF(0f, height - BUTTONS.toFloat(), width.toFloat(), height.toFloat())
+    /** the slots' centres left to right (index = the order's); empty before the first draw */
+    fun slotCentres(): List<Float> = order.mapNotNull { pics[it]?.centerX() }.takeIf { it.size == order.size } ?: emptyList()
+    /** slot [i]'s picture box (not pushed in), the Strip's px */
+    fun slotBox(i: Int): RectF? = order.getOrNull(i)?.let { pics[it] }?.let { RectF(it) }
+    /** room [r]'s picture where it is DRAWN now (gliding, or carried), its lift's scale included */
+    fun roomDrawn(r: Room): RectF? {
+        val p = pics[r] ?: return null
+        val x = if (r == liftRoom) liftX ?: drawnX[r] ?: p.centerX() else drawnX[r] ?: p.centerX()
+        val s = iconNow * (if (r == liftRoom || r == dropRoom) 1f + (HomeEditModel.LIFT_SCALE - 1f) * liftK() else 1f)
+        return RectF(x - s / 2f, p.centerY() - s / 2f, x + s / 2f, p.centerY() + s / 2f)
+    }
+    /** the slot index a room's touch box covers at [x], -1 = none (the disc, the ends) */
+    fun slotAt(x: Float, y: Float): Int = order.indexOfFirst { hit[it]?.contains(x, y) == true }
+
+    /**
+     * THE XP TRACK ON HOME (the record's [HomeLayout.xpBar]; SPEC section 8: "Hide gives Home 34 px (Home only; every other room keeps
+     * 935 by ruling)"): hidden, the track slides down behind the rooms' row and its place is Home's ([trackGone] px of it gone; the host
+     * lays Home that much lower: HomeView.trackInset). A touch there is then Home's (onTouchEvent lets it through), the disc's excepted.
+     */
+    private var trackFrom = 0f
+    private var trackTo = 0f
+    private var trackAt = 0L
+    private var trackMs = 0L
+    fun trackShown(show: Boolean, ms: Long) {
+        val to = if (show) 0f else TRACKS.toFloat()
+        if (to == trackTo) return
+        trackFrom = trackGone; trackTo = to; trackAt = now(); trackMs = ms
+        invalidate()
+    }
+    /** px of the track gone now (0 = shown .. TRACKS = hidden) */
+    val trackGone: Float get() {
+        if (trackMs <= 0L) return trackTo
+        val k = curve.getInterpolation(((now() - trackAt).toFloat() / trackMs).coerceIn(0f, 1f))
+        return trackFrom + (trackTo - trackFrom) * k
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        // P4: the XP track hidden on Home: its place is Home's (the content's below it), the disc stays the disc
+        if (e.actionMasked == MotionEvent.ACTION_DOWN && trackGone > 0f && e.y - (height - BAR) < trackGone && !onHome(e.x, e.y)) return false
         val rib = editTouch
         if (rib != null && editRibbon != null) {
             val ty = e.y - (height - BAR)
             if (e.actionMasked == MotionEvent.ACTION_DOWN) ribbonDown = ty in 0f..TRACKS.toFloat() && !onHome(e.x, e.y) && rib(e.x, ty, false)
             if (ribbonDown) { if (e.actionMasked == MotionEvent.ACTION_UP) { ribbonDown = false; rib(e.x, ty, true) }; return true }
         }
+        // P4: edit mode's rooms' row: the chrome's (select a room, carry it); the disc keeps its touch (save and leave)
+        val bt = editBarTouch
+        if (bt != null) {
+            // the chrome takes the DOWN (false: edit mode is parked by a fight - the rooms open as always)
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) barDown = e.y >= height - BUTTONS && !onHome(e.x, e.y) && bt(e)
+            else if (barDown) {
+                bt(e)
+                if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) barDown = false
+            }
+            if (barDown) return true
+        } else barDown = false
         if (e.action != MotionEvent.ACTION_DOWN) return true
         if (onHome(e.x, e.y)) { homePressed(); onPick(Room.HOME); return true }
         if (e.y < height - BUTTONS) return true                 // the tracking bar: no touch of its own
@@ -226,6 +331,10 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
 
     override fun onDraw(c: Canvas) {
         drawBar(c)
+        // P4: the lifted room over the bar and the disc, then the edit chrome's upper layer (the room cursor, the arrows, the tag)
+        (liftRoom ?: dropRoom?.takeIf { liftK() > 0f })?.let { drawLifted(c, it) }
+        editBar?.invoke(c, 1)
+        if (orderK(now()) < 1f || (liftK() > 0f && liftK() < 1f)) postInvalidateOnAnimation()
         // feat/wk-itemcast: the cast band moves (the fill, its finish): the next frame at its pace, with the living disc's own
         if (castNext >= 0L) { animating = true; liveDelay = minOf(liveDelay, maxOf(castNext, RoomCast.FRAME_MS)) }
         nextLiveFrame()
@@ -257,8 +366,10 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     private fun drawBar(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
         val top = h - BAR                                       // the bar's top edge: the tracking bar's top
+        // P4: the XP track hidden on Home slides down behind the rooms' row; the place it leaves is Home's (not painted)
+        val gone = trackGone
         pFill.color = Theme.panel
-        c.drawRect(0f, top, w, h, pFill)
+        c.drawRect(0f, top + gone, w, h, pFill)
 
         homeX = w / 2f
         homeY = top + RING + HOME / 2f                          // the ring's top is flush with the tracking bar's top
@@ -271,6 +382,8 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         val cast = castBand
         val castState = cast?.state() ?: RoomCast.NONE
         val ribbon = editRibbon
+        val trackSave = c.save()
+        if (gone > 0f) { c.clipRect(0f, top + gone, w, top + TRACKS); c.translate(0f, gone) }
         if (ribbon != null) ribbon(c, w, top, g0, g1)                          // P2: edit mode's ribbon in the tracking bar's place
         else if (castState != RoomCast.RUNNING) when {
             x != null && f != null -> {                         // cut in half by height: the faction over the experience
@@ -281,6 +394,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             f != null -> UiKit.track(c, all, f.kind, f.fill, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
             else -> UiKit.track(c, all, "xp", -1f, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
         }
+        c.restoreToCount(trackSave)
         castNext = -1L
         if (cast != null && castState != RoomCast.NONE) {
             val p = RoomCast.place(w, top, TRACKS.toFloat(), g0)
@@ -293,14 +407,16 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         // is no Character room. In `Room`'s order: Map, Quests, Cast, Spellbook, Professions, Group
         // Finder | Character, Bags, Chat, Social, Calendar, Settings.
         // HOME is the disc, never a room in the row (the home session's Room.HOME)
-        val rooms = Room.values().filter { it != Room.HOME && it.onBar }      // a room off the bar (Chat) is reached another way
-        var half = rooms.indexOfFirst { it.label == "CHARACTER" }
-        if (half < 0) half = rooms.indexOfFirst { it.label == "BAGS" }
-        if (half < 0) half = (rooms.size + 1) / 2
+        // P4 (D3: reorder only): the rooms in the layout's ORDER ([order]); the disc stays in the middle, half of them each side
+        // (today's order splits 6 | 6 at Character, as before)
+        val rooms = order                                                    // a room off the bar (Chat) is reached another way
+        val half = RoomBar.leftCount(rooms.size)
         hit.clear(); pics.clear()
         val cy = top + TRACKS + BUTTONS / 2f
-        group(c, rooms.take(half), 8f, homeX - HOME / 2f - 14f, top, h, cy)
-        group(c, rooms.drop(half), homeX + HOME / 2f + 14f, w - 8f, top, h, cy)
+        val tNow = now()
+        group(c, rooms.take(half), 8f, homeX - HOME / 2f - 14f, top, h, cy, tNow)
+        group(c, rooms.drop(half), homeX + HOME / 2f + 14f, w - 8f, top, h, cy, tNow)
+        editBar?.invoke(c, 0)                                                // P4: the edit chrome's lower layer (under the disc)
 
         // the consumables radial has lifted the disc out (it draws the disc that rises and becomes its hub): nothing here
         if (homeLifted) return
@@ -583,19 +699,26 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
      * The rooms of one side of HOME, from [x0] to [x1], each with an equal share of the width. A
      * room's touch box is its share, from the bar's top edge ([top]) to the screen's edge ([bottom]).
      */
-    private fun group(c: Canvas, rooms: List<Room>, x0: Float, x1: Float, top: Float, bottom: Float, cy: Float) {
+    private fun group(c: Canvas, rooms: List<Room>, x0: Float, x1: Float, top: Float, bottom: Float, cy: Float, t: Long = now()) {
         if (rooms.isEmpty()) return
         val cell = (x1 - x0) / rooms.size
         // as large as the finger's height allows ([ICON]), and never so large that the pressed frame
         // (FRAME times the picture) reaches into the next room's share
         val ICON = minOf(ICON, (cell - 4f) / FRAME)
+        iconNow = ICON
         glyph = (ICON - 8f) / 46f * 20f / 24f
+        val k = orderK(t)
         for ((i, r) in rooms.withIndex()) {
             val left = x0 + i * cell
             hit[r] = RectF(left, bottom - BUTTONS, left + cell, bottom)
             val open = r == active
-            val cx = left + cell / 2f
-            pics[r] = RectF(cx - ICON / 2f, cy - ICON / 2f, cx + ICON / 2f, cy + ICON / 2f)
+            val slotX = left + cell / 2f
+            pics[r] = RectF(slotX - ICON / 2f, cy - ICON / 2f, slotX + ICON / 2f, cy + ICON / 2f)
+            // P4: a new order glides each picture from where it was drawn to its slot; the lifted room is drawn over the bar (onDraw)
+            val from = orderFrom[r]
+            val cx = if (from != null && k < 1f) from + (slotX - from) * k else slotX
+            drawnX[r] = if (r == liftRoom) liftX ?: cx else cx
+            if (r == liftRoom || (r == dropRoom && liftK() > 0f)) continue
             if (open && iconSet >= 2) {
                 // the game's radial-menu pictures (LATER 18): pushed in = a sunken well under the picture, set down and right
                 // (set 3: the disc itself is pushed in, darker, its ring dim; no square under it)
@@ -628,8 +751,26 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         }
     }
 
+    /**
+     * P4: the lifted room (or the one just dropped, while its lift fades): over the bar and the disc, 1.0 -> 1.03 with a deep shadow
+     * (the edit chrome's lift), at the finger ([liftX]) or gliding to its slot; its picture at full light (picked up, not dimmed)
+     */
+    private fun drawLifted(c: Canvas, r: Room) {
+        val box = roomDrawn(r) ?: return
+        val k = liftK()
+        if (k > 0f) {
+            pShadow.color = Color.argb((140 * k).toInt(), 0, 0, 0)
+            c.drawRoundRect(RectF(box).apply { inset(-6f, -6f); offset(6f, 10f) }, 14f, 14f, pShadow)
+        }
+        if (!art(c, r, box.centerX(), box.centerY(), box.width(), false, lit = true)) {
+            pStroke.color = Theme.text; pStroke.strokeWidth = 1.8f
+            icon(c, r, box.centerX(), box.centerY(), false)
+        }
+    }
+    private val pShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { maskFilter = BlurMaskFilter(18f, BlurMaskFilter.Blur.NORMAL) }
+
     /** the room's icon from the UI kit, [size] px square; false when the kit is not on the device */
-    private fun art(c: Canvas, r: Room, cx: Float, cy: Float, size: Float, active: Boolean): Boolean {
+    private fun art(c: Canvas, r: Room, cx: Float, cy: Float, size: Float, active: Boolean, lit: Boolean = false): Boolean {
         if (iconSet >= 2) UiKit.tex("ricon_" + r.label.lowercase())?.let { bmp ->
             // THE GAME'S CONTROLLER RADIAL-MENU PICTURES (LATER 18): one artist, one light; kept in proportion inside the square
             // (they are not square), no item frame. Set 3 stands each on the radial menu's own dark disc in a bronze ring.
@@ -644,7 +785,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             val fit = size * (if (iconSet == 3) 0.74f else 0.92f)
             val k = minOf(fit / bmp.width, fit / bmp.height)
             val w = bmp.width * k; val h = bmp.height * k
-            c.drawBitmap(bmp, null, RectF(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f), if (active) pArtDown else pArtDim)
+            c.drawBitmap(bmp, null, RectF(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f), if (lit) pArt else if (active) pArtDown else pArtDim)
             return true
         }
         // the Macros room (Spells s10; D7, the user's pick: stand-ins now): the game's question-mark macro icon in the radial's ring until
@@ -652,7 +793,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         if (r == Room.MACROS && UiKit.tex("icon_macros") == null) { UiKit.macroRing(c, cx, cy, size * 0.92f, active, if (active) 255 else 215); return true }
         val bmp = UiKit.tex("icon_" + r.label.lowercase()) ?: return false
         val box = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
-        c.drawBitmap(bmp, null, box, if (active) pArtDown else pArtDim)
+        c.drawBitmap(bmp, null, box, if (lit) pArt else if (active) pArtDown else pArtDim)
         // item icons are square plates and get the thin frame the game gives them; the quest
         // mark is a bare "!" and does not. The open room has the pressed frame instead
         if (r != Room.QUESTS && !active) {

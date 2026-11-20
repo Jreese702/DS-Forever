@@ -20,7 +20,8 @@ import kotlin.math.abs
  * (asking Save / Discard / Keep editing when something changed, Save highlighted).
  */
 enum class EditStop {
-    BAND, CLOCK, CHAT, MAP, QUEST, DIVIDER, CAST, CHIP, PLUS;
+    /** [ROOMS] = phase 4's room bar (D3: reorder only): A lifts the room under its own cursor ([HomeEditModel.barSel]), never the bar */
+    BAND, CLOCK, CHAT, MAP, QUEST, DIVIDER, CAST, CHIP, PLUS, ROOMS;
     /** a widget a finger or A can lift and dock elsewhere */
     val movable: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST
     /** a widget with the red X chip (it can be taken off Home and brought back with "+") */
@@ -30,6 +31,7 @@ enum class EditStop {
     /** the tag drawn on its dashed frame (terse: the widget's name) */
     val tag: String get() = when (this) {
         BAND -> "Controller"; CLOCK -> "Clock"; CHAT -> "Chat"; MAP -> "Map"; QUEST -> "Quest"; CAST -> "Tap-to-cast"
+        ROOMS -> "Room bar"
         DIVIDER -> ""; CHIP -> ""; PLUS -> ""
     }
 }
@@ -88,6 +90,12 @@ class HomeEditModel(
     private var lastCard = if (saved.card != HomeLayout.CardDock.OFF) saved.card else HomeLayout.CardDock.ON_MAP
     /** the flip the chip names (-1 = none yet) */
     private var flipIdx = flips.indexOfFirst { it.make(saved).samePlace(saved) }
+    /** PHASE 4, THE ROOM BAR: its own cursor (an index into the draft's [HomeLayout.rooms]; Left / Right while the cursor is on the bar) */
+    var barSel = 0
+        private set
+    /** the room lifted on the bar (A, a finger): Left / Right move it, B puts the order back ([liftFrom]) */
+    var barLifted: String? = null
+        private set
 
     /** something would be written by Save */
     val dirty: Boolean get() = !draft.samePlace(saved) || allChars || (toolbarWant != null && toolbarWant != toolbarNow)
@@ -150,6 +158,8 @@ class HomeEditModel(
                 // on the divider Left / Right step the width; on the chip they flip the layouts (landing applies, the tabs' rule)
                 if (cursor == EditStop.DIVIDER && dx != 0) return widthStep(dx)
                 if (cursor == EditStop.CHIP && dx != 0) return flip(dx)
+                // on the room bar Left / Right walk its rooms (the Home disc is no stop: the cursor steps over it)
+                if (cursor == EditStop.ROOMS && dx != 0) { barSel = (barSel + dx).coerceIn(0, (draft.rooms.size - 1).coerceAtLeast(0)); return emptyList() }
                 nearest(stops, cursor, dx, dy)?.let { cursor = it }
                 emptyList()
             }
@@ -181,6 +191,12 @@ class HomeEditModel(
     }
 
     fun lift(s: EditStop): List<Fx> {
+        if (s == EditStop.ROOMS) {
+            // the room under the bar's cursor (the bar itself never moves: D3)
+            val r = draft.rooms.getOrNull(barSel) ?: return emptyList()
+            cursor = s; lifted = s; liftFrom = draft; menu = null; barLifted = r
+            return listOf(Fx.Lift)
+        }
         if (!s.movable) return emptyList()
         cursor = s; lifted = s; liftFrom = draft; menu = null
         return listOf(Fx.Lift)
@@ -189,19 +205,38 @@ class HomeEditModel(
     /** A with a widget lifted: it stays where the draft put it */
     fun drop(): List<Fx> {
         if (lifted == null) return emptyList()
-        lifted = null; liftFrom = null
+        lifted = null; liftFrom = null; barLifted = null
         return listOf(Fx.Lift)
     }
 
     private fun putBack(): List<Fx> {
         val from = liftFrom ?: draft
-        lifted = null; liftFrom = null
+        val room = barLifted
+        lifted = null; liftFrom = null; barLifted = null
         val moved = !from.samePlace(draft)
         draft = from
+        // a room put back: the bar's cursor stays on it, where it stood
+        if (room != null) from.rooms.indexOf(room).takeIf { it >= 0 }?.let { barSel = it }
         return if (moved) listOf(Fx.Lift, Fx.Relay(Motion.MODULE_CLOSE)) else listOf(Fx.Lift)
     }
 
-    private fun liftedKey(s: EditStop, k: String): List<Fx> = when (k) {
+    /** the lifted room one place left / right on the bar (EDIT_STEP: the others glide; across the Home disc too) */
+    fun moveRoom(d: Int): List<Fx> {
+        val r = barLifted ?: return emptyList()
+        val i = draft.rooms.indexOf(r)
+        val j = i + d
+        if (i < 0 || j !in draft.rooms.indices) return emptyList()
+        return change(draft.copy(rooms = RoomBar.move(draft.rooms, i, j)), EDIT_STEP)
+    }
+
+    private fun liftedKey(s: EditStop, k: String): List<Fx> = if (s == EditStop.ROOMS) when (k) {
+        "PADDLEFT", "PADDRIGHT" -> moveRoom(if (k == "PADDLEFT") -1 else 1)
+        "PAD1" -> drop()
+        "PAD2" -> putBack()
+        "PADBACK" -> swap()
+        "PADFORWARD" -> { drop(); listOf(Fx.Save) }
+        else -> emptyList()
+    } else when (k) {
         "PADDLEFT", "PADDRIGHT" -> step(s, if (k == "PADDLEFT") -1 else 1, horizontal = true)
         "PADDUP", "PADDDOWN" -> step(s, if (k == "PADDUP") -1 else 1, horizontal = false)
         "PAD1" -> drop()
@@ -284,6 +319,9 @@ class HomeEditModel(
         draft = to
         if (to.cast != HomeLayout.CastDock.OFF) lastCast = to.cast
         if (to.card != HomeLayout.CardDock.OFF) lastCard = to.card
+        // the bar's cursor rides with the lifted room (and stays on the bar whatever the order)
+        barLifted?.let { r -> to.rooms.indexOf(r).takeIf { it >= 0 }?.let { barSel = it } }
+        barSel = barSel.coerceIn(0, (to.rooms.size - 1).coerceAtLeast(0))
         return listOf(Fx.Relay(ms))
     }
 
@@ -347,6 +385,10 @@ class HomeEditModel(
             K_CARD -> change(l.copy(card = HomeWidgetMenus.CARD_DOCKS[k]), Motion.MODULE_OPEN)
             K_PLACE -> change(l.copy(cast = HomeWidgetMenus.CAST_DOCKS[k]), Motion.MODULE_OPEN)
             K_SIZE -> change(l.copy(castSize = SIZES[k]), Motion.MODULE_OPEN)
+            K_XP -> change(l.copy(xpBar = k == 0), Motion.MODULE_OPEN)
+            // Order: Reset = today's order (the cursor stays on its room)
+            K_ORDER -> { val r = l.rooms.getOrNull(barSel); val fx = change(l.copy(rooms = RoomBar.DEFAULT), Motion.MODULE_OPEN)
+                r?.let { RoomBar.DEFAULT.indexOf(it).takeIf { i -> i >= 0 }?.let { i -> barSel = i } }; fx }
             BottomTiles.TOOLBAR -> { toolbarWant = k == 0; emptyList() }
             K_SLOTS -> { menu = null; listOf(Fx.EditSlots) }
             K_FILTERS -> { menu = null; listOf(Fx.Filters) }
@@ -460,7 +502,7 @@ class HomeEditModel(
     }
 
     /** the B disc on the bar, the Home disc's gold tick, Start: save and leave */
-    fun saveLeave(): List<Fx> { lifted = null; menu = null; sheet = null; prompt = false; return listOf(Fx.Save) }
+    fun saveLeave(): List<Fx> { lifted = null; barLifted = null; menu = null; sheet = null; prompt = false; return listOf(Fx.Save) }
 
     // ---------------------------------------------------------------- touch: select, then menu; drag a widget by its body
 
@@ -474,6 +516,24 @@ class HomeEditModel(
         if (s != cursor) { cursor = s; return emptyList() }
         if (lifted == s) return drop()
         return openMenu(s)
+    }
+
+    /** a tap on room [i] of the room bar: the bar selected with its cursor there; on the room the cursor is on already: the bar's menu */
+    fun barTap(i: Int): List<Fx> {
+        removeAsk = null
+        if (i !in draft.rooms.indices) return emptyList()
+        if (menu != null) { menu = null; if (cursor == EditStop.ROOMS && barSel == i) return emptyList() }
+        if (lifted != null) drop()
+        if (cursor == EditStop.ROOMS && barSel == i) return openMenu(EditStop.ROOMS)
+        cursor = EditStop.ROOMS; barSel = i
+        return emptyList()
+    }
+
+    /** a finger lifts room [i] of the bar ([box] = its slot, in the drag's x): it follows the finger, the others make way ([dockUnder]) */
+    fun barDragStart(i: Int, x: Float, y: Float, box: HomeLayoutSolver.Box): List<Fx> {
+        if (parked || i !in draft.rooms.indices) return emptyList()
+        barSel = i
+        return dragStart(EditStop.ROOMS, x, y, box)
     }
 
     /** a drag: [Drag] keeps the finger; the draft follows the dock under it ([HYSTERESIS_PX] past the divider, after [HOVER_MS]) */
@@ -498,10 +558,12 @@ class HomeEditModel(
         fun columns(l: HomeLayout): Pair<Pair<Float, Float>, Pair<Float, Float>>
         fun valid(l: HomeLayout): Boolean
         val w: Float
+        /** phase 4: the room bar's slots' centres left to right (the drag's x), empty = no bar */
+        fun barSlots(): List<Float> = emptyList()
     }
 
     fun dragStart(s: EditStop, x: Float, y: Float, box: HomeLayoutSolver.Box): List<Fx> {
-        if (parked || (!s.movable && s != EditStop.DIVIDER)) return emptyList()
+        if (parked || (!s.movable && s != EditStop.DIVIDER && s != EditStop.ROOMS)) return emptyList()
         menu = null; sheet = null; removeAsk = null
         val mid = if (draft.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.SPLIT else HomeLayout.CastDock.ACROSS
         drag = Drag(s, x, y, box, mid)
@@ -541,7 +603,7 @@ class HomeEditModel(
         val want = if (d.moved) dockUnder(d, draft, geo) else null
         if (want != null && want != draft && geo.valid(want)) out += change(want, Motion.MODULE_CLOSE)
         else out += Fx.Relay(Motion.MODULE_CLOSE)                          // the widget slides back into its dock
-        if (d.stop != EditStop.DIVIDER) { lifted = null; liftFrom = null; out += Fx.Lift }
+        if (d.stop != EditStop.DIVIDER) { lifted = null; liftFrom = null; barLifted = null; out += Fx.Lift }
         return out
     }
 
@@ -557,6 +619,15 @@ class HomeEditModel(
      * when it was split) in the middle third; the divider snaps the chat's width to the nearest third / half / two thirds
      */
     fun dockUnder(d: Drag, l: HomeLayout, geo: Geo): HomeLayout? {
+        if (d.stop == EditStop.ROOMS) {
+            // the lifted room goes to the slot its centre is over (the others close up; the disc is no slot)
+            val r = barLifted ?: return null
+            val slots = geo.barSlots()
+            val from = l.rooms.indexOf(r)
+            if (slots.size != l.rooms.size || from < 0) return null
+            val to = slots.indices.minByOrNull { abs(slots[it] - d.cx) } ?: return null
+            return l.copy(rooms = RoomBar.move(l.rooms, from, to))
+        }
         val (lc, rc) = geo.columns(l)
         val div = (lc.second + rc.first) / 2f
         val cx = d.cx
@@ -612,7 +683,7 @@ class HomeEditModel(
     // ---------------------------------------------------------------- a fight mid-edit (section 4)
 
     /** a fight started: the chrome goes (120 ms), Home plays the saved layout's fight; the draft and the cursor wait */
-    fun park() { parked = true; drag = null; if (lifted != null) { lifted = null; liftFrom = null }; removeAsk = null }
+    fun park() { parked = true; drag = null; if (lifted != null) { lifted = null; liftFrom = null; barLifted = null }; removeAsk = null }
     /** the fight ended with Home on screen: edit mode where it was left */
     fun resume() { parked = false }
 
@@ -668,6 +739,9 @@ class HomeEditModel(
         const val K_CAST_PARTY = "castparty"
         const val K_SLOTS = "slots"
         const val K_FILTERS = "filters"
+        /** phase 4, the room bar's menu: the XP track on Home (layout), the order's Reset (layout) */
+        const val K_XP = "xpbar"
+        const val K_ORDER = "order"
 
         /**
          * the stop the cursor goes to from [from] pressing (dx, dy): the nearest stop whose centre lies that way, the distance along the
@@ -786,12 +860,17 @@ object HomeWidgetMenus {
             }
             add(MenuRow(HomeEditModel.K_SLOTS, "Edit slots", listOf("Edit slots"), -1, MenuRow.Kind.BUTTON))
         }
+        // phase 4 (SPEC section 7; final_08): the XP track on Home, the order's Reset. No "off the bar" row: D3 keeps every room on it
+        EditStop.ROOMS -> listOf(
+            MenuRow(HomeEditModel.K_XP, "XP bar", SHOW_HIDE, if (l.xpBar) 0 else 1),
+            MenuRow(HomeEditModel.K_ORDER, "Order", listOf("Reset"), -1, MenuRow.Kind.BUTTON),
+        )
         else -> emptyList()
     }
 
     /** the menu's title */
     fun title(s: EditStop): String = when (s) {
         EditStop.BAND -> "Controller"; EditStop.CLOCK -> "Clock"; EditStop.CHAT -> "Chat"; EditStop.MAP -> "Map"
-        EditStop.QUEST -> "Quest card"; EditStop.CAST -> "Tap-to-cast bar"; else -> ""
+        EditStop.QUEST -> "Quest card"; EditStop.CAST -> "Tap-to-cast bar"; EditStop.ROOMS -> "Room bar"; else -> ""
     }
 }

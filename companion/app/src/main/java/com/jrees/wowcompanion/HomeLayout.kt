@@ -30,8 +30,10 @@ data class HomeLayout(
     val rest: HomeRest = HomeRest.DIAMONDS,
     /** the band in fights: grow down (today's, D1's default), the rest size, or the top screen (phase 3: the bottom behaves as SAME) */
     val fight: FightBand = FightBand.GROW,
-    /** phase 4: the room bar's XP track (kept in the record now so a phase-4 build reads older records) */
+    /** phase 4: the room bar's XP track on Home (false = hidden there: Home takes its 34 px; every room keeps it) */
     val xpBar: Boolean = true,
+    /** phase 4 (D3: reorder only, every room stays on the bar): the room bar's order, [Room] names left to right ([RoomBar]) */
+    val rooms: List<String> = RoomBar.DEFAULT,
 ) {
     enum class Side { LEFT, RIGHT; fun other() = if (this == LEFT) RIGHT else LEFT }
     enum class Share(val num: Int, val den: Int) { THIRD(1, 3), HALF(1, 2), TWO_THIRDS(2, 3) }
@@ -74,6 +76,8 @@ object HomeLayoutJson {
     fun json(l: HomeLayout): String = JSONObject()
         .put("v", l.v).put("name", l.name).put("chat", l.chatSide.name).put("share", l.chatShare.name).put("card", l.card.name)
         .put("cast", l.cast.name).put("size", l.castSize.name).put("rest", l.rest.name).put("fight", l.fight.name).put("xp", l.xpBar)
+        // phase 4: the room bar's order only when it is not today's (a Classic record's text is unchanged)
+        .also { o -> if (!RoomBar.isDefault(l.rooms)) o.put("rooms", org.json.JSONArray(RoomBar.normalize(l.rooms))) }
         .toString()
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
@@ -95,6 +99,7 @@ object HomeLayoutJson {
                 rest = en(HomeRest.values(), "rest", d.rest),
                 fight = en(HomeLayout.FightBand.values(), "fight", d.fight),
                 xpBar = o.optBoolean("xp", d.xpBar),
+                rooms = o.optJSONArray("rooms")?.let { a -> RoomBar.normalize((0 until a.length()).map { a.optString(it, "") }) } ?: d.rooms,
             )
         } catch (e: Exception) { fallback }
     }
