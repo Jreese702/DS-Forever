@@ -25,7 +25,7 @@ def check(ok, what):
 L, errs = boot_world(strict=False)
 check(not errs, "the world loads (%s)" % "; ".join(errs)[:200])
 TAPPAD = open(os.path.join(ADDONS, "WowCompanion", "TapPad.lua"), encoding="utf-8").read()
-check(('local PADV = "pad24"' in TAPPAD or ('local PADV = "pad25"' in TAPPAD and "pad24 THE STREAM'S TAPS MEASURED" in TAPPAD)) and "testing stream, ui still didnt hide" in TAPPAD, "a. TapPad pad24, its note quotes the user")
+check(('local PADV = "pad24"' in TAPPAD or (int(__import__('re').search(r'local PADV = "pad(\d+)"', TAPPAD).group(1)) >= 25 and "pad24 THE STREAM'S TAPS MEASURED" in TAPPAD)) and "testing stream, ui still didnt hide" in TAPPAD, "a. TapPad pad24, its note quotes the user")
 
 # the game's cursor, in screen units (bottom-left origin); UIParent's effective scale = the stub screen's px per UI unit
 L.execute('''CUR = { x = 0, y = 0 }

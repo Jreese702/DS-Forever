@@ -110,6 +110,7 @@ object GameUiTiles {
     fun badge(r: GameUi.Row?): Badge = when {
         r == null || !r.known || r.note == "The game does not offer this yet" -> Badge.WAITING
         r.note.startsWith("The game refused") -> Badge.REFUSED
+        r.note == PadFit.NO_ROW_NOTE -> Badge.REFUSED            // #550: its pad row is not on the game's screen: "!", never the hourglass
         r.note == GameUi.GAME_OFF_NOTE -> Badge.GAME_OFF
         r.note in PENDING -> Badge.SENT
         r.id in ELEMENTS && r.note !in STEADY -> Badge.SENT

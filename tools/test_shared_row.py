@@ -219,7 +219,7 @@ names_s = dict((k, int(v)) for k, v in Ls.eval('(function() local t = {} for n, 
                                              'return t end)()').items())
 rows_s = described(Ls)
 dropped = sorted(n for n in names_s if n not in ("cal", "lay") and n not in rows_s)
-check(dropped == ["bmv", "classr"] and "mac" in rows_s, "b. smallest scale (121.5): only rows 54-55 drop (classr, bmv: as before), mac stays",
+check(dropped == ["bmv", "keytest"] and "mac" in rows_s, "b. smallest scale (121.5): only rows 54-55 drop (pad26's last two: keytest, bmv), mac stays",
       (dropped, rows_s.get("mac")))
 print("INFO rows: Thor scale %d names on %d places, %d described; smallest scale %d described, dropped %s"
       % (len(names), len(set(names.values())), THOR_PLACED, len(rows_s), dropped))

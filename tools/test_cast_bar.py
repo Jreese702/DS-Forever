@@ -107,6 +107,8 @@ L = boot(["safety", "tappad"], pre=PRE)
 load_block(L)
 L.execute('fire("PLAYER_LOGIN"); fire("PLAYER_ENTERING_WORLD", true, false); WowCompanion.pad.layout(); runTimers(NOW + 5)')
 nrows0 = int(L.eval('WowCompanion.pad.nrows'))
+NREG = 'select(2, (function() local n = 0 for _ in pairs(WowCompanion.pad.rows) do n = n + 1 end return nil, n end)())'
+nreg0 = int(L.eval(NREG))
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "cb2: an empty bar at the login registers NO castbar row")
 d = last(L, "castbar")
 check(d is not None and d.get("pick") is None and d.get("nopad") == 1 and d.get("pp") == [39, 19] and d.get("e") in ([], {})
@@ -121,8 +123,10 @@ edit(L, 403)
 check(int(L.eval('QSOON')) == 1, "cb2b: the row registered mid-session asks for the quests document again once (Home's pad copy)", L.eval('QSOON'))
 row = L.eval('WowCompanion.pad.rows.castbar')
 check(row is not None and bool(row.secure) and int(row.n) == N + 1, "cb6: the first edit registers the row 'castbar': 9 secure cells (8 + the pick)", row and (row.secure, row.n))
-check(row is not None and int(row.row) < int(L.eval('WowCompanion.pad.nrows')) <= 56 and int(L.eval('WowCompanion.pad.nrows')) == nrows0 + 1,
-      "within ROWS_MAX (56), one row more than before")
+# (TapPad pad26: a ranked row takes its own row - ORDER - so the pad's nrows need not grow; the count of rows does, by one)
+check(row is not None and int(row.row) < int(L.eval('WowCompanion.pad.nrows')) <= 56 and int(L.eval(NREG)) == nreg0 + 1
+      and (L.eval('WowCompanion.pad.SLOT') is None or int(row.row) == int(L.eval('WowCompanion.pad.SLOT.castbar'))),
+      "within ROWS_MAX (56), one row more than before (on its own row: pad26's ORDER)")
 desc = L.eval('WowCompanion.pad.describe()')
 check(desc['rows']['castbar'] is not None, "describe() publishes the castbar row (the app's TapBridge finds it)")
 check(L.eval('WowCompanion.pad.rows.castbar.cells[1].a["type"]') is None, "an empty slot's cell has no action")
