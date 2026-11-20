@@ -208,7 +208,7 @@ for k, v in TXT.items():
     e = comp(v, k)
     check(e is None, "a. Lua 5.1 compiles %s" % FILES[k], e or '')
 check(int(re.search(r'local PADV = "pad(\d+)"', TXT["tappad"]).group(1)) >= 22 and 'WC.prd = { V = "prd19"' in TXT["trail"] and int(re.search(r'WC\.compass = \{ V = "cp(\d+)" \}', TXT["trail"]).group(1)) >= 43
-      and int(re.search(r'local NB = \{ V = "nbar(\d+)"', TXT["actionbar"]).group(1)) >= 4 and 'local CHATV = "chat42"' in TXT["chat"] and int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 59
+      and int(re.search(r'local NB = \{ V = "nbar(\d+)"', TXT["actionbar"]).group(1)) >= 4 and 'local CHATV = "chat43"' in TXT["chat"] and int(re.search(r'local HV = "hub(\d+)"', TXT["hub"]).group(1)) >= 59
       and int(re.search(r'V = "uf(\d+)" \}', TXT["hub"]).group(1)) >= 24 and 'V = "lay1"' in TXT["hub"],
       "a. the versions: TapPad pad22, Trail prd19 / cp43 (or later), ActionBar nbar4 (or later: nbar5 the split swing lines), Chat chat42 (the toast glow veil + notice flash), Hub hub59+ (hub58 + the game's own UI; editor lay1, uf24): the 11-16 merge")
 check(all(QUOTE in TXT[k] for k in TXT), "a. each changed file's header note quotes the user", [k for k in TXT if QUOTE not in TXT[k]])

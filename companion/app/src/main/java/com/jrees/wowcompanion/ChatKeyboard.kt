@@ -305,7 +305,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         }
         override fun start(online: Boolean, lang: String, hints: List<String>, sink: VoiceEngine.Sink): Boolean {
             cur?.cancel()
-            val pick: VoiceListen = if (sheet?.offline == true && Voice.whisperModel(Tr.lang(), WhisperEngine.on()) != null) w else android()
+            val pick: VoiceListen = if (sheet?.offline == true && Voice.whisperModel(Tr.lang(), WhisperEngine.on(), Settings.voiceLanguage) != null) w else android()
             cur = pick
             return pick.start(online, lang, hints, sink)
         }
@@ -388,7 +388,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             val s = sheet ?: break
             when (a) {
                 is Voice.Act.Start -> {
-                    val lang = Voice.language(Tr.lang())
+                    val lang = VoiceLanguage.androidTag(Settings.voiceLanguage, Tr.lang())
                     val hints = if (a.online) emptyList() else runCatching { Voice.hints() }.getOrDefault(emptyList())
                     if (!listen().start(a.online, lang, hints, sink)) { run(s.error(Voice.E_BUSY)); return }
                     DiagLog.event("voice", s.logLine("listen"))
@@ -411,7 +411,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
                 }
                 Voice.Act.AskMic -> askMic(s)
                 Voice.Act.UseOnline -> { Settings.voiceTyping = Voice.Mode.ONLINE; DiagLog.event("voice", "online voice picked") }
-                Voice.Act.GetPack -> { val ok = listen().getPack(Voice.language(Tr.lang())); DiagLog.event("voice", "pack download asked ok=$ok") }
+                Voice.Act.GetPack -> { val ok = listen().getPack(VoiceLanguage.androidTag(Settings.voiceLanguage, Tr.lang())); DiagLog.event("voice", "pack download asked ok=$ok") }
                 is Voice.Act.GetModel -> getModel(s, a.model)
                 Voice.Act.Pass, Voice.Act.Glow -> {}
             }
@@ -428,7 +428,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     // (unless the sheet has closed)
     private var modelWatch: (() -> Unit)? = null
     /** where the list's cursor starts: the small one of the kind the app's language wants */
-    private fun sheetModel(): VoiceModels.Model = Voice.wantedModel(Tr.lang())
+    private fun sheetModel(): VoiceModels.Model = Voice.wantedModel(Tr.lang(), Settings.voiceLanguage)
     /** the files downloading or being checked now (Settings > Add-ons' too) */
     private fun busyModels(): Set<VoiceModels.Model> = VoiceModels.Model.values().filterTo(HashSet()) { m ->
         modelState(m).let { it is VoiceModels.State.Downloading || it == VoiceModels.State.Checking }
@@ -448,7 +448,9 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             ui.post {
                 if (sheet === s) {
                     // any of the four in: offline voice listens ([Voice.whisperModel] picks which and in what language)
-                    if (VoiceModels.Model.values().any { modelState(it) == VoiceModels.State.Ready }) { val (p, a) = probe(s.mode); run(s.modelReady(p, a)) }
+                    // #477: one that can listen in the Voice language (English alone cannot for Russian: the list stays)
+                    val pa = if (VoiceModels.Model.values().any { modelState(it) == VoiceModels.State.Ready }) probe(s.mode) else null
+                    if (pa != null && pa.second != Voice.Avail.NEED_MODEL) run(s.modelReady(pa.first, pa.second))
                     else { s.busy = busyModels(); invalidate(); onVoice() }
                 }
             }

@@ -2102,7 +2102,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         talkTabs.seed(chatView.talkTabs(), chatView.talkStart())
         // the Hub held the chat guest in the router's click (hub7); asked again here if it is not ours yet
         if (capHolder != "pad:chat") guestTap(GuestPad.cells(questsPad, "chat", hold = true))
-        if (Voice.whisperModel(Tr.lang(), WhisperEngine.on()) == null) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.NO_VOICE), "no voice model"); return }
+        if (Voice.whisperModel(Tr.lang(), WhisperEngine.on(), Settings.voiceLanguage) == null) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.NO_VOICE), "no voice model"); return }
         if (!VoiceMic.granted(this)) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.MIC_OFF), "no microphone"); return }
         talkLevel = 0f
         Log.i("WCHOME", "hold to talk: listening (${talkTabs.now()?.key})")

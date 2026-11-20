@@ -244,11 +244,22 @@ class GeneralTilesRoomTest {
         val r = room()
         val look = part(r, SettingsTabs.Group.LOOK)
         tap(r, look, look.tileBox(GeneralTiles.VOICE)!!)
-        val line = look.bandButtons().single()
-        assertEquals(3, line.size)
+        // the mode's three, then #477's Voice language stepper (previous / next) while voice typing is on
+        assertEquals(listOf(3, 2), look.bandButtons().map { it.size })
+        val line = look.bandButtons()[0]
         tap(r, look, line[1]); assertEquals(Voice.Mode.ONLINE, Settings.voiceTyping)
         tap(r, look, look.bandButtons()[0][2]); assertEquals(Voice.Mode.OFF, Settings.voiceTyping)
+        assertEquals("Off: no language line (no dead stop)", listOf(3), look.bandButtons().map { it.size })
         tap(r, look, look.bandButtons()[0][0]); assertEquals(Voice.Mode.DEVICE, Settings.voiceTyping)
+        // #477: Same as the app by default; next = Auto-detect, next again = English ... previous goes back; every button a stop
+        Settings.voiceLanguage = VoiceLanguage.SAME
+        try {
+            for (b in look.bandButtons()[1]) assertTrue(look.focusTargets().any { it == b })
+            tap(r, look, look.bandButtons()[1][1]); assertEquals(VoiceLanguage.AUTO, Settings.voiceLanguage)
+            repeat(5) { tap(r, look, look.bandButtons()[1][1]) }; assertEquals("ru", Settings.voiceLanguage)
+            tap(r, look, look.bandButtons()[1][0]); assertEquals("de", Settings.voiceLanguage)
+            tap(r, look, look.bandButtons()[1][1]); assertEquals("ru", Settings.voiceLanguage)
+        } finally { Settings.voiceLanguage = VoiceLanguage.SAME }
         // one band in the room: opening Swap screens' moves it
         tap(r, look, look.tileBox(GeneralTiles.SWAP)!!)
         assertEquals(GeneralTiles.SWAP, look.openTile)

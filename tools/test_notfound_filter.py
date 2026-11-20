@@ -51,7 +51,7 @@ game = L.eval('function(t) local f = FILTERS.CHAT_MSG_SYSTEM; if not f then retu
 line = "No player named 'Petra Stonewell-Realm' is currently playing."
 
 check(L.eval('WowCompanion.qtMode') is None, 'the retired mode is never set (the app no longer sends qtmode on)')
-check('local CHATV = "chat42"' in CHAT, 'Chat.lua is chat42 (chat37n merged, then chat40, chat41, chat42)')
+check('local CHATV = "chat43"' in CHAT, 'Chat.lua is chat43 (chat37n merged, then chat40, chat41, chat42, chat43)')
 check(hide(line) is True, 'QuestTrail loaded, mode off: our chat keeps the offline-peer line out', hide(line))
 check(game(line) is True, 'QuestTrail loaded, mode off: the game\'s chat filter keeps it out too', game(line))
 

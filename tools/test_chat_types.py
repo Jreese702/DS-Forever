@@ -49,7 +49,7 @@ L.execute("runTimers(NOW + 5); tick(1.0)")
 chats = [d for d in docs(L, typ="chat") if isinstance(d.get("chat"), dict)]
 ok(chats, "a chat document was sent")
 doc = chats[-1]["chat"]
-ok(doc.get("v") == "chat42", "the version is chat42 (chat37c merged, then chat40, chat41, chat42): %r" % doc.get("v"))
+ok(doc.get("v") == "chat43", "the version is chat43 (chat37c merged, then chat40, chat41, chat42, chat43): %r" % doc.get("v"))
 lines = doc.get("lines") or []
 by = {}
 for ln in lines:
