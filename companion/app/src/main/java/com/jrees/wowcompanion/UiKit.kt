@@ -192,7 +192,26 @@ object UiKit {
         val gone = LowMemCuts.kitOverCap(texCache.mapValues { it.value.byteCount.toLong() }, texUsed, SystemClock.uptimeMillis())
         var b = 0L
         for (n in gone) { texCache.remove(n)?.let { b += it.byteCount.toLong() }; texUsed.remove(n) }
-        return b
+        return b + sideLetGo()
+    }
+
+    /**
+     * THE KIT'S SIDE CACHES (memory work #56, D2, the user's yes 2026-11-19): the edge tiles cut from a picture ([tileCache], copies as
+     * big as the picture) and the pictures' light measures ([statsCache], which held the PICTURE itself: a picture the cap let go stayed
+     * in memory through it) were never let go. Now both follow the picture: a picture not in [texCache] any more takes its tiles and its
+     * measure with it ([LowMemCuts.sideGone]), at every cap and every trim. Main thread. The bytes let go.
+     */
+    private fun sideLetGo(): Long = synchronized(this) {
+        var b = 0L
+        for (n in LowMemCuts.sideGone(tileCache.keys, texCache.keys)) tileCache.remove(n)?.let { a -> b += a.sumOf { it.byteCount.toLong() } }
+        for (n in LowMemCuts.sideGone(statsCache.keys, texCache.keys)) statsCache.remove(n)
+        // a measure of an older copy of a picture still loaded (a theme change decoded it again) holds that old copy
+        statsCache.entries.removeAll { (n, v) -> texCache[n] !== v.first && run { b += v.first.byteCount.toLong(); true } }
+        b
+    }
+    /** the side caches' bytes (the memory line's "kit") */
+    private fun sideBytes(): Long = synchronized(this) {
+        tileCache.values.sumOf { a -> a.sumOf { it.byteCount.toLong() } } + tabEdges.values.sumOf { it.byteCount.toLong() }
     }
 
     /**
@@ -7846,9 +7865,11 @@ object UiKit {
 
     private val fonts = HashMap<String, Typeface>()
     private val texCache = HashMap<String, Bitmap>()
-    init { MemWatch.source("kit") { texCache.values.sumOf { it.byteCount.toLong() } + castCache.values.sumOf { it.byteCount.toLong() } } }
-    // test build 1489 (#56): the relief's let-go (game start, world, loading screens) caps the kit while the game runs
-    init { MemWatch.onTrim("kit") { _ -> if (runCatching { PlayGate.gameActiveNow() }.getOrDefault(false)) capKit() else 0L } }
+    // memory work #56 (D2): the side caches (edge tiles, traced tab edges) counted with the pictures
+    init { MemWatch.source("kit") { texCache.values.sumOf { it.byteCount.toLong() } + castCache.values.sumOf { it.byteCount.toLong() } + sideBytes() } }
+    // test build 1489 (#56): the relief's let-go (game start, world, loading screens) caps the kit while the game runs; memory work #56
+    // (D2): the side caches follow the pictures at every trim, the game up or not
+    init { MemWatch.onTrim("kit") { _ -> if (runCatching { PlayGate.gameActiveNow() }.getOrDefault(false)) capKit() else sideLetGo() } }
     private val tileCache = HashMap<String, Array<Bitmap>>()
     private val missing = HashMap<String, Long>()
 

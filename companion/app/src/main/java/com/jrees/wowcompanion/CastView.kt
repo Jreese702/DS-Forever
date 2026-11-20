@@ -1535,7 +1535,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     // ---- icons decoded off the UI thread (Icons.get is thread-safe: synchronized LruCache + pack, a duplicated buffer)
-    private val iconReady = HashMap<Int, Bitmap>()      // main thread
+    // memory work #56 (D2, the user's yes 2026-11-19): never cleared before (3 - 10 MB and growing over a session); now the least recently
+    // drawn go past the Thor's icon budget (LowMemCuts.iconsKept); one drawn again is asked of Icons again (its own LRU, or the pack)
+    private val iconBudget = LowMemCuts.iconsKeptNow()
+    private val iconReady = LowMemCuts.SizedLru<Int, Bitmap> { iconBudget }      // main thread
     private val iconAbsent = HashSet<Int>()             // main thread: the pack has no such icon (retried with the pack)
     private val iconWanted = LinkedHashSet<Int>()       // main thread: queued for the next batch
     private var iconBatchQueued = false

@@ -777,6 +777,20 @@ class MapView(context: Context) : View(context) {
     private var planBytes = 0L
     init { MemWatch.source("plans") { planBytes } }
     private val PLAN_BUDGET = 24L * 1024 * 1024
+    // memory work #56 (D2, the user's yes 2026-11-19): the plans were never trimmed (0 - 24 MB in the reports). Android's pressure and
+    // the reliefs keep at most the two newest while the map is on screen (the storey and its ghost) and none while it is not; a plan
+    // drawn again is decoded again (off the UI thread, as before). Never recycled here: a draw may still hold one this frame
+    init { MemWatch.onTrim("plans") { level -> trimPlans(level) } }
+    private fun trimPlans(level: Int): Long {
+        val keep = LowMemCuts.plansKept(level, isShown) ?: return 0L
+        var b = 0L
+        while (planCache.size > keep) {
+            val k = planCache.keys.first()
+            planCache.remove(k)?.let { b += it.byteCount.toLong() }
+        }
+        planBytes = (planBytes - b).coerceAtLeast(0L)
+        return b
+    }
 
     // DECODED OFF THE UI THREAD (D's full-catalogue report, 2026-10-13): a district's plan is 1400x1047, and decoding it inside
     // onDraw stalled the first frame in every newly entered building. A plan not decoded yet is asked for here and drawn when it

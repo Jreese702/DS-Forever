@@ -33,8 +33,15 @@ object Icons {
 
     @Volatile private var pak: Pak? = null
     private var lastTry = 0L
-    // ~16 KB per 64 px ARGB bitmap: 600 icons = ~10 MB, a full bag plus both action bars
-    private val cache = LruCache<Int, Bitmap>(600)
+    // ~16 KB per 64 px ARGB bitmap (600 icons were ~10 MB). Memory work #56 (D2): the count by the Thor (LowMemCuts.iconsKept: 160 / 240 / 400), sized again once the RAM is known ([fit])
+    private val cache = LruCache<Int, Bitmap>(LowMemCuts.iconsKeptNow())
+    @Volatile private var fitFor = -1L
+    private fun fit() {
+        val mb = DeviceTier.totalMb
+        if (mb == fitFor) return
+        fitFor = mb
+        runCatching { cache.resize(LowMemCuts.iconsKeptNow()) }
+    }
     init { MemWatch.source("icons") { cache.snapshot().values.sumOf { it.byteCount.toLong() } + uiCache.values.sumOf { it.byteCount.toLong() } } }
 
     /** true once a pack is mapped (callers can skip icon layout work until then) */
@@ -44,6 +51,7 @@ object Icons {
     fun get(fileID: Int?): Bitmap? {
         if (fileID == null || fileID <= 0) return null
         cache.get(fileID)?.let { return it }
+        fit()
         val p = open()
         // Track C, test23: the background all-icons step's packs (art/icons_all/*.pak) after the required pack; an icon found there
         // needs no required harvest; only one neither has is asked for
