@@ -23,7 +23,8 @@ public class Keyboard {
     private final XServer xServer;
 
     public interface OnKeyboardListener {
-        void onKeyPress(byte keycode, int keysym);
+        /** shiftedKeysym is what the key types with Shift; 0 means the same as keysym. */
+        void onKeyPress(byte keycode, int keysym, int shiftedKeysym, boolean autoRepeat);
 
         void onKeyRelease(byte keycode);
     }
@@ -44,13 +45,26 @@ public class Keyboard {
         keysyms[index*KEYSYMS_PER_KEYCODE+1] = majKeysym;
     }
 
+    public boolean hasKeysyms(byte keycode, int minKeysym, int majKeysym) {
+        int index = keycode - 8;
+        return keysyms[index*KEYSYMS_PER_KEYCODE+0] == minKeysym && keysyms[index*KEYSYMS_PER_KEYCODE+1] == majKeysym;
+    }
+
     public boolean hasKeysym(byte keycode, int keysym) {
         int index = keycode - 8;
         return keysyms[index*KEYSYMS_PER_KEYCODE+0] == keysym || keysyms[index*KEYSYMS_PER_KEYCODE+1] == keysym;
     }
 
     public void setKeyPress(byte keycode, int keysym) {
-        triggerOnKeyPress(keycode, keysym);
+        setKeyPress(keycode, keysym, true);
+    }
+
+    public void setKeyPress(byte keycode, int keysym, boolean autoRepeat) {
+        setKeyPress(keycode, keysym, 0, autoRepeat);
+    }
+
+    public void setKeyPress(byte keycode, int keysym, int shiftedKeysym, boolean autoRepeat) {
+        triggerOnKeyPress(keycode, keysym, shiftedKeysym, autoRepeat);
         pressedKeys.add(keycode);
         if (isModifier(keycode)) modifiersMask.set(getModifierFlag(keycode));
     }
@@ -71,9 +85,9 @@ public class Keyboard {
         onKeyboardListeners.remove(onKeyboardListener);
     }
 
-    private void triggerOnKeyPress(byte keycode, int keysym) {
+    private void triggerOnKeyPress(byte keycode, int keysym, int shiftedKeysym, boolean autoRepeat) {
         for (int i = onKeyboardListeners.size()-1; i >= 0; i--) {
-            onKeyboardListeners.get(i).onKeyPress(keycode, keysym);
+            onKeyboardListeners.get(i).onKeyPress(keycode, keysym, shiftedKeysym, autoRepeat);
         }
     }
 
@@ -124,9 +138,18 @@ public class Keyboard {
             return false;
 
         if (action == KeyEvent.ACTION_DOWN) {
+            // Hardware keyboards already repeat held keys: Android sends repeated ACTION_DOWNs
+            // and stops them when the key is released or focus moves away. The X server's own
+            // repeat timer is left off here so a held key isn't repeated twice, and a release
+            // that never reaches us (e.g. focus moved mid-press) can't repeat a key forever.
             boolean syntheticShift = needsSyntheticShift(event);
-            if (syntheticShift) xServer.injectKeyPress(XKeycode.KEY_SHIFT_L);
-            xServer.injectKeyPress(xKeycode, printableKeysym(event));
+            if (syntheticShift) xServer.injectKeyPress(XKeycode.KEY_SHIFT_L, 0, false);
+            int[] levels = keyLevels(event, xKeycode);
+            if (levels != null) {
+                xServer.injectKeyPress(xKeycode, levels[0], levels[1], false);
+            } else {
+                xServer.injectKeyPress(xKeycode, printableKeysym(event), false);
+            }
             if (syntheticShift) xServer.injectKeyRelease(XKeycode.KEY_SHIFT_L);
         } else if (action == KeyEvent.ACTION_UP) {
             xServer.injectKeyRelease(xKeycode);
@@ -139,6 +162,35 @@ public class Keyboard {
         if (pressedKeys.contains(XKeycode.KEY_SHIFT_L.getId()) || pressedKeys.contains(XKeycode.KEY_SHIFT_R.getId())) return false;
         int keyCode = event.getKeyCode();
         return event.isShiftPressed() || keyCode == KeyEvent.KEYCODE_AT || keyCode == KeyEvent.KEYCODE_STAR || keyCode == KeyEvent.KEYCODE_POUND || keyCode == KeyEvent.KEYCODE_PLUS;
+    }
+
+    /**
+     * What the key types without and with Shift, e.g. {'1', '!'}. Telling X both, as a real keyboard map does, keeps the
+     * key the same key when Shift is held, so Wine reports Shift+1 rather than a different key (Shift keybinds, #99).
+     * Returns null when the key doesn't type a printable ASCII character without Shift.
+     */
+    private int[] keyLevels(KeyEvent event, XKeycode xKeycode) {
+        try {
+            android.view.KeyCharacterMap map = event.getKeyCharacterMap();
+            int type = map.getKeyboardType();
+            if (type != android.view.KeyCharacterMap.FULL && type != android.view.KeyCharacterMap.ALPHA) {
+                // A keypad such as an MMO mouse's side buttons often has no Shift level. Keep what a full keyboard set
+                // for this key, or the US layout if none did, so the key stays the same key to Wine (Shift+mouse 1).
+                int index = (xKeycode.getId() - MIN_KEYCODE) * KEYSYMS_PER_KEYCODE;
+                if (keysyms[index] != 0) return new int[] {keysyms[index], keysyms[index + 1]};
+                map = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD);
+            }
+            int base = printable(map.get(event.getKeyCode(), 0));
+            if (base == 0) return null;
+            int shifted = printable(map.get(event.getKeyCode(), KeyEvent.META_SHIFT_ON));
+            return new int[] {base, shifted != 0 ? shifted : base};
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static int printable(int unicodeChar) {
+        return unicodeChar > 32 && unicodeChar < 127 ? unicodeChar : 0;
     }
 
     private static int printableKeysym(KeyEvent event) {
