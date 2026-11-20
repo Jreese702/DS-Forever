@@ -3676,7 +3676,236 @@ end
 -- moves; the hub document then says the layout owns the two (prd.lay: the app drops them from its tap loop). Hub's old columns 36-39
 -- still step them for an older app (into the saved entry: the player's press). While the editor is open the HUD is held up at its rest
 -- alpha (why "layout"), so the piece being moved is seen. P.lay is the piece Hub's editor gathers.
-WC.prd = { V = "prd19", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+-- prd20 / ab1 (GitHub #558 / #476, the user's rulings 2026-11-19): THE TOP SCREEN'S AURAS ARE THE GAME'S OWN AURA CONTAINERS, in and
+-- out of fights, so the look never changes. In a fight every aura read an add-on makes throws ("Auras cannot be accessed when secret
+-- while tainted": GetAuraDataByIndex, the instance-ID route, GetUnitAuraInstanceIDs; UNIT_AURA's payload is secret too), so prd16's
+-- reader had nothing to draw. This client ships Blizzard_AuraContainer for external code (its .toc: "XML files need to be loaded into
+-- the global environment in order to allow intrinsics and templates to be instantiated by external code"): an AuraContainer made with
+-- CustomAuraContainerTemplate (allowUntaintedCreation) runs its methods as SECURE DELEGATES and the GAME fills its buttons
+-- (CustomAuraButtonTemplate) - the icon, the stacks, the swipe and its seconds (a duration object), the dispel-type border, the
+-- pandemic glow, the game's own tooltip. Our Lua never reads anything back (the buttons lock: DenyTaintedAccessWhenAurasAreSecret).
+-- WC.abox makes ONE such container per piece (WC.abox.make: a host frame of ours, the container anchored inside it), each set up ONCE:
+--   SetEditModePreviewEnabled(false) (no fake Edit Mode auras), the flow layout (anchor, growth, the line's width), SetUnit(unit) once,
+--   then its groups (AddAuraGroup: a filter string, a max count, a sort, candidate filters, a layout). Every button is dressed in the
+--   group's initializeFrame, which the game calls as it makes each batch (before it applies the lock): our textures / font strings /
+--   Cooldown on the button, handed over with SetIcon, SetDurationCooldown, SetDurationText, SetApplicationCount, AddDispelTypeTexture,
+--   AddPandemicRegion; SetHideTooltipInCombat(true) (the game's tooltip never in a fight). No XML, no new file (a new .toc = restart).
+-- After that only two calls are ever made: UpdateAllAuras (a target change: the game's own TargetFrame does the same) and, on a Party
+-- mode change of the HUD, the flow's anchor / growth. Showing / hiding is OUR host frame (alpha / Show / Hide on our own plain frame,
+-- allowed in a fight), so the HUD switches that hid the old rows hide the containers the same way. Where the client has no container
+-- (no CustomAuraContainerGroupDefaultOptions in _G, CreateFrame refuses the type, the template lacks AddAuraGroup, or no group took)
+-- the old rows (prd16 / uf16) stay, as before.
+-- Tooltips: in a fight the game hides them itself (SetHideTooltipInCombat); out of one they follow "Hide game tooltips" - the button's
+-- tooltip is the FORBIDDEN AuraButtonTooltip, so tt6 lays its motion-only shield over each container's host (WC.tips.addBox).
+-- What the setup did rides one "cap" line per piece (probe "aurabox": made / refused, the steps that failed and their error text).
+WC.abox = { V = "ab1", boxes = {}, sent = {}, inits = 0, wired = {} }
+do
+    local A = WC.abox
+    local function secret(v) return type(issecretvalue) == "function" and issecretvalue(v) or false end
+    local function errText(e)
+        if type(e) == "string" and not secret(e) then return (e:gsub("[%c\"\\]", " "):sub(1, 120)) end
+        return "?"
+    end
+    -- an enum value from the client's own (re-exported) table, else the number its source gives
+    local function enumv(get, def)
+        local ok, v = pcall(get)
+        if ok and type(v) == "number" and not secret(v) then return v end
+        return def
+    end
+    A.SORT = { Default = 0, Expiration = 4 }
+    function A.sort(k) return enumv(function() return AuraContainerSortMethod[k] end, A.SORT[k] or 0) end
+    function A.dirNormal() return enumv(function() return AuraContainerSortDirection.Normal end, 0) end
+    A.FLOW = { Left = -1, Right = 1, Up = 1, Down = -1 }
+    function A.flow(k) return enumv(function() return AnchorUtil.FlowDirection[k] end, A.FLOW[k]) end
+    function A.border() return enumv(function() return Enum.CustomAuraButtonDispelTypeTextureStyle.Border end, 0) end
+    -- the seconds' colours the HUD row had (the BuffFrame's): white under a minute, gold from it - a step colour curve on the remaining
+    -- time, evaluated by the game; nil where the client has no curve (the font string's own colour then)
+    function A.textColor()
+        local ok, o = pcall(function()
+            local c = C_CurveUtil.CreateColorCurve()
+            pcall(function() c:SetType(Enum.LuaCurveType.Step) end)
+            c:AddPoint(0, CreateColor(1, 1, 1, 1))
+            c:AddPoint(60, CreateColor(1, 0.82, 0, 1))
+            return { curve = c, property = Enum.DurationTextBindingProperty.RemainingDuration }
+        end)
+        if ok and type(o) == "table" then return o end
+    end
+    local function wire(k, ok) A.wired[k] = A.wired[k] or { ok = 0, no = 0 }; local w = A.wired[k]; if ok then w.ok = w.ok + 1 else w.no = w.no + 1 end end
+    -- look: { size (UI units), font (px, UI units), mask (the cooldown manager's rounded icon), timer = "text" (our seconds under the icon,
+    -- the game's text binding) or "cd" (the Cooldown's own numbers in the icon's corner), bd (the border's outset), harmful }
+    function A.initFor(look)
+        return function(b)
+            A.inits = A.inits + 1
+            local sz = look.size
+            pcall(b.SetSize, b, sz, sz)
+            wire("tipcombat", pcall(b.SetHideTooltipInCombat, b, true))
+            -- a touch on an icon still reaches the world under it (as our old rows: no mouse); the hover keeps the game's tooltip
+            pcall(b.SetMouseClickEnabled, b, false)
+            local tx = b:CreateTexture(nil, "ARTWORK")
+            tx:SetAllPoints(b)
+            tx:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            if look.mask then
+                pcall(function()
+                    local m = b:CreateMaskTexture()
+                    m:SetAtlas("UI-HUD-CoolDownManager-Mask")
+                    m:SetAllPoints(b)
+                    tx:AddMaskTexture(m)
+                end)
+                pcall(function()
+                    local ov = b:CreateTexture(nil, "OVERLAY", nil, 1)
+                    ov:SetAtlas("UI-HUD-CoolDownManager-IconOverlay-c60")
+                    ov:SetPoint("CENTER", b, "CENTER", 0, 0)
+                    ov:SetSize(sz * 86 / 64, sz * 86 / 64)
+                end)
+            end
+            local cd = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
+            cd:SetAllPoints(b)
+            pcall(function() cd:SetReverse(true) end)                      -- the time GONE darkens (the aura's look)
+            pcall(function() cd:SetDrawEdge(look.mask == true) end)
+            pcall(function() cd:SetHideCountdownNumbers(look.timer ~= "cd") end)
+            if look.timer == "cd" then
+                -- the target bar's look (uf16): the game's own seconds, small, in the icon's lower right corner
+                pcall(function()
+                    for _, rg in ipairs({ cd:GetRegions() }) do
+                        if rg and rg.GetObjectType and rg:GetObjectType() == "FontString" then
+                            WC.font(rg, look.font, "OUTLINE"); rg:ClearAllPoints(); rg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", look.bd, -look.bd)
+                        end
+                    end
+                end)
+            end
+            local bd = b:CreateTexture(nil, "OVERLAY", nil, 2)
+            bd:SetPoint("TOPLEFT", b, "TOPLEFT", -look.bd, look.bd)
+            bd:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", look.bd, -look.bd)
+            bd:Hide()
+            local pd = b:CreateTexture(nil, "OVERLAY", nil, 3)
+            pcall(function() pd:SetAtlas("UI-CooldownManager-PandemicBorder") end)
+            pd:SetAllPoints(b)
+            pd:Hide()
+            local n = b:CreateFontString(nil, "OVERLAY")
+            WC.font(n, look.font, "OUTLINE")
+            if look.timer == "cd" then n:SetPoint("TOPLEFT", b, "TOPLEFT", -look.bd, look.bd) else n:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1) end
+            -- handed to the game ONCE (the button locks while auras are secret); what took is counted for the probe
+            wire("icon", pcall(b.SetIcon, b, tx))
+            wire("swipe", pcall(b.SetDurationCooldown, b, cd))
+            wire("stacks", pcall(b.SetApplicationCount, b, n))
+            if look.timer ~= "cd" then
+                local t = b:CreateFontString(nil, "OVERLAY")
+                WC.font(t, look.font, "OUTLINE")
+                t:SetPoint("TOP", b, "BOTTOM", 0, -2)
+                local col = A.textColor()
+                local okT = col and pcall(b.SetDurationText, b, t, { textColor = col })
+                if not okT then okT = pcall(b.SetDurationText, b, t, {}) end
+                wire("seconds", okT)
+            end
+            wire("border", pcall(b.AddDispelTypeTexture, b, bd, { style = A.border(), showWhenHarmful = true, showWhenHelpful = false,
+                                                                    showWithoutDispelType = look.harmful == true }))
+            wire("pandemic", pcall(b.AddPandemicRegion, b, pd))
+        end
+    end
+    -- one "cap" line per piece and outcome (plain values only)
+    function A.probe(key, made, steps, groups)
+        local k = key .. ":" .. tostring(made)
+        if A.sent[k] then return end
+        A.sent[k] = true
+        if WC.send and WC.encode then
+            local okC, c = pcall(InCombatLockdown)
+            pcall(function() WC.send(WC.encode({ type = "cap", probe = "aurabox", v = A.V, key = key, made = made, groups = groups,
+                                                 steps = steps, fight = okC and c == true })) end)
+        end
+    end
+    -- the piece's container: s = { key, parent, unit, w, h (the host's size), anchor ("TOPLEFT" / "TOPRIGHT" / "BOTTOMLEFT"), grow
+    -- ("Right" / "Left"), vgrow ("Down" / "Up"), line (the flow's line width), look, groups = { { key, filter, max, sort, cand, layout } } }
+    -- -> the box, or nil (no container on this client / refused: the caller keeps its old row)
+    function A.make(s)
+        if A.boxes[s.key] then return A.boxes[s.key] end
+        if A.boxes[s.key] == false then return nil end
+        -- the client's Blizzard_AuraContainer: its defaults, re-exported to the global environment (Blizzard_AuraContainerShared.lua)
+        if type(_G.CustomAuraContainerGroupDefaultOptions) ~= "table" then
+            A.boxes[s.key] = false
+            A.probe(s.key, false, { create = "no Blizzard_AuraContainer" }, 0)
+            return nil
+        end
+        local host = CreateFrame("Frame", nil, s.parent)
+        host:EnableMouse(false)
+        host:SetSize(s.w, s.h)
+        local ok, c = pcall(CreateFrame, "AuraContainer", nil, host, "CustomAuraContainerTemplate")
+        if not ok or type(c) ~= "table" or type(c.AddAuraGroup) ~= "function" or type(c.SetUnit) ~= "function" then
+            pcall(host.Hide, host)
+            A.boxes[s.key] = false
+            A.probe(s.key, false, { create = ok and "no AddAuraGroup" or errText(c) }, 0)
+            return nil
+        end
+        local steps = {}
+        local function try(name, ...)
+            local f = c[name]
+            if type(f) ~= "function" then steps[name] = "missing"; return false end
+            local okc, e = pcall(f, c, ...)
+            if not okc then steps[name] = errText(e) end
+            return okc
+        end
+        try("SetEditModePreviewEnabled", false)                             -- the user: no Edit Mode preview auras
+        local box = { key = s.key, host = host, c = c, unit = s.unit, steps = steps, up = false }
+        A.layout(box, s.anchor, s.grow, s.vgrow or "Down")
+        try("SetFlowLayoutMaximumLineSize", s.line)
+        try("SetUnit", s.unit)                                              -- ONCE: one container per unit token
+        local groups = 0
+        for _, g in ipairs(s.groups) do
+            local okg = try("AddAuraGroup", g.key, g.filter, { maxFrameCount = g.max, sortMethod = A.sort(g.sort or "Default"),
+                sortDirection = A.dirNormal(), candidateFilters = g.cand, layout = g.layout, initializeFrame = A.initFor(s.look) })
+            if okg then groups = groups + 1 end
+        end
+        if groups == 0 then
+            pcall(host.Hide, host)
+            A.boxes[s.key] = false
+            A.probe(s.key, false, steps, 0)
+            return nil
+        end
+        box.groups = groups
+        A.boxes[s.key] = box
+        A.probe(s.key, true, steps, groups)
+        if type(WC.tips) == "table" and type(WC.tips.addBox) == "function" then pcall(WC.tips.addBox, s.key, host) end
+        return box
+    end
+    -- the flow's anchor and growth (setup, and the HUD's Party mode move), the container anchored at that corner of its host
+    function A.layout(box, anchor, grow, vgrow)
+        local c = box.c
+        if box.anchor == anchor and box.grow == grow and box.vgrow == vgrow then return end
+        box.anchor, box.grow, box.vgrow = anchor, grow, vgrow
+        pcall(function() c:ClearAllPoints(); c:SetPoint(anchor, box.host, anchor, 0, 0) end)
+        local okA, eA = pcall(c.SetFlowLayoutAnchorPoint, c, anchor)
+        if not okA then box.steps.SetFlowLayoutAnchorPoint = errText(eA) end
+        local okG, eG = pcall(c.SetFlowLayoutGrowthDirection, c, A.flow(grow), A.flow(vgrow))
+        if not okG then box.steps.SetFlowLayoutGrowthDirection = errText(eG) end
+    end
+    -- a full refresh (a target change): the game's own TargetFrame calls the same on PLAYER_TARGET_CHANGED
+    function A.refresh(box)
+        if not box then return false end
+        local ok, e = pcall(box.c.UpdateAllAuras, box.c)
+        if not ok then box.steps.UpdateAllAuras = errText(e) end
+        return ok
+    end
+    -- shown / hidden: our own host frame only
+    function A.show(box, on)
+        if not box then return end
+        local h = box.host
+        if on then if not h:IsShown() then h:Show() end elseif h:IsShown() then h:Hide() end
+    end
+    -- the hub document's word: which pieces have a container, and what any step said
+    function A.word()
+        local out = {}
+        for k, b in pairs(A.boxes) do
+            if b == false then out[k] = "none"
+            else
+                local bad = nil
+                for s, e in pairs(b.steps) do bad = bad or (s .. ": " .. e) end
+                out[k] = bad or "ok"
+            end
+        end
+        return { v = A.V, b = out, n = A.inits }
+    end
+end
+
+WC.prd = { V = "prd20", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -4056,6 +4285,7 @@ do
         P.buffs, P.debuffs = {}, {}
         for i = 1, P.BUFF_MAX do P.buffs[i] = icon(f, i) end
         for i = 1, P.DEBUFF_MAX do P.debuffs[i] = icon(f, i) end
+        P.box = P.boxMake(f)                                           -- prd20: the game's own aura container in their place
         P.petL, P.pet = nil, nil
         P.petBuild()                                                   -- prd11: the pet's strip (its own layer on P.f)
         P.pick = nil
@@ -4075,6 +4305,11 @@ do
         if P.cp then P.cp.max = nil end                                  -- prd10: the pips' gaps laid out again at the new width
         for _, b in ipairs({ P.heal, P.shield }) do if b then b:SetWidth(u(P.W)) end end
         if P.lag then P.lag:SetAllPoints(P.hp) end
+        -- prd20: the container's line follows the bar's width (its host too); a refusal stays at the old width
+        if P.box then
+            pcall(function() P.box.host:SetWidth(u(P.W)) end)
+            pcall(P.box.c.SetFlowLayoutMaximumLineSize, P.box.c, u(P.W))
+        end
         P.cache = nil
     end
     function P.place()
@@ -4446,7 +4681,50 @@ do
         return math.max(0, math.ceil(left)) .. " s"
     end
     P.DEBUFF_ATLAS = { Magic = "magic", Curse = "curse", Disease = "disease", Poison = "poison", Bleed = "bleed", none = "default" }
+    -- prd20 (#558 / #476): the row is ONE aura container on "player" (WC.abox): the buffs (HELPFUL lasting BUFF_DUR or less, at most
+    -- BUFF_MAX), then the debuffs (HARMFUL with a duration, at most DEBUFF_MAX, the game's dispel-type border), flowing from the bar's
+    -- left edge and wrapping at its width; the seconds under each icon (the game's text binding), the swipe, the stacks, the pandemic
+    -- glow. Built with the bars (P.build); nil on a client without the container (the old row then, as before)
+    function P.boxMake(parent)
+        if type(WC.abox) ~= "table" then return nil end
+        local step = u(P.IGAP)
+        return WC.abox.make({
+            key = "hud", parent = parent, unit = "player", w = u(P.W), h = u(2 * (P.ICON + 18)), anchor = "TOPLEFT", grow = "Right",
+            line = u(P.W), look = { size = u(P.ICON), font = u(13), mask = true, timer = "text", bd = u(4), harmful = true },
+            groups = {
+                { key = "buffs", filter = "HELPFUL", max = P.BUFF_MAX, cand = { maxDuration = P.BUFF_DUR },
+                  layout = { elementSpacing = step, lineSpacing = u(18) } },
+                { key = "debuffs", filter = "HARMFUL", max = P.DEBUFF_MAX, cand = { maxDuration = math.huge },
+                  layout = { elementSpacing = step, lineSpacing = u(18), groupSpacing = u(P.IGAP * 2) } },
+            },
+        })
+    end
+    -- prd20: the container's place (our host frame: allowed in a fight) under the bars, or in Party mode above them (prd15: growing up)
+    function P.boxDraw(show)
+        local box = P.box
+        for _, list in ipairs({ P.buffs or {}, P.debuffs or {} }) do      -- (the old row's icons never show beside it)
+            for _, o in ipairs(list) do if o.f:IsShown() then o.f:Hide() end end
+        end
+        P.nb, P.nd = nil, nil
+        if not P.abAt or math.abs(now() - P.abAt) >= 2 then P.abAt = now(); P.ab = WC.abox.word() end   -- (the hub document's word)
+        local h = box.host
+        local y = P.auraUp and u(P.AURA_UP) or -u(P.HH + P.BAR_GAP + P.PH + P.ROW_GAP + (P.petDrop or 0))
+        if box.y ~= y or box.yUp ~= P.auraUp then
+            box.y, box.yUp = y, P.auraUp
+            h:ClearAllPoints()
+            if P.auraUp then
+                h:SetPoint("BOTTOMLEFT", P.f, "TOPLEFT", 0, y)
+                WC.abox.layout(box, "BOTTOMLEFT", "Right", "Up")
+            else
+                h:SetPoint("TOPLEFT", P.f, "TOPLEFT", 0, y)
+                WC.abox.layout(box, "TOPLEFT", "Right", "Down")
+            end
+        end
+        WC.abox.show(box, show == true)
+    end
     function P.drawAuras(show)
+        -- prd20: with the container nothing is read here, in a fight or out of one
+        if P.box then return P.boxDraw(show) end
         local b, d = {}, {}
         if show then
             -- the aura list re-read on UNIT_AURA and at most every AURA_S; the seconds every frame
@@ -4889,6 +5167,8 @@ do
     -- neither shown they move at once. Plain alpha on our own frames (the strip's layer holds over the curve's alpha for those 0.4 s; the
     -- aura icons back at 1 after); the pick box waits for the strip (P.pickStep)
     function P.aurasShown()
+        -- prd20: the container's host (its buttons are the game's: never read)
+        if P.box then return P.box.host:IsShown() == true end
         for _, list in ipairs({ P.buffs or {}, P.debuffs or {} }) do
             for _, o in ipairs(list) do if o.f and o.f:IsShown() then return true end end
         end
@@ -4897,6 +5177,7 @@ do
     function P.moveAlpha(a)
         local L = P.petL
         if L and L:IsShown() then pcall(function() L:SetAlpha(a) end) end
+        if P.box then pcall(function() P.box.host:SetAlpha(a) end) end      -- prd20: the container fades with the move too
         for _, list in ipairs({ P.buffs or {}, P.debuffs or {} }) do
             for _, o in ipairs(list) do if o.f then pcall(function() o.f:SetAlpha(a) end) end end
         end
@@ -5180,7 +5461,12 @@ end
 --   strata: hovering the consolidation button while the game's buffs are shown). Both are adopted by name / path like the rest, and
 --   an adopted frame is held by its own hooks whatever its type (the type check guards the SHARED table only). stats() also says how
 --   the target frame's shield lies (tm: "anchor" / "rect"), since that container's size is a secret value (secretwrap at its layout).
-WC.tips = { V = "tt5", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
+-- tt6 (#558 / #476, the user 2026-11-19: "the tt4 shield over aura containers applies"): the top screen's auras are now the game's own
+-- aura containers (Trail prd20 / Hub uf26, WC.abox), whose buttons show the FORBIDDEN AuraButtonTooltip as the target frame's did. In a
+-- fight the game hides it itself (SetHideTooltipInCombat); out of one, while tooltips are off, the same motion-only shield lies over each
+-- container's host (WC.tips.addBox: OUR plain frame, so it is anchored to it, never the container, whose size is a secret), in the
+-- host's strata and above its frame level (the buttons are its descendants), and comes down when tooltips are on or the host hides.
+WC.tips = { V = "tt6", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
                                   "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "NamePlateTooltip", "GameNoHeaderTooltip",
                                   "BuffFrameTooltip", "GameSmallHeaderTooltip", "PartyMemberBuffTooltip" },
             -- review of tt4: tooltips with no global name, by their path from one
@@ -5192,7 +5478,7 @@ WC.tips = { V = "tt5", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTool
             UNITS = { "TargetFrame", "FocusFrame", "Boss1TargetFrame", "Boss2TargetFrame", "Boss3TargetFrame", "Boss4TargetFrame",
                       "Boss5TargetFrame" },
             hooked = {}, on = false, zeroed = setmetatable({}, { __mode = "k" }), busy = false, typeHooked = false,
-            adopted = {}, list = {}, named = {}, queue = {}, shields = {}, ticking = false,
+            adopted = {}, list = {}, named = {}, queue = {}, shields = {}, ticking = false, boxes = {}, boxShields = {},
             st = { show = 0, upd = 0, size = 0, fill = 0, type = 0, shield = 0 } }
 do
     local T = WC.tips
@@ -5411,6 +5697,37 @@ do
                 shieldUp(e, false)
             end
         end
+        -- tt6: the shields over our aura containers' hosts (plain frames of ours: anchored, raised over the game's buttons in them)
+        for key, host in pairs(T.boxes) do
+            local e = T.boxShields[key]
+            local want = false
+            if T.on then
+                local ok, v = pcall(host.IsVisible, host)
+                want = ok and v == true
+            end
+            if want then
+                if not e then e = { f = newShield() }; T.boxShields[key] = e end
+                if e.f and e.c ~= host then
+                    local placed = pcall(function()
+                        e.f:SetFrameStrata(host:GetFrameStrata())
+                        e.f:SetFrameLevel(host:GetFrameLevel() + T.BOX_LIFT)
+                        e.f:ClearAllPoints(); e.f:SetAllPoints(host)
+                    end)
+                    if placed then e.c, e.mode = host, "box" end
+                end
+                shieldUp(e, e.f ~= false and e.c == host)
+            elseif e then
+                shieldUp(e, false)
+            end
+        end
+    end
+    -- tt6: a container's host to shield while tooltips are off (WC.abox.make), once per key
+    T.BOX_LIFT = 50
+    function T.addBox(key, host)
+        if type(key) ~= "string" or type(host) ~= "table" then return false end
+        T.boxes[key] = host
+        pcall(T.shieldTick)
+        return true
     end
 
     -- ---------------------------------------------------------------- tt4: one frame of ours runs while tooltips are off

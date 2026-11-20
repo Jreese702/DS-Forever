@@ -7,6 +7,7 @@ the REAL TapPad.lua and Hub.lua (the world files) under tools/wowstub.py.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +26,7 @@ L, errs = boot_world(strict=False)
 check(not errs, "the world loads (%s)" % "; ".join(errs)[:200])
 TAPPAD = open(os.path.join(ADDONS, "WowCompanion", "TapPad.lua"), encoding="utf-8").read()
 HUB = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
-check((("local PADV = \"pad24\"" in TAPPAD or "local PADV = \"pad25\"" in TAPPAD) and "pad23 WHERE A TAP LANDED" in TAPPAD) and "local HV = \"hub70\"" in HUB and "hub69 WHERE THE TAPS LANDED" in HUB, "a. TapPad pad24 (pad23 kept in its note), Hub hub70 (hub69 kept)")
+check((("local PADV = \"pad24\"" in TAPPAD or "local PADV = \"pad25\"" in TAPPAD) and "pad23 WHERE A TAP LANDED" in TAPPAD) and re.search(r'local HV = "hub(\d+)"', HUB) and int(re.search(r'local HV = "hub(\d+)"', HUB).group(1)) >= 70 and "hub69 WHERE THE TAPS LANDED" in HUB, "a. TapPad pad24 (pad23 kept in its note), Hub hub70 (hub69 kept)")
 check("so why is it still clicking all over after that then?" in HUB, "a. hub70's note quotes the user")
 check("it looked like it was doing a lot of clicks again and also the UI didnt hide" in TAPPAD
       and "it looked like it was doing a lot of clicks again and also the UI didnt hide" in HUB, "a. both notes quote the user")
