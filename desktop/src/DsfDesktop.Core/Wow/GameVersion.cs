@@ -19,10 +19,19 @@ namespace DsfDesktop.Wow
     /// </summary>
     public static class GameVersion
     {
-        /// <summary>the patch server's versions table of a product for a region (Blizzard's own, plain HTTP on 1119, as the Thor's
-        /// own updater reads it)</summary>
-        public static string VersionsUrl(string region, string product) =>
-            "http://" + Region(region) + ".patch.battle.net:1119/" + product + "/versions";
+        /// <summary>Blizzard's HTTPS version service, in the order asked (us, then eu when us does not answer). Each lists every
+        /// region's build, like the plain-HTTP [region].patch.battle.net:1119 it replaces (2026-11-20, after WoW Forever for Android
+        /// v2.3.7 7d0b00d0, as the Thor's own updater now reads it). Never plain HTTP: its cdns table names the CDN servers</summary>
+        public static readonly string[] PatchServers = { "https://us.version.battle.net/v2/products", "https://eu.version.battle.net/v2/products" };
+
+        /// <summary>a product's patch-server bases ("https://us.version.battle.net/v2/products/wowf"), in the order asked</summary>
+        public static List<string> PatchBases(string product) => PatchServers.Select(s => s + "/" + product).ToList();
+
+        /// <summary>the patch server's versions table of a product (the region's row is read out of it: <see cref="Current"/>)</summary>
+        public static string VersionsUrl(string region, string product) => PatchBases(product)[0] + "/versions";
+
+        /// <summary>every versions URL in the order asked</summary>
+        public static List<string> VersionsUrls(string product) => PatchBases(product).Select(b => b + "/versions").ToList();
 
         /// <summary>a region the patch server has (us, eu, kr, tw, cn); anything else = us</summary>
         public static string Region(string branch)
@@ -184,7 +193,7 @@ namespace DsfDesktop.Wow
                 if (!fetching && age >= (remoteOk ? CacheS : OfflineS))
                 {
                     fetching = true; go = true; remoteAt = t;
-                    url = GameVersion.VersionsUrl(region, product);
+                    url = string.Join("\n", GameVersion.VersionsUrls(product));
                 }
                 state = fetching && !remoteOk ? GameCheck.Checking
                       : !remoteOk ? GameCheck.Unknown
@@ -195,9 +204,15 @@ namespace DsfDesktop.Wow
                 var u = url; var reg = region;
                 run(() =>
                 {
-                    string body = null;
-                    try { body = fetch(u); } catch (Exception) { body = null; }
-                    var cur = GameVersion.Current(body, reg);
+                    // us first, then eu: the first one with the region's row
+                    string cur = null;
+                    foreach (var one in u.Split('\n'))
+                    {
+                        string body = null;
+                        try { body = fetch(one); } catch (Exception) { body = null; }
+                        cur = GameVersion.Current(body, reg);
+                        if (cur != null) break;
+                    }
                     lock (gate)
                     {
                         fetching = false;

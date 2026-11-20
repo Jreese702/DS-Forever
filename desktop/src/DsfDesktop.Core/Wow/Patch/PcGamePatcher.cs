@@ -43,7 +43,7 @@ namespace DsfDesktop.Wow.Patch
         public string Product = "wowf";
         /// <summary>a patch server url -> its body, null = no answer</summary>
         public Func<string, string> FetchText;
-        /// <summary>the patch server of a region ("http://us.patch.battle.net:1119/wowf")</summary>
+        /// <summary>the patch server of a region; null = Blizzard's HTTPS version service (GameVersion.PatchBases: us, then eu)</summary>
         public Func<string, string> PatchBase;
         public Func<IEnumerable<string>, string, CdnClient> Cdn = (hosts, path) => new CdnClient(hosts, path);
         /// <summary>WoW of this folder is running</summary>
@@ -283,9 +283,16 @@ namespace DsfDesktop.Wow.Patch
             var region = GameVersion.Region(V(row, "Branch").Length > 0 ? V(row, "Branch") : V(tv, "Branch"));
             Set(s => s.From = from);
 
-            var pbase = env.PatchBase?.Invoke(region) ?? ("http://" + region + ".patch.battle.net:1119/" + env.Product);
-            var versions = env.FetchText(pbase + "/versions");
-            ct.ThrowIfCancellationRequested();
+            // the first patch server whose versions table has the region's build (us, then eu); its cdns table is read from it too
+            var bases = env.PatchBase != null ? new List<string> { env.PatchBase(region) } : GameVersion.PatchBases(env.Product);
+            string pbase = bases[0], versions = null;
+            foreach (var one in bases)
+            {
+                pbase = one;
+                versions = env.FetchText(one + "/versions");
+                ct.ThrowIfCancellationRequested();
+                if (versions != null && Psv.Row(Psv.Parse(versions), "Region", region) != null) break;
+            }
             var vrow = Psv.Row(Psv.Parse(versions), "Region", region);
             var buildKey = V(vrow, "BuildConfig"); var cdnKey = V(vrow, "CDNConfig");
             var target = V(vrow, "VersionsName").Length > 0 ? V(vrow, "VersionsName") : V(vrow, "VersionName");
@@ -322,7 +329,8 @@ namespace DsfDesktop.Wow.Patch
             }
             catch (Exception e) { throw new PatchFailed("no_write", "can't write in " + env.Flavor + ": " + e.Message); }
 
-            var cdn = env.Cdn(hosts, path);
+            // over HTTPS: the cdns row's https Servers' hosts, else its Hosts (CdnClient maps them to their HTTPS names)
+            var cdn = env.Cdn(CdnClient.HttpsHosts(servers, hosts), path);
             var buildCfg = Config(cdn, buildKey, ct);
             var cdnCfg = Config(cdn, cdnKey, ct);
             var bc = ConfigFile.Parse(Encoding.UTF8.GetString(buildCfg));

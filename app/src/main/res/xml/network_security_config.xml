@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Blizzard over HTTPS only (2026-11-20, after WoW Forever for Android v2.3.7 7d0b00d0, which set usesCleartextTraffic="false").
+  DS Forever still needs plain HTTP elsewhere (the PC's streaming host and bridge on the LAN, the tests' local servers), so the
+  app-wide setting stays as it was and only Blizzard's patch and CDN domains refuse cleartext. Certificate checks are the system's
+  own everywhere: no trust anchor is added or removed here.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">battle.net</domain>
+        <domain includeSubdomains="true">blizzard.com</domain>
+        <domain includeSubdomains="true">blizzard.gcdn.cloudn.co.kr</domain>
+        <domain includeSubdomains="true">blzdist-wow.necdn.leihuo.netease.com</domain>
+    </domain-config>
+</network-security-config>
