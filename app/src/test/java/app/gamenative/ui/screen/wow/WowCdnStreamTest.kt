@@ -52,7 +52,7 @@ class WowCdnStreamTest {
     }
 
     private fun host(s: MockWebServer) = "127.0.0.1:${s.port}"
-    private fun cdn(vararg servers: MockWebServer) = WowClientDownloader.Cdn(servers.map { host(it) }, "tpr/wow")
+    private fun cdn(vararg servers: MockWebServer) = WowClientDownloader.Cdn(servers.map { "http://" + host(it) }, "tpr/wow")
     private val dest get() = File(root, "Data/client.blte")
     private fun nothingLeft() {
         assertFalse("dest was written", dest.exists())
@@ -66,6 +66,42 @@ class WowCdnStreamTest {
     private fun ok(b: ByteArray) = MockResponse().setResponseCode(200).setBody(Buffer().write(b))
     private fun ranged(b: ByteArray, from: Long, total: Long = 9999) =
         MockResponse().setResponseCode(206).setHeader("Content-Range", "bytes $from-${from + b.size - 1}/$total").setBody(Buffer().write(b))
+
+    private fun certFailure() = javax.net.ssl.SSLHandshakeException("Chain validation failed").apply {
+        initCause(java.security.cert.CertificateExpiredException("expired"))
+    }
+
+    /** upstream v2.3.9 efa6e700 (Korea): a server whose certificate failed is skipped; it neither fails the fetch nor hides a 404 */
+    @Test fun aServerWhoseCertificateFailedIsSkipped() {
+        com.jrees.wowcompanion.CdnHttps.forgetUntrusted()
+        try {
+            com.jrees.wowcompanion.CdnHttps.note("http://" + host(bad), certFailure())
+            badAnswer = { MockResponse().setResponseCode(500) }
+            goodAnswer = { MockResponse().setResponseCode(404) }
+            assertFalse("missing on the trusted server", cdn(bad, good).fetchTo("data", key, dest))
+            assertEquals("the skipped server was never asked", 0, bad.requestCount)
+            val body = bytes(1000)
+            goodAnswer = { ok(body) }
+            assertTrue(cdn(bad, good).fetch("data", key)!!.contentEquals(body))
+            assertEquals(0, bad.requestCount)
+        } finally {
+            com.jrees.wowcompanion.CdnHttps.forgetUntrusted()
+        }
+    }
+
+    /** a skipped server is still asked when it is the only one left (a Wi-Fi sign-in page fails every certificate) */
+    @Test fun everyServerSkippedMeansAllAreAskedAgain() {
+        com.jrees.wowcompanion.CdnHttps.forgetUntrusted()
+        try {
+            com.jrees.wowcompanion.CdnHttps.note("http://" + host(good), certFailure())
+            val body = bytes(500)
+            goodAnswer = { ok(body) }
+            assertTrue(cdn(good).fetch("data", key)!!.contentEquals(body))
+            assertEquals(1, good.requestCount)
+        } finally {
+            com.jrees.wowcompanion.CdnHttps.forgetUntrusted()
+        }
+    }
 
     @Test fun aWholeBodyStreamsToItsFile() {
         val body = bytes(300_000)

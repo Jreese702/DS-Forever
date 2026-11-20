@@ -161,12 +161,15 @@ object CdnArchives {
     internal fun rangeProblem(body: CdnStream.Body, size: Int): String? =
         if (body.size != size.toLong() || !body.head.contentEquals("BLTE".toByteArray())) "a damaged range (${body.size} bytes)" else null
 
-    /** downloads [hit]'s byte range from the first of [hosts] that serves it, to [to] whole or not at all; checks the BLTE header */
+    /**
+     * downloads [hit]'s byte range from the first of [hosts] (HTTPS base URLs, CdnHttps.servers) that serves it, to [to] whole or not
+     * at all; checks the BLTE header
+     */
     fun fetch(hosts: List<String>, cdnPath: String, hit: Hit, to: File, log: (String) -> Unit = {}): Boolean {
         val rel = cdnRel("data", hit.archive)
         // every host, twice (CdnRetry: a player's "worked after a few retries"); the last reason is kept for the art's message
         val why = CdnRetry.run(hosts) { host ->
-            val c = URL("https://$host/${cdnPath.trim('/')}/$rel").openConnection() as HttpURLConnection
+            val c = URL("$host/${cdnPath.trim('/')}/$rel").openConnection() as HttpURLConnection
             c.connectTimeout = 15_000; c.readTimeout = 60_000
             c.setRequestProperty("Range", "bytes=${hit.offset}-${hit.offset + hit.size - 1}")
             try {
@@ -182,6 +185,9 @@ object CdnArchives {
                 if (!tmp.renameTo(to)) { to.delete(); if (!tmp.renameTo(to)) { tmp.delete(); return@run "could not save it" } }
                 log("cdn archives: fetched ${to.name} (${hit.size} bytes) from archive ${hit.archive} on $host")
                 null
+            } catch (e: java.io.IOException) {
+                CdnHttps.note(host, e)             // a failed certificate: that server skipped for a while
+                throw e
             } finally { c.disconnect() }
         }
         if (why != null) { GameFiles.lastFetchWhy = why; log("cdn archives: could not fetch ${to.name} from archive ${hit.archive}: $why") }

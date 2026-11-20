@@ -30,6 +30,10 @@ function Dependency([string]$name, [string]$url, [string]$revision) {
     return $path.Replace('\','/')
 }
 Run 'bash' @((Join-Path $root 'tools/fetch_components.sh').Replace('\','/'), $Components)
+# Proton without its unused 32-bit Windows files (tools/trim_proton_i386.py; about 60 MB off the APK). Needs the zstandard
+# Python module or the zstd command; without them the APK is only bigger, and tools/build_release.py refuses the untrimmed file
+& python (Join-Path $root 'tools/trim_proton_i386.py') (Join-Path $root 'app/src/main/assets/bundled_components/proton-11.0-90624-arm64ec.wcp') | Out-Host
+if ($LASTEXITCODE -ne 0) { Write-Warning 'Proton not trimmed (pip install zstandard, then run tools/trim_proton_i386.py)' }
 if (-not $SkipNative) {
     $casc = Dependency 'CascLib' 'https://github.com/ladislav-zezula/CascLib.git' '38a34665624b8775bb875274b36191b21c38d97b'
     $recast = Dependency 'recastnavigation' 'https://github.com/recastnavigation/recastnavigation.git' '6dc1667f580357e8a2154c28b7867bea7e8ad3a7'

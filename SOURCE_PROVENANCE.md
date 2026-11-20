@@ -87,3 +87,16 @@ af9a7fd5dd986e26beb41903e075623b57afe57a3048831862b49e7e7b3f9e49):
 
 Output: fe752fbd6a2584c37920698719f70c8c3f0f74566025da4ba4d781d88079a00e.
 Host test: `wsl -e sh tools/dns-shim/test.sh` (Linux/glibc, LD_PRELOAD).
+
+## Proton without its 32-bit Windows files, 2026-11-20
+
+The shipped `proton-11.0-90624-arm64ec.wcp` is the pinned original (tools/components.sha256, unchanged, still fetched and
+checked by the unchanged tools/fetch_components.sh) rewritten by `tools/trim_proton_i386.py`, a port of WoW Forever for
+Android v2.4.4 commit 55b0bd234c3af27f9c157936589c999f4805025a (issue #89). It drops the 1012 files of
+lib/wine/i386-windows (the directory entry stays) and the 49 32-bit PE files of prefixPack.txz; every other entry is copied
+with the same order, permissions and links. 125,790,679 B -> 64,738,601 B.
+
+Trimmed SHA-256, pinned in tools/components-trimmed.sha256 and checked by tools/build_release.py (which refuses the
+untrimmed original): 4512cd6dd092e038d99a8856076a7a339dab81499135d85e74db3cad2ef4614a. Made on Windows with Python 3.13.3
+and the zstandard module 0.25.0 (level 19, single-threaded); two runs were byte-identical. Another zstd/xz build may give
+other bytes: the release check then fails and the pin must be renewed from a verified run.

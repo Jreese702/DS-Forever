@@ -209,8 +209,20 @@ val checkSessionBridge = tasks.register("checkSessionBridge") {
     }
 }
 
+// Proton ships without its unused 32-bit Windows files (tools/trim_proton_i386.py, after WoW Forever for Android v2.4.4 55b0bd23):
+// the original download (tools/components.sha256) still runs and the APK is only ~60 MB bigger; tools/build_release.py refuses it
+val bundledProton = file("src/main/assets/bundled_components/proton-11.0-90624-arm64ec.wcp")
+val checkTrimmedProton = tasks.register("checkTrimmedProton") {
+    val wcp = bundledProton
+    doLast {
+        if (wcp.isFile && wcp.length() == 125_790_679L) {
+            logger.warn("DS Forever: ${wcp.name} still has its 32-bit Windows files (~60 MB): python tools/trim_proton_i386.py ${wcp.path}")
+        }
+    }
+}
+
 tasks.configureEach {
-    if (name.startsWith("merge") && name.endsWith("Assets") && !name.contains("Test")) dependsOn(checkSessionBridge)
+    if (name.startsWith("merge") && name.endsWith("Assets") && !name.contains("Test")) dependsOn(checkSessionBridge, checkTrimmedProton)
     if (name == "preModernReleaseBuild") {
         doFirst {
             require(listOf("WC_KEYSTORE", "WC_KEYSTORE_PASS", "WC_KEY_ALIAS", "WC_KEY_PASS").all {

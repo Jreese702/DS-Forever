@@ -93,8 +93,9 @@ class WowProductTest {
     @Test fun productFactsMatchBlizzardsProductConfig() {
         assertEquals("_forever_", WowProduct.LAUNCH.flavorDir)
         assertEquals("_classic_beta_", WowProduct.BETA.flavorDir)
-        assertEquals("http://us.patch.battle.net:1119/wowf", WowProduct.LAUNCH.patchUrl)
-        assertEquals("http://us.patch.battle.net:1119/wow_classic_beta", WowProduct.BETA.patchUrl)
+        assertEquals("https://us.version.battle.net/v2/products/wowf", WowProduct.LAUNCH.patchUrl)
+        assertEquals(listOf("https://us.version.battle.net/v2/products/wowf", "https://eu.version.battle.net/v2/products/wowf"), WowProduct.LAUNCH.patchUrls)
+        assertEquals("https://us.version.battle.net/v2/products/wow_classic_beta", WowProduct.BETA.patchUrl)
         assertEquals(WowProduct.LAUNCH, WowProduct.forCode("wowf"))
         assertNull(WowProduct.forCode("wow_classic"))
     }

@@ -312,14 +312,16 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         private const val MAX_FETCHES = 40          // the build's DOWNLOAD / INSTALL tables + the root's VFS parts: a handful, once per game build
 
         /**
-         * One file CascLib needs, fetched over HTTPS from the CDN hosts the game's own .build.info names ("CDN Hosts" / "CDN Path"):
+         * One file CascLib needs, fetched over HTTPS from the CDN servers the game's own .build.info names (its https "CDN Servers",
+         * else "CDN Hosts" over HTTPS: CdnHttps; "CDN Path"):
          * [to] is CascLib's cache path (<cache>/data/xx/yy/<key> or config/…); the same relative path on the CDN. Written whole or not at all.
          */
         private fun fetch(root: File, cache: File, to: File): Boolean {
             val rel = to.path.removePrefix(cache.path).trimStart('/')
             if (rel == to.path || rel.isEmpty()) return false
             val cols = buildRow(root) ?: return false
-            val hosts = cols["CDN Hosts"].orEmpty().split(' ').filter { it.isNotBlank() }
+            // HTTPS base URLs ("https://level3.ssl.blizzard.com"); one whose certificate failed is skipped (CdnHttps)
+            val hosts = CdnHttps.usable(CdnHttps.servers(cols["CDN Servers"], cols["CDN Hosts"]))
             val path = cols["CDN Path"].orEmpty().trim('/')
             // a game file (data/xx/yy/<encoding key>) the CDN may keep only inside an archive: find it and fetch its byte range. Once one
             // loose game file has answered 404, the rest go to the archives first (issue #7: the loose try cost about 6 s per file)
@@ -373,7 +375,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                 why = CdnRetry.run(hosts, final = { missingIsFinal && looseRefusal(it) }) { host ->
                     val have = CdnResume.rangeFor(if (tmp.isFile) tmp.length() else 0L, size)
                     if (have == 0L) tmp.delete()
-                    val c = java.net.URL("https://$host/$path/$rel").openConnection() as java.net.HttpURLConnection
+                    val c = java.net.URL("$host/$path/$rel").openConnection() as java.net.HttpURLConnection
                     c.connectTimeout = 15_000; c.readTimeout = 60_000
                     if (have > 0) c.setRequestProperty("Range", "bytes=$have-")
                     var drop = false               // only an answer that proves the part wrong drops it (CdnResume.dropsPart)
@@ -398,6 +400,9 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                         android.util.Log.i("WCHARVEST", "fetched $rel (${to.length()} bytes) from $host" + if (from > 0) " (resumed at $from)" else "")
                         counter?.finish()
                         null
+                    } catch (e: java.io.IOException) {
+                        CdnHttps.note(host, e)     // a failed certificate: that server skipped for a while (Korea's cloudn.co.kr)
+                        throw e
                     } finally { c.disconnect(); if (drop) tmp.delete() }
                 }
                 if (why == null) break
