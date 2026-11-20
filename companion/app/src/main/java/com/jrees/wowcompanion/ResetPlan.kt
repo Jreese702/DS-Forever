@@ -35,7 +35,7 @@ package com.jrees.wowcompanion
  * APP PREFERENCES (SharedPreferences files)
  *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
  *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme
- *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk (the sign-in), polestarGuide, polestarOffBoot,
+ *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk, gameAccountPick (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
  *                        swapScreensFails, settingsTab, the migration marks
  *  framegen     SETTINGS enabled, multiplier, flowScale, performance, fpsLimitContainer, fpsLimitAsk   NEVER fpsLimit108, fpsLimitNote
@@ -68,6 +68,15 @@ package com.jrees.wowcompanion
  * GAME SETTINGS (Config.wtf) - Reset settings gives back ONLY what DS Forever recorded an original for: Low-memory graphics on an 8 GB
  * or (#56 G2) 12 GB Thor (view distance, particles, spells, shadows: GameConfigWtf.LOW_MEMORY_8GB_SAVED), each key still at DS Forever's value. Nothing
  * else in the game is written (the leave-no-trace rule): the low-memory textures and the start's forced keys have no recorded original.
+ *
+ * THE GAME SETTINGS DS FOREVER CHANGES (Config.wtf, GameConfigWtf.ensure, at Play only, never while the game runs):
+ *  - every start: gxApi, ResampleQuality, GamePadEnable, InputDeviceInterfaceStyle, gxMaximize, gxWindowedResolution (#305), the portal /
+ *    agentUID when wrong; the defaults only where missing (CONFIG_DEFAULTS, RenderScale #489); the old defaults once per folder (#293)
+ *  - Low-memory graphics: the textures (LOW_MEMORY_GRAPHICS) and, on 8 / 12 GB Thors, LOW_MEMORY_8GB (recorded: Reset gives them back)
+ *  - Game account (#47): "Ask each time" removes a marked accountList; "Remembered" (the user's ruling 2026-11-20, A) marks the
+ *    learned label "!" in accountList (Settings.gameAccountPick; no recorded original: the game rewrites the list itself; not reset)
+ *  - ClientSettings_WORK_OPTIMS_BY_API_MASK (the user's ruling 2026-11-20, B): the server's value "16001,0xe,0x0,0x1ff", launch client
+ *    only, only where missing (recorded: GameConfigWtf.WORK_OPTIMS_SAVED; Reset removes it again while it is still our value)
  */
 object ResetPlan {
     enum class Kind { SETTINGS, LAYOUTS, SKILLS }
@@ -131,7 +140,7 @@ object ResetPlan {
     val PREFS: List<PrefKey> = listOf(
         exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
             "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme"),
-        exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", "gameAccountAsk",
+        exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", "gameAccountAsk", "gameAccountPick",
             "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",
             "theme_custom", "swapScreensFails", "settingsTab"),
         exact("framegen", Kind.SETTINGS, "enabled", "multiplier", "flowScale", "performance", "fpsLimitContainer", "fpsLimitAsk"),

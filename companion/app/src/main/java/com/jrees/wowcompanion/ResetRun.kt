@@ -99,7 +99,7 @@ class ResetRun(
         var later = false
         if (ResetPlan.Kind.SETTINGS in kinds) {
             val wtf = runCatching { SvKeep.gameWtfFile(keptDir).takeIf { it.isFile }?.readText()?.trim() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { File(it) }
-            if (wtf != null && File(wtf, GameConfigWtf.LOW_MEMORY_8GB_SAVED).isFile) {
+            if (wtf != null && GameConfigWtf.hasOriginals(wtf)) {
                 if (gameRunning) later = runCatching { File(wtf, GameConfigWtf.RESET_RESTORE).writeText("reset settings\n"); true }.getOrDefault(false)
                 else gameKeys = runCatching { GameConfigWtf.restoreOriginals(wtf) }.getOrDefault(emptyList())
             }

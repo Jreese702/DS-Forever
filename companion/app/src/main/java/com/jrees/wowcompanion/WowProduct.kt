@@ -5,7 +5,7 @@ import java.time.LocalDate
 
 /**
  * WHICH WOW: FOREVER CLIENT THE GAME FOLDER HOLDS (launch support, 2026-10-13): the beta (wow_classic_beta, the client until launch day, 4 Nov 2026) and the
- * launch client (wowf, from 4 Nov 2026). Both come from Blizzard's own ProductConfig (us.patch.battle.net:1119/<product>/versions ->
+ * launch client (wowf, from 4 Nov 2026). Both come from Blizzard's own ProductConfig (us.version.battle.net/v2/products/<product>/versions ->
  * tpr/configs/data/<ProductConfig>): `shared_container_default_subfolder` is the flavor folder, the win `relative_path_arm64` the exe.
  * Both use the same CDN path (tpr/wow) and the same 1.60.1 client line.
  *
@@ -32,8 +32,11 @@ enum class WowProduct(
     LAUNCH("wowf", "_forever_", "Wow-arm64.exe", null, "World of Warcraft: Forever"),
     BETA("wow_classic_beta", "_classic_beta_", "WowB-ARM64.exe", "test", "World of Warcraft: Forever beta");
 
-    /** this product's patch-server URL (versions, cdns) */
-    val patchUrl get() = "http://us.patch.battle.net:1119/$code"
+    /** this product's patch-server URL (versions, cdns): Blizzard's HTTPS version service (CdnHttps; was plain HTTP on port 1119) */
+    val patchUrl get() = patchUrls.first()
+
+    /** every patch-server URL in the order tried (CdnHttps.PATCH_SERVERS: us, then eu), all HTTPS */
+    val patchUrls get() = CdnHttps.PATCH_SERVERS.map { "$it/$code" }
 
     /** the client exe under [root] (the folder with .build.info): the file as it is on disk whatever its case, else the expected name */
     fun exe(root: File): File {

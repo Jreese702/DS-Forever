@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.view.View
 import org.json.JSONObject
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -175,8 +176,20 @@ class PartyShotsTest {
         save(bmp, "home_player_menu.png")
     }
 
+    /**
+     * [tab] leaves the app-wide [PartyModel.live] holding a party with Party mode on. The
+     * PARTY_SHOTS_DIR tests never run in the suite, but [controllerTabHasNoFooter] does: later tests in the same Robolectric sandbox
+     * (SwingDualShotsTest: Home's swing band) then saw a live party. Put the model back to "no party, no cfg" after it.
+     */
+    private fun forgetLiveParty() {
+        val live = PartyModel.live
+        for ((name, v) in listOf("party" to null, "cfg" to null, "lastBox" to null, "currentParty" to false, "currentCfg" to false, "box" to 1)) {
+            PartyModel.State::class.java.getDeclaredField(name).apply { isAccessible = true }.set(live, v)
+        }
+    }
+
     /** P4 / P4Y / P4S: the Controller room on its Party mode tab (the room's 1240 x 935 above the bar) */
-    private fun tab(name: String, ppos: Int, smartY: Boolean, yc: Boolean, pfocus: String = "diam", pright: Int = 0, pset: Int = 1) {
+    private fun tab(name: String, ppos: Int, smartY: Boolean, yc: Boolean, pfocus: String = "diam", pright: Int = 0, pset: Int = 1): Bitmap {
         val live = PartyModel.live
         var cfg = JSONObject(cfgJson)
         if (smartY) cfg.getJSONObject("c").getJSONObject("sy").put("on", true)
@@ -191,6 +204,25 @@ class PartyShotsTest {
         val (bmp, c) = page()
         draw(c, v, 0f, 0f, 1240f, 935f)
         save(bmp, name)
+        return bmp
+    }
+
+    /**
+     * The user, 2026-11-20: "that icon at the bottom of party mode with the ->spiral>b I think should be removed its taking up space
+     * that it doesn't need to". The Party mode tab draws no footer plate (Select -> swirl -> B) under the diamonds: the band where it
+     * sat (local 150..600 x 760..830 at SituationPage.CTL_S, screen about 195..555 x 654..710) is the bare page, as on its left.
+     * Runs always (no PARTY_SHOTS_DIR needed), with the views' fallbacks when no art root is set.
+     */
+    @Test fun controllerTabHasNoFooter() {
+        artRoot()
+        val bmp = try { tab("controller_party_tab_nofooter.png", 8, smartY = false, yc = false) } finally { forgetLiveParty() }
+        // the plate was the kit's dark module (near-black); the page there is parchment (or its fallback), far lighter
+        val ref = bmp.getPixel(100, 682)                                    // the page left of the old plate, same height
+        val refSum = Color.red(ref) + Color.green(ref) + Color.blue(ref)
+        fun dark(p: Int) = Color.red(p) + Color.green(p) + Color.blue(p) < refSum / 3
+        var off = 0; var n = 0
+        for (y in 660..704 step 4) for (x in 200..550 step 5) { n++; if (dark(bmp.getPixel(x, y))) off++ }
+        assertTrue("the footer band should be bare page: $off of $n pixels are dark", off * 20 < n)
     }
 
     @Test fun controllerTab() {

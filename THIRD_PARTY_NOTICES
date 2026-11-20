@@ -476,6 +476,38 @@ Apache-2.0 WITH LLVM-exception, the statically linked mingw-w64 runtime is
 under its own permissive licences). Its SHA-256 is recorded in
 `tools/wow-session-bridge/wow-session-bridge.sha256` and SOURCE_PROVENANCE.md.
 
+## Game-account pick and WORK_OPTIMS pre-write (WoW Foreverywhere)
+
+Two Config.wtf writes in `GameConfigWtf.kt` are ported from WoW Foreverywhere
+by YoruDev-Ryland (https://github.com/YoruDev-Ryland/WoWForeverywhere, GPL-3.0):
+- the game account marked "!" in `accountList` (commits `8f43e2ac62c3`,
+  `565629ef4809`, `432f4a1f1314`: `accountListLine`, `GameAccounts.clean`);
+  DS Forever learns the label from the game's own marker instead of a picker;
+- `ClientSettings_WORK_OPTIMS_BY_API_MASK` "16001,0xe,0x0,0x1ff" written
+  before the first start so the game skips its login-time graphics-device
+  rebuild (commit `5e36083895db`, fork issue #46).
+
+## Upstream fixes: host name, keyboard, game-running service (WoW Forever for Android)
+
+Ported from WoW Forever for Android (https://github.com/jaredgei/wow-forever-android, GPL-3.0) on 2026-11-20:
+- `app/src/main/cpp/gamenative_dns_v4mapped.c` gethostbyname()/gethostbyname_r() host-name answers: v2.4.3, commit
+  `17c46d533d88e4bb7567a70e196e6be40b862635`, from PR #85 by Demineo04.
+- `com/winlator/xserver/Keyboard.java`, `InputDeviceManager.java`, `XServer.java`: no X auto-repeat for physical keys (v2.4.2,
+  commit `8607f984`), Shift keeps a key's identity (v2.4.6-rc3 `83cdbc93`, rc4 `9c4b577f`).
+- `app/src/main/java/app/gamenative/GameSessionService.kt`: the game-running foreground service (v2.4.4, commit `a3147360`), with
+  the fix from WoW Foreverywhere (https://github.com/YoruDev-Ryland/WoWForeverywhere, GPL-3.0) by YoruDev-Ryland, commit `3ed7cc9c`.
+  Its status-bar icon `app/src/main/res/drawable/ic_notification.xml` is Google's Material Symbols "sports_esports" (Apache-2.0).
+
+## Upstream changes: HTTPS game updates, Proton without 32-bit files (WoW Forever for Android)
+
+Ported from WoW Forever for Android (https://github.com/jaredgei/wow-forever-android, GPL-3.0) by jaredgei on 2026-11-20:
+- Blizzard's patch server and CDN over HTTPS (`companion/.../CdnHttps.kt`, `WowClientDownloader.kt`, `GameFiles.kt`,
+  `CdnArchives.kt`, Desktop `GameVersion.cs` / `PcGamePatcher.cs` / `CdnClient.cs`, `network_security_config.xml`): v2.3.7,
+  commit `7d0b00d0bf6f5a95716d7d30a97d412e03aa48c6` (from issues #7 / #54 by Rbm3267 and danieleforte92), and skipping a CDN host
+  whose certificate fails (Korea): v2.3.9, commit `efa6e7007636e3f574fd0c82d5b0e68b4d163c30`.
+- Proton shipped without its unused 32-bit Windows files (`tools/trim_proton_i386.py`, `ContainerManager.java`): v2.4.4, commit
+  `55b0bd234c3af27f9c157936589c999f4805025a` (issue #89).
+
 ## Samsung Performance SDK
 
 This project bundles `app/src/main/lib/perfsdk-v1.0.0.jar`, the Samsung Performance SDK

@@ -252,8 +252,8 @@ namespace DsfDesktop.Tests
             A.Eq("1.60.1.70938", GameVersion.Current(VersionsText, "kr"));
             A.Eq("1.60.1.70959", GameVersion.Current(VersionsText, "elsewhere"), "an unknown region reads us");
             A.Eq(null, GameVersion.Current("", "us")); A.Eq(null, GameVersion.Current("<html>nope</html>", "us"));
-            A.Eq("http://us.patch.battle.net:1119/wowf/versions", GameVersion.VersionsUrl("us", "wowf"));
-            A.Eq("http://eu.patch.battle.net:1119/wowf/versions", GameVersion.VersionsUrl("EU", "wowf"));
+            A.Eq("https://us.version.battle.net/v2/products/wowf/versions", GameVersion.VersionsUrl("us", "wowf"));
+            A.Eq("https://us.version.battle.net/v2/products/wowf/versions", GameVersion.VersionsUrl("EU", "wowf"), "us lists every region");
             A.True(GameVersion.Outdated("1.60.1.70938", "1.60.1.70959"));
             A.False(GameVersion.Outdated("1.60.1.70959", "1.60.1.70959"));
             A.False(GameVersion.Outdated("1.60.1.70960", "1.60.1.70959"), "newer than Blizzard's (a PTR): never outdated");
@@ -275,7 +275,7 @@ namespace DsfDesktop.Tests
             A.Eq(GameCheck.Checking, c.Poll(), "the first answer is on its way");
             A.Eq(GameCheck.Checking, c.Poll(), "asked once");
             A.Eq(0, urls.Count); queued[0](); queued.Clear();
-            A.Eq("http://us.patch.battle.net:1119/wowf/versions", urls[0]);
+            A.Eq("https://us.version.battle.net/v2/products/wowf/versions", urls[0]);
             A.Eq(GameCheck.Outdated, c.Poll()); A.Eq("1.60.1.70938", c.Installed); A.Eq("1.60.1.70959", c.Current);
             now = now.AddSeconds(GameVersionCheck.CacheS - 1);
             A.Eq(GameCheck.Outdated, c.Poll()); A.Eq(0, queued.Count, "cached");
@@ -290,6 +290,7 @@ namespace DsfDesktop.Tests
             A.Eq(GameCheck.Checking, c.Poll());
             foreach (var q in queued.ToList()) q(); queued.Clear();
             A.Eq(GameCheck.Unknown, c.Poll(), "no answer: unknown, a start goes ahead");
+            A.Eq("https://eu.version.battle.net/v2/products/wowf/versions", urls[urls.Count - 1], "us gave nothing: eu asked too");
             now = now.AddSeconds(GameVersionCheck.OfflineS);
             c.Poll(); A.Eq(1, queued.Count, "asked again after a minute");
             // no install row: unknown, nothing asked

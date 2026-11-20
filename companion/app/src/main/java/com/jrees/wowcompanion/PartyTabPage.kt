@@ -18,7 +18,8 @@ import android.view.View
  * Left page: the SET ROW (ZL, ZR as on the normal page; ZL + ZR dimmed with a lock: nothing happens with both held), the TOUCH ROW
  * (Touch: the picked plate's second tap, Target by default; Hold: the player menu, locked), the D-PAD DIAMOND (all four: gold move
  * arrows, locked - they move the pick; p38, the user's adaptive rows 2026-11-11), the FACE DIAMOND (A, X, Y as set on the layer on
- * show; Y's base place split: out of combat Inspect / Smart Y, in combat `yc`; B the red Back, locked) and a FOOTER plate: Select, the swirl, B (the way in and out). Right page: the place's title, its icon,
+ * show; Y's base place split: out of combat Inspect / Smart Y, in combat `yc`; B the red Back, locked). No footer (the user, 2026-11-20: the Select -> swirl -> B hint plate under the diamonds "is taking up
+ * space": gone; Select and B work as before). Right page: the place's title, its icon,
  * "Now", ONE red Change. The CURSOR is the add-on's (PadTabCtl p37: ppos = the router's 8 positions, pset, ptouch, pfocus); a finger
  * picks with padtab 27-36 (PartyTaps.pick), sets the no-spell value with 37, a spell with Book's two taps.
  *
@@ -153,14 +154,6 @@ class PartyTabPage(
         // THE TWO DIAMONDS
         for (q in 1..8) drawPlace(c, q, s, cfg)
         for (q in 1..8) sq(q).let { r -> UiKit.pad(c, glyph(q), r.centerX() + 36f, r.centerY() - 36f, 40f) }
-        // THE FOOTER: Select -> the swirl -> B (the way in and out of Party mode)
-        val f = PadDiamonds.rect(PadDiamonds.FOOTER)
-        UiKit.module(c, f)
-        UiKit.pad(c, face("minus"), f.left + 80f, f.centerY(), 46f)
-        UiKit.tex("home_swirl")?.let { c.drawBitmap(it, null, RectF(f.centerX() - 26f, f.centerY() - 26f, f.centerX() + 26f, f.centerY() + 26f), pBmp) }
-        UiKit.pad(c, face("b"), f.right - 80f, f.centerY(), 46f)
-        moveArrow(c, RectF(f.left + 130f, f.top, f.centerX() - 40f, f.bottom), 0f)
-        moveArrow(c, RectF(f.centerX() + 40f, f.top, f.right - 130f, f.bottom), 0f)
         // ONE cursor (the controller's or a finger's): the set plate, the Touch tile, the place; on the right page the place wears the
         // checked mark (the normal page's rule)
         val quiet = SystemClock.uptimeMillis() >= localUntil

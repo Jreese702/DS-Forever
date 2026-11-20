@@ -19,6 +19,9 @@ COMPONENT_NAMES = (
     "turnip-V32-RP6sched.zip",
 )
 COMPONENT_PREFIX = "assets/bundled_components/"
+# The Proton package ships trimmed of its unused 32-bit Windows files (tools/trim_proton_i386.py, after WoW Forever for Android
+# v2.4.4 55b0bd23): tools/components.sha256 still pins the original download, tools/components-trimmed.sha256 the shipped file.
+TRIMMED = ("proton-11.0-90624-arm64ec.wcp",)
 
 
 def digest(stream):
@@ -40,6 +43,18 @@ def verified_components(launcher):
         pinned[match[2]] = match[1].lower()
     if set(pinned) != set(COMPONENT_NAMES):
         raise ValueError("Component manifest must pin all four runtime files")
+    original = dict(pinned)
+    trimmed = {}
+    for line in (launcher / "tools/components-trimmed.sha256").read_text(encoding="ascii").splitlines():
+        if not line.strip():
+            continue
+        match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *]([^/\\\s]+)", line)
+        if not match or match[2] not in TRIMMED or match[2] in trimmed:
+            raise ValueError("Invalid or duplicate trimmed component entry")
+        trimmed[match[2]] = match[1].lower()
+    if set(trimmed) != set(TRIMMED):
+        raise ValueError("components-trimmed.sha256 must pin the trimmed Proton package")
+    pinned.update(trimmed)
     folder = launcher / "app/src/main/assets/bundled_components"
     if not folder.is_dir() or {path.name for path in folder.iterdir()} != set(COMPONENT_NAMES):
         raise ValueError("Expected exactly all four bundled runtime files")
@@ -51,6 +66,8 @@ def verified_components(launcher):
         with source.open("rb") as stream:
             actual = digest(stream)
         size = source.stat().st_size
+        if name in TRIMMED and actual == original[name]:
+            raise ValueError(name + " still has its 32-bit Windows files: run python tools/trim_proton_i386.py " + source.as_posix())
         if not size or actual != pinned[name]:
             raise ValueError("Pinned component hash mismatch: " + name)
         components.append({"file": name, "bytes": size, "sha256": actual})
@@ -107,7 +124,8 @@ def source_stamp(launcher, companion):
             files.update(path for path in root.glob("*.gradle.kts") if path.is_file())
             files.update(root / name for name in ("app/build.gradle.kts", "app/proguard-rules.pro",
                                                   "dsforever/build.gradle.kts", "gradle.properties", "local.properties",
-                                                  "tools/components.sha256", "tools/fetch_components.sh")
+                                                  "tools/components.sha256", "tools/fetch_components.sh",
+                                                  "tools/components-trimmed.sha256", "tools/trim_proton_i386.py")
                          if (root / name).is_file())
         for path in sorted(files):
             with path.open("rb") as source:

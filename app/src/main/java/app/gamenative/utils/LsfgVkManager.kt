@@ -504,6 +504,9 @@ object LsfgVkManager {
             // vkDestroyDevice hook never finalizes, so the game's own device re-create (GxRestart "DeviceStateChanged", ~20 s
             // after the account pick) aborted Wow-ARM64.exe in Turnip's kgsl_bo_finish (bo->gem_handle). Keep it unloaded:
             // the manifest removed, and the manifest's own disable switch as a second guard.
+            // 2026-11-20 (B): that re-create's trigger at login, the server's new WORK_OPTIMS value, is now pre-written in Config.wtf
+            // (GameConfigWtf.WORK_OPTIMS_KEY), so the login-time rebuild no longer happens. This stays: the layer has nothing to do on
+            // this backend, and any later GxRestart (a new server value, a graphics option the player changes) would still abort.
             disableLayerInContainer(container)
             envVars.put(ENV_DISABLE, "1")
             Timber.tag(TAG).i("LSFG native backend: in-game layer not loaded (dll=%s)", dllPath)

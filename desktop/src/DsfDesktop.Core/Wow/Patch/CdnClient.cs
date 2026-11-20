@@ -13,7 +13,9 @@ namespace DsfDesktop.Wow.Patch
     public sealed class CdnException : Exception { public CdnException(string m) : base(m) { } }
 
     /// <summary>
-    /// Blizzard's CDN (the hosts in Blizzard's order, http then https; the Thor's updater's integrity rules, jaredgei PR #54): a Range
+    /// Blizzard's CDN over HTTPS only (the hosts in Blizzard's order; 2026-11-20 after WoW Forever for Android v2.3.7 7d0b00d0 and
+    /// v2.3.9 efa6e700: Level 3 under its HTTPS name, a host whose CERTIFICATE fails skipped for the rest of this client's run, as
+    /// Korea's blizzard.gcdn.cloudn.co.kr; certificate checks are never turned off). The Thor's updater's integrity rules, jaredgei PR #54: a Range
     /// answer must be a 206 of exactly the asked length; a body as long as its Content-Length; configs are checked by the MD5 in their
     /// name and indexes by their footer by the callers' [verify], so a hotel sign-in page's "200" is never game data. 403 / 404 =
     /// missing (null / false); a 5xx, a timeout or a failed check = the next host, then a <see cref="CdnException"/>. Big bodies go to
@@ -29,17 +31,46 @@ namespace DsfDesktop.Wow.Patch
 
         /// <param name="hosts">"level3.blizzard.com us.cdn.blizzard.com" (or "127.0.0.1:port" in the tests)</param>
         /// <param name="path">"tpr/wow"</param>
-        /// <param name="https">also try https://host after http://host (off for the tests' plain listener)</param>
+        /// <param name="https">https://host (Level 3 as level3.ssl.blizzard.com); false = http://host, only for the tests' plain listener</param>
         public CdnClient(IEnumerable<string> hosts, string path, HttpMessageHandler handler = null, TimeSpan? idle = null, bool https = true)
         {
             try { ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12; } catch (Exception) { }
             var hs = hosts.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()).Distinct().ToList();
-            bases = hs.Select(h => "http://" + h + "/" + path.Trim('/')).ToList();
-            if (https) bases.AddRange(hs.Where(h => !h.Contains(":")).Select(h => "https://" + h + "/" + path.Trim('/')));
+            bases = hs.Select(h => (https ? "https://" + HttpsHost(h) : "http://" + h) + "/" + path.Trim('/')).Distinct().ToList();
             http = handler != null ? new HttpClient(handler, false) : new HttpClient();
             http.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
             this.idle = idle ?? TimeSpan.FromSeconds(30);
         }
+
+        /// <summary>a CDN host's HTTPS name (Level 3's plain host has an HTTPS twin)</summary>
+        public static string HttpsHost(string host) =>
+            string.Equals(host, "level3.blizzard.com", StringComparison.OrdinalIgnoreCase) ? "level3.ssl.blizzard.com" : host.ToLowerInvariant();
+
+        /// <summary>pure: the hosts of the https entries of a cdns row's Servers ("https://level3.ssl.blizzard.com/?maxhosts=4"), in
+        /// order; none = [hosts] as they are</summary>
+        public static List<string> HttpsHosts(string servers, IEnumerable<string> hosts)
+        {
+            var https = (servers ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(u => u.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                .Select(u => u.Substring(8).Split('/', '?')[0].ToLowerInvariant()).Where(h => h.Length > 0).Distinct().ToList();
+            return https.Count > 0 ? https : hosts.ToList();
+        }
+
+        /// <summary>pure: [e] (or an inner one) is a refused certificate, not a network hiccup</summary>
+        public static bool IsCertificateFailure(Exception e)
+        {
+            for (int depth = 0; e != null && depth < 8; depth++)
+            {
+                if (e is System.Security.Authentication.AuthenticationException) return true;
+                if (e is WebException we && we.Status == WebExceptionStatus.TrustFailure) return true;
+                if (e is AggregateException ae && ae.InnerExceptions.Count == 1) { e = ae.InnerExceptions[0]; continue; }
+                e = e.InnerException;
+            }
+            return false;
+        }
+
+        /// <summary>the bases whose certificate failed in this client's run: asked no more while another one is left</summary>
+        readonly HashSet<string> untrusted = new HashSet<string>();
 
         public static string Url(string b, string kind, string key) => b + "/" + kind + "/" + key.Substring(0, 2) + "/" + key.Substring(2, 4 - 2) + "/" + key;
 
@@ -195,9 +226,12 @@ namespace DsfDesktop.Wow.Patch
         object Each(string kind, string key, CancellationToken ct, Func<Tuple<long, long>> range, Func<HttpResponseMessage, string, object> take)
         {
             if (key == null || key.Length < 32 || !Hex.IsKey(key.Substring(0, 32))) throw new CdnException("a bad key " + key);
-            Exception failure = null;
+            Exception failure = null, refused = null;
             bool missing = false;
-            foreach (var b in bases)
+            List<string> usable;
+            lock (untrusted) usable = bases.Where(x => !untrusted.Contains(x)).ToList();
+            if (usable.Count == 0) usable = bases;           // all of them refused (a Wi-Fi sign-in page): asked again, still checked
+            foreach (var b in usable)
             {
                 ct.ThrowIfCancellationRequested();
                 var asked = range();
@@ -213,6 +247,14 @@ namespace DsfDesktop.Wow.Patch
                         catch (AggregateException ae)
                         {
                             if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
+                            if (IsCertificateFailure(ae))
+                            {
+                                // its certificate failed (Korea's cloudn.co.kr): skipped from now on; the other hosts mirror it, so this
+                                // is neither a failure nor a "missing" of its own
+                                lock (untrusted) untrusted.Add(b);
+                                refused = new CdnException("the certificate of " + b + " failed its check");
+                                continue;
+                            }
                             throw new CdnException((ae.InnerException?.InnerException ?? ae.InnerException ?? ae).Message + " (" + b + ")");
                         }
                     }
@@ -226,6 +268,11 @@ namespace DsfDesktop.Wow.Patch
                     }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception e) when (!(e is CdnException) && IsCertificateFailure(e))
+                {
+                    lock (untrusted) untrusted.Add(b);
+                    refused = new CdnException("the certificate of " + b + " failed its check");
+                }
                 catch (RangeGone) { throw; }
                 catch (CdnException e) { failure = e; }
                 catch (PatchFormatException e) { failure = e; }
@@ -236,6 +283,7 @@ namespace DsfDesktop.Wow.Patch
             }
             if (missing && failure == null) return null;
             if (failure is CdnException ce) throw ce;
+            if (failure == null && refused != null) throw new CdnException("every CDN host failed its certificate check (" + refused.Message + ")");
             throw new CdnException(failure?.Message ?? "no CDN hosts");
         }
     }

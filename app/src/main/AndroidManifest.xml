@@ -21,6 +21,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- The game-running foreground service (GameSessionService.kt; upstream v2.4.4 a3147360, the fork's 3ed7cc9c): Android is less
+         likely to freeze or kill the game while another app is in front. Normal install-time permissions, no prompt. No
+         POST_NOTIFICATIONS: its quiet notification stays out of the shade on Android 13+, and the service works the same. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- VOICE TO TEXT (the user, 2026-11-16: voice to text in the message box and all search boxes, "X opens our own voice prompt";
          the pick: "Android's own 'Allow microphone?' box, shown once on the bottom screen the first time you press X (never in a
          fight)"): the microphone, asked at runtime only on the player's first X (VoiceAskActivity), never at install or start. The
@@ -47,6 +52,7 @@
     <application
         android:name=".PluviaApp"
         android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false"
         android:extractNativeLibs="true"
         android:icon="${icon}"
@@ -89,6 +95,17 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
+        <!-- Keeps the game running locally while another app is in front (GameSessionService.kt). Not exported; started only
+             by the app itself once the game's environment is up, stopped when the game exits. -->
+        <service
+            android:name=".GameSessionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a running game session alive, including its server connection, while the player switches apps." />
+        </service>
 
         <!-- FileProvider for secure file sharing (for APK installation) -->
         <provider

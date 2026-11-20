@@ -186,6 +186,12 @@ class WowLaunchSwitchTest {
         assertTrue(before.contentEquals(File(root, ".build.info").readBytes()))
     }
 
+    /** Blizzard over HTTPS (upstream v2.3.7): the next patch server is asked when the first does not answer (us, then eu) */
+    @Test fun aDeadFirstPatchServerFallsThroughToTheNext() {
+        WowClientDownloader.patchUrlsFor = { listOf("http://127.0.0.1:1/patch/${it.code}", "http://127.0.0.1:${server.port}/patch/${it.code}") }
+        assertEquals(WowClientDownloader.Switch.Done("1.60.1.70532"), switch())
+    }
+
     @Test fun interruptedMoveResumesWhereItStopped() {
         failing += cdnPath("data", exeEkey)                                       // the CDN fails on the exe (a kill there is the same)
         try { switch(); fail("the move should have stopped") } catch (e: Exception) { /* said on the screen */ }
