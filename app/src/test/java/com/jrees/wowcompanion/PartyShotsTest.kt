@@ -176,6 +176,18 @@ class PartyShotsTest {
         save(bmp, "home_player_menu.png")
     }
 
+    /**
+     * [tab] leaves the app-wide [PartyModel.live] holding a party with Party mode on. The
+     * PARTY_SHOTS_DIR tests never run in the suite, but [controllerTabHasNoFooter] does: later tests in the same Robolectric sandbox
+     * (SwingDualShotsTest: Home's swing band) then saw a live party. Put the model back to "no party, no cfg" after it.
+     */
+    private fun forgetLiveParty() {
+        val live = PartyModel.live
+        for ((name, v) in listOf("party" to null, "cfg" to null, "lastBox" to null, "currentParty" to false, "currentCfg" to false, "box" to 1)) {
+            PartyModel.State::class.java.getDeclaredField(name).apply { isAccessible = true }.set(live, v)
+        }
+    }
+
     /** P4 / P4Y / P4S: the Controller room on its Party mode tab (the room's 1240 x 935 above the bar) */
     private fun tab(name: String, ppos: Int, smartY: Boolean, yc: Boolean, pfocus: String = "diam", pright: Int = 0, pset: Int = 1): Bitmap {
         val live = PartyModel.live
@@ -203,7 +215,7 @@ class PartyShotsTest {
      */
     @Test fun controllerTabHasNoFooter() {
         artRoot()
-        val bmp = tab("controller_party_tab_nofooter.png", 8, smartY = false, yc = false)
+        val bmp = try { tab("controller_party_tab_nofooter.png", 8, smartY = false, yc = false) } finally { forgetLiveParty() }
         // the plate was the kit's dark module (near-black); the page there is parchment (or its fallback), far lighter
         val ref = bmp.getPixel(100, 682)                                    // the page left of the old plate, same height
         val refSum = Color.red(ref) + Color.green(ref) + Color.blue(ref)
