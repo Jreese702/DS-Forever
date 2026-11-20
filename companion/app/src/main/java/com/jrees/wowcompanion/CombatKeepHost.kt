@@ -79,6 +79,7 @@ class CombatKeepHost(
             } else log("restore left ${miss.size} not on: the backup KEPT as it is (only additions are written this run)")
         }
         if (who !in checked) {
+            foldOrphans(who)
             val backup = read(who)
             if (CombatKeep.needsRestore(map, backup)) {
                 if (fighting() || !bookReady()) return                          // the next padmap tries again
@@ -91,6 +92,41 @@ class CombatKeepHost(
             armed = true                                                    // nothing owed: the store is the truth
         }
         CombatKeep.safeMerge(written[who]?.let { CombatKeep.fromJson(it) } ?: read(who), map, armed)?.let { write(it) }
+    }
+
+    /**
+     * RealmFix (the 11-20 hunter, test build 1513): the backups a realm-less session wrote for [who]'s name ("Name-_.json" from "Name-?",
+     * "Name-.json") fold into the real one once, at the run's first check: the real backup's entries always stay; an orphan entry the
+     * real one lacks comes in only from a NEWER orphan file ([RealmFix.combat]); both files are copied first (combat/realm-fix, 2 per
+     * file) and the orphan files then go. Left alone while the name has backups under two realms (never a guess). No names logged.
+     */
+    private fun foldOrphans(who: String) {
+        val name = CharKey.nameOf(who) ?: return
+        val d = dir()
+        val orphans = RealmFix.combatOrphanFiles(name).map { File(d, it) }.filter { it.isFile }
+        if (orphans.isEmpty()) return
+        val realFile = File(d, CombatKeep.fileName(who))
+        val reals = d.listFiles()?.filter { f ->
+            f.isFile && f.name.startsWith("$name-") && f.name.endsWith(".json") && orphans.none { it.name == f.name }
+        }.orEmpty()
+        if (reals.any { it.name != realFile.name }) { log("orphan backup left as it is (this name has a backup under another realm)"); return }
+        val bak = File(d, RealmFix.DIR)
+        val now = System.currentTimeMillis()
+        for (f in orphans) runCatching {
+            val orphan = CombatKeep.fromJson(f.readText())
+            val real = read(who)
+            val next = RealmFix.combat(real, if (realFile.isFile) realFile.lastModified() else Long.MIN_VALUE, orphan, f.lastModified(), who)
+            check(RealmFix.backup(f, bak, now)) { "no backup" }
+            File(d, f.name + ".bak").takeIf { it.isFile }?.let { check(RealmFix.backup(it, bak, now)) { "no backup" } }
+            if (next != null) {
+                check(RealmFix.backup(realFile, bak, now)) { "no backup" }
+                write(next)
+                check(read(who)?.entries?.size == next.entries.size) { "the real backup did not take" }
+            }
+            File(d, f.name + ".bak").delete()
+            check(f.delete() || !f.exists()) { "not removed" }
+            log("orphan backup folded: ${next?.let { "${it.entries.size - (real?.entries?.size ?: 0)} entries into the real one" } ?: "nothing taken"}, removed")
+        }.onFailure { log("orphan backup NOT folded (${it.message})") }
     }
 
     /** a restore's taps are running now (their answers are not the player's) */

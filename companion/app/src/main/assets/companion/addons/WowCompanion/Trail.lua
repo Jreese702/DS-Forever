@@ -3905,7 +3905,7 @@ do
     end
 end
 
-WC.prd = { V = "prd20", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
+WC.prd = { V = "prd21", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
            PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
@@ -3930,10 +3930,10 @@ do
     P.DEBUFF = { Magic = { 0.2, 0.6, 1 }, Curse = { 0.6, 0, 1 }, Disease = { 0.6, 0.4, 0 }, Poison = { 0, 0.6, 0 }, none = { 0.8, 0, 0 } }
 
     -- ---------------------------------------------------------------- the place (the app's slider)
+    -- prd21 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513): Safety k6's WC.charKey(), nil until the realm is known (it
+    -- was "Name-" with an empty realm, "?" with no name): nothing is read or kept per character without the whole key
     local function who()
-        local ok, n, r = pcall(function() return UnitName("player"), GetRealmName() end)
-        if ok and type(n) == "string" then return n .. "-" .. tostring(r or "") end
-        return "?"
+        return ((function() if type(WC.charKey) == "function" then return (WC.charKey()) end; local ok, k = pcall(function() local n, r = UnitName("player"), GetRealmName(); if type(n) == "string" and type(r) == "string" and n:find("%S") and r:find("%S") and r ~= "?" and r ~= "_" then return n .. "-" .. r end end); return ok and k or nil end)())
     end
     -- the OLD height (prdY, frame units; the prd4 shift once) of [name], the default when none
     local function oldY(name)
@@ -4006,13 +4006,16 @@ do
     -- prd8: the width and the scale, per character
     local function kept(key, def, lo, hi)
         local t = type(WowCompanionDB) == "table" and WowCompanionDB[key]
-        local v = type(t) == "table" and num(t[who()]) or nil
+        local w = who()
+        local v = w and type(t) == "table" and num(t[w]) or nil
         return v and math.max(lo, math.min(hi, v)) or def
     end
     local function keep(key, v, def)
+        local w = who()
+        if not w then return end                                        -- prd21: no character key yet: nothing kept
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
         if type(WowCompanionDB[key]) ~= "table" then WowCompanionDB[key] = {} end
-        WowCompanionDB[key][who()] = v ~= def and v or nil
+        WowCompanionDB[key][w] = v ~= def and v or nil
     end
     -- prd18: the layout's scale alone (P.fromLay sets the place with it; the place is left as it is here)
     function P.layScale()
@@ -4030,6 +4033,7 @@ do
     local function layStep(ddy, ds, reset)
         local L = WC.lay
         local name = type(L) == "table" and type(L.who) == "function" and L.who() or who()
+        if not name then return end                                     -- prd21: no character key yet: nothing kept
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
         if type(WowCompanionDB.lay) ~= "table" then WowCompanionDB.lay = {} end
         if type(WowCompanionDB.lay[name]) ~= "table" then WowCompanionDB.lay[name] = {} end

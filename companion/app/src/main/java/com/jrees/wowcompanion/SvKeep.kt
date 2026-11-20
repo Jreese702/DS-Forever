@@ -152,8 +152,21 @@ object SvKeep {
         // leave the fold as if the kept copy had none; the game file's the same, below
         val resets = SvReset.read(keptDir)
         val keptRaw = kept?.takeIf { it.n > 0 }?.let { runCatching { SvLua.parse(it.lua) }.getOrNull() }
-        val keptT = keptRaw?.let { if (resets.isEmpty()) it else SvReset.strip(variable, it, resets, kept.savedAt).first }
+        val keptT0 = keptRaw?.let { if (resets.isEmpty()) it else SvReset.strip(variable, it, resets, kept.savedAt).first }
         val mark = fromPcMark(keptDir, variable)
+        // RealmFix (the 11-20 hunter): the game file read first (when it reads whole) so the orphans of both copies fold as ONE picture
+        val gamePeek = runCatching { target.takeIf { it.isFile }?.readText()?.let { SvLua.parse(it, variable) } }.getOrNull()
+        val realms = RealmFix.realmsByName(listOf(gamePeek, keptT0))
+        val keptT = keptT0?.let { k ->
+            val r = RealmFix.clean(k, realms, RealmFix.held(listOf(gamePeek)))
+            when {
+                r.items.isEmpty() -> k
+                !RealmFix.backup(keptFile(keptDir, variable), File(keptDir, "${SvBackup.DIR}/${RealmFix.DIR}"), now) -> {
+                    log("settings backup: $variable: orphan keys NOT folded in the kept copy (no backup)"); k
+                }
+                else -> { log("settings backup: $variable kept copy: orphan keys folded (${r.adopted} into the real key, ${r.dropped} dropped)"); r.table }
+            }
+        }
         if (!target.isFile) {
             if (keptT == null || backupDir == null) { if (backupDir != null) log("settings backup: $name not written (nothing kept)"); return }
             log("settings backup kept before sync")
@@ -167,7 +180,18 @@ object SvKeep {
         if (gameRaw == null) { log("settings backup: $name not written (the game's own file does not read whole: left as it is)"); return }
         val gameAt = target.lastModified()
         // SvReset: the game file's entries a reset took away (a file older than the reset, or the old value itself) are not the game's
-        val (game, resetOut) = if (resets.isEmpty()) gameRaw to 0 else SvReset.strip(variable, gameRaw, resets, gameAt)
+        val (game0, resetOut) = if (resets.isEmpty()) gameRaw to 0 else SvReset.strip(variable, gameRaw, resets, gameAt)
+        // RealmFix: the game file's orphans folded too (the real key wins; a store the real key holds in the kept copy is never given
+        // an orphan's); before a start the game file is then written without them (its old file to backupDir, and a realm-fix copy)
+        val game = RealmFix.clean(game0, realms, RealmFix.held(listOf(keptT0))).let { r ->
+            when {
+                r.items.isEmpty() -> game0
+                backupDir != null && !RealmFix.backup(target, File(keptDir, "${SvBackup.DIR}/${RealmFix.DIR}"), now) -> {
+                    log("settings backup: $name: orphan keys NOT folded (no backup)"); game0
+                }
+                else -> { log("settings backup: $name: orphan keys folded (${r.adopted} into the real key, ${r.dropped} dropped)"); r.table }
+            }
+        }
         if (resetOut > 0) log("settings backup: $name: $resetOut reset entries left out")
         if (keptT == null) {
             // nothing (or nothing usable) kept: the kept copy starts as the game's own settings; the game file is not touched (but for
@@ -175,10 +199,11 @@ object SvKeep {
             val own = SvLua.withoutSkipped(variable, game)
             if (SvLua.leaves(own) > 0 && kept?.lua != SvLua.ser(own)) setKept(keptDir, variable, own, gameAt, now)
             if (backupDir != null) {
-                if (resetOut > 0) runCatching { log(write(target, Doc(variable, SvLua.leaves(game), SvLua.ser(game), now), backupDir)) }
+                val changed = resetOut > 0 || game !== game0                  // a reset's entries out, or RealmFix's orphans folded
+                if (changed) runCatching { log(write(target, Doc(variable, SvLua.leaves(game), SvLua.ser(game), now), backupDir)) }
                     .onFailure { log("settings backup: $name NOT written (${it.message})") }
                 runCatching { writeDoc(gameBaseFile(keptDir, variable), Doc(variable, 0, SvLua.ser(game), now)) }
-                if (resetOut == 0) log("settings backup: $name not written (nothing kept: the game's own kept)")
+                if (!changed) log("settings backup: $name not written (nothing kept: the game's own kept)")
             }
             return
         }

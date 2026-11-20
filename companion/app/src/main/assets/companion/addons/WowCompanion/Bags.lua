@@ -1502,15 +1502,16 @@ end
 -- becomes our override (the item keeps its button), the player's binding for it goes back to free (one SaveBindings: the set
 -- as it was before Bags bound it), and the WCB macros are deleted. None existed on the Thor or the PC on 2026-10-09 (their WTF
 -- caches: the "DS ..." macros are Spells' / Home's, not these).
+-- Safety k6 (the 11-20 hunter, test build 1513): WC.charKey(), nil until the realm is known. It was "Name-?" / "Name-" + a marker
+-- (S()'s markers are strings) / "?-?": nothing is read or saved per character without the whole key now
 function BB.charKey()
-    local n = S(function() return UnitName("player") end)
-    local r = S(function() return GetRealmName() end)
-    return (type(n) == "string" and n or "?") .. "-" .. (type(r) == "string" and r or "?")
+    return ((function() if type(WC.charKey) == "function" then return (WC.charKey()) end; local ok, k = pcall(function() local n, r = UnitName("player"), GetRealmName(); if type(n) == "string" and type(r) == "string" and n:find("%S") and r:find("%S") and r ~= "?" and r ~= "_" then return n .. "-" .. r end end); return ok and k or nil end)())
 end
 
 function BB.load()
     local db = type(WowCompanionDB) == "table" and WowCompanionDB.bagBinds or nil
-    local mine = type(db) == "table" and db[BB.charKey()] or nil
+    local me = BB.charKey()
+    local mine = me and type(db) == "table" and db[me] or nil
     BB.binds = {}
     if type(mine) == "table" then
         for k, id in pairs(mine) do
@@ -1522,11 +1523,13 @@ function BB.load()
 end
 
 function BB.save()
+    local me = BB.charKey()
+    if not me then return end                           -- k6: no character key yet: nothing saved (BB.load reads it again)
     if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
     if type(WowCompanionDB.bagBinds) ~= "table" then WowCompanionDB.bagBinds = {} end
     local out = {}
     for k, id in pairs(BB.binds) do out[k] = id end
-    WowCompanionDB.bagBinds[BB.charKey()] = next(out) and out or nil
+    WowCompanionDB.bagBinds[me] = next(out) and out or nil
 end
 
 -- one secure item button per chord, made out of combat, off screen, never under a finger (no art: nothing to see)

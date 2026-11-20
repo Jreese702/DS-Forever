@@ -103,11 +103,12 @@ object ResetPlan {
             "fix181", "keyProbe", "aclOurs", "aclReset1", "faceSwap", "faceCd", "combatFace", "macroRoom", "attack", "padLayout", "startOver",
             "castBarTab", "castBarShow", "castBarPShow"),
         DB to setOf("pqol", "pskip", "npEnemies", "npFriends", "npFriendsOff", "npFriendsSet", "routeWp", "chatTop", "compassCal",
-            "compassCam", "layV", "prdYv", "prdCurve", "camProbe", "calProbe", "qtDefaults", "chatStyleSet2", "cursorSoftSet"),
+            "compassCam", "layV", "prdYv", "prdCurve", "camProbe", "calProbe", "qtDefaults", "chatStyleSet2", "cursorSoftSet",
+            "realmOf", "realmFixBak"),     // Safety k6: the realms each name was seen with, and the orphan keys' fold backups
     )
 
-    /** a character key as the add-on writes it ("Name-Realm") */
-    fun isCharKey(k: Any): Boolean = k is String && k.indexOf('-') in 1 until k.length - 1
+    /** a character key as the add-on writes it ("Name-Realm"; [CharKey]: never a partial "Name-?" / "Name-_" one) */
+    fun isCharKey(k: Any): Boolean = CharKey.isKey(k)
 
     /**
      * the saved-table entries [kinds] reset: account keys always; a per-character key for [who] only, or with [all] for every character

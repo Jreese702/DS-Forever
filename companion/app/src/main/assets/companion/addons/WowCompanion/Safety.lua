@@ -234,7 +234,12 @@ WC.encode = encode
 --
 -- It is also the early warning for a patch that moves the secrecy map: `specimen` turns
 -- "plain", or `S` / `encode` turn false.
-WC.KERNEL = "k5"
+-- k6 THE CHARACTER'S KEY (the 11-20 hunter, test build 1513: "what happened to my combat bars on my hunter? they are gone?"): the game
+-- answered GetRealmName() with "" for a whole session, so every per-character store was read and written under "Name-" / "Name-?"
+-- (empty stores: the bars looked gone; the real "Name-Realm" ones were never touched). WC.charKey() at the end of this file is now the
+-- ONE builder of the name-realm key: nil until the realm is known (never a partial key); the realm the game gives, else the one this
+-- character already holds settings under; WC.realmFix folds the orphan stores away once, out of combat (the real key always wins).
+WC.KERNEL = "k6"
 
 local function blocked(f)
     return not pcall(f)
@@ -341,4 +346,238 @@ if type(CreateFrame) == "function" then
             end)
         end)
     end)
+end
+
+
+-- ---------------------------------------------------------------- k6 THE CHARACTER'S KEY, "Name-Realm" (WC.charKey) and the orphans' fold
+-- The rule (the user's per-character ruling, PadMap m36, kept): every per-character store is keyed "Name-Realm". A key is built ONLY from
+-- a plain, non-empty name and a plain, non-empty realm; anything else ("", nil, a secret, a failed call, "?", "_") is NOT a realm and the
+-- answer is nil ("no character yet": every store's own pre-login branch). Where the realm comes from, in order:
+--   1. GetRealmName() (the game's own answer, "live"); remembered per name in WowCompanionDB.realmOf.
+--   2. the realm this name already holds settings under ("kept"): the remembered ones and the "Name-<realm>" keys of our two saved tables,
+--      when EXACTLY ONE realm fits (GetNormalizedRealmName / UnitFullName's realm, when the game gives one, picks among several); never a
+--      guess between two characters of one name.
+--   3. none: nil (our tables looked through again at most every 2 s for the first 10 s - the saved tables load meanwhile -, then every
+--      30 s; GetRealmName itself is asked every call: a later live answer always wins).
+-- WC.realmFix: once per character and table, out of combat, the orphan keys of THIS character ("Name-", "Name-?", "Name-_", a marker) are
+-- taken out of every store (our tables' keys and two levels down): the real key's store stays as it is (never overwritten); a store the
+-- real key lacks (none, or only empty tables) takes the orphan's when it holds a setting (made in the realm-less session, the newest
+-- record there is); every taken orphan is kept in WowCompanionDB.realmFixBak (the 2 newest folds). Never a game API that writes.
+do
+    local function str(v)
+        if type(v) ~= "string" or not isPlain(v) then return nil end
+        if v == S_SECRET or v == S_ABSENT or v == S_THREW or not v:find("%S") then return nil end
+        return v
+    end
+    local function realmOk(r)
+        local s = str(r)
+        if s and s ~= "?" and s ~= "_" and not s:find("%c") then return s end
+    end
+    WC.realmOk = realmOk
+    local function norm(r) return (r:gsub("[%s%-'%.]", "")):lower() end
+    local function now() local ok, t = CALL(GetTime); return (ok and type(t) == "number") and t or 0 end
+    local function myName() return str(S(function() return UnitName("player") end)) end
+    local CK = { n = nil, r = nil, src = nil, missN = nil, missAt = nil, misses = 0 }
+    WC.ck = CK
+
+    local function remember(n, r)
+        local db = rawget(_G, "WowCompanionDB")
+        if type(db) ~= "table" then return end
+        if type(db.realmOf) ~= "table" then db.realmOf = {} end
+        local m = db.realmOf[n]
+        if type(m) ~= "table" then m = {}; db.realmOf[n] = m end
+        if m[r] ~= true then m[r] = true end
+    end
+
+    -- every realm name [n] holds settings under: the remembered ones and our tables' "n-<realm>" keys (two levels down)
+    local function realmsOf(n)
+        local pre, set, list = n .. "-", {}, {}
+        local function add(r) r = realmOk(r); if r and not set[r] then set[r] = true; list[#list + 1] = r end end
+        local function look(t)
+            for k in pairs(t) do if type(k) == "string" and #k > #pre and k:sub(1, #pre) == pre then add(k:sub(#pre + 1)) end end
+        end
+        local core = rawget(_G, "WowCompanionDB")
+        if type(core) == "table" and type(core.realmOf) == "table" and type(core.realmOf[n]) == "table" then
+            for r in pairs(core.realmOf[n]) do add(r) end
+        end
+        for _, db in ipairs({ core, rawget(_G, "WowCompanionSpellsDB") }) do
+            if type(db) == "table" then
+                look(db)
+                for k1, v in pairs(db) do
+                    if type(v) == "table" and k1 ~= "realmFixBak" then
+                        look(v)
+                        for _, w in pairs(v) do if type(w) == "table" then look(w) end end
+                    end
+                end
+            end
+        end
+        return list
+    end
+    WC.realmsOf = realmsOf
+
+    -- the game's own realm hint when GetRealmName is empty (its normalized spelling: no spaces), or nil
+    local function hint()
+        local h = realmOk(S(function() return GetNormalizedRealmName() end))
+        if h then return h end
+        local ok, _, r = CALL(UnitFullName, "player")
+        if ok then return realmOk(r) end
+    end
+
+    local function resolve(n)
+        local list = realmsOf(n)
+        if #list == 0 then return nil end
+        local h = hint()
+        if h then
+            local hit
+            for _, r in ipairs(list) do
+                if norm(r) == norm(h) then
+                    if hit then return nil end
+                    hit = r
+                end
+            end
+            return hit
+        end
+        if #list == 1 then return list[1] end
+    end
+
+    -- the character's key "Name-Realm", its name, its realm and where the realm came from ("live" / "kept"); nil = not known (yet)
+    function WC.charKey()
+        local n = myName()
+        if not n then return nil end
+        local live = realmOk(S(function() return GetRealmName() end))
+        if live then
+            if CK.n ~= n or CK.r ~= live or CK.src ~= "live" then CK.n, CK.r, CK.src = n, live, "live" end
+            remember(n, live)
+            return n .. "-" .. live, n, live, "live"
+        end
+        if CK.n == n and CK.r then return n .. "-" .. CK.r, n, CK.r, CK.src end
+        local t = now()
+        if CK.missN == n and CK.missAt and t - CK.missAt < ((CK.misses or 0) < 5 and 2 or 30) then return nil end
+        local r = resolve(n)
+        if r then
+            CK.n, CK.r, CK.src, CK.missN, CK.missAt, CK.misses = n, r, "kept", nil, nil, 0
+            return n .. "-" .. r, n, r, "kept"
+        end
+        if CK.missN ~= n then CK.misses = 0 end
+        CK.missN, CK.missAt, CK.misses = n, t, (CK.misses or 0) + 1
+        return nil
+    end
+    -- the realm's source now, for the padmap's diagnostics: "live", "kept" or "none" (never a name)
+    function WC.charKeySource()
+        local k, _, _, src = WC.charKey()
+        return k and src or "none"
+    end
+    -- a key string that is one of [n]'s orphans ("n-", "n-?", "n-_", "n-" .. a marker)
+    function WC.isOrphanKey(k, n)
+        if type(k) ~= "string" or type(n) ~= "string" or k:sub(1, #n + 1) ~= n .. "-" then return false end
+        local r = k:sub(#n + 2)
+        return r == "" or r == "?" or r == "_" or r == S_SECRET or r == S_ABSENT or r == S_THREW
+    end
+
+    -- ------------------------------------------------------------ the orphans' fold (WC.realmFix)
+    local RF = { done = {}, tries = 0, pending = false, last = nil }
+    WC.realmFix = RF
+    local SUFFIX = { "", "?", "_", S_SECRET, S_ABSENT, S_THREW }
+    local NAMED = { [""] = "-", ["?"] = "-?", ["_"] = "-_" }
+    -- holds a setting: a leaf that is not an empty string, somewhere in it (depth-limited)
+    local function holds(v, d)
+        d = d or 0
+        if type(v) == "table" then
+            if d > 12 then return true end
+            for _, x in pairs(v) do if holds(x, d + 1) then return true end end
+            return false
+        end
+        return v ~= nil and v ~= ""
+    end
+    RF.holds = holds
+    local function fight() local ok, v = CALL(InCombatLockdown); return ok and v == true end
+
+    -- one table [t] (at [path] in [var]): this character's orphans out, the real key kept or given the orphan's store; each into [items]
+    local function fixIn(t, key, n, var, path, items)
+        for _, suf in ipairs(SUFFIX) do
+            local o = n .. "-" .. suf
+            local ov = rawget(t, o)
+            if ov ~= nil then
+                local rv = rawget(t, key)
+                local act = "dropped"
+                if not holds(rv) and holds(ov) then
+                    if type(rv) == "table" and type(ov) == "table" then
+                        for k2, v2 in pairs(ov) do rv[k2] = v2 end            -- into the real store's own table (a module may hold it)
+                    else
+                        t[key] = ov
+                    end
+                    act = "adopted"
+                end
+                t[o] = nil
+                items[#items + 1] = { var = var, at = path, k = NAMED[suf] or "-marker", act = act, v = ov }
+            end
+        end
+    end
+
+    -- the fold for [var] (one of our two tables); true = looked through (it is loaded)
+    local function fixVar(var, key, n, items)
+        local db = rawget(_G, var)
+        if type(db) ~= "table" then return false end
+        fixIn(db, key, n, var, "", items)
+        local l1 = {}
+        for k1, v in pairs(db) do if type(v) == "table" and k1 ~= "realmFixBak" then l1[#l1 + 1] = { k1, v } end end
+        for _, e in ipairs(l1) do
+            local k1, v = e[1], e[2]
+            fixIn(v, key, n, var, tostring(k1), items)
+            local l2 = {}
+            for k2, w in pairs(v) do if type(w) == "table" then l2[#l2 + 1] = { k2, w } end end
+            for _, f in ipairs(l2) do fixIn(f[2], key, n, var, tostring(k1) .. "." .. tostring(f[1]), items) end
+        end
+        return true
+    end
+
+    -- at login and the world's entry, out of combat (else at the fight's end), again a few times while the realm is not known.
+    -- true = both tables folded for this character
+    function RF.run()
+        if fight() then RF.pending = true; return false end
+        RF.pending = false
+        local key, n = WC.charKey()
+        if not key then return false end
+        local items, all = {}, true
+        for _, var in ipairs({ "WowCompanionDB", "WowCompanionSpellsDB" }) do
+            if RF.done[var] ~= key then
+                if fixVar(var, key, n, items) then RF.done[var] = key else all = false end
+            end
+        end
+        if #items > 0 then
+            local adopted, dropped = 0, 0
+            for _, it in ipairs(items) do if it.act == "adopted" then adopted = adopted + 1 else dropped = dropped + 1 end end
+            RF.last = { adopted = adopted, dropped = dropped }
+            local core = rawget(_G, "WowCompanionDB")
+            if type(core) == "table" then
+                if type(core.realmFixBak) ~= "table" then core.realmFixBak = {} end
+                local ok, t = CALL(GetServerTime)
+                table.insert(core.realmFixBak, 1, { at = (ok and type(t) == "number") and t or 0, items = items })
+                while #core.realmFixBak > 2 do table.remove(core.realmFixBak) end
+            end
+        end
+        return all
+    end
+
+    if type(CreateFrame) == "function" then
+        pcall(function()
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("PLAYER_LOGIN")
+            f:RegisterEvent("PLAYER_ENTERING_WORLD")
+            f:RegisterEvent("PLAYER_REGEN_ENABLED")
+            local function again()
+                if RF.tries >= 20 or type(C_Timer) ~= "table" or type(C_Timer.After) ~= "function" then return end
+                RF.tries = RF.tries + 1
+                C_Timer.After(5, function()
+                    local ok, d = pcall(RF.run)
+                    if not (ok and d) and not RF.pending then again() end
+                end)
+            end
+            f:SetScript("OnEvent", function(_, e)
+                if e == "PLAYER_REGEN_ENABLED" and not RF.pending then return end
+                local ok, d = pcall(RF.run)
+                if not (ok and d) and not RF.pending then again() end
+            end)
+        end)
+    end
 end

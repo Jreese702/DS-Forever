@@ -48,7 +48,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "p25"          -- bump on every change; the app shows it, so a stale build is visible; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
+local PV = "p26"          -- bump on every change; the app shows it, so a stale build is visible; p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
 local MAKE_MAX = 26      -- make:1 .. make:26 on the control row; more than that is Create All
 local SEL_COLS = 40      -- columns of the "profsel" row (TapPad's COLS)
 local BASIC = 1          -- Enum.CraftingReagentType.Basic (profession constants documentation)
@@ -83,9 +83,8 @@ local function VB(v) v = V(v); if type(v) == "boolean" then return v end end
 
 -- THE CHARACTER (b-recipes-per-char): name-realm, the key every per-character store uses (Bags' BB.charKey). The app keeps each
 -- character's books under it, so an alt never sees another character's recipes
-local function who()
-    local n, r = TS(function() return UnitName("player") end), TS(function() return GetRealmName() end)
-    return n and (n .. "-" .. (r or "?")) or nil
+local function who()                                                    -- p26: nil until the realm is known (never "Name-?")
+    return ((function() if type(WC.charKey) == "function" then return (WC.charKey()) end; local ok, k = pcall(function() local n, r = UnitName("player"), GetRealmName(); if type(n) == "string" and type(r) == "string" and n:find("%S") and r:find("%S") and r ~= "?" and r ~= "_" then return n .. "-" .. r end end); return ok and k or nil end)())
 end
 
 -- The game's text markup (colours, links, textures) out of prose; |n is a line break.

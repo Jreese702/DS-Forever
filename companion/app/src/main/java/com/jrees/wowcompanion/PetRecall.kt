@@ -53,8 +53,9 @@ object PetRecall {
         else -> BUSY
     }
 
-    /** the per-character key of the padmap's own character (its `dpad.who`), GameUi.character's form "Name-Realm"; null = no name (no tell) */
-    fun who(name: String?, realm: String?): String? = name?.takeIf { it.isNotEmpty() }?.let { "$it-${realm ?: ""}" }
+    /** the per-character key of the padmap's own character (its `dpad.who`), GameUi.character's form "Name-Realm"; null = no name or no
+     *  realm yet (no tell; [CharKey]: never a partial "Name-" key) */
+    fun who(name: String?, realm: String?): String? = CharKey.of(name, realm)
 
     /** the taps that tell the add-on [word] */
     fun cells(word: Int): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to when (word) {

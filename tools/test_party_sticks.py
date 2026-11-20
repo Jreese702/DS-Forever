@@ -64,7 +64,7 @@ def last_stick(L, start):
     return d[-1] if d else None
 
 
-check('local RV = "r26"' in RSRC and "the control sticks arent working on the party inspect radials" in RSRC,
+check('local RV = "r27"' in RSRC and "the control sticks arent working on the party inspect radials" in RSRC,
       "Radial says r23 (r22p merged), its header note quotes the user")
 
 W = world()

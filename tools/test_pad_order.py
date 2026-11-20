@@ -144,8 +144,8 @@ def tap(L, row, col):
 FIX = {}
 # ================================================================ a. the tag, ORDER
 TP = SRC["x_WowCompanion_TapPad"]
-check('local PADV = "pad26"' in TP and "pad26 THE ROW ORDER (GitHub #550" in TP and "top screen ui doesnt update when editing in settings" in TP,
-      "a. TapPad pad26, its note names #550 and quotes the report")
+check('local PADV = "pad27"' in TP and "pad26 THE ROW ORDER (GitHub #550" in TP and "top screen ui doesnt update when editing in settings" in TP,
+      "a. TapPad pad27 (pad26's note names #550 and quotes the report)")
 L, errs = world(1920, 1080, uh_for(1080, 126.6))
 RANK = [L.eval('WowCompanion.pad.ORDER[%d]' % i) for i in range(1, 57)]
 check(len(RANK) == 56 and None not in RANK and len(set(RANK)) == 56 and L.eval('WowCompanion.pad.ORDER[57]') is None,

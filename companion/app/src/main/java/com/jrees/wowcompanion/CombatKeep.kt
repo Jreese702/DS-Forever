@@ -23,8 +23,9 @@ object CombatKeep {
     data class Entry(val page: Int, val set: Int, val pos: Int, val id: Int, val name: String, val face: Boolean)
     data class Backup(val who: String, val entries: List<Entry>)
 
-    /** the character the add-on's padmap names (its name-realm key, as the add-on's own per-character stores), or null */
-    fun who(map: PadMapModel.Map): String? = map.dpad?.name?.takeIf { it.isNotEmpty() }?.let { "$it-${map.dpad.realm ?: "?"}" }
+    /** the character the add-on's padmap names (its name-realm key, as the add-on's own per-character stores), or null; null too while
+     *  the realm is not known (the 11-20 hunter, [CharKey]: no "Name-?" backup is ever written, read or restored) */
+    fun who(map: PadMapModel.Map): String? = CharKey.of(map.dpad?.name, map.dpad?.realm)
 
     /** what the add-on holds now: the faces' fight spells and the page on show's overlay fight spells (spells only, never an item) */
     fun current(map: PadMapModel.Map): List<Entry> {

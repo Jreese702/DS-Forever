@@ -146,11 +146,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // the user's "Both" ruling after test20: the In-combat backup and the clean exit
     private lateinit var combatKeep: CombatKeepHost
     private var lastBook: SpellsModel.Book? = null
+    /** the realm source last logged ("character key: realm ..."; only these words, never a name) */
+    private var realmSourceTold: String? = null
+    private val REALM_SOURCES = setOf("live", "kept", "none")
     /** m62: the latest padmap (Settings' Smart Y section reads its Smart buffs) */
     private var lastPadMap: PadMapModel.Map? = null
 
     /** General > Reset: the character playing now, else the one the radials' kept lists last belonged to (the game not up yet) */
-    private fun resetWho(): String? = GameUi.character?.takeIf { it.isNotEmpty() }
+    private fun resetWho(): String? = GameUi.character?.takeIf { ResetPlan.isCharKey(it) }
         ?: getSharedPreferences("wc_radial", MODE_PRIVATE).getString("who", null)?.takeIf { ResetPlan.isCharKey(it) }
 
     private val resetRun by lazy {
@@ -3340,19 +3343,24 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (current && SmartRangeGone.note(it.srGone)) Log.i("WCSETUP", SmartRangeGone.line() ?: "")
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
                 if (current) mapView.qitemArmed = it.qitem?.id ?: 0          // ps4: the light blue row's Y glyph (PadMap m132)
-                if (current) { newSpellMap = it; it.dpad?.name?.takeIf { n -> n.isNotEmpty() }?.let { n -> newSpellWho = "$n-${it.dpad.realm ?: ""}" } }
+                if (current) { newSpellMap = it; CharKey.of(it.dpad?.name, it.dpad?.realm)?.let { k -> newSpellWho = k } }
+                // the realm's source (the add-on's Safety k6: "live" = the game's, "kept" = the one the character holds settings under,
+                // "none" = not known: no per-character key), one line when it changes (no name)
+                if (current) it.dpad?.realmSource?.takeIf { s -> s in REALM_SOURCES }?.let { rs -> if (rs != realmSourceTold) { realmSourceTold = rs; Log.i("WCSETUP", "character key: realm $rs") } }
                 // the D-pad room bar (Spells' m24): the Settings row's state, and the once-per-character prompt
                 it.dpad?.let { d ->
+                    // the 11-20 hunter (CharKey): every per-character store below only under the WHOLE key; no realm yet = none touched
+                    val ck = CharKey.of(d.name, d.realm)
                     // the character now: the wheels' kept lists of another character go (the per-character ruling)
-                    if (current && !d.name.isNullOrEmpty() && ::radialView.isInitialized) radialView.character("${d.name}-${d.realm ?: ""}")
+                    if (current && ck != null && ::radialView.isInitialized) radialView.character(ck)
                     // r20: the Hearthstone's kept end time is the character's (per name-realm)
-                    if (current && !d.name.isNullOrEmpty()) ItemCd.character("${d.name}-${d.realm ?: ""}")
-                    if (current && !d.name.isNullOrEmpty()) RadialMeta.who = "${d.name}-${d.realm ?: ""}"     // the spell radials' own settings
-                    if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
-                    if (!d.name.isNullOrEmpty()) TaxiNet.character("${d.name}-${d.realm ?: ""}")
-                    if (current && !d.name.isNullOrEmpty()) GameUi.character = "${d.name}-${d.realm ?: ""}"     // hub13: HUD mode per character
+                    if (current && ck != null) ItemCd.character(ck)
+                    if (current && ck != null) RadialMeta.who = ck     // the spell radials' own settings
+                    if (current && ck != null) QuestWatchKeep.character(ck)
+                    if (ck != null) TaxiNet.character(ck)
+                    if (current && ck != null) GameUi.character = ck     // hub13: HUD mode per character
                     // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences"); hold to talk's last used chat too (TalkKeep)
-                    if (current && !d.name.isNullOrEmpty()) { val who = "${d.name}-${d.realm ?: ""}"; ui.post { ChatFilter.character(who); TalkKeep.character(who) } }
+                    if (current && ck != null) ui.post { ChatFilter.character(ck); TalkKeep.character(ck) }
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
@@ -4763,8 +4771,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val dpadSentAt = HashMap<String, Long>()
 
     /** this character's choice in the app (both games share it: each game's add-on keeps its own) */
-    private fun dpadKey(d: PadMapModel.Dpad): String? =
-        if (d.name.isNullOrEmpty()) null else "choice_${d.name}-${d.realm ?: ""}"
+    private fun dpadKey(d: PadMapModel.Dpad): String? = CharKey.of(d.name, d.realm)?.let { "choice_$it" }     // CharKey: no realm, no ask
 
     /**
      * ONCE PER CHARACTER, after the first login (the user's pick): "Use DS Forever D-pad controls?". A game whose add-on already has the

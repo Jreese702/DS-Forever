@@ -162,7 +162,7 @@ check('local CV = "p58"' in SRC["padtabctl"] and "p58 THE CHOOSER AS A GRID" in 
       "a. PadTabCtl p58 and its note (p57's kept)")
 check('local BV = "b73"' in SRC["book"] and "b73 THE CHOOSER AS A GRID" in SRC["book"] and "b72 A FINGER ON A TAB" in SRC["book"],
       "a. Book b73 and its note (b72's kept)")
-check('local PV = "m177"' in SRC["padmap"] and "m177 MACROS IN THE CONTROLLER ROOM'S CHOOSER" in SRC["padmap"], "a. PadMap m177 and its note")
+check('local PV = "m178"' in SRC["padmap"] and "m177 MACROS IN THE CONTROLLER ROOM'S CHOOSER" in SRC["padmap"], "a. PadMap m178 (m177's note kept)")
 check('"dstool"' not in SRC["padtabctl"].split("local CTABS", 1)[1].split("--", 1)[0], "a. CTABS has no dstool")
 
 W = boot()

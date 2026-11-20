@@ -54,7 +54,7 @@ def hold(L, holder):
 
 
 # ---------------------------------------------------------------- 0. the header
-check('local RV = "r26"' in SRC, "Radial.lua's tag is r23 (r22c merged with r22p)")
+check('local RV = "r27"' in SRC, "Radial.lua's tag is r23 (r22c merged with r22p)")
 check("either stick should work those wheels" in SRC and "Both sticks aim, no walking" in SRC and "REPLACES r15" in SRC,
       "the header quotes the user (the request and the pick) and says it replaces r15")
 

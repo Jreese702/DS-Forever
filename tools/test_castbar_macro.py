@@ -155,7 +155,7 @@ def open_box(L, rights=1):
 
 
 # ================================================================ a. versions, notes, the block's code
-check('local CBV = "cb15"' in BLOCK and "cb13 A PLAYER'S MACRO ON THE BAR (GitHub #553" in AB, "a. ActionBar cb13 and its header note")
+check('local CBV = "cb16"' in BLOCK and "cb13 A PLAYER'S MACRO ON THE BAR (GitHub #553" in AB, "a. ActionBar cb13 and its header note")
 check('local BV = "b73"' in SRC["book"] and 'b69 A MACRO ONTO THE CAST BAR (GitHub #553' in SRC["book"], "a. Book b69 and its note")
 code = '\n'.join(l.split('--', 1)[0] for l in BLOCK.split('\n'))
 bad = [w for w in ('SetAttribute("macro"', "SetAttribute('macro'", 'CreateMacro', 'EditMacro', 'DeleteMacro', 'SetBinding', 'SaveBindings',
@@ -191,7 +191,7 @@ check(L.eval('RAN and RAN.line') == "/dance", "c. a tap on the cell runs the mac
 
 # ================================================================ d. the document
 e, d = bar(L)
-check(d.get('v') == 'cb15' and d.get('mac') == 1 and d.get('any') == 1, "d. the document: cb13, mac = 1", (d.get('v'), d.get('mac')))
+check(d.get('v') == 'cb16' and d.get('mac') == 1 and d.get('any') == 1, "d. the document: cb13, mac = 1", (d.get('v'), d.get('mac')))
 check(e[2].get('k') == 'macro' and e[2].get('n') == 'Bravo' and e[2].get('i') == 134400 and e[2].get('c') == 1 and 'miss' not in e[2]
       and 'id' not in e[2], "d. slot 2: k macro, its name, its icon, its cell", e[2])
 
