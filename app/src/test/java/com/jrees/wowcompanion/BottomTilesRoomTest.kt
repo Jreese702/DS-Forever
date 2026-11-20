@@ -125,7 +125,7 @@ class BottomTilesRoomTest {
 
     // ---------------------------------------------------------------- the tab
 
-    /** the Bottom screen tab: Home's 8 tiles and Map & chat's 3, each group ONE tile part; the old Tap-to-cast and Chat groups gone; no
+    /** the Bottom screen tab: Home's 9 tiles (11-20: Spell rank badges) and Map & chat's 3, each group ONE tile part; the old Tap-to-cast and Chat groups gone; no
      *  "What it does" panel (the tiles are the pictures, as on Top screen) */
     @Test fun bottomTabIsTwoGroupsOfTiles() {
         val r = room()
@@ -139,7 +139,7 @@ class BottomTilesRoomTest {
             assertEquals("$g not shown", View.GONE, r.groupBoxes.single { it.group == g }.box.visibility)
         // five columns of Top's 232 x 184 tiles on the 1240 px page
         val b = tileBoxes(r)
-        assertEquals(11, b.size)
+        assertEquals(12, b.size)
         for (t in b.values) { assertEquals(GameUiTiles.TILE_W, t.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, t.height(), 0.01f) }
         assertEquals(16f, b.getValue(BottomTiles.REST).left, 0.5f)
         assertEquals(W - 16f, b.getValue(BottomTiles.CLOCK).right, 0.5f)

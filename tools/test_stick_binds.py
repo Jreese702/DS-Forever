@@ -41,6 +41,7 @@ F = {
 SRC = {k: open(p, encoding="utf-8").read() for k, p in F.items()}
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wowstub import GAME  # noqa: E402
+from chooser_nav import Nav  # noqa: E402
 PARTY = open(os.path.join(ROOT, "tools", "test_party.py"), encoding="utf-8").read()
 WORLD_HELPERS = re.search(r"\nWORLD_HELPERS = r'''(.*?)'''", PARTY, re.S).group(1)
 fails = 0
@@ -171,7 +172,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p56"' in SRC["padtabctl"], "the versions: PadMap m157, PadTabCtl p52 (stick buttons)")
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p58"' in SRC["padtabctl"], "the versions: PadMap m157, PadTabCtl p52 (stick buttons)")
 STK = "\n".join(l.split("--", 1)[0] for l in
                 SRC["padmap"].split('-- m150 STICK BUTTONS (GitHub #78)\n', 1)[1].split('\nWC.padMap = {', 1)[0].splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', STK) and 'SaveBindings' not in STK and 'SetOverrideBinding' in STK,
@@ -335,13 +336,11 @@ R.execute('WowCompanion.padTabCtl.touchPos(4); pp("PADDDOWN"); pp("PAD1")')
 c = ctl_doc(R)
 check(c.get('chooser') and c['chooser'].get('list') == 'spells', "A on L3: the chooser opens on Spells (m157 / p52: all five tabs)",
       c.get('chooser'))
-R.execute('pp("PADDRIGHT"); pp("PADDRIGHT"); pp("PADDRIGHT")')
-check(ctl_doc(R)['chooser'].get('list') == 'extra', "Right x3: the Extra tab (its game bindings among the commands)", ctl_doc(R)['chooser'])
-# walk to Auto Run (Extra's rows: the commands, then Jump, Interact, Auto Run, Walk / Run) and choose it
-for _ in range(60):
-    if ctl_doc(R)['chooser'].get('id') == 'TOGGLEAUTORUN':
-        break
-    R.execute('pp("PADDDOWN")')
+NAV = Nav(R, ctl_doc)
+NAV.tab("extra")                                                  # p58: the tab row pages the tabs (the grid walks its cells)
+check(ctl_doc(R)['chooser'].get('list') == 'extra', "the Extra tab (its game bindings under Controller)", ctl_doc(R)['chooser'])
+# walk to Auto Run (p58: its Controller category opened on the way) and choose it
+NAV.goto('TOGGLEAUTORUN')
 R.execute('pp("PAD1")')
 check(bind(R, "PADLSTICK") == "TOGGLEAUTORUN" and store(R).get("1:9") == "TOGGLEAUTORUN",
       "choosing Auto Run there binds bare L3 (the controller's route)", (bind(R, "PADLSTICK"), store(R)))

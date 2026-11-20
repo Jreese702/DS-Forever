@@ -11,7 +11,7 @@ import org.junit.Test
  * tab drawn square in its slot. tools/test_party.py "p43" checks the add-on's own onlySpells() / bindHere the same way.
  */
 class ChooserTabsTest {
-    private val five = listOf("spells", "general", "professions", "extra", "dstool")
+    private val five = listOf("spells", "general", "professions", "extra", "macros")   // p58: DS is Extra's category, Macros the 5th
     private val three = listOf("spells", "general", "professions")
 
     private fun tabs(view: String, combat: Boolean = false) = ChooserTabs.keys(ChooserTabs.spellsOnly(view, combat))
@@ -45,7 +45,7 @@ class ChooserTabsTest {
         }
         // p52 / m157 (the user, 2026-11-13: "any of those 5 controller tabs should be able to bind here"): all five on a stick
         assertEquals("a stick's chooser: all five tabs", five, ChooserTabs.keys(false, stick = true))
-        assertEquals("Spells, General, Professions, Extra, DS", listOf("spells", "general", "professions", "extra", "dstool"), ChooserTabs.STICK_TABS)
+        assertEquals("Spells, General, Professions, Extra, Macros", listOf("spells", "general", "professions", "extra", "macros"), ChooserTabs.STICK_TABS)
         assertEquals("the eight as before", five, ChooserTabs.keys(false))
     }
 

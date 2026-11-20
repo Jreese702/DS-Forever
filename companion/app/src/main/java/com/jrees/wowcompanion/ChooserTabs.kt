@@ -16,7 +16,22 @@ package com.jrees.wowcompanion
  */
 object ChooserTabs {
     val SPELL_TABS = listOf("spells", "general", "professions")
-    val ALL_TABS = listOf("spells", "general", "professions", "extra", "dstool")
+    /** p58 (the user, 2026-11-20: "the 5th tab could easily be a category in tab 4, we also need to add macros here as an option"): the
+     *  DS tab ("dstool") is Extra's DS Forever category now, and the fifth tab is MACROS (the player's own saved macros) */
+    val ALL_TABS = listOf("spells", "general", "professions", "extra", "macros")
+    /** p58: the tabs drawn as an icon grid (the rest, Extra, a list under folding categories) */
+    val GRID_TABS = setOf("spells", "general", "professions", "macros")
+    /** p58: Extra's folding categories in their order (PadTabCtl CG.CATS; padtab 39, 38, 37 then 3 + k folds category k: Book b73) */
+    val CATS = listOf("cmd", "ds", "bind", "mount", "item")
+    fun catWord(k: String) = when (k) { "cmd" -> "Commands"; "ds" -> "DS Forever"; "bind" -> "Controller"; "mount" -> "Mounts"; else -> "Items" }
+    /** p58: the open tab's own word (the header line while nothing is highlighted) */
+    fun tabWord(k: String) = when (k) { "general" -> "General"; "professions" -> "Professions"; "extra" -> "Extra"; "macros" -> "Macros"; else -> "Spells" }
+
+    /** the user, 2026-11-20 ("when touching a tab in the controller menu and pressing down after it goes back to the last tab that was
+     *  open and goes down"): a finger on the controller's chooser tab [key] tells the add-on's chooser too - padtab 39, 38 then 5 + its
+     *  place in [ALL_TABS] (Book b73 / PadTabCtl p58: that list, its first row, the cursor on the tab); null = not a chooser tab */
+    fun touchCells(key: String): List<Pair<String, Int>>? =
+        ALL_TABS.indexOf(key).takeIf { it >= 0 }?.let { CastStripModel.page2(CastStripModel.P2_CHOOSER_TAB0 + it + 1) }
 
     /** [view] the room's tab ("normal", "combat", "radial", ...); [combatButton] the button carries a fight spell (WoW Defaults' Otherwise) */
     fun spellsOnly(view: String, combatButton: Boolean): Boolean = when (view) {

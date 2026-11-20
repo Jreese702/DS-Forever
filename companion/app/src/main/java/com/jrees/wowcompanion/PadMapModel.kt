@@ -156,6 +156,9 @@ object PadMapModel {
         /** m165 B: PET FOLLOW (the padmap's `pf`): the add-on's word from the app, a pet class, a live pet, B carried for it now; null =
          *  an add-on before m165 (no row, nothing told) */
         val petB: PetB? = null,
+        /** m177 (PadTabCtl p58): the player's own saved macros (by name, the icon our buttons show), the chooser's Macros grid in the
+         *  add-on's order (its touch page counts alike); empty = none or an add-on before m177 */
+        val macs: List<Mac> = emptyList(),
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -163,6 +166,9 @@ object PadMapModel {
         val fight: Boolean get() = fightSwitch ?: combat
         val faceArmed: Set<Int> get() = faceArmedLayer.keys
     }
+
+    /** m177: one of the player's saved macros: its [name] (how every put names it) and [icon] */
+    data class Mac(val name: String, val icon: Int)
 
     /** m160: the Smart Range clean-up's counts - [macros] our own saved macros deleted, [buttons] buttons that had the box, [kept]
      *  macros with our name but not our exact body (the player's: never touched); [pending] = not run yet this game session;
@@ -238,6 +244,7 @@ object PadMapModel {
             },
             mounts = objects(m.optJSONArray("mounts")).mapNotNull { o -> extra(o) },
             items = objects(m.optJSONArray("items")).mapNotNull { o -> extra(o) },
+            macs = objects(m.optJSONArray("macs")).mapNotNull { o -> textOrNull(o, "n")?.let { Mac(it, o.optInt("i", 0)) } },   // m177
             forms = objects(m.optJSONArray("forms")).mapNotNull { o ->
                 val id = o.optInt("id", 0)
                 if (id <= 0) null else Form(o.optInt("x", 0), id, o.optString("n", ""), o.optInt("i", 0), o.optBoolean("on", false),
@@ -549,6 +556,8 @@ object PadMapModel {
         val cbPShow: Boolean = true,
         val pbarPos: Int? = null,
         val pbarSet: Int? = null,
+        /** p58: Extra's open categories (the doc's `xo`, "cmd,ds"; CG.CATS keys); null = an add-on before p58 */
+        val xo: Set<String>? = null,
     ) {
         /** p55: the In combat > Tap to cast page (the bar's in-combat layer) */
         val cbFight: Boolean get() = view == "cbfight"
@@ -570,7 +579,7 @@ object PadMapModel {
             shown = c.optInt("shown", c.optInt("set", 1)).coerceIn(1, 4),
             pos = c.optInt("pos", 1).coerceIn(1, 10),             // m150: 9 / 10 = L3 / R3
             page = c.optInt("page", 1).coerceIn(1, 3),
-            chooser = ch?.let { Chooser(it.optString("list", "spells").let { l -> if (l == "commands") "extra" else l },
+            chooser = ch?.let { Chooser(it.optString("list", "spells").let { l -> if (l == "commands" || l == "dstool") "extra" else l },   // p58: DS is Extra's
                 it.optInt("row", 1).coerceAtLeast(1), textOrNull(it, "id"), it.optBoolean("tabs", false),
                 if (it.has("fight")) it.optBoolean("fight", false) else null) },
             box = bx?.let { b -> textOrNull(b, "kind")?.let { Box(it, textOrNull(b, "what"), textOrNull(b, "thing")) } },
@@ -605,6 +614,8 @@ object PadMapModel {
             cbpn = intOrNull(c, "cbpn"), cbPShow = if (c.has("cbpn")) c.optInt("cbps", 0) == 1 else true,
             pbarPos = c.optJSONObject("pbar")?.optInt("ppos", 8)?.coerceIn(1, 8),
             pbarSet = c.optJSONObject("pbar")?.optInt("pset", 1)?.coerceIn(1, 4),
+            xo = if (c.has("xo")) c.optString("xo", "").split(",").filter { it.isNotEmpty() }.toSet()
+                 else if ((msg.optString("v").removePrefix("p").takeWhile { it.isDigit() }.toIntOrNull() ?: 0) >= 57) emptySet() else null,
         )
     }
 
@@ -700,6 +711,12 @@ object PadMapModel {
      *  6 / 7 / 8 = from 0 / 40 / 80), then the entry's column, in ONE batch */
     const val ROW_EXTRA = "extra"
     fun extraCells(index: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 6 + (index / 40).coerceIn(0, 2), ROW_EXTRA to index % 40)
+    /** p58 / Book b73 THE THIRD PAGE (padtab 39, 38, 37 then N; the second page's 6-36 are b72's tab touches): no new row */
+    private fun page3(code: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 39, ROW_PADTAB to 38, ROW_PADTAB to 37, ROW_PADTAB to code)
+    /** p58: the player's macro [index] (0-based in [Map.macs]): its page pick (0-3 = from 0 / 40 / 80 / 120), then the "extra" row's column */
+    fun macroCells(index: Int): List<Pair<String, Int>> = page3((index / 40).coerceIn(0, 3)) + (ROW_EXTRA to index % 40)
+    /** p58: Extra's category [k] (1-based, ChooserTabs.CATS) folded / opened by touch (codes 4-8) */
+    fun foldCells(k: Int): List<Pair<String, Int>> = page3(3 + k.coerceIn(1, 5))
     /** the tab's index (1-4) by its name */
     fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; "cbfight" -> 7; "pbar" -> 8; else -> 1 }
     /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode; p53: the 6th, the Cast bar, opened by padtab 39 then 29) */

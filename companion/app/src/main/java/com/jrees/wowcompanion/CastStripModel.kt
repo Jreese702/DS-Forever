@@ -486,6 +486,19 @@ object CastStripModel {
     const val P2_PSHOW_OFF = 3
     const val P2_BIND_PARTY = 4
     const val P2_BIND_PARTY_TAP = 5
+    /** Book b72: 6-10 = the Controller room's chooser tab 1-5 by touch (ChooserTabs.touchCells), 11-34 = the Spellbook room's tab of skill
+     *  line 1-24, 35 its Professions tab, 36 its Pet tab ([bookTabCells]): a finger's tab is the controller's tab too */
+    const val P2_CHOOSER_TAB0 = 5
+    const val P2_BOOK_LINE0 = 10
+    const val P2_BOOK_PROF = 35
+    const val P2_BOOK_PET = 36
+    /** the Spellbook room's tab of skill line [line] by touch (100 = Professions, 101 = the pet's book); null = no code for it */
+    fun bookTabCells(line: Int): List<Pair<String, Int>>? = when (line) {
+        in 1..24 -> page2(P2_BOOK_LINE0 + line)
+        100 -> page2(P2_BOOK_PROF)
+        101 -> page2(P2_BOOK_PET)
+        else -> null
+    }
     fun page2(code: Int): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to PAGE2, PADTAB to code)
     /** the taps that open the room's Party mode bar (the room open): padtab 39, 38 then 1 */
     fun ctlPartyCells(): List<Pair<String, Int>> = page2(P2_PARTY_BAR)

@@ -32,8 +32,9 @@ object SpellRanks {
         index = if (b == null) emptyMap() else build(b)
     }
 
-    /** the badge of spell [spellId] on a button, or null (no book yet, not a spell of the book, no family of ranks) */
-    fun of(spellId: Int?): Badge? = spellId?.takeIf { it > 0 }?.let { index[it] }
+    /** the badge of spell [spellId] on a button, or null (no book yet, not a spell of the book, no family of ranks, or the player's
+     *  "Spell rank badges" setting is Off: [HomeSettings.rankBadges], off by default - every surface asks here, so one switch hides all) */
+    fun of(spellId: Int?): Badge? = if (!HomeSettings.rankBadges) null else spellId?.takeIf { it > 0 }?.let { index[it] }
 
     /** spell id -> its badge, for every known spell of [b] with a family of two or more numbered ranks */
     fun build(b: SpellsModel.Book): Map<Int, Badge> {

@@ -39,6 +39,7 @@ SRC = {k: open(p, encoding="utf-8").read() for k, p in F.items()}
 # helpers are still test_party.py's own (one harness)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wowstub import GAME  # noqa: E402
+from chooser_nav import Nav  # noqa: E402
 PARTY = open(os.path.join(ROOT, "tools", "test_party.py"), encoding="utf-8").read()
 WORLD_HELPERS = re.search(r"\nWORLD_HELPERS = r'''(.*?)'''", PARTY, re.S).group(1)
 fails = 0
@@ -156,7 +157,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p56"' in SRC["padtabctl"], "the versions: PadMap m160, PadTabCtl p54 (Smart Range gone)")
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p58"' in SRC["padtabctl"], "the versions: PadMap m160, PadTabCtl p54 (Smart Range gone)")
 ONF = re.search(r'local ONFIGHT = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
 check(not re.search(r'\bfunction\b', ONF), "the header's ONFIGHT snippet holds no 'function' (the game refuses it)")
 FBS = re.search(r'function OV\.fbSnip\(fbf\)\n    return .*?\[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
@@ -230,12 +231,11 @@ for _ in range(12):
     W.execute('pp("PADDLEFT")')
     c = ctl(W)
 check(c['view'] == 'combat' and c['pos'] == 1, "the In combat tab, the bare D-pad Left", c)
-W.execute('pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
-check(ctl(W).get('chooser', {}).get('list') == 'dstool', "its chooser's DS tab", ctl(W).get('chooser'))
-for _ in range(40):
-    if ctl(W)['chooser']['id'] == 'DSCHAT':
-        break
-    W.execute('pp("PADDDOWN")')
+W.execute('pp("PAD1")')
+NAV = Nav(W, ctl)
+NAV.tab("extra")                                                     # p58: DS Forever is Extra's category
+check(ctl(W).get('chooser', {}).get('list') == 'extra', "its chooser's Extra tab (DS Forever's category in it)", ctl(W).get('chooser'))
+NAV.goto('DSCHAT')
 W.execute('pp("PAD1")')
 b = ctl(W).get('box')
 check(b and b['kind'] == 'replace' and b.get('what') == 'DSCHAT' and ft(W, 1).get('n') == 'Lightning Bolt',
@@ -245,15 +245,13 @@ check(ft(W, 1).get('t') == 'command' and ft(W, 1).get('key') == 'DSCHAT' and not
       "Replace's one yes: Open Chat on the fight layer; Healing Wave untouched out of combat", (ft(W, 1), ctl(W).get('box')))
 # an empty fight layer: straight on (no box)
 W.execute('WowCompanion.padMap.clearCombat(1, 1, 1)')
-W.execute('pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end')
-for _ in range(40):
-    if ctl(W)['chooser']['id'] == 'DSMAP':
-        break
-    W.execute('pp("PADDDOWN")')
+W.execute('pp("PAD1")')
+NAV.tab("extra"); NAV.goto('DSMAP')
 W.execute('pp("PAD1")')
 check(not ctl(W).get('box') and ft(W, 1).get('key') == 'DSMAP', "an empty fight layer: Open Map goes straight on (no box)", (ctl(W).get('box'), ft(W, 1)))
 # Clear combat spell from the chooser's last row
-W.execute('pp("PAD1"); for i = 1, 4 do pp("PADDRIGHT") end; for i = 1, 80 do pp("PADDDOWN") end')
+W.execute('pp("PAD1")')
+NAV.tab("extra"); NAV.goto('uncombat')
 check(ctl(W)['chooser']['id'] == 'uncombat', "the chooser's last row: Clear combat spell", ctl(W)['chooser'])
 W.execute('pp("PAD1")')
 if ctl(W).get('box'):

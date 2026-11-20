@@ -377,6 +377,7 @@ object BottomPictures {
             }
             BottomTiles.TALK -> talk(c, r, look, tMs)
             BottomTiles.CASTBAR -> castBar(c, r, tMs)
+            BottomTiles.RANK -> ranks(c, r, HomeSettings.rankBadges)
             BottomTiles.ZOOM -> zoom(c, r, Settings.minimapYd, Settings.minimapIndoorYd, look.zoomIndoor)
             BottomTiles.WORLD -> world(c, r, Settings.worldMapFog == "all", look, tMs)
             BottomTiles.INPUT -> input(c, ctx, r, Settings.chatDefaultInput == "quick", big)
@@ -686,6 +687,27 @@ object BottomPictures {
             CastStripModel.Side.OFF -> {}
         }
         if (fight > 0f) UiKit.combatGlow(c, RectF(0f, 0f, 432f, 216f), 0.8f * fight, 28f)
+        c.restore()
+    }
+
+    // ---- Spell rank badges (2026-11-20): four of Home's spell buttons with real icons, #471's "R3" chips on them while On (the top
+    // ---- known rank gold, a lower one grey, as UiKit.spellRank draws them on Home), bare while Off
+
+    private fun ranks(c: Canvas, r: RectF, on: Boolean) {
+        val kk = r.width() / 432f
+        c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
+        pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
+        val slot = 84f; val gap = 20f
+        val x0 = (432f - 4 * slot - 3 * gap) / 2f; val y0 = (216f - slot) / 2f
+        val badges = listOf(SpellRanks.Badge(4, true), SpellRanks.Badge(2, true), SpellRanks.Badge(2, false), SpellRanks.Badge(3, true))
+        for (j in 0 until 4) {
+            val box = RectF(x0 + j * (slot + gap), y0, x0 + j * (slot + gap) + slot, y0 + slot)
+            val ic = Icons.get(SPELL_ICONS[j])
+            if (ic != null) c.drawBitmap(ic, null, box, pBmp)
+            else { pF.color = Color.rgb(60 + 20 * j, 90, 140 - 10 * j); c.drawRect(box, pF) }
+            pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawRect(box, pS)
+            if (on) UiKit.spellRank(c, box, badges[j])
+        }
         c.restore()
     }
 

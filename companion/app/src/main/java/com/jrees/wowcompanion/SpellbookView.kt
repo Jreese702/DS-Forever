@@ -195,6 +195,9 @@ class SpellbookView(
         }
     }
 
+    /** a tab key's skill line ("line:3" -> 3, "pet" -> the pet's book), as Book's tabs carry it (`k`) */
+    private fun lineOf(key: String): Int? = if (key == "pet") SpellsModel.PET_LINE else key.removePrefix("line:").toIntOrNull()
+
     // keep tab, page and choice on things that exist
     private fun settle() {
         val b = book ?: return
@@ -617,6 +620,13 @@ class SpellbookView(
                     tabKey = tabs[i].key; page = 1; descScroll = 0f
                     val onPage = pageOf(tabs[i])
                     chosenId = onPage.getOrNull(SpellsModel.firstKnown(b, onPage))?.let { idOf(it) }
+                    // the user, 2026-11-20 ("when touching a tab ... and pressing down after it goes back to the last tab that was open and
+                    // goes down"): the controller's cursor is told the tab too (Book b72), so its next press goes on in THIS tab
+                    if (held && ctl?.mode == "book") lineOf(tabs[i].key)?.let { CastStripModel.bookTabCells(it) }?.let { cells ->
+                        fingerSinceCtl = true
+                        val sent = padTabCells(cells)
+                        Log.i(TAG, "tab '${tabs[i].key}' by touch: ${cells.joinToString { "${it.first} ${it.second}" }} ${if (sent) "tapped" else "not sent"}")
+                    }
                 }
                 return
             }

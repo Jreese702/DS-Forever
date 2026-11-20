@@ -137,6 +137,16 @@ object HomeSettings {
         set(v) { if (v != pauseOverGame) { prefs?.edit()?.putBoolean("pauseOverGame", v)?.apply(); for (l in listeners) l() } }
 
     /**
+     * SPELL RANK BADGES (the user, 2026-11-20: "I dont personally love the rank icon so put that as a toggle in the settings, off by
+     * default"): true = every ranked spell picture wears #471's "R3" chip ([SpellRanks.of]); false (the default) = none anywhere. App-wide,
+     * Settings > Bottom screen > Home's "Spell rank badges" tile (BottomTiles.RANK); app-only (the add-on draws no badge, no tag)
+     */
+    var rankBadges: Boolean
+        get() = prefs?.getBoolean(KEY_RANK_BADGES, false) ?: false
+        set(v) { if (v != rankBadges) { prefs?.edit()?.putBoolean(KEY_RANK_BADGES, v)?.apply(); for (l in listeners) l() } }
+    const val KEY_RANK_BADGES = "rankBadges"
+
+    /**
      * B: PET RECALL (the user, 2026-11-18: "I like the pet recall but I think we need to remove the pet smart attack, its obnoxious"; the
      * pick: ON by default for pet classes, a player's saved choice kept; PetRecall): PER CHARACTER ([who] = "Name-Realm",
      * GameUi.character), the row shows only for a pet class; no character known = Off (nothing to tell). A character's SAVED choice is

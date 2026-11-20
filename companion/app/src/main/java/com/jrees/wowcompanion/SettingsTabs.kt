@@ -101,6 +101,8 @@ object SettingsTabs {
             "Focused quest",
             // the clock extras (the user's picks 2026-11-13): one row each
             "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "DS WoW toolbar",
+            // the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): #471's rank badges (BottomTiles.RANK)
+            "Spell rank badges",
             // hold to talk (the user, 2026-11-16): under the toolbar, "On release" under its switch (HoldTalk)
             HomeSettingsSection.TALK_ROW, HomeSettingsSection.RELEASE_ROW), Drawer.HOME),
         // GitHub #43 cb3: Off / Left / Right / Both (Home's section draws it, as it drew the old Home row)

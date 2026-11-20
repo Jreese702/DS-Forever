@@ -1,5 +1,8 @@
 {
 "plain": {
+"No macros yet": "Pas encore de macros",
+"Extra": "Extra",
+"DS Forever": "DS Forever",
 "Bar in Party mode": "Barre en mode groupe",
 "Off in Party mode": "Désactivée en mode groupe",
 "Casts on your pick": "Lancé sur votre choix",
@@ -1751,6 +1754,7 @@
 "No character yet": "Pas encore de personnage",
 "Swap": "Échanger",
 "Swing timer": "Minuteur de frappe",
+"Spell rank badges": "Badges de rang",
 "System": "Système",
 "Tabard designer": "Créateur de tabards",
 "Tabs": "Onglets",

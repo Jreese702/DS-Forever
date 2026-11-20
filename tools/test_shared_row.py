@@ -178,7 +178,7 @@ for d, f in (("WowCompanion", "TapPad"), ("WowCompanionSpells", "Spells"), ("Wow
     e = comp(SRC["x_%s_%s" % (d, f)], f)
     check(e is None, "a. Lua 5.1 compiles %s.lua" % f, e or '')
 TP, SP, BK = SRC["x_WowCompanion_TapPad"], SRC["x_WowCompanionSpells_Spells"], SRC["x_WowCompanionSpells_Book"]
-check((int(__import__('re').search(r'local PADV = "pad(\d+)"', TP).group(1)) >= 21) and 'local SV = "s17"' in SP and 'local BV = "b71"' in BK, "a. the versions: TapPad pad21, Spells s16, Book b65")
+check((int(__import__('re').search(r'local PADV = "pad(\d+)"', TP).group(1)) >= 21) and 'local SV = "s17"' in SP and 'local BV = "b73"' in BK, "a. the versions: TapPad pad21, Spells s16, Book b65")
 check("pad21 THE SHARED ROW" in TP and "s12 THE MACROS ROOM'S ROW SHARED" in SP and "b65 THE SHARED ROW" in BK,
       "a. each changed file's header note names the shared row")
 check('SHARE = "cal"' in SP and 'share = MR.SHARE' in SP, "a. the Macros room's row is the Calendar row's guest")
