@@ -926,13 +926,32 @@ end
 -- CB.clear(slot), CB.move(from, to) (a swap when both hold something); out of combat they go on at once, in a fight they wait in the
 -- queue as the Spellbook's toggles always did. The document says each slot's kind (`k`, none = a spell, as before), its name (`n`, not
 -- for a spell: the app has the book), an item's count (`ct`, `cons` = 1 for a consumable) and `any` = 1 (this bar takes every kind).
+-- cb14 THE IN-COMBAT LAYER (the user, 2026-11-19, the Controller / Tap to cast reorganisation, D10: "per-slot overrides"): a second
+-- store of 8, WowCompanionSpellsDB.castBarFight[name-realm] (the same entries as castBar), edited from the Controller room's In combat >
+-- Tap to cast and the Bind box's In combat + Tap to cast (CB.put / clear / move / at with the layer "f"). An empty fight slot keeps
+-- the out-of-combat thing; a set one replaces it in fights. THE SWITCH IN A FIGHT IS SECURE: the row grows from 9 cells to 17 (slots
+-- 0-7, the pick 8, the fight cells 9-16 = fight slot 1-8: CB_N + 1 + CB_N, within TapPad's 40 columns, no new row); every slot cell
+-- and every fight cell carries BOTH things as attributes set out of combat ("wc-n-*" the out-of-combat thing, "wc-f-*" the fight
+-- thing, armed only while the app's "Show in combat" is on), and a pre-click snippet of OUR OWN header (SecureHandlerWrapScript, the
+-- router's way, PadMap m20) copies the fight set onto type / spell / item / macrotext while [combat] holds (SecureCmdOptionParse, read
+-- at the press), else the out-of-combat set: no attribute is written from insecure code in a fight, no binding, macro or CVar. A
+-- fight cell's own attributes are the fight thing (the app taps cell 8 + i while Home shows a fight and fight slot i is set: the
+-- proposal's route; the snippet makes either cell right whichever the app taps). SHOW IN COMBAT (the app's Settings / the room's
+-- check box, HomeSettings.castBarCombat, told by Book b70's padtab 39 then 2 / 3, kept in WowCompanionSpellsDB.castBarShow): while
+-- it is off the fight set is never armed (the bar is hidden in fights anyway) and a fight-layer edit is refused "cb-hidden"; the
+-- fight slots are KEPT, unused, and come back armed when it is on again (D5). The document says `show` = 1 and the fight slots `f`
+-- (the same entries as `e`; `c` = the fight cell while it is built).
 do
-local CBV = "cb13"     -- cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
+local CBV = "cb14"     -- cb14 THE IN-COMBAT LAYER (header: castBarFight, 17 cells, the secure [combat] swap, `f` / `show`); cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 8, 8, 2   -- cb6: 8 slots (cells 0-7), the pick cell 8
 local CB_OLD_N = 12                      -- cb3: the slots a cb1 / cb2 store may hold (cb6: migrated to the first 8)
+local CB_F0 = CB_N                       -- cb14: fight slot i's cell = CB_F0 + i (9-16)
+local CB_CELLS = CB_N + 1 + CB_N         -- cb14: 17 cells (the slots, the pick, the fight slots)
+local CB_FIELD = { f = "castBarFight" }  -- cb14: the layer's store (nil = the out-of-combat bar, castBar)
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
-local CB = { want = {}, frozen = {}, row = nil, sig = nil, pick = nil, queue = {}, ready = false, cd = {}, learned = {}, last = nil }
+local CB = { want = {}, frozen = {}, row = nil, sig = nil, pick = nil, queue = {}, ready = false, cd = {}, learned = {}, last = nil,
+             wrapped = {}, hdr = nil }
 WC.castBar = CB
 local function cbReal(v) return v ~= nil and v ~= WC.ABSENT and v ~= WC.SECRET and v ~= WC.THREW end
 local function cbStr(fn) local v = S(fn); if type(v) == "string" and cbReal(v) and v ~= "" then return v end end
@@ -971,8 +990,10 @@ local function cbWho()
     if not n then return nil end
     return n .. "-" .. (cbStr(function() return GetRealmName() end) or "?")
 end
--- this character's slots table; create = make it (only after the login: the saved table is loaded by then)
-local function cbStore(create)
+-- this character's slots table; create = make it (only after the login: the saved table is loaded by then); cb14: [layer] "f" = the
+-- in-combat layer's (castBarFight), nil = the bar's own
+local function cbStore(create, layer)
+    local field = CB_FIELD[layer] or "castBar"
     local key = cbWho()
     if not key then return nil end
     local db = rawget(_G, "WowCompanionSpellsDB")
@@ -981,18 +1002,24 @@ local function cbStore(create)
         db = {}
         _G.WowCompanionSpellsDB = db
     end
-    if type(db.castBar) ~= "table" then
+    if type(db[field]) ~= "table" then
         if not create then return nil end
-        db.castBar = {}
+        db[field] = {}
     end
-    local s = db.castBar[key]
+    local s = db[field][key]
     if type(s) ~= "table" then
         if not create then return nil end
         s = {}
-        db.castBar[key] = s
+        db[field][key] = s
     end
     return s
 end
+-- cb14: the app's "Show in combat" (Book b70: padtab 39 then 2 on / 3 off), kept with the add-on's copy of the app's settings
+local function cbShow()
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    return type(db) == "table" and rawget(db, "castBarShow") == true
+end
+CB.show = cbShow
 -- cb3: an old store (slots past CB_N) keeps its first CB_N things on slots 1-CB_N, in slot order (a repeat dropped); every slot past
 -- CB_N cleared. cb6: CB_N = 8 (a cb3 store of 6 has nothing past 8: left as it is). cb9: a spell id kept as a number becomes { k, id }
 local function cbMigrate()
@@ -1019,9 +1046,9 @@ local function cbMigrate()
     return changed
 end
 CB.migrate = cbMigrate
--- the stored slots, 1..CB_N (a bad entry reads as empty)
-local function cbSlots()
-    local out, s = {}, cbStore(false)
+-- the stored slots, 1..CB_N (a bad entry reads as empty); cb14: [layer] as cbStore's
+local function cbSlots(layer)
+    local out, s = {}, cbStore(false, layer)
     if s then for i = 1, CB_N do out[i] = cbEntry(rawget(s, i)) end end
     return out
 end
@@ -1056,11 +1083,12 @@ local function cbApply(slots, ed)
     return nil, nil, "full"
 end
 -- the slots as they will be once the queue is applied, and the slots the queue changes (q: what differs from the store now)
-local function cbView()
+local function edLayer(ed) return type(ed) == "table" and ed.layer or nil end      -- cb14: an edit's layer (a toggle's number: the bar)
+local function cbView(layer)
     local v, q = {}, {}
-    local base = cbSlots()
+    local base = cbSlots(layer)
     for i = 1, CB_N do v[i] = base[i] end
-    for _, ed in ipairs(CB.queue) do cbApply(v, ed) end
+    for _, ed in ipairs(CB.queue) do if edLayer(ed) == layer then cbApply(v, ed) end end
     if #CB.queue > 0 then
         for i = 1, CB_N do
             if not ((v[i] == nil and base[i] == nil) or cbSame(v[i], base[i])) then q[i] = true end
@@ -1068,7 +1096,16 @@ local function cbView()
     end
     return v, q
 end
-CB.at = function(slot) local v = cbView(); return cbKeep(v[slot]) end           -- PadTabCtl p53: the room's slot under the cursor
+CB.at = function(slot, layer) local v = cbView(layer); return cbKeep(v[slot]) end     -- PadTabCtl p53: the room's slot under the cursor (cb14: [layer])
+-- cb14: what each slot does NOW: in a fight with Show on, a set fight slot's thing, else the slot's own (the cooldowns follow it)
+local function cbLiveView()
+    local v = cbView()
+    if cbFight() and cbShow() then
+        local f = cbView("f")
+        for i = 1, CB_N do if f[i] then v[i] = f[i] end end
+    end
+    return v
+end
 
 -- cb9: what a thing is called and looks like (read live; nil when the game does not say it plainly)
 local function cbNum(fn) local v = SN(fn); if cbId(v) then return v end end
@@ -1130,24 +1167,57 @@ local function cbLine(e)
     return nil
 end
 
--- the cells: 0-7 the slots' things, 8 the pick (no action: it runs on the press, as a plain cell)
-local function cbInit(btn, col)
-    local w = CB.want[col]
-    local e = w and w.e
-    local typ, spell, item, mt = nil, nil, nil, nil
+-- the cells: 0-7 the slots' things, 8 the pick (no action: it runs on the press, as a plain cell); cb14: 9-16 the fight slots
+-- a thing's secure attributes: type, spell, item, macrotext (all nil = no action)
+local function cbAttrs(e, line)
     if e and e.k == "spell" then
-        typ, spell = "spell", e.id
+        local spell = e.id
         local fn = rawget(WC, "spellsPetName")                         -- cb10: a pet's spell, by its name
         local okn, pn = false, nil
         if type(fn) == "function" then okn, pn = pcall(fn, e.id) end
         if okn and type(pn) == "string" then spell = pn end
-    elseif e and e.k == "item" then typ, item = "item", "item:" .. e.id
-    elseif e and w.line then typ, mt = "macro", w.line end
+        return "spell", spell, nil, nil
+    elseif e and e.k == "item" then return "item", nil, "item:" .. e.id, nil
+    elseif e and line then return "macro", nil, nil, line end
+    return nil, nil, nil, nil
+end
+-- cb14 THE SECURE SWAP (OUR OWN header; the router's way, PadMap m20): at every press the cell copies its fight set while the game says
+-- [combat] (read at the press, in the restricted environment), else its out-of-combat set. Attributes only: allowed in a fight
+CB.SWAP = [=[
+    local p = (self:GetAttribute("wc-f-type") and SecureCmdOptionParse("[combat] 1") == "1") and "wc-f-" or "wc-n-"
+    self:SetAttribute("type", self:GetAttribute(p .. "type"))
+    self:SetAttribute("spell", self:GetAttribute(p .. "spell"))
+    self:SetAttribute("item", self:GetAttribute(p .. "item"))
+    self:SetAttribute("macrotext", self:GetAttribute(p .. "macrotext"))
+]=]
+local function cbHeader()
+    if CB.hdr then return CB.hdr end
+    if cbFight() then return nil end
+    local ok, h = pcall(CreateFrame, "Frame", "WowCompanionCastBarHdr", UIParent, "SecureHandlerBaseTemplate")
+    CB.hdr = ok and h or nil
+    return CB.hdr
+end
+local function cbWrap(btn)
+    if CB.wrapped[btn] or cbFight() or type(rawget(_G, "SecureHandlerWrapScript")) ~= "function" then return end
+    local h = cbHeader()
+    if h and pcall(SecureHandlerWrapScript, btn, "OnClick", h, CB.SWAP) then CB.wrapped[btn] = true end
+end
+local function cbInit(btn, col)
+    local w = CB.want[col]
+    local nt, ns, ni, nm = cbAttrs(w and w.e, w and w.line)
+    local ft, fs, fi, fm = cbAttrs(w and w.fe, w and w.fline)
+    local fightCell = col > CB_F0
+    local typ = fightCell and ft or nt                                 -- a fight cell's own: the fight thing
     btn:SetAttribute("type", typ)
-    btn:SetAttribute("spell", spell)
-    btn:SetAttribute("item", item)
-    btn:SetAttribute("macrotext", mt)
-    CB.frozen[col] = typ and w.sig or nil
+    btn:SetAttribute("spell", fightCell and fs or ns)
+    btn:SetAttribute("item", fightCell and fi or ni)
+    btn:SetAttribute("macrotext", fightCell and fm or nm)
+    if col ~= CB_PICK_COL then
+        btn:SetAttribute("wc-n-type", nt); btn:SetAttribute("wc-n-spell", ns); btn:SetAttribute("wc-n-item", ni); btn:SetAttribute("wc-n-macrotext", nm)
+        btn:SetAttribute("wc-f-type", ft); btn:SetAttribute("wc-f-spell", fs); btn:SetAttribute("wc-f-item", fi); btn:SetAttribute("wc-f-macrotext", fm)
+        cbWrap(btn)
+    end
+    CB.frozen[col] = (typ or ft) and w.sig or nil
     -- review: TapPad runs init only once the pad has its place, which may be long after CB.sync (a late layout, a fight's queue):
     -- the document's cells follow the cells really built, so it goes out again just after (once per build, CB.send drops a repeat)
     if not CB.resend and C_Timer and type(C_Timer.After) == "function" then
@@ -1172,14 +1242,18 @@ function CB.sync()
     local pad = WC.pad
     if type(pad) ~= "table" or type(pad.secureRow) ~= "function" then return false end
     local slots = cbSlots()
+    local fslots = cbShow() and cbSlots("f") or {}                      -- cb14: the fight set only while Show in combat is on
     local want, parts = {}, {}
+    local function lineOf(e) return e and (e.k == "mount" or e.k == "command" or e.k == "macro") and cbLine(e) or nil end
     for i = 1, CB_N do
-        local e = slots[i]
-        if e then
-            local line = (e.k == "mount" or e.k == "command" or e.k == "macro") and cbLine(e) or nil
-            local sig = cbSig(e, line)
-            want[i - 1] = { e = e, line = line, sig = sig }
+        local e, fe = slots[i], fslots[i]
+        if e or fe then
+            local line, fline = lineOf(e), lineOf(fe)
+            local sig = (e and cbSig(e, line) or "-") .. (fe and ("/" .. cbSig(fe, fline)) or "")
+            local w = { e = e, line = line, fe = fe, fline = fline, sig = sig }
+            want[i - 1] = w
             parts[#parts + 1] = (i - 1) .. "=" .. sig
+            if fe then want[CB_F0 + i] = w end                          -- cb14: the fight cell, the same two things
         end
     end
     local sig = table.concat(parts, ",")
@@ -1190,7 +1264,7 @@ function CB.sync()
     end
     CB.want = want
     local fresh = CB.row == nil
-    local ok, row = pcall(pad.secureRow, "castbar", CB_N + 1, cbInit, cbClick, { onPress = true })
+    local ok, row = pcall(pad.secureRow, "castbar", CB_CELLS, cbInit, cbClick, { onPress = true })
     CB.row = (ok and type(row) == "number") and row or nil
     -- cb2b (review): a row registered mid-session is not in Home's pad copy (it rides on the quests document) until that is sent again
     if fresh and CB.row and type(WC.questsSoon) == "function" then pcall(WC.questsSoon) end
@@ -1199,14 +1273,14 @@ function CB.sync()
     return CB.row ~= nil
 end
 
-function CB.doc()
-    local v, q = cbView()
+local function cbEntries(layer)
+    local v, q = cbView(layer)
     local e = {}
     for i = 1, CB_N do
         local x = v[i]
-        local col = i - 1
+        local col = layer == "f" and (CB_F0 + i) or (i - 1)
         local w = CB.want[col]
-        local built = x ~= nil and w ~= nil and cbSame(w.e, x) and CB.frozen[col] == w.sig
+        local built = x ~= nil and w ~= nil and cbSame(layer == "f" and w.fe or w.e, x) and CB.frozen[col] == w.sig
         if x then
             local r = { s = i, c = (built and not q[i]) and col or nil, q = (q[i] or not built) and 1 or nil }
             if x.k == "spell" then
@@ -1230,8 +1304,14 @@ function CB.doc()
             e[#e + 1] = { s = i, q = 1 }                 -- emptied by a queued edit: dimmed until the fight ends
         end
     end
+    return e
+end
+function CB.doc()
+    -- cb14: `f` the fight slots (their cells 9-16 while built: armed only with Show on), `show` = 1 while Show in combat is on,
+    -- `fl` = 1 this add-on has the in-combat layer
     return { type = "castbar", v = CBV, n = CB_N, any = 1, mac = 1, pick = CB.row and CB_PICK_COL or nil, fight = cbFight() or nil,
-             nopad = (not CB.row) and 1 or nil, pp = CB_PADTAB_PICK, e = e }
+             nopad = (not CB.row) and 1 or nil, pp = CB_PADTAB_PICK, e = cbEntries(nil), f = cbEntries("f"), show = cbShow() and 1 or nil,
+             fl = 1 }
 end
 function CB.send(force)
     if type(WC.encode) ~= "function" or type(WC.send) ~= "function" then return end
@@ -1242,31 +1322,33 @@ function CB.send(force)
     WC.send(line)
     if type(WC.push) == "function" then WC.push() end
 end
-local function cbAck(ok, why, op, slot, queued)
+local function cbAck(ok, why, op, slot, queued, layer)
     if type(WC.encode) ~= "function" or type(WC.send) ~= "function" then return ok end
-    WC.send(WC.encode({ type = "castbarack", v = CBV, ok = ok and true or false, why = why, op = op, s = slot, q = queued and 1 or nil }))
+    WC.send(WC.encode({ type = "castbarack", v = CBV, ok = ok and true or false, why = why, op = op, s = slot, q = queued and 1 or nil,
+                        f = layer == "f" and 1 or nil }))
     return ok
 end
 
 -- ONE edit into the store (or, in a fight, the queue): the cells built again, answered, the document sent
 local function cbEdit(ed)
+    local layer = edLayer(ed)                             -- cb14: nil = the bar, "f" = the in-combat layer
     if cbFight() then
-        local v = cbView()
+        local v = cbView(layer)
         local op, i, why = cbApply(v, ed)
-        if not op then return cbAck(false, why) end
+        if not op then return cbAck(false, why, nil, nil, nil, layer) end
         CB.queue[#CB.queue + 1] = ed
-        cbAck(true, nil, op, i, true)
+        cbAck(true, nil, op, i, true, layer)
         CB.send()
         return true
     end
-    local s = cbStore(true)
-    if not s then return cbAck(false, "character") end
-    local v = cbSlots()
+    local s = cbStore(true, layer)
+    if not s then return cbAck(false, "character", nil, nil, nil, layer) end
+    local v = cbSlots(layer)
     local op, i, why = cbApply(v, ed)
-    if not op then return cbAck(false, why) end
+    if not op then return cbAck(false, why, nil, nil, nil, layer) end
     for k = 1, CB_N do s[k] = cbKeep(v[k]) end           -- cb3: a slot pick may move the spell off another slot too
     CB.sync()
-    cbAck(true, nil, op, i)
+    cbAck(true, nil, op, i, nil, layer)
     CB.send()
     return true
 end
@@ -1292,41 +1374,62 @@ function CB.toggle(id, slot)
 end
 -- cb9 THE ROOM'S EDITS (PadTabCtl p53, the Controller room's Cast bar tab): [kind] "spell" (a spell id) / "item" (an item id) /
 -- "mount" (a Mount Journal id) / "command" (a command's key) onto [slot]; Clear; Move (a swap when the target holds something)
-function CB.put(slot, kind, v)
-    if not cbSlotOk(slot) then return cbAck(false, "slot", "put") end
+-- cb14: [layer] "f" = the in-combat layer (refused "cb-hidden" while Show in combat is off: its slots are kept, not edited)
+function CB.put(slot, kind, v, layer)
+    if not cbSlotOk(slot) then return cbAck(false, "slot", "put", nil, nil, layer) end
+    if layer == "f" and not cbShow() then return cbAck(false, "cb-hidden", "put", slot, nil, layer) end
     local e
     if kind == "spell" then
         local okS, why = cbSpellOk(v)
-        if not okS then return cbAck(false, why, "put", slot) end
+        if not okS then return cbAck(false, why, "put", slot, nil, layer) end
         e = { k = "spell", id = v }
     elseif kind == "item" then
-        if not (cbId(v) and cbItemName(v)) then return cbAck(false, "item", "put", slot) end
+        if not (cbId(v) and cbItemName(v)) then return cbAck(false, "item", "put", slot, nil, layer) end
         e = { k = "item", id = v }
     elseif kind == "mount" then
-        if not (cbId(v) and cbMount(v)) then return cbAck(false, "mount", "put", slot) end
+        if not (cbId(v) and cbMount(v)) then return cbAck(false, "mount", "put", slot, nil, layer) end
         e = { k = "mount", id = v }
     elseif kind == "command" then
-        if not (type(v) == "string" and cbCmd(v)) then return cbAck(false, "command", "put", slot) end
+        if not (type(v) == "string" and cbCmd(v)) then return cbAck(false, "command", "put", slot, nil, layer) end
         e = { k = "command", key = v }
     elseif kind == "macro" then                                          -- cb13: the player's macro by name (it must exist, with text)
-        if not cbMacro(v) then return cbAck(false, "missing", "put", slot) end
+        if not cbMacro(v) then return cbAck(false, "missing", "put", slot, nil, layer) end
         e = { k = "macro", n = v }
     else
-        return cbAck(false, "kind", "put", slot)
+        return cbAck(false, "kind", "put", slot, nil, layer)
     end
-    if not cbWho() then return cbAck(false, "character", "put", slot) end
-    return cbEdit({ op = "put", s = slot, e = e })
+    if not cbWho() then return cbAck(false, "character", "put", slot, nil, layer) end
+    return cbEdit({ op = "put", s = slot, e = e, layer = layer })
 end
-function CB.clear(slot)
-    if not cbSlotOk(slot) then return cbAck(false, "slot", "clear") end
-    if not cbWho() then return cbAck(false, "character", "clear", slot) end
-    return cbEdit({ op = "clear", s = slot })
+function CB.clear(slot, layer)
+    if not cbSlotOk(slot) then return cbAck(false, "slot", "clear", nil, nil, layer) end
+    if layer == "f" and not cbShow() then return cbAck(false, "cb-hidden", "clear", slot, nil, layer) end
+    if not cbWho() then return cbAck(false, "character", "clear", slot, nil, layer) end
+    return cbEdit({ op = "clear", s = slot, layer = layer })
 end
-function CB.move(a, b)
-    if not (cbSlotOk(a) and cbSlotOk(b)) then return cbAck(false, "slot", "move") end
-    if not cbWho() then return cbAck(false, "character", "move", b) end
-    return cbEdit({ op = "move", a = a, b = b })
+function CB.move(a, b, layer)
+    if not (cbSlotOk(a) and cbSlotOk(b)) then return cbAck(false, "slot", "move", nil, nil, layer) end
+    if layer == "f" and not cbShow() then return cbAck(false, "cb-hidden", "move", b, nil, layer) end
+    if not cbWho() then return cbAck(false, "character", "move", b, nil, layer) end
+    return cbEdit({ op = "move", a = a, b = b, layer = layer })
 end
+-- cb14 (Book b70): the app's Show in combat, any time (no room needed). Out of combat the cells are armed / disarmed at once; in a
+-- fight it waits for the fight's end (secure attributes; CB.sync refuses in a fight), the bar is hidden in fights while it is off
+function CB.setShow(on)
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    if type(db) ~= "table" then
+        if not CB.ready then return end
+        db = {}
+        _G.WowCompanionSpellsDB = db
+    end
+    local was = db.castBarShow == true
+    db.castBarShow = on and true or nil
+    if was ~= (on and true or false) then
+        CB.sync()
+        CB.send()
+    end
+end
+WC.castBarShow = CB.setShow
 -- the fight is over: the queued edits go into the store in their order, the cells are built again
 function CB.flushQueue()
     if cbFight() or #CB.queue == 0 then return false end
@@ -1335,8 +1438,16 @@ function CB.flushQueue()
     CB.queue = {}
     if s then
         local v = cbSlots()
-        for _, ed in ipairs(q) do cbApply(v, ed) end
+        for _, ed in ipairs(q) do if edLayer(ed) == nil then cbApply(v, ed) end end
         for i = 1, CB_N do s[i] = cbKeep(v[i]) end
+    end
+    local fq = {}                                         -- cb14: the in-combat layer's queued edits
+    for _, ed in ipairs(q) do if edLayer(ed) == "f" then fq[#fq + 1] = ed end end
+    local fs = #fq > 0 and cbStore(true, "f") or nil
+    if fs then
+        local v = cbSlots("f")
+        for _, ed in ipairs(fq) do cbApply(v, ed) end
+        for i = 1, CB_N do fs[i] = cbKeep(v[i]) end
     end
     return true
 end
@@ -1384,7 +1495,7 @@ end
 -- SPELL_UPDATE_COOLDOWN: each spell slot's spell, its flags now
 function CB.cooldowns()
     local now, changed = cbNow(), false
-    local v = cbView()
+    local v = cbLiveView()                               -- cb14: a fight's set slot casts its fight spell
     local get = cbSpellApi("GetSpellCooldown")
     for i = 1, CB_N do
         local id, cur = cbSpell(v[i]), CB.cd[i]
@@ -1423,7 +1534,7 @@ function CB.castLanded(spellID)
     local id = SN(function() return spellID end)
     if not id then return end
     local now, hit = cbNow(), false
-    local v = cbView()
+    local v = cbLiveView()
     for i = 1, CB_N do
         if cbSpell(v[i]) == id then
             local d = cbLearned(id)
@@ -1453,6 +1564,7 @@ cbF:SetScript("OnEvent", function(_, ev, a1, a2, a3)
             CB.cooldowns()
         elseif ev == "PLAYER_REGEN_DISABLED" then
             CB.send()
+            CB.cooldowns()                               -- cb14: the fight slots' cooldowns now
         elseif ev == "SPELL_UPDATE_COOLDOWN" then
             CB.cooldowns()
         elseif ev == "SPELLS_CHANGED" or ev == "UPDATE_MACROS" then   -- cb13: a macro edited / renamed / deleted: its cell again
