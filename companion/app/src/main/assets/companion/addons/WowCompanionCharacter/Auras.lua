@@ -46,7 +46,12 @@ if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function
 local CALL, isPlain = WC.CALL, WC.isPlain
 local format = string.format
 
-local AV = "a7"     -- bump on every change; the app shows it, so a stale build is visible
+local AV = "a8"     -- bump on every change; the app shows it, so a stale build is visible
+-- a8 (#558 / #476, the user 2026-11-19: "Just remove them during fights"): IN A FIGHT the bottom screen's buffs / debuffs are hidden
+-- entirely, so nothing is read: the document says hide = true with empty lists (no aura read, no tooltip, no enchant read, the pad's
+-- aura slots kept as they were) and the app draws none of them - no frozen list, no estimate, no note. The fight: PLAYER_REGEN_DISABLED
+-- until PLAYER_REGEN_ENABLED, or the game's own word (UnitAffectingCombat / InCombatLockdown). Out of it every list comes back at once
+-- (REGEN_ENABLED sends). Outside a fight the reads are as before (a7), the locked route included (an encounter's aura lock).
 local MAX = { HELPFUL = 32, HARMFUL = 16 }      -- the game's BUFF_MAX_DISPLAY / DEBUFF_MAX_DISPLAY
 
 -- ---------------------------------------------------------------- safe reads (as Character.lua)
@@ -242,8 +247,30 @@ local lastKey = nil
 
 -- Build the document; send it when it differs from the last one (or always when forced). `now` and `full` are
 -- left out of the comparison: the app needs the clock, but a tick of it is not a change.
+local fightFlag = false          -- a8: PLAYER_REGEN_DISABLED .. PLAYER_REGEN_ENABLED
+local function inFight()
+    if fightFlag then return true end
+    local okc, c = CALL(UnitAffectingCombat, "player")
+    if okc and c == true then return true end
+    local okl, l = CALL(InCombatLockdown)
+    return okl and l == true
+end
+
 local function emit(force)
     tally.secret, tally.threw = 0, 0
+    -- a8: in a fight nothing is read; the app hides every aura display until the fight's end
+    if inFight() then
+        local doc = { type = "auras", v = AV, b = {}, d = {}, e = {}, hide = true, combat = true }
+        if WC.pad then local okp, g = pcall(WC.pad.describe); if okp then doc.pad = g end end
+        local okk, key = pcall(WC.encode, doc)
+        if not okk then return false end
+        if key == lastKey and not force then return false end
+        lastKey = key
+        doc.now = tenth(GetTime())
+        doc.full = force or nil
+        WC.send(WC.encode(doc))
+        return true
+    end
     local locked = secretNow()
     local doc = { type = "auras", v = AV }
     local vb, vd, wb, wd
@@ -303,6 +330,9 @@ f:SetScript("OnEvent", function(_, e, unit)
     if e == "UNIT_AURA" or e == "UNIT_INVENTORY_CHANGED" then
         if unit ~= nil and unit ~= "player" then return end
     end
+    -- a8: the fight's start hides the lists at once, its end brings them back at once
+    if e == "PLAYER_REGEN_DISABLED" then fightFlag = true; if emit(false) then WC.push() end return end
+    if e == "PLAYER_REGEN_ENABLED" then fightFlag = false; if emit(false) then WC.push() end return end
     soon()
 end)
 -- UNIT_AURA for the player only, where the client can filter it (as the game's buff frame registers it)
@@ -448,4 +478,4 @@ if type(WC.snapshot) == "function" then
     end)
 end
 
-WC.auras = { version = AV, emit = emit, tips = tipCache, armed = function() return armed end }     -- for tools/test_auras.py
+WC.auras = { version = AV, emit = emit, tips = tipCache, armed = function() return armed end, fight = inFight }     -- for tools/test_auras.py

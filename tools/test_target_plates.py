@@ -532,7 +532,7 @@ C_NamePlate.GetNamePlateForUnit = function(u) if u == "nameplate1" then return P
         chk("uf25: a %s target: %s behind the level box (%s)" % (cls, want or "no dragon", got), got == want)
     chk("uf25: the tags (Hub hub58 / uf25, Trail ag14), each note quoting the user",
         int(open(os.path.join(ROOT_ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read().split('local HV = "hub', 1)[1].split('"', 1)[0]) >= 58
-        and rig.UF.V == "uf25" and rig.G.WowCompanion.live.V == "ag14"
+        and int(rig.UF.V[2:]) >= 25 and rig.G.WowCompanion.live.V == "ag14"
         and all("the Skull above mobs is confusing, I think we need to scrap that" in open(os.path.join(ROOT_ADDONS, d, n), encoding="utf-8").read()
                 for d, n in (("WowCompanionHub", "Hub.lua"), ("WowCompanion", "Trail.lua"))))
     chk("uf25 / ag14: no 'dungeonskull' left in Hub or Trail", all("SetAtlas(\"dungeonskull\")" not in open(os.path.join(ROOT_ADDONS, d, n), encoding="utf-8").read()

@@ -311,7 +311,7 @@ def main():
     hub = open(HUB, encoding="utf-8").read()
     quote = "Cyrillic characters are displayed as empty squares instead of actual letters"
     chk("tags: Trail cp43 (or later) / ag13 (ag12f) / prd19, Hub hub56 / uf24 (the 11-16 merge)", int(C.V[2:]) >= 43 and int(G.WowCompanion.live.V[2:]) >= 13
-        and G.WowCompanion.prd.V == "prd19" and int(re.search(r'local HV = "hub(\d+)"', hub).group(1)) >= 57 and int(UF.V[2:]) >= 24, (C.V, UF.V))
+        and int(G.WowCompanion.prd.V[3:]) >= 19 and int(re.search(r'local HV = "hub(\d+)"', hub).group(1)) >= 57 and int(UF.V[2:]) >= 24, (C.V, UF.V))
     chk("tags: each header note quotes the issue and the user's pick (2026-11-16)",
         all(n in trail for n in ("-- cp41 ISSUE #358", "-- ag12f ISSUE #358", "-- prd18 ISSUE #358"))
         and "-- uf23 (hub55) ISSUE #358" in hub and "hub55 ISSUE #358" in hub

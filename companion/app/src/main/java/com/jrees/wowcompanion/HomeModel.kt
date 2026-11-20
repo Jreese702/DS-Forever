@@ -298,13 +298,17 @@ sealed class AuraAck {
  * THE PLAYER'S BUFFS AND DEBUFFS for Home's small map (user, 17:30: buffs top-left, debuffs bottom-left, each in a faded
  * button that opens a list over the small map). Latest document wins; a replayed one only fills an empty model. [locked] =
  * the game hides what they are now (combat). Time left counts down from when the document came.
- * IN COMBAT the buttons and the list show THE LAST LIST BEFORE THE FIGHT, GREYED ([shownBuffs], [greyed]; user 17:49: "The last
- * list before the fight, greyed out"). REMOVING a buff is out of combat only (17:49): [remove] -> the pick + cancel taps.
+ * IN A FIGHT every aura display is HIDDEN ([fightHidden]; #558 / #476, the user 2026-11-19: "Just remove them during fights"; it
+ * replaces 17:49's "The last list before the fight, greyed out"): the character session's a8 document says `hide` (or `combat`), and
+ * [shownBuffs] / [shownDebuffs] are empty until a document without it - no frozen list, no estimate, no note. An aura lock outside a
+ * fight (an encounter's) still shows the last open lists greyed ([greyed]). REMOVING a buff is out of combat only (17:49).
  */
 class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long = 8_000L) {
     var buffs: List<HomeAura> = emptyList(); private set
     var debuffs: List<HomeAura> = emptyList(); private set
     var locked = false; private set
+    /** a fight is on: nothing of the auras is shown (a8 `hide`, or an older add-on's `combat`) */
+    var fightHidden = false; private set
     /** the pad (rows `aurapick` / `auracancel`) as the auras doc publishes it */
     var pad: JSONObject? = null; private set
     private var openBuffs: List<HomeAura> = emptyList()      // the last lists seen while NOT locked
@@ -315,11 +319,11 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
     private var pendingAt = 0L
     private var picked = false
 
-    /** what the buttons and the list show: the live lists, or in combat the last ones before the fight */
-    val shownBuffs get() = if (locked) openBuffs else buffs
-    val shownDebuffs get() = if (locked) openDebuffs else debuffs
-    /** the shown lists are the old ones from before the fight */
-    val greyed get() = locked
+    /** what the buttons and the list show: nothing in a fight; the live lists, or under an aura lock the last open ones */
+    val shownBuffs get() = if (fightHidden) emptyList() else if (locked) openBuffs else buffs
+    val shownDebuffs get() = if (fightHidden) emptyList() else if (locked) openDebuffs else debuffs
+    /** the shown lists are the old ones from before the lock (never in a fight: nothing is shown then) */
+    val greyed get() = locked && !fightHidden
 
     /** true when something a button or the list shows changed */
     fun update(msg: JSONObject, current: Boolean, now: Long): Boolean {
@@ -329,13 +333,14 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
         val b = e + parse(msg.optJSONArray("b"), gameNow, enchant = false)
         val d = parse(msg.optJSONArray("d"), gameNow, enchant = false)
         val lock = msg.optBoolean("lock", false)
+        val fight = msg.optBoolean("hide", false) || msg.optBoolean("combat", false)
         msg.optJSONObject("pad")?.let { pad = it }
         heardAt = now
-        if (!lock) { openBuffs = b; openDebuffs = d; openAt = now }
-        // a buff being removed that is gone now: done
-        if (pendingId != null && b.none { it.id == pendingId }) pendingId = null
-        if (b == buffs && d == debuffs && lock == locked) return false
-        buffs = b; debuffs = d; locked = lock
+        if (!lock && !fight) { openBuffs = b; openDebuffs = d; openAt = now }
+        // a buff being removed that is gone now: done (a fight's empty lists say nothing about it)
+        if (!fight && pendingId != null && b.none { it.id == pendingId }) pendingId = null
+        if (b == buffs && d == debuffs && lock == locked && fight == fightHidden) return false
+        buffs = b; debuffs = d; locked = lock; fightHidden = fight
         return true
     }
 
@@ -346,7 +351,7 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
      */
     fun remove(id: Int, live: Boolean, now: Long): AuraTap {
         if (!live || heardAt < 0) return AuraTap.Refused("The game is not connected")
-        if (locked) return AuraTap.Refused("Out of combat only")
+        if (locked || fightHidden) return AuraTap.Refused("Out of combat only")
         if (pending(now) != null) return AuraTap.Refused("Still removing the last one")
         val a = buffs.firstOrNull { it.id == id } ?: return AuraTap.Refused("That buff is gone")
         if (a.enchant) return AuraTap.Refused("A weapon enchant cannot be removed here")
