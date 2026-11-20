@@ -228,7 +228,8 @@ object GameUi {
     const val SW_UFHPP = "ufhpp"; const val SW_UFHPT = "ufhpt"
     /** hub31 (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): on = Polestar's windows hidden (Hub.lua
      *  hub31 / hub36: every top-level Polestar frame at alpha 0, nothing of Polestar's own changed, so its guide, arrow data and steps
-     *  still run and the Polestar tab / quest tracker keep driving it). HIDDEN BY DEFAULT since 2026-11-20 (the user: "does polestar show
+     *  still run and the Polestar tab / quest tracker keep driving it; hub72, the user's "Also make it ignore touches": their mouse
+     *  input off too, given back exactly at Off). HIDDEN BY DEFAULT since 2026-11-20 (the user: "does polestar show
      *  on the top screen by default? we should hide that by default"); it was shown by default from 2026-11-11. Existing players: the
      *  key "sw.ps.<character>" is only written by the player's own tap on Settings > Top screen > Navigation > Polestar ([setSwitch]),
      *  so a character with no key (never chose) moves to hidden, and a character whose key says shown (false: they turned it On) keeps
