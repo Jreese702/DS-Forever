@@ -41,13 +41,14 @@ class RankBadgeShotsTest {
 
     @Before fun setUp() {
         ShadowSystemClock.advanceBy(Duration.ofSeconds(30))
+        HomeSettings.init(app); HomeSettings.rankBadges = true          // 2026-11-20: the badges are a setting, Off by default
         System.getenv("RANK_ART_ROOT")?.let { root ->
             ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, File(root)) }
     }
     @After fun down() {
         SpellRanks.update(null)
         CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null
-        HomeSettings.init(app); HomeSettings.castBarSide = CastStripModel.Side.OFF
+        HomeSettings.init(app); HomeSettings.castBarSide = CastStripModel.Side.OFF; HomeSettings.rankBadges = false
     }
 
     // ---------------------------------------------------------------- a level 20 Shaman's book (Spells.lua readItem's fields)
@@ -222,6 +223,26 @@ class RankBadgeShotsTest {
         assertFalse("the Spellbook shows badges", same(bookBefore, bookAfter))
         assertFalse("the chooser shows badges", same(chooserBefore, chooserAfter))
         assertFalse("the wheel shows badges", same(wheelBefore, wheelAfter))
+    }
+
+    /** the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): Settings > Bottom screen > Spell rank badges Off =
+     *  Home (its buttons and the tap-to-cast bar), the Spellbook, the chooser and a wheel drawn exactly as with no rank index at all;
+     *  On = the badges again, the same book */
+    @Test fun theSettingOffHidesEveryBadge() {
+        val b = book()
+        SpellRanks.update(null)
+        val homeNone = homeShot(); val bookNone = bookShot(b); val chooserNone = chooserShot(b); val wheelNone = wheelShot()
+        SpellRanks.update(b)
+        HomeSettings.rankBadges = false
+        val homeOff = homeShot(); val bookOff = bookShot(b); val chooserOff = chooserShot(b); val wheelOff = wheelShot()
+        save(homeOff, "home_setting_off.png"); save(bookOff, "spellbook_setting_off.png")
+        assertTrue("Home: no badge", same(homeNone, homeOff))
+        assertTrue("the Spellbook: no badge", same(bookNone, bookOff))
+        assertTrue("the chooser: no badge", same(chooserNone, chooserOff))
+        assertTrue("the wheel: no badge", same(wheelNone, wheelOff))
+        HomeSettings.rankBadges = true
+        assertFalse("On: Home's badges back", same(homeOff, homeShot()))
+        assertFalse("On: the Spellbook's badges back", same(bookOff, bookShot(b)))
     }
 
     @Test fun aBookWithNoFamiliesChangesNothing() {

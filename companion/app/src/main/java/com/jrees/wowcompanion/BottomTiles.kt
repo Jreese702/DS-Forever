@@ -15,9 +15,9 @@ import kotlin.math.abs
 
 /**
  * SETTINGS > BOTTOM SCREEN AS PICTURE TILES (the beautify pass; the user, 2026-11-17: "I REALLY REALLY love what you did with the top screen
- * settings menu with the pictures and want to do something similar to the other menus"; the design's section 3, critic C5 / C6): 11
- * tiles in TWO groups - Home (8: Rest controller, Combat layout, Swing timer, Focused quest, Clock band, DS WoW toolbar, Hold to talk,
- * Tap-to-cast bar) and Map & chat (3: Minimap zoom, World map, Message input). The pictures are real miniatures of our own Home
+ * settings menu with the pictures and want to do something similar to the other menus"; the design's section 3, critic C5 / C6): 12
+ * tiles in TWO groups - Home (9: Rest controller, Combat layout, Swing timer, Focused quest, Clock band, DS WoW toolbar, Hold to talk,
+ * Tap-to-cast bar, Spell rank badges) and Map & chat (3: Minimap zoom, World map, Message input). The pictures are real miniatures of our own Home
  * ([BottomPictures]). The settings are written through the same HomeSettings / Settings setters as the rows were (same keys, same
  * per-character store for hold to talk); only where and how they are drawn changed.
  *
@@ -35,6 +35,8 @@ object BottomTiles {
     const val TOOLBAR = "toolbar"
     const val TALK = "talk"
     const val CASTBAR = "castbar"
+    /** the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): #471's "R3" chips on every ranked spell picture */
+    const val RANK = "rank"
     const val ZOOM = "zoom"
     const val WORLD = "worldmap"
     const val INPUT = "input"
@@ -42,8 +44,8 @@ object BottomTiles {
     /** what the tiles read besides the settings: Spells' D-pad state (the DS WoW toolbar; null = an older add-on), the character */
     data class Env(val dpad: PadMapModel.Dpad?, val who: String?)
 
-    /** Home's 8 (critic C6: Tap-to-cast moved in, it lives on Home) and Map & chat's 3 */
-    val HOME_TILES = listOf(REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR)
+    /** Home's 9 (critic C6: Tap-to-cast moved in, it lives on Home; 2026-11-20: Spell rank badges last) and Map & chat's 3 */
+    val HOME_TILES = listOf(REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR, RANK)
     val MAP_TILES = listOf(ZOOM, WORLD, INPUT)
 
     /** the group's fixed tile list. Until the core lands the Bottom screen's two groups (Home, Map & chat) the old four are mapped: Home
@@ -73,7 +75,7 @@ object BottomTiles {
     /** a tile's name (display words, Tr.t'd by the drawer) */
     val NAMES: Map<String, String> = mapOf(REST to "Rest controller", COMBAT to "Combat layout", SWING to "Swing timer",
         QUEST to "Focused quest", CLOCK to "Clock band", TOOLBAR to "DS WoW toolbar", TALK to "Hold to talk", CASTBAR to "Tap-to-cast bar",
-        ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
+        RANK to "Spell rank badges", ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
 
     /** the clock band's lines: key, label, its icons.pak icon */
     val CLOCK_LINES = listOf(Triple("hearth", "Hearthstone", ItemCd.HEARTH_ICON), Triple("teleport", "Class teleport", 136010),
@@ -99,6 +101,7 @@ object BottomTiles {
         REST -> listOf(Line(REST, null, listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest)))
         COMBAT -> listOf(Line(COMBAT, null, listOf("Grow", "Same size"), if (HomeSettings.combatGrow) 0 else 1))
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))
+        RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
         QUEST -> listOf(Line(QUEST, null, listOf("Above Chat", "Above Minimap"), if (HomeSettings.questOverMap) 1 else 0))
         CLOCK -> CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
         TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null))
@@ -138,6 +141,7 @@ object BottomTiles {
         REST -> if (HomeSettings.rest == HomeRest.DIAMONDS) "Diamonds" else "Thin row"
         COMBAT -> if (HomeSettings.combatGrow) "Grow" else "Same size"
         SWING -> if (HomeSettings.swingTimer) "On" else "Off"
+        RANK -> if (HomeSettings.rankBadges) "On" else "Off"
         QUEST -> if (HomeSettings.questOverMap) "Above Minimap" else "Above Chat"
         CLOCK -> CLOCK_LINES.count { clockOn(it.first) }.let { n -> if (n == CLOCK_LINES.size) "On" else if (n == 0) "Off" else "$n / ${CLOCK_LINES.size}" }
         TOOLBAR -> if (env.dpad?.want == true) "On" else "Off"
@@ -151,13 +155,14 @@ object BottomTiles {
 
     /** the 36 px badge: Top's eye for the On / Off tiles, none for the others (their value word says it) */
     fun badge(id: String, env: Env): GameUiTiles.Badge? = when (id) {
-        SWING, TOOLBAR, TALK -> if (value(id, env) == "On") GameUiTiles.Badge.ON else GameUiTiles.Badge.OFF
+        SWING, TOOLBAR, TALK, RANK -> if (value(id, env) == "On") GameUiTiles.Badge.ON else GameUiTiles.Badge.OFF
         else -> null
     }
 
     /** the picture dimmed: the choice is Off (or the add-on cannot do it yet) */
     fun dimmed(id: String, env: Env): Boolean = when (id) {
         SWING -> !HomeSettings.swingTimer
+        RANK -> !HomeSettings.rankBadges
         TOOLBAR -> env.dpad?.want != true || env.dpad.colOn == null
         TALK -> !HomeSettings.holdTalk(env.who)
         CASTBAR -> HomeSettings.castBarSide == CastStripModel.Side.OFF
@@ -174,6 +179,7 @@ object BottomTiles {
             REST -> HomeSettings.rest = HomeRest.values()[k]
             COMBAT -> HomeSettings.combatGrow = k == 0
             SWING -> HomeSettings.swingTimer = k == 0
+            RANK -> HomeSettings.rankBadges = k == 0
             QUEST -> HomeSettings.questOverMap = k == 1
             "hearth" -> HomeSettings.clockHearth = k == 0
             "teleport" -> HomeSettings.clockTeleport = k == 0

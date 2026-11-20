@@ -40,7 +40,7 @@ package com.jrees.wowcompanion
  *  gameui       SETTINGS mode.<element>, sw.pmode, castbar.hide   LAYOUTS (per char) sw.<part>.<who>, hud.<who>, prdy./prdw./prds.<who>,
  *                        mt.<part>.<who>
  *  cast         SETTINGS buttonLayout, abxyLocation
- *  home         SETTINGS pauseOverGame   LAYOUTS (app-wide: Home has no per-character store) rest, questMin, questOverMap, combatGrow,
+ *  home         SETTINGS pauseOverGame, rankBadges   LAYOUTS (app-wide: Home has no per-character store) rest, questMin, questOverMap, combatGrow,
  *                        swingTimer, castBarSide, castStrip, castBarCombat, castBarPartyShow (Bar in Party mode), clockHearth,
  *                        clockTeleport, clockGold, clockBags, clockAmmo,
  *                        and the wheels' open / pick: radialTap, radialPickA, spellTap, spellPickA, classTapL, classPickAL, classTapR,
@@ -135,7 +135,7 @@ object ResetPlan {
         char("gameui", Kind.SETTINGS, "mode."),
         char("gameui", Kind.LAYOUTS, "sw.*.", "hud.", "prdy.", "prdw.", "prds.", "mt.*."),
         exact("cast", Kind.SETTINGS, "buttonLayout", "abxyLocation"),
-        exact("home", Kind.SETTINGS, "pauseOverGame"),
+        exact("home", Kind.SETTINGS, "pauseOverGame", "rankBadges"),
         exact("home", Kind.LAYOUTS, "rest", "questMin", "questOverMap", "combatGrow", "swingTimer", "castBarSide", "castStrip", "castBarCombat",
             "castBarPartyShow",
             "clockHearth", "clockTeleport", "clockGold", "clockBags", "clockAmmo", "radialTap", "radialPickA", "spellTap", "spellPickA",

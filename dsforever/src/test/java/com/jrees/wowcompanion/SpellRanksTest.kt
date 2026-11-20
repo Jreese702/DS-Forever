@@ -2,16 +2,21 @@ package com.jrees.wowcompanion
 
 import org.json.JSONArray
 import org.json.JSONObject
+import android.content.SharedPreferences
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /** #471 ("I cannot see which rank my spells are when assigning them to my crossbars"): which spells wear a rank badge, and when it is grey */
 class SpellRanksTest {
-    @After fun clear() = SpellRanks.update(null)
+    private val prefs = Prefs()
+    /** the badges' rules below are with the player's "Spell rank badges" setting On (2026-11-20: Off by default) */
+    @Before fun on() { HomeSettings.startForTest(prefs); HomeSettings.rankBadges = true }
+    @After fun clear() { SpellRanks.update(null); HomeSettings.startForTest(null) }
 
     private fun e(slot: Int, id: Int, name: String, rank: String? = null, passive: Boolean = false, line: Int = 2, prof: String? = null,
                   kind: SpellsModel.Kind = SpellsModel.Kind.SPELL, pet: Boolean = false, low: Boolean = false) =
@@ -92,5 +97,47 @@ class SpellRanksTest {
         SpellRanks.update(b)
         assertEquals(SpellRanks.Badge(1, false), SpellRanks.of(403))
         assertEquals(SpellRanks.Badge(2, true), SpellRanks.of(529))
+    }
+
+    /** the user, 2026-11-20 ("I dont personally love the rank icon so put that as a toggle in the settings, off by default"): with the
+     *  setting Off - a fresh install, or switched off - no spell has a badge anywhere (every surface asks [SpellRanks.of]); On brings them
+     *  back with the same book */
+    @Test fun theSettingIsOffByDefaultAndHidesEveryBadge() {
+        HomeSettings.startForTest(Prefs())
+        assertFalse("off by default", HomeSettings.rankBadges)
+        SpellRanks.update(book(bolt1, bolt2, bolt3))
+        assertNull(SpellRanks.of(403)); assertNull(SpellRanks.of(529)); assertNull(SpellRanks.of(548))
+        HomeSettings.rankBadges = true
+        assertEquals(SpellRanks.Badge(3, true), SpellRanks.of(548))
+        assertEquals(SpellRanks.Badge(1, false), SpellRanks.of(403))
+        HomeSettings.rankBadges = false
+        assertNull(SpellRanks.of(548)); assertNull(SpellRanks.of(403))
+    }
+
+    private class Prefs(val m: HashMap<String, Any?> = HashMap()) : SharedPreferences {
+        override fun getAll(): MutableMap<String, *> = m
+        override fun getString(k: String?, d: String?) = m[k] as? String ?: d
+        @Suppress("UNCHECKED_CAST")
+        override fun getStringSet(k: String?, d: MutableSet<String>?) = m[k] as? MutableSet<String> ?: d
+        override fun getInt(k: String?, d: Int) = m[k] as? Int ?: d
+        override fun getLong(k: String?, d: Long) = m[k] as? Long ?: d
+        override fun getFloat(k: String?, d: Float) = m[k] as? Float ?: d
+        override fun getBoolean(k: String?, d: Boolean) = m[k] as? Boolean ?: d
+        override fun contains(k: String?) = m.containsKey(k)
+        override fun registerOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun unregisterOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor {
+            val put = HashMap<String, Any?>(); val gone = HashSet<String>()
+            override fun putString(k: String, v: String?) = apply { put[k] = v }
+            override fun putStringSet(k: String, v: MutableSet<String>?) = apply { put[k] = v }
+            override fun putInt(k: String, v: Int) = apply { put[k] = v }
+            override fun putLong(k: String, v: Long) = apply { put[k] = v }
+            override fun putFloat(k: String, v: Float) = apply { put[k] = v }
+            override fun putBoolean(k: String, v: Boolean) = apply { put[k] = v }
+            override fun remove(k: String) = apply { gone.add(k) }
+            override fun clear() = apply { gone.addAll(m.keys) }
+            override fun commit(): Boolean { apply(); return true }
+            override fun apply() { for (k in gone) m.remove(k); m.putAll(put) }
+        }
     }
 }

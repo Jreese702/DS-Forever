@@ -116,8 +116,8 @@ class BottomTilesTest {
     @Test fun theModel() {
         HomeSettings.init(app); Settings.init(app)
         val none = BottomTiles.Env(null, "Sample-Realm")
-        assertEquals(listOf(BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR),
-            BottomTiles.slots(SettingsTabs.Group.HOME, none))
+        assertEquals(listOf(BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR,
+            BottomTiles.RANK), BottomTiles.slots(SettingsTabs.Group.HOME, none))
         var want: Boolean? = null
         val d = { on: Boolean -> PadMapModel.Dpad(on, emptyMap(), emptyList(), emptyList(), on, 1, 2, null, null) }
         assertEquals(BottomTiles.HOME_TILES.size - 1, BottomTiles.slots(SettingsTabs.Group.HOME, BottomTiles.Env(d(false), "Sample-Realm")).size)
@@ -156,6 +156,17 @@ class BottomTilesTest {
         BottomTiles.press(BottomTiles.ZOOM, "out", 1, on) { }
         assertEquals(Settings.stepYd(out, 1), Settings.minimapYd)
         Settings.minimapYd = out
+        // Spell rank badges (2026-11-20; Off by default: SpellRanksTest): one On / Off line, the rank index's own switch
+        HomeSettings.rankBadges = false
+        assertEquals("Off", BottomTiles.value(BottomTiles.RANK, on))
+        assertTrue(BottomTiles.dimmed(BottomTiles.RANK, on))
+        assertEquals(listOf(BottomTiles.RANK), BottomTiles.lines(BottomTiles.RANK, on).map { it.key })
+        BottomTiles.press(BottomTiles.RANK, BottomTiles.RANK, 0, on) { }
+        assertTrue(HomeSettings.rankBadges)
+        assertEquals("On", BottomTiles.value(BottomTiles.RANK, on))
+        assertEquals(GameUiTiles.Badge.ON, BottomTiles.badge(BottomTiles.RANK, on))
+        BottomTiles.press(BottomTiles.RANK, BottomTiles.RANK, 1, on) { }
+        assertFalse(HomeSettings.rankBadges)
         // the badge: Top's eye on the On / Off tiles only
         assertTrue(BottomTiles.badge(BottomTiles.SWING, on) != null && BottomTiles.badge(BottomTiles.REST, on) == null)
     }
