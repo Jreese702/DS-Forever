@@ -116,7 +116,13 @@ class HomePlacesGoldenTest {
 
     private fun page(s: St): Page {
         noArt()
-        app.getSharedPreferences("home", 0).edit().clear().commit()
+        // HomeSettings, Settings and CastSettings keep the JVM's FIRST app's prefs (init only fills a null), so clearing this app's prefs
+        // alone kept what a test run earlier in the full suite wrote there (an ABXY location of Nintendo left by an earlier test moved
+        // the face pictures and changed the pixels' CRCs). Each one points at this app's prefs, cleared: today's defaults, whatever ran before.
+        for ((o, name) in listOf(HomeSettings to "home", Settings to "settings", CastSettings to "cast")) {
+            val sp = app.getSharedPreferences(name, 0).apply { edit().clear().commit() }
+            o.javaClass.getDeclaredField("prefs").apply { isAccessible = true }.set(null, sp)
+        }
         HomeSettings.init(app)
         Settings.init(app)
         // (movable Home: HomeSettings keeps the JVM's first prefs across Robolectric apps; the layout record back to Classic, no character,
