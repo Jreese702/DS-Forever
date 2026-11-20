@@ -7,6 +7,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.os.SystemClock
 import android.graphics.Path
 import android.graphics.RectF
 import android.util.Log
@@ -2181,9 +2182,55 @@ class HomeView(
         if (classPending && sidePx > 0f && t <= 0f) { classPending = false; classLayerShow(true) }
     }
 
+    // ================================================================ movable Home: the D-pad toast (SPEC section 6 "SYNC", final_05)
+
+    /** the add-on's `d` changed its Left / Right (a swap took): "D-pad < Map > Chat" on Home for 1.6 s, the kit's gold arrows */
+    private var toastAt = 0L
+    private var toastWords: List<String> = emptyList()
+    fun toolbarToast(dirs: Map<Int, String>) {
+        toastWords = ToolbarMirror.toastWords(dirs).map { Tr.t(it) }
+        toastAt = SystemClock.uptimeMillis()
+        invalidate()
+    }
+    private val pToast = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pToastEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
+    private fun drawToast(c: Canvas) {
+        if (toastWords.isEmpty()) return
+        val a = ToolbarMirror.toastAlpha(SystemClock.uptimeMillis() - toastAt)
+        if (a <= 0f) { toastWords = emptyList(); return }
+        pToast.textSize = 30f; UiKit.asBody(pToast); pToast.color = Theme.gold; pToast.alpha = (255 * a).toInt()
+        val arrow = 22f; val gap = 14f
+        val words = toastWords
+        val wsum = words.sumOf { pToast.measureText(it).toDouble() }.toFloat() + (words.size - 1) * (arrow + 2 * gap)
+        val h = 54f
+        val cx = width / 2f
+        val cy = (now[Part.BARS]?.bottom ?: 226f) - h / 2f - 6f
+        val box = RectF(cx - wsum / 2f - 28f, cy - h / 2f, cx + wsum / 2f + 28f, cy + h / 2f)
+        pToastEdge.color = Theme.gold; pToastEdge.alpha = (255 * a).toInt()
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.ink; alpha = (235 * a).toInt() }
+        c.drawRoundRect(box, h / 2f, h / 2f, fill)
+        c.drawRoundRect(box, h / 2f, h / 2f, pToastEdge)
+        var x = box.left + 28f
+        val base = cy - (pToast.ascent() + pToast.descent()) / 2f
+        for ((i, w) in words.withIndex()) {
+            if (i > 0) {
+                x += gap
+                UiKit.tex(if (i == 1) "move_arrow_left" else "move_arrow_right")?.let { b ->
+                    val bp = Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = (255 * a).toInt() }
+                    c.drawBitmap(b, null, RectF(x, cy - arrow / 2f, x + arrow, cy + arrow / 2f), bp)
+                }
+                x += arrow + gap
+            }
+            c.drawText(w, x, base, pToast)
+            x += pToast.measureText(w)
+        }
+        postInvalidateOnAnimation()
+    }
+
     override fun dispatchDraw(c: Canvas) {
         super.dispatchDraw(c)
         if (shown == null || typeWanted) return                          // f-trackpad-keyboard: the tool is a clean page
+        drawToast(c)
         // the zone band and the clock FADE with a move (the harmony pass; they used to vanish at a move's start and pop back at
         // its end), drawn where their part is now (and, while the pause menu slides, where the map / the band have gone)
         val zoneA = mix(overlayFrom.zone, overlayTo.zone) * pauseMap[2]

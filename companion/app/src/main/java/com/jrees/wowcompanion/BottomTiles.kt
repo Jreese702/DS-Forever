@@ -27,6 +27,10 @@ import kotlin.math.abs
  * and ONE write per press.
  */
 object BottomTiles {
+    /** MOVABLE HOME (SPEC section 3 way 2, final_11; the user's D4): the FIRST tile, the layout by name. Phase 1: its band picks a preset,
+     *  swaps the chat and the map, steps the chat's width, uses / saves the three device slots and copies it to every character (D5);
+     *  phase 2's A opens edit mode from here */
+    const val LAYOUT = "layout"
     const val REST = "rest"
     const val COMBAT = "combat"
     const val SWING = "swing"
@@ -45,7 +49,7 @@ object BottomTiles {
     data class Env(val dpad: PadMapModel.Dpad?, val who: String?)
 
     /** Home's 9 (critic C6: Tap-to-cast moved in, it lives on Home; 2026-11-20: Spell rank badges last) and Map & chat's 3 */
-    val HOME_TILES = listOf(REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR, RANK)
+    val HOME_TILES = listOf(LAYOUT, REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR, RANK)
     val MAP_TILES = listOf(ZOOM, WORLD, INPUT)
 
     /** the group's fixed tile list. Until the core lands the Bottom screen's two groups (Home, Map & chat) the old four are mapped: Home
@@ -73,7 +77,7 @@ object BottomTiles {
     }
 
     /** a tile's name (display words, Tr.t'd by the drawer) */
-    val NAMES: Map<String, String> = mapOf(REST to "Rest controller", COMBAT to "Combat layout", SWING to "Swing timer",
+    val NAMES: Map<String, String> = mapOf(LAYOUT to "Home layout", REST to "Rest controller", COMBAT to "Combat layout", SWING to "Swing timer",
         QUEST to "Focused quest", CLOCK to "Clock band", TOOLBAR to "DS WoW toolbar", TALK to "Hold to talk", CASTBAR to "Tap-to-cast bar",
         RANK to "Spell rank badges", ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
 
@@ -98,11 +102,12 @@ object BottomTiles {
 
     /** [id]'s band: its choices, then its lines that can act now */
     fun lines(id: String, env: Env): List<Line> = when (id) {
+        LAYOUT -> layoutLines()
         REST -> listOf(Line(REST, null, listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest)))
         COMBAT -> listOf(Line(COMBAT, null, listOf("Grow", "Same size"), if (HomeSettings.combatGrow) 0 else 1))
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))
         RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
-        QUEST -> listOf(Line(QUEST, null, listOf("Above Chat", "Above Minimap"), if (HomeSettings.questOverMap) 1 else 0))
+        QUEST -> listOf(Line(QUEST, null, CARD_WORDS, CARD_DOCKS.indexOf(HomeSettings.layout.card)))
         CLOCK -> CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
         TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null))
         TALK -> {
@@ -113,9 +118,10 @@ object BottomTiles {
             out
         }
         CASTBAR -> {
-            val sides = CastStripModel.Side.values()
-            val out = arrayListOf(Line(CASTBAR, null, sides.map { it.label }, sides.indexOf(HomeSettings.castBarSide)))
+            // movable Home: the place in words that follow the widgets (SPEC P4 "meaning follows the widget"), and its slot size
+            val out = arrayListOf(Line(CASTBAR, null, CAST_WORDS, CAST_DOCKS.indexOf(HomeLayoutRules.shown(HomeSettings.layout).cast)))
             if (HomeSettings.castBarSide != CastStripModel.Side.OFF) {
+                out += Line("castsize", "Size", SIZE_WORDS, HomeLayout.SlotSize.values().indexOf(HomeSettings.layout.castSize))
                 val m = CastStripModel.Combat.values()
                 // cb14 (D5b): the same setting as the Controller room's In combat > "Show tap-to-cast" check box (D4), its mirror here
                 out += Line("castcombat", "Show in combat", m.map { it.label }, m.indexOf(HomeSettings.castBarCombat))
@@ -142,11 +148,12 @@ object BottomTiles {
         COMBAT -> if (HomeSettings.combatGrow) "Grow" else "Same size"
         SWING -> if (HomeSettings.swingTimer) "On" else "Off"
         RANK -> if (HomeSettings.rankBadges) "On" else "Off"
-        QUEST -> if (HomeSettings.questOverMap) "Above Minimap" else "Above Chat"
+        LAYOUT -> HomeLayoutStore.nameOf(HomeSettings.layout)
+        QUEST -> CARD_WORDS[CARD_DOCKS.indexOf(HomeSettings.layout.card).coerceAtLeast(0)]
         CLOCK -> CLOCK_LINES.count { clockOn(it.first) }.let { n -> if (n == CLOCK_LINES.size) "On" else if (n == 0) "Off" else "$n / ${CLOCK_LINES.size}" }
         TOOLBAR -> if (env.dpad?.want == true) "On" else "Off"
         TALK -> if (HomeSettings.holdTalk(env.who)) "On" else "Off"
-        CASTBAR -> HomeSettings.castBarSide.label
+        CASTBAR -> CAST_WORDS[CAST_DOCKS.indexOf(HomeLayoutRules.shown(HomeSettings.layout).cast).coerceAtLeast(0)]
         ZOOM -> "${Settings.minimapYd} · ${Settings.minimapIndoorYd} yd"
         WORLD -> if (Settings.worldMapFog == "all") "Show all" else "Explored only"
         INPUT -> if (Settings.chatDefaultInput == "quick") "Quick chat" else "Keyboard"
@@ -170,17 +177,57 @@ object BottomTiles {
         else -> false
     }
 
+    // ---------------------------------------------------------------- movable Home: the layout's words
+
+    /** the card's docks in the tile's order, and their words (they follow the widgets: "On map", never "Right") */
+    val CARD_DOCKS = listOf(HomeLayout.CardDock.ON_MAP, HomeLayout.CardDock.ABOVE_CHAT, HomeLayout.CardDock.OFF)
+    val CARD_WORDS = listOf("On map", "Above chat", "Off")
+    /** the bar's places offered in this build (Split is phase 3's) and their words */
+    val CAST_DOCKS = listOf(HomeLayout.CastDock.OFF, HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS)
+    val CAST_WORDS = listOf("Off", "Under chat", "Under map", "Across")
+    val SIZE_WORDS = listOf("S", "M", "L")
+
+    /** the Home layout tile's band: the presets, the chat's side and width, the three slots (Mine: use; Save here), All characters */
+    fun layoutLines(): List<Line> {
+        val l = HomeSettings.layout
+        val name = HomePresets.nameOf(l)
+        val slots = HomeLayoutStore.slots()
+        return listOf(
+            Line(LAYOUT, null, HomePresets.OFFERED.map { it.id }, HomePresets.OFFERED.indexOfFirst { it.id == name }),
+            Line("chatside", "Chat", listOf("Left", "Right"), HomeLayout.Side.values().indexOf(l.chatSide)),
+            Line("chatwidth", "Width", listOf("1/3", "1/2", "2/3"), HomeLayout.Share.values().indexOf(l.chatShare)),
+            Line("mine", "Mine", (1..HomePresets.SLOTS).map { "$it" }, slots.indexOfFirst { it != null && it.samePlace(l) },
+                enabled = slots.any { it != null }),
+            Line("savehere", "Save here", (1..HomePresets.SLOTS).map { "$it" }, -1),
+            Line("allchars", null, listOf("All characters"), -1),
+        )
+    }
+
+    /** a preset from the tile (or phase 2's Layouts sheet): its fields on the active record, and the card's fold it asks for */
+    fun usePreset(p: HomePresets.Preset) {
+        if (!p.available) return
+        HomeLayoutStore.set(p.apply(HomeSettings.layout))
+        p.folded?.let { HomeSettings.questMin = it }
+    }
+
     /** the band's picture moves (the open band only, up to 30 fps) */
     fun animated(id: String): Boolean = id == COMBAT || id == SWING || id == TALK || id == CASTBAR
 
     /** button [k] of line [key] of tile [id]: ONE player-pressed write, the rows' own setters; [onDpad] = the DS WoW toolbar's switch */
     fun press(id: String, key: String, k: Int, env: Env, onDpad: (Boolean) -> Unit) {
         when (key) {
+            LAYOUT -> HomePresets.OFFERED.getOrNull(k)?.let { usePreset(it) }
+            "chatside" -> HomeLayoutStore.update { it.copy(chatSide = HomeLayout.Side.values()[k]) }
+            "chatwidth" -> HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.values()[k]) }
+            "mine" -> HomeLayoutStore.slots().getOrNull(k)?.let { HomeLayoutStore.set(it) }
+            "savehere" -> HomeLayoutStore.saveSlot(k, HomeSettings.layout)
+            "allchars" -> HomeLayoutStore.set(HomeSettings.layout, all = true)
+            "castsize" -> HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.values()[k]) }
             REST -> HomeSettings.rest = HomeRest.values()[k]
             COMBAT -> HomeSettings.combatGrow = k == 0
             SWING -> HomeSettings.swingTimer = k == 0
             RANK -> HomeSettings.rankBadges = k == 0
-            QUEST -> HomeSettings.questOverMap = k == 1
+            QUEST -> CARD_DOCKS.getOrNull(k)?.let { d -> HomeLayoutStore.update { it.copy(card = d) } }
             "hearth" -> HomeSettings.clockHearth = k == 0
             "teleport" -> HomeSettings.clockTeleport = k == 0
             "gold" -> HomeSettings.clockGold = k == 0
@@ -189,7 +236,7 @@ object BottomTiles {
             TOOLBAR -> env.dpad?.let { d -> if (d.colOn != null) { val on = k == 0; if ((d.want == true) != on) onDpad(on) } }
             TALK -> env.who?.let { HomeSettings.setHoldTalk(it, k == 0) }
             "release" -> env.who?.let { HomeSettings.setTalkSendNow(it, k == 1) }
-            CASTBAR -> HomeSettings.castBarSide = CastStripModel.Side.values()[k]
+            CASTBAR -> CAST_DOCKS.getOrNull(k)?.let { HomeSettings.castDock = it }
             "castcombat" -> HomeSettings.castBarCombat = CastStripModel.Combat.values()[k]
             "out" -> Settings.minimapYd = Settings.stepYd(Settings.minimapYd, if (k == 0) -1 else 1)
             "in" -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, if (k == 0) -1 else 1)

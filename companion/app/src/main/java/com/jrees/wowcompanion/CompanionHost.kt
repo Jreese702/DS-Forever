@@ -560,6 +560,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // hold to talk (HoldTalk): the toolbar's microphone follows its switch and the last used chat's colour
         chatView.onTalkChannel = { if (talkPanelUp()) talkTabs.refresh(chatView.talkTabs()); talkDraw() }
         HomeSettings.onChange { ui.post { talkDraw() } }
+        // movable Home: a new layout (a preset, the swap, another character's) tells the add-on its DS toolbar sides (out of combat)
+        HomeLayoutStore.onChange { ui.post { lastDpad?.let { mirrorCheck(it) } } }
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
@@ -2012,14 +2014,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val TALK_TICK_MS = 100L
 
     /** hold to talk is on for this character and D-pad Left is the toolbar's Chat right now (the router's rule) */
-    private fun talkOn(): Boolean = HomeSettings.holdTalk(GameUi.character) &&
-        HoldTalk.leftIsChat(lastPadMap, lastDpad?.want == true && castView.roomBarOn, lastDpad?.dirs, homeView.dpadFight())
+    private fun talkOn(): Boolean = HomeSettings.holdTalk(GameUi.character) && talkKey() != null
+    /** movable Home: the bare D-pad key that is the toolbar's Chat now (Left, or Right after a swap; HoldTalk.chatKey) */
+    private fun talkKey(): String? =
+        HoldTalk.chatKey(lastPadMap, lastDpad?.want == true && castView.roomBarOn, lastDpad?.dirs, homeView.dpadFight())
 
-    /** D-pad Left down on the app's own reader: a hold may start (the gate is the early bar's, b98 / p35) */
-    private fun talkDown(): Boolean {
+    /** the toolbar's Chat key down on the app's own reader: a hold may start (the gate is the early bar's, b98 / p35) */
+    private fun talkDown(key: String = HoldTalk.LEFT_KEY): Boolean {
         if (!talkOn() || room != Room.HOME || capHolder.isNotEmpty() || DirectPad.sideHeld()) return false
         if (talkCovered()) return false
-        if (!holdTalk.down(SystemClock.uptimeMillis(), HomeSettings.talkSendNow(GameUi.character))) return false
+        if (!holdTalk.down(SystemClock.uptimeMillis(), HomeSettings.talkSendNow(GameUi.character), key = key)) return false
         talkNoVoice = false
         ui.postDelayed(talkTick, HoldTalk.HOLD_MS)
         talkDraw()
@@ -2322,7 +2326,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** b98: a press NO registered room takes (DirectPad.unclaimed); the hold to talk's pending press passes its other keys here too */
     private fun padUnclaimed(k: String, down: Boolean) {
         // hold to talk: D-pad Left on Home where it is the toolbar's Chat (a hold's note keeps the release too)
-        if (k == HoldTalk.LEFT_KEY && down) talkDown()
+        if (down && (k == HoldTalk.LEFT_KEY || k == HoldTalk.RIGHT_KEY) && k == talkKey()) talkDown(k)
         if (!down && k == holdTalk.src) talkUp()                            // Left's, or push to talk's own button (hub58)
         // Bags' press feedback (the user: "all other context buttons should have similar feedback"): A / B / X / Y push in the
         // drawn button at once; display only (Bags ignores other keys, and keys while it does not hold the controller)
@@ -3354,6 +3358,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences"); hold to talk's last used chat too (TalkKeep)
                     if (current && !d.name.isNullOrEmpty()) { val who = "${d.name}-${d.realm ?: ""}"; ui.post { ChatFilter.character(who); TalkKeep.character(who) } }
                     lastDpad = d; settings.homeSection.dpadChanged()
+                    // MOVABLE HOME (SPEC section 9, D5): the character's own layout; the DS toolbar's sides follow it (ToolbarMirror)
+                    if (current && !d.name.isNullOrEmpty()) HomeLayoutStore.character("${d.name}-${d.realm ?: ""}")
+                    if (current) { mirrorCurrent = true; mirrorCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
                     if (current && d.want != startToldWant) startTell(d.want == true)
@@ -4772,6 +4779,42 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * run (the user answered in the other game); only a character never asked anywhere sees the prompt. Never over a fight, the
      * setup's prompt or the start screen.
      */
+    // ---------------------------------------------------------------- movable Home: the DS toolbar's sides follow the layout
+
+    /** a current padmap came this run (a replayed one never sends) */
+    private var mirrorCurrent = false
+    /** the bit the add-on last confirmed (null = none yet this run: no toast for the first word) */
+    private var mirrorSeen: Int? = null
+    private var mirrorSentAt: Long? = null
+    private var mirrorSentWant: Int? = null
+    /** sends of the current wish without an answer: the timer tries [MIRROR_TRIES] times, then only a new padmap tries again */
+    private var mirrorTries = 0
+    private val MIRROR_TRIES = 3
+    private val mirrorAgain = Runnable { lastDpad?.let { mirrorCheck(it) } }
+
+    /** SPEC section 6 "SYNC": the layout's mirror bit vs the add-on's `d`; out of combat a pending wish is tapped (padtab 39, 38, 37 then 9 /
+     *  10) and tried again every ToolbarMirror.RESEND_MS until `d` says it; a fight waits. A new `d` shows the D-pad toast on Home */
+    private fun mirrorCheck(d: PadMapModel.Dpad) {
+        val bit = ToolbarMirror.bitOf(d.dirs)
+        if (ToolbarMirror.toastFor(mirrorSeen, bit)) homeView.toolbarToast(d.dirs)
+        if (bit != null) mirrorSeen = bit
+        if (!mirrorCurrent) return
+        val want = HomeLayoutSolver.mirrorBit(HomeSettings.layout)
+        if (mirrorSentWant != want) { mirrorSentAt = null; mirrorTries = 0 }
+        val now = SystemClock.elapsedRealtime()
+        ui.removeCallbacks(mirrorAgain)
+        when (val a = ToolbarMirror.decide(want, d.dirs, homeView.inFight(), mirrorSentAt?.let { now - it })) {
+            ToolbarMirror.Act.Matched -> { mirrorSentAt = null; mirrorSentWant = null; mirrorTries = 0 }
+            ToolbarMirror.Act.Wait -> if (!d.dirs.isNullOrEmpty()) ui.postDelayed(mirrorAgain, ToolbarMirror.RESEND_MS)
+            is ToolbarMirror.Act.Send -> {
+                mirrorSentAt = now; mirrorSentWant = want
+                val sent = padTabTap(ToolbarMirror.cells(a.on))
+                Log.i(HomeView.TAG, "toolbar mirror: ${if (a.on) "on (Left = map)" else "off (Left = chat)"} ${if (sent) "sent" else "not sent"}")
+                if (++mirrorTries < MIRROR_TRIES) ui.postDelayed(mirrorAgain, ToolbarMirror.RESEND_MS + 200L)
+            }
+        }
+    }
+
     private fun dpadAsk(d: PadMapModel.Dpad) {
         val key = dpadKey(d) ?: return
         if (d.colOn == null || d.colOff == null) return
@@ -4808,7 +4851,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!owed) prefs.edit().putBoolean("owed_$key", true).apply()
         // b133 (the user: "The actual text prompt for the dpad controls needs to be updated"; the user's pick "Pairs, 2 lines"): today's
         // DS WoW toolbar - the plain D-pad left Chat, right Map, up the radial, down the Home bar, in fights too
-        val b = arrayListOf("Left: Chat     Right: Map", "Up: the radial     Down: the Home bar", "Works in fights too")
+        val b = arrayListOf(ToolbarMirror.promptLine(d.dirs), "Up: the radial     Down: the Home bar", "Works in fights too")
         Log.i(HomeView.TAG, "dpad: ask $key")
         val show = show@{
             // issue #136: answered meanwhile (the Settings row): no default ON tap, no prompt

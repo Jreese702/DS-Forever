@@ -122,8 +122,9 @@ class CastBarCombatTest {
         val apply = h.substringAfter("private fun apply(s: HomeScreen, animate: Boolean) {").substringBefore("\n    private fun big(")
         assertTrue(apply.contains("castStripGate()")); assertFalse(apply.contains("castStripFight()"))
         assertTrue(h.contains("fun fightShown(): Boolean = flow.takeover || grow.fighting(System.currentTimeMillis())"))
-        assertTrue(h.contains("if (s.full != null && !s.takeover) { laidSide = CastStripModel.Side.OFF; return base }"))
-        assertTrue(h.contains("return withStrip(withParty(base, s, w), w, h)"))
+        // movable Home: the solver lays the bar (HomeLayoutSolver: a module full screen outside the takeover has none, the bar in the takeover)
+        assertTrue(h.contains("if (full) laidSide = CastStripModel.Side.OFF"))
+        assertTrue(h.contains("castHidden = !full && castHiddenNow()"))
         // checked on every tick (a fight's start / end), every settings change and (cb15) Party mode's on / off; the gate on every apply
         assertEquals(3, Regex("""castStripFight\(\)""").findAll(h).count() - 1)
     }

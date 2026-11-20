@@ -105,6 +105,9 @@ class HomePlacesGoldenTest {
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app)
         Settings.init(app)
+        // (movable Home: HomeSettings keeps the JVM's first prefs across Robolectric apps; the layout record back to Classic, no character,
+        // before today's settings are set through their old setters - a test run earlier may have left another layout there)
+        HomeLayoutStore.character(null); HomeLayoutStore.set(HomeLayout())
         HomeSettings.rest = s.rest
         HomeSettings.combatGrow = s.fight != Fight.SAME
         HomeSettings.castBarSide = s.side

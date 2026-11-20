@@ -13,7 +13,8 @@ package com.jrees.wowcompanion
  *                                 smartBuffs, partyBy, radialPins, sradials (+ the legacy sradial it is rebuilt from), castBar,
  *                                 castBarFight (cb14: the tap-to-cast bar's in-combat layer, next to castBar), castBarParty (cb15: its
  *                                 Party mode layer, the user's Option C, 2026-11-20)
- *                        LAYOUTS (per char) dpad (the DS WoW toolbar; back to its default ON, never "not asked": the prompt stays answered)
+ *                        LAYOUTS (per char) dpad (the DS WoW toolbar; back to its default ON, never "not asked": the prompt stays answered),
+ *                                 rbm (movable Home, PadMap m178: the toolbar's mirror bit; a reset = Left is the chat again, mirror 0)
  *                        NEVER   formSlotsBy, smartModel, cdLearn, petSpellBy, petDeadBy (learned / remembered game facts); dpadZL,
  *                                 srGone, srBy, srMacros, genUse, fix181, keyProbe, aclOurs, aclReset1 (one-time clean-ups / probes: a
  *                                 reset would run them again); faceSwap, faceCd, combatFace (crash recovery / learned, never synced);
@@ -44,8 +45,9 @@ package com.jrees.wowcompanion
  *                        swingTimer, castBarSide, castStrip, castBarCombat, castBarPartyShow (Bar in Party mode), clockHearth,
  *                        clockTeleport, clockGold, clockBags, clockAmmo,
  *                        and the wheels' open / pick: radialTap, radialPickA, spellTap, spellPickA, classTapL, classPickAL, classTapR,
- *                        classPickAR, pauseTap, pausePickA   SKILLS (per char) smartPet.<who>, petFollowB.<who> (B: pet recall)
- *               NEVER    castBarAsked, ruling.hide.2026-09-28 (asked once), holdTalk.<who>, talkSendNow.<who> (chat: not named in the
+ *                        classPickAR, pauseTap, pausePickA; movable Home (SPEC section 9): homeLayoutDefault, homeLayoutSlots, and per
+ *                        char homeLayout.<who> (a reset = Classic)   SKILLS (per char) smartPet.<who>, petFollowB.<who> (B: pet recall)
+ *               NEVER    castBarAsked, ruling.hide.2026-09-28 (asked once), homeLayoutMigrated (the one-time migration mark), holdTalk.<who>, talkSendNow.<who> (chat: not named in the
  *                        rulings - left, a decision)
  *  dpad         LAYOUTS (per char) choice_<who> (set ON, pending until the game says it)   NEVER pend_/owed_ (the prompt's own state)
  *  radial_meta  SKILLS  (per char) all[<who>] (the spell radials' names, icons, tap / hold)
@@ -83,6 +85,7 @@ object ResetPlan {
         *listOf("faceBy", "fightBy", "formFightBy", "cmdBy", "binds", "stickBy", "attackBy", "ccOff", "lowPickBy", "smartOn", "smartBuffs",
             "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight", "castBarParty").map { SvKey(SPELLS, it, Kind.SKILLS, true) }.toTypedArray(),
         SvKey(SPELLS, "dpad", Kind.LAYOUTS, true, default = true),
+        SvKey(SPELLS, "rbm", Kind.LAYOUTS, true),                                   // movable Home: the DS toolbar's mirror bit (none = off)
         *listOf("lay", "hubSw", "hubLy", "meters", "prdY", "prdS", "prdW").map { SvKey(DB, it, Kind.LAYOUTS, true) }.toTypedArray(),
         SvKey(DB, "bagBinds", Kind.SKILLS, true),
         *listOf("compass", "hideTips", "aggroRings", "lootTop").map { SvKey(DB, it, Kind.SETTINGS, false) }.toTypedArray(),
@@ -139,9 +142,11 @@ object ResetPlan {
         exact("home", Kind.LAYOUTS, "rest", "questMin", "questOverMap", "combatGrow", "swingTimer", "castBarSide", "castStrip", "castBarCombat",
             "castBarPartyShow",
             "clockHearth", "clockTeleport", "clockGold", "clockBags", "clockAmmo", "radialTap", "radialPickA", "spellTap", "spellPickA",
-            "classTapL", "classPickAL", "classTapR", "classPickAR", "pauseTap", "pausePickA"),
+            "classTapL", "classPickAL", "classTapR", "classPickAR", "pauseTap", "pausePickA",
+            HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS),
+        char("home", Kind.LAYOUTS, HomeLayoutStore.KEY_PREFIX),
         char("home", Kind.SKILLS, "smartPet.", "petFollowB."),
-        exact("home", null, "castBarAsked", "ruling.hide.2026-09-28"),
+        exact("home", null, "castBarAsked", "ruling.hide.2026-09-28", HomeLayoutStore.KEY_MIGRATED),
         char("home", null, "holdTalk.", "talkSendNow."),
         char("dpad", Kind.LAYOUTS, "choice_"),
         char("dpad", null, "pend_choice_", "owed_choice_"),

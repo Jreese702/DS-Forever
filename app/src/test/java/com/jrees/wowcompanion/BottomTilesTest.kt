@@ -116,7 +116,7 @@ class BottomTilesTest {
     @Test fun theModel() {
         HomeSettings.init(app); Settings.init(app)
         val none = BottomTiles.Env(null, "Sample-Realm")
-        assertEquals(listOf(BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR,
+        assertEquals(listOf(BottomTiles.LAYOUT, BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR,
             BottomTiles.RANK), BottomTiles.slots(SettingsTabs.Group.HOME, none))
         var want: Boolean? = null
         val d = { on: Boolean -> PadMapModel.Dpad(on, emptyMap(), emptyList(), emptyList(), on, 1, 2, null, null) }
@@ -142,7 +142,7 @@ class BottomTilesTest {
         assertEquals(1, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
         BottomTiles.press(BottomTiles.CASTBAR, BottomTiles.CASTBAR, 3, on) { }
         assertEquals(CastStripModel.Side.BOTH, HomeSettings.castBarSide)
-        assertEquals(2, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
+        assertEquals("the place, its size (movable Home), Show in combat", 3, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
         HomeSettings.castBarSide = CastStripModel.Side.OFF
         // the clock band: five On / Off lines with their icons
         assertEquals(5, BottomTiles.lines(BottomTiles.CLOCK, on).size)

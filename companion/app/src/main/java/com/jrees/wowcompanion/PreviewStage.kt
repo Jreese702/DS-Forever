@@ -108,7 +108,9 @@ object PreviewStage {
             c.scale(k, k)
             t.home.draw(c)
             m?.let { map ->
-                val chat = RectF(W - map.right, map.top, W - map.left, map.bottom)
+                // movable Home: the chat's column is wherever the layout put it (its pane's box), else the map's mirror (today's)
+                val pane = t.home.previewBoxes()["CHAT"]
+                val chat = if (pane != null) RectF(pane.left, map.top, pane.right, map.bottom) else RectF(W - map.right, map.top, W - map.left, map.bottom)
                 mapOf("map" to RectF(map), "chat" to chat, "controller" to RectF(0f, 0f, W.toFloat(), map.top))
             }
         }

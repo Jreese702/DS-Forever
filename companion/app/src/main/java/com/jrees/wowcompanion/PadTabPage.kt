@@ -237,6 +237,8 @@ class PadTabPage(
     // D-pad stays the player's fight spells, which win in a fight as PadMap m44 always did; an empty one does the toolbar's action); the
     // player's own buttons stay underneath and come back when it is off. Nothing goes on them meanwhile (PadTabCtl p34 / PadMap refuse it).
     private class Tool(val word: String, val art: String?, val what: String, val wheel: Boolean = false)
+    /** [tools]' words in the router's own language (PadMap's `d`), in [tools]' order */
+    private val TOOL_WORDS = listOf("chat", "radial", "map", "home")
     private val tools = listOf(
         Tool("Chat", "ricon_chat", "Opens the Chat room."),
         Tool("Radial", null, "Opens the radial of the consumables in your bags.", wheel = true),   // the toolbar's own mini wheel
@@ -246,7 +248,8 @@ class PadTabPage(
     private fun toolbarOn(): Boolean = toolbarShown?.invoke() ?: (map?.dpad?.want == true)
     /** the toolbar's place on button [p] of set [s] in the tab on show, or null (the player's own button) */
     private fun toolAt(s: Int, p: Int): Tool? =
-        if (s == 1 && p in 1..4 && cv() == "normal" && toolbarOn() && (!castBar() || drawingCtl)) tools[p - 1] else null      // p36: never In combat's (its own spells)
+        if (s == 1 && p in 1..4 && cv() == "normal" && toolbarOn() && (!castBar() || drawingCtl))     // p36: never In combat's (its own spells)
+            tools[TOOL_WORDS.indexOf(toolWord(map?.dpad?.dirs, p)).takeIf { it >= 0 } ?: (p - 1)] else null
     private fun toolArt(t: Tool) = t.art?.let { UiKit.tex(it) }
     private fun drawTool(c: Canvas, t: Tool, l: Float, tp: Float, size: Float) {
         UiKit.spell(c, toolArt(t), l, tp, size, UiKit.Spell.KNOWN)
@@ -2635,3 +2638,7 @@ class PadTabPage(
         private const val FIGHT_ROW_Y = 374f
     }
 }
+
+/** MOVABLE HOME (SPEC section 6 item 8): what the DS WoW toolbar does on the bare D-pad position [p] (1 Left .. 4 Down), by the router's
+ *  WORD (`dirs`, PadMap's `d`: after a swap Left is "map"), the router's default when it said nothing. Pure (PadTabPageToolAtTest) */
+internal fun toolWord(dirs: Map<Int, String>?, p: Int): String? = dirs?.get(p) ?: HoldTalk.DEFAULT_DIRS[p]

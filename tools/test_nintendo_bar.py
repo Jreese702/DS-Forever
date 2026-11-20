@@ -293,7 +293,7 @@ PADMAP, DPAD_ON, CC_ON, FORMS, FORMFIGHT = {}, true, true, {}, {}
 function PADMAP_ON()
     WowCompanion.padMap = {
         slotAt = function(page, set, pos) local s = PADMAP[set]; local v = s and s[pos]; if v then return v end; return { kind = "spell" } end,
-        dpadState = function() return { on = DPAD_ON } end,
+        dpadState = function() return { on = DPAD_ON, d = DPAD_D } end,
         combatOn = function() return CC_ON end,
         forms = function() return FORMS end,
         formFight = function(form, pos) local t = FORMFIGHT[form]; return t and t[pos] or nil end,
@@ -441,6 +441,15 @@ def main():
     s = shown(L)
     chk("plain layer: the DS toolbar on the bare D-pad (chat / radial / map / Home) out of a fight",
         [x["icon"] for x in s[:4]] == [134332, 134829, 134269, "tex:Interface\\AddOns\\WowCompanion\\Media\\ds_forever_icon"], [x["icon"] for x in s[:4]])
+    # nbar6 (PadMap m178, movable Home's swap): the icons by the router's WORD - after a swap Left is the map's, Right the chat's
+    G.DPAD_D = L.table_from({"1": "map", "2": "radial", "3": "chat", "4": "home"})
+    WC.nbar.refresh()
+    s = shown(L)
+    chk("nbar6: the toolbar's icons follow PadMap's d (Left map, Right chat after a swap)",
+        [x["icon"] for x in s[:4]] == [134269, 134829, 134332, "tex:Interface\\AddOns\\WowCompanion\\Media\\ds_forever_icon"], [x["icon"] for x in s[:4]])
+    G.DPAD_D = None
+    WC.nbar.refresh()
+    s = shown(L)
     chk("plain layer: the faces the game's fixed four out of a fight (Interact / Inspect - its live crosshair with a target - / Back / Jump)",
         [x["icon"] for x in s[4:]] == [136243, "atlas:crosshair_inspect_32", 136245, 136246], [x["icon"] for x in s[4:]])
     chk("glyphs (nbar2): the Nintendo layout (swap): D-pad arrows, each face its own letter (PAD3 X / PAD4 Y / PAD2 B / PAD1 A, m119)",

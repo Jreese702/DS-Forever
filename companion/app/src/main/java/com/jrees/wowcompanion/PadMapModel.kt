@@ -717,6 +717,12 @@ object PadMapModel {
     fun macroCells(index: Int): List<Pair<String, Int>> = page3((index / 40).coerceIn(0, 3)) + (ROW_EXTRA to index % 40)
     /** p58: Extra's category [k] (1-based, ChooserTabs.CATS) folded / opened by touch (codes 4-8) */
     fun foldCells(k: Int): List<Pair<String, Int>> = page3(3 + k.coerceIn(1, 5))
+    /** movable Home (Book b74): the DS toolbar's mirror bit for this character, page-3 codes 9 (off: Left = chat) / 10 (on: Left = map) */
+    const val P3_MIRROR_OFF = 9
+    const val P3_MIRROR_ON = 10
+    /** every page-3 code in use (b73's macro pages 0-3 and Extra's folds 4-8, b74's mirror 9-10): PadTabCodesTest keeps them apart */
+    val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8, "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON)
+    fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     /** the tab's index (1-4) by its name */
     fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; "cbfight" -> 7; "pbar" -> 8; else -> 1 }
     /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode; p53: the 6th, the Cast bar, opened by padtab 39 then 29) */

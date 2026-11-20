@@ -170,7 +170,8 @@ class HoldTalkTest {
         // the hold's presses come first, before the Chat room's own registration
         assertTrue(h.indexOf("DirectPad.Reg(\"talk\"") in 0 until h.indexOf("DirectPad.Reg(\"chat\""))
         // the gate: the toolbar's Chat under the router's fight rule
-        assertTrue(h.contains("HoldTalk.leftIsChat(lastPadMap, lastDpad?.want == true && castView.roomBarOn, lastDpad?.dirs, homeView.dpadFight())"))
+        // movable Home: the toolbar's Chat key (Left, or Right after a swap) by the same rule (HoldTalk.chatKey)
+        assertTrue(h.contains("HoldTalk.chatKey(lastPadMap, lastDpad?.want == true && castView.roomBarOn, lastDpad?.dirs, homeView.dpadFight())"))
         // every send through ChatView's path
         assertTrue(h.contains("chatView.talkSend(holdTalk.words, talkTabs.now()"))
         assertFalse("no game key from the hold", Regex("GameInput\\.key\\([^)]*talk").containsMatchIn(h))

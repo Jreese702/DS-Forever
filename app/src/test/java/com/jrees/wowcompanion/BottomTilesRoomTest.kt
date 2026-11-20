@@ -139,11 +139,11 @@ class BottomTilesRoomTest {
             assertEquals("$g not shown", View.GONE, r.groupBoxes.single { it.group == g }.box.visibility)
         // five columns of Top's 232 x 184 tiles on the 1240 px page
         val b = tileBoxes(r)
-        assertEquals(12, b.size)
+        assertEquals(13, b.size)                                             // movable Home: Home layout first
         for (t in b.values) { assertEquals(GameUiTiles.TILE_W, t.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, t.height(), 0.01f) }
-        assertEquals(16f, b.getValue(BottomTiles.REST).left, 0.5f)
-        assertEquals(W - 16f, b.getValue(BottomTiles.CLOCK).right, 0.5f)
-        assertEquals(b.getValue(BottomTiles.REST).left, b.getValue(BottomTiles.TOOLBAR).left, 0.01f)
+        assertEquals(16f, b.getValue(BottomTiles.LAYOUT).left, 0.5f)
+        assertEquals(W - 16f, b.getValue(BottomTiles.QUEST).right, 0.5f)
+        assertEquals(b.getValue(BottomTiles.LAYOUT).left, b.getValue(BottomTiles.CLOCK).left, 0.01f)
         // the toolbar off: Hold to talk is not drawn (it cannot act), the Tap-to-cast tile takes its place
         toolbarWant = false; r.refreshGroups(); lay(r)
         assertEquals(BottomTiles.HOME_TILES - BottomTiles.TALK, (home.parts.single() as BottomTilesView).tileIds())
@@ -159,13 +159,15 @@ class BottomTilesRoomTest {
         assertTrue(r.pad.onTabRow)
         press(r, "PADDDOWN")
         val boxes = tileBoxes(r)
-        val tile = boxes.getValue(BottomTiles.REST)
+        var tile = boxes.getValue(BottomTiles.LAYOUT)                   // movable Home (D4): Home layout is the first tile
         // (pick 5: no heading stops - the first stop under the tab row is a tile)
         repeat(4) { if (r.pad.focusBox() != tile) press(r, "PADDLEFT") }
         assertEquals("the first tile: top-left", tile, r.pad.focusBox())
         press(r, "PADDRIGHT")
-        assertEquals(boxes.getValue(BottomTiles.COMBAT), r.pad.focusBox())
-        press(r, "PADDLEFT")
+        assertEquals(boxes.getValue(BottomTiles.REST), r.pad.focusBox())
+        val first0 = tile
+        tile = boxes.getValue(BottomTiles.REST)                          // the Rest controller tile's band from here
+        assertTrue(first0.left < tile.left)
         HomeSettings.rest = HomeRest.DIAMONDS
         press(r, "PAD1")
         assertEquals(BottomTiles.REST, openTile(r))
@@ -197,13 +199,13 @@ class BottomTilesRoomTest {
         val p = partOf(r, BottomTiles.CASTBAR)
         assertEquals(BottomTiles.CASTBAR, p.openTile)
         var buttons = p.focusTargets().drop(p.tileIds().size)
-        assertEquals("Off / Left / Right / Both, no In combat while Off", 4, buttons.size)
+        assertEquals("Off / Under chat / Under map / Across, no In combat while Off", 4, buttons.size)
         for (b in buttons) assertTrue(b.height() >= 110f)
         tap(p, buttons[2].centerX(), buttons[2].centerY()); lay(r)
         assertEquals(CastStripModel.Side.RIGHT, HomeSettings.castBarSide)
         buttons = p.focusTargets().drop(p.tileIds().size)
-        assertEquals("In combat Hide / Stay now", 6, buttons.size)
-        tap(p, buttons[5].centerX(), buttons[5].centerY()); lay(r)
+        assertEquals("Size S / M / L and In combat Hide / Stay now", 9, buttons.size)
+        tap(p, buttons[8].centerX(), buttons[8].centerY()); lay(r)
         assertEquals(CastStripModel.Combat.STAY, HomeSettings.castBarCombat)
         HomeSettings.castBarCombat = CastStripModel.Combat.HIDE
         // a tap on the open tile closes it; another tile's tap moves the one band

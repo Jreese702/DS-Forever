@@ -215,14 +215,35 @@ class HoldTalk {
          * else Left is Chat while the DS WoW toolbar is on ([toolbar]) with Chat on Left ([dirs]: the router's own word, none = its
          * default), or the DS Chat command is on the bare button.
          */
-        fun leftIsChat(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean): Boolean {
-            val f = if (fight && map != null) HomeFightFace.dpadFight(map, LEFT) else null
-            if (f != null) return f.layer == "command" && f.key == CHAT_KEY
-            if (toolbar) return (dirs?.get(LEFT) ?: "chat") == "chat"
-            return map?.let { PadMapModel.slot(it, 1, LEFT)?.key == CHAT_KEY } == true
+        fun leftIsChat(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean): Boolean =
+            isChat(map, toolbar, dirs, fight, LEFT)
+
+        /**
+         * MOVABLE HOME (SPEC section 6 item 7): the toolbar's Chat is on the side the chat's column is (the add-on's mirror bit makes
+         * `dirs` say so): the bare D-pad key whose word is "chat" right now ([LEFT_KEY] or [RIGHT_KEY]), by the same rule as [leftIsChat];
+         * null = neither (no hold to talk)
+         */
+        fun chatKey(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean): String? = when {
+            isChat(map, toolbar, dirs, fight, LEFT) -> LEFT_KEY
+            isChat(map, toolbar, dirs, fight, RIGHT) -> RIGHT_KEY
+            else -> null
         }
+        /** the hold's arrow for the Settings row ("Hold [arrow] to talk"): the chat key's side, Left when unknown */
+        fun chatArrowRight(dirs: Map<Int, String>?): Boolean = dirs?.get(RIGHT) == "chat" && dirs[LEFT] != "chat"
+
+        private fun isChat(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean, pos: Int): Boolean {
+            val f = if (fight && map != null) HomeFightFace.dpadFight(map, pos) else null
+            if (f != null) return f.layer == "command" && f.key == CHAT_KEY
+            if (toolbar) return (dirs?.get(pos) ?: DEFAULT_DIRS[pos]) == "chat"
+            return map?.let { PadMapModel.slot(it, 1, pos)?.key == CHAT_KEY } == true
+        }
+        /** the router's default words (PadMap m29's ROOMBAR, mirror off) */
+        val DEFAULT_DIRS = mapOf(1 to "chat", 2 to "radial", 3 to "map", 4 to "home")
 
         const val LEFT = 1
+        const val RIGHT = 3
+        /** the toolbar's Chat after a swap (D-pad Right, the app reader's name) */
+        const val RIGHT_KEY = "PADDRIGHT"
         /** Spells' DS Chat command (PadMap.lua's commands: /click WowCompanionPadChat) */
         const val CHAT_KEY = "DSCHAT"
 

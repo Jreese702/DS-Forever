@@ -1,0 +1,213 @@
+package com.jrees.wowcompanion
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * MOVABLE HOME, EVERY LAYOUT IN EVERY STATE (SPEC.txt section 5 / 15 HomeLayoutRulesTest; phase 1): all 1,620 records the editor can
+ * make x every page state (rest / the takeover, Grow / Same / Top, no party / Party mode's rows in each row mode at 1-6 entries, a card or
+ * none, the buff list open, the bar hidden in a fight): no overlap, inside the frame, every part placed, the columns tiling the inner width
+ * exactly, the map at least 240 tall, the columns at least 400 wide, and the chat never shorter than Classic's in the same state (today's
+ * Classic is itself under the spec's 180 in some states: the takeover's party rows under a card above the chat). R0 / F1 / F2 fire only
+ * where expected: never on the Thor's 935 px page (P8: Classic = today), and F1 then F2 on a short page with Party mode's big rows.
+ */
+class HomeLayoutRulesTest {
+    private val S = HomeLayoutSolver
+    private val CARD_H = 118.75f          // the focused card at Home's scale (the golden's)
+    private val FOLDED_H = 66f
+
+    private fun states(h: Float = 935f): List<HomeLayoutSolver.State> {
+        val out = ArrayList<HomeLayoutSolver.State>()
+        for (takeover in listOf(false, true)) for (card in listOf(0f, FOLDED_H, CARD_H)) for (aura in listOf(false, true))
+            for (hidden in listOf(false, true)) {
+                if (hidden && !takeover) continue
+                val parties = ArrayList<Pair<HomeLayoutSolver.Party?, Boolean>>()
+                parties += null to false
+                for (n in listOf(1, 3, 5, 6)) for (pet in listOf(false, true)) {
+                    if (takeover) parties += HomeLayoutSolver.Party(PartyLayout.Mode.FIGHT_OFF, n, pet) to false   // the takeover's rows, Party mode off
+                    else {
+                        parties += HomeLayoutSolver.Party(PartyLayout.Mode.REST, n, pet) to false
+                        parties += HomeLayoutSolver.Party(PartyLayout.Mode.REST, n, pet) to true
+                        parties += HomeLayoutSolver.Party(PartyLayout.Mode.FIGHT_ON, n, pet) to true              // a fight with Party mode on
+                    }
+                }
+                for ((p, on) in parties) out += HomeLayoutSolver.State(h = h, takeover = takeover, card = card > 0f, cardH = card,
+                    auraOpen = aura, party = p, partyOn = on, castHidden = hidden)
+            }
+        return out
+    }
+
+    /** the chat's height Classic gives in [s] for [l]'s rest / fight / card / bar dock (side and width move nothing vertical) */
+    private fun classicChat(l: HomeLayout, s: HomeLayoutSolver.State): Float {
+        val c = HomeLayout(rest = l.rest, fight = l.fight, card = l.card, castSize = HomeLayout.SlotSize.L,
+            cast = if (l.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.UNDER_CHAT else l.cast)
+        return S.places(c, s).boxes.getValue(HomePart.CHAT).h
+    }
+
+    @Test fun everyLayoutIsValidInEveryState() {
+        val all = HomeLayoutRules.all()
+        assertEquals("2 x 3 x 3 x 5 x 3 x 2 x 3", 1620, all.size)
+        val st = states()
+        var n = 0
+        val bad = ArrayList<String>()
+        for (l in all) for (s in st) {
+            val r = S.places(l, s)
+            n++
+            val p = HomeLayoutRules.problems(l, s, r)
+            if (p.isNotEmpty() && bad.size < 10) bad += "$l / $s: $p"
+            val chat = r.boxes.getValue(HomePart.CHAT).h
+            val floor = minOf(HomeLayoutRules.CHAT_MIN, classicChat(l, s))
+            if (chat + 0.01f < floor && bad.size < 10) bad += "$l / $s: chat $chat under $floor"
+            if (r.f1 || r.f2) bad += "a fallback fired on the Thor's page: $l / $s"
+        }
+        assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
+        assertTrue(n > 1620 * 100)
+    }
+
+    @Test fun columnsTileTheInnerWidthForEveryShareAndSide() {
+        for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values()) {
+            val l = HomeLayout(chatSide = side, chatShare = share)
+            val b = S.places(l, HomeLayoutSolver.State()).boxes
+            val chat = b.getValue(HomePart.CHAT); val map = b.getValue(HomePart.MAP)
+            val want = (1240f - 16f - 8f) * share.num / share.den
+            assertEquals("$side $share chat width", want, chat.w, 0.01f)
+            assertEquals("$side $share map width", 1216f - want, map.w, 0.01f)
+            assertEquals(side == HomeLayout.Side.LEFT, chat.l < map.l)
+            assertEquals(map, b.getValue(HomePart.AURAS))
+        }
+        // Classic = today's c - 4 / c + 4, to the float
+        val c = S.places(HomeLayout(), HomeLayoutSolver.State()).boxes
+        assertEquals(HomeLayoutSolver.Box(8f, 234f, 616f, 927f), c[HomePart.CHAT])
+        assertEquals(HomeLayoutSolver.Box(624f, 234f, 1232f, 927f), c[HomePart.MAP])
+    }
+
+    @Test fun theCardFollowsItsHost() {
+        val s = HomeLayoutSolver.State(card = true, cardH = CARD_H)
+        for (side in HomeLayout.Side.values()) {
+            val on = S.places(HomeLayout(chatSide = side), s).boxes
+            val map = on.getValue(HomePart.MAP); val q = on.getValue(HomePart.QUESTS)
+            assertEquals("on the map, inset as the zone band", map.l + 8f, q.l, 0.01f); assertEquals(map.r - 8f, q.r, 0.01f)
+            assertEquals(map.t + HomeView.ZONE_BAND_BOTTOM + 4f, q.t, 0.01f)
+            val above = S.places(HomeLayout(chatSide = side, card = HomeLayout.CardDock.ABOVE_CHAT), s).boxes
+            val chat = above.getValue(HomePart.CHAT); val q2 = above.getValue(HomePart.QUESTS)
+            assertEquals(chat.l, q2.l, 0.01f); assertEquals(chat.r, q2.r, 0.01f); assertEquals(q2.b + 8f, chat.t, 0.01f)
+            assertFalse("Off: no card", HomePart.QUESTS in S.places(HomeLayout(chatSide = side, card = HomeLayout.CardDock.OFF), s).boxes)
+        }
+        // b128: the buff list open hides the card on the map, never above the chat
+        val aura = HomeLayoutSolver.State(card = true, cardH = CARD_H, auraOpen = true)
+        assertFalse(HomePart.QUESTS in S.places(HomeLayout(), aura).boxes)
+        assertTrue(HomePart.QUESTS in S.places(HomeLayout(card = HomeLayout.CardDock.ABOVE_CHAT), aura).boxes)
+    }
+
+    @Test fun theBarDockFollowsTheWidgetsAndItsSize() {
+        for (side in HomeLayout.Side.values()) for (dock in HomeLayout.CastDock.values()) for (size in HomeLayout.SlotSize.values()) {
+            val l = HomeLayout(chatSide = side, cast = dock, castSize = size)
+            val r = S.places(l, HomeLayoutSolver.State())
+            val b = r.boxes
+            if (dock == HomeLayout.CastDock.OFF) { assertFalse(HomePart.STRIP in b); continue }
+            val strip = b.getValue(HomePart.STRIP)
+            val chat = b.getValue(HomePart.CHAT); val map = b.getValue(HomePart.MAP)
+            when (dock) {
+                HomeLayout.CastDock.UNDER_CHAT -> { assertEquals(chat.l, strip.l, 0.01f); assertEquals(chat.r, strip.r, 0.01f); assertEquals(strip.t - 8f, chat.b, 0.01f); assertEquals(927f, map.b, 0.01f) }
+                HomeLayout.CastDock.UNDER_MAP -> { assertEquals(map.l, strip.l, 0.01f); assertEquals(strip.t - 8f, map.b, 0.01f); assertEquals(927f, chat.b, 0.01f) }
+                HomeLayout.CastDock.ACROSS -> { assertEquals(8f, strip.l, 0.01f); assertEquals(1232f, strip.r, 0.01f); assertEquals(chat.b, map.b, 0.01f) }
+                HomeLayout.CastDock.SPLIT -> {
+                    val two = b.getValue(HomePart.CAST2)
+                    assertEquals("two halves on one row", strip.t, two.t, 0.01f)
+                    assertTrue(strip.r <= two.l)
+                }
+                else -> {}
+            }
+            assertTrue("$dock $size: the slot no bigger than its size", strip.h <= size.px + 2 * CastStripModel.PAD + 0.01f)
+            // the geometric side the view scrolls by: Right (under the right column) rests at its end
+            val want = when (dock) {
+                HomeLayout.CastDock.UNDER_CHAT -> if (side == HomeLayout.Side.LEFT) CastStripModel.Side.LEFT else CastStripModel.Side.RIGHT
+                HomeLayout.CastDock.UNDER_MAP -> if (side == HomeLayout.Side.LEFT) CastStripModel.Side.RIGHT else CastStripModel.Side.LEFT
+                else -> CastStripModel.Side.BOTH
+            }
+            assertEquals(want, r.castSide)
+        }
+        // L = today's: CastStripModel.place's box exactly
+        for (side in listOf(CastStripModel.Side.LEFT, CastStripModel.Side.RIGHT, CastStripModel.Side.BOTH)) {
+            val l = HomeLayout(cast = HomeLayout.dockOf(side, HomeLayout.Side.LEFT))
+            val strip = S.places(l, HomeLayoutSolver.State()).boxes.getValue(HomePart.STRIP)
+            val old = CastStripModel.place(side, 1240f, 935f, 8f)!!
+            assertEquals(HomeLayoutSolver.Box(old.l, old.t, old.r, old.b), strip)
+        }
+    }
+
+    @Test fun thePartyModuleFollowsTheChatsColumn() {
+        val p = HomeLayoutSolver.Party(PartyLayout.Mode.REST, 3, false)
+        val s = HomeLayoutSolver.State(party = p, partyOn = true)
+        val left = S.places(HomeLayout(), s)
+        val right = S.places(HomeLayout(chatSide = HomeLayout.Side.RIGHT), s)
+        assertFalse(left.partyTabRight); assertTrue(right.partyTabRight)
+        val a = left.boxes.getValue(HomePart.PARTY); val b = right.boxes.getValue(HomePart.PARTY)
+        assertEquals("flush on the left edge", 0f, a.l, 0.01f)
+        assertEquals("flush on the right edge", 1240f, b.r, 0.01f)
+        assertEquals("the mirror image", 1240f - a.r, b.l, 0.01f)
+        assertEquals(a.t, b.t, 0.01f); assertEquals(a.b, b.b, 0.01f)
+        assertEquals(left.boxes.getValue(HomePart.CHAT).t, right.boxes.getValue(HomePart.CHAT).t, 0.01f)
+        // PartyLayout mirrored: the tab at the right edge, the well left of it, the cells inside the well
+        val m = PartyLayout.module(PartyLayout.Mode.REST, 3, top = 234f, left = b.l, right = 1240f, tabRight = true)
+        assertEquals(1240f, m.tag.r, 0.01f); assertEquals(1240f - PartyLayout.TAB_W, m.tag.l, 0.01f)
+        assertEquals(m.tag.l - PartyLayout.TAB_GAP, m.well.r, 0.01f)
+        for (cell in m.cells) assertTrue(cell.l >= m.well.l && cell.r <= m.well.r)
+    }
+
+    @Test fun r0NoGrowWithPartyModeOn() {
+        val l = HomeLayout(fight = HomeLayout.FightBand.GROW)
+        assertTrue(S.big(l, HomeLayoutSolver.State(takeover = true)))
+        assertFalse(S.big(l, HomeLayoutSolver.State(takeover = true, partyOn = true)))
+        assertFalse("Same size", S.big(l.copy(fight = HomeLayout.FightBand.SAME), HomeLayoutSolver.State(takeover = true)))
+        assertFalse("Top screen keeps the rest size on the bottom", S.big(l.copy(fight = HomeLayout.FightBand.TOP), HomeLayoutSolver.State(takeover = true)))
+        assertEquals(416f, S.barsBottom(l, HomeLayoutSolver.State(takeover = true)), 0f)
+        assertEquals(226f, S.barsBottom(l, HomeLayoutSolver.State()), 0f)
+        assertEquals(138f, S.barsBottom(l.copy(rest = HomeRest.ROW), HomeLayoutSolver.State()), 0f)
+    }
+
+    @Test fun f1ThenF2FireOnlyWhenTheChatIsTooShortInPartyMode() {
+        // a short page (a smaller screen): Party mode's 6 big rows under a card above the chat and a bar under it
+        val p = HomeLayoutSolver.Party(PartyLayout.Mode.FIGHT_ON, 6, true)
+        val l = HomeLayout(card = HomeLayout.CardDock.ABOVE_CHAT, cast = HomeLayout.CastDock.UNDER_CHAT)
+        val short = HomeLayoutSolver.State(h = 760f, card = true, cardH = CARD_H, party = p, partyOn = true)
+        val r = S.places(l, short)
+        assertTrue("F1: the card went onto the map", r.f1)
+        assertEquals(HomeLayout.CardDock.ON_MAP, r.card)
+        assertTrue("F2: the bar under the chat slid behind the room bar", r.f2 && r.castHidden)
+        assertTrue(r.boxes.getValue(HomePart.STRIP).t >= 760f)
+        assertTrue(r.boxes.getValue(HomePart.CHAT).h >= HomeLayoutRules.CHAT_HARD_MIN)
+        // the bar under the MAP: only F1 (the chat's column has no bar to take away)
+        val r2 = S.places(l.copy(cast = HomeLayout.CastDock.UNDER_MAP), short)
+        assertFalse(r2.f2)
+        // Party mode off: never (the takeover's rows are today's)
+        val off = S.places(l, short.copy(partyOn = false, party = p.copy(mode = PartyLayout.Mode.REST)))
+        assertFalse(off.f1 || off.f2)
+        // on the Thor's page: never (P8)
+        val thor = S.places(l, short.copy(h = 935f))
+        assertFalse(thor.f1 || thor.f2)
+    }
+
+    @Test fun fullModulesTakeTheFrame() {
+        for (m in HomeModule.values()) {
+            val b = S.places(HomeLayout(chatSide = HomeLayout.Side.RIGHT, cast = HomeLayout.CastDock.ACROSS), HomeLayoutSolver.State(full = m)).boxes
+            assertTrue(b.values.all { it == HomeLayoutSolver.Box(0f, 0f, 1240f, 935f) })
+            assertFalse(HomePart.STRIP in b)
+        }
+    }
+
+    @Test fun mirrorBitIsTheMapOnTheLeft() {
+        assertEquals(0, S.mirrorBit(HomeLayout()))
+        assertEquals(1, S.mirrorBit(HomeLayout(chatSide = HomeLayout.Side.RIGHT)))
+        assertEquals(1, S.mirrorBit(HomeLayout().swapped()))
+        assertEquals(HomeLayout(), HomeLayout().swapped().swapped())
+    }
+
+    @Test fun splitShowsAsAcrossUntilPhase3() {
+        val l = HomeLayout(cast = HomeLayout.CastDock.SPLIT)
+        assertEquals(HomeLayout.CastDock.ACROSS, HomeLayoutRules.shown(l).cast)
+        assertEquals(l.copy(cast = HomeLayout.CastDock.UNDER_MAP), HomeLayoutRules.shown(l.copy(cast = HomeLayout.CastDock.UNDER_MAP)))
+    }
+}

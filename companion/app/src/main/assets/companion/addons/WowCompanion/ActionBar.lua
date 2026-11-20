@@ -2443,7 +2443,9 @@ end
 -- and pcall'd; without them (or refused) the button is dimmed while its NeverSecret isActive says it cools (no sweep). The route that
 -- worked rides one "cap" line (probe "nbarcd") out of a fight and one in a fight per login. A secret is never compared or computed.
 ---------------------------------------------------------------------------------------------------
-local NB = { V = "nbar5", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
+-- nbar6 MOVABLE HOME'S SWAP (the user's rulings 2026-11-20, SPEC.txt section 6 item 5; PadMap m178): the DS toolbar's icons on the bare
+-- D-pad are picked by the router's WORD (padmap dpad `d`: after a swap Left is "map"), never by position (NB.TOOLBAR_BY).
+local NB = { V = "nbar6", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -2454,7 +2456,10 @@ local NB = { V = "nbar5", on = false, built = false, B = 46, OFF = 50, DX = 160,
              -- the left, B (PAD2) at the bottom, A (PAD1) on the right; the D-pad unchanged
              AT_SWAP = { [5] = { 0, 1 }, [6] = { -1, 0 }, [7] = { 0, -1 }, [8] = { 1, 0 } },
              -- PadMap m29's DS toolbar on the bare D-pad (left chat, up radial, right map, down Home's bar): the commands' own icons
-             TOOLBAR = { 134332, 134829, 134269, "tex:Interface\\AddOns\\WowCompanion\\Media\\ds_forever_icon" } }
+             TOOLBAR = { 134332, 134829, 134269, "tex:Interface\\AddOns\\WowCompanion\\Media\\ds_forever_icon" },
+             -- nbar6: the same icons by the router's word (PadMap's `d`)
+             TOOLBAR_BY = { chat = 134332, radial = 134829, map = 134269, home = "tex:Interface\\AddOns\\WowCompanion\\Media\\ds_forever_icon" },
+             dirs = nil }
 WC.nbar = NB
 WC.nbarOn = false
 
@@ -2754,7 +2759,7 @@ function NB.resolve(set, p, lay, page, fight, dpadOn, hasTarget, form)
     if set == 1 and p <= 4 then
         -- the bare D-pad: the fight layer's In-combat spell in a fight, else DS Forever's toolbar while the router holds it
         if fight and v and v.kind == "combat" and v.ov and type(v.c) == "table" then return refEntry(v.c) end
-        if dpadOn then return { kind = "icon", icon = NB.TOOLBAR[p] } end
+        if dpadOn then return { kind = "icon", icon = NB.TOOLBAR_BY[(NB.dirs or {})[tostring(p)] or ""] or NB.TOOLBAR[p] } end
         return base()                                   -- nbar2: a command / binding on the bare D-pad (no toolbar) too
     end
     if set == 1 then
@@ -2895,6 +2900,7 @@ function NB.refresh()
     if type(pm) == "table" and type(pm.dpadState) == "function" then
         local ok, ds = pcall(pm.dpadState)
         dpadOn = ok and type(ds) == "table" and ds.on == true
+        NB.dirs = ok and type(ds) == "table" and type(ds.d) == "table" and ds.d or nil   -- nbar6: the words of the bare D-pad
     end
     f.layer:SetText(NB.LAYER_WORD[set] or "")
     NB.stats = { ok = 0, fail = 0, ch = 0, dim = 0, n = 0 }
