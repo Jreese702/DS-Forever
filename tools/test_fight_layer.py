@@ -156,7 +156,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
-check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p55"' in SRC["padtabctl"], "the versions: PadMap m160, PadTabCtl p54 (Smart Range gone)")
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p56"' in SRC["padtabctl"], "the versions: PadMap m160, PadTabCtl p54 (Smart Range gone)")
 ONF = re.search(r'local ONFIGHT = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
 check(not re.search(r'\bfunction\b', ONF), "the header's ONFIGHT snippet holds no 'function' (the game refuses it)")
 FBS = re.search(r'function OV\.fbSnip\(fbf\)\n    return .*?\[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)

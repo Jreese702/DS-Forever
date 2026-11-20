@@ -41,6 +41,8 @@ WowCompanionSpellsDB = {
     cmdBy = both({ [5] = { k = "DSSRADIAL" } }, { [5] = { k = "DSSRADIAL" } }), binds = both({ ["1:2"] = "JUMP" }, { ["1:2"] = "JUMP" }),
     smartOn = both(true, true), sradials = both({ { ids = { 403 } } }, { { ids = { 3044 } } }), sradial = both({ 403 }, { 3044 }),
     castBar = both({ [1] = { k = "s", id = 403 } }, { [1] = { k = "s", id = 3044 } }),
+    castBarFight = both({ [1] = { k = "spell", id = 331 } }, { [1] = { k = "spell", id = 331 } }),
+    castBarParty = both({ [1] = { k = "spell", id = 331 } }, { [1] = { k = "spell", id = 331 } }),
     dpad = both(false, false), cdLearn = both({ s403 = 1.5 }, { s3044 = 6 }), dpadZL = both({ undone = {} }, { undone = {} }),
     padLayout = "plain", keyProbe = "m100",
 }
@@ -78,7 +80,7 @@ pm = SRC["padmap"]
 rad = open(os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanionSpells", "Radial.lua"),
            encoding="utf-8").read()
 # (0) the versions and the route
-check('local PV = "m175"' in pm, '(0) PadMap tag m175')
+check('local PV = "m176"' in pm, '(0) PadMap tag m176')
 check('local RV = "r26"' in rad and 'local PRV = "pr3"' in rad, '(0) Radial tags r26 / pr3')
 check(re.search(r'elseif col >= 20 and col <= 27 then\s*\n\s*--[^\n]*\n\s*if type\(WC\.dsfReset\) == "function" then WC\.dsfReset\(col\)', rad)
       is not None, '(0) the pause row hands columns 20-27 to WC.dsfReset')
@@ -86,7 +88,7 @@ check(re.search(r'elseif col >= 20 and col <= 27 then\s*\n\s*--[^\n]*\n\s*if typ
 # (1) Layouts, this character
 L = world()
 a, ds = reset(L, 21)
-check(a and a['ok'] is True and a['col'] == 21 and a['v'] == 'm175', '(1) layouts answered ok', a)
+check(a and a['ok'] is True and a['col'] == 21 and a['v'] == 'm176', '(1) layouts answered ok', a)
 check(val(L, 'WowCompanionDB.lay["%s"]' % ME) is None and val(L, 'WowCompanionDB.hubSw["%s"]' % ME) is None and
       val(L, 'WowCompanionDB.prdY["%s"]' % ME) is None and val(L, 'WowCompanionDB.meters["%s"]' % ME) is None, '(1) my layout stores gone')
 check(val(L, 'WowCompanionSpellsDB.dpad["%s"]' % ME) is True, '(1) my toolbar back to its default ON')
@@ -101,7 +103,7 @@ check(any(d.get('type') == 'svkeep' for d in ds), '(6) the saved tables sent at 
 L = world()
 a, _ = reset(L, 22)
 check(a and a['ok'] is True and a['n'] >= 8, '(2) skills answered ok', a)
-for k in ("faceBy", "fightBy", "cmdBy", "binds", "smartOn", "sradials", "sradial", "castBar"):
+for k in ("faceBy", "fightBy", "cmdBy", "binds", "smartOn", "sradials", "sradial", "castBar", "castBarFight", "castBarParty"):   # m176
     check(val(L, 'WowCompanionSpellsDB.%s["%s"]' % (k, ME)) is None, '(2) my %s gone' % k)
     check(val(L, 'WowCompanionSpellsDB.%s["%s"]' % (k, OTHER)) is not None, "(2) the other character's %s kept" % k)
 check(val(L, 'WowCompanionDB.bagBinds["%s"]' % ME) is None, '(2) my item binds gone')

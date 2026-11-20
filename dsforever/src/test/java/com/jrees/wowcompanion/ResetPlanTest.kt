@@ -41,7 +41,7 @@ class ResetPlanTest {
         named.getOrPut("WowCompanionSpellsDB") { HashSet() } += listOf("faceBy", "fightBy", "formFightBy", "formSlotsBy", "cmdBy", "binds",
             "stickBy", "attackBy", "dpad", "dpadZL", "ccOff", "genUse", "lowPickBy", "srGone", "smartOn", "smartBuffs", "smartModel",
             "partyBy", "petDeadBy", "petSpellBy", "macroRoom", "radialPins", "cdLearn", "sradials", "castBar", "padLayout",
-            "castBarFight", "castBarShow")                                  // cb14: reached as db[field] / rawget(db, ...)
+            "castBarFight", "castBarShow", "castBarParty", "castBarPShow")  // cb14 / cb15: reached as db[field] / rawget(db, ...)
         named.getOrPut("WowCompanionDB") { HashSet() } += listOf("prdW")
         for ((v, keys) in named) {
             val known = ResetPlan.SV_KEYS.filter { it.variable == v }.map { it.top }.toSet() + ResetPlan.SV_NEVER[v].orEmpty()
@@ -59,7 +59,12 @@ class ResetPlanTest {
         assertEquals("the toolbar back ON, never 'not asked'", true, ResetPlan.SV_KEYS.first { it.top == "dpad" }.default)
         // Skills: binds, fight spells, radials, Smart Y, pet wheels' picks, macros on buttons
         for (k in listOf("faceBy", "fightBy", "formFightBy", "cmdBy", "binds", "stickBy", "smartOn", "smartBuffs", "sradials", "sradial",
-                "radialPins", "castBar", "castBarFight", "partyBy")) assertEquals(k, ResetPlan.Kind.SKILLS, kind(sp, k))
+                "radialPins", "castBar", "castBarFight", "castBarParty", "partyBy")) assertEquals(k, ResetPlan.Kind.SKILLS, kind(sp, k))
+        // cb15 (the user, 2026-11-20, Option C): Party mode's bar layer resets with Skills; Bar in Party mode is a home LAYOUTS key, the
+        // add-on's copy never (the app tells it again)
+        assertTrue("castBarPShow" in ResetPlan.SV_NEVER.getValue(sp))
+        assertEquals(setOf("castBarPartyShow"), ResetPlan.prefKeys("home", setOf("castBarPartyShow"), setOf(ResetPlan.Kind.LAYOUTS), null, true))
+        assertEquals(emptySet<String>(), ResetPlan.prefKeys("home", setOf("castBarPartyShow"), setOf(ResetPlan.Kind.SKILLS), null, true))
         // cb14 (the user, 2026-11-19, D10): the in-combat layer resets with Skills; Show in combat stays a home LAYOUTS key (castBarCombat)
         assertTrue("castBarShow" in ResetPlan.SV_NEVER.getValue(sp))
         assertEquals(setOf("castBarCombat"), ResetPlan.prefKeys("home", setOf("castBarCombat"), setOf(ResetPlan.Kind.LAYOUTS), null, true))

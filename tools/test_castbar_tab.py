@@ -133,8 +133,8 @@ def clean(L, name):
           (L.eval('SPY[1]'), L.eval('VIOL[1]'), L.eval('SNIPERR[1]'), list(L.eval('ERRS').values())[:2]))
 
 
-check('local CV = "p55"' in SRC["padtabctl"] and 'local BV = "b70"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
-      and 'local CBV = "cb14"' in BLOCK, "the versions: PadTabCtl p55, Book b70, PadMap m172+, ActionBar cb14")
+check('local CV = "p56"' in SRC["padtabctl"] and 'local BV = "b71"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
+      and 'local CBV = "cb15"' in BLOCK, "the versions: PadTabCtl p55, Book b70, PadMap m172+, ActionBar cb14")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
       and 'EditMacro' not in code and 'PlaceAction' not in code and 'SetCVar' not in code and 'PickupAction' not in code,
@@ -167,9 +167,9 @@ check(ctl(W).get('pos') == 8, "Right walks the 8 slots and stops at 8", ctl(W).g
 W.execute('for _ = 1, 10 do pp("PADDLEFT") end')
 check(ctl(W).get('pos') == 1, "Left back to slot 1 and stops", ctl(W).get('pos'))
 W.execute('pp("PADDUP")')
-check(ctl(W).get('focus') == 'subtabs', "Up = the sub-tab row (p55)", ctl(W).get('focus'))
-W.execute('pp("PADDDOWN")')
-check(ctl(W).get('focus') == 'buttons', "Down = the slots again")
+check(ctl(W).get('view') == 'normal' and ctl(W).get('focus') == 'buttons', "Up = the controller over slot 1 (p56: no sub-tabs)", ctl(W))
+W.execute('WowCompanion.padTabCtl.touchPos(9); pp("PADDDOWN"); pp("PADDLEFT"); pp("PADDLEFT"); pp("PADDLEFT")')
+check(ctl(W).get('view') == 'castbar' and ctl(W).get('focus') == 'buttons' and ctl(W).get('pos') == 1, "Down = the slots again (slot 1)", ctl(W))
 W.execute('pp("PAD1")')
 c = ctl(W)
 check(c.get('chooser') and c['chooser'].get('list') == 'spells', "A on an empty slot: the chooser on Spells", c.get('chooser'))
@@ -238,7 +238,7 @@ if bi is not None:
     W.eval('WowCompanion.padTabCtl.touchExtra(%d)' % (bi % 40))
     check(store(W).get(8) is None and ctl(W).get('note') == 'cb-bind', "a game binding by touch is refused (cb-bind)", ctl(W).get('note'))
 e, d = bar(W)
-check(d.get('v') == 'cb14' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
+check(d.get('v') == 'cb15' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
 check(e[1].get('id') == 403 and 'k' not in e[1] and e[1].get('c') == 0, "slot 1: a spell as before (no k)", e[1])
 check(e[3].get('k') == 'command' and e[3].get('key') == 'TARGETNEARESTENEMY' and e[3].get('n') and e[3].get('i') == 132212 and e[3].get('c') == 2,
       "slot 3: kind command, key, name, icon, its cell", e[3])

@@ -1,4 +1,5 @@
-"""CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal D1-D10; ActionBar cb14, PadTabCtl p55, Book b70), off-device:
+"""CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal D1-D10; ActionBar cb14, PadTabCtl p55, Book b70; the room's
+navigation is Option C's since PadTabCtl p56 - tools/test_controller_situations.py has the rest), off-device:
 the REAL add-on files (the cast bar block of ActionBar.lua, Book, PadMap, PadTabCtl) under the stubbed game.
 
     python tools/test_controller_tap_tabs.py
@@ -170,9 +171,9 @@ def press(L, *keys):
 
 
 # ================================================================ a. versions, no trace in the code
-check('local CBV = "cb14"' in BLOCK and "cb14 THE IN-COMBAT LAYER" in AB, "a. ActionBar cb14 and its header note")
-check('local CV = "p55"' in SRC["padtabctl"] and "p55 CONTROLLER | TAP TO CAST" in SRC["padtabctl"], "a. PadTabCtl p55 and its note")
-check('local BV = "b70"' in SRC["book"] and "b70 CONTROLLER | TAP TO CAST" in SRC["book"], "a. Book b70 and its note")
+check('local CBV = "cb15"' in BLOCK and "cb14 THE IN-COMBAT LAYER" in AB, "a. ActionBar cb15 (cb14's in-combat layer note kept)")
+check('local CV = "p56"' in SRC["padtabctl"] and "p55 CONTROLLER | TAP TO CAST" in SRC["padtabctl"], "a. PadTabCtl p56 (p55's note kept)")
+check('local BV = "b71"' in SRC["book"] and "b70 CONTROLLER | TAP TO CAST" in SRC["book"], "a. Book b71 (b70's note kept)")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
       and 'EditMacro' not in code and 'PlaceAction' not in code and 'SetCVar' not in code and 'PickupAction' not in code
@@ -193,7 +194,7 @@ W.execute('WowCompanion.castBar.put(3, "item", 118)')                    # slot 
 check(store(W) == {1: ('spell', 403), 3: ('item', 118)} and fstore(W) == {1: ('spell', 331), 2: ('command', 'TARGETNEARESTENEMY')},
       "b. the two stores: castBar and castBarFight (per character)", (store(W), fstore(W)))
 row = W.eval('WowCompanion.pad.rows.castbar')
-check(row is not None and int(row.n) == 17 and int(row.n) <= 40, "b. the castbar row: 17 secure cells (8 + the pick + 8), within 40",
+check(row is not None and int(row.n) == 25 and int(row.n) <= 40, "b. the castbar row: 25 secure cells (cb15: 8 + the pick + 8 + Party mode's 8), within 40",
       row and row.n)
 check(cell(W, 0, "type") == "spell" and cell(W, 0, "spell") == 403 and cell(W, 0, "wc-n-spell") == 403 and cell(W, 0, "wc-f-spell") == 331,
       "b. slot 1's cell: its own spell, both sets as attributes", (cell(W, 0, "spell"), cell(W, 0, "wc-f-spell")))
@@ -206,7 +207,7 @@ check(cell(W, 8, "type") is None and cell(W, 8, "wc-n-type") is None, "b. the pi
 check(cell(W, 11, "type") is None, "b. an unset fight slot's cell (11) has no action")
 d = bar(W)
 fe = {x['s']: x for x in d.get('f', [])}
-check(d.get('v') == 'cb14' and d.get('show') == 1 and d.get('fl') == 1 and fe.get(1, {}).get('id') == 331 and fe[1].get('c') == 9
+check(d.get('v') == 'cb15' and d.get('show') == 1 and d.get('fl') == 1 and fe.get(1, {}).get('id') == 331 and fe[1].get('c') == 9
       and fe.get(2, {}).get('k') == 'command' and fe[2].get('c') == 10, "b. the document: `f` with cells 9 / 10, show = 1", d.get('f'))
 check(W.eval('WowCompanion.pad.describe().rows.castbar') is not None, "b. described (the app's TapBridge finds the row)")
 clean(W, "b")
@@ -266,86 +267,60 @@ W.execute('WowCompanion.castBar.clear(1, "f")')
 check(fstore(W).get(1) is None and cell(W, 0, "wc-f-type") is None, "e. Clear: the fight slot empty, slot 1 its own in fights again")
 clean(W, "e")
 
-# ================================================================ f. the room: top tabs, sub-tabs, LB / RB, B
+# ================================================================ f. the room (PadTabCtl p56: situations first, no sub-tabs)
 R = boot()
 padtab(R, 39, 30, 39, 2)
 R.execute('WowCompanion.padTabCtl.enter("tabs")')
 c = ctl(R)
-check(c.get('view') == 'normal' and c.get('focus') == 'tabs' and c.get('top') == 'normal', "f. the room opens on WoW Defaults > Controller, the cursor on the top tabs", c)
+check(c.get('view') == 'normal' and c.get('focus') == 'tabs' and c.get('top') == 'normal', "f. the room opens on Out of combat, the cursor on the tabs", c)
 seen = []
-for _ in range(5):
+for _ in range(4):
     press(R, "PADRSHOULDER")
     seen.append(ctl(R).get('view'))
-check('castbar' not in seen and 'cbfight' not in seen and seen[0] == 'combat' and seen[1] == 'radial',
-      "f. RB walks the top tabs only (In combat, Spell radial, ...): no Cast bar top tab (D1)", seen)
+check('castbar' not in seen and 'cbfight' not in seen and seen[0] == 'combat' and seen[-1] == 'radial',
+      "f. RB walks the situations only (no Cast bar tab, D1), Spell radial last", seen)
 R.execute('WowCompanion.padTabCtl.enter("tabs")')
 press(R, "PADDDOWN")
-c = ctl(R)
-check(c.get('focus') == 'subtabs' and c.get('view') == 'normal', "f. Down from the top tabs: WoW Defaults' sub-tabs (Controller lit)", c)
-press(R, "PADDRIGHT")
-c = ctl(R)
-check(c.get('view') == 'castbar' and c.get('focus') == 'subtabs' and c.get('top') == 'normal',
-      "f. Right on the sub-tabs: Tap to cast opens on landing, the cursor stays on the sub-tabs", c)
-press(R, "PADDRIGHT")
-check(ctl(R).get('view') == 'castbar', "f. no wrap past Tap to cast")
+check(ctl(R).get('focus') == 'switches' and ctl(R).get('view') == 'normal', "f. Down from the tabs: the chips (no sub-tabs)", ctl(R))
+press(R, "PADDDOWN", "PADDDOWN")
+check(ctl(R).get('focus') == 'buttons', "f. then the controller's buttons", ctl(R).get('focus'))
+R.execute('WowCompanion.padTabCtl.touchPos(9)')
 press(R, "PADDDOWN")
-check(ctl(R).get('focus') == 'buttons', "f. Down: the 8 slots")
+check(ctl(R).get('view') == 'castbar' and ctl(R).get('focus') == 'buttons', "f. Down off the controller: the bar's 8 slots (castbar)")
 press(R, "PAD1")
 check(ctl(R).get('chooser') is not None, "f. A: the chooser")
 press(R, "PAD2")
 check(ctl(R).get('chooser') is None and ctl(R).get('focus') == 'buttons', "f. B: chooser -> the page")
 press(R, "PAD2")
-check(ctl(R).get('focus') == 'subtabs' and ctl(R).get('view') == 'castbar', "f. B: the page -> the sub-tabs")
-press(R, "PAD2")
-check(ctl(R).get('focus') == 'tabs', "f. B: the sub-tabs -> the top tabs")
-check(R.eval('WowCompanion.padTabCtl.press("PAD2")') is False, "f. B on the top tabs: not the room's (Home)")
-check(R.eval('WowCompanion.padTabCtl.boxOpen()') is False, "f. boxOpen() false only on the top tabs (B leads Home there)")
-press(R, "PADRSHOULDER")
-check(ctl(R).get('view') == 'combat', "f. RB from WoW Defaults > Tap to cast: In combat > Controller")
-press(R, "PADLSHOULDER")
-check(ctl(R).get('view') == 'castbar' and ctl(R).get('top') == 'normal', "f. LB back: WoW Defaults remembers Tap to cast")
-R.execute('WowCompanion.padTabCtl.leave(); WowCompanion.padTabCtl.enter("tabs")')
-press(R, "PADDDOWN")
-check(ctl(R).get('view') == 'normal', "f. a fresh open: Controller again")
-# the Controller page: B from the buttons -> the sub-tabs
-press(R, "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDDOWN")
-check(ctl(R).get('focus') == 'buttons' and ctl(R).get('view') == 'normal', "f. down to WoW Defaults' buttons", ctl(R).get('focus'))
-press(R, "PAD2")
-check(ctl(R).get('focus') == 'subtabs', "f. B from the buttons: the sub-tabs")
+check(ctl(R).get('focus') == 'tabs', "f. B: the page -> the tabs")
+check(R.eval('WowCompanion.padTabCtl.press("PAD2")') is False, "f. B on the tabs: not the room's (Home)")
 clean(R, "f")
 
-# ================================================================ g. In combat's check boxes
+# ================================================================ g. In combat's check boxes (the chips)
 R.execute('WowCompanion.padTabCtl.touchTab(3)')                 # In combat by touch
-press(R, "PAD2", "PAD2")
+press(R, "PAD2")
 press(R, "PADDDOWN")
 c = ctl(R)
-check(c.get('view') == 'combat' and c.get('focus') == 'switches' and c.get('sw') == 1, "g. In combat: Down from the top tabs = the check boxes", c)
+check(c.get('view') == 'combat' and c.get('focus') == 'switches' and c.get('sw') == 1, "g. In combat: Down from the tabs = the chips", c)
 press(R, "PADDRIGHT", "PADDRIGHT", "PADDRIGHT")
-check(ctl(R).get('sw') == 3, "g. three check boxes: Combat controls, Start attack on cast, Show tap-to-cast", ctl(R).get('sw'))
+check(ctl(R).get('sw') == 3, "g. three chips: Combat controls, Start attack on cast, Show tap-to-cast", ctl(R).get('sw'))
 n0 = ctl(R).get('cbsn')
 press(R, "PAD1")
 c = ctl(R)
 check(c.get('cbsn') == n0 + 1 and c.get('note') == 'switch-cbshow' and R.eval('WowCompanion.castBar.show()') is False and c.get('cbs') is None,
       "g. A on Show tap-to-cast: counted (cbsn, the app flips castBarCombat), the add-on's copy off at once", c)
-press(R, "PADDDOWN")
-check(ctl(R).get('focus') == 'subtabs' and ctl(R).get('view') == 'combat', "g. Down from the check boxes: the sub-tabs (under them)")
-press(R, "PADDRIGHT")
-check(ctl(R).get('view') == 'cbfight' and ctl(R).get('top') == 'combat', "g. Right: In combat > Tap to cast opens on landing")
-press(R, "PADDUP")
-check(ctl(R).get('focus') == 'switches' and ctl(R).get('view') == 'cbfight', "g. Up from its sub-tabs: the check boxes stay with it")
-press(R, "PAD2")
-check(ctl(R).get('focus') == 'tabs', "g. B from the check boxes (above the sub-tabs): the top tabs")
 clean(R, "g")
 
-# ================================================================ h. In combat > Tap to cast: locked while Show is off
-press(R, "PADDDOWN", "PADDDOWN", "PADDDOWN")
+# ================================================================ h. In combat's bar: locked while Show is off
+R.execute('WowCompanion.padTabCtl.touchPos(4)')
+press(R, "PADDDOWN")
 c = ctl(R)
-check(c.get('view') == 'cbfight' and c.get('focus') == 'buttons', "h. down to the fight layer's 8 slots", c)
+check(c.get('view') == 'cbfight' and c.get('focus') == 'buttons', "h. down off In combat's controller: the fight layer's 8 slots", c)
 r0 = R.eval('REFN')
 press(R, "PAD1")
 c = ctl(R)
 check(c.get('chooser') is None and c.get('note') == 'cb-hidden' and R.eval('REFN') == r0 + 1,
-      "h. Show off: A = one red pulse and \"cb-hidden\", no chooser", (c.get('note'), R.eval('REFN') - r0))
+      "h. Show off: A = one red pulse and cb-hidden, no chooser", (c.get('note'), R.eval('REFN') - r0))
 press(R, "PAD3")
 check(ctl(R).get('carry') is None and ctl(R).get('note') == 'cb-hidden', "h. X too: nothing carried")
 R.execute('WowCompanion.padTabCtl.touchPos(2); WowCompanion.padTabCtl.touchSpell(331)')
@@ -373,7 +348,7 @@ padtab(R, 39, 30)
 R.execute('WowCompanion.padTabCtl.touchTab(1)')
 R.execute('WowCompanion._spellsBook.ctl.croom = true')
 padtab(R, 39, 1)
-check(ctl(R).get('view') == 'cbfight', "h. padtab 39 then 1: In combat > Tap to cast by touch", ctl(R).get('view'))
+check(ctl(R).get('view') == 'cbfight', "h. padtab 39 then 1: In combat's bar by touch", ctl(R).get('view'))
 clean(R, "h")
 
 # ================================================================ i. the Bind box's four tabs (Book b70)
