@@ -73,7 +73,8 @@ class TopCombatBarTest {
         val l = f.apply(HomeLayout())
         assertEquals(HomeLayout.FightBand.TOP, l.fight)
         assertEquals(HomePresets.FIGHTER, HomePresets.nameOf(l))
-        assertEquals("its Split shows as one bar across until Split ships", HomeLayout.CastDock.ACROSS, HomeLayoutRules.shown(l).cast)
+        assertEquals("its Split (phase 2: slots 1-4 under the left column, 5-8 under the right)", HomeLayout.CastDock.SPLIT,
+            HomeLayoutRules.shown(l).cast)
     }
 
     // ---------------------------------------------------------------- the bottom band

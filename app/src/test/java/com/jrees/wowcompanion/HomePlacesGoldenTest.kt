@@ -101,7 +101,21 @@ class HomePlacesGoldenTest {
 
     private class Page(val home: HomeView, val cast: CastView, val map: MapView)
 
+    /** no art root (the views' own fallbacks): a test run earlier in this JVM may have pointed ArtHarvest at MK_ART_ROOT (QuestPanelTest,
+     *  WaterDepthTest, the map shots) and left it there, and the kit's caches keep what it read (the full suite's order then changed the
+     *  pixels' CRCs here) */
+    private fun noArt() {
+        ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, null)
+        UiKit.root = UiKit.root                                         // the kit's caches forget (a font, a texture read before)
+        for (n in listOf("castCache", "castMissing")) when (val o = UiKit::class.java.getDeclaredField(n).apply { isAccessible = true }.get(UiKit)) {
+            is MutableMap<*, *> -> o.clear(); is MutableSet<*> -> o.clear()
+        }
+        Icons.refresh()
+        MinimapTiles.refresh()
+    }
+
     private fun page(s: St): Page {
+        noArt()
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app)
         Settings.init(app)

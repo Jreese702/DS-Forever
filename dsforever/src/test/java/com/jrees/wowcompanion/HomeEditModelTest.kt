@@ -324,9 +324,11 @@ class HomeEditModelTest {
     @Test fun theMenusRowsFollowTheRulings() {
         val v = HomeWidgetMenus.Values(toolbar = true, toolbarCan = true, talk = true)
         val band = HomeWidgetMenus.rows(EditStop.BAND, classic, v)
-        assertEquals("D1: Grow is the default; Top screen is phase 3's and opt-in", listOf("Grow", "Same size"),
+        assertEquals("D1: Grow is the default; Top screen (phase 3) is offered, opt-in", listOf("Grow", "Same size", "Top screen"),
             band.first { it.key == HomeEditModel.K_FIGHT }.words)
         assertEquals(0, band.first { it.key == HomeEditModel.K_FIGHT }.picked)
+        assertEquals("a Top screen record shows its pick", 2, HomeWidgetMenus.rows(EditStop.BAND, classic.copy(fight = HomeLayout.FightBand.TOP), v)
+            .first { it.key == HomeEditModel.K_FIGHT }.picked)
         assertEquals(listOf("Off", "Chat", "Map", "Across", "Split"), HomeWidgetMenus.rows(EditStop.CAST, classic, v).first().words)
         val map = HomeWidgetMenus.rows(EditStop.MAP, classic.copy(chatShare = HomeLayout.Share.THIRD), v)
         assertEquals("the map's width is its own share", 2, map.first { it.key == HomeEditModel.K_MAP_WIDTH }.picked)
@@ -339,15 +341,16 @@ class HomeEditModelTest {
 
     // ---------------------------------------------------------------- flips, the Layouts sheet
 
-    @Test fun flipsSkipFighterUntilPhaseThree() {
+    @Test fun flipsIncludeFighterSincePhaseThree() {
         val m = model(start = EditStop.CHIP)
         val seen = ArrayList<String>()
         repeat(HomePresets.ALL.size + 1) { m.press("PADRSHOULDER"); seen += m.chipName }
-        assertFalse(HomePresets.FIGHTER in seen)
-        assertEquals(listOf(HomePresets.MIRRORED, HomePresets.BIG_MAP, HomePresets.BIG_CHAT, HomePresets.COMPACT, HomePresets.CLASSIC,
-            HomePresets.MIRRORED, HomePresets.BIG_MAP), seen)
+        assertEquals(listOf(HomePresets.MIRRORED, HomePresets.BIG_MAP, HomePresets.BIG_CHAT, HomePresets.COMPACT, HomePresets.FIGHTER,
+            HomePresets.CLASSIC, HomePresets.MIRRORED), seen)
         m.press("PADLSHOULDER")
-        assertEquals(HomePresets.MIRRORED, m.chipName)
+        assertEquals(HomePresets.CLASSIC, m.chipName)
+        m.press("PADLSHOULDER")
+        assertEquals("Fighter: In fights = Top screen in the draft (D1: the player's own opt-in)", HomeLayout.FightBand.TOP, m.draft.fight)
         // every flip is made from the layout edit mode opened with (Compact's thin row does not stay on Classic)
         val c = model(start = EditStop.CHIP)
         repeat(4) { c.press("PADDRIGHT") }
@@ -367,7 +370,11 @@ class HomeEditModelTest {
         assertEquals(HomePresets.BIG_MAP, m.chipName)
         m.press("PAD1")
         m.sheetSel = 5
-        assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.CHIP)), m.press("PAD1"))   // Fighter: greyed
+        assertEquals(listOf(HomeEditModel.Fx.Relay(Motion.MODULE_OPEN)), m.press("PAD1"))   // Fighter: offered since phase 3
+        assertNull(m.sheet)
+        assertEquals(HomePresets.FIGHTER, m.chipName)
+        assertEquals(HomeLayout.FightBand.TOP, m.draft.fight)
+        m.press("PAD1")                                          // the sheet again
         m.sheetSel = 6
         assertEquals(listOf(HomeEditModel.Fx.SaveSlot(0)), m.press("PAD3"))         // X on slot 1: Save here
         m.sheetSel = m.sheetCount() - 1
