@@ -343,7 +343,7 @@ class CastStripModelTest {
         assertFalse(v.contains("CastStripModel.Side) -> Unit")); assertFalse(v.contains("drawCircle"))
         assertTrue(v.contains("Icons.get(it) ?: UiKit.icon(it)"))
         // the Bind box's Cast bar tab shows the slots' spells from icons.pak too (the kit alone has no spell icons)
-        assertTrue(src("SpellsOverlay.kt").contains("sl?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }"))
+        assertTrue(src("SpellsOverlay.kt").contains("?.let { Icons.get(it) ?: UiKit.icon(it) }"))      // cb13: a macro slot with no picture: the question mark
     }
 
     // ---------------------------------------------------------------- cb3: the Bind box's Cast bar tab (Book b56)
@@ -419,6 +419,43 @@ class CastStripModelTest {
         val v = src("CastStripView.kt")
         assertFalse(v.contains("drawText")); assertFalse(v.contains("Tr.t(")); assertFalse(v.contains("StaticLayout"))
         assertTrue(v.contains("UiKit.ringBox"))                                // the kit's HUD ring edge on every slot
+    }
+
+    /** cb13 (GitHub #553, a player: "I cannot assign macros to the bottom screen cast bar"): a player's macro on a slot, by name; a
+     *  gone macro (`miss`) takes no tap; the Macros room's Bind box gets the Cast bar tab only while the add-on takes macros (`mac`) */
+    @Test fun cb13ReadsAMacroSlot() {
+        val b = bar("""{"type":"castbar","v":"cb13","n":8,"any":1,"mac":1,"pp":[39,19],"pick":8,"e":[
+            {"s":1,"k":"macro","n":"Bravo","i":134400,"c":0},{"s":2,"k":"macro","n":"Gone","miss":1,"q":1,"c":1},
+            {"s":3,"k":"macro","n":"Heal","i":136243,"c":2,"id":77},{"s":4,"k":"macro","c":3}]}""")
+        assertTrue(b.macros)
+        val s = b.slots[0]
+        assertEquals(CastStripModel.Kind.MACRO, s.kind)
+        assertEquals("Bravo", s.name)
+        assertNull("a macro has no id (it goes by name)", s.id)
+        assertNull("nor a command key", s.key)
+        assertTrue(s.filled)
+        assertEquals(134400, s.icon)
+        assertNull("no count on a macro", s.countShown)
+        assertEquals(CastStripModel.ROW to 0, CastStripModel.tapCell(b, 0))
+        assertTrue("a gone macro keeps its name", b.slots[1].missing && b.slots[1].filled)
+        assertNull("a gone macro has no cell, takes no tap", b.slots[1].cell)
+        assertNull(CastStripModel.tapCell(b, 1))
+        assertNull("a stray id on a macro is ignored", b.slots[2].id)
+        assertFalse("a macro is no spell for the Spellbook's reads", b.has(77))
+        assertFalse("a macro row with no name is empty", b.slots[3].filled)
+        assertNull(CastStripModel.tapCell(b, 3))
+        assertTrue(b.hasSpells)
+        // the Bind box's tab: a spell's box as before; a macro's only while the add-on says mac = 1
+        assertTrue(CastStripModel.bindTab(L, b, macro = true))
+        assertFalse(CastStripModel.bindTab(OFF, b, macro = true))
+        val cb12 = bar("""{"type":"castbar","v":"cb12","n":8,"any":1,"pp":[39,19],"e":[]}""")
+        assertFalse(cb12.macros)
+        assertTrue("a spell's box on a cb12 add-on: unchanged", CastStripModel.bindTab(L, cb12))
+        assertFalse("a macro's box on a cb12 add-on: no Cast bar tab", CastStripModel.bindTab(L, cb12, macro = true))
+        // the overlay asks with the box's macro flag; a bag item's box stays spells-only (Book b59)
+        val o = src("SpellsOverlay.kt")
+        assertTrue(o.contains("if (bi != null && !bi.mac) return false"))
+        assertTrue(o.contains("CastStripModel.bindTab(HomeSettings.castBarSide, CastStripModel.Live.bar, macro = bi != null)"))
     }
 
     /** cb3: the Bind box's third tab replaces the Spellbook's own "Cast bar" button; the Settings row is Off / Left / Right / Both */
