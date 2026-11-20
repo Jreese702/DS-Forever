@@ -3457,8 +3457,9 @@ object UiKit {
         val p = bodyPaint(28f, Theme.text)
         var x = right
         for ((glyph, word) in pairs.reversed()) {
-            x -= p.measureText(word)
-            c.drawText(Tr.t(word), x, cy - (p.ascent() + p.descent()) / 2f, p)
+            val t = Tr.t(word)                                         // (measured as drawn: es / fr words are longer)
+            x -= p.measureText(t)
+            c.drawText(t, x, cy - (p.ascent() + p.descent()) / 2f, p)
             x -= 34f
             pad(c, glyph, x, cy, 48f)
             x -= 24f + 34f

@@ -113,7 +113,13 @@ object CastStripModel {
                    /** cb14: the add-on arms the in-combat layer (the app's Show in combat on, `show` = 1) */
                    val show: Boolean = false,
                    /** cb14: this add-on has the in-combat layer (`fl` = 1) */
-                   val fightLayer: Boolean = false) {
+                   val fightLayer: Boolean = false,
+                   /** cb15: Party mode's layer's 8 (empty = falls through); [Slot.cell] = its party cell (17-24) */
+                   val pslots: List<Slot> = List(SLOTS) { Slot(it, null, null, null, false) },
+                   /** cb15: the add-on arms Party mode's layer (the app's Bar in Party mode on, `ps` = 1) */
+                   val pshow: Boolean = false,
+                   /** cb15: this add-on has Party mode's layer (`pl` = 1) */
+                   val partyLayer: Boolean = false) {
         /** a pick can be sent: the padtab pick (cb2) or the row's own pick cell */
         val pickable: Boolean get() = padPick != null || pick != null
         /** cb3: the add-on takes a pick for one slot (the Bind box's Cast bar tab, Book b56) */
@@ -137,15 +143,19 @@ object CastStripModel {
         if (msg.optString("type") != "castbar") return null
         val slots = slotsOf(msg.optJSONArray("e"), 0 until SLOTS)
         val fslots = slotsOf(msg.optJSONArray("f"), FIGHT_CELL0 + 1..FIGHT_CELL0 + SLOTS)      // cb14: cells 9-16
+        val pslots = slotsOf(msg.optJSONArray("p"), PARTY_CELL0 + 1..PARTY_CELL0 + SLOTS)      // cb15: cells 17-24
         val pick = if (msg.has("pick")) msg.optInt("pick", -1).takeIf { it >= 0 } else null
         val pp = msg.optJSONArray("pp")?.let { a -> (0 until a.length()).map { a.optInt(it, -1) } }
             ?.takeIf { l -> l.isNotEmpty() && l.size <= 4 && l.all { it in 0 until 40 } }
         return Bar(slots, pick, msg.optBoolean("fight", false), msg.optString("v", ""), pp, msg.optInt("n", 12), msg.optInt("any", 0) == 1,
-            msg.optInt("mac", 0) == 1, fslots, msg.optInt("show", 0) == 1, msg.optInt("fl", 0) == 1)
+            msg.optInt("mac", 0) == 1, fslots, msg.optInt("show", 0) == 1, msg.optInt("fl", 0) == 1,
+            pslots, msg.optInt("ps", 0) == 1, msg.optInt("pl", 0) == 1)
     }
 
     /** cb14: a fight slot's cell is the pick cell's next: fight slot i (0..7) = cell [FIGHT_CELL0] + 1 + i */
     const val FIGHT_CELL0 = SLOTS
+    /** cb15: party slot i (0..7) = cell [PARTY_CELL0] + 1 + i (17-24) */
+    const val PARTY_CELL0 = SLOTS + SLOTS
 
     /** one list of the document's slots ([cells] = the cell numbers a built slot may carry) */
     private fun slotsOf(a: org.json.JSONArray?, cells: IntRange): List<Slot> {
@@ -186,19 +196,33 @@ object CastStripModel {
 
     /** a finger on slot [i]: the ONE tap (row, cell), or null (empty, queued, not built); cb14: [fight] = Home shows a fight with
      *  Show in combat on: a set fight slot's own cell (9-16) */
-    fun tapCell(bar: Bar?, i: Int, fight: Boolean = false): Pair<String, Int>? {
-        val s = shownSlot(bar, i, fight) ?: return null
+    fun tapCell(bar: Bar?, i: Int, fight: Boolean = false, party: Boolean = false): Pair<String, Int>? {
+        val s = shownSlot(bar, i, fight, party) ?: return null
         if (!s.filled || s.queued || s.missing) return null
         return s.cell?.let { ROW to it }
     }
 
-    /** cb14: what slot [i] shows and casts now: in a fight ([fight], Show on and armed: [Bar.show]) a set fight slot, else the slot */
-    fun shownSlot(bar: Bar?, i: Int, fight: Boolean = false): Slot? {
+    /** cb14: what slot [i] shows and casts now: in a fight ([fight], Show on and armed: [Bar.show]) a set fight slot, else the slot.
+     *  cb15 THE RULE PER SLOT: Party ([party] = Party mode on, Bar in Party mode armed: [Bar.pshow]) > In combat > the slot's own; an
+     *  empty slot falls through (the add-on decides the same at the press, securely: any of the slot's cells casts the right one) */
+    fun shownSlot(bar: Bar?, i: Int, fight: Boolean = false, party: Boolean = false): Slot? {
         val b = bar ?: return null
+        val p = b.pslots.getOrNull(i)
+        if (party && b.pshow && p != null && p.filled) return p
         val f = b.fslots.getOrNull(i)
         if (fight && b.show && f != null && f.filled) return f
         return b.slots.getOrNull(i)
     }
+    /** cb15: which layer slot [i] comes from now ("p" / "f" / null = its own): the strip's badge */
+    fun shownLayer(bar: Bar?, i: Int, fight: Boolean = false, party: Boolean = false): String? {
+        val b = bar ?: return null
+        if (party && b.pshow && b.pslots.getOrNull(i)?.filled == true) return "p"
+        if (fight && b.show && b.fslots.getOrNull(i)?.filled == true) return "f"
+        return null
+    }
+    /** cb15: the bar in a fight is hidden by [castBarCombat] HIDE unless Party mode is on with Bar in Party mode on (heals reachable) */
+    fun hiddenIn(mode: Combat, fighting: Boolean, partyOn: Boolean, partyShow: Boolean): Boolean =
+        hiddenIn(mode, fighting) && !(partyOn && partyShow)
 
     /** cb14 (D4): Show in combat IS castBarCombat: STAY = on (ticked), HIDE = off */
     fun showOf(mode: Combat): Boolean = mode == Combat.STAY
@@ -455,6 +479,19 @@ object CastStripModel {
     /** the taps that tell the add-on Show in combat ([show] = STAY): padtab 39 then 2 / 3 (no action, no room needed) */
     fun showCells(show: Boolean): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to if (show) SHOW_ON_CODE else SHOW_OFF_CODE)
 
+    /** cb15 / Book b71 THE SECOND PAGE OF ONE-SHOT CODES: padtab 39, then 38, then the code (39's own codes are all taken) */
+    const val PAGE2 = 38
+    const val P2_PARTY_BAR = 1
+    const val P2_PSHOW_ON = 2
+    const val P2_PSHOW_OFF = 3
+    const val P2_BIND_PARTY = 4
+    const val P2_BIND_PARTY_TAP = 5
+    fun page2(code: Int): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to PAGE2, PADTAB to code)
+    /** the taps that open the room's Party mode bar (the room open): padtab 39, 38 then 1 */
+    fun ctlPartyCells(): List<Pair<String, Int>> = page2(P2_PARTY_BAR)
+    /** the taps that tell the add-on Bar in Party mode ([on]): padtab 39, 38 then 2 / 3 (no action, no room needed) */
+    fun partyShowCells(on: Boolean): List<Pair<String, Int>> = page2(if (on) P2_PSHOW_ON else P2_PSHOW_OFF)
+
     /** the taps that open the room's Cast bar tab (the room open): padtab 39 then 29 */
     fun ctlTabCells(): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to CTL_TAB_CODE)
 
@@ -467,27 +504,36 @@ object CastStripModel {
     /** cb14: the box's In combat + Tap to cast tab: the add-on has the in-combat layer */
     fun bindFightTab(bar: Bar?, macro: Boolean = false): Boolean = bindTab(bar, macro) && bar?.fightLayer == true
 
-    /** cb14 (D9) THE BIND BOX'S FOUR TABS, in reading order: Out of combat + Controller, Out of combat + Tap to cast, In combat +
-     *  Controller, In combat + Tap to cast; LB / RB walk them ([stepBind]) */
-    data class BindTab(val fight: Boolean, val tap: Boolean) {
-        val index: Int get() = (if (fight) 2 else 0) + (if (tap) 1 else 0)
+    /** cb14 (D9) THE BIND BOX'S STOPS; cb15 (Option C, the user 2026-11-20): three SITUATIONS (Out of combat, In combat, Party mode),
+     *  each with BOTH devices on show, in reading order: a situation's controller, then its bar. LB / RB walk them ([stepBind]); the
+     *  tab row lights the situation, the gold box the device */
+    data class BindTab(val fight: Boolean, val tap: Boolean, val party: Boolean = false) {
+        val index: Int get() = (if (party) 4 else if (fight) 2 else 0) + (if (tap) 1 else 0)
+        /** 0 Out of combat, 1 In combat, 2 Party mode */
+        val situation: Int get() = if (party) 2 else if (fight) 1 else 0
     }
-    val BIND_TABS = listOf(BindTab(false, false), BindTab(false, true), BindTab(true, false), BindTab(true, true))
-    /** the tab after LB ([dir] -1) or RB (+1) from [from]; [tap] = the Tap to cast tabs are there, [fightTap] = the In combat one is
-     *  (an older add-on: none); no wrap */
-    fun stepBind(from: BindTab, dir: Int, tap: Boolean, fightTap: Boolean = tap): BindTab {
-        val list = BIND_TABS.filter { !it.tap || (tap && (!it.fight || fightTap)) }
+    val BIND_TABS = listOf(BindTab(false, false), BindTab(false, true), BindTab(true, false), BindTab(true, true),
+        BindTab(false, false, true), BindTab(false, true, true))
+    /** the stop after LB ([dir] -1) or RB (+1) from [from]; [tap] = the bar's stops are there, [fightTap] = In combat's is, [party] =
+     *  Party mode's situation is (Party mode allowed), [partyTap] = its bar (the add-on's party layer); no wrap */
+    fun stepBind(from: BindTab, dir: Int, tap: Boolean, fightTap: Boolean = tap, party: Boolean = false, partyTap: Boolean = false): BindTab {
+        val list = BIND_TABS.filter { t ->
+            (!t.party || party) && (!t.tap || (tap && (if (t.party) partyTap else !t.fight || fightTap)))
+        }
         val i = list.indexOf(from).let { if (it < 0) 0 else it }
         return list[(i + dir).coerceIn(0, list.size - 1)]
     }
     /** the taps that put the box on [t]: Out of combat / In combat + Controller = the spells row's bf-off / bf-on ([cols]: on, off);
-     *  Tap to cast = padtab 39 then 26 / 4 */
+     *  Tap to cast = padtab 39 then 26 / 4; cb15: Party mode = padtab 39, 38 then 4 (its controller) / 5 (its bar) */
     fun bindTabCells(t: BindTab, cols: Pair<Int, Int>?): List<Pair<String, Int>>? = when {
+        t.party -> page2(if (t.tap) P2_BIND_PARTY_TAP else P2_BIND_PARTY)
         t.tap && t.fight -> listOf(PADTAB to PICK, PADTAB to BIND_FIGHT_CODE)
         t.tap -> tabCells()
         cols == null -> null
         else -> listOf("spells" to if (t.fight) cols.first else cols.second)
     }
+    /** cb15: the box's Party mode bar stop: the add-on has Party mode's layer */
+    fun bindPartyTab(bar: Bar?, macro: Boolean = false): Boolean = bindTab(bar, macro) && bar?.partyLayer == true
 
     /** the taps that open the box's Cast bar tab: padtab 39 then 26 */
     fun tabCells(): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to TAB_CODE)

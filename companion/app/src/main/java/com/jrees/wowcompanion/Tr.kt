@@ -44,6 +44,7 @@ object Tr {
         o.optJSONObject("templates")?.let { t ->
             for (k in t.keys()) tm += Regex(k.split("%s").joinToString("(.+?)") { Regex.escape(it) }) to t.getString(k)
         }
+        tm.sortByDescending { it.first.pattern.length }      // the most specific first ("Tap slot %s, in combat" before "Tap slot %s")
         synchronized(this) { filePlain[lang] = plain; fileTemplates[lang] = tm; cache.clear() }
     }
 

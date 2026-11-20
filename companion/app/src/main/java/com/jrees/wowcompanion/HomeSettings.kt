@@ -238,6 +238,12 @@ object HomeSettings {
             prefs?.edit()?.putString(KEY_CAST_COMBAT, v.name)?.apply()
             for (l in listeners) l()
         }
+    /** cb15 BAR IN PARTY MODE (the user, 2026-11-20, the Controller room's Option C): while Party mode is on the tap-to-cast bar shows, in
+     *  fights too, whatever [castBarCombat] says (party heals stay reachable), and its Party mode layer is armed; on by default. The
+     *  Controller room's Party mode chip writes it; the add-on is told (padtab 39, 38 then 2 / 3) and keeps a copy (castBarPShow) */
+    var castBarPartyShow: Boolean
+        get() = prefs?.getBoolean(KEY_CAST_PARTY, true) ?: true
+        set(v) { if (v != castBarPartyShow) { prefs?.edit()?.putBoolean(KEY_CAST_PARTY, v)?.apply(); for (l in listeners) l() } }
     /** THE ONE-TIME "TRY THE TAP-TO-CAST BAR?" QUESTION (the user, 2026-11-13: "For this new install, I want it to have a one time pop
      *  up asking people if they want to try the new touch input bar"): true once it was answered (or never owed); app-wide, per
      *  install. [CastBarAsk] decides; the host shows it on Home */
@@ -275,6 +281,7 @@ object HomeSettings {
     private const val KEY_CAST_SIDE = "castBarSide"
     private const val KEY_CAST_COMBAT = "castBarCombat"
     private const val KEY_CAST_ASKED = "castBarAsked"
+    private const val KEY_CAST_PARTY = "castBarPartyShow"
     private const val KEY = "rest"
     private const val KEY_CLOCK_HEARTH = "clockHearth"
     private const val KEY_CLOCK_TELEPORT = "clockTeleport"

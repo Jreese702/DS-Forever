@@ -1556,6 +1556,7 @@ class HomeView(
                 || PARTY_MODULE != laidPartyModule))) changed()
         partyView.invalidate()
         shown?.let { partyStripSync(it) }
+        castStripFight()                                                  // cb15: Party mode on / off: the bar's Party layer and its fight rule
         onStateChanged?.invoke()                                          // the disc's red B follows
     }
 
@@ -1665,7 +1666,7 @@ class HomeView(
 
     /** a finger on slot [i]: the slot's cell on the "castbar" row (nothing for an empty / waiting slot) */
     private fun castStripTap(i: Int) {
-        val cell = CastStripModel.tapCell(CastStripModel.Live.bar, i, castStrip.fightNow) ?: return   // cb14: a fight's override cell (9-16)
+        val cell = CastStripModel.tapCell(CastStripModel.Live.bar, i, castStrip.fightNow, castStrip.partyNow) ?: return   // cb14 / cb15: the layer's cell
         val sent = pad != null && TapBridge.tap(context, pad, cell.first, cell.second) { }
         Log.i(TAG, "cast bar: slot ${i + 1} -> ${cell.first} ${cell.second} ${if (sent) "tapped" else "not sent"}")
     }
@@ -1695,14 +1696,16 @@ class HomeView(
     }
 
     /** the bar's touch gate for Home's fight now (no re-lay: [apply] calls this before it lays the page) */
-    private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown()) }
+    private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown(), castPartyKeep()) }
+    /** cb15 (Option C, Bar in Party mode): Party mode on and its bar setting on: the bar stays in fights and its Party layer shows */
+    private fun castPartyKeep(): Boolean = renderLook?.castSide == null && party.party?.onLive == true && HomeSettings.castBarPartyShow
 
     /** the bar's side and its fight rule now: the player's, or a preview look's (Hide with it) */
     private fun castSideNow(): CastStripModel.Side = renderLook?.castSide ?: HomeSettings.castBarSide
     private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat
 
     /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
-    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown())
+    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
 
     private fun castStripRelay() {
         val s = shown ?: return

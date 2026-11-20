@@ -101,11 +101,8 @@ class CastBarTabShotsTest {
         draw()
     }
 
-    /** the left page's slot tile centres (PadTabPage's CB_* : 8 x 72 px, 12 apart, centred on the left page, top 360) */
-    private fun tile(p: Int): Pair<Float, Float> {
-        val x0 = (8f + 740f) / 2f - (8 * 72f + 7 * 12f) / 2f
-        return x0 + (p - 1) * 84f + 36f to 396f + ControllerView.SUB_DY          // p55: under the sub-tab row
-    }
+    /** the left page's slot tile centres (p56: the bar's section under the controller, [SituationPage.tile]) */
+    private fun tile(p: Int): Pair<Float, Float> = SituationPage.tile(p).let { it.centerX() to it.centerY() }
     private val change = 990f to h - 85f
 
     @Test fun theTabIsASubTabNow() {
@@ -123,7 +120,8 @@ class CastBarTabShotsTest {
         assertTrue(r.v.enterRoom())
         val first = r.cells.first { it.contains("spells" to 5) }
         assertEquals("the setting (p55: and Show in combat) before the open, then the croom tap",
-            listOf("padtab" to 39, "padtab" to 30, "padtab" to 39, "padtab" to if (CastStripModel.showOf(HomeSettings.castBarCombat)) 2 else 3, "spells" to 5), first)
+            listOf("padtab" to 39, "padtab" to 30, "padtab" to 39, "padtab" to if (CastStripModel.showOf(HomeSettings.castBarCombat)) 2 else 3,
+                "padtab" to 39, "padtab" to 38, "padtab" to if (HomeSettings.castBarPartyShow) 2 else 3, "spells" to 5), first)     // p56: Bar in Party mode too
     }
 
     @Test fun aFingerOnASlotIsItsButtonCode() {
@@ -176,6 +174,7 @@ class CastBarTabShotsTest {
         val open = r.cells.first { it.contains("spells" to 5) }
         assertEquals("the setting, Show in combat (p55), the room's own open, then WoW Defaults > Tap to cast and slot 1",
             listOf("padtab" to 39, "padtab" to 30, "padtab" to 39, "padtab" to if (CastStripModel.showOf(HomeSettings.castBarCombat)) 2 else 3,
+                "padtab" to 39, "padtab" to 38, "padtab" to if (HomeSettings.castBarPartyShow) 2 else 3,         // p56: Bar in Party mode
                 "spells" to 5, "padtab" to 39, "padtab" to 29, PadMapModel.ROW to PadMapModel.colPos(1)), open)
         assertEquals("castbar", r.v.page().currentView())
         assertFalse("once", r.v.castBarOwed)
