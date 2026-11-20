@@ -13,7 +13,7 @@ import java.util.concurrent.Executors
  * OFFLINE VOICE TYPING for the voice sheet (the user, 2026-11-16: "could we use something like https://handy.computer/?", then "base with
  * optional downloads per language"): the microphone through AudioRecord (16 kHz mono PCM16, only once the player allowed it in Android's
  * own question, [VoiceMic]), [Voice.Vad]'s stop rule (1.2 s of quiet after the words, 15 s at most, A stops at once), then whisper.cpp
- * ([WhisperNative]) on a background thread with the model the app's language wants ([Voice.whisperModel]). The sheet shows "Listening",
+ * ([WhisperNative]) on a background thread with the model the Voice language wants ([Voice.whisperModel]: Settings.voiceLanguage, else the app's language; #477). The sheet shows "Listening",
  * then "Working", then the words in the box; NOTHING IS SENT by itself (the words go in only on A / Start, the sheet's rule).
  *
  * Every answer reaches the sink on the main thread, for the current session only: no recorder = [Voice.E_AUDIO], nothing said =
@@ -34,7 +34,7 @@ class WhisperEngine(context: Context,
 
     override fun start(online: Boolean, lang: String, hints: List<String>, sink: VoiceEngine.Sink): Boolean {
         cancel()
-        val pick = Voice.whisperModel(Tr.lang(), on()) ?: return false
+        val pick = Voice.whisperModel(Tr.lang(), on(), Settings.voiceLanguage) ?: return false
         if (!VoiceMic.granted(app)) { ui.post { sink.error(Voice.E_PERMISSIONS) }; return true }
         val s = ++session
         stopAsked = false
@@ -52,7 +52,7 @@ class WhisperEngine(context: Context,
     /** ptt-speed: the model starts loading at the push-to-talk press (the hold starts [HoldTalk.HOLD_MS] later), so a cold load
      *  overlaps the hold and the talking; nothing is recorded */
     fun preload() {
-        val pick = Voice.whisperModel(Tr.lang(), on()) ?: return
+        val pick = Voice.whisperModel(Tr.lang(), on(), Settings.voiceLanguage) ?: return
         if (held) warmMs = PTT_IDLE_MS
         work.execute { runCatching { loaded(pick.first) } }
     }

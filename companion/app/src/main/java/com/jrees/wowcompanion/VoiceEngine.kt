@@ -148,7 +148,7 @@ class VoiceEngine(context: Context) {
         /** which recognizer the sheet can use with the setting [mode] ([Voice.avail]; offline voice first when its model is on disk) */
         fun avail(ctx: Context, mode: Voice.Mode): Voice.Avail {
             VoiceModels.init(ctx)
-            return Voice.avail(mode, Build.VERSION.SDK_INT, onDeviceFlag(ctx), services(ctx), WhisperEngine.on(), Tr.lang())
+            return Voice.avail(mode, Build.VERSION.SDK_INT, onDeviceFlag(ctx), services(ctx), WhisperEngine.on(), Tr.lang(), Settings.voiceLanguage)
         }
     }
 }

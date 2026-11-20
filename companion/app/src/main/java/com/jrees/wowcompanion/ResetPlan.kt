@@ -29,8 +29,8 @@ package com.jrees.wowcompanion
  *                                 chatStyleSet2, cursorSoftSet (one-time moves, probes, calibrations: a reset would run them again)
  *
  * APP PREFERENCES (SharedPreferences files)
- *  settings     SETTINGS lighterMode, lowMemGraphics, homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping, minimapYd,
- *                        minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme
+ *  settings     SETTINGS lighterMode, lowMemGraphics, homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
+ *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme
  *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
  *                        swapScreensFails, settingsTab, the migration marks
@@ -122,7 +122,7 @@ object ResetPlan {
 
     val PREFS: List<PrefKey> = listOf(
         exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
-            "voiceTyping", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme"),
+            "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme"),
         exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", "gameAccountAsk",
             "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",
             "theme_custom", "swapScreensFails", "settingsTab"),

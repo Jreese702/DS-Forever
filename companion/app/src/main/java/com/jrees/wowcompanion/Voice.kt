@@ -34,7 +34,9 @@ object Voice {
 
     /**
      * What a recognizer wrote, as chat can carry it: accents folded (BEFORE the cleaning, which would drop the letter), curly quotes and
-     * dashes as ASCII, "|" dropped (chat13), runs of spaces as one, the ends trimmed.
+     * dashes as ASCII, "|" dropped (chat13), runs of spaces as one, the ends trimmed. #477: a letter of ANOTHER SCRIPT (Cyrillic, Greek,
+     * Arabic, CJK ...: [keepsScript]) is kept as it is (never decomposed: "й" stays "й"), and chat types it as UTF-8 (ChatStream's
+     * byte cells, Chat.lua chat43). The Latin letters fold to ASCII as before.
      */
     fun fold(s: String): String {
         val sb = StringBuilder(s.length)
@@ -55,6 +57,7 @@ object Voice {
                 else -> when {
                     ch.isWhitespace() || ch == '\u00A0' -> sb.append(' ')
                     ch.code < 128 -> sb.append(ch)
+                    keepsScript(ch) -> sb.append(ch)
                     else -> for (d in Normalizer.normalize(ch.toString(), Normalizer.Form.NFD))
                         if (Character.getType(d) != Character.NON_SPACING_MARK.toInt()) sb.append(d)
                 }
@@ -65,9 +68,33 @@ object Voice {
 
     private val SPACES = Regex(" {2,}")
 
-    /** [fold], then only printable ASCII but "|" (what ChatStream's cells type), no more than [max] */
+    /**
+     * #477: a character of a script that is not Latin, kept as it is ([fold]) and typed as UTF-8: a letter, digit or mark of its own
+     * script, or a CJK / full-width sign (the "ー" of Japanese is a Common-script letter), never a surrogate (an emoji: 4 UTF-8 bytes,
+     * whisper_jni drops them too), a control, format, private-use or unassigned one
+     */
+    fun keepsScript(ch: Char): Boolean {
+        if (ch.code < 128 || Character.isSurrogate(ch)) return false
+        when (Character.getType(ch).toByte()) {
+            Character.CONTROL, Character.FORMAT, Character.PRIVATE_USE, Character.UNASSIGNED, Character.SURROGATE,
+            Character.SPACE_SEPARATOR, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR -> return false
+        }
+        return when (runCatching { Character.UnicodeScript.of(ch.code) }.getOrNull()) {
+            null, Character.UnicodeScript.LATIN, Character.UnicodeScript.INHERITED, Character.UnicodeScript.UNKNOWN -> false
+            Character.UnicodeScript.COMMON -> Character.isLetterOrDigit(ch) || Character.UnicodeBlock.of(ch).let {
+                it == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION || it == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS ||
+                    it == Character.UnicodeBlock.KATAKANA || it == Character.UnicodeBlock.HIRAGANA
+            }
+            else -> true
+        }
+    }
+
+    /** a character chat can type: printable ASCII but "|" (ChatStream's letter cells), or another script's ([keepsScript], as UTF-8) */
+    fun chatChar(ch: Char): Boolean = (ch.code in 32..126 && ch != '|') || keepsScript(ch)
+
+    /** [fold], then only what chat can type ([chatChar]), no more than [max] */
     fun clean(s: String, max: Int): String =
-        fold(s).filter { it.code in 32..126 && it != '|' }.replace(SPACES, " ").trim().take(maxOf(0, max)).trimEnd()
+        fold(s).filter { chatChar(it) }.replace(SPACES, " ").trim().take(maxOf(0, max)).trimEnd()
 
     /**
      * The box's text with [heard] in it: a MESSAGE box ([append]) adds the words after what it had (a space between), a SEARCH or NAME box
@@ -188,15 +215,24 @@ object Voice {
     data class WhisperOn(val lib: Boolean, val en: Boolean, val multi: Boolean, val enSmall: Boolean = false, val multiSmall: Boolean = false)
 
     /**
-     * Which model and language offline voice uses for the app's language [appLang] ("en", "es", "fr"): a language that is not English
-     * takes the multilingual file when it is there; else the English one ("en"); else the multilingual one in the app's language.
-     * Of one kind the bigger file listens when both are in, else whichever is there. Null = no model on disk (or no library).
+     * Which model and language offline voice uses for the app's language [appLang] ("en", "es", "fr") and the Voice language pick [voice]
+     * ([VoiceLanguage], issue #477; default "Same as the app"):
+     *  - SAME AS THE APP (as before): a language that is not English takes the multilingual file when it is there; else the English one
+     *    ("en"); else the multilingual one in the app's language.
+     *  - A PICKED LANGUAGE or AUTO-DETECT: English takes the English file, else the multilingual one; anything else (Russian, "auto")
+     *    ONLY the multilingual one - an English-only ".en" model cannot write Russian, so none = null ([needsMulti]: the sheet offers
+     *    the "Other languages" download instead, with its size; nothing downloads by itself).
+     * Of one kind the bigger file listens when both are in, else whichever is there. Null = no model that can listen (or no library).
      */
-    fun whisperModel(appLang: String, w: WhisperOn?): Pair<VoiceModels.Model, String>? {
+    fun whisperModel(appLang: String, w: WhisperOn?, voice: String = VoiceLanguage.SAME): Pair<VoiceModels.Model, String>? {
         if (w == null || !w.lib) return null
-        val lang = langOf(appLang)
+        val lang = VoiceLanguage.resolve(voice, appLang)
         val en = if (w.en) VoiceModels.Model.EN else if (w.enSmall) VoiceModels.Model.EN_SMALL else null
         val multi = if (w.multi) VoiceModels.Model.MULTI else if (w.multiSmall) VoiceModels.Model.MULTI_SMALL else null
+        if (VoiceLanguage.sanitize(voice) != VoiceLanguage.SAME) return when {
+            lang == "en" -> (en ?: multi)?.let { it to "en" }
+            else -> multi?.let { it to lang }
+        }
         return when {
             lang != "en" && multi != null -> multi to lang
             en != null -> en to "en"
@@ -205,11 +241,17 @@ object Voice {
         }
     }
 
-    private fun langOf(appLang: String): String = appLang.lowercase().substringBefore('-').ifEmpty { "en" }
+    /**
+     * #477: the Voice language pick wants a multilingual model and only an English one is on disk (the library in): the voice sheet
+     * offers the "Other languages" download (its size on the row), never the English fallback, never a download by itself
+     */
+    fun needsMulti(appLang: String, w: WhisperOn?, voice: String = VoiceLanguage.SAME): Boolean =
+        w != null && w.lib && VoiceLanguage.sanitize(voice) != VoiceLanguage.SAME && VoiceLanguage.needsMulti(voice, appLang) &&
+            !w.multi && !w.multiSmall && (w.en || w.enSmall)
 
-    /** the model the voice sheet offers to download for [appLang]: the small one, multilingual for a language that is not English */
-    fun wantedModel(appLang: String): VoiceModels.Model =
-        if (langOf(appLang) != "en") VoiceModels.Model.MULTI_SMALL else VoiceModels.Model.EN_SMALL
+    /** the model the voice sheet offers to download for [appLang] and [voice]: the small one, multilingual for a language that is not English */
+    fun wantedModel(appLang: String, voice: String = VoiceLanguage.SAME): VoiceModels.Model =
+        if (VoiceLanguage.needsMulti(voice, appLang)) VoiceModels.Model.MULTI_SMALL else VoiceModels.Model.EN_SMALL
 
     /** what listens */
     sealed class Pick {
@@ -230,8 +272,9 @@ object Voice {
      * THE ORDER: offline voice when its model is on disk ([whisperModel]), else the on-device recognizer, else a trusted named service
      * ([trusted]), else none (then the sheet offers the model's download when the library is in: [avail]'s NEED_MODEL)
      */
-    fun pick(api: Int, onDeviceAvailable: Boolean, services: List<Service>, whisper: WhisperOn? = null, appLang: String = "en"): Pick {
-        whisperModel(appLang, whisper)?.let { (m, l) -> return Pick.Whisper(m, l) }
+    fun pick(api: Int, onDeviceAvailable: Boolean, services: List<Service>, whisper: WhisperOn? = null, appLang: String = "en",
+             voice: String = VoiceLanguage.SAME): Pick {
+        whisperModel(appLang, whisper, voice)?.let { (m, l) -> return Pick.Whisper(m, l) }
         return when {
             onDevice(api, onDeviceAvailable) -> Pick.OnDevice
             else -> trusted(services)?.let { Pick.Named(it) } ?: Pick.None
@@ -243,9 +286,9 @@ object Voice {
      * on-device one only (nothing leaves the Thor until the player picks Online once).
      */
     fun recognizer(online: Boolean, api: Int, onDeviceAvailable: Boolean, services: List<Service>, whisper: WhisperOn? = null,
-                   appLang: String = "en"): Pick {
+                   appLang: String = "en", voice: String = VoiceLanguage.SAME): Pick {
         // offline voice first, whichever the setting (nothing leaves the Thor)
-        whisperModel(appLang, whisper)?.let { (m, l) -> return Pick.Whisper(m, l) }
+        whisperModel(appLang, whisper, voice)?.let { (m, l) -> return Pick.Whisper(m, l) }
         return when {
             online -> trusted(services)?.let { Pick.Named(it) } ?: if (onDevice(api, onDeviceAvailable)) Pick.OnDevice else Pick.None
             onDevice(api, onDeviceAvailable) -> Pick.OnDevice
@@ -255,9 +298,11 @@ object Voice {
 
     /** which recognizer the sheet can use with the setting [mode] ([pick]'s order; Online = the player's pick of the named service) */
     fun avail(mode: Mode, api: Int, onDeviceAvailable: Boolean, services: List<Service>, whisper: WhisperOn? = null,
-              appLang: String = "en"): Avail {
+              appLang: String = "en", voice: String = VoiceLanguage.SAME): Avail {
         if (mode == Mode.OFF) return Avail.NONE
-        if (whisperModel(appLang, whisper) != null) return Avail.WHISPER
+        if (whisperModel(appLang, whisper, voice) != null) return Avail.WHISPER
+        // #477: a picked language only the multilingual model writes, and only English on disk: offer that download (never English)
+        if (needsMulti(appLang, whisper, voice)) return Avail.NEED_MODEL
         // nothing else can listen: the model's download is offered (a build with the library), else the old line
         val none = if (whisper?.lib == true) Avail.NEED_MODEL else Avail.NONE
         return when (mode) {

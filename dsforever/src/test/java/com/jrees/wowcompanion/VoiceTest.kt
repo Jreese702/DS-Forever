@@ -79,10 +79,11 @@ class VoiceTest {
 
     @Test fun cleanKeepsOnlyWhatChatCarriesAndCutsToTheBox() {
         assertEquals("hello", Voice.clean("hello world", 5))
-        assertEquals("ok", Voice.clean("日本 ok", 10))
+        // #477: another script is kept (chat types it as UTF-8, Chat.lua chat43); an emoji still goes
+        assertEquals("日本 ok", Voice.clean("日本 ok", 10))
         assertEquals("smile", Voice.clean("smile 😀", 20))
         val c = Voice.clean("Él dijo: «sí» — vale…", 255)
-        assertTrue(c, c.all { ChatStream.cellOf(it) != null })
+        assertTrue(c, c.all { ChatStream.cellOf(it) != null })         // Latin still folds to ASCII
         assertEquals("El dijo: \"si\" - vale...", c)
     }
 

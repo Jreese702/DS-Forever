@@ -239,6 +239,15 @@ object Settings {
         set(v) { if (v != voiceTyping) { prefs?.edit()?.putString("voiceTyping", v.key)?.apply(); changed() } }
 
     /**
+     * VOICE LANGUAGE (issue #477: "let me pick the speech language (Russian), independent of the app language"): what voice typing
+     * listens for - "app" (Same as the app, the default), "auto" (Auto-detect) or one of Whisper's language codes ([VoiceLanguage]).
+     * App-wide, like Voice typing; Reset settings' (ResetPlan's settings bucket).
+     */
+    var voiceLanguage: String
+        get() = VoiceLanguage.sanitize(prefs?.getString(VoiceLanguage.PREF, null))
+        set(v) { val s = VoiceLanguage.sanitize(v); if (s != voiceLanguage) { prefs?.edit()?.putString(VoiceLanguage.PREF, s)?.apply(); changed() } }
+
+    /**
      * WINDOWS ID (the user, 2026-11-14: "build it"; the BLZ51914400 wave): which Windows machine identity the game's container shows,
      * from the next game start - "per_install" (the default, 1.0.25's own identity per install) or "original" (v2.3.3's shared prebuilt
      * one). See [WindowsId]; the launcher reads it at each start (MachineIdentityApply).

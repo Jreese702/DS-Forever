@@ -40,6 +40,11 @@ object GeneralTiles {
     const val THEME = "theme"
     const val SWAP = "swap"
     const val VOICE = "voice"
+    /** #477: the Voice typing band's second line, the Voice language stepper (previous / next in [VoiceLanguage.ORDER]) */
+    const val VOICE_LANG = "voicelang"
+    val VOICE_LANG_STEPS = listOf("<", ">")
+    /** #477: the band's status while the Voice language needs the multilingual model and only English is on disk */
+    const val NEEDS_MULTI = "Download Other languages in Add-ons"
 
     /** a tile's slot: [wide] = it spans two columns (the design's three wide tiles: Theme here) */
     data class Slot(val id: String, val wide: Boolean = false)
@@ -277,22 +282,32 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         return voiceNeeds
     }
 
-    /** one line of a band: [words] choices (the chosen one [chosen], -1 = none lit), labelled when [label] is set */
-    private class BandLine(val key: String, val label: String?, val words: List<String>, val chosen: Int, val action: Boolean = false)
+    /** one line of a band: [words] choices (the chosen one [chosen], -1 = none lit), labelled when [label] is set; a stepper ([stepper]:
+     *  [words] are its buttons, [value] its value under the label, Bottom's minimap zoom lines) */
+    private class BandLine(val key: String, val label: String?, val words: List<String>, val chosen: Int, val action: Boolean = false,
+                           val value: String? = null, val stepper: Boolean = false)
 
     private fun lines(id: String): List<BandLine> = when (id) {
         GeneralTiles.SWAP -> listOfNotNull(
             BandLine("swap", null, listOf("On", "Off"), if (Settings.swapScreens) 0 else 1),
             // no dead stops: the Restart line only while a restart can apply the choice now
             if (swapPending() == ScreenSwap.Pending.RESTART) BandLine("restart", null, listOf("Restart DS Forever"), -1, action = true) else null)
-        GeneralTiles.VOICE -> listOf(BandLine("voice", null, Voice.Mode.values().map { it.label }, Settings.voiceTyping.ordinal))
+        GeneralTiles.VOICE -> listOfNotNull(BandLine("voice", null, Voice.Mode.values().map { it.label }, Settings.voiceTyping.ordinal),
+            // #477: the Voice language (Same as the app, Auto-detect, Whisper's languages): a stepper, while voice typing is on
+            if (Settings.voiceTyping != Voice.Mode.OFF) BandLine(GeneralTiles.VOICE_LANG, "Voice language", GeneralTiles.VOICE_LANG_STEPS, -1,
+                value = VoiceLanguage.label(Settings.voiceLanguage, Tr.lang()), stepper = true) else null)
         else -> emptyList()
     }
 
     /** the band's one status line: state only */
     private fun status(id: String): String = when (id) {
         GeneralTiles.SWAP -> if (swapPending() == ScreenSwap.Pending.AFTER_GAME) "After the game closes" else ""
-        GeneralTiles.VOICE -> if (Settings.voiceTyping != Voice.Mode.OFF && voiceNeedsModel()) "Download a voice in Add-ons" else ""
+        GeneralTiles.VOICE -> when {
+            Settings.voiceTyping == Voice.Mode.OFF || !voiceNeedsModel() -> ""
+            // #477: only English on disk and the Voice language needs the multilingual model
+            Voice.needsMulti(Tr.lang(), WhisperEngine.on(), Settings.voiceLanguage) -> GeneralTiles.NEEDS_MULTI
+            else -> "Download a voice in Add-ons"
+        }
         else -> ""
     }
 
@@ -471,6 +486,11 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             line.key == "voice" -> {
                 Settings.voiceTyping = Voice.Mode.values()[k]
                 DiagLog.event("voice", "Voice typing set ${Settings.voiceTyping.key}")
+            }
+            line.key == GeneralTiles.VOICE_LANG -> {
+                Settings.voiceLanguage = VoiceLanguage.step(Settings.voiceLanguage, if (k == 0) -1 else 1)
+                DiagLog.event("voice", "Voice language set ${Settings.voiceLanguage}")
+                voiceAvailAt = 0L                   // the status line looks again now (Russian may need the multilingual model)
             }
         }
     }
@@ -704,11 +724,15 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             val bl = lines.getOrNull(i) ?: continue
             line.label?.let { lb ->
                 pName.color = Theme.text
-                c.drawText(fitText(pName, Tr.t(bl.label ?: ""), lb.w - 6f, 25f, 18f), lb.l + 4f, lb.cy + 9f, pName)
+                if (bl.value != null) {
+                    c.drawText(fitText(pName, Tr.t(bl.label ?: ""), lb.w - 6f, 25f, 18f), lb.l + 4f, lb.cy - 6f, pName)
+                    pValue.color = Theme.gold
+                    c.drawText(fitText(pValue, Tr.t(bl.value), lb.w - 6f, 22f, 16f), lb.l + 4f, lb.cy + 26f, pValue)
+                } else c.drawText(fitText(pName, Tr.t(bl.label ?: ""), lb.w - 6f, 25f, 18f), lb.l + 4f, lb.cy + 9f, pName)
             }
             for ((k, b) in line.buttons.withIndex()) {
                 if (bl.action) UiKit.button(c, b.rect(), word(bl, k), UiKit.Button.UP, textSize = 27f)
-                else UiKit.choice(c, b.rect(), Tr.t(word(bl, k)), k == bl.chosen, textSize = 27f)
+                else UiKit.choice(c, b.rect(), Tr.t(word(bl, k)), k == bl.chosen, textSize = if (bl.stepper) 40f else 27f)
             }
         }
         val say = status(id)

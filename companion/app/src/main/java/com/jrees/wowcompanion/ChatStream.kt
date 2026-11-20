@@ -21,6 +21,11 @@ package com.jrees.wowcompanion
  * Pure Kotlin, tested off the device (tools/chat_test): [taps] hands cells to TapBridge (gap in ms between a batch's taps), [now]
  * is the clock, and the view feeds the add-on's answers to [heard].
  *
+ * #477 (UTF-8 chat, Chat.lua chat43): a character of another script (Cyrillic, Greek, CJK ...: [Voice.keepsScript]) goes as its UTF-8
+ * BYTES, each byte a prefix cell on the command row ([HI_A] = 0x80 + the next letter's code - 32, [HI_B] = 0xC0 + it; letters 32..95)
+ * and then that letter cell. The add-on's buffer is bytes (WoW's chat is UTF-8), so the length, hash and limits here are UTF-8 bytes
+ * ([bytes]); a delete takes the whole last character there, as here. Printable ASCII is one cell, as before.
+ *
  * [field] (chat22, 1.0.8: Send Mail and the auction-house search): the same rows fill ONE field another add-on borrowed from Chat.lua
  * (WC.chatField) while it holds the controller; Send hands the text to that add-on. No type, no target, no top-screen chat: the type
  * is "FIELD" (what Chat.lua reports while a field is open), a resync is the body alone, and nothing here ever shows or hides the
@@ -59,11 +64,48 @@ class ChatStream(
             else -> null
         }
 
-        /** Chat.lua's hashOf: h = (h * 31 + byte) mod 16777213 over the bytes */
+        /** #477: the prefix cells (Chat.lua chat43, the command row's columns 2 / 3): the next letter types byte 0x80 / 0xC0 + its code - 32 */
+        val HI_A = "chcmd" to 2
+        val HI_B = "chcmd" to 3
+
+        /**
+         * the cells that type [ch]: printable ASCII but "|" = its one cell; another script's character ([Voice.keepsScript]) = its UTF-8
+         * bytes, each [HI_A] or [HI_B] then the letter cell of (byte & 0x3F) + 32; null = chat cannot carry it (an emoji, a control)
+         */
+        fun cellsOf(ch: Char): List<Pair<String, Int>>? {
+            cellOf(ch)?.let { return listOf(it) }
+            if (!Voice.keepsScript(ch)) return null
+            val out = ArrayList<Pair<String, Int>>(6)
+            for (b in ch.toString().toByteArray(Charsets.UTF_8)) {
+                val v = b.toInt() and 0xFF
+                if (v < 0x80) return null
+                out.add(if (v < 0xC0) HI_A else HI_B)
+                out.add(cellOf(((v and 0x3F) + 32).toChar()) ?: return null)
+            }
+            return out
+        }
+
+        /** [s]'s length as the add-on counts it (Lua's #: UTF-8 bytes) */
+        fun bytes(s: String): Int = s.toByteArray(Charsets.UTF_8).size
+
+        /** Chat.lua's hashOf: h = (h * 31 + byte) mod 16777213 over the UTF-8 bytes (ASCII: one byte a character, as before) */
         fun hash(s: String): Int {
             var h = 0L
-            for (c in s) h = (h * 31 + c.code) % 16777213L
+            for (b in s.toByteArray(Charsets.UTF_8)) h = (h * 31 + (b.toInt() and 0xFF)) % 16777213L
             return h.toInt()
+        }
+
+        /** only what chat can carry ([cellsOf]), no more than [max] UTF-8 bytes (never half a character) */
+        fun carry(s: String, max: Int): String {
+            val sb = StringBuilder()
+            var n = 0
+            for (ch in s) {
+                if (cellsOf(ch) == null) continue
+                val b = if (ch.code < 0x80) 1 else if (ch.code < 0x800) 2 else 3
+                if (n + b > max) break
+                sb.append(ch); n += b
+            }
+            return sb.toString()
         }
     }
 
@@ -182,10 +224,10 @@ class ChatStream(
         return REPEAT_GAP_MS
     }
 
-    private fun letters(s: String): List<Pair<String, Int>> = s.mapNotNull { cellOf(it) }
+    private fun letters(s: String): List<Pair<String, Int>> = s.flatMap { cellsOf(it) ?: emptyList() }
 
-    /** only what chat can carry, and no more than the game takes */
-    fun clean(s: String, max: Int = MAX): String = s.filter { cellOf(it) != null }.take(max)
+    /** only what chat can carry, and no more than the game takes (UTF-8 bytes: the add-on's limits are Lua lengths) */
+    fun clean(s: String, max: Int = MAX): String = carry(s, max)
 
     /**
      * The message as the player has it now. Sends what differs: deletes back to the common start, then the new characters.
@@ -199,7 +241,7 @@ class ChatStream(
         val common = body.commonPrefixWith(want).length
         val deletes = body.length - common
         // a long way back is a clear and a retype when that is fewer taps
-        if (deletes > 1 && want.length < deletes) {
+        if (deletes > 1 && letters(want).size < deletes) {
             cells.add("chq" to CLEAR)
             cells.addAll(letters(want))
         } else {
@@ -255,8 +297,8 @@ class ChatStream(
     }
 
     /** the add-on's buffers as the last answer has them, against the mirror */
-    fun matches(h: Heard? = heardT): Boolean = h != null && h.len == body.length && h.h == hash(body) &&
-        h.tlen == target.length && h.th == hash(target) && h.ty == type
+    fun matches(h: Heard? = heardT): Boolean = h != null && h.len == bytes(body) && h.h == hash(body) &&
+        h.tlen == bytes(target) && h.th == hash(target) && h.ty == type
 
     /**
      * SEND the message: check first (15, answered at once), then the ONE game action (23). False when there is nothing to send or a

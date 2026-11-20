@@ -140,7 +140,7 @@ load = L.eval('function(src, name) local f, e = loadstring(src, name); if not f 
 load(CHAT, "@Chat.lua")("WowCompanion")
 L.execute('HOLDER = "pad:chat"; fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
 ok(L.eval('#ERRS') == 0, "no Lua errors at the login: %s" % L.eval('table.concat(ERRS, " | ")'))
-ok('local CHATV = "chat42"' in CHAT, "Chat.lua is chat42")
+ok('local CHATV = "chat43"' in CHAT, "Chat.lua is chat43")
 
 
 def alpha(expr):
@@ -196,7 +196,7 @@ ok(all(d.get("hold") == 5 for d in bn), "chat41: the game's toast time (toastDur
 ok(bn[0].get("who") == "Thrall" and bn[0].get("on") is True and not bn[0].get("bt"), "online: the character they play: %r" % bn[0])
 ok(bn[1].get("who") == "Quietone" and bn[1].get("on") is False and bn[1].get("bt") is True, "offline: the BattleTag's name: %r" % bn[1])
 ok(bn[2].get("who") is None, "only protected names: no name at all (the app says A friend): %r" % bn[2])
-ok(all(d.get("v") == "chat42" for d in bn) and len({d.get("id") for d in bn}) == 3, "each its own id, chat42")
+ok(all(d.get("v") == "chat43" for d in bn) and len({d.get("id") for d in bn}) == 3, "each its own id, chat43")
 raw = json.dumps(bn)
 ok("|K" not in raw and "Palfriend#" not in raw, "never the account name, a |K string or a whole BattleTag: %s" % raw)
 ok(not any(d.get("type") == "chat" and "Thrall" in json.dumps(d) for d in docs(L)[n0:]), "a BN login is not a chat line")
@@ -227,7 +227,7 @@ ok(more[3].get("who") == "Quietone" and more[3].get("text") is None, "a protecte
 ok(more[4].get("name") == "Goldshire Book Club", "a community invite: its name: %r" % more[4])
 ok(more[5].get("name") is None, "a protected community name: none: %r" % more[5])
 ok(more[6].get("name") == "Finders g1", "the community-finder invite: only the approved one not joined yet: %r" % more[6])
-ok(all(d.get("hold") == 5 and d.get("v") == "chat42" for d in more), "each with hold and chat42")
+ok(all(d.get("hold") == 5 and d.get("v") == "chat43" for d in more), "each with hold and chat43")
 raw = json.dumps(more)
 ok("|K" not in raw and "#" not in raw, "never a |K string or a whole BattleTag: %s" % raw)
 ok(not any(d.get("type") == "chat" and ("LFG Deadmines" in json.dumps(d)) for d in docs(L)[n1:]), "a broadcast is not a chat line")
@@ -238,7 +238,7 @@ L.execute('CVARS.toastDuration = "5"')
 
 # ---- 4. the "!" press: chcmd column 1
 cell = 'WowCompanion.pad.rows.chcmd.cells[1]'
-ok(L.eval('WowCompanion.pad.rows.chcmd ~= nil and WowCompanion.pad.rows.chcmd.n') == 2, "chcmd has two cells (no new row)")
+ok(L.eval('WowCompanion.pad.rows.chcmd ~= nil and WowCompanion.pad.rows.chcmd.n') == 4, "chcmd has four cells (no new row; chat43: 2 / 3 the UTF-8 byte prefixes)")
 ok(L.eval('%s ~= nil and %s:GetAttribute("type") == nil' % (cell, cell)), "column 1 has no secure action")
 ok(L.eval('WowCompanion.pad.rows.chcmd.cells[0]:GetAttribute("type")') == "macro", "column 0 is still the /command macro")
 
