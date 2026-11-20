@@ -28,6 +28,9 @@ Safety k7 (the k6 review's must-fix list), proven here too:
   k a kept realm found BEFORE PLAYER_LOGIN (WowCompanionSpellsDB not loaded yet) is asked again at PLAYER_LOGIN;
   l the fold's backup holds COPIES (an edit of the adopted store after the fold leaves the backup as it was);
   m the padmap's who carries rh (the game's realm hint present / none) for the app's diagnostic line.
+Safety k8 (the k6 review, round 2), proven here too:
+  n the class alone ("maybe": no server id to compare) picks a kept realm only AFTER PLAYER_LOGIN (no key before it);
+  o the fold's backup keeps the 2 newest folds PER NAME (another character's folds never push this one's out).
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -153,8 +156,9 @@ def clean(L, name):
 
 
 # ================================================================ 0 the versions and the builders
-check('WC.KERNEL = "k7"' in TEXT["safety"] and "function WC.charKey()" in TEXT["safety"] and "what happened to my combat bars on my hunter" in TEXT["safety"]
-      and "k7 THE KEPT REALM IS THIS CHARACTER'S" in TEXT["safety"], "0. Safety k7 (k6's note kept): WC.charKey, its note quotes the user")
+check('WC.KERNEL = "k8"' in TEXT["safety"] and "function WC.charKey()" in TEXT["safety"] and "what happened to my combat bars on my hunter" in TEXT["safety"]
+      and "k7 THE KEPT REALM IS THIS CHARACTER'S" in TEXT["safety"] and "-- k8 (the k6 review, round 2)" in TEXT["safety"],
+      "0. Safety k8 (k6's and k7's notes kept): WC.charKey, its note quotes the user")
 check('local PV = "m179"' in TEXT["padmap"] and 'local CBV = "cb16"' in AB and 'local SV = "s18"' in TEXT["spells"]
       and 'local RV = "r27"' in TEXT["radial"] and 'local SRV = "q8"' in TEXT["radial"] and 'local PV = "p26"' in TEXT["prof"]
       and 'local PADV = "pad27"' in TEXT["tappad"] and 'WC.prd = { V = "prd21"' in TEXT["trail"] and 'local HV = "hub72"' in TEXT["hub"]
@@ -202,7 +206,9 @@ check(ck(S)["k"] == "Korvash-Realm 7" and S.eval('WowCompanion.charKeyHint()') =
 # the server id not known now (UnitGUID nil): the class, with that realm the only one left
 S.execute(FRESH + 'UnitGUID = function() return nil end; WowCompanionSpellsDB = { fightBy = { ["Korvash-Realm 7"] = {} } }; '
           'WowCompanionDB = { realmOf = { Korvash = { ["Realm 7"] = { s = "1", c = "SHAMAN" } } } }')
-check(ck(S)["k"] == "Korvash-Realm 7", "a. no server id now: the recorded class matches, the one realm: kept", ck(S))
+check(ck(S)["k"] is None, "n. k8: no server id now, BEFORE PLAYER_LOGIN: the class alone picks nothing (no key)", ck(S))
+S.execute('fire("PLAYER_LOGIN"); ' + FRESH)
+check(ck(S)["k"] == "Korvash-Realm 7", "a. no server id now, logged in: the recorded class matches, the one realm: kept", ck(S))
 S.execute(FRESH + 'CLASS = "WARRIOR"')
 check(ck(S)["k"] is None, "a. ... another class: no key", ck(S))
 S.execute(FRESH + 'CLASS = "SHAMAN"; WowCompanionDB.realmOf.Korvash["Realm 8"] = { c = "SHAMAN" }')
@@ -403,16 +409,36 @@ for label, pre in (("live", DEVICE.replace('REALM = ""', 'REALM = "Realm"')), ("
 # ================================================================ k a kept realm found before PLAYER_LOGIN is asked again then
 K = boot(["safety"], pre=HELP + 'REALM = ""\nWowCompanionDB = { realmOf = { Korvash = { A = { c = "SHAMAN" } } } }\nWowCompanionSpellsDB = nil\n'
          'UnitGUID = function() return nil end\n')
-check(ck(K) == {"k": "Korvash-A", "n": "Korvash", "r": "A", "s": "kept"} and K.eval('WowCompanion.ck.early') is True,
-      "k. before PLAYER_LOGIN (only WowCompanionDB loaded): kept A, marked early", ck(K))
+check(ck(K)["k"] is None and K.eval('WowCompanion.ck.r') is None,
+      "n. k8: before PLAYER_LOGIN with only the class to tell (no server id): no key (a same-class alt's realm never takes the writes)", ck(K))
 K.execute('WowCompanionSpellsDB = { fightBy = { ["Korvash-B"] = { [1] = 1 } } }')
-check(ck(K)["k"] == "Korvash-A", "k. ... still cached until PLAYER_LOGIN", ck(K))
 K.execute('fire("PLAYER_LOGIN"); runTimers(NOW + 1)')
 check(ck(K)["k"] is None, "k. at PLAYER_LOGIN both tables are seen: a second realm (B) and only the class to tell = no key (never a guess)", ck(K))
 K.execute('WowCompanionSpellsDB = {}; WowCompanion.ck.missAt = nil')
 check(ck(K) == {"k": "Korvash-A", "n": "Korvash", "r": "A", "s": "kept"} and K.eval('WowCompanion.ck.early') is False,
-      "k. ... after login a kept realm is cached for the session (not early)", ck(K))
+      "k. ... after login the class alone picks the one realm left, cached for the session (not early)", ck(K))
 clean(K, "k")
+# the server id known before PLAYER_LOGIN: kept early (it matches), then asked again at login, where the game's own hint picks B
+K2 = boot(["safety"], pre=HELP + 'REALM = ""\nWowCompanionDB = { realmOf = { Korvash = { A = { s = "1", c = "SHAMAN" } } } }\nWowCompanionSpellsDB = nil\n')
+check(ck(K2) == {"k": "Korvash-A", "n": "Korvash", "r": "A", "s": "kept"} and K2.eval('WowCompanion.ck.early') is True,
+      "k. before PLAYER_LOGIN, the server id matches: kept A, marked early", ck(K2))
+K2.execute('WowCompanionSpellsDB = { fightBy = { ["Korvash-B"] = { [1] = 1 } } }; GetNormalizedRealmName = function() return "B" end')
+check(ck(K2)["k"] == "Korvash-A", "k. ... still cached until PLAYER_LOGIN", ck(K2))
+K2.execute('fire("PLAYER_LOGIN"); runTimers(NOW + 1)')
+check(ck(K2)["k"] == "Korvash-B", "k. ... at PLAYER_LOGIN asked again: the game's hint picks B (the early answer dropped)", ck(K2))
+clean(K2, "k2")
+
+# ================================================================ o the fold's backup: the 2 newest PER NAME
+OTHER = '{ at = %d, who = "Other", items = { { at = "x", k = "-", act = "dropped", v = %d } } }'
+pre_o = DEVICE + 'WowCompanionDB.realmFixBak = { %s, %s, %s, { at = 1, who = "Korvash", items = { { at = "old", k = "-", act = "dropped", v = 1 } } } }\n' % (
+    OTHER % (9, 9), OTHER % (8, 8), OTHER % (7, 7))
+O = world(pre=pre_o)
+per = O.eval('(function() local k, o = 0, 0 for _, r in ipairs(WowCompanionDB.realmFixBak) do if r.who == "Korvash" then k = k + 1 elseif r.who == "Other" then o = o + 1 end end return k .. "/" .. o end)()')
+check(per == "2/2" and O.eval('WowCompanionDB.realmFixBak[1].who') == "Korvash" and partials(O)[0] == 0,
+      "o. k8: the fold's backup keeps the 2 newest PER NAME (this one's new + old fold kept; the other name's 3 trimmed to its own 2)", per)
+check(O.eval('(function() for _, r in ipairs(WowCompanionDB.realmFixBak) do if r.who == "Korvash" and r.at == 1 then return r.items[1].v end end end)()') == 1,
+      "o. ... this character's earlier fold (its dropped orphan's value) is still there")
+clean(O, "o")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -100,11 +100,9 @@ object ChatFilter {
         val n = name?.takeIf { it.isNotEmpty() }
         if (n == who) return
         who = n
-        // the k6 review (item 8): a realm-less session's "Name-" ticks fold into the real key (it wins; a missing one takes them)
-        if (n != null) RealmFix.foldJson(all, n)?.let { gone ->
-            RealmFix.keepRemoved?.invoke("chat_filter", gone.toString())
-            runCatching { store?.write(all.toString()) }
-        }
+        // the k6 review (item 8): a realm-less session's "Name-" ticks fold into the real key (it wins; a missing one takes them); round 2
+        // (items A, D): only when the device's census holds the name under this realm alone, and only once what goes is kept
+        if (n != null && RealmFix.foldStore(all, n, "chat_filter")) runCatching { store?.write(all.toString()) }
         load()                                             // null (the k6 review, item 2: no realm yet): everything shows, nothing saved
         changed()
     }

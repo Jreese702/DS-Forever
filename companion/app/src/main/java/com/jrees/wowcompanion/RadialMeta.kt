@@ -27,11 +27,9 @@ object RadialMeta {
         set(v) {
             if (field == v) return
             field = v
-            // the k6 review (item 8): a realm-less session's "Name-" radial names fold into the real key (it wins)
-            if (v != null) RealmFix.foldJson(all, v)?.let { gone ->
-                RealmFix.keepRemoved?.invoke("radial_meta", gone.toString())
-                prefs?.edit()?.putString("all", all.toString())?.apply()
-            }
+            // the k6 review (item 8): a realm-less session's "Name-" radial names fold into the real key (it wins); round 2 (items A,
+            // D): only when the device's census holds the name under this realm alone, and only once what goes is kept
+            if (v != null && RealmFix.foldStore(all, v, "radial_meta")) prefs?.edit()?.putString("all", all.toString())?.apply()
             changed()
         }
 

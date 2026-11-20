@@ -86,7 +86,7 @@ class CombatKeepHost(
             // Safety k7 (the k6 review, item 1): a backup written for another class is another character's (a same-name character on
             // another realm): never restored, merged, written over or folded into; left as it is for this run
             if (CombatKeep.otherClass(map, backup0)) { otherClass += who; log("the backup is another class's: left as it is (nothing restored or written)"); return }
-            foldOrphans(who)
+            foldOrphans(who, map.dpad?.cls)
             val backup = read(who)
             if (CombatKeep.needsRestore(map, backup)) {
                 if (fighting() || !bookReady()) return                          // the next padmap tries again
@@ -106,8 +106,12 @@ class CombatKeepHost(
      * "Name-.json") fold into the real one once, at the run's first check: the real backup's entries always stay; an orphan entry the
      * real one lacks comes in only from a NEWER orphan file ([RealmFix.combat]); both files are copied first (combat/realm-fix, 2 per
      * file) and the orphan files then go. Left alone while the name has backups under two realms (never a guess). No names logged.
+     * The k6 review round 2 (item B): and left alone unless the device's census holds the name under [who]'s realm ALONE (RealmFix.mayFold:
+     * our saved tables, the app's per-character files, the other backups, the keys seen live) - a same-name character on another realm
+     * with no file of its own never takes the hunter's orphan -, and an orphan with entries is taken only when it says [cls], the class
+     * playing now (RealmFix.combatTakes: one of no class is left as it is, never restored onto this character's bars).
      */
-    private fun foldOrphans(who: String) {
+    private fun foldOrphans(who: String, cls: String?) {
         val name = CharKey.nameOf(who) ?: return
         val d = dir()
         val orphans = RealmFix.combatOrphanFiles(name).map { File(d, it) }.filter { it.isFile }
@@ -117,12 +121,14 @@ class CombatKeepHost(
             f.isFile && f.name.startsWith("$name-") && f.name.endsWith(".json") && orphans.none { it.name == f.name }
         }.orEmpty()
         if (reals.any { it.name != realFile.name }) { log("orphan backup left as it is (this name has a backup under another realm)"); return }
+        if (!RealmFix.mayFold(who)) { log("orphan backup left as it is (this name is not known under this realm alone)"); return }
         val bak = File(d, RealmFix.DIR)
         val now = System.currentTimeMillis()
         for (f in orphans) runCatching {
             val orphan = CombatKeep.fromJson(f.readText())
+            if (!RealmFix.combatTakes(orphan, cls)) { log("orphan backup left as it is (not this class's)"); return@runCatching }
             val real = read(who)
-            val next = RealmFix.combat(real, if (realFile.isFile) realFile.lastModified() else Long.MIN_VALUE, orphan, f.lastModified(), who)
+            val next = RealmFix.combat(real, if (realFile.isFile) realFile.lastModified() else Long.MIN_VALUE, orphan, f.lastModified(), who, cls)
             check(RealmFix.backup(f, bak, now)) { "no backup" }
             File(d, f.name + ".bak").takeIf { it.isFile }?.let { check(RealmFix.backup(it, bak, now)) { "no backup" } }
             if (next != null) {

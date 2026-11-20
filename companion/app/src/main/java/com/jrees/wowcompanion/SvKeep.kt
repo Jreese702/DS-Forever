@@ -120,6 +120,19 @@ object SvKeep {
         return Fold(out, fromKept, added, refused)
     }
 
+    /** the OTHER saved tables than [variable]: their kept copies in [keptDir] and their game files in [sv] (those that read) */
+    fun otherTables(keptDir: File, sv: File?, variable: String): List<Map<Any, Any>> = FILES.filterKeys { it != variable }.flatMap { (v, n) ->
+        listOfNotNull(
+            readKept(keptDir, v)?.let { d -> runCatching { SvLua.parse(d.lua) }.getOrNull() },
+            sv?.let { runCatching { File(it, n).takeIf { f -> f.isFile }?.readText()?.let { t -> SvLua.parse(t, v) } }.getOrNull() })
+    }
+
+    /** every one of our saved tables the device holds: both kept copies and both game files (the game's folder recorded at a start) */
+    fun tables(keptDir: File): List<Map<Any, Any>> {
+        val sv = runCatching { gameWtfFile(keptDir).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }?.let { savedVariablesDir(File(it)) } }.getOrNull()
+        return otherTables(keptDir, sv, "")
+    }
+
     private fun readKept(keptDir: File, variable: String): Doc? =
         fromJson(runCatching { keptFile(keptDir, variable).takeIf { it.isFile }?.readText() }.getOrNull())
 
@@ -156,7 +169,9 @@ object SvKeep {
         val mark = fromPcMark(keptDir, variable)
         // RealmFix (the 11-20 hunter): the game file read first (when it reads whole) so the orphans of both copies fold as ONE picture
         val gamePeek = runCatching { target.takeIf { it.isFile }?.readText()?.let { SvLua.parse(it, variable) } }.getOrNull()
-        val realms = RealmFix.realmsByName(listOf(gamePeek, keptT0))
+        // the k6 review round 2 (item C): the name's realms from BOTH our tables (the other one's kept copy and game file too, its realmOf
+        // with them), as the add-on's realmsOf looks at both: a name under another realm in the other table is never folded here
+        val realms = RealmFix.realmsByName(listOf(gamePeek, keptT0) + otherTables(keptDir, target.parentFile, variable))
         val keptT = keptT0?.let { k ->
             // the k6 review (item 3): a store the real key held BEFORE a reset (the raw kept copy, a reset mark) is held: a Reset is
             // never undone by an orphan's old value

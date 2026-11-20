@@ -160,13 +160,36 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun foldPrefOrphans(ck: String) {
         if (!prefsFolded.add(ck)) return
+        // the k6 review round 2 (item A): nothing to fold = no census asked; then only when the WHOLE device holds the name under ck's
+        // realm alone (RealmFix.Census): a same-name character on another realm never takes the hunter's orphans of a file
+        val files = RealmFix.PREF_FILES.associateWith { getSharedPreferences(it, MODE_PRIVATE) }
+        if (files.values.all { p -> runCatching { RealmFix.prefPlan(p.all, ck).empty }.getOrDefault(true) }) return
+        val c = RealmFix.censusOf(ck)
+        if (!RealmFix.foldOk(ck, c)) { Log.i("WCSETUP", "app preferences: orphan keys left as they are (this name is not known under this realm alone)"); return }
         val bak = getSharedPreferences(RealmFix.PREF_BAK, MODE_PRIVATE)
         var a = 0; var d = 0
-        for (f in RealmFix.PREF_FILES) runCatching {
-            val (x, y) = RealmFix.foldPrefs(getSharedPreferences(f, MODE_PRIVATE), f, ck, bak, System.currentTimeMillis())
+        for ((f, p) in files) runCatching {
+            val (x, y) = RealmFix.foldPrefs(p, f, ck, bak, System.currentTimeMillis(), c)
             a += x; d += y
         }
         if (a + d > 0) Log.i("WCSETUP", "app preferences: orphan keys folded ($a into the real key, $d dropped)")
+    }
+
+    /**
+     * the k6 review round 2 (items A-C): what this device holds of [real]'s name (RealmFix.Census): our saved tables (both kept copies
+     * and both game files, realmOf with them), every per-character preference file (and the radials' kept owner), the three JSON
+     * stores, the In-combat backup files' names, the keys seen live this app life. Read only; never logged.
+     */
+    private fun realmCensus(real: String): RealmFix.Census {
+        val kd = svKeptDir()
+        val prefKeys = RealmFix.PREF_FILES.map { getSharedPreferences(it, MODE_PRIVATE).all.keys } +
+            listOf(listOfNotNull(getSharedPreferences("wc_radial", MODE_PRIVATE).getString("who", null)))
+        val jsons = RealmFix.JSON_STORES.map { f ->
+            runCatching { org.json.JSONObject(getSharedPreferences(f, MODE_PRIVATE).getString("all", null) ?: "{}") }.getOrDefault(org.json.JSONObject())
+        }
+        val combat = java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "DS Forever/combat")
+            .listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        return RealmFix.censusFrom(real, SvKeep.tables(kd), prefKeys, jsons, combat)
     }
     /** m62: the latest padmap (Settings' Smart Y section reads its Smart buffs) */
     private var lastPadMap: PadMapModel.Map? = null
@@ -522,9 +545,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (RuntimeArt.needed(this)) { unpacking = true; unpackFirst(); return }
         Settings.init(this)
         // the k6 review (item 8): what a fold of the app's own per-character stores takes out is kept first (realm_fix_bak, 2 per store)
-        RealmFix.keepRemoved = { file, removed ->
-            runCatching { RealmFix.keepIn(getSharedPreferences(RealmFix.PREF_BAK, MODE_PRIVATE), file, removed, System.currentTimeMillis()) }
+        RealmFix.keepRemoved = { file, real, removed ->
+            runCatching { RealmFix.keepIn(getSharedPreferences(RealmFix.PREF_BAK, MODE_PRIVATE), file, real, removed, System.currentTimeMillis()) }
+                .getOrDefault(false)
         }
+        // the k6 review round 2 (items A-C): every fold asks the whole device whether the name is under one realm only
+        RealmFix.census = { real -> realmCensus(real) }
         Theme.init(this)                     // the saved theme (Settings > System > Theme), before any view copies a colour
         GameUi.init(this)
         PolestarQol.init(this)
@@ -3361,6 +3387,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // set further down, so a first padmap after a start / a character switch read the default or the last character's setting)
                 if (current) { petBNow = it.petB; petBWho = PetRecall.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
+                // the k6 review round 2: a realm seen in a current padmap counts against every other realm of its name (before any fold)
+                if (current) RealmFix.saw(CharKey.of(it.dpad?.name, it.dpad?.realm))
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 // PadMap m160: the Smart Range clean-up's counts (the problem report's line), one log line when they change
                 if (current && SmartRangeGone.note(it.srGone)) Log.i("WCSETUP", SmartRangeGone.line() ?: "")

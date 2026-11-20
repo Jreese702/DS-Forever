@@ -244,7 +244,10 @@ WC.encode = encode
 -- home server's id (UnitGUID), c = the class token }, recorded at every live session; the server must match (another = refused), else
 -- the class (and the one realm left), nothing recorded = no key. A kept realm found before PLAYER_LOGIN is asked again then (both
 -- tables loaded); the fold is skipped while the name holds settings under two realms (the app's rule); its backup holds COPIES.
-WC.KERNEL = "k7"
+-- k8 (the k6 review, round 2): the class alone ("maybe": no home server id to compare) picks a kept realm only AFTER PLAYER_LOGIN (before
+-- it, a same-class, same-name character's only recorded realm would take its writes until the login's re-check: no key until then);
+-- the fold's backup keeps the 2 newest folds PER NAME (one character's folds never push another's dropped orphans out).
+WC.KERNEL = "k8"
 
 local function blocked(f)
     return not pcall(f)
@@ -370,7 +373,7 @@ end
 -- WC.realmFix: once per character and table, out of combat, the orphan keys of THIS character ("Name-", "Name-?", "Name-_", a marker) are
 -- taken out of every store (our tables' keys and two levels down): the real key's store stays as it is (never overwritten); a store the
 -- real key lacks (none, or only empty tables) takes the orphan's when it holds a setting (made in the realm-less session, the newest
--- record there is); every taken orphan is kept in WowCompanionDB.realmFixBak (the 2 newest folds). Never a game API that writes.
+-- record there is); every taken orphan is kept in WowCompanionDB.realmFixBak (the 2 newest folds per name, k8). Never a game API that writes.
 do
     local function str(v)
         if type(v) ~= "string" or not isPlain(v) then return nil end
@@ -490,7 +493,8 @@ do
             if ev ~= "no" then left[#left + 1] = { r, ev } end
         end
         if #yes == 1 then return yes[1] end
-        if #yes == 0 and #left == 1 and left[1][2] == "maybe" then return left[1][1] end
+        -- k8: the class alone only once logged in (the server id is known then; before it, no key: asked again at PLAYER_LOGIN)
+        if #yes == 0 and #left == 1 and left[1][2] == "maybe" and CK.loggedIn then return left[1][1] end
         return nil                                                          -- no evidence, or two: never a guess
     end
 
@@ -630,8 +634,15 @@ do
             if type(core) == "table" then
                 if type(core.realmFixBak) ~= "table" then core.realmFixBak = {} end
                 local ok, t = CALL(GetServerTime)
-                table.insert(core.realmFixBak, 1, { at = (ok and type(t) == "number") and t or 0, items = items })
-                while #core.realmFixBak > 2 do table.remove(core.realmFixBak) end
+                table.insert(core.realmFixBak, 1, { at = (ok and type(t) == "number") and t or 0, who = n, items = items })
+                -- k8: the 2 newest folds PER NAME (an older record with no name counts as one name of its own)
+                local per, i = {}, 1
+                while i <= #core.realmFixBak do
+                    local rec = core.realmFixBak[i]
+                    local w = type(rec) == "table" and type(rec.who) == "string" and rec.who or ""
+                    per[w] = (per[w] or 0) + 1
+                    if per[w] > 2 then table.remove(core.realmFixBak, i) else i = i + 1 end
+                end
             end
         end
         return all

@@ -90,6 +90,97 @@ object RealmFix {
     fun resetHeld(marks: List<SvReset.Mark>, variable: String): Set<String> =
         marks.filter { it.variable == variable && CharKey.isKey(it.who) }.map { "${it.top}\u0000${it.who}" }.toSet()
 
+    // ---------------------------------------------------------------- THE NAME'S REALMS EVERYWHERE (the k6 review round 2, items A-C)
+    // A fold looked at ONE file or table for "this name is under another realm", while the add-on looks at both its tables: a same-name
+    // character on realm B (live) then took the hunter's (realm A) orphans of a file where the hunter had nothing else. Now every fold
+    // asks the WHOLE picture ([Census]: both saved tables' kept copies and game files - realmOf with them -, every per-character
+    // preference file, the three JSON stores, the In-combat backup files' names, and the keys seen live this app life) and folds only
+    // when that picture holds the name under the real key's realm ALONE, and holds it there (a realm only seen live is no evidence:
+    // the orphans may be another character's of that name).
+
+    /** what the app holds of one name: [stored] the realms it has keys / records under, [seen] the realms seen live this app life,
+     *  [otherFile] an In-combat backup file of that name under another realm */
+    data class Census(val stored: Set<String>, val seen: Set<String> = emptySet(), val otherFile: Boolean = false)
+
+    /** [real]'s orphans may fold: everything the app holds knows its name under [real]'s realm alone, and holds it there */
+    fun foldOk(real: String, c: Census?): Boolean {
+        if (c == null || !CharKey.isKey(real)) return false
+        val realm = real.substring(real.indexOf('-') + 1)
+        return !c.otherFile && realm in c.stored && (c.stored + c.seen) == setOf(realm)
+    }
+
+    /** the device's census of [real]'s name (CompanionHost); null = off the device: the app's own stores never fold then, our saved
+     *  tables fold by their own picture (both tables: [realmsByName]) */
+    @Volatile var census: ((real: String) -> Census)? = null
+        set(v) { synchronized(this) { cached.clear() }; field = v }
+    private val seenLive = HashMap<String, MutableSet<String>>()
+    private val cached = HashMap<String, Pair<Long, Census?>>()
+    private const val CACHE_MS = 5_000L
+
+    /** a whole key a current padmap named (this app life): its realm counts against every other realm of its name */
+    @Synchronized fun saw(key: String?) {
+        val k = key?.takeIf { CharKey.isKey(it) } ?: return
+        val n = CharKey.nameOf(k) ?: return
+        if (seenLive.getOrPut(n) { LinkedHashSet() }.add(k.substring(n.length + 1))) cached.clear()
+    }
+    @Synchronized fun seenOf(name: String): Set<String> = seenLive[name]?.toSet().orEmpty()
+    /** the tests: nothing seen, nothing cached, no device census */
+    @Synchronized fun forget() { seenLive.clear(); cached.clear(); census = null }
+
+    /** the device census of [real] (cached a few seconds: one fold asks it per store), or null */
+    @Synchronized fun censusOf(real: String, now: Long = System.currentTimeMillis()): Census? {
+        val f = census ?: return null
+        cached[real]?.let { (at, c) -> if (now - at in 0 until CACHE_MS) return c }
+        val c = runCatching { f(real) }.getOrNull()
+        cached[real] = now to c
+        return c
+    }
+
+    /** the device's answer: [real]'s orphans may fold (no census = never: the app's stores alone cannot tell) */
+    fun mayFold(real: String): Boolean = foldOk(real, censusOf(real))
+
+    /** the realms [name] holds a key under in a preference file's keys ("<prefix>Name-Realm") */
+    fun prefRealms(keys: Iterable<String>, name: String): Set<String> {
+        val out = LinkedHashSet<String>()
+        for (k in keys) {
+            val rest = tail(k, name)?.second ?: continue
+            if (CharKey.isKey("$name-$rest")) out += rest
+        }
+        return out
+    }
+
+    /** the realms [name] holds a key under in a JSON store keyed by character */
+    fun jsonRealms(all: JSONObject, name: String): Set<String> =
+        all.keys().asSequence().filter { CharKey.isKey(it) && CharKey.nameOf(it) == name }.map { it.substring(name.length + 1) }.toSet()
+
+    /** the In-combat backup files' names ([files]) against [real]: (its own file is there, a file of its name under another realm is) */
+    fun combatCensus(files: Iterable<String>, real: String): Pair<Boolean, Boolean> {
+        val name = CharKey.nameOf(real) ?: return false to false
+        val own = CombatKeep.fileName(real); val orphans = combatOrphanFiles(name)
+        var mine = false; var other = false
+        for (f in files) {
+            if (!f.startsWith("$name-") || !f.endsWith(".json") || f in orphans) continue
+            if (f == own) mine = true else other = true
+        }
+        return mine to other
+    }
+
+    /**
+     * the census of [real]'s name from what the device holds: [tables] our saved tables (kept copies and game files, both variables),
+     * [prefKeys] every per-character preference file's keys, [jsons] the JSON stores, [combatFiles] the In-combat backup files' names
+     */
+    fun censusFrom(real: String, tables: List<Map<*, *>?>, prefKeys: List<Iterable<String>>, jsons: List<JSONObject>,
+                   combatFiles: Iterable<String>): Census {
+        val name = CharKey.nameOf(real) ?: return Census(emptySet())
+        val stored = LinkedHashSet<String>()
+        stored += realmsByName(tables)[name].orEmpty()
+        for (k in prefKeys) stored += prefRealms(k, name)
+        for (j in jsons) stored += jsonRealms(j, name)
+        val (mine, other) = combatCensus(combatFiles, real)
+        if (mine) stored += real.substring(name.length + 1)
+        return Census(stored, seenOf(name), other)
+    }
+
     /** the orphan suffixes in the add-on's order (WC.realmFix's SUFFIX): "", "?", "_", then a marker */
     private fun rank(k: String): Int = when (k.substring(k.indexOf('-') + 1)) { "" -> 0; "?" -> 1; "_" -> 2; else -> 3 }
 
@@ -99,6 +190,9 @@ object RealmFix {
      */
     fun clean(t: Map<Any, Any>, realms: Map<String, Set<String>>, heldElsewhere: Set<String> = emptySet()): Result {
         val items = ArrayList<Item>()
+        // the k6 review round 2: on the device, a name folds only when the WHOLE census agrees ([mayFold]; asked once per name here)
+        val device = census != null
+        val ok = HashMap<String, Boolean>()
         fun fix(path: String, m: Map<Any, Any>, depth: Int): Map<Any, Any> {
             var out: LinkedHashMap<Any, Any>? = null
             fun w(): LinkedHashMap<Any, Any> = out ?: LinkedHashMap(m).also { out = it }
@@ -113,6 +207,7 @@ object RealmFix {
                 val rs = realms[name] ?: continue
                 if (rs.size != 1) continue                                         // none or two characters of one name: left as it is
                 val real = "$name-${rs.single()}"
+                if (device && !ok.getOrPut(real) { mayFold(real) }) continue          // another realm somewhere on the device: left
                 val cur = out ?: m
                 val ov = cur[o] ?: continue
                 val rv = cur[real]
@@ -136,14 +231,22 @@ object RealmFix {
     const val DIR = "realm-fix"
     const val KEEP = 2
 
-    /** a dated copy of [f] in [dir] before the fold touches it (the newest [KEEP] of its name stay); true = kept (or nothing to keep) */
+    /** the k6 review round 2 (item E): the FIRST copy of each file name a fold made, kept for good (never rotated) in [dir]/[FIRST] */
+    const val FIRST = "first"
+
+    /**
+     * a dated copy of [f] in [dir] before the fold touches it (the newest [KEEP] of its name stay; the very first one also stays for good
+     * in [FIRST]: later folds - of other characters - never push the earliest character's dropped orphans out); true = kept (or nothing
+     * to keep)
+     */
     fun backup(f: File, dir: File, now: Long): Boolean {
         if (!f.isFile) return true
         return runCatching {
             dir.mkdirs()
+            File(dir, FIRST).let { d -> File(d, f.name).takeIf { !it.exists() }?.let { d.mkdirs(); f.copyTo(it) } }
             val stamp = SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date(now))
             f.copyTo(File(dir, "${f.name}.$stamp.bak"), overwrite = true)
-            dir.listFiles()?.filter { it.name.startsWith(f.name + ".") && it.name.endsWith(".bak") }
+            dir.listFiles()?.filter { it.isFile && it.name.startsWith(f.name + ".") && it.name.endsWith(".bak") }
                 ?.sortedByDescending { it.name }?.drop(KEEP)?.forEach { it.delete() }
             true
         }.getOrDefault(false)
@@ -154,11 +257,15 @@ object RealmFix {
     // quest watches, flight paths, the Hearthstone's end time, new spells, Polestar's QoL, the chat checklist, the last used chat, the
     // radials' names). The same rule: the real key wins; a choice the real key lacks takes the orphan's (one that holds something); the
     // orphans go; a file where the name holds keys under another realm too is left as it is (never a guess); what goes is kept first.
+    // The k6 review round 2 (item A): and only when the device's [Census] holds the name under that realm alone ([foldPrefs] /
+    // [foldStore]): one file's own keys never decide it.
 
     /** the per-character preference files a realm-less session wrote "<prefix>Name-" keys in (the key always ENDS with the character) */
     val PREF_FILES = listOf("dpad", "home", "gameui", "wc_itemcd", "questwatch", "taxinet", "newspells", "polestar_qol")
-    /** where the folded preferences' removed orphans are kept (the [KEEP] newest per file), app-private */
+    /** where the folded preferences' removed orphans are kept (the [KEEP] newest per file and character), app-private */
     const val PREF_BAK = "realm_fix_bak"
+    /** the JSON stores keyed by character (each its preference file's "all"): [RadialMeta], [ChatFilter], [TalkKeep] */
+    val JSON_STORES = listOf("radial_meta", "chat_filter", "chat_talk")
 
     /** one preference file's fold for [real]: [adopt] orphan key -> the real key it fills, [drop] orphan keys the real key already holds
      *  (or that hold nothing) */
@@ -225,22 +332,45 @@ object RealmFix {
         return out
     }
 
-    /** the hosts' backup of what a fold took out of a store ([file], the JSON of the removed values); null in the tests (nothing kept) */
-    @Volatile var keepRemoved: ((file: String, removed: String) -> Unit)? = null
+    /** the hosts' backup of what a fold took out of a store ([file], the character [real], the JSON of the removed values); true = kept.
+     *  Null (the tests, before the host is up) = nothing can be kept: no JSON store folds ([foldStore]) */
+    @Volatile var keepRemoved: ((file: String, real: String, removed: String) -> Boolean)? = null
 
-    /** [removed] kept in [bak] under [file]: the [KEEP] newest folds, newest first */
-    fun keepIn(bak: SharedPreferences, file: String, removed: String, now: Long) {
-        val a = runCatching { JSONArray(bak.getString(file, "[]") ?: "[]") }.getOrDefault(JSONArray())
+    /** [bak]'s key for [file]'s folds of [real] (the k6 review round 2, item E: per character, so one character's folds never push
+     *  another's out) */
+    fun bakKey(file: String, real: String) = "$file|$real"
+
+    /** [removed] kept in [bak] under [file] and [real]: the [KEEP] newest folds of that character, newest first; true = written */
+    fun keepIn(bak: SharedPreferences, file: String, real: String, removed: String, now: Long): Boolean {
+        val key = bakKey(file, real)
+        val a = runCatching { JSONArray(bak.getString(key, "[]") ?: "[]") }.getOrDefault(JSONArray())
         val out = JSONArray().put(JSONObject().put("at", now).put("removed", JSONObject(removed)))
         for (i in 0 until minOf(a.length(), KEEP - 1)) out.put(a.opt(i))
-        bak.edit().putString(file, out.toString()).commit()
+        return bak.edit().putString(key, out.toString()).commit()
     }
 
     /**
-     * the fold of preference file [file] ([p]) for [real]; what goes is kept in [bak] first (none kept: nothing changed). Returns
-     * (adopted, dropped). The values keep their own types.
+     * a JSON store's fold for [real] ([RadialMeta], [ChatFilter], [TalkKeep]: [file] is its name): only when the device census agrees
+     * ([mayFold]) and what goes is KEPT first ([keepRemoved] answered true: the k6 review round 2, item D); [all] changed in place only
+     * then. True = folded (the caller writes the store).
      */
-    fun foldPrefs(p: SharedPreferences, file: String, real: String, bak: SharedPreferences, now: Long): Pair<Int, Int> {
+    fun foldStore(all: JSONObject, real: String, file: String): Boolean {
+        val name = CharKey.nameOf(real)?.takeIf { CharKey.isKey(real) } ?: return false
+        if (all.keys().asSequence().none { CharKey.isOrphan(it) && CharKey.nameOf(it) == name }) return false
+        if (!mayFold(real)) return false
+        val keep = keepRemoved ?: return false
+        val gone = foldJson(JSONObject(all.toString()), real) ?: return false
+        if (!runCatching { keep(file, real, gone.toString()) }.getOrDefault(false)) return false
+        return foldJson(all, real) != null
+    }
+
+    /**
+     * the fold of preference file [file] ([p]) for [real], only when the census [c] agrees ([foldOk]: the name under [real]'s realm
+     * alone on the whole device); what goes is kept in [bak] first (none kept: nothing changed). Returns (adopted, dropped). The values
+     * keep their own types.
+     */
+    fun foldPrefs(p: SharedPreferences, file: String, real: String, bak: SharedPreferences, now: Long, c: Census?): Pair<Int, Int> {
+        if (!foldOk(real, c)) return 0 to 0
         val all = p.all
         val plan = prefPlan(all, real)
         if (plan.empty) return 0 to 0
@@ -249,7 +379,7 @@ object RealmFix {
             val v = all[o]
             removed.put(o, JSONObject().put("t", v?.javaClass?.simpleName ?: "null").put("v", if (v is Set<*>) JSONArray(v.toList()) else v ?: JSONObject.NULL))
         }
-        if (runCatching { keepIn(bak, file, removed.toString(), now) }.isFailure) return 0 to 0
+        if (!runCatching { keepIn(bak, file, real, removed.toString(), now) }.getOrDefault(false)) return 0 to 0
         val e = p.edit()
         for ((o, r) in plan.adopt) {
             @Suppress("UNCHECKED_CAST")
@@ -274,18 +404,27 @@ object RealmFix {
     fun combatOrphanFiles(name: String): List<String> = listOf("$name-.json", "$name-_.json")
 
     /**
+     * the k6 review round 2 (item B): an orphan backup's entries are [cls]'s (the class playing now) only when the orphan SAYS that class;
+     * one of no class (written before k7) or another class is never taken - its file is left as it is. An empty orphan takes nothing
+     * (it may go); one that does not read is left as it is.
+     */
+    fun combatTakes(orphan: CombatKeep.Backup?, cls: String?): Boolean =
+        orphan != null && (orphan.entries.isEmpty() || (orphan.cls != null && orphan.cls == cls))
+
+    /**
      * the real backup after an orphan one: the REAL entries always stay (never overwritten); an orphan entry (a setting the real backup
      * does not hold: its page / set / button / face) comes in only when the orphan file is NEWER than the real one ([orphanAt] >
-     * [realAt]; no real file = older than anything). Null = nothing to write (no entry came in).
+     * [realAt]; no real file = older than anything) and the orphan is [cls]'s ([combatTakes]). Null = nothing to write (no entry came in).
      */
-    fun combat(real: CombatKeep.Backup?, realAt: Long, orphan: CombatKeep.Backup?, orphanAt: Long, who: String): CombatKeep.Backup? {
-        if (orphan == null || orphan.entries.isEmpty()) return null
+    fun combat(real: CombatKeep.Backup?, realAt: Long, orphan: CombatKeep.Backup?, orphanAt: Long, who: String, cls: String?): CombatKeep.Backup? {
+        if (orphan == null || orphan.entries.isEmpty() || !combatTakes(orphan, cls)) return null
+        if (real?.cls != null && real.cls != cls) return null
         if (real != null && real.who == who && orphanAt <= realAt) return null
         val have = real?.takeIf { it.who == who }?.entries.orEmpty()
         val key = { e: CombatKeep.Entry -> listOf(if (e.face) 0 else e.page, e.set, e.pos, if (e.face) 1 else 0) }
         val taken = have.map(key).toSet()
         val add = orphan.entries.filter { key(it) !in taken }
         if (add.isEmpty()) return null
-        return CombatKeep.Backup(who, (have + add).sortedWith(compareBy({ it.page }, { it.set }, { it.pos })), real?.cls ?: orphan.cls)
+        return CombatKeep.Backup(who, (have + add).sortedWith(compareBy({ it.page }, { it.set }, { it.pos })), cls)
     }
 }

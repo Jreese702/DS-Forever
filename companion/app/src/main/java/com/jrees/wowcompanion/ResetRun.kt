@@ -58,8 +58,9 @@ class ResetRun(
             if (!backupText("prefs-$file", jsonOf(have.filterKeys { it in rm }), now)) { refused += file; log("settings reset: $file not reset (no backup)"); continue }
             val e = p.edit()
             for (k in rm) {
-                // the toolbar's choice: ON (its default), pending until the game says it; the prompt stays answered
-                if (file == "dpad") e.putBoolean(k, true).putBoolean("pend_$k", true).remove("owed_$k") else e.remove(k)
+                // the toolbar's choice: ON (its default), pending until the game says it; the prompt stays answered. The k6 review round 2
+                // (item G): a realm-less session's orphan "choice_Name-" is REMOVED (never given the default: no orphan key is written)
+                if (file == "dpad" && !orphanKey(k)) e.putBoolean(k, true).putBoolean("pend_$k", true).remove("owed_$k") else e.remove(k)
             }
             e.commit()
             prefs += rm.size
@@ -120,6 +121,14 @@ class ResetRun(
      * takes them with the real one (else the next run's fold would make them the real backup and put the fight layer back). Left while
      * the name has a backup under another realm (never a guess).
      */
+    /** [k] ends with a realm-less session's orphan character key ("<prefix>Name-", "Name-?", "Name-_", a marker) */
+    private fun orphanKey(k: String): Boolean {
+        val i = k.lastIndexOf('-').takeIf { it > 0 } ?: return false
+        var s = i
+        while (s > 0 && k[s - 1].isLetter()) s--
+        return CharKey.isOrphan(k.substring(s))
+    }
+
     private fun combatOrphans(who: String?): List<File> {
         val w = who?.takeIf { ResetPlan.isCharKey(it) } ?: return emptyList()
         val name = CharKey.nameOf(w) ?: return emptyList()

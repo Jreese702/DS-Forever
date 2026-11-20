@@ -42,10 +42,8 @@ object TalkKeep {
         val n = name?.takeIf { it.isNotEmpty() }
         if (n == who) return
         who = n
-        if (n != null) RealmFix.foldJson(all, n)?.let { gone ->           // the k6 review (item 8): the real key wins
-            RealmFix.keepRemoved?.invoke("chat_talk", gone.toString())
-            runCatching { store?.write(all.toString()) }
-        }
+        // the k6 review (item 8): the real key wins; round 2 (items A, D): the census agrees, what goes is kept first
+        if (n != null && RealmFix.foldStore(all, n, "chat_talk")) runCatching { store?.write(all.toString()) }
         if (n == null) used = Used()                       // the k6 review (item 2): no realm yet = no character: Say, nothing saved
         load()
         changed()
