@@ -135,6 +135,29 @@ object HomeFightFace {
             }
         }.toMap()
 
+    /**
+     * #471 THE RANK BADGES OF THE FIGHT PICTURES: game position 1..8 -> the SPELL id drawn there as a fight thing ([icons] / [dpadIcons]'s
+     * positions and order, as [ids]), spells only ([PadMapModel.Ref.spellId]: no macro, item, mount or command), for [SpellRanks.of]
+     */
+    fun rankIds(map: PadMapModel.Map, fight: Boolean = map.fight): Map<Int, Int> {
+        val out = HashMap<Int, Int>()
+        for (pos in PadMapModel.FACES) PadMapModel.slot(map, BASE_SET, pos)?.fight?.spellId?.let { out[pos] = it }
+        if (fight) for (pos in 1..4) PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }
+            ?.combat?.spellId?.let { out[pos] = it }
+        formOwn(map).forEach { (pos, r) ->
+            if (pos in PadMapModel.FACES || fight) { val s = r.spellId; if (s != null) out[pos] = s else out.remove(pos) }
+        }
+        return out
+    }
+
+    /** #471: [trigFights]'s buttons ([cmdKey]) -> the SPELL id drawn there, spells only (as [rankIds]) */
+    fun trigRankIds(map: PadMapModel.Map, fight: Boolean = map.fight): Map<Int, Int> = if (!fight) emptyMap() else
+        map.sets.filter { it.set in 2..4 }.flatMap { st ->
+            st.slots.filter { it.kind == PadMapModel.Kind.COMBAT && it.ov && it.pos in 1..8 }.mapNotNull { sl ->
+                sl.combat?.takeIf { it.icon != 0 }?.spellId?.let { cmdKey(st.set, sl.pos) to it }
+            }
+        }.toMap()
+
     /** the pictures may show: proven, and at least one base face is armed with a fight spell */
     fun on(map: PadMapModel.Map, proven: Boolean = PROVEN): Boolean = proven && icons(map).isNotEmpty()
 

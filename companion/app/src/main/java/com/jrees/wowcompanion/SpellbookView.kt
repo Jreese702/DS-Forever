@@ -295,7 +295,7 @@ class SpellbookView(
             val st = SpellsModel.status(b, e)
             UiKit.bookEntry(c, entryRect(i, h), Icons.get(e.icon), e.name, SpellsModel.sub(b, e), kitState(st),
                 onBar = SpellsModel.onBar(b, e), chosen = !onTabs && isChosen(b, e), passive = e.passive,
-                autoCast = SpellsModel.autoCast(e), noMana = NoMana.has(e.spellId))
+                autoCast = SpellsModel.autoCast(e), noMana = NoMana.has(e.spellId), rank = rankOf(e))
         }
         val pages = pagesOf(tab)
         if (pages > 1) UiKit.bookPaging(c, 330f, (Y0 + 5f * rh(h) + h) / 2f, page, pages)
@@ -356,6 +356,10 @@ class SpellbookView(
                 x0 + 8f, top + 228f + i * 36f - pf.ascent(), pf)
     }
 
+    /** #471: a known spell's rank badge (SpellRanks: its family of ranks in this book); none for a spell not known yet */
+    private fun rankOf(e: SpellsModel.Entry): SpellRanks.Badge? =
+        if (e.kind == SpellsModel.Kind.SPELL) SpellRanks.of(e.spellId) else null
+
     private fun kitState(s: SpellsModel.Status) = when (s) {
         SpellsModel.Status.KNOWN -> UiKit.Spell.KNOWN
         SpellsModel.Status.LEVEL -> UiKit.Spell.LEVEL
@@ -367,7 +371,7 @@ class SpellbookView(
         val st = SpellsModel.status(b, e)
         val onBar = SpellsModel.onBar(b, e)
         UiKit.spell(c, Icons.get(e.icon), x0 + 36f, top + 16f, 96f, kitState(st), onBar, e.passive, autoCast = SpellsModel.autoCast(e),
-            noMana = NoMana.has(e.spellId))
+            noMana = NoMana.has(e.spellId), rank = rankOf(e))
 
         // the name: 42 px, smaller down to 30 to stay on one line, then two lines
         val nameLeft = x0 + 158f; val nameW = x1 - nameLeft

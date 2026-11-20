@@ -36,6 +36,8 @@ object PadMapModel {
         val manners: Boolean get() = kind == "manners"
         /** the spell id the button's state goes by: the spell's own, else a macro's spell now (m165) */
         val stateId: Int? get() = id ?: ms
+        /** #471: the id when this is a SPELL (the rank badge's): never an item's, a mount's, a macro's, a command's or a binding's */
+        val spellId: Int? get() = if (item || (layer != null && layer != "spell") || kind != null) null else id?.takeIf { it > 0 }
     }
 
     /** [combat] / [otherwise]: a COMBAT button's two spells ([otherwise] null = nothing out of combat); [fight]: the spell a base X / Y / A

@@ -100,6 +100,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var kitAlpha = 255         // Party mode: the kit picture alone faded (an arrow the box cannot take: 28 %)
         var noBadge = false        // Party mode: the D-pad slots are emptied (no glyph badge, no toolbar mark)
         var talk = false           // the D-pad toolbar's Chat: hold to talk's microphone shows on it ([talk])
+        var rk = 0                 // #471: an override's spell id for its rank badge (a fight face / D-pad / trigger fight spell; 0 = [id])
         var bmp: Bitmap? = null
         var shader: BitmapShader? = null
         val empty get() = k.isEmpty()
@@ -692,10 +693,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (li != N || src > 3) return null
         val icon = fightDpad?.get(src + 1)?.takeIf { it > 0 } ?: return null
         val cached = dpadFightBtns[src]
-        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, false); return cached }
+        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, false); cached.rk = fightRanks?.get(src + 1) ?: 0; return cached }
         val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
         classify(b)
         resolve(b, false)
+        b.rk = fightRanks?.get(src + 1) ?: 0
         dpadFightBtns[src] = b
         return b
     }
@@ -719,10 +721,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val at = li * 8 + src
         val icon = trigFights?.get(at)?.first?.takeIf { it > 0 } ?: return null
         val cached = trigBtns[at]
-        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, src >= 4); return cached }
+        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, src >= 4); cached.rk = trigRanks?.get(at) ?: 0; return cached }
         val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
         classify(b)
         resolve(b, src >= 4)
+        b.rk = trigRanks?.get(at) ?: 0
         trigBtns[at] = b
         return b
     }
@@ -758,6 +761,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * as the game's own buttons are.
      */
     var fightIds: Map<Int, Int>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** #471: base-set game position 1..8 -> the SPELL id of the fight picture there (HomeFightFace.rankIds), for its rank badge */
+    var fightRanks: Map<Int, Int>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** #471: [trigFights]' buttons ([HomeFightFace.cmdKey]) -> the SPELL id there (HomeFightFace.trigRankIds) */
+    var trigRanks: Map<Int, Int>? = null
         set(v) { if (field != v) { field = v; invalidate() } }
     private val fightStates = HashMap<Int, St>()
     private val fightCt = HashMap<Int, Int>()
@@ -835,10 +844,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val icon = fightFace?.get(src + 1) ?: return null
         if (icon <= 0) return null
         val cached = fightBtns[src]
-        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, true); return cached }
+        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, true); cached.rk = fightRanks?.get(src + 1) ?: 0; return cached }
         val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
         classify(b)
         resolve(b, true)
+        b.rk = fightRanks?.get(src + 1) ?: 0
         fightBtns[src] = b
         return b
     }
@@ -2644,6 +2654,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (!(drawCollapsed && keyText == null) && b?.noBadge != true) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
         if (b != null && b.ds) drawDsMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.34f)
+        // #471 the rank badge, top LEFT (the glyph is top right, a reagent count bottom right, the DS mark a macro's): a ranked spell only
+        if (b != null && !empty && b.k == "spell" && !(drawCollapsed && keyText == null)) SpellRanks.of(if (b.rk > 0) b.rk else b.id)?.let { rb ->
+            rect.set(cx - iconHalf, cy - iconHalf, cx + iconHalf, cy + iconHalf)
+            UiKit.spellRank(c, rect, rb)
+        }
         if (talkNow != null && talkNow.mode == TalkFace.Mode.READY) drawTalkBadge(c, cx, cy, iconHalf, talkNow)
         return next
     }
@@ -2885,6 +2900,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 }
             }
             if (sel) aRadHi?.let { hl -> val hw = slot / 2f; drawBox(c, hl, px - hw, py - hw, px + hw, py + hw) }
+            // #471: a ranked spell's badge, bottom left inside the round icon (its inscribed square: the key glyphs sit outside the icon)
+            if (has) SpellRanks.of(r.ids[i])?.let { rb ->
+                val q = 49f * sc * 0.74f
+                rect.set(px - q, py - q, px + q, py + q)
+                UiKit.spellRank(c, rect, rb, UiKit.RANK_BOTTOM_LEFT)
+            }
             // pa1 / q62: a pet spell that may cast itself: the game's corners, the marching shine while it does (live: PetAuto, then
             // the layout's word); a command whose mode is on: the gold ring (UI Art)
             if (has && r.autoA[i]) UiKit.autoCastRing(c, px, py, 56f * sc, classAutoOn(r, i))

@@ -445,7 +445,8 @@ class HomeRadialView(
             val dim = left <= 0.0 && (if (spell) RadialModel.Cd.dim(i.id) else ItemCd.dim(i.id))
             UiKit.RadialItem(Icons.get(i.icon), i.name, RadialModel.countShown(spell, i), pinned = i.pinned, ranOut = i.ranOut,
                 noMana = spell && NoMana.has(i.id),        // m71: a spell wheel's spell out of mana
-                cdLeft = left.toFloat(), cdLen = len.toFloat(), cdDim = dim) } }
+                cdLeft = left.toFloat(), cdLen = len.toFloat(), cdDim = dim,
+                rank = if (spell) SpellRanks.of(i.id) else null) } }     // #471: a spell wheel's ranked spell
     }
 
     /** the stick goes back only from neutral, or [RadialModel.STICK_BACK_MS] after the close (the user 2026-10-09; the pause wheel's rule) */

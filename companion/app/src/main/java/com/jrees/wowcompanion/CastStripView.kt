@@ -188,6 +188,11 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                     UiKit.ringEdge(c, ringPath, UiKit.RING_W, lit = down, alpha = alpha)
                 }
                 s?.countShown?.let { n -> UiKit.stackCount(c, r, n) }
+                // #471: a ranked spell's badge, top left (a count is bottom right)
+                SpellRanks.of(s?.spellId)?.let { rb ->
+                    val inset = r.width() * 0.07f
+                    UiKit.spellRank(c, RectF(r.left + inset, r.top + inset, r.right - inset, r.bottom - inset), rb, alpha = alpha)
+                }
             }
         }
         return sweeping
