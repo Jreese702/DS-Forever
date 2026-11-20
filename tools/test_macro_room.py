@@ -391,7 +391,8 @@ check(k.get('h') == 0 and k.get('f') == 1 and k.get('fb') == 2 and k.get('wx') =
 check(clean(L) == {}, "b. clean", clean(L))
 # a full pad: the row cannot be made, the document says so
 L2, _ = world()
-L2.execute('for i = WowCompanion.pad.nrows, 55 do WowCompanion.pad.op("filler" .. i, nil, function() end) end')
+# (TapPad pad26: rows sit on their ranked places, so a free row can be anywhere: every free one is filled)
+L2.execute('for i = 0, 55 do if not WowCompanion.pad.byRow[i] then WowCompanion.pad.op("filler" .. i, nil, function() end) end end')
 L2.execute('fire("UPDATE_MACROS"); advance(1)')
 ensure_row(L2)
 check(L2.eval('WowCompanion.pad.rows.mac') is None and mdoc(L2).get('norow') is True, "b. no free row: no row, the document says norow")

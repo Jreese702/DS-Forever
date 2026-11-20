@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad25"     -- pad25 NO CURSOR FROM OUR OWN PRESSES (the user, 2026-11-19, streaming 1.0.36: "the cursor keeps randomly showing on the game"; the Thor's taps.log: every press Desktop posts moves the game's own cursor to the cell, and pad13's rule showed it again on that move - ResetCursor - until it had rested a second at the park): a press of ours (a cell, the calibration strip, the layout catcher) ARMS the blank cursor at once; the moves a press explains (to the cell and the game's park, within PRESS_WIN of it, or back to the park spot it learned) keep it blank wherever it rests, over the world or a window; the first move nothing of ours explains (a real mouse, the trackpad, a touch on the top screen) disarms it and is kept as pad.humanAt (Dialogs d35 reads it); an item on the cursor or a spell aiming shows it, and it is still only under the game's own cursor drawing (pad14's soft()); nothing saved, no setting changed; pad24 THE STREAM'S TAPS MEASURED (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"; pad23's ring proved every "ui" tap (row 51, aimed y 115.5) pressed "uisw" (row 50) and every "pnav" tap (row 1, y 15.5) pressed "chq" (row 2) while the rows between were right: on the PC the game sees a press about 2 % closer to y ~65 than the app aims it): THE CALIBRATION STRIP, one plain press-only Button of ours, CAL_W game px wide, CAL_GAP left of the grid, over the band's full placed height, that does nothing but keep where the game saw each press (GetCursorPosition, read only; describe()'s `calib`: its box, the count and the last 4 "x,y" in game px), so the app taps it twice (top and bottom) and aims every tap through what it measured; the ring of presses also keeps where each was seen (rxDoc `at`, beside `last`); the catcher's band zone takes the strip in; nothing else changed; pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad26"     -- pad26 THE ROW ORDER (GitHub #550, with #564 / #570 / #249 / #260: "top screen ui doesnt update when editing in settings"; the reporter: the switches only failed with the game at about 960x540, at 1280x720 everything toggled): a row is no longer given the next free row in the order the add-ons happen to register, but ITS OWN ROW from ORDER (below), ranked by impact - the top screen's switches "uisw" and its one-tap restore / layout row "ui" FIRST (rows 0-1, placed at any resolution and UI scale), the least used rows last, so a smaller layout drops those; describe() says `drop` = the registered rows this layout cannot place (name -> row; normally absent), so the app can say so once instead of waiting on a row that is not there; same cells, same geometry, same fits(); a name not in ORDER takes the lowest free row, as before; pad25 NO CURSOR FROM OUR OWN PRESSES (the user, 2026-11-19, streaming 1.0.36: "the cursor keeps randomly showing on the game"; the Thor's taps.log: every press Desktop posts moves the game's own cursor to the cell, and pad13's rule showed it again on that move - ResetCursor - until it had rested a second at the park): a press of ours (a cell, the calibration strip, the layout catcher) ARMS the blank cursor at once; the moves a press explains (to the cell and the game's park, within PRESS_WIN of it, or back to the park spot it learned) keep it blank wherever it rests, over the world or a window; the first move nothing of ours explains (a real mouse, the trackpad, a touch on the top screen) disarms it and is kept as pad.humanAt (Dialogs d35 reads it); an item on the cursor or a spell aiming shows it, and it is still only under the game's own cursor drawing (pad14's soft()); nothing saved, no setting changed; pad24 THE STREAM'S TAPS MEASURED (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"; pad23's ring proved every "ui" tap (row 51, aimed y 115.5) pressed "uisw" (row 50) and every "pnav" tap (row 1, y 15.5) pressed "chq" (row 2) while the rows between were right: on the PC the game sees a press about 2 % closer to y ~65 than the app aims it): THE CALIBRATION STRIP, one plain press-only Button of ours, CAL_W game px wide, CAL_GAP left of the grid, over the band's full placed height, that does nothing but keep where the game saw each press (GetCursorPosition, read only; describe()'s `calib`: its box, the count and the last 4 "x,y" in game px), so the app taps it twice (top and bottom) and aims every tap through what it measured; the ring of presses also keeps where each was seen (rxDoc `at`, beside `last`); the catcher's band zone takes the strip in; nothing else changed; pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -117,9 +117,54 @@ local CAL_GAP = 6        -- pad24: game pixels between the strip and the grid's 
 -- On the Thor's own UI scale (popupTop 126.6 game px) rows 0-55 fit (row 55 ends at 12 + 56 x 2 = 124); at the SMALLEST scale (121.5)
 -- rows 54-55 are neither placed nor described, exactly as pad8 / pad9 drop rows, and the app finds those cells missing. Same cells,
 -- same geometry, same fits() and describe(). One real tap test on the device is owed before release (probe P11).
+-- pad26 THE ROW ORDER (GitHub #550 and its duplicates #564, #570, #249, #260). Rows were handed out in the order the add-ons registered
+-- them, and Hub's top-screen switch rows "uisw" / "ui" register late (rows 49-50 of 56). fits() places only the rows that end above
+-- popupTop, and that is fewer rows than 56 on a smaller layout: at the game's 960x540 (popupTop 94.9) rows 0-39, at 1280x720 with a
+-- lowered UI scale (#249: 107.6) rows 0-46, at 1920x1080's smallest scale (121.5) rows 0-53, at 960x540's smallest (0.64: 60.75) rows
+-- 0-22. So the switches were never placed there and their tiles waited forever. Now every known row has ITS OWN ROW, its place in
+-- ORDER, ranked by impact: the rows the top screen's switches and the one-tap restore need first (they fit at any layout the game
+-- allows), then the rooms' everyday rows, the least used last. A row keeps its row whatever order the add-ons load in or whichever
+-- add-on is off (a lazy row's row waits for it), so taps from a stale document still never land on a different row. Which rows a
+-- smaller layout drops (the bands are the measured layouts above; a room's rows are kept together across each band's edge):
+--   every layout:  uisw ui padtab spells sradial qpick qact ipick iact idlg pause gamemenu party pfocus bag0-5 binv pnav uwp (rows 0-22)
+--   below 1920x1080's smallest scale (rows 54-55):  keytest, bmv
+--   and below 1280x720 lowered (#249, rows 47-53):  prof profsel profopen, gf gfl gfw gfclose
+--   and below 960x540 (rows 40-46):                 talents talentn, aurapick auracancel, spick sact, cal (+ its guests mac, lay)
+--   and below 960x540's smallest (rows 23-39):      chq chr chs chcmd, ibuy isell iqty itrain, castbar radial classr tcast, mapw,
+--                                                   bagsort bmvq, extra radialpin
+-- A name not in ORDER (a new row nobody ranked yet: add it here; tools/test_pad_order.py fails on one) takes the lowest free row, as
+-- every row did before; opts.last (pad19) is kept for such a name. A ranked row whose own row is taken does the same. describe()'s `drop` lists the registered rows this layout does not place, so the
+-- app can say so (once) and never waits on them.
+local ORDER = {
+    "uisw", "ui",                                                    -- 0-1   the top screen's switches; the one-tap restore / layout
+    "padtab",                                                        -- 2     Book's one-shot pick (leases, the chooser)
+    "spells", "sradial",                                             -- 3-4   the Spellbook's cells; the spell radials (fights)
+    "qpick", "qact",                                                 -- 5-6   Quests
+    "ipick", "iact", "idlg",                                         -- 7-9   the NPC dialogs
+    "pause", "gamemenu",                                             -- 10-11 the pause wheel; the Game Menu
+    "party", "pfocus",                                               -- 12-13 Party mode; the unit menu
+    "bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv",          -- 14-20 Bags: the items, the worn gear
+    "pnav", "uwp",                                                   -- 21-22 the routes
+    "chq", "chr", "chs", "chcmd",                                    -- 23-26 Chat's keyboard
+    "ibuy", "isell", "iqty", "itrain",                               -- 27-30 vendors, trainers
+    "castbar", "radial", "classr", "tcast",                          -- 31-34 the cast bar, the radials, touch cast
+    "mapw",                                                          -- 35    the Map room
+    "bagsort", "bmvq",                                               -- 36-37 Bags' sort / move queue
+    "extra", "radialpin",                                            -- 38-39 the Controller room's Extra tab; the radials' pins
+    "talents", "talentn",                                            -- 40-41 Talents
+    "aurapick", "auracancel",                                        -- 42-43 the Character room's auras
+    "spick", "sact",                                                 -- 44-45 Social
+    "cal",                                                           -- 46    Calendar (Macros and the layout editor are its guests)
+    "prof", "profsel", "profopen",                                   -- 47-49 Professions
+    "gf", "gfl", "gfw", "gfclose",                                   -- 50-53 the Group Finder
+    "keytest",                                                       -- 54    the key channel's sweep / handshake (no keys: clicks)
+    "bmv",                                                           -- 55    Bags' drag row (pad19: the first to go)
+}
+local SLOT = {}
+for i, n in ipairs(ORDER) do SLOT[n] = i - 1 end
 local POPUP_TOP_UNITS = 135
 
-local pad = { rows = {}, byRow = {}, nrows = 0, ns = {}, geom = nil, info = nil, visible = false,
+local pad = { ORDER = ORDER, SLOT = SLOT, rows = {}, byRow = {}, nrows = 0, ns = {}, geom = nil, info = nil, visible = false,
               listeners = {}, secureAt = nil, securePending = false }
 WC.pad = pad
 
@@ -338,15 +383,25 @@ end
 -- every row registered after it still takes the lowest free row and the pinned one is the row that drops first when a smaller UI scale
 -- places fewer rows (Bags' shared drag row "bmv": at the smallest scale the drag row goes, never the rooms' or the radials' rows).
 -- Rows keep their places as before; pad.nrows stays one past the highest row in use (the readers loop 0 .. nrows - 1, a gap is nil).
-local nextRow = 0
+-- pad26: a ranked name takes its own row (ORDER); any other name the lowest free row (opts.last: ROWS_MAX - 1 first, as pad19)
 local function newRow(name, last)
-    local idx
-    if last and not pad.byRow[ROWS_MAX - 1] then
-        idx = ROWS_MAX - 1
-    else
-        while nextRow < ROWS_MAX and pad.byRow[nextRow] do nextRow = nextRow + 1 end
-        if nextRow >= ROWS_MAX then return nil end
-        idx = nextRow
+    local idx = SLOT[name]
+    if idx == nil or idx >= ROWS_MAX or pad.byRow[idx] then
+        idx = nil
+        if last and not pad.byRow[ROWS_MAX - 1] then
+            idx = ROWS_MAX - 1
+        else
+            -- first a free row no ranked name owns, then the lowest free row (the old rule: the next one)
+            for i = 0, ROWS_MAX - 1 do
+                if not pad.byRow[i] and ORDER[i + 1] == nil then idx = i break end
+            end
+            if idx == nil then
+                for i = 0, ROWS_MAX - 1 do
+                    if not pad.byRow[i] then idx = i break end
+                end
+            end
+        end
+        if idx == nil then return nil end
     end
     local r = { name = name, row = idx, cells = {} }
     pad.nrows = math.max(pad.nrows, idx + 1)
@@ -812,6 +867,11 @@ function pad.describe()
             sizes[name] = r.n
         end
     end
+    -- pad26: the registered rows this layout cannot place (a shared row once, by its host), name -> row; normally absent
+    local drop
+    for name, r in pairs(pad.rows) do
+        if not r.guestOf and not fits(r.row) then drop = drop or {}; drop[name] = r.row end
+    end
     local g = pad.geom
     -- pad23: a described row whose first cell does not stand where the grid says (its real top, game px from the screen's top, read
     -- off the frame): `off` lists it, so a tap that never lands can be told from a row that moved. Read only; normally absent
@@ -839,7 +899,7 @@ function pad.describe()
     -- (y + rows * ch) stays above them at whatever UI scale the player picks
     return { v = PADV, x = g.x, y = g.y, cw = CELL_W, ch = CELL_H, cols = COLS,
              popupTop = math.floor(POPUP_TOP_UNITS * pad.info.sy * 10 + 0.5) / 10,
-             pw = g.pw, ph = g.ph, rows = rows, sizes = sizes, keys = keysDescribe(), off = off, calib = cal }
+             pw = g.pw, ph = g.ph, rows = rows, sizes = sizes, keys = keysDescribe(), off = off, calib = cal, drop = drop }
 end
 
 local f = CreateFrame("Frame")

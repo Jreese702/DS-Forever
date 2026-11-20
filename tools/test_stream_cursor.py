@@ -28,7 +28,7 @@ def check(ok, what):
 
 # ---------------------------------------------------------------------------------------------------------------- A. TapPad pad25
 TAPPAD = open(os.path.join(ADDONS, "WowCompanion", "TapPad.lua"), encoding="utf-8").read()
-check('local PADV = "pad25"' in TAPPAD and "the cursor keeps randomly showing on the game" in TAPPAD, "A. TapPad pad25, its note quotes the user")
+check(int(__import__('re').search(r'local PADV = "pad(\d+)"', TAPPAD).group(1)) >= 25 and "pad25 NO CURSOR FROM OUR OWN PRESSES" in TAPPAD and "the cursor keeps randomly showing on the game" in TAPPAD, "A. TapPad pad25, its note quotes the user")
 
 PRE = r'''
 CUR = { x = 960, y = 640 }
