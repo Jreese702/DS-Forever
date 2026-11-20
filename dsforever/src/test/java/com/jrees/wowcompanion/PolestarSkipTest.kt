@@ -280,8 +280,8 @@ class PolestarSkipTest {
         assertTrue(TapSpacing.lead(c, 1_200L, prev, 120L) > 0L)
         // long after: no wait; other rows never wait; game points never
         assertEquals(0L, TapSpacing.lead(c, 5_000L, skip, 120L))
-        TapSpacing.ran(c, 6_000L, listOf("qact" to 3), 0L)
-        assertEquals(0L, TapSpacing.lead(c, 6_000L, listOf("qact" to 3), 0L))
+        TapSpacing.ran(c, 6_000L, listOf("pfocus" to 3), 0L)
+        assertEquals(0L, TapSpacing.lead(c, 6_000L, listOf("pfocus" to 3), 0L))
         assertEquals(0L, TapSpacing.lead(c, 6_000L, null, 0L))
         TapSpacing.ran(c, 6_000L, null, 0L)
         // PolestarNav's own 38 then 8 right behind a Skip waits too
@@ -308,7 +308,7 @@ class PolestarSkipTest {
         assertTrue(g[3] - g[1] >= TapSpacing.MIN_MS)
         // no repeat: exactly the gap; another row: never spaced; game points (null): the gap
         assertEquals(listOf(0L, 120L, 240L), TapSpacing.offsets(listOf(38, 12, 13).map { row to it }, 120L).toList())
-        assertEquals(listOf(0L, 0L), TapSpacing.offsets(listOf("qact" to 3, "qact" to 3), 0L).toList())
+        assertEquals(listOf(0L, 0L), TapSpacing.offsets(listOf("pfocus" to 3, "pfocus" to 3), 0L).toList())
         assertEquals(listOf(0L, 50L), TapSpacing.offsets(null, 50L, 2).toList())
         // ran() stamps each tap at its offset (the batch's end less the rest of it), so the next batch's lead counts from the real tap
         val c = TapSpacing.Clock()
