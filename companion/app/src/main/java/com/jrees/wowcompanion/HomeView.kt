@@ -1663,7 +1663,7 @@ class HomeView(
 
     /** a finger on slot [i]: the slot's cell on the "castbar" row (nothing for an empty / waiting slot) */
     private fun castStripTap(i: Int) {
-        val cell = CastStripModel.tapCell(CastStripModel.Live.bar, i) ?: return
+        val cell = CastStripModel.tapCell(CastStripModel.Live.bar, i, castStrip.fightNow) ?: return   // cb14: a fight's override cell (9-16)
         val sent = pad != null && TapBridge.tap(context, pad, cell.first, cell.second) { }
         Log.i(TAG, "cast bar: slot ${i + 1} -> ${cell.first} ${cell.second} ${if (sent) "tapped" else "not sent"}")
     }

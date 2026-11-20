@@ -75,6 +75,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
 
     /** Home's fight now ([fighting] = HomeView.fightShown()) with the choice [mode]; true = hidden changed (Home lays the page again) */
     fun fight(mode: CastStripModel.Combat, fighting: Boolean): Boolean {
+        val fn = fighting && CastStripModel.showOf(mode)                  // cb14: Show in combat on and Home shows a fight
+        if (fn != fightNow) { fightNow = fn; invalidate() }
         if (!fightGate.note(mode, fighting)) return false
         if (fightGate.hidden) dropTouch()
         invalidate()
@@ -90,6 +92,11 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
         if (downAt >= 0 || moved) parent?.requestDisallowInterceptTouchEvent(false)
         downAt = -1; moved = false; caught = false; pressedUntil = 0L; flingAt = -1L
     }
+
+    /** cb14: Home shows a fight with Show in combat on: a set fight slot shows and casts in its slot's place
+     *  ([CastStripModel.shownSlot] / [CastStripModel.tapCell] with fight = true) */
+    var fightNow = false
+        private set
 
     /** hidden by the fight (Hide in combat): no touch reaches the slots */
     val fightHidden: Boolean get() = fightGate.hidden
@@ -149,8 +156,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
         var sweeping = false
         for (i in CastStripModel.inView(side, width.toFloat(), height.toFloat(), o)) {
             val r = slotRect(i)
-            val s = b?.slots?.getOrNull(i)
-            val live = CastStripModel.tapCell(b, i) != null
+            val s = CastStripModel.shownSlot(b, i, fightNow)               // cb14: a fight's override in its place
+            val live = CastStripModel.tapCell(b, i, fightNow) != null
             val itemId = s?.takeIf { it.kind == CastStripModel.Kind.ITEM }?.id
             val spent = itemId != null && (s?.count == 0 || ItemCd.dim(itemId))       // cb9: none left, or held till the fight ends
             val alpha = when { s?.filled != true -> 110; live && !spent -> 255; else -> DIM }
@@ -243,7 +250,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                 downAt = CastStripModel.slotAt(side, ev.x, ev.y, w, height.toFloat(), scroll)
                 downX = ev.rawX; downY = ev.rawY; moved = false
                 sampleT.clear(); sampleX.clear(); sample(ev.eventTime, ev.rawX)
-                if (!caught && downAt >= 0 && CastStripModel.tapCell(bar, downAt) != null) {
+                if (!caught && downAt >= 0 && CastStripModel.tapCell(bar, downAt, fightNow) != null) {
                     pressedSlot = downAt; pressedUntil = SystemClock.elapsedRealtime() + PRESS_MS; invalidate()
                 }
                 return true
@@ -269,7 +276,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                     }
                 } else if (!caught) {
                     val i = CastStripModel.slotAt(side, ev.x, ev.y, w, height.toFloat(), scroll)
-                    if (i >= 0 && i == downAt && CastStripModel.tapCell(bar, i) != null) onTap(i)
+                    if (i >= 0 && i == downAt && CastStripModel.tapCell(bar, i, fightNow) != null) onTap(i)
                 }
                 downAt = -1; moved = false; caught = false
                 return true

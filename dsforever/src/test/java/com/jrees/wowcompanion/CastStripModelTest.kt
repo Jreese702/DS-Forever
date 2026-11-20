@@ -53,9 +53,9 @@ class CastStripModelTest {
         assertEquals(-1, b.slotOf(118, 118))
         assertTrue(b.hasSpells)
         assertFalse("a cb6 bar takes spells only", bar(two).anyKind)
-        assertTrue(CastStripModel.ctlTab(BOTH, b))
-        assertFalse(CastStripModel.ctlTab(OFF, b))
-        assertFalse(CastStripModel.ctlTab(L, bar(two)))
+        assertTrue(CastStripModel.ctlTab(b))
+        assertTrue("cb14 (D2): the bar Off no longer hides the sub-tabs (dimmed)", CastStripModel.barOff(OFF) && CastStripModel.ctlTab(b))
+        assertFalse(CastStripModel.ctlTab(bar(two)))
         assertEquals(listOf("padtab" to 39, "padtab" to 29), CastStripModel.ctlTabCells())
         assertEquals(listOf("padtab" to 39, "padtab" to 30), CastStripModel.ctlSettingCells(true))
         assertEquals(listOf("padtab" to 39, "padtab" to 31), CastStripModel.ctlSettingCells(false))
@@ -348,14 +348,14 @@ class CastStripModelTest {
 
     // ---------------------------------------------------------------- cb3: the Bind box's Cast bar tab (Book b56)
 
-    @Test fun theBindTabOnlyWhenTheSettingIsOn() {
+    @Test fun theBindTabWhileTheAddonTakesASlotPick() {
         val b = bar(two)
         assertTrue(b.slotPick)
-        assertFalse(CastStripModel.bindTab(OFF, b))
-        assertTrue(CastStripModel.bindTab(L, b)); assertTrue(CastStripModel.bindTab(R, b)); assertTrue(CastStripModel.bindTab(BOTH, b))
-        assertFalse(CastStripModel.bindTab(L, null))                         // no document yet
+        // cb14 (D2): the setting Off no longer hides the tab (dimmed with Turn on); the add-on's slot pick decides
+        assertTrue(CastStripModel.bindTab(b))
+        assertFalse(CastStripModel.bindTab(null))                            // no document yet
         val older = bar("""{"type":"castbar","v":"cb2b","n":12,"pick":12,"pp":[39,19],"e":[]}""")
-        assertFalse(older.slotPick); assertFalse(CastStripModel.bindTab(L, older))     // an older add-on takes no slot pick
+        assertFalse(older.slotPick); assertFalse(CastStripModel.bindTab(older))     // an older add-on takes no slot pick
         val six = bar("""{"type":"castbar","v":"cb3","n":6,"pick":6,"pp":[39,19],"e":[]}""")
         assertFalse(six.slotPick)                                             // cb3's 6: its Book knows no 27-28 (cb6 only)
         assertEquals(listOf("padtab" to 39, "padtab" to 26), CastStripModel.tabCells())
@@ -367,12 +367,9 @@ class CastStripModelTest {
         assertNull(CastStripModel.slotCells(8)); assertNull(CastStripModel.slotCells(-1))
         val codes = (0 until 8).map { CastStripModel.slotCode(it) }
         assertEquals(listOf(20, 21, 22, 23, 24, 25, 27, 28), codes)
-        // no collision with the pick's other codes: 0-4 unused (Smart Range's, gone), 5-18 the radial ops, 19 the pick, 26 the tab
+        // no collision with the pick's other codes: 0 pet recall, 1-4 cb14's (the retired Smart Range codes), 5-18 the radial ops, 19
+        // the pick, 26 the tab
         for (k in codes) assertFalse("$k", k in 0..19 || k == CastStripModel.TAB_CODE || k == CastStripModel.PICK)
-        // LB / RB walk Normal | In combat | Cast bar, no wrap; two tabs only while it is off
-        assertEquals(2, CastStripModel.stepTab(1, 1, true)); assertEquals(2, CastStripModel.stepTab(2, 1, true))
-        assertEquals(1, CastStripModel.stepTab(2, -1, true)); assertEquals(0, CastStripModel.stepTab(0, -1, true))
-        assertEquals(1, CastStripModel.stepTab(1, 1, false))
     }
 
     @Test fun theBindTabReadsTheAddonsCursor() {
@@ -446,24 +443,25 @@ class CastStripModelTest {
         assertNull(CastStripModel.tapCell(b, 3))
         assertTrue(b.hasSpells)
         // the Bind box's tab: a spell's box as before; a macro's only while the add-on says mac = 1
-        assertTrue(CastStripModel.bindTab(L, b, macro = true))
-        assertFalse(CastStripModel.bindTab(OFF, b, macro = true))
+        assertTrue(CastStripModel.bindTab(b, macro = true))
         val cb12 = bar("""{"type":"castbar","v":"cb12","n":8,"any":1,"pp":[39,19],"e":[]}""")
         assertFalse(cb12.macros)
-        assertTrue("a spell's box on a cb12 add-on: unchanged", CastStripModel.bindTab(L, cb12))
-        assertFalse("a macro's box on a cb12 add-on: no Cast bar tab", CastStripModel.bindTab(L, cb12, macro = true))
-        // the overlay asks with the box's macro flag; a bag item's box stays spells-only (Book b59)
+        assertTrue("a spell's box on a cb12 add-on: unchanged", CastStripModel.bindTab(cb12))
+        assertFalse("a macro's box on a cb12 add-on: no Cast bar tab", CastStripModel.bindTab(cb12, macro = true))
+        // the overlay asks with the box's macro flag; cb14 (D8): a bag item's box takes the Tap to cast tabs too
         val o = src("SpellsOverlay.kt")
-        assertTrue(o.contains("if (bi != null && !bi.mac) return false"))
-        assertTrue(o.contains("CastStripModel.bindTab(HomeSettings.castBarSide, CastStripModel.Live.bar, macro = bi != null)"))
+        assertFalse(o.contains("if (bi != null && !bi.mac) return false"))
+        assertTrue(o.contains("CastStripModel.bindTab(CastStripModel.Live.bar, macro = bi?.mac == true)"))
     }
 
     /** cb3: the Bind box's third tab replaces the Spellbook's own "Cast bar" button; the Settings row is Off / Left / Right / Both */
     @Test fun theThirdTabReplacesTheSpellbooksButton() {
         assertFalse(src("SpellbookView.kt").contains("\"Cast bar\""))
         val o = src("SpellsOverlay.kt")
-        assertEquals(1, Regex("""UiKit\.tab\(c, fightRect\(2, w\), "Cast bar", cbOn\)""").findAll(o).count())
-        assertTrue(o.contains("CastStripModel.bindTab(HomeSettings.castBarSide"))
+        // cb14 (D7 / D9): the box's two rows (Out of combat | In combat, Controller | Tap to cast)
+        assertTrue(o.contains("UiKit.tab(c, fightRect(0, w), \"Out of combat\", !f)"))
+        assertTrue(o.contains("val word = if (i == 0) \"Controller\" else \"Tap to cast\""))
+        assertFalse(o.contains("\"Normal\""))
         val h = src("HomeSettings.kt")
         assertTrue(h.contains("row(c, y + GAP, \"Tap-to-cast bar\""))
         assertFalse(h.contains("castStrip ="))
@@ -506,5 +504,87 @@ class CastStripModelTest {
             override fun commit(): Boolean { apply(); return true }
             override fun apply() { for (k in gone) m.remove(k); m.putAll(put) }
         }
+    }
+
+    // ---------------------------------------------------------------- cb14: CONTROLLER | TAP TO CAST (the user, 2026-11-19)
+
+    private val fightDoc = """{"type":"castbar","v":"cb14","n":8,"any":1,"mac":1,"fl":1,"show":1,"pick":8,"pp":[39,19],
+        "e":[{"s":1,"id":403,"c":0},{"s":3,"id":331,"c":2}],
+        "f":[{"s":1,"id":324,"c":9},{"s":2,"k":"command","key":"TARGETNEARESTENEMY","n":"Target","c":10},{"s":4,"id":5,"q":1},{"s":5,"id":6,"c":3}]}"""
+
+    @Test fun theFightLayerIsParsed() {
+        val b = bar(fightDoc)
+        assertTrue(b.fightLayer && b.show)
+        assertEquals(324, b.fslots[0].id); assertEquals(9, b.fslots[0].cell)
+        assertEquals(CastStripModel.Kind.COMMAND, b.fslots[1].kind); assertEquals(10, b.fslots[1].cell)
+        assertFalse("an unset fight slot", b.fslots[2].filled)
+        assertTrue(b.fslots[3].queued); assertNull(b.fslots[3].cell)
+        assertNull("a fight cell must be 9-16 (3 is a slot's)", b.fslots[4].cell)
+        assertNull("a slot's cell must be 0-7", bar(fightDoc.replace("\"c\":2}", "\"c\":12}")).slots[2].cell)
+        assertFalse("an older add-on: no layer, not shown", bar(two).fightLayer || bar(two).show)
+    }
+
+    @Test fun aFightTapsTheOverrideCellOnlyWithShowOn() {
+        val b = bar(fightDoc)
+        assertEquals("out of combat: slot 1's own", CastStripModel.ROW to 0, CastStripModel.tapCell(b, 0))
+        assertEquals("in a fight: its fight cell", CastStripModel.ROW to 9, CastStripModel.tapCell(b, 0, fight = true))
+        assertEquals("an empty fight slot keeps the slot's own in a fight", CastStripModel.ROW to 2, CastStripModel.tapCell(b, 2, fight = true))
+        assertEquals("a fight slot over an empty slot: in fights only", CastStripModel.ROW to 10, CastStripModel.tapCell(b, 1, fight = true))
+        assertNull(CastStripModel.tapCell(b, 1))
+        assertNull("a queued fight slot takes no tap", CastStripModel.tapCell(b, 3, fight = true))
+        assertEquals(324, CastStripModel.shownSlot(b, 0, fight = true)?.id)
+        assertEquals(403, CastStripModel.shownSlot(b, 0)?.id)
+        val off = bar(fightDoc.replace("\"show\":1,", ""))
+        assertEquals("Show off: the slot's own in a fight", CastStripModel.ROW to 0, CastStripModel.tapCell(off, 0, fight = true))
+        assertEquals(403, CastStripModel.shownSlot(off, 0, fight = true)?.id)
+    }
+
+    @Test fun showInCombatIsCastBarCombat() {
+        assertTrue(CastStripModel.showOf(CastStripModel.Combat.STAY))
+        assertFalse(CastStripModel.showOf(CastStripModel.Combat.HIDE))
+        assertEquals(CastStripModel.Combat.STAY, CastStripModel.combatFor(true))
+        assertEquals(CastStripModel.Combat.HIDE, CastStripModel.combatFor(false))
+        assertEquals("D5b: the row's words", listOf("Off", "On"), CastStripModel.Combat.values().map { it.label })
+        assertEquals("the default stays Hide (off)", CastStripModel.Combat.HIDE, CastStripModel.combatOf(null))
+        assertEquals(listOf("padtab" to 39, "padtab" to 2), CastStripModel.showCells(true))
+        assertEquals(listOf("padtab" to 39, "padtab" to 3), CastStripModel.showCells(false))
+        assertEquals(listOf("padtab" to 39, "padtab" to 1), CastStripModel.ctlFightCells())
+        assertEquals(CastStripModel.Side.BOTH, CastStripModel.turnOnSide)
+        assertTrue(CastStripModel.barOff(OFF)); assertFalse(CastStripModel.barOff(L))
+    }
+
+    @Test fun theBindBoxWalksFourTabs() {
+        val t = CastStripModel.BIND_TABS
+        assertEquals(listOf(0, 1, 2, 3), t.map { it.index })
+        var at = t[0]
+        val seen = arrayListOf(at)
+        repeat(4) { at = CastStripModel.stepBind(at, 1, tap = true); seen += at }
+        assertEquals("RB: Out·Controller, Out·Tap, In·Controller, In·Tap, then it stops", listOf(t[0], t[1], t[2], t[3], t[3]), seen)
+        assertEquals(t[2], CastStripModel.stepBind(t[3], -1, tap = true))
+        assertEquals(t[0], CastStripModel.stepBind(t[0], -1, tap = true))
+        assertEquals("no Tap to cast: two tabs", t[2], CastStripModel.stepBind(t[0], 1, tap = false))
+        assertEquals("an add-on without the in-combat layer: three", t[2], CastStripModel.stepBind(t[2], 1, tap = true, fightTap = false))
+        assertEquals(listOf("spells" to 11), CastStripModel.bindTabCells(t[0], 10 to 11))
+        assertEquals(listOf("spells" to 10), CastStripModel.bindTabCells(t[2], 10 to 11))
+        assertEquals(listOf("padtab" to 39, "padtab" to 26), CastStripModel.bindTabCells(t[1], 10 to 11))
+        assertEquals(listOf("padtab" to 39, "padtab" to 4), CastStripModel.bindTabCells(t[3], null))
+        assertNull(CastStripModel.bindTabCells(t[0], null))
+        val c = SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b70","ctl":{"on":true,"mode":"bind","bind":403,"bcb":2,"bcf":1,"cbon":3}}"""))
+        assertEquals(2, c?.bindCb); assertTrue(c!!.bindCbFight); assertEquals(3, c.cbOn)
+        assertTrue("D8: a bag item's box too", CastStripModel.bindTab(bar(fightDoc)))
+        assertTrue(CastStripModel.bindFightTab(bar(fightDoc)))
+        assertFalse(CastStripModel.bindFightTab(bar(two)))
+    }
+
+    @Test fun theRoomsDocumentCarriesTheSubTabs() {
+        val c = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p55","c":{"on":true,"focus":"subtabs","view":"cbfight","top":"combat",
+            "tcur":3,"cbsn":2,"cbon":1,"cbs":1}}"""))!!
+        assertEquals("cbfight", c.view); assertTrue(c.cbFight); assertEquals("combat", c.top)
+        assertEquals(2, c.cbsn); assertEquals(1, c.cbon); assertTrue(c.cbShow); assertFalse(c.cbOff)
+        assertEquals("normal", PadMapModel.topOf("castbar")); assertEquals("combat", PadMapModel.topOf("cbfight"))
+        assertEquals(7, PadMapModel.tabOf("cbfight"))
+        val old = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p54","c":{"on":true,"view":"castbar"}}"""))!!
+        assertEquals("an older add-on: the top from the view", "normal", old.top)
+        assertNull(old.cbsn)
     }
 }

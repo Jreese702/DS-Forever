@@ -100,12 +100,12 @@ class CastBarMacroShotsTest {
         HomeSettings.init(app); HomeSettings.castBarSide = BOTH
         CastStripModel.Live.set(bar)
         assertTrue("cb13: a macro's box has the Cast bar tab", three(box(macItem)))
-        assertFalse("a bag item's box stays spells-only (Book b59)", three(box("""{"id":6948,"n":"Hearthstone","i":134414}""")))
+        assertTrue("b70 (D8): a bag item's box has Tap to cast too", three(box("""{"id":6948,"n":"Hearthstone","i":134414}""")))
         CastStripModel.Live.set(CastStripModel.parse(JSONObject("""{"type":"castbar","v":"cb12","n":8,"any":1,"pp":[39,19],"e":[]}"""))!!)
         assertFalse("a cb12 add-on: no Cast bar tab for a macro", three(box(macItem)))
         HomeSettings.castBarSide = CastStripModel.Side.OFF
         CastStripModel.Live.set(bar)
-        assertFalse("the bar setting Off: no tab", three(box(macItem)))
+        assertTrue("b70 (D2): the bar setting Off: the tab stays (dimmed, Turn on)", three(box(macItem)))
     }
 
     private fun page(): HomeView {

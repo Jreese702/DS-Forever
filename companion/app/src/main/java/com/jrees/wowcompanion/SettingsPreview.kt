@@ -141,7 +141,7 @@ object SettingsPreview {
             "Gold" -> goldLine(c, r, s)
             "Hearthstone", "Class teleport", "Free bag slots", "Ammo" -> extras(c, r, id, s)
             "Tap-to-cast bar" -> castBar(c, r, s.castBar)
-            "In combat" -> castCombat(c, r, s, t)
+            "In combat", "Show in combat" -> castCombat(c, r, s, t)          // cb14 (D5b): the row renamed
             "World map" -> worldMap(c, r, s.worldMapAll)
             "Smart Y" -> smartY(c, r, s, t, glyph)
             "Party mode" -> partyMode(c, r, s.partyMode, t, glyph, s.glyphSet)
@@ -1020,7 +1020,7 @@ object SettingsPreview {
     private fun castCombat(c: Canvas, r: RectF, s: State, t: Float) {
         val side = if (s.castBar in 1..3) s.castBar else 1
         val k = (t % 2.4f) / 2.4f
-        twoWays(c, r, "Hide: the bar slides away", "Stay: the bar stays", s.castCombatHide, 300f) { box, hide ->
+        twoWays(c, r, "Off: the bar slides away", "On: the bar stays", s.castCombatHide, 300f) { box, hide ->
             val tw = minOf(box.width() * 0.5f, (box.height() - 16f) * 1.35f)
             val th = minOf(box.height() - 16f, tw / 1.35f)
             val tb = RectF(box.left + 12f, box.centerY() - th / 2f, box.left + 12f + tw, box.centerY() + th / 2f)
