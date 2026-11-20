@@ -72,6 +72,7 @@ class ResetRun(
             val gone = allMeta.keys().asSequence().toList().filter {
                 if (all) ResetPlan.isCharKey(it) || CharKey.isOrphan(it)
                 else it == who || (who != null && CharKey.isOrphan(it) && CharKey.nameOf(it) == CharKey.nameOf(who) &&     // its orphans too
+                    RealmFix.resetTakesOrphans(who) &&                                      // the k6 review round 3 (item 5)
                     allMeta.keys().asSequence().none { o -> o != who && ResetPlan.isCharKey(o) && CharKey.nameOf(o) == CharKey.nameOf(who) })
             }
             if (gone.isNotEmpty() && backupText("prefs-radial_meta", allMeta.toString(), now)) {
@@ -132,6 +133,7 @@ class ResetRun(
     private fun combatOrphans(who: String?): List<File> {
         val w = who?.takeIf { ResetPlan.isCharKey(it) } ?: return emptyList()
         val name = CharKey.nameOf(w) ?: return emptyList()
+        if (!RealmFix.resetTakesOrphans(w)) return emptyList()            // the k6 review round 3 (item 5): the device census decides too
         val orphanNames = RealmFix.combatOrphanFiles(name)
         val own = CombatKeep.fileName(w)
         val other = combatDir.listFiles()?.any { f ->

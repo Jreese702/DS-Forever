@@ -438,7 +438,7 @@ class RealmKeyTest {
         val home = Prefs(linkedMapOf("smartPet.$real" to true, "smartPet.$name-" to false, "holdTalk.$name-" to true, "rest" to "THIN",
             "holdTalk.Ash-R" to false, "talkSendNow.$name-" to ""))
         val bak = Prefs()
-        val alone = RealmFix.Census(setOf("Fake Realm 7 PvE"))
+        val alone = RealmFix.Census(setOf("Fake Realm 7 PvE"), classes = setOf("HUNTER"))
         assertEquals("no census: nothing folds (one file cannot tell)", 0 to 0, RealmFix.foldPrefs(home, "home", real, bak, at1320, null))
         assertEquals("1 adopted (holdTalk), 2 dropped (the real smartPet wins; an empty one)", 1 to 2, RealmFix.foldPrefs(home, "home", real, bak, at1320, alone))
         assertEquals(mapOf("smartPet.$real" to true, "rest" to "THIN", "holdTalk.Ash-R" to false, "holdTalk.$real" to true), home.m)
@@ -590,12 +590,15 @@ class RealmKeyTest {
         val dev = deviceTable()
         assertTrue(RealmFix.clean(dev, RealmFix.realmsByName(listOf(dev))).items.isEmpty())
         RealmFix.census = { r -> RealmFix.censusFrom(r, listOf(deviceTable()), emptyList(), emptyList(), emptyList()) }
+        assertTrue("round 3 (item 2): no class recorded for the realm (no live k7+ session saved): nothing folds",
+            RealmFix.clean(dev, RealmFix.realmsByName(listOf(dev))).items.isEmpty())
+        RealmFix.census = { r -> RealmFix.censusFrom(r, listOf(deviceTable(), hunterCore), emptyList(), emptyList(), emptyList()) }
         assertEquals(17, RealmFix.clean(dev, RealmFix.realmsByName(listOf(dev))).items.size)
     }
 
     /** item D: a JSON store folds only once what goes is kept (no backup, a failed one: nothing changed, nothing written) */
     @Test fun aJsonStoreFoldsOnlyOnceWhatGoesIsKept() {
-        RealmFix.census = { RealmFix.Census(setOf(realmA)) }
+        RealmFix.census = { RealmFix.Census(setOf(realmA), classes = setOf("HUNTER")) }
         val all = JSONObject().put("$name-", JSONArray().put("loot"))
         RealmFix.keepRemoved = null
         assertFalse("no backup: nothing changed", RealmFix.foldStore(all, real, "chat_filter")); assertTrue(all.has("$name-"))
@@ -640,6 +643,86 @@ class RealmKeyTest {
         assertEquals(true, d["choice_$real"]); assertEquals(true, d["pend_choice_$real"])
         assertFalse("the orphan removed, never given the default", d.containsKey("choice_$name-"))
         assertFalse(d.containsKey("pend_choice_$name-"))
+    }
+
+    // ================================================================ round 3 (the k6 review's third verdict)
+
+    /** the core table's realmOf of the hunter's realm, as a live k7+ session records it (server, class, k9's GUID; fake values) */
+    private val hunterCore = t("realmOf" to t(name to t(realmA to t("s" to "1", "c" to "HUNTER", "g" to "Player-1-0000AAAA"))))
+
+    /** item 2: a fold needs the realm's RECORDED class, and it must be the class playing now (the add-on's Safety k9 rule) */
+    @Test fun aFoldNeedsTheRecordedClassOfThePlayingCharacter() {
+        val keys = listOf(setOf("smartPet.$name-"))
+        fun c(tables: List<Map<*, *>?>, playing: String?) = RealmFix.censusFrom(real, tables, keys, emptyList(), emptyList(), playing)
+        val keysOnly = t("fightBy" to t(real to t(1L to "DSMAP")))
+        assertFalse("only our tables' keys (no realmOf record): no fold", RealmFix.foldOk(real, c(listOf(keysOnly), null)))
+        val k6 = t("realmOf" to t(name to t(realmA to true)))
+        assertFalse("k6's `true` record (no class): no fold", RealmFix.foldOk(real, c(listOf(keysOnly, k6), null)))
+        assertEquals(setOf("HUNTER"), c(listOf(keysOnly, hunterCore), null).classes)
+        assertTrue("the recorded class, nothing playing now (before a start)", RealmFix.foldOk(real, c(listOf(keysOnly, hunterCore), null)))
+        assertTrue("the recorded class is the one playing", RealmFix.foldOk(real, c(listOf(keysOnly, hunterCore), "HUNTER")))
+        assertFalse("ANOTHER class playing under that key: never a fold", RealmFix.foldOk(real, c(listOf(keysOnly, hunterCore), "WARRIOR")))
+        val two = t("realmOf" to t(name to t(realmA to t("c" to "MAGE"))))
+        assertFalse("two classes recorded over the copies: never a guess", RealmFix.foldOk(real, c(listOf(hunterCore, two), "HUNTER")))
+        // the app's own preference fold asks the same census: another class playing leaves every orphan where it is
+        val home = Prefs(linkedMapOf("smartPet.$name-" to true))
+        assertEquals(0 to 0, RealmFix.foldPrefs(home, "home", real, Prefs(), at1320, c(listOf(hunterCore), "WARRIOR")))
+        assertEquals(1, home.m.size)
+        assertEquals(1 to 0, RealmFix.foldPrefs(home, "home", real, Prefs(), at1320, c(listOf(hunterCore), "HUNTER")))
+        // the host passes the class of the current padmap (only when it is [real]'s)
+        val cen = src("CompanionHost.kt").let { it.substring(it.indexOf("private fun realmCensus(")).take(2000) }
+        assertTrue(cen.contains("CharKey.of(d.name, d.realm) == real }?.cls") && cen.contains("combat, playing)"))
+    }
+
+    /** item 5: a single character's Reset takes its name's orphans only when the DEVICE knows that name under no other realm */
+    @Test fun aResetLeavesOrphansTheDeviceCannotTieToThisCharacter() {
+        val game = t("castBar" to t(real to t(1L to t("k" to "spell", "id" to 3044L)), "$name-?" to t(1L to t("k" to "spell", "id" to 1L))),
+            "realmOf" to t(name to t(realmA to t("s" to "1", "c" to "HUNTER"))))
+        val homeKeys = setOf("smartPet.$real", "smartPet.$name-")
+        // the device: the alt under another realm in a preference file only (one table cannot see it)
+        RealmFix.census = { r -> RealmFix.censusFrom(r, listOf(game), listOf(setOf("holdTalk.$alt")), emptyList(), emptyList()) }
+        assertFalse(RealmFix.resetTakesOrphans(real))
+        val ts = ResetPlan.svTargets(setOf(ResetPlan.Kind.SKILLS), real, false, mapOf(V to listOf(game)))
+        assertTrue(ts.contains(SvReset.Target(V, "castBar", real, null)))
+        assertFalse("the orphan left (it may be the alt's)", ts.any { CharKey.isOrphan(it.who) })
+        assertEquals(setOf("smartPet.$real"), ResetPlan.prefKeys("home", homeKeys, setOf(ResetPlan.Kind.SKILLS), real, false))
+        // ... nor would any fold take it (the same census): the reset is never undone by it
+        assertFalse(RealmFix.mayFold(real))
+        // the run: the In-combat orphan file and the radials' orphan stay too; the real ones go (backed up first)
+        val combat = File(dir, "combat5").apply { mkdirs() }
+        val realF = File(combat, CombatKeep.fileName(real)).apply { writeText(CombatKeep.toJson(CombatKeep.Backup(real, listOf(e(1, 1, 3044, true))))) }
+        val orphanF = File(combat, "$name-_.json").apply { writeText("""{"v":1,"who":"$name-?","entries":[]}""") }
+        val prefs = HashMap<String, Prefs>()
+        prefs["radial_meta"] = Prefs(linkedMapOf("all" to JSONObject().put(real, 1).put("$name-", 2).toString()))
+        prefs["home"] = Prefs(linkedMapOf("smartPet.$real" to true, "smartPet.$name-" to false))
+        val kd5 = File(dir, "kept5").apply { mkdirs() }
+        val r = ResetRun({ prefs.getOrPut(it) { Prefs() } }, kd5, combat) { }.run(ResetPlan.Button.SKILLS, real, false, gameRunning = false, now = at1320)
+        assertEquals(1, r.combat); assertFalse(realF.exists()); assertTrue("the orphan backup file left", orphanF.exists())
+        val meta = JSONObject(prefs["radial_meta"]!!.getString("all", "{}")!!)
+        assertFalse(meta.has(real)); assertTrue("the radials' orphan left", meta.has("$name-"))
+        assertEquals(mapOf("smartPet.$name-" to false), prefs["home"]!!.m)
+        // the device knows the name under this realm alone: the orphans go with the character (as before)
+        RealmFix.forget()
+        RealmFix.census = { r2 -> RealmFix.censusFrom(r2, listOf(game), emptyList(), emptyList(), emptyList()) }
+        assertTrue(RealmFix.resetTakesOrphans(real))
+        assertTrue(ResetPlan.svTargets(setOf(ResetPlan.Kind.SKILLS), real, false, mapOf(V to listOf(game))).contains(SvReset.Target(V, "castBar", "$name-?", null)))
+        assertEquals(homeKeys, ResetPlan.prefKeys("home", homeKeys, setOf(ResetPlan.Kind.SKILLS), real, false))
+        ResetRun({ prefs.getOrPut(it) { Prefs() } }, kd5, combat) { }.run(ResetPlan.Button.SKILLS, real, false, gameRunning = false, now = at1320 + 1)
+        assertFalse(orphanF.exists()); assertTrue(prefs["home"]!!.m.isEmpty())
+        assertFalse(JSONObject(prefs["radial_meta"]!!.getString("all", "{}")!!).has("$name-"))
+        // a census that cannot be read: left (never a guess)
+        RealmFix.forget(); RealmFix.census = { error("unreadable") }
+        assertFalse(RealmFix.resetTakesOrphans(real))
+    }
+
+    /** item 4: no log line carries an exception's message (an IOException's names the file: the character's name, the account's path) */
+    @Test fun noLogCarriesAnExceptionsMessage() {
+        for (f in listOf("CombatKeepHost.kt", "SvKeep.kt", "SvReset.kt", "RealmFix.kt", "ResetRun.kt", "SvMerge.kt")) {
+            val x = src(f)
+            assertFalse(f, x.contains("\${it.message}"))
+            assertFalse(f, x.contains(".message}"))
+        }
+        assertTrue(src("CombatKeepHost.kt").contains("orphan backup NOT folded (\${it.javaClass.simpleName})"))
     }
 
     /** item 7 / 10: the diagnostic line says the hint; the In-combat backup's and the radials' log lines carry no character name */

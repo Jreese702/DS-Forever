@@ -136,6 +136,7 @@ object ResetPlan {
     /** [who]'s name when its orphans may be reset with it: the name holds settings in [tables] under [who]'s realm only; else null */
     fun orphanNameOf(who: String?, tables: List<Map<*, *>?>): String? {
         val w = who?.takeIf { isCharKey(it) } ?: return null
+        if (!RealmFix.resetTakesOrphans(w)) return null                     // the k6 review round 3 (item 5): the device census decides too
         val name = CharKey.nameOf(w) ?: return null
         val rs = RealmFix.realmsByName(tables)[name].orEmpty()
         return name.takeIf { rs.all { r -> "$name-$r" == w } }
@@ -225,9 +226,12 @@ object ResetPlan {
         // one character's reset: its name's orphans only while this file holds that name under its own realm alone (never a guess)
         if (all || who == null || !isCharKey(who)) return out
         val name = CharKey.nameOf(who) ?: return out
-        val other = keys.any { k -> val i = k.indexOf("$name-"); i >= 0 && (i == 0 || !k[i - 1].isLetterOrDigit()) &&
+        val orphan = { k: String -> k.endsWith("$name-") || k.endsWith("$name-?") || k.endsWith("$name-_") }
+        if (out.none(orphan)) return out
+        // the k6 review round 3 (item 5): the device census must agree too (a same-name alt's orphans are never reset with this one)
+        val other = !RealmFix.resetTakesOrphans(who) || keys.any { k -> val i = k.indexOf("$name-"); i >= 0 && (i == 0 || !k[i - 1].isLetterOrDigit()) &&
             k.substring(i).let { w -> w != who && isCharKey(w) } }
-        return if (other) out.filterTo(LinkedHashSet()) { !it.endsWith("$name-") && !it.endsWith("$name-?") && !it.endsWith("$name-_") } else out
+        return if (other) out.filterTo(LinkedHashSet()) { !orphan(it) } else out
     }
 
     /** the preference files any reset may touch */

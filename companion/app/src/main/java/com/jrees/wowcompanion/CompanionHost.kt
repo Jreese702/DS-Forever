@@ -189,7 +189,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         val combat = java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "DS Forever/combat")
             .listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
-        return RealmFix.censusFrom(real, SvKeep.tables(kd), prefKeys, jsons, combat)
+        // the k6 review round 3 (item 2): the class playing now, when the current padmap is [real]'s (never logged)
+        val playing = lastPadMap?.dpad?.takeIf { d -> CharKey.of(d.name, d.realm) == real }?.cls
+        return RealmFix.censusFrom(real, SvKeep.tables(kd), prefKeys, jsons, combat, playing)
     }
     /** m62: the latest padmap (Settings' Smart Y section reads its Smart buffs) */
     private var lastPadMap: PadMapModel.Map? = null

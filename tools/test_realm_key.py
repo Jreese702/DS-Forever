@@ -31,6 +31,12 @@ Safety k7 (the k6 review's must-fix list), proven here too:
 Safety k8 (the k6 review, round 2), proven here too:
   n the class alone ("maybe": no server id to compare) picks a kept realm only AFTER PLAYER_LOGIN (no key before it);
   o the fold's backup keeps the 2 newest folds PER NAME (another character's folds never push this one's out).
+Safety k9 and Bags bags-rk1 (the k6 review, round 3), proven here too:
+  p BAGS (bags-rk1): no key at PLAYER_LOGIN, the key known later: the real bagBinds are read then (never the near-empty set saved over
+    them); a bind made before is kept on top; a key that changes takes the new key's own record (the old set never copied onto it);
+  q THE GUID (k9): a private server that shares one server id over realms: a same-name alt (another GUID, the same server and class) gets
+    no key; the same server and another class (a record from before k9) gets none either; this character's own GUID: kept;
+  r the orphans' fold needs this character's evidence: a key from the class alone ("maybe") leaves the orphans (no fold, no backup).
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -156,9 +162,10 @@ def clean(L, name):
 
 
 # ================================================================ 0 the versions and the builders
-check('WC.KERNEL = "k8"' in TEXT["safety"] and "function WC.charKey()" in TEXT["safety"] and "what happened to my combat bars on my hunter" in TEXT["safety"]
-      and "k7 THE KEPT REALM IS THIS CHARACTER'S" in TEXT["safety"] and "-- k8 (the k6 review, round 2)" in TEXT["safety"],
-      "0. Safety k8 (k6's and k7's notes kept): WC.charKey, its note quotes the user")
+check('WC.KERNEL = "k9"' in TEXT["safety"] and "function WC.charKey()" in TEXT["safety"] and "what happened to my combat bars on my hunter" in TEXT["safety"]
+      and "k7 THE KEPT REALM IS THIS CHARACTER'S" in TEXT["safety"] and "-- k8 (the k6 review, round 2)" in TEXT["safety"]
+      and "-- k9 (the k6 review, round 3): THE CHARACTER'S OWN GUID" in TEXT["safety"],
+      "0. Safety k9 (k6's, k7's and k8's notes kept): WC.charKey, its note quotes the user")
 check('local PV = "m179"' in TEXT["padmap"] and 'local CBV = "cb16"' in AB and 'local SV = "s18"' in TEXT["spells"]
       and 'local RV = "r27"' in TEXT["radial"] and 'local SRV = "q8"' in TEXT["radial"] and 'local PV = "p26"' in TEXT["prof"]
       and 'local PADV = "pad27"' in TEXT["tappad"] and 'WC.prd = { V = "prd21"' in TEXT["trail"] and 'local HV = "hub72"' in TEXT["hub"]
@@ -183,8 +190,9 @@ for realm, label in (('""', 'an empty realm'), ('nil', 'a nil realm'), ('"?"', '
     check(ck(S)["k"] is None, "a. %s, nothing kept: no key (never \"Korvash-\" / \"Korvash-?\")" % label, ck(S))
 S.execute('REALM = "Realm"')
 check(ck(S) == {"k": "Korvash-Realm", "n": "Korvash", "r": "Realm", "s": "live"}, "a. the game's realm: Korvash-Realm (live)", ck(S))
-check(S.eval('SER(WowCompanionDB.realmOf)') == '{["Korvash"]={["Realm"]={["c"]="SHAMAN",["s"]="1"}}}',
-      "a. ... remembered per name WITH ITS EVIDENCE (k7: realmOf[name][realm] = { s = home server id, c = class })", S.eval('SER(WowCompanionDB.realmOf)'))
+check(S.eval('SER(WowCompanionDB.realmOf)') == '{["Korvash"]={["Realm"]={["c"]="SHAMAN",["g"]="Player-1-Korvash",["s"]="1"}}}',
+      "a. ... remembered per name WITH ITS EVIDENCE (k7: realmOf[name][realm] = { s = home server id, c = class }; k9: g = the GUID)",
+      S.eval('SER(WowCompanionDB.realmOf)'))
 S.execute('REALM = ""')
 check(ck(S)["k"] == "Korvash-Realm", "a. the realm empty later this session: the session's realm stays", ck(S))
 S.execute(FRESH)
@@ -439,6 +447,107 @@ check(per == "2/2" and O.eval('WowCompanionDB.realmFixBak[1].who') == "Korvash" 
 check(O.eval('(function() for _, r in ipairs(WowCompanionDB.realmFixBak) do if r.who == "Korvash" and r.at == 1 then return r.items[1].v end end end)()') == 1,
       "o. ... this character's earlier fold (its dropped orphan's value) is still there")
 clean(O, "o")
+
+# ================================================================ q THE GUID (k9)
+Q = boot(["safety"], pre=HELP + 'REALM = ""\nWowCompanionSpellsDB = { fightBy = { ["Korvash-Realm"] = { [1] = 1 } } }\n')
+for label, rec, want in (
+        ("another GUID, the same server and class (a shared server id)", '{ s = "1", c = "SHAMAN", g = "Player-1-Other" }', None),
+        ("a record from before k9: the same server, another class", '{ s = "1", c = "HUNTER" }', None),
+        ("a record from before k9: the same server and class", '{ s = "1", c = "SHAMAN" }', "Korvash-Realm"),
+        ("this character's own GUID", '{ s = "1", c = "SHAMAN", g = "Player-1-Korvash" }', "Korvash-Realm"),
+        ("its own GUID but another class recorded (never this one)", '{ s = "1", c = "HUNTER", g = "Player-1-Korvash" }', None)):
+    Q.execute(FRESH + 'WowCompanionDB = { realmOf = { Korvash = { Realm = %s } } }' % rec)
+    check(ck(Q)["k"] == want, "q. k9 %s: %s" % (label, "kept" if want else "no key"), ck(Q))
+Q.execute('fire("PLAYER_LOGIN"); ' + FRESH + 'WowCompanionDB = { realmOf = { Korvash = { Realm = { s = "1", c = "SHAMAN", g = "Player-1-Other" } } } }')
+check(ck(Q)["k"] is None, "q. ... after PLAYER_LOGIN too: another GUID is never this character (not even as a class-only 'maybe')", ck(Q))
+Q.execute('REALM = "Realm"; ' + FRESH)
+check(ck(Q)["s"] == "live" and Q.eval('WowCompanionDB.realmOf.Korvash.Realm.g') == "Player-1-Korvash",
+      "q. the game's realm (live): the record takes this character's GUID (a remade character of that name and realm is the one there now)")
+clean(Q, "q")
+# the device's shape: the hunter's realm recorded with ANOTHER GUID (the alt's session on a shared server id): no key, nothing folded
+QD = world(pre=DEVICE.replace(EVID, 'WowCompanionDB.realmOf = { Korvash = { Realm = { s = "1", c = "SHAMAN", g = "Player-1-Hunter" } } }'))
+check(QD.eval('(WowCompanion.charKey())') is None and partials(QD)[0] == 19 and QD.eval('WowCompanionDB.realmFixBak') is None,
+      "q. the device's shape, the realm's record holds another GUID: no key, the 19 orphans left, no fold", partials(QD))
+_, real_q = QD.eval('REALSTORES("%s")' % REAL)
+check(real_q == before_c, "q. ... the real stores byte for byte as stored")
+clean(QD, "q2")
+
+# ================================================================ r the fold needs this character's evidence
+RR = world(pre=DEVICE.replace(EVID, 'WowCompanionDB.realmOf = { Korvash = { Realm = { c = "SHAMAN" } } }'))
+check(RR.eval('(WowCompanion.charKey())') == REAL and RR.eval('WowCompanion.realmFix.skipped') == "evidence"
+      and partials(RR)[0] == 19 and RR.eval('WowCompanionDB.realmFixBak') is None,
+      "r. k9: the key from the class alone ('maybe', after the login): the stores read under it, but the orphans are left (no fold, no backup)",
+      (RR.eval('WowCompanion.realmFix.skipped'), partials(RR)[0]))
+clean(RR, "r")
+
+# ================================================================ p BAGS (bags-rk1)
+BAGS = TEXT["bags"]
+blines = BAGS.split("\n")
+b0 = next(i for i, l in enumerate(blines) if l.startswith("function BB.charKey()"))
+b1 = next(i for i, l in enumerate(blines) if l.startswith("function BB.button("))
+BCHUNK = "\n".join(blines[b0:b1])
+e0 = next(i for i, l in enumerate(blines) if l.startswith('    bf:RegisterEvent("PLAYER_LOGIN")'))
+e1 = next(i for i in range(e0, len(blines)) if blines[i] == "end" and blines[i - 1] == "    end)")
+BEVENTS = 'local bf = CreateFrame("Frame")\n' + "\n".join(blines[e0:e1])
+check("bags-rk1" in BAGS and "function BB.sync()" in BAGS and "if me ~= BB.key then BB.sync(); return end" in BAGS,
+      "p. the tag: Bags bags-rk1 (BB.sync; BB.save refuses another key's record)")
+
+
+def bags_world(pre):
+    L = boot(["safety"], pre=HELP + pre)
+    L.execute("BB = { binds = {}, buttons = {}, applied = {} }; APPLIED = 0; function BB.apply() APPLIED = APPLIED + 1; return true end\n"
+              "function BB.old() return nil end; function BB.migrate() BB.migrated = true end")
+    f = L.eval('function(src) local f, e = loadstring("local WC = _G.WowCompanion\\nlocal function chordRefusal(k) return nil end\\n" .. src, "@Bags.lua#bb"); '
+               'if not f then error(e) end; f() end')
+    f(BCHUNK + "\n" + BEVENTS)
+    return L
+
+
+HUNTER_BINDS = ('WowCompanionDB = { bagBinds = { ["Korvash-Realm"] = { PADBACK = 6948, PADLSTICK = 1234 } }, '
+                'realmOf = { Korvash = { Realm = { s = "1", c = "SHAMAN" } } } }\n')
+# no evidence readable before the realm comes: a second realm under the name (only the class to tell) = no key
+NOKEY = 'REALM = ""\nUnitGUID = function() return nil end\nWowCompanionSpellsDB = { fightBy = { ["Korvash-Other"] = { x = 1 } } }\n'
+# p1 the review's probe: no key at PLAYER_LOGIN, the key known later, one bind saved
+PB = bags_world(NOKEY + HUNTER_BINDS)
+PB.execute('fire("PLAYER_LOGIN")')
+check(PB.eval('(WowCompanion.charKey())') is None and PB.eval('next(BB.binds)') is None and PB.eval('BB.key') is None,
+      "p. no key at PLAYER_LOGIN: no binds read (nothing to save under)")
+PB.execute('REALM = "Realm"; BB.binds.PADRSHOULDER = 999; BB.save()')
+check(PB.eval('SER(WowCompanionDB.bagBinds["Korvash-Realm"])') == '{["PADBACK"]=6948,["PADLSTICK"]=1234,["PADRSHOULDER"]=999}',
+      "p. THE REVIEW'S PROBE: the key known later, one bind saved: the real binds KEPT, the new one added (never {PADRSHOULDER} alone)",
+      PB.eval('SER(WowCompanionDB.bagBinds["Korvash-Realm"])'))
+check(PB.eval('BB.key') == "Korvash-Realm" and PB.eval('BB.binds.PADBACK') == 6948 and PB.eval('APPLIED') >= 2,
+      "p. ... BB.binds is the real record now, applied")
+PB.execute('BB.binds.PADBACK = nil; BB.save()')
+check(PB.eval('SER(WowCompanionDB.bagBinds["Korvash-Realm"])') == '{["PADLSTICK"]=1234,["PADRSHOULDER"]=999}',
+      "p. ... a clear after that saves under the same key as usual")
+clean(PB, "p1")
+# p2 the key appears with no save in between: the login's timers read and apply the real binds
+P2 = bags_world(NOKEY + HUNTER_BINDS)
+P2.execute('fire("PLAYER_LOGIN"); runTimers(NOW + 3)')
+check(P2.eval('next(BB.binds)') is None, "p. the key still unknown a few seconds in: nothing read, nothing written")
+P2.execute('REALM = "Realm"; runTimers(NOW + 20)')
+check(P2.eval('BB.key') == "Korvash-Realm" and P2.eval('SER(BB.binds)') == '{["PADBACK"]=6948,["PADLSTICK"]=1234}'
+      and P2.eval('SER(WowCompanionDB.bagBinds["Korvash-Realm"])') == '{["PADBACK"]=6948,["PADLSTICK"]=1234}',
+      "p. ... the key known: the next timer reads the real binds and applies them; the stored record untouched", P2.eval('SER(BB.binds)'))
+P2.execute('runTimers(NOW + 4000)')
+check(P2.eval('#TIMERS') == 0, "p. ... and stops asking once the key is known", P2.eval('#TIMERS'))
+clean(P2, "p2")
+# p3 a key that CHANGES (a kept realm the game's own answer replaced): the new key's record as stored; the old key's never copied onto it
+P3 = bags_world('REALM = ""\nWowCompanionDB = { bagBinds = { ["Korvash-A"] = { PADBACK = 1 }, ["Korvash-B"] = { PADLSTICK = 2 } }, '
+                'realmOf = { Korvash = { A = { s = "1", c = "SHAMAN" } } } }\nWowCompanionSpellsDB = {}\n')
+P3.execute('fire("PLAYER_LOGIN")')
+check(P3.eval('BB.key') == "Korvash-A" and P3.eval('BB.binds.PADBACK') == 1, "p. a kept key at the login: its binds read")
+P3.execute('REALM = "B"; BB.binds.PADRSHOULDER = 3; BB.save()')
+check(P3.eval('SER(WowCompanionDB.bagBinds)') == '{["Korvash-A"]={["PADBACK"]=1},["Korvash-B"]={["PADLSTICK"]=2}}' and P3.eval('BB.key') == "Korvash-B"
+      and P3.eval('SER(BB.binds)') == '{["PADLSTICK"]=2}',
+      "p. ... the key changes (the game says B): B's record as stored, A's set never written onto it, A untouched", P3.eval('SER(WowCompanionDB.bagBinds)'))
+clean(P3, "p3")
+# p4 no key the whole session: nothing written anywhere
+P4 = bags_world('REALM = ""\nWowCompanionDB = { bagBinds = { ["Korvash-Realm"] = { PADBACK = 6948 } } }\nWowCompanionSpellsDB = {}\n')
+P4.execute('fire("PLAYER_LOGIN"); BB.binds.PADRSHOULDER = 999; BB.save(); runTimers(NOW + 4000)')
+check(P4.eval('SER(WowCompanionDB.bagBinds)') == '{["Korvash-Realm"]={["PADBACK"]=6948}}', "p. no key all session: nothing saved, the real binds as stored")
+clean(P4, "p4")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

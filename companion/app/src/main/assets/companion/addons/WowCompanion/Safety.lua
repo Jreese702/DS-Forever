@@ -247,7 +247,13 @@ WC.encode = encode
 -- k8 (the k6 review, round 2): the class alone ("maybe": no home server id to compare) picks a kept realm only AFTER PLAYER_LOGIN (before
 -- it, a same-class, same-name character's only recorded realm would take its writes until the login's re-check: no key until then);
 -- the fold's backup keeps the 2 newest folds PER NAME (one character's folds never push another's dropped orphans out).
-WC.KERNEL = "k8"
+-- k9 (the k6 review, round 3): THE CHARACTER'S OWN GUID. A "yes" assumed the home server id in UnitGUID ("Player-<server>-<id>") is
+-- another on every realm; a private server that shares one id over realms let a same-name alt (no record of its own) match the hunter's
+-- realm. realmOf[name][realm].g now keeps the whole GUID (a realm's characters have their own; never logged or sent): the GUID decides
+-- when both are known (another = "no"); a record from before k9 (no g) needs the server AND the class (the same server, another class =
+-- "no"). The orphans' fold (WC.realmFix) needs that evidence too: a key resolved by the class alone ("maybe") leaves the orphans as they
+-- are, and a live or kept key whose record holds another class folds nothing.
+WC.KERNEL = "k9"
 
 local function blocked(f)
     return not pcall(f)
@@ -368,6 +374,8 @@ end
 --      (realmOf[name][realm] = { s = home server id, c = class }, recorded at the live sessions): the server id when both are known (one
 --      that matches picks it even among several; another one refuses it), else the class with that realm the only one left. A realm with
 --      no evidence (only our tables' keys) is no key: a same-name character on another realm never writes into this one's stores.
+--      k9: the record also keeps g = the whole GUID; g decides when both are known, a recorded class that is not this one's refuses, and
+--      the server id alone (a record from before k9) needs the class to agree too.
 --   3. none: nil (our tables looked through again at most every 2 s for the first 10 s - the saved tables load meanwhile -, then every
 --      30 s; GetRealmName itself is asked every call: a later live answer always wins).
 -- WC.realmFix: once per character and table, out of combat, the orphan keys of THIS character ("Name-", "Name-?", "Name-_", a marker) are
@@ -401,7 +409,12 @@ do
         local ok, _, token = CALL(UnitClass, "player")
         if ok then return str(token) end
     end
-    WC.myServer, WC.myClass = myServer, myClass
+    -- k9: the whole GUID (a "Player-" one only), nil = not known now
+    local function myGuid()
+        local g = str(S(function() return UnitGUID("player") end))
+        return (g and g:match("^Player%-%d+%-%S+$")) and g or nil
+    end
+    WC.myServer, WC.myClass, WC.myGuid = myServer, myClass, myGuid
 
     -- the game's realm [r] for [n]: realmOf[n][r] = { s = server id, c = class } (k6's `true` = no evidence yet), filled in as the game
     -- gives them (the latest live answer: a deleted and remade character of that name and realm is the one there now)
@@ -415,10 +428,11 @@ do
         if type(m) ~= "table" then m = {}; db.realmOf[n] = m end
         local e = m[r]
         if type(e) ~= "table" then e = {}; m[r] = e end
-        local sid, cls = myServer(), myClass()
+        local sid, cls, gid = myServer(), myClass(), myGuid()
         if sid and e.s ~= sid then e.s = sid end
         if cls and e.c ~= cls then e.c = cls end
-        if e.s and e.c then CK.told = tag end
+        if gid and e.g ~= gid then e.g = gid end                            -- k9
+        if e.s and e.c and (e.g or not gid) then CK.told = tag end          -- k9: done once the GUID is in (or not readable now)
     end
 
     -- every realm name [n] holds settings under: the remembered ones and our tables' "n-<realm>" keys (two levels down)
@@ -459,13 +473,19 @@ do
 
     -- k7: [r] against this character: "yes" (the recorded home server is this one's), "maybe" (no server to compare, the class matches),
     -- "no" (another server or another class: a different character), nil (nothing recorded to compare)
-    local function evidence(n, r, sid, cls)
+    -- k9: [gid] the whole GUID decides first (another = "no"); then the server, which needs the class to agree too
+    local function evidence(n, r, sid, cls, gid)
         local db = rawget(_G, "WowCompanionDB")
         local m = type(db) == "table" and type(db.realmOf) == "table" and db.realmOf[n] or nil
         local e = type(m) == "table" and m[r] or nil
         if type(e) ~= "table" then return nil end
-        if sid and type(e.s) == "string" then return e.s == sid and "yes" or "no" end
-        if cls and type(e.c) == "string" then return e.c == cls and "maybe" or "no" end
+        if cls and type(e.c) == "string" and e.c ~= cls then return "no" end
+        if gid and type(e.g) == "string" then return e.g == gid and "yes" or "no" end
+        if sid and type(e.s) == "string" then
+            if e.s ~= sid then return "no" end
+            return (cls and type(e.c) == "string") and "yes" or "maybe"
+        end
+        if cls and type(e.c) == "string" then return "maybe" end
         return nil
     end
     WC.realmEvidence = evidence
@@ -485,10 +505,10 @@ do
             end
             return hit
         end
-        local sid, cls = myServer(), myClass()
+        local sid, cls, gid = myServer(), myClass(), myGuid()
         local yes, left = {}, {}
         for _, r in ipairs(list) do
-            local ev = evidence(n, r, sid, cls)
+            local ev = evidence(n, r, sid, cls, gid)
             if ev == "yes" then yes[#yes + 1] = r end
             if ev ~= "no" then left[#left + 1] = { r, ev } end
         end
@@ -611,8 +631,17 @@ do
     function RF.run()
         if fight() then RF.pending = true; return false end
         RF.pending = false
-        local key, n = WC.charKey()
+        local key, n, kr, src = WC.charKey()
         if not key then return false end
+        -- k9: the orphans fold only into a key with this character's own evidence: the game's realm (just recorded), or a kept one whose
+        -- record matches this GUID / server AND class ("yes"); the class alone ("maybe") or a record of another class leaves them as they
+        -- are (nothing reads them; a later session may fold them)
+        local ev = evidence(n, kr, myServer(), myClass(), myGuid())
+        if ev ~= "yes" and not (src == "live" and ev ~= "no") then
+            RF.skipped = "evidence"
+            for _, var in ipairs({ "WowCompanionDB", "WowCompanionSpellsDB" }) do if type(rawget(_G, var)) == "table" then RF.done[var] = key end end
+            return true
+        end
         -- k7: never a guess (the app's RealmFix.clean, the same rule): a name holding settings under two realms keeps its orphans as they
         -- are (nothing reads them); done for this character
         if #realmsOf(n) > 1 then

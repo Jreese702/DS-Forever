@@ -52,7 +52,7 @@ class CombatKeepHost(
             if (!tmp.renameTo(f)) { f.delete(); check(tmp.renameTo(f)) { "rename" } }
             written[b.who] = json
             log("wrote ${b.entries.size} entries")                                    // the k6 review (item 10): never a name
-        }.onFailure { log("NOT saved (${it.message})") }
+        }.onFailure { log("NOT saved (${it.javaClass.simpleName})") }          // the k6 review round 3 (item 4): its message names the file
     }
 
     /** Reset skills (ResetRun) took [who]'s backup away (null = every character's): nothing of it is put back or remembered this run */
@@ -139,7 +139,7 @@ class CombatKeepHost(
             File(d, f.name + ".bak").delete()
             check(f.delete() || !f.exists()) { "not removed" }
             log("orphan backup folded: ${next?.let { "${it.entries.size - (real?.entries?.size ?: 0)} entries into the real one" } ?: "nothing taken"}, removed")
-        }.onFailure { log("orphan backup NOT folded (${it.message})") }
+        }.onFailure { log("orphan backup NOT folded (${it.javaClass.simpleName})") }
     }
 
     /** a restore's taps are running now (their answers are not the player's) */

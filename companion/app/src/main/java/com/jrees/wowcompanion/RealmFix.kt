@@ -99,14 +99,33 @@ object RealmFix {
     // the orphans may be another character's of that name).
 
     /** what the app holds of one name: [stored] the realms it has keys / records under, [seen] the realms seen live this app life,
-     *  [otherFile] an In-combat backup file of that name under another realm */
-    data class Census(val stored: Set<String>, val seen: Set<String> = emptySet(), val otherFile: Boolean = false)
+     *  [otherFile] an In-combat backup file of that name under another realm; the k6 review round 3 (item 2): [classes] the classes the
+     *  add-on's realmOf recorded for [real]'s realm (Safety k7+: a live session's evidence), [playing] the class playing now (the
+     *  current padmap's, when it is [real]'s), null = not known */
+    data class Census(val stored: Set<String>, val seen: Set<String> = emptySet(), val otherFile: Boolean = false,
+                      val classes: Set<String> = emptySet(), val playing: String? = null)
 
-    /** [real]'s orphans may fold: everything the app holds knows its name under [real]'s realm alone, and holds it there */
+    /**
+     * [real]'s orphans may fold: everything the app holds knows its name under [real]'s realm alone, and holds it there; and (the k6
+     * review round 3, item 2: the add-on's Safety k9 rule) a live session RECORDED this realm's class (one class: realmOf's evidence), and
+     * it is the class playing now when that is known. No recorded class (no live k7+ session saved yet) = no fold: the orphans wait.
+     */
     fun foldOk(real: String, c: Census?): Boolean {
         if (c == null || !CharKey.isKey(real)) return false
         val realm = real.substring(real.indexOf('-') + 1)
-        return !c.otherFile && realm in c.stored && (c.stored + c.seen) == setOf(realm)
+        if (c.otherFile || realm !in c.stored || (c.stored + c.seen) != setOf(realm)) return false
+        if (c.classes.size != 1) return false
+        return c.playing == null || c.playing == c.classes.single()
+    }
+
+    /** the classes [name]'s realm [realm] was recorded with in [tables]' realmOf ({ s = server, c = class, g = GUID }; k6's `true` = none) */
+    fun recordedClasses(tables: List<Map<*, *>?>, name: String, realm: String): Set<String> {
+        val out = LinkedHashSet<String>()
+        for (t in tables) {
+            val rec = ((t?.get(REALM_OF) as? Map<*, *>)?.get(name) as? Map<*, *>)?.get(realm) as? Map<*, *> ?: continue
+            (rec["c"] as? String)?.takeIf { it.isNotBlank() }?.let { out += it }
+        }
+        return out
     }
 
     /** the device's census of [real]'s name (CompanionHost); null = off the device: the app's own stores never fold then, our saved
@@ -170,7 +189,7 @@ object RealmFix {
      * [prefKeys] every per-character preference file's keys, [jsons] the JSON stores, [combatFiles] the In-combat backup files' names
      */
     fun censusFrom(real: String, tables: List<Map<*, *>?>, prefKeys: List<Iterable<String>>, jsons: List<JSONObject>,
-                   combatFiles: Iterable<String>): Census {
+                   combatFiles: Iterable<String>, playing: String? = null): Census {
         val name = CharKey.nameOf(real) ?: return Census(emptySet())
         val stored = LinkedHashSet<String>()
         stored += realmsByName(tables)[name].orEmpty()
@@ -178,7 +197,24 @@ object RealmFix {
         for (j in jsons) stored += jsonRealms(j, name)
         val (mine, other) = combatCensus(combatFiles, real)
         if (mine) stored += real.substring(name.length + 1)
-        return Census(stored, seenOf(name), other)
+        return Census(stored, seenOf(name), other, recordedClasses(tables, name, real.substring(name.length + 1)), playing)
+    }
+
+    /**
+     * the k6 review round 3 (item 5): a single character's Reset takes [who]'s name's orphans only when a fold could take them: off the
+     * device (no census) the caller's own file decides as before; on the device the census must know the name under no realm but
+     * [who]'s (no other realm stored, seen live or in a backup file's name). Otherwise the orphans are left as they are: a same-name alt's
+     * may be among them. Nothing reads them, and no fold takes them while another realm is known ([foldOk] here; the add-on's
+     * WC.realmFix skips a name under two realms, and every realm the app learns comes from a padmap whose live realm the add-on records
+     * in realmOf), so the reset is never undone by them. The class evidence [foldOk] also asks is not asked here: a reset of the
+     * character's own orphans needs no proof they are its own beyond "no other character of that name is known".
+     */
+    fun resetTakesOrphans(who: String?): Boolean {
+        val w = who?.takeIf { CharKey.isKey(it) } ?: return false
+        if (census == null) return true
+        val c = censusOf(w) ?: return false
+        val realm = w.substring(w.indexOf('-') + 1)
+        return !c.otherFile && (c.stored + c.seen - realm).isEmpty()
     }
 
     /** the orphan suffixes in the add-on's order (WC.realmFix's SUFFIX): "", "?", "_", then a marker */
