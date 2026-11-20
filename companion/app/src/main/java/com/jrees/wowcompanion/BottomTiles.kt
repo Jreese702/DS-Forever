@@ -77,7 +77,7 @@ object BottomTiles {
     }
 
     /** a tile's name (display words, Tr.t'd by the drawer) */
-    val NAMES: Map<String, String> = mapOf(LAYOUT to "Home layout", REST to "Rest controller", COMBAT to "Combat layout", SWING to "Swing timer",
+    val NAMES: Map<String, String> = mapOf(LAYOUT to "Home layout", REST to "Rest controller", COMBAT to "In fights", SWING to "Swing timer",
         QUEST to "Focused quest", CLOCK to "Clock band", TOOLBAR to "DS WoW toolbar", TALK to "Hold to talk", CASTBAR to "Tap-to-cast bar",
         RANK to "Spell rank badges", ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
 
@@ -104,7 +104,8 @@ object BottomTiles {
     fun lines(id: String, env: Env): List<Line> = when (id) {
         LAYOUT -> layoutLines()
         REST -> listOf(Line(REST, null, listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest)))
-        COMBAT -> listOf(Line(COMBAT, null, listOf("Grow", "Same size"), if (HomeSettings.combatGrow) 0 else 1))
+        // movable Home phase 3 (SPEC section 11, final_11; the user's D1: Grow the default, Top screen opt-in): the old Combat layout tile
+        COMBAT -> listOf(Line(COMBAT, null, FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)))
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))
         RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
         QUEST -> listOf(Line(QUEST, null, CARD_WORDS, CARD_DOCKS.indexOf(HomeSettings.layout.card)))
@@ -139,13 +140,14 @@ object BottomTiles {
     fun status(id: String, env: Env): String? = when {
         id == TOOLBAR && env.dpad?.colOn == null -> "Needs the newer Spells add-on"
         id == TALK && env.who == null -> "Waiting for the game"
+        id == COMBAT -> TopCombatBar.status(HomeSettings.layout, env.dpad?.ct, env.dpad != null)
         else -> null
     }
 
     /** the tile's value word */
     fun value(id: String, env: Env): String = when (id) {
         REST -> if (HomeSettings.rest == HomeRest.DIAMONDS) "Diamonds" else "Thin row"
-        COMBAT -> if (HomeSettings.combatGrow) "Grow" else "Same size"
+        COMBAT -> FIGHT_WORDS[HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)]
         SWING -> if (HomeSettings.swingTimer) "On" else "Off"
         RANK -> if (HomeSettings.rankBadges) "On" else "Off"
         LAYOUT -> HomeLayoutStore.nameOf(HomeSettings.layout)
@@ -186,6 +188,8 @@ object BottomTiles {
     val CAST_DOCKS = listOf(HomeLayout.CastDock.OFF, HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS)
     val CAST_WORDS = listOf("Off", "Under chat", "Under map", "Across")
     val SIZE_WORDS = listOf("S", "M", "L")
+    /** "In fights" in [HomeLayout.FightBand]'s order */
+    val FIGHT_WORDS = listOf("Grow", "Same size", "Top screen")
 
     /** the Home layout tile's band: the presets, the chat's side and width, the three slots (Mine: use; Save here), All characters */
     fun layoutLines(): List<Line> {
@@ -224,7 +228,7 @@ object BottomTiles {
             "allchars" -> HomeLayoutStore.set(HomeSettings.layout, all = true)
             "castsize" -> HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.values()[k]) }
             REST -> HomeSettings.rest = HomeRest.values()[k]
-            COMBAT -> HomeSettings.combatGrow = k == 0
+            COMBAT -> HomeLayout.FightBand.values().getOrNull(k)?.let { HomeSettings.fightBand = it }
             SWING -> HomeSettings.swingTimer = k == 0
             RANK -> HomeSettings.rankBadges = k == 0
             QUEST -> CARD_DOCKS.getOrNull(k)?.let { d -> HomeLayoutStore.update { it.copy(card = d) } }

@@ -208,7 +208,7 @@ object LayoutModel {
 
     /** the piece's name (the app's words: Tr.t at the draw) */
     fun labelOf(id: String): String = if (id.startsWith("g.")) GAME_LABELS[id.substring(2)] ?: id.substring(2) else when (id) {
-        "hud" -> "HUD"; "compass" -> "Compass"; "target" -> "Target bar"; "party" -> "Party frames"; "nbar" -> "Nintendo bar"
+        "hud" -> "HUD"; "compass" -> "Compass"; "target" -> "Target bar"; "party" -> "Party frames"; "nbar" -> "Combat bar"
         "chat" -> "Top chat"; "psarrow" -> "Polestar arrow"; "psguide" -> "Polestar guide"; else -> id
     }
 

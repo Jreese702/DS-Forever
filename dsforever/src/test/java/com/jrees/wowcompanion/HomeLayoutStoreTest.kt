@@ -102,8 +102,8 @@ class HomeLayoutStoreTest {
     @Test fun presetsNameThemselves() {
         val base = HomeLayout(cast = HomeLayout.CastDock.ACROSS, rest = HomeRest.DIAMONDS)
         for (p in HomePresets.OFFERED) assertEquals(p.id, HomePresets.nameOf(p.apply(base)))
-        assertEquals(listOf("Classic", "Mirrored", "Big map", "Big chat", "Compact"), HomePresets.OFFERED.map { it.id })
-        assertFalse("Fighter waits for the top-screen bar (phase 3)", HomePresets.byId(HomePresets.FIGHTER)!!.available)
+        assertEquals(listOf("Classic", "Mirrored", "Big map", "Big chat", "Compact", "Fighter"), HomePresets.OFFERED.map { it.id })
+        assertTrue("phase 3: Fighter is offered (the player's own opt-in to the top-screen bar, D1)", HomePresets.byId(HomePresets.FIGHTER)!!.available)
         assertEquals(HomePresets.FIGHTER, HomePresets.nameOf(HomePresets.byId(HomePresets.FIGHTER)!!.apply(base)))
         // Classic keeps the player's bar, rest and fight mode; Mirrored is today's swapped with the bar under the chat
         val mine = HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP, rest = HomeRest.ROW, fight = HomeLayout.FightBand.SAME)

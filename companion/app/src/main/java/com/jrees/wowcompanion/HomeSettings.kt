@@ -228,6 +228,18 @@ object HomeSettings {
             prefs?.edit()?.putBoolean(KEY_COMBAT_GROW, v)?.apply()
             HomeLayoutStore.update { it.copy(fight = if (v) HomeLayout.FightBand.GROW else HomeLayout.FightBand.SAME) }
         }
+    /**
+     * MOVABLE HOME PHASE 3, "IN FIGHTS" (SPEC section 11; the user's D1: Grow stays the default, Top screen is OPT-IN, Same size stays): the
+     * band GROWs (today's), keeps its rest SAME size, or stays at rest while the controls show on the TOP screen as the add-on's Wings
+     * (TopCombatBar; CompanionHost sends the add-on's flag out of combat). The old key keeps Grow / Same size for an older build.
+     */
+    var fightBand: HomeLayout.FightBand
+        get() = layout.fight
+        set(v) {
+            if (v == fightBand) return
+            prefs?.edit()?.putBoolean(KEY_COMBAT_GROW, v == HomeLayout.FightBand.GROW)?.apply()
+            HomeLayoutStore.update { it.copy(fight = v) }
+        }
 
     /** p-swing-timer (a player: "would rather turn this off"): the SWING line under the controller in a fight (batch 12: not the cast bar); true = shown (the
      *  default, today's), false = none */
@@ -641,9 +653,11 @@ class HomeSettingsSection(context: Context,
             listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest),
             listOf({ HomeSettings.rest = HomeRest.ROW }, { HomeSettings.rest = HomeRest.DIAMONDS }))
         // r-combat-anim-off (the user on batch2): in a fight the controller grows (today's) or keeps its size and place
-        y = row(c, y + GAP, "Combat layout", listOf("In a fight the controller grows, or keeps its size."),
-            listOf("Grow", "Same size"), if (HomeSettings.combatGrow) 0 else 1,
-            listOf({ HomeSettings.combatGrow = true }, { HomeSettings.combatGrow = false }))
+        // movable Home phase 3: "Top screen" keeps the rest size here and shows the controls on the game screen (D1: opt-in)
+        y = row(c, y + GAP, "Combat layout", listOf("In a fight the controller grows, keeps its size, or moves to the top screen."),
+            listOf("Grow", "Same size", "Top screen"), HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand),
+            listOf({ HomeSettings.fightBand = HomeLayout.FightBand.GROW }, { HomeSettings.fightBand = HomeLayout.FightBand.SAME },
+                { HomeSettings.fightBand = HomeLayout.FightBand.TOP }))
         // p-swing-timer: the swing line under the controller in a fight (batch 12: the cast bar is not this setting)
         y = row(c, y + GAP, "Swing timer", listOf("The swing line under the controller in a fight. The cast bar stays."),
             listOf("On", "Off"), if (HomeSettings.swingTimer) 0 else 1,
