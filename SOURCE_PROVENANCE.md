@@ -65,3 +65,16 @@ upstream's own v2.4.5 release CI printed for this source (run 44308379224,
 head aba66f9c). The portable C protocol tests (`test.sh`) pass. The app build
 refuses any helper with other bytes (`checkSessionBridge`, app/build.gradle.kts).
 Rebuild: `sh tools/wow-session-bridge/build_dsf.sh` (Git Bash).
+
+## Proton without its 32-bit Windows files, 2026-11-20
+
+The shipped `proton-11.0-90624-arm64ec.wcp` is the pinned original (tools/components.sha256, unchanged, still fetched and
+checked by the unchanged tools/fetch_components.sh) rewritten by `tools/trim_proton_i386.py`, a port of WoW Forever for
+Android v2.4.4 commit 55b0bd234c3af27f9c157936589c999f4805025a (issue #89). It drops the 1012 files of
+lib/wine/i386-windows (the directory entry stays) and the 49 32-bit PE files of prefixPack.txz; every other entry is copied
+with the same order, permissions and links. 125,790,679 B -> 64,738,601 B.
+
+Trimmed SHA-256, pinned in tools/components-trimmed.sha256 and checked by tools/build_release.py (which refuses the
+untrimmed original): 4512cd6dd092e038d99a8856076a7a339dab81499135d85e74db3cad2ef4614a. Made on Windows with Python 3.13.3
+and the zstandard module 0.25.0 (level 19, single-threaded); two runs were byte-identical. Another zstd/xz build may give
+other bytes: the release check then fails and the pin must be renewed from a verified run.
