@@ -132,6 +132,14 @@ class SpellsOverlay(
     }
     private fun cbWell(w: Float): RectF = cbSlotRect(0, w).let { a -> cbSlotRect(7, w).let { b -> RectF(a.left - 18f, a.top - 18f, b.right + 18f, b.bottom + 18f) } }
     private var downSlot = -1
+    /** b71: the box's paints (per view: a plain JVM test of the companion's words never builds them) */
+    private val pCard = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(250, 30, 25, 20) }
+    private val pCardEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f; color = Color.rgb(96, 80, 58) }
+    private val pCardLit = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f; color = Color.rgb(255, 209, 0) }
+    private val pRecede = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(110, 8, 6, 4) }
+    private val pWell = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(250, 24, 20, 17) }
+    private val pWellEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f; color = Color.rgb(110, 92, 64) }
+    private val pRule = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 2f }
     /** LB / RB as the app's own reader sees them (on the Thor the game never hears LB: it is its emulated Ctrl): a NEW press moves the tab */
     private var lbWas = false
     private var rbWas = false
@@ -678,16 +686,9 @@ class SpellsOverlay(
         private const val CHIP_Y = 634f
         private const val BAR_HEAD = 698f
         private const val BAR_TOP = 734f
-        private val pCard = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(250, 30, 25, 20) }
-        private val pCardEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f; color = Color.rgb(96, 80, 58) }
-        private val pCardLit = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f; color = Color.rgb(255, 209, 0) }
         private const val CB_SLOT = 80f
         private const val CB_GAP = 16f
         private const val HINT_Y = 878f
-        private val pRecede = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(110, 8, 6, 4) }
-        private val pWell = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(250, 24, 20, 17) }
-        private val pWellEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f; color = Color.rgb(110, 92, 64) }
-        private val pRule = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 2f }
         private val pBmp = Paint(Paint.FILTER_BITMAP_FLAG)
         /** Book b57b: the stick tiles' side and their centres' distance from the box's middle (the chips reach 106 from it) */
         const val STICK_S = 64f
