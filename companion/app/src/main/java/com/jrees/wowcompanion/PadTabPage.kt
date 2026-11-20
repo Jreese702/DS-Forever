@@ -705,6 +705,21 @@ class PadTabPage(
         else -> PadMapModel.commandOn(m, sl)?.let { cmdIcon(it) } ?: Icons.get(sl.icon)
     }
 
+    /** #471: the rank badge of what [sl] holds as a SPELL (its own, no command / game binding over it); null for anything else */
+    private fun slotRank(m: PadMapModel.Map, sl: PadMapModel.Slot?): SpellRanks.Badge? =
+        if (sl == null || sl.kind != PadMapModel.Kind.SPELL || gameOn(sl) != null || PadMapModel.commandOn(m, sl) != null) null
+        else SpellRanks.of(sl.id)
+    /** #471: the badge of the spell [viewIcon] draws for [sl] in this view (a fight spell in the combat view, Otherwise out of it) */
+    private fun viewRank(m: PadMapModel.Map, sl: PadMapModel.Slot?): SpellRanks.Badge? = when {
+        view == "combat" -> when {
+            sl?.kind == PadMapModel.Kind.COMBAT && sl.ov -> SpellRanks.of(sl.combat?.spellId)
+            sl?.fight != null && PadMapModel.isFace(sl) -> SpellRanks.of(sl.fight.spellId)
+            else -> null
+        }
+        sl?.kind == PadMapModel.Kind.COMBAT -> SpellRanks.of(sl.otherwise?.spellId)
+        else -> slotRank(m, sl)
+    }
+
     private fun nameOf(m: PadMapModel.Map, sl: PadMapModel.Slot?): String = when {
         gameOn(sl) != null -> gameOn(sl)!!.name                                          // m155: the game's own
         sl == null || sl.kind == PadMapModel.Kind.NONE -> "Empty"
@@ -1009,7 +1024,8 @@ class PadTabPage(
             val items = (1..n).map { p ->
                 val id = ids.getOrNull(p - 1) ?: 0
                 // the carried place rides the cursor: its own place shows empty
-                if (id == 0 || (carry != null && carry.page == rpage && carry.pos == p)) null else UiKit.RadialItem(radIcon(book, id), radName(book, id), -1)
+                if (id == 0 || (carry != null && carry.page == rpage && carry.pos == p)) null else UiKit.RadialItem(radIcon(book, id), radName(book, id), -1,
+                    rank = SpellRanks.of(id))
             }
             UiKit.radialPreview(c, WHEEL_CX, wheelCy(h), wheelD(h), items, if (offWheel) -1 else pos - 1, even = n,
                 plusSlot = if (ids.size < 8) ids.size else -1)
@@ -1350,7 +1366,7 @@ class PadTabPage(
     private fun drawRadialRight(c: Canvas, m: PadMapModel.Map, w: Float, h: Float, book: SpellsModel.Book?) {
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
         val id = radId(pos)
-        UiKit.spell(c, radIcon(book, id), x0 + 36f, top + 16f, 96f, UiKit.Spell.KNOWN)
+        UiKit.spell(c, radIcon(book, id), x0 + 36f, top + 16f, 96f, UiKit.Spell.KNOWN, rank = SpellRanks.of(id))
         val name = radName(book, id)
         val nameLeft = x0 + 158f; val nameW = x1 - nameLeft
         val pn = UiKit.inkPaint(40f, heading = true)
@@ -1436,7 +1452,8 @@ class PadTabPage(
         val icon = viewIcon(m, sl, p)
         val sz = r.width()                                                  // m155: 80, a stick 64
         val game = gameOn(sl)                                               // m155: an empty stick's game binding: the game's own look
-        UiKit.spell(c, icon, r.left, r.top, sz, if ((fixed && !(view == "combat" && changes)) || game != null) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
+        UiKit.spell(c, icon, r.left, r.top, sz, if ((fixed && !(view == "combat" && changes)) || game != null) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN,
+            rank = viewRank(m, sl))                                         // #471
         // m155: a game binding with no picture of its own: its name, small, in the tile (two lines at most)
         if (game != null && icon == null) {
             val tp = TextPaint(UiKit.inkPaint(15f)).apply { color = Theme.parchmentInkDim }
@@ -1504,7 +1521,7 @@ class PadTabPage(
         val sl = slc
         val fixed = sl?.kind == PadMapModel.Kind.FIXED
         val cmd = sl?.let { PadMapModel.commandOn(m, it) }
-        UiKit.spell(c, iconOf(m, sl, pos), x0 + 36f, top + 16f, 96f, if (fixed) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
+        UiKit.spell(c, iconOf(m, sl, pos), x0 + 36f, top + 16f, 96f, if (fixed) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN, rank = slotRank(m, sl))
 
         // the name: 40 px, smaller down to 28 to stay on one line, then two lines (as the book's own right page)
         val name = nameOf(m, sl)
@@ -1648,7 +1665,8 @@ class PadTabPage(
         val fight = if (face) sl!!.fight else null
         val ref = if (isCombat) (if (inCombat) sl!!.combat else sl!!.otherwise) else null
         val bigIcon = when { isCombat -> ref?.let { Icons.get(it.icon) }; inCombat && fight != null -> Icons.get(fight.icon); else -> iconOf(m, sl, pos) }
-        UiKit.spell(c, bigIcon, x0 + 36f, top + 16f, 96f, if (fixed && !(inCombat && fight != null)) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN)
+        val bigRank = when { isCombat -> SpellRanks.of(ref?.spellId); inCombat && fight != null -> SpellRanks.of(fight.spellId); else -> slotRank(m, sl) }
+        UiKit.spell(c, bigIcon, x0 + 36f, top + 16f, 96f, if (fixed && !(inCombat && fight != null)) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN, rank = bigRank)
         val name = when { isCombat -> ref?.name ?: "Nothing"; inCombat && fight != null -> fight.name; else -> nameOf(m, sl) }
         val nameLeft = x0 + 158f; val nameW = x1 - nameLeft
         val pn = UiKit.inkPaint(40f, heading = true)
@@ -1679,7 +1697,7 @@ class PadTabPage(
                 val y = top + 186f + k * 96f
                 val label = if (k == 0) "In combat" else "Otherwise"
                 UiKit.spell(c, if (k == 0) Icons.get(fight.icon) else iconOf(m, sl, pos), x0 + 8f, y + 8f, 64f,
-                    if (k == 0) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
+                    if (k == 0) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL, rank = if (k == 0) SpellRanks.of(fight.spellId) else null)
                 c.drawText(Tr.t(label), x0 + 92f, y + 28f, pl)
                 if (k == 0) swords(c, x0 + 92f + pl.measureText(label) + 22f, y + 20f, 28f)
                 val word = if (k == 0) fight.name else nameOf(m, sl)
@@ -1703,7 +1721,7 @@ class PadTabPage(
             val ps = UiKit.inkPaint(30f)
             for ((k, row) in listOf("In combat" to sl!!.combat, "Otherwise" to sl.otherwise).withIndex()) {
                 val y = top + 186f + k * 96f
-                UiKit.spell(c, row.second?.let { Icons.get(it.icon) }, x0 + 8f, y + 8f, 64f, UiKit.Spell.KNOWN)
+                UiKit.spell(c, row.second?.let { Icons.get(it.icon) }, x0 + 8f, y + 8f, 64f, UiKit.Spell.KNOWN, rank = SpellRanks.of(row.second?.spellId))
                 c.drawText(Tr.t(row.first), x0 + 92f, y + 28f, pl)
                 if (k == 0) swords(c, x0 + 92f + pl.measureText(row.first) + 22f, y + 20f, 28f)
                 c.drawText(Tr.t(TextUtils.ellipsize(row.second?.name ?: "Nothing", TextPaint(ps), x1 - x0 - 100f, TextUtils.TruncateAt.END).toString()),
@@ -1745,7 +1763,7 @@ class PadTabPage(
             val y = FIGHT_ROW_Y
             val pl = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
             val ps = UiKit.inkPaint(30f)
-            UiKit.spell(c, Icons.get(e.icon), x0 + 8f, y + 8f, 64f, UiKit.Spell.KNOWN)
+            UiKit.spell(c, Icons.get(e.icon), x0 + 8f, y + 8f, 64f, UiKit.Spell.KNOWN, rank = SpellRanks.of(e.spellId))
             val label = Tr.t("In combat")
             c.drawText(label, x0 + 92f, y + 28f, pl)
             swords(c, x0 + 92f + pl.measureText(label) + 22f, y + 20f, 28f)
@@ -1852,11 +1870,14 @@ class PadTabPage(
                     is Thing.Mount -> Icons.get(t.x.icon); is Thing.Item -> Icons.get(t.x.icon)
                     is Thing.Binding -> bindIcon(t.b.key, t.b.icon)
                     else -> null }
+                val ir = RectF(rr.left + 18f, rr.centerY() - 30f, rr.left + 78f, rr.centerY() + 30f)
                 icon?.let {
                     PBMP.alpha = if (m.combat) 110 else 255
-                    c.drawBitmap(it, null, RectF(rr.left + 18f, rr.centerY() - 30f, rr.left + 78f, rr.centerY() + 30f), PBMP)
+                    c.drawBitmap(it, null, ir, PBMP)
                     PBMP.alpha = 255
                 }
+                // #471 (the player: "I cannot see which rank my spells are when assigning them to my crossbars"): the rank on show
+                if (t is Thing.Spell) SpellRanks.of(t.e.spellId)?.let { rb -> UiKit.spellRank(c, ir, rb, alpha = if (m.combat) 110 else 255) }
             }
             y += ROW_H
         }

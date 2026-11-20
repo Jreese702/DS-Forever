@@ -73,6 +73,47 @@ object UiKit {
         c.drawText(n.toString(), r.right - r.width() * 0.10f, r.bottom - r.height() * 0.10f, p)
     }
 
+    /** #471: [spellRank]'s corners. TOP LEFT everywhere a button's glyph sits top right (Home, the Controller room, the book, the cast
+     *  bar); BOTTOM LEFT on the spell wheels (the pointed slice's A glyph sits top left there, a pin top right, a count bottom right) */
+    const val RANK_TOP_LEFT = 0
+    const val RANK_BOTTOM_LEFT = 1
+
+    /**
+     * #471 THE RANK BADGE: "R3" in a small dark chip inside [icon]'s [corner] - the game's number font, its gold (the theme's accent) for
+     * the highest rank the player knows, the game's grey for a lower one (a hint that a higher rank exists). Clear of the glyph (top
+     * right), the stack count (bottom right), the cooldown's seconds (the middle) and the DS mark (a macro's, never a spell's).
+     * Returns the chip's box (a copy; empty when nothing was drawn).
+     */
+    fun spellRank(c: Canvas, icon: RectF, b: SpellRanks.Badge, corner: Int = RANK_TOP_LEFT, alpha: Int = 255): RectF {
+        if (icon.isEmpty || alpha <= 0) return RectF()
+        val h = (icon.height() * 0.30f).coerceAtLeast(13f)
+        // a fresh paint each time, as radialCd's: the number font is the harvest's, and may arrive after the first draw
+        val p = numberPaint(h * 0.84f, Color.WHITE, shadow = false).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+        val words = b.text
+        val w = p.measureText(words) + h * 0.42f
+        val inset = (icon.width() * 0.04f).coerceAtLeast(1f)
+        val l = icon.left + inset
+        val t = if (corner == RANK_BOTTOM_LEFT) icon.bottom - inset - h else icon.top + inset
+        val chip = rankChip.apply { set(l, t, l + w, t + h) }
+        val round = h * 0.28f
+        pRankFill.color = Color.BLACK; pRankFill.alpha = 190 * alpha / 255
+        c.drawRoundRect(chip, round, round, pRankFill)
+        pRankEdge.strokeWidth = (h * 0.07f).coerceAtLeast(1f)
+        pRankEdge.color = if (b.top) Theme.bronze else RANK_GREY_EDGE
+        pRankEdge.alpha = alpha
+        c.drawRoundRect(chip, round, round, pRankEdge)
+        p.color = if (b.top) Theme.gold else RANK_GREY
+        p.alpha = alpha
+        c.drawText(words, chip.centerX(), chip.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        return RectF(chip)
+    }
+    /** the game's GRAY_FONT_COLOR, a little lifted to read on the dark chip; its edge darker */
+    private val RANK_GREY = Color.rgb(158, 158, 158)
+    private val RANK_GREY_EDGE = Color.rgb(84, 84, 84)
+    private val rankChip = RectF()
+    private val pRankFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val pRankEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
     /** text for parchment: dark ink, and no shadow (the game draws none on paper) */
     fun inkPaint(size: Float, heading: Boolean = false) =
         paint(if (heading) title else body, size, Theme.parchmentInk, false)
@@ -4047,9 +4088,11 @@ object UiKit {
      * round frame. [chosen] = the entry a finger or the controller is on. [onDark] = not on a page.
      * [autoCast] (a PET's spell; hunter pets, warlock demons): 0 = it cannot cast itself, 1 = it
      * may (the game's gold corners, quiet), 2 = it does (the corners bright and the game's ring).
+     * [rank] (#471): the spell's rank badge ([SpellRanks.of]), top left on the icon; null = none (rankless, a lone rank, not a spell).
      */
     fun spell(c: Canvas, icon: Bitmap?, x: Float, y: Float, size: Float, state: Spell = Spell.KNOWN, onBar: Boolean = true,
-              passive: Boolean = false, chosen: Boolean = false, onDark: Boolean = false, autoCast: Int = 0, noMana: Boolean = false) {
+              passive: Boolean = false, chosen: Boolean = false, onDark: Boolean = false, autoCast: Int = 0, noMana: Boolean = false,
+              rank: SpellRanks.Badge? = null) {
         val known = state == Spell.KNOWN
         val ir = RectF(x, y, x + size, y + size)
         val pIcon = if (known) pBmp else pFaint.apply { alpha = if (onDark) 204 else 153 }
@@ -4074,6 +4117,7 @@ object UiKit {
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f
             pFlat.color = if (chosen) Theme.gold else Theme.bronze
             c.drawRect(ir, pFlat)
+            if (rank != null) spellRank(c, ir, rank)
             return
         }
         val ox = if (known) 41f else 40f; val oy = if (known) 18f else 16f
@@ -4116,6 +4160,7 @@ object UiKit {
                 pBmp.alpha = 255
             }
         }
+        if (rank != null) spellRank(c, ir, rank)                                   // #471: over the frame, under nothing
     }
 
     /**
@@ -4125,7 +4170,7 @@ object UiKit {
      */
     fun bookEntry(c: Canvas, r: RectF, icon: Bitmap?, name: String, sub: String?, state: Spell = Spell.KNOWN,
                   onBar: Boolean = true, chosen: Boolean = false, passive: Boolean = false, size: Float = 80f,
-                  autoCast: Int = 0, noMana: Boolean = false) {
+                  autoCast: Int = 0, noMana: Boolean = false, rank: SpellRanks.Badge? = null) {
         if (chosen) {
             val band = RectF(r.left, r.top + 5f, r.right, r.bottom - 5f)
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(51, 110, 60, 14)
@@ -4135,7 +4180,7 @@ object UiKit {
             c.drawRect(band, pFlat)
         }
         val ix = r.left + 24f; val iy = r.top + (r.height() - size) / 2f - 2f
-        spell(c, icon, ix, iy, size, state, onBar, passive, chosen, autoCast = autoCast, noMana = noMana)
+        spell(c, icon, ix, iy, size, state, onBar, passive, chosen, autoCast = autoCast, noMana = noMana, rank = rank)
         val tx = ix + size + 16f
         val room = r.right - 8f - tx
         val known = state == Spell.KNOWN
@@ -4654,7 +4699,9 @@ object UiKit {
                      /** q1b: a spell radial's cooldown counted by the app (RadialModel.Cd): seconds left and its whole length, 0 = none */
                      val cdLeft: Float = 0f, val cdLen: Float = 0f,
                      /** r20 / q4: dimmed with no number (a potion held until the fight ends; running in a fight, its length never learned) */
-                     val cdDim: Boolean = false)
+                     val cdDim: Boolean = false,
+                     /** #471: a spell wheel's spell's rank badge (bottom left: the pointed slice's A glyph is top left) */
+                     val rank: SpellRanks.Badge? = null)
 
     /** r20 / q4: the dim over an icon in [r] with no number (held, or a length never learned): the sweep's dark, whole */
     fun radialCdDim(c: Canvas, r: RectF, alpha: Int) {
@@ -5112,6 +5159,7 @@ object UiKit {
                 counts.style = Paint.Style.FILL; counts.color = Color.WHITE; counts.alpha = (255 * fade).toInt()
                 c.drawText(Tr.t(it.count.toString()), bx, by, counts)
             }
+            if (k > 0.9f) it.rank?.let { rb -> spellRank(c, r, rb, RANK_BOTTOM_LEFT, al) }    // #471
             if (it.pinned || it.ranOut) {
                 // the pin: the Friends list's gold pin over the icon's top-right corner (grey when its item ran out)
                 tex(if (it.ranOut) "rwheel_pin_off" else "rwheel_pin")?.let { pin ->

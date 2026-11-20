@@ -3217,7 +3217,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 else if (current && !msg.has("lost")) freeHidden("groupfinder", press = true)
             // the Spellbook (spells session): the book, who holds the controller, the answer to a Bind press. Leaving it with B goes
             // Home through the capture's release ("B") and the home session's route, as for Bags
-            "spells" -> SpellsModel.parse(msg)?.let { lastBook = it; spellsPad = it.pad; spellbookView.update(it); controllerView.update(it); spellsOverlay.onBook(it)
+            "spells" -> SpellsModel.parse(msg)?.let { lastBook = it; SpellRanks.update(it); spellsPad = it.pad; spellbookView.update(it); controllerView.update(it); spellsOverlay.onBook(it)
                 if (current) newSpellsFrom(it) }
             // CONTROL documents act only when CURRENT: one replayed from the backlog at app start tells who held the controller THEN, and
             // must not open the room or a page, bring up the Bind box or a Talents box, or leave a stale "held" behind (a later room change
