@@ -731,7 +731,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         // the D-pad layout (the user's design 2026-10-05; Hub hub5, Spells' router): right = Home's map module, left = the Chat room
         // ("The full Chat room": one way into chat), up = the consumables radial (batch b; nothing yet). Down is the bar's own
+        barSelect.onEditHome = { editHome("Y on the Home disc") }        // P2 (D4): Y on the disc = Edit Home
         barSelect.onDpad = dpad@{ k ->
+            // P2: Home's edit mode holds the controller: no toolbar / router word opens anything meanwhile (Start is its Save)
+            if (room == Room.HOME && homeView.editing) return@dpad
             // while the radial shows, its own reader moves round the ring; the router's map / chat / home words wait
             if (::radialView.isInitialized && radialView.isOpen && k != "radial" && !k.startsWith("sradial") && k != "smartor") return@dpad
             // the pause menu reads its own controller while it shows: only another Start ("pause") reaches it
@@ -1146,6 +1149,21 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         castView.overlayOpen = { overlayUp() }
         // #540: Home's B watch leaves a B alone while one of these overlays has it (and just after it closed one: overlayClosed)
         homeView.overlayOpen = { radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || barSelect.open }
+        // MOVABLE HOME P2, EDIT MODE: its ribbon in the room bar's XP track and the disc's gold tick (a touch on it saves), the DS toolbar's
+        // switch at Save (the Settings row's own route), the behaviour rows through BottomTiles.press with this host's env, the bar's slots
+        // (the Controller room's Tap-to-cast tab) and the chat's filters (the Chat room's checklist) after a Save
+        homeView.onEditChrome = { v ->
+            strip.editRibbon = v?.let { ev -> { c: android.graphics.Canvas, w: Float, top: Float, g0: Float, g1: Float -> ev.drawRibbon(c, w, top, g0, g1) } }
+            strip.editTick = v != null
+            strip.editTouch = v?.let { ev -> { x: Float, y: Float, up: Boolean -> ev.ribbonTouch(x, y, up) } }
+        }
+        homeView.editRibbonRedraw = { strip.invalidate() }
+        homeView.onEditToolbar = { on -> dpadSet(on) }
+        homeView.onEditPress = { key, k -> BottomTiles.press("", key, k, BottomTiles.Env(lastDpad, GameUi.character)) { on -> dpadSet(on) } }
+        homeView.onEditSlots = { controllerView.openOnCastBar(); pickRoom(Room.CONTROLLER) }
+        homeView.onEditFilters = { show(Room.CHAT); chatView.post { chatView.openFilters() } }
+        homeView.onEditChanged = { lbEval(); strip.invalidate() }
+        BottomTiles.editHome = { editHome("Settings' Home layout tile") }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> slideBarsUp = true; pauseSlideAll(t) }          // feat/pause-power: Home's controller goes up
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button
@@ -1868,7 +1886,23 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * whose B goes Home closes with its own close (the 2026-10-01 ruling) and Home shows; on Home, a full-screen module or the buff list
      * steps back (the B the disc shows there, the user 15:08).
      */
+    /**
+     * MOVABLE HOME P2 (the user's D4): edit mode from Settings > Bottom screen's first tile (A) or Y on the Home disc from the bar cursor.
+     * From a room, Home first with the room slide, then edit mode with the cursor on Chat; on Home at once. Refused in a fight (Home
+     * flashes the widget's edge red).
+     */
+    private fun editHome(why: String) {
+        if (shell.hostGone()) return
+        Log.i("WCHOME", "home edit: asked ($why)")
+        if (room != Room.HOME) {
+            show(Room.HOME)
+            ui.postDelayed({ if (room == Room.HOME) homeView.editOpen(EditStop.CHAT) }, EDIT_AFTER_SLIDE_MS)
+        } else homeView.editOpen(EditStop.CHAT)
+    }
+
     private fun swirlTouched() {
+        // MOVABLE HOME P2: the disc's gold tick while editing: save and leave
+        if (room == Room.HOME && homeView.editing) { homeView.editSave(); return }
         // PARTY MODE (4.2): on Home the disc shows red with B while Party mode is on; a touch on it is B: Party mode OFF
         if (room == Room.HOME && homeView.partyOnRest()) {
             val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } } == true
@@ -3369,7 +3403,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the app kept the last one replayed at its start, with no padmap after it for 12 minutes). A GAME WINDOW (aside =
                     // its name) gives the D-pad back to the game, so its slots show then
                     castView.roomBarOn = d.on || (d.want == true && d.aside == "room")
-                    castView.roomBar = d.dirs.ifEmpty { null }; castView.invalidate()
+                    castView.roomBar = homeView.roomBarFor(d.dirs.ifEmpty { null }); castView.invalidate()   // P2: edit mode previews its draft
                     talkDraw()                                                  // hold to talk's microphone follows the toolbar
                     if (current) dpadAsk(d)
                 }
@@ -3866,6 +3900,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun startPressed() {
         if (shell.hostGone()) return
+        // MOVABLE HOME P2: Start in edit mode = save and leave
+        if (room == Room.HOME && homeView.editing) { startReadAt = SystemClock.uptimeMillis(); homeView.editKey("PADFORWARD"); return }
         // the chat's board (the keyboard's Send, quick chat's Send; its voice page: Start is their Send): the Chat room, and Home's own chat module (the same ChatView lent)
         if ((room == Room.CHAT || (room == Room.HOME && homeView.chatModuleOn)) && chatView.ownsStart()) {
             chatView.onPad(JSONObject().put("type", "guestpad").put("id", "chat").put("k", "PADFORWARD").put("n", --directN)); return
@@ -3991,10 +4027,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** while the picture is up, Home's cover is looked at again (a room / window opening while LB is held has no shoulder change) */
     private val lbWatch = Runnable { if (!shell.hostGone() && ::lbView.isInitialized) lbEval() }
     private val LB_WATCH_MS = 100L
+    /** P2: edit mode opens after the room's slide to Home has landed (the room motion's own time and a frame) */
+    private val EDIT_AFTER_SLIDE_MS = Motion.MODULE_OPEN + 60L
 
     /** b-radial-exclusive: another overlay is up over Home (the class wheel's gate, CastView.overlayOpen; the LB picture's too) */
     private fun overlayUp(): Boolean =
-        radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() ||
+        radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() || (room == Room.HOME && homeView.editing) ||
             setupView.visibility == View.VISIBLE || loginPrompt.isOpen || barSelect.open ||
             (::dialogView.isInitialized && dialogView.covers()) ||
             (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || spellsOverlay.visibility == View.VISIBLE ||

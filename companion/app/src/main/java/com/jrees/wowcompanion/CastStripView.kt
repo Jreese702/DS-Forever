@@ -57,12 +57,25 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
 
     /** the place Home laid the bar in (its slots in view and spread) */
     var side: CastStripModel.Side = CastStripModel.Side.LEFT
-        set(v) { CastStripModel.Live.laid(v); if (field != v) { field = v; flingAt = -1L; invalidate() } }
+        set(v) { if (splitHalf == 0) CastStripModel.Live.laid(v); if (field != v) { field = v; flingAt = -1L; invalidate() } }
+
+    /**
+     * MOVABLE HOME P2, SPLIT (SPEC section 8: "two 4-slot bars, one under each column, with all 8 slots in view and no scrolling"): 0 = the
+     * one bar; 1 = the first half (slots 1-4, laid as LEFT at its start), 2 = the second (slots 5-8, laid as RIGHT at its end). The halves
+     * never scroll, show no edge arrows and never touch the one bar's kept scroll ([CastStripModel.Live]); a tap is the slot's same cell
+     */
+    var splitHalf = 0
+        set(v) { if (field != v) { field = v; flingAt = -1L; invalidate() } }
 
     /** cb5: the strip's scroll now (px, 0 = slot 1 leftmost), kept for the app's run as slots' shares in [CastStripModel.Live.pos] */
     var scroll: Float
-        get() = CastStripModel.fromPos(side, width.toFloat(), CastStripModel.Live.posFor(side))
+        get() = when (splitHalf) {
+            1 -> 0f
+            2 -> CastStripModel.fromPos(side, width.toFloat(), CastStripModel.rest(CastStripModel.Side.RIGHT))
+            else -> CastStripModel.fromPos(side, width.toFloat(), CastStripModel.Live.posFor(side))
+        }
         set(v) {
+            if (splitHalf != 0) return                                                  // P2: a split half never scrolls
             if (!CastStripModel.scrolls(side) || width <= 0) return                 // cb8: BOTH never scrolls (nor a bar not laid yet)
             val p = CastStripModel.toPos(side, width.toFloat(), v)
             if (CastStripModel.Live.side != side || p != CastStripModel.Live.pos) { CastStripModel.Live.keep(side, p); invalidate() }
@@ -149,7 +162,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
         c.clipRect(wl, 0f, wr, h)                                                       // the strip scrolls inside the well
         if (drawSlots(c, o, now)) sweeping = true
         c.restore()
-        val (al, ar) = CastStripModel.arrows(side, w, o)
+        val (al, ar) = if (splitHalf != 0) 0f to 0f else CastStripModel.arrows(side, w, o)
         if (al > 0f) edge(c, true, al, w, h)
         if (ar > 0f) edge(c, false, ar, w, h)
         if (sweeping || now < pressedUntil || flinging) postInvalidateDelayed(FRAME_MS)
@@ -271,17 +284,17 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                 if (!moved && CastStripModel.leftTap(dx, dy)) {
                     moved = true; pressedUntil = 0L
                     dragX = ev.rawX; dragFrom = scroll                                  // the strip follows from here (no jump)
-                    if (CastStripModel.scrolls(side)) parent?.requestDisallowInterceptTouchEvent(true)
+                    if (CastStripModel.scrolls(side) && splitHalf == 0) parent?.requestDisallowInterceptTouchEvent(true)
                     invalidate()
                 }
-                if (moved && CastStripModel.scrolls(side)) scroll = CastStripModel.dragScroll(side, w, dragFrom, ev.rawX - dragX)
+                if (moved && CastStripModel.scrolls(side) && splitHalf == 0) scroll = CastStripModel.dragScroll(side, w, dragFrom, ev.rawX - dragX)
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 sample(ev.eventTime, ev.rawX)
                 if (moved) {
                     val v = CastStripModel.velocity(sampleT, sampleX)
-                    if (CastStripModel.scrolls(side) && CastStripModel.flings(v)) {
+                    if (CastStripModel.scrolls(side) && splitHalf == 0 && CastStripModel.flings(v)) {
                         flingFrom = scroll; flingV = v; flingAt = ev.eventTime; invalidate()
                     }
                 } else if (!caught) {

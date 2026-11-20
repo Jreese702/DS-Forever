@@ -113,7 +113,8 @@ class CastBarCombatTest {
      *  (only a module full screen outside the takeover drops it), so Stay keeps it in fights with Party mode on and off */
     @Test fun homeFollowsItsOwnFightSignal() {
         val h = src("HomeView.kt")
-        assertTrue(h.contains("private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown(), castPartyKeep()) }"))
+        // movable Home P2: both halves of a Split bar (castStrip2) take the same gate
+        assertTrue(h.contains("private fun castStripGate() { for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep()) }"))
         assertTrue(h.contains("CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)"))     // cb15: Bar in Party mode
         // the player's own rule (a preview look - the cast bar question's picture - shows Hide)
         assertTrue(h.contains("if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat"))

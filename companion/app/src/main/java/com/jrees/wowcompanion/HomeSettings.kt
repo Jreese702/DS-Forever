@@ -38,6 +38,20 @@ object HomeSettings {
     /** the active layout record (the current character's; SPEC section 9) */
     val layout: HomeLayout get() = HomeLayoutStore.active()
 
+    /**
+     * MOVABLE HOME P2: edit mode's Save. The draft becomes the active record ([all] = the default and every character: D5's "All
+     * characters"), the old keys written as their facade setters write them (one release's downgrade reads them; castBarChosen keeps its
+     * meaning: the bar's key is written only when the bar changed or was chosen before)
+     */
+    fun saveLayout(l: HomeLayout, all: Boolean = false) {
+        val p = prefs ?: return
+        val e = p.edit().putString(KEY, l.rest.name).putBoolean(KEY_COMBAT_GROW, l.fight == HomeLayout.FightBand.GROW)
+        if (l.card != HomeLayout.CardDock.OFF) e.putBoolean("questOverMap", l.card == HomeLayout.CardDock.ON_MAP)
+        if (l.cast != layout.cast || p.contains(KEY_CAST_SIDE)) e.putString(KEY_CAST_SIDE, l.castSide.name).remove(KEY_CAST_STRIP)
+        e.apply()
+        if (!HomeLayoutStore.set(l, all)) for (x in listeners.toList()) x()
+    }
+
     /** the band at rest: a FACADE on the active layout record since movable Home (the old key still written for one release) */
     var rest: HomeRest
         get() = layout.rest

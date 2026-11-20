@@ -722,6 +722,9 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         return true
     }
 
+    /** MOVABLE HOME P2: Home's edit mode's chat menu, "Filters": the room opens on its checklist */
+    fun openFilters() = setMenu(true)
+
     private fun setMenu(open: Boolean) {
         if (open == menuOpen) return
         menuOpen = open

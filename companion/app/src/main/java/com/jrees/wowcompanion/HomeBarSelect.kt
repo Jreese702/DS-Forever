@@ -369,6 +369,8 @@ class HomeBarSelect(
 
     /** the D-pad layout's map / chat / radial presses (hub5), once each (replays and repeats already dropped): the host opens them */
     var onDpad: ((String) -> Unit)? = null
+    /** P2: Y on the Home disc (the host: Home's edit mode, Home first from a room); null = Y does nothing there */
+    var onEditHome: (() -> Unit)? = null
 
     private val idleClose = Runnable { if (open && byCommand) { Log.i(TAG, "bar: command cursor idle, closed"); close() } }
 
@@ -435,6 +437,8 @@ class HomeBarSelect(
             "PADDLEFT", "PADLSHOULDER", "PADLTRIGGER" -> step(-1)
             "PADDRIGHT", "PADRSHOULDER", "PADRTRIGGER" -> step(1)
             "PAD1" -> pick()
+            // MOVABLE HOME P2 (the user's D4): Y with the cursor on the Home disc = Edit Home (Home first from a room; the host's)
+            "PAD4" -> if (at == Room.HOME && onEditHome != null) { val go = onEditHome; close(); go?.invoke(); return }
             // B on Home's disc from a ROOM goes Home (the user 2026-10-01: "Yes, B on the Home disc goes Home"), not the swirl's pick
             // (A's pause wheel, 10-09). On Home B only closes the cursor, on the disc too (the user 2026-11-16: "it should just be
             // closing the dpad select"); anywhere else B closes it as well. Select always closes
@@ -534,6 +538,13 @@ class HomeBarSelect(
         if (onHome && !fromRoom) { shownBox = null; return }      // not drawn: the next step appears where it lands (nothing to glide from)
         val target = strip.place(at) ?: run { shownBox = null; return }
         target.offset(dx, dy)
+        // MOVABLE HOME P2 (D4): on the Home disc, "Y Edit" beside it (Y = Edit Home); only there, so the bar has no new clutter
+        if (onHome && onEditHome != null && (!fadingOut || open)) {
+            val g = 34f; val cy = target.top + 17f
+            UiKit.pad(c, UiKit.yGlyph(), target.right + 10f + g / 2f, cy, g)
+            val p = UiKit.bodyPaint(24f, Theme.gold)
+            c.drawText(Tr.t("Edit"), target.right + 14f + g, cy - (p.ascent() + p.descent()) / 2f, p)
+        }
         // THE CURSOR GLIDES to its next place (the user, 15 Oct: "it needs an animated movement over, instead of an instantly appearing
         // at the next spot"): from where it was drawn last to the new picture over MOVE_MS on the one curve; the arrows and the A ride
         val from = moveFrom

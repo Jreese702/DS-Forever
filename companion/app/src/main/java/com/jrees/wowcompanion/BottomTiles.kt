@@ -183,8 +183,16 @@ object BottomTiles {
     val CARD_DOCKS = listOf(HomeLayout.CardDock.ON_MAP, HomeLayout.CardDock.ABOVE_CHAT, HomeLayout.CardDock.OFF)
     val CARD_WORDS = listOf("On map", "Above chat", "Off")
     /** the bar's places offered in this build (Split is phase 3's) and their words */
-    val CAST_DOCKS = listOf(HomeLayout.CastDock.OFF, HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS)
-    val CAST_WORDS = listOf("Off", "Under chat", "Under map", "Across")
+    val CAST_DOCKS = listOf(HomeLayout.CastDock.OFF, HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS,
+        HomeLayout.CastDock.SPLIT)
+    val CAST_WORDS = listOf("Off", "Under chat", "Under map", "Across", "Split")
+
+    /**
+     * MOVABLE HOME P2 (SPEC section 3 way 2, final_11; the user's D4): A (or a finger) on the FIRST tile, "Home layout", opens EDIT MODE
+     * on Home (the host: Settings slides to Home with the room slide, the cursor on Chat). Null (the off-device renders, an older host) =
+     * the tile opens its band as in phase 1. The tile wears the A glyph while it does.
+     */
+    @JvmStatic var editHome: (() -> Unit)? = null
     val SIZE_WORDS = listOf("S", "M", "L")
 
     /** the Home layout tile's band: the presets, the chat's side and width, the three slots (Mine: use; Save here), All characters */
@@ -379,6 +387,8 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
                 val i = l.grid.tiles.indexOfFirst { it.contains(e.x, e.y) }
                 if (i >= 0) {
                     val id = l.slots[i]
+                    // P2: the Home layout tile's A = Edit Home (no band)
+                    if (id == BottomTiles.LAYOUT) BottomTiles.editHome?.let { go -> focusIdx = i; selected = null; go(); return true }
                     focusIdx = i
                     selected = if (selected == id) null else id
                     lineFocus = null
@@ -433,11 +443,15 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         c.drawRoundRect(rect, 10f, 10f, pFill)
         picture(c, id, GameUiTiles.well(box).rect(), e, look, null, prio)
         BottomTiles.badge(id, e)?.let { TilePictures.badge(c, GameUiTiles.badgeBox(box).rect(), it) }
+        // P2 (final_11): the Home layout tile's A glyph - A here opens edit mode
+        if (id == BottomTiles.LAYOUT && BottomTiles.editHome != null)
+            UiKit.pad(c, UiKit.okGlyph(), box.r - GameUiTiles.WELL_PAD - 22f, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 24f, 42f)
         edge(c, rect, open)
         val x = box.l + GameUiTiles.WELL_PAD + 2f
         val maxW = box.w - 2f * GameUiTiles.WELL_PAD - 4f
         pName.color = Theme.text
-        c.drawText(fitText(pName, Tr.t(BottomTiles.NAMES[id] ?: id), maxW, NAME_SIZE, NAME_MIN), x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
+        val nameW = if (id == BottomTiles.LAYOUT && BottomTiles.editHome != null) maxW - 48f else maxW
+        c.drawText(fitText(pName, Tr.t(BottomTiles.NAMES[id] ?: id), nameW, NAME_SIZE, NAME_MIN), x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
         pValue.color = if (BottomTiles.dimmed(id, e)) Theme.textDim else Theme.gold
         c.drawText(fitText(pValue, Tr.t(BottomTiles.value(id, e)), maxW, 22f, 16f), x, box.b - 12f, pValue)
     }

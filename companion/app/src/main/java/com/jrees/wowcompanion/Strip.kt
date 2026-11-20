@@ -196,7 +196,27 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         return dx * dx + dy * dy <= r * r
     }
 
+    /**
+     * MOVABLE HOME P2, THE EDIT RIBBON (SPEC section 4, final_02; D6 "hints in the XP bar's place"): while Home's edit mode runs, the
+     * tracking bar's place shows its ribbon ([editRibbon]: "Edit Home", the layout chip, "+", the hints; drawn by HomeEditView) and the
+     * Home disc wears a gold tick ([editTick]: a touch on the disc saves and leaves, the host's). A finger on the ribbon is the ribbon's
+     * ([editTouch], the Strip's own px; true = taken)
+     */
+    var editRibbon: ((c: Canvas, w: Float, top: Float, g0: Float, g1: Float) -> Unit)? = null
+        set(v) { field = v; invalidate() }
+    var editTick = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+    var editTouch: ((x: Float, y: Float, up: Boolean) -> Boolean)? = null
+    /** the ribbon took the finger's DOWN: its UP is the ribbon's too */
+    private var ribbonDown = false
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        val rib = editTouch
+        if (rib != null && editRibbon != null) {
+            val ty = e.y - (height - BAR)
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) ribbonDown = ty in 0f..TRACKS.toFloat() && !onHome(e.x, e.y) && rib(e.x, ty, false)
+            if (ribbonDown) { if (e.actionMasked == MotionEvent.ACTION_UP) { ribbonDown = false; rib(e.x, ty, true) }; return true }
+        }
         if (e.action != MotionEvent.ACTION_DOWN) return true
         if (onHome(e.x, e.y)) { homePressed(); onPick(Room.HOME); return true }
         if (e.y < height - BUTTONS) return true                 // the tracking bar: no touch of its own
@@ -250,7 +270,9 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         // feat/wk-itemcast: a cast running in a room takes the tracking bar's place; its finish fades out over it
         val cast = castBand
         val castState = cast?.state() ?: RoomCast.NONE
-        if (castState != RoomCast.RUNNING) when {
+        val ribbon = editRibbon
+        if (ribbon != null) ribbon(c, w, top, g0, g1)                          // P2: edit mode's ribbon in the tracking bar's place
+        else if (castState != RoomCast.RUNNING) when {
             x != null && f != null -> {                         // cut in half by height: the faction over the experience
                 UiKit.track(c, RectF(0f, top, w, top + TRACKS / 2f), f.kind, f.fill, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
                 UiKit.track(c, RectF(0f, top + TRACKS / 2f, w, top + TRACKS), x.kind, x.fill, x.reach, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
@@ -283,7 +305,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         // the consumables radial has lifted the disc out (it draws the disc that rises and becomes its hub): nothing here
         if (homeLifted) return
         // HOME in the game's look when its pieces are on the device; else the flat disc and the house
-        if (drawKitHome(c)) return
+        if (drawKitHome(c)) { if (editTick) drawEditTick(c); return }
         // HOME, over the bar and the rooms' icons: its ring on the bar's colour, the disc, the house
         pFill.color = Theme.panel
         c.drawCircle(homeX, homeY, HOME / 2f + RING, pFill)
@@ -299,8 +321,23 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         }
         pStroke.strokeWidth = 3.2f; pStroke.color = Theme.gold
         glyph = HOME / 56f * 20f / 24f * 1.1f
+        if (editTick) { drawEditTick(c); return }
         icon(c, Room.MAP, homeX, homeY, true, home = true)
     }
+
+    /** P2: edit mode's gold tick over the disc (a touch on it saves and leaves); the game's tick art, else a drawn one */
+    private fun drawEditTick(c: Canvas) {
+        val s = HOME * 0.62f
+        val r = RectF(homeX - s / 2f, homeY - s / 2f, homeX + s / 2f, homeY + s / 2f)
+        pFill.color = Color.argb(150, 0, 0, 0)
+        c.drawCircle(homeX, homeY, HOME * 0.40f, pFill)
+        val tick = UiKit.tex("check_tick")
+        if (tick != null) { c.drawBitmap(tick, null, r, pBmpTick); return }
+        pStroke.strokeWidth = 12f; pStroke.color = Theme.gold
+        c.drawLine(r.left + s * 0.18f, homeY, homeX - s * 0.06f, r.bottom - s * 0.2f, pStroke)
+        c.drawLine(homeX - s * 0.06f, r.bottom - s * 0.2f, r.right - s * 0.12f, r.top + s * 0.18f, pStroke)
+    }
+    private val pBmpTick = Paint(Paint.FILTER_BITMAP_FLAG)
 
     /**
      * HOME'S GLOW-UP (the user, 2026-09-29 15:17: "The home button itself needs a glow up to actually fit the classic wow

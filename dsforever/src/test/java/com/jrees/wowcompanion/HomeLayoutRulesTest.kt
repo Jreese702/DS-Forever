@@ -205,9 +205,13 @@ class HomeLayoutRulesTest {
         assertEquals(HomeLayout(), HomeLayout().swapped().swapped())
     }
 
-    @Test fun splitShowsAsAcrossUntilPhase3() {
+    @Test fun splitShipsWithEditMode() {
+        // P2: Split's second half is laid (HomeView's castStrip2): shown as itself, one 4-slot half under each column
         val l = HomeLayout(cast = HomeLayout.CastDock.SPLIT)
-        assertEquals(HomeLayout.CastDock.ACROSS, HomeLayoutRules.shown(l).cast)
+        assertTrue(HomeLayoutRules.SPLIT_SHIPS)
+        assertEquals(HomeLayout.CastDock.SPLIT, HomeLayoutRules.shown(l).cast)
+        val b = HomeLayoutSolver.places(l, HomeLayoutSolver.State()).boxes
+        assertTrue(b.getValue(HomePart.STRIP).r < b.getValue(HomePart.CAST2).l)
         assertEquals(l.copy(cast = HomeLayout.CastDock.UNDER_MAP), HomeLayoutRules.shown(l.copy(cast = HomeLayout.CastDock.UNDER_MAP)))
     }
 }

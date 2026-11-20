@@ -245,8 +245,8 @@ object HomeLayoutRules {
         return out
     }
 
-    /** what this build can show: Split's second half and the top-screen bar are phase 3 (P1 lays SPLIT as one bar across, TOP as the
-     *  rest size: the band's pictures switch, nothing grows) */
+    /** what this build can show: the top-screen bar is phase 3 (TOP lays as the rest size: the band's pictures switch, nothing grows);
+     *  Split's second half ships with phase 2's edit mode ([SPLIT_SHIPS]; P1 laid SPLIT as one bar across) */
     fun shown(l: HomeLayout): HomeLayout = if (l.cast == HomeLayout.CastDock.SPLIT && !SPLIT_SHIPS) l.copy(cast = HomeLayout.CastDock.ACROSS) else l
-    const val SPLIT_SHIPS = false
+    const val SPLIT_SHIPS = true                 // P2: the bar's second half is laid (HomeView's castStrip2)
 }

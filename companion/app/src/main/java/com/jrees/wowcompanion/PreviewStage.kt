@@ -69,6 +69,9 @@ object PreviewStage {
     var roomBarOn: () -> Boolean = { false }
 
     private class Tree(val home: HomeView, val cast: CastView, val map: MapView)
+    /** the stage's HomeView is being made now (HomeView's init: not a new live Home) */
+    @Volatile var building = false
+        private set
     private var tree: Tree? = null
 
     /**
@@ -302,7 +305,9 @@ object PreviewStage {
         val cast = CastView(ctx) { }
         val chatView = ChatView(ctx) { }
         holder.addView(map); holder.addView(cast); holder.addView(chatView)
-        val home = HomeView(ctx, map, cast, chatView) { }
+        // movable Home P2: the stage's own Home is never the live one (it leaves the live Home's edit draft alone)
+        building = true
+        val home = try { HomeView(ctx, map, cast, chatView) { } } finally { building = false }
         val t = Tree(home, cast, map)
         lay(t)
         home.borrow()

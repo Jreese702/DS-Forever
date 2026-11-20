@@ -199,13 +199,13 @@ class BottomTilesRoomTest {
         val p = partOf(r, BottomTiles.CASTBAR)
         assertEquals(BottomTiles.CASTBAR, p.openTile)
         var buttons = p.focusTargets().drop(p.tileIds().size)
-        assertEquals("Off / Under chat / Under map / Across, no In combat while Off", 4, buttons.size)
+        assertEquals("Off / Under chat / Under map / Across / Split (P2), no In combat while Off", 5, buttons.size)
         for (b in buttons) assertTrue(b.height() >= 110f)
         tap(p, buttons[2].centerX(), buttons[2].centerY()); lay(r)
         assertEquals(CastStripModel.Side.RIGHT, HomeSettings.castBarSide)
         buttons = p.focusTargets().drop(p.tileIds().size)
-        assertEquals("Size S / M / L and In combat Hide / Stay now", 9, buttons.size)
-        tap(p, buttons[8].centerX(), buttons[8].centerY()); lay(r)
+        assertEquals("Size S / M / L and In combat Hide / Stay now", 10, buttons.size)
+        tap(p, buttons[9].centerX(), buttons[9].centerY()); lay(r)
         assertEquals(CastStripModel.Combat.STAY, HomeSettings.castBarCombat)
         HomeSettings.castBarCombat = CastStripModel.Combat.HIDE
         // a tap on the open tile closes it; another tile's tap moves the one band
