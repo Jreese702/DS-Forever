@@ -1,0 +1,24 @@
+rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=NONE map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=NONE chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=ABOVE map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=ABOVE chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=BOTH barFight=HIDE card=NONE map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=BOTH barFight=HIDE card=NONE chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=BOTH barFight=HIDE card=OVER map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=BOTH barFight=HIDE card=OVER chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=BOTH barFight=HIDE card=ABOVE map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=DIAMONDS
+rest=DIAMONDS fight=NONE party=NONE bar=BOTH barFight=HIDE card=ABOVE chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=DIAMONDS
+rest=ROW fight=NONE party=NONE bar=OFF barFight=HIDE card=NONE map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=OFF barFight=HIDE card=NONE chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=OFF barFight=HIDE card=ABOVE map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=OFF barFight=HIDE card=ABOVE chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=BOTH barFight=HIDE card=NONE map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=BOTH barFight=HIDE card=NONE chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=BOTH barFight=HIDE card=OVER map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=BOTH barFight=HIDE card=OVER chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=BOTH barFight=HIDE card=ABOVE map :: AURAS=0.00,0.00,1240.00,935.00 MAP=0.00,0.00,1240.00,935.00 | visible=AURAS,MAP | pane=- | band=ROW
+rest=ROW fight=NONE party=NONE bar=BOTH barFight=HIDE card=ABOVE chat :: CHAT_FULL=0.00,0.00,1240.00,935.00 | visible=CHAT_FULL | pane=- | band=ROW

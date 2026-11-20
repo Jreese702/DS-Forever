@@ -1,0 +1,16 @@
+normal rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=NONE :: a8966fae
+card_over rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER :: 7af41b37
+card_over_lb rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER :: 8d8834f8
+card_above rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=ABOVE :: 62c0c84b
+thin_row rest=ROW fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER :: 47f277f0
+grow rest=DIAMONDS fight=GROW party=NONE bar=OFF barFight=HIDE card=OVER :: de3ae169
+same rest=DIAMONDS fight=SAME party=NONE bar=OFF barFight=HIDE card=OVER :: 7af41b37
+party3 rest=DIAMONDS fight=NONE party=ON3 bar=OFF barFight=HIDE card=OVER :: df3d39cd
+party3_lb rest=DIAMONDS fight=NONE party=ON3 bar=OFF barFight=HIDE card=OVER :: e44e53ea
+party5_fight rest=DIAMONDS fight=GROW party=ON5 bar=BOTH barFight=HIDE card=OVER :: b7f8ef31
+bar_left rest=DIAMONDS fight=NONE party=NONE bar=LEFT barFight=HIDE card=OVER :: aa3d103b
+bar_right rest=DIAMONDS fight=NONE party=NONE bar=RIGHT barFight=HIDE card=OVER :: 1a0d2ae0
+bar_both rest=DIAMONDS fight=NONE party=NONE bar=BOTH barFight=HIDE card=ABOVE :: 7c0c0a0e
+bar_both_grow_hidden rest=DIAMONDS fight=GROW party=NONE bar=BOTH barFight=HIDE card=OVER :: de3ae169
+full_map rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER :: 7070fa89
+full_chat rest=DIAMONDS fight=NONE party=NONE bar=OFF barFight=HIDE card=OVER :: aa8c3b96
