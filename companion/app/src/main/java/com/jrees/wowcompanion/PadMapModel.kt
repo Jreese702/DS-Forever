@@ -310,7 +310,8 @@ object PadMapModel {
                     who?.let { textOrNull(it, "n") }, who?.let { textOrNull(it, "r") },
                     dirs = (1..4).mapNotNull { p -> dirs?.let { textOrNull(it, p.toString()) }?.let { p to it } }.toMap(),
                     aside = textOrNull(d, "aside"),
-                    undone = sides("undone"))
+                    undone = sides("undone"),
+                    ct = if (d.has("ct")) d.optInt("ct", 0).coerceIn(0, 1) else null)
             },
             start = m.optJSONObject("start")?.let { st ->
                 StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"),
@@ -330,12 +331,13 @@ object PadMapModel {
      *  `spells` row columns that switch it (refused in a fight with one red pulse: tap again after it); [name] / [realm] the character
      *  (the once-per-character prompt); [dirs] D-pad position -> what it does (1 "left", 3 "right"; a missing position = the game's own);
      *  [aside] "room" / a game window's name while the router steps aside; [undone] what the one-time ZL+ZR cleanup took on this character
-     *  ("left" / "up" / "right": the old m24 DS Bar commands).
+     *  ("left" / "up" / "right": the old m24 DS Bar commands); [ct] m179: this character's top-screen combat bar flag (1 on, 0 off,
+     *  null = an older add-on without it).
      *  m24's slot fields ([placed] / [skipped] / [taken]) are empty from m25 on. */
     data class Dpad(val on: Boolean, val placed: kotlin.collections.Map<String, Boolean>, val skipped: List<String>, val taken: List<String>,
                     val want: Boolean?, val colOn: Int?, val colOff: Int?, val name: String?, val realm: String?,
                     val dirs: kotlin.collections.Map<Int, String> = emptyMap(), val aside: String? = null,
-                    val undone: List<String> = emptyList())
+                    val undone: List<String> = emptyList(), val ct: Int? = null)
     val DPAD_SIDES = listOf("left", "up", "right")
 
     /** m37 / m160 START (the padmap's `start`): [key] the game's OPENRADIAL key; [bound] "pause" = Start is the router's (Home's wheel, the
@@ -720,9 +722,15 @@ object PadMapModel {
     /** movable Home (Book b74): the DS toolbar's mirror bit for this character, page-3 codes 9 (off: Left = chat) / 10 (on: Left = map) */
     const val P3_MIRROR_OFF = 9
     const val P3_MIRROR_ON = 10
-    /** every page-3 code in use (b73's macro pages 0-3 and Extra's folds 4-8, b74's mirror 9-10): PadTabCodesTest keeps them apart */
-    val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8, "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON)
+    /** movable Home phase 3 (Book b75): the top-screen combat bar's flag for this character, page-3 codes 11 (off) / 12 (on) */
+    const val P3_TOP_OFF = 11
+    const val P3_TOP_ON = 12
+    /** every page-3 code in use (b73's macro pages 0-3 and Extra's folds 4-8, b74's mirror 9-10, b75's top bar 11-12): PadTabCodesTest
+     *  keeps them apart */
+    val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8,
+        "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
+    fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
     /** the tab's index (1-4) by its name */
     fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; "cbfight" -> 7; "pbar" -> 8; else -> 1 }
     /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode; p53: the 6th, the Cast bar, opened by padtab 39 then 29) */

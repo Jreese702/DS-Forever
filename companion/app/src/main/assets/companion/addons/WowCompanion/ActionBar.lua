@@ -2,6 +2,10 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar7 THE COMBAT BAR ON THE TOP SCREEN (movable Home phase 3, SPEC.txt section 11; the user's rulings 2026-11-20: D1 opt-in, D7 Wings):
+-- with this character's flag on (PadMap m179 ctop, the app's "In fights: Top screen") the Nintendo bar shows in fights as two halves around
+-- our HUD at a spot worked out out of combat (NB.fightSolve), frozen in the fight and re-fit only against our own frames; display only.
+-- At "THE COMBAT BAR ON THE TOP SCREEN".
 -- nbar5 SPLIT SWING TIMERS (the user, 2026-11-16: "Dual weilding needs split swing timers for each weapon"): with a weapon in the off
 -- hand (UnitAttackSpeed's 2nd return, the game's own HasOffHandWeapon) hudS.sw is the MAIN hand's swing and hudS.so the OFF hand's,
 -- each from its own PLAYER_SWING (type 0 / 1); one hand = one swing as before; Auto Shot unchanged. A haste change (UNIT_ATTACK_SPEED)
@@ -2445,7 +2449,8 @@ end
 ---------------------------------------------------------------------------------------------------
 -- nbar6 MOVABLE HOME'S SWAP (the user's rulings 2026-11-20, SPEC.txt section 6 item 5; PadMap m178): the DS toolbar's icons on the bare
 -- D-pad are picked by the router's WORD (padmap dpad `d`: after a swap Left is "map"), never by position (NB.TOOLBAR_BY).
-local NB = { V = "nbar6", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
+-- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
+local NB = { V = "nbar7", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -2502,9 +2507,11 @@ end
 function NB.anchor(b, lay)
     local p = b.p
     local a = (lay == "swap" and NB.AT_SWAP[p]) or NB.AT[p]
-    local cx = (p <= 4) and -NB.DX or NB.DX
+    local h = (p <= 4) and 1 or 2
+    local cx = (NB.hx or { -NB.DX, NB.DX })[h]                       -- nbar7: each half's centre (the Wings move them apart)
+    local cy = (NB.hy or { 0, 0 })[h]
     pcall(b.ClearAllPoints, b)
-    b:SetPoint("CENTER", b.nbParent, "CENTER", cx + a[1] * NB.OFF, a[2] * NB.OFF)
+    b:SetPoint("CENTER", b.nbParent, "CENTER", cx + a[1] * NB.OFF, cy + a[2] * NB.OFF)
     b.alay = lay
 end
 
@@ -2598,6 +2605,7 @@ function NB.build()
     -- the layer held now, over the bar's middle (none for the bare layer)
     f.layer = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.layer:SetPoint("CENTER", f, "CENTER", 0, 0)
+    NB.topParts(f)                                -- nbar7: the Wings' ZL / ZR chips and swing lines (hidden out of a fight)
     f:Hide()
     f:SetScript("OnUpdate", function(_, el) NB.tick(el) end)
     -- nbar2: the stock bar's spot / scale again when the UI scale or the screen changes
@@ -2642,6 +2650,12 @@ function NB.place()
     local f = NB.f
     if not f then return end
     local cx, cy, k = NB.stock()
+    -- nbar7: while the Wings show they hold the frame (the stock spot is still remembered; the next solve re-fits)
+    if NB.top and NB.top.shown then
+        if cx and cy then NB.lastC = { cx, cy, k } end
+        NB.top.key, NB.top.dirty = nil, true
+        return
+    end
     local ox, oy, sc = NB.layEntry()
     -- nbar2: the stock bar's own scale on ours (its buttons the stock size); nbar3: times the layout's size, the offsets in our own units
     pcall(f.SetScale, f, k * sc)
@@ -2684,7 +2698,9 @@ NB.lay = {
     end,
     off = function(w, h) return -w / 2, -h / 2 end,
     on = function() return NB.on == true end,
-    apply = function() pcall(NB.place) end,
+    -- nbar7 ("Combat bar", SPEC section 11): listed while the top-screen combat bar is on too, so it can be placed (an entry = Auto off)
+    want = function() return NB.on == true or NB.topFlag() end,
+    apply = function() pcall(NB.place); if NB.top then NB.top.dirty = true end end,
 }
 
 -- a ref from PadMap's views ({ n, id, i } a spell; { n, i, t, key } a whole-button thing) -> an entry. nbar3: a player's MACRO (t =
@@ -2877,7 +2893,7 @@ end
 -- one full redraw of the live layer
 function NB.refresh()
     local f = NB.f
-    if not f or not NB.on then return end
+    if not f or not (NB.on or NB.top.shown or NB.top.edit) then return end
     local combat = S(InCombatLockdown) == true
     local fight = combat or S(UnitAffectingCombat, "player") == true
     local hasTarget = S(UnitExists, "target") == true
@@ -2885,7 +2901,7 @@ function NB.refresh()
     -- our own frame's alpha, so the tick keeps watching
     local mf = mainFrame()
     local vis = mf ~= nil and MS(mf, "IsVisible") ~= false
-    pcall(f.SetAlpha, f, vis and 1 or 0)
+    pcall(f.SetAlpha, f, (vis and 1 or 0) * ((NB.top.shown and NB.top.alpha) or 1))     -- nbar7: the Wings' fade / dip
     NB.vis = vis
     local fightSw, form = NB.fightCtx(fight)
     local bu = barsUsable()
@@ -2902,7 +2918,8 @@ function NB.refresh()
         dpadOn = ok and type(ds) == "table" and ds.on == true
         NB.dirs = ok and type(ds) == "table" and type(ds.d) == "table" and ds.d or nil   -- nbar6: the words of the bare D-pad
     end
-    f.layer:SetText(NB.LAYER_WORD[set] or "")
+    f.layer:SetText((NB.top.shown or NB.top.edit) and "" or (NB.LAYER_WORD[set] or ""))  -- nbar7: the chips say it in the Wings
+    if NB.top.shown or NB.top.edit then NB.topChips(set) end
     NB.stats = { ok = 0, fail = 0, ch = 0, dim = 0, n = 0 }
     NB.shown = {}
     for p = 1, 8 do
@@ -2947,7 +2964,7 @@ function NB.probe(fight)
 end
 
 function NB.tick(el)
-    if not NB.on then return end
+    if not (NB.on or NB.top.shown or NB.top.edit) then return end
     NB.acc, NB.accS = NB.acc + (el or 0), NB.accS + (el or 0)
     if NB.acc < NB.POLL_S then return end
     NB.acc = 0
@@ -2983,9 +3000,551 @@ function WC.nbarSet(on)
             setAlpha(mainFrame(), 1)
             setAlpha(_G.GamepadPersistentInputLegend, 1)
         end
-        if NB.f then NB.f:Hide() end
+        if NB.f and not NB.top.shown then NB.f:Hide() end       -- nbar7: the Wings keep it to their own end (then gone)
+        NB.top.form = "fade"
     end
     return true
+end
+
+---------------------------------------------------------------------------------------------------
+-- nbar7 THE COMBAT BAR ON THE TOP SCREEN: "WINGS" (movable Home phase 3; SPEC.txt section 11, final_07 / final_07b; the user's rulings
+-- 2026-11-20: D1 "In fights: Top screen" is OPT-IN - the bottom band's Grow stays the default; D7 Wings: the D-pad diamond left of our
+-- HUD, the faces right of it, an auto spot unless the player placed the "Combat bar" piece in the top layout editor). While this
+-- character's flag is on (PadMap m179: WowCompanionSpellsDB.ctop, the app's "In fights: Top screen"; NB.topFlag) the Nintendo bar shows in
+-- a fight - on the router's own switch, WC.tgGrown, the signal the bottom band grows on - as two halves around our HUD, the ZL / ZR
+-- chips at the outer ends (lit while held), the split swing lines under the faces. Each button is the same live picture as the bar's
+-- (NB.refresh: the live layer, the fight layer, the faces' fight spells, the DS toolbar by word, duration-object sweeps, blue = mana,
+-- the red glyph = range only). The bottom band keeps its rest size (the app's half).
+-- THE SPOT (NB.fightSolve, pure: tools/test_combat_bar_spot.py): worked out OUT OF COMBAT against our own pieces (the HUD block - its
+-- bars, pet strip, aura host and Party mode's rows under it; the compass; the target bar with its cast strip, ToT, Y prompt and aura
+-- host; the left party column; Polestar's arrow and guide) and the game's frames shown then (WC.gameLay.rectNow: a plain read, OUT OF
+-- COMBAT ONLY), never over the tap pad's band (WC.lay.forbidden's "pad" zone with x 720-1200, y 24-178 at least); margin 24 px. The
+-- first candidate that fits wins:
+--   1 wings beside the HUD block, level with its middle, 34 px gap each side (clamped 16 px above the screen's bottom edge)
+--   2 wings raised in 24 px steps (up to 300 px) until both halves clear, staying level
+--   3 the halves joined into one bar, centred above the HUD block
+--   4 the Combat bar piece's own spot (the stock bar's) - always accepted (pushed under the tap pad's band if it would cover it)
+-- A spot the player placed (an entry for "nbar" in WowCompanionDB.lay = Auto off; the editor's Reset = Auto again) ALWAYS wins: the
+-- joined bar there. FROZEN at PLAYER_REGEN_DISABLED: the game's rects stay the last ones read out of combat; in a fight the spot is
+-- re-fit only against OUR frames (Party mode lifting the HUD: the wings re-hug the taller block). Re-solved out of combat at login, on a
+-- layout save (the piece's apply), UI_SCALE_CHANGED / DISPLAY_SIZE_CHANGED, every REFIT_S against ours and every SOLVE_S with the game's
+-- frames read again.
+-- MOTION (SPEC section 10): fade in + rise 24 px over 0.24 s, out over 0.20 s, Motion.curve's cubic (0.4, 0, 0.2, 1) evaluated per frame
+-- (NB.ease); with the Nintendo bar already shown out of combat ("Controller UI = Nintendo") the bar GLIDES from its spot to the wings and
+-- back; a re-fit glides 0.24 s. The top chat strip shown: the bar dips to 35 % alpha instead of moving. In the top layout editor (out of
+-- combat) the bar shows at its piece's spot so it can be placed.
+-- LIMITS: display only - plain frames made out of combat, EnableMouse(false), no secure template, anchored to UIParent and our own frames
+-- only; nothing of the game's moved, shown or hidden (the stock bar keeps whatever its own switch says, and is an obstacle when shown);
+-- no SetBinding / CVar / macro / action-slot write; no secret compared (every rect read through WC.isPlain; the game's never in a fight).
+-- The app sends nothing in combat: the add-on switches by itself.
+---------------------------------------------------------------------------------------------------
+NB.TOP = { IN_S = 0.24, OUT_S = 0.20, RISE = 24, GAP = 34, MARGIN = 24, STEP = 24, RAISE_MAX = 300, FLOOR = 16, DIP = 0.35,
+           REFIT_S = 0.5, SOLVE_S = 5, BAND = { x = 720, y = 24, w = 480, h = 154 },
+           -- one half, in the bar's own units: the diamond (2 OFF + B), the ZL / ZR chip outside it, the two swing lines under it
+           CHIP_W = 44, CHIP_H = 22, CHIP_GAP = 4, SW_GAP = 8, SW_H = 6, SW_SEP = 4 }
+NB.top = { want = false, shown = false, edit = false, t = 0, dir = 0, form = "fade", solveAcc = 0, gameAcc = 0, game = {}, gameAt = nil,
+           frozen = false, dirty = true, gameDirty = true, spot = nil, cur = nil, from = nil, mt = 1, alpha = 1, key = nil, n = 0, reads = 0, gameReads = 0 }
+NB.hx, NB.hy = { -NB.DX, NB.DX }, { 0, 0 }
+
+-- the cubic (0.4, 0, 0.2, 1) at [u] in 0..1 (the app's Motion.curve): x(t) = u by bisection, then y(t)
+function NB.ease(u)
+    if u <= 0 then return 0 elseif u >= 1 then return 1 end
+    local function bz(t, a, b) local m = 1 - t; return 3 * m * m * t * a + 3 * m * t * t * b + t * t * t end
+    local lo, hi = 0, 1
+    for _ = 1, 30 do
+        local mid = (lo + hi) / 2
+        if bz(mid, 0.4, 0.2) < u then lo = mid else hi = mid end
+    end
+    return bz((lo + hi) / 2, 0, 1)
+end
+
+-- one half's box in the bar's units: w, h and the diamond's centre from its top-left (the D-pad half; the faces' half mirrored)
+function NB.halfBox()
+    local T = NB.TOP
+    local d = 2 * NB.OFF + NB.B
+    local w = d + T.CHIP_GAP + T.CHIP_W
+    return w, d + T.SW_GAP + 2 * T.SW_H + T.SW_SEP, w - d / 2, d / 2
+end
+
+-- two rects overlap, [m] px apart at least
+function NB.overlaps(a, b, m)
+    m = m or 0
+    return a.x - m < b.x + b.w and b.x < a.x + a.w + m and a.y - m < b.y + b.h and b.y < a.y + a.h + m
+end
+function NB.union(a, b)
+    if not a then return b end
+    if not b then return a end
+    local x0, y0 = math.min(a.x, b.x), math.min(a.y, b.y)
+    local x1, y1 = math.max(a.x + a.w, b.x + b.w), math.max(a.y + a.h, b.y + b.h)
+    return { x = x0, y = y0, w = x1 - x0, h = y1 - y0 }
+end
+
+-- THE SOLVER (pure; 1080-line pixels from the top-left). [inp]: W, H, s (px per bar unit), hud (the HUD block's rect, nil = none),
+-- ours / game (rects to keep clear of), band (the tap pad's), placed (the player's own centre for the joined bar, nil = Auto), stock (the
+-- piece's default centre). -> { case = 1 / 2 / 3 / 4 / "placed", form = "wings" / "joined", l / r = the two diamonds' centres,
+-- rects = the two halves' boxes, raise = px raised (case 2) }
+function NB.fightSolve(inp)
+    local T = NB.TOP
+    local W, H, s = inp.W or 1920, inp.H or 1080, inp.s or 1
+    local hw, hh, ax, ay = NB.halfBox()
+    hw, hh, ax, ay = hw * s, hh * s, ax * s, ay * s
+    local dx = NB.DX * s
+    local band = inp.band or T.BAND
+    local obst = {}
+    for _, r in ipairs(inp.ours or {}) do obst[#obst + 1] = r end
+    for _, r in ipairs(inp.game or {}) do obst[#obst + 1] = r end
+    local function lrect(cx, cy) return { x = cx - ax, y = cy - ay, w = hw, h = hh } end
+    local function rrect(cx, cy) return { x = cx - (hw - ax), y = cy - ay, w = hw, h = hh } end
+    local function fits(r)
+        if r.x < 0 or r.y < 0 or r.x + r.w > W or r.y + r.h > H then return false end
+        if NB.overlaps(r, band, T.MARGIN) then return false end
+        for _, o in ipairs(obst) do if NB.overlaps(r, o, T.MARGIN) then return false end end
+        return true
+    end
+    local function out(case, form, lx, ly, rx, ry, raise)
+        return { case = case, form = form, l = { x = lx, y = ly }, r = { x = rx, y = ry }, raise = raise or 0,
+                 rects = { lrect(lx, ly), rrect(rx, ry) } }
+    end
+    -- the joined bar centred on [c], moved under the tap pad's band if it would cover it (and kept on the screen)
+    local function joined(case, c)
+        local x, y = c.x, c.y
+        local r = { x = x - dx - ax, y = y - ay, w = 2 * (dx + ax), h = hh }
+        if NB.overlaps(r, band, 0) then y = band.y + band.h + T.MARGIN + ay end
+        x = math.max(dx + ax, math.min(W - dx - ax, x))
+        y = math.max(ay, math.min(H - (hh - ay), y))
+        return out(case, "joined", x - dx, y, x + dx, y)
+    end
+    if inp.placed then return joined("placed", inp.placed) end
+    local hud = inp.hud
+    if hud then
+        local lx = hud.x - T.GAP - (hw - ax)
+        local rx = hud.x + hud.w + T.GAP + (hw - ax)
+        local cy = math.min(hud.y + hud.h / 2, H - T.FLOOR - (hh - ay))
+        if fits(lrect(lx, cy)) and fits(rrect(rx, cy)) then return out(1, "wings", lx, cy, rx, cy) end
+        local d = T.STEP
+        while d <= T.RAISE_MAX do
+            if fits(lrect(lx, cy - d)) and fits(rrect(rx, cy - d)) then return out(2, "wings", lx, cy - d, rx, cy - d, d) end
+            d = d + T.STEP
+        end
+        local jx, jy = hud.x + hud.w / 2, hud.y - T.GAP - (hh - ay)
+        if fits(lrect(jx - dx, jy)) and fits(rrect(jx + dx, jy)) then return out(3, "joined", jx - dx, jy, jx + dx, jy) end
+    end
+    return joined(4, inp.stock or { x = W / 2, y = H - 64 * s - hh / 2 })
+end
+
+-- ---------------------------------------------------------------- the inputs (our frames any time; the game's out of combat only)
+function NB.topScreen()
+    local L = WC.lay
+    if type(L) == "table" and type(L.screen) == "function" then
+        local ok, W, H, k = pcall(L.screen)
+        if ok and type(W) == "number" and type(H) == "number" and type(k) == "number" and k > 0 then return W, H, k end
+    end
+    return 1920, 1080, 1
+end
+-- a plain frame of OURS: its rect in 1080-line pixels while it shows (nil = hidden, at alpha 0, not laid out, or a value not plain)
+function NB.frameRect(f)
+    if type(f) ~= "table" then return nil end
+    local function n(m)
+        local fn = f[m]
+        if type(fn) ~= "function" then return nil end
+        local ok, v = pcall(fn, f)
+        if ok and type(v) == "number" and WC.isPlain(v) and v == v and v ~= math.huge and v ~= -math.huge then return v end
+        return nil
+    end
+    local okV, vis = pcall(function() return f:IsVisible() end)
+    if not (okV and vis == true) then return nil end
+    if (n("GetEffectiveAlpha") or n("GetAlpha") or 1) <= 0.01 then return nil end
+    local l, t, w, h = n("GetLeft"), n("GetTop"), n("GetWidth"), n("GetHeight")
+    local es = n("GetEffectiveScale") or 1
+    local okU, ues = pcall(function() return UIParent:GetEffectiveScale() end)
+    ues = (okU and type(ues) == "number" and WC.isPlain(ues) and ues > 0) and ues or 1
+    if not (l and t and w and h) or es <= 0 or w <= 0 or h <= 0 then return nil end
+    local _, H, k = NB.topScreen()
+    local r = es / ues
+    NB.top.reads = NB.top.reads + 1
+    return { x = l * r * k, y = (H / k - t * r) * k, w = w * r * k, h = h * r * k }
+end
+-- a layout piece's rect at its entry now (Hub's LAY.rect's arithmetic; nil = none)
+function NB.pieceRect(p, id)
+    if type(p) ~= "table" or type(p.base) ~= "function" or type(p.size) ~= "function" then return nil end
+    local ok, r = pcall(function()
+        local L = WC.lay
+        local e = (type(L) == "table" and type(L.get) == "function") and L.get(id) or nil
+        local ax, ay
+        if e == nil and type(p.follow) == "function" then ax, ay = p.follow() else
+            local bx, by = p.base()
+            ax, ay = (bx or 0) + ((e and e.dx) or 0), (by or 0) + ((e and e.dy) or 0)
+        end
+        local w, h = p.size(e)
+        local ox, oy = 0, 0
+        if type(p.off) == "function" then ox, oy = p.off(w, h) end
+        return { x = ax + (ox or 0), y = ay + (oy or 0), w = w, h = h }
+    end)
+    if ok and type(r) == "table" and type(r.x) == "number" and type(r.y) == "number" and type(r.w) == "number" and type(r.h) == "number"
+            and r.w > 0 and r.h > 0 then return r end
+    return nil
+end
+function NB.pieceOn(p)
+    if type(p) ~= "table" or type(p.on) ~= "function" then return false end
+    local ok, v = pcall(p.on)
+    return ok and v == true
+end
+-- OUR pieces' rects now (live frames first, else the piece's own rect) -> list, the HUD block
+function NB.topOurs()
+    local out, hud = {}, nil
+    local function add(r, id) if r then r.id = id; out[#out + 1] = r end end
+    local uf, prd, ab = rawget(WC, "uf"), rawget(WC, "prd"), rawget(WC, "abox")
+    local pf = type(uf) == "table" and type(uf.pf) == "table" and uf.pf or nil
+    local boxes = type(ab) == "table" and type(ab.boxes) == "table" and ab.boxes or {}
+    local function host(key) local b = boxes[key]; return type(b) == "table" and b.host or nil end
+    -- the HUD block: the bars, the pet strip, the aura host, and Party mode's rows hanging under it
+    if type(prd) == "table" and NB.pieceOn(prd.lay) then
+        local live = nil
+        local fs = { prd.f, prd.petL, type(prd.box) == "table" and prd.box.host or nil, host("hud") }
+        for i = 1, 4 do live = NB.union(live, NB.frameRect(fs[i])) end              -- (holes: not ipairs)
+        if pf and pf.at == "hud" and type(pf.frames) == "table" then
+            for _, f in pairs(pf.frames) do live = NB.union(live, NB.frameRect(f)) end
+        end
+        hud = live or NB.pieceRect(prd.lay, "hud")
+        if hud then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hud") end
+    end
+    local cp = rawget(WC, "compass")
+    if type(cp) == "table" and NB.pieceOn(cp.lay) then add(NB.pieceRect(cp.lay, "compass"), "compass") end
+    -- the target bar with its cast strip, ToT, Y prompt and its aura host
+    if type(uf) == "table" and NB.pieceOn(uf.layTarget) then
+        local tf = type(uf.tb) == "table" and uf.tb.f or nil
+        local live = nil
+        if type(tf) == "table" then
+            local fs = { tf, tf.cast, tf.tot, tf.prompt }
+            for i = 1, 4 do live = NB.union(live, NB.frameRect(fs[i])) end
+        end
+        for key, b in pairs(boxes) do
+            if type(key) == "string" and key:find("target", 1, true) and type(b) == "table" then live = NB.union(live, NB.frameRect(b.host)) end
+        end
+        add(live or NB.pieceRect(uf.layTarget, "target"), "target")
+    end
+    -- the party column on the left (out of Party mode)
+    if type(uf) == "table" and NB.pieceOn(uf.layParty) then
+        local live = nil
+        if pf and pf.at ~= "hud" and type(pf.frames) == "table" then
+            for _, f in pairs(pf.frames) do live = NB.union(live, NB.frameRect(f)) end
+        end
+        add(live or NB.pieceRect(uf.layParty, "party"), "party")
+    end
+    local ps = rawget(WC, "psLay")
+    if type(ps) == "table" and type(ps.pieces) == "table" then
+        for _, id in ipairs({ "psarrow", "psguide" }) do
+            if NB.pieceOn(ps.pieces[id]) then add(NB.pieceRect(ps.pieces[id], id), id) end
+        end
+    end
+    return out, hud
+end
+-- the game's frames shown NOW (out of combat only: nil in a fight, nothing read)
+function NB.topGame()
+    if S(InCombatLockdown) ~= false then return nil end
+    local G = rawget(WC, "gameLay")
+    local out = {}
+    if type(G) ~= "table" or type(G.shown) ~= "function" or type(G.rectNow) ~= "function" then return out end
+    pcall(G.find)
+    for _, id in ipairs(type(G.ids) == "table" and G.ids or {}) do
+        local okS, sh = pcall(G.shown, id)
+        if okS and sh == true then
+            local okR, r = pcall(G.rectNow, G.frame(id))
+            NB.top.gameReads = NB.top.gameReads + 1
+            if okR and type(r) == "table" and type(r.w) == "number" and r.w > 0 and r.h > 0 then
+                out[#out + 1] = { x = r.x, y = r.y, w = r.w, h = r.h, id = id }
+            end
+        end
+    end
+    return out
+end
+-- the tap pad's band (TapPad's own zone, never smaller than the spec's x 720-1200, y 24-178)
+function NB.topBand()
+    local L = WC.lay
+    if type(L) == "table" and type(L.forbidden) == "function" then
+        local ok, zs = pcall(L.forbidden)
+        if ok and type(zs) == "table" then
+            for _, z in ipairs(zs) do
+                if type(z) == "table" and z.why == "pad" and type(z.x) == "number" then return NB.union(z, NB.TOP.BAND) end
+            end
+        end
+    end
+    return NB.TOP.BAND
+end
+function NB.topInputs()
+    local W, H, kk = NB.topScreen()
+    local _, _, k = NB.stock()
+    local L = WC.lay
+    local e = (type(L) == "table" and type(L.get) == "function") and L.get("nbar") or nil
+    local sc = math.max(NB.S_MIN, math.min(NB.S_MAX, (e and num(e.s)) or 100)) / 100
+    local ours, hud = NB.topOurs()
+    local bx, by = NB.lay.base()
+    return { W = W, H = H, s = k * sc * kk, fsc = k * sc, kk = kk, hud = hud, ours = ours, game = NB.top.game or {}, band = NB.topBand(),
+             placed = e and { x = bx + (num(e.dx) or 0), y = by + (num(e.dy) or 0) } or nil, stock = { x = bx, y = by } }
+end
+-- [fresh]: the game's frames read again (out of combat only); then the spot, and a glide to it if it moved while shown
+function NB.topSolve(fresh)
+    local T = NB.top
+    if fresh and not T.frozen and S(InCombatLockdown) == false then T.game = NB.topGame() or T.game; T.gameAt = SN(GetTime) end
+    local ok, inp = pcall(NB.topInputs)
+    if not ok or type(inp) ~= "table" then return nil end
+    local r = NB.fightSolve(inp)
+    r.fsc, r.s, r.kk, r.H = inp.fsc, inp.s, inp.kk, inp.H
+    T.n = T.n + 1
+    local old = T.spot
+    T.spot = r
+    if T.shown and old and T.cur and (math.abs(old.l.x - r.l.x) + math.abs(old.l.y - r.l.y) + math.abs(old.r.x - r.r.x)
+            + math.abs(old.r.y - r.r.y)) > 1 then
+        T.from, T.mt = { l = { x = T.cur.l.x, y = T.cur.l.y }, r = { x = T.cur.r.x, y = T.cur.r.y } }, 0
+    end
+    return r
+end
+
+-- ---------------------------------------------------------------- the switch, the motion, the frames
+function NB.topFlag()
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.combatTopOn) == "function" then
+        local ok, v = pcall(pm.combatTopOn)
+        return ok and v == true
+    end
+    return false
+end
+-- the router's own fight switch (the fight or an attack / auto-repeat armed, not given back by B), else the fight itself
+function NB.topSwitch()
+    if type(WC.tgGrown) == "function" then
+        local ok, g = pcall(WC.tgGrown)
+        if ok and (g == true or g == false) then return g end
+    end
+    return S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true
+end
+function NB.chatUp()
+    local ct = rawget(WC, "chatTop")
+    return type(ct) == "table" and NB.pieceOn(ct.lay)
+end
+function NB.lerpSpot(a, b, k)
+    return { l = { x = a.l.x + (b.l.x - a.l.x) * k, y = a.l.y + (b.l.y - a.l.y) * k },
+             r = { x = a.r.x + (b.r.x - a.r.x) * k, y = a.r.y + (b.r.y - a.r.y) * k } }
+end
+-- the joined bar where it stands out of a fight (the Nintendo bar's spot), at the fight's scale
+function NB.joinedNow(sp)
+    local bx, by = NB.lay.base()
+    local L = WC.lay
+    local e = (type(L) == "table" and type(L.get) == "function") and L.get("nbar") or nil
+    local cx, cy = bx + ((e and num(e.dx)) or 0), by + ((e and num(e.dy)) or 0)
+    local dx = NB.DX * (sp.s or 1)
+    return { l = { x = cx - dx, y = cy }, r = { x = cx + dx, y = cy } }
+end
+-- the chips and the swing lines (built with the bar, out of combat)
+function NB.topParts(f)
+    local T = NB.TOP
+    f.chip, f.sw = {}, {}
+    for i, w in ipairs({ "ZL", "ZR" }) do
+        local c = CreateFrame("Frame", nil, f)
+        pcall(c.EnableMouse, c, false)
+        c:SetSize(T.CHIP_W, T.CHIP_H)
+        c.bg = c:CreateTexture(nil, "BACKGROUND")
+        c.bg:SetAllPoints(c)
+        pcall(c.bg.SetColorTexture, c.bg, 0.08, 0.07, 0.05, 0.8)
+        c.word = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        c.word:SetPoint("CENTER", c, "CENTER", 0, 0)
+        c.word:SetText(w)
+        c:Hide()
+        f.chip[i] = c
+    end
+    local dw = 2 * NB.OFF + NB.B
+    for i = 1, 2 do
+        local b = CreateFrame("Frame", nil, f)
+        pcall(b.EnableMouse, b, false)
+        b:SetSize(dw, T.SW_H)
+        b.w = dw
+        b.bg = b:CreateTexture(nil, "BACKGROUND")
+        b.bg:SetAllPoints(b)
+        pcall(b.bg.SetColorTexture, b.bg, 0, 0, 0, 0.6)
+        b.fill = b:CreateTexture(nil, "ARTWORK")
+        b.fill:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+        b.fill:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
+        b.fill:SetWidth(1)
+        pcall(b.fill.SetColorTexture, b.fill, 0.95, 0.78, 0.2, 1)
+        b:Hide()
+        f.sw[i] = b
+    end
+end
+-- the chips and the swing lines at the halves' places (offsets in the bar's units)
+function NB.topDeco()
+    local f, T = NB.f, NB.TOP
+    if not (f and f.chip) then return end
+    local d2 = NB.OFF + NB.B / 2
+    local cx, cy = d2 + T.CHIP_GAP + T.CHIP_W / 2, d2 - T.CHIP_H / 2
+    pcall(f.chip[1].ClearAllPoints, f.chip[1]); f.chip[1]:SetPoint("CENTER", f, "CENTER", NB.hx[1] - cx, NB.hy[1] + cy)
+    pcall(f.chip[2].ClearAllPoints, f.chip[2]); f.chip[2]:SetPoint("CENTER", f, "CENTER", NB.hx[2] + cx, NB.hy[2] + cy)
+    for i = 1, 2 do
+        local b = f.sw[i]
+        pcall(b.ClearAllPoints, b)
+        b:SetPoint("TOP", f, "CENTER", NB.hx[2], NB.hy[2] - d2 - T.SW_GAP - (i - 1) * (T.SW_H + T.SW_SEP))
+    end
+end
+-- the held layer on the chips (set 2 ZL, 3 ZR, 4 both)
+function NB.topChips(set)
+    local f = NB.f
+    if not (f and f.chip) then return end
+    local lit = { set == 2 or set == 4, set == 3 or set == 4 }
+    for i = 1, 2 do
+        local c = f.chip[i]
+        c.lit = lit[i]
+        if lit[i] then c.word:SetTextColor(1, 0.82, 0) else c.word:SetTextColor(0.75, 0.75, 0.75) end
+    end
+end
+-- the split swing lines under the faces (WC.swingDoc: plain numbers of our own; a line shows while its swing runs)
+function NB.topSwing()
+    local f = NB.f
+    if not (f and f.sw) then return end
+    local now = SN(GetTime) or 0
+    local ok, sw, so = pcall(WC.swingDoc, now)
+    for i, r in ipairs({ ok and sw or false, ok and so or false }) do
+        local b = f.sw[i]
+        if type(r) == "table" and type(r.s) == "number" and type(r.d) == "number" and r.d > 0 and now < r.s + r.d + 0.3 then
+            b.k = math.max(0, math.min(1, (now - r.s) / r.d))
+            b.fill:SetWidth(math.max(0.01, b.k * b.w))
+            b:Show()
+        else
+            b.k = nil
+            b:Hide()
+        end
+    end
+end
+-- the halves at [at] (two centres, px): the frame at their middle, each half's buttons round its own centre
+function NB.topPlace(at, sp)
+    local f, T = NB.f, NB.top
+    local s, fsc, kk, H = sp.s, sp.fsc, sp.kk, sp.H
+    if not (f and s and s > 0 and fsc and fsc > 0 and kk and kk > 0) then return end
+    local mx, my = (at.l.x + at.r.x) / 2, (at.l.y + at.r.y) / 2
+    local key = string.format("%.1f %.1f %.1f %.1f %.4f", at.l.x, at.l.y, at.r.x, at.r.y, fsc)
+    if key == T.key then return end
+    T.key = key
+    pcall(f.SetScale, f, fsc)
+    pcall(f.ClearAllPoints, f)
+    f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", mx / kk / fsc, ((H or 1080) - my) / kk / fsc)
+    NB.hx = { (at.l.x - mx) / s, (at.r.x - mx) / s }
+    NB.hy = { -(at.l.y - my) / s, -(at.r.y - my) / s }
+    local lay = NB.layout()
+    for p = 1, 8 do if f.btn[p] then NB.anchor(f.btn[p], lay) end end
+    NB.topDeco()
+    NB.at = "top:" .. tostring(sp.case)
+end
+-- the wings start showing / are gone
+function NB.topShow()
+    local f = NB.f
+    for i = 1, 2 do f.chip[i]:Show() end
+    f.layer:SetText("")
+    f:Show()
+    NB.set = 0
+    pcall(NB.refresh)
+end
+function NB.topHide()
+    local f, T = NB.f, NB.top
+    T.shown, T.key, T.cur, T.from, T.mt = false, nil, nil, nil, 1
+    NB.hx, NB.hy = { -NB.DX, NB.DX }, { 0, 0 }
+    for i = 1, 2 do f.chip[i]:Hide(); f.sw[i]:Hide() end
+    local lay = NB.layout()
+    for p = 1, 8 do if f.btn[p] then NB.anchor(f.btn[p], lay) end end
+    if NB.on or T.edit then
+        NB.place()
+        pcall(f.SetAlpha, f, 1)
+        f:Show()
+        NB.set = 0
+        pcall(NB.refresh)
+    else
+        f:Hide()
+    end
+end
+-- one frame of the motion: in / out, a re-fit's glide, the dip
+function NB.topApply()
+    local T, f = NB.top, NB.f
+    if not f or not f.chip then return end
+    if T.t <= 0 and T.dir == 0 then
+        if T.shown then NB.topHide() end
+        return
+    end
+    local sp = T.spot
+    if not sp then return end
+    if not T.shown then T.shown = true; NB.topShow() end
+    local to = sp
+    if T.mt < 1 and T.from then to = NB.lerpSpot(T.from, sp, NB.ease(T.mt)) end
+    T.cur = to
+    local e = NB.ease(T.t)
+    local from
+    if T.form == "glide" then from = NB.joinedNow(sp)
+    else from = { l = { x = to.l.x, y = to.l.y + NB.TOP.RISE }, r = { x = to.r.x, y = to.r.y + NB.TOP.RISE } } end
+    NB.topPlace(NB.lerpSpot(from, to, e), sp)
+    local a = (T.form == "glide") and 1 or e
+    if NB.chatUp() then a = a * NB.TOP.DIP end
+    T.alpha = a
+    pcall(f.SetAlpha, f, (NB.vis == false and 0 or 1) * a)
+    NB.topSwing()
+end
+-- the top layout editor open (out of combat) with the flag on: the bar at its piece's spot, to be placed (Nintendo mode shows it anyway)
+function NB.topEdit(flag, combat)
+    local T, f, L = NB.top, NB.f, WC.lay
+    local edit = flag and not NB.on and not combat and not T.shown and f ~= nil and type(L) == "table" and L.editing == true
+    if edit == T.edit then return end
+    T.edit = edit
+    if edit then
+        NB.place(); pcall(f.SetAlpha, f, 1); f:Show(); NB.set = 0; pcall(NB.refresh)
+    elseif not NB.on and not T.shown and f then
+        f:Hide()
+    end
+end
+-- the driver's tick (every frame): the solve's cadence, the switch, the motion
+function NB.topTick(el)
+    local T = NB.top
+    el = el or 0
+    T.solveAcc, T.gameAcc = T.solveAcc + el, T.gameAcc + el
+    local combat = S(InCombatLockdown) == true
+    local flag = NB.topFlag()
+    if flag and not NB.built and not combat then pcall(NB.build) end      -- the frames are made out of combat
+    if flag and NB.built then
+        -- the game's frames read again only out of combat, on their events or every SOLVE_S; ours on a change (a layout save, the
+        -- editor's view) or every REFIT_S (in a fight: our frames only, the game's as frozen)
+        if not combat and (T.gameDirty or T.gameAcc >= NB.TOP.SOLVE_S) then
+            T.gameDirty, T.dirty, T.gameAcc, T.solveAcc = false, false, 0, 0
+            NB.topSolve(true)
+        elseif T.dirty or T.spot == nil or T.solveAcc >= NB.TOP.REFIT_S then
+            T.dirty, T.solveAcc = false, 0
+            NB.topSolve(false)
+        end
+    end
+    local want = flag and NB.built and T.spot ~= nil and NB.topSwitch()
+    if want ~= T.want then
+        T.want = want
+        T.dir = want and 1 or -1
+        if want then
+            if not combat then NB.topSolve(true) end                       -- attack armed before the pull: the freshest spot
+            if not T.shown then T.form = NB.on and "glide" or "fade"; T.mt, T.from = 1, nil end
+        end
+    end
+    if T.dir ~= 0 then
+        T.t = T.t + T.dir * el / (T.dir > 0 and NB.TOP.IN_S or NB.TOP.OUT_S)
+        if T.t >= 1 then T.t, T.dir = 1, 0 elseif T.t <= 0 then T.t, T.dir = 0, 0 end
+    end
+    if T.mt < 1 then T.mt = math.min(1, T.mt + el / NB.TOP.IN_S) end
+    NB.topEdit(flag, combat)
+    NB.topApply()
+end
+function NB.topEvent(e)
+    local T = NB.top
+    if e == "PLAYER_REGEN_DISABLED" then T.frozen = true                -- the game's rects stay as last read out of combat
+    elseif e == "PLAYER_REGEN_ENABLED" then T.frozen = false; T.gameDirty = true
+    else T.gameDirty = true end
+end
+do
+    local drv = CreateFrame("Frame", nil, UIParent)
+    pcall(drv.EnableMouse, drv, false)
+    drv:SetScript("OnUpdate", function(_, el) local ok, err = pcall(NB.topTick, el); if not ok then noteError(err) end end)
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }) do
+        pcall(drv.RegisterEvent, drv, e)
+    end
+    drv:SetScript("OnEvent", function(_, e) pcall(NB.topEvent, e) end)
+    NB.drv = drv
 end
 
 ---------------------------------------------------------------------------------------------------

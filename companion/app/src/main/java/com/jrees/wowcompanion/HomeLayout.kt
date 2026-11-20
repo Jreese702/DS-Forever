@@ -28,7 +28,8 @@ data class HomeLayout(
     val castSize: SlotSize = SlotSize.L,
     /** the controller band at rest: the diamonds or the thin row */
     val rest: HomeRest = HomeRest.DIAMONDS,
-    /** the band in fights: grow down (today's, D1's default), the rest size, or the top screen (phase 3: the bottom behaves as SAME) */
+    /** the band in fights: grow down (today's, D1's default), the rest size, or the top screen (phase 3: the bottom keeps its rest box
+     *  as SAME does, a 1.5 s "up" cue, and the add-on's Wings on the top screen - TopCombatBar) */
     val fight: FightBand = FightBand.GROW,
     /** phase 4: the room bar's XP track on Home (false = hidden there: Home takes its 34 px; every room keeps it) */
     val xpBar: Boolean = true,
@@ -175,11 +176,12 @@ object HomePresets {
             holds = { it.chatSide == L && it.chatShare == HomeLayout.Share.TWO_THIRDS && it.card == HomeLayout.CardDock.ON_MAP && it.cast == HomeLayout.CastDock.UNDER_CHAT }),
         Preset(COMPACT, folded = true, apply = { it.copy(name = COMPACT, rest = HomeRest.ROW, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.M) },
             holds = { it.rest == HomeRest.ROW && it.cast == HomeLayout.CastDock.ACROSS && it.castSize == HomeLayout.SlotSize.M }),
-        Preset(FIGHTER, folded = true, available = false,
+        // phase 3: selectable now the top-screen combat bar ships (Split: slots 1-4 under the left column, 5-8 under the right)
+        Preset(FIGHTER, folded = true,
             apply = { it.copy(name = FIGHTER, fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.SPLIT) },
             holds = { it.fight == HomeLayout.FightBand.TOP && it.cast == HomeLayout.CastDock.SPLIT }),
     )
-    /** the presets the picker offers in this build (P1: Fighter waits for phase 3's top-screen bar) */
+    /** the presets the picker offers in this build (phase 3: Fighter too, the player's own opt-in to the top-screen bar, D1) */
     val OFFERED: List<Preset> get() = ALL.filter { it.available }
 
     fun byId(id: String): Preset? = ALL.firstOrNull { it.id == id }

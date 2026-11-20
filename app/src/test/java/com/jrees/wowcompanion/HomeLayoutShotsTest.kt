@@ -250,6 +250,64 @@ class HomeLayoutShotsTest {
         HomeView::class.java.getDeclaredMethod("placeFrame").apply { isAccessible = true }.invoke(home)
     }
 
+    // ---------------------------------------------------------------- phase 3: In fights = Top screen (SPEC section 11, final_10; D1 opt-in)
+
+    @Test fun topScreenKeepsTheRestBoxesWithTheUpCue() {
+        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+        val rest = boxes(page(l).home)
+        val p = page(l, fight = true)
+        assertTrue("the fight's takeover is on (the band's In-combat pictures)", p.home.flow.takeover)
+        val fight = boxes(p.home)
+        for (part in listOf("BARS", "MAP", "QUESTS"))
+            assertEquals("$part keeps its rest box in the fight", rest.getValue(part), fight.getValue(part))
+        // the chat's top stays (its bottom only gains the tap-to-cast bar's room while the bar hides in the fight, cb7, as today)
+        assertEquals("the chat's top", rest.getValue("CHAT").top, fight.getValue("CHAT").top, 0f)
+        assertEquals("the band at its rest size (226)", 226f, fight.getValue("BARS").bottom, 0.01f)
+        // the 1.5 s "up" plate at the clock spot from the fight's start
+        assertTrue("the up cue shows", p.home.topCueAlpha() > 0.9f)
+        shot(p, "bottom_fight_top_cue")
+        // B in the fight: nothing grew - no shrink, no red reminder (the takeover stays)
+        setField(p.home, "grewAt", 0L)
+        HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(p.home)
+        assertTrue("B in the fight does not shrink Top screen", p.home.flow.takeover)
+        settle(100)
+        assertEquals("the cue gone after 1.5 s", 0f, p.home.topCueAlpha(), 0f)
+        shot(p, "bottom_fight_top")
+        // the same layout with Grow (D1's default) grows and B shrinks it, as today
+        val g = page(l.copy(fight = HomeLayout.FightBand.GROW), fight = true)
+        assertEquals(416f, boxes(g.home).getValue("BARS").bottom, 0.01f)
+        assertEquals("Grow: no cue", 0f, g.home.topCueAlpha(), 0f)
+        setField(g.home, "grewAt", 0L)
+        HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(g.home)
+        assertFalse("Grow: B shrinks", g.home.flow.takeover)
+    }
+
+    @Test fun theInFightsTileIsThreeWay() {
+        page(HomeLayout())
+        val env = BottomTiles.Env(null, null)
+        assertEquals("In fights", BottomTiles.NAMES[BottomTiles.COMBAT])
+        assertEquals("D1: Grow by default", "Grow", BottomTiles.value(BottomTiles.COMBAT, env))
+        assertEquals(listOf("Grow", "Same size", "Top screen"), BottomTiles.lines(BottomTiles.COMBAT, env).single().words)
+        BottomTiles.press(BottomTiles.COMBAT, BottomTiles.COMBAT, 2, env) { }
+        assertEquals(HomeLayout.FightBand.TOP, HomeSettings.layout.fight)
+        assertEquals("Top screen", BottomTiles.value(BottomTiles.COMBAT, env))
+        assertEquals(2, BottomTiles.lines(BottomTiles.COMBAT, env).single().picked)
+        // an add-on without the flag says so (state only); with it, nothing
+        val old = PadMapModel.Dpad(true, emptyMap(), emptyList(), emptyList(), true, 1, 2, "Korvash", "Realm")
+        assertEquals("Needs the newer Spells add-on", BottomTiles.status(BottomTiles.COMBAT, BottomTiles.Env(old, null)))
+        assertEquals(null, BottomTiles.status(BottomTiles.COMBAT, BottomTiles.Env(old.copy(ct = 1), null)))
+        BottomTiles.press(BottomTiles.COMBAT, BottomTiles.COMBAT, 1, env) { }
+        assertEquals(HomeLayout.FightBand.SAME, HomeSettings.layout.fight)
+        BottomTiles.press(BottomTiles.COMBAT, BottomTiles.COMBAT, 0, env) { }
+        assertEquals(HomeLayout.FightBand.GROW, HomeSettings.layout.fight)
+        // the Fighter preset from the Home layout tile: the player's own opt-in
+        BottomTiles.press(BottomTiles.LAYOUT, BottomTiles.LAYOUT, HomePresets.OFFERED.indexOfFirst { it.id == HomePresets.FIGHTER }, env) { }
+        assertEquals(HomeLayout.FightBand.TOP, HomeSettings.layout.fight)
+        assertEquals("Fighter", BottomTiles.value(BottomTiles.LAYOUT, env))
+        assertTrue("Fighter folds the card", HomeSettings.questMin)
+        HomeSettings.questMin = false                      // (HomeSettings keeps its prefs for the whole JVM: the tests after this one)
+    }
+
     @Test fun theSettingsTileNamesTheLayout() {
         page(HomeLayout())
         assertEquals("Classic", BottomTiles.value(BottomTiles.LAYOUT, BottomTiles.Env(null, null)))

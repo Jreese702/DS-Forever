@@ -659,6 +659,9 @@ class HomeView(
             // controller (the user's own design), but B is a fight button too. Not in the first GROW_B_GRACE_MS after it grew (the
             // pull's opening presses), and never with ZL / ZR held (that B is a layer's ability)
             if (now - grewAt < GROW_B_GRACE_MS || (lent(castView) && castView.triggerHeld())) return
+            // movable Home phase 3 (SPEC section 11): In fights = Top screen grew nothing - B in the fight has no new meaning (no shrink,
+            // no red reminder); out of a fight (an attack armed) it still gives the faces back, as today
+            if (!TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now))) return
             val shrank = grow.minimize(now)
             // the user's pick: out of a fight, B also gives A / X / Y back (Spells' give-back); in a fight B only shrinks
             if (HomeFightFace.giveBack(shrank, grow.fighting(now), fightArmed())) giveBackTap(retry = false)
@@ -1312,6 +1315,7 @@ class HomeView(
         else if (party.party != null && (flow.full == null || flow.takeover) && partyModeNow(flow.screen) != laidPartyMode) changed()
         castStripFight()                                                  // the tap-to-cast bar's Hide in combat follows the fight
         editFightCheck(relay = true)                                      // P2: a fight parks edit mode's draft, its end brings it back
+        topCueCheck(now)
         val red = grow.red(now) && !flow.takeover && flow.full == null
         if (red != redShown) {
             redShown = red
@@ -2414,7 +2418,7 @@ class HomeView(
         return if (PreviewStage.render(context, look, fight = false, toolbar = null, into = bmp) != null) bmp else null
     }
 
-    /** the layout chip's list: the presets (Fighter shown, greyed until phase 3), then the device slots that hold a layout */
+    /** the layout chip's list: the presets (Fighter offered since phase 3), then the device slots that hold a layout */
     private fun editFlips(): List<HomeEditModel.Flip> {
         val out = ArrayList<HomeEditModel.Flip>()
         for (p in HomePresets.ALL) out += HomeEditModel.Flip(p.id, p.available) { l -> p.apply(l) }
@@ -2848,6 +2852,48 @@ class HomeView(
     }
 
 
+    // ================================================================ movable Home phase 3: the "up" cue (SPEC sections 10 / 11, final_10)
+
+    /** In fights = Top screen: when the fight signal Home grows on comes, a plate with an up arrow at the clock's spot for 1.5 s (120 in,
+     *  200 out) - the controls went up to the game screen; the band itself keeps its rest box (TopCombatBar) */
+    private var cueWas = false
+    private var cueAt = 0L
+    private fun topCueCheck(now: Long) {
+        val on = grow.shown(now)
+        if (TopCombatBar.cueStarts(cueWas, on, HomeSettings.layout) && flow.full == null) { cueAt = SystemClock.uptimeMillis(); invalidate() }
+        cueWas = on
+    }
+    /** the cue's alpha now (0 = none) */
+    fun topCueAlpha(): Float = if (cueAt == 0L) 0f else TopCombatBar.cueAlpha(SystemClock.uptimeMillis() - cueAt)
+    private val pCue = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val cuePath = android.graphics.Path()
+    private fun drawTopCue(c: Canvas) {
+        if (cueAt == 0L) return
+        val a = topCueAlpha()
+        if (a <= 0f) { cueAt = 0L; return }
+        val b = now[Part.BARS] ?: return
+        val sz = CUE_PX
+        val cx = b.centerX()
+        val cy = b.top + ClockBand.CHIP_TOP + sz / 2f + 4f
+        val box = RectF(cx - sz / 2f, cy - sz / 2f, cx + sz / 2f, cy + sz / 2f)
+        val al = (255 * a).toInt()
+        // the comic-ink plate: an ink rim, the red cloth, the game's gold arrow
+        pCue.style = Paint.Style.FILL; pCue.color = Theme.ink; pCue.alpha = al
+        c.drawRoundRect(RectF(box.left - 3f, box.top - 3f, box.right + 3f, box.bottom + 3f), 10f, 10f, pCue)
+        pCue.color = CUE_FILL; pCue.alpha = al
+        c.drawRoundRect(box, 8f, 8f, pCue)
+        pCue.style = Paint.Style.STROKE; pCue.strokeWidth = 3f; pCue.color = CUE_EDGE; pCue.alpha = al
+        c.drawRoundRect(box, 8f, 8f, pCue)
+        cuePath.reset()
+        cuePath.moveTo(cx, box.top + sz * 0.22f); cuePath.lineTo(box.right - sz * 0.2f, box.bottom - sz * 0.26f)
+        cuePath.lineTo(box.left + sz * 0.2f, box.bottom - sz * 0.26f); cuePath.close()
+        pCue.style = Paint.Style.FILL; pCue.color = Theme.gameGold; pCue.alpha = al
+        c.drawPath(cuePath, pCue)
+        pCue.style = Paint.Style.STROKE; pCue.strokeWidth = 2.5f; pCue.color = Theme.ink; pCue.alpha = al
+        c.drawPath(cuePath, pCue)
+        postInvalidateOnAnimation()
+    }
+
     // ================================================================ movable Home: the D-pad toast (SPEC section 6 "SYNC", final_05)
 
     /** the add-on's `d` changed its Left / Right (a swap took): "D-pad < Map > Chat" on Home for 1.6 s, the kit's gold arrows */
@@ -2907,10 +2953,12 @@ class HomeView(
         if (shown == null || typeWanted) return                          // f-trackpad-keyboard: the tool is a clean page
         drawToast(c)
         drawHold(c)
+        drawTopCue(c)
         // the zone band and the clock FADE with a move (the harmony pass; they used to vanish at a move's start and pop back at
         // its end), drawn where their part is now (and, while the pause menu slides, where the map / the band have gone)
         val zoneA = mix(overlayFrom.zone, overlayTo.zone) * pauseMap[2]
-        val clockA = mix(overlayFrom.clock, overlayTo.clock) * pauseTop[2]
+        // movable Home phase 3: the "up" cue takes the clock's spot for its 1.5 s (the clock fades out under it and back after it)
+        val clockA = mix(overlayFrom.clock, overlayTo.clock) * pauseTop[2] * (1f - topCueAlpha())
         val pauseSave = if (pauseT > 0f) c.save() else -1
         if (pauseSave >= 0) c.translate(pauseMap[0], pauseMap[1])
         // THE ZONE BAND across the small map's top, its whole width, the name centred (user, 09-29 17:30: "The current map
@@ -4159,6 +4207,10 @@ class HomeView(
         /** the red reminder's strength behind the controller (UI Art: 0.55; user 17:37: "a bit more subtle") */
         const val RED_STRENGTH = 0.55f
         const val COMBAT_BARS = 380f
+        /** phase 3's "up" cue: the plate's side, its red cloth and edge (final_10) */
+        const val CUE_PX = 64f
+        val CUE_FILL = Color.rgb(122, 26, 18)
+        val CUE_EDGE = Color.rgb(214, 58, 40)
         private const val HIDE_RULING = "ruling.hide.2026-09-28"
         const val SLOP = 16f
 

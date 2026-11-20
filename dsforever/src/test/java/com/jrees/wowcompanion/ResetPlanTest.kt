@@ -41,7 +41,7 @@ class ResetPlanTest {
         named.getOrPut("WowCompanionSpellsDB") { HashSet() } += listOf("faceBy", "fightBy", "formFightBy", "formSlotsBy", "cmdBy", "binds",
             "stickBy", "attackBy", "dpad", "dpadZL", "ccOff", "genUse", "lowPickBy", "srGone", "smartOn", "smartBuffs", "smartModel",
             "partyBy", "petDeadBy", "petSpellBy", "macroRoom", "radialPins", "cdLearn", "sradials", "castBar", "padLayout",
-            "castBarFight", "castBarShow", "castBarParty", "castBarPShow", "rbm")  // cb14 / cb15: reached as db[field] / rawget(db, ...)
+            "castBarFight", "castBarShow", "castBarParty", "castBarPShow", "rbm", "ctop")  // cb14 / cb15: reached as db[field] / rawget(db, ...)
         named.getOrPut("WowCompanionDB") { HashSet() } += listOf("prdW")
         for ((v, keys) in named) {
             val known = ResetPlan.SV_KEYS.filter { it.variable == v }.map { it.top }.toSet() + ResetPlan.SV_NEVER[v].orEmpty()

@@ -564,7 +564,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView.onTalkChannel = { if (talkPanelUp()) talkTabs.refresh(chatView.talkTabs()); talkDraw() }
         HomeSettings.onChange { ui.post { talkDraw() } }
         // movable Home: a new layout (a preset, the swap, another character's) tells the add-on its DS toolbar sides (out of combat)
-        HomeLayoutStore.onChange { ui.post { lastDpad?.let { mirrorCheck(it) } } }
+        HomeLayoutStore.onChange { ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it) } } }
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
@@ -3409,7 +3409,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // MOVABLE HOME (SPEC section 9, D5): the character's own layout; the DS toolbar's sides follow it (ToolbarMirror)
                     if (current && !d.name.isNullOrEmpty()) HomeLayoutStore.character("${d.name}-${d.realm ?: ""}")
-                    if (current) { mirrorCurrent = true; mirrorCheck(d) }
+                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
                     if (current && d.want != startToldWant) startTell(d.want == true)
@@ -4892,6 +4892,33 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val sent = padTabTap(ToolbarMirror.cells(a.on))
                 Log.i(HomeView.TAG, "toolbar mirror: ${if (a.on) "on (Left = map)" else "off (Left = chat)"} ${if (sent) "sent" else "not sent"}")
                 if (++mirrorTries < MIRROR_TRIES) ui.postDelayed(mirrorAgain, ToolbarMirror.RESEND_MS + 200L)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- movable Home phase 3: the top-screen combat bar's flag
+    private var topSentAt: Long? = null
+    private var topSentWant: Boolean? = null
+    private var topTries = 0
+    private val topAgain = Runnable { lastDpad?.let { topCheck(it) } }
+
+    /** SPEC section 11 "CHANNEL" (TopCombatBar): the layout's In fights = Top screen vs the add-on's `ct`; out of combat a pending wish is
+     *  tapped (padtab 39, 38, 37 then 11 / 12) and tried again every TopCombatBar.RESEND_MS until `ct` says it; a fight waits (the add-on
+     *  switches by itself in fights: nothing is sent then). Checked at every current padmap, so each login re-asserts it */
+    private fun topCheck(d: PadMapModel.Dpad) {
+        if (!mirrorCurrent) return
+        val want = TopCombatBar.wanted(HomeSettings.layout)
+        if (topSentWant != want) { topSentAt = null; topTries = 0 }
+        val now = SystemClock.elapsedRealtime()
+        ui.removeCallbacks(topAgain)
+        when (val a = TopCombatBar.decide(want, d.ct, homeView.inFight(), topSentAt?.let { now - it })) {
+            TopCombatBar.Act.Matched -> { topSentAt = null; topSentWant = null; topTries = 0 }
+            TopCombatBar.Act.Wait -> if (d.ct != null) ui.postDelayed(topAgain, TopCombatBar.RESEND_MS)
+            is TopCombatBar.Act.Send -> {
+                topSentAt = now; topSentWant = want
+                val sent = padTabTap(TopCombatBar.cells(a.on))
+                Log.i(HomeView.TAG, "top combat bar: ${if (a.on) "on" else "off"} ${if (sent) "sent" else "not sent"}")
+                if (++topTries < MIRROR_TRIES) ui.postDelayed(topAgain, TopCombatBar.RESEND_MS + 200L)
             }
         }
     }

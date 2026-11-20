@@ -483,7 +483,7 @@ class LayoutModelTest {
     }
 
     @Test fun everyNewWordIsTranslated() {
-        val words = listOf("Layout", "Edit layout", "Move and size the top screen's pieces.", "Bars", "HUD", "Compass", "Nintendo bar",
+        val words = listOf("Layout", "Edit layout", "Move and size the top screen's pieces.", "Bars", "HUD", "Compass", "Combat bar",
             "Top chat", "Unsaved", "Size", "Snap", "Grid", "Revert", "Copy", "Drop", "Step", "Game's Edit Mode is open", "Unsaved changes",
             "Discard", "Copy from", "Open", "Your HUD", "Target", "Party", "Navigation", "Target bar", "Party frames", "Waiting for the game",
             "Reset", "Save", "Pick", "Back", "No pad row", "In combat", "Cancel", "Polestar", "Polestar arrow", "Polestar guide",

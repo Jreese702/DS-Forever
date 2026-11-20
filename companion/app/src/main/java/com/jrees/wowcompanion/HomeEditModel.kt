@@ -813,8 +813,8 @@ object HomeWidgetMenus {
     val FIGHTS: List<HomeLayout.FightBand> get() = if (TOP_OFFERED) listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME, HomeLayout.FightBand.TOP)
         else listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)
     val FIGHT_WORDS: List<String> get() = if (TOP_OFFERED) listOf("Grow", "Same size", "Top screen") else listOf("Grow", "Same size")
-    /** phase 3 (the top-screen combat bar) turns this on */
-    const val TOP_OFFERED = false
+    /** phase 3 (the top-screen combat bar) ships: "Top screen" is offered, opt-in only (D1: Grow stays the default) */
+    const val TOP_OFFERED = true
     private val ON_OFF = listOf("On", "Off")
     private val SHOW_HIDE = listOf("Show", "Hide")
     private fun onOff(key: String, label: String, on: Boolean, enabled: Boolean = true) = MenuRow(key, label, ON_OFF, if (on) 0 else 1, enabled = enabled)
