@@ -75,6 +75,14 @@ object DeviceTier {
     fun eightGb(): Boolean = eightGb(totalMb, runCatching { isLite() }.getOrDefault(false))
 
     /**
+     * LOW-MEMORY GRAPHICS' EXTRA CUTS (view distance, particles, spells, shadows: GameConfigWtf.LOW_MEMORY_8GB) - the 8 GB Thors (test
+     * build 1489) and, from #56 G2 (the user's approval 2026-11-19), the 12 GB Pro too: every model under [LOW_MB] (and the Lite). Never
+     * the 16 GB Max, never while the RAM is unknown. Still only while the player's Low-memory graphics is on.
+     */
+    fun lowMemCuts(mb: Long, lite: Boolean = false): Boolean = eightGb(mb, lite) || lowMemory(mb)
+    fun lowMemCuts(): Boolean = lowMemCuts(totalMb, runCatching { isLite() }.getOrDefault(false))
+
+    /**
      * HOME'S MAP AT FULL DETAIL (the user, 2026-11-17: "I am slightly concerned about the map turning into a memory sink, if it does we
      * might need to evaluate how big it is and turn this into a Thor based toggle"): by default the whole-world zoom-out on the Map
      * room's art only on the 16 GB Thor Max (Android counts 15255 MB); the 8 / 12 GB Thors and an unknown RAM keep today's lighter map

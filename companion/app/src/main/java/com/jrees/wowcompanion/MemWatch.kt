@@ -30,6 +30,9 @@ object MemWatch {
     /** what DS Forever shows now (the host's room), for the line */
     @Volatile var room: String = "-"
 
+    /** #56 G1: the last launch's video memory cap ("vcap 3072", GameVideoMemory.short), on every line while the game is up */
+    @Volatile var launchGfx: String = ""
+
     /**
      * ONE HEAP DUMP per app run, test builds only (the user's yes 2026-11-08): the first time the PSS passes [DUMP_AT_MB], DS Forever's
      * own Java heap (every Bitmap object with its size and who holds it; no game data) goes to /sdcard/WowCompanion/logs/heap-<time>.hprof
@@ -392,7 +395,9 @@ object MemWatch {
             add("room $room")
             ArtHarvest.currentStep?.let { add("art $it") }
             runCatching { IndoorSchedulerStep.status?.let { s -> add("indoor ${s.phase.name.lowercase()}${if (s.now.isNotEmpty()) " " + s.now.take(24) else ""}") } }
-            add(if (LauncherHooks.gameUp()) "game up" else "game down")
+            val up = LauncherHooks.gameUp()
+            add(if (up) "game up" else "game down")
+            if (up && launchGfx.isNotEmpty()) add(launchGfx)
         }.joinToString(", ")
         val rt = Runtime.getRuntime()
         val low = lowKb; lowKb = -1L                                  // the low since the last line, then the next window
