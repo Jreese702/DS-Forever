@@ -89,7 +89,11 @@ class SpellsOverlay(
      * cb6 (the user, 2026-11-13: "8 total, 4 per side"): the tab shows all 8 in ONE row, two groups of 4 (the chat's 1-4, the minimap's
      * 5-8) a wider gap apart; the D-pad left / right walks all 8 (Book b57), slots 7-8 by padtab 39 then 27-28
      */
-    private fun three(): Boolean = ctl?.bindItem == null && CastStripModel.bindTab(HomeSettings.castBarSide, CastStripModel.Live.bar)   // b59: spells only
+    private fun three(): Boolean {                                      // b59: a bag item's box spells only; cb13 (#553): a macro's box too
+        val bi = ctl?.bindItem
+        if (bi != null && !bi.mac) return false
+        return CastStripModel.bindTab(HomeSettings.castBarSide, CastStripModel.Live.bar, macro = bi != null)
+    }
     /** a finger's Cast bar tab, shown AT THE TAP until the add-on's `bcb` agrees or 1.5 s pass (as [fightWant]) */
     private var cbWant: Boolean? = null
     private var cbUntil = 0L
@@ -323,11 +327,15 @@ class SpellsOverlay(
         if (cbOn) {
             val bar = CastStripModel.Live.bar
             val at = (ctl?.bindCb ?: 1) - 1
-            val here = e?.let { bar?.slotOf(it.actionId, it.spellId) } ?: -1
+            // cb13 (#553): a macro's box (Book b69): the macro's own picture at the cursor, its slot by name
+            val mac = item?.takeIf { it.mac }
+            val here = if (mac != null) bar?.slots?.indexOfFirst { it.kind == CastStripModel.Kind.MACRO && it.name == mac.name } ?: -1
+                       else e?.let { bar?.slotOf(it.actionId, it.spellId) } ?: -1
             for (i in 0 until CastStripModel.SLOTS) {
                 val sr = cbSlotRect(i, w, cy)
                 val sl = bar?.slots?.getOrNull(i)
-                val bmp = if (i == at && here != i) e?.let { Icons.get(it.icon) } else sl?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }
+                val bmp = if (i == at && here != i) (if (mac != null) (mac.icon.takeIf { it > 0 } ?: CastStripView.MACRO_QMARK).let { Icons.get(it) ?: UiKit.icon(it) } else e?.let { Icons.get(it.icon) })
+                          else (sl?.icon ?: CastStripView.MACRO_QMARK.takeIf { sl?.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }
                 UiKit.slot(c, bmp, sr.left, sr.top, sr.width())
                 if (i == here) UiKit.glow(c, RectF(sr).apply { inset(-10f, -10f) }, Color.rgb(60, 255, 60), 0.9f)
                 if (i == at) UiKit.focus(c, RectF(sr).apply { inset(-6f, -6f) })

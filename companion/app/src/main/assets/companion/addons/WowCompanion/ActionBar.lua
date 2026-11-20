@@ -39,6 +39,10 @@
 -- assign anything from the 5 tabs"): a slot holds a spell, an item, a mount or a command ({ k, id / key } per slot, an old number = a
 -- spell, migrated at the login), cast by our own cell (spell / item / a one-line macrotext on OUR button); the Controller room's Cast
 -- bar tab edits it (CB.put / CB.clear / CB.move, PadTabCtl p53). At "cb9 ANY CHOOSER KIND".
+-- cb13 A PLAYER'S MACRO ON THE BAR (GitHub #553, a player: "I cannot assign macros to the bottom screen cast bar"): a slot holds one of
+-- the player's own saved macros, BY NAME ({ k = "macro", n }), put there from the Macros room's Bind box (Book b69: its Cast bar tab,
+-- WC.castBarMacro); the cell is our own button with the macro's own text read live (type macro, macrotext: PadMap m163's way, no
+-- saved-macro attribute), re-armed on UPDATE_MACROS out of combat; a gone macro = no cell (`miss`). Nothing of the player's written.
 -- gws2 (issue #306, 1.0.32: the pet wheels' stick "dont respond ... or require bashing B"; the user's pick 2026-11-16: "if the game's own
 -- pet/spell flyout ... is still shown ~0.5 s after our class wheel lets go and no room holds the pad, make it visible (alpha 1) and close
 -- it once more the safe way"): a game wheel WE drew at alpha 0 that outlives the chord is drawn again and shut once more by our secure
@@ -923,7 +927,7 @@ end
 -- queue as the Spellbook's toggles always did. The document says each slot's kind (`k`, none = a spell, as before), its name (`n`, not
 -- for a spell: the app has the book), an item's count (`ct`, `cons` = 1 for a consumable) and `any` = 1 (this bar takes every kind).
 do
-local CBV = "cb12"     -- cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
+local CBV = "cb13"     -- cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 8, 8, 2   -- cb6: 8 slots (cells 0-7), the pick cell 8
 local CB_OLD_N = 12                      -- cb3: the slots a cb1 / cb2 store may hold (cb6: migrated to the first 8)
@@ -949,12 +953,17 @@ local function cbEntry(v)
         if type(key) == "string" and key ~= "" then return { k = "command", key = key } end
         return nil
     end
+    if k == "macro" then                                                 -- cb13: a player's macro, by its name
+        local n = rawget(v, "n")
+        if type(n) == "string" and n ~= "" then return { k = "macro", n = n } end
+        return nil
+    end
     if CB_KINDS[k] and cbId(rawget(v, "id")) then return { k = k, id = rawget(v, "id") } end
     return nil
 end
-local function cbSame(a, b) return a ~= nil and b ~= nil and a.k == b.k and a.id == b.id and a.key == b.key end
+local function cbSame(a, b) return a ~= nil and b ~= nil and a.k == b.k and a.id == b.id and a.key == b.key and a.n == b.n end
 local function cbSpell(e) return e ~= nil and e.k == "spell" and e.id or nil end
-local function cbKeep(e) return e and { k = e.k, id = e.id, key = e.key } or nil end    -- what the store keeps (no names: read live)
+local function cbKeep(e) return e and { k = e.k, id = e.id, key = e.key, n = e.n } or nil end    -- what the store keeps (cb13: a macro's name only)
 
 -- the character: name-realm (every per-character store's key)
 local function cbWho()
@@ -1089,9 +1098,29 @@ local function cbItemCount(id)
     end)
     return type(v) == "number" and v >= 0 and math.floor(v) or nil
 end
--- the cell's line for a macro kind (a mount's /cast, a command's own line); nil = none can be made now
+-- cb13: the player's macro by NAME, read only: { n, i icon, body } (the body plain and not empty), or nil (no such macro, unreadable)
+local function cbMacro(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    local mi = SN(function() return GetMacroIndexByName(name) end)
+    if not (cbId(mi)) then return nil end
+    local ok, n, icon, body = CALL(GetMacroInfo, mi)
+    if not ok then return nil end
+    body = cbStr(function() return body end)
+    if not (body and body:find("%S")) then return nil end
+    local i = cbNum(function() return icon end)
+    local pm = WC.padMap                                                 -- PadMap m165: what a #showtooltip macro would cast now
+    if type(pm) == "table" and type(pm.macLook) == "function" then
+        local okl, lk = pcall(pm.macLook, name)
+        if okl and type(lk) == "table" and cbId(lk.i) then i = lk.i end
+    end
+    return { n = cbStr(function() return n end) or name, i = i, body = body }
+end
+-- the cell's line for a macro kind (a mount's /cast, a command's own line; cb13 a player's macro's own text); nil = none can be made now
 local function cbLine(e)
-    if e.k == "mount" then
+    if e.k == "macro" then
+        local m = cbMacro(e.n)
+        return m and m.body or nil
+    elseif e.k == "mount" then
         local m = cbMount(e.id)
         return m and m.sp and ("/cast " .. m.sp) or nil
     elseif e.k == "command" then
@@ -1133,6 +1162,7 @@ end
 local function cbSig(e, line)
     if e.k == "command" then return "c" .. e.key .. "|" .. (line or "") end
     if e.k == "mount" then return "m" .. e.id .. "|" .. (line or "") end
+    if e.k == "macro" then return "M" .. e.n .. "|" .. (line or "") end      -- cb13: an edited macro builds again
     return e.k:sub(1, 1) .. e.id
 end
 -- (re)build the row when the stored slots changed; out of combat only. cb2: no row is registered for an empty bar (the row once
@@ -1146,7 +1176,7 @@ function CB.sync()
     for i = 1, CB_N do
         local e = slots[i]
         if e then
-            local line = (e.k == "mount" or e.k == "command") and cbLine(e) or nil
+            local line = (e.k == "mount" or e.k == "command" or e.k == "macro") and cbLine(e) or nil
             local sig = cbSig(e, line)
             want[i - 1] = { e = e, line = line, sig = sig }
             parts[#parts + 1] = (i - 1) .. "=" .. sig
@@ -1188,6 +1218,9 @@ function CB.doc()
             elseif x.k == "mount" then
                 local m = cbMount(x.id)
                 r.k, r.id, r.n, r.i, r.sid = "mount", x.id, m and m.n, m and m.i, m and m.sid
+            elseif x.k == "macro" then                   -- cb13: by name; a gone (or empty) macro has no cell (`miss`)
+                local m = cbMacro(x.n)
+                r.k, r.n, r.i, r.miss = "macro", x.n, m and m.i or nil, (not m) and 1 or nil
             else
                 local c = cbCmd(x.key)
                 r.k, r.key, r.n, r.i = "command", x.key, c and type(c.n) == "string" and c.n or nil, c and cbId(c.i) and c.i or nil
@@ -1197,7 +1230,7 @@ function CB.doc()
             e[#e + 1] = { s = i, q = 1 }                 -- emptied by a queued edit: dimmed until the fight ends
         end
     end
-    return { type = "castbar", v = CBV, n = CB_N, any = 1, pick = CB.row and CB_PICK_COL or nil, fight = cbFight() or nil,
+    return { type = "castbar", v = CBV, n = CB_N, any = 1, mac = 1, pick = CB.row and CB_PICK_COL or nil, fight = cbFight() or nil,
              nopad = (not CB.row) and 1 or nil, pp = CB_PADTAB_PICK, e = e }
 end
 function CB.send(force)
@@ -1275,6 +1308,9 @@ function CB.put(slot, kind, v)
     elseif kind == "command" then
         if not (type(v) == "string" and cbCmd(v)) then return cbAck(false, "command", "put", slot) end
         e = { k = "command", key = v }
+    elseif kind == "macro" then                                          -- cb13: the player's macro by name (it must exist, with text)
+        if not cbMacro(v) then return cbAck(false, "missing", "put", slot) end
+        e = { k = "macro", n = v }
     else
         return cbAck(false, "kind", "put", slot)
     end
@@ -1322,6 +1358,8 @@ function WC.castBarSpell(id)
     return CB.toggle(id, slot)
 end
 WC.castBarSlots = CB_N
+-- cb13 (Book b69): the Macros room's Bind box puts the player's macro [name] on slot [slot] (a put: off any other slot it was on)
+function WC.castBarMacro(slot, name) return CB.put(slot, "macro", name) end
 
 -- ---------------------------------------------------------------- the cooldowns ("castcd": the spells' slots; an item's is `itemcd`)
 local function cbLearned(id)
@@ -1397,7 +1435,7 @@ end
 
 local cbF = CreateFrame("Frame")
 for _, ev in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
-                      "SPELL_UPDATE_COOLDOWN", "SPELLS_CHANGED", "BAG_UPDATE_DELAYED" }) do pcall(cbF.RegisterEvent, cbF, ev) end
+                      "SPELL_UPDATE_COOLDOWN", "SPELLS_CHANGED", "BAG_UPDATE_DELAYED", "UPDATE_MACROS" }) do pcall(cbF.RegisterEvent, cbF, ev) end
 pcall(function() cbF:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
 cbF:SetScript("OnEvent", function(_, ev, a1, a2, a3)
     pcall(function()
@@ -1417,7 +1455,7 @@ cbF:SetScript("OnEvent", function(_, ev, a1, a2, a3)
             CB.send()
         elseif ev == "SPELL_UPDATE_COOLDOWN" then
             CB.cooldowns()
-        elseif ev == "SPELLS_CHANGED" then
+        elseif ev == "SPELLS_CHANGED" or ev == "UPDATE_MACROS" then   -- cb13: a macro edited / renamed / deleted: its cell again
             if not cbFight() then CB.sync() end
             CB.send()
         elseif ev == "BAG_UPDATE_DELAYED" then

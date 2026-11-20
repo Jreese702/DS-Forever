@@ -160,7 +160,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                 c.drawRoundRect(r, 4f, 4f, pWell)
                 // the spell's icon from icons.pak ([Icons], as the Spellbook draws it); the kit's fid_ art only for what the pack lacks
                 val icon = if (s?.kind == CastStripModel.Kind.COMMAND && PadMapModel.kitArt(s.key) != null) UiKit.tex(PadMapModel.kitArt(s.key)!!)
-                    else s?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }
+                    else (s?.icon ?: MACRO_QMARK.takeIf { s?.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }   // cb13: a macro without a picture: the game's question mark
                 if (icon != null) {
                     val inset = r.width() * 0.07f
                     pIcon.alpha = alpha
@@ -287,6 +287,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
 
     companion object {
         const val DIM = 90
+        /** cb13 (#553): the game's question-mark icon (fileID 134400), drawn for a macro slot the add-on sent no picture for */
+        const val MACRO_QMARK = 134400
         const val RING_SCALE = 0.75f
         const val PRESS_MS = 160L
         const val FRAME_MS = 16L

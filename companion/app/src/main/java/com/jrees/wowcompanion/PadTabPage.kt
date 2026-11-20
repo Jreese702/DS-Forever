@@ -525,6 +525,7 @@ class PadTabPage(
         val kind = when (s.kind) {
             CastStripModel.Kind.SPELL -> PadMapModel.Kind.SPELL; CastStripModel.Kind.ITEM -> PadMapModel.Kind.ITEM
             CastStripModel.Kind.MOUNT -> PadMapModel.Kind.OTHER; CastStripModel.Kind.COMMAND -> PadMapModel.Kind.COMMAND
+            CastStripModel.Kind.MACRO -> PadMapModel.Kind.MACRO                                          // cb13 (#553)
         }
         val name = s.name ?: if (s.kind == CastStripModel.Kind.SPELL) lastBook?.let { b -> SpellsModel.tabSpells(b)
             .firstOrNull { it.spellId == s.id || it.actionId == s.id }?.name } else null

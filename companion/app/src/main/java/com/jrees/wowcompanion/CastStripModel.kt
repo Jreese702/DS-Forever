@@ -45,6 +45,11 @@ import org.json.JSONObject
  * the document says the kind (`k`, none = a spell), the name (`n`), an item's count (`ct`, `cons` a consumable) and `any` = 1 (the bar
  * takes every kind: [Bar.anyKind], the Controller room's Cast bar tab then shows). [Slot.id] is the spell / item / mount id; the
  * Spellbook's reads ([Bar.has], [Bar.slotOf]) count spells only.
+ * cb13 A PLAYER'S MACRO (GitHub #553, a player: "I cannot assign macros to the bottom screen cast bar"): a slot can hold one of the
+ * player's own saved macros, by NAME ([Kind.MACRO], `k` "macro", `n` its name, `i` its icon; `miss` = 1 when no macro of that name
+ * has text now: no cell, drawn dimmed). It is put there from the Macros room's Bind box, whose Cast bar tab now shows for a macro too
+ * ([bindTab] with [macro] = true: only while the add-on says `mac` = 1, [Bar.macros]; Book b69). The add-on's cell runs the macro's
+ * own text on OUR button (ActionBar cb13); nothing of the player's is written.
  * The logic, without the look (unit-tested in dsforever: CastStripModelTest).
  */
 object CastStripModel {
@@ -70,15 +75,17 @@ object CastStripModel {
     enum class Side(val label: String) { OFF("Off"), LEFT("Left"), RIGHT("Right"), BOTH("Both") }
 
     /** cb9: what a slot holds */
-    enum class Kind { SPELL, ITEM, MOUNT, COMMAND }
+    enum class Kind { SPELL, ITEM, MOUNT, COMMAND, MACRO }
 
     /** one slot: [index] 0..7, the spell [id] (cb9: the item's / mount's for those kinds), its [icon] file id, the pad [cell] while the
      *  add-on's cell casts it (null = do not tap), [queued] = a fight's edit waits for the fight's end (drawn dimmed); cb9: [kind], a
      *  command's [key], the [name] (not for a spell: the book names it), an item's [count] (null = not said) and [consumable] */
     data class Slot(val index: Int, val id: Int?, val icon: Int?, val cell: Int?, val queued: Boolean, val kind: Kind = Kind.SPELL,
-                    val key: String? = null, val name: String? = null, val count: Int? = null, val consumable: Boolean = false) {
-        /** something is on the slot (any kind) */
-        val filled: Boolean get() = id != null || key != null
+                    val key: String? = null, val name: String? = null, val count: Int? = null, val consumable: Boolean = false,
+                    /** cb13: a macro slot whose macro is gone (or has no text): no cell, drawn dimmed */
+                    val missing: Boolean = false) {
+        /** something is on the slot (any kind; cb13: a macro by its [name]) */
+        val filled: Boolean get() = id != null || key != null || (kind == Kind.MACRO && name != null)
         /** the slot's spell id (a spell slot only) */
         val spellId: Int? get() = if (kind == Kind.SPELL) id else null
         /** cb9: the count drawn on the tile: a consumable's, or any item's past 1 (none for a single non-consumable: a Hearthstone) */
@@ -89,7 +96,9 @@ object CastStripModel {
      *  [fight] the add-on's lockdown now, [padPick] cb2's pick on the padtab row (its columns in order; null = an older add-on),
      *  [n] the add-on's slot count (cb6 = 8; cb3's 6 and an older add-on's 12 have no slot pick here: their codes differ) */
     data class Bar(val slots: List<Slot>, val pick: Int?, val fight: Boolean, val version: String, val padPick: List<Int>? = null,
-                   val n: Int = SLOTS, val anyKind: Boolean = false) {
+                   val n: Int = SLOTS, val anyKind: Boolean = false,
+                   /** cb13: the add-on takes a player's macro on a slot (`mac` = 1) */
+                   val macros: Boolean = false) {
         /** a pick can be sent: the padtab pick (cb2) or the row's own pick cell */
         val pickable: Boolean get() = padPick != null || pick != null
         /** cb3: the add-on takes a pick for one slot (the Bind box's Cast bar tab, Book b56) */
@@ -117,21 +126,25 @@ object CastStripModel {
                 val o = a.optJSONObject(k) ?: continue
                 val s = o.optInt("s", 0)
                 if (s !in 1..SLOTS) continue
-                val kind = when (o.optString("k", "")) { "item" -> Kind.ITEM; "mount" -> Kind.MOUNT; "command" -> Kind.COMMAND; else -> Kind.SPELL }
+                val kind = when (o.optString("k", "")) { "item" -> Kind.ITEM; "mount" -> Kind.MOUNT; "command" -> Kind.COMMAND; "macro" -> Kind.MACRO; else -> Kind.SPELL }
                 val key = o.optString("key", "").takeIf { kind == Kind.COMMAND && it.isNotEmpty() }
-                val id = if (kind == Kind.COMMAND) null else o.optInt("id", 0).takeIf { it > 0 }
-                val cell = if (o.has("c")) o.optInt("c", -1).takeIf { it in 0 until SLOTS } else null
-                val filled = id != null || key != null
+                val id = if (kind == Kind.COMMAND || kind == Kind.MACRO) null else o.optInt("id", 0).takeIf { it > 0 }
+                val macName = o.optString("n", "").takeIf { kind == Kind.MACRO && it.isNotEmpty() }
+                val missing = macName != null && o.optInt("miss", 0) == 1
+                val cell = if (o.has("c") && !missing) o.optInt("c", -1).takeIf { it in 0 until SLOTS } else null
+                val filled = id != null || key != null || macName != null
                 bySlot[s - 1] = Slot(s - 1, id, o.optInt("i", 0).takeIf { it > 0 }, cell.takeIf { filled }, o.optInt("q", 0) == 1,
                     if (filled) kind else Kind.SPELL, key, o.optString("n", "").takeIf { filled && it.isNotEmpty() },
-                    if (kind == Kind.ITEM && o.has("ct")) o.optInt("ct", 0).coerceAtLeast(0) else null, kind == Kind.ITEM && o.optInt("cons", 0) == 1)
+                    if (kind == Kind.ITEM && o.has("ct")) o.optInt("ct", 0).coerceAtLeast(0) else null, kind == Kind.ITEM && o.optInt("cons", 0) == 1,
+                    missing)
             }
         }
         val slots = (0 until SLOTS).map { bySlot[it] ?: Slot(it, null, null, null, false) }
         val pick = if (msg.has("pick")) msg.optInt("pick", -1).takeIf { it >= 0 } else null
         val pp = msg.optJSONArray("pp")?.let { a -> (0 until a.length()).map { a.optInt(it, -1) } }
             ?.takeIf { l -> l.isNotEmpty() && l.size <= 4 && l.all { it in 0 until 40 } }
-        return Bar(slots, pick, msg.optBoolean("fight", false), msg.optString("v", ""), pp, msg.optInt("n", 12), msg.optInt("any", 0) == 1)
+        return Bar(slots, pick, msg.optBoolean("fight", false), msg.optString("v", ""), pp, msg.optInt("n", 12), msg.optInt("any", 0) == 1,
+            msg.optInt("mac", 0) == 1)
     }
 
     /** the `castcd` message: slot index (0..7) -> its running cooldown; EMPTY = none runs. Null when it is not one. */
@@ -150,7 +163,7 @@ object CastStripModel {
     /** a finger on slot [i]: the ONE tap (row, cell), or null (empty, queued, not built) */
     fun tapCell(bar: Bar?, i: Int): Pair<String, Int>? {
         val s = bar?.slots?.getOrNull(i) ?: return null
-        if (!s.filled || s.queued) return null
+        if (!s.filled || s.queued || s.missing) return null
         return s.cell?.let { ROW to it }
     }
 
@@ -395,8 +408,10 @@ object CastStripModel {
     /** the taps that tell the add-on the setting ([on] = not Off): padtab 39 then 30 / 31 (no action, no room needed) */
     fun ctlSettingCells(on: Boolean): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to if (on) CTL_ON_CODE else CTL_OFF_CODE)
 
-    /** the Bind box shows its third tab: the setting is on and the add-on takes a slot pick */
-    fun bindTab(side: Side, bar: Bar?): Boolean = side != Side.OFF && bar?.slotPick == true
+    /** the Bind box shows its third tab: the setting is on and the add-on takes a slot pick; cb13: a macro's box ([macro]) only while
+     *  the add-on takes macros ([Bar.macros]); a bag item's box never (Book b59: spells only) */
+    fun bindTab(side: Side, bar: Bar?, macro: Boolean = false): Boolean =
+        side != Side.OFF && bar?.slotPick == true && (!macro || bar.macros)
 
     /** the taps that open the box's Cast bar tab: padtab 39 then 26 */
     fun tabCells(): List<Pair<String, Int>> = listOf(PADTAB to PICK, PADTAB to TAB_CODE)
