@@ -40,6 +40,8 @@ class VoiceEngine(context: Context) {
         fun error(code: Int)
         /** offline voice only ([WhisperEngine]): the recording stopped, the words are being worked out */
         fun working() {}
+        /** offline voice only (memory work #56, D4): the words wait for the voice model to load again ("Loading voice") */
+        fun loading() {}
     }
 
     private var rec: SpeechRecognizer? = null

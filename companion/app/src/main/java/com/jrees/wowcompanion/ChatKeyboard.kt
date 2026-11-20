@@ -369,7 +369,11 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         override fun final(text: String) { sheet?.let { s -> run(s.final(text)); DiagLog.event("voice", s.logLine("final")) } }
         override fun error(code: Int) { sheet?.let { s -> run(s.error(code)); DiagLog.event("voice", s.logLine("error $code")) } }
         override fun working() { sheet?.let { s -> s.working(); ticking(); invalidate(); onVoice() } }
+        // memory work #56 (D4): the voice model was let go (a loading screen, the world); the words wait for its load
+        override fun loading() { voiceLoading = true; invalidate() }
     }
+    /** the words wait for the voice model's load ("Loading voice" over them while working) */
+    private var voiceLoading = false
 
     /** the recognizer's events, for the off-device renders and tests (as Android would call them) */
     fun voiceSink(): VoiceEngine.Sink = sink
@@ -388,6 +392,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
             val s = sheet ?: break
             when (a) {
                 is Voice.Act.Start -> {
+                    voiceLoading = false
                     val lang = VoiceLanguage.androidTag(Settings.voiceLanguage, Tr.lang())
                     val hints = if (a.online) emptyList() else runCatching { Voice.hints() }.getOrDefault(emptyList())
                     if (!listen().start(a.online, lang, hints, sink)) { run(s.error(Voice.E_BUSY)); return }
@@ -576,7 +581,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
         Voice.State.MIC_OFF, Voice.State.BLOCKED -> "Microphone off"
         Voice.State.OFFER_ONLINE -> "Use online voice"
         Voice.State.LISTENING, Voice.State.STOPPING -> "Listening"
-        Voice.State.WORKING -> "Working"
+        Voice.State.WORKING -> if (voiceLoading) "Loading voice" else "Working"
         Voice.State.RESULT -> null
         Voice.State.PROBLEM -> s.problem?.title
     }
