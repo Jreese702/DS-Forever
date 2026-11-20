@@ -223,11 +223,29 @@ object Settings {
      * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
      * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
      * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered":
-     * Config.wtf as the game left it. No account name is ever read into, stored in or logged by DS Forever.
+     * Config.wtf as the game left it, plus (the user's ruling 2026-11-20, A) the player's last-picked game account marked "!" in its
+     * accountList at every start ([gameAccountPick]; GameConfigWtf.markAccount). Account labels are never logged.
      */
     var gameAccountAsk: Boolean
         get() = prefs?.getBoolean("gameAccountAsk", false) ?: false
         set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); changed() } }
+
+    /**
+     * THE LAST-PICKED GAME ACCOUNT (the user's ruling 2026-11-20, A: "Learn the pick automatically ... Store only the account LABEL, in
+     * the app's private prefs"): the label the game itself marked in Config.wtf's accountList (WoW1, WoW2 or the account's own name;
+     * GameConfigWtf.accountPickIn), learned at each Play before Config.wtf is written; never typed by the player. Used only with
+     * "Remembered". Never logged, never in a report or diagnostics (write "set" / "unset"); never reset by Reset settings (the sign-in,
+     * as [gameAccountAsk]); forgotten with the saved login ([forgetGameAccountPick]). Null = none learned yet.
+     */
+    var gameAccountPick: String?
+        get() = prefs?.getString("gameAccountPick", null)?.let(GameConfigWtf::cleanAccountLabel)
+        set(v) {
+            val clean = GameConfigWtf.cleanAccountLabel(v)
+            if (clean != gameAccountPick) prefs?.edit()?.apply { if (clean == null) remove("gameAccountPick") else putString("gameAccountPick", clean) }?.apply()
+        }
+
+    /** the saved login forgotten or changed: the next Battle.net login's game accounts may be others, so the pick is learned again */
+    fun forgetGameAccountPick() { gameAccountPick = null }
 
     /**
      * SWAP SCREENS (GitHub #232; ScreenSwap): true = the game on the second screen, DS Forever on the main one (display 0). Off by
