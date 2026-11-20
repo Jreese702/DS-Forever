@@ -197,6 +197,12 @@ object StartupDiag {
             val p = choice?.product ?: WowProduct.of(root)
             GameConfigWtf.reportLine(File(root, "${p.flavorDir}/WTF/Config.wtf").takeIf { it.isFile }?.readText())
         }.getOrElse { "? (${it.message})" }
+        // bug 2026-11-20 (test 1513, the account list shown with Remembered): the last Play's game-account states and the file's shape
+        // now (what the game left at its exit); states and counts only, never a label
+        out += "Game account: " + runCatching {
+            val p = choice?.product ?: WowProduct.of(root)
+            GameAccountDiag.reportLine(GameAccountDiag.last, GameAccountDiag.shape(GameAccountDiag.configWtf(root, p))) { stamp(it) }
+        }.getOrElse { "? (${it.message})" }
         // #56 G2: what the low-memory keys hold now (numbers only), so a report shows whether the game kept them
         out += "Low-memory keys: " + runCatching {
             val p = choice?.product ?: WowProduct.of(root)
