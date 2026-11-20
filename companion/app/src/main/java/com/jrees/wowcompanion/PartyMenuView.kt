@@ -136,5 +136,8 @@ class PartyMenuView(context: Context, grey: Set<String> = PlayerMenu.PARTY_GREY)
         const val ARROW = 40f
         /** where Home lays it: over the left column (the party module and chat) */
         val PLACE = RectF(24f, 236f, 600f, 914f)
+        /** movable Home (SPEC section 6 item 9): over the CHAT's column, mirrored to the right ([chatRight]) on a page [w] wide */
+        fun place(chatRight: Boolean, w: Float = 1240f): RectF =
+            if (!chatRight) RectF(PLACE) else RectF(w - PLACE.right, PLACE.top, w - PLACE.left, PLACE.bottom)
     }
 }

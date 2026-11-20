@@ -308,10 +308,9 @@ object CastStripModel {
 
     /** the slot side for [side] at a bar [barW] wide: every mode the same size (cb4, the user: "they should be the same size as the both
      *  option"), at most [MAX_SIDE], smaller only when the bar is too narrow for the slots in view */
-    fun slotSide(side: Side, barW: Float): Float {
-        val n = maxOf(1, visible(side))                                  // cb8: BOTH's 8 across the one bar, LEFT / RIGHT 4 in view
-        return ((barW - 2 * PAD - GAP * (n - 1)) / n).coerceIn(MIN_SIDE, MAX_SIDE)
-    }
+    fun slotSide(side: Side, barW: Float): Float = slotSide(maxOf(1, visible(side)), barW, MAX_SIDE)   // cb8: BOTH's 8 across, LEFT / RIGHT 4
+    /** movable Home: [n] slots in view across a bar [barW] wide, at most [max] (the layout's slot size S / M / L) */
+    fun slotSide(n: Int, barW: Float, max: Float): Float = ((barW - 2 * PAD - GAP * (n - 1)) / maxOf(1, n)).coerceIn(MIN_SIDE, max)
 
     /** the bar's height for [side] on a page [w] wide (0 = none): the slots' row (cb5: no dots band) */
     fun height(side: Side, w: Float, gap: Float): Float {

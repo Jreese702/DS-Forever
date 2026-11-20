@@ -60,11 +60,15 @@ object PartyLayout {
      * the module for [n] entries (1..6) in [mode], its well's top at [top]; [pet] = the second entry is your pet (m134: on your right
      * in the first row, the smaller cell); [left] = the screen's edge where the tab stands, [right] = the well's right
      */
-    fun module(mode: Mode, n: Int, pet: Boolean = false, top: Float = defaultTop(mode), left: Float = EDGE, right: Float = RIGHT): Module {
+    fun module(mode: Mode, n: Int, pet: Boolean = false, top: Float = defaultTop(mode), left: Float = EDGE, right: Float = RIGHT,
+               tabRight: Boolean = false): Module {
         val m = n.coerceIn(1, PartyModel.MAX_N)
         val h = plateH(mode)
-        val wl = left + TAB_W + TAB_GAP
-        val pl = wl + IN; val pr = right - IN
+        // movable Home (SPEC section 6 item 9): with the chat on the right the module mirrors: the tab flush on the RIGHT screen edge
+        // ([right]), the well from [left] to the tab's gap
+        val wl = if (tabRight) left else left + TAB_W + TAB_GAP
+        val wr = if (tabRight) right - TAB_W - TAB_GAP else right
+        val pl = wl + IN; val pr = wr - IN
         val cells = ArrayList<Box>(m)
         val rowOf = ArrayList<Int>(m)
         for ((r, row) in PartyModel.rows(m, pet).withIndex()) {
@@ -75,8 +79,9 @@ object PartyLayout {
             val mid = pl + (pr - pl - GAP) * share
             cells.add(Box(pl, t, mid, t + h)); cells.add(Box(mid + GAP, t, pr, t + h)); rowOf.add(r); rowOf.add(r)
         }
-        val well = Box(wl, top, right, cells.last().b + IN)
-        return Module(well, cells, Box(left, well.t, left + TAB_W, well.b), well.b + CHAT_GAP, rowOf)
+        val well = Box(wl, top, wr, cells.last().b + IN)
+        val tab = if (tabRight) Box(right - TAB_W, well.t, right, well.b) else Box(left, well.t, left + TAB_W, well.b)
+        return Module(well, cells, tab, well.b + CHAT_GAP, rowOf)
     }
 
     // ------------------------------------------------------------------------------------------------ a plate's parts

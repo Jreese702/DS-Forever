@@ -119,8 +119,11 @@ class HomeView(
         HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
         HomeSettings.onChange { post {
             if (flow.setRest(HomeSettings.rest)) changed()
+            // MOVABLE HOME: a new layout record (a preset, the swap, a facade setter, another character): the page glides there on the one
+            // motion (240 / 200 ms, Motion.curve); the D-pad's word follows in the add-on ([HomeLayoutStore], ToolbarMirror)
+            else if (laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true) shown?.let { apply(it, animate = isShown) }
             // the focused quest moved (Settings > Home): the parts go to their new places
-            else if (laidOverMap != HomeSettings.questOverMap) shown?.let { apply(it, animate = isShown) }
+            else if (laidOverMap != cardOverMap()) shown?.let { apply(it, animate = isShown) }
             // r-combat-anim-off: Grow / Same size changed during a fight: the band goes to its new size
             else if (lent(castView) && castView.swingOn != HomeSettings.swingTimer)
                 castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
@@ -1601,68 +1604,71 @@ class HomeView(
     /** a Home module went full screen (Home's rest page left): the host taps Party mode off (PartyModel.OFF_ON_LEAVE) */
     var onPartyLeaveRest: (() -> Unit)? = null
 
-    /** places [base] with the party module: it takes the top of the chat's place (under the card when the card is above chat) */
-    private fun withParty(base: Map<Part, RectF>, s: HomeScreen, w: Float): Map<Part, RectF> {
-        // 2026-11-05 (the user: "scrap the party mode showing from the bottom screen but keep the party mode toolbar settings for when
-        // party is being targeted on the top screen"; the game hides every health number, so the module could only guess): no module
-        laidPartyModule = PARTY_MODULE
-        if (!laidPartyModule) return base
-        val p = party.party ?: return base
-        val chat = base[Part.CHAT] ?: return base
-        val mode = partyModeNow(s)
-        laidPartyMode = mode; laidPartyN = p.view.size; laidPartyOn = p.onLive; laidPartyPet = p.viewPet
-        val right = w / 2f - 5f
-        // m134 (the user, 2026-11-11: the Select tab "attached to the side of the screen"): the module's view starts at the screen's
-        // left edge, where the tab stands; the member band (the well) starts right of it
-        val m = PartyLayout.module(mode, p.view.size, pet = p.viewPet, top = chat.top, left = PartyLayout.EDGE, right = right)
-        partyView.mode = mode
-        val out = LinkedHashMap(base)
-        out[Part.PARTY] = RectF(PartyLayout.EDGE, chat.top - PartyModuleView.RISE, right, m.well.b)
-        out[Part.CHAT] = RectF(chat.left, minOf(m.chatTop, chat.bottom - 1f), chat.right, chat.bottom)
+    /**
+     * MOVABLE HOME (SPEC.txt section 6 item 1): every part's box for [s] from the layout record ([HomeLayoutSolver]); it replaces
+     * placesBase / withParty / withStrip with the same arithmetic (Classic = today: HomePlacesGoldenTest). The bookkeeping of what was laid
+     * (the party module's mode and rows, the bar's side and slide, the card's dock and height) stays here.
+     */
+    private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
+        val l = layoutNow(s)
+        val full = s.full != null && !s.takeover
+        var partyIn: HomeLayoutSolver.Party? = null
+        if (!full) {
+            laidCardH = cardHeight()
+            laidOverMap = cardOverMap()
+            // 2026-11-05 / m129: the party module only with Party mode's switch on and a party document
+            laidPartyModule = PARTY_MODULE
+            val p = party.party
+            if (laidPartyModule && p != null) {
+                val mode = partyModeNow(s)
+                laidPartyMode = mode; laidPartyN = p.view.size; laidPartyOn = p.onLive; laidPartyPet = p.viewPet
+                partyView.mode = mode
+                partyIn = HomeLayoutSolver.Party(mode, p.view.size, p.viewPet)
+            }
+        }
+        val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(w, h, UiKit.MODULE_GAP, full = s.full, takeover = s.takeover,
+            card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
+            partyOn = partyOnHere(), castHidden = !full && castHiddenNow()))
+        if (full) laidSide = CastStripModel.Side.OFF
+        else {
+            laidLayout = l
+            laidSide = r.castSide
+            laidHidden = r.castHidden && r.castSide != CastStripModel.Side.OFF
+            if (r.castSide != CastStripModel.Side.OFF) castStrip.side = r.castSide
+            partyView.tabRight = r.partyTabRight
+            laidChatRight = r.partyTabRight
+        }
+        val out = LinkedHashMap<Part, RectF>()
+        for ((p, b) in r.boxes) PART_OF[p]?.let { out[it] = RectF(b.l, b.t, b.r, b.b) }
         return out
     }
+    /** the layout record the page was last laid with (a change of it glides the page there) */
+    private var laidLayout: HomeLayout? = null
+    /** the chat's column on the right (the party menus mirror with it) */
+    private var laidChatRight = false
+    private val PART_OF: Map<HomePart, Part> = HomePart.values().mapNotNull { hp -> Part.values().firstOrNull { it.name == hp.name }?.let { hp to it } }.toMap()
 
-    private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
-        val base = placesBase(s, w, h)
-        if (s.full != null && !s.takeover) { laidSide = CastStripModel.Side.OFF; return base }
-        return withStrip(withParty(base, s, w), w, h)
+    /**
+     * the record this page lays now: the player's active layout (the current character's), or a preview look's; its rest is the page's
+     * (HomeFlow keeps it), a look's grow / card / bar override (the Settings pictures)
+     */
+    private fun layoutNow(s: HomeScreen? = shown): HomeLayout {
+        val look = renderLook
+        var l = HomeLayoutRules.shown(look?.layout ?: HomeSettings.layout)
+        if (s != null) l = l.copy(rest = s.rest)
+        if (look != null) {
+            l = l.copy(fight = if (look.grow) HomeLayout.FightBand.GROW
+                else (if (l.fight == HomeLayout.FightBand.GROW) HomeLayout.FightBand.SAME else l.fight))
+            if (look.layout == null) l = l.copy(card = if (look.overMap) HomeLayout.CardDock.ON_MAP else HomeLayout.CardDock.ABOVE_CHAT)
+            look.castSide?.let { l = l.copy(cast = HomeLayout.dockOf(it, l.chatSide)) }
+        }
+        return l
     }
 
     /** the tap-to-cast bar's place laid by the last [places] (a change of the choice lays the page again) */
     private var laidSide = CastStripModel.Side.OFF
     /** cb7: the last [places] laid the bar slid away (Hide in combat, a fight shown); a change lays the page again with the one motion */
     private var laidHidden = false
-
-    /**
-     * GitHub #43 cb3: THE TAP-TO-CAST BAR's place, at rest and in a fight alike (the bar is most use in one), above the page's foot:
-     * LEFT under the chat (the chat, the quest card above it and the party module end a gap above it), RIGHT under the minimap (the map,
-     * its auras and the card over it end above it), BOTH one bar under both columns ([CastStripModel.place]). A module full screen has
-     * no bar (its own page). cb7 (the user, 2026-11-13: "it should slide down behind the home bar out of view, not fade out and give
-     * that space back to the map or chat"): with Hide in combat and a fight shown, the bar's box lies below the page (behind Home's
-     * bottom bar, [CastStripModel.hiddenBox]) and no column is cut; [apply]'s one motion carries the bar and the columns together.
-     */
-    private fun withStrip(base: Map<Part, RectF>, w: Float, h: Float): Map<Part, RectF> {
-        val side = castSideNow()
-        laidSide = side
-        val b0 = CastStripModel.place(side, w, h, UiKit.MODULE_GAP) ?: return base.also { laidHidden = false }
-        castStrip.side = side
-        val hidden = castHiddenNow()
-        laidHidden = hidden
-        val b = if (hidden) CastStripModel.hiddenBox(b0, h) else b0
-        val g = UiKit.MODULE_GAP
-        val top = b0.t
-        val out = LinkedHashMap(base)
-        out[Part.STRIP] = RectF(b.l, b.t, b.r, b.b)
-        fun cut(p: Part) { base[p]?.let { r -> if (r.bottom > top - g)
-            out[p] = RectF(r.left, r.top, r.right, CastStripModel.columnBottom(maxOf(r.top + 1f, top - g), r.bottom, hidden)) } }
-        val c = w / 2f
-        for (p in listOf(Part.CHAT, Part.QUESTS, Part.PARTY, Part.MAP, Part.AURAS)) {
-            val r = out[p] ?: continue
-            val leftCol = r.centerX() < c
-            if ((leftCol && CastStripModel.cutsLeft(side)) || (!leftCol && CastStripModel.cutsRight(side))) cut(p)
-        }
-        return out
-    }
 
     /** a finger on slot [i]: the slot's cell on the "castbar" row (nothing for an empty / waiting slot) */
     private fun castStripTap(i: Int) {
@@ -1701,95 +1707,29 @@ class HomeView(
     private fun castPartyKeep(): Boolean = renderLook?.castSide == null && party.party?.onLive == true && HomeSettings.castBarPartyShow
 
     /** the bar's side and its fight rule now: the player's, or a preview look's (Hide with it) */
-    private fun castSideNow(): CastStripModel.Side = renderLook?.castSide ?: HomeSettings.castBarSide
+    private fun castSideNow(): CastStripModel.Side = layoutNow().castSide
     private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat
 
     /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
     private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
+
+    /** the layout record changed in more than the bar since the page was laid */
+    private fun layoutMoved(): Boolean {
+        val was = laidLayout ?: return false
+        fun core(l: HomeLayout) = l.copy(cast = HomeLayout.CastDock.OFF, castSize = HomeLayout.SlotSize.L, name = "")
+        return core(was) != core(layoutNow())
+    }
 
     private fun castStripRelay() {
         val s = shown ?: return
         if (s.full != null && !s.takeover) return
         val side = castSideNow()
         if (side == laidSide) return
-        // cb3: Left <-> Right slides the bar over with the page's one motion (the columns make room); coming or going is laid at once
+        // cb3: Left <-> Right slides the bar over with the page's one motion (the columns make room); coming or going is laid at once.
+        // Movable Home: a new layout (a preset, a swap) moving more than the bar glides the whole page there
         val slide = (side == CastStripModel.Side.LEFT || side == CastStripModel.Side.RIGHT) &&
-            (laidSide == CastStripModel.Side.LEFT || laidSide == CastStripModel.Side.RIGHT)
+            (laidSide == CastStripModel.Side.LEFT || laidSide == CastStripModel.Side.RIGHT) || layoutMoved()
         apply(s, animate = slide && isShown)
-    }
-
-    private fun placesBase(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
-        val c = w / 2f
-        if (!s.takeover) s.full?.let { m ->
-            // NO bar and no close button on top (user, 2026-09-29 15:08: "get rid of the ugly top bars and use the B
-            // glyph on the home button to go back to home"): the module fills the frame; the strip's Home button
-            // shows B ([bGoesHome]) and takes the player back
-            return when (m) {
-                HomeModule.CHAT -> mapOf(Part.CHAT_FULL to RectF(0f, 0f, w, h))
-                // b129 (the user, b128: "I also want the buffs and debuffs to be in the open map module in the top right- pressing right on the d-pad should take you over to them to open with A- below the buffs should be the debuffs"): the aura pane over the open map, its rows in the top right
-                HomeModule.MAP -> mapOf(Part.MAP to RectF(0f, 0f, w, h), Part.AURAS to RectF(0f, 0f, w, h))
-                HomeModule.BARS -> mapOf(Part.BARS to RectF(0f, 0f, w, h))
-            }
-        }
-        // AT REST: the bars (thin row, or the diamonds), and under them the left column split EQUALLY between the tracked
-        // quests and the chat (user, 15:15), the minimap on the right. The diamonds at rest are SMALL, fitted into the top (user,
-        // 16:37: "the controller daimonds should still kind of shrink in size to fit on the top until going into combat").
-        // WHILE THE CONTROLLER IS BIG (auto-attack or combat, [HomeGrow]) the same page under a BIGGER band (16:37: "once in
-        // combat they should grow just a bit bigger than they are now"): the quests keep their place in the left column instead
-        // of moving to a line of their own (user, 16:35 report: "when entering combat, lets not move the quests anymore")
-        // THE HARMONY PASS (LATER 18, UI Art's HARMONY_SPEC section 2; the user: "Yes, build it as drawn"): every module is a well
-        // MODULE_GAP apart and from the frame's edges; the quest module is the focused quest's card only (its own height), the chat
-        // well takes the rest of the left column, the map well the right half
-        val g = UiKit.MODULE_GAP
-        val barsBottom = barsBottom(s)
-        val top = barsBottom + g
-        val cardBottom = top + cardHeight().also { laidCardH = it }
-        // THE TEST (the user 2026-10-07 16:02: "I want to test seeing the focused quest above the mini-map on the home screen to see
-        // that that looks like"): the card on top of the right column, the map under it, the chat the whole left column.
-        // Today's layout = QUEST_ABOVE_MAP false (one line)
-        // b121 (the user on b120: "I want to move the map name back to being above the quest, I also want to give the quest a see
-        // through background so that I can still see the map"): the map takes the whole right column again, its zone band on top;
-        // the card lies OVER the map under the band (inset as the band), see-through; the buffs row under the card
-        laidOverMap = cardOverMap()
-        if (cardOverMap()) {
-            val qTop = top + ZONE_BAND_BOTTOM + 4f
-            val qBottom = qTop + laidCardH
-            // b125 (the user: "if there is no focused quest, I doesnt have to say that, it should just not show anything"): no card.
-            // b128 (the user: "when opening buffs or debuffs the quest should hide to give that menu that opens more space"): no card
-            // while the buffs' or the debuffs' list is open. The aura pane lies over the WHOLE map again (its coordinates are the map's:
-            // the rim keep-out); its buff row stands flush under the card ([AuraPane.buffTop]: "the buffs need to be moved up to be
-            // flush with the quest")
-            val noCard = homeCard() == null || auraPane.open != null
-            return if (noCard) mapOf(
-                Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
-                Part.CHAT to RectF(g, top, c - 4f, h - g),
-                Part.MAP to RectF(c + 4f, top, w - g, h - g),
-                Part.AURAS to RectF(c + 4f, top, w - g, h - g),
-            ) else mapOf(
-                Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
-                Part.QUESTS to RectF(c + 12f, qTop, w - g - 8f, qBottom),
-                Part.CHAT to RectF(g, top, c - 4f, h - g),
-                Part.MAP to RectF(c + 4f, top, w - g, h - g),
-                Part.AURAS to RectF(c + 4f, top, w - g, h - g),
-            )
-        }
-        // ABOVE CHAT (the user 2026-10-09, Settings > Home): the card on top of the left column, the chat under it, the map the whole
-        // right column (no cover: the player and the arrows keep their places). No focused quest = no card, the chat from the top. The
-        // world notice stays at the top of the chat's well, so it stands right under the card, never on it
-        if (homeCard() == null) return mapOf(
-            Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
-            Part.CHAT to RectF(g, top, c - 4f, h - g),
-            Part.MAP to RectF(c + 4f, top, w - g, h - g),
-            Part.AURAS to RectF(c + 4f, top, w - g, h - g),
-        )
-        return mapOf(
-            Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
-            Part.QUESTS to RectF(g, top, c - 4f, cardBottom),
-            Part.CHAT to RectF(g, cardBottom + g, c - 4f, h - g),
-            Part.MAP to RectF(c + 4f, top, w - g, h - g),
-            // the buff / debuff buttons and their list, over the small map (user 17:30 / 17:49)
-            Part.AURAS to RectF(c + 4f, top, w - g, h - g),
-        )
     }
 
     private fun apply(s: HomeScreen, animate: Boolean) {
@@ -1991,13 +1931,7 @@ class HomeView(
     }
 
     /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
-    private fun big(s: HomeScreen) = s.takeover && (renderLook?.grow ?: HomeSettings.combatGrow)
-
-    private fun barsBottom(s: HomeScreen) = when {
-        big(s) -> 10f + COMBAT_BARS + CastBarPlace.TOP_STRIP          // b-cast-bar-size: the top-edge cast bar's room in a fight
-        s.rest == HomeRest.DIAMONDS -> 8f + REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP   // its strip under the buttons at rest
-        else -> 120f + CastBarPlace.REST_STRIP
-    }
+    private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover, partyOn = partyOnHere()))
 
     /**
      * The focused quest's card in HomeView px for the map's morph: where it sits now ([opening]) or where it will sit when the close
@@ -2114,8 +2048,8 @@ class HomeView(
         // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
         if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         wheelLayer?.layout(0, 0, r - l, b - t)                              // f-radial-behind: the whole page, under the columns
-        PartyMenuView.PLACE.let { m -> partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
-        PartyMenuView.PLACE.let { m -> targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
+        PartyMenuView.place(laidChatRight, (r - l).toFloat()).let { m -> partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
+        PartyMenuView.place(laidChatRight, (r - l).toFloat()).let { m -> targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val f = now[p] ?: continue
@@ -2201,13 +2135,19 @@ class HomeView(
             else UiKit.pauseOut(UiKit.PAUSE_TOP, t, screen)
         val left = UiKit.pauseOut(UiKit.PAUSE_LEFT, t, screen)
         pauseMap = UiKit.pauseOut(UiKit.PAUSE_MAP, t, screen)
+        val half = width / 2f
         for ((p, v) in views) {
-            val o = when (p) {
-                Part.BARS -> pauseTop
-                Part.CHAT, Part.CHAT_FULL, Part.PARTY -> left
-                Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
-                Part.QUESTS -> if (cardOverMap()) pauseMap else left
-                Part.MAP, Part.AURAS -> pauseMap
+            // MOVABLE HOME (SPEC section 6 item 2): the side is the part's HALF, not its name: the left column slides left whatever it
+            // holds (the map after a swap). A part across both halves (a full-screen module) keeps its own side
+            val r = now[p]
+            val across = r == null || (r.left < half && r.right > half)
+            val o = when {
+                p == Part.BARS -> pauseTop
+                p == Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
+                !across -> if (r!!.centerX() < half) left else pauseMap
+                p == Part.QUESTS -> if (cardOverMap()) pauseMap else left
+                p == Part.MAP || p == Part.AURAS -> pauseMap
+                else -> left                                                                         // the chat, the party module
             }
             // FULLY OFF, whatever the part's size (the user 2026-10-09: the FULL-SCREEN map "only slide[s] ... half way out"): the kit's
             // distance is for the compact parts; a bigger one goes as far as it needs to leave the screen, on the same curve
@@ -3392,7 +3332,8 @@ class HomeView(
         /** the focused quest's card over the map (b121): above the map's 0, under the wheel's lifted left column */
         private const val CARD_Z = 2f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
-        fun cardOverMap(): Boolean = renderLook?.overMap ?: HomeSettings.questOverMap
+        fun cardOverMap(): Boolean = renderLook?.let { l -> l.layout?.let { it.card == HomeLayout.CardDock.ON_MAP } ?: l.overMap }
+            ?: (HomeSettings.layout.card == HomeLayout.CardDock.ON_MAP)
 
         /**
          * f-settings-previews (the user: "make our visual aids in the settings less shitty", "Yes, this direction"): the Settings panel's
@@ -3403,7 +3344,9 @@ class HomeView(
         data class Look(val rest: HomeRest, val grow: Boolean, val overMap: Boolean, val swing: Boolean,
                         /** the one-time cast bar question's picture (the user, 2026-11-13: "make sure that this pop up uses realistic
                          *  visuals"): the bar laid on this side, Hide in combat, whatever the player's own setting; null = theirs */
-                        val castSide: CastStripModel.Side? = null)
+                        val castSide: CastStripModel.Side? = null,
+                        /** movable Home: a whole layout record to draw (the Home layout tile's preset pictures); null = the player's */
+                        val layout: HomeLayout? = null)
         internal var renderLook: Look? = null
         /** the Track Pad & Keyboard's own controller guest (Quests.lua's "tool": ZL / ZR kept from the game while it holds) */
         const val TOOL_GUEST = "tool"

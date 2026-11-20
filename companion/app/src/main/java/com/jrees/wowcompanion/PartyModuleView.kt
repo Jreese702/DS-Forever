@@ -47,9 +47,14 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     /** the tab's look and motion */
     val tab = SelectTab()
 
-    /** the module in this view's own px: the view's left is the screen's edge (the tab's place, m134) */
+    /** movable Home (SPEC section 6 item 9): the chat's column is on the right, so the Select tab stands on the RIGHT screen edge */
+    var tabRight = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** the module in this view's own px: the view's left (or, [tabRight], its right) is the screen's edge (the tab's place, m134) */
     fun module(): PartyLayout.Module =
-        PartyLayout.module(mode, live.party?.view?.size ?: 1, pet = live.party?.viewPet == true, top = 0f, left = 0f, right = width.toFloat())
+        PartyLayout.module(mode, live.party?.view?.size ?: 1, pet = live.party?.viewPet == true, top = 0f, left = 0f, right = width.toFloat(),
+            tabRight = tabRight)
 
     /** m150: a short word over the module (Smart Res refused in a fight), [NOTE_MS] */
     fun note(s: String) { noteText = s; noteUntil = SystemClock.uptimeMillis() + NOTE_MS; invalidate() }
@@ -227,7 +232,10 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         val pulse = tab.edgeAlpha(now)
         // the lit art: the wipe (on / off), else a pulse while it is off (a group formed: 0.5 .. 1 .. 0.5 shown as 0 .. 0.5 .. 0)
         val lit = if (w > 0f) w else if (pulse < 1f) (1f - pulse) else 0f
+        // movable Home: on the right edge the handle's art, its arrow and its notch are the left one's mirror image (the glyphs read as usual)
+        if (tabRight) { c.save(); c.scale(-1f, 1f, t.cx, 0f) }
         UiKit.sideHandle(c, RectF().of(t), lit, if (look == SelectTab.Look.UNBOUND) 170 else 255)
+        if (tabRight) c.restore()
         val tp = PartyLayout.tabParts(t)
         val gs = tp.glyph * tab.glyphScale(now)
         val ga = if (look == SelectTab.Look.UNBOUND) (255 * 0.4f).toInt() else 255
@@ -236,7 +244,7 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         // place (the user's decision 1, 2026-11-11: "B shown")
         val onLook = look == SelectTab.Look.ON
         if (!(onLook && tp.bOnArrow)) UiKit.tex("move_arrow_right")?.let { a ->
-            c.save(); c.rotate(tab.arrowDeg(now), tp.glyphCx, tp.arrowCy)
+            c.save(); if (tabRight) c.scale(-1f, 1f, tp.glyphCx, 0f); c.rotate(tab.arrowDeg(now), tp.glyphCx, tp.arrowCy)
             bmp(c, a, Box(tp.glyphCx - tp.arrow / 2f, tp.arrowCy - tp.arrow / 2f, tp.glyphCx + tp.arrow / 2f, tp.arrowCy + tp.arrow / 2f), ga)
             c.restore()
         }
@@ -246,7 +254,11 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         }
         // the pick on the tab's right edge (it slides with it): the game's small gold arrow (common-dropdown-icon-next), pointing in
         tab.notchY(now)?.let { ny ->
-            UiKit.tex("menu_next")?.let { a -> bmp(c, a, Box(t.r - tp.notch * 0.35f, ny - tp.notch / 2f, t.r + tp.notch * 0.65f, ny + tp.notch / 2f), 255) }
+            UiKit.tex("menu_next")?.let { a ->
+                if (tabRight) { c.save(); c.scale(-1f, 1f, t.cx, 0f) }
+                bmp(c, a, Box(t.r - tp.notch * 0.35f, ny - tp.notch / 2f, t.r + tp.notch * 0.65f, ny + tp.notch / 2f), 255)
+                if (tabRight) c.restore()
+            }
         }
     }
 

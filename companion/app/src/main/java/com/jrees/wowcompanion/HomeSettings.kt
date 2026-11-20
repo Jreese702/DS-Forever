@@ -23,17 +23,28 @@ object HomeSettings {
 
     fun init(c: Context) {
         if (prefs == null) prefs = c.applicationContext.getSharedPreferences("home", Context.MODE_PRIVATE)
+        layoutStore()
     }
 
     /** the off-device tests: these prefs (null = none, as before any init) */
-    internal fun startForTest(p: SharedPreferences?) { prefs = p }
+    internal fun startForTest(p: SharedPreferences?) { prefs = p; HomeLayoutStore.startForTest(p); layoutStore() }
 
+    /** MOVABLE HOME (SPEC section 9): the layout record shares this file; its changes are every Home listener's */
+    private var storeHeard = false
+    private fun layoutStore() {
+        if (HomeLayoutStore.prefs == null || HomeLayoutStore.prefs !== prefs) HomeLayoutStore.prefs = prefs
+        if (!storeHeard) { storeHeard = true; HomeLayoutStore.onChange { for (l in listeners.toList()) l() } }
+    }
+    /** the active layout record (the current character's; SPEC section 9) */
+    val layout: HomeLayout get() = HomeLayoutStore.active()
+
+    /** the band at rest: a FACADE on the active layout record since movable Home (the old key still written for one release) */
     var rest: HomeRest
-        get() = prefs?.getString(KEY, null)?.let { runCatching { HomeRest.valueOf(it) }.getOrNull() } ?: HomeRest.DIAMONDS
+        get() = layout.rest
         set(v) {
             if (v == rest) return
             prefs?.edit()?.putString(KEY, v.name)?.apply()
-            for (l in listeners) l()
+            HomeLayoutStore.update { it.copy(rest = v) }
         }
 
     /** the radial's way (the user, 2026-10-06: "make the Other radial type ... an option ... under the DS wow toolbar"): true = TAP
@@ -56,11 +67,11 @@ object HomeSettings {
      * minimap its full height. The card's rules are the same both ways (no focus = no card; a tap minimizes it)
      */
     var questOverMap: Boolean
-        get() = prefs?.getBoolean("questOverMap", true) ?: true
+        get() = layout.card != HomeLayout.CardDock.ABOVE_CHAT        // movable Home: a facade on the record's card dock
         set(v) {
-            if (v == questOverMap) return
+            if (v == questOverMap && layout.card != HomeLayout.CardDock.OFF) return
             prefs?.edit()?.putBoolean("questOverMap", v)?.apply()
-            for (l in listeners) l()
+            HomeLayoutStore.update { it.copy(card = if (v) HomeLayout.CardDock.ON_MAP else HomeLayout.CardDock.ABOVE_CHAT) }
         }
 
     var radialTap: Boolean
@@ -211,11 +222,11 @@ object HomeSettings {
      * rest's place and size: nothing on the page moves).
      */
     var combatGrow: Boolean
-        get() = prefs?.getBoolean(KEY_COMBAT_GROW, true) ?: true
+        get() = layout.fight == HomeLayout.FightBand.GROW            // movable Home: a facade on the record's "In fights" (D1: Grow)
         set(v) {
             if (v == combatGrow) return
             prefs?.edit()?.putBoolean(KEY_COMBAT_GROW, v)?.apply()
-            for (l in listeners) l()
+            HomeLayoutStore.update { it.copy(fight = if (v) HomeLayout.FightBand.GROW else HomeLayout.FightBand.SAME) }
         }
 
     /** p-swing-timer (a player: "would rather turn this off"): the SWING line under the controller in a fight (batch 12: not the cast bar); true = shown (the
@@ -232,12 +243,20 @@ object HomeSettings {
      *  ... or off by default"): OFF, LEFT (under the chat), RIGHT (under the minimap), BOTH. Never chosen: the old Home row's On
      *  ("castStrip" true) reads as LEFT, anything else OFF ([CastStripModel.sideOf]); the first change writes the new key and drops the old */
     var castBarSide: CastStripModel.Side
-        get() = CastStripModel.sideOf(prefs?.getString(KEY_CAST_SIDE, null),
-            prefs?.takeIf { it.contains(KEY_CAST_STRIP) }?.getBoolean(KEY_CAST_STRIP, false))
+        get() = HomeLayoutRules.shown(layout).castSide                // movable Home: the record's dock as a screen side
         set(v) {
             if (v == castBarSide && prefs?.contains(KEY_CAST_SIDE) == true) return
             prefs?.edit()?.putString(KEY_CAST_SIDE, v.name)?.remove(KEY_CAST_STRIP)?.apply()
-            for (l in listeners) l()
+            // an older route's screen side (Turn on = Both) means the dock under that column NOW (chat left or right)
+            if (!HomeLayoutStore.update { it.copy(cast = HomeLayout.dockOf(v, it.chatSide)) }) for (l in listeners) l()
+        }
+    /** movable Home: the bar's dock in words that follow the widgets (Off / Under chat / Under map / Across) */
+    var castDock: HomeLayout.CastDock
+        get() = layout.cast
+        set(v) {
+            if (v == castDock && prefs?.contains(KEY_CAST_SIDE) == true) return
+            prefs?.edit()?.putString(KEY_CAST_SIDE, layout.copy(cast = v).castSide.name)?.remove(KEY_CAST_STRIP)?.apply()
+            if (!HomeLayoutStore.update { it.copy(cast = v) }) for (l in listeners) l()
         }
     /** THE TAP-TO-CAST BAR IN A FIGHT (the user, 2026-11-13: "there should be a settings toggle to make them Hide/stay in combat"; the
      *  picks: its own section's row, "Hide in combat" by default): HIDE fades the bar out while Home shows a fight, STAY keeps it */
@@ -284,7 +303,7 @@ object HomeSettings {
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
     /** a reset (ResetRun) removed saved values: every listener reads them again */
-    fun resetDone() { for (l in listeners) l() }
+    fun resetDone() { HomeLayoutStore.resetDone(); for (l in listeners) l() }
 
     /** cb2's On / Off Home row (read once for cb3's migration, then removed) */
     private const val KEY_CAST_STRIP = "castStrip"
