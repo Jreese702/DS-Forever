@@ -422,8 +422,12 @@ object GameUi {
         val now = swNow(part) ?: return null
         val want = swWant(part)
         return Row(id, label, null, if (want) UiMode.ON else UiMode.OFF, true, !now,
-            if (now == want) (if (now) onWord else offWord) else "Sent")
+            if (now == want) (if (now) onWord else offWord) else if (swNoRow()) PadFit.NO_ROW_NOTE else "Sent")
     }
+    /** #550: the switches' row is registered but this layout cannot place it (TapPad pad26 `drop`): no tap can land, none waits */
+    private fun swNoRow(): Boolean = PadFit.missing(pad, sw?.row ?: "uisw")
+    /** #550: why a tap on [row] did not go: a row the layout cannot place, else no pad yet */
+    private fun noTapWhy(row: String): String = if (PadFit.missing(pad, row)) PadFit.NO_ROW_NOTE else "The game has not published its tap pad"
     fun playerRow(): Row? = swRow(PLAYER_ID, SW_PLAYER, "Player frame", "Shown on the top screen", "Hidden: the resource bar and the HUD instead")
     // hub26: while DS Forever's own frames are on, the game's of that group stay hidden whatever their own switch says
     fun targetRow(): Row? = swRow(TARGET_ID, SW_TARGET, "Target frame", "Shown on the top screen", "Hidden: the bars over the mobs instead")
@@ -794,6 +798,8 @@ object GameUi {
                           if (e.has("why")) e.optString("why") else null))
         }
         pad = h.optJSONObject("pad")
+        // #550: rows this layout cannot place (TapPad pad26 `drop`) are said ONCE, never a silent wait
+        if (current) PadFit.once(pad)?.let { n -> Log.i("WCLOG", "pad: $n (not placed: ${PadFit.dropped(pad).joinToString(" ")})"); GameInput.onStatus(n) }
         // fix/stream-row-offset: the load the stream's measured fit is for, and a strip measurement whose answer this document carries
         if (h.has("boot")) TapCal.boot = h.optLong("boot", 0L)
         if (current) TapCal.settle(pad, System.currentTimeMillis())?.let { line -> Log.i("WCHUB", line); TapBridge.note(line) }
@@ -886,7 +892,7 @@ object GameUi {
         val r = rst
         val rcol = restore.step(r, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
         if (rcol != null) {
-            last = if (GameInput.tap(ctx, pad, ROW, rcol)) UiStep.Wait("Restoring this character's top screen") else UiStep.Wait("The game has not published its tap pad")
+            last = if (GameInput.tap(ctx, pad, ROW, rcol)) UiStep.Wait("Restoring this character's top screen") else UiStep.Wait(noTapWhy(ROW))
             return
         }
         if (restore.holding(r, s, now)) { last = UiStep.Wait("Restoring this character's top screen"); return }
@@ -896,7 +902,7 @@ object GameUi {
         }
         val step = policy.step(s, room.name, visible, live, now, helloAt + GameUiPolicy.SETTLE_MS)
         if (step is UiStep.Tap && !GameInput.tap(ctx, pad, ROW, step.mask)) {
-            last = UiStep.Wait("The game has not published its tap pad")
+            last = UiStep.Wait(noTapWhy(ROW))
             return
         }
         last = step
@@ -912,7 +918,7 @@ object GameUi {
                 swBack.answered { p -> swSig(sws, p) }
                 val next = sws?.let { swNextSkip(it, swBack.parked(now)) { p -> swWant(p) } }
                 val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
-                if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
+                if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current && !swNoRow() &&
                     now >= helloAt + GameUiPolicy.SETTLE_MS) {
                     // fix/1492-feedback (the user, 2026-11-18, test 1492: "when opening the stream, it looked like it was doing a lot of
                     // clicks again"): every switch that differs goes in ONE batch ([swBatch], [SW_GAP_MS] apart: the whole set in about
