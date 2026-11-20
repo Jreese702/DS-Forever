@@ -12,6 +12,8 @@ export const COMMENT_WORDS = 400;
 export const TYPED_MAX = 300;
 /** at most this many key lines in a comment */
 export const KEY_LINES = 12;
+/** the memory lines a low-memory comment quotes at most (memory work #56: the stamp, 3 samples, 6 trims and reliefs) */
+export const MEM_KEY_LINES = 10;
 
 const AUTO = "Automatic crash report: ";
 
@@ -24,7 +26,13 @@ export const TRACKERS = [
   {
     id: "low-memory-kill", issue: 56,
     auto: /^Android closed DS Forever because the device ran low on memory\b/,
-    keys: (r) => diagLines(r.diag, [/^RAM: /, /^low-memory graphics /, /^Exits Android recorded/, /^ {2}\S.*: LOW_MEMORY /]),
+    // memory work #56 (D5): then the killed run's memory in short (the app's StartupDiag.memKeyLines: the exit record's stamp, the
+    // last 3 memory lines, the last trims and reliefs); an older app sends none
+    maxKeys: 22,
+    keys: (r) => [
+      ...diagLines(r.diag, [/^RAM: /, /^low-memory graphics /, /^Exits Android recorded/, /^ {2}\S.*: LOW_MEMORY /]),
+      ...diagLines(r.diag, [/^Mem (stamp|line|event): /], MEM_KEY_LINES),
+    ],
   },
   {
     id: "anr", issue: 153,
@@ -92,9 +100,9 @@ function traceLines(logs, n) {
   return [desc && desc.slice(0, 240), ...trace].filter(Boolean).slice(0, n);
 }
 
-/** the diagnostics' lines matching any of [res], in order, at most [KEY_LINES] */
-function diagLines(diag, res) {
-  return (diag || "").split("\n").filter((l) => res.some((re) => re.test(l))).slice(0, KEY_LINES).map((l) => l.trimEnd());
+/** the diagnostics' lines matching any of [res], in order, at most [max] */
+function diagLines(diag, res, max = KEY_LINES) {
+  return (diag || "").split("\n").filter((l) => res.some((re) => re.test(l))).slice(0, max).map((l) => l.trimEnd());
 }
 
 /** the known type of [r] (a validated report), or null = an unknown type (its own issue) */
@@ -127,7 +135,7 @@ export function ramTier(diag) {
  */
 export function buildComment(r, t, safe, uncommented = 0) {
   const words = safe(r.words.trim()).slice(0, COMMENT_WORDS);
-  const keys = (t.keys ? t.keys(r) : []).map((l) => safe(l).slice(0, 240)).slice(0, KEY_LINES);
+  const keys = (t.keys ? t.keys(r) : []).map((l) => safe(l).slice(0, 240)).slice(0, t.maxKeys || KEY_LINES);
   return [
     `**Another report** of \`${t.id}\``,
     "",

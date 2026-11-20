@@ -57,9 +57,11 @@ object MemWatch {
         thread = t
         val h = Handler(t.looper)
         handler = h
+        am = runCatching { ctx?.applicationContext?.getSystemService(android.app.ActivityManager::class.java) }.getOrNull()
         val tick = object : Runnable {
             override fun run() {
                 runCatching { val l = line(); Log.i(TAG, l); keep(l) }
+                runCatching { stampExit() }
                 runCatching { maybeDump(lastPssMb) }
                 h.postDelayed(this, EVERY_MS)
             }
@@ -359,6 +361,16 @@ object MemWatch {
      * no year: one more than a day after [whenMs] is last year's (a kill just after New Year). Pure (the tests).
      */
     const val BEFORE_LINES = 72
+    /** memory work #56 (D5): the trims and reliefs before the last [BEFORE_LINES] lines, at most this many, go first ([withEvents]) */
+    const val EARLIER_EVENTS = 12
+    /** the last [max] lines up to [whenMs] AND, before them, the earlier trims and reliefs of that window ([EARLIER_EVENTS]): a relief
+     *  at the world's entry 10 minutes before a kill stays in the record (memory work #56, D5). Pure */
+    fun withEvents(history: String, whenMs: Long, max: Int = BEFORE_LINES): List<String> {
+        val all = linesUpTo(history, whenMs, Int.MAX_VALUE)
+        val tail = all.takeLast(max)
+        val earlier = all.dropLast(max).filter { it.length > 15 && isEvent(it.substring(15)) }.takeLast(EARLIER_EVENTS)
+        return earlier + tail
+    }
     fun linesUpTo(history: String, whenMs: Long, max: Int = BEFORE_LINES): List<String> {
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = whenMs }
         val year = cal.get(java.util.Calendar.YEAR)
@@ -372,6 +384,87 @@ object MemWatch {
     }
 
     @Volatile private var lastPssMb = 0L
+
+    /**
+     * A MEM.LOG LINE IN SHORT for the report's key lines (memory work #56, D5; the #56 comments cut each key line at 240 characters and
+     * a full line is ~400): a sample "MM-dd HH:mm:ss pss 1187 MB (java 29, native 974, gfx 146, code 19) ... | game 2850 MB (13), free
+     * 6480 MB, ... | minimap 22, kit 6, ... | room ..., game up | low 317 MB, jheap ..., gpu 880 MB, ..." -> "HH:mm:ss pss 1187 (j 29 n 974
+     * gx 146) game 2850 free 6480 low 317 gpu 880 | kit 6 minimap 22 ..." (the five biggest caches); a trim or relief line as it is (its
+     * stamp to the second); null = neither. Pure (the tests).
+     */
+    fun shortLine(stamped: String): String? {
+        if (stamped.length < 16) return null
+        val time = stamped.substring(6, 14)
+        val l = stamped.substring(15)
+        if (isEvent(l)) return "$time $l"
+        if (!l.startsWith("pss ")) return null
+        fun num(re: String) = Regex(re).find(l)?.groupValues?.get(1)
+        val parts = l.split(" | ")
+        val caches = parts.getOrNull(2).orEmpty().split(", ").mapNotNull { c ->
+            val i = c.lastIndexOf(' '); if (i <= 0) null else c.substring(0, i) to (c.substring(i + 1).toLongOrNull() ?: return@mapNotNull null)
+        }.filter { it.second > 0 }.sortedByDescending { it.second }.take(5)
+        return buildString {
+            append(time).append(" pss ").append(num("^pss (\\d+)") ?: "?")
+            append(" (j ").append(num("java (\\d+)") ?: "?").append(" n ").append(num("native (\\d+)") ?: "?").append(" gx ").append(num("gfx (\\d+)") ?: "?").append(")")
+            num("game (\\d+) MB")?.let { append(" game ").append(it) }
+            num("free (\\d+) MB")?.let { append(" free ").append(it) }
+            num("low (\\d+) MB")?.let { append(" low ").append(it) }
+            num("gpu (\\d+) MB")?.let { append(" gpu ").append(it) }
+            num("psi some ([\\d.]+)")?.let { append(" psi ").append(it) }
+            if (caches.isNotEmpty()) append(" | ").append(caches.joinToString(" ") { "${it.first} ${it.second}" })
+        }
+    }
+    /** a trim from Android or a relief (the lines the low-memory reports need beside the samples) */
+    fun isEvent(l: String): Boolean = l.startsWith("trim from Android") || l.startsWith("relief (")
+
+    /**
+     * THE KEY LINES OF A KILLED RUN'S MEMORY (memory work #56, D5): of [lines] (mem.log's, oldest first, stamped) the last [samples]
+     * samples and the last [events] trims and reliefs, each [shortLine], in time order. Pure (the tests).
+     */
+    fun keyLines(lines: List<String>, samples: Int = 3, events: Int = 6): List<String> {
+        val idx = lines.indices.filter { shortLine(lines[it]) != null }
+        val sampleIdx = idx.filter { lines[it].substring(15).startsWith("pss ") }.takeLast(samples)
+        val eventIdx = idx.filter { isEvent(lines[it].substring(15)) }.takeLast(events)
+        return (sampleIdx + eventIdx).sorted().mapNotNull { shortLine(lines[it]) }
+    }
+
+    // ---------------------------------------------------------------- memory work #56 (D5): the exit record carries the memory
+    /**
+     * THE EXIT RECORD'S OWN MEMORY (memory work #56, D5, the user's yes 2026-11-19): every line also stamps Android's exit record for
+     * this process (ActivityManager.setProcessStateSummary, Android 11+, at most [SUMMARY_MAX] bytes), so a low-memory kill's
+     * ApplicationExitInfo says what DS Forever and the game held at the last line before it, even when mem.log is gone or the report is
+     * made hours later. CrashLogs reads it back into the next report ("State at the end").
+     */
+    const val SUMMARY_MAX = 128
+    @Volatile private var am: android.app.ActivityManager? = null
+    @Volatile private var summaryNow: String = ""
+    @Volatile private var lastFreeMb = -1L
+    @Volatile private var summaryDead = false
+    private fun stampExit() {
+        if (summaryDead || android.os.Build.VERSION.SDK_INT < 30) return
+        val a = am ?: return
+        val t = summaryNow
+        if (t.isEmpty()) return
+        runCatching { a.setProcessStateSummary(t.toByteArray(Charsets.UTF_8)) }.onFailure { summaryDead = true; Log.i(TAG, "exit stamp off: ${it.javaClass.simpleName}") }
+    }
+
+    /**
+     * "dsf <s> pss 390 j 31 n 210 gx 40 game 4120 free 216 low 180 gpu 880 | scenes 41 kit 6 safepath 24" - the line's numbers in MB
+     * ([epochS] its time), the biggest caches last, cut to [SUMMARY_MAX] bytes (ASCII); -1 = not read. Pure (the tests).
+     */
+    fun stateSummary(epochS: Long, pss: Long, java: Long, native: Long, gfx: Long, game: Long, free: Long, low: Long, gpu: Long,
+                     caches: List<Pair<String, Long>>): String {
+        val head = buildString {
+            append("dsf ").append(epochS).append(" pss ").append(pss).append(" j ").append(java).append(" n ").append(native).append(" gx ").append(gfx)
+            if (game >= 0) append(" game ").append(game)
+            if (free >= 0) append(" free ").append(free)
+            if (low >= 0) append(" low ").append(low)
+            if (gpu >= 0) append(" gpu ").append(gpu)
+        }
+        val top = caches.filter { it.second > 0 }.sortedByDescending { it.second }.joinToString(" ") { "${it.first.filter { c -> c.code in 33..126 }} ${it.second}" }
+        val all = if (top.isEmpty()) head else "$head | $top"
+        return if (all.length <= SUMMARY_MAX) all else all.take(SUMMARY_MAX).substringBeforeLast(' ')
+    }
     internal fun mb(kb: Long) = (kb + 512) / 1024
     internal fun mbB(b: Long) = (b + 512 * 1024) / (1024 * 1024)
 
@@ -385,9 +478,8 @@ object MemWatch {
         val parts = "java ${mb(stat("summary.java-heap"))}, native ${mb(stat("summary.native-heap"))}, gfx ${mb(stat("summary.graphics"))}, " +
             "code ${mb(stat("summary.code"))}"
         val heap = "heap ${mbB(Debug.getNativeHeapAllocatedSize())}/${mbB(Debug.getNativeHeapSize())} MB"
-        val caches = synchronized(this) { sources.toList() }.joinToString(", ") { (n, f) ->
-            "$n ${runCatching { mbB(f()) }.getOrDefault(-1)}"
-        }
+        val sized = synchronized(this) { sources.toList() }.map { (n, f) -> n to runCatching { mbB(f()) }.getOrDefault(-1L) }
+        val caches = sized.joinToString(", ") { (n, b) -> "$n $b" }
         val doing = buildList {
             add("room $room")
             ArtHarvest.currentStep?.let { add("art $it") }
@@ -396,12 +488,17 @@ object MemWatch {
         }.joinToString(", ")
         val rt = Runtime.getRuntime()
         val low = lowKb; lowKb = -1L                                  // the low since the last line, then the next window
+        val dev = device()
+        runCatching {
+            summaryNow = stateSummary(System.currentTimeMillis() / 1000, mb(pss), mb(stat("summary.java-heap")), mb(stat("summary.native-heap")),
+                mb(stat("summary.graphics")), gameMb, lastFreeMb, if (low >= 0) mb(low) else -1L, gpuBytes()?.let { mbB(it) } ?: -1L, sized)
+        }
         val more = extras(low, rt.totalMemory() - rt.freeMemory(), rt.maxMemory(), gpuBytes(), trimLevel,
             if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L)
         val bm = beatMax; beatMax = 0L                                // issue #230: the main thread's worst beat and touch since the last line
         val lag = listOf(beatNote(bm), runCatching { TouchLag.take() }.getOrDefault("")).filter { it.isNotEmpty() }.joinToString(", ")
-        if (lag.isNotEmpty()) return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing | $more, $lag"
-        return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing | $more"
+        if (lag.isNotEmpty()) return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more, $lag"
+        return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more"
     }
 
     /**
@@ -428,6 +525,7 @@ object MemWatch {
         fun kb(k: String) = mem.firstOrNull { it.startsWith("$k:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()
         val avail = kb("MemAvailable"); val swapT = kb("SwapTotal"); val swapF = kb("SwapFree")
         val game = if (gameMb >= 0) "game $gameMb MB ($gameN)" else "game ?"
+        lastFreeMb = avail?.let { mb(it) } ?: -1L
         val free = avail?.let { "free ${mb(it)} MB" } ?: "free ?"
         val swap = if (swapT != null && swapF != null) "swap ${mb(swapF)}/${mb(swapT)} MB" else "swap ?"
         return "$game, $free, $swap"
