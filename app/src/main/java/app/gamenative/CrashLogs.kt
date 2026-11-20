@@ -86,6 +86,8 @@ object CrashLogs {
                     appendLine("Description: ${e.description}")
                     appendLine("Process: ${e.processName} (pid ${e.pid}), importance ${e.importance}")
                     appendLine("Memory: pss ${e.pss} KB, rss ${e.rss} KB")
+                    // memory work #56 (D5): the memory DS Forever stamped on this record at its last line (MemWatch.stampExit)
+                    stateLine(runCatching { e.processStateSummary }.getOrNull())?.let { appendLine(it) }
                     appendLine("App: ${BuildConfig.VERSION_NAME}; device ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
                     // the killed run's memory lines, taken now, before this run's own lines push them out of mem.log (the review of
                     // the 1.0.28 crash cluster: #164 #167 #171 #182 were reported minutes to hours after the restart); before the
@@ -108,9 +110,18 @@ object CrashLogs {
      *  ReportUpload (it keeps them apart from the 15 000-character record cut) */
     const val MEMORY_MARK = com.jrees.wowcompanion.ReportUpload.MEMORY_MARK
     fun memoryPart(history: String, whenMs: Long): String {
-        val ls = com.jrees.wowcompanion.MemWatch.linesUpTo(history, whenMs)
+        // memory work #56 (D5): the killed run's earlier trims and reliefs before its last lines (MemWatch.withEvents)
+        val ls = com.jrees.wowcompanion.MemWatch.withEvents(history, whenMs)
         if (ls.isEmpty()) return ""
         return "\n$MEMORY_MARK\n" + ls.joinToString("\n") + "\n"
+    }
+
+    /** "State at the end: dsf ... pss ..." from the exit record's stamp (MemWatch.stateSummary), null = none (an older run, Android 10) */
+    const val STATE_MARK = "State at the end: "
+    fun stateLine(summary: ByteArray?): String? {
+        val t = summary?.takeIf { it.isNotEmpty() }?.toString(Charsets.UTF_8)?.map { if (it.code in 32..126) it else ' ' }?.joinToString("")
+            ?.replace(Regex(" +"), " ")?.trim() ?: return null
+        return if (t.isEmpty()) null else STATE_MARK + t
     }
 
     /** the exit record's trace as text: a native crash's tombstone protobuf decoded (issue #114: it was written as raw bytes) */

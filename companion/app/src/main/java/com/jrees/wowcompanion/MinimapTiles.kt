@@ -43,6 +43,25 @@ object MinimapTiles {
         // WCMEM: the tiles held (full and small)
         MemWatch.source("minimap") { synchronized(this) { cache.values.sumOf { it.byteCount.toLong() } + small.values.sumOf { it.byteCount.toLong() } +
             standIn.values.sumOf { it.byteCount.toLong() } } }
+        // memory work #56 (D2, the user's yes 2026-11-19): the tiles were never trimmed (9 - 14 MB in the reports). Android's pressure and
+        // the reliefs (Play, the world, every loading screen) keep only the newest few ([trimKeep]); a tile on screen is decoded again
+        MemWatch.onTrim("minimap") { level -> trimmed(level) }
+    }
+    /** the bytes let go (main thread: the caches are the UI thread's); what stays: LowMemCuts.minimapKept */
+    private fun trimmed(level: Int): Long {
+        val (kf, ks) = LowMemCuts.minimapKept(level) ?: return 0L
+        var b = 0L
+        fun cut(c: LinkedHashMap<Long, Bitmap>, keep: Int) {
+            val over = c.size - keep
+            if (over <= 0) return
+            val gone = c.keys.take(over)                               // access order: the least recently drawn first
+            for (k in gone) c.remove(k)?.let { b += it.byteCount.toLong() }
+        }
+        synchronized(this) {
+            cut(cache, kf); cut(small, ks)
+            if (kf == 0) { b += standIn.values.sumOf { it.byteCount.toLong() }; standIn.clear() }
+        }
+        return b
     }
     private val pending = HashSet<Long>()
     /**

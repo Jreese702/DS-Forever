@@ -2114,6 +2114,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (::lbView.isInitialized && ::pauseView.isInitialized) lbEval()
     }
 
+    /** memory work #56 (D4): the words wait for the voice model's load (it was let go at a loading screen or the world's entry) */
+    private var talkLoading = false
+    /** the line while the words are worked out: "…", or "Loading voice…" while the model loads again */
+    private fun talkWait(): String = if (talkLoading) Tr.t("Loading voice") + "…" else "…"
+
     /** the hold passed HOLD_MS: the microphone listens (offline Whisper only: a hold must answer at once, never a sheet) */
     private fun talkListen() {
         val now = SystemClock.uptimeMillis()
@@ -2124,12 +2129,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (Voice.whisperModel(Tr.lang(), WhisperEngine.on(), Settings.voiceLanguage) == null) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.NO_VOICE), "no voice model"); return }
         if (!VoiceMic.granted(this)) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.MIC_OFF), "no microphone"); return }
         talkLevel = 0f
+        talkLoading = false
         Log.i("WCHOME", "hold to talk: listening (${talkTabs.now()?.key})")
         val started = talkEngine.start(false, Tr.lang(), chatView.voiceNames(), object : VoiceEngine.Sink {
             override fun rms(db: Float) { talkLevel = HoldTalk.level(db); if (holdTalk.listening) talkDraw() }
             override fun partial(text: String) {}
             override fun final(text: String) = talkAct(holdTalk.heard(SystemClock.uptimeMillis(), text), "words")
             override fun error(code: Int) = talkAct(holdTalk.failed(SystemClock.uptimeMillis(), HoldTalk.problem(code)), "voice error $code")
+            // memory work #56 (D4): the model was let go at a loading screen or the world's entry; the words wait for its load
+            override fun loading() { talkLoading = true; talkDraw() }
         })
         if (!started) { talkNoVoice = true; talkAct(holdTalk.noVoice(now, HoldTalk.NO_VOICE), "no voice model") }
     }
@@ -2211,11 +2219,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         fun fade(total: Long): Int { val left = total - (now - holdTalk.shownAt); return if (left >= 500L) 255 else (255 * left / 500L).toInt().coerceIn(0, 255) }
         castView.talkPanel = if (!up) null else CastView.TalkPanel(talkTabs.tabs, talkTabs.sel,
             CastView.TalkFace(if (st == HoldTalk.St.HELD) CastView.TalkFace.Mode.LISTEN else CastView.TalkFace.Mode.WORK, colour, talkLevel),
-            prefix, when (st) { HoldTalk.St.HELD -> ""; HoldTalk.St.WORKING -> "…"; else -> holdTalk.words },
+            prefix, when (st) { HoldTalk.St.HELD -> ""; HoldTalk.St.WORKING -> talkWait(); else -> holdTalk.words },
             ask = st == HoldTalk.St.LINE, alpha = if (st == HoldTalk.St.LINE) fade(HoldTalk.LINE_MS) else 255)
         if (!up && st != HoldTalk.St.NOTE) talkTabs.clear()
         castView.talkLine = if (up) null else when (st) {
-            HoldTalk.St.HELD, HoldTalk.St.WORKING -> CastView.TalkLine(prefix, colour, if (st == HoldTalk.St.WORKING) "…" else "")
+            HoldTalk.St.HELD, HoldTalk.St.WORKING -> CastView.TalkLine(prefix, colour, if (st == HoldTalk.St.WORKING) talkWait() else "")
             HoldTalk.St.LINE -> CastView.TalkLine(prefix, colour, holdTalk.words, ask = true, alpha = fade(HoldTalk.LINE_MS))
             HoldTalk.St.SENDING -> CastView.TalkLine(prefix, colour, holdTalk.words)
             HoldTalk.St.NOTE -> if (holdTalk.noteSent) CastView.TalkLine(prefix, colour, holdTalk.note, alpha = fade(HoldTalk.NOTE_MS))

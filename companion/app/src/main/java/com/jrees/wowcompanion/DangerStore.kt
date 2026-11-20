@@ -18,8 +18,56 @@ object DangerStore {
     private var checkedAt = 0L
     @Volatile private var lastNote = ""
 
-    /** the hostile spawns on uiMap [map] (empty until read) */
-    fun spawns(map: Int): List<QuestieNpcs.Spawn> = byMap[map] ?: emptyList()
+    /** the hostile spawns on uiMap [map] (empty until read; a map let go under pressure is read again: [dropped]) */
+    fun spawns(map: Int): List<QuestieNpcs.Spawn> {
+        asked(map)
+        byMap[map]?.let { return it }
+        if (map in dropped) wantAgain = true                       // the next [check] reads QuestieDB again
+        return emptyList()
+    }
+
+    // ---------------------------------------------------------------- memory work #56 (D2, the user's yes 2026-11-19)
+    /**
+     * QUESTIEDB'S SPAWNS UNDER PRESSURE: about 60,000 spawns for every map (5 - 10 MB), kept all session and in no memory line. Now
+     * counted ([bytes], "danger") and, at Android's running-low or worse (MemWatch's trims and reliefs), only the maps asked for last
+     * ([recent]: the player's zone and the few a route or the map drew) stay; a map let go is read again when it is asked for - by the
+     * first [check] [REREAD_AFTER_MS] after the trim (never at once: the trims come while the game loads, and a read is a spike of its
+     * own). The trim does not bump [version]: the routes' danger grids already built stay as they are. Any thread.
+     */
+    const val KEEP_MAPS = 8
+    const val REREAD_AFTER_MS = 60_000L
+    @Volatile private var droppedAt = 0L
+    private val recent = LinkedHashSet<Int>()
+    @Volatile private var dropped: Set<Int> = emptySet()
+    @Volatile private var wantAgain = false
+    @Volatile private var watched = false
+    private fun asked(map: Int) = synchronized(recent) { recent.remove(map); recent.add(map); while (recent.size > KEEP_MAPS) recent.remove(recent.first()) }
+    /** the maps a trim at [level] keeps of [have] ([recentMaps] the newest last): null = nothing goes (below running-low). Pure */
+    fun keepAt(level: Int, have: Set<Int>, recentMaps: List<Int>): Set<Int>? =
+        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) null
+        else if (ShippedNets.severe(level)) emptySet() else recentMaps.filter { it in have }.toSet()
+    /** a map let go at [at] may be read again at [now] (pure) */
+    fun rereadDue(now: Long, at: Long): Boolean = now - at >= REREAD_AFTER_MS
+    /** a spawn's bytes in memory (the object, its two strings), estimated */
+    const val SPAWN_BYTES = 120L
+    fun bytes(): Long = byMap.values.sumOf { it.size * SPAWN_BYTES + 16L }
+    /** the trim: the bytes let go */
+    fun letGo(level: Int): Long {
+        val have = byMap
+        val keep = keepAt(level, have.keys, synchronized(recent) { recent.toList() }) ?: return 0L
+        val gone = have.filterKeys { it !in keep }
+        if (gone.isEmpty()) return 0L
+        byMap = have.filterKeys { it in keep }
+        dropped = dropped + gone.keys
+        droppedAt = runCatching { android.os.SystemClock.elapsedRealtime() }.getOrDefault(0L)
+        return gone.values.sumOf { it.size * SPAWN_BYTES + 16L }
+    }
+    private fun watch() {
+        if (watched) return
+        watched = true
+        MemWatch.source("danger") { bytes() }
+        MemWatch.onTrim("danger") { level -> letGo(level) }
+    }
 
     /** the off-device renders: [spawns] on uiMap [map], as if read */
     fun seed(map: Int, spawns: List<QuestieNpcs.Spawn>) { byMap = byMap + (map to spawns); version++ }
@@ -29,8 +77,10 @@ object DangerStore {
 
     /** ask now and then (cheap): reads again in the background when QuestieDB or the area table changed */
     fun check(ctx: Context, onReady: () -> Unit) {
+        watch()
         val now = android.os.SystemClock.elapsedRealtime()
         if (loading || now - checkedAt < 10_000L) return
+        if (wantAgain && rereadDue(now, droppedAt)) { wantAgain = false; stamp = "" }   // a map let go under pressure was asked for: read again
         checkedAt = now
         loading = true
         val app = ctx.applicationContext
@@ -49,6 +99,7 @@ object DangerStore {
                     val map = parseAreas(JSONObject(areas.readText()))
                     val spawns = QuestieNpcs.read(toc)
                     byMap = spawns.groupBy { map[it.area] ?: 0 }.filterKeys { it != 0 }
+                    dropped = emptySet()
                     stamp = st; version++
                     android.util.Log.i("WCMAP", "danger: ${spawns.size} hostile spawns on ${byMap.size} maps read in " +
                         "${(System.nanoTime() - t0) / 1_000_000} ms")

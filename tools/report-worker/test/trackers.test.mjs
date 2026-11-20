@@ -191,3 +191,20 @@ test("the per-address limit still holds for known types; counted reports do not 
   assert.equal((await handle(req(report(LOWMEM)), e, NOW)).status, 429);
   assert.equal(e.LIMITS.m.get(`all:${Math.floor(NOW / 86_400_000)}`), "1", "one comment, four only counted");
 });
+
+test("memory work #56 (D5): a low-memory comment quotes the killed run's memory in short, after the exits", () => {
+  const mem = ["Mem stamp: dsf 1763600000 pss 390 j 31 n 210 gx 40 game 4120 free 216 gpu 880 | scenes 41 kit 6",
+    "Mem event: 18:44:10 relief (world): let go voice 300 MB, safepath 24 MB; java 140 -> 31 MB; psi some 2.10 full 0.40",
+    "Mem line: 18:50:03 pss 380 (j 30 n 205 gx 40) game 4100 free 260 | scenes 41 kit 6",
+    "Mem line: 18:50:08 pss 385 (j 31 n 207 gx 40) game 4110 free 230 | scenes 41 kit 6",
+    "Mem line: 18:50:13 pss 390 (j 31 n 210 gx 40) game 4120 free 216 | scenes 41 kit 6"];
+  const diag = DIAG + "\n" + mem.join("\n");
+  const r = validate(report(LOWMEM, { diag })).report;
+  const c = buildComment(r, classify(r), safe, 0);
+  assert.ok(c.includes(": LOW_MEMORY (status 0"), "the exits still");
+  for (const l of mem) assert.ok(c.includes(l), l);
+  assert.ok(c.indexOf("LOW_MEMORY (status 0") < c.indexOf("Mem stamp: "), "the exits first");
+  // an older app's diagnostics: no memory lines, the comment as before
+  const old = buildComment(validate(report(LOWMEM)).report, classify(validate(report(LOWMEM)).report), safe, 0);
+  assert.ok(!old.includes("Mem "));
+});

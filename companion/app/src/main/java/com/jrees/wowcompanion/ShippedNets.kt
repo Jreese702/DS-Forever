@@ -13,11 +13,53 @@ import java.util.concurrent.ConcurrentHashMap
  * date (exported for build X, game is Y)") and said in Settings > Map's "SafePath network" row ([line]) and the problem report.
  */
 object ShippedNets {
-    const val KEEP = 3
+    /**
+     * Memory work #56 (D1, the user's yes 2026-11-19): ONE cache of whole zone files for the in-zone route AND the cross-zone legs
+     * (ShippedCrossStore kept 4 more of its own: up to 7 zones, 5 - 36 MB each). At most [KEEP]; the zone the player is in and its
+     * neighbours ([keepNow]) stay while the legs of a chain read other zones; Android's pressure lets go ([letGo]).
+     */
+    const val KEEP = 4
     const val MAX_BYTES = 4 * 1024 * 1024
 
-    /** a zone's pack and, when its build is not the game's, why it may be out of date */
-    class Loaded(val pack: ShippedNet.Pack, val stale: String?)
+    /** a zone's pack and, when its build is not the game's, why it may be out of date; [bytes] its estimated size in memory ([estimate]) */
+    class Loaded(val pack: ShippedNet.Pack, val stale: String?) {
+        val bytes: Long = estimate(pack)
+        /** the maps this zone's exits lead into (its neighbours) */
+        val neighbours: Set<Int> by lazy { pack.sections.flatMap { s -> s.net.exits.map { it.toMap } }.filter { it != pack.header.map && it != 0 }.toSet() }
+    }
+
+    /**
+     * A PACK'S BYTES IN MEMORY, ESTIMATED from what it holds (the objects the reader makes: each node, edge, way point and the strings
+     * the JSON reader gives each; the roadmap's and the walk grid's arrays). Measured on the PC against the heap for the 45 shipped
+     * files (ShippedNetsMemoryTest): within a factor of two. For the memory line, not a budget to the byte. Pure.
+     */
+    fun estimate(p: ShippedNet.Pack): Long {
+        var b = 256L
+        for (s in p.sections) b += sectionBytes(s)
+        p.roadmap?.let { r ->
+            b += 16L * 7 + 4L * (r.nodeCell.size + r.nodeGr.size + r.nodeGc.size + r.nodeFlags.size + r.edgeA.size + r.edgeB.size + r.edgeFlags.size)
+            b += 16L + 4L * r.edgePts.size + r.edgePts.sumOf { a -> if (a == null) 0L else 16L + 4L * a.size }
+        }
+        // the walk grid: its classes and faces, and what its decode adds (a deck's heights: a float a vertex, the biggest part)
+        p.walk?.let { w -> b += 64L + w.cls.size + (w.faces?.size ?: 0) + (w.faces48?.size ?: 0) + 4L * (w.deckZ?.size ?: 0) +
+            (w.deckHigh?.size ?: 0) + (w.dropD?.size ?: 0) }
+        return b
+    }
+    private const val STR = 48L                     // a short string the JSON reader made (its own copy)
+    private const val PT = 36L                      // a point: a double[2] and its list slot
+    fun sectionBytes(s: ShippedNet.Section): Long {
+        var b = 128L
+        b += s.net.nodes.size * (48L + 3 * STR)
+        b += s.net.edges.size * (48L + 3 * STR)
+        b += s.net.exits.size * (32L + 2 * STR)
+        for (w in s.ways) b += 40L + (w.pts?.let { 16L + it.size * PT } ?: 0L) + (w.layers?.let { 16L + 4L * it.size } ?: 0L)
+        for (l in s.links) b += 64L + 2 * STR + l.pts.size * 44L
+        b += s.starts.size * (32L + 2 * STR)
+        b += s.checkpoints.size * 20L
+        b += (s.roadmapDanger?.size ?: 0) + (s.wayTag?.size ?: 0) * 4L + (s.exitTag?.size ?: 0) * 4L
+        for (st in s.stitches) b += 40L + st.pts.size * PT
+        return b
+    }
 
     /** [header]'s build against the game's [game] (null / empty: unknown, no mark): the words, or null when they agree */
     fun staleWhy(header: ShippedNet.Header, game: String?): String? {
@@ -57,7 +99,19 @@ object ShippedNets {
     private val absent = ConcurrentHashMap.newKeySet<Int>()
     private val stale = ConcurrentHashMap<Int, String>()
 
-    fun init(ctx: Context) { if (appCtx == null) appCtx = ctx.applicationContext }
+    fun init(ctx: Context) {
+        if (appCtx != null) return
+        appCtx = ctx.applicationContext
+        watch()
+    }
+    @Volatile private var watched = false
+    /** the memory line and the pressure (once; ShippedCrossStore calls it too) */
+    fun watch() {
+        if (watched) return
+        watched = true
+        MemWatch.source("safepath") { bytes() }
+        MemWatch.onTrim("safepath") { level -> letGo(level) }
+    }
 
     @Volatile private var buildStamp = 0L
 
@@ -78,7 +132,7 @@ object ShippedNets {
         return gameBuild
     }
 
-    val files = RouteWork.Files(KEEP) { map ->
+    val files = RouteWork.Files(KEEP, keep = { keepNow() }, sizeOf = { it.bytes }) { map ->
         val ctx = appCtx ?: return@Files null
         load(map, { p -> runCatching { ctx.assets.open(p) }.getOrNull() }, game(ctx), { android.util.Log.i("WCMAP", it) }, staleSaid)
             .also { l -> if (l == null) absent.add(map) else { absent.remove(map); l.stale?.let { stale[map] = it } ?: stale.remove(map) } }
@@ -93,8 +147,42 @@ object ShippedNets {
     /** a load of zone [map] found no shipped network (no file, or unreadable) */
     fun none(map: Int): Boolean = map in absent
 
-    /** the zone the map asked for last (the Settings row's) */
+    /** the zone the map asked for last (the Settings row's; the cache keeps it and its neighbours) */
     @Volatile var lastMap = 0; private set
+
+    /** the zones the cache keeps while it can: the player's ([lastMap]) first, then the maps its exits lead into (when it is loaded) */
+    fun keepNow(): List<Int> {
+        val m = lastMap
+        if (m == 0) return emptyList()
+        return listOf(m) + (files.peek(m)?.neighbours ?: emptySet())
+    }
+
+    /**
+     * ANDROID'S PRESSURE (memory work #56, D1: MemWatch's trims and its reliefs at Play, the world and every loading screen): at
+     * running-low (the relief's level) every zone but the player's goes; at running-critical, onLowMemory or any background level the
+     * player's goes too, and the cross-zone graph ([ShippedCrossStore.release], read again from its small cache file when next asked).
+     * The bytes let go. Pure in its choice ([keepAt]); any thread.
+     */
+    fun letGo(level: Int): Long {
+        val stay = keepAt(level, lastMap)
+        if (stay == null) return 0L
+        var b = files.trimTo(stay)
+        if (stay.isEmpty()) b += ShippedCrossStore.release()
+        return b
+    }
+    /** the zones that stay at [level]: null = nothing goes (below running-low), [player] alone, or none */
+    fun keepAt(level: Int, player: Int): List<Int>? = when {
+        level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> null
+        severe(level) -> emptyList()
+        player != 0 -> listOf(player)
+        else -> emptyList()
+    }
+    /** running-critical, onLowMemory or a background level (the app's screen not shown and Android short) */
+    fun severe(level: Int): Boolean = level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL || level == MemWatch.LOW_MEMORY ||
+        level >= android.content.ComponentCallbacks2.TRIM_MEMORY_MODERATE
+
+    /** the memory line's "safepath": the whole zones kept and the cross-zone graph */
+    fun bytes(): Long = files.bytes() + ShippedCrossStore.bytes()
 
     /** Settings > Map's "SafePath network" row and the problem report */
     val line: String get() {
