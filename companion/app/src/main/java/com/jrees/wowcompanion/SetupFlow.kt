@@ -30,6 +30,9 @@ object SetupFlow {
         /** "Play without" was picked on the login pop-up (this launcher run) */
         val loginSkipped: Boolean = false,
         val art: Art = Art.IDLE,
+        /** issue #571: the game folder has never run (DataStaleness.firstRun, read from the folder): Play leads to its first run and the
+         *  art is built after it, so the art never holds Play here */
+        val firstRun: Boolean = false,
         val artPercent: Int = 0,
         /** the art is being built again for a new game version (after an update): its row says so */
         val artRebuild: Boolean = false,
@@ -252,8 +255,12 @@ object SetupFlow {
     fun terse(checks: List<Check>): List<Check> =
         checks.map { if (it.mark == Mark.BAD || it.full) it else it.copy(label = it.label.substringBefore(':').trim()) }
 
+    /** issue #571: the status line of a game folder that has never run (Play starts its first run) */
+    const val FIRST_RUN_LINE = "Play runs the game once first"
+
     fun canPlay(i: Inputs): Boolean =
-        i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
+        i.folderFound && !i.wrongGame && i.storage && (i.art == Art.READY || (i.firstRun && i.art != Art.RUNNING)) &&
+            i.busy == null && !i.gameRunning && i.appUpdate == null
 
     /** A DIRECT INSTALL'S STEPS, their times as measured on the Thor on home Wi-Fi (2026-11-01, 1.60.1.70707) */
     enum class Step(val typicalS: Int) { INSTALL(525), PREPARE(80), ART(1280) }
@@ -354,7 +361,7 @@ object SetupFlow {
         val play = Button("Play", Action.PLAY, canPlay(i))
         val line = i.busy ?: when (i.art) {
             Art.RUNNING -> if (i.artWhat.startsWith(TablesProgress.PREFIX)) i.artWhat else "Preparing the game art: ${i.artPercent}%"
-            Art.IDLE -> if (i.folderFound) "Checking the game art" else ""
+            Art.IDLE -> if (i.firstRun && i.folderFound) FIRST_RUN_LINE else if (i.folderFound) "Checking the game art" else ""
             else -> ""
         }
         return Screen(prompt, play, if (i.progress != null) "" else line, Button("Report a problem", Action.REPORT))
@@ -406,7 +413,8 @@ object SetupFlow {
         if (i.staleData != null) add(Check("Game folder: its Data is out of date - copy it again from your PC", Mark.BAD))
         add(if (i.loginSaved) Check("Battle.net login: saved", Mark.OK) else Check("Battle.net login: not saved", Mark.WAIT))
         add(when (i.art) {
-            Art.IDLE -> Check(if (i.folderFound) "Game art: checking" else "Game art: waits for the game folder", Mark.WAIT)
+            Art.IDLE -> Check(if (i.firstRun && i.folderFound) "Game art: after the game's first run"
+                else if (i.folderFound) "Game art: checking" else "Game art: waits for the game folder", Mark.WAIT)
             Art.RUNNING -> Check(if (i.artRebuild) "Game art: updating for the new game version: ${i.artPercent}%"
                 else if (i.artWhat.startsWith(TablesProgress.PREFIX)) "Game art: ${i.artWhat}"
                 else "Game art: ${i.artPercent}%${if (i.artWhat.isBlank()) "" else " (${i.artWhat})"}", Mark.WAIT)
