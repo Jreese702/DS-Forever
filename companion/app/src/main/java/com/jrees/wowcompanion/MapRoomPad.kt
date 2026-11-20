@@ -33,7 +33,7 @@ object MapRoomPad {
 
     fun cell(col: Int): List<Pair<String, Int>> = listOf(ROW to col)
 
-    /** the minimap probe's options (Map.lua mp1; bits 1 the probe, 2 the Find switch, 4 sparkles): op digit 2 on lane A, the bits on lane B */
+    /** the map's options (Map.lua mp3: bit 4 sparkles; 1 / 2 were the removed minimap probe's): op digit 2 on lane A, the bits on lane B */
     fun optCells(bits: Int): List<Pair<String, Int>> = listOf(ROW to WP_A + 2, ROW to WP_B + bits.coerceIn(0, 7))
 
     /** a pin at ([x], [y]) on map [mapId]: 8 taps; null when it cannot be said (a map id over 3 digits, a spot off the map) */

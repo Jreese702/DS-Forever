@@ -47,7 +47,7 @@ Authenticator challenges are manual; avoid repeated wrong-password tests.
 
 The companion shows observed NPCs, not database-only ghosts. No suggested spells.
 Old DS-created macros are removed silently, preserving user-created macros.
-Map probe defaults ON, tracking auto-switch OFF, sparkles OFF. Indoor legend:
+Herbs/ore: use the game's minimap tracking (live minimap dots are gone). Sparkles OFF by default. Indoor legend:
 **red main exit, green up, blue down**. Outdoors remains visible while a plan loads.
 
 ## Streaming From Your PC

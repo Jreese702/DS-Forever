@@ -1274,8 +1274,8 @@ class MapView(context: Context) : View(context) {
     private var continentList: List<PoiStore.Poi>? = null
     private var rect: PoiStore.Rect? = null
     private var seed: List<PoiStore.Pin> = emptyList()
-    // the filter panel's Show switches are KEPT across app lives (b-map-filters-persist): the role bits here, Chests / Rares
-    // ([showChests], [showRares]) beside them, app-wide like the probe's three ("mapprobe") and the Map room's ("maproom")
+    // the filter panel's Show switches are KEPT across app lives (b-map-filters-persist): the role bits here, Rares ([showRares])
+    // beside them, app-wide like Sparkles ("mapprobe") and the Map room's ("maproom")
     private val filterPrefs by lazy {
         context.getSharedPreferences("mapfilters", Context.MODE_PRIVATE).also { p ->
             // test73 (the user: "let's remove the aggro circles from the bottom screen (and from the options if it's there)"): the
@@ -1690,14 +1690,11 @@ class MapView(context: Context) : View(context) {
                         layers.toggle(QuestLayers.Layer.values()[FILTER_LAYER0 - bit]); postInvalidate(); return true
                     }
                     when (bit) {
-                        FILTER_CHESTS -> showChests = !showChests
                         FILTER_RARES -> showRares = !showRares
-                        FILTER_LIVE -> setProbeOption(PROBE_ON)
-                        FILTER_SWITCH -> setProbeOption(PROBE_SWITCH)
                         FILTER_SPARKLES -> setProbeOption(PROBE_SPARKLES)
                         else -> { mask = mask xor bit; recomputeSeed() }
                     }
-                    runCatching { filterPrefs.edit().putInt("mask", mask).putBoolean("chests", showChests).putBoolean("rares", showRares).apply() }
+                    runCatching { filterPrefs.edit().putInt("mask", mask).putBoolean("rares", showRares).apply() }
                     postInvalidate(); return true
                 }
                 // beside the rows but inside the panel: nothing. Outside the panel: it closes
@@ -2333,6 +2330,7 @@ class MapView(context: Context) : View(context) {
     fun update(m: JSONObject?, ageMs: Long) {
         map = m; staleMs = ageMs
         m?.let { noteMapChange(it.optInt("mapID", 0)) }
+        m?.let { if (it.has("mpo") && it.optInt("mpo") != probeWanted) askProbeOptions(force = false) }   // Map.lua mp3: sparkles taken
         addTrail(m?.optString("tr", null), -1L,  // the view is handed the map object itself
                  m?.optInt("mapID", Int.MIN_VALUE) ?: Int.MIN_VALUE)
         if (m != null) { adoptRect(m); recomputeSeed() }
@@ -3322,8 +3320,8 @@ class MapView(context: Context) : View(context) {
     // by Map's probe: counts, and places within 0.2 yd); the bundle stays the fallback for a map with no answer, and for forge /
     // anvil while ObjectDB has none. The SPAWN SPOTS draw under the service pins in UI Art's ghost family (UiKit.spawnSpot,
     // art-kit e675ef37): herbs while the game's Find Herbs tracking is on (map.track.h, Map.lua), ore while Find Minerals is (m),
-    // rares while [showRares]; dots at zone zoom, the game's pictures close in. CHESTS are not QuestieDB's spots (most hold nothing
-    // at a time: b-ghost-chests) but the ones the minimap probe saw (SeenChests), while [showChests].
+    // rares while [showRares]; dots at zone zoom, the game's pictures close in. CHESTS are not drawn: QuestieDB's spots mostly hold
+    // nothing (b-ghost-chests) and the minimap probe that saw the real ones is gone (issue #87, Map.lua mp3).
     // Places things CAN spawn, never "it is there now" (the minimap's own blips stay unreadable).
     private val qdbPins = LinkedHashMap<Int, QdbPins.Pins>()     // by uiMap, the last QDB_MAPS
     private val qdbNodes = LinkedHashMap<Int, QdbPins.Nodes>()
@@ -3332,9 +3330,6 @@ class MapView(context: Context) : View(context) {
     private val SPAWN_PIC = 26f                  // ... and the game's picture from SPAWN_PIC_PX_PER_YD in
     private val SPAWN_PIC_PX_PER_YD = 1.7f       // a cluster's spots (~15 yd apart) stop overlapping at 26 px
     private val RARE_PX = 30f; private val RARE_ELITE_PX = 36f
-    /** the chests the probe saw (SeenChests) show with this (the filter's) */
-    var showChests = runCatching { filterPrefs.getBoolean("chests", true) }.getOrDefault(true)
-        set(v) { if (field != v) { field = v; invalidate() } }
     /** rares' spawn spots */
     var showRares = runCatching { filterPrefs.getBoolean("rares", true) }.getOrDefault(true)
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -7656,21 +7651,12 @@ class MapView(context: Context) : View(context) {
             val pxYd = if (rr != null && rr.valid) fw / (2f * halfX * rr.width.toFloat()) else 0f
             val sp = if (pxYd >= SPAWN_PIC_PX_PER_YD) SPAWN_PIC else SPAWN_DOT
             val tr = m.optJSONObject("track")
-            // the minimap probe's LIVE herb / ore dots (Map.lua mp1): what the game's minimap shows now, a filter switch
-            if (probeWanted and PROBE_ON != 0 && liveMap == mid && android.os.SystemClock.elapsedRealtime() - liveAt < LIVE_MS) {
-                for (lv in live) { val gx = sx(lv.x); val gy = sy(lv.y); if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, lv.kind, sp, glow = true) }
-            }
             qdbNodes[mid]?.let { n ->
                 fun layer(a: List<QdbPins.Node>, kind: UiKit.Spawn) {
                     for (q in a) { val gx = sx(q.x); val gy = sy(q.y); if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, kind, sp, glow = true) }
                 }
                 if (tr?.optInt("h") == 1) layer(n.herb, UiKit.Spawn.HERB)
                 if (tr?.optInt("m") == 1) layer(n.ore, UiKit.Spawn.ORE)
-            }
-            // chests: only the ones the probe SAW (SeenChests; b-ghost-chests), never QuestieDB's spawn spots
-            if (showChests) for (ch in SeenChests.on(mid, android.os.SystemClock.elapsedRealtime())) {
-                val gx = sx(ch.nx); val gy = sy(ch.ny)
-                if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, UiKit.Spawn.CHEST, sp, glow = tr?.optInt("t") == 1)
             }
             if (showRares) qdbPins[mid]?.let { p ->
                 for (rare in p.rares) {
@@ -8369,7 +8355,7 @@ class MapView(context: Context) : View(context) {
         val lines = when (filterTab) {
             0 -> QuestLayers.Layer.values().size
             1 -> (roles.size + cols - 1) / cols
-            else -> (SPAWN_SWITCHES + cols - 1) / cols
+            else -> (SPAWN_SWITCHES + cols - 1) / cols + 1            // + the advice line (MinimapTracking.ADVICE)
         }
         val fieldW = if (lastFieldW > 0f) lastFieldW else side
         val fieldH = if (lastFieldH > 0f) lastFieldH else side
@@ -8420,7 +8406,7 @@ class MapView(context: Context) : View(context) {
         // ONE label size for the whole panel (UI Art: a single label shrunk on its own reads as a mistake): the largest, from 28,
         // at which the longest label fits beside a three-figure count
         val room = cw - 16f - num.measureText("000") - 18f - 156f
-        val longest = (roles.map { it.second } + listOf("Chests", "Rares", "Live dots", "Auto-switch", "Sparkles"))
+        val longest = (roles.map { it.second } + listOf("Rares", "Sparkles"))
             .maxByOrNull { name.measureText(it) } ?: ""
         var labelSize = 28f
         while (name.measureText(longest) > room && labelSize > 18f) { labelSize -= 1f; name.textSize = labelSize }
@@ -8440,15 +8426,12 @@ class MapView(context: Context) : View(context) {
             name.color = if (on) roleColour(bit) else cDim
             c.drawText(Tr.t(label), cx0 + 156f, cy - 2f - (name.ascent() + name.descent()) / 2f, name)
         }
-        // QUESTIEDB'S CHESTS AND RARES (the user, 2026-10-06: "Shown, with a filter switch" for each), two more cells of the grid:
-        // the game's picture, the count of spots on THIS map. Herbs and ore have no switch: they follow the game's own tracking.
+        // QUESTIEDB'S RARES (the user, 2026-10-06: "Shown, with a filter switch") and SPARKLES (the soft-target icons, Map.lua mp3):
+        // the game's picture, the count of spots on THIS map. Herbs and ore have no switch: they follow the game's own tracking, and
+        // the line under the cells says so (issue #87: the live dots, Chests and Auto-switch went with the minimap probe).
         val mid = map?.optInt("mapID", Int.MIN_VALUE) ?: Int.MIN_VALUE
         val spawnCells = listOf(
-            Triple(FILTER_CHESTS, "Chests", SeenChests.on(mid, android.os.SystemClock.elapsedRealtime()).size),
             Triple(FILTER_RARES, "Rares", qdbPins[mid]?.rares?.size ?: 0),
-            // the minimap probe's options (the user, 2026-10-12): the live dots, the Find Herbs / Minerals switch, sparkles
-            Triple(FILTER_LIVE, "Live dots", if (liveMap == mid) live.size else 0),
-            Triple(FILTER_SWITCH, "Auto-switch", 0),
             Triple(FILTER_SPARKLES, "Sparkles", 0))
         if (filterTab == 2) for ((j, cell) in spawnCells.withIndex()) {
             val (key, label, count) = cell
@@ -8458,42 +8441,36 @@ class MapView(context: Context) : View(context) {
             val cy = y0 + rowH / 2f
             filterHits[key] = RectF(cx0, y0, cx0 + cw, y0 + rowH)
             val on = when (key) {
-                FILTER_CHESTS -> showChests
                 FILTER_RARES -> showRares
-                FILTER_LIVE -> probeWanted and PROBE_ON != 0
-                FILTER_SWITCH -> probeWanted and PROBE_SWITCH != 0
                 else -> probeWanted and PROBE_SPARKLES != 0
             }
             if (i % cols > 0) { pFill.color = Theme.bronzeDim; c.drawRect(cx0 - 1f, cy - 38f, cx0, cy + 38f, pFill) }
             UiKit.check(c, cx0 + 44f, cy, 64f, on)
             // the game's picture PLAIN, as the role pins are (UI Art: no live rim / glow, no ghost: the switch carries on / off)
             when (key) {
-                FILTER_LIVE -> UiKit.spawnSpot(c, cx0 + 116f, cy, UiKit.Spawn.HERB, 56f)
-                FILTER_SWITCH -> UiKit.spawnSpot(c, cx0 + 116f, cy, UiKit.Spawn.ORE, 56f)
                 FILTER_SPARKLES -> drawIcon(c, Ic.SOFT_USE, cx0 + 116f, cy, 56f)
                 // the rares' switch: the silver dragon the map's rares now wear (the user's pick "Silver dragon", 2026-11-17)
-                FILTER_RARES -> UiKit.eliteDragon(c, RectF(cx0 + 116f - 28f, cy - 28f, cx0 + 116f + 28f, cy + 28f), silver = true)
-                else -> UiKit.tex("mm_chest")?.let { bmp ->
-                    val sc = 56f / max(bmp.width, bmp.height)
-                    val hw = bmp.width * sc / 2f; val hh = bmp.height * sc / 2f
-                    iconDst.set(cx0 + 116f - hw, cy - hh, cx0 + 116f + hw, cy + hh)
-                    c.drawBitmap(bmp, null, iconDst, pArt)
-                }
+                else -> UiKit.eliteDragon(c, RectF(cx0 + 116f - 28f, cy - 28f, cx0 + 116f + 28f, cy + 28f), silver = true)
             }
-            val n = if (key == FILTER_SWITCH || key == FILTER_SPARKLES) "" else count.toString()
+            val n = if (key == FILTER_SPARKLES) "" else count.toString()
             c.drawText(Tr.t(n), cx0 + cw - 16f, cy - (num.ascent() + num.descent()) / 2f, num)
             name.textSize = labelSize
             name.color = if (on) cGold else cDim
             c.drawText(Tr.t(label), cx0 + 156f, cy - 2f - (name.ascent() + name.descent()) / 2f, name)
         }
+        // issue #87 (the user's ruling 2026-11-19): where the live dots' switches were, one terse line: the game's own minimap tracking
+        if (filterTab == 2) {
+            val y0 = filterBox.top + head + ((SPAWN_SWITCHES + cols - 1) / cols) * rowH
+            val tip = UiKit.bodyPaint(labelSize, cDim)
+            val words = Tr.t(MinimapTracking.ADVICE)
+            while (tip.measureText(words) > filterBox.width() - 56f && tip.textSize > 16f) tip.textSize -= 1f
+            c.drawText(words, filterBox.left + 28f, y0 + rowH / 2f - (tip.ascent() + tip.descent()) / 2f, tip)
+        }
     }
 
     private val FILTER_ROW = 111f            // 48 dp on this panel: the touch floor
-    private val SPAWN_SWITCHES = 5           // Chests, Rares, the probe's three (after the roles)
-    private val FILTER_CHESTS = -1           // their keys in filterHits, beside the role bits (all positive)
-    private val FILTER_RARES = -2
-    private val FILTER_LIVE = -3
-    private val FILTER_SWITCH = -4
+    private val SPAWN_SWITCHES = 2           // Rares, Sparkles (after the roles; issue #87: Chests and the probe's two are gone)
+    private val FILTER_RARES = -2            // their keys in filterHits, beside the role bits (all positive)
     private val FILTER_SPARKLES = -5
     private val FILTER_LAYER0 = -10          // the Quests tab's rows: FILTER_LAYER0 - their QuestLayers.Layer index
     private val FILTER_TAB0 = -100           // the tabs: FILTER_TAB0 - their index
@@ -8550,22 +8527,15 @@ class MapView(context: Context) : View(context) {
         return out
     }
 
-    // ---- THE MINIMAP PROBE (Map.lua mp1, "mmprobe"; the user, 2026-10-12): the names of the dots the game's minimap shows, in
-    // yards from the player. A name that is one of this map's QuestieDB node kinds is a LIVE herb / ore / chest dot (drawn while the
-    // "Live dots" switch is on); one that is a QuestieDB service NPC here is that NPC SEEN (SeenNpcs). Its options are the user's
-    // (kept), sent to the add-on by the host ([onProbeOptions]: the pin lane's op digit 2) whenever the add-on says otherwise.
-    private val PROBE_ON = 1
-    private val PROBE_SWITCH = 2
-    private val PROBE_SPARKLES = 4
-    private val LIVE_MS = 30_000L
-    private class Live(val x: Double, val y: Double, val kind: UiKit.Spawn)
-    private val live = ArrayList<Live>()
-    private var liveMap = Int.MIN_VALUE
-    private var liveAt = 0L
+    // ---- SPARKLES (Map.lua mp3; one of the minimap probe's options until issue #87): the soft-target icons over nearby herbs / ore /
+    // chests, the user's switch (kept in "mapprobe"), sent to the add-on by the host ([onProbeOptions]: the pin lane's op digit 2)
+    // whenever the map snapshot's `mpo` says otherwise. The probe itself (live dots, its seen NPCs and chests) is gone: since game
+    // build 1.60.1.70862 the minimap's mouseover answered nothing (the user's ruling 2026-11-19: use the game's minimap tracking).
+    private val PROBE_SPARKLES = MinimapTracking.SPARKLES
     private val probePrefs by lazy { context.getSharedPreferences("mapprobe", Context.MODE_PRIVATE) }
-    /** the user's probe options (bits: 1 the probe / live dots, 2 the Find Herbs / Minerals switch, 4 sparkles), kept */
+    /** the user's Sparkles switch (bit 4; an older build's probe / auto-switch bits read as nothing), kept */
     private var probeWanted: Int = -1
-        get() { if (field < 0) field = runCatching { probePrefs.getInt("opts", PROBE_ON) }.getOrDefault(PROBE_ON); return field }
+        get() { if (field < 0) field = MinimapTracking.wanted(runCatching { probePrefs.getInt("opts", 0) }.getOrDefault(0)); return field }
     /** the host sends the options to the add-on (WorldMapRoomView.sendProbeOptions) */
     var onProbeOptions: ((Int) -> Unit)? = null
     private var optsAskedAt = 0L
@@ -8582,59 +8552,6 @@ class MapView(context: Context) : View(context) {
         if (!force && optsAsked == probeWanted && now - optsAskedAt < 15_000L) return
         optsAsked = probeWanted; optsAskedAt = now
         onProbeOptions?.invoke(probeWanted)
-    }
-
-    /** {"type":"mmprobe"}: the minimap's dots now (live nodes, seen NPCs) and the add-on's options */
-    fun onMmProbe(d: JSONObject) {
-        if (d.has("o") && d.optInt("o") != probeWanted) askProbeOptions(force = false)
-        val m = map ?: return
-        val r = rect ?: return
-        if (!r.valid) return
-        val mid = m.optInt("mapID", Int.MIN_VALUE)
-        if (d.has("m") && d.optInt("m") != mid) return
-        val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
-        if (wx.isNaN() || wy.isNaN()) return
-        val nodes = qdbNodes[mid]
-        val rows = zoneRows()
-        val now = android.os.SystemClock.elapsedRealtime()
-        live.clear(); liveMap = mid; liveAt = now
-        var changed = false
-        val chests = ArrayList<DoubleArray>()
-        val a = d.optJSONArray("d")
-        if (a != null) for (i in 0 until a.length()) {
-            val dot = a.optJSONObject(i) ?: continue
-            val name = dot.optString("t", "")
-            if (name.isEmpty()) continue
-            val at = SeenNpcs.dotSpot(wx, wy, dot.optDouble("n", 0.0), dot.optDouble("w", 0.0), r.top, r.left, r.height, r.width)
-            val nk = nodeKind(name, nodes) ?: if (name in SeenChests.NAMES) UiKit.Spawn.CHEST else null
-            if (nk == UiKit.Spawn.CHEST) { chests.add(at); continue }         // a chest: SeenChests keeps it (drawn by the Chests switch)
-            if (nk != null) { live.add(Live(at[0], at[1], nk)); continue }
-            if (rows == null) continue
-            val cands = rows.filter { it.name == name && it.entry > 0 }.map { Triple(it.entry, r.nx(it.wy), r.ny(it.wx)) }
-            SeenNpcs.nearest(cands, at[0], at[1], r.width, r.height)?.let { e ->
-                if (SeenNpcs.see(mid, e, at[0], at[1], 'p', System.currentTimeMillis(), r.width, r.height)) changed = true
-            }
-        }
-        if (changed) { recomputeSeed(); saveSeenSoon() }
-        // the chests it named, and the kept ones it should have named and did not (only while Find Treasure is on: else it cannot)
-        val me = SeenNpcs.dotSpot(wx, wy, 0.0, 0.0, r.top, r.left, r.height, r.width)
-        val radius = if (d.has("r")) d.optDouble("r", Double.NaN).takeIf { !it.isNaN() } else null
-        SeenChests.probe(mid, chests, me[0], me[1], r.width, r.height, radius, m.optJSONObject("track")?.optInt("t") == 1,
-            android.os.SystemClock.elapsedRealtime())
-        invalidate()
-    }
-
-    /** a probed name -> its node kind on this map (QuestieDB's node kinds: which list carries its bit), or null */
-    private fun nodeKind(name: String, n: QdbPins.Nodes?): UiKit.Spawn? {
-        val i = n?.kinds?.indexOf(name) ?: -1
-        if (n == null || i < 0 || i > 30) return null
-        val bit = 1 shl i
-        return when {
-            n.herb.any { it.mask and bit != 0 } -> UiKit.Spawn.HERB
-            n.ore.any { it.mask and bit != 0 } -> UiKit.Spawn.ORE
-            n.chest.any { it.mask and bit != 0 } -> UiKit.Spawn.CHEST
-            else -> UiKit.Spawn.HERB
-        }
     }
 
     /** the game's soft target on a creature (the 10 Hz position document): a QuestieDB service NPC of this map is SEEN */
