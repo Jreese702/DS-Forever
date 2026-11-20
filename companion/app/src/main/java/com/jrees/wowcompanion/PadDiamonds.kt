@@ -14,8 +14,6 @@ object PadDiamonds {
     fun formRect(i: Int) = PartyLayout.Box(40f + i * 112f, 364f, 40f + i * 112f + 100f, 434f)
     /** the Touch row's two tiles on the form row's line (Touch, Hold), each 320 wide */
     fun touchRect(i: Int) = PartyLayout.Box(40f + i * 334f, 364f, 40f + i * 334f + 320f, 434f)
-    /** the footer plate under the diamonds */
-    val FOOTER = PartyLayout.Box(150f, 760f, 600f, 830f)
 
     /** position [p]'s centre (the router's 1-8: 1-4 the D-pad, 5-8 the faces) as drawn for the layout ([swap] = Nintendo's face diamond) */
     fun centre(p: Int, swap: Boolean): Pair<Float, Float> {
