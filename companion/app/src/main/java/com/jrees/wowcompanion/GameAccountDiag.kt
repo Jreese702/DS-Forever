@@ -106,9 +106,86 @@ object GameAccountDiag {
     }
 
     /** the report's line: the last Play in this process (or none) and the file's shape now (what the game left at its exit). Pure */
-    fun reportLine(last: Pair<Long, String>?, now: Shape?, stamp: (Long) -> String): String =
+    fun reportLine(last: Pair<Long, String>?, now: Shape?, list: LogList? = null, stamp: (Long) -> String): String =
         (last?.let { (at, l) -> "${stamp(at)}: ${l.removePrefix("Game account: ")}" } ?: "(no Play in this run)") +
+            "; game's log: ${list?.words() ?: "no account count read"}; auto-pick off (no timely signal)" +
             "; Config.wtf now: ${now?.words() ?: "missing"}"
 
     private const val ACCOUNT_NAME = "accountName"
+
+    // ------------------------------------------------------------------------------------------------ the list in the game's log
+
+    /**
+     * THE LIST IN THE GAME'S LOG (the user's pick 2026-11-20, "Controller picks the row": first, can the app tell the list is up?).
+     * The engine writes, right after the password's answer (measured on WoW Forever 2026-10-09, one game account):
+     *   [N][Connection] Battle.net logon completed result="ERROR_OK (0)" numGameAccounts="1"
+     *   [N][Connection] Battle.net complete login requested hasGameAccount="true"
+     *   [N][Connection] Game account list not saved because accountName CVar is empty      (the saved login: no list is ever saved)
+     * With numGameAccounts 2 or more and no account passed, the client shows its list (C_Login.SelectGameAccount from the list's own
+     * Accept is the client's "Selecting game account" line). BUT the client writes General.log and Connection.log through a ~48 KiB
+     * buffer: the authenticator's line arrived 25-45 s after the game asked (SignInKeyboard, HomeLoginWatch). So this line says THAT
+     * the list came, never in time to press anything while it is up: the app only RECORDS it ([noteLog]), with how late it was read
+     * and how long the list stayed up. Counts and seconds only; nothing of a line is kept.
+     */
+    private val COUNT = Regex("""Battle\.net logon completed result="[^"]*" numGameAccounts="(\d{1,2})"""")
+    private val CLOCK = Regex("""^\s*\d{1,2}/\d{1,2} (\d\d):(\d\d):(\d\d)\.(\d{1,3})""")
+    private const val PICKED = "Selecting game account"
+    private const val COMPLETE = "Battle.net complete login requested"
+
+    /** the game's own clock in [line] as ms of the day; null = none. Pure */
+    fun clockMs(line: String): Long? = CLOCK.find(line)?.groupValues?.let { g ->
+        ((g[1].toLong() * 60 + g[2].toLong()) * 60 + g[3].toLong()) * 1000 + g[4].padEnd(3, '0').toLong()
+    }
+
+    /** [line]'s game-account count when it is the sign-in's "logon completed" line; null = another line. Pure */
+    fun accountCount(line: String): Int? = COUNT.find(line)?.groupValues?.get(1)?.toIntOrNull()
+
+    /** this client run's list, as the log told it (null = no count line yet) */
+    data class LogList(val accounts: Int, val shownAtMs: Long?, val readLagMs: Long?, val upMs: Long? = null, val done: Boolean = false) {
+        /** "list seen (2 accounts), read 31 s after the game wrote it, up 4 s" / "no list (1 account)". Pure */
+        fun words(): String = if (accounts < 2) "no list ($accounts account${if (accounts == 1) "" else "s"})" else
+            "list seen ($accounts accounts)" + (readLagMs?.let { ", read ${secs(it)} after the game wrote it" } ?: "") +
+                when { upMs != null -> ", up ${secs(upMs)}"; done -> ", picked"; else -> "" }
+    }
+
+    @Volatile var logList: LogList? = null
+        private set
+
+    /** a new client run (HomeLoginWatch): the last run's list is forgotten */
+    fun newRun() { logList = null }
+
+    /**
+     * one line of the game's log ([nowMs]: the device's local ms of the day when it was read). Returns the one sign-in-log line to
+     * write when this line told something new (the list's count, or its end), else null. Pure apart from [logList]
+     */
+    fun noteLog(raw: String, nowMs: Long = msOfDay(System.currentTimeMillis())): String? {
+        val line = raw.trimEnd('\r')
+        accountCount(line)?.let { n ->
+            val at = clockMs(line)
+            // the same line again (Connection.log carries General.log's lines): the first read stands
+            logList?.let { if (it.accounts == n && it.shownAtMs == at) return null }
+            val l = LogList(n, at, at?.let { lag(it, nowMs) }, done = n < 2)
+            logList = l
+            return "Game account list: ${l.words()}"
+        }
+        val cur = logList ?: return null
+        if (cur.done || cur.accounts < 2 || (PICKED !in line && COMPLETE !in line)) return null
+        val end = clockMs(line)
+        val l = cur.copy(upMs = if (end != null && cur.shownAtMs != null) lag(cur.shownAtMs, end) else null, done = true)
+        logList = l
+        return "Game account list: ${l.words()}"
+    }
+
+    /** [to] - [from] on the clock of one day (a run over midnight wraps); null past an hour (another day's line). Pure */
+    internal fun lag(from: Long, to: Long): Long? = ((to - from + DAY_MS) % DAY_MS).takeIf { it <= HOUR_MS }
+
+    private fun secs(ms: Long) = "${(ms + 500) / 1000} s"
+    private const val DAY_MS = 86_400_000L
+    private const val HOUR_MS = 3_600_000L
+
+    /** [epochMs] as the device's local ms of the day (the game's log clock is the device's: Wine reads it) */
+    fun msOfDay(epochMs: Long): Long = java.util.Calendar.getInstance().apply { timeInMillis = epochMs }.let { c ->
+        ((c.get(java.util.Calendar.HOUR_OF_DAY) * 60L + c.get(java.util.Calendar.MINUTE)) * 60 + c.get(java.util.Calendar.SECOND)) * 1000 +
+            c.get(java.util.Calendar.MILLISECOND)
+    }
 }

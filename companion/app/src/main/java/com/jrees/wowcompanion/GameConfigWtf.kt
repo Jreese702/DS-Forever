@@ -409,6 +409,8 @@ object GameConfigWtf {
      *    "!" only on a TYPED login at its own screen with a saved login name (the account dropdown's preselection). The saved login
      *    (login.txt: the client's kiosk auto-login) and Browser login (the helper clears GAME_ACCOUNT) never read it, so on DS Forever's
      *    own sign-ins the game shows its list whatever this file holds. Each Play logs a "Game account:" line (GameAccountDiag).
+     *    So Play no longer writes the mark (the user's pick 2026-11-20; prepareLaunch passes no pick): the list the game did not write
+     *    may be what broke logins with BLZ51914400 (the fork's #62). [markAccount] stays for the tests and a later decision.
      */
     const val ACCOUNT_LIST = "accountList"
     private const val MAX_LABEL = 64

@@ -1258,8 +1258,10 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
             askAccount = ask, screen = screen,
             // test build 1489 (#56): on the 8 GB Thors Low-memory graphics also lowers view distance, particles, spells and shadows;
             // #56 G2 (the user's approval 2026-11-19): on the 12 GB Pro too (DeviceTier.lowMemCuts)
-            // A: Remembered marks the learned pick "!" in accountList (ensure ignores it with Ask each time)
-            accountPick = pick, lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
+            // A: NO "!" written any more (the user's pick 2026-11-20 with "Controller picks the row"): the mark only serves a typed login
+            // with a saved login name, and a list the game did not write may be what broke logins with BLZ51914400 (the fork's #62).
+            // The pick is still LEARNED above from a mark the game wrote itself; Ask each time still clears a marked list
+            accountPick = null, lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
         val learnedWord = when { learned == null -> "none marked"; learned == pickBefore -> "same"; else -> "new" }
         accountPlay = com.jrees.wowcompanion.GameAccountDiag.Play(ask, pick != null,
             com.jrees.wowcompanion.GameAccountDiag.learned(learned, pickBefore), shapeBefore, !ask && accountKeys.isNotEmpty())

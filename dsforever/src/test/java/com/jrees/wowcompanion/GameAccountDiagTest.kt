@@ -80,7 +80,8 @@ class GameAccountDiagTest {
         assertTrue(report, report.startsWith("T1000: remembered; pick set;"))
         assertTrue(report.endsWith("; Config.wtf now: accountList marked (2), saved login name yes"))
         for (s in listOf(l, report)) assertFalse(s, s.contains(a) || s.contains(b) || s.contains(mail) || s.contains("example"))
-        assertEquals("(no Play in this run); Config.wtf now: missing", GameAccountDiag.reportLine(null, null) { "" })
+        assertEquals("(no Play in this run); game's log: no account count read; auto-pick off (no timely signal); Config.wtf now: missing",
+            GameAccountDiag.reportLine(null, null) { "" })
     }
 
     @Test fun markedAndAskWords() {
@@ -88,6 +89,77 @@ class GameAccountDiagTest {
         assertTrue(GameAccountDiag.line(p, GameAccountDiag.Route.BROWSER).contains("at Play no Config.wtf; marked this start; route browser login"))
         assertTrue(GameAccountDiag.line(p.copy(ask = true), GameAccountDiag.Route.OWN_SCREEN).contains("ask each time; pick set; learned none marked"))
         assertTrue(GameAccountDiag.line(p.copy(ask = true), GameAccountDiag.Route.OWN_SCREEN).contains("; no mark written;"))
+    }
+
+    // ------------------------------------------------------------------------------------------------ the list in the game's log
+
+    /** sample lines in the client's format (WoW Forever 2026-10-09; account names replaced by fakes) */
+    private val logonOne = "10/9 14:55:19.712  [N][Connection] Battle.net logon completed result=\"ERROR_OK (0)\" numGameAccounts=\"1\""
+    private val logonTwo = "11/20 09:12:03.250  [N][Connection] Battle.net logon completed result=\"ERROR_OK (0)\" numGameAccounts=\"2\""
+    private val gameInfo = "11/20 09:12:03.430  [N][Connection] Battle.net account service game info received responseType=\"GameInfo\" " +
+        "responseTypeValue=\"4\" code=\"ERROR_OK (0)\" name=\"$a\" numGameAccounts=\"2\" numGameAccountNames=\"0\""
+    private val selecting = "11/20 09:12:07.900  [N][Connection] Selecting game account"
+    private val complete = "11/20 09:12:08.010  [N][Connection] Battle.net complete login requested hasGameAccount=\"true\""
+
+    @Test fun theLogonLineGivesTheCountAndTheClock() {
+        assertEquals(1, GameAccountDiag.accountCount(logonOne))
+        assertEquals(2, GameAccountDiag.accountCount(logonTwo + "\r"))
+        assertNull(GameAccountDiag.accountCount(gameInfo))                   // the game info line also says numGameAccounts: not this one
+        assertNull(GameAccountDiag.accountCount("10/9 14:55:18.063  [N][Connection] Battle.net logon response received result=\"ERROR_OK (0)\""))
+        assertEquals(((14 * 60 + 55) * 60 + 19) * 1000L + 712, GameAccountDiag.clockMs(logonOne))
+        assertNull(GameAccountDiag.clockMs("no clock here"))
+        assertEquals(2_000L, GameAccountDiag.lag(86_399_000L, 1_000L))      // over midnight
+        assertNull(GameAccountDiag.lag(0L, 2 * 3_600_000L))                 // another day's line
+    }
+
+    @Test fun oneAccountIsNoList() {
+        GameAccountDiag.newRun()
+        assertEquals("Game account list: no list (1 account)", GameAccountDiag.noteLog(logonOne, GameAccountDiag.clockMs(logonOne)!! + 1_000L))
+        assertTrue(GameAccountDiag.logList!!.done)
+        assertNull(GameAccountDiag.noteLog(complete))                         // no list: nothing more to tell
+    }
+
+    /** the list's count, how late the buffered log was read, and how long the list stayed up; never a name */
+    @Test fun aListIsRecordedWithItsTiming() {
+        GameAccountDiag.newRun()
+        val readAt = GameAccountDiag.clockMs(logonTwo)!! + 31_000L               // the ~48 KiB buffer: read half a minute late
+        assertEquals("Game account list: list seen (2 accounts), read 31 s after the game wrote it", GameAccountDiag.noteLog(logonTwo, readAt))
+        assertNull(GameAccountDiag.noteLog(logonTwo, readAt + 5_000L))          // Connection.log's copy of the same line: the first read stands
+        assertNull(GameAccountDiag.noteLog(gameInfo, readAt))
+        assertEquals("Game account list: list seen (2 accounts), read 31 s after the game wrote it, up 5 s",
+            GameAccountDiag.noteLog(selecting, readAt))
+        assertNull(GameAccountDiag.noteLog(complete, readAt))                  // told once
+        val report = GameAccountDiag.reportLine(null, null, GameAccountDiag.logList) { "" }
+        assertTrue(report, report.contains("game's log: list seen (2 accounts), read 31 s after the game wrote it, up 5 s; auto-pick off"))
+        for (s in listOf(report, GameAccountDiag.logList!!.words())) assertFalse(s, s.contains(a) || s.contains("name="))
+        GameAccountDiag.newRun()
+        assertNull(GameAccountDiag.logList)
+        // without a "Selecting" line, the login going on ends the list too
+        GameAccountDiag.noteLog(logonTwo, readAt)
+        assertTrue(GameAccountDiag.noteLog(complete, readAt)!!.endsWith("up 5 s"))
+        GameAccountDiag.newRun()
+    }
+
+    /** Play writes no "!" any more (the user's pick 2026-11-20): the pick is learned only; Ask each time still clears */
+    @Test fun playWritesNoMark() {
+        val src = listOf("../app/src/main/java/app/gamenative/ui/screen/wow/WoWForeverScreen.kt", "app/src/main/java/app/gamenative/ui/screen/wow/WoWForeverScreen.kt")
+            .map { File(it) }.first { it.isFile }.readText()
+        val ensure = src.indexOf("val accountKeys = com.jrees.wowcompanion.GameConfigWtf.ensure(")
+        val call = src.substring(ensure, src.indexOf("lowMemCuts())", ensure))
+        assertTrue(call.contains("accountPick = null,"))
+        assertFalse(call.contains("accountPick = pick"))
+        // what that call does to a file the game marked itself: kept as the game wrote it, never re-marked
+        val root = Files.createTempDirectory("acct-nomark").toFile()
+        GameConfigWtf.ensure(root, WowProduct.LAUNCH, us)
+        val f = GameAccountDiag.configWtf(root, WowProduct.LAUNCH)
+        f.appendText("SET accountList \"$a|$b|\"\n")
+        GameConfigWtf.ensure(root, WowProduct.LAUNCH, us)
+        val before = f.readText()
+        assertEquals(emptyList<String>(), GameConfigWtf.ensure(root, WowProduct.LAUNCH, us, accountPick = null))
+        assertEquals(before, f.readText())
+        f.appendText("SET accountList \"!$a|\"\n")                                   // a list the game marked itself
+        assertEquals(a, GameConfigWtf.accountPickIn(root, WowProduct.LAUNCH))          // still learned
+        assertEquals(listOf("accountList"), GameConfigWtf.ensure(root, WowProduct.LAUNCH, us, askAccount = true))   // Ask clears it
     }
 
     /** Play: the shape is read before any write, and the line is logged once the sign-in route is known (after NativeLogin.prepare) */
