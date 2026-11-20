@@ -1,5 +1,11 @@
 {
 "plain": {
+"Bar in Party mode": "Barre en mode groupe",
+"Off in Party mode": "Désactivée en mode groupe",
+"Casts on your pick": "Lancé sur votre choix",
+"In Party mode": "En mode groupe",
+"L3 / R3 are set on Out of combat": "L3 / R3 se règlent dans Hors combat",
+"Turn the DS WoW toolbar off (Out of combat) to put your own spell here; it comes back as you left it.": "Désactivez la barre d'outils DS WoW (Hors combat) pour mettre votre propre sort ici ; il revient tel que vous l'avez laissé.",
 "Tap to cast": "Toucher pour lancer",
 "Turn on": "Activer",
 "Hidden in fights": "Masquée en combat",
@@ -2244,6 +2250,9 @@
 "Battle.net could not complete this sign-in page. Try again later.": "Battle.net n'a pas pu terminer cette page de connexion. Réessayez plus tard."
 },
 "templates": {
+"Empty: slot %s's own": "Vide : celui de l'emplacement %s",
+"\"%s\" is its own button: put it on your bars (Out of combat: Change, Extra).": "« %s » est son propre bouton : placez-le sur vos barres (Hors combat : Changer, Extra).",
+"Tap slot %s, Party mode": "Emplacement %s, mode groupe",
 "Tap slot %s, in combat": "Emplacement %s, en combat",
 "Tap slot %s": "Emplacement %s",
 "Empty: slot %s's own in fights": "Vide : en combat, celui de l’emplacement %s",

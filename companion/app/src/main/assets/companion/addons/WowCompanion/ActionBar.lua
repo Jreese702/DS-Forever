@@ -941,14 +941,30 @@ end
 -- it is off the fight set is never armed (the bar is hidden in fights anyway) and a fight-layer edit is refused "cb-hidden"; the
 -- fight slots are KEPT, unused, and come back armed when it is on again (D5). The document says `show` = 1 and the fight slots `f`
 -- (the same entries as `e`; `c` = the fight cell while it is built).
+-- cb15 THE PARTY MODE LAYER (the user, 2026-11-20, the Controller room's Option C "Situations first" with Party mode's tap-to-cast bar):
+-- a third store of 8, WowCompanionSpellsDB.castBarParty[name-realm], edited from the room's Party mode page and the Bind box's Party
+-- mode situation (CB.put / clear / move / at with the layer "p"). THE RULE, PER SLOT: Party (while Party mode is on) > In combat (in a
+-- fight, Show in combat on) > the slot's own; an empty slot falls through. A Party slot's SPELL casts on Party mode's pick (the soft
+-- target), or on yourself with no pick; an item, a mount, a command or a macro there is used as normal. DECIDED AT THE PRESS, SECURELY:
+-- the row grows to 25 cells (the slots 0-7, the pick 8, the fight cells 9-16, the party cells 17-24: CB_N + 1 + 2 x CB_N, within
+-- TapPad's 40); every slot / fight / party cell carries the party thing too ("wc-p-*", armed while the app's "Bar in Party mode" is
+-- on) and a frame ref to Party mode's own pad (WowCompanionPartyPad, PadMap m77: its "wc-party" is Party mode on / off and "wc-u" the
+-- pick, both written only by Party mode's restricted snippets and its out-of-combat set, in fights too). The pre-click snippet reads
+-- them at the press in the restricted environment (GetFrameRef + GetAttribute) and copies the party set with unit = the pick, else
+-- the cb14 [combat] rule: no insecure read or write in a fight. BAR IN PARTY MODE (the app's HomeSettings.castBarPartyShow, on by
+-- default; Book b71's padtab 39, 38 then 2 / 3, kept in WowCompanionSpellsDB.castBarPShow: false = off, never told = on): off = the
+-- party set is never armed and a party-layer edit is refused "cb-phidden"; the party slots are KEPT (the D5 rule). The document says
+-- `p` (the party slots, their cells 17-24 while built), `ps` = 1 while Bar in Party mode is on, `pl` = 1 (this add-on has the layer).
 do
-local CBV = "cb14"     -- cb14 THE IN-COMBAT LAYER (header: castBarFight, 17 cells, the secure [combat] swap, `f` / `show`); cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
+local CBV = "cb15"     -- cb15 THE PARTY MODE LAYER (header: castBarParty, 25 cells, the secure Party > In combat > own swap, unit = Party mode's pick, `p` / `ps` / `pl`); cb14 THE IN-COMBAT LAYER (header: castBarFight, 17 cells, the secure [combat] swap, `f` / `show`); cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 8, 8, 2   -- cb6: 8 slots (cells 0-7), the pick cell 8
 local CB_OLD_N = 12                      -- cb3: the slots a cb1 / cb2 store may hold (cb6: migrated to the first 8)
 local CB_F0 = CB_N                       -- cb14: fight slot i's cell = CB_F0 + i (9-16)
-local CB_CELLS = CB_N + 1 + CB_N         -- cb14: 17 cells (the slots, the pick, the fight slots)
-local CB_FIELD = { f = "castBarFight" }  -- cb14: the layer's store (nil = the out-of-combat bar, castBar)
+local CB_P0 = CB_N + CB_N                -- cb15: party slot i's cell = CB_P0 + i (17-24)
+local CB_CELLS = CB_N + 1 + CB_N + CB_N  -- cb15: 25 cells (the slots, the pick, the fight slots, the party slots); cb14's 17
+local CB_FIELD = { f = "castBarFight", p = "castBarParty" }  -- cb14 / cb15: the layer's store (nil = the out-of-combat bar, castBar)
+local CB_PAD = "WowCompanionPartyPad"    -- cb15: Party mode's pad (PadMap m77): "wc-party" on / off, "wc-u" the pick
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 local CB = { want = {}, frozen = {}, row = nil, sig = nil, pick = nil, queue = {}, ready = false, cd = {}, learned = {}, last = nil,
              wrapped = {}, hdr = nil }
@@ -1020,6 +1036,20 @@ local function cbShow()
     return type(db) == "table" and rawget(db, "castBarShow") == true
 end
 CB.show = cbShow
+-- cb15: the app's "Bar in Party mode" (Book b71: padtab 39, 38 then 2 on / 3 off): on unless told off (castBarPShow = false)
+local function cbPShow()
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    return not (type(db) == "table" and rawget(db, "castBarPShow") == false)
+end
+CB.pshow = cbPShow
+-- cb15: Party mode's pad frame (made by PadMap out of combat; nil until then) and whether Party mode is on now (a plain READ of its
+-- attribute: never written here)
+local function cbPad() local f = rawget(_G, CB_PAD); return type(f) == "table" and f or nil end
+local function cbPartyOn()
+    local f = cbPad()
+    return f ~= nil and S(function() return f:GetAttribute("wc-party") end) == true
+end
+CB.partyOn = cbPartyOn
 -- cb3: an old store (slots past CB_N) keeps its first CB_N things on slots 1-CB_N, in slot order (a repeat dropped); every slot past
 -- CB_N cleared. cb6: CB_N = 8 (a cb3 store of 6 has nothing past 8: left as it is). cb9: a spell id kept as a number becomes { k, id }
 local function cbMigrate()
@@ -1098,14 +1128,20 @@ local function cbView(layer)
 end
 CB.at = function(slot, layer) local v = cbView(layer); return cbKeep(v[slot]) end     -- PadTabCtl p53: the room's slot under the cursor (cb14: [layer])
 -- cb14: what each slot does NOW: in a fight with Show on, a set fight slot's thing, else the slot's own (the cooldowns follow it)
+-- cb15: Party mode on (Bar in Party mode on): a set party slot's thing first (Party > In combat > own)
 local function cbLiveView()
     local v = cbView()
     if cbFight() and cbShow() then
         local f = cbView("f")
         for i = 1, CB_N do if f[i] then v[i] = f[i] end end
     end
+    if cbPShow() and cbPartyOn() then
+        local p = cbView("p")
+        for i = 1, CB_N do if p[i] then v[i] = p[i] end end
+    end
     return v
 end
+CB.liveView = function() local v = cbLiveView(); local out = {}; for i = 1, CB_N do out[i] = cbKeep(v[i]) end; return out end
 
 -- cb9: what a thing is called and looks like (read live; nil when the game does not say it plainly)
 local function cbNum(fn) local v = SN(fn); if cbId(v) then return v end end
@@ -1183,12 +1219,25 @@ local function cbAttrs(e, line)
 end
 -- cb14 THE SECURE SWAP (OUR OWN header; the router's way, PadMap m20): at every press the cell copies its fight set while the game says
 -- [combat] (read at the press, in the restricted environment), else its out-of-combat set. Attributes only: allowed in a fight
+-- cb15: FIRST the party set, while Party mode's pad (the frame ref "wc-pad") says "wc-party": a spell there casts on the pad's pick
+-- ("wc-u": you, your pet or party1-4; you with no pick); an item / a mount / a command / a macro has no unit. An empty party slot
+-- (no "wc-p-type") falls through to the cb14 rule, then the slot's own
 CB.SWAP = [=[
-    local p = (self:GetAttribute("wc-f-type") and SecureCmdOptionParse("[combat] 1") == "1") and "wc-f-" or "wc-n-"
+    local p = "wc-n-"
+    local u = nil
+    if self:GetAttribute("wc-p-type") then
+        local pad = self:GetFrameRef("wc-pad")
+        if pad and pad:GetAttribute("wc-party") then
+            p = "wc-p-"
+            u = pad:GetAttribute("wc-u") or "player"
+        end
+    end
+    if p == "wc-n-" and self:GetAttribute("wc-f-type") and SecureCmdOptionParse("[combat] 1") == "1" then p = "wc-f-" end
     self:SetAttribute("type", self:GetAttribute(p .. "type"))
     self:SetAttribute("spell", self:GetAttribute(p .. "spell"))
     self:SetAttribute("item", self:GetAttribute(p .. "item"))
     self:SetAttribute("macrotext", self:GetAttribute(p .. "macrotext"))
+    if p == "wc-p-" and self:GetAttribute("wc-p-type") == "spell" then self:SetAttribute("unit", u) else self:SetAttribute("unit", nil) end
 ]=]
 local function cbHeader()
     if CB.hdr then return CB.hdr end
@@ -1206,18 +1255,25 @@ local function cbInit(btn, col)
     local w = CB.want[col]
     local nt, ns, ni, nm = cbAttrs(w and w.e, w and w.line)
     local ft, fs, fi, fm = cbAttrs(w and w.fe, w and w.fline)
-    local fightCell = col > CB_F0
-    local typ = fightCell and ft or nt                                 -- a fight cell's own: the fight thing
+    local pt, ps, pi, pm = cbAttrs(w and w.pe, w and w.pline)          -- cb15: the party thing
+    local fightCell = col > CB_F0 and col <= CB_P0
+    local partyCell = col > CB_P0                                      -- cb15: a party cell's own: the party thing
+    local typ = partyCell and pt or fightCell and ft or nt             -- a fight cell's own: the fight thing
     btn:SetAttribute("type", typ)
-    btn:SetAttribute("spell", fightCell and fs or ns)
-    btn:SetAttribute("item", fightCell and fi or ni)
-    btn:SetAttribute("macrotext", fightCell and fm or nm)
+    btn:SetAttribute("spell", partyCell and ps or fightCell and fs or ns)
+    btn:SetAttribute("item", partyCell and pi or fightCell and fi or ni)
+    btn:SetAttribute("macrotext", partyCell and pm or fightCell and fm or nm)
+    btn:SetAttribute("unit", nil)
     if col ~= CB_PICK_COL then
         btn:SetAttribute("wc-n-type", nt); btn:SetAttribute("wc-n-spell", ns); btn:SetAttribute("wc-n-item", ni); btn:SetAttribute("wc-n-macrotext", nm)
         btn:SetAttribute("wc-f-type", ft); btn:SetAttribute("wc-f-spell", fs); btn:SetAttribute("wc-f-item", fi); btn:SetAttribute("wc-f-macrotext", fm)
+        btn:SetAttribute("wc-p-type", pt); btn:SetAttribute("wc-p-spell", ps); btn:SetAttribute("wc-p-item", pi); btn:SetAttribute("wc-p-macrotext", pm)
+        -- cb15: Party mode's pad by a frame ref (set out of combat, here only), read by the snippet at the press
+        local pad, ref = cbPad(), rawget(_G, "SecureHandlerSetFrameRef")
+        if pad and type(ref) == "function" then pcall(ref, btn, "wc-pad", pad) end
         cbWrap(btn)
     end
-    CB.frozen[col] = (typ or ft) and w.sig or nil
+    CB.frozen[col] = (typ or ft or pt) and w.sig or nil
     -- review: TapPad runs init only once the pad has its place, which may be long after CB.sync (a late layout, a fight's queue):
     -- the document's cells follow the cells really built, so it goes out again just after (once per build, CB.send drops a repeat)
     if not CB.resend and C_Timer and type(C_Timer.After) == "function" then
@@ -1243,20 +1299,24 @@ function CB.sync()
     if type(pad) ~= "table" or type(pad.secureRow) ~= "function" then return false end
     local slots = cbSlots()
     local fslots = cbShow() and cbSlots("f") or {}                      -- cb14: the fight set only while Show in combat is on
+    local pslots = cbPShow() and cbSlots("p") or {}                     -- cb15: the party set only while Bar in Party mode is on
     local want, parts = {}, {}
+    local anyP = false
     local function lineOf(e) return e and (e.k == "mount" or e.k == "command" or e.k == "macro") and cbLine(e) or nil end
     for i = 1, CB_N do
-        local e, fe = slots[i], fslots[i]
-        if e or fe then
-            local line, fline = lineOf(e), lineOf(fe)
-            local sig = (e and cbSig(e, line) or "-") .. (fe and ("/" .. cbSig(fe, fline)) or "")
-            local w = { e = e, line = line, fe = fe, fline = fline, sig = sig }
+        local e, fe, pe = slots[i], fslots[i], pslots[i]
+        if e or fe or pe then
+            local line, fline, pline = lineOf(e), lineOf(fe), lineOf(pe)
+            local sig = (e and cbSig(e, line) or "-") .. (fe and ("/" .. cbSig(fe, fline)) or "") .. (pe and ("+" .. cbSig(pe, pline)) or "")
+            local w = { e = e, line = line, fe = fe, fline = fline, pe = pe, pline = pline, sig = sig }
             want[i - 1] = w
             parts[#parts + 1] = (i - 1) .. "=" .. sig
-            if fe then want[CB_F0 + i] = w end                          -- cb14: the fight cell, the same two things
+            if fe then want[CB_F0 + i] = w end                          -- cb14: the fight cell, the same things
+            if pe then want[CB_P0 + i] = w; anyP = true end             -- cb15: the party cell, the same things
         end
     end
-    local sig = table.concat(parts, ",")
+    -- cb15: Party mode's pad made since the last build (PadMap makes it out of combat, maybe after this row): built again for its ref
+    local sig = table.concat(parts, ",") .. ((anyP and cbPad()) and "|P" or "")
     if CB.row and sig == CB.sig then return true end
     if not CB.row and #parts == 0 then                   -- cb2: an empty bar takes no pad row
         CB.want, CB.sig, CB.frozen = {}, nil, {}
@@ -1278,9 +1338,9 @@ local function cbEntries(layer)
     local e = {}
     for i = 1, CB_N do
         local x = v[i]
-        local col = layer == "f" and (CB_F0 + i) or (i - 1)
+        local col = layer == "f" and (CB_F0 + i) or layer == "p" and (CB_P0 + i) or (i - 1)        -- cb15: the party cells 17-24
         local w = CB.want[col]
-        local built = x ~= nil and w ~= nil and cbSame(layer == "f" and w.fe or w.e, x) and CB.frozen[col] == w.sig
+        local built = x ~= nil and w ~= nil and cbSame(layer == "f" and w.fe or layer == "p" and w.pe or w.e, x) and CB.frozen[col] == w.sig
         if x then
             local r = { s = i, c = (built and not q[i]) and col or nil, q = (q[i] or not built) and 1 or nil }
             if x.k == "spell" then
@@ -1308,10 +1368,11 @@ local function cbEntries(layer)
 end
 function CB.doc()
     -- cb14: `f` the fight slots (their cells 9-16 while built: armed only with Show on), `show` = 1 while Show in combat is on,
-    -- `fl` = 1 this add-on has the in-combat layer
+    -- `fl` = 1 this add-on has the in-combat layer; cb15: `p` the party slots (cells 17-24 while built: armed only with Bar in Party
+    -- mode on), `ps` = 1 while it is on, `pl` = 1 this add-on has the party layer
     return { type = "castbar", v = CBV, n = CB_N, any = 1, mac = 1, pick = CB.row and CB_PICK_COL or nil, fight = cbFight() or nil,
              nopad = (not CB.row) and 1 or nil, pp = CB_PADTAB_PICK, e = cbEntries(nil), f = cbEntries("f"), show = cbShow() and 1 or nil,
-             fl = 1 }
+             fl = 1, p = cbEntries("p"), ps = cbPShow() and 1 or nil, pl = 1 }
 end
 function CB.send(force)
     if type(WC.encode) ~= "function" or type(WC.send) ~= "function" then return end
@@ -1325,7 +1386,7 @@ end
 local function cbAck(ok, why, op, slot, queued, layer)
     if type(WC.encode) ~= "function" or type(WC.send) ~= "function" then return ok end
     WC.send(WC.encode({ type = "castbarack", v = CBV, ok = ok and true or false, why = why, op = op, s = slot, q = queued and 1 or nil,
-                        f = layer == "f" and 1 or nil }))
+                        f = layer == "f" and 1 or nil, p = layer == "p" and 1 or nil }))
     return ok
 end
 
@@ -1375,9 +1436,17 @@ end
 -- cb9 THE ROOM'S EDITS (PadTabCtl p53, the Controller room's Cast bar tab): [kind] "spell" (a spell id) / "item" (an item id) /
 -- "mount" (a Mount Journal id) / "command" (a command's key) onto [slot]; Clear; Move (a swap when the target holds something)
 -- cb14: [layer] "f" = the in-combat layer (refused "cb-hidden" while Show in combat is off: its slots are kept, not edited)
+-- cb15: [layer] "p" = the Party mode layer (refused "cb-phidden" while Bar in Party mode is off: kept, not edited)
+local function cbLocked(layer)
+    if layer == "f" and not cbShow() then return "cb-hidden" end
+    if layer == "p" and not cbPShow() then return "cb-phidden" end
+    return nil
+end
+local CB_LAYERS = { f = true, p = true }
 function CB.put(slot, kind, v, layer)
+    if layer ~= nil and not CB_LAYERS[layer] then layer = nil end
     if not cbSlotOk(slot) then return cbAck(false, "slot", "put", nil, nil, layer) end
-    if layer == "f" and not cbShow() then return cbAck(false, "cb-hidden", "put", slot, nil, layer) end
+    if cbLocked(layer) then return cbAck(false, cbLocked(layer), "put", slot, nil, layer) end
     local e
     if kind == "spell" then
         local okS, why = cbSpellOk(v)
@@ -1402,14 +1471,16 @@ function CB.put(slot, kind, v, layer)
     return cbEdit({ op = "put", s = slot, e = e, layer = layer })
 end
 function CB.clear(slot, layer)
+    if layer ~= nil and not CB_LAYERS[layer] then layer = nil end
     if not cbSlotOk(slot) then return cbAck(false, "slot", "clear", nil, nil, layer) end
-    if layer == "f" and not cbShow() then return cbAck(false, "cb-hidden", "clear", slot, nil, layer) end
+    if cbLocked(layer) then return cbAck(false, cbLocked(layer), "clear", slot, nil, layer) end
     if not cbWho() then return cbAck(false, "character", "clear", slot, nil, layer) end
     return cbEdit({ op = "clear", s = slot, layer = layer })
 end
 function CB.move(a, b, layer)
+    if layer ~= nil and not CB_LAYERS[layer] then layer = nil end
     if not (cbSlotOk(a) and cbSlotOk(b)) then return cbAck(false, "slot", "move", nil, nil, layer) end
-    if layer == "f" and not cbShow() then return cbAck(false, "cb-hidden", "move", b, nil, layer) end
+    if cbLocked(layer) then return cbAck(false, cbLocked(layer), "move", b, nil, layer) end
     if not cbWho() then return cbAck(false, "character", "move", b, nil, layer) end
     return cbEdit({ op = "move", a = a, b = b, layer = layer })
 end
@@ -1430,6 +1501,23 @@ function CB.setShow(on)
     end
 end
 WC.castBarShow = CB.setShow
+-- cb15 (Book b71): the app's Bar in Party mode, any time (no room needed); out of combat the party set is armed / disarmed at once, in a
+-- fight at its end (CB.sync refuses in a fight)
+function CB.setPShow(on)
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    if type(db) ~= "table" then
+        if not CB.ready then return end
+        db = {}
+        _G.WowCompanionSpellsDB = db
+    end
+    local was = cbPShow()
+    if on then db.castBarPShow = nil else db.castBarPShow = false end      -- (false = told off; nil = on, the default)
+    if was ~= (on and true or false) then
+        CB.sync()
+        CB.send()
+    end
+end
+WC.castBarPartyShow = CB.setPShow
 -- the fight is over: the queued edits go into the store in their order, the cells are built again
 function CB.flushQueue()
     if cbFight() or #CB.queue == 0 then return false end
@@ -1441,13 +1529,15 @@ function CB.flushQueue()
         for _, ed in ipairs(q) do if edLayer(ed) == nil then cbApply(v, ed) end end
         for i = 1, CB_N do s[i] = cbKeep(v[i]) end
     end
-    local fq = {}                                         -- cb14: the in-combat layer's queued edits
-    for _, ed in ipairs(q) do if edLayer(ed) == "f" then fq[#fq + 1] = ed end end
-    local fs = #fq > 0 and cbStore(true, "f") or nil
-    if fs then
-        local v = cbSlots("f")
-        for _, ed in ipairs(fq) do cbApply(v, ed) end
-        for i = 1, CB_N do fs[i] = cbKeep(v[i]) end
+    for _, L in ipairs({ "f", "p" }) do                   -- cb14 / cb15: the in-combat and the Party mode layers' queued edits
+        local lq = {}
+        for _, ed in ipairs(q) do if edLayer(ed) == L then lq[#lq + 1] = ed end end
+        local ls = #lq > 0 and cbStore(true, L) or nil
+        if ls then
+            local v = cbSlots(L)
+            for _, ed in ipairs(lq) do cbApply(v, ed) end
+            for i = 1, CB_N do ls[i] = cbKeep(v[i]) end
+        end
     end
     return true
 end

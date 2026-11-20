@@ -21,6 +21,11 @@ import android.view.View
  * show; Y's base place split: out of combat Inspect / Smart Y, in combat `yc`; B the red Back, locked) and a FOOTER plate: Select, the swirl, B (the way in and out). Right page: the place's title, its icon,
  * "Now", ONE red Change. The CURSOR is the add-on's (PadTabCtl p37: ppos = the router's 8 positions, pset, ptouch, pfocus); a finger
  * picks with padtab 27-36 (PartyTaps.pick), sets the no-spell value with 37, a spell with Book's two taps.
+ *
+ * p56 SITUATIONS FIRST (Option C): the left page's picture is drawn at 0.8 under the "Controller" heading ([SituationPage]), Party
+ * mode's tap-to-cast bar under it ([PadTabPage], "pbar"); while the one cursor is on that bar this page draws its left side only (the
+ * place and layer from the add-on's `pbar`), the bar's own right page standing instead. A finger's place is turned back into the
+ * 0.8 picture's own frame.
  */
 class PartyTabPage(
     private val host: View,
@@ -44,10 +49,11 @@ class PartyTabPage(
 
     private fun live() = PartyModel.live
 
-    private fun ctlHolds(ctl: PadMapModel.Ctl?) = ctl != null && ctl.on && ctl.view == "party" && SystemClock.uptimeMillis() >= localUntil
-    /** the place the page shows as chosen: the controller's while it holds the tab, else the finger's */
-    private fun pos(ctl: PadMapModel.Ctl?): Int = if (ctlHolds(ctl)) ctl!!.ppos.coerceIn(1, 8) else localPos
-    private fun set(ctl: PadMapModel.Ctl?): Int = if (ctlHolds(ctl)) ctl!!.pset.coerceIn(1, 4) else localSet
+    private fun ctlHolds(ctl: PadMapModel.Ctl?) = ctl != null && ctl.on && (ctl.view == "party" || ctl.view == "pbar") &&
+        SystemClock.uptimeMillis() >= localUntil
+    /** the place the page shows as chosen: the controller's while it holds the tab, else the finger's (p56: on the bar, its `pbar`) */
+    private fun pos(ctl: PadMapModel.Ctl?): Int = if (ctlHolds(ctl)) (if (ctl!!.view == "pbar") ctl.pbarPos ?: localPos else ctl.ppos).coerceIn(1, 8) else localPos
+    private fun set(ctl: PadMapModel.Ctl?): Int = if (ctlHolds(ctl)) (if (ctl!!.view == "pbar") ctl.pbarSet ?: localSet else ctl.pset).coerceIn(1, 4) else localSet
     private fun onTouchRow(ctl: PadMapModel.Ctl?): Boolean =
         if (ctlHolds(ctl)) ctl!!.pfocus == "touch" || (ctl.pfocus == "right" && lastRightFromTouch) else localTouch
     private fun rightRow(ctl: PadMapModel.Ctl?): Int = if (ctlHolds(ctl)) ctl!!.pright.coerceAtLeast(0) else localRight
@@ -107,12 +113,14 @@ class PartyTabPage(
 
     // ------------------------------------------------------------------------------------------------ draw
 
-    fun draw(c: Canvas, w: Float, h: Float, ctl: PadMapModel.Ctl?) {
+    fun draw(c: Canvas, w: Float, h: Float, ctl: PadMapModel.Ctl?, right: Boolean = true) {
         lastCtl = ctl
         val cfg = live().cfg
         val s = set(ctl)
         val p = pos(ctl)
         val k = ctl?.takeIf { it.on && it.view == "party" }
+        val onBar = ctl?.on == true && ctl.view == "pbar"
+        c.save(); SituationPage.ctl(c)                                      // p56: the left page's picture at 0.8
         if (k?.pfocus == "touch") lastRightFromTouch = true else if (k?.pfocus == "diam" || k?.pfocus == "sets") lastRightFromTouch = false
         // THE SET ROW: ZL / ZR (the lit one is the layer on show), ZL + ZR dimmed with a lock
         val trig = SpellsModel.combo(SpellsModel.PadSlot(0, 4, 4, 1), style()).triggers
@@ -157,7 +165,8 @@ class PartyTabPage(
         // checked mark (the normal page's rule)
         val quiet = SystemClock.uptimeMillis() >= localUntil
         when {
-            k != null && quiet && k.pfocus == "tabs" -> {}
+            onBar && quiet -> {}                                            // p56: the cursor is on the bar
+            k != null && quiet && (k.pfocus == "tabs" || k.pfocus == "sw") -> {}
             k != null && quiet && k.pfocus == "sets" -> UiKit.focus(c, setR((k.scur - 2).coerceIn(0, 2)), onPaper = true)
             onTouchRow(ctl) -> {
                 val r = touchR(if (ctlHolds(ctl)) (ctl!!.ptouch - 1).coerceIn(0, 1) else 0)
@@ -166,6 +175,8 @@ class PartyTabPage(
             rightFocus(ctl) || chooserOpen(ctl) -> UiKit.checkedGlow(c, sq(p))
             else -> UiKit.slotFocus(c, sq(p))
         }
+        c.restore()
+        if (!right) return
         drawRight(c, ctl, cfg, s, p)
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
@@ -379,11 +390,14 @@ class PartyTabPage(
     fun onTouch(ev: MotionEvent, ctl: PadMapModel.Ctl?): Boolean {
         val cfg = live().cfg
         val x = ev.x; val y = ev.y
+        // p56: the left page's places in the 0.8 picture's own frame
+        val lx = if (x < 740f) SituationPage.toLocalX(x) else -1f
+        val ly = if (x < 740f) SituationPage.toLocalY(y) else -1f
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downPlace = (1..8).firstOrNull { sq(it).contains(x, y) } ?: -1
-                downSet = (0..2).firstOrNull { setR(it).contains(x, y) } ?: -1
-                downTouch = (0..1).firstOrNull { touchR(it).contains(x, y) } ?: -1
+                downPlace = (1..8).firstOrNull { sq(it).contains(lx, ly) } ?: -1
+                downSet = (0..2).firstOrNull { setR(it).contains(lx, ly) } ?: -1
+                downTouch = (0..1).firstOrNull { touchR(it).contains(lx, ly) } ?: -1
                 downAct = act.contains(x, y)
                 downList = if (curSlot(ctl) == "yc" && cfg?.sy?.on == true) (0 until 6).firstOrNull { listRow(it).contains(x, y) } ?: -1 else -1
                 downChoose = if (chooser != null && x > 760f && y >= CHOOSE_TOP) ((y - CHOOSE_TOP) / CHOOSE_H).toInt() else -1
@@ -397,16 +411,16 @@ class PartyTabPage(
                 }
                 val now = SystemClock.uptimeMillis()
                 when {
-                    downSet >= 0 && setR(downSet).contains(x, y) -> {
+                    downSet >= 0 && setR(downSet).contains(lx, ly) -> {
                         // ZL / ZR shown by a finger (A again: the base layer); ZL + ZR locked
                         if (downSet == 2) say("Both held: nothing")
                         else { localSet = if (set(ctl) == downSet + 2) 1 else downSet + 2; localPos = pos(ctl); localTouch = false; localUntil = now + ECHO_MS }
                     }
-                    downTouch >= 0 && touchR(downTouch).contains(x, y) -> {
+                    downTouch >= 0 && touchR(downTouch).contains(lx, ly) -> {
                         if (downTouch == 1) say("The player menu: fixed")
                         else { localTouch = true; localRight = 0; localUntil = now + ECHO_MS; PartyTaps.pick(cfg, "touch")?.let { tap(it) } }
                     }
-                    downPlace > 0 && sq(downPlace).contains(x, y) -> {
+                    downPlace > 0 && sq(downPlace).contains(lx, ly) -> {
                         val s = set(ctl)
                         localPos = downPlace; localSet = s; localTouch = false; localRight = 0; localUntil = now + ECHO_MS
                         PartyModel.slotAt(s, downPlace)?.let { slot -> PartyTaps.pick(cfg, slot)?.let { tap(it) } }

@@ -113,8 +113,8 @@ class CastBarCombatTest {
      *  (only a module full screen outside the takeover drops it), so Stay keeps it in fights with Party mode on and off */
     @Test fun homeFollowsItsOwnFightSignal() {
         val h = src("HomeView.kt")
-        assertTrue(h.contains("private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown()) }"))
-        assertTrue(h.contains("CastStripModel.hiddenIn(castCombatNow(), fightShown())"))
+        assertTrue(h.contains("private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown(), castPartyKeep()) }"))
+        assertTrue(h.contains("CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)"))     // cb15: Bar in Party mode
         // the player's own rule (a preview look - the cast bar question's picture - shows Hide)
         assertTrue(h.contains("if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat"))
         // cb7: a change of hidden lays the page again with the one motion; apply itself only gates (no re-lay from inside apply)
@@ -124,8 +124,8 @@ class CastBarCombatTest {
         assertTrue(h.contains("fun fightShown(): Boolean = flow.takeover || grow.fighting(System.currentTimeMillis())"))
         assertTrue(h.contains("if (s.full != null && !s.takeover) { laidSide = CastStripModel.Side.OFF; return base }"))
         assertTrue(h.contains("return withStrip(withParty(base, s, w), w, h)"))
-        // checked on every tick (a fight's start / end) and every settings change; the gate on every apply
-        assertEquals(2, Regex("""castStripFight\(\)""").findAll(h).count() - 1)
+        // checked on every tick (a fight's start / end), every settings change and (cb15) Party mode's on / off; the gate on every apply
+        assertEquals(3, Regex("""castStripFight\(\)""").findAll(h).count() - 1)
     }
 
     @Test fun theRowAndItsPicture() {

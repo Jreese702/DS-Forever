@@ -1429,7 +1429,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p55"' in SRC["padtabctl"] and 'local BV = "b70"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
+check('local CV = "p56"' in SRC["padtabctl"] and 'local BV = "b71"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
       "the versions: PadMap m160, PadTabCtl p54, Book b61 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m160 / p54 / b61 Smart Range gone)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1576,9 +1576,9 @@ check(ctlDoc(W8)['view'] == 'normal' and 'ppos' not in ctlDoc(W8), "padtab 0: ba
 W8.execute('WowCompanion.partyOk = false; ptab(26)')
 check(ctlDoc(W8)['view'] == 'normal', "p37: Party mode not allowed: padtab 26 opens WoW Defaults (the tab is hidden)", ctlDoc(W8)['view'])
 W8.execute('pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER")')
-check(ctlDoc(W8)['view'] == 'radial', "p37: ... and RB stops at the Spell radial (no Party mode tab past it)", ctlDoc(W8)['view'])
-W8.execute('WowCompanion.partyOk = true; pp("PADRSHOULDER")')
-check(ctlDoc(W8)['view'] == 'party', "p37: allowed again: RB from the Spell radial reaches Party mode", ctlDoc(W8)['view'])
+check(ctlDoc(W8)['view'] == 'radial', "p37: ... and RB steps over Party mode to the Spell radial (p56: the user's order)", ctlDoc(W8)['view'])
+W8.execute('WowCompanion.partyOk = true; pp("PADLSHOULDER")')
+check(ctlDoc(W8)['view'] == 'party', "p37: allowed again: LB from the Spell radial reaches Party mode (p56: before the radial)", ctlDoc(W8)['view'])
 W8.execute('ptab(0)')
 check(W8.eval('#SPY') == 0 and W8.eval('#VIOL') == 0 and list(W8.eval('ERRS').values()) == [], "no spied call, no lockdown breach, no error")
 
@@ -2066,17 +2066,14 @@ WT.execute('pp("PADDUP"); pp("PADDUP"); pp("PADDUP"); pp("PADDUP")')
 check(ctlDoc(WT)['focus'] == 'tabs', "p34: Up to the tab row", ctlDoc(WT)['focus'])
 WT.execute('pp("PADDDOWN")')
 c = ctlDoc(WT)
-check(c['focus'] == 'subtabs' and c['view'] == 'normal', "p55: Down from the tabs: WoW Defaults' sub-tabs (Controller | Tap to cast)", c)
-WT.execute('pp("PADDDOWN")')
-c = ctlDoc(WT)
-check(c['focus'] == 'switches' and c['sw'] == 1, "p34: Down from the sub-tabs: WoW Defaults' own switch (the DS WoW toolbar)", c)
+check(c['focus'] == 'switches' and c['sw'] == 1 and c['view'] == 'normal', "p34 / p56: Down from the tabs: Out of combat's own chip (the DS WoW toolbar)", c)
 w0 = WT.eval('want()')
 WT.execute('pp("PAD1")')
 check(WT.eval('want()') == (not w0), "p34: A on it flips the DS WoW toolbar", (w0, WT.eval('want()')))
 if WT.eval('want()') is not True:
     WT.execute('pp("PAD1")')
 check(WT.eval('want()') is True, "p34: the toolbar on", WT.eval('want()'))
-WT.execute('pp("PADDDOWN"); pp("PADDDOWN"); pp("PADDDOWN")')
+WT.execute('pp("PADDDOWN"); pp("PADDDOWN")')
 c = ctlDoc(WT)
 check(c['focus'] == 'buttons', "p34: down to the buttons", c['focus'])
 # to the D-pad's Left (position 1), the bare set

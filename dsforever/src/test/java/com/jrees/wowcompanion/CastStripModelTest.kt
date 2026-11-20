@@ -458,9 +458,9 @@ class CastStripModelTest {
     @Test fun theThirdTabReplacesTheSpellbooksButton() {
         assertFalse(src("SpellbookView.kt").contains("\"Cast bar\""))
         val o = src("SpellsOverlay.kt")
-        // cb14 (D7 / D9): the box's two rows (Out of combat | In combat, Controller | Tap to cast)
-        assertTrue(o.contains("UiKit.tab(c, fightRect(0, w), \"Out of combat\", !f)"))
-        assertTrue(o.contains("val word = if (i == 0) \"Controller\" else \"Tap to cast\""))
+        // cb15 / b71 (Option C): the box's ONE row of situations, both devices in its body
+        assertTrue(o.contains("val sitNames = listOf(\"Out of combat\", \"In combat\", \"Party mode\")"))
+        assertTrue(o.contains("darkSection(c, \"Controller\"") && o.contains("darkSection(c, \"Tap-to-cast bar\""))
         assertFalse(o.contains("\"Normal\""))
         val h = src("HomeSettings.kt")
         assertTrue(h.contains("row(c, y + GAP, \"Tap-to-cast bar\""))
@@ -555,7 +555,7 @@ class CastStripModelTest {
 
     @Test fun theBindBoxWalksFourTabs() {
         val t = CastStripModel.BIND_TABS
-        assertEquals(listOf(0, 1, 2, 3), t.map { it.index })
+        assertEquals(listOf(0, 1, 2, 3), t.take(4).map { it.index })              // (cb15: Party mode's two after them)
         var at = t[0]
         val seen = arrayListOf(at)
         repeat(4) { at = CastStripModel.stepBind(at, 1, tap = true); seen += at }
@@ -586,5 +586,87 @@ class CastStripModelTest {
         val old = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p54","c":{"on":true,"view":"castbar"}}"""))!!
         assertEquals("an older add-on: the top from the view", "normal", old.top)
         assertNull(old.cbsn)
+    }
+
+    // ---------------------------------------------------------------- cb15 / Option C (the user, 2026-11-20): Party mode's layer
+
+    private val partyDoc = """{"type":"castbar","v":"cb15","n":8,"any":1,"fl":1,"pl":1,"show":1,"ps":1,"pick":8,"pp":[39,19],
+        "e":[{"s":1,"id":403,"i":136048,"c":0},{"s":2,"id":331,"i":136052,"c":1},{"s":3,"id":324,"i":136051,"c":2}],
+        "f":[{"s":1,"id":8042,"i":136026,"c":9},{"s":2,"id":324,"i":136051,"c":10}],
+        "p":[{"s":1,"id":331,"i":136052,"c":17},{"s":4,"k":"item","id":118,"n":"Minor Healing Potion","i":134829,"c":20}]}"""
+
+    @Test fun thePartyLayerIsParsed() {
+        val b = bar(partyDoc)
+        assertTrue(b.partyLayer); assertTrue(b.pshow)
+        assertEquals(331, b.pslots[0].id); assertEquals(17, b.pslots[0].cell)
+        assertEquals(CastStripModel.Kind.ITEM, b.pslots[3].kind); assertEquals(20, b.pslots[3].cell)
+        assertFalse(b.pslots[1].filled)
+        assertEquals(16, CastStripModel.PARTY_CELL0)
+        val old = bar(fightDoc)
+        assertFalse("an older add-on: no party layer", old.partyLayer)
+    }
+
+    @Test fun partyThenInCombatThenOwnPerSlot() {
+        val b = bar(partyDoc)
+        // layers_party_rule.png's four cases (slot 1 all three, slot 2 fight + own, slot 3 own only, slot 4 party over an empty slot)
+        fun ids(fight: Boolean, party: Boolean) = (0..3).map { CastStripModel.shownSlot(b, it, fight, party)?.id }
+        assertEquals("out of combat", listOf(403, 331, 324, null), ids(false, false))
+        assertEquals("in a fight", listOf(8042, 324, 324, null), ids(true, false))
+        assertEquals("Party mode", listOf(331, 331, 324, 118), ids(false, true))
+        assertEquals("Party mode in a fight: the empty party slot 2 falls through to In combat", listOf(331, 324, 324, 118), ids(true, true))
+        assertEquals("the cell tapped is the layer's", "castbar" to 17, CastStripModel.tapCell(b, 0, true, true))
+        assertEquals("castbar" to 10, CastStripModel.tapCell(b, 1, true, true))
+        assertEquals("p", CastStripModel.shownLayer(b, 0, true, true)); assertEquals("f", CastStripModel.shownLayer(b, 1, true, true))
+        assertNull(CastStripModel.shownLayer(b, 2, true, true))
+        val off = bar(partyDoc.replace("\"ps\":1,", ""))
+        assertEquals("Bar in Party mode off (not armed): the party slots are not used", 403, CastStripModel.shownSlot(off, 0, false, true)?.id)
+    }
+
+    @Test fun partyModeKeepsTheBarInFights() {
+        val hide = CastStripModel.Combat.HIDE
+        assertTrue(CastStripModel.hiddenIn(hide, true, partyOn = false, partyShow = true))
+        assertFalse("Party mode on with Bar in Party mode on: shown in fights", CastStripModel.hiddenIn(hide, true, partyOn = true, partyShow = true))
+        assertTrue("Bar in Party mode off: Show in combat's rule", CastStripModel.hiddenIn(hide, true, partyOn = true, partyShow = false))
+        assertFalse(CastStripModel.hiddenIn(hide, false, partyOn = false, partyShow = false))
+    }
+
+    @Test fun theSecondPageOfCodes() {
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 1), CastStripModel.ctlPartyCells())
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 2), CastStripModel.partyShowCells(true))
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 3), CastStripModel.partyShowCells(false))
+    }
+
+    @Test fun theBindBoxWalksSixStops() {
+        val t = CastStripModel.BIND_TABS
+        assertEquals(listOf(0, 1, 2, 3, 4, 5), t.map { it.index })
+        assertEquals(listOf(0, 0, 1, 1, 2, 2), t.map { it.situation })
+        var at = t[0]
+        val seen = arrayListOf(at)
+        repeat(6) { at = CastStripModel.stepBind(at, 1, tap = true, fightTap = true, party = true, partyTap = true); seen += at }
+        assertEquals("RB: each situation's controller, then its bar; it stops at the last", listOf(t[0], t[1], t[2], t[3], t[4], t[5], t[5]), seen)
+        assertEquals("Party mode not allowed: four", t[3], CastStripModel.stepBind(t[3], 1, tap = true, fightTap = true, party = false))
+        assertEquals("no party layer: Party mode's controller only", t[4], CastStripModel.stepBind(t[4], 1, tap = true, fightTap = true, party = true, partyTap = false))
+        assertEquals("LB from Party mode's controller: In combat's bar", t[3], CastStripModel.stepBind(t[4], -1, tap = true, fightTap = true, party = true, partyTap = true))
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 4), CastStripModel.bindTabCells(t[4], null))
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 5), CastStripModel.bindTabCells(t[5], 10 to 11))
+        assertTrue(CastStripModel.bindPartyTab(bar(partyDoc))); assertFalse(CastStripModel.bindPartyTab(bar(fightDoc)))
+        val c = SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b71","ctl":{"on":true,"mode":"bind","bind":331,"bpm":1}}"""))!!
+        assertTrue(c.bindParty); assertFalse(c.bindCbParty)
+        val d = SpellsModel.parseCtl(JSONObject("""{"type":"spellsctl","v":"b71","ctl":{"on":true,"mode":"bind","bind":331,"bcb":2,"bcp":1}}"""))!!
+        assertTrue(d.bindCbParty); assertEquals(2, d.bindCb)
+    }
+
+    @Test fun theRoomsDocumentCarriesTheSituations() {
+        val c = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p56","c":{"on":true,"focus":"buttons","view":"pbar","top":"party",
+            "tcur":5,"cbpn":3,"cbps":1,"pbar":{"ppos":5,"pset":2}}}"""))!!
+        assertEquals("pbar", c.view); assertTrue(c.onBar); assertEquals("party", c.top)
+        assertEquals(3, c.cbpn); assertTrue(c.cbPShow); assertEquals(5, c.pbarPos); assertEquals(2, c.pbarSet)
+        assertEquals("party", PadMapModel.topOf("pbar")); assertEquals("pbar", PadMapModel.barOf("party"))
+        assertEquals("castbar", PadMapModel.barOf("normal")); assertEquals("cbfight", PadMapModel.barOf("combat")); assertNull(PadMapModel.barOf("radial"))
+        assertEquals(8, PadMapModel.tabOf("pbar"))
+        val off = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p56","c":{"on":true,"view":"party","cbpn":0}}"""))!!
+        assertFalse("the add-on's copy: off", off.cbPShow)
+        val old = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p55","c":{"on":true,"view":"normal"}}"""))!!
+        assertTrue("an older add-on: on (the default)", old.cbPShow)
     }
 }

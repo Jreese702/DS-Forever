@@ -34,7 +34,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
 -- p42 (int/1429): ctl-sets p39-p41 (the In combat chooser's five tabs, the fight-only layer) merged with party-combat / combat-nav
-local CV = "p55"                -- bump on every change; p55 CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal D1-D10; ActionBar cb14, Book b70): the top row is WoW Defaults | In combat | Spell radial | Party mode (the Cast bar tab is no top tab any more, D1); WoW Defaults and In combat each have SUB-TABS, Controller | Tap to cast (SUBS): "castbar" = WoW Defaults > Tap to cast (p53's page as it was), "cbfight" = In combat > Tap to cast, the bar's new IN-COMBAT LAYER (CB.put / clear / move with the layer "f": a set fight slot replaces the slot in fights, an empty one keeps it). The cursor: the top tabs, then on WoW Defaults the sub-tabs and its page, on In combat the check boxes (Combat controls, Start attack on cast, Show tap-to-cast = the app's castBarCombat: each A counted in `cbsn`, the app flips it and tells the add-on 39 then 2 / 3), the sub-tabs, then the page; landing on a sub-tab opens it (gold arrows), each top tab remembers its sub-tab while the room is open (a fresh open: Controller); LB / RB the top tabs only; B one level back (the chooser / box, the page, the sub-tabs, the top tabs, then Home). The bar Off in the app (castBarTab nil): the Tap to cast pages show dimmed, A = "Turn on" (`cbon` counted, the app turns the bar on), nothing else. Show in combat off: In combat > Tap to cast is locked - A / X and every touch put answer one red pulse and "cb-hidden", its slots kept; padtab 39 then 1 opens In combat > Tap to cast by touch; p54 SMART RANGE IS GONE (the user, 2026-11-13: "Lets scrap the smart ranged attack"): p46-p48 are out - the In combat tab's box, Y's flip (Y does nothing on the tab again, as before p46), A's Melee / Range picker, the half chooser / Clear / Move, the padtabctl doc's srp / srh and the carry's h; padtab 39's codes 0-4 (touchSr) are gone and stay unused, the one-shot pick itself (srPick / srWants / srDrop) stays for the radial ops (5-18) and the cast bar (19-31); p53 THE CAST BAR TAB (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can assign anything from the 5 tabs"): a 6th tab "castbar" (shown only while the app's Tap-to-cast bar setting is not Off: Book b60's padtab 39 then 30 / 31 say so, kept in WowCompanionSpellsDB.castBarTab; 39 then 29 opens it by touch): its 8 slots in one row (Left / Right, Up the tab row), A = the chooser with all five tabs (the game bindings left out: a key is no cast), a pick puts it on the slot (ActionBar cb9 CB.put), Clear empties it, X moves it (CB.move: a swap onto a filled slot); the touch routes are the eight's own (button codes 1-8 = slots 1-8, the spell's two taps, the "extra" row, Clear, padtab 3 / 4 / 5); p52 p52 STICKS TAKE ANYTHING (the user, 2026-11-13: "looking good, except people also want to be able to bind any of their spells and stuff to these, so any of those 5 controller tabs should be able to bind here"): L3 / R3 on WoW Defaults open the chooser with all five tabs (Spells, General, Professions, Extra, DS), the same rows as the eight, and every put goes on the stick (PadMap m157: its own secure button); X (Move) still refused (no bar slot: "bind-move"); a fight-layer pick by touch onto a stick is refused ("stick-normal": the sticks are WoW Defaults' only); p51 STICKS APART (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default, I also want those to be slightly smaller and moved away from the other two cross's to make it clear what they are."): L3 / R3 sit as a small pair of their own, centred below and between the two diamonds (the app draws them 64 px at 323 / 423, 790); their grid places follow (GRIDS 9 / 10 = { 2.2, 3 } / { 2.8, 3 }: the drawn x on the grid's columns, the 166 px between the diamonds one column): Down from the D-pad's Down = L3, Down from the face diamond's bottom = R3, L3 / R3 Left / Right between them; p50 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/multi-radial-v2's p49b next to p49, both kept; p49b: SEVERAL SPELL RADIALS back (feat/multi-radial-v2; p40 of 1.0.18): the plates = the radials + New, A on one = its settings (Name / Icon / Opening / Delete), the wheel = its spells + "+", no pages; the radial ops ride Book's padtab 39 + code 5-18 (38 / 39 are rank up / Smart Range now); p48 SMART RANGE: WHO HAS IT (PadMap m148; the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Y / A / touch offer Smart Range only where PadMap's srWhere says (the class; a Druid's Bear Form set, its form passed on to srToggle / srPut / srClear: the "sr-class" / "sr-bear" / "sr-form" notes elsewhere); the Melee half's chooser lists only the next-swing attacks the character knows; a form set's button carries its halves and box (here); no Move of a form's half; p47 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"): a Smart Range half's Clear goes straight off like its put (no box: the Clear box named the button's other half and said the wrong result); the box flip and the Melee / Range pick are refused while a button is carried (a stray tap on the Move page changed the hidden target button: "sr-carry"); p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): on the In combat tab Y (PAD4) flips the button's Smart Range box (PadMap m146 srToggle); with it on, A first asks Melee or Range (the small picker, `srp`), then the chooser opens for that half (spells only; its Clear row clears that half); X moves the picked half (onto the target's same half, PadMap srMove); the picked half is `srh` in the doc; by touch padtab 39 is the one-shot Smart Range pick and the padtab column after it says what (0 the box, 1 Melee, 2 Range, 3 the box on: the restore); p45 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): keepOn() for PadMap m144 (a backup restore's puts never mark a rank "picked on purpose"); p44 (review): the auto form only while the game SHOWS a stance bar (PadMap stanceShown: Ghost Wolf / Travel Form / an aura keep the plain set); a fresh open forgets ANY pick (form, cursor, auto); p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars); p49 STICK BUTTONS (GitHub #78; PadMap m150): WoW Defaults shows L3 / R3 (positions 9 / 10, under the diamonds, between them: GRIDS 9 / 10) for the game bindings only; A on one opens the chooser on Extra with the bindings alone (its only tab), Clear at the end; no Move, no spell, no command (said: "stick-binds"); In combat, the radial and Party never show them (the cursor walks 1-8 there; a tab change off WoW Defaults puts the cursor back on a button); by touch the one-shot talentn 38 pick before a button code 1 / 2 = L3 / R3; p48 SMART RANGE: WHO HAS IT (PadMap m148; the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Y / A / touch offer Smart Range only where PadMap's srWhere says (the class; a Druid's Bear Form set, its form passed on to srToggle / srPut / srClear: the "sr-class" / "sr-bear" / "sr-form" notes elsewhere); the Melee half's chooser lists only the next-swing attacks the character knows; a form set's button carries its halves and box (here); no Move of a form's half; p47 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"): a Smart Range half's Clear goes straight off like its put (no box: the Clear box named the button's other half and said the wrong result); the box flip and the Melee / Range pick are refused while a button is carried (a stray tap on the Move page changed the hidden target button: "sr-carry"); p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): on the In combat tab Y (PAD4) flips the button's Smart Range box (PadMap m146 srToggle); with it on, A first asks Melee or Range (the small picker, `srp`), then the chooser opens for that half (spells only; its Clear row clears that half); X moves the picked half (onto the target's same half, PadMap srMove); the picked half is `srh` in the doc; by touch padtab 39 is the one-shot Smart Range pick and the padtab column after it says what (0 the box, 1 Melee, 2 Range, 3 the box on: the restore); p45 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): keepOn() for PadMap m144 (a backup restore's puts never mark a rank "picked on purpose"); p44 (review): the auto form only while the game SHOWS a stance bar (PadMap stanceShown: Ghost Wolf / Travel Form / an aura keep the plain set); a fresh open forgets ANY pick (form, cursor, auto); p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p56"                -- bump on every change; p56 SITUATIONS FIRST (the user, 2026-11-20, the Controller room's Option C; ActionBar cb15, Book b71): ONE row of situation tabs in the user's order, Out of combat ("normal") | In combat | Party mode | Spell radial (ROW: LB / RB and the tab row step it; TABS keeps every padtab number); NO SUB-TABS: each situation's page holds BOTH devices, the controller and under it the tap-to-cast bar (BARV: "castbar", "cbfight", and the new "pbar" = Party mode's bar, the layer "p"), and ONE cursor walks down from the controller into the bar (the rows per situation: ORDER, the new row "bar"): Down from a controller place with nothing under it = the bar's slot under its column, Up from a slot = the controller place over it (the bottom row first); LB / RB keep the device (on the bar: the next situation's bar at the same slot); B one step back (the chooser / box -> the page -> the tabs -> Home). Party mode's page: "Bar in Party mode" (cbpshow, the app's castBarPartyShow; A counted in `cbpn`, the add-on's copy WC.castBarPartyShow flips at once), its bar locked "cb-phidden" while it is off; padtab 39, 38 then 1 opens Party mode's bar by touch (Book b71); p55 CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal D1-D10; ActionBar cb14, Book b70): the top row is WoW Defaults | In combat | Spell radial | Party mode (the Cast bar tab is no top tab any more, D1); WoW Defaults and In combat each have SUB-TABS, Controller | Tap to cast (SUBS): "castbar" = WoW Defaults > Tap to cast (p53's page as it was), "cbfight" = In combat > Tap to cast, the bar's new IN-COMBAT LAYER (CB.put / clear / move with the layer "f": a set fight slot replaces the slot in fights, an empty one keeps it). The cursor: the top tabs, then on WoW Defaults the sub-tabs and its page, on In combat the check boxes (Combat controls, Start attack on cast, Show tap-to-cast = the app's castBarCombat: each A counted in `cbsn`, the app flips it and tells the add-on 39 then 2 / 3), the sub-tabs, then the page; landing on a sub-tab opens it (gold arrows), each top tab remembers its sub-tab while the room is open (a fresh open: Controller); LB / RB the top tabs only; B one level back (the chooser / box, the page, the sub-tabs, the top tabs, then Home). The bar Off in the app (castBarTab nil): the Tap to cast pages show dimmed, A = "Turn on" (`cbon` counted, the app turns the bar on), nothing else. Show in combat off: In combat > Tap to cast is locked - A / X and every touch put answer one red pulse and "cb-hidden", its slots kept; padtab 39 then 1 opens In combat > Tap to cast by touch; p54 SMART RANGE IS GONE (the user, 2026-11-13: "Lets scrap the smart ranged attack"): p46-p48 are out - the In combat tab's box, Y's flip (Y does nothing on the tab again, as before p46), A's Melee / Range picker, the half chooser / Clear / Move, the padtabctl doc's srp / srh and the carry's h; padtab 39's codes 0-4 (touchSr) are gone and stay unused, the one-shot pick itself (srPick / srWants / srDrop) stays for the radial ops (5-18) and the cast bar (19-31); p53 THE CAST BAR TAB (the user, 2026-11-13: "in the controller menu we need a Tab for the cast bar if its enabled, where people can assign anything from the 5 tabs"): a 6th tab "castbar" (shown only while the app's Tap-to-cast bar setting is not Off: Book b60's padtab 39 then 30 / 31 say so, kept in WowCompanionSpellsDB.castBarTab; 39 then 29 opens it by touch): its 8 slots in one row (Left / Right, Up the tab row), A = the chooser with all five tabs (the game bindings left out: a key is no cast), a pick puts it on the slot (ActionBar cb9 CB.put), Clear empties it, X moves it (CB.move: a swap onto a filled slot); the touch routes are the eight's own (button codes 1-8 = slots 1-8, the spell's two taps, the "extra" row, Clear, padtab 3 / 4 / 5); p52 p52 STICKS TAKE ANYTHING (the user, 2026-11-13: "looking good, except people also want to be able to bind any of their spells and stuff to these, so any of those 5 controller tabs should be able to bind here"): L3 / R3 on WoW Defaults open the chooser with all five tabs (Spells, General, Professions, Extra, DS), the same rows as the eight, and every put goes on the stick (PadMap m157: its own secure button); X (Move) still refused (no bar slot: "bind-move"); a fight-layer pick by touch onto a stick is refused ("stick-normal": the sticks are WoW Defaults' only); p51 STICKS APART (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default, I also want those to be slightly smaller and moved away from the other two cross's to make it clear what they are."): L3 / R3 sit as a small pair of their own, centred below and between the two diamonds (the app draws them 64 px at 323 / 423, 790); their grid places follow (GRIDS 9 / 10 = { 2.2, 3 } / { 2.8, 3 }: the drawn x on the grid's columns, the 166 px between the diamonds one column): Down from the D-pad's Down = L3, Down from the face diamond's bottom = R3, L3 / R3 Left / Right between them; p50 THE 1.0.30 TEST BUILD MERGE (code 1453): feat/multi-radial-v2's p49b next to p49, both kept; p49b: SEVERAL SPELL RADIALS back (feat/multi-radial-v2; p40 of 1.0.18): the plates = the radials + New, A on one = its settings (Name / Icon / Opening / Delete), the wheel = its spells + "+", no pages; the radial ops ride Book's padtab 39 + code 5-18 (38 / 39 are rank up / Smart Range now); p48 SMART RANGE: WHO HAS IT (PadMap m148; the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Y / A / touch offer Smart Range only where PadMap's srWhere says (the class; a Druid's Bear Form set, its form passed on to srToggle / srPut / srClear: the "sr-class" / "sr-bear" / "sr-form" notes elsewhere); the Melee half's chooser lists only the next-swing attacks the character knows; a form set's button carries its halves and box (here); no Move of a form's half; p47 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"): a Smart Range half's Clear goes straight off like its put (no box: the Clear box named the button's other half and said the wrong result); the box flip and the Melee / Range pick are refused while a button is carried (a stray tap on the Move page changed the hidden target button: "sr-carry"); p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): on the In combat tab Y (PAD4) flips the button's Smart Range box (PadMap m146 srToggle); with it on, A first asks Melee or Range (the small picker, `srp`), then the chooser opens for that half (spells only; its Clear row clears that half); X moves the picked half (onto the target's same half, PadMap srMove); the picked half is `srh` in the doc; by touch padtab 39 is the one-shot Smart Range pick and the padtab column after it says what (0 the box, 1 Melee, 2 Range, 3 the box on: the restore); p45 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): keepOn() for PadMap m144 (a backup restore's puts never mark a rank "picked on purpose"); p44 (review): the auto form only while the game SHOWS a stance bar (PadMap stanceShown: Ghost Wolf / Travel Form / an aura keep the plain set); a fresh open forgets ANY pick (form, cursor, auto); p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars); p49 STICK BUTTONS (GitHub #78; PadMap m150): WoW Defaults shows L3 / R3 (positions 9 / 10, under the diamonds, between them: GRIDS 9 / 10) for the game bindings only; A on one opens the chooser on Extra with the bindings alone (its only tab), Clear at the end; no Move, no spell, no command (said: "stick-binds"); In combat, the radial and Party never show them (the cursor walks 1-8 there; a tab change off WoW Defaults puts the cursor back on a button); by touch the one-shot talentn 38 pick before a button code 1 / 2 = L3 / R3; p48 SMART RANGE: WHO HAS IT (PadMap m148; the user, 2026-11-12: "this option should only appear for classes with next swing pairs- and it should only list the abilities that can work with it in the melee options"; "for druid this should only appear for the bear form action bar, and that's even if there is ranged attacks that bear druid can use. maybe taunt?"): Y / A / touch offer Smart Range only where PadMap's srWhere says (the class; a Druid's Bear Form set, its form passed on to srToggle / srPut / srClear: the "sr-class" / "sr-bear" / "sr-form" notes elsewhere); the Melee half's chooser lists only the next-swing attacks the character knows; a form set's button carries its halves and box (here); no Move of a form's half; p47 SMART RANGE REVIEW (the user, 2026-11-12: "okay so I was skeptical and so I tried it with a different melee skill, wing clip and it did not work"): a Smart Range half's Clear goes straight off like its put (no box: the Clear box named the button's other half and said the wrong result); the box flip and the Melee / Range pick are refused while a button is carried (a stray tap on the Move page changed the hidden target button: "sr-carry"); p46 SMART RANGE (the user, 2026-11-12: "revise the right section and remove the "Otherwise spell", and instead move down the assigned spell and make space for an optional checkbox called "Smart Range". when enabled I want two selectable buttons, one for melee and one for range, and after selecting that button then the bind and move (if applicable) appear ... this should be per button/ button modifier combo"): on the In combat tab Y (PAD4) flips the button's Smart Range box (PadMap m146 srToggle); with it on, A first asks Melee or Range (the small picker, `srp`), then the chooser opens for that half (spells only; its Clear row clears that half); X moves the picked half (onto the target's same half, PadMap srMove); the picked half is `srh` in the doc; by touch padtab 39 is the one-shot Smart Range pick and the padtab column after it says what (0 the box, 1 Melee, 2 Range, 3 the box on: the restore); p45 RANK UP REVIEW (the user, 2026-11-12: "I know we have something in place to rank up abilities on login, but maybe for skills that are already on a bar a prompt to allow them to be ranked up when a new rank is learned is available?"): keepOn() for PadMap m144 (a backup restore's puts never mark a rank "picked on purpose"); p44 (review): the auto form only while the game SHOWS a stance bar (PadMap stanceShown: Ghost Wolf / Travel Form / an aura keep the plain set); a fresh open forgets ANY pick (form, cursor, auto); p44: THE ACTIVE STANCE'S BAR BY DEFAULT (issue #179, 1.0.25: "buttons do not stay mapped on ZR +FACE buttons"; the user's "Build it"): until the player picks a form in the row (tc.formPicked), WoW Defaults' form is the one the player is in while the game lays a stance bar over a set (PadMap m142's OV.fe follows), so that set shows and edits the bar the game presses; the caster picked on purpose stays the caster; In combat keeps the caster until a pick (as before); a fresh room open forgets the pick; p43: ALL FIVE TABS ON EVERY In combat BUTTON (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button"): a base X / Y / A, a form's own set and the bare D-pad with the DS WoW toolbar on too; an Extra / DS entry there goes on the fight layer (PadMap m141 putFight: the face store, the form's set, the slot), WoW Defaults untouched; a binding where no chord of ours can go (a base face, a form's set, the toolbar's D-pad) is refused with its reason (bind-fixed / bind-form / bind-dpad bar); spells only on the radial and out of combat's combat button; p41: THE FIGHT-ONLY LAYER (the user, 2026-11-11: "Build a fight-only layer"; PadMap m132): an Extra / DS entry on the In combat tab goes on the button's fight layer only (PadMap.putFight), the WoW Defaults assignment stays out of combat; its box is a plain Set / Replace on the fight layer (Replace only when a fight spell / fight-layer entry is there, naming it; p40's "replace both" retired); Clear combat spell removes it; p40: an Extra / DS entry on the In combat tab always asks first (Replace, an empty button too): it changes the button out of combat as well, and the box says so; p39: THE IN COMBAT TAB'S CHOOSER HAS ALL FIVE TABS (the user, 2026-11-11, on 1428: "The in combat tab of the controller bindings is missing all 5 pages of options, it only shows the first 3"): Extra and DS on In combat too (a command, binding, mount or item goes on the button itself, a fight spell there gives way); the three spell tabs only where nothing but a fight spell can go (a base X / Y / A, a form's own set, the bare D-pad the DS WoW toolbar holds, the radial; out of combat a combat button, as before); p38: THE D-PAD'S LEFT / RIGHT MOVE THE PICK TOO (the user, 2026-11-11, the party grid: "when one two or three full sized, when 4, bottom 2 consolidate, when 5 the next 2 consolidate" - PadMap m131 moves the pick over the rows with all four directions): Left / Right are locked "moves the pick" places like Up / Down (note locked), no longer kept for raids; p37: THE PARTY MODE TAB ON THE NORMAL LAYERS' PICTURE (party_design.md B, the user's decisions 2026-11-11): the set row (ZL / ZR; ZL + ZR locked), the Touch row (Touch; Hold locked), the two diamonds (Up / Down move the pick, locked; Left / Right kept for raids, locked; A / X / Y as set; B locked) - ppos = the router's 8 positions, pset, ptouch, pfocus tabs / sets / touch / diam / right; the tab only while Party mode is allowed (WC.partyOk); p36: the DS WoW toolbar claims only WoW Defaults' bare D-pad, never In combat's (the user 2026-11-10: "The ds toolbar is overwriting my combat bar and it shouldn't, i should still be able to assign combat keys with it on"; PadMap m44 already casts them in fights); p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 }, { 2.2, 3 }, { 2.8, 3 } },   -- 5-8 left / top / right / bottom; p51: 9 / 10 the sticks, below
@@ -55,17 +55,22 @@ local DIRS = { PADDUP = { 0, -1 }, PADDDOWN = { 0, 1 }, PADDLEFT = { -1, 0 }, PA
 -- Home's wheel; Left / Right step round it counter-clockwise / clockwise, Up goes to the page plates, Down does nothing), filled through
 -- SpellRadial.lua (WC.spellRadial: put / clear / move). Its chooser: Spells / General / Professions (no Extra: a radial casts spells).
 -- p33 PARTY MODE (PARTY_BUILD.md 4.4): the 5th tab, "party" (PadMap m77's slots, Y's In combat action, Touch, Smart Y's party list)
-local TABS = { "normal", "ds", "combat", "radial", "party", "castbar", "cbfight" }   -- p53: the 6th, the Cast bar (ActionBar cb9); p55: the 7th, In combat > Tap to cast
--- p55 THE SUB-TABS (the user, 2026-11-19, D1): each view's TOP tab, and the top tabs' Controller | Tap to cast pair
-local TOP = { normal = "normal", ds = "normal", castbar = "normal", combat = "combat", cbfight = "combat", radial = "radial", party = "party" }
-local SUBS = { normal = { "normal", "castbar" }, combat = { "combat", "cbfight" } }
+local TABS = { "normal", "ds", "combat", "radial", "party", "castbar", "cbfight", "pbar" }   -- p53: the 6th, the Cast bar (ActionBar cb9); p55: the 7th, In combat > Tap to cast; p56: the 8th, Party mode's bar
+-- p55: each view's TOP tab (its situation); p56: the sub-tabs are gone - a situation's bar view is the cursor on its bar
+local TOP = { normal = "normal", ds = "normal", castbar = "normal", combat = "combat", cbfight = "combat", radial = "radial", party = "party",
+              pbar = "party" }
 local function top(v) return TOP[v] or "normal" end
+-- p56 THE SITUATIONS' ROW (the user's Option C order): LB / RB and the tab row step it; the tab numbers (tcur) stay TABS' own
+local ROW = { "normal", "combat", "party", "radial" }
+-- p56: each situation's controller view and its bar view (the bar's layer: nil, "f", "p")
+local CTLV = { normal = "normal", combat = "combat", party = "party" }
+local BARV = { normal = "castbar", combat = "cbfight", party = "pbar" }
 -- each tab's switches ("as drawn"); "rmode" (the radial's Hold / Tap) is A on the DS tab's Up
 -- p34 (the user 2026-11-10: "consolidate the Controller menu. move the DS wow toolbar check box to the Wow defaults tab, when its
 -- selected replace those buttons with the DS WoW toolbar buttons, when uncheck it goes back to the normal D-pad skills"): the switch is
 -- WoW Defaults' own; "ds" stays in TABS (every padtab column keeps its number) but is never shown or stepped onto
-local SWITCHES = { normal = { "dpad" }, ds = { "dpad" }, combat = { "cc", "sa", "cbshow" }, radial = {}, party = {}, castbar = {},
-                   cbfight = { "cc", "sa", "cbshow" } }        -- p55 (D5c): Show tap-to-cast with the In combat checks
+local SWITCHES = { normal = { "dpad" }, ds = { "dpad" }, combat = { "cc", "sa", "cbshow" }, radial = {}, party = { "cbpshow" }, castbar = { "dpad" },
+                   cbfight = { "cc", "sa", "cbshow" }, pbar = { "cbpshow" } }  -- p55 (D5c): Show tap-to-cast with the In combat checks; p56: Bar in Party mode
 -- the rows from the top, per tab
 -- p19: the DS tab's "cleanup" row (PadMap m41 S1, the user's pick 2026-10-09: "a 'Clean up this character' button in the Controller
 -- room's DS tab lists exactly what goes; one yes per character"): under the D-pad, only while the plan has something
@@ -74,12 +79,12 @@ local SWITCHES = { normal = { "dpad" }, ds = { "dpad" }, combat = { "cc", "sa", 
 -- p29 (f-combat-forms): the In combat tab's "forms" row (Caster | the character's forms / stances), only while it has forms
 -- p32 (the user's pick A on test20): the out-of-combat tab's form row too, the GAME's own form bars (PadMap m57), while the game puts one
 -- p55: WoW Defaults' sub-tabs right under the top tabs; In combat's under its check boxes (the user: "under the check boxes")
-local ORDER = { normal = { "tabs", "subtabs", "switches", "forms", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" },
-                combat = { "tabs", "switches", "subtabs", "forms", "sets", "buttons" },
-                radial = { "tabs", "rpages", "buttons" }, party = { "tabs", "psets", "ptouch", "pdiam" },     -- p37: the party tab's rows
-                castbar = { "tabs", "subtabs", "buttons" },                                                   -- p53: its 8 slots
-                cbfight = { "tabs", "switches", "subtabs", "buttons" } }                                      -- p55: the fight layer's 8
-local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "rpages", party = "pdiam", castbar = "buttons", cbfight = "buttons" }
+-- p56: per SITUATION (a bar view walks its situation's rows): the settings chips, the controller's rows, then "bar" (the bar's 8)
+local ORDER = { normal = { "tabs", "switches", "forms", "sets", "buttons", "bar" }, ds = { "tabs", "switches", "dpad" },
+                combat = { "tabs", "switches", "forms", "sets", "buttons", "bar" },
+                radial = { "tabs", "rpages", "buttons" }, party = { "tabs", "switches", "psets", "ptouch", "pdiam", "bar" } }   -- p37: the party tab's rows
+local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "rpages", party = "pdiam", castbar = "buttons", cbfight = "buttons",
+                     pbar = "buttons" }
 -- p53 THE CAST BAR TAB: ActionBar cb9's bar (WC.castBar: at / put / clear / move); its 8 slots = tc.pos 1-8, one row
 local CB_N = 8
 local function CBAR() return (type(WC.castBar) == "table" and type(WC.castBar.put) == "function") and WC.castBar or nil end
@@ -103,10 +108,10 @@ local function rPlates() local out = rSlots(); if #out < 6 then out[#out + 1] = 
 local tc = { on = false, focus = "buttons", set = 1, pos = 1, chooser = nil, box = nil, note = nil, view = "normal",
              tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1, form = 0, fcur = 0, formPicked = false, ppos = 8, pright = 1, pset = 1, ptouch = 1,
              rplate = 1, rrow = 1, revn = 0,
-             sub = { normal = "normal", combat = "combat" }, cbsn = 0, cbon = 0 }      -- p55: each top tab's sub-tab; Show / Turn on counts
+             cbsn = 0, cbon = 0, cbpn = 0, cpos = 8, bpos = 1 }      -- p55: Show / Turn on counts; p56: Bar in Party mode's, the controller's and the bar's places
 local PT = {}                   -- p33: the Party tab's functions (filled at the end of this file)
-local function cbView(v) v = v or tc.view; return v == "castbar" or v == "cbfight" end      -- p55: a Tap to cast page
-local PFOCUS = { tabs = "tabs", psets = "sets", ptouch = "touch", pdiam = "diam", pright = "right" }      -- p37: the doc's pfocus
+local function cbView(v) v = v or tc.view; return v == "castbar" or v == "cbfight" or v == "pbar" end      -- p55: a Tap to cast page; p56: Party mode's
+local PFOCUS = { tabs = "tabs", psets = "sets", ptouch = "touch", pdiam = "diam", pright = "right", switches = "sw" }      -- p37: the doc's pfocus; p56: the chip
 -- p25 THE KEEP MODE (Book b36's quiet enter; test22 device: two of the restore's taps were lost, the "combat layer" pick among them, so
 -- the In-combat spell went onto the GAME's bar slot as a plain spell): while the app restores its backup, a spell is ONLY ever an
 -- In-combat setting (the overlay / a face's fight spell), and only right after a FRESH set AND button pick; nothing else acts
@@ -124,7 +129,7 @@ end
 local function tabIndex(v) for i, t in ipairs(TABS) do if t == v then return i end end return 1 end
 -- p34: the tabs the room shows; LB / RB / the tab row step over the hidden one
 -- p55: the sub-views ("castbar", "cbfight") are never TOP tabs: their top tab's sub-tab row reaches them
-local HIDDEN = { ds = true, castbar = true, cbfight = true }
+local HIDDEN = { ds = true, castbar = true, cbfight = true, pbar = true }
 -- p37 (party_design.md B): the Party mode tab shows only while Party mode is allowed (Hub's experimental switch: WC.partyOk)
 local function hidden(v)
     return HIDDEN[v] == true or (v == "party" and WC.partyOk ~= true)
@@ -133,20 +138,28 @@ end
 local function cbOff() return db().castBarTab == false end
 -- p55 (D5): Show in combat (the app's castBarCombat; Book b70's 39 then 2 / 3, kept by ActionBar cb14)
 local function cbShowOn() local cb = CBAR(); return cb ~= nil and type(cb.show) == "function" and cb.show() == true end
+-- p56: Bar in Party mode (the app's castBarPartyShow; ActionBar cb15 keeps the add-on's copy: on unless told off)
+local function cbPShowOn() local cb = CBAR(); return cb ~= nil and type(cb.pshow) == "function" and cb.pshow() == true end
 -- p55: why a Tap to cast page takes nothing now: "cb-off" (the bar is Off), "cb-hidden" (In combat > Tap to cast, Show off); nil = free
 local function cbLock()
     if not cbView() then return nil end
     if cbOff() then return "cb-off" end
     if tc.view == "cbfight" and not cbShowOn() then return "cb-hidden" end
+    if tc.view == "pbar" and not cbPShowOn() then return "cb-phidden" end         -- p56: Bar in Party mode off
     return nil
 end
--- the layer a Tap to cast page edits (ActionBar cb14): "f" = the in-combat layer
-local function cbLayer() return tc.view == "cbfight" and "f" or nil end
+-- the layer a Tap to cast page edits (ActionBar cb14): "f" = the in-combat layer; p56 (cb15): "p" = Party mode's
+local function cbLayer() return tc.view == "cbfight" and "f" or tc.view == "pbar" and "p" or nil end
 local shownSet                  -- below
+-- p56: the situation after / before [v]'s on the row (LB / RB, the tab row), over the hidden one; its TABS number (nil = an end)
 local function tabStep(i, d)
-    local j = i + d
-    while TABS[j] and hidden(TABS[j]) do j = j + d end
-    return TABS[j] and j or nil
+    local at = 1
+    for k, t in ipairs(ROW) do if t == top(TABS[i] or "normal") then at = k end end
+    local j = at + d
+    while ROW[j] and hidden(ROW[j]) do j = j + d end
+    if not ROW[j] then return nil end
+    for k, t in ipairs(TABS) do if t == ROW[j] then return k end end
+    return nil
 end
 -- p34: the bare D-pad is the DS WoW toolbar's while it is on (WoW Defaults and In combat show its four there): nothing goes on it
 local function toolbarHas(pos)
@@ -243,7 +256,10 @@ local function report(note)
         pset = tc.view == "party" and PT.shown and PT.shown() or nil, ptouch = tc.view == "party" and tc.ptouch or nil,
         pfocus = tc.view == "party" and (PFOCUS[tc.focus] or "diam") or nil,
         -- p55: the top tab, the Show / Turn on counts, Show in combat and the bar Off (the add-on's copies of the app's settings)
-        top = top(tc.view), cbsn = tc.cbsn or 0, cbon = tc.cbon or 0, cbs = cbShowOn() and 1 or nil, cboff = cbOff() and 1 or nil } }))
+        top = top(tc.view), cbsn = tc.cbsn or 0, cbon = tc.cbon or 0, cbs = cbShowOn() and 1 or nil, cboff = cbOff() and 1 or nil,
+        -- p56: Bar in Party mode's count and the add-on's copy of it; Party mode's bar shows the party page's left side too
+        cbpn = tc.cbpn or 0, cbps = cbPShowOn() and 1 or nil,
+        pbar = tc.view == "pbar" and { ppos = tc.ppos, pset = PT.shown and PT.shown() or 1 } or nil } }))
     WC.push()
 end
 
@@ -252,7 +268,7 @@ local function here()
         local cb = CBAR()
         local e = cb and cb.at(tc.pos, cbLayer()) or nil
         return { kind = e and e.k or "none", id = e and e.id or nil, key = e and e.key or nil, castbar = true, s = tc.pos,
-                 fight = tc.view == "cbfight" or nil }
+                 fight = tc.view == "cbfight" or nil, party = tc.view == "pbar" or nil }
     end
     if tc.view == "radial" then                                     -- p40: place pos on the radial shown (the "+" after its spells)
         local sr = SR()
@@ -492,7 +508,7 @@ end
 -- p55: a Tap to cast page that takes nothing now (cbLock): "cb-hidden" pulses red as a fight's refusal does; "cb-off" says it
 local function cbRefuse(why)
     report(why)
-    if why == "cb-hidden" and type(WC.spellsRefusedCombat) == "function" then WC.spellsRefusedCombat() end
+    if (why == "cb-hidden" or why == "cb-phidden") and type(WC.spellsRefusedCombat) == "function" then WC.spellsRefusedCombat() end
 end
 local function choose(thing)
     if inCombat() then refusedCombat() return end
@@ -535,25 +551,25 @@ end
 -- ---------------------------------------------------------------- p9: tabs, switches, Move
 
 local function setTab(v)
-    -- p34: an old padtab 1 (the DS tab) opens WoW Defaults; p55: the sub-views are no top tabs but open (cbView: the bar's add-on half)
-    if v == "ds" or (v == "party" and hidden(v)) or (cbView(v) and CBAR() == nil) or not TOP[v] then v = "normal" end
+    -- p34: an old padtab 1 (the DS tab) opens WoW Defaults; p55: the bar views are no top tabs but open (cbView: the bar's add-on half)
+    if v == "ds" or (TOP[v] == "party" and hidden("party")) or (cbView(v) and CBAR() == nil) or not TOP[v] then v = "normal" end
     local was = tc.view
+    -- p56: the controller's place and the bar's slot are each kept while the cursor is on the other device
+    if cbView(v) and not cbView(was) then tc.cpos = tc.pos; tc.pos = math.max(1, math.min(CB_N, tc.bpos or 1)) end
+    if not cbView(v) and cbView(was) then tc.bpos = tc.pos; tc.pos = tc.cpos or tc.pos end
     tc.view = v
     if v ~= "normal" and GRIDS.STICK[tc.pos] then tc.pos = tc.pos == 9 and 4 or 8 end     -- p49: the sticks are WoW Defaults' only
-    if cbView(v) and not cbView(was) then tc.pos = math.max(1, math.min(CB_N, tc.pos)) end
     tc.carry, tc.chooser, tc.box = nil, nil, nil
     tc.tcur = tabIndex(top(v))
-    if top(v) ~= top(was) then tc.sw = 1 end                            -- p55: the checks stay where they were across In combat's pair
-    if SUBS[top(v)] then tc.sub[top(v)] = v end                           -- p55: remembered while the room is open
-    -- p55: the cursor stays on the top tabs, the sub-tabs or the check boxes it changed the page from; else the page's own place
-    if tc.focus ~= "tabs" and not (tc.focus == "subtabs" and SUBS[top(v)]) and not (tc.focus == "switches" and top(v) == top(was)) then
-        tc.focus = HOME_FOCUS[v]
-    end
+    if top(v) ~= top(was) then tc.sw = 1 end
+    -- the cursor stays on the tabs or the situation's chips it changed the page from; else the page's own place
+    if tc.focus ~= "tabs" and not (tc.focus == "switches" and top(v) == top(was)) then tc.focus = HOME_FOCUS[v] end
     report("tab")
 end
--- p55: a TOP tab (LB / RB, the tab row): its remembered sub-tab
+-- p56: a SITUATION (LB / RB, the tab row): the device is kept - the cursor on a bar slot lands on the next situation's bar (the same
+-- slot), else on its controller
 local function setTop(t)
-    setTab(SUBS[t] and tc.sub[t] or t)
+    if cbView() and tc.focus == "buttons" and BARV[t] and CBAR() ~= nil and not hidden(t) then setTab(BARV[t]) else setTab(t) end
 end
 
 -- one row up / down in the tab's ORDER (the carried button stays among the sets and the buttons)
@@ -573,21 +589,66 @@ local function rowThere(f)
     -- p24: the clean-up rows are gone (the user after test14: "I dont understand why we have a cleanup button"; PadMap m45 removes
     -- our own old macros by itself)
     if f == "cleanup" or f == "shared" then return false end
+    if f == "switches" then return #(SWITCHES[tc.view] or {}) > 0 and (top(tc.view) ~= "party" or CBAR() ~= nil) end   -- p56
+    if f == "bar" then return BARV[top(tc.view)] ~= nil and CBAR() ~= nil end                                         -- p56
+    return true
+end
+
+-- p56 THE ONE CURSOR ACROSS BOTH DEVICES: a controller place's column (its drawn x on the grid, 0-5) -> the bar's slot under it, and a
+-- bar slot -> the controller place over it (the nearest by column, the lower row first: the sticks on Out of combat, else the bottoms)
+local function slotUnder(gx) return math.max(1, math.min(CB_N, math.floor(gx / 5 * (CB_N - 1) + 0.5) + 1)) end
+local function placeOver(s, n)
+    local grid = GRIDS[layout()]
+    local bx = (s - 1) * 5 / (CB_N - 1)
+    local maxY = 0
+    for i = 1, n do maxY = math.max(maxY, grid[i][2]) end
+    local best, bs
+    for i = 1, n do
+        local g = grid[i]
+        local sc = math.abs(g[1] - bx) + (maxY - g[2])
+        if not bs or sc < bs - 1e-6 or (math.abs(sc - bs) <= 1e-6 and g[2] > grid[best][2]) then best, bs = i, sc end
+    end
+    return best or 8
+end
+-- the row the cursor is on: a bar view's 8 = "bar"
+local function rowNow() if cbView() and tc.focus == "buttons" then return "bar" end return tc.focus end
+local function toBar()
+    local t = top(tc.view)
+    local b = BARV[t]
+    if not b or CBAR() == nil then return false end
+    local g = GRIDS[layout()][t == "party" and tc.ppos or tc.pos] or GRIDS[layout()][8]
+    tc.cpos = tc.pos
+    tc.view, tc.pos, tc.focus = b, slotUnder(g[1]), "buttons"
+    report("to-bar")
     return true
 end
 
 local function step(dir)
-    local order = ORDER[tc.view] or ORDER.normal
+    local order = ORDER[tc.view] or ORDER[top(tc.view)] or ORDER.normal        -- p56: a bar view walks its situation's rows
+    local cur = rowNow()
     local i = 1
-    for k, f in ipairs(order) do if f == tc.focus then i = k end end
+    for k, f in ipairs(order) do if f == cur then i = k end end
     local j = i + dir
-    -- p19 / p21: the clean-up's and the shared macros' rows only while they are there; a missing one is stepped over
-    while order[j] == "cleanup" or order[j] == "shared" or order[j] == "forms" do
+    -- p19 / p21: the clean-up's and the shared macros' rows only while they are there; a missing one is stepped over (p56: the chips
+    -- and the bar too)
+    while order[j] == "cleanup" or order[j] == "shared" or order[j] == "forms" or order[j] == "switches" or order[j] == "bar" do
         if rowThere(order[j]) then break end
         j = j + dir
     end
     if j < 1 or j > #order then return false end
-    if tc.carry and order[j] ~= "sets" and order[j] ~= "rpages" and order[j] ~= "buttons" then return false end
+    if tc.carry then
+        if tc.carry.castbar then return false end                       -- p56: a carried slot stays on its bar
+        if order[j] ~= "sets" and order[j] ~= "rpages" and order[j] ~= "buttons" and order[j] ~= "pdiam" then return false end
+    end
+    if order[j] == "bar" then return toBar() end
+    if cbView() then                                                    -- p56: up off the bar: the situation's controller
+        local s = tc.pos
+        tc.bpos = s
+        tc.view = CTLV[top(tc.view)] or "normal"
+        if order[j] == "buttons" then tc.pos = placeOver(s, tc.view == "normal" and #GRIDS[layout()] or 8)
+        elseif order[j] == "pdiam" then tc.ppos = placeOver(s, 8); tc.pos = tc.cpos or 8
+        else tc.pos = tc.cpos or 8 end
+    end
     tc.focus = order[j]
     if tc.focus == "tabs" then tc.tcur = tabIndex(top(tc.view)) end
     if tc.focus == "sets" then tc.scur = (tc.set >= 2 and tc.set) or 2 end
@@ -601,6 +662,12 @@ end
 -- p55: "cbshow" (Show tap-to-cast) is the APP's castBarCombat: the add-on counts the presses (`cbsn`, the app flips its setting once per
 -- count and tells the add-on 39 then 2 / 3); the add-on's own copy flips at once so the In combat > Tap to cast lock follows the press
 local function flip(k)
+    if k == "cbpshow" then                                              -- p56: Bar in Party mode (the app's castBarPartyShow)
+        tc.cbpn = (tc.cbpn or 0) + 1
+        if type(WC.castBarPartyShow) == "function" then pcall(WC.castBarPartyShow, not cbPShowOn()) end
+        report("switch-cbpshow")
+        return
+    end
     if k == "cbshow" then
         tc.cbsn = (tc.cbsn or 0) + 1
         if type(WC.castBarShow) == "function" then pcall(WC.castBarShow, not cbShowOn()) end
@@ -719,7 +786,8 @@ local function pressButtons(key)
     if DIRS[key] then
         local nxt = nearest(key)
         if nxt then tc.pos = nxt; report("move")
-        elseif key == "PADDUP" then step(-1) end
+        elseif key == "PADDUP" then step(-1)
+        elseif key == "PADDDOWN" then step(1) end                      -- p56: down into the bar (nothing under this place)
         return true
     end
     if (key == "PAD1" or key == "PAD3") and toolbarHas(tc.pos) then report("dpad-bar") return true end   -- p34
@@ -758,8 +826,8 @@ local function pressTabs(key)
     -- tabs consistent with this behavior"): the cursor LANDING on a tab opens it at once and stays on it (once per landing: the wall opens
     -- nothing; no game action: the room's own page). LB / RB as before.
     if key == "PADDLEFT" or key == "PADDRIGHT" then
-        local i = tabStep(tc.tcur, key == "PADDLEFT" and -1 or 1)       -- p34: over the hidden tab
-        if i and i ~= tc.tcur then setTop(TABS[i]) end                  -- p55: its remembered sub-tab
+        local i = tabStep(tc.tcur, key == "PADDLEFT" and -1 or 1)       -- p34: over the hidden tab; p56: the situations' row
+        if i and i ~= tc.tcur then setTop(TABS[i]) end
     elseif key == "PAD1" then
         if TABS[tc.tcur] ~= top(tc.view) then setTop(TABS[tc.tcur]) end -- open already (the landing did it)
     elseif key == "PADDDOWN" then step(1)
@@ -768,32 +836,11 @@ local function pressTabs(key)
     return true
 end
 
--- p55 THE SUB-TABS (Controller | Tap to cast): landing opens (p10's rule, the gold arrows on the lit one), Up / Down the rows round it
-local function pressSubtabs(key)
-    local list = SUBS[top(tc.view)]
-    if not list then step(1) return true end
-    if key == "PADDLEFT" or key == "PADDRIGHT" then
-        local i = 1
-        for k, v in ipairs(list) do if v == tc.view then i = k end end
-        local j = math.max(1, math.min(#list, i + (key == "PADDLEFT" and -1 or 1)))
-        if j ~= i then setTab(list[j]) end
-    elseif key == "PADDUP" then step(-1)
-    elseif key == "PADDDOWN" then step(1)
-    end
-    return true
-end
--- p55 B ONE LEVEL BACK (the user: "chooser -> page -> sub-tabs -> top tabs -> Home"): from the page the sub-tabs (when the tab has
--- them and they stand above the cursor's row), else the top tabs; from the top tabs Home (false: Book's B)
+-- p56 B ONE STEP BACK (the user: "B steps back once, then Home"; no sub-tabs): the chooser / box -> the page (their own B), the page
+-- (either device) -> the situation tabs, the tabs -> Home (false: Book's B)
 local function backOne()
     if tc.focus == "tabs" then return false end
-    local order = ORDER[tc.view] or ORDER.normal
-    local si, fi = nil, 1
-    for k, f in ipairs(order) do
-        if f == "subtabs" then si = k end
-        if f == tc.focus then fi = k end
-    end
-    if si and fi > si then tc.focus = "subtabs"
-    else tc.focus = "tabs"; tc.tcur = tabIndex(top(tc.view)) end
+    tc.focus = "tabs"; tc.tcur = tabIndex(top(tc.view))
     report("back-" .. tc.focus)
     return true
 end
@@ -980,8 +1027,8 @@ WC.padTabCtl = {
     enter = function(where)
         tc.on, tc.chooser, tc.box, tc.carry = true, nil, nil, nil
         tc.form, tc.fcur, tc.formAuto, tc.formPicked = 0, 0, nil, false  -- p44: a fresh open forgets the pick, starts on the shown stance bar
-        if where == "tabs" then tc.view = TABS[1]; tc.sub = { normal = "normal", combat = "combat" } end   -- p55: a fresh open: Controller
-        if hidden(top(tc.view)) or (cbView() and CBAR() == nil) then tc.view = "normal" end      -- p53: the Cast bar tab turned off since
+        if where == "tabs" then tc.view = TABS[1]; tc.cpos, tc.bpos = tc.cpos or 8, 1 end   -- p56: a fresh open: Out of combat, the controller
+        if hidden(top(tc.view)) or (cbView() and CBAR() == nil) then tc.view = "normal" end      -- p53: the bar turned off since (p56: or Party mode)
         tc.focus = where == "tabs" and "tabs" or HOME_FOCUS[tc.view] or "buttons"
         tc.tcur = tabIndex(top(tc.view))
         local pm = PM()
@@ -1003,7 +1050,7 @@ WC.padTabCtl = {
         if tc.box then return pressBox(key) end
         if tc.chooser then return pressChooser(key) end
         if key == "PADLSHOULDER" or key == "PADRSHOULDER" then                    -- p9: LB / RB = the tabs
-            local i = tabStep(tabIndex(top(tc.view)), key == "PADLSHOULDER" and -1 or 1)     -- p34: over the hidden tab; p55: the top tabs
+            local i = tabStep(tabIndex(top(tc.view)), key == "PADLSHOULDER" and -1 or 1)     -- p34: over the hidden tab; p56: the situations
             if i then setTop(TABS[i]) end
             return true
         end
@@ -1024,7 +1071,7 @@ WC.padTabCtl = {
             return true
         end
         if tc.focus == "tabs" then return pressTabs(key) end
-        if tc.focus == "subtabs" then return pressSubtabs(key) end          -- p55
+        if tc.focus == "subtabs" then tc.focus = "tabs"; return pressTabs(key) end      -- p56: no sub-tabs (an old cursor: the tabs)
         if tc.focus == "switches" then return pressSwitches(key) end
         if tc.focus == "sets" then return pressSets(key) end
         if tc.focus == "forms" then return pressForms(key) end
@@ -1100,20 +1147,31 @@ WC.padTabCtl = {
     end,
     touchCbOpen = function(slot)
         if CBAR() == nil then report("cb-tab-off") return end
-        if type(slot) == "number" and slot >= 1 and slot <= CB_N then tc.pos = slot end
-        tc.focus = "buttons"
+        if type(slot) == "number" and slot >= 1 and slot <= CB_N then tc.bpos = slot; if cbView() then tc.pos = slot end end
+        if tc.focus ~= "switches" then tc.focus = "buttons" end
         setTab("castbar")
     end,
     -- p55 (Book b70: padtab 39 then 1): In combat > Tap to cast by touch (the room open)
     touchCbFightOpen = function(slot)
         if CBAR() == nil then report("cb-tab-off") return end
-        if type(slot) == "number" and slot >= 1 and slot <= CB_N then tc.pos = slot end
-        if tc.focus ~= "subtabs" and tc.focus ~= "switches" then tc.focus = "buttons" end
+        if type(slot) == "number" and slot >= 1 and slot <= CB_N then tc.bpos = slot end
+        if tc.focus ~= "switches" then tc.focus = "buttons" end
         setTab("cbfight")
+    end,
+    -- p56 (Book b71: padtab 39, 38 then 1): Party mode's bar by touch (the room open; Party mode allowed)
+    touchCbPartyOpen = function(slot)
+        if CBAR() == nil or hidden("party") then report("cb-tab-off") return end
+        if type(slot) == "number" and slot >= 1 and slot <= CB_N then tc.bpos = slot end
+        if tc.focus ~= "switches" then tc.focus = "buttons" end
+        setTab("pbar")
     end,
     -- p55 (Book b70: padtab 39 then 2 / 3, after ActionBar took it): the app's Show in combat changed; the page says it
     touchCbShow = function()
         if tc.on then report("cb-show") end
+    end,
+    -- p56 (Book b71: padtab 39, 38 then 2 / 3, after ActionBar took it): the app's Bar in Party mode changed; the page says it
+    touchCbPShow = function()
+        if tc.on then report("cb-pshow") end
     end,
     -- p29: a finger on the form row (padtab 15 = Caster, 16-25 = the forms in the game's order): a pick, no game action
     touchForm = function(k)
@@ -1251,7 +1309,7 @@ WC.padTabCtl = {
         if not tc.on or tc.box then return end
         local key = d < 0 and "PADLSHOULDER" or "PADRSHOULDER"
         if tc.chooser then pressChooser(key) return end
-        local i = tabStep(tabIndex(top(tc.view)), d < 0 and -1 or 1)       -- p34: over the hidden tab; p55: the top tabs
+        local i = tabStep(tabIndex(top(tc.view)), d < 0 and -1 or 1)       -- p34: over the hidden tab; p56: the situations
         if i then setTop(TABS[i]) end
     end,
     touchExtraPage = function(base) tc.xpage = { base = base, at = GetTime() } end,
@@ -1289,6 +1347,7 @@ WC.padTabCtl = {
         if tc.on then report("layout") end
     end,
     layout = layout,
+    place = { under = slotUnder, over = placeOver },      -- p56: the controller <-> bar columns (tools/test_controller_situations.py)
 }
 
 -- ---------------------------------------------------------------- p33 THE PARTY MODE TAB (PARTY_BUILD.md 4.4; PadMap m77 holds the settings)
@@ -1440,7 +1499,8 @@ local function partyTab()
                 end
             end
             if best then tc.ppos = best; report("pmove")
-            elseif key == "PADDUP" then step(-1) end
+            elseif key == "PADDUP" then step(-1)
+            elseif key == "PADDDOWN" then step(1) end                  -- p56: down into Party mode's bar
             return true
         end
         if key == "PAD1" then
