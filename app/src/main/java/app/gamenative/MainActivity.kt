@@ -242,6 +242,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         PluviaApp.isActivityInForeground = true
+        // the game may have finished booting while the app was in the background, when Android refuses to start a foreground
+        // service (upstream v2.4.4): before the move to the top screen below, which returns early
+        if (PluviaApp.xEnvironment != null) GameSessionService.ensureStarted(applicationContext)
         // DS Forever fork: an existing task brought back on the bottom screen (singleTop: no onCreate) moves to the top screen too
         if (com.jrees.wowcompanion.fork.DsForeverScreen.moveToTop(this, PluviaApp.xEnvironment != null)) return
         com.jrees.wowcompanion.fork.DsForeverScreen.current?.show()
