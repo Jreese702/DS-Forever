@@ -225,7 +225,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (ResetPlan.Kind.LAYOUTS in kinds && ::homeView.isInitialized) homeView.editCancel()
         val r = resetRun.run(b, who, all, localGame)
         if (ResetPlan.Kind.SETTINGS in kinds) { Theme.use("classic"); Tr.setChoice(this, "auto"); Settings.resetDone(); FrameGen.resetDone() }
-        HomeSettings.resetDone(); GameUi.resetDone()
+        HomeSettings.resetDone(ResetPlan.Kind.LAYOUTS in kinds); GameUi.resetDone()
         if (ResetPlan.Kind.SKILLS in kinds) { RadialMeta.reload(); if (::combatKeep.isInitialized) combatKeep.resetDone(if (all) null else who) }
         if (ResetPlan.Kind.LAYOUTS in kinds && ::settings.isInitialized) settings.homeSection.dpadChanged()
         return r

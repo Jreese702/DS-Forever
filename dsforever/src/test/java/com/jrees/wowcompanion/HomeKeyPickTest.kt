@@ -220,6 +220,21 @@ class HomeKeyPickTest {
         assertTrue(rec(p, k7).chatShare != HomeLayout.Share.THIRD)
     }
 
+    /** the final review check: a Layouts reset of THIS character while the add-on asks clears the name's held edit too - Home shows
+     *  the default, and the key picked afterwards never gets the edit (the reset is not undone) */
+    @Test fun aThisCharacterLayoutsResetClearsTheHeldEdit() {
+        val p = fresh()
+        twoRecords(p)
+        feed(dpad(asking))
+        HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) }
+        assertTrue(HomeLayoutStore.KEY_HELD in p.m.keys)
+        HomeSettings.resetDone(layouts = true)
+        assertTrue("Home back on the default", HomeSettings.layout.chatShare != HomeLayout.Share.THIRD)
+        assertTrue("the name's held entry is gone", HomeLayoutStore.heldOf("Korvash") == null)
+        feed(dpad(resolved(r7, "picked")))
+        assertTrue("never laid on the picked key", rec(p, k7).chatShare != HomeLayout.Share.THIRD)
+    }
+
     // ---------------------------------------------------------------- the hold refused while the question is up
 
     /** the 1515 merge's review (findings 2 and 3): a hold on the chat / the map refused because the key question is up (shown or waiting

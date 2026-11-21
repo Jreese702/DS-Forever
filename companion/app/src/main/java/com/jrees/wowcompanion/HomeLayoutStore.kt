@@ -293,9 +293,12 @@ object HomeLayoutStore {
         cacheRaw = null; cache = null
     }
     /** a reset removed keys: the cache goes (HomeSettings.resetDone calls the listeners); a pending name's edit kept on disk comes
-     *  back from there (a reset that took [KEY_HELD] - All characters' Layouts - leaves none) */
-    fun resetDone() {
+     *  back from there (a reset that took [KEY_HELD] - All characters' Layouts - leaves none). [layouts]: a Layouts reset of THIS
+     *  character (final review check): the character's own held edit is part of its layout, so it goes too, and is not reloaded - else
+     *  it would land on the key picked afterwards and undo the reset */
+    fun resetDone(layouts: Boolean = false) {
         cacheRaw = null; cache = null; pendingEdit = null; pendingBase = null; heldName = null
+        if (layouts) { prefs?.let { heldDrop(it, if (pending) pendingName else who?.let { k -> CharKey.nameOf(k) }) }; return }
         if (pending) heldOf(pendingName)?.let { (b, e) -> pendingEdit = e; pendingBase = b; heldName = pendingName }
     }
 }
