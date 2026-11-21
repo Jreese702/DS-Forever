@@ -483,7 +483,7 @@ class HomeEditModelTest {
         assertEquals(HomePresets.BIG_MAP, m.chipName)
         m.press("PAD1")
         m.sheetSel = 5
-        assertEquals(listOf(HomeEditModel.Fx.Relay(Motion.MODULE_OPEN)), m.press("PAD1"))   // Fighter: offered since phase 3
+        assertEquals(listOf(HomeEditModel.Fx.Relay(Motion.MODULE_OPEN, morph = 1)), m.press("PAD1"))   // Fighter: offered since phase 3 (a later preset: +1)
         assertNull(m.sheet)
         assertEquals(HomePresets.FIGHTER, m.chipName)
         assertEquals(HomeLayout.FightBand.TOP, m.draft.fight)

@@ -41,11 +41,25 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val liveModel: HomeEditModel? get() = model
         /** the chrome's alpha (its 120 ms fade in, 200 out, the fight's park) */
         val chromeAlpha: Float
-        /** every part's box now in Home's px (the lifted widget at its laid place: [liftedOffset] moves it) */
+        /** every part's box now in Home's px (logical: the lifted widget at its laid place; [pose] moves and turns it) */
         fun parts(): Map<HomePart, RectF>
-        /** the lifted widget's drag offset now (px), and its lift (0 .. 1: the 1.03 scale and the shadow) */
-        fun liftedOffset(): Pair<Float, Float>
+        /** the lifted widget's lift (0 .. 1: the shadow) */
         fun liftK(): Float
+        /** the iPhone-style motion: [p]'s pose now as a matrix in Home's px (the shrink, the wiggle, the lift, the drop, the finger's
+         *  carry; false = none). The chrome on a widget is drawn through its part's pose, so it shrinks and wiggles with it */
+        fun pose(p: HomePart, out: android.graphics.Matrix): Boolean = false
+        /** the gold cursor's flight: its offset now per edge (l, t, r, b) from the widget's box */
+        fun cursorOffset(out: FloatArray) { out.fill(0f) }
+        /** a pop's progress (HomeEditMotion.MENU / SHEET / PROMPT / CHIP / RIBBON; 1 = landed) */
+        fun popK(kind: Int): Float = 1f
+        /** the chip's name sliding over on a flip (1 = landed), the way it went, the name before it */
+        fun chipFlip(): Float = 1f
+        val chipDir: Int get() = 0
+        val chipWas: String? get() = null
+        /** a room's pose on the bar (scale, turn deg, dx, dy into [out]); false = none */
+        fun roomPose(r: Room, out: FloatArray): Boolean = false
+        /** an input reached the chrome (the wiggle wakes) */
+        fun poke() {}
         /** the clock block's box in Home's px (null = none drawn: the thin row, a fight) */
         fun clockBox(): RectF?
         /** the bars each widget has in the state now, for [l] (the drop well's box) */
@@ -76,6 +90,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private val dash = DashPathEffect(floatArrayOf(14f, 9f), 0f)
     private val dashFine = DashPathEffect(floatArrayOf(8f, 7f), 0f)
     private val path = Path()
+    /** the motion's scratch (no allocation per frame) */
+    private val mtx = android.graphics.Matrix()
+    private val cur = FloatArray(4)
 
     // ---------------------------------------------------------------- where everything is
 
@@ -142,17 +159,73 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (a <= 0.01f) return
         val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * a).toInt()) else -1
         drawWidgets(c, m)
-        if (m.menu != null) drawMenu(c, m)
-        when (m.sheet) {
-            HomeEditModel.Sheet.LAYOUTS -> drawLayouts(c, m)
-            HomeEditModel.Sheet.ADD -> drawTray(c, m)
-            null -> {}
+        // the menu pops out of its widget's side (0.92 -> 1 with a little overshoot), the sheet / tray rise, the prompt pops
+        m.menu?.let { s ->
+            val k = host.popK(HomeEditMotion.MENU)
+            val sv = c.save()
+            if (abs(k - 1f) > 0.001f) {
+                val box = menuBox(s)
+                val wb = widgetBoxes()[s] ?: RectF(box.centerX(), height.toFloat(), box.centerX(), height.toFloat())
+                popIn(c, k, box, wb.centerX().coerceIn(box.left, box.right), wb.centerY().coerceIn(box.top, box.bottom), MENU_FROM)
+            }
+            drawMenu(c, m)
+            c.restoreToCount(sv)
         }
-        if (m.prompt) drawPrompt(c, m)
+        if (m.sheet != null) {
+            val k = host.popK(HomeEditMotion.SHEET)
+            val sv = c.save()
+            if (abs(k - 1f) > 0.001f) {
+                c.translate(0f, (1f - k) * SHEET_RISE)
+                val a = (k / 0.6f).coerceIn(0f, 1f)
+                if (a < 1f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * a).toInt())
+            }
+            when (m.sheet) {
+                HomeEditModel.Sheet.LAYOUTS -> drawLayouts(c, m)
+                HomeEditModel.Sheet.ADD -> drawTray(c, m)
+                null -> {}
+            }
+            c.restoreToCount(sv)
+        }
+        if (m.prompt) drawPrompt(c, m, host.popK(HomeEditMotion.PROMPT))
         if (save >= 0) c.restoreToCount(save)
         val fl = host.flash
         if (fl != null && SystemClock.uptimeMillis() - fl.second < HomeEditModel.FLASH_MS) postInvalidateOnAnimation()
         if (m.drag != null) postInvalidateOnAnimation()
+    }
+
+    /** a pop: scaled from [from] to 1 about [ax], [ay] as [k] goes 0 -> 1 (its overshoot past 1 too), faded in over its first 60 % */
+    private fun popIn(c: Canvas, k: Float, box: RectF?, ax: Float, ay: Float, from: Float) {
+        val s = from + (1f - from) * k
+        c.scale(s, s, ax, ay)
+        val a = (k / 0.6f).coerceIn(0f, 1f)
+        if (a < 1f) {
+            if (box != null) c.saveLayerAlpha(box.left - 40f, box.top - 40f, box.right + 40f, box.bottom + 40f, (255 * a).toInt())
+            else c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * a).toInt())
+        }
+    }
+
+    /** the part whose pose [s]'s chrome follows (a rider: its host's, which HomeView resolves) */
+    private fun poseOf(s: EditStop): HomePart? = when (s) {
+        EditStop.BAND, EditStop.CLOCK -> HomePart.BARS
+        EditStop.CHAT -> HomePart.CHAT
+        EditStop.MAP -> HomePart.MAP
+        EditStop.QUEST -> HomePart.QUESTS
+        EditStop.CAST -> HomePart.STRIP
+        else -> null
+    }
+    /** a canvas save with [s]'s pose on it (restore with the count returned) */
+    private fun posed(c: Canvas, s: EditStop): Int = posed(c, poseOf(s))
+    private fun posed(c: Canvas, p: HomePart?): Int {
+        val sv = c.save()
+        if (p != null && host.pose(p, mtx)) c.concat(mtx)
+        return sv
+    }
+    /** [r] (a box of [s]'s) as drawn now: its pose applied (the bounds of it) */
+    private fun posedRect(s: EditStop, r: RectF): RectF {
+        val o = RectF(r)
+        val p = poseOf(s)
+        if (p != null && host.pose(p, mtx)) mtx.mapRect(o)
+        return o
     }
 
     private fun drawWidgets(c: Canvas, m: HomeEditModel) {
@@ -160,14 +233,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val wb = widgetBoxes()
         val sel = m.cursor
         val lifted = m.lifted
-        val (ox, oy) = host.liftedOffset()
         val clock = wb[EditStop.CLOCK]
         val card = wb[EditStop.QUEST]
         val cardOnMap = m.draft.card == HomeLayout.CardDock.ON_MAP
         val lk = host.liftK()
         // the lifted widget lies over everything (its depth): the chrome of the others is never drawn on it - only round it
-        val liftBoxes = lifted?.let { l -> (if (l == EditStop.CAST) castBoxes(p) else listOfNotNull(wb[l]))
-            .map { RectF(it).apply { offset(ox, oy); grow(this, lk) } } } ?: emptyList()
+        val liftBoxes = lifted?.let { l -> (if (l == EditStop.CAST) castBoxes(p) else listOfNotNull(wb[l])).map { posedRect(l, it) } } ?: emptyList()
         val under = c.save()
         for (b in liftBoxes) c.clipOutRect(b)
         for (b in liftBoxes) if (lk > 0f) shadow(c, b, lk)
@@ -182,11 +253,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 else -> if (sel == s) r else null
             }
             if (keep === r) continue
+            val sv = posed(c, s)
             if (s == EditStop.CAST) { for (b in castBoxes(p)) dimRect(c, b, null) } else dimRect(c, r, keep)
+            c.restoreToCount(sv)
         }
         // the party module (Party mode): its dashed frame only, never a stop (it follows the chat)
         // its tag on the rows' end, clear of the Select tab (on the screen's edge side: PartyLayout's tab)
         p[HomePart.PARTY]?.let {
+            val sv = posed(c, HomePart.PARTY)
             // fix round 1: dimmed as every widget that is not picked (it never is: its own gold row box must not read as a second cursor)
             dimRect(c, it, null)
             frame(c, it, light = false)
@@ -197,18 +271,17 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 else if (tabLeft) left += PartyLayout.TAB_W + PartyLayout.TAB_GAP
             }
             tag(c, inner, "Party", false, Corner.TOP_RIGHT)
+            c.restoreToCount(sv)
         }
         // 2. the dashed ink frames and the tags (where they hide nothing: the band's on its foot, the map's bottom left, the card's top
         // right, the bar's on its top edge); a rider moves with its lifted host
         for ((s, r) in wb) {
             val rider = s == EditStop.CLOCK || (s == EditStop.QUEST && cardOnMap)
-            val moves = s == lifted || (rider && s == EditStop.QUEST && lifted == EditStop.MAP)
             val boxes = if (s == EditStop.CAST) castBoxes(p) else listOf(r)
-            for (b in boxes) {
-                val bb = if (moves) RectF(b).apply { offset(ox, oy) } else b
-                if (s != sel) frame(c, bb, light = rider)
-            }
-            tags += Triple(s, if (moves) RectF(boxes.first()).apply { offset(ox, oy) } else boxes.first(), s == sel)
+            val sv = posed(c, s)                                            // a rider rides its host's pose (HomeView resolves it)
+            for (b in boxes) if (s != sel) frame(c, b, light = rider)
+            c.restoreToCount(sv)
+            tags += Triple(s, boxes.first(), s == sel)
         }
         // the divider's handle
         dividerBox(p)?.let { d -> handle(c, d, sel == EditStop.DIVIDER || m.drag?.stop == EditStop.DIVIDER) }
@@ -222,12 +295,17 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             EditStop.DIVIDER, EditStop.CHIP, EditStop.PLUS -> emptyList()
             else -> listOfNotNull(wb[sel])
         }
+        // the golden box rides its widget's pose and flies from the last one (the cursor's spring: its offset per edge)
+        host.cursorOffset(cur)
         for (b0 in selBoxes) {
-            val b = if (sel == lifted) RectF(b0).apply { offset(ox, oy); grow(this, lk) } else b0
+            val b = if (selBoxes.size > 1) RectF(b0).apply { offset((cur[0] + cur[2]) / 2f, (cur[1] + cur[3]) / 2f) }
+                else RectF(b0.left + cur[0], b0.top + cur[1], b0.right + cur[2], b0.bottom + cur[3])
+            val sv = posed(c, sel)
             goldBox(c, b)
+            c.restoreToCount(sv)
         }
-        if (lifted != null && m.drag == null) selBoxes.firstOrNull()?.let { b0 ->
-            val b = RectF(b0).apply { offset(ox, oy) }
+        if (lifted != null && m.drag == null) selBoxes.firstOrNull()?.let { b ->
+            val sv = posed(c, lifted)
             val canL = m.nextDock(lifted, m.draft, -1, true) != null
             val canR = m.nextDock(lifted, m.draft, 1, true) != null
             if (canL || canR) UiKit.moveArrows(c, RectF(b.left, b.centerY() - 40f, b.right, b.centerY() + 40f), canL, canR, words = false)
@@ -235,33 +313,34 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             val canU = m.nextDock(lifted, m.draft, -1, false) != null
             val canD = m.nextDock(lifted, m.draft, 1, false) != null
             if (canU || canD) UiKit.moveArrowsUpDown(c, b, canU, canD, around = true)
+            c.restoreToCount(sv)
         }
         // 5. the red X chip on a selected removable widget, "Remove?" after its first tap
         if (sel.removable && lifted == null && m.menu == null && m.sheet == null && !m.prompt) selBoxes.lastOrNull()?.let { b ->
             val x = removeChip(b)
+            val sv = posed(c, sel)
+            val k = host.popK(HomeEditMotion.CHIP)                          // the chip pops in as the cursor lands
+            if (abs(k - 1f) > 0.001f) c.scale(k.coerceAtLeast(0f), k.coerceAtLeast(0f), x.centerX(), x.centerY())
             closeChip(c, x)
             if (m.removeAsk == sel) pill(c, removePill(b), "Remove?")
+            c.restoreToCount(sv)
         }
         // the tags last (no golden box, dim or neighbour's frame hides a widget's name): the others' still under the lifted widget
         val overLift = c.save()
         for (b in liftBoxes) c.clipOutRect(b)
-        for ((s, r, gold) in tags) if (liftedTags.none { it.first == s }) tag(c, r, s.tag, gold, cornerOf(s, r))
+        for ((s, r, gold) in tags) if (liftedTags.none { it.first == s }) { val sv = posed(c, s); tag(c, r, s.tag, gold, cornerOf(s, r)); c.restoreToCount(sv) }
         c.restoreToCount(overLift)
-        for ((s, r, gold) in liftedTags) tag(c, r, s.tag, gold, cornerOf(s, r))
+        for ((s, r, gold) in liftedTags) { val sv = posed(c, s); tag(c, r, s.tag, gold, cornerOf(s, r)); c.restoreToCount(sv) }
         tags.clear()
         // a refusal / a fight: the widget's edge red for FLASH_MS
         host.flash?.let { (s, at) ->
             val t = SystemClock.uptimeMillis() - at
             if (t in 0 until HomeEditModel.FLASH_MS) (if (s == EditStop.CAST) castBoxes(p) else listOfNotNull(wb[s])).forEach {
+                val sv = posed(c, s)
                 edgeColour(c, it, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
+                c.restoreToCount(sv)
             }
         }
-    }
-
-    private fun grow(r: RectF, k: Float) {
-        val s = 1f + (HomeEditModel.LIFT_SCALE - 1f) * k
-        val dw = r.width() * (s - 1f) / 2f; val dh = r.height() * (s - 1f) / 2f
-        r.inset(-dw, -dh)
     }
 
     /** the well(s) [stop] would take in [l] */
@@ -729,10 +808,13 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     // ---------------------------------------------------------------- the prompt (LayoutView's: Save highlighted)
 
     private val promptHit = ArrayList<RectF>()
-    private fun drawPrompt(c: Canvas, m: HomeEditModel) {
+    private fun drawPrompt(c: Canvas, m: HomeEditModel, k: Float = 1f) {
         val full = RectF(0f, 0f, width.toFloat(), height.toFloat())
-        pFill.style = Paint.Style.FILL; pFill.color = Color.argb(170, 0, 0, 0); c.drawRect(full, pFill)
+        // the dim fades in, the box pops (0.9 -> 1, a little past)
+        pFill.style = Paint.Style.FILL; pFill.color = Color.argb((170 * (k / 0.5f).coerceIn(0f, 1f)).toInt(), 0, 0, 0); c.drawRect(full, pFill)
         val box = RectF(full.centerX() - 380f, full.centerY() - 150f, full.centerX() + 380f, full.centerY() + 120f)
+        val sv = c.save()
+        if (abs(k - 1f) > 0.001f) popIn(c, k, box, box.centerX(), box.centerY(), PROMPT_FROM)
         UiKit.pane(c, box)
         val tp = UiKit.titlePaint(36f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
         c.drawText(Tr.t("Unsaved changes"), box.centerX(), box.top + 70f, tp)
@@ -745,6 +827,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             if (i == m.promptSel) UiKit.focus(c, b)
             promptHit += b
         }
+        c.restoreToCount(sv)
     }
 
     // ---------------------------------------------------------------- the edit ribbon (in the XP bar's place, drawn by the Strip)
@@ -766,6 +849,11 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return Ribbon(title, chip, arrowL, arrowR, plus)
     }
 
+    /** the ribbon's slide (1 = up over the XP track; the Strip draws the track under it while it is below 1) */
+    fun ribbonK(): Float = host.popK(HomeEditMotion.RIBBON)
+    /** a room's pose on the bar while editing (the Strip: scale, turn, dx, dy into [out]); false = none */
+    fun roomPose(r: Room, out: FloatArray): Boolean = host.roomPose(r, out)
+
     /** the Strip draws the ribbon in its tracking bar's place ([top] its top, [g0] .. [g1] the disc's gap) */
     fun drawRibbon(c: Canvas, w: Float, top: Float, g0: Float, g1: Float) {
         val m = host.model ?: return
@@ -773,7 +861,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (a <= 0.01f) return
         val h = Strip.TRACKS.toFloat()
         val save = c.saveLayerAlpha(0f, top, w, top + h, (255 * a).toInt())
-        c.translate(0f, top)
+        // it slides up over the XP track as edit mode opens (the Strip draws the track under it meanwhile) and down as it leaves
+        c.translate(0f, top + (1f - host.popK(HomeEditMotion.RIBBON)) * h)
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 255
         c.drawRect(0f, 0f, w, h, pFill)
         pLine.strokeWidth = 2f; pLine.color = Theme.gold; pLine.alpha = 200
@@ -788,7 +877,19 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.drawRoundRect(r.chip, 6f, 6f, pLine)
         arrow(c, r.arrowL, true); arrow(c, r.arrowR, false)
         val np = UiKit.bodyPaint(RIBBON_TEXT, if (m.cursor == EditStop.CHIP) Theme.gold else Theme.text).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(Tr.t(m.chipName), r.chip.centerX(), h / 2f - (np.ascent() + np.descent()) / 2f, np)
+        val ny = h / 2f - (np.ascent() + np.descent()) / 2f
+        val fk = host.chipFlip(); val was = host.chipWas
+        if (fk < 1f && was != null && host.chipDir != 0) {
+            // a flip: the old name slides out the way it went, the new one in from the other side
+            val cs = c.save()
+            c.clipRect(r.arrowL.right, r.chip.top, r.arrowR.left, r.chip.bottom)
+            val d = host.chipDir * CHIP_SLIDE
+            val full = np.alpha
+            np.alpha = (full * (1f - fk)).toInt(); c.drawText(Tr.t(was), r.chip.centerX() - d * fk, ny, np)
+            np.alpha = (full * fk).toInt(); c.drawText(Tr.t(m.chipName), r.chip.centerX() + d * (1f - fk), ny, np)
+            np.alpha = full
+            c.restoreToCount(cs)
+        } else c.drawText(Tr.t(m.chipName), r.chip.centerX(), ny, np)
         if (m.cursor == EditStop.CHIP && m.sheet == null) UiKit.focus(c, r.chip)
         if (m.plusShown) {
             pFill.color = Theme.raised; c.drawRoundRect(r.plus, 6f, 6f, pFill)
@@ -855,6 +956,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** a finger on the ribbon (Strip px): the chip's arrows flip, the chip opens the sheet, "+" the tray. True = the ribbon's */
     fun ribbonTouch(x: Float, y: Float, up: Boolean): Boolean {
         val m = host.liveModel ?: return false
+        host.poke()
         if (m.parked || y < 0f || y > Strip.TRACKS) return false
         // the prompt is modal (its own buttons answer); an open sheet / tray closes first
         if (m.prompt) return true
@@ -922,6 +1024,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private var barDragging = false
     fun barTouch(e: MotionEvent): Boolean {
         val m = host.liveModel ?: return false
+        host.poke()
         val bar = host.bar() ?: return false
         if (m.parked) return false
         val x = e.x; val y = e.y
@@ -976,6 +1079,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     fun touch(e: MotionEvent): Boolean {
         val m = host.liveModel ?: return false
         if (m.parked) return false                                          // parked (a fight): Home's own touches (touch-cast) go on
+        host.poke()
         val x = e.x; val y = e.y
         val now = SystemClock.uptimeMillis()
         when (e.actionMasked) {
@@ -1097,5 +1201,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val GLYPH = 28f
         /** the D-pad's hint: Left and Right glyphs side by side */
         const val DPAD = "dpad"
+        /** the pops' starting scale (a menu, the prompt), the sheet's rise (px), the chip's name slide (px) */
+        const val MENU_FROM = 0.92f
+        const val PROMPT_FROM = 0.9f
+        const val SHEET_RISE = 60f
+        const val CHIP_SLIDE = 24f
     }
 }

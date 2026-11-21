@@ -331,7 +331,8 @@ class HomeEditShotsTest {
         glideAt(home, 0.75f); shot(p, "23_width_glide_map_75", frames = 1)
         glideAt(home, 1f)
         settle()
-        assertEquals("landed: no scale, the viewport re-laid", 1f, mapSlot.scaleX, 0.0001f)
+        // landed: the glide's crop scale gone, the viewport re-laid; only edit mode's rest shrink is on it (the iPhone-style motion)
+        assertEquals("landed: no glide scale, the viewport re-laid", Motion.REST_SCALE, mapSlot.scaleX, 0.0001f)
         assertNull(mapSlot.clipBounds)
         assertEquals(boxes(home).getValue("MAP").width(), mapSlot.width.toFloat(), 1.5f)
         // THE LAYOUTS SHEET (A on the chip): six presets as live pictures, Mine's three slots, All characters

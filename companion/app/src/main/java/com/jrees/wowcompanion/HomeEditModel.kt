@@ -152,8 +152,9 @@ class HomeEditModel(
 
     /** the effects of one input, for the view (HomeView's edit controller) */
     sealed class Fx {
-        /** the draft changed: lay Home again, gliding [ms] (EDIT_STEP 120 a lifted step, MODULE_OPEN 240 a change, MODULE_CLOSE 200 a settle) */
-        data class Relay(val ms: Long) : Fx()
+        /** the draft changed: lay Home again, gliding [ms] (EDIT_STEP 120 a lifted step, MODULE_OPEN 240 a change, MODULE_CLOSE 200 a
+         *  settle); [morph] = a layout flip's way (-1 / +1: the modules cascade from the cursor, the chip's name slides; 0 = none) */
+        data class Relay(val ms: Long, val morph: Int = 0) : Fx()
         /** write the draft (+ All characters, + the toolbar's switch) and leave */
         object Save : Fx()
         /** leave without writing: Home glides back to [saved] */
@@ -168,7 +169,7 @@ class HomeEditModel(
         object Filters : Fx()
         /** refused (a dimmed choice, Fighter before phase 3): one red pulse on the stop */
         data class Refuse(val stop: EditStop?) : Fx()
-        /** the lift changed (scale 1.0 <-> 1.03, the shadow): LIFT_MS */
+        /** the lift changed (scale 1.0 <-> LIFT_SCALE, the shadow: HomeEditMotion's spring) */
         object Lift : Fx()
     }
 
@@ -359,11 +360,11 @@ class HomeEditModel(
             val e = order[at]
             if (e == own && hand != null) {
                 flipIdx = own
-                return change(hand, Motion.MODULE_OPEN) + foldOf(null)
+                return morphed(change(hand, Motion.MODULE_OPEN), d) + foldOf(null)
             }
             if (e != own && flips[e].available) {
                 flipIdx = e
-                return change(flips[e].make(saved), Motion.MODULE_OPEN) + foldOf(flips[e])
+                return morphed(change(flips[e].make(saved), Motion.MODULE_OPEN), d) + foldOf(flips[e])
             }
         }
         return emptyList()
@@ -384,6 +385,9 @@ class HomeEditModel(
         foldPressed = true
         return listOf(Fx.Press(K_FOLD, if (fo) 0 else 1))
     }
+
+    /** a layout flip's glide: [d] its way (the modules cascade, the chip's name slides that way) */
+    private fun morphed(fx: List<Fx>, d: Int): List<Fx> = fx.map { if (it is Fx.Relay) it.copy(morph = if (d < 0) -1 else 1) else it }
 
     /** one draft change: the effects ([ms] its glide); nothing when it changes nothing */
     private fun change(to: HomeLayout, ms: Long): List<Fx> {
@@ -550,17 +554,19 @@ class HomeEditModel(
             val f = flips.filter { !it.name.startsWith(SLOT_MARK) }[i]
             if (!f.available) return listOf(Fx.Refuse(EditStop.CHIP))
             keepHand()
+            val was = flipIdx
             flipIdx = flips.indexOf(f)
             sheet = null
-            return change(f.make(saved), Motion.MODULE_OPEN) + foldOf(f)
+            return morphed(change(f.make(saved), Motion.MODULE_OPEN), if (flipIdx < was) -1 else 1) + foldOf(f)
         }
         val si = i - presetCount
         if (si < HomePresets.SLOTS) {
             val l = slot(si) ?: return listOf(Fx.Refuse(EditStop.CHIP))
             keepHand()
+            val was = flipIdx
             flipIdx = flips.indexOfFirst { it.name == "$SLOT_MARK${si + 1}" }
             sheet = null
-            return change(l.copy(name = saved.name), Motion.MODULE_OPEN) + foldOf(null)
+            return morphed(change(l.copy(name = saved.name), Motion.MODULE_OPEN), if (flipIdx < was) -1 else 1) + foldOf(null)
         }
         allChars = !allChars
         return emptyList()
@@ -858,9 +864,9 @@ class HomeEditModel(
         const val EDIT_STEP = 120L
         /** the edit chrome's fade in (dim, dashes, tags, ribbon, the disc's tick); out = MODULE_CLOSE */
         const val CHROME_IN = 120L
-        /** the lift: 1.0 -> 1.03 and the shadow */
+        /** the lift: 1.0 -> LIFT_SCALE and the shadow (the room bar's curve; Home's widgets spring there: HomeEditMotion) */
         const val LIFT_MS = 160L
-        const val LIFT_SCALE = 1.03f
+        const val LIFT_SCALE = Motion.LIFT
         /** a request in a fight: the widget's edge red this long, nothing else */
         const val FLASH_MS = 300L
         /** the Layouts sheet's columns */

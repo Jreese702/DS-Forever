@@ -1222,10 +1222,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onEditChrome = { v ->
             strip.editRibbon = v?.let { ev -> { c: android.graphics.Canvas, w: Float, top: Float, g0: Float, g1: Float -> ev.drawRibbon(c, w, top, g0, g1) } }
             strip.editTick = v != null
+            // the iPhone-style edit mode: the ribbon slides over the XP track, the rooms shrink and wiggle
+            strip.editRibbonK = v?.let { ev -> { ev.ribbonK() } }
             strip.editTouch = v?.let { ev -> { x: Float, y: Float, up: Boolean -> ev.ribbonTouch(x, y, up) } }
             // P4: the room bar is a widget of edit mode (D3: reorder only): its chrome and its rooms' row's touches
             strip.editBar = v?.let { ev -> { c: android.graphics.Canvas, layer: Int -> ev.drawBar(c, layer) } }
             strip.editBarTouch = v?.let { ev -> { e: MotionEvent -> ev.barTouch(e) } }
+            strip.editPose = v?.let { ev -> { r: Room, out: FloatArray -> ev.roomPose(r, out) } }
         }
         homeView.editRibbonRedraw = { strip.invalidate() }
         homeView.onEditToolbar = { on -> dpadSet(on) }

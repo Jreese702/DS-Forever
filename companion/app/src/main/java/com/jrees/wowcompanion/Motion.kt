@@ -32,6 +32,48 @@ object Motion {
     const val RAIL_STAGGER = 15L
     const val RAIL_IN = 120L
 
+    // ---------------------------------------------------------------- edit mode's springs (HomeEditMotion; the user, 2026-11-21:
+    // "resemble more of like an iPhone app edit mode with apps kind of animating zoomed smaller a bit and being more animated")
+    // Each spring is a damping ratio (ZETA) and a natural frequency (W, rad/s); HomeEditMotion evaluates them in closed form.
+
+    /** every widget at rest in edit mode, zoomed out a little; a lifted one */
+    const val REST_SCALE = 0.94f
+    const val LIFT = 1.04f
+    /** edit mode opening (the shrink, ~330 ms, a hair past 0.94) / leaving (back to 1) */
+    const val ENTER_ZETA = 0.72f; const val ENTER_W = 17f
+    const val LEAVE_ZETA = 0.80f; const val LEAVE_W = 19f
+    /** the pick-up (peaks ~1.048) and the drop's plop (~0.93, then 0.94) and its slide into the dock (~2 % past it) */
+    const val LIFT_ZETA = 0.62f; const val LIFT_W = 24f
+    const val DROP_ZETA = 0.55f; const val DROP_W = 22f
+    const val DROP_OFFSET_ZETA = 0.78f; const val DROP_OFFSET_W = 20f
+    /** the gold cursor flying between widgets (~180 ms) */
+    const val CURSOR_ZETA = 0.85f; const val CURSOR_W = 30f
+    /** a widget's menu, the Layouts sheet / Add tray, the Save prompt, the edit ribbon, the red X chip */
+    const val MENU_ZETA = 0.70f; const val MENU_W = 26f
+    const val SHEET_ZETA = 0.85f; const val SHEET_W = 22f
+    const val PROMPT_ZETA = 0.65f; const val PROMPT_W = 28f
+    const val RIBBON_ZETA = 0.80f; const val RIBBON_W = 22f
+    const val CHIP_ZETA = 0.50f; const val CHIP_W = 30f
+    /** a layout glide under edit mode: the box's centre (a little overshoot) and its size (none: never laid past its target) */
+    const val GLIDE_ZETA = 0.82f
+    /** the wiggle: Hz, the most a small widget turns (deg), the most a corner travels (px), the bob (px) */
+    const val WIGGLE_HZ = 6.5f
+    const val WIGGLE_DEG = 1.2f
+    const val WIGGLE_PX = 3.0f
+    const val WIGGLE_BOB = 0.6f
+    /** the wiggle fading in after the open / out on a lift, a leave; quieter while a menu, sheet or prompt is open */
+    const val WIGGLE_IN = 140L
+    const val WIGGLE_OUT = 90L
+    const val WIGGLE_CALM = 0.4f
+    /** no input this long: the wiggle rests (the GPU and the battery while the game plays on the top screen); any press wakes it */
+    const val WIGGLE_IDLE = 15_000L
+    /** the chip's layout name sliding out / in on a flip; a layout flip's cascade per module */
+    const val CHIP_FLIP = 140L
+    const val FLIP_STAGGER = 18L
+    const val FLIP_STAGGER_MAX = 72L
+    /** the open's ripple out from the held widget */
+    const val ENTER_RIPPLE = 60L
+
     /** the one curve: fast out, slow in (Material's standard easing) */
     fun curve(): Interpolator = PathInterpolator(0.4f, 0f, 0.2f, 1f)
 

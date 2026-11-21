@@ -261,6 +261,12 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     }
     var editBar: ((c: Canvas, layer: Int) -> Unit)? = null
         set(v) { field = v; invalidate() }
+    /** the iPhone-style edit mode (the host's: HomeEditView.roomPose): each room's pose while editing (scale, turn deg, dx, dy into
+     *  the array; false = none) - the rooms shrink a little and wiggle with Home's widgets. Drawn only: the touch boxes stay */
+    var editPose: ((Room, FloatArray) -> Boolean)? = null
+    /** the edit ribbon's slide (1 = up over the XP track; below 1 the track is drawn under it): HomeEditView.ribbonK */
+    var editRibbonK: (() -> Float)? = null
+    private val poseBuf = FloatArray(4)
     var editBarTouch: ((MotionEvent) -> Boolean)? = null
     private var barDown = false
 
@@ -384,8 +390,9 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         val ribbon = editRibbon
         val trackSave = c.save()
         if (gone > 0f) { c.clipRect(0f, top + gone, w, top + TRACKS); c.translate(0f, gone) }
-        if (ribbon != null) ribbon(c, w, top, g0, g1)                          // P2: edit mode's ribbon in the tracking bar's place
-        else if (castState != RoomCast.RUNNING) when {
+        // P2: edit mode's ribbon in the tracking bar's place; sliding in / out, the track under it
+        val under = ribbon == null || (editRibbonK?.invoke() ?: 1f) < 0.999f
+        if (under && castState != RoomCast.RUNNING) when {
             x != null && f != null -> {                         // cut in half by height: the faction over the experience
                 UiKit.track(c, RectF(0f, top, w, top + TRACKS / 2f), f.kind, f.fill, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
                 UiKit.track(c, RectF(0f, top + TRACKS / 2f, w, top + TRACKS), x.kind, x.fill, x.reach, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
@@ -394,6 +401,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             f != null -> UiKit.track(c, all, f.kind, f.fill, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
             else -> UiKit.track(c, all, "xp", -1f, 0f, SEGMENTS, g0, g1, SEGMENT_GAP, segmentEdge)
         }
+        if (ribbon != null) ribbon(c, w, top, g0, g1)
         c.restoreToCount(trackSave)
         castNext = -1L
         if (cast != null && castState != RoomCast.NONE) {
@@ -719,6 +727,9 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             val cx = if (from != null && k < 1f) from + (slotX - from) * k else slotX
             drawnX[r] = if (r == liftRoom) liftX ?: cx else cx
             if (r == liftRoom || (r == dropRoom && liftK() > 0f)) continue
+            // edit mode: the room's pose (its shrink and wiggle about its picture's centre)
+            val posed = if (editPose?.invoke(r, poseBuf) == true) c.save().also {
+                c.translate(poseBuf[2], poseBuf[3]); c.rotate(poseBuf[1], cx, cy); c.scale(poseBuf[0], poseBuf[0], cx, cy) } else -1
             if (open && iconSet >= 2) {
                 // the game's radial-menu pictures (LATER 18): pushed in = a sunken well under the picture, set down and right
                 // (set 3: the disc itself is pushed in, darker, its ring dim; no square under it)
@@ -748,6 +759,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
                 if (m != null) c.drawBitmap(m, null, RectF(cx + 12f * k, cy - 40f * k, cx + 46f * k, cy + 6f * k), pArt)
                 else { pFill.color = Theme.gold; c.drawCircle(cx + 30f * k, cy - 24f * k, 9f * k, pFill) }
             }
+            if (posed >= 0) c.restoreToCount(posed)
         }
     }
 

@@ -1969,18 +1969,28 @@ class HomeView(
         overlayFrom = overlayOf(before); overlayTo = overlayOf(s); overlayOut = 1f; overlayIn = 0f
         // Map's call order: morph(0) BEFORE start (else one frame draws the new mode un-glided), morph(k) per frame, morph(1) at the end
         if (morphing) { flightClip(true); mapView.morph(0f, mFrom!!, mTo!!, isMap, card) }
+        // THE iPHONE-STYLE EDIT MODE: under edit mode every box glides on a spring (HomeEditMotion.glide: its centre a little past, its
+        // size never past its target), starting at the speed it had (a quick D-pad run never stops and starts again); a layout flip
+        // cascades out from the cursor. Outside edit mode (Classic, every fight, a module opening) the one curve as before
+        val springs = !morphing && !combat && !gliding && editGlides() && motion.on && motion.scale > 0f
+        if (!springs) partVel.clear()
+        val dur = if (springs) HomeEditMotion.glideMs(ms) else ms
+        val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
+        val delays = if (springs && applyMorph != 0) flipDelays(to) else emptyMap()
+        var cancelled = false
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = ms
-            interpolator = Motion.curve()
+            duration = dur
+            interpolator = if (springs) android.view.animation.LinearInterpolator() else Motion.curve()
             addUpdateListener { a ->
                 val k = a.animatedValue as Float
                 if (morphing) mapView.morph(k, mFrom!!, mTo!!, isMap, card)
-                for (p in from.keys) {
+                if (springs) springFrame(a.animatedFraction, dur, ms, from, to, v0, delays)
+                else for (p in from.keys) {
                     val f = from[p]!!
                     val t = to[p] ?: f
                     now[p] = RectF(lerp(f.left, t.left, k), lerp(f.top, t.top, k), lerp(f.right, t.right, k), lerp(f.bottom, t.bottom, k))
                 }
-                val t = a.animatedFraction * ms                       // the time in, linear
+                val t = a.animatedFraction * dur                      // the time in, linear
                 overlayOut = (1f - t / fadeMs).coerceIn(0f, 1f)
                 overlayIn = ((t - (ms - FADE_MS)) / FADE_MS).coerceIn(0f, 1f)
                 for (p in gone) if (!(gliding && p == Part.CHAT_FULL)) views[p]?.alpha = overlayOut
@@ -1995,7 +2005,10 @@ class HomeView(
                 if (moving) placeFrame()
             }
             addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationCancel(a: Animator) { cancelled = true }
                 override fun onAnimationEnd(a: Animator) {
+                    // a spring glide cut short keeps its parts' speeds for the next one; landed, they are still
+                    if (!cancelled) partVel.clear()
                     // fires on cancel too: the morph always ends (Map's safety net would after 700 ms anyway)
                     if (morphing) { mapView.morph(1f, mFrom!!, mTo!!, isMap, card); flightClip(false) }
                     if (gliding) { chatGlideBox.setEmpty(); chatSlot.clipToOutline = false; chatSlot.invalidateOutline() }
@@ -2015,6 +2028,39 @@ class HomeView(
             start()
         }
         invalidate()
+    }
+
+    /**
+     * One frame of an edit-mode spring glide at [fraction] of [dur] (the old glide [ms] sets the spring's pace): each part's centre and
+     * size from [from] (at its speed [v0]) to [to], [delays] (a flip's cascade) later; its speed kept ([partVel]); landed exactly at 1
+     */
+    private fun springFrame(fraction: Float, dur: Long, ms: Long, from: Map<Part, RectF>, to: Map<Part, RectF>,
+                            v0: Map<Part, FloatArray>, delays: Map<Part, Long>) {
+        val tSec = fraction * dur / 1000f
+        for ((p, f) in from) {
+            val tt = to[p] ?: f
+            val r = now[p] ?: RectF().also { now[p] = it }
+            if (fraction >= 1f) { r.set(tt); partVel.remove(p); continue }
+            val t = tSec - (delays[p] ?: 0L) / 1000f
+            val v = v0[p] ?: ZERO4
+            val vel = partVel.getOrPut(p) { FloatArray(4) }
+            HomeEditMotion.glide(f.centerX(), tt.centerX(), v[0], ms, t, false, glideOut); val cx = glideOut[0]; vel[0] = glideOut[1]
+            HomeEditMotion.glide(f.centerY(), tt.centerY(), v[1], ms, t, false, glideOut); val cy = glideOut[0]; vel[1] = glideOut[1]
+            HomeEditMotion.glide(f.width(), tt.width(), v[2], ms, t, true, glideOut); val w = glideOut[0]; vel[2] = glideOut[1]
+            HomeEditMotion.glide(f.height(), tt.height(), v[3], ms, t, true, glideOut); val h = glideOut[0]; vel[3] = glideOut[1]
+            r.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        }
+    }
+    /** a layout flip's cascade: each part's start by its rank of distance from the cursor's widget (the chip: the ribbon's corner) */
+    private fun flipDelays(to: Map<Part, RectF>): Map<Part, Long> {
+        val m = edit ?: return emptyMap()
+        val c = stopBox(m.cursor)
+        val cx = c?.centerX() ?: editView.ribbon(width.toFloat()).chip.centerX()
+        val cy = c?.centerY() ?: frameH
+        val order = to.entries.sortedBy { (_, r) -> kotlin.math.hypot(r.centerX() - cx, r.centerY() - cy) }
+        val out = HashMap<Part, Long>()
+        for ((i, e) in order.withIndex()) out[e.key] = HomeEditMotion.stagger(i)
+        return out
     }
 
     /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
@@ -2188,6 +2234,7 @@ class HomeView(
         topBarClip()
         editView.layout(0, 0, r - l, b - t - bottomInset)
         editDecor()
+        if (motion.on) editKick()                                         // Home laid again (back on screen): the edit motion goes on
     }
 
     /**
@@ -2349,15 +2396,50 @@ class HomeView(
     private var editAway = false
     private var chromeA = 0f
     private var chromeAnim: ValueAnimator? = null
-    /** the lift (0 .. 1: the 1.03 scale, the shadow, the depth) of [liftStop] */
-    private var liftK = 0f
-    private var liftAnim: ValueAnimator? = null
+    /** the lift (0 .. 1: the shadow, the depth) of [liftStop], on [motion]'s lift spring (1.04 with its overshoot, the drop's plop) */
+    private val liftK: Float get() = liftStop?.let { motion.liftK(it.ordinal, motionNow()) } ?: 0f
     private var liftStop: EditStop? = null
-    /** a dropped widget settling from the finger into its dock (MODULE_CLOSE): its offset at the release, eased to 0 */
-    private var settleFrom = floatArrayOf(0f, 0f)
-    private var settleK = 0f
-    private var settleAnim: ValueAnimator? = null
     private var editFlash: Pair<EditStop, Long>? = null
+
+    /**
+     * THE iPHONE-STYLE EDIT MODE (the user, 2026-11-21: "resemble more of like an iPhone app edit mode with apps kind of animating
+     * zoomed smaller a bit and being more animated generally"): every widget shrinks a little and wiggles, a lifted one grows and stops,
+     * a drop plops, the cursor flies, the menus pop ([HomeEditMotion], pure). Drawn only: the model, the solver and [now] never see it.
+     * ONE Choreographer ticker drives it while anything moves ([editKick]); it stops when idle, in a fight, with Home away and with the
+     * system's animations off (the static shrink). Classic outside edit mode never reaches it.
+     */
+    private val motion = HomeEditMotion()
+    /** the off-device shots: a pinned clock / animator scale (null = SystemClock / the system's) */
+    var editMotionNow: (() -> Long)? = null
+    var editMotionScale: (() -> Float)? = null
+    private fun motionNow(): Long = editMotionNow?.invoke() ?: SystemClock.uptimeMillis()
+    private fun motionScale(): Float = editMotionScale?.invoke() ?: if (!live) 0f else systemAnimScale()
+    private fun systemAnimScale(): Float = try {
+        if (android.os.Build.VERSION.SDK_INT >= 33) ValueAnimator.getDurationScale()
+        else android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+    } catch (t: Throwable) { 1f }
+    /** the off-device tests: the motion (read only) */
+    fun editMotion(): HomeEditMotion = motion
+    private val pose = HomeEditMotion.Pose()
+    private val poseBox = RectF()
+    private val poseOut = FloatArray(4)
+    private val viewM = android.graphics.Matrix()
+    private val paintM = android.graphics.Matrix()
+    private var tickerPosted = false
+    private val editTicker = android.view.Choreographer.FrameCallback { tickerPosted = false; editTick() }
+    /** what the motion saw last (a change pops a menu, flies the cursor) */
+    private var seenCursor: EditStop? = null
+    private var seenMenu: EditStop? = null
+    private var seenSheet: HomeEditModel.Sheet? = null
+    private var seenPrompt = false
+    private var seenChip: String? = null
+    /** the chip's name before the last flip (it slides out as the new one slides in) */
+    private var chipWas: String? = null
+    /** the next apply's flip (-1 / +1: its cascade; 0 = none) */
+    private var applyMorph = 0
+    /** each part's speed at the last glide frame (px/s: centre x, y, width, height): a new glide starts at it (no stop, no stutter) */
+    private val partVel = HashMap<Part, FloatArray>()
+    private val glideOut = FloatArray(2)
     private var editPadN = Int.MIN_VALUE
     /** the next apply's glide (null = apply's own rule) */
     private var applyMs: Long? = null
@@ -2441,8 +2523,20 @@ class HomeView(
             for ((p, r) in now) if (views[p]?.visibility == View.VISIBLE) out[HomePart.valueOf(p.name)] = RectF(r)
             return out
         }
-        override fun liftedOffset(): Pair<Float, Float> = liftOffset()
         override fun liftK(): Float = liftK
+        override fun pose(p: HomePart, out: android.graphics.Matrix): Boolean = partMatrix(Part.valueOf(p.name), out)
+        override fun cursorOffset(out: FloatArray) = motion.cursorOffset(motionNow(), out)
+        override fun popK(kind: Int): Float = motion.popK(kind, motionNow())
+        override fun chipFlip(): Float = motion.chipK(motionNow())
+        override val chipDir: Int get() = motion.chipDir
+        override val chipWas: String? get() = this@HomeView.chipWas
+        override fun roomPose(r: Room, out: FloatArray): Boolean {
+            if (!motion.on) return false
+            motion.pose(HomeEditMotion.roomKey(r.ordinal), motionNow(), ROOM_HALF_DIAG, pose)
+            out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
+            return !pose.isIdentity
+        }
+        override fun poke() { motion.poke(motionNow()); editKick() }
         override fun clockBox(): RectF? = editClockBox()
         override fun solve(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> = solveFor(l)
         override val geo: HomeEditModel.Geo get() = editGeo
@@ -2559,6 +2653,7 @@ class HomeView(
         editGuest(true)
         onEditChrome?.invoke(editView)
         Log.i(TAG, "home edit: open on ${start.name.lowercase()}${if (lift) " (lifted)" else ""}, ${HomeLayoutJson.json(saved)}")
+        editMotionStart(start)
         editRun(m.startOn(start, lift))
         liveDraft = m.draft
         onEditChanged?.invoke(true)
@@ -2592,7 +2687,7 @@ class HomeView(
         chromeModel = m
         editAway = false
         if (!m.parked) editGuest(false)                                   // parked (a fight, a room): the guest was freed then
-        settleAnim?.cancel(); settleK = 0f; liftTo(0f, null)
+        motion.leave(motionNow()); editKick()                             // every widget grows back to 1, the wiggle out, the ribbon down
         chromeFade(0f, Motion.MODULE_CLOSE) { chromeModel = null; editView.visibility = View.GONE; onEditChrome?.invoke(null); editView.dropThumbs() }
         // every part back to the saved rects (Discard) or kept where the draft put them (Save: the record is the draft now)
         if (!wrote && !m.draft.samePlace(m.saved)) editRelay(Motion.MODULE_CLOSE) else editRelay(Motion.MODULE_CLOSE, force = true)
@@ -2655,7 +2750,10 @@ class HomeView(
     private fun editRun(fx: List<HomeEditModel.Fx>) {
         val m = edit
         for (f in fx) when (f) {
-            is HomeEditModel.Fx.Relay -> { liveDraft = m?.draft; editRestSync(); editRelay(f.ms); editRoomBarSync() }
+            is HomeEditModel.Fx.Relay -> {
+                if (f.morph != 0) { chipWas = seenChip; motion.chipFlip(f.morph, motionNow()) }    // the chip's name slides over
+                liveDraft = m?.draft; editRestSync(); editRelay(f.ms, morph = f.morph); editRoomBarSync()
+            }
             HomeEditModel.Fx.Save -> { editLeave(save = true); return }
             HomeEditModel.Fx.Leave -> { editLeave(save = false); return }
             is HomeEditModel.Fx.Press -> editPress(f.key, f.k)
@@ -2665,14 +2763,168 @@ class HomeView(
             HomeEditModel.Fx.EditSlots -> { if (m?.dirty != true) editLeave(save = false); onEditSlots?.invoke(); return }
             HomeEditModel.Fx.Filters -> { if (m?.dirty != true) editLeave(save = false); onEditFilters?.invoke(); return }
             is HomeEditModel.Fx.Refuse -> editRefuse(f.stop)
-            HomeEditModel.Fx.Lift -> liftTo(if (m?.lifted != null) 1f else 0f, m?.lifted)
+            HomeEditModel.Fx.Lift -> editLift(m?.lifted)
         }
         m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
         editBarSync(fx.lastOrNull { it is HomeEditModel.Fx.Relay }?.let { (it as HomeEditModel.Fx.Relay).ms } ?: Motion.MODULE_OPEN)
+        editNotice()
         editDecor()
         editView.invalidate()
         invalidate()
     }
+
+    // ---------------------------------------------------------------- the motion's hooks (HomeEditMotion)
+
+    /** edit mode opens or comes back ([from]: the widget it opened on, the others ripple out from it; null = all at once) */
+    private fun editMotionStart(from: EditStop?) {
+        val t = motionNow()
+        motion.scale = motionScale()
+        motion.enter(t, from?.let { rippleFrom(it) })
+        val m = edit
+        seenCursor = m?.cursor; seenMenu = m?.menu; seenSheet = m?.sheet; seenPrompt = m?.prompt == true; seenChip = m?.chipName
+        editKick()
+    }
+
+    /** each key's start (ms) by its distance from [s]'s widget: the open ripples out from the one held */
+    private fun rippleFrom(s: EditStop): LongArray? {
+        val c = stopBox(s) ?: return null
+        val cx = c.centerX(); val cy = c.centerY()
+        val pts = ArrayList<Triple<Int, Float, Float>>()
+        for (k in listOf(EditStop.BAND, EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST))
+            stopBox(k)?.let { pts += Triple(k.ordinal, it.centerX(), it.centerY()) }
+        now[Part.PARTY]?.let { pts += Triple(HomeEditMotion.PARTY, it.centerX(), it.centerY()) }
+        val bar = roomBar
+        val xs = bar?.slotCentres().orEmpty()
+        val rooms = RoomBar.rooms((edit?.draft ?: HomeSettings.layout).rooms)
+        for ((i, x) in xs.withIndex()) rooms.getOrNull(i)?.let { pts += Triple(HomeEditMotion.roomKey(it.ordinal), x, frameH + Strip.BAR / 2f) }
+        val far = pts.maxOfOrNull { kotlin.math.hypot(it.second - cx, it.third - cy) } ?: return null
+        val out = LongArray(HomeEditMotion.KEYS)
+        for ((k, x, y) in pts) out[k] = HomeEditMotion.ripple(kotlin.math.hypot(x - cx, y - cy), far)
+        return out
+    }
+    /** [s]'s widget box now (logical: the model's) */
+    private fun stopBox(s: EditStop): RectF? = when (s) {
+        EditStop.BAND, EditStop.CLOCK -> now[Part.BARS]
+        EditStop.CHAT -> now[Part.CHAT]; EditStop.MAP -> now[Part.MAP]; EditStop.QUEST -> now[Part.QUESTS]
+        EditStop.CAST -> now[Part.STRIP] ?: now[Part.CAST2]
+        EditStop.DIVIDER -> editView.dividerBox()
+        else -> null
+    }
+
+    /** the model moved on: a new cursor flies there (and the X chip pops), a menu / sheet / prompt pops open, the wiggle calms */
+    private fun editNotice() {
+        val m = edit?.takeIf { !it.parked } ?: return
+        val t = motionNow()
+        motion.poke(t)
+        if (m.cursor != seenCursor) {
+            val old = seenCursor
+            seenCursor = m.cursor
+            val wb = editView.widgetBoxes()
+            val a = old?.let { wb[it] ?: stopBox(it) }; val b = wb[m.cursor] ?: stopBox(m.cursor)
+            if (a != null && b != null) {
+                motion.cursorOffset(t, poseOut)
+                motion.cursorFrom(a.left + poseOut[0] - b.left, a.top + poseOut[1] - b.top, a.right + poseOut[2] - b.right, a.bottom + poseOut[3] - b.bottom, t)
+            }
+            if (m.cursor.removable) motion.pop(HomeEditMotion.CHIP, t)
+        }
+        if (m.menu != null && m.menu != seenMenu) motion.pop(HomeEditMotion.MENU, t)
+        seenMenu = m.menu
+        if (m.sheet != null && m.sheet != seenSheet) motion.pop(HomeEditMotion.SHEET, t)
+        seenSheet = m.sheet
+        if (m.prompt && !seenPrompt) motion.pop(HomeEditMotion.PROMPT, t)
+        seenPrompt = m.prompt
+        seenChip = m.chipName
+        motion.modal(m.menu != null || m.sheet != null || m.prompt, t)
+        editKick()
+    }
+
+    /** the lift ([s] picked up) or the drop (null: the widget that was lifted plops into its dock, from the finger's offset) */
+    private fun editLift(s: EditStop?) {
+        val t = motionNow()
+        if (s != null) { liftStop = s; motion.lift(s.ordinal, t) }
+        else liftStop?.let { was ->
+            val (ox, oy) = if (edit?.drag == null) dragOffsetNow else 0f to 0f
+            dragOffsetNow = 0f to 0f
+            motion.drop(was.ordinal, ox, oy, t)
+        }
+        editKick()
+        editDecor()
+    }
+
+    /** the ticker's next frame (one post at a time; only while the motion is on): the display's vsync on screen; off a window (the
+     *  off-device renders) there is none to keep time with, so a 16 ms post */
+    private fun editKick() {
+        if (tickerPosted || !motion.on) return
+        tickerPosted = true
+        if (isAttachedToWindow) android.view.Choreographer.getInstance().postFrameCallback(editTicker)
+        else editUi.postDelayed(editTickOff, FRAME_MS)
+    }
+    private val editTickOff = Runnable { tickerPosted = false; editTick() }
+    /**
+     * ONE FRAME OF THE EDIT MOTION: the views' properties and the chrome (nothing is laid or measured here). A fight stills it at once;
+     * Home away stops it (an input or Home again starts it); it posts the next frame only while something moves.
+     */
+    private fun editTick() {
+        if (!motion.on) return
+        val t = motionNow()
+        if (fightShown()) { motion.still(); editDecor(); return }
+        if (!live) return
+        edit?.takeIf { !it.parked }?.let { motion.modal(it.menu != null || it.sheet != null || it.prompt, t) }
+        editDecor()
+        roomBar?.invalidate()
+        if (motion.busy(t)) editKick()
+        else if (!motion.on) editDecor()                                  // the leave landed: one identity pass
+    }
+
+    /** [p]'s pose key: its widget's (a rider's host's: the buffs and the card on the map ride the map's); -1 = none */
+    private fun keyOfPart(p: Part): Int = when (p) {
+        Part.BARS -> EditStop.BAND.ordinal
+        Part.CHAT -> EditStop.CHAT.ordinal
+        Part.MAP, Part.AURAS -> EditStop.MAP.ordinal
+        Part.QUESTS -> if (cardOverMap() && (edit?.lifted ?: liftStop) != EditStop.QUEST) EditStop.MAP.ordinal else EditStop.QUEST.ordinal
+        Part.STRIP, Part.CAST2 -> EditStop.CAST.ordinal
+        Part.PARTY -> HomeEditMotion.PARTY
+        Part.CHAT_FULL -> -1
+    }
+    /** the box [p]'s pose turns about (its key's widget: the map for its riders, both halves for a Split bar) into [out] */
+    private fun ownerBox(p: Part, out: RectF): Boolean {
+        val r = when (keyOfPart(p)) {
+            -1 -> null
+            EditStop.MAP.ordinal -> now[Part.MAP]
+            EditStop.CAST.ordinal -> {
+                val a = now[Part.STRIP]; val b = now[Part.CAST2]
+                if (a != null) { out.set(a); if (b != null) out.union(b); return true }
+                b
+            }
+            else -> now[p]
+        } ?: return false
+        out.set(r)
+        return true
+    }
+    /** [p]'s pose at [t] into [out] (its box into [poseBox]) */
+    private fun partPose(p: Part, t: Long, out: HomeEditMotion.Pose): HomeEditMotion.Pose {
+        if (!motion.on) return out.identity()
+        val k = keyOfPart(p)
+        if (k < 0 || !ownerBox(p, poseBox)) return out.identity()
+        return motion.pose(k, t, 0.5f * kotlin.math.hypot(poseBox.width(), poseBox.height()), out)
+    }
+    /** [p]'s pose as a matrix in Home's px (the finger's carry of a lifted widget too): false = identity. The chrome and Home's own paint
+     *  over a part (the map's well, zone band and buttons; the clock block) follow it */
+    private fun partMatrix(p: Part, out: android.graphics.Matrix): Boolean {
+        if (!motion.on) return false
+        partPose(p, motionNow(), pose)
+        var dx = pose.dx; var dy = pose.dy
+        val lifted = edit?.takeIf { !it.parked }?.lifted ?: liftStop
+        if (lifted != null && partOf(lifted, p)) { val (ox, oy) = liftOffset(); dx += ox; dy += oy }
+        if (pose.scale == 1f && pose.rot == 0f && dx == 0f && dy == 0f) return false
+        out.reset()
+        out.postScale(pose.scale, pose.scale, poseBox.centerX(), poseBox.centerY())
+        out.postRotate(pose.rot, poseBox.centerX(), poseBox.centerY())
+        out.postTranslate(dx, dy)
+        return true
+    }
+    /** Home's own paint over the parts follows their poses (edit mode on screen, or its leave landing) */
+    private fun editPaintPosed(): Boolean = motion.on && (edit?.parked == false || chromeModel != null)
 
     /**
      * P4, THE ROOM BAR UNDER EDIT MODE ([roomBar], the host's Strip): its order is the draft's while edit mode is live (each change glides
@@ -2703,12 +2955,12 @@ class HomeView(
     }
 
     /** lay Home again with the draft, gliding [ms]; [force] = a glide even when the draft equals what is laid (the chrome's settle) */
-    private fun editRelay(ms: Long, force: Boolean = false) {
+    private fun editRelay(ms: Long, force: Boolean = false, morph: Int = 0) {
         // the band's rest changed under edit mode (the draft's, or back to the saved one): the page's screen with the flow's rest now
         val s = shown?.let { if (it.rest != flow.rest) flow.screen else it } ?: return
         if (!force && laidLayout == layoutNow(s) && !laidChanged()) { editDecor(); return }
-        applyMs = ms
-        try { apply(s, animate = live) } finally { applyMs = null }
+        applyMs = ms; applyMorph = morph
+        try { apply(s, animate = live) } finally { applyMs = null; applyMorph = 0 }
     }
     /** what [places] laid besides the record: the card's height, the bar's side (a settle lays these again) */
     private fun laidChanged(): Boolean = laidSide != castSideNow() || (layoutNow().cast == HomeLayout.CastDock.SPLIT) != laidSplit ||
@@ -2733,7 +2985,8 @@ class HomeView(
             editRestSync()                                                // the saved rest for the fight (the draft's waits)
             editRoomBarSync(); editBarSync(Motion.COMBAT_GROW)
             editGuest(false)
-            settleAnim?.cancel(); settleK = 0f; liftTo(0f, null)
+            // every widget at its own size at once, nothing turning (no motion in a fight); the ticker stops
+            liftStop = null; dragOffsetNow = 0f to 0f; motion.still(); editDecor()
             // the room bar's chrome goes with the rest (the XP track back, no disc tick, no ribbon touches) once the fade is out
             chromeFade(0f, HomeEditModel.CHROME_IN) { if (edit?.parked == true) onEditChrome?.invoke(null) }
             Log.i(TAG, "home edit: parked (a fight)")
@@ -2746,6 +2999,7 @@ class HomeView(
             editGuest(true)
             onEditChrome?.invoke(editView)
             chromeFade(1f, HomeEditModel.CHROME_IN)
+            editMotionStart(null)
             Log.i(TAG, "home edit: back (the fight ended)")
             if (relay) editRelay(Motion.COMBAT_SHRINK)
         }
@@ -2758,6 +3012,7 @@ class HomeView(
         if (!m.parked) { m.park(); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L) }
         editAway = true
         chromeAnim?.cancel(); chromeA = 0f
+        liftStop = null; dragOffsetNow = 0f to 0f; motion.still(); editDecor()
         onEditChrome?.invoke(null)
     }
     private fun editAwayBack() {
@@ -2776,6 +3031,7 @@ class HomeView(
         editGuest(true)
         onEditChrome?.invoke(editView)
         chromeFade(1f, HomeEditModel.CHROME_IN)
+        editMotionStart(null)
         editRelay(Motion.MODULE_CLOSE)
         editBarSync(Motion.MODULE_CLOSE)
     }
@@ -2793,40 +3049,10 @@ class HomeView(
     /** the host's: redraw the ribbon (it lives in the room bar) */
     var editRibbonRedraw: (() -> Unit)? = null
 
-    /** the lift: 1.0 -> 1.03, the shadow, above the others (LIFT_MS); [s] the widget */
-    private fun liftTo(to: Float, s: EditStop?) {
-        liftAnim?.cancel()
-        if (s != null) liftStop = s
-        // a widget released by a finger keeps its offset while it settles into its dock
-        if (to == 0f && liftStop != null && edit?.drag == null && settleK == 0f) {
-            val (ox, oy) = dragOffsetNow
-            if (ox != 0f || oy != 0f) settle(ox, oy)
-        }
-        if (!live) { liftK = to; if (to == 0f && settleK == 0f) liftStop = null; editDecor(); return }
-        liftAnim = ValueAnimator.ofFloat(liftK, to).apply {
-            duration = HomeEditModel.LIFT_MS; interpolator = Motion.curve()
-            addUpdateListener { liftK = it.animatedValue as Float; editDecor() }
-            addListener(object : AnimatorListenerAdapter() { override fun onAnimationEnd(a: Animator) {
-                liftK = to; if (to == 0f && settleK == 0f) liftStop = null; editDecor() } })
-            start()
-        }
-    }
-    /** the drag's offset as last placed (the settle starts from it) */
+    /** the drag's offset as last placed (a finger's drop springs into its dock from it) */
     private var dragOffsetNow = 0f to 0f
-    private fun settle(ox: Float, oy: Float) {
-        settleAnim?.cancel()
-        settleFrom = floatArrayOf(ox, oy); settleK = 1f
-        if (!live) { settleK = 0f; return }
-        settleAnim = ValueAnimator.ofFloat(1f, 0f).apply {
-            duration = Motion.MODULE_CLOSE; interpolator = Motion.curve()
-            addUpdateListener { settleK = it.animatedValue as Float; editDecor() }
-            addListener(object : AnimatorListenerAdapter() { override fun onAnimationEnd(a: Animator) {
-                settleK = 0f; if (liftK == 0f) liftStop = null; editDecor() } })
-            start()
-        }
-    }
 
-    /** the lifted widget's offset now: under the finger (its grab kept), or settling into its dock */
+    /** the lifted widget's offset now under the finger (its grab kept); its drop's spring into the dock is [motion]'s */
     private fun liftOffset(): Pair<Float, Float> {
         val m = edit
         val d = m?.drag
@@ -2835,7 +3061,6 @@ class HomeView(
             val at = d.at()
             return (at.l - base.left) to (at.t - base.top)
         }
-        if (settleK > 0f) return settleFrom[0] * settleK to settleFrom[1] * settleK
         return 0f to 0f
     }
     private fun baseOf(s: EditStop): RectF? = when (s) {
@@ -2852,24 +3077,28 @@ class HomeView(
     }
 
     /**
-     * edit mode's transforms on the parts, every frame of a glide / a drag / a lift: the lifted widget's scale (1.03 x [liftK]), its finger
-     * offset, its depth; the map's picture scaled to its gliding box ([mapScaleTo], cover, clipped to the box). Nothing outside edit mode
-     * (one reset pass after it ends), so the class / pause slides keep their own translation.
+     * edit mode's transforms on the parts, every frame of a glide / a drag / a lift / the ticker: each part's pose ([motion]: the shrink,
+     * the wiggle, the lift with its overshoot, the drop's plop and slide), about its widget's centre (a rider's about its host's); the
+     * lifted widget's finger offset and depth; the map's picture scaled to its gliding box ([mapScaleTo], cover, clipped to the box) with
+     * its pose composed over the crop. Properties only (nothing is laid here). Nothing outside edit mode (one reset pass after it ends),
+     * so the class / pause slides keep their own translation.
      */
     private fun editDecor() {
         // fix round 1: a session PARKED (a fight, a room) is no session here: one reset pass, then the class / pause / LB slides keep
         // their own translation and depth (they open while parked), never written over on a layout or an apply frame
         val liveEdit = edit?.takeIf { !it.parked }
-        if (liveEdit == null && chromeModel == null && !decorDirty && mapScaleTo == null) return
+        if (liveEdit == null && chromeModel == null && !decorDirty && mapScaleTo == null && !motion.on) return
         if (liveEdit == null && chromeModel == null && mapScaleTo == null && (classOpen || pauseT > 0f || pauseSide > 0f)) return
+        val t = motionNow()
         val lifted = liveEdit?.lifted ?: liftStop
         val (ox, oy) = liftOffset()
         if (liveEdit?.drag != null) dragOffsetNow = ox to oy
         val k = liftK
+        val settling = lifted != null && motion.settling(lifted.ordinal, t)
         for ((p, v) in views) {
             val mine = lifted != null && partOf(lifted, p)
-            val sc = if (mine) 1f + (HomeEditModel.LIFT_SCALE - 1f) * k else 1f
-            val dx = if (mine) ox else 0f; val dy = if (mine) oy else 0f
+            partPose(p, t, pose)
+            val dx = pose.dx + (if (mine) ox else 0f); val dy = pose.dy + (if (mine) oy else 0f)
             val d = if (p == Part.MAP) mapScaleTo else null
             if (d != null) {
                 val cur = now[Part.MAP] ?: d
@@ -2877,20 +3106,28 @@ class HomeView(
                 val tx = cur.centerX() - (d.left + d.width() * s / 2f)
                 val ty = cur.centerY() - (d.top + d.height() * s / 2f)
                 mapScaleTx = tx; mapScaleTy = ty
-                v.pivotX = 0f; v.pivotY = 0f
-                v.scaleX = s; v.scaleY = s
-                v.translationX = tx + dx; v.translationY = ty + dy
-                val l = (cur.left - d.left - tx) / s; val t = (cur.top - d.top - ty) / s
-                v.clipBounds = android.graphics.Rect(kotlin.math.floor(l).toInt(), kotlin.math.floor(t).toInt(),
-                    kotlin.math.ceil(l + cur.width() / s).toInt(), kotlin.math.ceil(t + cur.height() / s).toInt())
+                // the pose turns and shrinks the map about its DRAWN centre while the crop holds it (identity: today's pivot 0, 0 move)
+                HomeEditMotion.composeMapGlide(d.left, d.top, tx, ty, s, cur.centerX(), cur.centerY(), poseOut)
+                v.pivotX = poseOut[0]; v.pivotY = poseOut[1]
+                v.scaleX = s * pose.scale; v.scaleY = s * pose.scale
+                v.rotation = pose.rot
+                v.translationX = poseOut[2] + dx; v.translationY = poseOut[3] + dy
+                val l = (cur.left - d.left - tx) / s; val tp = (cur.top - d.top - ty) / s
+                v.clipBounds = android.graphics.Rect(kotlin.math.floor(l).toInt(), kotlin.math.floor(tp).toInt(),
+                    kotlin.math.ceil(l + cur.width() / s).toInt(), kotlin.math.ceil(tp + cur.height() / s).toInt())
             } else {
-                v.pivotX = v.width / 2f; v.pivotY = v.height / 2f
-                v.scaleX = sc; v.scaleY = sc
+                // about the widget's centre (a rider: its host's), else the view's own
+                if (motion.on && ownerBox(p, poseBox)) { v.pivotX = poseBox.centerX() - v.left; v.pivotY = poseBox.centerY() - v.top }
+                else { v.pivotX = v.width / 2f; v.pivotY = v.height / 2f }
+                v.scaleX = pose.scale; v.scaleY = pose.scale
+                v.rotation = pose.rot
                 v.translationX = dx; v.translationY = dy
             }
-            v.translationZ = if (mine && (k > 0f || dx != 0f || dy != 0f)) LIFT_Z + restZ(p) else restZ(p)
+            v.translationZ = if (mine && (k > 0f || ox != 0f || oy != 0f || settling)) LIFT_Z + restZ(p) else restZ(p)
         }
-        decorDirty = liveEdit != null || chromeModel != null || mapScaleTo != null || liftK > 0f
+        // the lift has landed and its drop slid in: nothing is lifted any more
+        if (liveEdit?.lifted == null && liveEdit?.drag == null && liftStop != null && k == 0f && !settling) liftStop = null
+        decorDirty = liveEdit != null || chromeModel != null || mapScaleTo != null || liftK > 0f || motion.on
         if (mapScaleTo == null) { mapScaleTx = 0f; mapScaleTy = 0f }
         // fix round 1: the page settled with the cursor's widget gone (the card / the bar Off, Party mode's Hide): the cursor moves on
         if (liveEdit != null && settled) editCursorCheck(liveEdit)
@@ -2898,7 +3135,7 @@ class HomeView(
         invalidate()
     }
 
-    /** the drawn boxes (scale and offset applied) of the parts raised over the others by edit mode - a lifted, dragged or settling widget
+    /** the drawn boxes (pose and offset applied) of the parts raised over the others by edit mode - a lifted, dragged or settling widget
      *  that is not the map (the map's own paint follows the map); empty outside edit mode */
     fun liftedBoxes(): List<RectF> {
         // a parked session lifts nothing (the class wheel's cover depth on a column is not a lift)
@@ -2908,11 +3145,17 @@ class HomeView(
         for ((p, v) in views) {
             if (p == Part.MAP || p == Part.AURAS || v.visibility != View.VISIBLE || v.width <= 0) continue
             if (v.translationZ <= restZ(p) + 0.5f) continue
-            val px = v.left + v.pivotX; val py = v.top + v.pivotY
-            out += RectF(px + (v.left - px) * v.scaleX + v.translationX, py + (v.top - py) * v.scaleY + v.translationY,
-                px + (v.right - px) * v.scaleX + v.translationX, py + (v.bottom - py) * v.scaleY + v.translationY)
+            out += drawnBox(v)
         }
         return out
+    }
+    /** [v]'s box as drawn (its scale and turn about its pivot, its translation), in Home's px */
+    private fun drawnBox(v: View): RectF {
+        viewM.reset()
+        viewM.postScale(v.scaleX, v.scaleY, v.pivotX, v.pivotY)
+        viewM.postRotate(v.rotation, v.pivotX, v.pivotY)
+        viewM.postTranslate(v.left + v.translationX, v.top + v.translationY)
+        return RectF(0f, 0f, v.width.toFloat(), v.height.toFloat()).also { viewM.mapRect(it) }
     }
 
     /** the map's glide scaling ends: laid at its box, no scale, no clip (one full layout pass where it lands) */
@@ -2920,7 +3163,7 @@ class HomeView(
         if (mapScaleTo == null) return
         mapScaleTo = null; mapScaleTx = 0f; mapScaleTy = 0f
         mapSlot.clipBounds = null
-        mapSlot.scaleX = 1f; mapSlot.scaleY = 1f
+        mapSlot.scaleX = 1f; mapSlot.scaleY = 1f; mapSlot.rotation = 0f
         mapSlot.pivotX = mapSlot.width / 2f; mapSlot.pivotY = mapSlot.height / 2f
         mapSlot.translationX = 0f; mapSlot.translationY = 0f
         decorDirty = true
@@ -3182,8 +3425,10 @@ class HomeView(
         val liftClip = liftedBoxes()
         val clipSave = if (liftClip.isNotEmpty()) c.save() else -1
         for (b in liftClip) c.clipOutRect(b)
-        val slideSave = if (mapSlide != 0f || mapSlideY != 0f) c.save() else -1
-        if (slideSave >= 0) c.translate(mapSlide, mapSlideY)
+        // the iPhone-style edit mode: the map's paint shrinks, turns and lifts with the map (its pose, the finger's carry included)
+        val mapPosed = editPaintPosed() && partMatrix(Part.MAP, paintM)
+        val slideSave = if (mapPosed || mapSlide != 0f || mapSlideY != 0f) c.save() else -1
+        if (mapPosed) c.concat(paintM) else if (slideSave >= 0) c.translate(mapSlide, mapSlideY)
         if (zoneA > 0.01f) now[Part.MAP]?.let { m -> mapWell(c, m, zoneA) }
         if (zoneA > 0.01f && zoneText.isNotEmpty()) now[Part.MAP]?.let { m ->
             // the name is half the bar's height (UiKit.zoneBand): a 64 px bar = 32 px text (user 09-30: "the map name is SUPER
@@ -3235,10 +3480,13 @@ class HomeView(
             val spot = if (castView.parent === barsSlot) castView.clockSpot()?.also { spot ->
                 for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
             } else null
+            // the clock block rides the band's pose in edit mode
+            val posedSave = if (editPaintPosed() && partMatrix(Part.BARS, paintM)) c.save().also { c.concat(paintM) } else -1
             val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
             UiKit.clockBlock(c, b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, chipGold(), spot, items, g,
                 rowAlpha = if (rowOn) (trigA * 255).toInt() else 0, chipAlpha = if (chipOn) 255 else 0)
             if (save >= 0) c.restoreToCount(save)
+            if (posedSave >= 0) c.restoreToCount(posedSave)
             // the mm:ss counts (as the auras' times); nothing ticks otherwise
             if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
         }
@@ -4354,6 +4602,11 @@ class HomeView(
         private const val PARTY_MENU_Z = 10f
         /** P2: edit mode's chrome, over the party menus and the tool */
         private const val EDIT_Z = 60f
+        private val ZERO4 = FloatArray(4)
+        /** the edit ticker's frame off a window */
+        private const val FRAME_MS = 16L
+        /** a room's picture on the bar: half its diagonal (its wiggle's turn) */
+        private const val ROOM_HALF_DIAG = 40f
         /** P2: a lifted widget's depth (above the others, under the chrome) */
         private const val LIFT_Z = 30f
         /** P2: the hold's gold ring round the finger (final_12) */
