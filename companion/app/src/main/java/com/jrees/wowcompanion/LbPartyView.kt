@@ -27,6 +27,9 @@ import org.json.JSONObject
 class LbPartyView(context: Context) : View(context) {
     /** Home's panels' slide (the pause wheel's): 0 = at rest .. UiKit.PAUSE_OPEN_MS = out of the way */
     var onSlide: (Float) -> Unit = {}
+    /** fix/menus-fit: where the picture stands on Home as laid now (HomeView.lbPlace, moved into this view's coordinates by the host);
+     *  null = the old fixed place (the page's middle, under 1516's top) */
+    var place: (() -> LbFit.Place?)? = null
 
     private var held = false
     private var changedAt = 0L
@@ -79,27 +82,25 @@ class LbPartyView(context: Context) : View(context) {
         if (!held && t <= 0f) { visibility = GONE; return }
         val k = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
         val a = (255 * k).toInt()
-        val w = width.toFloat(); val cx = w / 2f
-        val s = minOf(w / 1240f, height / 1080f)
+        val w = width.toFloat()
         val party = PartyModel.live.party
         val members = party?.m.orEmpty()
         fun member(unit: String) = members.firstOrNull { it.u == unit }
         val now = SystemClock.uptimeMillis()
-        val bw = COL_W * s; val bh = 100f * s; val g = 16f * s
         // under the controller (it stays where it is: the user, "don't make the top controller part shift away"); no line over you
-        // (the user: "Scrap the soft target bit" ... "no remove the L target from that")
-        val yy = maxOf(236f * s, UiKit.pauseBarsBottom + 16f * s)
+        // (the user: "Scrap the soft target bit" ... "no remove the L target from that"). fix/menus-fit: on Home's page as laid
+        // (LbFit: the band's bottom now, the line between the columns, scaled to fit above a bar that stays)
+        val pl = place?.invoke() ?: run {
+            val s0 = minOf(w / 1240f, height / 1080f)
+            LbFit.Place(w / 2f, maxOf(236f * s0, UiKit.pauseBarsBottom + 16f * s0), s0, SIDE_PX, SIDE_PX)
+        }
+        val s = pl.k
+        val boxes = LbFit.bars(pl)
+        fun rf(b: LbFit.Box) = RectF(b.l, b.t, b.r, b.b)
         // YOU, with the A glyph, then the four as the game binds them: Up, Left + Right side by side, Down
-        val you = RectF(cx - bw / 2f, yy, cx + bw / 2f, yy + bh)
-        bar(c, you, member("player"), "player", LbMap.keyOf("player") ?: "PAD1", a, now, s)
-        val upT = you.bottom + 30f * s
-        val midT = upT + bh + g
-        val downT = midT + bh + g
-        val spots = mapOf("PADDUP" to RectF(cx - bw / 2f, upT, cx + bw / 2f, upT + bh),
-            "PADDLEFT" to RectF(cx - g / 2f - bw, midT, cx - g / 2f, midT + bh),
-            "PADDRIGHT" to RectF(cx + g / 2f, midT, cx + g / 2f + bw, midT + bh),
-            "PADDDOWN" to RectF(cx - bw / 2f, downT, cx + bw / 2f, downT + bh))
-        for ((key, r) in spots) {
+        bar(c, rf(boxes.getValue("PAD1")), member("player"), "player", LbMap.keyOf("player") ?: "PAD1", a, now, s)
+        for (key in listOf("PADDUP", "PADDLEFT", "PADDRIGHT", "PADDDOWN")) {
+            val r = rf(boxes.getValue(key))
             val unit = LbMap.unitOf(key)
             bar(c, r, unit?.let { member(it) }, unit, key, a, now, s)
         }
@@ -141,6 +142,8 @@ class LbPartyView(context: Context) : View(context) {
         /** 1.0.19: the column's bar width, and how far Home's sides move for it (the column with a margin, half each side) */
         const val COL_W = 300f
         const val SIDE_PX = 340f
+        /** fix/menus-fit: the picture's height at full size (you 100, 30, Up 100, 16, Left + Right 100, 16, Down 100) */
+        const val PICT_H = 462f
 
         /** fix/lb-home-only: the picture is up but Home is not in front ([onHome] false: a room; [covered]: the host's overlay gate,
          *  CompanionHost.overlayUp, or the target radial) - it goes at once instead of fading */
@@ -188,4 +191,52 @@ object LbMap {
 
     fun keyOf(unit: String): String? = byUnit[unit]
     fun unitOf(key: String): String? = byUnit.entries.firstOrNull { it.value == key }?.key
+}
+
+/**
+ * fix/menus-fit (the user on 1516: "The LB menu doesn't fit right with the map swapped and bigger"): WHERE THE LB PICTURE STANDS on
+ * Home's page as laid. Pure (the JVM tests run it over every record). It stood at the page's middle under a fixed or stale top
+ * (UiKit.pauseBarsBottom is the last pause's) and both sides moved 340: at a 1/3 or 2/3 share the wider column covered a side bar by
+ * 166 px, and a grown fight band ran under its top. Now:
+ *  - its top is the band's bottom as laid now + 10 (Classic's 236 at rest);
+ *  - it is centred on the line between the columns ([leftColR] .. [rightColL]), kept inside the page;
+ *  - it scales ([Place.k], at least [K_MIN]) to fit above [bottom] (the top of a bar that stays in place: Both), else the frame's foot;
+ *  - each side moves only as far as it needs to clear it with [MARGIN] ([Place.pushLeft] / [Place.pushRight]): 340 both in Classic.
+ * [classic] (the laid record is Classic's): 1516's top exactly (the user has not yet ruled on moving it under a grown band).
+ */
+object LbFit {
+    data class Box(val l: Float, val t: Float, val r: Float, val b: Float)
+    /** [cx] the picture's middle, [top] its first bar's top, [k] its scale (1 = 300 px bars), each side's move */
+    data class Place(val cx: Float, val top: Float, val k: Float, val pushLeft: Float, val pushRight: Float, val classic: Boolean = false)
+    const val MARGIN = 36f
+    const val K_MIN = 0.7f
+    /** half the picture's widest row (Left + Right: a bar and half the 16 px gap) at scale [k] */
+    fun halfW(k: Float): Float = (LbPartyView.COL_W + 8f) * k
+
+    fun place(w: Float, barsBottom: Float, leftColR: Float, rightColL: Float, bottom: Float, classic: Boolean, staleBars: Float): Place {
+        val top: Float; val k: Float; val cx: Float
+        if (classic) { k = 1f; cx = w / 2f; top = maxOf(236f, staleBars + 16f) }
+        else {
+            top = barsBottom + 10f
+            k = ((bottom - top) / LbPartyView.PICT_H).coerceIn(K_MIN, 1f)
+            val hw = halfW(k)
+            cx = ((leftColR + rightColL) / 2f).coerceIn(hw + 16f, maxOf(hw + 16f, w - hw - 16f))
+        }
+        val hw = halfW(k)
+        return Place(cx, top, k, maxOf(0f, leftColR - (cx - hw - MARGIN)), maxOf(0f, (cx + hw + MARGIN) - rightColL), classic)
+    }
+
+    /** the five bars ("PAD1" = you, then the D-pad's four) at [p] */
+    fun bars(p: Place): Map<String, Box> {
+        val s = p.k; val cx = p.cx
+        val bw = LbPartyView.COL_W * s; val bh = 100f * s; val g = 16f * s
+        val upT = p.top + bh + 30f * s
+        val midT = upT + bh + g
+        val downT = midT + bh + g
+        return linkedMapOf("PAD1" to Box(cx - bw / 2f, p.top, cx + bw / 2f, p.top + bh),
+            "PADDUP" to Box(cx - bw / 2f, upT, cx + bw / 2f, upT + bh),
+            "PADDLEFT" to Box(cx - g / 2f - bw, midT, cx - g / 2f, midT + bh),
+            "PADDRIGHT" to Box(cx + g / 2f, midT, cx + g / 2f + bw, midT + bh),
+            "PADDDOWN" to Box(cx - bw / 2f, downT, cx + bw / 2f, downT + bh))
+    }
 }

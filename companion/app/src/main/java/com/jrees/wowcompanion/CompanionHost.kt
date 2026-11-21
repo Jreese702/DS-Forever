@@ -1287,6 +1287,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         lbView = LbPartyView(this)
         // 1.0.19: Home's sides move only far enough for the picture (LbPartyView.SIDE_PX)
         lbView.onSlide = { t -> if (room == Room.HOME && !pauseView.isOpen && !tradOpen()) homeView.pauseSlide(t, LbPartyView.SIDE_PX) }
+        // fix/menus-fit: the picture stands on Home's page as laid (HomeView.lbPlace: the band now, the line between the columns),
+        // moved into the picture's own coordinates
+        lbView.place = {
+            if (room != Room.HOME || !homeView.isShown || homeView.width == 0) null else {
+                val a = IntArray(2); val b = IntArray(2)
+                homeView.getLocationOnScreen(a); lbView.getLocationOnScreen(b)
+                val p = homeView.lbPlace()
+                // (Classic's top is 1516's, already in the picture's own coordinates)
+                p.copy(cx = p.cx + (a[0] - b[0]), top = p.top + if (p.classic) 0 else a[1] - b[1])
+            }
+        }
         castView.onShoulders = { lb, rb -> lbAloneNow = lb && !rb; lbEval() }
         // hold to talk's pop-up: a finger on a chat tab picks it (as LB / RB do)
         castView.onTalkTab = { key -> if (talkPanelUp() && talkTabs.pick(key)) {

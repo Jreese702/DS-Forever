@@ -139,5 +139,12 @@ class PartyMenuView(context: Context, grey: Set<String> = PlayerMenu.PARTY_GREY)
         /** movable Home (SPEC section 6 item 9): over the CHAT's column, mirrored to the right ([chatRight]) on a page [w] wide */
         fun place(chatRight: Boolean, w: Float = 1240f): RectF =
             if (!chatRight) RectF(PLACE) else RectF(w - PLACE.right, PLACE.top, w - PLACE.left, PLACE.bottom)
+        /** fix/menus-fit: over the chat's column AS LAID ([col]: the chat and the party module, any share, either side), under the band
+         *  as it is now ([barsBottom]), inside the frame [h] - Classic's is [PLACE] (24..600 x 236..914); no column = [place] */
+        fun place(col: RectF?, barsBottom: Float, h: Float, chatRight: Boolean, w: Float): RectF {
+            if (col == null || col.width() < 64f) return place(chatRight, w)
+            val top = barsBottom + 10f
+            return RectF(col.left + 16f, top, col.right - 16f, maxOf(top + HEAD + ROW, minOf(PLACE.bottom, col.bottom, h - 8f)))
+        }
     }
 }

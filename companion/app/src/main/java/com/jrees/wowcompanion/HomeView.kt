@@ -544,13 +544,15 @@ class HomeView(
     private var classLeft = true
     /** fix/castbar-slides: the half a laid part belongs to for a side slide: the cast bar by its side (Both = neither), any other part by
      *  its centre ([HomeSlide.half]) */
-    private fun halfOf(p: Part, r: RectF, w: Float): HomeSlide.Half = HomeSlide.half(p == Part.STRIP && !laidSplit, laidSide, laidHidden, r.centerX(), w)
+    private fun halfOf(p: Part, r: RectF, w: Float): HomeSlide.Half =
+        HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w, split = laidSplit)
 
     /**
      * f-radial-middle (1.0.9, the user: "The Dpad up radial, and spell radial should slideup between the middle of the modules like the
      * class bars used to, like a mixture of what it is now and what those were sort of"): the item / spell wheel (HomeRadialView) asks
-     * for its slot here. [open] true: a square under the bars between the columns (ClassSlot.middle, never wider than the chat column);
-     * the columns part outwards by half of it (the class wheel's 1.0.8 motion), the slot is returned in Home's coordinates; null =
+     * for its slot here. [open] true: a square under the bars on the line between the columns (ClassSlot.middle; fix/menus-fit: at any
+     * share, either side); each column parts outwards as far as it needs to clear it (the class wheel's 1.0.8 motion), the slot is
+     * returned in Home's coordinates; null =
      * Home is not on show or a module is full screen (the wheel then stays the full-screen one). false: the columns come back.
      */
     fun wheelSlot(open: Boolean): RectF? {
@@ -570,10 +572,11 @@ class HomeView(
     private fun wheelFit(places: Map<Part, RectF>) {
         val w = width.toFloat(); val h = frameH
         val g = UiKit.MODULE_GAP
+        val line = columnsLine(w)
         val s = ClassSlot.middle(w, h, places[Part.BARS]?.bottom ?: 0f, g, w * WHEEL_SLOT_MAX,
-            bottom = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g))
+            bottom = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g), mid = (line.first + line.second) / 2f)
         wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
-        wheelPush = s.push
+        wheelPush = s.push; wheelPushR = s.pushRight
     }
     /**
      * fix/radials-clip-castbar (the user on 1.0.32-1469: "The spells and ds tool bar radials both also clip that bar"): the page laid
@@ -598,7 +601,7 @@ class HomeView(
             if (p == Part.BARS) continue
             if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
             val r = places[p] ?: continue
-            val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush)
+            val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush, wheelPushR)
             v.animate().cancel()
             val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
@@ -632,6 +635,33 @@ class HomeView(
     private var wheelOpen = false
     private val wheelRect = RectF()
     private var wheelPush = 0f
+    private var wheelPushR = 0f
+    /**
+     * fix/menus-fit: the line between Home's two columns as laid (the left column's right edge, the right column's left edge;
+     * HomeLayoutSolver.columns): the middle wheel and the LB picture stand on its middle, not the page's (Classic's is the page's)
+     */
+    private fun columnsLine(w: Float = width.toFloat()): Pair<Float, Float> {
+        val c = HomeLayoutSolver.columns(laidLayout ?: layoutNow(), w, UiKit.MODULE_GAP)
+        return c.first.second to c.second.first
+    }
+    /** fix/menus-fit: the laid record is Classic's (HomePresets' Classic holds it): the two looks the user has not yet ruled on keep
+     *  1516's exactly there (the LB picture's top over a grown band, the map's paint during the LB / pause slides) */
+    private fun classicLook(): Boolean = HomePresets.byId(HomePresets.CLASSIC)?.holds(laidLayout ?: layoutNow()) == true
+    /**
+     * fix/menus-fit: THE LB PICTURE's place on the page as laid (LbFit): under the band as it is now, on the line between the columns,
+     * scaled to fit above a bar that stays (Both), and how far each side moves to clear it. Home's own coordinates.
+     */
+    fun lbPlace(): LbFit.Place {
+        val w = width.toFloat(); val g = UiKit.MODULE_GAP
+        val line = columnsLine(w)
+        var bottom = frameH - g
+        for (p in listOf(Part.STRIP, Part.CAST2)) {
+            val r = now[p] ?: continue
+            if (views[p]?.visibility != View.VISIBLE || r.top >= frameH) continue
+            if (halfOf(p, r, w) == HomeSlide.Half.NONE) bottom = minOf(bottom, r.top - g)
+        }
+        return LbFit.place(w, barsBottom(), line.first, line.second, bottom, classicLook(), UiKit.pauseBarsBottom)
+    }
 
     /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
     private var grewAt = 0L
@@ -2128,8 +2158,12 @@ class HomeView(
         // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
         if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
-        PartyMenuView.place(laidChatRight, (r - l).toFloat()).let { m -> partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
-        PartyMenuView.place(laidChatRight, (r - l).toFloat()).let { m -> targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
+        // fix/menus-fit: over the chat's column as laid (any share, either side), under the band as it is now
+        val chatCol = now[Part.CHAT]?.let { c -> RectF(c).also { u -> now[Part.PARTY]?.let { u.union(it) } } }
+        PartyMenuView.place(chatCol, barsBottom(), frameH, laidChatRight, (r - l).toFloat()).let { m ->
+            partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
+            targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
+        }
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
@@ -2218,11 +2252,15 @@ class HomeView(
         val left = UiKit.pauseOut(UiKit.PAUSE_LEFT, t, screen)
         pauseMap = UiKit.pauseOut(UiKit.PAUSE_MAP, t, screen)
         val half = width / 2f
+        // fix/menus-fit: the LB picture's place on the page as laid: each side moves only as far as it needs to clear it
+        val lb = if (sidePx > 0f) lbPlace() else null
         for ((p, v) in views) {
             // MOVABLE HOME (SPEC section 6 item 2): the side is the part's HALF, not its name: the left column slides left whatever it
-            // holds (the map after a swap). A part across both halves (a full-screen module) keeps its own side
+            // holds (the map after a swap). A part across the whole page (a full-screen module) keeps its own side. fix/menus-fit: a
+            // 1/3 or 2/3 column straddles the middle but is NOT across: it goes by its centre (the swapped Big map's map flew right,
+            // across the open wheel and under the LB picture)
             val r = now[p]
-            val across = r == null || (r.left < half && r.right > half)
+            val across = r == null || HomeSlide.fullWidth(r.left, r.right, width.toFloat(), UiKit.MODULE_GAP)
             val o = when {
                 p == Part.BARS -> pauseTop
                 p == Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
@@ -2237,7 +2275,8 @@ class HomeView(
                 UiKit.PAUSE_OPEN_MS, screen)
             val kx = when {
                 endX[0] > 0f -> ((width - v.left) / endX[0]).coerceAtLeast(1f)
-                endX[0] < 0f -> (v.right / -endX[0]).coerceAtLeast(1f)
+                // (fix/menus-fit: a 1/3 or 2/3 column's laid right edge is fractional: the whole of it goes)
+                endX[0] < 0f -> (maxOf(v.right.toFloat(), r?.right ?: 0f) / -endX[0]).coerceAtLeast(1f)
                 else -> 1f
             }
             val ky = if (endX[1] < 0f) (v.bottom / -endX[1]).coerceAtLeast(1f) else 1f
@@ -2250,10 +2289,12 @@ class HomeView(
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
                 val ee = 1f - (1f - e) * (1f - e)
                 // fix/castbar-slides (the user on 1.0.31: "it should only slide the direction if its on that half. If its set to both it
-                // can stay in place"): the cast bar by its side (Left with the chat, Right with the minimap), Both's bar stays
-                val r = now[p]
-                v.translationX = if (p == Part.STRIP && r != null) HomeSlide.dx(halfOf(p, r, width.toFloat()), sidePx * ee)
-                    else (if (o === left) -1f else 1f) * sidePx * ee
+                // can stay in place"): the cast bar by its side (Left with the chat, Right with the minimap), Both's bar stays.
+                // fix/menus-fit: every part by its column (its half), each side by its own distance (LbFit: Classic's 340 both)
+                val pl = (lb?.pushLeft ?: sidePx) * ee; val pr = (lb?.pushRight ?: sidePx) * ee
+                val bar = p == Part.STRIP || p == Part.CAST2
+                v.translationX = if (r != null && (!across || bar)) HomeSlide.dx(halfOf(p, r, width.toFloat()), pl, pr)
+                    else if (o === left) -pl else pr
                 v.translationY = 0f
                 if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
             }
@@ -3028,6 +3069,19 @@ class HomeView(
         invalidate()
     }
     private val pToast = Paint(Paint.ANTI_ALIAS_FLAG)
+    /**
+     * the D-pad toast's pill for words [wsum] wide: in the diamonds' clock gap at rest (today's spot); fix/menus-fit: under the band
+     * when the band is the thin row or grown for a fight (the gap is not there: the pill lay on the row's buttons / the D-pad's lower
+     * button), over the columns' tops, inside the frame
+     */
+    fun toastBox(wsum: Float, h: Float = 54f): RectF {
+        val cx = width / 2f
+        val bb = now[Part.BARS]?.bottom ?: 226f
+        val diamonds = 8f + REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP
+        val cy = if (kotlin.math.abs(bb - diamonds) < 1f) bb - h / 2f - 6f
+            else (bb + UiKit.MODULE_GAP + h / 2f).coerceAtMost(frameH - UiKit.MODULE_GAP - h / 2f)
+        return RectF(cx - wsum / 2f - 28f, cy - h / 2f, cx + wsum / 2f + 28f, cy + h / 2f)
+    }
     private val pToastEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
     private fun drawToast(c: Canvas) {
         if (toastWords.isEmpty()) return
@@ -3039,8 +3093,8 @@ class HomeView(
         val wsum = words.sumOf { pToast.measureText(it).toDouble() }.toFloat() + (words.size - 1) * (arrow + 2 * gap)
         val h = 54f
         val cx = width / 2f
-        val cy = (now[Part.BARS]?.bottom ?: 226f) - h / 2f - 6f
-        val box = RectF(cx - wsum / 2f - 28f, cy - h / 2f, cx + wsum / 2f + 28f, cy + h / 2f)
+        val box = toastBox(wsum, h)
+        val cy = box.centerY()
         pToastEdge.color = Theme.gold; pToastEdge.alpha = (255 * a).toInt()
         val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.ink; alpha = (235 * a).toInt() }
         c.drawRoundRect(box, h / 2f, h / 2f, fill)
@@ -3071,6 +3125,12 @@ class HomeView(
     }
     override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView) false else super.drawChild(c, child, drawingTime)
 
+    /** fix/menus-fit: the map's own paint follows the map view's real move during the pause / LB slides (not Classic: see the use) */
+    private fun mapPaintRides(): Boolean = pauseT > 0f && !classicLook()
+    /** fix/menus-fit, the tests' reading of [dispatchDrawHome]: how far the map's own paint (the well edge, the zone band, the calendar)
+     *  is drawn from the map's laid box now, x */
+    fun mapPaintDx(): Float = (if (pauseT > 0f && !mapPaintRides()) pauseMap[0] else 0f) + mapSlot.translationX - mapScaleTx
+
     private fun dispatchDrawHome(c: Canvas) {
         super.dispatchDraw(c)
         if (shown == null || typeWanted) return                          // f-trackpad-keyboard: the tool is a clean page
@@ -3078,11 +3138,16 @@ class HomeView(
         drawTopCue(c)
         // the zone band and the clock FADE with a move (the harmony pass; they used to vanish at a move's start and pop back at
         // its end), drawn where their part is now (and, while the pause menu slides, where the map / the band have gone)
-        val zoneA = mix(overlayFrom.zone, overlayTo.zone) * pauseMap[2]
+        // fix/menus-fit: during the LB picture's and the pause's slides the map's own paint (its well edge, the zone band, the calendar
+        // and mail buttons, the mail card) rides the MAP VIEW's real move (mapSlide below already holds it) at the view's alpha: the
+        // pause curve's extra rightward move sent it twice as far, or the wrong way after a swap (an empty framed well with the zone's
+        // name stood behind the LB picture). Classic keeps 1516's paint there until the user rules on it (classicLook)
+        val paintRides = mapPaintRides()
+        val zoneA = mix(overlayFrom.zone, overlayTo.zone) * (if (paintRides) mapSlot.alpha else pauseMap[2])
         // movable Home phase 3: the "up" cue takes the clock's spot for its 1.5 s (the clock fades out under it and back after it)
         val clockA = mix(overlayFrom.clock, overlayTo.clock) * pauseTop[2] * (1f - topCueAlpha())
         val pauseSave = if (pauseT > 0f) c.save() else -1
-        if (pauseSave >= 0) c.translate(pauseMap[0], pauseMap[1])
+        if (pauseSave >= 0 && !paintRides) c.translate(pauseMap[0], pauseMap[1])
         // THE ZONE BAND across the small map's top, its whole width, the name centred (user, 09-29 17:30: "The current map
         // name should show over the top of the minimap like it does normally"; 09-30: centred across the full space): the
         // classic minimap's own zone bar (UI Art's UiKit.zoneBand)
@@ -4384,15 +4449,16 @@ class HomeView(
     }
 }
 
-/** f-class-radial rework: Home's wheel slot, pure (the tests check it fits): a square centred between the columns under the bars, at
- *  most [maxSide] (half the width, and never wider than the chat column it hides behind); [push] = how far each column slides out */
+/** f-class-radial rework: Home's wheel slot, pure (the tests check it fits: HomeSlideTest, HomeMenusFitTest): a square on the line
+ *  between the columns under the bars, at most [maxSide]; [Middle.push] / [Middle.pushRight] = how far each column slides out */
 internal object ClassSlot {
     data class Slot(val left: Float, val top: Float, val side: Float)
     data class Area(val left: Float, val top: Float, val right: Float, val bottom: Float)
     /** the column's area: the union of its parts' boxes [parts] (l, t, r, b), under the bars; none shown = that half of the page */
     fun column(parts: List<Area>, barsBottom: Float, h: Float, gap: Float, left: Boolean, w: Float): Area =
         if (parts.isEmpty()) (if (left) Area(gap, barsBottom + gap, w / 2f - gap / 2f, h - gap) else Area(w / 2f + gap / 2f, barsBottom + gap, w - gap, h - gap))
-        else Area(parts.minOf { it.left }, maxOf(barsBottom + gap, parts.minOf { it.top }), parts.maxOf { it.right }, parts.maxOf { it.bottom })
+        // fix/menus-fit: never below the frame (the wheel ran off it into the room bar when a stray box counted)
+        else Area(parts.minOf { it.left }, maxOf(barsBottom + gap, parts.minOf { it.top }), parts.maxOf { it.right }, minOf(h - gap, parts.maxOf { it.bottom }))
     /** the wheel: the largest square in the column's area, centred in it */
     fun inColumn(a: Area): Slot {
         val side = minOf(a.right - a.left, a.bottom - a.top).coerceAtLeast(1f)
@@ -4400,14 +4466,19 @@ internal object ClassSlot {
     }
     /**
      * f-radial-middle: the item / spell wheel's square between the columns, under the bars ([barsBottom]), at most [maxSide]; [push] =
-     * how far each column parts (half the wheel and a gap)
+     * how far the LEFT column parts, [pushRight] the right one (half the wheel and a gap each).
+     * fix/menus-fit (the user on 1516: menus "don't fit right with the map swapped and bigger"): centred on the LINE between the columns
+     * ([mid], the middle of the gap between the left column's right edge and the right column's left edge), not the page's middle: at a
+     * 1/3 or 2/3 share the wider column covered up to 190 px of a wheel centred on w / 2. Kept inside the page; a column parts as far
+     * as it needs to clear the square. Classic's line is the page's middle: unchanged.
      */
-    data class Middle(val left: Float, val top: Float, val side: Float, val push: Float)
-    fun middle(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float, bottom: Float = h - gap): Middle {
+    data class Middle(val left: Float, val top: Float, val side: Float, val push: Float, val pushRight: Float = push)
+    fun middle(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float, bottom: Float = h - gap, mid: Float = w / 2f): Middle {
         val avail = bottom - (barsBottom + gap)
-        val side = minOf(avail, maxSide).coerceAtLeast(1f)
+        val side = minOf(avail, maxSide, w - 2f * gap).coerceAtLeast(1f)
         val top = barsBottom + gap + (avail - side) / 2f
-        return Middle((w - side) / 2f, top, side, side / 2f + gap)
+        val left = (mid - side / 2f).coerceIn(gap, maxOf(gap, w - gap - side))
+        return Middle(left, top, side, maxOf(0f, mid - left + gap), maxOf(0f, left + side - mid + gap))
     }
     /** how far a part of the column slides to be wholly off its own edge ([w] the page's width) */
     fun away(left: Boolean, partLeft: Float, partRight: Float, w: Float, gap: Float): Float =
@@ -4426,15 +4497,23 @@ internal object ClassSlot {
  */
 internal object HomeSlide {
     enum class Half { LEFT, RIGHT, NONE }
-    fun half(strip: Boolean, side: CastStripModel.Side, hidden: Boolean, centerX: Float, w: Float): Half = when {
+    /** fix/menus-fit: [strip] = the part is a tap-to-cast bar (either view: the Split bar's second half too); [split] = the bar is laid
+     *  in two halves, each under its column (by its centre). A bar slid below the page for a fight is NO column's, split or not: the
+     *  class wheel counted Fighter's hidden halves into its column and ran off the frame into the room bar */
+    fun half(strip: Boolean, side: CastStripModel.Side, hidden: Boolean, centerX: Float, w: Float, split: Boolean = false): Half = when {
         !strip -> if (centerX < w / 2f) Half.LEFT else Half.RIGHT
         hidden -> Half.NONE
+        split -> if (centerX < w / 2f) Half.LEFT else Half.RIGHT
         side == CastStripModel.Side.LEFT -> Half.LEFT
         side == CastStripModel.Side.RIGHT -> Half.RIGHT
         else -> Half.NONE
     }
-    /** a side slide's offset for [h]: the left half goes left [px], the right half right, a part of neither stays */
-    fun dx(h: Half, px: Float): Float = when (h) { Half.LEFT -> -px; Half.RIGHT -> px; Half.NONE -> 0f }
+    /** a side slide's offset for [h]: the left half goes left [px], the right half right ([rightPx], [px] unless given), a part of
+     *  neither stays */
+    fun dx(h: Half, px: Float, rightPx: Float = px): Float = when (h) { Half.LEFT -> -px; Half.RIGHT -> rightPx; Half.NONE -> 0f }
+    /** fix/menus-fit: a part that spans the whole page (a full-screen module) - the only one that keeps its NAME's side in the slides;
+     *  a 1/3 or 2/3 column straddles the middle but belongs to the half its centre is in */
+    fun fullWidth(left: Float, right: Float, w: Float, gap: Float): Boolean = left <= gap + 1f && right >= w - gap - 1f
     /** the middle wheel's lowest edge: above Both's laid bar (it stays), else the page's foot */
     fun middleBottom(side: CastStripModel.Side, hidden: Boolean, stripTop: Float?, h: Float, gap: Float): Float =
         if (side == CastStripModel.Side.BOTH && !hidden && stripTop != null) minOf(h - gap, stripTop - gap) else h - gap
