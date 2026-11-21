@@ -121,20 +121,55 @@ class HomeEditMotionTest {
         for (k in keys) assertTrue("${HomeEditMotion.hz(k)} Hz", HomeEditMotion.hz(k) in Motion.WIGGLE_HZ * 0.94f..Motion.WIGGLE_HZ * 1.06f)
     }
 
-    @Test fun noCornerTravelsPastThreePixelsOnAnyLayout() {
+    /**
+     * the user's pick 2026-11-21, "Noticeable": a big module (the chat, the map, the party module, the card) turns about 0.8 deg, its
+     * corners ~6-8 px (the chat's and the map's columns); a room's picture stays at 1.2 deg; a size between turns between; no corner
+     * past WIGGLE_PX (8 px, was 3) on any layout, any part
+     */
+    @Test fun theWiggleIsNoticeableOnEveryLayout() {
         val layouts = HomePresets.ALL.map { it.apply(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)) } +
-            HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.THIRD)
-        for (l in layouts) {
-            val boxes = HomeLayoutSolver.places(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f)).boxes
+            HomePresets.ALL.map { it.apply(HomeLayout(cast = HomeLayout.CastDock.ABOVE_MAP)) } +
+            HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.THIRD) +
+            HomeLayout(chatShare = HomeLayout.Share.TWO_THIRDS, cast = HomeLayout.CastDock.UNDER_MAP)
+        val big = setOf(HomePart.CHAT, HomePart.MAP, HomePart.PARTY, HomePart.QUESTS)
+        var columns = 0
+        for (l in layouts) for (party in listOf(false, true)) {
+            val st = HomeLayoutSolver.State(card = true, cardH = 118f, partyOn = party,
+                party = if (party) HomeLayoutSolver.Party(PartyLayout.Mode.REST, 3, false) else null)
+            val boxes = HomeLayoutSolver.places(HomeLayoutRules.shown(l), st).boxes
             for ((p, b) in boxes) {
                 val hd = 0.5f * hypot(b.r - b.l, b.b - b.t)
-                val corner = hd * HomeEditMotion.amp(hd) * PI.toFloat() / 180f
+                val deg = HomeEditMotion.amp(hd)
+                val corner = hd * deg * PI.toFloat() / 180f
                 assertTrue("$p on ${l.name}: $corner px", corner <= Motion.WIGGLE_PX + 1e-3f)
+                assertTrue("$p on ${l.name}: $deg deg", deg in 0.7f..Motion.WIGGLE_DEG)
+                if (p in big) assertEquals("$p on ${l.name} (half-diagonal $hd) turns ~0.8 deg", Motion.WIGGLE_DEG_BIG, deg, 0.06f)
+                // the chat's and the map's columns (a module's own column, not the full-width chat): corners ~5.5-8 px at a half, a
+                // third's narrower column a little less at the same 0.8 deg
+                if ((p == HomePart.CHAT || p == HomePart.MAP) && b.r - b.l < 900f && b.b - b.t > 500f) {
+                    columns++
+                    val half = kotlin.math.abs((b.r - b.l) - 608f) < 20f
+                    assertTrue("$p on ${l.name}: its corners $corner px", corner in (if (half) 5.5f else 4.5f)..Motion.WIGGLE_PX + 1e-3f)
+                }
             }
         }
-        assertEquals("a room's small picture turns the most", Motion.WIGGLE_DEG, HomeEditMotion.amp(40f), 0f)
-        // the big chat only a little (~0.4 deg)
-        assertTrue(HomeEditMotion.amp(0.5f * hypot(600f, 700f)) in 0.3f..0.45f)
+        assertTrue("the columns were checked: $columns", columns > 20)
+        assertEquals("a room's small picture stays at 1.2 deg", Motion.WIGGLE_DEG, HomeEditMotion.amp(40f), 0f)
+        assertEquals(Motion.WIGGLE_DEG, HomeEditMotion.amp(12f), 0f)
+        // a chat column ~600 x 700: 0.8 deg, ~6.4 px at its corners
+        assertEquals(Motion.WIGGLE_DEG_BIG, HomeEditMotion.amp(0.5f * hypot(600f, 700f)), 1e-4f)
+        // between: a smaller widget turns between, the smaller the more
+        var was = HomeEditMotion.amp(40f)
+        for (hd in 41..Motion.WIGGLE_BIG.toInt()) {
+            val a = HomeEditMotion.amp(hd.toFloat())
+            assertTrue("$hd px: $a after $was", a < was && a > Motion.WIGGLE_DEG_BIG - 1e-4f)
+            was = a
+        }
+        assertEquals(1.0f, HomeEditMotion.amp(100f), 1e-4f)
+        // past the corners' budget (the band across the page): a hair under 0.8, its corner at 8 px
+        val band = 0.5f * hypot(1240f, 226f)
+        assertEquals(Motion.WIGGLE_PX, band * HomeEditMotion.amp(band) * PI.toFloat() / 180f, 1e-3f)
+        assertTrue(HomeEditMotion.amp(band) in 0.7f..0.8f)
     }
 
     @Test fun theWiggleFadesInAfterTheOpenAndOutOnTheLift() {
@@ -155,24 +190,116 @@ class HomeEditMotionTest {
         var calm = 0f
         for (t in 3200L..3400L) calm = maxOf(calm, abs(m.pose(chat, t, 40f, p).rot))
         assertTrue("calm while reading: $calm", calm <= Motion.WIGGLE_DEG * Motion.WIGGLE_CALM + 1e-3f && calm > 0.3f)
-        // 15 s with no input: the wiggle rests, and the clock can stop
-        assertTrue(m.busy(3400L))
-        val late = 3000L + Motion.WIGGLE_IDLE + 1000L
-        assertEquals(0f, m.pose(chat, late, 40f, p).rot, 0f)
-        assertFalse("nothing moves: the ticker stops", m.busy(late))
-        m.poke(late)
-        assertTrue("a press wakes it", m.busy(late + 16L))
-        // review round 2: it ramps back in from its rest (WIGGLE_IN), never a snap to full on the first frame
-        var first = 0f
-        for (t in late..late + 16L) first = maxOf(first, abs(m.pose(chat, t, 40f, p).rot))
-        assertTrue("no snap on the wake's first frame: $first", first <= 0.05f)
-        var back = 0f
-        for (t in late + 300L..late + 500L) back = maxOf(back, abs(m.pose(chat, t, 40f, p).rot))
-        assertTrue("back in full (the menu's calm) after it: $back", back > Motion.WIGGLE_DEG * Motion.WIGGLE_CALM * 0.9f)
-        // a poke while it wiggles changes nothing
-        val a = m.pose(chat, late + 600L, 40f, p).rot
-        m.poke(late + 600L)
-        assertEquals(a, m.pose(chat, late + 600L, 40f, p).rot, 0f)
+        // the menu closed: back in full
+        m.modal(false, 3500L)
+        var full = 0f
+        for (t in 3700L..3900L) full = maxOf(full, abs(m.pose(chat, t, 40f, p).rot))
+        assertTrue("back in full: $full", full > Motion.WIGGLE_DEG * 0.9f)
+    }
+
+    /**
+     * the user's pick 2026-11-21, "Never rest": no idle rest - with no input at all the wiggle goes on at its full turn the whole time
+     * edit mode is open (15 s, a minute, ten minutes) and the ticker keeps running; it still stops in a fight (still), with the animations
+     * off (scale 0) and once the leave has landed; the calm under a menu stays
+     */
+    @Test fun theWiggleNeverRestsWhileEditModeIsOpen() {
+        val m = HomeEditMotion()
+        val p = HomeEditMotion.Pose()
+        val chat = EditStop.CHAT.ordinal; val room = HomeEditMotion.roomKey(3)
+        m.enter(0L)
+        for (at in listOf(14_000L, 15_500L, 16_000L, 30_000L, 60_000L, 600_000L)) {
+            var most = 0f; var room1 = 0f
+            for (t in at..at + 200L) {
+                most = maxOf(most, abs(m.pose(chat, t, 460f, p).rot))
+                room1 = maxOf(room1, abs(m.pose(room, t, 40f, p).rot))
+            }
+            assertEquals("the chat at full turn at $at ms with no input", Motion.WIGGLE_DEG_BIG, most, 0.03f)
+            assertEquals("a room at full turn at $at ms", Motion.WIGGLE_DEG, room1, 0.03f)
+            assertTrue("the ticker runs at $at ms", m.busy(at) && m.wiggling(at))
+        }
+        // the calm under a menu stays (40 %), and it never rests under it either
+        m.modal(true, 700_000L)
+        var calm = 0f
+        for (t in 760_000L..760_200L) calm = maxOf(calm, abs(m.pose(chat, t, 460f, p).rot))
+        assertEquals(Motion.WIGGLE_DEG_BIG * Motion.WIGGLE_CALM, calm, 0.02f)
+        assertTrue(m.busy(760_200L))
+        // a fight: still at once, nothing to tick
+        m.still()
+        assertFalse(m.busy(760_300L)); assertFalse(m.wiggling(760_300L))
+        assertTrue(m.pose(chat, 760_300L, 460f, p).isIdentity)
+        // the leave: the ticker stops once it has landed
+        val n = HomeEditMotion()
+        n.enter(0L)
+        assertTrue(n.busy(40_000L))
+        n.leave(40_000L)
+        assertFalse("landed", n.busy(42_000L)); assertFalse(n.on)
+        // the animations off: the static shrink, no ticker, however long
+        val o = HomeEditMotion().apply { scale = 0f }
+        o.enter(0L)
+        for (t in listOf(0L, 20_000L, 120_000L)) {
+            assertFalse(o.busy(t)); assertEquals(0f, o.pose(chat, t, 460f, p).rot, 0f)
+            assertEquals(Motion.REST_SCALE, p.scale, 0f)
+        }
+    }
+
+    /**
+     * the user's pick 2026-11-21 (the shot pass: the lifted full-height map at 1.04 grew past Home's foot, its bottom edge under the room
+     * bar and the ribbon): keepIn shifts a grown / turning box back inside the frame, steady over the wiggle's cycle, never pulling a box
+     * laid past the frame further in, centring one too big for it
+     */
+    @Test fun keepInHoldsTheGrownBoxInsideTheFrame() {
+        val fr = 1240f; val fb = 935f
+        val p = HomeEditMotion.Pose()
+        // Classic's map column (band's foot 226 to the frame's foot), lifted at 1.04: 28 px past the foot before, inside after
+        val l = 624f; val t = 234f; val r = 1232f; val b = 935f
+        p.identity(); p.scale = Motion.LIFT
+        HomeEditMotion.keepIn(l, t, r, b, 0f, 0f, fr, fb, p)
+        val hw = (r - l) / 2f * p.scale; val hh = (b - t) / 2f * p.scale
+        assertTrue("its foot inside: ${(t + b) / 2f + p.dy + hh}", (t + b) / 2f + p.dy + hh <= fb + 1e-3f)
+        assertTrue("its top inside", (t + b) / 2f + p.dy - hh >= 0f)
+        assertTrue("its right edge inside", (l + r) / 2f + p.dx + hw <= fr + 1e-3f)
+        assertEquals("up by its growth", -(b - t) * (Motion.LIFT - 1f) / 2f, p.dy, 0.01f)
+        // the lift's overshoot (~1.048) too
+        p.identity(); p.scale = 1.05f
+        HomeEditMotion.keepIn(l, t, r, b, 0f, 0f, fr, fb, p)
+        assertTrue((t + b) / 2f + p.dy + (b - t) / 2f * 1.05f <= fb + 1e-3f)
+        // at rest (0.94) no shift; a wiggle's turn at the foot: the same shift over the whole cycle (its reach, not its turn now)
+        p.identity(); p.scale = Motion.REST_SCALE
+        HomeEditMotion.keepIn(l, t, r, b, 0f, 0f, fr, fb, p)
+        assertEquals(0f, p.dx, 0f); assertEquals(0f, p.dy, 0f)
+        val m = HomeEditMotion()
+        m.enter(0L)
+        val bar = floatArrayOf(8f, 845f, 616f, 935f)                     // a bar along the frame's foot, 608 x 90
+        val hd = 0.5f * hypot(bar[2] - bar[0], bar[3] - bar[1])
+        val shifts = HashSet<Int>()
+        for (tt in 2000L..2400L step 8L) {
+            m.pose(EditStop.CAST.ordinal, tt, hd, p)
+            val dy0 = p.dy
+            HomeEditMotion.keepIn(bar[0], bar[1], bar[2], bar[3], 0f, 0f, fr, fb, p)
+            shifts += Math.round((p.dy - dy0) * 100f)
+            // every corner of the turned box inside the frame
+            val a = Math.toRadians(p.rot.toDouble()); val co = cos(a).toFloat(); val si = sin(a).toFloat()
+            val cx = (bar[0] + bar[2]) / 2f + p.dx; val cy = (bar[1] + bar[3]) / 2f + p.dy
+            for ((x, y) in listOf(-1f to -1f, 1f to -1f, 1f to 1f, -1f to 1f)) {
+                val px = x * (bar[2] - bar[0]) / 2f * p.scale; val py = y * (bar[3] - bar[1]) / 2f * p.scale
+                val yy = cy + px * si + py * co
+                assertTrue("a corner at $tt: $yy", yy <= fb + 1e-2f)
+                assertTrue(cx + px * co - py * si in -1e-2f..fr + 1e-2f)
+            }
+        }
+        assertEquals("one steady shift over the cycle: $shifts", 1, shifts.size)
+        // a bar laid past the frame (slid below it) is left where it lies
+        p.identity(); p.scale = Motion.LIFT
+        HomeEditMotion.keepIn(8f, 940f, 616f, 1030f, 0f, 0f, fr, fb, p)
+        assertEquals(0f, p.dy, 0.01f)
+        // one too big for the frame: centred in it
+        p.identity(); p.scale = 1.2f
+        HomeEditMotion.keepIn(0f, 0f, fr, fb, 0f, 0f, fr, fb, p)
+        assertEquals(0f, p.dx, 1e-3f); assertEquals(0f, p.dy, 1e-3f)
+        // the pose's own offsets (the drop's slide) are not clamped: added on top
+        p.identity(); p.scale = Motion.LIFT; p.dy = 50f
+        HomeEditMotion.keepIn(l, t, r, b, 0f, 0f, fr, fb, p)
+        assertEquals(50f - (b - t) * (Motion.LIFT - 1f) / 2f, p.dy, 0.01f)
     }
 
     // ---------------------------------------------------------------- the lift and the drop

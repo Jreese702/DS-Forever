@@ -28,8 +28,9 @@ import java.time.Duration
  * fix/menus-fit (the user on 1516: "The LB menu doesn't fit right with the map swapped and bigger and probably a lot of other menus.
  * You need to fix that."): EVERY MENU OVER HOME x every offered preset x swapped x the biggest map share (chat 1/3) x rest / a grown fight
  * / Party mode, on the live HomeView. Each one is measured on the page as drawn (each part's laid box moved by its view's translation):
- *  - the LB picture (LbPartyView at HomeView.lbPlace): inside the screen, under the band (not Classic's held fight look), no part over it,
- *    its bars at least LbFit.K_MIN (the text readable), the map's own paint riding the map (not Classic's held look);
+ *  - the LB picture (LbPartyView at HomeView.lbPlace): inside the screen, under the band (Classic's grown fight too: the user's pick
+ *    2026-11-21, "Fix in Classic too"), no part over it, its bars at least LbFit.K_MIN (the text readable), the map's own paint riding the
+ *    map (Classic too);
  *  - the pause / target radial's slide: every part off the screen, off ITS OWN edge (its column's), the map's paint with it;
  *  - the middle wheel (D-pad Up / the spell radial): inside the frame, under the band, no part over it;
  *  - both class wheels: inside the frame, under the band, no part over them;
@@ -198,20 +199,19 @@ class HomeMenusFitShotsTest {
 
     private fun lbPicture(tag: String, p: Page, fight: Boolean) {
         val home = p.home
-        val cl = classic(p.layout)
         home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
         val pl = home.lbPlace()
         val bars = LbFit.bars(pl).values.map { RectF(it.l, it.t, it.r, it.b) }
         if (pl.k < LbFit.K_MIN - 1e-3f) no(tag, "LB picture scaled to ${pl.k} (text under ${28f * pl.k} px)")
         for (b in bars) {
             if (!inside(b, 0f, 0f, W.toFloat(), H.toFloat())) no(tag, "LB bar ${r(b)} off the screen")
-            // Classic's grown-fight top is 1516's (held for the user's yes): the picture over the band there is today's look
-            if (!(cl && fight) && b.top < band(home).bottom) no(tag, "LB bar ${r(b)} under the band (bottom ${band(home).bottom})")
+            // Classic's grown fight too (the user's pick 2026-11-21: 1516 drew its top over the grown band)
+            if (b.top < band(home).bottom) no(tag, "LB bar ${r(b)} under the band (bottom ${band(home).bottom})")
         }
         for ((k, d) in drawn(home)) for (b in bars) if (overlaps(d, b)) no(tag, "LB: $k drawn ${r(d)} covers the picture's bar ${r(b)}")
-        // the map's own paint (the well edge, the zone band, the calendar) rides the map (Classic: 1516's, held)
+        // the map's own paint (the well edge, the zone band, the calendar) rides the map (Classic too, the user's pick 2026-11-21)
         val mapV = views(home).getValue("MAP")
-        if (!cl && mapV.visibility == View.VISIBLE && kotlin.math.abs(home.mapPaintDx() - mapV.translationX) > 1f)
+        if (mapV.visibility == View.VISIBLE && kotlin.math.abs(home.mapPaintDx() - mapV.translationX) > 1f)
             no(tag, "LB: the map's paint moved ${home.mapPaintDx()}, the map ${mapV.translationX}")
         val lbv = LbPartyView(app)
         lbv.measure(View.MeasureSpec.makeMeasureSpec(W, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY))
@@ -237,7 +237,7 @@ class HomeMenusFitShotsTest {
             if (dir != 0f && (dir < 0f) != (l0.centerX() < W / 2f)) no(tag, "pause: $k (centre ${l0.centerX().toInt()}) slid ${dir.toInt()} across the page")
         }
         val mapV = views(home).getValue("MAP")
-        if (!classic(p.layout) && mapV.visibility == View.VISIBLE && kotlin.math.abs(home.mapPaintDx() - mapV.translationX) > 1f)
+        if (mapV.visibility == View.VISIBLE && kotlin.math.abs(home.mapPaintDx() - mapV.translationX) > 1f)
             no(tag, "pause: the map's paint moved ${home.mapPaintDx()}, the map ${mapV.translationX}")
         home.pauseSlide(UiKit.PAUSE_OPEN_MS * 0.45f)
         render(p, "$tag pause")

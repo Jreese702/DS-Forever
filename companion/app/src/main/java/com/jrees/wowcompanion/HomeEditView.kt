@@ -59,7 +59,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val chipWas: String? get() = null
         /** a room's pose on the bar (scale, turn deg, dx, dy into [out]); false = none */
         fun roomPose(r: Room, out: FloatArray): Boolean = false
-        /** an input reached the chrome (the wiggle wakes) */
+        /** an input reached the chrome (the edit ticker runs on: the wiggle never rests while edit mode is open) */
         fun poke() {}
         /** the clock block's box in Home's px (null = none drawn: the thin row, a fight) */
         fun clockBox(): RectF?
@@ -93,7 +93,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
 
     /**
      * THE CHROME'S TEXT PAINTS, made once per face / size / colour / alignment: the wiggle's ticker redraws the chrome (its tags, the
-     * ribbon, an open menu) every frame for up to WIGGLE_IDLE after an input, so no TextPaint (and its shadow layer) is made per draw.
+     * ribbon, an open menu) every frame the whole time edit mode is open, so no TextPaint (and its shadow layer) is made per draw.
      * A paint handed out is shared: its colour (alpha included) is set again on every fetch; nothing else of it may be changed.
      */
     private class TextKey(val face: android.graphics.Typeface, val size: Float, val colour: Int, val align: Paint.Align, val p: android.text.TextPaint)

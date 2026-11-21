@@ -150,7 +150,8 @@ class HomeEditWiringTest {
         assertTrue(body(home, "private fun editFightCheck(").contains("m.park()"))
     }
     /**
-     * review round 2: the wiggle's ticker redraws the chrome and Home every frame for up to WIGGLE_IDLE after an input, so the per-frame
+     * review round 2: the wiggle's ticker redraws the chrome and Home every frame the whole time edit mode is open (it never rests: the
+     * user's pick 2026-11-21), so the per-frame
      * paths make no paints, blurs, maps, pairs or boxes: the chrome's text paints are cached (textP), the lift's shadow blur is made once,
      * the host's parts / the edit view's boxes / the lifted boxes are reused, the finger's offset comes back in a FloatArray
      */
@@ -170,5 +171,16 @@ class HomeEditWiringTest {
         assertFalse("liftedBoxes", body(home, "fun liftedBoxes(): List<RectF>").contains("val out = ArrayList<RectF>()"))
         assertTrue("liftOffset", home.contains("private fun liftOffset(out: FloatArray)"))
         assertFalse("editDecor", body(home, "private fun editDecor(").contains("liftOffset()"))
+        // the 2026-11-21 picks: the frame's keep-in (every pose, every frame) and the cursor's seat make no boxes, poses or matrices
+        val motion = File(src, "HomeEditMotion.kt").readText()
+        for ((f, b) in listOf("posedIn" to body(home, "private fun posedIn("), "keepIn" to body(motion, "fun keepIn("),
+            "stopMatrix" to body(home, "private fun stopMatrix("), "editTick" to body(home, "private fun editTick("))
+            .map { it.first to it.second.substringBefore("\n    }\n") }) {
+            for (bad in listOf("RectF(", "Pose()", "Matrix()", "FloatArray(", "listOf(", "Pair(", " to ")) assertFalse("$f: $bad", b.contains(bad))
+        }
+        assertTrue("the seat's matrices are the view's own", home.contains("private val seatA = android.graphics.Matrix()"))
+        // never rests: no idle clock left in the motion, and the input no longer feeds one
+        assertFalse(motion.contains("WIGGLE_IDLE")); assertFalse(motion.contains("fun poke("))
+        assertFalse(home.contains("motion.poke("))
     }
 }

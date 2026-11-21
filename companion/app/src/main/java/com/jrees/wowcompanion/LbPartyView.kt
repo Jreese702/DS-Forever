@@ -202,7 +202,9 @@ object LbMap {
  *  - it is centred on the line between the columns ([leftColR] .. [rightColL]), kept inside the page;
  *  - it scales ([Place.k], at least [K_MIN]) to fit above [bottom] (the top of a bar that stays in place: Both), else the frame's foot;
  *  - each side moves only as far as it needs to clear it with [MARGIN] ([Place.pushLeft] / [Place.pushRight]): 340 both in Classic.
- * [classic] (the laid record is Classic's): 1516's top exactly (the user has not yet ruled on moving it under a grown band).
+ * [classic] (the laid record is Classic's): at rest 1516's place exactly (its top 236 in the picture's own coordinates, the page's
+ * middle, 340 each side); under a band grown for a fight (its foot + 10 past 236) the fitted place like every layout (the user's pick
+ * 2026-11-21, "Fix in Classic too": 1516 drew the picture's top over the grown band).
  */
 object LbFit {
     data class Box(val l: Float, val t: Float, val r: Float, val b: Float)
@@ -215,7 +217,8 @@ object LbFit {
 
     fun place(w: Float, barsBottom: Float, leftColR: Float, rightColL: Float, bottom: Float, classic: Boolean, staleBars: Float): Place {
         val top: Float; val k: Float; val cx: Float
-        if (classic) { k = 1f; cx = w / 2f; top = maxOf(236f, staleBars + 16f) }
+        val held = classic && barsBottom + 10f <= CLASSIC_TOP + 0.5f
+        if (held) { k = 1f; cx = w / 2f; top = maxOf(CLASSIC_TOP, staleBars + 16f) }
         else {
             top = barsBottom + 10f
             k = ((bottom - top) / LbPartyView.PICT_H).coerceIn(K_MIN, 1f)
@@ -223,8 +226,10 @@ object LbFit {
             cx = ((leftColR + rightColL) / 2f).coerceIn(hw + 16f, maxOf(hw + 16f, w - hw - 16f))
         }
         val hw = halfW(k)
-        return Place(cx, top, k, maxOf(0f, leftColR - (cx - hw - MARGIN)), maxOf(0f, (cx + hw + MARGIN) - rightColL), classic)
+        return Place(cx, top, k, maxOf(0f, leftColR - (cx - hw - MARGIN)), maxOf(0f, (cx + hw + MARGIN) - rightColL), held)
     }
+    /** Classic's (1516's) top at rest: the diamonds' foot (226) + 10 */
+    const val CLASSIC_TOP = 236f
 
     /** the five bars ("PAD1" = you, then the D-pad's four) at [p] */
     fun bars(p: Place): Map<String, Box> {

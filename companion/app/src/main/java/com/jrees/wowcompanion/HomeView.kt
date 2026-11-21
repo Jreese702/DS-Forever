@@ -644,8 +644,9 @@ class HomeView(
         val c = HomeLayoutSolver.columns(laidLayout ?: layoutNow(), w, UiKit.MODULE_GAP)
         return c.first.second to c.second.first
     }
-    /** fix/menus-fit: the laid record is Classic's (HomePresets' Classic holds it): the two looks the user has not yet ruled on keep
-     *  1516's exactly there (the LB picture's top over a grown band, the map's paint during the LB / pause slides, the D-pad toast).
+    /** fix/menus-fit: the laid record is Classic's (HomePresets' Classic holds it): the LB picture keeps 1516's place at rest (LbFit:
+     *  under a grown band it is fitted like every layout, the user's pick 2026-11-21 "Fix in Classic too", as the map's paint during the
+     *  LB / pause slides), the D-pad toast its spot on the grown diamonds' foot (not yet ruled on).
      *  The player's OWN record decides: a Top screen record laid as Grow while the add-on's Wings are not confirmed
      *  (TopCombatBar.honoured) is not Classic, so it keeps the fitted looks whatever the add-on's flag */
     private fun classicLook(): Boolean {
@@ -2587,7 +2588,7 @@ class HomeView(
             out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
             return !pose.isIdentity
         }
-        override fun poke() { motion.poke(motionNow()); editKick() }
+        override fun poke() = editKick()
         override fun clockBox(): RectF? = editClockBox()
         override fun solve(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> = solveFor(l)
         override val geo: HomeEditModel.Geo get() = editGeo
@@ -2874,37 +2875,39 @@ class HomeView(
         EditStop.CAST -> Part.STRIP
         else -> null
     }
-    /** [s]'s pose now as a scale about a pivot and a move (its small turn left out) into [out]: scale, pivot x, y, move x, y; none = 1 */
-    private fun stopAffine(s: EditStop?, t: Long, out: FloatArray) {
-        out[0] = 1f; out[1] = 0f; out[2] = 0f; out[3] = 0f; out[4] = 0f
-        val p = s?.let { stopPart(it) } ?: return
-        if (!motion.on) return
-        partPose(p, t, pose)
-        if (!pose.isIdentity) { out[0] = pose.scale; out[1] = poseBox.centerX(); out[2] = poseBox.centerY(); out[3] = pose.dx; out[4] = pose.dy }
-        val lifted = edit?.takeIf { !it.parked }?.lifted ?: liftStop
-        if (lifted != null && partOf(lifted, p)) { liftOffset(liftOff); out[3] += liftOff[0]; out[4] += liftOff[1] }
+    /** [s]'s whole pose now (HomeEditView draws its chrome through it: the scale, the turn, the move, the finger's carry) into [out];
+     *  its scale is the return (1 = none) */
+    private fun stopMatrix(s: EditStop?, out: android.graphics.Matrix): Float {
+        out.reset()
+        val p = s?.let { stopPart(it) } ?: return 1f
+        if (!partMatrix(p, out)) return 1f
+        return pose.scale
     }
-    private val affA = FloatArray(5)
-    private val affB = FloatArray(5)
+    private val seatA = android.graphics.Matrix()
+    private val seatB = android.graphics.Matrix()
+    private val seatInv = android.graphics.Matrix()
+    private val seatPt = FloatArray(2)
 
     /** the model moved on: a new cursor flies there (and the X chip pops), a menu / sheet / prompt pops open, the wiggle calms */
     private fun editNotice() {
         val m = edit?.takeIf { !it.parked } ?: return
         val t = motionNow()
-        motion.poke(t)
         if (m.cursor != seenCursor) {
             val old = seenCursor
             seenCursor = m.cursor
             val wb = editView.widgetBoxes()
             val a = old?.let { wb[it] ?: stopBox(it) }; val b = wb[m.cursor] ?: stopBox(m.cursor)
             if (a != null && b != null) {
-                // the gold box leaves the box it was DRAWN at: the old box (its flight's offset kept) through the OLD widget's pose, taken
-                // back through the NEW widget's (the box is drawn through the new pose from this frame on: no jump on its first frame)
+                // the gold box leaves the box it was DRAWN at: the old box (its flight's offset kept) through the OLD widget's whole pose
+                // (its wiggle's turn too: up to 8 px at a big module's corner), its centre taken back through the NEW widget's, its size
+                // by the two scales (the box is drawn through the new pose from this frame on: no jump on its first frame)
                 motion.cursorOffset(t, poseOut)
-                stopAffine(old, t, affA); stopAffine(m.cursor, t, affB)
-                fun seat(x: Float, i: Int): Float = (affA[0] * (x - affA[i]) + affA[i] + affA[i + 2] - affB[i] - affB[i + 2]) / affB[0] + affB[i]
-                motion.cursorFrom(seat(a.left + poseOut[0], 1) - b.left, seat(a.top + poseOut[1], 2) - b.top,
-                    seat(a.right + poseOut[2], 1) - b.right, seat(a.bottom + poseOut[3], 2) - b.bottom, t)
+                val sa = stopMatrix(old, seatA); val sb = stopMatrix(m.cursor, seatB)
+                val hw = (a.width() + poseOut[2] - poseOut[0]) / 2f * sa / sb; val hh = (a.height() + poseOut[3] - poseOut[1]) / 2f * sa / sb
+                seatPt[0] = (a.left + poseOut[0] + a.right + poseOut[2]) / 2f; seatPt[1] = (a.top + poseOut[1] + a.bottom + poseOut[3]) / 2f
+                seatA.mapPoints(seatPt)
+                if (seatB.invert(seatInv)) seatInv.mapPoints(seatPt)
+                motion.cursorFrom(seatPt[0] - hw - b.left, seatPt[1] - hh - b.top, seatPt[0] + hw - b.right, seatPt[1] + hh - b.bottom, t)
             }
             if (m.cursor.removable) motion.pop(HomeEditMotion.CHIP, t)
         }
@@ -2943,6 +2946,10 @@ class HomeView(
         else editUi.postDelayed(editTickOff, FRAME_MS)
     }
     private val editTickOff = Runnable { tickerPosted = false; editTick() }
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility == View.VISIBLE && motion.on) editKick()          // Home's window back: the edit motion goes on
+    }
     /**
      * ONE FRAME OF THE EDIT MOTION: the views' properties and the chrome (nothing is laid or measured here). A fight stills it at once;
      * Home away stops it (an input or Home again starts it); it posts the next frame only while something moves.
@@ -2952,6 +2959,9 @@ class HomeView(
         val t = motionNow()
         if (fightShown()) { motion.still(); editDecor(); return }
         if (!live) return
+        // the wiggle never rests while edit mode is open (the user's pick 2026-11-21): the window hidden (the screen off, the app gone
+        // behind another) stops the ticker too; onWindowVisibilityChanged starts it again
+        if (isAttachedToWindow && windowVisibility != View.VISIBLE) return
         edit?.takeIf { !it.parked }?.let { motion.modal(it.menu != null || it.sheet != null || it.prompt, t) }
         editDecor()
         roomBar?.invalidate()
@@ -2991,7 +3001,17 @@ class HomeView(
         val k = keyOfPart(p)
         if (k < 0 || !ownerBox(p, poseBox)) return out.identity()
         if (p == Part.QUESTS && k == EditStop.MAP.ordinal) return cardRidePose(t, out)
-        return motion.pose(k, t, 0.5f * kotlin.math.hypot(poseBox.width(), poseBox.height()), out)
+        return posedIn(k, t, poseBox, out)
+    }
+    /**
+     * [k]'s pose for its widget laid at [box], kept inside Home's frame (the user's pick 2026-11-21: a lifted full-height map at 1.04 grew
+     * past Home's foot and the room bar / the ribbon drew over its bottom edge; the bigger wiggle's corners at the frame's edges): the
+     * shift that keeps its grown, turning box inside (HomeEditMotion.keepIn). Drawn only: touch reads the laid box
+     */
+    private fun posedIn(k: Int, t: Long, box: RectF, out: HomeEditMotion.Pose): HomeEditMotion.Pose {
+        motion.pose(k, t, 0.5f * kotlin.math.hypot(box.width(), box.height()), out)
+        if (!out.isIdentity) HomeEditMotion.keepIn(box.left, box.top, box.right, box.bottom, 0f, 0f, width.toFloat(), frameH, out)
+        return out
     }
     /**
      * the card on the map: the MAP's pose (its scale and turn about the map's centre) said about the card's own centre ([poseBox]), mixed
@@ -3001,14 +3021,14 @@ class HomeView(
     private fun cardRidePose(t: Long, out: HomeEditMotion.Pose): HomeEditMotion.Pose {
         val m = now[Part.MAP] ?: return out.identity()
         val cx = poseBox.centerX(); val cy = poseBox.centerY()
-        motion.pose(EditStop.MAP.ordinal, t, 0.5f * kotlin.math.hypot(m.width(), m.height()), rideM)
+        posedIn(EditStop.MAP.ordinal, t, m, rideM)
         val vx = (cx - m.centerX()) * rideM.scale; val vy = (cy - m.centerY()) * rideM.scale
         val a = Math.toRadians(rideM.rot.toDouble()); val co = kotlin.math.cos(a).toFloat(); val si = kotlin.math.sin(a).toFloat()
         val mdx = m.centerX() + vx * co - vy * si + rideM.dx - cx
         val mdy = m.centerY() + vx * si + vy * co + rideM.dy - cy
         val w = cardOwn(t)
         if (w <= 0f) { out.scale = rideM.scale; out.rot = rideM.rot; out.dx = mdx; out.dy = mdy; return out }
-        motion.pose(EditStop.QUEST.ordinal, t, 0.5f * kotlin.math.hypot(poseBox.width(), poseBox.height()), rideQ)
+        posedIn(EditStop.QUEST.ordinal, t, poseBox, rideQ)
         out.scale = lerp(rideM.scale, rideQ.scale, w); out.rot = lerp(rideM.rot, rideQ.rot, w)
         out.dx = lerp(mdx, rideQ.dx, w); out.dy = lerp(mdy, rideQ.dy, w)
         return out
@@ -3530,8 +3550,9 @@ class HomeView(
     }
     override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView) false else super.drawChild(c, child, drawingTime)
 
-    /** fix/menus-fit: the map's own paint follows the map view's real move during the pause / LB slides (not Classic: see the use) */
-    private fun mapPaintRides(): Boolean = pauseT > 0f && !classicLook()
+    /** fix/menus-fit: the map's own paint follows the map view's real move during the pause / LB slides (Classic too: the user's pick
+     *  2026-11-21, "Fix in Classic too") */
+    private fun mapPaintRides(): Boolean = pauseT > 0f
     /** fix/menus-fit, the tests' reading of [dispatchDrawHome]: how far the map's own paint (the well edge, the zone band, the calendar)
      *  is drawn from the map's laid box now, x */
     fun mapPaintDx(): Float = (if (pauseT > 0f && !mapPaintRides()) pauseMap[0] else 0f) + mapSlot.translationX - mapScaleTx
@@ -3546,7 +3567,7 @@ class HomeView(
         // fix/menus-fit: during the LB picture's and the pause's slides the map's own paint (its well edge, the zone band, the calendar
         // and mail buttons, the mail card) rides the MAP VIEW's real move (mapSlide below already holds it) at the view's alpha: the
         // pause curve's extra rightward move sent it twice as far, or the wrong way after a swap (an empty framed well with the zone's
-        // name stood behind the LB picture). Classic keeps 1516's paint there until the user rules on it (classicLook)
+        // name stood behind the LB picture). Classic too (the user's pick 2026-11-21: "Fix in Classic too")
         val paintRides = mapPaintRides()
         val zoneA = mix(overlayFrom.zone, overlayTo.zone) * (if (paintRides) mapSlot.alpha else pauseMap[2])
         // movable Home phase 3: the "up" cue takes the clock's spot for its 1.5 s (the clock fades out under it and back after it)

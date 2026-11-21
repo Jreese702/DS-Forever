@@ -1297,7 +1297,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val a = IntArray(2); val b = IntArray(2)
                 homeView.getLocationOnScreen(a); lbView.getLocationOnScreen(b)
                 val p = homeView.lbPlace()
-                // (Classic's top is 1516's, already in the picture's own coordinates)
+                // (Classic at rest: 1516's top, already in the picture's own coordinates; under a grown band: fitted, as every layout)
                 p.copy(cx = p.cx + (a[0] - b[0]), top = p.top + if (p.classic) 0 else a[1] - b[1])
             }
         }

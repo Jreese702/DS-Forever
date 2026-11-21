@@ -291,6 +291,75 @@ class HomeEditMotionShotsTest {
         shot(p, "m10_drop_settled")
     }
 
+    /** [v]'s drawn box (its pivot, scale, turn and translation; the AABB of the turned box), Home's px */
+    private fun drawnBox(v: View): RectF {
+        val m = android.graphics.Matrix()
+        m.postScale(v.scaleX, v.scaleY, v.pivotX, v.pivotY); m.postRotate(v.rotation, v.pivotX, v.pivotY)
+        m.postTranslate(v.left + v.translationX, v.top + v.translationY)
+        val r = v.clipBounds?.let { RectF(it) } ?: RectF(0f, 0f, v.width.toFloat(), v.height.toFloat())
+        m.mapRect(r)
+        return r
+    }
+    private fun inside(r: RectF) = r.left >= -0.5f && r.top >= -0.5f && r.right <= W + 0.5f && r.bottom <= H + 0.5f
+
+    /**
+     * the user's pick 2026-11-21 (the shot pass): a lifted full-height widget at 1.04 (Classic's map: the band's foot to the frame's) grew
+     * past Home's foot and the room bar / the ribbon drew over it, its bottom edge cut off. Now the grown box stays inside Home's frame on
+     * every frame of the lift (its ~1.048 overshoot included) and its paint (the well's edge, the zone band) with it - every preset x
+     * dock, swapped, the map and the chat - while the touch targets (the model's boxes, the chrome's widget boxes) never move for it
+     */
+    @Test fun aLiftedWidgetStaysInsideHomesFrame() {
+        val cases = ArrayList<Pair<String, HomeLayout>>()
+        for (pr in HomePresets.ALL) for (dock in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ABOVE_MAP))
+            cases += "${pr.id}_${dock.name.lowercase()}" to pr.apply(HomeLayout(cast = dock))
+        cases += "swapped_third" to HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.THIRD, cast = HomeLayout.CastDock.UNDER_CHAT)
+        var checked = 0; var grewPast = 0; var shotted = false
+        for ((name, l) in cases) for ((stop, part) in listOf(EditStop.MAP to "MAP", EditStop.CHAT to "CHAT")) {
+            val p = page(l)
+            val home = p.home
+            pin(p)
+            val t0 = clock
+            if (!home.editOpen(stop)) continue
+            settle(12)
+            frame(p, t0 + 2000)
+            if (model(p).cursor != stop || !boxes(home).containsKey(part)) { home.editCancel(); continue }
+            val laid = boxes(home)
+            val hits = home.editChrome.widgetBoxes().mapValues { RectF(it.value) }
+            val r = laid.getValue(part)
+            // the old lift (1.04 about its centre, no shift) would reach past the frame here
+            if (r.centerY() + r.height() * Motion.LIFT / 2f > H + 0.5f || r.centerY() - r.height() * Motion.LIFT / 2f < -0.5f) grewPast++
+            val l0 = t0 + 2000
+            home.editKey("PAD1")
+            assertEquals("$name: $part lifted", stop, model(p).lifted)
+            for (dt in 0L..400L step 8L) {
+                frame(p, l0 + dt)
+                val d = drawnBox(views(home).getValue(part))
+                assertTrue("$name: $part lifted +$dt ms (scale ${views(home).getValue(part).scaleX}) drawn ${d.toShortString()} inside 0,0,$W,$H", inside(d))
+                if (part == "MAP") {
+                    val paint = posed(home, "MAP", laid.getValue("MAP"))
+                    assertTrue("$name: the map's paint +$dt ms ${paint.toShortString()} inside the frame", inside(paint))
+                    assertEquals("$name: the paint on the map", d.centerY(), paint.centerY(), 0.5f)
+                }
+            }
+            assertEquals("$name: lifted at 1.04", Motion.LIFT, views(home).getValue(part).scaleX, 0.002f)
+            if (name == "${HomePresets.CLASSIC}_under_chat" && part == "MAP") {
+                shotted = true
+                val b = shot(p, "m20_lift_map_inside")
+                val d = drawnBox(views(home).getValue("MAP"))
+                // its bottom edge is drawn (the well's edge, inside the frame), not under the room bar
+                val y = (d.bottom - 2f).toInt(); val x = d.centerX().toInt()
+                assertTrue("the map's foot drawn at $y", (y - 4..y).any { b.getPixel(x, it) != Theme.ink } && y < H)
+            }
+            assertEquals("$name: the model's boxes never move for it", laid, boxes(home))
+            assertEquals("$name: the touch targets never move for it", hits, home.editChrome.widgetBoxes().mapValues { RectF(it.value) })
+            checked++
+            home.editCancel()
+        }
+        assertTrue("checked $checked lifts", checked >= 30)
+        assertTrue("Classic's lifted map drawn", shotted)
+        assertTrue("the full-height lifts that grew past the frame before: $grewPast", grewPast >= 6)
+    }
+
     // ---------------------------------------------------------------- a layout flip, a menu's pop
 
     @Test fun aFlipCascadesAndTheChipNameSlides() {
@@ -434,6 +503,48 @@ class HomeEditMotionShotsTest {
         assertNotNull(home.editModel())
     }
 
+    /**
+     * the user's pick 2026-11-21, "Never rest": no input for 16 s, a minute, ten minutes - every widget still wiggles and the ticker runs;
+     * Home off screen stops the ticker (Home again starts it), and the leave's landing stops it for good
+     */
+    @Test fun theWiggleNeverRestsUntilHomeGoesAway() {
+        val p = page(classic)
+        val home = p.home
+        pin(p)
+        val t0 = clock
+        home.editOpen(EditStop.CHAT)
+        settle(12)
+        for (t in listOf(t0 + 16_000L, t0 + 60_000L, t0 + 600_000L)) {
+            clock = t; settle(2)
+            assertTrue("the ticker runs at +${t - t0} ms", field(home, "tickerPosted") as Boolean)
+            val a = views(home).mapValues { it.value.rotation }
+            clock = t + 37; settle(1)
+            for (n in listOf("CHAT", "MAP", "BARS")) {
+                assertNotEquals("$n still wiggling at +${t - t0} ms", a.getValue(n), views(home).getValue(n).rotation)
+                val r = boxes(home).getValue(n)
+                val most = HomeEditMotion.amp(0.5f * hypot(r.width(), r.height()))
+                assertTrue("$n within its turn", abs(views(home).getValue(n).rotation) <= most + 1e-4f)
+            }
+        }
+        shot(p, "m21_wiggle_600s")
+        // Home off screen: the ticker's next frame posts nothing more
+        home.forceLive = false
+        settle(3)
+        assertFalse("Home away: the ticker stopped", field(home, "tickerPosted") as Boolean)
+        assertTrue("edit mode still open", home.editMotion().on)
+        // Home again (laid again): it runs on
+        home.forceLive = true
+        home.requestLayout(); lay(home)
+        assertTrue("Home again: the ticker runs", field(home, "tickerPosted") as Boolean)
+        settle(2)
+        assertTrue(field(home, "tickerPosted") as Boolean)
+        // the leave lands: the ticker stops
+        home.editCancel()
+        clock += 3000; settle(30)
+        assertFalse(home.editMotion().on)
+        assertFalse("edit mode closed: no ticker", field(home, "tickerPosted") as Boolean)
+    }
+
     // ---------------------------------------------------------------- review round 2: no jumps
 
     private val partClass by lazy { Class.forName("com.jrees.wowcompanion.HomeView\$Part") }
@@ -493,7 +604,24 @@ class HomeEditMotionShotsTest {
         assertTrue("the last frame is a frame's step, not a snap: $lastStep px", lastStep <= 2f)
     }
 
-    /** the gold cursor leaves from where it was DRAWN: its first frame on the new widget is the old drawn box (no 0.06 x the centres' jump) */
+    /** the gold cursor's box as drawn now through its widget's whole pose, read as its centre and its size (the box turns with its
+     *  widget, so its corners are not compared) */
+    private fun cursorCentreSize(home: HomeView, stop: EditStop, partName: String, t: Long): RectF {
+        val b = home.editChrome.widgetBoxes().getValue(stop)
+        val off = FloatArray(4); home.editMotion().cursorOffset(t, off)
+        val box = RectF(b.left + off[0], b.top + off[1], b.right + off[2], b.bottom + off[3])
+        val m = android.graphics.Matrix()
+        val on = HomeView::class.java.getDeclaredMethod("partMatrix", partClass, android.graphics.Matrix::class.java).apply { isAccessible = true }
+            .invoke(home, part(partName), m) as Boolean
+        if (!on) return box
+        val c = floatArrayOf(box.centerX(), box.centerY()); m.mapPoints(c)
+        val v = floatArrayOf(1f, 0f); m.mapVectors(v)
+        val s = hypot(v[0], v[1])
+        return RectF(c[0] - box.width() * s / 2f, c[1] - box.height() * s / 2f, c[0] + box.width() * s / 2f, c[1] + box.height() * s / 2f)
+    }
+
+    /** the gold cursor leaves from where it was DRAWN: its first frame on the new widget is the old drawn box (no 0.06 x the centres'
+     *  jump; no jump by the wiggle's turn either - up to 8 px at a big module's corner - now it never rests, the user's pick 2026-11-21) */
     @Test fun theCursorFliesFromWhereItWasDrawn() {
         val p = page(classic)
         val home = p.home
@@ -501,19 +629,23 @@ class HomeEditMotionShotsTest {
         val t0 = clock
         home.editOpen(EditStop.CHAT)
         settle(12)
-        val t = t0 + Motion.WIGGLE_IDLE + 2000                              // the wiggle resting: each pose is its 0.94 alone
-        frame(p, t)
-        assertEquals(EditStop.CHAT, model(p).cursor)
-        val before = cursorDrawn(home, EditStop.CHAT, "CHAT", t)
-        home.editKey("PADDRIGHT")
-        assertEquals(EditStop.MAP, model(p).cursor)
-        frame(p, t)
-        val after = cursorDrawn(home, EditStop.MAP, "MAP", t)
-        for ((a, b) in listOf(before.left to after.left, before.top to after.top, before.right to after.right, before.bottom to after.bottom))
-            assertEquals("the box drawn where it was: $before -> $after", a, b, 0.5f)
-        frame(p, t + 400)
-        val landed = cursorDrawn(home, EditStop.MAP, "MAP", t + 400)
-        assertEquals("and it lands on the map", posed(home, "MAP", home.editChrome.widgetBoxes().getValue(EditStop.MAP)).centerX(), landed.centerX(), 1f)
+        for (t in listOf(t0 + 2000, t0 + 2037, t0 + 16_000, t0 + 60_000)) {  // mid-wiggle at its full turn, and past the old 15 s rest
+            frame(p, t)
+            assertEquals(EditStop.CHAT, model(p).cursor)
+            assertTrue("both turning at $t", views(home).getValue("CHAT").rotation != 0f && views(home).getValue("MAP").rotation != 0f)
+            val before = cursorCentreSize(home, EditStop.CHAT, "CHAT", t)
+            home.editKey("PADDRIGHT")
+            assertEquals(EditStop.MAP, model(p).cursor)
+            frame(p, t)
+            val after = cursorCentreSize(home, EditStop.MAP, "MAP", t)
+            for ((a, b) in listOf(before.left to after.left, before.top to after.top, before.right to after.right, before.bottom to after.bottom))
+                assertEquals("$t: the box drawn where it was: $before -> $after", a, b, 0.5f)
+            frame(p, t + 400)
+            val landed = cursorDrawn(home, EditStop.MAP, "MAP", t + 400)
+            assertEquals("and it lands on the map", posed(home, "MAP", home.editChrome.widgetBoxes().getValue(EditStop.MAP)).centerX(), landed.centerX(), 1f)
+            home.editKey("PADDLEFT")                                        // back to the chat for the next round
+            frame(p, t + 1400)
+        }
     }
 
     /** the card on the map: lifted, it grows from where it is (its pose moves from the map's to its own, no pivot switch); dropped, it
@@ -525,7 +657,7 @@ class HomeEditMotionShotsTest {
         val t0 = clock
         home.editOpen(EditStop.QUEST)
         settle(12)
-        val t = t0 + Motion.WIGGLE_IDLE + 2000
+        val t = t0 + 2000                                                   // the wiggle at its full turn (it never rests now)
         frame(p, t)
         val card = views(home).getValue("QUESTS")
         val c0 = drawnCentre(card)
@@ -544,7 +676,18 @@ class HomeEditMotionShotsTest {
         for (dt in 0L..900L step 16L) { frame(p, d0 + dt); val c = drawnCentre(card); most = maxOf(most, far(was, c)); was = c }
         assertTrue("no frame jumps over the lift and the drop: $most px", most < 4f)
         assertEquals("back on the map's rest", Motion.REST_SCALE, card.scaleX, 2e-3f)
-        assertTrue("and riding the map again (${far(c0, was)} px from where it was)", far(c0, was) < 3f)
+        // and riding the map again: its drawn centre is the map's pose (the map view's own transform) of its laid centre
+        val q = boxes(home).getValue("QUESTS")
+        val onMap = drawnPoint(views(home).getValue("MAP"), q.centerX(), q.centerY())
+        assertTrue("and riding the map again (${far(onMap, was)} px off the map's pose)", far(onMap, was) < 1f)
+    }
+    /** Home's point ([x], [y]) drawn through view [v]'s transform (its pivot, scale, turn and translation) */
+    private fun drawnPoint(v: View, x: Float, y: Float): Pair<Float, Float> {
+        val m = android.graphics.Matrix()
+        m.postScale(v.scaleX, v.scaleY, v.pivotX, v.pivotY); m.postRotate(v.rotation, v.pivotX, v.pivotY)
+        m.postTranslate(v.left + v.translationX, v.top + v.translationY)
+        val pt = floatArrayOf(x - v.left, y - v.top); m.mapPoints(pt)
+        return pt[0] to pt[1]
     }
 
     /** a room on the bar picked up and put down: from its 0.94 and its turn to the lift and back, never 1.0 for a frame */

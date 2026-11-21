@@ -56,17 +56,22 @@ object Motion {
     const val CHIP_ZETA = 0.50f; const val CHIP_W = 30f
     /** a layout glide under edit mode: the box's centre (a little overshoot) and its size (none: never laid past its target) */
     const val GLIDE_ZETA = 0.82f
-    /** the wiggle: Hz, the most a small widget turns (deg), the most a corner travels (px), the bob (px) */
+    /** the wiggle (the user's pick 2026-11-21, "Noticeable"): Hz; a room's small picture turns [WIGGLE_DEG], a big module (the chat, the
+     *  map, the party module, the card...) [WIGGLE_DEG_BIG] - a box of half-diagonal [WIGGLE_SMALL] or less the first, [WIGGLE_BIG] or
+     *  more the second, a size between in between - and no corner travels past [WIGGLE_PX] (the band across the page a hair under
+     *  0.8 deg); the bob (px) */
     const val WIGGLE_HZ = 6.5f
     const val WIGGLE_DEG = 1.2f
-    const val WIGGLE_PX = 3.0f
+    const val WIGGLE_DEG_BIG = 0.8f
+    const val WIGGLE_SMALL = 40f
+    const val WIGGLE_BIG = 160f
+    const val WIGGLE_PX = 8.0f
     const val WIGGLE_BOB = 0.6f
-    /** the wiggle fading in after the open / out on a lift, a leave; quieter while a menu, sheet or prompt is open */
+    /** the wiggle fading in after the open / out on a lift, a leave; quieter while a menu, sheet or prompt is open. It never rests
+     *  while edit mode is open (the user's pick 2026-11-21, "Never rest"): a fight, Home off screen and the animations off stop it */
     const val WIGGLE_IN = 140L
     const val WIGGLE_OUT = 90L
     const val WIGGLE_CALM = 0.4f
-    /** no input this long: the wiggle rests (the GPU and the battery while the game plays on the top screen); any press wakes it */
-    const val WIGGLE_IDLE = 15_000L
     /** the chip's layout name sliding out / in on a flip; a layout flip's cascade per module */
     const val CHIP_FLIP = 140L
     const val FLIP_STAGGER = 18L

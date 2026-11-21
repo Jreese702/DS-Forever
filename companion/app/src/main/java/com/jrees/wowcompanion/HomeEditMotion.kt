@@ -17,7 +17,8 @@ import kotlin.math.sqrt
  *
  *  - every widget (and every room on the room bar) springs down to [Motion.REST_SCALE] as edit mode opens, rippling out from the widget
  *    it opened on, and back to 1 as it leaves;
- *  - each wiggles (a small turn and bob, its own phase and pace; a big module turns less so no corner travels past [Motion.WIGGLE_PX]);
+ *  - each wiggles (a small turn and bob, its own phase and pace; a room turns [Motion.WIGGLE_DEG], a big module [Motion.WIGGLE_DEG_BIG],
+ *    no corner past [Motion.WIGGLE_PX]) the whole time edit mode is open (no idle rest: the user's pick 2026-11-21, "Never rest");
  *  - a lifted widget grows to [Motion.LIFT] (a little past it) and stops wiggling; dropped, it plops a hair below its rest and its finger
  *    offset springs into the dock;
  *  - the gold cursor's box flies between widgets; the menus, the sheets, the prompt, the X chip and the edit ribbon pop or slide in.
@@ -93,7 +94,6 @@ class HomeEditMotion {
     private var calmFrom = 1f
     private var calmTo = 1f
     private var calmAt = 0L
-    private var lastPoke = 0L
     /** the lifted key (-1 = none) */
     var lifted = -1
         private set
@@ -110,17 +110,6 @@ class HomeEditMotion {
         envFrom[k] = env(k, now); envTo[k] = to; envAt[k] = now + scaled(delay); envMs[k] = ms
     }
     private fun calm(now: Long) = ramp(calmFrom, calmTo, calmAt, Motion.WIGGLE_OUT, now)
-    /** 1 .. 0: the wiggle resting after [Motion.WIGGLE_IDLE] with no input (its fade out only) */
-    private fun rest(now: Long): Float {
-        if (scale <= 0f) return 1f
-        val k = ((now - lastPoke - Motion.WIGGLE_IDLE).toFloat() / IDLE_FADE).coerceIn(0f, 1f)
-        return 1f - k * k * (3f - 2f * k)
-    }
-    /** an input woke a resting (or fading) wiggle: it ramps back in from where it was over [Motion.WIGGLE_IN], as every other envelope */
-    private var wakeFrom = 1f
-    private var wakeAt = 0L
-    /** 1 .. 0: the wiggle's share now (resting after the idle time, ramping back in on a wake) */
-    private fun idle(now: Long): Float = min(rest(now), ramp(wakeFrom, 1f, wakeAt, Motion.WIGGLE_IN, now))
 
     // ---------------------------------------------------------------- the session
 
@@ -131,7 +120,7 @@ class HomeEditMotion {
     fun enter(now: Long, delays: LongArray? = null) {
         val was = on && !leaving
         on = true; leaving = false
-        epoch = now; lastPoke = now; wakeFrom = 1f; wakeAt = now
+        epoch = now
         calmFrom = 1f; calmTo = 1f; calmAt = now
         for (k in 0 until KEYS) {
             val d = delays?.getOrNull(k) ?: 0L
@@ -165,13 +154,6 @@ class HomeEditMotion {
         for (p in pops) p.snap(1f)
         for (c in cursor) c.snap(0f)
         chipAt = Long.MIN_VALUE / 2
-    }
-
-    /** an input (a press, a touch): the wiggle wakes if it rested (ramping in from where it was, never a snap to full) */
-    fun poke(now: Long) {
-        val was = idle(now)
-        if (was < 1f) { wakeFrom = was; wakeAt = now }
-        lastPoke = now
     }
 
     /** a menu, sheet or prompt open: the wiggle calms to [Motion.WIGGLE_CALM] */
@@ -209,29 +191,37 @@ class HomeEditMotion {
     /** [k]'s drop offset is still springing into its dock */
     fun settling(k: Int, now: Long): Boolean = k in 0 until KEYS && (!offX[k].done(now) || !offY[k].done(now))
 
-    /** one key's pose now; [halfDiag] = half its box's diagonal (px: the wiggle's turn keeps its corners within WIGGLE_PX) */
+    /** one key's pose now; [halfDiag] = half its box's diagonal (px: the wiggle's turn by its size, [amp]) */
     fun pose(k: Int, now: Long, halfDiag: Float, out: Pose): Pose {
         if (!on || k !in 0 until KEYS) return out.identity()
         out.scale = base[k].value(now) * lift[k].value(now)
         out.dx = offX[k].value(now)
         out.dy = offY[k].value(now)
-        out.rot = 0f
+        out.rot = 0f; out.reach = 0f; out.bob = 0f; out.bobMax = 0f
         if (scale > 0f) {
-            val e = env(k, now) * calm(now) * idle(now)
+            val e = env(k, now) * calm(now)
             if (e > 0f) {
                 val t = (now - epoch).toFloat() / 1000f / scale
                 val ph = 2f * PI.toFloat() * hz(k) * t + phase(k)
-                out.rot = amp(halfDiag) * e * sin(ph)
-                out.dy += Motion.WIGGLE_BOB * e * cos(ph)
+                out.reach = amp(halfDiag) * e
+                out.rot = out.reach * sin(ph)
+                out.bobMax = Motion.WIGGLE_BOB * e
+                out.bob = out.bobMax * cos(ph)
+                out.dy += out.bob
             }
         }
         return out
     }
 
-    /** a pose: the scale about its widget's centre, the turn (deg), the offset (px) */
+    /**
+     * a pose: the scale about its widget's centre, the turn (deg), the offset (px). [reach] = the most it turns at its wiggle's envelope
+     * now (deg), [bob] = the bob's share of [dy] now, [bobMax] its most: [keepIn] keeps the whole swing inside the frame, so its shift is
+     * steady over a wiggle's cycle (no corner pressing on the frame's edge)
+     */
     class Pose {
         var scale = 1f; var rot = 0f; var dx = 0f; var dy = 0f
-        fun identity(): Pose { scale = 1f; rot = 0f; dx = 0f; dy = 0f; return this }
+        var reach = 0f; var bob = 0f; var bobMax = 0f
+        fun identity(): Pose { scale = 1f; rot = 0f; dx = 0f; dy = 0f; reach = 0f; bob = 0f; bobMax = 0f; return this }
         val isIdentity: Boolean get() = scale == 1f && rot == 0f && dx == 0f && dy == 0f
     }
 
@@ -285,9 +275,9 @@ class HomeEditMotion {
         if (leaving) { on = false; return false }
         return wiggling(now)
     }
-    /** the wiggle still shows (an envelope over 0, not rested) */
+    /** the wiggle still shows (an envelope over 0): the whole time edit mode is open (it never rests) */
     fun wiggling(now: Long): Boolean {
-        if (!on || scale <= 0f || rest(now) <= 0f) return false
+        if (!on || scale <= 0f) return false
         for (k in 0 until KEYS) if (env(k, now) > 0f || envTo[k] > 0f) return true
         return false
     }
@@ -316,8 +306,7 @@ class HomeEditMotion {
         const val CHIP = 3
         const val RIBBON = 4
         private const val POPS = 5
-        /** the wiggle resting takes this long to fade (ms); a dropped widget wiggles again after this */
-        private const val IDLE_FADE = 400f
+        /** a dropped widget wiggles again after this (ms) */
         const val DROP_WIGGLE_AFTER = 120L
         /** the share of a glide still to go when its animator ends: the glide's length = GLIDE_END / (zeta omega) */
         private const val GLIDE_END = 7.0f
@@ -374,9 +363,42 @@ class HomeEditMotion {
             }
         }
 
-        /** the wiggle's largest turn (deg) for a box of half-diagonal [halfDiag]: a corner travels at most WIGGLE_PX */
-        fun amp(halfDiag: Float): Float =
-            if (halfDiag <= 0f) Motion.WIGGLE_DEG else min(Motion.WIGGLE_DEG, (Motion.WIGGLE_PX / halfDiag) * (180f / PI.toFloat()))
+        /**
+         * the wiggle's largest turn (deg) for a box of half-diagonal [halfDiag] (the user's pick 2026-11-21, "Noticeable"): a room's
+         * picture (WIGGLE_SMALL or less) WIGGLE_DEG, a big module (WIGGLE_BIG or more) WIGGLE_DEG_BIG, a size between on the line between;
+         * no corner travels past WIGGLE_PX (only a box wider than the chat and the map, the band across the page, turns a little less)
+         */
+        fun amp(halfDiag: Float): Float {
+            if (halfDiag <= Motion.WIGGLE_SMALL) return Motion.WIGGLE_DEG
+            val k = ((halfDiag - Motion.WIGGLE_SMALL) / (Motion.WIGGLE_BIG - Motion.WIGGLE_SMALL)).coerceIn(0f, 1f)
+            val deg = Motion.WIGGLE_DEG + (Motion.WIGGLE_DEG_BIG - Motion.WIGGLE_DEG) * k
+            return min(deg, (Motion.WIGGLE_PX / halfDiag) * (180f / PI.toFloat()))
+        }
+
+        /**
+         * the user's pick 2026-11-21 (the shot pass: a lifted full-height map at 1.04 grew past Home's foot, under the room bar and the
+         * ribbon, its bottom edge cut off): the shift (px) that keeps a widget laid at [l], [t], [r], [b], drawn through [pose] (its scale
+         * about its centre, its turn as far as it [Pose.reach]es, its bob), inside the frame [fl], [ft], [fr], [fb], added to the pose's
+         * dx / dy. The pose's own offsets (the drop's slide) and a finger's carry are left out: the shift follows the size and the swing
+         * only, so it never jumps. A box laid past the frame on an axis (a bar slid away) is left alone on it; one too big for the
+         * frame is centred in it. Drawn only: touch reads the laid box.
+         */
+        fun keepIn(l: Float, t: Float, r: Float, b: Float, fl: Float, ft: Float, fr: Float, fb: Float, pose: Pose) {
+            if (r <= l || b <= t) return
+            val a = max(abs(pose.rot), pose.reach) * (PI.toFloat() / 180f)
+            val co = cos(a); val si = sin(a)
+            val hw = (r - l) / 2f; val hh = (b - t) / 2f
+            val ex = pose.scale * (hw * co + hh * si)
+            val ey = pose.scale * (hw * si + hh * co) + pose.bobMax
+            if (l >= fl - 0.5f && r <= fr + 0.5f) pose.dx += shift((l + r) / 2f, ex, fl, fr)
+            if (t >= ft - 0.5f && b <= fb + 0.5f) pose.dy += shift((t + b) / 2f, ey, ft, fb)
+        }
+        private fun shift(c: Float, e: Float, lo: Float, hi: Float): Float = when {
+            2f * e >= hi - lo -> (lo + hi) / 2f - c
+            c - e < lo -> lo - (c - e)
+            c + e > hi -> hi - (c + e)
+            else -> 0f
+        }
         /** each key's pace (WIGGLE_HZ +- 6 %) and phase (the golden angle apart) */
         fun hz(k: Int): Float = Motion.WIGGLE_HZ * (1f + 0.06f * sin(k * 1.7f + 0.4f))
         fun phase(k: Int): Float = k * 2.39996f

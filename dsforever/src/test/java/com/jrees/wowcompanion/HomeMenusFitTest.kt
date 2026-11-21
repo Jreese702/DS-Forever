@@ -1,6 +1,7 @@
 package com.jrees.wowcompanion
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,7 +13,8 @@ import org.junit.Test
  *  - the middle wheel: inside the frame, under the band, never covered by a parted column;
  *  - the class wheels: inside the frame (a hidden Split half below the page is no column's), under the band;
  *  - no column is "across" the page (only a full-screen module keeps its name's side in the slides).
- * Classic's own look stays 1516's (the picture's top over a grown band is held for the user's yes): [classicIs1516].
+ * Classic at rest stays 1516's ([classicIs1516]); under a grown band it is fitted like every layout (the user's pick 2026-11-21, "Fix in
+ * Classic too": [classicsGrownFightSitsUnderTheBand]).
  */
 class HomeMenusFitTest {
     private val S = HomeLayoutSolver
@@ -175,6 +177,37 @@ class HomeMenusFitTest {
         val old = ClassSlot.middle(W, 935f, 226f, G, W * 0.6f)
         assertEquals(old, m)
         assertEquals(m.push, m.pushRight, 0f)
+    }
+
+    /**
+     * the user's pick 2026-11-21, "Fix in Classic too": 1516 drew Classic's LB picture at 236 (or a stale pause's band + 16) over a band
+     * grown for a fight; now it stands under the grown band as every layout's does (fitted: its top the band's foot + 10, scaled to the
+     * frame, in the picture's place on the page - not the held 1516 coordinates), while at rest (Diamonds, the thin row, Same size) it
+     * keeps 1516's place exactly, its stale-top quirk included
+     */
+    @Test fun classicsGrownFightSitsUnderTheBand() {
+        val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+        val c = HomeLayoutSolver.columns(classic, W, G)
+        val grown = S.places(classic, HomeLayoutSolver.State(takeover = true))
+        val bb = grown.boxes.getValue(HomePart.BARS).b
+        assertTrue("Classic's band grown for the fight: $bb", bb > 400f)
+        val pl = LbFit.place(W, bb, c.first.second, c.second.first, 927f, classic = true, staleBars = 0f)
+        assertEquals("under the grown band", bb + 10f, pl.top, 0f)
+        assertFalse("fitted: Home's coordinates (the host moves it into the picture's)", pl.classic)
+        assertEquals("the fitted place, as any layout's", LbFit.place(W, bb, c.first.second, c.second.first, 927f, classic = false, staleBars = 0f), pl)
+        for (b in LbFit.bars(pl).values) { assertTrue("under the band: ${b.t}", b.t >= bb); assertTrue("inside the frame: ${b.b}", b.b <= 927f + 0.5f) }
+        assertTrue(pl.k >= LbFit.K_MIN)
+        // a stale pause's band (a grown fight's, 1516's quirk) cannot lift it over the band either
+        assertEquals(bb + 10f, LbFit.place(W, bb, c.first.second, c.second.first, 927f, classic = true, staleBars = 600f).top, 0f)
+        // at rest: 1516's place exactly (the diamonds 226, the thin row's lower band, the stale top kept)
+        for (rest in listOf(226f, 120f)) {
+            val r = LbFit.place(W, rest, c.first.second, c.second.first, 927f, classic = true, staleBars = 0f)
+            assertEquals(LbFit.Place(620f, 236f, 1f, LbPartyView.SIDE_PX, LbPartyView.SIDE_PX, true), r)
+        }
+        assertEquals(616f, LbFit.place(W, 226f, c.first.second, c.second.first, 927f, classic = true, staleBars = 600f).top, 0f)
+        // Same size (the band at its rest height in the fight): 1516's too
+        val same = S.places(classic.copy(fight = HomeLayout.FightBand.SAME), HomeLayoutSolver.State(takeover = true)).boxes.getValue(HomePart.BARS).b
+        assertTrue(LbFit.place(W, same, c.first.second, c.second.first, 927f, classic = true, staleBars = 0f).classic)
     }
 
     /** the picture under a grown band scales to fit above a bar that stays (Compact's Both bar in a fight), never under the band */
