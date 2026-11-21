@@ -110,12 +110,17 @@ class HomeEditMotion {
         envFrom[k] = env(k, now); envTo[k] = to; envAt[k] = now + scaled(delay); envMs[k] = ms
     }
     private fun calm(now: Long) = ramp(calmFrom, calmTo, calmAt, Motion.WIGGLE_OUT, now)
-    /** 1 .. 0: the wiggle resting after [Motion.WIGGLE_IDLE] with no input */
-    private fun idle(now: Long): Float {
+    /** 1 .. 0: the wiggle resting after [Motion.WIGGLE_IDLE] with no input (its fade out only) */
+    private fun rest(now: Long): Float {
         if (scale <= 0f) return 1f
         val k = ((now - lastPoke - Motion.WIGGLE_IDLE).toFloat() / IDLE_FADE).coerceIn(0f, 1f)
         return 1f - k * k * (3f - 2f * k)
     }
+    /** an input woke a resting (or fading) wiggle: it ramps back in from where it was over [Motion.WIGGLE_IN], as every other envelope */
+    private var wakeFrom = 1f
+    private var wakeAt = 0L
+    /** 1 .. 0: the wiggle's share now (resting after the idle time, ramping back in on a wake) */
+    private fun idle(now: Long): Float = min(rest(now), ramp(wakeFrom, 1f, wakeAt, Motion.WIGGLE_IN, now))
 
     // ---------------------------------------------------------------- the session
 
@@ -126,7 +131,7 @@ class HomeEditMotion {
     fun enter(now: Long, delays: LongArray? = null) {
         val was = on && !leaving
         on = true; leaving = false
-        epoch = now; lastPoke = now
+        epoch = now; lastPoke = now; wakeFrom = 1f; wakeAt = now
         calmFrom = 1f; calmTo = 1f; calmAt = now
         for (k in 0 until KEYS) {
             val d = delays?.getOrNull(k) ?: 0L
@@ -162,8 +167,12 @@ class HomeEditMotion {
         chipAt = Long.MIN_VALUE / 2
     }
 
-    /** an input (a press, a touch): the wiggle wakes if it rested */
-    fun poke(now: Long) { lastPoke = now }
+    /** an input (a press, a touch): the wiggle wakes if it rested (ramping in from where it was, never a snap to full) */
+    fun poke(now: Long) {
+        val was = idle(now)
+        if (was < 1f) { wakeFrom = was; wakeAt = now }
+        lastPoke = now
+    }
 
     /** a menu, sheet or prompt open: the wiggle calms to [Motion.WIGGLE_CALM] */
     fun modal(open: Boolean, now: Long) {
@@ -195,6 +204,8 @@ class HomeEditMotion {
     /** the lift's share now (0 .. 1: the shadow, the depth) of [k] */
     fun liftK(k: Int, now: Long): Float = if (k in 0 until KEYS && on) liftShare(lift[k].value(now)) else 0f
     private fun liftShare(v: Float) = ((v - 1f) / (Motion.LIFT / Motion.REST_SCALE - 1f)).coerceIn(0f, 1f)
+    /** [k]'s lift spring has landed (its plop included) */
+    fun liftDone(k: Int, now: Long): Boolean = k !in 0 until KEYS || lift[k].done(now)
     /** [k]'s drop offset is still springing into its dock */
     fun settling(k: Int, now: Long): Boolean = k in 0 until KEYS && (!offX[k].done(now) || !offY[k].done(now))
 
@@ -276,7 +287,7 @@ class HomeEditMotion {
     }
     /** the wiggle still shows (an envelope over 0, not rested) */
     fun wiggling(now: Long): Boolean {
-        if (!on || scale <= 0f || idle(now) <= 0f) return false
+        if (!on || scale <= 0f || rest(now) <= 0f) return false
         for (k in 0 until KEYS) if (env(k, now) > 0f || envTo[k] > 0f) return true
         return false
     }

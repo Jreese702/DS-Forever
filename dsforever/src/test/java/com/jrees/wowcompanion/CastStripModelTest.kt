@@ -674,13 +674,10 @@ class CastStripModelTest {
         val laid = CastStripModel.Box(8f, 234f, 616f, 366f)
         val up = CastStripModel.hiddenAbove(laid, 8f)
         assertEquals(CastStripModel.Box(8f, 94f, 616f, 226f), up)
-        assertEquals("0 = laid", laid, CastStripModel.slideUpAt(laid, 8f, 0f))
-        assertEquals("1 = hidden", up, CastStripModel.slideUpAt(laid, 8f, 1f))
-        val mid = CastStripModel.slideUpAt(laid, 8f, 0.5f)
-        assertEquals(laid.t - 70f, mid.t, 0.01f); assertEquals(laid.h, mid.h, 0.01f)
-        // its column's top rides up from under the bar to the band's foot + the gap on the same k
-        assertEquals(374f, CastStripModel.columnTopAt(374f, 234f, 0f), 0f)
-        assertEquals(304f, CastStripModel.columnTopAt(374f, 234f, 0.5f), 0f)
-        assertEquals(234f, CastStripModel.columnTopAt(374f, 234f, 1f), 0f)
+        // the solver lays the hidden top bar with this very helper (its slide is Home's one motion between the two laid boxes)
+        val s = HomeLayoutSolver.places(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT), HomeLayoutSolver.State(castHidden = true))
+        val laidS = HomeLayoutSolver.places(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT), HomeLayoutSolver.State()).boxes.getValue(HomePart.STRIP)
+        val hid = CastStripModel.hiddenAbove(CastStripModel.Box(laidS.l, laidS.t, laidS.r, laidS.b), 8f)
+        assertEquals(HomeLayoutSolver.Box(hid.l, hid.t, hid.r, hid.b), s.boxes.getValue(HomePart.STRIP))
     }
 }

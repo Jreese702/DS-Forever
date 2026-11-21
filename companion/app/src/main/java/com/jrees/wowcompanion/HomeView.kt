@@ -645,8 +645,14 @@ class HomeView(
         return c.first.second to c.second.first
     }
     /** fix/menus-fit: the laid record is Classic's (HomePresets' Classic holds it): the two looks the user has not yet ruled on keep
-     *  1516's exactly there (the LB picture's top over a grown band, the map's paint during the LB / pause slides) */
-    private fun classicLook(): Boolean = HomePresets.byId(HomePresets.CLASSIC)?.holds(laidLayout ?: layoutNow()) == true
+     *  1516's exactly there (the LB picture's top over a grown band, the map's paint during the LB / pause slides, the D-pad toast).
+     *  The player's OWN record decides: a Top screen record laid as Grow while the add-on's Wings are not confirmed
+     *  (TopCombatBar.honoured) is not Classic, so it keeps the fitted looks whatever the add-on's flag */
+    private fun classicLook(): Boolean {
+        if (HomePresets.byId(HomePresets.CLASSIC)?.holds(laidLayout ?: layoutNow()) != true) return false
+        if (renderLook != null) return true
+        return HomeLayoutRules.shown(editDraft() ?: HomeSettings.layout).fight != HomeLayout.FightBand.TOP
+    }
     /**
      * fix/menus-fit: THE LB PICTURE's place on the page as laid (LbFit): under the band as it is now, on the line between the columns,
      * scaled to fit above a bar that stays (Both), and how far each side moves to clear it. Home's own coordinates.
@@ -1974,9 +1980,10 @@ class HomeView(
         // cascades out from the cursor. Outside edit mode (Classic, every fight, a module opening) the one curve as before
         val springs = !morphing && !combat && !gliding && editGlides() && motion.on && motion.scale > 0f
         if (!springs) partVel.clear()
-        val dur = if (springs) HomeEditMotion.glideMs(ms) else ms
         val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
         val delays = if (springs && applyMorph != 0) flipDelays(to) else emptyMap()
+        // a flip's cascade starts some parts later: the animator runs that much longer, so each lands on its own spring, not snapped
+        val dur = if (springs) HomeEditMotion.glideMs(ms) + (delays.values.maxOrNull() ?: 0L) else ms
         var cancelled = false
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = dur
@@ -2041,6 +2048,7 @@ class HomeView(
             val tt = to[p] ?: f
             val r = now[p] ?: RectF().also { now[p] = it }
             if (fraction >= 1f) { r.set(tt); partVel.remove(p); continue }
+            if (ridesIn(p, from, to)) continue                          // a rider inside its host: after the host (below)
             val t = tSec - (delays[p] ?: 0L) / 1000f
             val v = v0[p] ?: ZERO4
             val vel = partVel.getOrPut(p) { FloatArray(4) }
@@ -2050,18 +2058,57 @@ class HomeView(
             HomeEditMotion.glide(f.height(), tt.height(), v[3], ms, t, true, glideOut); val h = glideOut[0]; vel[3] = glideOut[1]
             r.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
         }
+        if (fraction >= 1f) return
+        // THE RIDERS (the card on the map, the buffs): their edges' offsets from the host glide (never past their ends: inside the host
+        // at both ends = inside it on every frame), on the host's delay, laid on the host's gliding box
+        for ((p, f) in from) {
+            if (!ridesIn(p, from, to)) continue
+            val hp = RIDER_HOST[p] ?: continue
+            val hf = from.getValue(hp); val ht = to.getValue(hp); val hn = now[hp] ?: continue
+            val tt = to[p] ?: f
+            val r = now[p] ?: RectF().also { now[p] = it }
+            val t = tSec - (delays[hp] ?: 0L) / 1000f
+            HomeEditMotion.glide(f.left - hf.left, tt.left - ht.left, 0f, ms, t, true, glideOut); val l = glideOut[0]
+            HomeEditMotion.glide(f.top - hf.top, tt.top - ht.top, 0f, ms, t, true, glideOut); val tp = glideOut[0]
+            HomeEditMotion.glide(f.right - hf.right, tt.right - ht.right, 0f, ms, t, true, glideOut); val rr = glideOut[0]
+            HomeEditMotion.glide(f.bottom - hf.bottom, tt.bottom - ht.bottom, 0f, ms, t, true, glideOut); val b = glideOut[0]
+            r.set(hn.left + l, hn.top + tp, hn.right + rr, hn.bottom + b)
+            partVel.remove(p)
+        }
     }
+    /** [p] is a rider ([RIDER_HOST]) inside its host at both ends of this glide: it glides as an offset from the host */
+    private fun ridesIn(p: Part, from: Map<Part, RectF>, to: Map<Part, RectF>): Boolean {
+        val hp = RIDER_HOST[p] ?: return false
+        val hf = from[hp] ?: return false; val ht = to[hp] ?: return false
+        val f = from[p] ?: return false; val t = to[p] ?: f
+        return within(f, hf) && within(t, ht)
+    }
+    private fun within(a: RectF, b: RectF) = a.left >= b.left - 0.5f && a.top >= b.top - 0.5f && a.right <= b.right + 0.5f && a.bottom <= b.bottom + 0.5f
     /** a layout flip's cascade: each part's start by its rank of distance from the cursor's widget (the chip: the ribbon's corner) */
     private fun flipDelays(to: Map<Part, RectF>): Map<Part, Long> {
         val m = edit ?: return emptyMap()
         val c = stopBox(m.cursor)
         val cx = c?.centerX() ?: editView.ribbon(width.toFloat()).chip.centerX()
         val cy = c?.centerY() ?: frameH
-        val order = to.entries.sortedBy { (_, r) -> kotlin.math.hypot(r.centerX() - cx, r.centerY() - cy) }
+        // ranked by widget, not by part: a rider (the card on the map, the buffs, the party module with the chat, a Split bar's second
+        // half) starts with its host, so it never leaves it mid-flip
+        val order = to.entries.filter { (p, _) -> flipHost(p, to) == null }.sortedBy { (_, r) -> kotlin.math.hypot(r.centerX() - cx, r.centerY() - cy) }
         val out = HashMap<Part, Long>()
         for ((i, e) in order.withIndex()) out[e.key] = HomeEditMotion.stagger(i)
+        for (p in to.keys) flipHost(p, to)?.let { h -> out[p] = out[h] ?: 0L }
         return out
     }
+    /** the widget [p] belongs to in a flip (null = its own): the card on the map (where it lands) and the buffs the map's, the party
+     *  module the chat's, a Split bar's second half the first's */
+    private fun flipHost(p: Part, to: Map<Part, RectF>): Part? = when (p) {
+        Part.AURAS -> Part.MAP
+        Part.QUESTS -> to[Part.MAP]?.let { m -> to[Part.QUESTS]?.takeIf { within(it, m) }?.let { Part.MAP } }
+        Part.PARTY -> Part.CHAT
+        Part.CAST2 -> Part.STRIP
+        else -> null
+    }?.takeIf { it in to }
+    /** the riders that lie inside their host (the card on the map, the buffs = the map's box) */
+    private val RIDER_HOST: Map<Part, Part> = mapOf(Part.QUESTS to Part.MAP, Part.AURAS to Part.MAP)
 
     /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
     private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover, partyOn = partyOnHere()))
@@ -2519,9 +2566,13 @@ class HomeView(
         override val liveModel: HomeEditModel? get() = edit
         override val chromeAlpha: Float get() = chromeA
         override fun parts(): Map<HomePart, RectF> {
-            val out = LinkedHashMap<HomePart, RectF>()
-            for ((p, r) in now) if (views[p]?.visibility == View.VISIBLE) out[HomePart.valueOf(p.name)] = RectF(r)
-            return out
+            partsOut.clear()
+            for ((p, r) in now) if (views[p]?.visibility == View.VISIBLE) {
+                val hp = HOME_PART_OF[p.ordinal]
+                val o = partsPool[p.ordinal]
+                o.set(r); partsOut[hp] = o
+            }
+            return partsOut
         }
         override fun liftK(): Float = liftK
         override fun pose(p: HomePart, out: android.graphics.Matrix): Boolean = partMatrix(Part.valueOf(p.name), out)
@@ -2585,8 +2636,14 @@ class HomeView(
         val b = now[Part.BARS] ?: return null
         if (!overlayTo.clock || castView.parent !== barsSlot) return null
         val spot = castView.clockSpot() ?: return null
-        return RectF(b.left + spot[0], b.top + 4f, b.left + spot[2], b.top + spot[3])
+        clockOut.set(b.left + spot[0], b.top + 4f, b.left + spot[2], b.top + spot[3])
+        return clockOut
     }
+    /** the edit chrome's reads every frame ([editHost]'s parts, the clock's box): Home's own, never kept by the chrome */
+    private val clockOut = RectF()
+    private val partsOut = LinkedHashMap<HomePart, RectF>()
+    private val partsPool = Array(Part.values().size) { RectF() }
+    private val HOME_PART_OF: Array<HomePart> by lazy { Part.values().map { HomePart.valueOf(it.name) }.toTypedArray() }
 
     /** the menus' behaviour values now (HomeSettings / Settings, the toolbar's word, this character's hold to talk) */
     private fun editValues(): HomeWidgetMenus.Values {
@@ -2779,7 +2836,7 @@ class HomeView(
     private fun editMotionStart(from: EditStop?) {
         val t = motionNow()
         motion.scale = motionScale()
-        motion.enter(t, from?.let { rippleFrom(it) })
+        motion.enter(t, from?.let { rippleFrom(it) }); cardOwnTo(0f, t, 0L)
         val m = edit
         seenCursor = m?.cursor; seenMenu = m?.menu; seenSheet = m?.sheet; seenPrompt = m?.prompt == true; seenChip = m?.chipName
         editKick()
@@ -2810,6 +2867,25 @@ class HomeView(
         EditStop.DIVIDER -> editView.dividerBox()
         else -> null
     }
+    /** the part whose pose [s]'s chrome is drawn through (HomeEditView.poseOf's) */
+    private fun stopPart(s: EditStop): Part? = when (s) {
+        EditStop.BAND, EditStop.CLOCK -> Part.BARS
+        EditStop.CHAT -> Part.CHAT; EditStop.MAP -> Part.MAP; EditStop.QUEST -> Part.QUESTS
+        EditStop.CAST -> Part.STRIP
+        else -> null
+    }
+    /** [s]'s pose now as a scale about a pivot and a move (its small turn left out) into [out]: scale, pivot x, y, move x, y; none = 1 */
+    private fun stopAffine(s: EditStop?, t: Long, out: FloatArray) {
+        out[0] = 1f; out[1] = 0f; out[2] = 0f; out[3] = 0f; out[4] = 0f
+        val p = s?.let { stopPart(it) } ?: return
+        if (!motion.on) return
+        partPose(p, t, pose)
+        if (!pose.isIdentity) { out[0] = pose.scale; out[1] = poseBox.centerX(); out[2] = poseBox.centerY(); out[3] = pose.dx; out[4] = pose.dy }
+        val lifted = edit?.takeIf { !it.parked }?.lifted ?: liftStop
+        if (lifted != null && partOf(lifted, p)) { liftOffset(liftOff); out[3] += liftOff[0]; out[4] += liftOff[1] }
+    }
+    private val affA = FloatArray(5)
+    private val affB = FloatArray(5)
 
     /** the model moved on: a new cursor flies there (and the X chip pops), a menu / sheet / prompt pops open, the wiggle calms */
     private fun editNotice() {
@@ -2822,8 +2898,13 @@ class HomeView(
             val wb = editView.widgetBoxes()
             val a = old?.let { wb[it] ?: stopBox(it) }; val b = wb[m.cursor] ?: stopBox(m.cursor)
             if (a != null && b != null) {
+                // the gold box leaves the box it was DRAWN at: the old box (its flight's offset kept) through the OLD widget's pose, taken
+                // back through the NEW widget's (the box is drawn through the new pose from this frame on: no jump on its first frame)
                 motion.cursorOffset(t, poseOut)
-                motion.cursorFrom(a.left + poseOut[0] - b.left, a.top + poseOut[1] - b.top, a.right + poseOut[2] - b.right, a.bottom + poseOut[3] - b.bottom, t)
+                stopAffine(old, t, affA); stopAffine(m.cursor, t, affB)
+                fun seat(x: Float, i: Int): Float = (affA[0] * (x - affA[i]) + affA[i] + affA[i + 2] - affB[i] - affB[i + 2]) / affB[0] + affB[i]
+                motion.cursorFrom(seat(a.left + poseOut[0], 1) - b.left, seat(a.top + poseOut[1], 2) - b.top,
+                    seat(a.right + poseOut[2], 1) - b.right, seat(a.bottom + poseOut[3], 2) - b.bottom, t)
             }
             if (m.cursor.removable) motion.pop(HomeEditMotion.CHIP, t)
         }
@@ -2841,11 +2922,13 @@ class HomeView(
     /** the lift ([s] picked up) or the drop (null: the widget that was lifted plops into its dock, from the finger's offset) */
     private fun editLift(s: EditStop?) {
         val t = motionNow()
-        if (s != null) { liftStop = s; motion.lift(s.ordinal, t) }
+        if (s != null) { liftStop = s; motion.lift(s.ordinal, t); if (s == EditStop.QUEST) cardOwnTo(1f, t, Motion.WIGGLE_IN) }
         else liftStop?.let { was ->
-            val (ox, oy) = if (edit?.drag == null) dragOffsetNow else 0f to 0f
-            dragOffsetNow = 0f to 0f
+            val ox = if (edit?.drag == null) dragOffsetNow[0] else 0f; val oy = if (edit?.drag == null) dragOffsetNow[1] else 0f
+            dragOffsetNow.fill(0f)
             motion.drop(was.ordinal, ox, oy, t)
+            // dropped (on the map): it rides the map's pose again over its plop
+            if (was == EditStop.QUEST) cardOwnTo(0f, t, CARD_RIDE_BACK)
         }
         editKick()
         editDecor()
@@ -2881,7 +2964,7 @@ class HomeView(
         Part.BARS -> EditStop.BAND.ordinal
         Part.CHAT -> EditStop.CHAT.ordinal
         Part.MAP, Part.AURAS -> EditStop.MAP.ordinal
-        Part.QUESTS -> if (cardOverMap() && (edit?.lifted ?: liftStop) != EditStop.QUEST) EditStop.MAP.ordinal else EditStop.QUEST.ordinal
+        Part.QUESTS -> if (cardOverMap()) EditStop.MAP.ordinal else EditStop.QUEST.ordinal
         Part.STRIP, Part.CAST2 -> EditStop.CAST.ordinal
         Part.PARTY -> HomeEditMotion.PARTY
         Part.CHAT_FULL -> -1
@@ -2890,7 +2973,8 @@ class HomeView(
     private fun ownerBox(p: Part, out: RectF): Boolean {
         val r = when (keyOfPart(p)) {
             -1 -> null
-            EditStop.MAP.ordinal -> now[Part.MAP]
+            // the card on the map turns about its OWN centre with the map's pose composed over it ([partPose]: no pivot switch at a lift)
+            EditStop.MAP.ordinal -> if (p == Part.QUESTS) now[Part.QUESTS] else now[Part.MAP]
             EditStop.CAST.ordinal -> {
                 val a = now[Part.STRIP]; val b = now[Part.CAST2]
                 if (a != null) { out.set(a); if (b != null) out.union(b); return true }
@@ -2906,8 +2990,42 @@ class HomeView(
         if (!motion.on) return out.identity()
         val k = keyOfPart(p)
         if (k < 0 || !ownerBox(p, poseBox)) return out.identity()
+        if (p == Part.QUESTS && k == EditStop.MAP.ordinal) return cardRidePose(t, out)
         return motion.pose(k, t, 0.5f * kotlin.math.hypot(poseBox.width(), poseBox.height()), out)
     }
+    /**
+     * the card on the map: the MAP's pose (its scale and turn about the map's centre) said about the card's own centre ([poseBox]), mixed
+     * with the card's own pose (QUEST's key: its lift, its plop, its wiggle) by [cardOwn] - 0 riding the map, 1 lifted - so a lift and a
+     * drop move the card on, never by a pivot's jump (the map and the card centres are ~200 px apart: 0.06 of that at 0.94)
+     */
+    private fun cardRidePose(t: Long, out: HomeEditMotion.Pose): HomeEditMotion.Pose {
+        val m = now[Part.MAP] ?: return out.identity()
+        val cx = poseBox.centerX(); val cy = poseBox.centerY()
+        motion.pose(EditStop.MAP.ordinal, t, 0.5f * kotlin.math.hypot(m.width(), m.height()), rideM)
+        val vx = (cx - m.centerX()) * rideM.scale; val vy = (cy - m.centerY()) * rideM.scale
+        val a = Math.toRadians(rideM.rot.toDouble()); val co = kotlin.math.cos(a).toFloat(); val si = kotlin.math.sin(a).toFloat()
+        val mdx = m.centerX() + vx * co - vy * si + rideM.dx - cx
+        val mdy = m.centerY() + vx * si + vy * co + rideM.dy - cy
+        val w = cardOwn(t)
+        if (w <= 0f) { out.scale = rideM.scale; out.rot = rideM.rot; out.dx = mdx; out.dy = mdy; return out }
+        motion.pose(EditStop.QUEST.ordinal, t, 0.5f * kotlin.math.hypot(poseBox.width(), poseBox.height()), rideQ)
+        out.scale = lerp(rideM.scale, rideQ.scale, w); out.rot = lerp(rideM.rot, rideQ.rot, w)
+        out.dx = lerp(mdx, rideQ.dx, w); out.dy = lerp(mdy, rideQ.dy, w)
+        return out
+    }
+    private val rideM = HomeEditMotion.Pose()
+    private val rideQ = HomeEditMotion.Pose()
+    /** the card's own pose's share over the map's (0 .. 1): up as it is lifted, back down as it plops onto the map again */
+    private var ownFrom = 0f
+    private var ownTo = 0f
+    private var ownAt = 0L
+    private var ownMs = 0L
+    private fun cardOwn(t: Long): Float {
+        if (motion.scale <= 0f || ownMs <= 0L) return ownTo
+        val k = ((t - ownAt).toFloat() / ownMs / motion.scale).coerceIn(0f, 1f)
+        return ownFrom + (ownTo - ownFrom) * (k * k * (3f - 2f * k))
+    }
+    private fun cardOwnTo(to: Float, t: Long, ms: Long) { ownFrom = cardOwn(t); ownTo = to; ownAt = t; ownMs = ms }
     /** [p]'s pose as a matrix in Home's px (the finger's carry of a lifted widget too): false = identity. The chrome and Home's own paint
      *  over a part (the map's well, zone band and buttons; the clock block) follow it */
     private fun partMatrix(p: Part, out: android.graphics.Matrix): Boolean {
@@ -2915,7 +3033,7 @@ class HomeView(
         partPose(p, motionNow(), pose)
         var dx = pose.dx; var dy = pose.dy
         val lifted = edit?.takeIf { !it.parked }?.lifted ?: liftStop
-        if (lifted != null && partOf(lifted, p)) { val (ox, oy) = liftOffset(); dx += ox; dy += oy }
+        if (lifted != null && partOf(lifted, p)) { liftOffset(liftOff); dx += liftOff[0]; dy += liftOff[1] }
         if (pose.scale == 1f && pose.rot == 0f && dx == 0f && dy == 0f) return false
         out.reset()
         out.postScale(pose.scale, pose.scale, poseBox.centerX(), poseBox.centerY())
@@ -2986,7 +3104,7 @@ class HomeView(
             editRoomBarSync(); editBarSync(Motion.COMBAT_GROW)
             editGuest(false)
             // every widget at its own size at once, nothing turning (no motion in a fight); the ticker stops
-            liftStop = null; dragOffsetNow = 0f to 0f; motion.still(); editDecor()
+            liftStop = null; dragOffsetNow.fill(0f); motion.still(); cardOwnTo(0f, 0L, 0L); editDecor()
             // the room bar's chrome goes with the rest (the XP track back, no disc tick, no ribbon touches) once the fade is out
             chromeFade(0f, HomeEditModel.CHROME_IN) { if (edit?.parked == true) onEditChrome?.invoke(null) }
             Log.i(TAG, "home edit: parked (a fight)")
@@ -3012,7 +3130,7 @@ class HomeView(
         if (!m.parked) { m.park(); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L) }
         editAway = true
         chromeAnim?.cancel(); chromeA = 0f
-        liftStop = null; dragOffsetNow = 0f to 0f; motion.still(); editDecor()
+        liftStop = null; dragOffsetNow.fill(0f); motion.still(); cardOwnTo(0f, 0L, 0L); editDecor()
         onEditChrome?.invoke(null)
     }
     private fun editAwayBack() {
@@ -3050,18 +3168,19 @@ class HomeView(
     var editRibbonRedraw: (() -> Unit)? = null
 
     /** the drag's offset as last placed (a finger's drop springs into its dock from it) */
-    private var dragOffsetNow = 0f to 0f
+    private val dragOffsetNow = FloatArray(2)
+    /** [liftOffset]'s frame buffer (every ticker frame reads it: no boxed pair per frame) */
+    private val liftOff = FloatArray(2)
 
-    /** the lifted widget's offset now under the finger (its grab kept); its drop's spring into the dock is [motion]'s */
-    private fun liftOffset(): Pair<Float, Float> {
-        val m = edit
-        val d = m?.drag
+    /** the lifted widget's offset now under the finger (its grab kept) into [out] (x, y); its drop's spring into the dock is [motion]'s */
+    private fun liftOffset(out: FloatArray) {
+        out[0] = 0f; out[1] = 0f
+        val d = edit?.drag
         if (d != null && d.stop.movable) {
-            val base = baseOf(d.stop) ?: return 0f to 0f
+            val base = baseOf(d.stop) ?: return
             val at = d.at()
-            return (at.l - base.left) to (at.t - base.top)
+            out[0] = at.l - base.left; out[1] = at.t - base.top
         }
-        return 0f to 0f
     }
     private fun baseOf(s: EditStop): RectF? = when (s) {
         EditStop.CHAT -> now[Part.CHAT]; EditStop.MAP -> now[Part.MAP]; EditStop.QUEST -> now[Part.QUESTS]
@@ -3088,11 +3207,13 @@ class HomeView(
         // their own translation and depth (they open while parked), never written over on a layout or an apply frame
         val liveEdit = edit?.takeIf { !it.parked }
         if (liveEdit == null && chromeModel == null && !decorDirty && mapScaleTo == null && !motion.on) return
-        if (liveEdit == null && chromeModel == null && mapScaleTo == null && (classOpen || pauseT > 0f || pauseSide > 0f)) return
+        // the middle wheel's columns parting (wheelPart's animators) is theirs too: the leave's ticker never writes them back to 0
+        if (liveEdit == null && chromeModel == null && mapScaleTo == null && (classOpen || wheelOpen || pauseT > 0f || pauseSide > 0f)) return
         val t = motionNow()
         val lifted = liveEdit?.lifted ?: liftStop
-        val (ox, oy) = liftOffset()
-        if (liveEdit?.drag != null) dragOffsetNow = ox to oy
+        liftOffset(liftOff)
+        val ox = liftOff[0]; val oy = liftOff[1]
+        if (liveEdit?.drag != null) { dragOffsetNow[0] = ox; dragOffsetNow[1] = oy }
         val k = liftK
         val settling = lifted != null && motion.settling(lifted.ordinal, t)
         for ((p, v) in views) {
@@ -3105,9 +3226,11 @@ class HomeView(
                 val s = max(cur.width() / max(1f, d.width()), cur.height() / max(1f, d.height()))
                 val tx = cur.centerX() - (d.left + d.width() * s / 2f)
                 val ty = cur.centerY() - (d.top + d.height() * s / 2f)
-                mapScaleTx = tx; mapScaleTy = ty
                 // the pose turns and shrinks the map about its DRAWN centre while the crop holds it (identity: today's pivot 0, 0 move)
                 HomeEditMotion.composeMapGlide(d.left, d.top, tx, ty, s, cur.centerX(), cur.centerY(), poseOut)
+                // the crop's own translation (its pivot's share included): what is left of translationX / Y is the finger's carry, which
+                // the map's paint follows when it is not drawn through the pose (a Discard's glide outlives the chrome's fade)
+                mapScaleTx = poseOut[2]; mapScaleTy = poseOut[3]
                 v.pivotX = poseOut[0]; v.pivotY = poseOut[1]
                 v.scaleX = s * pose.scale; v.scaleY = s * pose.scale
                 v.rotation = pose.rot
@@ -3126,7 +3249,8 @@ class HomeView(
             v.translationZ = if (mine && (k > 0f || ox != 0f || oy != 0f || settling)) LIFT_Z + restZ(p) else restZ(p)
         }
         // the lift has landed and its drop slid in: nothing is lifted any more
-        if (liveEdit?.lifted == null && liveEdit?.drag == null && liftStop != null && k == 0f && !settling) liftStop = null
+        // (after its lift spring has landed too: the drop's plop runs below 1 after the lift's share reads 0)
+        if (liveEdit?.lifted == null && liveEdit?.drag == null && liftStop != null && k == 0f && !settling && motion.liftDone(liftStop!!.ordinal, t)) liftStop = null
         decorDirty = liveEdit != null || chromeModel != null || mapScaleTo != null || liftK > 0f || motion.on
         if (mapScaleTo == null) { mapScaleTx = 0f; mapScaleTy = 0f }
         // fix round 1: the page settled with the cursor's widget gone (the card / the bar Off, Party mode's Hide): the cursor moves on
@@ -3136,26 +3260,32 @@ class HomeView(
     }
 
     /** the drawn boxes (pose and offset applied) of the parts raised over the others by edit mode - a lifted, dragged or settling widget
-     *  that is not the map (the map's own paint follows the map); empty outside edit mode */
+     *  that is not the map (the map's own paint follows the map); empty outside edit mode. Read every frame: the list and its boxes are
+     *  this view's own, good until the next call */
     fun liftedBoxes(): List<RectF> {
+        liftedOut.clear()
         // a parked session lifts nothing (the class wheel's cover depth on a column is not a lift)
-        if (edit?.takeIf { !it.parked } == null && chromeModel == null) return emptyList()
-        if ((edit?.lifted ?: liftStop) == EditStop.MAP) return emptyList()
-        val out = ArrayList<RectF>()
+        if (edit?.takeIf { !it.parked } == null && chromeModel == null) return liftedOut
+        if ((edit?.lifted ?: liftStop) == EditStop.MAP) return liftedOut
         for ((p, v) in views) {
             if (p == Part.MAP || p == Part.AURAS || v.visibility != View.VISIBLE || v.width <= 0) continue
             if (v.translationZ <= restZ(p) + 0.5f) continue
-            out += drawnBox(v)
+            if (liftedPool.size <= liftedOut.size) liftedPool += RectF()
+            liftedOut += drawnBox(v, liftedPool[liftedOut.size])
         }
-        return out
+        return liftedOut
     }
-    /** [v]'s box as drawn (its scale and turn about its pivot, its translation), in Home's px */
-    private fun drawnBox(v: View): RectF {
+    private val liftedOut = ArrayList<RectF>()
+    private val liftedPool = ArrayList<RectF>()
+    /** [v]'s box as drawn (its scale and turn about its pivot, its translation), in Home's px, into [out] */
+    private fun drawnBox(v: View, out: RectF = RectF()): RectF {
         viewM.reset()
         viewM.postScale(v.scaleX, v.scaleY, v.pivotX, v.pivotY)
         viewM.postRotate(v.rotation, v.pivotX, v.pivotY)
         viewM.postTranslate(v.left + v.translationX, v.top + v.translationY)
-        return RectF(0f, 0f, v.width.toFloat(), v.height.toFloat()).also { viewM.mapRect(it) }
+        out.set(0f, 0f, v.width.toFloat(), v.height.toFloat())
+        viewM.mapRect(out)
+        return out
     }
 
     /** the map's glide scaling ends: laid at its box, no scale, no clip (one full layout pass where it lands) */
@@ -3334,16 +3464,29 @@ class HomeView(
     /**
      * the D-pad toast's pill for words [wsum] wide: in the diamonds' clock gap at rest (today's spot); fix/menus-fit: under the band
      * when the band is the thin row or grown for a fight (the gap is not there: the pill lay on the row's buttons / the D-pad's lower
-     * button), over the columns' tops, inside the frame
+     * button), over the columns' tops, inside the frame; under a tap-to-cast bar that sits at the top of a column (Above chat / Above
+     * map, shown) when the pill reaches over it. Classic keeps 1516's spot on the band's foot (classicLook: not yet ruled on)
      */
     fun toastBox(wsum: Float, h: Float = 54f): RectF {
         val cx = width / 2f
         val bb = now[Part.BARS]?.bottom ?: 226f
         val diamonds = 8f + REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP
-        val cy = if (kotlin.math.abs(bb - diamonds) < 1f) bb - h / 2f - 6f
-            else (bb + UiKit.MODULE_GAP + h / 2f).coerceAtMost(frameH - UiKit.MODULE_GAP - h / 2f)
-        return RectF(cx - wsum / 2f - 28f, cy - h / 2f, cx + wsum / 2f + 28f, cy + h / 2f)
+        val l = cx - wsum / 2f - 28f; val r = cx + wsum / 2f + 28f
+        // Classic's diamonds grown for a fight: 1516's pill on the band's foot (a thin-row record is not 1516's Classic look: under it)
+        val held = classicLook() && (laidLayout ?: layoutNow()).rest == HomeRest.DIAMONDS
+        val cy = if (kotlin.math.abs(bb - diamonds) < 1f || held) bb - h / 2f - 6f
+            else {
+                var top = bb + UiKit.MODULE_GAP
+                if (laidTop && !laidHidden) for (p in TOP_BARS) {
+                    val b = now[p] ?: continue
+                    if (views[p]?.visibility != View.VISIBLE || b.bottom <= bb + 0.5f) continue
+                    if (b.left < r && l < b.right) top = maxOf(top, b.bottom + UiKit.MODULE_GAP)
+                }
+                (top + h / 2f).coerceAtMost(frameH - UiKit.MODULE_GAP - h / 2f)
+            }
+        return RectF(l, cy - h / 2f, r, cy + h / 2f)
     }
+    private val TOP_BARS = arrayOf(Part.STRIP, Part.CAST2)
     private val pToastEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
     private fun drawToast(c: Canvas) {
         if (toastWords.isEmpty()) return
@@ -4605,6 +4748,8 @@ class HomeView(
         private val ZERO4 = FloatArray(4)
         /** the edit ticker's frame off a window */
         private const val FRAME_MS = 16L
+        /** the card dropped on the map: its own pose hands back to the map's over this long (its plop shows on the way) */
+        private const val CARD_RIDE_BACK = 320L
         /** a room's picture on the bar: half its diagonal (its wiggle's turn) */
         private const val ROOM_HALF_DIAG = 40f
         /** P2: a lifted widget's depth (above the others, under the chrome) */

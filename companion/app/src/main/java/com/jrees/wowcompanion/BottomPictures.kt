@@ -667,9 +667,13 @@ object BottomPictures {
         val left = side == CastStripModel.Side.LEFT || side == CastStripModel.Side.BOTH
         val right = side == CastStripModel.Side.RIGHT || side == CastStripModel.Side.BOTH
         val room = (barH + g) * (1f - slide)
+        // Above chat / Above map: the bar at its column's TOP (the column starts under it), sliding UP for Hide (Home: behind the band)
+        val atTop = HomeLayoutRules.shown(HomeSettings.layout).cast.top
         val top = 0f
-        val chatCol = RectF(g, top + g, 216f - g / 2f, 216f - g - (if (left) room else 0f))
-        val map = RectF(216f + g / 2f, top + g, 432f - g, 216f - g - (if (right) room else 0f))
+        val chatCol = if (atTop) RectF(g, top + g + (if (left) room else 0f), 216f - g / 2f, 216f - g)
+            else RectF(g, top + g, 216f - g / 2f, 216f - g - (if (left) room else 0f))
+        val map = if (atTop) RectF(216f + g / 2f, top + g + (if (right) room else 0f), 432f - g, 216f - g)
+            else RectF(216f + g / 2f, top + g, 432f - g, 216f - g - (if (right) room else 0f))
         c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
         pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
         // the chat column, drawn as Home's pane lays it (its foot: the newest lines stay at the bottom as the column grows)
@@ -684,7 +688,7 @@ object BottomPictures {
         fun bar(l: Float, rr: Float, n: Int, first: Int) {
             val dy = (barH + g + 2f) * slide
             if (slide >= 1f) return
-            val well = RectF(l, 216f - g - barH + dy, rr, 216f - g + dy)
+            val well = if (atTop) RectF(l, g - dy, rr, g + barH - dy) else RectF(l, 216f - g - barH + dy, rr, 216f - g + dy)
             c.save(); c.clipRect(0f, 0f, 432f, 216f)
             pF.color = Theme.field; c.drawRoundRect(well, 6f, 6f, pF)
             pS.color = Theme.gold; pS.strokeWidth = 2f; c.drawRoundRect(well, 6f, 6f, pS)

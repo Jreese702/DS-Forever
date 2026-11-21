@@ -104,6 +104,8 @@ class HomeEditModel(
         private set
     /** the bar's / the card's last dock, for "+" (they come back where they were) */
     private var lastCast = if (saved.cast != HomeLayout.CastDock.OFF) saved.cast else HomeLayout.CastDock.UNDER_CHAT
+    /** the column the bar last sat in (its ladder's way back up from Across) */
+    private var barColumn: HomeModule = saved.cast.column ?: HomeModule.CHAT
     private var lastCard = if (saved.card != HomeLayout.CardDock.OFF) saved.card else HomeLayout.CardDock.ON_MAP
     /** the flip the chip names (-1 = none yet; [flips].size = the player's own [handMade]) */
     private var flipIdx = flips.indexOfFirst { it.available && it.make(saved).samePlace(saved) }
@@ -251,6 +253,7 @@ class HomeEditModel(
         lifted = null; liftFrom = null; barLifted = null
         val moved = !from.samePlace(draft)
         draft = from
+        from.cast.column?.let { barColumn = it }
         // a room put back: the bar's cursor stays on it, where it stood
         if (room != null) from.rooms.indexOf(room).takeIf { it >= 0 }?.let { barSel = it }
         return if (moved) listOf(Fx.Lift, Fx.Relay(Motion.MODULE_CLOSE)) else listOf(Fx.Lift)
@@ -312,11 +315,12 @@ class HomeEditModel(
         }
     }
 
-    /** the bar's Up / Down ladder (no wrap): Above x <-> Under x <-> Across <-> Split; Up from Across goes under the chat */
+    /** the bar's Up / Down ladder (no wrap): Above x <-> Under x <-> Across <-> Split; Up from Across goes back under the column it came
+     *  down from ([barColumn]; the chat's when it never sat in one), so every step undoes the last */
     private fun castLadder(c: HomeLayout.CastDock, up: Boolean): HomeLayout.CastDock? = when (c) {
         HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP -> if (up) null else c.withTop(false)
         HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP -> if (up) c.withTop(true) else HomeLayout.CastDock.ACROSS
-        HomeLayout.CastDock.ACROSS -> if (up) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.SPLIT
+        HomeLayout.CastDock.ACROSS -> if (up) HomeLayout.CastDock.UNDER_CHAT.withColumn(barColumn) else HomeLayout.CastDock.SPLIT
         HomeLayout.CastDock.SPLIT -> if (up) HomeLayout.CastDock.ACROSS else null
         HomeLayout.CastDock.OFF -> null
     }
@@ -394,6 +398,7 @@ class HomeEditModel(
         if (to == draft) return emptyList()
         draft = to
         if (to.cast != HomeLayout.CastDock.OFF) lastCast = to.cast
+        to.cast.column?.let { barColumn = it }
         if (to.card != HomeLayout.CardDock.OFF) lastCard = to.card
         // the bar's cursor rides with the lifted room (and stays on the bar whatever the order)
         barLifted?.let { r -> to.rooms.indexOf(r).takeIf { it >= 0 }?.let { barSel = it } }

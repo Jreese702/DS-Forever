@@ -146,6 +146,29 @@ class HomeEditModelTest {
 
     // ---------------------------------------------------------------- lift, docks, size, swap
 
+    /** review round 2: every step of the lifted bar's Up / Down ladder undoes the last (Up from Across goes back to the column it came
+     *  down from: Under map -> Down -> Up = Under map, as 1516's cycle did) */
+    @Test fun theBarsLadderUndoesEachStep() {
+        for (start in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP))
+            for (side in HomeLayout.Side.values()) {
+                val b = model(saved = classic.copy(cast = start, chatSide = side), start = EditStop.CAST)
+                b.press("PAD1")
+                assertEquals(EditStop.CAST, b.lifted)
+                val way = ArrayList<HomeLayout.CastDock>()
+                while (true) { way += b.draft.cast; if (b.press("PADDDOWN").isEmpty()) break }
+                assertEquals("$start $side: down to Split", HomeLayout.CastDock.SPLIT, b.draft.cast)
+                val back = ArrayList<HomeLayout.CastDock>()
+                while (true) { back += b.draft.cast; if (b.press("PADDUP").isEmpty()) break }
+                assertEquals("$start $side: Up retraces Down", way.reversed(), back.dropLast(back.size - way.size))
+                b.press("PADDDOWN")
+                assertEquals("$start $side: and Down again", start.withTop(false), b.draft.cast)
+            }
+        // a bar that never sat in a column (saved Across): Up goes under the chat
+        val a = model(saved = classic.copy(cast = HomeLayout.CastDock.ACROSS), start = EditStop.CAST)
+        a.press("PAD1"); a.press("PADDUP")
+        assertEquals(HomeLayout.CastDock.UNDER_CHAT, a.draft.cast)
+    }
+
     @Test fun aLiftedWidgetTakesItsDocks() {
         val m = model(start = EditStop.QUEST)
         m.press("PAD1")

@@ -41,7 +41,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val liveModel: HomeEditModel? get() = model
         /** the chrome's alpha (its 120 ms fade in, 200 out, the fight's park) */
         val chromeAlpha: Float
-        /** every part's box now in Home's px (logical: the lifted widget at its laid place; [pose] moves and turns it) */
+        /** every part's box now in Home's px (logical: the lifted widget at its laid place; [pose] moves and turns it). The host's own
+         *  map and boxes (read every frame): good until the next call, never kept or changed */
         fun parts(): Map<HomePart, RectF>
         /** the lifted widget's lift (0 .. 1: the shadow) */
         fun liftK(): Float
@@ -87,6 +88,31 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private val pLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val pGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; maskFilter = BlurMaskFilter(14f, BlurMaskFilter.Blur.NORMAL) }
     private val pBmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    /** the lifted widget's deep shadow (one blur, made once: the ticker draws it every frame while a widget is lifted) */
+    private val pShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; maskFilter = BlurMaskFilter(28f, BlurMaskFilter.Blur.NORMAL) }
+
+    /**
+     * THE CHROME'S TEXT PAINTS, made once per face / size / colour / alignment: the wiggle's ticker redraws the chrome (its tags, the
+     * ribbon, an open menu) every frame for up to WIGGLE_IDLE after an input, so no TextPaint (and its shadow layer) is made per draw.
+     * A paint handed out is shared: its colour (alpha included) is set again on every fetch; nothing else of it may be changed.
+     */
+    private class TextKey(val face: android.graphics.Typeface, val size: Float, val colour: Int, val align: Paint.Align, val p: android.text.TextPaint)
+    private val textCache = ArrayList<TextKey>()
+    private fun textP(kind: Int, size: Float, colour: Int, align: Paint.Align): android.text.TextPaint {
+        val face = when (kind) { 0 -> UiKit.body; 1 -> UiKit.title; else -> UiKit.number }
+        for (i in textCache.indices) {
+            val k = textCache[i]
+            if (k.face === face && k.size == size && k.colour == colour && k.align == align) { k.p.color = colour; return k.p }
+        }
+        val p = when (kind) { 0 -> UiKit.bodyPaint(size, colour); 1 -> UiKit.titlePaint(size, colour); else -> UiKit.numberPaint(size, colour) }
+        p.textAlign = align
+        if (textCache.size >= TEXT_CACHE) textCache.removeAt(0)
+        textCache += TextKey(face, size, colour, align, p)
+        return p
+    }
+    private fun bodyP(size: Float, colour: Int = Theme.text, align: Paint.Align = Paint.Align.LEFT) = textP(0, size, colour, align)
+    private fun titleP(size: Float, colour: Int = Theme.gold, align: Paint.Align = Paint.Align.LEFT) = textP(1, size, colour, align)
+    private fun numberP(size: Float, colour: Int = Theme.text, align: Paint.Align = Paint.Align.LEFT) = textP(2, size, colour, align)
     private val dash = DashPathEffect(floatArrayOf(14f, 9f), 0f)
     private val dashFine = DashPathEffect(floatArrayOf(8f, 7f), 0f)
     private val path = Path()
@@ -97,37 +123,63 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     // ---------------------------------------------------------------- where everything is
 
     /** the widgets' boxes as drawn (CAST = the bar's first half; [castBoxes] both), in Home's px */
-    fun widgetBoxes(): Map<EditStop, RectF> {
-        val p = host.parts()
-        val out = LinkedHashMap<EditStop, RectF>()
-        p[HomePart.BARS]?.let { out[EditStop.BAND] = RectF(it) }
-        host.clockBox()?.let { out[EditStop.CLOCK] = RectF(it) }
-        p[HomePart.CHAT]?.let { out[EditStop.CHAT] = RectF(it) }
-        p[HomePart.MAP]?.let { out[EditStop.MAP] = RectF(it) }
-        p[HomePart.QUESTS]?.let { out[EditStop.QUEST] = RectF(it) }
-        castBoxes(p).takeIf { it.isNotEmpty() }?.let { bs -> out[EditStop.CAST] = RectF(bs[0]).apply { for (b in bs) union(b) } }
-        return out
+    fun widgetBoxes(): Map<EditStop, RectF> = LinkedHashMap<EditStop, RectF>().also { o -> for ((s, r) in boxesNow(host.parts())) o[s] = RectF(r) }
+
+    /**
+     * [widgetBoxes] into this view's own map and boxes (the drawing's: the wiggle's ticker draws the chrome every frame, so nothing is
+     * made per frame); good until the next call, never kept
+     */
+    private fun boxesNow(p: Map<HomePart, RectF>): Map<EditStop, RectF> {
+        wbNow.clear()
+        p[HomePart.BARS]?.let { putBox(EditStop.BAND, it) }
+        host.clockBox()?.let { putBox(EditStop.CLOCK, it) }
+        p[HomePart.CHAT]?.let { putBox(EditStop.CHAT, it) }
+        p[HomePart.MAP]?.let { putBox(EditStop.MAP, it) }
+        p[HomePart.QUESTS]?.let { putBox(EditStop.QUEST, it) }
+        val bs = castNow(p)
+        if (bs.isNotEmpty()) { val o = putBox(EditStop.CAST, bs[0]); for (i in 1 until bs.size) o.union(bs[i]) }
+        return wbNow
+    }
+    private val wbNow = LinkedHashMap<EditStop, RectF>()
+    private val wbPool = java.util.EnumMap<EditStop, RectF>(EditStop::class.java)
+    private fun putBox(s: EditStop, r: RectF): RectF {
+        val o = wbPool[s] ?: RectF().also { wbPool[s] = it }
+        o.set(r); wbNow[s] = o
+        return o
     }
 
     /** the tap-to-cast bar's box(es) on the page (none while it is slid away: below the page, or up behind the band for a top bar) */
-    fun castBoxes(p: Map<HomePart, RectF> = host.parts()): List<RectF> {
+    fun castBoxes(p: Map<HomePart, RectF> = host.parts()): List<RectF> = castNow(p).map { RectF(it) }
+    /** [castBoxes] into this view's own list (the drawing's; good until the next call) */
+    private fun castNow(p: Map<HomePart, RectF>): List<RectF> {
+        castOut.clear()
         val h = height.toFloat().takeIf { it > 0f } ?: 935f
         val band = p[HomePart.BARS]?.bottom ?: 0f
-        return listOfNotNull(p[HomePart.STRIP], p[HomePart.CAST2]).filter { it.top < h - 1f && it.bottom > band + 1f }.map { RectF(it) }
+        for (part in CAST_PARTS) {
+            val r = p[part] ?: continue
+            if (r.top < h - 1f && r.bottom > band + 1f) { val o = castPool[castOut.size]; o.set(r); castOut += o }
+        }
+        return castOut
     }
+    private val castOut = ArrayList<RectF>(2)
+    private val CAST_PARTS = arrayOf(HomePart.STRIP, HomePart.CAST2)
+    private val castPool = arrayOf(RectF(), RectF())
 
     /** the bar laid at the top of a column (Above chat / Above map): its box, else null */
     private fun topCastBox(p: Map<HomePart, RectF>): RectF? =
-        if (host.model?.draft?.cast?.top == true) castBoxes(p).firstOrNull() else null
+        if (host.model?.draft?.cast?.top == true) castNow(p).firstOrNull()?.let { RectF(it) } else null
 
     /** the divider's handle: centred in the 8 px between the columns, halfway down them */
-    fun dividerBox(p: Map<HomePart, RectF> = host.parts()): RectF? {
+    fun dividerBox(p: Map<HomePart, RectF> = host.parts()): RectF? = dividerNow(p)?.let { RectF(it) }
+    private val divBox = RectF()
+    private fun dividerNow(p: Map<HomePart, RectF>): RectF? {
         val c = p[HomePart.CHAT] ?: return null; val m = p[HomePart.MAP] ?: return null
         val left = if (c.left < m.left) c else m; val right = if (left === c) m else c
         val x = (left.right + right.left) / 2f
         val top = max(left.top, right.top); val bottom = min(left.bottom, right.bottom)
         val cy = (top + bottom) / 2f
-        return RectF(x - HANDLE_W / 2f, cy - HANDLE_H / 2f, x + HANDLE_W / 2f, cy + HANDLE_H / 2f)
+        divBox.set(x - HANDLE_W / 2f, cy - HANDLE_H / 2f, x + HANDLE_W / 2f, cy + HANDLE_H / 2f)
+        return divBox
     }
 
     /** the cursor's stops in Home's px (the band's box for the D-pad is its part left of the clock, so Right reaches the clock) */
@@ -165,7 +217,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             val sv = c.save()
             if (abs(k - 1f) > 0.001f) {
                 val box = menuBox(s)
-                val wb = widgetBoxes()[s] ?: RectF(box.centerX(), height.toFloat(), box.centerX(), height.toFloat())
+                val wb = boxesNow(host.parts())[s] ?: RectF(box.centerX(), height.toFloat(), box.centerX(), height.toFloat())
                 popIn(c, k, box, wb.centerX().coerceIn(box.left, box.right), wb.centerY().coerceIn(box.top, box.bottom), MENU_FROM)
             }
             drawMenu(c, m)
@@ -220,17 +272,24 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (p != null && host.pose(p, mtx)) c.concat(mtx)
         return sv
     }
-    /** [r] (a box of [s]'s) as drawn now: its pose applied (the bounds of it) */
-    private fun posedRect(s: EditStop, r: RectF): RectF {
-        val o = RectF(r)
+    /** [r] (a box of [s]'s) as drawn now: its pose applied (the bounds of it), into [o] */
+    private fun posedRect(s: EditStop, r: RectF, o: RectF = RectF()): RectF {
+        o.set(r)
         val p = poseOf(s)
         if (p != null && host.pose(p, mtx)) mtx.mapRect(o)
         return o
     }
 
+    /** the lifted widget's drawn boxes (the drawing's own: good until the next frame) */
+    private val liftOut = ArrayList<RectF>(2)
+    private val liftPool = arrayOf(RectF(), RectF())
+    /** the cursor's box this frame */
+    private val curBox = RectF()
+
     private fun drawWidgets(c: Canvas, m: HomeEditModel) {
         val p = host.parts()
-        val wb = widgetBoxes()
+        val wb = boxesNow(p)
+        val cast = castNow(p)
         val sel = m.cursor
         val lifted = m.lifted
         val clock = wb[EditStop.CLOCK]
@@ -238,10 +297,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val cardOnMap = m.draft.card == HomeLayout.CardDock.ON_MAP
         val lk = host.liftK()
         // the lifted widget lies over everything (its depth): the chrome of the others is never drawn on it - only round it
-        val liftBoxes = lifted?.let { l -> (if (l == EditStop.CAST) castBoxes(p) else listOfNotNull(wb[l])).map { posedRect(l, it) } } ?: emptyList()
+        liftOut.clear()
+        if (lifted == EditStop.CAST) for (b in cast) liftOut += posedRect(lifted, b, liftPool[liftOut.size])
+        else if (lifted != null) wb[lifted]?.let { liftOut += posedRect(lifted, it, liftPool[0]) }
         val under = c.save()
-        for (b in liftBoxes) c.clipOutRect(b)
-        for (b in liftBoxes) if (lk > 0f) shadow(c, b, lk)
+        for (i in liftOut.indices) c.clipOutRect(liftOut[i])
+        if (lk > 0f) for (i in liftOut.indices) shadow(c, liftOut[i], lk)
         // 1. the dim over every widget that is not the selected one (black 70): the riders are dimmed with their host unless picked
         pFill.style = Paint.Style.FILL; pFill.color = Color.argb(DIM, 0, 0, 0)
         for ((s, r) in wb) {
@@ -254,7 +315,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             }
             if (keep === r) continue
             val sv = posed(c, s)
-            if (s == EditStop.CAST) { for (b in castBoxes(p)) dimRect(c, b, null) } else dimRect(c, r, keep)
+            if (s == EditStop.CAST) { for (i in cast.indices) dimRect(c, cast[i], null) } else dimRect(c, r, keep)
             c.restoreToCount(sv)
         }
         // the party module (Party mode): its dashed frame only, never a stop (it follows the chat)
@@ -266,45 +327,45 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             frame(c, it, light = false)
             val tabRight = it.right > width - UiKit.MODULE_GAP - 8f
             val tabLeft = it.left < UiKit.MODULE_GAP + 8f
-            val inner = RectF(it).apply {
-                if (tabRight) right -= PartyLayout.TAB_W + PartyLayout.TAB_GAP
-                else if (tabLeft) left += PartyLayout.TAB_W + PartyLayout.TAB_GAP
-            }
+            val inner = scratch2; inner.set(it)
+            if (tabRight) inner.right -= PartyLayout.TAB_W + PartyLayout.TAB_GAP
+            else if (tabLeft) inner.left += PartyLayout.TAB_W + PartyLayout.TAB_GAP
             tag(c, inner, "Party", false, Corner.TOP_RIGHT)
             c.restoreToCount(sv)
         }
         // 2. the dashed ink frames and the tags (where they hide nothing: the band's on its foot, the map's bottom left, the card's top
         // right, the bar's on its top edge); a rider moves with its lifted host
+        tagN = 0
         for ((s, r) in wb) {
             val rider = s == EditStop.CLOCK || (s == EditStop.QUEST && cardOnMap)
-            val boxes = if (s == EditStop.CAST) castBoxes(p) else listOf(r)
             val sv = posed(c, s)                                            // a rider rides its host's pose (HomeView resolves it)
-            for (b in boxes) if (s != sel) frame(c, b, light = rider)
+            if (s != sel) { if (s == EditStop.CAST) for (i in cast.indices) frame(c, cast[i], light = rider) else frame(c, r, light = rider) }
             c.restoreToCount(sv)
-            tags += Triple(s, boxes.first(), s == sel)
+            addTag(s, if (s == EditStop.CAST && cast.isNotEmpty()) cast[0] else r, s == sel)
         }
         // the divider's handle
-        dividerBox(p)?.let { d -> handle(c, d, sel == EditStop.DIVIDER || m.drag?.stop == EditStop.DIVIDER) }
+        dividerNow(p)?.let { d -> handle(c, d, sel == EditStop.DIVIDER || m.drag?.stop == EditStop.DIVIDER) }
         // 3. a finger's drop well: the dock under it (gold; red = refused, it would break a size rule)
         m.drag?.let { d -> d.cand?.let { cand -> wellFor(d.stop, cand)?.forEach { well(c, it, d.bad) } } }
-        val liftedTags = tags.filter { (s, _, _) -> s == lifted || (lifted == EditStop.MAP && s == EditStop.QUEST && cardOnMap) }
         c.restoreToCount(under)
         // 4. the golden box on the selected widget (riding the lifted one), the arrows to the docks a lifted one reaches
-        val selBoxes = when (sel) {
-            EditStop.CAST -> castBoxes(p)
-            EditStop.DIVIDER, EditStop.CHIP, EditStop.PLUS -> emptyList()
-            else -> listOfNotNull(wb[sel])
+        val one = when (sel) {
+            EditStop.CAST, EditStop.DIVIDER, EditStop.CHIP, EditStop.PLUS -> null
+            else -> wb[sel]
         }
+        val selN = if (sel == EditStop.CAST) cast.size else if (one != null) 1 else 0
         // the golden box rides its widget's pose and flies from the last one (the cursor's spring: its offset per edge)
         host.cursorOffset(cur)
-        for (b0 in selBoxes) {
-            val b = if (selBoxes.size > 1) RectF(b0).apply { offset((cur[0] + cur[2]) / 2f, (cur[1] + cur[3]) / 2f) }
-                else RectF(b0.left + cur[0], b0.top + cur[1], b0.right + cur[2], b0.bottom + cur[3])
+        for (i in 0 until selN) {
+            val b0 = if (sel == EditStop.CAST) cast[i] else one!!
+            val b = curBox
+            if (selN > 1) { b.set(b0); b.offset((cur[0] + cur[2]) / 2f, (cur[1] + cur[3]) / 2f) }
+            else b.set(b0.left + cur[0], b0.top + cur[1], b0.right + cur[2], b0.bottom + cur[3])
             val sv = posed(c, sel)
             goldBox(c, b)
             c.restoreToCount(sv)
         }
-        if (lifted != null && m.drag == null) selBoxes.firstOrNull()?.let { b ->
+        if (lifted != null && m.drag == null && selN > 0) (if (sel == EditStop.CAST) cast[0] else one!!).let { b ->
             val sv = posed(c, lifted)
             val canL = m.nextDock(lifted, m.draft, -1, true) != null
             val canR = m.nextDock(lifted, m.draft, 1, true) != null
@@ -316,32 +377,42 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             c.restoreToCount(sv)
         }
         // 5. the red X chip on a selected removable widget, "Remove?" after its first tap
-        if (sel.removable && lifted == null && m.menu == null && m.sheet == null && !m.prompt) selBoxes.lastOrNull()?.let { b ->
-            val x = removeChip(b)
-            val sv = posed(c, sel)
-            val k = host.popK(HomeEditMotion.CHIP)                          // the chip pops in as the cursor lands
-            if (abs(k - 1f) > 0.001f) c.scale(k.coerceAtLeast(0f), k.coerceAtLeast(0f), x.centerX(), x.centerY())
-            closeChip(c, x)
-            if (m.removeAsk == sel) pill(c, removePill(b), "Remove?")
-            c.restoreToCount(sv)
-        }
+        if (sel.removable && lifted == null && m.menu == null && m.sheet == null && !m.prompt && selN > 0)
+            (if (sel == EditStop.CAST) cast[selN - 1] else one!!).let { b ->
+                val x = removeChip(b)
+                val sv = posed(c, sel)
+                val k = host.popK(HomeEditMotion.CHIP)                          // the chip pops in as the cursor lands
+                if (abs(k - 1f) > 0.001f) c.scale(k.coerceAtLeast(0f), k.coerceAtLeast(0f), x.centerX(), x.centerY())
+                closeChip(c, x)
+                if (m.removeAsk == sel) pill(c, removePill(b), "Remove?")
+                c.restoreToCount(sv)
+            }
         // the tags last (no golden box, dim or neighbour's frame hides a widget's name): the others' still under the lifted widget
         val overLift = c.save()
-        for (b in liftBoxes) c.clipOutRect(b)
-        for ((s, r, gold) in tags) if (liftedTags.none { it.first == s }) { val sv = posed(c, s); tag(c, r, s.tag, gold, cornerOf(s, r)); c.restoreToCount(sv) }
+        for (i in liftOut.indices) c.clipOutRect(liftOut[i])
+        for (i in 0 until tagN) {
+            val t = tagPool[i]
+            if (!liftedTag(t.s, lifted, cardOnMap)) { val sv = posed(c, t.s); tag(c, t.r, t.s.tag, t.gold, cornerOf(t.s, t.r)); c.restoreToCount(sv) }
+        }
         c.restoreToCount(overLift)
-        for ((s, r, gold) in liftedTags) { val sv = posed(c, s); tag(c, r, s.tag, gold, cornerOf(s, r)); c.restoreToCount(sv) }
-        tags.clear()
+        for (i in 0 until tagN) {
+            val t = tagPool[i]
+            if (liftedTag(t.s, lifted, cardOnMap)) { val sv = posed(c, t.s); tag(c, t.r, t.s.tag, t.gold, cornerOf(t.s, t.r)); c.restoreToCount(sv) }
+        }
+        tagN = 0
         // a refusal / a fight: the widget's edge red for FLASH_MS
         host.flash?.let { (s, at) ->
             val t = SystemClock.uptimeMillis() - at
-            if (t in 0 until HomeEditModel.FLASH_MS) (if (s == EditStop.CAST) castBoxes(p) else listOfNotNull(wb[s])).forEach {
+            if (t in 0 until HomeEditModel.FLASH_MS) (if (s == EditStop.CAST) cast else listOfNotNull(wb[s])).forEach {
                 val sv = posed(c, s)
                 edgeColour(c, it, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
                 c.restoreToCount(sv)
             }
         }
     }
+    /** a tag drawn over the lifted widget (its own, or the card's riding the lifted map) */
+    private fun liftedTag(s: EditStop, lifted: EditStop?, cardOnMap: Boolean) =
+        s == lifted || (lifted == EditStop.MAP && s == EditStop.QUEST && cardOnMap)
 
     /** the well(s) [stop] would take in [l] */
     private fun wellFor(stop: EditStop, l: HomeLayout): List<RectF>? {
@@ -365,7 +436,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
 
     /** the soft dashed ink frame (a rider's lighter and finer) */
     private fun frame(c: Canvas, r: RectF, light: Boolean) {
-        val o = RectF(r).apply { inset(if (light) 4f else 2f, if (light) 4f else 2f) }
+        val o = scratch; o.set(r); o.inset(if (light) 4f else 2f, if (light) 4f else 2f)
         pLine.pathEffect = if (light) dashFine else dash
         pLine.strokeWidth = if (light) 2f else 3f
         pLine.color = Theme.bronze; pLine.alpha = if (light) 110 else 170
@@ -373,7 +444,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pLine.pathEffect = null
     }
 
-    private val tags = ArrayList<Triple<EditStop, RectF, Boolean>>()
+    /** this frame's tags (a pool: the ticker draws every frame) */
+    private class Tag { var s = EditStop.BAND; val r = RectF(); var gold = false }
+    private val tagPool = ArrayList<Tag>()
+    private var tagN = 0
+    private fun addTag(s: EditStop, r: RectF, gold: Boolean) {
+        if (tagPool.size <= tagN) tagPool += Tag()
+        val t = tagPool[tagN++]
+        t.s = s; t.r.set(r); t.gold = gold
+    }
     enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, BOTTOM_CENTRE, FOOT_LEFT, TOP_EDGE, TOP_EDGE_RIGHT }
     /** where each widget's tag stands (clear of what it shows) */
     private val CORNERS = mapOf(EditStop.BAND to Corner.BOTTOM_LEFT, EditStop.CLOCK to Corner.BOTTOM_RIGHT, EditStop.CHAT to Corner.TOP_RIGHT,
@@ -391,7 +470,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** the widget's name on a small plate (gold on the selected one) at [at] */
     private fun tag(c: Canvas, r: RectF, word: String, gold: Boolean, at: Corner = Corner.TOP_LEFT) {
         if (word.isEmpty()) return
-        val p = UiKit.bodyPaint(TAG_SIZE, if (gold) Theme.gold else Theme.text)
+        val p = bodyP(TAG_SIZE, if (gold) Theme.gold else Theme.text)
         val t = Tr.t(word)
         val w = p.measureText(t) + 26f
         val x = when (at) {
@@ -408,7 +487,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             Corner.TOP_EDGE, Corner.TOP_EDGE_RIGHT -> r.top - TAG_H / 2f
             else -> r.top + 10f
         }
-        val b = RectF(x, y, x + w, y + TAG_H)
+        val b = scratch; b.set(x, y, x + w, y + TAG_H)
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 225
         c.drawRoundRect(b, 8f, 8f, pFill)
         pLine.strokeWidth = 2f; pLine.color = if (gold) Theme.gold else Theme.bronze; pLine.alpha = 255
@@ -421,7 +500,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
      * soft gold glow round the widget, a 7 px gold box, the gold washed a little into its edge
      */
     private fun goldBox(c: Canvas, r: RectF) {
-        val o = RectF(r).apply { inset(-4f, -4f) }
+        val o = scratch2; o.set(r); o.inset(-4f, -4f)
         pGlow.color = Theme.focusA(170); pGlow.strokeWidth = 16f
         c.drawRoundRect(o, UiKit.MODULE_R + 4f, UiKit.MODULE_R + 4f, pGlow)
         // the inner wash: a gold edge band fading inward
@@ -433,16 +512,19 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pLine.strokeWidth = 7f; pLine.color = Theme.focusA(255)
         c.drawRoundRect(o, UiKit.MODULE_R + 4f, UiKit.MODULE_R + 4f, pLine)
         pLine.strokeWidth = 2f; pLine.color = Color.argb(150, 90, 50, 0)
-        c.drawRoundRect(RectF(o).apply { inset(-4.5f, -4.5f) }, UiKit.MODULE_R + 8f, UiKit.MODULE_R + 8f, pLine)
+        scratch.set(o); scratch.inset(-4.5f, -4.5f)
+        c.drawRoundRect(scratch, UiKit.MODULE_R + 8f, UiKit.MODULE_R + 8f, pLine)
     }
 
     /** the deep shadow under a lifted widget (its translationZ is above the others) */
     private fun shadow(c: Canvas, r: RectF, k: Float) {
-        pFill.style = Paint.Style.FILL; pFill.color = Color.argb((140 * k).toInt(), 0, 0, 0)
-        pFill.maskFilter = BlurMaskFilter(28f, BlurMaskFilter.Blur.NORMAL)
-        c.drawRoundRect(RectF(r).apply { offset(10f, 16f) }, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
-        pFill.maskFilter = null
+        pShadow.color = Color.argb((140 * k).toInt(), 0, 0, 0)
+        scratch.set(r); scratch.offset(10f, 16f)
+        c.drawRoundRect(scratch, UiKit.MODULE_R, UiKit.MODULE_R, pShadow)
     }
+    /** a frame's own box (the shadow, a frame's inset, a tag's plate, the gold box's rings): drawn at once, never kept */
+    private val scratch = RectF()
+    private val scratch2 = RectF()
 
     private fun edgeColour(c: Canvas, r: RectF, col: Int, alpha: Int) {
         pLine.strokeWidth = 6f; pLine.color = col; pLine.alpha = alpha
@@ -487,7 +569,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.drawRoundRect(r, r.height() / 2f, r.height() / 2f, pFill)
         pLine.strokeWidth = 2.5f; pLine.color = Theme.gold; pLine.alpha = 255
         c.drawRoundRect(r, r.height() / 2f, r.height() / 2f, pLine)
-        val p = UiKit.bodyPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+        val p = bodyP(26f, Color.WHITE, align = Paint.Align.CENTER)
         c.drawText(Tr.t(word), r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -498,12 +580,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
 
     /** a segmented row's button widths at text size [ts] */
     private fun segWidths(r: MenuRow, ts: Float): List<Float> {
-        val bp = UiKit.bodyPaint(ts)
+        val bp = bodyP(ts)
         return r.words.map { max(70f * ts / SEG_TEXT, bp.measureText(Tr.t(it)) + 34f * ts / SEG_TEXT) }
     }
     /** the width row [r] needs on ONE line (its label, the gap, its buttons) */
     private fun rowNeed(r: MenuRow): Float {
-        val label = UiKit.bodyPaint(28f).measureText(Tr.t(r.label)) + 18f + 24f
+        val label = bodyP(28f).measureText(Tr.t(r.label)) + 18f + 24f
         return when (r.kind) {
             MenuRow.Kind.SEG -> label + segWidths(r, SEG_TEXT).sum() + 6f * (r.words.size - 1) + 10f
             MenuRow.Kind.STEP -> label + 2 * 64f + 150f + 10f
@@ -514,7 +596,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /**
      * where [s]'s menu opens and how its rows lie: over the other column (the band's and the clock's over the columns, the bar's over the
      * columns above it). A column menu is at least [MENU_MIN_W] wide (narrower, it overhangs its own widget's column towards the middle)
-     * and ends at its HOST column's bottom (never over the tap-to-cast bar under it); a row whose words do not fit on one line puts its
+     * and ends at its HOST column's bottom; it, the band's and the clock's never lie on a tap-to-cast bar they cross ([clearBars]: under a
+     * top bar, over a foot bar, whichever column it is in); a row whose words do not fit on one line puts its
      * buttons under its label (the buttons' text smaller only if even that line is too short); rows tighten when the column is short.
      */
     private fun menuLay(s: EditStop, rows: List<MenuRow>): MenuLay {
@@ -527,25 +610,24 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val cardHost = if (host.model?.draft?.card == HomeLayout.CardDock.ABOVE_CHAT) map else chat
         val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST
         val hostCol = when (s) { EditStop.CHAT -> map; EditStop.MAP -> chat; EditStop.QUEST -> cardHost; else -> null }
-        // a bar at the top of the host column: the column's menu opens under it (never over the bar)
         val topBar = topCastBox(p)
-        val colTop = hostCol?.let { c -> topBar?.takeIf { it.left < c.centerX() && c.centerX() < it.right }?.let { max(top, it.bottom + g) } } ?: top
         // the horizontal extent and the room it has vertically
         var box: RectF
         when {
             column -> {
-                box = hostCol?.let { RectF(it.left, colTop, it.right, it.bottom) } ?: RectF(g, top, w / 2f, h - g)
+                box = hostCol?.let { RectF(it.left, top, it.right, it.bottom) } ?: RectF(g, top, w / 2f, h - g)
                 if (box.width() < MENU_MIN_W) {
                     if (box.centerX() < w / 2f) box.right = min(w - g, box.left + MENU_MIN_W) else box.left = max(g, box.right - MENU_MIN_W)
                 }
+                clearBars(box, p, top, g)
             }
             s == EditStop.ROOMS -> box = RectF(g + 8f, top, w - g - 8f, h - g)
             // the bar's menu over the columns above it; a top bar's opens BELOW it, down to the page's foot
             s == EditStop.CAST -> box = if (topBar != null) RectF(g + 100f, topBar.bottom + g, w - g - 100f, h - g) else {
-                val bt = castBoxes(p).minOfOrNull { it.top } ?: (h - g)
+                val bt = castNow(p).minOfOrNull { it.top } ?: (h - g)
                 RectF(g + 100f, top, w - g - 100f, bt - g)
             }
-            else -> box = RectF(w / 2f - 380f, top, w / 2f + 380f, h - g)
+            else -> box = RectF(w / 2f - 380f, top, w / 2f + 380f, h - g).also { clearBars(it, p, top, g) }
         }
         val avail = box.bottom - box.top
         val rowW = box.width() - 32f
@@ -585,6 +667,19 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         for (u in unit) { out += RectF(box.left + 16f, y, box.right - 16f, y + u * k - 10f); y += u * k }
         return MenuLay(box, out, wrap, segText)
     }
+    /**
+     * fix round 2: a menu box never lies on a tap-to-cast bar its FINAL width crosses (a column menu widened to MENU_MIN_W reaches into
+     * the other column; the band's and the clock's are centred): a bar at a column's top ([top] = the columns' top) - the menu starts
+     * under it; a bar at a column's foot - it ends over it
+     */
+    private fun clearBars(box: RectF, p: Map<HomePart, RectF>, top: Float, g: Float) {
+        val bars = castNow(p)
+        for (i in bars.indices) {
+            val b = bars[i]
+            if (b.left >= box.right || box.left >= b.right) continue
+            if (b.top <= top + 1f) box.top = max(box.top, b.bottom + g) else box.bottom = min(box.bottom, b.top - g)
+        }
+    }
 
     /** where [s]'s menu opens with its rows now (the tests' and the shots' reading of [menuLay]) */
     fun menuBox(s: EditStop): RectF = menuLay(s, host.menuRows(s)).box
@@ -598,14 +693,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
         c.drawRoundRect(box, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
         UiKit.module(c, box)
-        val tp = UiKit.titlePaint(40f, Theme.gold)
+        val tp = titleP(40f, Theme.gold)
         c.drawText(Tr.t(HomeWidgetMenus.title(s)), box.left + 28f, box.top + 56f, tp)
         UiKit.paneRule(c, box.left + 20f, box.top + MENU_HEAD - 12f, box.right - 20f)
         for ((i, r) in rows.withIndex()) {
             val rr = lay.rows[i]
             pFill.color = Theme.raised; pFill.alpha = 220
             c.drawRoundRect(rr, 8f, 8f, pFill)
-            val lp = UiKit.bodyPaint(28f, if (r.enabled) Theme.text else Theme.dim)
+            val lp = bodyP(28f, if (r.enabled) Theme.text else Theme.dim)
             val btns = ArrayList<RectF>()
             // a wrapped row: the label on its upper line, the buttons along its foot
             val btnH = if (lay.wrap[i]) min(58f, rr.height() * 0.5f) else rr.height() - 16f
@@ -626,7 +721,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                     val minus = RectF(plus.left - 150f - bw, plus.top, plus.left - 150f, plus.bottom)
                     // fix round 3: the app's steppers' look (Settings > Bottom screen's Zoom): neither plate lit as a pick, the signs big
                     UiKit.choice(c, minus, r.words[0], false, textSize = STEP_TEXT); UiKit.choice(c, plus, r.words[1], false, textSize = STEP_TEXT)
-                    val vp = UiKit.numberPaint(30f, Theme.text).apply { textAlign = Paint.Align.CENTER }
+                    val vp = numberP(30f, Theme.text, align = Paint.Align.CENTER)
                     c.drawText(r.value ?: "", (minus.right + plus.left) / 2f, plus.centerY() - (vp.ascent() + vp.descent()) / 2f, vp)
                     btns += minus; btns += plus
                 }
@@ -698,7 +793,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 250
         c.drawRoundRect(full, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
         UiKit.module(c, full)
-        c.drawText(Tr.t("Layouts"), full.left + 26f, full.top + 64f, UiKit.titlePaint(52f, Theme.gold))
+        c.drawText(Tr.t("Layouts"), full.left + 26f, full.top + 64f, titleP(52f, Theme.gold))
         val items = sheetItems(m)
         val boxes = sheetBoxes(m)
         val nPresets = m.flips.count { !it.name.startsWith(HomeEditModel.SLOT_MARK) }
@@ -716,22 +811,22 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                     if (bmp != null) c.drawBitmap(bmp, null, b, pBmp) else schematic(c, b, l)
                     UiKit.module(c, b, edgeOnly = true)
                     if (m.draft.samePlace(l)) UiKit.check(c, b.right - 28f, b.top + 28f, 38f, true)
-                    val np = UiKit.bodyPaint(32f, if (i == m.sheetSel) Theme.gold else Theme.text).apply { textAlign = Paint.Align.CENTER }
+                    val np = bodyP(32f, if (i == m.sheetSel) Theme.gold else Theme.text, align = Paint.Align.CENTER)
                     c.drawText(Tr.t(it.name), b.centerX(), b.bottom + 40f, np)
                     if (save >= 0) c.restoreToCount(save)
                     if (i == m.sheetSel) goldBox(c, b)
                 }
                 i < nPresets + HomePresets.SLOTS -> {
                     if (i == nPresets) {
-                        val lp = UiKit.bodyPaint(34f, Theme.dim)
+                        val lp = bodyP(34f, Theme.dim)
                         c.drawText(Tr.t("Mine"), full.left + 26f, b.centerY() - (lp.ascent() + lp.descent()) / 2f, lp)
                     }
                     if (l == null) {
                         // an empty slot says what a tap does (touch's "Save here"; X with the controller)
                         pLine.pathEffect = dash; pLine.strokeWidth = 2.5f; pLine.color = Theme.bronze; pLine.alpha = 200
                         c.drawRoundRect(b, 10f, 10f, pLine); pLine.pathEffect = null
-                        val pp = UiKit.bodyPaint(30f, Theme.dim)
-                        val sp = UiKit.bodyPaint(22f, Theme.dim)
+                        val pp = bodyP(30f, Theme.dim)
+                        val sp = bodyP(22f, Theme.dim)
                         val word = Tr.t("Save here")
                         val tw = pp.measureText(it.name) + 12f + sp.measureText(word)
                         val fit = tw <= b.width() - 16f
@@ -795,7 +890,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
         c.drawRoundRect(panel, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
         UiKit.module(c, panel)
-        c.drawText(Tr.t("Add"), panel.left + 24f, panel.top + 52f, UiKit.titlePaint(40f, Theme.gold))
+        c.drawText(Tr.t("Add"), panel.left + 24f, panel.top + 52f, titleP(40f, Theme.gold))
         for ((i, s) in m.removed.withIndex()) {
             val b = boxes[i]
             UiKit.button(c, b, if (s == EditStop.CAST) "Tap-to-cast bar" else "Quest card", UiKit.okGlyph())
@@ -816,7 +911,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val sv = c.save()
         if (abs(k - 1f) > 0.001f) popIn(c, k, box, box.centerX(), box.centerY(), PROMPT_FROM)
         UiKit.pane(c, box)
-        val tp = UiKit.titlePaint(36f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+        val tp = titleP(36f, Theme.gold, align = Paint.Align.CENTER)
         c.drawText(Tr.t("Unsaved changes"), box.centerX(), box.top + 70f, tp)
         val words = HomeEditModel.PROMPT
         val bw = (box.width() - 4 * 24f) / 3f
@@ -837,9 +932,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** the ribbon's pieces in the Strip's px (its top [Strip.TRACKS]) for a bar [w] wide */
     fun ribbon(w: Float): Ribbon {
         val h = Strip.TRACKS.toFloat()
-        val tp = UiKit.titlePaint(RIBBON_TITLE)
+        val tp = titleP(RIBBON_TITLE)
         val title = RectF(14f, 0f, 14f + tp.measureText(Tr.t("Edit Home")), h)
-        val np = UiKit.bodyPaint(RIBBON_TEXT)
+        val np = bodyP(RIBBON_TEXT)
         val name = host.model?.chipName ?: ""
         val nameW = max(150f, np.measureText(Tr.t(name)) + 16f)
         val chip = RectF(title.right + 18f, 2f, title.right + 18f + 30f + nameW + 30f, h - 2f)
@@ -869,14 +964,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.drawLine(0f, 1f, g0, 1f, pLine); c.drawLine(g1, 1f, w, 1f, pLine)
         c.drawLine(0f, h - 1f, g0, h - 1f, pLine); c.drawLine(g1, h - 1f, w, h - 1f, pLine)
         val r = ribbon(w)
-        val tp = UiKit.titlePaint(RIBBON_TITLE, Theme.gold)
+        val tp = titleP(RIBBON_TITLE, Theme.gold)
         c.drawText(Tr.t("Edit Home"), r.title.left, h / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
         // the layout chip: its value between the kit's gold arrows (the tabs-open-on-landing look)
         pFill.color = Theme.raised; c.drawRoundRect(r.chip, 6f, 6f, pFill)
         pLine.strokeWidth = 2f; pLine.color = if (m.cursor == EditStop.CHIP) Theme.gold else Theme.bronze; pLine.alpha = 255
         c.drawRoundRect(r.chip, 6f, 6f, pLine)
         arrow(c, r.arrowL, true); arrow(c, r.arrowR, false)
-        val np = UiKit.bodyPaint(RIBBON_TEXT, if (m.cursor == EditStop.CHIP) Theme.gold else Theme.text).apply { textAlign = Paint.Align.CENTER }
+        val np = bodyP(RIBBON_TEXT, if (m.cursor == EditStop.CHIP) Theme.gold else Theme.text, align = Paint.Align.CENTER)
         val ny = h / 2f - (np.ascent() + np.descent()) / 2f
         val fk = host.chipFlip(); val was = host.chipWas
         if (fk < 1f && was != null && host.chipDir != 0) {
@@ -894,7 +989,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (m.plusShown) {
             pFill.color = Theme.raised; c.drawRoundRect(r.plus, 6f, 6f, pFill)
             pLine.color = if (m.cursor == EditStop.PLUS) Theme.gold else Theme.bronze; c.drawRoundRect(r.plus, 6f, 6f, pLine)
-            val pp = UiKit.bodyPaint(30f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+            val pp = bodyP(30f, Theme.gold, align = Paint.Align.CENTER)
             c.drawText("+", r.plus.centerX(), h / 2f - (pp.ascent() + pp.descent()) / 2f, pp)
             if (m.cursor == EditStop.PLUS && m.sheet == null) UiKit.focus(c, r.plus)
         }
@@ -938,7 +1033,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     private fun hints(c: Canvas, right: Float, cy: Float, pairs: List<Pair<String, String>>) {
-        val p = UiKit.bodyPaint(RIBBON_TEXT, Theme.text)
+        val p = bodyP(RIBBON_TEXT, Theme.text)
         var x = right
         for ((glyph, word) in pairs.reversed()) {
             val t = Tr.t(word)
@@ -1203,6 +1298,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val DPAD = "dpad"
         /** the pops' starting scale (a menu, the prompt), the sheet's rise (px), the chip's name slide (px) */
         const val MENU_FROM = 0.92f
+        /** the text paints kept ([textP]) */
+        private const val TEXT_CACHE = 40
         const val PROMPT_FROM = 0.9f
         const val SHEET_RISE = 60f
         const val CHIP_SLIDE = 24f

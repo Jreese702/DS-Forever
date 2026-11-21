@@ -131,7 +131,8 @@ object HomeLayoutSolver {
         // fight (or by F2) it lies below the page and no column is cut
         val side = l.castSide
         if (aboveBar != null) {
-            out[HomePart.STRIP] = if (hidden) Box(aboveBar.l, top - aboveBar.h - g, aboveBar.r, top - g) else aboveBar
+            out[HomePart.STRIP] = if (hidden) CastStripModel.hiddenAbove(CastStripModel.Box(aboveBar.l, aboveBar.t, aboveBar.r, aboveBar.b), g)
+                .let { Box(it.l, it.t, it.r, it.b) } else aboveBar
             return Result(out, side, !chatLeft, card, hidden, f1, f2, bb, castTop = true)
         }
         val bars = castBoxes(l, w, h, g)

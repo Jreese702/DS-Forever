@@ -104,7 +104,7 @@ class HomeEditWiringTest {
         // a parked session writes no transform over the class / pause / LB slides
         val decor = body(home, "private fun editDecor()")
         assertTrue(decor.contains("val liveEdit = edit?.takeIf { !it.parked }"))
-        assertTrue(decor.contains("(classOpen || pauseT > 0f || pauseSide > 0f)) return"))
+        assertTrue(decor.contains("(classOpen || wheelOpen || pauseT > 0f || pauseSide > 0f)) return"))
         // the map's own paint clipped out of a lifted widget's box
         assertTrue(body(home, "private fun dispatchDrawHome(").contains("for (b in liftClip) c.clipOutRect(b)"))
         // the first Chat glide: the room's frame less its margins (P4's bottomMargin = TRACKS), never the content's whole height
@@ -148,5 +148,27 @@ class HomeEditWiringTest {
         // never opened in a fight; a fight parks it
         assertTrue(body(home, "fun editOpen(").contains("if (fightShown()) { editRefuse(start); return false }"))
         assertTrue(body(home, "private fun editFightCheck(").contains("m.park()"))
+    }
+    /**
+     * review round 2: the wiggle's ticker redraws the chrome and Home every frame for up to WIGGLE_IDLE after an input, so the per-frame
+     * paths make no paints, blurs, maps, pairs or boxes: the chrome's text paints are cached (textP), the lift's shadow blur is made once,
+     * the host's parts / the edit view's boxes / the lifted boxes are reused, the finger's offset comes back in a FloatArray
+     */
+    @Test fun theTickerFramesMakeNoPaintsOrMaps() {
+        for (k in listOf("bodyPaint(", "titlePaint(", "numberPaint(")) {
+            val uses = editView.split("UiKit." + k).size - 1
+            assertTrue("HomeEditView makes its text paints once (textP): $k x $uses", uses == 1)
+        }
+        assertTrue("one blur per paint, made with it", editView.lines().filter { it.contains("BlurMaskFilter(") }.all { it.trimStart().startsWith("private val ") })
+        for (f in listOf("private fun drawWidgets(", "private fun tag(", "private fun shadow(",
+            "private fun frame(", "private fun goldBox(")) {
+            val b = body(editView, f)
+            for (bad in listOf("LinkedHashMap", "listOf(", "Triple(", "BlurMaskFilter(", ".map {", ".filter {")) assertFalse("$f: $bad", b.contains(bad))
+        }
+        val parts = body(home, "override fun parts(): Map<HomePart, RectF>").substringBefore("return partsOut")
+        assertFalse("parts: a map", parts.contains("LinkedHashMap<HomePart, RectF>()")); assertFalse("parts: boxes", parts.contains("RectF(r)"))
+        assertFalse("liftedBoxes", body(home, "fun liftedBoxes(): List<RectF>").contains("val out = ArrayList<RectF>()"))
+        assertTrue("liftOffset", home.contains("private fun liftOffset(out: FloatArray)"))
+        assertFalse("editDecor", body(home, "private fun editDecor(").contains("liftOffset()"))
     }
 }

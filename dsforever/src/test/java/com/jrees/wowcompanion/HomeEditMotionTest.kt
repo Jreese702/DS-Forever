@@ -162,6 +162,17 @@ class HomeEditMotionTest {
         assertFalse("nothing moves: the ticker stops", m.busy(late))
         m.poke(late)
         assertTrue("a press wakes it", m.busy(late + 16L))
+        // review round 2: it ramps back in from its rest (WIGGLE_IN), never a snap to full on the first frame
+        var first = 0f
+        for (t in late..late + 16L) first = maxOf(first, abs(m.pose(chat, t, 40f, p).rot))
+        assertTrue("no snap on the wake's first frame: $first", first <= 0.05f)
+        var back = 0f
+        for (t in late + 300L..late + 500L) back = maxOf(back, abs(m.pose(chat, t, 40f, p).rot))
+        assertTrue("back in full (the menu's calm) after it: $back", back > Motion.WIGGLE_DEG * Motion.WIGGLE_CALM * 0.9f)
+        // a poke while it wiggles changes nothing
+        val a = m.pose(chat, late + 600L, 40f, p).rot
+        m.poke(late + 600L)
+        assertEquals(a, m.pose(chat, late + 600L, 40f, p).rot, 0f)
     }
 
     // ---------------------------------------------------------------- the lift and the drop

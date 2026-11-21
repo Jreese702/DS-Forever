@@ -280,9 +280,22 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     fun roomDrawn(r: Room): RectF? {
         val p = pics[r] ?: return null
         val x = if (r == liftRoom) liftX ?: drawnX[r] ?: p.centerX() else drawnX[r] ?: p.centerX()
-        val s = iconNow * (if (r == liftRoom || r == dropRoom) 1f + (HomeEditModel.LIFT_SCALE - 1f) * liftK() else 1f)
+        val s = iconNow * (if (r == liftRoom || r == dropRoom) liftPose(r, liftBuf) else 1f)
         return RectF(x - s / 2f, p.centerY() - s / 2f, x + s / 2f, p.centerY() + s / 2f)
     }
+    /**
+     * the lifted (or just dropped) room's pose into [out] (scale, turn, dx, dy; returns the scale): its edit pose (the 0.94 and the wiggle
+     * every room has while editing) handing over to the lift's 1 -> LIFT_SCALE as the lift comes in, and back as it fades - so the pick
+     * up and the drop never snap between the posed rooms' size and turn and the lifted one's
+     */
+    private fun liftPose(r: Room, out: FloatArray): Float {
+        val k = liftK()
+        if (editPose?.invoke(r, out) != true) { out[0] = 1f; out[1] = 0f; out[2] = 0f; out[3] = 0f }
+        val s = (out[0] + (1f - out[0]) * k) * (1f + (HomeEditModel.LIFT_SCALE - 1f) * k)
+        out[0] = s; out[1] *= 1f - k; out[2] *= 1f - k; out[3] *= 1f - k
+        return s
+    }
+    private val liftBuf = FloatArray(4)
     /** the slot index a room's touch box covers at [x], -1 = none (the disc, the ends) */
     fun slotAt(x: Float, y: Float): Int = order.indexOfFirst { hit[it]?.contains(x, y) == true }
 
@@ -770,6 +783,9 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     private fun drawLifted(c: Canvas, r: Room) {
         val box = roomDrawn(r) ?: return
         val k = liftK()
+        // its edit pose's turn and bob as the lift hands over (liftPose; the size is in the box)
+        val sv = c.save()
+        c.translate(liftBuf[2], liftBuf[3]); c.rotate(liftBuf[1], box.centerX(), box.centerY())
         if (k > 0f) {
             pShadow.color = Color.argb((140 * k).toInt(), 0, 0, 0)
             c.drawRoundRect(RectF(box).apply { inset(-6f, -6f); offset(6f, 10f) }, 14f, 14f, pShadow)
@@ -778,6 +794,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             pStroke.color = Theme.text; pStroke.strokeWidth = 1.8f
             icon(c, r, box.centerX(), box.centerY(), false)
         }
+        c.restoreToCount(sv)
     }
     private val pShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { maskFilter = BlurMaskFilter(18f, BlurMaskFilter.Blur.NORMAL) }
 

@@ -306,7 +306,8 @@ class HomeEditMotionShotsTest {
         home.editKey("PADRSHOULDER")                                        // RB: the next layout, live
         assertNotEquals(was, model(p).chipName)
         val dur = glideMs(home)
-        assertEquals(HomeEditMotion.glideMs(Motion.MODULE_OPEN), dur)
+        // the glide's length and the cascade's longest delay (review round 2: no part is snapped at the end)
+        assertTrue(dur > HomeEditMotion.glideMs(Motion.MODULE_OPEN) && dur <= HomeEditMotion.glideMs(Motion.MODULE_OPEN) + Motion.FLIP_STAGGER_MAX)
         val from = boxes(home)
         for (t in listOf(0L, 80L, 160L, 400L)) {
             glideAt(home, (t.toFloat() / dur).coerceAtMost(1f))
@@ -431,5 +432,184 @@ class HomeEditMotionShotsTest {
         frame(p, clock + 600)
         assertEquals(Motion.REST_SCALE, views(home).getValue("CHAT").scaleX, 2e-3f)
         assertNotNull(home.editModel())
+    }
+
+    // ---------------------------------------------------------------- review round 2: no jumps
+
+    private val partClass by lazy { Class.forName("com.jrees.wowcompanion.HomeView\$Part") }
+    private fun part(name: String): Any = partClass.enumConstants.first { (it as Enum<*>).name == name }
+    /** [box] as drawn through [partName]'s pose now (HomeView.partMatrix: the chrome's and the paint's) */
+    private fun posed(home: HomeView, partName: String, box: RectF): RectF {
+        val m = android.graphics.Matrix()
+        val on = HomeView::class.java.getDeclaredMethod("partMatrix", partClass, android.graphics.Matrix::class.java).apply { isAccessible = true }
+            .invoke(home, part(partName), m) as Boolean
+        return RectF(box).also { if (on) m.mapRect(it) }
+    }
+    /** the gold cursor's box as drawn now ([stop]'s box, its flight's offset, its widget's pose) */
+    private fun cursorDrawn(home: HomeView, stop: EditStop, partName: String, t: Long): RectF {
+        val b = home.editChrome.widgetBoxes().getValue(stop)
+        val off = FloatArray(4); home.editMotion().cursorOffset(t, off)
+        return posed(home, partName, RectF(b.left + off[0], b.top + off[1], b.right + off[2], b.bottom + off[3]))
+    }
+    /** a view's centre as drawn (its pivot, scale, turn and translation), Home's px */
+    private fun drawnCentre(v: View): Pair<Float, Float> {
+        val m = android.graphics.Matrix()
+        m.postScale(v.scaleX, v.scaleY, v.pivotX, v.pivotY); m.postRotate(v.rotation, v.pivotX, v.pivotY)
+        m.postTranslate(v.left + v.translationX, v.top + v.translationY)
+        val pt = floatArrayOf(v.width / 2f, v.height / 2f); m.mapPoints(pt)
+        return pt[0] to pt[1]
+    }
+    private fun far(a: Pair<Float, Float>, b: Pair<Float, Float>) = hypot(a.first - b.first, a.second - b.second)
+
+    /** a layout flip: the card on the map stays inside the map on every frame (it glides as the map's rider, on the map's delay), and
+     *  the animator runs the cascade's longest delay longer, so no part is snapped to its place at the end */
+    @Test fun aFlipKeepsTheCardOnItsMapAndLandsEveryPart() {
+        val p = page(classic)
+        val home = p.home
+        pin(p)
+        val t0 = clock
+        home.editOpen(EditStop.CHAT)
+        settle(12)
+        frame(p, t0 + 2000)
+        assertTrue("the card on the map", boxes(home).containsKey("QUESTS"))
+        home.editKey("PADRSHOULDER")
+        val dur = glideMs(home)
+        assertTrue("the cascade's delay on top of the glide: $dur", dur > HomeEditMotion.glideMs(Motion.MODULE_OPEN) &&
+            dur <= HomeEditMotion.glideMs(Motion.MODULE_OPEN) + Motion.FLIP_STAGGER_MAX)
+        val n = (dur / 16L).toInt()
+        var last = boxes(home)
+        var lastStep = 0f
+        for (i in 1..n) {
+            glideAt(home, i.toFloat() / n)
+            val b = boxes(home)
+            val q = b.getValue("QUESTS"); val m = b.getValue("MAP")
+            assertTrue("frame $i: the card ${q} inside the map $m",
+                q.left >= m.left - 0.5f && q.right <= m.right + 0.5f && q.top >= m.top - 0.5f && q.bottom <= m.bottom + 0.5f)
+            if (i == n) lastStep = b.keys.filter { it in last }.maxOf { k ->
+                val a = last.getValue(k); val c = b.getValue(k)
+                maxOf(abs(a.left - c.left), abs(a.top - c.top), abs(a.right - c.right), abs(a.bottom - c.bottom)) }
+            last = b
+        }
+        assertTrue("the last frame is a frame's step, not a snap: $lastStep px", lastStep <= 2f)
+    }
+
+    /** the gold cursor leaves from where it was DRAWN: its first frame on the new widget is the old drawn box (no 0.06 x the centres' jump) */
+    @Test fun theCursorFliesFromWhereItWasDrawn() {
+        val p = page(classic)
+        val home = p.home
+        pin(p)
+        val t0 = clock
+        home.editOpen(EditStop.CHAT)
+        settle(12)
+        val t = t0 + Motion.WIGGLE_IDLE + 2000                              // the wiggle resting: each pose is its 0.94 alone
+        frame(p, t)
+        assertEquals(EditStop.CHAT, model(p).cursor)
+        val before = cursorDrawn(home, EditStop.CHAT, "CHAT", t)
+        home.editKey("PADDRIGHT")
+        assertEquals(EditStop.MAP, model(p).cursor)
+        frame(p, t)
+        val after = cursorDrawn(home, EditStop.MAP, "MAP", t)
+        for ((a, b) in listOf(before.left to after.left, before.top to after.top, before.right to after.right, before.bottom to after.bottom))
+            assertEquals("the box drawn where it was: $before -> $after", a, b, 0.5f)
+        frame(p, t + 400)
+        val landed = cursorDrawn(home, EditStop.MAP, "MAP", t + 400)
+        assertEquals("and it lands on the map", posed(home, "MAP", home.editChrome.widgetBoxes().getValue(EditStop.MAP)).centerX(), landed.centerX(), 1f)
+    }
+
+    /** the card on the map: lifted, it grows from where it is (its pose moves from the map's to its own, no pivot switch); dropped, it
+     *  plops and rides the map's pose again - no frame jumps */
+    @Test fun theCardOnTheMapLiftsAndDropsWithoutAJump() {
+        val p = page(classic)
+        val home = p.home
+        pin(p)
+        val t0 = clock
+        home.editOpen(EditStop.QUEST)
+        settle(12)
+        val t = t0 + Motion.WIGGLE_IDLE + 2000
+        frame(p, t)
+        val card = views(home).getValue("QUESTS")
+        val c0 = drawnCentre(card)
+        home.editKey("PAD1")
+        assertEquals(EditStop.QUEST, model(p).lifted)
+        frame(p, t)
+        assertTrue("lifted at its first frame: where it was (${far(c0, drawnCentre(card))} px)", far(c0, drawnCentre(card)) < 0.5f)
+        var was = drawnCentre(card)
+        var most = 0f
+        for (dt in 16L..400L step 16L) { frame(p, t + dt); val c = drawnCentre(card); most = maxOf(most, far(was, c)); was = c }
+        assertEquals("lifted to 1.04", Motion.LIFT, card.scaleX, 0.003f)
+        val d0 = t + 400
+        clock = d0
+        home.editKey("PAD1")
+        assertEquals(null, model(p).lifted)
+        for (dt in 0L..900L step 16L) { frame(p, d0 + dt); val c = drawnCentre(card); most = maxOf(most, far(was, c)); was = c }
+        assertTrue("no frame jumps over the lift and the drop: $most px", most < 4f)
+        assertEquals("back on the map's rest", Motion.REST_SCALE, card.scaleX, 2e-3f)
+        assertTrue("and riding the map again (${far(c0, was)} px from where it was)", far(c0, was) < 3f)
+    }
+
+    /** a room on the bar picked up and put down: from its 0.94 and its turn to the lift and back, never 1.0 for a frame */
+    @Test fun aRoomLiftsAndDropsFromItsPose() {
+        val p = page(classic)
+        val s = p.strip
+        s.editPose = { _, o -> o[0] = Motion.REST_SCALE; o[1] = 1.1f; o[2] = 0f; o[3] = 0.4f; true }
+        draw(p)
+        val r = Room.values().first { it != Room.HOME && it.onBar }
+        val icon = s.roomDrawn(r)!!.width()
+        s.liftRoom = r
+        assertEquals("picked up: at its pose's size", icon * Motion.REST_SCALE, s.roomDrawn(r)!!.width(), 0.5f)
+        draw(p)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(HomeEditModel.LIFT_MS * 3)); draw(p)
+        assertEquals("lifted", icon * HomeEditModel.LIFT_SCALE, s.roomDrawn(r)!!.width(), 0.5f)
+        s.liftRoom = null
+        assertEquals("the drop starts at the lift", icon * HomeEditModel.LIFT_SCALE, s.roomDrawn(r)!!.width(), 0.5f)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(HomeEditModel.LIFT_MS * 3)); draw(p)
+        assertEquals("dropped: back at its pose's size", icon * Motion.REST_SCALE, s.roomDrawn(r)!!.width(), 0.5f)
+    }
+
+    /** Discard from a bigger map: its paint (the well edge, the zone band) stays on the map through the whole glide, the part after the
+     *  chrome's fade included (the crop's pivot share is the view's, not the paint's) */
+    @Test fun theMapsPaintStaysOnTheMapThroughADiscard() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP))
+        val home = p.home
+        home.editOpen(EditStop.MAP); settle(12)
+        home.editKey("PAD4"); settle(30)                                    // Y: the map 2/3
+        home.editKey("PADDDOWN"); assertEquals(EditStop.CAST, model(p).cursor)
+        home.editKey("PAD1"); home.editKey("PADDLEFT"); home.editKey("PAD1"); settle(30)
+        assertEquals(HomeLayout.CastDock.UNDER_CHAT, model(p).draft.cast)
+        val big = boxes(home).getValue("MAP")
+        home.editCancel()
+        // the glide (spring: longer than the chrome's 200 ms fade) and the fade, stepped by hand (the off-device animators)
+        val glide = field(home, "anim") as android.animation.ValueAnimator
+        assertTrue("a spring glide longer than the fade: ${glide.duration}", glide.duration > Motion.MODULE_CLOSE)
+        glideAt(home, 0.3f)
+        assertNotNull("the map's crop holds it", field(home, "mapScaleTo"))
+        assertEquals("chrome on: the map's paint on the map", 0f, home.mapPaintDx(), 1f)
+        (field(home, "chromeAnim") as android.animation.ValueAnimator).end()
+        assertEquals("the chrome faded", null, field(home, "chromeModel"))
+        for (k in listOf(0.6f, 0.8f, 0.95f)) {
+            glideAt(home, k)
+            assertNotNull("$k: the crop still holds it", field(home, "mapScaleTo"))
+            assertEquals("$k (the chrome faded): the map's paint on the map", 0f, home.mapPaintDx(), 1f)
+        }
+        glideAt(home, 1f); settle(4)
+        assertTrue("the map shrank both ways", boxes(home).getValue("MAP").let { it.width() < big.width() && it.height() < big.height() })
+    }
+
+    /** the middle wheel opened right after Save: the leave's ticker never puts the columns it parted back over it */
+    @Test fun theMiddleWheelOpensRightAfterSave() {
+        val p = page(classic)
+        val home = p.home
+        home.editOpen(EditStop.CHAT); settle(12)
+        home.editSave()
+        assertTrue("the leave's springs still run", home.editMotion().on)
+        val slot = home.wheelSlot(true)!!
+        settle(50)
+        assertFalse("the leave landed", home.editMotion().on)
+        for (n in listOf("CHAT", "MAP")) {
+            val v = views(home).getValue(n)
+            val d = RectF(boxes(home).getValue(n)).apply { offset(v.translationX, v.translationY) }
+            assertFalse("$n drawn $d over the wheel $slot", RectF.intersects(d, slot))
+        }
+        home.wheelSlot(false); settle(30)
     }
 }

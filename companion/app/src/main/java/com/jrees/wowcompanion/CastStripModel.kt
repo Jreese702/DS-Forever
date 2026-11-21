@@ -278,15 +278,9 @@ object CastStripModel {
     /** cb7: the bar's box hidden in a fight: the same box moved down until its top is the page's foot [h] (behind Home's bottom bar) */
     fun hiddenBox(b: Box, h: Float): Box = Box(b.l, h, b.r, h + b.h)
 
-    /** a top bar (Above chat / Above map) hidden: up behind the band, its foot on the band's foot ([g] over the columns' top) */
+    /** a top bar (Above chat / Above map) hidden: up behind the band, its foot on the band's foot ([g] over the columns' top); the
+     *  solver lays it with this (HomeLayoutSolver.places), Home's one motion carries it there */
     fun hiddenAbove(b: Box, g: Float): Box = Box(b.l, b.t - b.h - g, b.r, b.t - g)
-
-    /** a top bar's frame at progress [k] (0 = laid, 1 = up behind the band) and its column's top on the same [k] */
-    fun slideUpAt(b: Box, g: Float, k: Float): Box {
-        val d = (b.h + g) * k.coerceIn(0f, 1f)
-        return Box(b.l, b.t - d, b.r, b.b - d)
-    }
-    fun columnTopAt(cut: Float, full: Float, k: Float): Float = cut + (full - cut) * k.coerceIn(0f, 1f)
 
     /** cb7: a column's bottom under the bar: [cut] = where it ends above the laid bar, [full] = its own bottom with no bar; hidden = full */
     fun columnBottom(cut: Float, full: Float, hidden: Boolean): Float = if (hidden) full else cut

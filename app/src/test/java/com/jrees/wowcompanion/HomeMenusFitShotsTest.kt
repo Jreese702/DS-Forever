@@ -33,9 +33,13 @@ import java.time.Duration
  *  - the pause / target radial's slide: every part off the screen, off ITS OWN edge (its column's), the map's paint with it;
  *  - the middle wheel (D-pad Up / the spell radial): inside the frame, under the band, no part over it;
  *  - both class wheels: inside the frame, under the band, no part over them;
- *  - the D-pad toast: inside the frame, never over the band's buttons when the band is the thin row or grown;
- *  - edit mode's CHAT / MAP menus (at rest): inside the screen, under the band;
+ *  - the D-pad toast: inside the frame, never over the band's buttons when the band is the thin row or grown (Classic's diamonds grown
+ *    for a fight keep 1516's spot: held), never over a tap-to-cast bar shown at a column's top;
+ *  - edit mode's menus (every widget's, at rest): inside the screen, under the band, never over a tap-to-cast bar (the room bar's own
+ *    menu rises from the page's foot over the room bar it edits: not checked against the bar);
  *  - the party menu's place: inside the chat's column, under the band.
+ * Review round 2: every bar dock (Above chat / Above map too) x every preset x swapped x 1/3 and 2/3, and fights with the bar shown
+ * ("Show in combat"), and a Top screen record whose Wings are not confirmed (laid as Grow: never Classic's held looks).
  * PNG contact sheets with MENUS_FIT_SHOTS=<dir>.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -90,10 +94,14 @@ class HomeMenusFitShotsTest {
         ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, File(root)) } }
     private val MIRROR = mapOf(1 to "map", 2 to "radial", 3 to "chat", 4 to "home")
 
+    /** the bar stays in a fight ("Show in combat") for the pages of this run */
+    private var stay = false
+
     private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false): Page {
         art()
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app)
+        HomeSettings.castBarCombat = if (stay) CastStripModel.Combat.STAY else CastStripModel.Combat.HIDE
         HomeLayoutStore.character(null)
         HomeLayoutStore.set(layout)
         CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null
@@ -135,12 +143,16 @@ class HomeMenusFitShotsTest {
     private fun views(home: HomeView): Map<String, View> = (field(home, "views") as Map<Any, View>).entries.associate { it.key.toString() to it.value }
 
     /** each shown part's box as drawn now (its laid box moved by its translation); the buff list lies in the map, a bar slid away for
-     *  a fight below the page */
+     *  a fight below the page or (a top bar) up behind the band (clipped away) */
     private fun drawn(home: HomeView): Map<String, RectF> {
         val b = boxes(home); val v = views(home)
-        return b.filter { (k, r) -> k != "AURAS" && k != "BARS" && v[k]?.visibility == View.VISIBLE && r.top < H }.mapValues { (k, r) ->
+        val bb = b["BARS"]?.bottom ?: 0f
+        return b.filter { (k, r) -> k != "AURAS" && k != "BARS" && v[k]?.visibility == View.VISIBLE && r.top < H && r.bottom > bb + 0.5f &&
+            (v[k]?.clipBounds?.let { it.height() > 1 } ?: true) }.mapValues { (k, r) ->
             val vv = v.getValue(k); RectF(r).apply { offset(vv.translationX, vv.translationY) } }
     }
+    /** the tap-to-cast bar's drawn box(es) now (none while slid away) */
+    private fun castDrawn(home: HomeView): List<RectF> = drawn(home).filterKeys { it == "STRIP" || it == "CAST2" }.values.toList()
     private fun band(home: HomeView): RectF = boxes(home).getValue("BARS")
 
     private fun overlaps(a: RectF, b: RectF): Boolean = a.left < b.right - 0.5f && b.left < a.right - 0.5f && a.top < b.bottom - 0.5f && b.top < a.bottom - 0.5f
@@ -240,6 +252,8 @@ class HomeMenusFitShotsTest {
         settle(30)
         if (!inside(slot, G, band(home).bottom, W - G, H - G)) no(tag, "middle wheel ${r(slot)} off the frame or under the band")
         for ((k, d) in drawn(home)) if (overlaps(d, slot)) no(tag, "middle wheel: $k drawn ${r(d)} covers it ${r(slot)}")
+        run { val c = HomeLayoutSolver.columns(p.layout, W.toFloat(), G); val mid = (c.first.second + c.second.first) / 2f
+            if (kotlin.math.abs(slot.centerX() - mid) > 2f && slot.left > G + 1f && slot.right < W - G - 1f) no(tag, "middle wheel centre ${slot.centerX()} off the line $mid") }
         render(p, "$tag middle") { c -> c.drawRect(slot, pCyan) }
         home.wheelSlot(false); settle(30)
         home.wheelPainter = null
@@ -256,18 +270,25 @@ class HomeMenusFitShotsTest {
             val nm = if (side == 1) "LB+LT" else "RB+RT"
             if (!inside(cr, 0f, band(home).bottom, W.toFloat(), H - G)) no(tag, "$nm wheel ${r(cr)} off the frame or under the band")
             for ((k, d) in drawn(home)) if (overlaps(d, cr)) no(tag, "$nm: $k drawn ${r(d)} covers the wheel ${r(cr)}")
+            run { val c = HomeLayoutSolver.columns(p.layout, W.toFloat(), G)
+                val col = if (side == 1) c.first else c.second
+                if (cr.centerX() < col.first - 1f || cr.centerX() > col.second + 1f) no(tag, "$nm wheel ${r(cr)} not in its column ${col.first.toInt()}..${col.second.toInt()}") }
             render(p, "$tag $nm") { c -> c.drawRect(cr, pRed) }
             show.invoke(home, false); settle(40)
         }
     }
 
-    private fun toast(tag: String, p: Page) {
+    private fun toast(tag: String, p: Page, fight: Boolean) {
         val home = p.home
         val bb = band(home)
         val box = home.toastBox(380f)
         if (!inside(box, 0f, 0f, W.toFloat(), H.toFloat())) no(tag, "toast ${r(box)} off the frame")
         val diamonds = kotlin.math.abs(bb.bottom - HomeLayoutSolver.barsBottom(HomeLayout(), HomeLayoutSolver.State())) < 1f
-        if (!diamonds && box.top < bb.bottom) no(tag, "toast ${r(box)} over the band (bottom ${bb.bottom})")
+        // Classic's diamonds grown for a fight: 1516's pill on the band's foot (held for the user's ruling, like the LB picture's top)
+        val held = classic(p.layout) && fight && p.layout.rest == HomeRest.DIAMONDS && p.layout.fight != HomeLayout.FightBand.TOP
+        if (held) { if (kotlin.math.abs(box.centerY() - (bb.bottom - 27f - 6f)) > 1f) no(tag, "Classic toast ${r(box)} not on 1516's spot") }
+        else if (!diamonds && box.top < bb.bottom) no(tag, "toast ${r(box)} over the band (bottom ${bb.bottom})")
+        for (c in castDrawn(home)) if (overlaps(c, box)) no(tag, "toast ${r(box)} over the tap-to-cast bar ${r(c)}")
     }
 
     private fun partyMenu(tag: String, p: Page) {
@@ -280,32 +301,44 @@ class HomeMenusFitShotsTest {
     }
 
     private fun editMenus(tag: String, l: HomeLayout) {
-        for (s in listOf(EditStop.CHAT, EditStop.MAP)) {
+        for (s in EditStop.values().filter { it.hasMenu }) {
             val p = page(l)
-            if (!p.home.editOpen(s)) { no(tag, "edit $s refused"); continue }
+            if (!p.home.editOpen(EditStop.CHAT)) { no(tag, "edit $s refused"); continue }
             settle()
+            // a widget the record does not show (the card / the bar Off) has no menu to open
+            if (s != EditStop.ROOMS && s !in p.home.editChrome.widgetBoxes()) { p.home.editCancel(); settle(); continue }
             p.home.editAct { it.openMenu(s); emptyList() }; settle()
             val box = p.home.editChrome.menuBox(s)
             if (!inside(box, 0f, band(p.home).bottom, W.toFloat(), H.toFloat())) no(tag, "edit $s menu ${r(box)} off the screen or under the band")
-            render(p, "$tag edit $s")
+            val cb = p.home.editChrome.castBoxes()
+            if (s != EditStop.ROOMS) for (c in cb) if (overlaps(c, box)) no(tag, "edit $s menu ${r(box)} covers the tap-to-cast bar ${r(c)}")
+            render(p, "$tag edit $s") { c -> c.drawRect(box, pCyan); for (x in cb) c.drawRect(x, pRed) }
             p.home.editCancel(); settle()
         }
     }
 
     // ---------------------------------------------------------------- the matrix
 
-    /** every offered preset, swapped, at the biggest map share (and Big chat's 2/3), one per placement */
+    /** review round 2: every dock the bar takes (the presets' own, and each moved to every other: Above chat / Above map included) */
+    private val DOCKS = listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ABOVE_CHAT,
+        HomeLayout.CastDock.ABOVE_MAP, HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT)
+
+    /** every offered preset with its bar in every dock, swapped, at the biggest map share (1/3) and the biggest chat (2/3), one per placement */
     private fun matrix(): List<Pair<String, HomeLayout>> {
         val base = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
         val out = ArrayList<Pair<String, HomeLayout>>()
-        for (pr in HomePresets.OFFERED) {
-            val l = pr.apply(base)
-            val id = pr.id.lowercase().replace(' ', '_')
+        for (pr in HomePresets.OFFERED) for (d in listOf<HomeLayout.CastDock?>(null) + DOCKS) {
+            val l = pr.apply(base).let { if (d == null) it else it.copy(cast = d) }
+            val id = pr.id.lowercase().replace(' ', '_') + (d?.let { "_" + it.name.lowercase() } ?: "")
             out += id to l
             out += "${id}_swapped" to l.swapped()
             if (l.chatShare != HomeLayout.Share.THIRD) {
                 out += "${id}_bigmap" to l.copy(chatShare = HomeLayout.Share.THIRD)
                 out += "${id}_bigmap_swapped" to l.copy(chatShare = HomeLayout.Share.THIRD).swapped()
+            }
+            if (l.chatShare != HomeLayout.Share.TWO_THIRDS) {
+                out += "${id}_bigchat" to l.copy(chatShare = HomeLayout.Share.TWO_THIRDS)
+                out += "${id}_bigchat_swapped" to l.copy(chatShare = HomeLayout.Share.TWO_THIRDS).swapped()
             }
         }
         val seen = ArrayList<HomeLayout>()
@@ -323,7 +356,7 @@ class HomeMenusFitShotsTest {
             p = page(l, fight = fight, party = party)
             middleWheel(tag, p)
             classWheels(tag, p)
-            toast(tag, p)
+            toast(tag, p, fight)
             partyMenu(tag, p)
             if (edit) editMenus(tag, l)
             sheet("${id}__$state")
@@ -335,4 +368,53 @@ class HomeMenusFitShotsTest {
     @Test fun everyMenuFitsInAGrownFight() = run("fightgrow", fight = true, party = false, edit = false, grow = true)
     @Test fun everyMenuFitsInEachPresetsOwnFight() = run("fight", fight = true, party = false, edit = false, grow = false)
     @Test fun everyMenuFitsWithPartyMode() = run("partymode", fight = false, party = true, edit = false, grow = false)
+    /** "Show in combat": the bar stays in the fight (a top bar rides down under the grown band) */
+    @Test fun everyMenuFitsInAGrownFightWithTheBarShown() { stay = true; try { run("fightgrowstay", fight = true, party = false, edit = false, grow = true) } finally { stay = false } }
+    @Test fun everyMenuFitsInEachPresetsOwnFightWithTheBarShown() { stay = true; try { run("fightstay", fight = true, party = false, edit = false, grow = false) } finally { stay = false } }
+
+    /**
+     * a Top screen record (chat left, 1/2, the bar under the chat / the map / across) whose Wings the add-on has not confirmed is laid as
+     * Grow (TopCombatBar.honoured): it is still NOT Classic, so it gets the fitted LB picture (under the band), the map's paint riding
+     * the map, and the D-pad toast under the grown band - not Classic's held 1516 looks
+     */
+    @Test fun aTopScreenRecordWithoutItsWingsIsNotClassic() {
+        for (d in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS)) {
+            val l = HomeLayout(cast = d, fight = HomeLayout.FightBand.TOP)
+            assertTrue("the laid record holds Classic", classic(l.copy(fight = HomeLayout.FightBand.GROW)))
+            val tag = "top_without_wings_${d.name.lowercase()}"
+            var p = page(l, fight = true)
+            val bb = band(p.home).bottom
+            assertTrue("$tag: laid as a grown fight (bottom $bb)", bb > 400f)
+            lbPicture(tag, p, true)
+            for (b in LbFit.bars(p.home.lbPlace()).values) if (b.t < bb) no(tag, "LB bar ${b.t} under the band ($bb)")
+            p = page(l, fight = true)
+            pauseSlide(tag, p)
+            p = page(l, fight = true)
+            toast(tag, p, true)
+            if (p.home.toastBox(380f).top < bb) no(tag, "toast ${r(p.home.toastBox(380f))} over the band ($bb): Classic's held spot")
+            sheet("${tag}__fight")
+        }
+        assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
+    }
+
+    /** the pill itself, drawn: under a top bar at rest (Compact's thin row) and in a grown fight with the bar shown, clear of its slots */
+    @Test fun theToastIsDrawnUnderATopBar() {
+        val cases = listOf(
+            Triple("compact_above_chat_rest", HomePresets.byId(HomePresets.COMPACT)!!.apply(HomeLayout()).copy(cast = HomeLayout.CastDock.ABOVE_CHAT), false),
+            Triple("above_map_bigmap_fightgrowstay", HomeLayout(chatShare = HomeLayout.Share.THIRD, cast = HomeLayout.CastDock.ABOVE_MAP).swapped(), true))
+        for ((n, l, f) in cases) {
+            stay = f
+            try {
+                val p = page(l, fight = f)
+                p.home.toolbarToast(MIRROR)
+                ShadowSystemClock.advanceBy(Duration.ofMillis(400))
+                val box = p.home.toastBox(380f)
+                val bars = castDrawn(p.home)
+                assertTrue("$n: a top bar shown", bars.isNotEmpty())
+                for (c in bars) assertTrue("$n: toast ${r(box)} over the bar ${r(c)}", !overlaps(c, box))
+                render(p, "$n toast") { c -> c.drawRect(box, pCyan); for (x in bars) c.drawRect(x, pRed) }
+            } finally { stay = false }
+        }
+        sheet("toast_top_bar")
+    }
 }

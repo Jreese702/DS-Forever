@@ -375,4 +375,27 @@ class BottomTilesRoomTest {
         }
         File(out, "bot_sheet.png").outputStream().use { sheet.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
+
+    /** review round 2 ("pictures never lie"): the Tap-to-cast tile's picture puts an Above chat / Above map bar at its column's TOP (the
+     *  column starts under it), an Under one at the foot - the very edge the tile's word and Home use */
+    @Test fun theCastBarPictureShowsTheBarsEdge() {
+        room(kit = false)
+        fun goldRows(dock: HomeLayout.CastDock, x0: Int, x1: Int): List<Int> {
+            HomeLayoutStore.character(null); HomeLayoutStore.set(HomeLayout(cast = dock))
+            val b = Bitmap.createBitmap(432, 216, Bitmap.Config.ARGB_8888)
+            BottomPictures.draw(Canvas(b), app, BottomTiles.CASTBAR, RectF(0f, 0f, 432f, 216f), BottomPictures.Look(BottomTiles.Env(null, null)), null, 0)
+            val g = Theme.gold
+            fun near(c: Int) = kotlin.math.abs(Color.red(c) - Color.red(g)) < 40 && kotlin.math.abs(Color.green(c) - Color.green(g)) < 40 &&
+                kotlin.math.abs(Color.blue(c) - Color.blue(g)) < 40
+            return (0 until 216).filter { y -> (x0 until x1).count { x -> near(b.getPixel(x, y)) } > (x1 - x0) / 2 }
+        }
+        try {
+            for ((dock, x0, x1) in listOf(Triple(HomeLayout.CastDock.ABOVE_CHAT, 30, 190), Triple(HomeLayout.CastDock.ABOVE_MAP, 242, 402))) {
+                val top = goldRows(dock, x0, x1)
+                assertTrue("$dock: the bar's edge near the picture's top: $top", top.isNotEmpty() && top.all { it < 216 / 3 })
+                val under = goldRows(dock.withTop(false), x0, x1)
+                assertTrue("${dock.withTop(false)}: at the foot: $under", under.isNotEmpty() && under.all { it > 216 * 2 / 3 })
+            }
+        } finally { HomeLayoutStore.set(HomeLayout()) }
+    }
 }
