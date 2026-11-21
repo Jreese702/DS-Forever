@@ -92,11 +92,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return out
     }
 
-    /** the tap-to-cast bar's box(es) on the page (none while it is slid away) */
+    /** the tap-to-cast bar's box(es) on the page (none while it is slid away: below the page, or up behind the band for a top bar) */
     fun castBoxes(p: Map<HomePart, RectF> = host.parts()): List<RectF> {
         val h = height.toFloat().takeIf { it > 0f } ?: 935f
-        return listOfNotNull(p[HomePart.STRIP], p[HomePart.CAST2]).filter { it.top < h - 1f }.map { RectF(it) }
+        val band = p[HomePart.BARS]?.bottom ?: 0f
+        return listOfNotNull(p[HomePart.STRIP], p[HomePart.CAST2]).filter { it.top < h - 1f && it.bottom > band + 1f }.map { RectF(it) }
     }
+
+    /** the bar laid at the top of a column (Above chat / Above map): its box, else null */
+    private fun topCastBox(p: Map<HomePart, RectF>): RectF? =
+        if (host.model?.draft?.cast?.top == true) castBoxes(p).firstOrNull() else null
 
     /** the divider's handle: centred in the 8 px between the columns, halfway down them */
     fun dividerBox(p: Map<HomePart, RectF> = host.parts()): RectF? {
@@ -298,6 +303,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** fix round 1: where [s]'s tag stands on its box [r]: the chat's and the card's top right inside a wide column, ON the frame's top
      *  edge in a narrow one (a third: the card's title and the chat's lines reach that corner there; the tag must hide nothing) */
     fun cornerOf(s: EditStop, r: RectF): Corner {
+        // a bar at the top of its column: its tag on its FOOT edge (the top edge is the band's foot 8 px over it)
+        if (s == EditStop.CAST && host.model?.draft?.cast?.top == true) return Corner.FOOT_LEFT
         val at = CORNERS[s] ?: Corner.TOP_LEFT
         return if (at == Corner.TOP_RIGHT && r.width() < NARROW_TAG_W) Corner.TOP_EDGE_RIGHT else at
     }
@@ -441,23 +448,27 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val cardHost = if (host.model?.draft?.card == HomeLayout.CardDock.ABOVE_CHAT) map else chat
         val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST
         val hostCol = when (s) { EditStop.CHAT -> map; EditStop.MAP -> chat; EditStop.QUEST -> cardHost; else -> null }
+        // a bar at the top of the host column: the column's menu opens under it (never over the bar)
+        val topBar = topCastBox(p)
+        val colTop = hostCol?.let { c -> topBar?.takeIf { it.left < c.centerX() && c.centerX() < it.right }?.let { max(top, it.bottom + g) } } ?: top
         // the horizontal extent and the room it has vertically
         var box: RectF
         when {
             column -> {
-                box = hostCol?.let { RectF(it.left, top, it.right, it.bottom) } ?: RectF(g, top, w / 2f, h - g)
+                box = hostCol?.let { RectF(it.left, colTop, it.right, it.bottom) } ?: RectF(g, top, w / 2f, h - g)
                 if (box.width() < MENU_MIN_W) {
                     if (box.centerX() < w / 2f) box.right = min(w - g, box.left + MENU_MIN_W) else box.left = max(g, box.right - MENU_MIN_W)
                 }
             }
             s == EditStop.ROOMS -> box = RectF(g + 8f, top, w - g - 8f, h - g)
-            s == EditStop.CAST -> {
+            // the bar's menu over the columns above it; a top bar's opens BELOW it, down to the page's foot
+            s == EditStop.CAST -> box = if (topBar != null) RectF(g + 100f, topBar.bottom + g, w - g - 100f, h - g) else {
                 val bt = castBoxes(p).minOfOrNull { it.top } ?: (h - g)
-                box = RectF(g + 100f, top, w - g - 100f, bt - g)
+                RectF(g + 100f, top, w - g - 100f, bt - g)
             }
             else -> box = RectF(w / 2f - 380f, top, w / 2f + 380f, h - g)
         }
-        val avail = box.bottom - top
+        val avail = box.bottom - box.top
         val rowW = box.width() - 32f
         // a segmented row: one line at the full text size; else one line a little smaller (down to SEG_TEXT_MIN); else wrapped
         fun segNeed(r: MenuRow, ts: Float) = segWidths(r, ts).sum() + 6f * (r.words.size - 1)
@@ -486,8 +497,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val boxH = MENU_HEAD + sum * k + 24f
         box = when (s) {
             EditStop.ROOMS -> RectF(box.left, max(top, h - g - boxH), box.right, h - g)
-            EditStop.CAST -> RectF(box.left, max(top, box.bottom - boxH), box.right, box.bottom)
-            else -> RectF(box.left, top, box.right, top + boxH)
+            EditStop.CAST -> if (topBar != null) RectF(box.left, box.top, box.right, box.top + boxH)
+                else RectF(box.left, max(top, box.bottom - boxH), box.right, box.bottom)
+            else -> RectF(box.left, box.top, box.right, box.top + boxH)
         }
         val out = ArrayList<RectF>()
         var y = box.top + MENU_HEAD

@@ -159,11 +159,84 @@ class HomeEditModelTest {
         assertNull(m.lifted); assertEquals(EditStop.QUEST, m.cursor)
         val b = model(start = EditStop.CAST)
         b.press("PAD1")
+        // the bar's ladder, no wrap: Above x <-> Under x <-> Across <-> Split
         val seen = ArrayList<HomeLayout.CastDock>()
-        repeat(4) { b.press("PADDDOWN"); seen += b.draft.cast }
-        assertEquals(listOf(HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT, HomeLayout.CastDock.UNDER_CHAT), seen)
+        repeat(3) { b.press("PADDDOWN"); seen += b.draft.cast }
+        assertEquals(listOf(HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT, HomeLayout.CastDock.SPLIT), seen)
+        assertEquals("the foot of the ladder: no move", emptyList<HomeEditModel.Fx>(), b.press("PADDDOWN"))
+        seen.clear()
+        repeat(4) { b.press("PADDUP"); seen += b.draft.cast }
+        assertEquals(listOf(HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_CHAT), seen)
         b.press("PADDRIGHT")
-        assertEquals("Right = the right column's dock (the map's)", HomeLayout.CastDock.UNDER_MAP, b.draft.cast)
+        assertEquals("Right = the right column's dock (the map's), the edge kept", HomeLayout.CastDock.ABOVE_MAP, b.draft.cast)
+        b.press("PADDDOWN")
+        assertEquals(HomeLayout.CastDock.UNDER_MAP, b.draft.cast)
+        b.press("PADDUP"); b.press("PADDLEFT")
+        assertEquals(HomeLayout.CastDock.ABOVE_CHAT, b.draft.cast)
+        // the arrows show only real moves (nextDock null at the ladder's ends)
+        assertEquals(null, b.nextDock(EditStop.CAST, b.draft, -1, horizontal = false))
+        assertEquals(null, b.nextDock(EditStop.CAST, b.draft.copy(cast = HomeLayout.CastDock.SPLIT), 1, horizontal = false))
+        // across a swap the bar keeps its module and its edge (Above map stays above the map)
+        val sw = b.draft.copy(cast = HomeLayout.CastDock.ABOVE_MAP).swapped()
+        assertEquals(HomeLayout.CastDock.ABOVE_MAP, sw.cast)
+        assertEquals(HomeLayout.CastDock.ABOVE_CHAT, b.nextDock(EditStop.CAST, sw, 1, horizontal = true)?.cast)
+    }
+
+    @Test fun theBarsEdgeRowAndPlusBringItBackOnTop() {
+        val m = model(saved = classic.copy(cast = HomeLayout.CastDock.UNDER_MAP), start = EditStop.CAST)
+        val v = HomeWidgetMenus.Values()
+        var rows = HomeWidgetMenus.rows(EditStop.CAST, m.draft, v)
+        val edge = rows.indexOfFirst { it.key == HomeEditModel.K_CAST_EDGE }
+        assertTrue("a column's bar has the Above / Below row", edge >= 0)
+        assertEquals("Map", rows[edge].label); assertEquals(listOf("Above", "Below"), rows[edge].words); assertEquals(1, rows[edge].picked)
+        m.openMenu(EditStop.CAST)
+        m.menuTouch(edge, 0, rows)
+        assertEquals(HomeLayout.CastDock.ABOVE_MAP, m.draft.cast)
+        rows = HomeWidgetMenus.rows(EditStop.CAST, m.draft, v)
+        assertEquals("Place still says Map", HomeWidgetMenus.CAST_DOCKS.indexOf(HomeLayout.CastDock.UNDER_MAP),
+            rows.first { it.key == HomeEditModel.K_PLACE }.picked)
+        // Place Chat keeps the edge
+        m.menuTouch(rows.indexOfFirst { it.key == HomeEditModel.K_PLACE }, HomeWidgetMenus.CAST_DOCKS.indexOf(HomeLayout.CastDock.UNDER_CHAT), rows)
+        assertEquals(HomeLayout.CastDock.ABOVE_CHAT, m.draft.cast)
+        rows = HomeWidgetMenus.rows(EditStop.CAST, m.draft, v)
+        assertEquals("Chat", rows.first { it.key == HomeEditModel.K_CAST_EDGE }.label)
+        // Across: no edge row (Across and Split stay at the foot)
+        m.menuTouch(rows.indexOfFirst { it.key == HomeEditModel.K_PLACE }, HomeWidgetMenus.CAST_DOCKS.indexOf(HomeLayout.CastDock.ACROSS), rows)
+        assertEquals(HomeLayout.CastDock.ACROSS, m.draft.cast)
+        assertTrue(HomeWidgetMenus.rows(EditStop.CAST, m.draft, v).none { it.key == HomeEditModel.K_CAST_EDGE })
+        assertTrue(HomeWidgetMenus.rows(EditStop.CAST, m.draft.copy(cast = HomeLayout.CastDock.OFF), v).none { it.key == HomeEditModel.K_CAST_EDGE })
+        // removed above the chat, "+" brings it back above the chat
+        val r = model(saved = classic.copy(cast = HomeLayout.CastDock.ABOVE_CHAT), start = EditStop.CAST)
+        r.remove(EditStop.CAST)
+        assertEquals(HomeLayout.CastDock.OFF, r.draft.cast)
+        r.addBack(EditStop.CAST)
+        assertEquals(HomeLayout.CastDock.ABOVE_CHAT, r.draft.cast)
+    }
+
+    @Test fun dragTheBarUpToLayItAboveItsColumn() {
+        val m = model(start = EditStop.CAST)
+        val bar = stops(classic).getValue(EditStop.CAST)
+        m.dragStart(EditStop.CAST, bar.cx, (bar.t + bar.b) / 2f, bar)
+        // straight up the chat's column into its upper half: above the chat
+        m.dragMove(bar.cx, 300f, 0L, geo); m.dragTick(100L)
+        assertEquals(HomeLayout.CastDock.ABOVE_CHAT, m.draft.cast)
+        // along the top into the middle third: never Across (that is the foot's), the edge and the column kept
+        m.dragMove(630f, 300f, 200L, geo); m.dragTick(300L)
+        assertEquals(HomeLayout.CastDock.ABOVE_CHAT, m.draft.cast)
+        // over the map, still high: above the map
+        m.dragMove(1100f, 300f, 400L, geo); m.dragTick(500L)
+        assertEquals(HomeLayout.CastDock.ABOVE_MAP, m.draft.cast)
+        // down into the lower half: under the map
+        m.dragMove(1100f, 860f, 600L, geo); m.dragTick(700L)
+        assertEquals(HomeLayout.CastDock.UNDER_MAP, m.draft.cast)
+        // the middle third of the lower half: Across
+        m.dragMove(630f, 860f, 800L, geo); m.dragTick(900L)
+        assertEquals(HomeLayout.CastDock.ACROSS, m.draft.cast)
+        // from Across, up in the middle: stays Across (no column to take the top of)
+        m.dragMove(630f, 300f, 1000L, geo); m.dragTick(1100L)
+        assertEquals(HomeLayout.CastDock.ACROSS, m.draft.cast)
+        m.dragEnd(630f, 300f, 1110L, geo)
+        assertNull(m.lifted)
     }
 
     @Test fun ySizesTheSelectedWidget() {

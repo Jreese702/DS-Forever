@@ -116,6 +116,57 @@ class HomeLayoutStoreTest {
         assertEquals(true, HomePresets.byId(HomePresets.COMPACT)!!.folded)
     }
 
+    // ---------------------------------------------------------------- the bar above its column
+
+    @Test fun theBarAboveItsColumnRoundTripsAndOldRecordsReadAsTheFoot() {
+        // an older record (no Above word) reads as the foot, as before; the new words round-trip
+        for (old in listOf("UNDER_CHAT", "UNDER_MAP")) {
+            val l = HomeLayoutJson.parse("""{"v":1,"chat":"LEFT","cast":"$old"}""")
+            assertFalse(l.cast.top)
+            assertEquals(old, l.cast.name)
+        }
+        for (d in listOf(HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP)) for (side in HomeLayout.Side.values()) {
+            val l = HomeLayout(chatSide = side, cast = d)
+            assertEquals(l, HomeLayoutJson.parse(HomeLayoutJson.json(l)))
+            assertTrue(HomeLayoutJson.json(l).contains("\"cast\":\"${d.name}\""))
+            assertEquals("the version stays 1", 1, l.v)
+            // a swap keeps the module (and the edge): Above map is above the map whichever side the map takes
+            assertEquals(d, l.swapped().cast)
+            assertEquals(l.copy(cast = d.withTop(false)).castSide, l.castSide)
+        }
+        // layOn: an edit Under -> Above lands on the real record's other changes
+        val base = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+        val real = base.copy(chatShare = HomeLayout.Share.THIRD)
+        val laid = HomeLayoutStore.layOn(real, base, base.copy(cast = HomeLayout.CastDock.ABOVE_CHAT))
+        assertEquals(HomeLayout.CastDock.ABOVE_CHAT, laid.cast); assertEquals(HomeLayout.Share.THIRD, laid.chatShare)
+    }
+
+    @Test fun classicPutsAnAboveBarBackAtItsFoot() {
+        val classic = HomePresets.byId(HomePresets.CLASSIC)!!
+        assertEquals(HomeLayout.CastDock.UNDER_MAP, classic.apply(HomeLayout(cast = HomeLayout.CastDock.ABOVE_MAP)).cast)
+        assertEquals(HomeLayout.CastDock.UNDER_CHAT, classic.apply(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT)).cast)
+        for (d in listOf(HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP)) {
+            assertEquals("Classic = 1516: never a bar above a column", HomePresets.CUSTOM, HomePresets.nameOf(HomeLayout(cast = d)))
+            for (p in HomePresets.ALL) assertFalse(p.id, p.holds(HomeLayout(cast = d)))
+        }
+        assertEquals(HomePresets.CLASSIC, HomePresets.nameOf(HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP)))
+    }
+
+    @Test fun theOldSettersKeepTheBarAboveItsColumn() {
+        val p = fresh()
+        HomeSettings.castDock = HomeLayout.CastDock.ABOVE_CHAT
+        assertEquals(HomeLayout.CastDock.ABOVE_CHAT, HomeSettings.layout.cast)
+        assertEquals("pre-movable builds read a screen side (the foot)", "LEFT", p.m["castBarSide"])
+        // an older route's Right (the map's column with the chat on the left): above the map now, the edge kept
+        HomeSettings.castBarSide = CastStripModel.Side.RIGHT
+        assertEquals(HomeLayout.CastDock.ABOVE_MAP, HomeSettings.layout.cast)
+        assertEquals("RIGHT", p.m["castBarSide"])
+        assertEquals(CastStripModel.Side.RIGHT, HomeSettings.castBarSide)
+        // Turn on (Both) is Across, at the foot
+        HomeSettings.castBarSide = CastStripModel.Side.BOTH
+        assertEquals(HomeLayout.CastDock.ACROSS, HomeSettings.layout.cast)
+    }
+
     // ---------------------------------------------------------------- per character (D5)
 
     @Test fun eachCharacterHasItsOwnAndAllCharactersCopiesIt() {

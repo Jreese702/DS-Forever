@@ -274,9 +274,9 @@ object HomeSettings {
             if (v == castBarSide && prefs?.contains(KEY_CAST_SIDE) == true) return
             prefs?.edit()?.putString(KEY_CAST_SIDE, v.name)?.remove(KEY_CAST_STRIP)?.apply()
             // an older route's screen side (Turn on = Both) means the dock under that column NOW (chat left or right)
-            if (!HomeLayoutStore.update { it.copy(cast = HomeLayout.dockOf(v, it.chatSide)) }) for (l in listeners) l()
+            if (!HomeLayoutStore.update { it.copy(cast = HomeLayout.dockOf(v, it.chatSide, keepTop = it.cast.top)) }) for (l in listeners) l()
         }
-    /** movable Home: the bar's dock in words that follow the widgets (Off / Under chat / Under map / Across) */
+    /** movable Home: the bar's dock in words that follow the widgets (Off / Under or Above chat / Under or Above map / Across / Split) */
     var castDock: HomeLayout.CastDock
         get() = layout.cast
         set(v) {

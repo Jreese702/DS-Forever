@@ -669,4 +669,18 @@ class CastStripModelTest {
         val old = PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","v":"p55","c":{"on":true,"view":"normal"}}"""))!!
         assertTrue("an older add-on: on (the default)", old.cbPShow)
     }
+
+    @Test fun aTopBarSlidesUpBehindTheBand() {
+        val laid = CastStripModel.Box(8f, 234f, 616f, 366f)
+        val up = CastStripModel.hiddenAbove(laid, 8f)
+        assertEquals(CastStripModel.Box(8f, 94f, 616f, 226f), up)
+        assertEquals("0 = laid", laid, CastStripModel.slideUpAt(laid, 8f, 0f))
+        assertEquals("1 = hidden", up, CastStripModel.slideUpAt(laid, 8f, 1f))
+        val mid = CastStripModel.slideUpAt(laid, 8f, 0.5f)
+        assertEquals(laid.t - 70f, mid.t, 0.01f); assertEquals(laid.h, mid.h, 0.01f)
+        // its column's top rides up from under the bar to the band's foot + the gap on the same k
+        assertEquals(374f, CastStripModel.columnTopAt(374f, 234f, 0f), 0f)
+        assertEquals(304f, CastStripModel.columnTopAt(374f, 234f, 0.5f), 0f)
+        assertEquals(234f, CastStripModel.columnTopAt(374f, 234f, 1f), 0f)
+    }
 }

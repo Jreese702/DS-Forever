@@ -428,7 +428,9 @@ class HomeEditShotsTest {
     @Suppress("UNCHECKED_CAST")
     @Test fun everyMenuFitsAtAThirdAndInSpanishAndFrench() {
         val layouts = listOf("bigmap" to HomePresets.byId(HomePresets.BIG_MAP)!!.apply(HomeLayout()),
-            "bigchat" to HomePresets.byId(HomePresets.BIG_CHAT)!!.apply(HomeLayout()))
+            "bigchat" to HomePresets.byId(HomePresets.BIG_CHAT)!!.apply(HomeLayout()),
+            // the bar above the third-wide chat: its menu's Above / Below row, the map's menu under the bar
+            "bigmap_topbar" to HomePresets.byId(HomePresets.BIG_MAP)!!.apply(HomeLayout()).copy(cast = HomeLayout.CastDock.ABOVE_CHAT))
         val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
         try {
             for (l in listOf("en", "es", "fr")) {
@@ -455,6 +457,11 @@ class HomeEditShotsTest {
                                 assertTrue("$l $ln $s '${Tr.t(r.label)}': buttons clear of the label ($b vs ${labelRight})",
                                     b.left >= labelRight - 1f || b.top >= rr.top + 0.3f * rr.height())
                             }
+                        }
+                        if (layout.cast.top && (s == EditStop.CAST || s == EditStop.MAP)) {
+                            val bar = boxes(p.home).getValue("STRIP")
+                            assertTrue("$l $ln $s: the menu opens under the top bar", ev.menuBox(s).top >= bar.bottom + 7.5f)
+                            if (s == EditStop.CAST) assertTrue("$l $ln: the Above / Below row", words.any { it.key == HomeEditModel.K_CAST_EDGE })
                         }
                         if (s == EditStop.CHAT || s == EditStop.MAP) {
                             val host = boxes(p.home).getValue(if (s == EditStop.CHAT) "MAP" else "CHAT")

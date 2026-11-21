@@ -20,6 +20,21 @@ class HomeSlideTest {
         assertEquals(HomeSlide.Half.NONE, HomeSlide.half(true, R, true, 930f, w))
     }
 
+    @Test fun aTopBarGoesWithItsColumn() {
+        // Above chat / Above map: the bar's half is its column's, either side, every share (laid by the solver)
+        for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values())
+            for (d in listOf(HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP)) {
+                val l = HomeLayout(chatSide = side, chatShare = share, cast = d)
+                val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State())
+                val strip = r.boxes.getValue(HomePart.STRIP)
+                val col = r.boxes.getValue(if (d == HomeLayout.CastDock.ABOVE_CHAT) HomePart.CHAT else HomePart.MAP)
+                val want = if (col.cx < (r.boxes.getValue(HomePart.CHAT).cx + r.boxes.getValue(HomePart.MAP).cx) / 2f) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
+                assertEquals("$l", want, HomeSlide.half(true, r.castSide, false, strip.cx, w))
+                // hidden (up behind the band): no column's
+                assertEquals(HomeSlide.Half.NONE, HomeSlide.half(true, r.castSide, true, strip.cx, w))
+            }
+    }
+
     @Test fun otherPartsByTheirCentre() {
         assertEquals(HomeSlide.Half.LEFT, HomeSlide.half(false, B, false, 300f, w))
         assertEquals(HomeSlide.Half.RIGHT, HomeSlide.half(false, B, false, 930f, w))

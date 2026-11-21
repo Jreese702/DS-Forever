@@ -657,7 +657,8 @@ class HomeView(
         var bottom = frameH - g
         for (p in listOf(Part.STRIP, Part.CAST2)) {
             val r = now[p] ?: continue
-            if (views[p]?.visibility != View.VISIBLE || r.top >= frameH) continue
+            // slid away: below the page, or (a top bar) up behind the band - no limit
+            if (views[p]?.visibility != View.VISIBLE || r.top >= frameH || r.bottom <= barsBottom() + 0.5f) continue
             if (halfOf(p, r, w) == HomeSlide.Half.NONE) bottom = minOf(bottom, r.top - g)
         }
         return LbFit.place(w, barsBottom(), line.first, line.second, bottom, classicLook(), UiKit.pauseBarsBottom)
@@ -1694,6 +1695,7 @@ class HomeView(
             laidHidden = r.castHidden && r.castSide != CastStripModel.Side.OFF
             // P2: Split = the first view on slots 1-4 under the left column, the second on 5-8 under the right (no scroll)
             laidSplit = l.cast == HomeLayout.CastDock.SPLIT
+            laidTop = r.castTop
             castStrip.splitHalf = if (laidSplit) 1 else 0
             if (laidSplit) { castStrip.side = CastStripModel.Side.LEFT; castStrip2.side = CastStripModel.Side.RIGHT }
             else if (r.castSide != CastStripModel.Side.OFF) castStrip.side = r.castSide
@@ -1708,6 +1710,8 @@ class HomeView(
     private var laidLayout: HomeLayout? = null
     /** P2: the last [places] laid the tap-to-cast bar split in two halves */
     private var laidSplit = false
+    /** the last [places] laid the bar at the top of its column (Above chat / Above map): hidden, it slides up behind the band */
+    private var laidTop = false
     /** the chat's column on the right (the party menus mirror with it) */
     private var laidChatRight = false
     private val PART_OF: Map<HomePart, Part> = HomePart.values().mapNotNull { hp -> Part.values().firstOrNull { it.name == hp.name }?.let { hp to it } }.toMap()
@@ -1793,9 +1797,10 @@ class HomeView(
         val s = shown ?: return
         if (s.full != null && !s.takeover) return
         val side = castSideNow()
-        if (side == laidSide && (layoutNow().cast == HomeLayout.CastDock.SPLIT) == laidSplit) return
+        if (side == laidSide && (layoutNow().cast == HomeLayout.CastDock.SPLIT) == laidSplit && layoutNow().cast.top == laidTop) return
         // cb3: Left <-> Right slides the bar over with the page's one motion (the columns make room); coming or going is laid at once.
         // Movable Home: a new layout (a preset, a swap) moving more than the bar glides the whole page there
+        // (Above <-> Under on one side glides too: the bar moves up or down its column)
         val slide = (side == CastStripModel.Side.LEFT || side == CastStripModel.Side.RIGHT) &&
             (laidSide == CastStripModel.Side.LEFT || laidSide == CastStripModel.Side.RIGHT) || layoutMoved()
         apply(s, animate = slide && isShown)
@@ -2150,7 +2155,17 @@ class HomeView(
                 v.measure(MeasureSpec.makeMeasureSpec(x1 - x0, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(y1 - y0, MeasureSpec.EXACTLY))
             v.layout(x0, y0, x1, y1)
         }
+        topBarClip()
         editDecor()
+    }
+
+    /** a top bar hidden or on its way (Hide in combat, F2): clipped at the band's foot, so it slides up BEHIND the band whatever the
+     *  band's paint (the views' order draws it over the band); laid, lifted or dragged in edit mode it is never clipped */
+    private fun topBarClip() {
+        val v = castStrip                                                   // a top bar is never Split: only the one bar
+        val bars = now[Part.BARS]
+        v.clipBounds = if (bars == null || !laidTop || !(laidHidden || v.sliding) || editLive()) null
+            else android.graphics.Rect(0, (bars.bottom + UiKit.MODULE_GAP - v.top).toInt().coerceIn(0, max(0, v.height)), max(1, v.width), max(1, v.height))
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
@@ -2170,6 +2185,7 @@ class HomeView(
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             v.layout(x0, y0, max(x0 + 1, f.right.toInt()), max(y0 + 1, f.bottom.toInt()))
         }
+        topBarClip()
         editView.layout(0, 0, r - l, b - t - bottomInset)
         editDecor()
     }
@@ -2454,6 +2470,8 @@ class HomeView(
             return HomeLayoutRules.problems(l, st, HomeLayoutSolver.places(HomeLayoutRules.shown(l), st)).isEmpty()
         }
         override val w: Float get() = width.toFloat()
+        override val colTop: Float get() = barsBottom() + UiKit.MODULE_GAP
+        override val colBottom: Float get() = frameH - UiKit.MODULE_GAP
         override fun barSlots(): List<Float> = roomBar?.slotCentres() ?: emptyList()
     }
 
@@ -2693,7 +2711,8 @@ class HomeView(
         try { apply(s, animate = live) } finally { applyMs = null }
     }
     /** what [places] laid besides the record: the card's height, the bar's side (a settle lays these again) */
-    private fun laidChanged(): Boolean = laidSide != castSideNow() || (layoutNow().cast == HomeLayout.CastDock.SPLIT) != laidSplit
+    private fun laidChanged(): Boolean = laidSide != castSideNow() || (layoutNow().cast == HomeLayout.CastDock.SPLIT) != laidSplit ||
+        layoutNow().cast.top != laidTop
 
     /** refused (a fight, a dimmed choice): the widget's edge red for FLASH_MS, nothing else */
     private fun editRefuse(s: EditStop?) {

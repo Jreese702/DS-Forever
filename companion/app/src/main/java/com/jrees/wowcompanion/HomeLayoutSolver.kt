@@ -31,10 +31,10 @@ object HomeLayoutSolver {
 
     /** the laid page: [boxes] every part, [castSide] the bar's geometric side (CastStripView), [partyTabRight] the Select tab on the
      *  right screen edge (chat on the right), [card] the dock used (F1 may move "Above chat" onto the map), [castHidden] the bar slid
-     *  away (cb7, or F2), [f1] / [f2] which fallback fired */
+     *  away (cb7, or F2), [f1] / [f2] which fallback fired, [castTop] the bar laid at the top of its column (hidden = up behind the band) */
     data class Result(val boxes: Map<HomePart, Box>, val castSide: CastStripModel.Side, val partyTabRight: Boolean,
                       val card: HomeLayout.CardDock, val castHidden: Boolean, val f1: Boolean = false, val f2: Boolean = false,
-                      val barsBottom: Float = 0f)
+                      val barsBottom: Float = 0f, val castTop: Boolean = false)
 
     /** the band's bottom: the fight's grow (only GROW, never with Party mode on: R0), the diamonds or the thin row at rest */
     fun big(l: HomeLayout, s: State): Boolean = s.takeover && l.fight == HomeLayout.FightBand.GROW && !s.partyOn
@@ -60,7 +60,8 @@ object HomeLayoutSolver {
         // F1: an "Above chat" card shows on the map while Party mode is on and the chat's column is too short
         val withF1 = if (l0.card == HomeLayout.CardDock.ABOVE_CHAT) solve(l0, s, f1 = true, f2 = false) else first
         if (!HomeLayoutRules.cramped(withF1, s)) return withF1
-        // F2: still too short: the bar's part under the chat slides behind the room bar (today's hide motion) until Party mode ends
+        // F2: still too short: the bar's part in the chat's column slides away (under it: behind the room bar, today's hide motion; above
+        // it: up behind the band) until Party mode ends
         return if (HomeLayoutRules.cutsChat(l0)) solve(l0, s, f1 = withF1.f1, f2 = true) else withF1
     }
 
@@ -85,17 +86,25 @@ object HomeLayoutSolver {
         val card = if (f1) HomeLayout.CardDock.ON_MAP else l.card
         val out = LinkedHashMap<HomePart, Box>()
         out[HomePart.BARS] = Box(0f, if (big(l, s)) 10f else 8f, w, bb)
-        val map = Box(mapCol.first, top, mapCol.second, h - g)
-        var chat = Box(chatCol.first, top, chatCol.second, h - g)
+        val hidden = s.castHidden || f2
+        // THE TOP BAR (Above chat / Above map): first under the band in its column, the column's parts stacked under it (the card, the
+        // party module, the chat); hidden in a fight (or by F2) it slides up behind the band and the column keeps the band's top
+        val aboveBar = if (l.cast.top) castBoxes(l, w, h, g, top).firstOrNull() else null
+        val aboveCol = l.cast.column
+        val lift = if (aboveBar != null && !hidden) aboveBar.h + g else 0f
+        val map = Box(mapCol.first, top + if (aboveCol == HomeModule.MAP) lift else 0f, mapCol.second, h - g)
+        var chat = Box(chatCol.first, top + if (aboveCol == HomeModule.CHAT) lift else 0f, chatCol.second, h - g)
         when (card) {
             HomeLayout.CardDock.ON_MAP -> if (s.card && !s.auraOpen) {
-                // b121: the card over the map under its zone band, inset as the band
-                val qTop = top + HomeView.ZONE_BAND_BOTTOM + 4f
-                out[HomePart.QUESTS] = Box(map.l + 8f, qTop, map.r - 8f, qTop + s.cardH)
+                // b121: the card over the map under its zone band, inset as the band (map.t == top unless a bar sits above the map)
+                val qTop = map.t + HomeView.ZONE_BAND_BOTTOM + 4f
+                // a bar above the map pushes the card down: it ends at the map's foot as a bar under the map would cut it
+                val qBottom = if (aboveCol == HomeModule.MAP && lift > 0f) maxOf(qTop + 1f, minOf(qTop + s.cardH, map.b)) else qTop + s.cardH
+                out[HomePart.QUESTS] = Box(map.l + 8f, qTop, map.r - 8f, qBottom)
             }
             HomeLayout.CardDock.ABOVE_CHAT -> if (s.card) {
-                val cardBottom = top + s.cardH
-                out[HomePart.QUESTS] = Box(chat.l, top, chat.r, cardBottom)
+                val cardBottom = chat.t + s.cardH
+                out[HomePart.QUESTS] = Box(chat.l, chat.t, chat.r, cardBottom)
                 chat = chat.copy(t = cardBottom + g)
             }
             HomeLayout.CardDock.OFF -> {}
@@ -121,7 +130,10 @@ object HomeLayoutSolver {
         // THE TAP-TO-CAST BAR (cb3 / cb7): above the page's foot under its column(s); the parts above it end a gap over it; hidden in a
         // fight (or by F2) it lies below the page and no column is cut
         val side = l.castSide
-        val hidden = s.castHidden || f2
+        if (aboveBar != null) {
+            out[HomePart.STRIP] = if (hidden) Box(aboveBar.l, top - aboveBar.h - g, aboveBar.r, top - g) else aboveBar
+            return Result(out, side, !chatLeft, card, hidden, f1, f2, bb, castTop = true)
+        }
         val bars = castBoxes(l, w, h, g)
         if (bars.isEmpty()) return Result(out, side, !chatLeft, card, false, f1, f2, bb)
         val base = LinkedHashMap(out)
@@ -138,18 +150,25 @@ object HomeLayoutSolver {
         return Result(out, side, !chatLeft, card, hidden, f1, f2, bb)
     }
 
-    /** the bar's box(es) laid (not hidden): one under its column, one across, or Split's two (slots 1-4 left, 5-8 right) */
-    fun castBoxes(l: HomeLayout, w: Float, h: Float, g: Float): List<Box> {
+    /** the bar's box(es) laid (not hidden): one under its column, one across, or Split's two (slots 1-4 left, 5-8 right); a top dock's
+     *  one box starts at [top] (the columns' top: the band's bottom + a gap) */
+    fun castBoxes(l: HomeLayout, w: Float, h: Float, g: Float, top: Float = 0f): List<Box> {
         val (lc, rc) = columns(l, w, g)
         val chatLeft = l.chatSide == HomeLayout.Side.LEFT
         fun bar(col: Pair<Float, Float>, n: Int): Box {
             val bh = CastStripModel.slotSide(n, col.second - col.first, l.castSize.px) + 2 * CastStripModel.PAD
             return Box(col.first, h - g - bh, col.second, h - g)
         }
+        fun barTop(col: Pair<Float, Float>): Box {
+            val bh = CastStripModel.slotSide(CastStripModel.VISIBLE, col.second - col.first, l.castSize.px) + 2 * CastStripModel.PAD
+            return Box(col.first, top, col.second, top + bh)
+        }
         return when (l.cast) {
             HomeLayout.CastDock.OFF -> emptyList()
             HomeLayout.CastDock.UNDER_CHAT -> listOf(bar(if (chatLeft) lc else rc, CastStripModel.VISIBLE))
             HomeLayout.CastDock.UNDER_MAP -> listOf(bar(if (chatLeft) rc else lc, CastStripModel.VISIBLE))
+            HomeLayout.CastDock.ABOVE_CHAT -> listOf(barTop(if (chatLeft) lc else rc))
+            HomeLayout.CastDock.ABOVE_MAP -> listOf(barTop(if (chatLeft) rc else lc))
             HomeLayout.CastDock.ACROSS -> listOf(bar(g to w - g, CastStripModel.SLOTS))
             HomeLayout.CastDock.SPLIT -> {
                 val a = bar(lc, CastStripModel.VISIBLE); val b = bar(rc, CastStripModel.VISIBLE)
@@ -187,7 +206,8 @@ object HomeLayoutRules {
     const val MAP_MIN = 240f
     const val COL_MIN_W = 400f
 
-    fun cutsChat(l: HomeLayout): Boolean = l.cast == HomeLayout.CastDock.UNDER_CHAT || l.cast == HomeLayout.CastDock.ACROSS || l.cast == HomeLayout.CastDock.SPLIT
+    fun cutsChat(l: HomeLayout): Boolean = l.cast == HomeLayout.CastDock.UNDER_CHAT || l.cast == HomeLayout.CastDock.ABOVE_CHAT ||
+        l.cast == HomeLayout.CastDock.ACROSS || l.cast == HomeLayout.CastDock.SPLIT
 
     /** F1 / F2's trigger: Party mode on and the chat's column under the hard floor */
     fun cramped(r: HomeLayoutSolver.Result, s: HomeLayoutSolver.State): Boolean {
@@ -234,10 +254,10 @@ object HomeLayoutRules {
 
     fun valid(l: HomeLayout, s: HomeLayoutSolver.State): Boolean = problems(l, s, HomeLayoutSolver.places(l, s)).isEmpty()
 
-    /** every record the editor can make (SPEC section 2: 2 sides x 3 widths x 3 card docks x 5 bar docks x 3 slot sizes x 2 rests x
-     *  3 fight modes = 1,620) */
+    /** every record the editor can make (SPEC section 2: 2 sides x 3 widths x 3 card docks x 7 bar docks x 3 slot sizes x 2 rests x
+     *  3 fight modes = 2,268; the 7 docks count Above chat / Above map) */
     fun all(): List<HomeLayout> {
-        val out = ArrayList<HomeLayout>(1620)
+        val out = ArrayList<HomeLayout>(2268)
         for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values()) for (card in HomeLayout.CardDock.values())
             for (cast in HomeLayout.CastDock.values()) for (size in HomeLayout.SlotSize.values()) for (rest in HomeRest.values())
                 for (fight in HomeLayout.FightBand.values())

@@ -23,7 +23,8 @@ data class HomeLayout(
     val chatShare: Share = Share.HALF,
     /** the focused quest's card: over the map (under its zone band), at the top of the chat's column, or not on Home */
     val card: CardDock = CardDock.ON_MAP,
-    /** the tap-to-cast bar: off, under the chat, under the map, one bar across both, or two halves (one under each column) */
+    /** the tap-to-cast bar: off, under or above the chat, under or above the map (both follow a swap: they name a module, not a side),
+     *  one bar across both, or two halves (one under each column); Across and Split stay at the foot */
     val cast: CastDock = CastDock.OFF,
     val castSize: SlotSize = SlotSize.L,
     /** the controller band at rest: the diamonds or the thin row */
@@ -39,7 +40,29 @@ data class HomeLayout(
     enum class Side { LEFT, RIGHT; fun other() = if (this == LEFT) RIGHT else LEFT }
     enum class Share(val num: Int, val den: Int) { THIRD(1, 3), HALF(1, 2), TWO_THIRDS(2, 3) }
     enum class CardDock { ON_MAP, ABOVE_CHAT, OFF }
-    enum class CastDock { OFF, UNDER_CHAT, UNDER_MAP, ACROSS, SPLIT }
+    enum class CastDock {
+        OFF, UNDER_CHAT, UNDER_MAP, ABOVE_CHAT, ABOVE_MAP, ACROSS, SPLIT;
+        /** the bar at the TOP of its column (under the band), not the foot */
+        val top: Boolean get() = this == ABOVE_CHAT || this == ABOVE_MAP
+        /** the module whose column it sits in (null: off, across or split) */
+        val column: HomeModule? get() = when (this) {
+            UNDER_CHAT, ABOVE_CHAT -> HomeModule.CHAT
+            UNDER_MAP, ABOVE_MAP -> HomeModule.MAP
+            else -> null
+        }
+        /** the same column at the top ([b]) or the foot; a dock with no column is unchanged */
+        fun withTop(b: Boolean): CastDock = when (column) {
+            HomeModule.CHAT -> if (b) ABOVE_CHAT else UNDER_CHAT
+            HomeModule.MAP -> if (b) ABOVE_MAP else UNDER_MAP
+            else -> this
+        }
+        /** the bar in [c]'s column, keeping its edge (from Off, Across or Split: the foot) */
+        fun withColumn(c: HomeModule): CastDock = when (c) {
+            HomeModule.CHAT -> if (top) ABOVE_CHAT else UNDER_CHAT
+            HomeModule.MAP -> if (top) ABOVE_MAP else UNDER_MAP
+            else -> this
+        }
+    }
     /** the tap-to-cast slot's side (L = CastStripModel.MAX_SIDE, today's) */
     enum class SlotSize(val px: Float) { S(88f), M(100f), L(112f) }
     enum class FightBand { GROW, SAME, TOP }
@@ -52,8 +75,8 @@ data class HomeLayout(
     /** the tap-to-cast bar's GEOMETRIC side for CastStripModel / CastStripView (they keep screen sides: Right rests at its end) */
     val castSide: CastStripModel.Side get() = when (cast) {
         CastDock.OFF -> CastStripModel.Side.OFF
-        CastDock.UNDER_CHAT -> if (chatSide == Side.LEFT) CastStripModel.Side.LEFT else CastStripModel.Side.RIGHT
-        CastDock.UNDER_MAP -> if (chatSide == Side.LEFT) CastStripModel.Side.RIGHT else CastStripModel.Side.LEFT
+        CastDock.UNDER_CHAT, CastDock.ABOVE_CHAT -> if (chatSide == Side.LEFT) CastStripModel.Side.LEFT else CastStripModel.Side.RIGHT
+        CastDock.UNDER_MAP, CastDock.ABOVE_MAP -> if (chatSide == Side.LEFT) CastStripModel.Side.RIGHT else CastStripModel.Side.LEFT
         CastDock.ACROSS, CastDock.SPLIT -> CastStripModel.Side.BOTH
     }
 
@@ -62,13 +85,14 @@ data class HomeLayout(
 
     companion object {
         const val VERSION = 1
-        /** a geometric side picked by an older route (Settings' old Left / Right, "Turn on" = Both) -> the dock it means NOW */
-        fun dockOf(side: CastStripModel.Side, chatSide: Side): CastDock = when (side) {
+        /** a geometric side picked by an older route (Settings' old Left / Right, "Turn on" = Both) -> the dock it means NOW; [keepTop]
+         *  keeps a bar that was above its column above the new one */
+        fun dockOf(side: CastStripModel.Side, chatSide: Side, keepTop: Boolean = false): CastDock = when (side) {
             CastStripModel.Side.OFF -> CastDock.OFF
             CastStripModel.Side.BOTH -> CastDock.ACROSS
             CastStripModel.Side.LEFT -> if (chatSide == Side.LEFT) CastDock.UNDER_CHAT else CastDock.UNDER_MAP
             CastStripModel.Side.RIGHT -> if (chatSide == Side.LEFT) CastDock.UNDER_MAP else CastDock.UNDER_CHAT
-        }
+        }.withTop(keepTop)
     }
 }
 
@@ -164,12 +188,13 @@ object HomePresets {
 
     val ALL: List<Preset> = listOf(
         // Classic = today's Home, the way BACK from any preset: it also undoes what the others set (Compact's thin row and M slots,
-        // Fighter's Split bar and top-screen fight: Under chat, Grow - D1's default); the bar's own dock and Same size stay the player's
+        // Fighter's Split bar and top-screen fight: Under chat, Grow - D1's default; a bar above its column goes back to its foot, 1516's
+        // only edge); the bar's own column and Same size stay the player's
         Preset(CLASSIC, apply = { it.copy(name = CLASSIC, chatSide = L, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP,
                 rest = HomeRest.DIAMONDS, castSize = HomeLayout.SlotSize.L,
-                cast = if (it.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.UNDER_CHAT else it.cast,
+                cast = if (it.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.UNDER_CHAT else it.cast.withTop(false),
                 fight = if (it.fight == HomeLayout.FightBand.TOP) HomeLayout.FightBand.GROW else it.fight) },
-            holds = { it.chatSide == L && it.chatShare == HomeLayout.Share.HALF && it.cast != HomeLayout.CastDock.SPLIT &&
+            holds = { it.chatSide == L && it.chatShare == HomeLayout.Share.HALF && it.cast != HomeLayout.CastDock.SPLIT && !it.cast.top &&
                 it.fight != HomeLayout.FightBand.TOP }),
         Preset(MIRRORED, apply = { it.copy(name = MIRRORED, chatSide = R, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP,
                 cast = HomeLayout.CastDock.UNDER_CHAT) },

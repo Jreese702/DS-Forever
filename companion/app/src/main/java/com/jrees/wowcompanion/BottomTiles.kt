@@ -120,7 +120,10 @@ object BottomTiles {
         }
         CASTBAR -> {
             // movable Home: the place in words that follow the widgets (SPEC P4 "meaning follows the widget"), and its slot size
-            val out = arrayListOf(Line(CASTBAR, null, CAST_WORDS, CAST_DOCKS.indexOf(HomeLayoutRules.shown(HomeSettings.layout).cast)))
+            val cast = HomeLayoutRules.shown(HomeSettings.layout).cast
+            val out = arrayListOf(Line(CASTBAR, null, CAST_WORDS, CAST_DOCKS.indexOf(cast.withTop(false))))
+            // a column's bar: above or below that column (Across and Split stay at the foot)
+            cast.column?.let { c -> out += Line(CAST_EDGE, if (c == HomeModule.CHAT) "Chat" else "Map", HomeWidgetMenus.EDGE_WORDS, if (cast.top) 0 else 1) }
             if (HomeSettings.castBarSide != CastStripModel.Side.OFF) {
                 out += Line("castsize", "Size", SIZE_WORDS, HomeLayout.SlotSize.values().indexOf(HomeSettings.layout.castSize))
                 val m = CastStripModel.Combat.values()
@@ -156,7 +159,7 @@ object BottomTiles {
         CLOCK -> CLOCK_LINES.count { clockOn(it.first) }.let { n -> if (n == CLOCK_LINES.size) "On" else if (n == 0) "Off" else "$n / ${CLOCK_LINES.size}" }
         TOOLBAR -> if (env.dpad?.want == true) "On" else "Off"
         TALK -> if (HomeSettings.holdTalk(env.who)) "On" else "Off"
-        CASTBAR -> CAST_WORDS[CAST_DOCKS.indexOf(HomeLayoutRules.shown(HomeSettings.layout).cast).coerceAtLeast(0)]
+        CASTBAR -> castWord(HomeLayoutRules.shown(HomeSettings.layout).cast)
         ZOOM -> "${Settings.minimapYd} · ${Settings.minimapIndoorYd} yd"
         WORLD -> if (Settings.worldMapFog == "all") "Show all" else "Explored only"
         INPUT -> if (Settings.chatDefaultInput == "quick") "Quick chat" else "Keyboard"
@@ -188,7 +191,15 @@ object BottomTiles {
     /** the bar's places offered in this build (Split is phase 3's) and their words */
     val CAST_DOCKS = listOf(HomeLayout.CastDock.OFF, HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS,
         HomeLayout.CastDock.SPLIT)
-    val CAST_WORDS = listOf("Off", "Under chat", "Under map", "Across", "Split")
+    val CAST_WORDS = listOf("Off", "Chat", "Map", "Across", "Split")
+    /** the bar's edge line (column docks only): Above / Below its column */
+    const val CAST_EDGE = "castedge"
+    /** the tile's value word for a dock */
+    fun castWord(c: HomeLayout.CastDock): String = when (c) {
+        HomeLayout.CastDock.OFF -> "Off"; HomeLayout.CastDock.UNDER_CHAT -> "Under chat"; HomeLayout.CastDock.UNDER_MAP -> "Under map"
+        HomeLayout.CastDock.ABOVE_CHAT -> "Above chat"; HomeLayout.CastDock.ABOVE_MAP -> "Above map"
+        HomeLayout.CastDock.ACROSS -> "Across"; HomeLayout.CastDock.SPLIT -> "Split"
+    }
 
     /**
      * MOVABLE HOME P2 (SPEC section 3 way 2, final_11; the user's D4): A (or a finger) on the FIRST tile, "Home layout", opens EDIT MODE
@@ -249,7 +260,9 @@ object BottomTiles {
             TOOLBAR -> env.dpad?.let { d -> if (d.colOn != null) { val on = k == 0; if ((d.want == true) != on) onDpad(on) } }
             TALK -> env.who?.let { HomeSettings.setHoldTalk(it, k == 0) }
             "release" -> env.who?.let { HomeSettings.setTalkSendNow(it, k == 1) }
-            CASTBAR -> CAST_DOCKS.getOrNull(k)?.let { HomeSettings.castDock = it }
+            // Chat / Map keep the bar's edge; the edge line moves it above / below its column
+            CASTBAR -> CAST_DOCKS.getOrNull(k)?.let { d -> HomeSettings.castDock = d.column?.let { HomeSettings.castDock.withColumn(it) } ?: d }
+            CAST_EDGE -> HomeSettings.castDock = HomeSettings.castDock.withTop(k == 0)
             "castcombat" -> HomeSettings.castBarCombat = CastStripModel.Combat.values()[k]
             "out" -> Settings.minimapYd = Settings.stepYd(Settings.minimapYd, if (k == 0) -1 else 1)
             "in" -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, if (k == 0) -1 else 1)

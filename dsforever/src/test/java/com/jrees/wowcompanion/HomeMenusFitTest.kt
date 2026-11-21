@@ -6,7 +6,7 @@ import org.junit.Test
 
 /**
  * fix/menus-fit (the user on 1516: "The LB menu doesn't fit right with the map swapped and bigger and probably a lot of other menus"):
- * every Home overlay that parts the columns, over ALL 1,620 records the editor can make x rest / a fight (grown or not, the bar hidden
+ * every Home overlay that parts the columns, over ALL 2,268 records the editor can make (the bar under or ABOVE its column too) x rest / a fight (grown or not, the bar hidden
  * or staying) / Party mode. Pure: the solver's boxes, [HomeSlide]'s halves, [LbFit] and [ClassSlot] as HomeView uses them.
  *  - the LB picture: under the band as laid, inside the frame, never covered by a part once the sides moved (each part by its column);
  *  - the middle wheel: inside the frame, under the band, never covered by a parted column;
@@ -32,8 +32,9 @@ class HomeMenusFitTest {
     private class Page(val l: HomeLayout, val s: HomeLayoutSolver.State, val r: HomeLayoutSolver.Result) {
         val split get() = l.cast == HomeLayout.CastDock.SPLIT
         val bb get() = r.boxes.getValue(HomePart.BARS).b
-        /** the parts on the page (the buff list lies inside the map; a bar hidden for a fight lies below the page) */
-        val shown: Map<HomePart, HomeLayoutSolver.Box> get() = r.boxes.filter { (p, b) -> p != HomePart.BARS && p != HomePart.AURAS && b.t < s.h }
+        /** the parts on the page (the buff list lies inside the map; a bar hidden for a fight lies below the page, or up behind the band) */
+        val shown: Map<HomePart, HomeLayoutSolver.Box> get() = r.boxes.filter { (p, b) -> p != HomePart.BARS && p != HomePart.AURAS && b.t < s.h &&
+            !((p == HomePart.STRIP || p == HomePart.CAST2) && b.b <= bb + 0.5f) }
         fun half(p: HomePart, b: HomeLayoutSolver.Box): HomeSlide.Half =
             HomeSlide.half(p == HomePart.STRIP || p == HomePart.CAST2, r.castSide, r.castHidden && r.castSide != CastStripModel.Side.OFF,
                 b.cx, 1240f, split = split)
@@ -126,6 +127,26 @@ class HomeMenusFitTest {
                 if (bad.size < 12) bad += "${p.l} / ${p.s} ${if (left) "LB+LT" else "RB+RT"}: ${sl}"
         }
         assertTrue(bad.joinToString("\n"), bad.isEmpty())
+    }
+
+    /** the bar above its column moves no menu: the LB picture and the middle wheel stand where its Under twin's do, in every state
+     *  (the bar goes with its column in the slides; slid up behind the band it is no limit) */
+    @Test fun aTopBarMovesNoMenu() {
+        var n = 0
+        for (p in pages()) {
+            if (!p.l.cast.top) continue
+            val t = Page(p.l.copy(cast = p.l.cast.withTop(false)), p.s, S.places(p.l.copy(cast = p.l.cast.withTop(false)), p.s))
+            val line = p.line()
+            assertEquals("${p.l} / ${p.s}", LbFit.place(W, t.bb, line.first, line.second, lbBottom(t), classic = false, staleBars = 0f),
+                LbFit.place(W, p.bb, line.first, line.second, lbBottom(p), classic = false, staleBars = 0f))
+            // the top bar goes with its column (shown), no column's when hidden
+            val strip = p.r.boxes.getValue(HomePart.STRIP)
+            val col = p.r.boxes.getValue(if (p.l.cast.column == HomeModule.CHAT) HomePart.CHAT else HomePart.MAP)
+            if (!p.r.castHidden) assertEquals(p.half(HomePart.CHAT, col), p.half(HomePart.STRIP, strip))
+            else assertTrue(HomePart.STRIP !in p.shown)
+            n++
+        }
+        assertTrue(n > 600 * 5)
     }
 
     /** Fighter's Split bar hidden for a fight is no column's (it lies below the page); shown, each half is its column's */

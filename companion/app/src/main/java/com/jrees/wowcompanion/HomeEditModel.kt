@@ -288,8 +288,8 @@ class HomeEditModel(
         return change(to, EDIT_STEP)
     }
 
-    /** the dock a lifted widget goes to: Left / Right = the column on that side (chat and map swap); Up / Down = the next dock (the
-     *  card On map <-> Above chat; the bar Under chat -> Under map -> Across -> Split) */
+    /** the dock a lifted widget goes to: Left / Right = the column on that side (chat and map swap; the bar keeps its edge); Up / Down =
+     *  the next dock (the card On map <-> Above chat; the bar's ladder, no wrap: Above its column <-> Under it <-> Across <-> Split) */
     fun nextDock(s: EditStop, l: HomeLayout, d: Int, horizontal: Boolean): HomeLayout? {
         val side = if (d < 0) HomeLayout.Side.LEFT else HomeLayout.Side.RIGHT
         return when (s) {
@@ -303,12 +303,21 @@ class HomeEditModel(
             }
             EditStop.CAST -> {
                 if (l.cast == HomeLayout.CastDock.OFF) return null
-                val to = if (horizontal) (if (side == l.chatSide) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP)
-                    else CAST_CYCLE[(CAST_CYCLE.indexOf(l.cast) + (if (d < 0) CAST_CYCLE.size - 1 else 1)) % CAST_CYCLE.size]
-                if (to == l.cast) null else l.copy(cast = to)
+                val to = if (horizontal) l.cast.withColumn(if (side == l.chatSide) HomeModule.CHAT else HomeModule.MAP)
+                    else castLadder(l.cast, d < 0)
+                if (to == null || to == l.cast) null else l.copy(cast = to)
             }
             else -> null
         }
+    }
+
+    /** the bar's Up / Down ladder (no wrap): Above x <-> Under x <-> Across <-> Split; Up from Across goes under the chat */
+    private fun castLadder(c: HomeLayout.CastDock, up: Boolean): HomeLayout.CastDock? = when (c) {
+        HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP -> if (up) null else c.withTop(false)
+        HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP -> if (up) c.withTop(true) else HomeLayout.CastDock.ACROSS
+        HomeLayout.CastDock.ACROSS -> if (up) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.SPLIT
+        HomeLayout.CastDock.SPLIT -> if (up) HomeLayout.CastDock.ACROSS else null
+        HomeLayout.CastDock.OFF -> null
     }
 
     /** Y: the widget's size step (chat / map width, the band's rest look, the card folded, the bar's slots) */
@@ -446,7 +455,10 @@ class HomeEditModel(
             K_CHAT_WIDTH -> change(l.copy(chatShare = SHARES[k]), Motion.MODULE_OPEN)
             K_MAP_WIDTH -> change(l.copy(chatShare = SHARES[SHARES.size - 1 - k]), Motion.MODULE_OPEN)
             K_CARD -> change(l.copy(card = HomeWidgetMenus.CARD_DOCKS[k]), Motion.MODULE_OPEN).also { offed(s, EditStop.QUEST, draft.card == HomeLayout.CardDock.OFF) }
-            K_PLACE -> change(l.copy(cast = HomeWidgetMenus.CAST_DOCKS[k]), Motion.MODULE_OPEN).also { offed(s, EditStop.CAST, draft.cast == HomeLayout.CastDock.OFF) }
+            // Chat / Map keep the bar's edge (above or under that column); Off, Across and Split lie at the foot
+            K_PLACE -> HomeWidgetMenus.CAST_DOCKS[k].let { c -> change(l.copy(cast = c.column?.let { l.cast.withColumn(it) } ?: c), Motion.MODULE_OPEN) }
+                .also { offed(s, EditStop.CAST, draft.cast == HomeLayout.CastDock.OFF) }
+            K_CAST_EDGE -> change(l.copy(cast = l.cast.withTop(k == 0)), Motion.MODULE_OPEN)
             K_SIZE -> change(l.copy(castSize = SIZES[k]), Motion.MODULE_OPEN)
             K_XP -> change(l.copy(xpBar = k == 0), Motion.MODULE_OPEN)
             // Order: Reset = today's order (the cursor stays on its room)
@@ -666,6 +678,7 @@ class HomeEditModel(
         /** where the widget's box stands now under the finger (its grab kept) */
         fun at(): HomeLayoutSolver.Box = HomeLayoutSolver.Box(box0.l + x - downX, box0.t + y - downY, box0.r + x - downX, box0.b + y - downY)
         val cx: Float get() = (box0.l + box0.r) / 2f + x - downX
+        val cy: Float get() = (box0.t + box0.b) / 2f + y - downY
     }
     var drag: Drag? = null
         private set
@@ -675,6 +688,9 @@ class HomeEditModel(
         fun columns(l: HomeLayout): Pair<Pair<Float, Float>, Pair<Float, Float>>
         fun valid(l: HomeLayout): Boolean
         val w: Float
+        /** the columns' top and foot now (the bar's drag: its upper half lays it above its column); Home's rest page by default */
+        val colTop: Float get() = 234f
+        val colBottom: Float get() = 927f
         /** phase 4: the room bar's slots' centres left to right (the drag's x), empty = no bar */
         fun barSlots(): List<Float> = emptyList()
     }
@@ -732,8 +748,8 @@ class HomeEditModel(
 
     /**
      * the layout the dragged widget's CENTRE asks for (the finger keeps its grab): chat / map swap sides once the centre is
-     * [HYSTERESIS_PX] beyond the divider; the card docks to the column under it; the bar to the left / right column, or across (Split
-     * when it was split) in the middle third; the divider snaps the chat's width to the nearest third / half / two thirds
+     * [HYSTERESIS_PX] beyond the divider; the card docks to the column under it; the bar to the left / right column (above it in the
+     * columns' upper half, under it in the lower), or across (Split when it was split) in the middle third of the lower half; the divider snaps the chat's width to the nearest third / half / two thirds
      */
     fun dockUnder(d: Drag, l: HomeLayout, geo: Geo): HomeLayout? {
         if (d.stop == EditStop.ROOMS) {
@@ -767,21 +783,25 @@ class HomeEditModel(
                 if (l.cast == HomeLayout.CastDock.OFF) return null
                 val third = geo.w / 6f
                 val b1 = div - third; val b2 = div + third
-                val zone = when (l.cast) {
-                    HomeLayout.CastDock.UNDER_CHAT -> if (l.chatSide == HomeLayout.Side.LEFT) -1 else 1
-                    HomeLayout.CastDock.UNDER_MAP -> if (mapSide == HomeLayout.Side.LEFT) -1 else 1
+                val zone = when (l.cast.column) {
+                    HomeModule.CHAT -> if (l.chatSide == HomeLayout.Side.LEFT) -1 else 1
+                    HomeModule.MAP -> if (mapSide == HomeLayout.Side.LEFT) -1 else 1
                     else -> 0
                 }
                 val h = HYSTERESIS_PX
+                // the edge: the columns' upper half = above, the lower = under (the edge kept within the hysteresis)
+                val midY = (geo.colTop + geo.colBottom) / 2f
+                val up = when { d.cy < midY - h -> true; d.cy > midY + h -> false; else -> l.cast.top }
                 val to = when (zone) {
                     -1 -> if (cx > b2 + h) 1 else if (cx > b1 + h) 0 else -1
                     1 -> if (cx < b1 - h) -1 else if (cx < b2 - h) 0 else 1
                     else -> if (cx < b1 - h) -1 else if (cx > b2 + h) 1 else 0
                 }
                 val dock = when (to) {
-                    0 -> d.midDock
-                    -1 -> if (l.chatSide == HomeLayout.Side.LEFT) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP
-                    else -> if (l.chatSide == HomeLayout.Side.RIGHT) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP
+                    // across (or split) only from the lower half: dragging along the top never drops the bar at the foot
+                    0 -> if (!up) d.midDock else if (l.cast.column != null) l.cast.withTop(true) else l.cast
+                    -1 -> (if (l.chatSide == HomeLayout.Side.LEFT) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP).withTop(up)
+                    else -> (if (l.chatSide == HomeLayout.Side.RIGHT) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP).withTop(up)
                 }
                 l.copy(cast = dock)
             }
@@ -853,7 +873,8 @@ class HomeEditModel(
 
         val SHARES = HomeLayout.Share.values().toList()
         val SIZES = HomeLayout.SlotSize.values().toList()
-        val CAST_CYCLE = listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT)
+        /** the bar's Above / Below row (column docks only) */
+        const val K_CAST_EDGE = "castedge"
 
         // the menus' layout rows (the draft) and the view's own behaviour keys; every other key is BottomTiles.press's
         const val K_REST = "rest"
@@ -942,6 +963,8 @@ object HomeWidgetMenus {
     val CAST_DOCKS = listOf(HomeLayout.CastDock.OFF, HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS,
         HomeLayout.CastDock.SPLIT)
     val CAST_WORDS = listOf("Off", "Chat", "Map", "Across", "Split")
+    /** the bar's edge in its column ([HomeEditModel.K_CAST_EDGE]) */
+    val EDGE_WORDS = listOf("Above", "Below")
     /** In fights: Grow (D1's default) and Same size; "Top screen" is phase 3's, opt-in only ([TOP_OFFERED]) */
     val FIGHTS: List<HomeLayout.FightBand> get() = if (TOP_OFFERED) listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME, HomeLayout.FightBand.TOP)
         else listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)
@@ -985,7 +1008,9 @@ object HomeWidgetMenus {
             onOff(HomeEditModel.K_FOLD, "Folded", v.folded),
         )
         EditStop.CAST -> buildList {
-            add(MenuRow(HomeEditModel.K_PLACE, "Place", CAST_WORDS, CAST_DOCKS.indexOf(l.cast)))
+            add(MenuRow(HomeEditModel.K_PLACE, "Place", CAST_WORDS, CAST_DOCKS.indexOf(l.cast.withTop(false))))
+            // a column's bar: above or below that column (Across and Split stay at the foot)
+            l.cast.column?.let { c -> add(MenuRow(HomeEditModel.K_CAST_EDGE, if (c == HomeModule.CHAT) "Chat" else "Map", EDGE_WORDS, if (l.cast.top) 0 else 1)) }
             if (l.cast != HomeLayout.CastDock.OFF) {
                 add(MenuRow(HomeEditModel.K_SIZE, "Size", listOf("S", "M", "L"), HomeEditModel.SIZES.indexOf(l.castSize)))
                 add(MenuRow(HomeEditModel.K_CAST_FIGHT, "In fights", SHOW_HIDE, if (v.castShowInFight) 0 else 1))
