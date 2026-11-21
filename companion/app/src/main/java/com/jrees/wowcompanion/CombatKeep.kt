@@ -86,15 +86,27 @@ object CombatKeep {
      * ([others]: the combat folder's files; an orphan / no-realm key, an empty one or another class's never counts) is this
      * character's: it is restored into the add-on's key [who] (the app never picks a realm: the key stays the add-on's; the old file is
      * left as it is - nothing moved or renamed). Two or more = never a guess (null).
+     * Safety k12 (the review, round 2): BOTH classes must be known and the same (a backup or an add-on of no class is never taken),
+     * and only when the add-on says this key is a fresh one nobody chose ([mayAdopt]).
      */
     fun adopt(who: String, cls: String?, others: List<Backup>): Backup? {
         val name = CharKey.nameOf(who) ?: return null
+        if (cls == null) return null
         val mine = others.filter { b ->
-            b.who != who && CharKey.isKey(b.who) && CharKey.nameOf(b.who) == name && b.entries.isNotEmpty() &&
-                !(cls != null && b.cls != null && b.cls != cls)
+            b.who != who && CharKey.isKey(b.who) && CharKey.nameOf(b.who) == name && b.entries.isNotEmpty() && b.cls == cls
         }.distinctBy { it.who }
         val one = mine.singleOrNull() ?: return null
-        return Backup(who, one.entries, cls ?: one.cls)
+        return Backup(who, one.entries, cls)
+    }
+
+    /**
+     * Safety k12 / PadMap m182 (the review, round 2): adoption only for a key the add-on built fresh with NO question asked (its tables
+     * were lost: who.ad = 1, rs "new"); never after the player's answer to the key question (a picked realm, "New character"), never
+     * for a key found where settings live, never from an older add-on that does not say so
+     */
+    fun mayAdopt(map: PadMapModel.Map): Boolean {
+        val d = map.dpad ?: return false
+        return d.adopt && d.realmSource == "new" && (d.nameCands ?: 0) == 0 && d.picks.isEmpty()
     }
 
     /** the taps that put [backup] back, one batch per setting (ONE put each) between the quiet enter and the leave; [column] = a spell's

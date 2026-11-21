@@ -59,28 +59,42 @@ class KeyPickTest {
         assertNull(d.realm)
         assertNull("no key: nothing per character", CombatKeep.who(m))
         assertNull(PetRecall.who(d.name, d.realm))
-        assertEquals(listOf(KeyPick.Cand(kept, 288), KeyPick.Cand("Classic Beta PvE", 1)), d.picks)
+        assertEquals(listOf(KeyPick.Cand(kept, 288, 1), KeyPick.Cand("Classic Beta PvE", 1, 2)), d.picks)
         assertEquals("ask", d.realmSource)
     }
 
     @Test fun aCandidateThatIsNoRealmIsDropped() {
         val d = padmap("""{"n":"Korvash","rs":"ask","pk":[{"r":"","n":3},{"r":"?","n":3},{"r":"A","n":-4},{"n":2}]}""").dpad!!
-        assertEquals(listOf(KeyPick.Cand("A", 0)), d.picks)
+        assertEquals("the add-on's own place kept (3rd)", listOf(KeyPick.Cand("A", 0, 3)), d.picks)
+    }
+
+    /** Safety k12 / PadMap m182 (the review, round 2): a candidate the app drops (a C1 control, a Unicode-only blank the add-on's
+     *  byte-wise check lets through) never shifts another onto its row: the answer names the add-on's own place */
+    @Test fun aDroppedCandidateNeverShiftsTheAnswer() {
+        val d = padmap("""{"n":"Korvash","rs":"ask","pk":[{"r":"Realm\u0085X","n":5},{"r":"\u00a0","n":4},{"r":"B","n":3},{"r":"C","n":2}]}""").dpad!!
+        assertEquals(listOf(KeyPick.Cand("B", 3, 3), KeyPick.Cand("C", 2, 4)), d.picks)
+        assertEquals("row 0 (B) = the add-on's pk[3]", 3, KeyPick.pickOf(0, d.picks))
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 12), KeyPick.cells(KeyPick.pickOf(0, d.picks)))
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 13), KeyPick.cells(KeyPick.pickOf(1, d.picks)))
+        assertEquals("the last row: New character", listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 9),
+            KeyPick.cells(KeyPick.pickOf(2, d.picks)))
     }
 
     @Test fun theChoicesWordsAndAnswers() {
-        val c = listOf(KeyPick.Cand(kept, 288), KeyPick.Cand("Classic Beta PvE", 1))
+        val c = listOf(KeyPick.Cand(kept, 288, 1), KeyPick.Cand("Classic Beta PvE", 1, 2))
         assertEquals(listOf("Korvash - $kept, 288 settings", "Korvash - Classic Beta PvE, 1 setting", "New character"), KeyPick.options("Korvash", c))
-        assertEquals(0, KeyPick.pickOf(0, c)); assertEquals(1, KeyPick.pickOf(1, c)); assertNull("New character", KeyPick.pickOf(2, c))
-        // the padtab's third page (Book b74): 39, 38, 37, then 10 + i / 9
-        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 10), KeyPick.cells(0))
-        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 11), KeyPick.cells(1))
+        assertEquals(1, KeyPick.pickOf(0, c)); assertEquals(2, KeyPick.pickOf(1, c)); assertNull("New character", KeyPick.pickOf(2, c))
+        // the padtab's third page (Book b74): 39, 38, 37, then 9 + the add-on's place / 9
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 10), KeyPick.cells(1))
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 11), KeyPick.cells(2))
         assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 9), KeyPick.cells(null))
-        assertEquals("never past the add-on's 10", 19, KeyPick.cells(42).last().second)
+        assertEquals("the add-on's 10th", 19, KeyPick.cells(10)!!.last().second)
+        assertNull("never past the add-on's 10: nothing sent", KeyPick.cells(42))
+        assertNull("no place 0", KeyPick.cells(0))
     }
 
     @Test fun askedOnceOnHomeOutOfFightsLaterUntilTheNextLogin() {
-        val c = listOf(KeyPick.Cand(kept, 288), KeyPick.Cand("B", 1))
+        val c = listOf(KeyPick.Cand(kept, 288, 1), KeyPick.Cand("B", 1, 2))
         assertEquals(KeyPick.Act.ASK, KeyPick.decide(c, open = false, later = false, sentAgoMs = null, ready = true, fight = false))
         assertEquals("a fight: waits", KeyPick.Act.WAIT, KeyPick.decide(c, false, false, null, true, true))
         assertEquals("Home busy: waits", KeyPick.Act.WAIT, KeyPick.decide(c, false, false, null, false, false))
@@ -92,6 +106,43 @@ class KeyPickTest {
             KeyPick.decide(c, false, false, KeyPick.ANSWER_WAIT_MS + 1, true, false))
         assertEquals("the key came: an open question goes", KeyPick.Act.CLOSE, KeyPick.decide(emptyList(), true, false, null, true, false))
         assertEquals(KeyPick.Act.NONE, KeyPick.decide(emptyList(), false, false, null, true, false))
+        assertEquals("the review, round 2: an open question drawn from another list is put away", KeyPick.Act.CLOSE,
+            KeyPick.decide(c, true, false, null, true, false, changed = true))
+    }
+
+    /** the review, round 2: the question is up for X; the player relogs to Y (also asked): X's rows are never answered for Y */
+    @Test fun anOpenQuestionFollowsTheCharacterAndItsList() {
+        val x = padmap("""{"n":"Korvash","rs":"ask","pk":[{"r":"A","n":3},{"r":"B","n":1}]}""").dpad!!
+        val y = padmap("""{"n":"Brenna","rs":"ask","pk":[{"r":"C","n":9},{"r":"D","n":2}]}""").dpad!!
+        val shown = KeyPick.Shown(x.name!!, x.picks)
+        assertEquals("the same padmap again: still the same question", shown, KeyPick.Shown(x.name!!, x.picks))
+        val changed = shown != KeyPick.Shown(y.name!!, y.picks)
+        assertTrue(changed)
+        assertEquals(KeyPick.Act.CLOSE, KeyPick.decide(y.picks, open = true, later = false, sentAgoMs = null, ready = true, fight = false, changed = changed))
+        // put away, then asked with Y's own list
+        assertEquals(KeyPick.Act.ASK, KeyPick.decide(y.picks, open = false, later = false, sentAgoMs = null, ready = true, fight = false))
+        assertEquals(listOf("Brenna - C, 9 settings", "Brenna - D, 2 settings", "New character"), KeyPick.options(y.name!!, y.picks))
+        // the same name, another list (a candidate gone or another count): put away too
+        val x2 = padmap("""{"n":"Korvash","rs":"ask","pk":[{"r":"B","n":1},{"r":"E","n":4}]}""").dpad!!
+        assertTrue(shown != KeyPick.Shown(x2.name!!, x2.picks))
+    }
+
+    /** the review, round 2: "Later" outlives a rebuilt bottom screen (a new host over the same prefs) within the same login */
+    @Test fun laterIsKeptAcrossARebuiltHost() {
+        val store = HashMap<String, String>()
+        fun host() = KeyPick.LaterMarks(get = { store[it] }, put = { k, v -> if (v == null) store.remove(k) else store[k] = v })
+        val mark = KeyPick.laterMark(10000L, 77L)
+        host().said("Korvash", mark)
+        val rebuilt = host()
+        assertTrue("the same login: still Later", rebuilt.isLater("Korvash", mark))
+        assertFalse("the next login: asked again", rebuilt.isLater("Korvash", KeyPick.laterMark(10450L, 77L)))
+        assertFalse("another character: never", rebuilt.isLater("Brenna", mark))
+        assertEquals("one entry per name, overwritten", 1, store.size)
+        rebuilt.said("Korvash", KeyPick.laterMark(10450L, 77L)); assertEquals(1, store.size)
+        rebuilt.answered("Korvash"); assertTrue(store.isEmpty())
+        assertFalse(host().isLater("Korvash", KeyPick.laterMark(10450L, 77L)))
+        val broken = KeyPick.LaterMarks(get = { error("no prefs") }, put = { _, _ -> error("no prefs") })
+        assertFalse("a store that fails: never Later, never a crash", broken.isLater("Korvash", mark)); broken.said("Korvash", mark)
     }
 
     // ---------------------------------------------------------------- the WCSETUP line: words and counts only
@@ -146,7 +197,7 @@ class KeyPickTest {
             assertEquals("$lang.json stays CRLF", lf, crlf)
             Tr.load(lang, bytes.toString(Charsets.UTF_8))
             assertEquals(title, Tr.t(KeyPick.TITLE, lang))
-            assertEquals(label, Tr.t(KeyPick.label("Korvash", KeyPick.Cand("R 7", 288)), lang))
+            assertEquals(label, Tr.t(KeyPick.label("Korvash", KeyPick.Cand("R 7", 288, 1)), lang))
             assertNotNull(Tr.t(KeyPick.FOOTER, lang).takeIf { it != KeyPick.FOOTER })
             assertNotNull(Tr.t(KeyPick.NEW_CHAR, lang).takeIf { it != KeyPick.NEW_CHAR })
         }
@@ -190,16 +241,35 @@ class KeyPickTest {
             CombatKeep.Backup("Brenna-$kept", listOf(e(2)), "HUNTER")))!!
         assertEquals("restored INTO the add-on's key (the app never picks a realm)", fresh, got.who)
         assertEquals(288, got.entries.size); assertEquals("HUNTER", got.cls)
-        // the restore's own rule takes it (the store empty at login)
-        val m = padmap("""{"n":"Korvash","r":"Realm7","rs":"new","c":"HUNTER"}""")
+        // the restore's own rule takes it (the store empty at login), only for a fresh key nobody chose (k12: who.ad)
+        val m = padmap("""{"n":"Korvash","r":"Realm7","rs":"new","c":"HUNTER","nc":0,"ad":1}""")
         assertEquals(fresh, CombatKeep.who(m))
+        assertTrue(CombatKeep.mayAdopt(m))
         assertTrue(CombatKeep.needsRestore(m, got))
         assertNull("another class's backup is never this one's", CombatKeep.adopt(fresh, "WARRIOR", listOf(real)))
         assertNull("two of this name under other realms: never a guess", CombatKeep.adopt(fresh, "HUNTER",
             listOf(real, CombatKeep.Backup("Korvash-Classic Beta PvE", listOf(e(3)), "HUNTER"))))
         assertNull("an empty one is nothing to take", CombatKeep.adopt(fresh, "HUNTER", listOf(real.copy(entries = emptyList()))))
         assertNull("only another name's", CombatKeep.adopt(fresh, "HUNTER", listOf(CombatKeep.Backup("Brenna-$kept", listOf(e(2)), "HUNTER"))))
-        assertEquals("a backup of no class (older) is this name's", fresh, CombatKeep.adopt(fresh, "HUNTER", listOf(real.copy(cls = null)))?.who)
+        // k12 (the review, round 2): both classes known and the same
+        assertNull("a backup of no class (older) is never taken", CombatKeep.adopt(fresh, "HUNTER", listOf(real.copy(cls = null))))
+        assertNull("an add-on of no class: never", CombatKeep.adopt(fresh, null, listOf(real)))
+    }
+
+    /** Safety k12 / PadMap m182 (the review, round 2): the key question's answer is never overridden by another realm's backup */
+    @Test fun noAdoptionAfterTheKeyQuestionsAnswer() {
+        // the player picked "New character" (rs new, no ad), a realm (picked), or the add-on found the settings (sticky / guid)
+        for (who in listOf("""{"n":"Korvash","r":"Forever","rs":"new","c":"HUNTER","nc":0}""",
+                """{"n":"Korvash","r":"Pool B","rs":"picked","c":"HUNTER","nc":2,"ad":1}""",
+                """{"n":"Korvash","r":"Pool A","rs":"sticky","c":"HUNTER","nc":1}""",
+                """{"n":"Korvash","r":"Pool A","rs":"guid","c":"HUNTER","nc":2}""",
+                """{"n":"Korvash","r":"Realm7","rs":"new","c":"HUNTER","nc":2,"ad":1}""",
+                """{"n":"Korvash","r":"Realm7","rs":"new","c":"HUNTER"}""")) {
+            assertFalse(who, CombatKeep.mayAdopt(padmap(who)))
+        }
+        assertFalse("no padmap who: never", CombatKeep.mayAdopt(padmap("null")))
+        assertTrue(padmap("""{"n":"Korvash","r":"Realm7","rs":"new","ad":1}""").dpad!!.adopt)
+        assertFalse(padmap("""{"n":"Korvash","r":"Realm7","rs":"new","ad":0}""").dpad!!.adopt)
     }
 
     @Test fun theChoiceAlwaysFitsTheBottomScreen() {

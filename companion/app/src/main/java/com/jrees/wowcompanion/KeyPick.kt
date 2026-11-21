@@ -17,17 +17,20 @@ package com.jrees.wowcompanion
  * Pure (no Android).
  */
 object KeyPick {
-    /** one saved place a character's settings may live under: [realm] (the key "Name-[realm]") holding [count] settings */
-    data class Cand(val realm: String, val count: Int)
+    /** one saved place a character's settings may live under: [realm] (the key "Name-[realm]") holding [count] settings; [pos] = its
+     *  place in the ADD-ON's list (1-based, PadMap m182): the answer names it, so a candidate the app drops shifts nothing */
+    data class Cand(val realm: String, val count: Int, val pos: Int)
 
     /** the add-on's sources of the key (Safety k10 WC.charKeySource), the diagnostic line's first word */
     val SOURCES = setOf("guid", "guid-id", "sticky", "live", "hint", "picked", "new", "ask", "none",
         "kept")                                                          // "kept": an add-on before k10
     val GUID_WORDS = setOf("same", "server-changed", "id-changed", "new", "unknown")
 
-    /** the padtab's third page (Book b74): [index] 0-based in the candidates, null = "a new character" */
-    fun cells(index: Int?): List<Pair<String, Int>> {
-        val code = if (index == null) NEW_CODE else FIRST_CODE + index.coerceIn(0, MAX - 1)
+    /** the padtab's third page (Book b74): [pos] the candidate's place in the add-on's list (1-based, [Cand.pos]), null = "a new
+     *  character"; null = no such place (nothing is sent) */
+    fun cells(pos: Int?): List<Pair<String, Int>>? {
+        if (pos != null && pos !in 1..MAX) return null
+        val code = if (pos == null) NEW_CODE else FIRST_CODE + pos - 1
         return listOf(PADTAB to 39, PADTAB to 38, PADTAB to 37, PADTAB to code)
     }
     const val PADTAB = "padtab"
@@ -47,8 +50,11 @@ object KeyPick {
     /** the choices in the add-on's order, then "New character" */
     fun options(name: String, cands: List<Cand>): List<String> = cands.take(MAX).map { label(name, it) } + NEW_CHAR
 
-    /** the choice at [i] in [options]: the candidate's index, or null for "New character" */
-    fun pickOf(i: Int, cands: List<Cand>): Int? = if (i in 0 until minOf(cands.size, MAX)) i else null
+    /** the choice at row [i] of [options]: the candidate's place in the add-on's list ([Cand.pos]), or null for "New character" */
+    fun pickOf(i: Int, cands: List<Cand>): Int? = if (i in 0 until minOf(cands.size, MAX)) cands[i].pos else null
+
+    /** what an open question was drawn from (the review, round 2): a padmap with another name or other candidates puts it away */
+    data class Shown(val name: String, val cands: List<Cand>)
 
     /**
      * the k10 review (round 1): what "Later" is tied to - the add-on's login ([loginStamp], PadMap m181: new at every PLAYER_LOGIN, a
@@ -63,17 +69,35 @@ object KeyPick {
      * what the app does now: [cands] the current padmap's question (empty = none, or the key is known), [open] the question shows or
      * waits for the controller, [later] the player said Later for this character in this game run, [sentAgoMs] since the last answer
      * was tapped (null = none: an answer the add-on has not taken yet is not asked over for [ANSWER_WAIT_MS]), [ready] Home free (no
-     * room, no other prompt, no game window), [fight] in combat (never asked in a fight; an open question goes away and comes back)
+     * room, no other prompt, no game window), [fight] in combat (never asked in a fight; an open question goes away and comes back),
+     * [changed] the open question was drawn from another name or other candidates than the padmap's now (a relog to another
+     * character, a changed list: put away and asked again with the new one - never answered by the old list's row)
      */
-    fun decide(cands: List<Cand>, open: Boolean, later: Boolean, sentAgoMs: Long?, ready: Boolean, fight: Boolean): Act = when {
+    fun decide(cands: List<Cand>, open: Boolean, later: Boolean, sentAgoMs: Long?, ready: Boolean, fight: Boolean,
+               changed: Boolean = false): Act = when {
         cands.isEmpty() -> if (open) Act.CLOSE else Act.NONE
-        open -> if (fight) Act.CLOSE else Act.NONE
+        open -> if (fight || changed) Act.CLOSE else Act.NONE
         later -> Act.NONE
         sentAgoMs != null && sentAgoMs in 0 until ANSWER_WAIT_MS -> Act.WAIT
         fight || !ready -> Act.WAIT
         else -> Act.ASK
     }
     const val ANSWER_WAIT_MS = 10_000L
+
+    /** the "Later" marks' prefs file (the review, round 2: kept across a rebuilt bottom screen; one entry per name, overwritten) */
+    const val LATER_PREFS = "keyask"
+    fun laterKey(name: String) = "later_$name"
+
+    /**
+     * the review, round 2: the per-name "Later" marks over a store that outlives the bottom screen's host (the host's prefs file
+     * [LATER_PREFS]; a rebuilt host - tabbing out and back, Swap screens - reads the same marks): [get] / [put] by [laterKey], null = none
+     */
+    class LaterMarks(private val get: (String) -> String?, private val put: (String, String?) -> Unit) {
+        /** the player said Later for [name] in the login [mark] stands for ([laterMark]) */
+        fun isLater(name: String, mark: String): Boolean = runCatching { get(laterKey(name)) == mark }.getOrDefault(false)
+        fun said(name: String, mark: String) { runCatching { put(laterKey(name), mark) } }
+        fun answered(name: String) { runCatching { if (get(laterKey(name)) != null) put(laterKey(name), null) } }
+    }
 
     /**
      * the WCSETUP line (Safety k10 / PadMap m180): "character key: <source>, realm reported|empty, hint present|none, name candidates N,

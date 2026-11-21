@@ -318,12 +318,17 @@ object PadMapModel {
                     nameCands = who?.takeIf { it.has("nc") }?.optInt("nc", -1)?.takeIf { it >= 0 },
                     unclaimed = who?.takeIf { it.has("uc") }?.optInt("uc", -1)?.takeIf { it >= 0 },
                     guidState = who?.let { textOrNull(it, "gs") },
+                    // m182 (Safety k12, the review round 2): each candidate keeps its place in the ADD-ON's list ([KeyPick.Cand.pos],
+                    // 1-based): the answer names that place, so a candidate the app drops never shifts another onto its row
                     picks = who?.optJSONArray("pk")?.let { a ->
-                        (0 until a.length()).mapNotNull { i -> a.optJSONObject(i) }.mapNotNull { o ->
-                            CharKey.realm(textOrNull(o, "r"))?.let { r -> KeyPick.Cand(r, o.optInt("n", 0).coerceAtLeast(0)) }
-                        }.take(KeyPick.MAX)
+                        (0 until minOf(a.length(), KeyPick.MAX)).mapNotNull { i ->
+                            a.optJSONObject(i)?.let { o ->
+                                CharKey.realm(textOrNull(o, "r"))?.let { r -> KeyPick.Cand(r, o.optInt("n", 0).coerceAtLeast(0), i + 1) }
+                            }
+                        }
                     } ?: emptyList(),
-                    loginStamp = who?.takeIf { it.has("ls") }?.optLong("ls", -1L)?.takeIf { it > 0L })
+                    loginStamp = who?.takeIf { it.has("ls") }?.optLong("ls", -1L)?.takeIf { it > 0L },
+                    adopt = who?.optInt("ad", 0) == 1)
             },
             start = m.optJSONObject("start")?.let { st ->
                 StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"),
@@ -366,7 +371,10 @@ object PadMapModel {
                     val picks: List<KeyPick.Cand> = emptyList(),
                     /** m181 (Safety k11): the add-on login's stamp (a number, new at every PLAYER_LOGIN, a /reload's too): the key
                      *  question's "Later" lasts until it changes ([KeyPick.laterMark]); null from an older add-on */
-                    val loginStamp: Long? = null)
+                    val loginStamp: Long? = null,
+                    /** m182 (Safety k12): the add-on built this key fresh and nobody chose it (no question asked): only then may the app
+                     *  put this name's In-combat backup under another realm into it ([CombatKeep.mayAdopt]); false from an older add-on */
+                    val adopt: Boolean = false)
     val DPAD_SIDES = listOf("left", "up", "right")
 
     /** m37 / m160 START (the padmap's `start`): [key] the game's OPENRADIAL key; [bound] "pause" = Start is the router's (Home's wheel, the

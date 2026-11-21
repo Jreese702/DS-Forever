@@ -92,7 +92,8 @@ class CombatKeepHost(
             // Safety k11 (the k10 review, round 1): no backup of this key at all (a fresh key after the saved tables were lost): the
             // one backup of this NAME under another realm is this character's (CombatKeep.adopt), restored into the add-on's key
             val own = read(who)
-            val adopt = if (own == null && !File(dir(), CombatKeep.fileName(who)).exists()) adopted(who, map.dpad?.cls) else null
+            // k12 (the review, round 2): only a fresh key nobody chose (the add-on's who.ad): never over the key question's answer
+            val adopt = if (own == null && CombatKeep.mayAdopt(map) && !File(dir(), CombatKeep.fileName(who)).exists()) adopted(who, map.dpad?.cls) else null
             val backup = own ?: adopt
             if (CombatKeep.needsRestore(map, backup)) {
                 if (fighting() || !bookReady()) return                          // the next padmap tries again

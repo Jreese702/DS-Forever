@@ -4852,9 +4852,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var keyAskWaitId = 0
     private var keyAskSentAt = 0L
     /** the characters (by name: the question's own, never logged) the player said Later for, and the login they said it in
-     *  ([KeyPick.laterMark]: the add-on's login stamp, else the game run) */
-    private val keyAskLater = HashMap<String, String>()
+     *  ([KeyPick.laterMark]: the add-on's login stamp, else the game run); the review, round 2: in a small prefs file, so a rebuilt
+     *  bottom screen (tabbing out and back, Swap screens) keeps it within the same login - a stale mark stops matching by itself */
+    private val keyAskLater = KeyPick.LaterMarks(
+        get = { k -> getSharedPreferences(KeyPick.LATER_PREFS, MODE_PRIVATE).getString(k, null) },
+        put = { k, v ->
+            val e = getSharedPreferences(KeyPick.LATER_PREFS, MODE_PRIVATE).edit()
+            if (v == null) e.remove(k) else e.putString(k, v)
+            e.apply()
+        })
     private var keyAskDpad: PadMapModel.Dpad? = null
+    /** what the open question was drawn from (the review, round 2): another name or list puts it away */
+    private var keyAskShown: KeyPick.Shown? = null
 
     private fun keyAsk(d: PadMapModel.Dpad) {
         if (!::setupView.isInitialized || !::startView.isInitialized) return
@@ -4868,14 +4877,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE
         val ready = room == Room.HOME && !homeView.homeGuestWanted() && capHolder.isEmpty() && !busy &&
             (startView.visibility != View.VISIBLE)
-        val later = name != null && keyAskLater[name] == KeyPick.laterMark(d.loginStamp, run)
+        val later = name != null && !keyAskOpen && keyAskLater.isLater(name, KeyPick.laterMark(d.loginStamp, run))
         val sentAgo = if (keyAskSentAt == 0L) null else SystemClock.elapsedRealtime() - keyAskSentAt
-        when (KeyPick.decide(cands, keyAskOpen, later, sentAgo, ready, fight)) {
+        val changed = keyAskOpen && keyAskShown != name?.let { KeyPick.Shown(it, cands) }
+        when (KeyPick.decide(cands, keyAskOpen, later, sentAgo, ready, fight, changed)) {
             KeyPick.Act.NONE -> return
             KeyPick.Act.WAIT -> { ui.removeCallbacks(keyAskTick); ui.postDelayed(keyAskTick, 3_000L); return }
             KeyPick.Act.CLOSE -> {
-                Log.i(HomeView.TAG, "key question: put away (${if (cands.isEmpty()) "the key is known" else "a fight"})")
-                keyAskOpen = false; keyAskWaitId++
+                Log.i(HomeView.TAG, "key question: put away (${if (cands.isEmpty()) "the key is known" else if (changed) "the question changed" else "a fight"})")
+                keyAskOpen = false; keyAskWaitId++; keyAskShown = null
                 setupView.close(); setupPadOff()
                 if (cands.isNotEmpty()) { ui.removeCallbacks(keyAskTick); ui.postDelayed(keyAskTick, 3_000L) }
                 return
@@ -4884,6 +4894,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         val who = name ?: return
         keyAskOpen = true
+        keyAskShown = KeyPick.Shown(who, cands)
         Log.i(HomeView.TAG, "key question: ask (${cands.size} saved places)")
         val show = {
             setupView.choose(Tr.t(KeyPick.TITLE), KeyPick.options(who, cands), Tr.t(KeyPick.FOOTER), KeyPick.LATER,
@@ -4900,20 +4911,20 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** A: the choice to the add-on (padtab 39, 38, 37, then its code); asked again only if the add-on still asks after a while */
     private fun keyAnswer(who: String, index: Int?) {
         if (!keyAskOpen) return
-        keyAskOpen = false; keyAskWaitId++
-        val sent = padTabTap(KeyPick.cells(index))
+        keyAskOpen = false; keyAskWaitId++; keyAskShown = null
+        val sent = KeyPick.cells(index)?.let { padTabTap(it) } ?: false
         keyAskSentAt = SystemClock.elapsedRealtime()
-        Log.i(HomeView.TAG, "key question: ${if (index == null) "a new character" else "saved place ${index + 1}"} ${if (sent) "sent" else "NOT sent"}")
+        Log.i(HomeView.TAG, "key question: ${if (index == null) "a new character" else "saved place $index"} ${if (sent) "sent" else "NOT sent"}")
         setupView.close(); setupPadOff()
         ui.removeCallbacks(keyAskTick); ui.postDelayed(keyAskTick, KeyPick.ANSWER_WAIT_MS + 500L)
-        if (keyAskLater[who] != null) keyAskLater.remove(who)
+        keyAskLater.answered(who)
     }
 
     /** B: later - no key this game run (nothing per character is written); asked again at the next login */
     private fun keyLater(who: String) {
         if (!keyAskOpen) return
-        keyAskOpen = false; keyAskWaitId++
-        keyAskLater[who] = KeyPick.laterMark(keyAskDpad?.loginStamp, LauncherHooks.gameStartSec)
+        keyAskOpen = false; keyAskWaitId++; keyAskShown = null
+        keyAskLater.said(who, KeyPick.laterMark(keyAskDpad?.loginStamp, LauncherHooks.gameStartSec))
         Log.i(HomeView.TAG, "key question: later (asked again at the next login)")
         setupView.close(); setupPadOff()
     }
