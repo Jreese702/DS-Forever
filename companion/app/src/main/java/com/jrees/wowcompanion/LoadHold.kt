@@ -8,7 +8,10 @@ package com.jrees.wowcompanion
  * The windows ([deferNow]): from the game's start (Play) until it reaches the world (at most [HARD_MS] from Play), from the world
  * entry (and its return after a logout) until 30 s after it - its own window, so a slow login still holds through the kills 7 - 36 s
  * after the world - and from each loading screen in the world until 5 s after it ends (at most [HARD_MS] from its start); each job's
- * own wait at most [HARD_MS], so nothing can stay held (a lost "loading over" event, a world that never comes). Nothing once the game
+ * own wait at most [HARD_MS], so nothing can stay held (a lost "loading over" event, a world that never comes). That cap counts from
+ * the job's FIRST hold and a new window never re-bases it (the plan: "Each wait has a hard limit of 90 s"): a job held since Play on
+ * a login slower than about 60 s runs at its 90 s inside the world's 30 s window (and is not held again in that window); only the jobs
+ * first asked after the world entry wait for its end. Nothing once the game
  * has ended. The minimap is never held. Each hold and each run is one mem.log line
  * ("light8: held ...", "light8: ran ... after N s held"). Off Light 8 nothing is ever held (test build 1516's behaviour).
  */

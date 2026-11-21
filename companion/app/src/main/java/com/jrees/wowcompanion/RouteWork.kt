@@ -23,7 +23,11 @@ object RouteWork {
         }
     }
 
-    fun onMain(): Boolean = Looper.myLooper() == Looper.getMainLooper()
+    fun onMain(): Boolean = mainNow()
+
+    // the tests' seams (the app never sets them): the UI-thread check and the miss clock (no Looper / SystemClock on the JVM)
+    @Volatile internal var mainNow: () -> Boolean = { Looper.myLooper() == Looper.getMainLooper() }
+    @Volatile internal var elapsed: () -> Long = { android.os.SystemClock.elapsedRealtime() }
 
     /** [work] on the route thread after what is queued there, no result (Light 8: a relief lets the route thread's own scratch go) */
     fun later(work: () -> Unit) { exec.execute { runCatching(work) } }
@@ -55,8 +59,8 @@ object RouteWork {
         // Light 8 (the 8 GB Thors' bound, [quietReload]): the maps stored since their last [drop]. A map the bound (or a relief) let go
         // and read again at once for a caller off the UI thread is the same file the caller now has: its load does not bump [version],
         // so a plan keyed by the versions (MapView's cross-zone route, SafePath's stamps) settles as on test build 1516's unbounded
-        // caches instead of planning again after every reload. A caller that got null (the UI thread's miss, the load-time hold) still
-        // sees the bump when its map arrives
+        // caches instead of planning again after every reload. A caller that got null (the UI thread's miss, the load-time hold, a
+        // load that failed - an IOException or an OutOfMemoryError - or the miss window after it) still sees the bump when its map arrives
         private val stored = HashSet<Int>()
         private val listeners = ArrayList<() -> Unit>()
         @Synchronized fun onLoaded(l: () -> Unit) { listeners.add(l) }
@@ -67,7 +71,7 @@ object RouteWork {
         fun get(map: Int, hold: Boolean): T? {
             synchronized(this) {
                 have.get(map)?.let { return it }
-                missAt[map]?.let { if (android.os.SystemClock.elapsedRealtime() - it < MISS_RETRY_MS) return null }
+                missAt[map]?.let { if (elapsed() - it < MISS_RETRY_MS) { stored.remove(map); return null } }    // (null: its arrival bumps)
                 if (hold && held(map)) return null
                 if (onMain()) {
                     stored.remove(map)                                 // (the caller got null: its arrival bumps [version])
@@ -86,7 +90,9 @@ object RouteWork {
             val ls: List<() -> Unit>
             synchronized(this) {
                 loading.remove(map)
-                if (v != null) store(map, v) else missAt[map] = android.os.SystemClock.elapsedRealtime()
+                // (a failed load: the caller got null, so the map's arrival bumps [version] - an off-UI caller that does not retry,
+                // SafePath's draft, plans again then)
+                if (v != null) store(map, v) else { missAt[map] = elapsed(); stored.remove(map) }
                 ls = if (v != null) ArrayList(listeners) else emptyList()
             }
             if (ls.isNotEmpty()) main.post { ls.forEach { it() } }

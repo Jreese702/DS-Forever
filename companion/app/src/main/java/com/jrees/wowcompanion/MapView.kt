@@ -3109,14 +3109,17 @@ class MapView(context: Context) : View(context) {
                 val y0 = minOf(pwy, gy) - CrossZone.MARGIN; val y1 = maxOf(pwy, gy) + CrossZone.MARGIN
                 val ids = zi(cont, x0, x1, y0, y1)
                 // the smallest zones first: a city's own grid over its parent zone's (the same ground; its buildings are its own)
+                val l8 = DeviceTier.light8()
                 val zones = ids.mapNotNull { id ->
                     val w = wo?.invoke(id) ?: return@mapNotNull null
                     Triple(id, w, (w.top - w.bottom) * (w.left - w.right))
                 }.sortedBy { it.third }.map { (id, _, _) ->
-                    // (each zone's road grid read once for the plan and held by it, as its terrain is: Light 8's bound on the 8 GB Thors
-                    // never sends one zone's grid out for another's in the middle of the A*, read again for each cell)
-                    val rg = Roads.of(id)
-                    CrossZone.Zone(id, Terrain.of(id), Terrain.buildingsOf(id)) { wx, wy -> rg != null && Roads.isRoad(rg, wx, wy) }
+                    // Light 8 (the 8 GB Thors): each zone's road grid read once for the plan and held by it, as its terrain is, so the
+                    // bound never sends one zone's grid out for another's in the middle of the A*, read again for each cell - and read
+                    // lazily, on the first cell that asks (as 1516's per-cell read). Every other Thor: test build 1516's per-cell read
+                    val rg by lazy(LazyThreadSafetyMode.NONE) { if (l8) Roads.of(id) else null }
+                    CrossZone.Zone(id, Terrain.of(id), Terrain.buildingsOf(id)) { wx, wy ->
+                        if (l8) rg.let { g -> g != null && Roads.isRoad(g, wx, wy) } else Roads.isRoad(id, wx, wy) }
                 }
                 val threats = ArrayList<CrossZone.Threat>()
                 for (id in ids) {

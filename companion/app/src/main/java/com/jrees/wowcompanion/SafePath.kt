@@ -1014,9 +1014,10 @@ object SafePath {
         if (!RouteWork.onMain()) return
         val stamp = "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Climb.files.version}:${zones.version}:${DangerStore.version}:$mine"
         if (tried[map] == stamp) return
-        // Light 8 (LoadHold, the 8 GB Thors only): a draft waits while the game loads - it is heavy, and it reads its neighbours'
-        // drafts (other zones). Not tried yet, so the first draw after the hold drafts it; off Light 8 never held
-        if (LoadHold.hold(LoadHold.SAFEPATH, "draft") {}) return
+        // Light 8 (LoadHold, the 8 GB Thors only): another zone's draft waits while the game loads (LIGHT8_PLAN.md change 4: SafePath
+        // data for zones other than the player's own; the player's own zone, or one while the player's is not known, never waits). Not
+        // tried yet, so the first draw after the hold drafts it; off Light 8 never held
+        if (LoadHold.otherZone(map) && LoadHold.hold(LoadHold.SAFEPATH, "draft") {}) return
         tried[map] = stamp
         RouteWork.run({
             Roads.of(map) ?: return@run "no road textures yet"

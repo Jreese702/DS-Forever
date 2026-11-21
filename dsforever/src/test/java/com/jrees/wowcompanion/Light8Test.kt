@@ -25,6 +25,7 @@ class Light8Test {
 
     private val clock0 = LoadHold.clock; private val light0 = LoadHold.lightNow; private val window0 = LoadHold.windowNow
     private val player0 = LoadHold.playerNow; private val say0 = LoadHold.say; private val mem0 = MemWatch.light8Now
+    private val onMain0 = RouteWork.mainNow; private val elapsed0 = RouteWork.elapsed
     private val said = ArrayList<String>()
     private var now = 1_000_000L
 
@@ -37,6 +38,7 @@ class Light8Test {
         setTotalMb(0L); DeviceTier.light8Override = null
         LoadHold.clock = clock0; LoadHold.lightNow = light0; LoadHold.windowNow = window0; LoadHold.playerNow = player0; LoadHold.say = say0
         LoadHold.reset()
+        RouteWork.mainNow = onMain0; RouteWork.elapsed = elapsed0
         MemWatch.light8Now = mem0; MemWatch.light8MarkReset()
         MemWatch.onTrim8("light8test") { 0L }; MemWatch.onTrim("light8test-plain") { 0L }
     }
@@ -146,9 +148,47 @@ class Light8Test {
         assertEquals(10, plain.version)
         // the plan reads each zone's road grid once (held by the plan as its terrain is), never per cell through the bounded cache
         val map = text("MapView.kt")
-        assertTrue(map.contains("val rg = Roads.of(id)\n                    CrossZone.Zone(id, Terrain.of(id), Terrain.buildingsOf(id)) { wx, wy -> rg != null && Roads.isRoad(rg, wx, wy) }"))
+        // (Light 8 only, and lazily - the first cell that asks, as 1516's; every other Thor keeps 1516's per-cell read)
+        assertTrue(map.contains("val l8 = DeviceTier.light8()\n                val zones = ids.mapNotNull { id ->"))
+        assertTrue(map.contains("val rg by lazy(LazyThreadSafetyMode.NONE) { if (l8) Roads.of(id) else null }\n" +
+            "                    CrossZone.Zone(id, Terrain.of(id), Terrain.buildingsOf(id)) { wx, wy ->\n" +
+            "                        if (l8) rg.let { g -> g != null && Roads.isRoad(g, wx, wy) } else Roads.isRoad(id, wx, wy) }"))
+        assertFalse("no up-front read of every box zone", map.contains("val rg = Roads.of(id)"))
         assertTrue(text("LowMemCuts.kt").contains("quietReload = { light() }"))
         assertTrue(text("Climb.kt").contains("quietReload = { DeviceTier.light8() }"))
+    }
+
+    @Test fun aFailedReloadOffTheUiThreadStillBumpsWhenTheZoneArrives() {
+        // a zone the bound let go, read again by an off-UI caller (SafePath's draft, the cross-zone plan) whose load fails (an
+        // IOException, an OutOfMemoryError): the caller got null, so the zone's arrival after MISS_RETRY_MS must bump the version
+        // (SafePath set tried[map] = stamp and does not retry until a version moves)
+        var clock = 50_000L
+        RouteWork.mainNow = { false }; RouteWork.elapsed = { clock }
+        var fail = false
+        val f = LowMemCuts.zoneFiles<String>({ 1L }, light = { true }, keepNow = { listOf(1, 2, 3) }) { m ->
+            if (fail) throw OutOfMemoryError("test") else "z$m" }
+        for (m in 1..12) assertEquals("z$m", f.get(m))
+        val v1 = f.version
+        assertEquals(12, v1)
+        val gone = (4..12).first { f.peek(it) == null }
+        // a plain quiet reload: no bump (the reload-loop fix stays)
+        assertEquals("z$gone", f.get(gone)); assertEquals(v1, f.version)
+        val gone2 = (4..12).first { f.peek(it) == null }
+        fail = true
+        assertNull("the load failed", f.get(gone2))
+        assertEquals(v1, f.version)
+        fail = false
+        clock += 5_000
+        assertNull("inside the miss window: null again", f.get(gone2))
+        clock += RouteWork.MISS_RETRY_MS
+        assertEquals("z$gone2", f.get(gone2))
+        assertEquals("the caller that got null sees the bump", v1 + 1, f.version)
+        assertEquals("z$gone2", f.get(gone2)); assertEquals("in memory: nothing new", v1 + 1, f.version)
+        // the next zone the bound let go, failed once and then read: one bump for its arrival
+        val gone3 = (4..12).first { f.peek(it) == null }
+        fail = true; assertNull(f.get(gone3)); fail = false
+        clock += RouteWork.MISS_RETRY_MS
+        assertEquals("z$gone3", f.get(gone3)); assertEquals(v1 + 2, f.version)
     }
 
     @Test fun aRoutePlanOverMoreZonesThanTheBoundSettles() {
@@ -257,7 +297,10 @@ class Light8Test {
     }
 
     @Test fun theNewCachesAreRegisteredForTheLineOnly() {
-        assertTrue(text("InteractView.kt").contains("MemWatch.source8(\"loot\") { iconReady.values.sumOf { it.byteCount.toLong() } }"))
+        // (held weakly: MemWatch's sources live as long as the process, so a destroyed view and its icons are never kept, any Thor)
+        val iv = text("InteractView.kt")
+        assertTrue(iv.contains("val icons = java.lang.ref.WeakReference(iconReady)\n        MemWatch.source8(\"loot\") { icons.get()?.values?.sumOf { it.byteCount.toLong() } ?: 0L }"))
+        assertFalse("no strong capture of the view", iv.contains("MemWatch.source8(\"loot\") { iconReady"))
         assertTrue("no new bound on the loot icons", text("InteractView.kt").contains("if (iconReady.size > 300) { iconReady.clear(); iconWarmed.clear() }"))
         assertTrue(text("BottomPictures.kt").contains("MemWatch.source8(\"bottompics\")"))
         assertTrue(text("GeneralPictures.kt").contains("MemWatch.source8(\"generalpics\") { bytes() }"))
@@ -386,6 +429,31 @@ class Light8Test {
         assertFalse("not held again in the same window", LoadHold.hold(LoadHold.SAFEPATH, "a") { ran++ })
     }
 
+    @Test fun aJobHeldSincePlayKeepsItsNinetySecondsThroughTheWorldWindow() {
+        // the plan's cap ("Each wait has a hard limit of 90 s"): Play at 0, held at 5 s, the world at 80 s (its own window to 110 s).
+        // The job's 90 s count from its first hold and the world entry does not re-base them: it runs at 95 s, inside the world's
+        // window, and is not held again in it; a job first asked after the world entry waits for the window's end
+        val play = now
+        val world = play + 80_000
+        LoadHold.lightNow = { true }
+        LoadHold.windowNow = { t -> LoadHold.deferNow(play, if (t >= world) world else 0L, 0L, false, 0L, t) }
+        now = play + 5_000
+        var ran = 0
+        assertTrue(LoadHold.hold(LoadHold.DANGER) { ran++ })
+        now = world; LoadHold.windowStarted(); assertEquals(emptyList<String>(), LoadHold.tick())
+        now = play + 94_999; assertEquals(emptyList<String>(), LoadHold.tick())
+        now = play + 95_000
+        assertEquals(listOf(LoadHold.DANGER), LoadHold.tick())
+        assertEquals(1, ran)
+        assertEquals("light8: ran danger re-read after 90 s held (90 s limit)", said.last())
+        assertFalse("not held again in the world's window", LoadHold.hold(LoadHold.DANGER) {})
+        // a job first asked after the world: held until the window's end (world + 30 s)
+        assertTrue(LoadHold.hold(LoadHold.SAFEPATH) {})
+        now = world + 29_999; assertEquals(emptyList<String>(), LoadHold.tick())
+        now = world + 30_000; assertEquals(listOf(LoadHold.SAFEPATH), LoadHold.tick())
+        assertTrue(text("LoadHold.kt").contains("That cap counts from\n * the job's FIRST hold and a new window never re-bases it"))
+    }
+
     @Test fun aJobItsLimitLetGoIsHeldAgainInTheNextWindow() {
         // Play at 0, held at 5 s, the world at 70 s, a loading screen at 85 s that keeps a window on past 95 s: the job's own 90 s
         // let it go while a window still ran; nothing else pending (the ticker would stop)
@@ -445,7 +513,9 @@ class Light8Test {
         // past the hold (a saved draft is never made without them)
         val sp = text("SafePath.kt")
         val refresh = sp.substring(sp.indexOf("fun refresh(map: Int, cont: Int"), sp.indexOf("fun districtFor("))
-        assertTrue(refresh.indexOf("if (LoadHold.hold(LoadHold.SAFEPATH, \"draft\") {}) return") in 0 until refresh.indexOf("tried[map] = stamp"))
+        // (another zone's draft only: the player's own zone is never held - LIGHT8_PLAN.md change 4)
+        assertTrue(refresh.indexOf("if (LoadHold.otherZone(map) && LoadHold.hold(LoadHold.SAFEPATH, \"draft\") {}) return") in 0 until refresh.indexOf("tried[map] = stamp"))
+        assertFalse(refresh.contains("        if (LoadHold.hold(LoadHold.SAFEPATH, \"draft\")"))
         assertTrue(refresh.contains("mapNotNull { m -> drafts.get(m, hold = false) }"))
         assertTrue(refresh.contains("val old = drafts.get(map, hold = false)"))
         // the cache's unheld read: a held zone is loaded at once with hold = false
