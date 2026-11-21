@@ -179,6 +179,19 @@ class HomeEditWiringTest {
             for (bad in listOf("RectF(", "Pose()", "Matrix()", "FloatArray(", "listOf(", "Pair(", " to ")) assertFalse("$f: $bad", b.contains(bad))
         }
         assertTrue("the seat's matrices are the view's own", home.contains("private val seatA = android.graphics.Matrix()"))
+        // review round 3: the ticker redraws the room bar and Home's map paint every frame the whole time edit mode is open (it never
+        // rests), so those draws make no boxes, lists, sublists or parsed colours either: the bar's rooms in pooled boxes over index
+        // ranges, its tracks / tick / disc / pictures in its own boxes, the map's band and its buttons in Home's
+        for ((f, b) in listOf("drawBar" to body(strip, "private fun drawBar("), "group" to body(strip, "private fun group("),
+            "drawEditTick" to body(strip, "private fun drawEditTick("), "art" to body(strip, "private fun art("),
+            "the map's paint" to body(home, "private fun dispatchDrawHome(").substringAfter("val mapPosed = ").substringBefore("if (slideSave >= 0) c.restoreToCount(slideSave)"))) {
+            assertTrue("$f: read", b.length > 80)
+            for (bad in listOf("RectF(", ".take(", ".drop(", "withIndex", "parseColor", "floatArrayOf(", "FloatArray(", "listOf(",
+                "HomeCalendarButton.box(", "HomeMailButton.box(")) assertFalse("$f: $bad", b.contains(bad))
+        }
+        assertFalse("drawKitHome: its disc's box", body(strip, "private fun drawKitHome(").contains("RectF("))
+        assertTrue("the bar's boxes pooled", strip.contains("private val hitPool = Array(Room.values().size) { RectF() }"))
+        assertFalse("no boxed glide starts", strip.contains("HashMap<Room, Float>"))
         // never rests: no idle clock left in the motion, and the input no longer feeds one
         assertFalse(motion.contains("WIGGLE_IDLE")); assertFalse(motion.contains("fun poke("))
         assertFalse(home.contains("motion.poke("))

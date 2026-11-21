@@ -2578,6 +2578,7 @@ class HomeView(
         override fun liftK(): Float = liftK
         override fun pose(p: HomePart, out: android.graphics.Matrix): Boolean = partMatrix(Part.valueOf(p.name), out)
         override fun cursorOffset(out: FloatArray) = motion.cursorOffset(motionNow(), out)
+        override fun cursorTurn(): Float = motion.cursorTurn(motionNow())
         override fun popK(kind: Int): Float = motion.popK(kind, motionNow())
         override fun chipFlip(): Float = motion.chipK(motionNow())
         override val chipDir: Int get() = motion.chipDir
@@ -2879,10 +2880,14 @@ class HomeView(
      *  its scale is the return (1 = none) */
     private fun stopMatrix(s: EditStop?, out: android.graphics.Matrix): Float {
         out.reset()
+        stopTurn = 0f
         val p = s?.let { stopPart(it) } ?: return 1f
         if (!partMatrix(p, out)) return 1f
+        stopTurn = pose.rot
         return pose.scale
     }
+    /** the last [stopMatrix]'s turn (deg; 0 = none) */
+    private var stopTurn = 0f
     private val seatA = android.graphics.Matrix()
     private val seatB = android.graphics.Matrix()
     private val seatInv = android.graphics.Matrix()
@@ -2902,12 +2907,17 @@ class HomeView(
                 // (its wiggle's turn too: up to 8 px at a big module's corner), its centre taken back through the NEW widget's, its size
                 // by the two scales (the box is drawn through the new pose from this frame on: no jump on its first frame)
                 motion.cursorOffset(t, poseOut)
-                val sa = stopMatrix(old, seatA); val sb = stopMatrix(m.cursor, seatB)
+                // the old box's drawn angle (its widget's turn and the gold box's own turn still in flight) over the new widget's: the gold
+                // box turns by it on its first frame and springs to the new widget's angle (the two wiggle on their own phases)
+                val turnA = motion.cursorTurn(t)
+                val sa = stopMatrix(old, seatA); val ra = stopTurn
+                val sb = stopMatrix(m.cursor, seatB); val rb = stopTurn
                 val hw = (a.width() + poseOut[2] - poseOut[0]) / 2f * sa / sb; val hh = (a.height() + poseOut[3] - poseOut[1]) / 2f * sa / sb
                 seatPt[0] = (a.left + poseOut[0] + a.right + poseOut[2]) / 2f; seatPt[1] = (a.top + poseOut[1] + a.bottom + poseOut[3]) / 2f
                 seatA.mapPoints(seatPt)
                 if (seatB.invert(seatInv)) seatInv.mapPoints(seatPt)
-                motion.cursorFrom(seatPt[0] - hw - b.left, seatPt[1] - hh - b.top, seatPt[0] + hw - b.right, seatPt[1] + hh - b.bottom, t)
+                motion.cursorFrom(seatPt[0] - hw - b.left, seatPt[1] - hh - b.top, seatPt[0] + hw - b.right, seatPt[1] + hh - b.bottom, t,
+                    ra + turnA - rb)
             }
             if (m.cursor.removable) motion.pop(HomeEditMotion.CHIP, t)
         }
@@ -3557,6 +3567,11 @@ class HomeView(
      *  is drawn from the map's laid box now, x */
     fun mapPaintDx(): Float = (if (pauseT > 0f && !mapPaintRides()) pauseMap[0] else 0f) + mapSlot.translationX - mapScaleTx
 
+    /** the map's own paint's boxes (the zone band, the Calendar and mail buttons), set in place each draw */
+    private val mapBand = RectF()
+    private val mapCal = RectF()
+    private val mapMail = RectF()
+
     private fun dispatchDrawHome(c: Canvas) {
         super.dispatchDraw(c)
         if (shown == null || typeWanted) return                          // f-trackpad-keyboard: the tool is a clean page
@@ -3601,19 +3616,20 @@ class HomeView(
             // before it, and both fade and slide together
             // THE MAIL ENVELOPE (the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has mail";
             // HomeMailButton): beside the Calendar button while the game says there is mail; the band one button shorter meanwhile
+            // (no boxes made: the edit wiggle's ticker draws this every frame the whole time edit mode is open)
             val mailOn = mail?.on == true
-            val band = RectF(m.left + 8f, m.top + ZONE_BAND_TOP, HomeMailButton.bandRight(m.right, mailOn), m.top + ZONE_BAND_BOTTOM)
-            val cb = HomeCalendarButton.box(m.right, m.top)
-            val save = if (zoneA < 0.99f) c.saveLayerAlpha(band.left - 4f, band.top - 4f, cb[2] + 4f, band.bottom + 4f, (zoneA * 255).toInt()) else -1
+            val band = mapBand.apply { set(m.left + 8f, m.top + ZONE_BAND_TOP, HomeMailButton.bandRight(m.right, mailOn), m.top + ZONE_BAND_BOTTOM) }
+            val cb = mapCal.apply { set(m.right - HomeCalendarButton.EDGE - HomeCalendarButton.SIZE, m.top + HomeCalendarButton.TOP, m.right - HomeCalendarButton.EDGE, m.top + HomeCalendarButton.TOP + HomeCalendarButton.SIZE) }
+            val save = if (zoneA < 0.99f) c.saveLayerAlpha(band.left - 4f, band.top - 4f, cb.right + 4f, band.bottom + 4f, (zoneA * 255).toInt()) else -1
             UiKit.zoneBand(c, band, zoneText, Theme.zoneColour(zonePvp))
-            UiKit.calendarButton(c, RectF(cb[0], cb[1], cb[2], cb[3]), calPending, down = auraPane.calDown)
-            val mb = HomeMailButton.box(m.right, m.top)
-            if (mailOn) UiKit.mailButton(c, RectF(mb[0], mb[1], mb[2], mb[3]), lit = mailOpen, down = auraPane.mailDown)
+            UiKit.calendarButton(c, cb, calPending, down = auraPane.calDown)
+            val mb = mapMail.apply { set(cb); offset(-HomeMailButton.SHIFT, 0f) }
+            if (mailOn) UiKit.mailButton(c, mb, lit = mailOpen, down = auraPane.mailDown)
             if (save >= 0) c.restoreToCount(save)
             // its card hangs under it, over the map (and the quest card / buffs while it is open), at the band's own fade
             if (mailOn && mailOpen && !auraPane.fullMap()) {
                 val cs = if (zoneA < 0.99f) c.saveLayerAlpha(m.left, m.top, m.right, m.bottom + 40f, (zoneA * 255).toInt()) else -1
-                mail?.let { ml -> UiKit.mailCard(c, mb[2], mb[3] + HomeMailButton.CARD_GAP, m.left + 8f, ml.heading, ml.from) }
+                mail?.let { ml -> UiKit.mailCard(c, mb.right, mb.bottom + HomeMailButton.CARD_GAP, m.left + 8f, ml.heading, ml.from) }
                 if (cs >= 0) c.restoreToCount(cs)
             }
         }

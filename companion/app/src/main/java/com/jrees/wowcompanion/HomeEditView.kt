@@ -51,6 +51,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         fun pose(p: HomePart, out: android.graphics.Matrix): Boolean = false
         /** the gold cursor's flight: its offset now per edge (l, t, r, b) from the widget's box */
         fun cursorOffset(out: FloatArray) { out.fill(0f) }
+        /** the gold cursor's turn now over its widget's (deg, about the box's centre): its flight from the old widget's angle */
+        fun cursorTurn(): Float = 0f
         /** a pop's progress (HomeEditMotion.MENU / SHEET / PROMPT / CHIP / RIBBON; 1 = landed) */
         fun popK(kind: Int): Float = 1f
         /** the chip's name sliding over on a flip (1 = landed), the way it went, the name before it */
@@ -356,12 +358,19 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val selN = if (sel == EditStop.CAST) cast.size else if (one != null) 1 else 0
         // the golden box rides its widget's pose and flies from the last one (the cursor's spring: its offset per edge)
         host.cursorOffset(cur)
+        // its turn too (about the box's centre; a Split bar's two boxes about their union's, the box its flight was seated on)
+        val turn = host.cursorTurn()
+        val pivot = if (sel == EditStop.CAST) wb[EditStop.CAST] else null
         for (i in 0 until selN) {
             val b0 = if (sel == EditStop.CAST) cast[i] else one!!
             val b = curBox
             if (selN > 1) { b.set(b0); b.offset((cur[0] + cur[2]) / 2f, (cur[1] + cur[3]) / 2f) }
             else b.set(b0.left + cur[0], b0.top + cur[1], b0.right + cur[2], b0.bottom + cur[3])
             val sv = posed(c, sel)
+            if (turn != 0f) {
+                if (selN > 1 && pivot != null) c.rotate(turn, pivot.centerX() + (cur[0] + cur[2]) / 2f, pivot.centerY() + (cur[1] + cur[3]) / 2f)
+                else c.rotate(turn, b.centerX(), b.centerY())
+            }
             goldBox(c, b)
             c.restoreToCount(sv)
         }

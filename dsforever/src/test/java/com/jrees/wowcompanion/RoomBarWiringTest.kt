@@ -25,8 +25,9 @@ class RoomBarWiringTest {
         assertTrue(strip.contains("val half = RoomBar.leftCount(rooms.size)"))
         assertFalse("no fixed Room.values() bar any more", strip.contains("Room.values().filter { it != Room.HOME && it.onBar }"))
         // the touch boxes and place() are the slots of the order (pics / hit filled in group from the order's rooms)
-        assertTrue(strip.contains("hit[r] = RectF(left, bottom - BUTTONS, left + cell, bottom)"))
-        assertTrue(strip.contains("pics[r] = RectF(slotX - ICON / 2f, cy - ICON / 2f, slotX + ICON / 2f, cy + ICON / 2f)"))
+        // (review round 3: in the bar's pooled boxes, set in place - the never-resting edit wiggle redraws the bar every frame)
+        assertTrue(strip.contains("hit[r] = hitPool[r.ordinal].apply { set(left, bottom - BUTTONS, left + cell, bottom) }"))
+        assertTrue(strip.contains("pics[r] = picPool[r.ordinal].apply { set(slotX - ICON / 2f, cy - ICON / 2f, slotX + ICON / 2f, cy + ICON / 2f) }"))
     }
 
     @Test fun theCursorTheCommandsAndThePushFollow() {

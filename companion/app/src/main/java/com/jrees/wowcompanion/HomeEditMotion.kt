@@ -227,15 +227,22 @@ class HomeEditMotion {
 
     // ---------------------------------------------------------------- the cursor, the pops, the chip
 
-    private val cursor = Array(4) { Spring(0f, 0.25f) }
-    /** the gold box leaves the box it was drawn at: [d] = old drawn edge - new edge (l, t, r, b), springing to 0 (its speed carried) */
-    fun cursorFrom(dl: Float, dt: Float, dr: Float, db: Float, now: Long) {
-        cursorEdge(0, dl, now); cursorEdge(1, dt, now); cursorEdge(2, dr, now); cursorEdge(3, db, now)
+    /** the gold box's flight: its four edges (l, t, r, b, px), then its turn (deg) */
+    private val cursor = Array(5) { Spring(0f, if (it == TURN) 0.01f else 0.25f) }
+    /**
+     * the gold box leaves the box it was drawn at: [d] = old drawn edge - new edge (l, t, r, b), [turn] = the old box's drawn angle - the
+     * new widget's (deg: the two widgets wiggle on their own phases, up to 1.6 deg apart at 0.8 each), each springing to 0 on the same
+     * spring (its speed carried), so its first frame is the old drawn box, corners too
+     */
+    fun cursorFrom(dl: Float, dt: Float, dr: Float, db: Float, now: Long, turn: Float = 0f) {
+        cursorEdge(0, dl, now); cursorEdge(1, dt, now); cursorEdge(2, dr, now); cursorEdge(3, db, now); cursorEdge(TURN, turn, now)
     }
     private fun cursorEdge(i: Int, d: Float, now: Long) =
         cursor[i].jump(d, 0f, cursor[i].velocity(now), now, Motion.CURSOR_ZETA, Motion.CURSOR_W)
     /** the cursor's offset now per edge (l, t, r, b) */
     fun cursorOffset(now: Long, out: FloatArray) { for (i in 0..3) out[i] = if (on) cursor[i].value(now) else 0f }
+    /** the cursor's turn now (deg) over its widget's: HomeEditView turns the gold box by it about the box's centre */
+    fun cursorTurn(now: Long): Float = if (on) cursor[TURN].value(now) else 0f
 
     private val pops = Array(POPS) { Spring(1f, 0.002f) }
     /** a menu / sheet / prompt / chip opening: its pop from 0 (1 = landed; past 1 a little on its overshoot) */
@@ -306,6 +313,8 @@ class HomeEditMotion {
         const val CHIP = 3
         const val RIBBON = 4
         private const val POPS = 5
+        /** the cursor's turn spring (after its four edges) */
+        private const val TURN = 4
         /** a dropped widget wiggles again after this (ms) */
         const val DROP_WIGGLE_AFTER = 120L
         /** the share of a glide still to go when its animator ends: the glide's length = GLIDE_END / (zeta omega) */
@@ -388,10 +397,18 @@ class HomeEditMotion {
             val a = max(abs(pose.rot), pose.reach) * (PI.toFloat() / 180f)
             val co = cos(a); val si = sin(a)
             val hw = (r - l) / 2f; val hh = (b - t) / 2f
-            val ex = pose.scale * (hw * co + hh * si)
-            val ey = pose.scale * (hw * si + hh * co) + pose.bobMax
-            if (l >= fl - 0.5f && r <= fr + 0.5f) pose.dx += shift((l + r) / 2f, ex, fl, fr)
-            if (t >= ft - 0.5f && b <= fb + 0.5f) pose.dy += shift((t + b) / 2f, ey, ft, fb)
+            val inX = l >= fl - 0.5f && r <= fr + 0.5f
+            val inY = t >= ft - 0.5f && b <= fb + 0.5f
+            // a box laid (nearly) as wide or as tall as the frame (the tap-to-cast bar across the page, 8 .. 1232): its lift draws it no
+            // bigger than the frame holds (the bar at 1.04 ran 16 px past both page edges). Its cap follows the box and its swing only,
+            // so it never jumps; a box with room for its growth is never capped
+            val wx = hw * co + hh * si; val wy = hw * si + hh * co
+            if (inX && wx > 0f) pose.scale = min(pose.scale, (fr - fl) / (2f * wx))
+            if (inY && wy > 0f) pose.scale = min(pose.scale, max(0f, fb - ft - 2f * pose.bobMax) / (2f * wy))
+            val ex = pose.scale * wx
+            val ey = pose.scale * wy + pose.bobMax
+            if (inX) pose.dx += shift((l + r) / 2f, ex, fl, fr)
+            if (inY) pose.dy += shift((t + b) / 2f, ey, ft, fb)
         }
         private fun shift(c: Float, e: Float, lo: Float, hi: Float): Float = when {
             2f * e >= hi - lo -> (lo + hi) / 2f - c

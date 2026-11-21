@@ -292,14 +292,63 @@ class HomeEditMotionTest {
         p.identity(); p.scale = Motion.LIFT
         HomeEditMotion.keepIn(8f, 940f, 616f, 1030f, 0f, 0f, fr, fb, p)
         assertEquals(0f, p.dy, 0.01f)
-        // one too big for the frame: centred in it
+        // one too big for the frame: drawn no bigger than the frame, centred in it
         p.identity(); p.scale = 1.2f
         HomeEditMotion.keepIn(0f, 0f, fr, fb, 0f, 0f, fr, fb, p)
-        assertEquals(0f, p.dx, 1e-3f); assertEquals(0f, p.dy, 1e-3f)
+        assertEquals(0f, p.dx, 1e-3f); assertEquals(0f, p.dy, 1e-3f); assertEquals(1f, p.scale, 1e-4f)
         // the pose's own offsets (the drop's slide) are not clamped: added on top
         p.identity(); p.scale = Motion.LIFT; p.dy = 50f
         HomeEditMotion.keepIn(l, t, r, b, 0f, 0f, fr, fb, p)
         assertEquals(50f - (b - t) * (Motion.LIFT - 1f) / 2f, p.dy, 0.01f)
+    }
+
+    /**
+     * review round 3 (pick 4 on the full-width bar): the tap-to-cast bar across the page (ACROSS / SPLIT: 8 .. 1232) lifted at 1.04 was
+     * 1273 px wide, centred, its ends 16.5 px past both page edges. Now its drawn scale is capped to what the frame holds (steady: its
+     * box and its swing only), so every corner is inside; a box with room to grow keeps its 1.04
+     */
+    @Test fun keepInCapsABoxAsWideAsTheFrame() {
+        val fr = 1240f; val fb = 935f
+        val p = HomeEditMotion.Pose()
+        val l = 8f; val t = 845f; val r = 1232f; val b = 935f
+        for (s in listOf(Motion.LIFT, 1.05f, 1.02f)) {
+            p.identity(); p.scale = s
+            HomeEditMotion.keepIn(l, t, r, b, 0f, 0f, fr, fb, p)
+            val hw = (r - l) / 2f * p.scale
+            assertTrue("capped at $s: ${p.scale}", p.scale < s && p.scale <= fr / (r - l) + 1e-4f)
+            assertTrue("its ends inside at $s", (l + r) / 2f + p.dx - hw >= -1e-2f && (l + r) / 2f + p.dx + hw <= fr + 1e-2f)
+            assertTrue("its foot inside at $s", (t + b) / 2f + p.dy + (b - t) / 2f * p.scale <= fb + 1e-2f)
+        }
+        // the cap is steady while it wiggles in (its reach, not its turn now): one scale over a cycle, every corner inside
+        val m = HomeEditMotion()
+        m.enter(0L)
+        val hd = 0.5f * hypot(r - l, b - t)
+        val scales = HashSet<Int>()
+        for (tt in 2000L..2400L step 8L) {
+            m.pose(EditStop.CAST.ordinal, tt, hd, p)
+            p.scale = Motion.LIFT                                           // as lifted, the wiggle still at full reach (the worst case)
+            HomeEditMotion.keepIn(l, t, r, b, 0f, 0f, fr, fb, p)
+            scales += Math.round(p.scale * 1e5f)
+            val a = Math.toRadians(p.rot.toDouble()); val co = cos(a).toFloat(); val si = sin(a).toFloat()
+            val cx = (l + r) / 2f + p.dx; val cy = (t + b) / 2f + p.dy
+            for ((x, y) in listOf(-1f to -1f, 1f to -1f, 1f to 1f, -1f to 1f)) {
+                val px = x * (r - l) / 2f * p.scale; val py = y * (b - t) / 2f * p.scale
+                assertTrue("a corner at $tt", cx + px * co - py * si in -1e-2f..fr + 1e-2f)
+                assertTrue("a corner at $tt", cy + px * si + py * co in -1e-2f..fb + 1e-2f)
+            }
+        }
+        assertEquals("one steady cap over the cycle: $scales", 1, scales.size)
+        // at rest (0.94) the bar is not capped; a half-width box lifted keeps its 1.04
+        p.identity(); p.scale = Motion.REST_SCALE
+        HomeEditMotion.keepIn(l, t, r, b, 0f, 0f, fr, fb, p)
+        assertEquals(Motion.REST_SCALE, p.scale, 0f)
+        p.identity(); p.scale = Motion.LIFT
+        HomeEditMotion.keepIn(624f, 234f, 1232f, 935f, 0f, 0f, fr, fb, p)
+        assertEquals(Motion.LIFT, p.scale, 0f)
+        // a bar slid off the page (past the frame on x) is left alone on that axis
+        p.identity(); p.scale = Motion.LIFT
+        HomeEditMotion.keepIn(-1300f, t, -76f, b, 0f, 0f, fr, fb, p)
+        assertEquals(Motion.LIFT, p.scale, 0f); assertEquals(0f, p.dx, 0f)
     }
 
     // ---------------------------------------------------------------- the lift and the drop
@@ -391,6 +440,22 @@ class HomeEditMotionTest {
         m.cursorOffset(540L, c); val x = c[0]
         m.cursorFrom(x + 300f, 0f, x + 300f, 0f, 540L)
         m.cursorOffset(540L, c); assertEquals(x + 300f, c[0], 1e-3f)
+        // review round 3: its turn (the old widget's drawn angle over the new one's) flies on the same spring: the old angle at its first
+        // frame, the new widget's once landed
+        m.cursorFrom(0f, 0f, 0f, 0f, 1000L, 1.4f)
+        assertEquals(1.4f, m.cursorTurn(1000L), 1e-4f)
+        val mid = m.cursorTurn(1060L)
+        assertTrue("turning on its way: $mid", mid > 0f && mid < 1.4f)
+        assertEquals(0f, m.cursorTurn(1400L), 0.01f)
+        assertEquals("landed exactly", 0f, m.cursorTurn(3000L), 0f)
+        // a second press mid-turn goes on from the turn drawn
+        m.cursorFrom(0f, 0f, 0f, 0f, 4000L, -1.2f)
+        val w = m.cursorTurn(4030L)
+        m.cursorFrom(0f, 0f, 0f, 0f, 4030L, w + 0.5f)
+        assertEquals(w + 0.5f, m.cursorTurn(4030L), 1e-4f)
+        assertTrue("its flight keeps the ticker on", m.busy(4040L))
+        m.still()
+        assertEquals("still: no turn", 0f, m.cursorTurn(4040L), 0f)
     }
 
     // ---------------------------------------------------------------- the map's crop, the cascade, the model

@@ -358,6 +358,45 @@ class HomeEditMotionShotsTest {
         assertTrue("checked $checked lifts", checked >= 30)
         assertTrue("Classic's lifted map drawn", shotted)
         assertTrue("the full-height lifts that grew past the frame before: $grewPast", grewPast >= 6)
+        // review round 3: the full-width tap-to-cast bar (ACROSS: one bar 8 .. 1232; SPLIT: two halves posed as one) lifted at 1.04 was
+        // 1273 px wide, its ends 16.5 px past both page edges: now drawn no bigger than the frame holds, every half inside, touch unmoved
+        var bars = 0
+        for (pr in HomePresets.ALL) for (dock in listOf(HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT)) {
+            val name = "${pr.id}_${dock.name.lowercase()}"
+            val p = page(pr.apply(HomeLayout(cast = dock)).copy(cast = dock))
+            val home = p.home
+            pin(p)
+            val t0 = clock
+            if (!home.editOpen(EditStop.CAST)) continue
+            settle(12)
+            frame(p, t0 + 2000)
+            // the halves laid (the pose turns about their union, HomeView.ownerBox) and the ones drawn
+            val laidHalves = listOf("STRIP", "CAST2").filter { boxes(home).containsKey(it) }
+            val halves = laidHalves.filter { views(home).getValue(it).visibility == View.VISIBLE }
+            if (model(p).cursor != EditStop.CAST || halves.isEmpty()) { home.editCancel(); continue }
+            val laid = boxes(home)
+            val hits = home.editChrome.widgetBoxes().mapValues { RectF(it.value) }
+            val union = RectF(laid.getValue(laidHalves[0])).also { u -> for (h in laidHalves) u.union(laid.getValue(h)) }
+            assertTrue("$name: the bar laid across the page (${union.toShortString()}; laid $laidHalves, drawn $halves)", union.width() * Motion.LIFT > W + 1f)
+            val l0 = t0 + 2000
+            home.editKey("PAD1")
+            assertEquals("$name: the bar lifted", EditStop.CAST, model(p).lifted)
+            for (dt in 0L..400L step 8L) {
+                frame(p, l0 + dt)
+                for (h in halves) {
+                    val d = drawnBox(views(home).getValue(h))
+                    assertTrue("$name: $h lifted +$dt ms (scale ${views(home).getValue(h).scaleX}) drawn ${d.toShortString()} inside 0,0,$W,$H", inside(d))
+                }
+            }
+            val sc = views(home).getValue(halves[0]).scaleX
+            assertTrue("$name: grown past its rest, no bigger than the frame: $sc", sc > Motion.REST_SCALE + 0.03f && sc * union.width() <= W + 0.5f)
+            if (name == "${HomePresets.CLASSIC}_across") shot(p, "m21_lift_bar_inside")
+            assertEquals("$name: the model's boxes never move for it", laid, boxes(home))
+            assertEquals("$name: the touch targets never move for it", hits, home.editChrome.widgetBoxes().mapValues { RectF(it.value) })
+            bars++
+            home.editCancel()
+        }
+        assertTrue("checked $bars full-width bar lifts", bars >= 4)
     }
 
     // ---------------------------------------------------------------- a layout flip, a menu's pop
@@ -604,24 +643,24 @@ class HomeEditMotionShotsTest {
         assertTrue("the last frame is a frame's step, not a snap: $lastStep px", lastStep <= 2f)
     }
 
-    /** the gold cursor's box as drawn now through its widget's whole pose, read as its centre and its size (the box turns with its
-     *  widget, so its corners are not compared) */
-    private fun cursorCentreSize(home: HomeView, stop: EditStop, partName: String, t: Long): RectF {
+    /** the gold cursor's box as drawn now (HomeEditView's goldBox): its four corners (x, y each) through its widget's whole pose and the
+     *  cursor's own turn about the box's centre (review round 3: the corners are compared, the turn's flight included) */
+    private fun cursorCorners(home: HomeView, stop: EditStop, partName: String, t: Long): FloatArray {
         val b = home.editChrome.widgetBoxes().getValue(stop)
         val off = FloatArray(4); home.editMotion().cursorOffset(t, off)
         val box = RectF(b.left + off[0], b.top + off[1], b.right + off[2], b.bottom + off[3])
         val m = android.graphics.Matrix()
-        val on = HomeView::class.java.getDeclaredMethod("partMatrix", partClass, android.graphics.Matrix::class.java).apply { isAccessible = true }
-            .invoke(home, part(partName), m) as Boolean
-        if (!on) return box
-        val c = floatArrayOf(box.centerX(), box.centerY()); m.mapPoints(c)
-        val v = floatArrayOf(1f, 0f); m.mapVectors(v)
-        val s = hypot(v[0], v[1])
-        return RectF(c[0] - box.width() * s / 2f, c[1] - box.height() * s / 2f, c[0] + box.width() * s / 2f, c[1] + box.height() * s / 2f)
+        HomeView::class.java.getDeclaredMethod("partMatrix", partClass, android.graphics.Matrix::class.java).apply { isAccessible = true }
+            .invoke(home, part(partName), m)
+        m.preRotate(home.editMotion().cursorTurn(t), box.centerX(), box.centerY())
+        val pts = floatArrayOf(box.left, box.top, box.right, box.top, box.right, box.bottom, box.left, box.bottom)
+        m.mapPoints(pts)
+        return pts
     }
 
-    /** the gold cursor leaves from where it was DRAWN: its first frame on the new widget is the old drawn box (no 0.06 x the centres'
-     *  jump; no jump by the wiggle's turn either - up to 8 px at a big module's corner - now it never rests, the user's pick 2026-11-21) */
+    /** the gold cursor leaves from where it was DRAWN: its first frame on the new widget is the old drawn box, every corner (no 0.06 x
+     *  the centres' jump; no snap by the two widgets' turns either - up to 1.6 deg apart at 0.8 each, ~10 px at the chat's corners - its
+     *  turn flies from the old one's; review round 3) */
     @Test fun theCursorFliesFromWhereItWasDrawn() {
         val p = page(classic)
         val home = p.home
@@ -633,14 +672,18 @@ class HomeEditMotionShotsTest {
             frame(p, t)
             assertEquals(EditStop.CHAT, model(p).cursor)
             assertTrue("both turning at $t", views(home).getValue("CHAT").rotation != 0f && views(home).getValue("MAP").rotation != 0f)
-            val before = cursorCentreSize(home, EditStop.CHAT, "CHAT", t)
+            val before = cursorCorners(home, EditStop.CHAT, "CHAT", t)
+            val turnGap = views(home).getValue("CHAT").rotation - views(home).getValue("MAP").rotation
+            val turnWas = home.editMotion().cursorTurn(t)                   // the last flight's turn still drawn (the rounds' clocks overlap)
             home.editKey("PADDRIGHT")
             assertEquals(EditStop.MAP, model(p).cursor)
             frame(p, t)
-            val after = cursorCentreSize(home, EditStop.MAP, "MAP", t)
-            for ((a, b) in listOf(before.left to after.left, before.top to after.top, before.right to after.right, before.bottom to after.bottom))
-                assertEquals("$t: the box drawn where it was: $before -> $after", a, b, 0.5f)
+            val after = cursorCorners(home, EditStop.MAP, "MAP", t)
+            assertEquals("$t: its turn flies from the chat's angle", turnGap + turnWas, home.editMotion().cursorTurn(t), 0.01f)
+            for (i in before.indices)
+                assertEquals("$t: corner ${i / 2} drawn where it was: ${before.toList()} -> ${after.toList()}", before[i], after[i], 0.5f)
             frame(p, t + 400)
+            assertEquals("$t: the turn landed on the map's", 0f, home.editMotion().cursorTurn(t + 400), 0.02f)
             val landed = cursorDrawn(home, EditStop.MAP, "MAP", t + 400)
             assertEquals("and it lands on the map", posed(home, "MAP", home.editChrome.widgetBoxes().getValue(EditStop.MAP)).centerX(), landed.centerX(), 1f)
             home.editKey("PADDLEFT")                                        // back to the chat for the next round
