@@ -92,7 +92,7 @@ class HomeEditWiringTest {
         val reset = body(host, "private fun resetApply(")
         val cancel = reset.indexOf("if (ResetPlan.Kind.LAYOUTS in kinds && ::homeView.isInitialized) homeView.editCancel()")
         assertTrue("the Layouts reset cancels edit mode", cancel > 0)
-        assertTrue("before HomeSettings.resetDone()", cancel < reset.indexOf("HomeSettings.resetDone()"))
+        assertTrue("before HomeSettings.resetDone(", cancel < reset.indexOf("HomeSettings.resetDone(ResetPlan.Kind.LAYOUTS in kinds)"))
         // the owner: recorded at the open, checked when the store's owner changes, a park's resume and Save
         assertTrue(home.contains("HomeLayoutStore.onOwner { editUi.post { editOwnerCheck(\"the character changed\") } }"))
         assertTrue(body(home, "fun editOpen(").contains("editOwner = HomeLayoutStore.owner()"))
