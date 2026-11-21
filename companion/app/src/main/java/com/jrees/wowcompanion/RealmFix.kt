@@ -34,6 +34,8 @@ object RealmFix {
 
     /** the add-on's own bookkeeping of this fold (WowCompanionDB.realmFixBak): never looked into */
     private const val BAK = "realmFixBak"
+    /** Safety k10: the add-on's GUID records (WowCompanionDB.who[GUID] = { k = key, c, i }): GUID keys, never a character's */
+    private const val WHO = "who"
     /** the add-on's remembered realms (WowCompanionDB.realmOf[name] = { [realm] = true }) */
     private const val REALM_OF = "realmOf"
 
@@ -48,7 +50,7 @@ object RealmFix {
     private fun containers(t: Map<*, *>, f: (String, Map<*, *>) -> Unit) {
         f("", t)
         for ((k1, v) in t) {
-            if (v !is Map<*, *> || k1 == BAK) continue
+            if (v !is Map<*, *> || k1 == BAK || k1 == WHO) continue
             f("$k1", v)
             for ((k2, w) in v) if (w is Map<*, *>) f("$k1.$k2", w)
         }

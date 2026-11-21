@@ -2255,7 +2255,10 @@
 "Sign-in tried to open an unsupported address. Cancel and try again.": "La connexion a tenté d'ouvrir une adresse non prise en charge. Annulez et réessayez.",
 "The sign-in page's secure connection could not be verified.": "La connexion sécurisée de la page de connexion n'a pas pu être vérifiée.",
 "The sign-in page could not load. Check your connection and try again.": "La page de connexion n'a pas pu se charger. Vérifiez votre connexion et réessayez.",
-"Battle.net could not complete this sign-in page. Try again later.": "Battle.net n'a pas pu terminer cette page de connexion. Réessayez plus tard."
+"Battle.net could not complete this sign-in page. Try again later.": "Battle.net n'a pas pu terminer cette page de connexion. Réessayez plus tard.",
+"Which saved settings are this character's?": "Quels réglages enregistrés sont ceux de ce personnage ?",
+"Nothing is moved or renamed.": "Rien n'est déplacé ni renommé.",
+"New character": "Nouveau personnage"
 },
 "templates": {
 "Empty: slot %s's own": "Vide : celui de l'emplacement %s",
@@ -2488,6 +2491,8 @@
 "Updating the game %s -> %s": "Mise à jour du jeu %s -> %s",
 "%s / %s MB": "%s / %s Mo",
 "Not enough space (%s MB)": "Espace insuffisant (%s Mo)",
-"PC not reachable at %s": "PC injoignable à %s"
+"PC not reachable at %s": "PC injoignable à %s",
+"%s - %s, %s settings": "%s - %s, %s réglages",
+"%s - %s, 1 setting": "%s - %s, 1 réglage"
 }
 }

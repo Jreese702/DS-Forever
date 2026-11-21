@@ -313,7 +313,16 @@ object PadMapModel {
                     undone = sides("undone"),
                     realmSource = who?.let { textOrNull(it, "rs") },
                     realmHint = who?.let { textOrNull(it, "rh") },
-                    cls = who?.let { textOrNull(it, "c") })
+                    cls = who?.let { textOrNull(it, "c") },
+                    realmReported = who?.let { textOrNull(it, "rr") },
+                    nameCands = who?.takeIf { it.has("nc") }?.optInt("nc", -1)?.takeIf { it >= 0 },
+                    unclaimed = who?.takeIf { it.has("uc") }?.optInt("uc", -1)?.takeIf { it >= 0 },
+                    guidState = who?.let { textOrNull(it, "gs") },
+                    picks = who?.optJSONArray("pk")?.let { a ->
+                        (0 until a.length()).mapNotNull { i -> a.optJSONObject(i) }.mapNotNull { o ->
+                            CharKey.realm(textOrNull(o, "r"))?.let { r -> KeyPick.Cand(r, o.optInt("n", 0).coerceAtLeast(0)) }
+                        }.take(KeyPick.MAX)
+                    } ?: emptyList())
             },
             start = m.optJSONObject("start")?.let { st ->
                 StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"),
@@ -339,12 +348,21 @@ object PadMapModel {
                     val want: Boolean?, val colOn: Int?, val colOff: Int?, val name: String?, val realm: String?,
                     val dirs: kotlin.collections.Map<Int, String> = emptyMap(), val aside: String? = null,
                     val undone: List<String> = emptyList(),
-                    /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"), null from an older add-on */
+                    /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"; m180, Safety k10: "guid", "guid-id",
+                     *  "sticky", "live", "hint", "picked", "new", "ask", "none"), null from an older add-on. [realm] is the STORED key's */
                     val realmSource: String? = null,
                     /** PadMap m179 (Safety k7): the game's realm hint ("present" / "none", the diagnostic line), null from an older add-on */
                     val realmHint: String? = null,
                     /** PadMap m179: the character's class token (CombatKeep refuses another class's backup), null = not said */
-                    val cls: String? = null)
+                    val cls: String? = null,
+                    /** PadMap m180 (Safety k10): whether the game reported a realm ("reported" / "empty"), the diagnostic line only */
+                    val realmReported: String? = null,
+                    /** m180: how many realms the name holds settings under / other names' unclaimed records of this class (counts only) */
+                    val nameCands: Int? = null, val unclaimed: Int? = null,
+                    /** m180: the GUID against its record ("same" / "server-changed" / "id-changed" / "new" / "unknown"), the line only */
+                    val guidState: String? = null,
+                    /** m180: the one-time question while the key is ambiguous ([KeyPick]); empty = none (or the key is known) */
+                    val picks: List<KeyPick.Cand> = emptyList())
     val DPAD_SIDES = listOf("left", "up", "right")
 
     /** m37 / m160 START (the padmap's `start`): [key] the game's OPENRADIAL key; [bound] "pause" = Start is the router's (Home's wheel, the

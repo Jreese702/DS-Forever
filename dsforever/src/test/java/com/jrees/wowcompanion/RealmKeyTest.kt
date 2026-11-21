@@ -727,8 +727,10 @@ class RealmKeyTest {
 
     /** item 7 / 10: the diagnostic line says the hint; the In-combat backup's and the radials' log lines carry no character name */
     @Test fun theLogsSayTheHintAndNeverAName() {
+        // Safety k10: the line is KeyPick.diagLine's (its words: KeyPickTest), the host logs it as it is
         val h = src("CompanionHost.kt")
-        assertTrue(h.contains("\", hint \$h\"") && h.contains("REALM_HINTS = setOf(\"present\", \"none\")"))
+        assertTrue(h.contains("KeyPick.diagLine(it.dpad)") && src("KeyPick.kt").contains("b.append(\", hint \").append(it)")
+            && src("KeyPick.kt").contains("it == \"present\" || it == \"none\""))
         val host = src("CombatKeepHost.kt")
         for (bad in listOf("for \${b.who}", "of \$who\")", "of \${backup.who}", "for \${backup.who}")) assertFalse(bad, host.contains(bad))
         assertFalse(src("HomeRadialView.kt").contains("radial: character \$key"))
