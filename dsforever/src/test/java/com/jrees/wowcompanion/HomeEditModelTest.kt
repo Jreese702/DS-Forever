@@ -559,4 +559,55 @@ class HomeEditModelTest {
         assertTrue(m.sheetUse(0).isEmpty())
         assertEquals(classic, m.draft)
     }
+
+    /** fix round 2: browsing past Compact / Fighter never leaves the card folded - a landing with no fold of its own (a preset whose
+     *  folded is null, a slot) puts back the fold edit mode opened with; the preset that IS landed on keeps its own */
+    @Test fun aPassedOverPresetsFoldIsPutBack() {
+        val fl = HomePresets.ALL.map { p -> HomeEditModel.Flip(p.id, p.available, p.folded) { l -> p.apply(l) } }
+        val m = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, foldOpen = false)
+        val seen = ArrayList<HomeEditModel.Fx>()
+        repeat(fl.size) { if (m.chipName != HomePresets.COMPACT) seen += m.flip(1) }
+        assertEquals(HomePresets.COMPACT, m.chipName)
+        assertTrue("Compact's fold pressed live", seen.contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)))
+        val back = m.flip(-1)
+        assertEquals(HomePresets.BIG_CHAT, m.chipName)
+        assertEquals("back to Big chat (no fold): the card open again, as edit mode opened",
+            listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 1)), back.filterIsInstance<HomeEditModel.Fx.Press>())
+        assertTrue("a second landing without a fold presses nothing more", m.flip(-1).none { it is HomeEditModel.Fx.Press })
+        // Compact -> Fighter (both fold): Fighter's own fold, never the open one in between
+        val f = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, foldOpen = false)
+        repeat(fl.size) { if (f.chipName != HomePresets.COMPACT) f.flip(1) }
+        val toFighter = f.flip(1)
+        assertEquals(HomePresets.FIGHTER, f.chipName)
+        assertEquals(listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)), toFighter.filterIsInstance<HomeEditModel.Fx.Press>())
+        // the card was folded when edit mode opened: the put-back folds it (it never unfolds a card the player had folded)
+        val g = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, foldOpen = true)
+        repeat(fl.size) { if (g.chipName != HomePresets.COMPACT) g.flip(1) }
+        assertEquals(listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)), g.flip(-1).filterIsInstance<HomeEditModel.Fx.Press>())
+        // the Layouts sheet: Compact, then a slot -> the open fold again
+        val slot = HomePresets.byId(HomePresets.MIRRORED)!!.apply(classic)
+        val s = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, slotNow = { if (it == 0) slot else null }, foldOpen = false)
+        val ci = fl.filter { !it.name.startsWith(HomeEditModel.SLOT_MARK) }.indexOfFirst { it.name == HomePresets.COMPACT }
+        assertTrue(s.sheetUse(ci).contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)))
+        assertTrue(s.sheetUse(s.sheetCount() - HomePresets.SLOTS - 1).contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 1)))
+        // the fold not known (a caller that gives none): no put-back, as before
+        val n = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true)
+        repeat(fl.size) { if (n.chipName != HomePresets.COMPACT) n.flip(1) }
+        assertTrue(n.flip(-1).none { it is HomeEditModel.Fx.Press })
+    }
+
+    /** fix round 2: the cursor on the Clock when LB / RB lands on a thin-row layout (no clock): it falls back to the band (its menu
+     *  closed), never left on a widget with no box (no gold box drawn, A opening a menu for a clock not shown) */
+    @Test fun theClockCursorFallsBackToTheBand() {
+        val m = model()
+        m.openMenu(EditStop.CLOCK)
+        assertEquals(EditStop.CLOCK, m.cursor)
+        assertFalse("its box is there: nothing moves", m.cursorCheck(stops(m.draft)))
+        val gone = stops(m.draft).filterKeys { it != EditStop.CLOCK }
+        assertTrue(m.cursorCheck(gone))
+        assertEquals(EditStop.BAND, m.cursor)
+        assertNull("the clock's menu closed", m.menu)
+        assertFalse(m.cursorCheck(gone))
+        assertTrue(EditStop.CLOCK in HomeEditModel.GONE_CHECKED)
+    }
 }

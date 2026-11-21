@@ -221,12 +221,14 @@ class HoldTalk {
         /**
          * MOVABLE HOME (SPEC section 6 item 7): the toolbar's Chat is on the side the chat's column is (the add-on's mirror bit makes
          * `dirs` say so): the bare D-pad key whose word is "chat" right now ([LEFT_KEY] or [RIGHT_KEY]), by the same rule as [leftIsChat];
-         * null = neither (no hold to talk)
+         * null = neither (no hold to talk). Fix round 2: Right is the side only when the toolbar's own `dirs` put the chat there (the
+         * mirrored layout, as [chatArrowRight] - the Settings row's arrow - reads it); every other case is 1514's Left only (a DS Chat
+         * command on Right's In-combat entry or on the bare Right never arms the hold)
          */
-        fun chatKey(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean): String? = when {
-            isChat(map, toolbar, dirs, fight, LEFT) -> LEFT_KEY
-            isChat(map, toolbar, dirs, fight, RIGHT) -> RIGHT_KEY
-            else -> null
+        fun chatKey(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean): String? {
+            val pos = if (toolbar && chatArrowRight(dirs)) RIGHT else LEFT
+            if (!isChat(map, toolbar, dirs, fight, pos)) return null
+            return if (pos == RIGHT) RIGHT_KEY else LEFT_KEY
         }
         /** the hold's arrow for the Settings row ("Hold [arrow] to talk"): the chat key's side, Left when unknown */
         fun chatArrowRight(dirs: Map<Int, String>?): Boolean = dirs?.get(RIGHT) == "chat" && dirs[LEFT] != "chat"

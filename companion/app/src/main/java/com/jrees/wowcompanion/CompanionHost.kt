@@ -220,12 +220,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val who = resetWho()
         // the Thor's own game runs only in Local (streaming, the PC's does: the Thor's Config.wtf can be written now)
         val localGame = LauncherHooks.gameUp() && PlayModes.current != PlayMode.STREAM
-        val r = resetRun.run(b, who, all, localGame)
         val kinds = b.kinds
-        if (ResetPlan.Kind.SETTINGS in kinds) { Theme.use("classic"); Tr.setChoice(this, "auto"); Settings.resetDone(); FrameGen.resetDone() }
         // movable Home fix round 1: a Layouts reset ends edit mode - open or parked by the Settings room - unwritten, so no Save puts the
-        // pre-reset record back
+        // pre-reset record back. Fix round 2: BEFORE the reset touches the prefs, so Discard's fold restore (questMin) is wiped by it too
         if (ResetPlan.Kind.LAYOUTS in kinds && ::homeView.isInitialized) homeView.editCancel()
+        val r = resetRun.run(b, who, all, localGame)
+        if (ResetPlan.Kind.SETTINGS in kinds) { Theme.use("classic"); Tr.setChoice(this, "auto"); Settings.resetDone(); FrameGen.resetDone() }
         HomeSettings.resetDone(); GameUi.resetDone()
         if (ResetPlan.Kind.SKILLS in kinds) { RadialMeta.reload(); if (::combatKeep.isInitialized) combatKeep.resetDone(if (all) null else who) }
         if (ResetPlan.Kind.LAYOUTS in kinds && ::settings.isInitialized) settings.homeSection.dpadChanged()
@@ -4225,6 +4225,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var roomAnim: android.animation.ValueAnimator? = null
     private var roomAnimPic: android.widget.ImageView? = null
     private var roomAnimViews: List<View> = emptyList()
+    /** fix round 2: the Home page clipped to its frame for the push (the picture or the incoming Home view; null = none) */
+    private var roomAnimClipped: View? = null
 
     /** a room's place on the bottom bar, left to right (the bar's ORDER since movable Home P4, the layout record's: RoomBar; Home's disc
      *  in the middle). Chat has no place on the bar: it counts right after the bar room it follows in Room's order (Controller) */
@@ -4263,10 +4265,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (leavingHome && outPicture == null) return              // no picture of Home: the old swap
         val w = content.width.toFloat(); val h = content.height.toFloat()
         if (w <= 0f || h <= 0f) return
+        // movable Home fix round 2 (P4): Home is the content's height (it reaches under the XP track), its FRAME ends at the track's top
+        // (trackInsetNow = Strip.TRACKS while the track shows). A push to / from Home moves by that frame and Home's moving page is
+        // clipped to it, so Home's foot meets the room's top edge to edge as in 1514 (never 34 px of Home's ink between them)
+        val homeFrame = ((homeView.height.takeIf { it > 0 } ?: content.height) - homeView.trackInsetNow).coerceAtLeast(1)
+        val vh = if (leavingHome || to == Room.HOME) homeFrame.toFloat() else h
         // where the incoming page starts (the outgoing one ends the opposite way: they move as one strip)
         val (sx, sy) = when {
-            leavingHome -> 0f to h                                  // up from the bottom edge
-            to == Room.HOME -> 0f to -h                             // down from the top edge
+            leavingHome -> 0f to vh                                 // up from the bottom edge
+            to == Room.HOME -> 0f to -vh                            // down from the top edge
             barOrder(to) > barOrder(from) -> w to 0f                // a room to the right: in from the right
             else -> -w to 0f
         }
@@ -4275,6 +4282,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }.also { content.addView(it, content.indexOfChild(incoming), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
         else null
         roomAnimPic = pic
+        val homeMoving: View? = if (leavingHome) pic else if (to == Room.HOME) incoming else null
+        if (homeView.trackInsetNow > 0) homeMoving?.clipBounds = android.graphics.Rect(0, 0, content.width, homeFrame)
+        roomAnimClipped = homeMoving
         val leaving: View = pic ?: outgoing.also { it.visibility = View.VISIBLE }     // a room leaving draws itself until it is off
         roomAnimViews = listOfNotNull(incoming, if (pic == null) outgoing else null)
         val baseX = if (pic != null) outgoing.left.toFloat() else 0f
@@ -4303,6 +4313,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         a.cancel()
         roomAnimPic?.let { content.removeView(it) }
         roomAnimPic = null
+        roomAnimClipped?.clipBounds = null                                // fix round 2: Home whole again (its frame's clip was the push's)
+        roomAnimClipped = null
         for (v in roomAnimViews) {
             v.translationX = 0f; v.translationY = 0f
             v.setLayerType(View.LAYER_TYPE_NONE, null)

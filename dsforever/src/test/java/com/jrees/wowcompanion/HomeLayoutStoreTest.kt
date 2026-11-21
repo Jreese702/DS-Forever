@@ -260,6 +260,36 @@ class HomeLayoutStoreTest {
         assertEquals(n1, heard)
     }
 
+    /** fix round 2: the SAME owner's Save lays only the session's own changes on the record as it is NOW - a change made while edit mode
+     *  was parked (Settings > Bottom screen, the Controller room's Turn on) is kept, never the whole draft written over it */
+    @Test fun aSameOwnerSaveKeepsWhatChangedWhileParked() {
+        val p = fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        HomeLayoutStore.set(HomeLayout(cast = HomeLayout.CastDock.OFF, chatShare = HomeLayout.Share.HALF))
+        val o = HomeLayoutStore.owner()
+        val base = HomeSettings.layout
+        val draft = base.copy(chatShare = HomeLayout.Share.THIRD)                  // the session: the chat's width only
+        // parked meanwhile: the fight's dock and the bar turned on elsewhere (the record written directly)
+        HomeLayoutStore.set(HomeLayoutStore.active().copy(fight = HomeLayout.FightBand.TOP))
+        HomeLayoutStore.update { it.copy(cast = HomeLayout.CastDock.UNDER_CHAT) }
+        assertEquals(HomeLayoutStore.EditSave.SAME, HomeLayoutStore.editSaveFor(o))
+        val rec = HomeLayoutStore.editSave(o, base, draft)!!
+        HomeSettings.saveLayout(rec)
+        val k = HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String)
+        assertEquals("the session's change", HomeLayout.Share.THIRD, k.chatShare)
+        assertEquals("the fight dock set while parked: kept", HomeLayout.FightBand.TOP, k.fight)
+        assertEquals("the bar turned on while parked: kept", HomeLayout.CastDock.UNDER_CHAT, k.cast)
+        // the session changed the same field too: its own value wins
+        val base2 = HomeSettings.layout
+        HomeLayoutStore.update { it.copy(cast = HomeLayout.CastDock.OFF) }
+        val r2 = HomeLayoutStore.editSave(o, base2, base2.copy(cast = HomeLayout.CastDock.ACROSS))!!
+        assertEquals(HomeLayout.CastDock.ACROSS, r2.cast)
+        // nothing changed underneath: the draft as it is (name and all)
+        val base3 = HomeSettings.layout
+        val d3 = HomePresets.byId(HomePresets.MIRRORED)!!.apply(base3)
+        assertEquals(d3, HomeLayoutStore.editSave(o, base3, d3))
+    }
+
     @Test fun threeDeviceSlots() {
         fresh()
         assertEquals(listOf<HomeLayout?>(null, null, null), HomeLayoutStore.slots())

@@ -49,6 +49,9 @@ class HomeEditModel(
     val toolbarNow: Boolean? = null,
     /** the device slots NOW (a slot kept by "Save here" this session is used at once, on every route: A, a finger, the chip) */
     val slotNow: (Int) -> HomeLayout? = { null },
+    /** the quest card's fold when edit mode opened (true = folded; null = not known: a landing never puts it back). Fix round 2: a
+     *  landing with no fold of its own (Classic, Big chat, a slot) puts this fold back after a passed-over Compact / Fighter pressed one */
+    val foldOpen: Boolean? = null,
 ) {
     /** a layout the chip offers; [can] = selectable now (a device slot: while it holds a layout); [folded] = the quest card's fold the
      *  preset sets when it is PICKED (Compact, Fighter: folded; null = the fold is left alone), applied live as the Settings tile does */
@@ -94,6 +97,8 @@ class HomeEditModel(
      *  fold back. A preset the saved record merely still holds never touches the fold */
     var foldPicked = false
         private set
+    /** a preset's fold is showing now (pressed by the last landing): the next landing without a fold of its own puts [foldOpen] back */
+    private var foldPressed = false
     /** the DS toolbar's On / Off picked in the band's menu, sent at Save (null = unchanged) */
     var toolbarWant: Boolean? = null
         private set
@@ -326,10 +331,19 @@ class HomeEditModel(
         return emptyList()
     }
 
-    /** a picked preset's fold, pressed live (K_FOLD 0 = folded, 1 = open) */
-    private fun foldOf(f: Flip): List<Fx> {
-        val fo = f.folded ?: return emptyList()
+    /** a landing's fold, pressed live (K_FOLD 0 = folded, 1 = open): the preset's own (Compact, Fighter); a landing with none ([f] null
+     *  or its folded null: Classic, Big chat, a slot) after one that pressed a fold = the fold edit mode opened with ([foldOpen]), so
+     *  browsing past Compact never leaves the card folded for a layout that never asked for it (fix round 2) */
+    private fun foldOf(f: Flip?): List<Fx> {
+        val fo = f?.folded
+        if (fo == null) {
+            val open = foldOpen
+            if (!foldPressed || open == null) return emptyList()
+            foldPressed = false
+            return listOf(Fx.Press(K_FOLD, if (open) 0 else 1))
+        }
         foldPicked = true
+        foldPressed = true
         return listOf(Fx.Press(K_FOLD, if (fo) 0 else 1))
     }
 
@@ -431,11 +445,17 @@ class HomeEditModel(
     fun cursorCheck(stops: Map<EditStop, HomeLayoutSolver.Box>): Boolean {
         if (parked || sheet != null || prompt) return false
         val c = cursor
-        if (c != EditStop.QUEST && c != EditStop.CAST) return false
+        if (c !in GONE_CHECKED) return false
         if (c in stops || EditStop.CHIP !in stops) return false
         if (menu == c) menu = null
         if (lifted == c) { lifted = null; liftFrom = null }
-        cursor = if (plusShown && EditStop.PLUS in stops) EditStop.PLUS else EditStop.CHIP
+        // fix round 2: the clock (only on the small-diamonds rest: LB / RB to a thin-row layout takes it away) falls back to the band
+        // it sat in; the card and the bar to "+" when shown (and drawn), else the chip
+        cursor = when {
+            c == EditStop.CLOCK && EditStop.BAND in stops -> EditStop.BAND
+            plusShown && EditStop.PLUS in stops -> EditStop.PLUS
+            else -> EditStop.CHIP
+        }
         return true
     }
 
@@ -497,7 +517,7 @@ class HomeEditModel(
             val l = slot(si) ?: return listOf(Fx.Refuse(EditStop.CHIP))
             flipIdx = flips.indexOfFirst { it.name == "$SLOT_MARK${si + 1}" }
             sheet = null
-            return change(l.copy(name = saved.name), Motion.MODULE_OPEN)
+            return change(l.copy(name = saved.name), Motion.MODULE_OPEN) + foldOf(null)
         }
         allChars = !allChars
         return emptyList()
@@ -801,6 +821,8 @@ class HomeEditModel(
         const val K_PLACE = "place"
         const val K_SIZE = "size"
         const val K_FOLD = "fold"
+        /** the stops whose box can go while edit mode is open (the cursor on one is moved by [cursorCheck]) */
+        val GONE_CHECKED = setOf(EditStop.QUEST, EditStop.CAST, EditStop.CLOCK)
         const val K_CAST_FIGHT = "castfight"
         const val K_CAST_PARTY = "castparty"
         const val K_SLOTS = "slots"

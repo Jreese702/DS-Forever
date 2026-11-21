@@ -100,6 +100,24 @@ class HomeEditWiringTest {
         assertTrue(home.contains("partyView.boxShown = { !editLive() }"))
     }
 
+    @Test fun fixRound2Wiring() {
+        // a Layouts reset ends edit mode BEFORE the reset touches the prefs (Discard's fold put-back never outlives the reset)
+        val reset = body(host, "private fun resetApply(")
+        val cancel = reset.indexOf("homeView.editCancel()")
+        assertTrue(cancel > 0 && cancel < reset.indexOf("resetRun.run(b, who, all, localGame)"))
+        // edit mode knows the fold it opened with (a landing with no fold of its own puts it back)
+        assertTrue(body(home, "fun editOpen(").contains("foldOpen = HomeSettings.questMin"))
+        // the cursor's widget gone: the clock too (the model's set), not only the card and the bar
+        assertTrue(body(home, "private fun editCursorCheck(").contains("if (m.cursor !in HomeEditModel.GONE_CHECKED) return"))
+        // the push to / from Home moves by Home's FRAME (less the XP track's place) and clips Home's page to it; the clip goes at the end
+        val push = body(host, "private fun roomMotionStart(")
+        assertTrue(push.contains("val homeFrame = ((homeView.height.takeIf { it > 0 } ?: content.height) - homeView.trackInsetNow).coerceAtLeast(1)"))
+        assertTrue(push.contains("leavingHome -> 0f to vh") && push.contains("to == Room.HOME -> 0f to -vh"))
+        assertFalse("never the content's whole height for Home", push.contains("leavingHome -> 0f to h "))
+        assertTrue(push.contains("homeMoving?.clipBounds = android.graphics.Rect(0, 0, content.width, homeFrame)"))
+        assertTrue(body(host, "private fun roomMotionEnd(").contains("roomAnimClipped?.clipBounds = null"))
+    }
+
     @Test fun nothingReachesTheAddOnBeforeSave() {
         // edit mode taps only its guest hold / free (GuestPad); Save is the one writer (the toolbar's switch through the host's own route)
         val section = home.substring(home.indexOf("MOVABLE HOME, PHASE 2: EDIT MODE"), home.indexOf("movable Home: the D-pad toast"))

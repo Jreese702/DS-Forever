@@ -237,8 +237,9 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar9 and nbar7's / nbar8's notes", 'local NB = { V = "nbar9"' in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
-        and "nbar8 (the fix pass on movable Home)" in src)
+    chk("0. ActionBar's tag nbar10 and nbar7's / nbar8's / nbar9's notes", 'local NB = { V = "nbar10"' in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
+        and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
+        and "nbar10 (movable Home fix round 2)" in src)
     chk("0. nbar9: the build gate has no combat test (display-only frames are legal in a fight)",
         "if flag and not NB.built then pcall(NB.build) end" in src and "not NB.built and not combat" not in src)
     chk("0. ActionBar's main chunk loads under Lua 5.1 (the 200-locals limit kept)", NB is not None and NB.fightSolve is not None)
@@ -291,6 +292,25 @@ def main():
     r = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0), placed=R(960, 60, 0, 0))
     chk("A5. a placed spot over the tap pad band: moved under it", r["case"] == "placed" and not any(over(rect(x), BAND) for x in r["rects"].values())
         and r["rects"][1]["y"] >= 22 + 158, r["rects"])
+    # nbar10: the screen clamp runs BEFORE the band test (a top-left spot the clamp moves right never lands on the band), at MARGIN 24.
+    # The editor keeps the piece (466 units wide) on the screen, so its centre x >= 233 s; the joined bar is 562 units wide
+    bad = []
+    for s in (1.0, 1.281, 1.3, 1.336, 1.36, 1.392, 1.4, 1.406, 1.5):
+        for cx in range(int(233 * s) + 1, 720, 4):
+            for cy in (int(73 * s) + 1, 100, 150, 200):
+                rr = fsolve(L, s=s, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(cx, cy, 0, 0))
+                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 121 * s < -1e-6:
+                    bad.append((s, cx, cy))
+    chk("A5. nbar10: a placed spot near the left edge at band height, s 1.0-1.5 (UI scale x size): never within 24 px of the band, on screen",
+        not bad, bad[:5])
+    rr = fsolve(L, s=1.336, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(312, 150, 0, 0))
+    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 281 s)",
+        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 281 * 1.336) < 1e-6
+        and rr["rects"][1]["y"] >= 24 + 154 + 24 - 1e-6, rr)
+    # case 4 (the stock fallback) too: a stock spot moved to the top-left
+    rr = fsolve(L, s=1.336, hud=None, ours=[], game=[], stock=R(300, 150, 0, 0))
+    chk("A5. nbar10: case 4's stock fallback at the top-left: clear of the band", rr["case"] == 4
+        and not any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()), rr["rects"])
     # several top layouts: the HUD moved / resized, the target lowered, a left party column, Party mode's block
     layouts = {
         "hud left (dx -560)": (R(260, 890, 280, 58), []),

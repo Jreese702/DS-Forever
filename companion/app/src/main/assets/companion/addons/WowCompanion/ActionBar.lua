@@ -2,6 +2,8 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar10 (movable Home fix round 2): the joined bar (placed, or case 4's stock fallback) is clamped to the screen BEFORE the tap pad
+-- band test, and that test keeps MARGIN (24 px) as fits() does: a top-left spot the clamp moved right never lands on the band.
 -- nbar9 (movable Home fix round 1): the Wings' frames are built in a fight too (a /reload or a login inside combat, or the character
 -- key arriving mid-fight, left the opted-in player with no bar for the whole fight: NB.build is display-only, legal in combat); the
 -- driver reads the flag at its first tick and then every FLAG_S (0.5 s), not every frame, and does nothing more while it is off.
@@ -2455,7 +2457,7 @@ end
 -- nbar6 MOVABLE HOME'S SWAP (the user's rulings 2026-11-20, SPEC.txt section 6 item 5; PadMap m178): the DS toolbar's icons on the bare
 -- D-pad are picked by the router's WORD (padmap dpad `d`: after a swap Left is "map"), never by position (NB.TOOLBAR_BY).
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
-local NB = { V = "nbar9", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
+local NB = { V = "nbar10", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -3110,13 +3112,15 @@ function NB.fightSolve(inp)
         return { case = case, form = form, l = { x = lx, y = ly }, r = { x = rx, y = ry }, raise = raise or 0,
                  rects = { lrect(lx, ly), rrect(rx, ry) } }
     end
-    -- the joined bar centred on [c], moved under the tap pad's band if it would cover it (and kept on the screen)
+    -- the joined bar centred on [c], kept on the screen FIRST, then moved under the tap pad's band if it would come within MARGIN of it
+    -- (nbar10: the clamp ran after the band test, so a left-edge spot that cleared the band was pushed onto it by the clamp)
+    local function keep(x, y)
+        return math.max(dx + ax, math.min(W - dx - ax, x)), math.max(ay, math.min(H - (hh - ay), y))
+    end
     local function joined(case, c)
-        local x, y = c.x, c.y
+        local x, y = keep(c.x, c.y)
         local r = { x = x - dx - ax, y = y - ay, w = 2 * (dx + ax), h = hh }
-        if NB.overlaps(r, band, 0) then y = band.y + band.h + T.MARGIN + ay end
-        x = math.max(dx + ax, math.min(W - dx - ax, x))
-        y = math.max(ay, math.min(H - (hh - ay), y))
+        if NB.overlaps(r, band, T.MARGIN) then x, y = keep(x, band.y + band.h + T.MARGIN + ay) end
         return out(case, "joined", x - dx, y, x + dx, y)
     end
     if inp.placed then return joined("placed", inp.placed) end

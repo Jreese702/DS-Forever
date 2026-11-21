@@ -71,10 +71,11 @@ object HomeLayoutStore {
         else -> EditSave.NONE
     }
     /** edit mode's Save: [draft], opened on [opened] over [base] (what it showed then); null = refused (another owner now: nothing
-     *  written). LAY_ON writes only the fields the session changed on top of the record the store holds now */
+     *  written). Both SAME and LAY_ON write only the fields the session changed on top of the record the store holds now: a change
+     *  made while edit mode was parked (Settings > Bottom screen, the Controller room's Turn on) is kept, never the whole draft over
+     *  it (fix round 2). Nothing changed underneath: the draft as it is */
     fun editSave(opened: Owner, base: HomeLayout, draft: HomeLayout): HomeLayout? = when (editSaveFor(opened)) {
-        EditSave.SAME -> draft
-        EditSave.LAY_ON -> layOn(active(), base, draft)
+        EditSave.SAME, EditSave.LAY_ON -> active().let { now -> if (now == base) draft else layOn(now, base, draft) }
         EditSave.NONE -> null
     }
     /** a per-character record key of the prefs ("homeLayout.<Name-Realm>": a whole key only) */

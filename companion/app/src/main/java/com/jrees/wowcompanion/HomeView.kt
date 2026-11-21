@@ -2452,7 +2452,7 @@ class HomeView(
         val saved = HomeSettings.layout
         chromeModel = null
         val m = HomeEditModel(saved, start, editFlips(), HomeLayoutStore.nameOf(saved), toolbarNow = padMap?.dpad?.want,
-            slotNow = { HomeLayoutStore.slots().getOrNull(it) })
+            slotNow = { HomeLayoutStore.slots().getOrNull(it) }, foldOpen = HomeSettings.questMin)
         edit = m
         editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (Save goes only there)
         editFoldOpen = HomeSettings.questMin
@@ -2479,7 +2479,7 @@ class HomeView(
         if (rec != null) {
             HomeSettings.saveLayout(rec, all = m.allChars)
             m.toolbarWant?.let { if (it != m.toolbarNow) onEditToolbar?.invoke(it) }
-            Log.i(TAG, "home edit: saved ${HomeLayoutJson.json(rec)}${if (m.allChars) " (all characters)" else ""}${if (rec != m.draft) " (laid on the record the key brought)" else ""}")
+            Log.i(TAG, "home edit: saved ${HomeLayoutJson.json(rec)}${if (m.allChars) " (all characters)" else ""}${if (rec != m.draft) " (laid on the record as it is now)" else ""}")
         } else if (save) Log.i(TAG, "home edit: NOT saved (the record it was read under is not the active one now)")
         else Log.i(TAG, "home edit: closed${if (m.dirty) " (discarded)" else ""}")
         // a preset's fold is applied live when it is picked (as the Settings tile does); Discard puts the fold back as it was
@@ -2539,7 +2539,7 @@ class HomeView(
 
     /** the cursor on a widget with no box now (the card / the bar Off, Party mode's Hide): to "+" or the chip ([HomeEditModel.cursorCheck]) */
     private fun editCursorCheck(m: HomeEditModel) {
-        if (m.cursor != EditStop.QUEST && m.cursor != EditStop.CAST) return
+        if (m.cursor !in HomeEditModel.GONE_CHECKED) return
         if (m.cursorCheck(editView.stops())) { Log.i(TAG, "home edit: the cursor's widget is gone: on ${m.cursor.name.lowercase()}"); editView.invalidate() }
     }
 

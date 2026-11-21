@@ -5,6 +5,7 @@ import com.jrees.wowcompanion.HoldTalk.St
 import com.jrees.wowcompanion.PadMapModel.Kind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -175,5 +176,32 @@ class HoldTalkTest {
         // every send through ChatView's path
         assertTrue(h.contains("chatView.talkSend(holdTalk.words, talkTabs.now()"))
         assertFalse("no game key from the hold", Regex("GameInput\\.key\\([^)]*talk").containsMatchIn(h))
+    }
+
+    /** fix round 2: hold to talk arms D-pad Right ONLY when the toolbar's own `dirs` put the chat there (the mirrored layout, the
+     *  Settings row's arrow); a DS Chat command on Right's In-combat entry or on the bare Right never arms it (1514: Left only) */
+    @Test fun rightIsTheTalkKeyOnlyWhenTheToolbarMirrorsTheChat() {
+        val normal = mapOf(1 to "chat", 2 to "radial", 3 to "map", 4 to "home")
+        val mirrored = mapOf(1 to "map", 2 to "radial", 3 to "chat", 4 to "home")
+        val rightChatFight = PadMapModel.Slot(3, 3, Kind.COMBAT, null, null, 0, combat = chatCmd, ov = true)
+        val rightChatBare = PadMapModel.Slot(3, 3, Kind.COMMAND, null, "DS Chat", 134332, key = HoldTalk.CHAT_KEY)
+        fun two(a: PadMapModel.Slot, b: PadMapModel.Slot, fight: Boolean) =
+            PadMapModel.Map("m164", 1, 1, fight, listOf(PadMapModel.PadSet(1, listOf(a, b))), null, null, emptyList(), fightSwitch = fight, faceCc = true)
+        // (a) the toolbar on, a fight: Left's In-combat entry a spell, Right's the DS Chat command -> no hold (Left casts, Right runs DS Chat)
+        assertNull(HoldTalk.chatKey(two(leftFight, rightChatFight, true), true, normal, true))
+        // (b) the toolbar off, DS Chat on the bare Right -> no hold on Right
+        assertNull(HoldTalk.chatKey(map(rightChatBare, false), false, null, false))
+        // the mirrored toolbar: Right (out of a fight, and in one with nothing In combat on Right)
+        assertEquals(HoldTalk.RIGHT_KEY, HoldTalk.chatKey(map(leftPlain, false), true, mirrored, false))
+        assertEquals(HoldTalk.RIGHT_KEY, HoldTalk.chatKey(map(leftPlain, true), true, mirrored, true))
+        // mirrored, but a fight with an In-combat spell on Right: no hold (as Left's spell in 1514)
+        val rightSpell = PadMapModel.Slot(3, 3, Kind.COMBAT, null, null, 0, combat = bolt, ov = true)
+        assertNull(HoldTalk.chatKey(map(rightSpell, true), true, mirrored, true))
+        // 1514's Left rules unchanged
+        assertEquals(HoldTalk.LEFT_KEY, HoldTalk.chatKey(map(leftPlain, false), true, normal, false))
+        assertEquals(HoldTalk.LEFT_KEY, HoldTalk.chatKey(map(leftPlain.copy(kind = Kind.COMBAT, combat = chatCmd, ov = true), true), false, null, true))
+        assertNull(HoldTalk.chatKey(map(leftFight, true), true, normal, true))
+        // the key and the Settings row's arrow agree
+        for (d in listOf(normal, mirrored, null)) assertEquals(HoldTalk.chatArrowRight(d), HoldTalk.chatKey(map(leftPlain, false), true, d, false) == HoldTalk.RIGHT_KEY)
     }
 }
