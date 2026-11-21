@@ -12,6 +12,14 @@ import android.content.SharedPreferences
  * (The spec's "homeLayout.default" / "homeLayouts" are spelled apart from the per-character prefix so a reset's prefix match never takes
  * them for a character.)
  *
+ * ONE CHARACTER KEY (test build 1514's rule, [CharKey]): a record is kept only under a WHOLE "Name-Realm" key. A character named with no
+ * realm (the add-on's realm not known yet) is PENDING: nothing of any character's is read or written - Home shows the default record,
+ * an edit made meanwhile is held in memory only (never under the default, never under "homeLayout.Name-" / "Name-?" / "Name-_"), and
+ * the previous character's key is let go at once. When the key arrives the character's own record is read first (seeded from the
+ * default at a first login), then this session's edit is laid on top (the add-on's MT.sync / BB.sync pattern: a record is never written
+ * under a key it was not read under). "All characters" writes the default and every WHOLE key the prefs hold (an orphan key is left to
+ * RealmFix's fold).
+ *
  * MIGRATION: the first read builds Classic from today's app-wide keys ([HomeLayoutMigration]); the old setters (Settings > Bottom screen,
  * CastBarAsk, the Controller room's "Turn on") are facades in [HomeSettings] that write the CURRENT character's record, and still write
  * their old keys for one release (a downgrade reads them; castBarChosen keeps its meaning).
@@ -26,6 +34,14 @@ object HomeLayoutStore {
     /** the character now ("Name-Realm"), null = none known yet (the default record is the active one) */
     @Volatile var who: String? = null
         private set
+    /** a character is named but its key is not known yet ([who] null): nothing per character is read or written */
+    @Volatile var pending: Boolean = false
+        private set
+    /** the pending character's name (an edit held for one name never goes to another) and the edit held meanwhile */
+    private var pendingName: String? = null
+    private var pendingEdit: HomeLayout? = null
+    /** what Home showed when the first pending edit was made (the edit's base: only the fields changed from it are laid on top) */
+    private var pendingBase: HomeLayout? = null
     private var cacheRaw: String? = null
     private var cache: HomeLayout? = null
     private val listeners = ArrayList<() -> Unit>()
@@ -33,7 +49,9 @@ object HomeLayoutStore {
     fun onChange(l: () -> Unit) { synchronized(listeners) { listeners.add(l) } }
     private fun changed() { val ls = synchronized(listeners) { listeners.toList() }; for (l in ls) l() }
 
-    private fun key(w: String?) = if (w.isNullOrEmpty()) KEY_DEFAULT else KEY_PREFIX + w
+    private fun key(w: String?) = if (w == null) KEY_DEFAULT else KEY_PREFIX + w
+    /** a per-character record key of the prefs ("homeLayout.<Name-Realm>": a whole key only) */
+    fun isCharRecord(k: String): Boolean = k.startsWith(KEY_PREFIX) && CharKey.isKey(k.removePrefix(KEY_PREFIX))
 
     /** today's keys, read once (the first run of the new build), as the Classic record */
     private fun migrate(p: SharedPreferences) {
@@ -55,10 +73,12 @@ object HomeLayoutStore {
         return HomeLayoutJson.parse(p.getString(KEY_DEFAULT, null))
     }
 
-    /** the active record: the character's (seeded from the default at its first login), else the default */
+    /** the active record: the character's (seeded from the default at its first login), else the default (while pending: the edit
+     *  held this session, else the default) */
     fun active(): HomeLayout {
         val p = prefs ?: return HomeLayout()
         migrate(p)
+        if (pending) pendingEdit?.let { return it }
         val raw = p.getString(key(who), null) ?: p.getString(KEY_DEFAULT, null)
         if (raw == cacheRaw) cache?.let { return it }
         val l = HomeLayoutJson.parse(raw)
@@ -66,13 +86,30 @@ object HomeLayoutStore {
         return l
     }
 
-    /** the character now: its own record (a first login copies the default); a different record re-lays Home with the glide */
-    fun character(w: String?) {
-        if (w == who) return
+    /**
+     * the character now: [w] its key (only a WHOLE "Name-Realm" counts, [CharKey.isKey]), [name] its name when it is named without one
+     * (pending: no record read or written, the previous character's key let go). Its own record (a first login copies the default); a
+     * pending edit of the same name is laid on top once the key is known. A different record re-lays Home with the glide
+     */
+    fun character(w: String?, name: String? = CharKey.nameOf(w)) {
+        val k = w?.takeIf { CharKey.isKey(it) }
+        val n = if (k != null) CharKey.nameOf(k) else name?.takeIf { it.isNotBlank() }
+        val pend = k == null && n != null
+        if (k == who && pend == pending && (!pend || n == pendingName)) return
         val before = active()
-        who = w
+        // this session's edit while the key was not known: only for the same name, only once the key is known
+        val carry = pendingEdit?.takeIf { pending && k != null && n == pendingName }
+        val carryBase = pendingBase
+        if (!pend || n != pendingName) { pendingEdit = null; pendingBase = null }
+        who = k; pending = pend; pendingName = if (pend) n else null
         val p = prefs
-        if (p != null && !w.isNullOrEmpty() && !p.contains(key(w))) p.edit().putString(key(w), HomeLayoutJson.json(default())).apply()
+        if (p != null && k != null) {
+            if (!p.contains(key(k))) p.edit().putString(key(k), HomeLayoutJson.json(default())).apply()   // read under k first (seeded)
+            if (carry != null) {                                                                          // then the session's edit on top
+                val real = HomeLayoutJson.parse(p.getString(key(k), null))
+                p.edit().putString(key(k), HomeLayoutJson.json(layOn(real, carryBase ?: real, carry))).apply()
+            }
+        }
         if (active() != before) changed()
     }
 
@@ -83,16 +120,37 @@ object HomeLayoutStore {
         migrate(p)
         val rec = l.copy(name = HomePresets.nameOf(l))
         val before = active()
+        // pending (named, no key): held in memory only; "All characters" still writes the default and the whole keys
+        if (pending) { if (pendingEdit == null) pendingBase = before; pendingEdit = rec }
+        if (pending && !all) {
+            val now = active()
+            if (now != before) { changed(); return true }
+            return false
+        }
         val e = p.edit()
-        e.putString(key(who), HomeLayoutJson.json(rec))
+        if (!pending) e.putString(key(who), HomeLayoutJson.json(rec))
         if (all) {
             e.putString(KEY_DEFAULT, HomeLayoutJson.json(rec))
-            for (k in p.all.keys) if (k.startsWith(KEY_PREFIX)) e.putString(k, HomeLayoutJson.json(rec))
+            for (k in p.all.keys) if (isCharRecord(k)) e.putString(k, HomeLayoutJson.json(rec))
         }
         e.apply()
         val now = active()
         if (now != before) { changed(); return true }
         return all
+    }
+
+    /** [real] with only the fields [base] -> [edit] changed laid on top (this session's own changes; every other field stays [real]'s) */
+    internal fun layOn(real: HomeLayout, base: HomeLayout, edit: HomeLayout): HomeLayout {
+        val b = org.json.JSONObject(HomeLayoutJson.json(base))
+        val e = org.json.JSONObject(HomeLayoutJson.json(edit))
+        val r = org.json.JSONObject(HomeLayoutJson.json(real))
+        val keys = (b.keys().asSequence() + e.keys().asSequence()).toSet() - setOf("v", "name")
+        for (f in keys) {
+            if (b.opt(f)?.toString() == e.opt(f)?.toString()) continue
+            if (e.has(f)) r.put(f, e.get(f)) else r.remove(f)
+        }
+        val l = HomeLayoutJson.parse(r.toString(), real)
+        return l.copy(name = HomePresets.nameOf(l))
     }
 
     /** a change of the active record by [f] (the facade setters) */
@@ -103,7 +161,7 @@ object HomeLayoutStore {
     }
 
     /** the characters with a record of their own */
-    fun characters(): List<String> = prefs?.all?.keys.orEmpty().filter { it.startsWith(KEY_PREFIX) }.map { it.removePrefix(KEY_PREFIX) }.sorted()
+    fun characters(): List<String> = prefs?.all?.keys.orEmpty().filter { isCharRecord(it) }.map { it.removePrefix(KEY_PREFIX) }.sorted()
 
     fun slots(): List<HomeLayout?> = HomeLayoutJson.slots(prefs?.getString(KEY_SLOTS, null))
     /** keeps [l] in slot [i] (0..2): "Save here" */
@@ -124,7 +182,9 @@ object HomeLayoutStore {
     }
 
     /** the off-device tests: these prefs (and no character) */
-    internal fun startForTest(p: SharedPreferences?) { prefs = p; who = null; cacheRaw = null; cache = null }
+    internal fun startForTest(p: SharedPreferences?) {
+        prefs = p; who = null; pending = false; pendingName = null; pendingEdit = null; pendingBase = null; cacheRaw = null; cache = null
+    }
     /** a reset removed keys: the cache goes (HomeSettings.resetDone calls the listeners) */
-    fun resetDone() { cacheRaw = null; cache = null }
+    fun resetDone() { cacheRaw = null; cache = null; pendingEdit = null; pendingBase = null }
 }

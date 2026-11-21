@@ -140,7 +140,8 @@ object BottomTiles {
     fun status(id: String, env: Env): String? = when {
         id == TOOLBAR && env.dpad?.colOn == null -> "Needs the newer Spells add-on"
         id == TALK && env.who == null -> "Waiting for the game"
-        id == COMBAT -> TopCombatBar.status(HomeSettings.layout, env.dpad?.ct, env.dpad != null)
+        id == COMBAT -> TopCombatBar.status(HomeSettings.layout, env.dpad?.ct,
+            env.dpad?.let { CharKey.of(it.name, it.realm) != null } == true)     // the 1514 merge: no key = PadMap m181 sends no `ct` (not an older add-on)
         else -> null
     }
 

@@ -142,6 +142,69 @@ class HomeLayoutStoreTest {
         assertEquals(listOf("Huntress-Realm", "Newbie-Realm", "Shammy-Realm"), HomeLayoutStore.characters())
     }
 
+    /** the 1514 merge (one character key, CharKey): a character named with no realm is pending - no record read or written under a
+     *  partial key ("homeLayout.Name-", "Name-?", "Name-_") nor the default, the previous character's key let go; when the key comes the
+     *  real record is read first and only this session's changes are laid on top */
+    @Test fun aRealmLessCharacterNeverStoresAndLetsThePreviousGo() {
+        val p = fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        HomeLayoutStore.set(HomePresets.byId(HomePresets.MIRRORED)!!.apply(HomeSettings.layout))
+        assertTrue(HomeSettings.layout.mirrored)
+        val defaultBefore = p.m[HomeLayoutStore.KEY_DEFAULT]
+        val korvashBefore = p.m["homeLayout.Korvash-Realm"]
+        // a switch to a character whose realm is not known: not Korvash's layout, no key of its own
+        for (partial in listOf("Thrandil-", "Thrandil-?", "Thrandil-_")) {
+            HomeLayoutStore.character(partial, "Thrandil")
+            assertNull("no key for $partial", HomeLayoutStore.who)
+            assertTrue(HomeLayoutStore.pending)
+            assertFalse("the previous character's layout is let go", HomeSettings.layout.mirrored)
+        }
+        HomeLayoutStore.character(null, "Thrandil")
+        assertTrue(HomeLayoutStore.pending); assertNull(HomeLayoutStore.who)
+        // an edit while pending: shown, written nowhere
+        assertTrue(HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) })
+        assertEquals(HomeLayout.Share.THIRD, HomeSettings.layout.chatShare)
+        HomeSettings.rest = HomeRest.ROW                                          // a facade setter too
+        assertEquals(HomeRest.ROW, HomeSettings.layout.rest)
+        assertTrue("no partial key: ${p.m.keys}", p.m.keys.none { it.startsWith("homeLayout.Thrandil") })
+        assertTrue(p.m.keys.filter { it.startsWith(HomeLayoutStore.KEY_PREFIX) }.all { CharKey.isKey(it.removePrefix(HomeLayoutStore.KEY_PREFIX)) })
+        assertEquals("the default is not written", defaultBefore, p.m[HomeLayoutStore.KEY_DEFAULT])
+        assertEquals("nor the previous character's", korvashBefore, p.m["homeLayout.Korvash-Realm"])
+        assertEquals(listOf("Korvash-Realm"), HomeLayoutStore.characters())
+        // the key comes: a first login seeds from the default, then the session's edit on top
+        HomeLayoutStore.character("Thrandil-Realm")
+        assertFalse(HomeLayoutStore.pending); assertEquals("Thrandil-Realm", HomeLayoutStore.who)
+        assertEquals(HomeLayout.Share.THIRD, HomeSettings.layout.chatShare); assertEquals(HomeRest.ROW, HomeSettings.layout.rest)
+        val t = HomeLayoutJson.parse(p.m["homeLayout.Thrandil-Realm"] as String)
+        assertEquals(HomeLayout.Share.THIRD, t.chatShare); assertFalse(t.mirrored)
+        // a character that HAS a record: read first, only the changed fields laid on top (its own mirror kept)
+        HomeLayoutStore.character(null, "Korvash")
+        assertFalse(HomeSettings.layout.mirrored)
+        HomeLayoutStore.update { it.copy(xpBar = !it.xpBar) }
+        HomeLayoutStore.character("Korvash-Realm")
+        assertTrue("Korvash's own record read before the write", HomeSettings.layout.mirrored)
+        assertEquals(!HomeLayout().xpBar, HomeSettings.layout.xpBar)
+        // an edit held for one name never goes to another
+        HomeLayoutStore.character(null, "Thrandil")
+        HomeLayoutStore.update { it.copy(card = HomeLayout.CardDock.OFF) }
+        HomeLayoutStore.character(null, "Korvash")
+        HomeLayoutStore.character("Korvash-Realm")
+        assertTrue(HomeSettings.layout.card != HomeLayout.CardDock.OFF)
+        HomeLayoutStore.character("Thrandil-Realm")
+        assertTrue("the held edit went with the switch", HomeSettings.layout.card != HomeLayout.CardDock.OFF)
+        // a partial key string is never a record key, never listed
+        HomeLayoutStore.character("Korvash-?")
+        assertNull(HomeLayoutStore.who)
+        assertFalse(p.m.containsKey("homeLayout.Korvash-?"))
+        // the reset keys: the record keys are character keys (ResetPlan's per-character prefix), the device keys exact
+        assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", "homeLayout.Korvash-Realm")?.kind)
+        assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", HomeLayoutStore.KEY_DEFAULT)?.kind)
+        assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", HomeLayoutStore.KEY_SLOTS)?.kind)
+        assertTrue(ResetPlan.prefKeys("home", setOf("homeLayout.Korvash-Realm", "homeLayout.Thrandil-Realm"), setOf(ResetPlan.Kind.LAYOUTS),
+            "Korvash-Realm", false) == setOf("homeLayout.Korvash-Realm"))
+        assertTrue(ResetPlan.isCharKey("Korvash-Realm")); assertFalse(ResetPlan.isCharKey("Korvash-")); assertFalse(ResetPlan.isCharKey("Korvash-?"))
+    }
+
     @Test fun threeDeviceSlots() {
         fresh()
         assertEquals(listOf<HomeLayout?>(null, null, null), HomeLayoutStore.slots())

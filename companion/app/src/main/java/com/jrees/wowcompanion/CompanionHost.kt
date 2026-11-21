@@ -3479,7 +3479,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current && named) ui.post { ChatFilter.character(ck); TalkKeep.character(ck) }
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // MOVABLE HOME (SPEC section 9, D5): the character's own layout; the DS toolbar's sides follow it (ToolbarMirror)
-                    if (current && !d.name.isNullOrEmpty()) HomeLayoutStore.character("${d.name}-${d.realm ?: ""}")
+                    // the 1514 merge (CharKey): the WHOLE key only; named with no realm = pending (no record read or written, the
+                    // previous character's key let go; an edit meanwhile is laid on the real record once the key comes)
+                    if (current && named) HomeLayoutStore.character(ck, d.name)
                     if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
@@ -4950,6 +4952,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (ToolbarMirror.toastFor(mirrorSeen, bit)) homeView.toolbarToast(d.dirs)
         if (bit != null) mirrorSeen = bit
         if (!mirrorCurrent) return
+        // the 1514 merge (CharKey): no key = the layout is not this character's (Home shows the default) and the add-on refuses the
+        // bit ("no character"): nothing is sent until the key comes (PadMap m181 sends the padmap again then)
+        if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(mirrorAgain); return }
         val want = HomeLayoutSolver.mirrorBit(HomeSettings.layout)
         if (mirrorSentWant != want) { mirrorSentAt = null; mirrorTries = 0 }
         val now = SystemClock.elapsedRealtime()
@@ -4977,6 +4982,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  switches by itself in fights: nothing is sent then). Checked at every current padmap, so each login re-asserts it */
     private fun topCheck(d: PadMapModel.Dpad) {
         if (!mirrorCurrent) return
+        if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(topAgain); return }      // the 1514 merge: as mirrorCheck
         val want = TopCombatBar.wanted(HomeSettings.layout)
         if (topSentWant != want) { topSentAt = null; topTries = 0 }
         val now = SystemClock.elapsedRealtime()
