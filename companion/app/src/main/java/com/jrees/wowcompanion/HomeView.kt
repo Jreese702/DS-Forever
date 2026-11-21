@@ -671,7 +671,7 @@ class HomeView(
             if (now - grewAt < GROW_B_GRACE_MS || (lent(castView) && castView.triggerHeld())) return
             // movable Home phase 3 (SPEC section 11): In fights = Top screen grew nothing - B in the fight has no new meaning (no shrink,
             // no red reminder); out of a fight (an attack armed) it still gives the faces back, as today
-            if (!TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now))) return
+            if (!TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)) return
             val shrank = grow.minimize(now)
             // the user's pick: out of a fight, B also gives A / X / Y back (Spells' give-back); in a fight B only shrinks
             if (HomeFightFace.giveBack(shrank, grow.fighting(now), fightArmed())) giveBackTap(retry = false)
@@ -736,7 +736,11 @@ class HomeView(
 
     /** every padmap (MainActivity's route): Cast's fight faces and their switch (the host's, never a constant), and the map kept */
     fun onPadMap(map: PadMapModel.Map) {
+        val ctWas = padMap?.dpad?.ct
         padMap = map
+        // the 1515 merge's review: the Wings' flag changed (the add-on said it, or a key came / went) - Top screen's band follows it
+        if (map.dpad?.ct != ctWas && laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true)
+            shown?.let { apply(it, animate = isShown) }
         HomeAttackSwitch.note(map)                      // Spells' start-attack switch, drawn in Home's Settings section
         castView.fightFace = HomeFightFace.icons(map)
         castView.fightFaceOn = HomeFightFace.on(map)
@@ -1689,6 +1693,8 @@ class HomeView(
             // P4: the room bar's fields are the bar's, not the page's (its order glides in the Strip; the XP track's place is [trackInset])
             .copy(rooms = RoomBar.DEFAULT, xpBar = true)
         if (s != null) l = l.copy(rest = s.rest)
+        // the 1515 merge's review (P5): Top screen only while the add-on's Wings are on (`ct` 1); no key / not confirmed = Grow
+        if (look == null) l = TopCombatBar.honoured(l, padMap?.dpad?.ct)
         if (look != null) {
             l = l.copy(fight = if (look.grow) HomeLayout.FightBand.GROW
                 else (if (l.fight == HomeLayout.FightBand.GROW) HomeLayout.FightBand.SAME else l.fight))
@@ -2938,11 +2944,20 @@ class HomeView(
         holdStop = null
         editUi.removeCallbacks(holdRing)
         holdChildCancelled = false
-        if (fightShown()) { holdSwallow = true; editRefuse(s); return }
-        // fix round 1: the DOWN's gates again at the fire (Home left or covered meanwhile: another room, the pause / LB / class wheel,
-        // the type tool, the mail card, a host overlay): nothing opens, the gesture stays the child's
-        if (!holdStillOk(s)) { Log.i(TAG, "home edit: the hold ended unopened (Home left or covered)"); invalidate(); return }
+        // a fight, or (the 1515 merge's review) the key question up - shown or waiting for the controller: refused AND swallowed to the
+        // lift (the red edge only; never the Chat room or the map module on the UP). Fix round 1: the DOWN's gates again at the fire
+        // (Home left or covered meanwhile: another room, the pause / LB / class wheel, the type tool, the mail card, a host overlay):
+        // nothing opens, the gesture stays the child's
+        when (HomeEditModel.holdFire(fightShown(), editBlocked?.invoke() == true, holdStillOk(s))) {
+            HomeEditModel.HoldFire.REFUSE -> {
+                if (!fightShown()) Log.i(TAG, "home edit: refused (the key question is up)")
+                holdSwallow = true; editRefuse(s); invalidate(); return
+            }
+            HomeEditModel.HoldFire.LET_GO -> { Log.i(TAG, "home edit: the hold ended unopened (Home left or covered)"); invalidate(); return }
+            HomeEditModel.HoldFire.OPEN -> {}
+        }
         if (editOpen(s, lift = true)) { holdTakes = true; editView.carry(s, holdX, holdY) }
+        else holdSwallow = true                                           // refused there: the lift is swallowed the same way
         invalidate()
     }
     /** the hold's widget is still what [holdBodyAt] gives where it came down, on a Home that is on screen and not covered */
@@ -2986,7 +3001,7 @@ class HomeView(
     private var cueAt = 0L
     private fun topCueCheck(now: Long) {
         val on = grow.shown(now)
-        if (TopCombatBar.cueStarts(cueWas, on, HomeSettings.layout) && flow.full == null) { cueAt = SystemClock.uptimeMillis(); invalidate() }
+        if (TopCombatBar.cueStarts(cueWas, on, HomeSettings.layout, padMap?.dpad?.ct) && flow.full == null) { cueAt = SystemClock.uptimeMillis(); invalidate() }
         cueWas = on
     }
     /** the cue's alpha now (0 = none) */

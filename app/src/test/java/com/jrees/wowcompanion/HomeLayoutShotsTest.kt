@@ -85,7 +85,9 @@ class HomeLayoutShotsTest {
     private fun art() { System.getenv("HOME_LAYOUT_ART")?.let { root ->
         ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, File(root)) } }
 
-    private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false, dirs: Map<Int, String>? = null): Page {
+    /** [ct] the add-on's top-screen Wings flag in a padmap fed first (the 1515 merge's review: Top screen is honoured only at ct 1);
+     *  null = no padmap */
+    private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false, dirs: Map<Int, String>? = null, ct: Int? = null): Page {
         art()
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app)
@@ -99,6 +101,7 @@ class HomeLayoutShotsTest {
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
         home.borrow()
+        ct?.let { home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":$it}}}"""))!!) }
         lay(home)
         cast.roomBarOn = true
         cast.roomBar = dirs ?: HoldTalk.DEFAULT_DIRS
@@ -254,8 +257,8 @@ class HomeLayoutShotsTest {
 
     @Test fun topScreenKeepsTheRestBoxesWithTheUpCue() {
         val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
-        val rest = boxes(page(l).home)
-        val p = page(l, fight = true)
+        val rest = boxes(page(l, ct = 1).home)
+        val p = page(l, fight = true, ct = 1)
         assertTrue("the fight's takeover is on (the band's In-combat pictures)", p.home.flow.takeover)
         val fight = boxes(p.home)
         for (part in listOf("BARS", "MAP", "QUESTS"))
@@ -280,6 +283,17 @@ class HomeLayoutShotsTest {
         setField(g.home, "grewAt", 0L)
         HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(g.home)
         assertFalse("Grow: B shrinks", g.home.flow.takeover)
+        // the 1515 merge's review (P5): Top screen with the Wings NOT on the top screen (no key while the add-on asks or after Later:
+        // no ct; an older add-on; not confirmed yet) grows the band as Grow does - no "up" cue, and B shrinks it
+        for (ct in listOf(null, 0)) {
+            val n = page(l, fight = true, ct = ct)
+            assertTrue(n.home.flow.takeover)
+            assertEquals("ct=$ct: the band grows", 416f, boxes(n.home).getValue("BARS").bottom, 0.01f)
+            assertEquals("ct=$ct: no up cue", 0f, n.home.topCueAlpha(), 0f)
+            setField(n.home, "grewAt", 0L)
+            HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(n.home)
+            assertFalse("ct=$ct: B shrinks", n.home.flow.takeover)
+        }
     }
 
     @Test fun theInFightsTileIsThreeWay() {

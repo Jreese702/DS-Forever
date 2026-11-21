@@ -101,20 +101,25 @@ class TopCombatBarTest {
 
     @Test fun bNeverShrinksTopScreenInTheFight() {
         val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
-        assertFalse("in the fight: nothing grew, no shrink, no red reminder", TopCombatBar.bShrinks(top, fighting = true))
-        assertTrue("an attack armed out of a fight: today's B (the faces given back)", TopCombatBar.bShrinks(top, fighting = false))
-        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) {
-            assertTrue(TopCombatBar.bShrinks(HomeLayout(fight = f), true)); assertTrue(TopCombatBar.bShrinks(HomeLayout(fight = f), false))
+        assertFalse("in the fight: nothing grew, no shrink, no red reminder", TopCombatBar.bShrinks(top, fighting = true, ct = 1))
+        assertTrue("an attack armed out of a fight: today's B (the faces given back)", TopCombatBar.bShrinks(top, fighting = false, ct = 1))
+        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) for (ct in listOf(null, 0, 1)) {
+            assertTrue(TopCombatBar.bShrinks(HomeLayout(fight = f), true, ct)); assertTrue(TopCombatBar.bShrinks(HomeLayout(fight = f), false, ct))
         }
+        // the 1515 merge's review: no Wings on the top screen (no key, Later, an older add-on, not confirmed): the band grew, B shrinks it
+        for (ct in listOf(null, 0)) assertTrue("ct=$ct", TopCombatBar.bShrinks(top, fighting = true, ct = ct))
     }
 
     @Test fun theUpCueAtTheFightsStart() {
         val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
-        assertTrue(TopCombatBar.cueStarts(false, true, top))
-        assertFalse("not again while the fight lasts", TopCombatBar.cueStarts(true, true, top))
-        assertFalse("not at its end", TopCombatBar.cueStarts(true, false, top))
-        assertFalse("Grow: no cue (the band grows)", TopCombatBar.cueStarts(false, true, HomeLayout()))
-        assertFalse(TopCombatBar.cueStarts(false, true, HomeLayout(fight = HomeLayout.FightBand.SAME)))
+        assertTrue(TopCombatBar.cueStarts(false, true, top, 1))
+        assertFalse("not again while the fight lasts", TopCombatBar.cueStarts(true, true, top, 1))
+        assertFalse("not at its end", TopCombatBar.cueStarts(true, false, top, 1))
+        assertFalse("Grow: no cue (the band grows)", TopCombatBar.cueStarts(false, true, HomeLayout(), 1))
+        assertFalse(TopCombatBar.cueStarts(false, true, HomeLayout(fight = HomeLayout.FightBand.SAME), 1))
+        // the 1515 merge's review: the Wings not on (no key while asking / after Later: no ct; an older add-on; ct 0): no "up" cue
+        assertFalse("no key", TopCombatBar.cueStarts(false, true, top, null))
+        assertFalse("not confirmed", TopCombatBar.cueStarts(false, true, top, 0))
         // 1.5 s: 120 in, held, 200 out
         assertEquals(1_500L, TopCombatBar.CUE_MS)
         assertEquals(0f, TopCombatBar.cueAlpha(0), 0f)
@@ -124,6 +129,36 @@ class TopCombatBarTest {
         assertEquals(0.5f, TopCombatBar.cueAlpha(1_400), 0.001f)
         assertEquals(0f, TopCombatBar.cueAlpha(1_500), 0f)
         assertEquals(0f, TopCombatBar.cueAlpha(-5), 0f)
+    }
+
+    /** the 1515 merge's review (P5, "the pictures never lie"): Top screen is honoured only while the add-on's Wings are on (`ct` 1). With
+     *  no key (the question asks, or "Later" kept the login keyless: who has no r, the padmap no ct) the band grows as Grow does */
+    @Test fun topScreenWithoutTheWingsGrowsTheBand() {
+        val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
+        val fight = HomeLayoutSolver.State(takeover = true)
+        for (ct in listOf(null, 0)) {
+            val l = TopCombatBar.honoured(top, ct)
+            assertEquals("ct=$ct: laid as Grow", HomeLayout.FightBand.GROW, l.fight)
+            assertTrue("ct=$ct: the band grows", HomeLayoutSolver.big(l, fight))
+            assertEquals(416f, HomeLayoutSolver.places(l, fight).barsBottom, 0.01f)
+            assertFalse(TopCombatBar.live(top, ct))
+        }
+        assertEquals("the Wings on: Top screen kept", top, TopCombatBar.honoured(top, 1))
+        assertFalse(HomeLayoutSolver.big(TopCombatBar.honoured(top, 1), fight))
+        assertTrue(TopCombatBar.live(top, 1))
+        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) for (ct in listOf(null, 0, 1))
+            assertEquals("$f is never changed", f, TopCombatBar.honoured(HomeLayout(fight = f), ct).fight)
+        // a keyless padmap (the add-on asking: no r, no ct) as the host reads it
+        val asking = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"dpad":{"on":true,"want":true,"who":{"n":"Korvash","rs":"ask",
+            "pk":[{"r":"Realm 7","n":4},{"r":"Realm 8","n":5}]}}}}"""))!!.dpad!!
+        assertNull(asking.realm); assertNull(asking.ct)
+        assertEquals(HomeLayout.FightBand.GROW, TopCombatBar.honoured(top, asking.ct).fight)
+        // HomeView lays, cues and shrinks by the CURRENT padmap's flag
+        val home = java.io.File(listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"),
+            java.io.File("companion/app/src/main/java/com/jrees/wowcompanion")).first { it.isDirectory }, "HomeView.kt").readText()
+        assertTrue(home.contains("if (look == null) l = TopCombatBar.honoured(l, padMap?.dpad?.ct)"))
+        assertTrue(home.contains("TopCombatBar.cueStarts(cueWas, on, HomeSettings.layout, padMap?.dpad?.ct)"))
+        assertTrue(home.contains("TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)"))
     }
 
     // ---------------------------------------------------------------- the channel

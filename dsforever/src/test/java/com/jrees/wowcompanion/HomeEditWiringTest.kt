@@ -99,7 +99,7 @@ class HomeEditWiringTest {
         assertTrue(body(home, "private fun editAwayBack()").contains("editOwnerCheck("))
         // the hold: cancelled when another room opens, its gates again at the fire
         assertTrue(body(home, "fun giveBack()").contains("holdCancel()"))
-        assertTrue(body(home, "private fun holdFired()").contains("if (!holdStillOk(s))"))
+        assertTrue(body(home, "private fun holdFired()").contains("HomeEditModel.holdFire(fightShown(), editBlocked?.invoke() == true, holdStillOk(s))"))
         assertTrue(home.contains("private fun holdStillOk(s: EditStop): Boolean = live && holdBodyAt(holdX, holdY) == s && overlayOpen?.invoke() != true"))
         // a parked session writes no transform over the class / pause / LB slides
         val decor = body(home, "private fun editDecor()")

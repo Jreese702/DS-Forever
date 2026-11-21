@@ -25,6 +25,16 @@ object TopCombatBar {
     /** the layout asks for the top-screen bar */
     fun wanted(l: HomeLayout): Boolean = l.fight == HomeLayout.FightBand.TOP
 
+    /**
+     * the 1515 merge's review (SPEC P5, "the pictures never lie"): the bottom screen honours Top screen only while the add-on SAYS its
+     * Wings are on - [ct] the current padmap's flag is 1. With no key (the add-on asks, or the question's "Later" kept it keyless for
+     * the login: whoKey() nil, no `ct`), an add-on without the flag, or a flag not confirmed yet, the Wings cannot show, so the band
+     * grows as Grow does (the default), no "up" cue, and B shrinks as ever
+     */
+    fun live(l: HomeLayout, ct: Int?): Boolean = wanted(l) && ct == 1
+    /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow */
+    fun honoured(l: HomeLayout, ct: Int?): HomeLayout = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
+
     sealed class Act {
         /** `ct` already says the layout's choice */
         object Matched : Act()
@@ -46,8 +56,9 @@ object TopCombatBar {
     /** the taps for [on] */
     fun cells(on: Boolean): List<Pair<String, Int>> = PadMapModel.combatTopCells(on)
 
-    /** the "up" cue starts: the fight signal Home grows on came ([was] false -> [now] true) with In fights = Top screen */
-    fun cueStarts(was: Boolean, now: Boolean, l: HomeLayout): Boolean = !was && now && wanted(l)
+    /** the "up" cue starts: the fight signal Home grows on came ([was] false -> [now] true) with In fights = Top screen, the add-on's
+     *  Wings on ([live]: [ct] the current padmap's flag) */
+    fun cueStarts(was: Boolean, now: Boolean, l: HomeLayout, ct: Int?): Boolean = !was && now && live(l, ct)
 
     /** the cue's alpha at [ms] since it started (0 after [CUE_MS]) */
     fun cueAlpha(ms: Long): Float = when {
@@ -59,7 +70,7 @@ object TopCombatBar {
 
     /** B on Home with the takeover on: shrinks it unless In fights = Top screen and the fight is on (nothing grew). Out of a fight (an
      *  attack armed) B keeps today's meaning there too: the takeover goes and the faces are given back (the add-on's wings follow) */
-    fun bShrinks(l: HomeLayout, fighting: Boolean): Boolean = !(wanted(l) && fighting)
+    fun bShrinks(l: HomeLayout, fighting: Boolean, ct: Int?): Boolean = !(live(l, ct) && fighting)
 
     /** the Settings band's status for the In fights tile: Top screen chosen but the add-on has no flag yet */
     fun status(l: HomeLayout, ct: Int?, haveDpad: Boolean): String? =

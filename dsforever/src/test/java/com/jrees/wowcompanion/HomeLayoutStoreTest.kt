@@ -190,8 +190,12 @@ class HomeLayoutStoreTest {
         HomeLayoutStore.character(null, "Korvash")
         HomeLayoutStore.character("Korvash-Realm")
         assertTrue(HomeSettings.layout.card != HomeLayout.CardDock.OFF)
+        // the 1515 merge's review: one name is one character - Thrandil's held edit waits (kept by name) for Thrandil's own key
         HomeLayoutStore.character("Thrandil-Realm")
-        assertTrue("the held edit went with the switch", HomeSettings.layout.card != HomeLayout.CardDock.OFF)
+        assertEquals("the held edit reaches its own name's key", HomeLayout.CardDock.OFF, HomeSettings.layout.card)
+        assertNull(HomeLayoutStore.heldOf("Thrandil"))
+        HomeLayoutStore.character("Korvash-Realm")
+        assertTrue("and never another's", HomeSettings.layout.card != HomeLayout.CardDock.OFF)
         // a partial key string is never a record key, never listed
         HomeLayoutStore.character("Korvash-?")
         assertNull(HomeLayoutStore.who)

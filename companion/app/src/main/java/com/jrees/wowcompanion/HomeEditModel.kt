@@ -807,6 +807,9 @@ class HomeEditModel(
     /** the cursor's start (a hold lifts the held widget; Settings and the disc start on Chat) */
     fun startOn(s: EditStop, lift: Boolean): List<Fx> { cursor = s; return if (lift) lift(s) else emptyList() }
 
+    /** what a hold that reached [HOLD_MS] does ([holdFire]) */
+    enum class HoldFire { REFUSE, LET_GO, OPEN }
+
     companion object {
         /** the long hold that opens edit mode on the chat's or the map's body (CLASS_LONG_MS, PartyLayout.HOLD_MS) */
         const val HOLD_MS = 450L
@@ -814,6 +817,17 @@ class HomeEditModel(
         const val RING_FROM_MS = 150L
         /** a finger moving this far (px) cancels the hold */
         const val HOLD_SLOP = 24f
+
+        /** what a hold that reached [HOLD_MS] does: [REFUSE] the red edge and the rest of the gesture swallowed (no Chat room, no map
+         *  module on the lift), [LET_GO] nothing opens and the gesture stays the child's (Home left or covered meanwhile), [OPEN] edit
+         *  mode is asked to open (a refusal there is swallowed too) */
+        /** [fight] Home shows a fight, [blocked] edit mode may not open now (the 1515 merge's key question, shown or waiting for the
+         *  controller: KeyPick.editMayOpen), [stillOk] Home is still on screen, uncovered, under the finger's widget */
+        fun holdFire(fight: Boolean, blocked: Boolean, stillOk: Boolean): HoldFire = when {
+            fight || blocked -> HoldFire.REFUSE
+            !stillOk -> HoldFire.LET_GO
+            else -> HoldFire.OPEN
+        }
         /** a drag starts past this (px) */
         const val DRAG_SLOP = 12f
         /** a widget's centre must pass the divider by this much to swap sides */

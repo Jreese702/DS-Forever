@@ -32,6 +32,13 @@ import android.content.SharedPreferences
  * Controller room's Turn on) still writes the default as before AND is held the same way: the first character's own record gets the
  * changed fields when its key comes (it is never silently dropped).
  *
+ * THE HELD EDIT ON DISK (the 1515 merge's review): after the question's "Later" the add-on has no key for the rest of that login, so a
+ * pending name's held edit (Home's Save, Settings > Bottom screen) can stand for a whole session. It is kept in "homeLayoutHeld" too
+ * ([KEY_HELD]: {"<Name>": {"base": record, "edit": record}}, one entry per NAME - a name is the character's identity - never a
+ * per-character key, so no reset's prefix match and no RealmFix fold takes it for one): a restarted app (Thor sleep, low memory, an
+ * update) shows it again while the name is still pending, a switch to another character leaves it for its own name, and the name's
+ * resolved key gets its changed fields (then the entry goes). A reset with "All characters" takes it with the device's keys.
+ *
  * MIGRATION: the first read builds Classic from today's app-wide keys ([HomeLayoutMigration]); the old setters (Settings > Bottom screen,
  * CastBarAsk, the Controller room's "Turn on") are facades in [HomeSettings] that write the CURRENT character's record, and still write
  * their old keys for one release (a downgrade reads them; castBarChosen keeps its meaning).
@@ -41,6 +48,8 @@ object HomeLayoutStore {
     const val KEY_DEFAULT = "homeLayoutDefault"
     const val KEY_SLOTS = "homeLayoutSlots"
     const val KEY_MIGRATED = "homeLayoutMigrated"
+    /** the pending names' held edits, kept across an app restart (the 1515 merge's review): {"<Name>": {"base": .., "edit": ..}} */
+    const val KEY_HELD = "homeLayoutHeld"
 
     internal var prefs: SharedPreferences? = null
     /** the character now ("Name-Realm"), null = none known yet (the default record is the active one) */
@@ -102,6 +111,31 @@ object HomeLayoutStore {
     /** a per-character record key of the prefs ("homeLayout.<Name-Realm>": a whole key only) */
     fun isCharRecord(k: String): Boolean = k.startsWith(KEY_PREFIX) && CharKey.isKey(k.removePrefix(KEY_PREFIX))
 
+    /** the held edits on disk by name ([KEY_HELD]); an unreadable entry is none */
+    private fun heldAll(p: SharedPreferences): org.json.JSONObject =
+        runCatching { org.json.JSONObject(p.getString(KEY_HELD, null) ?: "{}") }.getOrElse { org.json.JSONObject() }
+    /** [name]'s held edit on disk: (its base, the edit), null = none */
+    internal fun heldOf(name: String?): Pair<HomeLayout, HomeLayout>? {
+        val p = prefs ?: return null
+        val o = heldAll(p).optJSONObject(name ?: return null) ?: return null
+        val b = o.optJSONObject("base") ?: return null
+        val e = o.optJSONObject("edit") ?: return null
+        return HomeLayoutJson.parse(b.toString()) to HomeLayoutJson.parse(e.toString())
+    }
+    private fun heldKeep(p: SharedPreferences, name: String, base: HomeLayout, edit: HomeLayout) {
+        val all = heldAll(p)
+        all.put(name, org.json.JSONObject().put("base", org.json.JSONObject(HomeLayoutJson.json(base)))
+            .put("edit", org.json.JSONObject(HomeLayoutJson.json(edit))))
+        p.edit().putString(KEY_HELD, all.toString()).apply()
+    }
+    private fun heldDrop(p: SharedPreferences, name: String?) {
+        if (name == null || !p.contains(KEY_HELD)) return
+        val all = heldAll(p)
+        if (!all.has(name)) return
+        all.remove(name)
+        if (all.length() == 0) p.edit().remove(KEY_HELD).apply() else p.edit().putString(KEY_HELD, all.toString()).apply()
+    }
+
     /** today's keys, read once (the first run of the new build), as the Classic record */
     private fun migrate(p: SharedPreferences) {
         if (p.getBoolean(KEY_MIGRATED, false)) return
@@ -147,21 +181,32 @@ object HomeLayoutStore {
         if (k == who && pend == pending && (!pend || n == pendingName)) return
         val before = active()
         val ownerBefore = owner()
+        val p = prefs
         // this session's edit while the key was not known: for the same name (or made before any character was known: the first one's)
-        val held = pendingEdit?.takeIf { who == null && (heldName == null || heldName == n) }
+        var held = pendingEdit?.takeIf { who == null && (heldName == null || heldName == n) }
+        var heldBase = pendingBase
+        var heldFor = if (held != null) heldName else null
+        // the 1515 merge's review: the name's edit kept on disk (an earlier app life, or held before a switch to another character);
+        // an edit of this session made before any character was known goes on top of it
+        heldOf(n)?.let { (b, e) ->
+            held = held?.let { h -> layOn(e, heldBase ?: e, h) } ?: e
+            heldBase = b; heldFor = n
+        }
         // only once the key is known: the add-on's resolved key for the held edit's own name (the 1515 merge: the sticky key, the
         // question's pick or "New character" alike); an edit made before any character was known: the first one's
-        val carry = held?.takeIf { k != null && (heldName == null || carryOk(k, heldName)) }
-        val carryBase = pendingBase
-        if (pend && held != null) heldName = n                      // still held: now for this name (a no-character edit adopted)
-        else { pendingEdit = null; pendingBase = null; heldName = null }
+        val carry = held?.takeIf { k != null && (heldFor == null || carryOk(k, heldFor)) }
+        val carryBase = heldBase
+        if (pend && held != null) {                                 // still held: now for this name (a no-character edit adopted)
+            pendingEdit = held; pendingBase = heldBase; heldName = n
+            if (p != null && n != null) heldKeep(p, n, heldBase ?: held!!, held!!)
+        } else { pendingEdit = null; pendingBase = null; heldName = null }
         who = k; pending = pend; pendingName = if (pend) n else null
-        val p = prefs
         if (p != null && k != null) {
             if (!p.contains(key(k))) p.edit().putString(key(k), HomeLayoutJson.json(default())).apply()   // read under k first (seeded)
             if (carry != null) {                                                                          // then the session's edit on top
                 val real = HomeLayoutJson.parse(p.getString(key(k), null))
                 p.edit().putString(key(k), HomeLayoutJson.json(layOn(real, carryBase ?: real, carry))).apply()
+                heldDrop(p, CharKey.nameOf(k))                                                            // laid on: no longer held
             }
         }
         if (active() != before) changed()
@@ -180,6 +225,8 @@ object HomeLayoutStore {
         if (who == null) {
             if (pendingEdit == null) { pendingBase = before; heldName = if (pending) pendingName else null }
             pendingEdit = rec
+            // the 1515 merge's review: a pending name's edit is kept on disk too (after "Later" it stands for the whole login)
+            heldName?.let { heldKeep(p, it, pendingBase ?: before, rec) }
         }
         if (pending && !all) {
             val now = active()
@@ -245,6 +292,10 @@ object HomeLayoutStore {
         prefs = p; who = null; pending = false; pendingName = null; pendingEdit = null; pendingBase = null; heldName = null
         cacheRaw = null; cache = null
     }
-    /** a reset removed keys: the cache goes (HomeSettings.resetDone calls the listeners) */
-    fun resetDone() { cacheRaw = null; cache = null; pendingEdit = null; pendingBase = null; heldName = null }
+    /** a reset removed keys: the cache goes (HomeSettings.resetDone calls the listeners); a pending name's edit kept on disk comes
+     *  back from there (a reset that took [KEY_HELD] - All characters' Layouts - leaves none) */
+    fun resetDone() {
+        cacheRaw = null; cache = null; pendingEdit = null; pendingBase = null; heldName = null
+        if (pending) heldOf(pendingName)?.let { (b, e) -> pendingEdit = e; pendingBase = b; heldName = pendingName }
+    }
 }

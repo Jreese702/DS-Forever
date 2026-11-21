@@ -16,7 +16,10 @@ import org.junit.Test
  *  - while the add-on ASKS (no r, the question's candidates in pk) Home is pending: nothing per character read or written;
  *  - a held edit (Settings' facades, or edit mode's draft opened while pending) lands on the PICKED key with its changed fields only,
  *    the other realm's record untouched; "New character" puts it on the new key only;
- *  - Home's edit mode and the key question never both hold the controller ([KeyPick.decide]'s editing, [KeyPick.editMayOpen]);
+ *  - the merge's review: the held edit is kept on disk by name (homeLayoutHeld) - after "Later" it survives an app restart and a switch
+ *    to another character, and reaches only its own name's resolved key;
+ *  - Home's edit mode and the key question never both hold the controller ([KeyPick.decide]'s editing, [KeyPick.editMayOpen]); a hold
+ *    refused while the question is up is swallowed (no Chat room / map module on the lift);
  *  - the reset coverage keeps Home's keys (homeLayout.<who>, the device's homeLayoutDefault / homeLayoutSlots with All characters only,
  *    the add-on's rbm / ctop) and never resets the add-on's who records.
  * Names and realms are made up.
@@ -133,7 +136,7 @@ class HomeKeyPickTest {
         assertEquals("Realm 8 untouched", k8Before, p.m["homeLayout.$k8"])
     }
 
-    @Test fun aHeldEditNeverGoesToAnotherNameOrALaterLogin() {
+    @Test fun aHeldEditNeverGoesToAnotherNameAndWaitsForItsOwn() {
         val p = fresh()
         twoRecords(p)
         feed(dpad(asking))
@@ -142,11 +145,102 @@ class HomeKeyPickTest {
         feed(dpad("""{"n":"Thrandil","r":"$r7","rs":"guid"}"""))
         assertEquals("Thrandil-$r7", HomeLayoutStore.who)
         assertTrue(HomeSettings.layout.card != HomeLayout.CardDock.ABOVE_CHAT)
-        // Korvash again, resolved: the edit was let go with the switch (never laid on later)
+        assertTrue(rec(p, "Thrandil-$r7").card != HomeLayout.CardDock.ABOVE_CHAT)
+        // the 1515 merge's review: one name is one character - Korvash's edit waits for Korvash's own key (kept by name, not dropped)
         feed(dpad(resolved(r7, "guid")))
-        assertEquals(HomeLayout.CardDock.ON_MAP, rec(p, k7).card)
+        assertEquals(HomeLayout.CardDock.ABOVE_CHAT, rec(p, k7).card)
+        assertTrue("laid on: no longer held", HomeLayoutStore.heldOf("Korvash") == null && !p.m.containsKey(HomeLayoutStore.KEY_HELD))
         assertTrue(HomeLayoutStore.carryOk(k7, "Korvash")); assertFalse(HomeLayoutStore.carryOk(k7, "Thrandil"))
         assertFalse("a partial key never", HomeLayoutStore.carryOk("Korvash-", "Korvash")); assertFalse(HomeLayoutStore.carryOk(k7, null))
+    }
+
+    /** the 1515 merge's review (finding 1): after "Later" the add-on has no key for the whole login - an edit saved then survives an app
+     *  restart (Thor sleep, low memory, an update) and reaches the key picked at the next login, changed fields only */
+    @Test fun anEditSavedAfterLaterSurvivesARestartAndReachesThePick() {
+        val p = fresh()
+        twoRecords(p)
+        val k8Before = p.m["homeLayout.$k8"]; val k7Before = rec(p, k7)
+        feed(dpad(asking))                                                     // the question; the player says Later: still asking
+        val opened = HomeLayoutStore.owner(); val base = HomeSettings.layout
+        val draft = base.copy(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.TWO_THIRDS)
+        assertEquals(HomeLayoutStore.EditSave.SAME, HomeLayoutStore.editSaveFor(opened))
+        HomeSettings.saveLayout(HomeLayoutStore.editSave(opened, base, draft)!!)                // edit mode's Save
+        assertEquals(HomeLayout.Share.TWO_THIRDS, HomeSettings.layout.chatShare)
+        assertTrue("kept on disk, by name", p.m.containsKey(HomeLayoutStore.KEY_HELD))
+        assertTrue("never under a key", p.m.keys.filter { it.startsWith(HomeLayoutStore.KEY_PREFIX) }.all { CharKey.isKey(it.removePrefix(HomeLayoutStore.KEY_PREFIX)) })
+        assertFalse("the held entry is no per-character record", HomeLayoutStore.isCharRecord(HomeLayoutStore.KEY_HELD))
+        assertEquals(k8Before, p.m["homeLayout.$k8"])
+        // the app process dies; a new one starts on the same prefs, the same login (Later kept): still asking
+        HomeSettings.startForTest(p)
+        assertNull(HomeLayoutStore.who)
+        feed(dpad(asking))
+        assertTrue(HomeLayoutStore.pending)
+        assertEquals("Home shows the saved edit again", HomeLayout.Share.TWO_THIRDS, HomeSettings.layout.chatShare)
+        assertEquals(HomeLayout.Side.RIGHT, HomeSettings.layout.chatSide)
+        // a facade's change in the new process goes on top of it
+        HomeLayoutStore.update { it.copy(card = HomeLayout.CardDock.ABOVE_CHAT) }
+        // another restart, then the next login: the player picks Realm 7
+        HomeSettings.startForTest(p)
+        feed(dpad(asking))
+        feed(dpad(resolved(r7, "picked")))
+        assertEquals(k7, HomeLayoutStore.who)
+        val now = rec(p, k7)
+        assertEquals(HomeLayout.Share.TWO_THIRDS, now.chatShare); assertEquals(HomeLayout.Side.RIGHT, now.chatSide)
+        assertEquals(HomeLayout.CardDock.ABOVE_CHAT, now.card)
+        assertEquals("Realm 7's own rest kept", k7Before.rest, now.rest)
+        assertEquals("Realm 8 untouched", k8Before, p.m["homeLayout.$k8"])
+        assertFalse("laid on: the held entry goes", p.m.containsKey(HomeLayoutStore.KEY_HELD))
+        // a restart with the key known: nothing laid on again
+        HomeSettings.startForTest(p)
+        feed(dpad(resolved(r7, "guid")))
+        HomeLayoutStore.set(rec(p, k7).copy(card = HomeLayout.CardDock.ON_MAP))
+        HomeSettings.startForTest(p)
+        feed(dpad(resolved(r7, "guid")))
+        assertEquals(HomeLayout.CardDock.ON_MAP, rec(p, k7).card)
+    }
+
+    @Test fun aResetDecidesTheHeldEdit() {
+        val p = fresh()
+        twoRecords(p)
+        feed(dpad(asking))
+        HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) }
+        val L = setOf(ResetPlan.Kind.LAYOUTS)
+        val keys = p.m.keys.toSet()
+        assertTrue(HomeLayoutStore.KEY_HELD in keys)
+        assertTrue("This character (asking: no key): kept", HomeLayoutStore.KEY_HELD !in ResetPlan.prefKeys("home", keys, L, null, false))
+        assertTrue("This character of another key: kept", HomeLayoutStore.KEY_HELD !in ResetPlan.prefKeys("home", keys, L, k8, false))
+        assertTrue("All characters: taken", HomeLayoutStore.KEY_HELD in ResetPlan.prefKeys("home", keys, L, k8, true))
+        // a reset that left it (another kind, This character): Home still shows it
+        HomeLayoutStore.resetDone()
+        assertEquals(HomeLayout.Share.THIRD, HomeSettings.layout.chatShare)
+        // All characters' Layouts took it: gone from Home too, never laid on later
+        p.m.remove(HomeLayoutStore.KEY_HELD); HomeLayoutStore.resetDone()
+        assertTrue(HomeSettings.layout.chatShare != HomeLayout.Share.THIRD)
+        feed(dpad(resolved(r7, "picked")))
+        assertTrue(rec(p, k7).chatShare != HomeLayout.Share.THIRD)
+    }
+
+    // ---------------------------------------------------------------- the hold refused while the question is up
+
+    /** the 1515 merge's review (findings 2 and 3): a hold on the chat / the map refused because the key question is up (shown or waiting
+     *  for the controller) is swallowed like the fight's refusal - the lift never opens the Chat room or the map module */
+    @Test fun aHoldRefusedByTheQuestionIsSwallowed() {
+        assertEquals(HomeEditModel.HoldFire.REFUSE, HomeEditModel.holdFire(fight = false, blocked = true, stillOk = true))
+        assertEquals(HomeEditModel.HoldFire.REFUSE, HomeEditModel.holdFire(fight = false, blocked = true, stillOk = false))
+        assertEquals(HomeEditModel.HoldFire.REFUSE, HomeEditModel.holdFire(fight = true, blocked = false, stillOk = true))
+        assertEquals(HomeEditModel.HoldFire.LET_GO, HomeEditModel.holdFire(fight = false, blocked = false, stillOk = false))
+        assertEquals(HomeEditModel.HoldFire.OPEN, HomeEditModel.holdFire(fight = false, blocked = false, stillOk = true))
+        val src = listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"), java.io.File("companion/app/src/main/java/com/jrees/wowcompanion"))
+            .first { it.isDirectory }
+        val home = java.io.File(src, "HomeView.kt").readText()
+        val i = home.indexOf("private fun holdFired()")
+        val fired = home.substring(i, home.indexOf("private fun holdStillOk(", i))
+        assertTrue(fired.contains("HomeEditModel.holdFire(fightShown(), editBlocked?.invoke() == true, holdStillOk(s))"))
+        assertTrue("refused: swallowed to the lift", fired.contains("holdSwallow = true; editRefuse(s); invalidate(); return"))
+        assertTrue("an editOpen refusal is swallowed too", fired.contains("else holdSwallow = true"))
+        // a swallowed gesture's child is cancelled once (the Chat room / map module never see the UP)
+        val disp = home.substring(home.indexOf("override fun dispatchTouchEvent(e: MotionEvent)"))
+        assertTrue(disp.substring(0, disp.indexOf("holdWatch(e)")).contains("if (holdTakes || holdSwallow)"))
     }
 
     // ---------------------------------------------------------------- one owner of the controller
@@ -205,10 +299,11 @@ class HomeKeyPickTest {
     @Test fun resetKeepsHomesKeysAndNeverTheAddOnsWhoRecords() {
         val L = setOf(ResetPlan.Kind.LAYOUTS)
         val keys = setOf("homeLayout.$k7", "homeLayout.$k8", "homeLayout.Thrandil-$r7", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS,
-            HomeLayoutStore.KEY_MIGRATED)
+            HomeLayoutStore.KEY_MIGRATED, HomeLayoutStore.KEY_HELD)
         assertEquals("This character: its own record only", setOf("homeLayout.$k8"), ResetPlan.prefKeys("home", keys, L, k8, false))
         assertEquals("All characters: every record, the default and the slots",
-            setOf("homeLayout.$k7", "homeLayout.$k8", "homeLayout.Thrandil-$r7", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS),
+            setOf("homeLayout.$k7", "homeLayout.$k8", "homeLayout.Thrandil-$r7", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS,
+                HomeLayoutStore.KEY_HELD),
             ResetPlan.prefKeys("home", keys, L, k8, true))
         assertTrue("asking (no key): This character takes nothing of Home's", ResetPlan.prefKeys("home", keys, L, null, false).isEmpty())
         for (top in listOf("rbm", "ctop")) {
