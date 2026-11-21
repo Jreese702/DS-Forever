@@ -50,6 +50,13 @@ object KeyPick {
     /** the choice at [i] in [options]: the candidate's index, or null for "New character" */
     fun pickOf(i: Int, cands: List<Cand>): Int? = if (i in 0 until minOf(cands.size, MAX)) i else null
 
+    /**
+     * the k10 review (round 1): what "Later" is tied to - the add-on's login ([loginStamp], PadMap m181: new at every PLAYER_LOGIN, a
+     * /reload and a relog included), so the question comes back at the next login, not only at the next game run; [run] (the game run)
+     * only for an add-on that sends no stamp
+     */
+    fun laterMark(loginStamp: Long?, run: Long): String = if (loginStamp != null) "login $loginStamp" else "run $run"
+
     enum class Act { NONE, WAIT, ASK, CLOSE }
 
     /**

@@ -24,7 +24,7 @@ class KeyPickTest {
     private val key = "Korvash-$kept"
 
     private fun padmap(who: String) = PadMapModel.parse(JSONObject(
-        """{"type":"padmap","v":"m180","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"cols":{"on":1,"off":2},"who":$who}}}"""))!!
+        """{"type":"padmap","v":"m181","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"cols":{"on":1,"off":2},"who":$who}}}"""))!!
 
     // ---------------------------------------------------------------- the app's key IS the add-on's
 
@@ -161,5 +161,67 @@ class KeyPickTest {
         assertEquals(setOf(kept), realms["Korvash"])
         assertNull("a GUID key is never read as a character \"Player\"", realms["Player"])
         assertTrue(ResetPlan.SV_NEVER.getValue("WowCompanionDB").contains("who"))
+    }
+
+    // ---------------------------------------------------------------- Safety k11 (the k10 review, round 1)
+
+    @Test fun laterLastsUntilTheNextLoginNotTheGameRun() {
+        val d1 = padmap("""{"n":"Korvash","rs":"ask","ls":10000,"pk":[{"r":"$kept","n":3},{"r":"B","n":1}]}""").dpad!!
+        assertEquals(10000L, d1.loginStamp)
+        val mark = KeyPick.laterMark(d1.loginStamp, run = 77L)
+        // the same login (another padmap of it): still Later
+        assertEquals(mark, KeyPick.laterMark(padmap("""{"n":"Korvash","rs":"ask","ls":10000}""").dpad!!.loginStamp, 77L))
+        // a relog or a /reload in the SAME game run: a new stamp = asked again
+        val d2 = padmap("""{"n":"Korvash","rs":"ask","ls":10450,"pk":[{"r":"$kept","n":3},{"r":"B","n":1}]}""").dpad!!
+        assertFalse(mark == KeyPick.laterMark(d2.loginStamp, 77L))
+        // an older add-on (no stamp): the game run, as before
+        assertNull(padmap("""{"n":"Korvash","rs":"ask"}""").dpad!!.loginStamp)
+        assertEquals(KeyPick.laterMark(null, 77L), KeyPick.laterMark(null, 77L))
+        assertFalse(KeyPick.laterMark(null, 77L) == KeyPick.laterMark(null, 78L))
+        assertNull("not a stamp", padmap("""{"n":"Korvash","rs":"ask","ls":-3}""").dpad!!.loginStamp)
+    }
+
+    private fun e(id: Int) = CombatKeep.Entry(1, 1, id, 1000 + id, "Spell $id", false)
+
+    @Test fun aFreshKeyTakesThisNamesOneBackupUnderAnotherRealm() {
+        val fresh = "Korvash-Realm7"                                       // the add-on's key after its saved tables were lost (the hint)
+        val real = CombatKeep.Backup(key, (1..288).map { e(it) }, "HUNTER")
+        val got = CombatKeep.adopt(fresh, "HUNTER", listOf(real, CombatKeep.Backup("Korvash-_", listOf(e(1)), "HUNTER"),
+            CombatKeep.Backup("Brenna-$kept", listOf(e(2)), "HUNTER")))!!
+        assertEquals("restored INTO the add-on's key (the app never picks a realm)", fresh, got.who)
+        assertEquals(288, got.entries.size); assertEquals("HUNTER", got.cls)
+        // the restore's own rule takes it (the store empty at login)
+        val m = padmap("""{"n":"Korvash","r":"Realm7","rs":"new","c":"HUNTER"}""")
+        assertEquals(fresh, CombatKeep.who(m))
+        assertTrue(CombatKeep.needsRestore(m, got))
+        assertNull("another class's backup is never this one's", CombatKeep.adopt(fresh, "WARRIOR", listOf(real)))
+        assertNull("two of this name under other realms: never a guess", CombatKeep.adopt(fresh, "HUNTER",
+            listOf(real, CombatKeep.Backup("Korvash-Classic Beta PvE", listOf(e(3)), "HUNTER"))))
+        assertNull("an empty one is nothing to take", CombatKeep.adopt(fresh, "HUNTER", listOf(real.copy(entries = emptyList()))))
+        assertNull("only another name's", CombatKeep.adopt(fresh, "HUNTER", listOf(CombatKeep.Backup("Brenna-$kept", listOf(e(2)), "HUNTER"))))
+        assertEquals("a backup of no class (older) is this name's", fresh, CombatKeep.adopt(fresh, "HUNTER", listOf(real.copy(cls = null)))?.who)
+    }
+
+    @Test fun theChoiceAlwaysFitsTheBottomScreen() {
+        val w = 1240f; val h = 1080f
+        for (tl in 1..4) for (fl in 0..3) for (n in 1..(KeyPick.MAX + 1)) {
+            val f = ChoiceFit.fit(w, h, tl, fl, n)
+            val top = maxOf(ChoiceFit.MARGIN, (h - f.boxH) / 2f)
+            assertTrue("tl $tl fl $fl n $n: the box ${f.boxH} fits", top + f.boxH <= h - ChoiceFit.MARGIN + 0.01f)
+            assertTrue("every choice placed", f.cols * f.rows >= n)
+            assertTrue("the box fits the width", f.boxW <= w)
+            // Later (111 px, 50 px off the box's bottom) is on the screen
+            assertTrue(top + f.boxH - 50f <= h)
+            if (tl <= 3 && fl <= 2) assertTrue("tl $tl fl $fl n $n: rows stay touchable (${f.rowH})", f.rowH >= ChoiceFit.MIN_H)
+        }
+        // a short list keeps the full rows in one column (the look as before)
+        val two = ChoiceFit.fit(w, h, 2, 1, 3)
+        assertEquals(1, two.cols); assertEquals(ChoiceFit.OPT_H, two.rowH); assertEquals(ChoiceFit.BOX_W, two.boxW)
+        // the review's case: 5 candidates + New character, a 2-line title: it used to run 61 px off the screen
+        val six = ChoiceFit.fit(w, h, 2, 1, 6)
+        assertTrue(six.boxH <= h - 2 * ChoiceFit.MARGIN)
+        // 10 candidates + New character: two columns in a wider box
+        val all = ChoiceFit.fit(w, h, 3, 2, 11)
+        assertEquals(2, all.cols); assertEquals(6, all.rows); assertTrue(all.boxW > ChoiceFit.BOX_W)
     }
 }

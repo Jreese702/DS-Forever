@@ -322,7 +322,8 @@ object PadMapModel {
                         (0 until a.length()).mapNotNull { i -> a.optJSONObject(i) }.mapNotNull { o ->
                             CharKey.realm(textOrNull(o, "r"))?.let { r -> KeyPick.Cand(r, o.optInt("n", 0).coerceAtLeast(0)) }
                         }.take(KeyPick.MAX)
-                    } ?: emptyList())
+                    } ?: emptyList(),
+                    loginStamp = who?.takeIf { it.has("ls") }?.optLong("ls", -1L)?.takeIf { it > 0L })
             },
             start = m.optJSONObject("start")?.let { st ->
                 StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"),
@@ -362,7 +363,10 @@ object PadMapModel {
                     /** m180: the GUID against its record ("same" / "server-changed" / "id-changed" / "new" / "unknown"), the line only */
                     val guidState: String? = null,
                     /** m180: the one-time question while the key is ambiguous ([KeyPick]); empty = none (or the key is known) */
-                    val picks: List<KeyPick.Cand> = emptyList())
+                    val picks: List<KeyPick.Cand> = emptyList(),
+                    /** m181 (Safety k11): the add-on login's stamp (a number, new at every PLAYER_LOGIN, a /reload's too): the key
+                     *  question's "Later" lasts until it changes ([KeyPick.laterMark]); null from an older add-on */
+                    val loginStamp: Long? = null)
     val DPAD_SIDES = listOf("left", "up", "right")
 
     /** m37 / m160 START (the padmap's `start`): [key] the game's OPENRADIAL key; [bound] "pause" = Start is the router's (Home's wheel, the

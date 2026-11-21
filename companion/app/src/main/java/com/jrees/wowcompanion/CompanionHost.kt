@@ -4846,13 +4846,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // ---------------------------------------------------------------- Safety k10 THE STICKY REALM'S ONE-TIME QUESTION (KeyPick)
     // the user, 2026-11-20: when it is ambiguous which saved settings are this character's, "the bottom screen asks ONCE (remember the
     // answer)"; nothing is moved or renamed. The add-on keeps the answer (this character's GUID record); B = later: asked again at the
-    // next login (the next game run), no key meanwhile. Shown like the other one-time prompts: on Home, out of fights, once the game
+    // next login (the add-on's login stamp, PadMap m181: a relog or a /reload counts), no key meanwhile. Shown like the other one-time prompts: on Home, out of fights, once the game
     // hands Home the controller (A / B then), else touch first after a few seconds
     private var keyAskOpen = false
     private var keyAskWaitId = 0
     private var keyAskSentAt = 0L
-    /** the characters (by name: the question's own, never logged) the player said Later for, and the game run they said it in */
-    private val keyAskLater = HashMap<String, Long>()
+    /** the characters (by name: the question's own, never logged) the player said Later for, and the login they said it in
+     *  ([KeyPick.laterMark]: the add-on's login stamp, else the game run) */
+    private val keyAskLater = HashMap<String, String>()
     private var keyAskDpad: PadMapModel.Dpad? = null
 
     private fun keyAsk(d: PadMapModel.Dpad) {
@@ -4867,7 +4868,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE
         val ready = room == Room.HOME && !homeView.homeGuestWanted() && capHolder.isEmpty() && !busy &&
             (startView.visibility != View.VISIBLE)
-        val later = name != null && keyAskLater[name] == run
+        val later = name != null && keyAskLater[name] == KeyPick.laterMark(d.loginStamp, run)
         val sentAgo = if (keyAskSentAt == 0L) null else SystemClock.elapsedRealtime() - keyAskSentAt
         when (KeyPick.decide(cands, keyAskOpen, later, sentAgo, ready, fight)) {
             KeyPick.Act.NONE -> return
@@ -4912,7 +4913,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun keyLater(who: String) {
         if (!keyAskOpen) return
         keyAskOpen = false; keyAskWaitId++
-        keyAskLater[who] = LauncherHooks.gameStartSec
+        keyAskLater[who] = KeyPick.laterMark(keyAskDpad?.loginStamp, LauncherHooks.gameStartSec)
         Log.i(HomeView.TAG, "key question: later (asked again at the next login)")
         setupView.close(); setupPadOff()
     }

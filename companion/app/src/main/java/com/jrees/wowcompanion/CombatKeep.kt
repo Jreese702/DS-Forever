@@ -79,6 +79,24 @@ object CombatKeep {
         backup != null && backup.who == who(map) && !otherClass(map, backup) && backup.entries.isNotEmpty() && current(map).isEmpty() &&
             !map.combat && !map.fight
 
+    /**
+     * THE NAME IS THE CHARACTER (Safety k11, the k10 review round 1; the user, 2026-11-20: on WoW Forever "no one can have those names"):
+     * the add-on lost its saved tables (an uninstall wipes them; this backup survives it) and built a fresh key for [who] under another
+     * realm (the game's hint, "Forever") - so [who] has NO backup file of its own. The ONE backup of this name under another realm
+     * ([others]: the combat folder's files; an orphan / no-realm key, an empty one or another class's never counts) is this
+     * character's: it is restored into the add-on's key [who] (the app never picks a realm: the key stays the add-on's; the old file is
+     * left as it is - nothing moved or renamed). Two or more = never a guess (null).
+     */
+    fun adopt(who: String, cls: String?, others: List<Backup>): Backup? {
+        val name = CharKey.nameOf(who) ?: return null
+        val mine = others.filter { b ->
+            b.who != who && CharKey.isKey(b.who) && CharKey.nameOf(b.who) == name && b.entries.isNotEmpty() &&
+                !(cls != null && b.cls != null && b.cls != cls)
+        }.distinctBy { it.who }
+        val one = mine.singleOrNull() ?: return null
+        return Backup(who, one.entries, cls ?: one.cls)
+    }
+
     /** the taps that put [backup] back, one batch per setting (ONE put each) between the quiet enter and the leave; [column] = a spell's
      *  Bind column on the `spells` row (null = no touch cell: that setting is [Plan.skipped]); [page] = the page on show, picked back last */
     data class Plan(val batches: List<List<Pair<String, Int>>>, val restored: List<Entry>, val skipped: List<Entry>)

@@ -260,7 +260,12 @@ WC.encode = encode
 -- WC.charKey now resolves at PLAYER_LOGIN through this GUID's own record (WowCompanionDB.who), the ONE realm the name holds settings
 -- under ("sticky"), or a one-time question on the bottom screen when it is ambiguous (WC.charKeyPick); a new character gets
 -- "Name-<realm>" ("Name-Forever" when the game names none), recorded so it never flaps. A resolved key never changes in the session.
-WC.KERNEL = "k10"
+-- k11 (the k10 review, round 1): a realm counts as a place the settings live only when its key HOLDS settings (a remembered realm or an
+-- empty-table key never pulls the key off the real settings); a same-name record of this class under another GUID never blocks the
+-- sticky key (a name is one character: the record is re-pointed to this GUID, asked only when 2+ realms hold settings); the counts in
+-- the diagnostics on every path; a "new" key prefers a realm the name is already known under; the login's stamp (ls) for the app's
+-- "Later" (asked again at the next login, a /reload included).
+WC.KERNEL = "k11"
 
 local function blocked(f)
     return not pcall(f)
@@ -382,13 +387,17 @@ end
 --   a) "guid": this GUID's own record, WowCompanionDB.who[GUID] = { k = the key its settings live under, c = class, i = the GUID's id
 --      segment } (its name must be this one's and its class not another), whatever realm the game reports now;
 --   b) "guid-id": a record with the same id segment AND class (the GUID's server part changed) - the record moves to the new GUID;
---   c) "sticky": the ONE realm this name holds settings under (WowCompanionDB.realmOf + our two tables' "Name-<realm>" keys) that no
---      other GUID's record claims ("live" when it is the game's own realm); of several, the one the game's realm or hint names exactly
---      ("live" / "hint"); a key another GUID of another class claims is never this character's;
---   d) ambiguous (two or more realms left, or only keys another GUID of this class claims): no key yet; the bottom screen asks ONCE
+--   c) "sticky": the ONE realm this name holds settings under (WowCompanionDB.realmOf + our two tables' "Name-<realm>" keys; k11: only
+--      a key that HOLDS settings counts - a remembered realm or an empty-table key is not where the settings live) ("live" when it is
+--      the game's own realm); of several, the one the game's realm or hint names exactly ("live" / "hint"), else the one a same-name
+--      record of this class holds; a key another GUID of another class claims is never this character's. k11: a same-name record of
+--      THIS class under another GUID never blocks it (a name is one character: the record is re-pointed to this GUID, gs "id-changed");
+--   d) ambiguous (two or more realms holding settings left, nothing naming one): no key yet; the bottom screen asks ONCE
 --      (WC.charKeyInfo().pk: each realm and how many settings it holds, plus "a new character"); the pick is this GUID's record
 --      (WC.charKeyPick, the padtab's third page, Book b74); "later" = no key until the next login asks again (nothing is written);
---   e) "new": nothing to claim: "Name-<the game's realm>", else "Name-<its hint>", else "Name-Forever" (never a key another one holds).
+--   e) "new": nothing to claim: "Name-<the game's realm>", else a realm the name is already known under (k11: the one the hint names
+--      after norm(), else the only one), else "Name-<its hint>", else "Name-Forever" (never a key another one holds). The app's In-combat
+--      backup of this name under another realm is put back into it by the app (CombatKeep.adopt: the name is the character).
 -- Once a key is resolved in a session it never changes in that session (a later GetRealmName answer is ignored). Before PLAYER_LOGIN:
 -- this GUID's record, or the game's realm when the name holds settings under it or under none (asked again at the login). The
 -- record is the account's own saved table; a GUID is never logged or sent.
@@ -580,11 +589,18 @@ do
     end
 
     -- k10 e): a new character's realm: the game's, else its hint, else "Forever" - never one [n] holds settings under or another claims
-    local function newRealm(n, live, h, list, claims)
+    -- k11 (the review, round 1): [known] = every realm the name is known under (one with no settings included): before a spelling of
+    -- our own (the hint's no-space one, "Forever"), the one of them the hint names after norm(), else the only one
+    local function newRealm(n, live, h, list, claims, known)
         local held = {}
         for _, r in ipairs(list) do held[r] = true end
-        local function ok(r) return r and not held[r] and not claims[n .. "-" .. r] end
-        for _, r in ipairs({ live or false, h or false, "Forever" }) do if r and ok(r) then return r end end
+        local function ok(r) return r and not held[r] and claims[n .. "-" .. r] ~= "other" end
+        if live and ok(live) then return live end
+        local spare = {}
+        for _, r in ipairs(known or {}) do if ok(r) then spare[#spare + 1] = r end end
+        if h then for _, r in ipairs(spare) do if norm(r) == norm(h) then return r end end end
+        if #spare == 1 then return spare[1] end
+        for _, r in ipairs({ h or false, "Forever" }) do if r and ok(r) then return r end end
         for i = 2, 9 do if ok("Forever " .. i) then return "Forever " .. i end end
         return nil
     end
@@ -616,15 +632,19 @@ do
         local who = whoTab()
         local claims, same, other = claimsOf(n, gid, cls)
         diag.oc = other
+        -- k11 (the review, round 1): every realm the name is known under ([known]: a remembered realm, an empty-table key included) and
+        -- the ones that HOLD settings ([list]): only those are where the settings live. The counts on every path (a) too)
+        local known = realmsOf(n)
+        local list = {}
+        for _, r in ipairs(known) do if uses(n .. "-" .. r) > 0 then list[#list + 1] = r end end
+        diag.nc = #list
+        diag.uc = unclaimedSameClass(n, cls)
         -- a) this GUID's own record
         if gid and who and type(who[gid]) == "table" then
             local e = who[gid]
             local kn, kr = split(e.k)
             if kn == n and not (cls and type(e.c) == "string" and e.c ~= cls) then diag.gs = "same"; return kr, "guid", diag end
         end
-        local list = realmsOf(n)
-        diag.nc = #list
-        diag.uc = unclaimedSameClass(n, cls)
         -- b) the same id segment and class: the GUID's server part changed (only once logged in: the record moves to this GUID)
         local id = idOf(gid)
         if id and cls and who and CK.loggedIn then
@@ -647,36 +667,35 @@ do
         local function has(r) for _, x in ipairs(list) do if x == r then return true end end return false end
         if not CK.loggedIn then
             -- before PLAYER_LOGIN: only the game's realm, when the name holds settings under it (no other claims it) or under none
-            if live and not claims[n .. "-" .. live] and (#list == 0 or has(live)) then return live, "live", diag end
+            if live and claims[n .. "-" .. live] ~= "other" and (#list == 0 or has(live)) then return live, "live", diag end
             return nil, nil, diag
         end
-        -- c) the realms no other GUID claims
-        local free, amb = {}, {}
+        -- c) the realms holding settings that no other GUID of ANOTHER class claims (k11: a same-name record of this class is this
+        -- character under another GUID - a name is one character -, never a block; [mine] = the ones such a record holds)
+        local free, mine = {}, {}
         for _, r in ipairs(list) do
             local c = claims[n .. "-" .. r]
-            if not c then free[#free + 1] = r elseif c == "same" then amb[#amb + 1] = r end
+            if c ~= "other" then
+                free[#free + 1] = r
+                if c == "same" then mine[#mine + 1] = r end
+            end
         end
         if #free == 1 then return free[1], (live == free[1]) and "live" or "sticky", diag end
         if #free > 1 then
-            if live and has(live) and not claims[n .. "-" .. live] then return live, "live", diag end
+            if live and has(live) and claims[n .. "-" .. live] ~= "other" then return live, "live", diag end
             if h then
                 local hit, two
                 for _, r in ipairs(free) do if norm(r) == norm(h) then if hit then two = true end; hit = r end end
                 if hit and not two then return hit, "hint", diag end
             end
-        end
-        -- d) ambiguous: asked once on the bottom screen
-        if #free > 1 or #amb > 0 then
-            local cands = {}
-            for _, r in ipairs(free) do cands[#cands + 1] = r end
-            for _, r in ipairs(amb) do cands[#cands + 1] = r end
-            table.sort(cands)
+            if #mine == 1 then return mine[1], "sticky", diag end
+            -- d) ambiguous: asked once on the bottom screen (2+ realms hold this name's settings, nothing names one)
             local pk = {}
-            for i, r in ipairs(cands) do if i <= 10 then pk[#pk + 1] = { r = r, n = uses(n .. "-" .. r) } end end
+            for i, r in ipairs(free) do if i <= 10 then pk[#pk + 1] = { r = r, n = uses(n .. "-" .. r) } end end
             return nil, "ask", diag, pk
         end
         -- e) a new character
-        local r = newRealm(n, live, h, list, claims)
+        local r = newRealm(n, live, h, list, claims, known)
         if r then return r, "new", diag end
         return nil, nil, diag
     end
@@ -686,8 +705,17 @@ do
         CK.n, CK.r, CK.key, CK.src, CK.early, CK.pk, CK.pkN = n, r, n .. "-" .. r, src, not CK.loggedIn, nil, nil
         CK.missN, CK.missAt, CK.misses = nil, nil, 0
         if CK.loggedIn then
-            record(myGuid(), CK.key, myClass())
+            local gid, cls = myGuid(), myClass()
+            record(gid, CK.key, cls)
             remember(n, r)
+            -- k11: a same-name record of this class under ANOTHER GUID holding this key is this character's (a name is one character):
+            -- re-pointed to this GUID (the record above), the old one dropped
+            local who = whoTab()
+            if gid and who then
+                for g, e in pairs(who) do
+                    if g ~= gid and type(e) == "table" and e.k == CK.key and not (cls and type(e.c) == "string" and e.c ~= cls) then who[g] = nil end
+                end
+            end
         end
         return CK.key, n, r, src
     end
@@ -721,7 +749,8 @@ do
     function WC.charKeyInfo()
         local src = WC.charKeySource()
         local d = CK.diag or {}
-        return { rs = src, rh = d.rh or WC.charKeyHint(), rr = d.rr, nc = d.nc, uc = d.uc, gs = d.gs, pk = (not CK.key) and CK.pk or nil }
+        return { rs = src, rh = d.rh or WC.charKeyHint(), rr = d.rr, nc = d.nc, uc = d.uc, gs = d.gs, pk = (not CK.key) and CK.pk or nil,
+                 ls = CK.ls }
     end
     -- k10 THE ASK'S ANSWER (the padtab's third page, Book b74): [i] = the candidate's place in WC.charKeyInfo().pk (1-based), 0 = a new
     -- character. Recorded as this GUID's; only while asked, once logged in, out of combat (the stores re-read their key then)
@@ -746,8 +775,12 @@ do
         return true
     end
     -- k7 PLAYER_LOGIN: both saved tables are loaded and the GUID is known; a key found before is asked again (k10: then kept)
+    -- k11: [ls] = this login's stamp (the client's clock, tenths of a second: every PLAYER_LOGIN, a /reload's included, gets its own),
+    -- the app's "Later" lasts until it changes (asked again at the next login). A number only: no name, no realm, no GUID
     function WC.charKeyLogin()
         CK.loggedIn = true
+        local okT, t = CALL(GetTime)
+        CK.ls = (okT and type(t) == "number" and t > 0) and math.floor(t * 10) or nil
         if CK.key and CK.early then CK.n, CK.r, CK.key, CK.src, CK.early = nil, nil, nil, nil, false end
         CK.missN, CK.missAt, CK.misses = nil, nil, 0
     end

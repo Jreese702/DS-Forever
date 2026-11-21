@@ -174,7 +174,7 @@ check(b''.join(got) == mixed and all(p.decode('utf-8', errors='strict') is not N
 
 # ------------------------------------------------------------------ the device's own word on it
 r = L.eval(b'WowCompanion.kernelSelfTest')()
-check(r[b'v'] == b'k10' and r[b'utf8'] is True and r[b'sink'] == b'sink1', 'the self-test: k10, utf8 true, sink1', dict(r))
+check(r[b'v'] == b'k11' and r[b'utf8'] is True and r[b'sink'] == b'sink1', 'the self-test: k11, utf8 true, sink1', dict(r))
 check(isinstance(r[b'cc'], (int, float)) and int(r[b'cc']) == len([x for x in high.split(b',') if x]),
       'the self-test counts the high bytes this client\'s %c calls controls', r[b'cc'])
 capdoc = enc(L.eval(b'function(k) return { type = "cap", kernel = k } end')(r))
