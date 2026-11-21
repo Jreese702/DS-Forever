@@ -120,7 +120,8 @@ WC.gameLay = { ids = GAMEIDS, find = function() end,
 -- the router's switch and PadMap's flag
 TG, CTOP = false, false
 WC.tgGrown = function() return TG end
-WC.padMap.combatTopOn = function() return CTOP end
+FLAGREADS = 0
+WC.padMap.combatTopOn = function() FLAGREADS = FLAGREADS + 1; return CTOP end
 function DRV(dt) local d = WC.nbar.drv; d.onOnUpdate(d, dt); local f = WC.nbar.f; if f and f.shown and f.onOnUpdate then f.onOnUpdate(f, dt) end end
 function EV(e) local d = WC.nbar.drv; d.onOnEvent(d, e) end
 function RUN(sec, dt) dt = dt or 0.02; local n = math.floor(sec / dt + 0.5); for _ = 1, n do NOW = NOW + dt; DRV(dt) end end
@@ -236,7 +237,10 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar8 and nbar7's note", 'local NB = { V = "nbar8"' in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src)
+    chk("0. ActionBar's tag nbar9 and nbar7's / nbar8's notes", 'local NB = { V = "nbar9"' in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
+        and "nbar8 (the fix pass on movable Home)" in src)
+    chk("0. nbar9: the build gate has no combat test (display-only frames are legal in a fight)",
+        "if flag and not NB.built then pcall(NB.build) end" in src and "not NB.built and not combat" not in src)
     chk("0. ActionBar's main chunk loads under Lua 5.1 (the 200-locals limit kept)", NB is not None and NB.fightSolve is not None)
 
     # ------------------------------------------------------------------------------------------------ A the solver
@@ -316,7 +320,10 @@ def main():
     # ------------------------------------------------------------------------------------------------ B the opt-in
     G.TG, G.COMBAT = True, True
     L.execute('EV("PLAYER_REGEN_DISABLED")')
+    G.FLAGREADS = 0
     L.execute('RUN(1.0)')
+    chk("B. nbar9: the flag off, the driver reads it every FLAG_S (0.5 s), never every frame (50 frames: at most 3 reads)",
+        1 <= G.FLAGREADS <= 3, G.FLAGREADS)
     chk("B. the flag off: in a fight nothing is built or shown (Grow / Same size: the add-on does nothing)", not NB.built and not NB.top.shown
         and NB.f is None, (NB.built, NB.top.shown))
     chk("B. the flag off: no frame read, no game frame read", NB.top.reads == 0 and G.RECTNOW == 0, (NB.top.reads, G.RECTNOW))
@@ -327,7 +334,7 @@ def main():
     chk("B. the flag on: the piece is listed in the top layout editor (so it can be placed)", NB.lay.want() is True and NB.lay.on() is False)
 
     # ------------------------------------------------------------------------------------------------ C the live bar
-    L.execute('RUN(0.1)')
+    L.execute('RUN(0.6)')                                         # nbar9: the flag is read every FLAG_S (0.5 s)
     chk("C. the flag on, out of combat: the frames built (out of combat), the spot solved, nothing shown yet", NB.built and NB.top.spot is not None
         and not NB.top.shown and NB.f.shown is False, (NB.built, NB.top.spot is not None, NB.top.shown))
     chk("C. out of combat the game's shown frames were read (plain)", G.RECTNOW >= 1 and G.RECTNOW_COMBAT == 0, (G.RECTNOW, G.RECTNOW_COMBAT))
@@ -498,6 +505,30 @@ def main():
             if rel is not None and lupa.lua_type(rel) == "table" and rel._name is not None:
                 anchors.add(rel._name)
     chk("F. nothing of ours anchored to a game frame", not anchors, anchors)
+
+    # ------------------------------------------------------------------------------------------------ G nbar9: built inside a fight
+    # a /reload or a login INSIDE a fight (the lockdown on from the first frame), the flag on: the frames are built at once (plain,
+    # display-only frames are legal in combat) and the Wings show within IN_S, solved against our own frames (the game's never read)
+    L2 = boot()
+    G2 = L2.globals()
+    NB2 = G2.WowCompanion.nbar
+    G2.COMBAT, G2.TG, G2.CTOP = True, True, True
+    L2.execute('RUN(0.3, 0.02)')
+    chk("G. nbar9: lockdown from the first frame, flag on: built, a spot, shown within IN_S (0.24 s)", NB2.built and NB2.top.spot is not None
+        and NB2.top.shown and abs(NB2.f.alpha - 1) < 1e-6, (NB2.built, NB2.top.spot is not None, NB2.top.shown))
+    chk("G. ... no game frame read in the fight, nothing raised, still no Secure template / mouse", G2.RECTNOW_COMBAT == 0 and G2.RAISED == 0
+        and len(G2.BADTPL) == 0 and G2.BADMOUSE == 0, (G2.RECTNOW_COMBAT, G2.RAISED))
+    # the character key arriving mid-fight (R.ctopOn false until then): the flag turns on in the fight, the bar is built and shown
+    L3 = boot()
+    G3 = L3.globals()
+    NB3 = G3.WowCompanion.nbar
+    G3.COMBAT, G3.TG, G3.CTOP = True, True, False
+    L3.execute('RUN(1.0)')
+    chk("G. the key not known yet in the fight: nothing built", not NB3.built and NB3.f is None)
+    G3.CTOP = True
+    L3.execute('RUN(0.8, 0.02)')
+    chk("G. the key arrives mid-fight (flag on): built and shown in the same fight (FLAG_S + IN_S)", NB3.built and NB3.top.shown
+        and abs(NB3.f.alpha - 1) < 1e-6 and G3.RECTNOW_COMBAT == 0, (NB3.built, NB3.top.shown))
 
     # ------------------------------------------------------------------------------------------------ the renders
     if "--shots" in sys.argv or os.environ.get("COMBAT_BAR_SHOTS"):

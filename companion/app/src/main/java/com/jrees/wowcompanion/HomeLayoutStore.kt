@@ -50,6 +50,33 @@ object HomeLayoutStore {
     private fun changed() { val ls = synchronized(listeners) { listeners.toList() }; for (l in ls) l() }
 
     private fun key(w: String?) = if (w == null) KEY_DEFAULT else KEY_PREFIX + w
+
+    /**
+     * WHOSE RECORD IS ACTIVE: [key] the whole "Name-Realm" key, else (pending) [name] alone, else neither (the default record). Edit mode
+     * keeps the owner it opened on and saves only to it ([editSave]): never a draft read under one owner written under another.
+     */
+    data class Owner(val key: String?, val name: String?)
+    fun owner(): Owner = Owner(who, if (pending) pendingName else who?.let { CharKey.nameOf(it) })
+    private val ownerListeners = ArrayList<() -> Unit>()
+    /** the active record's owner changed (another character, a key that arrived, a key let go): edit mode re-checks its owner */
+    fun onOwner(l: () -> Unit) { synchronized(ownerListeners) { ownerListeners.add(l) } }
+    private fun ownerChanged() { val ls = synchronized(ownerListeners) { ownerListeners.toList() }; for (l in ls) l() }
+
+    /** how a draft opened on [opened] may be saved now: to the same owner as it is, by its own changes only once the pending name's key
+     *  arrived (the late key: [layOn] over the character's real record), else not at all (another character, the key let go) */
+    enum class EditSave { SAME, LAY_ON, NONE }
+    fun editSaveFor(opened: Owner, now: Owner = owner()): EditSave = when {
+        opened == now -> EditSave.SAME
+        opened.key == null && opened.name != null && now.key != null && now.name == opened.name -> EditSave.LAY_ON
+        else -> EditSave.NONE
+    }
+    /** edit mode's Save: [draft], opened on [opened] over [base] (what it showed then); null = refused (another owner now: nothing
+     *  written). LAY_ON writes only the fields the session changed on top of the record the store holds now */
+    fun editSave(opened: Owner, base: HomeLayout, draft: HomeLayout): HomeLayout? = when (editSaveFor(opened)) {
+        EditSave.SAME -> draft
+        EditSave.LAY_ON -> layOn(active(), base, draft)
+        EditSave.NONE -> null
+    }
     /** a per-character record key of the prefs ("homeLayout.<Name-Realm>": a whole key only) */
     fun isCharRecord(k: String): Boolean = k.startsWith(KEY_PREFIX) && CharKey.isKey(k.removePrefix(KEY_PREFIX))
 
@@ -97,6 +124,7 @@ object HomeLayoutStore {
         val pend = k == null && n != null
         if (k == who && pend == pending && (!pend || n == pendingName)) return
         val before = active()
+        val ownerBefore = owner()
         // this session's edit while the key was not known: only for the same name, only once the key is known
         val carry = pendingEdit?.takeIf { pending && k != null && n == pendingName }
         val carryBase = pendingBase
@@ -111,6 +139,7 @@ object HomeLayoutStore {
             }
         }
         if (active() != before) changed()
+        if (owner() != ownerBefore) ownerChanged()
     }
 
     /** writes [l] as the active record (the character's, else the default); [all] = "All characters": the default and every character

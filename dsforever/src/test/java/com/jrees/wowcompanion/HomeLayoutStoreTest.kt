@@ -205,6 +205,61 @@ class HomeLayoutStoreTest {
         assertTrue(ResetPlan.isCharKey("Korvash-Realm")); assertFalse(ResetPlan.isCharKey("Korvash-")); assertFalse(ResetPlan.isCharKey("Korvash-?"))
     }
 
+    /** fix round 1 (P1 / P2 of the review): edit mode's draft is saved only to the record it was read under - the same owner as it is;
+     *  the pending name's key that arrived: only the session's changes on the real record; another character: nothing written */
+    @Test fun anEditIsSavedOnlyToTheRecordItWasReadUnder() {
+        val p = fresh()
+        var heard = 0
+        HomeLayoutStore.onOwner { heard++ }
+        // Korvash-Realm keeps chat RIGHT, rest ROW; Thrandil-Realm its card OFF, bar ACROSS
+        HomeLayoutStore.character("Korvash-Realm")
+        HomeLayoutStore.set(HomeLayout(chatSide = HomeLayout.Side.RIGHT, rest = HomeRest.ROW))
+        HomeLayoutStore.character("Thrandil-Realm")
+        HomeLayoutStore.set(HomeLayout(card = HomeLayout.CardDock.OFF, cast = HomeLayout.CastDock.ACROSS))
+        val thrandil = p.m["homeLayout.Thrandil-Realm"]
+        // P1: Korvash named before his realm (pending): edit mode opens on the default, changes only the share, then the key arrives
+        HomeLayoutStore.character(null, "Korvash")
+        val n0 = heard
+        val o1 = HomeLayoutStore.owner()
+        assertEquals(HomeLayoutStore.Owner(null, "Korvash"), o1)
+        val base1 = HomeSettings.layout
+        val draft1 = base1.copy(chatShare = HomeLayout.Share.THIRD)
+        HomeLayoutStore.character("Korvash-Realm")
+        assertTrue("the owner change is heard (edit mode re-checks)", heard > n0)
+        assertEquals(HomeLayoutStore.EditSave.LAY_ON, HomeLayoutStore.editSaveFor(o1))
+        val rec1 = HomeLayoutStore.editSave(o1, base1, draft1)!!
+        HomeSettings.saveLayout(rec1)
+        val k = HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String)
+        assertEquals("the session's change", HomeLayout.Share.THIRD, k.chatShare)
+        assertEquals("Korvash's own chat side kept", HomeLayout.Side.RIGHT, k.chatSide)
+        assertEquals("Korvash's own rest kept", HomeRest.ROW, k.rest)
+        // P2: edit mode opens on Korvash, the game switches to Thrandil, then Save: refused, Thrandil's record untouched
+        val o2 = HomeLayoutStore.owner()
+        assertEquals(HomeLayoutStore.EditSave.SAME, HomeLayoutStore.editSaveFor(o2))
+        assertEquals("the same owner: the draft as it is", HomeLayout(xpBar = false), HomeLayoutStore.editSave(o2, k, HomeLayout(xpBar = false)))
+        val draft2 = k.copy(card = HomeLayout.CardDock.ON_MAP, cast = HomeLayout.CastDock.OFF)
+        HomeLayoutStore.character("Thrandil-Realm")
+        assertEquals(HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o2))
+        assertNull(HomeLayoutStore.editSave(o2, k, draft2))
+        assertEquals("Thrandil's record never written", thrandil, p.m["homeLayout.Thrandil-Realm"])
+        // the key let go (Korvash-Realm -> Korvash pending again) and the default (no name) -> a character: neither is the same record
+        HomeLayoutStore.character("Korvash-Realm")
+        val o3 = HomeLayoutStore.owner()
+        HomeLayoutStore.character(null, "Korvash")
+        assertEquals(HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o3))
+        HomeLayoutStore.character(null)
+        val o4 = HomeLayoutStore.owner()
+        assertEquals(HomeLayoutStore.Owner(null, null), o4)
+        HomeLayoutStore.character("Korvash-Realm")
+        assertEquals(HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o4))
+        // another pending name's key is not this one's
+        assertEquals(HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(HomeLayoutStore.Owner(null, "Thrandil")))
+        // the same character again: no owner change heard
+        val n1 = heard
+        HomeLayoutStore.character("Korvash-Realm")
+        assertEquals(n1, heard)
+    }
+
     @Test fun threeDeviceSlots() {
         fresh()
         assertEquals(listOf<HomeLayout?>(null, null, null), HomeLayoutStore.slots())

@@ -122,6 +122,9 @@ class HomeView(
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
         HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
+        // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
+        HomeLayoutStore.onOwner { editUi.post { editOwnerCheck("the character changed") } }
+        partyView.boxShown = { !editLive() }                              // fix round 1: never a second gold box beside edit mode's
         HomeSettings.onChange { post {
             if (flow.setRest(restWanted())) changed()
             // MOVABLE HOME: a new layout record (a preset, the swap, a facade setter, another character): the page glides there on the one
@@ -261,6 +264,7 @@ class HomeView(
 
     /** another room opens: everything borrowed goes back where it came from, last lent first */
     fun giveBack() {
+        holdCancel()                                                      // a hold under way never opens edit mode on a hidden Home
         editAwayPark()
         watchB(false)
         setMapPage(HomeMapPages.Page.QUESTS); mapView.worldDone()                 // 2026-11-17: the map controls' sticks, the world's art
@@ -2427,7 +2431,7 @@ class HomeView(
     /** the layout chip's list: the presets (Fighter offered since phase 3), then the device slots that hold a layout */
     private fun editFlips(): List<HomeEditModel.Flip> {
         val out = ArrayList<HomeEditModel.Flip>()
-        for (p in HomePresets.ALL) out += HomeEditModel.Flip(p.id, p.available) { l -> p.apply(l) }
+        for (p in HomePresets.ALL) out += HomeEditModel.Flip(p.id, p.available, p.folded) { l -> p.apply(l) }
         // every device slot, read LIVE (one kept by "Save here" this session is on the chip at once; an empty one is skipped)
         for (i in 0 until HomePresets.SLOTS)
             out += HomeEditModel.Flip("${HomeEditModel.SLOT_MARK}${i + 1}", { HomeLayoutStore.slots().getOrNull(i) != null }) { l ->
@@ -2450,6 +2454,8 @@ class HomeView(
         val m = HomeEditModel(saved, start, editFlips(), HomeLayoutStore.nameOf(saved), toolbarNow = padMap?.dpad?.want,
             slotNow = { HomeLayoutStore.slots().getOrNull(it) })
         edit = m
+        editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (Save goes only there)
+        editFoldOpen = HomeSettings.questMin
         editAway = false
         editView.dropThumbs()
         editView.visibility = View.VISIBLE
@@ -2467,35 +2473,56 @@ class HomeView(
     /** Save (the draft written; All characters; the DS toolbar's switch) or Discard, then edit mode ends: the chrome out (200 ms) */
     private fun editLeave(save: Boolean) {
         val m = edit ?: return
-        if (save) {
-            HomeSettings.saveLayout(m.draft, all = m.allChars)
-            HomePresets.byId(m.chipName)?.folded?.let { HomeSettings.questMin = it }
+        // fix round 1: the draft goes only to the record it was read under (the same owner as it is; the pending name's key that
+        // arrived: the session's own changes on top of the real record); another character's record is never written (nor its toolbar)
+        val rec = if (!save) null else editOwner.let { o -> if (o == null) m.draft else HomeLayoutStore.editSave(o, m.saved, m.draft) }
+        if (rec != null) {
+            HomeSettings.saveLayout(rec, all = m.allChars)
             m.toolbarWant?.let { if (it != m.toolbarNow) onEditToolbar?.invoke(it) }
-            Log.i(TAG, "home edit: saved ${HomeLayoutJson.json(m.draft)}${if (m.allChars) " (all characters)" else ""}")
-        } else Log.i(TAG, "home edit: closed${if (m.dirty) " (discarded)" else ""}")
+            Log.i(TAG, "home edit: saved ${HomeLayoutJson.json(rec)}${if (m.allChars) " (all characters)" else ""}${if (rec != m.draft) " (laid on the record the key brought)" else ""}")
+        } else if (save) Log.i(TAG, "home edit: NOT saved (the record it was read under is not the active one now)")
+        else Log.i(TAG, "home edit: closed${if (m.dirty) " (discarded)" else ""}")
+        // a preset's fold is applied live when it is picked (as the Settings tile does); Discard puts the fold back as it was
+        if (rec == null && m.foldPicked) HomeSettings.questMin = editFoldOpen
+        val wrote = rec != null
         edit = null
+        editOwner = null
         liveDraft = null
         editRestSync()                                                    // the saved record's rest again (Save: the draft's, now saved)
         editRoomBarSync()                                                 // the add-on's own `d` again (Save's mirror follows it)
         editBarSync(Motion.MODULE_CLOSE)                                  // P4: the room bar's saved order (Discard glides it back)
         chromeModel = m
         editAway = false
-        editGuest(false)
+        if (!m.parked) editGuest(false)                                   // parked (a fight, a room): the guest was freed then
         settleAnim?.cancel(); settleK = 0f; liftTo(0f, null)
         chromeFade(0f, Motion.MODULE_CLOSE) { chromeModel = null; editView.visibility = View.GONE; onEditChrome?.invoke(null); editView.dropThumbs() }
         // every part back to the saved rects (Discard) or kept where the draft put them (Save: the record is the draft now)
-        if (!save && !m.draft.samePlace(m.saved)) editRelay(Motion.MODULE_CLOSE) else editRelay(Motion.MODULE_CLOSE, force = true)
+        if (!wrote && !m.draft.samePlace(m.saved)) editRelay(Motion.MODULE_CLOSE) else editRelay(Motion.MODULE_CLOSE, force = true)
         onEditChanged?.invoke(false)
         onStateChanged?.invoke()
     }
 
-    /** the host's: Home is leaving (Settings' route back, a reset): edit mode ends without writing */
+    /** the host's: Home is leaving (Settings' route back, a Layouts reset - open or parked): edit mode ends without writing */
     fun editCancel() { if (edit != null) editLeave(save = false) }
+    /** the record edit mode opened on ([HomeLayoutStore.owner]) and the quest card's fold then (a preset's fold is put back by Discard) */
+    private var editOwner: HomeLayoutStore.Owner? = null
+    private var editFoldOpen = true
+    /** the active record's owner is another now (another character, the key let go): edit mode - open or parked - ends unwritten; the
+     *  pending name's key that arrived keeps it (Save lays the session's own changes on the real record). True = it ended */
+    private fun editOwnerCheck(why: String): Boolean {
+        if (edit == null) return false
+        val o = editOwner ?: return false
+        if (HomeLayoutStore.editSaveFor(o) != HomeLayoutStore.EditSave.NONE) return false
+        Log.i(TAG, "home edit: ended unwritten ($why: the draft's record is not the active one)")
+        editLeave(save = false)
+        return true
+    }
     /** the disc's gold tick / the host's Start: save and leave */
     fun editSave() { edit?.let { editRun(it.saveLeave()) } }
 
     /** the guest "home" while edit mode holds the controller (its presses: [editPad]) */
     private fun editGuest(hold: Boolean) {
+        partyView.invalidate()                                            // the party's own row box: hidden while edit mode holds Home
         if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = hold))) Log.i(TAG, "home edit: ${if (hold) "hold" else "free"}")
         if (hold) homeGuestTap(GuestPad.bnext(pad, home = false))
     }
@@ -2510,9 +2537,16 @@ class HomeView(
         editKey(msg.optString("k"))
     }
 
+    /** the cursor on a widget with no box now (the card / the bar Off, Party mode's Hide): to "+" or the chip ([HomeEditModel.cursorCheck]) */
+    private fun editCursorCheck(m: HomeEditModel) {
+        if (m.cursor != EditStop.QUEST && m.cursor != EditStop.CAST) return
+        if (m.cursorCheck(editView.stops())) { Log.i(TAG, "home edit: the cursor's widget is gone: on ${m.cursor.name.lowercase()}"); editView.invalidate() }
+    }
+
     /** one key of edit mode's (the guest's, Start from the host's reader, the tests) */
     fun editKey(k: String) {
         val m = edit ?: return
+        if (settled) editCursorCheck(m)
         val wasSheet = m.sheet
         editRun(m.key(k, editView.stops()) { s -> editMenuRows(s) })
         if (m.sheet == HomeEditModel.Sheet.LAYOUTS && wasSheet == null) editView.dropThumbs()
@@ -2606,6 +2640,7 @@ class HomeView(
             Log.i(TAG, "home edit: parked (a fight)")
             if (relay) editRelay(Motion.COMBAT_GROW)
         } else if (!fight && m.parked && live) {
+            if (editOwnerCheck("the fight ended on another character")) return
             m.resume(); liveDraft = m.draft
             editRestSync()
             editRoomBarSync(); editBarSync(Motion.COMBAT_SHRINK)
@@ -2629,6 +2664,7 @@ class HomeView(
         val m = edit ?: return
         if (!editAway) return
         editAway = false
+        if (editOwnerCheck("Home again on another character")) return
         if (fightShown()) return                                          // the fight's end brings it back (editFightCheck)
         m.resume(); liveDraft = m.draft
         editRestSync()
@@ -2716,10 +2752,14 @@ class HomeView(
      * (one reset pass after it ends), so the class / pause slides keep their own translation.
      */
     private fun editDecor() {
-        if (edit == null && chromeModel == null && !decorDirty && mapScaleTo == null) return
-        val lifted = edit?.lifted ?: liftStop
+        // fix round 1: a session PARKED (a fight, a room) is no session here: one reset pass, then the class / pause / LB slides keep
+        // their own translation and depth (they open while parked), never written over on a layout or an apply frame
+        val liveEdit = edit?.takeIf { !it.parked }
+        if (liveEdit == null && chromeModel == null && !decorDirty && mapScaleTo == null) return
+        if (liveEdit == null && chromeModel == null && mapScaleTo == null && (classOpen || pauseT > 0f || pauseSide > 0f)) return
+        val lifted = liveEdit?.lifted ?: liftStop
         val (ox, oy) = liftOffset()
-        if (edit?.drag != null) dragOffsetNow = ox to oy
+        if (liveEdit?.drag != null) dragOffsetNow = ox to oy
         val k = liftK
         for ((p, v) in views) {
             val mine = lifted != null && partOf(lifted, p)
@@ -2745,10 +2785,29 @@ class HomeView(
             }
             v.translationZ = if (mine && (k > 0f || dx != 0f || dy != 0f)) LIFT_Z + restZ(p) else restZ(p)
         }
-        decorDirty = edit != null || chromeModel != null || mapScaleTo != null
+        decorDirty = liveEdit != null || chromeModel != null || mapScaleTo != null || liftK > 0f
         if (mapScaleTo == null) { mapScaleTx = 0f; mapScaleTy = 0f }
+        // fix round 1: the page settled with the cursor's widget gone (the card / the bar Off, Party mode's Hide): the cursor moves on
+        if (liveEdit != null && settled) editCursorCheck(liveEdit)
         editView.invalidate()
         invalidate()
+    }
+
+    /** the drawn boxes (scale and offset applied) of the parts raised over the others by edit mode - a lifted, dragged or settling widget
+     *  that is not the map (the map's own paint follows the map); empty outside edit mode */
+    fun liftedBoxes(): List<RectF> {
+        // a parked session lifts nothing (the class wheel's cover depth on a column is not a lift)
+        if (edit?.takeIf { !it.parked } == null && chromeModel == null) return emptyList()
+        if ((edit?.lifted ?: liftStop) == EditStop.MAP) return emptyList()
+        val out = ArrayList<RectF>()
+        for ((p, v) in views) {
+            if (p == Part.MAP || p == Part.AURAS || v.visibility != View.VISIBLE || v.width <= 0) continue
+            if (v.translationZ <= restZ(p) + 0.5f) continue
+            val px = v.left + v.pivotX; val py = v.top + v.pivotY
+            out += RectF(px + (v.left - px) * v.scaleX + v.translationX, py + (v.top - py) * v.scaleY + v.translationY,
+                px + (v.right - px) * v.scaleX + v.translationX, py + (v.bottom - py) * v.scaleY + v.translationY)
+        }
+        return out
     }
 
     /** the map's glide scaling ends: laid at its box, no scale, no clip (one full layout pass where it lands) */
@@ -2839,9 +2898,14 @@ class HomeView(
         editUi.removeCallbacks(holdRing)
         holdChildCancelled = false
         if (fightShown()) { holdSwallow = true; editRefuse(s); return }
+        // fix round 1: the DOWN's gates again at the fire (Home left or covered meanwhile: another room, the pause / LB / class wheel,
+        // the type tool, the mail card, a host overlay): nothing opens, the gesture stays the child's
+        if (!holdStillOk(s)) { Log.i(TAG, "home edit: the hold ended unopened (Home left or covered)"); invalidate(); return }
         if (editOpen(s, lift = true)) { holdTakes = true; editView.carry(s, holdX, holdY) }
         invalidate()
     }
+    /** the hold's widget is still what [holdBodyAt] gives where it came down, on a Home that is on screen and not covered */
+    private fun holdStillOk(s: EditStop): Boolean = live && holdBodyAt(holdX, holdY) == s && overlayOpen?.invoke() != true
 
     /** the hold's gold ring at the finger from RING_FROM_MS, and the panel's edge lighting over the hold (final_12) */
     private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
@@ -2973,6 +3037,11 @@ class HomeView(
         // P2: the map's lift (a finger dragging it) moves its paint too; its glide's scaling does not (now[MAP] is the box drawn)
         val mapSlide = mapSlot.translationX - mapScaleTx
         val mapSlideY = if (edit != null || chromeModel != null) mapSlot.translationY - mapScaleTy else 0f
+        // fix round 1: a widget other than the map lifted / dragged / settling lies OVER the map's own paint (its well edge, the zone
+        // band, the calendar and mail buttons, the mail card): that paint is clipped out of the lifted box (translationZ orders views only)
+        val liftClip = liftedBoxes()
+        val clipSave = if (liftClip.isNotEmpty()) c.save() else -1
+        for (b in liftClip) c.clipOutRect(b)
         val slideSave = if (mapSlide != 0f || mapSlideY != 0f) c.save() else -1
         if (slideSave >= 0) c.translate(mapSlide, mapSlideY)
         if (zoneA > 0.01f) now[Part.MAP]?.let { m -> mapWell(c, m, zoneA) }
@@ -3000,6 +3069,7 @@ class HomeView(
             }
         }
         if (slideSave >= 0) c.restoreToCount(slideSave)
+        if (clipSave >= 0) c.restoreToCount(clipSave)
         // THE CLOCK AND THE BATTERY at the top centre, between the two diamond groups (17:30: "the time should be on display
         // at the top center between the controls, right under it, a battery Icon with my current system charge").
         // not before the controller layout has come: the Cast view's "Waiting" stands there (UI Art, seen on its emulator)

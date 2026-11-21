@@ -116,6 +116,7 @@ object SettingsPreview {
         // the Rooms tab: the player's own minimap, the real keyboard
         if (live != null && liveRooms(c, r, id, s, live)) return
         when (id) {
+            "Home layout" -> layoutPlan(c, r)
             "Controller on Home" -> homeLayout(c, r, s.diamonds)
             "Combat layout" -> combat(c, r, s.combatGrow, t)
             "Swing timer" -> swing(c, r, s.swing, t)
@@ -486,6 +487,32 @@ object SettingsPreview {
     }
 
     // ---- Home: the rows' own drawings (until the stage has a picture)
+
+    /**
+     * movable Home fix round 1: the Home layout tile's stand-in (no game picture yet: before WoW's first document) - the active record's
+     * boxes from the solver (HomeEditView's schematic look), the controller band's rest (diamonds / the thin row) in its box
+     */
+    fun layoutPlan(c: Canvas, r: RectF, l: HomeLayout = HomeSettings.layout) {
+        val res = HomeLayoutSolver.places(l, HomeLayoutSolver.State(card = l.card != HomeLayout.CardDock.OFF, cardH = 118f))
+        val pw = 1240f; val ph = 935f
+        val k = min((r.width() - 20f) / pw, (r.height() - 20f) / ph)
+        val ox = r.centerX() - pw * k / 2f; val oy = r.centerY() - ph * k / 2f
+        for ((p, b) in res.boxes) {
+            if (p == HomePart.AURAS) continue
+            val rr = RectF(ox + b.l * k, oy + b.t * k, ox + b.r * k, oy + b.b * k)
+            pFill.color = when (p) { HomePart.MAP -> Color.rgb(86, 98, 54); HomePart.QUESTS -> Color.rgb(70, 54, 22); HomePart.BARS -> Color.rgb(30, 26, 20)
+                HomePart.STRIP, HomePart.CAST2 -> Color.rgb(40, 52, 90); else -> Theme.panel }
+            c.drawRoundRect(rr, 5f, 5f, pFill)
+            pStroke.color = BRONZE; pStroke.strokeWidth = 1.5f; c.drawRoundRect(rr, 5f, 5f, pStroke)
+            when (p) {
+                HomePart.BARS -> if (l.rest == HomeRest.DIAMONDS) diamond(c, rr.centerX(), rr.centerY(), min(rr.height() / 6.5f, 12f), min(rr.height() / 3.2f, 26f))
+                    else thinRow(c, rr.centerX(), rr.centerY(), rr.width())
+                HomePart.CHAT -> { pFill.color = DIMC
+                    for (i in 0 until 4) { val y = rr.bottom - 10f - i * 9f; if (y > rr.top + 6f) c.drawRect(rr.left + 6f, y - 2f, rr.left + 6f + (rr.width() - 12f) * (0.9f - 0.15f * (i % 3)), y, pFill) } }
+                else -> {}
+            }
+        }
+    }
 
     private fun homeLayout(c: Canvas, r: RectF, diamonds: Boolean) {
         val h = RectF(r.left + 10f, r.top + 10f, r.right - 10f, r.bottom - 10f)

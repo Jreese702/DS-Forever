@@ -182,6 +182,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         // the party module (Party mode): its dashed frame only, never a stop (it follows the chat)
         // its tag on the rows' end, clear of the Select tab (on the screen's edge side: PartyLayout's tab)
         p[HomePart.PARTY]?.let {
+            // fix round 1: dimmed as every widget that is not picked (it never is: its own gold row box must not read as a second cursor)
+            dimRect(c, it, null)
             frame(c, it, light = false)
             val tabRight = it.right > width - UiKit.MODULE_GAP - 8f
             val tabLeft = it.left < UiKit.MODULE_GAP + 8f
@@ -238,9 +240,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         // the tags last (no golden box, dim or neighbour's frame hides a widget's name): the others' still under the lifted widget
         val overLift = c.save()
         for (b in liftBoxes) c.clipOutRect(b)
-        for ((s, r, gold) in tags) if (liftedTags.none { it.first == s }) tag(c, r, s.tag, gold, CORNERS[s] ?: Corner.TOP_LEFT)
+        for ((s, r, gold) in tags) if (liftedTags.none { it.first == s }) tag(c, r, s.tag, gold, cornerOf(s, r))
         c.restoreToCount(overLift)
-        for ((s, r, gold) in liftedTags) tag(c, r, s.tag, gold, CORNERS[s] ?: Corner.TOP_LEFT)
+        for ((s, r, gold) in liftedTags) tag(c, r, s.tag, gold, cornerOf(s, r))
         tags.clear()
         // a refusal / a fight: the widget's edge red for FLASH_MS
         host.flash?.let { (s, at) ->
@@ -288,10 +290,17 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     private val tags = ArrayList<Triple<EditStop, RectF, Boolean>>()
-    enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, BOTTOM_CENTRE, FOOT_LEFT, TOP_EDGE }
+    enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, BOTTOM_CENTRE, FOOT_LEFT, TOP_EDGE, TOP_EDGE_RIGHT }
     /** where each widget's tag stands (clear of what it shows) */
     private val CORNERS = mapOf(EditStop.BAND to Corner.BOTTOM_LEFT, EditStop.CLOCK to Corner.BOTTOM_RIGHT, EditStop.CHAT to Corner.TOP_RIGHT,
         EditStop.MAP to Corner.BOTTOM_LEFT, EditStop.QUEST to Corner.TOP_RIGHT, EditStop.CAST to Corner.TOP_EDGE)
+
+    /** fix round 1: where [s]'s tag stands on its box [r]: the chat's and the card's top right inside a wide column, ON the frame's top
+     *  edge in a narrow one (a third: the card's title and the chat's lines reach that corner there; the tag must hide nothing) */
+    fun cornerOf(s: EditStop, r: RectF): Corner {
+        val at = CORNERS[s] ?: Corner.TOP_LEFT
+        return if (at == Corner.TOP_RIGHT && r.width() < NARROW_TAG_W) Corner.TOP_EDGE_RIGHT else at
+    }
 
     /** the widget's name on a small plate (gold on the selected one) at [at] */
     private fun tag(c: Canvas, r: RectF, word: String, gold: Boolean, at: Corner = Corner.TOP_LEFT) {
@@ -301,6 +310,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val w = p.measureText(t) + 26f
         val x = when (at) {
             Corner.TOP_RIGHT, Corner.BOTTOM_RIGHT -> r.right - 12f - w
+            Corner.TOP_EDGE_RIGHT -> r.right - 22f - w
             Corner.BOTTOM_CENTRE -> r.centerX() - w / 2f
             Corner.FOOT_LEFT, Corner.TOP_EDGE -> r.left + 22f
             else -> r.left + 12f
@@ -309,7 +319,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             Corner.BOTTOM_LEFT, Corner.BOTTOM_RIGHT -> r.bottom - 12f - TAG_H
             Corner.BOTTOM_CENTRE -> r.bottom - 6f - TAG_H
             Corner.FOOT_LEFT -> r.bottom - TAG_H / 2f
-            Corner.TOP_EDGE -> r.top - TAG_H / 2f
+            Corner.TOP_EDGE, Corner.TOP_EDGE_RIGHT -> r.top - TAG_H / 2f
             else -> r.top + 10f
         }
         val b = RectF(x, y, x + w, y + TAG_H)
@@ -1048,6 +1058,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val DIM = 70
         const val TAG_SIZE = 24f
         const val TAG_H = 36f
+        /** a column narrower than this (a third of the page: ~400 px) puts the chat's / the card's tag on the frame's top edge */
+        const val NARROW_TAG_W = 520f
         const val HANDLE_W = 18f
         const val HANDLE_H = 92f
         const val CHIP_R = 26f

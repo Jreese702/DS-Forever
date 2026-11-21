@@ -478,9 +478,13 @@ class HomeEditShotsTest {
         val party = boxes(p.home).getValue("PARTY")
         assertTrue("the party module follows the chat (right)", party.right >= 1239f)
         assertTrue("never a stop", EditStop.values().none { it.name == "PARTY" })
+        val pv = field(p.home, "partyView") as PartyModuleView
+        assertFalse("fix round 1: the party's own gold row box hidden while editing (no second cursor)", pv.boxShown())
         shot(p, "30_party_mode_edit_mirrored")
         p.home.editKey("PAD3"); settle()
         shot(p, "30b_party_mode_chat_menu")
+        p.home.editCancel(); settle()
+        assertTrue("edit mode over: the row box again", pv.boxShown())
     }
 
     @Test fun aShortTapStillOpensTheChatRoom() {
@@ -701,6 +705,230 @@ class HomeEditShotsTest {
             c.drawText(s.first, x + 4f, y + 1080 / 4 + 19f, tp)
         }
         File(d, "p4_overview.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    // ---------------------------------------------------------------- movable Home fix round 1 (the review's findings)
+
+    /** the prefs the layout store writes (HomeSettings' file, or another test's stand-in kept by HomeSettings.init) */
+    private fun storePrefs(): android.content.SharedPreferences =
+        HomeLayoutStore::class.java.getDeclaredField("prefs").apply { isAccessible = true }.get(null) as android.content.SharedPreferences
+    private fun rec(key: String): String? = storePrefs().getString(HomeLayoutStore.KEY_PREFIX + key, null)
+    private fun editViewOf(h: HomeView): HomeEditView = (field(h, "editView\$delegate") as Lazy<*>).value as HomeEditView
+
+    /** P2: edit mode open (or parked by a room) on Korvash, the game switches to Thrandil: it ends unwritten, Thrandil's record untouched */
+    @Test fun anotherCharacterEndsEditModeUnwritten() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        HomeLayoutStore.character("Thrandil-Realm"); HomeLayoutStore.set(HomeLayout(card = HomeLayout.CardDock.OFF, cast = HomeLayout.CastDock.ACROSS))
+        HomeLayoutStore.character("Korvash-Realm"); HomeLayoutStore.set(HomeLayout(chatSide = HomeLayout.Side.RIGHT, cast = HomeLayout.CastDock.UNDER_CHAT))
+        settle()
+        val thrandil = rec("Thrandil-Realm")
+        val korvash = rec("Korvash-Realm")
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editKey("PADBACK"); settle()
+        assertTrue(model(p).dirty)
+        HomeLayoutStore.character("Thrandil-Realm"); settle()
+        assertNull("another character: edit mode ended", p.home.editModel())
+        assertFalse(p.home.editing)
+        assertEquals("Thrandil's record never written", thrandil, rec("Thrandil-Realm"))
+        assertEquals("nor Korvash's (nothing was saved)", korvash, rec("Korvash-Realm"))
+        // parked by a room, the switch meanwhile, then Home again: ended, nothing resumed, nothing written
+        HomeLayoutStore.character("Korvash-Realm"); settle()
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editKey("PADBACK"); settle()
+        p.home.giveBack()
+        assertTrue(model(p).parked)
+        HomeLayoutStore.character("Thrandil-Realm"); settle()
+        p.home.borrow(); lay(p.home); settle()
+        assertNull(p.home.editModel())
+        assertEquals(thrandil, rec("Thrandil-Realm"))
+        assertEquals(korvash, rec("Korvash-Realm"))
+    }
+
+    /** P1: Korvash named before his realm (Home on the default), edit mode changes only the width, the key arrives, Save: only that
+     *  change is laid on Korvash's own record (his chat side and rest kept) */
+    @Test fun theLateKeyKeepsTheCharactersOwnRecord() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        HomeLayoutStore.character("Korvash-Realm")
+        HomeLayoutStore.set(HomeLayout(chatSide = HomeLayout.Side.RIGHT, rest = HomeRest.ROW, cast = HomeLayout.CastDock.UNDER_CHAT))
+        HomeLayoutStore.character(null, "Korvash"); settle()
+        assertTrue(HomeLayoutStore.pending)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editKey("PAD4"); settle()
+        val share = model(p).draft.chatShare
+        assertNotEquals(HomeLayout.Share.HALF, share)
+        HomeLayoutStore.character("Korvash-Realm"); settle()
+        assertNotNull("the same character's key: edit mode stays", p.home.editModel())
+        p.home.editSave(); settle()
+        val k = HomeLayoutJson.parse(rec("Korvash-Realm"))
+        assertEquals("the session's change", share, k.chatShare)
+        assertEquals("his own chat side kept", HomeLayout.Side.RIGHT, k.chatSide)
+        assertEquals("his own rest kept", HomeRest.ROW, k.rest)
+    }
+
+    /** a Layouts reset while edit mode is parked by the Settings room (the host's resetApply: editCancel first): no draft to Save */
+    @Test fun aLayoutsResetLeavesNoDraftToSave() {
+        val p = page(HomeLayout(chatSide = HomeLayout.Side.RIGHT, cast = HomeLayout.CastDock.UNDER_CHAT))
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editKey("PAD4"); settle()
+        assertTrue(model(p).dirty)
+        p.home.giveBack()                                                     // Settings opens: the draft parked
+        assertTrue(model(p).parked)
+        p.home.editCancel()                                                   // resetApply, LAYOUTS
+        storePrefs().edit().remove(HomeLayoutStore.KEY_DEFAULT).commit()
+        HomeSettings.resetDone()
+        p.home.borrow(); lay(p.home); settle()
+        assertNull("no session to resume", p.home.editModel())
+        assertEquals("Classic again", HomeLayout.Side.LEFT, HomeSettings.layout.chatSide)
+        p.home.editSave(); p.home.editKey("PADFORWARD"); settle()
+        assertEquals("nothing put the old record back", HomeLayout.Side.LEFT, HomeSettings.layout.chatSide)
+    }
+
+    /** the hold's timer never opens edit mode on a Home that was left (another room) or covered (a host overlay) meanwhile */
+    @Test fun aHoldNeverOpensOnALeftOrCoveredHome() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val home = p.home
+        home.forceLive = true
+        val m = boxes(home).getValue("MAP")
+        val x = m.centerX(); val y = m.top + 420f
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x, y); settle(10)
+        home.giveBack()                                                       // a room opens, the thumb still resting
+        settle(30)
+        assertNull("another room: no edit mode on the hidden Home", home.editModel())
+        touch(p, MotionEvent.ACTION_UP, x, y)
+        home.borrow(); lay(home); settle()
+        var cover = false
+        home.overlayOpen = { cover }
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x, y); settle(10)
+        cover = true                                                          // the pause / a radial / the bar select over Home
+        settle(30)
+        assertNull("covered: no edit mode", home.editModel())
+        touch(p, MotionEvent.ACTION_UP, x, y); settle()
+        cover = false
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x, y); settle(30)
+        assertTrue("nothing in the way: the hold opens it as always", home.editing)
+        touch(p, MotionEvent.ACTION_UP, x, y); settle()
+    }
+
+    /** a fight parks edit mode: the class wheel's / the LB picture's slide offsets on the columns are never written over by a layout */
+    @Test fun aParkedSessionLeavesTheSlidesTheirOffsets() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val home = p.home
+        home.forceLive = true
+        assertTrue(home.editOpen(EditStop.CHAT)); settle()
+        home.editKey("PADBACK"); settle()
+        home.onFull(full(true), true); home.onQuests(quests(true), true); home.tick(); settle()
+        assertTrue(model(p).parked)
+        val chat = views(home).getValue("CHAT")
+        chat.translationX = -120f; chat.translationZ = 7f                     // classLayerShow's slide on the column
+        lay(home); settle(); lay(home)
+        assertEquals(-120f, chat.translationX, 0.01f)
+        assertEquals(7f, chat.translationZ, 0.01f)
+    }
+
+    /** the lifted chat lies over the map's own paint: its box is clipped out of the zone band / well edge / buttons ([HomeView.liftedBoxes]) */
+    @Test fun aLiftedChatIsDrawnOverTheMapsPaint() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val home = p.home
+        home.forceLive = true
+        assertTrue(home.liftedBoxes().isEmpty())
+        assertTrue(home.editOpen(EditStop.CHAT)); settle()
+        assertTrue("selected, not lifted: nothing over the map", home.liftedBoxes().isEmpty())
+        home.editKey("PAD1"); settle()
+        val lb = home.liftedBoxes()
+        val c = boxes(home).getValue("CHAT")
+        assertEquals(1, lb.size)
+        assertTrue("the chat's drawn box (1.03)", lb[0].contains(c.centerX(), c.centerY()) && lb[0].width() > c.width())
+        home.editKey("PADRIGHT"); settle()
+        assertTrue("stepped over the map: the box is where the chat is drawn", home.liftedBoxes().single().intersect(RectF(boxes(home).getValue("MAP"))))
+        home.editKey("PAD1"); settle()
+        assertTrue("dropped: none", home.liftedBoxes().isEmpty())
+        home.editCancel(); settle()
+        assertTrue(home.editOpen(EditStop.MAP)); home.editKey("PAD1"); settle()
+        assertEquals(EditStop.MAP, model(p).lifted)
+        assertTrue("the map lifted: its own paint follows it", home.liftedBoxes().isEmpty())
+    }
+
+    /** Save on a Compact layout keeps the player's own unfold; a preset PICKED in the session folds live, Discard unfolds again */
+    @Test fun aPresetsFoldOnlyWhenPicked() {
+        val compact = HomePresets.byId(HomePresets.COMPACT)!!.apply(HomeLayout())
+        val p = page(compact)
+        HomeSettings.questMin = false
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        assertEquals(HomePresets.COMPACT, model(p).chipName)
+        p.home.editSave(); settle()
+        assertFalse("the player's unfold kept", HomeSettings.questMin)
+        val q = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        HomeSettings.questMin = false
+        assertTrue(q.home.editOpen(EditStop.CHAT)); settle()
+        repeat(HomePresets.ALL.size) { if (model(q).chipName != HomePresets.COMPACT) q.home.editKey("PADRSHOULDER") }
+        settle()
+        assertEquals(HomePresets.COMPACT, model(q).chipName)
+        assertTrue("picked: folded live (the preview is what Save keeps)", HomeSettings.questMin)
+        q.home.editCancel(); settle()
+        assertFalse("Discard: the fold as it was", HomeSettings.questMin)
+    }
+
+    /** the Card / the bar Off from its own menu: the cursor goes on ("+"), the golden box always on something drawn */
+    @Test fun offFromItsOwnMenuLeavesNoCursorOnNothing() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val home = p.home
+        assertTrue(home.editOpen(EditStop.QUEST)); settle()
+        home.editKey("PAD3"); settle()
+        assertEquals(EditStop.QUEST, model(p).menu)
+        // Place: On map -> Above chat -> Off
+        home.editKey("PADDRIGHT"); home.editKey("PADDRIGHT"); settle()
+        assertEquals(HomeLayout.CardDock.OFF, model(p).draft.card)
+        assertNull(model(p).menu)
+        assertEquals(EditStop.PLUS, model(p).cursor)
+        val ev = editViewOf(home)
+        assertTrue("its stop is drawn", EditStop.PLUS in ev.stops())
+    }
+
+    /** the pictures never lie: Hold to talk's tile arrow follows `d`; the Home layout tile's stand-in is drawn; narrow tags on the edge */
+    @Test fun thePicturesFollowTheRecord() {
+        val swapped = HoldTalk.DEFAULT_DIRS + mapOf(1 to HoldTalk.DEFAULT_DIRS.getValue(3), 3 to HoldTalk.DEFAULT_DIRS.getValue(1))
+        assertEquals("gen_left", BottomPictures.talkGlyph(HoldTalk.DEFAULT_DIRS))
+        assertEquals("gen_right", BottomPictures.talkGlyph(swapped))
+        assertEquals("gen_left", BottomPictures.talkGlyph(null))
+        // the Home layout tile with no game yet: its stand-in (never an empty well)
+        val b = Bitmap.createBitmap(438, 300, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b); c.drawColor(android.graphics.Color.BLACK)
+        SettingsPreview.draw(c, RectF(0f, 0f, 438f, 300f), "Home layout", SettingsPreview.State(), 0L, SettingsPreview.Glyph { _, _, _, _, _, _ -> })
+        var lit = 0
+        for (yy in 0 until 300 step 4) for (xx in 0 until 438 step 4) if (b.getPixel(xx, yy) != android.graphics.Color.BLACK) lit++
+        assertTrue("the record's boxes drawn ($lit)", lit > 2000)
+        out?.let { d -> File(d, "40_home_layout_tile_standin.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        // the tags: a third's column puts the chat's / the card's on the frame's top edge, a half keeps the top right corner
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val ev = editViewOf(p.home)
+        assertEquals(HomeEditView.Corner.TOP_EDGE_RIGHT, ev.cornerOf(EditStop.CHAT, RectF(8f, 200f, 410f, 900f)))
+        assertEquals(HomeEditView.Corner.TOP_EDGE_RIGHT, ev.cornerOf(EditStop.QUEST, RectF(830f, 260f, 1232f, 400f)))
+        assertEquals(HomeEditView.Corner.TOP_RIGHT, ev.cornerOf(EditStop.CHAT, RectF(8f, 200f, 616f, 900f)))
+        assertEquals(HomeEditView.Corner.BOTTOM_LEFT, ev.cornerOf(EditStop.MAP, RectF(830f, 200f, 1232f, 900f)))
+    }
+
+    /** the toolbar's Left / Right pictures: a swap slides them (no one-frame jump), another change cross-fades in 120 ms */
+    @Test fun theToolbarPicturesSlideOnASwap() {
+        val cast = CastView(app) { }
+        cast.layout = CastView.Layout.DIAMONDS                             // Home's band (the room's FULL bar has no toolbar row)
+        cast.roomBarOn = true
+        cast.roomBar = HoldTalk.DEFAULT_DIRS
+        assertNull(cast.roomMotionK())
+        cast.roomBar = HoldTalk.DEFAULT_DIRS + mapOf(1 to "map", 3 to "chat")
+        assertNotNull("a swap runs a motion", cast.roomMotionK())
+        assertTrue(cast.roomMotionSwap)
+        val at = android.os.SystemClock.elapsedRealtime()
+        assertTrue(cast.roomMotionK(at + Motion.MODULE_OPEN / 2)!! in 0.05f..0.95f)
+        assertNull("done after the glide", cast.roomMotionK(at + Motion.MODULE_OPEN + 20))
+        cast.roomBar = HoldTalk.DEFAULT_DIRS + mapOf(1 to "map", 3 to "home")
+        assertNotNull(cast.roomMotionK())
+        assertFalse("not a swap: a cross-fade", cast.roomMotionSwap)
+        assertNull("120 ms", cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + CastView.ROOM_FADE_MS + 20))
+        cast.roomBar = cast.roomBar!! + mapOf(2 to "open")
+        assertNull("Up / Down only: nothing", cast.roomMotionK())
     }
 
     /** the Layouts sheet's live pictures: the settings stage fed a game (PreviewStage) */

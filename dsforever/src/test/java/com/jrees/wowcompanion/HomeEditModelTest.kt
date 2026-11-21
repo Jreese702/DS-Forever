@@ -477,6 +477,79 @@ class HomeEditModelTest {
         assertEquals("the chip's flips reach it too", "1", m.chipName)
     }
 
+    /** fix round 1: Off picked in the bar's / the card's OWN menu moves the cursor as the red X does ("+", else the chip); the map's
+     *  "Quest card" row leaves it on the map; a widget left with no box (Party mode's Hide) moves it at the next check */
+    @Test fun offFromItsOwnMenuMovesTheCursor() {
+        val v = HomeWidgetMenus.Values(toolbar = true, toolbarCan = true)
+        val m = model()
+        m.openMenu(EditStop.CAST)
+        val rows = HomeWidgetMenus.rows(EditStop.CAST, m.draft, v)
+        m.menuTouch(rows.indexOfFirst { it.key == HomeEditModel.K_PLACE }, HomeWidgetMenus.CAST_DOCKS.indexOf(HomeLayout.CastDock.OFF), rows)
+        assertEquals(HomeLayout.CastDock.OFF, m.draft.cast)
+        assertNull("the menu closed", m.menu)
+        assertEquals("on \"+\" (shown now)", EditStop.PLUS, m.cursor)
+        assertTrue(m.plusShown)
+        val q = model()
+        q.openMenu(EditStop.QUEST)
+        val qr = HomeWidgetMenus.rows(EditStop.QUEST, q.draft, v)
+        q.menuTouch(qr.indexOfFirst { it.key == HomeEditModel.K_CARD }, HomeWidgetMenus.CARD_DOCKS.indexOf(HomeLayout.CardDock.OFF), qr)
+        assertEquals(HomeLayout.CardDock.OFF, q.draft.card)
+        assertNull(q.menu); assertEquals(EditStop.PLUS, q.cursor)
+        // another dock from its own menu: the menu stays, the cursor too
+        val d = model()
+        d.openMenu(EditStop.CAST)
+        val dr = HomeWidgetMenus.rows(EditStop.CAST, d.draft, v)
+        d.menuTouch(dr.indexOfFirst { it.key == HomeEditModel.K_PLACE }, HomeWidgetMenus.CAST_DOCKS.indexOf(HomeLayout.CastDock.ACROSS), dr)
+        assertEquals(EditStop.CAST, d.menu); assertEquals(EditStop.CAST, d.cursor)
+        // the card Off from the MAP's menu: the cursor stays on the map
+        val mm = model()
+        mm.openMenu(EditStop.MAP)
+        val mr = HomeWidgetMenus.rows(EditStop.MAP, mm.draft, v)
+        mm.menuTouch(mr.indexOfFirst { it.key == HomeEditModel.K_CARD }, HomeWidgetMenus.CARD_DOCKS.indexOf(HomeLayout.CardDock.OFF), mr)
+        assertEquals(EditStop.MAP, mm.cursor); assertEquals(EditStop.MAP, mm.menu)
+        // the bar slid away by Party mode's Hide (a Press: the draft keeps the bar): no CAST box -> the cursor to the chip ("+" not shown)
+        val p = model()
+        p.openMenu(EditStop.CAST); p.closeMenu()
+        assertEquals(EditStop.CAST, p.cursor)
+        assertFalse("its box is there: nothing moves", p.cursorCheck(stops(p.draft)))
+        val gone = stops(p.draft).filterKeys { it != EditStop.CAST }
+        assertTrue(p.cursorCheck(gone))
+        assertEquals(EditStop.CHIP, p.cursor)
+        assertFalse(p.cursorCheck(gone))
+        // the chip's D-pad works from there as always (no jump to the first stop)
+        p.press("PADDUP")
+        assertTrue(p.cursor != EditStop.CHIP)
+    }
+
+    /** fix round 1: a preset's fold (Compact, Fighter: folded) is pressed LIVE when it is picked - never at Save because the saved record
+     *  still holds the preset (the player's own unfold kept) */
+    @Test fun aPresetsFoldOnlyWhenPicked() {
+        val fl = HomePresets.ALL.map { p -> HomeEditModel.Flip(p.id, p.available, p.folded) { l -> p.apply(l) } }
+        val compact = HomePresets.byId(HomePresets.COMPACT)!!.apply(classic)
+        val m = HomeEditModel(compact, EditStop.QUEST, fl, HomePresets.nameOf(compact), true)
+        assertEquals(HomePresets.COMPACT, m.chipName)
+        val y = m.sizeStep(EditStop.QUEST)
+        assertEquals("Y on the card: the fold toggled (app-wide), the draft untouched", listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, -1)), y)
+        assertEquals(listOf(HomeEditModel.Fx.Save), m.saveLeave())
+        assertFalse("nothing picked: Save leaves the fold alone", m.foldPicked)
+        // picking Compact from Classic: the fold pressed with the flip (the preview shows it), Mirrored presses none
+        val n = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true)
+        var fx: List<HomeEditModel.Fx> = emptyList()
+        repeat(fl.size) { if (n.chipName != HomePresets.COMPACT) fx = n.flip(1) }
+        assertEquals(HomePresets.COMPACT, n.chipName)
+        assertTrue(fx.contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)))
+        assertTrue(n.foldPicked)
+        val r = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true)
+        val mir = r.flip(1)
+        assertEquals(HomePresets.MIRRORED, r.chipName)
+        assertTrue(mir.none { it is HomeEditModel.Fx.Press })
+        assertFalse(r.foldPicked)
+        // the Layouts sheet too
+        val s = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true)
+        val fi = fl.filter { !it.name.startsWith(HomeEditModel.SLOT_MARK) }.indexOfFirst { it.name == HomePresets.FIGHTER }
+        assertTrue(s.sheetUse(fi).contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)))
+    }
+
     @Test fun parkedTouchesDoNothing() {
         val m = model(start = EditStop.CHIP)
         m.park()

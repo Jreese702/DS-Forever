@@ -223,6 +223,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val r = resetRun.run(b, who, all, localGame)
         val kinds = b.kinds
         if (ResetPlan.Kind.SETTINGS in kinds) { Theme.use("classic"); Tr.setChoice(this, "auto"); Settings.resetDone(); FrameGen.resetDone() }
+        // movable Home fix round 1: a Layouts reset ends edit mode - open or parked by the Settings room - unwritten, so no Save puts the
+        // pre-reset record back
+        if (ResetPlan.Kind.LAYOUTS in kinds && ::homeView.isInitialized) homeView.editCancel()
         HomeSettings.resetDone(); GameUi.resetDone()
         if (ResetPlan.Kind.SKILLS in kinds) { RadialMeta.reload(); if (::combatKeep.isInitialized) combatKeep.resetDone(if (all) null else who) }
         if (ResetPlan.Kind.LAYOUTS in kinds && ::settings.isInitialized) settings.homeSection.dpadChanged()
@@ -4310,9 +4313,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** [opening]: from the pane's box ([pane], Home's px) to the frame over Home's [picture]; else from the frame onto the pane */
     private fun chatGlideStart(opening: Boolean, pane: android.graphics.RectF, picture: android.graphics.Bitmap?) {
-        // the room's full size: its own, or (never laid out yet: the first open) the content's it fills
-        val fw = (chatView.width.takeIf { it > 0 } ?: content.width).toFloat()
-        val fh = (chatView.height.takeIf { it > 0 } ?: content.height).toFloat()
+        // the room's full size: its own, or (never laid out yet: the first open) the content's it fills less its margins (P4: every room
+        // ends at the XP track's top, bottomMargin = Strip.TRACKS: the content is that much taller than the room)
+        val lp = chatView.layoutParams as? ViewGroup.MarginLayoutParams
+        val fw = (chatView.width.takeIf { it > 0 } ?: (content.width - (lp?.let { it.leftMargin + it.rightMargin } ?: 0))).toFloat()
+        val fh = (chatView.height.takeIf { it > 0 } ?: (content.height - (lp?.let { it.topMargin + it.bottomMargin } ?: 0))).toFloat()
         if (fw <= 0f || fh <= 0f) return
         val cx = chatView.left.toFloat(); val cy = chatView.top.toFloat()
         // everything below in CONTENT px: the pane's box, and the frame the room fills

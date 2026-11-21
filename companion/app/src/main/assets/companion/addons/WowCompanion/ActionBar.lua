@@ -2,6 +2,9 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar9 (movable Home fix round 1): the Wings' frames are built in a fight too (a /reload or a login inside combat, or the character
+-- key arriving mid-fight, left the opted-in player with no bar for the whole fight: NB.build is display-only, legal in combat); the
+-- driver reads the flag at its first tick and then every FLAG_S (0.5 s), not every frame, and does nothing more while it is off.
 -- nbar8 (the fix pass on movable Home): a "Combat bar" entry counts as PLACED only when it moves the piece (dx / dy not 0) - a size
 -- alone (the editor's size step) keeps the Wings at their auto spot, scaled; in a fight (InCombatLockdown / the player in combat) the
 -- Wings stay for the WHOLE fight whatever B gave back (SPEC section 11: tgGrown only decides out of combat - an attack armed before the
@@ -2452,7 +2455,7 @@ end
 -- nbar6 MOVABLE HOME'S SWAP (the user's rulings 2026-11-20, SPEC.txt section 6 item 5; PadMap m178): the DS toolbar's icons on the bare
 -- D-pad are picked by the router's WORD (padmap dpad `d`: after a swap Left is "map"), never by position (NB.TOOLBAR_BY).
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
-local NB = { V = "nbar8", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
+local NB = { V = "nbar9", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -3041,7 +3044,7 @@ end
 -- The app sends nothing in combat: the add-on switches by itself.
 ---------------------------------------------------------------------------------------------------
 NB.TOP = { IN_S = 0.24, OUT_S = 0.20, RISE = 24, GAP = 34, MARGIN = 24, STEP = 24, RAISE_MAX = 300, FLOOR = 16, DIP = 0.35,
-           REFIT_S = 0.5, SOLVE_S = 5, BAND = { x = 720, y = 24, w = 480, h = 154 },
+           REFIT_S = 0.5, SOLVE_S = 5, FLAG_S = 0.5, BAND = { x = 720, y = 24, w = 480, h = 154 },
            -- one half, in the bar's own units: the diamond (2 OFF + B), the ZL / ZR chip outside it, the two swing lines under it
            CHIP_W = 44, CHIP_H = 22, CHIP_GAP = 4, SW_GAP = 8, SW_H = 6, SW_SEP = 4 }
 NB.top = { want = false, shown = false, edit = false, t = 0, dir = 0, form = "fade", solveAcc = 0, gameAcc = 0, game = {}, gameAt = nil,
@@ -3514,10 +3517,17 @@ end
 function NB.topTick(el)
     local T = NB.top
     el = el or 0
+    -- nbar9: the flag (PadMap's ctop under the character key) read at the first tick, then every FLAG_S, never every frame (it
+    -- changes only on a padtab code or a key that arrives late); with it off and nothing shown, fading or previewed: nothing more
+    T.flagAcc = (T.flagAcc or 0) + el
+    if T.flag == nil or T.flagAcc >= NB.TOP.FLAG_S then T.flagAcc = 0; T.flag = NB.topFlag() end
+    local flag = T.flag
+    if not flag and not T.want and not T.shown and not T.edit and T.dir == 0 and T.t <= 0 then return end
     T.solveAcc, T.gameAcc = T.solveAcc + el, T.gameAcc + el
     local combat = S(InCombatLockdown) == true
-    local flag = NB.topFlag()
-    if flag and not NB.built and not combat then pcall(NB.build) end      -- the frames are made out of combat
+    -- nbar9: built in a fight too (a /reload or a login inside combat, the key arriving mid-fight): NB.build makes only plain frames,
+    -- textures, fontstrings and the game's plain cooldown swipe, EnableMouse(false), anchored to UIParent - legal in combat
+    if flag and not NB.built then pcall(NB.build) end
     if flag and NB.built then
         -- the game's frames read again only out of combat, on their events or every SOLVE_S; ours on a change (a layout save, the
         -- editor's view) or every REFIT_S (in a fight: our frames only, the game's as frozen)

@@ -47,6 +47,10 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     /** the tab's look and motion */
     val tab = SelectTab()
 
+    /** movable Home fix round 1: false while Home's edit mode runs - the picked row's gold box is not drawn (the party is never an edit
+     *  stop: its box must not read as a second cursor beside edit mode's golden box) */
+    var boxShown: () -> Boolean = { true }
+
     /** movable Home (SPEC section 6 item 9): the chat's column is on the right, so the Select tab stands on the RIGHT screen edge */
     var tabRight = false
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -81,9 +85,10 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         UiKit.module(c, RectF().of(m.well))
         val on = p.onLive
         // m150: the box is counted over the add-on's entries; drawn over the view (a dead pet entry moves the party one on)
-        val boxed = if (on) p.viewIndex(live.box.coerceIn(1, p.n) - 1) else -1
+        val boxedAt = if (on) p.viewIndex(live.box.coerceIn(1, p.n) - 1) else -1
+        val boxed = if (boxShown()) boxedAt else -1
         tab.setLook(SelectTab.lookOf(p), now)
-        tab.setNotch(if (on) PartyLayout.notchY(m, boxed + 1) else null, now)
+        tab.setNotch(if (on) PartyLayout.notchY(m, boxedAt + 1) else null, now)
         tab.groupSeen(p.grp, p.fight, now)
         // m150: Smart Res armed counts as a res to cast (the soft green edge on a dead member)
         val resOn = p.res || live.cfg?.slots?.values?.any { it != null && it.res && it.k } == true

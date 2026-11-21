@@ -50,9 +50,11 @@ class HomeEditModel(
     /** the device slots NOW (a slot kept by "Save here" this session is used at once, on every route: A, a finger, the chip) */
     val slotNow: (Int) -> HomeLayout? = { null },
 ) {
-    /** a layout the chip offers; [can] = selectable now (a device slot: while it holds a layout) */
-    class Flip(val name: String, val can: () -> Boolean, val make: (HomeLayout) -> HomeLayout) {
-        constructor(name: String, available: Boolean = true, make: (HomeLayout) -> HomeLayout) : this(name, { available }, make)
+    /** a layout the chip offers; [can] = selectable now (a device slot: while it holds a layout); [folded] = the quest card's fold the
+     *  preset sets when it is PICKED (Compact, Fighter: folded; null = the fold is left alone), applied live as the Settings tile does */
+    class Flip(val name: String, val can: () -> Boolean, val folded: Boolean? = null, val make: (HomeLayout) -> HomeLayout) {
+        constructor(name: String, available: Boolean = true, folded: Boolean? = null, make: (HomeLayout) -> HomeLayout) :
+            this(name, { available }, folded, make)
         val available: Boolean get() = can()
     }
 
@@ -87,6 +89,10 @@ class HomeEditModel(
         private set
     /** "All characters" in the Layouts sheet: Save writes the draft to the default and every character (D5) */
     var allChars = false
+        private set
+    /** a preset with a fold was PICKED this session (the chip, LB / RB, the Layouts sheet): its fold was pressed live; Discard puts the
+     *  fold back. A preset the saved record merely still holds never touches the fold */
+    var foldPicked = false
         private set
     /** the DS toolbar's On / Off picked in the band's menu, sent at Save (null = unchanged) */
     var toolbarWant: Boolean? = null
@@ -314,10 +320,17 @@ class HomeEditModel(
             i = if (i < 0) (if (d > 0) 0 else n - 1) else (i + d + n) % n
             if (flips[i].available) {
                 flipIdx = i
-                return change(flips[i].make(saved), Motion.MODULE_OPEN)
+                return change(flips[i].make(saved), Motion.MODULE_OPEN) + foldOf(flips[i])
             }
         }
         return emptyList()
+    }
+
+    /** a picked preset's fold, pressed live (K_FOLD 0 = folded, 1 = open) */
+    private fun foldOf(f: Flip): List<Fx> {
+        val fo = f.folded ?: return emptyList()
+        foldPicked = true
+        return listOf(Fx.Press(K_FOLD, if (fo) 0 else 1))
     }
 
     /** one draft change: the effects ([ms] its glide); nothing when it changes nothing */
@@ -389,8 +402,8 @@ class HomeEditModel(
             K_MAP_SIDE -> change(l.copy(chatSide = HomeLayout.Side.values()[k].other()), Motion.MODULE_OPEN)
             K_CHAT_WIDTH -> change(l.copy(chatShare = SHARES[k]), Motion.MODULE_OPEN)
             K_MAP_WIDTH -> change(l.copy(chatShare = SHARES[SHARES.size - 1 - k]), Motion.MODULE_OPEN)
-            K_CARD -> change(l.copy(card = HomeWidgetMenus.CARD_DOCKS[k]), Motion.MODULE_OPEN)
-            K_PLACE -> change(l.copy(cast = HomeWidgetMenus.CAST_DOCKS[k]), Motion.MODULE_OPEN)
+            K_CARD -> change(l.copy(card = HomeWidgetMenus.CARD_DOCKS[k]), Motion.MODULE_OPEN).also { offed(s, EditStop.QUEST, draft.card == HomeLayout.CardDock.OFF) }
+            K_PLACE -> change(l.copy(cast = HomeWidgetMenus.CAST_DOCKS[k]), Motion.MODULE_OPEN).also { offed(s, EditStop.CAST, draft.cast == HomeLayout.CastDock.OFF) }
             K_SIZE -> change(l.copy(castSize = SIZES[k]), Motion.MODULE_OPEN)
             K_XP -> change(l.copy(xpBar = k == 0), Motion.MODULE_OPEN)
             // Order: Reset = today's order (the cursor stays on its room)
@@ -401,6 +414,29 @@ class HomeEditModel(
             K_FILTERS -> { menu = null; listOf(Fx.Filters) }
             else -> listOf(Fx.Press(r.key, k))
         }
+    }
+
+    /** fix round 1: the widget [w] turned Off from its OWN menu ([s] = w): the menu closes and the cursor goes where remove() puts it
+     *  ("+" now shown, else the chip) - never left on a widget with no box */
+    private fun offed(s: EditStop, w: EditStop, off: Boolean) {
+        if (!off || s != w) return
+        menu = null
+        if (cursor == w) cursor = if (plusShown) EditStop.PLUS else EditStop.CHIP
+    }
+
+    /**
+     * fix round 1: the cursor's widget has NO box now ([stops]: the card or the bar off, Party mode's Hide sliding the bar away, F2):
+     * its menu closes, its lift ends, the cursor goes to "+" when shown (and drawn), else the chip. True = the cursor moved
+     */
+    fun cursorCheck(stops: Map<EditStop, HomeLayoutSolver.Box>): Boolean {
+        if (parked || sheet != null || prompt) return false
+        val c = cursor
+        if (c != EditStop.QUEST && c != EditStop.CAST) return false
+        if (c in stops || EditStop.CHIP !in stops) return false
+        if (menu == c) menu = null
+        if (lifted == c) { lifted = null; liftFrom = null }
+        cursor = if (plusShown && EditStop.PLUS in stops) EditStop.PLUS else EditStop.CHIP
+        return true
     }
 
     // ---------------------------------------------------------------- the sheets (the Layouts sheet, the Add tray)
@@ -454,7 +490,7 @@ class HomeEditModel(
             if (!f.available) return listOf(Fx.Refuse(EditStop.CHIP))
             flipIdx = flips.indexOf(f)
             sheet = null
-            return change(f.make(saved), Motion.MODULE_OPEN)
+            return change(f.make(saved), Motion.MODULE_OPEN) + foldOf(f)
         }
         val si = i - presetCount
         if (si < HomePresets.SLOTS) {

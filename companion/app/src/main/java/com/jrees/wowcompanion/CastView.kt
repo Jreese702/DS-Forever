@@ -381,10 +381,39 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * turns it off in fights, when the game's D-pad is back). The base layer's D-pad then draws as its own "Room bar" group.
      */
     var roomBar: Map<Int, String>? = null
-        set(v) { if (field != v) { field = v; roomBtns.fill(null); invalidate() } }
+        set(v) { if (field != v) { roomMotionStart(field, v); field = v; roomBtns.fill(null); invalidate() } }
     var roomBarOn = false
         set(v) { if (field != v) { field = v; invalidate() } }
     private val roomBtns = arrayOfNulls<Btn>(4)
+
+    /**
+     * movable Home fix round 1 (SPEC section 10): the toolbar's Left / Right pictures never jump. A SWAP (Left <-> Right: edit mode's
+     * draft preview, Save's mirror) slides each picture from the other slot to its own over [roomSlideMs] on the page's curve, crossing
+     * in the gap between Up and Down; any other change of Left / Right cross-fades over ROOM_FADE_MS. Only while the room bar is drawn.
+     */
+    var roomSlideMs: Long = Motion.MODULE_OPEN
+    private val roomPrev = arrayOfNulls<Btn>(4)
+    private var roomMotionAt = 0L
+    private var roomMotionMs = 0L
+    private var roomSwap = false
+    private fun roomMotionStart(old: Map<Int, String>?, new: Map<Int, String>?) {
+        roomMotionMs = 0L
+        if (!roomBarOn || old == null || new == null || layout == Layout.FULL) return
+        if (old[1] == new[1] && old[3] == new[3]) return
+        roomSwap = old[1] == new[3] && old[3] == new[1]
+        for (i in 0 until 4) roomPrev[i] = roomBtns[i]
+        roomMotionAt = SystemClock.elapsedRealtime()
+        roomMotionMs = if (roomSwap) roomSlideMs else ROOM_FADE_MS
+    }
+    /** the room bar's motion now (0 .. 1 on the curve), null = none running */
+    fun roomMotionK(now: Long = SystemClock.elapsedRealtime()): Float? {
+        if (roomMotionMs <= 0L) return null
+        val u = (now - roomMotionAt).toFloat() / roomMotionMs
+        if (u >= 1f || u < 0f) { roomMotionMs = 0L; for (i in 0 until 4) roomPrev[i] = null; return null }
+        return roomCurve.getInterpolation(u)
+    }
+    val roomMotionSwap: Boolean get() = roomSwap
+    private val roomCurve by lazy { Motion.curve() }
 
     /**
      * p35 (the user 2026-11-10: "change the left and right D-pad button Icons to move the bar left or right. until the home bar is
@@ -3221,6 +3250,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         CastBarPlace.slot(pos, layout == Layout.DIAMONDS, t, sx, xo, yo, width.toFloat(), out)
     }
     private val bandBox = FloatArray(3)
+    private val roomFromBox = FloatArray(3)
 
     /**
      * SPEC part 5: the 8 slots at their table positions, each drawn by [drawSlot] at the fixed [BAND_K]
@@ -3246,9 +3276,23 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             bandSlot(pos, bandBox)
             val circle = pos >= 4
             val scale = bandBox[2] / ((if (circle) 38f else 40f) * k)
+            // fix round 1: the toolbar's Left / Right picture in motion (a swap slides it in from the other slot, a change cross-fades)
+            val rk = if (fb != null && fb === roomBtns.getOrNull(src) && (src == 0 || src == 2)) roomMotionK(now) else null
+            var cx = bandBox[0]; var cy = bandBox[1]
+            if (rk != null) {
+                next = 0L
+                if (roomSwap) { bandSlot(2 - pos, roomFromBox); cx = lerp(roomFromBox[0], cx, rk); cy = lerp(roomFromBox[1], cy, rk) }
+                else roomPrev[src]?.let { pb ->
+                    val ps = c.save(); c.translate(cx, cy); c.scale(scale, scale)
+                    c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * (1f - rk)).toInt())
+                    drawSlot(c, pos, 0f, 0f, circle, pb, fightStateOf(pb, src), -1, now, false, 0f, null, -1f)
+                    c.restoreToCount(ps)
+                }
+            }
             val slotSave = c.save()
-            c.translate(bandBox[0], bandBox[1])
+            c.translate(cx, cy)
             c.scale(scale, scale)
+            if (rk != null && !roomSwap) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * rk).toInt())
             if (fb != null && fb.drawAlpha < 255) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, fb.drawAlpha)
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
@@ -4272,6 +4316,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private val NO_KEYS = IntArray(ClassPetKeys.SPOTS) { -1 }
         // layers: the four trigger layers carry state, the three shoulder layers do not
         private const val N = 0; private const val LT = 1; private const val RT = 2; private const val LR = 3
+        /** the toolbar's Left / Right pictures cross-fade on a change that is not a swap (SPEC section 10: after Save, the new `d`) */
+        const val ROOM_FADE_MS = 120L
         private const val FR = 4; private const val HO = 5; private const val SC = 6
         private const val LAYERS = 7
         private const val STATE_LAYERS = 4

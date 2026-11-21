@@ -607,7 +607,8 @@ object BottomPictures {
         c.restore()
     }
 
-    // ---- Hold to talk: the real chat behind, the kit's chat box with the mic, D-pad Left with Home's hold ring; the band: hold, the
+    // ---- Hold to talk: the real chat behind, the kit's chat box with the mic, the D-pad's chat arrow (Left; Right after a swap: the add-on's
+    // ---- `d`, HoldTalk.chatArrowRight - the row's own words) with Home's hold ring; the band: hold, the
     // ---- words in the box, then sent into the chat (Send now) or waiting for A (Show, A sends)
 
     private fun talk(c: Canvas, r: RectF, look: Look, tMs: Long?) {
@@ -624,13 +625,14 @@ object BottomPictures {
         // lands as the newest, lit a moment)
         val lines = if (sent) SAMPLE_CHAT + ChatLn("say", SAMPLE_ME, SAMPLE_SAID) else SAMPLE_CHAT
         chat(c, RectF(0f, 0f, 432f, chatH - 4f), 22f, lines, lit = if (sent) lines.size - 1 else -1)
-        // the lower part: the game's chat box on the frame, D-pad Left with Home's hold ring, the mic in the box
+        // the lower part: the game's chat box on the frame, the chat's D-pad arrow with Home's hold ring, the mic in the box
         pF.shader = LinearGradient(0f, chatH - 30f, 0f, chatH, Color.argb(0, 0, 0, 0), Color.argb(230, 10, 10, 12), Shader.TileMode.CLAMP)
         c.drawRect(0f, chatH - 30f, 432f, chatH, pF); pF.shader = null
         pF.color = Color.argb(230, 10, 10, 12); c.drawRect(0f, chatH, 432f, 216f, pF)
-        val hold = (t / 1.2f).coerceIn(0f, 1f)                                   // the ring fills while D-pad Left is held
+        val hold = (t / 1.2f).coerceIn(0f, 1f)                                   // the ring fills while the arrow is held
         val gx = 46f; val gy = 178f
-        UiKit.pad(c, "gen_left", gx, gy, 58f, if (on) 255 else 150)
+        // fix round 1 (P5: the pictures never lie): the arrow hold to talk answers to now (Right once the toolbar's `d` is mirrored)
+        UiKit.pad(c, talkGlyph(look.env.dpad?.dirs), gx, gy, 58f, if (on) 255 else 150)
         if (on) UiKit.holdRing(c, gx, gy, 36f, hold)
         val box = RectF(92f, 154f, 424f, 202f)
         UiKit.inputBox(c, box)
@@ -643,6 +645,9 @@ object BottomPictures {
         }
         c.restore()
     }
+
+    /** the Hold to talk tile's arrow: the D-pad side the chat is on in the add-on's `d` ([HoldTalk.chatArrowRight]) */
+    fun talkGlyph(dirs: Map<Int, String>?): String = if (HoldTalk.chatArrowRight(dirs)) "gen_right" else "gen_left"
 
     // ---- Tap-to-cast bar: Home's two columns (the real chat, the minimap's own art), the bar of real spell icons under the chosen
     // ---- one(s); In combat: Hide slides it away
