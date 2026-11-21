@@ -5,9 +5,11 @@ package com.jrees.wowcompanion
  * loads, so DS Forever adds no spike of its own when the game's memory jumps:
  *  - the danger map re-read (DangerStore: the QuestieDB read);
  *  - SafePath data for zones other than the player's own (SafePath's and ShippedNets' zone files, the cross-zone graph).
- * The windows ([deferNow]): from the game's start (Play) until 30 s after it reaches the world, and from each loading screen in the
- * world until 5 s after it ends - each window at most [HARD_MS], and each job's own wait at most [HARD_MS], so nothing can stay held
- * (a lost "loading over" event, a world that never comes). The minimap is never held. Each hold and each run is one mem.log line
+ * The windows ([deferNow]): from the game's start (Play) until it reaches the world (at most [HARD_MS] from Play), from the world
+ * entry (and its return after a logout) until 30 s after it - its own window, so a slow login still holds through the kills 7 - 36 s
+ * after the world - and from each loading screen in the world until 5 s after it ends (at most [HARD_MS] from its start); each job's
+ * own wait at most [HARD_MS], so nothing can stay held (a lost "loading over" event, a world that never comes). Nothing once the game
+ * has ended. The minimap is never held. Each hold and each run is one mem.log line
  * ("light8: held ...", "light8: ran ... after N s held"). Off Light 8 nothing is ever held (test build 1516's behaviour).
  */
 object LoadHold {
@@ -24,16 +26,17 @@ object LoadHold {
     const val SAFEPATH = "other-zone SafePath"
 
     /**
-     * the holds apply at [now] (epoch ms; pure): from [gameStartedAt] (0 = no game, or it ended) until [inWorldAt] (0 = not yet) +
-     * [LOGIN_TAIL_MS]; from [loadStartAt] (the last loading screen in the world, 0 = none) while [loadingOn] and until [loadEndAt] +
-     * [ZONE_TAIL_MS]; each window at most [HARD_MS] from its start
+     * the holds apply at [now] (epoch ms; pure): from [gameStartedAt] (0 = no game, or it ended) until [inWorldAt] (0 = not yet), at
+     * most [HARD_MS]; from [inWorldAt] (the world's entry or return) until [LOGIN_TAIL_MS] after it, while a game runs; from
+     * [loadStartAt] (the last loading screen in the world, 0 = none, or the game ended) while [loadingOn] and until [loadEndAt] +
+     * [ZONE_TAIL_MS], at most [HARD_MS] from its start
      */
     fun deferNow(gameStartedAt: Long, inWorldAt: Long, loadStartAt: Long, loadingOn: Boolean, loadEndAt: Long, now: Long): Boolean {
-        val login = gameStartedAt > 0L && now >= gameStartedAt && now - gameStartedAt < HARD_MS &&
-            (inWorldAt <= 0L || now < inWorldAt + LOGIN_TAIL_MS)
+        val login = gameStartedAt > 0L && now >= gameStartedAt && now - gameStartedAt < HARD_MS && (inWorldAt <= 0L || now < inWorldAt)
+        val world = gameStartedAt > 0L && inWorldAt > 0L && now >= inWorldAt && now < inWorldAt + LOGIN_TAIL_MS
         val zone = loadStartAt > 0L && now >= loadStartAt && now - loadStartAt < HARD_MS &&
             (loadingOn || now < loadEndAt + ZONE_TAIL_MS)
-        return login || zone
+        return login || world || zone
     }
 
     // the tests' seams (the app never sets them)
@@ -51,7 +54,8 @@ object LoadHold {
 
     private class Job(val heldAt: Long) { val then = LinkedHashMap<String, () -> Unit>() }
     private val pending = LinkedHashMap<String, Job>()
-    /** the jobs let go by their own hard limit while the window still runs: never held again until it ends */
+    /** the jobs let go by their own hard limit while the window still runs: never held again until it ends (a tick that sees no
+     *  window, a hold asked outside one, or a new window: [windowStarted]) */
     private val overLimit = HashSet<String>()
 
     /**
@@ -60,7 +64,7 @@ object LoadHold {
      */
     fun hold(job: String, key: String = job, then: () -> Unit): Boolean {
         val now = clock()
-        if (!holdingNow(now)) return false
+        if (!holdingNow(now)) { synchronized(this) { overLimit.clear() }; return false }
         val first: Boolean
         synchronized(this) {
             if (job in overLimit) return false
@@ -72,6 +76,15 @@ object LoadHold {
         if (first) { runCatching { say("light8: held $job (the game is loading)") }; arm() }
         return true
     }
+
+    /**
+     * a new window starts (GameLife: Play, the world's entry or return, a loading screen): a job its own limit let go in an earlier
+     * window is held again in this one. Any thread; off Light 8 there is nothing to clear
+     */
+    @Synchronized fun windowStarted() { overLimit.clear() }
+
+    /** the jobs let go by their own limit, not held again in this window (the tests) */
+    @Synchronized internal fun overLimitNow(): List<String> = overLimit.toList()
 
     /** the jobs held now (the tests, the report) */
     @Synchronized fun heldJobs(): List<String> = pending.keys.toList()
@@ -107,7 +120,8 @@ object LoadHold {
     private val ticker = object : Runnable {
         override fun run() {
             runCatching { tick() }
-            val more = synchronized(this@LoadHold) { pending.isNotEmpty().also { if (!it) armed = false } }
+            // (the ticker also runs while a job its limit let go waits for the window's end: the tick that sees it over clears it)
+            val more = synchronized(this@LoadHold) { (pending.isNotEmpty() || overLimit.isNotEmpty()).also { if (!it) armed = false } }
             if (more) runCatching { main.postDelayed(this, TICK_MS) }.onFailure { armed = false }
         }
     }

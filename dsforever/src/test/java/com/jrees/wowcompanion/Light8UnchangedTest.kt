@@ -118,4 +118,23 @@ class Light8UnchangedTest {
         val mem = File(src, "MemWatch.kt").readText()
         assertTrue(mem.contains("\"code \${mb(stat(\"summary.code\"))}\" + if (l8) light8Parts("))
     }
+
+    @Test fun theZoneCachesBumpAsBeforeAndTheWindowsNeverHold() {
+        for (mb in tiers) {
+            setTotalMb(mb)
+            // the per-zone caches: every load bumps (no bound, so no reload but after a trim or a drop; both bump as 1516)
+            val f = LowMemCuts.zoneFiles<String>({ 1L }, keepNow = { listOf(1, 2) }) { "z$it" }
+            for (m in 1..20) f.store(m, "z$m")
+            f.trim(); for (m in 1..20) f.store(m, "z$m")
+            assertEquals("$mb", 40, f.version)
+            // the climb maps (3 on every Thor): a reload bumps, as before
+            val climb = RouteWork.Files<String>(max = LowMemCuts.CLIMB_MAX, quietReload = { DeviceTier.light8() }) { "z$it" }
+            for (r in 1..2) for (m in 1..5) if (climb.peek(m) == null) climb.store(m, "z$m")
+            assertEquals("$mb", 10, climb.version)
+            // a new window, a hold asked: nothing held, nothing logged
+            LoadHold.windowStarted()
+            assertFalse(LoadHold.hold(LoadHold.SAFEPATH, "draft") {})
+        }
+        assertTrue(LoadHold.heldJobs().isEmpty())
+    }
 }

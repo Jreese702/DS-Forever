@@ -3113,7 +3113,10 @@ class MapView(context: Context) : View(context) {
                     val w = wo?.invoke(id) ?: return@mapNotNull null
                     Triple(id, w, (w.top - w.bottom) * (w.left - w.right))
                 }.sortedBy { it.third }.map { (id, _, _) ->
-                    CrossZone.Zone(id, Terrain.of(id), Terrain.buildingsOf(id)) { wx, wy -> Roads.isRoad(id, wx, wy) }
+                    // (each zone's road grid read once for the plan and held by it, as its terrain is: Light 8's bound on the 8 GB Thors
+                    // never sends one zone's grid out for another's in the middle of the A*, read again for each cell)
+                    val rg = Roads.of(id)
+                    CrossZone.Zone(id, Terrain.of(id), Terrain.buildingsOf(id)) { wx, wy -> rg != null && Roads.isRoad(rg, wx, wy) }
                 }
                 val threats = ArrayList<CrossZone.Threat>()
                 for (id in ids) {

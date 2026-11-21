@@ -123,5 +123,7 @@ object DangerInputs {
 
         @Synchronized fun clear() = m.clear()
         @Synchronized fun size() = m.size
+        /** the grids' bytes, estimated (their two floats a cell) */
+        @Synchronized fun bytes(): Long = m.values.sumOf { it.grid.nx.toLong() * it.grid.ny * 8L + 64L }
     }
 }

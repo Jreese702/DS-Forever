@@ -44,8 +44,13 @@ object MemWatch {
     @Synchronized internal fun names(): Pair<List<String>, List<String>> = sources.keys.toList() to sources8.keys.toList()
     @Synchronized internal fun trimNames(): Pair<List<String>, List<String>> = trimmers.keys.toList() to trimmers8.keys.toList()
 
-    /** Light 8's own parts of the PSS split: ", oth 40, sys 12, swp 128" (private-other, system, DS Forever's own swap; MB). Pure */
-    fun light8Parts(othMb: Long, sysMb: Long, swpMb: Long): String = ", oth $othMb, sys $sysMb, swp $swpMb"
+    /**
+     * Light 8's rest of the PSS split, then DS Forever's swap: ", stk 1, oth 40, sys 12; swp 128" (MB). java + native + gfx + code +
+     * stk (stack) + oth (private-other) + sys (system) add up to the line's PSS - Android's PSS already holds the swapped-out pages'
+     * share, inside sys. swp (summary.total-swap) is NOT one of the parts: the swapped-out size uncompressed (not a PSS share, not
+     * zram's compressed size), partly inside sys already - after the ";" so it is never added in. Pure
+     */
+    fun light8Parts(stkMb: Long, othMb: Long, sysMb: Long, swpMb: Long): String = ", stk $stkMb, oth $othMb, sys $sysMb; swp $swpMb"
     /** Light 8: how old the game's memory sample is: ", game age 12 s" ("" = no sample yet). Pure */
     fun gameAge(sampleAtMs: Long?, nowMs: Long): String = if (sampleAtMs == null) "" else ", game age ${((nowMs - sampleAtMs).coerceAtLeast(0L)) / 1000} s"
     /** "light8 on" on the first line of the process (the report says it is on), null afterwards and off Light 8 */
@@ -513,7 +518,8 @@ object MemWatch {
         val l8 = light8()
         val swp = if (l8) mb(stat("summary.total-swap")) else -1L
         val parts = "java ${mb(stat("summary.java-heap"))}, native ${mb(stat("summary.native-heap"))}, gfx ${mb(stat("summary.graphics"))}, " +
-            "code ${mb(stat("summary.code"))}" + if (l8) light8Parts(mb(stat("summary.private-other")), mb(stat("summary.system")), swp) else ""
+            "code ${mb(stat("summary.code"))}" + if (l8) light8Parts(mb(stat("summary.stack")), mb(stat("summary.private-other")),
+                mb(stat("summary.system")), swp) else ""
         val heap = "heap ${mbB(Debug.getNativeHeapAllocatedSize())}/${mbB(Debug.getNativeHeapSize())} MB"
         val sized = synchronized(this) { sources.toList() + if (l8) sources8.toList() else emptyList() }
             .map { (n, f) -> n to runCatching { mbB(f()) }.getOrDefault(-1L) }

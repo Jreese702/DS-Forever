@@ -29,7 +29,8 @@ object LowMemCuts {
     const val SCENE_MAX_HELD_8 = 3
     /** the loading pictures held at most: [SCENE_MAX_HELD_8] on Light 8, [SCENE_MAX_HELD] otherwise (test build 1516's) */
     fun sceneMaxHeld(light8: Boolean): Int = if (light8) SCENE_MAX_HELD_8 else SCENE_MAX_HELD
-    /** Light 8: a loading picture Android decoded as ARGB_8888 (it has alpha) is copied down to RGB_565 (the scene is drawn opaque) */
+    /** Light 8: a loading picture Android decoded as ARGB_8888 (it has alpha) is copied down to RGB_565 (the scene is drawn opaque).
+     *  A guard: the kit's loading pictures carry no alpha and already decode as RGB_565, so Light 8 saves one picture (~2.7 MB) here */
     fun sceneForce565(light8: Boolean): Boolean = light8
 
     /** Light 8: the per-zone data (terrain, roads, SafePath zones / water / drafts / nets) keeps at most this many zones */
@@ -69,7 +70,7 @@ object LowMemCuts {
                             keepNow: () -> List<Int> = { zoneKeepNow() }, load: (Int) -> T?): RouteWork.Files<T> =
         RouteWork.Files(keep = { if (light()) keepNow() else emptyList() }, sizeOf = sizeOf,
             bound = { if (light()) zoneBound(true, keepNow().size) else 0 }, playerFirst = { light() },
-            holdJob = holdJob, holdIf = { m -> LoadHold.otherZone(m) }, load = load)
+            holdJob = holdJob, holdIf = { m -> LoadHold.otherZone(m) }, quietReload = { light() }, load = load)
 
     // ------------------------------------------------------------------ the kit (UiKit)
 

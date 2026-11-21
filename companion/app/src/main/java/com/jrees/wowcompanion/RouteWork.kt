@@ -25,6 +25,9 @@ object RouteWork {
 
     fun onMain(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
+    /** [work] on the route thread after what is queued there, no result (Light 8: a relief lets the route thread's own scratch go) */
+    fun later(work: () -> Unit) { exec.execute { runCatching(work) } }
+
     const val MISS_RETRY_MS = 10_000L
 
     /**
@@ -37,6 +40,7 @@ object RouteWork {
     class Files<T : Any>(max: Int = 0, private val keep: () -> Collection<Int> = { emptyList() }, private val sizeOf: (T) -> Long = { 0L },
                          bound: (() -> Int)? = null, others: () -> Int = { -1 }, playerFirst: () -> Boolean = { false },
                          private val holdJob: String? = null, private val holdIf: (Int) -> Boolean = { false },
+                         private val quietReload: () -> Boolean = { false },
                          private val load: (Int) -> T?) {
         // at most [max] kept (the least recently used not kept by [keep] goes first; 0 = no bound): a zone's lattice is 5-20 MB.
         // Light 8 (LIGHT8_PLAN.md): [bound] instead of [max] when given, read at every put (DeviceTier.light8 live, never once here);
@@ -48,15 +52,25 @@ object RouteWork {
         private val heldMaps = LinkedHashSet<Int>()
         private val holdKey = "files@" + System.identityHashCode(this)
         @Volatile var version = 0; private set
+        // Light 8 (the 8 GB Thors' bound, [quietReload]): the maps stored since their last [drop]. A map the bound (or a relief) let go
+        // and read again at once for a caller off the UI thread is the same file the caller now has: its load does not bump [version],
+        // so a plan keyed by the versions (MapView's cross-zone route, SafePath's stamps) settles as on test build 1516's unbounded
+        // caches instead of planning again after every reload. A caller that got null (the UI thread's miss, the load-time hold) still
+        // sees the bump when its map arrives
+        private val stored = HashSet<Int>()
         private val listeners = ArrayList<() -> Unit>()
         @Synchronized fun onLoaded(l: () -> Unit) { listeners.add(l) }
 
-        fun get(map: Int): T? {
+        fun get(map: Int): T? = get(map, true)
+
+        /** [get]; [hold] false = never waits for Light 8's load-time hold (SafePath's draft reading its neighbours' drafts) */
+        fun get(map: Int, hold: Boolean): T? {
             synchronized(this) {
                 have.get(map)?.let { return it }
                 missAt[map]?.let { if (android.os.SystemClock.elapsedRealtime() - it < MISS_RETRY_MS) return null }
-                if (held(map)) return null
+                if (hold && held(map)) return null
                 if (onMain()) {
+                    stored.remove(map)                                 // (the caller got null: its arrival bumps [version])
                     if (loading.add(map)) exec.execute { fill(map) }
                     return null
                 }
@@ -80,7 +94,13 @@ object RouteWork {
         }
 
         /** [v] kept for [map] (a load's result; the tests put one directly): what went for the bound */
-        @Synchronized internal fun store(map: Int, v: T): List<Int> { val gone = have.put(map, v); missAt.remove(map); version++; return gone }
+        @Synchronized internal fun store(map: Int, v: T): List<Int> {
+            val gone = have.put(map, v); missAt.remove(map)
+            // (every other Thor, and every first load or rebuilt file: test build 1516's bump)
+            if (!(map in stored && runCatching { quietReload() }.getOrDefault(false))) version++
+            stored.add(map)
+            return gone
+        }
 
         /** Light 8: [map] waits for the load-time hold (LoadHold: a zone other than the player's while the game loads); off Light 8,
          *  or without a [holdJob], never */
@@ -88,7 +108,7 @@ object RouteWork {
             val job = holdJob ?: return false
             if (!runCatching { holdIf(map) }.getOrDefault(false)) return false
             if (!LoadHold.hold(job, holdKey) { loadHeld() }) return false
-            heldMaps.add(map)
+            heldMaps.add(map); stored.remove(map)                  // (the caller got null: its arrival bumps [version])
             return true
         }
         /** the hold is over: the maps asked for meanwhile are loaded now (the route thread; each load bumps [version]). How many */
@@ -103,7 +123,7 @@ object RouteWork {
         @Synchronized fun bound(): Int = have.bound()
 
         /** forget [map] (its file was rebuilt) */
-        @Synchronized fun drop(map: Int) { have.remove(map); missAt.remove(map) }
+        @Synchronized fun drop(map: Int) { have.remove(map); missAt.remove(map); stored.remove(map) }
         /** forget them all (the device short of memory: loaded again when asked) */
         @Synchronized fun trim() { have.clear() }
         /** memory pressure: every one but [stay] goes; the bytes let go ([sizeOf]) */

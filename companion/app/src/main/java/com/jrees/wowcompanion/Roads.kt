@@ -318,7 +318,9 @@ object Roads {
     fun of(map: Int): Grid? = files.get(map)
 
     /** the texture at world ([wx], [wy]) of [map] is a learned road */
-    fun isRoad(map: Int, wx: Double, wy: Double): Boolean { val g = of(map) ?: return false; return roads.isNotEmpty() && g.shows(wx, wy, roads) }
+    fun isRoad(map: Int, wx: Double, wy: Double): Boolean { val g = of(map) ?: return false; return isRoad(g, wx, wy) }
+    /** the same for a zone's grid [g] already in hand (a plan over many zones: one read per zone, never one per cell) */
+    fun isRoad(g: Grid, wx: Double, wy: Double): Boolean = roads.isNotEmpty() && g.shows(wx, wy, roads)
 
     /**
      * which textures are roads: over the zones with walked cells ([zones]: each zone's grid and its continent), a texture is a road

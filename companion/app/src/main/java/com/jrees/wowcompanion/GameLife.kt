@@ -60,6 +60,7 @@ object GameLife {
         startedAt = now; worldSeen = false; ended = false; note = null; closer = null; loads = 0; loadingAt = 0L; worldAt = 0L; loadEndAt = 0L
         lastLoadAt = 0L
         leftAt = 0L
+        runCatching { LoadHold.windowStarted() }                   // Light 8: a new game's window (nothing to clear on another Thor)
         DiagLog.event("game", "started")
         LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
         // issue triage 2026-11-14 (the 1.0.29 - 1.0.31 low-memory cluster; the user: "yes on the triage things"): the game is about to
@@ -95,7 +96,7 @@ object GameLife {
      */
     fun worldLeft(now: Long = System.currentTimeMillis()) { if (worldNow) leftAt = now }
     /** the add-on's hello after a logout word ([worldLeft]): the world is back, its calm starts now */
-    fun worldBack(now: Long = System.currentTimeMillis()) { if (leftAt != 0L) { leftAt = 0L; worldAt = now } }
+    fun worldBack(now: Long = System.currentTimeMillis()) { if (leftAt != 0L) { leftAt = 0L; worldAt = now; runCatching { LoadHold.windowStarted() } } }
     /** the logout word came and the add-on's hello not yet */
     val awayNow: Boolean get() = worldNow && leftAt != 0L
     @Volatile private var leftAt = 0L
@@ -105,6 +106,7 @@ object GameLife {
         if (worldSeen || startedAt == 0L) return
         worldAt = now
         worldSeen = true
+        runCatching { LoadHold.windowStarted() }                   // Light 8: the world entry's own window
         DiagLog.event("game", "in the world after ${minutes(now - startedAt)}")
         LastRun.gameInWorld()
         // issue triage 2026-11-14: the reports' kills came 7 - 36 s after this, the game still loading the world: the same relief.
@@ -133,6 +135,7 @@ object GameLife {
         if (!worldNow) return null
         if (on) {
             loadingAt = now; lastLoadAt = now; loads++
+            runCatching { LoadHold.windowStarted() }               // Light 8: this loading screen's window
             val why = "loading screen $loads"
             MemWatch.relieve(why)
             return why
@@ -147,11 +150,13 @@ object GameLife {
     }
     /**
      * LIGHT 8'S LOAD-TIME WINDOW NOW (LoadHold.deferNow; LIGHT8_PLAN.md change 4): the login's (from [started] - pressing Play - until
-     * 30 s after [inWorld]; [loadingScreen] fires only once in the world, so the login's own load keys off the game's start) and the
-     * last loading screen's in the world (until 5 s after its end). Nothing once the game has ended. Read by LoadHold only
+     * [inWorld]; [loadingScreen] fires only once in the world, so the login's own load keys off the game's start), the world entry's
+     * (until 30 s after [inWorld] or [worldBack]) and the last loading screen's in the world (until 5 s after its end). Nothing once
+     * the game has ended - a loading screen up when it died included (its "over" never comes then). Read by LoadHold only
      */
     fun holdWindow(now: Long = System.currentTimeMillis()): Boolean =
-        LoadHold.deferNow(if (ended) 0L else startedAt, if (worldSeen) worldAt else 0L, lastLoadAt, loadingAt != 0L, loadEndAt, now)
+        LoadHold.deferNow(if (ended) 0L else startedAt, if (worldSeen) worldAt else 0L, if (ended) 0L else lastLoadAt, loadingAt != 0L,
+            loadEndAt, now)
     /** when the last loading screen in the world came (kept after its end; 0 = none in this game) */
     @Volatile private var lastLoadAt = 0L
 

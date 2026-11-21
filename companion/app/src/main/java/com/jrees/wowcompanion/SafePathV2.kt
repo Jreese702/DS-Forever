@@ -122,6 +122,10 @@ object SafePathV2 {
 
     /** the route's memory given back when the device asks (onTrimMemory): the lattices and the leg's scratch */
     fun trim() { Climb.files.trim(); Climb.Scratch.release(); dangers.clear() }
+    /** the danger grids' bytes now (Light 8's memory line, Climb's "climbscratch") */
+    fun dangerBytes(): Long = dangers.bytes()
+    /** the danger grids go (Light 8's relief; built again when a plan asks) */
+    fun dropDangers() { dangers.clear() }
     @Volatile private var hooked = false
     fun init(ctx: Context) {
         if (hooked) return
