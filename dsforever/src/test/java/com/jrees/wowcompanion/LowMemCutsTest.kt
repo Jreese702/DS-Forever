@@ -62,7 +62,7 @@ class LowMemCutsTest {
         assertEquals(4, LowMemCuts.SCENE_MAX_HELD)
         assertEquals(listOf(1, 2), LowMemCuts.overCap(listOf(1, 2, 3, 4, 5, 6)))
         assertEquals(emptyList<Int>(), LowMemCuts.overCap(listOf(1, 2, 3)))
-        assertTrue(text("Scene.kt").contains("LowMemCuts.overCap(pics.keys.toList())"))
+        assertTrue(text("Scene.kt").contains("LowMemCuts.overCap(pics.keys.toList(), LowMemCuts.sceneMaxHeld(DeviceTier.light8()))"))
         assertTrue(text("Scene.kt").contains("inSampleSize = LowMemCuts.sampleFor(bounds.outWidth, bounds.outHeight)"))
         val scene = text("Scene.kt")
         assertTrue("RGB_565 asked (Android keeps ARGB_8888 for a picture with alpha)", scene.contains("inPreferredConfig = Bitmap.Config.RGB_565"))

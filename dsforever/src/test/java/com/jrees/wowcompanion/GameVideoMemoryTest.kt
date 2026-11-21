@@ -43,6 +43,31 @@ class GameVideoMemoryTest {
         assertEquals(emptyMap<String, String>(), dxvkParse("\"dxgi.maxDeviceMemory = 2048\ndxgi.maxSharedMemory = 2048\n\""))
     }
 
+    // ------------------------------------------------------------------ Light 8 (LIGHT8_PLAN.md change 5, the user's answer Q2: both, 8 GB only)
+
+    @Test fun light8sTwoDxvkOptionsByThorAndWithTheCapOff() {
+        val opts = mapOf("dxvk.trackPipelineLifetime" to "true", "dxvk.numCompilerThreads" to "4")
+        // the 8 GB Thor, the cap on: the cap and both options in one DXVK_CONFIG DXVK can parse
+        val on8 = G.env(G.capMb(7_191L), on = true, light8 = true)
+        assertEquals("DXVK_CONFIG=dxgi.maxDeviceMemory=2048;dxgi.maxSharedMemory=2048;dxvk.trackPipelineLifetime=true;dxvk.numCompilerThreads=4", on8)
+        assertEquals(mapOf("dxgi.maxDeviceMemory" to "2048", "dxgi.maxSharedMemory" to "2048") + opts, dxvkParse(on8.removePrefix("DXVK_CONFIG=")))
+        // the cap off (the setting) or no cap: the options still there, built apart from the cap
+        assertEquals("DXVK_CONFIG=dxvk.trackPipelineLifetime=true;dxvk.numCompilerThreads=4", G.env(2048, on = false, light8 = true))
+        assertEquals("DXVK_CONFIG=dxvk.trackPipelineLifetime=true;dxvk.numCompilerThreads=4", G.env(null, on = true, light8 = true))
+        assertEquals(opts, dxvkParse(G.LIGHT8_DXVK))
+        assertFalse("no spaces (the container's env string splits on them)", on8.contains(' '))
+        // the 12 GB Pro, the 16 GB Max: test build 1516's string exactly
+        assertEquals(G.env(3072, true), G.env(G.capMb(11_265L), on = true, light8 = false))
+        assertEquals(G.env(4096, true), G.env(G.capMb(15_255L), on = true, light8 = false))
+        assertEquals("", G.env(3072, on = false, light8 = false))
+        // logged once per launch, the exact string
+        assertEquals("light8 on, dxcfg dxgi.maxDeviceMemory=2048;dxgi.maxSharedMemory=2048;dxvk.trackPipelineLifetime=true;dxvk.numCompilerThreads=4",
+            G.dxcfgLine(on8))
+        val choice = screen.substring(screen.indexOf("private fun videoMemoryChoice("), screen.indexOf("private fun containerConfig("))
+        assertTrue(choice.contains("com.jrees.wowcompanion.MemWatch.note(\"launch: \$l8\")"))
+        assertTrue(choice.contains("return VideoMemoryChoice(env, bcn)"))
+    }
+
     /** a copy of DXVK 2.4.1's DXVK_CONFIG handling (str::split on ";" then parseUserConfigLine), enough for these options */
     private fun dxvkParse(conf: String): Map<String, String> {
         val out = LinkedHashMap<String, String>()

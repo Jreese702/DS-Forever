@@ -567,13 +567,22 @@ object Terrain {
     private val grids = HashMap<Int, Grid?>()
     /** zone [map]'s grid (null until the harvest built it) */
     // (test56's ANRs: kept in memory once read, a missing one remembered a while, never read on the UI thread: RouteWork.Files)
-    val files = RouteWork.Files { map -> Grid.read(ArtHarvest.file("terrain/$map.bin")) }
+    // Light 8 (LIGHT8_PLAN.md): at most LowMemCuts.zoneBound zones each (LowMemCuts.zoneFiles); test build 1516's unbounded cache elsewhere
+    val files = LowMemCuts.zoneFiles<Grid>({ it.slope.size + 64L }) { map -> Grid.read(ArtHarvest.file("terrain/$map.bin")) }
     fun of(map: Int): Grid? = files.get(map)
     /** zone [map]'s building cover (0..9 of a cell's samples a room covers), null until the harvest built it (RouteWork.Files) */
-    val buildings = RouteWork.Files { map -> Grid.read(ArtHarvest.file("terrain/$map.bld")) }
+    val buildings = LowMemCuts.zoneFiles<Grid>({ it.slope.size + 64L }) { map -> Grid.read(ArtHarvest.file("terrain/$map.bld")) }
     fun buildingsOf(map: Int): Grid? = buildings.get(map)
     /** zone [map]'s [Heights] (the ghost's drops), null until the harvest built them (RouteWork.Files) */
-    val heights = RouteWork.Files { map -> Heights.read(ArtHarvest.file("terrain/$map.hgt")) }
+    val heights = LowMemCuts.zoneFiles<Heights>({ it.h.size * 4L + 64L }) { map -> Heights.read(ArtHarvest.file("terrain/$map.hgt")) }
+
+    // LIGHT 8: counted ("terrain") and let go down to the player's zone and its neighbours on a memory warning, the 8 GB Thors only
+    init {
+        MemWatch.source8("terrain") { files.bytes() + buildings.bytes() + heights.bytes() }
+        MemWatch.onTrim8("terrain") { level ->
+            if (!LowMemCuts.zoneTrims(level)) 0L else LowMemCuts.zoneKeepNow().let { k -> files.trimTo(k) + buildings.trimTo(k) + heights.trimTo(k) }
+        }
+    }
     fun heightsOf(map: Int): Heights? = heights.get(map)
 
     // ---------------------------------------------------------------- the walked cells (b)

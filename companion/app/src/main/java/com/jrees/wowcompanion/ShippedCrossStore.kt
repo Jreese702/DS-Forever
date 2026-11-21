@@ -74,6 +74,8 @@ object ShippedCrossStore {
         index?.let { return it }
         val app = appCtx ?: return null
         if (!ready) return null
+        // Light 8 (LIGHT8_PLAN.md change 4): the graph of every zone waits while the game loads; a plan made meanwhile is made again
+        if (holdBump()) return null
         if (RouteWork.onMain()) { RouteWork.run({ index(); "" }) {}; return null }
         synchronized(this) {
             index?.let { return it }
@@ -107,6 +109,12 @@ object ShippedCrossStore {
             return ix
         }
     }
+
+    /**
+     * LIGHT 8'S HOLD (LoadHold, the 8 GB Thors only): true = the cross-zone data waits now; when the hold ends [version] goes up, so a
+     * cross-zone plan made meanwhile (no graph, or straight legs for a held zone) is made again. Off Light 8 always false
+     */
+    fun holdBump(): Boolean = LoadHold.hold(LoadHold.SAFEPATH, "cross") { version++ }
 
     /** memory pressure (ShippedNets.letGo): the graph goes (read again from the cache file when next asked); the bytes let go */
     fun release(): Long {

@@ -307,11 +307,20 @@ object Roads {
     /** zone [map]'s texture grid (null until the harvest built it) */
     // (test56's ANRs: a missing grid was opened again for every cell of the route's grid, on the UI thread, under this object's lock;
     // now each zone's grid is read once off the UI thread and kept, a missing one remembered a while: RouteWork.Files)
-    val files = RouteWork.Files { map -> Grid.read(ArtHarvest.file("groundtex/$map.bin")) }
+    // Light 8 (LIGHT8_PLAN.md): at most LowMemCuts.zoneBound zones (LowMemCuts.zoneFiles), counted ("roads") and let go down to the
+    // player's zone and its neighbours on a memory warning, the 8 GB Thors only; test build 1516's unbounded cache elsewhere
+    val files = LowMemCuts.zoneFiles<Grid>({ it.tex.size * 4L + it.palette.size * 4L + (it.thin?.size ?: 0) * 8L + 64L }) { map ->
+        Grid.read(ArtHarvest.file("groundtex/$map.bin")) }
+    init {
+        MemWatch.source8("roads") { files.bytes() }
+        MemWatch.onTrim8("roads") { level -> if (!LowMemCuts.zoneTrims(level)) 0L else files.trimTo(LowMemCuts.zoneKeepNow()) }
+    }
     fun of(map: Int): Grid? = files.get(map)
 
     /** the texture at world ([wx], [wy]) of [map] is a learned road */
-    fun isRoad(map: Int, wx: Double, wy: Double): Boolean { val g = of(map) ?: return false; return roads.isNotEmpty() && g.shows(wx, wy, roads) }
+    fun isRoad(map: Int, wx: Double, wy: Double): Boolean { val g = of(map) ?: return false; return isRoad(g, wx, wy) }
+    /** the same for a zone's grid [g] already in hand (a plan over many zones: one read per zone, never one per cell) */
+    fun isRoad(g: Grid, wx: Double, wy: Double): Boolean = roads.isNotEmpty() && g.shows(wx, wy, roads)
 
     /**
      * which textures are roads: over the zones with walked cells ([zones]: each zone's grid and its continent), a texture is a road

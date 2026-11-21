@@ -777,15 +777,23 @@ object Climb {
             private val seen = ThreadLocal<Int>()
             /** this thread's scratch for [n] vertices, the first [n] of each array set as a fresh leg's */
             fun of(n: Int): Scratch {
-                if (seen.get() != released) { mine.set(null); seen.set(released) }
+                if (seen.get() != released) { mine.set(null); seen.set(released); heldBy.remove(Thread.currentThread().id) }
                 if (n > (peak.get() ?: 0)) peak.set(n)
-                val sc = mine.get()?.takeIf { it.size >= n } ?: Scratch(n).also { mine.set(it) }
+                val sc = mine.get()?.takeIf { it.size >= n } ?: Scratch(n).also { mine.set(it); heldBy[Thread.currentThread().id] = n }
                 java.util.Arrays.fill(sc.dist, 0, n, Double.MAX_VALUE); java.util.Arrays.fill(sc.prev, 0, n, -1)
                 java.util.Arrays.fill(sc.extra, 0, n, Double.NaN); java.util.Arrays.fill(sc.via, 0, n, -1); java.util.Arrays.fill(sc.wet, 0, n, 0)
                 return sc
             }
             /** every thread's scratch let go at its next leg */
             fun release() { released++ }
+            /** this thread's scratch let go now (Light 8's relief, posted to the route thread: RouteWork.later) */
+            fun dropHere() { mine.set(null); seen.set(released); heldBy.remove(Thread.currentThread().id) }
+            /** the bytes every thread's scratch holds now ([BYTES_PER_VERTEX] a vertex; Light 8's memory line, "climbscratch") */
+            fun heldBytes(): Long = heldBy.values.sumOf { it.toLong() } * BYTES_PER_VERTEX
+            /** dist 8 + prev 4 + extra 8 + via 4 + wet 1 */
+            const val BYTES_PER_VERTEX = 25L
+            // (the vertices each thread's scratch holds, by thread id: bookkeeping only, on every Thor)
+            private val heldBy = java.util.concurrent.ConcurrentHashMap<Long, Int>()
             /** this thread's scratch's size now (the tests) */
             fun sizeHere(): Int = mine.get()?.size ?: 0
             private val peak = ThreadLocal<Int>()
@@ -826,5 +834,27 @@ object Climb {
     }
 
     /** the zones' lattices (the terrain step's), kept in memory */
-    val files = RouteWork.Files(max = 3) { map -> Grid.read(ArtHarvest.file("terrain/$map.clb")) }
+    // Light 8 (LIGHT8_PLAN.md): still at most 3, but only one of them outside the player's zone and its neighbours (the player's zone
+    // last to go); counted ("climb") and let go down to that keep set on a memory warning or a relief (before: only SafePathV2's own
+    // trim). Every other Thor: test build 1516's 3 least recently used, nothing on the memory line
+    val files = RouteWork.Files<Grid>(max = LowMemCuts.CLIMB_MAX, keep = { if (DeviceTier.light8()) LowMemCuts.zoneKeepNow() else emptyList() },
+        sizeOf = { it.cls.size + (it.faces?.size ?: 0) + 64L }, others = { LowMemCuts.climbOthers(DeviceTier.light8()) },
+        playerFirst = { DeviceTier.light8() }, quietReload = { DeviceTier.light8() }) { map -> Grid.read(ArtHarvest.file("terrain/$map.clb")) }
+    init {
+        MemWatch.source8("climb") { files.bytes() }
+        MemWatch.onTrim8("climb") { level -> if (!LowMemCuts.zoneTrims(level)) 0L else files.trimTo(LowMemCuts.zoneKeepNow()) }
+        // the legs' scratch (the shipped lattice's snap, ShippedSnap: up to its LATTICE_WINDOW; the dormant SafePathV2's up to
+        // WINDOW_CAP) and SafePathV2's danger grids: counted and let go at the reliefs too (before: only SafePathV2's own trim)
+        MemWatch.source8("climbscratch") { Scratch.heldBytes() + SafePathV2.dangerBytes() }
+        MemWatch.onTrim8("climbscratch") { level -> if (!LowMemCuts.zoneTrims(level)) 0L else letScratchGo() }
+    }
+
+    /** Light 8's relief: every leg's scratch and SafePathV2's danger grids go (the route thread's at once, after its work); the bytes */
+    fun letScratchGo(): Long {
+        val b = Scratch.heldBytes() + SafePathV2.dangerBytes()
+        Scratch.release()
+        RouteWork.later { Scratch.dropHere() }
+        SafePathV2.dropDangers()
+        return b
+    }
 }

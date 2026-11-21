@@ -788,7 +788,8 @@ object SafePath {
             private const val ORG = 32.0 * MapHarvest.ADT_YD
         }
     }
-    val zones = RouteWork.Files { map -> Zones.read(ArtHarvest.file("safepath/zones/$map.bin")) }
+    // Light 8 (LIGHT8_PLAN.md): at most LowMemCuts.zoneBound zones, another zone than the player's held while the game loads (LowMemCuts.zoneFiles)
+    val zones = LowMemCuts.zoneFiles<Zones>({ it.area.size * 4L + 64L }, LoadHold.SAFEPATH) { map -> Zones.read(ArtHarvest.file("safepath/zones/$map.bin")) }
 
     /**
      * a zone's WATER (b-safepath-water: no way or node in water but over a bridge or a shallow ford), as the game holds it: per vertex
@@ -919,7 +920,7 @@ object SafePath {
         }
     }
     const val WATER_YD = Climb.STEP         // the water's vertices: the lattice's own (4.2 yd, the liquid's own cell)
-    val waters = RouteWork.Files { map -> Water.read(ArtHarvest.file("safepath/water/$map.bin")) }
+    val waters = LowMemCuts.zoneFiles<Water>({ it.depth.size + it.bridge.size + 64L }, LoadHold.SAFEPATH) { map -> Water.read(ArtHarvest.file("safepath/water/$map.bin")) }
     const val AREAS_FILE = "safepath/areas.json"
     @Volatile private var areasRead: Areas? = null
     /** the areas table (read once, off the UI thread) */
@@ -1000,7 +1001,7 @@ object SafePath {
     // ---------------------------------------------------------------- the draft on the device
 
     /** a zone's draft, as last made (null: none yet) */
-    val drafts = RouteWork.Files { map -> runCatching { Net.fromJson(JSONObject(ArtHarvest.file("safepath/$map.draft.json").readText())) }.getOrNull() }
+    val drafts = LowMemCuts.zoneFiles<Net>({ netBytes(it) }, LoadHold.SAFEPATH) { map -> runCatching { Net.fromJson(JSONObject(ArtHarvest.file("safepath/$map.draft.json").readText())) }.getOrNull() }
     private val tried = HashMap<Int, String>()
 
     /**
@@ -1013,6 +1014,10 @@ object SafePath {
         if (!RouteWork.onMain()) return
         val stamp = "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Climb.files.version}:${zones.version}:${DangerStore.version}:$mine"
         if (tried[map] == stamp) return
+        // Light 8 (LoadHold, the 8 GB Thors only): another zone's draft waits while the game loads (LIGHT8_PLAN.md change 4: SafePath
+        // data for zones other than the player's own; the player's own zone, or one while the player's is not known, never waits). Not
+        // tried yet, so the first draw after the hold drafts it; off Light 8 never held
+        if (LoadHold.otherZone(map) && LoadHold.hold(LoadHold.SAFEPATH, "draft") {}) return
         tried[map] = stamp
         RouteWork.run({
             Roads.of(map) ?: return@run "no road textures yet"
@@ -1024,7 +1029,7 @@ object SafePath {
             // the lattice (the terrain step's, when it has run): the exits checked on the ground, as the harness does
             val cg = Climb.files.get(map)
             val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks, water ${waters.get(map) != null} v${ZONES_STEP.version}, ground ${cg != null}, v3"
-            val old = drafts.get(map)
+            val old = drafts.get(map, hold = false)              // (the zone drafted now: never waits for the hold)
             if (old != null && old.built == built) return@run null
             val names = HashMap<Int, String>()
             fun nameOf(m: Int) = names.getOrPut(m) {
@@ -1053,7 +1058,8 @@ object SafePath {
                     d.isNaN() || d == Water.BRIDGE || d <= FORD_DEPTH } ?: true })
                 groundExits(checkExits(net, gr), gr, ::nameOf, onMap = onMap)
             }
-            val neighbours = grounded.exits.map { it.toMap }.distinct().mapNotNull { m -> drafts.get(m) }
+            // (read past Light 8's load-time hold: a draft is saved and kept, so it is never made without its neighbours it could read)
+            val neighbours = grounded.exits.map { it.toMap }.distinct().mapNotNull { m -> drafts.get(m, hold = false) }
             val checked = checkCrossings(grounded, neighbours)
             ArtHarvest.file("safepath/$map.draft.json").also { it.parentFile?.mkdirs() }.writeText(checked.toJson().toString())
             drafts.drop(map); nets.drop(map)
@@ -1572,7 +1578,20 @@ object SafePath {
     const val EXIT_SNAP_YD = 300.0         // a crossing out of the zone this near one of the network's exits goes to that exit
 
     /** the networks for the routes, as their files read (the review's corrections, else the draft), kept in memory */
-    val nets = RouteWork.Files { map -> load(map) }
+    val nets = LowMemCuts.zoneFiles<Net>({ netBytes(it) }, LoadHold.SAFEPATH) { map -> load(map) }
+
+    /** a network's bytes in memory, estimated (Light 8's memory line): its nodes, ways and exits */
+    fun netBytes(n: Net): Long = 96L + n.nodes.size * 72L + n.edges.size * 64L + n.exits.size * 56L
+
+    // LIGHT 8 (LIGHT8_PLAN.md): the zone files counted on the memory line ("spzones") and, on a memory warning, let go down to the
+    // player's zone and its neighbours (LowMemCuts.zoneKeepNow); both only on the 8 GB Thors (MemWatch.source8 / onTrim8)
+    init {
+        MemWatch.source8("spzones") { zones.bytes() + waters.bytes() + drafts.bytes() + nets.bytes() }
+        MemWatch.onTrim8("spzones") { level ->
+            if (!LowMemCuts.zoneTrims(level)) 0L
+            else LowMemCuts.zoneKeepNow().let { k -> zones.trimTo(k) + waters.trimTo(k) + drafts.trimTo(k) + nets.trimTo(k) }
+        }
+    }
 
     // ---------------------------------------------------------------- the capitals' districts (our own table; the user: "Both")
 

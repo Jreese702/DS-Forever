@@ -95,6 +95,8 @@ object SetupFlow {
         val lastCrash: String? = null,
         /** the Polestar quest guide has not been answered yet (PolestarGuide.ask; the user, 2026-11-12): its one question */
         val polestarAsk: Boolean = false,
+        /** Light 8 (the 8 GB Thors, DeviceTier.light8; the user's answer Q5 2026-11-21): the one-line tip before Play ([PLAY_TIP_8GB]) */
+        val light8Tip: Boolean = false,
     )
 
     enum class Action {
@@ -255,6 +257,10 @@ object SetupFlow {
     fun terse(checks: List<Check>): List<Check> =
         checks.map { if (it.mark == Mark.BAD || it.full) it else it.copy(label = it.label.substringBefore(':').trim()) }
 
+    /** LIGHT 8'S ONE-LINE TIP before Play (the 8 GB Thors only; the user's answer Q5 2026-11-21): in place of "Ready", Spanish and French in
+     *  the app's i18n */
+    const val PLAY_TIP_8GB = "Ready. Close other apps for smoother play"
+
     /** issue #571: the status line of a game folder that has never run (Play starts its first run) */
     const val FIRST_RUN_LINE = "Play runs the game once first"
 
@@ -363,7 +369,7 @@ object SetupFlow {
             Art.RUNNING -> if (i.artWhat.startsWith(TablesProgress.PREFIX)) i.artWhat else "Preparing the game art: ${i.artPercent}%"
             Art.IDLE -> if (i.firstRun && i.folderFound) FIRST_RUN_LINE else if (i.folderFound) "Checking the game art" else ""
             else -> ""
-        }
+        }.let { l -> if (l.isEmpty() && i.light8Tip && prompt == null && canPlay(i)) PLAY_TIP_8GB else l }
         return Screen(prompt, play, if (i.progress != null) "" else line, Button("Report a problem", Action.REPORT))
     }
 

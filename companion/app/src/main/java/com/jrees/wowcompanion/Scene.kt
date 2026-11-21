@@ -73,8 +73,9 @@ object Scene {
         missingAt.remove(fid)
         pics[fid] = b
         held += b.byteCount.toLong()
-        // the least recently asked beyond the cap go (a pass that comes back decodes its picture again)
-        for (k in LowMemCuts.overCap(pics.keys.toList())) pics.remove(k)?.let { held -= it.byteCount.toLong() }
+        // the least recently asked beyond the cap go (a pass that comes back decodes its picture again). Light 8 (LIGHT8_PLAN.md
+        // change 2, DeviceTier.light8 read now): 3 held instead of 4
+        for (k in LowMemCuts.overCap(pics.keys.toList(), LowMemCuts.sceneMaxHeld(DeviceTier.light8()))) pics.remove(k)?.let { held -= it.byteCount.toLong() }
         return b
     }
 
@@ -86,7 +87,15 @@ object Scene {
             inPreferredConfig = Bitmap.Config.RGB_565
             if (bounds.outWidth > 0 && bounds.outHeight > 0) inSampleSize = LowMemCuts.sampleFor(bounds.outWidth, bounds.outHeight)
         }
-        return BitmapFactory.decodeFile(path, o)
+        val b = BitmapFactory.decodeFile(path, o) ?: return null
+        // Light 8 (LIGHT8_PLAN.md change 2): a picture Android kept in ARGB_8888 (it has alpha) goes down to RGB_565 too - the scene is
+        // drawn opaque, half the bytes; every other Thor keeps test build 1516's decode. A GUARD ONLY: the kit writes every loading
+        // picture without alpha (KitBuild: rgb = true) and test build 1516 already decodes those as RGB_565, so this never runs on
+        // today's pictures. Light 8's real saving here is the 4th picture held no more: one 1240 x 1080 x 2 B, about 2.7 MB
+        if (!LowMemCuts.sceneForce565(DeviceTier.light8()) || b.config == Bitmap.Config.RGB_565) return b
+        val c = runCatching { b.copy(Bitmap.Config.RGB_565, false) }.getOrNull() ?: return b
+        b.recycle()
+        return c
     }
 
     /**

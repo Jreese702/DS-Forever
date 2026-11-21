@@ -132,7 +132,10 @@ object ShippedNets {
         return gameBuild
     }
 
-    val files = RouteWork.Files(KEEP, keep = { keepNow() }, sizeOf = { it.bytes }) { map ->
+    // Light 8 (LIGHT8_PLAN.md): the player's zone is the last to go when every kept zone is in the keep set, and another zone's
+    // network waits while the game loads (LoadHold); every other Thor as test build 1516
+    val files = RouteWork.Files(KEEP, keep = { keepNow() }, sizeOf = { it.bytes }, playerFirst = { DeviceTier.light8() },
+        holdJob = LoadHold.SAFEPATH, holdIf = { m -> LoadHold.otherZone(m).also { if (it) ShippedCrossStore.holdBump() } }) { map ->
         val ctx = appCtx ?: return@Files null
         load(map, { p -> runCatching { ctx.assets.open(p) }.getOrNull() }, game(ctx), { android.util.Log.i("WCMAP", it) }, staleSaid)
             .also { l -> if (l == null) absent.add(map) else { absent.remove(map); l.stale?.let { stale[map] = it } ?: stale.remove(map) } }
