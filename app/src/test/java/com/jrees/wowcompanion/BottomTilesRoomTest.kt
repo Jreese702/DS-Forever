@@ -295,6 +295,10 @@ class BottomTilesRoomTest {
             if (id == BottomTiles.TALK) org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(1600))
             shot("bot_band_${i + 1}_$id")
         }
+        // In fights = Top screen: the fight's frames with the "up" plate (the controls went to the game screen)
+        HomeSettings.fightBand = HomeLayout.FightBand.TOP
+        open(BottomTiles.COMBAT); shot("bot_band_3b_combat_top_screen")
+        HomeSettings.fightBand = HomeLayout.FightBand.GROW
         // Hold to talk On (this character): the hold, the words in the box, A to send; then Send now, the line sent into the chat
         HomeSettings.setHoldTalk("Sample-Realm", true); HomeSettings.setTalkSendNow("Sample-Realm", false)
         open(BottomTiles.TALK); org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(1600)); shot("bot_band_7b_talk_on")

@@ -412,4 +412,78 @@ class HomeEditModelTest {
         assertEquals(false, m.toolbarWant)
         assertEquals(listOf(HomeEditModel.Fx.Save), m.press("PADFORWARD"))
     }
+
+    // ---------------------------------------------------------------- the fix pass (review findings)
+
+    @Test fun startOnThePromptSaves() {
+        val m = model()
+        m.press("PADBACK", "PAD2")
+        assertTrue(m.prompt)
+        assertEquals("Start = Save in every edit context (section 12), the prompt too", listOf(HomeEditModel.Fx.Save), m.press("PADFORWARD"))
+        assertFalse(m.prompt)
+    }
+
+    @Test fun classicIsTheWayBackFromEveryPreset() {
+        val cl = HomePresets.byId(HomePresets.CLASSIC)!!
+        val fighter = HomePresets.byId(HomePresets.FIGHTER)!!.apply(classic)
+        val a = cl.apply(fighter)
+        assertEquals(HomeLayout.FightBand.GROW, a.fight)
+        assertEquals(HomeLayout.CastDock.UNDER_CHAT, a.cast)
+        assertEquals(HomePresets.CLASSIC, HomePresets.nameOf(a))
+        val b = cl.apply(HomePresets.byId(HomePresets.COMPACT)!!.apply(classic))
+        assertEquals(HomeRest.DIAMONDS, b.rest)
+        assertEquals(HomeLayout.SlotSize.L, b.castSize)
+        assertEquals(HomePresets.CLASSIC, HomePresets.nameOf(b))
+        assertEquals("Same size stays the player's", HomeLayout.FightBand.SAME, cl.apply(classic.copy(fight = HomeLayout.FightBand.SAME)).fight)
+        // saved as Fighter: Classic from the sheet, and the record Save would write is named Classic, the top-screen bar off
+        val m = model(saved = fighter, start = EditStop.CHIP)
+        m.press("PAD1"); m.sheetUse(0)
+        assertEquals(HomePresets.CLASSIC, m.chipName)
+        assertEquals(HomePresets.CLASSIC, HomePresets.nameOf(m.draft))
+        assertTrue(m.draft.fight != HomeLayout.FightBand.TOP)
+    }
+
+    @Test fun theSheetsMineRowIsARowOfItsOwn() {
+        val m = model(start = EditStop.CHIP)
+        m.press("PAD1")
+        val p = HomePresets.ALL.size
+        m.sheetSel = p
+        m.press("PADDDOWN"); assertEquals("Down on Mine stays (never sideways to All characters)", p, m.sheetSel)
+        m.sheetSel = p + HomePresets.SLOTS
+        m.press("PADDUP"); assertEquals("Up from All characters: the preset above it", p - 1, m.sheetSel)
+        m.sheetSel = p
+        m.press("PADDUP"); assertEquals("Up from slot 1: the last presets' row, its first", ((p - 1) / HomeEditModel.SHEET_COLS) * HomeEditModel.SHEET_COLS, m.sheetSel)
+        m.sheetSel = 1
+        m.press("PADDDOWN"); assertEquals(1 + HomeEditModel.SHEET_COLS, m.sheetSel)
+        m.press("PADDDOWN"); assertEquals("the last presets' row: down to Mine, same column", p + 1, m.sheetSel)
+    }
+
+    @Test fun aSlotSavedThisSessionIsUsedOnEveryRoute() {
+        val slots = arrayOfNulls<HomeLayout>(HomePresets.SLOTS)
+        val fl = flips() + (0 until HomePresets.SLOTS).map { i ->
+            HomeEditModel.Flip("${HomeEditModel.SLOT_MARK}${i + 1}", { slots[i] != null }) { l -> slots[i]?.copy(name = l.name) ?: l } }
+        val m = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, slotNow = { slots[it] })
+        m.press("PAD1")
+        val p = HomePresets.ALL.size
+        m.sheetSel = p
+        assertEquals("an empty slot: refused", listOf(HomeEditModel.Fx.Refuse(EditStop.CHIP)), m.press("PAD1"))
+        assertEquals(listOf(HomeEditModel.Fx.SaveSlot(0)), m.press("PAD3"))
+        slots[0] = classic.swapped()                              // what Save here kept
+        m.press("PAD1")
+        assertTrue("A uses the slot as it is NOW", m.draft.mirrored)
+        assertEquals("the chip says 1 (as the Settings tile), never #1", "1", m.chipName)
+        m.press("PADLSHOULDER")
+        m.press("PADRSHOULDER")
+        assertEquals("the chip's flips reach it too", "1", m.chipName)
+    }
+
+    @Test fun parkedTouchesDoNothing() {
+        val m = model(start = EditStop.CHIP)
+        m.park()
+        assertTrue(m.flip(1).isEmpty())
+        assertTrue(m.tap(EditStop.CHIP).isEmpty())
+        assertNull("no sheet opened behind a fight", m.sheet)
+        assertTrue(m.sheetUse(0).isEmpty())
+        assertEquals(classic, m.draft)
+    }
 }

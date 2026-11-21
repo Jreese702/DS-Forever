@@ -87,7 +87,7 @@ NORMAL = {1: "chat", 2: "radial", 3: "map", 4: "home"}
 MIRROR = {1: "map", 2: "radial", 3: "chat", 4: "home"}
 
 # ------------------------------------------------------------------------------------------------ the tags
-check('local PV = "m179"' in SRC["padmap"] and "m178 MOVABLE HOME'S SWAP" in SRC["padmap"], "0. PadMap's tag m179 (m178's swap note kept)")
+check('local PV = "m180"' in SRC["padmap"] and "m178 MOVABLE HOME'S SWAP" in SRC["padmap"], "0. PadMap's tag m179 (m178's swap note kept)")
 check('local BV = "b75"' in SRC["book"] and "b74 MOVABLE HOME'S SWAP" in SRC["book"], "0. Book's tag b75 (b74's page-3 codes 9 / 10 kept)")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")
 
@@ -117,7 +117,7 @@ clean(W, "2")
 W.execute('fightOn()')
 padtab(W, 39, 38, 37, 9)
 W.execute('tick(0.5)')
-check(W.eval('(WowCompanionSpellsDB.rbm or {})[WHO .. "-" .. REALM]') is None, "3. in a fight: code 9 remembered at once (the bit gone)")
+check(W.eval('(WowCompanionSpellsDB.rbm or {})[WHO .. "-" .. REALM]') == 0, "3. in a fight: code 9 remembered at once (m180: the bit 0, never deleted)")
 dirs, m = d(W)
 check(dirs == MIRROR and m == 1 and roombar(W, 1) == "WowCompanionPadMap",
       "3. in a fight nothing re-bound: d still says what the keys do (Left the map)", (dirs, m, roombar(W, 1)))

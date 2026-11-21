@@ -47,8 +47,14 @@ class HomeEditModel(
     val savedName: String = HomePresets.CLASSIC,
     /** the DS toolbar's switch as the add-on says it now (null = no Spells word: the row is not offered) */
     val toolbarNow: Boolean? = null,
+    /** the device slots NOW (a slot kept by "Save here" this session is used at once, on every route: A, a finger, the chip) */
+    val slotNow: (Int) -> HomeLayout? = { null },
 ) {
-    class Flip(val name: String, val available: Boolean = true, val make: (HomeLayout) -> HomeLayout)
+    /** a layout the chip offers; [can] = selectable now (a device slot: while it holds a layout) */
+    class Flip(val name: String, val can: () -> Boolean, val make: (HomeLayout) -> HomeLayout) {
+        constructor(name: String, available: Boolean = true, make: (HomeLayout) -> HomeLayout) : this(name, { available }, make)
+        val available: Boolean get() = can()
+    }
 
     // ---------------------------------------------------------------- the state
     var draft: HomeLayout = saved
@@ -89,7 +95,7 @@ class HomeEditModel(
     private var lastCast = if (saved.cast != HomeLayout.CastDock.OFF) saved.cast else HomeLayout.CastDock.UNDER_CHAT
     private var lastCard = if (saved.card != HomeLayout.CardDock.OFF) saved.card else HomeLayout.CardDock.ON_MAP
     /** the flip the chip names (-1 = none yet) */
-    private var flipIdx = flips.indexOfFirst { it.make(saved).samePlace(saved) }
+    private var flipIdx = flips.indexOfFirst { it.available && it.make(saved).samePlace(saved) }
     /** PHASE 4, THE ROOM BAR: its own cursor (an index into the draft's [HomeLayout.rooms]; Left / Right while the cursor is on the bar) */
     var barSel = 0
         private set
@@ -103,7 +109,8 @@ class HomeEditModel(
     /** the layout chip's word: the flip it names, the saved name while nothing changed, else "Edited" */
     val chipName: String get() {
         val f = flips.getOrNull(flipIdx)
-        if (f != null && draft.samePlace(f.make(saved))) return f.name
+        // a device slot reads "1" .. "3" as the Settings tile does (its flip is named with SLOT_MARK)
+        if (f != null && f.available && draft.samePlace(f.make(saved))) return f.name.removePrefix(SLOT_MARK)
         return if (draft.samePlace(saved)) savedName else EDITED
     }
 
@@ -300,7 +307,7 @@ class HomeEditModel(
 
     /** the chip's arrows, LB / RB: the next layout, live (each one made from the layout Home had when edit mode opened) */
     fun flip(d: Int): List<Fx> {
-        if (flips.isEmpty()) return emptyList()
+        if (parked || flips.isEmpty()) return emptyList()
         val n = flips.size
         var i = flipIdx
         repeat(n) {
@@ -405,12 +412,11 @@ class HomeEditModel(
     private fun sheetKey(s: Sheet, k: String): List<Fx> {
         val n = if (s == Sheet.LAYOUTS) sheetCount() else removed.size
         if (n == 0) { sheet = null; return emptyList() }
-        val cols = if (s == Sheet.LAYOUTS) SHEET_COLS else 1
         when (k) {
             "PADDLEFT" -> sheetSel = (sheetSel - 1).coerceAtLeast(0)
             "PADDRIGHT" -> sheetSel = (sheetSel + 1).coerceAtMost(n - 1)
-            "PADDUP" -> sheetSel = (sheetSel - cols).coerceAtLeast(0)
-            "PADDDOWN" -> sheetSel = (sheetSel + cols).coerceAtMost(n - 1)
+            "PADDUP", "PADDDOWN" -> sheetSel = if (s == Sheet.LAYOUTS) sheetVertical(sheetSel, if (k == "PADDUP") -1 else 1)
+                else (sheetSel + if (k == "PADDUP") -1 else 1).coerceIn(0, n - 1)
             "PAD1" -> return if (s == Sheet.LAYOUTS) sheetUse(sheetSel) else addBack(removed.getOrNull(sheetSel))
             "PAD3" -> if (s == Sheet.LAYOUTS) return sheetSaveHere(sheetSel)
             "PAD2" -> sheet = null
@@ -419,8 +425,29 @@ class HomeEditModel(
         return emptyList()
     }
 
+    /**
+     * the Layouts sheet's Up / Down as it is DRAWN: the presets in rows of [SHEET_COLS], then "Mine" (the slots and All characters) as one
+     * row of its own; Down on Mine stays, Up from Mine goes to the preset above it (its column, the last row's nearest)
+     */
+    fun sheetVertical(i: Int, d: Int): Int {
+        val p = presetCount
+        if (i >= p) {                                                           // the Mine row
+            if (d > 0 || p == 0) return i
+            val lastRow = (p - 1) / SHEET_COLS
+            return (lastRow * SHEET_COLS + (i - p).coerceAtMost(SHEET_COLS - 1)).coerceAtMost(p - 1)
+        }
+        val to = i + d * SHEET_COLS
+        return when {
+            to < 0 -> i
+            to < p -> to
+            i / SHEET_COLS == (p - 1) / SHEET_COLS -> p + (i % SHEET_COLS)          // the last presets' row: down to Mine, same column
+            else -> p - 1                                                            // a short last row: its last preset
+        }
+    }
+
     /** A (or a finger) on sheet item [i]: a preset = use it on the draft; a slot = its layout; the last = All characters on / off */
-    fun sheetUse(i: Int, slot: (Int) -> HomeLayout? = { null }): List<Fx> {
+    fun sheetUse(i: Int, slot: (Int) -> HomeLayout? = slotNow): List<Fx> {
+        if (parked) return emptyList()
         sheetSel = i
         if (i < presetCount) {
             val f = flips.filter { !it.name.startsWith(SLOT_MARK) }[i]
@@ -431,7 +458,7 @@ class HomeEditModel(
         }
         val si = i - presetCount
         if (si < HomePresets.SLOTS) {
-            val l = slot(si) ?: flips.firstOrNull { it.name == "$SLOT_MARK${si + 1}" }?.make(saved) ?: return listOf(Fx.Refuse(EditStop.CHIP))
+            val l = slot(si) ?: return listOf(Fx.Refuse(EditStop.CHIP))
             flipIdx = flips.indexOfFirst { it.name == "$SLOT_MARK${si + 1}" }
             sheet = null
             return change(l.copy(name = saved.name), Motion.MODULE_OPEN)
@@ -442,6 +469,7 @@ class HomeEditModel(
 
     /** X on a slot: keep the draft there now (a device slot is not the active layout: it needs no Save) */
     fun sheetSaveHere(i: Int): List<Fx> {
+        if (parked) return emptyList()
         sheetSel = i
         val si = i - presetCount
         return if (si in 0 until HomePresets.SLOTS) listOf(Fx.SaveSlot(si)) else emptyList()
@@ -488,6 +516,7 @@ class HomeEditModel(
         "PADDRIGHT" -> { promptSel = (promptSel + 1) % PROMPT.size; emptyList() }
         "PAD1" -> promptPick(promptSel)
         "PAD2" -> { prompt = false; emptyList() }
+        "PADFORWARD" -> promptPick(0)                                         // Start = Save, in every edit context (section 12)
         else -> emptyList()
     }
 
@@ -508,6 +537,7 @@ class HomeEditModel(
 
     /** a tap on a widget: an unselected one is selected, the selected one opens its menu */
     fun tap(s: EditStop): List<Fx> {
+        if (parked) return emptyList()
         removeAsk = null
         if (menu != null) { menu = null; if (s == cursor) return emptyList() }
         if (lifted != null && lifted != s) drop()

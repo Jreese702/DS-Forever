@@ -356,7 +356,9 @@ object BottomPictures {
                 if (b != null) { blit(c, b, r); sides(c, r) } else fallback(c, r, "Controller on Home", look, tMs)
             }
             BottomTiles.COMBAT -> {
-                val grow = HomeSettings.combatGrow
+                // In fights: Grow / Same size / Top screen (the band keeps its rest box as Same size does; the controls go up: the plate)
+                val band = HomeSettings.fightBand
+                val grow = band == HomeLayout.FightBand.GROW
                 val restB = crop("combat|rest|$sz", shot(player(), false, null, ::fightFaces), prio)
                 val fightB = crop("combat|$grow|$sz", shot(player(grow = grow), true, null, ::fightFaces), prio)
                 if (restB == null || fightB == null) { fallback(c, r, "Combat layout", look, tMs); return }
@@ -366,6 +368,12 @@ object BottomPictures {
                 if (k > 0f) { pBmp.alpha = (255 * k).toInt(); blit(c, fightB, r); pBmp.alpha = 255 }
                 sides(c, r, FIGHT_SIDE, FOOT)
                 if (k > 0f) UiKit.combatGlow(c, r, 0.75f * k, r.height() * 0.16f)
+                // Top screen: the "up" plate on the fight's frames (the Wings are on the game screen)
+                if (band == HomeLayout.FightBand.TOP && k > 0f) {
+                    // in the frame's upper left corner, clear of the faces (the band's own cue sits on the clock spot)
+                    val s = r.height() * 0.26f
+                    HomeView.upPlate(c, r.left + s * 0.5f + r.height() * 0.08f, r.top + s * 0.5f + r.height() * 0.08f, s, k, pF, path)
+                }
             }
             BottomTiles.SWING -> {
                 val on = HomeSettings.swingTimer

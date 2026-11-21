@@ -2,6 +2,10 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar8 (the fix pass on movable Home): a "Combat bar" entry counts as PLACED only when it moves the piece (dx / dy not 0) - a size
+-- alone (the editor's size step) keeps the Wings at their auto spot, scaled; in a fight (InCombatLockdown / the player in combat) the
+-- Wings stay for the WHOLE fight whatever B gave back (SPEC section 11: tgGrown only decides out of combat - an attack armed before the
+-- pull, B's give-back); a settled frame of the motion does no work (no spot, no string rebuilt per frame).
 -- nbar7 THE COMBAT BAR ON THE TOP SCREEN (movable Home phase 3, SPEC.txt section 11; the user's rulings 2026-11-20: D1 opt-in, D7 Wings):
 -- with this character's flag on (PadMap m179 ctop, the app's "In fights: Top screen") the Nintendo bar shows in fights as two halves around
 -- our HUD at a spot worked out out of combat (NB.fightSolve), frozen in the fight and re-fit only against our own frames; display only.
@@ -2450,7 +2454,7 @@ end
 -- nbar6 MOVABLE HOME'S SWAP (the user's rulings 2026-11-20, SPEC.txt section 6 item 5; PadMap m178): the DS toolbar's icons on the bare
 -- D-pad are picked by the router's WORD (padmap dpad `d`: after a swap Left is "map"), never by position (NB.TOOLBAR_BY).
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
-local NB = { V = "nbar7", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
+local NB = { V = "nbar8", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -3279,8 +3283,11 @@ function NB.topInputs()
     local sc = math.max(NB.S_MIN, math.min(NB.S_MAX, (e and num(e.s)) or 100)) / 100
     local ours, hud = NB.topOurs()
     local bx, by = NB.lay.base()
+    -- nbar8: placed = the entry MOVES the piece (a size alone is the Wings' scale, Auto stays on)
+    local dx, dy = (e and num(e.dx)) or 0, (e and num(e.dy)) or 0
+    local placed = (e ~= nil and (dx ~= 0 or dy ~= 0)) and { x = bx + dx, y = by + dy } or nil
     return { W = W, H = H, s = k * sc * kk, fsc = k * sc, kk = kk, hud = hud, ours = ours, game = NB.top.game or {}, band = NB.topBand(),
-             placed = e and { x = bx + (num(e.dx) or 0), y = by + (num(e.dy) or 0) } or nil, stock = { x = bx, y = by } }
+             placed = placed, stock = { x = bx, y = by } }
 end
 -- [fresh]: the game's frames read again (out of combat only); then the spot, and a glide to it if it moved while shown
 function NB.topSolve(fresh)
@@ -3311,6 +3318,8 @@ function NB.topFlag()
 end
 -- the router's own fight switch (the fight or an attack / auto-repeat armed, not given back by B), else the fight itself
 function NB.topSwitch()
+    -- nbar8: in a fight the Wings stay to its end (B's give-back drops the bottom grow's word, never the top screen's bar)
+    if S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true then return true end
     if type(WC.tgGrown) == "function" then
         local ok, g = pcall(WC.tgGrown)
         if ok and (g == true or g == false) then return g end
@@ -3467,6 +3476,14 @@ function NB.topApply()
     end
     local sp = T.spot
     if not sp then return end
+    -- nbar8: settled (in, no glide, nothing re-solved, the dip as it was): nothing to place this frame
+    local dip = NB.chatUp()
+    if T.shown and T.done and T.t >= 1 and T.dir == 0 and T.mt >= 1 and T.key ~= nil and T.cur == sp and T.dipWas == dip
+            and T.visWas == NB.vis then
+        NB.topSwing()
+        return
+    end
+    T.dipWas, T.visWas = dip, NB.vis
     if not T.shown then T.shown = true; NB.topShow() end
     local to = sp
     if T.mt < 1 and T.from then to = NB.lerpSpot(T.from, sp, NB.ease(T.mt)) end
@@ -3480,6 +3497,7 @@ function NB.topApply()
     if NB.chatUp() then a = a * NB.TOP.DIP end
     T.alpha = a
     pcall(f.SetAlpha, f, (NB.vis == false and 0 or 1) * a)
+    T.done = T.t >= 1 and T.dir == 0 and T.mt >= 1                      -- nbar8: this frame laid the settled state itself
     NB.topSwing()
 end
 -- the top layout editor open (out of combat) with the flag on: the bar at its piece's spot, to be placed (Nintendo mode shows it anyway)

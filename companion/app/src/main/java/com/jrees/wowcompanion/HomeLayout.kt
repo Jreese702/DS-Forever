@@ -140,7 +140,7 @@ object HomeLayoutMigration {
 
 /**
  * THE PRESETS (SPEC section 9; code constants). Each one sets only its own fields on the current record ([apply]); the rest (the bar, the
- * rest look, the fight mode where it says nothing) stays the player's. [nameOf] names a record by the first preset whose fields it holds
+ * rest look, the fight mode where it says nothing) stays the player's - except Classic, which also undoes the other presets' fields. [nameOf] names a record by the first preset whose fields it holds
  * (Classic last: chat left at half), else "Custom".
  */
 object HomePresets {
@@ -163,8 +163,14 @@ object HomePresets {
     private val R = HomeLayout.Side.RIGHT
 
     val ALL: List<Preset> = listOf(
-        Preset(CLASSIC, apply = { it.copy(name = CLASSIC, chatSide = L, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP) },
-            holds = { it.chatSide == L && it.chatShare == HomeLayout.Share.HALF && it.cast != HomeLayout.CastDock.SPLIT }),
+        // Classic = today's Home, the way BACK from any preset: it also undoes what the others set (Compact's thin row and M slots,
+        // Fighter's Split bar and top-screen fight: Under chat, Grow - D1's default); the bar's own dock and Same size stay the player's
+        Preset(CLASSIC, apply = { it.copy(name = CLASSIC, chatSide = L, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP,
+                rest = HomeRest.DIAMONDS, castSize = HomeLayout.SlotSize.L,
+                cast = if (it.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.UNDER_CHAT else it.cast,
+                fight = if (it.fight == HomeLayout.FightBand.TOP) HomeLayout.FightBand.GROW else it.fight) },
+            holds = { it.chatSide == L && it.chatShare == HomeLayout.Share.HALF && it.cast != HomeLayout.CastDock.SPLIT &&
+                it.fight != HomeLayout.FightBand.TOP }),
         Preset(MIRRORED, apply = { it.copy(name = MIRRORED, chatSide = R, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP,
                 cast = HomeLayout.CastDock.UNDER_CHAT) },
             holds = { it.chatSide == R && it.chatShare == HomeLayout.Share.HALF && it.card == HomeLayout.CardDock.ON_MAP && it.cast == HomeLayout.CastDock.UNDER_CHAT }),

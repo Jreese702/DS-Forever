@@ -112,6 +112,22 @@ class SvSyncTest {
         assertEquals(SvLua.ser(thorNow), SvKeep.fromJson(File(dir, "WowCompanionSpellsDB.json" + SvBackup.PRESYNC).readText())!!.lua)
     }
 
+    /**
+     * PadMap m180: the DS toolbar's mirror bit and the top-screen combat bar's flag store an explicit 0 for off. The three-way merge then
+     * keeps the Thor's "off" against the PC's older "on" (base = on); a DELETED entry (m178 / m179's `nil`) came back from the PC
+     */
+    @Test fun anOffMirrorBitOrTopFlagStaysOffThroughTheMerge() {
+        val who = "Thrall-Area 52"
+        for (key in listOf("rbm", "ctop")) {
+            val base = mapOf<Any, Any>(key to mapOf<Any, Any>(who to 1L))
+            val remote = mapOf<Any, Any>(key to mapOf<Any, Any>(who to 1L))
+            val off = SvMerge.merge(mapOf<Any, Any>(key to mapOf<Any, Any>(who to 0L)), remote, base).table
+            assertEquals("$key: local 0, remote 1, base 1 keeps 0", 0L, (off[key] as Map<*, *>)[who])
+            val gone = SvMerge.merge(mapOf<Any, Any>(key to emptyMap<Any, Any>()), remote, base).table
+            assertEquals("$key: a deleted entry is added back by the merge (why off is 0, never nil)", 1L, (gone[key] as Map<*, *>)[who])
+        }
+    }
+
     /** a corrupt or partial PC document: nothing written for that table, the Thor's kept copy untouched */
     @Test fun aCorruptPcFileWritesNothing() {
         keep("WowCompanionSpellsDB", thorLua)

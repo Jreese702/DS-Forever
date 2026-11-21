@@ -236,7 +236,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar7 and its note", 'local NB = { V = "nbar7"' in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src)
+    chk("0. ActionBar's tag nbar8 and nbar7's note", 'local NB = { V = "nbar8"' in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src)
     chk("0. ActionBar's main chunk loads under Lua 5.1 (the 200-locals limit kept)", NB is not None and NB.fightSolve is not None)
 
     # ------------------------------------------------------------------------------------------------ A the solver
@@ -398,16 +398,18 @@ def main():
     G.CHAT_UP = False
     L.execute('RUN(0.1)')
     chk("C. the strip gone: alpha 1 again", abs(f.alpha - 1) < 1e-6, f.alpha)
-    # B gave the buttons back (the router's switch false): out over 0.2 s, then hidden
+    # nbar8: B gave the buttons back IN the fight (the router's switch false): the Wings stay to the fight's end (SPEC section 11)
     G.TG = False
-    L.execute('RUN(0.1, 0.02)')
-    chk("C. the switch off: fading out (half way at 0.1 s)", NB.top.shown and 0 < f.alpha < 1, f.alpha)
+    L.execute('RUN(0.3, 0.02)')
+    chk("C. B's give-back in the fight: the Wings stay, alpha 1 (nbar8)", NB.top.shown and abs(f.alpha - 1) < 1e-6 and f.shown is True, f.alpha)
+    # the fight's end: out over 0.2 s, then hidden
+    G.COMBAT = False
+    L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.1, 0.02)')
+    chk("C. the fight's end: fading out (half way at 0.1 s)", NB.top.shown and 0 < f.alpha < 1, f.alpha)
     L.execute('RUN(0.12, 0.02)')
     chk("C. ... gone after 0.2 s: hidden, the chips and swing lines too", not NB.top.shown and f.shown is False and not f.chip[1].shown
         and not f.sw[1].shown, (NB.top.shown, f.shown))
-    # the fight's end
-    G.COMBAT = False
-    L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.2)')
+    L.execute('RUN(0.1)')
     chk("C. after the fight: the spot solved again with the game's frames (ChatFrame1 now shown)", G.RECTNOW > reads0 and not NB.top.frozen,
         (G.RECTNOW, reads0))
     # an attack armed out of combat (the router's switch on, no fight): the wings show, solved fresh
@@ -470,6 +472,14 @@ def main():
     G.TG, G.COMBAT = False, False
     L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.4); LAYE.nbar = nil; WowCompanion.nbar.lay.apply(); RUN(0.1)')
     chk("E. Reset in the editor (no entry) = Auto again", todict(NB.top.spot)["case"] == 1, todict(NB.top.spot)["case"])
+    # nbar8: a SIZE alone (the editor's size step writes dx = dy = 0) is no place: still the Wings' auto spot, at the piece's scale
+    fsc0 = L.eval('WowCompanion.nbar.topInputs().fsc')
+    L.execute('LAYE.nbar = { dx = 0, dy = 0, s = 130 }; WowCompanion.nbar.lay.apply(); RUN(0.1)')
+    rs = todict(L.eval('WowCompanion.nbar.topSolve(true)'))
+    fsc1 = L.eval('WowCompanion.nbar.topInputs().fsc')
+    chk("E. nbar8: an entry with s = 130 and dx = dy = 0 still solves to the Wings (case 1 / 2), scaled x1.3", rs["case"] in (1, 2)
+        and rs["form"] == "wings" and abs(fsc1 / fsc0 - 1.3) < 1e-6, (rs["case"], rs["form"], fsc0, fsc1))
+    L.execute('LAYE.nbar = nil; WowCompanion.nbar.lay.apply(); RUN(0.1)')
 
     # ------------------------------------------------------------------------------------------------ F leave no trace
     tpls = set(str(o.tpl) for o in G.OURS.values() if o.tpl is not None)

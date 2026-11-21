@@ -105,10 +105,11 @@ class HomeLayoutStoreTest {
         assertEquals(listOf("Classic", "Mirrored", "Big map", "Big chat", "Compact", "Fighter"), HomePresets.OFFERED.map { it.id })
         assertTrue("phase 3: Fighter is offered (the player's own opt-in to the top-screen bar, D1)", HomePresets.byId(HomePresets.FIGHTER)!!.available)
         assertEquals(HomePresets.FIGHTER, HomePresets.nameOf(HomePresets.byId(HomePresets.FIGHTER)!!.apply(base)))
-        // Classic keeps the player's bar, rest and fight mode; Mirrored is today's swapped with the bar under the chat
-        val mine = HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP, rest = HomeRest.ROW, fight = HomeLayout.FightBand.SAME)
+        // Classic keeps the player's bar dock and Grow / Same size, and is the way back from the others (SPEC section 9: Diamonds, slots
+        // L; Fighter's Split / Top screen undone); Mirrored is today's swapped with the bar under the chat
+        val mine = HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP, rest = HomeRest.ROW, fight = HomeLayout.FightBand.SAME, castSize = HomeLayout.SlotSize.M)
         val c = HomePresets.byId(HomePresets.CLASSIC)!!.apply(mine.copy(chatSide = HomeLayout.Side.RIGHT))
-        assertEquals(mine.copy(name = HomePresets.CLASSIC), c)
+        assertEquals(mine.copy(name = HomePresets.CLASSIC, rest = HomeRest.DIAMONDS, castSize = HomeLayout.SlotSize.L), c)
         val m = HomePresets.byId(HomePresets.MIRRORED)!!.apply(HomeLayout())
         assertTrue(m.mirrored); assertEquals(HomeLayout.CastDock.UNDER_CHAT, m.cast)
         assertEquals(HomePresets.CUSTOM, HomePresets.nameOf(HomeLayout(chatSide = HomeLayout.Side.RIGHT, card = HomeLayout.CardDock.OFF)))

@@ -123,7 +123,7 @@ class HomeView(
         flow.setRest(HomeSettings.rest)
         HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
         HomeSettings.onChange { post {
-            if (flow.setRest(HomeSettings.rest)) changed()
+            if (flow.setRest(restWanted())) changed()
             // MOVABLE HOME: a new layout record (a preset, the swap, a facade setter, another character): the page glides there on the one
             // motion (240 / 200 ms, Motion.curve); the D-pad's word follows in the add-on ([HomeLayoutStore], ToolbarMirror)
             else if (laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true) shown?.let { apply(it, animate = isShown) }
@@ -2303,6 +2303,11 @@ class HomeView(
     var onEditChanged: ((Boolean) -> Unit)? = null
 
     private fun editDraft(): HomeLayout? = edit?.takeIf { !it.parked }?.draft
+    /** the band's rest Home is laid with: the draft's while edit mode is live (Y on the band, the menu's Rest row preview live), else the
+     *  saved record's (a fight's park, Discard and Leave put it back) */
+    private fun restWanted(): HomeRest = editDraft()?.rest ?: HomeSettings.rest
+    /** HomeFlow's rest to [restWanted]; true = it changed (the next lay reads it: [layoutNow], CastView's look, [solveFor]) */
+    private fun editRestSync(): Boolean = flow.setRest(restWanted())
 
     /**
      * P5's ONE EXCEPTION (SPEC section 1): while edit mode runs, the band's D-pad pictures preview the DRAFT (after a swap Left = the map,
@@ -2333,6 +2338,7 @@ class HomeView(
 
     private val editHost: HomeEditView.Host by lazy { object : HomeEditView.Host {
         override val model: HomeEditModel? get() = edit ?: chromeModel
+        override val liveModel: HomeEditModel? get() = edit
         override val chromeAlpha: Float get() = chromeA
         override fun parts(): Map<HomePart, RectF> {
             val out = LinkedHashMap<HomePart, RectF>()
@@ -2422,8 +2428,10 @@ class HomeView(
     private fun editFlips(): List<HomeEditModel.Flip> {
         val out = ArrayList<HomeEditModel.Flip>()
         for (p in HomePresets.ALL) out += HomeEditModel.Flip(p.id, p.available) { l -> p.apply(l) }
-        for ((i, s) in HomeLayoutStore.slots().withIndex()) if (s != null)
-            out += HomeEditModel.Flip("${HomeEditModel.SLOT_MARK}${i + 1}") { l -> s.copy(name = l.name) }
+        // every device slot, read LIVE (one kept by "Save here" this session is on the chip at once; an empty one is skipped)
+        for (i in 0 until HomePresets.SLOTS)
+            out += HomeEditModel.Flip("${HomeEditModel.SLOT_MARK}${i + 1}", { HomeLayoutStore.slots().getOrNull(i) != null }) { l ->
+                HomeLayoutStore.slots().getOrNull(i)?.copy(name = l.name) ?: l }
         return out
     }
 
@@ -2439,7 +2447,8 @@ class HomeView(
         if (classOpen) classLayerShow(false)
         val saved = HomeSettings.layout
         chromeModel = null
-        val m = HomeEditModel(saved, start, editFlips(), HomeLayoutStore.nameOf(saved), toolbarNow = padMap?.dpad?.want)
+        val m = HomeEditModel(saved, start, editFlips(), HomeLayoutStore.nameOf(saved), toolbarNow = padMap?.dpad?.want,
+            slotNow = { HomeLayoutStore.slots().getOrNull(it) })
         edit = m
         editAway = false
         editView.dropThumbs()
@@ -2466,6 +2475,7 @@ class HomeView(
         } else Log.i(TAG, "home edit: closed${if (m.dirty) " (discarded)" else ""}")
         edit = null
         liveDraft = null
+        editRestSync()                                                    // the saved record's rest again (Save: the draft's, now saved)
         editRoomBarSync()                                                 // the add-on's own `d` again (Save's mirror follows it)
         editBarSync(Motion.MODULE_CLOSE)                                  // P4: the room bar's saved order (Discard glides it back)
         chromeModel = m
@@ -2513,13 +2523,15 @@ class HomeView(
     private fun editRun(fx: List<HomeEditModel.Fx>) {
         val m = edit
         for (f in fx) when (f) {
-            is HomeEditModel.Fx.Relay -> { liveDraft = m?.draft; editRelay(f.ms); editRoomBarSync() }
+            is HomeEditModel.Fx.Relay -> { liveDraft = m?.draft; editRestSync(); editRelay(f.ms); editRoomBarSync() }
             HomeEditModel.Fx.Save -> { editLeave(save = true); return }
             HomeEditModel.Fx.Leave -> { editLeave(save = false); return }
             is HomeEditModel.Fx.Press -> editPress(f.key, f.k)
             is HomeEditModel.Fx.SaveSlot -> m?.let { HomeLayoutStore.saveSlot(f.i, it.draft); editView.dropThumbs() }
-            HomeEditModel.Fx.EditSlots -> { editLeave(save = true); onEditSlots?.invoke(); return }
-            HomeEditModel.Fx.Filters -> { editLeave(save = true); onEditFilters?.invoke(); return }
+            // the bar's slots / the chat's filters (another room): an unchanged draft leaves; a changed one WAITS (the room's
+            // giveBack parks it, editAwayPark) and edit mode is back where it was with Home - nothing is written without Save
+            HomeEditModel.Fx.EditSlots -> { if (m?.dirty != true) editLeave(save = false); onEditSlots?.invoke(); return }
+            HomeEditModel.Fx.Filters -> { if (m?.dirty != true) editLeave(save = false); onEditFilters?.invoke(); return }
             is HomeEditModel.Fx.Refuse -> editRefuse(f.stop)
             HomeEditModel.Fx.Lift -> liftTo(if (m?.lifted != null) 1f else 0f, m?.lifted)
         }
@@ -2560,7 +2572,8 @@ class HomeView(
 
     /** lay Home again with the draft, gliding [ms]; [force] = a glide even when the draft equals what is laid (the chrome's settle) */
     private fun editRelay(ms: Long, force: Boolean = false) {
-        val s = shown ?: return
+        // the band's rest changed under edit mode (the draft's, or back to the saved one): the page's screen with the flow's rest now
+        val s = shown?.let { if (it.rest != flow.rest) flow.screen else it } ?: return
         if (!force && laidLayout == layoutNow(s) && !laidChanged()) { editDecor(); return }
         applyMs = ms
         try { apply(s, animate = live) } finally { applyMs = null }
@@ -2584,16 +2597,20 @@ class HomeView(
         val fight = fightShown()
         if (fight && !m.parked) {
             m.park(); liveDraft = null
+            editRestSync()                                                // the saved rest for the fight (the draft's waits)
             editRoomBarSync(); editBarSync(Motion.COMBAT_GROW)
             editGuest(false)
             settleAnim?.cancel(); settleK = 0f; liftTo(0f, null)
-            chromeFade(0f, HomeEditModel.CHROME_IN)
+            // the room bar's chrome goes with the rest (the XP track back, no disc tick, no ribbon touches) once the fade is out
+            chromeFade(0f, HomeEditModel.CHROME_IN) { if (edit?.parked == true) onEditChrome?.invoke(null) }
             Log.i(TAG, "home edit: parked (a fight)")
             if (relay) editRelay(Motion.COMBAT_GROW)
         } else if (!fight && m.parked && live) {
             m.resume(); liveDraft = m.draft
+            editRestSync()
             editRoomBarSync(); editBarSync(Motion.COMBAT_SHRINK)
             editGuest(true)
+            onEditChrome?.invoke(editView)
             chromeFade(1f, HomeEditModel.CHROME_IN)
             Log.i(TAG, "home edit: back (the fight ended)")
             if (relay) editRelay(Motion.COMBAT_SHRINK)
@@ -2603,7 +2620,7 @@ class HomeView(
     /** another room over Home: the draft waits (as for a fight); Home again: edit mode where it was */
     private fun editAwayPark() {
         val m = edit ?: return
-        if (!m.parked) { m.park(); liveDraft = null; editGuest(false); editBarSync(0L) }
+        if (!m.parked) { m.park(); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L) }
         editAway = true
         chromeAnim?.cancel(); chromeA = 0f
         onEditChrome?.invoke(null)
@@ -2614,6 +2631,7 @@ class HomeView(
         editAway = false
         if (fightShown()) return                                          // the fight's end brings it back (editFightCheck)
         m.resume(); liveDraft = m.draft
+        editRestSync()
         editGuest(true)
         onEditChrome?.invoke(editView)
         chromeFade(1f, HomeEditModel.CHROME_IN)
@@ -2763,6 +2781,9 @@ class HomeView(
      *  card), on Home's rest page; null = a hold there is never edit mode's */
     private fun holdBodyAt(x: Float, y: Float): EditStop? {
         if (flow.full != null && !flow.takeover) return null
+        // never armed in a fight: a slow touch there stays today's tap (the map / the chat opens, combat-touch); the refusal's red edge
+        // is the Settings tile's and the disc's (editOpen)
+        if (fightShown()) return null
         if (classOpen || pauseT > 0f || typeWanted || mailOpen || wheelOpen) return null
         now[Part.QUESTS]?.let { if (questPane.visibility == View.VISIBLE && it.contains(x, y)) return null }
         now[Part.PARTY]?.let { if (partyView.visibility == View.VISIBLE && it.contains(x, y)) return null }
@@ -2872,25 +2893,7 @@ class HomeView(
         val a = topCueAlpha()
         if (a <= 0f) { cueAt = 0L; return }
         val b = now[Part.BARS] ?: return
-        val sz = CUE_PX
-        val cx = b.centerX()
-        val cy = b.top + ClockBand.CHIP_TOP + sz / 2f + 4f
-        val box = RectF(cx - sz / 2f, cy - sz / 2f, cx + sz / 2f, cy + sz / 2f)
-        val al = (255 * a).toInt()
-        // the comic-ink plate: an ink rim, the red cloth, the game's gold arrow
-        pCue.style = Paint.Style.FILL; pCue.color = Theme.ink; pCue.alpha = al
-        c.drawRoundRect(RectF(box.left - 3f, box.top - 3f, box.right + 3f, box.bottom + 3f), 10f, 10f, pCue)
-        pCue.color = CUE_FILL; pCue.alpha = al
-        c.drawRoundRect(box, 8f, 8f, pCue)
-        pCue.style = Paint.Style.STROKE; pCue.strokeWidth = 3f; pCue.color = CUE_EDGE; pCue.alpha = al
-        c.drawRoundRect(box, 8f, 8f, pCue)
-        cuePath.reset()
-        cuePath.moveTo(cx, box.top + sz * 0.22f); cuePath.lineTo(box.right - sz * 0.2f, box.bottom - sz * 0.26f)
-        cuePath.lineTo(box.left + sz * 0.2f, box.bottom - sz * 0.26f); cuePath.close()
-        pCue.style = Paint.Style.FILL; pCue.color = Theme.gameGold; pCue.alpha = al
-        c.drawPath(cuePath, pCue)
-        pCue.style = Paint.Style.STROKE; pCue.strokeWidth = 2.5f; pCue.color = Theme.ink; pCue.alpha = al
-        c.drawPath(cuePath, pCue)
+        upPlate(c, b.centerX(), b.top + ClockBand.CHIP_TOP + CUE_PX / 2f + 4f, CUE_PX, a, pCue, cuePath)
         postInvalidateOnAnimation()
     }
 
@@ -2951,7 +2954,6 @@ class HomeView(
     private fun dispatchDrawHome(c: Canvas) {
         super.dispatchDraw(c)
         if (shown == null || typeWanted) return                          // f-trackpad-keyboard: the tool is a clean page
-        drawToast(c)
         drawHold(c)
         drawTopCue(c)
         // the zone band and the clock FADE with a move (the harmony pass; they used to vanish at a move's start and pop back at
@@ -3041,6 +3043,7 @@ class HomeView(
             else castView.drawTalkLine(c, ox, oy, width.toFloat())
         }
         if (pauseSave >= 0) c.restoreToCount(pauseSave)
+        drawToast(c)                                                      // the D-pad toast over the clock block's chips (final_05)
     }
 
     // ================================================================ the bars: a tap opens them full screen
@@ -4211,6 +4214,26 @@ class HomeView(
         const val CUE_PX = 64f
         val CUE_FILL = Color.rgb(122, 26, 18)
         val CUE_EDGE = Color.rgb(214, 58, 40)
+
+        /** the "up" plate ([sz] square round [cx], [cy], alpha [a]): an ink rim, the red cloth, the game's gold arrow (Home's cue and
+         *  Settings' In fights picture of Top screen) */
+        fun upPlate(c: Canvas, cx: Float, cy: Float, sz: Float, a: Float, p: Paint, path: android.graphics.Path) {
+            val box = RectF(cx - sz / 2f, cy - sz / 2f, cx + sz / 2f, cy + sz / 2f)
+            val al = (255 * a.coerceIn(0f, 1f)).toInt()
+            p.style = Paint.Style.FILL; p.color = Theme.ink; p.alpha = al
+            c.drawRoundRect(RectF(box.left - 3f, box.top - 3f, box.right + 3f, box.bottom + 3f), 10f, 10f, p)
+            p.color = CUE_FILL; p.alpha = al
+            c.drawRoundRect(box, 8f, 8f, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 3f; p.color = CUE_EDGE; p.alpha = al
+            c.drawRoundRect(box, 8f, 8f, p)
+            path.reset()
+            path.moveTo(cx, box.top + sz * 0.22f); path.lineTo(box.right - sz * 0.2f, box.bottom - sz * 0.26f)
+            path.lineTo(box.left + sz * 0.2f, box.bottom - sz * 0.26f); path.close()
+            p.style = Paint.Style.FILL; p.color = Theme.gameGold; p.alpha = al
+            c.drawPath(path, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f; p.color = Theme.ink; p.alpha = al
+            c.drawPath(path, p)
+        }
         private const val HIDE_RULING = "ruling.hide.2026-09-28"
         const val SLOP = 16f
 

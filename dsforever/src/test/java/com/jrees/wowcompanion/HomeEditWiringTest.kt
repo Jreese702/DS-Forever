@@ -47,6 +47,7 @@ class HomeEditWiringTest {
         assertTrue("never the zone band / calendar / mail", hold.contains("y < m.top + ZONE_BAND_BOTTOM"))
         assertTrue("never the zoom / auras", hold.contains("auraPane.owns("))
         assertTrue("never the card, never the party rows", hold.contains("Part.QUESTS") && hold.contains("Part.PARTY"))
+        assertTrue("never armed in a fight (a slow touch there stays today's tap)", hold.contains("if (fightShown()) return null"))
     }
 
     @Test fun saveAndTheSuspensions() {

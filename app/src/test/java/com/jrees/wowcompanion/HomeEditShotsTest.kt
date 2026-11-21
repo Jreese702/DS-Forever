@@ -376,15 +376,98 @@ class HomeEditShotsTest {
         assertTrue(p.home.inFight())
         assertFalse(p.home.editOpen(EditStop.CHAT))
         assertFalse(p.home.editing)
-        // a hold in a fight: the edge red, nothing else (no room, no edit mode)
+        // a slow touch in a fight: the hold is never armed (no ring, no red edge) - it stays today's tap (combat-touch)
         val c = boxes(p.home).getValue("CHAT")
+        setField(p.home, "editFlash", null)                                 // editOpen's own refusal above
         touch(p, MotionEvent.ACTION_DOWN, c.centerX(), c.bottom - 60f)
         settle(30)
-        shot(p, "31_fight_hold_refused_red_edge", frames = 1)
+        assertNull("no hold armed in a fight", field(p.home, "holdStop"))
+        assertNull("no red refusal for a body hold in a fight", field(p.home, "editFlash"))
+        shot(p, "31_fight_slow_touch_no_hold", frames = 1)
         touch(p, MotionEvent.ACTION_UP, c.centerX(), c.bottom - 60f)
         settle()
         assertFalse(p.home.editing)
-        assertTrue("the chat's tap never reached the Chat room", p.rooms.isEmpty())
+    }
+
+    /** the fix pass: Y on the band (and the band menu's Rest row) previews LIVE - the band's box changes before Save; Discard puts it back */
+    @Test fun theBandsRestPreviewsLive() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        assertEquals(HomeRest.DIAMONDS, HomeSettings.rest)
+        val b0 = boxes(p.home).getValue("BARS")
+        assertTrue(p.home.editOpen(EditStop.BAND)); settle()
+        p.home.editKey("PAD4"); settle()
+        assertEquals(HomeRest.ROW, model(p).draft.rest)
+        val b1 = boxes(p.home).getValue("BARS")
+        assertNotEquals("the band's box follows the draft's rest before Save (Diamonds -> Thin row)", b0.bottom, b1.bottom, 0.5f)
+        assertEquals("nothing saved yet", HomeRest.DIAMONDS, HomeSettings.rest)
+        shot(p, "32_band_thin_row_live")
+        // the band menu's Rest row: back to Diamonds, live
+        p.home.editKey("PAD3"); settle()
+        assertEquals(EditStop.BAND, model(p).menu)
+        p.home.editKey("PADDLEFT"); settle()
+        assertEquals(HomeRest.DIAMONDS, model(p).draft.rest)
+        assertEquals(b0.bottom, boxes(p.home).getValue("BARS").bottom, 0.5f)
+        p.home.editKey("PAD2"); p.home.editKey("PAD4"); settle()
+        // Discard: the saved rest again
+        p.home.editCancel(); settle()
+        assertEquals(b0.bottom, boxes(p.home).getValue("BARS").bottom, 0.5f)
+        assertEquals(HomeRest.DIAMONDS, HomeSettings.rest)
+    }
+
+    private fun lang(l: String) {
+        if (l != "en") listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+            .firstOrNull { it.canRead() }?.let { Tr.load(l, it.readText()) }
+        Tr.setChoice(app, l)
+    }
+
+    /**
+     * the fix pass: every widget menu FITS - at a third of the width (Big map's chat, Big chat's map) and in Spanish / French: no row's
+     * buttons over its label (a long row puts them under it), every button inside its row, a column menu no lower than its column
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Test fun everyMenuFitsAtAThirdAndInSpanishAndFrench() {
+        val layouts = listOf("bigmap" to HomePresets.byId(HomePresets.BIG_MAP)!!.apply(HomeLayout()),
+            "bigchat" to HomePresets.byId(HomePresets.BIG_CHAT)!!.apply(HomeLayout()))
+        val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+        try {
+            for (l in listOf("en", "es", "fr")) {
+                lang(l)
+                for ((ln, layout) in layouts) {
+                    val p = page(layout)
+                    assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+                    for (s in listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST, EditStop.BAND)) {
+                        p.home.editAct { it.openMenu(s); emptyList() }; settle()
+                        val img = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+                        p.home.draw(Canvas(img))
+                        val ev = p.home.editChrome
+                        val btns = field(ev, "menuBoxes") as List<List<RectF>>
+                        val rows = field(ev, "menuRowBoxes") as List<RectF>
+                        val words = rowsOf.invoke(p.home, s) as List<MenuRow>
+                        assertEquals("$l $ln $s: one row box per row", words.size, rows.size)
+                        val lp = UiKit.bodyPaint(28f)
+                        for ((i, r) in words.withIndex()) {
+                            val rr = rows[i]
+                            val labelRight = rr.left + 18f + lp.measureText(Tr.t(r.label))
+                            for (b in btns[i]) {
+                                assertTrue("$l $ln $s '${Tr.t(r.label)}': button inside its row", b.left >= rr.left - 1f && b.right <= rr.right + 1f)
+                                if (r.kind == MenuRow.Kind.BUTTON && r.label == r.words.first()) continue
+                                assertTrue("$l $ln $s '${Tr.t(r.label)}': buttons clear of the label ($b vs ${labelRight})",
+                                    b.left >= labelRight - 1f || b.top >= rr.top + 0.3f * rr.height())
+                            }
+                        }
+                        if (s == EditStop.CHAT || s == EditStop.MAP) {
+                            val host = boxes(p.home).getValue(if (s == EditStop.CHAT) "MAP" else "CHAT")
+                            val box = ev.menuBox(s)
+                            // (a column too short even for the tightened rows lets the menu run on a little: MENU_K_MIN)
+                            assertTrue("$l $ln $s: the menu ends at its column's bottom (${box.bottom} vs ${host.bottom})", box.bottom <= host.bottom + 60f)
+                        }
+                        if (l != "en" || ln == "bigmap") shot(p, "33_menu_${l}_${ln}_${s.name.lowercase()}")
+                        p.home.editAct { it.closeMenu(); emptyList() }
+                    }
+                    p.home.editCancel()
+                }
+            }
+        } finally { Tr.setChoice(app, "auto") }
     }
 
     @Test fun partyModeIsFramedNeverPicked() {
