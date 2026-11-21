@@ -4248,6 +4248,8 @@ class InteractView(context: Context) : View(context) {
     private val iconWarmed = HashSet<Int>()
     // icons the warm-up has DECODED (off the main thread): the loot pop draws only these, so its animation never decodes (RC3 stall)
     private val iconReady = java.util.concurrent.ConcurrentHashMap<Int, android.graphics.Bitmap>()
+    // Light 8 (LIGHT8_PLAN.md change 1): counted on the 8 GB Thors' memory line ("loot"); registered only, its bound unchanged
+    init { MemWatch.source8("loot") { iconReady.values.sumOf { it.byteCount.toLong() } } }
 
     /**
      * The loot window's icons decoded OFF the UI thread as its doc arrives (UI Art measured ~875 ms on the first frame after a

@@ -289,8 +289,14 @@ object StartupDiag {
         "Indoor maps in the background: ${runCatching { Settings.init(ctx); Settings.indoorBuild }.getOrDefault("?")}",
         // issue triage 2026-11-14 (the low-memory cluster #236 - #276): the reports could not say whether the game's smaller textures were on
         "Thor model: ${runCatching { DeviceTier.init(ctx); DeviceTier.model() }.getOrDefault("?")}; lighter mode ${runCatching { DeviceTier.lowMemory() }.getOrDefault(false)}; " +
-            "low-memory graphics ${runCatching { Settings.init(ctx); if (Settings.lowMemGraphics) "on" else "off" }.getOrDefault("?")}",
+            "low-memory graphics ${runCatching { Settings.init(ctx); if (Settings.lowMemGraphics) "on" else "off" }.getOrDefault("?")}" +
+            // Light 8 (LIGHT8_PLAN.md; the user's answer Q1: no switch, the report says it is on): on the 8 GB Thors only, so every other
+            // Thor's header is test build 1516's
+            light8Header(runCatching { DeviceTier.light8() }.getOrDefault(false)),
     )
+
+    /** the Thor model line's Light 8 part: "; 8 GB light: on" on the 8 GB Thors, nothing elsewhere. Pure */
+    fun light8Header(on: Boolean): String = if (on) "; 8 GB light: on" else ""
 
     /**
      * THE NEWEST CRASH RECORD IN SHORT (issue triage 2026-11-16, the 1.0.32 low-memory cluster #279 - #425: every report's excerpt

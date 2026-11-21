@@ -58,6 +58,7 @@ object GameLife {
 
     fun started(now: Long = System.currentTimeMillis()) {
         startedAt = now; worldSeen = false; ended = false; note = null; closer = null; loads = 0; loadingAt = 0L; worldAt = 0L; loadEndAt = 0L
+        lastLoadAt = 0L
         leftAt = 0L
         DiagLog.event("game", "started")
         LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
@@ -131,7 +132,7 @@ object GameLife {
     fun loadingScreen(on: Boolean, now: Long = System.currentTimeMillis()): String? {
         if (!worldNow) return null
         if (on) {
-            loadingAt = now; loads++
+            loadingAt = now; lastLoadAt = now; loads++
             val why = "loading screen $loads"
             MemWatch.relieve(why)
             return why
@@ -144,6 +145,16 @@ object GameLife {
         runCatching { Scene.loadingOver("loading screen $loads over") }
         return l
     }
+    /**
+     * LIGHT 8'S LOAD-TIME WINDOW NOW (LoadHold.deferNow; LIGHT8_PLAN.md change 4): the login's (from [started] - pressing Play - until
+     * 30 s after [inWorld]; [loadingScreen] fires only once in the world, so the login's own load keys off the game's start) and the
+     * last loading screen's in the world (until 5 s after its end). Nothing once the game has ended. Read by LoadHold only
+     */
+    fun holdWindow(now: Long = System.currentTimeMillis()): Boolean =
+        LoadHold.deferNow(if (ended) 0L else startedAt, if (worldSeen) worldAt else 0L, lastLoadAt, loadingAt != 0L, loadEndAt, now)
+    /** when the last loading screen in the world came (kept after its end; 0 = none in this game) */
+    @Volatile private var lastLoadAt = 0L
+
     /** the loading screens seen in the world in this game run, and when the one up now came (0 = none up) */
     @Volatile var loads = 0
         private set

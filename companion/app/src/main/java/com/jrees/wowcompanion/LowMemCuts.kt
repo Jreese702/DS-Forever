@@ -23,6 +23,54 @@ object LowMemCuts {
     /** the held pictures beyond [cap], least recently asked first ([lru] in that order) */
     fun <K> overCap(lru: Collection<K>, cap: Int = SCENE_MAX_HELD): List<K> = lru.take((lru.size - cap).coerceAtLeast(0))
 
+    // ------------------------------------------------------------------ LIGHT 8 (LIGHT8_PLAN.md; DeviceTier.light8, read live)
+
+    /** Light 8: at most this many loading pictures decoded (the reveal draws three passes at once) */
+    const val SCENE_MAX_HELD_8 = 3
+    /** the loading pictures held at most: [SCENE_MAX_HELD_8] on Light 8, [SCENE_MAX_HELD] otherwise (test build 1516's) */
+    fun sceneMaxHeld(light8: Boolean): Int = if (light8) SCENE_MAX_HELD_8 else SCENE_MAX_HELD
+    /** Light 8: a loading picture Android decoded as ARGB_8888 (it has alpha) is copied down to RGB_565 (the scene is drawn opaque) */
+    fun sceneForce565(light8: Boolean): Boolean = light8
+
+    /** Light 8: the per-zone data (terrain, roads, SafePath zones / water / drafts / nets) keeps at most this many zones */
+    const val ZONE_CAP_8 = 8
+    /** the per-zone caches' bound: 0 (no bound, test build 1516's) off Light 8; on it [ZONE_CAP_8], never below the keep set + 1 */
+    fun zoneBound(light8: Boolean, keepSize: Int): Int = if (!light8) 0 else maxOf(ZONE_CAP_8, keepSize + 1)
+
+    /** the climb maps' bound: 3 on every Thor (test build 1516's) */
+    const val CLIMB_MAX = 3
+    /** the climb maps kept outside the keep set: 1 on Light 8 (the keep set and one recent zone), no such rule (-1) otherwise */
+    fun climbOthers(light8: Boolean): Int = if (light8) 1 else -1
+
+    /** the player's zone first, then its neighbours, no 0, no repeat ([player] 0 = not known: none). Pure */
+    fun zoneKeep(player: Int, neighbours: Collection<Int>): List<Int> =
+        if (player == 0) emptyList() else (listOf(player) + neighbours).filter { it != 0 }.distinct()
+
+    /** the zone the player is in now: the position's map (SafePath's walk), else the zone the map asked for last (0 = not known) */
+    fun playerZone(): Int = runCatching { SafePath.lastMap }.getOrDefault(0).takeIf { it != 0 } ?: runCatching { ShippedNets.lastMap }.getOrDefault(0)
+
+    /** the zones the per-zone caches keep on Light 8: the player's and the maps its exits lead into (ShippedNets' network) */
+    fun zoneKeepNow(): List<Int> {
+        val p = playerZone()
+        if (p == 0) return emptyList()
+        return zoneKeep(p, runCatching { ShippedNets.files.peek(p)?.neighbours }.getOrNull() ?: emptySet<Int>())
+    }
+
+    /** a memory warning (running-low or worse, MemWatch's reliefs too) lets the per-zone caches go down to the keep set */
+    fun zoneTrims(level: Int): Boolean = level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
+
+    /**
+     * ONE PER-ZONE CACHE (Terrain, Roads, SafePath): test build 1516's unbounded RouteWork.Files off Light 8 (no keep set, no bound);
+     * on Light 8 at most [zoneBound] zones, the least recently used not in the keep set going first and the player's zone last.
+     * [light] and [keepNow] are read at every put ([light] is DeviceTier.light8, live). [holdJob]: the load-time hold (LoadHold) for
+     * zones other than the player's.
+     */
+    fun <T : Any> zoneFiles(sizeOf: (T) -> Long, holdJob: String? = null, light: () -> Boolean = { DeviceTier.light8() },
+                            keepNow: () -> List<Int> = { zoneKeepNow() }, load: (Int) -> T?): RouteWork.Files<T> =
+        RouteWork.Files(keep = { if (light()) keepNow() else emptyList() }, sizeOf = sizeOf,
+            bound = { if (light()) zoneBound(true, keepNow().size) else 0 }, playerFirst = { light() },
+            holdJob = holdJob, holdIf = { m -> LoadHold.otherZone(m) }, load = load)
+
     // ------------------------------------------------------------------ the kit (UiKit)
 
     /** the kit's pictures while the game runs, bytes */

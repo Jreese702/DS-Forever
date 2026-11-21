@@ -1010,6 +1010,8 @@ object MediaArt {
     private val missing = HashSet<String>()
 
     init {
+        // Light 8 (LIGHT8_PLAN.md change 1): counted on the 8 GB Thors' memory line ("mediaart"); registered only
+        MemWatch.source8("mediaart") { bytes() }
         MemWatch.onTrim("tilepics") { level ->
             if (!PreviewStage.cacheLetsGo(level, MemWatch.room) || cache.isEmpty()) 0L
             else cache.values.sumOf { it.byteCount.toLong() }.also { cache.clear(); missing.clear() }

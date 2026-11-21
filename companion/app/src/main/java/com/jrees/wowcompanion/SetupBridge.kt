@@ -133,7 +133,8 @@ object SetupBridge {
             reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) },
             staleData = DataStaleness.current()?.takeIf { !staleOk },
             lowSpace = i.lowSpace?.takeIf { !spaceOk },
-            gameClosed = GameLife.note, lastCrash = LastRun.pending, polestarAsk = PolestarGuide.ask(Settings.polestarGuide)))
+            gameClosed = GameLife.note, lastCrash = LastRun.pending, polestarAsk = PolestarGuide.ask(Settings.polestarGuide),
+            light8Tip = runCatching { DeviceTier.light8() }.getOrDefault(false)))
     }
 
     /** the start-up checks have passed (the chooser may show); false while the launcher hasn't published them */

@@ -83,6 +83,20 @@ object DeviceTier {
     fun lowMemCuts(): Boolean = lowMemCuts(totalMb, runCatching { isLite() }.getOrDefault(false))
 
     /**
+     * LIGHT 8 (the approved plan LIGHT8_PLAN.md; the user's answers 2026-11-21: Q1 no Settings switch, automatic on 8 GB, the report
+     * header says it is on): the 8 GB Thors (Base, Lite) count every cache, hold 3 loading pictures at lower colour depth, cap the
+     * per-zone data (trimmed to the player's zone and its neighbours on a memory warning), hold the danger re-read and other zones'
+     * SafePath data while the game loads, give the game's container two DXVK options and show a one-line tip before Play. The 12 GB Pro,
+     * the 16 GB Max and an unknown RAM keep test build 1516's behaviour exactly. [eightGb] is the rule: the Lite only once the RAM is
+     * known. [override]: the tests' (no Settings row in this build). READ LIVE at every eviction, bound and check, never once at a
+     * cache's construction ([totalMb] stays 0 until [init]).
+     */
+    fun light8(mb: Long, lite: Boolean, override: Boolean? = null): Boolean = override ?: eightGb(mb, lite)
+    /** the tests' override of [light8] (null = the Thor's own RAM decides; nothing in the app sets it) */
+    @Volatile internal var light8Override: Boolean? = null
+    fun light8(): Boolean = light8(totalMb, runCatching { isLite() }.getOrDefault(false), light8Override)
+
+    /**
      * HOME'S MAP AT FULL DETAIL (the user, 2026-11-17: "I am slightly concerned about the map turning into a memory sink, if it does we
      * might need to evaluate how big it is and turn this into a Thor based toggle"): by default the whole-world zoom-out on the Map
      * room's art only on the 16 GB Thor Max (Android counts 15255 MB); the 8 / 12 GB Thors and an unknown RAM keep today's lighter map

@@ -1354,7 +1354,16 @@ private fun videoMemoryChoice(context: Context): VideoMemoryChoice {
     Timber.i("Container graphics: %s", line)
     com.jrees.wowcompanion.MemWatch.launchGfx = G.short(cap, on)
     com.jrees.wowcompanion.MemWatch.note("launch: $line")
-    return VideoMemoryChoice(G.env(cap, on), bcn)
+    // Light 8 (LIGHT8_PLAN.md change 5; the user's answer Q2 2026-11-21): the 8 GB Thors' two DXVK options beside the cap, read live and
+    // logged once per launch with the exact DXVK_CONFIG; every other Thor's environment is test build 1516's (G.env(cap, on))
+    val light8 = runCatching { tier.light8() }.getOrDefault(false)
+    val env = G.env(cap, on, light8)
+    if (light8) {
+        val l8 = G.dxcfgLine(env)
+        Timber.i("Container graphics: %s", l8)
+        com.jrees.wowcompanion.MemWatch.note("launch: $l8")
+    }
+    return VideoMemoryChoice(env, bcn)
 }
 
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: String, gfx: VideoMemoryChoice): JSONObject {

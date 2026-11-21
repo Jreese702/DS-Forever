@@ -215,6 +215,9 @@ object ThemeGallery {
 
     /** the kit's ring_square recoloured per metal (64 px), or null without the picture: a per-metal cache, about 16 KB each */
     private val ringCache = HashMap<String, Bitmap?>()
+    // Light 8 (LIGHT8_PLAN.md change 1): the miniatures and metal rings counted on the 8 GB Thors' memory line ("themegallery");
+    // registered only (read off the main thread: a read that meets a change says -1 on that line)
+    init { MemWatch.source8("themegallery") { pics.values.sumOf { it.byteCount.toLong() } + ringCache.values.sumOf { it?.byteCount?.toLong() ?: 0L } } }
     private var ringRaw: Bitmap? = null
     private var ringTried = false
 

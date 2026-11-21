@@ -43,6 +43,24 @@ object GameVideoMemory {
     /** the container's extra environment ("" = none): [capMb] null or the setting off = nothing (the driver's own size) */
     fun env(capMb: Int?, on: Boolean): String = if (on && capMb != null && capMb > 0) "$DXVK_CONFIG=${dxvkConfig(capMb)}" else ""
 
+    /**
+     * LIGHT 8'S TWO DXVK OPTIONS (LIGHT8_PLAN.md change 5; the user's answer Q2 2026-11-21: both, the 8 GB Thors only, logged once per
+     * launch): DXVK's pipeline-lifetime tracking (pipelines not used lately are let go) and 4 shader compiler threads (fewer shaders
+     * compiled at once while the game loads). DXVK 2.4.1's own option names, no spaces (the container's env string splits on them)
+     */
+    const val LIGHT8_DXVK = "dxvk.trackPipelineLifetime=true;dxvk.numCompilerThreads=4"
+
+    /** the container's extra environment with Light 8's options ([light8]); off Light 8 exactly [env] (test build 1516's). Built apart
+     *  from the cap: the options are there even when the cap is off (the setting, an unknown RAM) */
+    fun env(capMb: Int?, on: Boolean, light8: Boolean): String {
+        if (!light8) return env(capMb, on)
+        val cap = if (on && capMb != null && capMb > 0) dxvkConfig(capMb) + ";" else ""
+        return "$DXVK_CONFIG=$cap$LIGHT8_DXVK"
+    }
+
+    /** the launch's Light 8 line (mem.log, once per launch): "light8 on, dxcfg dxgi.maxDeviceMemory=2048;...;dxvk.numCompilerThreads=4" */
+    fun dxcfgLine(env: String): String = "light8 on, dxcfg " + env.removePrefix("$DXVK_CONFIG=").ifEmpty { "none" }
+
     /** the Wrapper's BCn emulation for the GPU: off on an Adreno (native BCn), the Wrapper's own "auto" anywhere else */
     fun bcnEmulation(adreno: Boolean): String = if (adreno) "none" else "auto"
 

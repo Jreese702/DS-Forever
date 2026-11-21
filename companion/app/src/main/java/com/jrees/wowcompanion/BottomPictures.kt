@@ -119,6 +119,8 @@ object BottomPictures {
     }
     val small = Cache(SMALL_BUDGET)
     val large = Cache(LARGE_BUDGET)
+    // Light 8 (LIGHT8_PLAN.md change 1): the crops counted on the 8 GB Thors' memory line ("bottompics"); registered only
+    init { MemWatch.source8("bottompics") { small.bytes + large.bytes } }
 
     /** one crop to make: Home at [look] / [fight] / [toolbar], the [win]dow of Home's px, made [w] x [h] */
     class Shot(val look: HomeView.Companion.Look, val fight: Boolean, val toolbar: Boolean?, val win: (Map<String, RectF>) -> RectF?,

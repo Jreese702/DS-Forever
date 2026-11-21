@@ -27,6 +27,32 @@ object MemWatch {
     /** a picture cache (or anything holding memory) reports its bytes under [name]; the last registration of a name wins */
     @Synchronized fun source(name: String, bytes: () -> Long) { sources[name] = bytes }
 
+    /**
+     * LIGHT 8'S COUNTING (LIGHT8_PLAN.md change 1; the 8 GB Thors only, DeviceTier.light8 read at every line): the caches no line
+     * counted before (the climb maps, the per-zone terrain, roads and SafePath zone files, the loot pop's icons, the UI picture caches)
+     * are on the line after the others, only while Light 8 is on; every other Thor's line is test build 1516's, byte for byte
+     */
+    private val sources8 = LinkedHashMap<String, () -> Long>()
+    @Synchronized fun source8(name: String, bytes: () -> Long) { sources8[name] = bytes }
+    /** Light 8 only: [f] gives memory back for a trim level (and every relief), as [onTrim]; never called on another Thor */
+    private val trimmers8 = LinkedHashMap<String, (Int) -> Long>()
+    @Synchronized fun onTrim8(name: String, f: (Int) -> Long) { trimmers8[name] = f }
+    /** Light 8 now (the tests' seam) */
+    @Volatile internal var light8Now: () -> Boolean = { DeviceTier.light8() }
+    private fun light8(): Boolean = runCatching { light8Now() }.getOrDefault(false)
+    /** the registered names (the tests): the plain ones, then Light 8's */
+    @Synchronized internal fun names(): Pair<List<String>, List<String>> = sources.keys.toList() to sources8.keys.toList()
+    @Synchronized internal fun trimNames(): Pair<List<String>, List<String>> = trimmers.keys.toList() to trimmers8.keys.toList()
+
+    /** Light 8's own parts of the PSS split: ", oth 40, sys 12, swp 128" (private-other, system, DS Forever's own swap; MB). Pure */
+    fun light8Parts(othMb: Long, sysMb: Long, swpMb: Long): String = ", oth $othMb, sys $sysMb, swp $swpMb"
+    /** Light 8: how old the game's memory sample is: ", game age 12 s" ("" = no sample yet). Pure */
+    fun gameAge(sampleAtMs: Long?, nowMs: Long): String = if (sampleAtMs == null) "" else ", game age ${((nowMs - sampleAtMs).coerceAtLeast(0L)) / 1000} s"
+    /** "light8 on" on the first line of the process (the report says it is on), null afterwards and off Light 8 */
+    @Volatile private var light8Said = false
+    @Synchronized internal fun light8Mark(on: Boolean): String? { if (!on || light8Said) return null; light8Said = true; return "light8 on" }
+    @Synchronized internal fun light8MarkReset() { light8Said = false }
+
     /** what DS Forever shows now (the host's room), for the line */
     @Volatile var room: String = "-"
 
@@ -160,8 +186,11 @@ object MemWatch {
     fun pressureSince(since: Long): Boolean = since > 0L && pressureAt >= since
 
     /** every trim registration at [level] (the main thread): what each let go, -1 = it failed */
-    private fun letGo(level: Int): List<Pair<String, Long>> =
-        synchronized(this) { trimmers.toList() }.map { (n, f) -> n to runCatching { f(level) }.getOrDefault(-1L) }
+    private fun letGo(level: Int): List<Pair<String, Long>> {
+        val l8 = light8()                                          // Light 8: its own trims too (the per-zone data, the climb maps)
+        return synchronized(this) { trimmers.toList() + if (l8) trimmers8.toList() else emptyList() }
+            .map { (n, f) -> n to runCatching { f(level) }.getOrDefault(-1L) }
+    }
 
     // ---------------------------------------------------------------- issue triage 2026-11-14: relief before the game's own big allocation
     /**
@@ -408,7 +437,9 @@ object MemWatch {
         }.filter { it.second > 0 }.sortedByDescending { it.second }.take(5)
         return buildString {
             append(time).append(" pss ").append(num("^pss (\\d+)") ?: "?")
-            append(" (j ").append(num("java (\\d+)") ?: "?").append(" n ").append(num("native (\\d+)") ?: "?").append(" gx ").append(num("gfx (\\d+)") ?: "?").append(")")
+            append(" (j ").append(num("java (\\d+)") ?: "?").append(" n ").append(num("native (\\d+)") ?: "?").append(" gx ").append(num("gfx (\\d+)") ?: "?")
+            num("swp (\\d+)")?.let { append(" sw ").append(it) }       // Light 8's lines only (DS Forever's own swap)
+            append(")")
             num("game (\\d+) MB")?.let { append(" game ").append(it) }
             num("free (\\d+) MB")?.let { append(" free ").append(it) }
             num("low (\\d+) MB")?.let { append(" low ").append(it) }
@@ -456,9 +487,10 @@ object MemWatch {
      * ([epochS] its time), the biggest caches last, cut to [SUMMARY_MAX] bytes (ASCII); -1 = not read. Pure (the tests).
      */
     fun stateSummary(epochS: Long, pss: Long, java: Long, native: Long, gfx: Long, game: Long, free: Long, low: Long, gpu: Long,
-                     caches: List<Pair<String, Long>>): String {
+                     caches: List<Pair<String, Long>>, swp: Long = -1L): String {
         val head = buildString {
             append("dsf ").append(epochS).append(" pss ").append(pss).append(" j ").append(java).append(" n ").append(native).append(" gx ").append(gfx)
+            if (swp >= 0) append(" sw ").append(swp)                  // Light 8 only (-1 on every other Thor)
             if (game >= 0) append(" game ").append(game)
             if (free >= 0) append(" free ").append(free)
             if (low >= 0) append(" low ").append(low)
@@ -478,10 +510,13 @@ object MemWatch {
         fun stat(k: String) = mi.getMemoryStat(k)?.toLongOrNull() ?: 0L
         val pss = mi.totalPss.toLong()
         lastPssMb = mb(pss)
+        val l8 = light8()
+        val swp = if (l8) mb(stat("summary.total-swap")) else -1L
         val parts = "java ${mb(stat("summary.java-heap"))}, native ${mb(stat("summary.native-heap"))}, gfx ${mb(stat("summary.graphics"))}, " +
-            "code ${mb(stat("summary.code"))}"
+            "code ${mb(stat("summary.code"))}" + if (l8) light8Parts(mb(stat("summary.private-other")), mb(stat("summary.system")), swp) else ""
         val heap = "heap ${mbB(Debug.getNativeHeapAllocatedSize())}/${mbB(Debug.getNativeHeapSize())} MB"
-        val sized = synchronized(this) { sources.toList() }.map { (n, f) -> n to runCatching { mbB(f()) }.getOrDefault(-1L) }
+        val sized = synchronized(this) { sources.toList() + if (l8) sources8.toList() else emptyList() }
+            .map { (n, f) -> n to runCatching { mbB(f()) }.getOrDefault(-1L) }
         val caches = sized.joinToString(", ") { (n, b) -> "$n $b" }
         val doing = buildList {
             add("room $room")
@@ -490,13 +525,14 @@ object MemWatch {
             val up = LauncherHooks.gameUp()
             add(if (up) "game up" else "game down")
             if (up && launchGfx.isNotEmpty()) add(launchGfx)
+            light8Mark(l8)?.let { add(it) }
         }.joinToString(", ")
         val rt = Runtime.getRuntime()
         val low = lowKb; lowKb = -1L                                  // the low since the last line, then the next window
-        val dev = device()
+        val dev = device() + if (l8) gameAge(gameSample?.second, SystemClock.uptimeMillis()) else ""
         runCatching {
             summaryNow = stateSummary(System.currentTimeMillis() / 1000, mb(pss), mb(stat("summary.java-heap")), mb(stat("summary.native-heap")),
-                mb(stat("summary.graphics")), gameMb, lastFreeMb, if (low >= 0) mb(low) else -1L, gpuBytes()?.let { mbB(it) } ?: -1L, sized)
+                mb(stat("summary.graphics")), gameMb, lastFreeMb, if (low >= 0) mb(low) else -1L, gpuBytes()?.let { mbB(it) } ?: -1L, sized, swp)
         }
         val more = extras(low, rt.totalMemory() - rt.freeMemory(), rt.maxMemory(), gpuBytes(), trimLevel,
             if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L)

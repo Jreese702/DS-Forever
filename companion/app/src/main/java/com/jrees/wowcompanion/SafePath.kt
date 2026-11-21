@@ -788,7 +788,8 @@ object SafePath {
             private const val ORG = 32.0 * MapHarvest.ADT_YD
         }
     }
-    val zones = RouteWork.Files { map -> Zones.read(ArtHarvest.file("safepath/zones/$map.bin")) }
+    // Light 8 (LIGHT8_PLAN.md): at most LowMemCuts.zoneBound zones, another zone than the player's held while the game loads (LowMemCuts.zoneFiles)
+    val zones = LowMemCuts.zoneFiles<Zones>({ it.area.size * 4L + 64L }, LoadHold.SAFEPATH) { map -> Zones.read(ArtHarvest.file("safepath/zones/$map.bin")) }
 
     /**
      * a zone's WATER (b-safepath-water: no way or node in water but over a bridge or a shallow ford), as the game holds it: per vertex
@@ -919,7 +920,7 @@ object SafePath {
         }
     }
     const val WATER_YD = Climb.STEP         // the water's vertices: the lattice's own (4.2 yd, the liquid's own cell)
-    val waters = RouteWork.Files { map -> Water.read(ArtHarvest.file("safepath/water/$map.bin")) }
+    val waters = LowMemCuts.zoneFiles<Water>({ it.depth.size + it.bridge.size + 64L }, LoadHold.SAFEPATH) { map -> Water.read(ArtHarvest.file("safepath/water/$map.bin")) }
     const val AREAS_FILE = "safepath/areas.json"
     @Volatile private var areasRead: Areas? = null
     /** the areas table (read once, off the UI thread) */
@@ -1000,7 +1001,7 @@ object SafePath {
     // ---------------------------------------------------------------- the draft on the device
 
     /** a zone's draft, as last made (null: none yet) */
-    val drafts = RouteWork.Files { map -> runCatching { Net.fromJson(JSONObject(ArtHarvest.file("safepath/$map.draft.json").readText())) }.getOrNull() }
+    val drafts = LowMemCuts.zoneFiles<Net>({ netBytes(it) }, LoadHold.SAFEPATH) { map -> runCatching { Net.fromJson(JSONObject(ArtHarvest.file("safepath/$map.draft.json").readText())) }.getOrNull() }
     private val tried = HashMap<Int, String>()
 
     /**
@@ -1572,7 +1573,20 @@ object SafePath {
     const val EXIT_SNAP_YD = 300.0         // a crossing out of the zone this near one of the network's exits goes to that exit
 
     /** the networks for the routes, as their files read (the review's corrections, else the draft), kept in memory */
-    val nets = RouteWork.Files { map -> load(map) }
+    val nets = LowMemCuts.zoneFiles<Net>({ netBytes(it) }, LoadHold.SAFEPATH) { map -> load(map) }
+
+    /** a network's bytes in memory, estimated (Light 8's memory line): its nodes, ways and exits */
+    fun netBytes(n: Net): Long = 96L + n.nodes.size * 72L + n.edges.size * 64L + n.exits.size * 56L
+
+    // LIGHT 8 (LIGHT8_PLAN.md): the zone files counted on the memory line ("spzones") and, on a memory warning, let go down to the
+    // player's zone and its neighbours (LowMemCuts.zoneKeepNow); both only on the 8 GB Thors (MemWatch.source8 / onTrim8)
+    init {
+        MemWatch.source8("spzones") { zones.bytes() + waters.bytes() + drafts.bytes() + nets.bytes() }
+        MemWatch.onTrim8("spzones") { level ->
+            if (!LowMemCuts.zoneTrims(level)) 0L
+            else LowMemCuts.zoneKeepNow().let { k -> zones.trimTo(k) + waters.trimTo(k) + drafts.trimTo(k) + nets.trimTo(k) }
+        }
+    }
 
     // ---------------------------------------------------------------- the capitals' districts (our own table; the user: "Both")
 

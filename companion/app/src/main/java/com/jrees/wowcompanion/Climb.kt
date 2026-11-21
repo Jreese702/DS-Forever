@@ -826,5 +826,14 @@ object Climb {
     }
 
     /** the zones' lattices (the terrain step's), kept in memory */
-    val files = RouteWork.Files(max = 3) { map -> Grid.read(ArtHarvest.file("terrain/$map.clb")) }
+    // Light 8 (LIGHT8_PLAN.md): still at most 3, but only one of them outside the player's zone and its neighbours (the player's zone
+    // last to go); counted ("climb") and let go down to that keep set on a memory warning or a relief (before: only SafePathV2's own
+    // trim). Every other Thor: test build 1516's 3 least recently used, nothing on the memory line
+    val files = RouteWork.Files<Grid>(max = LowMemCuts.CLIMB_MAX, keep = { if (DeviceTier.light8()) LowMemCuts.zoneKeepNow() else emptyList() },
+        sizeOf = { it.cls.size + (it.faces?.size ?: 0) + 64L }, others = { LowMemCuts.climbOthers(DeviceTier.light8()) },
+        playerFirst = { DeviceTier.light8() }) { map -> Grid.read(ArtHarvest.file("terrain/$map.clb")) }
+    init {
+        MemWatch.source8("climb") { files.bytes() }
+        MemWatch.onTrim8("climb") { level -> if (!LowMemCuts.zoneTrims(level)) 0L else files.trimTo(LowMemCuts.zoneKeepNow()) }
+    }
 }

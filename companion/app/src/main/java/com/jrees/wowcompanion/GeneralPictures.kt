@@ -224,6 +224,8 @@ object GeneralPictures {
     private var rockBmp: Bitmap? = null
     private var rockMissing = false
     private val ringBmps = HashMap<String, Bitmap>()
+    // Light 8 (LIGHT8_PLAN.md change 1): the scene, rock and rings counted on the 8 GB Thors' memory line ("generalpics"); registered only
+    init { MemWatch.source8("generalpics") { bytes() } }
     private val ringMissing = HashSet<String>()
     private val groundFilters = HashMap<String, ColorMatrixColorFilter>()
 

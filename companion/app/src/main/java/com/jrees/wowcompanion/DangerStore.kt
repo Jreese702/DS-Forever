@@ -78,6 +78,8 @@ object DangerStore {
     /** ask now and then (cheap): reads again in the background when QuestieDB or the area table changed */
     fun check(ctx: Context, onReady: () -> Unit) {
         watch()
+        // Light 8 (LIGHT8_PLAN.md change 4): while the game loads the re-read waits (LoadHold: at most 90 s), then runs; off Light 8 never
+        if (LoadHold.hold(LoadHold.DANGER) { check(ctx, onReady) }) return
         val now = android.os.SystemClock.elapsedRealtime()
         if (loading || now - checkedAt < 10_000L) return
         if (wantAgain && rereadDue(now, droppedAt)) { wantAgain = false; stamp = "" }   // a map let go under pressure was asked for: read again
