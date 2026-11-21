@@ -533,7 +533,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                     val bw = 64f
                     val plus = RectF(rr.right - 10f - bw, btnTop, rr.right - 10f, btnTop + btnH)
                     val minus = RectF(plus.left - 150f - bw, plus.top, plus.left - 150f, plus.bottom)
-                    UiKit.choice(c, minus, r.words[0], true); UiKit.choice(c, plus, r.words[1], true)
+                    // fix round 3: the app's steppers' look (Settings > Bottom screen's Zoom): neither plate lit as a pick, the signs big
+                    UiKit.choice(c, minus, r.words[0], false, textSize = STEP_TEXT); UiKit.choice(c, plus, r.words[1], false, textSize = STEP_TEXT)
                     val vp = UiKit.numberPaint(30f, Theme.text).apply { textAlign = Paint.Align.CENTER }
                     c.drawText(r.value ?: "", (minus.right + plus.left) / 2f, plus.centerY() - (vp.ascent() + vp.descent()) / 2f, vp)
                     btns += minus; btns += plus
@@ -785,7 +786,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             if (m.cursor == EditStop.PLUS && m.sheet == null) UiKit.focus(c, r.plus)
         }
         // the hints, one word each, right of the disc
-        hints(c, w - 14f, h / 2f, hintsFor(m))
+        hints(c, w - 14f, h / 2f, hintsFor(m, m.menu?.let { host.menuRows(it).getOrNull(m.menuRow)?.kind }))
         c.restoreToCount(save)
     }
 
@@ -802,12 +803,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     /** the hints for the state: glyph names (the chosen set's) and one word each */
-    fun hintsFor(m: HomeEditModel): List<Pair<String, String>> {
+    fun hintsFor(m: HomeEditModel, row: MenuRow.Kind? = null): List<Pair<String, String>> {
         val a = UiKit.okGlyph(); val b = UiKit.backGlyph(); val x = UiKit.xGlyph(); val y = UiKit.yGlyph()
         return when {
             m.prompt -> listOf(a to "OK", b to "Back")
             m.sheet == HomeEditModel.Sheet.LAYOUTS -> listOf(a to "Use", x to "Save here", b to "Back")
             m.sheet == HomeEditModel.Sheet.ADD -> listOf(a to "Add", b to "Back")
+            // fix round 3: a stepper row (the Map's Zoom out / in) changes with Left / Right only: the D-pad's glyph, never A's
+            m.menu != null && row == MenuRow.Kind.STEP -> listOf(DPAD to "Change", b to "Back")
             m.menu != null -> listOf(a to "Change", b to "Back")
             m.lifted == EditStop.ROOMS -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
             m.lifted != null -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
@@ -1071,6 +1074,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val WRAP_K = 1.55f
         /** the segmented buttons' text size, and the least a row may shrink it to stay on one line */
         const val SEG_TEXT = 26f
+        /** a stepper's sign (the Map's Zoom rows: Settings > Bottom screen's own steppers' 40) */
+        const val STEP_TEXT = 40f
         const val SEG_TEXT_MIN = 22f
         /** the most a short column tightens a menu's rows */
         const val MENU_K_MIN = 0.8f

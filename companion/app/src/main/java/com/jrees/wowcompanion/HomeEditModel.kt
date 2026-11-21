@@ -105,8 +105,25 @@ class HomeEditModel(
     /** the bar's / the card's last dock, for "+" (they come back where they were) */
     private var lastCast = if (saved.cast != HomeLayout.CastDock.OFF) saved.cast else HomeLayout.CastDock.UNDER_CHAT
     private var lastCard = if (saved.card != HomeLayout.CardDock.OFF) saved.card else HomeLayout.CardDock.ON_MAP
-    /** the flip the chip names (-1 = none yet) */
+    /** the flip the chip names (-1 = none yet; [flips].size = the player's own [handMade]) */
     private var flipIdx = flips.indexOfFirst { it.available && it.make(saved).samePlace(saved) }
+    /**
+     * fix round 3: the player's OWN layout in the flip cycle (the chip's Left / Right, LB / RB) - the draft as it was when a flip first
+     * left it (a hand-made "Edited", or a saved layout no preset names). It sits right after the flip it was made from ([handAfter]; -1 =
+     * before the first), so Right still goes on to the next layout as before and the press back the other way always finds it: a flip
+     * never throws the player's changes away. Null = the draft was a named layout (nothing to keep)
+     */
+    private var handMade: HomeLayout? = null
+    private var handAfter = -1
+    /** the draft is the layout [flipIdx] names (a flip of it), not the player's own */
+    private fun onFlip(): Boolean = flipIdx in flips.indices && flips[flipIdx].available && draft.samePlace(flips[flipIdx].make(saved))
+    /** before a flip or a sheet pick leaves the draft: a draft no flip names is kept as the cycle's own entry ([handMade]) */
+    private fun keepHand() {
+        if (onFlip()) return
+        handMade = draft
+        if (flipIdx != flips.size) handAfter = flipIdx
+        flipIdx = flips.size
+    }
     /** PHASE 4, THE ROOM BAR: its own cursor (an index into the draft's [HomeLayout.rooms]; Left / Right while the cursor is on the bar) */
     var barSel = 0
         private set
@@ -194,7 +211,7 @@ class HomeEditModel(
     }
 
     private fun a(): List<Fx> = when (cursor) {
-        EditStop.CHIP -> { sheet = Sheet.LAYOUTS; sheetSel = flipIdx.coerceAtLeast(0); emptyList() }
+        EditStop.CHIP -> { sheet = Sheet.LAYOUTS; sheetSel = flipIdx.takeIf { it in flips.indices } ?: 0; emptyList() }
         EditStop.PLUS -> if (plusShown) { sheet = Sheet.ADD; sheetSel = 0; emptyList() } else emptyList()
         EditStop.BAND, EditStop.CLOCK -> openMenu(cursor)
         EditStop.DIVIDER -> emptyList()
@@ -316,16 +333,28 @@ class HomeEditModel(
         return change(draft.copy(chatShare = SHARES[i]), Motion.MODULE_OPEN)
     }
 
-    /** the chip's arrows, LB / RB: the next layout, live (each one made from the layout Home had when edit mode opened) */
+    /** the chip's arrows, LB / RB: the next layout, live (each one made from the layout Home had when edit mode opened); the player's own
+     *  layout ([handMade]) is one more stop of the cycle, after the last flip (fix round 3) */
     fun flip(d: Int): List<Fx> {
         if (parked || flips.isEmpty()) return emptyList()
-        val n = flips.size
-        var i = flipIdx
+        keepHand()
+        val hand = handMade
+        val own = flips.size                                              // the player's own stop in [order]
+        val order = ArrayList<Int>()
+        if (hand != null && handAfter !in flips.indices) order += own
+        for (i in flips.indices) { order += i; if (hand != null && i == handAfter) order += own }
+        val n = order.size
+        var at = order.indexOf(flipIdx)
         repeat(n) {
-            i = if (i < 0) (if (d > 0) 0 else n - 1) else (i + d + n) % n
-            if (flips[i].available) {
-                flipIdx = i
-                return change(flips[i].make(saved), Motion.MODULE_OPEN) + foldOf(flips[i])
+            at = if (at < 0) (if (d > 0) 0 else n - 1) else (at + d + n) % n
+            val e = order[at]
+            if (e == own && hand != null) {
+                flipIdx = own
+                return change(hand, Motion.MODULE_OPEN) + foldOf(null)
+            }
+            if (e != own && flips[e].available) {
+                flipIdx = e
+                return change(flips[e].make(saved), Motion.MODULE_OPEN) + foldOf(flips[e])
             }
         }
         return emptyList()
@@ -508,6 +537,7 @@ class HomeEditModel(
         if (i < presetCount) {
             val f = flips.filter { !it.name.startsWith(SLOT_MARK) }[i]
             if (!f.available) return listOf(Fx.Refuse(EditStop.CHIP))
+            keepHand()
             flipIdx = flips.indexOf(f)
             sheet = null
             return change(f.make(saved), Motion.MODULE_OPEN) + foldOf(f)
@@ -515,6 +545,7 @@ class HomeEditModel(
         val si = i - presetCount
         if (si < HomePresets.SLOTS) {
             val l = slot(si) ?: return listOf(Fx.Refuse(EditStop.CHIP))
+            keepHand()
             flipIdx = flips.indexOfFirst { it.name == "$SLOT_MARK${si + 1}" }
             sheet = null
             return change(l.copy(name = saved.name), Motion.MODULE_OPEN) + foldOf(null)
@@ -597,7 +628,7 @@ class HomeEditModel(
         removeAsk = null
         if (menu != null) { menu = null; if (s == cursor) return emptyList() }
         if (lifted != null && lifted != s) drop()
-        if (s == EditStop.CHIP) { sheet = Sheet.LAYOUTS; sheetSel = flipIdx.coerceAtLeast(0); cursor = s; return emptyList() }
+        if (s == EditStop.CHIP) { sheet = Sheet.LAYOUTS; sheetSel = flipIdx.takeIf { it in flips.indices } ?: 0; cursor = s; return emptyList() }
         if (s == EditStop.PLUS) { cursor = s; return if (plusShown) { sheet = Sheet.ADD; sheetSel = 0; emptyList() } else emptyList() }
         if (s != cursor) { cursor = s; return emptyList() }
         if (lifted == s) return drop()

@@ -20,6 +20,12 @@ import android.content.SharedPreferences
  * under a key it was not read under). "All characters" writes the default and every WHOLE key the prefs hold (an orphan key is left to
  * RealmFix's fold).
  *
+ * FIX ROUND 3: the held edit goes onto a key only when no other realm of that name is known (the prefs hold no other "Name-Realm"
+ * record, and the device census agrees: RealmFix.resetTakesOrphans) - a realm-less session followed by a same-name alt on another realm
+ * never gets the first one's change (never a guess between two characters of one name). A change made before ANY character is known
+ * (the app's start, the login screen: Settings > Bottom screen, the Controller room's Turn on) still writes the default as before AND is
+ * held the same way: the first character's own record gets the changed fields when its key comes (it is never silently dropped).
+ *
  * MIGRATION: the first read builds Classic from today's app-wide keys ([HomeLayoutMigration]); the old setters (Settings > Bottom screen,
  * CastBarAsk, the Controller room's "Turn on") are facades in [HomeSettings] that write the CURRENT character's record, and still write
  * their old keys for one release (a downgrade reads them; castBarChosen keeps its meaning).
@@ -37,9 +43,12 @@ object HomeLayoutStore {
     /** a character is named but its key is not known yet ([who] null): nothing per character is read or written */
     @Volatile var pending: Boolean = false
         private set
-    /** the pending character's name (an edit held for one name never goes to another) and the edit held meanwhile */
+    /** the pending character's name (an edit held for one name never goes to another) and the edit held meanwhile (while pending, or
+     *  - fix round 3 - made before any character was known: [heldName] null until a pending name adopts it) */
     private var pendingName: String? = null
     private var pendingEdit: HomeLayout? = null
+    /** the name the held edit is for (null = made before any character was named: the first character's) */
+    private var heldName: String? = null
     /** what Home showed when the first pending edit was made (the edit's base: only the fields changed from it are laid on top) */
     private var pendingBase: HomeLayout? = null
     private var cacheRaw: String? = null
@@ -67,8 +76,18 @@ object HomeLayoutStore {
     enum class EditSave { SAME, LAY_ON, NONE }
     fun editSaveFor(opened: Owner, now: Owner = owner()): EditSave = when {
         opened == now -> EditSave.SAME
-        opened.key == null && opened.name != null && now.key != null && now.name == opened.name -> EditSave.LAY_ON
+        opened.key == null && opened.name != null && now.key != null && now.name == opened.name && carryOk(now.key) -> EditSave.LAY_ON
         else -> EditSave.NONE
+    }
+
+    /** fix round 3: a pending name's edit may go onto [k]: no other realm of its name is known (the prefs' records and the device
+     *  census, RealmFix.resetTakesOrphans: no stored, seen or backup-file realm but [k]'s). Otherwise the edit is let go: never a guess */
+    internal fun carryOk(k: String): Boolean {
+        val name = CharKey.nameOf(k) ?: return false
+        val other = prefs?.all?.keys.orEmpty().any { r ->
+            isCharRecord(r) && r != key(k) && CharKey.nameOf(r.removePrefix(KEY_PREFIX)) == name
+        }
+        return !other && RealmFix.resetTakesOrphans(k)
     }
     /** edit mode's Save: [draft], opened on [opened] over [base] (what it showed then); null = refused (another owner now: nothing
      *  written). Both SAME and LAY_ON write only the fields the session changed on top of the record the store holds now: a change
@@ -126,10 +145,13 @@ object HomeLayoutStore {
         if (k == who && pend == pending && (!pend || n == pendingName)) return
         val before = active()
         val ownerBefore = owner()
-        // this session's edit while the key was not known: only for the same name, only once the key is known
-        val carry = pendingEdit?.takeIf { pending && k != null && n == pendingName }
+        // this session's edit while the key was not known: for the same name (or made before any character was known: the first one's)
+        val held = pendingEdit?.takeIf { who == null && (heldName == null || heldName == n) }
+        // only once the key is known; a pending name's edit only while no other realm of the name is known (fix round 3: never a guess)
+        val carry = held?.takeIf { k != null && (heldName == null || carryOk(k)) }
         val carryBase = pendingBase
-        if (!pend || n != pendingName) { pendingEdit = null; pendingBase = null }
+        if (pend && held != null) heldName = n                      // still held: now for this name (a no-character edit adopted)
+        else { pendingEdit = null; pendingBase = null; heldName = null }
         who = k; pending = pend; pendingName = if (pend) n else null
         val p = prefs
         if (p != null && k != null) {
@@ -150,8 +172,12 @@ object HomeLayoutStore {
         migrate(p)
         val rec = l.copy(name = HomePresets.nameOf(l))
         val before = active()
-        // pending (named, no key): held in memory only; "All characters" still writes the default and the whole keys
-        if (pending) { if (pendingEdit == null) pendingBase = before; pendingEdit = rec }
+        // pending (named, no key): held in memory only; "All characters" still writes the default and the whole keys. Fix round 3: no
+        // character known yet - the default is written as before, and the change is held for the first character's own record too
+        if (who == null) {
+            if (pendingEdit == null) { pendingBase = before; heldName = if (pending) pendingName else null }
+            pendingEdit = rec
+        }
         if (pending && !all) {
             val now = active()
             if (now != before) { changed(); return true }
@@ -213,8 +239,9 @@ object HomeLayoutStore {
 
     /** the off-device tests: these prefs (and no character) */
     internal fun startForTest(p: SharedPreferences?) {
-        prefs = p; who = null; pending = false; pendingName = null; pendingEdit = null; pendingBase = null; cacheRaw = null; cache = null
+        prefs = p; who = null; pending = false; pendingName = null; pendingEdit = null; pendingBase = null; heldName = null
+        cacheRaw = null; cache = null
     }
     /** a reset removed keys: the cache goes (HomeSettings.resetDone calls the listeners) */
-    fun resetDone() { cacheRaw = null; cache = null; pendingEdit = null; pendingBase = null }
+    fun resetDone() { cacheRaw = null; cache = null; pendingEdit = null; pendingBase = null; heldName = null }
 }

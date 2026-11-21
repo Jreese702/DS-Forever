@@ -4961,6 +4961,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var mirrorTries = 0
     private val MIRROR_TRIES = 3
     private val mirrorAgain = Runnable { lastDpad?.let { mirrorCheck(it) } }
+    /** the last send of a wish went unanswered: Home's Save hold on the D-pad pictures ends (a cross-fade back to the add-on's `d`) */
+    private val mirrorGiveUp = Runnable {
+        val d = lastDpad
+        if (d == null || ToolbarMirror.bitOf(d.dirs) != HomeLayoutSolver.mirrorBit(HomeSettings.layout)) homeView.roomBarHoldEnd()
+    }
 
     /** SPEC section 6 "SYNC": the layout's mirror bit vs the add-on's `d`; out of combat a pending wish is tapped (padtab 39, 38, 37 then 9 /
      *  10) and tried again every ToolbarMirror.RESEND_MS until `d` says it; a fight waits. A new `d` shows the D-pad toast on Home */
@@ -4971,11 +4976,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!mirrorCurrent) return
         // the 1514 merge (CharKey): no key = the layout is not this character's (Home shows the default) and the add-on refuses the
         // bit ("no character"): nothing is sent until the key comes (PadMap m181 sends the padmap again then)
-        if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(mirrorAgain); return }
+        if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); homeView.roomBarHoldEnd(); return }
         val want = HomeLayoutSolver.mirrorBit(HomeSettings.layout)
         if (mirrorSentWant != want) { mirrorSentAt = null; mirrorTries = 0 }
         val now = SystemClock.elapsedRealtime()
-        ui.removeCallbacks(mirrorAgain)
+        ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp)
         when (val a = ToolbarMirror.decide(want, d.dirs, homeView.inFight(), mirrorSentAt?.let { now - it })) {
             ToolbarMirror.Act.Matched -> { mirrorSentAt = null; mirrorSentWant = null; mirrorTries = 0 }
             ToolbarMirror.Act.Wait -> if (!d.dirs.isNullOrEmpty()) ui.postDelayed(mirrorAgain, ToolbarMirror.RESEND_MS)
@@ -4984,6 +4989,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val sent = padTabTap(ToolbarMirror.cells(a.on))
                 Log.i(HomeView.TAG, "toolbar mirror: ${if (a.on) "on (Left = map)" else "off (Left = chat)"} ${if (sent) "sent" else "not sent"}")
                 if (++mirrorTries < MIRROR_TRIES) ui.postDelayed(mirrorAgain, ToolbarMirror.RESEND_MS + 200L)
+                else ui.postDelayed(mirrorGiveUp, ToolbarMirror.RESEND_MS + 200L)      // fix round 3: Save's held pictures go back to `d`
             }
         }
     }

@@ -366,7 +366,8 @@ class HomeEditShotsTest {
         assertFalse(home.editing)
         assertTrue(HomeSettings.layout.samePlace(draft))
         assertFalse(p.strip.editTick)
-        assertEquals("after Save the pictures are the add-on's `d` again until it confirms the mirror", "chat", p.cast.roomBar?.get(1))
+        // fix round 3: after Save the pictures keep the SAVED sides until the add-on's `d` says them (no slide back and forth)
+        assertEquals(if (HomeLayoutSolver.mirrorBit(HomeSettings.layout) == 1) "map" else "chat", p.cast.roomBar?.get(1))
         shot(p, "29_saved")
         contact()
     }
@@ -908,6 +909,96 @@ class HomeEditShotsTest {
         assertEquals(HomeEditView.Corner.TOP_EDGE_RIGHT, ev.cornerOf(EditStop.QUEST, RectF(830f, 260f, 1232f, 400f)))
         assertEquals(HomeEditView.Corner.TOP_RIGHT, ev.cornerOf(EditStop.CHAT, RectF(8f, 200f, 616f, 900f)))
         assertEquals(HomeEditView.Corner.BOTTOM_LEFT, ev.cornerOf(EditStop.MAP, RectF(830f, 200f, 1232f, 900f)))
+    }
+
+    // ---------------------------------------------------------------- fix round 3
+
+    /** finding 4: hold to talk's pop-up lies over the chat's and the map's tops; a finger resting there (a tab picked) never arms the hold */
+    @Test fun aHoldNeverArmsUnderHoldToTalk() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val home = p.home
+        home.forceLive = true
+        val m = boxes(home).getValue("MAP")
+        val x = m.centerX(); val y = m.top + 420f
+        p.cast.talkPanel = CastView.TalkPanel(listOf(TalkTabs.Tab("say", "Say", android.graphics.Color.WHITE)), 0,
+            CastView.TalkFace(CastView.TalkFace.Mode.READY, android.graphics.Color.WHITE), "", "")
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x, y); settle(40)
+        assertNull("hold to talk up: no edit mode", home.editModel())
+        touch(p, MotionEvent.ACTION_UP, x, y); settle()
+        p.cast.talkPanel = null
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x, y); settle(40)
+        assertTrue("the pop-up gone: the hold opens it as always", home.editing)
+        touch(p, MotionEvent.ACTION_UP, x, y); settle()
+    }
+
+    /** finding 5: back from the Filters route (a room over a parked session), Home is laid with the DRAFT in the same call: the Chat
+     *  room's closing glide (chatPaneBox, read right after borrow) lands on the draft's chat pane, not the saved one's */
+    @Test fun backFromARoomThePaneIsTheDrafts() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val home = p.home
+        home.forceLive = true
+        val saved = home.chatPaneBox()!!
+        assertTrue(home.editOpen(EditStop.CHAT)); settle()
+        home.editKey("PADBACK"); settle(); lay(home); settle()                // Select: the chat on the right in the draft
+        val draft = home.chatPaneBox()!!
+        assertTrue("the draft moved the pane", draft.left > saved.left + 100f)
+        home.giveBack()                                                       // Filters: the Chat room over Home, the session parked
+        assertTrue(model(p).parked)
+        home.borrow()                                                         // B: Home again (its resume posted)
+        assertEquals("the glide's target is the draft's pane at once", draft, home.chatPaneBox())
+        settle(); lay(home); settle()
+        assertTrue(home.editing)
+        assertEquals(draft, home.chatPaneBox())
+        home.editCancel(); settle(); lay(home); settle()
+        assertEquals("Discard: the saved pane again", saved, home.chatPaneBox())
+    }
+
+    /** finding 7: Save keeps the D-pad pictures on the saved sides until the add-on's `d` says them (no slide back and forth); the
+     *  resend given up = a cross-fade back to `d` */
+    @Test fun saveKeepsTheToolbarPicturesUntilTheAddonSaysThem() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val home = p.home
+        home.forceLive = true
+        val cast = p.cast
+        val swapped = HoldTalk.DEFAULT_DIRS + mapOf(1 to "map", 3 to "chat")
+        cast.roomBar = home.roomBarFor(HoldTalk.DEFAULT_DIRS)
+        assertTrue(home.editOpen(EditStop.CHAT)); settle()
+        home.editKey("PADBACK"); settle()
+        assertEquals("the draft's preview", swapped, cast.roomBar)
+        cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + 10_000L)  // the preview's slide done
+        home.editSave(); settle(2)
+        assertEquals("Save: still the saved sides", swapped, cast.roomBar)
+        assertNull("nothing moved", cast.roomMotionK())
+        // the add-on still answers with the old `d` (a padmap before the taps landed): the pictures hold
+        cast.roomBar = home.roomBarFor(HoldTalk.DEFAULT_DIRS)
+        assertEquals(swapped, cast.roomBar); assertNull(cast.roomMotionK())
+        // the confirming `d`: the same pictures, nothing moves
+        cast.roomBar = home.roomBarFor(swapped)
+        assertEquals(swapped, cast.roomBar); assertNull(cast.roomMotionK())
+        // a Save the add-on never confirms: the host gives up and the pictures cross-fade back to `d` (never a slide)
+        assertTrue(home.editOpen(EditStop.CHAT)); settle()
+        home.editKey("PADBACK"); settle()
+        cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + 10_000L)
+        home.editSave(); settle(2)
+        assertEquals(HoldTalk.DEFAULT_DIRS, cast.roomBar)
+        home.roomBarHoldEnd()
+        assertEquals(swapped, cast.roomBar)
+        assertNotNull(cast.roomMotionK())
+        assertFalse("a cross-fade", cast.roomMotionSwap)
+    }
+
+    /** finding 9: on a stepper row (the Map's Zoom out / in) the ribbon shows the D-pad's Change, never A's */
+    @Test fun aStepperRowsHintIsTheDpad() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val home = p.home
+        assertTrue(home.editOpen(EditStop.MAP)); settle()
+        home.editKey("PAD3"); settle()
+        assertEquals(EditStop.MAP, model(p).menu)
+        val ev = editViewOf(home)
+        assertEquals(listOf(HomeEditView.DPAD to "Change", UiKit.backGlyph() to "Back"), ev.hintsFor(model(p), MenuRow.Kind.STEP))
+        assertEquals(UiKit.okGlyph() to "Change", ev.hintsFor(model(p), MenuRow.Kind.SEG).first())
     }
 
     /** the toolbar's Left / Right pictures: a swap slides them (no one-frame jump), another change cross-fades in 120 ms */

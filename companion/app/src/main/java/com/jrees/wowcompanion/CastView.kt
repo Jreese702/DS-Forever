@@ -396,11 +396,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var roomMotionAt = 0L
     private var roomMotionMs = 0L
     private var roomSwap = false
+    private var roomFadeNext = false
+    /** [roomBar] = [v] with the cross-fade even for a swap (fix round 3: Home's Save hold given up, the pictures go back to `d`) */
+    fun roomBarFade(v: Map<Int, String>?) { roomFadeNext = true; try { roomBar = v } finally { roomFadeNext = false } }
     private fun roomMotionStart(old: Map<Int, String>?, new: Map<Int, String>?) {
         roomMotionMs = 0L
         if (!roomBarOn || old == null || new == null || layout == Layout.FULL) return
         if (old[1] == new[1] && old[3] == new[3]) return
-        roomSwap = old[1] == new[3] && old[3] == new[1]
+        roomSwap = !roomFadeNext && old[1] == new[3] && old[3] == new[1]
         for (i in 0 until 4) roomPrev[i] = roomBtns[i]
         roomMotionAt = SystemClock.elapsedRealtime()
         roomMotionMs = if (roomSwap) roomSlideMs else ROOM_FADE_MS

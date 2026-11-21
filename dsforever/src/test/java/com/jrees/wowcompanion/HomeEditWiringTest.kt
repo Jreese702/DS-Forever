@@ -70,6 +70,22 @@ class HomeEditWiringTest {
         assertTrue(strip.contains("if (editTick) { drawEditTick(c); return }"))
     }
 
+    /** movable Home fix round 3: the wiring of the review's findings */
+    @Test fun fixRound3Wiring() {
+        // the hold never arms while hold to talk's pop-up is up (it lies over the chat and the map)
+        assertTrue(body(home, "private fun holdBodyAt(").contains("if (castView.talkPanel != null) return null"))
+        // the Zoom steppers: the app's own stepper look (no plate lit as a pick, the signs at 40)
+        assertTrue(editView.contains("UiKit.choice(c, minus, r.words[0], false, textSize = STEP_TEXT); UiKit.choice(c, plus, r.words[1], false, textSize = STEP_TEXT)"))
+        assertTrue(editView.contains("const val STEP_TEXT = 40f"))
+        assertTrue(editView.contains("hintsFor(m, m.menu?.let { host.menuRows(it).getOrNull(m.menuRow)?.kind })"))
+        // the toolbar mirror's last unanswered send ends Home's Save hold on the pictures (a cross-fade back to `d`)
+        assertTrue(host.contains("else ui.postDelayed(mirrorGiveUp, ToolbarMirror.RESEND_MS + 200L)"))
+        assertTrue(body(host, "private fun mirrorCheck(").contains("ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp)"))
+        // Home back over a room-parked session: the draft laid in borrow itself (the Chat room's closing glide reads it at once)
+        assertTrue(body(home, "fun borrow()").contains("if (editBackDue) editRestSync()"))
+        assertTrue(home.contains("private fun editDraft(): HomeLayout? = edit?.takeIf { !it.parked || editBackDue }?.draft"))
+    }
+
     /** movable Home fix round 1: the wiring the review found missing */
     @Test fun fixRound1Wiring() {
         // a Layouts reset ends edit mode (open or parked) BEFORE the stores are read again: no Save puts the old record back

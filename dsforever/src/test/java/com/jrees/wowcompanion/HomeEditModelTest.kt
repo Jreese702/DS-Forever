@@ -359,6 +359,46 @@ class HomeEditModelTest {
         assertEquals(HomeRest.DIAMONDS, c.draft.rest)
     }
 
+    /** fix round 3 (finding 6): the chip's Left / Right (and LB / RB) never throw the player's own changes away - the draft is the
+     *  cycle's own "Edited" stop after the last flip, so the press back the other way brings it back exactly */
+    @Test fun aFlipAwayFromTheDraftCanAlwaysComeBack() {
+        val m = model(start = EditStop.CHIP)
+        // the player's own layout: the bar off, the chat a third wide (not any preset)
+        val own = m.draft.copy(cast = HomeLayout.CastDock.OFF, chatShare = HomeLayout.Share.THIRD)
+        val f = HomeEditModel::class.java.getDeclaredField("draft").apply { isAccessible = true }
+        f.set(m, own)
+        assertEquals(HomeEditModel.EDITED, m.chipName)
+        m.press("PADDRIGHT")                                                // Right on the chip: the next layout, as always
+        assertEquals(HomePresets.MIRRORED, m.chipName)
+        assertFalse(m.draft.samePlace(own))
+        m.press("PADDLEFT")                                                 // and back: the player's own, exactly
+        assertEquals(own, m.draft)
+        assertEquals(HomeEditModel.EDITED, m.chipName)
+        // the other way round: Left from it goes to the layout it was made from, Right brings it back
+        m.press("PADDLEFT")
+        assertEquals(HomePresets.CLASSIC, m.chipName)
+        m.press("PADDRIGHT")
+        assertEquals(own, m.draft)
+        // a whole lap with RB passes every preset and comes back to it
+        val seen = ArrayList<String>()
+        repeat(HomePresets.ALL.size + 1) { m.press("PADRSHOULDER"); seen += m.chipName }
+        assertEquals(HomeEditModel.EDITED, seen.last()); assertEquals(own, m.draft)
+        assertEquals(HomePresets.ALL.map { it.id }.toSet(), seen.dropLast(1).toSet())
+        // the sheet's pick keeps it too (a flip back reaches it), and the sheet never opens on the "Edited" stop
+        m.press("PAD1")
+        assertEquals(0, m.sheetSel)
+        m.press("PADDRIGHT", "PAD1")
+        assertEquals(HomePresets.MIRRORED, m.chipName)
+        m.flip(-1)                                                          // Mirrored -> the player's own (made from Classic)
+        assertEquals(own, m.draft)
+        // nothing changed (the saved layout a preset names): no extra stop, the cycle as before
+        val n = model(start = EditStop.CHIP)
+        val lap = ArrayList<String>()
+        repeat(HomePresets.ALL.size) { n.press("PADRSHOULDER"); lap += n.chipName }
+        assertEquals(HomePresets.CLASSIC, lap.last())
+        assertTrue(HomeEditModel.EDITED !in lap)
+    }
+
     @Test fun theSheetUsesSavesHereAndCopiesToAllCharacters() {
         val m = model(start = EditStop.CHIP)
         m.press("PAD1")

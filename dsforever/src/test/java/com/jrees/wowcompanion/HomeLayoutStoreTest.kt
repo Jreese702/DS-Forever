@@ -15,7 +15,7 @@ import org.junit.Test
  * toolbar words; the page-3 code registry; the reset plan's new keys. Pure.
  */
 class HomeLayoutStoreTest {
-    @After fun down() { HomeSettings.startForTest(null) }
+    @After fun down() { HomeSettings.startForTest(null); RealmFix.forget() }
 
     private fun fresh(p: Prefs = Prefs()): Prefs { HomeSettings.startForTest(p); return p }
 
@@ -200,6 +200,8 @@ class HomeLayoutStoreTest {
         assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", "homeLayout.Korvash-Realm")?.kind)
         assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", HomeLayoutStore.KEY_DEFAULT)?.kind)
         assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", HomeLayoutStore.KEY_SLOTS)?.kind)
+        assertTrue("the device's keys: All characters only", ResetPlan.ruleOf("home", HomeLayoutStore.KEY_SLOTS)!!.allOnly &&
+            ResetPlan.ruleOf("home", HomeLayoutStore.KEY_DEFAULT)!!.allOnly)
         assertTrue(ResetPlan.prefKeys("home", setOf("homeLayout.Korvash-Realm", "homeLayout.Thrandil-Realm"), setOf(ResetPlan.Kind.LAYOUTS),
             "Korvash-Realm", false) == setOf("homeLayout.Korvash-Realm"))
         assertTrue(ResetPlan.isCharKey("Korvash-Realm")); assertFalse(ResetPlan.isCharKey("Korvash-")); assertFalse(ResetPlan.isCharKey("Korvash-?"))
@@ -359,13 +361,84 @@ class HomeLayoutStoreTest {
         assertEquals("no word: the router's default", "chat", toolWord(null, 1))
     }
 
+    /** fix round 3 (finding 2): a realm-less session's edit is held for its NAME; when a same-name character on another realm logs in
+     *  (Korvash-Stormreach after a pending Korvash), it never gets that edit - only a key whose name has no other known realm does */
+    @Test fun aSameNameAltOnAnotherRealmNeverGetsTheHeldEdit() {
+        val p = fresh()
+        HomeLayoutStore.character("Korvash-Silvermoon")                       // two Korvashes on the device, each with a record
+        HomeLayoutStore.character("Korvash-Stormreach")
+        val storm = p.m["homeLayout.Korvash-Stormreach"]
+        HomeLayoutStore.character(null, "Korvash")                            // a session with no realm: which Korvash is not known
+        assertTrue(HomeLayoutStore.update { it.copy(chatSide = HomeLayout.Side.RIGHT) })
+        val o = HomeLayoutStore.owner()
+        HomeLayoutStore.character("Korvash-Stormreach")                       // the relog: the other realm's Korvash
+        assertEquals("the held edit never goes onto a same-name alt's record", storm, p.m["homeLayout.Korvash-Stormreach"])
+        assertFalse(HomeSettings.layout.mirrored)
+        assertEquals("edit mode opened while pending: not saved onto the alt", HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o))
+        // the device census knows another realm of the name (a stored table, a backup file) though the prefs hold one record: refused too
+        val q = fresh()
+        HomeLayoutStore.character("Thrandil-Realm")
+        RealmFix.census = { RealmFix.Census(stored = setOf("Realm", "Other")) }
+        HomeLayoutStore.character(null, "Thrandil")
+        HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) }
+        val o2 = HomeLayoutStore.owner()
+        HomeLayoutStore.character("Thrandil-Realm")
+        assertEquals(HomeLayout.Share.HALF, HomeLayoutJson.parse(q.m["homeLayout.Thrandil-Realm"] as String).chatShare)
+        assertEquals(HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o2))
+        // one realm known: the late key still gets the session's change (aRealmLessCharacterNeverStoresAndLetsThePreviousGo)
+        RealmFix.census = { RealmFix.Census(stored = setOf("Realm")) }
+        HomeLayoutStore.character(null, "Thrandil")
+        HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) }
+        val o3 = HomeLayoutStore.owner()
+        assertTrue(HomeLayoutStore.carryOk("Thrandil-Realm"))
+        HomeLayoutStore.character("Thrandil-Realm")
+        assertEquals(HomeLayout.Share.THIRD, HomeLayoutJson.parse(q.m["homeLayout.Thrandil-Realm"] as String).chatShare)
+        assertEquals(HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o3.copy(name = "Korvash")))
+    }
+
+    /** fix round 3 (finding 3): a change made before ANY character is known (the app's start, the login screen) writes the default as
+     *  before AND reaches the first character's own record (only the changed fields: its own others kept), never silently lost */
+    @Test fun aChangeBeforeAnyCharacterReachesTheFirstOne() {
+        val p = fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        HomeLayoutStore.set(HomePresets.byId(HomePresets.MIRRORED)!!.apply(HomeSettings.layout))
+        // the app starts again (the same prefs): no character yet, Home on the default
+        fresh(p)
+        assertNull(HomeLayoutStore.who); assertFalse(HomeLayoutStore.pending)
+        HomeSettings.combatGrow = false                                       // Settings > Bottom screen: Combat layout = Same size
+        assertEquals("the default written (the seed of a first login)", HomeLayout.FightBand.SAME,
+            HomeLayoutJson.parse(p.m[HomeLayoutStore.KEY_DEFAULT] as String).fight)
+        HomeLayoutStore.character("Korvash-Realm")                            // the main logs in: it HAS a record
+        assertEquals("the change reached him", HomeLayout.FightBand.SAME, HomeSettings.layout.fight)
+        assertTrue("his own mirror kept", HomeSettings.layout.mirrored)
+        assertEquals(HomeLayout.FightBand.SAME, HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String).fight)
+        // the next character gets nothing more (held once): the default seeds it as always
+        HomeLayoutStore.character("Thrandil-Realm")
+        assertFalse(HomeSettings.layout.mirrored)
+        // no character, then a pending name adopts the change, then its key: carried (one realm known)
+        fresh(p)
+        HomeLayoutStore.update { it.copy(xpBar = false) }
+        HomeLayoutStore.character(null, "Korvash")
+        HomeLayoutStore.character("Korvash-Realm")
+        assertFalse(HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String).xpBar)
+        // no character, a pending name, then ANOTHER name: let go
+        fresh(p)
+        HomeLayoutStore.update { it.copy(card = HomeLayout.CardDock.OFF) }
+        HomeLayoutStore.character(null, "Korvash")
+        HomeLayoutStore.character(null, "Thrandil")
+        HomeLayoutStore.character("Thrandil-Realm")
+        assertTrue(HomeLayoutJson.parse(p.m["homeLayout.Thrandil-Realm"] as String).card != HomeLayout.CardDock.OFF)
+    }
+
     // ---------------------------------------------------------------- reset
 
     @Test fun layoutsResetTheNewKeys() {
         val me = "Shammy-Realm"; val other = "Hunt-Realm"
         val keys = setOf("homeLayout.$me", "homeLayout.$other", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS, HomeLayoutStore.KEY_MIGRATED)
         val L = setOf(ResetPlan.Kind.LAYOUTS)
-        assertEquals(setOf("homeLayout.$me", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS), ResetPlan.prefKeys("home", keys, L, me, false))
+        // fix round 3: "This character" takes its own record only - the three "Mine" slots and the first-login seed are the device's
+        assertEquals(setOf("homeLayout.$me"), ResetPlan.prefKeys("home", keys, L, me, false))
+        assertEquals(setOf("homeLayout.$me"), ResetPlan.prefKeys("home", keys, ResetPlan.Kind.values().toSet(), me, false))
         assertEquals(setOf("homeLayout.$me", "homeLayout.$other", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS),
             ResetPlan.prefKeys("home", keys, L, me, true))
         assertTrue("never by Settings / Skills", ResetPlan.prefKeys("home", keys, setOf(ResetPlan.Kind.SETTINGS, ResetPlan.Kind.SKILLS), me, true).isEmpty())

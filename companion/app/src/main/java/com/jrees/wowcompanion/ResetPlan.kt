@@ -46,8 +46,10 @@ package com.jrees.wowcompanion
  *                        swingTimer, castBarSide, castStrip, castBarCombat, castBarPartyShow (Bar in Party mode), clockHearth,
  *                        clockTeleport, clockGold, clockBags, clockAmmo,
  *                        and the wheels' open / pick: radialTap, radialPickA, spellTap, spellPickA, classTapL, classPickAL, classTapR,
- *                        classPickAR, pauseTap, pausePickA; movable Home (SPEC section 9): homeLayoutDefault, homeLayoutSlots, and per
- *                        char homeLayout.<who> (a reset = Classic)   SKILLS (per char) smartPet.<who>, petFollowB.<who> (B: pet recall)
+ *                        classPickAR, pauseTap, pausePickA; movable Home (SPEC section 9): per char homeLayout.<who> (a reset = Classic
+ *                        WRITTEN under that key: the default stays), and ONLY with "All characters" (fix round 3: they belong to no one
+ *                        character) homeLayoutDefault (the seed of a first login) and homeLayoutSlots (the three device slots of "Mine")
+ *                        SKILLS (per char) smartPet.<who>, petFollowB.<who> (B: pet recall)
  *               NEVER    castBarAsked, ruling.hide.2026-09-28 (asked once), homeLayoutMigrated (the one-time migration mark), holdTalk.<who>, talkSendNow.<who> (chat: not named in the
  *                        rulings - left, a decision)
  *  dpad         LAYOUTS (per char) choice_<who> (set ON, pending until the game says it)   NEVER pend_/owed_ (the prompt's own state)
@@ -148,9 +150,12 @@ object ResetPlan {
     }
 
     /** one preference key's rule: an exact key, or a per-character key "<prefix><who>" (with [suffix] after it); [kind] null = never */
-    data class PrefKey(val file: String, val key: String, val kind: Kind?, val perChar: Boolean = false, val wholeFile: Boolean = false)
+    /** [allOnly]: an exact key that belongs to no one character (the device's): reset only with "All characters" (fix round 3) */
+    data class PrefKey(val file: String, val key: String, val kind: Kind?, val perChar: Boolean = false, val wholeFile: Boolean = false,
+                       val allOnly: Boolean = false)
 
     private fun exact(file: String, kind: Kind?, vararg keys: String) = keys.map { PrefKey(file, it, kind) }
+    private fun device(file: String, kind: Kind, vararg keys: String) = keys.map { PrefKey(file, it, kind, allOnly = true) }
     private fun char(file: String, kind: Kind?, vararg prefixes: String) = prefixes.map { PrefKey(file, it, kind, perChar = true) }
 
     val PREFS: List<PrefKey> = listOf(
@@ -169,8 +174,9 @@ object ResetPlan {
         exact("home", Kind.LAYOUTS, "rest", "questMin", "questOverMap", "combatGrow", "swingTimer", "castBarSide", "castStrip", "castBarCombat",
             "castBarPartyShow",
             "clockHearth", "clockTeleport", "clockGold", "clockBags", "clockAmmo", "radialTap", "radialPickA", "spellTap", "spellPickA",
-            "classTapL", "classPickAL", "classTapR", "classPickAR", "pauseTap", "pausePickA",
-            HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS),
+            "classTapL", "classPickAL", "classTapR", "classPickAR", "pauseTap", "pausePickA"),
+        // fix round 3: the first-login seed and the three "Mine" slots are the device's, never one character's ("This character" keeps them)
+        device("home", Kind.LAYOUTS, HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS),
         char("home", Kind.LAYOUTS, HomeLayoutStore.KEY_PREFIX),
         char("home", Kind.SKILLS, "smartPet.", "petFollowB."),
         exact("home", null, "castBarAsked", "ruling.hide.2026-09-28", HomeLayoutStore.KEY_MIGRATED),
@@ -228,6 +234,7 @@ object ResetPlan {
             val r = ruleOf(file, k) ?: return@filter false
             val kind = r.kind ?: return@filter false
             if (kind !in kinds) return@filter false
+            if (r.allOnly && !all) return@filter false
             if (r.perChar && kind != Kind.SETTINGS) matches(r, k, who, all) else true
         }.toSet()
         // one character's reset: its name's orphans only while this file holds that name under its own realm alone (never a guess)

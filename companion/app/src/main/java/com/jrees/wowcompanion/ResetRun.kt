@@ -50,18 +50,23 @@ class ResetRun(
         val refused = ArrayList<String>()
         var prefs = 0
         // 1. the preferences
+        // fix round 3: one character's Layouts reset keeps the device's default record (the seed of every first login): Home's Classic is
+        // WRITTEN under the character's own key, so it comes back as Classic, never as that default
+        val classicFor = if (ResetPlan.Kind.LAYOUTS in kinds && !all) who?.takeIf { ResetPlan.isCharKey(it) } else null
         for (file in ResetPlan.FILES) {
             val p = prefsOf(file)
             val have = p.all
             val rm = ResetPlan.prefKeys(file, have.keys, kinds, who, all)
-            if (rm.isEmpty()) continue
-            if (!backupText("prefs-$file", jsonOf(have.filterKeys { it in rm }), now)) { refused += file; log("settings reset: $file not reset (no backup)"); continue }
+            val classic = if (file == "home" && classicFor != null) HomeLayoutStore.KEY_PREFIX + classicFor else null
+            if (rm.isEmpty() && classic == null) continue
+            if (rm.isNotEmpty() && !backupText("prefs-$file", jsonOf(have.filterKeys { it in rm }), now)) { refused += file; log("settings reset: $file not reset (no backup)"); continue }
             val e = p.edit()
             for (k in rm) {
                 // the toolbar's choice: ON (its default), pending until the game says it; the prompt stays answered. The k6 review round 2
                 // (item G): a realm-less session's orphan "choice_Name-" is REMOVED (never given the default: no orphan key is written)
                 if (file == "dpad" && !orphanKey(k)) e.putBoolean(k, true).putBoolean("pend_$k", true).remove("owed_$k") else e.remove(k)
             }
+            if (classic != null) e.putString(classic, HomeLayoutJson.json(HomeLayout()))
             e.commit()
             prefs += rm.size
         }

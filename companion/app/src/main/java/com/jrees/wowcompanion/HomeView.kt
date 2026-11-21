@@ -240,7 +240,13 @@ class HomeView(
 
     /** Home is about to show: take the map and the bars. MainActivity calls this after its room loop. */
     fun borrow() {
-        if (edit?.parked == true && editAway) editUi.post { editAwayBack() }
+        // fix round 3: the session's draft is laid AT ONCE (the Chat room's closing glide reads chatPaneBox in this same call), the rest
+        // of the resume (the guest, the chrome) on the next loop as before
+        if (edit?.parked == true && editAway) {
+            editBackDue = !fightShown() && editOwner?.let { HomeLayoutStore.editSaveFor(it) } != HomeLayoutStore.EditSave.NONE
+            if (editBackDue) editRestSync()
+            editUi.post { editAwayBack() }
+        }
         lend(mapView, mapSlot)
         mapView.onFieldTouch = { mapFieldTouched() }                          // 2026-11-17: a touch on the open map = its map controls
         // an untracked quest's disc (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the left menu"): the
@@ -2306,7 +2312,9 @@ class HomeView(
     /** edit mode opened / closed (the host re-reads its guards) */
     var onEditChanged: ((Boolean) -> Unit)? = null
 
-    private fun editDraft(): HomeLayout? = edit?.takeIf { !it.parked }?.draft
+    private fun editDraft(): HomeLayout? = edit?.takeIf { !it.parked || editBackDue }?.draft
+    /** fix round 3: Home is back over a room-parked session and its resume is posted ([borrow]): the page is laid with the draft already */
+    private var editBackDue = false
     /** the band's rest Home is laid with: the draft's while edit mode is live (Y on the band, the menu's Rest row preview live), else the
      *  saved record's (a fight's park, Discard and Leave put it back) */
     private fun restWanted(): HomeRest = editDraft()?.rest ?: HomeSettings.rest
@@ -2322,10 +2330,27 @@ class HomeView(
     private var roomBarKept = false
     fun roomBarFor(dirs: Map<Int, String>?): Map<Int, String>? { roomBarReal = dirs; roomBarKept = true; return editRoomBar(dirs) }
     private fun editRoomBar(dirs: Map<Int, String>?): Map<Int, String>? {
-        val d = editDraft() ?: return dirs
+        val draft = editDraft()
+        val want = draft?.let { HomeLayoutSolver.mirrorBit(it) }
+            ?: roomBarHold?.takeIf { it == HomeLayoutSolver.mirrorBit(HomeSettings.layout) }
+            ?: run { roomBarHold = null; return dirs }
         val have = dirs?.let { ToolbarMirror.bitOf(it) } ?: return dirs
-        if (have == HomeLayoutSolver.mirrorBit(d)) return dirs
+        if (have == want) { if (draft == null) roomBarHold = null; return dirs }
         return dirs + mapOf(1 to dirs.getValue(3), 3 to dirs.getValue(1))
+    }
+    /**
+     * fix round 3 (SPEC section 10: "after Save (new d arrives): 120 ms cross-fade if they differ"): Save keeps the saved record's sides
+     * (its mirror bit) on the pictures until the add-on's `d` says them - the swap the player previewed never slides back and forth
+     * while ToolbarMirror's taps are on their way. The host's [roomBarHoldEnd] (the resend gave up, no key to send for) puts `d` back with
+     * the cross-fade. Null = `d` as it is
+     */
+    private var roomBarHold: Int? = null
+    fun roomBarHoldEnd() {
+        if (roomBarHold == null) return
+        roomBarHold = null
+        if (!lent(castView) || editDraft() != null) return
+        val want = editRoomBar(roomBarReal)
+        if (castView.roomBar != want) { castView.roomBarFade(want); castView.invalidate() }
     }
     private fun editRoomBarSync() {
         if (!lent(castView)) return
@@ -2486,6 +2511,8 @@ class HomeView(
         if (rec == null && m.foldPicked) HomeSettings.questMin = editFoldOpen
         val wrote = rec != null
         edit = null
+        editBackDue = false
+        roomBarHold = rec?.let { HomeLayoutSolver.mirrorBit(it) }             // fix round 3: the saved sides until `d` says them
         editOwner = null
         liveDraft = null
         editRestSync()                                                    // the saved record's rest again (Save: the draft's, now saved)
@@ -2654,6 +2681,7 @@ class HomeView(
 
     /** another room over Home: the draft waits (as for a fight); Home again: edit mode where it was */
     private fun editAwayPark() {
+        editBackDue = false
         val m = edit ?: return
         if (!m.parked) { m.park(); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L) }
         editAway = true
@@ -2661,11 +2689,16 @@ class HomeView(
         onEditChrome?.invoke(null)
     }
     private fun editAwayBack() {
+        val due = editBackDue
+        editBackDue = false
         val m = edit ?: return
-        if (!editAway) return
+        if (!editAway) { if (due) { editRestSync(); editRelay(Motion.MODULE_CLOSE) }; return }
         editAway = false
         if (editOwnerCheck("Home again on another character")) return
-        if (fightShown()) return                                          // the fight's end brings it back (editFightCheck)
+        if (fightShown()) {                                               // the fight's end brings it back (editFightCheck)
+            if (due) { editRestSync(); editRelay(Motion.COMBAT_GROW) }    // the draft laid early goes: the saved record for the fight
+            return
+        }
         m.resume(); liveDraft = m.draft
         editRestSync()
         editGuest(true)
@@ -2844,6 +2877,8 @@ class HomeView(
         // is the Settings tile's and the disc's (editOpen)
         if (fightShown()) return null
         if (classOpen || pauseT > 0f || typeWanted || mailOpen || wheelOpen) return null
+        // fix round 3: never while hold to talk's pop-up is up (it lies over the chat's and the map's tops; its tabs take a finger)
+        if (castView.talkPanel != null) return null
         now[Part.QUESTS]?.let { if (questPane.visibility == View.VISIBLE && it.contains(x, y)) return null }
         now[Part.PARTY]?.let { if (partyView.visibility == View.VISIBLE && it.contains(x, y)) return null }
         now[Part.CHAT]?.let { c -> if (chatPane.visibility == View.VISIBLE && c.contains(x, y) && !chatPane.onBang(x - c.left, y - c.top)) return EditStop.CHAT }
