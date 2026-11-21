@@ -12,7 +12,7 @@ import org.junit.Test
  * MOVABLE HOME PHASE 3, THE COMBAT BAR ON THE TOP SCREEN, the app's half (SPEC.txt sections 10-12 and 15; the user's rulings 2026-11-20:
  * D1 "In fights: Top screen" is OPT-IN, Grow stays the default, Same size stays): the setting (default, facade, migration, presets), the
  * bottom band's behaviour (Top screen lays every layout in a fight exactly as at rest, no grow, no B shrink in the fight, the 1.5 s "up"
- * cue), and the channel to the add-on (page-3 codes 11 / 12 out of combat, re-sent until the padmap's `ct` says it; an older add-on is
+ * cue), and the channel to the add-on (page-3 codes 22 / 23, Book b76, out of combat, re-sent until the padmap's `ct` says it; an older add-on is
  * never tapped). Pure.
  */
 class TopCombatBarTest {
@@ -137,15 +137,15 @@ class TopCombatBarTest {
         assertEquals("just sent", TopCombatBar.Act.Wait, TopCombatBar.decide(true, 0, false, 1_000L))
         assertEquals("sent again", TopCombatBar.Act.Send(true), TopCombatBar.decide(true, 0, false, TopCombatBar.RESEND_MS))
         assertEquals("an older add-on (no ct): never tapped", TopCombatBar.Act.Wait, TopCombatBar.decide(true, null, false, null))
-        // padtab 39, 38, 37 then 11 / 12 (Book b75)
-        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 12), TopCombatBar.cells(true))
-        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 11), TopCombatBar.cells(false))
+        // padtab 39, 38, 37 then 22 / 23 (Book b76)
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 23), TopCombatBar.cells(true))
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 22), TopCombatBar.cells(false))
         assertEquals(PadMapModel.P3_TOP_OFF..PadMapModel.P3_TOP_ON, PadMapModel.PAGE3_CODES["top combat bar"])
         val used = HashMap<Int, String>()
         for ((what, r) in PadMapModel.PAGE3_CODES) for (c in r) assertNull("code $c is both", used.put(c, what))
-        // Book b75 handles exactly 11 / 12 (the add-on's own table)
+        // Book b76 handles exactly 22 / 23 (the add-on's own table)
         val book = java.io.File(addons(), "WowCompanionSpells/Book.lua").readText()
-        assertTrue(book.contains("for k = 0, 1 do P3[11 + k] = function()") && book.contains("pm.combatTop, k == 1"))
+        assertTrue(book.contains("for k = 0, 1 do P3[22 + k] = function()") && book.contains("pm.combatTop, k == 1"))
     }
 
     @Test fun thePadmapCarriesTheFlag() {

@@ -7,11 +7,11 @@ user's rulings 2026-11-20: D1 "In fights: Top screen" is OPT-IN), off-device: th
 Proven here:
   1 by default (no flag): `ct` = 0 in the dpad state, WC.padMap.combatTopOn() false (ActionBar nbar7 shows nothing: the bottom band's
     Grow / Same size stay the player's);
-  2 the app's page-3 code (padtab 39, 38, 37 then 12): the flag is this character's (WowCompanionSpellsDB.ctop[name-realm] = 1), `ct` = 1,
+  2 the app's page-3 code (padtab 39, 38, 37 then 23; Book b76, the 1515 merge: off the sticky realm question's 9-19): the flag is this character's (WowCompanionSpellsDB.ctop[name-realm] = 1), `ct` = 1,
     the padmap sent again; nothing bound (the router's buttons and the D-pad's sides unchanged);
-  3 code 11 clears it; a code in a fight is remembered at once (a display flag only: no binding, no attribute - nothing protected);
+  3 code 22 clears it; a code in a fight is remembered at once (a display flag only: no binding, no attribute - nothing protected);
   4 per character: another character has its own (none = off);
-  5 the earlier page-3 codes still reach their own handlers (the mirror 9 / 10, Extra's folds 4-8);
+  5 the earlier page-3 codes still reach their own handlers (the mirror 20 / 21, Extra's folds 4-8);
   6 the add-on's own Layouts reset (WC.dsfReset 21) clears it with the other layout stores, and lists it for the app's ResetPlan;
 plus no spied call, no lockdown breach, no snippet error, no Lua error. Needs lupa. Exit code 1 on any failure."""
 import os
@@ -99,8 +99,8 @@ def sent_ct(L, n0):
 NORMAL = {1: "chat", 2: "radial", 3: "map", 4: "home"}
 
 # ------------------------------------------------------------------------------------------------ the tags
-check('local PV = "m181"' in SRC["padmap"] and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap's tag m179 and its note")
-check('local BV = "b75"' in SRC["book"] and "b75 THE COMBAT BAR ON THE TOP SCREEN" in SRC["book"], "0. Book's tag b75 (page-3 codes 11 / 12)")
+check('local PV = "m183"' in SRC["padmap"] and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap's tag m179 and its note")
+check('local BV = "b76"' in SRC["book"] and "b75 THE COMBAT BAR ON THE TOP SCREEN" in SRC["book"], "0. Book's tag b76 (b75's note kept; its codes now 22 / 23)")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")
 
 W = boot()
@@ -112,9 +112,9 @@ ct, dirs, m = st(W)
 check(ct == 0 and W.eval(pm + '.combatTopOn()') is False, "1. no flag: ct = 0, combatTopOn() false (the bottom's Grow / Same size)", ct)
 binds0 = [W.eval('router(%d) and router(%d).a["wc-roombar"]' % (p, p)) for p in range(1, 5)]
 
-# ------------------------------------------------------------------------------------------------ 2 the app's code 12, out of combat
+# ------------------------------------------------------------------------------------------------ 2 the app's code 23, out of combat
 n0 = int(W.eval('#SENT'))
-padtab(W, 39, 38, 37, 12)
+padtab(W, 39, 38, 37, 23)
 W.execute('runTimers(NOW + 1)')
 who = W.eval('WHO .. "-" .. REALM')
 check(W.eval('(WowCompanionSpellsDB.ctop or {})[WHO .. "-" .. REALM]') == 1, "2. the flag kept for this character (ctop[%s] = 1)" % who)
@@ -125,12 +125,12 @@ check(dirs == NORMAL and m == 0 and [W.eval('router(%d) and router(%d).a["wc-roo
       "2. nothing bound: the D-pad's sides and the router's buttons unchanged", (dirs, m))
 clean(W, "2")
 
-# ------------------------------------------------------------------------------------------------ 3 code 11, and a code in a fight
-padtab(W, 39, 38, 37, 11)
+# ------------------------------------------------------------------------------------------------ 3 code 22, and a code in a fight
+padtab(W, 39, 38, 37, 22)
 W.execute('runTimers(NOW + 1)')
-check(W.eval('(WowCompanionSpellsDB.ctop or {})[WHO .. "-" .. REALM]') == 0 and st(W)[0] == 0, "3. code 11: off again (m180: an explicit 0, kept by the sync merge)")
+check(W.eval('(WowCompanionSpellsDB.ctop or {})[WHO .. "-" .. REALM]') == 0 and st(W)[0] == 0, "3. code 22: off again (m180: an explicit 0, kept by the sync merge)")
 W.execute('fightOn()')
-padtab(W, 39, 38, 37, 12)
+padtab(W, 39, 38, 37, 23)
 W.execute('tick(0.5)')
 check(W.eval('(WowCompanionSpellsDB.ctop or {})[WHO .. "-" .. REALM]') == 1 and W.eval(pm + '.combatTopOn()') is True,
       "3. in a fight: remembered at once (a display flag: nothing protected)")
@@ -146,11 +146,11 @@ check(st(W)[0] == 0 and W.eval(pm + '.combatTopOn()') is False, "4. the flag is 
 W.execute('WowCompanionSpellsDB.ctop["Other-" .. REALM] = nil')
 
 # ------------------------------------------------------------------------------------------------ 5 the older page-3 codes
-padtab(W, 39, 38, 37, 10)
+padtab(W, 39, 38, 37, 21)
 W.execute('runTimers(NOW + 1)')
 ct, dirs, m = st(W)
-check(m == 1 and dirs[1] == "map" and ct == 0, "5. code 10 still the toolbar's mirror (the flag untouched)", (ct, dirs, m))
-padtab(W, 39, 38, 37, 9)
+check(m == 1 and dirs[1] == "map" and ct == 0, "5. code 21 still the toolbar's mirror (the flag untouched)", (ct, dirs, m))
+padtab(W, 39, 38, 37, 20)
 W.execute('runTimers(NOW + 1)')
 W.execute('FOLDED = {}; WowCompanion.padTabCtl.touchFold = function(k) FOLDED[#FOLDED + 1] = k end; WowCompanion._spellsBook.ctl.croom = true')
 padtab(W, 39, 38, 37, 5)
@@ -158,7 +158,7 @@ check(W.eval('#FOLDED') == 1 and W.eval('FOLDED[1]') == 2 and st(W)[0] == 0, "5.
 clean(W, "5")
 
 # ------------------------------------------------------------------------------------------------ 6 the add-on's own Layouts reset
-padtab(W, 39, 38, 37, 12)
+padtab(W, 39, 38, 37, 23)
 W.execute('runTimers(NOW + 1)')
 keys = W.eval('WowCompanion.dsfResetKeys.spells.layouts')
 check(keys is not None and "ctop" in [keys[i] for i in range(1, len(keys) + 1)], "6. ctop is in the add-on's Layouts list (= ResetPlan's)")

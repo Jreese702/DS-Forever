@@ -20,11 +20,17 @@ import android.content.SharedPreferences
  * under a key it was not read under). "All characters" writes the default and every WHOLE key the prefs hold (an orphan key is left to
  * RealmFix's fold).
  *
- * FIX ROUND 3: the held edit goes onto a key only when no other realm of that name is known (the prefs hold no other "Name-Realm"
- * record, and the device census agrees: RealmFix.resetTakesOrphans) - a realm-less session followed by a same-name alt on another realm
- * never gets the first one's change (never a guess between two characters of one name). A change made before ANY character is known
- * (the app's start, the login screen: Settings > Bottom screen, the Controller room's Turn on) still writes the default as before AND is
- * held the same way: the first character's own record gets the changed fields when its key comes (it is never silently dropped).
+ * THE STICKY KEY (test build 1515, the 1515 merge; the user's rulings 2026-11-20: WoW Forever has no dedicated realms, a character's
+ * whole name is globally unique and is its identity, its key is the realm its settings ALREADY live under): the ONLY key Home ever
+ * uses is the add-on's resolved one - [character]'s key is CharKey.of(n, r) from the current padmap's who, and r is absent while the
+ * add-on ASKS (one name holding settings under 2+ realms: the bottom screen's one-time question) or does not know yet. Then Home is
+ * PENDING as above. A held edit is laid on (changed fields only) onto the key the add-on resolves for THAT SAME NAME - whatever the
+ * source (its record, sticky, live, the question's pick, "New character": a fresh key) - and never onto another name's key. Fix round 3's
+ * "no other realm of the name known" guard is gone: a same-name alt on another realm is not another character (one name = one
+ * character), and the realm the add-on resolves is where this character's settings live, so a held edit is never silently dropped once
+ * the name is resolved. A change made before ANY character is known (the app's start, the login screen: Settings > Bottom screen, the
+ * Controller room's Turn on) still writes the default as before AND is held the same way: the first character's own record gets the
+ * changed fields when its key comes (it is never silently dropped).
  *
  * MIGRATION: the first read builds Classic from today's app-wide keys ([HomeLayoutMigration]); the old setters (Settings > Bottom screen,
  * CastBarAsk, the Controller room's "Turn on") are facades in [HomeSettings] that write the CURRENT character's record, and still write
@@ -76,19 +82,15 @@ object HomeLayoutStore {
     enum class EditSave { SAME, LAY_ON, NONE }
     fun editSaveFor(opened: Owner, now: Owner = owner()): EditSave = when {
         opened == now -> EditSave.SAME
-        opened.key == null && opened.name != null && now.key != null && now.name == opened.name && carryOk(now.key) -> EditSave.LAY_ON
+        opened.key == null && opened.name != null && now.key != null && carryOk(now.key, opened.name) -> EditSave.LAY_ON
         else -> EditSave.NONE
     }
 
-    /** fix round 3: a pending name's edit may go onto [k]: no other realm of its name is known (the prefs' records and the device
-     *  census, RealmFix.resetTakesOrphans: no stored, seen or backup-file realm but [k]'s). Otherwise the edit is let go: never a guess */
-    internal fun carryOk(k: String): Boolean {
-        val name = CharKey.nameOf(k) ?: return false
-        val other = prefs?.all?.keys.orEmpty().any { r ->
-            isCharRecord(r) && r != key(k) && CharKey.nameOf(r.removePrefix(KEY_PREFIX)) == name
-        }
-        return !other && RealmFix.resetTakesOrphans(k)
-    }
+    /** the 1515 merge (the sticky key): a pending [name]'s edit may go onto [k] when [k] is a WHOLE key of that same name - [k] is
+     *  always the add-on's resolved key for the name ([character]: CharKey.of(n, r), no r while the add-on asks), so the question's pick
+     *  and "New character" both carry it; another name's key never does. (Fix round 3's "no other realm of the name known" guard is
+     *  gone with the ruling that one name is one character: it dropped the held edit exactly when the add-on had just asked.) */
+    internal fun carryOk(k: String, name: String?): Boolean = name != null && CharKey.isKey(k) && CharKey.nameOf(k) == name
     /** edit mode's Save: [draft], opened on [opened] over [base] (what it showed then); null = refused (another owner now: nothing
      *  written). Both SAME and LAY_ON write only the fields the session changed on top of the record the store holds now: a change
      *  made while edit mode was parked (Settings > Bottom screen, the Controller room's Turn on) is kept, never the whole draft over
@@ -147,8 +149,9 @@ object HomeLayoutStore {
         val ownerBefore = owner()
         // this session's edit while the key was not known: for the same name (or made before any character was known: the first one's)
         val held = pendingEdit?.takeIf { who == null && (heldName == null || heldName == n) }
-        // only once the key is known; a pending name's edit only while no other realm of the name is known (fix round 3: never a guess)
-        val carry = held?.takeIf { k != null && (heldName == null || carryOk(k)) }
+        // only once the key is known: the add-on's resolved key for the held edit's own name (the 1515 merge: the sticky key, the
+        // question's pick or "New character" alike); an edit made before any character was known: the first one's
+        val carry = held?.takeIf { k != null && (heldName == null || carryOk(k, heldName)) }
         val carryBase = pendingBase
         if (pend && held != null) heldName = n                      // still held: now for this name (a no-character edit adopted)
         else { pendingEdit = null; pendingBase = null; heldName = null }

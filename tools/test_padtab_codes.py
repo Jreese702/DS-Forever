@@ -8,8 +8,8 @@ Book.lua's second page (padtab 39, 38 then N: the table P2) and third page (padt
   2 every code lies on the pad's 40 columns (0..39);
   3 the app's registry (PadMapModel.PAGE3_CODES) names every third-page code Book defines, and nothing Book does not define;
   4 the app's own third-page sends (PadMapModel.P3_* constants) are registered codes;
-  5 PHASE 2 (edit mode) adds no code: edit mode is app-only; its only add-on contact is Save's mirror bit (9 / 10, phase 1). Codes 11 and
-    12 stay FREE for phase 3's top-screen combat bar (SPEC section 11: off / on) unless Book has taken them for exactly that.
+  5 PHASE 2 (edit mode) adds no code: edit mode is app-only; its only add-on contact is Save's mirror bit. The 1515 merge (Book b76): the
+    sticky realm question keeps 9 / 10-19 (test build 1515's), Home's mirror bit moves to 20 / 21 and the top-screen combat bar to 22 / 23.
 Exit code 1 on any failure."""
 import os
 import re
@@ -74,9 +74,12 @@ check(sorted(set(p3)) == sorted(set(registered)), "the registry names exactly Bo
 for name, c in consts.items():
     check(c in registered, "the app's send %s = %d is a registered code" % (name, c))
 
-# phase 2: no new code; 11 / 12 kept for phase 3's top-screen combat bar
-check(set(p3) <= set(range(0, 11)) or {11, 12} & set(p3) and "combat" in book.lower(),
-      "P3 codes 11 / 12 free for phase 3's combat bar (or taken by it): third page now %s" % sorted(set(p3)))
+# phase 2: no new code; phase 3 took 11 / 12 for the top-screen combat bar; the 1515 merge (Book b76): the sticky realm question owns 9
+# (a new character) and 10-19 (the candidates 1-10), so Home's mirror is 20 / 21 and the top bar 22 / 23
+check(consts.get("P3_KEY_NEW") == 9 and consts.get("P3_KEY_LAST") == 19 and {9} | set(range(10, 20)) <= set(p3),
+      "the key question's 9 / 10-19 (Book b74, test build 1515) kept")
+check(consts.get("P3_MIRROR_OFF") == 20 and consts.get("P3_MIRROR_ON") == 21 and consts.get("P3_TOP_OFF") == 22 and consts.get("P3_TOP_ON") == 23
+      and {20, 21, 22, 23} <= set(p3), "Home's codes off the question's: mirror 20 / 21, top bar 22 / 23 (third page now %s)" % sorted(set(p3)))
 
 print("%s: %d failure(s)" % ("FAIL" if fails else "PASS", fails))
 sys.exit(1 if fails else 0)

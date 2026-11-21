@@ -5,12 +5,12 @@ REAL add-on files under test_party.py's stubbed game (test_fight_layer.py's worl
 
 With the app's chat on the right of Home, the DS toolbar's D-pad Left opens the map and Right the chat. Proven here:
   1 by default (no bit): `d` = 1 chat, 2 radial, 3 map, 4 home; m = 0; the router's Left button clicks WowCompanionPadChat;
-  2 the app's page-3 code (padtab 39, 38, 37 then 10): the bit is this character's (WowCompanionSpellsDB.rbm[name-realm] = 1), bound at
+  2 the app's page-3 code (padtab 39, 38, 37 then 21; Book b76, the 1515 merge: 9 / 10 were the mirror's, now the sticky realm question's): the bit is this character's (WowCompanionSpellsDB.rbm[name-realm] = 1), bound at
     once out of combat: Left clicks WowCompanionPadMap, Right WowCompanionPadChat; `d` says 1 map / 3 chat, m = 1; Up / Down unchanged;
   3 IN A FIGHT the code is remembered but nothing is re-bound (no protected call from insecure code): `d` keeps saying what the keys
     do (the table last bound), and the fight's end binds the new sides (the router's out-of-combat check), `d` following;
   4 per character: another character has its own bit (none = today's sides);
-  5 code 9 clears it; the earlier page-3 codes (Extra's folds 4-8) still reach their own handlers;
+  5 code 20 clears it; the earlier page-3 codes (Extra's folds 4-8) still reach their own handlers;
 plus no spied call, no lockdown breach, no snippet error, no Lua error. Needs lupa. Exit code 1 on any failure."""
 import os
 import re
@@ -87,8 +87,8 @@ NORMAL = {1: "chat", 2: "radial", 3: "map", 4: "home"}
 MIRROR = {1: "map", 2: "radial", 3: "chat", 4: "home"}
 
 # ------------------------------------------------------------------------------------------------ the tags
-check('local PV = "m181"' in SRC["padmap"] and "m178 MOVABLE HOME'S SWAP" in SRC["padmap"], "0. PadMap's tag m179 (m178's swap note kept)")
-check('local BV = "b75"' in SRC["book"] and "b74 MOVABLE HOME'S SWAP" in SRC["book"], "0. Book's tag b75 (b74's page-3 codes 9 / 10 kept)")
+check('local PV = "m183"' in SRC["padmap"] and "m178 MOVABLE HOME'S SWAP" in SRC["padmap"], "0. PadMap's tag m179 (m178's swap note kept)")
+check('local BV = "b76"' in SRC["book"] and "b74 MOVABLE HOME'S SWAP" in SRC["book"] and "for k = 0, 1 do P3[20 + k]" in SRC["book"], "0. Book's tag b76 (b74's mirror note kept; its codes now 20 / 21)")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")
 
 W = boot()
@@ -101,8 +101,8 @@ check(dirs == NORMAL and m == 0, "1. no bit: d = chat / radial / map / home, m =
 check(roombar(W, 1) == "WowCompanionPadChat" and roombar(W, 3) == "WowCompanionPadMap", "1. Left clicks the Chat, Right the Map",
       (roombar(W, 1), roombar(W, 3)))
 
-# ------------------------------------------------------------------------------------------------ 2 the app's code 10, out of combat
-padtab(W, 39, 38, 37, 10)
+# ------------------------------------------------------------------------------------------------ 2 the app's code 21, out of combat
+padtab(W, 39, 38, 37, 21)
 W.execute('runTimers(NOW + 1)')
 who = W.eval('WHO .. "-" .. REALM')
 check(W.eval('(WowCompanionSpellsDB.rbm or {})[WHO .. "-" .. REALM]') == 1, "2. the bit kept for this character (rbm[%s] = 1)" % who)
@@ -115,9 +115,9 @@ clean(W, "2")
 
 # ------------------------------------------------------------------------------------------------ 3 a fight: remembered, bound after it
 W.execute('fightOn()')
-padtab(W, 39, 38, 37, 9)
+padtab(W, 39, 38, 37, 20)
 W.execute('tick(0.5)')
-check(W.eval('(WowCompanionSpellsDB.rbm or {})[WHO .. "-" .. REALM]') == 0, "3. in a fight: code 9 remembered at once (m180: the bit 0, never deleted)")
+check(W.eval('(WowCompanionSpellsDB.rbm or {})[WHO .. "-" .. REALM]') == 0, "3. in a fight: code 20 remembered at once (m180: the bit 0, never deleted)")
 dirs, m = d(W)
 check(dirs == MIRROR and m == 1 and roombar(W, 1) == "WowCompanionPadMap",
       "3. in a fight nothing re-bound: d still says what the keys do (Left the map)", (dirs, m, roombar(W, 1)))
@@ -129,17 +129,17 @@ check(dirs == NORMAL and m == 0 and roombar(W, 1) == "WowCompanionPadChat",
 clean(W, "3 (after it)")
 
 # ------------------------------------------------------------------------------------------------ 4 per character
-padtab(W, 39, 38, 37, 10)
+padtab(W, 39, 38, 37, 21)
 W.execute('runTimers(NOW + 1)')
 W.execute('WowCompanionSpellsDB.rbm["Other-' + W.eval('REALM') + '"] = nil')
 check(W.eval('WowCompanionSpellsDB.rbm["Other-" .. REALM]') is None and W.eval('WowCompanionSpellsDB.rbm[WHO .. "-" .. REALM]') == 1,
       "4. the bit is this character's only (another has none: today's sides)")
 
-# ------------------------------------------------------------------------------------------------ 5 code 9 and the older codes
-padtab(W, 39, 38, 37, 9)
+# ------------------------------------------------------------------------------------------------ 5 code 20 and the older codes
+padtab(W, 39, 38, 37, 20)
 W.execute('runTimers(NOW + 1)')
 dirs, m = d(W)
-check(dirs == NORMAL and m == 0, "5. code 9: today's sides again", (dirs, m))
+check(dirs == NORMAL and m == 0, "5. code 20: today's sides again", (dirs, m))
 W.execute('FOLDED = {}; WowCompanion.padTabCtl.touchFold = function(k) FOLDED[#FOLDED + 1] = k end; WowCompanion._spellsBook.ctl.croom = true')
 padtab(W, 39, 38, 37, 5)
 check(W.eval('#FOLDED') == 1 and W.eval('FOLDED[1]') == 2 and d(W)[1] == 0,

@@ -2274,6 +2274,10 @@ class HomeView(
     private var chromeModel: HomeEditModel? = null
     /** edit mode runs on Home, not parked by a fight or a room (the host's gates: the class wheel, the LB picture, Start, the disc) */
     val editing: Boolean get() = editLive()
+    /** the 1515 merge: edit mode is there, open OR parked (a fight, a room): the host's key question waits for it to end */
+    val editPresent: Boolean get() = edit != null
+    /** the host's: true while the key question is up (KeyPick.editMayOpen) - edit mode does not open then */
+    var editBlocked: (() -> Boolean)? = null
     /** edit mode holds Home now: its chrome takes the touches, the guest "home" its presses; parked (a fight, a room) Home is Home */
     private fun editLive(): Boolean = edit?.parked == false
     /** the off-device tests: the session */
@@ -2471,6 +2475,8 @@ class HomeView(
     fun editOpen(start: EditStop = EditStop.CHAT, lift: Boolean = false): Boolean {
         if (edit != null) { edit?.let { if (!it.parked) editRun(it.startOn(start, lift)) }; return true }
         if (fightShown()) { editRefuse(start); return false }
+        // the 1515 merge: never while the sticky realm's key question is up (shown or waiting for the controller): one owner at a time
+        if (editBlocked?.invoke() == true) { Log.i(TAG, "home edit: refused (the key question is up)"); editRefuse(start); return false }
         if (flow.full != null && !flow.takeover && flow.close()) changed()
         mailCard(false); auraPane.close(); closeTypeTool()
         if (classOpen) classLayerShow(false)

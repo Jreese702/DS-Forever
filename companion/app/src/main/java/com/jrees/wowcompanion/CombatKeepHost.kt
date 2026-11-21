@@ -30,6 +30,8 @@ class CombatKeepHost(
     /** test22 P0: writes may REMOVE entries only once the store is confirmed (see CombatKeep.safeMerge) */
     private var armed = false
     private val written = HashMap<String, String>()
+    /** the keys whose adoption ([adopted]) was logged this run (one line each, not one per padmap) */
+    private val adoptSaid = HashSet<String>()
 
     private fun log(s: String) = Log.i(TAG, "combat keep: $s")
 
@@ -67,7 +69,7 @@ class CombatKeepHost(
         if (!current) return
         val who = CombatKeep.who(map) ?: return
         val r = LauncherHooks.gameStartSec
-        if (r != run) { run = r; checked.clear(); otherClass.clear(); restoring = null; retried = false; armed = false }
+        if (r != run) { run = r; checked.clear(); otherClass.clear(); adoptSaid.clear(); restoring = null; retried = false; armed = false }
         restoring?.let { b ->
             if (SystemClock.uptimeMillis() < restoreUntil) return              // nothing written while the restore's taps run
             val miss = CombatKeep.missing(b, map)
@@ -87,10 +89,16 @@ class CombatKeepHost(
             // another realm): never restored, merged, written over or folded into; left as it is for this run
             if (CombatKeep.otherClass(map, backup0)) { otherClass += who; log("the backup is another class's: left as it is (nothing restored or written)"); return }
             foldOrphans(who, map.dpad?.cls)
-            val backup = read(who)
+            // Safety k11 (the k10 review, round 1): no backup of this key at all (a fresh key after the saved tables were lost): the
+            // one backup of this NAME under another realm is this character's (CombatKeep.adopt), restored into the add-on's key
+            val own = read(who)
+            // k12 (the review, round 2): only a fresh key nobody chose (the add-on's who.ad): never over the key question's answer
+            val adopt = if (own == null && CombatKeep.mayAdopt(map) && !File(dir(), CombatKeep.fileName(who)).exists()) adopted(who, map.dpad?.cls) else null
+            val backup = own ?: adopt
             if (CombatKeep.needsRestore(map, backup)) {
                 if (fighting() || !bookReady()) return                          // the next padmap tries again
                 checked += who
+                if (adopt != null) write(adopt)                                 // this key's own backup from now on (only additions until armed)
                 log("kept (store empty at login): ${backup!!.entries.size} entries")
                 start(backup, map)
                 return
@@ -141,6 +149,21 @@ class CombatKeepHost(
             log("orphan backup folded: ${next?.let { "${it.entries.size - (real?.entries?.size ?: 0)} entries into the real one" } ?: "nothing taken"}, removed")
         }.onFailure { log("orphan backup NOT folded (${it.javaClass.simpleName})") }
     }
+
+    /** [who]'s name's backups under other realms (the combat folder's "Name-*.json"; never the orphans' or the copies), as [CombatKeep.adopt]
+     *  takes them; logged with counts only */
+    private fun adopted(who: String, cls: String?): CombatKeep.Backup? = runCatching {
+        val name = CharKey.nameOf(who) ?: return@runCatching null
+        val own = CombatKeep.fileName(who)
+        val orphans = RealmFix.combatOrphanFiles(name).toSet()
+        val others = dir().listFiles()?.filter { f ->
+            f.isFile && f.name != own && f.name.startsWith("$name-") && f.name.endsWith(".json") && f.name !in orphans
+        }.orEmpty().mapNotNull { f -> runCatching { CombatKeep.fromJson(f.readText()) }.getOrNull() }
+        val say = adoptSaid.add(who)
+        CombatKeep.adopt(who, cls, others)?.also {
+            if (say) log("no backup of this key: this name's one backup under another saved place taken (${it.entries.size} entries; that file left as it is)")
+        } ?: run { if (say && others.size > 1) log("no backup of this key: ${others.size} of this name under other saved places (never a guess)"); null }
+    }.getOrNull()
 
     /** a restore's taps are running now (their answers are not the player's) */
     fun restoringNow(): Boolean = restoring != null

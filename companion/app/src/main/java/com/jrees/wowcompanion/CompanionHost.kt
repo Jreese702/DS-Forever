@@ -146,10 +146,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // the user's "Both" ruling after test20: the In-combat backup and the clean exit
     private lateinit var combatKeep: CombatKeepHost
     private var lastBook: SpellsModel.Book? = null
-    /** the realm source last logged ("character key: realm ..., hint ..."; only these words, never a name) */
+    /** the key's source last logged (KeyPick.diagLine: "character key: <source>, realm ..., hint ..., ..."; words and counts only,
+     *  never a name, a realm or a GUID) */
     private var realmSourceTold: String? = null
-    private val REALM_SOURCES = setOf("live", "kept", "none")
-    private val REALM_HINTS = setOf("present", "none")
     /** the character keys whose app preferences were folded this app life (RealmFix.foldPrefs: once each) */
     private val prefsFolded = HashSet<String>()
 
@@ -1233,7 +1232,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onEditPress = { key, k -> BottomTiles.press("", key, k, BottomTiles.Env(lastDpad, GameUi.character)) { on -> dpadSet(on) } }
         homeView.onEditSlots = { controllerView.openOnCastBar(); pickRoom(Room.CONTROLLER) }
         homeView.onEditFilters = { show(Room.CHAT); chatView.post { chatView.openFilters() } }
-        homeView.onEditChanged = { lbEval(); trackSync(); strip.invalidate() }
+        homeView.onEditChanged = { on ->
+            lbEval(); trackSync(); strip.invalidate()
+            // the 1515 merge: a key question that waited for edit mode is looked at again once edit mode has ended
+            if (!on && keyAskDpad != null) { ui.removeCallbacks(keyAskTick); ui.postDelayed(keyAskTick, 500L) }
+        }
+        // the 1515 merge: edit mode never opens while the key question is up (shown, or waiting for the controller)
+        homeView.editBlocked = { !KeyPick.editMayOpen(keyAskOpen) }
         BottomTiles.editHome = { editHome("Settings' Home layout tile") }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> slideBarsUp = true; pauseSlideAll(t) }          // feat/pause-power: Home's controller goes up
@@ -2873,6 +2878,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 msg.optJSONObject("actionbar")?.let { castView.update(it); bagsView.castTick() }      // bags-de1: the grid's bar too
                 homeView.onFull(msg, current)
                 if (castAskOpen && homeView.inFight()) castBarAsk()          // a fight: the cast bar question goes at once (back after)
+                if (keyAskOpen && homeView.inFight()) keyAskTick.run()       // Safety k10: the key question too (asked again after it)
                 if (current) PreviewStage.feedFull(msg)                     // f-settings-previews: the Settings panel's live miniatures
                 PreviewStage.roomBar = { castView.roomBar }; PreviewStage.roomBarOn = { castView.roomBarOn }
                 msg.optJSONObject("bags")?.let { bagsView.update(it, current); pinPicker.update(it); characterView.updateBags(it)
@@ -3454,12 +3460,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (current) mapView.qitemArmed = it.qitem?.id ?: 0          // ps4: the light blue row's Y glyph (PadMap m132)
                 // the k6 review (item 2): a character named with no realm (a switch, the realm not known) = no character: never the previous one's
                 if (current) { newSpellMap = it; CharKey.of(it.dpad?.name, it.dpad?.realm).let { k -> if (k != null || !it.dpad?.name.isNullOrEmpty()) newSpellWho = k } }
-                // the realm's source (the add-on's Safety k6: "live" = the game's, "kept" = the one the character holds settings under,
-                // "none" = not known: no per-character key), one line when it changes (no name)
-                // Safety k7 / PadMap m179: and whether the game gave its realm hint ("present" / "none": a kept realm needs evidence otherwise)
-                if (current) it.dpad?.realmSource?.takeIf { s -> s in REALM_SOURCES }?.let { rs ->
-                    val line = "realm $rs" + (it.dpad?.realmHint?.takeIf { h -> h in REALM_HINTS }?.let { h -> ", hint $h" } ?: "")
-                    if (line != realmSourceTold) { realmSourceTold = line; Log.i("WCSETUP", "character key: $line") }
+                // the key's source (Safety k10 / PadMap m180: "guid" / "guid-id" / "sticky" / "live" / "hint" / "picked" / "new", "ask"
+                // = the bottom screen's question, "none" = not known: no per-character key) and its diagnostics (whether the game reported
+                // a realm and its hint, how many realms the name holds, whether the GUID matched its record), one line when it changes:
+                // words and counts only (KeyPick.diagLine), never a name, a realm or a GUID
+                if (current) KeyPick.diagLine(it.dpad)?.let { line ->
+                    if (line != realmSourceTold) { realmSourceTold = line; Log.i("WCSETUP", line) }
                 }
                 // the D-pad room bar (Spells' m24): the Settings row's state, and the once-per-character prompt
                 it.dpad?.let { d ->
@@ -3497,6 +3503,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     castView.roomBar = homeView.roomBarFor(d.dirs.ifEmpty { null }); castView.invalidate()   // P2: edit mode previews its draft
                     talkDraw()                                                  // hold to talk's microphone follows the toolbar
                     if (current) dpadAsk(d)
+                    if (current) keyAsk(d)                                       // Safety k10: the sticky realm's one-time question
                 }
             }
             // GitHub #43 THE TAP-TO-CAST BAR (ActionBar cb1): the slots (a state: a replayed one counts, the last one wins); its cooldowns
@@ -4967,8 +4974,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (d == null || ToolbarMirror.bitOf(d.dirs) != HomeLayoutSolver.mirrorBit(HomeSettings.layout)) homeView.roomBarHoldEnd()
     }
 
-    /** SPEC section 6 "SYNC": the layout's mirror bit vs the add-on's `d`; out of combat a pending wish is tapped (padtab 39, 38, 37 then 9 /
-     *  10) and tried again every ToolbarMirror.RESEND_MS until `d` says it; a fight waits. A new `d` shows the D-pad toast on Home */
+    /** SPEC section 6 "SYNC": the layout's mirror bit vs the add-on's `d`; out of combat a pending wish is tapped (padtab 39, 38, 37 then 20 /
+     *  21, Book b76) and tried again every ToolbarMirror.RESEND_MS until `d` says it; a fight waits. A new `d` shows the D-pad toast on Home */
     private fun mirrorCheck(d: PadMapModel.Dpad) {
         val bit = ToolbarMirror.bitOf(d.dirs)
         if (ToolbarMirror.toastFor(mirrorSeen, bit)) homeView.toolbarToast(d.dirs)
@@ -5001,7 +5008,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val topAgain = Runnable { lastDpad?.let { topCheck(it) } }
 
     /** SPEC section 11 "CHANNEL" (TopCombatBar): the layout's In fights = Top screen vs the add-on's `ct`; out of combat a pending wish is
-     *  tapped (padtab 39, 38, 37 then 11 / 12) and tried again every TopCombatBar.RESEND_MS until `ct` says it; a fight waits (the add-on
+     *  tapped (padtab 39, 38, 37 then 22 / 23, Book b76) and tried again every TopCombatBar.RESEND_MS until `ct` says it; a fight waits (the add-on
      *  switches by itself in fights: nothing is sent then). Checked at every current padmap, so each login re-asserts it */
     private fun topCheck(d: PadMapModel.Dpad) {
         if (!mirrorCurrent) return
@@ -5020,6 +5027,95 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (++topTries < MIRROR_TRIES) ui.postDelayed(topAgain, TopCombatBar.RESEND_MS + 200L)
             }
         }
+    }
+
+    // ---------------------------------------------------------------- Safety k10 THE STICKY REALM'S ONE-TIME QUESTION (KeyPick)
+    // the user, 2026-11-20: when it is ambiguous which saved settings are this character's, "the bottom screen asks ONCE (remember the
+    // answer)"; nothing is moved or renamed. The add-on keeps the answer (this character's GUID record); B = later: asked again at the
+    // next login (the add-on's login stamp, PadMap m181: a relog or a /reload counts), no key meanwhile. Shown like the other one-time prompts: on Home, out of fights, once the game
+    // hands Home the controller (A / B then), else touch first after a few seconds
+    private var keyAskOpen = false
+    private var keyAskWaitId = 0
+    private var keyAskSentAt = 0L
+    /** the characters (by name: the question's own, never logged) the player said Later for, and the login they said it in
+     *  ([KeyPick.laterMark]: the add-on's login stamp, else the game run); the review, round 2: in a small prefs file, so a rebuilt
+     *  bottom screen (tabbing out and back, Swap screens) keeps it within the same login - a stale mark stops matching by itself */
+    private val keyAskLater = KeyPick.LaterMarks(
+        get = { k -> getSharedPreferences(KeyPick.LATER_PREFS, MODE_PRIVATE).getString(k, null) },
+        put = { k, v ->
+            val e = getSharedPreferences(KeyPick.LATER_PREFS, MODE_PRIVATE).edit()
+            if (v == null) e.remove(k) else e.putString(k, v)
+            e.apply()
+        })
+    private var keyAskDpad: PadMapModel.Dpad? = null
+    /** what the open question was drawn from (the review, round 2): another name or list puts it away */
+    private var keyAskShown: KeyPick.Shown? = null
+
+    private fun keyAsk(d: PadMapModel.Dpad) {
+        if (!::setupView.isInitialized || !::startView.isInitialized) return
+        keyAskDpad = d
+        val name = d.name
+        val cands = if (name.isNullOrEmpty() || CharKey.of(name, d.realm) != null) emptyList() else d.picks
+        val run = LauncherHooks.gameStartSec
+        val fight = homeView.inFight()
+        val busy = (!keyAskOpen && (setupView.visibility == View.VISIBLE || setupWaiting != null)) || setupBusy || setupLoading ||
+            reloadAt != 0L || loginPrompt.isOpen || newSpellAsking != 0 || newSpellBinding != 0 ||
+            interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE
+        val ready = room == Room.HOME && !homeView.homeGuestWanted() && capHolder.isEmpty() && !busy &&
+            (startView.visibility != View.VISIBLE)
+        val later = name != null && !keyAskOpen && keyAskLater.isLater(name, KeyPick.laterMark(d.loginStamp, run))
+        val sentAgo = if (keyAskSentAt == 0L) null else SystemClock.elapsedRealtime() - keyAskSentAt
+        val changed = keyAskOpen && keyAskShown != name?.let { KeyPick.Shown(it, cands) }
+        // the 1515 merge into movable Home: Home's edit mode (open or parked) and the question never both own the controller - the
+        // question waits for edit mode to end (HomeView.editBlocked keeps edit mode from opening while the question is up)
+        val editing = homeView.editPresent
+        when (KeyPick.decide(cands, keyAskOpen, later, sentAgo, ready, fight, changed, editing)) {
+            KeyPick.Act.NONE -> return
+            KeyPick.Act.WAIT -> { ui.removeCallbacks(keyAskTick); ui.postDelayed(keyAskTick, 3_000L); return }
+            KeyPick.Act.CLOSE -> {
+                Log.i(HomeView.TAG, "key question: put away (${if (cands.isEmpty()) "the key is known" else if (changed) "the question changed" else if (editing) "Home's edit mode" else "a fight"})")
+                keyAskOpen = false; keyAskWaitId++; keyAskShown = null
+                setupView.close(); setupPadOff()
+                if (cands.isNotEmpty()) { ui.removeCallbacks(keyAskTick); ui.postDelayed(keyAskTick, 3_000L) }
+                return
+            }
+            KeyPick.Act.ASK -> {}
+        }
+        val who = name ?: return
+        keyAskOpen = true
+        keyAskShown = KeyPick.Shown(who, cands)
+        Log.i(HomeView.TAG, "key question: ask (${cands.size} saved places)")
+        val show = {
+            setupView.choose(Tr.t(KeyPick.TITLE), KeyPick.options(who, cands), Tr.t(KeyPick.FOOTER), KeyPick.LATER,
+                onPick = { i -> keyAnswer(who, KeyPick.pickOf(i, cands)) }, onLater = { keyLater(who) })
+        }
+        setupWaiting = show
+        val wait = ++keyAskWaitId
+        if (!setupPadOn()) { setupWaiting = null; show() ; return }
+        ui.postDelayed({ if (wait == keyAskWaitId && keyAskOpen && setupWaiting === show) setupShowAnyway("key question: no hold") }, 6_000L)
+    }
+
+    private val keyAskTick = Runnable { keyAskDpad?.let { runCatching { keyAsk(it) }.onFailure { e -> Log.w(HomeView.TAG, "key question failed", e) } } }
+
+    /** A: the choice to the add-on (padtab 39, 38, 37, then its code); asked again only if the add-on still asks after a while */
+    private fun keyAnswer(who: String, index: Int?) {
+        if (!keyAskOpen) return
+        keyAskOpen = false; keyAskWaitId++; keyAskShown = null
+        val sent = KeyPick.cells(index)?.let { padTabTap(it) } ?: false
+        keyAskSentAt = SystemClock.elapsedRealtime()
+        Log.i(HomeView.TAG, "key question: ${if (index == null) "a new character" else "saved place $index"} ${if (sent) "sent" else "NOT sent"}")
+        setupView.close(); setupPadOff()
+        ui.removeCallbacks(keyAskTick); ui.postDelayed(keyAskTick, KeyPick.ANSWER_WAIT_MS + 500L)
+        keyAskLater.answered(who)
+    }
+
+    /** B: later - no key this game run (nothing per character is written); asked again at the next login */
+    private fun keyLater(who: String) {
+        if (!keyAskOpen) return
+        keyAskOpen = false; keyAskWaitId++; keyAskShown = null
+        keyAskLater.said(who, KeyPick.laterMark(keyAskDpad?.loginStamp, LauncherHooks.gameStartSec))
+        Log.i(HomeView.TAG, "key question: later (asked again at the next login)")
+        setupView.close(); setupPadOff()
     }
 
     private fun dpadAsk(d: PadMapModel.Dpad) {

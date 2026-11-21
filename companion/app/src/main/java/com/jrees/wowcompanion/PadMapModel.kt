@@ -314,7 +314,22 @@ object PadMapModel {
                     ct = if (d.has("ct")) d.optInt("ct", 0).coerceIn(0, 1) else null,
                     realmSource = who?.let { textOrNull(it, "rs") },
                     realmHint = who?.let { textOrNull(it, "rh") },
-                    cls = who?.let { textOrNull(it, "c") })
+                    cls = who?.let { textOrNull(it, "c") },
+                    realmReported = who?.let { textOrNull(it, "rr") },
+                    nameCands = who?.takeIf { it.has("nc") }?.optInt("nc", -1)?.takeIf { it >= 0 },
+                    unclaimed = who?.takeIf { it.has("uc") }?.optInt("uc", -1)?.takeIf { it >= 0 },
+                    guidState = who?.let { textOrNull(it, "gs") },
+                    // m182 (Safety k12, the review round 2): each candidate keeps its place in the ADD-ON's list ([KeyPick.Cand.pos],
+                    // 1-based): the answer names that place, so a candidate the app drops never shifts another onto its row
+                    picks = who?.optJSONArray("pk")?.let { a ->
+                        (0 until minOf(a.length(), KeyPick.MAX)).mapNotNull { i ->
+                            a.optJSONObject(i)?.let { o ->
+                                CharKey.realm(textOrNull(o, "r"))?.let { r -> KeyPick.Cand(r, o.optInt("n", 0).coerceAtLeast(0), i + 1) }
+                            }
+                        }
+                    } ?: emptyList(),
+                    loginStamp = who?.takeIf { it.has("ls") }?.optLong("ls", -1L)?.takeIf { it > 0L },
+                    adopt = who?.optInt("ad", 0) == 1)
             },
             start = m.optJSONObject("start")?.let { st ->
                 StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"),
@@ -341,12 +356,27 @@ object PadMapModel {
                     val want: Boolean?, val colOn: Int?, val colOff: Int?, val name: String?, val realm: String?,
                     val dirs: kotlin.collections.Map<Int, String> = emptyMap(), val aside: String? = null,
                     val undone: List<String> = emptyList(), val ct: Int? = null,
-                    /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"), null from an older add-on */
+                    /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"; m180, Safety k10: "guid", "guid-id",
+                     *  "sticky", "live", "hint", "picked", "new", "ask", "none"), null from an older add-on. [realm] is the STORED key's */
                     val realmSource: String? = null,
                     /** PadMap m179 (Safety k7): the game's realm hint ("present" / "none", the diagnostic line), null from an older add-on */
                     val realmHint: String? = null,
                     /** PadMap m179: the character's class token (CombatKeep refuses another class's backup), null = not said */
-                    val cls: String? = null)
+                    val cls: String? = null,
+                    /** PadMap m180 (Safety k10): whether the game reported a realm ("reported" / "empty"), the diagnostic line only */
+                    val realmReported: String? = null,
+                    /** m180: how many realms the name holds settings under / other names' unclaimed records of this class (counts only) */
+                    val nameCands: Int? = null, val unclaimed: Int? = null,
+                    /** m180: the GUID against its record ("same" / "server-changed" / "id-changed" / "new" / "unknown"), the line only */
+                    val guidState: String? = null,
+                    /** m180: the one-time question while the key is ambiguous ([KeyPick]); empty = none (or the key is known) */
+                    val picks: List<KeyPick.Cand> = emptyList(),
+                    /** m181 (Safety k11): the add-on login's stamp (a number, new at every PLAYER_LOGIN, a /reload's too): the key
+                     *  question's "Later" lasts until it changes ([KeyPick.laterMark]); null from an older add-on */
+                    val loginStamp: Long? = null,
+                    /** m182 (Safety k12): the add-on built this key fresh and nobody chose it (no question asked): only then may the app
+                     *  put this name's In-combat backup under another realm into it ([CombatKeep.mayAdopt]); false from an older add-on */
+                    val adopt: Boolean = false)
     val DPAD_SIDES = listOf("left", "up", "right")
 
     /** m37 / m160 START (the padmap's `start`): [key] the game's OPENRADIAL key; [bound] "pause" = Start is the router's (Home's wheel, the
@@ -728,15 +758,22 @@ object PadMapModel {
     fun macroCells(index: Int): List<Pair<String, Int>> = page3((index / 40).coerceIn(0, 3)) + (ROW_EXTRA to index % 40)
     /** p58: Extra's category [k] (1-based, ChooserTabs.CATS) folded / opened by touch (codes 4-8) */
     fun foldCells(k: Int): List<Pair<String, Int>> = page3(3 + k.coerceIn(1, 5))
-    /** movable Home (Book b74): the DS toolbar's mirror bit for this character, page-3 codes 9 (off: Left = chat) / 10 (on: Left = map) */
-    const val P3_MIRROR_OFF = 9
-    const val P3_MIRROR_ON = 10
-    /** movable Home phase 3 (Book b75): the top-screen combat bar's flag for this character, page-3 codes 11 (off) / 12 (on) */
-    const val P3_TOP_OFF = 11
-    const val P3_TOP_ON = 12
-    /** every page-3 code in use (b73's macro pages 0-3 and Extra's folds 4-8, b74's mirror 9-10, b75's top bar 11-12): PadTabCodesTest
-     *  keeps them apart */
+    /** movable Home (Book b74; b76 the 1515 merge: off the sticky realm question's 9-19): the DS toolbar's mirror bit for this character,
+     *  page-3 codes 20 (off: Left = chat) / 21 (on: Left = map) */
+    const val P3_MIRROR_OFF = 20
+    const val P3_MIRROR_ON = 21
+    /** movable Home phase 3 (Book b75; b76: moved with the mirror): the top-screen combat bar's flag for this character, page-3 codes
+     *  22 (off) / 23 (on) */
+    const val P3_TOP_OFF = 22
+    const val P3_TOP_ON = 23
+    /** the sticky realm question's codes (Book b74, test build 1515): [KeyPick.NEW_CODE] 9 = "a new character", [KeyPick.FIRST_CODE] 10
+     *  .. 19 = the add-on's candidates 1-10 (KeyPick sends them; HomeLayoutStoreTest keeps these two equal to KeyPick's) */
+    const val P3_KEY_NEW = 9
+    const val P3_KEY_LAST = 19
+    /** every page-3 code in use (b73's macro pages 0-3 and Extra's folds 4-8, the key question's 9-19, b76's mirror 20-21 and top bar
+     *  22-23): PadTabCodesTest keeps them apart */
     val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8,
+        "key question" to P3_KEY_NEW..P3_KEY_LAST,
         "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)

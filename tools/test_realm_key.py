@@ -37,11 +37,40 @@ Safety k9 and Bags bags-rk1 (the k6 review, round 3), proven here too:
   q THE GUID (k9): a private server that shares one server id over realms: a same-name alt (another GUID, the same server and class) gets
     no key; the same server and another class (a record from before k9) gets none either; this character's own GUID: kept;
   r the orphans' fold needs this character's evidence: a key from the class alone ("maybe") leaves the orphans (no fold, no backup).
-The 1514 merge into movable Home (PadMap m181), proven here too:
-  s THE HOME KEYS (rbm: the DS toolbar's mirror bit, ctop: the top-screen combat bar's flag): no key = both refused ("no character"),
+The 1514 merge into movable Home (PadMap m181) and the 1515 merge (m183), proven here too:
+  hs THE HOME KEYS (rbm: the DS toolbar's mirror bit, ctop: the top-screen combat bar's flag): no key = both refused ("no character"),
     nothing written under any partial key, the padmap's `ct` absent (not "off"); the key arriving late: the character's own rbm / ctop
     read then (the sides re-bound, `m` / `ct` / `d` in the next padmap, sent by itself), nothing written over them; an edit then goes
     under the whole key only; another character's bit never read.
+Safety k10 THE STICKY REALM (the user, 2026-11-20: WoW Forever's realm is a ruleset pool, the reported realm can be empty or another one,
+and a character's name is unique) supersedes k7-k9's evidence rules; the sections above prove k10's answers for their shapes, and:
+  s THE DEVICE (test build 1514): GetRealmName "" + a hint that names another realm + ONE kept realm with settings + orphans "Name-" /
+    "Name-?": the key is the kept one ("sticky"), the real stores untouched, the orphans folded only into stores the real key lacks,
+    the backup kept, the GUID record written;
+  t a live realm that differs from the one kept realm: the kept one wins, and never flaps later in the session (nor the next one);
+  u the same GUID, the reported realm changed: its record's key, nothing renamed;
+  v the GUID's server part changed, the id segment and class the same: the same key, the record moved;
+  w one name under two realms: no key, the candidates published (realm + settings count); the padtab pick (third page 10 + i) is
+    stored by GUID: the key, and the next login has it with no question; a "new character" pick (9); a NEW character while other
+    characters' settings exist: no question, its own key;
+  x a brand-new character with nothing to claim: the game's realm, else its hint, else "Name-Forever", the same next session;
+  y two different characters (other GUIDs) never resolve to the same key by themselves;
+  z the padmap's diagnostics: rs / rr / rh / nc / uc / gs words only (no realm, no GUID beyond the candidates' realms).
+Safety k11 (the k10 review, round 1), proven here too:
+  aa a realm with ZERO settings (a remembered realm, a k6 `true`, an empty-table key) is never where the settings live: the game's realm
+     or hint naming it keeps the key on the real settings (sticky), the orphans fold into the real key, never pinned on the empty one;
+  ab a new key prefers a realm the name is already known under (the hint after norm(), else the only one) over a spelling of our own;
+  ac a same-name record of this class under another GUID never blocks the sticky key (a name is one character): no question, the
+     record re-pointed; of two realms with settings, the one such a record holds;
+  ad the diagnostics' counts on every path (a guid session included);
+Safety k12 / PadMap m182 (the k10 review, round 2), proven here too:
+  af our Spells add-on turned off for a session (its table nil, the game says it is not loaded): no "new" key is recorded (no key at
+     all for a name with nothing seen; a key found in the core table is this session's only: no record, no fold); the next session
+     (both tables) finds the real settings; a record from before k12 whose key holds NO settings follows the ONE realm that does (the
+     orphan folded into the real key only); a player's pick (p = 1) never moves by itself; two realms with settings keep the record;
+  ag the padmap's who.ad (the app may adopt this name's In-combat backup): only a fresh key nobody chose, never after the question's
+     answer (a realm or "New character"), never a guid / sticky session.
+  ae the login's stamp ls (a new one at every PLAYER_LOGIN): the app's Later lasts until the next login.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -167,14 +196,17 @@ def clean(L, name):
 
 
 # ================================================================ 0 the versions and the builders
-check('WC.KERNEL = "k9"' in TEXT["safety"] and "function WC.charKey()" in TEXT["safety"] and "what happened to my combat bars on my hunter" in TEXT["safety"]
+check('WC.KERNEL = "k12"' in TEXT["safety"] and "-- k11 (the k10 review, round 1)" in TEXT["safety"] and "-- k12 (the k10 review, round 2)" in TEXT["safety"] and "function WC.charKey()" in TEXT["safety"] and "what happened to my combat bars on my hunter" in TEXT["safety"]
       and "k7 THE KEPT REALM IS THIS CHARACTER'S" in TEXT["safety"] and "-- k8 (the k6 review, round 2)" in TEXT["safety"]
-      and "-- k9 (the k6 review, round 3): THE CHARACTER'S OWN GUID" in TEXT["safety"],
-      "0. Safety k9 (k6's, k7's and k8's notes kept): WC.charKey, its note quotes the user")
-check('local PV = "m181"' in TEXT["padmap"] and 'local CBV = "cb16"' in AB and 'local SV = "s18"' in TEXT["spells"]
+      and "-- k9 (the k6 review, round 3): THE CHARACTER'S OWN GUID" in TEXT["safety"] and "-- k10 THE STICKY REALM" in TEXT["safety"]
+      and "Realms work different in wow forever" in TEXT["safety"] and "function WC.charKeyPick(i)" in TEXT["safety"],
+      "0. Safety k12 (k6-k11's notes kept): WC.charKey, the sticky realm, the note quotes the user")
+check('local BV = "b76"' in SRC["book"] and "b74 THE STICKY REALM'S QUESTION" in SRC["book"] and "P3[9] = function()" in SRC["book"],
+      "0. Book b74: the third page's 9 / 10-19 (the sticky realm's question)")
+check('local PV = "m183"' in TEXT["padmap"] and "m180 THE STICKY REALM" in TEXT["padmap"] and "m181 (Safety k11" in TEXT["padmap"] and "m182 (Safety k12" in TEXT["padmap"] and 'local CBV = "cb16"' in AB and 'local SV = "s18"' in TEXT["spells"]
       and 'local RV = "r27"' in TEXT["radial"] and 'local SRV = "q8"' in TEXT["radial"] and 'local PV = "p26"' in TEXT["prof"]
       and 'local PADV = "pad27"' in TEXT["tappad"] and 'WC.prd = { V = "prd21"' in TEXT["trail"] and 'local HV = "hub74"' in TEXT["hub"]
-      and 'v = "pq2"' in TEXT["map"], "0. the tags: PadMap m181, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p26, TapPad pad27, Trail prd21, Hub hub74, Map pq2")
+      and 'v = "pq2"' in TEXT["map"], "0. the tags: PadMap m182, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p26, TapPad pad27, Trail prd21, Hub hub74, Map pq2")
 # every per-character builder goes through WC.charKey: no file but Safety concatenates GetRealmName() into a key any more
 for k, s in list(TEXT.items()) + [("actionbar", AB)]:
     if k == "safety":
@@ -182,53 +214,53 @@ for k, s in list(TEXT.items()) + [("actionbar", AB)]:
     bad = re.findall(r'GetRealmName\(\)[^\n]*\)\s*or\s*"\?"|tostring\(r or ""\)|n \.\. "-" \.\. \(r or "\?"\)', s)
     check(not bad, "0. %s builds no partial key (no 'or \"?\"' / tostring(r or \"\"))" % k, bad[:1])
 
-# ================================================================ a WC.charKey
+# ================================================================ a WC.charKey (k10)
 S = boot(["safety"], pre=HELP + 'ORIG_UnitGUID = UnitGUID')
 def ck(L):
     r = L.eval('(function() local k, n, r, s = WowCompanion.charKey(); return { k = k, n = n, r = r, s = s } end)()')
     return {x: r[x] for x in ("k", "n", "r", "s")}
 
 
-FRESH = 'WowCompanion.ck.n = nil; WowCompanion.ck.r = nil; WowCompanion.ck.missAt = nil; WowCompanion.ck.told = nil; '
+FRESH = ('WowCompanion.ck.n = nil; WowCompanion.ck.r = nil; WowCompanion.ck.key = nil; WowCompanion.ck.src = nil; WowCompanion.ck.missAt = nil; '
+         'WowCompanion.ck.told = nil; WowCompanion.ck.pk = nil; ')
 for realm, label in (('""', 'an empty realm'), ('nil', 'a nil realm'), ('"?"', 'a "?" realm'), ('"   "', 'a blank realm'), ('SECRETV', 'a secret realm')):
     S.execute('REALM = %s; ' % realm + FRESH + 'WowCompanionDB = {}; WowCompanionSpellsDB = {}')
-    check(ck(S)["k"] is None, "a. %s, nothing kept: no key (never \"Korvash-\" / \"Korvash-?\")" % label, ck(S))
+    check(ck(S)["k"] is None, "a. %s before PLAYER_LOGIN, nothing kept: no key (never \"Korvash-\" / \"Korvash-?\")" % label, ck(S))
 S.execute('REALM = "Realm"')
-check(ck(S) == {"k": "Korvash-Realm", "n": "Korvash", "r": "Realm", "s": "live"}, "a. the game's realm: Korvash-Realm (live)", ck(S))
+check(ck(S) == {"k": "Korvash-Realm", "n": "Korvash", "r": "Realm", "s": "live"} and S.eval('WowCompanion.ck.early') is True,
+      "a. before PLAYER_LOGIN, nothing kept: the game's realm (live), early (asked again at the login)", ck(S))
+check(S.eval('WowCompanionDB.who') is None and S.eval('WowCompanionDB.realmOf') is None, "a. ... nothing recorded before the login")
+S.execute('fire("PLAYER_LOGIN")')
+check(ck(S) == {"k": "Korvash-Realm", "n": "Korvash", "r": "Realm", "s": "new"}, "a. at PLAYER_LOGIN: a new character, nothing to claim: the game's realm (new)", ck(S))
+check(S.eval('SER(WowCompanionDB.who)') == '{["Player-1-Korvash"]={["c"]="SHAMAN",["i"]="Korvash",["k"]="Korvash-Realm"}}',
+      "a. ... recorded under this GUID (k = the key, c = the class, i = the GUID's id segment)", S.eval('SER(WowCompanionDB.who)'))
 check(S.eval('SER(WowCompanionDB.realmOf)') == '{["Korvash"]={["Realm"]={["c"]="SHAMAN",["g"]="Player-1-Korvash",["s"]="1"}}}',
-      "a. ... remembered per name WITH ITS EVIDENCE (k7: realmOf[name][realm] = { s = home server id, c = class }; k9: g = the GUID)",
-      S.eval('SER(WowCompanionDB.realmOf)'))
+      "a. ... the key's realm remembered with its evidence (s = home server id, c = class, g = the GUID)", S.eval('SER(WowCompanionDB.realmOf)'))
 S.execute('REALM = ""')
-check(ck(S)["k"] == "Korvash-Realm", "a. the realm empty later this session: the session's realm stays", ck(S))
+check(ck(S)["k"] == "Korvash-Realm", "a. the realm empty later this session: the session's key stays", ck(S))
+S.execute('REALM = "Other Realm"; NOW = NOW + 60')
+check(ck(S)["k"] == "Korvash-Realm", "a. another realm reported later this session: the key never flaps", ck(S))
 S.execute(FRESH)
-check(ck(S) == {"k": "Korvash-Realm", "n": "Korvash", "r": "Realm", "s": "kept"}, "a. a new session, the realm empty: the remembered realm, its server matches (kept)", ck(S))
+check(ck(S) == {"k": "Korvash-Realm", "n": "Korvash", "r": "Realm", "s": "guid"}, "a. a new session, another realm reported: this GUID's record (guid)", ck(S))
+S.execute(FRESH + 'REALM = ""')
+check(ck(S)["s"] == "guid" and ck(S)["k"] == "Korvash-Realm", "a. ... the realm empty: the same", ck(S))
 S.execute(FRESH + 'WowCompanionDB = {}; WowCompanionSpellsDB = { fightBy = { ["Korvash-Realm 7"] = { [1] = 1 }, ["Korvash-"] = {}, ["Korvash-?"] = {} } }')
-check(ck(S)["k"] is None, "a. k7: the ONE realm our tables hold the name under, but NO evidence it is this character's: no key", ck(S))
-S.execute(FRESH + 'WowCompanionDB = { realmOf = { Korvash = { ["Realm 7"] = { s = "1", c = "SHAMAN" } } } }')
-check(ck(S)["k"] == "Korvash-Realm 7", "a. ... the realm recorded with this character's server: kept (orphans are no realm)", ck(S))
-S.execute(FRESH + 'WowCompanionSpellsDB.faceBy = { ["Korvash-Other Realm"] = { x = 1 } }')
-check(ck(S)["k"] == "Korvash-Realm 7", "a. two realms, no hint: the one whose recorded server is this character's picks (the other has none)", ck(S))
-S.execute(FRESH + 'WowCompanionDB.realmOf.Korvash["Other Realm"] = { s = "1", c = "SHAMAN" }')
-check(ck(S)["k"] is None, "a. two realms both recorded with this server (never a guess): no key", ck(S))
+check(ck(S) == {"k": "Korvash-Realm 7", "n": "Korvash", "r": "Realm 7", "s": "sticky"},
+      "a. k10: the ONE realm our tables hold the name under, no record at all: that one (sticky; orphans are no realm)", ck(S))
+S.execute(FRESH + 'WowCompanionDB = {}; WowCompanionSpellsDB.faceBy = { ["Korvash-Other Realm"] = { x = 1 } }')
+check(ck(S)["k"] is None and S.eval('#WowCompanion.charKeyInfo().pk') == 2 and S.eval('WowCompanion.charKeySource()') == "ask",
+      "a. two realms, no hint, no record: no key (never a guess), the question's 2 candidates", ck(S))
 S.execute('NOW = NOW + 3; GetNormalizedRealmName = function() return "OtherRealm" end')
-check(ck(S)["k"] == "Korvash-Other Realm", "a. ... the game's normalized realm (no spaces) picks one", ck(S))
+check(ck(S) == {"k": "Korvash-Other Realm", "n": "Korvash", "r": "Other Realm", "s": "hint"}, "a. ... the game's normalized realm (no spaces) picks one (hint)", ck(S))
 check(S.eval('WowCompanion.charKeyHint()') == "present", "a. ... the hint's word: present")
-S.execute('GetNormalizedRealmName = nil; ' + FRESH + 'WowCompanionDB.realmOf.Korvash["Other Realm"] = { s = "2", c = "SHAMAN" }')
-check(ck(S)["k"] == "Korvash-Realm 7" and S.eval('WowCompanion.charKeyHint()') == "none",
-      "a. two realms, one recorded with ANOTHER server: this character's server picks its own", ck(S))
-# the server id not known now (UnitGUID nil): the class, with that realm the only one left
-S.execute(FRESH + 'UnitGUID = function() return nil end; WowCompanionSpellsDB = { fightBy = { ["Korvash-Realm 7"] = {} } }; '
-          'WowCompanionDB = { realmOf = { Korvash = { ["Realm 7"] = { s = "1", c = "SHAMAN" } } } }')
-check(ck(S)["k"] is None, "n. k8: no server id now, BEFORE PLAYER_LOGIN: the class alone picks nothing (no key)", ck(S))
-S.execute('fire("PLAYER_LOGIN"); ' + FRESH)
-check(ck(S)["k"] == "Korvash-Realm 7", "a. no server id now, logged in: the recorded class matches, the one realm: kept", ck(S))
-S.execute(FRESH + 'CLASS = "WARRIOR"')
-check(ck(S)["k"] is None, "a. ... another class: no key", ck(S))
-S.execute(FRESH + 'CLASS = "SHAMAN"; WowCompanionDB.realmOf.Korvash["Realm 8"] = { c = "SHAMAN" }')
-check(ck(S)["k"] is None, "a. ... two realms with only the class to tell: no key (never a guess)", ck(S))
-S.execute('UnitGUID = ORIG_UnitGUID; REALM = "Realm 7"')
-check(ck(S) == {"k": "Korvash-Realm 7", "n": "Korvash", "r": "Realm 7", "s": "live"}, "a. a live realm always wins", ck(S))
-S.execute('WHO = nil')
+S.execute('GetNormalizedRealmName = nil; ' + FRESH + 'WowCompanionDB = {}; REALM = "Realm 7"')
+check(ck(S)["k"] == "Korvash-Realm 7" and ck(S)["s"] == "live", "a. two realms, the game's realm names one exactly: that one (live)", ck(S))
+S.execute(FRESH + 'REALM = ""; CLASS = "WARRIOR"; WowCompanionSpellsDB = { fightBy = { ["Korvash-Realm"] = { [1] = 1 } } }; '
+          'WowCompanionDB = { who = { ["Player-1-Korvash"] = { k = "Korvash-Realm", c = "SHAMAN", i = "Korvash" } }, '
+          'realmOf = { Korvash = { Realm = { s = "1", c = "SHAMAN", g = "Player-1-Korvash" } } } }')
+check(ck(S) == {"k": "Korvash-Forever", "n": "Korvash", "r": "Forever", "s": "new"},
+      "a. this GUID's record holds ANOTHER class: never that key; a key of its own (new, Forever: no realm named)", ck(S))
+S.execute('CLASS = "SHAMAN"; WHO = nil')
 check(ck(S)["k"] is None, "a. no name: no key")
 clean(S, "a")
 
@@ -236,13 +268,19 @@ clean(S, "a")
 B = world(pre='REALM = ""')
 m = padmap(B)
 who = (m.get('dpad') or {}).get('who') or {}
-check(who.get('n') == 'Korvash' and 'r' not in who and who.get('rs') == 'none', "b. the padmap's who: the name, no realm, rs none", who)
+check(who.get('n') == 'Korvash' and who.get('r') == 'Forever' and who.get('rs') == 'new' and who.get('rr') == 'empty' and who.get('gs') == 'new',
+      "b. k10: a NEW character, the realm empty: its own whole key Korvash-Forever (rs new), never a partial one", who)
 ok = B.eval('WowCompanion.padMap.putFight(1, 1, 1, "command", "DSMAP")')
-check(ok is not True and (ok[1] if isinstance(ok, tuple) else None) in (None, "no character"), "b. a fight-layer edit is refused (no character)", ok)
+check(ok is True or (isinstance(ok, tuple) and ok[0] is True), "b. ... a fight-layer edit goes under it", ok)
 B.execute('WowCompanion.padMap.emit(true); fire("PLAYER_REGEN_DISABLED"); fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 60)')
 c, where = partials(B)
 check(c == 0, "b. no store under any partial key in either table after the login, padmaps and an edit", where)
-check(B.eval('SER(WowCompanionSpellsDB.fightBy or {})') == '{}', "b. the fight layer's table holds no character at all")
+check(B.eval('(function() local ks = {} for k in pairs(WowCompanionSpellsDB.fightBy or {}) do ks[#ks + 1] = k end return table.concat(ks, ",") end)()') == "Korvash-Forever",
+      "b. ... the fight layer's table holds only Korvash-Forever")
+B2 = world(pre='WowCompanionDB = ' + B.eval('SER(WowCompanionDB)') + '\nWowCompanionSpellsDB = ' + B.eval('SER(WowCompanionSpellsDB)') + '\nREALM = "Live Realm"\n')
+check(B2.eval('(WowCompanion.charKey())') == "Korvash-Forever" and B2.eval('WowCompanion.charKeySource()') == "guid",
+      "b. ... the next session (a realm reported now): the same key from its record (guid), never flaps", B2.eval('(WowCompanion.charKey())'))
+clean(B2, "b2")
 clean(B, "b")
 
 # ================================================================ c THE DEVICE'S SHAPE
@@ -284,7 +322,10 @@ check(int(n0) == 23 and int(c0) == 19, "c. the shape: the real key in 22 stores 
 D = world(pre=DEVICE)
 m = padmap(D)
 who = (m.get('dpad') or {}).get('who') or {}
-check(who == {"n": "Korvash", "r": "Realm", "rs": "kept", "rh": "none", "c": "SHAMAN"}, "c. the realm empty at login: the padmap's who is the REAL key's (rs kept, rh none)", who)
+ls = who.pop('ls', None)
+check(who == {"n": "Korvash", "r": "Realm", "rs": "sticky", "rh": "none", "c": "SHAMAN", "rr": "empty", "nc": 1, "uc": 0, "gs": "new"}
+      and isinstance(ls, int) and ls > 0,
+      "c. the realm empty at login: the padmap's who is the REAL key's (rs sticky, rr empty, rh none, 1 name candidate, guid new)", who)
 sl = m['sets'][0]['slots'][0]
 check(sl.get('kind') == 'combat' and (sl.get('c') or {}).get('key') == 'DSMAP', "c. THE BARS COME BACK: slot 1's fight layer from the real fightBy", sl)
 check(D.eval('HDR("wc-ft-1")') == "/click WowCompanionPadMap", "c. ... armed on the router (it runs in the next fight)", D.eval('HDR("wc-ft-1")'))
@@ -313,8 +354,9 @@ names = D.eval('SER(WowCompanionDB.realmFixBak)')
 check("Korvash-" not in names, "c. the backup holds no partial key as a key (its kind only: - / -? / -_)")
 D.execute('fire("PLAYER_ENTERING_WORLD", false, true); runTimers(NOW + 30)')
 check(D.eval('#WowCompanionDB.realmFixBak') == 1, "c. idempotent: the next world entry folds nothing more")
-check(D.eval('SER(WowCompanionDB.realmOf)') == '{["Korvash"]={["Realm"]={["c"]="SHAMAN",["s"]="1"}}}',
-      "c. a realm only kept (not the game's): the evidence as it was (nothing new remembered)", D.eval('SER(WowCompanionDB.realmOf)'))
+check(D.eval('SER(WowCompanionDB.realmOf)') == '{["Korvash"]={["Realm"]={["c"]="SHAMAN",["g"]="Player-1-Korvash",["s"]="1"}}}'
+      and D.eval('WowCompanionDB.who["Player-1-Korvash"].k') == REAL,
+      "c. k10: the key's own realm remembered with this GUID, the GUID's record holds the key", D.eval('SER(WowCompanionDB.realmOf)'))
 # l the fold's backup holds COPIES: the adopted store edited after the fold, the backup's value as it was
 D.execute('WowCompanionSpellsDB.hmBy["%s"].hp = 77' % REAL)
 hm = D.eval('(function() for _, it in ipairs(WowCompanionDB.realmFixBak[1].items) do if it.at == "hmBy" then return SER(it.v) end end end)()')
@@ -367,78 +409,97 @@ clean(C, "f")
 # ================================================================ g the realm back (live) with orphans from before
 G = world(pre=DEVICE.replace('REALM = ""', 'REALM = "Realm"'))
 who = (padmap(G).get('dpad') or {}).get('who') or {}
-check(who == {"n": "Korvash", "r": "Realm", "rs": "live", "rh": "none", "c": "SHAMAN"} and partials(G)[0] == 0 and G.eval('WowCompanionDB.realmOf.Korvash.Realm.s') == "1",
+check({k: who.get(k) for k in ("n", "r", "rs", "rh", "c", "rr")} == {"n": "Korvash", "r": "Realm", "rs": "live", "rh": "none", "c": "SHAMAN", "rr": "reported"} and partials(G)[0] == 0 and G.eval('WowCompanionDB.realmOf.Korvash.Realm.s') == "1",
       "g. the game's realm again: live, the orphans folded the same, the realm remembered", (who, partials(G)))
 n2, after2 = G.eval('REALSTORES("%s")' % REAL)
 check([x for x in after2.split("\n") if not x.startswith("S.hmBy=")] == cl, "g. ... the real stores as a login with no orphan leaves them")
 clean(G, "g")
 
-# ================================================================ i A SAME-NAME CHARACTER ON ANOTHER REALM (k7, the review's probe)
+# ================================================================ i A SAME-NAME CHARACTER ON ANOTHER REALM (k7's probe; k10's answers)
+# k10 (the user: a whole name is unique on WoW Forever): a record of this name with ANOTHER CLASS is another character (a deleted and
+# remade one): it gets a key of its own, the hunter's stores are never written, the orphans are left (they may be the other's). A record
+# of this name and class (another home server) or none at all is this character: the one kept realm (sticky)
 SAME = (r'REALM = ""' + '\n' + 'WowCompanionSpellsDB = { fightBy = { ["%s"] = %s }, attackBy = { ["%s"] = { v = 1 } }, genUse = { ["%s"] = { hunter = true } }, '
         'dpad = { ["%s"] = true }, faceBy = { ["Korvash-"] = { x = 3 } } }\n') % (REAL, FIGHT, REAL, REAL, REAL)
-for label, pre in (
-        ("another home server", SAME + 'WowCompanionDB = { realmOf = { Korvash = { Realm = { s = "7", c = "HUNTER" } } } }\nCLASS = "WARRIOR"\n'),
-        ("the same class, another server", SAME + 'WowCompanionDB = { realmOf = { Korvash = { Realm = { s = "7", c = "SHAMAN" } } } }\n'),
+for label, pre, mine in (
+        ("another home server and another class", SAME + 'WowCompanionDB = { realmOf = { Korvash = { Realm = { s = "7", c = "HUNTER" } } } }\nCLASS = "WARRIOR"\n', False),
         ("no server id now, another class", SAME + 'WowCompanionDB = { realmOf = { Korvash = { Realm = { s = "7", c = "HUNTER" } } } }\nCLASS = "WARRIOR"\n'
-                                               'UNITS.player.guid = "Creature-0-0"\n'),
-        ("the hunter's realm with no evidence at all (only our tables' keys)", SAME + 'WowCompanionDB = {}\nCLASS = "WARRIOR"\n')):
+                                               'UNITS.player.guid = "Creature-0-0"\n', False),
+        ("another GUID's record of another class", SAME + 'WowCompanionDB = { who = { ["Player-1-Hunter"] = { k = "%s", c = "HUNTER", i = "Hunter" } } }\nCLASS = "WARRIOR"\n' % REAL, False),
+        ("the same class, another home server (the same name: this character)", SAME + 'WowCompanionDB = { realmOf = { Korvash = { Realm = { s = "7", c = "SHAMAN" } } } }\n', True),
+        ("no evidence at all (only our tables' keys: the name is this character)", SAME + 'WowCompanionDB = {}\nCLASS = "WARRIOR"\n', True)):
     P2 = lupa.LuaRuntime(unpack_returned_tuples=True)
     P2.execute(GAME); P2.execute(HELP); P2.execute(pre)
     before = P2.eval('REALSTORES("%s")' % REAL)[1]
     I = world(pre=pre)
     who = (padmap(I).get('dpad') or {}).get('who') or {}
     ok = I.eval('WowCompanion.padMap.putFight(1, 1, 2, "command", "DSCHAT")')
-    check(I.eval('(WowCompanion.charKey())') is None and 'r' not in who and who.get('rs') == 'none',
-          "i. a same-name character on another realm (%s), the realm empty: no key, the padmap's who has no realm" % label, who)
-    check(ok is not True, "i. ... its fight-layer edit is refused", ok)
     I.execute('WowCompanion.padMap.emit(true); fire("PLAYER_REGEN_DISABLED"); fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 120)')
-    check(I.eval('REALSTORES("%s")' % REAL)[1] == before and I.eval('WowCompanionSpellsDB.faceBy["Korvash-"].x') == 3,
-          "i. ... the hunter's stores byte for byte as they were (nothing written under its key, no fold)", I.eval('REALSTORES("%s")' % REAL)[1])
-    check(I.eval('WowCompanionDB.realmFixBak') is None, "i. ... no fold backup")
+    if mine:
+        check(I.eval('(WowCompanion.charKey())') == REAL and who.get('r') == 'Realm' and who.get('rs') == 'sticky',
+              "i. k10 %s, the realm empty: the kept realm (sticky)" % label, who)
+        check(I.eval('WowCompanionSpellsDB.fightBy["%s"][2].key' % REAL) == "DSCHAT" and partials(I)[0] == 0,
+              "i. ... its edit goes to the kept key, its orphan folded", partials(I))
+    else:
+        check(I.eval('(WowCompanion.charKey())') == "Korvash-Forever" and who.get('r') == 'Forever' and who.get('rs') == 'new',
+              "i. k10 %s, the realm empty: a key of its own (new), never the hunter's" % label, who)
+        check(I.eval('REALSTORES("%s")' % REAL)[1] == before and I.eval('WowCompanionSpellsDB.faceBy["Korvash-"].x') == 3,
+              "i. ... the hunter's stores byte for byte as they were (nothing written under its key, no fold)", I.eval('REALSTORES("%s")' % REAL)[1])
+        check(I.eval('WowCompanionDB.realmFixBak') is None and I.eval('WowCompanion.realmFix.skipped') == "other",
+              "i. ... no fold, no fold backup (another class's record holds the name)")
     clean(I, "i")
 
-# the device's shape with NO evidence yet (no live k7 session so far): no key, nothing folded, nothing written (the bars wait for a live one)
+# the device's shape with NO evidence yet (no live session recorded one): k10, the one kept realm (sticky), the orphans folded
 N = world(pre=NOEVID)
 who = (padmap(N).get('dpad') or {}).get('who') or {}
-check(who.get('rs') == 'none' and 'r' not in who and partials(N)[0] == 19 and N.eval('WowCompanionDB.realmFixBak') is None,
-      "i. the device's shape, no evidence recorded yet: no key, the 19 orphans left, no fold", (who, partials(N)[0]))
+check(who.get('rs') == 'sticky' and who.get('r') == 'Realm' and partials(N)[0] == 0 and N.eval('#WowCompanionDB.realmFixBak') == 1,
+      "i. k10: the device's shape, no evidence recorded: the kept realm (sticky), the 19 orphans folded, the backup kept", (who, partials(N)[0]))
 _, real_n = N.eval('REALSTORES("%s")' % REAL)
-check(real_n == before_c, "i. ... the real stores byte for byte as stored", [x for x in real_n.split("\n") if x not in before_c.split("\n")][:2])
-N.execute('REALM = "Realm"; fire("PLAYER_ENTERING_WORLD", false, true); runTimers(NOW + 30)')
-check(N.eval('WowCompanionDB.realmOf.Korvash.Realm.s') == "1" and partials(N)[0] == 0,
-      "i. ... the game's realm back (live): the evidence recorded, the orphans folded")
+check([x for x in real_n.split("\n") if not x.startswith("S.hmBy=")] == cl, "i. ... the real stores as a login with no orphan leaves them")
+check(N.eval('WowCompanionDB.realmOf.Korvash.Realm.g') == "Player-1-Korvash" and N.eval('WowCompanionDB.who["Player-1-Korvash"].k') == REAL,
+      "i. ... the kept realm remembered with this GUID, and the GUID's record")
 clean(N, "i")
 
-# ================================================================ j the fold SKIPPED while the name holds settings under two realms
-for label, pre in (("live", DEVICE.replace('REALM = ""', 'REALM = "Realm"')), ("kept", DEVICE)):
+# ================================================================ j two realms under the name: the fold only into a RESOLVED key
+for label, pre, key in (("live", DEVICE.replace('REALM = ""', 'REALM = "Realm"'), REAL), ("ask", DEVICE, None)):
     J = world(pre=pre + 'WowCompanionSpellsDB.faceBy["Korvash-Other Realm"] = { x = 4 }\n')
     who = (padmap(J).get('dpad') or {}).get('who') or {}
-    check(who.get('r') == 'Realm' and partials(J)[0] == 19 and J.eval('WowCompanionDB.realmFixBak') is None
-          and J.eval('WowCompanion.realmFix.skipped') is True,
-          "j. (%s) the name under two realms: the key resolves, but the fold is skipped (19 orphans left, no backup)" % label, (who, partials(J)[0]))
+    if key:
+        check(who.get('r') == 'Realm' and who.get('rs') == 'live' and partials(J)[0] == 0 and J.eval('#WowCompanionDB.realmFixBak') == 1,
+              "j. k10 (%s) the name under two realms, the game names one: that key, the orphans folded into it" % label, (who, partials(J)[0]))
+    else:
+        pk = who.get('pk') or []
+        check('r' not in who and who.get('rs') == 'ask' and partials(J)[0] == 19 and J.eval('WowCompanionDB.realmFixBak') is None,
+              "j. k10 (%s) the name under two realms, no realm named: no key, the fold skipped (19 orphans left, no backup)" % label, (who, partials(J)[0]))
+        check([c.get('r') for c in pk] == ["Other Realm", "Realm"] and pk[1].get('n', 0) > 20 and pk[0].get('n') == 1,
+              "j. ... the question's candidates: each realm and how many settings it holds", pk)
     check(J.eval('WowCompanionSpellsDB.faceBy["Korvash-Other Realm"].x') == 4, "j. ... the other realm's store untouched")
     clean(J, "j")
 
-# ================================================================ k a kept realm found before PLAYER_LOGIN is asked again then
+# ================================================================ k a key found before PLAYER_LOGIN is asked again then
 K = boot(["safety"], pre=HELP + 'REALM = ""\nWowCompanionDB = { realmOf = { Korvash = { A = { c = "SHAMAN" } } } }\nWowCompanionSpellsDB = nil\n'
          'UnitGUID = function() return nil end\n')
 check(ck(K)["k"] is None and K.eval('WowCompanion.ck.r') is None,
-      "n. k8: before PLAYER_LOGIN with only the class to tell (no server id): no key (a same-class alt's realm never takes the writes)", ck(K))
+      "n. before PLAYER_LOGIN with no realm from the game: no key (the saved tables may not be loaded yet)", ck(K))
 K.execute('WowCompanionSpellsDB = { fightBy = { ["Korvash-B"] = { [1] = 1 } } }')
 K.execute('fire("PLAYER_LOGIN"); runTimers(NOW + 1)')
-check(ck(K)["k"] is None, "k. at PLAYER_LOGIN both tables are seen: a second realm (B) and only the class to tell = no key (never a guess)", ck(K))
-K.execute('WowCompanionSpellsDB = {}; WowCompanion.ck.missAt = nil')
-check(ck(K) == {"k": "Korvash-A", "n": "Korvash", "r": "A", "s": "kept"} and K.eval('WowCompanion.ck.early') is False,
-      "k. ... after login the class alone picks the one realm left, cached for the session (not early)", ck(K))
+check(ck(K) == {"k": "Korvash-B", "n": "Korvash", "r": "B", "s": "sticky"} and K.eval('WowCompanion.ck.early') is False,
+      "k. at PLAYER_LOGIN both tables are seen: k11, the remembered realm A holds NO settings (not where they live): B, the one that does "
+      "(sticky), cached for the session (not early)", ck(K))
+K.execute('WowCompanionSpellsDB = {}; WowCompanionDB.who = nil; WowCompanionDB.realmOf.Korvash.B = nil; ' + FRESH)
+check(ck(K) == {"k": "Korvash-A", "n": "Korvash", "r": "A", "s": "new"},
+      "k. ... no settings anywhere: the one realm the name is known under (A, new), never a spelling of our own", ck(K))
 clean(K, "k")
-# the server id known before PLAYER_LOGIN: kept early (it matches), then asked again at login, where the game's own hint picks B
-K2 = boot(["safety"], pre=HELP + 'REALM = ""\nWowCompanionDB = { realmOf = { Korvash = { A = { s = "1", c = "SHAMAN" } } } }\nWowCompanionSpellsDB = nil\n')
-check(ck(K2) == {"k": "Korvash-A", "n": "Korvash", "r": "A", "s": "kept"} and K2.eval('WowCompanion.ck.early') is True,
-      "k. before PLAYER_LOGIN, the server id matches: kept A, marked early", ck(K2))
-K2.execute('WowCompanionSpellsDB = { fightBy = { ["Korvash-B"] = { [1] = 1 } } }; GetNormalizedRealmName = function() return "B" end')
+# the game's realm before PLAYER_LOGIN: early, asked again at login, where this GUID's record decides
+K2 = boot(["safety"], pre=HELP + 'REALM = "A"\nWowCompanionDB = { realmOf = { Korvash = { A = { s = "1", c = "SHAMAN" } } } }\nWowCompanionSpellsDB = nil\n')
+check(ck(K2) == {"k": "Korvash-A", "n": "Korvash", "r": "A", "s": "live"} and K2.eval('WowCompanion.ck.early') is True,
+      "k. before PLAYER_LOGIN, the game's realm holds the name's settings: A (live), marked early", ck(K2))
+K2.execute('WowCompanionSpellsDB = { fightBy = { ["Korvash-B"] = { [1] = 1 } } }; WowCompanionDB.who = { ["Player-1-Korvash"] = { k = "Korvash-B", c = "SHAMAN", i = "Korvash" } }')
 check(ck(K2)["k"] == "Korvash-A", "k. ... still cached until PLAYER_LOGIN", ck(K2))
 K2.execute('fire("PLAYER_LOGIN"); runTimers(NOW + 1)')
-check(ck(K2)["k"] == "Korvash-B", "k. ... at PLAYER_LOGIN asked again: the game's hint picks B (the early answer dropped)", ck(K2))
+check(ck(K2)["k"] == "Korvash-B" and ck(K2)["s"] == "guid", "k. ... at PLAYER_LOGIN asked again: this GUID's record picks B (the early answer dropped)", ck(K2))
+K2.execute('REALM = "A"; NOW = NOW + 60')
+check(ck(K2)["k"] == "Korvash-B", "k. ... and kept: the game's A later never flaps it", ck(K2))
 clean(K2, "k2")
 
 # ================================================================ o the fold's backup: the 2 newest PER NAME
@@ -453,36 +514,36 @@ check(O.eval('(function() for _, r in ipairs(WowCompanionDB.realmFixBak) do if r
       "o. ... this character's earlier fold (its dropped orphan's value) is still there")
 clean(O, "o")
 
-# ================================================================ q THE GUID (k9)
-Q = boot(["safety"], pre=HELP + 'REALM = ""\nWowCompanionSpellsDB = { fightBy = { ["Korvash-Realm"] = { [1] = 1 } } }\n')
-for label, rec, want in (
-        ("another GUID, the same server and class (a shared server id)", '{ s = "1", c = "SHAMAN", g = "Player-1-Other" }', None),
-        ("a record from before k9: the same server, another class", '{ s = "1", c = "HUNTER" }', None),
-        ("a record from before k9: the same server and class", '{ s = "1", c = "SHAMAN" }', "Korvash-Realm"),
-        ("this character's own GUID", '{ s = "1", c = "SHAMAN", g = "Player-1-Korvash" }', "Korvash-Realm"),
-        ("its own GUID but another class recorded (never this one)", '{ s = "1", c = "HUNTER", g = "Player-1-Korvash" }', None)):
+# ================================================================ q THE GUID (k9's records; k10's answers)
+Q = boot(["safety"], pre=HELP + 'REALM = ""\nWowCompanionSpellsDB = { fightBy = { ["Korvash-Realm"] = { [1] = 1 } } }\nWowCompanionDB = {}\n')
+Q.execute('fire("PLAYER_LOGIN")')
+for label, rec, want, src in (
+        ("another GUID of this class holds the realm (k11: the same name = this character under a changed GUID)", '{ s = "1", c = "SHAMAN", g = "Player-1-Other" }', "Korvash-Realm", "sticky"),
+        ("a record from before k9: the same server, another class", '{ s = "1", c = "HUNTER" }', "Korvash-Forever", "new"),
+        ("a record from before k9: the same server and class", '{ s = "1", c = "SHAMAN" }', "Korvash-Realm", "sticky"),
+        ("this character's own GUID", '{ s = "1", c = "SHAMAN", g = "Player-1-Korvash" }', "Korvash-Realm", "sticky"),
+        ("its own GUID but another class recorded (never this one)", '{ s = "1", c = "HUNTER", g = "Player-1-Korvash" }', "Korvash-Forever", "new")):
     Q.execute(FRESH + 'WowCompanionDB = { realmOf = { Korvash = { Realm = %s } } }' % rec)
-    check(ck(Q)["k"] == want, "q. k9 %s: %s" % (label, "kept" if want else "no key"), ck(Q))
-Q.execute('fire("PLAYER_LOGIN"); ' + FRESH + 'WowCompanionDB = { realmOf = { Korvash = { Realm = { s = "1", c = "SHAMAN", g = "Player-1-Other" } } } }')
-check(ck(Q)["k"] is None, "q. ... after PLAYER_LOGIN too: another GUID is never this character (not even as a class-only 'maybe')", ck(Q))
-Q.execute('REALM = "Realm"; ' + FRESH)
-check(ck(Q)["s"] == "live" and Q.eval('WowCompanionDB.realmOf.Korvash.Realm.g') == "Player-1-Korvash",
-      "q. the game's realm (live): the record takes this character's GUID (a remade character of that name and realm is the one there now)")
+    check(ck(Q)["k"] == want and Q.eval('WowCompanion.charKeySource()') == src, "q. k10 %s: %s (%s)" % (label, want or "no key", src), ck(Q))
+Q.execute(FRESH + 'WowCompanionDB = { realmOf = { Korvash = { Realm = { s = "1", c = "SHAMAN", g = "Player-1-Other" } } } }; REALM = "Realm"')
+check(ck(Q)["k"] == "Korvash-Realm" and ck(Q)["s"] == "live" and Q.eval('WowCompanion.charKeyInfo().gs') == "id-changed"
+      and Q.eval('WowCompanion.charKeyInfo().pk') is None and Q.eval('WowCompanionDB.realmOf.Korvash.Realm.g') == "Player-1-Korvash",
+      "q. ... k11, the game names that realm: that key (live, no question), guid id-changed, the realm's record re-pointed to this GUID", ck(Q))
 clean(Q, "q")
-# the device's shape: the hunter's realm recorded with ANOTHER GUID (the alt's session on a shared server id): no key, nothing folded
+# the device's shape: the hunter's realm recorded with ANOTHER GUID of this class: k11, the same name = this character: its key, folded
 QD = world(pre=DEVICE.replace(EVID, 'WowCompanionDB.realmOf = { Korvash = { Realm = { s = "1", c = "SHAMAN", g = "Player-1-Hunter" } } }'))
-check(QD.eval('(WowCompanion.charKey())') is None and partials(QD)[0] == 19 and QD.eval('WowCompanionDB.realmFixBak') is None,
-      "q. the device's shape, the realm's record holds another GUID: no key, the 19 orphans left, no fold", partials(QD))
+who = (padmap(QD).get('dpad') or {}).get('who') or {}
+check(QD.eval('(WowCompanion.charKey())') == REAL and partials(QD)[0] == 0 and QD.eval('#WowCompanionDB.realmFixBak') == 1
+      and who.get('rs') == 'sticky' and 'pk' not in who and who.get('gs') == 'id-changed',
+      "q. k11 the device's shape, the realm's record holds another GUID of this class: the kept key (sticky, no question), the orphans folded", (partials(QD), who))
 _, real_q = QD.eval('REALSTORES("%s")' % REAL)
-check(real_q == before_c, "q. ... the real stores byte for byte as stored")
+check([x for x in real_q.split("\n") if not x.startswith("S.hmBy=")] == cl, "q. ... the real stores as a login with no orphan leaves them")
 clean(QD, "q2")
 
-# ================================================================ r the fold needs this character's evidence
+# ================================================================ r k10: the fold needs no evidence (a name is one character)
 RR = world(pre=DEVICE.replace(EVID, 'WowCompanionDB.realmOf = { Korvash = { Realm = { c = "SHAMAN" } } }'))
-check(RR.eval('(WowCompanion.charKey())') == REAL and RR.eval('WowCompanion.realmFix.skipped') == "evidence"
-      and partials(RR)[0] == 19 and RR.eval('WowCompanionDB.realmFixBak') is None,
-      "r. k9: the key from the class alone ('maybe', after the login): the stores read under it, but the orphans are left (no fold, no backup)",
-      (RR.eval('WowCompanion.realmFix.skipped'), partials(RR)[0]))
+check(RR.eval('(WowCompanion.charKey())') == REAL and partials(RR)[0] == 0 and RR.eval('#WowCompanionDB.realmFixBak') == 1,
+      "r. k10: the key from the class alone (sticky): the orphans folded into it, the backup kept", partials(RR)[0])
 clean(RR, "r")
 
 # ================================================================ p BAGS (bags-rk1)
@@ -538,20 +599,20 @@ check(P2.eval('BB.key') == "Korvash-Realm" and P2.eval('SER(BB.binds)') == '{["P
 P2.execute('runTimers(NOW + 4000)')
 check(P2.eval('#TIMERS') == 0, "p. ... and stops asking once the key is known", P2.eval('#TIMERS'))
 clean(P2, "p2")
-# p3 a key that CHANGES (a kept realm the game's own answer replaced): the new key's record as stored; the old key's never copied onto it
+# p3 k10: the key NEVER changes in a session: this GUID's record (A) at the login, the game's B later: A's record kept, B untouched
 P3 = bags_world('REALM = ""\nWowCompanionDB = { bagBinds = { ["Korvash-A"] = { PADBACK = 1 }, ["Korvash-B"] = { PADLSTICK = 2 } }, '
-                'realmOf = { Korvash = { A = { s = "1", c = "SHAMAN" } } } }\nWowCompanionSpellsDB = {}\n')
+                'who = { ["Player-1-Korvash"] = { k = "Korvash-A", c = "SHAMAN", i = "Korvash" } } }\nWowCompanionSpellsDB = {}\n')
 P3.execute('fire("PLAYER_LOGIN")')
-check(P3.eval('BB.key') == "Korvash-A" and P3.eval('BB.binds.PADBACK') == 1, "p. a kept key at the login: its binds read")
-P3.execute('REALM = "B"; BB.binds.PADRSHOULDER = 3; BB.save()')
-check(P3.eval('SER(WowCompanionDB.bagBinds)') == '{["Korvash-A"]={["PADBACK"]=1},["Korvash-B"]={["PADLSTICK"]=2}}' and P3.eval('BB.key') == "Korvash-B"
-      and P3.eval('SER(BB.binds)') == '{["PADLSTICK"]=2}',
-      "p. ... the key changes (the game says B): B's record as stored, A's set never written onto it, A untouched", P3.eval('SER(WowCompanionDB.bagBinds)'))
+check(P3.eval('BB.key') == "Korvash-A" and P3.eval('BB.binds.PADBACK') == 1, "p. this GUID's key at the login: its binds read")
+P3.execute('REALM = "B"; NOW = NOW + 60; BB.binds.PADRSHOULDER = 3; BB.save()')
+check(P3.eval('SER(WowCompanionDB.bagBinds)') == '{["Korvash-A"]={["PADBACK"]=1,["PADRSHOULDER"]=3},["Korvash-B"]={["PADLSTICK"]=2}}' and P3.eval('BB.key') == "Korvash-A",
+      "p. ... the game says B later: the key stays A (no flap), the bind saved under A, B untouched", P3.eval('SER(WowCompanionDB.bagBinds)'))
 clean(P3, "p3")
 # p4 no key the whole session: nothing written anywhere
-P4 = bags_world('REALM = ""\nWowCompanionDB = { bagBinds = { ["Korvash-Realm"] = { PADBACK = 6948 } } }\nWowCompanionSpellsDB = {}\n')
+P4 = bags_world('REALM = ""\nWowCompanionDB = { bagBinds = { ["Korvash-Realm"] = { PADBACK = 6948 }, ["Korvash-Other"] = { PADBACK = 1 } } }\nWowCompanionSpellsDB = {}\n')
 P4.execute('fire("PLAYER_LOGIN"); BB.binds.PADRSHOULDER = 999; BB.save(); runTimers(NOW + 4000)')
-check(P4.eval('SER(WowCompanionDB.bagBinds)') == '{["Korvash-Realm"]={["PADBACK"]=6948}}', "p. no key all session: nothing saved, the real binds as stored")
+check(P4.eval('SER(WowCompanionDB.bagBinds)') == '{["Korvash-Other"]={["PADBACK"]=1},["Korvash-Realm"]={["PADBACK"]=6948}}',
+      "p. no key all session (the question never answered): nothing saved, the real binds as stored")
 clean(P4, "p4")
 
 # ---------------------------------------------------------------- q. Hub's meters store (hub73 MT.sync): the key can come after PLAYER_LOGIN
@@ -577,51 +638,443 @@ check(Q2.eval('SER(WowCompanionDB.meters)') == '{["Korvash-Realm"]={["c"]=true,[
       "q. ... the next press saves the merged record", Q2.eval('SER(WowCompanionDB.meters)'))
 clean(Q2, "q2")
 Q3 = boot(["safety", "hub"], pre=HELP + 'REALM = ""\nWowCompanionDB = { meters = { ["Korvash-A"] = { d = "on" }, ["Korvash-B"] = { p = 2 } }, '
-          'realmOf = { Korvash = { A = { s = "1", c = "SHAMAN" } } } }\nWowCompanionSpellsDB = {}\n')
+          'who = { ["Player-1-Korvash"] = { k = "Korvash-A", c = "SHAMAN", i = "Korvash" } } }\nWowCompanionSpellsDB = {}\n')
 Q3.execute('fire("PLAYER_LOGIN")')
-check(Q3.eval('WowCompanion.meters.key') == "Korvash-A", "q. a kept key at the login: its record read")
-Q3.execute('REALM = "B"; WowCompanion.meters.cell(WowCompanion.meters.C.DMG_OFF)')
-check(Q3.eval('SER(WowCompanionDB.meters)') == '{["Korvash-A"]={["d"]="on"},["Korvash-B"]={["d"]="off",["p"]=2}}',
-      "q. ... the key changes: B's record + this press only; A's record never written onto B, A untouched", Q3.eval('SER(WowCompanionDB.meters)'))
+check(Q3.eval('WowCompanion.meters.key') == "Korvash-A", "q. this GUID's key at the login: its record read")
+Q3.execute('REALM = "B"; NOW = NOW + 60; WowCompanion.meters.cell(WowCompanion.meters.C.DMG_OFF)')
+check(Q3.eval('SER(WowCompanionDB.meters)') == '{["Korvash-A"]={["d"]="off"},["Korvash-B"]={["p"]=2}}',
+      "q. ... the game says B later: the key stays A (no flap), the press saved under A, B untouched", Q3.eval('SER(WowCompanionDB.meters)'))
 clean(Q3, "q3")
 
-# ================================================================ s THE HOME KEYS (PadMap m181: rbm / ctop through WC.charKey)
+# ================================================================ s-z SAFETY k10 THE STICKY REALM
+KEPT = "Korvash-CAMWOW US1 Realm 7 PvE"
+
+
+def padtab(L, *cols):
+    for c in cols:
+        L.execute('WowCompanion.pad.rows["padtab"].handler(nil, %d); NOW = NOW + 0.1' % c)
+
+
+def saved(L):
+    """the two saved tables as the next session loads them"""
+    return 'WowCompanionDB = %s\nWowCompanionSpellsDB = %s\n' % (L.eval('SER(WowCompanionDB)'), L.eval('SER(WowCompanionSpellsDB)'))
+
+
+def keys_of(L, name):
+    return L.eval('(function() local t = WowCompanion.realmsOf("%s"); return table.concat(t, "|") end)()' % name)
+
+
+# s THE DEVICE (test build 1514): GetRealmName "", the game's hint names ANOTHER realm, ONE kept realm with settings, no realmOf record,
+# the orphans "Korvash-" / "Korvash-?" (an empty one over a real store, one with another value over a real store, one with a setting
+# where the real key holds only an empty table, one where the real key has nothing); other characters' settings under both pools
+DEV = ('REALM = ""\nGetNormalizedRealmName = function() return "CAMWOWUS1Realm9PvE" end\n'
+       'WowCompanionDB = { lay = { ["%(k)s"] = { hud = { dx = 1 } }, ["Brenna-Classic Beta PvE"] = { hud = { dx = 9 } } } }\n'
+       'WowCompanionSpellsDB = {\n'
+       '  fightBy = { ["%(k)s"] = %(f)s, ["Korvash-"] = {}, ["Tolvar-CAMWOW US1 Realm 7 PvE"] = { [1] = { t = "spell", id = 5 } } },\n'
+       '  faceBy = { ["%(k)s"] = { a = 1 }, ["Korvash-"] = { a = 999 } },\n'
+       '  castBar = { ["%(k)s"] = {}, ["Korvash-?"] = { [1] = { k = "spell", id = 331 } } },\n'
+       '  hmBy = { ["Korvash-"] = { hp = 5 } },\n'
+       '  smartOn = { ["%(k)s"] = true },\n'
+       '}\n') % {"k": KEPT, "f": FIGHT}
+SD = world(pre=DEV)
+who = (padmap(SD).get('dpad') or {}).get('who') or {}
+check(SD.eval('(WowCompanion.charKey())') == KEPT and who.get('r') == "CAMWOW US1 Realm 7 PvE" and who.get('rs') == 'sticky'
+      and who.get('rr') == 'empty' and who.get('rh') == 'present' and who.get('nc') == 1 and 'pk' not in who,
+      "s. THE DEVICE: realm empty, a hint naming another realm, one kept realm: its key (sticky), no question", who)
+sl = padmap(SD)['sets'][0]['slots'][0]
+check(sl.get('kind') == 'combat' and (sl.get('c') or {}).get('key') == 'DSMAP', "s. ... THE BARS COME BACK: slot 1's fight layer from the kept fightBy", sl)
+check(SD.eval('SER(WowCompanionSpellsDB.faceBy)') == '{["%s"]={["a"]=1}}' % KEPT and SD.eval('WowCompanionSpellsDB.fightBy["%s"][1].key' % KEPT) == "DSMAP",
+      "s. ... the real stores untouched (an orphan with another value dropped, never over the real one)", SD.eval('SER(WowCompanionSpellsDB.faceBy)'))
+check(SD.eval('SER(WowCompanionSpellsDB.castBar["%s"])' % KEPT) == '{[1]={["id"]=331,["k"]="spell"}}'
+      and SD.eval('SER(WowCompanionSpellsDB.hmBy["%s"])' % KEPT) == '{["hp"]=5}',
+      "s. ... an orphan filled only stores the real key lacks or holds empty (castBar's empty table, hmBy none)", SD.eval('SER(WowCompanionSpellsDB.castBar)'))
+check(partials(SD)[0] == 0 and SD.eval('#WowCompanionDB.realmFixBak') == 1 and SD.eval('#WowCompanionDB.realmFixBak[1].items') == 4,
+      "s. ... every orphan out, all four kept in the fold's backup", partials(SD))
+check(SD.eval('WowCompanionSpellsDB.fightBy["Tolvar-CAMWOW US1 Realm 7 PvE"][1].id') == 5 and SD.eval('WowCompanionDB.lay["Brenna-Classic Beta PvE"].hud.dx') == 9,
+      "s. ... the other characters' settings untouched")
+check(SD.eval('SER(WowCompanionDB.who)') == '{["Player-1-Korvash"]={["c"]="SHAMAN",["i"]="Korvash",["k"]="%s"}}' % KEPT,
+      "s. ... the GUID's record: the kept key (nothing moved or renamed)", SD.eval('SER(WowCompanionDB.who)'))
+check(keys_of(SD, "Korvash") == "CAMWOW US1 Realm 7 PvE", "s. ... the name still holds settings under the one realm only", keys_of(SD, "Korvash"))
+SD.execute('WowCompanion.padMap.putFight(1, 1, 2, "command", "DSCHAT")')
+check(SD.eval('WowCompanionSpellsDB.fightBy["%s"][2].key' % KEPT) == "DSCHAT" and partials(SD)[0] == 0, "s. ... a new edit goes to the kept key")
+clean(SD, "s")
+
+# t a LIVE realm that differs from the one kept realm: the kept one wins, never flaps (this session or the next)
+TL = world(pre=DEV.replace('REALM = ""', 'REALM = "CAMWOW US1 Realm 9 PvE"'))
+who = (padmap(TL).get('dpad') or {}).get('who') or {}
+check(TL.eval('(WowCompanion.charKey())') == KEPT and who.get('rs') == 'sticky' and who.get('rr') == 'reported',
+      "t. a live realm other than the kept one: the kept key (sticky)", who)
+TL.execute('REALM = "CAMWOW US1 Realm 3 PvE"; NOW = NOW + 120; fire("PLAYER_ENTERING_WORLD", false, true); runTimers(NOW + 30)')
+check(TL.eval('(WowCompanion.charKey())') == KEPT, "t. ... the game reports a third realm later: the key never flaps")
+check(keys_of(TL, "Korvash") == "CAMWOW US1 Realm 7 PvE" and TL.eval('WowCompanionDB.realmOf.Korvash["CAMWOW US1 Realm 9 PvE"]') is None,
+      "t. ... a reported realm the settings do not live under is never remembered (no second realm for the name)", keys_of(TL, "Korvash"))
+clean(TL, "t")
+
+# u the same GUID logs in, the reported realm changed: its record's key, nothing renamed
+U = world(pre=saved(TL) + 'REALM = "CAMWOW US2 Realm 1 PvP"\n')
+who = (padmap(U).get('dpad') or {}).get('who') or {}
+check(U.eval('(WowCompanion.charKey())') == KEPT and who.get('rs') == 'guid' and who.get('gs') == 'same',
+      "u. the next session, the game reports another realm: this GUID's record (guid, gs same)", who)
+check(keys_of(U, "Korvash") == "CAMWOW US1 Realm 7 PvE" and U.eval('WowCompanionSpellsDB.fightBy["%s"][1].key' % KEPT) == "DSMAP",
+      "u. ... nothing renamed: the settings where they were, no key under the new realm")
+clean(U, "u")
+
+# v the GUID's server part changes, the id segment and class the same: the same key, the record moved to the new GUID
+V = world(pre=saved(TL) + 'REALM = ""\nUNITS.player.guid = "Player-2-Korvash"\n')
+who = (padmap(V).get('dpad') or {}).get('who') or {}
+check(V.eval('(WowCompanion.charKey())') == KEPT and who.get('rs') == 'guid-id' and who.get('gs') == 'server-changed',
+      "v. the GUID's server part changed (same id, same class): the same key (guid-id, gs server-changed)", who)
+check(V.eval('WowCompanionDB.who["Player-2-Korvash"].k') == KEPT and V.eval('WowCompanionDB.who["Player-1-Korvash"]') is None,
+      "v. ... the record moved to the new GUID")
+clean(V, "v")
+V2 = world(pre=saved(TL) + 'REALM = ""\nUNITS.player.guid = "Player-2-Korvash"\nCLASS = "WARRIOR"\n')
+check(V2.eval('(WowCompanion.charKey())') != KEPT, "v. ... the same id but ANOTHER class: never that key", V2.eval('(WowCompanion.charKey())'))
+clean(V2, "v2")
+
+# w ONE NAME UNDER TWO REALMS: no key, the candidates; the pick by the padtab's third page, stored by GUID
+TWO = ('REALM = ""\nWowCompanionDB = {}\nWowCompanionSpellsDB = { fightBy = { ["%s"] = %s, ["Korvash-Classic Beta PvE"] = { [1] = { t = "spell", id = 7 } } }, '
+       'faceBy = { ["%s"] = { a = 1, b = 2 } }, ["Brenna-Classic Beta PvE"] = { x = 1 } }\n') % (KEPT, FIGHT, KEPT)
+W = world(pre=TWO)
+who = (padmap(W).get('dpad') or {}).get('who') or {}
+pk = who.get('pk') or []
+check(W.eval('(WowCompanion.charKey())') is None and who.get('rs') == 'ask' and 'r' not in who
+      and [(c.get('r'), c.get('n')) for c in pk] == [("CAMWOW US1 Realm 7 PvE", 9), ("Classic Beta PvE", 2)],
+      "w. one name under two realms, nothing names one: no key, the question's candidates (realm, settings)", who)
+ok = W.eval('WowCompanion.padMap.putFight(1, 1, 2, "command", "DSCHAT")')
+check(ok is not True and W.eval('WowCompanionSpellsDB.fightBy["%s"][2]' % KEPT) is None, "w. ... meanwhile nothing is written (no key)", ok)
+W.execute('COMBAT = true')
+padtab(W, 39, 38, 37, 10)
+check(W.eval('(WowCompanion.charKey())') is None, "w. ... a pick in a fight is refused (asked again after it)")
+W.execute('COMBAT = false')
+padtab(W, 39, 38, 37, 10)
+who = (padmap(W).get('dpad') or {}).get('who') or {}
+check(W.eval('(WowCompanion.charKey())') == KEPT and who.get('rs') == 'picked' and 'pk' not in who
+      and W.eval('WowCompanionDB.who["Player-1-Korvash"].k') == KEPT,
+      "w. ... the pick (padtab 39, 38, 37, 10 = the first): its key (picked), stored as this GUID's record", who)
+W.execute('WowCompanion.padMap.putFight(1, 1, 2, "command", "DSCHAT")')
+check(W.eval('WowCompanionSpellsDB.fightBy["%s"][2].key' % KEPT) == "DSCHAT" and W.eval('WowCompanionSpellsDB.fightBy["Korvash-Classic Beta PvE"][1].id') == 7,
+      "w. ... edits go to the picked key; the other realm's settings untouched")
+clean(W, "w")
+W2 = world(pre=saved(W) + 'REALM = "Classic Beta PvE"\n')
+who = (padmap(W2).get('dpad') or {}).get('who') or {}
+check(W2.eval('(WowCompanion.charKey())') == KEPT and who.get('rs') == 'guid' and 'pk' not in who,
+      "w. ... the next login: the picked key from the record, no question (even with the other realm reported)", who)
+clean(W2, "w2")
+# "a new character" (code 9): its own fresh key, never one of the candidates
+WN = world(pre=TWO)
+padtab(WN, 39, 38, 37, 9)
+check(WN.eval('(WowCompanion.charKey())') == "Korvash-Forever" and WN.eval('WowCompanion.charKeySource()') == "new"
+      and WN.eval('WowCompanionDB.who["Player-1-Korvash"].k') == "Korvash-Forever",
+      "w. ... 'a new character' (padtab 39, 38, 37, 9): a fresh key of its own, recorded", WN.eval('(WowCompanion.charKey())'))
+clean(WN, "wn")
+# a lost pick code (no question pending) does nothing
+WX = world(pre=saved(W2))
+padtab(WX, 39, 38, 37, 11)
+check(WX.eval('(WowCompanion.charKey())') == KEPT, "w. ... a pick code with no question pending changes nothing")
+clean(WX, "wx")
+# a NEW character while other characters' settings exist: no question, its own key
+WB = world(pre=TWO + 'WHO = "Saelis"\n')
+who = (padmap(WB).get('dpad') or {}).get('who') or {}
+check(WB.eval('(WowCompanion.charKey())') == "Saelis-Forever" and who.get('rs') == 'new' and 'pk' not in who,
+      "w. a NEW character while other characters' settings exist: never asked, its own key (new)", who)
+clean(WB, "wb")
+
+# x a brand-new character: the game's realm, else its hint, else "Name-Forever"; the same next session
+for label, pre, want in (("the game's realm", 'REALM = "Pool A"\n', "Korvash-Pool A"),
+                         ("the hint", 'REALM = ""\nGetNormalizedRealmName = function() return "PoolB" end\n', "Korvash-PoolB"),
+                         ("neither", 'REALM = ""\n', "Korvash-Forever")):
+    X = world(pre='WowCompanionDB = {}\nWowCompanionSpellsDB = {}\n' + pre)
+    check(X.eval('(WowCompanion.charKey())') == want and X.eval('WowCompanion.charKeySource()') == "new",
+          "x. a brand-new character, %s: %s (new)" % (label, want), X.eval('(WowCompanion.charKey())'))
+    X.execute('WowCompanion.padMap.putFight(1, 1, 2, "command", "DSCHAT")')
+    X2 = world(pre=saved(X) + 'REALM = "Pool C"\nGetNormalizedRealmName = function() return "PoolD" end\n')
+    check(X2.eval('(WowCompanion.charKey())') == want and X2.eval('WowCompanion.charKeySource()') == "guid",
+          "x. ... the next session (other realms reported): the same key (guid)", X2.eval('(WowCompanion.charKey())'))
+    clean(X, "x"); clean(X2, "x2")
+
+# y two different characters never resolve to the same key: another NAME never (a key is the name's), and a same-name record of ANOTHER
+# class is another character (a deleted and remade one); k11 (the review round 1, the user's ruling "no one can have those names"): a
+# same-name record of THIS class under another GUID is this character (its GUID changed): its key, the record re-pointed, no question
+HUNTER = ('REALM = "Realm"\nWowCompanionSpellsDB = { fightBy = { ["Korvash-Realm"] = %s } }\n'
+          'WowCompanionDB = { who = { ["Player-1-Hunter"] = { k = "Korvash-Realm", c = "%%s", i = "Hunter" } } }\n') % FIGHT
+for cls, label in (("WARRIOR", "another class"), ("SHAMAN", "the same class")):
+    Y = world(pre=HUNTER % cls)
+    k = Y.eval('(WowCompanion.charKey())')
+    if cls == "SHAMAN":
+        check(k == "Korvash-Realm" and Y.eval('WowCompanion.charKeySource()') == "live" and Y.eval('WowCompanion.charKeyInfo().gs') == "id-changed"
+              and Y.eval('WowCompanionDB.who["Player-1-Hunter"]') is None and Y.eval('WowCompanionDB.who["Player-1-Korvash"].k') == "Korvash-Realm",
+              "y. k11 another GUID of the same class holds Korvash-Realm: the same name = this character: that key, the record re-pointed", k)
+    else:
+        check(k == "Korvash-Forever" and Y.eval('WowCompanionSpellsDB.fightBy["Korvash-Realm"][1].key') == "DSMAP"
+              and Y.eval('WowCompanionSpellsDB.fightBy["Korvash-Realm"][2]') is None and Y.eval('WowCompanionDB.who["Player-1-Hunter"].k') == "Korvash-Realm",
+              "y. another GUID of ANOTHER class holds Korvash-Realm: never that key (a key of its own), its record kept", k)
+    clean(Y, "y")
+YO = world(pre=HUNTER % "SHAMAN" + 'WHO = "Saelis"\n')
+check(YO.eval('(WowCompanion.charKey())') == "Saelis-Realm" and YO.eval('WowCompanionDB.who["Player-1-Hunter"].k') == "Korvash-Realm",
+      "y. another NAME on the same realm: its own key, the other's record untouched", YO.eval('(WowCompanion.charKey())'))
+clean(YO, "yo")
+
+# z the padmap's diagnostics: words and counts only; no GUID ever leaves the game
+Z = world(pre=DEV)
+sent = "\n".join(x for x in (Z.eval('SENT[%d]' % i) for i in range(1, int(Z.eval('#SENT')) + 1)) if '"type":"svkeep"' not in x)
+who = (padmap(Z).get('dpad') or {}).get('who') or {}
+check(set(who) <= {"n", "r", "rs", "rh", "c", "rr", "nc", "uc", "gs", "pk", "ls"} and isinstance(who.get('nc'), int) and isinstance(who.get('uc'), int)
+      and isinstance(who.get('ls'), int)
+      and who.get('gs') in ("same", "server-changed", "id-changed", "new", "unknown"), "z. the who's fields: words and counts", who)
+check("Player-1-Korvash" not in sent, "z. no GUID in any document sent (but svkeep: the account's own save file, kept by the app)")
+clean(Z, "z")
+
+# ================================================================ k11 THE k10 REVIEW, ROUND 1
+# aa a realm with ZERO settings (a k6-k9 realmOf entry: a record of this GUID, a k6 `true`; an empty-table key) is not where the settings
+# live: the game's realm or hint naming it never moves the key off the real settings, never pins it, never takes the orphans
+R7 = "Korvash-Realm 7"
+ZERO = {
+    "a k9 record of this GUID": 'WowCompanionDB = { realmOf = { Korvash = { Other = { s = "1", c = "SHAMAN", g = "Player-1-Korvash" } } } }\n',
+    "a k6 true entry": 'WowCompanionDB = { realmOf = { Korvash = { Other = true } } }\n',
+    "an empty-table key": 'WowCompanionDB = { lay = { ["Korvash-Other"] = {} } }\n',
+}
+AA_SP = ('WowCompanionSpellsDB = { fightBy = { ["%s"] = %s }, faceBy = { ["%s"] = { a = 1, b = 2, c = 3 } }, attackBy = { ["Korvash-?"] = { v = 5 } }, '
+         'hmBy = { ["Korvash-"] = { hp = 5 } } }\n') % (R7, FIGHT, R7)
+for label, core in ZERO.items():
+    for how, realm in (("the game's realm names it", 'REALM = "Other"\n'),
+                       ("the realm empty, the hint names it", 'REALM = ""\nGetNormalizedRealmName = function() return "Other" end\n')):
+        A1 = world(pre=AA_SP + core + realm)
+        who = (padmap(A1).get('dpad') or {}).get('who') or {}
+        check(A1.eval('(WowCompanion.charKey())') == R7 and who.get('rs') == 'sticky' and who.get('nc') == 1 and 'pk' not in who
+              and A1.eval('WowCompanionDB.who["Player-1-Korvash"].k') == R7,
+              "aa. k11 %s with no settings, %s: the key stays where the settings live (sticky), recorded so" % (label, how), who)
+        check(A1.eval('WowCompanionSpellsDB.attackBy["%s"].v' % R7) == 5 and A1.eval('WowCompanionSpellsDB.attackBy["Korvash-Other"]') is None and A1.eval('SER(WowCompanionSpellsDB.hmBy)') == '{["%s"]={["hp"]=5}}' % R7
+              and partials(A1)[0] == 0 and A1.eval('#WowCompanionDB.realmFixBak') == 1,
+              "aa. ... the orphans folded into the REAL key (never into the empty one), the backup kept", A1.eval('SER(WowCompanionSpellsDB.attackBy)'))
+        check(A1.eval('WowCompanionSpellsDB.fightBy["%s"][1].key' % R7) == "DSMAP" and A1.eval('SER(WowCompanionSpellsDB.faceBy["%s"])' % R7) == '{["a"]=1,["b"]=2,["c"]=3}'
+              and A1.eval('(function() for _, db in ipairs({ WowCompanionSpellsDB }) do for _, t in pairs(db) do if type(t) == "table" and t["Korvash-Other"] ~= nil then return true end end end return false end)()') is False,
+              "aa. ... the real stores as they were, nothing written under Korvash-Other")
+        A2 = world(pre=saved(A1) + realm)
+        check(A2.eval('(WowCompanion.charKey())') == R7 and A2.eval('WowCompanion.charKeySource()') == "guid",
+              "aa. ... the next session (the same report): the real key from the record (guid)", A2.eval('(WowCompanion.charKey())'))
+        clean(A1, "aa"); clean(A2, "aa2")
+# two realms with settings and an empty one the game names: asked, the empty one never a candidate
+A3 = world(pre=AA_SP + 'WowCompanionSpellsDB.faceBy["Korvash-Classic Beta PvE"] = { a = 9 }\n' + ZERO["a k6 true entry"] + 'REALM = "Other"\n')
+who = (padmap(A3).get('dpad') or {}).get('who') or {}
+check(A3.eval('(WowCompanion.charKey())') is None and who.get('rs') == 'ask' and [c.get('r') for c in who.get('pk') or []] == ["Classic Beta PvE", "Realm 7"]
+      and who.get('nc') == 2, "aa. two realms hold settings, the game names an EMPTY third: asked, the empty one never a candidate", who)
+clean(A3, "aa3")
+
+# ab a NEW key prefers a realm the name is already known under (no settings there) over a spelling of our own: the hint after norm()
+for label, pre, want in (("the hint names it after norm()", 'GetNormalizedRealmName = function() return "Realm7" end\n', R7),
+                         ("no hint, the only one", '', R7)):
+    AB = world(pre='REALM = ""\nWowCompanionDB = { realmOf = { Korvash = { ["Realm 7"] = true } } }\nWowCompanionSpellsDB = {}\n' + pre)
+    check(AB.eval('(WowCompanion.charKey())') == want and AB.eval('WowCompanion.charKeySource()') == "new",
+          "ab. k11 nothing holds settings, the name known under Realm 7, %s: %s (new), never Korvash-Realm7" % (label, want), AB.eval('(WowCompanion.charKey())'))
+    clean(AB, "ab")
+
+# ac THE REVIEW'S PROBE: session 1 sticky; session 2 with a WHOLLY different GUID (same name and class): the same key, no question
+AC = world(pre=saved(SD) + 'REALM = ""\nGetNormalizedRealmName = function() return "CAMWOWUS1Realm9PvE" end\nUNITS.player.guid = "Player-77-Zed99"\n')
+who = (padmap(AC).get('dpad') or {}).get('who') or {}
+check(AC.eval('(WowCompanion.charKey())') == KEPT and who.get('rs') == 'sticky' and 'pk' not in who and who.get('gs') == 'id-changed',
+      "ac. k11 another GUID entirely (same name, same class): the kept key (sticky), no question, gs id-changed", who)
+check(AC.eval('WowCompanionDB.who["Player-77-Zed99"].k') == KEPT and AC.eval('WowCompanionDB.who["Player-1-Korvash"]') is None,
+      "ac. ... the record re-pointed to the new GUID (the old one dropped)", AC.eval('SER(WowCompanionDB.who)'))
+AC2 = world(pre=saved(AC) + 'REALM = ""\nUNITS.player.guid = "Player-77-Zed99"\n')
+check(AC2.eval('(WowCompanion.charKey())') == KEPT and AC2.eval('WowCompanion.charKeySource()') == "guid", "ac. ... the next login: guid")
+ACL = world(pre=saved(SD) + 'REALM = "CAMWOW US1 Realm 7 PvE"\nUNITS.player.guid = "Player-88-Other11"\n')
+check(ACL.eval('(WowCompanion.charKey())') == KEPT and ACL.eval('WowCompanion.charKeySource()') == "live" and ACL.eval('WowCompanion.charKeyInfo().pk') is None,
+      "ac. ... the game names the kept realm exactly, another GUID: live, no question")
+clean(AC, "ac"); clean(AC2, "ac2"); clean(ACL, "acl")
+# two realms with settings, one held by a same-name record of this class under another GUID: that one, no question
+AD = world(pre=TWO.replace('WowCompanionDB = {}', 'WowCompanionDB = { who = { ["Player-5-Old"] = { k = "Korvash-Classic Beta PvE", c = "SHAMAN", i = "Old" } } }'))
+check(AD.eval('(WowCompanion.charKey())') == "Korvash-Classic Beta PvE" and AD.eval('WowCompanion.charKeySource()') == "sticky"
+      and AD.eval('WowCompanionDB.who["Player-5-Old"]') is None,
+      "ac. two realms hold settings, a same-name record of this class (another GUID) holds one: that one, no question", AD.eval('(WowCompanion.charKey())'))
+clean(AD, "ad")
+
+# ad the diagnostics' counts on EVERY path: the guid session still counts the realms the name holds settings under
+U2 = world(pre=saved(SD) + 'REALM = ""\n')
+who = (padmap(U2).get('dpad') or {}).get('who') or {}
+check(who.get('rs') == 'guid' and who.get('nc') == 1 and who.get('uc') == 0 and who.get('gs') == 'same',
+      "ad. k11 a guid session: name candidates 1 (never 0), guid same", who)
+clean(U2, "ad")
+
+# ae the login's stamp: one per PLAYER_LOGIN (a /reload or a relog is a new one); a number only
+L1 = world(pre=DEV)
+L2 = world(pre=saved(L1) + 'NOW = NOW + 45\n')
+s1 = ((padmap(L1).get('dpad') or {}).get('who') or {}).get('ls')
+s2 = ((padmap(L2).get('dpad') or {}).get('who') or {}).get('ls')
+check(isinstance(s1, int) and isinstance(s2, int) and s1 > 0 and s2 > 0 and s1 != s2,
+      "ae. k11 the padmap's who.ls: the login's stamp, a new one at the next PLAYER_LOGIN (the app's Later lasts until it changes)", (s1, s2))
+check(L2.eval('WowCompanion.ck.ls') == s2 and L2.eval('WowCompanion.charKeyInfo().ls') == s2, "ae. ... the add-on's own stamp of this login")
+clean(L1, "ae"); clean(L2, "ae2")
+
+# ================================================================ k12 THE k10 REVIEW, ROUND 2
+# af THE REVIEW'S PROBE: session 1 with our Spells add-on turned off (the game's blocked-action pop-up: Disable + ReloadUI), its table nil
+SPOFF = 'C_AddOns = { IsAddOnLoaded = function(n) if n == "WowCompanionSpells" then return false, false end return true, true end }\n'
+POOL = 'REALM = ""\nGetNormalizedRealmName = function() return "PoolHint" end\n'
+RR7 = "Korvash-Real Realm 7"
+def bkeys(L, store):
+    return L.eval('(function() local o = {} for k in pairs(WowCompanionSpellsDB.%s or {}) do o[#o + 1] = k end table.sort(o) return table.concat(o, " | ") end)()' % store)
+F1 = boot(["safety"], pre=HELP + POOL + SPOFF + 'WowCompanionDB = { lay = { ["Korvash-"] = { hud = 1 } } }\nWowCompanionSpellsDB = nil\n')
+F1.execute('fire("PLAYER_LOGIN")')
+check(ck(F1)["k"] is None and F1.eval('WowCompanion.charKeySource()') == "none" and F1.eval('WowCompanion.charKeySpellsSeen()') is False,
+      "af. k12 the Spells add-on off, nothing seen for the name: NO key (never a one-off new key)", ck(F1))
+check(F1.eval('WowCompanionDB.who') is None and F1.eval('WowCompanionDB.realmOf') is None and F1.eval('WowCompanionDB.realmFixBak') is None
+      and F1.eval('WowCompanionDB.lay["Korvash-"].hud') == 1,
+      "af. ... nothing recorded, nothing folded (the core orphan left as it is)", F1.eval('SER(WowCompanionDB)'))
+clean(F1, "af1")
+# session 2: both tables, the real settings under Real Realm 7, an orphan over them
+S2PRE = (POOL + 'WowCompanionDB = %s\n' % F1.eval('SER(WowCompanionDB)') +
+         'WowCompanionSpellsDB = { fightBy = { ["%s"] = { [1] = { t = "spell", id = 5 } }, ["Korvash-"] = { [2] = { t = "spell", id = 9 } } }, '
+         'faceBy = { ["%s"] = { a = 1 } } }\n' % (RR7, RR7))
+F2 = boot(["safety"], pre=HELP + S2PRE)
+F2.execute('fire("PLAYER_LOGIN")')
+check(ck(F2) == {"k": RR7, "n": "Korvash", "r": "Real Realm 7", "s": "sticky"} and F2.eval('WowCompanionDB.who["Player-1-Korvash"].k') == RR7,
+      "af. ... the next session (both tables): the real key (sticky), recorded", ck(F2))
+check(bkeys(F2, "fightBy") == RR7 and F2.eval('WowCompanionSpellsDB.fightBy["%s"][1].id' % RR7) == 5 and F2.eval('WowCompanionSpellsDB.fightBy["%s"][2]' % RR7) is None
+      and F2.eval('#WowCompanionDB.realmFixBak') == 1 and F2.eval('WowCompanionDB.lay["%s"].hud' % RR7) == 1,
+      "af. ... the orphan never folded elsewhere (the real fightBy kept as it was, the orphan dropped and backed up; the core orphan into the real key)",
+      (bkeys(F2, "fightBy"), F2.eval('SER(WowCompanionDB)')))
+clean(F2, "af2")
+# a key found in the core table while the Spells add-on is off: this session's only (no record, no fold)
+F3 = boot(["safety"], pre=HELP + POOL + SPOFF + 'WowCompanionDB = { lay = { ["%s"] = { hud = 2 }, ["Korvash-"] = { hud = 1 } } }\nWowCompanionSpellsDB = nil\n' % RR7)
+F3.execute('fire("PLAYER_LOGIN")')
+check(ck(F3)["k"] == RR7 and F3.eval('WowCompanion.ck.temp') is True and F3.eval('WowCompanionDB.who') is None
+      and F3.eval('WowCompanionDB.realmOf') is None and F3.eval('WowCompanionDB.lay["Korvash-"].hud') == 1 and F3.eval('WowCompanionDB.realmFixBak') is None,
+      "af. the Spells add-on off, the core table names the realm: that key for this session only (no record, no realm remembered, no fold)",
+      F3.eval('SER(WowCompanionDB)'))
+clean(F3, "af3")
+# a record from before k12 (a one-off new key recorded while the settings could not be seen): it follows the ONE realm that holds them
+F4 = boot(["safety"], pre=HELP + S2PRE.replace('WowCompanionDB = {', 'WowCompanionDB = { who = { ["Player-1-Korvash"] = { k = "Korvash-PoolHint", c = "SHAMAN", i = "Korvash" } },', 1))
+F4.execute('fire("PLAYER_LOGIN")')
+check(ck(F4)["k"] == RR7 and ck(F4)["s"] == "sticky" and F4.eval('WowCompanionDB.who["Player-1-Korvash"].k') == RR7
+      and bkeys(F4, "fightBy") == RR7 and F4.eval('WowCompanionSpellsDB.fightBy["Korvash-PoolHint"]') is None,
+      "af. a k10/k11 record whose key holds no settings, ONE realm holds them: that key (sticky), the record re-pointed, nothing under the old key",
+      (ck(F4), F4.eval('SER(WowCompanionDB.who)'), bkeys(F4, "fightBy")))
+F4b = boot(["safety"], pre=HELP + 'REALM = ""\nWowCompanionDB = %s\nWowCompanionSpellsDB = %s\n' % (F4.eval('SER(WowCompanionDB)'), F4.eval('SER(WowCompanionSpellsDB)')))
+F4b.execute('fire("PLAYER_LOGIN")')
+check(ck(F4b)["k"] == RR7 and ck(F4b)["s"] == "guid", "af. ... the next login: guid", ck(F4b))
+clean(F4, "af4"); clean(F4b, "af4b")
+# the record's key holds settings of its own: kept (guid), never moved
+F5 = boot(["safety"], pre=HELP + S2PRE.replace('WowCompanionDB = {', 'WowCompanionDB = { who = { ["Player-1-Korvash"] = { k = "Korvash-PoolHint", c = "SHAMAN", i = "Korvash" } }, bags = { ["Korvash-PoolHint"] = { x = 1 } },', 1))
+F5.execute('fire("PLAYER_LOGIN")')
+check(ck(F5)["k"] == "Korvash-PoolHint" and ck(F5)["s"] == "guid", "af. a record whose key HOLDS settings: kept (guid), whatever else the name holds", ck(F5))
+# the player's pick (p = 1, "New character"): never moved by itself, even with no settings of its own yet
+F6 = boot(["safety"], pre=HELP + S2PRE.replace('WowCompanionDB = {', 'WowCompanionDB = { who = { ["Player-1-Korvash"] = { k = "Korvash-Forever", c = "SHAMAN", i = "Korvash", p = 1 } },', 1))
+F6.execute('fire("PLAYER_LOGIN")')
+check(ck(F6)["k"] == "Korvash-Forever" and ck(F6)["s"] == "guid" and F6.eval('WowCompanionDB.who["Player-1-Korvash"].p') == 1,
+      "af. the player's own pick (p = 1) with no settings yet: kept (guid), never moved to the realm that holds settings", ck(F6))
+# two realms hold settings, the record's key none: kept (never a guess, never a question for a recorded character)
+F7 = boot(["safety"], pre=HELP + S2PRE.replace('WowCompanionDB = {', 'WowCompanionDB = { who = { ["Player-1-Korvash"] = { k = "Korvash-PoolHint", c = "SHAMAN", i = "Korvash" } },', 1)
+          .replace('faceBy = {', 'faceBy = { ["Korvash-Classic Beta PvE"] = { z = 1 },', 1))
+F7.execute('fire("PLAYER_LOGIN")')
+check(ck(F7)["k"] == "Korvash-PoolHint" and ck(F7)["s"] == "guid", "af. the record's key holds none, TWO realms do: the record kept (no guess)", ck(F7))
+clean(F5, "af5"); clean(F6, "af6"); clean(F7, "af7")
+# the Spells add-on loaded with no saved table yet (a first install): a nil table is empty, a new character's key as before
+F8 = boot(["safety"], pre=HELP + 'REALM = "Pool A"\nC_AddOns = { IsAddOnLoaded = function() return true, true end }\nWowCompanionDB = nil\nWowCompanionSpellsDB = nil\n')
+F8.execute('fire("PLAYER_LOGIN")')
+check(ck(F8)["k"] == "Korvash-Pool A" and ck(F8)["s"] == "new" and F8.eval('WowCompanionDB.who["Player-1-Korvash"].k') == "Korvash-Pool A",
+      "af. a first install (the Spells add-on loaded, no saved table yet): the new key, recorded", ck(F8))
+clean(F8, "af8")
+
+# ag who.ad: the app's adoption only for a fresh key nobody chose
+G1 = world(pre='WowCompanionDB = {}\nWowCompanionSpellsDB = {}\nREALM = ""\n')
+who = (padmap(G1).get('dpad') or {}).get('who') or {}
+check(who.get('rs') == 'new' and who.get('ad') == 1, "ag. k12 a fresh key nobody chose (new, no question): who.ad 1", who)
+G2 = world(pre=saved(G1) + 'REALM = ""\n')
+who = (padmap(G2).get('dpad') or {}).get('who') or {}
+check(who.get('rs') == 'guid' and 'ad' not in who, "ag. ... the next session (guid): no ad", who)
+clean(G1, "ag1"); clean(G2, "ag2")
+for code, want_src in ((9, "new"), (10, "picked")):
+    GP = world(pre=TWO)
+    padtab(GP, 39, 38, 37, code)
+    who = (padmap(GP).get('dpad') or {}).get('who') or {}
+    check(who.get('rs') == want_src and 'ad' not in who and GP.eval('WowCompanionDB.who["Player-1-Korvash"].p') == 1,
+          "ag. the question's answer (padtab ... %d, %s): no ad (never another realm's backup over the answer), the record marked p = 1" % (code, want_src), who)
+    GQ = world(pre=saved(GP) + 'REALM = "Classic Beta PvE"\n')
+    check(GQ.eval('WowCompanion.charKeySource()') == "guid" and GQ.eval('(WowCompanion.charKey())') == GP.eval('(WowCompanion.charKey())')
+          and GQ.eval('WowCompanion.charKeyInfo().pk') is None,
+          "ag. ... the next login: the answer's key (guid), no question", GQ.eval('(WowCompanion.charKey())'))
+    clean(GP, "agp%d" % code); clean(GQ, "agq%d" % code)
+who = (padmap(SD).get('dpad') or {}).get('who') or {}
+check(who.get('rs') == 'sticky' and 'ad' not in who, "ag. the device's sticky key: no ad", who)
+
+# ================================================================ hs THE HOME KEYS (PadMap m181 / m183: rbm / ctop through WC.charKey)
+# the 1515 merge (Safety k12): a name with nothing anywhere now gets a fresh key ("new", x above); "no key" is the add-on ASKING (one
+# name holding settings under 2+ realms, nothing naming one) - Home's two add-on stores (rbm: the DS toolbar's mirror bit, ctop: the
+# top-screen combat bar's flag) read nothing and write nothing then, and the answer's key is read at once (the next padmap says it)
 check('local kNow = whoKey()' in TEXT["padmap"] and 'R.rbmDB()[k] = on and 1 or 0' in TEXT["padmap"] and 'R.ctopDB()[k] = on and 1 or 0' in TEXT["padmap"]
-      and 'ct = k and (R.ctopOn() and 1 or 0) or nil' in TEXT["padmap"], "s. the tag: PadMap m181 (rbm / ctop under whoKey, `ct` nil without a key)")
-S1 = world(pre='REALM = ""\nWowCompanionSpellsDB, WowCompanionDB = {}, {}\n')
-ok1, why1 = S1.eval('WowCompanion.padMap.dpadMirror(true)')
-ok2, why2 = S1.eval('WowCompanion.padMap.combatTop(true)')
-check(S1.eval('(WowCompanion.charKey())') is None and ok1 is False and why1 == "no character" and ok2 is False and why2 == "no character",
-      "s. no key: the mirror bit and the top-screen flag refused (\"no character\")", (ok1, why1, ok2, why2))
-check(partials(S1)[0] == 0 and S1.eval('SER(WowCompanionSpellsDB.rbm)') in ('nil', '{}') and S1.eval('SER(WowCompanionSpellsDB.ctop)') in ('nil', '{}'),
-      "s. ... nothing written: no partial key, rbm / ctop hold no key at all", (partials(S1), S1.eval('SER(WowCompanionSpellsDB.rbm)')))
+      and 'ct = k and (R.ctopOn() and 1 or 0) or nil' in TEXT["padmap"] and "m183 THE 1515 MERGE INTO MOVABLE HOME" in TEXT["padmap"],
+      "hs. the tag: PadMap m183 (rbm / ctop under whoKey, `ct` nil without a key)")
+R7, R8 = "Korvash-Realm 7", "Korvash-Realm 8"
+ASK = ('REALM = ""\nWowCompanionDB = {}\n'
+       'WowCompanionSpellsDB = { dpad = { ["%(a)s"] = true, ["%(b)s"] = true }, faceBy = { ["%(a)s"] = { a = 1 }, ["%(b)s"] = { a = 2, b = 3 } },\n'
+       '  rbm = { ["%(a)s"] = 1, ["%(b)s"] = 0, ["Other-Realm 7"] = 0 }, ctop = { ["%(a)s"] = 1, ["%(b)s"] = 0, ["Other-Realm 7"] = 1 } }\n') % {"a": R7, "b": R8}
+HOME0 = '{["Korvash-Realm 7"]=1,["Korvash-Realm 8"]=0,["Other-Realm 7"]=%d}'
+S1 = world(pre=ASK)
 dp = padmap(S1).get('dpad') or {}
-check('ct' not in dp and dp.get('m') == 0 and 'r' not in (dp.get('who') or {}), "s. ... the padmap's `ct` absent (unknown, not off), m = 0, no realm", dp.get('ct'))
-check(S1.eval('WowCompanion.padMap.combatTopOn()') is False, "s. ... ActionBar's Wings read off (no character's flag read)")
-clean(S1, "s1")
-LATE = ('REALM = ""\nWowCompanionSpellsDB = { dpad = { ["Korvash-Realm"] = true }, rbm ={ ["Korvash-Realm"] = 1, ["Other-Realm"] = 0 }, ctop = { ["Korvash-Realm"] = 1, ["Other-Realm"] = 0 } }\n'
-        'WowCompanionDB = {}\n')
-S2 = world(pre=LATE)
-dp = padmap(S2).get('dpad') or {}
-check('ct' not in dp and dp.get('m') == 0 and S2.eval('WowCompanion.padMap.combatTopOn()') is False,
-      "s. the character's bits kept, no key at login: not read (today's sides, the flag unknown)", dp)
-n_before = len(docs(S2, 'padmap'))
-S2.execute('REALM = "Realm"; tick(0.1); runTimers(NOW + 2)')
-ds = docs(S2, 'padmap')
-dp = ds[-1]['m'].get('dpad') or {} if ds else {}
-check(len(ds) > n_before and dp.get('ct') == 1 and dp.get('m') == 1 and dp.get('d') == {"1": "map", "2": "radial", "3": "chat", "4": "home"}
-      and (dp.get('who') or {}).get('r') == "Realm",
-      "s. THE KEY COMES LATE: the next padmap (sent by itself) says this character's own bits (ct 1, m 1, Left = map)", dp)
-check(S2.eval('router(1).a["wc-roombar"]') == "WowCompanionPadMap" and S2.eval('WowCompanion.padMap.combatTopOn()') is True,
-      "s. ... read again under the real key: the sides re-bound (Left clicks the Map), the Wings' flag on", S2.eval('router(1).a["wc-roombar"]'))
-check(S2.eval('SER(WowCompanionSpellsDB.rbm)') == '{["Korvash-Realm"]=1,["Other-Realm"]=0}'
-      and S2.eval('SER(WowCompanionSpellsDB.ctop)') == '{["Korvash-Realm"]=1,["Other-Realm"]=0}',
-      "s. ... nothing written over them (read before any write)", S2.eval('SER(WowCompanionSpellsDB.rbm)'))
-S2.execute('WowCompanion.padMap.combatTop(false); WowCompanion.padMap.dpadMirror(false); runTimers(NOW + 1)')
-check(S2.eval('SER(WowCompanionSpellsDB.ctop)') == '{["Korvash-Realm"]=0,["Other-Realm"]=0}'
-      and S2.eval('SER(WowCompanionSpellsDB.rbm)') == '{["Korvash-Realm"]=0,["Other-Realm"]=0}' and partials(S2)[0] == 0,
-      "s. ... an edit then: under the whole key only (an explicit 0), another character's untouched, no partial key", S2.eval('SER(WowCompanionSpellsDB.ctop)'))
-clean(S2, "s2")
+who = dp.get('who') or {}
+pk = [c.get('r') for c in (who.get('pk') or [])]
+check(S1.eval('(WowCompanion.charKey())') is None and who.get('rs') == 'ask' and 'r' not in who and sorted(pk) == ["Realm 7", "Realm 8"],
+      "hs. ASKING (two realms hold the name's settings): no key, no realm in who, the question's two candidates", who)
+check('ct' not in dp and dp.get('m') == 0 and S1.eval('WowCompanion.padMap.combatTopOn()') is False,
+      "hs. ... nothing read: `ct` absent (unknown, not off), m = 0 (today's sides), the Wings' flag off", dp)
+ok1, why1 = S1.eval('WowCompanion.padMap.dpadMirror(true)')
+ok2, why2 = S1.eval('WowCompanion.padMap.combatTop(false)')
+padtab(S1, 39, 38, 37, 21)
+padtab(S1, 39, 38, 37, 22)
+check(ok1 is False and why1 == "no character" and ok2 is False and why2 == "no character" and S1.eval('(WowCompanion.charKey())') is None,
+      "hs. ... both refused (\"no character\"), the app's codes 21 / 22 too (no key, still asking)", (ok1, why1, ok2, why2))
+check(S1.eval('SER(WowCompanionSpellsDB.rbm)') == HOME0 % 0 and S1.eval('SER(WowCompanionSpellsDB.ctop)') == HOME0 % 1 and partials(S1)[0] == 0,
+      "hs. ... nothing written: rbm / ctop as saved, no partial key", (S1.eval('SER(WowCompanionSpellsDB.rbm)'), S1.eval('SER(WowCompanionSpellsDB.ctop)')))
+clean(S1, "hs1")
+for label, want, ctw, mw in (("Realm 7", R7, 1, 1), ("Realm 8", R8, 0, 0)):
+    S2 = world(pre=ASK)
+    pk = [c.get('r') for c in (((padmap(S2).get('dpad') or {}).get('who') or {}).get('pk') or [])]
+    n_before = len(docs(S2, 'padmap'))
+    padtab(S2, 39, 38, 37, 10 + pk.index(label))
+    S2.execute('tick(0.1); runTimers(NOW + 2)')
+    ds = docs(S2, 'padmap')
+    dp = (ds[-1]['m'].get('dpad') or {}) if ds else {}
+    check(S2.eval('(WowCompanion.charKey())') == want and S2.eval('WowCompanion.charKeySource()') == "picked" and len(ds) > n_before
+          and dp.get('ct') == ctw and dp.get('m') == mw and (dp.get('who') or {}).get('r') == label and 'pk' not in (dp.get('who') or {}),
+          "hs. THE PICK (%s): the next padmap (sent by itself) says that key's own bits (ct %d, m %d), who.r = %s" % (label, ctw, mw, label), dp)
+    side = "WowCompanionPadMap" if mw else "WowCompanionPadChat"
+    check(S2.eval('router(1).a["wc-roombar"]') == side and S2.eval('WowCompanion.padMap.combatTopOn()') is (ctw == 1),
+          "hs. ... read again under the picked key: Left clicks the %s, the Wings' flag %s" % (side.replace("WowCompanionPad", ""), "on" if ctw else "off"), S2.eval('router(1).a["wc-roombar"]'))
+    check(S2.eval('SER(WowCompanionSpellsDB.rbm)') == HOME0 % 0 and S2.eval('SER(WowCompanionSpellsDB.ctop)') == HOME0 % 1,
+          "hs. ... nothing written over them by the pick", S2.eval('SER(WowCompanionSpellsDB.rbm)'))
+    padtab(S2, 39, 38, 37, 20 + (1 - mw))
+    padtab(S2, 39, 38, 37, 22 + (1 - ctw))
+    S2.execute('runTimers(NOW + 1)')
+    other = R8 if want == R7 else R7
+    check(S2.eval('WowCompanionSpellsDB.rbm["%s"]' % want) == 1 - mw and S2.eval('WowCompanionSpellsDB.ctop["%s"]' % want) == 1 - ctw
+          and S2.eval('WowCompanionSpellsDB.rbm["%s"]' % other) == (0 if other == R8 else 1)
+          and S2.eval('WowCompanionSpellsDB.ctop["%s"]' % other) == (0 if other == R8 else 1)
+          and S2.eval('WowCompanionSpellsDB.ctop["Other-Realm 7"]') == 1 and partials(S2)[0] == 0,
+          "hs. ... an edit then (codes 20-23): under the picked key only; the other realm's and another character's untouched", S2.eval('SER(WowCompanionSpellsDB.ctop)'))
+    clean(S2, "hs2 " + label)
+# "a new character" (code 9): a fresh key, NONE of the candidates' bits read (today's sides, the flag off)
+S3 = world(pre=ASK)
+padtab(S3, 39, 38, 37, 9)
+S3.execute('tick(0.1); runTimers(NOW + 2)')
+dp = padmap(S3).get('dpad') or {}
+k3 = S3.eval('(WowCompanion.charKey())')
+check(k3 not in (None, R7, R8) and dp.get('ct') == 0 and dp.get('m') == 0 and dp.get('d') == {"1": "chat", "2": "radial", "3": "map", "4": "home"}
+      and S3.eval('WowCompanion.padMap.combatTopOn()') is False,
+      "hs. 'a new character': its own key (%s), no candidate's bit read (ct 0, m 0, today's sides)" % k3, dp)
+padtab(S3, 39, 38, 37, 23)
+S3.execute('runTimers(NOW + 1)')
+check(S3.eval('WowCompanionSpellsDB.ctop["%s"]' % k3) == 1 and S3.eval('SER(WowCompanionSpellsDB.rbm)') == HOME0 % 0
+      and S3.eval('WowCompanionSpellsDB.ctop["%s"]' % R7) == 1 and S3.eval('WowCompanionSpellsDB.ctop["%s"]' % R8) == 0,
+      "hs. ... its edits go to the new key only", S3.eval('SER(WowCompanionSpellsDB.ctop)'))
+clean(S3, "hs3")
+# a pick in a fight is refused by Safety: still asking, nothing read or written
+S4 = world(pre=ASK)
+S4.execute('COMBAT = true')
+padtab(S4, 39, 38, 37, 10)
+dp = padmap(S4).get('dpad') or {}
+check(S4.eval('(WowCompanion.charKey())') is None and 'ct' not in dp and S4.eval('SER(WowCompanionSpellsDB.ctop)') == HOME0 % 1,
+      "hs. a pick in a fight: refused, still asking (no `ct`, nothing written)", dp)
+S4.execute('COMBAT = false')
+clean(S4, "hs4")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

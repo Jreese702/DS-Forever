@@ -44,10 +44,32 @@ class SetupView(context: Context) : View(context) {
     fun ask(p: CompanionSetup.Prompt, yes: String, no: String, onYes: () -> Unit, onNo: () -> Unit, icon: Int = 0,
             picture: Picture? = null, cursor: Boolean = false) {
         face = Face.PROMPT; title = p.title; bullets = p.bullets; footer = p.footer; note = ""; promptIcon = icon
-        yesLabel = yes; noLabel = no; yesAct = onYes; noAct = onNo; answered = false
+        yesLabel = yes; noLabel = no; yesAct = onYes; noAct = onNo; answered = false; options = emptyList()
         this.picture = picture; picAt = android.os.SystemClock.uptimeMillis(); this.cursor = cursor; focusYes = true
         visibility = VISIBLE; invalidate()
     }
+
+    /**
+     * A ONE-TIME CHOICE in the same look (Safety k10, the sticky realm's question: "Which saved settings are this character's?"): the
+     * title, one full-width button per choice in [options] (stacked; the D-pad's up / down move the gold box, A picks the boxed one),
+     * [footer] under them, and [later] at the bottom (B). [onPick] gets the choice's index, [onLater] the later.
+     */
+    fun choose(title: String, options: List<String>, footer: String, later: String, onPick: (Int) -> Unit, onLater: () -> Unit) {
+        face = Face.PROMPT; this.title = title; bullets = emptyList(); this.footer = footer; note = ""; promptIcon = 0
+        yesLabel = ""; noLabel = later; yesAct = {}; noAct = onLater; answered = false
+        picture = null; cursor = false; focusYes = true
+        this.options = options; optFocus = 0; pickAct = onPick
+        visibility = VISIBLE; invalidate()
+    }
+    /** the choice's buttons (empty = a yes / no prompt) */
+    private var options: List<String> = emptyList()
+    private var optFocus = 0
+    /** the last drawn layout's rows per column and columns ([ChoiceFit]) */
+    private var optRows = 1
+    private var optCols = 1
+    private var pickAct: (Int) -> Unit = {}
+    /** the boxed choice (tests) */
+    val focusedOption: Int get() = optFocus
 
     /** the cast bar question (the user, 2026-11-13: "show a little picture with the pop up showing how it looks with it animating away
      *  in combat"): a picture between the title and the buttons, [height] tall, drawn at the time since the prompt opened (ms); an
@@ -75,6 +97,25 @@ class SetupView(context: Context) : View(context) {
     /** one controller press while [padOn]: A = the yes button, B = the no button (each shows pushed in a moment) */
     fun padKey(k: String) {
         if (!padOn || visibility != VISIBLE || face != Face.PROMPT) return
+        if (options.isNotEmpty()) {
+            when (k) {
+                "PADDUP" -> { optFocus = (optFocus - 1).coerceAtLeast(0); invalidate() }
+                "PADDDOWN" -> { optFocus = (optFocus + 1).coerceAtMost(options.size - 1); invalidate() }
+                // two columns ([ChoiceFit]): left / right move across
+                "PADDLEFT" -> if (optCols > 1 && optFocus - optRows >= 0) { optFocus -= optRows; invalidate() }
+                "PADDRIGHT" -> if (optCols > 1 && optFocus + optRows < options.size) { optFocus += optRows; invalidate() }
+                "PAD1", "PAD2" -> {
+                    val hit = if (k == "PAD1") "opt$optFocus" else "later"
+                    pressed = hit; invalidate()
+                    val i = optFocus
+                    postDelayed({
+                        if (pressed == hit) { pressed = null; invalidate() }
+                        if (k == "PAD1") pickAct(i) else noAct()
+                    }, 120L)
+                }
+            }
+            return
+        }
         if (cursor && (k == "PADDLEFT" || k == "PADDRIGHT")) { focusYes = k == "PADDLEFT"; invalidate(); return }
         val hit = when (k) { "PAD1" -> if (!cursor || focusYes) "setup" else "later"; "PAD2" -> "later"; else -> return }
         pressed = hit; invalidate()
@@ -97,7 +138,7 @@ class SetupView(context: Context) : View(context) {
     fun refuse(why: String) { note = why; invalidate() }
     fun work(l: String) { face = Face.WORK; line = l; visibility = VISIBLE; invalidate() }
     fun failed(l: String) { face = Face.FAILED; line = l; visibility = VISIBLE; invalidate() }
-    fun close() { visibility = GONE; picture = null; cursor = false }
+    fun close() { visibility = GONE; picture = null; cursor = false; options = emptyList() }
 
     override fun onDraw(c: Canvas) {
         hits.clear()
@@ -122,6 +163,7 @@ class SetupView(context: Context) : View(context) {
 
     private fun drawPrompt(c: Canvas, w: Float, h: Float, cx: Float) {
         UiKit.cover(c, RectF(0f, 0f, w, h))
+        if (options.isNotEmpty()) { drawChoice(c, h, cx); return }
         val tp = UiKit.bodyPaint(42f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
         val lp = UiKit.bodyPaint(32f, Theme.text)                       // the bullets: left-aligned, one change each
         val dp = UiKit.bodyPaint(32f, Theme.gold)                       // the bullet mark
@@ -176,6 +218,43 @@ class SetupView(context: Context) : View(context) {
         if (cursor && padOn) UiKit.focus(c, if (focusYes) yesR else noR)     // the gold box on the button A presses
     }
 
+    /** the one-time choice: the title, the choices stacked (the gold box on the one A picks), the footer, Later (B). The k10 review
+     *  (round 1): the list always fits the screen ([ChoiceFit]: shorter rows, then two columns in a wider box), Later inside it */
+    private fun drawChoice(c: Canvas, h: Float, cx: Float) {
+        val tp = UiKit.bodyPaint(42f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+        val fp = UiKit.bodyPaint(28f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+        val textW = BOX_W - 140f
+        val tl = wrap(title, tp, textW)
+        val fl = if (footer.isEmpty()) emptyList() else wrap(footer, fp, textW)
+        val fit = ChoiceFit.fit(width.toFloat(), h, tl.size, fl.size, options.size)
+        optRows = fit.rows; optCols = fit.cols
+        val top = maxOf(ChoiceFit.MARGIN, (h - fit.boxH) / 2f)
+        val box = RectF(cx - fit.boxW / 2f, top, cx + fit.boxW / 2f, top + fit.boxH)
+        UiKit.dialog(c, box)
+        var y = box.top + 50f + 18f + 42f
+        for (l in tl) { c.drawText(l, cx, y, tp); y += 56f }
+        y += 20f - 42f
+        val colW = (box.width() - 140f - (fit.cols - 1) * ChoiceFit.COL_GAP) / fit.cols
+        for ((i, o) in options.withIndex()) {
+            val col = i / fit.rows; val row = i % fit.rows
+            val x = box.left + 70f + col * (colW + ChoiceFit.COL_GAP)
+            val ry = y + row * (fit.rowH + fit.gap)
+            val r = RectF(x, ry, x + colW, ry + fit.rowH)
+            val st = if (pressed == "opt$i") UiKit.Button.DOWN else UiKit.Button.UP
+            if (padOn && i == optFocus) UiKit.button(c, r, o, aGlyph(), st) else UiKit.button(c, r, o, st)
+            hits.add(r to "opt$i")
+            if (padOn && i == optFocus) UiKit.focus(c, r)
+        }
+        y += fit.rows * (fit.rowH + fit.gap)
+        y += 10f + 30f
+        for (l in fl) { c.drawText(l, cx, y, fp); y += 38f }
+        val by = box.bottom - 50f - 111f
+        val lr = RectF(cx - 150f, by, cx + 150f, by + 111f)
+        val st = if (pressed == "later") UiKit.Button.DOWN else UiKit.Button.UP
+        if (padOn) UiKit.button(c, lr, noLabel, UiKit.backGlyph(), st) else UiKit.button(c, lr, noLabel, st)
+        hits.add(lr to "later")
+    }
+
     private fun button(c: Canvas, r: RectF, label: String, hit: String) {
         val st = if (pressed == hit) UiKit.Button.DOWN else UiKit.Button.UP
         // the cast bar question's cursor: A on the boxed button, B on No when the box is on Yes
@@ -204,10 +283,11 @@ class SetupView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> { pressed = hit; invalidate() }
             MotionEvent.ACTION_UP -> {
                 val was = pressed; pressed = null; invalidate()
-                if (was != null && was == hit) when (hit) {
-                    "setup" -> yesAct()
-                    "later" -> noAct()
-                    "ok" -> onDismiss()
+                if (was != null && was == hit) when {
+                    hit == "setup" -> yesAct()
+                    hit == "later" -> noAct()
+                    hit == "ok" -> onDismiss()
+                    hit.startsWith("opt") -> hit.removePrefix("opt").toIntOrNull()?.let { pickAct(it) }
                 }
             }
             MotionEvent.ACTION_CANCEL -> { pressed = null; invalidate() }
@@ -219,5 +299,46 @@ class SetupView(context: Context) : View(context) {
         const val BOX_W = 900f
         const val BULLET_IN = 34f    // the bullet text's start in from the bullet
         const val ICON_SZ = 96f      // f-new-spell-prompt: the spell icon over the title
+    }
+}
+
+/**
+ * THE ONE-TIME CHOICE'S LAYOUT (Safety k10's key question; the k10 review round 1: with 5+ saved places the stacked list ran off the
+ * 1080 px bottom screen and Later could not be touched). The box is never taller than the screen less [MARGIN] each side: full rows
+ * ([OPT_H] / [OPT_GAP]) when they fit, else shorter rows down to [MIN_H], else two columns in a wider box (as wide as the screen
+ * allows, [WIDE_W] at most). Pure (tests).
+ */
+object ChoiceFit {
+    data class Fit(val cols: Int, val rows: Int, val rowH: Float, val gap: Float, val boxW: Float, val boxH: Float)
+
+    const val BOX_W = 900f
+    const val WIDE_W = 1180f
+    const val OPT_H = 96f
+    const val OPT_GAP = 16f
+    const val MIN_H = 60f
+    const val TIGHT_GAP = 10f
+    const val COL_GAP = 20f
+    const val MARGIN = 30f
+
+    /** the box's height without the rows: the title's [tl] lines, the footer's [fl], Later and the padding */
+    fun fixed(tl: Int, fl: Int): Float = 50f + 18f + tl * 56f + 20f + 10f + fl * 38f + 30f + 111f + 50f
+
+    fun fit(w: Float, h: Float, tl: Int, fl: Int, n: Int): Fit {
+        val count = maxOf(n, 1)
+        val fix = fixed(tl, fl)
+        val avail = maxOf(0f, h - 2 * MARGIN - fix)
+        val wide = minOf(WIDE_W, maxOf(BOX_W, w - 2 * MARGIN))
+        for (cols in 1..2) {
+            val rows = (count + cols - 1) / cols
+            val bw = if (cols == 1) BOX_W else wide
+            if (rows * (OPT_H + OPT_GAP) <= avail) return Fit(cols, rows, OPT_H, OPT_GAP, bw, fix + rows * (OPT_H + OPT_GAP))
+            val rh = avail / rows - TIGHT_GAP
+            if (rh >= MIN_H) return Fit(cols, rows, minOf(OPT_H, rh), TIGHT_GAP, bw, fix + rows * (minOf(OPT_H, rh) + TIGHT_GAP))
+        }
+        // never taller than the screen: the rows share what is left (a tiny screen only)
+        val rows = (count + 1) / 2
+        val gap = 6f
+        val rh = maxOf(1f, avail / rows - gap)
+        return Fit(2, rows, rh, gap, wide, fix + rows * (rh + gap))
     }
 }

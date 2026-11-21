@@ -111,7 +111,8 @@ object ResetPlan {
             "castBarTab", "castBarShow", "castBarPShow"),
         DB to setOf("pqol", "pskip", "npEnemies", "npFriends", "npFriendsOff", "npFriendsSet", "routeWp", "chatTop", "compassCal",
             "compassCam", "layV", "prdYv", "prdCurve", "camProbe", "calProbe", "qtDefaults", "chatStyleSet2", "cursorSoftSet",
-            "realmOf", "realmFixBak"),     // Safety k6: the realms each name was seen with, and the orphan keys' fold backups
+            "realmOf", "realmFixBak", "who"),     // Safety k6: the realms each name was seen with, and the orphan keys' fold backups;
+                                                  // k10: each character's GUID record (which key its settings live under)
     )
 
     /** a character key as the add-on writes it ("Name-Realm"; [CharKey]: never a partial "Name-?" / "Name-_" one) */

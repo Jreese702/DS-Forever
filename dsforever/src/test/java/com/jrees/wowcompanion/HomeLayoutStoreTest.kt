@@ -321,9 +321,9 @@ class HomeLayoutStoreTest {
         assertEquals("sent again", ToolbarMirror.Act.Send(true), ToolbarMirror.decide(1, normal, false, ToolbarMirror.RESEND_MS))
         assertEquals("no padmap yet", ToolbarMirror.Act.Wait, ToolbarMirror.decide(1, null, false, null))
         assertEquals(ToolbarMirror.Act.Send(false), ToolbarMirror.decide(0, mirrored, false, null))
-        // padtab 39, 38, 37 then 9 / 10 (Book b74)
-        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 10), ToolbarMirror.cells(true))
-        assertEquals(9, ToolbarMirror.cells(false).last().second)
+        // padtab 39, 38, 37 then 20 / 21 (Book b76: off the sticky realm question's 9-19)
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 21), ToolbarMirror.cells(true))
+        assertEquals(20, ToolbarMirror.cells(false).last().second)
         // the toast: a change only, never the run's first word
         assertFalse(ToolbarMirror.toastFor(null, 1)); assertTrue(ToolbarMirror.toastFor(0, 1)); assertFalse(ToolbarMirror.toastFor(1, 1))
         assertEquals(listOf("D-pad", "Map", "Chat"), ToolbarMirror.toastWords(mirrored))
@@ -340,9 +340,15 @@ class HomeLayoutStoreTest {
             assertTrue("a pad column", c in 0..39)
         }
         assertEquals(PadMapModel.P3_MIRROR_OFF..PadMapModel.P3_MIRROR_ON, PadMapModel.PAGE3_CODES["toolbar mirror"])
-        // Book b74 handles exactly these (the add-on's own table)
+        // the 1515 merge: the key question's 9 / 10-19 are KeyPick's, never Home's
+        assertEquals(KeyPick.NEW_CODE..(KeyPick.FIRST_CODE + KeyPick.MAX - 1), PadMapModel.PAGE3_CODES["key question"])
+        assertEquals(KeyPick.NEW_CODE, PadMapModel.P3_KEY_NEW); assertEquals(KeyPick.FIRST_CODE + KeyPick.MAX - 1, PadMapModel.P3_KEY_LAST)
+        assertEquals(KeyPick.NEW_CODE, KeyPick.cells(null)!!.last().second)
+        assertEquals(KeyPick.FIRST_CODE + KeyPick.MAX - 1, KeyPick.cells(KeyPick.MAX)!!.last().second)
+        // Book b76 handles exactly these (the add-on's own table)
         val book = java.io.File(addons(), "WowCompanionSpells/Book.lua").readText()
-        assertTrue(book.contains("for k = 0, 1 do P3[9 + k] = function()"))
+        assertTrue(book.contains("for k = 0, 1 do P3[20 + k] = function()") && book.contains("pm.dpadMirror, k == 1"))
+        assertTrue(book.contains("P3[9] = function() if type(WC.charKeyPick)") && book.contains("for k = 1, 10 do P3[9 + k] = function() if type(WC.charKeyPick)"))
         assertTrue(book.contains("for k = 0, 3 do P3[k]") && book.contains("for k = 1, 5 do P3[3 + k]"))
     }
 
@@ -361,21 +367,27 @@ class HomeLayoutStoreTest {
         assertEquals("no word: the router's default", "chat", toolWord(null, 1))
     }
 
-    /** fix round 3 (finding 2): a realm-less session's edit is held for its NAME; when a same-name character on another realm logs in
-     *  (Korvash-Stormreach after a pending Korvash), it never gets that edit - only a key whose name has no other known realm does */
-    @Test fun aSameNameAltOnAnotherRealmNeverGetsTheHeldEdit() {
+    /** fix round 3 (finding 2), REVISED by the 1515 merge (the sticky key; the user's ruling: one name is one character, the realm is
+     *  only where its settings live): a realm-less session's edit is held for its NAME and lands on the key the add-on resolves for that
+     *  name - whatever other realms the prefs or the device census know (fix round 3 dropped it then: exactly the add-on's ask case) -
+     *  with only its changed fields; another name's key never gets it (HomeKeyPickTest: the question's pick and "New character") */
+    @Test fun aHeldEditFollowsTheAddOnsResolvedKeyForItsName() {
         val p = fresh()
-        HomeLayoutStore.character("Korvash-Silvermoon")                       // two Korvashes on the device, each with a record
+        HomeLayoutStore.character("Korvash-Silvermoon")                       // one name, settings under two realms
+        HomeLayoutStore.set(HomeLayout(card = HomeLayout.CardDock.OFF))
         HomeLayoutStore.character("Korvash-Stormreach")
-        val storm = p.m["homeLayout.Korvash-Stormreach"]
-        HomeLayoutStore.character(null, "Korvash")                            // a session with no realm: which Korvash is not known
+        HomeLayoutStore.set(HomeLayout(rest = HomeRest.ROW))
+        val silver = p.m["homeLayout.Korvash-Silvermoon"]
+        HomeLayoutStore.character(null, "Korvash")                            // the add-on asks: no key
         assertTrue(HomeLayoutStore.update { it.copy(chatSide = HomeLayout.Side.RIGHT) })
         val o = HomeLayoutStore.owner()
-        HomeLayoutStore.character("Korvash-Stormreach")                       // the relog: the other realm's Korvash
-        assertEquals("the held edit never goes onto a same-name alt's record", storm, p.m["homeLayout.Korvash-Stormreach"])
-        assertFalse(HomeSettings.layout.mirrored)
-        assertEquals("edit mode opened while pending: not saved onto the alt", HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o))
-        // the device census knows another realm of the name (a stored table, a backup file) though the prefs hold one record: refused too
+        HomeLayoutStore.character("Korvash-Stormreach")                       // the add-on resolves Korvash to Stormreach
+        val s = HomeLayoutJson.parse(p.m["homeLayout.Korvash-Stormreach"] as String)
+        assertTrue("the held edit lands on the resolved key", s.mirrored)
+        assertEquals("its own fields kept", HomeRest.ROW, s.rest)
+        assertEquals("the other realm's record untouched", silver, p.m["homeLayout.Korvash-Silvermoon"])
+        assertEquals("edit mode opened while pending: saved onto the same name's resolved key", HomeLayoutStore.EditSave.LAY_ON, HomeLayoutStore.editSaveFor(o))
+        // the device census knowing another realm of the name changes nothing (one name = one character)
         val q = fresh()
         HomeLayoutStore.character("Thrandil-Realm")
         RealmFix.census = { RealmFix.Census(stored = setOf("Realm", "Other")) }
@@ -383,17 +395,10 @@ class HomeLayoutStoreTest {
         HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) }
         val o2 = HomeLayoutStore.owner()
         HomeLayoutStore.character("Thrandil-Realm")
-        assertEquals(HomeLayout.Share.HALF, HomeLayoutJson.parse(q.m["homeLayout.Thrandil-Realm"] as String).chatShare)
-        assertEquals(HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o2))
-        // one realm known: the late key still gets the session's change (aRealmLessCharacterNeverStoresAndLetsThePreviousGo)
-        RealmFix.census = { RealmFix.Census(stored = setOf("Realm")) }
-        HomeLayoutStore.character(null, "Thrandil")
-        HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) }
-        val o3 = HomeLayoutStore.owner()
-        assertTrue(HomeLayoutStore.carryOk("Thrandil-Realm"))
-        HomeLayoutStore.character("Thrandil-Realm")
         assertEquals(HomeLayout.Share.THIRD, HomeLayoutJson.parse(q.m["homeLayout.Thrandil-Realm"] as String).chatShare)
-        assertEquals(HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o3.copy(name = "Korvash")))
+        assertEquals(HomeLayoutStore.EditSave.LAY_ON, HomeLayoutStore.editSaveFor(o2))
+        assertTrue(HomeLayoutStore.carryOk("Thrandil-Realm", "Thrandil"))
+        assertEquals("another name's draft: never", HomeLayoutStore.EditSave.NONE, HomeLayoutStore.editSaveFor(o2.copy(name = "Korvash")))
     }
 
     /** fix round 3 (finding 3): a change made before ANY character is known (the app's start, the login screen) writes the default as

@@ -3,8 +3,8 @@ package com.jrees.wowcompanion
 /**
  * MOVABLE HOME, THE DS TOOLBAR FOLLOWS THE SWAP (SPEC.txt section 6, "SYNC"): with the chat on the right, D-pad Left opens the map and Right
  * the chat. The add-on owns the binding (PadMap m178: ROOMBAR from the per-character mirror bit WowCompanionSpellsDB.rbm, re-bound OUT
- * OF COMBAT only, its `d` saying what the keys do); the app's layout is the source of truth and tells it with padtab 39, 38, 37 then 9 /
- * 10 (Book b74), never in a fight, re-sent until the padmap's `d` says it - DpadChoice's pend / resend pattern. Until then every picture
+ * OF COMBAT only, its `d` saying what the keys do); the app's layout is the source of truth and tells it with padtab 39, 38, 37 then 20 /
+ * 21 (Book b76; b74's 9 / 10 are the sticky realm question's since test build 1515), never in a fight, re-sent until the padmap's `d` says it - DpadChoice's pend / resend pattern. Until then every picture
  * is drawn from `d` (P5: the pictures never lie). Pure: CompanionHost keeps the clock and does the taps.
  */
 object ToolbarMirror {
