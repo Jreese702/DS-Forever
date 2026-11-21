@@ -182,7 +182,7 @@ object SvReset {
             reset += n; tables++
             log("settings reset: $variable: $n entries back to defaults")
         }
-        runCatching { write(keptDir, marks) }.onFailure { log("settings reset: marks NOT written (${it.message})") }
+        runCatching { write(keptDir, marks) }.onFailure { log("settings reset: marks NOT written (${it.javaClass.simpleName})") }
         return Done(reset, tables, refused)
     }
 }

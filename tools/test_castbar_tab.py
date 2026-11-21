@@ -135,7 +135,7 @@ def clean(L, name):
 
 
 check('local CV = "p58"' in SRC["padtabctl"] and 'local BV = "b75"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
-      and 'local CBV = "cb15"' in BLOCK, "the versions: PadTabCtl p55, Book b70, PadMap m172+, ActionBar cb14")
+      and 'local CBV = "cb16"' in BLOCK, "the versions: PadTabCtl p55, Book b70, PadMap m172+, ActionBar cb14")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
       and 'EditMacro' not in code and 'PlaceAction' not in code and 'SetCVar' not in code and 'PickupAction' not in code,
@@ -238,7 +238,7 @@ if bi is not None:
     W.eval('WowCompanion.padTabCtl.touchExtra(%d)' % (bi % 40))
     check(store(W).get(8) is None and ctl(W).get('note') == 'cb-bind', "a game binding by touch is refused (cb-bind)", ctl(W).get('note'))
 e, d = bar(W)
-check(d.get('v') == 'cb15' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
+check(d.get('v') == 'cb16' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
 check(e[1].get('id') == 403 and 'k' not in e[1] and e[1].get('c') == 0, "slot 1: a spell as before (no k)", e[1])
 check(e[3].get('k') == 'command' and e[3].get('key') == 'TARGETNEARESTENEMY' and e[3].get('n') and e[3].get('i') == 132212 and e[3].get('c') == 2,
       "slot 3: kind command, key, name, icon, its cell", e[3])

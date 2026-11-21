@@ -99,7 +99,7 @@ def sent_ct(L, n0):
 NORMAL = {1: "chat", 2: "radial", 3: "map", 4: "home"}
 
 # ------------------------------------------------------------------------------------------------ the tags
-check('local PV = "m180"' in SRC["padmap"] and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap's tag m179 and its note")
+check('local PV = "m181"' in SRC["padmap"] and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap's tag m179 and its note")
 check('local BV = "b75"' in SRC["book"] and "b75 THE COMBAT BAR ON THE TOP SCREEN" in SRC["book"], "0. Book's tag b75 (page-3 codes 11 / 12)")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")
 

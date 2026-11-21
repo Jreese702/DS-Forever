@@ -964,7 +964,7 @@ end
 -- party set is never armed and a party-layer edit is refused "cb-phidden"; the party slots are KEPT (the D5 rule). The document says
 -- `p` (the party slots, their cells 17-24 while built), `ps` = 1 while Bar in Party mode is on, `pl` = 1 (this add-on has the layer).
 do
-local CBV = "cb15"     -- cb15 THE PARTY MODE LAYER (header: castBarParty, 25 cells, the secure Party > In combat > own swap, unit = Party mode's pick, `p` / `ps` / `pl`); cb14 THE IN-COMBAT LAYER (header: castBarFight, 17 cells, the secure [combat] swap, `f` / `show`); cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
+local CBV = "cb16"     -- cb16 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() put castBar / castBarFight / castBarParty under "Name-?"): cbWho() is Safety k6's WC.charKey(), nil until the realm is known; cb15 THE PARTY MODE LAYER (header: castBarParty, 25 cells, the secure Party > In combat > own swap, unit = Party mode's pick, `p` / `ps` / `pl`); cb14 THE IN-COMBAT LAYER (header: castBarFight, 17 cells, the secure [combat] swap, `f` / `show`); cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 8, 8, 2   -- cb6: 8 slots (cells 0-7), the pick cell 8
 local CB_OLD_N = 12                      -- cb3: the slots a cb1 / cb2 store may hold (cb6: migrated to the first 8)
@@ -1010,9 +1010,7 @@ local function cbKeep(e) return e and { k = e.k, id = e.id, key = e.key, n = e.n
 
 -- the character: name-realm (every per-character store's key)
 local function cbWho()
-    local n = cbStr(function() return UnitName("player") end)
-    if not n then return nil end
-    return n .. "-" .. (cbStr(function() return GetRealmName() end) or "?")
+    return (WC.charKey())                                               -- cb16: nil until the realm is known (never "Name-?")
 end
 -- this character's slots table; create = make it (only after the login: the saved table is loaded by then); cb14: [layer] "f" = the
 -- in-combat layer's (castBarFight), nil = the bar's own

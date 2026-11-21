@@ -185,7 +185,7 @@ def party_on(L, on=True):
 
 
 # ================================================================ a. versions, the note, no trace
-check('local CBV = "cb15"' in BLOCK and "cb15 THE PARTY MODE LAYER" in AB, "a. ActionBar cb15 and its header note")
+check('local CBV = "cb16"' in BLOCK and "cb15 THE PARTY MODE LAYER" in AB, "a. ActionBar cb16 (cb15's header note kept)")
 check('local CV = "p58"' in SRC["padtabctl"] and "p56 SITUATIONS FIRST" in SRC["padtabctl"], "a. PadTabCtl p56 and its note")
 check('local BV = "b75"' in SRC["book"] and "b71 SITUATIONS FIRST" in SRC["book"], "a. Book b71 and its note")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
@@ -232,7 +232,7 @@ check(cell(W, 3, "type") is None and cell(W, 3, "wc-p-spell") == 8017 and cell(W
 check(cell(W, 18, "type") is None and cell(W, 8, "type") is None, "b. an unset party slot's cell (18) and the pick cell have no action")
 d = bar(W)
 pe = {x['s']: x for x in d.get('p', [])}
-check(d.get('v') == 'cb15' and d.get('ps') == 1 and d.get('pl') == 1 and pe.get(1, {}).get('c') == 17 and pe.get(4, {}).get('c') == 20
+check(d.get('v') == 'cb16' and d.get('ps') == 1 and d.get('pl') == 1 and pe.get(1, {}).get('c') == 17 and pe.get(4, {}).get('c') == 20
       and pe.get(5, {}).get('k') == 'item', "b. the document: `p` with cells 17 / 20, ps = 1, pl = 1", d.get('p'))
 clean(W, "b")
 

@@ -28,8 +28,9 @@ object QuestWatchKeep {
         private var char: String? = null
         private var checked = false
 
-        /** the character now (a padmap names it); another one starts its own check */
-        fun character(key: String) { if (key != char) { char = key; checked = false } }
+        /** the character now (a padmap names it); another one starts its own check; null = a character with no realm yet (the k6
+         *  review, item 2: nothing kept or restored under the previous one's key) */
+        fun character(key: String?) { if (key != char) { char = key; checked = false } }
 
         /** a login or a reload (the add-on's hello): the next quests document is the session's first */
         fun newSession() { checked = false }
@@ -72,7 +73,7 @@ object QuestWatchKeep {
         })
     }
 
-    fun character(key: String) { model?.character(key) }
+    fun character(key: String?) { model?.character(key) }
     fun newSession() { model?.newSession() }
     fun cleanEnd() { model?.cleanEnd() }
     fun onQuests(list: List<Q>, canAct: Boolean): List<Q> = model?.onQuests(list, canAct) ?: emptyList()

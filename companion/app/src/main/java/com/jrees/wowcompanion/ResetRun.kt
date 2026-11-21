@@ -58,8 +58,9 @@ class ResetRun(
             if (!backupText("prefs-$file", jsonOf(have.filterKeys { it in rm }), now)) { refused += file; log("settings reset: $file not reset (no backup)"); continue }
             val e = p.edit()
             for (k in rm) {
-                // the toolbar's choice: ON (its default), pending until the game says it; the prompt stays answered
-                if (file == "dpad") e.putBoolean(k, true).putBoolean("pend_$k", true).remove("owed_$k") else e.remove(k)
+                // the toolbar's choice: ON (its default), pending until the game says it; the prompt stays answered. The k6 review round 2
+                // (item G): a realm-less session's orphan "choice_Name-" is REMOVED (never given the default: no orphan key is written)
+                if (file == "dpad" && !orphanKey(k)) e.putBoolean(k, true).putBoolean("pend_$k", true).remove("owed_$k") else e.remove(k)
             }
             e.commit()
             prefs += rm.size
@@ -68,7 +69,12 @@ class ResetRun(
             // the spell radials' names, icons, tap / hold (one JSON of every character's)
             val rp = prefsOf("radial_meta")
             val allMeta = runCatching { JSONObject(rp.getString("all", "{}") ?: "{}") }.getOrDefault(JSONObject())
-            val gone = allMeta.keys().asSequence().toList().filter { if (all) ResetPlan.isCharKey(it) else it == who }
+            val gone = allMeta.keys().asSequence().toList().filter {
+                if (all) ResetPlan.isCharKey(it) || CharKey.isOrphan(it)
+                else it == who || (who != null && CharKey.isOrphan(it) && CharKey.nameOf(it) == CharKey.nameOf(who) &&     // its orphans too
+                    RealmFix.resetTakesOrphans(who) &&                                      // the k6 review round 3 (item 5)
+                    allMeta.keys().asSequence().none { o -> o != who && ResetPlan.isCharKey(o) && CharKey.nameOf(o) == CharKey.nameOf(who) })
+            }
             if (gone.isNotEmpty() && backupText("prefs-radial_meta", allMeta.toString(), now)) {
                 for (k in gone) allMeta.remove(k)
                 rp.edit().putString("all", allMeta.toString()).commit(); prefs += gone.size
@@ -88,7 +94,7 @@ class ResetRun(
         var combat = 0
         if (ResetPlan.Kind.SKILLS in kinds) {
             val files = if (all) combatDir.listFiles()?.filter { it.isFile && it.name.endsWith(".json") }.orEmpty()
-                else listOfNotNull(who?.let { File(combatDir, CombatKeep.fileName(it)) }?.takeIf { it.isFile })
+                else listOfNotNull(who?.let { File(combatDir, CombatKeep.fileName(it)) }?.takeIf { it.isFile }) + combatOrphans(who)
             for (f in files) {
                 if (!SvReset.backup(f, backups, now)) { refused += f.name; continue }
                 if (f.delete()) combat++
@@ -109,6 +115,32 @@ class ResetRun(
             "add-on entries, ${r.combat} In-combat backups, ${r.gameKeys.size} game settings given back${if (later) " (at the next start)" else ""}" +
             if (refused.isEmpty()) "" else "; ${refused.size} not done (no backup)")
         return r
+    }
+
+    /**
+     * the k6 review (item 3): the In-combat backups a realm-less session wrote for [who]'s name ("Name-.json", "Name-_.json"); a reset
+     * takes them with the real one (else the next run's fold would make them the real backup and put the fight layer back). Left while
+     * the name has a backup under another realm (never a guess).
+     */
+    /** [k] ends with a realm-less session's orphan character key ("<prefix>Name-", "Name-?", "Name-_", a marker) */
+    private fun orphanKey(k: String): Boolean {
+        val i = k.lastIndexOf('-').takeIf { it > 0 } ?: return false
+        var s = i
+        while (s > 0 && k[s - 1].isLetter()) s--
+        return CharKey.isOrphan(k.substring(s))
+    }
+
+    private fun combatOrphans(who: String?): List<File> {
+        val w = who?.takeIf { ResetPlan.isCharKey(it) } ?: return emptyList()
+        val name = CharKey.nameOf(w) ?: return emptyList()
+        if (!RealmFix.resetTakesOrphans(w)) return emptyList()            // the k6 review round 3 (item 5): the device census decides too
+        val orphanNames = RealmFix.combatOrphanFiles(name)
+        val own = CombatKeep.fileName(w)
+        val other = combatDir.listFiles()?.any { f ->
+            f.isFile && f.name.startsWith("$name-") && f.name.endsWith(".json") && f.name != own && f.name !in orphanNames
+        } ?: false
+        if (other) return emptyList()
+        return orphanNames.map { File(combatDir, it) }.filter { it.isFile }
     }
 
     private fun keptTable(v: String): Map<Any, Any>? =

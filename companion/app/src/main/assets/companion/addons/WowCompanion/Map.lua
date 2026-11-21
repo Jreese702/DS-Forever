@@ -2946,12 +2946,9 @@ function WC.pqol.ns()
     local P = _G.Polestar
     if type(P) == "table" and type(P.Get) == "function" and type(P.Set) == "function" then return P end
 end
+-- pq2 (Safety k6, the 11-20 hunter, test build 1513): WC.charKey(), nil until the realm is known (an empty realm made "Name-")
 function WC.pqol.key()
-    local okN, n = pcall(UnitName, "player")
-    local okR, r = pcall(GetRealmName)
-    if not okN or not okR then return nil end
-    if type(n) ~= "string" or type(r) ~= "string" then return nil end
-    return n .. "-" .. r
+    return ((function() if type(WC.charKey) == "function" then return (WC.charKey()) end; local ok, k = pcall(function() local n, r = UnitName("player"), GetRealmName(); if type(n) == "string" and type(r) == "string" and n:find("%S") and r:find("%S") and r ~= "?" and r ~= "_" then return n .. "-" .. r end end); return ok and k or nil end)())
 end
 function WC.pqol.want()
     local db = type(WowCompanionDB) == "table" and type(WowCompanionDB.pqol) == "table" and WowCompanionDB.pqol or nil
@@ -2990,7 +2987,7 @@ function WC.pqol.apply()
 end
 function WC.pqol.say()
     pcall(function()
-        WC.send(WC.encode({ type = "pqol", v = "pq1", have = WC.pqol.ns() ~= nil, m = WC.pqol.now(), w = WC.pqol.want() }))
+        WC.send(WC.encode({ type = "pqol", v = "pq2", have = WC.pqol.ns() ~= nil, m = WC.pqol.now(), w = WC.pqol.want() }))
         WC.push()
     end)
 end

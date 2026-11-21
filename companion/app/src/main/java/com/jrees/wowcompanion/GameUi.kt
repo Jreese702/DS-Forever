@@ -226,8 +226,17 @@ object GameUi {
     const val SW_UFTOT = "uftot"
     /** uf11 (the user: "toggles for health total, Percentage and blank with blank as the default"): one row of three, kept as two switches */
     const val SW_UFHPP = "ufhpp"; const val SW_UFHPT = "ufhpt"
-    /** hub31 (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): on = Polestar's windows hidden; off by default */
+    /** hub31 (the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): on = Polestar's windows hidden (Hub.lua
+     *  hub31 / hub36: every top-level Polestar frame at alpha 0, nothing of Polestar's own changed, so its guide, arrow data and steps
+     *  still run and the Polestar tab / quest tracker keep driving it; hub72, the user's "Also make it ignore touches": their mouse
+     *  input off too, given back exactly at Off). HIDDEN BY DEFAULT since 2026-11-20 (the user: "does polestar show
+     *  on the top screen by default? we should hide that by default"); it was shown by default from 2026-11-11. Existing players: the
+     *  key "sw.ps.<character>" is only written by the player's own tap on Settings > Top screen > Navigation > Polestar ([setSwitch]),
+     *  so a character with no key (never chose) moves to hidden, and a character whose key says shown (false: they turned it On) keeps
+     *  it shown; no migration key. Reset > Layouts ("sw.*.") takes it back to hidden ([ResetPlan]) */
     const val SW_PS = "ps"
+    /** the Polestar switch's default: hidden (see [SW_PS]) */
+    const val SW_PS_DEFAULT_HIDDEN = true
     /** hub33 (the user, 2026-11-11: "find a way to include Pet HP in the HUD, and better distinguish the player HUD vs Pet HUD"): the pet's
      *  strip under the resource bar (mock-up A, "Sub-strip under"); on by default */
     const val SW_PET = "pet"
@@ -275,7 +284,7 @@ object GameUi {
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
-        SW_ATK to false, SW_SHOT to true, SW_PMODE to true, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false, SW_SHOTF to false, SW_PS to false,
+        SW_ATK to false, SW_SHOT to true, SW_PMODE to true, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false, SW_SHOTF to false, SW_PS to SW_PS_DEFAULT_HIDDEN,
         SW_PET to true, SW_SRES to true, SW_NPF to false)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {

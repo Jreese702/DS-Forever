@@ -484,6 +484,123 @@ def main():
     G4.ROWS.uisw(None, SW4.PS_HIDE)
     L4.execute("FADE(GF, 0, 1)")
     chk("hub36: on again: the hooks still hold (%s)" % G4.GF.alpha, G4.GF.alpha == 0)
+    # hub72 HIDDEN POLESTAR IGNORES TOUCHES (the user, 2026-11-20: "Also make it ignore touches"): while hidden, every hidden top-level
+    # Polestar frame and every frame under it takes no click / motion input, kept in memory and given back exactly at Off; protected
+    # frames only out of combat; later windows (the welcome) and Polestar's own EnableMouse calls caught; nothing of PolestarDB written
+    L6 = tc.lupa.LuaRuntime()
+    L6.execute(STUB + r"""
+        MADE = {}; TICKERS = {}; FIGHT = false
+        function InCombatLockdown() return FIGHT end
+        local base = CreateFrame
+        function CreateFrame(kind, name, parent)
+            local f = base(); f.parent = parent; f.hooks = {}; f.kids = {}; f.name = name; MADE[#MADE + 1] = f
+            if name then _G[name] = f end
+            if type(parent) == "table" and parent.kids then table.insert(parent.kids, f) end
+            return f
+        end
+        function Frame:GetParent() return self.parent end
+        function Frame:GetObjectType() return "Frame" end
+        function Frame:IsProtected() return rawget(self, "prot") == true end
+        function Frame:GetChildren() return (table.unpack or unpack)(self.kids or {}) end
+        function Frame:HookScript(k, fn) self.hooks[k] = self.hooks[k] or {}; table.insert(self.hooks[k], fn) end
+        function Frame:Show() CALLS.show = CALLS.show + 1; for _, fn in ipairs(self.hooks.OnShow or {}) do fn(self) end end
+        -- the client's input state: click and motion apart, EnableMouse sets both (a protected frame in a fight refuses, as the game)
+        local function guard(self) if rawget(self, "prot") and FIGHT then COMBAT_WRITES = (COMBAT_WRITES or 0) + 1; error("blocked") end end
+        function Frame:EnableMouse(on) guard(self); self.click = on == true; self.motion = on == true end
+        function Frame:SetMouseClickEnabled(on) guard(self); self.click = on == true end
+        function Frame:SetMouseMotionEnabled(on) guard(self); self.motion = on == true end
+        function Frame:IsMouseEnabled() return self.click == true or self.motion == true end
+        function Frame:IsMouseClickEnabled() return self.click == true end
+        function Frame:IsMouseMotionEnabled() return self.motion == true end
+        function hooksecurefunc(t, k, fn)
+            if type(t) == "string" then return end
+            local orig = t[k]
+            rawset(t, k, function(...) local r = orig(...); fn(...); return r end)
+        end
+        C_Timer = { After = function() end, NewTicker = function(s, fn) if not TICKERS[s] then TICKERS[s] = fn end end }   -- the first per period: Polestar's looks come first
+        UIParent = setmetatable({ hooks = {}, kids = {} }, Frame)
+        Minimap = setmetatable({ hooks = {}, kids = {} }, Frame)
+        PolestarDB = { ui = { shown = true } }; PolestarCharDB = { welcomeSeen = 0 }
+        -- Polestar 0.2.5's shapes: the guide window (EnableMouse(true), GuideFrame.lua:2052) with a row (motion only: a tooltip) and a
+        -- click-only count; the arrow (Arrow.lua:83); a secure QoL button; the minimap button; someone else's frame
+        GF = CreateFrame("Frame", "PolestarGuideFrame", UIParent); GF:EnableMouse(true)
+        ROW = CreateFrame("Button", nil, GF); ROW:SetMouseClickEnabled(false); ROW:SetMouseMotionEnabled(true)
+        COUNT = CreateFrame("Button", nil, ROW); COUNT:SetMouseClickEnabled(true); COUNT:SetMouseMotionEnabled(false)
+        TIP = CreateFrame("Frame", nil, GF); TIP:EnableMouse(false)
+        ARROW = CreateFrame("Frame", "PolestarNavArrow", UIParent); ARROW:EnableMouse(true)
+        STEP = CreateFrame("Button", "PolestarStepButton", UIParent); STEP:EnableMouse(true); STEP.prot = true
+        MMB = CreateFrame("Button", "PolestarMinimapButton", Minimap); MMB:EnableMouse(true)
+        OTHER = CreateFrame("Frame", "SomeoneElsesFrame", UIParent); OTHER:EnableMouse(true)
+        -- a touch: the first frame (top-most first) that takes clicks, else the world
+        function TAP(...) for _, f in ipairs({ ... }) do if rawget(f, "click") then return rawget(f, "name") or "child" end end return "world" end
+        function SNAP() local t = {}; for i, f in ipairs(MADE) do t[i] = tostring(rawget(f, "click")) .. "/" .. tostring(rawget(f, "motion")) end; return table.concat(t, " ") end
+        function SV() return tostring(PolestarDB.ui.shown) .. tostring(PolestarCharDB.welcomeSeen) .. tostring(next(PolestarDB, "ui")) end
+    """)
+    L6.execute(open(HUB, encoding="utf-8").read().replace("local ADDON = ...", "local ADDON = 'WowCompanionHub'", 1))
+    G6 = L6.globals()
+    for i in range(1, len(G6.MADE) + 1):
+        if G6.MADE[i].OnEvent:
+            G6.MADE[i].OnEvent(G6.MADE[i], "PLAYER_LOGIN")
+    SW6, sw6 = G6.WowCompanion.hub.SW, G6.ROWS.uisw
+    q6, s6, m6 = G6.TICKERS[0.25], G6.TICKERS[5], G6.TICKERS[1]
+    chk("hub72: a 1 s look beside the 0.25 s and 5 s ones", m6 is not None and q6 is not None and s6 is not None)
+    before = G6.SNAP()
+    sv0 = G6.SV()
+    chk("hub72: shown: touches land on Polestar's window (%s)" % G6.TAP(G6.COUNT, G6.GF), G6.TAP(G6.COUNT, G6.GF) == "child")
+    sw6(None, SW6.PS_HIDE)
+    chk("hub72: hidden: the window, its row, its count and the arrow take no click or motion (%s %s %s %s %s %s %s %s)"
+        % (G6.GF.click, G6.GF.motion, G6.ROW.click, G6.ROW.motion, G6.COUNT.click, G6.COUNT.motion, G6.ARROW.click, G6.ARROW.motion),
+        L6.eval("not (GF.click or GF.motion or ROW.click or ROW.motion or COUNT.click or COUNT.motion or ARROW.click or ARROW.motion)"))
+    chk("hub72: hidden: a touch on the window or the arrow goes through to the world (%s)" % G6.TAP(G6.COUNT, G6.ROW, G6.GF, G6.ARROW),
+        G6.TAP(G6.COUNT, G6.ROW, G6.GF, G6.ARROW) == "world")
+    chk("hub72: the secure step button (out of combat) takes no touch either (%s)" % G6.STEP.click, G6.STEP.click is False)
+    chk("hub72: the minimap button and someone else's frame keep their input", G6.MMB.click is True and G6.OTHER.click is True)
+    # the welcome made later, at login (Welcome.lua:862, F:EnableMouse(true) and its hero :879): through at the next 0.25 s look
+    L6.execute('WEL = CreateFrame("Frame", "PolestarWelcome", UIParent); WEL:EnableMouse(true); HERO = CreateFrame("Frame", nil, WEL); HERO:EnableMouse(true); WEL:Show()')
+    q6()
+    chk("hub72: the welcome made later: it and its hero let touches through (%s)" % G6.TAP(G6.HERO, G6.WEL),
+        G6.TAP(G6.HERO, G6.WEL) == "world")
+    # a row built later under the window (a step rendered): the 1 s look
+    L6.execute('LATE = CreateFrame("Button", nil, GF); LATE:EnableMouse(true)')
+    m6()
+    chk("hub72: a row built later: through at the 1 s look (%s)" % G6.LATE.click, G6.LATE.click is False)
+    # Polestar turning a hooked frame's input on again while hidden (a re-skin): straight back off, its wish kept for Off
+    L6.execute("GF:EnableMouse(true)")
+    chk("hub72: Polestar's own EnableMouse(true) while hidden: off again at once (%s)" % G6.GF.click, G6.GF.click is False)
+    # COMBAT: hidden in a fight, a protected frame is never written; it waits for the fight's end
+    sw6(None, SW6.PS_SHOW)
+    shown_back = G6.SNAP()
+    L6.execute("FIGHT = true; COMBAT_WRITES = 0")
+    sw6(None, SW6.PS_HIDE)
+    q6(); m6(); s6()
+    chk("hub72: hidden in a fight: the secure step button untouched (click %s, writes refused %s)" % (G6.STEP.click, G6.COMBAT_WRITES),
+        G6.STEP.click is True and G6.COMBAT_WRITES == 0)
+    chk("hub72: hidden in a fight: the unprotected window still lets touches through (%s)" % G6.GF.click, G6.GF.click is False)
+    L6.execute("FIGHT = false")
+    m6()
+    chk("hub72: the fight over: the step button off at the 1 s look (%s)" % G6.STEP.click, G6.STEP.click is False)
+    # shown again IN a fight: the window back at once, the protected button owed until the fight ends
+    L6.execute("FIGHT = true; COMBAT_WRITES = 0")
+    sw6(None, SW6.PS_SHOW)
+    m6()
+    chk("hub72: shown in a fight: the window back (%s), the step button not written (%s, refused %s)" % (G6.GF.click, G6.STEP.click, G6.COMBAT_WRITES),
+        G6.GF.click is True and G6.STEP.click is False and G6.COMBAT_WRITES == 0)
+    L6.execute("FIGHT = false")
+    m6()
+    chk("hub72: the fight over: the step button's input back (%s)" % G6.STEP.click, G6.STEP.click is True)
+    after = G6.SNAP()
+    chk("hub72: shown again: every frame's click / motion exactly as before the first hide\n  before %s\n  after  %s" % (before, after),
+        shown_back.split(" ")[:8] == before.split(" ")[:8] and after.split(" ")[:8] == before.split(" ")[:8])
+    chk("hub72: the row kept motion only, the count click only, the tip none (%s/%s %s/%s %s/%s)"
+        % (G6.ROW.click, G6.ROW.motion, G6.COUNT.click, G6.COUNT.motion, G6.TIP.click, G6.TIP.motion),
+        G6.ROW.click is False and G6.ROW.motion is True and G6.COUNT.click is True and G6.COUNT.motion is False
+        and G6.TIP.click is False and G6.TIP.motion is False)
+    chk("hub72: later frames back too: the welcome, its hero, the late row (%s %s %s)" % (G6.WEL.click, G6.HERO.click, G6.LATE.click),
+        G6.WEL.click is True and G6.HERO.click is True and G6.LATE.click is True)
+    chk("hub72: shown: touches land on Polestar's window again (%s)" % G6.TAP(G6.COUNT, G6.GF), G6.TAP(G6.COUNT, G6.GF) == "child")
+    chk("hub72: nothing owed, nothing of Polestar's saved data written (%s -> %s)" % (sv0, G6.SV()),
+        L6.eval("next(WowCompanion.hub.ps.mouse) == nil") and G6.SV() == sv0)
+    chk("hub72: never Show / Hide from us (hide %d)" % G6.CALLS.hide, G6.CALLS.hide == 0)
     # hub54 (issue #267, reopening #197: "Turning it on does hide your target health bar but does not bring og one back"): the game's
     # Target / Player / Pet frames have Edit Mode's UpdateSystemSettingOpacity, which sets NOTHING for a system without an Opacity setting
     # (EditModeUnitFrameSystemMixin: only when ShouldShowSetting(Opacity); the presets give it to the party / raid frames alone). The stub

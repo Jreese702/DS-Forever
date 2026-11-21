@@ -135,7 +135,8 @@ class PetRecallTest {
     /** the review: the word is this padmap's character's setting (GameUi.character is set later in the same padmap's handling) */
     @Test fun theWordIsThePadmapsOwnCharacters() {
         assertEquals("Korvash-Realm", PetRecall.who("Korvash", "Realm"))
-        assertEquals("Korvash-", PetRecall.who("Korvash", null))                    // GameUi.character's own form for no realm
+        assertNull(PetRecall.who("Korvash", null))     // the 11-20 hunter (CharKey): no realm = no key (it was "Korvash-", a partial key)
+        assertNull(PetRecall.who("Korvash", ""))
         assertNull(PetRecall.who(null, "Realm"))
         assertNull(PetRecall.who("", "Realm"))
         val p = Prefs()

@@ -10,6 +10,7 @@ import android.view.View
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -139,7 +140,7 @@ class GameUiTilesRoomTest {
             .put("X_ON", 30).put("X_OFF", 31).put("X_RIDE", 32))
 
     private fun game(hudHidden: Boolean = false, chatHidden: Boolean = true, pending: Boolean = false, mt: JSONObject? = mtDoc(),
-                     hs: JSONObject? = hsDoc(ch = hudHidden, bh = hudHidden, xh = hudHidden)) {
+                     hs: JSONObject? = hsDoc(ch = hudHidden, bh = hudHidden, xh = hudHidden), psHidden: Boolean = false) {
         GameUi.character = "Sample-Realm"
         val cols = JSONObject()
         listOf("PLAYER_SHOW", "PLAYER_HIDE", "TARGET_SHOW", "TARGET_HIDE", "NP_OFF", "NP_ON", "PRD_OFF", "PRD_ON", "WM_OFF", "WM_ON",
@@ -147,7 +148,7 @@ class GameUiTilesRoomTest {
             "UFHPT_ON", "UFHPT_OFF", "PS_HIDE", "PS_SHOW", "PET_ON", "PET_OFF", "NPF_ON", "NPF_OFF").forEachIndexed { i, k -> cols.put(k, i) }
         val sw = JSONObject().put("row", "uisw").put("cols", cols).put("set", JSONObject())
             .put("player", "hidden").put("target", "hidden").put("np", true).put("prd", true).put("wm", false).put("party", "shown")
-            .put("ufp", true).put("uft", true).put("uftot", false).put("ufhpp", false).put("ufhpt", false).put("ps", false).put("pet", true)
+            .put("ufp", true).put("uft", true).put("uftot", false).put("ufhpp", false).put("ufhpt", false).put("ps", psHidden).put("pet", true)
             .put("npf", false)
         val els = org.json.JSONArray()
         for ((i, id) in listOf("minimap", "hud", "tracker", "chat", "dialogs").withIndex())
@@ -681,23 +682,30 @@ class GameUiTilesRoomTest {
             assertEquals(3, nav.focusTargets().size)
             val row = { GameUiSection::class.java.getDeclaredMethod("rowOf", String::class.java).apply { isAccessible = true }
                 .invoke(nav, GameUiTiles.PS_ID) as GameUi.Row? }
-            // the game says its frame is shown ("ps" = hidden: false): On
-            assertEquals(UiMode.ON, row()!!.mode)
-            assertEquals(GameUiTiles.Badge.ON, GameUiTiles.badge(row()))
+            // 2026-11-20 (the user: "we should hide that by default"): nothing chosen = hidden wanted. The game still shows it
+            // ("ps" = hidden: false): Off, the badge waits for the game
+            assertEquals(true, GameUi.swWant(GameUi.SW_PS))
+            assertEquals(UiMode.OFF, row()!!.mode)
+            assertEquals(GameUiTiles.Badge.SENT, GameUiTiles.badge(row()))
+            // the game took the hide: Off, settled
+            game(psHidden = true); settle(r)
+            assertEquals(UiMode.OFF, row()!!.mode)
+            assertEquals(GameUiTiles.Badge.OFF, GameUiTiles.badge(row()))
+            assertEquals("Hidden now", row()!!.note)
             val t = nav.focusTargets()[2]
             tap(nav, t.centerX(), t.centerY()); settle(r)
             assertEquals(GameUiTiles.PS_ID, nav.openTile)
             val b = nav.focusTargets().drop(3)
             assertEquals("On / Off", 2, b.size)
-            // Off: the switch's "hidden" wanted; the picture follows (dimmed), the badge waits for the game
-            tap(nav, b[1].centerX(), b[1].centerY()); settle(r)
-            assertEquals(true, GameUi.swWant(GameUi.SW_PS))
-            assertEquals(UiMode.OFF, row()!!.mode)
-            assertEquals(GameUiTiles.Badge.SENT, GameUiTiles.badge(row()))
-            // On again: shown wanted, the game agrees
+            // On: shown wanted (the switch's "hidden" false); the badge waits for the game
             tap(nav, b[0].centerX(), b[0].centerY()); settle(r)
             assertEquals(false, GameUi.swWant(GameUi.SW_PS))
-            assertEquals(GameUiTiles.Badge.ON, GameUiTiles.badge(row()))
+            assertEquals(UiMode.ON, row()!!.mode)
+            assertEquals(GameUiTiles.Badge.SENT, GameUiTiles.badge(row()))
+            // Off again: hidden wanted, the game agrees
+            tap(nav, b[1].centerX(), b[1].centerY()); settle(r)
+            assertEquals(true, GameUi.swWant(GameUi.SW_PS))
+            assertEquals(GameUiTiles.Badge.OFF, GameUiTiles.badge(row()))
             // the guide off: the tile goes, its band with it (B has nothing of it to close)
             Settings.polestarGuide = PolestarGuide.OFF; settle(r)
             assertEquals(listOf(GameUiSection.COMPASS_ID, GameUi.WM_ID), nav.tileIds())
@@ -707,6 +715,29 @@ class GameUiTilesRoomTest {
             dirF.set(ThirdPartyAddons, savedDir); stateF.set(ThirdPartyAddons, savedState)
             Settings.polestarGuide = null
         }
+    }
+
+    /** 2026-11-20 POLESTAR HIDDEN BY DEFAULT, EXISTING PLAYERS: a character that never chose (no key) moves to hidden; one whose saved
+     *  choice is shown (they turned it On) keeps it shown; one that chose hidden stays hidden. Nothing is written by the move */
+    @Test fun existingPlayersKeepAChosenOnAndEveryoneElseIsHidden() {
+        GameUi.init(app)
+        val sp = app.getSharedPreferences("gameui", android.content.Context.MODE_PRIVATE)
+        sp.edit().putBoolean("sw.ps.Shown-Realm", false).putBoolean("sw.ps.Hidden-Realm", true).commit()
+        val want = { who: String -> GameUi.character = who; GameUi.swWant(GameUi.SW_PS) }
+        assertEquals("never chose: hidden", true, want("Sample-Realm"))
+        assertEquals("turned it On: kept shown", false, want("Shown-Realm"))
+        assertEquals("chose hidden: hidden", true, want("Hidden-Realm"))
+        assertFalse("no key written for the one that never chose", sp.contains("sw.ps.Sample-Realm"))
+        // the game shows it for the one that never chose: the next switch tap is the hide; for the one that turned it On, nothing
+        game()
+        val s = GameUi::class.java.getDeclaredField("sw").apply { isAccessible = true }.get(GameUi) as GameUi.Sw
+        val shown = s.copy(set = s.set + (GameUi.SW_PS to true))
+        GameUi.character = "Sample-Realm"
+        assertEquals(GameUi.SW_PS to true, GameUi.swNextSkip(shown, setOf(GameUi.SW_PLAYER, GameUi.SW_TARGET, GameUi.SW_NP, GameUi.SW_PRD,
+            GameUi.SW_WM, GameUi.SW_PARTY, GameUi.SW_UFP, GameUi.SW_UFT, GameUi.SW_UFTOT, GameUi.SW_UFHPP, GameUi.SW_UFHPT)) { GameUi.swWant(it) })
+        GameUi.character = "Shown-Realm"
+        assertNull(GameUi.swNextSkip(shown, setOf(GameUi.SW_PLAYER, GameUi.SW_TARGET, GameUi.SW_NP, GameUi.SW_PRD, GameUi.SW_WM,
+            GameUi.SW_PARTY, GameUi.SW_UFP, GameUi.SW_UFT, GameUi.SW_UFTOT, GameUi.SW_UFHPP, GameUi.SW_UFHPT, GameUi.SW_PET, GameUi.SW_NPF)) { GameUi.swWant(it) })
     }
 
     // ---------------------------------------------------------------- split-hud: the three tiles

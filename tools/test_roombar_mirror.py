@@ -87,7 +87,7 @@ NORMAL = {1: "chat", 2: "radial", 3: "map", 4: "home"}
 MIRROR = {1: "map", 2: "radial", 3: "chat", 4: "home"}
 
 # ------------------------------------------------------------------------------------------------ the tags
-check('local PV = "m180"' in SRC["padmap"] and "m178 MOVABLE HOME'S SWAP" in SRC["padmap"], "0. PadMap's tag m179 (m178's swap note kept)")
+check('local PV = "m181"' in SRC["padmap"] and "m178 MOVABLE HOME'S SWAP" in SRC["padmap"], "0. PadMap's tag m179 (m178's swap note kept)")
 check('local BV = "b75"' in SRC["book"] and "b74 MOVABLE HOME'S SWAP" in SRC["book"], "0. Book's tag b75 (b74's page-3 codes 9 / 10 kept)")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")
 

@@ -98,7 +98,7 @@ class TalkKeepTest {
         val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
             .map { File(it) }.first { it.isDirectory }
         val h = File(src, "CompanionHost.kt").readText()
-        assertTrue("restored when the padmap names the character", h.contains("TalkKeep.character(who)"))
+        assertTrue("restored when the padmap names the character (its whole key: CharKey)", h.contains("TalkKeep.character(ck)"))
         val c = File(src, "ChatView.kt").readText()
         assertTrue(c.contains("TalkKeep.resolve(TalkKeep.used, kinds().map { it.key }.toSet(), chans)"))
         assertTrue(c.contains("TalkKeep.went(TalkKeep.Used(t, if (t == \"WHISPER\") w else \"\", chan))"))

@@ -1502,31 +1502,64 @@ end
 -- becomes our override (the item keeps its button), the player's binding for it goes back to free (one SaveBindings: the set
 -- as it was before Bags bound it), and the WCB macros are deleted. None existed on the Thor or the PC on 2026-10-09 (their WTF
 -- caches: the "DS ..." macros are Spells' / Home's, not these).
+-- Safety k6 (the 11-20 hunter, test build 1513): WC.charKey(), nil until the realm is known. It was "Name-?" / "Name-" + a marker
+-- (S()'s markers are strings) / "?-?": nothing is read or saved per character without the whole key now
 function BB.charKey()
-    local n = S(function() return UnitName("player") end)
-    local r = S(function() return GetRealmName() end)
-    return (type(n) == "string" and n or "?") .. "-" .. (type(r) == "string" and r or "?")
+    return ((function() if type(WC.charKey) == "function" then return (WC.charKey()) end; local ok, k = pcall(function() local n, r = UnitName("player"), GetRealmName(); if type(n) == "string" and type(r) == "string" and n:find("%S") and r:find("%S") and r ~= "?" and r ~= "_" then return n .. "-" .. r end end); return ok and k or nil end)())
 end
 
-function BB.load()
+-- bags-rk1 (the k6 review, round 3: "Bags overwrites the real bag binds when the key appears after login"): BB.load runs once, at
+-- PLAYER_LOGIN, and BB.save writes the whole record from memory. With no key at the login (the realm empty, the hint not there yet, the
+-- kept realm not resolved yet) BB.binds was {}; once the key came (the realm back, the hint, Safety's 2 s / 30 s re-checks) the next save
+-- wrote that near-empty set over the REAL bagBinds["Name-Realm"] (every earlier bind lost). Now BB.key is the key BB.load read under, and
+-- a save under any other key first reads that key's record (BB.sync: the stored binds, this session's own key-less binds on top); the
+-- first time the key appears (timers after the login, a world entry, a fight's end) BB.sync reads and applies it too. A key that CHANGES
+-- (a kept realm the game's own answer replaced) takes the new key's record as stored: the old key's set is never copied onto it.
+function BB.read(me)
     local db = type(WowCompanionDB) == "table" and WowCompanionDB.bagBinds or nil
-    local mine = type(db) == "table" and db[BB.charKey()] or nil
-    BB.binds = {}
+    local mine = me and type(db) == "table" and db[me] or nil
+    local out = {}
     if type(mine) == "table" then
         for k, id in pairs(mine) do
-            if type(k) == "string" and tonumber(id) and not chordRefusal(k) then BB.binds[k] = tonumber(id)
+            if type(k) == "string" and tonumber(id) and not chordRefusal(k) then out[k] = tonumber(id)
             elseif type(k) == "string" and tonumber(id) and k:match("([^%-]+)$") == "PADFORWARD" then BB.dropped = true end
         end
     end
+    return out
+end
+
+function BB.load()
+    local me = BB.charKey()
+    BB.key = me
+    BB.binds = BB.read(me)
     if BB.dropped then BB.save() end                    -- Start's old bind gone from our record too (the pause wheel's now)
 end
 
+-- bags-rk1: the key now against the one BB.binds was read under; true = BB.binds is now the key's own record (and applied)
+function BB.sync()
+    local me = BB.charKey()
+    if not me or me == BB.key then return false end
+    local had = BB.key
+    local stored = BB.read(me)
+    local mine = false
+    if had == nil then                                  -- binds made while no key was known: this character's, kept on top
+        for k, id in pairs(BB.binds) do stored[k] = id; mine = true end
+    end
+    BB.key, BB.binds = me, stored
+    if mine or BB.dropped then BB.save() end
+    BB.apply()                                          -- in a fight: waits for PLAYER_REGEN_ENABLED (BB.pending)
+    return true
+end
+
 function BB.save()
+    local me = BB.charKey()
+    if not me then return end                           -- k6: no character key yet: nothing saved (BB.load reads it again)
+    if me ~= BB.key then BB.sync(); return end          -- bags-rk1: never the whole record of another (or no) key over this one's
     if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
     if type(WowCompanionDB.bagBinds) ~= "table" then WowCompanionDB.bagBinds = {} end
     local out = {}
     for k, id in pairs(BB.binds) do out[k] = id end
-    WowCompanionDB.bagBinds[BB.charKey()] = next(out) and out or nil
+    WowCompanionDB.bagBinds[me] = next(out) and out or nil
 end
 
 -- one secure item button per chord, made out of combat, off screen, never under a finger (no art: nothing to see)
@@ -1633,13 +1666,23 @@ end
 do
     local bf = CreateFrame("Frame")
     bf:RegisterEvent("PLAYER_LOGIN")
+    bf:RegisterEvent("PLAYER_ENTERING_WORLD")
     bf:RegisterEvent("PLAYER_REGEN_ENABLED")
     bf:SetScript("OnEvent", function(_, e)
         if e == "PLAYER_LOGIN" then
             BB.load(); BB.apply(); BB.oldDoc = BB.old()
             BB.migrated = nil
             for n = 1, 3 do C_Timer.After(2 * n, function() if not BB.migrated then BB.migrate() end end) end   -- bags-bindbox1
+            -- bags-rk1: no key at the login: asked again (every 5 s for a minute, then every 30 s for half an hour) until it is known
+            local function later(n)
+                if BB.key ~= nil or n > 72 then return end
+                C_Timer.After(n <= 12 and 5 or 30, function() pcall(BB.sync); later(n + 1) end)
+            end
+            if BB.key == nil then later(1) end
+        elseif e == "PLAYER_ENTERING_WORLD" then        -- bags-rk1: a world entry with the key known now
+            if BB.key == nil and BB.binds then pcall(BB.sync) end
         else                                            -- a fight's end: what waited for it, and an old stick bind not moved yet
+            if BB.key == nil then pcall(BB.sync) end    -- bags-rk1
             if BB.pending then BB.apply() end
             if BB.migrated == false then BB.migrate() end
         end

@@ -171,7 +171,7 @@ def press(L, *keys):
 
 
 # ================================================================ a. versions, no trace in the code
-check('local CBV = "cb15"' in BLOCK and "cb14 THE IN-COMBAT LAYER" in AB, "a. ActionBar cb15 (cb14's in-combat layer note kept)")
+check('local CBV = "cb16"' in BLOCK and "cb14 THE IN-COMBAT LAYER" in AB, "a. ActionBar cb16 (cb14's in-combat layer note kept)")
 check('local CV = "p58"' in SRC["padtabctl"] and "p55 CONTROLLER | TAP TO CAST" in SRC["padtabctl"], "a. PadTabCtl p56 (p55's note kept)")
 check('local BV = "b75"' in SRC["book"] and "b70 CONTROLLER | TAP TO CAST" in SRC["book"], "a. Book b71 (b70's note kept)")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
@@ -207,7 +207,7 @@ check(cell(W, 8, "type") is None and cell(W, 8, "wc-n-type") is None, "b. the pi
 check(cell(W, 11, "type") is None, "b. an unset fight slot's cell (11) has no action")
 d = bar(W)
 fe = {x['s']: x for x in d.get('f', [])}
-check(d.get('v') == 'cb15' and d.get('show') == 1 and d.get('fl') == 1 and fe.get(1, {}).get('id') == 331 and fe[1].get('c') == 9
+check(d.get('v') == 'cb16' and d.get('show') == 1 and d.get('fl') == 1 and fe.get(1, {}).get('id') == 331 and fe[1].get('c') == 9
       and fe.get(2, {}).get('k') == 'command' and fe[2].get('c') == 10, "b. the document: `f` with cells 9 / 10, show = 1", d.get('f'))
 check(W.eval('WowCompanion.pad.describe().rows.castbar') is not None, "b. described (the app's TapBridge finds the row)")
 clean(W, "b")

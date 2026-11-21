@@ -380,7 +380,12 @@ object SvSync {
             val (remote, resetOut) = if (resets.isEmpty()) remoteRaw to 0 else SvReset.strip(variable, remoteRaw, resets, pcAt)
             if (resetOut > 0) log("settings sync: $variable from the PC: $resetOut reset entries left out")
             val base = baseOf(keptDir, variable)
-            val m = SvMerge.merge(localT, remote, base)
+            // RealmFix (the 11-20 hunter): the PC's orphan keys fold first (the real key wins; a store the Thor's real key holds is
+            // never given an orphan's), so a realm-less PC session never adds "Name-" / "Name-?" stores to the Thor's kept copy
+            // the k6 review round 2 (item C): the name's realms from both tables (the other's kept copy and the PC's other file too)
+            val others = SvKeep.otherTables(keptDir, null, variable) + SvKeep.FILES.keys.filter { it != variable }.mapNotNull { v ->
+                byVar[v]?.takeIf { it.optBoolean("exists", false) }?.let { o -> runCatching { SvLua.parse(o.optString("text"), v) }.getOrNull() } }
+            val m = SvMerge.merge(localT, pcFolded(variable, remote, localT, log, listOf(remoteRaw), resets, others), base)
             log("settings sync: $variable from the PC: ${m.taken} changed, ${m.added} added, ${m.refused} refused" + if (base == null) " (first sync: the Thor's win)" else "")
             val doc = if (m.changed) keep(keptDir, variable, m.table, now, log) ?: continue else local
             if (doc.n == 0) continue
@@ -391,6 +396,17 @@ object SvSync {
         }
         // sent even with no table: Desktop's start waits for this answer, not for its time-out
         return JSONObject().put("t", "sv_write").put("v", 1).put("acct", msg.optString("acct")).put("docs", out)
+    }
+
+    /** the PC's table [remote] with its orphan keys folded against the Thor's kept [local] ([RealmFix]); one line when any */
+    private fun pcFolded(variable: String, remote: Map<Any, Any>, local: Map<Any, Any>, log: (String) -> Unit,
+                         raw: List<Map<Any, Any>?> = emptyList(), resets: List<SvReset.Mark> = emptyList(),
+                         others: List<Map<Any, Any>> = emptyList()): Map<Any, Any> {
+        // the k6 review (item 3): a store the real key held before a reset (the PC's raw table, a reset mark) is held too: an orphan never
+        // brings a reset value back. Round 2 (item C): the realms counted over BOTH our tables ([others]: the other table's copies)
+        val r = RealmFix.clean(remote, RealmFix.realmsByName(listOf(local, remote) + others), RealmFix.held(listOf(local) + raw) + RealmFix.resetHeld(resets, variable))
+        if (r.items.isNotEmpty()) log("settings sync: $variable from the PC: orphan keys folded (${r.adopted} into the real key, ${r.dropped} dropped)")
+        return r.table
     }
 
     /** Desktop's "sv_written": a table written or already the same = the PC holds it now (the base; its documents trusted) */
@@ -444,7 +460,8 @@ object SvSync {
             }
             return
         }
-        val m = SvMerge.merge(localT, remote, if (trust) baseOf(keptDir, d.variable) else null)
+        val m = SvMerge.merge(localT, pcFolded(d.variable, remote, localT, log, listOf(remoteIn), SvReset.read(keptDir),
+            SvKeep.otherTables(keptDir, null, d.variable)), if (trust) baseOf(keptDir, d.variable) else null)
         val kept = !m.changed || keep(keptDir, d.variable, m.table, now, log) != null
         if (m.changed && kept)
             log("settings sync: ${d.variable} from the PC: ${m.taken} changed, ${m.added} added, ${m.refused} refused" + if (trust) "" else " (not confirmed: the Thor's win)")

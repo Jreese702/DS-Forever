@@ -173,7 +173,7 @@ check(cols["nokbd"] < 40, "still inside the control row's 40 columns", cols["nok
 check(L.eval('#TRACE') == 0, "no trace: no binding, macro, CVar or window call", L.eval('#TRACE'))
 check('p24 (voice1, the user 2026-11-16' in SRC and '"A opens the keyboard, X opens our own voice prompt"' in SRC,
       "the version note quotes the user")
-check('local PV = "p25"' in SRC and 'p25 (voice1 review, the user 2026-11-16' in SRC, "p25: the tag bumped, its note quotes the user")
+check('local PV = "p26"' in SRC and 'p25 (voice1 review, the user 2026-11-16' in SRC, "p25: the tag bumped, its note quotes the user")
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -307,11 +307,14 @@ object PadMapModel {
                 val dirs = d.optJSONObject("d")
                 Dpad(d.optBoolean("on", false), DPAD_SIDES.associateWith { placed?.optBoolean(it, false) == true }, sides("skipped"), sides("taken"),
                     if (d.has("want")) d.optBoolean("want", false) else null, col("on"), col("off"),
-                    who?.let { textOrNull(it, "n") }, who?.let { textOrNull(it, "r") },
+                    who?.let { textOrNull(it, "n") }, who?.let { textOrNull(it, "r") }?.let { CharKey.realm(it) },
                     dirs = (1..4).mapNotNull { p -> dirs?.let { textOrNull(it, p.toString()) }?.let { p to it } }.toMap(),
                     aside = textOrNull(d, "aside"),
                     undone = sides("undone"),
-                    ct = if (d.has("ct")) d.optInt("ct", 0).coerceIn(0, 1) else null)
+                    ct = if (d.has("ct")) d.optInt("ct", 0).coerceIn(0, 1) else null,
+                    realmSource = who?.let { textOrNull(it, "rs") },
+                    realmHint = who?.let { textOrNull(it, "rh") },
+                    cls = who?.let { textOrNull(it, "c") })
             },
             start = m.optJSONObject("start")?.let { st ->
                 StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"),
@@ -337,7 +340,13 @@ object PadMapModel {
     data class Dpad(val on: Boolean, val placed: kotlin.collections.Map<String, Boolean>, val skipped: List<String>, val taken: List<String>,
                     val want: Boolean?, val colOn: Int?, val colOff: Int?, val name: String?, val realm: String?,
                     val dirs: kotlin.collections.Map<Int, String> = emptyMap(), val aside: String? = null,
-                    val undone: List<String> = emptyList(), val ct: Int? = null)
+                    val undone: List<String> = emptyList(), val ct: Int? = null,
+                    /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"), null from an older add-on */
+                    val realmSource: String? = null,
+                    /** PadMap m179 (Safety k7): the game's realm hint ("present" / "none", the diagnostic line), null from an older add-on */
+                    val realmHint: String? = null,
+                    /** PadMap m179: the character's class token (CombatKeep refuses another class's backup), null = not said */
+                    val cls: String? = null)
     val DPAD_SIDES = listOf("left", "up", "right")
 
     /** m37 / m160 START (the padmap's `start`): [key] the game's OPENRADIAL key; [bound] "pause" = Start is the router's (Home's wheel, the
