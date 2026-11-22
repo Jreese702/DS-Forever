@@ -58,6 +58,20 @@ object TopCombatBar {
      *  attack armed) B keeps today's meaning there too: the takeover goes and the faces are given back (the add-on's wings follow) */
     fun bShrinks(l: HomeLayout, fighting: Boolean, ct: Int?): Boolean = !(live(l, ct) && fighting)
 
+    /**
+     * THE TAP-TO-CAST BAR STAYS IN A TOP-SCREEN FIGHT (the 11-22 check of the slide's shots: the bar under the chat was gone in the
+     * fight - Settings > Tap-to-cast bar > Show in combat Off, its default, slid it down behind the room bar). Tap-to-cast is a fight
+     * tool, and with Top screen the band leaves the bottom screen in a fight, so the bar is the bottom screen's one fight control: it
+     * STAYS - seen, its fight layer shown, tappable - with its column, wherever its dock puts it (under / above the chat or the map,
+     * across, Split), whatever Show in combat says. [l] the record as the page lays it (TopCombatBar.honoured: Top screen only while the
+     * add-on's Wings are on); Party mode ([partyOn]) has no Top-screen takeover (the band stays: the setting and Bar in Party mode rule
+     * as ever). Grow and Same size keep Show in combat as it is.
+     */
+    fun stripStays(l: HomeLayout, partyOn: Boolean): Boolean = wanted(l) && !partyOn
+    /** the tap-to-cast bar's fight rule for [l]: STAY when [stripStays], else the player's [setting] */
+    fun stripCombat(l: HomeLayout, partyOn: Boolean, setting: CastStripModel.Combat): CastStripModel.Combat =
+        if (stripStays(l, partyOn)) CastStripModel.Combat.STAY else setting
+
     /** the Settings band's status for the In fights tile: Top screen chosen but the add-on has no flag yet */
     fun status(l: HomeLayout, ct: Int?, haveDpad: Boolean): String? =
         if (wanted(l) && haveDpad && ct == null) "Needs the newer Spells add-on" else null

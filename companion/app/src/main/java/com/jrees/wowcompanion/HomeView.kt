@@ -1734,6 +1734,8 @@ class HomeView(
     /** the overall fraction (0..1) a Top-screen slide had reached when the next apply cancelled it, and its way; -1 = none */
     private var slideCutAt = -1f
     private var slideCutUp = false
+    /** the down-slide's hold left (ms) when the next apply cut it inside it (TopSlide.holdMs: a re-lay then waits only what was left) */
+    private var slideCutHold = 0L
     /** P2: the last [places] laid the tap-to-cast bar split in two halves */
     private var laidSplit = false
     /** the last [places] laid the bar at the top of its column (Above chat / Above map): hidden, it slides up behind the band */
@@ -1807,7 +1809,10 @@ class HomeView(
 
     /** the bar's side and its fight rule now: the player's, or a preview look's (Hide with it) */
     private fun castSideNow(): CastStripModel.Side = layoutNow().castSide
-    private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat
+    // In fights = Top screen (TopCombatBar.stripStays): the band leaves the bottom screen in the fight, the bar stays whatever Show in
+    // combat says (its fight layer, its touches, its dock); the cast bar question's picture keeps its own Hide
+    private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE
+        else TopCombatBar.stripCombat(layoutNow(), partyOnHere(), HomeSettings.castBarCombat)
 
     /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
     private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
@@ -1911,10 +1916,10 @@ class HomeView(
         // everywhere else B comes through the Cast view's reader
         watchB((s.full == HomeModule.CHAT || s.full == HomeModule.MAP) && !s.takeover && lent(mapView))
         val w = width.toFloat(); val h = frameH
-        slideCutAt = -1f
+        slideCutAt = -1f; slideCutHold = 0L
         anim?.cancel()
-        // a slide THIS cancel just cut short (its overall fraction and way; -1 = none)
-        val cutAt = slideCutAt; val cutUp = slideCutUp; slideCutAt = -1f
+        // a slide THIS cancel just cut short (its overall fraction and way; -1 = none; the hold it had left)
+        val cutAt = slideCutAt; val cutUp = slideCutUp; val cutHold = slideCutHold; slideCutAt = -1f; slideCutHold = 0L
         if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
         val wasAway = laidAway
         val to = places(s, w, h)
@@ -1931,7 +1936,12 @@ class HomeView(
         val resumeAt = TopSlide.resumeAt(slide, wasAway, away, open || wasFull, cutAt, cutUp)
         val sliding = slide || resumeAt >= 0f
         val slideFrom = if (slide) 0f else resumeAt.coerceAtLeast(0f)      // the slide's fraction this motion starts at
-        if (lent(castView) && !laidAway) castView.away = false                // the down-slide's start (or the band on the page)
+        // the way down waits for the Wings to be mostly off the top screen (TopSlide.DOWN_HOLD_MS; the band and the Wings never both
+        // show): a fresh way down from the band landed away, or what was left of that hold; a reversal mid-slide goes at once
+        val hold = if (sliding) TopSlide.holdMs(slide, away, TopSlide.bandOff(now[Part.BARS]?.bottom), cutUp, cutHold, resumeAt) else 0L
+        // the down-slide's start (or the band on the page); held, the band stays away above the page - its cast bar given to the rooms'
+        // bar - until the hold ends (below), so the player's cast never leaves the bottom screen
+        if (lent(castView) && !laidAway && hold == 0L) castView.away = false
         for ((p, v) in views) if (to.containsKey(p)) {
             // a part coming back after being GONE starts from rest: no left-over slide, its own depth (the card over the map)
             if (v.visibility != View.VISIBLE && !classOpen && pauseT == 0f) { v.animate().cancel(); v.translationX = 0f; v.translationZ = restZ(p) }
@@ -2021,7 +2031,7 @@ class HomeView(
         val springs = !morphing && !combat && !sliding && !gliding && editGlides() && motion.on && motion.scale > 0f
         if (!springs) partVel.clear()
         val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
-        val dur = if (springs) HomeEditMotion.glideMs(ms) else ms
+        val dur = if (springs) HomeEditMotion.glideMs(ms) else ms + hold
         var cancelled = false
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = dur
@@ -2034,7 +2044,9 @@ class HomeView(
                 else if (sliding) for (p in from.keys) {
                     val f = from[p]!!
                     val t = to[p] ?: f
-                    val q = TopSlide.resumeK(a.animatedFraction, slideFrom, away)
+                    // (the hold first: every part stays where it stands, then the slide's own time)
+                    val q = TopSlide.resumeK(TopSlide.afterHold(a.animatedFraction * dur, hold, ms), slideFrom, away)
+                    if (hold > 0L && !away && q > 0f && lent(castView)) castView.away = false    // the hold over: the band draws again
                     now[p] = RectF(lerp(f.left, t.left, q), lerp(f.top, t.top, q), lerp(f.right, t.right, q), lerp(f.bottom, t.bottom, q))
                 }
                 else for (p in from.keys) {
@@ -2042,7 +2054,7 @@ class HomeView(
                     val t = to[p] ?: f
                     now[p] = RectF(lerp(f.left, t.left, k), lerp(f.top, t.top, k), lerp(f.right, t.right, k), lerp(f.bottom, t.bottom, k))
                 }
-                val t = a.animatedFraction * dur                      // the time in, linear
+                val t = a.animatedFraction * dur - hold               // the time in, linear (the slide's own, past its hold)
                 overlayOut = (1f - t / fadeMs).coerceIn(0f, 1f)
                 overlayIn = ((t - (ms - FADE_MS)) / FADE_MS).coerceIn(0f, 1f)
                 for (p in gone) if (!(gliding && p == Part.CHAT_FULL)) views[p]?.alpha = overlayOut
@@ -2060,7 +2072,11 @@ class HomeView(
                 override fun onAnimationCancel(a: Animator) {
                     cancelled = true
                     // a slide cut short: the next apply goes on with it if it keeps the way ([TopSlide.resumeAt])
-                    if (sliding) { slideCutAt = TopSlide.overall((a as ValueAnimator).animatedFraction, slideFrom); slideCutUp = away }
+                    if (sliding) {
+                        val tIn = (a as ValueAnimator).animatedFraction * dur
+                        slideCutAt = TopSlide.overall(TopSlide.afterHold(tIn, hold, ms), slideFrom); slideCutUp = away
+                        slideCutHold = if (tIn < hold) Math.round(hold - tIn.toDouble()).coerceAtLeast(1L) else 0L
+                    }
                 }
                 override fun onAnimationEnd(a: Animator) {
                     // a spring glide cut short keeps its parts' speeds for the next one; landed, they are still

@@ -116,8 +116,10 @@ class CastBarCombatTest {
         // movable Home P2: both halves of a Split bar (castStrip2) take the same gate
         assertTrue(h.contains("private fun castStripGate() { for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep()) }"))
         assertTrue(h.contains("CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)"))     // cb15: Bar in Party mode
-        // the player's own rule (a preview look - the cast bar question's picture - shows Hide)
-        assertTrue(h.contains("if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat"))
+        // the player's own rule (a preview look - the cast bar question's picture - shows Hide); In fights = Top screen keeps the bar
+        // (the 11-22 shots: TopCombatBar.stripCombat - STAY with Top screen live and Party mode off, else the player's setting)
+        assertTrue(h.contains("if (renderLook?.castSide != null) CastStripModel.Combat.HIDE\n" +
+            "        else TopCombatBar.stripCombat(layoutNow(), partyOnHere(), HomeSettings.castBarCombat)"))
         // cb7: a change of hidden lays the page again with the one motion; apply itself only gates (no re-lay from inside apply)
         assertTrue(h.contains("if (laidSide == CastStripModel.Side.OFF || castHiddenNow() == laidHidden) return"))
         val apply = h.substringAfter("private fun apply(s: HomeScreen, animate: Boolean) {").substringBefore("\n    private fun big(")

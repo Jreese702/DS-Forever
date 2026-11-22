@@ -308,6 +308,17 @@ class HomeLayoutShotsTest {
         assertTrue("away: the band draws nothing", p.cast.away)
         assertFalse("away: its cast bar is not the shown one (the rooms' bar takes it)", p.cast.ownCastBarShown())
         assertEquals("Home's band bottom for its followers: 0, never negative", 0f, p.home.barsBottom(), 0f)
+        // THE TAP-TO-CAST BAR STAYS (the 11-22 shots: Show in combat Off, the default, had slid it away under the room bar while the band
+        // left too - no fight control on the bottom screen): on the page under the grown chat, where it rests, tappable, its fight layer
+        assertEquals("(the player's setting: Show in combat Off)", CastStripModel.Combat.HIDE, HomeSettings.castBarCombat)
+        val sb = away.getValue("STRIP")
+        assertEquals("the bar where it rests", rest.getValue("STRIP"), sb)
+        assertTrue("under the grown chat, on the page ($sb)", sb.top >= away.getValue("CHAT").bottom + 8f - 0.01f && sb.bottom <= H + 0.01f)
+        val strip = views(p.home).getValue("STRIP") as CastStripView
+        assertEquals(View.VISIBLE, strip.visibility)
+        assertFalse("not slid away", strip.fightHidden)
+        assertTrue("it takes touches in the fight", strip.takesTouch)
+        assertTrue("its fight layer shows", strip.fightNow)
         shot(p, "bottom_fight_top_away")
         // B in the fight: nothing changes (no shrink, no red reminder)
         setField(p.home, "grewAt", 0L)
@@ -320,6 +331,8 @@ class HomeLayoutShotsTest {
         val g = page(l.copy(fight = HomeLayout.FightBand.GROW), fight = true)
         assertEquals(416f, boxes(g.home).getValue("BARS").bottom, 0.01f)
         assertFalse(g.cast.away)
+        assertTrue("Grow keeps Show in combat Off: the bar slid away below the page", boxes(g.home).getValue("STRIP").top >= H - 0.01f)
+        assertTrue((views(g.home).getValue("STRIP") as CastStripView).fightHidden)
         setField(g.home, "grewAt", 0L)
         HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(g.home)
         assertFalse("Grow: B shrinks", g.home.flow.takeover)
@@ -334,6 +347,35 @@ class HomeLayoutShotsTest {
             HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(n.home)
             assertFalse("ct=$ct: B shrinks", n.home.flow.takeover)
         }
+    }
+
+    /**
+     * the tap-to-cast bar's docks keep working in a Top-screen fight (the 11-22 shots): Above chat rides up with its grown column (at the
+     * top gap, the chat under it), Under map stays under the map; Party mode (no Top-screen takeover: the band stays) keeps the player's
+     * Show in combat Off
+     */
+    @Test fun topScreenKeepsTheTapToCastBarInItsDock() {
+        val above = page(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT, fight = HomeLayout.FightBand.TOP), fight = true, ct = 1)
+        assertTrue(above.cast.away)
+        val a = boxes(above.home)
+        assertEquals("Above chat: the bar at the top of the grown column", 8f, a.getValue("STRIP").top, 0.01f)
+        assertTrue("the chat's column under it", a.getValue("CHAT").top >= a.getValue("STRIP").bottom + 8f - 0.01f)
+        assertTrue((views(above.home).getValue("STRIP") as CastStripView).takesTouch)
+        shot(above, "bottom_fight_top_away_above_chat")
+        val underMap = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP, fight = HomeLayout.FightBand.TOP), fight = true, ct = 1)
+        val m = boxes(underMap.home)
+        assertTrue("Under map: under the grown map", m.getValue("STRIP").top >= m.getValue("MAP").bottom + 8f - 0.01f && m.getValue("STRIP").bottom <= H + 0.01f)
+        assertEquals("in the map's column", m.getValue("MAP").left, m.getValue("STRIP").left, 0.01f)
+        assertTrue((views(underMap.home).getValue("STRIP") as CastStripView).takesTouch)
+        val party = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP), fight = true, party = true, ct = 1)
+        assertFalse("Party mode: the band stays", party.cast.away)
+        val ps = views(party.home).getValue("STRIP") as CastStripView
+        assertFalse("Party mode: Bar in Party mode (on by default) keeps it, as ever", ps.fightHidden)
+        try {
+            HomeSettings.castBarPartyShow = false
+            party.home.tick(); settle()
+            assertTrue("Party mode, Bar in Party mode off: Show in combat Off slides the bar away as ever (no Top-screen keep)", ps.fightHidden)
+        } finally { HomeSettings.castBarPartyShow = true }
     }
 
     /** the fight's signal as the add-on sends it (hudS.c), then Home's tick: the flow's takeover follows */
@@ -383,6 +425,7 @@ class HomeLayoutShotsTest {
             frame()
             val b = boxes(home)
             bandB += b.getValue("BARS").bottom; chatT += b.getValue("CHAT").top
+            pageFrame("up frame $i", b, rest)
             if (!shotMid && b.getValue("BARS").bottom < (rb.bottom - 16f) / 2f) { shotMid = true; shotNow(p, "bottom_fight_top_slide50") }
             if (i == 3) shotNow(p, "bottom_fight_top_slide25")
         }
@@ -399,19 +442,33 @@ class HomeLayoutShotsTest {
         assertTrue("the band eases in (slow off the mark: $f4b at 64 ms of 240)", f4b < 64f / 240f)
         for (i in bandB.indices) assertTrue("frame $i: the chat's top ${chatT[i]} under the band's foot ${bandB[i]}", chatT[i] >= bandB[i] + 8f - 0.01f)
         shot(p, "bottom_fight_top_away")
-        // the fight's end: back down (the band's view draws again from the first frame)
+        // the fight's end: back down (the band's view draws again from the first frame) - after the HOLD: the band waits above the page
+        // until the add-on's Wings are mostly off the top screen (TopSlide.DOWN_HOLD_MS; the 11-22 check sheet: at end + 48 ms both
+        // showed), the columns waiting grown with it (one motion)
         fightSignal(home, false)
+        var offAt: Int? = if (!home.flow.takeover) -1 else null
         var downAt = -1
         val downB = ArrayList<Float>()
         for (i in 0 until 400) {
             frame()
             if (i % 8 == 0) home.tick()
-            val b = boxes(home).getValue("BARS").bottom
+            if (offAt == null && !home.flow.takeover) offAt = i
+            val bx = boxes(home)
+            val b = bx.getValue("BARS").bottom
+            if (offAt != null && downAt < 0 && b <= -16f + 0.01f) {
+                assertEquals("frame $i inside the hold: the columns wait grown with the band", 8f, bx.getValue("CHAT").top, 0.01f)
+                // the band still above the page: its cast bar stays given to the rooms' bar (the player's cast seen on the bottom screen)
+                assertTrue("frame $i inside the hold: the band still away", p.cast.away)
+                assertFalse(p.cast.ownCastBarShown())
+            }
             if (downAt < 0 && b > -16f + 0.01f) { downAt = i; assertFalse("the down-slide's start: the band draws again", p.cast.away) }
-            if (downAt >= 0) { downB += b; if (downB.size == 6) shotNow(p, "bottom_fight_top_return50") }
+            if (downAt >= 0) { downB += b; pageFrame("down frame $i", bx, rest); if (downB.size == 6) shotNow(p, "bottom_fight_top_return50") }
             if (downAt >= 0 && downB.size > 24) break
         }
         assertTrue("the fight's end brought the band back down", downAt >= 0 && !home.flow.takeover)
+        val heldMs = (downAt - offAt!!) * 16L
+        assertTrue("the way down held for the Wings: the band moved $heldMs ms after the fight's end (hold ${TopSlide.DOWN_HOLD_MS})",
+            heldMs >= TopSlide.DOWN_HOLD_MS && heldMs <= TopSlide.DOWN_HOLD_MS + 64L)
         for (i in 1 until downB.size) assertTrue("down: the band never goes back up ($downB)", downB[i] >= downB[i - 1] - 0.01f)
         val landed = boxes(home)
         for (part in listOf("BARS", "CHAT", "MAP")) assertEquals("$part back at rest", rest.getValue(part), landed.getValue(part))
@@ -436,6 +493,7 @@ class HomeLayoutShotsTest {
         for (i in 0 until 30) frame()
         assertEquals("the blip over: at rest", rest.getValue("BARS"), boxes(home).getValue("BARS"))
         assertFalse("cut short: the band's view never went away", p.cast.away)
+        downHoldReversals(p, rest)
         reLayMidSlide(p, rb)
         moduleInATopFight(p)
         // animations off (the system's duration scale 0): the band jumps
@@ -446,6 +504,104 @@ class HomeLayoutShotsTest {
             assertEquals("animations off: away at once", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
             assertTrue(p.cast.away)
         } finally { animScale(1f) }
+    }
+
+    /**
+     * the 11-22 shots, Above chat: the tap-to-cast bar rides its column up and down with the slide on the real animator - every frame
+     * under the band's foot, the column's next part under it, nothing behind the room bar; it stays touchable once landed in the fight.
+     */
+    @Config(qualifiers = "w1240dp-h1080dp-mdpi")
+    @Test fun topScreenAboveChatBarRidesItsColumn() {
+        val delayWas = org.robolectric.shadows.ShadowChoreographer.getFrameDelay()
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
+        try {
+            val p = page(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT, fight = HomeLayout.FightBand.TOP), ct = 1)
+            val home = p.home
+            val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+            act.setContentView(home, android.view.ViewGroup.LayoutParams(W, H))
+            ShadowLooper.idleMainLooper(); lay(home); settle(10)
+            val rest = boxes(home)
+            assertEquals("at rest: the bar under the band", rest.getValue("BARS").bottom + 8f, rest.getValue("STRIP").top, 0.01f)
+            val strip = views(home).getValue("STRIP") as CastStripView
+            fun check(what: String) {
+                val b = boxes(home)
+                val band = b.getValue("BARS"); val st = b.getValue("STRIP")
+                assertTrue("$what: the bar under the band's foot (${st.top} vs ${band.bottom})", st.top >= band.bottom + 8f - 0.01f)
+                assertTrue("$what: the chat's column under the bar", b.getValue("CHAT").top >= st.bottom + 8f - 0.01f)
+                for ((part, r) in b) if (part != "BARS") assertTrue("$what: $part never below the page ($r)", r.bottom <= H + 0.01f)
+            }
+            fightSignal(home, true)
+            val tops = ArrayList<Float>()
+            for (i in 0 until 24) { frame(); check("up frame $i"); tops += boxes(home).getValue("STRIP").top }
+            for (i in 1 until tops.size) assertTrue("up: the bar rides up, never down ($tops)", tops[i] <= tops[i - 1] + 0.01f)
+            assertEquals("landed: at the top gap", 8f, boxes(home).getValue("STRIP").top, 0.01f)
+            assertTrue("landed: touchable in the fight", strip.takesTouch && !strip.fightHidden)
+            fightSignal(home, false)
+            for (i in 0 until 400) {
+                frame(); if (i % 8 == 0) home.tick(); check("down frame $i")
+                if (!home.flow.takeover && boxes(home).getValue("STRIP") == rest.getValue("STRIP")) break
+            }
+            for (i in 0 until 20) frame()
+            assertEquals("back at rest", rest.getValue("STRIP"), boxes(home).getValue("STRIP"))
+        } finally {
+            org.robolectric.shadows.ShadowChoreographer.setPaused(false)
+            org.robolectric.shadows.ShadowChoreographer.setFrameDelay(delayWas)
+        }
+    }
+
+    /** one frame of a Top-screen slide: nothing goes behind the room bar (every part's box over the page's foot; the band leaves by the
+     *  TOP edge), and the tap-to-cast bar under the chat stays where it rests, seen and touchable (the 11-22 shots: it slid down behind
+     *  the room bar, clipped, mid-slide) */
+    private fun pageFrame(what: String, b: Map<String, RectF>, rest: Map<String, RectF>) {
+        for ((part, r) in b) if (part != "BARS") assertTrue("$what: $part never below the page, behind the room bar ($r)", r.bottom <= H + 0.01f)
+        assertEquals("$what: the bar under the chat stays put", rest.getValue("STRIP"), b.getValue("STRIP"))
+        assertTrue("$what: the band leaves by the top edge", b.getValue("BARS").bottom <= rest.getValue("BARS").bottom + 0.01f)
+    }
+
+    /**
+     * the hold and the reversals (the 11-22 check sheet): a fight back INSIDE the down-slide's hold keeps the band above the page (it
+     * never showed); a fight back ON the way down (past the hold) turns the band back up at once from where it stands - no hold, no jump
+     */
+    private fun downHoldReversals(p: Page, rest: Map<String, RectF>) {
+        val home = p.home
+        fightSignal(home, true)
+        for (i in 0 until 24) frame()
+        assertTrue(p.cast.away)
+        fightSignal(home, false)
+        for (i in 0 until 40) { if (!home.flow.takeover) break; frame(); if (i % 8 == 0) home.tick() }
+        assertFalse(home.flow.takeover)
+        for (i in 0 until 5) {
+            frame()
+            assertEquals("inside the hold (frame $i): the band waits above the page", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
+        }
+        fightSignal(home, true)
+        assertTrue(home.flow.takeover)
+        for (i in 0 until 24) {
+            frame()
+            assertEquals("back in the fight inside the hold (frame $i): the band never came down", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
+            assertEquals(8f, boxes(home).getValue("CHAT").top, 0.01f)
+        }
+        assertTrue("landed away again", p.cast.away)
+        // on the way down, past the hold: the fight comes back -> up at once from where it stands
+        fightSignal(home, false)
+        var b0 = -16f
+        for (i in 0 until 60) { frame(); if (i % 8 == 0) home.tick(); b0 = boxes(home).getValue("BARS").bottom; if (b0 > 20f) break }
+        assertTrue("on its way down ($b0)", b0 > 20f && b0 < rest.getValue("BARS").bottom - 1f)
+        fightSignal(home, true)
+        assertTrue(home.flow.takeover)
+        val ups = ArrayList<Float>()
+        for (i in 0 until 24) { frame(); ups += boxes(home).getValue("BARS").bottom }
+        assertTrue("no jump at the turn (${ups[0]} from $b0)", kotlin.math.abs(ups[0] - b0) < 30f)
+        assertTrue("turned back up at once, no hold ($ups)", ups[4] < b0 - 0.5f)
+        for (i in 1 until ups.size) assertTrue("up again: never back down ($ups)", ups[i] <= ups[i - 1] + 0.01f)
+        assertEquals("landed away", -16f, ups.last(), 0.01f)
+        assertTrue(p.cast.away)
+        fightSignal(home, false)
+        for (i in 0 until 400) { frame(); if (i % 8 == 0) home.tick(); if (!home.flow.takeover && boxes(home).getValue("BARS") == rest.getValue("BARS")) break }
+        for (i in 0 until 20) frame()
+        assertEquals("back at rest", rest.getValue("BARS"), boxes(home).getValue("BARS"))
+        assertFalse(p.cast.away)
     }
 
     /**

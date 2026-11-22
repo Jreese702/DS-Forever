@@ -742,6 +742,8 @@ def main():
     chk("H. ... EnableMouse never true, nothing raised", G4.BADMOUSE == 0 and G4.RAISED == 0, (G4.BADMOUSE, G4.RAISED))
 
     # ------------------------------------------------------------------------------------------------ the renders
+    scenes_pin()
+    hold_pin()
     if "--shots" in sys.argv or os.environ.get("COMBAT_BAR_SHOTS"):
         render(out_dir)
     print("\n%d passed, %d failed" % (passes, len(fails)))
@@ -750,6 +752,97 @@ def main():
 
 
 # ---------------------------------------------------------------------------------------------------------------- the renders
+SCENES = [
+    ("p3_top_01_default_wings", "In fights: Top screen - Wings beside the HUD (case 1, final_07)", {}),
+    # Party mode LIVE (PadMap's party export `live`, the app's PartyModel.onLive): no Wings - the band keeps the controls on the bottom
+    # screen (R0), only the HUD lifts for the rows. The mock sets padMap.party (it used to leave it out: the Wings drew under Party mode)
+    ("p3_top_02_party_no_wings", "Party mode live: the HUD lifted for the rows, NO Wings (the band stays on the bottom screen, R0)",
+     {"party": True}),
+    ("p3_top_03_stockbar_raised", "Controller UI On (the stock bar shown): raised in 24 px steps (case 2)", {"stock": True}),
+    ("p3_top_04_blocked_joined", "Game chat and tracker on both sides: joined above the HUD (case 3)", {"walls": True}),
+    ("p3_top_05_placed", "Placed in the top layout editor (Auto off): the joined bar there", {"placed": True}),
+    ("p3_top_06_chat_dip", "The top chat strip up in the fight: the bar dips to 35 % (it never moves for it)", {"chat": True}),
+    ("p3_top_07_glide_mid", "Nintendo mode: half way through the glide from the stock spot to the wings", {"glide": True}),
+    ("p3_top_08_fade_in_mid", "nbar11 the slide in: 0.19 s of 0.06 + 0.26 s (up from below the edge)", {"fadein": True}),
+    ]
+
+
+def hold_pin():
+    """the 11-22 check sheet (fight end + 48 ms: the band and the Wings both showed): the app's down-slide HOLDS until the Wings are mostly
+    off the top screen. TopSlide.kt's copy of the Wings' way down must be the add-on's (NB.TOP.OUT_S on NB.easeIn), and its hold must
+    cover them [WINGS_MOSTLY_OFF] off even if the app heard the fight's end the very frame they started down"""
+    kt = open(os.path.join(KT, "TopSlide.kt"), encoding="utf-8").read()
+    ab = open(AB, encoding="utf-8").read()
+    out_s = re.search(r"NB\.TOP = \{[^}]*?OUT_S = ([0-9.]+)", ab)
+    ms = re.search(r"const val WINGS_OUT_MS = (\d+)L", kt)
+    chk("C. hold pin: TopSlide.WINGS_OUT_MS is the add-on's NB.TOP.OUT_S",
+        out_s is not None and ms is not None and abs(float(out_s.group(1)) * 1000 - int(ms.group(1))) < 0.5,
+        (out_s and out_s.group(1), ms and ms.group(1)))
+    chk("C. hold pin: TopSlide.WINGS_OUT is NB.easeIn's (0.4, 0, 1, 1)",
+        "val WINGS_OUT = floatArrayOf(0.4f, 0f, 1f, 1f)" in kt and "function NB.easeIn(u) return NB.cubic(u, 0.4, 0, 1, 1) end" in ab)
+    off = float(re.search(r"const val WINGS_MOSTLY_OFF = ([0-9.]+)f", kt).group(1))
+    allow = int(re.search(r"const val LATENCY_ALLOWANCE_MS = (\d+)L", kt).group(1))
+    L = boot()
+    ease_in = L.eval("WowCompanion.nbar.easeIn")
+    # the hold as TopSlide computes it: the first whole ms the Wings are WINGS_MOSTLY_OFF off, + the allowance
+    out_ms = int(ms.group(1))
+    first = next(t for t in range(0, out_ms + 1) if ease_in(t / out_ms) >= off)
+    chk("C. hold pin: the Wings are %d %% off when the band may start (%d ms + %d ms allowance)" % (off * 100, first, allow),
+        ease_in(first / out_ms) >= off and 150 <= first + allow <= 260, (first, allow))
+
+
+def scene_run(o):
+    """one render scene's top screen through the fight's start: a fresh add-on, the scene's mocks, the fight (the renders and the checks
+    share it, so a render never draws what the rules say cannot show)"""
+    L = boot("MFSCALE = 1.3")
+    G = L.globals()
+    G.CTOP = True
+    if o.get("party"):
+        L.execute('SETR(WowCompanion.prd.f, 820, 790, 280, 32); SETR(WowCompanion.prd.box.host, 820, 762, 280, 26); WowCompanion.uf.pf.at = "hud"; '
+                  'for i = 1, 4 do local c = (i - 1) % 2; local r = math.floor((i - 1) / 2); '
+                  'WowCompanion.uf.pf.frames[i] = MOCKF(740 + c * 330, 864 + r * 76, 300, 64) end')
+        # Party mode LIVE as PadMap exports it (the Wings' switch reads it: NB.partyOn)
+        L.execute('WowCompanion.padMap.party = { live = function() return true end, on = function() return true end }')
+    if o.get("stock"):
+        L.execute('GAME["g.GamepadMainActionBarFrame"].shown = true')
+    if o.get("walls"):
+        L.execute('GAME["g.ChatFrame1"] = { x = 20, y = 560, w = 540, h = 500, shown = true }; '
+                  'GAME["g.ObjectiveTrackerFrame"] = { x = 1360, y = 520, w = 540, h = 540, shown = true }')
+    if o.get("placed"):
+        L.execute('LAYE.nbar = { dx = -560, dy = -290, s = 100 }')
+    if o.get("glide"):
+        L.execute('WowCompanion.nbarSet(true)')
+    L.execute('WowCompanion.swingNote(2.4, 0); WowCompanion.swingNote(1.8, 1)')
+    L.execute('NOW = NOW + 0.6')
+    L.execute('RUN(0.2)')
+    G.COMBAT = True
+    G.TG = True
+    L.execute('EV("PLAYER_REGEN_DISABLED")')
+    if o.get("glide"):
+        L.execute('RUN(0.12, 0.02)')
+    elif o.get("fadein"):
+        L.execute('RUN(0.18, 0.02)')
+    else:
+        L.execute('RUN(0.5, 0.02)')
+    if o.get("chat"):
+        G.CHAT_UP = True
+        L.execute('RUN(0.1)')
+    return L
+
+
+def scenes_pin():
+    """the renders follow the rules: every scene's Wings shown exactly when its caption says so (Party mode live = no Wings)"""
+    for name, title, o in SCENES:
+        L = scene_run(o)
+        T = L.globals().WowCompanion.nbar.top
+        shown = bool(T.shown)
+        if o.get("party"):
+            chk("R. render scene %s: Party mode live -> no Wings (and its caption says so)" % name,
+                not shown and T.want is False and "NO Wings" in title and "wings" not in name.replace("no_wings", ""), (shown, title))
+        else:
+            chk("R. render scene %s: the Wings shown" % name, shown, shown)
+
+
 def render(out_dir):
     """the top screen from the Lua math: the scene's pieces at their rects, the stock bar where shown, and the bar exactly where nbar7's
     frames stand (each button's anchor read back from the frames, not recomputed)"""
@@ -766,49 +859,11 @@ def render(out_dir):
         p = os.path.join(ICONS, n + ".png")
         icons.append(Image.open(p).convert("RGBA") if os.path.exists(p) else None)
 
-    scenes = [
-        ("p3_top_01_default_wings", "In fights: Top screen - Wings beside the HUD (case 1, final_07)", {}),
-        ("p3_top_02_party_wings", "Party mode: the HUD lifted, the wings re-hug the taller block (final_07b)", {"party": True}),
-        ("p3_top_03_stockbar_raised", "Controller UI On (the stock bar shown): raised in 24 px steps (case 2)", {"stock": True}),
-        ("p3_top_04_blocked_joined", "Game chat and tracker on both sides: joined above the HUD (case 3)", {"walls": True}),
-        ("p3_top_05_placed", "Placed in the top layout editor (Auto off): the joined bar there", {"placed": True}),
-        ("p3_top_06_chat_dip", "The top chat strip up in the fight: the bar dips to 35 % (it never moves for it)", {"chat": True}),
-        ("p3_top_07_glide_mid", "Nintendo mode: half way through the glide from the stock spot to the wings", {"glide": True}),
-        ("p3_top_08_fade_in_mid", "nbar11 the slide in: 0.19 s of 0.06 + 0.26 s (up from below the edge)", {"fadein": True}),
-    ]
+    scenes = SCENES
     made = []
     for name, title, o in scenes:
-        L = boot("MFSCALE = 1.3")
+        L = scene_run(o)
         G = L.globals()
-        G.CTOP = True
-        if o.get("party"):
-            L.execute('SETR(WowCompanion.prd.f, 820, 790, 280, 32); SETR(WowCompanion.prd.box.host, 820, 762, 280, 26); WowCompanion.uf.pf.at = "hud"; '
-                      'for i = 1, 4 do local c = (i - 1) % 2; local r = math.floor((i - 1) / 2); '
-                      'WowCompanion.uf.pf.frames[i] = MOCKF(740 + c * 330, 864 + r * 76, 300, 64) end')
-        if o.get("stock"):
-            L.execute('GAME["g.GamepadMainActionBarFrame"].shown = true')
-        if o.get("walls"):
-            L.execute('GAME["g.ChatFrame1"] = { x = 20, y = 560, w = 540, h = 500, shown = true }; '
-                      'GAME["g.ObjectiveTrackerFrame"] = { x = 1360, y = 520, w = 540, h = 540, shown = true }')
-        if o.get("placed"):
-            L.execute('LAYE.nbar = { dx = -560, dy = -290, s = 100 }')
-        if o.get("glide"):
-            L.execute('WowCompanion.nbarSet(true)')
-        L.execute('WowCompanion.swingNote(2.4, 0); WowCompanion.swingNote(1.8, 1)')
-        L.execute('NOW = NOW + 0.6')
-        L.execute('RUN(0.2)')
-        G.COMBAT = True
-        G.TG = True
-        L.execute('EV("PLAYER_REGEN_DISABLED")')
-        if o.get("glide"):
-            L.execute('RUN(0.12, 0.02)')
-        elif o.get("fadein"):
-            L.execute('RUN(0.18, 0.02)')
-        else:
-            L.execute('RUN(0.5, 0.02)')
-        if o.get("chat"):
-            G.CHAT_UP = True
-            L.execute('RUN(0.1)')
         img = Image.open(BG).convert("RGBA") if os.path.exists(BG) else Image.new("RGBA", (1920, 1080), (60, 50, 30, 255))
         lay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         d = ImageDraw.Draw(lay)
@@ -853,7 +908,8 @@ def render(out_dir):
         img.alpha_composite(lay)
         # the bar, from its frames
         f = W.nbar.f
-        alpha = float(f.alpha or 1)
+        # nothing of the Wings drawn when they are not shown (Party mode live: the band keeps the controls below)
+        alpha = float(f.alpha or 1) if (W.nbar.top.shown and f.shown is not False) else 0.0
         bar = Image.new("RGBA", img.size, (0, 0, 0, 0))
         bd = ImageDraw.Draw(bar)
         sc = f.scale or 1
@@ -926,13 +982,13 @@ def render(out_dir):
                     bd.rectangle((cx - w2 / 2, cy, cx + w2 / 2, cy + hh_), fill=(0, 0, 0, 200), outline=(90, 80, 60, 255))
                     bd.rectangle((cx - w2 / 2, cy, cx - w2 / 2 + w2 * (s_.k or 0), cy + hh_), fill=(240, 200, 50, 255))
         if alpha < 1:
-            a = bar.split()[3].point(lambda v: int(v * alpha))
+            a = bar.split()[3].point(lambda v, alpha=alpha: int(v * alpha))
             bar.putalpha(a)
         img.alpha_composite(bar)
         # the solver's boxes (thin dashed outline) and the caption
-        sp = todict(W.nbar.top.spot)
+        sp = todict(W.nbar.top.spot) if (W.nbar.top.spot and W.nbar.top.shown) else {"case": "-", "form": "no Wings", "rects": {}}
         dd = ImageDraw.Draw(img)
-        for k in (1, 2):
+        for k in ((1, 2) if sp["rects"] else ()):
             rr = sp["rects"][k]
             for x in range(int(rr["x"]), int(rr["x"] + rr["w"]), 12):
                 dd.line((x, rr["y"], x + 6, rr["y"]), fill=(255, 215, 0, 255), width=1)

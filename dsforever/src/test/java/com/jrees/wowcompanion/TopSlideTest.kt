@@ -127,4 +127,82 @@ class TopSlideTest {
             assertEquals(1f, TopSlide.resumeK(1f, cut, up), 1e-5f)
         }
     }
+
+    /**
+     * THE WAY DOWN WAITS FOR THE WINGS (the 11-22 check sheet: at the fight's end + 48 ms the band was already coming down on its
+     * fast-start curve while the Wings were still leaving on their slow-start one - both showed). The hold covers the Wings mostly off
+     * whatever the channel's latency (the app always hears the end after the Wings start), and nothing waits on the way up or on a
+     * reversal.
+     */
+    @Test fun theWayDownWaitsForTheWings() {
+        assertEquals(200L, TopSlide.WINGS_OUT_MS)                                  // ActionBar NB.TOP.OUT_S
+        assertTrue(TopSlide.WINGS_OUT.contentEquals(floatArrayOf(0.4f, 0f, 1f, 1f))) // NB.easeIn
+        assertEquals(0f, TopSlide.wingsOff(0L), 0f); assertEquals(1f, TopSlide.wingsOff(TopSlide.WINGS_OUT_MS), 0f)
+        assertTrue("the Wings mostly off at the hold's own part", TopSlide.wingsOff(TopSlide.WINGS_MOSTLY_OFF_MS) >= TopSlide.WINGS_MOSTLY_OFF)
+        assertTrue("(the first such ms)", TopSlide.wingsOff(TopSlide.WINGS_MOSTLY_OFF_MS - 1) < TopSlide.WINGS_MOSTLY_OFF)
+        assertEquals(TopSlide.WINGS_MOSTLY_OFF_MS + TopSlide.LATENCY_ALLOWANCE_MS, TopSlide.DOWN_HOLD_MS)
+        assertTrue("about 0.2 s (${TopSlide.DOWN_HOLD_MS})", TopSlide.DOWN_HOLD_MS in 150L..260L)
+        // the fight's end on the add-on's clock (the Wings start down at 0); the app hears it [lat] ms later and holds: the band's first
+        // frame on the page (its bottom past the top edge: any progress of the way down) never comes before the Wings are mostly off.
+        // (The old motion had no hold: the band was on the page from the app's first frame, the Wings barely moved: both showed.)
+        for (lat in listOf(0L, 16L, 40L, 90L)) for (t in 0L..600L) {
+            val slideT = t - lat - TopSlide.DOWN_HOLD_MS                              // the band's own slide time
+            if (slideT <= 0L) continue
+            val k = TopSlide.partK(slideT / Motion.TOP_SLIDE_DOWN.toFloat(), up = false)
+            if (k <= 0f) continue
+            assertTrue("lat=$lat t=$t: the band in (k=$k) only once the Wings are mostly off (${TopSlide.wingsOff(minOf(t, 200L))})",
+                TopSlide.wingsOff(minOf(t, TopSlide.WINGS_OUT_MS)) >= TopSlide.WINGS_MOSTLY_OFF)
+        }
+        // who holds
+        assertEquals("a fresh way down from the band landed away", TopSlide.DOWN_HOLD_MS,
+            TopSlide.holdMs(slide = true, isAway = false, bandOff = true, cutUp = false, cutHold = 0L, resumeAt = -1f))
+        assertEquals("a reversal: an up-slide cut on its way (the band partly on the page) turns back at once", 0L,
+            TopSlide.holdMs(slide = true, isAway = false, bandOff = false, cutUp = true, cutHold = 0L, resumeAt = -1f))
+        assertEquals("the way up never holds", 0L, TopSlide.holdMs(true, isAway = true, bandOff = false, cutUp = false, cutHold = 0L, resumeAt = -1f))
+        assertEquals("a fight back inside the hold: up at once (nothing moved)", 0L,
+            TopSlide.holdMs(true, isAway = true, bandOff = true, cutUp = false, cutHold = 120L, resumeAt = -1f))
+        assertEquals("a re-lay inside the hold waits what was left", 120L,
+            TopSlide.holdMs(false, isAway = false, bandOff = true, cutUp = false, cutHold = 120L, resumeAt = 0f))
+        assertEquals("a re-lay past the hold: none", 0L, TopSlide.holdMs(false, false, bandOff = false, cutUp = false, cutHold = 0L, resumeAt = 0.3f))
+        assertEquals("a re-lay of an up-slide: none", 0L, TopSlide.holdMs(false, true, bandOff = false, cutUp = true, cutHold = 50L, resumeAt = 0.3f))
+        assertEquals("not a slide's continuation: none", 0L, TopSlide.holdMs(false, false, bandOff = true, cutUp = false, cutHold = 50L, resumeAt = -1f))
+        assertTrue(TopSlide.bandOff(-16f)); assertTrue(TopSlide.bandOff(-15.6f)); assertFalse(TopSlide.bandOff(-10f)); assertFalse(TopSlide.bandOff(null))
+        // the slide's own time after the hold
+        assertEquals(0f, TopSlide.afterHold(100f, 199L, 240L), 0f)
+        assertEquals(0f, TopSlide.afterHold(199f, 199L, 240L), 0f)
+        assertEquals(0.5f, TopSlide.afterHold(319f, 199L, 240L), 1e-5f)
+        assertEquals(1f, TopSlide.afterHold(500f, 199L, 240L), 0f)
+        assertEquals(0.5f, TopSlide.afterHold(120f, 0L, 240L), 1e-5f)
+    }
+
+    /**
+     * THE TAP-TO-CAST BAR STAYS IN A TOP-SCREEN FIGHT (the 11-22 shots: Show in combat Off, the default, slid it away under the room
+     * bar while the band left too - the bottom screen had no fight control at all): Top screen with Party mode off keeps it (STAY),
+     * Grow / Same size and Party mode keep the player's setting. The solver then lays it on the page in the fight, in its dock.
+     */
+    @Test fun theTapToCastBarStaysInATopFight() {
+        val top = HomeLayout(fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.UNDER_CHAT)
+        assertTrue(TopCombatBar.stripStays(top, partyOn = false))
+        assertFalse("Party mode: no Top-screen takeover, the setting rules", TopCombatBar.stripStays(top, partyOn = true))
+        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) assertFalse(TopCombatBar.stripStays(top.copy(fight = f), false))
+        assertEquals(CastStripModel.Combat.STAY, TopCombatBar.stripCombat(top, false, CastStripModel.Combat.HIDE))
+        assertEquals(CastStripModel.Combat.HIDE, TopCombatBar.stripCombat(top, true, CastStripModel.Combat.HIDE))
+        assertEquals(CastStripModel.Combat.HIDE, TopCombatBar.stripCombat(top.copy(fight = HomeLayout.FightBand.GROW), false, CastStripModel.Combat.HIDE))
+        assertEquals(CastStripModel.Combat.STAY, TopCombatBar.stripCombat(top.copy(fight = HomeLayout.FightBand.GROW), false, CastStripModel.Combat.STAY))
+        // the fight's page with the bar kept (castHidden false): every dock on the page, under its column(s), nothing below the frame
+        val st = HomeLayoutSolver.State()
+        for (cast in HomeLayout.CastDock.values()) {
+            if (cast == HomeLayout.CastDock.OFF) continue
+            val l = top.copy(cast = cast)
+            val hidden = CastStripModel.hiddenIn(TopCombatBar.stripCombat(l, false, CastStripModel.Combat.HIDE), fighting = true)
+            assertFalse("$cast: not hidden in the Top fight", hidden)
+            val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(takeover = true, castHidden = hidden))
+            assertTrue(r.away); assertFalse(r.castHidden)
+            val b = r.boxes.getValue(HomePart.STRIP)
+            assertTrue("$cast: on the page (${b.t}..${b.b} of ${st.h})", b.t >= 0f && b.b <= st.h + 0.01f)
+            assertTrue("$cast: ${HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), r)}",
+                HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), r).isEmpty())
+            if (cast.top) assertEquals("$cast: at the top of its grown column (the top gap)", 8f, b.t, 0.01f)
+        }
+    }
 }
