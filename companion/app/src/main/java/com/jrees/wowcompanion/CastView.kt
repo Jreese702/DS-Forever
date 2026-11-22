@@ -387,9 +387,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private val roomBtns = arrayOfNulls<Btn>(4)
 
     /**
-     * movable Home fix round 1 (SPEC section 10): the toolbar's Left / Right pictures never jump. A SWAP (Left <-> Right: edit mode's
-     * draft preview, Save's mirror) slides each picture from the other slot to its own over [roomSlideMs] on the page's curve, crossing
-     * in the gap between Up and Down; any other change of Left / Right cross-fades over ROOM_FADE_MS. Only while the room bar is drawn.
+     * movable Home fix round 1 (SPEC section 10): the toolbar's pictures never jump. A SWAP (the same pictures in a new order: edit mode's
+     * draft preview, the add-on's new order - 1518 build 3: any two directions, Up and Down too) slides each moved picture from the slot it
+     * came from to its own over [roomSlideMs] on the page's curve; any other change cross-fades over ROOM_FADE_MS. Only while the room
+     * bar is drawn.
      */
     var roomSlideMs: Long = Motion.MODULE_OPEN
     private val roomPrev = arrayOfNulls<Btn>(4)
@@ -397,17 +398,56 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var roomMotionMs = 0L
     private var roomSwap = false
     private var roomFadeNext = false
+    /** per D-pad slot (0-3): it changed in the running motion, and (a swap) the slot its picture slides in from */
+    private val roomMoved = BooleanArray(4)
+    private val roomFrom = IntArray(4)
     /** [roomBar] = [v] with the cross-fade even for a swap (fix round 3: Home's Save hold given up, the pictures go back to `d`) */
     fun roomBarFade(v: Map<Int, String>?) { roomFadeNext = true; try { roomBar = v } finally { roomFadeNext = false } }
     private fun roomMotionStart(old: Map<Int, String>?, new: Map<Int, String>?) {
         roomMotionMs = 0L
         if (!roomBarOn || old == null || new == null || layout == Layout.FULL) return
-        if (old[1] == new[1] && old[3] == new[3]) return
-        roomSwap = !roomFadeNext && old[1] == new[3] && old[3] == new[1]
+        for (i in 0 until 4) roomMoved[i] = old[i + 1] != new[i + 1]
+        if (roomMoved.none { it }) return
+        // a swap: every moved picture is one another slot showed before (each once)
+        val from = (0 until 4).map { i -> if (!roomMoved[i]) i else (0 until 4).firstOrNull { j -> roomMoved[j] && old[j + 1] == new[i + 1] } ?: -1 }
+        roomSwap = !roomFadeNext && from.none { it < 0 } && from.toSet().size == 4
+        for (i in 0 until 4) roomFrom[i] = from[i].let { if (it < 0) i else it }
         for (i in 0 until 4) roomPrev[i] = roomBtns[i]
         roomMotionAt = SystemClock.elapsedRealtime()
         roomMotionMs = if (roomSwap) roomSlideMs else ROOM_FADE_MS
     }
+
+    /**
+     * 1518 build 3, EDIT MODE'S D-PAD ICONS AS APPS (Home's hook, null = none): D-pad slot [src] (0-3)'s pose now - (scale, turn deg, dx, dy)
+     * into the array, about its own centre; false = drawn plain. Home sets it while edit mode shows: each icon wiggles on its own, the
+     * lifted one follows the finger
+     */
+    var editPiece: ((Int, FloatArray) -> Boolean)? = null
+    private val pieceBuf = FloatArray(4)
+    /** the band draws the DS toolbar's own picture on each D-pad slot now (not Party mode's, a fight spell's, the Home bar's arrows,
+     *  nor "Waiting"): only then are the icons movable in edit mode (drawBand's own choice, made the same way) */
+    fun toolbarDrawn(): Boolean {
+        val h = hud ?: return false
+        if (!roomBarOn || layout == Layout.FULL) return false
+        val li = layer
+        for (src in 0..3) {
+            val fb = partyOverride(h, src) ?: dpadFightOverride(li, src) ?: roomOverride(li, src)
+            if (fb == null || fb !== roomBtns[src]) return false
+        }
+        return true
+    }
+    /** D-pad slot [src] (0-3)'s box in this view's px at the band's look now (edit mode's piece box); false = not the band */
+    fun padBox(src: Int, out: RectF): Boolean {
+        if (src !in 0..3 || width <= 0 || height <= 0 || layout == Layout.FULL) return false
+        bandSlot(src, bandBox)
+        val r = bandBox[2] / 2f
+        out.set(bandBox[0] - r, bandBox[1] - r, bandBox[0] + r, bandBox[1] + r)
+        return true
+    }
+    /** the clock chip's centre x in this view's px at [place] for a chip [chipW] x [chipH] (CastBarPlace.clockChipCx); null = not offered */
+    fun clockChipCx(place: HomeLayout.ClockPlace, chipW: Float, chipH: Float): Float? =
+        if (layout != Layout.DIAMONDS || width <= 0 || height <= 0) null
+        else CastBarPlace.clockChipCx(place, width.toFloat(), height.toFloat() - topPx(), stripH(), chipW, chipH)
     /** the room bar's motion now (0 .. 1 on the curve), null = none running */
     fun roomMotionK(now: Long = SystemClock.elapsedRealtime()): Float? {
         if (roomMotionMs <= 0L) return null
@@ -3279,12 +3319,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             bandSlot(pos, bandBox)
             val circle = pos >= 4
             val scale = bandBox[2] / ((if (circle) 38f else 40f) * k)
-            // fix round 1: the toolbar's Left / Right picture in motion (a swap slides it in from the other slot, a change cross-fades)
-            val rk = if (fb != null && fb === roomBtns.getOrNull(src) && (src == 0 || src == 2)) roomMotionK(now) else null
+            // fix round 1: a toolbar picture in motion (a swap slides it in from the slot it came from, a change cross-fades)
+            val rk = if (fb != null && fb === roomBtns.getOrNull(src) && src in 0..3 && roomMoved[src]) roomMotionK(now) else null
             var cx = bandBox[0]; var cy = bandBox[1]
             if (rk != null) {
                 next = 0L
-                if (roomSwap) { bandSlot(2 - pos, roomFromBox); cx = lerp(roomFromBox[0], cx, rk); cy = lerp(roomFromBox[1], cy, rk) }
+                if (roomSwap) { bandSlot(roomFrom[src], roomFromBox); cx = lerp(roomFromBox[0], cx, rk); cy = lerp(roomFromBox[1], cy, rk) }
                 else roomPrev[src]?.let { pb ->
                     val ps = c.save(); c.translate(cx, cy); c.scale(scale, scale)
                     c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * (1f - rk)).toInt())
@@ -3293,6 +3333,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 }
             }
             val slotSave = c.save()
+            // 1518 build 3: edit mode's D-pad icon wiggles on its own (Home's pose for this slot)
+            if (pos < 4) editPiece?.let { f -> if (f(src, pieceBuf)) {
+                c.translate(pieceBuf[2], pieceBuf[3]); c.rotate(pieceBuf[1], cx, cy); c.scale(pieceBuf[0], pieceBuf[0], cx, cy)
+                if (pieceBuf[0] != 1f || pieceBuf[1] != 0f || pieceBuf[2] != 0f || pieceBuf[3] != 0f) next = 0L } }
             c.translate(cx, cy)
             c.scale(scale, scale)
             if (rk != null && !roomSwap) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * rk).toInt())
@@ -4644,6 +4688,38 @@ internal object CastBarPlace {
     const val JOIN_BOTTOM = 60f
     /** the clock band's clearance from the buttons round it (frame px) */
     const val CLOCK_PAD = 4f
+
+    /**
+     * 1518 build 3 (the user's ruling 2026-11-21: the clock is its own small piece that can sit at a few spots along the bar): the clock
+     * chip's centre x (view px) at [place] on Home's DIAMONDS band [w] x [h] with its bottom strip [strip], for a chip [chipW] x [chipH]
+     * from [chipTop]. CENTRE is today's (the band's middle, always). LEFT / RIGHT push the chip as far out as the free run allows: the run
+     * between the nearest buttons whose box reaches the chip's height on each side of the middle (the D-pad's Right, the faces' left at
+     * the diamonds' rest), [CLOCK_PAD] clear of them - so it never stands on a button, the L / R plates or the ABXY face. Null = not
+     * offered (it would move less than [CLOCK_MIN_SHIFT] from the middle: no room)
+     */
+    fun clockChipCx(place: HomeLayout.ClockPlace, w: Float, h: Float, strip: Float, chipW: Float, chipH: Float,
+                    chipTop: Float = ClockBand.CHIP_TOP): Float? {
+        val mid = w / 2f
+        if (place == HomeLayout.ClockPlace.CENTRE) return mid
+        val s = w / FRAME_W
+        val sx = (h - strip) / TAKE_H
+        val box = FloatArray(3)
+        var lo = 0f; var hi = w
+        for (p in 0 until 8) {
+            slot(p, true, 1f, sx, 0f, 0f, w, box)
+            val r = box[2] / 2f
+            if (box[1] + r <= chipTop || box[1] - r >= chipTop + chipH) continue            // not at the chip's height
+            if (box[0] < mid) lo = maxOf(lo, box[0] + r) else hi = minOf(hi, box[0] - r)
+        }
+        // the LB / RB plates in the top corners (14 .. 138 / 1102 .. 1226 frame px)
+        lo = maxOf(lo, 138f * s); hi = minOf(hi, 1102f * s)
+        val pad = CLOCK_PAD * s
+        val cx = if (place == HomeLayout.ClockPlace.LEFT) lo + pad + chipW / 2f else hi - pad - chipW / 2f
+        val shift = if (place == HomeLayout.ClockPlace.LEFT) mid - cx else cx - mid
+        return if (shift >= CLOCK_MIN_SHIFT * s) cx else null
+    }
+    /** a LEFT / RIGHT spot must sit at least this far (frame px) from the middle to be offered */
+    const val CLOCK_MIN_SHIFT = 24f
 
     /**
      * THE CLOCK BAND'S SPOT (feat/clock-extras-v2, the user: "center them where the ZR and LR appear"): Home's DIAMONDS band [w] x [h] at

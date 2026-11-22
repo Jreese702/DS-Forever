@@ -181,8 +181,19 @@ object HomeLayoutSolver {
 
     /** the outer screen edge the party module's Select tab stands on (and PartyMenuView's side): the chat's column's */
     fun partyEdgeRight(l: HomeLayout): Boolean = l.chatSide == HomeLayout.Side.RIGHT
-    /** the add-on's DS toolbar mirror bit: 1 = the map is left of the chat (D-pad Left = map, Right = chat) */
-    fun mirrorBit(l: HomeLayout): Int = if (l.mirrored) 1 else 0
+    /**
+     * 1518 build 3: what each bare D-pad direction of the DS toolbar opens for [l] (position 1-4 -> PadMap's words "chat", "radial", "map",
+     * "home"): its [HomeLayout.pad] with the columns' modules put in (the left column's is the chat unless the chat is on the right).
+     * Classic gives today's two tables exactly (ROOMBAR, the mirror bit off; RB_M on): the add-on's `d` is compared with it
+     */
+    fun dpadDirs(l: HomeLayout): Map<Int, String> {
+        val left = if (l.chatSide == HomeLayout.Side.LEFT) "chat" else "map"
+        val right = if (left == "chat") "map" else "chat"
+        return l.pad.withIndex().associate { (i, k) ->
+            (i + 1) to when (k) { HomeLayout.PadKey.LEFT_COL -> left; HomeLayout.PadKey.RIGHT_COL -> right
+                HomeLayout.PadKey.RADIAL -> "radial"; HomeLayout.PadKey.HOME -> "home" }
+        }
+    }
 
     /** the order withStrip cut the columns in (kept: the golden's boxes) */
     private val CUT_ORDER = listOf(HomePart.CHAT, HomePart.QUESTS, HomePart.PARTY, HomePart.MAP, HomePart.AURAS)

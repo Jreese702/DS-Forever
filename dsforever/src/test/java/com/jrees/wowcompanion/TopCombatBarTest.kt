@@ -146,7 +146,7 @@ class TopCombatBarTest {
         for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) for (ct in listOf(null, 0, 1))
             assertEquals("$f is never changed", f, TopCombatBar.honoured(HomeLayout(fight = f), ct).fight)
         // a keyless padmap (the add-on asking: no r, no ct) as the host reads it
-        val asking = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"dpad":{"on":true,"want":true,"who":{"n":"Korvash","rs":"ask",
+        val asking = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m184","m":{"dpad":{"on":true,"want":true,"who":{"n":"Korvash","rs":"ask",
             "pk":[{"r":"Realm 7","n":4},{"r":"Realm 8","n":5}]}}}}"""))!!.dpad!!
         assertNull(asking.realm); assertNull(asking.ct)
         assertEquals(HomeLayout.FightBand.GROW, TopCombatBar.honoured(top, asking.ct).fight)
@@ -200,7 +200,7 @@ class TopCombatBarTest {
         assertNull("a reset = off (no entry): the band grows", k.default)
         // the add-on's own Layouts reset clears it too (PadMap m179)
         val pm = java.io.File(addons(), "WowCompanionSpells/PadMap.lua").readText()
-        assertTrue(pm.contains("layouts = { \"dpad\", \"rbm\", \"ctop\" }"))
+        assertTrue(pm.contains("layouts = { \"dpad\", \"rbm\", \"rbp\", \"ctop\" }"))           // m184: the D-pad order too
     }
 
     @Test fun theWordsAreTranslated() {

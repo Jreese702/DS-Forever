@@ -2421,8 +2421,10 @@ class HomeView(
     private var chromeA = 0f
     private var chromeAnim: ValueAnimator? = null
     /** the lift (0 .. 1: the shadow, the depth) of [liftStop], on [motion]'s lift spring (1.04 with its overshoot, the drop's plop) */
-    private val liftK: Float get() = liftStop?.let { motion.liftK(it.ordinal, motionNow()) } ?: 0f
+    private val liftK: Float get() = liftStop?.let { motion.liftK(liftKey, motionNow()) } ?: 0f
     private var liftStop: EditStop? = null
+    /** [liftStop]'s motion key, taken at the lift (a D-pad icon's follows the icon as it swaps: HomeEditModel.keyOf) */
+    private var liftKey = 0
     private var editFlash: Pair<EditStop, Long>? = null
 
     /**
@@ -2468,10 +2470,9 @@ class HomeView(
     /** a transform of edit mode's is on a view (one reset pass after edit mode ends) */
     private var decorDirty = false
 
-    /** the host's hooks: the ribbon + the disc's tick (the chrome, null = gone), the DS toolbar's switch at Done, the bar's slots
-     *  (the Controller room's Tap-to-cast tab), the chat's filters (the Chat room's checklist) */
+    /** the host's hooks: the ribbon + the disc's tick (the chrome, null = gone), the bar's slots (the Controller room's Tap-to-cast
+     *  tab), the chat's filters (the Chat room's checklist) */
     var onEditChrome: ((HomeEditView?) -> Unit)? = null
-    var onEditToolbar: ((Boolean) -> Unit)? = null
     var onEditSlots: (() -> Unit)? = null
     var onEditFilters: (() -> Unit)? = null
     /** a behaviour row's press with the host's env (BottomTiles.press); null = Home presses it itself (the off-device renders) */
@@ -2492,29 +2493,30 @@ class HomeView(
     private fun editRestSync(): Boolean = flow.setRest(restWanted())
 
     /**
-     * P5's ONE EXCEPTION (SPEC section 1): while edit mode runs, the band's D-pad pictures preview the DRAFT (after a swap Left = the map,
-     * Right = the chat), the add-on's own `d` kept aside ([roomBarReal]) and put back when edit mode ends or parks. The host hands every
-     * padmap's `d` through [roomBarFor].
+     * P5's ONE EXCEPTION (SPEC section 1): while edit mode runs, the band's D-pad pictures preview the DRAFT's order (after a swap Left =
+     * the map, Right = the chat; 1518 build 3: any order the player dragged the icons into), the add-on's own `d` kept aside
+     * ([roomBarReal]) and put back when edit mode ends or parks. The host hands every padmap's `d` through [roomBarFor].
      */
     private var roomBarReal: Map<Int, String>? = null
     private var roomBarKept = false
     fun roomBarFor(dirs: Map<Int, String>?): Map<Int, String>? { roomBarReal = dirs; roomBarKept = true; return editRoomBar(dirs) }
     private fun editRoomBar(dirs: Map<Int, String>?): Map<Int, String>? {
         val draft = editDraft()
-        val want = draft?.let { HomeLayoutSolver.mirrorBit(it) }
-            ?: roomBarHold?.takeIf { it == HomeLayoutSolver.mirrorBit(HomeSettings.layout) }
+        val want = draft?.let { HomeLayoutSolver.dpadDirs(it) }
+            ?: roomBarHold?.takeIf { it == HomeLayoutSolver.dpadDirs(HomeSettings.layout) }
             ?: run { roomBarHold = null; return dirs }
-        val have = dirs?.let { ToolbarMirror.bitOf(it) } ?: return dirs
-        if (have == want) { if (draft == null) roomBarHold = null; return dirs }
-        return dirs + mapOf(1 to dirs.getValue(3), 3 to dirs.getValue(1))
+        // the toolbar's own words only (the Home bar's arrows, an older add-on's partial `d`: as they are)
+        if (dirs == null || ToolbarMirror.rank(dirs) == null) return dirs
+        if ((1..4).all { dirs[it] == want[it] }) { if (draft == null) roomBarHold = null; return dirs }
+        return dirs + want
     }
     /**
-     * fix round 3 (SPEC section 10: "after Save (new d arrives): 120 ms cross-fade if they differ"): Done keeps the saved record's sides
-     * (its mirror bit) on the pictures until the add-on's `d` says them - the swap the player previewed never slides back and forth
-     * while ToolbarMirror's taps are on their way. The host's [roomBarHoldEnd] (the resend gave up, no key to send for) puts `d` back with
-     * the cross-fade. Null = `d` as it is
+     * fix round 3 (SPEC section 10: "after Save (new d arrives): 120 ms cross-fade if they differ"): Done keeps the saved record's D-pad
+     * order on the pictures until the add-on's `d` says it - the swap the player previewed never slides back and forth while
+     * ToolbarMirror's taps are on their way. The host's [roomBarHoldEnd] (the resend gave up, no key to send for, an older add-on) puts
+     * `d` back with the cross-fade. Null = `d` as it is
      */
-    private var roomBarHold: Int? = null
+    private var roomBarHold: Map<Int, String>? = null
     fun roomBarHoldEnd() {
         if (roomBarHold == null) return
         roomBarHold = null
@@ -2568,7 +2570,8 @@ class HomeView(
             return !pose.isIdentity
         }
         override fun poke() = editKick()
-        override fun clockBox(): RectF? = editClockBox()
+        override fun pieceBox(s: EditStop): RectF? = editPieceBox(s)
+        override fun piecePose(s: EditStop, out: android.graphics.Matrix): Boolean = pieceMatrix(s, out)
         override fun solve(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> = solveFor(l)
         override val geo: HomeEditModel.Geo get() = editGeo
         override fun run(fx: List<HomeEditModel.Fx>) = editRun(fx)
@@ -2596,6 +2599,69 @@ class HomeView(
         override val colTop: Float get() = barsBottom() + UiKit.MODULE_GAP
         override val colBottom: Float get() = frameH - UiKit.MODULE_GAP
         override fun barSlots(): List<Float> = roomBar?.slotCentres() ?: emptyList()
+        override fun padSlots(): Map<Int, HomeLayoutSolver.Box> = buildMap {
+            for (s in EditStop.PADS) editPieceBox(s)?.let { put(s.pad, HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom)) }
+        }
+        override fun clockXs(): Map<HomeLayout.ClockPlace, Float> = buildMap {
+            val b = now[Part.BARS] ?: return@buildMap
+            for (pl in clockPlacesNow()) clockCx(pl, b)?.let { put(pl, it) }
+        }
+    }
+
+    /**
+     * 1518 build 3, WHAT THE BAND'S PIECES MAY DO NOW (HomeEditModel.Env): the D-pad icons move only while the band draws the DS toolbar's
+     * own pictures (the toolbar on and bound, not Party mode's pictures nor a fight spell's: CastView.toolbarDrawn) for a known character
+     * key (the sticky key rules: never while it is unknown); an add-on without `pp` takes only the Left / Right swap. The clock: the spots
+     * the band offers it now
+     */
+    private val editEnv = object : HomeEditModel.Env {
+        override val pads: HomeEditModel.PadCan get() {
+            val d = padMap?.dpad
+            if (!lent(castView) || castView.parent !== barsSlot || !castView.toolbarDrawn()) return HomeEditModel.PadCan.NONE
+            if (d == null || CharKey.of(d.name, d.realm) == null || HomeLayoutStore.owner().key == null) return HomeEditModel.PadCan.NONE
+            return if (d.pp) HomeEditModel.PadCan.FULL else HomeEditModel.PadCan.SIMPLE
+        }
+        override val clockPlaces: List<HomeLayout.ClockPlace> get() = clockPlacesNow()
+    }
+
+    /**
+     * the chip's centre x now on the band [b]: the record's spot (the draft's in edit mode), gliding [CLOCK_GLIDE_MS] to a new spot while
+     * edit mode shows; outside edit mode it is simply there (a record read, a Reset: no glide)
+     */
+    private fun clockXNow(b: RectF): Float {
+        val draft = editDraft()
+        val to = clockCx(draft?.clock ?: HomeSettings.layout.clock, b) ?: b.centerX()
+        val t = SystemClock.uptimeMillis()
+        if (draft == null || clockXTo.isNaN()) { clockXTo = to; clockXFrom = to; clockXCur = to; return to }
+        if (kotlin.math.abs(to - clockXTo) > 0.5f) { clockXFrom = clockXCur; clockXTo = to; clockXAt = t }
+        val u = ((t - clockXAt).toFloat() / CLOCK_GLIDE_MS).coerceIn(0f, 1f)
+        clockXCur = clockXFrom + (clockXTo - clockXFrom) * clockCurve.getInterpolation(u)
+        if (u < 1f) postInvalidateOnAnimation()
+        return clockXCur
+    }
+    private var clockXTo = Float.NaN
+    private var clockXFrom = 0f
+    private var clockXCur = 0f
+    private var clockXAt = 0L
+    private val clockCurve by lazy { Motion.curve() }
+
+    /** the clock chip's size for its spots and its edit box (scale 1): the time's digits as 0s and the battery at 100 % (the chip's
+     *  widest look for the text's length), its width up to the next 16 px, so the spots and the touch box never creep with the minutes */
+    private fun clockChipSizeNow(): FloatArray =
+        UiKit.clockChipSize(clockText.ifEmpty { "00:00" }.map { if (it.isDigit()) '0' else it }.joinToString(""), 100, chipGold())
+            .also { it[0] = kotlin.math.ceil(it[0] / 16f) * 16f }
+    /** the chip's centre x in Home's px at [pl] on the band [b] (null = that spot is not offered: the thin row, a button in the way) */
+    private fun clockCx(pl: HomeLayout.ClockPlace, b: RectF): Float? {
+        if (pl == HomeLayout.ClockPlace.CENTRE) return b.centerX()
+        if (castView.parent !== barsSlot) return null
+        val cs = clockChipSizeNow()
+        return castView.clockChipCx(pl, cs[0], cs[1])?.let { b.left + it }
+    }
+    /** the spots the chip may take now, left to right (none: no clock drawn on the band) */
+    private fun clockPlacesNow(): List<HomeLayout.ClockPlace> {
+        val b = now[Part.BARS] ?: return emptyList()
+        if (!overlayTo.clock || castView.parent !== barsSlot || castView.clockSpot() == null) return emptyList()
+        return HomeLayout.ClockPlace.values().filter { clockCx(it, b) != null }
     }
 
     /** the page's state now, as [places] hands it to the solver (for a drop well and a drop's check) */
@@ -2609,16 +2675,61 @@ class HomeView(
     private fun solveFor(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> =
         HomeLayoutSolver.places(HomeLayoutRules.shown(l.copy(rest = flow.rest)), solveState(l)).boxes
 
-    /** the clock block's box in Home's px while the small diamonds show it (null: the thin row, a fight) */
-    private fun editClockBox(): RectF? {
+    /**
+     * 1518 build 3: a band piece's box in Home's px as laid - a D-pad icon's spot (CastView.padBox; the band at rest, the diamonds or the
+     * thin row) or the clock chip at the draft's spot (the diamonds only: the thin row has none); null = none drawn now
+     */
+    private fun editPieceBox(s: EditStop): RectF? {
         val b = now[Part.BARS] ?: return null
-        if (!overlayTo.clock || castView.parent !== barsSlot) return null
-        val spot = castView.clockSpot() ?: return null
-        clockOut.set(b.left + spot[0], b.top + 4f, b.left + spot[2], b.top + spot[3])
-        return clockOut
+        if (castView.parent !== barsSlot || barsSlot.visibility != View.VISIBLE) return null
+        val o = pieceOut[s.ordinal]
+        if (s.pad > 0) {
+            if (!castView.padBox(s.pad - 1, o)) return null
+            o.offset(b.left, b.top)
+            return o
+        }
+        if (s != EditStop.CLOCK || !overlayTo.clock || castView.clockSpot() == null) return null
+        val cx = clockCx(editDraft()?.clock ?: HomeSettings.layout.clock, b) ?: b.centerX()
+        val cs = clockChipSizeNow()
+        o.set(cx - cs[0] / 2f, b.top + ClockBand.CHIP_TOP, cx + cs[0] / 2f, b.top + ClockBand.CHIP_TOP + cs[1])
+        return o
     }
-    /** the edit chrome's reads every frame ([editHost]'s parts, the clock's box): Home's own, never kept by the chrome */
-    private val clockOut = RectF()
+    /** the edit chrome's reads every frame ([editHost]'s parts, the pieces' boxes): Home's own, never kept by the chrome */
+    private val pieceOut = Array(EditStop.values().size) { RectF() }
+
+    /**
+     * a band piece's pose now ([s]'s key: a D-pad icon's follows the icon, HomeEditModel.keyOf) with the finger's carry while it is
+     * dragged, as a matrix in Home's px about its box's centre; false = none (no motion, the piece not movable now: drawn plain)
+     */
+    private fun pieceMatrix(s: EditStop, out: android.graphics.Matrix): Boolean {
+        if (!piecePose(s, pieceBuf)) return false
+        val box = editPieceBox(s) ?: return false
+        out.reset()
+        out.postScale(pieceBuf[0], pieceBuf[0], box.centerX(), box.centerY())
+        out.postRotate(pieceBuf[1], box.centerX(), box.centerY())
+        out.postTranslate(pieceBuf[2], pieceBuf[3])
+        return true
+    }
+    /** [s]'s pose (scale, turn deg, dx, dy into [out]); false = identity / none */
+    private fun piecePose(s: EditStop, out: FloatArray): Boolean {
+        if (!motion.on) return false
+        val m = edit?.takeIf { !it.parked } ?: chromeModel ?: return false
+        if (s.pad > 0 && editEnv.pads == HomeEditModel.PadCan.NONE) return false
+        if (s == EditStop.CLOCK && clockPlacesNow().size < 2) return false
+        val box = editPieceBox(s) ?: return false
+        val k = if (liftStop == s) liftKey else m.keyOf(s)
+        motion.pose(k, motionNow(), 0.5f * kotlin.math.hypot(box.width(), box.height()), pose)
+        var dx = pose.dx; var dy = pose.dy
+        val d = m.drag
+        if (d != null && d.stop.piece && m.lifted == s) { dx += d.cx - box.centerX(); dy += d.cy - box.centerY() }
+        out[0] = pose.scale; out[1] = pose.rot; out[2] = dx; out[3] = dy
+        return pose.scale != 1f || pose.rot != 0f || dx != 0f || dy != 0f
+    }
+    private val pieceBuf = FloatArray(4)
+    /** CastView's hook (its D-pad slot [src] 0-3 drawn through its icon's pose while edit mode shows) */
+    private val castPieceHook: (Int, FloatArray) -> Boolean = { src, out ->
+        EditStop.padStop(src + 1)?.let { piecePose(it, out) } == true
+    }
     private val partsOut = LinkedHashMap<HomePart, RectF>()
     private val partsPool = Array(Part.values().size) { RectF() }
     private val HOME_PART_OF: Array<HomePart> by lazy { Part.values().map { HomePart.valueOf(it.name) }.toTypedArray() }
@@ -2628,9 +2739,6 @@ class HomeView(
         val d = padMap?.dpad
         val who = GameUi.character
         return HomeWidgetMenus.Values(
-            swing = HomeSettings.swingTimer, rank = HomeSettings.rankBadges,
-            toolbar = d?.let { it.want == true }, toolbarCan = d?.colOn != null,
-            clock = BottomTiles.CLOCK_LINES.associate { it.first to BottomTiles.clockOn(it.first) },
             quickInput = Settings.chatDefaultInput == "quick",
             talk = if (who != null && d?.want == true && d.colOn != null) HomeSettings.holdTalk(who) else null,
             talkSendNow = who != null && HomeSettings.talkSendNow(who),
@@ -2639,7 +2747,7 @@ class HomeView(
     }
     private fun editMenuRows(s: EditStop): List<MenuRow> {
         val m = edit ?: chromeModel ?: return emptyList()
-        return HomeWidgetMenus.rows(s, m.draft, editValues(), m.toolbarWant)
+        return HomeWidgetMenus.rows(s, m.draft, editValues())
     }
 
     /**
@@ -2656,7 +2764,8 @@ class HomeView(
         if (classOpen) classLayerShow(false)
         val saved = HomeSettings.layout
         chromeModel = null
-        val m = HomeEditModel(saved, start, toolbarNow = padMap?.dpad?.want)
+        val m = HomeEditModel(saved, start, editEnv)
+        castView.editPiece = castPieceHook
         edit = m
         editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (it is saved only there)
         editPersisted = saved
@@ -2731,12 +2840,11 @@ class HomeView(
         val back = if (write && discard) editPersisted?.let { prev -> editOwner?.let { o -> HomeLayoutStore.editSave(o, prev, m.saved) } } else null
         if (back != null) HomeSettings.saveLayout(back)
         val done = write && !discard
-        if (done) m.toolbarWant?.let { if (it != m.toolbarNow) onEditToolbar?.invoke(it) }
         Log.i(TAG, "home edit: ${when { done -> "done"; back != null -> "discarded, back to ${HomeLayoutJson.json(back)}"; discard -> "discard NOT written (another record is active)"; else -> "ended" }}")
         edit = null
         editBackDue = false
         editPersisted = null
-        roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null   // fix round 3: the record's sides until `d` says them
+        roomBarHold = if (write) HomeLayoutSolver.dpadDirs(HomeSettings.layout) else null   // fix round 3: the record's order until `d` says it
         editOwner = null
         liveDraft = null
         editRestSync()                                                    // the record's rest
@@ -2891,8 +2999,10 @@ class HomeView(
         val c = stopBox(s) ?: return null
         val cx = c.centerX(); val cy = c.centerY()
         val pts = ArrayList<Triple<Int, Float, Float>>()
-        for (k in listOf(EditStop.BAND, EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST))
-            stopBox(k)?.let { pts += Triple(k.ordinal, it.centerX(), it.centerY()) }
+        for (k in listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST))
+            stopBox(k)?.let { pts += Triple(k.key, it.centerX(), it.centerY()) }
+        val em = edit
+        for (k in HomeEditView.PIECES) editPieceBox(k)?.let { pts += Triple(em?.keyOf(k) ?: k.key, it.centerX(), it.centerY()) }
         now[Part.PARTY]?.let { pts += Triple(HomeEditMotion.PARTY, it.centerX(), it.centerY()) }
         val bar = roomBar
         val xs = bar?.slotCentres().orEmpty()
@@ -2906,7 +3016,7 @@ class HomeView(
     }
     /** [s]'s widget box now (logical: the model's) */
     private fun stopBox(s: EditStop): RectF? = when (s) {
-        EditStop.BAND, EditStop.CLOCK -> now[Part.BARS]
+        EditStop.CLOCK, EditStop.PAD_L, EditStop.PAD_U, EditStop.PAD_R, EditStop.PAD_D -> editPieceBox(s)?.let { RectF(it) }
         EditStop.CHAT -> now[Part.CHAT]; EditStop.MAP -> now[Part.MAP]; EditStop.QUEST -> now[Part.QUESTS]
         EditStop.CAST -> now[Part.STRIP] ?: now[Part.CAST2]
         EditStop.DIVIDER -> editView.dividerBox()
@@ -2914,7 +3024,6 @@ class HomeView(
     }
     /** the part whose pose [s]'s chrome is drawn through (HomeEditView.poseOf's) */
     private fun stopPart(s: EditStop): Part? = when (s) {
-        EditStop.BAND, EditStop.CLOCK -> Part.BARS
         EditStop.CHAT -> Part.CHAT; EditStop.MAP -> Part.MAP; EditStop.QUEST -> Part.QUESTS
         EditStop.CAST -> Part.STRIP
         else -> null
@@ -2924,6 +3033,7 @@ class HomeView(
     private fun stopMatrix(s: EditStop?, out: android.graphics.Matrix): Float {
         out.reset()
         stopTurn = 0f
+        if (s != null && s.piece) { if (!piecePose(s, pieceBuf)) return 1f; pieceMatrix(s, out); stopTurn = pieceBuf[1]; return pieceBuf[0] }
         val p = s?.let { stopPart(it) } ?: return 1f
         if (!partMatrix(p, out)) return 1f
         stopTurn = pose.rot
@@ -2975,11 +3085,14 @@ class HomeView(
     /** the lift ([s] picked up) or the drop (null: the widget that was lifted plops into its dock, from the finger's offset) */
     private fun editLift(s: EditStop?) {
         val t = motionNow()
-        if (s != null) { liftStop = s; motion.lift(s.ordinal, t); if (s == EditStop.QUEST) cardOwnTo(1f, t, Motion.WIGGLE_IN) }
+        if (s != null) {
+            liftStop = s; liftKey = edit?.keyOf(s) ?: s.key
+            motion.lift(liftKey, t); if (s == EditStop.QUEST) cardOwnTo(1f, t, Motion.WIGGLE_IN)
+        }
         else liftStop?.let { was ->
             val ox = if (edit?.drag == null) dragOffsetNow[0] else 0f; val oy = if (edit?.drag == null) dragOffsetNow[1] else 0f
             dragOffsetNow.fill(0f)
-            motion.drop(was.ordinal, ox, oy, t)
+            motion.drop(liftKey, ox, oy, t)
             // dropped (on the map): it rides the map's pose again over its plop
             if (was == EditStop.QUEST) cardOwnTo(0f, t, CARD_RIDE_BACK)
         }
@@ -3021,11 +3134,12 @@ class HomeView(
 
     /** [p]'s pose key: its widget's (a rider's host's: the buffs and the card on the map ride the map's); -1 = none */
     private fun keyOfPart(p: Part): Int = when (p) {
-        Part.BARS -> EditStop.BAND.ordinal
-        Part.CHAT -> EditStop.CHAT.ordinal
-        Part.MAP, Part.AURAS -> EditStop.MAP.ordinal
-        Part.QUESTS -> if (cardOverMap()) EditStop.MAP.ordinal else EditStop.QUEST.ordinal
-        Part.STRIP, Part.CAST2 -> EditStop.CAST.ordinal
+        // 1518 build 3: the band never moves as one (its pieces wiggle on their own: CastView.editPiece, the clock chip)
+        Part.BARS -> -1
+        Part.CHAT -> EditStop.CHAT.key
+        Part.MAP, Part.AURAS -> EditStop.MAP.key
+        Part.QUESTS -> if (cardOverMap()) EditStop.MAP.key else EditStop.QUEST.key
+        Part.STRIP, Part.CAST2 -> EditStop.CAST.key
         Part.PARTY -> HomeEditMotion.PARTY
         Part.CHAT_FULL -> -1
     }
@@ -3034,8 +3148,8 @@ class HomeView(
         val r = when (keyOfPart(p)) {
             -1 -> null
             // the card on the map turns about its OWN centre with the map's pose composed over it ([partPose]: no pivot switch at a lift)
-            EditStop.MAP.ordinal -> if (p == Part.QUESTS) now[Part.QUESTS] else now[Part.MAP]
-            EditStop.CAST.ordinal -> {
+            EditStop.MAP.key -> if (p == Part.QUESTS) now[Part.QUESTS] else now[Part.MAP]
+            EditStop.CAST.key -> {
                 val a = now[Part.STRIP]; val b = now[Part.CAST2]
                 if (a != null) { out.set(a); if (b != null) out.union(b); return true }
                 b
@@ -3050,7 +3164,7 @@ class HomeView(
         if (!motion.on) return out.identity()
         val k = keyOfPart(p)
         if (k < 0 || !ownerBox(p, poseBox)) return out.identity()
-        if (p == Part.QUESTS && k == EditStop.MAP.ordinal) return cardRidePose(t, out)
+        if (p == Part.QUESTS && k == EditStop.MAP.key) return cardRidePose(t, out)
         return posedIn(k, t, poseBox, out)
     }
     /**
@@ -3071,14 +3185,14 @@ class HomeView(
     private fun cardRidePose(t: Long, out: HomeEditMotion.Pose): HomeEditMotion.Pose {
         val m = now[Part.MAP] ?: return out.identity()
         val cx = poseBox.centerX(); val cy = poseBox.centerY()
-        posedIn(EditStop.MAP.ordinal, t, m, rideM)
+        posedIn(EditStop.MAP.key, t, m, rideM)
         val vx = (cx - m.centerX()) * rideM.scale; val vy = (cy - m.centerY()) * rideM.scale
         val a = Math.toRadians(rideM.rot.toDouble()); val co = kotlin.math.cos(a).toFloat(); val si = kotlin.math.sin(a).toFloat()
         val mdx = m.centerX() + vx * co - vy * si + rideM.dx - cx
         val mdy = m.centerY() + vx * si + vy * co + rideM.dy - cy
         val w = cardOwn(t)
         if (w <= 0f) { out.scale = rideM.scale; out.rot = rideM.rot; out.dx = mdx; out.dy = mdy; return out }
-        posedIn(EditStop.QUEST.ordinal, t, poseBox, rideQ)
+        posedIn(EditStop.QUEST.key, t, poseBox, rideQ)
         out.scale = lerp(rideM.scale, rideQ.scale, w); out.rot = lerp(rideM.rot, rideQ.rot, w)
         out.dx = lerp(mdx, rideQ.dx, w); out.dy = lerp(mdy, rideQ.dy, w)
         return out
@@ -3293,7 +3407,7 @@ class HomeView(
         val ox = liftOff[0]; val oy = liftOff[1]
         if (liveEdit?.drag != null) { dragOffsetNow[0] = ox; dragOffsetNow[1] = oy }
         val k = liftK
-        val settling = lifted != null && motion.settling(lifted.ordinal, t)
+        val settling = lifted != null && motion.settling(if (lifted == liftStop) liftKey else edit?.keyOf(lifted) ?: lifted.key, t)
         for ((p, v) in views) {
             val mine = lifted != null && partOf(lifted, p)
             partPose(p, t, pose)
@@ -3328,7 +3442,7 @@ class HomeView(
         }
         // the lift has landed and its drop slid in: nothing is lifted any more
         // (after its lift spring has landed too: the drop's plop runs below 1 after the lift's share reads 0)
-        if (liveEdit?.lifted == null && liveEdit?.drag == null && liftStop != null && k == 0f && !settling && motion.liftDone(liftStop!!.ordinal, t)) liftStop = null
+        if (liveEdit?.lifted == null && liveEdit?.drag == null && liftStop != null && k == 0f && !settling && motion.liftDone(liftKey, t)) liftStop = null
         decorDirty = liveEdit != null || chromeModel != null || mapScaleTo != null || liftK > 0f || motion.on
         if (mapScaleTo == null) { mapScaleTx = 0f; mapScaleTy = 0f }
         // fix round 1: the page settled with the cursor's widget gone (the card / the bar Off, Party mode's Hide): the cursor moves on
@@ -3481,7 +3595,7 @@ class HomeView(
         editFlash?.let { (fs, at) ->
             val t = android.os.SystemClock.uptimeMillis() - at
             val box = now[when (fs) { EditStop.MAP -> Part.MAP; EditStop.CAST -> Part.STRIP; EditStop.QUEST -> Part.QUESTS
-                EditStop.BAND, EditStop.CLOCK -> Part.BARS; else -> Part.CHAT }]
+                EditStop.CLOCK, EditStop.PAD_L, EditStop.PAD_U, EditStop.PAD_R, EditStop.PAD_D -> Part.BARS; else -> Part.CHAT }]
             if (edit == null && chromeModel == null && box != null && t in 0 until HomeEditModel.FLASH_MS) {
                 pRing.strokeWidth = 6f; pRing.color = Color.argb((255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt(), 220, 40, 30)
                 c.drawRoundRect(RectF(box).apply { inset(-2f, -2f) }, UiKit.MODULE_R, UiKit.MODULE_R, pRing)
@@ -3530,11 +3644,15 @@ class HomeView(
 
     // ================================================================ movable Home: the D-pad toast (SPEC section 6 "SYNC", final_05)
 
-    /** the add-on's `d` changed its Left / Right (a swap took): "D-pad < Map > Chat" on Home for 1.6 s, the kit's gold arrows */
+    /** the add-on's `d` changed its order (a swap took): "D-pad < Map > Chat" on Home for 1.6 s, the kit's gold arrows - each direction
+     *  that changed, its arrow before its word (1518 build 3: Up and Down too) */
     private var toastAt = 0L
     private var toastWords: List<String> = emptyList()
-    fun toolbarToast(dirs: Map<Int, String>) {
-        toastWords = ToolbarMirror.toastWords(dirs).map { Tr.t(it) }
+    private var toastDirs: List<Int?> = emptyList()
+    fun toolbarToast(before: Map<Int, String>?, dirs: Map<Int, String>) {
+        val items = ToolbarMirror.toastItems(before, dirs)
+        toastWords = items.map { Tr.t(it.second) }
+        toastDirs = items.map { it.first }
         toastAt = SystemClock.uptimeMillis()
         invalidate()
     }
@@ -3587,9 +3705,14 @@ class HomeView(
         for ((i, w) in words.withIndex()) {
             if (i > 0) {
                 x += gap
-                UiKit.tex(if (i == 1) "move_arrow_left" else "move_arrow_right")?.let { b ->
+                // the direction's arrow: Left / Right as drawn, Up / Down the right arrow turned
+                val dir = toastDirs.getOrNull(i) ?: (if (i == 1) 1 else 3)
+                UiKit.tex(if (dir == 1) "move_arrow_left" else "move_arrow_right")?.let { b ->
                     val bp = Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = (255 * a).toInt() }
+                    val sv = c.save()
+                    if (dir == 2 || dir == 4) c.rotate(if (dir == 2) -90f else 90f, x + arrow / 2f, cy)
                     c.drawBitmap(b, null, RectF(x, cy - arrow / 2f, x + arrow, cy + arrow / 2f), bp)
+                    c.restoreToCount(sv)
                 }
                 x += arrow + gap
             }
@@ -3708,13 +3831,20 @@ class HomeView(
             val spot = if (castView.parent === barsSlot) castView.clockSpot()?.also { spot ->
                 for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
             } else null
-            // the clock block rides the band's pose in edit mode
-            val posedSave = if (editPaintPosed() && partMatrix(Part.BARS, paintM)) c.save().also { c.concat(paintM) } else -1
+            // 1518 build 3: the chip at its spot (the record's, the draft's in edit mode: it glides there), the extras row on the join; in
+            // edit mode the chip wiggles as its own app (its own pose), the row stays
+            val cx = clockXNow(b)
+            val centre = kotlin.math.abs(cx - b.centerX()) < 0.5f
             val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
-            UiKit.clockBlock(c, b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, chipGold(), spot, items, g,
-                rowAlpha = if (rowOn) (trigA * 255).toInt() else 0, chipAlpha = if (chipOn) 255 else 0)
+            if (chipOn) {
+                val posedSave = if (editPaintPosed() && pieceMatrix(EditStop.CLOCK, paintM)) c.save().also { c.concat(paintM) } else -1
+                UiKit.clockBlock(c, cx, b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, chipGold(), spot, items, g,
+                    rowAlpha = 0, chipAlpha = 255, chipGrow = centre)
+                if (posedSave >= 0) c.restoreToCount(posedSave)
+            }
+            if (rowOn) UiKit.clockBlock(c, cx, b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, chipGold(), spot, items, g,
+                rowAlpha = (trigA * 255).toInt(), chipAlpha = 0, chipGrow = centre)
             if (save >= 0) c.restoreToCount(save)
-            if (posedSave >= 0) c.restoreToCount(posedSave)
             // the mm:ss counts (as the auras' times); nothing ticks otherwise
             if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
         }
@@ -4833,6 +4963,8 @@ class HomeView(
         private val ZERO4 = FloatArray(4)
         /** the edit ticker's frame off a window */
         private const val FRAME_MS = 16L
+        /** the clock chip's glide to a new spot in edit mode (one controller step's) */
+        const val CLOCK_GLIDE_MS = HomeEditModel.EDIT_STEP
         /** the card dropped on the map: its own pose hands back to the map's over this long (its plop shows on the way) */
         private const val CARD_RIDE_BACK = 320L
         /** a room's picture on the bar: half its diagonal (its wiggle's turn) */

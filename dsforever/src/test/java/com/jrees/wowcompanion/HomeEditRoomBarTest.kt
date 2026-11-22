@@ -17,7 +17,7 @@ import org.junit.Test
 class HomeEditRoomBarTest {
     private val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
     private fun model(saved: HomeLayout = classic, start: EditStop = EditStop.CHAT) =
-        HomeEditModel(saved, start, true)
+        HomeEditModel(saved, start)
 
     /** the bar's slots as the Strip lays them (1240 wide) for [n] visible rooms (+ the "+" cell when [plus]): left of the 128 px disc
      *  leftCount of the cells, the rest right of it; only the rooms' centres (the "+" cell is no slot) */
@@ -33,8 +33,8 @@ class HomeEditRoomBarTest {
     private fun stops(l: HomeLayout): Map<EditStop, HomeLayoutSolver.Box> {
         val b = HomeLayoutSolver.places(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f)).boxes
         val out = LinkedHashMap<EditStop, HomeLayoutSolver.Box>()
-        out[EditStop.BAND] = b.getValue(HomePart.BARS).copy(r = 470f)
-        out[EditStop.CLOCK] = HomeLayoutSolver.Box(470f, 12f, 770f, 200f)
+        out[EditStop.PAD_U] = HomeLayoutSolver.Box(285f, 4f, 381f, 100f)
+        out[EditStop.CLOCK] = HomeLayoutSolver.Box(550f, 10f, 690f, 94f)
         out[EditStop.CHAT] = b.getValue(HomePart.CHAT)
         out[EditStop.MAP] = b.getValue(HomePart.MAP)
         b[HomePart.QUESTS]?.let { out[EditStop.QUEST] = it }
@@ -50,7 +50,7 @@ class HomeEditRoomBarTest {
     }
     private fun HomeEditModel.press(vararg keys: String): List<HomeEditModel.Fx> {
         val out = ArrayList<HomeEditModel.Fx>()
-        for (k in keys) out += key(k, stops(draft)) { s -> HomeWidgetMenus.rows(s, draft, HomeWidgetMenus.Values(), toolbarWant) }
+        for (k in keys) out += key(k, stops(draft)) { s -> HomeWidgetMenus.rows(s, draft, HomeWidgetMenus.Values()) }
         return out
     }
 

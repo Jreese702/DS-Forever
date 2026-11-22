@@ -174,17 +174,61 @@ class HomeEditMotionShotsTest {
         val m = p.home.editMotion()
         val b = boxes(p.home)
         val pose = HomeEditMotion.Pose()
-        for ((name, key, owner) in listOf(Triple("CHAT", EditStop.CHAT.ordinal, "CHAT"), Triple("MAP", EditStop.MAP.ordinal, "MAP"),
-            Triple("BARS", EditStop.BAND.ordinal, "BARS"))) {
+        for ((name, key, owner) in listOf(Triple("CHAT", EditStop.CHAT.key, "CHAT"), Triple("MAP", EditStop.MAP.key, "MAP"))) {
             val v = views(p.home).getValue(name)
             val r = b.getValue(owner)
             m.pose(key, t, 0.5f * hypot(r.width(), r.height()), pose)
             assertEquals("$what: $name scale", pose.scale, v.scaleX, 1e-4f)
             assertEquals("$what: $name turn", pose.rot, v.rotation, 1e-3f)
         }
+        // 1518 build 3: the band never moves as one (its pieces wiggle on their own, drawn inside it)
+        val bars = views(p.home).getValue("BARS")
+        assertEquals("$what: the band's own scale", 1f, bars.scaleX, 1e-4f)
+        assertEquals("$what: the band's own turn", 0f, bars.rotation, 1e-3f)
     }
 
     private val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+
+    /**
+     * 1518 build 3 (the user's ruling 2026-11-21: the top bar's small icons are apps): each D-pad toolbar icon and the clock chip wiggle
+     * on their own phase and pace (CastView.editPiece, the chip's own pose), the band itself never moves, every piece within its turn;
+     * a toolbar that is not the add-on's (no character key) draws its icons plain
+     */
+    @Test fun theBandsPiecesWiggleOnTheirOwn() {
+        val p = page(classic)
+        val home = p.home
+        HomeLayoutStore.character("Korvash-Realm")
+        home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m184","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
+            "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"pp":1,"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
+        pin(p)
+        val t0 = clock
+        home.editOpen(EditStop.CHAT)
+        val cast = field(home, "castView") as CastView
+        val hook = cast.editPiece!!
+        val clockM = HomeView::class.java.getDeclaredMethod("piecePose", EditStop::class.java, FloatArray::class.java).apply { isAccessible = true }
+        fun turns(): List<Float> {
+            val out = (0..3).map { src -> FloatArray(4).also { assertTrue("D-pad $src posed", hook(src, it)) }[1] }
+            val c = FloatArray(4)
+            assertTrue("the clock posed", clockM.invoke(home, EditStop.CLOCK, c) as Boolean)
+            return out + c[1]
+        }
+        frame(p, t0 + 1000)
+        val a = turns()
+        shot(p, "m30_band_pieces_wiggle_1000")
+        frame(p, t0 + 1077)
+        val b = turns()
+        shot(p, "m31_band_pieces_wiggle_1077")
+        for (i in a.indices) {
+            assertTrue("piece $i within its turn", abs(a[i]) <= Motion.WIGGLE_DEG + 1e-3f && abs(b[i]) <= Motion.WIGGLE_DEG + 1e-3f)
+            assertNotEquals("piece $i wiggles", a[i], b[i])
+        }
+        assertEquals("each on its own phase", a.size, a.map { (it * 1000).toInt() }.toSet().size)
+        assertEquals("the band itself still", 0f, views(home).getValue("BARS").rotation, 0f)
+        // no character key: the icons are not the add-on's to move - drawn plain, no wiggle
+        HomeLayoutStore.character(null)
+        assertFalse(hook(0, FloatArray(4)))
+        home.editCancel()
+    }
 
     // ---------------------------------------------------------------- the open, the wiggle, the ribbon
 
@@ -221,7 +265,9 @@ class HomeEditMotionShotsTest {
         frame(p, t0 + 1077)
         val b = views(home).mapValues { it.value.rotation }
         shot(p, "m05_wiggle_1077")
-        for (n in listOf("CHAT", "MAP", "BARS")) {
+        // 1518 build 3: the band never wiggles as one (its pieces do, drawn inside it: CastView.editPiece, the clock chip)
+        assertEquals("the band still", 0f, b.getValue("BARS"), 0f)
+        for (n in listOf("CHAT", "MAP")) {
             val r = boxes(home).getValue(n)
             val hd = 0.5f * hypot(r.width(), r.height())
             assertTrue("$n turns within its budget", abs(a.getValue(n)) <= HomeEditMotion.amp(hd) + 1e-4f && abs(b.getValue(n)) <= HomeEditMotion.amp(hd) + 1e-4f)
@@ -478,10 +524,11 @@ class HomeEditMotionShotsTest {
         val b = shot(p, "m17_still_400")
         val props1 = views(home).mapValues { listOf(it.value.scaleX, it.value.rotation, it.value.translationX, it.value.translationY) }
         assertEquals("nothing moves between frames", props0, props1)
-        for (n in listOf("CHAT", "MAP", "BARS")) {
+        for (n in listOf("CHAT", "MAP")) {
             assertEquals("$n at rest at once", Motion.REST_SCALE, views(home).getValue(n).scaleX, 0f)
             assertEquals("$n never turns", 0f, views(home).getValue(n).rotation, 0f)
         }
+        assertEquals("the band is no widget: its own size", 1f, views(home).getValue("BARS").scaleX, 0f)
         assertTrue("the same picture", a.sameAs(b))
         assertFalse("no ticker to run", home.editMotion().busy(t0 + 400))
     }
@@ -530,7 +577,7 @@ class HomeEditMotionShotsTest {
             assertTrue("the ticker runs at +${t - t0} ms", field(home, "tickerPosted") as Boolean)
             val a = views(home).mapValues { it.value.rotation }
             clock = t + 37; settle(1)
-            for (n in listOf("CHAT", "MAP", "BARS")) {
+            for (n in listOf("CHAT", "MAP")) {
                 assertNotEquals("$n still wiggling at +${t - t0} ms", a.getValue(n), views(home).getValue(n).rotation)
                 val r = boxes(home).getValue(n)
                 val most = HomeEditMotion.amp(0.5f * hypot(r.width(), r.height()))

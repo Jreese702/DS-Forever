@@ -9,7 +9,8 @@ Book.lua's second page (padtab 39, 38 then N: the table P2) and third page (padt
   3 the app's registry (PadMapModel.PAGE3_CODES) names every third-page code Book defines, and nothing Book does not define;
   4 the app's own third-page sends (PadMapModel.P3_* constants) are registered codes;
   5 PHASE 2 (edit mode) adds no code: edit mode is app-only; its only add-on contact is Save's mirror bit. The 1515 merge (Book b76): the
-    sticky realm question keeps 9 / 10-19 (test build 1515's), Home's mirror bit moves to 20 / 21 and the top-screen combat bar to 22 / 23.
+    sticky realm question keeps 9 / 10-19 (test build 1515's), Home's mirror bit moves to 20 / 21 and the top-screen combat bar to 22 / 23;
+  6 test build 1518 build 3 (Book b77): 24 = the D-pad order's pick, its rank 0-23 the next column (a fourth step, P2.P4).
 Exit code 1 on any failure."""
 import os
 import re
@@ -80,6 +81,10 @@ check(consts.get("P3_KEY_NEW") == 9 and consts.get("P3_KEY_LAST") == 19 and {9} 
       "the key question's 9 / 10-19 (Book b74, test build 1515) kept")
 check(consts.get("P3_MIRROR_OFF") == 20 and consts.get("P3_MIRROR_ON") == 21 and consts.get("P3_TOP_OFF") == 22 and consts.get("P3_TOP_ON") == 23
       and {20, 21, 22, 23} <= set(p3), "Home's codes off the question's: mirror 20 / 21, top bar 22 / 23 (third page now %s)" % sorted(set(p3)))
+
+# 1518 build 3 (Book b77): the D-pad order's pick 24, then its rank 0-23 (the fourth step's table P2.P4)
+check(consts.get("P3_PERM_PICK") == 24 and 24 in p3 and "for k = 0, 23 do P2.P4[k]" in book,
+      "the D-pad order: pick 24 on the third page, its rank 0-23 the next column")
 
 print("%s: %d failure(s)" % ("FAIL" if fails else "PASS", fails))
 sys.exit(1 if fails else 0)

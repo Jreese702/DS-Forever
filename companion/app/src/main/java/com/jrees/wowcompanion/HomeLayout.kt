@@ -43,7 +43,18 @@ data class HomeLayout(
     /** 1518 build 2 (the user's ruling 2026-11-21: each room icon is its own app): the rooms taken off the bar with their "-" badge
      *  (they wait in edit mode's "+" spot); never Settings ([RoomBar.hiddenOf]); empty = every room on the bar (Classic) */
     val hidden: List<String> = emptyList(),
+    /** 1518 build 3 (the user's ruling 2026-11-21: the top bar's small icons are apps): what each bare D-pad direction of the DS toolbar
+     *  opens, positions 1-4 (Left, Up, Right, Down), as SIDE-RELATIVE pieces - the left column's module, the radial, the right column's
+     *  module, the Home bar - so a chat / map swap (Select) still carries the D-pad with the columns (SPEC 6 "SYNC"). Classic = [PAD_DEFAULT]
+     *  (today's two tables, the mirror bit's off and on, both); a swap in edit mode reorders it ([HomeLayoutSolver.dpadDirs] resolves it) */
+    val pad: List<PadKey> = PAD_DEFAULT,
+    /** 1518 build 3: the time / battery / gold chip's spot along the band (the diamonds only; the extras row stays on the ZL + ZR join) */
+    val clock: ClockPlace = ClockPlace.CENTRE,
 ) {
+    /** a D-pad direction's piece ([pad]): the module in the LEFT / RIGHT column (chat or map, whichever is there), the radial, the Home bar */
+    enum class PadKey { LEFT_COL, RADIAL, RIGHT_COL, HOME }
+    /** the clock chip's spot: left of the band's centre, the centre (today's), right of it (CastBarPlace.clockChipCx) */
+    enum class ClockPlace { LEFT, CENTRE, RIGHT }
     enum class Side { LEFT, RIGHT; fun other() = if (this == LEFT) RIGHT else LEFT }
     enum class Share(val num: Int, val den: Int) { THIRD(1, 3), HALF(1, 2), TWO_THIRDS(2, 3) }
     enum class CardDock { ON_MAP, ABOVE_CHAT, OFF }
@@ -74,7 +85,7 @@ data class HomeLayout(
     enum class SlotSize(val px: Float) { S(88f), M(100f), L(112f) }
     enum class FightBand { GROW, SAME, TOP }
 
-    /** the map is left of the chat: the add-on's DS toolbar mirror bit (D-pad Left = the map, Right = the chat) */
+    /** the map is left of the chat (the party module's edge; the D-pad's own order is [pad], resolved by HomeLayoutSolver.dpadDirs) */
     val mirrored: Boolean get() = chatSide == Side.RIGHT
     /** the same layout with chat and map swapped (Select in edit mode) */
     fun swapped(): HomeLayout = copy(chatSide = chatSide.other())
@@ -104,12 +115,32 @@ data class HomeLayout(
     fun classic(): HomeLayout = copy(name = LEGACY_CLASSIC, chatSide = Side.LEFT, chatShare = Share.HALF, card = CardDock.ON_MAP,
         rest = HomeRest.DIAMONDS, castSize = SlotSize.L,
         cast = if (cast == CastDock.SPLIT) CastDock.UNDER_CHAT else cast.withTop(false),
-        fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList())
+        fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList(),
+        pad = PAD_DEFAULT, clock = ClockPlace.CENTRE)
+
+    /** the D-pad order with the pieces at positions [a] and [b] (1-4) swapped (edit mode's drag / A-then-D-pad of a toolbar icon) */
+    fun padSwapped(a: Int, b: Int): HomeLayout {
+        if (a !in 1..4 || b !in 1..4 || a == b) return this
+        val p = pad.toMutableList()
+        val t = p[a - 1]; p[a - 1] = p[b - 1]; p[b - 1] = t
+        return copy(pad = p)
+    }
+    /** the D-pad order is one the add-on's mirror bit says alone (today's two tables: page-3 codes 20 / 21 reach every add-on) */
+    val padSimple: Boolean get() = pad == PAD_DEFAULT || pad == PAD_FLIPPED
 
     companion object {
         const val VERSION = 1
         /** the legacy [name] a new and a migrated record carry (1517's Classic preset's; the JSON text of a Classic record unchanged) */
         const val LEGACY_CLASSIC = "Classic"
+        /** Classic's D-pad: Left = the left column's module, Up = the radial, Right = the right column's, Down = the Home bar */
+        val PAD_DEFAULT = listOf(PadKey.LEFT_COL, PadKey.RADIAL, PadKey.RIGHT_COL, PadKey.HOME)
+        /** Left and Right crossed (the mirror bit's other table whatever side the chat is on) */
+        val PAD_FLIPPED = listOf(PadKey.RIGHT_COL, PadKey.RADIAL, PadKey.LEFT_COL, PadKey.HOME)
+        /** a read D-pad order: the four pieces once each, else Classic's */
+        fun padOf(words: List<String>): List<PadKey> {
+            val p = words.mapNotNull { w -> PadKey.values().firstOrNull { it.name == w } }
+            return if (p.size == 4 && p.toSet().size == 4) p else PAD_DEFAULT
+        }
         /** a geometric side picked by an older route (Settings' old Left / Right, "Turn on" = Both) -> the dock it means NOW; [keepTop]
          *  keeps a bar that was above its column above the new one */
         fun dockOf(side: CastStripModel.Side, chatSide: Side, keepTop: Boolean = false): CastDock = when (side) {
@@ -130,6 +161,9 @@ object HomeLayoutJson {
         .also { o -> if (!RoomBar.isDefault(l.rooms)) o.put("rooms", org.json.JSONArray(RoomBar.normalize(l.rooms))) }
         // 1518 build 2: the hidden rooms only when there are some (a Classic record's text is unchanged)
         .also { o -> RoomBar.hiddenOf(l.hidden).takeIf { it.isNotEmpty() }?.let { o.put("hide", org.json.JSONArray(it)) } }
+        // 1518 build 3: the D-pad order and the clock's spot only when they are not Classic's (a Classic record's text is unchanged)
+        .also { o -> HomeLayout.padOf(l.pad.map { it.name }).takeIf { it != HomeLayout.PAD_DEFAULT }?.let { p -> o.put("pad", org.json.JSONArray(p.map { it.name })) } }
+        .also { o -> if (l.clock != HomeLayout.ClockPlace.CENTRE) o.put("clock", l.clock.name) }
         .toString()
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
@@ -153,6 +187,8 @@ object HomeLayoutJson {
                 xpBar = o.optBoolean("xp", d.xpBar),
                 rooms = o.optJSONArray("rooms")?.let { a -> RoomBar.normalize((0 until a.length()).map { a.optString(it, "") }) } ?: d.rooms,
                 hidden = o.optJSONArray("hide")?.let { a -> RoomBar.hiddenOf((0 until a.length()).map { a.optString(it, "") }) } ?: d.hidden,
+                pad = o.optJSONArray("pad")?.let { a -> HomeLayout.padOf((0 until a.length()).map { a.optString(it, "") }) } ?: d.pad,
+                clock = en(HomeLayout.ClockPlace.values(), "clock", d.clock),
             )
         } catch (e: Exception) { fallback }
     }

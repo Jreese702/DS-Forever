@@ -122,8 +122,10 @@ class HomeEditWiringTest {
         val reset = body(host, "private fun resetApply(")
         val cancel = reset.indexOf("homeView.editCancel()")
         assertTrue(cancel > 0 && cancel < reset.indexOf("resetRun.run(b, who, all, localGame)"))
-        // 1518: no layouts - edit mode opens on the record and the toolbar's word only (no flips, no slots, no fold of a preset's)
-        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start, toolbarNow = padMap?.dpad?.want)"))
+        // 1518: no layouts - edit mode opens on the record only (no flips, no slots, no fold of a preset's); build 3: the band's pieces'
+        // conditions (the toolbar drawn, the character key, the add-on's pp, the clock's spots) and CastView's pose hook
+        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start, editEnv)"))
+        assertTrue(body(home, "fun editOpen(").contains("castView.editPiece = castPieceHook"))
         assertFalse(body(home, "fun editOpen(").contains("foldOpen"))
         // the cursor's widget gone: the clock too (the model's set), not only the card and the bar
         assertTrue(body(home, "private fun editCursorCheck(").contains("if (m.cursor !in HomeEditModel.GONE_CHECKED) return"))
@@ -151,7 +153,10 @@ class HomeEditWiringTest {
         val end = body(home, "private fun editEnd(")
         assertTrue(end.contains("if (write && !discard) editPersist(m, now = true)"))
         assertTrue(end.contains("HomeLayoutStore.editSave(o, prev, m.saved)"))
-        assertTrue(end.contains("if (done) m.toolbarWant?.let { if (it != m.toolbarNow) onEditToolbar?.invoke(it) }"))
+        // 1518 build 3: no toolbar switch in edit mode (the band's menu is gone: Settings > Bottom screen has it); the record's D-pad
+        // order is held on the pictures until the add-on's `d` says it
+        assertFalse(home.contains("onEditToolbar"))
+        assertTrue(end.contains("roomBarHold = if (write) HomeLayoutSolver.dpadDirs(HomeSettings.layout) else null"))
         assertFalse("no All characters from edit mode", end.contains("all ="))
         // the add-on hears the record's sides / fight bar only once edit mode is not live
         assertTrue(body(host, "private fun mirrorCheck(").contains("if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }"))

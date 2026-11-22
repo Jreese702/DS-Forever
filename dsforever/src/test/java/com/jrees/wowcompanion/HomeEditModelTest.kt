@@ -12,21 +12,32 @@ import org.junit.Test
  * test build 1518, no prompt - every change is saved as it is made); Discard (Done's long press, a held B) back to the opening record;
  * the cursor's spatial moves over Home's real boxes; lift / drop / put back and each widget's docks; Select's swap from any stop; a
  * finger's drag with the 48 px hysteresis and the 80 ms hover; the divider's snap; Y's size steps; no layouts (the shoulders do
- * nothing); remove and "+"; a fight's park and resume; Start = Done; and the toolbar's switch waiting for Done. Pure.
+ * nothing); remove and "+"; a fight's park and resume; Start = Done; and (1518 build 3) the band's pieces as apps: no band widget, no
+ * Clock box, the D-pad icons swapping directions, the clock stepping along its spots. Pure.
  */
 class HomeEditModelTest {
     private val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
-    private fun model(saved: HomeLayout = classic, start: EditStop = EditStop.CHAT, toolbar: Boolean? = true) =
-        HomeEditModel(saved, start, toolbar)
+    private fun model(saved: HomeLayout = classic, start: EditStop = EditStop.CHAT, env: HomeEditModel.Env = HomeEditModel.Env.ALL) =
+        HomeEditModel(saved, start, env)
+    private fun env(pads: HomeEditModel.PadCan = HomeEditModel.PadCan.FULL,
+                    clock: List<HomeLayout.ClockPlace> = HomeLayout.ClockPlace.values().toList()) = object : HomeEditModel.Env {
+        override val pads = pads
+        override val clockPlaces = clock
+    }
+
+    /** the band's pieces as Home lays them on the diamonds at rest (CastBarPlace's slots: the D-pad's Left / Up / Right / Down round x
+     *  333, the clock chip at the middle) */
+    private val pieces = mapOf(
+        EditStop.PAD_L to HomeLayoutSolver.Box(186f, 56f, 282f, 152f), EditStop.PAD_U to HomeLayoutSolver.Box(285f, 4f, 381f, 100f),
+        EditStop.PAD_R to HomeLayoutSolver.Box(384f, 56f, 480f, 152f), EditStop.PAD_D to HomeLayoutSolver.Box(285f, 108f, 381f, 204f),
+        EditStop.CLOCK to HomeLayoutSolver.Box(550f, 10f, 690f, 94f))
 
     /** Home's boxes for [l] (the solver's, a focused quest shown) as the edit view gives the cursor, the ribbon under the frame */
     private fun stops(l: HomeLayout, plus: Boolean = false): Map<EditStop, HomeLayoutSolver.Box> {
         val r = HomeLayoutSolver.places(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f))
         val b = r.boxes
         val out = LinkedHashMap<EditStop, HomeLayoutSolver.Box>()
-        val bars = b.getValue(HomePart.BARS)
-        out[EditStop.BAND] = bars.copy(r = 470f)
-        out[EditStop.CLOCK] = HomeLayoutSolver.Box(470f, 12f, 770f, 200f)
+        out.putAll(pieces)
         out[EditStop.CHAT] = b.getValue(HomePart.CHAT)
         out[EditStop.MAP] = b.getValue(HomePart.MAP)
         b[HomePart.QUESTS]?.let { out[EditStop.QUEST] = it }
@@ -43,11 +54,13 @@ class HomeEditModelTest {
         override fun columns(l: HomeLayout) = HomeLayoutSolver.columns(l, 1240f, 8f)
         override fun valid(l: HomeLayout) = HomeLayoutRules.valid(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f))
         override val w = 1240f
+        override fun padSlots() = pieces.filterKeys { it.pad > 0 }.mapKeys { it.key.pad }
+        override fun clockXs() = mapOf(HomeLayout.ClockPlace.LEFT to 558f, HomeLayout.ClockPlace.CENTRE to 620f, HomeLayout.ClockPlace.RIGHT to 682f)
     }
 
     private fun HomeEditModel.press(vararg keys: String, l: HomeLayout = draft): List<HomeEditModel.Fx> {
         val out = ArrayList<HomeEditModel.Fx>()
-        for (k in keys) out += key(k, stops(l, plusShown)) { s -> HomeWidgetMenus.rows(s, draft, HomeWidgetMenus.Values(toolbar = true, toolbarCan = true), toolbarWant) }
+        for (k in keys) out += key(k, stops(l, plusShown)) { s -> HomeWidgetMenus.rows(s, draft, HomeWidgetMenus.Values()) }
         return out
     }
 
@@ -79,18 +92,22 @@ class HomeEditModelTest {
         assertTrue("Done keeps the change", m.draft.mirrored)
     }
 
-    /** 1518: Discard (Done's long press, a held B) from any level - the opening record and the toolbar's switch back, nothing lifted /
-     *  open, the glide back first */
+    /** 1518: Discard (Done's long press, a held B) from any level - the opening record back (1518 build 3: its D-pad order and clock spot
+     *  too), nothing lifted / open, the glide back first */
     @Test fun discardPutsTheOpeningRecordBack() {
-        val m = model(start = EditStop.BAND)
-        m.press("PADBACK", "PAD4")                               // the swap, the thin row
-        m.press("PAD1", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDRIGHT")   // the band's menu: the DS toolbar Off
-        assertEquals(false, m.toolbarWant)
-        assertEquals(EditStop.BAND, m.menu)
+        val m = model(start = EditStop.PAD_L)
+        m.press("PADBACK")                                       // the swap
+        m.press("PAD1", "PADDUP", "PAD1")                        // the Left icon onto Up
+        m.press("PADDRIGHT", "PADDRIGHT", "PADDRIGHT")            // over to the clock (Up -> Right -> the clock)
+        assertEquals(EditStop.CLOCK, m.cursor)
+        m.press("PAD1", "PADDLEFT")                               // the clock lifted, a spot left
+        assertEquals(HomeLayout.ClockPlace.LEFT, m.draft.clock)
+        assertEquals(EditStop.CLOCK, m.lifted)
         assertTrue(m.changed)
         assertEquals(listOf(HomeEditModel.Fx.Relay(Motion.MODULE_CLOSE), HomeEditModel.Fx.Discard), m.discard())
         assertEquals(classic, m.draft)
-        assertNull(m.toolbarWant); assertNull(m.menu); assertNull(m.lifted)
+        assertEquals(HomeLayout.PAD_DEFAULT, m.draft.pad); assertEquals(HomeLayout.ClockPlace.CENTRE, m.draft.clock)
+        assertNull(m.menu); assertNull(m.lifted); assertNull(m.padLifted)
         assertFalse(m.changed)
         // lifted mid-move: the lift goes with it
         val l = model()
@@ -118,9 +135,11 @@ class HomeEditModelTest {
         assertFalse(m.changed)
         m.press("PADBACK"); assertTrue(m.changed)
         m.press("PADBACK"); assertFalse("swapped back: the opening record again", m.changed)
-        val t = model(start = EditStop.BAND)
-        t.press("PAD1", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDRIGHT")
-        assertTrue("the toolbar's switch is a change too", t.changed)
+        val t = model(start = EditStop.PAD_L)
+        t.press("PAD1", "PADDRIGHT", "PAD1")
+        assertTrue("a D-pad swap is a change too", t.changed)
+        t.press("PAD1", "PADDLEFT", "PAD1")
+        assertFalse("swapped back by hand: no change", t.changed)
     }
 
     /** 1518, the autosave's moment: the draft is settled (written now) only with nothing lifted and no finger down */
@@ -156,13 +175,15 @@ class HomeEditModelTest {
         assertEquals(EditStop.CHAT, m.cursor)
         m.press("PADDRIGHT"); assertEquals("straight across to the map (the divider is no Left / Right stop)", EditStop.MAP, m.cursor)
         m.press("PADDUP"); assertEquals("the card over the map is above its centre", EditStop.QUEST, m.cursor)
-        m.press("PADDUP"); assertEquals(EditStop.CLOCK, m.cursor)
-        m.press("PADDLEFT"); assertEquals(EditStop.BAND, m.cursor)
+        m.press("PADDUP"); assertEquals("1518 build 3: the band is no stop - its clock chip is", EditStop.CLOCK, m.cursor)
+        m.press("PADDLEFT"); assertEquals("the D-pad's Right icon beside it", EditStop.PAD_R, m.cursor)
+        m.press("PADDLEFT"); assertEquals(EditStop.PAD_U, m.cursor)
+        m.press("PADDDOWN"); assertEquals(EditStop.PAD_D, m.cursor)
         m.press("PADDDOWN"); assertEquals(EditStop.CHAT, m.cursor)
         m.press("PADDDOWN"); assertEquals("the bar under the chat", EditStop.CAST, m.cursor)
         m.press("PADDDOWN"); assertEquals("nothing under it (1518: the ribbon's Done is no stop - B and Start are Done)", EditStop.CAST, m.cursor)
         m.press("PADDUP"); assertEquals(EditStop.CHAT, m.cursor)
-        m.press("PADDUP"); assertEquals("Up from the chat: the band, never the divider", EditStop.BAND, m.cursor)
+        m.press("PADDUP"); assertEquals("Up from the chat: the D-pad's Down icon, never the divider", EditStop.PAD_D, m.cursor)
         // the divider is reached from above (the clock over the columns' gap), Left / Right there step the width
         val d = model(start = EditStop.CLOCK, saved = classic.copy(card = HomeLayout.CardDock.OFF))
         d.press("PADDDOWN"); assertEquals(EditStop.DIVIDER, d.cursor)
@@ -185,7 +206,7 @@ class HomeEditModelTest {
         r.press("PADDRIGHT")
         assertEquals(HomeLayout.Share.THIRD, r.draft.chatShare)
         // 1518: no layouts - LB / RB flip nothing, from any stop
-        for (s in listOf(EditStop.CHAT, EditStop.MAP, EditStop.BAND, EditStop.CAST, EditStop.DIVIDER)) {
+        for (s in listOf(EditStop.CHAT, EditStop.MAP, EditStop.PAD_U, EditStop.CLOCK, EditStop.CAST, EditStop.DIVIDER)) {
             val c = model(start = s)
             assertTrue(s.name, c.press("PADLSHOULDER", "PADRSHOULDER").isEmpty())
             assertEquals(classic, c.draft); assertEquals(s, c.cursor)
@@ -314,14 +335,15 @@ class HomeEditModelTest {
         val m = model()
         m.press("PAD4"); assertEquals(HomeLayout.Share.TWO_THIRDS, m.draft.chatShare)
         m.press("PAD4"); assertEquals(HomeLayout.Share.THIRD, m.draft.chatShare)
-        val band = model(start = EditStop.BAND); band.press("PAD4"); assertEquals(HomeRest.ROW, band.draft.rest)
+        // 1518 build 3: the band's rest look is Settings' (no band widget): Y on its pieces does nothing
+        for (s in HomeEditView.PIECES) { val p = model(start = s); assertTrue(s.name, p.press("PAD4").isEmpty()); assertEquals(classic, p.draft) }
         val bar = model(start = EditStop.CAST); bar.press("PAD4"); assertEquals(HomeLayout.SlotSize.S, bar.draft.castSize)
         val card = model(start = EditStop.QUEST)
         assertEquals("the card's fold is the app-wide setting (the card's own tap)", listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, -1)), card.press("PAD4"))
     }
 
     @Test fun selectSwapsFromAnyStop() {
-        for (s in listOf(EditStop.BAND, EditStop.CLOCK, EditStop.MAP, EditStop.CAST, EditStop.DIVIDER)) {
+        for (s in listOf(EditStop.PAD_L, EditStop.CLOCK, EditStop.MAP, EditStop.CAST, EditStop.DIVIDER)) {
             val m = model(start = s)
             m.press("PADBACK")
             assertEquals(s.name, HomeLayout.Side.RIGHT, m.draft.chatSide)
@@ -453,25 +475,19 @@ class HomeEditModelTest {
         assertEquals(listOf(HomeEditModel.Fx.Press(HomeEditModel.K_CAST_FIGHT, 0)), m.press("PADDLEFT"))   // In fights: Show
         m.press("PADDDOWN", "PADDDOWN")
         assertEquals(listOf(HomeEditModel.Fx.EditSlots), m.press("PAD1"))
-        val band = model(start = EditStop.BAND)
-        band.press("PAD1")                                      // A on the band: its menu
-        assertEquals(EditStop.BAND, band.menu)
-        band.press("PADDDOWN", "PADDDOWN")                      // Swing timer
-        assertEquals(listOf(HomeEditModel.Fx.Press(BottomTiles.SWING, 1)), band.press("PADDRIGHT"))
-        band.press("PADDDOWN", "PADDDOWN")                      // DS WoW toolbar: kept for Save, nothing sent
-        assertTrue(band.press("PADDRIGHT").isEmpty())
-        assertEquals(false, band.toolbarWant)
-        assertTrue(band.changed)
+        // 1518 build 3: the band's pieces have no menu (X nothing, A lifts: an app), the band itself is no stop
+        for (s in HomeEditView.PIECES) {
+            val p = model(start = s)
+            assertTrue(s.name, p.press("PAD3").isEmpty()); assertNull(p.menu)
+            assertEquals(listOf(HomeEditModel.Fx.Lift), p.press("PAD1")); assertNull(p.menu); assertEquals(s, p.lifted)
+            assertFalse(s.hasMenu); assertEquals("", s.tag)
+        }
     }
 
     @Test fun theMenusRowsFollowTheRulings() {
-        val v = HomeWidgetMenus.Values(toolbar = true, toolbarCan = true, talk = true)
-        val band = HomeWidgetMenus.rows(EditStop.BAND, classic, v)
-        assertEquals("D1: Grow is the default; Top screen (phase 3) is offered, opt-in", listOf("Grow", "Same size", "Top screen"),
-            band.first { it.key == HomeEditModel.K_FIGHT }.words)
-        assertEquals(0, band.first { it.key == HomeEditModel.K_FIGHT }.picked)
-        assertEquals("a Top screen record shows its pick", 2, HomeWidgetMenus.rows(EditStop.BAND, classic.copy(fight = HomeLayout.FightBand.TOP), v)
-            .first { it.key == HomeEditModel.K_FIGHT }.picked)
+        val v = HomeWidgetMenus.Values(talk = true)
+        // 1518 build 3: no Controller menu, no Clock menu (every row of theirs is a Settings > Bottom screen tile)
+        for (s in HomeEditView.PIECES) assertTrue(s.name, HomeWidgetMenus.rows(s, classic, v).isEmpty())
         assertEquals(listOf("Off", "Chat", "Map", "Across", "Split"), HomeWidgetMenus.rows(EditStop.CAST, classic, v).first().words)
         val map = HomeWidgetMenus.rows(EditStop.MAP, classic.copy(chatShare = HomeLayout.Share.THIRD), v)
         assertEquals("the map's width is its own share", 2, map.first { it.key == HomeEditModel.K_MAP_WIDTH }.picked)
@@ -479,7 +495,6 @@ class HomeEditModelTest {
         val chat = HomeWidgetMenus.rows(EditStop.CHAT, classic, v)
         assertTrue(chat.any { it.key == "release" })
         assertTrue(HomeWidgetMenus.rows(EditStop.CHAT, classic, v.copy(talk = null)).none { it.key == BottomTiles.TALK })
-        assertEquals(5, HomeWidgetMenus.rows(EditStop.CLOCK, classic, v).size)
     }
 
     // ---------------------------------------------------------------- a fight mid-edit
@@ -499,15 +514,107 @@ class HomeEditModelTest {
         assertTrue("the draft came back as it was", m.draft.mirrored)
     }
 
-    @Test fun theToolbarWaitsForDone() {
-        val m = model(start = EditStop.BAND)
-        val fx = ArrayList<HomeEditModel.Fx>()
-        fx += m.press("PADBACK", "PAD4", "PAD1", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDRIGHT", "PAD2")
-        fx += m.press("PADDDOWN", "PADDDOWN", "PAD1", "PADDDOWN", "PAD2", "PADRSHOULDER")
-        assertTrue(fx.all { it is HomeEditModel.Fx.Relay || it is HomeEditModel.Fx.Lift || it is HomeEditModel.Fx.Press })
-        assertTrue("only app-wide behaviour rows press setters", fx.filterIsInstance<HomeEditModel.Fx.Press>().none { it.key == BottomTiles.TOOLBAR })
-        assertEquals(false, m.toolbarWant)
-        assertEquals(listOf(HomeEditModel.Fx.Done), m.press("PADFORWARD"))
+    // ---------------------------------------------------------------- 1518 build 3: the band's pieces as apps
+
+    /** A lifts a D-pad icon; the D-pad points where it goes: it SWAPS with the icon there (that direction opens it from now on), the
+     *  cursor and the lift riding with it; A drops, B puts the order back */
+    @Test fun aLiftedDpadIconSwapsWithTheDirectionPressed() {
+        val m = model(start = EditStop.PAD_L)
+        assertEquals(listOf(HomeEditModel.Fx.Lift), m.press("PAD1"))
+        assertEquals(EditStop.PAD_L, m.lifted); assertEquals(HomeLayout.PadKey.LEFT_COL, m.padLifted)
+        val key = m.keyOf(EditStop.PAD_L)
+        assertEquals(listOf(HomeEditModel.Fx.Relay(HomeEditModel.EDIT_STEP)), m.press("PADDUP"))
+        assertEquals(listOf(HomeLayout.PadKey.RADIAL, HomeLayout.PadKey.LEFT_COL, HomeLayout.PadKey.RIGHT_COL, HomeLayout.PadKey.HOME), m.draft.pad)
+        assertEquals(mapOf(1 to "radial", 2 to "chat", 3 to "map", 4 to "home"), HomeLayoutSolver.dpadDirs(m.draft))
+        assertEquals("the cursor and the lift ride with the icon", EditStop.PAD_U, m.cursor); assertEquals(EditStop.PAD_U, m.lifted)
+        assertEquals("the icon keeps its own motion key (its wiggle, its lift)", key, m.keyOf(EditStop.PAD_U))
+        m.press("PADDDOWN")
+        assertEquals(listOf(HomeLayout.PadKey.RADIAL, HomeLayout.PadKey.HOME, HomeLayout.PadKey.RIGHT_COL, HomeLayout.PadKey.LEFT_COL), m.draft.pad)
+        assertTrue("the same spot: nothing", m.press("PADDDOWN").isEmpty())
+        assertFalse("lifted: the autosave waits for the drop", m.settled)
+        m.press("PAD2")
+        assertEquals("B: the order back", HomeLayout.PAD_DEFAULT, m.draft.pad)
+        assertEquals("the cursor on the icon's own spot again", EditStop.PAD_L, m.cursor)
+        assertNull(m.lifted); assertNull(m.padLifted)
+        m.press("PAD1", "PADDRIGHT", "PAD1")
+        assertEquals(HomeLayout.PAD_FLIPPED, m.draft.pad); assertTrue(m.settled); assertTrue(m.changed)
+        assertEquals("Left <-> Right with the chat on the left: the map on Left", ToolbarMirror.MIRROR, HomeLayoutSolver.dpadDirs(m.draft))
+        // Select still carries the D-pad with the columns (the pieces are side-relative)
+        m.press("PADBACK")
+        assertEquals(ToolbarMirror.NORMAL, HomeLayoutSolver.dpadDirs(m.draft))
+    }
+
+    /** the icons move only while they are the toolbar's (NONE: a red pulse, nothing lifted); an older Spells add-on (SIMPLE) takes only
+     *  today's two tables: Left <-> Right, never Up / Down (a red pulse, the order kept) */
+    @Test fun theDpadIconsAreRefusedWhenTheyCannotBeBound() {
+        val none = model(start = EditStop.PAD_R, env = env(pads = HomeEditModel.PadCan.NONE))
+        assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.PAD_R)), none.press("PAD1"))
+        assertNull(none.lifted); assertEquals(classic, none.draft)
+        val r = stops(classic).getValue(EditStop.PAD_R)
+        assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.PAD_R)), none.dragStart(EditStop.PAD_R, r.cx, 100f, r))
+        assertNull("a refused piece is never carried", none.drag)
+        val old = model(start = EditStop.PAD_L, env = env(pads = HomeEditModel.PadCan.SIMPLE))
+        old.press("PAD1")
+        assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.PAD_L)), old.press("PADDUP"))
+        assertEquals(HomeLayout.PAD_DEFAULT, old.draft.pad)
+        old.press("PADDRIGHT", "PAD1")
+        assertEquals(HomeLayout.PAD_FLIPPED, old.draft.pad)
+        assertTrue(old.draft.padSimple)
+    }
+
+    /** a finger carries an icon onto another D-pad spot: after the hover the two swap; let go off every spot, it stays where it is */
+    @Test fun aFingerSwapsTwoDpadIcons() {
+        val m = model(start = EditStop.CHAT)
+        val l = stops(classic).getValue(EditStop.PAD_L)
+        val d = stops(classic).getValue(EditStop.PAD_D)
+        m.dragStart(EditStop.PAD_L, l.cx, 104f, l)
+        assertEquals(EditStop.PAD_L, m.lifted); assertNotNull(m.drag)
+        m.dragMove(d.cx, 156f, 0L, geo)
+        assertEquals("the hover first", HomeLayout.PAD_DEFAULT, m.draft.pad)
+        m.dragTick(HomeEditModel.HOVER_MS + 1L)
+        assertEquals(listOf(HomeLayout.PadKey.HOME, HomeLayout.PadKey.RADIAL, HomeLayout.PadKey.RIGHT_COL, HomeLayout.PadKey.LEFT_COL), m.draft.pad)
+        assertEquals(EditStop.PAD_D, m.cursor)
+        m.dragMove(900f, 600f, 200L, geo)
+        m.dragEnd(900f, 600f, 210L, geo)
+        assertEquals("off every spot: it stays where it is", HomeLayout.PadKey.LEFT_COL, m.draft.pad[3])
+        assertNull(m.lifted); assertNull(m.padLifted); assertTrue(m.settled)
+    }
+
+    /** the clock chip: A lifts it, Left / Right step through the spots the band offers (no wrap), B puts it back; a band with one spot
+     *  (or none) refuses it; a finger drops it on the nearest spot */
+    @Test fun theClockStepsAlongItsSpots() {
+        val m = model(start = EditStop.CLOCK)
+        m.press("PAD1")
+        assertEquals(EditStop.CLOCK, m.lifted)
+        m.press("PADDLEFT"); assertEquals(HomeLayout.ClockPlace.LEFT, m.draft.clock)
+        assertTrue("no wrap", m.press("PADDLEFT").isEmpty())
+        m.press("PADDRIGHT", "PADDRIGHT"); assertEquals(HomeLayout.ClockPlace.RIGHT, m.draft.clock)
+        assertTrue("Up / Down: nothing", m.press("PADDUP", "PADDDOWN").isEmpty())
+        m.press("PAD2"); assertEquals(HomeLayout.ClockPlace.CENTRE, m.draft.clock); assertNull(m.lifted)
+        // only the spots offered: the right one missing (a button in the way)
+        val two = model(start = EditStop.CLOCK, env = env(clock = listOf(HomeLayout.ClockPlace.LEFT, HomeLayout.ClockPlace.CENTRE)))
+        two.press("PAD1", "PADDRIGHT")
+        assertEquals(HomeLayout.ClockPlace.CENTRE, two.draft.clock)
+        val one = model(start = EditStop.CLOCK, env = env(clock = listOf(HomeLayout.ClockPlace.CENTRE)))
+        assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.CLOCK)), one.press("PAD1")); assertNull(one.lifted)
+        // a finger: the nearest spot by x
+        val f = model()
+        val c = stops(classic).getValue(EditStop.CLOCK)
+        f.dragStart(EditStop.CLOCK, c.cx, 52f, c)
+        f.dragMove(c.cx + 70f, 52f, 0L, geo); f.dragEnd(c.cx + 70f, 52f, 10L, geo)
+        assertEquals(HomeLayout.ClockPlace.RIGHT, f.draft.clock)
+        assertNull(f.lifted)
+    }
+
+    /** a band piece is an app: a tap only moves the cursor there (no menu); its hints are the rooms' ("A Move"); the pieces' boxes gone
+     *  (the toolbar off, the thin row) move the cursor on */
+    @Test fun aTapOnAPieceOnlyMovesTheCursor() {
+        val m = model()
+        assertTrue(m.tap(EditStop.PAD_U).isEmpty()); assertEquals(EditStop.PAD_U, m.cursor)
+        assertTrue("a second tap: still no menu", m.tap(EditStop.PAD_U).isEmpty()); assertNull(m.menu)
+        assertTrue(EditStop.PADS.all { it in HomeEditModel.GONE_CHECKED })
+        val gone = stops(m.draft).filterKeys { it.pad == 0 }
+        assertTrue(m.cursorCheck(gone)); assertEquals(EditStop.CHAT, m.cursor)
     }
 
     // ---------------------------------------------------------------- the fix pass (review findings)
@@ -534,7 +641,7 @@ class HomeEditModelTest {
     /** fix round 1: Off picked in the bar's / the card's OWN menu moves the cursor as the red X does ("+", else the chat); the map's
      *  "Quest card" row leaves it on the map; a widget left with no box (Party mode's Hide) moves it at the next check */
     @Test fun offFromItsOwnMenuMovesTheCursor() {
-        val v = HomeWidgetMenus.Values(toolbar = true, toolbarCan = true)
+        val v = HomeWidgetMenus.Values()
         val m = model()
         m.openMenu(EditStop.CAST)
         val rows = HomeWidgetMenus.rows(EditStop.CAST, m.draft, v)
@@ -572,7 +679,7 @@ class HomeEditModelTest {
         assertFalse(p.cursorCheck(gone))
         // the D-pad works from there as always (no jump to the first stop)
         p.press("PADDUP")
-        assertEquals(EditStop.BAND, p.cursor)
+        assertEquals(EditStop.PAD_D, p.cursor)
     }
 
     @Test fun parkedTouchesDoNothing() {
@@ -585,17 +692,17 @@ class HomeEditModelTest {
         assertEquals(classic.copy(cast = HomeLayout.CastDock.OFF), m.draft)
     }
 
-    /** fix round 2: the cursor on the Clock when the band goes to the thin row (no clock): it falls back to the band (its menu
-     *  closed), never left on a widget with no box (no gold box drawn, A opening a menu for a clock not shown) */
-    @Test fun theClockCursorFallsBackToTheBand() {
-        val m = model()
-        m.openMenu(EditStop.CLOCK)
-        assertEquals(EditStop.CLOCK, m.cursor)
+    /** fix round 2: the cursor on the Clock when the band goes to the thin row (no clock): it falls back to the D-pad's Up icon beside
+     *  it (1518 build 3: the band is no stop), its lift ended, never left on a piece with no box */
+    @Test fun theClockCursorFallsBackToTheDpad() {
+        val m = model(start = EditStop.CLOCK)
+        m.press("PAD1")
+        assertEquals(EditStop.CLOCK, m.lifted)
         assertFalse("its box is there: nothing moves", m.cursorCheck(stops(m.draft)))
         val gone = stops(m.draft).filterKeys { it != EditStop.CLOCK }
         assertTrue(m.cursorCheck(gone))
-        assertEquals(EditStop.BAND, m.cursor)
-        assertNull("the clock's menu closed", m.menu)
+        assertEquals(EditStop.PAD_U, m.cursor)
+        assertNull("the lift ended", m.lifted)
         assertFalse(m.cursorCheck(gone))
         assertTrue(EditStop.CLOCK in HomeEditModel.GONE_CHECKED)
     }

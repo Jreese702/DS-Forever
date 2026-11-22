@@ -19,9 +19,13 @@ import kotlin.math.min
  * MOVABLE HOME, PHASE 2: EDIT MODE'S CHROME (SPEC.txt sections 3, 4, 7, 8; final_02 .. final_06, final_09). A child of [HomeView] over every
  * part, the frame's size: Home stays LIVE and FULL SIZE under it (D6) - what you edit is what you get, touch targets keep their size.
  *
- *  - every widget that is not selected is dimmed (black 70 / 255) with a soft dashed ink frame and its terse tag; the riders inside a
- *    widget (the clock in the band, the quest card on the map) a lighter inner frame; the party module (Party mode) a dashed frame only
- *    (it follows the chat: never a stop);
+ *  - every widget that is not selected is dimmed (black 70 / 255) with a soft dashed ink frame and its terse tag; a rider inside a
+ *    widget (the quest card on the map) a lighter inner frame; the party module (Party mode) a dashed frame only (it follows the chat:
+ *    never a stop);
+ *  - THE TOP BAR'S SMALL ICONS AS APPS (1518 build 3, the user's ruling 2026-11-21): the band wears nothing - no dim, no dashed frame, no
+ *    "Controller" tag, no Clock box; its four D-pad toolbar icons and its clock chip wiggle on their own (Home draws them through their
+ *    own poses: CastView.editPiece, the clock block) and take the app's golden cursor box; the L / R targets, ZL / ZR and the face never
+ *    move and are no stops;
  *  - the selected widget wears the GOLDEN BOX (the app's cursor look: a thick gold box with its glow, never a thin outline), at once;
  *    lifted, the kit's gold arrows point at the docks it can reach, and a finger's drop well shows the dock under it (red: refused);
  *  - the divider's handle between the columns, the red X chip on a selected removable widget ("Remove?" first);
@@ -69,8 +73,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         fun plusPose(out: FloatArray): Boolean = false
         /** an input reached the chrome (the edit ticker runs on: the wiggle never rests while edit mode is open) */
         fun poke() {}
-        /** the clock block's box in Home's px (null = none drawn: the thin row, a fight) */
-        fun clockBox(): RectF?
+        /** 1518 build 3: a band piece's box in Home's px as laid (a D-pad icon's spot, the clock chip; null = none drawn now: the thin row
+         *  has no clock, no band) */
+        fun pieceBox(s: EditStop): RectF? = null
+        /** a band piece's whole pose now as a matrix in Home's px (its shrink, wiggle, lift and the finger's carry; false = none): the
+         *  golden box rides it */
+        fun piecePose(s: EditStop, out: android.graphics.Matrix): Boolean = false
         /** the bars each widget has in the state now, for [l] (the drop well's box) */
         fun solve(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box>
         val geo: HomeEditModel.Geo
@@ -135,8 +143,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
      */
     private fun boxesNow(p: Map<HomePart, RectF>): Map<EditStop, RectF> {
         wbNow.clear()
-        p[HomePart.BARS]?.let { putBox(EditStop.BAND, it) }
-        host.clockBox()?.let { putBox(EditStop.CLOCK, it) }
+        // the band itself is no widget (1518 build 3): only its pieces are
+        for (s in PIECES) host.pieceBox(s)?.let { putBox(s, it) }
         p[HomePart.CHAT]?.let { putBox(EditStop.CHAT, it) }
         p[HomePart.MAP]?.let { putBox(EditStop.MAP, it) }
         p[HomePart.QUESTS]?.let { putBox(EditStop.QUEST, it) }
@@ -186,14 +194,11 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return divBox
     }
 
-    /** the cursor's stops in Home's px (the band's box for the D-pad is its part left of the clock, so Right reaches the clock) */
+    /** the cursor's stops in Home's px (the band's pieces each their own: the D-pad walks between them spatially) */
     fun stops(): Map<EditStop, HomeLayoutSolver.Box> {
         val out = LinkedHashMap<EditStop, HomeLayoutSolver.Box>()
         val wb = widgetBoxes()
-        for ((s, r) in wb) {
-            val b = if (s == EditStop.BAND && wb[EditStop.CLOCK] != null) RectF(r.left, r.top, wb[EditStop.CLOCK]!!.left, r.bottom) else r
-            out[s] = HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom)
-        }
+        for ((s, r) in wb) out[s] = HomeLayoutSolver.Box(r.left, r.top, r.right, r.bottom)
         // the divider's D-pad stop is the columns' top (reached from the band above it; Left / Right there step the width)
         dividerBox()?.let { d -> val top = listOfNotNull(host.parts()[HomePart.CHAT], host.parts()[HomePart.MAP]).minOfOrNull { it.top } ?: d.top
             // only the gap's middle: never straight above / below a column (Up from the chat goes to the band, not here)
@@ -263,9 +268,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
     }
 
-    /** the part whose pose [s]'s chrome follows (a rider: its host's, which HomeView resolves) */
+    /** the part whose pose [s]'s chrome follows (a rider: its host's, which HomeView resolves; a band piece: its own, [Host.piecePose]) */
     private fun poseOf(s: EditStop): HomePart? = when (s) {
-        EditStop.BAND, EditStop.CLOCK -> HomePart.BARS
         EditStop.CHAT -> HomePart.CHAT
         EditStop.MAP -> HomePart.MAP
         EditStop.QUEST -> HomePart.QUESTS
@@ -273,7 +277,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         else -> null
     }
     /** a canvas save with [s]'s pose on it (restore with the count returned) */
-    private fun posed(c: Canvas, s: EditStop): Int = posed(c, poseOf(s))
+    private fun posed(c: Canvas, s: EditStop): Int {
+        if (!s.piece) return posed(c, poseOf(s))
+        val sv = c.save()
+        if (host.piecePose(s, mtx)) c.concat(mtx)
+        return sv
+    }
     private fun posed(c: Canvas, p: HomePart?): Int {
         val sv = c.save()
         if (p != null && host.pose(p, mtx)) c.concat(mtx)
@@ -282,6 +291,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** [r] (a box of [s]'s) as drawn now: its pose applied (the bounds of it), into [o] */
     private fun posedRect(s: EditStop, r: RectF, o: RectF = RectF()): RectF {
         o.set(r)
+        if (s.piece) { if (host.piecePose(s, mtx)) mtx.mapRect(o); return o }
         val p = poseOf(s)
         if (p != null && host.pose(p, mtx)) mtx.mapRect(o)
         return o
@@ -299,7 +309,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val cast = castNow(p)
         val sel = m.cursor
         val lifted = m.lifted
-        val clock = wb[EditStop.CLOCK]
         val card = wb[EditStop.QUEST]
         val cardOnMap = m.draft.card == HomeLayout.CardDock.ON_MAP
         val lk = host.liftK()
@@ -310,13 +319,13 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val under = c.save()
         for (i in liftOut.indices) c.clipOutRect(liftOut[i])
         if (lk > 0f) for (i in liftOut.indices) shadow(c, liftOut[i], lk)
-        // 1. the dim over every widget that is not the selected one (black 70): the riders are dimmed with their host unless picked
+        // 1. the dim over every widget that is not the selected one (black 70): a rider is dimmed with its host unless picked; the band's
+        // pieces never (1518 build 3: the band wears nothing - its fixed parts show the physical buttons, undimmed)
         pFill.style = Paint.Style.FILL; pFill.color = Color.argb(DIM, 0, 0, 0)
         for ((s, r) in wb) {
-            if (s == EditStop.CLOCK || (s == EditStop.QUEST && cardOnMap)) continue          // riders: inside their host's dim
+            if (s.piece || (s == EditStop.QUEST && cardOnMap)) continue          // riders: inside their host's dim
             if (s == lifted) continue
             val keep = when (s) {
-                EditStop.BAND -> if (sel == EditStop.CLOCK) clock else if (sel == EditStop.BAND) r else null
                 EditStop.MAP -> if (sel == EditStop.QUEST && cardOnMap) card else if (sel == EditStop.MAP) r else null
                 else -> if (sel == s) r else null
             }
@@ -340,11 +349,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             tag(c, inner, "Party", false, Corner.TOP_RIGHT)
             c.restoreToCount(sv)
         }
-        // 2. the dashed ink frames and the tags (where they hide nothing: the band's on its foot, the map's bottom left, the card's top
-        // right, the bar's on its top edge); a rider moves with its lifted host
+        // 2. the dashed ink frames and the tags (where they hide nothing: the map's bottom left, the card's top right, the bar's on its top
+        // edge); a rider moves with its lifted host; the band's pieces wear neither
         tagN = 0
         for ((s, r) in wb) {
-            val rider = s == EditStop.CLOCK || (s == EditStop.QUEST && cardOnMap)
+            if (s.piece) continue
+            val rider = s == EditStop.QUEST && cardOnMap
             val sv = posed(c, s)                                            // a rider rides its host's pose (HomeView resolves it)
             if (s != sel) { if (s == EditStop.CAST) for (i in cast.indices) frame(c, cast[i], light = rider) else frame(c, r, light = rider) }
             c.restoreToCount(sv)
@@ -376,7 +386,17 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 if (selN > 1 && pivot != null) c.rotate(turn, pivot.centerX() + (cur[0] + cur[2]) / 2f, pivot.centerY() + (cur[1] + cur[3]) / 2f)
                 else c.rotate(turn, b.centerX(), b.centerY())
             }
-            goldBox(c, b)
+            // a band piece: the room bar's own cursor look (an app's icon, as the rooms'), a module the golden box
+            if (sel.piece) { scratch2.set(b); scratch2.inset(-8f, -8f); UiKit.focus(c, scratch2) } else goldBox(c, b)
+            c.restoreToCount(sv)
+        }
+        // a lifted clock: the kit's gold arrows to the spots it can still step to
+        if (lifted == EditStop.CLOCK && m.drag == null && one != null) {
+            val spots = m.env.clockPlaces
+            val i = spots.indexOf(m.draft.clock)
+            val sv = posed(c, lifted)
+            scratch2.set(one); scratch2.inset(-8f, -8f)
+            UiKit.moveArrows(c, scratch2, left = i > 0, right = i in 0 until spots.size - 1, words = false)
             c.restoreToCount(sv)
         }
         if (lifted != null && m.drag == null && selN > 0) (if (sel == EditStop.CAST) cast[0] else one!!).let { b ->
@@ -459,7 +479,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     /** this frame's tags (a pool: the ticker draws every frame) */
-    private class Tag { var s = EditStop.BAND; val r = RectF(); var gold = false }
+    private class Tag { var s = EditStop.CHAT; val r = RectF(); var gold = false }
     private val tagPool = ArrayList<Tag>()
     private var tagN = 0
     private fun addTag(s: EditStop, r: RectF, gold: Boolean) {
@@ -469,8 +489,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
     enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, BOTTOM_CENTRE, FOOT_LEFT, TOP_EDGE, TOP_EDGE_RIGHT }
     /** where each widget's tag stands (clear of what it shows) */
-    private val CORNERS = mapOf(EditStop.BAND to Corner.BOTTOM_LEFT, EditStop.CLOCK to Corner.BOTTOM_RIGHT, EditStop.CHAT to Corner.TOP_RIGHT,
-        EditStop.MAP to Corner.BOTTOM_LEFT, EditStop.QUEST to Corner.TOP_RIGHT, EditStop.CAST to Corner.TOP_EDGE)
+    private val CORNERS = mapOf(EditStop.CHAT to Corner.TOP_RIGHT, EditStop.MAP to Corner.BOTTOM_LEFT, EditStop.QUEST to Corner.TOP_RIGHT,
+        EditStop.CAST to Corner.TOP_EDGE)
 
     /** fix round 1: where [s]'s tag stands on its box [r]: the chat's and the card's top right inside a wide column, ON the frame's top
      *  edge in a narrow one (a third: the card's title and the chat's lines reach that corner there; the tag must hide nothing) */
@@ -950,12 +970,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.cursor == EditStop.ROOMS && m.barOnPlus -> listOf(a to "Add")
             m.cursor == EditStop.ROOMS && m.barRoom?.let { RoomBar.canHide(it) } == true -> listOf(a to "Move", x to "Hide")
             m.cursor == EditStop.ROOMS -> listOf(a to "Move")
+            // 1518 build 3: a lifted D-pad icon swaps with the direction pressed; the clock steps along its spots
+            (m.lifted?.pad ?: 0) > 0 -> listOf(DPAD to "Swap", a to "Drop", b to "Put back")
+            m.lifted == EditStop.CLOCK -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
             m.lifted != null -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
             // at the top level B is Done: the Done button wears its glyph (no "Done" hint beside it)
             m.cursor == EditStop.PLUS -> listOf(a to "Add")
             m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width")
-            m.cursor == EditStop.BAND -> listOf(a to "Options", y to "Size")
-            m.cursor == EditStop.CLOCK -> listOf(a to "Options")
+            m.cursor.piece -> listOf(a to "Move")
             else -> listOf(a to "Move", x to "Options", y to "Size")
         }
     }
@@ -1173,7 +1195,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             MotionEvent.ACTION_POINTER_DOWN -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null }
             MotionEvent.ACTION_MOVE -> {
                 val s = downStop
-                if (!dragging && s != null && (s.movable || s == EditStop.DIVIDER) &&
+                if (!dragging && s != null && (s.movable || s == EditStop.DIVIDER || s.piece) &&
                     (abs(x - downX) > HomeEditModel.DRAG_SLOP || abs(y - downY) > HomeEditModel.DRAG_SLOP)) {
                     val b = if (s == EditStop.DIVIDER) dividerBox() else widgetBoxes()[s]
                     if (b != null) {
@@ -1194,11 +1216,11 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return true
     }
 
-    /** the widget under a finger (the card and the bar before the columns, the clock before the band, the divider's handle first) */
+    /** the widget under a finger (the divider's handle first, the band's pieces, the card and the bar before the columns) */
     fun stopAt(x: Float, y: Float): EditStop? {
         dividerBox()?.let { if (RectF(it).apply { inset(-18f, -10f) }.contains(x, y)) return EditStop.DIVIDER }
         val wb = widgetBoxes()
-        for (s in listOf(EditStop.QUEST, EditStop.CAST, EditStop.CLOCK, EditStop.CHAT, EditStop.MAP, EditStop.BAND)) {
+        for (s in TOUCH_ORDER) {
             if (s == EditStop.CAST) { if (castBoxes().any { it.contains(x, y) }) return s; continue }
             if (wb[s]?.contains(x, y) == true) return s
         }
@@ -1238,6 +1260,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     companion object {
+        /** the band's pieces (1518 build 3): the D-pad toolbar icons, then the clock chip */
+        val PIECES = listOf(EditStop.PAD_L, EditStop.PAD_U, EditStop.PAD_R, EditStop.PAD_D, EditStop.CLOCK)
+        /** the stops a finger finds, first first (the pieces over the modules; the band itself is none) */
+        private val TOUCH_ORDER = PIECES + listOf(EditStop.QUEST, EditStop.CAST, EditStop.CHAT, EditStop.MAP)
         /** the dim over a widget that is not selected (SPEC section 4: alpha 70 / 255 black) */
         const val DIM = 70
         const val TAG_SIZE = 24f

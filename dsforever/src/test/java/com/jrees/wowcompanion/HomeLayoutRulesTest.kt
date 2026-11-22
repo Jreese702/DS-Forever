@@ -203,11 +203,43 @@ class HomeLayoutRulesTest {
         }
     }
 
-    @Test fun mirrorBitIsTheMapOnTheLeft() {
-        assertEquals(0, S.mirrorBit(HomeLayout()))
-        assertEquals(1, S.mirrorBit(HomeLayout(chatSide = HomeLayout.Side.RIGHT)))
-        assertEquals(1, S.mirrorBit(HomeLayout().swapped()))
+    /** 1518 build 3: the D-pad order resolves to the add-on's words: Classic = today's two tables (the mirror bit off with the chat on
+     *  the left, on with it on the right), a swapped order follows the columns (side-relative pieces) */
+    @Test fun theDpadOrderResolvesToTheAddOnsWords() {
+        assertEquals(ToolbarMirror.NORMAL, S.dpadDirs(HomeLayout()))
+        assertEquals(ToolbarMirror.MIRROR, S.dpadDirs(HomeLayout(chatSide = HomeLayout.Side.RIGHT)))
+        assertEquals(ToolbarMirror.MIRROR, S.dpadDirs(HomeLayout().swapped()))
+        assertTrue(HomeLayout().swapped().mirrored)
         assertEquals(HomeLayout(), HomeLayout().swapped().swapped())
+        val up = HomeLayout().padSwapped(1, 2)
+        assertEquals(mapOf(1 to "radial", 2 to "chat", 3 to "map", 4 to "home"), S.dpadDirs(up))
+        assertEquals("the chat's piece follows its column", mapOf(1 to "radial", 2 to "map", 3 to "chat", 4 to "home"), S.dpadDirs(up.swapped()))
+        assertEquals(ToolbarMirror.MIRROR, S.dpadDirs(HomeLayout().padSwapped(1, 3)))
+        assertTrue(HomeLayout().padSwapped(1, 3).padSimple); assertFalse(up.padSimple)
+        assertEquals("no swap past the four", HomeLayout(), HomeLayout().padSwapped(0, 5))
+        // every order of the four pieces is the add-on's (a rank 0-23), each once
+        val all = listOf(HomeLayout.PadKey.values().toList()).flatMap { k -> perms(k) }.map { ToolbarMirror.rank(S.dpadDirs(HomeLayout(pad = it))) }
+        assertEquals((0 until 24).toList(), all.filterNotNull().sorted())
+    }
+    private fun <T> perms(l: List<T>): List<List<T>> = if (l.size <= 1) listOf(l) else l.flatMap { x -> perms(l - x).map { listOf(x) + it } }
+
+    /** 1518 build 3: the D-pad order and the clock's spot are written only when not Classic's (a Classic record's text unchanged), read
+     *  back as written, a damaged order read as Classic's; Reset Home to Classic puts both back */
+    @Test fun theDpadOrderAndTheClockSpotInTheRecord() {
+        val classic = HomeLayout()
+        val text = HomeLayoutJson.json(classic)
+        assertFalse(text.contains("\"pad\"")); assertFalse(text.contains("\"clock\""))
+        val l = classic.padSwapped(2, 4).copy(clock = HomeLayout.ClockPlace.RIGHT)
+        val j = HomeLayoutJson.json(l)
+        assertTrue(j.contains("\"pad\":[\"LEFT_COL\",\"HOME\",\"RIGHT_COL\",\"RADIAL\"]")); assertTrue(j.contains("\"clock\":\"RIGHT\""))
+        assertEquals(l, HomeLayoutJson.parse(j))
+        assertEquals(HomeLayout.PAD_DEFAULT, HomeLayoutJson.parse(j.replace("\"HOME\"", "\"LEFT_COL\"")).pad)
+        assertEquals(HomeLayout.ClockPlace.CENTRE, HomeLayoutJson.parse(j.replace("\"RIGHT\"", "\"UP\"")).clock)
+        val back = l.classic()
+        assertEquals(HomeLayout.PAD_DEFAULT, back.pad); assertEquals(HomeLayout.ClockPlace.CENTRE, back.clock)
+        // the store's per-key delta carries them like any field
+        val real = classic.copy(castSize = HomeLayout.SlotSize.M)
+        assertEquals(real.copy(pad = l.pad, clock = l.clock), HomeLayoutStore.layOn(real, classic, l))
     }
 
     // ---------------------------------------------------------------- the bar at the top of a column (Above chat / Above map)

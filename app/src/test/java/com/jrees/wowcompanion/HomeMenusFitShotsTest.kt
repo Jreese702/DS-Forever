@@ -417,7 +417,7 @@ class HomeMenusFitShotsTest {
             stay = f
             try {
                 val p = page(l, fight = f)
-                p.home.toolbarToast(MIRROR)
+                p.home.toolbarToast(null, MIRROR)
                 ShadowSystemClock.advanceBy(Duration.ofMillis(400))
                 val box = p.home.toastBox(380f)
                 val bars = castDrawn(p.home)

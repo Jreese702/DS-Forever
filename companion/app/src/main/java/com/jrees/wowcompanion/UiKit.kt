@@ -3074,14 +3074,15 @@ object UiKit {
      * that space and shrink when a cast bar pops up or L+R"): the clock chip from [chipTop] centred on [cx] and the extras row in
      * [spot], between today's SMALL look ([clockChip] + [clockBand], [g] = 0) and the GROWN one ([ClockBand.grow], [g] = 1): every
      * piece's place and size eased between the two, so the block scales smoothly. [rowAlpha] = the row's own fade (the triggers).
+     * [chipGrow] false (1518 build 3: the chip at a spot left / right of the middle) = the chip stays its small size (only the row grows).
      */
     fun clockBlock(c: Canvas, cx: Float, chipTop: Float, time: String, battery: Int, charging: Boolean, gold: Long?, spot: FloatArray?,
-                   items: List<BandItem>, g: Float, rowAlpha: Int = 255, chipAlpha: Int = 255) {
+                   items: List<BandItem>, g: Float, rowAlpha: Int = 255, chipAlpha: Int = 255, chipGrow: Boolean = true) {
         val floor = chipTop - ClockBand.CHIP_TOP + ClockBand.chipBottom(gold != null) + ClockBand.CHIP_PAD
         val grown = if (g > 0.001f && spot != null) clockGrown(spot, chipTop, time, battery, gold, items) else null
         val e = if (grown == null) 0f else g.coerceIn(0f, 1f)
         if (chipAlpha > 0) {
-            val s = 1f + (grown?.let { it.chip - 1f } ?: 0f) * e
+            val s = if (!chipGrow) 1f else 1f + (grown?.let { it.chip - 1f } ?: 0f) * e
             c.save(); c.scale(s, s, cx, chipTop)
             clockChip(c, cx, chipTop, time, battery, charging, chipAlpha, gold)
             c.restore()

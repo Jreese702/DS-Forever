@@ -224,7 +224,7 @@ class HomeLayoutShotsTest {
         shot(a, "classic_rest")
         val p = page(HomeArrangements.of(HomeArrangements.MIRRORED, classic), party = true, dirs = MIRROR)
         val to = boxes(p.home)
-        p.home.toolbarToast(MIRROR)
+        p.home.toolbarToast(null, MIRROR)
         settle(5)
         shot(p, "mirrored_toast")
         assertTrue(to.getValue("CHAT").left > to.getValue("MAP").left)

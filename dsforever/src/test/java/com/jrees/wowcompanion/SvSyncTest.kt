@@ -118,7 +118,7 @@ class SvSyncTest {
      */
     @Test fun anOffMirrorBitOrTopFlagStaysOffThroughTheMerge() {
         val who = "Thrall-Area 52"
-        for (key in listOf("rbm", "ctop")) {
+        for (key in listOf("rbm", "rbp", "ctop")) {
             val base = mapOf<Any, Any>(key to mapOf<Any, Any>(who to 1L))
             val remote = mapOf<Any, Any>(key to mapOf<Any, Any>(who to 1L))
             val off = SvMerge.merge(mapOf<Any, Any>(key to mapOf<Any, Any>(who to 0L)), remote, base).table

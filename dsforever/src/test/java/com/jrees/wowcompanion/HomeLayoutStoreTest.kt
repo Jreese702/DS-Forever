@@ -452,21 +452,40 @@ class HomeLayoutStoreTest {
     private val normal = mapOf(1 to "chat", 2 to "radial", 3 to "map", 4 to "home")
     private val mirrored = mapOf(1 to "map", 2 to "radial", 3 to "chat", 4 to "home")
 
-    @Test fun mirrorResendsUntilTheAddonSaysIt() {
-        assertEquals(0, ToolbarMirror.bitOf(normal)); assertEquals(1, ToolbarMirror.bitOf(mirrored)); assertNull(ToolbarMirror.bitOf(emptyMap()))
-        assertEquals(ToolbarMirror.Act.Matched, ToolbarMirror.decide(0, normal, false, null))
-        assertEquals(ToolbarMirror.Act.Send(true), ToolbarMirror.decide(1, normal, false, null))
-        assertEquals("queued in a fight", ToolbarMirror.Act.Wait, ToolbarMirror.decide(1, normal, true, null))
-        assertEquals("just sent", ToolbarMirror.Act.Wait, ToolbarMirror.decide(1, normal, false, 1_000L))
-        assertEquals("sent again", ToolbarMirror.Act.Send(true), ToolbarMirror.decide(1, normal, false, ToolbarMirror.RESEND_MS))
-        assertEquals("no padmap yet", ToolbarMirror.Act.Wait, ToolbarMirror.decide(1, null, false, null))
-        assertEquals(ToolbarMirror.Act.Send(false), ToolbarMirror.decide(0, mirrored, false, null))
-        // padtab 39, 38, 37 then 20 / 21 (Book b76: off the sticky realm question's 9-19)
-        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 21), ToolbarMirror.cells(true))
-        assertEquals(20, ToolbarMirror.cells(false).last().second)
-        // the toast: a change only, never the run's first word
-        assertFalse(ToolbarMirror.toastFor(null, 1)); assertTrue(ToolbarMirror.toastFor(0, 1)); assertFalse(ToolbarMirror.toastFor(1, 1))
-        assertEquals(listOf("D-pad", "Map", "Chat"), ToolbarMirror.toastWords(mirrored))
+    /** 1518 build 3: the layout's whole D-pad order against the add-on's `d`: today's two tables by the mirror bit's codes 20 / 21 (any
+     *  add-on), any other order by code 24 then its rank (only when the padmap says `pp`; an older add-on: Old, nothing sent), never in a
+     *  fight, re-sent every RESEND_MS until `d` says it */
+    @Test fun theDpadOrderResendsUntilTheAddonSaysIt() {
+        val up = mapOf(1 to "radial", 2 to "chat", 3 to "map", 4 to "home")
+        val on = PadMapModel.mirrorCells(true); val off = PadMapModel.mirrorCells(false)
+        assertEquals(ToolbarMirror.Act.Matched, ToolbarMirror.decide(normal, normal, false, false, null))
+        assertEquals(ToolbarMirror.Act.Send(on), ToolbarMirror.decide(mirrored, normal, false, false, null))
+        assertEquals("queued in a fight", ToolbarMirror.Act.Wait, ToolbarMirror.decide(mirrored, normal, false, true, null))
+        assertEquals("just sent", ToolbarMirror.Act.Wait, ToolbarMirror.decide(mirrored, normal, false, false, 1_000L))
+        assertEquals("sent again", ToolbarMirror.Act.Send(on), ToolbarMirror.decide(mirrored, normal, false, false, ToolbarMirror.RESEND_MS))
+        assertEquals("no padmap yet", ToolbarMirror.Act.Wait, ToolbarMirror.decide(mirrored, null, false, false, null))
+        assertEquals(ToolbarMirror.Act.Send(off), ToolbarMirror.decide(normal, mirrored, true, false, null))
+        assertEquals("today's tables go by the bit even with pp (every add-on knows 20 / 21)", ToolbarMirror.Act.Send(on), ToolbarMirror.decide(mirrored, normal, true, false, null))
+        // any other order: code 24 then its rank, only with pp
+        val r = ToolbarMirror.rank(up)!!
+        assertEquals(ToolbarMirror.Act.Send(PadMapModel.permCells(r)), ToolbarMirror.decide(up, normal, true, false, null))
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 24, "padtab" to r), PadMapModel.permCells(r))
+        assertEquals("an older add-on: nothing to send", ToolbarMirror.Act.Old, ToolbarMirror.decide(up, normal, false, false, null))
+        assertEquals("pp in a fight: queued", ToolbarMirror.Act.Wait, ToolbarMirror.decide(up, normal, true, true, null))
+        assertEquals(ToolbarMirror.Act.Matched, ToolbarMirror.decide(up, up, true, false, null))
+        // the ranks: 0 today's, 14 the mirror, every order once, each back to itself
+        assertEquals(0, ToolbarMirror.rank(normal)); assertEquals(14, ToolbarMirror.rank(mirrored))
+        assertEquals((0 until 24).toList(), (0 until 24).map { ToolbarMirror.rank(ToolbarMirror.ofRank(it)!!) })
+        assertNull(ToolbarMirror.rank(mapOf(1 to "chat", 2 to "chat", 3 to "map", 4 to "home"))); assertNull(ToolbarMirror.ofRank(24))
+        // padtab 39, 38, 37 then 20 / 21 (Book b76+: off the sticky realm question's 9-19)
+        assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 21), ToolbarMirror.cells(mirrored, false))
+        assertEquals(20, ToolbarMirror.cells(normal, false)!!.last().second)
+        assertNull("another order without pp: no taps", ToolbarMirror.cells(up, false))
+        // the toast: a change only, never the run's first word; it names each direction that changed
+        assertFalse(ToolbarMirror.toastFor(null, mirrored)); assertTrue(ToolbarMirror.toastFor(normal, mirrored)); assertFalse(ToolbarMirror.toastFor(mirrored, mirrored))
+        assertEquals(listOf(null to "D-pad", 1 to "Map", 3 to "Chat"), ToolbarMirror.toastItems(normal, mirrored))
+        assertEquals(listOf(null to "D-pad", 1 to "Radial", 2 to "Chat"), ToolbarMirror.toastItems(normal, up))
+        assertEquals("Up: the radial     Down: the Home bar", ToolbarMirror.promptLine2(normal))
         assertEquals(0f, ToolbarMirror.toastAlpha(0)); assertEquals(1f, ToolbarMirror.toastAlpha(500)); assertEquals(0f, ToolbarMirror.toastAlpha(ToolbarMirror.TOAST_MS))
         assertEquals("Left: Map     Right: Chat", ToolbarMirror.promptLine(mirrored))
         assertEquals("Left: Chat     Right: Map", ToolbarMirror.promptLine(null))
@@ -485,9 +504,11 @@ class HomeLayoutStoreTest {
         assertEquals(KeyPick.NEW_CODE, PadMapModel.P3_KEY_NEW); assertEquals(KeyPick.FIRST_CODE + KeyPick.MAX - 1, PadMapModel.P3_KEY_LAST)
         assertEquals(KeyPick.NEW_CODE, KeyPick.cells(null)!!.last().second)
         assertEquals(KeyPick.FIRST_CODE + KeyPick.MAX - 1, KeyPick.cells(KeyPick.MAX)!!.last().second)
-        // Book b76 handles exactly these (the add-on's own table)
+        // Book b76+ handles exactly these (the add-on's own table); b77: 24 then the D-pad order's rank
         val book = java.io.File(addons(), "WowCompanionSpells/Book.lua").readText()
         assertTrue(book.contains("for k = 0, 1 do P3[20 + k] = function()") && book.contains("pm.dpadMirror, k == 1"))
+        assertTrue(book.contains("P3[24] = function() P2.p4 = GetTime() end") && book.contains("pcall(pm.dpadPerm, k)"))
+        assertEquals(PadMapModel.P3_PERM_PICK..PadMapModel.P3_PERM_PICK, PadMapModel.PAGE3_CODES["D-pad order"])
         assertTrue(book.contains("P3[9] = function() if type(WC.charKeyPick)") && book.contains("for k = 1, 10 do P3[9 + k] = function() if type(WC.charKeyPick)"))
         assertTrue(book.contains("for k = 0, 3 do P3[k]") && book.contains("for k = 1, 5 do P3[3 + k]"))
     }
@@ -498,7 +519,17 @@ class HomeLayoutStoreTest {
         assertEquals("the router said nothing: its default", HoldTalk.LEFT_KEY, HoldTalk.chatKey(null, true, null, false))
         assertNull("the toolbar off and no DS Chat command", HoldTalk.chatKey(null, false, mirrored, false))
         assertTrue(HoldTalk.leftIsChat(null, true, normal, false)); assertFalse(HoldTalk.leftIsChat(null, true, mirrored, false))
-        assertTrue(HoldTalk.chatArrowRight(mirrored)); assertFalse(HoldTalk.chatArrowRight(normal)); assertFalse(HoldTalk.chatArrowRight(null))
+        assertEquals(3, HoldTalk.chatPos(mirrored)); assertEquals(1, HoldTalk.chatPos(normal)); assertEquals(1, HoldTalk.chatPos(null))
+        assertEquals("gen_right", HoldTalk.chatGlyph(mirrored)); assertEquals("Hold D-pad Right to talk.", HoldTalk.chatWord(mirrored))
+        // 1518 build 3: the Chat icon dragged to Up / Down: its key there, the Settings row's words and arrow follow
+        val up = mapOf(1 to "radial", 2 to "chat", 3 to "map", 4 to "home")
+        val down = mapOf(1 to "home", 2 to "radial", 3 to "map", 4 to "chat")
+        assertEquals(HoldTalk.UP_KEY, HoldTalk.chatKey(null, true, up, false))
+        assertEquals(HoldTalk.DOWN_KEY, HoldTalk.chatKey(null, true, down, false))
+        assertFalse(HoldTalk.leftIsChat(null, true, up, false))
+        assertEquals("Hold D-pad Up to talk.", HoldTalk.chatWord(up)); assertEquals("gen_down", HoldTalk.chatGlyph(down))
+        assertEquals("Hold D-pad Left to talk.", HoldTalk.chatWord(null))
+        assertTrue(HoldTalk.CHAT_KEYS.containsAll(listOf("PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN")))
     }
 
     @Test fun theControllerRoomsToolbarIsByWord() {

@@ -165,8 +165,23 @@ class BottomTilesTest {
         assertEquals("the place, its size (movable Home), Show in combat", 3, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
         HomeSettings.castBarSide = CastStripModel.Side.OFF
         // the clock band: five On / Off lines with their icons
-        assertEquals(5, BottomTiles.lines(BottomTiles.CLOCK, on).size)
-        assertTrue(BottomTiles.lines(BottomTiles.CLOCK, on).all { it.icon != null && it.modes != null })
+        // 1518 build 3: the chip's spot first (edit mode's Clock box is gone), then the five On / Off extras with their icons
+        val clock = BottomTiles.lines(BottomTiles.CLOCK, on)
+        assertEquals(6, clock.size)
+        assertEquals(BottomTiles.CLOCK_PLACE, clock[0].key); assertEquals(listOf("Left", "Centre", "Right"), clock[0].words); assertEquals(1, clock[0].picked)
+        assertTrue(clock.drop(1).all { it.icon != null && it.modes != null })
+        BottomTiles.press(BottomTiles.CLOCK, BottomTiles.CLOCK_PLACE, 2, on) { }
+        assertEquals(HomeLayout.ClockPlace.RIGHT, HomeSettings.layout.clock)
+        BottomTiles.press(BottomTiles.CLOCK, BottomTiles.CLOCK_PLACE, 1, on) { }
+        assertEquals(HomeLayout.ClockPlace.CENTRE, HomeSettings.layout.clock)
+        // the DS WoW toolbar tile: its switch, then "D-pad order: Reset" (lit only once edit mode reordered the icons)
+        val tb = BottomTiles.lines(BottomTiles.TOOLBAR, on)
+        assertEquals(listOf(BottomTiles.TOOLBAR, BottomTiles.PAD_RESET), tb.map { it.key })
+        assertFalse("Classic's order: nothing to reset", tb[1].enabled)
+        HomeLayoutStore.update { it.padSwapped(1, 2) }
+        assertTrue(BottomTiles.lines(BottomTiles.TOOLBAR, on)[1].enabled)
+        BottomTiles.press(BottomTiles.TOOLBAR, BottomTiles.PAD_RESET, 0, on) { }
+        assertEquals(HomeLayout.PAD_DEFAULT, HomeSettings.layout.pad)
         BottomTiles.press(BottomTiles.CLOCK, "gold", 1, on) { }
         assertFalse(HomeSettings.clockGold)
         assertEquals("4 / 5", BottomTiles.value(BottomTiles.CLOCK, on))

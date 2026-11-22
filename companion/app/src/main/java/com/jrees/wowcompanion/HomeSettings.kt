@@ -735,7 +735,7 @@ class HomeSettingsSection(context: Context,
             // HOLD TO TALK (the user, 2026-11-16, HoldTalk): under the toolbar while it is on; "On release" only while it is On
             if (d.want == true && d.colOn != null) {
                 val who = talkWho()
-                y = row(c, y + GAP, TALK_ROW, listOf(if (HoldTalk.chatArrowRight(d.dirs)) "Hold D-pad Right to talk." else "Hold D-pad Left to talk."), listOf("Off", "On"), if (HomeSettings.holdTalk(who)) 1 else 0,
+                y = row(c, y + GAP, TALK_ROW, listOf(HoldTalk.chatWord(d.dirs)), listOf("Off", "On"), if (HomeSettings.holdTalk(who)) 1 else 0,
                     if (who == null) null else listOf({ HomeSettings.setHoldTalk(who, false) }, { HomeSettings.setHoldTalk(who, true) }))
                 if (HomeSettings.holdTalk(who)) y = row(c, y + GAP, RELEASE_ROW, listOf("To the last chat you used."),
                     listOf("Show, A sends", "Send now"), if (HomeSettings.talkSendNow(who)) 1 else 0,
