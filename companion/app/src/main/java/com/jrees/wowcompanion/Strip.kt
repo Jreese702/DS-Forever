@@ -881,6 +881,11 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         if (k > 0f) {
             pShadow.color = Color.argb((140 * k).toInt(), 0, 0, 0)
             c.drawRoundRect(RectF(box).apply { inset(-6f, -6f); offset(6f, 10f) }, 14f, 14f, pShadow)
+            // 1518: a solid backing the size of the gold cursor box (HomeEditView.drawBar's inset), so a neighbour's picture and "-"
+            // badge never show through the carried app (iOS draws the carried app fully on top)
+            val ink = if (Theme.classic) Color.rgb(16, 12, 9) else Theme.raised
+            pLiftBack.color = Color.argb((255 * k).toInt(), Color.red(ink), Color.green(ink), Color.blue(ink))
+            c.drawRoundRect(liftBack.apply { set(box); inset(-10f, -8f) }, 10f, 10f, pLiftBack)
         }
         if (!art(c, r, box.centerX(), box.centerY(), box.width(), false, lit = true)) {
             pStroke.color = Theme.text; pStroke.strokeWidth = 1.8f
@@ -889,6 +894,8 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         c.restoreToCount(sv)
     }
     private val pShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { maskFilter = BlurMaskFilter(18f, BlurMaskFilter.Blur.NORMAL) }
+    private val pLiftBack = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val liftBack = RectF()
 
     /** room [r]'s bar picture at [cx], [cy], [size] px, at full light (edit mode's tray of hidden rooms shows the bar's own pictures) */
     fun drawRoomPicture(c: Canvas, r: Room, cx: Float, cy: Float, size: Float) {
