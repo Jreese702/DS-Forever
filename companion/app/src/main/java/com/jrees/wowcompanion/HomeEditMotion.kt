@@ -201,7 +201,7 @@ class HomeEditMotion {
             val e = env(k, now) * calm(now)
             if (e > 0f) {
                 val t = (now - epoch).toFloat() / 1000f / scale
-                val ph = 2f * PI.toFloat() * hz(k) * t + phase(k)
+                val ph = 2f * PI.toFloat() * hzFor(k, halfDiag) * t + phase(k)
                 out.reach = amp(halfDiag) * e
                 out.rot = out.reach * sin(ph)
                 out.bobMax = Motion.WIGGLE_BOB * e
@@ -408,6 +408,11 @@ class HomeEditMotion {
         }
         /** each key's pace (WIGGLE_HZ +- 6 %) and phase (the golden angle apart) */
         fun hz(k: Int): Float = Motion.WIGGLE_HZ * (1f + 0.06f * sin(k * 1.7f + 0.4f))
+        /** 1518 feel pass: [k]'s pace for a box of half-diagonal [halfDiag] - a small picture's [hz], a big module's the calmer
+         *  [Motion.WIGGLE_HZ_BIG] (the same per-key spread; a step, never a slide: no widget's box crosses the split while it wiggles,
+         *  so its phase never jumps) */
+        fun hzFor(k: Int, halfDiag: Float): Float =
+            if (halfDiag < Motion.WIGGLE_PACE_SPLIT) hz(k) else hz(k) * (Motion.WIGGLE_HZ_BIG / Motion.WIGGLE_HZ)
         fun phase(k: Int): Float = k * 2.39996f
 
         /** the open's ripple: a widget [d] px from the one it opened on (of [far] at most) starts this many ms later */
