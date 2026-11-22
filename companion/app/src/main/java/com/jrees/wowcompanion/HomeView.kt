@@ -2616,12 +2616,21 @@ class HomeView(
      */
     private val editEnv = object : HomeEditModel.Env {
         override val pads: HomeEditModel.PadCan get() {
-            val d = padMap?.dpad
-            if (!lent(castView) || castView.parent !== barsSlot || !castView.toolbarDrawn()) return HomeEditModel.PadCan.NONE
-            if (d == null || CharKey.of(d.name, d.realm) == null || HomeLayoutStore.owner().key == null) return HomeEditModel.PadCan.NONE
-            return if (d.pp) HomeEditModel.PadCan.FULL else HomeEditModel.PadCan.SIMPLE
+            if (drawPass != 0L && padsPass == drawPass) return padsKept
+            val v = padsNow()
+            if (drawPass != 0L) { padsPass = drawPass; padsKept = v }
+            return v
         }
         override val clockPlaces: List<HomeLayout.ClockPlace> get() = clockPlacesNow()
+    }
+
+    private var padsPass = 0L
+    private var padsKept = HomeEditModel.PadCan.NONE
+    private fun padsNow(): HomeEditModel.PadCan {
+        val d = padMap?.dpad
+        if (!lent(castView) || castView.parent !== barsSlot || !castView.toolbarDrawn()) return HomeEditModel.PadCan.NONE
+        if (d == null || CharKey.of(d.name, d.realm) == null || HomeLayoutStore.owner().key == null) return HomeEditModel.PadCan.NONE
+        return if (d.pp) HomeEditModel.PadCan.FULL else HomeEditModel.PadCan.SIMPLE
     }
 
     /**
@@ -2647,9 +2656,19 @@ class HomeView(
 
     /** the clock chip's size for its spots and its edit box (scale 1): the time's digits as 0s and the battery at 100 % (the chip's
      *  widest look for the text's length), its width up to the next 16 px, so the spots and the touch box never creep with the minutes */
-    private fun clockChipSizeNow(): FloatArray =
-        UiKit.clockChipSize(clockText.ifEmpty { "00:00" }.map { if (it.isDigit()) '0' else it }.joinToString(""), 100, chipGold())
-            .also { it[0] = kotlin.math.ceil(it[0] / 16f) * 16f }
+    private fun clockChipSizeNow(): FloatArray {
+        // the review: kept until the time's text or the gold changes (the wiggle's frames read it several times each)
+        val gold = chipGold()
+        if (chipSizeText == clockText && chipSizeGold == gold && chipSizeSet) return chipSize
+        val z = UiKit.clockChipSize(clockText.ifEmpty { "00:00" }.map { if (it.isDigit()) '0' else it }.joinToString(""), 100, gold)
+        chipSize[0] = kotlin.math.ceil(z[0] / 16f) * 16f; chipSize[1] = z[1]
+        chipSizeText = clockText; chipSizeGold = gold; chipSizeSet = true
+        return chipSize
+    }
+    private val chipSize = FloatArray(2)
+    private var chipSizeText: String? = null
+    private var chipSizeGold: Long? = null
+    private var chipSizeSet = false
     /** the chip's centre x in Home's px at [pl] on the band [b] (null = that spot is not offered: the thin row, a button in the way) */
     private fun clockCx(pl: HomeLayout.ClockPlace, b: RectF): Float? {
         if (pl == HomeLayout.ClockPlace.CENTRE) return b.centerX()
@@ -2657,12 +2676,21 @@ class HomeView(
         val cs = clockChipSizeNow()
         return castView.clockChipCx(pl, cs[0], cs[1])?.let { b.left + it }
     }
-    /** the spots the chip may take now, left to right (none: no clock drawn on the band) */
+    /** the spots the chip may take now, left to right (none: no clock drawn on the band); within one draw pass the first answer is
+     *  kept (the review: the wiggle's frame asked it per piece) */
     private fun clockPlacesNow(): List<HomeLayout.ClockPlace> {
-        val b = now[Part.BARS] ?: return emptyList()
-        if (!overlayTo.clock || castView.parent !== barsSlot || castView.clockSpot() == null) return emptyList()
-        return HomeLayout.ClockPlace.values().filter { clockCx(it, b) != null }
+        if (drawPass != 0L && placesPass == drawPass) return placesKept
+        val b = now[Part.BARS]
+        val out = if (b == null || !overlayTo.clock || castView.parent !== barsSlot || castView.clockSpot() == null) emptyList()
+            else CLOCK_PLACES.filter { clockCx(it, b) != null }
+        if (drawPass != 0L) { placesPass = drawPass; placesKept = out }
+        return out
     }
+    private var placesPass = 0L
+    private var placesKept: List<HomeLayout.ClockPlace> = emptyList()
+    /** the edit chrome's per-draw caches' pass (0 = not drawing: every read fresh) */
+    private var drawPass = 0L
+    private var drawPasses = 0L
 
     /** the page's state now, as [places] hands it to the solver (for a drop well and a drop's check) */
     private fun solveState(l: HomeLayout): HomeLayoutSolver.State {
@@ -2689,10 +2717,28 @@ class HomeView(
             return o
         }
         if (s != EditStop.CLOCK || !overlayTo.clock || castView.clockSpot() == null) return null
+        if (drawPass != 0L && clockBoxPass == drawPass) return o           // this draw pass's box (the wiggle reads it per frame)
         val cx = clockCx(editDraft()?.clock ?: HomeSettings.layout.clock, b) ?: b.centerX()
         val cs = clockChipSizeNow()
-        o.set(cx - cs[0] / 2f, b.top + ClockBand.CHIP_TOP, cx + cs[0] / 2f, b.top + ClockBand.CHIP_TOP + cs[1])
+        // the review: at Centre the chip is drawn grown (UiKit.clockBlock's chip scale, about its top centre): the box is the drawn one
+        val k = if (kotlin.math.abs(cx - b.centerX()) < 0.5f) clockChipKNow(b) else 1f
+        val top = b.top + ClockBand.CHIP_TOP
+        o.set(cx - cs[0] * k / 2f, top, cx + cs[0] * k / 2f, top + cs[1] * k)
+        if (drawPass != 0L) clockBoxPass = drawPass
         return o
+    }
+    private var clockBoxPass = 0L
+    /** the chip's scale as drawn in the draw pass [clockKPass] (UiKit.clockChipScale: 1 = its small look; grown at Centre) */
+    private var clockChipDrawnK = 1f
+    private var clockKPass = 0L
+    /** the Centre chip's scale now: the clock's own within the draw pass that drew it, else worked out from the state now (a touch, a
+     *  key, a read before any draw: rare, so made fresh) - the same answer the next draw gives */
+    private fun clockChipKNow(b: RectF): Float {
+        if (drawPass != 0L && clockKPass == drawPass) return clockChipDrawnK
+        val g = infoG(android.os.SystemClock.elapsedRealtime())
+        if (g <= 0.001f || castView.parent !== barsSlot) return 1f
+        val spot = castView.clockSpot()?.also { sp -> for (i in 0 until sp.size - 1) sp[i] += if (i % 2 == 0) b.left else b.top } ?: return 1f
+        return UiKit.clockChipScale(UiKit.clockGrownFor(spot, b.top + ClockBand.CHIP_TOP, clockText, batteryPct, chipGold(), bandItems(), g), g)
     }
     /** the edit chrome's reads every frame ([editHost]'s parts, the pieces' boxes): Home's own, never kept by the chrome */
     private val pieceOut = Array(EditStop.values().size) { RectF() }
@@ -2703,7 +2749,7 @@ class HomeView(
      */
     private fun pieceMatrix(s: EditStop, out: android.graphics.Matrix): Boolean {
         if (!piecePose(s, pieceBuf)) return false
-        val box = editPieceBox(s) ?: return false
+        val box = editPieceBox(s) ?: return false                       // piecePose's own box (kept within a draw pass)
         out.reset()
         out.postScale(pieceBuf[0], pieceBuf[0], box.centerX(), box.centerY())
         out.postRotate(pieceBuf[1], box.centerX(), box.centerY())
@@ -2714,10 +2760,11 @@ class HomeView(
     private fun piecePose(s: EditStop, out: FloatArray): Boolean {
         if (!motion.on) return false
         val m = edit?.takeIf { !it.parked } ?: chromeModel ?: return false
-        if (s.pad > 0 && editEnv.pads == HomeEditModel.PadCan.NONE) return false
-        if (s == EditStop.CLOCK && clockPlacesNow().size < 2) return false
+        if (!m.pieceMovable(s)) return false
         val box = editPieceBox(s) ?: return false
-        val k = if (liftStop == s) liftKey else m.keyOf(s)
+        // the review: the key follows the icon (HomeEditModel.keyOf), never the spot it was lifted from - after a swap the icon that
+        // came into that spot wiggles as its own (the lifted one's key is keyOf its new spot: liftKey by construction)
+        val k = m.keyOf(s)
         motion.pose(k, motionNow(), 0.5f * kotlin.math.hypot(box.width(), box.height()), pose)
         var dx = pose.dx; var dy = pose.dy
         val d = m.drag
@@ -2906,10 +2953,13 @@ class HomeView(
         }
     }
     private val hold = Hold()
-    /** the hold's progress now (0 .. 1), null = none */
-    private fun editHoldK(): Float? {
+    /** the hold's progress now (0 .. 1), null = none - and none for its first [HomeEditModel.RING_FROM_MS] (the review: a normal B or
+     *  tap on Done never flashes "Discard"; the ring then fills over the rest of [HomeEditModel.DISCARD_HOLD_MS]) */
+    fun editHoldK(): Float? {
         val at = hold.at.takeIf { it >= 0 } ?: return null
-        return ((android.os.SystemClock.uptimeMillis() - at).toFloat() / HomeEditModel.DISCARD_HOLD_MS).coerceIn(0f, 1f)
+        val t = android.os.SystemClock.uptimeMillis() - at
+        if (t < HomeEditModel.RING_FROM_MS) return null
+        return ((t - HomeEditModel.RING_FROM_MS).toFloat() / (HomeEditModel.DISCARD_HOLD_MS - HomeEditModel.RING_FROM_MS)).coerceIn(0f, 1f)
     }
     private fun editHoldDown() { if (edit?.parked == false) hold.start() }
     /** true = the hold had fired (Discard ran): the release does nothing */
@@ -3723,6 +3773,12 @@ class HomeView(
     }
 
     /** P2: edit mode's chrome is drawn LAST, over Home's own paint (the zone band, the clock block, the wells' edges) */
+    /** one draw pass: the edit chrome's per-pass caches (the clock's spots and box, the D-pad icons' word) live while it runs */
+    override fun draw(c: Canvas) {
+        drawPass = ++drawPasses
+        try { super.draw(c) } finally { drawPass = 0L }
+    }
+
     override fun dispatchDraw(c: Canvas) {
         dispatchDrawHome(c)
         if (editView.visibility == View.VISIBLE && editView.width > 0) {
@@ -3836,14 +3892,18 @@ class HomeView(
             val cx = clockXNow(b)
             val centre = kotlin.math.abs(cx - b.centerX()) < 0.5f
             val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
+            // the grown layout once for the chip and the row; the chip's scale is edit mode's clock box at Centre (the review)
+            val gold = chipGold()
+            val grown = UiKit.clockGrownFor(spot, b.top + ClockBand.CHIP_TOP, clockText, batteryPct, gold, items, g)
+            clockChipDrawnK = UiKit.clockChipScale(grown, g, centre); clockKPass = drawPass
             if (chipOn) {
                 val posedSave = if (editPaintPosed() && pieceMatrix(EditStop.CLOCK, paintM)) c.save().also { c.concat(paintM) } else -1
-                UiKit.clockBlock(c, cx, b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, chipGold(), spot, items, g,
-                    rowAlpha = 0, chipAlpha = 255, chipGrow = centre)
+                UiKit.clockBlock(c, cx, b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, gold, spot, items, g,
+                    rowAlpha = 0, chipAlpha = 255, chipGrow = centre, grown = grown)
                 if (posedSave >= 0) c.restoreToCount(posedSave)
             }
-            if (rowOn) UiKit.clockBlock(c, cx, b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, chipGold(), spot, items, g,
-                rowAlpha = (trigA * 255).toInt(), chipAlpha = 0, chipGrow = centre)
+            if (rowOn) UiKit.clockBlock(c, cx, b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, gold, spot, items, g,
+                rowAlpha = (trigA * 255).toInt(), chipAlpha = 0, chipGrow = centre, grown = grown)
             if (save >= 0) c.restoreToCount(save)
             // the mm:ss counts (as the auras' times); nothing ticks otherwise
             if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
@@ -4917,6 +4977,8 @@ class HomeView(
     }
 
     companion object {
+        /** the clock chip's spots, left to right (made once: the wiggle's frames filter them) */
+        private val CLOCK_PLACES = HomeLayout.ClockPlace.values().toList()
         /** chat40: the refresh notice's "!" waits this long for the game's answer before it can be pressed again */
         private const val GO_GUARD_MS = 2_000L
         /** one pick + act pair at a time: the add-on's pick serves one action (CompanionHost's restore uses the same gap) */

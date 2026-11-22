@@ -114,6 +114,8 @@ class HomeEditMotionShotsTest {
         home.onChat(JSONObject().put("v", "chat40").put("s", 1).put("n", chatLines.size).put("lines", lines))
         home.partyChanged()
         home.tick()
+        // the clock as the device has it from the start (the clock's edit box at Centre is the chip as drawn: its time's width counts)
+        setField(home, "clockText", "9:51 AM"); setField(home, "batteryPct", 98)
         ShadowLooper.idleMainLooper()
         lay(home)
         HomeView::class.java.getDeclaredMethod("changed").apply { isAccessible = true }.invoke(home)

@@ -562,6 +562,20 @@ class HomeEditModelTest {
         assertTrue(old.draft.padSimple)
     }
 
+    /** the review: what can move says so - [HomeEditModel.pieceMovable] (the hint's "Move", the wiggle) is exactly what A would lift */
+    @Test fun aPieceIsMovableExactlyWhenALiftsIt() {
+        for (pads in HomeEditModel.PadCan.values()) for (spots in listOf(1, 2, 3)) {
+            val e = env(pads = pads, clock = HomeLayout.ClockPlace.values().take(spots))
+            for (s in EditStop.PADS + EditStop.CLOCK) {
+                val m = model(start = s, env = e)
+                val movable = m.pieceMovable(s)
+                m.press("PAD1")
+                assertEquals("$pads / $spots spots / $s", movable, m.lifted == s)
+            }
+        }
+        assertFalse(model().pieceMovable(EditStop.CHAT))
+    }
+
     /** a finger carries an icon onto another D-pad spot: after the hover the two swap; let go off every spot, it stays where it is */
     @Test fun aFingerSwapsTwoDpadIcons() {
         val m = model(start = EditStop.CHAT)

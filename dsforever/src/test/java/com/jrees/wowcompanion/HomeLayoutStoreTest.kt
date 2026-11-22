@@ -177,6 +177,37 @@ class HomeLayoutStoreTest {
         val before = HashMap(p.m)
         BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.ALL_CHARS, 0, BottomTiles.Env(null, null)) { }
         assertEquals(before, p.m)
+    }
+
+    /** the review: "Reset Home to Classic" while the key is pending would be held against the pending view (the default) and lay
+     *  nothing on the character's own record when the key arrives - so it is offered, like "all characters", only under a whole key */
+    @Test fun resetHomeToClassicWaitsForAWholeKey() {
+        val p = fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        val own = HomeLayout(chatSide = HomeLayout.Side.RIGHT, hidden = listOf("MAP"),
+            pad = listOf(HomeLayout.PadKey.LEFT_COL, HomeLayout.PadKey.HOME, HomeLayout.PadKey.RIGHT_COL, HomeLayout.PadKey.RADIAL))
+        HomeLayoutStore.set(own)
+        val stored = p.m["homeLayout.Korvash-Realm"]
+        HomeLayoutStore.character(null, "Korvash")
+        assertTrue(HomeLayoutStore.pending)
+        assertFalse(BottomTiles.resetLines().first { it.key == BottomTiles.HOME_CLASSIC }.enabled)
+        val before = HashMap(p.m)
+        BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.HOME_CLASSIC, 0, BottomTiles.Env(null, null)) { }
+        HomeSettings.resetHomeToClassic()
+        assertEquals("nothing written or held", before, p.m)
+        HomeLayoutStore.character("Korvash-Realm")
+        assertEquals(stored, p.m["homeLayout.Korvash-Realm"])
+        assertEquals(own, HomeSettings.layout)
+        // with the key: offered, and it resets this character's own record
+        assertTrue(BottomTiles.resetLines().first { it.key == BottomTiles.HOME_CLASSIC }.enabled)
+        BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.HOME_CLASSIC, 0, BottomTiles.Env(null, "Korvash-Realm")) { }
+        assertEquals(own.classic(), HomeSettings.layout)
+        assertTrue(HomeSettings.layout.classicPlace); assertTrue(HomeSettings.layout.hidden.isEmpty())
+        assertEquals(HomeLayout.PAD_DEFAULT, HomeSettings.layout.pad)
+    }
+
+    @Test fun theResetTileKeepsItsShape() {
+        fresh()
         // the tile: last of Home's, named Reset Home; Edit Home has no band of its own
         assertEquals(BottomTiles.HOME_RESET, BottomTiles.HOME_TILES.last())
         assertEquals("Reset Home", BottomTiles.NAMES[BottomTiles.HOME_RESET]); assertEquals("Edit Home", BottomTiles.NAMES[BottomTiles.LAYOUT])

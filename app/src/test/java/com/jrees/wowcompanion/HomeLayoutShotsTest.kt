@@ -331,7 +331,11 @@ class HomeLayoutShotsTest {
         assertEquals(BottomTiles.HOME_RESET, BottomTiles.HOME_TILES.last())
         assertEquals(listOf("Reset Home to Classic", "Use this Home for all characters"),
             BottomTiles.lines(BottomTiles.HOME_RESET, env).map { it.words.single() })
-        BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.HOME_CLASSIC, 0, env) { }
+        // no whole character key: Reset is not offered (nothing is written without one); a character's own Home resets
+        assertFalse(BottomTiles.resetLines().first { it.key == BottomTiles.HOME_CLASSIC }.enabled)
+        HomeLayoutStore.character("Korvash-Realm")
+        assertTrue(HomeSettings.layout.mirrored)
+        BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.HOME_CLASSIC, 0, BottomTiles.Env(null, "Korvash-Realm")) { }
         assertFalse(HomeSettings.layout.mirrored)
         assertTrue(HomeSettings.layout.classicPlace)
         assertEquals(HomeLayout.Share.HALF, HomeSettings.layout.chatShare)

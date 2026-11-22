@@ -54,8 +54,9 @@ object HomeSettings {
 
     /** 1518, Settings' "Reset Home to Classic": THIS character's Home back to Classic ([HomeLayout.classic]: the bar's column and Same
      *  size kept, as Classic always kept them; the room bar's order and the XP track back too), through the store's own rules; the
-     *  card's fold and the behaviour settings are left as they are */
-    fun resetHomeToClassic() { saveLayout(layout.classic()) }
+     *  card's fold and the behaviour settings are left as they are. Only under a WHOLE key: while pending the active record is the
+     *  pending view, not the character's own, and the held change would lay nothing on the real record once the key arrives */
+    fun resetHomeToClassic() { if (HomeLayoutStore.who != null) saveLayout(layout.classic()) }
 
     /** the band at rest: a FACADE on the active layout record since movable Home (the old key still written for one release) */
     var rest: HomeRest

@@ -389,7 +389,10 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         val rib = editTouch
         if (rib != null && editRibbon != null) {
             val ty = e.y - (height - BAR)
-            if (e.actionMasked == MotionEvent.ACTION_DOWN) ribbonDown = ty in 0f..TRACKS.toFloat() && !onHome(e.x, e.y) && rib(e.x, ty, MotionEvent.ACTION_DOWN)
+            // the review: "+" and Done take a down up to RIBBON_SLOP below the ribbon too (48 px touch boxes: the Strip's top is the
+            // ribbon's, nothing above it is the Strip's); the ribbon says no to the rest of that slop, which stays the rooms'
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) ribbonDown = ty in 0f..(TRACKS + RIBBON_SLOP) && !onHome(e.x, e.y) &&
+                rib(e.x, ty, MotionEvent.ACTION_DOWN)
             if (ribbonDown) {
                 // the UP (a tap: Done; after the long press: nothing) and the CANCEL (the hold let go) are the ribbon's too
                 if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) { ribbonDown = false; rib(e.x, ty, e.actionMasked) }
@@ -1035,6 +1038,8 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     companion object {
         /** the tracking bar: the top of the bar, flush with the top of HOME's ring */
         const val TRACKS = 34
+        /** edit mode's ribbon: how far below it (into the rooms' row's top) a down on its "+" or Done still counts (TRACKS + 14 = 48) */
+        const val RIBBON_SLOP = 14f
         /** the rooms' pictures: a full finger (48 dp at 369 dpi) under the tracking bar */
         const val BUTTONS = 111
         /** the bar: the tracking bar and the rooms' finger. The rooms end on its top edge */

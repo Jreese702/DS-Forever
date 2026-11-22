@@ -37,8 +37,11 @@ import kotlin.math.abs
 enum class EditStop {
     /** [ROOMS] = the room bar's rooms (1518 build 2: each one an app): A lifts the room under its own cursor ([HomeEditModel.barSel]),
      *  X hides it, A on its "+" opens the hidden rooms' tray - never the bar itself (no frame, no tag, no menu). [CLOCK] = the band's
-     *  clock chip and [PAD_L] .. [PAD_D] = the DS toolbar's D-pad icons (1518 build 3: each one an app, no frame, no tag, no menu) */
-    CLOCK, CHAT, MAP, QUEST, DIVIDER, CAST, PLUS, ROOMS, PAD_L, PAD_U, PAD_R, PAD_D;
+     *  clock chip and [PAD_L] .. [PAD_D] = the DS toolbar's D-pad icons (1518 build 3: each one an app, no frame, no tag, no menu).
+     *  [DONE] = the ribbon's Done (the review's controller path to Discard that needs no held button: the relayed feed sees no hold) -
+     *  reached only by Right from the room bar's right end (or from the ribbon's "+"), never by the D-pad's spatial walk: A is Done,
+     *  X Discard */
+    CLOCK, CHAT, MAP, QUEST, DIVIDER, CAST, PLUS, ROOMS, PAD_L, PAD_U, PAD_R, PAD_D, DONE;
     /** a widget a finger or A can lift and dock elsewhere (the band's small pieces are [piece]s: they swap / step, never dock) */
     val movable: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST
     /** a widget with the red X chip (it can be taken off Home and brought back with "+") */
@@ -204,13 +207,22 @@ class HomeEditModel(
                 val dy = when (k) { "PADDUP" -> -1; "PADDDOWN" -> 1; else -> 0 }
                 // on the divider Left / Right step the width
                 if (cursor == EditStop.DIVIDER && dx != 0) return widthStep(dx)
-                // on the room bar Left / Right walk its rooms (the Home disc is no stop: the cursor steps over it)
-                if (cursor == EditStop.ROOMS && dx != 0) { barSel = (barSel + dx).coerceIn(0, barMax().coerceAtLeast(0)); return emptyList() }
+                // on the room bar Left / Right walk its rooms (the Home disc is no stop: the cursor steps over it); Right past its right
+                // end: the ribbon's Done (A Done, X Discard)
+                if (cursor == EditStop.ROOMS && dx != 0) {
+                    if (dx > 0 && barSel >= barMax() && EditStop.DONE in stops) { cursor = EditStop.DONE; return emptyList() }
+                    barSel = (barSel + dx).coerceIn(0, barMax().coerceAtLeast(0)); return emptyList()
+                }
+                // Done: Left / Down go back to the room bar's right end, where it was reached from
+                if (cursor == EditStop.DONE && (dx < 0 || dy > 0) && EditStop.ROOMS in stops) {
+                    cursor = EditStop.ROOMS; barSel = barMax().coerceAtLeast(0); return emptyList()
+                }
                 nearest(stops, cursor, dx, dy)?.let { cursor = it }
                 emptyList()
             }
             "PAD1" -> a()
-            "PAD3" -> if (cursor == EditStop.ROOMS) barRoom?.let { hideRoom(it) } ?: emptyList()
+            "PAD3" -> if (cursor == EditStop.DONE) discard()
+                else if (cursor == EditStop.ROOMS) barRoom?.let { hideRoom(it) } ?: emptyList()
                 else if (cursor.hasMenu && cursor in stops) openMenu(cursor) else emptyList()
             "PAD4" -> sizeStep(cursor)
             "PADBACK" -> swap()
@@ -223,6 +235,7 @@ class HomeEditModel(
     private fun a(): List<Fx> = when (cursor) {
         EditStop.PLUS -> if (plusShown) { sheet = Sheet.ADD; sheetSel = 0; emptyList() } else emptyList()
         EditStop.DIVIDER -> emptyList()
+        EditStop.DONE -> done()
         EditStop.ROOMS -> if (barOnPlus) openRoomTray() else lift(cursor)
         else -> lift(cursor)
     }
@@ -248,14 +261,21 @@ class HomeEditModel(
      * pictures show, no character key ...), the clock while the band offers it two spots or more
      */
     private fun liftPiece(s: EditStop): List<Fx> {
+        if (!pieceMovable(s)) { cursor = s; return listOf(Fx.Refuse(s)) }
         if (s.pad > 0) {
-            if (env.pads == PadCan.NONE) { cursor = s; return listOf(Fx.Refuse(s)) }
             cursor = s; lifted = s; liftFrom = draft; menu = null; padLifted = draft.pad[s.pad - 1]
             return listOf(Fx.Lift)
         }
-        if (env.clockPlaces.size < 2) { cursor = s; return listOf(Fx.Refuse(s)) }
         cursor = s; lifted = s; liftFrom = draft; menu = null
         return listOf(Fx.Lift)
+    }
+
+    /** a band piece A or a finger can pick up now: a D-pad icon while [Env.pads] lets it, the clock with two spots or more (the review:
+     *  a piece that cannot move wears no "A Move" hint and no wiggle) */
+    fun pieceMovable(s: EditStop): Boolean = when {
+        s.pad > 0 -> env.pads != PadCan.NONE
+        s == EditStop.CLOCK -> env.clockPlaces.size >= 2
+        else -> false
     }
 
     /**
@@ -937,6 +957,8 @@ class HomeEditModel(
             var best: EditStop? = null; var bestScore = Float.MAX_VALUE
             for ((s, b) in stops) {
                 if (s == from || (s == EditStop.DIVIDER && dx != 0)) continue
+                // Done is reached by Right only (from the room bar's end: the caller; from the ribbon's "+" here)
+                if (s == EditStop.DONE && !(from == EditStop.PLUS && dx > 0)) continue
                 val cx = b.cx; val cy = (b.t + b.b) / 2f
                 val along = (cx - acx) * dx + (cy - acy) * dy
                 if (along <= 1f) continue

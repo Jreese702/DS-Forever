@@ -230,12 +230,13 @@ object BottomTiles {
     /** "In fights" in [HomeLayout.FightBand]'s order */
     val FIGHT_WORDS = listOf("Grow", "Same size", "Top screen")
 
-    /** the Reset Home band's buttons (1518): this character's Home back to Classic; this character's Home for every character (only
-     *  once a WHOLE character key is known: the store writes no pending name's record, and "all" would skip this very character) */
+    /** the Reset Home band's buttons (1518): this character's Home back to Classic; this character's Home for every character. BOTH
+     *  only once a WHOLE character key is known: the store writes no pending name's record (a reset held against the pending view
+     *  would lay nothing on the real record when the key arrives - the review's finding), and "all" would skip this very character */
     const val HOME_CLASSIC = "homeclassic"
     const val ALL_CHARS = "allchars"
     fun resetLines(): List<Line> = listOf(
-        Line(HOME_CLASSIC, null, listOf("Reset Home to Classic"), -1),
+        Line(HOME_CLASSIC, null, listOf("Reset Home to Classic"), -1, enabled = HomeLayoutStore.who != null),
         Line(ALL_CHARS, null, listOf("Use this Home for all characters"), -1, enabled = HomeLayoutStore.who != null),
     )
 
@@ -245,7 +246,7 @@ object BottomTiles {
     /** button [k] of line [key] of tile [id]: ONE player-pressed write, the rows' own setters; [onDpad] = the DS WoW toolbar's switch */
     fun press(id: String, key: String, k: Int, env: Env, onDpad: (Boolean) -> Unit) {
         when (key) {
-            HOME_CLASSIC -> HomeSettings.resetHomeToClassic()
+            HOME_CLASSIC -> if (HomeLayoutStore.who != null) HomeSettings.resetHomeToClassic()
             ALL_CHARS -> if (HomeLayoutStore.who != null) HomeLayoutStore.set(HomeSettings.layout, all = true)
             "castsize" -> HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.values()[k]) }
             REST -> HomeSettings.rest = HomeRest.values()[k]

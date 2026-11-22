@@ -278,4 +278,57 @@ class HomeEditRoomBarTest {
         // Start is Done from the bar
         assertEquals(listOf(HomeEditModel.Fx.Done), m.press("PADFORWARD"))
     }
+
+    /** the review: a controller on the RELAYED feed (no held B to see) reaches Discard too - Done is a stop, reached by Right from the
+     *  room bar's right end (or the ribbon's "+"), never by the spatial walk; A on it is Done, X Discard; Left / Down go back */
+    private fun withDone(l: HomeLayout, plus: Boolean = false): Map<EditStop, HomeLayoutSolver.Box> {
+        val out = LinkedHashMap(stops(l))
+        if (plus) out[EditStop.PLUS] = HomeLayoutSolver.Box(14f, 937f, 60f, 965f)
+        out[EditStop.DONE] = HomeLayoutSolver.Box(1080f, 937f, 1230f, 965f)
+        return out
+    }
+    private fun HomeEditModel.pressD(vararg keys: String, plus: Boolean = false): List<HomeEditModel.Fx> {
+        val out = ArrayList<HomeEditModel.Fx>()
+        for (k in keys) out += key(k, withDone(draft, plus)) { s -> HomeWidgetMenus.rows(s, draft, HomeWidgetMenus.Values()) }
+        return out
+    }
+
+    @Test fun doneIsAStopRightOfTheBarsEndAndXOnItDiscards() {
+        val m = model(start = EditStop.ROOMS)
+        m.pressD("PADDRIGHT")
+        assertEquals("one room right: still the bar", EditStop.ROOMS, m.cursor)
+        m.pressD("PAD3")                                                      // a room hidden (a change Discard puts back)
+        assertTrue(m.changed)
+        repeat(RoomBar.DEFAULT.size + 2) { m.pressD("PADDRIGHT") }
+        assertEquals("Right past the bar's end (its \"+\"): Done", EditStop.DONE, m.cursor)
+        m.pressD("PADDRIGHT"); assertEquals(EditStop.DONE, m.cursor)
+        m.pressD("PADDLEFT")
+        assertEquals("Left: back on the bar's end", EditStop.ROOMS, m.cursor); assertTrue(m.barOnPlus)
+        m.pressD("PADDRIGHT"); m.pressD("PADDDOWN")
+        assertEquals("Down: the bar again", EditStop.ROOMS, m.cursor)
+        m.pressD("PADDRIGHT")
+        val fx = m.pressD("PAD3")
+        assertTrue("X on Done: Discard", fx.contains(HomeEditModel.Fx.Discard))
+        assertFalse(m.changed)
+        // A on Done: Done
+        val d = model(start = EditStop.ROOMS)
+        repeat(RoomBar.DEFAULT.size + 1) { d.pressD("PADDRIGHT") }
+        assertEquals(EditStop.DONE, d.cursor)
+        assertEquals(listOf(HomeEditModel.Fx.Done), d.pressD("PAD1"))
+    }
+
+    @Test fun theSpatialWalkNeverLandsOnDone() {
+        for (start in listOf(EditStop.CHAT, EditStop.MAP, EditStop.CAST, EditStop.ROOMS, EditStop.CLOCK, EditStop.PAD_U)) {
+            val m = model(start = start)
+            for (k in listOf("PADDDOWN", "PADDDOWN", "PADDUP", "PADDLEFT", "PADDRIGHT", "PADDDOWN", "PADDUP", "PADDUP")) {
+                if (m.cursor == EditStop.ROOMS && k == "PADDRIGHT") continue           // the bar's own walk (its end leads to Done)
+                m.pressD(k)
+                assertTrue("$start then $k: never Done by the walk", m.cursor != EditStop.DONE)
+            }
+        }
+        // the ribbon's "+": Right is Done
+        val m = model(classic.copy(cast = HomeLayout.CastDock.OFF), start = EditStop.PLUS)
+        m.pressD("PADDRIGHT", plus = true)
+        assertEquals(EditStop.DONE, m.cursor)
+    }
 }

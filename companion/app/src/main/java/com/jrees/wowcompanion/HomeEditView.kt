@@ -35,7 +35,8 @@ import kotlin.math.min
  *    rooms rising from it ([apps], [drawBar], [barTouch]);
  *  - THE EDIT RIBBON in the XP bar's place (drawn by the Strip through [drawRibbon]; test build 1518, the user's ruling 2026-11-21: no
  *    title, no layout chip): "+" at its left while something is off Home, the hints one word each, and "Done" at its right - a tap is
- *    Done (every change is saved already), a long press ([HomeEditModel.DISCARD_HOLD_MS], its gold ring filling) Discard.
+ *    Done (every change is saved already), a long press ([HomeEditModel.DISCARD_HOLD_MS], its gold ring filling from
+ *    [HomeEditModel.RING_FROM_MS]) Discard; the controller reaches Done as a stop too (Right from the room bar's end: A Done, X Discard).
  * Every input goes to [HomeEditModel]; its effects go back to the host ([Host.run]).
  */
 class HomeEditView(context: Context, private val host: Host) : View(context) {
@@ -62,7 +63,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         fun cursorTurn(): Float = 0f
         /** a pop's progress (HomeEditMotion.MENU / SHEET / CHIP / RIBBON; 1 = landed) */
         fun popK(kind: Int): Float = 1f
-        /** Done's hold (a finger on it, B held on the direct feed): 0 .. 1 while it runs towards Discard, null = none */
+        /** Done's hold (a finger on it, B held on the direct feed): 0 .. 1 while it runs towards Discard, null = none (a short press: the
+         *  first [HomeEditModel.RING_FROM_MS] show nothing) */
         fun holdK(): Float? = null
         /** a finger went down on Done ([down]) or up / away from it: the host's hold timer (true on the up = the hold fired already:
          *  Discard ran, the up does nothing) */
@@ -205,8 +207,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             out[EditStop.DIVIDER] = HomeLayoutSolver.Box(d.centerX() - 2f, top, d.centerX() + 2f, top + 40f) }
         val rib = ribbon(width.toFloat().takeIf { it > 0f } ?: 1240f)
         val y0 = height.toFloat()
-        // "+" on the ribbon while something is off Home (Done needs no stop: B and Start are Done)
+        // "+" on the ribbon while something is off Home
         if (host.model?.plusShown == true) out[EditStop.PLUS] = HomeLayoutSolver.Box(rib.plus.left, y0 + rib.plus.top, rib.plus.right, y0 + rib.plus.bottom)
+        // Done (B and Start are Done anywhere; the stop is the relayed feed's way to Discard, which sees no held B): Right only
+        out[EditStop.DONE] = HomeLayoutSolver.Box(rib.done.left, y0 + rib.done.top, rib.done.right, y0 + rib.done.bottom)
         // phase 4: the room bar's rooms' row, under the ribbon (Down from the columns; Left / Right there walk its rooms)
         if (host.bar() != null) out[EditStop.ROOMS] = HomeLayoutSolver.Box(8f, y0 + Strip.TRACKS, (width.toFloat().takeIf { it > 0f } ?: 1240f) - 8f, y0 + Strip.BAR)
         return out
@@ -297,6 +301,23 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return o
     }
 
+    /** the review: a piece's cursor box (Home's px, drawn through [s]'s pose) has its DRAWN top at [PIECE_BOX_TOP] at least - the Up
+     *  spot's lifted box ran off the screen's top; only the box's top edge comes down (the icon is CastView's, untouched) */
+    private val onScreen = RectF()
+    private fun pieceCursor(s: EditStop, b: RectF, out: RectF): RectF {
+        out.set(b); out.inset(-8f, -8f)
+        val d = posedRect(s, out, onScreen)
+        if (d.top >= PIECE_BOX_TOP || out.height() <= 0f) return out
+        val k = (d.height() / out.height()).coerceAtLeast(0.1f)
+        out.top = min(out.top + (PIECE_BOX_TOP - d.top) / k, out.centerY())
+        return out
+    }
+    /** piece [s]'s cursor box as drawn now (its pose applied; null = no box): the tests' check that it stays on screen */
+    fun pieceCursorDrawn(s: EditStop): RectF? {
+        val b = host.pieceBox(s) ?: return null
+        return posedRect(s, pieceCursor(s, b, RectF()))
+    }
+
     /** the lifted widget's drawn boxes (the drawing's own: good until the next frame) */
     private val liftOut = ArrayList<RectF>(2)
     private val liftPool = arrayOf(RectF(), RectF())
@@ -367,7 +388,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.restoreToCount(under)
         // 4. the golden box on the selected widget (riding the lifted one), the arrows to the docks a lifted one reaches
         val one = when (sel) {
-            EditStop.CAST, EditStop.DIVIDER, EditStop.PLUS -> null
+            EditStop.CAST, EditStop.DIVIDER, EditStop.PLUS, EditStop.DONE -> null
             else -> wb[sel]
         }
         val selN = if (sel == EditStop.CAST) cast.size else if (one != null) 1 else 0
@@ -387,7 +408,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 else c.rotate(turn, b.centerX(), b.centerY())
             }
             // a band piece: the room bar's own cursor look (an app's icon, as the rooms'), a module the golden box
-            if (sel.piece) { scratch2.set(b); scratch2.inset(-8f, -8f); UiKit.focus(c, scratch2) } else goldBox(c, b)
+            if (sel.piece) UiKit.focus(c, pieceCursor(sel, b, scratch2)) else goldBox(c, b)
             c.restoreToCount(sv)
         }
         // a lifted clock: the kit's gold arrows to the spots it can still step to
@@ -875,8 +896,17 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
 
     // ---------------------------------------------------------------- the edit ribbon (in the XP bar's place, drawn by the Strip)
 
-    /** the ribbon's pieces (the Strip's px): "+" at its left (drawn only while something is off Home), Done at its right */
-    class Ribbon(val plus: RectF, val done: RectF)
+    /** the ribbon's pieces (the Strip's px): "+" at its left (drawn only while something is off Home), Done at its right; their touch
+     *  boxes [plusHit] / [doneHit] are [TOUCH_MIN] square at least (the review: the ribbon is only [Strip.TRACKS] tall, the Strip's
+     *  top edge - a down just below it over "+" or Done, the rooms' row's top [Strip.RIBBON_SLOP], is the ribbon's too) */
+    class Ribbon(val plus: RectF, val done: RectF) {
+        val plusHit: RectF get() = grown(plus)                           // made on a touch only (the ribbon is made every frame)
+        val doneHit: RectF get() = grown(done)
+        private fun grown(r: RectF): RectF {
+            val dx = max(8f, (TOUCH_MIN - r.width()) / 2f)
+            return RectF(r.left - dx, 0f, r.right + dx, max(r.bottom + 6f, TOUCH_MIN))
+        }
+    }
 
     /** the ribbon's pieces in the Strip's px (its top [Strip.TRACKS]) for a bar [w] wide */
     fun ribbon(w: Float): Ribbon {
@@ -918,19 +948,26 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             c.drawText("+", r.plus.centerX(), h / 2f - (pp.ascent() + pp.descent()) / 2f, pp)
             if (m.cursor == EditStop.PLUS && m.sheet == null) UiKit.focus(c, r.plus)
         }
-        drawDone(c, r.done, h)
-        // the hints, one word each, right of the disc and left of Done
-        hints(c, r.done.left - 18f, h / 2f, hintsFor(m, m.menu?.let { host.menuRows(it).getOrNull(m.menuRow)?.kind }))
+        drawDone(c, r.done, h, doneGlyph(m))
+        if (m.cursor == EditStop.DONE && m.menu == null && m.sheet == null && m.lifted == null) UiKit.focus(c, r.done)
+        // the hints, one word each, right of the disc and left of Done (the review: never under the disc - the least needed go first)
+        hints(c, g1 + HINT_GAP, r.done.left - 18f, h / 2f, hintsFor(m, m.menu?.let { host.menuRows(it).getOrNull(m.menuRow)?.kind }))
         c.restoreToCount(save)
     }
 
+    /** Done's glyph: B's only where B IS Done (the top level: no menu, tray or lift - else B is Back / Put back, the review found two
+     *  B's side by side); Start's elsewhere (Start is Done in every state) */
+    fun doneGlyph(m: HomeEditModel): String =
+        if (m.menu == null && m.sheet == null && m.lifted == null) UiKit.backGlyph() else Glyphs.start()
+
     /**
-     * the ribbon's one button: "Done" with B's glyph (the comic-ink kit's raised button, a gold edge); held, its gold ring fills round
-     * it towards Discard and its word reads "Discard" (the hold's own feedback: no text elsewhere)
+     * the ribbon's one button: "Done" with [glyph] (B's at the top level, Start's while B is Back / Put back; the comic-ink kit's raised
+     * button, a gold edge); held past [HomeEditModel.RING_FROM_MS] (the host's [Host.holdK]), its gold ring fills round it towards Discard
+     * and its word reads "Discard" (the hold's own feedback: no text elsewhere; a short tap or B never shows it)
      */
     private val ringMeasure = android.graphics.PathMeasure()
     private val ringPart = Path()
-    private fun drawDone(c: Canvas, b: RectF, h: Float) {
+    private fun drawDone(c: Canvas, b: RectF, h: Float, glyph: String) {
         val k = host.holdK()
         pFill.style = Paint.Style.FILL; pFill.color = Theme.raised; pFill.alpha = 255
         c.drawRoundRect(b, 6f, 6f, pFill)
@@ -953,7 +990,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val tp = bodyP(RIBBON_TEXT, Theme.gold, align = Paint.Align.LEFT)
         val tw = tp.measureText(word)
         val x0 = b.centerX() - (GLYPH + 6f + tw) / 2f
-        UiKit.pad(c, UiKit.backGlyph(), x0 + GLYPH / 2f, h / 2f, GLYPH)
+        UiKit.pad(c, glyph, x0 + GLYPH / 2f, h / 2f, GLYPH)
         c.drawText(word, x0 + GLYPH + 6f, h / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
     }
 
@@ -971,30 +1008,86 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.cursor == EditStop.ROOMS && m.barRoom?.let { RoomBar.canHide(it) } == true -> listOf(a to "Move", x to "Hide")
             m.cursor == EditStop.ROOMS -> listOf(a to "Move")
             // 1518 build 3: a lifted D-pad icon swaps with the direction pressed; the clock steps along its spots
-            (m.lifted?.pad ?: 0) > 0 -> listOf(DPAD to "Swap", a to "Drop", b to "Put back")
+            (m.lifted?.pad ?: 0) > 0 -> listOf(DPAD4 to "Swap", a to "Drop", b to "Put back")
             m.lifted == EditStop.CLOCK -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
             m.lifted != null -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
             // at the top level B is Done: the Done button wears its glyph (no "Done" hint beside it)
             m.cursor == EditStop.PLUS -> listOf(a to "Add")
+            // Done as a stop: A is Done (its button says so), X Discard
+            m.cursor == EditStop.DONE -> listOf(x to "Discard")
             m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width")
-            m.cursor.piece -> listOf(a to "Move")
+            // a piece that cannot move now (the toolbar off, Party mode's pictures, one spot for the clock ...): no promise of a move
+            m.cursor.piece -> if (m.pieceMovable(m.cursor)) listOf(a to "Move") else emptyList()
             else -> listOf(a to "Move", x to "Options", y to "Size")
         }
     }
 
-    private fun hints(c: Canvas, right: Float, cy: Float, pairs: List<Pair<String, String>>) {
-        val p = bodyP(RIBBON_TEXT, Theme.text)
+    /** one hint's glyph width ([DPAD]: Left and Right side by side; [DPAD4]: one four-way cross) */
+    private fun glyphW(g: String): Float = if (g == DPAD) 2f * GLYPH + 2f else GLYPH
+    /** the hints' width with the first [n] of [pairs] in paint [p] */
+    private fun hintsW(pairs: List<Pair<String, String>>, n: Int, p: Paint): Float {
+        var w = 0f
+        for (i in 0 until n) w += p.measureText(Tr.t(pairs[i].second)) + 6f + glyphW(pairs[i].first) + (if (i > 0) 18f else 0f)
+        return w
+    }
+
+    /**
+     * the hints right-aligned to [right], never left of [left] (the disc's gap: the review found ES / FR running under it): the last
+     * pairs (the least needed: Size, then Options; Put back, then Drop) go first, then the text shrinks to [RIBBON_TEXT_MIN]
+     */
+    private fun hints(c: Canvas, left: Float, right: Float, cy: Float, pairs: List<Pair<String, String>>) {
+        if (pairs.isEmpty() || right <= left) return
+        val n = hintsKept(pairs, right - left)
+        var size = RIBBON_TEXT
+        var p = bodyP(size, Theme.text)
+        while (size > RIBBON_TEXT_MIN && hintsW(pairs, n, p) > right - left) { size -= 1f; p = bodyP(size, Theme.text) }
+        val sv = c.save()
+        c.clipRect(left, 0f, right, cy * 2f)
         var x = right
-        for ((glyph, word) in pairs.reversed()) {
+        for (i in n - 1 downTo 0) {
+            val (glyph, word) = pairs[i]
             val t = Tr.t(word)
             x -= p.measureText(t)
             c.drawText(t, x, cy - (p.ascent() + p.descent()) / 2f, p)
             x -= 6f + GLYPH / 2f
-            if (glyph == DPAD) {
-                UiKit.pad(c, "gen_right", x, cy, GLYPH); x -= GLYPH + 2f
-                UiKit.pad(c, "gen_left", x, cy, GLYPH)
-            } else UiKit.pad(c, glyph, x, cy, GLYPH)
+            when (glyph) {
+                DPAD -> { UiKit.pad(c, "gen_right", x, cy, GLYPH); x -= GLYPH + 2f; UiKit.pad(c, "gen_left", x, cy, GLYPH) }
+                DPAD4 -> dpad4(c, x, cy, GLYPH)
+                else -> UiKit.pad(c, glyph, x, cy, GLYPH)
+            }
             x -= GLYPH / 2f + 18f
+        }
+        hintsLeftDrawn = x + 18f
+        c.restoreToCount(sv)
+    }
+    /** the last drawn hints' left edge (the tests' check that they stay clear of the disc) */
+    var hintsLeftDrawn = Float.NaN
+
+    /** how many of [pairs] (from the first) fit [room] px at [RIBBON_TEXT] (one at least: the text shrinks for it) */
+    fun hintsKept(pairs: List<Pair<String, String>>, room: Float): Int {
+        val p = bodyP(RIBBON_TEXT, Theme.text)
+        var n = pairs.size
+        while (n > 1 && hintsW(pairs, n, p) > room) n--
+        return n
+    }
+
+    /** the review: a lifted D-pad icon swaps all four ways - ONE cross with its four arms lit (each direction's glyph lights its own
+     *  arm: each drawn clipped to its arm's quarter, the triangles from the cross's centre) */
+    private val armClip = Path()
+    private fun dpad4(c: Canvas, cx: Float, cy: Float, size: Float) {
+        val h = size / 2f
+        for (i in 0 until 4) {
+            armClip.reset(); armClip.moveTo(cx, cy)
+            when (i) {
+                0 -> { armClip.lineTo(cx - h, cy - h); armClip.lineTo(cx - h, cy + h) }      // left
+                1 -> { armClip.lineTo(cx - h, cy - h); armClip.lineTo(cx + h, cy - h) }      // up
+                2 -> { armClip.lineTo(cx + h, cy - h); armClip.lineTo(cx + h, cy + h) }      // right
+                else -> { armClip.lineTo(cx - h, cy + h); armClip.lineTo(cx + h, cy + h) }   // down
+            }
+            armClip.close()
+            val sv = c.save(); c.clipPath(armClip)
+            UiKit.pad(c, DPAD4_ARMS[i], cx, cy, size)
+            c.restoreToCount(sv)
         }
     }
 
@@ -1010,13 +1103,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val m = host.liveModel ?: run { doneDown = false; return false }
         host.poke()
         val up = action == MotionEvent.ACTION_UP
-        if (m.parked || (!up && (y < 0f || y > Strip.TRACKS))) return false
+        if (m.parked || (!up && (y < 0f || y > Strip.TRACKS + Strip.RIBBON_SLOP))) return false
         val r = ribbon(width.toFloat().takeIf { it > 0f } ?: 1240f)
-        val onDone = RectF(r.done).apply { inset(-8f, -6f) }.contains(x, y)
+        val onDone = r.doneHit.contains(x, y)
+        val onPlus = m.plusShown && r.plusHit.contains(x, y)
         if (!up) {
             if (onDone) { doneDown = true; host.holdDone(true); invalidate(); return true }
-            // an open tray closes first (its UP is the ribbon's too)
-            return m.sheet != null || (m.plusShown && r.plus.contains(x, y))
+            // an open tray closes first (its UP is the ribbon's too); just off the ribbon only "+" and Done are its
+            return (m.sheet != null && y >= 0f && y <= Strip.TRACKS) || onPlus
         }
         if (doneDown) {
             doneDown = false
@@ -1026,7 +1120,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             return true
         }
         if (m.sheet != null) { m.closeSheet(); invalidate(); return true }
-        if (m.plusShown && r.plus.contains(x, y)) { host.run(m.tap(EditStop.PLUS)); invalidate(); return true }
+        if (onPlus) { host.run(m.tap(EditStop.PLUS)); invalidate(); return true }
         return false
     }
 
@@ -1288,11 +1382,22 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val MENU_K_MIN = 0.8f
         const val TAP_SLOP = 24f
         const val RIBBON_TEXT = 22f
+        /** the least the hints shrink to before they are cut (after the least needed pairs went) */
+        const val RIBBON_TEXT_MIN = 18f
+        /** the hints' room past the disc's gap */
+        const val HINT_GAP = 12f
+        /** the ribbon's "+" and Done: the least touch box (px, both ways) */
+        const val TOUCH_MIN = 48f
+        /** a piece's cursor box: its drawn top never above this (the gold edge and glow reach ~9 px out) */
+        const val PIECE_BOX_TOP = 10f
         /** the ribbon's Done button's least width */
         const val DONE_MIN_W = 150f
         const val GLYPH = 28f
         /** the D-pad's hint: Left and Right glyphs side by side */
         const val DPAD = "dpad"
+        /** the D-pad's four-way hint (a lifted D-pad icon's Swap): one cross, its four arms lit */
+        const val DPAD4 = "dpad4"
+        private val DPAD4_ARMS = arrayOf("gen_left", "gen_up", "gen_right", "gen_down")
         /** a menu's pop's starting scale, the Add tray's rise (px) */
         const val MENU_FROM = 0.92f
         /** the text paints kept ([textP]) */

@@ -408,11 +408,26 @@ class HomeEditShotsTest {
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle(70)                // past the open: the wiggle runs
         shot(p, "32_top_bar_apps", frames = 1)
         val ev = p.home.editChrome
+        // the review: the clock's box at Centre is the chip as DRAWN (grown with the band), its size kept between frames
+        setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
+        p.home.draw(Canvas(Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)))
+        val sizeOf = HomeView::class.java.getDeclaredMethod("clockChipSizeNow").apply { isAccessible = true }
+        val cs = sizeOf.invoke(p.home) as FloatArray
+        assertTrue("the chip's size is kept", cs === sizeOf.invoke(p.home))
+        val drawnK = field(p.home, "clockChipDrawnK") as Float
+        assertTrue(drawnK >= 1f)
+        val clockBox = HomeView::class.java.getDeclaredMethod("editPieceBox", EditStop::class.java).apply { isAccessible = true }
+            .invoke(p.home, EditStop.CLOCK) as RectF
+        assertEquals("the box's height is the drawn chip's (x $drawnK)", cs[1] * drawnK, clockBox.height(), 0.5f)
+        assertEquals(cs[0] * drawnK, clockBox.width(), 0.5f)
+        assertEquals(HomeEditMotion.roomKey(Room.values().size), HomeEditMotion.PLUS_ROOM)
         val wb = ev.widgetBoxes()
         for (s in HomeEditView.PIECES) {
             val b = wb[s]
             assertNotNull("$s: a stop of its own", b)
-            assertTrue("$s: a small piece inside the band ($b in $bars)", b!!.width() < 200f && b.top >= bars.top - 1f && b.bottom <= bars.bottom + 1f)
+            // (the clock at Centre: the chip as drawn, grown with the band - the review)
+            assertTrue("$s: a small piece inside the band ($b in $bars)", b!!.width() < (if (s == EditStop.CLOCK) 260f else 200f) &&
+                b.top >= bars.top - 1f && b.bottom <= bars.bottom + 1f)
         }
         val views = (HomeView::class.java.getDeclaredField("views").apply { isAccessible = true }.get(p.home) as Map<*, *>)
             .entries.first { (it.key as Enum<*>).name == "BARS" }.value as View
@@ -429,6 +444,16 @@ class HomeEditShotsTest {
         assertEquals(mapOf(1 to "radial", 2 to "chat", 3 to "map", 4 to "home"), HomeLayoutSolver.dpadDirs(model(p).draft))
         assertEquals("the band previews the draft's order", "chat", p.cast.roomBar?.get(2))
         assertEquals(EditStop.PAD_U, model(p).lifted)
+        // the review: the swap's Hint is the four-way cross; the icon that came into Left wiggles as its own (never posed as the lifted
+        // one); the lifted icon's box in the Up spot stays on screen
+        assertEquals(HomeEditView.DPAD4, ev.hintsFor(model(p)).first().first)
+        settle(20)
+        val poseOf = HomeView::class.java.getDeclaredMethod("piecePose", EditStop::class.java, FloatArray::class.java).apply { isAccessible = true }
+        val pl = FloatArray(4); val pu = FloatArray(4)
+        poseOf.invoke(p.home, EditStop.PAD_L, pl); poseOf.invoke(p.home, EditStop.PAD_U, pu)
+        assertTrue("the lifted Up icon (${pu[0]}) over the Left one that came in (${pl[0]})", pu[0] > pl[0] + 0.02f)
+        val upBox = ev.pieceCursorDrawn(EditStop.PAD_U)!!
+        assertTrue("the lifted Up icon's box on screen (${upBox.top})", upBox.top >= HomeEditView.PIECE_BOX_TOP - 0.5f)
         shot(p, "33_dpad_icon_swapped_up", frames = 1)
         p.home.editKey("PAD1"); settle()
         assertEquals("saved as it is made", model(p).draft.pad, HomeSettings.layout.pad)
@@ -593,6 +618,104 @@ class HomeEditShotsTest {
         assertFalse(p.home.partyHoldsDpad())
     }
 
+    /**
+     * the review of 1518: Done wears B's glyph only where B is Done (Start's under a menu, a tray, a lift); a short B or tap never
+     * flashes "Discard" (the hold shows from RING_FROM_MS); the ribbon's "+" and Done take a finger 48 px tall (into the rooms' row's
+     * top); Done is a controller stop - Right from the bar's end, X Discard (the relayed feed, which sees no held B); a D-pad icon that
+     * cannot move promises no move
+     */
+    @Test fun theRibbonsReviewFixes() {
+        val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+        val p = page(classic, roomBar = true)
+        p.home.forceLive = true
+        drawStrip(p)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        val ev = p.home.editChrome
+        assertEquals(UiKit.backGlyph(), ev.doneGlyph(model(p)))
+        p.home.editKey("PAD3"); settle()
+        assertNotNull("the chat's menu", model(p).menu)
+        assertEquals("B is Back here: Start's glyph on Done", Glyphs.start(), ev.doneGlyph(model(p)))
+        p.home.editKey("PAD2"); settle()
+        p.home.editKey("PAD1"); settle()
+        assertEquals(EditStop.CHAT, model(p).lifted)
+        assertEquals("B is Put back here", Glyphs.start(), ev.doneGlyph(model(p)))
+        p.home.editKey("PAD2"); settle()
+        assertEquals(UiKit.backGlyph(), ev.doneGlyph(model(p)))
+        // a short B: no ring, no "Discard" (only from RING_FROM_MS); it is Done on its release
+        p.home.editB(true); settle(5)
+        assertNull("80 ms: nothing shows", p.home.editHoldK())
+        settle(5)
+        assertNotNull("160 ms: the ring starts", p.home.editHoldK())
+        p.home.editB(false); settle()
+        assertFalse(p.home.editing)
+        // the ribbon's touch boxes: 48 px; a down 12 px under the ribbon over Done is Done's, over the rooms the rooms'
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        val r = ev.ribbon(W.toFloat())
+        assertTrue(r.doneHit.height() >= HomeEditView.TOUCH_MIN && r.doneHit.width() >= HomeEditView.TOUCH_MIN)
+        assertTrue(r.plusHit.height() >= HomeEditView.TOUCH_MIN && r.plusHit.width() >= HomeEditView.TOUCH_MIN)
+        assertFalse(ev.ribbonTouch(400f, Strip.TRACKS + 12f, MotionEvent.ACTION_DOWN))
+        assertTrue(ev.ribbonTouch(r.done.centerX(), Strip.TRACKS + 12f, MotionEvent.ACTION_DOWN)); settle(3)
+        ev.ribbonTouch(r.done.centerX(), Strip.TRACKS + 12f, MotionEvent.ACTION_UP); settle()
+        assertFalse("a tap just under Done: Done", p.home.editing)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editAct { it.remove(EditStop.CAST) }; settle()
+        assertTrue(model(p).plusShown)
+        assertTrue(ev.ribbonTouch(r.plus.centerX(), Strip.TRACKS + 12f, MotionEvent.ACTION_DOWN))
+        ev.ribbonTouch(r.plus.centerX(), Strip.TRACKS + 12f, MotionEvent.ACTION_UP); settle()
+        assertEquals("a tap just under \"+\": its tray", HomeEditModel.Sheet.ADD, model(p).sheet)
+        p.home.editKey("PAD2"); settle()
+        // the controller's Discard with no held B: Right past the bar's end is Done, X there Discards
+        p.home.editKey("PADBACK"); settle()
+        assertTrue(HomeSettings.layout.mirrored)
+        p.home.editAct { it.startOn(EditStop.ROOMS, false) }; settle()
+        repeat(RoomBar.DEFAULT.size + 2) { if (model(p).cursor != EditStop.DONE) p.home.editKey("PADDRIGHT") }
+        assertEquals(EditStop.DONE, model(p).cursor)
+        assertEquals(listOf(UiKit.xGlyph() to "Discard"), ev.hintsFor(model(p)))
+        shot4(p, "p4_20_done_stop")
+        p.home.editKey("PAD3"); settle()
+        assertFalse("X on Done: discarded", p.home.editing)
+        assertEquals(classic, HomeSettings.layout)
+        // no padmap: the D-pad icons cannot move - no "A Move" on them
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editAct { it.startOn(EditStop.PAD_U, false) }; settle()
+        assertFalse(model(p).pieceMovable(EditStop.PAD_U))
+        assertTrue("no promise of a move", ev.hintsFor(model(p)).isEmpty())
+        p.home.editCancel()
+    }
+
+    /** the review: in Spanish and French the ribbon's hints never run under the Home disc (the least needed pairs go first) */
+    @Test fun theRibbonsHintsStayClearOfTheDiscInSpanishAndFrench() {
+        try {
+            for (l in listOf("en", "es", "fr")) {
+                lang(l)
+                val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), roomBar = true)
+                HomeLayoutStore.character("Korvash-Realm")
+                p.home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m184","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
+                    "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"pp":1,"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
+                settle()
+                drawStrip(p)
+                assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+                val ev = p.home.editChrome
+                val g1 = W / 2f + 64f + 6f + 2f
+                val states = listOf<Pair<String, (HomeEditModel) -> List<HomeEditModel.Fx>>>(
+                    "top" to { m -> m.startOn(EditStop.CHAT, false) },
+                    "lifted chat" to { m -> m.startOn(EditStop.CHAT, true) },
+                    "lifted room" to { m -> m.startOn(EditStop.ROOMS, true) },
+                    "lifted pad" to { m -> m.startOn(EditStop.PAD_L, true) },
+                    "menu" to { m -> m.openMenu(EditStop.CHAT); emptyList() })
+                for ((n, f) in states) {
+                    p.home.editAct { it.drop(); it.closeMenu(); f(it) }; settle()
+                    val c = Canvas(Bitmap.createBitmap(W, Strip.TRACKS, Bitmap.Config.ARGB_8888))
+                    ev.hintsLeftDrawn = Float.NaN
+                    ev.drawRibbon(c, W.toFloat(), 0f, W / 2f - 72f, g1)
+                    assertTrue("$l $n: hints drawn", !ev.hintsLeftDrawn.isNaN())
+                    assertTrue("$l $n: clear of the disc (${ev.hintsLeftDrawn} vs $g1)", ev.hintsLeftDrawn >= g1)
+                }
+                p.home.editCancel()
+            }
+        } finally { Tr.setChoice(app, "auto") }
+    }
+
     @Test fun theSettingsTileOpensEditMode() {
         page(HomeLayout())
         var asked = 0
@@ -713,8 +836,8 @@ class HomeEditShotsTest {
         assertTrue("no room opened by the edit touches", p.rooms.isEmpty())
         shot4(p, "p4_07_badge_tap_hides_quests")
         // Settings never leaves the bar: X there is one red pulse
-        repeat(20) { home.editKey("PADDRIGHT") }
-        assertTrue(m.barOnPlus)
+        repeat(20) { if (!m.barOnPlus) home.editKey("PADDRIGHT") }           // (Right past "+" is the ribbon's Done: the review)
+        assertTrue(m.barOnPlus); assertEquals(EditStop.ROOMS, m.cursor)
         home.editKey("PADDLEFT")
         assertEquals("SETTINGS", m.barRoom)
         home.editKey("PAD3"); settle(2)

@@ -2469,8 +2469,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (k == "PADFORWARD" && down) startPressed()
         if (k == "PAD2" && down) bPressed()
         // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
-        // a half second"): only while the bare Down IS the Home bar - the toolbar on, or the Home Bar command put on it
-        if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld() && downIsHomeBar()
+        // a half second"): only while the bare key IS the Home bar - the toolbar on, or the Home Bar command put on it; 1518 build 3's
+        // review: the toolbar's Home bar is wherever a D-pad icon swap put it (the add-on's `d`), never Down by default
+        if (down && k == homeBarKey() && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld()
             && interactView.visibility != View.VISIBLE && !dialogView.covers()
             && spellsOverlay.visibility != View.VISIBLE && startView.visibility != View.VISIBLE
             && !homeView.partyHoldsDpad()) barSelect.openEarly(room)       // Party mode's D-pad: no early bar either (2026-11-04)
@@ -4708,10 +4709,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** Spells' last word on the D-pad room bar (null = an older add-on) */
     private var lastDpad: PadMapModel.Dpad? = null
-    /** p35: the bare D-pad Down opens Home's room bar: the DS WoW toolbar is on, or the Home Bar command (DSHOME) is on that button;
-     *  wk-dpad (the user 2026-11-16: "using the down ability in combat on the D-pad is flashing the home button again"): never while the
-     *  fight switch gives Down its In-combat entry (HomeFightFace.downIsHomeBar, the router's own m44 rule) */
-    private fun downIsHomeBar(): Boolean = HomeFightFace.downIsHomeBar(lastPadMap, lastDpad?.want == true, homeView.dpadFight())
+    /** p35: the bare D-pad key that opens Home's room bar (Down by default; 1518 build 3: wherever the toolbar's `d` put "home"): the
+     *  DS WoW toolbar is on, or the Home Bar command (DSHOME) is on Down; wk-dpad (the user 2026-11-16: "using the down ability in
+     *  combat on the D-pad is flashing the home button again"): never while the fight switch gives that key its In-combat entry
+     *  (HomeFightFace.homeBarKey, the router's own m44 rule) */
+    private fun homeBarKey(): String? = HomeFightFace.homeBarKey(lastPadMap, lastDpad?.want == true, lastDpad?.dirs, homeView.dpadFight())
 
     // ---------------------------------------------------------------- f-new-spell-prompt: learned spells, one prompt at a time on Home
     /** the user (1.0.9): "After learning new spells when I return home they should have a prompt 1 at a time a to bind or b to dismiss" */
