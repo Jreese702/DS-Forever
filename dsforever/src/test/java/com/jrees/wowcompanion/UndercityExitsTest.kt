@@ -1,6 +1,7 @@
 package com.jrees.wowcompanion
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -61,6 +62,30 @@ class UndercityExitsTest {
         l.onDoc(1429, 0, -9500.0, -1300.0, false, 200_000L)
         l.onDoc(1433, 0, -9510.0, -1310.0, false, 201_000L)
         assertEquals(1, l.of(1429).size); assertTrue(l.of(1433).isEmpty())
+    }
+
+    @Test fun walkingOutOfTheUndercityTeachesTheWayBackIn() {
+        val l = CityExits.Learner(Mem())
+        l.onDoc(1458, 0, 1631.0, 224.0, false, 0L)                        // the Undercity, on the elevator riding up
+        l.onDoc(1420, 0, 1633.0, 226.0, false, 15_000L)                   // the map turns to Tirisfal at the top
+        assertEquals(listOf(1420), l.of(1458).map { it.toMap })
+        assertEquals(listOf(1458), l.of(1420).map { it.toMap }); assertEquals(1633.0, l.of(1420)[0].wx, 1e-9)
+    }
+
+    @Test fun aDropOffThunderBluffIsNoWayUpIntoIt() {
+        // review 11-22: a jump off a Thunder Bluff mesa turns the map to Mulgore a few yards (2-D) from the edge; the cliff's foot
+        // is no way up. The way down is kept (it was before #578), never the reverse at the landing
+        val l = CityExits.Learner(Mem())
+        l.onDoc(1456, 0, -1290.0, 120.0, false, 0L)                       // Thunder Bluff, at a mesa's edge
+        l.onDoc(1412, 0, -1296.0, 126.0, false, 3_000L)                   // landed in Mulgore below
+        assertEquals(listOf(1412), l.of(1456).map { it.toMap })
+        assertTrue(l.of(1412).isEmpty())
+        // a city gate on the ground, the same: one way only, the one walked (Stormwind's gate into Elwynn)
+        l.onDoc(1453, 0, -9000.0, 500.0, false, 100_000L)
+        l.onDoc(1429, 0, -9010.0, 505.0, false, 101_000L)
+        assertEquals(listOf(1429), l.of(1453).map { it.toMap }); assertTrue(l.of(1429).isEmpty())
+        assertTrue(CityExits.backToo(1420, 1458)); assertTrue(CityExits.backToo(1458, 1420))
+        assertFalse(CityExits.backToo(1456, 1412)); assertFalse(CityExits.backToo(1412, 1456)); assertFalse(CityExits.backToo(1453, 1429))
     }
 
     @Test fun theWorldChainTakesTheElevatorsUpAndDown() {

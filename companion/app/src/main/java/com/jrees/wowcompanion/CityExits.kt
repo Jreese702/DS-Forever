@@ -60,6 +60,11 @@ object CityExits {
      *  the goal lies in [cameFrom] itself ([goalThere]) or the player is under the ground ([UNDERGROUND], #578) */
     fun backRule(mapId: Int, cameFrom: Int, goalThere: Boolean): Int = if (goalThere || mapId in UNDERGROUND) 0 else cameFrom
 
+    /** does a walk on foot from [from] into [to] teach the way back as well (the Learner, #578)? Only into or out of a capital UNDER THE
+     *  GROUND ([UNDERGROUND]): its ways are elevators and sewers, walked both ways. Any other border, a capital's too, may be a drop
+     *  (a jump off a Thunder Bluff mesa into Mulgore lands at a cliff's foot, no way up): one way only, the one walked */
+    fun backToo(from: Int, to: Int): Boolean = from in UNDERGROUND || to in UNDERGROUND
+
     /** a table entry's place on its map, in that map's 0..1 ([at] turns world yards x, y into it): its own x / y, else its world yards */
     fun tableAt(e: Exit, at: (Double, Double) -> DoubleArray): DoubleArray? = when {
         !e.x.isNaN() && !e.y.isNaN() -> doubleArrayOf(e.x, e.y)
@@ -150,10 +155,11 @@ object CityExits {
                 learned = if (gap <= FOOT_YD) Exit(lastMap, "", wx = lastWx, wy = lastWy, toMap = map, learned = true)
                     else Exit(lastMap, "", wx = lastWx, wy = lastWy, toMap = map, toWx = wx, toWy = wy, rideYd = TRAM_YD, learned = true)
                 keep(learned)
-                // #578: a capital's gate or elevator walked through is a way BACK as well (walked into the Undercity, its way out is
-                // known; the reverse kept on the new map's side). Only a capital's: elsewhere a walk across a border can be a drop
-                // down a cliff, no way back up
-                if (!learned.transport && (map in CITIES || lastMap in CITIES))
+                // #578: the Undercity's elevator (or sewer) walked through is a way BACK as well (walked into the Undercity, its way
+                // out is known; the reverse kept on the new map's side). Only UNDER THE GROUND ([backToo]): anywhere else a walk across
+                // a border can be a drop down a cliff (off a Thunder Bluff mesa, a city wall), no way back up - and the document
+                // carries no height to tell the two apart
+                if (!learned.transport && backToo(lastMap, map))
                     keep(Exit(map, "", wx = wx, wy = wy, toMap = lastMap, learned = true))
             }
             // leaving the continent on foot (a tram / boat / portal into its own instance): remember where

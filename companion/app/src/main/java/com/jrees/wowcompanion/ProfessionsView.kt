@@ -96,6 +96,11 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
     var onPickItem: () -> Boolean = { false }
     /** the next [leave] is the item pick's: the controller let go, the game's window left open */
     private var leaveForPick = false
+    /**
+     * the game's window is open for the enchant's item pick ([leave] for it let the controller go and closed nothing): coming back
+     * ([enter]) keeps the enchant's page and its recipe ([M.keepsPickPage]); a pick that ended in another room closes it ([pickEndedAway])
+     */
+    private var pickOpen = false
 
     /** RC3: B leaves for Home on the press, except while a craft runs (then B is the game's /stopcasting and the room stays: bstop) */
     override fun bLeadsHome(): Boolean = ProfessionsStore.overview?.bstop != true && !kbOpen    // voice: B closes the search keyboard first
@@ -875,6 +880,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     /** the room was entered: hold the controller (MainActivity calls this); one tap, never repeated within 1.5 s */
     fun enter() {
+        // #541: back from the enchant's item pick, the game's window still on the enchant's page: the room stays on that page, its
+        // recipe chosen, its search and scroll (the hold below is the page's), and the window is never re-opened on its book
+        val pickBack = M.keepsPickPage(pickOpen, viewed, ProfessionsStore.overview); pickOpen = false
         val t = M.enterTap(ProfessionsStore.overview, viewed == 0) ?: return
         val mode = if (viewed == 0) "book" else "page"
         val now = SystemClock.uptimeMillis()
@@ -890,8 +898,23 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         // ONLY ONCE THE ROOM HOLDS THE CONTROLLER (2026-09-30 22:49: the Calendar room still held it, the capture could not hide
         // the window and it showed on the top screen): the book tap waits for the addon's yes to the hold (or for `held` after
         // its retry), at most BOOK_WAIT; then never.
+        if (pickBack) { quietUntil = now + ENTRY_QUIET; goTo(viewed); return }
         goTo(0); quietUntil = now + ENTRY_QUIET
         bookPendingAt = now
+    }
+
+    /**
+     * #541: the enchant's item pick ended while neither this room nor the Bags room shows (the item picked in the Character room, or
+     * the pick stopped from Home): the game's window left open for it ([leave] for the pick closed nothing) is closed the leave's way,
+     * ONE click of the room's close cell. The controller already went back on the pick (its `free`), so no second `free`: another
+     * room may hold it now. Nothing when no window was left open. Returns true when the close tap went out.
+     */
+    fun pickEndedAway(): Boolean {
+        if (!pickOpen) return false
+        pickOpen = false
+        val sent = send(M.closeTap(ProfessionsStore.overview))
+        Log.i(TAG, "pickEndedAway: the enchant's pick ended in another room: close ${if (sent) "sent" else "NOT sent"}")
+        return sent
     }
 
     /** uptime ms of the shared controller's last holder change (MainActivity); 0 = unknown */
@@ -929,7 +952,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         if (leftByB) { leftByB = false; return }
         val ov = ProfessionsStore.overview
         // #541: into the Bags room for the enchant's item: the controller let go, never the game's close (the pick is the enchant's)
-        if (forPick) { send(M.freeTap(ov)); return }
+        if (forPick) { pickOpen = true; send(M.freeTap(ov)); return }
         val close = M.closeTap(ov, SystemClock.uptimeMillis() - bookSentAt < ENTRY_QUIET)
         if (close != null && send(close)) {
             val at = SystemClock.uptimeMillis(); closingAt = at

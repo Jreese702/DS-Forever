@@ -501,6 +501,13 @@ object ProfessionsModel {
         if (ov != null && p != null && p.main && p.pos in 1..2) ctlTap(ov, "forget:${p.pos}") else null
 
     /**
+     * #541: entering the room again after the enchant's item pick keeps the page it left on ([viewed], its recipe, search and scroll)
+     * instead of the entry's book: only when the pick left the game's window open ([pickOpen]) and the game still shows that profession
+     * ([Overview.open]); else the usual entry on the book
+     */
+    fun keepsPickPage(pickOpen: Boolean, viewed: Int, ov: Overview?): Boolean = pickOpen && viewed != 0 && ov != null && ov.open == viewed
+
+    /**
      * Entering the room on its book (addon p19, the order every room uses since R1): the `enter` key, with which the addon answers
      * "open now" and takes the controller one frame after the game's window has shown. An older addon without the key: the old
      * hold (`book`). Nothing while the room already holds on its book.

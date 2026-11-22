@@ -75,4 +75,18 @@ class ProfessionsEnchantTest {
         val all = M.createAll(ov, ov.list[0], b, b.recipe(502), dust)
         assertEquals(ProfessionsModel.Kind.CREATE, all.kind); assertTrue(all.enabled); assertEquals(26, all.tap!!.col)
     }
+
+    @Test fun backFromTheItemPickTheRoomKeepsTheEnchantsPage() {
+        // review 11-22: the itarget-off return re-entered the room on its book (goTo(0)) while the game's window and the add-on's hold
+        // stayed on the Enchanting page. Back from the pick, the page (and its recipe) is kept while the game still shows it
+        val ov = overview()                                                       // the game's window open on Enchanting (333)
+        assertTrue(M.keepsPickPage(true, 333, ov))
+        assertFalse(M.keepsPickPage(false, 333, ov))                              // an ordinary entry: the book, as always
+        assertFalse(M.keepsPickPage(true, 0, ov))                                 // the room was on its book
+        assertFalse(M.keepsPickPage(true, 202, ov))                               // another profession than the one the game shows
+        assertFalse(M.keepsPickPage(true, 333, null))
+        val closed = M.parseOverview(JSONObject().put("list", JSONArray().put(JSONObject().put("pos", 1).put("id", 333).put("name", "Enchanting")))
+            .put("ctl", JSONObject()))                                            // the game's window closed meanwhile (its own B)
+        assertFalse(M.keepsPickPage(true, 333, closed))
+    }
 }

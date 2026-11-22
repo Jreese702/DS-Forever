@@ -2966,8 +2966,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // bags-kit3: the pick's type and what the game said of it (cx), for a later device check of kits / stones
                 if (msg.optBoolean("on")) Log.i("WCKIT", "itarget: ctx=${msg.optString("ctx")} wornOk=${msg.optString("wornOk")} cx=${msg.optJSONObject("cx")}")
                 characterView.onItarget(msg.optBoolean("on"), msg)
-                // #541: the Professions room's enchant was put on its item (or its pick stopped): back to Professions
-                if (!msg.optBoolean("on") && enchPickBack) { enchPickBack = false; if (room == Room.BAGS) show(Room.PROFESSIONS) }
+                // #541: the Professions room's enchant was put on its item (or its pick stopped): back to Professions from the Bags
+                // room; ended in another room (the Character room's worn-slot pick, Home), the game's window left open for the pick
+                // is closed there (ProfessionsView.pickEndedAway: one close tap, the leave's), never left shown and held by nobody
+                if (!msg.optBoolean("on") && enchPickBack) {
+                    enchPickBack = false
+                    if (room == Room.BAGS) show(Room.PROFESSIONS) else if (room != Room.PROFESSIONS) professionsView.pickEndedAway()
+                }
             }
             // PadMap m104: which LB button targets whom, from the game's own bindings (the LB picture)
             "lbmap" -> LbMap.update(msg)
