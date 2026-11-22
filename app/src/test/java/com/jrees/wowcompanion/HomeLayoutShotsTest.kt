@@ -148,6 +148,21 @@ class HomeLayoutShotsTest {
         File(d, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    /** a frame of a motion as it stands (one pass, no settle: [shot]'s second pass would move the clock on); the art warmed by a
+     *  [shot] before it */
+    private fun shotNow(p: Page, name: String) {
+        val d = out ?: return
+        val b = Bitmap.createBitmap(W, 1080, Bitmap.Config.ARGB_8888)
+        setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
+        val c = Canvas(b); c.drawColor(Theme.ink); p.home.draw(c)
+        val st = Strip(app) { }
+        st.active = Room.HOME
+        st.measure(View.MeasureSpec.makeMeasureSpec(W, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(Strip.HEIGHT, View.MeasureSpec.EXACTLY))
+        st.layout(0, 0, W, Strip.HEIGHT)
+        c.translate(0f, H.toFloat()); st.draw(c)
+        File(d, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     private fun solver(l: HomeLayout, home: HomeView): Map<String, HomeLayoutSolver.Box> {
         val b = boxes(home)
         return b.mapValues { HomeLayoutSolver.Box(it.value.left, it.value.top, it.value.right, it.value.bottom) }
@@ -253,45 +268,181 @@ class HomeLayoutShotsTest {
 
     // ---------------------------------------------------------------- phase 3: In fights = Top screen (SPEC section 11, final_10; D1 opt-in)
 
-    @Test fun topScreenKeepsTheRestBoxesWithTheUpCue() {
+    /** HomeView's private apply (the page's one motion): [animate] true runs the real animator on the shadow clock (the page is not on
+     *  a window here, so changed() alone would lay it at once) */
+    private fun applyNow(home: HomeView, s: HomeScreen, animate: Boolean) {
+        HomeView::class.java.getDeclaredMethod("apply", HomeScreen::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+            .invoke(home, s, animate)
+    }
+    private fun frame() { ShadowSystemClock.advanceBy(Duration.ofMillis(16)); ShadowLooper.idleMainLooper() }
+    /** the animators' duration scale (the system's "animations off" = 0); Robolectric keeps the last one set */
+    private fun animScale(k: Float) {
+        android.animation.ValueAnimator::class.java.getDeclaredMethod("setDurationScale", Float::class.javaPrimitiveType).apply { isAccessible = true }
+            .invoke(null, k)
+    }
+
+    /**
+     * IN FIGHTS = TOP SCREEN, THE SLIDE (TopSlide; the user, 2026-11-22: "the bottom [band] does not transition out during combat like it
+     * should so it shows in both places. It should be a slick animation looking like it slides up to the top screen"; the pick "Chat and
+     * map grow up"): with the add-on's Wings on (ct 1) the fight's takeover slides the band up off the page at its rest size while the
+     * chat and map columns grow up into the strip; B changes nothing; the band's view stays VISIBLE (its pad reader) but draws nothing
+     * once away; the reverse at the fight's end; a reversal mid-way goes on from where the parts are. No Wings (ct null / 0): Grow.
+     */
+    @Test fun topScreenSlidesTheBandUpAndColumnsGrow() {
         val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
-        val rest = boxes(page(l, ct = 1).home)
+        val restPage = page(l, ct = 1)
+        val rest = boxes(restPage.home)
         val p = page(l, fight = true, ct = 1)
         assertTrue("the fight's takeover is on (the band's In-combat pictures)", p.home.flow.takeover)
-        val fight = boxes(p.home)
-        for (part in listOf("BARS", "MAP", "QUESTS"))
-            assertEquals("$part keeps its rest box in the fight", rest.getValue(part), fight.getValue(part))
-        // the chat's top stays (its bottom only gains the tap-to-cast bar's room while the bar hides in the fight, cb7, as today)
-        assertEquals("the chat's top", rest.getValue("CHAT").top, fight.getValue("CHAT").top, 0f)
-        assertEquals("the band at its rest size (226)", 226f, fight.getValue("BARS").bottom, 0.01f)
-        // the 1.5 s "up" plate at the clock spot from the fight's start
-        assertTrue("the up cue shows", p.home.topCueAlpha() > 0.9f)
-        shot(p, "bottom_fight_top_cue")
-        // B in the fight: nothing grew - no shrink, no red reminder (the takeover stays)
+        val away = boxes(p.home)
+        val rb = rest.getValue("BARS"); val ab = away.getValue("BARS")
+        assertEquals("the band above the page: its bottom 16 over the top edge", -16f, ab.bottom, 0.01f)
+        assertEquals("the band its rest size (no re-measure)", rb.height(), ab.height(), 0.01f)
+        assertEquals(rb.width(), ab.width(), 0.01f)
+        assertEquals("the chat's column grown up to the top gap", 8f, away.getValue("CHAT").top, 0.01f)
+        assertEquals("the map's", 8f, away.getValue("MAP").top, 0.01f)
+        assertEquals("the columns' x unchanged", rest.getValue("CHAT").left, away.getValue("CHAT").left, 0.01f)
+        assertEquals(View.VISIBLE, views(p.home).getValue("BARS").visibility)
+        assertTrue("the band's view stays shown (its pad reader runs)", p.cast.visibility == View.VISIBLE)
+        assertTrue("away: the band draws nothing", p.cast.away)
+        assertFalse("away: its cast bar is not the shown one (the rooms' bar takes it)", p.cast.ownCastBarShown())
+        assertEquals("Home's band bottom for its followers: 0, never negative", 0f, p.home.barsBottom(), 0f)
+        shot(p, "bottom_fight_top_away")
+        // B in the fight: nothing changes (no shrink, no red reminder)
         setField(p.home, "grewAt", 0L)
         HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(p.home)
         assertTrue("B in the fight does not shrink Top screen", p.home.flow.takeover)
-        settle(100)
-        assertEquals("the cue gone after 1.5 s", 0f, p.home.topCueAlpha(), 0f)
-        shot(p, "bottom_fight_top")
+        settle(20)
+        assertEquals("B: the band still away", -16f, boxes(p.home).getValue("BARS").bottom, 0.01f)
+
         // the same layout with Grow (D1's default) grows and B shrinks it, as today
         val g = page(l.copy(fight = HomeLayout.FightBand.GROW), fight = true)
         assertEquals(416f, boxes(g.home).getValue("BARS").bottom, 0.01f)
-        assertEquals("Grow: no cue", 0f, g.home.topCueAlpha(), 0f)
+        assertFalse(g.cast.away)
         setField(g.home, "grewAt", 0L)
         HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(g.home)
         assertFalse("Grow: B shrinks", g.home.flow.takeover)
-        // the 1515 merge's review (P5): Top screen with the Wings NOT on the top screen (no key while the add-on asks or after Later:
-        // no ct; an older add-on; not confirmed yet) grows the band as Grow does - no "up" cue, and B shrinks it
+        // the 1515 merge's review (P5): Top screen with the Wings NOT on the top screen (no key; an older add-on; not confirmed) grows the
+        // band as Grow does, and B shrinks it
         for (ct in listOf(null, 0)) {
             val n = page(l, fight = true, ct = ct)
             assertTrue(n.home.flow.takeover)
             assertEquals("ct=$ct: the band grows", 416f, boxes(n.home).getValue("BARS").bottom, 0.01f)
-            assertEquals("ct=$ct: no up cue", 0f, n.home.topCueAlpha(), 0f)
+            assertFalse("ct=$ct: the band on the page", n.cast.away)
             setField(n.home, "grewAt", 0L)
             HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(n.home)
             assertFalse("ct=$ct: B shrinks", n.home.flow.takeover)
         }
+    }
+
+    /** the fight's signal as the add-on sends it (hudS.c), then Home's tick: the flow's takeover follows */
+    private fun fightSignal(home: HomeView, on: Boolean) {
+        home.onFull(JSONObject().put("type", "full").put("actionbar", JSONObject().put("hud", JSONObject().put("ok", true)
+            .put("hudS", JSONObject().put("c", on)))), true)
+        home.onQuests(quests(on), true)
+        home.tick()
+    }
+
+    /**
+     * THE SLIDE'S REAL MOTION (TopSlide in HomeView.apply), on a window so Home animates its own changes (isShown): the fight's signal
+     * comes -> the band slides up off the page on its ease-in while the chat / map columns lead on Motion.curve, sampled every 16 ms on the
+     * shadow clock; it lands away (the band's view then draws nothing); the fight ends -> back down; a blip mid-way reverses from where
+     * every part is. Shots: bottom_fight_top_slide50 / _away / _return50
+     */
+    @Config(qualifiers = "w1240dp-h1080dp-mdpi")
+    @Test fun topScreenTheSlidesRealFrames() {
+        // frames only as the clock moves (16 ms each), as HomeMapControlsShotsTest drives them; the choreographer as it was afterwards
+        val delayWas = org.robolectric.shadows.ShadowChoreographer.getFrameDelay()
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
+        try { slideFrames() } finally {
+            org.robolectric.shadows.ShadowChoreographer.setPaused(false)
+            org.robolectric.shadows.ShadowChoreographer.setFrameDelay(delayWas)
+        }
+    }
+
+    private fun slideFrames() {
+        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+        val p = page(l, ct = 1)
+        val home = p.home
+        val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        act.setContentView(home, android.view.ViewGroup.LayoutParams(W, H))
+        ShadowLooper.idleMainLooper(); lay(home); settle(10)
+        assertTrue("on a window (Home animates its own changes)", home.isShown)
+        val rest = boxes(home)
+        val rb = rest.getValue("BARS")
+        assertTrue("at rest: the band on the page", rb.bottom > 100f && !p.cast.away)
+        shot(p, "bottom_fight_top_rest")                                 // (warms the art for the motion's frames)
+        // the fight: up
+        fightSignal(home, true)
+        assertTrue("the fight's takeover", home.flow.takeover)
+        val bandB = ArrayList<Float>(); val chatT = ArrayList<Float>()
+        var shotMid = false
+        for (i in 0 until 24) {
+            frame()
+            val b = boxes(home)
+            bandB += b.getValue("BARS").bottom; chatT += b.getValue("CHAT").top
+            if (!shotMid && b.getValue("BARS").bottom < (rb.bottom - 16f) / 2f) { shotMid = true; shotNow(p, "bottom_fight_top_slide50") }
+            if (i == 3) shotNow(p, "bottom_fight_top_slide25")
+        }
+        for (i in 1 until bandB.size) assertTrue("up: the band never goes back down (frame $i: $bandB)", bandB[i] <= bandB[i - 1] + 0.01f)
+        for (i in 1 until chatT.size) assertTrue("up: the chat's top never goes back down (frame $i: $chatT)", chatT[i] <= chatT[i - 1] + 0.01f)
+        assertTrue("on its way for ~240 ms (frames: $bandB)", bandB[4] > -15f && bandB.last() == -16f)
+        val end = boxes(home)
+        assertEquals("landed away", -16f, end.getValue("BARS").bottom, 0.01f)
+        assertEquals("the chat grown up", 8f, end.getValue("CHAT").top, 0.01f)
+        assertEquals("the map grown up", 8f, end.getValue("MAP").top, 0.01f)
+        assertTrue("landed: the band's view draws nothing", p.cast.away)
+        // one curve: the band eases in (slow off the mark) and the chat's top rides its foot every frame (never over the band)
+        val f4b = (rb.bottom - bandB[3]) / (rb.bottom + 16f)
+        assertTrue("the band eases in (slow off the mark: $f4b at 64 ms of 240)", f4b < 64f / 240f)
+        for (i in bandB.indices) assertTrue("frame $i: the chat's top ${chatT[i]} under the band's foot ${bandB[i]}", chatT[i] >= bandB[i] + 8f - 0.01f)
+        shot(p, "bottom_fight_top_away")
+        // the fight's end: back down (the band's view draws again from the first frame)
+        fightSignal(home, false)
+        var downAt = -1
+        val downB = ArrayList<Float>()
+        for (i in 0 until 400) {
+            frame()
+            if (i % 8 == 0) home.tick()
+            val b = boxes(home).getValue("BARS").bottom
+            if (downAt < 0 && b > -16f + 0.01f) { downAt = i; assertFalse("the down-slide's start: the band draws again", p.cast.away) }
+            if (downAt >= 0) { downB += b; if (downB.size == 6) shotNow(p, "bottom_fight_top_return50") }
+            if (downAt >= 0 && downB.size > 24) break
+        }
+        assertTrue("the fight's end brought the band back down", downAt >= 0 && !home.flow.takeover)
+        for (i in 1 until downB.size) assertTrue("down: the band never goes back up ($downB)", downB[i] >= downB[i - 1] - 0.01f)
+        val landed = boxes(home)
+        for (part in listOf("BARS", "CHAT", "MAP")) assertEquals("$part back at rest", rest.getValue(part), landed.getValue(part))
+        // a blip: the fight comes and goes mid-slide - the motion turns where the parts are (no jump) and the band never goes away
+        fightSignal(home, true)
+        for (i in 0 until 7) frame()
+        val at = boxes(home)
+        assertTrue("mid-way up", at.getValue("BARS").bottom < rb.bottom - 1f && at.getValue("BARS").bottom > -15f)
+        // (B gives the fight back out of the fight's lockdown: the takeover goes; here the signal's end does it)
+        fightSignal(home, false)
+        var turned: Map<String, RectF>? = null
+        for (i in 0 until 400) {
+            frame()
+            if (i % 8 == 0) home.tick()
+            if (!home.flow.takeover) { frame(); turned = boxes(home); break }
+        }
+        val next = turned ?: error("the blip never ended")
+        for (part in listOf("BARS", "CHAT", "MAP")) {
+            val a = at.getValue(part); val n = next.getValue(part)
+            assertTrue("$part: no jump at the turn (${a.top} -> ${n.top})", kotlin.math.abs(n.top - a.top) < 60f)
+        }
+        for (i in 0 until 30) frame()
+        assertEquals("the blip over: at rest", rest.getValue("BARS"), boxes(home).getValue("BARS"))
+        assertFalse("cut short: the band's view never went away", p.cast.away)
+        // animations off (the system's duration scale 0): the band jumps
+        animScale(0f)
+        try {
+            fightSignal(home, true)
+            frame()
+            assertEquals("animations off: away at once", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
+            assertTrue(p.cast.away)
+        } finally { animScale(1f) }
     }
 
     @Test fun theInFightsTileIsThreeWay() {

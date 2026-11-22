@@ -98,7 +98,8 @@ class HomeMenusFitShotsTest {
     /** the bar stays in a fight ("Show in combat") for the pages of this run */
     private var stay = false
 
-    private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false): Page {
+    /** [ct] the add-on's top-screen Wings flag fed in a padmap first (In fights = Top screen is live only at ct 1) */
+    private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false, ct: Int? = null): Page {
         art()
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app)
@@ -114,6 +115,7 @@ class HomeMenusFitShotsTest {
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
         home.borrow()
+        ct?.let { home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":$it}}}"""))!!) }
         lay(home)
         cast.roomBarOn = true
         cast.roomBar = if (layout.mirrored) MIRROR else HoldTalk.DEFAULT_DIRS
@@ -403,6 +405,37 @@ class HomeMenusFitShotsTest {
             p = page(l, fight = true)
             toast(tag, p, true)
             if (p.home.toastBox(380f).top < bb) no(tag, "toast ${r(p.home.toastBox(380f))} over the band ($bb): Classic's held spot")
+            sheet("${tag}__fight")
+        }
+        assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
+    }
+
+    /**
+     * In fights = Top screen LIVE (the Wings on, ct 1; TopSlide): the band slid above the page, the columns grown up - the LB picture, the
+     * pause slide, the middle wheel, the class wheels, the D-pad toast and the party menu all inside the frame and clear of what is drawn,
+     * every dock, swapped too
+     */
+    @Test fun everyMenuFitsInALiveTopScreenFight() {
+        for (d in listOf<HomeLayout.CastDock?>(null) + DOCKS) for (swap in listOf(false, true)) {
+            val l0 = HomeLayout(fight = HomeLayout.FightBand.TOP).let { if (d == null) it else it.copy(cast = d) }
+            val l = if (swap) l0.swapped() else l0
+            val tag = "top_live_${d?.name?.lowercase() ?: "default"}${if (swap) "_swapped" else ""}"
+            var p = page(l, fight = true, ct = 1)
+            val bb = band(p.home)
+            if (bb.bottom > 0f) no(tag, "the band not above the page (bottom ${bb.bottom})")
+            if (!p.cast.away) no(tag, "the band's view not away")
+            if (p.cast.ownCastBarShown()) no(tag, "the band's cast bar still the shown one")
+            if (UiKit.pauseBarsBottom < 0f) no(tag, "the pause's band bottom negative")
+            lbPicture(tag, p, true)
+            for (b in LbFit.bars(p.home.lbPlace()).values) if (b.t < 0f) no(tag, "LB bar ${b.t} off the top")
+            p = page(l, fight = true, ct = 1)
+            pauseSlide(tag, p)
+            p = page(l, fight = true, ct = 1)
+            middleWheel(tag, p)
+            classWheels(tag, p)
+            toast(tag, p, true)
+            if (p.home.toastBox(380f).top < 0f) no(tag, "toast ${r(p.home.toastBox(380f))} off the top")
+            partyMenu(tag, p)
             sheet("${tag}__fight")
         }
         assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())

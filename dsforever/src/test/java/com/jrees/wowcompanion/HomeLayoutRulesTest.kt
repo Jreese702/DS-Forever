@@ -167,10 +167,43 @@ class HomeLayoutRulesTest {
         assertTrue(S.big(l, HomeLayoutSolver.State(takeover = true)))
         assertFalse(S.big(l, HomeLayoutSolver.State(takeover = true, partyOn = true)))
         assertFalse("Same size", S.big(l.copy(fight = HomeLayout.FightBand.SAME), HomeLayoutSolver.State(takeover = true)))
-        assertFalse("Top screen keeps the rest size on the bottom", S.big(l.copy(fight = HomeLayout.FightBand.TOP), HomeLayoutSolver.State(takeover = true)))
+        assertFalse("Top screen never grows", S.big(l.copy(fight = HomeLayout.FightBand.TOP), HomeLayoutSolver.State(takeover = true)))
         assertEquals(416f, S.barsBottom(l, HomeLayoutSolver.State(takeover = true)), 0f)
         assertEquals(226f, S.barsBottom(l, HomeLayoutSolver.State()), 0f)
         assertEquals(138f, S.barsBottom(l.copy(rest = HomeRest.ROW), HomeLayoutSolver.State()), 0f)
+    }
+
+    /** In fights = Top screen (TopSlide; the user 2026-11-22: "slides up to the top screen", "Chat and map grow up"): the takeover lays the
+     *  band above the page at its rest size and every column starts at the top gap; Party mode (no takeover, R0) keeps it; every record
+     *  stays valid with it */
+    @Test fun topScreenLaysTheBandAwayAndTheColumnsGrowUp() {
+        val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
+        val fight = HomeLayoutSolver.State(takeover = true)
+        assertTrue(S.away(top, fight)); assertFalse(S.away(top, HomeLayoutSolver.State()))
+        assertFalse("Party mode keeps the band (R0)", S.away(top, fight.copy(partyOn = true)))
+        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) assertFalse(S.away(top.copy(fight = f), fight))
+        assertEquals(0f, S.barsBottom(top, fight), 0f)
+        for (rest in HomeRest.values()) {
+            val r = S.places(top.copy(rest = rest), fight)
+            val bars = r.boxes.getValue(HomePart.BARS)
+            assertTrue(r.away)
+            assertEquals("$rest: the rest size", S.restBottom(top.copy(rest = rest)) - 8f, bars.h, 0.001f)
+            assertEquals(-HomeLayoutSolver.AWAY_PAST, bars.b, 0f)
+            assertEquals(8f, r.boxes.getValue(HomePart.CHAT).t, 0f); assertEquals(8f, r.boxes.getValue(HomePart.MAP).t, 0f)
+        }
+        // every record x the takeover with Top screen: valid (the band away is not on the page), and its card / party / bar follow
+        var n = 0
+        val bad = ArrayList<String>()
+        for (l in HomeLayoutRules.all().filter { it.fight == HomeLayout.FightBand.TOP }) for (s in listOf(fight, fight.copy(card = true, cardH = CARD_H),
+                fight.copy(castHidden = true), fight.copy(auraOpen = true, card = true, cardH = CARD_H))) {
+            val r = S.places(l, s); n++
+            val p = HomeLayoutRules.problems(l, s, r)
+            if (p.isNotEmpty() && bad.size < 5) bad += "$l / $s: $p"
+            if (!r.away && bad.size < 5) bad += "$l / $s: not away"
+            val c = r.boxes.getValue(HomePart.CHAT); val m = r.boxes.getValue(HomePart.MAP)
+            if (minOf(c.t, m.t) > 8f + 0.01f && l.cast.top.not() && !s.card && bad.size < 5) bad += "$l / $s: the columns did not grow up"
+        }
+        assertTrue("checked $n: ${bad.joinToString("; ")}", bad.isEmpty())
     }
 
     @Test fun f1ThenF2FireOnlyWhenTheChatIsTooShortInPartyMode() {
@@ -277,6 +310,13 @@ class HomeLayoutRulesTest {
             val r = S.places(l, HomeLayoutSolver.State(takeover = true, castHidden = true))
             val bars = r.boxes.getValue(HomePart.BARS); val strip = r.boxes.getValue(HomePart.STRIP)
             assertTrue(r.castHidden && r.castTop)
+            if (fight == HomeLayout.FightBand.TOP) {
+                // Top screen's fight: the band is above the page; the hidden bar above it too (its foot at the page's top), the column from 8
+                assertTrue(r.away && strip.b <= 0.01f)
+                val col = r.boxes.getValue(if (dock == HomeLayout.CastDock.ABOVE_CHAT) HomePart.CHAT else HomePart.MAP)
+                assertEquals(8f, col.t, 0.01f)
+                continue
+            }
             assertEquals("its foot on the band's foot", bars.b, strip.b, 0.01f)
             val laid = S.places(l, HomeLayoutSolver.State(takeover = true)).boxes.getValue(HomePart.STRIP)
             val up = CastStripModel.hiddenAbove(CastStripModel.Box(laid.l, laid.t, laid.r, laid.b), 8f)

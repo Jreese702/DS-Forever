@@ -31,14 +31,26 @@ object HomeLayoutSolver {
 
     /** the laid page: [boxes] every part, [castSide] the bar's geometric side (CastStripView), [partyTabRight] the Select tab on the
      *  right screen edge (chat on the right), [card] the dock used (F1 may move "Above chat" onto the map), [castHidden] the bar slid
-     *  away (cb7, or F2), [f1] / [f2] which fallback fired, [castTop] the bar laid at the top of its column (hidden = up behind the band) */
+     *  away (cb7, or F2), [f1] / [f2] which fallback fired, [castTop] the bar laid at the top of its column (hidden = up behind the band),
+     *  [away] the band laid above the page (In fights = Top screen live, the fight's takeover: [away]) */
     data class Result(val boxes: Map<HomePart, Box>, val castSide: CastStripModel.Side, val partyTabRight: Boolean,
                       val card: HomeLayout.CardDock, val castHidden: Boolean, val f1: Boolean = false, val f2: Boolean = false,
-                      val barsBottom: Float = 0f, val castTop: Boolean = false)
+                      val barsBottom: Float = 0f, val castTop: Boolean = false, val away: Boolean = false)
 
     /** the band's bottom: the fight's grow (only GROW, never with Party mode on: R0), the diamonds or the thin row at rest */
     fun big(l: HomeLayout, s: State): Boolean = s.takeover && l.fight == HomeLayout.FightBand.GROW && !s.partyOn
+    /**
+     * IN FIGHTS = TOP SCREEN (TopSlide; the user 2026-11-22: "slides up to the top screen", the pick "Chat and map grow up"): the fight's
+     * takeover with Top screen lays the band ABOVE the page - its rest size, its bottom 16 px over the frame's top edge - and the columns
+     * start at the frame's top gap. TOP reaches the solver only while the add-on's Wings are on (HomeView.layoutNow: TopCombatBar.honoured
+     * lays Grow otherwise); Party mode has no takeover (R0), so the band stays there
+     */
+    fun away(l: HomeLayout, s: State): Boolean = s.takeover && l.fight == HomeLayout.FightBand.TOP && !s.partyOn
+    /** the band's rest bottom for [l] (the diamonds or the thin row with its cast strip) */
+    fun restBottom(l: HomeLayout): Float =
+        if (l.rest == HomeRest.DIAMONDS) 8f + HomeView.REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP else 120f + CastBarPlace.REST_STRIP
     fun barsBottom(l: HomeLayout, s: State): Float = when {
+        away(l, s) -> 0f
         big(l, s) -> 10f + HomeView.COMBAT_BARS + CastBarPlace.TOP_STRIP
         l.rest == HomeRest.DIAMONDS -> 8f + HomeView.REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP
         else -> 120f + CastBarPlace.REST_STRIP
@@ -85,7 +97,10 @@ object HomeLayoutSolver {
         val mapCol = if (chatLeft) rc else lc
         val card = if (f1) HomeLayout.CardDock.ON_MAP else l.card
         val out = LinkedHashMap<HomePart, Box>()
-        out[HomePart.BARS] = Box(0f, if (big(l, s)) 10f else 8f, w, bb)
+        val away = away(l, s)
+        // Top screen's fight: the band's rest box moved up past the frame's top edge by its own bottom + 16 (the same size: no re-measure)
+        out[HomePart.BARS] = if (away) restBottom(l).let { rb -> Box(0f, 8f - (rb + AWAY_PAST), w, -AWAY_PAST) }
+            else Box(0f, if (big(l, s)) 10f else 8f, w, bb)
         val hidden = s.castHidden || f2
         // THE TOP BAR (Above chat / Above map): first under the band in its column, the column's parts stacked under it (the card, the
         // party module, the chat); hidden in a fight (or by F2) it slides up behind the band and the column keeps the band's top
@@ -133,10 +148,10 @@ object HomeLayoutSolver {
         if (aboveBar != null) {
             out[HomePart.STRIP] = if (hidden) CastStripModel.hiddenAbove(CastStripModel.Box(aboveBar.l, aboveBar.t, aboveBar.r, aboveBar.b), g)
                 .let { Box(it.l, it.t, it.r, it.b) } else aboveBar
-            return Result(out, side, !chatLeft, card, hidden, f1, f2, bb, castTop = true)
+            return Result(out, side, !chatLeft, card, hidden, f1, f2, bb, castTop = true, away = away)
         }
         val bars = castBoxes(l, w, h, g)
-        if (bars.isEmpty()) return Result(out, side, !chatLeft, card, false, f1, f2, bb)
+        if (bars.isEmpty()) return Result(out, side, !chatLeft, card, false, f1, f2, bb, away = away)
         val base = LinkedHashMap(out)
         for ((i, b0) in bars.withIndex()) {
             val b = if (hidden) Box(b0.l, h, b0.r, h + b0.h) else b0
@@ -148,7 +163,7 @@ object HomeLayoutSolver {
                 if (r.b > top0 - g) out[p] = r.copy(b = CastStripModel.columnBottom(maxOf(r.t + 1f, top0 - g), r.b, hidden))
             }
         }
-        return Result(out, side, !chatLeft, card, hidden, f1, f2, bb)
+        return Result(out, side, !chatLeft, card, hidden, f1, f2, bb, away = away)
     }
 
     /** the bar's box(es) laid (not hidden): one under its column, one across, or Split's two (slots 1-4 left, 5-8 right); a top dock's
@@ -198,6 +213,8 @@ object HomeLayoutSolver {
     /** the order withStrip cut the columns in (kept: the golden's boxes) */
     private val CUT_ORDER = listOf(HomePart.CHAT, HomePart.QUESTS, HomePart.PARTY, HomePart.MAP, HomePart.AURAS)
     const val COLUMN_GAP = 8f
+    /** Top screen's fight: how far past the frame's top edge the band's bottom lies (wholly off the page) */
+    const val AWAY_PAST = 16f
 }
 
 /** Home's parts by name (HomeView's own Part enum maps to these one to one; CAST2 = Split's second half, phase 3's view) */
@@ -238,7 +255,9 @@ object HomeLayoutRules {
         if (l.cast != HomeLayout.CastDock.OFF && HomePart.STRIP !in b) out += "STRIP not placed"
         if (l.cast == HomeLayout.CastDock.SPLIT && HomePart.CAST2 !in b) out += "CAST2 not placed"
         if (s.party != null && HomePart.PARTY !in b) out += "PARTY not placed"
-        val shown = b.filter { (p, x) -> p != HomePart.AURAS && !(r.castHidden && (p == HomePart.STRIP || p == HomePart.CAST2)) }
+        // (Top screen's fight: the band laid above the page is not on it)
+        val shown = b.filter { (p, x) -> p != HomePart.AURAS && !(r.castHidden && (p == HomePart.STRIP || p == HomePart.CAST2))
+            && !(r.away && p == HomePart.BARS) }
         for ((p, x) in shown) {
             if (x.l < -0.01f || x.r > s.w + 0.01f || x.t < -0.01f || x.b > s.h + 0.01f) out += "$p outside the frame: $x"
             if (x.w <= 0f || x.h <= 0f) out += "$p empty: $x"
@@ -277,7 +296,7 @@ object HomeLayoutRules {
         return out
     }
 
-    /** what this build can show: the top-screen bar is phase 3 (TOP lays as the rest size: the band's pictures switch, nothing grows);
+    /** what this build can show (TOP: the band slides above the page in a fight, [HomeLayoutSolver.away]);
      *  Split's second half ships with phase 2's edit mode ([SPLIT_SHIPS]; P1 laid SPLIT as one bar across) */
     fun shown(l: HomeLayout): HomeLayout = if (l.cast == HomeLayout.CastDock.SPLIT && !SPLIT_SHIPS) l.copy(cast = HomeLayout.CastDock.ACROSS) else l
     const val SPLIT_SHIPS = true                 // P2: the bar's second half is laid (HomeView's castStrip2)

@@ -4,23 +4,21 @@ package com.jrees.wowcompanion
  * MOVABLE HOME PHASE 3: THE COMBAT BAR ON THE TOP SCREEN (SPEC.txt section 11, final_07 / final_07b / final_10; the user's rulings
  * 2026-11-20: D1 "In fights: Top screen" is OPT-IN - the band's Grow stays the default and Same size stays; D7 the "Wings").
  *
- * With the layout's In fights = Top screen ([HomeLayout.FightBand.TOP]) the bottom band keeps its REST box in a fight (the solver's
- * big() is GROW only: only the band's pictures switch to the In-combat layer, today's Same size path), a 1.5 s "up" plate shows at the
- * clock's spot when the fight starts, and B in the fight never shrinks anything (nothing grew; no red reminder). On the top screen the
- * add-on shows its Nintendo bar as two halves around our HUD (ActionBar nbar7), by itself, on the router's own fight switch.
+ * With the layout's In fights = Top screen ([HomeLayout.FightBand.TOP]) live ([live]) the bottom band SLIDES UP off the bottom screen's
+ * top edge in a fight while the chat / map columns glide up into the freed strip (the user, 2026-11-22: "It should be a slick animation
+ * looking like it slides up to the top screen"; [TopSlide], [HomeLayoutSolver.away]) and back down after it - the slide is the cue (the
+ * old 1.5 s "up" plate is gone) - and B in the fight never shrinks anything (no red reminder). On the top screen the add-on's Nintendo
+ * bar slides in upward from the screen's bottom edge as two halves around our HUD (ActionBar nbar7 / nbar11, the bottom band's ring
+ * look), by itself, on the router's own fight switch.
  *
  * THE CHANNEL: the add-on's per-character flag (PadMap m179 WowCompanionSpellsDB.ctop; its `ct` in the padmap's dpad state) set with
- * padtab 39, 38, 37 then 11 (off) / 12 (on) (Book b75). The app is the source of truth: OUT OF COMBAT ONLY (a fight waits; the add-on
+ * padtab 39, 38, 37 then 22 (off) / 23 (on) (Book b76; PadMapModel.P3_TOP_OFF / P3_TOP_ON). The app is the source of truth: OUT OF COMBAT ONLY (a fight waits; the add-on
  * switches by itself in fights, so the app sends nothing then), re-sent every [RESEND_MS] until `ct` says it, and re-asserted at each
  * login (the first padmap of a run is checked like any other) - ToolbarMirror's pattern. Pure: CompanionHost keeps the clock and taps.
  */
 object TopCombatBar {
     /** the gap between two sends of the same wish (the add-on answers a tap with a padmap within a second) */
     const val RESEND_MS = 5_000L
-    /** the bottom band's "up" cue (SPEC section 10: a 1.5 s plate at the clock spot, 120 in / 200 out) */
-    const val CUE_IN_MS = 120L
-    const val CUE_OUT_MS = 200L
-    const val CUE_MS = 1_500L
 
     /** the layout asks for the top-screen bar */
     fun wanted(l: HomeLayout): Boolean = l.fight == HomeLayout.FightBand.TOP
@@ -29,7 +27,7 @@ object TopCombatBar {
      * the 1515 merge's review (SPEC P5, "the pictures never lie"): the bottom screen honours Top screen only while the add-on SAYS its
      * Wings are on - [ct] the current padmap's flag is 1. With no key (the add-on asks, or the question's "Later" kept it keyless for
      * the login: whoKey() nil, no `ct`), an add-on without the flag, or a flag not confirmed yet, the Wings cannot show, so the band
-     * grows as Grow does (the default), no "up" cue, and B shrinks as ever
+     * grows as Grow does (the default), and B shrinks as ever
      */
     fun live(l: HomeLayout, ct: Int?): Boolean = wanted(l) && ct == 1
     /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow */
@@ -55,18 +53,6 @@ object TopCombatBar {
 
     /** the taps for [on] */
     fun cells(on: Boolean): List<Pair<String, Int>> = PadMapModel.combatTopCells(on)
-
-    /** the "up" cue starts: the fight signal Home grows on came ([was] false -> [now] true) with In fights = Top screen, the add-on's
-     *  Wings on ([live]: [ct] the current padmap's flag) */
-    fun cueStarts(was: Boolean, now: Boolean, l: HomeLayout, ct: Int?): Boolean = !was && now && live(l, ct)
-
-    /** the cue's alpha at [ms] since it started (0 after [CUE_MS]) */
-    fun cueAlpha(ms: Long): Float = when {
-        ms < 0 || ms >= CUE_MS -> 0f
-        ms < CUE_IN_MS -> ms / CUE_IN_MS.toFloat()
-        ms < CUE_MS - CUE_OUT_MS -> 1f
-        else -> (CUE_MS - ms) / CUE_OUT_MS.toFloat()
-    }
 
     /** B on Home with the takeover on: shrinks it unless In fights = Top screen and the fight is on (nothing grew). Out of a fight (an
      *  attack armed) B keeps today's meaning there too: the takeover goes and the faces are given back (the add-on's wings follow) */

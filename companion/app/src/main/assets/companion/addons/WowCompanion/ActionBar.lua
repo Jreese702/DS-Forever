@@ -2,6 +2,21 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar11 THE WINGS REWORK (the user, 2026-11-22, after trying Top screen: "The square icons don't look anything like ours on the bottom
+-- screen in the circles and it overlaps with my hud ... It should be a slick animation looking like it slides up to the top screen"):
+-- (a) THE RING LOOK - every button wears the bottom band's controller look (CastView.drawSlot's layers, the game's own gamepad atlases
+-- the band harvests on the device, so nothing is shipped): the focus glow, the dark well, the icon masked round (faces) / rounded square
+-- (D-pad: the band's D-pad slots are square), the slot ring (normal / pressed / disabled), the empty slot's own art, the glyph badge at
+-- the ring's top-right (the Nintendo face lettering, the plain layout's xbox letters, the D-pad's cross glyphs; red = range only), the
+-- count bottom-right; the ZL / ZR chips are the trigger glyphs over a soft gold disc when held. Atlas refused -> today's letter.
+-- (b) NEVER OVER THE HUD - the HUD block comes from its geometry (Trail P.lay.block: bars, pips, aura rows under or above, the pet strip
+-- under or beside, Party mode's rows, the lift), unioned with the live frames read at ANY alpha (a HUD faded out of combat still counts);
+-- the fight-only game frames (cast bars, Cooldown Manager, mirror timers, extra ability, boss frames, swing timers) are RESERVED once
+-- seen; the solver shrinks before it moves (k 1 / 0.9 / 0.8, raised, joined, a grid scan at 0.7, the stock spot last).
+-- (c) THE SLIDE - with a clear lane under both halves the bar slides IN UPWARD from below the top screen's bottom edge (60 ms hold,
+-- 0.26 s ease-out) as the app's band slides up off the bottom screen, and back down (0.20 s ease-in); no lane = today's fade + rise.
+-- The fight's edges (REGEN / auto-attack / auto-repeat) send the state at once (the app's slide is not 0.5 s late). Party mode: no Wings
+-- (the band stays below, ruling R0's default). Display only, as before (the LIMITS note at the Wings).
 -- nbar10 (movable Home fix round 2): the joined bar (placed, or case 4's stock fallback) is clamped to the screen BEFORE the tap pad
 -- band test, and that test keeps MARGIN (24 px) as fits() does: a top-left spot the clamp moved right never lands on the band.
 -- nbar9 (movable Home fix round 1): the Wings' frames are built in a fight too (a /reload or a login inside combat, or the character
@@ -2188,7 +2203,8 @@ local function buildState()
     stateSlots = slots
     statePets = pets
     WC.slotSid = sids
-    local st = { c = combat, aa = autoAttack == true, ar = autoRepeat == true, L = L }
+    local edgeIn = WC.regenEdge == "in" and ((SN(GetTime) or 0) - (WC.regenEdgeAt or 0)) < 1
+    local st = { c = combat or edgeIn, aa = autoAttack == true, ar = autoRepeat == true, L = L }
     do                                                          -- b-bar-gcd: the running GCD (game time) for the flagged slots
         local g, now = WC.gcdRun, SN(GetTime) or 0
         if g and now < g.s + g.d then st.gd = { s = math.floor(g.s * 1000 + 0.5) / 1000, d = math.floor(g.d * 1000 + 0.5) / 1000 } end
@@ -2279,6 +2295,22 @@ end
 local function emitCastNow()
     lastStateAt = -1e9
     emitState(true)
+end
+-- nbar11 THE FIGHT'S EDGES AT ONCE (REGEN, auto-attack, auto-repeat): the next frame's build goes out outside the 0.5 s window, so the
+-- app's band slides up with the add-on's Wings (about 40-90 ms, not up to 0.6 s). WC.regenEdge "in" from PLAYER_REGEN_DISABLED until
+-- ENABLED: the state says the fight even where the handler ran before the lockdown (hudS.c) - for 1 s at most (it only bridges the
+-- frames before InCombatLockdown reads true; a missed ENABLED never leaves a fight standing). One extra send per edge at most
+function WC.stateEdge(ev)
+    if ev == "PLAYER_REGEN_DISABLED" then WC.regenEdge, WC.regenEdgeAt = "in", SN(GetTime) or 0
+    elseif ev == "PLAYER_REGEN_ENABLED" then WC.regenEdge = nil end
+    WC.edgeDue = true
+    if not loggedIn then return end
+    C_Timer.After(0, function()
+        if not WC.edgeDue then return end
+        WC.edgeDue = false
+        lastStateAt = -1e9
+        emitState(false)
+    end)
 end
 
 local function requestState()
@@ -2457,7 +2489,10 @@ end
 -- nbar6 MOVABLE HOME'S SWAP (the user's rulings 2026-11-20, SPEC.txt section 6 item 5; PadMap m178): the DS toolbar's icons on the bare
 -- D-pad are picked by the router's WORD (padmap dpad `d`: after a swap Left is "map"), never by position (NB.TOOLBAR_BY).
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
-local NB = { V = "nbar10", on = false, built = false, B = 46, OFF = 50, DX = 160, GLYPH = 22, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
+-- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
+-- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
+local NB = { V = "nbar11", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+             OFF = 50, DX = 160, GLYPH = 17, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
              -- the button a position is, by the game's binding (bar.actionButtons order: D-pad L / U / R / D, face left / top / right / bottom)
@@ -2488,7 +2523,31 @@ function WC.padGlyphAtlas(key)
     if d then return { "Gamepad_Gen_" .. d .. "_64", "Gamepad_Gen_DPad" .. d .. "_64", "Gamepad_Ltr_" .. d .. "_64" } end
     return {}
 end
-NB.glyphAtlas = WC.padGlyphAtlas
+-- nbar11 THE RING GLYPHS (the bottom band's: CastView's Nintendo preset wears the Switch face lettering and the xbox CROSS D-pad - the
+-- Thor's D-pad is a cross; the plain layout the xbox letters): first, then the one glyph rule's atlases (WC.padGlyphAtlas, Hub's too:
+-- unchanged), then the letter. [pressed] the held look (the xbox set's is "-down", the Switch set's "-pressed")
+NB.RING_FACE = { PAD1 = "a", PAD2 = "b", PAD3 = "x", PAD4 = "y" }
+NB.RING_DIR = { PADDLEFT = "left", PADDUP = "up", PADDRIGHT = "right", PADDDOWN = "down" }
+function NB.RING_GLYPH(key, pressed)
+    local db = rawget(_G, "WowCompanionSpellsDB")
+    local plain = type(db) == "table" and db.padLayout == "plain"
+    local l = NB.RING_FACE[key]
+    if l then
+        if plain then return "gamepad-xbox1-button" .. l .. (pressed and "-down" or "-normal") end
+        return "gamepad-switch-128x-face-" .. l .. (pressed and "-pressed" or "-normal")
+    end
+    local d = NB.RING_DIR[key]
+    if d then return "gamepad-xbox1-dpad" .. d .. (pressed and "-down" or "-normal") end
+    return nil
+end
+function NB.glyphAtlas(key, pressed)
+    local out = {}
+    local r = NB.RING_GLYPH(key, pressed == true)
+    if r then out[1] = r end
+    if pressed == true then local n = NB.RING_GLYPH(key, false); if n then out[#out + 1] = n end end
+    for _, a in ipairs(WC.padGlyphAtlas(key)) do out[#out + 1] = a end
+    return out
+end
 NB.GLYPH_WORD = { PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y", PADDUP = "^", PADDDOWN = "v", PADDLEFT = "<", PADDRIGHT = ">" }
 -- nbar2: an atlas this client really has (Trail's PRD.atlasOn: GetAtlasInfo knows it and SetAtlas did not return false; a pcall alone
 -- counts a refused atlas as drawn)
@@ -2518,7 +2577,8 @@ function NB.anchor(b, lay)
     local cx = (NB.hx or { -NB.DX, NB.DX })[h]                       -- nbar7: each half's centre (the Wings move them apart)
     local cy = (NB.hy or { 0, 0 })[h]
     pcall(b.ClearAllPoints, b)
-    b:SetPoint("CENTER", b.nbParent, "CENTER", cx + a[1] * NB.OFF, cy + a[2] * NB.OFF)
+    -- nbar11: a held button sits 2 units lower (the band's press)
+    b:SetPoint("CENTER", b.nbParent, "CENTER", cx + a[1] * NB.OFF, cy + a[2] * NB.OFF - (b.down and 2 or 0))
     b.alay = lay
 end
 
@@ -2540,6 +2600,16 @@ function NB.heldSet()
     if not ok or type(st) ~= "table" or not WC.isPlain(st) then return 1 end
     local bt = field(st, "buttons")
     if type(bt) ~= "table" or not WC.isPlain(bt) then return 1 end
+    -- nbar11: the eight buttons' own held state too (the ring's pressed look; the same plain read, indices looked up once)
+    local held = 0
+    NB.idx = NB.idx or {}
+    for p = 1, 8 do
+        local key = NB.KEY_OF[p]
+        if NB.idx[key] == nil then NB.idx[key] = NB.padIdx(key) end
+        local i = NB.idx[key]
+        if i and S(function() return bt[i] end) == true then held = held + 2 ^ (p - 1) end
+    end
+    NB.held = held
     local li, ri = NB.padIdx("PADLTRIGGER"), NB.padIdx("PADRTRIGGER")
     if not li or not ri then return 1 end
     local lt = S(function() return bt[li] end) == true
@@ -2560,18 +2630,101 @@ function NB.paint(tx, v)
     return false
 end
 
--- one button of our bar: plain frames only (no template but the game's plain cooldown swipe), never the mouse
+-- nbar11 THE RING LOOK's art (the game's own atlases, as the bottom band draws them; CastView.drawSlot): the slot ring by shape and
+-- state, the empty slot's own art by position, the focus glow, the masks
+NB.MASK_FILE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+NB.WELL = { 10 / 255, 8 / 255, 6 / 255 }                     -- CastView's WELL (0xFF0A0806)
+NB.SLOT_DIR = { "left", "up", "right", "down" }
+function NB.ringAtlas(circle, state)
+    return "gamepad-actionbar-" .. (circle and "circleslot" or "squareslot") .. "-border-" .. (state or "normal")
+end
+function NB.slotAtlas(p, pressed)
+    local sfx = pressed and "-pressed" or "-normal"
+    if p <= 4 then return "gamepad-actionbar-squareslot-generic-dpad" .. NB.SLOT_DIR[p] .. sfx end
+    return "gamepad-actionbar-circleslot-xbox-" .. (NB.RING_FACE[NB.KEY_OF[p]] or "a") .. sfx
+end
+-- a mask over [t] (the round / rounded-square atlas, else the portrait mask file for a circle); nil = none (the square's crop instead)
+function NB.maskFor(b, t, circle)
+    local okM, m = pcall(function() return b:CreateMaskTexture() end)
+    if not (okM and type(m) == "table") then return nil end
+    pcall(m.SetAllPoints, m, t)
+    local on = NB.atlasOn(m, circle and "CircleMask" or "SquareMask")
+    if not on and circle then
+        on = pcall(m.SetTexture, m, NB.MASK_FILE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    end
+    if not on then return nil end
+    return m
+end
+-- the look built once per button (out of combat or in: plain textures on our own frame)
+function NB.skin(b)
+    local circle = b.circle
+    b.mask = NB.maskFor(b, b.icon, circle)                    -- the icon's (and the dim's) shape
+    b.wmask = NB.maskFor(b, b.bg, circle)                     -- the well's
+    if b.mask then
+        pcall(b.icon.AddMaskTexture, b.icon, b.mask)
+        pcall(b.dim.AddMaskTexture, b.dim, b.mask)
+    else
+        pcall(b.icon.SetTexCoord, b.icon, 0.08, 0.92, 0.08, 0.92)      -- no mask: the icon's own border cropped
+    end
+    if b.wmask then pcall(b.bg.AddMaskTexture, b.bg, b.wmask) end
+    if circle then
+        for _, c in ipairs({ b.cd, b.ch }) do
+            pcall(c.SetSwipeTexture, c, NB.MASK_FILE)
+            pcall(c.SetUseCircularEdge, c, true)
+        end
+    end
+    b.ringOn = NB.atlasOn(b.ring, NB.ringAtlas(circle, "normal"))
+    b.rs = b.ringOn and "normal" or nil
+    if b.ringOn then b.ring:Show() else b.ring:Hide() end
+    b.focusOn = NB.atlasOn(b.focus, "gamepad-actionbar-focus-bg-" .. (circle and "circ" or "square"))
+    if b.focusOn then pcall(b.focus.SetAlpha, b.focus, 0.4); b.focus:Show() else b.focus:Hide() end
+    b.wellKind = nil
+    NB.well(b, false)
+    -- the glyph's backing disc (shown only for the letter fallback)
+    b.gmask = NB.maskFor(b, b.gdisc, true)
+    if b.gmask then pcall(b.gdisc.AddMaskTexture, b.gdisc, b.gmask) end
+    pcall(b.gdisc.SetColorTexture, b.gdisc, 0.05, 0.04, 0.03, 0.85)
+    b.gdisc:Hide()
+end
+-- the well: the dark disc under the icon, or an empty slot's own art (the D-pad arrow / the face letter's slot); without the ring art
+-- (a client refusing the atlases) today's plain dark square
+function NB.well(b, empty)
+    local kind = (empty and b.ringOn) and ("slot" .. (b.down and "P" or "")) or "well"
+    if kind == b.wellKind then return end
+    b.wellKind = kind
+    if kind ~= "well" and NB.atlasOn(b.bg, NB.slotAtlas(b.p, b.down)) then
+        pcall(b.bg.SetVertexColor, b.bg, 1, 1, 1)
+        return
+    end
+    if b.ringOn then pcall(b.bg.SetColorTexture, b.bg, NB.WELL[1], NB.WELL[2], NB.WELL[3], 1)
+    else pcall(b.bg.SetColorTexture, b.bg, 0, 0, 0, 0.45) end
+end
+-- the ring's state: pressed while held, disabled when empty or unusable, else normal (set only on a change)
+function NB.ring(b)
+    if not b.ringOn then return end
+    local st = (b.down and "pressed") or ((b.kind == "empty" or b.look == "unusable") and "disabled") or "normal"
+    if st == b.rs then return end
+    if NB.atlasOn(b.ring, NB.ringAtlas(b.circle, st)) then b.rs = st
+    else NB.atlasOn(b.ring, NB.ringAtlas(b.circle, "normal")); b.rs = "normal" end
+end
+
+-- one button of our bar: plain frames only (no template but the game's plain cooldown swipe), never the mouse. nbar11: the ring look's
+-- layers bottom to top as CastView.drawSlot's - focus glow, well (or the empty slot's art), icon (masked), sweeps, dim, ring, glyph
 function NB.button(parent, p)
+    local circle = p >= 5
+    local sz = circle and NB.BC or NB.B
     local b = CreateFrame("Frame", nil, parent)
-    b:SetSize(NB.B, NB.B)
+    b:SetSize(sz, sz)
     pcall(b.EnableMouse, b, false)
-    b.p, b.nbParent = p, parent
+    b.p, b.nbParent, b.circle, b.sz = p, parent, circle, sz
+    b.focus = b:CreateTexture(nil, "BACKGROUND", nil, -8)
+    b.focus:SetPoint("CENTER", b, "CENTER", 0, 0)
+    b.focus:SetSize(sz + NB.FOCUS, sz + NB.FOCUS)
     b.bg = b:CreateTexture(nil, "BACKGROUND")
     b.bg:SetAllPoints(b)
-    pcall(b.bg.SetColorTexture, b.bg, 0, 0, 0, 0.45)
     b.icon = b:CreateTexture(nil, "ARTWORK")
-    b.icon:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -2)
-    b.icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
+    b.icon:SetPoint("TOPLEFT", b, "TOPLEFT", NB.INSET, -NB.INSET)
+    b.icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -NB.INSET, NB.INSET)
     b.cd = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
     b.cd:SetAllPoints(b.icon)
     pcall(b.cd.EnableMouse, b.cd, false)
@@ -2587,14 +2740,54 @@ function NB.button(parent, p)
     b.dim:SetAllPoints(b.icon)
     pcall(b.dim.SetColorTexture, b.dim, 0, 0, 0, 0.6)
     b.dim:Hide()
-    b.glyph = b:CreateTexture(nil, "OVERLAY", nil, 2)
+    -- nbar11: the ring, the glyph badge and the count over the sweeps (a plain child frame a few levels up, never the mouse)
+    local top = CreateFrame("Frame", nil, b)
+    pcall(top.EnableMouse, top, false)
+    top:SetAllPoints(b)
+    pcall(function() top:SetFrameLevel(b:GetFrameLevel() + 3) end)
+    b.top = top
+    b.ring = top:CreateTexture(nil, "OVERLAY", nil, 1)
+    b.ring:SetAllPoints(b)
+    local gx, gy = NB.GLYPH_AT[1], circle and NB.GLYPH_AT[3] or NB.GLYPH_AT[2]
+    b.gdisc = top:CreateTexture(nil, "OVERLAY", nil, 1)
+    b.gdisc:SetSize(NB.GLYPH, NB.GLYPH)
+    b.gdisc:SetPoint("CENTER", b, "CENTER", gx, gy)
+    b.glyph = top:CreateTexture(nil, "OVERLAY", nil, 2)
     b.glyph:SetSize(NB.GLYPH, NB.GLYPH)
-    b.glyph:SetPoint("CENTER", b, "BOTTOMRIGHT", -3, 3)
-    b.word = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    b.glyph:SetPoint("CENTER", b, "CENTER", gx, gy)
+    b.word = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     b.word:SetPoint("CENTER", b.glyph, "CENTER", 0, 0)
-    b.count = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-    b.count:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 3, 3)
+    b.count = top:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    pcall(function() local fn, sz2 = b.count:GetFont(); if fn then b.count:SetFont(fn, sz2 or 12, "OUTLINE") end end)
+    b.count:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -3, 3)
+    NB.skin(b)
     return b
+end
+-- nbar11: the held buttons' pressed look (ring, glyph, the 2-unit drop) at once, between two redraws (the tick's poll)
+function NB.pressLook(mask)
+    local f = NB.f
+    if not (f and f.btn) then return end
+    local lay = NB.layout()
+    for p = 1, 8 do
+        local b = f.btn[p]
+        local down = (math.floor((mask or 0) / 2 ^ (p - 1)) % 2) == 1
+        if b and down ~= (b.down == true) then
+            b.down = down
+            NB.anchor(b, lay)
+            NB.ring(b)
+            NB.well(b, b.kind == "empty")
+            NB.glyph(b)
+        end
+    end
+end
+-- nbar11: the focus glow's flash on a layer change (1 -> 0.4 over 0.33 s, the band's FOCUS_MS)
+function NB.focusTick()
+    local f = NB.f
+    if not (f and f.btn and NB.focusAt) then return end
+    local t = ((SN(GetTime) or 0) - NB.focusAt) / 0.33
+    local a = 0.4 + 0.6 * (1 - math.max(0, math.min(1, t)))
+    for p = 1, 8 do local b = f.btn[p]; if b and b.focusOn then pcall(b.focus.SetAlpha, b.focus, a) end end
+    if t >= 1 then NB.focusAt = nil end
 end
 
 function NB.build()
@@ -2887,14 +3080,16 @@ function NB.glyph(b)
     local key = NB.KEY_OF[b.p]
     local lay = NB.layout()
     if b.alay ~= lay then NB.anchor(b, lay) end          -- nbar2: the faces follow the ABXY location
-    if b.gkey == key and b.glay == lay then return end
-    b.gkey, b.glay = key, lay
-    for _, a in ipairs(NB.glyphAtlas(key)) do
+    local down = b.down == true
+    if b.gkey == key and b.glay == lay and b.gdown == down then return end
+    b.gkey, b.glay, b.gdown = key, lay, down
+    for _, a in ipairs(NB.glyphAtlas(key, down)) do
         -- nbar2: only an atlas the client really has (a refused one falls to the next, then the letter)
-        if NB.atlasOn(b.glyph, a) then b.glyph:Show(); b.word:SetText(""); b.atlas = a; return end
+        if NB.atlasOn(b.glyph, a) then b.glyph:Show(); b.word:SetText(""); b.atlas = a; if b.gdisc then b.gdisc:Hide() end; return end
     end
     b.glyph:Hide(); b.atlas = nil
     b.word:SetText(NB.GLYPH_WORD[key] or "")
+    if b.gdisc then b.gdisc:Show() end                      -- nbar11: the letter on a dark disc
 end
 
 -- one full redraw of the live layer
@@ -2927,6 +3122,8 @@ function NB.refresh()
     end
     f.layer:SetText((NB.top.shown or NB.top.edit) and "" or (NB.LAYER_WORD[set] or ""))  -- nbar7: the chips say it in the Wings
     if NB.top.shown or NB.top.edit then NB.topChips(set) end
+    if NB.setWas ~= nil and NB.setWas ~= set then NB.focusAt = SN(GetTime) end   -- nbar11: the layer changed: the focus glow flashes
+    NB.setWas = set
     NB.stats = { ok = 0, fail = 0, ch = 0, dim = 0, n = 0 }
     NB.shown = {}
     for p = 1, 8 do
@@ -2949,6 +3146,8 @@ function NB.refresh()
         local cnt = st and (num(st.cnt) or num(st.ch)) or nil
         b.count:SetText(cnt and tostring(cnt) or "")
         b.kind = e.kind
+        NB.well(b, e.kind == "empty")                     -- nbar11: an empty slot wears its own art, its ring disabled
+        NB.ring(b)
         NB.shown[p] = { kind = e.kind, icon = e.icon, id = e.id, s = e.d and e.d.s or nil, route = route }
     end
     NB.probe(fight)
@@ -2981,6 +3180,9 @@ function NB.tick(el)
         pcall(NB.place)
     end
     local set = (bu == false) and 1 or NB.heldSet()
+    local held = (bu == false) and 0 or (NB.held or 0)
+    if held ~= (NB.heldWas or 0) then NB.heldWas = held; pcall(NB.pressLook, held) end     -- nbar11: the pressed rings at once
+    if NB.focusAt then pcall(NB.focusTick) end
     if set ~= NB.set or NB.accS >= NB.STATE_S then
         NB.accS = 0
         local ok, err = pcall(NB.refresh)
@@ -3022,47 +3224,94 @@ end
 -- chips at the outer ends (lit while held), the split swing lines under the faces. Each button is the same live picture as the bar's
 -- (NB.refresh: the live layer, the fight layer, the faces' fight spells, the DS toolbar by word, duration-object sweeps, blue = mana,
 -- the red glyph = range only). The bottom band keeps its rest size (the app's half).
--- THE SPOT (NB.fightSolve, pure: tools/test_combat_bar_spot.py): worked out OUT OF COMBAT against our own pieces (the HUD block - its
--- bars, pet strip, aura host and Party mode's rows under it; the compass; the target bar with its cast strip, ToT, Y prompt and aura
--- host; the left party column; Polestar's arrow and guide) and the game's frames shown then (WC.gameLay.rectNow: a plain read, OUT OF
--- COMBAT ONLY), never over the tap pad's band (WC.lay.forbidden's "pad" zone with x 720-1200, y 24-178 at least); margin 24 px. The
--- first candidate that fits wins:
---   1 wings beside the HUD block, level with its middle, 34 px gap each side (clamped 16 px above the screen's bottom edge)
---   2 wings raised in 24 px steps (up to 300 px) until both halves clear, staying level
---   3 the halves joined into one bar, centred above the HUD block
---   4 the Combat bar piece's own spot (the stock bar's) - always accepted (pushed under the tap pad's band if it would cover it)
+-- THE SPOT (NB.fightSolve, pure: tools/test_combat_bar_spot.py, tools/test_wings_geometry.py): worked out OUT OF COMBAT against our own
+-- pieces (nbar11: the HUD BLOCK from its geometry, Trail's P.lay.block - the bars, the combo pips, the aura rows under or above, the pet
+-- strip under or beside, Party mode's rows, the lift - unioned with its live frames read at any alpha, so a HUD faded out of combat
+-- still counts; the compass; the target bar with its cast strip, ToT, Y prompt and aura host; the left party column; Polestar's arrow
+-- and guide), the game's frames shown then and the fight-only game frames RESERVED (NB.RESERVE: the cast bars always, the Cooldown
+-- Manager, mirror timers, extra ability, boss frames and swing timers once seen this session) - WC.gameLay.rectNow, a plain read, OUT OF
+-- COMBAT ONLY - never over the tap pad's band (WC.lay.forbidden's "pad" zone with x 720-1200, y 24-178 at least); margin 24 px.
+-- nbar11 SHRINK FIRST, THEN MOVE - the first candidate that fits wins:
+--   1 wings beside the HUD block, level with its middle, 34 px gap each side (clamped 16 px above the bottom), at k 1, then 0.9, 0.8
+--   2 wings raised in 24 px steps (up to 300 px) at k 0.8 until both halves clear, staying level
+--   3 the halves joined into one bar, centred above the HUD block, at k 1, then 0.8
+--   4 a grid scan at k 0.7 over the lower 60 % of the screen (24 px steps, bottom rows first, centre outward), then at 0.55 there,
+--     then at 0.55 over the whole screen (a big bar on a small UI): the first joined spot clear
+--   5 the Combat bar piece's own spot (the stock bar's) - the last resort, always accepted (pushed under the tap pad's band if it would
+--     cover it; the geometry test fails any HUD state that lands here)
+-- The result's k scales the bar (NB.topSolve); its `lane` says the column under each half down to the screen's bottom edge is clear
+-- (the slide's path, below).
 -- A spot the player placed (an entry for "nbar" in WowCompanionDB.lay = Auto off; the editor's Reset = Auto again) ALWAYS wins: the
 -- joined bar there. FROZEN at PLAYER_REGEN_DISABLED: the game's rects stay the last ones read out of combat; in a fight the spot is
 -- re-fit only against OUR frames (Party mode lifting the HUD: the wings re-hug the taller block). Re-solved out of combat at login, on a
 -- layout save (the piece's apply), UI_SCALE_CHANGED / DISPLAY_SIZE_CHANGED, every REFIT_S against ours and every SOLVE_S with the game's
 -- frames read again.
--- MOTION (SPEC section 10): fade in + rise 24 px over 0.24 s, out over 0.20 s, Motion.curve's cubic (0.4, 0, 0.2, 1) evaluated per frame
--- (NB.ease); with the Nintendo bar already shown out of combat ("Controller UI = Nintendo") the bar GLIDES from its spot to the wings and
--- back; a re-fit glides 0.24 s. The top chat strip shown: the bar dips to 35 % alpha instead of moving. In the top layout editor (out of
--- combat) the bar shows at its piece's spot so it can be placed.
--- LIMITS: display only - plain frames made out of combat, EnableMouse(false), no secure template, anchored to UIParent and our own frames
--- only; nothing of the game's moved, shown or hidden (the stock bar keeps whatever its own switch says, and is an obstacle when shown);
--- no SetBinding / CVar / macro / action-slot write; no secret compared (every rect read through WC.isPlain; the game's never in a fight).
+-- MOTION (nbar11, the user 2026-11-22: "a slick animation looking like it slides up to the top screen"): with a clear lane the bar
+-- SLIDES IN UPWARD from fully below the top screen's bottom edge - a HOLD_IN (60 ms) wait, then IN_S (0.26 s) on the ease-out cubic
+-- (0, 0, 0.2, 1), alpha 1 all the way - as the app's band slides up off the bottom screen's top edge, so it reads as one object crossing
+-- the seam; out it slides back down past the edge over OUT_S (0.20 s) on the ease-in (0.4, 0, 1, 1) (the app's Motion.curveOut), then
+-- hides; a reversal mid-way goes on from where it is. No lane (the joined bar above the HUD, a placed spot over something): today's fade
+-- in + rise 24 px. With the Nintendo bar already shown out of combat ("Controller UI = Nintendo") the bar GLIDES from its spot to the
+-- wings and back; a re-fit glides IN_S. The top chat strip shown: the bar dips to 35 % alpha instead of moving. In the top layout editor
+-- (out of combat) the bar shows at its piece's spot so it can be placed. Party mode: no Wings (NB.topSwitch; the band stays below).
+-- LIMITS: display only - plain frames, EnableMouse(false), no secure template, anchored to UIParent and our own frames only; nothing of
+-- the game's moved, shown or hidden (the stock bar keeps whatever its own switch says, and is an obstacle when shown); no SetBinding /
+-- CVar / macro / action-slot write; no secret compared (every rect read through WC.isPlain; the game's never in a fight).
+-- nbar11 COMBAT SAFETY OF THE SLIDE: the Wings are insecure, display-only frames, so their motion in a fight is a per-frame SetPoint /
+-- SetScale / SetAlpha on WowCompanionNintendoBar (our own frame, parented and anchored to UIParent only - never to a protected frame,
+-- so nothing protected joins its anchor family) and SetAtlas / SetVertexColor on our own textures; no AnimationGroup (nothing on the
+-- device proves one in a fight, and none is needed), no secure template, no state driver. Proven on the device (1518): the Wings built,
+-- shown, moved, scaled and faded in fights (topApply -> topPlace per frame, the re-fit glide), SetAtlas on our textures in a fight
+-- (NB.glyph inside NB.refresh), mask textures on our frames (Trail's pet portrait), NB.build in a fight (nbar9). New and guarded: the
+-- round sweeps' SetSwipeTexture / SetUseCircularEdge run at build, pcall'd. Nothing depends on PLAYER_REGEN_DISABLED firing before the
+-- lockdown (the reserved rects are read only while InCombatLockdown() is false).
 -- The app sends nothing in combat: the add-on switches by itself.
 ---------------------------------------------------------------------------------------------------
-NB.TOP = { IN_S = 0.24, OUT_S = 0.20, RISE = 24, GAP = 34, MARGIN = 24, STEP = 24, RAISE_MAX = 300, FLOOR = 16, DIP = 0.35,
+NB.TOP = { HOLD_IN = 0.06, IN_S = 0.26, OUT_S = 0.20, RISE = 24, KS = { 1, 0.9, 0.8 }, KJ = { 1, 0.8 }, KG = { { 0.7, 0.4 }, { 0.55, 0.4 }, { 0.55, 0 } }, GAP = 34, MARGIN = 24, STEP = 24, RAISE_MAX = 300, FLOOR = 16, DIP = 0.35,
            REFIT_S = 0.5, SOLVE_S = 5, FLAG_S = 0.5, BAND = { x = 720, y = 24, w = 480, h = 154 },
            -- one half, in the bar's own units: the diamond (2 OFF + B), the ZL / ZR chip outside it, the two swing lines under it
-           CHIP_W = 44, CHIP_H = 22, CHIP_GAP = 4, SW_GAP = 8, SW_H = 6, SW_SEP = 4 }
+           CHIP_W = 40, CHIP_H = 28, CHIP_GAP = 4, SW_GAP = 8, SW_H = 6, SW_SEP = 4 }
 NB.top = { want = false, shown = false, edit = false, t = 0, dir = 0, form = "fade", solveAcc = 0, gameAcc = 0, game = {}, gameAt = nil,
            frozen = false, dirty = true, gameDirty = true, spot = nil, cur = nil, from = nil, mt = 1, alpha = 1, key = nil, n = 0, reads = 0, gameReads = 0 }
 NB.hx, NB.hy = { -NB.DX, NB.DX }, { 0, 0 }
 
--- the cubic (0.4, 0, 0.2, 1) at [u] in 0..1 (the app's Motion.curve): x(t) = u by bisection, then y(t)
-function NB.ease(u)
+-- a cubic bezier (x1, y1, x2, y2) at [u] in 0..1 (as Android's PathInterpolator): x(t) = u by bisection, then y(t)
+function NB.cubic(u, x1, y1, x2, y2)
     if u <= 0 then return 0 elseif u >= 1 then return 1 end
     local function bz(t, a, b) local m = 1 - t; return 3 * m * m * t * a + 3 * m * t * t * b + t * t * t end
     local lo, hi = 0, 1
     for _ = 1, 30 do
         local mid = (lo + hi) / 2
-        if bz(mid, 0.4, 0.2) < u then lo = mid else hi = mid end
+        if bz(mid, x1, x2) < u then lo = mid else hi = mid end
     end
-    return bz((lo + hi) / 2, 0, 1)
+    return bz((lo + hi) / 2, y1, y2)
+end
+-- the app's Motion.curve (0.4, 0, 0.2, 1): the glides and the fade
+function NB.ease(u) return NB.cubic(u, 0.4, 0, 0.2, 1) end
+-- nbar11 the slide's curves: in = ease-out (0, 0, 0.2, 1: Motion.curveEnter, the band coming down), out = ease-in (0.4, 0, 1, 1:
+-- Motion.curveOut, what leaves the screen)
+function NB.easeOut(u) return NB.cubic(u, 0, 0, 0.2, 1) end
+function NB.easeIn(u) return NB.cubic(u, 0.4, 0, 1, 1) end
+-- the slide's progress (0 below the edge .. 1 at the spot) at T.t for the way it goes ([dir] 1 in, -1 out: out runs T.t 1 -> 0)
+function NB.slideK(t, dir)
+    if dir == -1 then return 1 - NB.easeIn(1 - t) end
+    return NB.easeOut(t)
+end
+-- the T.t on the other way's curve that gives the same progress [k] (a reversal mid-way goes on from where the bar is: no jump)
+function NB.slideT(k, dir)
+    local lo, hi = 0, 1
+    for _ = 1, 30 do
+        local mid = (lo + hi) / 2
+        if NB.slideK(mid, dir) < k then lo = mid else hi = mid end
+    end
+    return (lo + hi) / 2
+end
+-- how far below its spot the slide starts (px): both halves wholly under the screen's bottom edge [H] (+2)
+function NB.slideDrop(to, sp)
+    local _, hh, _, ay = NB.halfBox()
+    local s = sp.s or 1
+    local H = sp.H or 1080
+    return H + ay * s - math.min(to.l.y, to.r.y) + 2, hh * s
 end
 
 -- one half's box in the bar's units: w, h and the diamond's centre from its top-left (the D-pad half; the faces' half mirrored)
@@ -3088,57 +3337,111 @@ end
 
 -- THE SOLVER (pure; 1080-line pixels from the top-left). [inp]: W, H, s (px per bar unit), hud (the HUD block's rect, nil = none),
 -- ours / game (rects to keep clear of), band (the tap pad's), placed (the player's own centre for the joined bar, nil = Auto), stock (the
--- piece's default centre). -> { case = 1 / 2 / 3 / 4 / "placed", form = "wings" / "joined", l / r = the two diamonds' centres,
--- rects = the two halves' boxes, raise = px raised (case 2) }
+-- piece's default centre). -> { case = 1 / 2 / 3 / 4 / 5 / "placed", form = "wings" / "joined", l / r = the two diamonds' centres,
+-- rects = the two halves' boxes, raise = px raised (case 2), k = the shrink (the bar's scale times it), lane = the column under each
+-- half to the bottom edge clear (the slide's path) }
 function NB.fightSolve(inp)
     local T = NB.TOP
-    local W, H, s = inp.W or 1920, inp.H or 1080, inp.s or 1
-    local hw, hh, ax, ay = NB.halfBox()
-    hw, hh, ax, ay = hw * s, hh * s, ax * s, ay * s
-    local dx = NB.DX * s
+    local W, H, s0 = inp.W or 1920, inp.H or 1080, inp.s or 1
     local band = inp.band or T.BAND
     local obst = {}
     for _, r in ipairs(inp.ours or {}) do obst[#obst + 1] = r end
     for _, r in ipairs(inp.game or {}) do obst[#obst + 1] = r end
-    local function lrect(cx, cy) return { x = cx - ax, y = cy - ay, w = hw, h = hh } end
-    local function rrect(cx, cy) return { x = cx - (hw - ax), y = cy - ay, w = hw, h = hh } end
+    -- one size's half box (px) and the diamonds' half spread
+    local function geo(k)
+        local hw, hh, ax, ay = NB.halfBox()
+        local s = s0 * k
+        return { s = s, hw = hw * s, hh = hh * s, ax = ax * s, ay = ay * s, dx = NB.DX * s }
+    end
+    local function lrect(g, cx, cy) return { x = cx - g.ax, y = cy - g.ay, w = g.hw, h = g.hh } end
+    local function rrect(g, cx, cy) return { x = cx - (g.hw - g.ax), y = cy - g.ay, w = g.hw, h = g.hh } end
     local function fits(r)
         if r.x < 0 or r.y < 0 or r.x + r.w > W or r.y + r.h > H then return false end
         if NB.overlaps(r, band, T.MARGIN) then return false end
         for _, o in ipairs(obst) do if NB.overlaps(r, o, T.MARGIN) then return false end end
         return true
     end
-    local function out(case, form, lx, ly, rx, ry, raise)
-        return { case = case, form = form, l = { x = lx, y = ly }, r = { x = rx, y = ry }, raise = raise or 0,
-                 rects = { lrect(lx, ly), rrect(rx, ry) } }
+    -- the slide's lane: nothing of ours or the game's in the column under a half, down to the screen's bottom edge
+    local function clearUnder(r)
+        local col = { x = r.x, y = r.y + r.h, w = r.w, h = math.max(0, H - (r.y + r.h)) + 1 }
+        for _, o in ipairs(obst) do if NB.overlaps(col, o, 0) then return false end end
+        return true
+    end
+    local function out(case, form, g, k, lx, ly, rx, ry, raise)
+        local rects = { lrect(g, lx, ly), rrect(g, rx, ry) }
+        return { case = case, form = form, l = { x = lx, y = ly }, r = { x = rx, y = ry }, raise = raise or 0, k = k,
+                 rects = rects, lane = clearUnder(rects[1]) and clearUnder(rects[2]) }
     end
     -- the joined bar centred on [c], kept on the screen FIRST, then moved under the tap pad's band if it would come within MARGIN of it
     -- (nbar10: the clamp ran after the band test, so a left-edge spot that cleared the band was pushed onto it by the clamp)
-    local function keep(x, y)
-        return math.max(dx + ax, math.min(W - dx - ax, x)), math.max(ay, math.min(H - (hh - ay), y))
+    local function keep(g, x, y)
+        return math.max(g.dx + g.ax, math.min(W - g.dx - g.ax, x)), math.max(g.ay, math.min(H - (g.hh - g.ay), y))
     end
-    local function joined(case, c)
-        local x, y = keep(c.x, c.y)
-        local r = { x = x - dx - ax, y = y - ay, w = 2 * (dx + ax), h = hh }
-        if NB.overlaps(r, band, T.MARGIN) then x, y = keep(x, band.y + band.h + T.MARGIN + ay) end
-        return out(case, "joined", x - dx, y, x + dx, y)
+    local function joined(case, c, k)
+        local g = geo(k or 1)
+        local x, y = keep(g, c.x, c.y)
+        local r = { x = x - g.dx - g.ax, y = y - g.ay, w = 2 * (g.dx + g.ax), h = g.hh }
+        if NB.overlaps(r, band, T.MARGIN) then x, y = keep(g, x, band.y + band.h + T.MARGIN + g.ay) end
+        return out(case, "joined", g, k or 1, x - g.dx, y, x + g.dx, y)
     end
     if inp.placed then return joined("placed", inp.placed) end
     local hud = inp.hud
     if hud then
-        local lx = hud.x - T.GAP - (hw - ax)
-        local rx = hud.x + hud.w + T.GAP + (hw - ax)
-        local cy = math.min(hud.y + hud.h / 2, H - T.FLOOR - (hh - ay))
-        if fits(lrect(lx, cy)) and fits(rrect(rx, cy)) then return out(1, "wings", lx, cy, rx, cy) end
-        local d = T.STEP
-        while d <= T.RAISE_MAX do
-            if fits(lrect(lx, cy - d)) and fits(rrect(rx, cy - d)) then return out(2, "wings", lx, cy - d, rx, cy - d, d) end
-            d = d + T.STEP
+        local function level(g) return math.min(hud.y + hud.h / 2, H - T.FLOOR - (g.hh - g.ay)) end
+        -- 1: level beside the block, the full size first, then a little smaller
+        for _, k in ipairs(T.KS) do
+            local g = geo(k)
+            local lx, rx = hud.x - T.GAP - (g.hw - g.ax), hud.x + hud.w + T.GAP + (g.hw - g.ax)
+            local cy = level(g)
+            if fits(lrect(g, lx, cy)) and fits(rrect(g, rx, cy)) then return out(1, "wings", g, k, lx, cy, rx, cy) end
         end
-        local jx, jy = hud.x + hud.w / 2, hud.y - T.GAP - (hh - ay)
-        if fits(lrect(jx - dx, jy)) and fits(rrect(jx + dx, jy)) then return out(3, "joined", jx - dx, jy, jx + dx, jy) end
+        -- 2: raised at the smallest of those sizes
+        do
+            local k = T.KS[#T.KS]
+            local g = geo(k)
+            local lx, rx = hud.x - T.GAP - (g.hw - g.ax), hud.x + hud.w + T.GAP + (g.hw - g.ax)
+            local cy = level(g)
+            local d = T.STEP
+            while d <= T.RAISE_MAX do
+                if fits(lrect(g, lx, cy - d)) and fits(rrect(g, rx, cy - d)) then return out(2, "wings", g, k, lx, cy - d, rx, cy - d, d) end
+                d = d + T.STEP
+            end
+        end
+        -- 3: joined above the block
+        for _, k in ipairs(T.KJ) do
+            local g = geo(k)
+            local jx, jy = hud.x + hud.w / 2, hud.y - T.GAP - (g.hh - g.ay)
+            if fits(lrect(g, jx - g.dx, jy)) and fits(rrect(g, jx + g.dx, jy)) then return out(3, "joined", g, k, jx - g.dx, jy, jx + g.dx, jy) end
+        end
     end
-    return joined(4, inp.stock or { x = W / 2, y = H - 64 * s - hh / 2 })
+    -- 4: a grid scan of the lower 60 % at k 0.7, then 0.55, then the whole screen at 0.55 (bottom rows first, from the middle outward):
+    -- the first clear joined spot
+    for _, kt in ipairs(T.KG) do
+        local k = kt[1]
+        local g = geo(k)
+        local x0, x1 = g.dx + g.ax, W - g.dx - g.ax
+        local yBottom, yTop = H - T.FLOOR - (g.hh - g.ay), H * kt[2] + g.ay
+        local mid = (hud and (hud.x + hud.w / 2)) or W / 2
+        local y = yBottom
+        while y >= yTop do
+            local i = 0
+            while true do
+                local tried = false
+                for _, sgn in ipairs(i == 0 and { 1 } or { -1, 1 }) do
+                    local x = mid + sgn * i * T.STEP
+                    if x >= x0 and x <= x1 then
+                        tried = true
+                        if fits(lrect(g, x - g.dx, y)) and fits(rrect(g, x + g.dx, y)) then return out(4, "joined", g, k, x - g.dx, y, x + g.dx, y) end
+                    end
+                end
+                if not tried and (mid - i * T.STEP < x0) and (mid + i * T.STEP > x1) then break end
+                i = i + 1
+            end
+            y = y - T.STEP
+        end
+    end
+    local g1 = geo(1)
+    return joined(5, inp.stock or { x = W / 2, y = H - 64 * s0 - g1.hh / 2 })
 end
 
 -- ---------------------------------------------------------------- the inputs (our frames any time; the game's out of combat only)
@@ -3150,8 +3453,9 @@ function NB.topScreen()
     end
     return 1920, 1080, 1
 end
--- a plain frame of OURS: its rect in 1080-line pixels while it shows (nil = hidden, at alpha 0, not laid out, or a value not plain)
-function NB.frameRect(f)
+-- a plain frame of OURS: its rect in 1080-line pixels while it shows (nil = hidden, at alpha 0, not laid out, or a value not plain).
+-- nbar11 [anyAlpha]: a frame faded to alpha 0 still counts (the HUD fades out of combat, where the spot is solved; it is back in the fight)
+function NB.frameRect(f, anyAlpha)
     if type(f) ~= "table" then return nil end
     local function n(m)
         local fn = f[m]
@@ -3162,7 +3466,7 @@ function NB.frameRect(f)
     end
     local okV, vis = pcall(function() return f:IsVisible() end)
     if not (okV and vis == true) then return nil end
-    if (n("GetEffectiveAlpha") or n("GetAlpha") or 1) <= 0.01 then return nil end
+    if not anyAlpha and (n("GetEffectiveAlpha") or n("GetAlpha") or 1) <= 0.01 then return nil end
     local l, t, w, h = n("GetLeft"), n("GetTop"), n("GetWidth"), n("GetHeight")
     local es = n("GetEffectiveScale") or 1
     local okU, ues = pcall(function() return UIParent:GetEffectiveScale() end)
@@ -3206,15 +3510,23 @@ function NB.topOurs()
     local pf = type(uf) == "table" and type(uf.pf) == "table" and uf.pf or nil
     local boxes = type(ab) == "table" and type(ab.boxes) == "table" and ab.boxes or {}
     local function host(key) local b = boxes[key]; return type(b) == "table" and b.host or nil end
-    -- the HUD block: the bars, the pet strip, the aura host, and Party mode's rows hanging under it
+    -- the HUD block: the bars, the pet strip, the aura host, and Party mode's rows hanging under it. nbar11: read at any alpha, and
+    -- unioned with the block's own geometry (Trail P.lay.block: every part the HUD can show in a fight, wherever it is now)
     if type(prd) == "table" and NB.pieceOn(prd.lay) then
         local live = nil
         local fs = { prd.f, prd.petL, type(prd.box) == "table" and prd.box.host or nil, host("hud") }
-        for i = 1, 4 do live = NB.union(live, NB.frameRect(fs[i])) end              -- (holes: not ipairs)
+        for i = 1, 4 do live = NB.union(live, NB.frameRect(fs[i], true)) end        -- (holes: not ipairs)
         if pf and pf.at == "hud" and type(pf.frames) == "table" then
-            for _, f in pairs(pf.frames) do live = NB.union(live, NB.frameRect(f)) end
+            for _, f in pairs(pf.frames) do live = NB.union(live, NB.frameRect(f, true)) end
         end
-        hud = live or NB.pieceRect(prd.lay, "hud")
+        local geo = nil
+        if type(prd.lay.block) == "function" then
+            local L = WC.lay
+            local e = (type(L) == "table" and type(L.get) == "function") and L.get("hud") or nil
+            local okB, r = pcall(prd.lay.block, e)
+            if okB and type(r) == "table" and type(r.x) == "number" and type(r.w) == "number" and r.w > 0 and r.h > 0 then geo = r end
+        end
+        hud = NB.union(live, geo) or NB.pieceRect(prd.lay, "hud")
         if hud then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hud") end
     end
     local cp = rawget(WC, "compass")
@@ -3248,20 +3560,52 @@ function NB.topOurs()
     end
     return out, hud
 end
--- the game's frames shown NOW (out of combat only: nil in a fight, nothing read)
+-- nbar11 THE RESERVED GAME FRAMES: the ones that show only in a fight (all in Hub's G.REG). Read out of combat even while hidden (an
+-- anchored frame has a rect); each good rect kept for the session. A cast bar always counts (every class casts); the others once they
+-- have shown this session (a Cooldown Manager switched off takes no room)
+NB.RESERVE = { "PlayerCastingBarFrame", "GamepadPlayerCastingBarFrame", "EssentialCooldownViewer", "UtilityCooldownViewer",
+               "BuffIconCooldownViewer", "BuffBarCooldownViewer", "MirrorTimerContainer", "ExtraAbilityContainer", "BossTargetFrameContainer",
+               "SwingTimerMainHandFrame", "SwingTimerOffHandFrame", "SwingTimerRangedFrame" }
+NB.RESERVE_ALWAYS = { PlayerCastingBarFrame = true, GamepadPlayerCastingBarFrame = true }
+-- the game's frames shown NOW and the reserved ones (out of combat only: nil in a fight, nothing read)
 function NB.topGame()
     if S(InCombatLockdown) ~= false then return nil end
     local G = rawget(WC, "gameLay")
     local out = {}
     if type(G) ~= "table" or type(G.shown) ~= "function" or type(G.rectNow) ~= "function" then return out end
     pcall(G.find)
+    local T = NB.top
+    T.res, T.seen = T.res or {}, T.seen or {}
+    local have = {}
     for _, id in ipairs(type(G.ids) == "table" and G.ids or {}) do
         local okS, sh = pcall(G.shown, id)
         if okS and sh == true then
             local okR, r = pcall(G.rectNow, G.frame(id))
-            NB.top.gameReads = NB.top.gameReads + 1
+            T.gameReads = T.gameReads + 1
             if okR and type(r) == "table" and type(r.w) == "number" and r.w > 0 and r.h > 0 then
                 out[#out + 1] = { x = r.x, y = r.y, w = r.w, h = r.h, id = id }
+                have[id] = true
+                T.seen[id] = true
+                T.res[id] = { x = r.x, y = r.y, w = r.w, h = r.h, id = id }
+            end
+        end
+    end
+    for _, name in ipairs(NB.RESERVE) do
+        local id = "g." .. name
+        if not have[id] then
+            local fr = type(G.frame) == "function" and G.frame(id) or nil
+            if fr ~= nil then
+                local okR, r = pcall(G.rectNow, fr)
+                T.gameReads = T.gameReads + 1
+                if okR and type(r) == "table" and type(r.x) == "number" and type(r.y) == "number" and type(r.w) == "number"
+                        and type(r.h) == "number" and r.w > 0 and r.h > 0 then
+                    T.res[id] = { x = r.x, y = r.y, w = r.w, h = r.h, id = id }
+                end
+            end
+            -- (GetLeft nil on a hidden frame: the last rect seen stays)
+            local keep = T.res[id]
+            if keep and (NB.RESERVE_ALWAYS[name] or T.seen[id]) then
+                out[#out + 1] = { x = keep.x, y = keep.y, w = keep.w, h = keep.h, id = id, reserved = true }
             end
         end
     end
@@ -3294,14 +3638,32 @@ function NB.topInputs()
     return { W = W, H = H, s = k * sc * kk, fsc = k * sc, kk = kk, hud = hud, ours = ours, game = NB.top.game or {}, band = NB.topBand(),
              placed = placed, stock = { x = bx, y = by } }
 end
+-- the solve's inputs as one string (nil = not keyable)
+function NB.inputKey(inp)
+    local ok, k = pcall(function()
+        local out = { string.format("%.4f %.4f %.1f %.1f|", inp.s, inp.fsc, inp.W, inp.H) }
+        local function rk(r) out[#out + 1] = r and string.format("%.1f,%.1f,%.1f,%.1f;", r.x, r.y, r.w or 0, r.h or 0) or "-;" end
+        rk(inp.hud); rk(inp.band); rk(inp.placed); rk(inp.stock)
+        for _, r in ipairs(inp.ours or {}) do rk(r) end
+        out[#out + 1] = "|"
+        for _, r in ipairs(inp.game or {}) do rk(r) end
+        return table.concat(out)
+    end)
+    return ok and k or nil
+end
 -- [fresh]: the game's frames read again (out of combat only); then the spot, and a glide to it if it moved while shown
 function NB.topSolve(fresh)
     local T = NB.top
     if fresh and not T.frozen and S(InCombatLockdown) == false then T.game = NB.topGame() or T.game; T.gameAt = SN(GetTime) end
     local ok, inp = pcall(NB.topInputs)
     if not ok or type(inp) ~= "table" then return nil end
+    -- nbar11: the same inputs as the last solve -> the same spot (the grid scan is never redone every REFIT_S for nothing)
+    local key = NB.inputKey(inp)
+    if key and key == T.inKey and T.spot then return T.spot end
+    T.inKey = key
     local r = NB.fightSolve(inp)
-    r.fsc, r.s, r.kk, r.H = inp.fsc, inp.s, inp.kk, inp.H
+    local k = r.k or 1                                                  -- nbar11: the solver's shrink on the bar's scale
+    r.fsc, r.s, r.kk, r.H = inp.fsc * k, inp.s * k, inp.kk, inp.H
     T.n = T.n + 1
     local old = T.spot
     T.spot = r
@@ -3322,7 +3684,16 @@ function NB.topFlag()
     return false
 end
 -- the router's own fight switch (the fight or an attack / auto-repeat armed, not given back by B), else the fight itself
+-- nbar11: Party mode on (Trail's P.partyModeOn: PadMap's party switch, outside a raid) - the bottom band keeps the controls (ruling R0:
+-- no takeover in Party mode), so the Wings stay off: the bar is never in both places
+function NB.partyOn()
+    local prd = rawget(WC, "prd")
+    if type(prd) ~= "table" or type(prd.partyModeOn) ~= "function" then return false end
+    local ok, v = pcall(prd.partyModeOn)
+    return ok and v == true
+end
 function NB.topSwitch()
+    if NB.partyOn() then return false end
     -- nbar8: in a fight the Wings stay to its end (B's give-back drops the bottom grow's word, never the top screen's bar)
     if S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true then return true end
     if type(WC.tgGrown) == "function" then
@@ -3356,12 +3727,26 @@ function NB.topParts(f)
         local c = CreateFrame("Frame", nil, f)
         pcall(c.EnableMouse, c, false)
         c:SetSize(T.CHIP_W, T.CHIP_H)
-        c.bg = c:CreateTexture(nil, "BACKGROUND")
+        c.key = (i == 1) and "zl" or "zr"
+        -- nbar11: the trigger glyph (the band's UiKit.triggerChip look): dim at rest, lit over a soft gold disc while held; the old dark
+        -- chip with its word only where the client refuses the glyph
+        c.disc = c:CreateTexture(nil, "BACKGROUND")
+        c.disc:SetPoint("CENTER", c, "CENTER", 0, 0)
+        c.disc:SetSize(T.CHIP_H + 8, T.CHIP_H + 8)
+        c.dmask = NB.maskFor(c, c.disc, true)
+        if c.dmask then pcall(c.disc.AddMaskTexture, c.disc, c.dmask) end
+        pcall(c.disc.SetColorTexture, c.disc, 1, 0.78, 0.3, 0.38)
+        c.disc:Hide()
+        c.bg = c:CreateTexture(nil, "BACKGROUND", nil, -1)
         c.bg:SetAllPoints(c)
         pcall(c.bg.SetColorTexture, c.bg, 0.08, 0.07, 0.05, 0.8)
+        c.g = c:CreateTexture(nil, "ARTWORK")
+        c.g:SetAllPoints(c)
         c.word = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         c.word:SetPoint("CENTER", c, "CENTER", 0, 0)
         c.word:SetText(w)
+        c.gOn = NB.atlasOn(c.g, "gamepad-switch-128x-" .. c.key .. "-normal")
+        if c.gOn then c.bg:Hide(); c.word:Hide(); c.g:Show(); pcall(c.g.SetAlpha, c.g, 0.55) else c.g:Hide() end
         c:Hide()
         f.chip[i] = c
     end
@@ -3404,8 +3789,16 @@ function NB.topChips(set)
     local lit = { set == 2 or set == 4, set == 3 or set == 4 }
     for i = 1, 2 do
         local c = f.chip[i]
+        local was = c.lit
         c.lit = lit[i]
         if lit[i] then c.word:SetTextColor(1, 0.82, 0) else c.word:SetTextColor(0.75, 0.75, 0.75) end
+        if c.gOn and was ~= c.lit then
+            if not NB.atlasOn(c.g, "gamepad-switch-128x-" .. c.key .. (c.lit and "-pressed" or "-normal")) then
+                NB.atlasOn(c.g, "gamepad-switch-128x-" .. c.key .. "-normal")
+            end
+            pcall(c.g.SetAlpha, c.g, c.lit and 1 or 0.55)
+            if c.lit then c.disc:Show() else c.disc:Hide() end
+        end
     end
 end
 -- the split swing lines under the faces (WC.swingDoc: plain numbers of our own; a line shows while its swing runs)
@@ -3496,9 +3889,15 @@ function NB.topApply()
     local e = NB.ease(T.t)
     local from
     if T.form == "glide" then from = NB.joinedNow(sp)
+    elseif T.form == "slide" then
+        -- nbar11: from wholly below the top screen's bottom edge, straight up (in: ease-out; out: ease-in back down)
+        local d = NB.slideDrop(to, sp)
+        from = { l = { x = to.l.x, y = to.l.y + d }, r = { x = to.r.x, y = to.r.y + d } }
+        e = NB.slideK(T.t, T.sd or 1)
     else from = { l = { x = to.l.x, y = to.l.y + NB.TOP.RISE }, r = { x = to.r.x, y = to.r.y + NB.TOP.RISE } } end
+    T.k = e
     NB.topPlace(NB.lerpSpot(from, to, e), sp)
-    local a = (T.form == "glide") and 1 or e
+    local a = (T.form == "fade") and e or 1
     if NB.chatUp() then a = a * NB.TOP.DIP end
     T.alpha = a
     pcall(f.SetAlpha, f, (NB.vis == false and 0 or 1) * a)
@@ -3532,7 +3931,11 @@ function NB.topTick(el)
     -- nbar9: built in a fight too (a /reload or a login inside combat, the key arriving mid-fight): NB.build makes only plain frames,
     -- textures, fontstrings and the game's plain cooldown swipe, EnableMouse(false), anchored to UIParent - legal in combat
     if flag and not NB.built then pcall(NB.build) end
-    if flag and NB.built then
+    -- nbar11: while the bar leaves (shown, the switch off) the spot stays as it was - it slides straight down from where it stands; the
+    -- fresh solve (the fight's end marks the game's frames dirty) waits until it is gone
+    local sw = NB.topSwitch()
+    local leaving = T.shown and not sw
+    if flag and NB.built and not leaving then
         -- the game's frames read again only out of combat, on their events or every SOLVE_S; ours on a change (a layout save, the
         -- editor's view) or every REFIT_S (in a fight: our frames only, the game's as frozen)
         if not combat and (T.gameDirty or T.gameAcc >= NB.TOP.SOLVE_S) then
@@ -3543,14 +3946,37 @@ function NB.topTick(el)
             NB.topSolve(false)
         end
     end
-    local want = flag and NB.built and T.spot ~= nil and NB.topSwitch()
+    local want = flag and NB.built and T.spot ~= nil and sw
     if want ~= T.want then
         T.want = want
+        local was = T.dir
         T.dir = want and 1 or -1
         if want then
             if not combat then NB.topSolve(true) end                       -- attack armed before the pull: the freshest spot
-            if not T.shown then T.form = NB.on and "glide" or "fade"; T.mt, T.from = 1, nil end
+            if not T.shown then
+                -- nbar11: the slide when the lane under both halves is clear, else the fade + rise; the glide in Nintendo mode
+                T.form = NB.on and "glide" or ((T.spot and T.spot.lane) and "slide" or "fade"); T.mt, T.from = 1, nil
+            end
+            if T.form == "slide" and T.t <= 0 and not T.shown then
+                T.dir, T.hold, T.sd = 0, NB.TOP.HOLD_IN, 1               -- the band's first frames go first: a 60 ms hold
+            end
+        else
+            T.hold = nil
+            -- the way down: a settled slide whose lane closed since (a lifted HUD) leaves by the fade instead (no jump at t = 1)
+            if T.form == "slide" and T.t >= 1 and was == 0 and not (T.spot and T.spot.lane) then T.form = "fade" end
         end
+        -- a slide reversed mid-way goes on from where it is (the other curve's t at the same progress)
+        if T.form == "slide" and T.dir ~= 0 and T.dir ~= (T.sd or 1) then
+            local k = NB.slideK(T.t, T.sd or 1)
+            T.sd = T.dir
+            if T.t > 0 and T.t < 1 then T.t = NB.slideT(k, T.sd) end
+        elseif T.dir ~= 0 then
+            T.sd = T.dir
+        end
+    end
+    if T.hold then
+        T.hold = T.hold - el
+        if T.hold <= 0 then T.hold, T.dir, T.sd = nil, 1, 1 end
     end
     if T.dir ~= 0 then
         T.t = T.t + T.dir * el / (T.dir > 0 and NB.TOP.IN_S or NB.TOP.OUT_S)
@@ -3889,14 +4315,16 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
     elseif event == "PLAYER_REGEN_ENABLED" then
         installHooks()
         trySetupKeys()
-        requestState()
+        WC.stateEdge(event)             -- nbar11: the fight's end at once
         layoutSoon()                    -- f-class-radial: a radial that changed in the fight gets its touch cells now
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        WC.stateEdge(event)             -- nbar11: the fight's start at once
     elseif event == "START_AUTOREPEAT_SPELL" then
         autoRepeat = true
-        requestState()
+        WC.stateEdge(event)
     elseif event == "STOP_AUTOREPEAT_SPELL" then
         autoRepeat = false
-        requestState()
+        WC.stateEdge(event)
     elseif event == "PLAYER_SWING" then
         WC.swingNote(a1, a2)
         requestState()
@@ -3910,10 +4338,10 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
         if slot == 16 or slot == 17 then WC.swingWeapons(slot); requestState() end
     elseif event == "PLAYER_ENTER_COMBAT" then
         autoAttack = true
-        requestState()
+        WC.stateEdge(event)
     elseif event == "PLAYER_LEAVE_COMBAT" then
         autoAttack = false
-        requestState()
+        WC.stateEdge(event)
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         local ok, err = pcall(sampleGCD)    -- isOnGCD is only trustworthy HERE, synchronously
         if not ok then noteError(err) end

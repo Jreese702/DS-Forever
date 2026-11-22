@@ -76,20 +76,31 @@ class TopCombatBarTest {
 
     // ---------------------------------------------------------------- the bottom band
 
-    @Test fun topScreenLaysEveryLayoutAtItsRestBoxesInAFight() {
+    /** TopSlide (the user, 2026-11-22: "slides up to the top screen", the pick "Chat and map grow up"): in a fight every Top screen record
+     *  lays the band ABOVE the page at its rest size and the columns grow up into the strip; every other box keeps its rest x range */
+    @Test fun topScreenLaysEveryLayoutWithTheBandAwayInAFight() {
         var n = 0
         for (l in HomeLayoutRules.all().filter { it.fight == HomeLayout.FightBand.TOP }) {
             for (hidden in listOf(false, true)) for (card in listOf(false, true)) {
                 val rest = HomeLayoutSolver.places(l, HomeLayoutSolver.State(card = card, cardH = 118f, castHidden = hidden))
                 val fight = HomeLayoutSolver.places(l, HomeLayoutSolver.State(takeover = true, card = card, cardH = 118f, castHidden = hidden))
                 assertFalse(HomeLayoutSolver.big(l, HomeLayoutSolver.State(takeover = true)))
-                assertEquals("$l: the band's bottom", rest.barsBottom, fight.barsBottom, 0f)
-                assertEquals("$l: every box as at rest", rest.boxes, fight.boxes)
+                assertTrue("$l: away", fight.away && !rest.away)
+                assertEquals("$l: the band's bottom", 0f, fight.barsBottom, 0f)
+                val rb = rest.boxes.getValue(HomePart.BARS); val fb = fight.boxes.getValue(HomePart.BARS)
+                assertEquals("$l: the band its rest size", rb.h, fb.h, 0.001f)
+                assertEquals("$l: above the page", -HomeLayoutSolver.AWAY_PAST, fb.b, 0f)
+                // the columns: the same x ranges, grown up by the band's rest bottom
+                for (p in listOf(HomePart.CHAT, HomePart.MAP)) {
+                    val a = rest.boxes.getValue(p); val b = fight.boxes.getValue(p)
+                    assertEquals("$l: $p's x", a.l, b.l, 0f); assertEquals(a.r, b.r, 0f)
+                    assertTrue("$l: $p grown up", b.t <= a.t - rest.barsBottom + 0.01f)
+                }
                 assertTrue("$l: valid in the fight", HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), HomeLayoutSolver.places(l,
                     HomeLayoutSolver.State(takeover = true))).isEmpty())
                 n++
             }
-            // Grow (the same record otherwise) does grow: Top really is the rest's place
+            // Grow (the same record otherwise) does grow
             val g = l.copy(fight = HomeLayout.FightBand.GROW)
             assertEquals(416f, HomeLayoutSolver.places(g, HomeLayoutSolver.State(takeover = true)).barsBottom, 0.01f)
         }
@@ -107,25 +118,15 @@ class TopCombatBarTest {
         for (ct in listOf(null, 0)) assertTrue("ct=$ct", TopCombatBar.bShrinks(top, fighting = true, ct = ct))
     }
 
-    @Test fun theUpCueAtTheFightsStart() {
-        val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
-        assertTrue(TopCombatBar.cueStarts(false, true, top, 1))
-        assertFalse("not again while the fight lasts", TopCombatBar.cueStarts(true, true, top, 1))
-        assertFalse("not at its end", TopCombatBar.cueStarts(true, false, top, 1))
-        assertFalse("Grow: no cue (the band grows)", TopCombatBar.cueStarts(false, true, HomeLayout(), 1))
-        assertFalse(TopCombatBar.cueStarts(false, true, HomeLayout(fight = HomeLayout.FightBand.SAME), 1))
-        // the 1515 merge's review: the Wings not on (no key while asking / after Later: no ct; an older add-on; ct 0): no "up" cue
-        assertFalse("no key", TopCombatBar.cueStarts(false, true, top, null))
-        assertFalse("not confirmed", TopCombatBar.cueStarts(false, true, top, 0))
-        // 1.5 s: 120 in, held, 200 out
-        assertEquals(1_500L, TopCombatBar.CUE_MS)
-        assertEquals(0f, TopCombatBar.cueAlpha(0), 0f)
-        assertEquals(0.5f, TopCombatBar.cueAlpha(60), 0.001f)
-        assertEquals(1f, TopCombatBar.cueAlpha(120), 0f)
-        assertEquals(1f, TopCombatBar.cueAlpha(1_299), 0f)
-        assertEquals(0.5f, TopCombatBar.cueAlpha(1_400), 0.001f)
-        assertEquals(0f, TopCombatBar.cueAlpha(1_500), 0f)
-        assertEquals(0f, TopCombatBar.cueAlpha(-5), 0f)
+    /** nbar11 / TopSlide (the user, 2026-11-22: "It should be a slick animation looking like it slides up to the top screen"): the old
+     *  1.5 s "up" plate is gone - the slide is the cue */
+    @Test fun theUpCueIsGoneTheSlideIsTheCue() {
+        val src = java.io.File(listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"),
+            java.io.File("companion/app/src/main/java/com/jrees/wowcompanion")).first { it.isDirectory }, "TopCombatBar.kt").readText()
+        assertFalse(src.contains("fun cueStarts")); assertFalse(src.contains("fun cueAlpha")); assertFalse(src.contains("CUE_MS"))
+        assertTrue("the Book's codes in the note (b76: 22 off / 23 on)", src.contains("then 22 (off) / 23 (on) (Book b76"))
+        assertEquals(listOf(PadMapModel.ROW_PADTAB to 39, PadMapModel.ROW_PADTAB to 38, PadMapModel.ROW_PADTAB to 37, PadMapModel.ROW_PADTAB to 23),
+            TopCombatBar.cells(true))
     }
 
     /** the 1515 merge's review (P5, "the pictures never lie"): Top screen is honoured only while the add-on's Wings are on (`ct` 1). With
@@ -150,11 +151,11 @@ class TopCombatBarTest {
             "pk":[{"r":"Realm 7","n":4},{"r":"Realm 8","n":5}]}}}}"""))!!.dpad!!
         assertNull(asking.realm); assertNull(asking.ct)
         assertEquals(HomeLayout.FightBand.GROW, TopCombatBar.honoured(top, asking.ct).fight)
-        // HomeView lays, cues and shrinks by the CURRENT padmap's flag
+        // HomeView lays and shrinks by the CURRENT padmap's flag (no cue any more: the band slides)
         val home = java.io.File(listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"),
             java.io.File("companion/app/src/main/java/com/jrees/wowcompanion")).first { it.isDirectory }, "HomeView.kt").readText()
         assertTrue(home.contains("if (look == null) l = TopCombatBar.honoured(l, padMap?.dpad?.ct)"))
-        assertTrue(home.contains("TopCombatBar.cueStarts(cueWas, on, HomeSettings.layout, padMap?.dpad?.ct)"))
+        assertFalse(home.contains("cueStarts")); assertFalse(home.contains("topCueAlpha"))
         assertTrue(home.contains("TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)"))
     }
 

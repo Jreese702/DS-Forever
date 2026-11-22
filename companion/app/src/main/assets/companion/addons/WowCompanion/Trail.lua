@@ -4339,6 +4339,37 @@ do
         on = function() local ok, w = pcall(P.wanted); return ok and w == true end,
         apply = function() P.fromLay(); P.resize(); P.place() end,
     }
+    -- THE HUD BLOCK (prd21 + ActionBar nbar11, the top-screen combat bar's "never over my HUD"; the user 2026-11-22): every part the HUD can
+    -- show in a fight, from its geometry alone (a pure function of the fields: a HUD faded out of combat, its auras not up yet, still
+    -- counts) - the bars, the combo pips (P.petDrop has them while shown), the pet strip under (petDrop) or beside the HP bar
+    -- (PET_SIDE_GAP past its rim, P.petGeo's row), Party mode's rows under the bars (petDrop = PET_GAP + PARTY_GAP + their room), the aura
+    -- host's two rows under them (ROW_GAP past the strip) or above them (AURA_UP, Party mode), Party mode's lift - at the HUD's scale.
+    -- [e] the layout entry (its dx / dy / s; nil = the default spot). -> { x, y, w, h } in 1080-line px from the top-left
+    P.lay.block = function(e)
+        local sc = ((e and num(e.s)) or num(P.sc) or P.S_DEF) / 100
+        local bx, by = P.lay.base()
+        local ax = bx + ((e and num(e.dx)) or 0)
+        local ay = by + ((e and num(e.dy)) or 0) - (num(P.lift) or 0) * sc
+        local w = num(P.W) or num(P.wd) or P.W_DEF
+        local base = P.HH + P.BAR_GAP + P.PH
+        local drop = math.max(0, num(P.petDrop) or 0)
+        local auraH = 2 * (P.ICON + 18)
+        -- spec px from the bars' top-left (y down)
+        local x0, x1, y0, y1 = 0, w, 0, base + drop
+        if P.auraUp then y0 = -(P.AURA_UP + auraH)
+        else y1 = base + P.ROW_GAP + drop + auraH end
+        local pl = P.petL
+        local petOn = pl ~= nil and type(pl.IsShown) == "function" and pl:IsShown() == true
+        if petOn and P.petSide == "beside" then
+            local okG, g = pcall(P.petGeo)
+            local row = (okG and type(g) == "table" and num(g.row)) or 0
+            local px = w + 7 * P.HH / 8 + P.PET_SIDE_GAP
+            local py = -(row - base) / 2
+            x1 = math.max(x1, px + w)
+            y0, y1 = math.min(y0, py), math.max(y1, py + row)
+        end
+        return { x = ax - (w / 2) * sc + x0 * sc, y = ay + y0 * sc, w = (x1 - x0) * sc, h = (y1 - y0) * sc }
+    end
 
     -- ---------------------------------------------------------------- the values (fed, never read)
     -- prd3: the lag bar (under the health fill), the heals and the shield (past it, clipped to the bar), the cost (on the power fill)

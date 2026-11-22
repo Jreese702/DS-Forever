@@ -128,7 +128,15 @@ function F:SetAtlas(a)
     return true
 end
 function F:SetScale(k) self.scale = k end
-function F:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
+-- nbar11 (the ring look): masks, the round sweeps, frame levels
+function F:CreateMaskTexture() local m = new("mask", self); return m end
+function F:AddMaskTexture(m) self.masks = self.masks or {}; self.masks[#self.masks + 1] = m end
+function F:SetTexCoord(...) self.tcoord = { ... } end
+function F:SetSwipeTexture(t) self.swipe = t end
+function F:SetUseCircularEdge(v) self.circEdge = v end
+function F:SetFrameLevel(l) self.level = l end
+function F:GetFrameLevel() return self.level or 1 end
+function F:SetColorTexture(r, g, b, a) self.color = { r, g, b, a }; self.atlas = nil end
 function F:SetVertexColor(r, g, b) self.vc = { r, g, b } end
 function F:SetDesaturated(d) self.desat = d end
 function F:SetText(t) self.text = t end
@@ -452,9 +460,12 @@ def main():
     s = shown(L)
     chk("plain layer: the faces the game's fixed four out of a fight (Interact / Inspect - its live crosshair with a target - / Back / Jump)",
         [x["icon"] for x in s[4:]] == [136243, "atlas:crosshair_inspect_32", 136245, 136246], [x["icon"] for x in s[4:]])
-    chk("glyphs (nbar2): the Nintendo layout (swap): D-pad arrows, each face its own letter (PAD3 X / PAD4 Y / PAD2 B / PAD1 A, m119)",
-        [x["atlas"] for x in s] == ["Gamepad_Gen_Left_64", "Gamepad_Gen_Up_64", "Gamepad_Gen_Right_64", "Gamepad_Gen_Down_64",
-                                    "Gamepad_Rev_X_64", "Gamepad_Rev_Y_64", "Gamepad_Rev_B_64", "Gamepad_Rev_A_64"], [x["atlas"] for x in s])
+    chk("glyphs (nbar11, the bottom band's ring glyphs): the Nintendo layout (swap): the xbox cross D-pad, each face its own Switch letter "
+        "(PAD3 X / PAD4 Y / PAD2 B / PAD1 A, m119)",
+        [x["atlas"] for x in s] == ["gamepad-xbox1-dpadleft-normal", "gamepad-xbox1-dpadup-normal", "gamepad-xbox1-dpadright-normal",
+                                    "gamepad-xbox1-dpaddown-normal", "gamepad-switch-128x-face-x-normal", "gamepad-switch-128x-face-y-normal",
+                                    "gamepad-switch-128x-face-b-normal", "gamepad-switch-128x-face-a-normal"], [x["atlas"] for x in s])
+    ring_checks(chk, L, f)
     O, D = WC.nbar.OFF, WC.nbar.DX
     at = [(f.btn[p].pts[1][4], f.btn[p].pts[1][5]) for p in range(5, 9)]
     chk("ABXY location swap (nbar2, CastView's Nintendo arrangement): X top, Y left, B bottom, A right",
@@ -538,8 +549,9 @@ def main():
     G.WowCompanionSpellsDB = L.table_from({"padLayout": "plain"})
     WC.nbar.refresh()
     s = shown(L)
-    chk("the plain layout: Ltr_X / Ltr_Y / Ltr_B / Ltr_A on the faces", [x["atlas"] for x in s[4:]] == ["Gamepad_Ltr_X_64", "Gamepad_Ltr_Y_64",
-        "Gamepad_Ltr_B_64", "Gamepad_Ltr_A_64"], [x["atlas"] for x in s[4:]])
+    chk("the plain layout (nbar11): the xbox letters on the faces (the band's plain set)", [x["atlas"] for x in s[4:]] == [
+        "gamepad-xbox1-buttonx-normal", "gamepad-xbox1-buttony-normal", "gamepad-xbox1-buttonb-normal", "gamepad-xbox1-buttona-normal"],
+        [x["atlas"] for x in s[4:]])
     at = [(f.btn[p].pts[1][4], f.btn[p].pts[1][5]) for p in range(5, 9)]
     chk("the plain ABXY location: X left, Y top, B right, A bottom", at == [(D - O, 0), (D, O), (D + O, 0), (D, -O)], at)
     G.WowCompanionSpellsDB = None
@@ -615,6 +627,72 @@ def main():
     aura_checks(chk)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
+
+
+def ring_checks(chk, L, f):
+    """nbar11 THE RING LOOK (the user, 2026-11-22: "The square icons don't look anything like ours on the bottom screen in the circles"):
+    every button as CastView.drawSlot draws the band's - the D-pad square rings (40 units x 1.15 = 46), the faces round (38 x 1.15 = 44),
+    the focus glow, the dark well (an empty slot its own art), the icon masked (CircleMask / SquareMask) and inset 3.5, the round sweeps,
+    the ring on the top child frame over the sweeps, the glyph badge 17 at the ring's top-right, the count bottom-right"""
+    W = L.globals().WowCompanion
+    NB = W.nbar
+    btn = [f.btn[p] for p in range(1, 9)]
+    same = L.eval("rawequal")
+    chk("nbar11 ring: the D-pad four square (46), the faces round (44)", [b.circle for b in btn] == [False] * 4 + [True] * 4
+        and [b.w for b in btn] == [46] * 4 + [44] * 4, [(b.circle, b.w) for b in btn])
+    rings = [b.ring.atlas for b in btn]
+    chk("nbar11 ring: the slot rings (squareslot on the D-pad, circleslot on the faces), normal at rest",
+        rings == ["gamepad-actionbar-squareslot-border-normal"] * 4 + ["gamepad-actionbar-circleslot-border-normal"] * 4, rings)
+    chk("nbar11 ring: over the sweeps (on the top child frame, a few levels up, never the mouse)",
+        all(same(b.ring.parent, b.top) and same(b.glyph.parent, b.top) and b.top.mouse is False and (b.top.level or 0) >= 3 for b in btn))
+    masks = [(b.mask.atlas if b.mask else None) for b in btn]
+    chk("nbar11 ring: the icon masked (SquareMask on the D-pad, CircleMask on the faces), its dim too",
+        masks == ["SquareMask"] * 4 + ["CircleMask"] * 4 and all(b.icon.masks and same(b.icon.masks[1], b.mask) and same(b.dim.masks[1], b.mask)
+                                                                  for b in btn), masks)
+    chk("nbar11 ring: the icon inset 3.5 in its ring", all(b.icon.pts[1][4] == 3.5 and b.icon.pts[2][4] == -3.5 for b in btn),
+        [list(b.icon.pts[1].values()) for b in btn[:1]])
+    chk("nbar11 ring: the faces' sweeps round (the portrait mask as the swipe, circular edge)",
+        all(b.cd.swipe == NB.MASK_FILE and b.cd.circEdge is True for b in btn[4:]) and all(b.cd.swipe is None for b in btn[:4]))
+    chk("nbar11 ring: the focus glow (focus-bg-square / -circ, 30 past the slot, 0.4 at rest)",
+        [b.focus.atlas for b in btn] == ["gamepad-actionbar-focus-bg-square"] * 4 + ["gamepad-actionbar-focus-bg-circ"] * 4
+        and all(b.focus.alpha == 0.4 and b.focus.w == b.w + 30 for b in btn))
+    wells = [tuple(round(v, 4) for v in b.bg.color.values()) if b.bg.color else b.bg.atlas for b in btn]
+    chk("nbar11 ring: the dark well (CastView's WELL 0A0806) under a filled slot",
+        all(w == (round(10 / 255, 4), round(8 / 255, 4), round(6 / 255, 4), 1) for w in wells), wells)
+    gp = [(b.glyph.w, b.glyph.pts[1][4], b.glyph.pts[1][5]) for b in btn]
+    chk("nbar11 ring: the glyph badge 17 at the ring's top-right (+13.2, +13.2 squares; +13.2, +9.8 circles)",
+        gp == [(17, 13.2, 13.2)] * 4 + [(17, 13.2, 9.8)] * 4, gp)
+    chk("nbar11 ring: the count at the bottom-right", all(b.count.pts[1][1] == "BOTTOMRIGHT" for b in btn))
+    chk("nbar11: Hub's one glyph rule unchanged (WC.padGlyphAtlas: Rev_* / Gen_*)", list(W.padGlyphAtlas("PAD1").values()) == ["Gamepad_Rev_A_64"]
+        and list(W.padGlyphAtlas("PADDLEFT").values()) == ["Gamepad_Gen_Left_64", "Gamepad_Gen_DPadLeft_64", "Gamepad_Ltr_Left_64"])
+    # an empty slot: its own slot art, the ring disabled; a held button: pressed ring / glyph, 2 units lower
+    b = btn[6]
+    NB.well(b, True)
+    b.kind = "empty"
+    NB.ring(b)
+    chk("nbar11 ring: an empty face slot wears its own art (circleslot-xbox-b) and the disabled ring",
+        b.bg.atlas == "gamepad-actionbar-circleslot-xbox-b-normal" and b.ring.atlas == "gamepad-actionbar-circleslot-border-disabled",
+        (b.bg.atlas, b.ring.atlas))
+    e0 = btn[0]
+    NB.well(e0, True)
+    chk("nbar11 ring: an empty D-pad slot its square arrow art", e0.bg.atlas == "gamepad-actionbar-squareslot-generic-dpadleft-normal", e0.bg.atlas)
+    NB.well(e0, False)
+    NB.well(b, False)
+    b.kind = "icon"
+    NB.ring(b)
+    y0 = btn[7].pts[1][5]
+    NB.pressLook(2 ** 7)
+    chk("nbar11 ring: A held -> its pressed ring and glyph, 2 units lower", btn[7].ring.atlas == "gamepad-actionbar-circleslot-border-pressed"
+        and btn[7].glyph.atlas == "gamepad-switch-128x-face-a-pressed" and btn[7].pts[1][5] == y0 - 2, (btn[7].ring.atlas, btn[7].glyph.atlas))
+    NB.pressLook(0)
+    chk("nbar11 ring: let go -> normal again, back in place", btn[7].ring.atlas == "gamepad-actionbar-circleslot-border-normal"
+        and btn[7].glyph.atlas == "gamepad-switch-128x-face-a-normal" and btn[7].pts[1][5] == y0)
+    # no atlas at all: the old dark square well, no ring
+    L6 = boot(pre="NOATLAS = true")
+    L6.globals().ROWS["uisw"](None, 35)
+    b6 = L6.eval("WowCompanion.nbar.f.btn[5]")
+    chk("nbar11 ring: a client without the atlases -> no ring, today's dark well, the icon cropped (no mask)", b6.ringOn is False
+        and b6.ring.shown is False and tuple(b6.bg.color.values()) == (0, 0, 0, 0.45), (b6.ringOn, b6.ring.shown))
 
 
 def review_checks(chk):
@@ -717,17 +795,21 @@ def review_checks(chk):
     s = shown(L)
     chk("nbar2 router switch: not routed (nil) -> the fight itself", s[4]["id"] == 8042, s[4])
     # a refused atlas (SetAtlas returns false, no error): the next candidate, then the letter
-    L = boot(pre="REFUSED = { Gamepad_Gen_Left_64 = true, Gamepad_Rev_X_64 = true }")
+    L = boot(pre="REFUSED = { ['gamepad-xbox1-dpadleft-normal'] = true, Gamepad_Gen_Left_64 = true, ['gamepad-switch-128x-face-x-normal'] = true, "
+                 "Gamepad_Rev_X_64 = true }")
     G, W = on(L)
     s = shown(L)
-    chk("nbar2 atlas refused (no raise): D-pad left takes the next candidate (Gamepad_Gen_DPadLeft_64)", s[0]["atlas"] == "Gamepad_Gen_DPadLeft_64", s[0])
-    chk("nbar2 atlas refused: X's only atlas refused -> its letter X", s[4]["atlas"] is None and s[4]["word"] == "X", s[4])
+    chk("nbar2 / nbar11 atlas refused (no raise): D-pad left falls past the ring glyph and Gen_Left to Gamepad_Gen_DPadLeft_64",
+        s[0]["atlas"] == "Gamepad_Gen_DPadLeft_64", s[0])
+    chk("nbar2 / nbar11 atlas refused: X's atlases all refused -> its letter X on the dark disc", s[4]["atlas"] is None and s[4]["word"] == "X"
+        and W.nbar.f.btn[5].gdisc.shown is True, s[4])
     L = boot(pre="REFUSED = {}")
-    L.execute("WowCompanion.prd = { atlasOn = function(t, a) PRDN = (PRDN or 0) + 1; if a == 'Gamepad_Rev_A_64' then return false end; t:SetAtlas(a); return true end }")
+    L.execute("WowCompanion.prd = { atlasOn = function(t, a) PRDN = (PRDN or 0) + 1; if a == 'Gamepad_Rev_A_64' or a == 'gamepad-switch-128x-face-a-normal' "
+              "then return false end; t:SetAtlas(a); return true end }")
     G, W = on(L)
     s = shown(L)
     chk("nbar2 atlas: Trail's PRD.atlasOn decides when present (its refusal -> the letter A)", (G.PRDN or 0) >= 8 and s[7]["word"] == "A"
-        and s[6]["atlas"] == "Gamepad_Rev_B_64", (G.PRDN, s[7]))
+        and s[6]["atlas"] == "gamepad-switch-128x-face-b-normal", (G.PRDN, s[7]))
     # the stock bar's visibility, scale and spot
     L = boot(pre="MFSCALE = 0.8")
     G, W = on(L)

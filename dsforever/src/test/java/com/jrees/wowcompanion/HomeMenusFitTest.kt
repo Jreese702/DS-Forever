@@ -33,7 +33,8 @@ class HomeMenusFitTest {
 
     private class Page(val l: HomeLayout, val s: HomeLayoutSolver.State, val r: HomeLayoutSolver.Result) {
         val split get() = l.cast == HomeLayout.CastDock.SPLIT
-        val bb get() = r.boxes.getValue(HomePart.BARS).b
+        /** the band's foot as Home's followers read it (HomeView.barsBottom: Top screen's fight lays the band above the page, foot 0) */
+        val bb get() = maxOf(0f, r.boxes.getValue(HomePart.BARS).b)
         /** the parts on the page (the buff list lies inside the map; a bar hidden for a fight lies below the page, or up behind the band) */
         val shown: Map<HomePart, HomeLayoutSolver.Box> get() = r.boxes.filter { (p, b) -> p != HomePart.BARS && p != HomePart.AURAS && b.t < s.h &&
             !((p == HomePart.STRIP || p == HomePart.CAST2) && b.b <= bb + 0.5f) }

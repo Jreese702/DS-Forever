@@ -249,6 +249,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var triggerStrip = false
         set(v) { if (field != v) { field = v; invalidate() } }
+    /**
+     * IN FIGHTS = TOP SCREEN (TopSlide): Home's band slid up off the bottom screen for the fight (the add-on's Wings hold the controls on
+     * the top screen). The view stays VISIBLE - its pad reader keeps running (B, the radial, the triggers come through it) - but draws
+     * nothing and runs no frame clock, and its cast bar is not shown ([ownCastBarShown]: the rooms' bar takes the cast). Set by Home at
+     * the up-slide's end, cleared at the down-slide's start
+     */
+    var away = false
+        set(v) { if (field != v) { field = v; invalidate(); onCastState?.invoke() } }
 
     /** while true the band draws NO presses (no push-down, no flash): Home's Select cursor owns the pad then
      *  (user 2026-09-30, LATER item 23a). Layers and the triggers still follow the pad. */
@@ -2250,6 +2258,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     override fun onDraw(c: Canvas) {
+        if (away) return                                                   // off the page: no paint, no next frame asked for
         fonts()
         c.drawColor(Theme.ink)
         groundPainter?.invoke(c, width, height)
@@ -3649,7 +3658,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var roomNamePaint: Paint? = null
 
     /** Home draws this cast bar itself now (on screen, its band layout, a layout to draw): the rooms' bar leaves it out */
-    fun ownCastBarShown(): Boolean = isShown && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
+    fun ownCastBarShown(): Boolean = isShown && !away && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
 
     /**
      * review fix: when this view leaves the screen or comes back (a room opens, a Home module covers the band, Home returns) the answer

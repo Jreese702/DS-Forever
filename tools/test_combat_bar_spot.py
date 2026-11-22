@@ -10,22 +10,28 @@ prompt, the party column and Party mode's rows under the HUD; WC.abox's aura hos
 frames (WC.gameLay: MinimapCluster, ObjectiveTrackerFrame, the stock gamepad bar, ChatFrame1 - their rects SECRET in a fight), the layout
 store (WC.lay: entries, the tap pad's forbidden band, the editor), PadMap's flag (combatTopOn) and the router's switch (WC.tgGrown).
 Checks:
-  A THE SOLVER (NB.fightSolve, pure): the four candidates in order - 1 wings beside the HUD level with its middle, 34 px gaps, clamped
-    16 px above the bottom; 2 raised in 24 px steps (the stock bar shown); 3 joined above the HUD (both sides blocked); 4 the piece's own
-    spot (no HUD / nothing fits) - and a placed spot ALWAYS wins (pushed under the tap pad's band if it would cover it); several top
-    layouts (the HUD moved / resized, Party mode's taller block, the target bar lowered, a left party column): every result inside the
-    screen, never over the tap pad band, cases 1-3 never within 24 px of an obstacle.
+  A THE SOLVER (NB.fightSolve, pure; nbar11 shrink first, then move): 1 wings beside the HUD level with its middle, 34 px gaps,
+    clamped 16 px above the bottom, at k 1 / 0.9 / 0.8; 2 raised in 24 px steps at k 0.8 (the stock bar shown); 3 joined above the HUD
+    at k 1 / 0.8 (both sides blocked); 4 a grid scan at k 0.7 over the lower 60 %; 5 the piece's own spot (nothing fits) - and a placed
+    spot ALWAYS wins (pushed under the tap pad's band if it would cover it); the lane (the column under each half clear: the slide's
+    path); several top layouts (the HUD moved / resized, Party mode's taller block, the target bar lowered, a left party column): every
+    result inside the screen, never over the tap pad band, cases 1-4 never within 24 px of an obstacle.
   B THE OPT-IN: the flag off -> nothing built, nothing shown, in fights too; the piece listed in the top layout editor only while
     Nintendo mode or the flag is on.
-  C THE LIVE BAR: placed out of combat (the game's frames read then), the fight's switch -> fade in + rise 24 px over 0.24 s on the cubic
-    (0.4, 0, 0.2, 1), the D-pad diamond's centre at the solved left spot and the faces' at the right; FROZEN in the fight: a game frame
+  C THE LIVE BAR: placed out of combat (the game's frames read then), the fight's switch -> nbar11 THE SLIDE: a 60 ms hold, then up
+    from wholly below the top screen's bottom edge over 0.26 s on the ease-out (0, 0, 0.2, 1), alpha 1 all the way, the D-pad diamond's
+    centre at the solved left spot and the faces' at the right by 0.32 s; a reversal mid-way goes on from where it is; FROZEN: a game frame
     shown mid-fight is never read (rectNow not called, no secret touched) and does not move it; Party mode's lift (our own frames) re-fits
     it with a 0.24 s glide; the top chat strip dips it to 35 %; the chips light with ZL / ZR; the swing lines run; B's give-back (the
-    router's switch false) / the fight's end fades it out over 0.2 s and hides it.
+    router's switch false) / the fight's end slides it back down past the edge over 0.2 s (ease-in) and hides it; no lane = the fade +
+    rise; Party mode on = no Wings.
   D NINTENDO MODE: the bar glides from its stock spot to the wings and back (alpha 1 all the way) and ends at the stock spot again.
   E THE EDITOR: the flag on, Nintendo off, the editor open out of combat -> the bar shows at its piece's spot; a placed spot = the fight's.
   F LEAVE NO TRACE: no Secure template, EnableMouse never true, no SetBinding / CVar / macro call, nothing of Blizzard's moved, shown or
     hidden, no secret compared (none raised), our frames read through isPlain (a secret of ours skipped, not compared).
+  H nbar11 COMBAT SAFETY OF THE SLIDE: the lockdown on from frame 0 through a whole fight in and out - no AnimationGroup, no template
+    but the plain cooldown swipe, no binding / CVar / macro call, nothing of Blizzard's touched but reads, every SetPoint's relative
+    frame ours or UIParent, no reserved / game rect read in the fight; the reserved cast bar read out of combat while hidden.
 --shots renders the top screen (the game capture in the spec folder under the pieces and the solved wings) as PNGs.
 Needs lupa (PIL for --shots). Exit code 1 on any failure."""
 import math
@@ -237,7 +243,8 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar10 and nbar7's / nbar8's / nbar9's notes", 'local NB = { V = "nbar10"' in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
+    chk("0. ActionBar's tag nbar11 and nbar7's / nbar8's / nbar9's / nbar10's notes", 'local NB = { V = "nbar11"' in src
+        and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)
     chk("0. nbar9: the build gate has no combat test (display-only frames are legal in a fight)",
@@ -246,8 +253,8 @@ def main():
 
     # ------------------------------------------------------------------------------------------------ A the solver
     hw, hh, ax, ay = L.eval("WowCompanion.nbar.halfBox")()
-    chk("A. one half: the diamond 146 + the chip (4 + 44) wide, + the swing lines (8 + 6 + 4 + 6) tall; the diamond's centre",
-        (hw, hh, ax, ay) == (194, 170, 121, 73), (hw, hh, ax, ay))
+    chk("A. one half: the diamond 146 + the trigger chip (4 + 40, nbar11) wide, + the swing lines (8 + 6 + 4 + 6) tall; the diamond's centre",
+        (hw, hh, ax, ay) == (190, 170, 117, 73), (hw, hh, ax, ay))
     hud = R(820, 890, 280, 58)                                   # the bars + the aura host
     ours = [R(820, 890, 280, 58, "hud"), R(530, 4, 860, 76, "compass"), R(790, 86, 372, 94, "target")]
     game = [R(1590, 0, 330, 390, "g.MinimapCluster")]
@@ -258,6 +265,7 @@ def main():
     chk("A1. level with the block's middle (y 919), both halves on one line", r["l"]["y"] == r["r"]["y"] == 919, (r["l"], r["r"]))
     chk("A1. the D-pad's diamond left (x 713), the faces' right (x 1207)", (r["l"]["x"], r["r"]["x"]) == (713, 1207), (r["l"], r["r"]))
     invariants("A1", r, ours + game)
+    chk("A1. nbar11: full size (k 1) and the lane under both halves clear (the slide's path)", r["k"] == 1 and r["lane"] is True, (r["k"], r["lane"]))
     # the bottom clamp: a HUD low on the screen
     low = R(820, 1000, 280, 58)
     r = fsolve(L, hud=low, ours=[dict(low, id="hud")], stock=R(960, 984, 0, 0))
@@ -266,25 +274,42 @@ def main():
     # A2: the stock bar shown (Controller UI On) under the wings: raised in 24 px steps
     stockbar = R(640, 944, 640, 120, "g.GamepadMainActionBarFrame")
     r = fsolve(L, hud=hud, ours=ours, game=game + [stockbar], stock=R(960, 984, 0, 0))
-    chk("A2. the stock bar shown: case 2, raised by 24 px steps", r["case"] == 2 and r["raise"] % 24 == 0 and r["raise"] > 0, (r["case"], r["raise"]))
+    chk("A2. the stock bar shown: nbar11 shrinks first (k 0.9 / 0.8 level fail), then case 2 at k 0.8, raised by 24 px steps",
+        r["case"] == 2 and r["k"] == 0.8 and r["raise"] % 24 == 0 and r["raise"] > 0, (r["case"], r["k"], r["raise"]))
     chk("A2. the least raise that clears it (footprint 24 px above it)", r["rects"][1]["y"] + r["rects"][1]["h"] <= 944 - 24
         and r["rects"][1]["y"] + r["rects"][1]["h"] + 24 > 944 - 24, r["rects"][1])
-    chk("A2. still level and beside the HUD", r["l"]["y"] == r["r"]["y"] and r["l"]["x"] == 713, (r["l"], r["r"]))
+    chk("A2. still level and beside the HUD (34 px off its side at k 0.8)", r["l"]["y"] == r["r"]["y"] and abs(r["l"]["x"] - (820 - 34 - 73 * 0.8)) < 1e-6,
+        (r["l"], r["r"]))
+    chk("A2. the stock bar under the halves: no lane (the fade + rise instead)", r["lane"] is False, r["lane"])
     invariants("A2", r, ours + game + [stockbar])
+    # nbar11: a little crowding (a frame just under the full-size halves) -> the same spot, a little smaller (k 0.9), never moved
+    nudge = [R(500, 1035, 920, 40, "g.SomethingLow")]
+    r = fsolve(L, hud=hud, ours=ours, game=game + nudge, stock=R(960, 984, 0, 0))
+    chk("A1. nbar11 shrink first: a frame under the full-size halves -> case 1 at k 0.9 (level, beside)", r["case"] == 1 and r["k"] == 0.9
+        and r["l"]["y"] == r["r"]["y"] == 919, (r["case"], r["k"], r["l"]))
+    invariants("A1 k 0.9", r, ours + game + nudge)
     # A3: both sides blocked over the whole raise: joined above the HUD
-    walls = [R(0, 560, 600, 520, "g.ChatFrame1"), R(1320, 560, 600, 520, "g.ObjectiveTrackerFrame")]
+    walls = [R(0, 560, 640, 520, "g.ChatFrame1"), R(1280, 560, 640, 520, "g.ObjectiveTrackerFrame")]
     r = fsolve(L, hud=hud, ours=ours, game=game + walls, stock=R(960, 984, 0, 0))
     chk("A3. both sides blocked: case 3, the halves joined above the HUD", r["case"] == 3 and r["form"] == "joined", (r["case"], r["form"]))
     chk("A3. centred over the HUD, 34 px above it", abs((r["l"]["x"] + r["r"]["x"]) / 2 - 960) < 0.01
         and abs(r["rects"][1]["y"] + r["rects"][1]["h"] - (890 - 34)) < 0.01, r)
+    chk("A3. joined above the HUD: the HUD under it, so no lane (the fade + rise)", r["lane"] is False and r["k"] == 1, (r["lane"], r["k"]))
     invariants("A3", r, ours + game + walls)
     # A4: no HUD, or nothing fits: the piece's own spot, always accepted
-    r = fsolve(L, ours=ours, game=game, stock=R(960, 984, 0, 0))
-    chk("A4. no HUD: case 4, the joined bar at the piece's own (stock) spot", r["case"] == 4 and (r["l"]["x"] + r["r"]["x"]) / 2 == 960
-        and r["l"]["y"] == 984 - 0 or (r["case"] == 4 and r["l"]["y"] == 1080 - (170 - 73)), r)
-    full = [R(0, 200, 1920, 880, "g.Everything")]
+    r = fsolve(L, ours=ours[1:], game=game, stock=R(960, 984, 0, 0))
+    chk("A4. nbar11 no HUD: case 4, the grid scan at k 0.7 - the bottom row, the middle first", r["case"] == 4 and r["k"] == 0.7
+        and abs((r["l"]["x"] + r["r"]["x"]) / 2 - 960) < 1e-6 and abs(r["rects"][1]["y"] + r["rects"][1]["h"] - (1080 - 16)) < 1e-6, r)
+    invariants("A4", r, ours[1:] + game)
+    # the grid: the lower middle taken (a frame across it) -> the first clear spot outward / upward, inside the lower 60 %
+    block = [R(560, 700, 800, 380, "g.Middle")]
+    r = fsolve(L, ours=ours[1:], game=game + block, stock=R(960, 984, 0, 0))
+    chk("A4. the grid scan steps outward / upward past an obstacle, inside the lower 60 % (y >= 432)", r["case"] == 4
+        and min(r["rects"][1]["y"], r["rects"][2]["y"]) >= 0.4 * 1080 - 1e-6, r)
+    invariants("A4 grid", r, ours[1:] + game + block)
+    full = [R(0, 0, 1920, 1080, "g.Everything")]
     r = fsolve(L, hud=hud, ours=ours, game=game + full, stock=R(960, 984, 0, 0))
-    chk("A4. nothing fits: case 4 still (always accepted)", r["case"] == 4, r["case"])
+    chk("A5. nothing fits: case 5, the stock spot (always accepted, the last resort)", r["case"] == 5, r["case"])
     # a placed spot always wins (even where the wings would fit), the joined bar there; over the band -> pushed under it
     r = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0), placed=R(500, 600, 0, 0))
     chk("A5. a placed spot wins over the wings (Auto off): the joined bar there", r["case"] == "placed" and r["form"] == "joined"
@@ -299,17 +324,17 @@ def main():
         for cx in range(int(233 * s) + 1, 720, 4):
             for cy in (int(73 * s) + 1, 100, 150, 200):
                 rr = fsolve(L, s=s, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(cx, cy, 0, 0))
-                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 121 * s < -1e-6:
+                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 117 * s < -1e-6:
                     bad.append((s, cx, cy))
     chk("A5. nbar10: a placed spot near the left edge at band height, s 1.0-1.5 (UI scale x size): never within 24 px of the band, on screen",
         not bad, bad[:5])
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(312, 150, 0, 0))
-    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 281 s)",
-        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 281 * 1.336) < 1e-6
+    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 277 s)",
+        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 277 * 1.336) < 1e-6
         and rr["rects"][1]["y"] >= 24 + 154 + 24 - 1e-6, rr)
-    # case 4 (the stock fallback) too: a stock spot moved to the top-left
-    rr = fsolve(L, s=1.336, hud=None, ours=[], game=[], stock=R(300, 150, 0, 0))
-    chk("A5. nbar10: case 4's stock fallback at the top-left: clear of the band", rr["case"] == 4
+    # case 5 (the stock fallback) too: a stock spot moved to the top-left (the whole screen taken, so the grid finds nothing)
+    rr = fsolve(L, s=1.336, hud=None, ours=[], game=[R(0, 0, 1920, 1080, "g.Wall")], stock=R(300, 150, 0, 0))
+    chk("A5. nbar10: case 5's stock fallback at the top-left: clear of the band", rr["case"] == 5
         and not any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()), rr["rects"])
     # several top layouts: the HUD moved / resized, the target lowered, a left party column, Party mode's block
     layouts = {
@@ -320,6 +345,7 @@ def main():
         "party column on the left, long": (hud, [R(24, 250, 300, 800, "party")]),
         "Party mode: the taller, wider block (final_07b)": (R(735, 795, 610, 215), []),
         "the HUD at the very left edge": (R(10, 890, 280, 58), []),
+        "a big HUD (160 %, 400 wide) low": (R(640, 900, 640, 150), []),
     }
     for name, (h, extra) in layouts.items():
         ob = [dict(h, id="hud"), R(530, 4, 860, 76, "compass"), R(790, 86, 372, 94, "target")] + extra
@@ -330,11 +356,11 @@ def main():
         and abs(rp["rects"][1]["x"] + rp["rects"][1]["w"] - (735 - 34)) < 0.01 and abs(rp["rects"][2]["x"] - (1345 + 34)) < 0.01
         and rp["l"]["y"] == 795 + 215 / 2, rp)
     edge = fsolve(L, hud=R(10, 890, 280, 58), ours=[R(10, 890, 280, 58, "hud")], game=game, stock=R(960, 984, 0, 0))
-    chk("A6. the HUD at the left edge: no room for the D-pad's half, none above it either -> the piece's own spot (case 4)",
-        edge["case"] == 4, edge["case"])
+    chk("A6. the HUD at the left edge: no room for the D-pad's half beside it nor joined above it -> the grid's spot (case 4), never the stock "
+        "fallback", edge["case"] == 4, edge["case"])
     big = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0), s=1.5)
-    chk("A6. the size scales the halves (150 %: 291 x 255)", abs(big["rects"][1]["w"] - 291) < 0.01 and abs(big["rects"][1]["h"] - 255) < 0.01,
-        big["rects"][1])
+    chk("A6. the size scales the halves (150 %: 285 x 255)", abs(big["rects"][1]["w"] - 285) < 0.01 and abs(big["rects"][1]["h"] - 255) < 0.01
+        and big["k"] == 1, big["rects"][1])
     chk("A7. the solver is pure: no frame read, no event, nothing created", G.RAISED == 0 and NB.top.reads == 0 and G.RECTNOW == 0)
 
     # ------------------------------------------------------------------------------------------------ B the opt-in
@@ -367,18 +393,34 @@ def main():
     L.execute('EV("PLAYER_REGEN_DISABLED")')
     G.TG = True
     reads0 = G.RECTNOW
-    L.execute('RUN(0.12, 0.02)')
+    chk("C. nbar11: the lane under both halves clear -> the slide", sp["lane"] is True)
+    L.execute('RUN(0.04, 0.02)')
     f = NB.f
-    a_mid = f.alpha
-    e_mid = L.eval("WowCompanion.nbar.ease")(0.5)
-    chk("C. the fade: half way (0.12 s) the alpha follows the cubic (0.4, 0, 0.2, 1)", NB.top.shown and abs(a_mid - e_mid) < 0.09, (a_mid, e_mid))
-    lx, ly = L.eval("DIAMOND")(1)
-    chk("C. ... and rises: below its spot by (1 - e) x 24 px", ly > sp["l"]["y"] and abs(ly - sp["l"]["y"] - 24 * (1 - NB.ease(NB.top.t))) < 0.6,
-        (ly, sp["l"]["y"]))
-    L.execute('RUN(0.2, 0.02)')
+    chk("C. nbar11: the 60 ms hold first (the band's first frames go first): nothing shown yet", not NB.top.shown and NB.top.form == "slide"
+        and NB.top.hold is not None, (NB.top.shown, NB.top.form))
+    L.execute('RUN(0.04, 0.02)')
     lx, ly = L.eval("DIAMOND")(1)
     rx, ry = L.eval("DIAMOND")(2)
-    chk("C. in after 0.24 s: alpha 1", abs(f.alpha - 1) < 1e-6, f.alpha)
+    hb = L.eval("WowCompanion.nbar.halfBox")()
+    sc_ = NB.top.spot.s
+    d0 = L.eval("WowCompanion.nbar.slideDrop")(NB.top.spot, NB.top.spot)[0]
+    chk("C. nbar11: the slide starts with both halves wholly below the top screen's bottom edge (from = spot + drop: the tops past 1080)",
+        sp["l"]["y"] + d0 - hb[3] * sc_ >= 1080 and sp["r"]["y"] + d0 - hb[3] * sc_ >= 1080, (sp["l"]["y"], d0))
+    chk("C. ... its first frame: shown, below the spot, alpha 1", NB.top.shown and ly > sp["l"]["y"] + 10 and ry > sp["r"]["y"] + 10
+        and abs(f.alpha - 1) < 1e-6, (ly, ry, f.alpha))
+    seq = []
+    for _ in range(6):
+        L.execute('RUN(0.02, 0.02)')
+        seq.append(L.eval("DIAMOND")(1)[1])
+    t_ = NB.top.t
+    k_ = L.eval("WowCompanion.nbar.easeOut")(t_)
+    chk("C. ... rising every frame (straight up, x fixed), on the ease-out (0, 0, 0.2, 1)", all(b < a for a, b in zip(seq, seq[1:]))
+        and abs(seq[-1] - (sp["l"]["y"] + d0 * (1 - k_))) < 0.6 and abs(L.eval("DIAMOND")(1)[0] - sp["l"]["x"]) < 0.01, (seq, t_, k_))
+    chk("C. ... alpha 1 all the way (the slide is the cue, no fade)", abs(f.alpha - 1) < 1e-6, f.alpha)
+    L.execute('RUN(0.14, 0.02)')
+    lx, ly = L.eval("DIAMOND")(1)
+    rx, ry = L.eval("DIAMOND")(2)
+    chk("C. in by 0.32 s (hold 0.06 + 0.26): alpha 1, settled", abs(f.alpha - 1) < 1e-6 and NB.top.t == 1, (f.alpha, NB.top.t))
     chk("C. the D-pad's diamond at the left spot, the faces' at the right (px)", abs(lx - sp["l"]["x"]) < 0.01 and abs(ly - sp["l"]["y"]) < 0.01
         and abs(rx - sp["r"]["x"]) < 0.01 and abs(ry - sp["r"]["y"]) < 0.01, ((lx, ly), (rx, ry), sp["l"], sp["r"]))
     zl = L.eval("PARTCENTRE")(f.chip[1])
@@ -432,9 +474,14 @@ def main():
     # the fight's end: out over 0.2 s, then hidden
     G.COMBAT = False
     L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.1, 0.02)')
-    chk("C. the fight's end: fading out (half way at 0.1 s)", NB.top.shown and 0 < f.alpha < 1, f.alpha)
+    lyb = L.eval("DIAMOND")(1)[1]
+    k_out = L.eval("WowCompanion.nbar.slideK")(NB.top.t, -1)
+    spn = todict(NB.top.spot)
+    dd = L.eval("WowCompanion.nbar.slideDrop")(NB.top.spot, NB.top.spot)[0]
+    chk("C. nbar11 the fight's end: sliding back down (half way at 0.1 s), alpha 1, on the ease-in", NB.top.shown and abs(f.alpha - 1) < 1e-6
+        and lyb > spn["l"]["y"] + 1 and abs(lyb - (spn["l"]["y"] + dd * (1 - k_out))) < 0.6, (f.alpha, lyb, spn["l"]["y"]))
     L.execute('RUN(0.12, 0.02)')
-    chk("C. ... gone after 0.2 s: hidden, the chips and swing lines too", not NB.top.shown and f.shown is False and not f.chip[1].shown
+    chk("C. ... gone after 0.2 s (below the edge): hidden, the chips and swing lines too", not NB.top.shown and f.shown is False and not f.chip[1].shown
         and not f.sw[1].shown, (NB.top.shown, f.shown))
     L.execute('RUN(0.1)')
     chk("C. after the fight: the spot solved again with the game's frames (ChatFrame1 now shown)", G.RECTNOW > reads0 and not NB.top.frozen,
@@ -449,6 +496,39 @@ def main():
         and abs(f.alpha - 1) < 1e-6, (NB.top.shown, G.RECTNOW - n0))
     G.TG = False
     L.execute('RUN(0.3)')
+    # nbar11: a reversal mid-slide (a fight blip) goes on from where the bar is - no jump either way
+    G.TG = True
+    L.execute('RUN(0.18, 0.02)')
+    y_in = L.eval("DIAMOND")(1)[1]
+    G.TG = False
+    L.execute('RUN(0.02, 0.02)')
+    y_rev = L.eval("DIAMOND")(1)[1]
+    G.TG = True
+    L.execute('RUN(0.02, 0.02)')
+    y_back = L.eval("DIAMOND")(1)[1]
+    chk("C. nbar11: reversed mid-slide (in -> out -> in): each frame moves on from where it was (no jump), the right way",
+        y_rev >= y_in - 0.01 and abs(y_rev - y_in) < 60 and y_back <= y_rev + 0.01 and abs(y_back - y_rev) < 60, (y_in, y_rev, y_back))
+    G.TG = False
+    L.execute('RUN(0.4)')
+    chk("C. ... and out again: hidden", not NB.top.shown)
+    # nbar11: Party mode on -> no Wings (the band keeps the controls below: ruling R0's default)
+    L.execute('WowCompanion.prd.partyModeOn = function() return true end')
+    G.TG = True
+    L.execute('RUN(0.5)')
+    chk("C. nbar11: Party mode on -> the Wings stay off (never in both places)", not NB.top.shown and NB.top.want is False, NB.top.shown)
+    G.TG = False
+    L.execute('WowCompanion.prd.partyModeOn = nil; RUN(0.3)')
+    # nbar11: no lane (the stock bar under the halves) -> today's fade + rise
+    L.execute('GAME["g.GamepadMainActionBarFrame"].shown = true; WowCompanion.nbar.top.gameDirty = true; RUN(0.1)')
+    chk("C. nbar11: the stock bar under the halves -> no lane", NB.top.spot.lane is False, NB.top.spot.lane)
+    G.TG = True
+    L.execute('RUN(0.12, 0.02)')
+    chk("C. nbar11 no lane: the fade + rise (no hold, the alpha follows the cubic)", NB.top.form == "fade" and NB.top.shown and 0 < f.alpha < 1,
+        (NB.top.form, f.alpha))
+    L.execute('RUN(0.3, 0.02)')
+    chk("C. ... in: alpha 1", abs(f.alpha - 1) < 1e-6, f.alpha)
+    G.TG = False
+    L.execute('RUN(0.4); GAME["g.GamepadMainActionBarFrame"].shown = false; WowCompanion.nbar.top.gameDirty = true; RUN(0.1)')
 
     # ------------------------------------------------------------------------------------------------ D Nintendo mode: the glide
     W.nbarSet(True)
@@ -550,6 +630,43 @@ def main():
     chk("G. the key arrives mid-fight (flag on): built and shown in the same fight (FLAG_S + IN_S)", NB3.built and NB3.top.shown
         and abs(NB3.f.alpha - 1) < 1e-6 and G3.RECTNOW_COMBAT == 0, (NB3.built, NB3.top.shown))
 
+    # ------------------------------------------------------------------------------------------------ H nbar11 combat safety of the slide
+    L4 = boot("ANIMGROUPS = 0; getmetatable(UIParent).CreateAnimationGroup = function() ANIMGROUPS = ANIMGROUPS + 1; return {} end")
+    G4 = L4.globals()
+    NB4 = G4.WowCompanion.nbar
+    # the reserved cast bar: hidden, read out of combat (its rect kept), never in the fight
+    L4.execute('GAME["g.PlayerCastingBarFrame"] = { x = 810, y = 820, w = 300, h = 30, shown = false }; '
+               'GAMEFR = { ["g.PlayerCastingBarFrame"] = GAME["g.PlayerCastingBarFrame"] }; '
+               'WowCompanion.gameLay.frame = function(id) return GAME[id] end')
+    G4.CTOP = True
+    L4.execute('RUN(0.6)')
+    res = NB4.top.res and NB4.top.res["g.PlayerCastingBarFrame"]
+    chk("H. nbar11: the reserved cast bar (hidden) read out of combat and kept", res is not None and res.y == 820, res)
+    gm = [todict(x) for x in NB4.top.game.values()] if NB4.top.game else []
+    chk("H. ... and counted as an obstacle (a cast bar always is)", any(x.get("id") == "g.PlayerCastingBarFrame" and x.get("reserved") for x in gm), gm)
+    rn0 = G4.RECTNOW
+    G4.COMBAT, G4.TG = True, True
+    L4.execute('EV("PLAYER_REGEN_DISABLED"); RUN(0.6, 0.02)')
+    G4.TG = False
+    L4.execute('RUN(0.1, 0.02)')
+    G4.COMBAT = False
+    L4.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.5, 0.02)')
+    chk("H. a whole fight in and out (slide in, slide out): no AnimationGroup made", G4.ANIMGROUPS == 0, G4.ANIMGROUPS)
+    tpls = set(str(o.tpl) for o in G4.OURS.values() if o.tpl is not None)
+    chk("H. ... no template but the plain cooldown swipe, no Secure one", len(G4.BADTPL) == 0 and tpls <= {"CooldownFrameTemplate"}, tpls)
+    chk("H. ... no SetBinding / SetOverrideBinding / CVar / macro / state driver call", len(G4.SPY) == 0, list(G4.SPY.values()))
+    chk("H. ... nothing of Blizzard's touched but reads (no SetPoint / Show / Hide on a game frame)", len(G4.BLIZ) == 0, list(G4.BLIZ.values())[:5])
+    chk("H. ... no game or reserved rect read in the fight (the game's rects only out of combat)", G4.RECTNOW_COMBAT == 0, G4.RECTNOW_COMBAT)
+    rels = set()
+    for o in G4.OURS.values():
+        for pt in (o.pts or {}).values():
+            rel = pt[2] if len(pt) >= 2 else None
+            if rel is not None and lupa.lua_type(rel) == "table":
+                if rel._name is not None and rel._name != "UIParent":
+                    rels.add(str(rel._name))
+    chk("H. ... every SetPoint's relative frame ours or UIParent (nothing protected in our anchor family)", not rels, rels)
+    chk("H. ... EnableMouse never true, nothing raised", G4.BADMOUSE == 0 and G4.RAISED == 0, (G4.BADMOUSE, G4.RAISED))
+
     # ------------------------------------------------------------------------------------------------ the renders
     if "--shots" in sys.argv or os.environ.get("COMBAT_BAR_SHOTS"):
         render(out_dir)
@@ -583,7 +700,7 @@ def render(out_dir):
         ("p3_top_05_placed", "Placed in the top layout editor (Auto off): the joined bar there", {"placed": True}),
         ("p3_top_06_chat_dip", "The top chat strip up in the fight: the bar dips to 35 % (it never moves for it)", {"chat": True}),
         ("p3_top_07_glide_mid", "Nintendo mode: half way through the glide from the stock spot to the wings", {"glide": True}),
-        ("p3_top_08_fade_in_mid", "The fade in: 0.12 s of 0.24 s (rising 24 px)", {"fadein": True}),
+        ("p3_top_08_fade_in_mid", "nbar11 the slide in: 0.19 s of 0.06 + 0.26 s (up from below the edge)", {"fadein": True}),
     ]
     made = []
     for name, title, o in scenes:
@@ -609,8 +726,10 @@ def render(out_dir):
         G.COMBAT = True
         G.TG = True
         L.execute('EV("PLAYER_REGEN_DISABLED")')
-        if o.get("glide") or o.get("fadein"):
+        if o.get("glide"):
             L.execute('RUN(0.12, 0.02)')
+        elif o.get("fadein"):
+            L.execute('RUN(0.18, 0.02)')
         else:
             L.execute('RUN(0.5, 0.02)')
         if o.get("chat"):
@@ -664,36 +783,66 @@ def render(out_dir):
         bar = Image.new("RGBA", img.size, (0, 0, 0, 0))
         bd = ImageDraw.Draw(bar)
         sc = f.scale or 1
-        B = W.nbar.B * sc
+        # nbar11 THE RING LOOK as the frames hold it: each slot's own size (46 square D-pad, 44 round faces), the well, the icon inset
+        # 3.5 and masked, the bronze slot ring, the glyph badge (17) at its own offset (top-right), the count bottom-right
+        RING = (176, 140, 90, 255)
         for p in range(1, 9):
+            b = f.btn[p]
             cx, cy = L.eval("BCENTRE")(p)
-            x0, y0 = cx - B / 2, cy - B / 2
-            face = p > 4
+            Bp = (b.w or W.nbar.B) * sc
+            x0, y0 = cx - Bp / 2, cy - Bp / 2
+            face = bool(b.circle)
+            fb = (x0 - 10 * sc, y0 - 10 * sc, x0 + Bp + 10 * sc, y0 + Bp + 10 * sc)
             if face:
-                bd.ellipse((x0 - 3, y0 - 3, x0 + B + 3, y0 + B + 3), fill=(30, 24, 18, 255), outline=(150, 120, 80, 255), width=3)
+                bd.ellipse(fb, fill=(255, 196, 90, 28))
+                bd.ellipse((x0, y0, x0 + Bp, y0 + Bp), fill=(10, 8, 6, 255))
             else:
-                bd.rounded_rectangle((x0 - 3, y0 - 3, x0 + B + 3, y0 + B + 3), radius=6, fill=(30, 24, 18, 255), outline=(150, 120, 80, 255), width=3)
+                bd.rounded_rectangle(fb, radius=int(Bp / 5), fill=(255, 196, 90, 28))
+                bd.rounded_rectangle((x0, y0, x0 + Bp, y0 + Bp), radius=int(Bp / 7), fill=(10, 8, 6, 255))
             ic = icons[(p - 1) % len(icons)]
+            ins = W.nbar.INSET * sc
             if ic is not None:
-                im = ic.resize((int(B), int(B)))
+                side = int(Bp - 2 * ins)
+                im = ic.resize((side, side))
+                m = Image.new("L", im.size, 0)
                 if face:
-                    m = Image.new("L", im.size, 0)
-                    ImageDraw.Draw(m).ellipse((1, 1, im.width - 2, im.height - 2), fill=255)
-                    im.putalpha(m)
-                bar.alpha_composite(im, (int(x0), int(y0)))
-            # the glyph: the pad letter at the button's corner
-            word = {1: "<", 2: "^", 3: ">", 4: "v", 5: "X", 6: "Y", 7: "B", 8: "A"}[p]
-            gx, gy = x0 + B - 4, y0 + B - 4
+                    ImageDraw.Draw(m).ellipse((0, 0, side - 1, side - 1), fill=255)
+                else:
+                    ImageDraw.Draw(m).rounded_rectangle((0, 0, side - 1, side - 1), radius=int(side / 7), fill=255)
+                im.putalpha(m)
+                bar.alpha_composite(im, (int(x0 + ins), int(y0 + ins)))
+            ring = (x0, y0, x0 + Bp, y0 + Bp)
+            if face:
+                bd.ellipse(ring, outline=RING, width=max(2, int(3 * sc)))
+            else:
+                bd.rounded_rectangle(ring, radius=int(Bp / 7), outline=RING, width=max(2, int(3 * sc)))
+            # the glyph badge where the frame put it (CENTER offsets, bar units up = screen up)
+            gp = b.glyph.pts[1]
+            gx, gy = cx + gp[4] * sc, cy - gp[5] * sc
+            gr = W.nbar.GLYPH * sc / 2
             red = p == 8
-            bd.ellipse((gx - 13, gy - 13, gx + 13, gy + 13), fill=(220, 40, 40, 255) if red else (245, 245, 245, 255), outline=(20, 20, 20, 255), width=2)
-            bd.text((gx, gy), word, fill=(255, 255, 255, 255) if red else (20, 20, 20, 255), font=small, anchor="mm")
+            atl = b.glyph.atlas or ""
+            if "dpad" in atl:
+                bd.ellipse((gx - gr, gy - gr, gx + gr, gy + gr), fill=(30, 30, 30, 255), outline=(220, 220, 220, 255), width=1)
+                arm = gr * 0.55
+                bd.line((gx - arm, gy, gx + arm, gy), fill=(235, 235, 235, 255), width=max(2, int(2 * sc)))
+                bd.line((gx, gy - arm, gx, gy + arm), fill=(235, 235, 235, 255), width=max(2, int(2 * sc)))
+            else:
+                word = {5: "X", 6: "Y", 7: "B", 8: "A"}.get(p, "")
+                bd.ellipse((gx - gr, gy - gr, gx + gr, gy + gr), fill=(245, 245, 245, 255), outline=(30, 30, 30, 255), width=1)
+                bd.text((gx, gy), word, fill=(230, 40, 40, 255) if red else (20, 20, 20, 255), font=small, anchor="mm")
         if f.chip and f.chip[1].shown:
             for i in (1, 2):
                 c = f.chip[i]
                 cx, cy = L.eval("PARTCENTRE")(c)
                 w2, h2 = W.nbar.TOP.CHIP_W * sc / 2, W.nbar.TOP.CHIP_H * sc / 2
-                bd.rounded_rectangle((cx - w2, cy - h2, cx + w2, cy + h2), radius=5, fill=(20, 17, 13, 230), outline=(150, 120, 80, 255), width=2)
-                bd.text((cx, cy), c.word.text, fill=(255, 210, 0, 255) if c.lit else (210, 210, 210, 255), font=small, anchor="mm")
+                if c.lit:
+                    rr = h2 + 4 * sc
+                    bd.ellipse((cx - rr, cy - rr, cx + rr, cy + rr), fill=(255, 200, 76, 96))
+                col = (255, 255, 255, 255) if c.lit else (255, 255, 255, 140)
+                bd.rounded_rectangle((cx - w2 * 0.8, cy - h2 * 0.75, cx + w2 * 0.8, cy + h2 * 0.75), radius=int(h2 * 0.7), outline=col,
+                                     width=max(2, int(2 * sc)))
+                bd.text((cx, cy), "ZL" if i == 1 else "ZR", fill=col, font=small, anchor="mm")
             for i in (1, 2):
                 s_ = f.sw[i]
                 if s_.shown:
