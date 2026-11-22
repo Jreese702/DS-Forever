@@ -65,6 +65,8 @@ final class OutputQueue {
     }
 
     static boolean onMainThread() {
+        // #153: the X input queue's thread neither (every touch, pad button and key is sent from it now, holding the X locks)
+        if (com.winlator.xserver.XInputQueue.onInputThread()) return true;
         Looper main = Looper.getMainLooper();
         return main != null && main.isCurrentThread();
     }

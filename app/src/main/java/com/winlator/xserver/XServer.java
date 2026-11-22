@@ -58,7 +58,8 @@ public class XServer {
     public XServer(ScreenInfo screenInfo, boolean useGlibcContainer, boolean mouseDragCompatibilityEnabled) {
         Log.d("XServer", "Creating xServer " + screenInfo);
         this.screenInfo = screenInfo;
-        for (Lockable lockable : Lockable.values()) locks.put(lockable, new ReentrantLock());
+        for (Lockable lockable : Lockable.values()) locks.put(lockable, new OwnedLock());
+        inputQueue.setSlowListener(this::reportSlowInput);
 
         pixmapManager = new PixmapManager();
         drawableManager = new DrawableManager(this);
@@ -181,13 +182,146 @@ public class XServer {
         return null;
     }
 
+    // ---------------------------------------------------------------- #153: every input through one queue, never the caller's wait
+    /**
+     * THE INPUT QUEUE (#153): every inject* below queues its work on [inputQueue]'s own thread, so the caller (the UI thread for a
+     * touch, a pad button, a key) never waits on WINDOW_MANAGER / INPUT_DEVICE while an X request thread or the renderer holds them.
+     * The order is kept (one FIFO worker). What a caller reads back right after sending - is a button down, is Shift held - is the
+     * LOGICAL state: what the X server will hold once everything sent so far has run ([isPointerButtonPressed], [isKeyPressed],
+     * [isShiftDown]), set in the same step as the queueing, so a release that checks "pressed?" is never lost behind a slow lock.
+     * Work that must read the X server's own state and act on it goes through [postInput] (it runs on the input thread, in order).
+     */
+    private final XInputQueue inputQueue = new XInputQueue("XInput", new XInputQueue.Mover() {
+        @Override public void moveTo(int x, int y) { pointerMoveNow(x, y); }
+        @Override public void moveBy(int dx, int dy) { pointerMoveDeltaNow(dx, dy); }
+    });
+    private final Object logical = new Object();
+    private int logicalButtons = 0;                          // Pointer.Button.flag() bits
+    private final boolean[] logicalKeys = new boolean[256];  // by X keycode
+
+    public XInputQueue getInputQueue() { return inputQueue; }
+
+    /** [op] on the input thread after everything sent before it (at once when already there): input that reads the X state first */
+    public void postInput(Runnable op) {
+        inputQueue.post(op);
+    }
+
+    /** the button is down once everything sent so far has run (the caller's view; any thread) */
+    public boolean isPointerButtonPressed(Pointer.Button button) {
+        synchronized (logical) { return (logicalButtons & button.flag()) != 0; }
+    }
+
+    /** the key is down once everything sent so far has run (any thread) */
+    public boolean isKeyPressed(XKeycode key) {
+        synchronized (logical) { return logicalKeys[key.getId() & 0xff]; }
+    }
+
+    /** a Shift is down once everything sent so far has run (the keyboard's modifier flag 1; any thread) */
+    public boolean isShiftDown() {
+        return isKeyPressed(XKeycode.KEY_SHIFT_L) || isKeyPressed(XKeycode.KEY_SHIFT_R);
+    }
+
+    /** [op] after [state] changed the logical view, in one step with its queueing; [op] at once (outside the step) on the input thread */
+    private void submit(Runnable state, Runnable op) {
+        boolean here;
+        synchronized (logical) {
+            state.run();
+            here = inputQueue.isInputThread();
+            if (!here) inputQueue.post(op);
+        }
+        if (here) op.run();
+    }
+
     public void injectPointerMove(int x, int y) {
+        inputQueue.moveTo(x, y);
+    }
+
+    public void injectPointerMoveDelta(int dx, int dy) {
+        if (dx == 0 && dy == 0) return;
+        inputQueue.moveBy(dx, dy);
+    }
+
+    /** the pointer by [dx], [dy] from where it IS when this runs (absolute, no XInput raw motion): the touchpad's cursor drag */
+    public void injectPointerMoveBy(int dx, int dy) {
+        postInput(() -> pointerMoveNow(pointer.getX() + dx, pointer.getY() + dy));
+    }
+
+    public void injectPointerButtonPress(Pointer.Button buttonCode) {
+        submit(() -> logicalButtons |= buttonCode.flag(), () -> pointerButtonPressNow(buttonCode));
+    }
+
+    public void injectPointerButtonRelease(Pointer.Button buttonCode) {
+        submit(() -> logicalButtons &= ~buttonCode.flag(), () -> pointerButtonReleaseNow(buttonCode));
+    }
+
+    public void injectKeyPress(XKeycode xKeycode) {
+        injectKeyPress(xKeycode, 0);
+    }
+
+    public void injectKeyPress(XKeycode xKeycode, int keysym) {
+        injectKeyPress(xKeycode, keysym, true);
+    }
+
+    public void injectKeyPress(XKeycode xKeycode, int keysym, boolean autoRepeat) {
+        injectKeyPress(xKeycode, keysym, 0, autoRepeat);
+    }
+
+    /** As injectKeyPress, telling X what the key types without (keysym) and with Shift (shiftedKeysym). */
+    public void injectKeyPress(XKeycode xKeycode, int keysym, int shiftedKeysym, boolean autoRepeat) {
+        submit(() -> logicalKeys[xKeycode.getId() & 0xff] = true, () -> keyPressNow(xKeycode, keysym, shiftedKeysym, autoRepeat));
+    }
+
+    public void injectKeyRelease(XKeycode xKeycode) {
+        submit(() -> logicalKeys[xKeycode.getId() & 0xff] = false, () -> keyReleaseNow(xKeycode));
+    }
+
+    /** a ReentrantLock that says which thread holds it (the slow-input line) */
+    static final class OwnedLock extends ReentrantLock {
+        Thread owner() { return getOwner(); }
+    }
+
+    /**
+     * An input op has waited [waitedMs] (#153: the freeze reports could not say who held the X lock): the input thread's frames and
+     * every held X lock's owner with its frames, logged once per slow op (WCXIN, and DiagLog's event for the report). On its own
+     * short thread: the caller is whoever queued the next input, maybe the UI thread.
+     */
+    private void reportSlowInput(long waitedMs, Thread worker) {
+        Thread t = new Thread(() -> {
+            StringBuilder sb = new StringBuilder("input waited ").append(waitedMs).append(" ms: ");
+            sb.append(frames(worker, 8));
+            for (Lockable l : Lockable.values()) {
+                ReentrantLock lock = locks.get(l);
+                Thread owner = lock instanceof OwnedLock ? ((OwnedLock) lock).owner() : null;
+                if (owner != null && owner != worker) {
+                    sb.append(" | ").append(l.name()).append(" held by \"").append(owner.getName()).append("\": ").append(frames(owner, 10));
+                }
+            }
+            String line = sb.toString();
+            try { Log.w("WCXIN", line); } catch (Throwable ignored) {}
+            try { com.jrees.wowcompanion.DiagLog.INSTANCE.event("xinput", line.length() > 1500 ? line.substring(0, 1500) : line, System.currentTimeMillis()); } catch (Throwable ignored) {}
+        }, "WCXIN-report");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static String frames(Thread t, int max) {
+        StackTraceElement[] st = t.getStackTrace();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < st.length && i < max; i++) {
+            if (i > 0) sb.append(" <- ");
+            sb.append(st[i].getClassName().replaceFirst("^.*\\.", "")).append('.').append(st[i].getMethodName()).append(':').append(st[i].getLineNumber());
+        }
+        if (st.length > max) sb.append(" <- ...");
+        return sb.toString();
+    }
+
+    private void pointerMoveNow(int x, int y) {
         try (XLock lock = lock(Lockable.WINDOW_MANAGER, Lockable.INPUT_DEVICE)) {
             pointer.setPosition(x, y);
         }
     }
 
-    public void injectPointerMoveDelta(int dx, int dy) {
+    private void pointerMoveDeltaNow(int dx, int dy) {
         if (dx == 0 && dy == 0) return;
 
         WinHandler handler = winHandler;
@@ -251,7 +385,7 @@ public class XServer {
         }
     }
 
-    public void injectPointerButtonPress(Pointer.Button buttonCode) {
+    private void pointerButtonPressNow(Pointer.Button buttonCode) {
         try (XLock lock = lock(Lockable.WINDOW_MANAGER, Lockable.INPUT_DEVICE)) {
             pointer.setButton(buttonCode, true);
 
@@ -261,7 +395,7 @@ public class XServer {
         }
     }
 
-    public void injectPointerButtonRelease(Pointer.Button buttonCode) {
+    private void pointerButtonReleaseNow(Pointer.Button buttonCode) {
         try (XLock lock = lock(Lockable.WINDOW_MANAGER, Lockable.INPUT_DEVICE)) {
             pointer.setButton(buttonCode, false);
 
@@ -271,28 +405,13 @@ public class XServer {
         }
     }
 
-    public void injectKeyPress(XKeycode xKeycode) {
-        injectKeyPress(xKeycode, 0);
-    }
-
-    public void injectKeyPress(XKeycode xKeycode, int keysym) {
-        injectKeyPress(xKeycode, keysym, true);
-    }
-
-    public void injectKeyPress(XKeycode xKeycode, int keysym, boolean autoRepeat) {
-        try (XLock lock = lock(Lockable.WINDOW_MANAGER, Lockable.INPUT_DEVICE)) {
-            keyboard.setKeyPress(xKeycode.getId(), keysym, autoRepeat);
-        }
-    }
-
-    /** As injectKeyPress, telling X what the key types without (keysym) and with Shift (shiftedKeysym). */
-    public void injectKeyPress(XKeycode xKeycode, int keysym, int shiftedKeysym, boolean autoRepeat) {
+    private void keyPressNow(XKeycode xKeycode, int keysym, int shiftedKeysym, boolean autoRepeat) {
         try (XLock lock = lock(Lockable.WINDOW_MANAGER, Lockable.INPUT_DEVICE)) {
             keyboard.setKeyPress(xKeycode.getId(), keysym, shiftedKeysym, autoRepeat);
         }
     }
 
-    public void injectKeyRelease(XKeycode xKeycode) {
+    private void keyReleaseNow(XKeycode xKeycode) {
         try (XLock lock = lock(Lockable.WINDOW_MANAGER, Lockable.INPUT_DEVICE)) {
             keyboard.setKeyRelease(xKeycode.getId());
         }

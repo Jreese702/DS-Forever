@@ -61,6 +61,12 @@ class KeyboardRepeatShiftTest {
             keyboard.setKeyPress(firstArg<XKeycode>().id, secondArg(), thirdArg<Int>(), arg<Boolean>(3))
         }
         every { xServer.injectKeyRelease(any()) } answers { keyboard.setKeyRelease(firstArg<XKeycode>().id) }
+        // #153: the input queue runs inline here; the logical key state is the keyboard's own
+        every { xServer.postInput(any()) } answers { firstArg<Runnable>().run() }
+        every { xServer.isKeyPressed(any()) } answers { keyboard.pressedKeys.contains(firstArg<XKeycode>().id) }
+        every { xServer.isShiftDown() } answers {
+            keyboard.pressedKeys.contains(XKeycode.KEY_SHIFT_L.id) || keyboard.pressedKeys.contains(XKeycode.KEY_SHIFT_R.id)
+        }
         InputDeviceManager(xServer)   // registers itself as the keyboard's listener
     }
 

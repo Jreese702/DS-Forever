@@ -3519,9 +3519,15 @@ class MapView(context: Context) : View(context) {
         if (!r.valid) return false
         val a = qdbAreas[m.optInt("mapID", Int.MIN_VALUE)] ?: return false
         var any = false
-        val groups = a.objs.filter { it.qid == id }.flatMap { QdbAreas.groups(it.pts, r.width, r.height) }
+        // #153: the groups come from QdbAreas' cache; a big objective is worked out on its own thread and the map draws again then
+        val groups = QdbAreas.groupsFor(a, id, r.width, r.height) { qdbReady(a.m) } ?: return false
         for (g in QdbAreas.keep(groups, focused)) qAreaOf01(g.outline, focused, floored = true)?.let { qAreas.add(it); any = true }
         return any
+    }
+
+    /** #153: map [m]'s QuestieDB groups are worked out (the areas thread): the quest areas again when it is still this map's */
+    private fun qdbReady(m: Int) {
+        post { if (m == map?.optInt("mapID", Int.MIN_VALUE)) { deriveQuestAreas(map); invalidate() } }
     }
 
     /** {"type":"qdbareas"} (Quests' add-on): this map's QuestieDB spawn spots of the tracked quests' objectives */
@@ -3531,6 +3537,9 @@ class MapView(context: Context) : View(context) {
         if (qdbAreas[a.m]?.set == a.set) return                 // the heartbeat's re-send: nothing changed
         qdbAreas.remove(a.m); qdbAreas[a.m] = a
         while (qdbAreas.size > QDB_MAPS) qdbAreas.remove(qdbAreas.keys.first())
+        // #153: this map's groups worked out on the areas thread first (the areas then come from the cache), not on this thread
+        val r = rect
+        if (a.m == map?.optInt("mapID", Int.MIN_VALUE) && r != null && r.valid) { QdbAreas.prepare(a, r.width, r.height) { qdbReady(a.m) }; return }
         if (a.m == map?.optInt("mapID", Int.MIN_VALUE)) { deriveQuestAreas(map); invalidate() }
     }
     private val qdbAreas = LinkedHashMap<Int, QdbAreas.Areas>()

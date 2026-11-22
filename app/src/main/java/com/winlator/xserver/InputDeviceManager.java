@@ -32,10 +32,15 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
     private final Runnable autoRepeatRunnable = new Runnable() {
         @Override
         public void run() {
-            if (xServer.keyboard.getPressedKeys().contains(currentRepeatingKeycode)) {
-                onKeyPress(currentRepeatingKeycode, currentRepeatingKeysym, currentRepeatingShiftedKeysym, true);
-                autoRepeatHandler.postDelayed(this, repeatRateMs);
-            }
+            // #153: the repeat's press runs on the X input queue (in order with the release, under the X lock), never on the UI thread
+            xServer.postInput(() -> {
+                if (xServer.keyboard.getPressedKeys().contains(currentRepeatingKeycode)) {
+                    try (XLock lock = xServer.lock(XServer.Lockable.WINDOW_MANAGER, XServer.Lockable.INPUT_DEVICE)) {
+                        onKeyPress(currentRepeatingKeycode, currentRepeatingKeysym, currentRepeatingShiftedKeysym, true);
+                    }
+                    autoRepeatHandler.postDelayed(autoRepeatRunnable, repeatRateMs);
+                }
+            });
         }
     };
 

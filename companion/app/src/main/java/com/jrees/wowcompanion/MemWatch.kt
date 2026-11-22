@@ -45,7 +45,8 @@ object MemWatch {
     @Synchronized internal fun trimNames(): Pair<List<String>, List<String>> = trimmers.keys.toList() to trimmers8.keys.toList()
 
     /**
-     * Light 8's rest of the PSS split, then DS Forever's swap: ", stk 1, oth 40, sys 12; swp 128" (MB). java + native + gfx + code +
+     * The rest of the PSS split, then DS Forever's swap: ", stk 1, oth 40, sys 12; swp 128" (MB). Light 8's since 1517, on every Thor
+     * since #56 (11-22: counting only, nothing else changes). java + native + gfx + code +
      * stk (stack) + oth (private-other) + sys (system) add up to the line's PSS - Android's PSS already holds the swapped-out pages'
      * share, inside sys. swp (summary.total-swap) is NOT one of the parts: the swapped-out size uncompressed (not a PSS share, not
      * zram's compressed size), partly inside sys already - after the ";" so it is never added in. Pure
@@ -97,6 +98,7 @@ object MemWatch {
                 runCatching { val l = line(); Log.i(TAG, l); keep(l) }
                 runCatching { stampExit() }
                 runCatching { maybeDump(lastPssMb) }
+                runCatching { timedTick(h) }                              // #56: the long session's own relief
                 h.postDelayed(this, EVERY_MS)
             }
         }
@@ -226,6 +228,7 @@ object MemWatch {
      *  its buffers are garbage now, and the game start's own relief seconds later still gets its collection, as before) */
     fun relieve(why: String, delayMs: Long = 0L, collectNow: Boolean = false) {
         val h = handler ?: return
+        reliefAt = SystemClock.uptimeMillis() + delayMs.coerceAtLeast(0L)   // #56: the timed relief counts from the last relief
         runCatching {
             Handler(Looper.getMainLooper()).postDelayed({
                 val freed = letGo(RELIEF_LEVEL)
@@ -239,6 +242,76 @@ object MemWatch {
             }, delayMs.coerceAtLeast(0L))
         }
     }
+
+    // ---------------------------------------------------------------- #56 (11-22): a timed relief in long sessions
+    /**
+     * THE LONG SESSION'S OWN RELIEF (#56, 11-22: on 16 GB Thors the kills come 100 - 441 min into a session and DS Forever's own size at
+     * the kill grows with the session, r = 0.87, 400 -> 880-1058 MB; between reliefs our native memory only climbs, 3 - 5 MB a minute
+     * in the world, and the reliefs come only at Play, the world's entry and loading screens - a long session in one zone gets none).
+     * Every [TIMED_EVERY_MS] since the last relief of any kind, while the game is in the world on this device (not streaming), no
+     * loading screen is up, the world has been calm (no load) for [TIMED_CALM_MS] and the player is not fighting ([fightNow], read on
+     * the UI thread): the same relief as a loading screen's - DS Forever's own rebuildable caches let go (the trims at running-low:
+     * pictures, map and minimap tiles, decoded art, kit caches; each one keeps what is on show), one Java collection, the allocator's free
+     * pages handed back - never anything of the game's. Measured: DS Forever's PSS before and after, in the relief's mem.log line
+     * ("relief (timed, 24 min since the last): ...; pss 612 -> 540 MB").
+     */
+    const val TIMED_EVERY_MS = 20 * 60_000L
+    const val TIMED_CALM_MS = 60_000L
+    /** the last relief of any kind (uptime ms; the watch's start counts as one) */
+    @Volatile private var reliefAt = 0L
+    /** the player is fighting now (the host sets it; read on the UI thread only) */
+    @Volatile var fightNow: () -> Boolean = { false }
+    /** the timed relief's facts now (the tests' seam): (in the world on this device, a loading screen up, the calm in ms) */
+    @Volatile internal var worldNow: () -> Triple<Boolean, Boolean, Long> = {
+        Triple(GameLife.worldNow && !GameLife.awayNow && LauncherHooks.gameUp() && !PlayGate.streamingNow(), GameLife.loadingNow, GameLife.calmMs())
+    }
+    @Volatile private var timedAsked = false
+
+    /** a timed relief is due (pure: the tests): [sinceMs] since the last relief, in the world, no load up, calm long enough */
+    fun timedDue(sinceMs: Long, inWorld: Boolean, loading: Boolean, calmMs: Long): Boolean =
+        inWorld && !loading && calmMs >= TIMED_CALM_MS && sinceMs >= TIMED_EVERY_MS
+
+    /** "relief (timed, 24 min since the last)" (pure) */
+    fun timedWhy(sinceMs: Long): String = "timed, ${sinceMs / 60_000L} min since the last"
+
+    /** "pss 612 -> 540 MB" (pure) */
+    fun pssNote(beforeMb: Long, afterMb: Long): String = "pss $beforeMb -> $afterMb MB"
+
+    /** the watch's 5 s tick (its thread): the relief when due, the fight check on the UI thread, the work back here */
+    private fun timedTick(h: Handler) {
+        val now = SystemClock.uptimeMillis()
+        if (reliefAt == 0L) { reliefAt = now; return }
+        if (timedAsked) return
+        val (inWorld, loading, calm) = worldNow()
+        val since = now - reliefAt
+        if (!timedDue(since, inWorld, loading, calm)) return
+        timedAsked = true
+        Handler(Looper.getMainLooper()).post {
+            val fighting = runCatching { fightNow() }.getOrDefault(false)
+            if (fighting) { timedAsked = false; return@post }             // the next tick asks again
+            h.post { runCatching { timedRelief(timedWhy(since)) }; timedAsked = false }
+        }
+    }
+
+    /** the timed relief itself (this watch's thread): PSS, the let-go on the UI thread, the collection and the purge here, PSS again */
+    private fun timedRelief(why: String) {
+        val h = handler ?: return
+        val before = pssMbNow()
+        reliefAt = SystemClock.uptimeMillis()
+        Handler(Looper.getMainLooper()).post {
+            val freed = letGo(RELIEF_LEVEL)
+            h.post { runCatching {
+                val gc = collect(true)
+                val purge = NativeHeap.purgeLine()
+                val after = pssMbNow()
+                val l = trimLine("relief ($why)", freed, listOf(gc, purge, pssNote(before, after)).filter { it.isNotEmpty() }.joinToString("; "), psiNow())
+                Log.i(TAG, l); keep(l)
+                runCatching { DiagLog.event("memory", l.take(600)) }
+            } }
+        }
+    }
+
+    private fun pssMbNow(): Long = runCatching { val mi = Debug.MemoryInfo(); Debug.getMemoryInfo(mi); mb(mi.totalPss.toLong()) }.getOrDefault(-1L)
 
     /**
      * ONE LINE INTO mem.log (memory relief 2, the user's picks 2026-11-14: "logged to mem.log"): the end of a loading screen, the Map
@@ -443,7 +516,7 @@ object MemWatch {
         return buildString {
             append(time).append(" pss ").append(num("^pss (\\d+)") ?: "?")
             append(" (j ").append(num("java (\\d+)") ?: "?").append(" n ").append(num("native (\\d+)") ?: "?").append(" gx ").append(num("gfx (\\d+)") ?: "?")
-            num("swp (\\d+)")?.let { append(" sw ").append(it) }       // Light 8's lines only (DS Forever's own swap)
+            num("swp (\\d+)")?.let { append(" sw ").append(it) }       // DS Forever's own swap (every Thor's line since #56 11-22)
             append(")")
             num("game (\\d+) MB")?.let { append(" game ").append(it) }
             num("free (\\d+) MB")?.let { append(" free ").append(it) }
@@ -495,7 +568,7 @@ object MemWatch {
                      caches: List<Pair<String, Long>>, swp: Long = -1L): String {
         val head = buildString {
             append("dsf ").append(epochS).append(" pss ").append(pss).append(" j ").append(java).append(" n ").append(native).append(" gx ").append(gfx)
-            if (swp >= 0) append(" sw ").append(swp)                  // Light 8 only (-1 on every other Thor)
+            if (swp >= 0) append(" sw ").append(swp)                  // every Thor since #56 11-22 (-1 = not read)
             if (game >= 0) append(" game ").append(game)
             if (free >= 0) append(" free ").append(free)
             if (low >= 0) append(" low ").append(low)
@@ -516,10 +589,12 @@ object MemWatch {
         val pss = mi.totalPss.toLong()
         lastPssMb = mb(pss)
         val l8 = light8()
-        val swp = if (l8) mb(stat("summary.total-swap")) else -1L
+        // #56 (11-22): the rest of the PSS split and DS Forever's own swap on EVERY Thor (counting only; Light 8's since 1517): the
+        // 16 GB long-session kills grow with the session and the 12 GB ones come with swap nearly full, and neither line said where
+        val swp = mb(stat("summary.total-swap"))
         val parts = "java ${mb(stat("summary.java-heap"))}, native ${mb(stat("summary.native-heap"))}, gfx ${mb(stat("summary.graphics"))}, " +
-            "code ${mb(stat("summary.code"))}" + if (l8) light8Parts(mb(stat("summary.stack")), mb(stat("summary.private-other")),
-                mb(stat("summary.system")), swp) else ""
+            "code ${mb(stat("summary.code"))}" + light8Parts(mb(stat("summary.stack")), mb(stat("summary.private-other")),
+                mb(stat("summary.system")), swp)
         val heap = "heap ${mbB(Debug.getNativeHeapAllocatedSize())}/${mbB(Debug.getNativeHeapSize())} MB"
         val sized = synchronized(this) { sources.toList() + if (l8) sources8.toList() else emptyList() }
             .map { (n, f) -> n to runCatching { mbB(f()) }.getOrDefault(-1L) }

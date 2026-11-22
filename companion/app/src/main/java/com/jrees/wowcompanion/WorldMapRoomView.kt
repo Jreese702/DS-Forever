@@ -1817,7 +1817,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         for (id in ids) {
             val q = logEntry(id)
             if (q?.optBoolean("ready") == true || q?.optBoolean("done") == true || marks().firstOrNull { it.id == id }?.done == true) continue
-            val groups = qa.objs.filter { it.qid == id }.flatMap { QdbAreas.groups(it.pts, ax, ay) }
+            // #153: from QdbAreas' cache (this ran on every frame); a big objective is worked out on its own thread, then a redraw
+            val groups = QdbAreas.groupsFor(qa, id, ax, ay) { postInvalidate() } ?: continue
             if (groups.isEmpty()) continue
             val k = if (id == lit && id != focusQid) e else 1f
             for (g in QdbAreas.keep(groups, focused = id == focusQid)) {

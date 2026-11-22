@@ -48,4 +48,54 @@ class LogSieveTest {
         assertTrue(h.startsWith("line 1\n")); assertTrue(h.contains("line 5")); assertFalse(h.contains("line 6"))
         assertTrue(h.endsWith("[the rest of the game's report is left out]"))
     }
+    /** #153 (1.0.37): the freeze reports' 12 key lines (the report worker: Description, "main", the first frames) held only the lock's
+     *  own frames; in short the callers in our code come first */
+    @Test fun anAnrsMainThreadInShortNamesOurCallers() {
+        val main = listOf(
+            "\"main\" prio=5 tid=1 Waiting",
+            "  | group=\"main\" sCount=1 ucsCount=0 flags=1 obj=0x72a0 self=0xb4",
+            "  at jdk.internal.misc.Unsafe.park(Native method)",
+            "  - waiting on an unknown object",
+            "  at java.util.concurrent.locks.LockSupport.park(LockSupport.java:194)",
+            "  at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:885)",
+            "  at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:917)",
+            "  at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1240)",
+            "  at java.util.concurrent.locks.ReentrantLock.lock(ReentrantLock.java:267)",
+            "  at com.winlator.xserver.XServer\$MultiXLock.<init>(SourceFile:153)",
+            "  at com.winlator.xserver.XServer\$MultiXLock.<init>(SourceFile:0)",
+            "  at com.winlator.xserver.XServer.lock(SourceFile:169)",
+            "  at com.winlator.xserver.XServer.injectPointerMove(SourceFile:185)",
+            "  at com.winlator.widget.TouchpadView.handleTouchscreenEvent(SourceFile:403)",
+            "  at com.winlator.widget.TouchpadView.onTouchEventTimed(SourceFile:380)",
+            "  at com.winlator.widget.TouchpadView.onTouchEvent(SourceFile:361)",
+            "  at android.view.View.dispatchTouchEvent(View.java:15024)",
+            "  at android.view.ViewGroup.dispatchTransformedTouchEvent(ViewGroup.java:3115)",
+            "  at android.view.ViewGroup.dispatchTouchEvent(ViewGroup.java:2788)",
+            "  at com.jrees.wowcompanion.CompanionHost\$\$ExternalSyntheticLambda467.run(SourceFile:0)",
+            "  at android.os.Looper.loop(Looper.java:288)",
+            "  at android.app.ActivityThread.main(ActivityThread.java:7918)")
+        val short = LogSieve.compactFrames(main)
+        // the report worker's key lines: the "main" header and the "at " / "- " / "native:" lines, 11 after the Description
+        val keys = short.map { it.trim() }.filter { Regex("""^"main"|^native: #\d+|^at |^- (waiting|locked|sleeping)""").containsMatchIn(it) }.take(11)
+        assertTrue(keys.joinToString(" / "), keys.any { it.contains("TouchpadView.handleTouchscreenEvent") })
+        assertTrue(keys.any { it.contains("XServer.injectPointerMove") })
+        assertEquals("at jdk.internal.misc.Unsafe.park(Native method)", keys[1])          // what it is blocked in stays first
+        assertTrue(short.contains("  at ... (5 runtime frames)"))
+        assertEquals(1, short.count { it.contains("XServer\$MultiXLock.<init>") })          // R8's repeat goes
+        assertFalse(short.any { it.contains("ExternalSyntheticLambda") })
+        assertTrue(short.contains("  | group=\"main\" sCount=1 ucsCount=0 flags=1 obj=0x72a0 self=0xb4"))
+        // in the record: the short main thread first, the full one at the end, one "main" header
+        val rec = "DS Forever: how the last run ended\n---------- Trace ----------\n" + main.joinToString("\n") +
+            "\n\n\"Binder:1_1\" prio=5 tid=9 Native\n  at a.b(C.kt:1)\n"
+        val t = LogSieve.traceFirst(rec)
+        assertEquals(1, Regex("\"main\" prio=5").findAll(t).count())
+        assertTrue(t.indexOf("at ... (5 runtime frames)") < t.indexOf("[the rest of the trace]"))
+        assertTrue(t.indexOf("[the main thread in full]") > t.indexOf("\"Binder:1_1\""))
+        assertTrue(t.substring(t.indexOf("[the main thread in full]")).contains("AbstractQueuedSynchronizer.acquireQueued"))
+        // native frames: the first two, then one line
+        val nat = listOf("\"main\" prio=5 tid=1 Native") + (0..9).map { "  native: #%02d pc 000a6c2c  /system/lib64/libc.so (f$it+12)".format(it) } +
+            listOf("  at com.winlator.renderer.VulkanRenderer.nativeSetFrameGenerationShaders(Native method)")
+        val ns = LogSieve.compactFrames(nat)
+        assertEquals(listOf(nat[0], nat[1], nat[2], "  native: #02-#09 (8 more native frames)", nat.last()), ns)
+    }
 }

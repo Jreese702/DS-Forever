@@ -271,7 +271,7 @@ class ExternalOnScreenKeyboardView(
 
     private fun pressKey(key: XKeycode, withShift: Boolean = false) {
         if (!downKeys.add(key)) return
-        val shiftWasDown = xServer.keyboard.modifiersMask.isSet(1)
+        val shiftWasDown = xServer.isShiftDown()
         if (withShift && !shiftWasDown) xServer.injectKeyPress(XKeycode.KEY_SHIFT_L)
         xServer.injectKeyPress(key)
         if (withShift && !shiftWasDown) xServer.injectKeyRelease(XKeycode.KEY_SHIFT_L)

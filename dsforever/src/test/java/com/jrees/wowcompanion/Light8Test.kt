@@ -287,7 +287,8 @@ class Light8Test {
         assertEquals("dsf 1 pss 300 j 20 n 100 gx 10 sw 55", MemWatch.stateSummary(1L, 300, 20, 100, 10, -1, -1, -1, -1, emptyList(), swp = 55))
         val mem = text("MemWatch.kt")
         assertTrue(mem.contains("light8Parts(mb(stat(\"summary.stack\")), mb(stat(\"summary.private-other\")),\n                mb(stat(\"summary.system\")), swp)"))
-        assertTrue(mem.contains("val swp = if (l8) mb(stat(\"summary.total-swap\")) else -1L"))
+        // #56 (11-22): the counting is on every Thor now (MemTimedReliefTest), the caches and the marker still Light 8's
+        assertTrue(mem.contains("val swp = mb(stat(\"summary.total-swap\"))"))
         assertTrue(mem.contains("sources.toList() + if (l8) sources8.toList() else emptyList()"))
         assertTrue(mem.contains("light8Mark(l8)?.let { add(it) }"))
         assertTrue(mem.contains("val dev = device() + if (l8) gameAge(gameSample?.second, SystemClock.uptimeMillis()) else \"\""))

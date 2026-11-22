@@ -159,7 +159,8 @@ public class Keyboard {
     }
 
     private boolean needsSyntheticShift(KeyEvent event) {
-        if (pressedKeys.contains(XKeycode.KEY_SHIFT_L.getId()) || pressedKeys.contains(XKeycode.KEY_SHIFT_R.getId())) return false;
+        // #153: what the X server will hold once the queued input has run (pressedKeys changes on the X input thread)
+        if (xServer.isShiftDown()) return false;
         int keyCode = event.getKeyCode();
         return event.isShiftPressed() || keyCode == KeyEvent.KEYCODE_AT || keyCode == KeyEvent.KEYCODE_STAR || keyCode == KeyEvent.KEYCODE_POUND || keyCode == KeyEvent.KEYCODE_PLUS;
     }

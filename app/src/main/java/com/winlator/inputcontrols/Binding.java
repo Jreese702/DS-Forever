@@ -161,7 +161,7 @@ public enum Binding {
             if (holdCount > 0) {
                 return;
             }
-            else if (!xServer.keyboard.getModifiersMask().isSet(1)) {
+            else if (!xServer.isShiftDown()) {
                 xServer.injectKeyPress(XKeycode.KEY_SHIFT_L);
                 tildeShiftHolds.put(xServer, 1);
             }
