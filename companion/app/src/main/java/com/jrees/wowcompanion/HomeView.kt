@@ -2678,9 +2678,11 @@ class HomeView(
         val b = now[Part.BARS] ?: return null
         val slots = ArrayList<HomeLayoutSolver.Box>(8)
         val pad = RectF(); val face = RectF()
+        val keys = ArrayList<RectF>(8)
         for (pos in 0 until 8) {
             castView.slotRect(pos, bandSlotBox); bandSlotBox.offset(b.left, b.top)
             slots += HomeLayoutSolver.Box(bandSlotBox.left, bandSlotBox.top, bandSlotBox.right, bandSlotBox.bottom)
+            keys += RectF(bandSlotBox)
             if (pos == 0 || pos == 4) (if (pos == 0) pad else face).set(bandSlotBox) else (if (pos < 4) pad else face).union(bandSlotBox)
         }
         val diamonds = castView.layout == CastView.Layout.DIAMONDS
@@ -2714,7 +2716,7 @@ class HomeView(
             chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview)
         fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
         return HomeEditView.BandGeo(RectF(b), pad, face, rf(pieces.padPen), rf(pieces.facePen), pieces.look?.let { rf(it) },
-            pieces.fightPen?.let { rf(it) }, extras, plus, diamonds, chip)
+            pieces.fightPen?.let { rf(it) }, extras, plus, diamonds, chip, keys)
     }
 
     /** P2: the extras now for edit mode's model (Settings' clock rows: on, hidden) - fed before every input reaches it */

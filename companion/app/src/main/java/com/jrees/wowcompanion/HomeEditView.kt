@@ -99,7 +99,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
      */
     class BandGeo(val band: RectF, val pad: RectF, val face: RectF, val padPen: RectF, val facePen: RectF, val look: RectF?,
                   val fightPen: RectF?, val extras: List<Pair<String, RectF>>, val plus: RectF?, val diamonds: Boolean,
-                  val chip: RectF? = null)
+                  val chip: RectF? = null, val keys: List<RectF> = emptyList())
 
     init { isClickable = true }
 
@@ -714,6 +714,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 val cx = bubbleOf.centerX().coerceIn(BUBBLE_EDGE + bw / 2f, w - BUBBLE_EDGE - bw / 2f)
                 box = RectF(cx - bw / 2f, top + BUBBLE_TAIL, cx + bw / 2f, h - g)
                 val hung = box.top
+                // fix round 3 (the review: the 640 px bubble overhangs the other column by about 12 px, so a top bar THERE pushed it about
+                // 140 px down, tailless, over its own empty column): a bar wholly to one side of the pencil narrows the bubble to end a gap
+                // short of it while the bubble stays MENU_MIN_W wide; only a bar it still crosses moves it ([clearBars])
+                val ax = bubbleOf.centerX()
+                for (b in castNow(p)) {
+                    if (b.left >= box.right || box.left >= b.right) continue
+                    if (b.left > ax && b.left - g - box.left >= MENU_MIN_W) box.right = b.left - g
+                    else if (b.right < ax && box.right - (b.right + g) >= MENU_MIN_W) box.left = b.right + g
+                }
                 clearBars(box, p, top, g)
                 // fix round (the review: under a tap-to-cast bar at a column's top the tail landed on that bar): a bubble a bar pushed down
                 // has no tail - it would point at the bar, not at the D-pad or the buttons
@@ -1653,10 +1662,13 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (hit(g.fightPen)) return EditStop.FIGHT_PEN to null
         val m = host.model
         if (m?.fightPreview != true) {
+            // fix round 3 (the review: the first extra's badge reach covered the D-pad's Right button's lower part): on one of the D-pad's
+            // or the ABXY's buttons ([BandGeo.keys]) an extra takes the finger only on its own cell or its drawn badge
+            val onKey = g.keys.any { it.contains(x, y) }
             // an extra's "-" badge first (on its top left), then the extra, then "+"
-            for ((k, r) in g.extras) if (extraBadgeHit(k, r, x, y)) return EditStop.EXTRAS to "badge:$k"
-            for ((k, r) in g.extras) if (hit(r)) return EditStop.EXTRAS to k
-            if (hit(g.plus)) return EditStop.EXTRAS to "plus"
+            for ((k, r) in g.extras) if (extraBadgeHit(k, r, x, y, onKey)) return EditStop.EXTRAS to "badge:$k"
+            for ((k, r) in g.extras) if (hit(r, grow = !onKey)) return EditStop.EXTRAS to k
+            if (hit(g.plus, grow = !onKey)) return EditStop.EXTRAS to "plus"
         }
         if (hit(g.pad, grow = false)) return EditStop.PAD_PEN to null
         if (hit(g.face, grow = false)) return EditStop.FACE_PEN to null
@@ -1667,14 +1679,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
      * extra [k]'s "-" badge under a finger at [x], [y] ([r] its cell). Fix round (the review: the room bar's [Strip.BADGE_HIT] reach round
      * a badge on a 28 px picture covered most of the picture, so a tap meant to select the Hearthstone hid it): off the extra's picture the
      * badge keeps that reach; ON the picture only the drawn badge itself (its disc and [EXTRA_BADGE_SLOP]) is the badge's - the rest of the
-     * picture selects the extra. The gold line's picture is its line ([r])
+     * picture selects the extra. The gold line's picture is its line ([r]). [onKey]: the finger on one of the band's buttons (fix round 3)
+     * - there too only the drawn badge is the badge's (the rest is the button's: its pencil's bubble)
      */
-    fun extraBadgeHit(k: String, r: RectF, x: Float, y: Float): Boolean {
+    fun extraBadgeHit(k: String, r: RectF, x: Float, y: Float, onKey: Boolean = false): Boolean {
         val bx = if (k == "gold") r.left - EXTRA_BADGE_R - 2f else r.left + BADGE_IN
         val by = if (k == "gold") r.centerY() else r.top + BADGE_IN
         val d = kotlin.math.hypot(x - bx, y - by)
         if (d > Strip.BADGE_HIT / 2f) return false
-        return !extraPicture(k, r).contains(x, y) || d <= EXTRA_BADGE_R + EXTRA_BADGE_SLOP
+        return (!onKey && !extraPicture(k, r).contains(x, y)) || d <= EXTRA_BADGE_R + EXTRA_BADGE_SLOP
     }
     /** extra [k]'s picture in its cell [r] (the icon: [ClockBand.ICON] at the cell's scale, centred, at its top; the gold line: the line;
      *  [EXTRA_PLUS]: its "+" spot's square, the blank frame's place) */

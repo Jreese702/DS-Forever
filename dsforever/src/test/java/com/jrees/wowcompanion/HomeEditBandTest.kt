@@ -233,4 +233,48 @@ class HomeEditBandTest {
         assertTrue(m.cursorCheck(stops(classic, m))); assertEquals("no Look chip in the preview", EditStop.PAD_PEN, m.cursor)
         assertNotNull(stops(classic, m)[EditStop.FIGHT_PEN])
     }
+
+    /** fix round 3 (the review: the Add tray during the Fight preview put the cursor on the bar or card it brought back - no stop then,
+     *  D4 - so A lifted it, Y resized it and the D-pad jumped anywhere): the cursor stays on a stop that exists ("+" while shown, else
+     *  the ribbon's Fight), and a cursor left on a page widget the preview hides goes there too */
+    @Test fun addingAWidgetBackInThePreviewKeepsTheCursorOnAStop() {
+        for (w in listOf(EditStop.CAST, EditStop.QUEST)) {
+            for (bothOff in listOf(false, true)) {
+                val l = when {
+                    bothOff -> classic.copy(cast = HomeLayout.CastDock.OFF, card = HomeLayout.CardDock.OFF)
+                    w == EditStop.CAST -> classic.copy(cast = HomeLayout.CastDock.OFF)
+                    else -> classic.copy(card = HomeLayout.CardDock.OFF)
+                }
+                val m = model(l, start = EditStop.FIGHT)
+                m.press("PAD1")                                                 // the preview on
+                assertTrue(m.fightPreview)
+                m.press("PADDLEFT"); assertEquals("$w: Left from Fight to \"+\"", EditStop.PLUS, m.cursor)
+                m.press("PAD1"); assertEquals(HomeEditModel.Sheet.ADD, m.sheet)
+                val sel = m.removed.indexOf(w); assertTrue(sel >= 0)
+                repeat(sel) { m.press("PADDDOWN") }
+                m.press("PAD1")
+                assertNull(m.sheet)
+                assertFalse("$w back on Home", w in m.removed)
+                val st = stops(m.draft, m)
+                assertTrue("$w (both off $bothOff): the cursor on a stop that exists (${m.cursor})", m.cursor in st)
+                assertEquals(if (m.plusShown) EditStop.PLUS else EditStop.FIGHT, m.cursor)
+                assertFalse("nothing to move it to", m.cursorCheck(st))
+                val size = m.draft.castSize
+                m.press("PAD4"); assertEquals("$w: Y resizes nothing", size, m.draft.castSize)
+                if (m.cursor == EditStop.PLUS) m.press("PAD2") else m.press("PADDRIGHT")
+                assertNull("$w: nothing lifted", m.lifted)
+            }
+            // a cursor left on a page widget the preview hides: to "+" when shown, else to the ribbon's Fight
+            for (plus in listOf(false, true)) {
+                val l = if (plus) classic.copy(card = if (w == EditStop.CAST) HomeLayout.CardDock.OFF else classic.card,
+                    cast = if (w == EditStop.QUEST) HomeLayout.CastDock.OFF else classic.cast) else classic
+                val m = model(l, start = EditStop.FIGHT)
+                m.press("PAD1"); m.startOn(w, false)
+                val st = stops(m.draft, m)
+                assertFalse(w in st)
+                assertTrue("$w: the cursor moves", m.cursorCheck(st))
+                assertEquals("$w (plus $plus)", if (plus) EditStop.PLUS else EditStop.FIGHT, m.cursor)
+            }
+        }
+    }
 }

@@ -676,14 +676,17 @@ class HomeEditModel(
             cursor = if (EditStop.LOOK in stops) EditStop.LOOK else EditStop.PAD_PEN
             return true
         }
-        // [stops] laid (the chat always has a box on Home): only then is a missing box a widget gone
-        if (c in stops || EditStop.CHAT !in stops) return false
+        // [stops] laid (the chat always has a box on Home; with the Fight preview none of the page's has, the ribbon's Fight always
+        // has: fix round 3): only then is a missing box a widget gone
+        val preview = fightPreview && EditStop.FIGHT in stops
+        if (c in stops || (EditStop.CHAT !in stops && !preview)) return false
         if (menu == c) menu = null
         if (lifted == c) drop()                                           // 1518: every lift field (the view plops it: editCursorCheck)
-        // the card and the bar to "+" when shown (and drawn), else the chat; the party list (QOL > Party mode off, the party gone) to
-        // the chat
+        // the card and the bar to "+" when shown (and drawn), else the chat (the preview: the ribbon's Fight); the party list (QOL >
+        // Party mode off, the party gone) to the chat
         cursor = when {
             c != EditStop.PARTY && plusShown && EditStop.PLUS in stops -> EditStop.PLUS
+            EditStop.CHAT !in stops -> EditStop.FIGHT
             else -> EditStop.CHAT
         }
         return true
@@ -713,11 +716,15 @@ class HomeEditModel(
     /** "+" tray's A: the widget back in its last dock (today's slide in: the part comes from 80 % and fades in) */
     fun addBack(s: EditStop?): List<Fx> {
         sheet = null
-        return when (s) {
+        val fx = when (s) {
             EditStop.CAST -> { cursor = EditStop.CAST; change(draft.copy(cast = lastCast), Motion.MODULE_OPEN) }
             EditStop.QUEST -> { cursor = EditStop.QUEST; change(draft.copy(card = lastCard), Motion.MODULE_OPEN) }
             else -> emptyList()
         }
+        // fix round 3 (the review): during the Fight preview the page's widgets have no stop (D4): the cursor stays on "+" while it is
+        // shown, else on the ribbon's Fight - never on the widget just brought back (A would lift it, Y resize it under the grown band)
+        if (fightPreview && (s == EditStop.CAST || s == EditStop.QUEST)) cursor = if (plusShown) EditStop.PLUS else EditStop.FIGHT
+        return fx
     }
 
     // ---------------------------------------------------------------- remove (the red X chip, touch)

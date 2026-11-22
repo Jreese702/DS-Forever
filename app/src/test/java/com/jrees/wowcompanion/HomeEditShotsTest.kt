@@ -738,6 +738,48 @@ class HomeEditShotsTest {
         p.home.editCancel()
     }
 
+    /** fix round 3 (the review: an extra's "-" badge kept its full reach off its picture, ON the D-pad's Right button too, so a tap on
+     *  that button's lower part hid the first extra): on the D-pad's and the ABXY's buttons (their pencils' too) an extra takes a finger
+     *  only on its own cell or its drawn badge; every other point of a button opens that button's bubble */
+    @Test fun theDpadsButtonsKeepTheirTapsBesideTheExtras() {
+        val p = bandPage()
+        HomeSettings.clockHearth = true; HomeSettings.clockTeleport = true; HomeSettings.clockGold = true; HomeSettings.clockBags = true
+        HomeSettings.clockAmmo = true
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
+        val ev = p.home.editChrome
+        val g = geo(p)!!
+        assertTrue(g.extras.isNotEmpty())
+        val bars = boxes(p.home).getValue("BARS")
+        fun badge(k: String, r: RectF) = if (k == "gold") Pair(r.left - HomeEditView.EXTRA_BADGE_R - 2f, r.centerY())
+            else Pair(r.left + HomeEditView.BADGE_IN, r.top + HomeEditView.BADGE_IN)
+        fun grown(r: RectF?) = r?.let { RectF(it).apply { inset(-maxOf(0f, (HomeEditView.TOUCH_MIN - width()) / 2f), -maxOf(0f, (HomeEditView.TOUCH_MIN - height()) / 2f)) } }
+        val own = listOfNotNull(grown(g.look), grown(g.fightPen), g.plus)
+        var bad = 0; var first: String? = null; var near = 0
+        val slot = RectF()
+        for (pos in 0 until 8) {
+            p.cast.slotRect(pos, slot); slot.offset(bars.left, bars.top)
+            val want = if (pos < 4) EditStop.PAD_PEN else EditStop.FACE_PEN
+            var y = slot.top + 0.5f
+            while (y < slot.bottom) {
+                var x = slot.left + 0.5f
+                while (x < slot.right) {
+                    val onExtra = g.extras.any { (k, r) -> r.contains(x, y) ||
+                        badge(k, r).let { (bx, by) -> kotlin.math.hypot(x - bx, y - by) <= HomeEditView.EXTRA_BADGE_R + HomeEditView.EXTRA_BADGE_SLOP } }
+                    if (!onExtra && own.none { it.contains(x, y) }) {
+                        if (g.extras.any { (k, r) -> badge(k, r).let { (bx, by) -> kotlin.math.hypot(x - bx, y - by) <= Strip.BADGE_HIT / 2f } }) near++
+                        val got = ev.stopAt(x, y)
+                        if (got != want) { bad++; if (first == null) first = "slot $pos at ($x, $y): $got" }
+                    }
+                    x += 1f
+                }
+                y += 1f
+            }
+        }
+        assertTrue("the badges' reach does come onto the buttons (the case checked: $near points)", near > 0)
+        assertEquals("every point of a button off the extras opens its bubble (first: $first)", 0, bad)
+        p.home.editCancel()
+    }
+
     /** fix round (the review: the Fight toggle right of the disc took about 130 px of the hints): the Fight toggle sits left of the disc,
      *  clear of "+", and the hints have their 1518 room again; the readability pass: a state's hints are all kept at a smaller text
      *  before anything is dropped, so EVERY hint shows in every state in English, Spanish and French (French lifts excepted: their
@@ -828,6 +870,32 @@ class HomeEditShotsTest {
                 assertNotNull("$cast: the tail", tail)
                 assertTrue("$cast: the tail's tip at the band", tail!!.top >= bars.bottom - 1f && tail.top <= bars.bottom + UiKit.MODULE_GAP + 2f)
             }
+            p.home.editCancel()
+        }
+    }
+
+    /** fix round 3 (the review: a pencil's 640 px bubble overhangs the other column by about 12 px, so a top tap-to-cast bar THERE pushed
+     *  it about 140 px down, tailless, over its own empty column): a bar the bubble only overhangs narrows the bubble instead - it still
+     *  hangs from the band under its pencil, with its tail, clear of the bar, at least MENU_MIN_W wide */
+    @Test fun aBubbleKeepsItsTailBesideATopCastBarInTheOtherColumn() {
+        for ((cast, pen) in listOf(HomeLayout.CastDock.ABOVE_MAP to EditStop.PAD_PEN, HomeLayout.CastDock.ABOVE_CHAT to EditStop.FACE_PEN)) {
+            val p = bandPage(l = HomeLayout(cast = cast))
+            assertTrue(p.home.editOpen(pen)); settle(30)
+            p.home.editAct { it.pencilTap(pen) }; settle(8)
+            val ev = p.home.editChrome
+            val box = ev.menuBox(pen)
+            val all = boxes(p.home)
+            val bars = all.getValue("BARS")
+            val bar = all.getValue("STRIP")
+            assertTrue("$cast: the bar at its column's top", bar.top < bars.bottom + 40f)
+            assertFalse("$cast: the bubble clear of the bar ($box, $bar)", RectF.intersects(box, bar))
+            assertTrue("$cast: the bubble hangs from the band ($box)", box.top <= bars.bottom + UiKit.MODULE_GAP + HomeEditView.BUBBLE_TAIL + 1f)
+            assertTrue("$cast: still a bubble's width (${box.width()})", box.width() >= HomeEditView.MENU_MIN_W)
+            val tail = ev.bubbleTailBox(pen)
+            assertNotNull("$cast: the tail", tail)
+            val pc = ev.bandBox(pen)!!.centerX()
+            assertTrue("$cast: the tail under its pencil", kotlin.math.abs(tail!!.centerX() - pc) < 1f)
+            if (pen == EditStop.PAD_PEN) shot(p, "51_bubble_beside_other_column_bar", frames = 1)
             p.home.editCancel()
         }
     }
