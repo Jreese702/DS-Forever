@@ -99,7 +99,6 @@ object ResetPlan {
             "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight", "castBarParty").map { SvKey(SPELLS, it, Kind.SKILLS, true) }.toTypedArray(),
         SvKey(SPELLS, "dpad", Kind.LAYOUTS, true, default = true),
         SvKey(SPELLS, "rbm", Kind.LAYOUTS, true),                                   // movable Home: the DS toolbar's mirror bit (none = off)
-        SvKey(SPELLS, "rbp", Kind.LAYOUTS, true),                                   // 1518 build 3 (PadMap m184): the D-pad order (0 = none: rbm's)
         SvKey(SPELLS, "ctop", Kind.LAYOUTS, true),                                  // movable Home phase 3: the top-screen combat bar (none = off)
         *listOf("lay", "hubSw", "hubLy", "meters", "prdY", "prdS", "prdW").map { SvKey(DB, it, Kind.LAYOUTS, true) }.toTypedArray(),
         SvKey(DB, "bagBinds", Kind.SKILLS, true),

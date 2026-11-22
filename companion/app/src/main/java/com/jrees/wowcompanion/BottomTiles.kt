@@ -39,10 +39,6 @@ object BottomTiles {
     const val QUEST = "quest"
     const val CLOCK = "clock"
     const val TOOLBAR = "toolbar"
-    /** 1518 build 3: the Clock band tile's spot line, the DS WoW toolbar tile's D-pad order reset */
-    const val CLOCK_PLACE = "clockplace"
-    const val PAD_RESET = "padreset"
-    val CLOCK_PLACE_WORDS = listOf("Left", "Centre", "Right")
     const val TALK = "talk"
     const val CASTBAR = "castbar"
     /** the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): #471's "R3" chips on every ranked spell picture */
@@ -122,12 +118,8 @@ object BottomTiles {
         RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
         XP -> listOf(Line(XP, null, SHOW_HIDE, if (HomeSettings.layout.xpBar) 0 else 1, listOf(UiMode.ON, UiMode.OFF)))
         QUEST -> listOf(Line(QUEST, null, CARD_WORDS, CARD_DOCKS.indexOf(HomeSettings.layout.card)))
-        // 1518 build 3 (the user's ruling 2026-11-21: edit mode's Clock box and its menu are gone): the chip's spot first, then the extras
-        CLOCK -> listOf(Line(CLOCK_PLACE, "Place", CLOCK_PLACE_WORDS, HomeLayout.ClockPlace.values().indexOf(HomeSettings.layout.clock))) +
-            CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
-        // 1518 build 3: the D-pad icons' order (edit mode drags them) back to Classic's, this character's
-        TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null),
-            Line(PAD_RESET, "D-pad order", listOf("Reset"), -1, enabled = HomeSettings.layout.pad != HomeLayout.PAD_DEFAULT))
+        CLOCK -> CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
+        TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null))
         TALK -> {
             val on = HomeSettings.holdTalk(env.who)
             val out = arrayListOf(onOff(TALK, on, enabled = env.who != null))
@@ -260,8 +252,6 @@ object BottomTiles {
             "gold" -> HomeSettings.clockGold = k == 0
             "bags" -> HomeSettings.clockBags = k == 0
             "ammo" -> HomeSettings.clockAmmo = k == 0
-            CLOCK_PLACE -> HomeLayout.ClockPlace.values().getOrNull(k)?.let { p -> HomeLayoutStore.update { it.copy(clock = p) } }
-            PAD_RESET -> HomeLayoutStore.update { it.copy(pad = HomeLayout.PAD_DEFAULT) }
             TOOLBAR -> env.dpad?.let { d -> if (d.colOn != null) { val on = k == 0; if ((d.want == true) != on) onDpad(on) } }
             TALK -> env.who?.let { HomeSettings.setHoldTalk(it, k == 0) }
             "release" -> env.who?.let { HomeSettings.setTalkSendNow(it, k == 1) }

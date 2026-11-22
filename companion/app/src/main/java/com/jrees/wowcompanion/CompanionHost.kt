@@ -2144,7 +2144,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** hold to talk is on for this character and D-pad Left is the toolbar's Chat right now (the router's rule) */
     private fun talkOn(): Boolean = HomeSettings.holdTalk(GameUi.character) && talkKey() != null
-    /** movable Home: the bare D-pad key that is the toolbar's Chat now (Left, or wherever the layout put it; HoldTalk.chatKey) */
+    /** movable Home: the bare D-pad key that is the toolbar's Chat now (Left, or Right after a swap; HoldTalk.chatKey) */
     private fun talkKey(): String? =
         HoldTalk.chatKey(lastPadMap, lastDpad?.want == true && castView.roomBarOn, lastDpad?.dirs, homeView.dpadFight())
 
@@ -2458,7 +2458,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** b98: a press NO registered room takes (DirectPad.unclaimed); the hold to talk's pending press passes its other keys here too */
     private fun padUnclaimed(k: String, down: Boolean) {
         // hold to talk: D-pad Left on Home where it is the toolbar's Chat (a hold's note keeps the release too)
-        if (down && k in HoldTalk.CHAT_KEYS && k == talkKey()) talkDown(k)
+        if (down && (k == HoldTalk.LEFT_KEY || k == HoldTalk.RIGHT_KEY) && k == talkKey()) talkDown(k)
         if (!down && k == holdTalk.src) talkUp()                            // Left's, or push to talk's own button (hub58)
         // Bags' press feedback (the user: "all other context buttons should have similar feedback"): A / B / X / Y push in the
         // drawn button at once; display only (Bags ignores other keys, and keys while it does not hold the controller)
@@ -2469,9 +2469,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (k == "PADFORWARD" && down) startPressed()
         if (k == "PAD2" && down) bPressed()
         // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
-        // a half second"): only while the bare key IS the Home bar - the toolbar on, or the Home Bar command put on it; 1518 build 3's
-        // review: the toolbar's Home bar is wherever a D-pad icon swap put it (the add-on's `d`), never Down by default
-        if (down && k == homeBarKey() && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld()
+        // a half second"): only while the bare Down IS the Home bar - the toolbar on, or the Home Bar command put on it
+        if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld() && downIsHomeBar()
             && interactView.visibility != View.VISIBLE && !dialogView.covers()
             && spellsOverlay.visibility != View.VISIBLE && startView.visibility != View.VISIBLE
             && !homeView.partyHoldsDpad()) barSelect.openEarly(room)       // Party mode's D-pad: no early bar either (2026-11-04)
@@ -4709,11 +4708,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** Spells' last word on the D-pad room bar (null = an older add-on) */
     private var lastDpad: PadMapModel.Dpad? = null
-    /** p35: the bare D-pad key that opens Home's room bar (Down by default; 1518 build 3: wherever the toolbar's `d` put "home"): the
-     *  DS WoW toolbar is on, or the Home Bar command (DSHOME) is on Down; wk-dpad (the user 2026-11-16: "using the down ability in
-     *  combat on the D-pad is flashing the home button again"): never while the fight switch gives that key its In-combat entry
-     *  (HomeFightFace.homeBarKey, the router's own m44 rule) */
-    private fun homeBarKey(): String? = HomeFightFace.homeBarKey(lastPadMap, lastDpad?.want == true, lastDpad?.dirs, homeView.dpadFight())
+    /** p35: the bare D-pad Down opens Home's room bar: the DS WoW toolbar is on, or the Home Bar command (DSHOME) is on that button;
+     *  wk-dpad (the user 2026-11-16: "using the down ability in combat on the D-pad is flashing the home button again"): never while the
+     *  fight switch gives Down its In-combat entry (HomeFightFace.downIsHomeBar, the router's own m44 rule) */
+    private fun downIsHomeBar(): Boolean = HomeFightFace.downIsHomeBar(lastPadMap, lastDpad?.want == true, homeView.dpadFight())
 
     // ---------------------------------------------------------------- f-new-spell-prompt: learned spells, one prompt at a time on Home
     /** the user (1.0.9): "After learning new spells when I return home they should have a prompt 1 at a time a to bind or b to dismiss" */
@@ -4985,51 +4983,44 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** a current padmap came this run (a replayed one never sends) */
     private var mirrorCurrent = false
-    /** the D-pad order the add-on last confirmed (null = none yet this run: no toast for the first word) */
-    private var mirrorSeen: Map<Int, String>? = null
+    /** the bit the add-on last confirmed (null = none yet this run: no toast for the first word) */
+    private var mirrorSeen: Int? = null
     private var mirrorSentAt: Long? = null
-    private var mirrorSentWant: Map<Int, String>? = null
+    private var mirrorSentWant: Int? = null
     /** sends of the current wish without an answer: the timer tries [MIRROR_TRIES] times, then only a new padmap tries again */
     private var mirrorTries = 0
     private val MIRROR_TRIES = 3
-    /** the last "needs the newer add-on" order logged (once per wish) */
-    private var mirrorOldLogged: Map<Int, String>? = null
     private val mirrorAgain = Runnable { lastDpad?.let { mirrorCheck(it) } }
     /** the last send of a wish went unanswered: Home's Save hold on the D-pad pictures ends (a cross-fade back to the add-on's `d`) */
     private val mirrorGiveUp = Runnable {
         val d = lastDpad
-        if (d == null || d.dirs != HomeLayoutSolver.dpadDirs(HomeSettings.layout)) homeView.roomBarHoldEnd()
+        if (d == null || ToolbarMirror.bitOf(d.dirs) != HomeLayoutSolver.mirrorBit(HomeSettings.layout)) homeView.roomBarHoldEnd()
     }
 
-    /** SPEC section 6 "SYNC" (1518 build 3: the whole D-pad order): the layout's order vs the add-on's `d`; out of combat a pending wish
-     *  is tapped (today's two tables: padtab 39, 38, 37 then 20 / 21; any other order: 24 then its rank, Book b77 / PadMap m184's `pp`) and
-     *  tried again every ToolbarMirror.RESEND_MS until `d` says it; a fight waits. A new `d` shows the D-pad toast on Home */
+    /** SPEC section 6 "SYNC": the layout's mirror bit vs the add-on's `d`; out of combat a pending wish is tapped (padtab 39, 38, 37 then 20 /
+     *  21, Book b76) and tried again every ToolbarMirror.RESEND_MS until `d` says it; a fight waits. A new `d` shows the D-pad toast on Home */
     private fun mirrorCheck(d: PadMapModel.Dpad) {
-        val seen = d.dirs.takeIf { ToolbarMirror.rank(it) != null }
-        if (ToolbarMirror.toastFor(mirrorSeen, seen)) homeView.toolbarToast(mirrorSeen, d.dirs)
-        if (seen != null) mirrorSeen = seen
+        val bit = ToolbarMirror.bitOf(d.dirs)
+        if (ToolbarMirror.toastFor(mirrorSeen, bit)) homeView.toolbarToast(d.dirs)
+        if (bit != null) mirrorSeen = bit
         if (!mirrorCurrent) return
         // the 1514 merge (CharKey): no key = the layout is not this character's (Home shows the default) and the add-on refuses the
-        // order ("no character"): nothing is sent until the key comes (PadMap m181 sends the padmap again then)
+        // bit ("no character"): nothing is sent until the key comes (PadMap m181 sends the padmap again then)
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); homeView.roomBarHoldEnd(); return }
         // 1518 (edit mode saves as it goes): nothing is sent while edit mode is live - the D-pad pictures preview the draft - and the
-        // record's order goes to the add-on once it is not (onEditLive: Done, Discard - the opening order back -, a fight, another room)
+        // record's sides go to the add-on once it is not (onEditLive: Done, Discard, a fight, another room)
         if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }
-        val want = HomeLayoutSolver.dpadDirs(HomeSettings.layout)
+        val want = HomeLayoutSolver.mirrorBit(HomeSettings.layout)
         if (mirrorSentWant != want) { mirrorSentAt = null; mirrorTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp)
-        when (val a = ToolbarMirror.decide(want, d.dirs, d.pp, homeView.inFight(), mirrorSentAt?.let { now - it })) {
+        when (val a = ToolbarMirror.decide(want, d.dirs, homeView.inFight(), mirrorSentAt?.let { now - it })) {
             ToolbarMirror.Act.Matched -> { mirrorSentAt = null; mirrorSentWant = null; mirrorTries = 0 }
             ToolbarMirror.Act.Wait -> if (!d.dirs.isNullOrEmpty()) ui.postDelayed(mirrorAgain, ToolbarMirror.RESEND_MS)
-            ToolbarMirror.Act.Old -> {
-                if (mirrorOldLogged != want) { mirrorOldLogged = want; Log.i(HomeView.TAG, "toolbar order: $want needs the newer Spells add-on (no pp): not sent") }
-                homeView.roomBarHoldEnd()
-            }
             is ToolbarMirror.Act.Send -> {
                 mirrorSentAt = now; mirrorSentWant = want
-                val sent = padTabTap(a.cells)
-                Log.i(HomeView.TAG, "toolbar order: $want ${if (sent) "sent" else "not sent"} (${a.cells.joinToString(" ") { it.second.toString() }})")
+                val sent = padTabTap(ToolbarMirror.cells(a.on))
+                Log.i(HomeView.TAG, "toolbar mirror: ${if (a.on) "on (Left = map)" else "off (Left = chat)"} ${if (sent) "sent" else "not sent"}")
                 if (++mirrorTries < MIRROR_TRIES) ui.postDelayed(mirrorAgain, ToolbarMirror.RESEND_MS + 200L)
                 else ui.postDelayed(mirrorGiveUp, ToolbarMirror.RESEND_MS + 200L)      // fix round 3: Save's held pictures go back to `d`
             }
@@ -5190,7 +5181,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!owed) prefs.edit().putBoolean("owed_$key", true).apply()
         // b133 (the user: "The actual text prompt for the dpad controls needs to be updated"; the user's pick "Pairs, 2 lines"): today's
         // DS WoW toolbar - the plain D-pad left Chat, right Map, up the radial, down the Home bar, in fights too
-        val b = arrayListOf(ToolbarMirror.promptLine(d.dirs), ToolbarMirror.promptLine2(d.dirs), "Works in fights too")
+        val b = arrayListOf(ToolbarMirror.promptLine(d.dirs), "Up: the radial     Down: the Home bar", "Works in fights too")
         Log.i(HomeView.TAG, "dpad: ask $key")
         val show = show@{
             // issue #136: answered meanwhile (the Settings row): no default ON tap, no prompt

@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m184"               -- bump on every change; m184 THE D-PAD ORDER (test build 1518 build 3, the user's ruling 2026-11-21: the top bar's D-pad icons are apps - dragging one onto another D-pad spot swaps what those two directions open): a per-character ORDER of the DS toolbar's four directions, WowCompanionSpellsDB.rbp[charKey] = 1 + the order's rank 0-23 over ROOMBAR's words (chat, radial, map, home; 0 = none: rbm's table as before), set by Book b77's page-3 code 24 then the rank (R.dpadPerm), read and written ONLY under whoKey() (nil: refused, "no character"), BOUND OUT OF COMBAT ONLY (routerBind; a change in a fight is bound by the router's next out-of-combat check) - only the router D-pad buttons' "wc-roombar" attribute changes, through the override bindings the router already owns (no SetBinding, no CVar, no macro, nothing protected in a fight); each order's table is built once (R.RB_P: rank 0 IS ROOMBAR and 14 IS R.RB_M, so the by-reference checks - the re-bind test, `m` - keep working); the mirror bit's codes 20 / 21 clear rbp (0, never nil: m180's sync rule), so they always win back; the dpad state says pp = 1 (the app sends any order only then) and `d` stays the table last bound; "rbp" joins the layouts reset; m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m183"               -- bump on every change; m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -1177,38 +1177,10 @@ R.rbmDB = function()
     if type(db.rbm) ~= "table" then db.rbm = {} end
     return db.rbm
 end
--- m184 THE D-PAD ORDER: this character's order (WowCompanionSpellsDB.rbp[name-realm] = 1 + its rank over ROOMBAR's positions; 0 / none =
--- the mirror bit's table), each order's table made once (rank 0 is ROOMBAR, 14 is R.RB_M: the same tables, so `m` and the re-bind test,
--- which compare tables by reference, read them as before)
-R.RB_P = { [0] = ROOMBAR, [14] = R.RB_M }
-R.rbPerm = function(rank)
-    if type(rank) ~= "number" or rank < 0 or rank > 23 or rank % 1 ~= 0 then return nil end
-    if R.RB_P[rank] then return R.RB_P[rank] end
-    local left, k, out, fact = { 1, 2, 3, 4 }, rank, {}, { 6, 2, 1, 1 }
-    for i = 1, 4 do
-        local j = math.floor(k / fact[i]) + 1
-        out[i] = ROOMBAR[table.remove(left, j)]
-        k = k % fact[i]
-    end
-    R.RB_P[rank] = out
-    return out
-end
-R.rbpDB = function()
-    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
-    local db = _G.WowCompanionSpellsDB
-    if type(db.rbp) ~= "table" then db.rbp = {} end
-    return db.rbp
-end
--- the toolbar's table for this character: its order (m184), else its mirror bit's
+-- the toolbar's table for this character's bit
 R.roomBar = function()
     local k = whoKey()
-    if k == nil then return ROOMBAR end
-    local p = R.rbpDB()[k]
-    if type(p) == "number" and p >= 1 and p <= 24 then
-        local t = R.rbPerm(p - 1)
-        if t then return t end
-    end
-    return (R.rbmDB()[k] == 1) and R.RB_M or ROOMBAR
+    return (k ~= nil and R.rbmDB()[k] == 1) and R.RB_M or ROOMBAR
 end
 local function T(fn) local ok, v = pcall(fn); if ok then return v end end      -- a value (a frame, a table) or nil
 -- m101 THE TARGET RADIAL (the user, 2026-11-07: "When targeting something while not in the combat state, I want the Y glyph to appear over
@@ -3443,18 +3415,7 @@ R.dpadMirror = function(on)
     local k = whoKey()
     if not k then return false, "no character" end
     R.rbmDB()[k] = on and 1 or 0                                       -- m180: off is 0, never a deleted entry (the sync merge keeps it)
-    R.rbpDB()[k] = 0                                                   -- m184: the bit's table wins back over an order (0, never nil)
     if not inCombat() then routerBind("rbm") end
-    soon()
-    return true
-end
--- m184: the D-pad order of [rank] (0-23) for this character, remembered at once; bound now out of combat, after the fight in one
-R.dpadPerm = function(rank)
-    local k = whoKey()
-    if not k then return false, "no character" end
-    if not R.rbPerm(rank) then return false, "no such order" end
-    R.rbpDB()[k] = rank + 1
-    if not inCombat() then routerBind("rbp") end
     soon()
     return true
 end
@@ -3562,7 +3523,7 @@ dpadState = function()
     local ki = type(WC.charKeyInfo) == "function" and WC.charKeyInfo() or { rs = WC.charKeySource(), rh = WC.charKeyHint and WC.charKeyHint() or nil }
     return { on = on, want = want, cols = WC.spellsDpadCols, who = n and { n = n, r = r, rs = ki.rs, rh = ki.rh, c = playerClass(), rr = ki.rr,
              nc = ki.nc, uc = ki.uc, gs = ki.gs, pk = (not k) and ki.pk or nil, ls = ki.ls, ad = k and ki.ad or nil } or nil, d = d,
-             m = (rbT == R.RB_M) and 1 or 0, pp = 1,                           -- m184: any order binds (Book b77's code 24)
+             m = (rbT == R.RB_M) and 1 or 0,
              ct = k and (R.ctopOn() and 1 or 0) or nil,                          -- m179: the top-screen combat bar's flag; m181: nil while no key (not "off")
              aside = (want == true and R.aside) or nil, undone = type(z) == "table" and #z.undone > 0 and z.undone or nil }
 end
@@ -5032,7 +4993,6 @@ WC.padMap = {
     sharedRun = function() return CLEAN.sharedRun() end,
     dpadState = function() return dpadState() end,
     dpadMirror = function(on) return R.dpadMirror(on) end,              -- m178: Book b74's page-3 codes 9 / 10
-    dpadPerm = function(rank) return R.dpadPerm(rank) end,              -- m184: Book b77's page-3 code 24 then the rank
     combatTop = function(on) return R.combatTop(on) end,                -- m179: Book b75's page-3 codes 11 / 12
     combatTopOn = function() return R.ctopOn() end,                     -- m179: ActionBar nbar7's Wings read it
     zlClean = function() return zlClean() end,
@@ -6785,7 +6745,7 @@ end
 -- route. Nothing of the game's own is touched (bars, bindings, macros, CVars: the leave-no-trace rule). Answer: {type = "dsfreset"}.
 do
     local SPELLS = {
-        layouts = { "dpad", "rbm", "rbp", "ctop" },                                      -- m178: the DS toolbar's mirror bit (none = off); m179: the top-screen combat bar's flag
+        layouts = { "dpad", "rbm", "ctop" },                                      -- m178: the DS toolbar's mirror bit (none = off); m179: the top-screen combat bar's flag
         skills = { "faceBy", "fightBy", "formFightBy", "cmdBy", "binds", "stickBy", "attackBy", "ccOff", "lowPickBy", "smartOn",
                    "smartBuffs", "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight", "castBarParty" },   -- m176
     }

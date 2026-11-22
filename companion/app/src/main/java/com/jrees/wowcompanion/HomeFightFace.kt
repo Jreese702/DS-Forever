@@ -97,27 +97,11 @@ object HomeFightFace {
      * toolbar; p36 gave In combat's D-pad back its fight spells with the toolbar on, so a fight's Down lit the bar and the game never
      * confirmed it (EARLY_MS later it closed).
      */
-    fun downIsHomeBar(map: PadMapModel.Map?, toolbar: Boolean, fight: Boolean): Boolean =
-        homeBarKey(map, toolbar, null, fight) == "PADDDOWN"
-
-    /**
-     * THE BARE D-PAD KEY THAT IS HOME'S ROOM BAR NOW (the app reader's name: PADDLEFT .. PADDDOWN), null = none - the b98 early open's
-     * key. The review of 1518 build 3: a D-pad icon swap moves the Home bar off Down (the add-on's `d` [dirs] says where; a missing
-     * position = the router's default word, [HoldTalk.DEFAULT_DIRS]), so with the toolbar on the key is the one whose word is "home",
-     * by the same rule as [HoldTalk.chatKey]; without the toolbar it is Down only (the Home Bar command on the bare button, p35). In the
-     * fight switch ([fight]) that position's In-combat entry decides, as before for Down ([downIsHomeBar]'s wk-dpad rule).
-     */
-    fun homeBarKey(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean): String? {
-        val pos = if (toolbar) homeBarPos(dirs) ?: return null else DOWN
-        val f = if (fight && map != null) dpadFight(map, pos) else null
-        val bar = if (f != null) f.layer == "command" && f.key == PadMapModel.HOME_KEY
-            else toolbar || map?.let { PadMapModel.slot(it, BASE_SET, pos)?.key == PadMapModel.HOME_KEY } == true
-        return if (bar) PAD_KEYS[pos - 1] else null
+    fun downIsHomeBar(map: PadMapModel.Map?, toolbar: Boolean, fight: Boolean): Boolean {
+        val f = if (fight && map != null) dpadFight(map, DOWN) else null
+        if (f != null) return f.layer == "command" && f.key == PadMapModel.HOME_KEY
+        return toolbar || map?.let { PadMapModel.slot(it, BASE_SET, DOWN)?.key == PadMapModel.HOME_KEY } == true
     }
-    /** the D-pad position (1-4) whose toolbar word is "home" in [dirs] (the default's Down when unknown); null = none */
-    fun homeBarPos(dirs: Map<Int, String>?): Int? = (1..4).firstOrNull { (dirs?.get(it) ?: HoldTalk.DEFAULT_DIRS[it]) == "home" }
-    /** the bare D-pad keys by position 1-4 (the app reader's names) */
-    private val PAD_KEYS = arrayOf("PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN")
 
     /**
      * THE COMPANION'S COMMANDS ON THE BAR (Track C, the user after test17: the Spell Radial on ZL+ZR + Y worked but "The button was not

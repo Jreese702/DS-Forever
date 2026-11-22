@@ -612,7 +612,7 @@ object BottomPictures {
     }
 
     // ---- Hold to talk: the real chat behind, the kit's chat box with the mic, the D-pad's chat arrow (Left; Right after a swap: the add-on's
-    // ---- `d`, HoldTalk.chatWord - the row's own words) with Home's hold ring; the band: hold, the
+    // ---- `d`, HoldTalk.chatArrowRight - the row's own words) with Home's hold ring; the band: hold, the
     // ---- words in the box, then sent into the chat (Send now) or waiting for A (Show, A sends)
 
     private fun talk(c: Canvas, r: RectF, look: Look, tMs: Long?) {
@@ -650,8 +650,8 @@ object BottomPictures {
         c.restore()
     }
 
-    /** the Hold to talk tile's arrow: the D-pad direction the chat is on in the add-on's `d` ([HoldTalk.chatGlyph]) */
-    fun talkGlyph(dirs: Map<Int, String>?): String = HoldTalk.chatGlyph(dirs)
+    /** the Hold to talk tile's arrow: the D-pad side the chat is on in the add-on's `d` ([HoldTalk.chatArrowRight]) */
+    fun talkGlyph(dirs: Map<Int, String>?): String = if (HoldTalk.chatArrowRight(dirs)) "gen_right" else "gen_left"
 
     // ---- Tap-to-cast bar: Home's two columns (the real chat, the minimap's own art), the bar of real spell icons under the chosen
     // ---- one(s); In combat: Hide slides it away

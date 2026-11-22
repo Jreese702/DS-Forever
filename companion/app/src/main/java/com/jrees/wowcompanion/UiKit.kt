@@ -3074,16 +3074,14 @@ object UiKit {
      * that space and shrink when a cast bar pops up or L+R"): the clock chip from [chipTop] centred on [cx] and the extras row in
      * [spot], between today's SMALL look ([clockChip] + [clockBand], [g] = 0) and the GROWN one ([ClockBand.grow], [g] = 1): every
      * piece's place and size eased between the two, so the block scales smoothly. [rowAlpha] = the row's own fade (the triggers).
-     * [chipGrow] false (1518 build 3: the chip at a spot left / right of the middle) = the chip stays its small size (only the row grows).
-     * [grown] = [clockGrownFor]'s (a caller that draws the block twice, or needs [clockChipScale] too, works it out once).
      */
     fun clockBlock(c: Canvas, cx: Float, chipTop: Float, time: String, battery: Int, charging: Boolean, gold: Long?, spot: FloatArray?,
-                   items: List<BandItem>, g: Float, rowAlpha: Int = 255, chipAlpha: Int = 255, chipGrow: Boolean = true,
-                   grown: ClockBand.Grown? = clockGrownFor(spot, chipTop, time, battery, gold, items, g)) {
+                   items: List<BandItem>, g: Float, rowAlpha: Int = 255, chipAlpha: Int = 255) {
         val floor = chipTop - ClockBand.CHIP_TOP + ClockBand.chipBottom(gold != null) + ClockBand.CHIP_PAD
+        val grown = if (g > 0.001f && spot != null) clockGrown(spot, chipTop, time, battery, gold, items) else null
         val e = if (grown == null) 0f else g.coerceIn(0f, 1f)
-        val s = clockChipScale(grown, g, chipGrow)
         if (chipAlpha > 0) {
+            val s = 1f + (grown?.let { it.chip - 1f } ?: 0f) * e
             c.save(); c.scale(s, s, cx, chipTop)
             clockChip(c, cx, chipTop, time, battery, charging, chipAlpha, gold)
             c.restore()
@@ -3110,13 +3108,6 @@ object UiKit {
             c.restore()
         }
     }
-
-    /** [clockBlock]'s grown layout at [g] (null = the small look: [g] 0, no extras' spot) */
-    fun clockGrownFor(spot: FloatArray?, chipTop: Float, time: String, battery: Int, gold: Long?, items: List<BandItem>, g: Float): ClockBand.Grown? =
-        if (g > 0.001f && spot != null) clockGrown(spot, chipTop, time, battery, gold, items) else null
-    /** the clock chip's scale about its top centre in [clockBlock] (1 = its small look; [chipGrow] false: always 1) */
-    fun clockChipScale(grown: ClockBand.Grown?, g: Float, chipGrow: Boolean = true): Float =
-        if (!chipGrow || grown == null) 1f else 1f + (grown.chip - 1f) * g.coerceIn(0f, 1f)
 
     /** the grown layout for these pieces ([ClockBand.grow] with their measured sizes) */
     fun clockGrown(spot: FloatArray, chipTop: Float, time: String, battery: Int, gold: Long?, items: List<BandItem>): ClockBand.Grown? {

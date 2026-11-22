@@ -220,15 +220,9 @@ class HomeEditShotsTest {
         assertTrue("no room opened", p.rooms.isEmpty())
         assertTrue(p.strip.editTick)
         shot(p, "02_edit_mode_map")
-        // the controller: Left to the chat, Up to a D-pad icon (1518 build 3: the band is no stop, its icons are), Right to the clock
+        // the controller: Left to the chat (the band has no stops: the top bar stays still - the user's ruling 2026-11-22)
         home.editKey("PADDLEFT"); settle(); assertEquals(EditStop.CHAT, model(p).cursor)
         shot(p, "03_cursor_chat")
-        home.editKey("PADDUP"); settle()
-        assertTrue("Up from the chat: one of the toolbar's D-pad icons (${model(p).cursor})", model(p).cursor.pad > 0)
-        shot(p, "04_cursor_dpad_icon")
-        for (i in 0 until 4) if (model(p).cursor != EditStop.CLOCK) home.editKey("PADDRIGHT")
-        settle(); assertEquals(EditStop.CLOCK, model(p).cursor)
-        shot(p, "04b_cursor_clock")
         // a FINGER drags the map across the centre: past 48 px, after 80 ms the chat glides right; the drop well; the release settles
         val m1 = boxes(home).getValue("MAP")
         val dy = m1.top + 400f
@@ -280,14 +274,6 @@ class HomeEditShotsTest {
         assertEquals(EditStop.QUEST, model(p).cursor)
         home.editKey("PAD3"); settle(); shot(p, "12_menu_quest")
         home.editKey("PAD2")
-        home.editKey("PADDUP"); settle()
-        assertTrue("Up from the card: one of the band's pieces (${model(p).cursor})", model(p).cursor.piece)
-        for (i in 0 until 4) if (model(p).cursor != EditStop.CLOCK) home.editKey("PADDRIGHT")
-        settle(); assertEquals(EditStop.CLOCK, model(p).cursor)
-        // 1518 build 3: no Clock menu, no Controller menu - X does nothing on the band's pieces
-        home.editKey("PAD3"); settle()
-        assertNull("no menu on the clock", model(p).menu)
-        shot(p, "13_clock_no_menu")
         // THE TAP-TO-CAST BAR'S EDITOR: Place = Split (two 4-slot halves, no scroll, the same cells), Size M, the remove chip
         val m = model(p)
         home.editAct { it.tap(EditStop.CAST) }; settle()
@@ -322,7 +308,7 @@ class HomeEditShotsTest {
         shot(p, "19_add_tray")
         home.editKey("PAD1"); settle()
         assertEquals(HomeLayout.CastDock.SPLIT, m.draft.cast)
-        // the divider (reached from the clock above it) steps the width; the map's picture scales along the glide
+        // the divider (Up from a column's top reaches it) steps the width; the map's picture scales along the glide
         home.editAct { it.tap(EditStop.DIVIDER) }; settle()
         shot(p, "20_divider")
         home.editKey("PADDRIGHT")
@@ -369,7 +355,7 @@ class HomeEditShotsTest {
         assertTrue(HomeSettings.layout.samePlace(draft))
         assertFalse(p.strip.editTick)
         // fix round 3: after Done the pictures keep the record's sides until the add-on's `d` says them (no slide back and forth)
-        assertEquals(HomeLayoutSolver.dpadDirs(HomeSettings.layout)[1], p.cast.roomBar?.get(1))
+        assertEquals(if (HomeLayoutSolver.mirrorBit(HomeSettings.layout) == 1) "map" else "chat", p.cast.roomBar?.get(1))
         shot(p, "29_saved")
         contact()
     }
@@ -393,85 +379,59 @@ class HomeEditShotsTest {
     }
 
     /**
-     * 1518 build 3 (the user's ruling 2026-11-21: "I think the box in the middle is confusing"): the band is no widget - never posed as
-     * one, no stop, no menu, no Clock box; its four D-pad icons and its clock chip are apps (each its own stop and its own wiggle). A
-     * D-pad icon lifted and sent Up swaps two directions (the band previews the draft's order: P5's one exception), saved as it is made;
-     * the clock steps to a spot left of the middle; Discard puts both back
+     * the user's ruling 2026-11-22 after 1518 ("What the hell is the dpad swapping buttons or clock move? ... remove that"): THE TOP BAR
+     * STAYS STILL in edit mode - the band drawn exactly as outside edit mode at any wiggle time (no wiggle, no badge, no dim, no frame),
+     * no stop on or above it (only a tap-to-cast bar at a column's top sits above the columns), a finger on it finds nothing, and the
+     * clock chip sits at the band's centre
      */
-    @Test fun theTopBarsIconsAreApps() {
-        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
-        HomeLayoutStore.character("Korvash-Realm")
-        p.home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m184","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
-            "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"pp":1,"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
-        settle()
-        val bars = boxes(p.home).getValue("BARS")
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(70)                // past the open: the wiggle runs
-        shot(p, "32_top_bar_apps", frames = 1)
-        val ev = p.home.editChrome
-        // the review: the clock's box at Centre is the chip as DRAWN (grown with the band), its size kept between frames
-        setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
-        p.home.draw(Canvas(Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)))
-        val sizeOf = HomeView::class.java.getDeclaredMethod("clockChipSizeNow").apply { isAccessible = true }
-        val cs = sizeOf.invoke(p.home) as FloatArray
-        assertTrue("the chip's size is kept", cs === sizeOf.invoke(p.home))
-        val drawnK = field(p.home, "clockChipDrawnK") as Float
-        assertTrue(drawnK >= 1f)
-        val clockBox = HomeView::class.java.getDeclaredMethod("editPieceBox", EditStop::class.java).apply { isAccessible = true }
-            .invoke(p.home, EditStop.CLOCK) as RectF
-        assertEquals("the box's height is the drawn chip's (x $drawnK)", cs[1] * drawnK, clockBox.height(), 0.5f)
-        assertEquals(cs[0] * drawnK, clockBox.width(), 0.5f)
-        assertEquals(HomeEditMotion.roomKey(Room.values().size), HomeEditMotion.PLUS_ROOM)
-        val wb = ev.widgetBoxes()
-        for (s in HomeEditView.PIECES) {
-            val b = wb[s]
-            assertNotNull("$s: a stop of its own", b)
-            // (the clock at Centre: the chip as drawn, grown with the band - the review)
-            assertTrue("$s: a small piece inside the band ($b in $bars)", b!!.width() < (if (s == EditStop.CLOCK) 260f else 200f) &&
-                b.top >= bars.top - 1f && b.bottom <= bars.bottom + 1f)
+    @Test fun theTopBarStaysStillInEditMode() {
+        for (cast in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.ABOVE_MAP)) {
+            val p = page(HomeLayout(cast = cast))
+            HomeLayoutStore.character("Korvash-Realm")
+            p.home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
+                "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
+            settle()
+            val bars = boxes(p.home).getValue("BARS")
+            val l = bars.left.toInt(); val t = bars.top.toInt()
+            val w = bars.width().toInt(); val h = bars.height().toInt()
+            fun band(clock: String = "9:51 AM"): IntArray {
+                setField(p.home, "clockText", clock); setField(p.home, "batteryPct", 98)
+                val img = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+                val c = Canvas(img); c.drawColor(Theme.ink); p.home.draw(c)
+                return IntArray(w * h).also { img.getPixels(it, 0, w, l, t, w, h) }
+            }
+            val off = band()
+            // the cursor on the room bar (the Strip's): a column's golden box glows ~9 px out, over the gap into the band's foot
+            assertTrue(p.home.editOpen(EditStop.ROOMS)); settle(70)               // past the open: the wiggle runs
+            shot(p, "32_top_bar_still_${cast.name.lowercase()}", frames = 1)
+            for ((i, n) in listOf(0, 5).withIndex()) {
+                settle(n)
+                val on = band()
+                var dn = 0; var x0 = w; var x1 = -1; var y0 = h; var y1 = -1
+                for (k in on.indices) if (on[k] != off[k]) { dn++; x0 = minOf(x0, k % w); x1 = maxOf(x1, k % w); y0 = minOf(y0, k / w); y1 = maxOf(y1, k / w) }
+                assertTrue("$cast: the band drawn as outside edit mode (wiggle time $i): $dn px differ in x $x0..$x1 y $y0..$y1 of ${w}x$h", dn == 0)
+            }
+            val v = views(p.home).getValue("BARS")
+            assertEquals(0f, v.rotation, 0f); assertEquals(1f, v.scaleX, 0f); assertEquals(0f, v.translationX, 0f)
+            // no stop on the band or above the columns (a bar above its column is the one widget there)
+            val ev = p.home.editChrome
+            for ((s, b) in ev.stops()) assertTrue("$cast: $s at ${b.t} below the band (${bars.bottom})", b.t >= bars.bottom - 0.5f)
+            // a finger on the band: nothing
+            var y = bars.top + 4f
+            while (y < bars.bottom - 2f) {
+                var x = 8f
+                while (x < W - 8f) { assertNull("$cast: nothing at ($x, $y)", ev.stopAt(x, y)); x += 24f }
+                y += 12f
+            }
+            // the clock chip at the band's centre: what the chip adds to the band (its time on vs none) centres on it
+            val noChip = band("")
+            var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
+            val with = band()
+            for (i in with.indices) if (with[i] != noChip[i]) { val x = i % w; minX = minOf(minX, x); maxX = maxOf(maxX, x) }
+            assertTrue("$cast: the chip is drawn", maxX > minX)
+            assertEquals("$cast: the chip's centre", bars.width() / 2f, (minX + maxX + 1) / 2f, 2f)
+            p.home.editCancel()
         }
-        val views = (HomeView::class.java.getDeclaredField("views").apply { isAccessible = true }.get(p.home) as Map<*, *>)
-            .entries.first { (it.key as Enum<*>).name == "BARS" }.value as View
-        assertEquals("the band itself never wiggles", 0f, views.rotation, 1e-4f); assertEquals(1f, views.scaleX, 1e-4f)
-        // each D-pad icon is posed on its own (CastView's hook: the shrink here; HomeEditMotionShotsTest: their wiggles apart)
-        val hook = p.cast.editPiece!!
-        val a = FloatArray(4)
-        for (src in 0..3) assertTrue("D-pad $src posed", hook(src, a))
-        // the Left icon lifted and sent Up: the two directions swap, the band previews it
-        p.home.editAct { it.startOn(EditStop.PAD_L, false) }; settle()
-        p.home.editKey("PAD1"); settle()
-        assertEquals(EditStop.PAD_L, model(p).lifted)
-        p.home.editKey("PADDUP"); settle()
-        assertEquals(mapOf(1 to "radial", 2 to "chat", 3 to "map", 4 to "home"), HomeLayoutSolver.dpadDirs(model(p).draft))
-        assertEquals("the band previews the draft's order", "chat", p.cast.roomBar?.get(2))
-        assertEquals(EditStop.PAD_U, model(p).lifted)
-        // the review: the swap's Hint is the four-way cross; the icon that came into Left wiggles as its own (never posed as the lifted
-        // one); the lifted icon's box in the Up spot stays on screen
-        assertEquals(HomeEditView.DPAD4, ev.hintsFor(model(p)).first().first)
-        settle(20)
-        val poseOf = HomeView::class.java.getDeclaredMethod("piecePose", EditStop::class.java, FloatArray::class.java).apply { isAccessible = true }
-        val pl = FloatArray(4); val pu = FloatArray(4)
-        poseOf.invoke(p.home, EditStop.PAD_L, pl); poseOf.invoke(p.home, EditStop.PAD_U, pu)
-        assertTrue("the lifted Up icon (${pu[0]}) over the Left one that came in (${pl[0]})", pu[0] > pl[0] + 0.02f)
-        val upBox = ev.pieceCursorDrawn(EditStop.PAD_U)!!
-        assertTrue("the lifted Up icon's box on screen (${upBox.top})", upBox.top >= HomeEditView.PIECE_BOX_TOP - 0.5f)
-        shot(p, "33_dpad_icon_swapped_up", frames = 1)
-        p.home.editKey("PAD1"); settle()
-        assertEquals("saved as it is made", model(p).draft.pad, HomeSettings.layout.pad)
-        // the clock to the spot left of the middle
-        p.home.editAct { it.startOn(EditStop.CLOCK, false) }; settle()
-        p.home.editKey("PAD1"); settle()
-        assertEquals("the diamonds offer the clock its spots", EditStop.CLOCK, model(p).lifted)
-        p.home.editKey("PADDLEFT"); settle(10)
-        assertEquals(HomeLayout.ClockPlace.LEFT, model(p).draft.clock)
-        p.home.editKey("PAD1"); settle()
-        shot(p, "34_clock_left_of_middle")
-        assertEquals(HomeLayout.ClockPlace.LEFT, HomeSettings.layout.clock)
-        assertTrue(ev.widgetBoxes().getValue(EditStop.CLOCK).centerX() < bars.centerX() - 20f)
-        // Discard: the opening order and spot back (the add-on is told once edit mode is not live)
-        p.home.editAct { it.discard() }; settle()
-        assertEquals(HomeLayout.PAD_DEFAULT, HomeSettings.layout.pad)
-        assertEquals(HomeLayout.ClockPlace.CENTRE, HomeSettings.layout.clock)
-        assertFalse(p.home.editing)
     }
 
     private fun lang(l: String) {
@@ -675,12 +635,6 @@ class HomeEditShotsTest {
         p.home.editKey("PAD3"); settle()
         assertFalse("X on Done: discarded", p.home.editing)
         assertEquals(classic, HomeSettings.layout)
-        // no padmap: the D-pad icons cannot move - no "A Move" on them
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
-        p.home.editAct { it.startOn(EditStop.PAD_U, false) }; settle()
-        assertFalse(model(p).pieceMovable(EditStop.PAD_U))
-        assertTrue("no promise of a move", ev.hintsFor(model(p)).isEmpty())
-        p.home.editCancel()
     }
 
     /** 1518 (F3): the ribbon's slop (the rooms' row's top 14 px, so "+" and Done meet 48 px) never takes a down a room's "-" badge
@@ -796,8 +750,8 @@ class HomeEditShotsTest {
                 lang(l)
                 val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), roomBar = true)
                 HomeLayoutStore.character("Korvash-Realm")
-                p.home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m184","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
-                    "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"pp":1,"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
+                p.home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
+                    "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
                 settle()
                 drawStrip(p)
                 assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
@@ -807,7 +761,6 @@ class HomeEditShotsTest {
                     "top" to { m -> m.startOn(EditStop.CHAT, false) },
                     "lifted chat" to { m -> m.startOn(EditStop.CHAT, true) },
                     "lifted room" to { m -> m.startOn(EditStop.ROOMS, true) },
-                    "lifted pad" to { m -> m.startOn(EditStop.PAD_L, true) },
                     "menu" to { m -> m.openMenu(EditStop.CHAT); emptyList() })
                 for ((n, f) in states) {
                     p.home.editAct { it.drop(); it.closeMenu(); f(it) }; settle()
@@ -1453,17 +1406,8 @@ class HomeEditShotsTest {
         assertNotNull(cast.roomMotionK())
         assertFalse("not a swap: a cross-fade", cast.roomMotionSwap)
         assertNull("120 ms", cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + CastView.ROOM_FADE_MS + 20))
-        assertNull(cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + CastView.ROOM_FADE_MS + 20))
-        // 1518 build 3: Up and Down are the toolbar's too - a swap there slides as Left / Right do, any other change cross-fades
-        cast.roomBar = HoldTalk.DEFAULT_DIRS
-        cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + Motion.MODULE_OPEN + 20)
-        cast.roomBar = HoldTalk.DEFAULT_DIRS + mapOf(2 to "home", 4 to "radial")
-        assertNotNull("Up <-> Down: a motion", cast.roomMotionK())
-        assertTrue("a swap: a slide", cast.roomMotionSwap)
-        cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + Motion.MODULE_OPEN + 20)
         cast.roomBar = cast.roomBar!! + mapOf(2 to "open")
-        assertNotNull("Up alone changed: a cross-fade", cast.roomMotionK())
-        assertFalse(cast.roomMotionSwap)
+        assertNull("Up / Down only: nothing", cast.roomMotionK())
     }
 
     /** the settings stage fed a game (PreviewStage: the Settings tiles' live pictures) */

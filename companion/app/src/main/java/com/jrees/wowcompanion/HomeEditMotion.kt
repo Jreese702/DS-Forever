@@ -296,10 +296,6 @@ class HomeEditMotion {
         private const val ROOM0 = 16
         /** 1518 build 2: the room bar's "+" spot wiggles as its own app (the key after the last room's; worked out once: the review) */
         @JvmField val PLUS_ROOM: Int = roomKey(Room.values().size)
-        /** 1518 build 3: the band's pieces are apps too - the DS toolbar's four D-pad icons (by their piece, HomeLayout.PadKey's order:
-         *  an icon keeps its key, its phase and its lift as it swaps from spot to spot) and the clock chip, each its own phase and pace */
-        const val PAD0 = 40
-        const val CLOCK_PIECE = 44
         /** the pops */
         const val MENU = 0
         const val SHEET = 1
