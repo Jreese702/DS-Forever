@@ -770,6 +770,23 @@ class HomeEditShotsTest {
         assertFalse("held on Done: discarded", home.editing)
         stripTouch(p, MotionEvent.ACTION_UP, r.done.centerX() - 8f, r.done.centerY() + 4f); settle()
         assertEquals(HomeLayout.CastDock.UNDER_CHAT, HomeSettings.layout.cast)
+        // the last check: a finger that RESTS on Done past its Discard (still, no MOVE) while the chrome fades away; its UP never
+        // reaches the ribbon. The next session's first ribbon tap is still a tap (editEnd lets the finger go)
+        assertTrue(home.editOpen(EditStop.CHAT)); settle()
+        home.editAct { it.remove(EditStop.CAST) }; settle(); drawStrip(p)
+        val r2 = home.editChrome.ribbon(W.toFloat())
+        assertTrue(stripTouch(p, MotionEvent.ACTION_DOWN, r2.done.centerX(), r2.done.centerY()))
+        settle(60); drawStrip(p)
+        assertFalse("held still on Done: discarded", home.editing)
+        assertFalse("edit mode ended: Done's down let go", home.editChrome.doneDown)
+        stripTouch(p, MotionEvent.ACTION_UP, r2.done.centerX(), r2.done.centerY()); settle()
+        assertTrue(home.editOpen(EditStop.CHAT)); settle()
+        home.editAct { it.remove(EditStop.CAST) }; settle(); drawStrip(p)
+        val r3 = home.editChrome.ribbon(W.toFloat())
+        stripTouch(p, MotionEvent.ACTION_DOWN, r3.plus.centerX(), r3.plus.centerY()); stripTouch(p, MotionEvent.ACTION_UP, r3.plus.centerX(), r3.plus.centerY())
+        settle()
+        assertEquals("the next session's first tap is a tap", HomeEditModel.Sheet.ADD, model(p).sheet)
+        home.editKey("PAD2"); settle()
     }
 
     /** the review: in Spanish and French the ribbon's hints never run under the Home disc (the least needed pairs go first) */

@@ -2908,7 +2908,9 @@ class HomeView(
      */
     private fun editEnd(discard: Boolean, write: Boolean = true) {
         val m = edit ?: return
-        hold.cancel()
+        // 1518: every end (Done, Discard - a finger may still rest on Done past its hold -, a cancel) lets the ribbon's finger go, so
+        // the next session's first ribbon tap is never swallowed by a stale down or a fired hold
+        hold.cancel(); editView.ribbonLetGo(); hold.fired = false
         if (write && !discard) editPersist(m, now = true)
         // 1518: a late key's Discard (the key came while lifted / parked): the character's real record back
         if (write && discard) editAdopt(m)?.let { back -> val now = HomeLayoutStore.active(); m.rebase(now, back); editPersisted = now }
