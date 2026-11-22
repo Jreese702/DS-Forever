@@ -35,6 +35,11 @@ class MapHoldClaim(private val who: String, private val log: (String) -> Unit = 
     /** the last refusal's or loss's reason (the tests, the note) */
     var why: String? = null
         private set
+    /** the exit guard's re-asks since the show or the last hold ([guard]; [MAX_GUARD_ASKS] at most: never a hold cell tapped all visit) */
+    var guardAsks = 0
+        private set
+    /** the guard's "left at that" said once (the log and the note), until the next show or hold */
+    private var guardSaid = false
 
     val shown get() = st != St.OFF
     val held get() = st == St.HELD
@@ -46,7 +51,7 @@ class MapHoldClaim(private val who: String, private val log: (String) -> Unit = 
 
     /** the map came up: a fresh claim, asked now */
     fun shown() {
-        st = St.ASKING; drops = 0; why = null
+        st = St.ASKING; drops = 0; why = null; guardAsks = 0; guardSaid = false
         log("$who: claim on, the hold asked (the cursor waits for it)")
     }
 
@@ -84,7 +89,7 @@ class MapHoldClaim(private val who: String, private val log: (String) -> Unit = 
             }
             ok -> {
                 val was = st
-                st = St.HELD; this.why = null
+                st = St.HELD; this.why = null; heldAgain()
                 log("$who: hold answered: held${if (was == St.HELD) " (already)" else ""}${catchLine()}")
                 return false
             }
@@ -105,7 +110,7 @@ class MapHoldClaim(private val who: String, private val log: (String) -> Unit = 
         if (st == St.OFF) return false
         val active = held && !pend
         if (active) {
-            if (st != St.HELD) { st = St.HELD; why = null; log("$who: held (the add-on's state)${catchLine()}") }
+            if (st != St.HELD) { st = St.HELD; why = null; heldAgain(); log("$who: held (the add-on's state)${catchLine()}") }
             return false
         }
         if (held && pend) {
@@ -123,7 +128,7 @@ class MapHoldClaim(private val who: String, private val log: (String) -> Unit = 
     /** a press reached the map: only the holder gets presses (also after a "pending" answer) */
     fun press() {
         if (st == St.OFF || st == St.HELD) return
-        st = St.HELD; why = null
+        st = St.HELD; why = null; heldAgain()
         log("$who: held (a press arrived)${catchLine()}")
     }
 
@@ -159,6 +164,40 @@ class MapHoldClaim(private val who: String, private val log: (String) -> Unit = 
         return true
     }
 
+    /** what the exit guard's tick does for this claim ([guard]) */
+    enum class Guard {
+        /** nothing shows */ OFF,
+        /** a round of asks is still out: left to finish (its end may still say the note), never restarted */ ROUND,
+        /** refused for a reason another ask will not change ([RETRY_WHYS]): not asked again, the note */ FIXED,
+        /** [MAX_GUARD_ASKS] re-asks and still no hold (a queued take that never came): not asked again, the note */ SPENT,
+        /** ask again now (a new round) */ ASK
+    }
+
+    /**
+     * the host's exit guard (paced by ExitGuard.RETRY_MS, out of a fight, the capture naming NOBODY while the map shows): ask again,
+     * or not. [roundAsking] = the map's own round of asks is still going (its asks, its last answer's wait). Bounded (#584's review):
+     * at most [MAX_GUARD_ASKS] re-asks until a hold lands, none while a round is out, none after a refusal that will not change.
+     */
+    fun guard(roundAsking: Boolean): Guard {
+        if (st == St.OFF) return Guard.OFF
+        if (roundAsking) return Guard.ROUND
+        if (st == St.REFUSED && why !in RETRY_WHYS) {
+            if (!guardSaid) { guardSaid = true; log("$who: hold refused (${why ?: "?"}): not asked again by the exit guard, the stick stays the game's") }
+            return Guard.FIXED
+        }
+        if (guardAsks >= MAX_GUARD_ASKS) {
+            if (!guardSaid) {
+                guardSaid = true
+                if (st != St.HELD && st != St.REFUSED) st = St.UNANSWERED
+                log("$who: no hold after $guardAsks exit-guard asks (${why ?: st.name.lowercase()}): left at that, the stick stays the game's, the cursor waits")
+            }
+            return Guard.SPENT
+        }
+        nobody()
+        guardAsks++
+        return Guard.ASK
+    }
+
     /** a new round of asks starts ([reason]: who wants it) */
     fun again(reason: String) {
         if (st == St.OFF) return
@@ -177,6 +216,9 @@ class MapHoldClaim(private val who: String, private val log: (String) -> Unit = 
         caught = on
         if (st != St.OFF) log("$who: the game's stick catch ${if (on) "on: the stick is the map's" else "off: the stick is the game's"}${if (held) " (held)" else ""}")
     }
+
+    /** a hold landed: the exit guard's count starts again (a later loss, an NPC window's, may be asked for again) */
+    private fun heldAgain() { guardAsks = 0; guardSaid = false }
 
     private fun dropAgain(): Boolean {
         if (drops >= MAX_DROPS) { log("$who: the hold dropped $drops times since the map opened: left to the exit guard"); return false }
@@ -198,5 +240,12 @@ class MapHoldClaim(private val who: String, private val log: (String) -> Unit = 
          * an NPC window, a fight (its own pending ENTER route). The exit guard asks again once the capture names nobody.
          */
         val WAIT_WHYS = setOf("B", "left", "taken", "npc", "combat")
+        /** the exit guard's re-asks per show until a hold lands */
+        const val MAX_GUARD_ASKS = 3
+        /**
+         * refusals another ask may change: another holder ("busy": the guard asks only once the capture names nobody) and a fight
+         * (the guard asks only out of one). Any other ("no controller capture", "no way in", "bad spec" ...) stays: not asked again.
+         */
+        val RETRY_WHYS = setOf("busy", "combat")
     }
 }

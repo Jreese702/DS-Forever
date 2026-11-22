@@ -1798,6 +1798,19 @@ local function holderNow()
     local ok, st = CALL(c.state)
     if ok and type(st) == "table" and type(st.holder) == "string" and WC.isPlain(st.holder) then return st.holder end
 end
+-- #584's review: a pending / queued take the capture no longer has. Interact drops a fight's pending ENTER at the fight's end (or a
+-- newer fight take replaces it) without a lost(), so the room stayed held + pend with the capture naming NOBODY: every hold ask then
+-- answered "ok, waits" and nothing took again. Out of a fight with nobody holding there is nothing to wait for (a fight's ENTER waits
+-- only in a fight; a queued take waits behind a holder): the pend is stale and the next take is a real one. (A table field, not a local:
+-- the main chunk is at Lua's 200-local limit.)
+function mr.stalePend()
+    if not (mr.held and mr.pend) then return false end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then return false end
+    local c = mrCap()
+    if not c or type(c.state) ~= "function" then return false end
+    local ok, st = CALL(c.state)
+    return (ok and type(st) == "table" and st.holder == nil) and true or false
+end
 local function mapShown()
     local f = _G.WorldMapFrame
     if type(f) ~= "table" then return false end
@@ -1982,6 +1995,7 @@ end
 -- [force] = take again even while held with this via (a new spec: B's close switched on / off)
 mrTake = function(via, force)
     via = via or "touch"
+    if mr.stalePend() then mr.held, mr.pend = false, false end    -- #584's review: a stale pend takes for real (the app's hold ask)
     if mr.held and not force and (mr.via == via or via == "touch") then return true end   -- a touch hold changes no window hold
     local c = mrCap()
     if not c then mr.why = "no controller capture"; mrNote("take-skip-nocapture"); return false, mr.why end
@@ -2226,6 +2240,7 @@ end
 local function mrTick()
     if mr.homeAt and now() - mr.homeAt > mr.HOME_TTL then pcall(mr.stickSync) end     -- mr8: a lapsed hold lets the sticks go (fights too)
     if mr.pend and mrIsHolder() then mr.pend = false; mrNote("taken") end
+    if mr.want and mr.stalePend() then mrTake(mr.open and "window" or "touch") end    -- #584's review: nobody holds, nothing to wait for
     if type(InCombatLockdown) == "function" and InCombatLockdown() then return end
     -- the window is shared with the Quests room's quest log: only a map the Map room wanted is taken again
     if not mr.want or not mr.open or mr.stayOff or (mr.held and mr.via == "window") then return end
@@ -2239,8 +2254,8 @@ local function mrAfterFight()
     if type(InCombatLockdown) == "function" and InCombatLockdown() then return end
     mrArmClose()
     mrRefresh()
-    if mr.held and not mrIsHolder() and not mr.pend then
-        mr.held = false
+    if mr.held and not mrIsHolder() and (not mr.pend or mr.stalePend()) then     -- #584's review: the fight's ENTER dropped unsaid
+        mr.held, mr.pend = false, false
         mrTake(mr.open and "window" or "touch")
     elseif mr.held and mr.via == "window" and not mr.open then
         mrTake("touch", true)                              -- the window closed in the fight: B is the room's own again

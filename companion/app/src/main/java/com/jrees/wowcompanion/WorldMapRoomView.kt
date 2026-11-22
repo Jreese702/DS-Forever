@@ -2794,6 +2794,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         val sent = if (own) rowTap(MapRoomPad.HOLD) else guestTap(GuestPad.cells(padDoc, "map", hold = true))
         claim.asked(holdAsk.asksSent + (if (sent) 1 else 0), HoldAsk.MAX, sent,
             when { padDoc == null -> "no pad document yet"; own -> "the room's row"; else -> "the guest map" })
+        if (sent) lastAskAt = android.os.SystemClock.uptimeMillis()
         if (holdAsk.asked(sent)) postDelayed(holdTick, HoldAsk.EVERY_MS)
         else if (holdAsk.spent()) { removeCallbacks(roundEnd); postDelayed(roundEnd, HoldAsk.EVERY_MS) }   // the last ask's answer may still come
     }
@@ -2809,17 +2810,33 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (!isShown || !roomOn) return
         claim.again(reason)
         holdAsk.shown(); removeCallbacks(roundEnd)
+        lastAskAt = android.os.SystemClock.uptimeMillis()
         removeCallbacks(holdTick); postDelayed(holdTick, HoldAsk.EVERY_MS)
     }
+    /** the last hold ask that went out (or the round queued: [askAgain]); uptime ms */
+    private var lastAskAt = Long.MIN_VALUE / 2
+    /** a round of asks is still out: unanswered and its last ask recent (the next one, or the last one's answer, still to come) */
+    private fun roundAsking(): Boolean = holdAsk.asking && android.os.SystemClock.uptimeMillis() - lastAskAt <= HoldAsk.EVERY_MS * 2
     /**
      * the host's exit guard (CompanionHost.guardStep): the capture has named nobody for its grace while the room shows, out of a fight
-     * and paced by ExitGuard.RETRY_MS. The room believed it held -> not any more; either way the hold is asked again.
+     * and paced by ExitGuard.RETRY_MS. The room believed it held -> not any more; the hold is asked again - BOUNDED (#584's review:
+     * MapHoldClaim.guard): never over a round still out (its end says the note), never after a refusal another ask will not change,
+     * [MapHoldClaim.MAX_GUARD_ASKS] re-asks at most until a hold lands; then the note ("press B to go Home": the guard's B reader).
      */
     fun guardReask() {
+        if (!isShown || !roomOn) return
         val was = claimLive()
-        if (claim.nobody()) askAgain("the exit guard: nobody holds")
+        when (claim.guard(roundAsking())) {
+            MapHoldClaim.Guard.ASK -> askAgain("the exit guard: nobody holds (${claim.guardAsks}/${MapHoldClaim.MAX_GUARD_ASKS})")
+            MapHoldClaim.Guard.FIXED, MapHoldClaim.Guard.SPENT -> if (!held && !claimNoted) { claimNoted = true; say(NO_HOLD_NOTE) }
+            else -> {}
+        }
         claimed(was)
     }
+    /** the tests: the note on the room now (null = none) */
+    fun noteNow(): String? = note
+    /** the tests: the exit guard's re-asks this show */
+    fun claimGuardAsks(): Int = claim.guardAsks
     private fun guestTap(cells: List<Pair<String, Int>>?): Boolean = cells != null && TapBridge.taps(context, padDoc, cells)
 
     /** where B leads, for the Home button's glyph: "back" (a menu, or something browsed) or "home" */

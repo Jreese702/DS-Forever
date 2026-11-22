@@ -172,6 +172,72 @@ class MapHoldClaimTest {
         assertFalse(a.spent())
     }
 
+    // ---- #584's review: the exit guard's re-asks are bounded
+
+    @Test fun theExitGuardLeavesARoundStillOutAlone() {
+        val c = claim()
+        c.shown()
+        assertEquals(MapHoldClaim.Guard.ROUND, c.guard(roundAsking = true))
+        assertEquals("nothing counted, nothing restarted", 0, c.guardAsks)
+        assertEquals(MapHoldClaim.St.ASKING, c.st)
+        assertEquals(MapHoldClaim.Guard.OFF, claim().guard(roundAsking = false))
+    }
+
+    @Test fun aTakeThatOnlyEverWaitsIsAskedAFewTimesThenLeft() {
+        val c = claim()
+        c.shown()
+        c.answer(ok = true, why = "", waits = true)                    // the stale pend: "ok, waits" every time
+        for (i in 1..MapHoldClaim.MAX_GUARD_ASKS) {
+            assertEquals(MapHoldClaim.Guard.ASK, c.guard(roundAsking = false))
+            assertEquals(i, c.guardAsks)
+            c.again("the exit guard")
+            assertFalse(c.answer(ok = true, why = "", waits = true))
+            assertEquals(MapHoldClaim.St.PENDING, c.st)
+        }
+        assertEquals(MapHoldClaim.Guard.SPENT, c.guard(roundAsking = false))
+        assertEquals(MapHoldClaim.St.UNANSWERED, c.st)
+        assertFalse(c.cursorLive())
+        assertEquals(MapHoldClaim.Guard.SPENT, c.guard(roundAsking = false))
+        assertEquals("said once", 1, lines.count { it.contains("exit-guard asks") })
+        // a hold lands (the add-on's state): the count starts again
+        c.win(held = true, pend = false)
+        assertTrue(c.held)
+        assertEquals(0, c.guardAsks)
+        assertEquals(MapHoldClaim.Guard.ASK, c.guard(roundAsking = false))
+        assertEquals("the guard's re-ask: the capture names nobody, not held", MapHoldClaim.St.LOST, c.st)
+        // a new show starts it again too
+        c.hidden(); c.shown()
+        assertEquals(0, c.guardAsks)
+    }
+
+    @Test fun aRefusalThatWillNotChangeIsNotAskedAgain() {
+        for (w in listOf("no controller capture", "no way in", "bad spec")) {
+            val c = claim()
+            c.shown()
+            c.answer(ok = false, why = w)
+            assertEquals(MapHoldClaim.Guard.FIXED, c.guard(roundAsking = false))
+            assertEquals(MapHoldClaim.Guard.FIXED, c.guard(roundAsking = false))
+            assertEquals(w, 0, c.guardAsks)
+            assertEquals(MapHoldClaim.St.REFUSED, c.st)
+        }
+        assertEquals("logged once a claim", 3, lines.count { it.contains("not asked again by the exit guard") })
+        val b = claim()
+        b.shown()
+        b.answer(ok = false, why = "busy")                             // another holder: the guard asks once nobody holds
+        assertEquals(MapHoldClaim.Guard.ASK, b.guard(roundAsking = false))
+    }
+
+    @Test fun homesReaderWaitsWhileAnotherHolderDrivesThePad() {
+        val home = src("HomeView.kt")
+        assertTrue("an NPC window's (a room's) loss: no B reader of Home's while it holds",
+            home.contains("if (waitLoss && !nobody) mapFallbackOff(keepWatch = true)"))
+        assertTrue("the note fits the case", home.contains("mapNoteSaid = if (fight) FIGHT_MAP_NOTE else KEPT_MAP_NOTE"))
+        val lua = File(listOf("../companion/app/src/main/assets/companion/addons/WowCompanion/Map.lua",
+            "companion/app/src/main/assets/companion/addons/WowCompanion/Map.lua").first { File(it).isFile }).readText()
+        assertTrue("Map.lua: a stale pend takes for real (tools/test_map_stale_pend.py)", lua.contains("function mr.stalePend()") &&
+            lua.contains("if mr.stalePend() then mr.held, mr.pend = false, false end"))
+    }
+
     // the wiring, read off the sources (the room and Home's module both gate their sticks on the claim)
     private fun src(n: String) = File(listOf("../companion/app/src/main/java/com/jrees/wowcompanion/$n", "companion/app/src/main/java/com/jrees/wowcompanion/$n")
         .first { File(it).isFile }).readText()
@@ -193,7 +259,7 @@ class MapHoldClaimTest {
         for (f in listOf("es.json", "fr.json")) {
             val t = File(listOf("../companion/app/src/main/assets/companion/i18n/$f", "companion/app/src/main/assets/companion/i18n/$f")
                 .first { File(it).isFile }).readText()
-            assertTrue(f, t.contains("\"${WorldMapRoomView.NO_HOLD_NOTE}\": "))
+            for (n in listOf(WorldMapRoomView.NO_HOLD_NOTE, HomeView.KEPT_MAP_NOTE, HomeView.FIGHT_MAP_NOTE)) assertTrue("$f: $n", t.contains("\"$n\": "))
         }
     }
 }

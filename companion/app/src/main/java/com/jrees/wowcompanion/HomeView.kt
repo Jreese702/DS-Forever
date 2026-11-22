@@ -1090,10 +1090,13 @@ class HomeView(
     private fun mapWatchStep() {
         if (!mapWanted) { mapFallbackOff(); return }
         val since = android.os.SystemClock.uptimeMillis() - mapAskAt
-        if (MapExitGuard.fallback(mapWanted, mapHeld, mapRefused, since)) mapFallbackOn()
         // #584: a loss that names a holder or a choice (taken, npc, B ...) waits until the capture names nobody (no ping-pong in its queue)
         val waitLoss = mapClaim.st == MapHoldClaim.St.LOST && mapClaim.why in MapHoldClaim.WAIT_WHYS
         val nobody = capHolderNow().let { it == null || it.isEmpty() }
+        // #584's review: while that other holder (an NPC window, a room) drives the pad, Home reads no B of its own - the holder's B (the
+        // loot / vendor window's close) would close the map module too. The reader starts once nobody holds and no hold came back
+        if (waitLoss && !nobody) mapFallbackOff(keepWatch = true)
+        else if (MapExitGuard.fallback(mapWanted, mapHeld, mapRefused, since)) mapFallbackOn()
         if (MapExitGuard.retry(mapWanted, mapHeld, inFight(), since) && (!waitLoss || nobody)) {
             Log.i("WCLOG", "map module: the hold asked again (out of the fight)"); mapAsk(); return
         }
@@ -1109,7 +1112,10 @@ class HomeView(
     private fun mapFallbackOn() {
         if (mapFallbackReader != null) return
         Log.i("WCLOG", "map module: no controller hold (${if (mapRefused) "refused: a fight" else "no answer"}): B closes it")
-        auraPane.note("In a fight the game keeps the controller: press B to close the map")
+        // the note fits the case: a fight's refusal / pending ENTER, or (out of one) a hold that did not come back
+        val fight = inFight() || mapClaim.why == "combat" || mapClaim.st == MapHoldClaim.St.PENDING
+        mapNoteSaid = if (fight) FIGHT_MAP_NOTE else KEPT_MAP_NOTE
+        auraPane.note(mapNoteSaid!!)
         mapFallbackHeld = 0
         mapFallbackReader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> }, onButtons = { h ->
             post {
@@ -1121,6 +1127,10 @@ class HomeView(
             }
         }).also { it.start() }
     }
+    /** the tests: Home's own B reader for the module runs, and the last note it said */
+    fun mapFallbackReading(): Boolean = mapFallbackReader != null
+    var mapNoteSaid: String? = null
+        private set
     /** ExitGuard (the host's): the map module guards itself */
     fun mapGuarding(): Boolean = mapWanted
     /** fix/polestar-b-home: the module believes it holds the controller (its B then comes through the guest, never Home's own reader) */
@@ -1151,9 +1161,11 @@ class HomeView(
         if (typeWanted) return                                         // the tool asks for its own hold when it opens again
         if (homeOwnGuestWanted() && homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i("WCLOG", "exit guard: Home's hold asked again")
     }
-    private fun mapFallbackOff() {
+    /** Home's B reader off; [keepWatch] = the once-a-second watch goes on (another holder has the pad for now) */
+    private fun mapFallbackOff(keepWatch: Boolean = false) {
+        if (keepWatch && mapFallbackReader != null) Log.i("WCLOG", "map module: another holder has the controller: Home's B reader off meanwhile")
         mapFallbackReader?.stop(); mapFallbackReader = null; mapFallbackHeld = 0
-        removeCallbacks(mapWatch)
+        if (!keepWatch) removeCallbacks(mapWatch)
     }
     private var mapBSaid: String? = null
     private var homePadN = -1
@@ -5134,6 +5146,9 @@ class HomeView(
         const val TAG = "WCHOME"
         /** #584: how long the map controls wait for the game's stick catch before asking again, and how many asks before the keep-alive */
         const val STICKS_ANSWER_MS = 1_200L
+        /** the map module without the controller (Home's B reader): in a fight, and out of one (es / fr in i18n) */
+        const val FIGHT_MAP_NOTE = "In a fight the game keeps the controller: press B to close the map"
+        const val KEPT_MAP_NOTE = "The game kept the controller: press B to close the map"
         const val STICKS_ASKS = 3
         /** f-trackpad-keyboard: the tool's lift, above the quest card (2) and the class wheel's cover */
         private const val TYPE_Z = 50f
