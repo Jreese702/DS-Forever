@@ -70,10 +70,10 @@ object HomeLayoutStore {
     private var heldName: String? = null
     /** what Home showed when the first pending edit was made (the edit's base: only the fields changed from it are laid on top) */
     private var pendingBase: HomeLayout? = null
-    /** 1518: the last held edit [character] laid onto a whole key: that key, the character's real record BEFORE the lay-on, and the
-     *  held edit's base ([lateSaved]: Discard's record for a session opened while the name was pending); null = none since the last
-     *  change of character */
-    private var carried: Triple<String, HomeLayout, HomeLayout>? = null
+    /** 1518: the pending name's key as [character] took it ([Late]: that key, the character's real record read under it BEFORE anything
+     *  was laid on, and the pending record's base - the held edit's, else what Home showed while pending); null = none since the last
+     *  change of character. Recorded whether or not a held edit was carried (a session's first change may still be unsaved: lifted) */
+    private var carried: Late? = null
     private var cacheRaw: String? = null
     private var cache: HomeLayout? = null
     private val listeners = ArrayList<() -> Unit>()
@@ -123,10 +123,29 @@ object HomeLayoutStore {
      * key before the held edit was laid on) with only the held changes of before the session laid on - never the pending default's
      * values for the fields the session touched (they would be written over the character's own). Anything else: [saved] as it is
      */
-    fun lateSaved(opened: Owner, saved: HomeLayout): HomeLayout {
-        val c = carried ?: return saved
-        if (editSaveFor(opened) != EditSave.LAY_ON || c.first != who) return saved
-        return layOn(c.second, c.third, saved)
+    fun lateSaved(opened: Owner, saved: HomeLayout): HomeLayout = lateFor(opened)?.on(saved) ?: saved
+
+    /**
+     * 1518 (the checkers' F1-a / F1-c): the pending name's key as it arrived: [on] turns a record of the pending frame (what edit mode
+     * opened on, the draft as last saved) into the key's frame - the character's REAL record with only that record's own changes from
+     * the pending base laid on (the default's values never land on the fields the character has its own for)
+     */
+    data class Late internal constructor(val key: String, internal val real: HomeLayout, internal val base: HomeLayout) {
+        fun on(x: HomeLayout): HomeLayout = layOn(real, base, x)
+    }
+    /** the late key of a draft opened on [opened] (its pending name's key is the active one now), null = none */
+    fun lateFor(opened: Owner): Late? = carried?.takeIf { editSaveFor(opened) == EditSave.LAY_ON && it.key == who }
+    /**
+     * 1518: a session opened on pending [opened] takes the late key (before ANY write of its own under that key): the record Discard puts
+     * back from here - [saved] (what it opened on) in the key's frame ([late], [lateFor] when null: none known, the record as it is
+     * now is the character's own), with any change made under the key since it came laid on ([persisted], the draft as last saved
+     * while pending, in the key's frame, against the record now). Never the pending default's values over the character's own fields,
+     * and never the carry itself taken for an outside change (a held change of before the session that the session undid stays)
+     */
+    fun lateAdopt(opened: Owner, late: Late?, saved: HomeLayout, persisted: HomeLayout): HomeLayout {
+        val l = late?.takeIf { it.key == who } ?: lateFor(opened)
+        val now = active()
+        return if (l == null) layOn(saved, persisted, now) else layOn(l.on(saved), l.on(persisted), now)
     }
     /** a per-character record key of the prefs ("homeLayout.<Name-Realm>": a whole key only) */
     fun isCharRecord(k: String): Boolean = k.startsWith(KEY_PREFIX) && CharKey.isKey(k.removePrefix(KEY_PREFIX))
@@ -224,11 +243,15 @@ object HomeLayoutStore {
         carried = null                                                  // 1518: only the carry of THIS change of character counts
         if (p != null && k != null) {
             if (!p.contains(key(k))) p.edit().putString(key(k), HomeLayoutJson.json(default())).apply()   // read under k first (seeded)
+            val real = HomeLayoutJson.parse(p.getString(key(k), null))
             if (carry != null) {                                                                          // then the session's edit on top
-                val real = HomeLayoutJson.parse(p.getString(key(k), null))
                 p.edit().putString(key(k), HomeLayoutJson.json(layOn(real, carryBase ?: real, carry))).apply()
-                carried = Triple(k, real, carryBase ?: real)                                              // 1518: Discard's way back
+                carried = Late(k, real, carryBase ?: real)                                                // 1518: Discard's way back
                 heldDrop(p, CharKey.nameOf(k))                                                            // laid on: no longer held
+            } else if (ownerBefore.key == null && ownerBefore.name != null && carryOk(k, ownerBefore.name)) {
+                // 1518 (F1-a): the pending name's key with nothing held (a session's first change unsaved yet: lifted, a finger down) -
+                // the character's own record as read, against what Home showed while pending
+                carried = Late(k, real, before)
             }
         }
         if (active() != before) changed()
@@ -301,7 +324,8 @@ object HomeLayoutStore {
      *  it would land on the key picked afterwards and undo the reset */
     fun resetDone(layouts: Boolean = false) {
         cacheRaw = null; cache = null; pendingEdit = null; pendingBase = null; heldName = null
-        carried = null                                                  // 1518: a reset decides the record (edit mode ended first)
+        if (layouts) carried = null                                     // 1518: a Layouts reset decides the record (edit mode ended first);
+        // any other reset (Settings, Skills: edit mode may wait parked in the Settings room) leaves the late key's record as it was read
         if (layouts) { prefs?.let { heldDrop(it, if (pending) pendingName else who?.let { k -> CharKey.nameOf(k) }) }; return }
         if (pending) heldOf(pendingName)?.let { (b, e) -> pendingEdit = e; pendingBase = b; heldName = pendingName }
     }

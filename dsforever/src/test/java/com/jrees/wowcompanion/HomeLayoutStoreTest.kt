@@ -481,39 +481,104 @@ class HomeLayoutStoreTest {
     /** 1518 (F1): a session opened while the name was pending (the default shown), its key arriving mid-edit: Discard puts back the
      *  character's REAL record (plus the held change of before the session) - never the pending default's values over the fields the
      *  session touched. Both orders: the view's rebase then Discard, and a Discard before the rebase (a lift held when the key came) */
+    /** HomeView's edit session as the store sees it (editOpen / editPersist / editRebase / editEnd's Discard / editOwnerCheck's
+     *  snapshot of the late key): the draft's owner, the record Discard puts back, the draft as last saved */
+    private class Sess {
+        var o = HomeLayoutStore.owner()
+        var saved = HomeSettings.layout
+        var persisted = saved
+        var draft = saved
+        var late: HomeLayoutStore.Late? = null
+        /** editOwnerCheck: the owner changed (the key came) */
+        fun ownerCheck() { if (HomeLayoutStore.editSaveFor(o) == HomeLayoutStore.EditSave.LAY_ON && late == null) late = HomeLayoutStore.lateFor(o) }
+        /** editAdopt: the late key taken (before any write under it); the Discard record, null = no late key */
+        private fun adopt(): HomeLayout? {
+            if (HomeLayoutStore.editSaveFor(o) != HomeLayoutStore.EditSave.LAY_ON) return null
+            val back = HomeLayoutStore.lateAdopt(o, late, saved, persisted)
+            saved = back; o = HomeLayoutStore.owner(); late = null
+            return back
+        }
+        /** editPersist (a settled change, or the drop's) */
+        fun persist() {
+            if (draft == persisted) return
+            val l = adopt()
+            HomeSettings.saveLayout(HomeLayoutStore.editSave(o, persisted, draft)!!); persisted = draft
+            if (l != null) { val now = HomeLayoutStore.active(); draft = now; saved = l; persisted = now }
+        }
+        /** editRebase (settled when the key came, or Home again after a park) */
+        fun rebase() {
+            val l = adopt(); val now = HomeLayoutStore.active()
+            if (l == null && now == persisted) return
+            saved = l ?: HomeLayoutStore.layOn(saved, persisted, now); draft = now; persisted = now
+        }
+        /** Discard */
+        fun discard() {
+            adopt()?.let { l -> val now = HomeLayoutStore.active(); saved = l; draft = now; persisted = now }
+            HomeSettings.saveLayout(HomeLayoutStore.editSave(o, persisted, saved)!!)
+        }
+    }
+
+    /**
+     * 1518 (F1, and the checkers' F1-a / F1-b / F1-c): a session opened while the name is pending, the key arriving mid-edit, then Discard:
+     * the character's OWN record comes back with only the held changes of before the session laid on - never the pending default's
+     * values. Whether the session's change was saved before the key (held, carried) or not yet (lifted: written at the drop, after the
+     * key); rebased before Discard or not; a held change of before the session that the session undid (on a field the character has its
+     * own value for); a Settings reset (not Layouts) between the key and the session taking it
+     */
     @Test fun aLateKeysDiscardPutsBackTheCharactersOwnRecord() {
-        for (rebaseFirst in listOf(true, false)) for (before in listOf(false, true)) {
-            val what = "rebase first $rebaseFirst, a held change before the session $before"
+        val real = HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.TWO_THIRDS, rest = HomeRest.ROW)
+        for (savedFirst in listOf(true, false)) for (rebaseFirst in listOf(true, false)) for (before in listOf("none", "xp", "width undone"))
+        for (reset in listOf(false, true)) for (snapshot in listOf(true, false)) {
+            val what = "saved before the key $savedFirst, rebase first $rebaseFirst, held before the session $before, a reset $reset, " +
+                "the session's snapshot $snapshot"
             val p = fresh()
-            val real = HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.TWO_THIRDS, rest = HomeRest.ROW)
             HomeLayoutStore.character("Korvash-Realm")
             HomeLayoutStore.set(real)
             HomeLayoutStore.character(null, "Korvash")                                     // pending: the default shows
-            if (before) HomeLayoutStore.update { it.copy(xpBar = !it.xpBar) }              // held before edit mode opened
-            // edit mode opens on the pending name and changes the width (the field the character's record has its own value for)
-            val o = HomeLayoutStore.owner()
-            val saved = HomeSettings.layout
-            var persisted = saved
-            val draft = saved.copy(chatShare = HomeLayout.Share.THIRD)
-            HomeSettings.saveLayout(HomeLayoutStore.editSave(o, persisted, draft)!!); persisted = draft
+            val d = HomeSettings.layout
+            assertEquals(HomeLayout.Share.HALF, d.chatShare)
+            when (before) {                                                                // held before edit mode opened
+                "xp" -> HomeLayoutStore.update { it.copy(xpBar = !it.xpBar) }
+                "width undone" -> HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) }
+            }
+            val s = Sess()
+            // the session changes the width (a field the character's record has its own value for): the default's back again when the
+            // held change was the width (the session undid it), else a third
+            s.draft = s.saved.copy(chatShare = if (before == "width undone") d.chatShare else HomeLayout.Share.THIRD)
+            if (savedFirst) s.persist()                                                    // settled: saved at once (held)
             HomeLayoutStore.character("Korvash-Realm")                                     // the key arrives mid-edit
-            assertEquals(what, HomeLayout.Share.THIRD, HomeSettings.layout.chatShare)
-            // the view: editAdopt (Discard's record = the real one), then (rebase first) the record as it is now laid on it
-            assertEquals(HomeLayoutStore.EditSave.LAY_ON, HomeLayoutStore.editSaveFor(o))
-            var back = HomeLayoutStore.lateSaved(o, saved)
-            val o2 = HomeLayoutStore.owner()
-            assertEquals(HomeLayoutStore.EditSave.SAME, HomeLayoutStore.editSaveFor(o2))
-            if (rebaseFirst) { val now = HomeLayoutStore.active(); back = HomeLayoutStore.layOn(back, persisted, now); persisted = now }
-            HomeSettings.saveLayout(HomeLayoutStore.editSave(o2, persisted, back)!!)       // Discard
-            val want = if (before) real.copy(xpBar = !real.xpBar) else real
+            if (snapshot) s.ownerCheck()
+            if (reset) HomeSettings.resetDone()                                            // a Settings reset: edit mode waits on
+            assertEquals(what, HomeLayoutStore.EditSave.LAY_ON, HomeLayoutStore.editSaveFor(s.o))
+            if (!savedFirst) s.persist()                                                   // the drop (or a park's save) under the key
+            if (rebaseFirst) s.rebase()
+            if (!savedFirst || rebaseFirst) {                                              // taken (else: Discard takes it)
+                assertEquals(what, HomeLayoutStore.EditSave.SAME, HomeLayoutStore.editSaveFor(s.o))
+                assertEquals(what, s.draft, HomeSettings.layout)                           // the draft is his record as written
+            }
+            s.discard()
+            val want = when (before) { "xp" -> real.copy(xpBar = !real.xpBar); "width undone" -> real.copy(chatShare = HomeLayout.Share.THIRD); else -> real }
             assertEquals(what, want, HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String))
             assertEquals(what, want, HomeSettings.layout)
+        }
+        // a change made under the key after it came (Settings > Bottom screen while parked): kept by Discard, only the session's undone
+        run {
+            val p = fresh()
+            HomeLayoutStore.character("Korvash-Realm"); HomeLayoutStore.set(real)
+            HomeLayoutStore.character(null, "Korvash")
+            val s = Sess()
+            s.draft = s.saved.copy(chatShare = HomeLayout.Share.THIRD)
+            HomeLayoutStore.character("Korvash-Realm"); s.ownerCheck()
+            HomeLayoutStore.update { it.copy(rest = HomeRest.DIAMONDS) }
+            s.persist(); s.discard()
+            assertEquals(real.copy(rest = HomeRest.DIAMONDS), HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String))
         }
         // not a late key (the same owner, or nothing carried): the opening record as it is
         fresh()
         HomeLayoutStore.character("Korvash-Realm")
         val o = HomeLayoutStore.owner()
         assertEquals(HomeLayout(xpBar = false), HomeLayoutStore.lateSaved(o, HomeLayout(xpBar = false)))
+        assertNull(HomeLayoutStore.lateFor(o))
     }
 
     // ---------------------------------------------------------------- the DS toolbar follows the swap

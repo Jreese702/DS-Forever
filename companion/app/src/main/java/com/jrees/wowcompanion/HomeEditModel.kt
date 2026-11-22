@@ -664,7 +664,7 @@ class HomeEditModel(
         if (now.card != HomeLayout.CardDock.OFF) lastCard = now.card
         barSel = barSel.coerceIn(0, barMax().coerceAtLeast(0))
     }
-    /** 1518: the record Discard puts back is [s] now (the pending name's key came: the character's real record, HomeLayoutStore.lateSaved);
+    /** 1518: the record Discard puts back is [s] now (the pending name's key came: the character's real record, HomeLayoutStore.lateAdopt);
      *  the draft stays as it is */
     fun savedIs(s: HomeLayout) { saved = s }
 

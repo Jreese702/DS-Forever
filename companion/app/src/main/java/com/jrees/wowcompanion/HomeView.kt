@@ -2815,7 +2815,7 @@ class HomeView(
         castView.editPiece = castPieceHook
         edit = m
         editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (it is saved only there)
-        editPersisted = saved
+        editPersisted = saved; editLate = null
         editAway = false
         editView.visibility = View.VISIBLE
         chromeFade(1f, HomeEditModel.CHROME_IN)
@@ -2848,14 +2848,22 @@ class HomeView(
         if (!now && (m.parked || !m.settled)) return
         val prev = editPersisted ?: return
         if (m.draft == prev) return
+        // 1518 (F1-a): the pending name's key came while a widget was lifted (its rebase waited for the drop): the session takes it
+        // BEFORE its first write under it, while the store still holds the character's own record as the key brought it
+        val late = editAdopt(m)
         val o = editOwner ?: return
         val rec = HomeLayoutStore.editSave(o, prev, m.draft) ?: run {
             Log.i(TAG, "home edit: NOT saved (the record it was read under is not the active one now)"); return }
         HomeSettings.saveLayout(rec)
         editPersisted = m.draft
         Log.i(TAG, "home edit: saved ${HomeLayoutJson.json(rec)}${if (rec != m.draft) " (laid on the record as it is now)" else ""}")
-        // the pending name's key came while a widget was lifted (its rebase waited for the drop): the session is the real record's now
-        if (!m.parked && HomeLayoutStore.editSaveFor(o) == HomeLayoutStore.EditSave.LAY_ON) { editRebase(m); editRelay(Motion.MODULE_OPEN) }
+        // the session is the real record's now: the draft is the record as written, Discard's the character's own (taken before the write)
+        if (late != null) {
+            val now = HomeLayoutStore.active()
+            m.rebase(now, late); editPersisted = now
+            Log.i(TAG, "home edit: on the late key's record ${HomeLayoutJson.json(now)}")
+            if (!m.parked) editRelay(Motion.MODULE_OPEN)
+        }
     }
 
     /**
@@ -2865,10 +2873,10 @@ class HomeView(
      */
     private fun editRebase(m: HomeEditModel) {
         val prev = editPersisted ?: return
+        val late = editAdopt(m)
         val now = HomeLayoutStore.active()
-        editAdopt(m)
-        if (now == prev) return
-        m.rebase(now, HomeLayoutStore.layOn(m.saved, prev, now))
+        if (late == null && now == prev) return
+        m.rebase(now, late ?: HomeLayoutStore.layOn(m.saved, prev, now))
         editPersisted = now
         Log.i(TAG, "home edit: rebased on the record as it is now ${HomeLayoutJson.json(now)}")
     }
@@ -2876,15 +2884,22 @@ class HomeView(
     /**
      * 1518: the pending name's key came (the late key, [HomeLayoutStore.EditSave.LAY_ON]): the session's owner is the character's key from
      * here, and the record Discard puts back is the character's REAL record with only the held changes of before the session on it
-     * ([HomeLayoutStore.lateSaved]) - never the pending default's values over the fields the session touched. Before any write or
-     * Discard under the new owner (the rebase, or a Discard that came first: a lift held when the key came)
+     * ([HomeLayoutStore.lateAdopt]; a change made under the key since it came laid on too) - never the pending default's values over the
+     * fields the session touched. Run before ANY write or Discard under the new owner (the rebase, the drop's save, a Discard that came
+     * first): returns that record (the caller rebases the draft on the record as it is then), null = no late key to take
      */
-    private fun editAdopt(m: HomeEditModel) {
-        val o = editOwner ?: return
-        if (HomeLayoutStore.editSaveFor(o) != HomeLayoutStore.EditSave.LAY_ON) return
-        m.savedIs(HomeLayoutStore.lateSaved(o, m.saved))
-        editOwner = HomeLayoutStore.owner()
+    private fun editAdopt(m: HomeEditModel): HomeLayout? {
+        val o = editOwner ?: return null
+        if (HomeLayoutStore.editSaveFor(o) != HomeLayoutStore.EditSave.LAY_ON) return null
+        val prev = editPersisted ?: return null
+        val back = HomeLayoutStore.lateAdopt(o, editLate, m.saved, prev)
+        m.savedIs(back)
+        editOwner = HomeLayoutStore.owner(); editLate = null
+        return back
     }
+    /** 1518 (F1-b): the late key as it came, kept by the session from the owner change (so nothing after - a reset in the Settings room
+     *  while parked - can lose it before the session takes it) */
+    private var editLate: HomeLayoutStore.Late? = null
 
     /**
      * EDIT MODE ENDS: Done (every change is written already; the DS toolbar's switch sent now) or Discard (the record it opened on
@@ -2895,7 +2910,8 @@ class HomeView(
         val m = edit ?: return
         hold.cancel()
         if (write && !discard) editPersist(m, now = true)
-        if (write && discard) editAdopt(m)                                // 1518: a late key's Discard: the character's real record back
+        // 1518: a late key's Discard (the key came while lifted / parked): the character's real record back
+        if (write && discard) editAdopt(m)?.let { back -> val now = HomeLayoutStore.active(); m.rebase(now, back); editPersisted = now }
         // Discard: the opening record back, laid as the inverse of the session's net change over the record the store holds now (a
         // change made meanwhile kept); only to the record it was read under (another character's is never written)
         val back = if (write && discard) editPersisted?.let { prev -> editOwner?.let { o -> HomeLayoutStore.editSave(o, prev, m.saved) } } else null
@@ -2904,7 +2920,7 @@ class HomeView(
         Log.i(TAG, "home edit: ${when { done -> "done"; back != null -> "discarded, back to ${HomeLayoutJson.json(back)}"; discard -> "discard NOT written (another record is active)"; else -> "ended" }}")
         edit = null
         editBackDue = false
-        editPersisted = null
+        editPersisted = null; editLate = null
         roomBarHold = if (write) HomeLayoutSolver.dpadDirs(HomeSettings.layout) else null   // fix round 3: the record's order until `d` says it
         editOwner = null
         liveDraft = null
@@ -2936,6 +2952,7 @@ class HomeView(
         when (HomeLayoutStore.editSaveFor(o)) {
             HomeLayoutStore.EditSave.SAME -> return false
             HomeLayoutStore.EditSave.LAY_ON -> {
+                if (editLate == null) editLate = HomeLayoutStore.lateFor(o)  // 1518 (F1-b): the key as it came, whatever the state
                 // live and settled: at once (lifted / a finger down: at the drop, editPersist; parked: at the resume)
                 if (!m.parked && m.settled) { editRebase(m); editRelay(Motion.MODULE_OPEN); editBarSync(Motion.MODULE_OPEN); editView.invalidate() }
                 return false

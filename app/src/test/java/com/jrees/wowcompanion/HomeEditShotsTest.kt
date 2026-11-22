@@ -1166,6 +1166,44 @@ class HomeEditShotsTest {
         HomeLayoutStore.character(null); storePrefs().edit().clear().commit(); HomeLayoutStore.resetDone()
     }
 
+    /** 1518 (the checkers' F1-a / F1-b): the late key when nothing of the session was saved yet (Chat lifted and stepped: written at the
+     *  drop) - dropped then Discard, Discard still lifted, a room parks it (its save) then Home again; and a change held, a room parks it,
+     *  the key comes, a Settings reset (not Layouts) runs: every Discard puts his own record back, never the pending default's values */
+    @Test fun aLateKeyWithNothingSavedYetDiscardsToTheCharactersOwnRecord() {
+        for (how in listOf("drop", "lifted", "room", "held, room, reset")) {
+            val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+            HomeLayoutStore.character("Korvash-Realm")
+            HomeLayoutStore.set(HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.THIRD, rest = HomeRest.ROW,
+                cast = HomeLayout.CastDock.UNDER_CHAT))
+            val own = rec("Korvash-Realm")
+            HomeLayoutStore.character(null, "Korvash"); settle()
+            val pendingShare = HomeSettings.layout.chatShare
+            assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+            if (how == "held, room, reset") {
+                p.home.editKey("PAD4"); settle()                                     // saved at once: held for the pending name
+                p.home.giveBack(); assertTrue(model(p).parked)                       // the Settings room
+                HomeLayoutStore.character("Korvash-Realm"); settle()                 // the key comes while parked
+                HomeSettings.resetDone()                                             // a Settings reset (not Layouts): edit mode waits on
+                p.home.borrow(); lay(p.home); settle()
+            } else {
+                p.home.editKey("PAD1"); settle(); assertEquals(EditStop.CHAT, model(p).lifted)
+                p.home.editKey("PAD4"); settle()                                     // the width, lifted: written at the drop
+                assertNotEquals(pendingShare, model(p).draft.chatShare)
+                HomeLayoutStore.character("Korvash-Realm"); settle()                 // the key comes, Chat still lifted
+                when (how) {
+                    "drop" -> { p.home.editKey("PAD1"); settle(); assertNull(model(p).lifted) }
+                    "room" -> { p.home.giveBack(); assertTrue(model(p).parked); p.home.borrow(); lay(p.home); settle() }
+                }
+            }
+            assertNotNull(how, p.home.editModel())
+            p.home.editAct { it.discard() }; settle()
+            assertNull(how, p.home.editModel())
+            assertEquals("$how: his own record back", HomeLayoutJson.parse(own), HomeLayoutJson.parse(rec("Korvash-Realm")))
+            assertEquals(how, HomeLayout.Share.THIRD, HomeSettings.layout.chatShare)
+            HomeLayoutStore.character(null); storePrefs().edit().clear().commit(); HomeLayoutStore.resetDone()
+        }
+    }
+
     /** a Layouts reset while edit mode is parked by the Settings room (the host's resetApply: editCancel first): nothing written after it */
     @Test fun aLayoutsResetLeavesNoDraftToSave() {
         val p = page(HomeLayout(chatSide = HomeLayout.Side.RIGHT, cast = HomeLayout.CastDock.UNDER_CHAT))
