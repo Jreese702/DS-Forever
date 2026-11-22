@@ -248,13 +248,20 @@ class HomeEditModel(
         if (s == EditStop.ROOMS) {
             // the room under the bar's cursor (the bar itself never moves; "+" is no room)
             val r = barRoom ?: return emptyList()
+            val dropped = dropOther(s, r)                                 // 1518: a lift over another drops that one first
             cursor = s; lifted = s; liftFrom = draft; menu = null; barLifted = r
-            return listOf(Fx.Lift)
+            return dropped + Fx.Lift
         }
         if (!s.movable) return emptyList()
+        val dropped = dropOther(s)
         cursor = s; lifted = s; liftFrom = draft; menu = null
-        return listOf(Fx.Lift)
+        return dropped + Fx.Lift
     }
+
+    /** 1518: a lift that replaces another (a drag or a tap while one is lifted): the old one is dropped where the draft put it, and
+     *  its drop's effects go first (the view plops it: no widget left in its lifted pose); the same lift again ([s], room [room]) is none */
+    private fun dropOther(s: EditStop, room: String? = null): List<Fx> =
+        if (lifted != null && (lifted != s || barLifted != room)) drop() else emptyList()
 
     /**
      * a band piece picked up (A, a finger): a D-pad icon while [Env.pads] lets it (else one red pulse: the toolbar is off, Party mode's
@@ -262,12 +269,13 @@ class HomeEditModel(
      */
     private fun liftPiece(s: EditStop): List<Fx> {
         if (!pieceMovable(s)) { cursor = s; return listOf(Fx.Refuse(s)) }
+        val dropped = dropOther(s)                                        // 1518: a lift over another drops that one first
         if (s.pad > 0) {
             cursor = s; lifted = s; liftFrom = draft; menu = null; padLifted = draft.pad[s.pad - 1]
-            return listOf(Fx.Lift)
+            return dropped + Fx.Lift
         }
         cursor = s; lifted = s; liftFrom = draft; menu = null
-        return listOf(Fx.Lift)
+        return dropped + Fx.Lift
     }
 
     /** a band piece A or a finger can pick up now: a D-pad icon while [Env.pads] lets it, the clock with two spots or more (the review:
@@ -482,9 +490,9 @@ class HomeEditModel(
 
     fun openMenu(s: EditStop): List<Fx> {
         if (!s.hasMenu) return emptyList()
-        if (lifted != null) drop()
+        val dropped = if (lifted != null) drop() else emptyList()          // 1518: the drop's effects (the view plops it)
         cursor = s; menu = s; menuRow = 0
-        return emptyList()
+        return dropped
     }
 
     fun closeMenu() { menu = null }
@@ -564,7 +572,7 @@ class HomeEditModel(
         // [stops] laid (the chat always has a box on Home): only then is a missing box a widget gone
         if (c in stops || EditStop.CHAT !in stops) return false
         if (menu == c) menu = null
-        if (lifted == c) { lifted = null; liftFrom = null; padLifted = null }
+        if (lifted == c) drop()                                           // 1518: every lift field (the view plops it: editCursorCheck)
         // fix round 2: the clock (only on the small-diamonds rest: the thin row takes it away) falls back to the D-pad's Up icon beside
         // it (1518 build 3: the band is no stop any more); the card and the bar to "+" when shown (and drawn), else the chat
         cursor = when {
@@ -616,14 +624,15 @@ class HomeEditModel(
     fun cancelRemove() { removeAsk = null }
 
     fun remove(s: EditStop): List<Fx> {
-        lifted = null; liftFrom = null; menu = null
+        val dropped = if (lifted != null) drop() else emptyList()          // 1518: a lift ends with its drop's effects (the view plops it)
+        menu = null
         val fx = when (s) {
             EditStop.CAST -> change(draft.copy(cast = HomeLayout.CastDock.OFF), Motion.MODULE_OPEN)
             EditStop.QUEST -> change(draft.copy(card = HomeLayout.CardDock.OFF), Motion.MODULE_OPEN)
             else -> emptyList()
         }
         if (cursor == s) cursor = if (plusShown) EditStop.PLUS else EditStop.CHAT
-        return fx
+        return dropped + fx
     }
 
     // ---------------------------------------------------------------- Done / Discard (1518: the ribbon's one button)
@@ -655,6 +664,9 @@ class HomeEditModel(
         if (now.card != HomeLayout.CardDock.OFF) lastCard = now.card
         barSel = barSel.coerceIn(0, barMax().coerceAtLeast(0))
     }
+    /** 1518: the record Discard puts back is [s] now (the pending name's key came: the character's real record, HomeLayoutStore.lateSaved);
+     *  the draft stays as it is */
+    fun savedIs(s: HomeLayout) { saved = s }
 
     // ---------------------------------------------------------------- touch: select, then menu; drag a widget by its body
 
@@ -663,13 +675,14 @@ class HomeEditModel(
         if (parked) return emptyList()
         removeAsk = null
         if (menu != null) { menu = null; if (s == cursor) return emptyList() }
-        if (lifted != null && lifted != s) drop()
-        if (s == EditStop.PLUS) { cursor = s; return if (plusShown) { sheet = Sheet.ADD; sheetSel = 0; emptyList() } else emptyList() }
-        if (s != cursor) { cursor = s; return emptyList() }
+        // 1518: a tap elsewhere drops the lifted widget - with its drop's effects (the view plops it: no stale lifted pose)
+        val dropped = if (lifted != null && lifted != s) drop() else emptyList()
+        if (s == EditStop.PLUS) { cursor = s; if (plusShown) { sheet = Sheet.ADD; sheetSel = 0 }; return dropped }
+        if (s != cursor) { cursor = s; return dropped }
         if (lifted == s) return drop()
         // a band piece is an app: a tap only moves the cursor (a drag carries it); no menu
-        if (s.piece) return emptyList()
-        return openMenu(s)
+        if (s.piece) return dropped
+        return dropped + openMenu(s)
     }
 
     /** a tap on visible room [i] of the room bar: the cursor goes there (nothing opens: a room is an app, it has no menu); an open menu
@@ -680,9 +693,9 @@ class HomeEditModel(
         if (i !in barRooms.indices) return emptyList()
         if (sheet != null) { sheet = null; return emptyList() }
         menu = null
-        if (lifted != null) drop()
+        val dropped = if (lifted != null) drop() else emptyList()          // 1518: the drop's effects (the view plops it)
         cursor = EditStop.ROOMS; barSel = i
-        return emptyList()
+        return dropped
     }
 
     /** a finger lifts visible room [i] of the bar ([box] = its slot, in the drag's x): it follows the finger, the others make way
@@ -738,9 +751,11 @@ class HomeEditModel(
             return fx
         }
         val mid = if (draft.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.SPLIT else HomeLayout.CastDock.ACROSS
+        // 1518: the divider's drag ends a lift (with its drop's effects); a widget's lift(s) drops another itself
+        val dropped = if (s == EditStop.DIVIDER && lifted != null) drop() else emptyList()
         drag = Drag(s, x, y, box, mid)
         cursor = s
-        return if (s == EditStop.DIVIDER) emptyList() else lift(s)
+        return if (s == EditStop.DIVIDER) dropped else lift(s)
     }
 
     /** the finger moved: the dock under it; a new dock is laid once it has been asked for [HOVER_MS] (the divider snaps at once) */

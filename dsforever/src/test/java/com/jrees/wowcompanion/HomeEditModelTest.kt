@@ -720,4 +720,47 @@ class HomeEditModelTest {
         assertFalse(m.cursorCheck(gone))
         assertTrue(EditStop.CLOCK in HomeEditModel.GONE_CHECKED)
     }
+
+    /** 1518 (F2): every path that ends or replaces a lift carries the drop's [HomeEditModel.Fx.Lift] (the view plops the old widget:
+     *  never left grown, still and raised for the session) - a tap on the map, a tap on a room, a menu, a room dragged, another widget
+     *  dragged, the lifted bar removed, its box gone */
+    @Test fun everyLiftEndedOrReplacedSaysSo() {
+        val lift = HomeEditModel.Fx.Lift
+        fun chatLifted(): HomeEditModel = model().also { it.press("PAD1"); assertEquals(EditStop.CHAT, it.lifted) }
+        var m = chatLifted()
+        assertEquals("a tap on the map", listOf(lift), m.tap(EditStop.MAP)); assertNull(m.lifted); assertEquals(EditStop.MAP, m.cursor)
+        m = chatLifted()
+        assertEquals("a tap on a room", listOf(lift), m.barTap(2)); assertNull(m.lifted); assertEquals(EditStop.ROOMS, m.cursor)
+        m = chatLifted()
+        assertEquals("the map's menu", listOf(lift), m.openMenu(EditStop.MAP)); assertNull(m.lifted); assertEquals(EditStop.MAP, m.menu)
+        m = chatLifted()
+        val tapped = m.tap(EditStop.MAP); assertTrue(lift in tapped)
+        assertEquals("a second tap opens the menu (nothing lifted: no drop)", emptyList<HomeEditModel.Fx>(), m.tap(EditStop.MAP))
+        m = chatLifted()
+        assertEquals("a room dragged: the chat's drop, then the room's lift", listOf(lift, lift),
+            m.barDragStart(1, 100f, 1000f, HomeLayoutSolver.Box(60f, 960f, 140f, 1040f)))
+        assertEquals(EditStop.ROOMS, m.lifted); assertEquals(m.barRooms[1], m.barLifted)
+        m.dragCancel()
+        m = chatLifted()
+        val map = stops(classic).getValue(EditStop.MAP)
+        assertEquals("the map dragged", listOf(lift, lift), m.dragStart(EditStop.MAP, map.cx, (map.t + map.b) / 2f, map)); assertEquals(EditStop.MAP, m.lifted)
+        m.dragCancel()
+        m = chatLifted()
+        assertEquals("the same widget dragged: no drop", listOf(lift), m.dragStart(EditStop.CHAT, 100f, 400f, stops(classic).getValue(EditStop.CHAT)))
+        m.dragCancel()
+        // the lifted bar removed: its drop first (then the relay of the change)
+        m = model(start = EditStop.CAST); m.press("PAD1"); assertEquals(EditStop.CAST, m.lifted)
+        val off = m.remove(EditStop.CAST)
+        assertEquals(lift, off.first()); assertNull(m.lifted)
+        assertTrue(off.any { it is HomeEditModel.Fx.Relay })
+        // a room lifted by A, another room dragged: the first room's drop, then the second's lift
+        m = model(start = EditStop.ROOMS); m.press("PAD1"); val first = m.barLifted
+        assertEquals(listOf(lift, lift), m.barDragStart(3, 300f, 1000f, HomeLayoutSolver.Box(260f, 960f, 340f, 1040f)))
+        assertTrue(first != m.barLifted)
+        m.dragCancel()
+        // the lifted bar's box gone (Party mode's Hide): the lift ends with it
+        m = model(start = EditStop.CAST); m.press("PAD1")
+        assertTrue(m.cursorCheck(stops(m.draft).filterKeys { it != EditStop.CAST }))
+        assertNull(m.lifted); assertNull(m.barLifted); assertNull(m.padLifted)
+    }
 }

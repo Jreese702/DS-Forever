@@ -220,8 +220,10 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     var editTick = false
         set(v) { if (field != v) { field = v; invalidate() } }
     var editTouch: ((x: Float, y: Float, action: Int) -> Boolean)? = null
-    /** the ribbon took the finger's DOWN: its UP is the ribbon's too */
-    private var ribbonDown = false
+        set(v) { field = v; if (v == null) ribbonDown = false }        // 1518: the chrome gone (a fight, Done): no finger of its kept
+    /** the ribbon took the finger's DOWN: its MOVEs and its UP are the ribbon's too */
+    var ribbonDown = false
+        private set
 
     // ---------------------------------------------------------------- MOVABLE HOME P4: THE ROOM BAR (SPEC sections 2, 7, 8; final_08)
 
@@ -331,6 +333,9 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         return RectF((bx - h).coerceAtLeast(0f), (by - h).coerceAtLeast(height - BUTTONS.toFloat()), bx + h, by + h)
     }
 
+    /** 1518: a point of the rooms' row (the Strip's px) a room's "-" badge or the bar's "+" spot claims: the ribbon's slop never takes it */
+    fun slopClaimed(x: Float, y: Float): Boolean = badgeAt(x, y) != null || (editApps?.plus == true && plusBox()?.contains(x, y) == true)
+
     /** where the rooms' row is (the Strip's px): under the tracking bar, the whole width */
     fun buttonsBox(): RectF = RectF(0f, height - BUTTONS.toFloat(), width.toFloat(), height.toFloat())
     /** the slots' centres left to right (index = the order's); empty before the first draw */
@@ -391,11 +396,14 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
             val ty = e.y - (height - BAR)
             // the review: "+" and Done take a down up to RIBBON_SLOP below the ribbon too (48 px touch boxes: the Strip's top is the
             // ribbon's, nothing above it is the Strip's); the ribbon says no to the rest of that slop, which stays the rooms'
+            // 1518: in that slop a room's "-" badge or the bar's "+" spot keeps its own down (a hide tap is never Done / the Add tray)
             if (e.actionMasked == MotionEvent.ACTION_DOWN) ribbonDown = ty in 0f..(TRACKS + RIBBON_SLOP) && !onHome(e.x, e.y) &&
-                rib(e.x, ty, MotionEvent.ACTION_DOWN)
+                (ty <= TRACKS || !slopClaimed(e.x, e.y)) && rib(e.x, ty, MotionEvent.ACTION_DOWN)
             if (ribbonDown) {
-                // the UP (a tap: Done; after the long press: nothing) and the CANCEL (the hold let go) are the ribbon's too
+                // the UP (a tap: Done; after the long press: nothing) and the CANCEL (the hold let go) are the ribbon's too; 1518: so is
+                // each MOVE (a finger slid off Done lets the hold go: iOS's long press)
                 if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) { ribbonDown = false; rib(e.x, ty, e.actionMasked) }
+                else if (e.actionMasked == MotionEvent.ACTION_MOVE) rib(e.x, ty, MotionEvent.ACTION_MOVE)
                 return true
             }
         }

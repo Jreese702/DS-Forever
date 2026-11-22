@@ -478,6 +478,44 @@ class HomeLayoutStoreTest {
         assertEquals("its own rest kept", HomeRest.ROW, t.rest)
     }
 
+    /** 1518 (F1): a session opened while the name was pending (the default shown), its key arriving mid-edit: Discard puts back the
+     *  character's REAL record (plus the held change of before the session) - never the pending default's values over the fields the
+     *  session touched. Both orders: the view's rebase then Discard, and a Discard before the rebase (a lift held when the key came) */
+    @Test fun aLateKeysDiscardPutsBackTheCharactersOwnRecord() {
+        for (rebaseFirst in listOf(true, false)) for (before in listOf(false, true)) {
+            val what = "rebase first $rebaseFirst, a held change before the session $before"
+            val p = fresh()
+            val real = HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.TWO_THIRDS, rest = HomeRest.ROW)
+            HomeLayoutStore.character("Korvash-Realm")
+            HomeLayoutStore.set(real)
+            HomeLayoutStore.character(null, "Korvash")                                     // pending: the default shows
+            if (before) HomeLayoutStore.update { it.copy(xpBar = !it.xpBar) }              // held before edit mode opened
+            // edit mode opens on the pending name and changes the width (the field the character's record has its own value for)
+            val o = HomeLayoutStore.owner()
+            val saved = HomeSettings.layout
+            var persisted = saved
+            val draft = saved.copy(chatShare = HomeLayout.Share.THIRD)
+            HomeSettings.saveLayout(HomeLayoutStore.editSave(o, persisted, draft)!!); persisted = draft
+            HomeLayoutStore.character("Korvash-Realm")                                     // the key arrives mid-edit
+            assertEquals(what, HomeLayout.Share.THIRD, HomeSettings.layout.chatShare)
+            // the view: editAdopt (Discard's record = the real one), then (rebase first) the record as it is now laid on it
+            assertEquals(HomeLayoutStore.EditSave.LAY_ON, HomeLayoutStore.editSaveFor(o))
+            var back = HomeLayoutStore.lateSaved(o, saved)
+            val o2 = HomeLayoutStore.owner()
+            assertEquals(HomeLayoutStore.EditSave.SAME, HomeLayoutStore.editSaveFor(o2))
+            if (rebaseFirst) { val now = HomeLayoutStore.active(); back = HomeLayoutStore.layOn(back, persisted, now); persisted = now }
+            HomeSettings.saveLayout(HomeLayoutStore.editSave(o2, persisted, back)!!)       // Discard
+            val want = if (before) real.copy(xpBar = !real.xpBar) else real
+            assertEquals(what, want, HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String))
+            assertEquals(what, want, HomeSettings.layout)
+        }
+        // not a late key (the same owner, or nothing carried): the opening record as it is
+        fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        val o = HomeLayoutStore.owner()
+        assertEquals(HomeLayout(xpBar = false), HomeLayoutStore.lateSaved(o, HomeLayout(xpBar = false)))
+    }
+
     // ---------------------------------------------------------------- the DS toolbar follows the swap
 
     private val normal = mapOf(1 to "chat", 2 to "radial", 3 to "map", 4 to "home")

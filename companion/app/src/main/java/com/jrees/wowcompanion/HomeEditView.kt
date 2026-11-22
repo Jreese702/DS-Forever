@@ -1092,19 +1092,40 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     /** the finger that went down on Done (its long press runs: [Host.holdDone]) */
-    private var doneDown = false
+    var doneDown = false
+        private set
+    /** 1518: the finger slid off Done (its hold let go): its UP does nothing */
+    private var doneSlid = false
+
+    /** 1518: the finger on Done let go of (edit mode parked by a fight or a room, the chrome torn down): its hold goes, the ribbon's
+     *  next tap is a tap (never swallowed by a stale down) */
+    fun ribbonLetGo() {
+        doneSlid = false
+        if (!doneDown) return
+        doneDown = false; host.holdDone(false); invalidate()
+    }
 
     /**
-     * a finger on the ribbon (Strip px; [action] = MotionEvent's ACTION_DOWN / ACTION_UP / ACTION_CANCEL): Done - a tap is Done, a long
-     * press Discard (the host's hold timer) - and "+" the Add tray. True = the ribbon's
+     * a finger on the ribbon (Strip px; [action] = MotionEvent's ACTION_DOWN / ACTION_MOVE / ACTION_UP / ACTION_CANCEL): Done - a tap is
+     * Done, a long press Discard (the host's hold timer; 1518: a finger slid off Done by more than [TAP_SLOP] lets the hold go and its
+     * UP does nothing, iOS's long press) - and "+" the Add tray. True = the ribbon's
      */
     fun ribbonTouch(x: Float, y: Float, action: Int): Boolean {
-        if (action == MotionEvent.ACTION_CANCEL) { if (doneDown) { doneDown = false; host.holdDone(false) }; return true }
+        if (action == MotionEvent.ACTION_CANCEL) { ribbonLetGo(); return true }
         val m = host.liveModel ?: run { doneDown = false; return false }
         host.poke()
         val up = action == MotionEvent.ACTION_UP
-        if (m.parked || (!up && (y < 0f || y > Strip.TRACKS + Strip.RIBBON_SLOP))) return false
+        // 1518: parked meanwhile (a fight): the finger's UP / CANCEL clears its down, so the first tap after the fight is a tap
+        if (m.parked) { if (up) ribbonLetGo(); return false }
         val r = ribbon(width.toFloat().takeIf { it > 0f } ?: 1240f)
+        if (action == MotionEvent.ACTION_MOVE) {
+            // 1518: off Done by more than the tap slop: the hold goes (the ring, "Discard" back to Done); the UP then does nothing
+            if (doneDown && !RectF(r.doneHit).apply { inset(-TAP_SLOP, -TAP_SLOP) }.contains(x, y)) { ribbonLetGo(); doneSlid = true }
+            return true
+        }
+        if (up && doneSlid) { doneSlid = false; return true }
+        if (!up) doneSlid = false
+        if (!up && (y < 0f || y > Strip.TRACKS + Strip.RIBBON_SLOP)) return false
         val onDone = r.doneHit.contains(x, y)
         val onPlus = m.plusShown && r.plusHit.contains(x, y)
         if (!up) {

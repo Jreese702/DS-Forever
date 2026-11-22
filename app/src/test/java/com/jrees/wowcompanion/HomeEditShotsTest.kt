@@ -683,6 +683,95 @@ class HomeEditShotsTest {
         p.home.editCancel()
     }
 
+    /** 1518 (F3): the ribbon's slop (the rooms' row's top 14 px, so "+" and Done meet 48 px) never takes a down a room's "-" badge
+     *  claims: a hide tap on the end rooms' badges hides the room - never Done (the right end) nor the Add tray (the left end) */
+    @Test fun theRibbonsSlopLeavesTheBadgesTheirTaps() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), roomBar = true)
+        p.home.forceLive = true
+        drawStrip(p)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editAct { it.remove(EditStop.CAST) }; settle(); drawStrip(p)        // "+" on the ribbon too
+        assertTrue(model(p).plusShown)
+        val ev = p.home.editChrome
+        val r = ev.ribbon(W.toFloat())
+        val y = Strip.TRACKS + 4f                                                // inside the slop, inside the badges' boxes
+        var checked = 0
+        for ((what, hit) in listOf("Done" to r.doneHit, "the Add tray's +" to r.plusHit)) {
+            val room = p.strip.order.firstOrNull { RoomBar.canHide(it.name) && it.name !in model(p).draft.hidden &&
+                p.strip.badgeBox(it)?.let { b -> b.top <= y && b.bottom >= y && b.left < hit.right && b.right > hit.left } == true } ?: continue
+            val b = p.strip.badgeBox(room)!!
+            val x = (maxOf(b.left, hit.left) + minOf(b.right, hit.right)) / 2f
+            assertTrue("$what's hit covers the point", hit.contains(x, y))
+            assertTrue(p.strip.slopClaimed(x, y))
+            stripTouch(p, MotionEvent.ACTION_DOWN, x, y); stripTouch(p, MotionEvent.ACTION_UP, x, y); settle(); drawStrip(p)
+            assertTrue("$what: still editing", p.home.editing)
+            assertNull("$what: no tray", model(p).sheet)
+            assertTrue("$what: ${room.name} hidden by its badge", room.name in model(p).draft.hidden)
+            checked++
+        }
+        assertTrue("an end room's badge under the ribbon's slop", checked > 0)
+        // the slop over Done with no badge there is still Done's (the ribbon's own top: always the ribbon's)
+        stripTouch(p, MotionEvent.ACTION_DOWN, r.done.centerX(), r.done.centerY()); stripTouch(p, MotionEvent.ACTION_UP, r.done.centerX(), r.done.centerY())
+        settle()
+        assertFalse("a tap on Done: Done", p.home.editing)
+    }
+
+    /** 1518 (F4 / F5): a finger held on Done when a fight parks edit mode lets go (the first ribbon tap after the fight is a tap, not
+     *  swallowed); a finger slid off Done by more than the tap slop lets the hold go - no ring, no Discard at 600 ms, its UP nothing */
+    @Test fun doneHeldThroughAFightOrSlidOffLetsGo() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), roomBar = true)
+        val home = p.home
+        home.forceLive = true
+        drawStrip(p)
+        assertTrue(home.editOpen(EditStop.CHAT)); settle()
+        home.editAct { it.remove(EditStop.CAST) }; settle(); drawStrip(p)
+        val ev = home.editChrome
+        val r = ev.ribbon(W.toFloat())
+        val m = model(p)
+        for (upWhileParked in listOf(true, false)) {
+            // F4: the finger on Done, then a fight
+            assertTrue(stripTouch(p, MotionEvent.ACTION_DOWN, r.done.centerX(), r.done.centerY()))
+            assertTrue(ev.doneDown && p.strip.ribbonDown)
+            home.onFull(full(true), true); home.onQuests(quests(true), true); home.tick(); settle(); drawStrip(p)
+            assertTrue(m.parked)
+            assertFalse("parked: Done's down let go", ev.doneDown)
+            assertFalse("the chrome gone: the Strip keeps no ribbon finger", p.strip.ribbonDown)
+            assertNull(home.editHoldK())
+            if (upWhileParked) stripTouch(p, MotionEvent.ACTION_UP, r.done.centerX(), r.done.centerY())
+            home.onFull(full(false), true); home.onQuests(quests(false), true)
+            ShadowSystemClock.advanceBy(Duration.ofSeconds(25)); home.tick(); settle(); drawStrip(p)
+            assertFalse(m.parked)
+            assertTrue("no Discard from the held finger", home.editing)
+            // the first ribbon tap after the fight: "+" opens its tray (never swallowed)
+            stripTouch(p, MotionEvent.ACTION_DOWN, r.plus.centerX(), r.plus.centerY()); stripTouch(p, MotionEvent.ACTION_UP, r.plus.centerX(), r.plus.centerY())
+            settle()
+            assertEquals("up while parked $upWhileParked: the first tap is a tap", HomeEditModel.Sheet.ADD, m.sheet)
+            home.editKey("PAD2"); settle()
+            assertNull(m.sheet)
+        }
+        // F5: down on Done, the ring starts; the finger slides off: the hold goes, no Discard at 600 ms, the UP does nothing
+        assertTrue(stripTouch(p, MotionEvent.ACTION_DOWN, r.done.centerX(), r.done.centerY())); settle(12)
+        assertNotNull("the ring", home.editHoldK())
+        stripTouch(p, MotionEvent.ACTION_MOVE, r.done.centerX() + 6f, r.done.centerY()); settle(1)
+        assertNotNull("within the tap slop: the hold goes on", home.editHoldK())
+        stripTouch(p, MotionEvent.ACTION_MOVE, r.doneHit.left - HomeEditView.TAP_SLOP - 30f, r.done.centerY()); settle(1)
+        assertNull("slid off: no ring", home.editHoldK())
+        assertFalse(ev.doneDown)
+        settle(50)
+        assertTrue("no Discard at ${HomeEditModel.DISCARD_HOLD_MS} ms", home.editing)
+        stripTouch(p, MotionEvent.ACTION_MOVE, r.done.centerX(), r.done.centerY())
+        stripTouch(p, MotionEvent.ACTION_UP, r.done.centerX(), r.done.centerY()); settle()
+        assertTrue("its UP does nothing (back over Done too)", home.editing)
+        assertEquals(HomeLayout.CastDock.OFF, HomeSettings.layout.cast)
+        // a hold that stays on Done (a small slide): Discard as before
+        assertTrue(stripTouch(p, MotionEvent.ACTION_DOWN, r.done.centerX(), r.done.centerY())); settle(5)
+        stripTouch(p, MotionEvent.ACTION_MOVE, r.done.centerX() - 8f, r.done.centerY() + 4f)
+        settle(45)
+        assertFalse("held on Done: discarded", home.editing)
+        stripTouch(p, MotionEvent.ACTION_UP, r.done.centerX() - 8f, r.done.centerY() + 4f); settle()
+        assertEquals(HomeLayout.CastDock.UNDER_CHAT, HomeSettings.layout.cast)
+    }
+
     /** the review: in Spanish and French the ribbon's hints never run under the Home disc (the least needed pairs go first) */
     @Test fun theRibbonsHintsStayClearOfTheDiscInSpanishAndFrench() {
         try {
@@ -1050,6 +1139,31 @@ class HomeEditShotsTest {
         assertEquals("the session's change", share, k.chatShare)
         assertEquals("his own chat side kept", HomeLayout.Side.RIGHT, k.chatSide)
         assertEquals("his own rest kept", HomeRest.ROW, k.rest)
+    }
+
+    /** 1518 (F1): the same late key, then Discard: the character's own record comes back (his width, not the pending default's) - after
+     *  the rebase (settled when the key came) and before it (a widget lifted when the key came: the rebase waits for the drop) */
+    @Test fun aLateKeysDiscardPutsBackTheCharactersOwnRecord() {
+        for (liftedWhenKeyCame in listOf(false, true)) {
+            val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+            HomeLayoutStore.character("Korvash-Realm")
+            HomeLayoutStore.set(HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.THIRD, rest = HomeRest.ROW,
+                cast = HomeLayout.CastDock.UNDER_CHAT))
+            val own = rec("Korvash-Realm")
+            HomeLayoutStore.character(null, "Korvash"); settle()
+            assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+            p.home.editKey("PAD4"); settle()                                         // the width: a field his record has its own value for
+            assertNotEquals(HomeLayout.Share.THIRD, model(p).draft.chatShare)
+            if (liftedWhenKeyCame) { p.home.editKey("PAD1"); settle(); assertEquals(EditStop.CHAT, model(p).lifted) }
+            HomeLayoutStore.character("Korvash-Realm"); settle()
+            assertNotNull(p.home.editModel())
+            p.home.editAct { it.discard() }; settle()
+            assertNull(p.home.editModel())
+            assertEquals("lifted $liftedWhenKeyCame: his own record back", HomeLayoutJson.parse(own), HomeLayoutJson.parse(rec("Korvash-Realm")))
+            assertEquals(HomeLayout.Share.THIRD, HomeSettings.layout.chatShare)
+        }
+        // the store's prefs outlive this test's app (HomeSettings keeps the first one's): no record of Korvash's for the next test
+        HomeLayoutStore.character(null); storePrefs().edit().clear().commit(); HomeLayoutStore.resetDone()
     }
 
     /** a Layouts reset while edit mode is parked by the Settings room (the host's resetApply: editCancel first): nothing written after it */

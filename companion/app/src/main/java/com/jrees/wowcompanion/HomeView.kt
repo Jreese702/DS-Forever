@@ -2866,11 +2866,24 @@ class HomeView(
     private fun editRebase(m: HomeEditModel) {
         val prev = editPersisted ?: return
         val now = HomeLayoutStore.active()
-        if (HomeLayoutStore.editSaveFor(editOwner ?: return) == HomeLayoutStore.EditSave.LAY_ON) editOwner = HomeLayoutStore.owner()
+        editAdopt(m)
         if (now == prev) return
         m.rebase(now, HomeLayoutStore.layOn(m.saved, prev, now))
         editPersisted = now
         Log.i(TAG, "home edit: rebased on the record as it is now ${HomeLayoutJson.json(now)}")
+    }
+
+    /**
+     * 1518: the pending name's key came (the late key, [HomeLayoutStore.EditSave.LAY_ON]): the session's owner is the character's key from
+     * here, and the record Discard puts back is the character's REAL record with only the held changes of before the session on it
+     * ([HomeLayoutStore.lateSaved]) - never the pending default's values over the fields the session touched. Before any write or
+     * Discard under the new owner (the rebase, or a Discard that came first: a lift held when the key came)
+     */
+    private fun editAdopt(m: HomeEditModel) {
+        val o = editOwner ?: return
+        if (HomeLayoutStore.editSaveFor(o) != HomeLayoutStore.EditSave.LAY_ON) return
+        m.savedIs(HomeLayoutStore.lateSaved(o, m.saved))
+        editOwner = HomeLayoutStore.owner()
     }
 
     /**
@@ -2882,6 +2895,7 @@ class HomeView(
         val m = edit ?: return
         hold.cancel()
         if (write && !discard) editPersist(m, now = true)
+        if (write && discard) editAdopt(m)                                // 1518: a late key's Discard: the character's real record back
         // Discard: the opening record back, laid as the inverse of the session's net change over the record the store holds now (a
         // change made meanwhile kept); only to the record it was read under (another character's is never written)
         val back = if (write && discard) editPersisted?.let { prev -> editOwner?.let { o -> HomeLayoutStore.editSave(o, prev, m.saved) } } else null
@@ -2996,7 +3010,12 @@ class HomeView(
     /** the cursor on a widget with no box now (the card / the bar Off, Party mode's Hide): to "+" or the chat ([HomeEditModel.cursorCheck]) */
     private fun editCursorCheck(m: HomeEditModel) {
         if (m.cursor !in HomeEditModel.GONE_CHECKED) return
-        if (m.cursorCheck(editView.stops())) { Log.i(TAG, "home edit: the cursor's widget is gone: on ${m.cursor.name.lowercase()}"); editView.invalidate() }
+        val was = m.lifted
+        if (m.cursorCheck(editView.stops())) {
+            Log.i(TAG, "home edit: the cursor's widget is gone: on ${m.cursor.name.lowercase()}")
+            if (was != null && m.lifted == null) editLift(null)            // 1518: its lift ended too: no stale lifted pose
+            editView.invalidate()
+        }
     }
 
     /** one key of edit mode's (the guest's, Start from the host's reader, the tests) */
@@ -3136,7 +3155,13 @@ class HomeView(
     private fun editLift(s: EditStop?) {
         val t = motionNow()
         if (s != null) {
-            liftStop = s; liftKey = edit?.keyOf(s) ?: s.key
+            val k = edit?.keyOf(s) ?: s.key
+            // 1518: the drop's Lift and the new one come in one run (the model's state is the new lift's by then): once is enough
+            if (liftStop == s && liftKey == k && motion.lifted == k) { editKick(); editDecor(); return }
+            // 1518: another widget still in its lifted pose (a lift that replaced it): it plops into its dock first
+            liftStop?.let { was -> if (motion.lifted == liftKey && liftKey != k) {
+                motion.drop(liftKey, 0f, 0f, t); if (was == EditStop.QUEST) cardOwnTo(0f, t, CARD_RIDE_BACK) } }
+            liftStop = s; liftKey = k
             motion.lift(liftKey, t); if (s == EditStop.QUEST) cardOwnTo(1f, t, Motion.WIGGLE_IN)
         }
         else liftStop?.let { was ->
@@ -3334,7 +3359,7 @@ class HomeView(
         if (editAway) return
         val fight = fightShown()
         if (fight && !m.parked) {
-            hold.cancel()
+            hold.cancel(); editView.ribbonLetGo()                         // 1518: a finger held on Done lets go (no stale down after)
             m.park(); editPersist(m, now = true); liveDraft = null
             editRestSync()                                                // the saved rest for the fight (the draft's waits)
             editRoomBarSync(); editBarSync(Motion.COMBAT_GROW)
@@ -3366,7 +3391,7 @@ class HomeView(
     private fun editAwayPark() {
         editBackDue = false
         val m = edit ?: return
-        hold.cancel()
+        hold.cancel(); editView.ribbonLetGo()                             // 1518: a finger held on Done lets go (no stale down after)
         if (!m.parked) { m.park(); editPersist(m, now = true); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L); onEditLive?.invoke(false) }
         editAway = true
         chromeAnim?.cancel(); chromeA = 0f

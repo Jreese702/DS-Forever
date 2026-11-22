@@ -340,6 +340,40 @@ class HomeEditMotionShotsTest {
         shot(p, "m10_drop_settled")
     }
 
+    /** 1518 (F2): a lift that ends or is replaced by a touch - a tap on the map, a tap on a room, a room dragged, the lifted bar removed
+     *  - plops the old widget into its dock: never left grown, still and raised for the rest of the session */
+    @Test fun aLiftEndedByATouchNeverLeavesAStalePose() {
+        val cases = listOf<Triple<String, EditStop, (HomeEditModel) -> List<HomeEditModel.Fx>>>(
+            Triple("a tap on the map", EditStop.CHAT) { m -> m.tap(EditStop.MAP) },
+            Triple("a tap on a room", EditStop.CHAT) { m -> m.barTap(2) },
+            Triple("a room dragged", EditStop.CHAT) { m -> m.barDragStart(1, 100f, 1000f, HomeLayoutSolver.Box(60f, 960f, 140f, 1040f)) },
+            Triple("the lifted bar removed", EditStop.CAST) { m -> m.remove(EditStop.CAST) })
+        for ((what, s, act) in cases) {
+            val p = page(classic)
+            val home = p.home
+            pin(p)
+            val t0 = clock
+            home.editOpen(EditStop.CHAT)
+            settle(12)
+            frame(p, t0 + 2000)
+            home.editAct { it.startOn(s, true) }                                // A on it: lifted
+            assertEquals(what, s, model(p).lifted)
+            frame(p, t0 + 2300)
+            assertTrue("$what: lifted", home.editMotion().liftK(s.key, clock) > 0.9f)
+            home.editAct(act)
+            assertTrue("$what: the old lift is not the motion's", home.editMotion().lifted != s.key)
+            frame(p, t0 + 3300)
+            assertEquals("$what: plopped back", 0f, home.editMotion().liftK(s.key, clock), 1e-3f)
+            if (s == EditStop.CHAT) {
+                val v = views(home).getValue("CHAT")
+                assertEquals("$what: the chat at its rest size", Motion.REST_SCALE, v.scaleX, 0.02f)
+                assertEquals("$what: not raised", 0f, v.translationZ, 0f)
+            }
+            if (model(p).drag != null) home.editAct { it.dragCancel() }
+            home.editCancel()
+        }
+    }
+
     /** [v]'s drawn box (its pivot, scale, turn and translation; the AABB of the turned box), Home's px */
     private fun drawnBox(v: View): RectF {
         val m = android.graphics.Matrix()
