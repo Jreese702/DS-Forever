@@ -780,6 +780,17 @@ def hold_pin():
         (out_s and out_s.group(1), ms and ms.group(1)))
     chk("C. hold pin: TopSlide.WINGS_OUT is NB.easeIn's (0.4, 0, 1, 1)",
         "val WINGS_OUT = floatArrayOf(0.4f, 0f, 1f, 1f)" in kt and "function NB.easeIn(u) return NB.cubic(u, 0.4, 0, 1, 1) end" in ab)
+    # the 11-22 review: a reversal of the way up holds by how far in the Wings had got - TopSlide's copy of their way up is the add-on's
+    hold_in = re.search(r"NB\.TOP = \{[^}]*?HOLD_IN = ([0-9.]+)", ab)
+    in_s = re.search(r"NB\.TOP = \{[^}]*?IN_S = ([0-9.]+)", ab)
+    k_hold = re.search(r"const val WINGS_HOLD_IN_MS = (\d+)L", kt)
+    k_in = re.search(r"const val WINGS_IN_MS = (\d+)L", kt)
+    chk("C. hold pin: TopSlide.WINGS_HOLD_IN_MS / WINGS_IN_MS are the add-on's NB.TOP.HOLD_IN / IN_S",
+        None not in (hold_in, in_s, k_hold, k_in) and abs(float(hold_in.group(1)) * 1000 - int(k_hold.group(1))) < 0.5
+        and abs(float(in_s.group(1)) * 1000 - int(k_in.group(1))) < 0.5,
+        (hold_in and hold_in.group(1), in_s and in_s.group(1), k_hold and k_hold.group(1), k_in and k_in.group(1)))
+    chk("C. hold pin: TopSlide.WINGS_IN is NB.easeOut's (0, 0, 0.2, 1)",
+        "val WINGS_IN = floatArrayOf(0f, 0f, 0.2f, 1f)" in kt and "function NB.easeOut(u) return NB.cubic(u, 0, 0, 0.2, 1) end" in ab)
     off = float(re.search(r"const val WINGS_MOSTLY_OFF = ([0-9.]+)f", kt).group(1))
     allow = int(re.search(r"const val LATENCY_ALLOWANCE_MS = (\d+)L", kt).group(1))
     L = boot()

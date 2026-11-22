@@ -539,6 +539,28 @@ class CastStripModelTest {
         assertEquals(403, CastStripModel.shownSlot(off, 0, fight = true)?.id)
     }
 
+    /**
+     * the 11-22 review: In fights = Top screen keeps the bar in the fight whatever Show in combat says (TopCombatBar.stripCombat: STAY),
+     * but it shows the layer Show in combat arms - with Show off (the default) the add-on builds no fight cells (`show` absent), so the
+     * kept bar shows and casts each slot's OWN entry (never a fight slot it cannot cast); with Show on, the In-combat layer as ever
+     */
+    @Test fun aTopScreenFightKeepsTheBarOnTheLayerShowArms() {
+        val top = HomeLayout(fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.UNDER_CHAT)
+        val mode = TopCombatBar.stripCombat(top, partyOn = false, setting = CastStripModel.Combat.HIDE)
+        assertFalse("kept: not hidden in the Top fight", CastStripModel.hiddenIn(mode, fighting = true))
+        val fightNow = CastStripModel.showOf(mode)                            // CastStripView.fight's fightNow in the fight
+        val off = bar(fightDoc.replace("\"show\":1,", ""))
+        assertFalse(off.show)
+        assertEquals("Show off: slot 1's own spell shown", 403, CastStripModel.shownSlot(off, 0, fight = fightNow)?.id)
+        assertEquals("Show off: slot 1's own cell cast", CastStripModel.ROW to 0, CastStripModel.tapCell(off, 0, fight = fightNow))
+        assertNull("Show off: a fight slot over an empty slot is not offered", CastStripModel.tapCell(off, 1, fight = fightNow))
+        assertNull("Show off: no In-combat badge", CastStripModel.shownLayer(off, 0, fight = fightNow))
+        val on = bar(fightDoc)
+        assertEquals("Show on: the In-combat layer", 324, CastStripModel.shownSlot(on, 0, fight = fightNow)?.id)
+        assertEquals(CastStripModel.ROW to 9, CastStripModel.tapCell(on, 0, fight = fightNow))
+        assertEquals("f", CastStripModel.shownLayer(on, 0, fight = fightNow))
+    }
+
     @Test fun showInCombatIsCastBarCombat() {
         assertTrue(CastStripModel.showOf(CastStripModel.Combat.STAY))
         assertFalse(CastStripModel.showOf(CastStripModel.Combat.HIDE))

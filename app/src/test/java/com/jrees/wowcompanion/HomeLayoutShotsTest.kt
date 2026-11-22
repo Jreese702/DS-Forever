@@ -496,14 +496,89 @@ class HomeLayoutShotsTest {
         downHoldReversals(p, rest)
         reLayMidSlide(p, rb)
         moduleInATopFight(p)
-        // animations off (the system's duration scale 0): the band jumps
+        lateCutHolds(p, rest)
+        // the hold is WALL-clock time (the 11-22 review: folded into the animator it was scaled by the system's animator duration scale,
+        // the add-on's Wings never are): at 0.5x the band still waits DOWN_HOLD_MS after the fight's end, then slides at the scaled pace
+        animScale(0.5f)
+        try {
+            fightSignal(home, true)
+            for (i in 0 until 24) frame()
+            assertTrue("0.5x: landed away", p.cast.away)
+            val held = heldDown(home, rest)
+            assertTrue("0.5x: the band waited the whole wall-clock hold ($held ms, hold ${TopSlide.DOWN_HOLD_MS})",
+                held >= TopSlide.DOWN_HOLD_MS && held <= TopSlide.DOWN_HOLD_MS + 64L)
+        } finally { animScale(1f) }
+        // animations off (the system's duration scale 0): the band jumps - up at once; down after the same wall-clock hold
         animScale(0f)
         try {
             fightSignal(home, true)
             frame()
             assertEquals("animations off: away at once", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
             assertTrue(p.cast.away)
+            val held = heldDown(home, rest)
+            assertTrue("animations off: the band jumped back only after the Wings' hold ($held ms, hold ${TopSlide.DOWN_HOLD_MS})",
+                held >= TopSlide.DOWN_HOLD_MS && held <= TopSlide.DOWN_HOLD_MS + 32L)
+            frame()
+            assertEquals("animations off: back at rest in one jump", rest.getValue("BARS"), boxes(home).getValue("BARS"))
         } finally { animScale(1f) }
+    }
+
+    /** the band laid away: the fight ends; the ms (16 ms frames, from the takeover's drop) the band stays above the page, every one of
+     *  them with the columns grown and its cast given to the rooms' bar; then it comes down and lands at rest */
+    private fun heldDown(home: HomeView, rest: Map<String, RectF>): Long {
+        fightSignal(home, false)
+        var offAt: Int? = if (!home.flow.takeover) -1 else null
+        var downAt = -1
+        for (i in 0 until 400) {
+            frame()
+            if (i % 8 == 0) home.tick()
+            if (offAt == null && !home.flow.takeover) offAt = i
+            if (offAt != null && boxes(home).getValue("BARS").bottom > -16f + 0.01f) { downAt = i; break }
+            if (offAt != null) assertEquals("inside the hold (frame $i): the columns wait grown", 8f, boxes(home).getValue("CHAT").top, 0.01f)
+        }
+        assertTrue("the band came down", downAt >= 0 && offAt != null)
+        for (i in 0 until 40) frame()
+        assertEquals("landed at rest", rest.getValue("BARS"), boxes(home).getValue("BARS"))
+        return (downAt - offAt!!) * 16L
+    }
+
+    /**
+     * the 11-22 review: the fight's end LATE in the up-slide (a one-hit kill 200-230 ms in) - the band 90 % off the page, the Wings
+     * nearly all in on the top screen. It turned back down at once (no hold: the band had not landed), so both showed for several frames.
+     * Now it holds where it stands for TopSlide.reversalHoldMs of the up-slide's age (the Wings reversed from where they had got, mostly
+     * off), the columns with it, then comes down; an early cut (the blip above) turns back about at once.
+     */
+    private fun lateCutHolds(p: Page, rest: Map<String, RectF>) {
+        val home = p.home
+        val t0 = android.os.SystemClock.uptimeMillis()
+        fightSignal(home, true)
+        assertTrue(home.flow.takeover)
+        for (i in 0 until 20) { frame(); if (boxes(home).getValue("BARS").bottom < 30f) break }
+        val cut = boxes(home)
+        val cb = cut.getValue("BARS").bottom
+        assertTrue("late in the up-slide: mostly off the page, not landed ($cb)", cb < 30f && cb > -15f)
+        fightSignal(home, false)
+        assertFalse("the fight's end heard inside the up-slide", home.flow.takeover)
+        val upMs = android.os.SystemClock.uptimeMillis() - t0
+        val want = TopSlide.reversalHoldMs(upMs)
+        assertTrue("a late cut holds most of the way ($want ms at $upMs ms)", want >= 120L && want < TopSlide.DOWN_HOLD_MS)
+        var movedAt = -1
+        for (i in 0 until 60) {
+            frame()
+            val b = boxes(home)
+            if (b.getValue("BARS") != cut.getValue("BARS")) { movedAt = i; break }
+            assertEquals("held (frame $i): the chat waits with the band", cut.getValue("CHAT"), b.getValue("CHAT"))
+        }
+        val heldMs = (movedAt + 1) * 16L
+        assertTrue("the band held where it stood until the Wings were mostly off ($heldMs ms, want $want)", movedAt >= 0 && heldMs >= want)
+        assertTrue("then came down without waiting more ($heldMs, want $want; the animator's first frames as the hold test allows)", heldMs <= want + 64L)
+        val b1 = boxes(home).getValue("BARS").bottom
+        // (the first move: at most the ease-out's first frames from where it stood - the way down's fast start, not a jump)
+        val first = (rest.getValue("BARS").bottom - cb) * TopSlide.partK(48f / Motion.TOP_SLIDE_DOWN, up = false)
+        assertTrue("down from where it stood, no jump ($cb -> $b1, at most $first)", b1 >= cb - 0.01f && b1 - cb <= first)
+        for (i in 0 until 40) frame()
+        assertEquals("back at rest", rest.getValue("BARS"), boxes(home).getValue("BARS"))
+        assertFalse(p.cast.away)
     }
 
     /**

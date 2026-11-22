@@ -156,8 +156,12 @@ class TopSlideTest {
         // who holds
         assertEquals("a fresh way down from the band landed away", TopSlide.DOWN_HOLD_MS,
             TopSlide.holdMs(slide = true, isAway = false, bandOff = true, cutUp = false, cutHold = 0L, resumeAt = -1f))
-        assertEquals("a reversal: an up-slide cut on its way (the band partly on the page) turns back at once", 0L,
+        assertEquals("a reversal of an up-slide of no known age turns back at once", 0L,
             TopSlide.holdMs(slide = true, isAway = false, bandOff = false, cutUp = true, cutHold = 0L, resumeAt = -1f))
+        assertEquals("a reversal: an up-slide cut on its way waits as long as the Wings need", TopSlide.reversalHoldMs(230L),
+            TopSlide.holdMs(slide = true, isAway = false, bandOff = false, cutUp = true, cutHold = 0L, resumeAt = -1f, upMs = 230L))
+        assertEquals("a down-slide reversed (a glide's cut, not the way up): none", 0L,
+            TopSlide.holdMs(slide = true, isAway = false, bandOff = false, cutUp = false, cutHold = 0L, resumeAt = -1f, upMs = 230L))
         assertEquals("the way up never holds", 0L, TopSlide.holdMs(true, isAway = true, bandOff = false, cutUp = false, cutHold = 0L, resumeAt = -1f))
         assertEquals("a fight back inside the hold: up at once (nothing moved)", 0L,
             TopSlide.holdMs(true, isAway = true, bandOff = true, cutUp = false, cutHold = 120L, resumeAt = -1f))
@@ -173,6 +177,45 @@ class TopSlideTest {
         assertEquals(0.5f, TopSlide.afterHold(319f, 199L, 240L), 1e-5f)
         assertEquals(1f, TopSlide.afterHold(500f, 199L, 240L), 0f)
         assertEquals(0.5f, TopSlide.afterHold(120f, 0L, 240L), 1e-5f)
+    }
+
+    /**
+     * A REVERSAL WAITS AS LONG AS THE WINGS NEED (the 11-22 review: the fight's end 200-230 ms into the up-slide - the band ~93 % off the
+     * page, the Wings ~93 % in - turned the band back down at once; at +48 ms it was half back while the Wings still showed 85 %). The
+     * Wings' way up is the add-on's (HOLD_IN 60 ms, IN_S 0.26 s on NB.easeOut); reversed, they leave from where they are on the way
+     * down's curve. The band holds where it stands until they are mostly off, whatever the channel's delay on the fight's end.
+     */
+    @Test fun aLateReversalWaitsForTheWings() {
+        assertEquals(60L, TopSlide.WINGS_HOLD_IN_MS); assertEquals(260L, TopSlide.WINGS_IN_MS)       // ActionBar NB.TOP.HOLD_IN / IN_S
+        assertTrue(TopSlide.WINGS_IN.contentEquals(floatArrayOf(0f, 0f, 0.2f, 1f)))                  // NB.easeOut
+        assertEquals(0f, TopSlide.wingsIn(60L), 0f); assertEquals(1f, TopSlide.wingsIn(320L), 0f)
+        assertEquals("the review's figure: 93 % in at 230 ms", 0.93f, TopSlide.wingsIn(230L), 0.01f)
+        assertEquals(0L, TopSlide.wingsOutAt(1f)); assertEquals(TopSlide.WINGS_OUT_MS, TopSlide.wingsOutAt(0f))
+        // the hold: none before the Wings move or for no age; the whole one when they were all in; never more; never a step
+        assertEquals(0L, TopSlide.reversalHoldMs(-1L))
+        assertEquals("the Wings not started: at once", 0L, TopSlide.reversalHoldMs(50L))
+        assertEquals("all in: the whole hold", TopSlide.DOWN_HOLD_MS, TopSlide.reversalHoldMs(400L))
+        var was = 0L
+        for (up in 0L..400L) {
+            val h = TopSlide.reversalHoldMs(up)
+            assertTrue("up=$up: never less than an earlier cut's ($h < $was)", h >= was)
+            assertTrue("up=$up: no step ($was -> $h)", h - was <= 8L)
+            assertTrue(h in 0L..TopSlide.DOWN_HOLD_MS)
+            was = h
+        }
+        assertTrue("late (230 ms): most of the hold (${TopSlide.reversalHoldMs(230L)})", TopSlide.reversalHoldMs(230L) >= 140L)
+        // the property: cut at [up] on the add-on's clock (the Wings reverse at 0 from wingsIn(up)); the app hears it [lat] ms later,
+        // holds, then slides: the band's first move onto the page never comes before the Wings are mostly off
+        for (up in 0L..239L step 3) for (lat in listOf(0L, 16L, 40L, 90L)) {
+            val e0 = TopSlide.wingsOutAt(TopSlide.wingsIn(up))
+            val hold = TopSlide.reversalHoldMs(up)
+            for (t in 0L..600L) {
+                val slideT = t - lat - hold
+                if (slideT <= 0L) continue
+                val shown = 1f - TopSlide.wingsOff(minOf(e0 + t, TopSlide.WINGS_OUT_MS))
+                assertTrue("up=$up lat=$lat t=$t: the band moved while the Wings showed $shown", shown <= 1f - TopSlide.WINGS_MOSTLY_OFF + 0.005f)
+            }
+        }
     }
 
     /**

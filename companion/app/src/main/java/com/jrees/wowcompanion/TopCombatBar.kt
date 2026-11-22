@@ -62,10 +62,15 @@ object TopCombatBar {
      * THE TAP-TO-CAST BAR STAYS IN A TOP-SCREEN FIGHT (the 11-22 check of the slide's shots: the bar under the chat was gone in the
      * fight - Settings > Tap-to-cast bar > Show in combat Off, its default, slid it down behind the room bar). Tap-to-cast is a fight
      * tool, and with Top screen the band leaves the bottom screen in a fight, so the bar is the bottom screen's one fight control: it
-     * STAYS - seen, its fight layer shown, tappable - with its column, wherever its dock puts it (under / above the chat or the map,
-     * across, Split), whatever Show in combat says. [l] the record as the page lays it (TopCombatBar.honoured: Top screen only while the
-     * add-on's Wings are on); Party mode ([partyOn]) has no Top-screen takeover (the band stays: the setting and Bar in Party mode rule
-     * as ever). Grow and Same size keep Show in combat as it is.
+     * STAYS - seen and tappable - with its column, wherever its dock puts it (under / above the chat or the map, across, Split), whatever
+     * Show in combat says. WHAT IT SHOWS (the 11-22 review): the layer the player's Show in combat arms, as in any fight - Show on, its
+     * In-combat layer (CastStripModel.Bar.show: the add-on built the fight cells); Show off (the default), THE BAR'S OWN SLOTS: the
+     * In-combat layer stays unarmed (the add-on builds no wc-f- cells while Show in combat is off, and the room locks that layer:
+     * cb-hidden), so CastStripModel.shownSlot / tapCell fall through to each slot's own entry - what is drawn is what is cast. Keeping the
+     * bar never arms that layer behind the player's back: Show in combat IS the add-on's castBarShow (D4), the Controller room's In combat
+     * check box and its lock, which ControllerView re-asserts from the app's setting. [l] the record as the page lays it
+     * (TopCombatBar.honoured: Top screen only while the add-on's Wings are on); Party mode ([partyOn]) has no Top-screen takeover (the
+     * band stays: the setting and Bar in Party mode rule as ever). Grow and Same size keep Show in combat as it is.
      */
     fun stripStays(l: HomeLayout, partyOn: Boolean): Boolean = wanted(l) && !partyOn
     /** the tap-to-cast bar's fight rule for [l]: STAY when [stripStays], else the player's [setting] */

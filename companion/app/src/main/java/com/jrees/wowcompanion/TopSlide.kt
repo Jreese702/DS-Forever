@@ -10,8 +10,10 @@ package com.jrees.wowcompanion
  * page then read as two objects); at the fight's end the reverse - the band comes back down on the ease-out ([DOWN], Motion.curveEnter),
  * the columns with it. The add-on's Wings slide in upward from the top screen's bottom edge at the same moment (ActionBar nbar11: a
  * 60 ms hold, 0.26 s ease-out), so the band reads as one object crossing the seam: accelerating off the bottom screen, decelerating onto
- * the top one. The way down HOLDS first until the Wings are mostly off the top screen ([DOWN_HOLD_MS]). A reversal mid-way starts from
- * where every part is (HomeView: from = now). "Animations off" (the system's duration scale 0) ends the animator at once: the band jumps.
+ * the top one. The way down HOLDS first until the Wings are mostly off the top screen ([DOWN_HOLD_MS]; a reversal of the way up as long
+ * as the Wings need, [reversalHoldMs]). A reversal mid-way starts from where every part is (HomeView: from = now). The hold is wall-clock
+ * time (HomeView posts the slide's start: the add-on's Wings run in real time, never on the system's animator duration scale); the slide
+ * itself follows that scale - "Animations off" (0) lands it in one frame: the band jumps, after the hold on the way down.
  *
  * Pure (no Android types; the curves are evaluated here as Android's PathInterpolator evaluates them), so the plain JVM tests pin them.
  */
@@ -72,9 +74,13 @@ object TopSlide {
      * app hears the fight's end, as if it heard it the very frame the Wings start (the add-on sends the edge on its next frame, the
      * channel adds its 40-90 ms: the app always hears it later, so the Wings are further off than that), plus [LATENCY_ALLOWANCE_MS] for
      * the add-on stepping its slide by whole game frames (a frame late on a slow one). Every part waits with the band (the columns stay
-     * grown under it: one motion). A reversal mid-slide never waits: an up-slide cut by the fight's end turns back down at once from
-     * where it stands (the Wings were not all up either), and a fight coming back inside the hold keeps the band away (nothing moved).
-     * The way up keeps no hold (the Wings wait 60 ms for the band: ActionBar HOLD_IN).
+     * grown under it: one motion). A fight coming back inside the hold keeps the band away (nothing moved). The way up keeps no hold
+     * (the Wings wait 60 ms for the band: ActionBar HOLD_IN).
+     * A REVERSAL WAITS AS LONG AS THE WINGS NEED (the 11-22 review: an up-slide cut late - a one-hit kill 200-230 ms in - left the band
+     * 93 % off the page and the Wings 93 % in, and the band turned back down at once: at +48 ms it was half back while the Wings were
+     * still 85 % shown). An up-slide cut by the fight's end holds [reversalHoldMs] where it stands: the time the Wings, reversed from
+     * as far in as they had got ([wingsIn] at the up-slide's wall-clock age), take to be mostly off, plus the same allowance - the
+     * whole [DOWN_HOLD_MS] when they were all in, nothing when they had barely started (an early cut turns back at once, as before).
      */
     const val WINGS_OUT_MS = 200L
     /** the Wings' way down: NB.easeIn (0.4, 0, 1, 1), the same curve as [UP] */
@@ -91,15 +97,31 @@ object TopSlide {
     /** the down-slide's hold (about 199 ms) */
     val DOWN_HOLD_MS: Long = WINGS_MOSTLY_OFF_MS + LATENCY_ALLOWANCE_MS
 
+    /** the Wings' way up: ActionBar NB.TOP.HOLD_IN (0.06 s) then NB.TOP.IN_S (0.26 s) on NB.easeOut (0, 0, 0.2, 1), the same curve as [DOWN] */
+    const val WINGS_HOLD_IN_MS = 60L
+    const val WINGS_IN_MS = 260L
+    val WINGS_IN = floatArrayOf(0f, 0f, 0.2f, 1f)
+    /** how far in the Wings are (0 under the edge .. 1 at their spot) [upMs] after the fight's start, counted on the band's clock: the
+     *  add-on hears both edges of the fight before the app by about the same channel delay, so the Wings' age at their reversal is the
+     *  band's up-slide age at its own */
+    fun wingsIn(upMs: Long): Float = cubic((upMs - WINGS_HOLD_IN_MS) / WINGS_IN_MS.toFloat(), WINGS_IN)
+    /** where on a whole way down ([wingsOff]'s ms) the Wings reversed from [k] in stand: the add-on goes on from where they are (NB.slideT) */
+    fun wingsOutAt(k: Float): Long = (0L..WINGS_OUT_MS).first { 1f - wingsOff(it) <= k }
+    /** an up-slide [upMs] old (wall clock) turned back down by the fight's end: the hold until the Wings, reversed from where they
+     *  stood, are mostly off (+ the allowance); 0..[DOWN_HOLD_MS], continuous (no step where the Wings cross "mostly") */
+    fun reversalHoldMs(upMs: Long): Long =
+        if (upMs < 0L) 0L else (WINGS_MOSTLY_OFF_MS - wingsOutAt(wingsIn(upMs)) + LATENCY_ALLOWANCE_MS).coerceIn(0L, DOWN_HOLD_MS)
+
     /**
      * the hold before this motion's parts move: a fresh way down ([slide], not [isAway]) with the band wholly above the page now
      * ([bandOff]: its bottom at or over the frame's top edge less [HomeLayoutSolver.AWAY_PAST] - landed away, or held there) waits
-     * [DOWN_HOLD_MS]; a down-slide re-laid inside its hold ([resumeAt] >= 0, the cut one going down) waits what was left of it
-     * ([cutHold]); a reversal (an up-slide cut on its way: the band partly on the page), the way up, a glide: none
+     * [DOWN_HOLD_MS]; a reversal (an up-slide cut on its way, [cutUp], [upMs] old on the wall clock: the band partly on the page)
+     * [reversalHoldMs]; a down-slide re-laid inside its hold ([resumeAt] >= 0, the cut one going down) waits what was left of it
+     * ([cutHold]); the way up, a glide: none
      */
-    fun holdMs(slide: Boolean, isAway: Boolean, bandOff: Boolean, cutUp: Boolean, cutHold: Long, resumeAt: Float): Long = when {
+    fun holdMs(slide: Boolean, isAway: Boolean, bandOff: Boolean, cutUp: Boolean, cutHold: Long, resumeAt: Float, upMs: Long = -1L): Long = when {
         isAway -> 0L
-        slide -> if (bandOff) DOWN_HOLD_MS else 0L
+        slide -> if (bandOff) DOWN_HOLD_MS else if (cutUp) reversalHoldMs(upMs) else 0L
         resumeAt >= 0f && !cutUp -> cutHold.coerceIn(0L, DOWN_HOLD_MS)
         else -> 0L
     }

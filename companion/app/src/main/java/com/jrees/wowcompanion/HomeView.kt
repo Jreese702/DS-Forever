@@ -1736,6 +1736,26 @@ class HomeView(
     private var slideCutUp = false
     /** the down-slide's hold left (ms) when the next apply cut it inside it (TopSlide.holdMs: a re-lay then waits only what was left) */
     private var slideCutHold = 0L
+    /** THE HOLD ON THE WALL CLOCK (the 11-22 review: folded into the ValueAnimator's duration, the system's animator duration scale cut
+     *  it - 0.5x halved it, "Animations off" dropped it - while the add-on's Wings leave in real time): a held slide's animator is started
+     *  by [holdRun] after the hold, posted on the main looper; [holdUntil] / [holdFrom] / [holdUp] say where a cut finds it ([holdCut]) */
+    private val holdHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var holdRun: Runnable? = null
+    private var holdUntil = 0L
+    private var holdFrom = 0f
+    private var holdUp = false
+    /** the wall-clock start of the last up-slide (TopSlide.reversalHoldMs: how far in the Wings had got when the fight's end cut it); -1 = none */
+    private var upSlideAt = -1L
+    /** a held slide this apply cuts inside its hold: never started (a cancel would tell its listeners nothing), it is ended as a
+     *  running one is - its cancel and end run (the motion's clean-up), then the hold it had left is noted for the next motion */
+    private fun holdCut() {
+        val r = holdRun ?: return
+        holdHandler.removeCallbacks(r); holdRun = null
+        val a = anim; anim = null
+        a?.listeners?.toList()?.forEach { it.onAnimationCancel(a); it.onAnimationEnd(a) }
+        slideCutAt = holdFrom; slideCutUp = holdUp
+        slideCutHold = (holdUntil - SystemClock.uptimeMillis()).coerceAtLeast(1L)
+    }
     /** P2: the last [places] laid the tap-to-cast bar split in two halves */
     private var laidSplit = false
     /** the last [places] laid the bar at the top of its column (Above chat / Above map): hidden, it slides up behind the band */
@@ -1810,7 +1830,8 @@ class HomeView(
     /** the bar's side and its fight rule now: the player's, or a preview look's (Hide with it) */
     private fun castSideNow(): CastStripModel.Side = layoutNow().castSide
     // In fights = Top screen (TopCombatBar.stripStays): the band leaves the bottom screen in the fight, the bar stays whatever Show in
-    // combat says (its fight layer, its touches, its dock); the cast bar question's picture keeps its own Hide
+    // combat says (its touches, its dock; its In-combat layer only when Show in combat armed it, else its own slots); the cast bar question's
+    // picture keeps its own Hide
     private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE
         else TopCombatBar.stripCombat(layoutNow(), partyOnHere(), HomeSettings.castBarCombat)
 
@@ -1917,6 +1938,7 @@ class HomeView(
         watchB((s.full == HomeModule.CHAT || s.full == HomeModule.MAP) && !s.takeover && lent(mapView))
         val w = width.toFloat(); val h = frameH
         slideCutAt = -1f; slideCutHold = 0L
+        holdCut()
         anim?.cancel()
         // a slide THIS cancel just cut short (its overall fraction and way; -1 = none; the hold it had left)
         val cutAt = slideCutAt; val cutUp = slideCutUp; val cutHold = slideCutHold; slideCutAt = -1f; slideCutHold = 0L
@@ -1937,8 +1959,12 @@ class HomeView(
         val sliding = slide || resumeAt >= 0f
         val slideFrom = if (slide) 0f else resumeAt.coerceAtLeast(0f)      // the slide's fraction this motion starts at
         // the way down waits for the Wings to be mostly off the top screen (TopSlide.DOWN_HOLD_MS; the band and the Wings never both
-        // show): a fresh way down from the band landed away, or what was left of that hold; a reversal mid-slide goes at once
-        val hold = if (sliding) TopSlide.holdMs(slide, away, TopSlide.bandOff(now[Part.BARS]?.bottom), cutUp, cutHold, resumeAt) else 0L
+        // show): a fresh way down from the band landed away, or what was left of that hold; an up-slide turned back by the fight's end
+        // as long as the Wings, reversed from as far in as they had got, need (its wall-clock age; an early cut: at once)
+        val clock = SystemClock.uptimeMillis()
+        val upMs = if (cutUp && cutAt >= 0f && upSlideAt >= 0L) clock - upSlideAt else -1L
+        val hold = if (sliding) TopSlide.holdMs(slide, away, TopSlide.bandOff(now[Part.BARS]?.bottom), cutUp, cutHold, resumeAt, upMs) else 0L
+        if (slide) upSlideAt = if (away) clock else -1L
         // the down-slide's start (or the band on the page); held, the band stays away above the page - its cast bar given to the rooms'
         // bar - until the hold ends (below), so the player's cast never leaves the bottom screen
         if (lent(castView) && !laidAway && hold == 0L) castView.away = false
@@ -2031,7 +2057,7 @@ class HomeView(
         val springs = !morphing && !combat && !sliding && !gliding && editGlides() && motion.on && motion.scale > 0f
         if (!springs) partVel.clear()
         val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
-        val dur = if (springs) HomeEditMotion.glideMs(ms) else ms + hold
+        val dur = if (springs) HomeEditMotion.glideMs(ms) else ms          // (a hold waits before start(), on the wall clock: below)
         var cancelled = false
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = dur
@@ -2044,8 +2070,8 @@ class HomeView(
                 else if (sliding) for (p in from.keys) {
                     val f = from[p]!!
                     val t = to[p] ?: f
-                    // (the hold first: every part stays where it stands, then the slide's own time)
-                    val q = TopSlide.resumeK(TopSlide.afterHold(a.animatedFraction * dur, hold, ms), slideFrom, away)
+                    // (a hold ran before the animator started: every part stood where it was; now the slide's own time)
+                    val q = TopSlide.resumeK(a.animatedFraction, slideFrom, away)
                     if (hold > 0L && !away && q > 0f && lent(castView)) castView.away = false    // the hold over: the band draws again
                     now[p] = RectF(lerp(f.left, t.left, q), lerp(f.top, t.top, q), lerp(f.right, t.right, q), lerp(f.bottom, t.bottom, q))
                 }
@@ -2054,7 +2080,7 @@ class HomeView(
                     val t = to[p] ?: f
                     now[p] = RectF(lerp(f.left, t.left, k), lerp(f.top, t.top, k), lerp(f.right, t.right, k), lerp(f.bottom, t.bottom, k))
                 }
-                val t = a.animatedFraction * dur - hold               // the time in, linear (the slide's own, past its hold)
+                val t = a.animatedFraction * dur                      // the time in, linear (the slide's own, past its hold)
                 overlayOut = (1f - t / fadeMs).coerceIn(0f, 1f)
                 overlayIn = ((t - (ms - FADE_MS)) / FADE_MS).coerceIn(0f, 1f)
                 for (p in gone) if (!(gliding && p == Part.CHAT_FULL)) views[p]?.alpha = overlayOut
@@ -2073,9 +2099,8 @@ class HomeView(
                     cancelled = true
                     // a slide cut short: the next apply goes on with it if it keeps the way ([TopSlide.resumeAt])
                     if (sliding) {
-                        val tIn = (a as ValueAnimator).animatedFraction * dur
-                        slideCutAt = TopSlide.overall(TopSlide.afterHold(tIn, hold, ms), slideFrom); slideCutUp = away
-                        slideCutHold = if (tIn < hold) Math.round(hold - tIn.toDouble()).coerceAtLeast(1L) else 0L
+                        slideCutAt = TopSlide.overall((a as ValueAnimator).animatedFraction, slideFrom); slideCutUp = away
+                        slideCutHold = 0L                            // (past its hold: a cut inside it is [holdCut]'s)
                     }
                 }
                 override fun onAnimationEnd(a: Animator) {
@@ -2101,7 +2126,14 @@ class HomeView(
                     invalidate()
                 }
             })
-            start()
+            if (hold > 0L) {
+                // the hold on the WALL clock (the Wings run in real time; an animator's own delay would be scaled by the system's
+                // animator duration scale): every part stands where it is until the slide starts
+                val va = this
+                val r = object : Runnable { override fun run() { if (holdRun === this) { holdRun = null; va.start() } } }
+                holdRun = r; holdUntil = clock + hold; holdFrom = slideFrom; holdUp = away
+                holdHandler.postDelayed(r, hold)
+            } else start()
         }
         invalidate()
     }
