@@ -112,8 +112,9 @@ class HomeEditWiringTest {
         val glide = body(host, "private fun chatGlideStart(")
         assertTrue(glide.contains("content.height - (lp?.let { it.topMargin + it.bottomMargin } ?: 0)"))
         assertFalse(glide.contains("?: content.height)"))
-        // the party module dimmed in edit mode (its own gold row box is never a second cursor)
-        assertTrue(editView.contains("dimRect(c, it, null)\n            frame(c, it, light = false)"))
+        // the party module's own gold row box is never a second cursor in edit mode; after 1518 it is a widget (dimmed, framed and
+        // tagged as the others, a stop: the user's ruling 2026-11-22)
+        assertTrue(editView.contains("p[HomePart.PARTY]?.let { putBox(EditStop.PARTY, it) }"))
         assertTrue(home.contains("partyView.boxShown = { !editLive() }"))
     }
 

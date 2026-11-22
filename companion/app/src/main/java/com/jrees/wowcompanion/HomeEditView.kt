@@ -20,8 +20,8 @@ import kotlin.math.min
  * part, the frame's size: Home stays LIVE and FULL SIZE under it (D6) - what you edit is what you get, touch targets keep their size.
  *
  *  - every widget that is not selected is dimmed (black 70 / 255) with a soft dashed ink frame and its terse tag; a rider inside a
- *    widget (the quest card on the map) a lighter inner frame; the party module (Party mode) a dashed frame only (it follows the chat:
- *    never a stop);
+ *    widget (the quest card on the map) a lighter inner frame; the party list (Party mode's module) is a widget like the others since
+ *    the user's ruling 2026-11-22 after 1518 (the top or the foot of either column), its tag clear of its Select tab;
  *  - THE TOP BAR STAYS STILL (1518 build 3, the user's ruling 2026-11-21; the user's ruling 2026-11-22 after 1518: "What the hell is the
  *    dpad swapping buttons or clock move? ... remove that"): the band wears nothing - no dim, no dashed frame, no tag, no Clock box, no
  *    wiggle, no badge - and has no stops: a finger on it finds nothing; its options live in Settings > Bottom screen;
@@ -142,6 +142,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         p[HomePart.CHAT]?.let { putBox(EditStop.CHAT, it) }
         p[HomePart.MAP]?.let { putBox(EditStop.MAP, it) }
         p[HomePart.QUESTS]?.let { putBox(EditStop.QUEST, it) }
+        // after 1518: the party list is a widget (the top or the foot of either column)
+        p[HomePart.PARTY]?.let { putBox(EditStop.PARTY, it) }
         val bs = castNow(p)
         if (bs.isNotEmpty()) { val o = putBox(EditStop.CAST, bs[0]); for (i in 1 until bs.size) o.union(bs[i]) }
         return wbNow
@@ -270,6 +272,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         EditStop.MAP -> HomePart.MAP
         EditStop.QUEST -> HomePart.QUESTS
         EditStop.CAST -> HomePart.STRIP
+        EditStop.PARTY -> HomePart.PARTY
         else -> null
     }
     /** a canvas save with [s]'s pose on it (restore with the count returned) */
@@ -324,21 +327,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             if (s == EditStop.CAST) { for (i in cast.indices) dimRect(c, cast[i], null) } else dimRect(c, r, keep)
             c.restoreToCount(sv)
         }
-        // the party module (Party mode): its dashed frame only, never a stop (it follows the chat)
-        // its tag on the rows' end, clear of the Select tab (on the screen's edge side: PartyLayout's tab)
-        p[HomePart.PARTY]?.let {
-            val sv = posed(c, HomePart.PARTY)
-            // fix round 1: dimmed as every widget that is not picked (it never is: its own gold row box must not read as a second cursor)
-            dimRect(c, it, null)
-            frame(c, it, light = false)
-            val tabRight = it.right > width - UiKit.MODULE_GAP - 8f
-            val tabLeft = it.left < UiKit.MODULE_GAP + 8f
-            val inner = scratch2; inner.set(it)
-            if (tabRight) inner.right -= PartyLayout.TAB_W + PartyLayout.TAB_GAP
-            else if (tabLeft) inner.left += PartyLayout.TAB_W + PartyLayout.TAB_GAP
-            tag(c, inner, "Party", false, Corner.TOP_RIGHT)
-            c.restoreToCount(sv)
-        }
         // 2. the dashed ink frames and the tags (where they hide nothing: the map's bottom left, the card's top right, the bar's on its top
         // edge); a rider moves with its lifted host
         tagN = 0
@@ -347,7 +335,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             val sv = posed(c, s)                                            // a rider rides its host's pose (HomeView resolves it)
             if (s != sel) { if (s == EditStop.CAST) for (i in cast.indices) frame(c, cast[i], light = rider) else frame(c, r, light = rider) }
             c.restoreToCount(sv)
-            addTag(s, if (s == EditStop.CAST && cast.isNotEmpty()) cast[0] else r, s == sel)
+            addTag(s, if (s == EditStop.CAST && cast.isNotEmpty()) cast[0] else if (s == EditStop.PARTY) partyRows(r) else r, s == sel)
         }
         // the divider's handle
         dividerNow(p)?.let { d -> handle(c, d, sel == EditStop.DIVIDER || m.drag?.stop == EditStop.DIVIDER) }
@@ -423,6 +411,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             }
         }
     }
+    /** the party list's box less its Select tab (its tag on the rows' end, clear of the tab on the screen's edge: PartyLayout's) */
+    private fun partyRows(r: RectF): RectF {
+        val inner = scratch3; inner.set(r)
+        val w = width.toFloat().takeIf { it > 0f } ?: 1240f
+        if (r.right > w - UiKit.MODULE_GAP - 8f) inner.right -= PartyLayout.TAB_W + PartyLayout.TAB_GAP
+        else if (r.left < UiKit.MODULE_GAP + 8f) inner.left += PartyLayout.TAB_W + PartyLayout.TAB_GAP
+        return inner
+    }
+    private val scratch3 = RectF()
     /** a tag drawn over the lifted widget (its own, or the card's riding the lifted map) */
     private fun liftedTag(s: EditStop, lifted: EditStop?, cardOnMap: Boolean) =
         s == lifted || (lifted == EditStop.MAP && s == EditStop.QUEST && cardOnMap)
@@ -436,6 +433,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             EditStop.MAP -> b[HomePart.MAP]?.let { listOf(r(it)) }
             EditStop.QUEST -> b[HomePart.QUESTS]?.let { listOf(r(it)) }
             EditStop.CAST -> listOfNotNull(b[HomePart.STRIP], b[HomePart.CAST2]).map { r(it) }
+            EditStop.PARTY -> b[HomePart.PARTY]?.let { listOf(r(it)) }
             else -> null
         }
     }
@@ -469,13 +467,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, BOTTOM_CENTRE, FOOT_LEFT, TOP_EDGE, TOP_EDGE_RIGHT }
     /** where each widget's tag stands (clear of what it shows) */
     private val CORNERS = mapOf(EditStop.CHAT to Corner.TOP_RIGHT, EditStop.MAP to Corner.BOTTOM_LEFT, EditStop.QUEST to Corner.TOP_RIGHT,
-        EditStop.CAST to Corner.TOP_EDGE)
+        EditStop.CAST to Corner.TOP_EDGE, EditStop.PARTY to Corner.TOP_RIGHT)
 
     /** fix round 1: where [s]'s tag stands on its box [r]: the chat's and the card's top right inside a wide column, ON the frame's top
      *  edge in a narrow one (a third: the card's title and the chat's lines reach that corner there; the tag must hide nothing) */
     fun cornerOf(s: EditStop, r: RectF): Corner {
         // a bar at the top of its column: its tag on its FOOT edge (the top edge is the band's foot 8 px over it)
         if (s == EditStop.CAST && host.model?.draft?.cast?.top == true) return Corner.FOOT_LEFT
+        // the party list's inside its rows' top right at any width (its top edge may be the band's foot, 8 px over it)
+        if (s == EditStop.PARTY) return Corner.TOP_RIGHT
         val at = CORNERS[s] ?: Corner.TOP_LEFT
         return if (at == Corner.TOP_RIGHT && r.width() < NARROW_TAG_W) Corner.TOP_EDGE_RIGHT else at
     }
@@ -621,8 +621,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val bars = p[HomePart.BARS]
         val top = (bars?.bottom ?: 226f) + g
         val cardHost = if (host.model?.draft?.card == HomeLayout.CardDock.ABOVE_CHAT) map else chat
-        val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST
-        val hostCol = when (s) { EditStop.CHAT -> map; EditStop.MAP -> chat; EditStop.QUEST -> cardHost; else -> null }
+        val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST || s == EditStop.PARTY
+        // the party list's over the column it is not in
+        val partyHost = if (host.model?.draft?.party?.column == HomeModule.MAP) chat else map
+        val hostCol = when (s) { EditStop.CHAT -> map; EditStop.MAP -> chat; EditStop.QUEST -> cardHost; EditStop.PARTY -> partyHost; else -> null }
         val topBar = topCastBox(p)
         // the horizontal extent and the room it has vertically
         var box: RectF
@@ -965,17 +967,22 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.cursor == EditStop.ROOMS && m.barOnPlus -> listOf(a to "Add")
             m.cursor == EditStop.ROOMS && m.barRoom?.let { RoomBar.canHide(it) } == true -> listOf(a to "Move", x to "Hide")
             m.cursor == EditStop.ROOMS -> listOf(a to "Move")
-            m.lifted != null -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
+            // the chat and the map move sideways only; the card, the bar and the party list all four ways (after 1518: the bar's way to
+            // the top was never shown)
+            m.lifted == EditStop.CHAT || m.lifted == EditStop.MAP -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
+            m.lifted != null -> listOf(DPAD4 to "Move", a to "Drop", b to "Put back")
             // at the top level B is Done: the Done button wears its glyph (no "Done" hint beside it)
             m.cursor == EditStop.PLUS -> listOf(a to "Add")
             // Done as a stop: A is Done (its button says so), X Discard
             m.cursor == EditStop.DONE -> listOf(x to "Discard")
             m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width")
+            // the party list has no size (its rows are Party mode's)
+            m.cursor == EditStop.PARTY -> listOf(a to "Move", x to "Options")
             else -> listOf(a to "Move", x to "Options", y to "Size")
         }
     }
 
-    /** one hint's glyph width ([DPAD]: Left and Right side by side) */
+    /** one hint's glyph width ([DPAD]: Left and Right side by side; [DPAD4]: one four-way cross) */
     private fun glyphW(g: String): Float = if (g == DPAD) 2f * GLYPH + 2f else GLYPH
     /** the hints' width with the first [n] of [pairs] in paint [p] */
     private fun hintsW(pairs: List<Pair<String, String>>, n: Int, p: Paint): Float {
@@ -1005,6 +1012,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             x -= 6f + GLYPH / 2f
             when (glyph) {
                 DPAD -> { UiKit.pad(c, "gen_right", x, cy, GLYPH); x -= GLYPH + 2f; UiKit.pad(c, "gen_left", x, cy, GLYPH) }
+                DPAD4 -> dpad4(c, x, cy, GLYPH)
                 else -> UiKit.pad(c, glyph, x, cy, GLYPH)
             }
             x -= GLYPH / 2f + 18f
@@ -1021,6 +1029,26 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         var n = pairs.size
         while (n > 1 && hintsW(pairs, n, p) > room) n--
         return n
+    }
+
+    /** a lifted widget that moves all four ways (the card, the bar, the party list): ONE cross with its four arms lit (each direction's
+     *  glyph lights its own arm: each drawn clipped to its arm's quarter, the triangles from the cross's centre) */
+    private val armClip = Path()
+    private fun dpad4(c: Canvas, cx: Float, cy: Float, size: Float) {
+        val h = size / 2f
+        for (i in 0 until 4) {
+            armClip.reset(); armClip.moveTo(cx, cy)
+            when (i) {
+                0 -> { armClip.lineTo(cx - h, cy - h); armClip.lineTo(cx - h, cy + h) }      // left
+                1 -> { armClip.lineTo(cx - h, cy - h); armClip.lineTo(cx + h, cy - h) }      // up
+                2 -> { armClip.lineTo(cx + h, cy - h); armClip.lineTo(cx + h, cy + h) }      // right
+                else -> { armClip.lineTo(cx - h, cy + h); armClip.lineTo(cx + h, cy + h) }   // down
+            }
+            armClip.close()
+            val sv = c.save(); c.clipPath(armClip)
+            UiKit.pad(c, DPAD4_ARMS[i], cx, cy, size)
+            c.restoreToCount(sv)
+        }
     }
 
     /** the finger that went down on Done (its long press runs: [Host.holdDone]) */
@@ -1308,7 +1336,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
 
     companion object {
         /** the stops a finger finds, first first (the riders over the modules; the band is none) */
-        private val TOUCH_ORDER = listOf(EditStop.QUEST, EditStop.CAST, EditStop.CHAT, EditStop.MAP)
+        private val TOUCH_ORDER = listOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.CHAT, EditStop.MAP)
         /** the dim over a widget that is not selected (SPEC section 4: alpha 70 / 255 black) */
         const val DIM = 70
         const val TAG_SIZE = 24f
@@ -1344,6 +1372,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val GLYPH = 28f
         /** the D-pad's hint: Left and Right glyphs side by side */
         const val DPAD = "dpad"
+        /** the D-pad's four-way hint (a lifted card, bar or party list's Move): one cross, its four arms lit */
+        const val DPAD4 = "dpad4"
+        private val DPAD4_ARMS = arrayOf("gen_left", "gen_up", "gen_right", "gen_down")
         /** a menu's pop's starting scale, the Add tray's rise (px) */
         const val MENU_FROM = 0.92f
         /** the text paints kept ([textP]) */

@@ -43,6 +43,10 @@ data class HomeLayout(
     /** 1518 build 2 (the user's ruling 2026-11-21: each room icon is its own app): the rooms taken off the bar with their "-" badge
      *  (they wait in edit mode's "+" spot); never Settings ([RoomBar.hiddenOf]); empty = every room on the bar (Classic) */
     val hidden: List<String> = emptyList(),
+    /** after 1518, the user's ruling 2026-11-22 ("Why can't I move the party mode or the tap to cast to the top?"): the party list (Party
+     *  mode's module) at the top or the foot of the chat's or the map's column (it names a module, so a swap carries it); Above chat =
+     *  today's (Classic) */
+    val party: PartyDock = PartyDock.ABOVE_CHAT,
 ) {
     enum class Side { LEFT, RIGHT; fun other() = if (this == LEFT) RIGHT else LEFT }
     enum class Share(val num: Int, val den: Int) { THIRD(1, 3), HALF(1, 2), TWO_THIRDS(2, 3) }
@@ -70,6 +74,22 @@ data class HomeLayout(
             else -> this
         }
     }
+    /** the party list's dock: the top or the foot of the chat's or the map's column (its Select tab on that column's outer screen edge) */
+    enum class PartyDock {
+        ABOVE_CHAT, UNDER_CHAT, ABOVE_MAP, UNDER_MAP;
+        /** at the TOP of its column (under the band, and under a bar above that column), not the foot */
+        val top: Boolean get() = this == ABOVE_CHAT || this == ABOVE_MAP
+        /** the module whose column it sits in */
+        val column: HomeModule get() = if (this == ABOVE_CHAT || this == UNDER_CHAT) HomeModule.CHAT else HomeModule.MAP
+        /** the same column at the top ([b]) or the foot */
+        fun withTop(b: Boolean): PartyDock = of(column, b)
+        /** [c]'s column (the chat's or the map's; the band: unchanged), keeping its edge */
+        fun withColumn(c: HomeModule): PartyDock = if (c == HomeModule.BARS) this else of(c, top)
+        companion object {
+            fun of(c: HomeModule, top: Boolean): PartyDock = if (c == HomeModule.MAP) (if (top) ABOVE_MAP else UNDER_MAP)
+                else (if (top) ABOVE_CHAT else UNDER_CHAT)
+        }
+    }
     /** the tap-to-cast slot's side (L = CastStripModel.MAX_SIDE, today's) */
     enum class SlotSize(val px: Float) { S(88f), M(100f), L(112f) }
     enum class FightBand { GROW, SAME, TOP }
@@ -90,21 +110,23 @@ data class HomeLayout(
     /** the same placement fields (the legacy name ignored) */
     fun samePlace(o: HomeLayout): Boolean = copy(name = "", v = VERSION) == o.copy(name = "", v = VERSION)
 
-    /** Classic's PLACES (1517's Classic preset held these): chat left at half, no Split bar, no bar above its column, no top-screen fight.
-     *  The LB picture and the D-pad toast keep 1516's spots on such a record (HomeView.classicLook), pixel for pixel */
+    /** Classic's PLACES (1517's Classic preset held these): chat left at half, no Split bar, no bar above its column, no top-screen fight,
+     *  the party list above the chat. The LB picture and the D-pad toast keep 1516's spots on such a record (HomeView.classicLook), pixel
+     *  for pixel */
     val classicPlace: Boolean get() = chatSide == Side.LEFT && chatShare == Share.HALF && cast != CastDock.SPLIT && !cast.top &&
-        fight != FightBand.TOP
+        fight != FightBand.TOP && party == PartyDock.ABOVE_CHAT
 
     /**
      * Settings' "Reset Home to Classic" (1518, this character): 1517's Classic preset's fields (chat left at half, the card on the map,
      * the diamonds, L slots, a Split bar back under the chat and a bar above its column back at its foot, a top-screen fight back to
      * Grow - the bar's own column and Same size stay the player's, as Classic always kept them), plus today's room bar (its order, every
-     * room on it - none hidden - and the XP track shown)
+     * room on it - none hidden - and the XP track shown) and the party list back above the chat
      */
     fun classic(): HomeLayout = copy(name = LEGACY_CLASSIC, chatSide = Side.LEFT, chatShare = Share.HALF, card = CardDock.ON_MAP,
         rest = HomeRest.DIAMONDS, castSize = SlotSize.L,
         cast = if (cast == CastDock.SPLIT) CastDock.UNDER_CHAT else cast.withTop(false),
-        fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList())
+        fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList(),
+        party = PartyDock.ABOVE_CHAT)
 
     companion object {
         const val VERSION = 1
@@ -130,6 +152,8 @@ object HomeLayoutJson {
         .also { o -> if (!RoomBar.isDefault(l.rooms)) o.put("rooms", org.json.JSONArray(RoomBar.normalize(l.rooms))) }
         // 1518 build 2: the hidden rooms only when there are some (a Classic record's text is unchanged)
         .also { o -> RoomBar.hiddenOf(l.hidden).takeIf { it.isNotEmpty() }?.let { o.put("hide", org.json.JSONArray(it)) } }
+        // after 1518: the party list's dock only when it is not above the chat (a Classic record's text is unchanged)
+        .also { o -> if (l.party != HomeLayout.PartyDock.ABOVE_CHAT) o.put("party", l.party.name) }
         .toString()
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
@@ -153,6 +177,7 @@ object HomeLayoutJson {
                 xpBar = o.optBoolean("xp", d.xpBar),
                 rooms = o.optJSONArray("rooms")?.let { a -> RoomBar.normalize((0 until a.length()).map { a.optString(it, "") }) } ?: d.rooms,
                 hidden = o.optJSONArray("hide")?.let { a -> RoomBar.hiddenOf((0 until a.length()).map { a.optString(it, "") }) } ?: d.hidden,
+                party = en(HomeLayout.PartyDock.values(), "party", d.party),
             )
         } catch (e: Exception) { fallback }
     }

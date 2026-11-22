@@ -312,6 +312,43 @@ class HomeLayoutStoreTest {
         assertEquals(listOf("Huntress-Realm", "Newbie-Realm", "Shammy-Realm"), HomeLayoutStore.characters())
     }
 
+    /** after 1518 (the user's ruling 2026-11-22): the party list's dock is this character's like the rest - written only when it is not
+     *  above the chat (a Classic record's text unchanged), copied by "Use this Home for all characters", laid on by key, put back by
+     *  Discard, and Reset Home to Classic puts it back above the chat */
+    @Test fun thePartyListsDockIsEachCharactersOwn() {
+        val p = fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        HomeLayoutStore.set(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+        val classicText = p.m["homeLayout.Korvash-Realm"] as String
+        assertFalse(classicText, classicText.contains("party"))
+        val o = HomeLayoutStore.owner()
+        val opened = HomeSettings.layout
+        val moved = opened.copy(party = HomeLayout.PartyDock.UNDER_MAP)
+        HomeSettings.saveLayout(HomeLayoutStore.editSave(o, opened, moved)!!)
+        assertTrue((p.m["homeLayout.Korvash-Realm"] as String).contains("\"party\":\"UNDER_MAP\""))
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, HomeSettings.layout.party)
+        // another character: its own (Classic's)
+        HomeLayoutStore.character("Huntress-Realm")
+        assertEquals(HomeLayout.PartyDock.ABOVE_CHAT, HomeSettings.layout.party)
+        HomeLayoutStore.character("Korvash-Realm")
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, HomeSettings.layout.party)
+        // a change from elsewhere meanwhile is kept; Discard puts only the dock back
+        HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.S) }
+        HomeSettings.saveLayout(HomeLayoutStore.editSave(o, moved, opened)!!)
+        assertEquals(opened.copy(castSize = HomeLayout.SlotSize.S), HomeSettings.layout)
+        assertFalse((p.m["homeLayout.Korvash-Realm"] as String).contains("party"))
+        // layOn by key: the dock lands on the real record's other changes
+        val base = HomeLayout()
+        val laid = HomeLayoutStore.layOn(base.copy(chatShare = HomeLayout.Share.THIRD), base, base.copy(party = HomeLayout.PartyDock.ABOVE_MAP))
+        assertEquals(HomeLayout.PartyDock.ABOVE_MAP, laid.party); assertEquals(HomeLayout.Share.THIRD, laid.chatShare)
+        // all characters
+        HomeLayoutStore.set(HomeSettings.layout.copy(party = HomeLayout.PartyDock.ABOVE_MAP), all = true)
+        HomeLayoutStore.character("Huntress-Realm")
+        assertEquals(HomeLayout.PartyDock.ABOVE_MAP, HomeSettings.layout.party)
+        // Reset Home to Classic
+        assertEquals(HomeLayout.PartyDock.ABOVE_CHAT, HomeSettings.layout.classic().party)
+    }
+
     /** the 1514 merge (one character key, CharKey): a character named with no realm is pending - no record read or written under a
      *  partial key ("homeLayout.Name-", "Name-?", "Name-_") nor the default, the previous character's key let go; when the key comes the
      *  real record is read first and only this session's changes are laid on top */

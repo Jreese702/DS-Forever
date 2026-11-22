@@ -497,21 +497,169 @@ class HomeEditShotsTest {
         } finally { Tr.setChoice(app, "auto") }
     }
 
-    @Test fun partyModeIsFramedNeverPicked() {
-        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT).swapped(), party = true)
+    /**
+     * after 1518, the user's ruling 2026-11-22 ("Why can't I move the party mode or the tap to cast to the top?"): the party list is a
+     * widget - the D-pad walks to it, A lifts it (it grows and stops wiggling), the D-pad carries it to the foot of the chat's column,
+     * the map's foot, the map's top (its Select tab on that column's outer edge), A drops it (saved as it goes), Select carries it with
+     * the map, X its menu over the other column, and Discard puts the opening record back; its own gold row box stays hidden
+     */
+    @Test fun thePartyListMovesWithTheController() {
+        val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+        val p = page(classic, party = true)
         p.home.forceLive = true
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(40)
         assertFalse("Party mode's D-pad waits while editing", p.home.partyHoldsDpad())
-        val party = boxes(p.home).getValue("PARTY")
-        assertTrue("the party module follows the chat (right)", party.right >= 1239f)
-        assertTrue("never a stop", EditStop.values().none { it.name == "PARTY" })
         val pv = field(p.home, "partyView") as PartyModuleView
         assertFalse("fix round 1: the party's own gold row box hidden while editing (no second cursor)", pv.boxShown())
-        shot(p, "30_party_mode_edit_mirrored")
-        p.home.editKey("PAD3"); settle()
-        shot(p, "30b_party_mode_chat_menu")
-        p.home.editCancel(); settle()
+        val ev = p.home.editChrome
+        assertTrue("a stop now", EditStop.PARTY in ev.stops())
+        assertEquals(boxes(p.home).getValue("PARTY"), ev.widgetBoxes()[EditStop.PARTY])
+        shot(p, "30_party_list_edit")
+        p.home.editKey("PADDUP"); settle()
+        assertEquals("Up from the chat: the party list over it", EditStop.PARTY, model(p).cursor)
+        assertEquals(listOf(UiKit.okGlyph() to "Move", UiKit.xGlyph() to "Options"), ev.hintsFor(model(p)))
+        shot(p, "30a_party_list_picked", frames = 1)
+        p.home.editKey("PAD1"); settle(20)
+        assertEquals(EditStop.PARTY, model(p).lifted)
+        assertEquals("the four-way Move", HomeEditView.DPAD4 to "Move", ev.hintsFor(model(p)).first())
+        assertTrue("lifted: it grows over the others", pv.scaleX > views(p.home).getValue("CHAT").scaleX + 0.01f)
+        assertTrue("raised over the others", pv.translationZ > views(p.home).getValue("CHAT").translationZ)
+        shot(p, "30b_party_list_lifted", frames = 1)
+        // Down: the chat's foot, over the bar under the chat
+        p.home.editKey("PADDDOWN"); settle(30)
+        var b = boxes(p.home)
+        assertEquals(HomeLayout.PartyDock.UNDER_CHAT, model(p).draft.party)
+        assertEquals(b.getValue("STRIP").top - 8f, b.getValue("PARTY").bottom, 0.5f)
+        assertEquals(b.getValue("PARTY").top - PartyLayout.CHAT_GAP, b.getValue("CHAT").bottom, 0.5f)
+        assertEquals(0f, b.getValue("PARTY").left, 0.5f)
+        assertEquals("lifted: not saved yet", classic, HomeSettings.layout)
+        shot(p, "30c_party_list_under_chat", frames = 1)
+        // Right: the map's foot (the page's foot: no bar there), its tab on the right edge
+        p.home.editKey("PADDRIGHT"); settle(30)
+        b = boxes(p.home)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, model(p).draft.party)
+        assertEquals(927f, b.getValue("PARTY").bottom, 0.5f)
+        assertEquals(1240f, b.getValue("PARTY").right, 0.5f)
+        assertTrue(pv.tabRight)
+        assertTrue("the card on the map ends over it", b.getValue("QUESTS").bottom <= b.getValue("PARTY").top)
+        shot(p, "30d_party_list_under_map", frames = 1)
+        // Up: the map's top (the card under the map's zone band below it)
+        p.home.editKey("PADDUP"); settle(30)
+        b = boxes(p.home)
+        assertEquals(HomeLayout.PartyDock.ABOVE_MAP, model(p).draft.party)
+        assertEquals(b.getValue("BARS").bottom + 8f, b.getValue("PARTY").top, 0.5f)
+        assertEquals(b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP, b.getValue("MAP").top, 0.5f)
+        assertEquals(b.getValue("MAP").top + HomeView.ZONE_BAND_BOTTOM + 4f, b.getValue("QUESTS").top, 0.5f)
+        // A: dropped and saved
+        p.home.editKey("PAD1"); settle(30)
+        assertNull(model(p).lifted)
+        assertEquals(classic.copy(party = HomeLayout.PartyDock.ABOVE_MAP), HomeSettings.layout)
+        shot(p, "30e_party_list_above_map", frames = 1)
+        // Select: the modules swap, the party list stays the map's (now on the left, its tab on the left edge)
+        p.home.editKey("PADBACK"); settle(30)
+        b = boxes(p.home)
+        assertEquals(0f, b.getValue("PARTY").left, 0.5f)
+        assertFalse(pv.tabRight)
+        assertTrue(b.getValue("MAP").left < b.getValue("CHAT").left)
+        assertEquals(b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP, b.getValue("MAP").top, 0.5f)
+        shot(p, "30f_party_list_swapped", frames = 1)
+        // X: its menu over the chat's column (the one it is not in), inside the screen, under the band
+        p.home.editKey("PAD3"); settle(20)
+        assertEquals(EditStop.PARTY, model(p).menu)
+        val menu = ev.menuBox(EditStop.PARTY)
+        assertTrue("menu $menu over the chat's column", menu.left >= b.getValue("CHAT").left - 1f && menu.right <= b.getValue("CHAT").right + 1f)
+        assertTrue(menu.top >= b.getValue("BARS").bottom && menu.bottom <= H)
+        assertFalse("never over the party list", RectF.intersects(menu, b.getValue("PARTY")))
+        shot(p, "30g_party_list_menu", frames = 1)
+        // its Edge row: Below = the map's foot
+        p.home.editKey("PADDDOWN"); p.home.editKey("PADDRIGHT"); settle(30)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, model(p).draft.party)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, HomeSettings.layout.party)
+        p.home.editKey("PAD2"); settle()
+        // Discard: the opening record back, the party list over the chat again
+        p.home.editB(true); settle(45)
+        assertFalse(p.home.editing)
+        assertEquals(classic, HomeSettings.layout)
+        b = boxes(p.home)
+        assertEquals(0f, b.getValue("PARTY").left, 0.5f)
+        assertEquals(b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP, b.getValue("CHAT").top, 0.5f)
         assertTrue("edit mode over: the row box again", pv.boxShown())
+    }
+
+    /** a finger drags the party list: from the chat's top down to the map's foot (the release lays the dock under it), and back up
+     *  over the chat; the drop well shows where it goes */
+    @Test fun thePartyListMovesWithAFinger() {
+        val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+        val p = page(classic, party = true)
+        p.home.forceLive = true
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(40)
+        var party = boxes(p.home).getValue("PARTY")
+        val x0 = party.centerX(); val y0 = party.centerY()
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x0, y0)
+        for (i in 1..12) { touch(p, MotionEvent.ACTION_MOVE, x0 + 52f * i, y0 + 48f * i); settle(2) }
+        assertEquals("a drag lifts it", EditStop.PARTY, model(p).lifted)
+        assertNotNull(model(p).drag)
+        shot(p, "31_party_list_dragged", frames = 1)
+        touch(p, MotionEvent.ACTION_UP, x0 + 52f * 12, y0 + 48f * 12); settle(40)
+        assertNull(model(p).lifted)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, HomeSettings.layout.party)
+        party = boxes(p.home).getValue("PARTY")
+        assertEquals(927f, party.bottom, 0.5f); assertEquals(1240f, party.right, 0.5f)
+        shot(p, "31a_party_list_dropped_under_map", frames = 1)
+        // and back over the chat's top
+        val x1 = party.centerX(); val y1 = party.centerY()
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x1, y1)
+        for (i in 1..12) { touch(p, MotionEvent.ACTION_MOVE, x1 - 52f * i, y1 - 48f * i); settle(2) }
+        touch(p, MotionEvent.ACTION_UP, x1 - 52f * 12, y1 - 48f * 12); settle(40)
+        assertEquals(classic, HomeSettings.layout)
+        party = boxes(p.home).getValue("PARTY")
+        assertEquals(0f, party.left, 0.5f)
+        assertEquals(party.bottom + PartyLayout.CHAT_GAP, boxes(p.home).getValue("CHAT").top, 0.5f)
+        p.home.editCancel()
+    }
+
+    /** the party list's menu fits in English, Spanish and French, at a third of the width, from each column */
+    @Suppress("UNCHECKED_CAST")
+    @Test fun thePartyListsMenuFitsInSpanishAndFrench() {
+        val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+        try {
+            for (l in listOf("en", "es", "fr")) {
+                lang(l)
+                for (dock in HomeLayout.PartyDock.values()) for (base in listOf(HomeArrangements.of(HomeArrangements.BIG_MAP, HomeLayout()),
+                        HomeArrangements.of(HomeArrangements.BIG_CHAT, HomeLayout()).swapped())) {
+                    val layout = base.copy(party = dock)
+                    val p = page(layout, party = true)
+                    assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+                    p.home.editAct { it.openMenu(EditStop.PARTY); emptyList() }; settle()
+                    val img = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+                    p.home.draw(Canvas(img))
+                    val ev = p.home.editChrome
+                    val btns = field(ev, "menuBoxes") as List<List<RectF>>
+                    val rows = field(ev, "menuRowBoxes") as List<RectF>
+                    val words = rowsOf.invoke(p.home, EditStop.PARTY) as List<MenuRow>
+                    val tag = "$l $dock ${layout.chatSide} ${layout.chatShare}"
+                    assertEquals(tag, 2, words.size); assertEquals(tag, words.size, rows.size)
+                    val lp = UiKit.bodyPaint(28f)
+                    for ((i, r) in words.withIndex()) {
+                        val rr = rows[i]
+                        val labelRight = rr.left + 18f + lp.measureText(Tr.t(r.label))
+                        for (bt in btns[i]) {
+                            assertTrue("$tag '${Tr.t(r.label)}': button inside its row", bt.left >= rr.left - 1f && bt.right <= rr.right + 1f)
+                            assertTrue("$tag '${Tr.t(r.label)}': buttons clear of the label", bt.left >= labelRight - 1f || bt.top >= rr.top + 0.3f * rr.height())
+                        }
+                    }
+                    val box = ev.menuBox(EditStop.PARTY)
+                    val b = boxes(p.home)
+                    assertTrue("$tag: inside the screen, under the band", box.left >= -0.5f && box.right <= W + 0.5f &&
+                        box.top >= b.getValue("BARS").bottom - 0.5f && box.bottom <= H + 0.5f)
+                    for (c in ev.castBoxes()) assertFalse("$tag: never over the bar", RectF.intersects(box, c))
+                    if (l != "en") shot(p, "33p_menu_${l}_${dock.name.lowercase()}_${layout.chatShare.name.lowercase()}")
+                    p.home.editCancel()
+                }
+            }
+        } finally { Tr.setChoice(app, "auto") }
     }
 
     @Test fun aShortTapStillOpensTheChatRoom() {

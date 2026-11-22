@@ -38,7 +38,8 @@ import java.time.Duration
  *    for a fight keep 1516's spot: held), never over a tap-to-cast bar shown at a column's top;
  *  - edit mode's menus (every widget's, at rest): inside the screen, under the band, never over a tap-to-cast bar (the room bar's own
  *    menu rises from the page's foot over the room bar it edits: not checked against the bar);
- *  - the party menu's place: inside the chat's column, under the band.
+ *  - the party menu's place: inside the party list's column (the chat's for Classic's dock; after 1518 the map's too), under the band;
+ *    the party list in its dock's column, its tab on that column's outer edge, nothing over it.
  * Review round 2: every bar dock (Above chat / Above map too) x every preset x swapped x 1/3 and 2/3, and fights with the bar shown
  * ("Show in combat"), and a Top screen record whose Wings are not confirmed (laid as Grow: never Classic's held looks).
  * PNG contact sheets with MENUS_FIT_SHOTS=<dir>.
@@ -293,11 +294,27 @@ class HomeMenusFitShotsTest {
 
     private fun partyMenu(tag: String, p: Page) {
         val home = p.home
-        val chat = boxes(home)["CHAT"] ?: return
+        // after 1518: over the party list's own column (the chat's for Classic's dock, the map's when it sits there)
+        val inMap = p.layout.party.column == HomeModule.MAP
+        val col = boxes(home)[if (inMap) "MAP" else "CHAT"] ?: return
         val m = home.partyMenu
         val box = RectF(m.left.toFloat(), m.top.toFloat(), m.right.toFloat(), m.bottom.toFloat())
-        if (box.left < chat.left - 0.5f || box.right > chat.right + 0.5f) no(tag, "party menu ${r(box)} outside the chat's column ${r(chat)}")
+        if (box.left < col.left - 0.5f || box.right > col.right + 0.5f) no(tag, "party menu ${r(box)} outside the party's column ${r(col)}")
         if (box.top < band(home).bottom || box.bottom > H) no(tag, "party menu ${r(box)} under the band or off the frame")
+    }
+
+    /** after 1518: the party list's box sits in its dock's column, its tab on that column's outer edge, nothing over it */
+    private fun partyPlace(tag: String, p: Page) {
+        val b = boxes(p.home)
+        val party = b["PARTY"] ?: return no(tag, "no party list")
+        val col = b.getValue(if (p.layout.party.column == HomeModule.MAP) "MAP" else "CHAT")
+        if (party.centerX() < col.left || party.centerX() > col.right) no(tag, "party list ${r(party)} not in its column ${r(col)}")
+        val other = b.getValue(if (p.layout.party.column == HomeModule.MAP) "CHAT" else "MAP")
+        val right = col.left > other.left
+        if (right && kotlin.math.abs(party.right - W) > 0.5f || !right && kotlin.math.abs(party.left) > 0.5f)
+            no(tag, "party list ${r(party)}: its tab off its column's outer edge")
+        for ((k, d) in drawn(p.home)) if (k != "PARTY" && overlaps(d, party)) no(tag, "$k drawn ${r(d)} over the party list ${r(party)}")
+        if (b.getValue("MAP").height() < HomeLayoutRules.MAP_MIN - 0.5f) no(tag, "the map ${b.getValue("MAP").height()} under its minimum")
     }
 
     private fun editMenus(tag: String, l: HomeLayout) {
@@ -356,8 +373,20 @@ class HomeMenusFitShotsTest {
         return out.filter { (_, l) -> if (seen.any { it.samePlace(l) }) false else { seen += l; true } }
     }
 
-    private fun run(state: String, fight: Boolean, party: Boolean, edit: Boolean, grow: Boolean) {
-        for ((id, l0) in matrix()) {
+    /** after 1518 (the user's ruling 2026-11-22): every arrangement 1517 offered (and swapped) with the party list moved to each of its
+     *  other docks - the chat's foot, the map's top and foot */
+    private fun partyMatrix(arrangements: List<Pair<String, HomeLayout>> = HomeArrangements.ALL): List<Pair<String, HomeLayout>> {
+        val out = ArrayList<Pair<String, HomeLayout>>()
+        for ((name, arr) in arrangements) for (d in HomeLayout.PartyDock.values().filter { it != HomeLayout.PartyDock.ABOVE_CHAT }) {
+            val id = name.lowercase().replace(' ', '_') + "_party_" + d.name.lowercase()
+            out += id to arr.copy(party = d)
+            out += "${id}_swapped" to arr.copy(party = d).swapped()
+        }
+        return out
+    }
+
+    private fun run(state: String, fight: Boolean, party: Boolean, edit: Boolean, grow: Boolean, list: List<Pair<String, HomeLayout>> = matrix()) {
+        for ((id, l0) in list) {
             val l = if (grow) l0.copy(fight = HomeLayout.FightBand.GROW) else l0
             val tag = "$id $state"
             var p = page(l, fight = fight, party = party)
@@ -369,6 +398,7 @@ class HomeMenusFitShotsTest {
             classWheels(tag, p)
             toast(tag, p, fight)
             partyMenu(tag, p)
+            partyPlace(tag, p)
             if (edit) editMenus(tag, l)
             sheet("${id}__$state")
         }
@@ -382,6 +412,17 @@ class HomeMenusFitShotsTest {
     /** "Show in combat": the bar stays in the fight (a top bar rides down under the grown band) */
     @Test fun everyMenuFitsInAGrownFightWithTheBarShown() { stay = true; try { run("fightgrowstay", fight = true, party = false, edit = false, grow = true) } finally { stay = false } }
     @Test fun everyMenuFitsInEachPresetsOwnFightWithTheBarShown() { stay = true; try { run("fightstay", fight = true, party = false, edit = false, grow = false) } finally { stay = false } }
+
+    /** after 1518: the party list at the chat's foot, the map's top or the map's foot - every arrangement and swapped, at rest (edit
+     *  mode's menus, the party list's own included) and with Party mode on */
+    @Test fun everyMenuFitsWithThePartyListMoved() = run("partyrest", fight = false, party = false, edit = true, grow = false, list = partyMatrix())
+    @Test fun everyMenuFitsWithThePartyListMovedInPartyMode() = run("partymode", fight = false, party = true, edit = false, grow = false, list = partyMatrix())
+    /** the takeover's party rows with the bar shown in combat (F3 slides a map's bar away when the map would be too short) */
+    @Test fun everyMenuFitsWithThePartyListMovedInAGrownFightWithTheBarShown() {
+        val bars = listOf(HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ABOVE_MAP, HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.UNDER_CHAT)
+        val list = partyMatrix(bars.map { d -> "classic_${d.name.lowercase()}" to HomeLayout(cast = d) })
+        stay = true; try { run("fightgrowstay", fight = true, party = false, edit = false, grow = true, list = list) } finally { stay = false }
+    }
 
     /**
      * a Top screen record (chat left, 1/2, the bar under the chat / the map / across) whose Wings the add-on has not confirmed is laid as

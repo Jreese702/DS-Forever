@@ -1708,6 +1708,7 @@ class HomeView(
             else if (r.castSide != CastStripModel.Side.OFF) castStrip.side = r.castSide
             partyView.tabRight = r.partyTabRight
             laidChatRight = r.partyTabRight
+            laidPartyInMap = l.party.column == HomeModule.MAP
         }
         val out = LinkedHashMap<Part, RectF>()
         for ((p, b) in r.boxes) PART_OF[p]?.let { out[it] = RectF(b.l, b.t, b.r, b.b) }
@@ -1719,8 +1720,10 @@ class HomeView(
     private var laidSplit = false
     /** the last [places] laid the bar at the top of its column (Above chat / Above map): hidden, it slides up behind the band */
     private var laidTop = false
-    /** the chat's column on the right (the party menus mirror with it) */
+    /** the party list's column on the right (the party menus mirror with it: the chat's for Classic's dock) */
     private var laidChatRight = false
+    /** after 1518: the party list laid in the map's column (the party menus open over that column) */
+    private var laidPartyInMap = false
     private val PART_OF: Map<HomePart, Part> = HomePart.values().mapNotNull { hp -> Part.values().firstOrNull { it.name == hp.name }?.let { hp to it } }.toMap()
 
     /**
@@ -2242,9 +2245,10 @@ class HomeView(
         // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
         if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
-        // fix/menus-fit: over the chat's column as laid (any share, either side), under the band as it is now
-        val chatCol = now[Part.CHAT]?.let { c -> RectF(c).also { u -> now[Part.PARTY]?.let { u.union(it) } } }
-        PartyMenuView.place(chatCol, barsBottom(), frameH, laidChatRight, (r - l).toFloat()).let { m ->
+        // fix/menus-fit: over the party list's column as laid (any share, either side: the chat's for Classic's dock; after 1518 the
+        // map's when it sits there), under the band as it is now
+        val partyCol = now[if (laidPartyInMap) Part.MAP else Part.CHAT]?.let { c -> RectF(c).also { u -> now[Part.PARTY]?.let { u.union(it) } } }
+        PartyMenuView.place(partyCol, barsBottom(), frameH, laidChatRight, (r - l).toFloat()).let { m ->
             partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
             targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
         }
@@ -2918,9 +2922,8 @@ class HomeView(
         val c = stopBox(s) ?: return null
         val cx = c.centerX(); val cy = c.centerY()
         val pts = ArrayList<Triple<Int, Float, Float>>()
-        for (k in listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST))
+        for (k in listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST, EditStop.PARTY))
             stopBox(k)?.let { pts += Triple(k.key, it.centerX(), it.centerY()) }
-        now[Part.PARTY]?.let { pts += Triple(HomeEditMotion.PARTY, it.centerX(), it.centerY()) }
         val bar = roomBar
         val xs = bar?.slotCentres().orEmpty()
         val rooms = RoomBar.shown(edit?.draft ?: HomeSettings.layout)
@@ -2935,13 +2938,14 @@ class HomeView(
     private fun stopBox(s: EditStop): RectF? = when (s) {
         EditStop.CHAT -> now[Part.CHAT]; EditStop.MAP -> now[Part.MAP]; EditStop.QUEST -> now[Part.QUESTS]
         EditStop.CAST -> now[Part.STRIP] ?: now[Part.CAST2]
+        EditStop.PARTY -> now[Part.PARTY]
         EditStop.DIVIDER -> editView.dividerBox()
         else -> null
     }
     /** the part whose pose [s]'s chrome is drawn through (HomeEditView.poseOf's) */
     private fun stopPart(s: EditStop): Part? = when (s) {
         EditStop.CHAT -> Part.CHAT; EditStop.MAP -> Part.MAP; EditStop.QUEST -> Part.QUESTS
-        EditStop.CAST -> Part.STRIP
+        EditStop.CAST -> Part.STRIP; EditStop.PARTY -> Part.PARTY
         else -> null
     }
     /** [s]'s whole pose now (HomeEditView draws its chrome through it: the scale, the turn, the move, the finger's carry) into [out];
@@ -3297,7 +3301,7 @@ class HomeView(
     }
     private fun baseOf(s: EditStop): RectF? = when (s) {
         EditStop.CHAT -> now[Part.CHAT]; EditStop.MAP -> now[Part.MAP]; EditStop.QUEST -> now[Part.QUESTS]
-        EditStop.CAST -> now[Part.STRIP]; else -> null
+        EditStop.CAST -> now[Part.STRIP]; EditStop.PARTY -> now[Part.PARTY]; else -> null
     }
     /** the parts a widget moves with it (the map takes its buffs and the card over it) */
     private fun partOf(s: EditStop, p: Part): Boolean = when (s) {
@@ -3305,6 +3309,7 @@ class HomeView(
         EditStop.MAP -> p == Part.MAP || p == Part.AURAS || (p == Part.QUESTS && cardOverMap())
         EditStop.QUEST -> p == Part.QUESTS
         EditStop.CAST -> p == Part.STRIP || p == Part.CAST2
+        EditStop.PARTY -> p == Part.PARTY
         else -> false
     }
 

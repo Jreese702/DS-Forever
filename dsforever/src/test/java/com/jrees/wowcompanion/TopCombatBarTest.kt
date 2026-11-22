@@ -93,7 +93,7 @@ class TopCombatBarTest {
             val g = l.copy(fight = HomeLayout.FightBand.GROW)
             assertEquals(416f, HomeLayoutSolver.places(g, HomeLayoutSolver.State(takeover = true)).barsBottom, 0.01f)
         }
-        assertEquals("756 Top-screen records (7 bar docks, Above chat / map too) x 4", 756 * 4, n)
+        assertEquals("3,024 Top-screen records (7 bar docks, Above chat / map too; x 4 party list docks after 1518) x 4", 3024 * 4, n)
     }
 
     @Test fun bNeverShrinksTopScreenInTheFight() {

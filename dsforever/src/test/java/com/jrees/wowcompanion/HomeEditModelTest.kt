@@ -20,13 +20,16 @@ class HomeEditModelTest {
     private fun model(saved: HomeLayout = classic, start: EditStop = EditStop.CHAT) = HomeEditModel(saved, start)
 
     /** Home's boxes for [l] (the solver's, a focused quest shown) as the edit view gives the cursor, the ribbon under the frame */
-    private fun stops(l: HomeLayout, plus: Boolean = false): Map<EditStop, HomeLayoutSolver.Box> {
-        val r = HomeLayoutSolver.places(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f))
+    /** the party list's input for the pages with one (Party mode's module: 3 at rest) */
+    private val P3 = HomeLayoutSolver.Party(PartyLayout.Mode.REST, 3, false)
+    private fun stops(l: HomeLayout, plus: Boolean = false, party: HomeLayoutSolver.Party? = null): Map<EditStop, HomeLayoutSolver.Box> {
+        val r = HomeLayoutSolver.places(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f, party = party))
         val b = r.boxes
         val out = LinkedHashMap<EditStop, HomeLayoutSolver.Box>()
         out[EditStop.CHAT] = b.getValue(HomePart.CHAT)
         out[EditStop.MAP] = b.getValue(HomePart.MAP)
         b[HomePart.QUESTS]?.let { out[EditStop.QUEST] = it }
+        b[HomePart.PARTY]?.let { out[EditStop.PARTY] = it }
         b[HomePart.STRIP]?.let { s -> out[EditStop.CAST] = b[HomePart.CAST2]?.let { s.copy(r = it.r) } ?: s }
         val c = b.getValue(HomePart.CHAT); val m = b.getValue(HomePart.MAP)
         val x = (minOf(c.r, m.r) + maxOf(c.l, m.l)) / 2f
@@ -46,6 +49,17 @@ class HomeEditModelTest {
         val out = ArrayList<HomeEditModel.Fx>()
         for (k in keys) out += key(k, stops(l, plusShown)) { s -> HomeWidgetMenus.rows(s, draft, HomeWidgetMenus.Values()) }
         return out
+    }
+    /** [press] on a page with the party list (each press against the draft as it is then) */
+    private fun HomeEditModel.pressP(vararg keys: String): List<HomeEditModel.Fx> {
+        val out = ArrayList<HomeEditModel.Fx>()
+        for (k in keys) out += key(k, stops(draft, plusShown, P3)) { s -> HomeWidgetMenus.rows(s, draft, HomeWidgetMenus.Values()) }
+        return out
+    }
+    private val geoP = object : HomeEditModel.Geo {
+        override fun columns(l: HomeLayout) = HomeLayoutSolver.columns(l, 1240f, 8f)
+        override fun valid(l: HomeLayout) = HomeLayoutRules.valid(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f, party = P3))
+        override val w = 1240f
     }
 
     // ---------------------------------------------------------------- the B ladder
@@ -305,11 +319,21 @@ class HomeEditModelTest {
         // the middle third of the lower half: Across
         m.dragMove(630f, 860f, 800L, geo); m.dragTick(900L)
         assertEquals(HomeLayout.CastDock.ACROSS, m.draft.cast)
-        // from Across, up in the middle: stays Across (no column to take the top of)
+        // after 1518 ("Why can't I move ... the tap to cast to the top?"): from Across, straight up in the middle: the top of the column
+        // it last sat in (the map's here), never Across sliding back
         m.dragMove(630f, 300f, 1000L, geo); m.dragTick(1100L)
-        assertEquals(HomeLayout.CastDock.ACROSS, m.draft.cast)
+        assertEquals(HomeLayout.CastDock.ABOVE_MAP, m.draft.cast)
         m.dragEnd(630f, 300f, 1110L, geo)
         assertNull(m.lifted)
+        // a bar saved Across that never sat in a column: up in the middle = above the chat; Split's too
+        for (from in listOf(HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT)) {
+            val a = model(saved = classic.copy(cast = from), start = EditStop.CAST)
+            val box = stops(a.draft).getValue(EditStop.CAST)
+            a.dragStart(EditStop.CAST, 620f, (box.t + box.b) / 2f, box)
+            a.dragMove(620f, 300f, 0L, geo)
+            a.dragEnd(620f, 300f, 10L, geo)
+            assertEquals("$from dragged straight up", HomeLayout.CastDock.ABOVE_CHAT, a.draft.cast)
+        }
     }
 
     @Test fun ySizesTheSelectedWidget() {
@@ -492,10 +516,138 @@ class HomeEditModelTest {
     /** "What the hell is the dpad swapping buttons or clock move? ... remove that": the band has no stop (no D-pad icon, no clock, no
      *  band), and the stops keep the motion keys 1518 gave them (their wiggle phases and paces unchanged) */
     @Test fun theBandHasNoStopsAndTheKeysStay() {
-        assertEquals(listOf("CHAT", "MAP", "QUEST", "DIVIDER", "CAST", "PLUS", "ROOMS", "DONE"), EditStop.values().map { it.name })
-        assertEquals(listOf(2, 3, 4, 5, 6, 7, 8, 13), EditStop.values().map { it.key })
-        assertEquals(setOf(EditStop.QUEST, EditStop.CAST), HomeEditModel.GONE_CHECKED)
-        assertTrue("no key is a room's or the party's", EditStop.values().none { it.key == HomeEditMotion.PARTY || it.key >= HomeEditMotion.roomKey(0) })
+        assertEquals(listOf("CHAT", "MAP", "QUEST", "DIVIDER", "CAST", "PARTY", "PLUS", "ROOMS", "DONE"), EditStop.values().map { it.name })
+        assertEquals("the party list keeps the key it wiggled on in 1518", listOf(2, 3, 4, 5, 6, HomeEditMotion.PARTY, 7, 8, 13),
+            EditStop.values().map { it.key })
+        assertEquals(EditStop.values().size, EditStop.values().map { it.key }.toSet().size)
+        assertEquals(setOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY), HomeEditModel.GONE_CHECKED)
+        assertTrue("no key is a room's", EditStop.values().none { it.key >= HomeEditMotion.roomKey(0) })
+    }
+
+    // ---------------------------------------------------------------- the party list (after 1518, the user's ruling 2026-11-22)
+
+    /** "Why can't I move the party mode ... to the top?": A lifts the party list, the D-pad carries it to the top or the foot of either
+     *  column (no wrap), A drops, B puts it back; it is a widget (movable, a menu, a tag), never removed */
+    @Test fun thePartyListLiftsAndTakesEveryDock() {
+        assertTrue(EditStop.PARTY.movable); assertTrue(EditStop.PARTY.hasMenu); assertFalse(EditStop.PARTY.removable)
+        assertEquals("Party", EditStop.PARTY.tag)
+        for (side in HomeLayout.Side.values()) {
+            val saved = classic.copy(chatSide = side)
+            val m = model(saved = saved, start = EditStop.PARTY)
+            m.pressP("PAD1")
+            assertEquals(EditStop.PARTY, m.lifted)
+            val chatKey = if (side == HomeLayout.Side.LEFT) "PADDLEFT" else "PADDRIGHT"
+            val mapKey = if (side == HomeLayout.Side.LEFT) "PADDRIGHT" else "PADDLEFT"
+            assertEquals("$side: the chat's side: no move", emptyList<HomeEditModel.Fx>(), m.pressP(chatKey))
+            assertEquals("$side: already at the top", emptyList<HomeEditModel.Fx>(), m.pressP("PADDUP"))
+            assertEquals(listOf(HomeEditModel.Fx.Relay(HomeEditModel.EDIT_STEP)), m.pressP("PADDDOWN"))
+            assertEquals(HomeLayout.PartyDock.UNDER_CHAT, m.draft.party)
+            assertEquals("no wrap", emptyList<HomeEditModel.Fx>(), m.pressP("PADDDOWN"))
+            m.pressP(mapKey); assertEquals("$side: the map's column, the edge kept", HomeLayout.PartyDock.UNDER_MAP, m.draft.party)
+            m.pressP("PADDUP"); assertEquals(HomeLayout.PartyDock.ABOVE_MAP, m.draft.party)
+            assertEquals("the other column's other side: none", emptyList<HomeEditModel.Fx>(), m.pressP(mapKey))
+            // Select swaps the modules: the party list stays the map's (it names a module)
+            m.pressP("PADBACK")
+            assertEquals(side.other(), m.draft.chatSide); assertEquals(HomeLayout.PartyDock.ABOVE_MAP, m.draft.party)
+            assertEquals(EditStop.PARTY, m.lifted)
+            // B: everything since the lift back
+            m.pressP("PAD2")
+            assertNull(m.lifted); assertEquals(saved, m.draft); assertFalse(m.changed)
+            // A, Down, A: dropped at the chat's foot (the draft settles: the view saves it)
+            m.pressP("PAD1", "PADDDOWN", "PAD1")
+            assertNull(m.lifted); assertTrue(m.settled); assertEquals(HomeLayout.PartyDock.UNDER_CHAT, m.draft.party); assertTrue(m.changed)
+            assertEquals(EditStop.PARTY, m.cursor)
+            // Y: no size; X its menu
+            assertTrue(m.pressP("PAD4").isEmpty()); assertEquals(saved.copy(party = HomeLayout.PartyDock.UNDER_CHAT), m.draft)
+            m.pressP("PAD3"); assertEquals(EditStop.PARTY, m.menu)
+            m.pressP("PAD2"); assertNull(m.menu)
+            // Discard: the opening record back
+            assertEquals(listOf(HomeEditModel.Fx.Relay(Motion.MODULE_CLOSE), HomeEditModel.Fx.Discard), m.discard())
+            assertEquals(saved, m.draft)
+            // the arrows the view draws: only real moves
+            assertNull(m.nextDock(EditStop.PARTY, saved, -1, horizontal = false))
+            assertNotNull(m.nextDock(EditStop.PARTY, saved, 1, horizontal = false))
+        }
+    }
+
+    /** the D-pad walks to the party list spatially (over the chat at the top, under it at the foot), and the cursor leaves it when it
+     *  goes (QOL > Party mode off) - to the chat, never "+" */
+    @Test fun theCursorReachesThePartyListAndLeavesItWhenItGoes() {
+        val m = model(saved = classic.copy(card = HomeLayout.CardDock.OFF))
+        m.pressP("PADDUP"); assertEquals("over the chat", EditStop.PARTY, m.cursor)
+        m.pressP("PADDDOWN"); assertEquals(EditStop.CHAT, m.cursor)
+        val u = model(saved = classic.copy(card = HomeLayout.CardDock.OFF, party = HomeLayout.PartyDock.UNDER_CHAT))
+        u.pressP("PADDDOWN"); assertEquals("under the chat, over the bar", EditStop.PARTY, u.cursor)
+        u.pressP("PADDDOWN"); assertEquals(EditStop.CAST, u.cursor)
+        u.pressP("PADDUP", "PADDUP"); assertEquals(EditStop.CHAT, u.cursor)
+        // gone: the cursor to the chat, its lift and menu ended ("+" shown and drawn: still the chat)
+        val g = model(saved = classic.copy(cast = HomeLayout.CastDock.OFF), start = EditStop.PARTY)
+        g.pressP("PAD1"); assertEquals(EditStop.PARTY, g.lifted)
+        val stops = stops(g.draft, plus = true)
+        assertFalse(EditStop.PARTY in stops)
+        assertTrue(g.cursorCheck(stops))
+        assertEquals(EditStop.CHAT, g.cursor); assertNull(g.lifted)
+    }
+
+    /** a finger drags the party list: the column under its centre past the divider's hysteresis, the top or the foot by the columns'
+     *  halves (after the hover; laid at once on the release), a refused dock never laid */
+    @Test fun dragThePartyListToEachDock() {
+        val m = model(start = EditStop.PARTY)
+        val box = stops(m.draft, party = P3).getValue(EditStop.PARTY)
+        val y0 = (box.t + box.b) / 2f
+        m.dragStart(EditStop.PARTY, box.cx, y0, box)
+        assertEquals(EditStop.PARTY, m.lifted)
+        // down the chat's column into its lower half: its foot (after the hover)
+        m.dragMove(box.cx, y0 + 500f, 0L, geoP)
+        assertEquals("the hover first", HomeLayout.PartyDock.ABOVE_CHAT, m.draft.party)
+        m.dragTick(100L)
+        assertEquals(HomeLayout.PartyDock.UNDER_CHAT, m.draft.party)
+        // a little past the divider: within the hysteresis, still the chat's
+        m.dragMove(box.cx + (620f - box.cx) + 20f, y0 + 500f, 200L, geoP); m.dragTick(300L)
+        assertEquals(HomeLayout.PartyDock.UNDER_CHAT, m.draft.party)
+        // over the map: the map's foot
+        m.dragMove(box.cx + 640f, y0 + 500f, 400L, geoP); m.dragTick(500L)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, m.draft.party)
+        // up into the upper half: the map's top
+        m.dragMove(box.cx + 640f, y0, 600L, geoP); m.dragTick(700L)
+        assertEquals(HomeLayout.PartyDock.ABOVE_MAP, m.draft.party)
+        // the release lays the dock under the finger at once: back over the chat's top
+        val fx = m.dragEnd(box.cx, y0, 710L, geoP)
+        assertEquals(HomeLayout.PartyDock.ABOVE_CHAT, m.draft.party)
+        assertTrue(HomeEditModel.Fx.Lift in fx); assertNull(m.lifted); assertNull(m.drag)
+        assertFalse(m.changed)
+        // a cancel puts it back
+        m.dragStart(EditStop.PARTY, box.cx, y0, box)
+        m.dragMove(box.cx, y0 + 500f, 0L, geoP); m.dragTick(100L)
+        assertEquals(HomeLayout.PartyDock.UNDER_CHAT, m.draft.party)
+        m.dragCancel()
+        assertEquals(HomeLayout.PartyDock.ABOVE_CHAT, m.draft.party)
+    }
+
+    /** its menu: Place (Chat / Map) keeps the edge, the edge row (Above / Below) keeps the column - the words the bar's rows use */
+    @Test fun thePartyListsMenu() {
+        val v = HomeWidgetMenus.Values()
+        val m = model(start = EditStop.PARTY)
+        var rows = HomeWidgetMenus.rows(EditStop.PARTY, m.draft, v)
+        assertEquals(listOf(HomeEditModel.K_PARTY_PLACE, HomeEditModel.K_PARTY_EDGE), rows.map { it.key })
+        assertEquals(listOf("Chat", "Map"), rows[0].words); assertEquals(0, rows[0].picked)
+        assertEquals("Chat", rows[1].label); assertEquals(HomeWidgetMenus.EDGE_WORDS, rows[1].words); assertEquals(0, rows[1].picked)
+        assertEquals("Party", HomeWidgetMenus.title(EditStop.PARTY))
+        m.openMenu(EditStop.PARTY)
+        m.menuTouch(1, 1, rows)
+        assertEquals(HomeLayout.PartyDock.UNDER_CHAT, m.draft.party)
+        rows = HomeWidgetMenus.rows(EditStop.PARTY, m.draft, v)
+        m.menuTouch(0, 1, rows)
+        assertEquals("the map's column, the edge kept", HomeLayout.PartyDock.UNDER_MAP, m.draft.party)
+        rows = HomeWidgetMenus.rows(EditStop.PARTY, m.draft, v)
+        assertEquals("Map", rows[1].label); assertEquals(1, rows[0].picked); assertEquals(1, rows[1].picked)
+        // the controller: Up / Down the rows, Left / Right the choice
+        m.pressP("PADDDOWN", "PADDLEFT")
+        assertEquals(HomeLayout.PartyDock.ABOVE_MAP, m.draft.party)
+        assertEquals(EditStop.PARTY, m.menu)
+        // the other widgets' menus never offer it
+        for (s in listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST))
+            assertTrue(HomeWidgetMenus.rows(s, m.draft, v).none { it.key == HomeEditModel.K_PARTY_PLACE || it.key == HomeEditModel.K_PARTY_EDGE })
     }
 
     // ---------------------------------------------------------------- the fix pass (review findings)

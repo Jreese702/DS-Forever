@@ -30,27 +30,36 @@ import kotlin.math.abs
  * the "+" spot at the end while a room is hidden); A lifts a room (Left / Right carry it, A drops, B puts it back), X hides it (its "-"
  * badge; Settings never: a red pulse), A on "+" opens the small tray of hidden rooms (A puts one back where it was). A finger: a tap
  * moves the cursor, a drag carries the room, a tap on a badge hides it, a tap on "+" opens the tray.
+ *
+ * THE PARTY LIST AND THE BAR AT THE TOP (after 1518, the user's ruling 2026-11-22: "Why can't I move the party mode or the tap to cast to
+ * the top?"): the party list (Party mode's module) is a widget - the top or the foot of the chat's or the map's column ([nextDock], a
+ * finger's [dockUnder], its menu's Place / edge rows); an Across or Split bar dragged straight up goes to the top of the column it last
+ * sat in; a lifted card, bar or party list shows the four-way Move.
  */
 enum class EditStop {
     /** [ROOMS] = the room bar's rooms (1518 build 2: each one an app): A lifts the room under its own cursor ([HomeEditModel.barSel]),
      *  X hides it, A on its "+" opens the hidden rooms' tray - never the bar itself (no frame, no tag, no menu). The band has no stops.
      *  [DONE] = the ribbon's Done (the review's controller path to Discard that needs no held button: the relayed feed sees no hold) -
      *  reached only by Right from the room bar's right end (or from the ribbon's "+"), never by the D-pad's spatial walk: A is Done,
-     *  X Discard */
-    CHAT, MAP, QUEST, DIVIDER, CAST, PLUS, ROOMS, DONE;
+     *  X Discard.
+     *  [PARTY] = the party list (Party mode's module; after 1518, the user's ruling 2026-11-22: "Why can't I move the party mode or the
+     *  tap to cast to the top?"): a widget like the others - A lifts it, the D-pad carries it to the top or the foot of the chat's or
+     *  the map's column, A drops, B puts it back; a finger drags it; X its menu. Never removed (its presence is QOL > Party mode) */
+    CHAT, MAP, QUEST, DIVIDER, CAST, PARTY, PLUS, ROOMS, DONE;
     /** a widget a finger or A can lift and dock elsewhere */
-    val movable: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST
+    val movable: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST || this == PARTY
     /** a widget with the red X chip (it can be taken off Home and brought back with "+") */
     val removable: Boolean get() = this == QUEST || this == CAST
     /** a widget with a menu (X; on the room bar X hides the room under the cursor instead) */
-    val hasMenu: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST
-    /** its motion key (HomeEditMotion: spelled out, the keys 1518 gave each stop - the wiggle phases and paces stay as they were) */
+    val hasMenu: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST || this == PARTY
+    /** its motion key (HomeEditMotion: spelled out, the keys 1518 gave each stop - the wiggle phases and paces stay as they were; the
+     *  party list keeps the key it wiggled on in 1518, [HomeEditMotion.PARTY]) */
     val key: Int get() = when (this) {
-        CHAT -> 2; MAP -> 3; QUEST -> 4; DIVIDER -> 5; CAST -> 6; PLUS -> 7; ROOMS -> 8; DONE -> 13
+        CHAT -> 2; MAP -> 3; QUEST -> 4; DIVIDER -> 5; CAST -> 6; PARTY -> HomeEditMotion.PARTY; PLUS -> 7; ROOMS -> 8; DONE -> 13
     }
     /** the tag drawn on its dashed frame (terse: the widget's name; the bar's rooms none) */
     val tag: String get() = when (this) {
-        CHAT -> "Chat"; MAP -> "Map"; QUEST -> "Quest"; CAST -> "Tap-to-cast"
+        CHAT -> "Chat"; MAP -> "Map"; QUEST -> "Quest"; CAST -> "Tap-to-cast"; PARTY -> "Party"
         else -> ""
     }
 }
@@ -315,7 +324,8 @@ class HomeEditModel(
     }
 
     /** the dock a lifted widget goes to: Left / Right = the column on that side (chat and map swap; the bar keeps its edge); Up / Down =
-     *  the next dock (the card On map <-> Above chat; the bar's ladder, no wrap: Above its column <-> Under it <-> Across <-> Split) */
+     *  the next dock (the card On map <-> Above chat; the bar's ladder, no wrap: Above its column <-> Under it <-> Across <-> Split; the
+     *  party list the top <-> the foot of its column) */
     fun nextDock(s: EditStop, l: HomeLayout, d: Int, horizontal: Boolean): HomeLayout? {
         val side = if (d < 0) HomeLayout.Side.LEFT else HomeLayout.Side.RIGHT
         return when (s) {
@@ -332,6 +342,11 @@ class HomeEditModel(
                 val to = if (horizontal) l.cast.withColumn(if (side == l.chatSide) HomeModule.CHAT else HomeModule.MAP)
                     else castLadder(l.cast, d < 0)
                 if (to == null || to == l.cast) null else l.copy(cast = to)
+            }
+            // the party list: Left / Right the column on that side (its edge kept), Up / Down the top or the foot of its column (no wrap)
+            EditStop.PARTY -> {
+                val to = if (horizontal) l.party.withColumn(if (side == l.chatSide) HomeModule.CHAT else HomeModule.MAP) else l.party.withTop(d < 0)
+                if (to == l.party) null else l.copy(party = to)
             }
             else -> null
         }
@@ -441,6 +456,9 @@ class HomeEditModel(
             K_PLACE -> HomeWidgetMenus.CAST_DOCKS[k].let { c -> change(l.copy(cast = c.column?.let { l.cast.withColumn(it) } ?: c), Motion.MODULE_OPEN) }
                 .also { offed(s, EditStop.CAST, draft.cast == HomeLayout.CastDock.OFF) }
             K_CAST_EDGE -> change(l.copy(cast = l.cast.withTop(k == 0)), Motion.MODULE_OPEN)
+            // the party list's column (its edge kept) and its edge in that column
+            K_PARTY_PLACE -> change(l.copy(party = l.party.withColumn(if (k == 0) HomeModule.CHAT else HomeModule.MAP)), Motion.MODULE_OPEN)
+            K_PARTY_EDGE -> change(l.copy(party = l.party.withTop(k == 0)), Motion.MODULE_OPEN)
             K_SIZE -> change(l.copy(castSize = SIZES[k]), Motion.MODULE_OPEN)
             K_SLOTS -> { menu = null; listOf(Fx.EditSlots) }
             K_FILTERS -> { menu = null; listOf(Fx.Filters) }
@@ -468,9 +486,10 @@ class HomeEditModel(
         if (c in stops || EditStop.CHAT !in stops) return false
         if (menu == c) menu = null
         if (lifted == c) drop()                                           // 1518: every lift field (the view plops it: editCursorCheck)
-        // the card and the bar to "+" when shown (and drawn), else the chat
+        // the card and the bar to "+" when shown (and drawn), else the chat; the party list (QOL > Party mode off, the party gone) to
+        // the chat
         cursor = when {
-            plusShown && EditStop.PLUS in stops -> EditStop.PLUS
+            c != EditStop.PARTY && plusShown && EditStop.PLUS in stops -> EditStop.PLUS
             else -> EditStop.CHAT
         }
         return true
@@ -683,7 +702,9 @@ class HomeEditModel(
     /**
      * the layout the dragged widget's CENTRE asks for (the finger keeps its grab): chat / map swap sides once the centre is
      * [HYSTERESIS_PX] beyond the divider; the card docks to the column under it; the bar to the left / right column (above it in the
-     * columns' upper half, under it in the lower), or across (Split when it was split) in the middle third of the lower half; the divider snaps the chat's width to the nearest third / half / two thirds
+     * columns' upper half, under it in the lower), or across (Split when it was split) in the middle third of the lower half (in the
+     * upper half there: the top of the column it last sat in); the party list to the column under it, its top or its foot by the columns'
+     * halves; the divider snaps the chat's width to the nearest third / half / two thirds
      */
     fun dockUnder(d: Drag, l: HomeLayout, geo: Geo): HomeLayout? {
         if (d.stop == EditStop.ROOMS) {
@@ -733,12 +754,23 @@ class HomeEditModel(
                     else -> if (cx < b1 - h) -1 else if (cx > b2 + h) 1 else 0
                 }
                 val dock = when (to) {
-                    // across (or split) only from the lower half: dragging along the top never drops the bar at the foot
-                    0 -> if (!up) d.midDock else if (l.cast.column != null) l.cast.withTop(true) else l.cast
+                    // across (or split) only from the lower half: dragging along the top never drops the bar at the foot; an Across /
+                    // Split bar dragged straight up goes to the top of the column it last sat in (after 1518: "Why can't I move ... the
+                    // tap to cast to the top?" - it stayed Across and slid back)
+                    0 -> if (!up) d.midDock else if (l.cast.column != null) l.cast.withTop(true)
+                        else HomeLayout.CastDock.ABOVE_CHAT.withColumn(barColumn)
                     -1 -> (if (l.chatSide == HomeLayout.Side.LEFT) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP).withTop(up)
                     else -> (if (l.chatSide == HomeLayout.Side.RIGHT) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP).withTop(up)
                 }
                 l.copy(cast = dock)
+            }
+            // the party list: the column under its centre (past the divider by the hysteresis), the top in the columns' upper half, the
+            // foot in the lower (the edge kept within the hysteresis)
+            EditStop.PARTY -> {
+                val to = sideOver(if (l.party.column == HomeModule.CHAT) l.chatSide else mapSide)
+                val midY = (geo.colTop + geo.colBottom) / 2f
+                val up = when { d.cy < midY - HYSTERESIS_PX -> true; d.cy > midY + HYSTERESIS_PX -> false; else -> l.party.top }
+                l.copy(party = HomeLayout.PartyDock.of(if (to == l.chatSide) HomeModule.CHAT else HomeModule.MAP, up))
             }
             EditStop.DIVIDER -> {
                 val gap = lc.first
@@ -819,7 +851,10 @@ class HomeEditModel(
         const val K_SIZE = "size"
         const val K_FOLD = "fold"
         /** the stops whose box can go while edit mode is open (the cursor on one is moved by [cursorCheck]) */
-        val GONE_CHECKED = setOf(EditStop.QUEST, EditStop.CAST)
+        val GONE_CHECKED = setOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY)
+        /** the party list's menu rows: its column (Chat / Map) and its edge in it (Above / Below) */
+        const val K_PARTY_PLACE = "partyplace"
+        const val K_PARTY_EDGE = "partyedge"
         const val K_CAST_FIGHT = "castfight"
         const val K_CAST_PARTY = "castparty"
         const val K_SLOTS = "slots"
@@ -930,12 +965,19 @@ object HomeWidgetMenus {
             }
             add(MenuRow(HomeEditModel.K_SLOTS, "Edit slots", listOf("Edit slots"), -1, MenuRow.Kind.BUTTON))
         }
+        // the party list (after 1518): its column and its edge there, as the bar's Place and edge rows
+        EditStop.PARTY -> listOf(
+            MenuRow(HomeEditModel.K_PARTY_PLACE, "Place", PARTY_WORDS, if (l.party.column == HomeModule.CHAT) 0 else 1),
+            MenuRow(HomeEditModel.K_PARTY_EDGE, if (l.party.column == HomeModule.CHAT) "Chat" else "Map", EDGE_WORDS, if (l.party.top) 0 else 1),
+        )
         else -> emptyList()
     }
+    /** the party list's columns ([HomeEditModel.K_PARTY_PLACE]) */
+    val PARTY_WORDS = listOf("Chat", "Map")
 
     /** the menu's title */
     fun title(s: EditStop): String = when (s) {
         EditStop.CHAT -> "Chat"; EditStop.MAP -> "Map"
-        EditStop.QUEST -> "Quest card"; EditStop.CAST -> "Tap-to-cast bar"; else -> ""
+        EditStop.QUEST -> "Quest card"; EditStop.CAST -> "Tap-to-cast bar"; EditStop.PARTY -> "Party"; else -> ""
     }
 }
