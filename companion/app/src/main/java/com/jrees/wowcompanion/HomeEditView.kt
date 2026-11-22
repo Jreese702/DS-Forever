@@ -134,8 +134,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private fun bodyP(size: Float, colour: Int = Theme.text, align: Paint.Align = Paint.Align.LEFT) = textP(0, size, colour, align)
     private fun titleP(size: Float, colour: Int = Theme.gold, align: Paint.Align = Paint.Align.LEFT) = textP(1, size, colour, align)
     private fun numberP(size: Float, colour: Int = Theme.text, align: Paint.Align = Paint.Align.LEFT) = textP(2, size, colour, align)
+    /** the fight pencil's own colours (the readability pass): a fight-red ring and tip on a dark red disc */
+    private val FIGHT_RED = Color.rgb(200, 60, 40)
+    private val FIGHT_INK = Color.rgb(58, 16, 12)
     private val dash = DashPathEffect(floatArrayOf(14f, 9f), 0f)
     private val dashFine = DashPathEffect(floatArrayOf(8f, 7f), 0f)
+    private val dashPlus = DashPathEffect(floatArrayOf(5f, 4f), 0f)
     private val path = Path()
     /** the motion's scratch (no allocation per frame) */
     private val mtx = android.graphics.Matrix()
@@ -246,8 +250,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
     /** the box of the extra under the stop's cursor (or of "+"), as drawn: null = none */
     private fun extraBox(g: BandGeo, m: HomeEditModel): RectF? =
-        if (m.extraOnPlus) g.plus else m.extra?.let { k -> g.extras.firstOrNull { it.first == k }?.second }
-    /** [s]'s box on the band now (a pencil, the Look chip, the extra under the cursor), null = none */
+        if (m.extraOnPlus) g.plus?.let { extraPicture(EXTRA_PLUS, it) }
+        else m.extra?.let { k -> g.extras.firstOrNull { it.first == k }?.let { (_, r) -> extraPicture(k, r) } }
+    /** [s]'s box on the band now (a pencil, the Look chip, the extra under the cursor: its picture - the readability pass: the cursor
+     *  hugs the 28 px picture, not the taller cell under it), null = none */
     fun bandBox(s: EditStop): RectF? {
         val g = host.band() ?: return null
         val m = host.model
@@ -970,7 +976,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pencil(c, g.padPen, m.menu == EditStop.PAD_PEN)
         pencil(c, g.facePen, m.menu == EditStop.FACE_PEN)
         g.fightPen?.let { pencil(c, it, m.menu == EditStop.FIGHT_PEN, fight = true) }
-        g.look?.let { lookChip(c, it, if (g.diamonds) HomeRest.ROW else HomeRest.DIAMONDS) }
+        g.look?.let { lookChip(c, it, if (g.diamonds) HomeRest.DIAMONDS else HomeRest.ROW) }
         for ((k, r) in g.extras) {
             val sv = c.save()
             if (host.extraPose(k, mtx)) c.concat(mtx)
@@ -981,7 +987,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         g.plus?.let { r ->
             val sv = c.save()
             if (host.extraPose("plus", mtx)) c.concat(mtx)
-            plusSpot(c, r.centerX(), r.centerY(), min(r.width(), r.height()))
+            // the readability pass: on the cell's picture square (the blank frame the clock draws there), not the cell's middle
+            val pic = extraPicture(EXTRA_PLUS, r)
+            plusSpot(c, pic.centerX(), pic.centerY(), min(pic.width(), pic.height()))
             c.restoreToCount(sv)
         }
         val cur = m.cursor
@@ -998,12 +1006,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     /** a pencil badge (P1, drawn in vectors: no pencil art in the kit): an ink disc in a bronze ring (gold while its bubble is open), a
-     *  cream pencil across it; [fight] = the fight look's (a red tip) */
+     *  cream pencil across it; [fight] = the fight look's: the readability pass (the shots: it read as a third copy of the other two,
+     *  only its tip red) - a fight-red disc and ring, the pencil's tip red too, so it reads as the fight's own at a glance */
     private fun pencil(c: Canvas, r: RectF, open: Boolean, fight: Boolean = false) {
         val cx = r.centerX(); val cy = r.centerY(); val rad = min(r.width(), r.height()) / 2f
-        pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 235
+        pFill.style = Paint.Style.FILL; pFill.color = if (fight) FIGHT_INK else Theme.ink; pFill.alpha = 235
         c.drawCircle(cx, cy, rad, pFill)
-        pLine.pathEffect = null; pLine.strokeWidth = 2.5f; pLine.color = if (open) Theme.gold else Theme.bronze; pLine.alpha = 255
+        pLine.pathEffect = null; pLine.strokeWidth = if (fight) 3f else 2.5f
+        pLine.color = if (open) Theme.gold else if (fight) FIGHT_RED else Theme.bronze; pLine.alpha = 255
         c.drawCircle(cx, cy, rad - 1.5f, pLine)
         val sv = c.save()
         c.rotate(-45f, cx, cy)
@@ -1011,7 +1021,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         // the body, the ferrule, the sharpened tip and its lead
         pFill.color = Theme.text; pFill.alpha = 255
         scratch.set(cx - len / 2f + th, cy - th / 2f, cx + len / 2f, cy + th / 2f); c.drawRect(scratch, pFill)
-        pFill.color = if (fight) Color.rgb(200, 60, 40) else Theme.gold
+        pFill.color = if (fight) FIGHT_RED else Theme.gold
         scratch.set(cx + len / 2f - th * 0.9f, cy - th / 2f, cx + len / 2f, cy + th / 2f); c.drawRect(scratch, pFill)
         path.reset(); path.moveTo(cx - len / 2f + th, cy - th / 2f); path.lineTo(cx - len / 2f, cy); path.lineTo(cx - len / 2f + th, cy + th / 2f); path.close()
         pFill.color = Theme.bronze; c.drawPath(path, pFill)
@@ -1019,24 +1029,35 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.restoreToCount(sv)
     }
 
-    /** the Look chip (P3): a raised plate with the pictogram of the look a press gives - [to] ROW a thin row of five buttons, DIAMONDS two
-     *  diamonds of four */
-    private fun lookChip(c: Canvas, r: RectF, to: HomeRest) {
+    /**
+     * the Look chip (P3): a raised plate split in two like the bubbles' own two-word switch (Rest controller: Thin row / Diamonds) - a thin
+     * row's pictogram on its left, two diamonds on its right, the look the band has [now] lit (gold on a gold wash), the other dim. The
+     * readability pass (the shots: a plate of dots did not read as a switch): both looks shown, so it reads as "this or that", no text
+     */
+    private fun lookChip(c: Canvas, r: RectF, now: HomeRest) {
         pFill.style = Paint.Style.FILL; pFill.color = Theme.raised; pFill.alpha = 240
         c.drawRoundRect(r, 8f, 8f, pFill)
+        val mid = r.centerX()
+        // the lit half's wash
+        val litRow = now == HomeRest.ROW
+        scratch.set(if (litRow) r.left else mid, r.top, if (litRow) mid else r.right, r.bottom); scratch.inset(3f, 3f)
+        pFill.color = Theme.gold; pFill.alpha = 70
+        c.drawRoundRect(scratch, 6f, 6f, pFill)
         pLine.pathEffect = null; pLine.strokeWidth = 2f; pLine.color = Theme.bronze; pLine.alpha = 255
         c.drawRoundRect(r, 8f, 8f, pLine)
-        pFill.color = Theme.gold; pFill.alpha = 255
-        val cy = r.centerY()
-        if (to == HomeRest.ROW) {
-            val n = 6; val d = r.width() / (n + 1); val s = min(d * 0.75f, r.height() * 0.42f)
-            for (i in 0 until n) { val x = r.left + d * (i + 1); scratch.set(x - s / 2f, cy - s / 2f, x + s / 2f, cy + s / 2f); c.drawRoundRect(scratch, 2f, 2f, pFill) }
-        } else {
-            val s = min(r.height() * 0.22f, r.width() * 0.09f)
-            for (side in 0..1) {
-                val gx = r.left + r.width() * (if (side == 0) 0.3f else 0.7f)
-                for ((dx, dy) in DIAMOND) c.drawCircle(gx + dx * s * 1.6f, cy + dy * s * 1.6f, s * 0.75f, pFill)
-            }
+        pLine.strokeWidth = 1.5f; pLine.alpha = 200
+        c.drawLine(mid, r.top + 6f, mid, r.bottom - 6f, pLine)
+        val cy = r.centerY(); val half = r.width() / 2f
+        // the thin row: four buttons in a row
+        pFill.color = if (litRow) Theme.gold else Theme.dim; pFill.alpha = 255
+        val n = 4; val d = (half - 8f) / n; val sq = min(d * 0.72f, r.height() * 0.30f)
+        for (i in 0 until n) { val x = r.left + 4f + d * (i + 0.5f); scratch.set(x - sq / 2f, cy - sq / 2f, x + sq / 2f, cy + sq / 2f); c.drawRoundRect(scratch, 1.5f, 1.5f, pFill) }
+        // the diamonds: two of four
+        pFill.color = if (litRow) Theme.dim else Theme.gold
+        val ds = min(r.height() * 0.065f, half * 0.06f)
+        for (side in 0..1) {
+            val gx = mid + half * (if (side == 0) 0.28f else 0.72f)
+            for ((dx, dy) in DIAMOND) c.drawCircle(gx + dx * ds * 2f, cy + dy * ds * 2f, ds, pFill)
         }
     }
 
@@ -1051,13 +1072,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.drawRoundRect(scratch2, 1.8f, 1.8f, pFill)
     }
 
-    /** the extras' "+" spot (the room bar's "+" look, the cell's size) */
+    /** the extras' "+" spot: an empty picture slot (the readability pass: a rounded square over the blank frame the clock draws, the
+     *  same size as the pictures beside it - the circle left the frame's corners showing under it), a dashed bronze edge, a gold "+" */
     private fun plusSpot(c: Canvas, cx: Float, cy: Float, size: Float) {
         val r = size * 0.5f
+        scratch2.set(cx - r, cy - r, cx + r, cy + r)
         pFill.style = Paint.Style.FILL; pFill.color = Theme.raised; pFill.alpha = 255
-        c.drawCircle(cx, cy, r, pFill)
-        pLine.pathEffect = dashFine; pLine.strokeWidth = 2f; pLine.color = Theme.bronze; pLine.alpha = 255
-        c.drawCircle(cx, cy, r - 1f, pLine)
+        c.drawRoundRect(scratch2, 4f, 4f, pFill)
+        pLine.pathEffect = dashPlus; pLine.strokeWidth = 2f; pLine.color = Theme.bronze; pLine.alpha = 255
+        scratch2.inset(1f, 1f)
+        c.drawRoundRect(scratch2, 3f, 3f, pLine)
         pLine.pathEffect = null
         pFill.color = Theme.gold
         val arm = r * 0.5f; val th = 2.6f
@@ -1140,7 +1164,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val h = Strip.TRACKS.toFloat()
         val plus = RectF(14f, 2f, 14f + 46f, h - 2f)
         val tp = bodyP(RIBBON_TEXT)
-        val dw = max(DONE_MIN_W, max(tp.measureText(Tr.t("Done")), tp.measureText(Tr.t("Discard"))) + GLYPH + 40f)
+        val dw = max(DONE_MIN_W, max(tp.measureText(Tr.t("Done")), tp.measureText(Tr.t("Discard"))) + GLYPH + DONE_PAD)
         val done = RectF(w - 10f - dw, 2f, w - 10f, h - 2f)
         // P4: the Fight toggle. Fix round (the review: right of the disc it took about 130 px of the hints, so "B Put back" - and in French
         // a bubble's "B Back" - no longer fitted): just LEFT of the disc's gap, where the ribbon has nothing but "+" at its far left - still
@@ -1284,13 +1308,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** the hints' width with the first [n] of [pairs] in paint [p] */
     private fun hintsW(pairs: List<Pair<String, String>>, n: Int, p: Paint): Float {
         var w = 0f
-        for (i in 0 until n) w += p.measureText(Tr.t(pairs[i].second)) + 6f + glyphW(pairs[i].first) + (if (i > 0) 18f else 0f)
+        for (i in 0 until n) w += p.measureText(Tr.t(pairs[i].second)) + 6f + glyphW(pairs[i].first) + (if (i > 0) HINT_SEP else 0f)
         return w
     }
 
     /**
-     * the hints right-aligned to [right], never left of [left] (the disc's gap: the review found ES / FR running under it): the last
-     * pairs (the least needed: Size, then Options; Put back, then Drop) go first, then the text shrinks to [RIBBON_TEXT_MIN]
+     * the hints right-aligned to [right], never left of [left] (the disc's gap: the review found ES / FR running under it): the text
+     * shrinks to [RIBBON_TEXT_MIN] to keep them all ([hintsKept]); only past that do the last pairs (the least needed: Size, then
+     * Options; Put back, then Drop) go
      */
     private fun hints(c: Canvas, left: Float, right: Float, cy: Float, pairs: List<Pair<String, String>>) {
         if (pairs.isEmpty() || right <= left) return
@@ -1312,9 +1337,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 DPAD4 -> dpad4(c, x, cy, GLYPH)
                 else -> UiKit.pad(c, glyph, x, cy, GLYPH)
             }
-            x -= GLYPH / 2f + 18f
+            x -= GLYPH / 2f + HINT_SEP
         }
-        hintsLeftDrawn = x + 18f
+        hintsLeftDrawn = x + HINT_SEP
         hintsKeptDrawn = n
         c.restoreToCount(sv)
     }
@@ -1326,9 +1351,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** how many of [pairs] (from the first) fit [room] px at [RIBBON_TEXT] (one at least: the text shrinks for it) */
     fun hintsKept(pairs: List<Pair<String, String>>, room: Float): Int {
         val p = bodyP(RIBBON_TEXT, Theme.text)
-        // fix round (the review: B's hint went first): B's hint - each state's last (Put back, Back) - is kept at a smaller text, down
-        // to [RIBBON_TEXT_MIN], before any pair is dropped
-        if (pairs.size > 1 && pairs.last().first == UiKit.backGlyph() && hintsW(pairs, pairs.size, p) > room &&
+        // fix round (the review: B's hint went first) and the readability pass (every hint that fits shows): ALL of a state's hints are
+        // kept at a smaller text, down to [RIBBON_TEXT_MIN], before any pair is dropped ([hints] shrinks the text for them)
+        if (pairs.size > 1 && hintsW(pairs, pairs.size, p) > room &&
             hintsW(pairs, pairs.size, bodyP(RIBBON_TEXT_MIN, Theme.text)) <= room) return pairs.size
         var n = pairs.size
         while (n > 1 && hintsW(pairs, n, p) > room) n--
@@ -1651,7 +1676,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (d > Strip.BADGE_HIT / 2f) return false
         return !extraPicture(k, r).contains(x, y) || d <= EXTRA_BADGE_R + EXTRA_BADGE_SLOP
     }
-    /** extra [k]'s picture in its cell [r] (the icon: [ClockBand.ICON] at the cell's scale, centred, at its top; the gold line: the line) */
+    /** extra [k]'s picture in its cell [r] (the icon: [ClockBand.ICON] at the cell's scale, centred, at its top; the gold line: the line;
+     *  [EXTRA_PLUS]: its "+" spot's square, the blank frame's place) */
     fun extraPicture(k: String, r: RectF): RectF {
         if (k == "gold") return r
         val side = ClockBand.ICON * r.height() / ClockBand.CELL_H
@@ -1719,6 +1745,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val EXTRA_BADGE_R = 11f
         /** an extra's badge over its picture: the drawn disc and this much round it is the badge's ([extraBadgeHit]) */
         const val EXTRA_BADGE_SLOP = 3f
+        /** the extras' "+" spot's key ([BandGeo.plus]: [extraPicture]) */
+        const val EXTRA_PLUS = "plus"
         /** the Look chip's diamond pictogram: four buttons round a centre */
         private val DIAMOND = listOf(-1f to 0f, 0f to -1f, 1f to 0f, 0f to 1f)
         /** the dim over a widget that is not selected (SPEC section 4: alpha 70 / 255 black) */
@@ -1745,10 +1773,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val MENU_K_MIN = 0.8f
         const val TAP_SLOP = 24f
         const val RIBBON_TEXT = 22f
-        /** the least the hints shrink to before they are cut (after the least needed pairs went) */
+        /** the least the hints shrink to before any is cut (the readability pass: all of a state's hints shrink first, then the least
+         *  needed pairs go) */
         const val RIBBON_TEXT_MIN = 18f
         /** the hints' room past the disc's gap */
         const val HINT_GAP = 12f
+        /** between two hints (the readability pass: 18 -> 14, so Spanish and French keep all three: the glyphs part them) */
+        const val HINT_SEP = 14f
+        /** Done's room round its glyph and word (the readability pass: 40 -> 28 - French "Abandonner" sized it 199 px wide, the hints'
+         *  room) */
+        const val DONE_PAD = 28f
         /** the ribbon's "+" and Done: the least touch box (px, both ways) */
         const val TOUCH_MIN = 48f
         /** the ribbon's Done button's least width */

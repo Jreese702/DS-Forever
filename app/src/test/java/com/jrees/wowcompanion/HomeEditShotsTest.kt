@@ -731,12 +731,25 @@ class HomeEditShotsTest {
         settle(8)
         assertTrue("still on", HomeSettings.clockHearth)
         assertEquals(EditStop.EXTRAS, m.cursor); assertEquals("hearth", m.extra)
+        // the readability pass: the cursor hugs the 28 px picture (not the taller cell with the picture at its top)
+        val cur = ev.bandBox(EditStop.EXTRAS)!!
+        assertEquals("the cursor's box is the picture", hr, cur)
+        assertTrue("the cell is taller than its picture", g.extras.first { it.first == "hearth" }.second.height() > cur.height() + 8f)
         p.home.editCancel()
     }
 
     /** fix round (the review: the Fight toggle right of the disc took about 130 px of the hints): the Fight toggle sits left of the disc,
-     *  clear of "+", and the hints have their 1518 room again; B's hint (each state's last) is kept at a smaller text before anything is
-     *  dropped, so EVERY hint shows in English and Spanish in every state, and in French in a bubble, the tray and a menu (B Back) */
+     *  clear of "+", and the hints have their 1518 room again; the readability pass: a state's hints are all kept at a smaller text
+     *  before anything is dropped, so EVERY hint shows in every state in English, Spanish and French (French lifts excepted: their
+     *  three never fit beside "Abandonner"'s Done, as in 1518) */
+    /** a failed state's hints' widths at the smallest and the full text (the message's reading) */
+    private fun hintWidths(ev: HomeEditView, pairs: List<Pair<String, String>>): String {
+        val hw = HomeEditView::class.java.getDeclaredMethod("hintsW", List::class.java, Int::class.javaPrimitiveType, android.graphics.Paint::class.java).apply { isAccessible = true }
+        val bp = HomeEditView::class.java.declaredMethods.first { it.name.startsWith("bodyP") && it.parameterTypes.size == 3 }.apply { isAccessible = true }
+        val p18 = bp.invoke(ev, 18f, Theme.text, android.graphics.Paint.Align.LEFT)
+        val p22 = bp.invoke(ev, 22f, Theme.text, android.graphics.Paint.Align.LEFT)
+        return "w18=${hw.invoke(ev, pairs, pairs.size, p18)} w22=${hw.invoke(ev, pairs, pairs.size, p22)} done=${ev.ribbon(W.toFloat()).done.width()} words=${pairs.map { Tr.t(it.second) }}"
+    }
     @Test fun theRibbonKeepsEveryHintInEveryLanguage() {
         val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
         val lost = ArrayList<String>()
@@ -753,6 +766,16 @@ class HomeEditShotsTest {
                 assertTrue("$l: Fight clear of +", r.fight.left > r.plusHit.right)
                 val states = listOf<Pair<String, (HomeEditModel) -> List<HomeEditModel.Fx>>>(
                     "top" to { m -> m.startOn(EditStop.CHAT, false) },
+                    "top map" to { m -> m.startOn(EditStop.MAP, false) },
+                    "top card" to { m -> m.startOn(EditStop.QUEST, false) },
+                    "top bar" to { m -> m.startOn(EditStop.CAST, false) },
+                    "top room" to { m -> m.startOn(EditStop.ROOMS, false) },
+                    "the D-pad's pencil" to { m -> m.startOn(EditStop.PAD_PEN, false) },
+                    "the Look chip" to { m -> m.startOn(EditStop.LOOK, false) },
+                    "an extra" to { m -> HomeSettings.clockGold = true; m.startOn(EditStop.EXTRAS, false) },
+                    "Fight" to { m -> m.startOn(EditStop.FIGHT, false) },
+                    "Done" to { m -> m.startOn(EditStop.DONE, false) },
+                    "the divider" to { m -> m.startOn(EditStop.DIVIDER, false) },
                     "lifted chat" to { m -> m.startOn(EditStop.CHAT, true) },
                     "lifted card" to { m -> m.startOn(EditStop.QUEST, true) },
                     "lifted bar" to { m -> m.startOn(EditStop.CAST, true) },
@@ -770,21 +793,20 @@ class HomeEditShotsTest {
                     ev.hintsKeptDrawn = -1; ev.hintsLeftDrawn = Float.NaN
                     ev.drawRibbon(c, W.toFloat(), 0f, W / 2f - Strip.GAP_HALF, g1)
                     assertTrue("$l $n: clear of the disc", ev.hintsLeftDrawn >= g1)
-                    // B's hint (Put back, Back) is each state's last: every hint is kept there; elsewhere the least needed may go
-                    // (Size, then Options: 1518's rule, as before the Fight toggle came)
-                    if (m.menu != null || m.sheet != null || m.lifted != null) {
+                    if (m.menu != null || m.sheet != null || m.lifted != null)
                         assertEquals("$l $n: B's hint is there", UiKit.backGlyph(), pairs.last().first)
-                        // French lifts (Côté / Déplacer, Lâcher, Remettre next to "Abandonner"'s wide Done) never fitted the 322 px the
-                        // ribbon had before the Fight toggle came either (1518): the last pair goes there, as 1518 ruled; the rest keep all
-                        if (l == "fr" && m.lifted != null) assertTrue("$l $n: Move and Drop kept", ev.hintsKeptDrawn >= 2)
-                        else if (pairs.size != ev.hintsKeptDrawn) lost += "$l $n: ${ev.hintsKeptDrawn} of ${pairs.map { it.second }} " +
-                            "(room ${ev.ribbon(W.toFloat()).done.left - 18f - g1 - HomeEditView.HINT_GAP})"
-                    } else assertTrue("$l $n: the first hints kept (${ev.hintsKeptDrawn} of ${pairs.size})", ev.hintsKeptDrawn >= minOf(2, pairs.size))
+                    // the readability pass (the shots: only "A Move" with the chat selected, room to spare): EVERY hint of every state
+                    // shows in all three languages (the text shrinks to RIBBON_TEXT_MIN before any is dropped)
+                    // the one exception: French lifts (Côté / Déplacer, Lâcher, Remettre beside "Abandonner"'s wide Done: 356 px of
+                    // hints at the smallest text in a 322 px room) never fitted, in 1518 either - the least needed (B's) goes there
+                    if (l == "fr" && m.lifted != null) assertTrue("$l $n: Move and Drop kept", ev.hintsKeptDrawn >= pairs.size - 1)
+                    else if (pairs.size != ev.hintsKeptDrawn) lost += "$l $n: ${ev.hintsKeptDrawn} of ${pairs.map { it.second }} " +
+                        "(room ${ev.ribbon(W.toFloat()).done.left - 18f - g1 - HomeEditView.HINT_GAP}) needs ${hintWidths(ev, pairs)}"
                 }
                 p.home.editCancel()
             }
         } finally { Tr.setChoice(app, "auto") }
-        assertTrue("B's hint lost: $lost", lost.isEmpty())
+        assertTrue("hints lost: $lost", lost.isEmpty())
     }
 
     /** fix round (the review: under a tap-to-cast bar at a column's top a pencil bubble's tail landed on that bar): the bubble a bar pushed
@@ -1406,6 +1428,16 @@ class HomeEditShotsTest {
                 val g1 = W / 2f + 64f + 6f + 2f
                 val states = listOf<Pair<String, (HomeEditModel) -> List<HomeEditModel.Fx>>>(
                     "top" to { m -> m.startOn(EditStop.CHAT, false) },
+                    "top map" to { m -> m.startOn(EditStop.MAP, false) },
+                    "top card" to { m -> m.startOn(EditStop.QUEST, false) },
+                    "top bar" to { m -> m.startOn(EditStop.CAST, false) },
+                    "top room" to { m -> m.startOn(EditStop.ROOMS, false) },
+                    "the D-pad's pencil" to { m -> m.startOn(EditStop.PAD_PEN, false) },
+                    "the Look chip" to { m -> m.startOn(EditStop.LOOK, false) },
+                    "an extra" to { m -> HomeSettings.clockGold = true; m.startOn(EditStop.EXTRAS, false) },
+                    "Fight" to { m -> m.startOn(EditStop.FIGHT, false) },
+                    "Done" to { m -> m.startOn(EditStop.DONE, false) },
+                    "the divider" to { m -> m.startOn(EditStop.DIVIDER, false) },
                     "lifted chat" to { m -> m.startOn(EditStop.CHAT, true) },
                     "lifted room" to { m -> m.startOn(EditStop.ROOMS, true) },
                     "menu" to { m -> m.openMenu(EditStop.CHAT); emptyList() })

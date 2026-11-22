@@ -35,10 +35,26 @@ class BandEditPlaceTest {
         for ((n, b) in pieces) {
             assertTrue("$tag: $n $b inside the band $band", b.l >= band.l && b.r <= band.r && b.t >= band.t - 0.5f && b.b <= band.b + 0.5f)
             assertTrue("$tag: $n $b at least 24 px", b.w >= 24f && b.h >= 24f)
-            for ((i, s) in slots.withIndex()) assertTrue("$tag: $n $b on button $i $s", !b.overlaps(s))
+            // readability pass: in the thin row a pencil sits ON its own button's corner (its own group only); nothing else on a button
+            val own = when { diamonds -> emptyList(); n == "pad" -> listOf(2); n == "face" -> listOf(4); else -> emptyList() }
+            for ((i, s) in slots.withIndex()) if (i !in own) assertTrue("$tag: $n $b on button $i $s", !b.overlaps(s))
+            for (i in own) assertTrue("$tag: $n $b on its button's corner ${slots[i]}", b.cx >= slots[i].l && b.cx <= slots[i].r + b.w * 0.5f &&
+                (b.t + b.b) / 2f >= (slots[i].t + slots[i].b) / 2f && b.b <= slots[i].b + 0.5f)
             if (clock != null) assertTrue("$tag: $n $b on the clock chip $clock", !b.overlaps(clock))
             for ((m, o) in pieces) if (m != n) assertTrue("$tag: $n $b on $m $o", !b.overlaps(o))
         }
+        // each pencil at its OWN part's corner (the readability pass: the shots read the two as one pair): its centre within its half
+        // and a little of its group's nearest button, and the two pencils well apart (the band's ends, or the thin row's two sides)
+        for ((n, b, g) in listOf(Triple("pad", p.padPen, 0..3), Triple("face", p.facePen, 4..7))) {
+            val d = g.minOf { gap(b, slots[it]) }
+            assertTrue("$tag: $n $b at its part ($d px off)", d <= BandEdit.PAD + 1f)
+            val other = if (n == "pad") 4..7 else 0..3
+            assertTrue("$tag: $n $b nearer its own part than the other", d < other.minOf { gap(b, slots[it]) })
+        }
+        val apart = maxOf(p.facePen.l - p.padPen.r, p.padPen.l - p.facePen.r)
+        assertTrue("$tag: the two pencils apart ($apart px)", apart >= if (diamonds) 400f else 60f)
+        // the D-pad's pencil is not beside the Look chip (the shots: they read as one piece)
+        p.look?.let { l -> assertTrue("$tag: the Look chip ${l} clear of the D-pad's pencil ${p.padPen}", gap(l, p.padPen) >= if (diamonds) 24f else 12f) }
         if (preview) { assertNull(p.look); assertNotNull(p.fightPen) } else { assertNotNull(p.look); assertNull(p.fightPen) }
     }
 
@@ -58,6 +74,12 @@ class BandEditPlaceTest {
         // the grown fight band (380 tall): the fight pencil at its top centre
         val gh = 380f
         check("grown", HomeLayoutSolver.Box(0f, top, W, top + gh), slots(true, gh, top, true), null, true, true, true)
+    }
+
+    /** the empty space between two boxes (0 = touching or overlapping) */
+    private fun gap(a: HomeLayoutSolver.Box, b: HomeLayoutSolver.Box): Float {
+        val dx = maxOf(0f, maxOf(a.l - b.r, b.l - a.r)); val dy = maxOf(0f, maxOf(a.t - b.b, b.t - a.b))
+        return kotlin.math.hypot(dx, dy)
     }
 
     private object UiKitSizes { fun chip(gold: Boolean) = ClockBand.chipBottom(gold) - ClockBand.CHIP_TOP }
