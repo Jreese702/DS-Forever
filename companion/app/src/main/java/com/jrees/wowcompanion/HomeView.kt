@@ -1550,7 +1550,16 @@ class HomeView(
 
     // ================================================================ states -> places (spec parts 1, 2, 3, 6)
 
-    private fun changed() { editFightCheck(); apply(flow.screen, animate = isShown); onStateChanged?.invoke() }
+    private fun changed() {
+        editFightCheck()
+        // In fights = Top screen: a module opened in the fight closes (its every route ends here) - the takeover is back at once, so the
+        // band goes straight back above the page (HomeTouch.open kept the grow) rather than landing at its rest box for up to a tick
+        if (flow.full == null && !flow.takeover && TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct)) {
+            val now = System.currentTimeMillis()
+            if (flow.combat(takeoverWanted(now))) grewAt = now
+        }
+        apply(flow.screen, animate = isShown); onStateChanged?.invoke()
+    }
 
     /** the D-pad layout's RIGHT (the user, 2026-10-05: "I want right to open that home map module"): the map module opens as a tap on
      *  the small map would (refused in a fight's takeover, as the tap is); false = nothing changed */
@@ -1567,7 +1576,9 @@ class HomeView(
     private fun touchOpen(m: HomeModule): Boolean {
         val now = System.currentTimeMillis()
         val fighting = flow.takeover || grow.fighting(now)
-        if (!HomeTouch.open(flow, grow, m, now)) return false
+        // In fights = Top screen in the fight: the grow stays (the Wings stay up top); closing the module brings the takeover back
+        val keepGrow = !TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)
+        if (!HomeTouch.open(flow, grow, m, now, keepGrow)) return false
         if (fighting && flow.full != null) openedInFight = true
         Log.i("WCLOG", "home: $m opened by touch${if (fighting) " (in a fight)" else ""}")
         changed()
@@ -1720,6 +1731,9 @@ class HomeView(
      *  [placedAway] the last [places]' answer (chatPaneBox asks places too: only apply moves [laidAway]) */
     private var laidAway = false
     private var placedAway = false
+    /** the overall fraction (0..1) a Top-screen slide had reached when the next apply cancelled it, and its way; -1 = none */
+    private var slideCutAt = -1f
+    private var slideCutUp = false
     /** P2: the last [places] laid the tap-to-cast bar split in two halves */
     private var laidSplit = false
     /** the last [places] laid the bar at the top of its column (Above chat / Above map): hidden, it slides up behind the band */
@@ -1897,13 +1911,26 @@ class HomeView(
         // everywhere else B comes through the Cast view's reader
         watchB((s.full == HomeModule.CHAT || s.full == HomeModule.MAP) && !s.takeover && lent(mapView))
         val w = width.toFloat(); val h = frameH
+        slideCutAt = -1f
         anim?.cancel()
+        // a slide THIS cancel just cut short (its overall fraction and way; -1 = none)
+        val cutAt = slideCutAt; val cutUp = slideCutUp; slideCutAt = -1f
         if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
         val wasAway = laidAway
         val to = places(s, w, h)
         laidAway = placedAway
-        // IN FIGHTS = TOP SCREEN (TopSlide): the band leaving the page for the fight / coming back after it
-        val slide = TopSlide.isSlide(wasAway, laidAway)
+        val away = laidAway
+        // IN FIGHTS = TOP SCREEN (TopSlide): the band leaving the page for the fight / coming back after it. Only the takeover's own change
+        // (no full module before or now): a module opened from a Top fight / closed back into one keeps the module's time and curve, the
+        // map's morph in step with its box (the 11-22 review)
+        val wasFull = before != null && before.full != null && !before.takeover
+        val slide = TopSlide.isSlide(wasAway, away) && !open && !wasFull
+        // the 11-22 review: a re-lay inside the slide's 240 ms that keeps the band's way (edit mode's park, a card, the cast bar's side,
+        // the XP track's inset) goes ON with the same slide from where it was cut - its time left, its curve - not a fresh MODULE_CLOSE
+        // glide on Motion.curve (the columns overtaking the band again)
+        val resumeAt = TopSlide.resumeAt(slide, wasAway, away, open || wasFull, cutAt, cutUp)
+        val sliding = slide || resumeAt >= 0f
+        val slideFrom = if (slide) 0f else resumeAt.coerceAtLeast(0f)      // the slide's fraction this motion starts at
         if (lent(castView) && !laidAway) castView.away = false                // the down-slide's start (or the band on the page)
         for ((p, v) in views) if (to.containsKey(p)) {
             // a part coming back after being GONE starts from rest: no left-over slide, its own depth (the card over the map)
@@ -1913,7 +1940,7 @@ class HomeView(
         // fix/radials-clip-castbar: an open middle wheel follows the page laid again (a fight's start / end), never over the bar
         if (s.full == null || s.takeover) wheelRefit(to)
         if (!animate || before == null) {
-            if (lent(castView)) castView.away = laidAway                       // laid at once (no motion): away now
+            if (lent(castView)) castView.away = away                           // laid at once (no motion): away now
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
             chatReturn()
@@ -1934,7 +1961,7 @@ class HomeView(
         val isMap = s.full == HomeModule.MAP && !s.takeover
         val morphing = lent(mapView) && wasMap != isMap && now[Part.MAP] != null && to[Part.MAP] != null
         // the slide keeps its own pace whoever lays the page (a fight parking edit mode's draft too: editRelay's applyMs)
-        val ms = if (slide) TopSlide.durationMs(laidAway) else applyMs ?: when {
+        val ms = if (sliding) TopSlide.restMs(away, slideFrom) else applyMs ?: when {
             combat -> if (s.takeover) Motion.COMBAT_GROW else Motion.COMBAT_SHRINK
             open && !(before.full != null && !before.takeover) -> Motion.MODULE_OPEN
             !open && before.full != null && !before.takeover -> Motion.MODULE_CLOSE
@@ -1991,7 +2018,7 @@ class HomeView(
         // THE iPHONE-STYLE EDIT MODE: under edit mode every box glides on a spring (HomeEditMotion.glide: its centre a little past, its
         // size never past its target), starting at the speed it had (a quick D-pad run never stops and starts again). Outside edit mode
         // (Classic, every fight, a module opening) the one curve as before
-        val springs = !morphing && !combat && !slide && !gliding && editGlides() && motion.on && motion.scale > 0f
+        val springs = !morphing && !combat && !sliding && !gliding && editGlides() && motion.on && motion.scale > 0f
         if (!springs) partVel.clear()
         val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
         val dur = if (springs) HomeEditMotion.glideMs(ms) else ms
@@ -1999,15 +2026,15 @@ class HomeView(
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = dur
             // the slide: linear time, every part on the way's curve (TopSlide.partK: ease-in up / ease-out down; the columns ride the band's foot)
-            interpolator = if (springs || slide) android.view.animation.LinearInterpolator() else Motion.curve()
+            interpolator = if (springs || sliding) android.view.animation.LinearInterpolator() else Motion.curve()
             addUpdateListener { a ->
                 val k = a.animatedValue as Float
                 if (morphing) mapView.morph(k, mFrom!!, mTo!!, isMap, card)
                 if (springs) springFrame(a.animatedFraction, dur, ms, from, to, v0)
-                else if (slide) for (p in from.keys) {
+                else if (sliding) for (p in from.keys) {
                     val f = from[p]!!
                     val t = to[p] ?: f
-                    val q = TopSlide.partK(a.animatedFraction, laidAway)
+                    val q = TopSlide.resumeK(a.animatedFraction, slideFrom, away)
                     now[p] = RectF(lerp(f.left, t.left, q), lerp(f.top, t.top, q), lerp(f.right, t.right, q), lerp(f.bottom, t.bottom, q))
                 }
                 else for (p in from.keys) {
@@ -2030,12 +2057,18 @@ class HomeView(
                 if (moving) placeFrame()
             }
             addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationCancel(a: Animator) { cancelled = true }
+                override fun onAnimationCancel(a: Animator) {
+                    cancelled = true
+                    // a slide cut short: the next apply goes on with it if it keeps the way ([TopSlide.resumeAt])
+                    if (sliding) { slideCutAt = TopSlide.overall((a as ValueAnimator).animatedFraction, slideFrom); slideCutUp = away }
+                }
                 override fun onAnimationEnd(a: Animator) {
                     // a spring glide cut short keeps its parts' speeds for the next one; landed, they are still
                     if (!cancelled) partVel.clear()
-                    // the up-slide landed (not cut short by a reversal): the band is off the page - it draws nothing more (CastView.away)
-                    if (slide && laidAway && !cancelled && lent(castView)) castView.away = true
+                    // the motion landed with the band laid above the page: it draws nothing more (CastView.away). Any motion that lands
+                    // there, not only a whole up-slide (the 11-22 review: a re-lay inside the slide's 240 ms cancelled it, and the glide
+                    // that took over never set it - the band sat off the page with its cast bar claimed, the bottom screen had none)
+                    if (!cancelled && lent(castView)) castView.away = away
                     // fires on cancel too: the morph always ends (Map's safety net would after 700 ms anyway)
                     if (morphing) { mapView.morph(1f, mFrom!!, mTo!!, isMap, card); flightClip(false) }
                     if (gliding) { chatGlideBox.setEmpty(); chatSlot.clipToOutline = false; chatSlot.invalidateOutline() }

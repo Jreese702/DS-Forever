@@ -24,7 +24,8 @@ Checks:
     shown mid-fight is never read (rectNow not called, no secret touched) and does not move it; Party mode's lift (our own frames) re-fits
     it with a 0.24 s glide; the top chat strip dips it to 35 %; the chips light with ZL / ZR; the swing lines run; B's give-back (the
     router's switch false) / the fight's end slides it back down past the edge over 0.2 s (ease-in) and hides it; no lane = the fade +
-    rise; Party mode on = no Wings.
+    rise; Party mode on = no Wings (the 11-22 review: on PadMap's `live`, pinned to the app's PartyModel.onLive over on / aside / fight /
+    raid); the router's Y unbound (tgGrown nil) = the armed auto-attack / auto-repeat, as the app's grow.
   D NINTENDO MODE: the bar glides from its stock spot to the wings and back (alpha 1 all the way) and ends at the stock spot again.
   E THE EDITOR: the flag on, Nintendo off, the editor open out of combat -> the bar shows at its piece's spot; a placed spot = the fight's.
   F LEAVE NO TRACE: no Secure template, EnableMouse never true, no SetBinding / CVar / macro call, nothing of Blizzard's moved, shown or
@@ -46,6 +47,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ADDONS = os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons")
 SAFETY = os.path.join(ADDONS, "WowCompanion", "Safety.lua")
 AB = os.path.join(ADDONS, "WowCompanion", "ActionBar.lua")
+PADMAP = os.path.join(ADDONS, "WowCompanionSpells", "PadMap.lua")
+KT = os.path.join(ROOT, "companion", "app", "src", "main", "java", "com", "jrees", "wowcompanion")
 NBT = open(os.path.join(ROOT, "tools", "test_nintendo_bar.py"), encoding="utf-8").read()
 STUB = re.search(r"\nSTUB = r'''(.*?)'''", NBT, re.S).group(1)
 SCENE = re.search(r"\nSCENE = r'''(.*?)'''", NBT, re.S).group(1)
@@ -234,6 +237,41 @@ def invariants(name, r, inp_obst, s=1):
         chk(name + ": case %s clears every obstacle by 24 px" % r["case"], not hit, hit)
 
 
+def party_pin(L):
+    """the 11-22 review: ONE Party-mode predicate on both sides. The app's PartyModel.onLive (on && (aside == null || fight), read off
+    PadMap's party document: on = PM.on(), aside = R.aside, fight = fighting()) and the add-on's PadMap export `live` the Wings switch on:
+    the same truth table over on / aside / fight, a raid included (neither side gates raids)"""
+    pm = open(PADMAP, encoding="utf-8").read()
+    kt = open(os.path.join(KT, "PartyModel.kt"), encoding="utf-8").read()
+    hv = open(os.path.join(KT, "HomeView.kt"), encoding="utf-8").read()
+    ab = open(AB, encoding="utf-8").read()
+    m = re.search(r"\n\s+live = (function\(\) return .*? end),\s*\n", pm)
+    chk("C. review pin: PadMap's party export has `live`", m is not None)
+    doc = re.search(r"local on = PM\.on\(\)\s*\n.*?return \{ on = on, aside = R\.aside or nil, box = box, fight = fighting\(\),", pm, re.S)
+    chk("C. review pin: the party document's on / aside / fight are PM.on() / R.aside / fighting() (what the app reads)", doc is not None)
+    chk("C. review pin: the app's PartyModel.onLive = on && (aside == null || fight), Home's partyOnHere reads it",
+        "val onLive: Boolean get() = on && (aside == null || fight)" in kt and "private fun partyOnHere(): Boolean = party.party?.onLive == true" in hv)
+    nb = re.search(r"function NB\.partyOn\(\)(.*?)\nend", ab, re.S)
+    chk("C. review pin: NB.partyOn reads PadMap's live (on() for an older PadMap), no raid gate, not Trail's P.partyModeOn",
+        nb is not None and "p.live" in nb.group(1) and "IsInRaid" not in nb.group(1) and "partyModeOn" not in nb.group(1))
+    if m is None:
+        return
+    mk = L.eval('function(src) local f, e = loadstring("local PM, R, fighting = ...; return " .. src); if not f then error(e) end; '
+                'return function(on, aside, fight, raid) IsInRaid = function() return raid end; '
+                'return f({ on = function() return on end }, { aside = aside }, function() return fight end)() end end')
+    live = mk(m.group(1))
+    bad = []
+    for on in (False, True):
+        for aside in (None, "room", "GameMenuFrame"):
+            for fight in (False, True):
+                for raid in (False, True):
+                    app = on and (aside is None or fight)
+                    got = live(on, aside, fight, raid)
+                    if got is not app:
+                        bad.append((on, aside, fight, raid, got, app))
+    chk("C. review pin: PadMap's live == the app's onLive over on x aside (none / room / menu) x fight x raid (24 states)", not bad, bad[:4])
+
+
 def main():
     out_dir = SHOTS
     if "--shots" in sys.argv:
@@ -253,8 +291,10 @@ def main():
 
     # ------------------------------------------------------------------------------------------------ A the solver
     hw, hh, ax, ay = L.eval("WowCompanion.nbar.halfBox")()
-    chk("A. one half: the diamond 146 + the trigger chip (4 + 40, nbar11) wide, + the swing lines (8 + 6 + 4 + 6) tall; the diamond's centre",
-        (hw, hh, ax, ay) == (190, 170, 117, 73), (hw, hh, ax, ay))
+    # the 11-22 review: the box holds what a half DRAWS - the slots' focus glow (OFF 50 + the 46 slot / 2 + FOCUS 30 / 2 = 88 from the
+    # diamond's centre) on its top and its inner side, the glow + the 2-unit press below it, the chip side as before (117)
+    chk("A. one half: outer 117 (the diamond's 73 + the trigger chip 4 + 40), inner 88 / up 88 (the focus glow), down 97 (the swing "
+        "lines 73 + 8 + 6 + 4 + 6); the diamond's centre", (hw, hh, ax, ay) == (205, 185, 117, 88), (hw, hh, ax, ay))
     hud = R(820, 890, 280, 58)                                   # the bars + the aura host
     ours = [R(820, 890, 280, 58, "hud"), R(530, 4, 860, 76, "compass"), R(790, 86, 372, 94, "target")]
     game = [R(1590, 0, 330, 390, "g.MinimapCluster")]
@@ -263,7 +303,7 @@ def main():
     lr, rr = rect(r["rects"][1]), rect(r["rects"][2])
     chk("A1. 34 px each side of the HUD block", abs(lr[0] + lr[2] - (820 - 34)) < 0.01 and abs(rr[0] - (1100 + 34)) < 0.01, (lr, rr))
     chk("A1. level with the block's middle (y 919), both halves on one line", r["l"]["y"] == r["r"]["y"] == 919, (r["l"], r["r"]))
-    chk("A1. the D-pad's diamond left (x 713), the faces' right (x 1207)", (r["l"]["x"], r["r"]["x"]) == (713, 1207), (r["l"], r["r"]))
+    chk("A1. the D-pad's diamond left (x 698), the faces' right (x 1222)", (r["l"]["x"], r["r"]["x"]) == (698, 1222), (r["l"], r["r"]))
     invariants("A1", r, ours + game)
     chk("A1. nbar11: full size (k 1) and the lane under both halves clear (the slide's path)", r["k"] == 1 and r["lane"] is True, (r["k"], r["lane"]))
     # the bottom clamp: a HUD low on the screen
@@ -278,7 +318,7 @@ def main():
         r["case"] == 2 and r["k"] == 0.8 and r["raise"] % 24 == 0 and r["raise"] > 0, (r["case"], r["k"], r["raise"]))
     chk("A2. the least raise that clears it (footprint 24 px above it)", r["rects"][1]["y"] + r["rects"][1]["h"] <= 944 - 24
         and r["rects"][1]["y"] + r["rects"][1]["h"] + 24 > 944 - 24, r["rects"][1])
-    chk("A2. still level and beside the HUD (34 px off its side at k 0.8)", r["l"]["y"] == r["r"]["y"] and abs(r["l"]["x"] - (820 - 34 - 73 * 0.8)) < 1e-6,
+    chk("A2. still level and beside the HUD (34 px off its side at k 0.8)", r["l"]["y"] == r["r"]["y"] and abs(r["l"]["x"] - (820 - 34 - 88 * 0.8)) < 1e-6,
         (r["l"], r["r"]))
     chk("A2. the stock bar under the halves: no lane (the fade + rise instead)", r["lane"] is False, r["lane"])
     invariants("A2", r, ours + game + [stockbar])
@@ -359,7 +399,7 @@ def main():
     chk("A6. the HUD at the left edge: no room for the D-pad's half beside it nor joined above it -> the grid's spot (case 4), never the stock "
         "fallback", edge["case"] == 4, edge["case"])
     big = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0), s=1.5)
-    chk("A6. the size scales the halves (150 %: 285 x 255)", abs(big["rects"][1]["w"] - 285) < 0.01 and abs(big["rects"][1]["h"] - 255) < 0.01
+    chk("A6. the size scales the halves (150 %: 307.5 x 277.5)", abs(big["rects"][1]["w"] - 307.5) < 0.01 and abs(big["rects"][1]["h"] - 277.5) < 0.01
         and big["k"] == 1, big["rects"][1])
     chk("A7. the solver is pure: no frame read, no event, nothing created", G.RAISED == 0 and NB.top.reads == 0 and G.RECTNOW == 0)
 
@@ -385,7 +425,7 @@ def main():
         and not NB.top.shown and NB.f.shown is False, (NB.built, NB.top.spot is not None, NB.top.shown))
     chk("C. out of combat the game's shown frames were read (plain)", G.RECTNOW >= 1 and G.RECTNOW_COMBAT == 0, (G.RECTNOW, G.RECTNOW_COMBAT))
     sp = todict(NB.top.spot)
-    chk("C. the live spot: case 1 beside the live HUD block (bars + aura host: 820-1100 x 890-952)", sp["case"] == 1 and sp["l"]["x"] == 713
+    chk("C. the live spot: case 1 beside the live HUD block (bars + aura host: 820-1100 x 890-952)", sp["case"] == 1 and sp["l"]["x"] == 698
         and sp["l"]["y"] == 921, (sp["case"], sp["l"], sp["r"]))
     W.swingNote(2.0, 0)                                           # a main-hand swing running
     # the fight: PLAYER_REGEN_DISABLED (frozen), the router's switch on
@@ -511,13 +551,47 @@ def main():
     G.TG = False
     L.execute('RUN(0.4)')
     chk("C. ... and out again: hidden", not NB.top.shown)
-    # nbar11: Party mode on -> no Wings (the band keeps the controls below: ruling R0's default)
-    L.execute('WowCompanion.prd.partyModeOn = function() return true end')
+    # nbar11: Party mode on -> no Wings (the band keeps the controls below: ruling R0's default). The 11-22 review: on PadMap's `live`
+    # (the app's PartyModel.onLive: on, and not aside unless fighting) - never Trail's raid-gated P.partyModeOn
+    L.execute('PLIVE, PON = true, true; WowCompanion.padMap.party = { live = function() return PLIVE end, on = function() return PON end }')
     G.TG = True
     L.execute('RUN(0.5)')
     chk("C. nbar11: Party mode on -> the Wings stay off (never in both places)", not NB.top.shown and NB.top.want is False, NB.top.shown)
+    # in a raid Trail's P.partyModeOn says false (the HUD's lift), the app's onLive still true: the Wings stay off as the band stays below
+    L.execute('WowCompanion.prd.partyModeOn = function() return false end; RUN(0.5)')
+    chk("C. review: Party mode in a RAID (Trail's raid gate false, PadMap's live true) -> still no Wings (the app keeps the band)",
+        not NB.top.shown and NB.top.want is False, NB.top.shown)
+    # Party mode on but suspended by an aside out of combat (live false, on true): the app takes over (the band slides away) -> Wings
+    L.execute('PLIVE = false; RUN(0.5)')
+    chk("C. review: Party mode on but aside out of combat (live false) -> the Wings show (the band slid away: never on neither)",
+        NB.top.want is True and NB.top.shown, (NB.top.want, NB.top.shown))
     G.TG = False
-    L.execute('WowCompanion.prd.partyModeOn = nil; RUN(0.3)')
+    L.execute('RUN(0.4)')
+    # an older PadMap without `live`: its plain on()
+    L.execute('WowCompanion.padMap.party = { on = function() return true end }')
+    G.TG = True
+    L.execute('RUN(0.5)')
+    chk("C. review: an older PadMap (no live) -> its on()", not NB.top.shown and NB.top.want is False, NB.top.shown)
+    G.TG = False
+    L.execute('WowCompanion.padMap.party = nil; WowCompanion.prd.partyModeOn = nil; RUN(0.4)')
+    party_pin(L)
+    # the router's Y not bound (tgGrown nil): an attack armed before the pull (the app's hudS.aa / ar grow) shows the Wings; it ends: gone
+    L.execute('WowCompanion.tgGrown = function() return nil end')
+    L.execute('RUN(0.3)')
+    chk("C. review: tgGrown nil, nothing armed, out of combat -> no Wings", NB.top.want is False, NB.top.want)
+    L.execute('for _, x in ipairs(EVENTS["PLAYER_ENTER_COMBAT"] or {}) do if x.onOnEvent then x.onOnEvent(x, "PLAYER_ENTER_COMBAT") end end')
+    L.execute('RUN(0.5)')
+    chk("C. review: tgGrown nil + auto-attack armed (PLAYER_ENTER_COMBAT) -> the Wings show as the band slides away",
+        NB.top.want is True and NB.top.shown, (NB.top.want, NB.top.shown))
+    L.execute('for _, x in ipairs(EVENTS["PLAYER_LEAVE_COMBAT"] or {}) do if x.onOnEvent then x.onOnEvent(x, "PLAYER_LEAVE_COMBAT") end end')
+    L.execute('RUN(0.5)')
+    chk("C. review: ... the attack stops -> the Wings leave", NB.top.want is False and not NB.top.shown, (NB.top.want, NB.top.shown))
+    L.execute('for _, x in ipairs(EVENTS["START_AUTOREPEAT_SPELL"] or {}) do if x.onOnEvent then x.onOnEvent(x, "START_AUTOREPEAT_SPELL") end end')
+    L.execute('RUN(0.5)')
+    chk("C. review: tgGrown nil + Auto Shot (START_AUTOREPEAT_SPELL) -> the Wings show", NB.top.want is True, NB.top.want)
+    L.execute('for _, x in ipairs(EVENTS["STOP_AUTOREPEAT_SPELL"] or {}) do if x.onOnEvent then x.onOnEvent(x, "STOP_AUTOREPEAT_SPELL") end end')
+    L.execute('WowCompanion.tgGrown = function() return TG end; RUN(0.5)')
+    chk("C. review: ... stopped, the router's switch back -> no Wings", NB.top.want is False and not NB.top.shown, (NB.top.want, NB.top.shown))
     # nbar11: no lane (the stock bar under the halves) -> today's fade + rise
     L.execute('GAME["g.GamepadMainActionBarFrame"].shown = true; WowCompanion.nbar.top.gameDirty = true; RUN(0.1)')
     chk("C. nbar11: the stock bar under the halves -> no lane", NB.top.spot.lane is False, NB.top.spot.lane)

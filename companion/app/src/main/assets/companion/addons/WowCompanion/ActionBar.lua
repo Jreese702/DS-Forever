@@ -3314,12 +3314,34 @@ function NB.slideDrop(to, sp)
     return H + ay * s - math.min(to.l.y, to.r.y) + 2, hh * s
 end
 
--- one half's box in the bar's units: w, h and the diamond's centre from its top-left (the D-pad half; the faces' half mirrored)
+-- one half's box in the bar's units: w, h and the diamond's centre from its top-left (the D-pad half; the faces' half mirrored).
+-- nbar11 review: the box holds everything a half DRAWS, not only the diamond's slots: each slot's focus glow (FOCUS past the slot, at
+-- alpha 0.4 at rest and 1 on every layer flash) reached 15 units past the diamond on its top and its inner side, and the held ZL / ZR
+-- disc (CHIP_H + 8 round the chip) 4 above it - the solver kept only the diamond clear of the HUD, so the glow could flash over it.
+-- NB.halfArt gives the drawn reach on each side; the box is the larger of it and the diamond / chip / swing-line layout
+function NB.halfArt()
+    local T = NB.TOP
+    local d2 = NB.OFF + NB.B / 2
+    -- the outermost slot's glow (a slot sits OFF from the centre on each axis; a held one 2 lower)
+    local glow = NB.OFF + math.max(NB.B, NB.BC) / 2 + NB.FOCUS / 2
+    local disc = (T.CHIP_H + 8) / 2
+    local chipX, chipY = d2 + T.CHIP_GAP + T.CHIP_W / 2, d2 - T.CHIP_H / 2       -- NB.topDeco's chip centre (outward, up)
+    return {
+        up = math.max(glow, chipY + math.max(T.CHIP_H / 2, disc)),
+        down = glow + 2,
+        inner = glow,
+        outer = math.max(glow, chipX + math.max(T.CHIP_W / 2, disc)),
+    }
+end
 function NB.halfBox()
     local T = NB.TOP
     local d = 2 * NB.OFF + NB.B
-    local w = d + T.CHIP_GAP + T.CHIP_W
-    return w, d + T.SW_GAP + 2 * T.SW_H + T.SW_SEP, w - d / 2, d / 2
+    local a = NB.halfArt()
+    local outer = math.max(d + T.CHIP_GAP + T.CHIP_W - d / 2, a.outer)
+    local inner = math.max(d / 2, a.inner)
+    local up = math.max(d / 2, a.up)
+    local down = math.max(d / 2 + T.SW_GAP + 2 * T.SW_H + T.SW_SEP, a.down)
+    return outer + inner, up + down, outer, up
 end
 
 -- two rects overlap, [m] px apart at least
@@ -3684,12 +3706,18 @@ function NB.topFlag()
     return false
 end
 -- the router's own fight switch (the fight or an attack / auto-repeat armed, not given back by B), else the fight itself
--- nbar11: Party mode on (Trail's P.partyModeOn: PadMap's party switch, outside a raid) - the bottom band keeps the controls (ruling R0:
--- no takeover in Party mode), so the Wings stay off: the bar is never in both places
+-- nbar11: Party mode on - the bottom band keeps the controls (ruling R0: no takeover in Party mode), so the Wings stay off: the bar is
+-- never in both places. nbar11 review: the SAME rule the app reads off the party document (PartyModel.onLive = on && (aside == null ||
+-- fight)), from PadMap's own export (WC.padMap.party.live: PM.on() and (R.aside == nil or fighting())) - no raid exclusion (Trail's
+-- P.partyModeOn drops raids for the HUD's lift; the app never did, so in a raid the Wings showed while the band stayed below), and an
+-- out-of-combat aside counts as off on both sides. An older PadMap without `live`: its plain on()
 function NB.partyOn()
-    local prd = rawget(WC, "prd")
-    if type(prd) ~= "table" or type(prd.partyModeOn) ~= "function" then return false end
-    local ok, v = pcall(prd.partyModeOn)
+    local pm = rawget(WC, "padMap")
+    local p = type(pm) == "table" and pm.party or nil
+    if type(p) ~= "table" then return false end
+    local fn = (type(p.live) == "function" and p.live) or (type(p.on) == "function" and p.on) or nil
+    if not fn then return false end
+    local ok, v = pcall(fn)
     return ok and v == true
 end
 function NB.topSwitch()
@@ -3700,6 +3728,9 @@ function NB.topSwitch()
         local ok, g = pcall(WC.tgGrown)
         if ok and (g == true or g == false) then return g end
     end
+    -- nbar11 review: the router's Y not bound (tgGrown nil): the same armed attack the app's grow follows (hudS.aa / hudS.ar, this
+    -- file's autoAttack / autoRepeat), so an attack armed before the pull shows the Wings as the band slides away
+    if autoAttack == true or autoRepeat == true then return true end
     return S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true
 end
 function NB.chatUp()

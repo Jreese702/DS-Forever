@@ -11,6 +11,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -435,6 +436,8 @@ class HomeLayoutShotsTest {
         for (i in 0 until 30) frame()
         assertEquals("the blip over: at rest", rest.getValue("BARS"), boxes(home).getValue("BARS"))
         assertFalse("cut short: the band's view never went away", p.cast.away)
+        reLayMidSlide(p, rb)
+        moduleInATopFight(p)
         // animations off (the system's duration scale 0): the band jumps
         animScale(0f)
         try {
@@ -443,6 +446,78 @@ class HomeLayoutShotsTest {
             assertEquals("animations off: away at once", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
             assertTrue(p.cast.away)
         } finally { animScale(1f) }
+    }
+
+    /**
+     * the 11-22 review: a re-lay INSIDE the up-slide (the same tick's edit-mode park, a card, the aura pane, the cast bar's side, the XP
+     * track's inset) cancelled the slide and its glide never set CastView.away: the band sat off the page claiming the cast bar for the
+     * whole fight. Now the re-lay goes on with the same slide (its time left, its curve: the band never back down, the chat under its
+     * foot, landed by the slide's 240 ms) and whatever lands away sets away - a re-lay in the very first frame (fraction 0) too.
+     */
+    private fun reLayMidSlide(p: Page, rb: RectF) {
+        val home = p.home
+        for (cutAt in listOf(0, 5)) {
+            fightSignal(home, true)
+            assertTrue(home.flow.takeover)
+            val bandB = ArrayList<Float>(); val chatT = ArrayList<Float>()
+            for (i in 0 until cutAt) { frame(); boxes(home).let { bandB += it.getValue("BARS").bottom; chatT += it.getValue("CHAT").top } }
+            applyNow(home, home.flow.screen, animate = true)                 // the re-lay, the band's way unchanged
+            val a = field(home, "anim") as android.animation.ValueAnimator
+            assertTrue("cut at $cutAt: still the slide's linear time (its curve per part)", a.interpolator is android.view.animation.LinearInterpolator)
+            assertTrue("cut at $cutAt: the slide's time LEFT (${a.duration} ms)", a.duration <= Motion.TOP_SLIDE_UP - cutAt * 16L + 17L)
+            for (i in 0 until 24) { frame(); boxes(home).let { bandB += it.getValue("BARS").bottom; chatT += it.getValue("CHAT").top } }
+            for (i in 1 until bandB.size) assertTrue("cut at $cutAt: the band never back down ($bandB)", bandB[i] <= bandB[i - 1] + 0.01f)
+            for (i in bandB.indices) assertTrue("cut at $cutAt: frame $i chat ${chatT[i]} under the band's foot ${bandB[i]}", chatT[i] >= bandB[i] + 8f - 0.01f)
+            assertTrue("cut at $cutAt: the band left the page's top ($bandB)", bandB.first() < rb.bottom + 0.01f)
+            assertEquals("cut at $cutAt: landed away", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
+            assertTrue("cut at $cutAt: the band's view is away (it gives up its cast bar)", p.cast.away)
+            assertFalse("cut at $cutAt: its cast bar is not the shown one", p.cast.ownCastBarShown())
+            // a re-lay once landed (laid away already): away stays
+            applyNow(home, home.flow.screen, animate = true)
+            for (i in 0 until 20) frame()
+            assertTrue("cut at $cutAt: a later re-lay keeps it away", p.cast.away)
+            fightSignal(home, false)
+            for (i in 0 until 400) { frame(); if (i % 8 == 0) home.tick(); if (!home.flow.takeover && boxes(home).getValue("BARS") == rb) break }
+            for (i in 0 until 20) frame()
+            assertEquals("cut at $cutAt: back at rest", rb, boxes(home).getValue("BARS"))
+            assertFalse(p.cast.away)
+        }
+    }
+
+    /**
+     * the 11-22 review: a module opened by touch in a Top-screen fight and closed again. The touch no longer minimizes the grow (nothing
+     * grew; the Wings stay up top), so the close brings the takeover straight back: the band slides back above the page and is away - not
+     * left at its rest box with a red reminder under the Wings. The open / close themselves keep the module's time and curve (the map's
+     * morph in step with its box), never the slide's.
+     */
+    private fun moduleInATopFight(p: Page) {
+        val home = p.home
+        fightSignal(home, true)
+        for (i in 0 until 24) frame()
+        assertTrue(p.cast.away)
+        assertTrue("the small map opens in the fight", home.openMapModule())
+        assertEquals(HomeModule.MAP, home.flow.full)
+        assertFalse(home.flow.takeover)
+        val a = field(home, "anim") as android.animation.ValueAnimator
+        assertFalse("the open: the module's curve, not the slide's linear time", a.interpolator is android.view.animation.LinearInterpolator)
+        // (the takeover going as the module opens: the fight-time open's own COMBAT_SHRINK, as with Grow - never the slide's)
+        assertEquals("the open: the fight-time open's time, not the slide's", Motion.COMBAT_SHRINK, a.duration)
+        assertFalse("the open: the band no longer away", p.cast.away)
+        for (i in 0 until 24) frame()
+        home.homeDisc()                                                    // closed (every close route ends in changed())
+        assertNull(home.flow.full)
+        assertTrue("closed in the Top fight: the takeover is back at once", home.flow.takeover)
+        val c = field(home, "anim") as android.animation.ValueAnimator
+        assertFalse("the close: the module's curve", c.interpolator is android.view.animation.LinearInterpolator)
+        for (i in 0 until 24) frame()
+        home.tick()
+        for (i in 0 until 4) frame()
+        assertEquals("closed: the band back above the page", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
+        assertTrue("closed: away (the cast bar given up)", p.cast.away)
+        assertFalse("no red reminder (nothing was minimized)", field(home, "redShown") as Boolean)
+        fightSignal(home, false)
+        for (i in 0 until 400) { frame(); if (i % 8 == 0) home.tick(); if (!home.flow.takeover && !p.cast.away && boxes(home).getValue("BARS").bottom > 100f) break }
+        for (i in 0 until 20) frame()
     }
 
     @Test fun theInFightsTileIsThreeWay() {

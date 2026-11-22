@@ -97,4 +97,34 @@ class TopSlideTest {
             assertTrue("$p: heading back", kotlin.math.abs(back1[1] - box(rest, p)[1]) <= kotlin.math.abs(mid[1] - box(rest, p)[1]) + 1e-4f)
         }
     }
+
+    /** the 11-22 review: a re-lay inside the slide goes ON with it - the time left, the same path - and only then (not a new slide, not a
+     *  module, not the other way, not after it landed) */
+    @Test fun aReLayMidSlideGoesOnWithIt() {
+        assertEquals(-1f, TopSlide.resumeAt(slide = true, wasAway = false, isAway = true, moduleInvolved = false, cutAt = 0.3f, cutUp = true), 0f)
+        assertEquals(-1f, TopSlide.resumeAt(false, true, true, moduleInvolved = true, cutAt = 0.3f, cutUp = true), 0f)
+        assertEquals(-1f, TopSlide.resumeAt(false, true, true, false, cutAt = -1f, cutUp = true), 0f)
+        assertEquals("the cut one went the other way", -1f, TopSlide.resumeAt(false, true, true, false, cutAt = 0.3f, cutUp = false), 0f)
+        assertEquals("landed", -1f, TopSlide.resumeAt(false, true, true, false, cutAt = 1f, cutUp = true), 0f)
+        assertEquals("cut in its first frame: a whole slide still", 0f, TopSlide.resumeAt(false, true, true, false, cutAt = 0f, cutUp = true), 0f)
+        assertEquals(0.4f, TopSlide.resumeAt(false, true, true, false, cutAt = 0.4f, cutUp = true), 0f)
+        assertEquals(0.25f, TopSlide.resumeAt(false, false, false, false, cutAt = 0.25f, cutUp = false), 0f)
+        // the time left
+        assertEquals(Motion.TOP_SLIDE_UP, TopSlide.restMs(true, 0f))
+        assertEquals(Math.round(Motion.TOP_SLIDE_UP * 0.6), TopSlide.restMs(true, 0.4f))
+        assertEquals(1L, TopSlide.restMs(false, 1f))
+        // the same path: a part whose box did not change, re-started from where it stood at the cut, follows the uncut slide exactly
+        for (up in listOf(true, false)) for (cut in listOf(0f, 0.2f, 0.5f, 0.8f)) {
+            val from = floatArrayOf(0f, 200f, 1240f, 416f); val to = floatArrayOf(0f, -232f, 1240f, -16f)
+            val at = TopSlide.frame(from, to, cut, up)
+            for (j in 0..20) {
+                val u = j / 20f
+                val q = TopSlide.resumeK(u, cut, up)
+                val whole = TopSlide.frame(from, to, TopSlide.overall(u, cut), up)
+                for (i in 0..3) assertEquals("up=$up cut=$cut u=$u", whole[i], at[i] + (to[i] - at[i]) * q, 0.05f)
+            }
+            assertEquals(0f, TopSlide.resumeK(0f, cut, up), 1e-5f)
+            assertEquals(1f, TopSlide.resumeK(1f, cut, up), 1e-5f)
+        }
+    }
 }

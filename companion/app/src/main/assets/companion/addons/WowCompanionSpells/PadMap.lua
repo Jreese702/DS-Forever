@@ -7776,7 +7776,10 @@ local function partyMode()
     -- m110: box = Party mode's state (on, the picked unit "u"); lb = each unit's button under LB (self / p1..p4), as last read
     -- m129 (party_design.md E / A.4): selWant = what Select is now ("bound" / "off" / "dialog" / "aside": Hub's top tab), rng(unit) =
     -- the one range answer (true / false / nil), grouped = in a party (Hub's own row: grouped or Party mode on, the user 2026-11-11)
+    -- nbar11 review: live = Party mode as the app reads this party document (PartyModel.onLive: on, and not aside unless in a fight;
+    -- raids included) - ActionBar's Wings switch on the same predicate, so the controls are never on both screens or on neither
     WC.padMap.party = { cfg = function() return PM.cfgNow and PM.cfgNow() or PM.resolve() end, put = PM.put, on = PM.on,
+                        live = function() return (PM.on() and (R.aside == nil or fighting())) and true or false end,
                         box = PM.box, lb = function() return OV.lbmap.last end,
                         selWant = function() return PM.sel or PM.selWant(R.aside, false) end, rng = function(u) return PM.rngOf(u) end,
                         grouped = function() return PM.grouped() end,

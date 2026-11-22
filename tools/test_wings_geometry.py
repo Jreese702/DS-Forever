@@ -17,6 +17,9 @@ Checks:
     block), and never the case-5 stock fallback (the solver shrinks first: k 1 / 0.9 / 0.8 beside, raised at 0.8, joined above at 1 /
     0.8, the grid at 0.7 then 0.55 in the lower 60 %, then 0.55 anywhere); the other axes (stock scale 0.8 / 1 / 1.2, the piece's size 70 / 100 / 150, the target
     bar / compass / party column on / off, the reserved frames on / off) over a spread of HUD states.
+  2b WHAT IS DRAWN (the 11-22 review: the focus glow reached 15 units past the solved box): every slot's focus glow, a held slot's
+    2-unit drop, the glyph badges, the ZL / ZR chip with its gold disc and the swing lines - computed from the bar's constants and its
+    placement code, not NB.halfBox - inside the solved boxes and >= MARGIN from every resolved HUD frame.
   3 THE SLIDE NEVER CROSSES IT: where the solve says `lane`, the slide (from wholly below the screen's bottom edge up to the spot on
     NB.easeOut, sampled every 1/60 s) rises monotonically and never touches a HUD frame.
   4 THE INPUTS: NB.topOurs unions P.lay.block with the live frames read at ANY alpha (the HUD faded out of combat still counts).
@@ -326,6 +329,59 @@ def problems(r, hud_frames, obst, s):
     return out
 
 
+def art_rects(NBL, r):
+    """the 11-22 review: what each half DRAWS, in px, from the bar's own constants and NB.anchor / NB.button / NB.topDeco's placement
+    (not NB.halfBox): every slot's focus glow (slot + FOCUS, centred; a held slot 2 units lower), its glyph badge, the ZL / ZR chip with
+    its held gold disc (CHIP_H + 8), the two swing lines under the faces' diamond. -> {1: [rects], 2: [rects]} (top-left origin)"""
+    NB = NBL.globals().WowCompanion.nbar
+    T = NB.TOP
+    s = r["s_used"]
+    off, d2 = NB.OFF, NB.OFF + NB.B / 2
+    ga = NB.GLYPH_AT
+    out = {}
+    for h, c in ((1, r["l"]), (2, r["r"])):
+        sz = NB.B if h == 1 else NB.BC
+        rects = []
+        for ax, ay in ((-1, 0), (0, 1), (1, 0), (0, -1)):
+            for drop in (0, 2):
+                cx, cy = c["x"] + ax * off * s, c["y"] - ay * off * s + drop * s
+                g = (sz + NB.FOCUS) / 2 * s
+                rects.append((cx - g, cy - g, 2 * g, 2 * g))
+                gy = ga[2] if h == 1 else ga[3]
+                b = NB.GLYPH / 2 * s
+                rects.append((cx + ga[1] * s - b, cy - gy * s - b, 2 * b, 2 * b))
+        sgn = -1 if h == 1 else 1
+        ccx = c["x"] + sgn * (d2 + T.CHIP_GAP + T.CHIP_W / 2) * s
+        ccy = c["y"] - (d2 - T.CHIP_H / 2) * s
+        hw = max(T.CHIP_W, T.CHIP_H + 8) / 2 * s
+        hh = max(T.CHIP_H, T.CHIP_H + 8) / 2 * s
+        rects.append((ccx - hw, ccy - hh, 2 * hw, 2 * hh))
+        if h == 2:
+            dw = (2 * NB.OFF + NB.B) * s
+            top = c["y"] + (d2 + T.SW_GAP) * s
+            rects.append((c["x"] - dw / 2, top, dw, (2 * T.SW_H + T.SW_SEP) * s))
+        out[h] = rects
+    return out
+
+
+def art_problems(NBL, r, hud_frames):
+    """every drawn rect inside its half's solved box, so the box's MARGIN from the HUD holds for the art; and the art itself never
+    within MARGIN of a resolved HUD frame (cases 1-4)"""
+    if r["case"] == 5:
+        return []
+    out = []
+    art = art_rects(NBL, r)
+    for h in (1, 2):
+        box = (r["rects"][h]["x"], r["rects"][h]["y"], r["rects"][h]["w"], r["rects"][h]["h"])
+        for x in art[h]:
+            if not inside(x, box, 0.01):
+                out.append("half %d draws %s outside its box %s" % (h, tuple(round(v, 1) for v in x), tuple(round(v, 1) for v in box)))
+            for n, hf in hud_frames.items():
+                if over(x, hf, MARGIN - 1e-6):
+                    out.append("half %d's art %s within %d px of the HUD's %s" % (h, tuple(round(v, 1) for v in x), MARGIN, n))
+    return out
+
+
 def slide_problems(NBL, r, hud_frames):
     """the slide's path, sampled every 1/60 s over IN_S: monotonic, never on a HUD frame"""
     if not r["lane"] or r["case"] == 5:                 # (case 5 is check 2's failure already)
@@ -364,7 +420,7 @@ def main():
     NB = NBG.WowCompanion.nbar
     hb = NBL.eval("WowCompanion.nbar.halfBox")()
     # ------------------------------------------------------------------------------------------------ 1-3 the matrix
-    bad_block, bad_solve, bad_slide = [], [], []
+    bad_block, bad_solve, bad_slide, bad_art = [], [], [], []
     n_states = n_solves = 0
     cases = {}
     keep = {}
@@ -390,6 +446,9 @@ def main():
             p = problems(r, fr, obst, s)
             if p:
                 bad_solve.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), p[:2]))
+            ap = art_problems(NBL, r, fr)
+            if ap:
+                bad_art.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), ap[:2]))
             sp = slide_problems(NBL, r, fr)
             if sp:
                 bad_slide.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), sp[:2]))
@@ -412,6 +471,9 @@ def main():
                 p = problems(r, fr, obst, s)
                 if p:
                     bad_solve.append(((ui_h,) + hs + (stock, size, tg, cp, pc, res), p[:2]))
+                ap = art_problems(NBL, r, fr)
+                if ap:
+                    bad_art.append(((ui_h,) + hs + (stock, size, tg, cp, pc, res), ap[:2]))
                 sp = slide_problems(NBL, r, fr)
                 if sp:
                     bad_slide.append(((ui_h,) + hs + (stock, size, tg, cp, pc, res), sp[:2]))
@@ -420,6 +482,8 @@ def main():
         "above) in %d HUD states x 4 UI heights" % (n_states // 4), not bad_block, bad_block[:3])
     chk("2. the Wings: inside the screen, off the tap pad band, >= 24 px from every RESOLVED HUD frame, never the case-5 fallback "
         "(%d solves)" % n_solves, not bad_solve, bad_solve[:4])
+    chk("2b. review: what the halves DRAW (the focus glow, a held slot's 2-unit drop, the glyph badges, the ZL / ZR chip's gold disc, "
+        "the swing lines) inside the solved boxes and >= 24 px from every resolved HUD frame (%d solves)" % n_solves, not bad_art, bad_art[:3])
     chk("2. ... the bar shrinks before it moves: some states solved at k < 1 (cases seen %s)" % sorted(cases, key=str), any(c for c in cases))
     chk("3. the slide (lane true): wholly below the edge at the start, monotonic, never on a HUD frame (sampled every 1/60 s)",
         not bad_slide, bad_slide[:3])

@@ -31,6 +31,36 @@ object TopSlide {
      *  top never passes the band's foot (the band's bottom and the columns' tops move by nearly the same distance) */
     fun partK(f: Float, up: Boolean): Float = cubic(f, if (up) UP else DOWN)
 
+    /**
+     * THE SLIDE CUT SHORT (the 11-22 review): HomeView.apply cancels the running motion on every re-lay, and inside the slide's 240 ms
+     * plenty re-lay the page with the band's way unchanged (a fight parking edit mode's draft in the same tick, a quest / mail card, the
+     * aura pane, the cast bar's side, the XP track's inset, Home coming back from a room). Such a re-lay goes ON with the slide: the
+     * fraction it starts at (0..1), or -1 when it is not a slide's continuation - [slide] (a new slide or a reversal: from 0), a full
+     * module before or now ([moduleInvolved]: the module's own time and curve), no slide cut by this re-lay ([cutAt] < 0), the cut one
+     * going the other way, or one that had landed.
+     */
+    fun resumeAt(slide: Boolean, wasAway: Boolean, isAway: Boolean, moduleInvolved: Boolean, cutAt: Float, cutUp: Boolean): Float = when {
+        slide || moduleInvolved || wasAway != isAway -> -1f
+        cutAt < 0f || cutAt >= 1f || cutUp != isAway -> -1f
+        else -> cutAt
+    }
+
+    /** the time left of a slide ([away] = up) that starts at the fraction [from] (0 = a whole slide); at least 1 ms */
+    fun restMs(away: Boolean, from: Float): Long =
+        Math.round(durationMs(away) * (1f - from.coerceIn(0f, 1f)).toDouble()).coerceAtLeast(1L)
+
+    /** the slide's overall fraction at the linear fraction [u] of a motion that started at [from] */
+    fun overall(u: Float, from: Float): Float = from + (1f - from) * u
+
+    /** a part's progress between where it stood when the slide was cut at [from] (its new `from`) and its box, at the linear fraction [u]
+     *  of the rest: the cut slide's own curve carried on (a part whose box did not change follows the very path it was on) */
+    fun resumeK(u: Float, from: Float, up: Boolean): Float {
+        if (from <= 0f) return partK(u, up)
+        val p0 = partK(from, up)
+        if (p0 >= 1f) return 1f
+        return ((partK(overall(u, from), up) - p0) / (1f - p0)).coerceIn(0f, 1f)
+    }
+
     /** one part's box at [f] between [from] and [to] (l, t, r, b) - HomeView.apply's frame, and the tests' */
     fun frame(from: FloatArray, to: FloatArray, f: Float, up: Boolean): FloatArray {
         val k = partK(f, up)
