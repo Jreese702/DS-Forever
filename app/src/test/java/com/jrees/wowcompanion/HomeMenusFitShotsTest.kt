@@ -343,6 +343,48 @@ class HomeMenusFitShotsTest {
         else if (!inside(tray, 0f, 0f, W.toFloat(), H.toFloat())) no(tag, "edit tray of hidden rooms ${r(tray)} off the screen")
         tray?.let { t -> render(p, "$tag edit room tray") { c -> c.drawRect(t, pCyan) } }
         p.home.editCancel(); settle()
+        editBand(tag, l, p)                                                  // the same Home (every Home made stays heard: one less)
+    }
+
+    /**
+     * THE TOP BAR'S BUBBLES AND TRAY (the user's rulings 2026-11-22): the D-pad's and the ABXY's pencil bubbles, the extras' tray with all
+     * five hidden, and the fight pencil's bubble in each In fights look (the preview: Grow's grown band, Same size's and Top screen's rest
+     * box) - each on the screen, under the band, never over a tap-to-cast bar
+     */
+    private fun editBand(tag: String, l: HomeLayout, p: Page) {
+        HomeLayoutStore.character("Korvash-Realm"); HomeLayoutStore.set(l)
+        setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
+        settle()
+        if (!p.home.editOpen(EditStop.CHAT)) { no(tag, "edit refused (band)"); return }
+        settle()
+        val ev = p.home.editChrome
+        fun check(what: String, box: RectF?) {
+            if (box == null) { no(tag, "edit $what: none"); return }
+            val bb = band(p.home).bottom
+            if (!inside(box, 16f, bb, W - 16f, H.toFloat())) no(tag, "edit $what ${r(box)} off the screen or over the band (bottom $bb)")
+            for (c in ev.castBoxes()) if (overlaps(c, box)) no(tag, "edit $what ${r(box)} covers the tap-to-cast bar ${r(c)}")
+            render(p, "$tag edit $what") { c -> c.drawRect(box, pCyan) }
+        }
+        for (s in listOf(EditStop.PAD_PEN, EditStop.FACE_PEN)) {
+            p.home.editAct { it.pencilTap(s) }; settle(4)
+            check(s.name.lowercase(), ev.menuBox(s))
+            p.home.editAct { it.closeMenu(); emptyList() }
+        }
+        // the extras' tray (Diamonds at rest only: the thin row has no extras row)
+        if (l.rest == HomeRest.DIAMONDS) {
+            p.home.editAct { m -> HomeEditModel.EXTRA_KEYS.flatMap { m.hideExtra(it) } }; settle(4)
+            p.home.editAct { it.openExtraTray() }; settle(4)
+            check("extras tray", ev.extraTrayBox())
+            p.home.editAct { m -> m.closeSheet(); HomeEditModel.EXTRA_KEYS.flatMap { m.unhideExtra(it) } }; settle(4)
+        }
+        for (f in HomeLayout.FightBand.values()) {
+            p.home.editAct { listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, f.ordinal)) }; settle(4)
+            p.home.editAct { it.toggleFight() }; settle(30)
+            p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(4)
+            check("fight ${f.name.lowercase()}", ev.menuBox(EditStop.FIGHT_PEN))
+            p.home.editAct { it.closeMenu(); it.toggleFight() }; settle(30)
+        }
+        p.home.editCancel(); settle()
     }
 
     // ---------------------------------------------------------------- the matrix

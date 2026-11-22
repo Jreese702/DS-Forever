@@ -513,14 +513,17 @@ class HomeEditModelTest {
 
     // ---------------------------------------------------------------- the top bar stays still (the user's ruling 2026-11-22)
 
-    /** "What the hell is the dpad swapping buttons or clock move? ... remove that": the band has no stop (no D-pad icon, no clock, no
-     *  band), and the stops keep the motion keys 1518 gave them (their wiggle phases and paces unchanged) */
-    @Test fun theBandHasNoStopsAndTheKeysStay() {
-        assertEquals(listOf("CHAT", "MAP", "QUEST", "DIVIDER", "CAST", "PARTY", "PLUS", "ROOMS", "DONE"), EditStop.values().map { it.name })
-        assertEquals("the party list keeps the key it wiggled on in 1518", listOf(2, 3, 4, 5, 6, HomeEditMotion.PARTY, 7, 8, 13),
+    /** "What the hell is the dpad swapping buttons or clock move? ... remove that": nothing on the band moves (no D-pad icon swap, no
+     *  clock spot); the user's rulings 2026-11-22 then gave the band its pieces (pencils, the Look chip, the extras, the fight pencil:
+     *  HomeEditBandTest) - none movable, none removable - and the 1518 stops keep the motion keys they had (their wiggle phases and paces) */
+    @Test fun theBandHasNoMovingStopsAndTheKeysStay() {
+        assertEquals(listOf("CHAT", "MAP", "QUEST", "DIVIDER", "CAST", "PARTY", "PLUS", "ROOMS", "DONE", "PAD_PEN", "FACE_PEN", "LOOK",
+            "EXTRAS", "FIGHT_PEN", "FIGHT"), EditStop.values().map { it.name })
+        assertEquals("the party list keeps the key it wiggled on in 1518", listOf(2, 3, 4, 5, 6, HomeEditMotion.PARTY, 7, 8, 13, 9, 11, 12, 14, 1, 15),
             EditStop.values().map { it.key })
         assertEquals(EditStop.values().size, EditStop.values().map { it.key }.toSet().size)
-        assertEquals(setOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY), HomeEditModel.GONE_CHECKED)
+        assertTrue(HomeEditModel.GONE_CHECKED.containsAll(setOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY)))
+        assertTrue("no band piece moves", EditStop.values().filter { it.band }.none { it.movable || it.removable })
         assertTrue("no key is a room's", EditStop.values().none { it.key >= HomeEditMotion.roomKey(0) })
     }
 

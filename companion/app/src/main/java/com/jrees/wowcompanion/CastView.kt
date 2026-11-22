@@ -241,6 +241,18 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      *  no SWING (its fill and its restart flash); the CAST bar and its flashes stay (Settings > Home "Swing timer") */
     var swingOn = true
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** P4 (the user's ruling 2026-11-22): Home's edit mode previews the fight look - with no swing of the game's running, a stand-in swing
+     *  loops along the line ([PREVIEW_SWING_MS]) so Swing timer On / Off shows; false (always outside edit mode) = nothing changes */
+    var swingPreview = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** P1 (edit mode's top bar pieces): slot [pos]'s box (0..3 the D-pad L / U / R / D, 4..7 the faces) in this view's px into [out] */
+    fun slotRect(pos: Int, out: RectF) {
+        bandSlot(pos, slotRectBox)
+        val h = slotRectBox[2] / 2f
+        out.set(slotRectBox[0] - h, slotRectBox[1] - h, slotRectBox[0] + h, slotRectBox[1] + h)
+    }
+    private val slotRectBox = FloatArray(3)
 
     /**
      * DIAMONDS only (Home's band; LATER 16 + 18, UI Art's HARMONY_SPEC): ZL / ZR wells low under the LB / RB plates
@@ -3677,9 +3689,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val fa = if (offPass) now - offFlashAt else now - flashAtMs
         val fk = if (!offPass) flashKind else if (offFlashAt > 0L && fa >= 0 && fa < SWING_FLASH_MS) FLASH_SWING else 0
         val flashLen = when (fk) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
+        // P4: edit mode's fight preview with no real swing: the stand-in loops (the main hand's line only)
+        val standIn = swingPreview && !offPass && swingStartMs.isNaN()
         val parts = SwingLine.parts(swingOn && !castOnly && !roomPass && !into, now.toDouble(), castStartMs, castEndMs,
-            if (offPass) offStartMs else swingStartMs, if (offPass) offDurMs else swingDurMs, SWING_GRACE,
+            if (standIn) (now - now % PREVIEW_SWING_MS).toDouble() else if (offPass) offStartMs else swingStartMs,
+            if (standIn) PREVIEW_SWING_MS.toDouble() else if (offPass) offDurMs else swingDurMs, SWING_GRACE,
             fk != 0, fk == FLASH_SWING, fa, flashLen)
+        if (standIn && swingOn) postInvalidateOnAnimation()
         val flashing = parts.flash
         val casting = parts.cast
         val swingP = parts.swing
@@ -4400,6 +4416,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private const val BAR_H = 14f                  // the bar's height at 1240 wide (UI Art)
         private const val DS_MACRO_PREFIX = "DS Bar"   // Spellbook's companion macros: DS Bar Left / Open / Right
         private const val SWING_GRACE = 0.5      // swing lengths the line waits dimmed for the next swing
+        /** P4: the fight preview's stand-in swing (ms; edit mode only: [swingPreview]) */
+        const val PREVIEW_SWING_MS = 2600L
         private const val FOCUS_MS = 330L          // *ShadowFocus alpha 1 -> 0.4
         private const val GLOW_TOP_MS = 300f       // trigger GlowTop alpha 1 -> 0
         private const val GLOW_BOTTOM_MS = 500L    // trigger GlowBottom alpha 0.7 -> 0.2

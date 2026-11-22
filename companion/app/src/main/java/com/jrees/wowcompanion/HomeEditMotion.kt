@@ -296,6 +296,11 @@ class HomeEditMotion {
         private const val ROOM0 = 16
         /** 1518 build 2: the room bar's "+" spot wiggles as its own app (the key after the last room's; worked out once: the review) */
         @JvmField val PLUS_ROOM: Int = roomKey(Room.values().size)
+        /** P2 (the user's ruling 2026-11-22): the clock's extras wiggle as apps, each on its own key (its place in
+         *  HomeEditModel.EXTRA_KEYS: the key stays whatever else is shown), the extras' "+" spot after them; past the room bar's keys */
+        private const val EXTRA0 = 32
+        fun extraKey(i: Int): Int = (EXTRA0 + i).coerceAtMost(KEYS - 1)
+        @JvmField val PLUS_EXTRA: Int = extraKey(HomeEditModel.EXTRA_KEYS.size)
         /** the pops */
         const val MENU = 0
         const val SHEET = 1
