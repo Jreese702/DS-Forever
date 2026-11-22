@@ -69,6 +69,39 @@ class XInputQueueTest {
         assertTrue(q.stats().contains("merged 1998"))
     }
 
+    /**
+     * #153 review: a stick held through a stall (16 ms ticks of 10 px while a key waits on the X lock) used to merge into ONE move of
+     * the whole sum, landing as a 3000 px jump when the lock freed. A relative sum now lives [XInputQueue.STALE_MOVE_MS] at most: the
+     * stalled stretch is dropped and only the newest deltas move the cursor (it pauses, as before the queue).
+     */
+    @Test fun aStalledStickDoesNotLandAsOneJump() {
+        val q = XInputQueue("XInputTest5", mover)
+        val gate = CountDownLatch(1)
+        q.post { gate.await(3, TimeUnit.SECONDS) }                // a key press stuck on the X lock
+        Thread.sleep(30)
+        val start = System.nanoTime()
+        var sent = 0
+        while ((System.nanoTime() - start) / 1_000_000L < 3 * XInputQueue.STALE_MOVE_MS + 100) { q.moveBy(10, 0); sent += 10; Thread.sleep(16) }
+        gate.countDown()
+        assertTrue(q.awaitIdle(5_000))
+        assertEquals(1, log.size)
+        val dx = log[0].removePrefix("by ").substringBefore(',').toInt()
+        println("XInputQueueTest: a stick held through a stall sent %d px; %d px landed when the lock freed (before: all %d)".format(sent, dx, sent))
+        assertTrue("the stalled stretch was replayed ($dx of $sent px)", dx in 10..(10 * (XInputQueue.STALE_MOVE_MS / 16 + 2)).toInt())
+        assertTrue(q.stats().contains("stale "))
+    }
+
+    @Test fun deltasWithinTheWindowStillAddUp() {
+        val q = XInputQueue("XInputTest6", mover)
+        val gate = CountDownLatch(1)
+        q.post { gate.await(2, TimeUnit.SECONDS) }
+        Thread.sleep(30)
+        for (i in 1..50) q.moveBy(3, -2)                          // a burst well inside the window
+        gate.countDown()
+        assertTrue(q.awaitIdle(5_000))
+        assertEquals(listOf("by 150,-100"), log.toList())
+    }
+
     @Test fun inputSentFromTheWorkerRunsAtOnceInOrder() {
         val q = XInputQueue("XInputTest3", mover)
         var onWorker = false

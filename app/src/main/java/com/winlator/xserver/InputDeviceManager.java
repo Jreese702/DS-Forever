@@ -3,6 +3,7 @@ package com.winlator.xserver;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.ViewConfiguration;
 
 import com.winlator.winhandler.MouseEventFlags;
@@ -29,20 +30,37 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
     private int repeatDelayMs = 500;
     private int repeatRateMs = 50;
 
-    private final Runnable autoRepeatRunnable = new Runnable() {
-        @Override
-        public void run() {
-            // #153: the repeat's press runs on the X input queue (in order with the release, under the X lock), never on the UI thread
-            xServer.postInput(() -> {
-                if (xServer.keyboard.getPressedKeys().contains(currentRepeatingKeycode)) {
-                    try (XLock lock = xServer.lock(XServer.Lockable.WINDOW_MANAGER, XServer.Lockable.INPUT_DEVICE)) {
-                        onKeyPress(currentRepeatingKeycode, currentRepeatingKeysym, currentRepeatingShiftedKeysym, true);
-                    }
-                    autoRepeatHandler.postDelayed(autoRepeatRunnable, repeatRateMs);
+    /** the repeat timers' token (one removeCallbacksAndMessages ends them all) */
+    private final Object autoRepeatToken = new Object();
+    /** bumped by every press and by the repeating key's release: a repeat queued before it does nothing (#153 review) */
+    private volatile int autoRepeatGen;
+
+    /**
+     * The repeat of the key [onKeyPress] just set, in [delayMs]. #153: the repeat's press runs on the X input queue (in order with the
+     * release, under the X lock), never on the UI thread. The key and the generation are taken HERE, when the timer is set: a repeat
+     * that was already queued behind a stalled op when a later press (or the release) ran is stale and does nothing - the queue cannot
+     * be un-posted the way the timer can, so it checks (a new press ends the previous key's repeat; a new repeat key waits its delay).
+     */
+    private void scheduleAutoRepeat(long delayMs) {
+        final int gen = autoRepeatGen;
+        final byte keycode = currentRepeatingKeycode;
+        final int keysym = currentRepeatingKeysym, shiftedKeysym = currentRepeatingShiftedKeysym;
+        autoRepeatHandler.postAtTime(() -> xServer.postInput(() -> {
+            if (gen != autoRepeatGen || keycode != currentRepeatingKeycode) return;
+            if (xServer.keyboard.getPressedKeys().contains(keycode)) {
+                try (XLock lock = xServer.lock(XServer.Lockable.WINDOW_MANAGER, XServer.Lockable.INPUT_DEVICE)) {
+                    onKeyPress(keycode, keysym, shiftedKeysym, true);
                 }
-            });
-        }
-    };
+                if (keycode == currentRepeatingKeycode) scheduleAutoRepeat(repeatRateMs);
+            }
+        }), autoRepeatToken, SystemClock.uptimeMillis() + delayMs);
+    }
+
+    /** every pending repeat ends (the timers, and any repeat already queued: its generation is old) */
+    private void stopAutoRepeat() {
+        autoRepeatGen++;
+        autoRepeatHandler.removeCallbacksAndMessages(autoRepeatToken);
+    }
 
     public InputDeviceManager(XServer xServer) {
         this.xServer = xServer;
@@ -229,7 +247,7 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
     @Override
     public void onKeyPress(byte keycode, int keysym, int shiftedKeysym, boolean autoRepeat) {
         // Any new key press ends the previous key's repeat, as on a real keyboard.
-        autoRepeatHandler.removeCallbacks(autoRepeatRunnable);
+        stopAutoRepeat();
 
         Window focusedWindow = xServer.windowManager.getFocusedWindow();
         if (focusedWindow == null) return;
@@ -269,14 +287,14 @@ public class InputDeviceManager implements Pointer.OnPointerMotionListener, Keyb
             currentRepeatingKeycode = keycode;
             currentRepeatingKeysym = keysym;
             currentRepeatingShiftedKeysym = shiftedKeysym;
-            autoRepeatHandler.postDelayed(autoRepeatRunnable, repeatDelayMs);
+            scheduleAutoRepeat(repeatDelayMs);
         }
     }
 
     @Override
     public void onKeyRelease(byte keycode) {
         if (keycode == currentRepeatingKeycode) {
-            autoRepeatHandler.removeCallbacks(autoRepeatRunnable);
+            stopAutoRepeat();
         }
 
         Window focusedWindow = xServer.windowManager.getFocusedWindow();

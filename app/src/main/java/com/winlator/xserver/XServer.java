@@ -198,6 +198,11 @@ public class XServer {
     private final Object logical = new Object();
     private int logicalButtons = 0;                          // Pointer.Button.flag() bits
     private final boolean[] logicalKeys = new boolean[256];  // by X keycode
+    // the hold a sender meant (#153 review): when each press was SENT (under [logical]) and when it RAN (input thread only)
+    private final long[] keySentNs = new long[256], keyRanNs = new long[256];
+    private final long[] buttonSentNs = new long[8], buttonRanNs = new long[8];
+    /** the most of a sender's press-to-release gap kept when the queue ran behind (a long hold is never replayed in full) */
+    public static final long MAX_KEPT_HOLD_MS = 60L;
 
     public XInputQueue getInputQueue() { return inputQueue; }
 
@@ -238,6 +243,12 @@ public class XServer {
 
     public void injectPointerMoveDelta(int dx, int dy) {
         if (dx == 0 && dy == 0) return;
+        // relative mouse: straight to the Windows side as before #153 (no X lock involved, nothing waits behind a stalled key)
+        WinHandler handler = winHandler;
+        if (relativeMouseMovement && handler != null) {
+            handler.mouseEvent(MouseEventFlags.MOVE, dx, dy, 0);
+            return;
+        }
         inputQueue.moveBy(dx, dy);
     }
 
@@ -247,11 +258,70 @@ public class XServer {
     }
 
     public void injectPointerButtonPress(Pointer.Button buttonCode) {
-        submit(() -> logicalButtons |= buttonCode.flag(), () -> pointerButtonPressNow(buttonCode));
+        submitButtonPress(buttonCode, null);
     }
 
     public void injectPointerButtonRelease(Pointer.Button buttonCode) {
-        submit(() -> logicalButtons &= ~buttonCode.flag(), () -> pointerButtonReleaseNow(buttonCode));
+        submitButtonRelease(buttonCode, null);
+    }
+
+    /**
+     * ONE click at [x], [y] held [holdMs], then the pointer goes back where it was (DS Forever's cell taps). The spot to go back to is
+     * read on the input thread when the click's press runs, in order with everything sent before it, never from the caller's view of a
+     * queue that may be behind (#153 review: a tap reading the X pointer while a trackpad move or an earlier tap was still queued left
+     * the pointer parked on a cell). The move and the press run as one op, the release and the move back as another, and the release
+     * keeps the hold even when both ran late. Sleeps [holdMs] on the caller (never the UI thread).
+     */
+    public void injectClickAt(int x, int y, Pointer.Button button, long holdMs) {
+        final int[] back = new int[2];
+        submitButtonPress(button, () -> {
+            back[0] = pointer.getX(); back[1] = pointer.getY();
+            pointerMoveNow(x, y);
+        });
+        try { Thread.sleep(holdMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        submitButtonRelease(button, () -> pointerMoveNow(back[0], back[1]));
+    }
+
+    /** a pointer press; [before] runs on the input thread just before it, in the same op */
+    private void submitButtonPress(Pointer.Button button, Runnable before) {
+        final int i = button.code() & 7;
+        final long sent = System.nanoTime();
+        submit(() -> { logicalButtons |= button.flag(); buttonSentNs[i] = sent; }, () -> {
+            if (before != null) before.run();
+            pointerButtonPressNow(button);
+            buttonRanNs[i] = System.nanoTime();
+        });
+    }
+
+    /** a pointer release, keeping the sender's hold; [after] runs on the input thread just after it, in the same op */
+    private void submitButtonRelease(Pointer.Button button, Runnable after) {
+        final int i = button.code() & 7;
+        final long sent = System.nanoTime();
+        final long[] pressSent = new long[1];
+        submit(() -> { logicalButtons &= ~button.flag(); pressSent[0] = buttonSentNs[i]; }, () -> {
+            keepHold(pressSent[0], sent, buttonRanNs[i]);
+            pointerButtonReleaseNow(button);
+            if (after != null) after.run();
+        });
+    }
+
+    /**
+     * On the input thread, before a release: the sender sent the press and the release [releaseSentNs] - [pressSentNs] apart; when the
+     * queue ran behind, the two would run back to back (a secure cell acting on the release, a key tap, got no hold at all). Waits out
+     * what is missing of that gap since the press RAN, up to [MAX_KEPT_HOLD_MS]; nothing when the queue kept up.
+     */
+    static void keepHold(long pressSentNs, long releaseSentNs, long pressRanNs) {
+        long left = holdLeftNs(pressSentNs, releaseSentNs, pressRanNs, System.nanoTime());
+        if (left <= 0L) return;
+        try { Thread.sleep(left / 1_000_000L, (int) (left % 1_000_000L)); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
+
+    /** what is left to wait of the sender's hold at [nowNs] (0: none; a press that has not run for this release, or 1 ms or less) */
+    static long holdLeftNs(long pressSentNs, long releaseSentNs, long pressRanNs, long nowNs) {
+        if (pressSentNs == 0L || pressRanNs == 0L || pressRanNs < pressSentNs || releaseSentNs < pressSentNs) return 0L;
+        long want = Math.min(releaseSentNs - pressSentNs, MAX_KEPT_HOLD_MS * 1_000_000L);
+        long left = want - (nowNs - pressRanNs);
+        return left > 1_000_000L ? left : 0L;
     }
 
     public void injectKeyPress(XKeycode xKeycode) {
@@ -268,11 +338,22 @@ public class XServer {
 
     /** As injectKeyPress, telling X what the key types without (keysym) and with Shift (shiftedKeysym). */
     public void injectKeyPress(XKeycode xKeycode, int keysym, int shiftedKeysym, boolean autoRepeat) {
-        submit(() -> logicalKeys[xKeycode.getId() & 0xff] = true, () -> keyPressNow(xKeycode, keysym, shiftedKeysym, autoRepeat));
+        final int k = xKeycode.getId() & 0xff;
+        final long sent = System.nanoTime();
+        submit(() -> { logicalKeys[k] = true; keySentNs[k] = sent; }, () -> {
+            keyPressNow(xKeycode, keysym, shiftedKeysym, autoRepeat);
+            keyRanNs[k] = System.nanoTime();
+        });
     }
 
     public void injectKeyRelease(XKeycode xKeycode) {
-        submit(() -> logicalKeys[xKeycode.getId() & 0xff] = false, () -> keyReleaseNow(xKeycode));
+        final int k = xKeycode.getId() & 0xff;
+        final long sent = System.nanoTime();
+        final long[] pressSent = new long[1];
+        submit(() -> { logicalKeys[k] = false; pressSent[0] = keySentNs[k]; }, () -> {
+            keepHold(pressSent[0], sent, keyRanNs[k]);
+            keyReleaseNow(xKeycode);
+        });
     }
 
     /** a ReentrantLock that says which thread holds it (the slow-input line) */

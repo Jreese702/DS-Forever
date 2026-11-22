@@ -123,6 +123,48 @@ class KeyboardRepeatShiftTest {
         assertEquals("BKSP stopped repeating at the A press", after, presses())
     }
 
+    /** the input queue held back (an op stuck on the X lock): postInput lands in [held] until [drain] */
+    private val held = mutableListOf<Runnable>()
+    private fun holdQueue() { every { xServer.postInput(any()) } answers { held += firstArg<Runnable>() } }
+    private fun inlineQueue() { every { xServer.postInput(any()) } answers { firstArg<Runnable>().run() } }
+    private fun drain() { while (held.isNotEmpty()) held.removeAt(0).run() }
+
+    /**
+     * #153 review: the repeat's timer fired and queued its press behind a stalled op, then a new key press ran first. Before: the queued
+     * repeat read the CURRENT repeating key when it ran and repeated the old key (or the new one, at once) - the new press could not
+     * un-post it. Now it is stale and does nothing.
+     */
+    @Test fun aRepeatQueuedBeforeANewPressDoesNothing() {
+        xServer.injectKeyPress(XKeycode.KEY_BKSP, 0)
+        holdQueue()
+        idle(520)                                    // BKSP's repeat timer fired: its press waits in the queue
+        assertEquals(1, held.size)
+        xServer.keyboard.onKeyEvent(hw(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A))   // A's press runs first (no X repeat of its own)
+        val after = presses()
+        drain()
+        assertEquals("the stale repeat sent nothing", after, presses())
+        inlineQueue()
+        idle(2_000)
+        assertEquals("BKSP never started repeating again", after, presses())
+    }
+
+    @Test fun aRepeatQueuedBeforeANewRepeatKeyDoesNotRepeatItEarly() {
+        xServer.injectKeyPress(XKeycode.KEY_BKSP, 0)
+        holdQueue()
+        idle(520)
+        assertEquals(1, held.size)
+        xServer.injectKeyPress(XKeycode.KEY_A, 0)    // a new auto-repeat key: its first repeat is its own 500 ms away
+        val after = presses()
+        drain()
+        assertEquals("A not repeated at once by BKSP's stale repeat", after, presses())
+        inlineQueue()
+        idle(400)
+        assertEquals("A waits its delay", after, presses())
+        idle(300)
+        assertTrue("then A repeats (${presses()})", presses() > after)
+        xServer.injectKeyRelease(XKeycode.KEY_A)
+    }
+
     @Test fun shiftNumberKeepsTheKeysIdentity() {
         val before = keysyms(XKeycode.KEY_1)
         assertEquals('1'.code to '!'.code, before)

@@ -11,6 +11,8 @@ import java.util.ArrayDeque;
  *
  * Pointer moves that have not started yet are merged into the newest one of the same kind (absolute: the last position wins; relative:
  * the deltas add up), so a stalled X lock never builds a backlog of thousands of moves; keys and buttons are never merged or dropped.
+ * A relative sum is kept for [STALE_MOVE_MS] only: past that, the deltas added so far are dropped and the sum starts again from the
+ * newest one, so a stick held through a 5 s stall does not land as one 3000 px jump when the lock frees (the cursor pauses instead).
  * The worker leaves after [IDLE_EXIT_MS] with nothing to do and is started again by the next input (no thread left behind by an
  * X server that is gone). An op that has run for [SLOW_MS] is told to the [SlowListener] once (XServer logs who holds the X locks).
  * Pure Java (the tests drive it with plain locks).
@@ -22,6 +24,8 @@ public final class XInputQueue {
     public static final long IDLE_EXIT_MS = 30_000L;
     /** past this many queued items a new pointer move is dropped (keys and buttons never are) */
     public static final int MAX_QUEUED = 4_096;
+    /** a queued relative move older than this drops its sum and starts again from the newest delta (a stall is not replayed) */
+    public static final long STALE_MOVE_MS = 250L;
 
     /** where the merged pointer moves land (XServer's own, run on the worker) */
     public interface Mover {
@@ -41,7 +45,8 @@ public final class XInputQueue {
         int a, b;
         final Runnable op;
         final long queuedNs;
-        Item(int kind, int a, int b, Runnable op, long queuedNs) { this.kind = kind; this.a = a; this.b = b; this.op = op; this.queuedNs = queuedNs; }
+        long sumFromNs;                          // MOVE_BY: when the deltas in [a], [b] started adding up
+        Item(int kind, int a, int b, Runnable op, long queuedNs) { this.kind = kind; this.a = a; this.b = b; this.op = op; this.queuedNs = queuedNs; this.sumFromNs = queuedNs; }
     }
 
     private final String name;
@@ -52,7 +57,7 @@ public final class XInputQueue {
     private volatile boolean slowSaid;
     private volatile SlowListener slowListener;
     // the counts (stats(): a report line; the tests)
-    private long ran, merged, dropped, maxWaitNs, maxRunNs;
+    private long ran, merged, dropped, stale, maxWaitNs, maxRunNs;
 
     public XInputQueue(String name, Mover mover) {
         this.name = name;
@@ -95,7 +100,14 @@ public final class XInputQueue {
         synchronized (this) {
             Item tail = queue.peekLast();
             if (kind != OP && tail != null && tail.kind == kind) {
-                if (kind == MOVE_TO) { tail.a = a; tail.b = b; } else { tail.a += a; tail.b += b; }
+                if (kind == MOVE_TO) {
+                    tail.a = a; tail.b = b;
+                } else if (now - tail.sumFromNs > STALE_MOVE_MS * 1_000_000L) {
+                    tail.a = a; tail.b = b; tail.sumFromNs = now;    // the stalled stretch's deltas are dropped, not replayed
+                    stale++;
+                } else {
+                    tail.a += a; tail.b += b;
+                }
                 merged++;
             } else if (kind != OP && queue.size() >= MAX_QUEUED) {
                 dropped++;
@@ -177,11 +189,11 @@ public final class XInputQueue {
     /** how many items wait now */
     public synchronized int pending() { return queue.size(); }
 
-    /** "input ran 120, merged 40, dropped 0, wait max 3 ms, run max 1 ms" since the last call (the counts start again) */
+    /** "input ran 120, merged 40, dropped 0, stale 0, wait max 3 ms, run max 1 ms" since the last call (the counts start again) */
     public synchronized String stats() {
-        String s = "input ran " + ran + ", merged " + merged + ", dropped " + dropped + ", wait max " + maxWaitNs / 1_000_000L +
-            " ms, run max " + maxRunNs / 1_000_000L + " ms";
-        ran = 0; merged = 0; dropped = 0; maxWaitNs = 0; maxRunNs = 0;
+        String s = "input ran " + ran + ", merged " + merged + ", dropped " + dropped + ", stale " + stale + ", wait max " +
+            maxWaitNs / 1_000_000L + " ms, run max " + maxRunNs / 1_000_000L + " ms";
+        ran = 0; merged = 0; dropped = 0; stale = 0; maxWaitNs = 0; maxRunNs = 0;
         return s;
     }
 }

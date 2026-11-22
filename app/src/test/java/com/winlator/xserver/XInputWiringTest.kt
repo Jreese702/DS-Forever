@@ -26,11 +26,25 @@ class XInputWiringTest {
         for (head in listOf("public void injectPointerMove(int x, int y)", "public void injectPointerMoveDelta(int dx, int dy)",
                             "public void injectPointerButtonPress(Pointer.Button buttonCode)", "public void injectPointerButtonRelease(Pointer.Button buttonCode)",
                             "public void injectKeyPress(XKeycode xKeycode, int keysym, int shiftedKeysym, boolean autoRepeat)",
-                            "public void injectKeyRelease(XKeycode xKeycode)", "public void injectPointerMoveBy(int dx, int dy)")) {
+                            "public void injectKeyRelease(XKeycode xKeycode)", "public void injectPointerMoveBy(int dx, int dy)",
+                            "public void injectClickAt(int x, int y, Pointer.Button button, long holdMs)",
+                            "private void submitButtonPress(Pointer.Button button, Runnable before)",
+                            "private void submitButtonRelease(Pointer.Button button, Runnable after)")) {
             val b = body(x, head)
             assertFalse(head, b.contains("lock("))
-            assertTrue(head, b.contains("inputQueue.") || b.contains("submit(") || b.contains("postInput("))
+            assertTrue(head, b.contains("inputQueue.") || b.contains("submit(") || b.contains("submitButton") || b.contains("postInput("))
         }
+        // #153 review: relative-mouse deltas go straight to the Windows side (never behind a key stuck on the X lock)
+        val delta = body(x, "public void injectPointerMoveDelta(int dx, int dy)")
+        assertTrue(delta.indexOf("handler.mouseEvent(MouseEventFlags.MOVE") in 0 until delta.indexOf("inputQueue.moveBy("))
+        // a release keeps the sender's hold even when the queue ran behind
+        for (head in listOf("public void injectKeyRelease(XKeycode xKeycode)", "private void submitButtonRelease(Pointer.Button button, Runnable after)")) {
+            val b = body(x, head)
+            assertTrue(head, b.indexOf("keepHold(") in 0 until maxOf(b.indexOf("keyReleaseNow("), b.indexOf("pointerButtonReleaseNow(")))
+        }
+        // the click's spot to go back to is read on the input thread, in the press's own op
+        val click = body(x, "public void injectClickAt(int x, int y, Pointer.Button button, long holdMs)")
+        assertTrue(click.contains("submitButtonPress(button, () -> {") && click.indexOf("back[0] = pointer.getX()") > click.indexOf("submitButtonPress("))
         // the logical view is set in the same step as the queueing
         val submit = body(x, "private void submit(Runnable state, Runnable op)")
         assertTrue(submit.contains("synchronized (logical)") && submit.indexOf("state.run()") < submit.indexOf("inputQueue.post(op)"))
@@ -52,10 +66,21 @@ class XInputWiringTest {
 
     @Test fun theRepeatAndTheSocketWritesStayOffTheUiThread() {
         val idm = text("com/winlator/xserver/InputDeviceManager.java")
-        val repeat = idm.substring(idm.indexOf("private final Runnable autoRepeatRunnable"), idm.indexOf("public InputDeviceManager("))
+        val repeat = body(idm, "private void scheduleAutoRepeat(long delayMs)")
         assertTrue(repeat.contains("xServer.postInput(") && repeat.contains("xServer.lock(XServer.Lockable.WINDOW_MANAGER, XServer.Lockable.INPUT_DEVICE)"))
+        // #153 review: a repeat already queued when a later press ran does nothing (the key and the generation are taken at the timer)
+        assertTrue(repeat.indexOf("final int gen = autoRepeatGen") in 0 until repeat.indexOf("postAtTime(") &&
+            repeat.contains("if (gen != autoRepeatGen || keycode != currentRepeatingKeycode) return;"))
+        assertFalse(idm.contains("removeCallbacks(autoRepeatRunnable)"))
         val oq = body(text("com/winlator/xconnector/OutputQueue.java"), "static boolean onMainThread()")
         assertTrue(oq.contains("XInputQueue.onInputThread()"))
+    }
+
+    /** #153 review: DS Forever's cell tap never reads the X pointer on its own thread (a queued move or tap would be missed) */
+    @Test fun theCellTapReadsItsBackSpotOnTheInputThread() {
+        val tap = body(text("app/gamenative/ui/screen/xserver/XServerScreen.kt"), "override fun tap(fx: Float, fy: Float)")
+        assertTrue(tap.contains("xs.injectClickAt("))
+        assertFalse(tap.contains("pointer.getX()") || tap.contains("Thread.sleep(") || tap.contains("injectPointerMove("))
     }
 
     @Test fun frameGenerationPushesStayOffTheUiThread() {
