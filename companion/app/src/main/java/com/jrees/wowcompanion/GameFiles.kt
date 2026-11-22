@@ -55,7 +55,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         }
         val error = CascNative.lastReadError()
         // a damaged cached table (p-casclib-1000): the next open of the game files drops the cache first (once per run)
-        if (CascHeal.damaged(error)) { readSawDamage = true; android.util.Log.w("WCHARVEST", "$label: CascLib error $error, the cache goes at the next open") }
+        if (CascHeal.damaged(error)) { readSawDamage = true; readDamagedErr = error; android.util.Log.w("WCHARVEST", "$label: CascLib error $error, the cache goes at the next open") }
         lastReadWhy = "$label: " + when (status) {
             CascNative.UNKNOWN -> "not in this game build's index (does the folder match its .build.info?)"
             CascNative.NOT_PRESENT -> "not on this device (is the game folder fully copied or downloaded?)"
@@ -177,8 +177,41 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                 heal(ctx, "the open failed with CascLib error $lastOpenErr")
                 openOnce(ctx)?.let { return it }
             }
-            if (CascHeal.damaged(lastOpenErr)) lastWhy = CascHeal.damagedMessage(lastOpenErr)
+            // #577: the words follow how the folder was installed, and the start screen offers Repair ([damagedErr])
+            damagedErr = if (CascHeal.damaged(lastOpenErr)) lastOpenErr else 0
+            if (damagedErr != 0) lastWhy = CascHeal.damagedMessage(lastOpenErr, CascHeal.route(gameRoot(ctx)))
             return null
+        }
+
+        /** #577: the last open failed on damaged game files even after the self-heal (CascLib's error), 0 = not */
+        @Volatile var damagedErr = 0
+            private set
+        /** #577: a read in this process met a damaged game file (CascLib's error; an art step then fails on it), 0 = none since a repair */
+        @Volatile var readDamagedErr = 0
+            internal set
+        /** #577: the start screen offers Repair (an open or a read met damaged game files) */
+        val repairWanted: Boolean get() = damagedErr != 0 || readDamagedErr != 0
+
+        /**
+         * #577: one game file by its whole encoding key (hex) from the CDN (a loose file, or its range in an archive), into the app's own
+         * cache as CascLib's own fetches are; a copy kept there before is fetched again. The file, or null ([lastFetchWhy] says why).
+         */
+        fun fetchByKey(ctx: Context, ekey: String): File? {
+            val root = gameRoot(ctx)
+            val cache = File(ctx.cacheDir, "casc").apply { mkdirs() }
+            val to = File(cache, "data/${ekey.take(2)}/${ekey.drop(2).take(2)}/$ekey")
+            to.delete()
+            return if (runCatching { fetch(root, cache, to) }.getOrDefault(false) && to.isFile) to else null
+        }
+
+        /**
+         * #577: after a repair the next open starts clean: the app's download cache goes (the files fetched for the repair with it) and
+         * the self-heal may run again in this process
+         */
+        fun afterRepair(ctx: Context) = synchronized(accessLock) {
+            File(ctx.cacheDir, "casc").deleteRecursively()
+            CdnArchives.forget()
+            healed = false; readSawDamage = false; damagedErr = 0; readDamagedErr = 0; lastWhy = null
         }
 
         private fun heal(ctx: Context, why: String) {
@@ -233,6 +266,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                 return null
             }
             lastWhy = null
+            damagedErr = 0
             return GameFiles(h, root, product, key, cache)
         }
         /**

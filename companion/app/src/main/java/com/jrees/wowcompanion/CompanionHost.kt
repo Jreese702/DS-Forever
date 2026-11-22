@@ -437,6 +437,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }, if (ReportUpload.enabled) REPORT_TIMEOUT_MS * 2 else REPORT_TIMEOUT_MS)
     }
 
+    /** the launcher's restart from Settings (and its Restart anyway, #576): Home first, the start screen's notice, the restart */
+    private var restartFromSettings: () -> Unit = {}
+
     private fun noticeShow(s: ReportNotice.State) {
         reportNotice.show(s)
         SetupBridge.noticeAsking = reportNotice.asking
@@ -661,6 +664,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // through TapBridge's one worker, queued after the leave's own taps anyway), Home shows the notice until the new run attaches,
         // and every step is logged under WCSETUP
         settingsRest.onRestart = {
+            // #576 (1.0.37: restarted from Settings 5 times in 15 min while the game was downloading at its connect screen, each one
+            // interrupting it): while the game downloads, the restart asks first (Restart anyway / Wait), on Home
+            if (ReportNotice.restartAsks(NativeLogin.downloadingNow, LauncherHooks.gameUp())) {
+                Log.i("WCSETUP", "restart from Settings: pressed in $room while the game downloads; asked first")
+                SetupBridge.log?.invoke("restart: asked first (the game is downloading)")
+                if (room != Room.HOME) show(Room.HOME)
+                noticeShow(ReportNotice.State.RestartDownloading)
+            } else restartFromSettings()
+        }
+        restartFromSettings = {
             val restart = SetupBridge.restartGame
             Log.i("WCSETUP", "restart from Settings: pressed in $room; launcher hook ${if (restart != null) "present" else "MISSING"}" +
                 "; restarting already ${SetupBridge.restarting}")
@@ -1428,6 +1441,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // Send report's notice on Home (compiling, then ready / failed)
             reportNotice = ReportNotice(this@CompanionHost).apply {
                 onOpen = { s -> if (openUrlOnTop(s.url)) ReportFlow.clearPending() }
+                // #576: Restart anyway on the downloading card
+                onRestartAnyway = { SetupBridge.log?.invoke("restart: anyway (the game was downloading)"); restartFromSettings() }
                 onDismiss = { SetupBridge.noticeAsking = false }
                 onOpenUrl = { url -> if (openUrlOnTop(url)) ReportFlow.clearPending() }
             }
@@ -2643,13 +2658,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!::startView.isInitialized) return
         val up = DependencyAddons.gameUpNow(LauncherHooks.gameUp(), LauncherHooks.gameStartSec, GameLife.endedAt)
         // the game gone: a "Waiting for the world." this step wrote goes back to the plain waiting line (a last run's past-login is no sign-in)
-        if (!up && worldLineOurs) { worldLineOurs = false; if (startView.line == AddonSilence.WORLD_LINE) startView.line = PreLoginTraffic.WAITING_LINE }
+        if (!up && worldLineOurs) { worldLineOurs = false
+            if (startView.line == AddonSilence.WORLD_LINE || AddonSilence.isDownloadAfterLine(startView.line)) startView.line = PreLoginTraffic.WAITING_LINE }
         val free = up && startView.visibility == View.VISIBLE && reloadAt == 0L && !setupLoading && restartNoticeAt == 0L &&
             !(::setupView.isInitialized && setupView.visibility == View.VISIBLE)
         val signedIn = NativeLogin.pastLogin || (::loginWatch.isInitialized && loginWatch.state.realm)
         // the review: the game's traffic quiet (character select after a normal logout, its memory still high) holds a new word back
         val mode = if (!free) AddonSilence.StartMode.KEEP else AddonSilence.startMode(startView.line, startView.login != StartView.Login.NONE,
-            signedIn, NativeLogin.downloading, silence.silent, worldMem.inWorld, NativeLogin.trafficQuiet, shown = startView.addons != null)
+            signedIn, NativeLogin.downloading, silence.silent, worldMem.inWorld, NativeLogin.trafficQuiet, shown = startView.addons != null,
+            downloadingAfter = NativeLogin.downloadingAfter)
         when (mode) {
             AddonSilence.StartMode.ADDONS -> {
                 if (startView.addons == null) startCause = addonsCause()
@@ -2664,6 +2681,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 startView.addons = card
             }
             AddonSilence.StartMode.WORLD_LINE -> { startView.addons = null; startView.line = AddonSilence.WORLD_LINE; worldLineOurs = true }
+            // #579: the game downloads past its login screen: the line says so, with its rate (a minute's), until it ends
+            AddonSilence.StartMode.DOWNLOAD_LINE -> {
+                startView.addons = null
+                val l = AddonSilence.downloadAfterLine(NativeLogin.afterLoginMb)
+                if (startView.line != l) { startView.line = l; startView.invalidate() }
+                worldLineOurs = true
+            }
             AddonSilence.StartMode.KEEP -> if (startView.addons != null) {
                 startView.addons = null
                 if (startView.visibility != View.VISIBLE || !silence.silent) startHow = false

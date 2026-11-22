@@ -159,6 +159,17 @@ object NativeLogin {
      * a minute. The unread file's cap waits then, and the start screen says "Game downloading". Main thread.
      */
     @Volatile var downloading = false; private set
+    /**
+     * #579 / #576 (1.0.37: "local stuck on login screen (connecting)": a partial install downloading 232-386 MB a minute right through the
+     * Connecting screen, under "Waiting for the world."): past the login screen (or after the read) and before the world, the game
+     * receives at least [PreLoginTraffic.BUSY_MB] MB a minute. The start screen says "Game downloading" then, and a restart asks first.
+     * Main thread.
+     */
+    @Volatile var downloadingAfter = false; private set
+    /** the MB the game received in the last whole minute past the login screen (the start screen's line; 0 = no whole minute yet) */
+    val afterLoginMb: Long get() = PreLoginTraffic.mb(afterLogin.lastMinute)
+    /** the game downloads now, before or past its login screen ([downloading] or [downloadingAfter]) */
+    val downloadingNow: Boolean get() = downloading || downloadingAfter
     /** the last moment [downloading] was seen (0 = not in this run): the 5-minute cap counts from here once the download ends */
     private var holdFrom = 0L
     /** the "kept past its cap" line once per file */
@@ -208,7 +219,7 @@ object NativeLogin {
         consumed = false; firstReadAt = 0L; pastLogin = false; pastLoginAt = 0L; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
-        downloading = false; holdFrom = 0L; capHeld = false
+        downloading = false; downloadingAfter = false; holdFrom = 0L; capHeld = false
         downloadAtRead = false; lastHeavyAt = 0L; heavyNoted = false; readMs = 0L
         val root = shadowRoot(ctx).apply { mkdirs() }
         val isLinkF = { f: File -> Files.isSymbolicLink(f.toPath()) }
@@ -354,6 +365,18 @@ object NativeLogin {
             // issue #215: past the login screen and still downloading before the world: the minute's line and the bottom screen's state
             if (PreLoginTraffic.countsAfter(firstReadAt > 0L, pastLogin, reachedWorld)) afterLogin.add(rxBytes, System.currentTimeMillis())?.let {
                 logEvent(it + (runCatching { bottomState?.invoke() }.getOrNull()?.let { s -> "; bottom screen: $s" } ?: ""))
+            }
+            // #579: past the login screen and before the world, the same "Game downloading" while it fetches (the line had said
+            // "Waiting for the world." through 1.6 GB of it)
+            val da = PreLoginTraffic.downloading(PreLoginTraffic.countsAfter(firstReadAt > 0L, pastLogin, reachedWorld), afterLogin.busy)
+            if (da != downloadingAfter) {
+                downloadingAfter = da
+                logEvent(when {
+                    da -> "the game is downloading past its login screen (before the world)"
+                    reachedWorld -> "the game reached the world while downloading"
+                    else -> "the game's download past its login screen ended"
+                })
+                onChange?.invoke()
             }
             // issue #132: downloading before the login screen holds the unread file's cap and says "Game downloading"
             val d = PreLoginTraffic.downloading(counts, preLogin.busy)
@@ -526,7 +549,7 @@ object NativeLogin {
     fun end(ctx: Context? = null) {
         outOfWorld = false
         browserStopped("the game screen went")
-        if (downloading) { downloading = false; changed() }
+        if (downloading || downloadingAfter) { downloading = false; downloadingAfter = false; changed() }
         clear(ctx)
         observer?.stopWatching(); observer = null
         logEvent("client run ends")

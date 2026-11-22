@@ -30,8 +30,20 @@ object CascHeal {
         else -> "error $err"
     }
 
-    fun damagedMessage(err: Int): String =
-        "The game's files on this device look damaged: copy the Data folder again (CascLib error $err: ${name(err)})"
+    /**
+     * HOW THE FOLDER WAS INSTALLED (#577, 1.0.37: "copy the Data folder again" was said to a player whose folder DS Forever's Install
+     * directly had made): [DIRECT] = Install directly (its [DataStaleness.STREAMED] marker: the game streams its data into it); [FOLDER] =
+     * a folder chosen or copied from a PC.
+     */
+    enum class Route { DIRECT, FOLDER }
+
+    fun route(gameRoot: File): Route = if (File(gameRoot, DataStaleness.STREAMED).exists()) Route.DIRECT else Route.FOLDER
+
+    /** the start screen's words for damaged game files, by how the folder was installed; Repair is offered beside them (#577) */
+    fun damagedMessage(err: Int, route: Route): String = when (route) {
+        Route.DIRECT -> "The game's files on this device look damaged. Repair checks them and downloads the damaged ones again (CascLib error $err: ${name(err)})"
+        Route.FOLDER -> "The game's files on this device look damaged. Repair checks them and downloads the damaged ones again, or copy the Data folder again from your PC (CascLib error $err: ${name(err)})"
+    }
 
     /**
      * Whether a downloaded cache file is whole before it is used (null = it is): the length the server announced, a CDN config's

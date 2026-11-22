@@ -139,8 +139,14 @@ fun WoWForeverScreen(
     var artFailed by remember { mutableStateOf<String?>(null) }
     /** issue #571: the game folder has never run (DataStaleness.firstRun, read from the folder at each checkFiles) */
     var neverRun by remember { mutableStateOf(false) }
+    /** #577: Repair game files is running ([repairStatus] its line; Play waits), and what the last one did until OK */
+    var isRepairing by remember { mutableStateOf(false) }
+    var repairStatus by remember { mutableStateOf("") }
+    var repairNote by remember { mutableStateOf<String?>(null) }
     /** the dependency add-ons' line (QuestieDB, M4); null = not checked in this launcher run */
     var dependencies by remember { mutableStateOf<String?>(null) }
+    /** #556: the background dependency step is running (its steps' lines may update [dependencies] until its result lands) */
+    var depsRunning by remember { mutableStateOf(false) }
     var versionStatus by remember { mutableStateOf<WowClientDownloader.VersionCheckResult?>(null) }
     var isCheckingVersion by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
@@ -297,8 +303,8 @@ fun WoWForeverScreen(
             if (restart) com.jrees.wowcompanion.SetupBridge.log?.invoke("restart: Play by $by refused ($why)")
             if (restart && by == "restart") com.jrees.wowcompanion.SetupBridge.restarting = false
         }
-        if (isLaunching || isUpdating || (isHarvesting && !artReady) || files.isWrongGame) {
-            refused("launching=$isLaunching updating=$isUpdating harvesting=$isHarvesting wrongGame=${files.isWrongGame}"); return
+        if (isLaunching || isUpdating || (isHarvesting && !artReady) || files.isWrongGame || isRepairing) {
+            refused("launching=$isLaunching updating=$isUpdating harvesting=$isHarvesting wrongGame=${files.isWrongGame} repairing=$isRepairing"); return
         }
         // the "DS Forever vX is out" pop-up waits for Update or Later before any launch (board b-update-blocks-play). The state
         // itself, not the composition's appUpdate val: the auto-launch calls the first composition's launchGame
@@ -634,6 +640,7 @@ fun WoWForeverScreen(
     LaunchedEffect(artReady, files.hasStorageAccess, gamePath) {
         if (!artReady || !files.hasStorageAccess || filesMissing || dependencies != null) return@LaunchedEffect
         dependencies = "QuestieDB: checking for the latest"
+        depsRunning = true
         try {
             dependencies = withContext(Dispatchers.IO) {
                 runCatching {
@@ -642,12 +649,16 @@ fun WoWForeverScreen(
                     com.jrees.wowcompanion.Settings.init(context)
                     // the third-party add-ons (Settings > Add-ons; Polestar, fetched here and moved in on a Yes), applied by the same step
                     com.jrees.wowcompanion.ThirdPartyAddons.init(context)
+                    // #556: a package going in (Spoken Quests' 1.5 GB unpack, ~7 min) says how far on the add-ons row meanwhile
                     com.jrees.wowcompanion.DependencyAddons.run(WowClientDownloader.flavorDir(File(gamePath)),
-                        File(context.cacheDir, "dsforever"), File(context.filesDir, "dsforever/dependencies.json"))
+                        File(context.cacheDir, "dsforever"), File(context.filesDir, "dsforever/dependencies.json"),
+                        onStep = { step -> com.jrees.wowcompanion.ThirdPartyAddons.backgroundLine(step)?.let { l ->
+                            scope.launch(Dispatchers.Main) { if (depsRunning) dependencies = l } } })
                 }.getOrElse { "QuestieDB skipped (${it.message})" }
-            }
+            }.also { depsRunning = false }
         } catch (e: CancellationException) {
             // a key changed mid-check (file access, the folder): free the line so the next run of this effect checks again
+            depsRunning = false
             dependencies = null
             throw e
         }
@@ -657,6 +668,40 @@ fun WoWForeverScreen(
     fun setupLog(msg: String) {
         android.util.Log.i("WCSETUP", msg)
         com.jrees.wowcompanion.SetupBridge.log?.invoke(msg)
+    }
+
+    /**
+     * #577 (1.0.37: damaged game files after an unclean stop, every open "CascLib error 1000", no way back but a reinstall): REPAIR, with
+     * the game closed. The launcher's part (WowClientDownloader.repairFiles: the build's configs, the client's own files, the CDN
+     * indexes), then the game folder's storage checked file by file and each damaged file downloaded again in place (GameRepair). Its
+     * result stays on the bottom screen until OK; the art is tried again from a clean open.
+     */
+    fun performRepair() {
+        // never with the game up: the repair writes into the folder the game reads
+        val gameUp = com.jrees.wowcompanion.DependencyAddons.gameRunning()
+        if (isRepairing || isLaunching || isUpdating || isHarvesting || filesMissing || !files.hasStorageAccess || gameUp) {
+            setupLog("repair: refused (busy: launching $isLaunching, updating $isUpdating, art $isHarvesting, game up $gameUp)"); return
+        }
+        val root = File(gamePath)
+        isRepairing = true
+        repairStatus = com.jrees.wowcompanion.GameRepair.checkLine(0)
+        repairNote = null
+        setupLog("repair: starting (${com.jrees.wowcompanion.CascHeal.route(root).name.lowercase()} install, CascLib error ${com.jrees.wowcompanion.GameFiles.damagedErr})")
+        scope.launch {
+            val status: (String) -> Unit = { msg -> scope.launch(Dispatchers.Main) { if (isRepairing) repairStatus = msg } }
+            val (clientFixed, clientWhy, local) = withContext(Dispatchers.IO) {
+                val client = runCatching { WowClientDownloader.repairFiles(root, status) }
+                client.exceptionOrNull()?.let { Timber.w(it, "repair: the game's own files") }
+                val local = com.jrees.wowcompanion.GameRepair.run(context, status)
+                Triple(client.getOrDefault(-1), client.exceptionOrNull()?.message, local)
+            }
+            isRepairing = false
+            val note = com.jrees.wowcompanion.GameRepair.summary(local, clientFixed, clientWhy)
+            setupLog("repair: done: $note")
+            repairNote = note
+            // the art again, from a clean open: whole, it builds; still damaged, its pop-up (and Repair) comes back under the result
+            harvestArt(retry = true)
+        }
     }
 
     fun performInstall() {
@@ -932,6 +977,8 @@ fun WoWForeverScreen(
         installBar = if (installStartedAt != 0L) com.jrees.wowcompanion.SetupFlow.timeBar(com.jrees.wowcompanion.SetupFlow.Step.INSTALL, (System.currentTimeMillis() - installStartedAt) / 1000.0) else null,
         artWhat = (harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.what.orEmpty(),
         artWhy = artFailed.orEmpty(),
+        repairable = artFailed != null && com.jrees.wowcompanion.GameFiles.repairWanted,
+        repairNote = repairNote,
         addonsInstalled = addonsInstalled,
         addonsProblem = addonsProblem,
         dependencies = dependencies,
@@ -955,6 +1002,7 @@ fun WoWForeverScreen(
         regionSwitch = regionSwitch?.let { sw -> com.jrees.wowcompanion.GameRegion.ALL.firstOrNull { it.code == sw.to }?.label }?.takeIf { isUpdating || updateQueued },
         stopping = stopping,
         busy = when {
+            isRepairing -> repairStatus
             isUpdating -> updateStatusText
             updateQueued -> com.jrees.wowcompanion.SetupFlow.updateGateLine(
                 if (isHarvesting) com.jrees.wowcompanion.SetupFlow.UpdateGate.STOP_ART else com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH, -1)
@@ -973,6 +1021,8 @@ fun WoWForeverScreen(
             com.jrees.wowcompanion.SetupFlow.Action.GRANT_STORAGE -> StorageUtils.requestManageExternalStoragePermission(context)
             com.jrees.wowcompanion.SetupFlow.Action.SKIP_LOGIN -> loginSkipped = true
             com.jrees.wowcompanion.SetupFlow.Action.RETRY_ART -> harvestArt(retry = true)
+            com.jrees.wowcompanion.SetupFlow.Action.REPAIR_GAME -> performRepair()
+            com.jrees.wowcompanion.SetupFlow.Action.REPAIR_OK -> repairNote = null
             com.jrees.wowcompanion.SetupFlow.Action.UPDATE_GAME -> performUpdate()
             com.jrees.wowcompanion.SetupFlow.Action.STOP_UPDATE -> when (com.jrees.wowcompanion.SetupFlow.stopRoute(regionSwitch != null, isUpdating, updateQueued, stopping)) {
                 // queued, nothing running: stopped at once (the queue never starts it afterwards)

@@ -42,6 +42,10 @@ object SetupFlow {
         val installBar: Float? = null,
         val artWhat: String = "",
         val artWhy: String = "",
+        /** #577: the art failed on damaged game files (GameFiles.damagedErr): its pop-up offers Repair */
+        val repairable: Boolean = false,
+        /** #577: what the last Repair did, in words (GameRepair.summary), until OK; null = none */
+        val repairNote: String? = null,
         /** our bundled add-ons are in the game's AddOns folder */
         val addonsInstalled: Boolean = false,
         /** the add-on install's problem in terse words (LauncherSetup.problem: a failed install, or the set removed again and again;
@@ -124,7 +128,9 @@ object SetupFlow {
         POLESTAR_YES, POLESTAR_NO,
         /** the region's download (the user, 2026-11-17: "downloading a new build" after a region picked by mistake): stop it, the old
          *  install kept and the region before it put back */
-        STOP_UPDATE
+        STOP_UPDATE,
+        /** #577: Repair game files (the damaged-files pop-up), and its result's OK */
+        REPAIR_GAME, REPAIR_OK
     }
     data class Button(val label: String, val action: Action, val enabled: Boolean = true)
     data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>)
@@ -342,8 +348,13 @@ object SetupFlow {
             !i.storage -> Prompt("storage", "Allow file access",
                 "Android needs \"All files access\" so the game and DS Forever can read the game folder.",
                 listOf(Button("Open settings", Action.GRANT_STORAGE)))
+            // #577: what the last Repair did, until OK (its own pop-up: the damaged-files one may come back under it)
+            i.repairNote != null && i.busy == null -> Prompt("repair", "Repair game files", i.repairNote, listOf(Button("OK", Action.REPAIR_OK)))
+            // #577: damaged game files: Repair first (it checks them and downloads the damaged ones again), Try again beside it
             i.art == Art.FAILED -> Prompt("art", "The game art couldn't be built",
-                i.artWhy.ifEmpty { "The game files could not be read." }, listOf(Button("Try again", Action.RETRY_ART)))
+                i.artWhy.ifEmpty { "The game files could not be read." },
+                if (i.repairable) listOf(Button("Repair files", Action.REPAIR_GAME, i.busy == null), Button("Try again", Action.RETRY_ART))
+                else listOf(Button("Try again", Action.RETRY_ART)))
             // before the client's pop-up: its "Play anyway" waits for this choice (canPlay)
             i.appUpdate != null -> Prompt("app", "DS Forever ${i.appUpdate} is out", "Update now, or later from this screen.",
                 listOf(Button("Update", Action.UPDATE_APP, i.busy == null), Button("Later", Action.LATER_APP)))

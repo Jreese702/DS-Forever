@@ -217,6 +217,9 @@ object StartupDiag {
         }.getOrElse { "Region: ? (${it.message})" }
         out += "Active build (GameFiles): ${runCatching { GameFiles.activeBuild(root)?.let { "${it.first} ${it.second}" } }.getOrNull() ?: "none"}"
         out += "Last open problem: ${GameFiles.lastWhy ?: "(none)"}"
+        // #577: the last game run that closed as it started, with the guest program's own last lines (proot / box64 / Wine)
+        out += "Last quick close: " + (GuestOutput.lastQuickExit?.replace("\n", "\n    ") ?: "(none)")
+        out += "Last repair: ${GameRepair.last ?: "(none)"}"
         return out
     }
 

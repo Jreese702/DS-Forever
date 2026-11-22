@@ -141,10 +141,49 @@ class ThirdPartyAddonsTest {
         val a = addon(zipBytes); ThirdPartyAddons.ALL = listOf(a)
         choices["t.core"] = true
         val part = File(tmp, "private/dl/Test-1.0.zip.part"); part.parentFile.mkdirs()
-        part.writeBytes(zipBytes.copyOfRange(0, 40))                    // 40 bytes came before it stopped
+        part.writeBytes(zipBytes.copyOfRange(0, 60))                    // 60 bytes came before it stopped, 40 of them synced (#556)
+        ThirdPartyAddons.synced(part).writeText("40")
         ThirdPartyAddons.fetchNow(a, "core")
-        assertEquals(zipBytes.size - 40L, served)                       // only the rest was asked for
+        assertEquals(zipBytes.size - 40L, served)                       // only the rest was asked for, from the last synced byte
         assertEquals(ThirdPartyAddons.Kind.DOWNLOADED, ThirdPartyAddons.status(a, "core").kind)
+        assertFalse("the sync note goes with the part", ThirdPartyAddons.synced(part).exists())
+    }
+
+    /** #556: the app closed part-way through the unpack: the next start keeps the staging copy and goes on where it stopped */
+    @Test fun anUnpackCutShortGoesOnAtTheNextStart() {
+        val a = downloaded()
+        val p = a.core
+        val st = File(staging, "t-core")
+        File(st, "TestA").mkdirs()
+        File(st, ThirdPartyAddons.UNPACKING).writeText(ThirdPartyAddons.sig(p))
+        File(st, "TestA/TestA.toc").writeText("## Version: 1.0\n")                 // whole (its CRC matches)
+        File(st, "TestA/a.lua").writeText("x")                                     // cut short
+        val wrote = ArrayList<String>()
+        ThirdPartyAddons.unpackWrote = { wrote.add(it) }
+        val steps = ArrayList<String>()
+        try {
+            val line = ThirdPartyAddons.applyAtStart(game) { steps.add(it) }
+            assertTrue(line, line.contains("Test 1.0 installed"))
+        } finally { ThirdPartyAddons.unpackWrote = null }
+        assertFalse("TestA.toc was kept, not written again", "TestA/TestA.toc" in wrote)
+        assertTrue(wrote.toString(), "TestA/a.lua" in wrote && "TestB/TestB.toc" in wrote)
+        assertEquals("x=1", File(addons, "TestA/a.lua").readText())
+        assertTrue(ThirdPartyAddons.coreInstalled(a))
+        assertFalse("no staging left behind", staging.exists())
+        assertTrue(steps.toString(), steps.any { it.startsWith("Installing add-ons: Test") })
+        assertEquals("the row is back to Installed", ThirdPartyAddons.Kind.INSTALLED, ThirdPartyAddons.status(a, "core").kind)
+    }
+
+    /** #556: a cut-short copy of ANOTHER pin (or no mark at all) is still cleared and unpacked from 0 */
+    @Test fun anUnpackOfAnotherPinStartsAgain() {
+        val a = downloaded()
+        val st = File(staging, "t-core")
+        File(st, "TestA").mkdirs()
+        File(st, ThirdPartyAddons.UNPACKING).writeText("t/v0.9|1|00")
+        File(st, "TestA/old.lua").writeText("old")
+        val line = ThirdPartyAddons.applyAtStart(game)
+        assertTrue(line, line.contains("Test 1.0 installed"))
+        assertFalse("nothing of the other pin's copy went in", File(addons, "TestA/old.lua").exists())
     }
 
     @Test fun theGameRunningWaits() {
@@ -362,7 +401,10 @@ class ThirdPartyAddonsTest {
         downloaded()
         val steps = ArrayList<String>()
         ThirdPartyAddons.applyAtStart(game, onStep = { steps.add(it) })
-        assertEquals(listOf("Installing add-ons: Test..."), steps)
+        // #556: the unpack's percent by the zip's entries (the old pass jumped 0 -> 100 on a small zip): one step, its percents
+        assertEquals("Installing add-ons: Test...", steps.first())
+        assertEquals("Installing add-ons: Test...", steps.last())
+        assertTrue(steps.toString(), steps.all { it.startsWith("Installing add-ons: Test") })
         choices["t.core"] = false
         steps.clear(); ThirdPartyAddons.applyAtStart(game, onStep = { steps.add(it) })
         assertEquals(listOf("Removing add-ons: Test..."), steps)

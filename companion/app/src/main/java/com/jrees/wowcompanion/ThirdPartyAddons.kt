@@ -396,7 +396,8 @@ object ThirdPartyAddons {
                 fetchWanted(a, key)                          // switched off meanwhile: stop (the part is kept)
             } ?: return setLive(a, key, null)
             if (part.length() != p.bytes) throw IOException("the download is incomplete")
-            if (DependencyAddons.sha256(part) != p.sha256) { part.delete(); throw IOException("the download's checksum is wrong") }
+            if (DependencyAddons.sha256(part) != p.sha256) { part.delete(); synced(part).delete(); throw IOException("the download's checksum is wrong") }
+            synced(part).delete()
             zip.delete()
             if (!part.renameTo(zip)) throw IOException("the download could not be kept")
             putState(a, key, state(a, key).put("zip", p.tag))
@@ -409,11 +410,26 @@ object ThirdPartyAddons {
     /** the release asset by its pinned tag and name, resumed from [part]'s length; [onProgress] false = stop; null = stopped */
     private fun download(repo: String, p: Pkg, part: File, onProgress: (Long) -> Boolean): Unit? {
         val url = p.url ?: releaseUrl(repo, p)
-        var have = if (part.isFile) part.length() else 0L
-        if (have > p.bytes) { part.delete(); have = 0L }
+        var have = resumeFrom(part, p.bytes)
+        if (have == 0L) { part.delete(); synced(part).delete() }
         val c = DependencyAddons.connect(url, if (have > 0) have else null)
         return pull(c, p, part, have, onProgress)
     }
+
+    /**
+     * #556 ("the install restarts from zero after any close"): a kept part's whole length. The part is synced to the disk every
+     * [SYNC_BYTES] and that length written beside it ([synced]); an unclean stop (a power loss, a reboot) can leave the bytes after the
+     * last sync zero-filled, so a resume starts there, never at the file's own length. A part without that note (an older app) gives up
+     * its last [SYNC_BYTES]. The pinned sha256 still checks the whole file at the end. Pure (the tests).
+     */
+    internal fun resumeFrom(part: File, total: Long): Long {
+        val len = if (part.isFile) part.length() else 0L
+        if (len <= 0L || len > total) return 0L
+        val note = runCatching { synced(part).readText().trim().toLong() }.getOrNull()
+        return (if (note != null) minOf(note, len) else len - SYNC_BYTES).coerceIn(0L, len)
+    }
+    internal fun synced(part: File) = File(part.path + ".synced")
+    internal const val SYNC_BYTES = 32L * 1024 * 1024
 
     /** the release asset's address, by its pinned tag and name, its size as pinned */
     private fun releaseUrl(repo: String, p: Pkg): String {
@@ -430,15 +446,19 @@ object ThirdPartyAddons {
         val until = System.currentTimeMillis() + DEADLINE_MS
         try {
             if (have > 0 && c.responseCode != HttpURLConnection.HTTP_PARTIAL) have = 0L        // the host sent it whole: start again
-            java.io.FileOutputStream(part, have > 0).use { o ->
+            // #556: the part goes on from [have] exactly (a tail past the last synced length was cut by [resumeFrom])
+            java.io.RandomAccessFile(part, "rw").use { o ->
+                o.setLength(have); o.seek(have)
                 c.inputStream.use { i ->
                     val buf = ByteArray(256 * 1024)
-                    var got = have; var told = 0L
+                    var got = have; var told = 0L; var sync = have
                     while (true) {
                         val n = i.read(buf); if (n < 0) break
                         o.write(buf, 0, n); got += n
                         if (got > p.bytes) throw IOException("${p.asset} is bigger than it should be")
                         if (System.currentTimeMillis() > until) throw IOException("the download took too long")
+                        // on the disk every [SYNC_BYTES]: the length written down after the sync is whole whatever stops the app
+                        if (got - sync >= SYNC_BYTES || got == p.bytes) { sync = got; o.fd.sync(); runCatching { synced(part).writeText(got.toString()) } }
                         if (got - told >= 8_000_000 || got == p.bytes) { told = got; if (!onProgress(got)) return null }
                     }
                 }
@@ -506,7 +526,7 @@ object ThirdPartyAddons {
                 }
                 if (!want && a.base && key == "core" && state(a, key).optString("zip").isNotEmpty()) {
                     // a No (the user, 2026-11-12: the prompt's No / the toggle off): the fetched-ahead package's room back
-                    zipOf(p).delete(); File(zipOf(p).path + ".part").delete(); putState(a, key, state(a, key).apply { remove("zip") })
+                    zipOf(p).delete(); File(zipOf(p).path + ".part").delete(); synced(File(zipOf(p).path + ".part")).delete(); putState(a, key, state(a, key).apply { remove("zip") })
                     log("add-ons: $name not wanted: its download freed")
                 }
                 if (!want || inst) continue
@@ -577,6 +597,14 @@ object ThirdPartyAddons {
 
     /** the staged copy's mark: written once the unpack is complete, the package's [sig] */
     private const val STAGED = ".dsf-staged"
+    /**
+     * #556: the mark of an unpack under way, the package's [sig], written before the first file and deleted when [STAGED] is written. A
+     * staging copy with it and without [STAGED] is an unpack cut short: the next start goes on with it ([DependencyAddons.unpackResume]
+     * keeps each file already there at its size and CRC-32), never from 0.
+     */
+    internal const val UNPACKING = ".dsf-unpacking"
+    internal fun unpackCutShort(staging: File, p: Pkg): Boolean =
+        staging.isDirectory && !File(staging, STAGED).exists() && runCatching { File(staging, UNPACKING).readText() }.getOrNull() == sig(p)
     private fun stagingOf(flavorRoot: File, a: Addon, key: String) = File(flavorRoot, "Interface/${DependencyAddons.STAGING}/${a.id}-$key")
 
     /**
@@ -587,8 +615,9 @@ object ThirdPartyAddons {
         for (a in ALL) for ((key, p) in a.pkgs()) {
             val st = stagingOf(flavorRoot, a, key)
             if (!st.exists()) continue
+            // #556: an unpack cut short (the app closed or killed part-way) is kept too: the next start goes on where it stopped
             val keep = wanted(a, key) && !installed(a, key) && failedWhy(a, key) == null &&
-                runCatching { File(st, STAGED).readText() }.getOrNull() == sig(p)
+                (runCatching { File(st, STAGED).readText() }.getOrNull() == sig(p) || unpackCutShort(st, p))
             if (!keep) { st.deleteRecursively(); log("add-ons: cleared the leftover staging copy of ${a.id}-$key") }
         }
         File(flavorRoot, "Interface/${DependencyAddons.STAGING}").delete()            // only when empty
@@ -601,6 +630,19 @@ object ThirdPartyAddons {
     internal fun installLine(name: String, pct: Int): String =
         if (pct in 1..99) "Installing add-ons: $name $pct%..." else "Installing add-ons: $name..."
 
+    /**
+     * #556: the start screen's add-ons line for a step of the BACKGROUND start step (it showed "QuestieDB: checking for the latest"
+     * through the whole 7-min unpack, so players closed the app and it began again): a package going in says so with its percent and
+     * to keep the app open; null = a step the line does not show
+     */
+    fun backgroundLine(step: String): String? = if (step.startsWith("Installing add-ons")) "$step Keep DS Forever open" else null
+
+    /** #556: the Settings > Add-ons row while its package unpacks */
+    internal fun installRowLine(pct: Int): String = if (pct in 1..99) "Installing: $pct%. Keep DS Forever open" else "Installing. Keep DS Forever open"
+
+    /** #556 (the tests): each file the unpack wrote, null = not told */
+    @Volatile internal var unpackWrote: ((String) -> Unit)? = null
+
     private fun moveIn(a: Addon, key: String, p: Pkg, flavorRoot: File, progress: ((Int) -> Unit)? = null) {
         val iface = File(flavorRoot, "Interface")
         val addons = File(iface, "AddOns").apply { mkdirs() }
@@ -611,16 +653,32 @@ object ThirdPartyAddons {
         // (review, 2026-11-11) and still whole: every folder the package brings is there with its .toc
         val staged = runCatching { mark.readText() }.getOrNull() == sig(p) &&
             p.folders.all { DependencyAddons.installedVersion(File(staging, it)) != null }
-        if (!staged && flavorRoot.usableSpace < p.bytes + SPACE_MARGIN)
-            throw Later("needs ${size(((p.bytes + SPACE_MARGIN) / 1_000_000).toInt())} free for the game")
+        // #556: an unpack the app's close cut short goes on where it stopped (what it already wrote needs no room again)
+        val resume = !staged && unpackCutShort(staging, p)
+        val have = if (resume) runCatching { staging.walkBottomUp().filter { it.isFile }.sumOf { it.length() } }.getOrDefault(0L) else 0L
+        if (!staged && flavorRoot.usableSpace < (p.bytes - have).coerceAtLeast(0L) + SPACE_MARGIN)
+            throw Later("needs ${size((((p.bytes - have).coerceAtLeast(0L) + SPACE_MARGIN) / 1_000_000).toInt())} free for the game")
         var keep = false
         try {
             if (!staged) {
-                if (staging.exists()) staging.deleteRecursively()             // our own leftover only
-                DependencyAddons.unpack(zipOf(p), staging, "", maxFiles = 40_000, maxBytes = p.bytes * 3 / 2 + 50_000_000,
-                    progress = progress)
+                if (resume) log("add-ons: ${a.id}-$key: an unpack cut short goes on where it stopped (${have / 1_000_000} MB already there)")
+                else {
+                    if (staging.exists()) staging.deleteRecursively()             // our own leftover only
+                    staging.mkdirs()
+                    File(staging, UNPACKING).writeText(sig(p))
+                }
+                // the Settings row says how far it is (it read "Downloaded: goes in when the game next starts" through the whole unpack)
+                setLive(a, key, Status(Kind.DOWNLOADING, installRowLine(0), 0))
+                val pct0 = intArrayOf(-1)
+                val written = DependencyAddons.unpackResume(zipOf(p), staging, "", maxFiles = 40_000, maxBytes = p.bytes * 3 / 2 + 50_000_000,
+                    progress = { pct ->
+                        progress?.invoke(pct)
+                        if (pct != pct0[0]) { pct0[0] = pct; setLive(a, key, Status(Kind.DOWNLOADING, installRowLine(pct), pct)) }
+                    }, wrote = unpackWrote)
+                if (resume) log("add-ons: ${a.id}-$key: the unpack went on: $written files written now")
                 keepNotices(staging)
                 mark.writeText(sig(p))
+                File(staging, UNPACKING).delete()                          // after the mark: never a moment with neither
             } else log("add-ons: ${a.id}-$key: the staged copy is complete, not unpacked again")
             val folders = staging.listFiles()?.filter { d -> d.isDirectory && DependencyAddons.installedVersion(d) != null } ?: emptyList()
             require(folders.isNotEmpty()) { "the package has no add-on in it" }
@@ -644,6 +702,7 @@ object ThirdPartyAddons {
             // #139: never a staging copy left behind by a failure (only the complete copy the game's start interrupted is kept)
             if (!keep) staging.deleteRecursively()
             File(iface, DependencyAddons.STAGING).delete()                // only when empty
+            setLive(a, key, null)
         }
     }
 

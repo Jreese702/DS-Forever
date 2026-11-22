@@ -301,6 +301,15 @@ public abstract class ProcessHelper {
     }
 
     public static int exec(String command, String[] envp, File workingDir, Callback<Integer> terminationCallback) {
+        return exec(command, envp, workingDir, terminationCallback, null);
+    }
+
+    /**
+     * #577 (DS Forever): [outputSink] gets every line the program writes to stdout and stderr (the debug callbacks too, when there
+     * are any): the game's start passes it so a game that closes as it starts leaves its last words in the report. Its readers are
+     * waited for (at most OUTPUT_WAIT_MS) before [terminationCallback], so the last lines are in before the end is told.
+     */
+    public static int exec(String command, String[] envp, File workingDir, Callback<Integer> terminationCallback, Callback<String> outputSink) {
         int pid = -1;
         java.lang.Process process = null;
         try {
@@ -317,7 +326,10 @@ public abstract class ProcessHelper {
             pid = pidField.getInt(process);
             pidField.setAccessible(false);
 
-            if (!debugCallbacks.isEmpty()) {
+            Thread[] drains = null;
+            if (outputSink != null) {
+                drains = new Thread[] { createDrainThread(process.getInputStream(), outputSink), createDrainThread(process.getErrorStream(), outputSink) };
+            } else if (!debugCallbacks.isEmpty()) {
                 createDebugThread(process.getInputStream());
                 createDebugThread(process.getErrorStream());
             }
@@ -325,7 +337,7 @@ public abstract class ProcessHelper {
 //            createDebugThread(process.getInputStream(), "STDOUT", pid);
 //            createDebugThread(process.getErrorStream(), "STDERR", pid);
 
-            if (terminationCallback != null) createWaitForThread(process, terminationCallback);
+            if (terminationCallback != null) createWaitForThread(process, terminationCallback, drains);
         }
         catch (Exception e) {
             Log.e("ProcessHelper", "Failed to execute command: " + e);
@@ -462,12 +474,49 @@ public abstract class ProcessHelper {
     }
 
 
+    /** #577: how long the end waits for the output readers to take the program's last lines */
+    private static final long OUTPUT_WAIT_MS = 500;
+
+    /** #577: one stream's lines to [sink] and the debug callbacks; a daemon thread, ended by the stream's end */
+    private static Thread createDrainThread(final InputStream inputStream, final Callback<String> sink) {
+        Thread t = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    try { sink.call(line); } catch (Throwable ignored) {}
+                    synchronized (debugCallbacks) {
+                        if (!debugCallbacks.isEmpty()) {
+                            for (Callback<String> callback : debugCallbacks) callback.call(line);
+                        }
+                    }
+                }
+            }
+            catch (IOException ignored) {
+                // the stream closed with the process (or destroy()): nothing more to read
+            }
+        }, "guest-output");
+        t.setDaemon(true);
+        t.start();
+        return t;
+    }
+
     private static void createWaitForThread(java.lang.Process process, final Callback<Integer> terminationCallback) {
+        createWaitForThread(process, terminationCallback, null);
+    }
+
+    private static void createWaitForThread(java.lang.Process process, final Callback<Integer> terminationCallback, final Thread[] drains) {
         Executors.newSingleThreadExecutor().execute(new Runnable() {
             @Override
             public void run() {
                 try {
                     int status = process.waitFor();
+                    if (drains != null) {
+                        long until = System.currentTimeMillis() + OUTPUT_WAIT_MS;
+                        for (Thread d : drains) {
+                            long left = until - System.currentTimeMillis();
+                            if (left > 0) d.join(left);
+                        }
+                    }
                     terminationCallback.call(status);
                 }
                 catch (InterruptedException e) {

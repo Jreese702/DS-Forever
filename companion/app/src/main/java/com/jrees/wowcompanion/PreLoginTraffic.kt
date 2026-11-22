@@ -89,7 +89,8 @@ internal class PreLoginTraffic(private val minuteMs: Long = 60_000L, private val
          * downloading"); any other line stays.
          */
         fun lineAtNewRun(line: String, downloading: Boolean): String =
-            if (line == RESTART_LINE || line == AddonSilence.WORLD_LINE || line == AddonSilence.SIGNED_WORLD_LINE)
+            if (line == RESTART_LINE || line == AddonSilence.WORLD_LINE || line == AddonSilence.SIGNED_WORLD_LINE ||
+                AddonSilence.isDownloadAfterLine(line))
                 waitingLine(WAITING_LINE, downloading) else line
 
         /**

@@ -66,7 +66,7 @@ class StartView(context: Context) : View(context) {
     /** How pressed: the host shows the card's steps */
     var onHow: (() -> Unit)? = null
     /** the add-ons' word is on show now (the report's bottom-screen line) */
-    val addonsShown: Boolean get() = addons != null && line in AddonSilence.WAIT_LINES
+    val addonsShown: Boolean get() = addons != null && AddonSilence.isWaitLine(line)
 
     /** the Menu ([StartMenu]), in place of Report at the bottom left */
     var menuOpen: Boolean

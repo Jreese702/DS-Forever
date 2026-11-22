@@ -27,9 +27,17 @@ class CascHealTest {
         assertFalse(CascHeal.shouldHeal(0, healedThisRun = true, readSawDamage = true))
     }
 
-    @Test fun stillDamagedSaysWhatToDo() =
-        assertEquals("The game's files on this device look damaged: copy the Data folder again (CascLib error 1000: bad format)",
-            CascHeal.damagedMessage(1000))
+    /** #577: the words follow how the folder was installed (Install directly's folder is never told to copy Data from a PC) */
+    @Test fun stillDamagedSaysWhatToDoByInstallRoute() {
+        assertEquals("The game's files on this device look damaged. Repair checks them and downloads the damaged ones again (CascLib error 1000: bad format)",
+            CascHeal.damagedMessage(1000, CascHeal.Route.DIRECT))
+        assertEquals("The game's files on this device look damaged. Repair checks them and downloads the damaged ones again, or copy the Data " +
+            "folder again from your PC (CascLib error 1004: a file is corrupt)", CascHeal.damagedMessage(1004, CascHeal.Route.FOLDER))
+        val root = File(dir, "game").apply { mkdirs() }
+        assertEquals(CascHeal.Route.FOLDER, CascHeal.route(root))
+        File(root, DataStaleness.STREAMED).writeText("")
+        assertEquals(CascHeal.Route.DIRECT, CascHeal.route(root))
+    }
 
     // ---- every download checked before it is used
 

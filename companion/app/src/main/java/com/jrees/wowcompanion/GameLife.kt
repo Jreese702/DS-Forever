@@ -177,8 +177,31 @@ object GameLife {
         val indoor = runCatching { IndoorSchedulerStep.status?.let { "${it.phase.name.lowercase()} ${it.ready}/${it.total}" } }.getOrNull() ?: "not running"
         DiagLog.event("game", "ended: ${describe(status, by)} (status $status) after ${minutes(ran)}${if (worldSeen) "" else ", before reaching the world"}; " +
             "MemAvailable $mem; indoor maps: $indoor")
-        note = if (abnormal(status, by)) noteText(status, ran) else null
+        // #577: closed as it started (proot / box64 / Wine gave up before the client ran): its own output into the log and the report
+        val quick = quickExit(status, ran, by, startedAt != 0L)
+        quickExits = if (quick) quickExits + 1 else 0
+        if (quick) runCatching {
+            val (lines, before) = GuestOutput.tail()
+            DiagLog.event("game", "closed as it started ($ran ms, status $status, $quickExits in a row); its output: " +
+                if (lines.isEmpty()) "none" else "${lines.size} lines${if (before > 0) " (and $before before them)" else ""}")
+            for (l in lines) DiagLog.event("game output", l)
+            val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(now))
+            GuestOutput.lastQuickExit = "status $status after $ran ms ($quickExits in a row, $at):\n" + GuestOutput.block(lines, before)
+        }
+        note = if (abnormal(status, by)) (if (quick) quickNoteText(status) else noteText(status, ran)) else null
     }
+
+    /** #577: a run that closed within this long, with an error and not by us, closed as it started (the client never ran) */
+    const val QUICK_EXIT_MS = 2_000L
+    /** the runs in a row that closed as they started (0 after any other end) */
+    @Volatile var quickExits = 0
+        private set
+    fun quickExit(status: Int, ranMs: Long, closer: String?, started: Boolean): Boolean =
+        started && status != 0 && closer == null && ranMs in 0 until QUICK_EXIT_MS
+
+    /** the note's words when the game closed as it started (#577) */
+    fun quickNoteText(status: Int): String =
+        "The game closed as it started (${describe(status)}). A problem report holds what it said: please send one."
 
     /** the launcher's screen is back (the game screen gone) */
     fun launcherBack() { if (startedAt != 0L) DiagLog.event("launcher", "back") }
