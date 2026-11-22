@@ -248,6 +248,7 @@ class HomeView(
             editUi.post { editAwayBack() }
         }
         lend(mapView, mapSlot)
+        mapView.sticksClaim = { mapSticksLive() }                              // #584: the sticks only while the module holds
         mapView.onFieldTouch = { mapFieldTouched() }                          // 2026-11-17: a touch on the open map = its map controls
         // an untracked quest's disc (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the left menu"): the
         // map shows it in the list, so the module goes to the Quests page (from the controls or the buffs; the list full again)
@@ -878,7 +879,12 @@ class HomeView(
 
     /** one press for the full map module: the MapView's host keys; B with nothing open leaves the module (Home's rest) */
     private fun mapPad(msg: JSONObject) {
-        if (msg.has("lost")) { mapHeld = false; mapView.padHints = false; return }
+        if (msg.has("lost")) {
+            mapHeld = false; mapView.padHints = false
+            // #584: asked again at once (a drop the capture did not explain), else the watch: Home's reader for B, the ask after the fight
+            if (mapClaim.lost(msg.optString("lost"))) mapAsk() else { removeCallbacks(mapWatch); postDelayed(mapWatch, 1000L) }
+            return
+        }
         val n = msg.optInt("n", -1)
         if (n == homePadN) return
         homePadN = n
@@ -937,18 +943,60 @@ class HomeView(
     /** the map controls hold the sticks in the game (Map.lua mr8's catch: the character does not walk while they move the map) */
     private var sticksOn = false
     private fun sticksCatch(on: Boolean) {
-        removeCallbacks(sticksKeep)
+        removeCallbacks(sticksKeep); removeCallbacks(sticksCheck)
         if (on == sticksOn && !on) return
+        val was = mapSticksLive()
         sticksOn = on
+        if (on) sticksAsks++ else sticksAsks = 0
         val cells = MapRoomPad.homeSticksCells(pad, on)
-        if (cells != null && pad != null && TapBridge.tapsSpaced(context, pad, cells, MapRoomPad.GAP_MS)) {
+        sticksRow = cells != null
+        val sent = cells != null && pad != null && TapBridge.tapsSpaced(context, pad, cells, MapRoomPad.GAP_MS)
+        if (sent) {
             if (on != sticksSaid) Log.i(TAG, "map controls: sticks ${if (on) "held" else "let go"}")
             sticksSaid = on
         }
-        if (on) postDelayed(sticksKeep, MapRoomPad.HOME_STICKS_KEEP_MS)
+        // #584: every ask of the catch (not the 4 s keep-alive once it shows) and why one could not go
+        if (on && !mapClaim.caught) Log.i("WCMAP", "map controls: stick catch ask $sticksAsks ${if (sent) "sent" else "not sent (${if (cells == null) "no map row" else "no pad document"})"}" +
+            if (mapHeld) "" else " (the module not held yet: the cursor waits)")
+        if (on) postDelayed(if (sent && !mapClaim.caught) sticksCheck else sticksKeep, if (sent && !mapClaim.caught) STICKS_ANSWER_MS else MapRoomPad.HOME_STICKS_KEEP_MS)
+        if (mapSticksLive() != was) { if (!was) mapView.sticksResume(); mapView.invalidate() }
     }
     private var sticksSaid: Boolean? = null
     private val sticksKeep = Runnable { if (sticksOn && mapPage == HomeMapPages.Page.CONTROLS && mapWanted) sticksCatch(true) }
+    /** #584: the catch's answer did not come in [STICKS_ANSWER_MS]: asked again ([STICKS_ASKS] at most, then the 4 s keep-alive) */
+    private val sticksCheck = Runnable {
+        if (!sticksOn || mapPage != HomeMapPages.Page.CONTROLS || !mapWanted) return@Runnable
+        if (mapClaim.caught || sticksAsks >= STICKS_ASKS) {
+            if (!mapClaim.caught) Log.i("WCMAP", "map controls: no stick catch after $sticksAsks asks: the stick stays the game's, the cursor waits")
+            postDelayed(sticksKeep, MapRoomPad.HOME_STICKS_KEEP_MS); return@Runnable
+        }
+        sticksCatch(true)
+    }
+    private var sticksAsks = 0
+    /** the map row is published (Map.lua mr8): the catch is asked for, so the cursor waits for it */
+    private var sticksRow = false
+
+    // ---- #584 THE MODULE'S CLAIM (MapHoldClaim; the Map room's rule): the cursor and the zoom move only while the module holds the
+    // controller (mapHeld) AND, on the controls page, the game's stick catch shows (once Home's has shown at all: an older add-on
+    // without it keeps the hold alone). Else the stick is the game's: the character walks, the cursor stays. WCMAP lines.
+    private val mapClaim = MapHoldClaim("map module") { Log.i("WCMAP", it) }
+    /** the tests: the claim, and whether the sticks are the map's now */
+    fun mapClaimState(): MapHoldClaim.St = mapClaim.st
+    fun mapSticksLive(): Boolean = mapWanted && mapHeld && mapClaim.catchOk(needCatch = sticksOn && sticksRow)
+    /** Map.lua's mapwin `stick` (the host, every document): the game's stick catch shows or not */
+    fun onMapStick(on: Boolean) {
+        val was = mapSticksLive()
+        val before = mapClaim.caught
+        mapClaim.stick(on)
+        if (mapClaim.caught == before) return
+        // it dropped while the controls hold the sticks: asked again (the add-on lets it go by itself when Home stops holding, or 10 s on)
+        if (!on && mapWanted && sticksOn && mapPage == HomeMapPages.Page.CONTROLS) {
+            Log.i("WCMAP", "map controls: the stick catch dropped: asked again"); sticksAsks = 0; sticksCatch(true)
+        }
+        val now = mapSticksLive()
+        if (now && !was) mapView.sticksResume()
+        if (now != was) mapView.invalidate()
+    }
     /** a touch on the open map's field: the map controls (the user: "tapping in the map area should also change it to the map controls") */
     private fun mapFieldTouched() {
         if (!mapWanted) return
@@ -972,7 +1020,7 @@ class HomeView(
             when (msg.optString("op")) {
                 // combat_nav Step 1 (the user, 2026-11-11): "pending" (a fight's take until the ENTER tap) is NOT held: the guard reads B
                 // meanwhile; the first press that arrives (mapPad) makes it held
-                "hold" -> if (MapExitGuard.ackHeld(msg.optBoolean("ok"), msg.optString("why"))) mapHeldNow()
+                "hold" -> if (mapAnswer(msg)) mapHeldNow()
                     else if (MapExitGuard.ackPending(msg.optBoolean("ok"), msg.optString("why"))) {
                         Log.i(TAG, "map module: hold pending (the fight's ENTER)")
                         mapHeld = false; mapRefused = false; mapFallbackOn(); removeCallbacks(mapWatch); postDelayed(mapWatch, 1000L)
@@ -982,7 +1030,7 @@ class HomeView(
                         // never a module the player cannot leave: B read by Home closes it (MapExitGuard), the hold asked again after the fight
                         mapRefused = true; mapFallbackOn(); removeCallbacks(mapWatch); postDelayed(mapWatch, 1000L)
                     }
-                "free", "leave" -> { mapHeld = false; mapView.padHints = false }
+                "free", "leave" -> { mapClaim.freed(); mapHeld = false; mapView.padHints = false }
             }
             return
         }
@@ -1023,19 +1071,41 @@ class HomeView(
     private val mapWatch = Runnable { mapWatchStep() }
     private fun mapAsk() {
         mapAskAt = android.os.SystemClock.uptimeMillis(); mapRefused = false
-        if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i(TAG, "map module: hold")
+        if (!mapClaim.shown) mapClaim.shown() else if (!mapClaim.held) mapClaim.again("the module")
+        val cells = GuestPad.cells(pad, GUEST_ID, hold = true)
+        val sent = homeGuestTap(cells)
+        if (sent) Log.i(TAG, "map module: hold")
+        mapClaim.asked(++mapAsks, 0, sent, if (sent) "the guest home" else if (pad == null) "no pad document yet" else "no guest cell")
         removeCallbacks(mapWatch); postDelayed(mapWatch, MapExitGuard.ANSWER_MS)
     }
+    private var mapAsks = 0
+    /** a hold answer for the module: the claim logs it; true = it holds (MapExitGuard.ackHeld: "pending" does not) */
+    private fun mapAnswer(msg: JSONObject): Boolean {
+        mapClaim.answer(msg.optBoolean("ok"), msg.optString("why"))
+        return MapExitGuard.ackHeld(msg.optBoolean("ok"), msg.optString("why"))
+    }
+    /** the host's capture holder (null = not known): Home asks again after a loss that names a holder only once nobody holds */
+    var capHolderNow: () -> String? = { null }
     /** once a second while the module is open without the controller: the fallback reader, and the hold asked again after the fight */
     private fun mapWatchStep() {
         if (!mapWanted) { mapFallbackOff(); return }
         val since = android.os.SystemClock.uptimeMillis() - mapAskAt
         if (MapExitGuard.fallback(mapWanted, mapHeld, mapRefused, since)) mapFallbackOn()
-        if (MapExitGuard.retry(mapWanted, mapHeld, inFight(), since)) { Log.i("WCLOG", "map module: the hold asked again (out of the fight)"); mapAsk(); return }
+        // #584: a loss that names a holder or a choice (taken, npc, B ...) waits until the capture names nobody (no ping-pong in its queue)
+        val waitLoss = mapClaim.st == MapHoldClaim.St.LOST && mapClaim.why in MapHoldClaim.WAIT_WHYS
+        val nobody = capHolderNow().let { it == null || it.isEmpty() }
+        if (MapExitGuard.retry(mapWanted, mapHeld, inFight(), since) && (!waitLoss || nobody)) {
+            Log.i("WCLOG", "map module: the hold asked again (out of the fight)"); mapAsk(); return
+        }
         if (!mapHeld) postDelayed(mapWatch, 1000L)
     }
     /** the map module holds the controller now (a "held" answer, or the first press after "pending"): the guard off */
-    private fun mapHeldNow() { mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB(); mapFallbackOff() }
+    private fun mapHeldNow() {
+        val was = mapSticksLive()
+        mapClaim.press()
+        mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB(); mapFallbackOff()
+        if (mapSticksLive() && !was) mapView.sticksResume()
+    }
     private fun mapFallbackOn() {
         if (mapFallbackReader != null) return
         Log.i("WCLOG", "map module: no controller hold (${if (mapRefused) "refused: a fight" else "no answer"}): B closes it")
@@ -1064,6 +1134,7 @@ class HomeView(
     fun mapHoldGone() {
         if (!mapHolds()) return
         Log.i("WCLOG", "map module: the capture names nobody: not held, B read by Home, the hold asked again")
+        mapClaim.nobody()
         mapHeld = false; mapBSaid = null; mapView.padHints = false
         mapFallbackOn()
         mapAsk()
@@ -1843,9 +1914,10 @@ class HomeView(
         val mapFull = s.full == HomeModule.MAP && !s.takeover && lent(mapView)
         if (mapFull != mapWanted) {
             mapWanted = mapFull
-            if (mapFull) { auraPane.close(); homePadN = -1; setMapPage(HomeMapPages.Page.QUESTS); mapAsk() }
+            if (mapFull) { auraPane.close(); homePadN = -1; setMapPage(HomeMapPages.Page.QUESTS); mapAsks = 0; mapAsk() }
             else {
                 setMapPage(HomeMapPages.Page.QUESTS); mapView.worldDone()          // 2026-11-17: the sticks and the world's art let go
+                mapClaim.hidden()
                 if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "map module: free"); mapHeld = false; mapBSaid = null; mapView.padHints = false; auraPane.leaveFull(); mapFallbackOff()
             }
         }
@@ -5060,6 +5132,9 @@ class HomeView(
         const val TOOL_GUEST = "tool"
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */
         const val TAG = "WCHOME"
+        /** #584: how long the map controls wait for the game's stick catch before asking again, and how many asks before the keep-alive */
+        const val STICKS_ANSWER_MS = 1_200L
+        const val STICKS_ASKS = 3
         /** f-trackpad-keyboard: the tool's lift, above the quest card (2) and the class wheel's cover */
         private const val TYPE_Z = 50f
         /** the party member's player menu: over every module (the card at CARD_Z, a sliding column at CLASS_COVER_Z), under the tool */

@@ -13,7 +13,7 @@ import android.view.View
  */
 class MapStickDriver(private val view: View, private val speedPxS: Float, private val host: Host) {
     interface Host {
-        /** the map takes the sticks now (shown, no menu up) */
+        /** the map takes the sticks now (shown, no menu up, and - #584 - the map holds the controller: MapHoldClaim) */
         fun sticksLive(): Boolean
         /** the left stick moves the cursor now (the Map room: the map side, not its list) */
         fun cursorLive(): Boolean = true
@@ -51,6 +51,16 @@ class MapStickDriver(private val view: View, private val speedPxS: Float, privat
         stickX = 0f; stickY = 0f; zoomY = 0f
         view.removeCallbacks(cursorFrame); view.removeCallbacks(zoomFrame)
         cursorRunning = false; zoomRunning = false
+    }
+
+    /**
+     * the host's sticks became live again (#584: the map's hold landed, the stick catch showed): a stick already pushed and held still
+     * sends no new vector, so the frame loops start here from the last one read
+     */
+    fun resume() {
+        if (reader == null || !host.sticksLive()) return
+        if (!cursorRunning && host.cursorLive() && MapRoomKeys.stickMoves(stickX, stickY)) { cursorRunning = true; cursorAt = 0L; view.postOnAnimation(cursorFrame) }
+        if (!zoomRunning && kotlin.math.abs(zoomY) > MapRoomKeys.STICK_DEAD) { zoomRunning = true; zoomAt = 0L; view.postOnAnimation(zoomFrame) }
     }
 
     /** one stick vector (PadInput's: 0 = left, 1 = right; x right, y down, -1..1) */
