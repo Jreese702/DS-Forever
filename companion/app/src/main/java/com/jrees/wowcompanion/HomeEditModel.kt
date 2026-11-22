@@ -587,13 +587,29 @@ class HomeEditModel(
             "PADDLEFT", "PADDRIGHT" -> {
                 val d = if (k == "PADDLEFT") -1 else 1
                 when (r.kind) {
-                    MenuRow.Kind.SEG -> (r.picked + d).let { to -> if (to in r.words.indices && to != r.picked) row(s, r, to) else emptyList() }
+                    // fix round (the review): a dimmed word is stepped over (In fights' Top screen without the Wings word); only dimmed
+                    // words that way: refused as before (the flash says why nothing moved)
+                    MenuRow.Kind.SEG -> {
+                        var to = r.picked + d
+                        while (to in r.words.indices && to in r.off) to += d
+                        when {
+                            to in r.words.indices && to != r.picked -> row(s, r, to)
+                            (r.picked + d) in r.words.indices -> listOf(Fx.Refuse(s))
+                            else -> emptyList()
+                        }
+                    }
                     MenuRow.Kind.STEP -> row(s, r, if (d < 0) 0 else 1)
                     MenuRow.Kind.BUTTON -> emptyList()
                 }
             }
             "PAD1" -> when (r.kind) {
-                MenuRow.Kind.SEG -> row(s, r, (r.picked + 1).mod(r.words.size))
+                // fix round (the review: A from Same size stuck on a dimmed Top screen, refused every time): the cycle steps over the
+                // dimmed words and wraps; every other word dimmed: refused
+                MenuRow.Kind.SEG -> {
+                    var to = (r.picked + 1).mod(r.words.size)
+                    while (to in r.off && to != r.picked) to = (to + 1).mod(r.words.size)
+                    if (to == r.picked && r.words.size > 1) listOf(Fx.Refuse(s)) else row(s, r, to)
+                }
                 MenuRow.Kind.STEP -> emptyList()
                 MenuRow.Kind.BUTTON -> row(s, r, 0)
             }

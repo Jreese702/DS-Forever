@@ -36,7 +36,7 @@ class HomeEditBandTest {
             out[EditStop.DIVIDER] = B(x - 2f, top, x + 2f, top + 40f)
         }
         if (m.plusShown) out[EditStop.PLUS] = B(14f, 937f, 60f, 967f)
-        out[EditStop.FIGHT] = B(704f, 937f, 814f, 967f)
+        out[EditStop.FIGHT] = B(426f, 937f, 536f, 967f)                     // fix round: left of the disc (the hints keep their room)
         out[EditStop.DONE] = B(1080f, 937f, 1230f, 967f)
         out[EditStop.ROOMS] = B(8f, 969f, 1232f, 1080f)
         val diamonds = l.rest == HomeRest.DIAMONDS
@@ -150,6 +150,31 @@ class HomeEditBandTest {
         assertEquals("Top screen refused", listOf(HomeEditModel.Fx.Refuse(EditStop.FIGHT_PEN)),
             m.press("PADDRIGHT", v = values.copy(fightBand = HomeLayout.FightBand.SAME)))
         assertTrue("with the Wings word: pickable", HomeWidgetMenus.rows(EditStop.FIGHT_PEN, m.draft, values.copy(ct = 1))[0].off.isEmpty())
+    }
+
+    /** fix round (the review: with no Wings word A on In fights went Grow -> Same size, then stuck on the dimmed Top screen, refused every
+     *  time): A's cycle steps over a dimmed word and wraps; Left / Right step over it too, and only dimmed words that way is refused */
+    @Test fun aSkipsADimmedWordAndWraps() {
+        val m = model(start = EditStop.FIGHT)
+        m.press("PAD1"); m.startOn(EditStop.FIGHT_PEN, false); m.press("PAD1")
+        assertEquals(EditStop.FIGHT_PEN, m.menu)
+        val same = values.copy(fightBand = HomeLayout.FightBand.SAME)
+        assertEquals("Grow -> Same size", listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, HomeLayout.FightBand.SAME.ordinal)), m.press("PAD1"))
+        assertEquals("Same size -> past the dimmed Top screen -> Grow",
+            listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, HomeLayout.FightBand.GROW.ordinal)), m.press("PAD1", v = same))
+        assertEquals("with the Wings word Top screen is next",
+            listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, HomeLayout.FightBand.TOP.ordinal)), m.press("PAD1", v = same.copy(ct = 1)))
+        // a row whose middle word is dimmed: Left / Right step over it
+        val mid = MenuRow(BottomTiles.COMBAT, "In fights", BottomTiles.FIGHT_WORDS, 0, off = setOf(1))
+        val rows = listOf(mid)
+        fun k(key: String, r: MenuRow) = m.key(key, stops(m.draft, m)) { listOf(r) }
+        assertEquals(listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, 2)), k("PADDRIGHT", rows[0]))
+        assertEquals(listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, 0)), k("PADDLEFT", mid.copy(picked = 2)))
+        assertEquals("A from Grow: past the dimmed middle", listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, 2)), k("PAD1", mid))
+        // every other word dimmed: refused (nothing to pick)
+        assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.FIGHT_PEN)), k("PAD1", mid.copy(off = setOf(1, 2))))
+        assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.FIGHT_PEN)), k("PADDRIGHT", mid.copy(off = setOf(1, 2))))
+        assertTrue("Left at the row's start: nothing", k("PADDLEFT", mid).isEmpty())
     }
 
     /** P2: X (or the "-") hides the extra under the cursor - Settings' row Off; the cursor stays at its place; "+" opens the tray of the

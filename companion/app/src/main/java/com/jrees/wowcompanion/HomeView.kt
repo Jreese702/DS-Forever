@@ -1254,8 +1254,9 @@ class HomeView(
     }
     /** edit mode's gold line: the purse while Gold is on (0 until the bags say it: the line still shows, wiggles and hides) */
     private fun editChipGold(): Long? = if (HomeSettings.clockGold) (goldCopper ?: 0L) else null
-    /** the clock block is edit mode's now (live, not parked): its extras as apps */
-    private fun editClock(): Boolean = edit?.parked == false
+    /** the clock block is edit mode's now (live, not parked): its extras as apps. P4 fix round (the review): not while the fight preview
+     *  shows - the block is then drawn exactly as a fight draws it (the extras with data only, no "+" cell, nothing wiggling) */
+    private fun editClock(): Boolean = edit?.let { !it.parked && !it.fightPreview } == true
     /** the row's keys the last edit-mode clock block drew (its cells' poses: [extraPoser]) */
     private var editRowDrawn: List<String> = emptyList()
     /** P2: each extra's wiggle on its own key (the gold line -1), about its cell's centre; nothing outside edit mode */
@@ -1270,7 +1271,7 @@ class HomeView(
     }
     /** extra [k]'s pose now into [extraPoseBuf]; false = none */
     private fun extraPoseAt(k: String): Boolean {
-        if (!motion.on || !editPaintPosed()) return false
+        if (!motion.on || !editPaintPosed() || !editClock()) return false          // the fight preview: nothing wiggles
         val key = if (k == EDIT_PLUS) HomeEditMotion.PLUS_EXTRA else HomeEditMotion.extraKey(HomeEditModel.EXTRA_KEYS.indexOf(k).coerceAtLeast(0))
         motion.pose(key, motionNow(), EXTRA_HALF_DIAG, extraPoseBuf)
         return !extraPoseBuf.isIdentity
@@ -2144,6 +2145,22 @@ class HomeView(
     private fun editFightLook(): Boolean = edit?.let { !it.parked && it.fightPreview } == true
     /** when the preview came on (its Top screen cue loops from here) */
     private var previewAt = 0L
+    /** P4 fix round: the preview's look was given to the D-pad and the band (the toggle's Fx.Preview) and not taken back yet */
+    private var previewLaid = false
+    /**
+     * P4 fix round (the review: Done / Discard / a park / another room cleared the model's preview with no Fx.Preview, so the D-pad kept its
+     * In-combat pictures - and the bar's prediction read them as the D-pad's spells out of a fight - and a Discard that changed nothing kept
+     * the grown band and its looping stand-in swing on the Classic page): the preview ended by any other way than its toggle - the
+     * D-pad's own pictures again here; true = it was showing, so the caller lays the band again FORCED (the preview is no field of the
+     * record: an unforced relay finds the record unchanged and keeps the fight look)
+     */
+    private fun previewEnded(): Boolean {
+        if (!previewLaid || editFightLook()) return false
+        previewLaid = false
+        applyDpad()
+        Log.i(TAG, "home edit: fight preview ended (not by its toggle)")
+        return true
+    }
 
     /**
      * The focused quest's card in HomeView px for the map's morph: where it sits now ([opening]) or where it will sit when the close
@@ -2675,10 +2692,12 @@ class HomeView(
         val extras = ArrayList<Pair<String, RectF>>()
         var plus: RectF? = null
         if (clockShown) {
-            val keys = editRowKeys()
-            val items = editBandItems(keys)
+            // the block as the clock draw lays it now (the fight preview: a fight's own row, no edit row)
+            val ed = editClock()
+            val keys = if (ed) editRowKeys() else emptyList()
+            val items = if (ed) editBandItems(keys) else bandItems()
             val spot = castView.clockSpot()?.also { sp -> for (i in 0 until sp.size - 1) sp[i] += if (i % 2 == 0) b.left else b.top }
-            val gold = editChipGold()
+            val gold = if (ed) editChipGold() else chipGold()
             val (cb, gb, cells) = UiKit.clockBlockBoxes(b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, gold, spot, items,
                 infoG(android.os.SystemClock.elapsedRealtime()))
             chip = cb
@@ -2894,8 +2913,11 @@ class HomeView(
         if (!m.parked) editGuest(false)                                   // parked (a fight, a room): the guest was freed then
         motion.leave(motionNow()); editKick()                             // every widget grows back to 1, the wiggle out, the ribbon down
         chromeFade(0f, Motion.MODULE_CLOSE) { chromeModel = null; editView.visibility = View.GONE; onEditChrome?.invoke(null) }
-        // every part to the record's rects (Discard: its glide back already runs; Done: kept where the draft put them, the chrome's settle)
-        if (discard) editRelay(Motion.MODULE_CLOSE) else editRelay(Motion.MODULE_CLOSE, force = true)
+        // every part to the record's rects (Discard: its glide back already runs; Done: kept where the draft put them, the chrome's settle);
+        // P4 fix round: a preview that was showing - the D-pad's own pictures again, and the band laid again even for a Discard that
+        // changed nothing (its rest look, no stand-in swing)
+        val preview = previewEnded()
+        if (discard && !preview) editRelay(Motion.MODULE_CLOSE) else editRelay(Motion.MODULE_CLOSE, force = true)
         onEditChanged?.invoke(false)
         onEditLive?.invoke(false)
         onStateChanged?.invoke()
@@ -3025,6 +3047,7 @@ class HomeView(
             is HomeEditModel.Fx.Preview -> {
                 previewAt = android.os.SystemClock.uptimeMillis()
                 Log.i(TAG, "home edit: fight preview ${if (f.on) "on" else "off"}")
+                previewLaid = editFightLook()
                 applyDpad()
                 editRelay(if (f.on) Motion.COMBAT_GROW else Motion.COMBAT_SHRINK, force = true)
             }
@@ -3374,7 +3397,10 @@ class HomeView(
             chromeFade(0f, HomeEditModel.CHROME_IN) { if (edit?.parked == true) onEditChrome?.invoke(null) }
             Log.i(TAG, "home edit: parked (a fight)")
             onEditLive?.invoke(false)
-            if (relay) editRelay(Motion.COMBAT_GROW)
+            // P4 fix round: a preview showing when the fight came: the D-pad follows the real fight's word now (the caller without
+            // [relay] lays the page itself)
+            val preview = previewEnded()
+            if (relay) editRelay(Motion.COMBAT_GROW, force = preview)
         } else if (!fight && m.parked && live) {
             if (editOwnerCheck("the fight ended on another character")) return
             editRebase(m)
@@ -3397,6 +3423,9 @@ class HomeView(
         val m = edit ?: return
         hold.cancel(); editView.ribbonLetGo()                             // 1518: a finger held on Done lets go (no stale down after)
         if (!m.parked) { m.park(); editPersist(m, now = true); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L); onEditLive?.invoke(false) }
+        // P4 fix round: a preview showing: the D-pad's own pictures and the band's rest look (no stand-in swing, the cast bar alone) laid
+        // at once, while the band is still Home's - the room that takes it next never gets the preview's look
+        if (previewEnded()) shown?.let { apply(if (it.rest != flow.rest) flow.screen else it, animate = false) }
         editAway = true
         chromeAnim?.cancel(); chromeA = 0f
         liftStop = null; dragOffsetNow.fill(0f); motion.still(); cardOwnTo(0f, 0L, 0L); editDecor()
