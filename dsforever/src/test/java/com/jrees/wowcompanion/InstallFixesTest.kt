@@ -141,6 +141,15 @@ class InstallFixesTest {
         assertFalse("never a second Repair while one runs", SetupFlow.screen(base.copy(repairable = true, busy = GameRepair.checkLine(12)))
             .prompt!!.buttons.first().enabled)
         assertEquals("Checking the game's files: 12%", SetupFlow.screen(base.copy(repairable = true, busy = GameRepair.checkLine(12))).line)
+        // #577 review: Try again waits too while Repair runs (an art run then would read the files the repair writes)
+        assertEquals(listOf(false, false), SetupFlow.screen(base.copy(repairable = true, busy = GameRepair.checkLine(12)))
+            .prompt!!.buttons.map { it.enabled })
+        assertEquals(listOf(true, true), p.buttons.map { it.enabled })
+        // and an update (by itself, a region switch's) waits in the queue for the repair's end, never beside it
+        assertEquals(SetupFlow.UpdateGate.WAIT_REPAIR, SetupFlow.updateGate(true, false, false, false, true, repairing = true))
+        assertEquals(SetupFlow.UpdateGate.WAIT_REPAIR, SetupFlow.updateGate(true, false, true, true, true, repairing = true))
+        assertEquals(SetupFlow.UpdateGate.BUSY, SetupFlow.updateGate(true, true, false, false, true, repairing = true))
+        assertEquals(SetupFlow.UpdateGate.GO, SetupFlow.updateGate(true, false, false, false, true, repairing = false))
         // its result until OK, then the damaged pop-up again if anything is left
         val done = SetupFlow.screen(base.copy(repairable = true, repairNote = "Repaired 3 damaged files.")).prompt!!
         assertEquals("repair", done.id)
@@ -194,9 +203,14 @@ class InstallFixesTest {
             AddonSilence.downloadAfterLine(345), AddonSilence.DOWNLOAD_AFTER_LINE,
             ReportNotice.RESTART_TITLE, ReportNotice.RESTART_TEXT, ReportNotice.RESTART_ANYWAY, ReportNotice.WAIT,
             ThirdPartyAddons.backgroundLine(ThirdPartyAddons.installLine("Spoken Quests", 42))!!, ThirdPartyAddons.installRowLine(42),
-            ThirdPartyAddons.installRowLine(0), GameLife.quickNoteText(1))
+            ThirdPartyAddons.installRowLine(0), GameLife.quickNoteText(1),
+            GameRepair.couldNotRun(java.io.IOException("disk gone")), GameRepair.NO_MEMORY_LINE,
+            SetupFlow.updateGateLine(SetupFlow.UpdateGate.WAIT_REPAIR, -1))
         for (l in listOf("es", "fr")) for (w in words) assertTrue("$l: $w", Tr.t(w, l) != w)
         assertEquals("Juego descargando (345 MB por minuto): déjalo en marcha", Tr.t(AddonSilence.downloadAfterLine(345), "es"))
         assertEquals("Réparation des fichiers du jeu : 3 sur 9", Tr.t(GameRepair.repairLine(3, 9), "fr"))
+        assertEquals("La reparación no pudo ejecutarse: no hay memoria suficiente. Cierra otras apps y vuelve a reparar.",
+            Tr.t(GameRepair.NO_MEMORY_LINE, "es"))
+        assertEquals("La réparation n'a pas pu s'exécuter : disk gone", Tr.t("Repair could not run: disk gone", "fr"))
     }
 }

@@ -44,7 +44,21 @@ object GameRepair {
      */
     fun run(ctx: Context, onStatus: (String) -> Unit, stop: () -> Boolean = { false }): Result {
         val root = GameFiles.gameRoot(ctx)
-        return runOn(root, onStatus, stop) { key -> GameFiles.fetchByKey(ctx, key) }.also { GameFiles.afterRepair(ctx) }
+        // the app's cache dropped whatever happened (a repair that failed part-way may have written some files back already)
+        try { return runOn(root, onStatus, stop) { key -> GameFiles.fetchByKey(ctx, key) } }
+        finally { runCatching { GameFiles.afterRepair(ctx) } }
+    }
+
+    /**
+     * #577 review: the repair itself failed (out of memory on a big folder, an unreadable segment, ...): said on the start screen, and
+     * the report's line, instead of a crash or a Repair that never ends
+     */
+    const val NO_MEMORY_LINE = "Repair could not run: not enough memory. Close other apps, then Repair again."
+    fun couldNotRun(t: Throwable): String {
+        val why = if (t is OutOfMemoryError) "not enough memory" else (t.message ?: t.javaClass.simpleName)
+        last = "could not run: $why"
+        log("could not run: $why")
+        return if (t is OutOfMemoryError) NO_MEMORY_LINE else "Repair could not run: $why"
     }
 
     internal fun runOn(root: File, onStatus: (String) -> Unit, stop: () -> Boolean, fetch: (String) -> File?): Result {
@@ -54,7 +68,7 @@ object GameRepair {
             val data = File(root, "Data/data")
             onStatus(checkLine(0))
             val scan = CascLocal.scan(data, progress = { done, total -> onStatus(checkLine(if (total > 0) (done * 100 / total).toInt() else 0)) }, stop = stop)
-            log("check: ${scan.entries} files (${scan.bytes / 1_000_000} MB) read, ${scan.damaged.size} damaged" +
+            log("check: ${scan.entries} files (${scan.bytes / 1_000_000} MB) read, ${scan.damaged.size} damaged, ${scan.skipped} index entries not files" +
                 (if (scan.problems.isEmpty()) "" else "; ${scan.problems.joinToString("; ")}") + if (scan.stopped) "; stopped" else "")
             for (d in scan.damaged.take(20)) log("damaged: data.%03d @%d (%d bytes): %s".format(d.entry.archive, d.entry.offset, d.entry.size, d.why))
             if (scan.stopped) return done(Result(scan.entries, scan.damaged.size, 0, emptyList(), scan.problems, route, stopped = true))

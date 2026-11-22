@@ -550,6 +550,8 @@ fun WoWForeverScreen(
     fun harvestArt(retry: Boolean = false, force: Boolean = false) {
         // [force]: the launch switch's own start (the screen's flags may still be the old build's, or Play's)
         if (!force && (isLaunching || isUpdating || isHarvesting || files.isWrongGame || filesMissing)) return
+        // #577 review: never while Repair writes the folder (its own end starts the art again, from a clean open)
+        if (isRepairing) { Timber.i("WoWForeverScreen: art waits for the repair"); return }
         // issue #571: file access first, so an unreadable folder is never taken for one that has never run
         if (!files.hasStorageAccess) return
         if (com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) { if (retry || artFailed == null) seedGame(); return }
@@ -577,7 +579,8 @@ fun WoWForeverScreen(
      */
     suspend fun switchIfDue(): Boolean {
         val root = File(gamePath)
-        if (isUpdating || isLaunching || !files.hasStorageAccess) return false
+        // #577 review: never during Repair (both write the folder); the switch goes at the next start
+        if (isUpdating || isLaunching || isRepairing || !files.hasStorageAccess) return false
         if (!withContext(Dispatchers.IO) { runCatching { com.jrees.wowcompanion.WowSwitch.due(root) }.getOrDefault(false) }) return false
         PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)        // minutes of download: the player sees the line, not the splash
         isUpdating = true
@@ -676,6 +679,9 @@ fun WoWForeverScreen(
      * indexes), then the game folder's storage checked file by file and each damaged file downloaded again in place (GameRepair). Its
      * result stays on the bottom screen until OK; the art is tried again from a clean open.
      */
+    /** [performUpdate], declared below (a repair's end starts the update that waited for it) */
+    var updateFn: () -> Unit = {}
+
     fun performRepair() {
         // never with the game up: the repair writes into the folder the game reads
         val gameUp = com.jrees.wowcompanion.DependencyAddons.gameRunning()
@@ -689,23 +695,30 @@ fun WoWForeverScreen(
         setupLog("repair: starting (${com.jrees.wowcompanion.CascHeal.route(root).name.lowercase()} install, CascLib error ${com.jrees.wowcompanion.GameFiles.damagedErr})")
         scope.launch {
             val status: (String) -> Unit = { msg -> scope.launch(Dispatchers.Main) { if (isRepairing) repairStatus = msg } }
-            val (clientFixed, clientWhy, local) = withContext(Dispatchers.IO) {
-                val client = runCatching { WowClientDownloader.repairFiles(root, status) }
-                client.exceptionOrNull()?.let { Timber.w(it, "repair: the game's own files") }
-                val local = com.jrees.wowcompanion.GameRepair.run(context, status)
-                Triple(client.getOrDefault(-1), client.exceptionOrNull()?.message, local)
+            // #577 review: whatever the repair throws (out of memory on a big folder, ...) is said, and Repair always ends (Play waits
+            // for it): never a crash, never a "repairing" left on until the app restarts
+            val note = try {
+                val (clientFixed, clientWhy, local) = withContext(Dispatchers.IO) {
+                    val client = runCatching { WowClientDownloader.repairFiles(root, status) }
+                    client.exceptionOrNull()?.let { Timber.w(it, "repair: the game's own files") }
+                    val local = runCatching { com.jrees.wowcompanion.GameRepair.run(context, status) }
+                    Triple(client.getOrDefault(-1), client.exceptionOrNull()?.message, local)
+                }
+                local.fold({ com.jrees.wowcompanion.GameRepair.summary(it, clientFixed, clientWhy) },
+                    { Timber.e(it, "repair: the game folder's storage"); com.jrees.wowcompanion.GameRepair.couldNotRun(it) })
+            } finally {
+                isRepairing = false
             }
-            isRepairing = false
-            val note = com.jrees.wowcompanion.GameRepair.summary(local, clientFixed, clientWhy)
             setupLog("repair: done: $note")
             repairNote = note
-            // the art again, from a clean open: whole, it builds; still damaged, its pop-up (and Repair) comes back under the result
-            harvestArt(retry = true)
+            // the art again, from a clean open: whole, it builds; still damaged, its pop-up (and Repair) comes back under the result.
+            // An update that waited for the repair goes first (#577 review): it builds the art again for its build when it is done
+            if (updateQueued) updateFn() else harvestArt(retry = true)
         }
     }
 
     fun performInstall() {
-        if (isUpdating) return
+        if (isUpdating || isRepairing) return
         val root = GamePath.installDir()
         if (!StorageUtils.hasStoragePermission(context, root.path)) { StorageUtils.requestManageExternalStoragePermission(context); return }
         val metered = runCatching {
@@ -765,7 +778,8 @@ fun WoWForeverScreen(
         // a Stop pressed before the download began (the art run's stop, the queue) wins: never wiped by the start below
         if (updateStop.get()) { stopBeforeDownload(); return }
         // never silent (the user, 2026-10-28: A on Update did nothing while a background art step ran): go, queue, or say why not
-        val gate = com.jrees.wowcompanion.SetupFlow.updateGate(versionStatus != null, isUpdating, isLaunching, isHarvesting, files.hasStorageAccess)
+        val gate = com.jrees.wowcompanion.SetupFlow.updateGate(versionStatus != null, isUpdating, isLaunching, isHarvesting, files.hasStorageAccess,
+            repairing = isRepairing)
         val line = com.jrees.wowcompanion.SetupFlow.updateGateLine(gate, -1)
         when (gate) {
             com.jrees.wowcompanion.SetupFlow.UpdateGate.GO -> { updateQueued = false; setupLog("update: starting") }
@@ -785,7 +799,7 @@ fun WoWForeverScreen(
                 }
                 return
             }
-            com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH -> {
+            com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH, com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_REPAIR -> {
                 if (!updateQueued) setupLog("update: waiting (${gate.name.lowercase()}): $line")
                 updateQueued = true
                 return
@@ -840,6 +854,8 @@ fun WoWForeverScreen(
         }
     }
 
+    updateFn = { performUpdate() }
+
     // 2026-11-07 (the user: "they cant play without it just start the update and remove the prompt"): an out-of-date game updates by
     // itself, once per new build (a failed one waits for Try again, never a loop)
     var autoUpdatedFor by remember { mutableStateOf<String?>(null) }
@@ -880,9 +896,9 @@ fun WoWForeverScreen(
         if (regionRecheck && !isUpdating) { regionRecheck = false; checkVersionStatus() }
     }
 
-    // the queued Update goes as soon as nothing holds it (an art step's end, a launch's end)
-    LaunchedEffect(updateQueued, isHarvesting, isLaunching) {
-        if (updateQueued && !isHarvesting && !isLaunching) performUpdate()
+    // the queued Update goes as soon as nothing holds it (an art step's end, a launch's end, a repair's end: #577 review)
+    LaunchedEffect(updateQueued, isHarvesting, isLaunching, isRepairing) {
+        if (updateQueued && !isHarvesting && !isLaunching && !isRepairing) performUpdate()
     }
 
     // the auto-launch held back in the chooser's route: it goes when Local is picked (the chooser's card launched at once before, when

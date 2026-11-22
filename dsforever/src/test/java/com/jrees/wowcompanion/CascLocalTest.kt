@@ -76,6 +76,143 @@ class CascLocalTest {
         return puts
     }
 
+    /**
+     * #577 review: a real install's layout (measured on one, read only): data.000 starts with 16 segment headers of 30 bytes, which
+     * the bucket names as a 30-byte file at offset 0; the local headers are zero-filled; and some files are named twice in their
+     * bucket, as (offset, size) and again as (offset + 30, size - 30), the BLTE body itself. [aliased] = which bodies get that second name.
+     */
+    private fun realStorage(vararg bodies: Pair<ByteArray, String>, aliased: Set<Int> = emptySet()): List<Put> {
+        val seg = ByteArrayOutputStream()
+        seg.write(ByteArray(16 * 30) { 0x21 })
+        val puts = ArrayList<Put>()
+        for ((b, k) in bodies) { puts.add(Put(b, k, seg.size().toLong())); seg.write(ByteArray(30)); seg.write(b) }
+        File(data, "data.000").writeBytes(seg.toByteArray())
+        val entries = ByteArrayOutputStream()
+        fun entry(key: String, offset: Long, size: Long) {
+            entries.write(key.chunked(2).take(9).map { it.toInt(16).toByte() }.toByteArray())
+            for (i in 4 downTo 0) entries.write((offset ushr (8 * i)).toInt() and 0xff)
+            entries.write(le32(size))
+        }
+        entry("00ab12cd34ef560000", 0, 30)                                                  // the segment's header
+        for ((i, p) in puts.withIndex()) {
+            entry(p.key, p.offset, 30L + p.body.size)
+            if (i in aliased) entry(p.key, p.offset + 30, p.body.size.toLong())             // the same file, by its body
+        }
+        val header = ByteArrayOutputStream()
+        header.write(le32(0x10)); header.write(le32(0))
+        header.write(byteArrayOf(7, 0, 0, 0, 4, 5, 9, 30)); header.write(ByteArray(8)); header.write(ByteArray(8))
+        header.write(le32(entries.size().toLong())); header.write(le32(0))
+        File(data, "0000000002.idx").writeBytes(header.toByteArray() + entries.toByteArray())
+        return puts
+    }
+
+    @Test fun aRealLayoutIsWholeAndItsSecondNamesAreNotDamage() {
+        val bodies = arrayOf(framed("one ".toByteArray(), "two".toByteArray()), zlib(ByteArray(3000) { (it % 5).toByte() }),
+            framed(ByteArray(700) { 7 }), zlib("text".repeat(300).toByteArray()))
+        val puts = realStorage(*bodies, aliased = setOf(0, 1, 3))
+        assertEquals(1 + 4 + 3, CascLocal.readIndex(File(data, "0000000002.idx")).first.size)
+        val scan = CascLocal.scan(data)
+        assertTrue(scan.damaged.toString(), scan.damaged.isEmpty())
+        assertEquals("each file checked once", 4, scan.entries)
+        assertEquals("the segment's header and the three whole-body parts", 4, scan.skipped)
+        assertEquals("all there", 0, scan.partial)
+        // a damaged file there is found once (not again by its second name), mended, and the folder is whole again
+        val seg = File(data, "data.000").readBytes()
+        for (i in 0 until 40) seg[(puts[1].offset + 30 + 30 + i).toInt()] = 0
+        File(data, "data.000").writeBytes(seg)
+        val d = CascLocal.scan(data).damaged.single()
+        assertEquals(puts[1].offset, d.entry.offset)
+        assertEquals(bodies[1].second.take(18), d.entry.key9)
+        assertNull(CascLocal.writeBack(data, d.entry, File(tmp, "cdn").apply { writeBytes(bodies[1].first) }, bodies[1].second))
+        assertTrue(CascLocal.scan(data).damaged.isEmpty())
+        // Repair on it: nothing "too much", nothing left over
+        val r = GameRepair.runOn(root, {}, { false }) { null }
+        assertTrue(r.toString(), r.whole)
+        assertEquals("No damaged files found.", GameRepair.summary(r, 0))
+    }
+
+    @Test fun aFilesPartsAreItsOwnKeyInsideIt() {
+        // an entry inside another of its key and segment is a resident part of that file; another key there is a file of its own
+        val t = CascLocal.Table(4)
+        fun add(arc: Int, key: Int, off: Long, size: Long) = t.add(ByteArray(9) { key.toByte() }, 0, arc, off, size)
+        add(3, 1, 1000, 130)       // 0: a file
+        add(3, 1, 1030, 100)       // 1: its whole body: all there
+        add(3, 1, 1030, 99)        // 2: a part of it
+        add(3, 1, 1000, 130)       // 3: the very same entry twice
+        add(3, 9, 0, 30)           // 4: the segment's header
+        add(3, 9, 2000, 30)        // 5: a 30-byte entry past the headers: still checked (and too short for a file)
+        add(4, 5, 500, 130)        // 6: segment 4: a file
+        add(4, 6, 530, 100)        // 7: another key 30 bytes in: a file of its own
+        add(5, 7, 5000, 1000)      // 8: a file streamed in part: its header and first frame, and one frame further on
+        add(5, 7, 5000, 130)       // 9
+        add(5, 7, 5800, 200)       // 10
+        add(6, 7, 100, 50)         // 11: the same key in another segment: a file of its own
+        val plan = CascLocal.toCheck(t)
+        assertEquals(4, plan.segments.size)
+        assertEquals(listOf(1000L to 130L, 2000L to 30L), plan.segments[0].map { t.offset[it] to t.size[it] })
+        assertEquals(listOf(500L to 130L, 530L to 100L), plan.segments[1].map { t.offset[it] to t.size[it] })
+        assertEquals(listOf(8), plan.segments[2].toList())
+        assertEquals(listOf(11), plan.segments[3].toList())
+        assertEquals("3 parts of file 0, the segment's header, 2 parts of file 8", 6, plan.skipped)
+        assertEquals("file 0 is all there", setOf(8), plan.partial.keys)
+        assertEquals(listOf(0L, 100L, 770L, 970L), plan.partial[8]!!.toList())
+        assertTrue(CascLocal.resident(plan.partial[8], 770, 970))
+        assertFalse(CascLocal.resident(plan.partial[8], 100, 770))
+        assertTrue(CascLocal.resident(null, 0, 1))
+        assertEquals("010101010101010101", t.key9(0))
+    }
+
+    @Test fun aFileStreamedInPartIsCheckedInItsPartsOnly() {
+        // the game streams files: a frame it has not read yet holds zeros (measured on a real install), no damage
+        val f1 = ByteArray(300) { 1 }; val f2 = ByteArray(400) { 2 }; val f3 = ByteArray(200) { 3 }
+        val (body, key) = framed(f1, f2, f3)
+        val puts = realStorage(body to key)
+        val hs = 12 + 24 * 3                                  // "BLTE", its size and the frame table
+        assertEquals(body.size, hs + f1.size + f2.size + f3.size + 3)
+        val at = puts[0].offset
+        val seg = File(data, "data.000").readBytes()
+        val frame2 = at + 30 + hs + f1.size + 1
+        for (i in 0 until f2.size + 1) seg[(frame2 + i).toInt()] = 0
+        File(data, "data.000").writeBytes(seg)
+        assertEquals("all there, it is damage", 1, CascLocal.scan(data).damaged.size)
+        // the index names its parts: the header with frame 1, and frame 3
+        val idx = File(data, "0000000002.idx")
+        val b = idx.readBytes()
+        fun entry(offset: Long, size: Long) = key.chunked(2).take(9).map { it.toInt(16).toByte() }.toByteArray() +
+            (4 downTo 0).map { ((offset ushr (8 * it)).toInt() and 0xff).toByte() }.toByteArray() + le32(size)
+        val more = entry(at, 30L + hs + f1.size + 1) + entry(frame2 + f2.size + 1, f3.size + 1L)
+        val n = b.size - 0x28 + more.size
+        val withParts = b.copyOf(0x20) + le32(n.toLong()) + b.copyOfRange(0x24, b.size) + more
+        idx.writeBytes(withParts)
+        val scan = CascLocal.scan(data)
+        assertTrue(scan.damaged.toString(), scan.damaged.isEmpty())
+        assertEquals(1, scan.entries); assertEquals(1, scan.partial)
+        // a resident frame zero-filled is damage, with the file's whole key
+        for (i in 0 until 50) seg[(at + 30 + hs + 10 + i).toInt()] = 0
+        File(data, "data.000").writeBytes(seg)
+        val d = CascLocal.scan(data).damaged.single()
+        assertEquals("frame 1 of 3 is damaged", d.why)
+        assertEquals(key, d.fullKey)
+        // mended with the CDN's whole body: then every frame is there and whole
+        assertNull(CascLocal.writeBack(data, d.entry, File(tmp, "cdn").apply { writeBytes(body) }, key))
+        assertTrue(CascLocal.scan(data).damaged.isEmpty())
+    }
+
+    @Test fun aPatchManifestIsNotBlteAndNotDamage() {
+        // the real install keeps patch manifests as the CDN serves them ("PA", version 2), not BLTE-encoded
+        val pa = byteArrayOf('P'.code.toByte(), 'A'.code.toByte(), 2, 16, 16, 16, 16, 0) + ByteArray(200) { (it * 13).toByte() }
+        assertNull(CascLocal.bodyProblem(CascLocal.StreamSource(pa.inputStream()), pa.size.toLong()).why)
+        val other = byteArrayOf('P'.code.toByte(), 'X'.code.toByte(), 2, 16, 16, 16, 16, 0) + ByteArray(200)
+        assertEquals("no BLTE header (other bytes)", CascLocal.bodyProblem(CascLocal.StreamSource(other.inputStream()), other.size.toLong()).why)
+    }
+
+    @Test fun aRepairThatCannotRunSaysSo() {
+        assertEquals("Repair could not run: disk gone", GameRepair.couldNotRun(java.io.IOException("disk gone")))
+        assertEquals("could not run: disk gone", GameRepair.last)
+        assertEquals(GameRepair.NO_MEMORY_LINE, GameRepair.couldNotRun(OutOfMemoryError("Java heap space")))
+        assertEquals("could not run: not enough memory", GameRepair.last)
+    }
+
     @Test fun aWholeStorageHasNothingDamaged() {
         storage(framed("hello ".toByteArray(), "world".toByteArray()), zlib(ByteArray(5000) { (it % 7).toByte() }))
         val scan = CascLocal.scan(data)
