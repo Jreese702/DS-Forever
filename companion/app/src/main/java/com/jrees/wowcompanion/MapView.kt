@@ -2949,7 +2949,16 @@ class MapView(context: Context) : View(context) {
             if (learnedFrom[e.map]?.contains(e.toMap) == true) continue
             val w = worldOf?.invoke(e.map)?.takeIf { it.valid && it.continent == cont } ?: continue
             val tw = worldOf?.invoke(e.toMap)?.takeIf { it.valid && it.continent == cont } ?: continue
-            val ax = w.wx(e.y); val ay = w.wy(e.x)
+            // (a measured entry in world yards: #578's Undercity elevators; a walk ends where it starts)
+            val ax = if (e.x.isNaN()) e.wx else w.wx(e.y); val ay = if (e.x.isNaN()) e.wy else w.wy(e.x)
+            if (ax.isNaN() || ay.isNaN()) continue
+            if (!e.transport) {
+                out.add(MultiHop.Hop(e.map, ax, ay, e.toMap, ax, ay, 0.0, "${e.name} to ${name(e.toMap)}", "t:${e.map}>${e.toMap}"))
+                // (a way on foot runs both ways: the elevators down as well)
+                if (learnedFrom[e.toMap]?.contains(e.map) != true)
+                    out.add(MultiHop.Hop(e.toMap, ax, ay, e.map, ax, ay, 0.0, "To ${name(e.map)}", "t:${e.toMap}>${e.map}"))
+                continue
+            }
             val tx = if (e.toX.isNaN()) 0.5 else e.toX; val ty = if (e.toY.isNaN()) 0.5 else e.toY
             out.add(MultiHop.Hop(e.map, ax, ay, e.toMap, tw.wx(ty), tw.wy(tx), e.rideYd, "${e.name} to ${name(e.toMap)}", "t:${e.map}>${e.toMap}"))
         }
@@ -3257,12 +3266,14 @@ class MapView(context: Context) : View(context) {
     private fun tableWays(mapId: Int, r: PoiStore.Rect): List<CityExits.Way> {
         val learnedTo = (exitLearner()?.of(mapId) ?: emptyList()).map { it.toMap }.toSet()
         return CityExits.TABLE.filter { it.map == mapId && it.toMap !in learnedTo }.mapNotNull { e ->
-            val end = if (!e.transport) doubleArrayOf(e.x, e.y)
+            // its own 0..1, or its measured world yards on this map (#578: the Undercity's elevators)
+            val at = CityExits.tableAt(e) { wx, wy -> here(r, wx, wy) } ?: return@mapNotNull null
+            val end = if (!e.transport) at
                 else worldOf?.invoke(e.toMap)?.takeIf { it.valid && it.continent == r.continent }?.let { w ->
                     val tx = if (e.toX.isNaN()) 0.5 else e.toX; val ty = if (e.toY.isNaN()) 0.5 else e.toY
                     here(r, w.wx(ty), w.wy(tx))
                 }
-            end?.let { CityExits.Way(e, e.x, e.y, it[0], it[1]) }
+            end?.let { CityExits.Way(e, at[0], at[1], it[0], it[1]) }
         }
     }
 
@@ -5425,8 +5436,9 @@ class MapView(context: Context) : View(context) {
             ways.addAll(rideWays(mapId, r, allSpots))
         // back where the player came from is ruled out, unless the quest itself lies in that map
         val fw = farW
-        val backRule = if (fw != null && worldOf?.invoke(cameFrom)?.let { w -> w.valid && w.continent == r.continent &&
-                fw[1] in w.bottom..w.top && fw[2] in w.right..w.left } == true) 0 else cameFrom
+        // (#578: under the ground every way on goes up first - the Undercity's elevators are never ruled out as "back")
+        val backRule = CityExits.backRule(mapId, cameFrom, fw != null && worldOf?.invoke(cameFrom)?.let { w -> w.valid && w.continent == r.continent &&
+                fw[1] in w.bottom..w.top && fw[2] in w.right..w.left } == true)
         val planned = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
             ways = ways, inCity = mapId in CityExits.CITIES,
             wayName = { e ->

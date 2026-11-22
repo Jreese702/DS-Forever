@@ -1403,6 +1403,7 @@ class PadTabPage(
             if (!kb.voiceShown) c.drawText(Tr.t("${Glyphs.name("a")} types · Start saves · ${Glyphs.name("b")} cancels"), 48f, 270f, hint)
             // X and the microphone on the name box while the keys show (the voice design: a finger on it = X)
             edMic = if (!kb.voiceShown && VoiceUi.micShown(host.context)) VoiceUi.micGlyph(c, box.right - 24f, box.centerY(), 44f) else null
+            kb.scaleOverride = ChatKeyboard.scaleOf(host)        // never attached: the host's screen (#557)
             kb.measure(View.MeasureSpec.makeMeasureSpec(w.toInt(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
             val kh = kb.measuredHeight
             kb.layout(0, 0, w.toInt(), kh)

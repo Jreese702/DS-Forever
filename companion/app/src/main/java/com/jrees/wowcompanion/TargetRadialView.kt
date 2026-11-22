@@ -485,7 +485,7 @@ class TargetRadialView(
     private fun drawRename(c: Canvas) {
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         UiKit.cover(c, screen)
-        val kh = kb?.let { if (it.height > 0) it.height.toFloat() else ChatKeyboard.fullHeight().toFloat() } ?: 0f
+        val kh = kb?.let { if (it.height > 0) it.height.toFloat() else it.boardHeight().toFloat() } ?: 0f
         val w = minOf(900f, width - 60f)
         val bottom = (height - kh - 24f).coerceAtLeast(240f)
         val box = RectF(width / 2f - w / 2f, bottom - 230f, width / 2f + w / 2f, bottom)

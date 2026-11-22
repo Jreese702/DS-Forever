@@ -1153,7 +1153,7 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
 
         /** the line over the keyboard (InteractView's): the field's word, what is typed, the caret */
         private fun typingLine(c: Canvas, r: RectF) {
-            val kh = if (keyboard.height > 0) keyboard.height else ChatKeyboard.fullHeight()
+            val kh = if (keyboard.height > 0) keyboard.height else keyboard.boardHeight()
             val box = RectF(r.left + 8f, r.bottom - kh - 86f, r.right - 8f, r.bottom - kh - 6f)
             UiKit.menu(c, box, solid = true)
             val lab = Tr.t(MacrosModel.kbdWord(state?.kbd)) + ":"

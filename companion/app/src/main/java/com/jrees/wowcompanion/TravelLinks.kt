@@ -157,6 +157,18 @@ object TravelLinks {
                 "tram:${e.toMap}>${e.map}"))
         }
 
+        // the table's measured ways ON FOOT (#578: the Undercity's elevators, in world yards), both ways: a walk ends where it starts
+        for (e in inp.table) {
+            if (e.transport || e.toMap == 0) continue
+            val w = if (!e.wx.isNaN() && !e.wy.isNaN()) doubleArrayOf(e.wx, e.wy)
+                else if (!e.x.isNaN() && !e.y.isNaN()) at?.invoke(e.map, e.x, e.y) else null
+            if (w == null) continue
+            val l = Link(Kind.WALK, e.map, w[0], w[1], e.toMap, w[0], w[1], 0.0,
+                "Take the ${e.name.ifEmpty { "way" }.replaceFirstChar { it.lowercase() }} to ${inp.mapName(e.toMap)}", "t:${e.map}>${e.toMap}")
+            add(l)
+            add(l.back("To ${inp.mapName(e.map)}", "t:${e.toMap}>${e.map}"))
+        }
+
         // PORTAL: one way; the landing learned at the portal, else not known (costed at UNKNOWN_YD, said so)
         for (p in inp.portals) {
             if (p.faction != 0 && p.faction and who.faction == 0) { left.add("o${p.id} (${p.name}: the other side's)"); continue }

@@ -88,6 +88,14 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
     private var lastPadN = -1
     /** B: MainActivity goes HOME (user ruling 23:12), which leaves the room (see [leave]) */
     var onLeave: () -> Unit = {}
+    /**
+     * ENCHANT, THEN PICK THE ITEM (#541): the game asks for the enchant's item (add-on p27's ack `pick`): the host shows the Bags room,
+     * whose "Choose an item" lists what it can go on (worn first). The game's professions window stays open behind ([leave] lets the
+     * controller go without its close: the pick is the enchant's own)
+     */
+    var onPickItem: () -> Boolean = { false }
+    /** the next [leave] is the item pick's: the controller let go, the game's window left open */
+    private var leaveForPick = false
 
     /** RC3: B leaves for Home on the press, except while a craft runs (then B is the game's /stopcasting and the room stays: bstop) */
     override fun bLeadsHome(): Boolean = ProfessionsStore.overview?.bstop != true && !kbOpen    // voice: B closes the search keyboard first
@@ -206,10 +214,13 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         board.invalidate()
     }
 
-    /** the addon's answer to a tap: a refusal (its reason, or the game's red text) shows 3 s at the foot */
-    fun onAck(msg: org.json.JSONObject) {
+    /** the addon's answer to a tap: a refusal (its reason, or the game's red text) shows 3 s at the foot; [live] = a current one (never
+     *  a replayed backlog line: #541's pick hand-over only then) */
+    fun onAck(msg: org.json.JSONObject, live: Boolean = true) {
         val op = msg.optString("op")
-        if (op in listOf("make", "all", "track", "untrack")) pendingTap = 0L
+        if (op in listOf("make", "all", "track", "untrack", "ench")) pendingTap = 0L
+        // #541: the enchant was cast and the game asks for its item: its pick in the Bags room
+        if (live && op == "ench" && msg.optBoolean("ok") && msg.optBoolean("pick")) { leaveForPick = true; if (!onPickItem()) leaveForPick = false }
         if (op == "open") { openAnsweredAt = SystemClock.uptimeMillis(); if (!msg.optBoolean("ok")) opening = 0 }
         if (op == "close") closingAt = 0L
         // the addon's answer to the entry: "open now" (or held) -> the ONE book tap; `noopen` (queued behind another room, or a fight's
@@ -788,7 +799,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             if (canLess) hits.add(Hit(RectF(610f - 120f - 55.5f, by + 55f - 55.5f, 610f - 120f + 55.5f, by + 55f + 55.5f)) { setCount(r, n - 1) })
             if (canMore) hits.add(Hit(RectF(610f + 120f - 55.5f, by + 55f - 55.5f, 610f + 120f + 55.5f, by + 55f + 55.5f)) { setCount(r, n + 1) })
             val createDown = act.enabled && isDown(Fk.Create)
-            UiKit.button(c, createBox, ov?.word("create", "Create") ?: "Create", "rev_x",
+            // an enchant's button says Enchant (#541: its press casts it and the Bags room picks the item)
+            val createWord = if (act.kind == M.Kind.ENCHANT) ov?.word("enchant", "Enchant") ?: "Enchant" else ov?.word("create", "Create") ?: "Create"
+            UiKit.button(c, createBox, createWord, "rev_x",
                 when { createDown -> UiKit.Button.DOWN; act.enabled && !inFlight -> UiKit.Button.UP; else -> UiKit.Button.DISABLED })
             val doCreate = { if (send(act.tap)) { pendingTap = SystemClock.uptimeMillis(); postInvalidateDelayed(TAP_WAIT + 50) } }
             if (act.enabled && !inFlight) hits.add(Hit(RectF(createBox), Fk.Create) { doCreate() })
@@ -909,11 +922,14 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
     fun leave() {
         modeSent = null
         bookPendingAt = 0L
+        val forPick = leaveForPick; leaveForPick = false
         // IN A FIGHT the leave is Interact's (capture i81; Home taps its leave cell, which clicks this room's spec.leave = the game's
         // close button, so a craft keeps running): the room sends nothing of its own there, and never retries
         if (ProfessionsStore.overview?.combat == true) { leftByB = false; closingAt = 0L; return }
         if (leftByB) { leftByB = false; return }
         val ov = ProfessionsStore.overview
+        // #541: into the Bags room for the enchant's item: the controller let go, never the game's close (the pick is the enchant's)
+        if (forPick) { send(M.freeTap(ov)); return }
         val close = M.closeTap(ov, SystemClock.uptimeMillis() - bookSentAt < ENTRY_QUIET)
         if (close != null && send(close)) {
             val at = SystemClock.uptimeMillis(); closingAt = at

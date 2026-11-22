@@ -49,6 +49,20 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     /** the height the room gives the board at rest (the input screen fills the room: UI Art's SHEET_chat_input); 0 = its own */
     var fillHeight = 0
         set(v) { if (field != v) { field = v; invalidate() } }
+    /**
+     * THE BOARD'S SCALE (#557, the Ayaneo Pocket DS: "the popup keyboard its so large it doesn't fit on the screen"): its sizes are the
+     * Thor's (1240 x 1080 bottom screen), scaled down to a smaller screen ([scaleFor], the kit's rule: min(1, w / 1240, h / 1080)).
+     * Null = the screen it is on ([scaleOf]: its window once attached); a board drawn on another's canvas says it (PadTabPage: its
+     * host's; a picture of the board drawn at the Thor's size: 1).
+     */
+    var scaleOverride: Float? = null
+        set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
+    /** the scale the board's sizes take now */
+    val scale: Float get() = scaleOverride ?: scaleOf(this)
+    /** the board's whole height at its [scale] (a host placing the board before it is measured) */
+    fun boardHeight(): Int = fullHeight(scale)
+    private var measuredScale = 1f
+
     /** Send is drawn faint while the game cannot take a message; a press still asks the owner */
     var sendEnabled = true
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -115,39 +129,49 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
     // UI Art's geometry (KeyboardSample.kt on art-kit 8e9a6676): a solid kit menu panel 6 px in from the sides and
     // 4 px over the bottom; inside it 16 px, rows of 92 px keys 8 px apart, ten units across; the hints under the keys
     override fun onMeasure(wSpec: Int, hSpec: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(wSpec), resolveSize(fullHeight(), hSpec))
+        measuredScale = scale
+        setMeasuredDimension(MeasureSpec.getSize(wSpec), resolveSize(fullHeight(measuredScale), hSpec))
     }
 
     private val board = Paint(Paint.ANTI_ALIAS_FLAG)
 
     override fun onDraw(c: Canvas) {
         c.drawColor(Theme.ink)
+        // #557: the screen's size known only now (the first measure ran before the window had its size): measured again at its scale
+        val k = scale
+        if (scaleOverride == null && isAttachedToWindow && kotlin.math.abs(k - measuredScale) > 0.001f) requestLayout()
         // drawn at the FULL height even while the room gives it less: sliding in, its top edge carries the keys up
         // from below (the room clips the rest), so the board slides and is never squeezed
-        val kb = RectF(6f, 0f, width - 6f, (if (fillHeight > 0) fillHeight else fullHeight()) - 4f)
+        val kb = RectF(6f, 0f, width - 6f, (if (fillHeight > 0) fillHeight else fullHeight(k)) - 4f)
         // look 1, the user's pick: the keys on a black board with a thin bronze-brown edge (UI Art's sample)
         board.style = Paint.Style.FILL; board.color = Color.rgb(6, 6, 6)
         c.drawRoundRect(kb, 14f, 14f, board)
         board.style = Paint.Style.STROKE; board.strokeWidth = 2f; board.color = Color.rgb(60, 52, 40)
         c.drawRoundRect(kb, 14f, 14f, board)
         places.clear()
-        sheet?.let { drawVoice(c, kb, it); return }
+        // the voice page in the Thor's frame, scaled to the board (its touch boxes then put on the board as drawn: [voiceHitsScaled])
+        sheet?.let {
+            c.save(); c.scale(k, k)
+            drawVoice(c, RectF(kb.left / k, kb.top / k, kb.right / k, kb.bottom / k), it)
+            c.restore()
+            if (k != 1f) voiceHitsScaled(k)
+            return
+        }
         val rows = keys.layoutRows()
-        val unit = (kb.width() - INSET * 2 - 9 * GAP) / 10f
-        // the keys as tall as the board allows (the input screen fills the room: ~120 px keys), never shorter than KEY_H
-        val keyH = maxOf(KEY_H, (kb.height() - INSET * 2 - (rows.size - 1) * GAP) / rows.size)
-        var y = kb.top + INSET
+        val g = keyMetrics(kb.width(), kb.height(), rows.size, k)
+        val unit = g[0]; val keyH = g[1]; val inset = g[2]; val gap = g[3]
+        var y = kb.top + inset
         for ((ri, row) in rows.withIndex()) {
-            var x = kb.left + INSET + row.lead * (unit + GAP)          // the A-L row half a key in
+            var x = kb.left + inset + row.lead * (unit + gap)          // the A-L row half a key in
             for ((ci, cell) in row.cells.withIndex()) {
-                val w = unit * cell.w + GAP * (cell.w - 1f)
+                val w = unit * cell.w + gap * (cell.w - 1f)
                 val r = RectF(x, y, x + w, y + keyH)
                 drawKey(c, r, cell.key, down = ri == popRow && ci == popCol && popShown(android.os.SystemClock.uptimeMillis()))
                 places += Triple(ri, ci, r)
                 if (ri == keys.row && ci == keys.col) UiKit.focus(c, r)       // the gold box: the cursor
-                x += w + GAP
+                x += w + gap
             }
-            y += keyH + GAP
+            y += keyH + gap
         }
         drawPop(c, kb)
         // what the controller does here, the game's way: glyph and word, under the keys
@@ -813,26 +837,74 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false, vo
 
     private fun voiceTouch(e: MotionEvent) {
         if (e.actionMasked != MotionEvent.ACTION_UP) return
+        val ex = e.x; val ey = e.y
         // a model row (NEED_MODEL's list): that one is picked and its download asked, as A on it
-        modelRows.firstOrNull { it.second.contains(e.x, e.y) }?.let { (m, _) -> sheet?.model = m; voicePress("PAD1"); return }
+        modelRows.firstOrNull { it.second.contains(ex, ey) }?.let { (m, _) -> sheet?.model = m; voicePress("PAD1"); return }
         val key = when {
-            btnRect?.contains(e.x, e.y) == true -> "PAD1"
+            btnRect?.contains(ex, ey) == true -> "PAD1"
             // the medallion: X's say it again (and A's stop while listening)
-            medRect?.contains(e.x, e.y) == true -> if (sheet?.state == Voice.State.LISTENING) "PAD1" else "PAD3"
-            else -> chips.firstOrNull { it.r.contains(e.x, e.y) }?.key
+            medRect?.contains(ex, ey) == true -> if (sheet?.state == Voice.State.LISTENING) "PAD1" else "PAD3"
+            else -> chips.firstOrNull { it.r.contains(ex, ey) }?.key
         } ?: return
         voicePress(key)
+    }
+
+    /** #557: the voice page drawn in the Thor's frame at scale [k]: its touch boxes put on the board as drawn (the view's own pixels) */
+    private fun voiceHitsScaled(k: Float) {
+        fun RectF.onBoard() = set(left * k, top * k, right * k, bottom * k)
+        chips.forEach { it.r.onBoard() }
+        btnRect?.onBoard(); medRect?.onBoard()
+        modelRows.forEach { it.second.onBoard() }
     }
 
     /** a finger the host routes here itself (PadTabPage draws this board on its own canvas): the voice page's touch */
     fun voiceTouchAt(e: MotionEvent): Boolean { if (sheet == null) return false; voiceTouch(e); return true }
 
     companion object {
-        /** the keyboard's whole height: the rows, the hints under them, the board's margins */
-        fun fullHeight(): Int {
+        /**
+         * the keyboard's whole height at scale [k] (1 = the Thor's bottom screen; [scaleFor]): the rows and the board's margins. A host
+         * that places the board itself asks the board's own ([boardHeight], or [fullHeight] of a view on its screen)
+         */
+        fun fullHeight(k: Float = 1f): Int {
             val rows = ChatKeys.Layout.DEFAULT.pages[0].size
             // the rows and the board's margins (the legend under them is gone: LATER 27)
-            return (INSET + rows * KEY_H + (rows - 1) * GAP + INSET + 4f).toInt()
+            return ((INSET + rows * KEY_H + (rows - 1) * GAP + INSET) * k + 4f).toInt()
+        }
+        /** the board's whole height on the screen [v] is on */
+        fun fullHeight(v: View): Int = fullHeight(scaleOf(v))
+
+        /** the Thor's bottom screen, the board's sizes' own frame */
+        const val REF_W = 1240f
+        const val REF_H = 1080f
+        /** never smaller than this (a window far smaller than any bottom screen, before its size is known) */
+        const val MIN_SCALE = 0.4f
+
+        /** a screen of [w] x [h]: the kit's rule, min(1, w / 1240, h / 1080) (the Pocket DS's 1024 x 768: 0.71); unknown = 1 */
+        fun scaleFor(w: Float, h: Float): Float =
+            if (w <= 0f || h <= 0f) 1f else minOf(1f, w / REF_W, h / REF_H).coerceAtLeast(MIN_SCALE)
+
+        /**
+         * the scale for the screen [v] is on: its window's root once laid out, else (attached, the window's size not known yet) the
+         * display its context shows; a view in no window = 1 (a board drawn elsewhere says its own: [scaleOverride])
+         */
+        fun scaleOf(v: View): Float {
+            if (!v.isAttachedToWindow) return 1f
+            val root = v.rootView
+            if (root != null && root !== v && root.width > 0 && root.height > 0) return scaleFor(root.width.toFloat(), root.height.toFloat())
+            val m = runCatching { v.resources.displayMetrics }.getOrNull() ?: return 1f
+            return scaleFor(m.widthPixels.toFloat(), m.heightPixels.toFloat())
+        }
+
+        /**
+         * the keys' sizes on a board [w] x [h] of [rows] rows at scale [k]: [unit (a letter key's width), key height, inset, gap]. The
+         * keys fill the board's height (the Chat room's input screen gives it the room: ~120 px keys on the Thor) - never taller than
+         * the board (#557: the old floor of 92 px ran the Send row off a 768 px screen)
+         */
+        fun keyMetrics(w: Float, h: Float, rows: Int, k: Float): FloatArray {
+            val inset = INSET * k; val gap = GAP * k
+            val unit = (w - inset * 2 - 9 * gap) / 10f
+            val keyH = ((h - inset * 2 - (rows - 1) * gap) / rows.coerceAtLeast(1)).coerceAtLeast(8f)
+            return floatArrayOf(unit, keyH, inset, gap)
         }
 
         /** the user's pick on SHEET_keyboard_v2.png: 1 = dark keycaps */

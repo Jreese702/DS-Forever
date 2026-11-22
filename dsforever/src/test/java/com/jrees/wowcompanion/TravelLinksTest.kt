@@ -16,6 +16,8 @@ import java.io.ByteArrayOutputStream
  * an avoided crossing's cost, flights known AND connected only, requirements, QuestieDB's portal objects.
  */
 class TravelLinksTest {
+    /** the measured table's RIDES only (the tram): its ways on foot are in the game's world yards (#578's Undercity elevators), which this synthetic world does not have */
+    private val synthTable = CityExits.TABLE.filter { it.transport }
     // ---- the synthetic world: map -> (continent, its box's corner); each box 1000 x 1000 yd
     private val boxes = LinkedHashMap<Int, DoubleArray>()
     private fun box(map: Int, cont: Int) { val i = boxes.size; boxes[map] = doubleArrayOf(cont.toDouble(), (i % 8) * 2000.0, (i / 8) * 2000.0) }
@@ -94,7 +96,7 @@ class TravelLinksTest {
         at(1427, 100.0, 100.0)[0], at(1427, 100.0, 100.0)[1], 520.0, "Through the Searing Gorge gate", "SG-GATE", requires = "key-searing-gorge")
 
     private fun inputs(learned: Map<Int, List<CityExits.Exit>> = learnedTram) = TravelLinks.Inputs(
-        mapAt = ::mapAt, mapName = ::name, nets = walks, learnedMaps = learned.keys, learned = { learned[it].orEmpty() },
+        table = synthTable, mapAt = ::mapAt, mapName = ::name, nets = walks, learnedMaps = learned.keys, learned = { learned[it].orEmpty() },
         rides = rides, masters = masters, taxiKnown = { it in net }, taxiConnected = { a, b -> a != b && a in net && b in net },
         tableAt = ::tableAt, portals = portals, manual = listOf(sgGate, sgGate.back("Through the Searing Gorge gate back", "SG-GATE")))
 
@@ -182,7 +184,7 @@ class TravelLinksTest {
 
     @Test fun aHostileDockIsNeverBoarded() {
         val only = listOf(ride(7, 1411, dockDurotar, 1420, dockTirisfal, A, 0))        // its near dock an Alliance town
-        val inp = TravelLinks.Inputs(mapAt = ::mapAt, rides = only)
+        val inp = TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, rides = only)
         val goal = at(1420, 500.0, 500.0)
         assertNull(plan(H, at(1411, 500.0, 500.0), 1, goal, 0, inp = inp).first)
         val (p, _) = plan(A, at(1411, 500.0, 500.0), 1, goal, 0, inp = inp)
@@ -197,12 +199,12 @@ class TravelLinksTest {
         val only = listOf(ride(7, 1411, dockDurotar, 1420, dockTirisfal, A, A))
         val l = mapOf(1411 to listOf(CityExits.Exit(1411, "", wx = dockDurotar[0], wy = dockDurotar[1], toMap = 1420,
             toWx = dockTirisfal[0], toWy = dockTirisfal[1], rideYd = CityExits.TRAM_YD, learned = true)))
-        val inp = TravelLinks.Inputs(mapAt = ::mapAt, rides = only, learnedMaps = l.keys, learned = { l[it].orEmpty() })
+        val inp = TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, rides = only, learnedMaps = l.keys, learned = { l[it].orEmpty() })
         assertTrue(TravelLinks.build(inp, TravelLinks.Character(H)).links.isEmpty())
     }
 
     @Test fun aOneWayPortalIsNeverReversed() {
-        val inp = TravelLinks.Inputs(mapAt = ::mapAt, portals = portals.take(1))
+        val inp = TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, portals = portals.take(1))
         val g = TravelLinks.build(inp, TravelLinks.Character(A))
         assertEquals(1, g.links.size)
         assertTrue(g.links[0].oneWay)
@@ -212,7 +214,7 @@ class TravelLinksTest {
     }
 
     @Test fun theUnknownLandingCostsUnknownYdThenIsLearned() {
-        val inp = TravelLinks.Inputs(mapAt = ::mapAt, mapName = ::name, portals = portals.take(1))
+        val inp = TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, mapName = ::name, portals = portals.take(1))
         val goal = at(1453, 600.0, 600.0)
         val (p, _) = plan(A, dalaran, 0, goal, 0, inp = inp)
         p!!
@@ -228,7 +230,7 @@ class TravelLinksTest {
         val landing = at(1453, 100.0, 900.0)
         learner.onDoc(1416, 0, dalaran[0] + 3, dalaran[1], false, 0L)
         assertNotNull(learner.onDoc(1453, 0, landing[0], landing[1], false, 4_000L))
-        val inp2 = TravelLinks.Inputs(mapAt = ::mapAt, mapName = ::name, portals = portals.take(1), learnedMaps = listOf(1416), learned = learner::of)
+        val inp2 = TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, mapName = ::name, portals = portals.take(1), learnedMaps = listOf(1416), learned = learner::of)
         val (q, g2) = plan(A, dalaran, 0, goal, 0, inp = inp2)
         q!!
         assertTrue(q.gaps.isEmpty())
@@ -253,7 +255,7 @@ class TravelLinksTest {
         chain.forEachIndexed { i, m -> local[m] = doubleArrayOf(i * 1000.0, 0.0) }
         val nets = chain.zipWithNext().map { (a, b) -> SafePath.Net(a, 0, "t", listOf(SafePath.Node(1, local[b]!![0], 0.0, SafePath.EXIT)), emptyList(),
             listOf(SafePath.Exit(1, b, "walk", ""))) }
-        val g = TravelLinks.build(TravelLinks.Inputs(mapAt = { _, _, _ -> null }, nets = nets), TravelLinks.Character(A))
+        val g = TravelLinks.build(TravelLinks.Inputs(table = synthTable, mapAt = { _, _, _ -> null }, nets = nets), TravelLinks.Character(A))
         fun to(goal: Int) = TravelLinks.plan(g, chain[0], 10.0, 0.0, local[goal]!![0] + 10, 0.0, { m, _, _ -> m == goal })
         assertEquals(8, to(chain[8])!!.steps.size)                      // eight hops: found
         assertNull(to(chain[9]))                                       // nine: past the cap
@@ -264,7 +266,7 @@ class TravelLinksTest {
     @Test fun anAvoidedCrossingCostsSixTimesItsStretch() {
         val a = 1429; val b = 1453
         val nets = listOf(crossing(a, b, at(a, 500.0, 500.0), avoid = true), crossing(a, b, at(a, 500.0, 900.0)))
-        val g = TravelLinks.build(TravelLinks.Inputs(mapAt = ::mapAt, mapName = ::name, nets = nets), TravelLinks.Character(A))
+        val g = TravelLinks.build(TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, mapName = ::name, nets = nets), TravelLinks.Character(A))
         val av = g.links.first { it.avoid && it.fromMap == a }
         assertEquals((TravelLinks.AVOID_K - 1) * TravelLinks.CROSS_YD, av.yd, 1e-9)
         assertTrue(av.words.contains("dangerous"))
@@ -277,21 +279,21 @@ class TravelLinksTest {
     }
 
     @Test fun flightsOnlyBetweenNodesKnownAndConnected() {
-        val inp = TravelLinks.Inputs(mapAt = ::mapAt, masters = masters, taxiKnown = { it == 2 || it == 14 || it == 99 },
+        val inp = TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, masters = masters, taxiKnown = { it == 2 || it == 14 || it == 99 },
             taxiConnected = { x, y -> x != y && x in net && y in net })
         val g = TravelLinks.build(inp, TravelLinks.Character(A))
         assertEquals(setOf("f2>14", "f14>2"), g.links.map { it.key }.toSet())
         // the Horde knows none of the Alliance's masters
         assertTrue(TravelLinks.build(inp, TravelLinks.Character(H)).links.isEmpty())
         // known but never shown connected: no flight
-        val g2 = TravelLinks.build(TravelLinks.Inputs(mapAt = ::mapAt, masters = masters, taxiKnown = { true }), TravelLinks.Character(A))
+        val g2 = TravelLinks.build(TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, masters = masters, taxiKnown = { true }), TravelLinks.Character(A))
         assertTrue(g2.links.isEmpty())
         // without flights
         assertTrue(TravelLinks.build(inp, TravelLinks.Character(A, flights = false)).links.isEmpty())
     }
 
     @Test fun aSingleCrossingRideRunsBothWays() {
-        val g = TravelLinks.build(TravelLinks.Inputs(mapAt = ::mapAt, rides = rides), TravelLinks.Character(A))
+        val g = TravelLinks.build(TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, rides = rides), TravelLinks.Character(A))
         val r295 = g.links.filter { it.key == "r295" }
         assertEquals(setOf(1439 to 1437, 1437 to 1439), r295.map { it.fromMap to it.toMap }.toSet())
         assertTrue(r295.none { it.oneWay })
@@ -300,17 +302,17 @@ class TravelLinksTest {
 
     @Test fun aFactionLinkIsOnlyItsSides() {
         val l = TravelLinks.Link(TravelLinks.Kind.LINK, 1429, 0.0, 0.0, 1453, 0.0, 0.0, 10.0, "x", "X", faction = A)
-        assertEquals(1, TravelLinks.build(TravelLinks.Inputs(mapAt = ::mapAt, manual = listOf(l)), TravelLinks.Character(A)).links.size)
-        assertTrue(TravelLinks.build(TravelLinks.Inputs(mapAt = ::mapAt, manual = listOf(l)), TravelLinks.Character(H)).links.isEmpty())
+        assertEquals(1, TravelLinks.build(TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, manual = listOf(l)), TravelLinks.Character(A)).links.size)
+        assertTrue(TravelLinks.build(TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, manual = listOf(l)), TravelLinks.Character(H)).links.isEmpty())
     }
 
     @Test fun aPortalWhoseDestinationIsNotKnownIsLeftOutUntilLearned() {
         val p = TravelLinks.Portal(5, "Portal to Somewhere", 1416, dalaran[0], dalaran[1], "Somewhere", null)
-        val g = TravelLinks.build(TravelLinks.Inputs(mapAt = ::mapAt, portals = listOf(p)), TravelLinks.Character(A))
+        val g = TravelLinks.build(TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, portals = listOf(p)), TravelLinks.Character(A))
         assertTrue(g.links.isEmpty()); assertTrue(g.left[0].startsWith("o5"))
         val l = mapOf(1416 to listOf(CityExits.Exit(1416, "", wx = dalaran[0], wy = dalaran[1], toMap = 1453, toWx = 1.0, toWy = 2.0,
             rideYd = CityExits.TRAM_YD, learned = true)))
-        val g2 = TravelLinks.build(TravelLinks.Inputs(mapAt = ::mapAt, portals = listOf(p), learnedMaps = l.keys, learned = { l[it].orEmpty() }),
+        val g2 = TravelLinks.build(TravelLinks.Inputs(table = synthTable, mapAt = ::mapAt, portals = listOf(p), learnedMaps = l.keys, learned = { l[it].orEmpty() }),
             TravelLinks.Character(A))
         assertEquals(1453, g2.links.single().toMap)
     }

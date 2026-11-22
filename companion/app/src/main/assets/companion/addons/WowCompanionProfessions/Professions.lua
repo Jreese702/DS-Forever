@@ -48,7 +48,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "p26"          -- bump on every change; the app shows it, so a stale build is visible; p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
+local PV = "p27"          -- bump on every change; the app shows it, so a stale build is visible; p27 ENCHANTING FROM THE ROOM (#541, "cant enchant": every Enchanting recipe was refused, "needs an item to enchant"): ctl ench casts the selected enchant once (the game's own CraftRecipe, as Create) and the game asks for its item; the ack says pick = true and the app opens the Bags room's "Choose an item" (Bags.lua's pick: what the enchant can go on, worn first; its Replace question answered there); p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
 local MAKE_MAX = 26      -- make:1 .. make:26 on the control row; more than that is Create All
 local SEL_COLS = 40      -- columns of the "profsel" row (TapPad's COLS)
 local BASIC = 1          -- Enum.CraftingReagentType.Basic (profession constants documentation)
@@ -133,6 +133,8 @@ for _, k in ipairs({ "all", "track", "untrack", "book", "page", "free", "enter" 
 for _, k in ipairs({ "forget:1", "forget:2" }) do CTL_STATIC[#CTL_STATIC + 1] = k end
 -- p24: the app's search keyboard up / down (appended: the columns before keep theirs)
 for _, k in ipairs({ "kbd", "nokbd" }) do CTL_STATIC[#CTL_STATIC + 1] = k end
+-- p27 (#541): enchant, then pick the item (appended: the columns before keep theirs)
+CTL_STATIC[#CTL_STATIC + 1] = "ench"
 
 -- the secure "profopen" row: a stable column per profession for the session, and the spell each column casts
 local openCols, openSpell, openLine, openDirty = {}, {}, {}, false
@@ -554,6 +556,7 @@ local WORDS = {
     requires = "PROFESSIONS_REQUIRED_TOOLS", cooldown = "COOLDOWN_REMAINING", skillUp = "TRADESKILL_FILTER_HAS_SKILL_UP",
     makeable = "CRAFT_IS_MAKEABLE", slots = "TRADESKILL_FILTER_SLOTS", first = "PROFESSIONS_FIRST_PROFESSION",
     second = "PROFESSIONS_SECOND_PROFESSION", missing = "PROFESSIONS_MISSING_PROFESSION", combat = "ERR_NOT_IN_COMBAT",
+    enchant = "ENSCRIBE",           -- p27: the button's word for an enchant (the game's "Enchant")
     -- the book's EMPTY small places, as the game fills them (camelot book templates: missingHeader / missingText)
     cookName = "PROFESSIONS_COOKING", cookMissing = "PROFESSIONS_COOKING_MISSING",
     fishName = "PROFESSIONS_FISHING", fishMissing = "PROFESSIONS_FISHING_MISSING",
@@ -1142,6 +1145,35 @@ for n = 1, MAKE_MAX do
 end
 CTL.all = function()
     local rid = target("all"); if rid then craft("all", rid, nil) end
+end
+-- p27 ENCHANT, THEN PICK THE ITEM (#541, the player: "cant enchant"; the triage's plan): an enchant goes on an item, so Create
+-- refuses it (craft above); this casts it ONCE with the game's own CraftRecipe (the same call Create makes, from the same pad tap)
+-- and the game asks for its item - its pick (SpellIsTargeting), which the Bags room's "Choose an item" answers (Bags.lua KIT: only
+-- what C_Item.DoesItemMatchTargetEnchantingSpell allows, worn first; the game's Replace question; B there is its /stopspelltarget).
+-- Nothing is targeted or applied here. The ack: ok + pick = true once the game asks for the item (looked at once more 0.3 s later:
+-- the ask may come a frame after the cast); a cast with no ask (the game chose the item itself) is ok without pick.
+local PICK_LOOK = 0.3
+local function enchant(op, rid)
+    if not st.known[rid].ench then return ack(op, rid, false, "not an enchant") end
+    if st.busy and GetTime() - st.busy.at > BUSY_GRACE + 6 * st.busy.n then st.busy = nil end
+    if st.busy then return ack(op, rid, false, "already crafting") end
+    local function picking() return TB(function() return SpellIsTargeting() end) == true end
+    if picking() then return ack(op, rid, false, "already choosing an item") end
+    local can = SN(function() return C_TradeSkillUI.GetCraftableCount(rid) end) or 0
+    if can < 1 then return ack(op, rid, false, "nothing can be made", { can = can }) end
+    local ok = CALL(C_TradeSkillUI.CraftRecipe, rid, 1)
+    if not ok then return ack(op, rid, false, "the game refused") end
+    local extra = { n = 1, name = nameOf(rid), ench = true }
+    if picking() then extra.pick = true; return ack(op, rid, true, nil, extra) end
+    C_Timer.After(PICK_LOOK, function()
+        local on = picking()
+        local casting = TB(function() return UnitCastingInfo("player") ~= nil end) == true
+        extra.pick = on or nil
+        ack(op, rid, on or casting, (not on and not casting) and "the game asked for no item" or nil, extra)
+    end)
+end
+CTL.ench = function()
+    local rid = target("ench"); if rid then enchant("ench", rid) end
 end
 -- p23 FORGET (the user, 2026-11-09: "buttons to forget professions"; the pick "Forget, then Tap again": the app asks twice before it
 -- taps). The game's own Unlearn (the camelot book's UnlearnButton, MAIN professions only) ends in its UNLEARN_SKILL pop-up's accept,

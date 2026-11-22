@@ -73,8 +73,13 @@ class CityExitsTest {
         assertEquals(1, l.of(1453).count { it.toMap == 1455 })
     }
 
-    @Test fun onlyTheMeasuredTramIsInTheTable() {
-        assertEquals(1, CityExits.TABLE.size)
+    @Test fun onlyTheMeasuredWaysAreInTheTable() {
+        // the tram (measured on the Thor) and the Undercity's elevators (#578: a player's Thor log), nothing estimated
+        assertEquals(2, CityExits.TABLE.size)
+        assertEquals("Deeprun Tram", CityExits.TABLE[0].name)
         assertEquals(0.690, CityExits.TABLE[0].x, 1e-9); assertEquals(0.310, CityExits.TABLE[0].y, 1e-9)
+        val uc = CityExits.TABLE[1]
+        assertEquals(1458, uc.map); assertEquals(1420, uc.toMap); assertTrue(!uc.transport)
+        assertEquals(1631.0, uc.wx, 1e-9); assertEquals(224.0, uc.wy, 1e-9)
     }
 }
