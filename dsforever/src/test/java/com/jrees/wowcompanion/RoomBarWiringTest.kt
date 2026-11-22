@@ -22,7 +22,9 @@ class RoomBarWiringTest {
     @Test fun theStripDrawsTheOrder() {
         val strip = k("Strip.kt")
         assertTrue(strip.contains("val rooms = order "))
-        assertTrue(strip.contains("val half = RoomBar.leftCount(rooms.size)"))
+        // 1518 build 2: the halves split the cells (the rooms drawn - the visible ones - and edit mode's "+" spot after them)
+        assertTrue(strip.contains("val cells = rooms.size + if (plusNow) 1 else 0"))
+        assertTrue(strip.contains("val half = RoomBar.leftCount(cells).coerceAtMost(rooms.size)"))
         assertFalse("no fixed Room.values() bar any more", strip.contains("Room.values().filter { it != Room.HOME && it.onBar }"))
         // the touch boxes and place() are the slots of the order (pics / hit filled in group from the order's rooms)
         // (review round 3: in the bar's pooled boxes, set in place - the never-resting edit wiggle redraws the bar every frame)
@@ -34,16 +36,51 @@ class RoomBarWiringTest {
         // the bar cursor (Select / D-pad Down / the DS Bar Left / Right / Open commands) walks the bar as DRAWN
         val bar = k("HomeBarSelect.kt")
         assertTrue(bar.contains(".mapNotNull { r -> strip.place(r)?.let { r to it.centerX() } }.sortedBy { it.second }.map { it.first }"))
-        // the rooms' sideways push: by the bar's order, not Room.ordinal
+        // the rooms' sideways push: by the record's whole order with its hidden rooms (never the Strip's list: it holds only the rooms
+        // drawn, and normalizing it would put the hidden rooms back into the count), not Room.ordinal
         val host = k("CompanionHost.kt")
-        assertTrue(host.contains("private fun barOrder(r: Room): Int = RoomBar.position(r, strip.order.map { it.name })"))
+        assertTrue(host.contains("private fun barOrder(r: Room): Int = RoomBar.position(r, HomeSettings.layout.rooms, HomeSettings.layout.hidden)"))
         assertFalse(host.contains("private fun barOrder(r: Room): Int = r.ordinal"))
-        // the record drives the bar (another character, Save, a reset); edit mode its draft
-        assertTrue(host.contains("strip.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), Motion.MODULE_OPEN)"))
+        assertFalse(host.contains("RoomBar.position(r, strip.order"))
+        // the record drives the bar (another character, a reset); edit mode its draft - the VISIBLE rooms in every place
+        assertTrue(host.contains("strip.showOrder(RoomBar.shown(HomeSettings.layout), Motion.MODULE_OPEN)"))
         assertTrue(host.contains("homeView.roomBar = strip"))
-        assertTrue(k("HomeView.kt").contains("b.showOrder(RoomBar.rooms((m?.draft ?: HomeSettings.layout).rooms), ms)"))
+        assertTrue(k("HomeView.kt").contains("b.showOrder(RoomBar.shown(m?.draft ?: HomeSettings.layout), ms)"))
         // the Settings pictures' bar too
-        assertTrue(k("PreviewStage.kt").contains("st.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), 0L)"))
+        assertTrue(k("PreviewStage.kt").contains("st.showOrder(RoomBar.shown(HomeSettings.layout), 0L)"))
+        for (f in listOf("CompanionHost.kt", "HomeView.kt", "PreviewStage.kt")) assertFalse(f, k(f).contains("showOrder(RoomBar.rooms("))
+    }
+
+    @Test fun theBarWearsNoFrameAndEachRoomIsAnApp() {
+        // 1518 build 2: drawBar's lower layer draws nothing (no dim, no dashed frame, no gold edge round the row), and no tag
+        val ev = k("HomeEditView.kt")
+        val draw = ev.substringAfter("fun drawBar(c: Canvas, layer: Int) {").substringBefore("\n    }\n")
+        assertTrue(draw.contains("if (layer == 0) return"))
+        for (bad in listOf("frame(", "buttonsBox()", "tag(", "DIM", "drawRoundRect(row")) assertFalse(bad, draw.contains(bad))
+        // the badge is drawn inside the room's own pose (it wiggles with its app); Settings has none
+        val strip = k("Strip.kt")
+        val group = strip.substringAfter("private fun group(").substringBefore("\n    }\n")
+        assertTrue(group.contains("editApps?.let { a -> if (RoomBar.canHide(r.name)) a.badge(c, r, cx, cy, ICON) }"))
+        assertTrue("before the pose's restore", group.indexOf("a.badge(") < group.indexOf("if (posed >= 0) c.restoreToCount(posed)"))
+        assertTrue(k("RoomBar.kt").contains("val UNHIDEABLE: Set<String> = setOf(Room.SETTINGS.name)"))
+        // the host hands the Strip the apps; the "+" spot wiggles on its own key
+        assertTrue(k("CompanionHost.kt").contains("strip.editApps = v?.apps()"))
+        assertTrue(k("HomeView.kt").contains("motion.pose(HomeEditMotion.PLUS_ROOM, motionNow(), ROOM_HALF_DIAG, pose)"))
+        // the bar's menu is gone (XP bar moved to Settings > Bottom screen's Home tiles; Order: Reset dropped: Discard / Reset Home)
+        val model = k("HomeEditModel.kt")
+        for (bad in listOf("K_XP", "K_ORDER", "\"Room bar\"")) assertFalse(bad, model.contains(bad))
+        assertTrue(k("BottomTiles.kt").contains("XP -> HomeLayoutStore.update { it.copy(xpBar = k == 0) }"))
+    }
+
+    @Test fun aHiddenRoomStillOpensEveryOtherWay() {
+        // hiding takes a room off the bar only: the game's windows, Polestar, the pause wheel still open it (the host's show / pickRoom
+        // by Room, never by a bar place); the bar cursor and the D-pad's bar commands walk only what the Strip drew
+        val host = k("CompanionHost.kt")
+        for (r in listOf("Room.BAGS", "Room.QUESTS", "Room.CHARACTER", "Room.SOCIAL", "Room.GROUPFINDER", "Room.PROFESSIONS", "Room.MACROS"))
+            assertTrue(r, Regex("(show|pickRoom)\\($r\\b").containsMatchIn(host))
+        assertFalse("nothing reads the hidden list to refuse a room", host.contains("hidden.contains(") || host.contains("in HomeSettings.layout.hidden"))
+        val bar = k("HomeBarSelect.kt")
+        assertTrue(bar.contains("strip.place(r)"))
     }
 
     @Test fun theXpTrackIsHomesOnly() {

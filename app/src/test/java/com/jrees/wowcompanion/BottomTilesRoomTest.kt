@@ -139,7 +139,7 @@ class BottomTilesRoomTest {
             assertEquals("$g not shown", View.GONE, r.groupBoxes.single { it.group == g }.box.visibility)
         // five columns of Top's 232 x 184 tiles on the 1240 px page
         val b = tileBoxes(r)
-        assertEquals(14, b.size)                                             // movable Home: Edit Home first; 1518: Reset Home last of Home's
+        assertEquals(15, b.size)                                             // movable Home: Edit Home first; 1518: Reset Home last of Home's, the XP bar before it
         for (t in b.values) { assertEquals(GameUiTiles.TILE_W, t.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, t.height(), 0.01f) }
         assertEquals(16f, b.getValue(BottomTiles.LAYOUT).left, 0.5f)
         assertEquals(W - 16f, b.getValue(BottomTiles.QUEST).right, 0.5f)

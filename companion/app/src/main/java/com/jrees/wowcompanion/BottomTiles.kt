@@ -43,6 +43,9 @@ object BottomTiles {
     const val CASTBAR = "castbar"
     /** the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): #471's "R3" chips on every ranked spell picture */
     const val RANK = "rank"
+    /** 1518 build 2 (the room bar is no edit-mode widget any more, so its menu went): the XP track on Home, Show / Hide (this
+     *  character's record, [HomeLayout.xpBar]: Home takes its 34 px; every room keeps it) */
+    const val XP = "xpbar"
     const val ZOOM = "zoom"
     const val WORLD = "worldmap"
     const val INPUT = "input"
@@ -50,9 +53,9 @@ object BottomTiles {
     /** what the tiles read besides the settings: Spells' D-pad state (the DS WoW toolbar; null = an older add-on), the character */
     data class Env(val dpad: PadMapModel.Dpad?, val who: String?)
 
-    /** Home's 11 (critic C6: Tap-to-cast moved in, it lives on Home; 2026-11-20: Spell rank badges; 1518: Reset Home last) and Map &
-     *  chat's 3 */
-    val HOME_TILES = listOf(LAYOUT, REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR, RANK, HOME_RESET)
+    /** Home's 12 (critic C6: Tap-to-cast moved in, it lives on Home; 2026-11-20: Spell rank badges; 1518: Reset Home last, the XP bar
+     *  before it) and Map & chat's 3 */
+    val HOME_TILES = listOf(LAYOUT, REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR, RANK, XP, HOME_RESET)
     val MAP_TILES = listOf(ZOOM, WORLD, INPUT)
 
     /** the group's fixed tile list. Until the core lands the Bottom screen's two groups (Home, Map & chat) the old four are mapped: Home
@@ -82,7 +85,7 @@ object BottomTiles {
     /** a tile's name (display words, Tr.t'd by the drawer) */
     val NAMES: Map<String, String> = mapOf(LAYOUT to "Edit Home", HOME_RESET to "Reset Home", REST to "Rest controller", COMBAT to "In fights", SWING to "Swing timer",
         QUEST to "Focused quest", CLOCK to "Clock band", TOOLBAR to "DS WoW toolbar", TALK to "Hold to talk", CASTBAR to "Tap-to-cast bar",
-        RANK to "Spell rank badges", ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
+        RANK to "Spell rank badges", XP to "XP bar", ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
 
     /** the clock band's lines: key, label, its icons.pak icon */
     val CLOCK_LINES = listOf(Triple("hearth", "Hearthstone", ItemCd.HEARTH_ICON), Triple("teleport", "Class teleport", 136010),
@@ -94,6 +97,7 @@ object BottomTiles {
                val value: String? = null, val icon: Int? = null, val enabled: Boolean = true, val stepper: Boolean = false)
 
     private val ONOFF = listOf("On", "Off")
+    private val SHOW_HIDE = listOf("Show", "Hide")
     private val ONOFF_MODES = listOf(UiMode.ON, UiMode.OFF)
     private fun onOff(key: String, on: Boolean, label: String? = null, icon: Int? = null, enabled: Boolean = true) =
         Line(key, label, ONOFF, if (on) 0 else 1, ONOFF_MODES, icon = icon, enabled = enabled)
@@ -112,6 +116,7 @@ object BottomTiles {
         COMBAT -> listOf(Line(COMBAT, null, FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)))
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))
         RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
+        XP -> listOf(Line(XP, null, SHOW_HIDE, if (HomeSettings.layout.xpBar) 0 else 1, listOf(UiMode.ON, UiMode.OFF)))
         QUEST -> listOf(Line(QUEST, null, CARD_WORDS, CARD_DOCKS.indexOf(HomeSettings.layout.card)))
         CLOCK -> CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
         TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null))
@@ -158,6 +163,7 @@ object BottomTiles {
         COMBAT -> FIGHT_WORDS[HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)]
         SWING -> if (HomeSettings.swingTimer) "On" else "Off"
         RANK -> if (HomeSettings.rankBadges) "On" else "Off"
+        XP -> if (HomeSettings.layout.xpBar) "Show" else "Hide"
         QUEST -> CARD_WORDS[CARD_DOCKS.indexOf(HomeSettings.layout.card).coerceAtLeast(0)]
         CLOCK -> CLOCK_LINES.count { clockOn(it.first) }.let { n -> if (n == CLOCK_LINES.size) "On" else if (n == 0) "Off" else "$n / ${CLOCK_LINES.size}" }
         TOOLBAR -> if (env.dpad?.want == true) "On" else "Off"
@@ -172,6 +178,7 @@ object BottomTiles {
     /** the 36 px badge: Top's eye for the On / Off tiles, none for the others (their value word says it) */
     fun badge(id: String, env: Env): GameUiTiles.Badge? = when (id) {
         SWING, TOOLBAR, TALK, RANK -> if (value(id, env) == "On") GameUiTiles.Badge.ON else GameUiTiles.Badge.OFF
+        XP -> if (HomeSettings.layout.xpBar) GameUiTiles.Badge.ON else GameUiTiles.Badge.OFF
         else -> null
     }
 
@@ -179,6 +186,7 @@ object BottomTiles {
     fun dimmed(id: String, env: Env): Boolean = when (id) {
         SWING -> !HomeSettings.swingTimer
         RANK -> !HomeSettings.rankBadges
+        XP -> !HomeSettings.layout.xpBar
         TOOLBAR -> env.dpad?.want != true || env.dpad.colOn == null
         TALK -> !HomeSettings.holdTalk(env.who)
         CASTBAR -> HomeSettings.castBarSide == CastStripModel.Side.OFF
@@ -236,6 +244,7 @@ object BottomTiles {
             COMBAT -> HomeLayout.FightBand.values().getOrNull(k)?.let { HomeSettings.fightBand = it }
             SWING -> HomeSettings.swingTimer = k == 0
             RANK -> HomeSettings.rankBadges = k == 0
+            XP -> HomeLayoutStore.update { it.copy(xpBar = k == 0) }
             QUEST -> CARD_DOCKS.getOrNull(k)?.let { d -> HomeLayoutStore.update { it.copy(card = d) } }
             "hearth" -> HomeSettings.clockHearth = k == 0
             "teleport" -> HomeSettings.clockTeleport = k == 0

@@ -257,8 +257,9 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     /**
      * EDIT MODE ON THE BAR: [liftRoom] = the room lifted (drawn over the bar and the disc at 1.03 with its shadow, LIFT 160 ms),
      * [liftX] = its picture's centre while a finger carries it (null = at its slot, gliding there); [editBar] = the edit chrome, drawn
-     * by HomeEditView in two layers (0: under the lifted room and the disc - the dim, the dashed frame, the bar's gold; 1: over them -
-     * the room cursor, the arrows, the tag); [editBarTouch] = a finger on the rooms' row while editing (the edit chrome's: select, drag)
+     * by HomeEditView in two layers (0: under the lifted room and the disc - nothing since 1518 build 2: the bar wears no frame; 1: over
+     * them - the room cursor, the arrows); [editBarTouch] = a finger on the rooms' row while editing (the edit chrome's: select, drag,
+     * a badge's hide, the "+" spot's tray)
      */
     var liftRoom: Room? = null
         set(v) { if (field != v) { if (v == null && field != null) { dropRoom = field; settle() } else dropRoom = null; field = v; liftAt = now(); invalidate() } }
@@ -283,6 +284,52 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     private val poseBuf = FloatArray(4)
     var editBarTouch: ((MotionEvent) -> Boolean)? = null
     private var barDown = false
+
+    /**
+     * 1518 BUILD 2, THE ROOMS AS APPS (the user's ruling 2026-11-21: "just have the individual icons wiggle like their own apps with
+     * buttons around them like apps that can move"): while edit mode is live each room wears a small "-" badge at its picture's top left
+     * (drawn inside the room's own pose, so it wiggles with it; Settings has none: [RoomBar.canHide]), and while a room is hidden a "+"
+     * spot stands at the END of the bar (its own cell, its own wiggle). Drawn by the edit chrome (HomeEditView.apps); the Strip lays
+     * them. Null = not editing (the bar is exactly today's).
+     */
+    interface EditApps {
+        /** the "+" spot shows at the bar's end now (a room is hidden, edit mode live and not parked) */
+        val plus: Boolean
+        /** room [r]'s "-" badge on its picture ([cx], [cy] its centre, [icon] its size); the canvas carries the room's pose */
+        fun badge(c: Canvas, r: Room, cx: Float, cy: Float, icon: Float)
+        /** the "+" spot at [cx], [cy] ([icon] the rooms' picture size), in its own pose */
+        fun plus(c: Canvas, cx: Float, cy: Float, icon: Float)
+    }
+    var editApps: EditApps? = null
+        set(v) { field = v; invalidate() }
+    /** the "+" spot's cell as last laid (its touch box: the cell's share of the bar, as a room's) and its picture's box */
+    private val plusHit = RectF()
+    private val plusPic = RectF()
+    /** the "+" spot was laid in the last draw (a change of it glides the rooms to their new cells) */
+    private var plusLaid = false
+    /** the "+" spot's touch box (the Strip's px), null = none on the bar */
+    fun plusBox(): RectF? = if (plusLaid) RectF(plusHit) else null
+    /** the "+" spot's picture box (not posed), null = none */
+    fun plusDrawn(): RectF? = if (plusLaid) RectF(plusPic) else null
+    /**
+     * the room whose "-" badge is under a finger at [x], [y] (the Strip's px; null = none): a [BADGE_HIT] square round the badge's centre
+     * at its picture's top left, kept in the rooms' row (never the ribbon's) and on the screen
+     */
+    fun badgeAt(x: Float, y: Float): Room? {
+        if (editApps == null) return null
+        for (r in order) {
+            if (!RoomBar.canHide(r.name)) continue
+            if (badgeBox(r)?.contains(x, y) == true) return r
+        }
+        return null
+    }
+    /** room [r]'s badge's touch box (at rest: the touch boxes stay while the pictures wiggle) */
+    fun badgeBox(r: Room): RectF? {
+        val p = pics[r] ?: return null
+        val bx = p.left + BADGE_IN; val by = p.top + BADGE_IN
+        val h = BADGE_HIT / 2f
+        return RectF((bx - h).coerceAtLeast(0f), (by - h).coerceAtLeast(height - BUTTONS.toFloat()), bx + h, by + h)
+    }
 
     /** where the rooms' row is (the Strip's px): under the tracking bar, the whole width */
     fun buttonsBox(): RectF = RectF(0f, height - BUTTONS.toFloat(), width.toFloat(), height.toFloat())
@@ -369,7 +416,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
 
     override fun onDraw(c: Canvas) {
         drawBar(c)
-        // P4: the lifted room over the bar and the disc, then the edit chrome's upper layer (the room cursor, the arrows, the tag)
+        // P4: the lifted room over the bar and the disc, then the edit chrome's upper layer (the room cursor, the arrows)
         (liftRoom ?: dropRoom?.takeIf { liftK() > 0f })?.let { drawLifted(c, it) }
         editBar?.invoke(c, 1)
         if (orderK(now()) < 1f || (liftK() > 0f && liftK() < 1f)) postInvalidateOnAnimation()
@@ -450,12 +497,26 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         // P4 (D3: reorder only): the rooms in the layout's ORDER ([order]); the disc stays in the middle, half of them each side
         // (today's order splits 6 | 6 at Character, as before)
         val rooms = order                                                    // a room off the bar (Chat) is reached another way
-        val half = RoomBar.leftCount(rooms.size)
+        // 1518 build 2: edit mode's "+" spot is the bar's last cell while a room is hidden (the rooms split round the disc with it)
+        val apps = editApps
+        val plusNow = apps != null && apps.plus
+        if (plusNow != plusLaid) { drawnX.copyInto(orderFrom); orderAt = now(); orderMs = if (drawnX.all { it.isNaN() }) 0L else Motion.MODULE_OPEN }
+        val cells = rooms.size + if (plusNow) 1 else 0
+        val half = RoomBar.leftCount(cells).coerceAtMost(rooms.size)
         hit.clear(); pics.clear()
         val cy = top + TRACKS + BUTTONS / 2f
         val tNow = now()
-        group(c, rooms, 0, half, 8f, homeX - HOME / 2f - 14f, top, h, cy, tNow)
-        group(c, rooms, half, rooms.size, homeX + HOME / 2f + 14f, w - 8f, top, h, cy, tNow)
+        val lx0 = 8f; val lx1 = homeX - HOME / 2f - 14f; val rx0 = homeX + HOME / 2f + 14f; val rx1 = w - 8f
+        // one picture size for both halves (the narrower half's cells: 6 | 5 never draws two sizes; today's 6 | 6 is unchanged)
+        val nL = half; val nR = cells - half
+        val cellMin = minOf(if (nL > 0) (lx1 - lx0) / nL else Float.MAX_VALUE, if (nR > 0) (rx1 - rx0) / nR else Float.MAX_VALUE)
+        val icon = minOf(ICON, (cellMin - 4f) / FRAME)
+        iconNow = icon
+        glyph = (icon - 8f) / 46f * 20f / 24f
+        group(c, rooms, 0, half, lx0, lx1, top, h, cy, tNow, icon, 0)
+        group(c, rooms, half, rooms.size, rx0, rx1, top, h, cy, tNow, icon, if (plusNow) 1 else 0)
+        plusLaid = plusNow
+        if (plusNow) apps?.plus(c, plusPic.centerX(), plusPic.centerY(), icon)
         editBar?.invoke(c, 0)                                                // P4: the edit chrome's lower layer (under the disc)
 
         // the consumables radial has lifted the disc out (it draws the disc that rises and becomes its hub): nothing here
@@ -736,19 +797,23 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     }
 
     /**
-     * The rooms of one side of HOME ([rooms] [from] until [until]), from [x0] to [x1], each with an equal share of the width. A
-     * room's touch box is its share, from the bar's top edge ([top]) to the screen's edge ([bottom]). No boxes or lists are made: the
-     * edit wiggle's ticker draws it every frame while edit mode is open
+     * The rooms of one side of HOME ([rooms] [from] until [until]), from [x0] to [x1], each with an equal share of the width ([extra]
+     * more cells after them: edit mode's "+" spot, laid into [plusHit] / [plusPic]). A room's touch box is its share, from the bar's top
+     * edge ([top]) to the screen's edge ([bottom]). [ICON] = the pictures' size (as large as the finger's height allows, never so large
+     * that the pressed frame - FRAME times the picture - reaches into the next room's share: drawBar's, the narrower half's). No boxes or
+     * lists are made: the edit wiggle's ticker draws it every frame while edit mode is open
      */
-    private fun group(c: Canvas, rooms: List<Room>, from: Int, until: Int, x0: Float, x1: Float, top: Float, bottom: Float, cy: Float, t: Long = now()) {
+    private fun group(c: Canvas, rooms: List<Room>, from: Int, until: Int, x0: Float, x1: Float, top: Float, bottom: Float, cy: Float,
+                      t: Long, ICON: Float, extra: Int) {
         val n = until - from
-        if (n <= 0) return
-        val cell = (x1 - x0) / n
-        // as large as the finger's height allows ([ICON]), and never so large that the pressed frame
-        // (FRAME times the picture) reaches into the next room's share
-        val ICON = minOf(ICON, (cell - 4f) / FRAME)
-        iconNow = ICON
-        glyph = (ICON - 8f) / 46f * 20f / 24f
+        if (n + extra <= 0) return
+        val cell = (x1 - x0) / (n + extra)
+        if (extra > 0) {
+            val left = x0 + n * cell
+            plusHit.set(left, bottom - BUTTONS, left + cell, bottom)
+            val px = left + cell / 2f
+            plusPic.set(px - ICON / 2f, cy - ICON / 2f, px + ICON / 2f, cy + ICON / 2f)
+        }
         val k = orderK(t)
         for (i in 0 until n) {
             val r = rooms[from + i]
@@ -794,6 +859,8 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
                 if (m != null) c.drawBitmap(m, null, roomTmp.apply { set(cx + 12f * k, cy - 40f * k, cx + 46f * k, cy + 6f * k) }, pArt)
                 else { pFill.color = Theme.gold; c.drawCircle(cx + 30f * k, cy - 24f * k, 9f * k, pFill) }
             }
+            // 1518 build 2: edit mode's "-" badge, in the room's own pose (it wiggles with its app)
+            editApps?.let { a -> if (RoomBar.canHide(r.name)) a.badge(c, r, cx, cy, ICON) }
             if (posed >= 0) c.restoreToCount(posed)
         }
     }
@@ -819,6 +886,16 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         c.restoreToCount(sv)
     }
     private val pShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { maskFilter = BlurMaskFilter(18f, BlurMaskFilter.Blur.NORMAL) }
+
+    /** room [r]'s bar picture at [cx], [cy], [size] px, at full light (edit mode's tray of hidden rooms shows the bar's own pictures) */
+    fun drawRoomPicture(c: Canvas, r: Room, cx: Float, cy: Float, size: Float) {
+        if (art(c, r, cx, cy, size, false, lit = true)) return
+        val g = glyph
+        glyph = (size - 8f) / 46f * 20f / 24f
+        pStroke.color = Theme.text; pStroke.strokeWidth = 1.8f
+        icon(c, r, cx, cy, false)
+        glyph = g
+    }
 
     /** the room's icon from the UI kit, [size] px square; false when the kit is not on the device */
     private fun art(c: Canvas, r: Room, cx: Float, cy: Float, size: Float, active: Boolean, lit: Boolean = false): Boolean {
@@ -984,6 +1061,9 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         private const val GOLD_IN = 0.12f
         private const val GOLD_OUT = 0.16f
         private const val FRAME = 1.18f     // the pressed frame round the open room's picture
+        /** edit mode's "-" badge: its centre this far in from its picture's top left corner, and its touch square (a finger's) */
+        const val BADGE_IN = 4f
+        const val BADGE_HIT = 52f
         private const val HOME = 128f       // HOME's disc
         private const val RING = 6f         // the ring round it
     }

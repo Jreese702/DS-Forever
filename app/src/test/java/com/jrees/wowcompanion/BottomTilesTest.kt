@@ -111,13 +111,33 @@ class BottomTilesTest {
         assertEquals(0, BottomPictures.pendingCount())
     }
 
+    /** 1518 build 2: the XP bar on Home moved here from the room bar's edit-mode menu (gone: each room is an app): Show / Hide, this
+     *  character's record, Top's eye badge, the picture dimmed while hidden */
+    @Test fun theXpBarTile() {
+        HomeSettings.init(app); Settings.init(app)
+        HomeLayoutStore.set(HomeLayout())
+        val env = BottomTiles.Env(null, null)
+        assertEquals("XP bar", BottomTiles.NAMES[BottomTiles.XP])
+        assertEquals(listOf("Show", "Hide"), BottomTiles.lines(BottomTiles.XP, env).single().words)
+        assertEquals("Show", BottomTiles.value(BottomTiles.XP, env))
+        assertEquals(GameUiTiles.Badge.ON, BottomTiles.badge(BottomTiles.XP, env))
+        BottomTiles.press(BottomTiles.XP, BottomTiles.XP, 1, env) { }
+        assertFalse(HomeSettings.layout.xpBar)
+        assertEquals("Hide", BottomTiles.value(BottomTiles.XP, env))
+        assertEquals(1, BottomTiles.lines(BottomTiles.XP, env).single().picked)
+        assertTrue(BottomTiles.dimmed(BottomTiles.XP, env))
+        BottomTiles.press(BottomTiles.XP, BottomTiles.XP, 0, env) { }
+        assertTrue(HomeSettings.layout.xpBar)
+        assertEquals("a Classic record's text again", HomeLayoutJson.json(HomeLayout()), HomeLayoutJson.json(HomeSettings.layout))
+    }
+
     /** the model: Home's 8 (the toolbar's two only with the Spells add-on's word / the toolbar on), Map & chat's 3; lines that cannot act
      *  are not drawn; the writes are the rows' own setters */
     @Test fun theModel() {
         HomeSettings.init(app); Settings.init(app)
         val none = BottomTiles.Env(null, "Sample-Realm")
         assertEquals(listOf(BottomTiles.LAYOUT, BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR,
-            BottomTiles.RANK, BottomTiles.HOME_RESET), BottomTiles.slots(SettingsTabs.Group.HOME, none))
+            BottomTiles.RANK, BottomTiles.XP, BottomTiles.HOME_RESET), BottomTiles.slots(SettingsTabs.Group.HOME, none))
         var want: Boolean? = null
         val d = { on: Boolean -> PadMapModel.Dpad(on, emptyMap(), emptyList(), emptyList(), on, 1, 2, null, null) }
         assertEquals(BottomTiles.HOME_TILES.size - 1, BottomTiles.slots(SettingsTabs.Group.HOME, BottomTiles.Env(d(false), "Sample-Realm")).size)

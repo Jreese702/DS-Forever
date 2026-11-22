@@ -38,8 +38,11 @@ data class HomeLayout(
     val fight: FightBand = FightBand.GROW,
     /** phase 4: the room bar's XP track on Home (false = hidden there: Home takes its 34 px; every room keeps it) */
     val xpBar: Boolean = true,
-    /** phase 4 (D3: reorder only, every room stays on the bar): the room bar's order, [Room] names left to right ([RoomBar]) */
+    /** phase 4: the room bar's WHOLE order, [Room] names left to right ([RoomBar]); a hidden room keeps its place here */
     val rooms: List<String> = RoomBar.DEFAULT,
+    /** 1518 build 2 (the user's ruling 2026-11-21: each room icon is its own app): the rooms taken off the bar with their "-" badge
+     *  (they wait in edit mode's "+" spot); never Settings ([RoomBar.hiddenOf]); empty = every room on the bar (Classic) */
+    val hidden: List<String> = emptyList(),
 ) {
     enum class Side { LEFT, RIGHT; fun other() = if (this == LEFT) RIGHT else LEFT }
     enum class Share(val num: Int, val den: Int) { THIRD(1, 3), HALF(1, 2), TWO_THIRDS(2, 3) }
@@ -96,12 +99,12 @@ data class HomeLayout(
      * Settings' "Reset Home to Classic" (1518, this character): 1517's Classic preset's fields (chat left at half, the card on the map,
      * the diamonds, L slots, a Split bar back under the chat and a bar above its column back at its foot, a top-screen fight back to
      * Grow - the bar's own column and Same size stay the player's, as Classic always kept them), plus today's room bar (its order, every
-     * room on it, the XP track shown)
+     * room on it - none hidden - and the XP track shown)
      */
     fun classic(): HomeLayout = copy(name = LEGACY_CLASSIC, chatSide = Side.LEFT, chatShare = Share.HALF, card = CardDock.ON_MAP,
         rest = HomeRest.DIAMONDS, castSize = SlotSize.L,
         cast = if (cast == CastDock.SPLIT) CastDock.UNDER_CHAT else cast.withTop(false),
-        fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT)
+        fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList())
 
     companion object {
         const val VERSION = 1
@@ -125,6 +128,8 @@ object HomeLayoutJson {
         .put("cast", l.cast.name).put("size", l.castSize.name).put("rest", l.rest.name).put("fight", l.fight.name).put("xp", l.xpBar)
         // phase 4: the room bar's order only when it is not today's (a Classic record's text is unchanged)
         .also { o -> if (!RoomBar.isDefault(l.rooms)) o.put("rooms", org.json.JSONArray(RoomBar.normalize(l.rooms))) }
+        // 1518 build 2: the hidden rooms only when there are some (a Classic record's text is unchanged)
+        .also { o -> RoomBar.hiddenOf(l.hidden).takeIf { it.isNotEmpty() }?.let { o.put("hide", org.json.JSONArray(it)) } }
         .toString()
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
@@ -147,6 +152,7 @@ object HomeLayoutJson {
                 fight = en(HomeLayout.FightBand.values(), "fight", d.fight),
                 xpBar = o.optBoolean("xp", d.xpBar),
                 rooms = o.optJSONArray("rooms")?.let { a -> RoomBar.normalize((0 until a.length()).map { a.optString(it, "") }) } ?: d.rooms,
+                hidden = o.optJSONArray("hide")?.let { a -> RoomBar.hiddenOf((0 until a.length()).map { a.optString(it, "") }) } ?: d.hidden,
             )
         } catch (e: Exception) { fallback }
     }

@@ -129,9 +129,10 @@ class HomeEditMotionShotsTest {
             strip.editBar = v?.let { ev -> { c: Canvas, layer: Int -> ev.drawBar(c, layer) } }
             strip.editBarTouch = v?.let { ev -> { e: MotionEvent -> ev.barTouch(e) } }
             strip.editPose = v?.let { ev -> { r: Room, o: FloatArray -> ev.roomPose(r, o) } }
+            strip.editApps = v?.apps()                                       // 1518 build 2: the badges, the "+" spot
         }
         home.roomBar = strip
-        strip.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), 0L)
+        strip.showOrder(RoomBar.shown(HomeSettings.layout), 0L)
         home.forceLive = true
         return Page(home, strip)
     }
@@ -720,6 +721,35 @@ class HomeEditMotionShotsTest {
         assertEquals("the drop starts at the lift", icon * HomeEditModel.LIFT_SCALE, s.roomDrawn(r)!!.width(), 0.5f)
         ShadowSystemClock.advanceBy(Duration.ofMillis(HomeEditModel.LIFT_MS * 3)); draw(p)
         assertEquals("dropped: back at its pose's size", icon * Motion.REST_SCALE, s.roomDrawn(r)!!.width(), 0.5f)
+    }
+
+    /** 1518 build 2: every room is its own app - each wiggles on its own phase (its "-" badge drawn in its pose, so with it), and the
+     *  "+" spot at the bar's end has its own wiggle too; the touch boxes stay at rest */
+    @Test fun theRoomsWiggleAsAppsWithTheirBadgesAndThePlusSpot() {
+        val p = page(classic)
+        val home = p.home
+        pin(p)
+        val t0 = clock
+        home.editOpen(EditStop.MAP); settle(12)
+        home.editAct { it.hideRoom("BAGS") }; settle(4)
+        draw(p)
+        val plus = p.strip.plusBox()
+        assertTrue("a room hidden: the \"+\" spot at the bar's end", plus != null && plus.right > W - 120f)
+        val badge0 = p.strip.badgeBox(Room.MAP)!!
+        val o = FloatArray(4)
+        frame(p, t0 + 1400); val a = RoomBar.DEFAULT.filter { it != "BAGS" }.associateWith { n ->
+            home.editChrome.roomPose(Room.valueOf(n), o); o[1] }
+        home.editChrome.plusPose(o); val pa = o[1]
+        shot(p, "m15_rooms_as_apps_1400")
+        frame(p, t0 + 1650); val b = RoomBar.DEFAULT.filter { it != "BAGS" }.associateWith { n ->
+            home.editChrome.roomPose(Room.valueOf(n), o); o[1] }
+        home.editChrome.plusPose(o); val pb = o[1]
+        shot(p, "m16_rooms_as_apps_1650")
+        for (n in a.keys) assertNotEquals("$n wiggles", a.getValue(n), b.getValue(n))
+        assertNotEquals("the \"+\" spot wiggles", pa, pb)
+        assertTrue("each room on its own phase", a.values.toSet().size == a.size)
+        assertTrue("\"+\" on its own phase", a.values.none { it == pa })
+        assertEquals("the badge's touch box stays at rest", badge0, p.strip.badgeBox(Room.MAP))
     }
 
     /** Discard from a bigger map: its paint (the well edge, the zone band) stays on the map through the whole glide, the part after the

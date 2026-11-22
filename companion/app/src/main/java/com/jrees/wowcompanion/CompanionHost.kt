@@ -931,7 +931,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.trackInset(Strip.TRACKS, animate = false)
         // P4: the room bar's order is the layout record's (per character, D5); edit mode drives it from its draft (HomeView.roomBar)
         homeView.roomBar = strip
-        strip.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), 0L)
+        strip.showOrder(RoomBar.shown(HomeSettings.layout), 0L)
         HomeSettings.onChange { ui.post { if (!shell.hostGone()) roomBarSync() } }
         // THE ROOM'S COMBAT CUE (Home; the user: "I want the room that I am in to flash red"): over every room, under the bar and every
         // overlay; it takes no touch
@@ -1225,10 +1225,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the iPhone-style edit mode: the ribbon slides over the XP track, the rooms shrink and wiggle
             strip.editRibbonK = v?.let { ev -> { ev.ribbonK() } }
             strip.editTouch = v?.let { ev -> { x: Float, y: Float, action: Int -> ev.ribbonTouch(x, y, action) } }
-            // P4: the room bar is a widget of edit mode (D3: reorder only): its chrome and its rooms' row's touches
+            // P4: the room bar's rooms in edit mode (1518 build 2: each one an app, the bar no widget): the cursor's box, the touches
             strip.editBar = v?.let { ev -> { c: android.graphics.Canvas, layer: Int -> ev.drawBar(c, layer) } }
             strip.editBarTouch = v?.let { ev -> { e: MotionEvent -> ev.barTouch(e) } }
             strip.editPose = v?.let { ev -> { r: Room, out: FloatArray -> ev.roomPose(r, out) } }
+            // 1518 build 2: each room an app - its "-" badge, the "+" spot at the bar's end while a room is hidden
+            strip.editApps = v?.apps()
         }
         homeView.editRibbonRedraw = { strip.invalidate() }
         homeView.onEditToolbar = { on -> dpadSet(on) }
@@ -4256,15 +4258,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var roomAnimClipped: View? = null
 
     /** a room's place on the bottom bar, left to right (the bar's ORDER since movable Home P4, the layout record's: RoomBar; Home's disc
-     *  in the middle). Chat has no place on the bar: it counts right after the bar room it follows in Room's order (Controller) */
-    private fun barOrder(r: Room): Int = RoomBar.position(r, strip.order.map { it.name })
+     *  in the middle). Chat has no place on the bar: it counts right after the bar room it follows in Room's order (Controller); a room
+     *  hidden from the bar (1518 build 2) right after the visible room it follows. The record's whole order and hidden rooms: edit mode
+     *  saves as it goes, so they are what the bar shows (the Strip's own list holds only the rooms drawn) */
+    private fun barOrder(r: Room): Int = RoomBar.position(r, HomeSettings.layout.rooms, HomeSettings.layout.hidden)
 
     /**
      * MOVABLE HOME P4: the room bar follows the active record (another character's, Save, a reset) - its order glides (MODULE_OPEN); edit
      * mode drives it from its draft meanwhile (HomeView.roomBar) - and the XP track's place ([trackSync]).
      */
     private fun roomBarSync() {
-        if (!homeView.editing) strip.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), Motion.MODULE_OPEN)
+        if (!homeView.editing) strip.showOrder(RoomBar.shown(HomeSettings.layout), Motion.MODULE_OPEN)
         trackSync()
     }
 

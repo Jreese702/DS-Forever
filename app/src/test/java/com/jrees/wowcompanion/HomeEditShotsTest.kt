@@ -146,11 +146,13 @@ class HomeEditShotsTest {
             if (roomBar) {
                 strip.editBar = v?.let { ev -> { c: Canvas, layer: Int -> ev.drawBar(c, layer) } }
                 strip.editBarTouch = v?.let { ev -> { e: MotionEvent -> ev.barTouch(e) } }
+                strip.editPose = v?.let { ev -> { r: Room, o: FloatArray -> ev.roomPose(r, o) } }
+                strip.editApps = v?.apps()                                   // 1518 build 2: the badges, the "+" spot
             }
         }
         if (roomBar) {
             home.roomBar = strip
-            strip.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), 0L)
+            strip.showOrder(RoomBar.shown(HomeSettings.layout), 0L)
         }
         return Page(home, cast, strip, rooms)
     }
@@ -581,7 +583,7 @@ class HomeEditShotsTest {
         }
     }
 
-    // ---------------------------------------------------------------- PHASE 4: the room bar (D3: reorder only; XP bar on / off)
+    // ---------------------------------------------------------------- PHASE 4: the room bar (1518 build 2: each room an app - reorder, hide, "+")
 
     /** the host's frame: Home's view reaches under the room bar's XP track (HomeView.trackInset), the bar drawn at the frame's foot */
     private val HV = H + Strip.TRACKS
@@ -621,16 +623,21 @@ class HomeEditShotsTest {
         drawStrip(p)
         assertEquals("the frame is still 935 over the track", H.toFloat(), boxes(home).getValue("MAP").bottom + UiKit.MODULE_GAP, 1f)
         assertEquals(RoomBar.DEFAULT, names(p.strip))
+        val classicSlots = p.strip.slotCentres()
+        val classicIcon = p.strip.slotBox(0)!!.width()
         shot4(p, "p4_00_home_classic")
-        // the cursor: from the map Down to the room bar (its gold edge, the golden box on its first room)
+        // edit mode: each room an app (its own wiggle, a "-" badge; Settings none), no frame / tag / gold edge round the bar
         assertTrue(home.editOpen(EditStop.MAP)); settle()
-        shot4(p, "p4_01a_edit_bar_dimmed_tagged")
+        assertNull("nothing hidden: no \"+\" spot", p.strip.plusBox())
+        assertTrue(p.strip.badgeBox(Room.MAP) != null)
+        assertNull("Settings has no badge", p.strip.badgeBox(Room.SETTINGS)?.let { b -> p.strip.badgeAt(b.centerX(), b.centerY()) })
+        shot4(p, "p4_01a_edit_rooms_as_apps")
         home.editKey("PADDDOWN"); settle()
         val m = model(p)
         assertEquals(EditStop.ROOMS, m.cursor)
-        shot4(p, "p4_01_bar_selected")
+        shot4(p, "p4_01_cursor_on_the_first_room")
         repeat(7) { home.editKey("PADDRIGHT") }
-        assertEquals("BAGS", m.draft.rooms[m.barSel])
+        assertEquals("BAGS", m.barRoom)
         shot4(p, "p4_02_cursor_on_bags")
         // A: Bags lifted (1.03, the shadow, the gold arrows)
         home.editKey("PAD1"); settle()
@@ -648,16 +655,66 @@ class HomeEditShotsTest {
         assertEquals("BAGS", names(p.strip)[5])
         shot4(p, "p4_05_bags_over_the_disc")
         assertEquals("carried: nothing written before the drop", RoomBar.DEFAULT, HomeSettings.layout.rooms)
-        // A drops; X = the bar's menu: XP bar Show / Hide, Order Reset (final_08)
-        home.editKey("PAD1"); home.editKey("PAD3"); settle()
-        assertEquals(EditStop.ROOMS, m.menu)
-        shot4(p, "p4_06_room_bar_menu")
-        home.editKey("PADDRIGHT"); settle()                                // XP bar: Hide (the draft)
-        assertFalse(m.draft.xpBar)
-        assertFalse("1518: saved as it is made (edit mode keeps the track: its ribbon)", HomeSettings.layout.xpBar)
-        assertEquals("the dropped room saved too", "BAGS", HomeSettings.layout.rooms[5])
-        shot4(p, "p4_07_menu_xp_hide")
-        home.editKey("PAD2"); settle()
+        // A drops (saved now); X hides it: the next room slides into its place, "+" stands at the bar's end - with one room hidden the
+        // twelve cells are exactly today's (the rooms' centres and size unchanged, "+" in Settings' old cell)
+        home.editKey("PAD1"); settle()
+        assertEquals("the dropped room saved", "BAGS", HomeSettings.layout.rooms[5])
+        home.editKey("PAD3"); settle(); drawStrip(p)
+        assertEquals(listOf("BAGS"), m.draft.hidden)
+        assertEquals("saved as it is made", listOf("BAGS"), HomeSettings.layout.hidden)
+        assertFalse("BAGS" in names(p.strip))
+        assertEquals("GROUPFINDER", m.barRoom)
+        val plus = p.strip.plusBox()!!
+        assertEquals(classicSlots.last(), plus.centerX(), 0.5f)
+        assertEquals(classicSlots.take(11).map { Math.round(it) }, p.strip.slotCentres().map { Math.round(it) })
+        assertEquals(classicIcon, p.strip.slotBox(0)!!.width(), 0.01f)
+        assertNull("no menu (a room is an app)", m.menu)
+        shot4(p, "p4_06_bags_hidden_plus_at_the_end")
+        // a finger on Quests' badge: hidden in one tap (no "Remove?")
+        val qb = p.strip.badgeBox(Room.QUESTS)!!
+        t0 = android.os.SystemClock.uptimeMillis()
+        stripTouch(p, MotionEvent.ACTION_DOWN, qb.centerX(), qb.centerY()); stripTouch(p, MotionEvent.ACTION_UP, qb.centerX(), qb.centerY())
+        settle(); drawStrip(p)
+        assertEquals(listOf("QUESTS", "BAGS"), m.draft.hidden)
+        assertTrue("no room opened by the edit touches", p.rooms.isEmpty())
+        shot4(p, "p4_07_badge_tap_hides_quests")
+        // Settings never leaves the bar: X there is one red pulse
+        repeat(20) { home.editKey("PADDRIGHT") }
+        assertTrue(m.barOnPlus)
+        home.editKey("PADDLEFT")
+        assertEquals("SETTINGS", m.barRoom)
+        home.editKey("PAD3"); settle(2)
+        assertEquals(listOf("QUESTS", "BAGS"), m.draft.hidden)
+        assertEquals(EditStop.ROOMS, (field(home, "editFlash") as Pair<*, *>).first)
+        shot4(p, "p4_08_settings_refuses", settleFirst = false)
+        // "+": A opens the small tray of the hidden rooms (over Home's foot, rising from "+", clear of the screen's edges)
+        home.editKey("PADDRIGHT"); home.editKey("PAD1"); settle()
+        assertEquals(HomeEditModel.Sheet.ROOMS, m.sheet)
+        assertEquals(listOf("QUESTS", "BAGS"), m.hiddenRooms)
+        val tray = home.editChrome.roomTrayBox()!!
+        assertTrue("$tray", tray.left >= 16f && tray.right <= W - 16f && tray.top >= 0f && tray.bottom <= HV.toFloat())
+        assertTrue("right-aligned to the \"+\" spot", tray.right >= plus.centerX())
+        shot4(p, "p4_09_plus_tray")
+        // Down, A: Bags back where it was (before Group Finder), the cursor on it; the tray closes
+        home.editKey("PADDDOWN"); home.editKey("PAD1"); settle(); drawStrip(p)
+        assertNull(m.sheet)
+        assertEquals("BAGS", m.barRoom)
+        assertEquals(names(p.strip).indexOf("GROUPFINDER") - 1, names(p.strip).indexOf("BAGS"))
+        // a finger on "+" and on the tray's row: Quests back after Map
+        val pb = p.strip.plusBox()!!
+        stripTouch(p, MotionEvent.ACTION_DOWN, pb.centerX(), pb.centerY()); stripTouch(p, MotionEvent.ACTION_UP, pb.centerX(), pb.centerY())
+        settle()
+        assertEquals(HomeEditModel.Sheet.ROOMS, m.sheet)
+        lay(home, W, HV); home.draw(Canvas(Bitmap.createBitmap(W, HV, Bitmap.Config.ARGB_8888)))   // the tray's rows as drawn
+        val t2 = home.editChrome.roomTrayBox()!!
+        val ry = t2.top + HomeEditView.TRAY_HEAD + 20f
+        for (a in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val e = MotionEvent.obtain(t0, android.os.SystemClock.uptimeMillis(), a, t2.centerX(), ry, 0); home.editChrome.touch(e); e.recycle()
+        }
+        settle(); drawStrip(p)
+        assertTrue(m.draft.hidden.isEmpty())
+        assertEquals(1, names(p.strip).indexOf("QUESTS"))
+        assertNull("nothing hidden: \"+\" gone, the bar today's twelve", p.strip.plusBox())
         // a FINGER carries Settings to the far left: lifted at once, the others make way after the 80 ms hover, the release lays it
         val sx = p.strip.slotBox(11)!!.centerX(); val sy = p.strip.slotBox(11)!!.centerY()
         t0 = android.os.SystemClock.uptimeMillis()
@@ -668,44 +725,63 @@ class HomeEditShotsTest {
         home.editAct { it.dragTick(android.os.SystemClock.uptimeMillis()) }
         drawStrip(p)
         ShadowSystemClock.advanceBy(Duration.ofMillis(110))
-        shot4(p, "p4_08_finger_carries_settings", settleFirst = false)
+        shot4(p, "p4_10_finger_carries_settings", settleFirst = false)
         val x0 = p.strip.slotBox(0)!!.centerX()
         stripTouch(p, MotionEvent.ACTION_MOVE, x0 + 4f, sy); settle(1)
         stripTouch(p, MotionEvent.ACTION_UP, x0 + 4f, sy)
         settle()
         assertEquals("SETTINGS", names(p.strip)[0])
-        assertEquals("every room still on the bar (D3)", RoomBar.DEFAULT.toSet(), names(p.strip).toSet())
         assertTrue("no room opened by the edit touches", p.rooms.isEmpty())
-        shot4(p, "p4_09_settings_far_left")
-        // a tap on the selected room: the bar's menu
-        val s0 = p.strip.slotBox(0)!!
-        stripTouch(p, MotionEvent.ACTION_DOWN, s0.centerX(), s0.centerY()); stripTouch(p, MotionEvent.ACTION_UP, s0.centerX(), s0.centerY())
-        assertEquals(EditStop.ROOMS, m.menu)
-        home.editKey("PAD2")
-        // Start: Done. The record keeps the order and the hidden track (per character); the host lays Home into the track's place
-        home.editKey("PADFORWARD"); settle()
+        shot4(p, "p4_11_settings_far_left")
+        // a tap on a room: the cursor there, nothing opens (no menu)
+        val s3 = p.strip.slotBox(3)!!
+        stripTouch(p, MotionEvent.ACTION_DOWN, s3.centerX(), s3.centerY()); stripTouch(p, MotionEvent.ACTION_UP, s3.centerX(), s3.centerY())
+        assertEquals(3, m.barSel); assertNull(m.menu); assertNull(m.sheet)
+        // Macros hidden, the tray open, then A FIGHT: the tray closes, no badge, no "+" (the rooms open as always); its end: back
+        home.editAct { it.hideRoom("MACROS") }; home.editAct { it.openRoomTray() }; settle()
+        assertEquals(HomeEditModel.Sheet.ROOMS, m.sheet)
+        home.onFull(full(true), true); home.onQuests(quests(true), true); home.tick(); settle(); drawStrip(p)
+        assertTrue(m.parked)
+        assertNull(m.sheet)
+        assertNull("parked: no \"+\" spot", p.strip.plusBox())
+        assertFalse("MACROS" in names(p.strip))
+        shot4(p, "p4_12_fight_parked_no_badges")
+        home.onFull(full(false), true); home.onQuests(quests(false), true)
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(25)); home.tick(); settle(); drawStrip(p)
+        assertFalse(m.parked)
+        assertTrue("back: \"+\" again", p.strip.plusBox() != null)
+        // Start: Done. The record keeps the order and the hidden room (per character); out of edit mode the bar is 11 rooms, 6 | 5, one
+        // picture size, no "+"
+        home.editKey("PADFORWARD"); settle(); drawStrip(p)
         assertFalse(home.editing)
         assertEquals("SETTINGS", HomeSettings.layout.rooms[0])
-        assertEquals("BAGS", HomeSettings.layout.rooms[6])
+        assertEquals(listOf("MACROS"), HomeSettings.layout.hidden)
+        assertNull(p.strip.plusBox())
+        assertEquals(RoomBar.DEFAULT.size - 1, names(p.strip).size)
+        assertTrue((0 until 11).all { Math.abs(p.strip.slotBox(it)!!.width() - p.strip.slotBox(0)!!.width()) < 0.01f })
+        assertTrue("6 left of the disc", p.strip.slotBox(5)!!.right < W / 2f && p.strip.slotBox(6)!!.left > W / 2f)
+        // the XP bar is Settings > Bottom screen's now (Home's tiles: Show / Hide, this character's record)
+        BottomTiles.press("", BottomTiles.XP, 1, BottomTiles.Env(null, null)) { }
         assertFalse(HomeSettings.layout.xpBar)
         // the host's trackSync (Home on screen, the record's track hidden): the track slides away, every part glides into its 34 px
         p.strip.trackShown(false, Motion.MODULE_CLOSE)
         home.trackInset(0, animate = true, ms = Motion.MODULE_CLOSE)
         glideAt(home, 0.5f)
         ShadowSystemClock.advanceBy(Duration.ofMillis(100))
-        shot4(p, "p4_10_xp_track_going", settleFirst = false)
+        shot4(p, "p4_13_xp_track_going", settleFirst = false)
         glideAt(home, 1f); settle()
         assertEquals("Home's frame takes the track's 34 px", HV.toFloat(), boxes(home).getValue("MAP").bottom + UiKit.MODULE_GAP, 1f)
         assertEquals(Strip.TRACKS.toFloat(), p.strip.trackGone, 0.01f)
-        shot4(p, "p4_11_saved_reordered_xp_hidden")
+        shot4(p, "p4_14_saved_reordered_hidden_xp_hidden")
         // a touch in the track's place is Home's (the strip lets it through), the disc keeps its own
         assertFalse(stripTouch(p, MotionEvent.ACTION_DOWN, 200f, 10f))
         assertTrue(stripTouch(p, MotionEvent.ACTION_DOWN, W / 2f, 40f))
-        // the bar cursor (HomeBarSelect) walks the bar as drawn: Settings first now
+        // the bar cursor (HomeBarSelect) walks the bar as drawn: Settings first now, Macros nowhere
         val sel = HomeBarSelect(app, p.strip, { null }) { _, _ -> }
         @Suppress("UNCHECKED_CAST")
         val order = HomeBarSelect::class.java.getDeclaredMethod("order").apply { isAccessible = true }.invoke(sel) as List<Room>
         assertEquals(Room.SETTINGS, order.first())
+        assertFalse(Room.MACROS in order)
         assertEquals(names(p.strip), order.map { it.name })
         contact4()
     }
@@ -720,12 +796,19 @@ class HomeEditShotsTest {
         p.home.editKey("PAD1"); p.home.editKey("PADDRIGHT"); p.home.editKey("PADDRIGHT"); p.home.editKey("PAD1"); settle()
         assertEquals("MAP", names(p.strip)[2])
         assertEquals("saved at the drop", "MAP", HomeSettings.layout.rooms[2])
-        // a held B: Discard - the order glides back, the record as it was
-        p.home.editB(true); settle(45); p.home.editB(false); settle()
+        // two rooms hidden (X, X): saved as they go
+        p.home.editKey("PAD3"); p.home.editKey("PAD3"); settle()
+        assertEquals(listOf("MAP", "TALENTS"), HomeSettings.layout.hidden)
+        drawStrip(p)
+        assertTrue(p.strip.plusBox() != null)
+        // a held B: Discard - the order and the hidden rooms glide back, the record as it was
+        p.home.editB(true); settle(45); p.home.editB(false); settle(); drawStrip(p)
         assertFalse(p.home.editing)
         assertEquals(RoomBar.DEFAULT, names(p.strip))
         assertEquals(RoomBar.DEFAULT, HomeSettings.layout.rooms)
+        assertTrue(HomeSettings.layout.hidden.isEmpty())
         assertNull(p.strip.liftRoom)
+        assertNull(p.strip.plusBox())
     }
 
     /** the phase-4 states on one sheet (p4_overview.png) */

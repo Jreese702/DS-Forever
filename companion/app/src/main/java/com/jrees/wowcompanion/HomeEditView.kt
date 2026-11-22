@@ -26,6 +26,9 @@ import kotlin.math.min
  *    lifted, the kit's gold arrows point at the docks it can reach, and a finger's drop well shows the dock under it (red: refused);
  *  - the divider's handle between the columns, the red X chip on a selected removable widget ("Remove?" first);
  *  - a widget's menu over the other column, the Add tray;
+ *  - THE ROOM BAR'S ROOMS AS APPS (1518 build 2, the user's ruling 2026-11-21): no frame, tag or menu round the bar - each room wiggles
+ *    on its own with a small "-" badge (Settings none), a "+" spot at the bar's end while a room is hidden, its small tray of the hidden
+ *    rooms rising from it ([apps], [drawBar], [barTouch]);
  *  - THE EDIT RIBBON in the XP bar's place (drawn by the Strip through [drawRibbon]; test build 1518, the user's ruling 2026-11-21: no
  *    title, no layout chip): "+" at its left while something is off Home, the hints one word each, and "Done" at its right - a tap is
  *    Done (every change is saved already), a long press ([HomeEditModel.DISCARD_HOLD_MS], its gold ring filling) Discard.
@@ -62,6 +65,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         fun holdDone(down: Boolean): Boolean = false
         /** a room's pose on the bar (scale, turn deg, dx, dy into [out]); false = none */
         fun roomPose(r: Room, out: FloatArray): Boolean = false
+        /** the bar's "+" spot's pose (its own wiggle: HomeEditMotion.PLUS_ROOM), as [roomPose] */
+        fun plusPose(out: FloatArray): Boolean = false
         /** an input reached the chrome (the edit ticker runs on: the wiggle never rests while edit mode is open) */
         fun poke() {}
         /** the clock block's box in Home's px (null = none drawn: the thin row, a fight) */
@@ -222,7 +227,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             drawMenu(c, m)
             c.restoreToCount(sv)
         }
-        if (m.sheet != null) {
+        if (m.sheet == HomeEditModel.Sheet.ROOMS) {
+            // the bar's tray of hidden rooms pops out of its "+" spot (0.92 -> 1, as a menu out of its widget)
+            val k = host.popK(HomeEditMotion.SHEET)
+            val sv = c.save()
+            val lay = roomTray(m)
+            if (lay != null && abs(k - 1f) > 0.001f) popIn(c, k, lay.panel, lay.ax, lay.panel.bottom, MENU_FROM)
+            drawRoomTray(c, m, lay)
+            c.restoreToCount(sv)
+        } else if (m.sheet != null) {
             val k = host.popK(HomeEditMotion.SHEET)
             val sv = c.save()
             if (abs(k - 1f) > 0.001f) {
@@ -622,7 +635,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 }
                 clearBars(box, p, top, g)
             }
-            s == EditStop.ROOMS -> box = RectF(g + 8f, top, w - g - 8f, h - g)
             // the bar's menu over the columns above it; a top bar's opens BELOW it, down to the page's foot
             s == EditStop.CAST -> box = if (topBar != null) RectF(g + 100f, topBar.bottom + g, w - g - 100f, h - g) else {
                 val bt = castNow(p).minOfOrNull { it.top } ?: (h - g)
@@ -658,7 +670,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val k = if (MENU_HEAD + sum + 24f <= avail || sum <= 0f) 1f else ((avail - MENU_HEAD - 24f) / sum).coerceIn(MENU_K_MIN, 1f)
         val boxH = MENU_HEAD + sum * k + 24f
         box = when (s) {
-            EditStop.ROOMS -> RectF(box.left, max(top, h - g - boxH), box.right, h - g)
             EditStop.CAST -> if (topBar != null) RectF(box.left, box.top, box.right, box.top + boxH)
                 else RectF(box.left, max(top, box.bottom - boxH), box.right, box.bottom)
             else -> RectF(box.left, box.top, box.right, box.top + boxH)
@@ -709,7 +720,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             val labelY = if (lay.wrap[i]) (rr.top + btnTop) / 2f else rr.centerY()
             when (r.kind) {
                 MenuRow.Kind.BUTTON -> {
-                    // a row named apart from its button (the room bar's "Order" [Reset]) shows its name as the other rows do
+                    // a row named apart from its button shows its name as the other rows do
                     if (r.label != r.words.first()) c.drawText(Tr.t(r.label), rr.left + 18f, labelY - (lp.ascent() + lp.descent()) / 2f, lp)
                     val b = RectF(rr.right - 300f, btnTop, rr.right - 10f, btnTop + btnH)
                     UiKit.button(c, b, r.words.first(), UiKit.okGlyph())
@@ -777,6 +788,71 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
     private val trayHit = ArrayList<RectF>()
 
+    // ---------------------------------------------------------------- the room bar's tray of hidden rooms (its "+" spot)
+
+    /** the tray laid out (this view's px): its panel, each row's box, the "+" spot's centre x it rises from */
+    private class RoomTray(val panel: RectF, val rows: List<RectF>, val ax: Float)
+
+    /**
+     * the tray of the hidden rooms over Home's foot, rising from the bar's "+" spot: right-aligned to it, 16 px clear of the screen's
+     * edges, one row each (the room's bar picture and its name; a second column past [TRAY_ROWS]); null = nothing hidden / no "+"
+     */
+    private fun roomTray(m: HomeEditModel): RoomTray? {
+        val names = m.hiddenRooms
+        if (names.isEmpty()) return null
+        val w = width.toFloat().takeIf { it > 0f } ?: 1240f
+        val h = height.toFloat().takeIf { it > 0f } ?: 935f
+        val plus = host.bar()?.plusBox()
+        val ax = plus?.centerX() ?: (w - 60f)
+        val cols = if (names.size > TRAY_ROWS) 2 else 1
+        val rowsN = (names.size + cols - 1) / cols
+        val colW = TRAY_W
+        val pw = cols * colW + (cols - 1) * 12f + 32f
+        val avail = h - 16f - TRAY_HEAD - 20f
+        val rowH = min(TRAY_ROW, (avail / rowsN) - 10f).coerceAtLeast(56f)
+        val ph = TRAY_HEAD + rowsN * (rowH + 10f) + 10f
+        val right = min(w - 16f, (plus?.right ?: (w - 16f)) + 4f)
+        val left = max(16f, right - pw)
+        val bottom = h - 8f
+        val panel = RectF(left, bottom - ph, left + pw, bottom)
+        val rows = names.indices.map { i ->
+            val col = i / rowsN; val row = i % rowsN
+            val x = panel.left + 16f + col * (colW + 12f)
+            val y = panel.top + TRAY_HEAD + row * (rowH + 10f)
+            RectF(x, y, x + colW, y + rowH)
+        }
+        return RoomTray(panel, rows, ax.coerceIn(panel.left, panel.right))
+    }
+
+    /** the tray's box (the tests' and the shots' reading; null = not open) */
+    fun roomTrayBox(): RectF? = host.model?.takeIf { it.sheet == HomeEditModel.Sheet.ROOMS }?.let { roomTray(it)?.panel?.let { p -> RectF(p) } }
+
+    private fun drawRoomTray(c: Canvas, m: HomeEditModel, lay: RoomTray?) {
+        trayHit.clear()
+        if (lay == null) return
+        val panel = lay.panel
+        pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
+        c.drawRoundRect(panel, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
+        UiKit.module(c, panel)
+        c.drawText(Tr.t("Add"), panel.left + 24f, panel.top + 52f, titleP(40f, Theme.gold))
+        val bar = host.bar()
+        val names = m.hiddenRooms
+        for ((i, n) in names.withIndex()) {
+            val b = lay.rows[i]
+            pFill.color = Theme.raised; pFill.alpha = 230
+            c.drawRoundRect(b, 8f, 8f, pFill)
+            pLine.strokeWidth = 2f; pLine.color = Theme.bronze; pLine.alpha = 255
+            c.drawRoundRect(b, 8f, 8f, pLine)
+            val pic = b.height() - 12f
+            val room = Room.values().firstOrNull { it.name == n }
+            if (room != null && bar != null) bar.drawRoomPicture(c, room, b.left + 10f + pic / 2f, b.centerY(), pic)
+            val tp = bodyP(28f, Theme.text)
+            c.drawText(Tr.t(RoomBar.word(n)), b.left + 22f + pic, b.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+            if (i == m.sheetSel) UiKit.focus(c, b)
+        }
+        trayHit.addAll(lay.rows)
+    }
+
     // ---------------------------------------------------------------- the edit ribbon (in the XP bar's place, drawn by the Strip)
 
     /** the ribbon's pieces (the Strip's px): "+" at its left (drawn only while something is off Home), Done at its right */
@@ -796,6 +872,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     fun ribbonK(): Float = host.popK(HomeEditMotion.RIBBON)
     /** a room's pose on the bar while editing (the Strip: scale, turn, dx, dy into [out]); false = none */
     fun roomPose(r: Room, out: FloatArray): Boolean = host.roomPose(r, out)
+    /** the bar's "+" spot's pose (its own wiggle), as [roomPose] */
+    fun plusPose(out: FloatArray): Boolean = host.plusPose(out)
 
     /** the Strip draws the ribbon in its tracking bar's place ([top] its top, [g0] .. [g1] the disc's gap) */
     fun drawRibbon(c: Canvas, w: Float, top: Float, g0: Float, g1: Float) {
@@ -868,11 +946,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.menu != null && row == MenuRow.Kind.STEP -> listOf(DPAD to "Change", b to "Back")
             m.menu != null -> listOf(a to "Change", b to "Back")
             m.lifted == EditStop.ROOMS -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
+            // a room is an app: A carries it, X hides it (Settings stays); the "+" spot: A its tray
+            m.cursor == EditStop.ROOMS && m.barOnPlus -> listOf(a to "Add")
+            m.cursor == EditStop.ROOMS && m.barRoom?.let { RoomBar.canHide(it) } == true -> listOf(a to "Move", x to "Hide")
+            m.cursor == EditStop.ROOMS -> listOf(a to "Move")
             m.lifted != null -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
             // at the top level B is Done: the Done button wears its glyph (no "Done" hint beside it)
             m.cursor == EditStop.PLUS -> listOf(a to "Add")
             m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width")
-            m.cursor == EditStop.ROOMS -> listOf(a to "Move", x to "Options")
             m.cursor == EditStop.BAND -> listOf(a to "Options", y to "Size")
             m.cursor == EditStop.CLOCK -> listOf(a to "Options")
             else -> listOf(a to "Move", x to "Options", y to "Size")
@@ -930,50 +1011,93 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     // ---------------------------------------------------------------- phase 4: the room bar (drawn by the Strip, in its px)
 
     /**
-     * THE ROOM BAR'S CHROME (final_08; D3: reorder only), in two layers the Strip calls: 0 under the lifted room and the disc - not
-     * selected: the dim (black 70) and the dashed ink frame as every other widget; selected: a gold edge round the rooms' row (the bar is
-     * the widget); 1 over them - the golden box on the room under the bar's own cursor (lifted: round the carried picture, with the kit's
-     * gold arrows to the sides it can still go) and the "Room bar" tag. The chrome's fade rides [Host.chromeAlpha].
+     * THE ROOM BAR'S CHROME (1518 build 2: the rooms are apps - the bar itself wears nothing: no dim, no frame, no gold edge, no tag), in
+     * the two layers the Strip calls: 0 (under the lifted room and the disc) nothing; 1 (over them) the golden box on the room under the
+     * bar's own cursor - or on its "+" spot - (lifted: round the carried picture, with the kit's gold arrows to the sides it can still go)
+     * and a refusal's red pulse (X on Settings). The chrome's fade rides [Host.chromeAlpha]. The badges and the "+" spot are [apps]'.
      */
     fun drawBar(c: Canvas, layer: Int) {
+        if (layer == 0) return
         val m = host.model ?: return
         val bar = host.bar() ?: return
         val a = host.chromeAlpha
         if (a <= 0.01f || m.parked) return
-        val row = bar.buttonsBox().apply { inset(4f, 4f) }
+        if (m.cursor != EditStop.ROOMS) return
         val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, bar.width.toFloat(), bar.height.toFloat(), (255 * a).toInt()) else -1
-        val sel = m.cursor == EditStop.ROOMS && m.menu == null && m.sheet == null
-        val onBar = m.cursor == EditStop.ROOMS
-        if (layer == 0) {
-            if (!onBar) {
-                pFill.style = Paint.Style.FILL; pFill.color = Color.argb(DIM, 0, 0, 0)
-                c.drawRect(bar.buttonsBox(), pFill)
-                frame(c, row, light = false)
-            } else {
-                pLine.strokeWidth = 3f; pLine.color = Theme.focusA(210); pLine.pathEffect = null
-                c.drawRoundRect(row, UiKit.MODULE_R, UiKit.MODULE_R, pLine)
+        val sel = m.menu == null && m.sheet == null
+        val name = m.barRoom
+        val room = name?.let { n -> Room.values().firstOrNull { it.name == n } }
+        val b = if (room != null) bar.roomDrawn(room) else if (m.barOnPlus) bar.plusDrawn() else null
+        if (b != null) {
+            val box = scratch; box.set(b); box.inset(-10f, -8f)
+            if (sel || m.lifted == EditStop.ROOMS) UiKit.focus(c, box)
+            if (m.lifted == EditStop.ROOMS && m.drag == null && name != null) {
+                val vis = m.barRooms
+                val i = vis.indexOf(name)
+                UiKit.moveArrows(c, box, left = i > 0, right = i < vis.size - 1, words = false)
             }
-        } else {
-            val room = m.draft.rooms.getOrNull(m.barSel)?.let { n -> Room.values().firstOrNull { it.name == n } }
-            if (onBar && room != null) bar.roomDrawn(room)?.let { b ->
-                val box = RectF(b).apply { inset(-10f, -8f) }
-                if (sel || m.lifted == EditStop.ROOMS) UiKit.focus(c, box)
-                if (m.lifted == EditStop.ROOMS && m.drag == null) {
-                    val i = m.draft.rooms.indexOf(room.name)
-                    UiKit.moveArrows(c, box, left = i > 0, right = i < m.draft.rooms.size - 1, words = false)
+            host.flash?.let { (s, at) ->
+                val t = SystemClock.uptimeMillis() - at
+                if (s == EditStop.ROOMS && t in 0 until HomeEditModel.FLASH_MS) {
+                    edgeColour(c, box, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
+                    bar.postInvalidateOnAnimation()
                 }
             }
-            // the tag while the bar is not the widget picked (picked, its menu's title names it; the tag would hide a room)
-            if (!onBar) tag(c, row, EditStop.ROOMS.tag, false, Corner.BOTTOM_LEFT)
         }
         if (save >= 0) c.restoreToCount(save)
     }
 
-    /** a finger on the rooms' row while editing (the Strip's px): a tap selects a room (the selected one: the bar's menu), a drag
-     *  carries it - the others make way after the hover, the drop settles it (the model's drag, its x the bar's) */
+    /**
+     * THE ROOMS AS APPS (1518 build 2) for the Strip ([Strip.EditApps]): the "+" spot while a room is hidden (edit mode on screen, not
+     * parked), each hideable room's "-" badge - the comic-ink look: an ink disc, a bronze ring, a cream bar - and the "+" spot's own
+     * picture (a raised disc, a bronze ring, a gold "+", its own wiggle). None on the lifted room (it is picked up), none while parked
+     */
+    fun apps(): Strip.EditApps = appsImpl
+    private val appsImpl = object : Strip.EditApps {
+        override val plus: Boolean get() = host.model?.let { m -> m.barPlus && !m.parked && host.chromeAlpha > 0.01f } == true
+        override fun badge(c: Canvas, r: Room, cx: Float, cy: Float, icon: Float) {
+            val m = host.model ?: return
+            val a = host.chromeAlpha
+            if (a <= 0.01f || m.parked || m.barLifted == r.name) return
+            val bx = cx - icon / 2f + Strip.BADGE_IN; val by = cy - icon / 2f + Strip.BADGE_IN
+            val al = (255 * a).toInt().coerceIn(0, 255)
+            pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = al
+            c.drawCircle(bx, by, BADGE_R, pFill)
+            pLine.strokeWidth = 2.5f; pLine.color = Theme.bronze; pLine.alpha = al; pLine.pathEffect = null
+            c.drawCircle(bx, by, BADGE_R - 1f, pLine)
+            pFill.color = Theme.text; pFill.alpha = al
+            scratch2.set(bx - BADGE_R * 0.5f, by - 2.2f, bx + BADGE_R * 0.5f, by + 2.2f)
+            c.drawRoundRect(scratch2, 2.2f, 2.2f, pFill)
+        }
+        override fun plus(c: Canvas, cx: Float, cy: Float, icon: Float) {
+            val a = host.chromeAlpha
+            if (a <= 0.01f) return
+            val al = (255 * a).toInt().coerceIn(0, 255)
+            val sv = c.save()
+            if (host.plusPose(plusBuf)) { c.translate(plusBuf[2], plusBuf[3]); c.rotate(plusBuf[1], cx, cy); c.scale(plusBuf[0], plusBuf[0], cx, cy) }
+            val r = icon * 0.46f
+            pFill.style = Paint.Style.FILL; pFill.color = Theme.raised; pFill.alpha = al
+            c.drawCircle(cx, cy, r, pFill)
+            pLine.pathEffect = dashFine; pLine.strokeWidth = 2.5f; pLine.color = Theme.bronze; pLine.alpha = al
+            c.drawCircle(cx, cy, r - 1.5f, pLine)
+            pLine.pathEffect = null
+            pFill.color = Theme.gold; pFill.alpha = al
+            val arm = r * 0.5f; val th = 3.2f
+            scratch2.set(cx - arm, cy - th, cx + arm, cy + th); c.drawRoundRect(scratch2, th, th, pFill)
+            scratch2.set(cx - th, cy - arm, cx + th, cy + arm); c.drawRoundRect(scratch2, th, th, pFill)
+            c.restoreToCount(sv)
+        }
+    }
+    private val plusBuf = FloatArray(4)
+
+    /** a finger on the rooms' row while editing (the Strip's px): a tap on a room's "-" badge hides it, a tap on "+" opens the tray of
+     *  hidden rooms, a tap on a room moves the cursor there, a drag carries it - the others make way after the hover, the drop settles it
+     *  (the model's drag, its x the bar's). An open tray: any tap on the row closes it */
     private var barDownX = 0f
     private var barDownY = 0f
     private var barDownSlot = -1
+    private var barDownBadge: Room? = null
+    private var barDownPlus = false
     private var barDragging = false
     fun barTouch(e: MotionEvent): Boolean {
         val m = host.liveModel ?: return false
@@ -985,7 +1109,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 barDownX = x; barDownY = y; barDragging = false
-                barDownSlot = if (m.sheet != null) -1 else bar.slotAt(x, y)
+                val open = m.sheet != null
+                barDownBadge = if (open) null else bar.badgeAt(x, y)
+                barDownPlus = !open && barDownBadge == null && bar.plusBox()?.contains(x, y) == true
+                barDownSlot = if (open || barDownPlus) -1 else bar.slotAt(x, y)
             }
             MotionEvent.ACTION_MOVE -> {
                 val i = barDownSlot
@@ -998,12 +1125,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 if (barDragging) host.run(m.dragMove(x, y, now, host.geo))
             }
             MotionEvent.ACTION_UP -> {
+                val tap = abs(x - barDownX) <= TAP_SLOP && abs(y - barDownY) <= TAP_SLOP
+                val badge = barDownBadge
                 if (barDragging) { host.run(m.dragEnd(x, y, now, host.geo)); barDragging = false }
                 else if (m.sheet != null) m.closeSheet()
-                else if (barDownSlot >= 0 && abs(x - barDownX) <= TAP_SLOP && abs(y - barDownY) <= TAP_SLOP) host.run(m.barTap(barDownSlot))
-                barDownSlot = -1
+                else if (tap && badge != null) host.run(m.hideRoom(badge.name))
+                else if (tap && barDownPlus) host.run(m.openRoomTray())
+                else if (barDownSlot >= 0 && tap) host.run(m.barTap(barDownSlot))
+                barDownSlot = -1; barDownBadge = null; barDownPlus = false
             }
-            MotionEvent.ACTION_CANCEL -> { if (barDragging) host.run(m.dragCancel()); barDragging = false; barDownSlot = -1 }
+            MotionEvent.ACTION_CANCEL -> { if (barDragging) host.run(m.dragCancel()); barDragging = false; barDownSlot = -1; barDownBadge = null; barDownPlus = false }
         }
         invalidate(); bar.invalidate()
         return true
@@ -1077,7 +1208,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private fun tapAt(m: HomeEditModel, x: Float, y: Float) {
         if (m.sheet != null) {
             val i = trayHit.indexOfFirst { it.contains(x, y) }
-            if (i >= 0) host.run(m.addBack(m.removed.getOrNull(i))) else m.closeSheet()
+            if (i < 0) m.closeSheet()
+            else if (m.sheet == HomeEditModel.Sheet.ROOMS) host.run(m.unhideRoom(m.hiddenRooms.getOrNull(i)))
+            else host.run(m.addBack(m.removed.getOrNull(i)))
             return
         }
         if (m.menu != null) {
@@ -1139,5 +1272,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         /** the text paints kept ([textP]) */
         private const val TEXT_CACHE = 40
         const val SHEET_RISE = 60f
+        /** the room bar's "-" badge's radius (an iOS-style badge on the picture's top left), the tray of hidden rooms' sizes */
+        const val BADGE_R = 15f
+        const val TRAY_W = 380f
+        const val TRAY_ROW = 84f
+        const val TRAY_HEAD = 76f
+        /** rows in one column of the tray (more hidden rooms: a second column) */
+        const val TRAY_ROWS = 6
     }
 }

@@ -1732,7 +1732,7 @@ class HomeView(
         // P2: while edit mode runs (not parked by a fight), Home is laid with its draft: every change glides there
         var l = HomeLayoutRules.shown(look?.layout ?: editDraft() ?: HomeSettings.layout)
             // P4: the room bar's fields are the bar's, not the page's (its order glides in the Strip; the XP track's place is [trackInset])
-            .copy(rooms = RoomBar.DEFAULT, xpBar = true)
+            .copy(rooms = RoomBar.DEFAULT, xpBar = true, hidden = emptyList())
         if (s != null) l = l.copy(rest = s.rest)
         // the 1515 merge's review (P5): Top screen only while the add-on's Wings are on (`ct` 1); no key / not confirmed = Grow
         if (look == null) l = TopCombatBar.honoured(l, padMap?.dpad?.ct)
@@ -2561,6 +2561,12 @@ class HomeView(
             out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
             return !pose.isIdentity
         }
+        override fun plusPose(out: FloatArray): Boolean {
+            if (!motion.on) return false
+            motion.pose(HomeEditMotion.PLUS_ROOM, motionNow(), ROOM_HALF_DIAG, pose)
+            out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
+            return !pose.isIdentity
+        }
         override fun poke() = editKick()
         override fun clockBox(): RectF? = editClockBox()
         override fun solve(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> = solveFor(l)
@@ -2890,8 +2896,9 @@ class HomeView(
         now[Part.PARTY]?.let { pts += Triple(HomeEditMotion.PARTY, it.centerX(), it.centerY()) }
         val bar = roomBar
         val xs = bar?.slotCentres().orEmpty()
-        val rooms = RoomBar.rooms((edit?.draft ?: HomeSettings.layout).rooms)
+        val rooms = RoomBar.shown(edit?.draft ?: HomeSettings.layout)
         for ((i, x) in xs.withIndex()) rooms.getOrNull(i)?.let { pts += Triple(HomeEditMotion.roomKey(it.ordinal), x, frameH + Strip.BAR / 2f) }
+        bar?.plusBox()?.let { pts += Triple(HomeEditMotion.PLUS_ROOM, it.centerX(), frameH + Strip.BAR / 2f) }
         val far = pts.maxOfOrNull { kotlin.math.hypot(it.second - cx, it.third - cy) } ?: return null
         val out = LongArray(HomeEditMotion.KEYS)
         for ((k, x, y) in pts) out[k] = HomeEditMotion.ripple(kotlin.math.hypot(x - cx, y - cy), far)
@@ -3116,7 +3123,7 @@ class HomeView(
     private fun editBarSync(ms: Long) {
         val b = roomBar ?: return
         val m = edit?.takeIf { !it.parked }
-        b.showOrder(RoomBar.rooms((m?.draft ?: HomeSettings.layout).rooms), ms)
+        b.showOrder(RoomBar.shown(m?.draft ?: HomeSettings.layout), ms)
         val lr = m?.barLifted?.let { n -> Room.values().firstOrNull { it.name == n } }
         b.liftRoom = lr
         b.liftX = m?.drag?.takeIf { it.stop == EditStop.ROOMS && lr != null }?.cx

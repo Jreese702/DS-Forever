@@ -294,6 +294,8 @@ class HomeEditMotion {
         const val PARTY = 10
         fun roomKey(ordinal: Int): Int = (ROOM0 + ordinal).coerceAtMost(KEYS - 1)
         private const val ROOM0 = 16
+        /** 1518 build 2: the room bar's "+" spot wiggles as its own app (the key after the last room's) */
+        val PLUS_ROOM: Int get() = roomKey(Room.values().size)
         /** the pops */
         const val MENU = 0
         const val SHEET = 1

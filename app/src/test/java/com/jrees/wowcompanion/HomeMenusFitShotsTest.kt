@@ -306,15 +306,26 @@ class HomeMenusFitShotsTest {
             if (!p.home.editOpen(EditStop.CHAT)) { no(tag, "edit $s refused"); continue }
             settle()
             // a widget the record does not show (the card / the bar Off) has no menu to open
-            if (s != EditStop.ROOMS && s !in p.home.editChrome.widgetBoxes()) { p.home.editCancel(); settle(); continue }
+            if (s !in p.home.editChrome.widgetBoxes()) { p.home.editCancel(); settle(); continue }
             p.home.editAct { it.openMenu(s); emptyList() }; settle()
             val box = p.home.editChrome.menuBox(s)
             if (!inside(box, 0f, band(p.home).bottom, W.toFloat(), H.toFloat())) no(tag, "edit $s menu ${r(box)} off the screen or under the band")
             val cb = p.home.editChrome.castBoxes()
-            if (s != EditStop.ROOMS) for (c in cb) if (overlaps(c, box)) no(tag, "edit $s menu ${r(box)} covers the tap-to-cast bar ${r(c)}")
+            for (c in cb) if (overlaps(c, box)) no(tag, "edit $s menu ${r(box)} covers the tap-to-cast bar ${r(c)}")
             render(p, "$tag edit $s") { c -> c.drawRect(box, pCyan); for (x in cb) c.drawRect(x, pRed) }
             p.home.editCancel(); settle()
         }
+        // 1518 build 2: the room bar's tray of hidden rooms (every hideable room hidden: its two columns) fits the screen too
+        val p = page(l)
+        if (!p.home.editOpen(EditStop.CHAT)) { no(tag, "edit refused"); return }
+        settle()
+        p.home.editAct { m -> RoomBar.DEFAULT.filter { RoomBar.canHide(it) }.flatMap { m.hideRoom(it) } }
+        p.home.editAct { it.openRoomTray() }; settle()
+        val tray = p.home.editChrome.roomTrayBox()
+        if (tray == null) no(tag, "edit: no tray of hidden rooms")
+        else if (!inside(tray, 0f, 0f, W.toFloat(), H.toFloat())) no(tag, "edit tray of hidden rooms ${r(tray)} off the screen")
+        tray?.let { t -> render(p, "$tag edit room tray") { c -> c.drawRect(t, pCyan) } }
+        p.home.editCancel(); settle()
     }
 
     // ---------------------------------------------------------------- the matrix

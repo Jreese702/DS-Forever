@@ -396,6 +396,7 @@ object BottomPictures {
             BottomTiles.TALK -> talk(c, r, look, tMs)
             BottomTiles.CASTBAR -> castBar(c, r, tMs)
             BottomTiles.RANK -> ranks(c, r, HomeSettings.rankBadges)
+            BottomTiles.XP -> xpTrack(c, r, HomeSettings.layout.xpBar)
             BottomTiles.ZOOM -> zoom(c, r, Settings.minimapYd, Settings.minimapIndoorYd, look.zoomIndoor)
             BottomTiles.WORLD -> world(c, r, Settings.worldMapFog == "all", look, tMs)
             BottomTiles.INPUT -> input(c, ctx, r, Settings.chatDefaultInput == "quick", big)
@@ -734,6 +735,25 @@ object BottomPictures {
             else { pF.color = Color.rgb(60 + 20 * j, 90, 140 - 10 * j); c.drawRect(box, pF) }
             pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawRect(box, pS)
             if (on) UiKit.spellRank(c, box, badges[j])
+        }
+        c.restore()
+    }
+
+    /** the XP bar on Home (1518 build 2): the room bar's top, close up - its XP track over the rooms' row (Show), or the row alone with
+     *  Home reaching down to it (Hide) */
+    private fun xpTrack(c: Canvas, r: RectF, on: Boolean) {
+        val kk = r.width() / 432f
+        c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
+        pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
+        val top = if (on) 70f else 104f
+        pF.color = Theme.panel; c.drawRect(0f, top, 432f, 216f, pF)
+        if (on) UiKit.track(c, RectF(0f, top, 432f, top + 34f), "xp", 0.62f, 0.74f, 5, 0f, 0f, 8f, 1.5f)
+        // three rooms' discs under it (the bar's row)
+        val cy = 160f
+        for (j in 0 until 3) {
+            val cx = 64f + j * 104f
+            pF.color = Theme.raised; c.drawCircle(cx, cy, 34f, pF)
+            pS.color = Theme.bronzeDim; pS.strokeWidth = 2.5f; c.drawCircle(cx, cy, 34f, pS)
         }
         c.restore()
     }

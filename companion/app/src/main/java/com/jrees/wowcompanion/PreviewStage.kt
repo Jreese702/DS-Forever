@@ -293,7 +293,7 @@ object PreviewStage {
         t.home.draw(c)
         val st = stripView ?: Strip(a.ctx) { }.also { stripView = it }
         st.active = Room.HOME
-        st.showOrder(RoomBar.rooms(HomeSettings.layout.rooms), 0L)        // P4: the bar in the active record's order
+        st.showOrder(RoomBar.shown(HomeSettings.layout), 0L)        // P4: the bar in the active record's order
         st.measure(View.MeasureSpec.makeMeasureSpec(W, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(Strip.HEIGHT, View.MeasureSpec.EXACTLY))
         st.layout(0, 0, W, Strip.HEIGHT)
         c.translate(0f, H.toFloat()); st.draw(c)
