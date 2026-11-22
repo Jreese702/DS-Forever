@@ -117,7 +117,7 @@ class BottomTilesTest {
         HomeSettings.init(app); Settings.init(app)
         val none = BottomTiles.Env(null, "Sample-Realm")
         assertEquals(listOf(BottomTiles.LAYOUT, BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR,
-            BottomTiles.RANK), BottomTiles.slots(SettingsTabs.Group.HOME, none))
+            BottomTiles.RANK, BottomTiles.HOME_RESET), BottomTiles.slots(SettingsTabs.Group.HOME, none))
         var want: Boolean? = null
         val d = { on: Boolean -> PadMapModel.Dpad(on, emptyMap(), emptyList(), emptyList(), on, 1, 2, null, null) }
         assertEquals(BottomTiles.HOME_TILES.size - 1, BottomTiles.slots(SettingsTabs.Group.HOME, BottomTiles.Env(d(false), "Sample-Realm")).size)

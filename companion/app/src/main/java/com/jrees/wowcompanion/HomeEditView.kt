@@ -1,7 +1,6 @@
 package com.jrees.wowcompanion
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
@@ -26,9 +25,10 @@ import kotlin.math.min
  *  - the selected widget wears the GOLDEN BOX (the app's cursor look: a thick gold box with its glow, never a thin outline), at once;
  *    lifted, the kit's gold arrows point at the docks it can reach, and a finger's drop well shows the dock under it (red: refused);
  *  - the divider's handle between the columns, the red X chip on a selected removable widget ("Remove?" first);
- *  - a widget's menu over the other column, the Layouts sheet, the Add tray, the Save / Discard / Keep editing prompt;
- *  - THE EDIT RIBBON in the XP bar's place (drawn by the Strip through [drawRibbon]): "Edit Home", the layout chip "< Classic >" with the
- *    kit's gold arrows ("Edited" once something changed), "+" while something is off Home, the hints one word each.
+ *  - a widget's menu over the other column, the Add tray;
+ *  - THE EDIT RIBBON in the XP bar's place (drawn by the Strip through [drawRibbon]; test build 1518, the user's ruling 2026-11-21: no
+ *    title, no layout chip): "+" at its left while something is off Home, the hints one word each, and "Done" at its right - a tap is
+ *    Done (every change is saved already), a long press ([HomeEditModel.DISCARD_HOLD_MS], its gold ring filling) Discard.
  * Every input goes to [HomeEditModel]; its effects go back to the host ([Host.run]).
  */
 class HomeEditView(context: Context, private val host: Host) : View(context) {
@@ -53,12 +53,13 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         fun cursorOffset(out: FloatArray) { out.fill(0f) }
         /** the gold cursor's turn now over its widget's (deg, about the box's centre): its flight from the old widget's angle */
         fun cursorTurn(): Float = 0f
-        /** a pop's progress (HomeEditMotion.MENU / SHEET / PROMPT / CHIP / RIBBON; 1 = landed) */
+        /** a pop's progress (HomeEditMotion.MENU / SHEET / CHIP / RIBBON; 1 = landed) */
         fun popK(kind: Int): Float = 1f
-        /** the chip's name sliding over on a flip (1 = landed), the way it went, the name before it */
-        fun chipFlip(): Float = 1f
-        val chipDir: Int get() = 0
-        val chipWas: String? get() = null
+        /** Done's hold (a finger on it, B held on the direct feed): 0 .. 1 while it runs towards Discard, null = none */
+        fun holdK(): Float? = null
+        /** a finger went down on Done ([down]) or up / away from it: the host's hold timer (true on the up = the hold fired already:
+         *  Discard ran, the up does nothing) */
+        fun holdDone(down: Boolean): Boolean = false
         /** a room's pose on the bar (scale, turn deg, dx, dy into [out]); false = none */
         fun roomPose(r: Room, out: FloatArray): Boolean = false
         /** an input reached the chrome (the edit ticker runs on: the wiggle never rests while edit mode is open) */
@@ -70,9 +71,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val geo: HomeEditModel.Geo
         fun run(fx: List<HomeEditModel.Fx>)
         fun menuRows(s: EditStop): List<MenuRow>
-        /** a picture of [l] at [w] x [h] (PreviewStage), null = drawn schematic */
-        fun thumb(l: HomeLayout, w: Int, h: Int): Bitmap?
-        fun slots(): List<HomeLayout?>
         /** the room bar's height (the ribbon sits in its top TRACKS px) */
         val stripH: Int
         /** a red pulse on a widget's edge (a refusal, a fight): the widget and when */
@@ -89,7 +87,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val pGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; maskFilter = BlurMaskFilter(14f, BlurMaskFilter.Blur.NORMAL) }
-    private val pBmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     /** the lifted widget's deep shadow (one blur, made once: the ticker draws it every frame while a widget is lifted) */
     private val pShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; maskFilter = BlurMaskFilter(28f, BlurMaskFilter.Blur.NORMAL) }
 
@@ -198,9 +195,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             out[EditStop.DIVIDER] = HomeLayoutSolver.Box(d.centerX() - 2f, top, d.centerX() + 2f, top + 40f) }
         val rib = ribbon(width.toFloat().takeIf { it > 0f } ?: 1240f)
         val y0 = height.toFloat()
-        out[EditStop.CHIP] = HomeLayoutSolver.Box(rib.chip.left, y0 + rib.chip.top, rib.chip.right, y0 + rib.chip.bottom)
+        // "+" on the ribbon while something is off Home (Done needs no stop: B and Start are Done)
         if (host.model?.plusShown == true) out[EditStop.PLUS] = HomeLayoutSolver.Box(rib.plus.left, y0 + rib.plus.top, rib.plus.right, y0 + rib.plus.bottom)
-        // phase 4: the room bar's rooms' row, under the ribbon (Down from the chip or the map; Left / Right there walk its rooms)
+        // phase 4: the room bar's rooms' row, under the ribbon (Down from the columns; Left / Right there walk its rooms)
         if (host.bar() != null) out[EditStop.ROOMS] = HomeLayoutSolver.Box(8f, y0 + Strip.TRACKS, (width.toFloat().takeIf { it > 0f } ?: 1240f) - 8f, y0 + Strip.BAR)
         return out
     }
@@ -213,7 +210,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (a <= 0.01f) return
         val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * a).toInt()) else -1
         drawWidgets(c, m)
-        // the menu pops out of its widget's side (0.92 -> 1 with a little overshoot), the sheet / tray rise, the prompt pops
+        // the menu pops out of its widget's side (0.92 -> 1 with a little overshoot), the Add tray rises
         m.menu?.let { s ->
             val k = host.popK(HomeEditMotion.MENU)
             val sv = c.save()
@@ -233,14 +230,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 val a = (k / 0.6f).coerceIn(0f, 1f)
                 if (a < 1f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * a).toInt())
             }
-            when (m.sheet) {
-                HomeEditModel.Sheet.LAYOUTS -> drawLayouts(c, m)
-                HomeEditModel.Sheet.ADD -> drawTray(c, m)
-                null -> {}
-            }
+            drawTray(c, m)
             c.restoreToCount(sv)
         }
-        if (m.prompt) drawPrompt(c, m, host.popK(HomeEditMotion.PROMPT))
         if (save >= 0) c.restoreToCount(save)
         val fl = host.flash
         if (fl != null && SystemClock.uptimeMillis() - fl.second < HomeEditModel.FLASH_MS) postInvalidateOnAnimation()
@@ -352,7 +344,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.restoreToCount(under)
         // 4. the golden box on the selected widget (riding the lifted one), the arrows to the docks a lifted one reaches
         val one = when (sel) {
-            EditStop.CAST, EditStop.DIVIDER, EditStop.CHIP, EditStop.PLUS -> null
+            EditStop.CAST, EditStop.DIVIDER, EditStop.PLUS -> null
             else -> wb[sel]
         }
         val selN = if (sel == EditStop.CAST) cast.size else if (one != null) 1 else 0
@@ -386,7 +378,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             c.restoreToCount(sv)
         }
         // 5. the red X chip on a selected removable widget, "Remove?" after its first tap
-        if (sel.removable && lifted == null && m.menu == null && m.sheet == null && !m.prompt && selN > 0)
+        if (sel.removable && lifted == null && m.menu == null && m.sheet == null && selN > 0)
             (if (sel == EditStop.CAST) cast[selN - 1] else one!!).let { b ->
                 val x = removeChip(b)
                 val sv = posed(c, sel)
@@ -758,130 +750,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private val menuRowBoxes = ArrayList<RectF>()
     private val lastMenuBox = RectF()
 
-    // ---------------------------------------------------------------- the Layouts sheet (final_09)
-
-    private class SheetItem(val name: String, val layout: HomeLayout?, val available: Boolean)
-
-    private fun sheetItems(m: HomeEditModel): List<SheetItem> {
-        val presets = m.flips.filter { !it.name.startsWith(HomeEditModel.SLOT_MARK) }
-            .map { SheetItem(it.name, it.make(m.saved), it.available) }
-        val slots = host.slots().mapIndexed { i, l -> SheetItem("${i + 1}", l, l != null) }
-        return presets + slots + SheetItem("All characters", null, true)
-    }
-
-    /** the sheet's item boxes (the frame inset by the module gap: 3 thumbnails a row, then Mine's slots, then All characters) */
-    private fun sheetBoxes(m: HomeEditModel): List<RectF> {
-        val w = width.toFloat(); val h = height.toFloat()
-        val out = ArrayList<RectF>()
-        val n = m.flips.count { !it.name.startsWith(HomeEditModel.SLOT_MARK) }
-        val cols = HomeEditModel.SHEET_COLS
-        val left = 36f; val right = w - 36f
-        val cw = (right - left - (cols - 1) * 34f) / cols
-        val th = cw * (h / w)
-        var y = 96f
-        for (i in 0 until n) {
-            val col = i % cols; if (col == 0 && i > 0) y += th + 58f
-            out += RectF(left + col * (cw + 34f), y, left + col * (cw + 34f) + cw, y + th)
-        }
-        y += th + 66f
-        val sw = (right - left - 150f - 3 * 22f) / 4f
-        for (i in 0 until HomePresets.SLOTS) out += RectF(left + 150f + i * (sw + 22f), y, left + 150f + i * (sw + 22f) + sw, y + 64f)
-        out += RectF(left + 150f + 3 * (sw + 22f), y, right, y + 64f)
-        return out
-    }
-
-    private val thumbs = HashMap<String, Bitmap?>()
-    private val thumbWait = HashSet<String>()
-    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
-    /** the sheet opened: its pictures made once (PreviewStage), kept while edit mode lasts */
-    fun dropThumbs() { thumbs.clear(); thumbWait.clear() }
-
-    private fun drawLayouts(c: Canvas, m: HomeEditModel) {
-        val w = width.toFloat(); val h = height.toFloat()
-        val full = RectF(UiKit.MODULE_GAP, UiKit.MODULE_GAP, w - UiKit.MODULE_GAP, h - UiKit.MODULE_GAP)
-        pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 250
-        c.drawRoundRect(full, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
-        UiKit.module(c, full)
-        c.drawText(Tr.t("Layouts"), full.left + 26f, full.top + 64f, titleP(52f, Theme.gold))
-        val items = sheetItems(m)
-        val boxes = sheetBoxes(m)
-        val nPresets = m.flips.count { !it.name.startsWith(HomeEditModel.SLOT_MARK) }
-        for ((i, it) in items.withIndex()) {
-            val b = boxes.getOrNull(i) ?: continue
-            val l = it.layout
-            when {
-                i < nPresets && l != null -> {
-                    val key = HomeLayoutJson.json(l)
-                    // the pictures are made one a frame after the sheet opens (the schematic stands in meanwhile): no hitch on its open
-                    val bmp = thumbs[key]
-                    if (!thumbs.containsKey(key) && thumbWait.isEmpty() && thumbWait.add(key)) ui.post {
-                        thumbs[key] = host.thumb(l, b.width().toInt(), b.height().toInt()); thumbWait.remove(key); invalidate() }
-                    val save = if (!it.available) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom + 56f, 110) else -1
-                    if (bmp != null) c.drawBitmap(bmp, null, b, pBmp) else schematic(c, b, l)
-                    UiKit.module(c, b, edgeOnly = true)
-                    if (m.draft.samePlace(l)) UiKit.check(c, b.right - 28f, b.top + 28f, 38f, true)
-                    val np = bodyP(32f, if (i == m.sheetSel) Theme.gold else Theme.text, align = Paint.Align.CENTER)
-                    c.drawText(Tr.t(it.name), b.centerX(), b.bottom + 40f, np)
-                    if (save >= 0) c.restoreToCount(save)
-                    if (i == m.sheetSel) goldBox(c, b)
-                }
-                i < nPresets + HomePresets.SLOTS -> {
-                    if (i == nPresets) {
-                        val lp = bodyP(34f, Theme.dim)
-                        c.drawText(Tr.t("Mine"), full.left + 26f, b.centerY() - (lp.ascent() + lp.descent()) / 2f, lp)
-                    }
-                    if (l == null) {
-                        // an empty slot says what a tap does (touch's "Save here"; X with the controller)
-                        pLine.pathEffect = dash; pLine.strokeWidth = 2.5f; pLine.color = Theme.bronze; pLine.alpha = 200
-                        c.drawRoundRect(b, 10f, 10f, pLine); pLine.pathEffect = null
-                        val pp = bodyP(30f, Theme.dim)
-                        val sp = bodyP(22f, Theme.dim)
-                        val word = Tr.t("Save here")
-                        val tw = pp.measureText(it.name) + 12f + sp.measureText(word)
-                        val fit = tw <= b.width() - 16f
-                        val x0 = if (fit) b.centerX() - tw / 2f else b.centerX() - pp.measureText(it.name) / 2f
-                        c.drawText(it.name, x0, b.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
-                        if (fit) c.drawText(word, x0 + pp.measureText(it.name) + 12f, b.centerY() - (sp.ascent() + sp.descent()) / 2f, sp)
-                    } else UiKit.choice(c, b, it.name, chosen = m.draft.samePlace(l), textSize = 30f)
-                    if (i == m.sheetSel) UiKit.focus(c, b)
-                    sheetFlash(c, b, i == m.sheetSel)
-                }
-                else -> {
-                    UiKit.choice(c, b, it.name, chosen = m.allChars, textSize = 28f)
-                    if (i == m.sheetSel) UiKit.focus(c, b)
-                }
-            }
-            if (i < nPresets) sheetFlash(c, b, i == m.sheetSel)
-        }
-        sheetHit.clear(); sheetHit.addAll(boxes)
-    }
-    /** a refused pick in the sheet (an empty slot's Use, a dimmed preset): the picked item's edge red for FLASH_MS */
-    private fun sheetFlash(c: Canvas, b: RectF, picked: Boolean) {
-        if (!picked) return
-        val (s, at) = host.flash ?: return
-        if (s != EditStop.CHIP) return
-        val t = SystemClock.uptimeMillis() - at
-        if (t in 0 until HomeEditModel.FLASH_MS) {
-            edgeColour(c, b, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
-            postInvalidateOnAnimation()
-        }
-    }
-    private val sheetHit = ArrayList<RectF>()
-
-    /** the drawn stand-in for a layout's picture: its boxes from the solver, each a module well */
-    private fun schematic(c: Canvas, r: RectF, l: HomeLayout) {
-        val s = HomeLayoutSolver.places(l, HomeLayoutSolver.State(card = true, cardH = 118f))
-        val k = r.width() / 1240f
-        pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; c.drawRect(r, pFill)
-        for ((p, b) in s.boxes) {
-            if (p == HomePart.AURAS) continue
-            val rr = RectF(r.left + b.l * k, r.top + b.t * k, r.left + b.r * k, r.top + b.b * k)
-            pFill.color = when (p) { HomePart.MAP -> Color.rgb(86, 98, 54); HomePart.QUESTS -> Color.rgb(70, 54, 22); HomePart.BARS -> Color.rgb(30, 26, 20)
-                HomePart.STRIP, HomePart.CAST2 -> Color.rgb(40, 52, 90); else -> Theme.panel }
-            c.drawRoundRect(rr, 6f, 6f, pFill)
-        }
-    }
-
     // ---------------------------------------------------------------- the Add tray ("+")
 
     private fun trayBoxes(m: HomeEditModel): List<RectF> {
@@ -909,48 +777,19 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
     private val trayHit = ArrayList<RectF>()
 
-    // ---------------------------------------------------------------- the prompt (LayoutView's: Save highlighted)
-
-    private val promptHit = ArrayList<RectF>()
-    private fun drawPrompt(c: Canvas, m: HomeEditModel, k: Float = 1f) {
-        val full = RectF(0f, 0f, width.toFloat(), height.toFloat())
-        // the dim fades in, the box pops (0.9 -> 1, a little past)
-        pFill.style = Paint.Style.FILL; pFill.color = Color.argb((170 * (k / 0.5f).coerceIn(0f, 1f)).toInt(), 0, 0, 0); c.drawRect(full, pFill)
-        val box = RectF(full.centerX() - 380f, full.centerY() - 150f, full.centerX() + 380f, full.centerY() + 120f)
-        val sv = c.save()
-        if (abs(k - 1f) > 0.001f) popIn(c, k, box, box.centerX(), box.centerY(), PROMPT_FROM)
-        UiKit.pane(c, box)
-        val tp = titleP(36f, Theme.gold, align = Paint.Align.CENTER)
-        c.drawText(Tr.t("Unsaved changes"), box.centerX(), box.top + 70f, tp)
-        val words = HomeEditModel.PROMPT
-        val bw = (box.width() - 4 * 24f) / 3f
-        promptHit.clear()
-        for ((i, wd) in words.withIndex()) {
-            val b = RectF(box.left + 24f + i * (bw + 24f), box.bottom - 110f, box.left + 24f + i * (bw + 24f) + bw, box.bottom - 30f)
-            if (i == m.promptSel) UiKit.button(c, b, wd, UiKit.okGlyph()) else UiKit.button(c, b, wd)
-            if (i == m.promptSel) UiKit.focus(c, b)
-            promptHit += b
-        }
-        c.restoreToCount(sv)
-    }
-
     // ---------------------------------------------------------------- the edit ribbon (in the XP bar's place, drawn by the Strip)
 
-    class Ribbon(val title: RectF, val chip: RectF, val arrowL: RectF, val arrowR: RectF, val plus: RectF)
+    /** the ribbon's pieces (the Strip's px): "+" at its left (drawn only while something is off Home), Done at its right */
+    class Ribbon(val plus: RectF, val done: RectF)
 
     /** the ribbon's pieces in the Strip's px (its top [Strip.TRACKS]) for a bar [w] wide */
     fun ribbon(w: Float): Ribbon {
         val h = Strip.TRACKS.toFloat()
-        val tp = titleP(RIBBON_TITLE)
-        val title = RectF(14f, 0f, 14f + tp.measureText(Tr.t("Edit Home")), h)
-        val np = bodyP(RIBBON_TEXT)
-        val name = host.model?.chipName ?: ""
-        val nameW = max(150f, np.measureText(Tr.t(name)) + 16f)
-        val chip = RectF(title.right + 18f, 2f, title.right + 18f + 30f + nameW + 30f, h - 2f)
-        val arrowL = RectF(chip.left, chip.top, chip.left + 34f, chip.bottom)
-        val arrowR = RectF(chip.right - 34f, chip.top, chip.right, chip.bottom)
-        val plus = RectF(chip.right + 14f, 2f, chip.right + 14f + 46f, h - 2f)
-        return Ribbon(title, chip, arrowL, arrowR, plus)
+        val plus = RectF(14f, 2f, 14f + 46f, h - 2f)
+        val tp = bodyP(RIBBON_TEXT)
+        val dw = max(DONE_MIN_W, max(tp.measureText(Tr.t("Done")), tp.measureText(Tr.t("Discard"))) + GLYPH + 40f)
+        val done = RectF(w - 10f - dw, 2f, w - 10f, h - 2f)
+        return Ribbon(plus, done)
     }
 
     /** the ribbon's slide (1 = up over the XP track; the Strip draws the track under it while it is below 1) */
@@ -973,71 +812,70 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.drawLine(0f, 1f, g0, 1f, pLine); c.drawLine(g1, 1f, w, 1f, pLine)
         c.drawLine(0f, h - 1f, g0, h - 1f, pLine); c.drawLine(g1, h - 1f, w, h - 1f, pLine)
         val r = ribbon(w)
-        val tp = titleP(RIBBON_TITLE, Theme.gold)
-        c.drawText(Tr.t("Edit Home"), r.title.left, h / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
-        // the layout chip: its value between the kit's gold arrows (the tabs-open-on-landing look)
-        pFill.color = Theme.raised; c.drawRoundRect(r.chip, 6f, 6f, pFill)
-        pLine.strokeWidth = 2f; pLine.color = if (m.cursor == EditStop.CHIP) Theme.gold else Theme.bronze; pLine.alpha = 255
-        c.drawRoundRect(r.chip, 6f, 6f, pLine)
-        arrow(c, r.arrowL, true); arrow(c, r.arrowR, false)
-        val np = bodyP(RIBBON_TEXT, if (m.cursor == EditStop.CHIP) Theme.gold else Theme.text, align = Paint.Align.CENTER)
-        val ny = h / 2f - (np.ascent() + np.descent()) / 2f
-        val fk = host.chipFlip(); val was = host.chipWas
-        if (fk < 1f && was != null && host.chipDir != 0) {
-            // a flip: the old name slides out the way it went, the new one in from the other side
-            val cs = c.save()
-            c.clipRect(r.arrowL.right, r.chip.top, r.arrowR.left, r.chip.bottom)
-            val d = host.chipDir * CHIP_SLIDE
-            val full = np.alpha
-            np.alpha = (full * (1f - fk)).toInt(); c.drawText(Tr.t(was), r.chip.centerX() - d * fk, ny, np)
-            np.alpha = (full * fk).toInt(); c.drawText(Tr.t(m.chipName), r.chip.centerX() + d * (1f - fk), ny, np)
-            np.alpha = full
-            c.restoreToCount(cs)
-        } else c.drawText(Tr.t(m.chipName), r.chip.centerX(), ny, np)
-        if (m.cursor == EditStop.CHIP && m.sheet == null) UiKit.focus(c, r.chip)
         if (m.plusShown) {
+            pLine.strokeWidth = 2f; pLine.alpha = 255
             pFill.color = Theme.raised; c.drawRoundRect(r.plus, 6f, 6f, pFill)
             pLine.color = if (m.cursor == EditStop.PLUS) Theme.gold else Theme.bronze; c.drawRoundRect(r.plus, 6f, 6f, pLine)
             val pp = bodyP(30f, Theme.gold, align = Paint.Align.CENTER)
             c.drawText("+", r.plus.centerX(), h / 2f - (pp.ascent() + pp.descent()) / 2f, pp)
             if (m.cursor == EditStop.PLUS && m.sheet == null) UiKit.focus(c, r.plus)
         }
-        // the hints, one word each, right of the disc
-        hints(c, w - 14f, h / 2f, hintsFor(m, m.menu?.let { host.menuRows(it).getOrNull(m.menuRow)?.kind }))
+        drawDone(c, r.done, h)
+        // the hints, one word each, right of the disc and left of Done
+        hints(c, r.done.left - 18f, h / 2f, hintsFor(m, m.menu?.let { host.menuRows(it).getOrNull(m.menuRow)?.kind }))
         c.restoreToCount(save)
     }
 
-    private fun arrow(c: Canvas, r: RectF, left: Boolean) {
-        val pic = UiKit.tex(if (left) "move_arrow_left" else "move_arrow_right")
-        val s = r.height() * 0.8f
-        val d = RectF(r.centerX() - s / 2f, r.centerY() - s / 2f, r.centerX() + s / 2f, r.centerY() + s / 2f)
-        if (pic != null) { c.drawBitmap(pic, null, d, pBmp); return }
-        path.reset()
-        if (left) { path.moveTo(d.right - 6f, d.top + 4f); path.lineTo(d.left + 6f, d.centerY()); path.lineTo(d.right - 6f, d.bottom - 4f) }
-        else { path.moveTo(d.left + 6f, d.top + 4f); path.lineTo(d.right - 6f, d.centerY()); path.lineTo(d.left + 6f, d.bottom - 4f) }
-        path.close()
-        pFill.color = Theme.gold; c.drawPath(path, pFill)
+    /**
+     * the ribbon's one button: "Done" with B's glyph (the comic-ink kit's raised button, a gold edge); held, its gold ring fills round
+     * it towards Discard and its word reads "Discard" (the hold's own feedback: no text elsewhere)
+     */
+    private val ringMeasure = android.graphics.PathMeasure()
+    private val ringPart = Path()
+    private fun drawDone(c: Canvas, b: RectF, h: Float) {
+        val k = host.holdK()
+        pFill.style = Paint.Style.FILL; pFill.color = Theme.raised; pFill.alpha = 255
+        c.drawRoundRect(b, 6f, 6f, pFill)
+        if (k != null && k > 0f) {
+            // the hold fills the button from its left (gold, see-through), the ring traced round it as it goes
+            val sv = c.save()
+            c.clipRect(b.left, b.top, b.left + b.width() * k.coerceIn(0f, 1f), b.bottom)
+            pFill.color = Theme.gold; pFill.alpha = 90; c.drawRoundRect(b, 6f, 6f, pFill); pFill.alpha = 255
+            c.restoreToCount(sv)
+            pLine.strokeWidth = 4f; pLine.color = Theme.gold; pLine.alpha = 255
+            path.reset(); path.addRoundRect(b, 6f, 6f, Path.Direction.CW)
+            ringMeasure.setPath(path, false)
+            ringPart.reset()
+            ringMeasure.getSegment(0f, ringMeasure.length * k.coerceIn(0f, 1f), ringPart, true)
+            c.drawPath(ringPart, pLine)
+        }
+        pLine.strokeWidth = 2f; pLine.color = Theme.gold; pLine.alpha = 255
+        c.drawRoundRect(b, 6f, 6f, pLine)
+        val word = Tr.t(if (k != null && k > 0f) "Discard" else "Done")
+        val tp = bodyP(RIBBON_TEXT, Theme.gold, align = Paint.Align.LEFT)
+        val tw = tp.measureText(word)
+        val x0 = b.centerX() - (GLYPH + 6f + tw) / 2f
+        UiKit.pad(c, UiKit.backGlyph(), x0 + GLYPH / 2f, h / 2f, GLYPH)
+        c.drawText(word, x0 + GLYPH + 6f, h / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
     }
 
     /** the hints for the state: glyph names (the chosen set's) and one word each */
     fun hintsFor(m: HomeEditModel, row: MenuRow.Kind? = null): List<Pair<String, String>> {
         val a = UiKit.okGlyph(); val b = UiKit.backGlyph(); val x = UiKit.xGlyph(); val y = UiKit.yGlyph()
         return when {
-            m.prompt -> listOf(a to "OK", b to "Back")
-            m.sheet == HomeEditModel.Sheet.LAYOUTS -> listOf(a to "Use", x to "Save here", b to "Back")
-            m.sheet == HomeEditModel.Sheet.ADD -> listOf(a to "Add", b to "Back")
+            m.sheet != null -> listOf(a to "Add", b to "Back")
             // fix round 3: a stepper row (the Map's Zoom out / in) changes with Left / Right only: the D-pad's glyph, never A's
             m.menu != null && row == MenuRow.Kind.STEP -> listOf(DPAD to "Change", b to "Back")
             m.menu != null -> listOf(a to "Change", b to "Back")
             m.lifted == EditStop.ROOMS -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
             m.lifted != null -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
-            m.cursor == EditStop.CHIP -> listOf(DPAD to "Layout", a to "Layouts", b to "Done")
-            m.cursor == EditStop.PLUS -> listOf(a to "Add", b to "Done")
-            m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width", b to "Done")
-            m.cursor == EditStop.ROOMS -> listOf(a to "Move", x to "Options", b to "Done")
-            m.cursor == EditStop.BAND || m.cursor == EditStop.CLOCK ->
-                (if (m.cursor == EditStop.BAND) listOf(a to "Options", y to "Size") else listOf(a to "Options")) + (b to "Done")
-            else -> listOf(a to "Move", x to "Options", y to "Size", b to "Done")
+            // at the top level B is Done: the Done button wears its glyph (no "Done" hint beside it)
+            m.cursor == EditStop.PLUS -> listOf(a to "Add")
+            m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width")
+            m.cursor == EditStop.ROOMS -> listOf(a to "Move", x to "Options")
+            m.cursor == EditStop.BAND -> listOf(a to "Options", y to "Size")
+            m.cursor == EditStop.CLOCK -> listOf(a to "Options")
+            else -> listOf(a to "Move", x to "Options", y to "Size")
         }
     }
 
@@ -1057,25 +895,36 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
     }
 
-    /** a finger on the ribbon (Strip px): the chip's arrows flip, the chip opens the sheet, "+" the tray. True = the ribbon's */
-    fun ribbonTouch(x: Float, y: Float, up: Boolean): Boolean {
-        val m = host.liveModel ?: return false
+    /** the finger that went down on Done (its long press runs: [Host.holdDone]) */
+    private var doneDown = false
+
+    /**
+     * a finger on the ribbon (Strip px; [action] = MotionEvent's ACTION_DOWN / ACTION_UP / ACTION_CANCEL): Done - a tap is Done, a long
+     * press Discard (the host's hold timer) - and "+" the Add tray. True = the ribbon's
+     */
+    fun ribbonTouch(x: Float, y: Float, action: Int): Boolean {
+        if (action == MotionEvent.ACTION_CANCEL) { if (doneDown) { doneDown = false; host.holdDone(false) }; return true }
+        val m = host.liveModel ?: run { doneDown = false; return false }
         host.poke()
-        if (m.parked || y < 0f || y > Strip.TRACKS) return false
-        // the prompt is modal (its own buttons answer); an open sheet / tray closes first
-        if (m.prompt) return true
-        if (m.sheet != null) { if (up) { m.closeSheet(); invalidate() }; return true }
+        val up = action == MotionEvent.ACTION_UP
+        if (m.parked || (!up && (y < 0f || y > Strip.TRACKS))) return false
         val r = ribbon(width.toFloat().takeIf { it > 0f } ?: 1240f)
-        if (!up) return r.chip.contains(x, y) || (m.plusShown && r.plus.contains(x, y))
-        when {
-            r.arrowL.contains(x, y) -> host.run(m.flip(-1))
-            r.arrowR.contains(x, y) -> host.run(m.flip(1))
-            r.chip.contains(x, y) -> host.run(m.tap(EditStop.CHIP))
-            m.plusShown && r.plus.contains(x, y) -> host.run(m.tap(EditStop.PLUS))
-            else -> return false
+        val onDone = RectF(r.done).apply { inset(-8f, -6f) }.contains(x, y)
+        if (!up) {
+            if (onDone) { doneDown = true; host.holdDone(true); invalidate(); return true }
+            // an open tray closes first (its UP is the ribbon's too)
+            return m.sheet != null || (m.plusShown && r.plus.contains(x, y))
         }
-        invalidate()
-        return true
+        if (doneDown) {
+            doneDown = false
+            val fired = host.holdDone(false)
+            if (!fired && onDone) host.run(m.done())
+            invalidate()
+            return true
+        }
+        if (m.sheet != null) { m.closeSheet(); invalidate(); return true }
+        if (m.plusShown && r.plus.contains(x, y)) { host.run(m.tap(EditStop.PLUS)); invalidate(); return true }
+        return false
     }
 
     // ---------------------------------------------------------------- phase 4: the room bar (drawn by the Strip, in its px)
@@ -1093,7 +942,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (a <= 0.01f || m.parked) return
         val row = bar.buttonsBox().apply { inset(4f, 4f) }
         val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, bar.width.toFloat(), bar.height.toFloat(), (255 * a).toInt()) else -1
-        val sel = m.cursor == EditStop.ROOMS && m.menu == null && m.sheet == null && !m.prompt
+        val sel = m.cursor == EditStop.ROOMS && m.menu == null && m.sheet == null
         val onBar = m.cursor == EditStop.ROOMS
         if (layer == 0) {
             if (!onBar) {
@@ -1136,7 +985,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 barDownX = x; barDownY = y; barDragging = false
-                barDownSlot = if (m.prompt || m.sheet != null) -1 else bar.slotAt(x, y)
+                barDownSlot = if (m.sheet != null) -1 else bar.slotAt(x, y)
             }
             MotionEvent.ACTION_MOVE -> {
                 val i = barDownSlot
@@ -1150,7 +999,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             }
             MotionEvent.ACTION_UP -> {
                 if (barDragging) { host.run(m.dragEnd(x, y, now, host.geo)); barDragging = false }
-                else if (m.prompt) {}
                 else if (m.sheet != null) m.closeSheet()
                 else if (barDownSlot >= 0 && abs(x - barDownX) <= TAP_SLOP && abs(y - barDownY) <= TAP_SLOP) host.run(m.barTap(barDownSlot))
                 barDownSlot = -1
@@ -1188,8 +1036,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val now = SystemClock.uptimeMillis()
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = x; downY = y; dragging = false; carried = false; downAt = now
-                downStop = if (m.menu == null && m.sheet == null && !m.prompt) stopAt(x, y) else null
+                downX = x; downY = y; dragging = false; carried = false
+                downStop = if (m.menu == null && m.sheet == null) stopAt(x, y) else null
             }
             MotionEvent.ACTION_POINTER_DOWN -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null }
             MotionEvent.ACTION_MOVE -> {
@@ -1206,7 +1054,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             }
             MotionEvent.ACTION_UP -> {
                 if (dragging) { host.run(m.dragEnd(x, y, now, host.geo)); dragging = false }
-                else if (abs(x - downX) <= TAP_SLOP && abs(y - downY) <= TAP_SLOP) tapAt(m, x, y, held = now - downAt >= HomeEditModel.HOLD_MS)
+                else if (abs(x - downX) <= TAP_SLOP && abs(y - downY) <= TAP_SLOP) tapAt(m, x, y)
                 downStop = null
             }
             MotionEvent.ACTION_CANCEL -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null }
@@ -1226,31 +1074,11 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return null
     }
 
-    /** when the finger went down (a hold on a filled slot of the Layouts sheet = Save here) */
-    private var downAt = 0L
-
-    private fun tapAt(m: HomeEditModel, x: Float, y: Float, held: Boolean = false) {
-        if (m.prompt) { promptHit.indexOfFirst { it.contains(x, y) }.takeIf { it >= 0 }?.let { host.run(m.promptPick(it)) }; return }
-        when (m.sheet) {
-            HomeEditModel.Sheet.LAYOUTS -> {
-                val i = sheetHit.indexOfFirst { it.contains(x, y) }
-                // a device slot by touch (X's "Save here" with the controller): an EMPTY slot's tap keeps the draft there; a HOLD on a
-                // filled one keeps it there too (its tap uses it)
-                val si = i - m.flips.count { !it.name.startsWith(HomeEditModel.SLOT_MARK) }
-                val slotNow = if (si in 0 until HomePresets.SLOTS) host.slots().getOrNull(si) else null
-                when {
-                    i < 0 -> m.closeSheet()
-                    si in 0 until HomePresets.SLOTS && (slotNow == null || held) -> host.run(m.sheetSaveHere(i))
-                    else -> host.run(m.sheetUse(i) { host.slots().getOrNull(it) })
-                }
-                return
-            }
-            HomeEditModel.Sheet.ADD -> {
-                val i = trayHit.indexOfFirst { it.contains(x, y) }
-                if (i >= 0) host.run(m.addBack(m.removed.getOrNull(i))) else m.closeSheet()
-                return
-            }
-            null -> {}
+    private fun tapAt(m: HomeEditModel, x: Float, y: Float) {
+        if (m.sheet != null) {
+            val i = trayHit.indexOfFirst { it.contains(x, y) }
+            if (i >= 0) host.run(m.addBack(m.removed.getOrNull(i))) else m.closeSheet()
+            return
         }
         if (m.menu != null) {
             if (lastMenuBox.contains(x, y)) {
@@ -1300,17 +1128,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         /** the most a short column tightens a menu's rows */
         const val MENU_K_MIN = 0.8f
         const val TAP_SLOP = 24f
-        const val RIBBON_TITLE = 26f
         const val RIBBON_TEXT = 22f
+        /** the ribbon's Done button's least width */
+        const val DONE_MIN_W = 150f
         const val GLYPH = 28f
         /** the D-pad's hint: Left and Right glyphs side by side */
         const val DPAD = "dpad"
-        /** the pops' starting scale (a menu, the prompt), the sheet's rise (px), the chip's name slide (px) */
+        /** a menu's pop's starting scale, the Add tray's rise (px) */
         const val MENU_FROM = 0.92f
         /** the text paints kept ([textP]) */
         private const val TEXT_CACHE = 40
-        const val PROMPT_FROM = 0.9f
         const val SHEET_RISE = 60f
-        const val CHIP_SLIDE = 24f
     }
 }

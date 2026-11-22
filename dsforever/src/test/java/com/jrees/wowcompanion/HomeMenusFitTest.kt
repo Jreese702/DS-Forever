@@ -212,7 +212,7 @@ class HomeMenusFitTest {
 
     /** the picture under a grown band scales to fit above a bar that stays (Compact's Both bar in a fight), never under the band */
     @Test fun theLbPictureScalesAboveABothBar() {
-        val l = HomePresets.byId(HomePresets.COMPACT)!!.apply(HomeLayout())
+        val l = HomeArrangements.of(HomeArrangements.COMPACT, HomeLayout())
         val r = S.places(l, HomeLayoutSolver.State(takeover = true))
         val strip = r.boxes.getValue(HomePart.STRIP)
         val bb = r.boxes.getValue(HomePart.BARS).b

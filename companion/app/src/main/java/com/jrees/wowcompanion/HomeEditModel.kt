@@ -5,63 +5,51 @@ import kotlin.math.abs
 /**
  * MOVABLE HOME, PHASE 2: EDIT MODE'S PURE STATE MACHINE (SPEC.txt "Live docks" sections 3, 4, 7, 8, 12 and 13; the user's rulings on
  * DECISIONS.txt, 2026-11-20: D4 the three ways in, D6 full size and live with the hints in the XP bar's place, D2 / D3 both touch bars
- * editable). The shape of LayoutModel.Editor (the top-screen editor the user signed off): one draft, a cursor, a lifted widget, a menu, a
- * sheet, the Save / Discard / Keep editing prompt; every input returns the [Fx] effects the view carries out. No Android types: the JVM
- * tests drive it press by press (HomeEditModelTest).
+ * editable; test build 1518, the user's rulings 2026-11-21: no layouts - no presets, no layout chip, no Layouts sheet, no LB / RB flips,
+ * no slots - and a ribbon with just "Done"). One draft, a cursor, a lifted widget, a menu, the Add tray; every input returns the [Fx]
+ * effects the view carries out. No Android types: the JVM tests drive it press by press (HomeEditModelTest).
  *
- * THE DRAFT: a [HomeLayout] Home is laid with while editing (HomeView.layoutNow); every change glides there on the one motion. Nothing is
- * written or sent to the add-on until Save (the DS toolbar's On / Off and "All characters" wait in the draft too). The menus' BEHAVIOUR
- * rows (the swing line, the clock's extras, hold to talk, the zoom ...) write at once through the same setters as Settings > Bottom screen
- * ([Fx.Press] -> BottomTiles.press): they are app-wide settings, not the layout.
+ * THE DRAFT: a [HomeLayout] Home is laid with while editing (HomeView.layoutNow); every change glides there on the one motion. It SAVES
+ * AS IT GOES (1518): each settled change ([settled]: nothing lifted, no finger down) is written by the view through the store's own
+ * per-character rules (HomeLayoutStore.editSave: the whole key only, the session's own fields laid on, a pending name's edit held).
+ * [saved] stays the record edit mode opened on: DISCARD (a long press on Done, a held B) puts it back. The DS toolbar's On / Off waits
+ * in the draft and is sent at Done. The menus' BEHAVIOUR rows (the swing line, the clock's extras, hold to talk, the zoom ...) write at
+ * once through the same setters as Settings > Bottom screen ([Fx.Press] -> BottomTiles.press): they are app-wide settings, not the
+ * layout, and Discard leaves them.
  *
  * THE BUTTONS (section 4): D-pad = the cursor between stops (spatial), with a widget lifted its next dock; A lift / drop (the band and the
- * clock: their menu; the layout chip: the Layouts sheet; "+": the Add tray); X the widget's menu; Y its size; Select = swap chat and map
- * (from any stop); Start = save and leave; LB / RB flip the layouts; B one step back: put back, close the menu / sheet / tray, then leave
- * (asking Save / Discard / Keep editing when something changed, Save highlighted).
+ * clock: their menu; "+": the Add tray); X the widget's menu; Y its size; Select = swap chat and map (from any stop); Start = Done; the
+ * shoulders do nothing here; B one step back: put back, close the menu / tray, then Done. A held B (the controller's direct feed) or a
+ * long press on Done = Discard.
  */
 enum class EditStop {
     /** [ROOMS] = phase 4's room bar (D3: reorder only): A lifts the room under its own cursor ([HomeEditModel.barSel]), never the bar */
-    BAND, CLOCK, CHAT, MAP, QUEST, DIVIDER, CAST, CHIP, PLUS, ROOMS;
+    BAND, CLOCK, CHAT, MAP, QUEST, DIVIDER, CAST, PLUS, ROOMS;
     /** a widget a finger or A can lift and dock elsewhere */
     val movable: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST
     /** a widget with the red X chip (it can be taken off Home and brought back with "+") */
     val removable: Boolean get() = this == QUEST || this == CAST
     /** a widget with a menu (X) */
-    val hasMenu: Boolean get() = this != DIVIDER && this != CHIP && this != PLUS
+    val hasMenu: Boolean get() = this != DIVIDER && this != PLUS
     /** the tag drawn on its dashed frame (terse: the widget's name) */
     val tag: String get() = when (this) {
         BAND -> "Controller"; CLOCK -> "Clock"; CHAT -> "Chat"; MAP -> "Map"; QUEST -> "Quest"; CAST -> "Tap-to-cast"
         ROOMS -> "Room bar"
-        DIVIDER -> ""; CHIP -> ""; PLUS -> ""
+        DIVIDER -> ""; PLUS -> ""
     }
 }
 
 class HomeEditModel(
-    /** the layout Home showed when edit mode opened (the active record): Discard goes back to it */
-    val saved: HomeLayout,
+    saved: HomeLayout,
     /** where the cursor starts: Chat from Settings and Y on the disc, the held widget from a hold */
     start: EditStop = EditStop.CHAT,
-    /** the layout chip's list (the presets on offer, then the device slots that hold a layout): a name and the layout it makes of [saved] */
-    val flips: List<Flip> = emptyList(),
-    /** the chip's name for [saved] (a preset's, a slot's, else Custom) */
-    val savedName: String = HomePresets.CLASSIC,
     /** the DS toolbar's switch as the add-on says it now (null = no Spells word: the row is not offered) */
     val toolbarNow: Boolean? = null,
-    /** the device slots NOW (a slot kept by "Save here" this session is used at once, on every route: A, a finger, the chip) */
-    val slotNow: (Int) -> HomeLayout? = { null },
-    /** the quest card's fold when edit mode opened (true = folded; null = not known: a landing never puts it back). Fix round 2: a
-     *  landing with no fold of its own (Classic, Big chat, a slot) puts this fold back after a passed-over Compact / Fighter pressed one */
-    val foldOpen: Boolean? = null,
 ) {
-    /** a layout the chip offers; [can] = selectable now (a device slot: while it holds a layout); [folded] = the quest card's fold the
-     *  preset sets when it is PICKED (Compact, Fighter: folded; null = the fold is left alone), applied live as the Settings tile does */
-    class Flip(val name: String, val can: () -> Boolean, val folded: Boolean? = null, val make: (HomeLayout) -> HomeLayout) {
-        constructor(name: String, available: Boolean = true, folded: Boolean? = null, make: (HomeLayout) -> HomeLayout) :
-            this(name, { available }, folded, make)
-        val available: Boolean get() = can()
-    }
-
     // ---------------------------------------------------------------- the state
+    /** the record Home showed when edit mode opened: Discard puts it back ([rebase] lays a change made while edit mode waited onto it) */
+    var saved: HomeLayout = saved
+        private set
     var draft: HomeLayout = saved
         private set
     var cursor: EditStop = start
@@ -75,31 +63,19 @@ class HomeEditModel(
     var menu: EditStop? = null
         private set
     var menuRow = 0
-    /** the open sheet: the Layouts sheet (A on the chip) or the Add tray ("+") */
-    enum class Sheet { LAYOUTS, ADD }
+    /** the open sheet: the Add tray ("+": the card or the bar back on Home) */
+    enum class Sheet { ADD }
     var sheet: Sheet? = null
         private set
     var sheetSel = 0
-    /** the Save / Discard / Keep editing prompt (B with a changed draft) */
-    var prompt = false
-        private set
-    var promptSel = 0
     /** the red X chip's "Remove?" pill on this widget (touch: the first tap asks, the second removes) */
     var removeAsk: EditStop? = null
         private set
-    /** a fight came: the chrome is away, Home plays the saved layout's fight, the draft waits ([park] / [resume]) */
+    /** a fight came (or another room): the chrome is away, Home plays the record's fight (the draft is saved already), edit mode waits
+     *  ([park] / [resume]) */
     var parked = false
         private set
-    /** "All characters" in the Layouts sheet: Save writes the draft to the default and every character (D5) */
-    var allChars = false
-        private set
-    /** a preset with a fold was PICKED this session (the chip, LB / RB, the Layouts sheet): its fold was pressed live; Discard puts the
-     *  fold back. A preset the saved record merely still holds never touches the fold */
-    var foldPicked = false
-        private set
-    /** a preset's fold is showing now (pressed by the last landing): the next landing without a fold of its own puts [foldOpen] back */
-    private var foldPressed = false
-    /** the DS toolbar's On / Off picked in the band's menu, sent at Save (null = unchanged) */
+    /** the DS toolbar's On / Off picked in the band's menu, sent at Done (null = unchanged; Discard drops it) */
     var toolbarWant: Boolean? = null
         private set
     /** the bar's / the card's last dock, for "+" (they come back where they were) */
@@ -107,25 +83,6 @@ class HomeEditModel(
     /** the column the bar last sat in (its ladder's way back up from Across) */
     private var barColumn: HomeModule = saved.cast.column ?: HomeModule.CHAT
     private var lastCard = if (saved.card != HomeLayout.CardDock.OFF) saved.card else HomeLayout.CardDock.ON_MAP
-    /** the flip the chip names (-1 = none yet; [flips].size = the player's own [handMade]) */
-    private var flipIdx = flips.indexOfFirst { it.available && it.make(saved).samePlace(saved) }
-    /**
-     * fix round 3: the player's OWN layout in the flip cycle (the chip's Left / Right, LB / RB) - the draft as it was when a flip first
-     * left it (a hand-made "Edited", or a saved layout no preset names). It sits right after the flip it was made from ([handAfter]; -1 =
-     * before the first), so Right still goes on to the next layout as before and the press back the other way always finds it: a flip
-     * never throws the player's changes away. Null = the draft was a named layout (nothing to keep)
-     */
-    private var handMade: HomeLayout? = null
-    private var handAfter = -1
-    /** the draft is the layout [flipIdx] names (a flip of it), not the player's own */
-    private fun onFlip(): Boolean = flipIdx in flips.indices && flips[flipIdx].available && draft.samePlace(flips[flipIdx].make(saved))
-    /** before a flip or a sheet pick leaves the draft: a draft no flip names is kept as the cycle's own entry ([handMade]) */
-    private fun keepHand() {
-        if (onFlip()) return
-        handMade = draft
-        if (flipIdx != flips.size) handAfter = flipIdx
-        flipIdx = flips.size
-    }
     /** PHASE 4, THE ROOM BAR: its own cursor (an index into the draft's [HomeLayout.rooms]; Left / Right while the cursor is on the bar) */
     var barSel = 0
         private set
@@ -133,16 +90,11 @@ class HomeEditModel(
     var barLifted: String? = null
         private set
 
-    /** something would be written by Save */
-    val dirty: Boolean get() = !draft.samePlace(saved) || allChars || (toolbarWant != null && toolbarWant != toolbarNow)
+    /** the session changed something against the record it opened on (Discard has something to put back) */
+    val changed: Boolean get() = !draft.samePlace(saved) || (toolbarWant != null && toolbarWant != toolbarNow)
 
-    /** the layout chip's word: the flip it names, the saved name while nothing changed, else "Edited" */
-    val chipName: String get() {
-        val f = flips.getOrNull(flipIdx)
-        // a device slot reads "1" .. "3" as the Settings tile does (its flip is named with SLOT_MARK)
-        if (f != null && f.available && draft.samePlace(f.make(saved))) return f.name.removePrefix(SLOT_MARK)
-        return if (draft.samePlace(saved)) savedName else EDITED
-    }
+    /** nothing is lifted and no finger is down: the draft is settled (the view saves it now) */
+    val settled: Boolean get() = lifted == null && drag == null
 
     /** "+" shows: the bar or the card is off Home */
     val plusShown: Boolean get() = draft.cast == HomeLayout.CastDock.OFF || draft.card == HomeLayout.CardDock.OFF
@@ -155,19 +107,18 @@ class HomeEditModel(
     /** the effects of one input, for the view (HomeView's edit controller) */
     sealed class Fx {
         /** the draft changed: lay Home again, gliding [ms] (EDIT_STEP 120 a lifted step, MODULE_OPEN 240 a change, MODULE_CLOSE 200 a
-         *  settle); [morph] = a layout flip's way (-1 / +1: the modules cascade from the cursor, the chip's name slides; 0 = none) */
-        data class Relay(val ms: Long, val morph: Int = 0) : Fx()
-        /** write the draft (+ All characters, + the toolbar's switch) and leave */
-        object Save : Fx()
-        /** leave without writing: Home glides back to [saved] */
-        object Leave : Fx()
+         *  settle); the view saves a settled draft ([settled]) */
+        data class Relay(val ms: Long) : Fx()
+        /** leave: every change is saved already (the toolbar's switch is sent now) */
+        object Done : Fx()
+        /** leave, putting back the record edit mode opened on ([saved]): Home glides back to it */
+        object Discard : Fx()
         /** a behaviour row: BottomTiles.press(key, k) or the view's own setter ("fold", "castparty") */
         data class Press(val key: String, val k: Int) : Fx()
-        /** keep the draft in device slot [i] ("Save here") */
-        data class SaveSlot(val i: Int) : Fx()
-        /** the bar's slots: Save, then the Controller room's Tap-to-cast tab (padtab 39 then 29) */
+        /** the bar's slots: the Controller room's Tap-to-cast tab (padtab 39 then 29); edit mode waits there when the session changed
+         *  something (Discard can still put it back), else it ends */
         object EditSlots : Fx()
-        /** the chat's filters: Save, then the Chat room's checklist */
+        /** the chat's filters: the Chat room's checklist (edit mode waits there as for the slots) */
         object Filters : Fx()
         /** refused (a dimmed choice, Fighter before phase 3): one red pulse on the stop */
         data class Refuse(val stop: EditStop?) : Fx()
@@ -185,17 +136,15 @@ class HomeEditModel(
     fun key(k: String, stops: Map<EditStop, HomeLayoutSolver.Box>, menuRows: (EditStop) -> List<MenuRow> = { emptyList() }): List<Fx> {
         if (parked) return emptyList()
         removeAsk = null
-        if (prompt) return promptKey(k)
-        sheet?.let { return sheetKey(it, k) }
+        if (sheet != null) return trayKey(k)
         menu?.let { return menuKey(it, k, menuRows(it)) }
         lifted?.let { return liftedKey(it, k) }
         return when (k) {
             "PADDLEFT", "PADDRIGHT", "PADDUP", "PADDDOWN" -> {
                 val dx = when (k) { "PADDLEFT" -> -1; "PADDRIGHT" -> 1; else -> 0 }
                 val dy = when (k) { "PADDUP" -> -1; "PADDDOWN" -> 1; else -> 0 }
-                // on the divider Left / Right step the width; on the chip they flip the layouts (landing applies, the tabs' rule)
+                // on the divider Left / Right step the width
                 if (cursor == EditStop.DIVIDER && dx != 0) return widthStep(dx)
-                if (cursor == EditStop.CHIP && dx != 0) return flip(dx)
                 // on the room bar Left / Right walk its rooms (the Home disc is no stop: the cursor steps over it)
                 if (cursor == EditStop.ROOMS && dx != 0) { barSel = (barSel + dx).coerceIn(0, (draft.rooms.size - 1).coerceAtLeast(0)); return emptyList() }
                 nearest(stops, cursor, dx, dy)?.let { cursor = it }
@@ -205,28 +154,21 @@ class HomeEditModel(
             "PAD3" -> if (cursor.hasMenu && cursor in stops) openMenu(cursor) else emptyList()
             "PAD4" -> sizeStep(cursor)
             "PADBACK" -> swap()
-            "PADFORWARD" -> listOf(Fx.Save)
-            "PADLSHOULDER" -> flip(-1)
-            "PADRSHOULDER" -> flip(1)
+            "PADFORWARD" -> done()
             "PAD2" -> back()
             else -> emptyList()
         }
     }
 
     private fun a(): List<Fx> = when (cursor) {
-        EditStop.CHIP -> { sheet = Sheet.LAYOUTS; sheetSel = flipIdx.takeIf { it in flips.indices } ?: 0; emptyList() }
         EditStop.PLUS -> if (plusShown) { sheet = Sheet.ADD; sheetSel = 0; emptyList() } else emptyList()
         EditStop.BAND, EditStop.CLOCK -> openMenu(cursor)
         EditStop.DIVIDER -> emptyList()
         else -> lift(cursor)
     }
 
-    /** B one step back at the top level: leave, asking first when something changed */
-    private fun back(): List<Fx> {
-        if (!dirty) return listOf(Fx.Leave)
-        prompt = true; promptSel = 0                                   // Save highlighted (LayoutView's signed-off prompt)
-        return emptyList()
-    }
+    /** B one step back at the top level: Done (every change is saved already) */
+    private fun back(): List<Fx> = done()
 
     fun lift(s: EditStop): List<Fx> {
         if (s == EditStop.ROOMS) {
@@ -273,7 +215,7 @@ class HomeEditModel(
         "PAD1" -> drop()
         "PAD2" -> putBack()
         "PADBACK" -> swap()
-        "PADFORWARD" -> { drop(); listOf(Fx.Save) }
+        "PADFORWARD" -> { drop(); done() }
         else -> emptyList()
     } else when (k) {
         "PADDLEFT", "PADDRIGHT" -> step(s, if (k == "PADDLEFT") -1 else 1, horizontal = true)
@@ -282,7 +224,7 @@ class HomeEditModel(
         "PAD2" -> putBack()
         "PAD4" -> sizeStep(s)
         "PADBACK" -> swap()
-        "PADFORWARD" -> { drop(); listOf(Fx.Save) }
+        "PADFORWARD" -> { drop(); done() }
         else -> emptyList()
     }
 
@@ -347,52 +289,6 @@ class HomeEditModel(
         return change(draft.copy(chatShare = SHARES[i]), Motion.MODULE_OPEN)
     }
 
-    /** the chip's arrows, LB / RB: the next layout, live (each one made from the layout Home had when edit mode opened); the player's own
-     *  layout ([handMade]) is one more stop of the cycle, after the last flip (fix round 3) */
-    fun flip(d: Int): List<Fx> {
-        if (parked || flips.isEmpty()) return emptyList()
-        keepHand()
-        val hand = handMade
-        val own = flips.size                                              // the player's own stop in [order]
-        val order = ArrayList<Int>()
-        if (hand != null && handAfter !in flips.indices) order += own
-        for (i in flips.indices) { order += i; if (hand != null && i == handAfter) order += own }
-        val n = order.size
-        var at = order.indexOf(flipIdx)
-        repeat(n) {
-            at = if (at < 0) (if (d > 0) 0 else n - 1) else (at + d + n) % n
-            val e = order[at]
-            if (e == own && hand != null) {
-                flipIdx = own
-                return morphed(change(hand, Motion.MODULE_OPEN), d) + foldOf(null)
-            }
-            if (e != own && flips[e].available) {
-                flipIdx = e
-                return morphed(change(flips[e].make(saved), Motion.MODULE_OPEN), d) + foldOf(flips[e])
-            }
-        }
-        return emptyList()
-    }
-
-    /** a landing's fold, pressed live (K_FOLD 0 = folded, 1 = open): the preset's own (Compact, Fighter); a landing with none ([f] null
-     *  or its folded null: Classic, Big chat, a slot) after one that pressed a fold = the fold edit mode opened with ([foldOpen]), so
-     *  browsing past Compact never leaves the card folded for a layout that never asked for it (fix round 2) */
-    private fun foldOf(f: Flip?): List<Fx> {
-        val fo = f?.folded
-        if (fo == null) {
-            val open = foldOpen
-            if (!foldPressed || open == null) return emptyList()
-            foldPressed = false
-            return listOf(Fx.Press(K_FOLD, if (open) 0 else 1))
-        }
-        foldPicked = true
-        foldPressed = true
-        return listOf(Fx.Press(K_FOLD, if (fo) 0 else 1))
-    }
-
-    /** a layout flip's glide: [d] its way (the modules cascade, the chip's name slides that way) */
-    private fun morphed(fx: List<Fx>, d: Int): List<Fx> = fx.map { if (it is Fx.Relay) it.copy(morph = if (d < 0) -1 else 1) else it }
-
     /** one draft change: the effects ([ms] its glide); nothing when it changes nothing */
     private fun change(to: HomeLayout, ms: Long): List<Fx> {
         if (to == draft) return emptyList()
@@ -438,7 +334,7 @@ class HomeEditModel(
                 MenuRow.Kind.BUTTON -> row(s, r, 0)
             }
             "PAD2", "PAD3" -> { menu = null; emptyList() }
-            "PADFORWARD" -> { menu = null; listOf(Fx.Save) }
+            "PADFORWARD" -> { menu = null; done() }
             "PADBACK" -> swap()
             else -> emptyList()
         }
@@ -481,108 +377,49 @@ class HomeEditModel(
     }
 
     /** fix round 1: the widget [w] turned Off from its OWN menu ([s] = w): the menu closes and the cursor goes where remove() puts it
-     *  ("+" now shown, else the chip) - never left on a widget with no box */
+     *  ("+", shown now that it is off) - never left on a widget with no box */
     private fun offed(s: EditStop, w: EditStop, off: Boolean) {
         if (!off || s != w) return
         menu = null
-        if (cursor == w) cursor = if (plusShown) EditStop.PLUS else EditStop.CHIP
+        if (cursor == w) cursor = if (plusShown) EditStop.PLUS else EditStop.CHAT
     }
 
     /**
      * fix round 1: the cursor's widget has NO box now ([stops]: the card or the bar off, Party mode's Hide sliding the bar away, F2):
-     * its menu closes, its lift ends, the cursor goes to "+" when shown (and drawn), else the chip. True = the cursor moved
+     * its menu closes, its lift ends, the cursor goes to "+" when shown (and drawn), else the chat. True = the cursor moved
      */
     fun cursorCheck(stops: Map<EditStop, HomeLayoutSolver.Box>): Boolean {
-        if (parked || sheet != null || prompt) return false
+        if (parked || sheet != null) return false
         val c = cursor
         if (c !in GONE_CHECKED) return false
-        if (c in stops || EditStop.CHIP !in stops) return false
+        // [stops] laid (the chat always has a box on Home): only then is a missing box a widget gone
+        if (c in stops || EditStop.CHAT !in stops) return false
         if (menu == c) menu = null
         if (lifted == c) { lifted = null; liftFrom = null }
-        // fix round 2: the clock (only on the small-diamonds rest: LB / RB to a thin-row layout takes it away) falls back to the band
-        // it sat in; the card and the bar to "+" when shown (and drawn), else the chip
+        // fix round 2: the clock (only on the small-diamonds rest: the thin row takes it away) falls back to the band it sat in; the
+        // card and the bar to "+" when shown (and drawn), else the chat
         cursor = when {
             c == EditStop.CLOCK && EditStop.BAND in stops -> EditStop.BAND
             plusShown && EditStop.PLUS in stops -> EditStop.PLUS
-            else -> EditStop.CHIP
+            else -> EditStop.CHAT
         }
         return true
     }
 
-    // ---------------------------------------------------------------- the sheets (the Layouts sheet, the Add tray)
+    // ---------------------------------------------------------------- the Add tray
 
-    /** the Layouts sheet's stops: every flip, then the three slots ("Mine"), then "All characters" */
-    fun sheetCount(slots: Int = HomePresets.SLOTS): Int = presetCount + slots + 1
-    private val presetCount: Int get() = flips.count { !it.name.startsWith(SLOT_MARK) }
-
-    private fun sheetKey(s: Sheet, k: String): List<Fx> {
-        val n = if (s == Sheet.LAYOUTS) sheetCount() else removed.size
+    /** a press while the Add tray is open (its list runs down: Up / Down, Left / Right alike) */
+    private fun trayKey(k: String): List<Fx> {
+        val n = removed.size
         if (n == 0) { sheet = null; return emptyList() }
         when (k) {
-            "PADDLEFT" -> sheetSel = (sheetSel - 1).coerceAtLeast(0)
-            "PADDRIGHT" -> sheetSel = (sheetSel + 1).coerceAtMost(n - 1)
-            "PADDUP", "PADDDOWN" -> sheetSel = if (s == Sheet.LAYOUTS) sheetVertical(sheetSel, if (k == "PADDUP") -1 else 1)
-                else (sheetSel + if (k == "PADDUP") -1 else 1).coerceIn(0, n - 1)
-            "PAD1" -> return if (s == Sheet.LAYOUTS) sheetUse(sheetSel) else addBack(removed.getOrNull(sheetSel))
-            "PAD3" -> if (s == Sheet.LAYOUTS) return sheetSaveHere(sheetSel)
+            "PADDLEFT", "PADDUP" -> sheetSel = (sheetSel - 1).coerceAtLeast(0)
+            "PADDRIGHT", "PADDDOWN" -> sheetSel = (sheetSel + 1).coerceAtMost(n - 1)
+            "PAD1" -> return addBack(removed.getOrNull(sheetSel))
             "PAD2" -> sheet = null
-            "PADFORWARD" -> { sheet = null; return listOf(Fx.Save) }
+            "PADFORWARD" -> { sheet = null; return done() }
         }
         return emptyList()
-    }
-
-    /**
-     * the Layouts sheet's Up / Down as it is DRAWN: the presets in rows of [SHEET_COLS], then "Mine" (the slots and All characters) as one
-     * row of its own; Down on Mine stays, Up from Mine goes to the preset above it (its column, the last row's nearest)
-     */
-    fun sheetVertical(i: Int, d: Int): Int {
-        val p = presetCount
-        if (i >= p) {                                                           // the Mine row
-            if (d > 0 || p == 0) return i
-            val lastRow = (p - 1) / SHEET_COLS
-            return (lastRow * SHEET_COLS + (i - p).coerceAtMost(SHEET_COLS - 1)).coerceAtMost(p - 1)
-        }
-        val to = i + d * SHEET_COLS
-        return when {
-            to < 0 -> i
-            to < p -> to
-            i / SHEET_COLS == (p - 1) / SHEET_COLS -> p + (i % SHEET_COLS)          // the last presets' row: down to Mine, same column
-            else -> p - 1                                                            // a short last row: its last preset
-        }
-    }
-
-    /** A (or a finger) on sheet item [i]: a preset = use it on the draft; a slot = its layout; the last = All characters on / off */
-    fun sheetUse(i: Int, slot: (Int) -> HomeLayout? = slotNow): List<Fx> {
-        if (parked) return emptyList()
-        sheetSel = i
-        if (i < presetCount) {
-            val f = flips.filter { !it.name.startsWith(SLOT_MARK) }[i]
-            if (!f.available) return listOf(Fx.Refuse(EditStop.CHIP))
-            keepHand()
-            val was = flipIdx
-            flipIdx = flips.indexOf(f)
-            sheet = null
-            return morphed(change(f.make(saved), Motion.MODULE_OPEN), if (flipIdx < was) -1 else 1) + foldOf(f)
-        }
-        val si = i - presetCount
-        if (si < HomePresets.SLOTS) {
-            val l = slot(si) ?: return listOf(Fx.Refuse(EditStop.CHIP))
-            keepHand()
-            val was = flipIdx
-            flipIdx = flips.indexOfFirst { it.name == "$SLOT_MARK${si + 1}" }
-            sheet = null
-            return morphed(change(l.copy(name = saved.name), Motion.MODULE_OPEN), if (flipIdx < was) -1 else 1) + foldOf(null)
-        }
-        allChars = !allChars
-        return emptyList()
-    }
-
-    /** X on a slot: keep the draft there now (a device slot is not the active layout: it needs no Save) */
-    fun sheetSaveHere(i: Int): List<Fx> {
-        if (parked) return emptyList()
-        sheetSel = i
-        val si = i - presetCount
-        return if (si in 0 until HomePresets.SLOTS) listOf(Fx.SaveSlot(si)) else emptyList()
     }
 
     fun closeSheet() { sheet = null }
@@ -615,33 +452,39 @@ class HomeEditModel(
             EditStop.QUEST -> change(draft.copy(card = HomeLayout.CardDock.OFF), Motion.MODULE_OPEN)
             else -> emptyList()
         }
-        if (cursor == s) cursor = EditStop.CHIP
+        if (cursor == s) cursor = if (plusShown) EditStop.PLUS else EditStop.CHAT
         return fx
     }
 
-    // ---------------------------------------------------------------- the prompt
+    // ---------------------------------------------------------------- Done / Discard (1518: the ribbon's one button)
 
-    private fun promptKey(k: String): List<Fx> = when (k) {
-        "PADDLEFT" -> { promptSel = (promptSel + PROMPT.size - 1) % PROMPT.size; emptyList() }
-        "PADDRIGHT" -> { promptSel = (promptSel + 1) % PROMPT.size; emptyList() }
-        "PAD1" -> promptPick(promptSel)
-        "PAD2" -> { prompt = false; emptyList() }
-        "PADFORWARD" -> promptPick(0)                                         // Start = Save, in every edit context (section 12)
-        else -> emptyList()
+    /** Done (its tap, B at the top level, Start, the Home disc's gold tick): a lift stays where the draft put it, every change is saved
+     *  already, edit mode ends */
+    fun done(): List<Fx> {
+        lifted = null; liftFrom = null; barLifted = null; drag = null; menu = null; sheet = null; removeAsk = null
+        return listOf(Fx.Done)
     }
 
-    /** Save / Discard / Keep editing */
-    fun promptPick(i: Int): List<Fx> {
-        prompt = false
-        return when (i) {
-            0 -> listOf(Fx.Save)
-            1 -> { draft = saved; allChars = false; toolbarWant = null; listOf(Fx.Leave) }
-            else -> emptyList()
-        }
+    /** Discard (a long press on Done, a held B): the record edit mode opened on comes back - the draft, the toolbar's switch - and edit
+     *  mode ends; the view writes [saved] back over the session's own changes */
+    fun discard(): List<Fx> {
+        lifted = null; liftFrom = null; barLifted = null; drag = null; menu = null; sheet = null; removeAsk = null
+        draft = saved; toolbarWant = null
+        return listOf(Fx.Relay(Motion.MODULE_CLOSE), Fx.Discard)
     }
 
-    /** the B disc on the bar, the Home disc's gold tick, Start: save and leave */
-    fun saveLeave(): List<Fx> { lifted = null; barLifted = null; menu = null; sheet = null; prompt = false; return listOf(Fx.Save) }
+    /**
+     * a change made to the record while edit mode waited (a fight, another room, the pending name's key that arrived): the draft is the
+     * store's record [now], and [savedNow] the record Discard puts back (the opening record with that outside change laid on, so Discard
+     * undoes only this session's own changes)
+     */
+    fun rebase(now: HomeLayout, savedNow: HomeLayout) {
+        draft = now; saved = savedNow
+        if (now.cast != HomeLayout.CastDock.OFF) lastCast = now.cast
+        now.cast.column?.let { barColumn = it }
+        if (now.card != HomeLayout.CardDock.OFF) lastCard = now.card
+        barSel = barSel.coerceIn(0, (now.rooms.size - 1).coerceAtLeast(0))
+    }
 
     // ---------------------------------------------------------------- touch: select, then menu; drag a widget by its body
 
@@ -651,7 +494,6 @@ class HomeEditModel(
         removeAsk = null
         if (menu != null) { menu = null; if (s == cursor) return emptyList() }
         if (lifted != null && lifted != s) drop()
-        if (s == EditStop.CHIP) { sheet = Sheet.LAYOUTS; sheetSel = flipIdx.takeIf { it in flips.indices } ?: 0; cursor = s; return emptyList() }
         if (s == EditStop.PLUS) { cursor = s; return if (plusShown) { sheet = Sheet.ADD; sheetSel = 0; emptyList() } else emptyList() }
         if (s != cursor) { cursor = s; return emptyList() }
         if (lifted == s) return drop()
@@ -830,7 +672,7 @@ class HomeEditModel(
 
     // ---------------------------------------------------------------- a fight mid-edit (section 4)
 
-    /** a fight started: the chrome goes (120 ms), Home plays the saved layout's fight; the draft and the cursor wait */
+    /** a fight started: the chrome goes (120 ms), Home plays the record's fight (the draft is saved already); the cursor waits */
     fun park() { parked = true; drag = null; if (lifted != null) { lifted = null; liftFrom = null; barLifted = null }; removeAsk = null }
     /** the fight ended with Home on screen: edit mode where it was left */
     fun resume() { parked = false }
@@ -874,13 +716,8 @@ class HomeEditModel(
         const val LIFT_SCALE = Motion.LIFT
         /** a request in a fight: the widget's edge red this long, nothing else */
         const val FLASH_MS = 300L
-        /** the Layouts sheet's columns */
-        const val SHEET_COLS = 3
-        /** the chip's word once the draft is none of the named layouts */
-        const val EDITED = "Edited"
-        /** a slot's flip is named "#1".."#3" in [flips] (the chip shows "1".."3") */
-        const val SLOT_MARK = "#"
-        val PROMPT = listOf("Save", "Discard", "Keep editing")
+        /** Done held this long (a finger, or B on the controller's direct feed) = Discard; the ring fills meanwhile */
+        const val DISCARD_HOLD_MS = 600L
 
         val SHARES = HomeLayout.Share.values().toList()
         val SIZES = HomeLayout.SlotSize.values().toList()
@@ -951,8 +788,8 @@ data class MenuRow(val key: String, val label: String, val words: List<String>, 
 
 /**
  * THE WIDGETS' MENUS (SPEC section 7; final_04, final_06): X (or a tap on the selected widget) opens its menu over the other column, every
- * change previewing live behind it. The LAYOUT rows edit the draft (written at Save by the same store write as Settings > Bottom screen's
- * Home layout tile); the BEHAVIOUR rows are the very keys BottomTiles.press writes (one setter, so the two never disagree). Pure: the
+ * change previewing live behind it. The LAYOUT rows edit the draft (saved as it goes, through the same store write as Settings > Bottom
+ * screen's tiles); the BEHAVIOUR rows are the very keys BottomTiles.press writes (one setter, so the two never disagree). Pure: the
  * behaviour values come in [Values] (HomeView reads them from HomeSettings / Settings).
  */
 object HomeWidgetMenus {

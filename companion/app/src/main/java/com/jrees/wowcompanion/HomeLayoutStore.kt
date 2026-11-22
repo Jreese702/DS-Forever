@@ -3,11 +3,13 @@ package com.jrees.wowcompanion
 import android.content.SharedPreferences
 
 /**
- * MOVABLE HOME, WHERE THE LAYOUT IS KEPT (SPEC.txt section 9; the user's D5, 2026-11-20: per character, with an "All characters"
- * button). In the "home" prefs (HomeSettings' file, the LAYOUTS reset bucket):
+ * MOVABLE HOME, WHERE THE LAYOUT IS KEPT (SPEC.txt section 9; the user's D5, 2026-11-20: per character; 1518: no layouts, each
+ * character just keeps its own arrangement, Settings' "Use this Home for all characters" copies one). In the "home" prefs (HomeSettings'
+ * file, the LAYOUTS reset bucket):
  *   "homeLayout.<Name-Realm>"  the character's active record (JSON, [HomeLayoutJson])
- *   "homeLayoutDefault"        the record before a character is known; it seeds a character's first login and "All characters" writes it
- *   "homeLayoutSlots"          the three device-wide slots of "Mine"
+ *   "homeLayoutDefault"        the record before a character is known; it seeds a character's first login (Classic from the migration,
+ *                              unless "all characters" wrote it, or a change was made before any character was known)
+ *   "homeLayoutSlots"          1517's three device slots of "Mine": UNREAD since 1518, left on disk ([KEY_SLOTS_LEGACY])
  *   "homeLayoutMigrated"       the one-time migration mark (NEVER reset: a reset leaves today's keys reset too, so Classic comes back)
  * (The spec's "homeLayout.default" / "homeLayouts" are spelled apart from the per-character prefix so a reset's prefix match never takes
  * them for a character.)
@@ -17,8 +19,8 @@ import android.content.SharedPreferences
  * an edit made meanwhile is held in memory only (never under the default, never under "homeLayout.Name-" / "Name-?" / "Name-_"), and
  * the previous character's key is let go at once. When the key arrives the character's own record is read first (seeded from the
  * default at a first login), then this session's edit is laid on top (the add-on's MT.sync / BB.sync pattern: a record is never written
- * under a key it was not read under). "All characters" writes the default and every WHOLE key the prefs hold (an orphan key is left to
- * RealmFix's fold).
+ * under a key it was not read under). "All characters" (Settings' "Use this Home for all characters") writes the default and every WHOLE
+ * key the prefs hold (an orphan key is left to RealmFix's fold).
  *
  * THE STICKY KEY (test build 1515, the 1515 merge; the user's rulings 2026-11-20: WoW Forever has no dedicated realms, a character's
  * whole name is globally unique and is its identity, its key is the realm its settings ALREADY live under): the ONLY key Home ever
@@ -33,7 +35,7 @@ import android.content.SharedPreferences
  * changed fields when its key comes (it is never silently dropped).
  *
  * THE HELD EDIT ON DISK (the 1515 merge's review): after the question's "Later" the add-on has no key for the rest of that login, so a
- * pending name's held edit (Home's Save, Settings > Bottom screen) can stand for a whole session. It is kept in "homeLayoutHeld" too
+ * pending name's held edit (edit mode's autosave, Settings > Bottom screen) can stand for a whole session. It is kept in "homeLayoutHeld" too
  * ([KEY_HELD]: {"<Name>": {"base": record, "edit": record}}, one entry per NAME - a name is the character's identity - never a
  * per-character key, so no reset's prefix match and no RealmFix fold takes it for one): a restarted app (Thor sleep, low memory, an
  * update) shows it again while the name is still pending, a switch to another character leaves it for its own name, and the name's
@@ -46,7 +48,9 @@ import android.content.SharedPreferences
 object HomeLayoutStore {
     const val KEY_PREFIX = "homeLayout."
     const val KEY_DEFAULT = "homeLayoutDefault"
-    const val KEY_SLOTS = "homeLayoutSlots"
+    /** 1517's device slots of "Mine": unread since 1518 (no layouts), left on disk; only an explicit All-characters Layouts reset
+     *  (ResetPlan) still clears it */
+    const val KEY_SLOTS_LEGACY = "homeLayoutSlots"
     const val KEY_MIGRATED = "homeLayoutMigrated"
     /** the pending names' held edits, kept across an app restart (the 1515 merge's review): {"<Name>": {"base": .., "edit": ..}} */
     const val KEY_HELD = "homeLayoutHeld"
@@ -69,7 +73,7 @@ object HomeLayoutStore {
     private var cacheRaw: String? = null
     private var cache: HomeLayout? = null
     private val listeners = ArrayList<() -> Unit>()
-    /** a change of the active record (a preset, a swap, a facade setter, another character): HomeSettings' listeners hear it */
+    /** a change of the active record (edit mode's autosave, a facade setter, a reset, another character): HomeSettings' listeners hear it */
     fun onChange(l: () -> Unit) { synchronized(listeners) { listeners.add(l) } }
     private fun changed() { val ls = synchronized(listeners) { listeners.toList() }; for (l in ls) l() }
 
@@ -100,10 +104,11 @@ object HomeLayoutStore {
      *  and "New character" both carry it; another name's key never does. (Fix round 3's "no other realm of the name known" guard is
      *  gone with the ruling that one name is one character: it dropped the held edit exactly when the add-on had just asked.) */
     internal fun carryOk(k: String, name: String?): Boolean = name != null && CharKey.isKey(k) && CharKey.nameOf(k) == name
-    /** edit mode's Save: [draft], opened on [opened] over [base] (what it showed then); null = refused (another owner now: nothing
-     *  written). Both SAME and LAY_ON write only the fields the session changed on top of the record the store holds now: a change
-     *  made while edit mode was parked (Settings > Bottom screen, the Controller room's Turn on) is kept, never the whole draft over
-     *  it (fix round 2). Nothing changed underneath: the draft as it is */
+    /** edit mode's write (1518: its autosave of each change, and Discard's way back): [draft], opened on [opened], over [base] (what
+     *  the store held when [draft] was made from it); null = refused (another owner now: nothing written). Both SAME and LAY_ON write
+     *  only the fields [base] -> [draft] changed on top of the record the store holds now: a change made meanwhile (Settings > Bottom
+     *  screen, the Controller room's Turn on, a late key's real record) is kept, never the whole draft over it (fix round 2). Nothing
+     *  changed underneath: the draft as it is */
     fun editSave(opened: Owner, base: HomeLayout, draft: HomeLayout): HomeLayout? = when (editSaveFor(opened)) {
         EditSave.SAME, EditSave.LAY_ON -> active().let { now -> if (now == base) draft else layOn(now, base, draft) }
         EditSave.NONE -> null
@@ -218,7 +223,7 @@ object HomeLayoutStore {
     fun set(l: HomeLayout, all: Boolean = false): Boolean {
         val p = prefs ?: return false
         migrate(p)
-        val rec = l.copy(name = HomePresets.nameOf(l))
+        val rec = l                                                     // 1518: the legacy name as read (no presets name it)
         val before = active()
         // pending (named, no key): held in memory only; "All characters" still writes the default and the whole keys. Fix round 3: no
         // character known yet - the default is written as before, and the change is held for the first character's own record too
@@ -255,8 +260,7 @@ object HomeLayoutStore {
             if (b.opt(f)?.toString() == e.opt(f)?.toString()) continue
             if (e.has(f)) r.put(f, e.get(f)) else r.remove(f)
         }
-        val l = HomeLayoutJson.parse(r.toString(), real)
-        return l.copy(name = HomePresets.nameOf(l))
+        return HomeLayoutJson.parse(r.toString(), real)                 // the legacy name: [real]'s, as read
     }
 
     /** a change of the active record by [f] (the facade setters) */
@@ -268,24 +272,6 @@ object HomeLayoutStore {
 
     /** the characters with a record of their own */
     fun characters(): List<String> = prefs?.all?.keys.orEmpty().filter { isCharRecord(it) }.map { it.removePrefix(KEY_PREFIX) }.sorted()
-
-    fun slots(): List<HomeLayout?> = HomeLayoutJson.slots(prefs?.getString(KEY_SLOTS, null))
-    /** keeps [l] in slot [i] (0..2): "Save here" */
-    fun saveSlot(i: Int, l: HomeLayout) {
-        val p = prefs ?: return
-        if (i !in 0 until HomePresets.SLOTS) return
-        val s = slots().toMutableList()
-        s[i] = l.copy(name = "${i + 1}")
-        p.edit().putString(KEY_SLOTS, HomeLayoutJson.slotsJson(s)).apply()
-    }
-
-    /** the name the Home layout tile shows: a preset's, else a slot the record equals ("1".."3"), else Custom */
-    fun nameOf(l: HomeLayout): String {
-        val n = HomePresets.nameOf(l)
-        if (n != HomePresets.CUSTOM) return n
-        val i = slots().indexOfFirst { it != null && it.samePlace(l) }
-        return if (i >= 0) "${i + 1}" else n
-    }
 
     /** the off-device tests: these prefs (and no character) */
     internal fun startForTest(p: SharedPreferences?) {

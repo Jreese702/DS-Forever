@@ -10,8 +10,8 @@ import org.junit.Test
 
 /**
  * MOVABLE HOME, THE RECORD'S LIFE (SPEC.txt sections 9 / 15; phase 1): JSON round trip and tolerant parse; the migration of today's keys
- * into Classic; the presets and their names; the per-character store (D5) with its default, first-login seed, "All characters" and the
- * three device slots; the old setters as facades; the toolbar mirror's resend rule; hold to talk's key after a swap; the Controller room's
+ * into Classic; 1518's records with a legacy preset / slot name (read as their own fields, the name kept, never rewritten); the
+ * per-character store (D5) with its default, first-login seed and "All characters"; the old setters as facades; the toolbar mirror's resend rule; hold to talk's key after a swap; the Controller room's
  * toolbar words; the page-3 code registry; the reset plan's new keys. Pure.
  */
 class HomeLayoutStoreTest {
@@ -35,9 +35,6 @@ class HomeLayoutStoreTest {
         val l = HomeLayoutJson.parse("""{"v":1,"chat":"RIGHT","share":"QUARTER","card":"MOON","cast":"ACROSS","size":"XL","rest":"ROW","fight":"SAME"}""")
         assertEquals(HomeLayout(chatSide = HomeLayout.Side.RIGHT, cast = HomeLayout.CastDock.ACROSS, rest = HomeRest.ROW,
             fight = HomeLayout.FightBand.SAME), l)
-        assertEquals(listOf<HomeLayout?>(null, null, null), HomeLayoutJson.slots("nope"))
-        val s = listOf(HomeLayout(name = "1"), null, HomeLayout(name = "3", chatShare = HomeLayout.Share.THIRD))
-        assertEquals(s, HomeLayoutJson.slots(HomeLayoutJson.slotsJson(s)))
     }
 
     // ---------------------------------------------------------------- migration
@@ -45,7 +42,7 @@ class HomeLayoutStoreTest {
     @Test fun todaysKeysBecomeClassic() {
         for (rest in HomeRest.values()) for (grow in listOf(true, false)) for (over in listOf(true, false)) for (side in CastStripModel.Side.values()) {
             val l = HomeLayoutMigration.fromToday(rest, grow, over, side)
-            assertEquals(HomePresets.CLASSIC, l.name)
+            assertEquals(HomeLayout.LEGACY_CLASSIC, l.name)
             assertEquals(HomeLayout.Side.LEFT, l.chatSide); assertEquals(HomeLayout.Share.HALF, l.chatShare)
             assertEquals(rest, l.rest)
             assertEquals(if (grow) HomeLayout.FightBand.GROW else HomeLayout.FightBand.SAME, l.fight)
@@ -97,23 +94,95 @@ class HomeLayoutStoreTest {
         assertTrue(heard >= 1)
     }
 
-    // ---------------------------------------------------------------- presets
+    // ---------------------------------------------------------------- 1518: no presets, the legacy name
 
-    @Test fun presetsNameThemselves() {
-        val base = HomeLayout(cast = HomeLayout.CastDock.ACROSS, rest = HomeRest.DIAMONDS)
-        for (p in HomePresets.OFFERED) assertEquals(p.id, HomePresets.nameOf(p.apply(base)))
-        assertEquals(listOf("Classic", "Mirrored", "Big map", "Big chat", "Compact", "Fighter"), HomePresets.OFFERED.map { it.id })
-        assertTrue("phase 3: Fighter is offered (the player's own opt-in to the top-screen bar, D1)", HomePresets.byId(HomePresets.FIGHTER)!!.available)
-        assertEquals(HomePresets.FIGHTER, HomePresets.nameOf(HomePresets.byId(HomePresets.FIGHTER)!!.apply(base)))
-        // Classic keeps the player's bar dock and Grow / Same size, and is the way back from the others (SPEC section 9: Diamonds, slots
-        // L; Fighter's Split / Top screen undone); Mirrored is today's swapped with the bar under the chat
-        val mine = HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP, rest = HomeRest.ROW, fight = HomeLayout.FightBand.SAME, castSize = HomeLayout.SlotSize.M)
-        val c = HomePresets.byId(HomePresets.CLASSIC)!!.apply(mine.copy(chatSide = HomeLayout.Side.RIGHT))
-        assertEquals(mine.copy(name = HomePresets.CLASSIC, rest = HomeRest.DIAMONDS, castSize = HomeLayout.SlotSize.L), c)
-        val m = HomePresets.byId(HomePresets.MIRRORED)!!.apply(HomeLayout())
-        assertTrue(m.mirrored); assertEquals(HomeLayout.CastDock.UNDER_CHAT, m.cast)
-        assertEquals(HomePresets.CUSTOM, HomePresets.nameOf(HomeLayout(chatSide = HomeLayout.Side.RIGHT, card = HomeLayout.CardDock.OFF)))
-        assertEquals(true, HomePresets.byId(HomePresets.COMPACT)!!.folded)
+    /**
+     * the user's ruling 2026-11-21 (layouts removed): a 1517 record that names a preset or a slot already holds that arrangement's own
+     * fields, so it reads as exactly that (no visual change on the upgrade); its name is kept as read and never re-derived - a write
+     * (edit mode's autosave, a facade setter, a lay-on) keeps the text, a Classic record's byte for byte; slots / default / held data
+     * stay on disk untouched
+     */
+    @Test fun aRecordNamingAPresetReadsAsItsFieldsItsNameKept() {
+        val bigMap = HomeArrangements.of(HomeArrangements.BIG_MAP, HomeArrangements.BASE)
+        val raw = HomeLayoutJson.json(bigMap)                                      // the text 1517 wrote for Big map
+        assertTrue(raw.contains(""""name":"Big map""""))
+        val slots = """[null,{"v":1,"name":"2","chat":"RIGHT"},null]"""
+        val p = fresh(Prefs(hashMapOf(HomeLayoutStore.KEY_MIGRATED to true, HomeLayoutStore.KEY_DEFAULT to HomeLayoutJson.json(HomeLayout()),
+            "homeLayout.Korvash-Realm" to raw, HomeLayoutStore.KEY_SLOTS_LEGACY to slots)))
+        HomeLayoutStore.character("Korvash-Realm")
+        assertEquals("read as its fields", bigMap, HomeSettings.layout)
+        assertEquals("nothing rewritten on reading", raw, p.m["homeLayout.Korvash-Realm"])
+        // a change: the name stays as read (no preset names it any more), only the changed field differs
+        HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.M) }
+        assertEquals(bigMap.copy(castSize = HomeLayout.SlotSize.M), HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String))
+        assertEquals("Big map", HomeSettings.layout.name)
+        // a lay-on keeps the real record's name
+        assertEquals("Big map", HomeLayoutStore.layOn(bigMap, HomeLayout(), HomeLayout(name = "Mirrored", chatSide = HomeLayout.Side.RIGHT)).name)
+        // a slot's record reads as its fields too
+        p.m["homeLayout.Alt-Realm"] = """{"v":1,"name":"3","chat":"RIGHT","share":"TWO_THIRDS"}"""
+        HomeLayoutStore.character("Alt-Realm")
+        assertEquals(HomeLayout(name = "3", chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.TWO_THIRDS), HomeSettings.layout)
+        // the slots are left on disk, unread
+        assertEquals(slots, p.m[HomeLayoutStore.KEY_SLOTS_LEGACY])
+        // a Classic record's text is byte-identical through a write that changes nothing of it
+        val classicRaw = HomeLayoutJson.json(HomeLayout())
+        HomeLayoutStore.character("Newbie-Realm")
+        assertEquals(classicRaw, p.m["homeLayout.Newbie-Realm"])
+        HomeLayoutStore.update { it.copy(rest = HomeRest.ROW) }
+        HomeLayoutStore.update { it.copy(rest = HomeRest.DIAMONDS) }
+        assertEquals(classicRaw, p.m["homeLayout.Newbie-Realm"])
+    }
+
+    /** 1518: the Reset Home words in Spanish and French (CRLF kept), and the layouts' own words gone with them (terse: no dead strings) */
+    @Test fun theResetWordsAreTranslatedAndTheLayoutWordsGone() {
+        val dir = listOf(java.io.File("../companion/app/src/main/assets/companion/i18n"), java.io.File("companion/app/src/main/assets/companion/i18n"))
+            .first { it.isDirectory }
+        for (l in listOf("es", "fr")) {
+            val text = java.io.File(dir, "$l.json").readBytes().toString(Charsets.UTF_8)
+            val plain = org.json.JSONObject(text).getJSONObject("plain")
+            for (w in listOf("Edit Home", "Reset Home", "Reset Home to Classic", "Use this Home for all characters", "Done", "Discard", "Add"))
+                assertTrue("$l: $w", plain.has(w))
+            for (w in listOf("Home layout", "Edited", "Layouts", "Keep editing", "Mirrored", "Big map", "Big chat", "Compact", "Fighter",
+                    "Mine", "Save here")) assertFalse("$l: $w is gone", plain.has(w))
+            assertTrue("$l: CRLF lines", text.split("\n").dropLast(1).all { it.endsWith("\r") })
+        }
+    }
+
+    /** 1518, Settings' Reset Home: "Reset Home to Classic" is THIS character's only (the whole key, the store's rules); "Use this Home
+     *  for all characters" writes the default (new characters' seed) and every whole key, offered only once a whole key is known */
+    @Test fun resetHomeToClassicIsThisCharactersAndAllCharactersCopiesIt() {
+        val p = fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        val fighter = HomeArrangements.of(HomeArrangements.FIGHTER, HomeArrangements.BASE).copy(xpBar = false, rooms = RoomBar.DEFAULT.reversed())
+        HomeLayoutStore.set(fighter)
+        HomeLayoutStore.character("Thrandil-Realm")
+        HomeLayoutStore.set(HomeLayout(chatSide = HomeLayout.Side.RIGHT))
+        val thrandil = p.m["homeLayout.Thrandil-Realm"]
+        HomeLayoutStore.character("Korvash-Realm")
+        BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.HOME_CLASSIC, 0, BottomTiles.Env(null, "Korvash-Realm")) { }
+        assertEquals(fighter.classic(), HomeSettings.layout)
+        assertTrue(HomeSettings.layout.classicPlace); assertTrue(HomeSettings.layout.xpBar); assertEquals(RoomBar.DEFAULT, HomeSettings.layout.rooms)
+        assertEquals("another character's Home untouched", thrandil, p.m["homeLayout.Thrandil-Realm"])
+        // all characters: offered with a whole key, writes the default and every whole key
+        assertTrue(BottomTiles.resetLines().first { it.key == BottomTiles.ALL_CHARS }.enabled)
+        HomeLayoutStore.update { it.copy(chatShare = HomeLayout.Share.THIRD) }
+        BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.ALL_CHARS, 0, BottomTiles.Env(null, "Korvash-Realm")) { }
+        HomeLayoutStore.character("Thrandil-Realm")
+        assertEquals(HomeLayout.Share.THIRD, HomeSettings.layout.chatShare)
+        HomeLayoutStore.character("Newbie-Realm")
+        assertEquals("a new character starts from it", HomeLayout.Share.THIRD, HomeSettings.layout.chatShare)
+        // pending (no whole key): not offered, and a press writes nothing
+        HomeLayoutStore.character(null, "Pendy")
+        assertFalse(BottomTiles.resetLines().first { it.key == BottomTiles.ALL_CHARS }.enabled)
+        val before = HashMap(p.m)
+        BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.ALL_CHARS, 0, BottomTiles.Env(null, null)) { }
+        assertEquals(before, p.m)
+        // the tile: last of Home's, named Reset Home; Edit Home has no band of its own
+        assertEquals(BottomTiles.HOME_RESET, BottomTiles.HOME_TILES.last())
+        assertEquals("Reset Home", BottomTiles.NAMES[BottomTiles.HOME_RESET]); assertEquals("Edit Home", BottomTiles.NAMES[BottomTiles.LAYOUT])
+        assertTrue(BottomTiles.lines(BottomTiles.LAYOUT, BottomTiles.Env(null, null)).isEmpty())
+        assertEquals(listOf("Reset Home to Classic", "Use this Home for all characters"),
+            BottomTiles.lines(BottomTiles.HOME_RESET, BottomTiles.Env(null, null)).map { it.words.single() })
     }
 
     // ---------------------------------------------------------------- the bar above its column
@@ -142,14 +211,11 @@ class HomeLayoutStoreTest {
     }
 
     @Test fun classicPutsAnAboveBarBackAtItsFoot() {
-        val classic = HomePresets.byId(HomePresets.CLASSIC)!!
-        assertEquals(HomeLayout.CastDock.UNDER_MAP, classic.apply(HomeLayout(cast = HomeLayout.CastDock.ABOVE_MAP)).cast)
-        assertEquals(HomeLayout.CastDock.UNDER_CHAT, classic.apply(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT)).cast)
-        for (d in listOf(HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP)) {
-            assertEquals("Classic = 1516: never a bar above a column", HomePresets.CUSTOM, HomePresets.nameOf(HomeLayout(cast = d)))
-            for (p in HomePresets.ALL) assertFalse(p.id, p.holds(HomeLayout(cast = d)))
-        }
-        assertEquals(HomePresets.CLASSIC, HomePresets.nameOf(HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP)))
+        assertEquals(HomeLayout.CastDock.UNDER_MAP, HomeLayout(cast = HomeLayout.CastDock.ABOVE_MAP).classic().cast)
+        assertEquals(HomeLayout.CastDock.UNDER_CHAT, HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT).classic().cast)
+        for (d in listOf(HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP))
+            assertFalse("Classic = 1516: never a bar above a column", HomeLayout(cast = d).classicPlace)
+        assertTrue(HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP).classicPlace)
     }
 
     @Test fun theOldSettersKeepTheBarAboveItsColumn() {
@@ -172,7 +238,7 @@ class HomeLayoutStoreTest {
     @Test fun eachCharacterHasItsOwnAndAllCharactersCopiesIt() {
         val p = fresh()
         HomeLayoutStore.character("Shammy-Realm")
-        val mirrored = HomePresets.byId(HomePresets.MIRRORED)!!.apply(HomeSettings.layout)
+        val mirrored = HomeArrangements.of(HomeArrangements.MIRRORED, HomeSettings.layout)
         HomeLayoutStore.set(mirrored)
         assertTrue(HomeSettings.layout.mirrored)
         // another character: seeded from the default (Classic), not Shammy's
@@ -199,7 +265,7 @@ class HomeLayoutStoreTest {
     @Test fun aRealmLessCharacterNeverStoresAndLetsThePreviousGo() {
         val p = fresh()
         HomeLayoutStore.character("Korvash-Realm")
-        HomeLayoutStore.set(HomePresets.byId(HomePresets.MIRRORED)!!.apply(HomeSettings.layout))
+        HomeLayoutStore.set(HomeArrangements.of(HomeArrangements.MIRRORED, HomeSettings.layout))
         assertTrue(HomeSettings.layout.mirrored)
         val defaultBefore = p.m[HomeLayoutStore.KEY_DEFAULT]
         val korvashBefore = p.m["homeLayout.Korvash-Realm"]
@@ -254,8 +320,8 @@ class HomeLayoutStoreTest {
         // the reset keys: the record keys are character keys (ResetPlan's per-character prefix), the device keys exact
         assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", "homeLayout.Korvash-Realm")?.kind)
         assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", HomeLayoutStore.KEY_DEFAULT)?.kind)
-        assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", HomeLayoutStore.KEY_SLOTS)?.kind)
-        assertTrue("the device's keys: All characters only", ResetPlan.ruleOf("home", HomeLayoutStore.KEY_SLOTS)!!.allOnly &&
+        assertEquals(ResetPlan.Kind.LAYOUTS, ResetPlan.ruleOf("home", HomeLayoutStore.KEY_SLOTS_LEGACY)?.kind)
+        assertTrue("the device's keys: All characters only", ResetPlan.ruleOf("home", HomeLayoutStore.KEY_SLOTS_LEGACY)!!.allOnly &&
             ResetPlan.ruleOf("home", HomeLayoutStore.KEY_DEFAULT)!!.allOnly)
         assertTrue(ResetPlan.prefKeys("home", setOf("homeLayout.Korvash-Realm", "homeLayout.Thrandil-Realm"), setOf(ResetPlan.Kind.LAYOUTS),
             "Korvash-Realm", false) == setOf("homeLayout.Korvash-Realm"))
@@ -343,23 +409,42 @@ class HomeLayoutStoreTest {
         assertEquals(HomeLayout.CastDock.ACROSS, r2.cast)
         // nothing changed underneath: the draft as it is (name and all)
         val base3 = HomeSettings.layout
-        val d3 = HomePresets.byId(HomePresets.MIRRORED)!!.apply(base3)
+        val d3 = HomeArrangements.of(HomeArrangements.MIRRORED, base3)
         assertEquals(d3, HomeLayoutStore.editSave(o, base3, d3))
     }
 
-    @Test fun threeDeviceSlots() {
-        fresh()
-        assertEquals(listOf<HomeLayout?>(null, null, null), HomeLayoutStore.slots())
-        val big = HomePresets.byId(HomePresets.BIG_MAP)!!.apply(HomeLayout())
-        HomeLayoutStore.saveSlot(1, big.copy(chatSide = HomeLayout.Side.RIGHT))
-        HomeLayoutStore.saveSlot(7, big)                                      // no such slot
-        val s = HomeLayoutStore.slots()
-        assertNull(s[0]); assertEquals("2", s[1]!!.name); assertNull(s[2])
-        HomeLayoutStore.set(s[1]!!)
-        assertEquals("a slot's layout is named by its slot", "2", HomeLayoutStore.nameOf(HomeSettings.layout))
-        // the slots are the device's: another character sees the same
-        HomeLayoutStore.character("Alt-Realm")
-        assertEquals(s, HomeLayoutStore.slots())
+    /** 1518, the autosave and Discard through editSave: each change written on the record as it is (a pending name's held, a late key's
+     *  laid on); Discard's inverse write puts the opening record back over the session's own changes only */
+    @Test fun theAutosaveAndDiscardGoThroughEditSave() {
+        val p = fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        HomeLayoutStore.set(HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP))
+        val o = HomeLayoutStore.owner()
+        val opened = HomeSettings.layout
+        // two settled changes, each written as it is made (the base: the draft as last written)
+        val d1 = opened.swapped()
+        HomeSettings.saveLayout(HomeLayoutStore.editSave(o, opened, d1)!!)
+        assertTrue(HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String).mirrored)
+        val d2 = d1.copy(chatShare = HomeLayout.Share.THIRD)
+        HomeSettings.saveLayout(HomeLayoutStore.editSave(o, d1, d2)!!)
+        // a change from elsewhere meanwhile (Settings while parked): kept by Discard
+        HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.S) }
+        HomeSettings.saveLayout(HomeLayoutStore.editSave(o, d2, opened)!!)                  // Discard
+        assertEquals(opened.copy(castSize = HomeLayout.SlotSize.S), HomeSettings.layout)
+        // pending: held (never written under a partial key or the default), the late key gets it laid on its real record
+        HomeLayoutStore.character("Thrandil-Realm")
+        HomeLayoutStore.set(HomeLayout(rest = HomeRest.ROW))
+        HomeLayoutStore.character(null, "Thrandil")
+        val op = HomeLayoutStore.owner()
+        val b = HomeSettings.layout
+        val dp = b.copy(chatShare = HomeLayout.Share.TWO_THIRDS)
+        HomeSettings.saveLayout(HomeLayoutStore.editSave(op, b, dp)!!)
+        assertEquals(HomeLayout.Share.TWO_THIRDS, HomeSettings.layout.chatShare)
+        assertTrue(p.m.keys.none { it.startsWith("homeLayout.Thrandil") && it != "homeLayout.Thrandil-Realm" })
+        HomeLayoutStore.character("Thrandil-Realm")
+        val t = HomeSettings.layout
+        assertEquals("the held change on the real record", HomeLayout.Share.TWO_THIRDS, t.chatShare)
+        assertEquals("its own rest kept", HomeRest.ROW, t.rest)
     }
 
     // ---------------------------------------------------------------- the DS toolbar follows the swap
@@ -461,7 +546,7 @@ class HomeLayoutStoreTest {
     @Test fun aChangeBeforeAnyCharacterReachesTheFirstOne() {
         val p = fresh()
         HomeLayoutStore.character("Korvash-Realm")
-        HomeLayoutStore.set(HomePresets.byId(HomePresets.MIRRORED)!!.apply(HomeSettings.layout))
+        HomeLayoutStore.set(HomeArrangements.of(HomeArrangements.MIRRORED, HomeSettings.layout))
         // the app starts again (the same prefs): no character yet, Home on the default
         fresh(p)
         assertNull(HomeLayoutStore.who); assertFalse(HomeLayoutStore.pending)
@@ -494,12 +579,12 @@ class HomeLayoutStoreTest {
 
     @Test fun layoutsResetTheNewKeys() {
         val me = "Shammy-Realm"; val other = "Hunt-Realm"
-        val keys = setOf("homeLayout.$me", "homeLayout.$other", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS, HomeLayoutStore.KEY_MIGRATED)
+        val keys = setOf("homeLayout.$me", "homeLayout.$other", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS_LEGACY, HomeLayoutStore.KEY_MIGRATED)
         val L = setOf(ResetPlan.Kind.LAYOUTS)
         // fix round 3: "This character" takes its own record only - the three "Mine" slots and the first-login seed are the device's
         assertEquals(setOf("homeLayout.$me"), ResetPlan.prefKeys("home", keys, L, me, false))
         assertEquals(setOf("homeLayout.$me"), ResetPlan.prefKeys("home", keys, ResetPlan.Kind.values().toSet(), me, false))
-        assertEquals(setOf("homeLayout.$me", "homeLayout.$other", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS),
+        assertEquals(setOf("homeLayout.$me", "homeLayout.$other", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS_LEGACY),
             ResetPlan.prefKeys("home", keys, L, me, true))
         assertTrue("never by Settings / Skills", ResetPlan.prefKeys("home", keys, setOf(ResetPlan.Kind.SETTINGS, ResetPlan.Kind.SKILLS), me, true).isEmpty())
         assertTrue("the migration mark: never", ResetPlan.prefKeys("home", keys, ResetPlan.Kind.values().toSet(), me, true).none { it == HomeLayoutStore.KEY_MIGRATED })

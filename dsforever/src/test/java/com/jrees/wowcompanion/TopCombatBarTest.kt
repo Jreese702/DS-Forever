@@ -35,11 +35,9 @@ class TopCombatBarTest {
         // a store migrated from an older build's Same size: Same size, not Top
         fresh(HomeLayoutStoreTest.Prefs(hashMapOf("combatGrow" to false)))
         assertEquals(HomeLayout.FightBand.SAME, HomeSettings.fightBand)
-        // every preset but Fighter keeps the player's fight mode (the player's own opt-in is the only way to Top)
-        for (p in HomePresets.OFFERED) {
-            val l = p.apply(HomeLayout())
-            assertEquals(p.id, p.id == HomePresets.FIGHTER, l.fight == HomeLayout.FightBand.TOP)
-        }
+        // of the six arrangements 1517 offered, only Fighter is in Top screen (the player's own opt-in is the only way to Top)
+        for ((id, l) in HomeArrangements.on(HomeLayout()))
+            assertEquals(id, id == HomeArrangements.FIGHTER, l.fight == HomeLayout.FightBand.TOP)
     }
 
     @Test fun theSettingIsAFacadeOnTheLayout() {
@@ -66,13 +64,12 @@ class TopCombatBarTest {
         assertEquals(true, p.m["combatGrow"])
     }
 
-    @Test fun theFighterPresetIsOfferedAndNamesItself() {
-        val f = HomePresets.byId(HomePresets.FIGHTER)!!
-        assertTrue(f.available)
-        assertTrue(f in HomePresets.OFFERED)
-        val l = f.apply(HomeLayout())
+    /** 1518 (no presets): a 1517 record saved as Fighter reads as its fields - Top screen, the Split bar - and wants the top bar */
+    @Test fun aFighterRecordKeepsItsTopScreenBar() {
+        val l = HomeLayoutJson.parse(HomeLayoutJson.json(HomeArrangements.of(HomeArrangements.FIGHTER, HomeLayout())))
         assertEquals(HomeLayout.FightBand.TOP, l.fight)
-        assertEquals(HomePresets.FIGHTER, HomePresets.nameOf(l))
+        assertEquals(HomeArrangements.FIGHTER, l.name)
+        assertTrue(TopCombatBar.wanted(l))
         assertEquals("its Split (phase 2: slots 1-4 under the left column, 5-8 under the right)", HomeLayout.CastDock.SPLIT,
             HomeLayoutRules.shown(l).cast)
     }
@@ -207,7 +204,7 @@ class TopCombatBarTest {
     }
 
     @Test fun theWordsAreTranslated() {
-        val words = listOf("In fights", "Top screen", "Grow", "Same size", "Combat bar", "Fighter", "Needs the newer Spells add-on",
+        val words = listOf("In fights", "Top screen", "Grow", "Same size", "Combat bar", "Needs the newer Spells add-on",
             "In a fight the controller grows, keeps its size, or moves to the top screen.")
         val dir = listOf(java.io.File("../companion/app/src/main/assets/companion/i18n"), java.io.File("companion/app/src/main/assets/companion/i18n"))
             .first { it.isDirectory }

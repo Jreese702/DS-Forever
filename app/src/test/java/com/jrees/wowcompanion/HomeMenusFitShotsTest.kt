@@ -159,7 +159,7 @@ class HomeMenusFitShotsTest {
     private fun overlaps(a: RectF, b: RectF): Boolean = a.left < b.right - 0.5f && b.left < a.right - 0.5f && a.top < b.bottom - 0.5f && b.top < a.bottom - 0.5f
     private fun inside(a: RectF, l: Float, t: Float, r: Float, b: Float) = a.left >= l - 0.5f && a.top >= t - 0.5f && a.right <= r + 0.5f && a.bottom <= b + 0.5f
     private fun r(x: RectF) = "${x.left.toInt()}..${x.right.toInt()} x ${x.top.toInt()}..${x.bottom.toInt()}"
-    private fun classic(l: HomeLayout) = HomePresets.byId(HomePresets.CLASSIC)!!.holds(l)
+    private fun classic(l: HomeLayout) = l.classicPlace
 
     // ---------------------------------------------------------------- the pictures (MENUS_FIT_SHOTS only)
 
@@ -323,13 +323,13 @@ class HomeMenusFitShotsTest {
     private val DOCKS = listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ABOVE_CHAT,
         HomeLayout.CastDock.ABOVE_MAP, HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT)
 
-    /** every offered preset with its bar in every dock, swapped, at the biggest map share (1/3) and the biggest chat (2/3), one per placement */
+    /** every arrangement 1517 offered as a preset (HomeArrangements: the same records) with its bar in every dock, swapped, at the biggest
+     *  map share (1/3) and the biggest chat (2/3), one per placement */
     private fun matrix(): List<Pair<String, HomeLayout>> {
-        val base = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
         val out = ArrayList<Pair<String, HomeLayout>>()
-        for (pr in HomePresets.OFFERED) for (d in listOf<HomeLayout.CastDock?>(null) + DOCKS) {
-            val l = pr.apply(base).let { if (d == null) it else it.copy(cast = d) }
-            val id = pr.id.lowercase().replace(' ', '_') + (d?.let { "_" + it.name.lowercase() } ?: "")
+        for ((name, arr) in HomeArrangements.ALL) for (d in listOf<HomeLayout.CastDock?>(null) + DOCKS) {
+            val l = arr.let { if (d == null) it else it.copy(cast = d) }
+            val id = name.lowercase().replace(' ', '_') + (d?.let { "_" + it.name.lowercase() } ?: "")
             out += id to l
             out += "${id}_swapped" to l.swapped()
             if (l.chatShare != HomeLayout.Share.THIRD) {
@@ -400,7 +400,7 @@ class HomeMenusFitShotsTest {
     /** the pill itself, drawn: under a top bar at rest (Compact's thin row) and in a grown fight with the bar shown, clear of its slots */
     @Test fun theToastIsDrawnUnderATopBar() {
         val cases = listOf(
-            Triple("compact_above_chat_rest", HomePresets.byId(HomePresets.COMPACT)!!.apply(HomeLayout()).copy(cast = HomeLayout.CastDock.ABOVE_CHAT), false),
+            Triple("compact_above_chat_rest", HomeArrangements.of(HomeArrangements.COMPACT, HomeLayout()).copy(cast = HomeLayout.CastDock.ABOVE_CHAT), false),
             Triple("above_map_bigmap_fightgrowstay", HomeLayout(chatShare = HomeLayout.Share.THIRD, cast = HomeLayout.CastDock.ABOVE_MAP).swapped(), true))
         for ((n, l, f) in cases) {
             stay = f

@@ -31,8 +31,8 @@ import kotlin.math.hypot
 /**
  * THE iPHONE-STYLE EDIT MODE ON THE REAL [HomeView] (the user, 2026-11-21: "resemble more of like an iPhone app edit mode with apps kind
  * of animating zoomed smaller a bit and being more animated generally"), at fixed frame times on a pinned motion clock: the open's
- * shrink (0 / 120 / 240 ms), the wiggle's extremes, the lift, a spring glide mid-way, the drop's plop, a layout flip's cascade with the
- * chip's name sliding, a menu's pop on the swapped big map, the ribbon's slide, the leave back to the very Classic page, the system's
+ * shrink (0 / 120 / 240 ms), the wiggle's extremes, the lift, a spring glide mid-way, the drop's plop, a swap's glide with the card
+ * riding its map, a menu's pop on the swapped big map, the ribbon's slide, the leave back to the very Classic page, the system's
  * animations off (the static shrink), and a fight stilling it all at once. The views' properties are checked against the motion's poses;
  * the model's boxes never move for it. With HOME_EDIT_SHOTS (+ HOME_LAYOUT_ART) every frame is drawn:
  *   HOME_EDIT_SHOTS=<dir> HOME_LAYOUT_ART=<root> gradlew :app:testModernDebugUnitTest --tests "*HomeEditMotionShotsTest*"
@@ -310,8 +310,8 @@ class HomeEditMotionShotsTest {
      */
     @Test fun aLiftedWidgetStaysInsideHomesFrame() {
         val cases = ArrayList<Pair<String, HomeLayout>>()
-        for (pr in HomePresets.ALL) for (dock in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ABOVE_MAP))
-            cases += "${pr.id}_${dock.name.lowercase()}" to pr.apply(HomeLayout(cast = dock))
+        for (dock in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ABOVE_MAP))
+            for ((id, l) in HomeArrangements.on(HomeLayout(cast = dock))) cases += "${id}_${dock.name.lowercase()}" to l
         cases += "swapped_third" to HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.THIRD, cast = HomeLayout.CastDock.UNDER_CHAT)
         var checked = 0; var grewPast = 0; var shotted = false
         for ((name, l) in cases) for ((stop, part) in listOf(EditStop.MAP to "MAP", EditStop.CHAT to "CHAT")) {
@@ -342,7 +342,7 @@ class HomeEditMotionShotsTest {
                 }
             }
             assertEquals("$name: lifted at 1.04", Motion.LIFT, views(home).getValue(part).scaleX, 0.002f)
-            if (name == "${HomePresets.CLASSIC}_under_chat" && part == "MAP") {
+            if (name == "${HomeArrangements.CLASSIC}_under_chat" && part == "MAP") {
                 shotted = true
                 val b = shot(p, "m20_lift_map_inside")
                 val d = drawnBox(views(home).getValue("MAP"))
@@ -361,9 +361,9 @@ class HomeEditMotionShotsTest {
         // review round 3: the full-width tap-to-cast bar (ACROSS: one bar 8 .. 1232; SPLIT: two halves posed as one) lifted at 1.04 was
         // 1273 px wide, its ends 16.5 px past both page edges: now drawn no bigger than the frame holds, every half inside, touch unmoved
         var bars = 0
-        for (pr in HomePresets.ALL) for (dock in listOf(HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT)) {
-            val name = "${pr.id}_${dock.name.lowercase()}"
-            val p = page(pr.apply(HomeLayout(cast = dock)).copy(cast = dock))
+        for (dock in listOf(HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT)) for ((id, arr) in HomeArrangements.on(HomeLayout(cast = dock))) {
+            val name = "${id}_${dock.name.lowercase()}"
+            val p = page(arr.copy(cast = dock))
             val home = p.home
             pin(p)
             val t0 = clock
@@ -390,7 +390,7 @@ class HomeEditMotionShotsTest {
             }
             val sc = views(home).getValue(halves[0]).scaleX
             assertTrue("$name: grown past its rest, no bigger than the frame: $sc", sc > Motion.REST_SCALE + 0.03f && sc * union.width() <= W + 0.5f)
-            if (name == "${HomePresets.CLASSIC}_across") shot(p, "m21_lift_bar_inside")
+            if (name == "${HomeArrangements.CLASSIC}_across") shot(p, "m21_lift_bar_inside")
             assertEquals("$name: the model's boxes never move for it", laid, boxes(home))
             assertEquals("$name: the touch targets never move for it", hits, home.editChrome.widgetBoxes().mapValues { RectF(it.value) })
             bars++
@@ -399,36 +399,7 @@ class HomeEditMotionShotsTest {
         assertTrue("checked $bars full-width bar lifts", bars >= 4)
     }
 
-    // ---------------------------------------------------------------- a layout flip, a menu's pop
-
-    @Test fun aFlipCascadesAndTheChipNameSlides() {
-        val p = page(classic)
-        val home = p.home
-        pin(p)
-        val t0 = clock
-        home.editOpen(EditStop.CHAT)
-        settle(12)                                                          // the chrome's fade in (the motion's clock is pinned)
-        frame(p, t0 + 2000)
-        val f0 = t0 + 2000
-        val was = model(p).chipName
-        home.editKey("PADRSHOULDER")                                        // RB: the next layout, live
-        assertNotEquals(was, model(p).chipName)
-        val dur = glideMs(home)
-        // the glide's length and the cascade's longest delay (review round 2: no part is snapped at the end)
-        assertTrue(dur > HomeEditMotion.glideMs(Motion.MODULE_OPEN) && dur <= HomeEditMotion.glideMs(Motion.MODULE_OPEN) + Motion.FLIP_STAGGER_MAX)
-        val from = boxes(home)
-        for (t in listOf(0L, 80L, 160L, 400L)) {
-            glideAt(home, (t.toFloat() / dur).coerceAtMost(1f))
-            frame(p, f0 + t)
-            val k = home.editMotion().chipK(f0 + t)
-            if (t == 80L) assertTrue("the chip's name sliding over: $k", k > 0f && k < 1f)
-            shot(p, "m11_flip_%03d".format(t))
-        }
-        glideAt(home, 1f)
-        assertEquals(1f, home.editMotion().chipK(f0 + 400), 0f)
-        assertEquals(+1, home.editMotion().chipDir)
-        assertNotEquals("the page laid the next layout", from, boxes(home))
-    }
+    // ---------------------------------------------------------------- a menu's pop
 
     @Test fun aMenuPopsOutOfItsWidgetOnTheSwappedBigMap() {
         val swapped = HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.THIRD, cast = HomeLayout.CastDock.UNDER_CHAT)
@@ -611,9 +582,9 @@ class HomeEditMotionShotsTest {
     }
     private fun far(a: Pair<Float, Float>, b: Pair<Float, Float>) = hypot(a.first - b.first, a.second - b.second)
 
-    /** a layout flip: the card on the map stays inside the map on every frame (it glides as the map's rider, on the map's delay), and
-     *  the animator runs the cascade's longest delay longer, so no part is snapped to its place at the end */
-    @Test fun aFlipKeepsTheCardOnItsMapAndLandsEveryPart() {
+    /** a swap (Select): the card on the map stays inside the map on every frame (it glides as the map's rider), and every part lands
+     *  on its own spring - none snapped to its place at the end (1518: no layout flips, no cascade) */
+    @Test fun aSwapKeepsTheCardOnItsMapAndLandsEveryPart() {
         val p = page(classic)
         val home = p.home
         pin(p)
@@ -622,10 +593,9 @@ class HomeEditMotionShotsTest {
         settle(12)
         frame(p, t0 + 2000)
         assertTrue("the card on the map", boxes(home).containsKey("QUESTS"))
-        home.editKey("PADRSHOULDER")
+        home.editKey("PADBACK")
         val dur = glideMs(home)
-        assertTrue("the cascade's delay on top of the glide: $dur", dur > HomeEditMotion.glideMs(Motion.MODULE_OPEN) &&
-            dur <= HomeEditMotion.glideMs(Motion.MODULE_OPEN) + Motion.FLIP_STAGGER_MAX)
+        assertEquals("the spring's glide, no cascade on top", HomeEditMotion.glideMs(Motion.MODULE_OPEN), dur)
         val n = (dur / 16L).toInt()
         var last = boxes(home)
         var lastStep = 0f
@@ -763,7 +733,7 @@ class HomeEditMotionShotsTest {
         home.editKey("PAD1"); home.editKey("PADDLEFT"); home.editKey("PAD1"); settle(30)
         assertEquals(HomeLayout.CastDock.UNDER_CHAT, model(p).draft.cast)
         val big = boxes(home).getValue("MAP")
-        home.editCancel()
+        home.editAct { it.discard() }
         // the glide (spring: longer than the chrome's 200 ms fade) and the fade, stepped by hand (the off-device animators)
         val glide = field(home, "anim") as android.animation.ValueAnimator
         assertTrue("a spring glide longer than the fade: ${glide.duration}", glide.duration > Motion.MODULE_CLOSE)
@@ -781,12 +751,12 @@ class HomeEditMotionShotsTest {
         assertTrue("the map shrank both ways", boxes(home).getValue("MAP").let { it.width() < big.width() && it.height() < big.height() })
     }
 
-    /** the middle wheel opened right after Save: the leave's ticker never puts the columns it parted back over it */
-    @Test fun theMiddleWheelOpensRightAfterSave() {
+    /** the middle wheel opened right after Done: the leave's ticker never puts the columns it parted back over it */
+    @Test fun theMiddleWheelOpensRightAfterDone() {
         val p = page(classic)
         val home = p.home
         home.editOpen(EditStop.CHAT); settle(12)
-        home.editSave()
+        home.editDone()
         assertTrue("the leave's springs still run", home.editMotion().on)
         val slot = home.wheelSlot(true)!!
         settle(50)

@@ -211,15 +211,15 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
 
     /**
      * MOVABLE HOME P2, THE EDIT RIBBON (SPEC section 4, final_02; D6 "hints in the XP bar's place"): while Home's edit mode runs, the
-     * tracking bar's place shows its ribbon ([editRibbon]: "Edit Home", the layout chip, "+", the hints; drawn by HomeEditView) and the
-     * Home disc wears a gold tick ([editTick]: a touch on the disc saves and leaves, the host's). A finger on the ribbon is the ribbon's
-     * ([editTouch], the Strip's own px; true = taken)
+     * tracking bar's place shows its ribbon ([editRibbon]: "+" while something is off Home, the hints, Done - a long press Discard;
+     * drawn by HomeEditView) and the Home disc wears a gold tick ([editTick]: a touch on the disc is Done, the host's). A finger on the
+     * ribbon is the ribbon's ([editTouch]: the Strip's own px and MotionEvent's action - DOWN, UP or CANCEL; true = taken)
      */
     var editRibbon: ((c: Canvas, w: Float, top: Float, g0: Float, g1: Float) -> Unit)? = null
         set(v) { field = v; invalidate() }
     var editTick = false
         set(v) { if (field != v) { field = v; invalidate() } }
-    var editTouch: ((x: Float, y: Float, up: Boolean) -> Boolean)? = null
+    var editTouch: ((x: Float, y: Float, action: Int) -> Boolean)? = null
     /** the ribbon took the finger's DOWN: its UP is the ribbon's too */
     private var ribbonDown = false
 
@@ -342,8 +342,12 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         val rib = editTouch
         if (rib != null && editRibbon != null) {
             val ty = e.y - (height - BAR)
-            if (e.actionMasked == MotionEvent.ACTION_DOWN) ribbonDown = ty in 0f..TRACKS.toFloat() && !onHome(e.x, e.y) && rib(e.x, ty, false)
-            if (ribbonDown) { if (e.actionMasked == MotionEvent.ACTION_UP) { ribbonDown = false; rib(e.x, ty, true) }; return true }
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) ribbonDown = ty in 0f..TRACKS.toFloat() && !onHome(e.x, e.y) && rib(e.x, ty, MotionEvent.ACTION_DOWN)
+            if (ribbonDown) {
+                // the UP (a tap: Done; after the long press: nothing) and the CANCEL (the hold let go) are the ribbon's too
+                if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) { ribbonDown = false; rib(e.x, ty, e.actionMasked) }
+                return true
+            }
         }
         // P4: edit mode's rooms' row: the chrome's (select a room, carry it); the disc keeps its touch (save and leave)
         val bt = editBarTouch

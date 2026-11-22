@@ -9,14 +9,18 @@ import org.json.JSONObject
  *
  * The rulings it carries (the user, 2026-11-20, on DECISIONS.txt):
  *  - D1: in fights the band GROWs by default (today's); "Top screen" is opt-in only, "Same size" stays.
- *  - D5: the active layout is PER CHARACTER, with an "All characters" button ([HomeLayoutStore]).
+ *  - D5: the active layout is PER CHARACTER ([HomeLayoutStore]); Settings' "Use this Home for all characters" copies it (1518).
+ *  - 2026-11-21 (after 1517): no layouts any more - no presets, no slots, no layout chip; each character keeps its own arrangement, and
+ *    Settings' "Reset Home to Classic" ([classic]) puts this character's back.
  *  - D8: after a swap LB+LT slides the LEFT column, whatever it holds (Home's slides are by position, see HomeView.pauseSlide).
  * P8 "Classic = today": the record migrated from today's keys ([HomeLayoutMigration]) lays Home exactly as before (HomePlacesGoldenTest).
  */
 data class HomeLayout(
     val v: Int = VERSION,
-    /** the preset or slot it was last saved as ("Classic", "Mirrored", ..., "1".."3"); informative only: [HomePresets.nameOf] names it */
-    val name: String = HomePresets.CLASSIC,
+    /** LEGACY, informative only: the preset or slot 1517 last saved it as ("Classic", "Mirrored", ..., "1".."3"). Never shown and
+     *  never re-derived since 1518 (no presets): read tolerantly and written back as read, so a record's text stays as it was (a
+     *  Classic record byte-identical; a 1517 downgrade reads it). A record that names a preset already holds that preset's fields */
+    val name: String = LEGACY_CLASSIC,
     /** which column the chat takes; the map takes the other */
     val chatSide: Side = Side.LEFT,
     /** the chat column's share of the inner width (the map takes the rest) */
@@ -69,7 +73,7 @@ data class HomeLayout(
 
     /** the map is left of the chat: the add-on's DS toolbar mirror bit (D-pad Left = the map, Right = the chat) */
     val mirrored: Boolean get() = chatSide == Side.RIGHT
-    /** the same layout with chat and map swapped (Select in edit mode, the Home layout tile's swap) */
+    /** the same layout with chat and map swapped (Select in edit mode) */
     fun swapped(): HomeLayout = copy(chatSide = chatSide.other())
 
     /** the tap-to-cast bar's GEOMETRIC side for CastStripModel / CastStripView (they keep screen sides: Right rests at its end) */
@@ -80,11 +84,29 @@ data class HomeLayout(
         CastDock.ACROSS, CastDock.SPLIT -> CastStripModel.Side.BOTH
     }
 
-    /** the same placement fields (the name ignored): a slot or a preset holds this layout */
+    /** the same placement fields (the legacy name ignored) */
     fun samePlace(o: HomeLayout): Boolean = copy(name = "", v = VERSION) == o.copy(name = "", v = VERSION)
+
+    /** Classic's PLACES (1517's Classic preset held these): chat left at half, no Split bar, no bar above its column, no top-screen fight.
+     *  The LB picture and the D-pad toast keep 1516's spots on such a record (HomeView.classicLook), pixel for pixel */
+    val classicPlace: Boolean get() = chatSide == Side.LEFT && chatShare == Share.HALF && cast != CastDock.SPLIT && !cast.top &&
+        fight != FightBand.TOP
+
+    /**
+     * Settings' "Reset Home to Classic" (1518, this character): 1517's Classic preset's fields (chat left at half, the card on the map,
+     * the diamonds, L slots, a Split bar back under the chat and a bar above its column back at its foot, a top-screen fight back to
+     * Grow - the bar's own column and Same size stay the player's, as Classic always kept them), plus today's room bar (its order, every
+     * room on it, the XP track shown)
+     */
+    fun classic(): HomeLayout = copy(name = LEGACY_CLASSIC, chatSide = Side.LEFT, chatShare = Share.HALF, card = CardDock.ON_MAP,
+        rest = HomeRest.DIAMONDS, castSize = SlotSize.L,
+        cast = if (cast == CastDock.SPLIT) CastDock.UNDER_CHAT else cast.withTop(false),
+        fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT)
 
     companion object {
         const val VERSION = 1
+        /** the legacy [name] a new and a migrated record carry (1517's Classic preset's; the JSON text of a Classic record unchanged) */
+        const val LEGACY_CLASSIC = "Classic"
         /** a geometric side picked by an older route (Settings' old Left / Right, "Turn on" = Both) -> the dock it means NOW; [keepTop]
          *  keeps a bar that was above its column above the new one */
         fun dockOf(side: CastStripModel.Side, chatSide: Side, keepTop: Boolean = false): CastDock = when (side) {
@@ -128,25 +150,6 @@ object HomeLayoutJson {
             )
         } catch (e: Exception) { fallback }
     }
-
-    /** the three device slots ("homeLayoutSlots"): a JSON array of records or nulls, always 3 long */
-    fun slots(s: String?): List<HomeLayout?> {
-        val out = arrayOfNulls<HomeLayout>(HomePresets.SLOTS).toMutableList()
-        if (s.isNullOrBlank()) return out
-        try {
-            val a = org.json.JSONArray(s)
-            for (i in 0 until minOf(a.length(), HomePresets.SLOTS)) {
-                val o = a.optJSONObject(i) ?: continue
-                out[i] = parse(o.toString(), fallback = HomeLayout(name = "?")).takeIf { it.name != "?" }
-            }
-        } catch (_: Exception) {}
-        return out
-    }
-    fun slotsJson(slots: List<HomeLayout?>): String {
-        val a = org.json.JSONArray()
-        for (i in 0 until HomePresets.SLOTS) a.put(slots.getOrNull(i)?.let { JSONObject(json(it)) } ?: JSONObject.NULL)
-        return a.toString()
-    }
 }
 
 /**
@@ -156,67 +159,8 @@ object HomeLayoutJson {
  */
 object HomeLayoutMigration {
     fun fromToday(rest: HomeRest, combatGrow: Boolean, questOverMap: Boolean, castSide: CastStripModel.Side): HomeLayout = HomeLayout(
-        name = HomePresets.CLASSIC, chatSide = HomeLayout.Side.LEFT, chatShare = HomeLayout.Share.HALF,
+        name = HomeLayout.LEGACY_CLASSIC, chatSide = HomeLayout.Side.LEFT, chatShare = HomeLayout.Share.HALF,
         card = if (questOverMap) HomeLayout.CardDock.ON_MAP else HomeLayout.CardDock.ABOVE_CHAT,
         cast = HomeLayout.dockOf(castSide, HomeLayout.Side.LEFT), castSize = HomeLayout.SlotSize.L, rest = rest,
         fight = if (combatGrow) HomeLayout.FightBand.GROW else HomeLayout.FightBand.SAME)
-}
-
-/**
- * THE PRESETS (SPEC section 9; code constants). Each one sets only its own fields on the current record ([apply]); the rest (the bar, the
- * rest look, the fight mode where it says nothing) stays the player's - except Classic, which also undoes the other presets' fields. [nameOf] names a record by the first preset whose fields it holds
- * (Classic last: chat left at half), else "Custom".
- */
-object HomePresets {
-    const val CLASSIC = "Classic"
-    const val MIRRORED = "Mirrored"
-    const val BIG_MAP = "Big map"
-    const val BIG_CHAT = "Big chat"
-    const val COMPACT = "Compact"
-    const val FIGHTER = "Fighter"
-    const val CUSTOM = "Custom"
-    /** the device-wide slots of "Mine" (named "1", "2", "3"; typed names are v2) */
-    const val SLOTS = 3
-
-    /** [folded] = the card's fold (app-wide HomeSettings.questMin) the preset asks for, null = left as it is; [available] = selectable now
-     *  (Fighter needs "In fights: Top screen", phase 3) */
-    class Preset(val id: String, val folded: Boolean? = null, val available: Boolean = true,
-                 val apply: (HomeLayout) -> HomeLayout, val holds: (HomeLayout) -> Boolean)
-
-    private val L = HomeLayout.Side.LEFT
-    private val R = HomeLayout.Side.RIGHT
-
-    val ALL: List<Preset> = listOf(
-        // Classic = today's Home, the way BACK from any preset: it also undoes what the others set (Compact's thin row and M slots,
-        // Fighter's Split bar and top-screen fight: Under chat, Grow - D1's default; a bar above its column goes back to its foot, 1516's
-        // only edge); the bar's own column and Same size stay the player's
-        Preset(CLASSIC, apply = { it.copy(name = CLASSIC, chatSide = L, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP,
-                rest = HomeRest.DIAMONDS, castSize = HomeLayout.SlotSize.L,
-                cast = if (it.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.UNDER_CHAT else it.cast.withTop(false),
-                fight = if (it.fight == HomeLayout.FightBand.TOP) HomeLayout.FightBand.GROW else it.fight) },
-            holds = { it.chatSide == L && it.chatShare == HomeLayout.Share.HALF && it.cast != HomeLayout.CastDock.SPLIT && !it.cast.top &&
-                it.fight != HomeLayout.FightBand.TOP }),
-        Preset(MIRRORED, apply = { it.copy(name = MIRRORED, chatSide = R, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP,
-                cast = HomeLayout.CastDock.UNDER_CHAT) },
-            holds = { it.chatSide == R && it.chatShare == HomeLayout.Share.HALF && it.card == HomeLayout.CardDock.ON_MAP && it.cast == HomeLayout.CastDock.UNDER_CHAT }),
-        Preset(BIG_MAP, apply = { it.copy(name = BIG_MAP, chatSide = L, chatShare = HomeLayout.Share.THIRD, card = HomeLayout.CardDock.ABOVE_CHAT,
-                cast = HomeLayout.CastDock.UNDER_MAP) },
-            holds = { it.chatSide == L && it.chatShare == HomeLayout.Share.THIRD && it.card == HomeLayout.CardDock.ABOVE_CHAT && it.cast == HomeLayout.CastDock.UNDER_MAP }),
-        Preset(BIG_CHAT, apply = { it.copy(name = BIG_CHAT, chatSide = L, chatShare = HomeLayout.Share.TWO_THIRDS, card = HomeLayout.CardDock.ON_MAP,
-                cast = HomeLayout.CastDock.UNDER_CHAT) },
-            holds = { it.chatSide == L && it.chatShare == HomeLayout.Share.TWO_THIRDS && it.card == HomeLayout.CardDock.ON_MAP && it.cast == HomeLayout.CastDock.UNDER_CHAT }),
-        Preset(COMPACT, folded = true, apply = { it.copy(name = COMPACT, rest = HomeRest.ROW, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.M) },
-            holds = { it.rest == HomeRest.ROW && it.cast == HomeLayout.CastDock.ACROSS && it.castSize == HomeLayout.SlotSize.M }),
-        // phase 3: selectable now the top-screen combat bar ships (Split: slots 1-4 under the left column, 5-8 under the right)
-        Preset(FIGHTER, folded = true,
-            apply = { it.copy(name = FIGHTER, fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.SPLIT) },
-            holds = { it.fight == HomeLayout.FightBand.TOP && it.cast == HomeLayout.CastDock.SPLIT }),
-    )
-    /** the presets the picker offers in this build (phase 3: Fighter too, the player's own opt-in to the top-screen bar, D1) */
-    val OFFERED: List<Preset> get() = ALL.filter { it.available }
-
-    fun byId(id: String): Preset? = ALL.firstOrNull { it.id == id }
-
-    /** the record's name: the first specific preset it holds, Classic, else Custom */
-    fun nameOf(l: HomeLayout): String = (ALL.drop(1) + ALL.first()).firstOrNull { it.holds(l) }?.id ?: CUSTOM
 }

@@ -31,9 +31,9 @@ import java.time.Duration
  * MOVABLE HOME, PHASE 2: EDIT MODE ON THE REAL [HomeView] (SPEC.txt section 15 HomeEditShotsTest): the 450 ms hold on the map's body (the
  * ring from 150 ms; the tap's map module never opens), the chrome (dim, dashed frames, tags, the golden box, the divider, the ribbon in the
  * room bar's XP track, the disc's gold tick), a finger's drag across the centre (the chat glides over, the drop well), the controller's
- * lift / steps / swap / Y, every widget's menu, the tap-to-cast bar's editor and Split's two halves, the Layouts sheet, remove / "+", the
- * Save / Discard prompt, a fight parking the draft and its end bringing it back, the map's picture scaled along a width glide, Save
- * writing the record. With HOME_EDIT_SHOTS (and HOME_LAYOUT_ART = an art root) every state is drawn, the room bar under it:
+ * lift / steps / swap / Y, every widget's menu, the tap-to-cast bar's editor and Split's two halves, remove / "+", the ribbon's Done
+ * (held: its ring towards Discard), a fight parking edit mode and its end bringing it back, the map's picture scaled along a width
+ * glide; test build 1518: every settled change written as it is made, Done / Discard (a long press, a held B). With HOME_EDIT_SHOTS (and HOME_LAYOUT_ART = an art root) every state is drawn, the room bar under it:
  *   HOME_EDIT_SHOTS=<dir> HOME_LAYOUT_ART=<root> gradlew :app:testModernDebugUnitTest --tests "*HomeEditShotsTest*"
  */
 @RunWith(RobolectricTestRunner::class)
@@ -141,7 +141,7 @@ class HomeEditShotsTest {
         home.onEditChrome = { v ->
             strip.editRibbon = v?.let { ev -> { c: Canvas, w: Float, top: Float, g0: Float, g1: Float -> ev.drawRibbon(c, w, top, g0, g1) } }
             strip.editTick = v != null
-            strip.editTouch = v?.let { ev -> { x: Float, y: Float, up: Boolean -> ev.ribbonTouch(x, y, up) } }
+            strip.editTouch = v?.let { ev -> { x: Float, y: Float, action: Int -> ev.ribbonTouch(x, y, action) } }
             // P4 (the host's wiring): the room bar's chrome and its rooms' row's touches
             if (roomBar) {
                 strip.editBar = v?.let { ev -> { c: Canvas, layer: Int -> ev.drawBar(c, layer) } }
@@ -251,7 +251,7 @@ class HomeEditShotsTest {
         val b1 = boxes(home)
         assertTrue("the map now left of the chat", b1.getValue("MAP").left < b1.getValue("CHAT").left)
         assertNull(model(p).lifted)
-        assertEquals("the toolbar's mirror waits for Save", false, HomeSettings.layout.mirrored)
+        assertEquals("1518: the drop is saved as it is made (the add-on hears it at Done)", true, HomeSettings.layout.mirrored)
         shot(p, "07_swapped_draft")
         // the controller lifts the chat (A), the arrows toward its docks; B puts it back
         home.editKey("PADDRIGHT"); settle()
@@ -335,26 +335,22 @@ class HomeEditShotsTest {
         assertEquals("landed: no glide scale, the viewport re-laid", Motion.REST_SCALE, mapSlot.scaleX, 0.0001f)
         assertNull(mapSlot.clipBounds)
         assertEquals(boxes(home).getValue("MAP").width(), mapSlot.width.toFloat(), 1.5f)
-        // THE LAYOUTS SHEET (A on the chip): six presets as live pictures, Mine's three slots, All characters
-        home.editAct { it.tap(EditStop.CHIP) }; settle()
-        assertEquals(HomeEditModel.Sheet.LAYOUTS, m.sheet)
-        shot(p, "24_layouts_sheet")
-        home.editKey("PAD2"); settle()
-        // the chip's flip (live, the glide)
-        home.editKey("PADDRIGHT"); settle()
-        shot(p, "25_chip_flipped")
-        // B with changes: Save / Discard / Keep editing, Save lit
-        home.editKey("PAD2"); settle()
-        assertTrue(m.prompt)
-        shot(p, "26_prompt")
-        home.editKey("PAD2"); settle()
-        // A FIGHT mid-edit: the chrome goes, Home plays the SAVED layout's fight; its end brings the draft back
+        // 1518: THE RIBBON'S ONE BUTTON, Done: held, its gold ring fills towards Discard; let go early, nothing happens
+        val ev = home.editChrome
+        val done = ev.ribbon(W.toFloat()).done
+        assertTrue(ev.ribbonTouch(done.centerX(), done.centerY(), MotionEvent.ACTION_DOWN))
+        settle(18)
+        shot(p, "24_done_held_ring", frames = 1)
+        ev.ribbonTouch(done.centerX(), done.centerY(), MotionEvent.ACTION_CANCEL); settle()
+        assertTrue("let go early: still editing", home.editing)
+        assertTrue("the draft kept", m.draft.mirrored)
+        // A FIGHT mid-edit: the chrome goes, Home plays the record's fight (the draft, saved as it went); its end brings edit mode back
         val draft = m.draft
         home.onFull(full(true), true); home.onQuests(quests(true), true); home.tick(); settle()
         assertTrue(m.parked)
         assertFalse(home.homeOwnGuestWanted())
         assertFalse("parked: Home is Home (B, touch-cast, Party mode's D-pad)", home.editing)
-        assertEquals("the saved layout's fight (Classic: the chat left)", true, boxes(home).getValue("CHAT").left < boxes(home).getValue("MAP").left)
+        assertEquals("the record's fight (saved as it went: the chat right)", true, boxes(home).getValue("CHAT").left > boxes(home).getValue("MAP").left)
         shot(p, "27_fight_parked")
         home.onFull(full(false), true); home.onQuests(quests(false), true)
         // the fight's word lapses (the grow's), then Home ticks
@@ -362,12 +358,12 @@ class HomeEditShotsTest {
         assertFalse(m.parked)
         assertEquals(draft, m.draft)
         shot(p, "28_fight_over_resumed")
-        // Start: Save. The record is the draft, the chrome fades, the disc's tick goes
+        // Start: Done. The record is the draft, the chrome fades, the disc's tick goes
         home.editKey("PADFORWARD"); settle()
         assertFalse(home.editing)
         assertTrue(HomeSettings.layout.samePlace(draft))
         assertFalse(p.strip.editTick)
-        // fix round 3: after Save the pictures keep the SAVED sides until the add-on's `d` says them (no slide back and forth)
+        // fix round 3: after Done the pictures keep the record's sides until the add-on's `d` says them (no slide back and forth)
         assertEquals(if (HomeLayoutSolver.mirrorBit(HomeSettings.layout) == 1) "map" else "chat", p.cast.roomBar?.get(1))
         shot(p, "29_saved")
         contact()
@@ -391,7 +387,8 @@ class HomeEditShotsTest {
         assertFalse(p.home.editing)
     }
 
-    /** the fix pass: Y on the band (and the band menu's Rest row) previews LIVE - the band's box changes before Save; Discard puts it back */
+    /** the fix pass: Y on the band (and the band menu's Rest row) previews LIVE - the band's box changes at once (1518: saved as it is
+     *  made); Discard puts it back */
     @Test fun theBandsRestPreviewsLive() {
         val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
         assertEquals(HomeRest.DIAMONDS, HomeSettings.rest)
@@ -400,8 +397,8 @@ class HomeEditShotsTest {
         p.home.editKey("PAD4"); settle()
         assertEquals(HomeRest.ROW, model(p).draft.rest)
         val b1 = boxes(p.home).getValue("BARS")
-        assertNotEquals("the band's box follows the draft's rest before Save (Diamonds -> Thin row)", b0.bottom, b1.bottom, 0.5f)
-        assertEquals("nothing saved yet", HomeRest.DIAMONDS, HomeSettings.rest)
+        assertNotEquals("the band's box follows the draft's rest (Diamonds -> Thin row)", b0.bottom, b1.bottom, 0.5f)
+        assertEquals("1518: saved as it is made", HomeRest.ROW, HomeSettings.rest)
         shot(p, "32_band_thin_row_live")
         // the band menu's Rest row: back to Diamonds, live
         p.home.editKey("PAD3"); settle()
@@ -410,8 +407,8 @@ class HomeEditShotsTest {
         assertEquals(HomeRest.DIAMONDS, model(p).draft.rest)
         assertEquals(b0.bottom, boxes(p.home).getValue("BARS").bottom, 0.5f)
         p.home.editKey("PAD2"); p.home.editKey("PAD4"); settle()
-        // Discard: the saved rest again
-        p.home.editCancel(); settle()
+        // Discard: the rest it opened with again
+        p.home.editAct { it.discard() }; settle()
         assertEquals(b0.bottom, boxes(p.home).getValue("BARS").bottom, 0.5f)
         assertEquals(HomeRest.DIAMONDS, HomeSettings.rest)
     }
@@ -428,10 +425,10 @@ class HomeEditShotsTest {
      */
     @Suppress("UNCHECKED_CAST")
     @Test fun everyMenuFitsAtAThirdAndInSpanishAndFrench() {
-        val layouts = listOf("bigmap" to HomePresets.byId(HomePresets.BIG_MAP)!!.apply(HomeLayout()),
-            "bigchat" to HomePresets.byId(HomePresets.BIG_CHAT)!!.apply(HomeLayout()),
+        val layouts = listOf("bigmap" to HomeArrangements.of(HomeArrangements.BIG_MAP, HomeLayout()),
+            "bigchat" to HomeArrangements.of(HomeArrangements.BIG_CHAT, HomeLayout()),
             // the bar above the third-wide chat: its menu's Above / Below row, the map's menu under the bar
-            "bigmap_topbar" to HomePresets.byId(HomePresets.BIG_MAP)!!.apply(HomeLayout()).copy(cast = HomeLayout.CastDock.ABOVE_CHAT))
+            "bigmap_topbar" to HomeArrangements.of(HomeArrangements.BIG_MAP, HomeLayout()).copy(cast = HomeLayout.CastDock.ABOVE_CHAT))
         val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
         try {
             for (l in listOf("en", "es", "fr")) {
@@ -513,16 +510,47 @@ class HomeEditShotsTest {
         touch(p, MotionEvent.ACTION_UP, c.centerX() + 30f, c.bottom - 60f)
     }
 
-    @Test fun discardGlidesBackAndWritesNothing() {
+    /** 1518: a long press on Done (and a held B on the direct feed) is Discard - the record edit mode opened on written back, Home
+     *  glides back to it; a tap on Done, a short B: Done (the change kept, it was saved as it was made) */
+    @Test fun aLongPressOnDoneOrAHeldBDiscards() {
         val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
         val p = page(classic)
+        p.home.forceLive = true
         assertTrue(p.home.editOpen(EditStop.MAP))
         p.home.editKey("PADBACK"); settle()
         assertTrue(boxes(p.home).getValue("MAP").left < boxes(p.home).getValue("CHAT").left)
-        p.home.editKey("PAD2"); p.home.editKey("PADDRIGHT"); p.home.editKey("PAD1"); settle()
-        assertFalse(p.home.editing)
+        assertTrue("saved as it is made", HomeSettings.layout.mirrored)
+        // the long press on Done (DISCARD_HOLD_MS): Discard fires while the finger is still down; its release does nothing more
+        val ev = p.home.editChrome
+        val done = ev.ribbon(W.toFloat()).done
+        assertTrue(ev.ribbonTouch(done.centerX(), done.centerY(), MotionEvent.ACTION_DOWN))
+        settle(10)
+        assertTrue("not yet", p.home.editing)
+        settle(40)
+        assertFalse("held past ${HomeEditModel.DISCARD_HOLD_MS} ms: discarded", p.home.editing)
+        ev.ribbonTouch(done.centerX(), done.centerY(), MotionEvent.ACTION_UP); settle()
+        assertEquals(classic, HomeSettings.layout)
+        assertTrue("back where it was", boxes(p.home).getValue("CHAT").left < boxes(p.home).getValue("MAP").left)
+        // a held B on the direct feed: the same
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editKey("PADBACK"); settle()
+        assertTrue(HomeSettings.layout.mirrored)
+        p.home.editB(true); settle(45)
+        assertFalse("B held: discarded", p.home.editing)
+        p.home.editB(false); settle()
+        assertEquals(classic, HomeSettings.layout)
+        // a short B, a tap on Done: Done, the change kept
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editKey("PADBACK"); settle()
+        p.home.editB(true); settle(5); p.home.editB(false); settle()
+        assertFalse("a short B at the top: Done", p.home.editing)
+        assertTrue("kept", HomeSettings.layout.mirrored)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        p.home.editKey("PADBACK"); settle()
+        assertTrue(ev.ribbonTouch(done.centerX(), done.centerY(), MotionEvent.ACTION_DOWN)); settle(3)
+        ev.ribbonTouch(done.centerX(), done.centerY(), MotionEvent.ACTION_UP); settle()
+        assertFalse("a tap on Done: Done", p.home.editing)
         assertEquals(classic, HomeSettings.layout.copy(name = classic.name))
-        assertTrue("back where it was saved", boxes(p.home).getValue("CHAT").left < boxes(p.home).getValue("MAP").left)
         // the hold's touch suspension: no band touch-cast while editing (the chrome takes every touch)
         p.home.editOpen(EditStop.CHAT); settle()
         assertTrue(p.home.homeOwnGuestWanted())
@@ -544,7 +572,7 @@ class HomeEditShotsTest {
         val t = part.focusTargets().first()
         val d = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, t.centerX(), t.centerY(), 0); part.dispatchTouchEvent(d); d.recycle()
         val u = MotionEvent.obtain(0, 40, MotionEvent.ACTION_UP, t.centerX(), t.centerY(), 0); part.dispatchTouchEvent(u); u.recycle()
-        assertEquals("A / a finger on Home layout = Edit Home", 1, asked)
+        assertEquals("A / a finger on the Edit Home tile = edit mode", 1, asked)
         assertNull("no band opened", part.openTile)
         out?.let { d2 ->
             val b = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
@@ -619,14 +647,15 @@ class HomeEditShotsTest {
         home.editKey("PADDLEFT"); settle()
         assertEquals("BAGS", names(p.strip)[5])
         shot4(p, "p4_05_bags_over_the_disc")
-        assertEquals("nothing written before Save", RoomBar.DEFAULT, HomeSettings.layout.rooms)
+        assertEquals("carried: nothing written before the drop", RoomBar.DEFAULT, HomeSettings.layout.rooms)
         // A drops; X = the bar's menu: XP bar Show / Hide, Order Reset (final_08)
         home.editKey("PAD1"); home.editKey("PAD3"); settle()
         assertEquals(EditStop.ROOMS, m.menu)
         shot4(p, "p4_06_room_bar_menu")
         home.editKey("PADDRIGHT"); settle()                                // XP bar: Hide (the draft)
         assertFalse(m.draft.xpBar)
-        assertTrue("edit mode keeps the track: its ribbon", HomeSettings.layout.xpBar)
+        assertFalse("1518: saved as it is made (edit mode keeps the track: its ribbon)", HomeSettings.layout.xpBar)
+        assertEquals("the dropped room saved too", "BAGS", HomeSettings.layout.rooms[5])
         shot4(p, "p4_07_menu_xp_hide")
         home.editKey("PAD2"); settle()
         // a FINGER carries Settings to the far left: lifted at once, the others make way after the 80 ms hover, the release lays it
@@ -653,7 +682,7 @@ class HomeEditShotsTest {
         stripTouch(p, MotionEvent.ACTION_DOWN, s0.centerX(), s0.centerY()); stripTouch(p, MotionEvent.ACTION_UP, s0.centerX(), s0.centerY())
         assertEquals(EditStop.ROOMS, m.menu)
         home.editKey("PAD2")
-        // Start: Save. The record keeps the order and the hidden track (per character); the host lays Home into the track's place
+        // Start: Done. The record keeps the order and the hidden track (per character); the host lays Home into the track's place
         home.editKey("PADFORWARD"); settle()
         assertFalse(home.editing)
         assertEquals("SETTINGS", HomeSettings.layout.rooms[0])
@@ -690,8 +719,9 @@ class HomeEditShotsTest {
         assertEquals(EditStop.ROOMS, model(p).cursor)
         p.home.editKey("PAD1"); p.home.editKey("PADDRIGHT"); p.home.editKey("PADDRIGHT"); p.home.editKey("PAD1"); settle()
         assertEquals("MAP", names(p.strip)[2])
-        // B: Save / Discard / Keep editing; Discard: the order glides back, nothing written
-        p.home.editKey("PAD2"); p.home.editKey("PADDRIGHT"); p.home.editKey("PAD1"); settle()
+        assertEquals("saved at the drop", "MAP", HomeSettings.layout.rooms[2])
+        // a held B: Discard - the order glides back, the record as it was
+        p.home.editB(true); settle(45); p.home.editB(false); settle()
         assertFalse(p.home.editing)
         assertEquals(RoomBar.DEFAULT, names(p.strip))
         assertEquals(RoomBar.DEFAULT, HomeSettings.layout.rooms)
@@ -724,8 +754,9 @@ class HomeEditShotsTest {
     private fun rec(key: String): String? = storePrefs().getString(HomeLayoutStore.KEY_PREFIX + key, null)
     private fun editViewOf(h: HomeView): HomeEditView = (field(h, "editView\$delegate") as Lazy<*>).value as HomeEditView
 
-    /** P2: edit mode open (or parked by a room) on Korvash, the game switches to Thrandil: it ends unwritten, Thrandil's record untouched */
-    @Test fun anotherCharacterEndsEditModeUnwritten() {
+    /** P2: edit mode open (or parked by a room) on Korvash, the game switches to Thrandil: it ends, nothing more written - Korvash's
+     *  record keeps what was saved as it was made, Thrandil's record untouched */
+    @Test fun anotherCharacterEndsEditMode() {
         val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
         HomeLayoutStore.character("Thrandil-Realm"); HomeLayoutStore.set(HomeLayout(card = HomeLayout.CardDock.OFF, cast = HomeLayout.CastDock.ACROSS))
         HomeLayoutStore.character("Korvash-Realm"); HomeLayoutStore.set(HomeLayout(chatSide = HomeLayout.Side.RIGHT, cast = HomeLayout.CastDock.UNDER_CHAT))
@@ -734,27 +765,32 @@ class HomeEditShotsTest {
         val korvash = rec("Korvash-Realm")
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
         p.home.editKey("PADBACK"); settle()
-        assertTrue(model(p).dirty)
+        assertTrue(model(p).changed)
+        val swapped = rec("Korvash-Realm")
+        assertEquals("1518: Korvash's swap saved as it was made", HomeLayout.Side.LEFT, HomeLayoutJson.parse(swapped).chatSide)
         HomeLayoutStore.character("Thrandil-Realm"); settle()
         assertNull("another character: edit mode ended", p.home.editModel())
         assertFalse(p.home.editing)
         assertEquals("Thrandil's record never written", thrandil, rec("Thrandil-Realm"))
-        assertEquals("nor Korvash's (nothing was saved)", korvash, rec("Korvash-Realm"))
+        assertEquals("Korvash's as it was saved", swapped, rec("Korvash-Realm"))
+        assertTrue(korvash != swapped)
         // parked by a room, the switch meanwhile, then Home again: ended, nothing resumed, nothing written
         HomeLayoutStore.character("Korvash-Realm"); settle()
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
         p.home.editKey("PADBACK"); settle()
         p.home.giveBack()
         assertTrue(model(p).parked)
+        val again = rec("Korvash-Realm")
         HomeLayoutStore.character("Thrandil-Realm"); settle()
         p.home.borrow(); lay(p.home); settle()
         assertNull(p.home.editModel())
         assertEquals(thrandil, rec("Thrandil-Realm"))
-        assertEquals(korvash, rec("Korvash-Realm"))
+        assertEquals("Korvash's: the parked session's saved swap, nothing after", again, rec("Korvash-Realm"))
+        assertEquals(HomeLayout.Side.RIGHT, HomeLayoutJson.parse(again).chatSide)
     }
 
-    /** P1: Korvash named before his realm (Home on the default), edit mode changes only the width, the key arrives, Save: only that
-     *  change is laid on Korvash's own record (his chat side and rest kept) */
+    /** P1: Korvash named before his realm (Home on the default), edit mode changes only the width (held: no key to write it under),
+     *  the key arrives: only that change is laid on Korvash's own record (his chat side and rest kept), and edit mode goes on there */
     @Test fun theLateKeyKeepsTheCharactersOwnRecord() {
         val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
         HomeLayoutStore.character("Korvash-Realm")
@@ -765,21 +801,23 @@ class HomeEditShotsTest {
         p.home.editKey("PAD4"); settle()
         val share = model(p).draft.chatShare
         assertNotEquals(HomeLayout.Share.HALF, share)
+        assertTrue("held, never under a partial key", storePrefs().all.keys.none { it.startsWith(HomeLayoutStore.KEY_PREFIX + "Korvash") && it != HomeLayoutStore.KEY_PREFIX + "Korvash-Realm" })
         HomeLayoutStore.character("Korvash-Realm"); settle()
         assertNotNull("the same character's key: edit mode stays", p.home.editModel())
-        p.home.editSave(); settle()
+        assertEquals("rebased on his real record", HomeLayout.Side.RIGHT, model(p).draft.chatSide)
+        p.home.editDone(); settle()
         val k = HomeLayoutJson.parse(rec("Korvash-Realm"))
         assertEquals("the session's change", share, k.chatShare)
         assertEquals("his own chat side kept", HomeLayout.Side.RIGHT, k.chatSide)
         assertEquals("his own rest kept", HomeRest.ROW, k.rest)
     }
 
-    /** a Layouts reset while edit mode is parked by the Settings room (the host's resetApply: editCancel first): no draft to Save */
+    /** a Layouts reset while edit mode is parked by the Settings room (the host's resetApply: editCancel first): nothing written after it */
     @Test fun aLayoutsResetLeavesNoDraftToSave() {
         val p = page(HomeLayout(chatSide = HomeLayout.Side.RIGHT, cast = HomeLayout.CastDock.UNDER_CHAT))
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
         p.home.editKey("PAD4"); settle()
-        assertTrue(model(p).dirty)
+        assertTrue(model(p).changed)
         p.home.giveBack()                                                     // Settings opens: the draft parked
         assertTrue(model(p).parked)
         p.home.editCancel()                                                   // resetApply, LAYOUTS
@@ -788,7 +826,7 @@ class HomeEditShotsTest {
         p.home.borrow(); lay(p.home); settle()
         assertNull("no session to resume", p.home.editModel())
         assertEquals("Classic again", HomeLayout.Side.LEFT, HomeSettings.layout.chatSide)
-        p.home.editSave(); p.home.editKey("PADFORWARD"); settle()
+        p.home.editDone(); p.home.editKey("PADFORWARD"); settle()
         assertEquals("nothing put the old record back", HomeLayout.Side.LEFT, HomeSettings.layout.chatSide)
     }
 
@@ -858,26 +896,6 @@ class HomeEditShotsTest {
         assertTrue(home.editOpen(EditStop.MAP)); home.editKey("PAD1"); settle()
         assertEquals(EditStop.MAP, model(p).lifted)
         assertTrue("the map lifted: its own paint follows it", home.liftedBoxes().isEmpty())
-    }
-
-    /** Save on a Compact layout keeps the player's own unfold; a preset PICKED in the session folds live, Discard unfolds again */
-    @Test fun aPresetsFoldOnlyWhenPicked() {
-        val compact = HomePresets.byId(HomePresets.COMPACT)!!.apply(HomeLayout())
-        val p = page(compact)
-        HomeSettings.questMin = false
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
-        assertEquals(HomePresets.COMPACT, model(p).chipName)
-        p.home.editSave(); settle()
-        assertFalse("the player's unfold kept", HomeSettings.questMin)
-        val q = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
-        HomeSettings.questMin = false
-        assertTrue(q.home.editOpen(EditStop.CHAT)); settle()
-        repeat(HomePresets.ALL.size) { if (model(q).chipName != HomePresets.COMPACT) q.home.editKey("PADRSHOULDER") }
-        settle()
-        assertEquals(HomePresets.COMPACT, model(q).chipName)
-        assertTrue("picked: folded live (the preview is what Save keeps)", HomeSettings.questMin)
-        q.home.editCancel(); settle()
-        assertFalse("Discard: the fold as it was", HomeSettings.questMin)
     }
 
     /** the Card / the bar Off from its own menu: the cursor goes on ("+"), the golden box always on something drawn */
@@ -959,13 +977,13 @@ class HomeEditShotsTest {
         settle(); lay(home); settle()
         assertTrue(home.editing)
         assertEquals(draft, home.chatPaneBox())
-        home.editCancel(); settle(); lay(home); settle()
-        assertEquals("Discard: the saved pane again", saved, home.chatPaneBox())
+        home.editAct { it.discard() }; settle(); lay(home); settle()
+        assertEquals("Discard: the pane it opened with again", saved, home.chatPaneBox())
     }
 
-    /** finding 7: Save keeps the D-pad pictures on the saved sides until the add-on's `d` says them (no slide back and forth); the
+    /** finding 7: Done keeps the D-pad pictures on the record's sides until the add-on's `d` says them (no slide back and forth); the
      *  resend given up = a cross-fade back to `d` */
-    @Test fun saveKeepsTheToolbarPicturesUntilTheAddonSaysThem() {
+    @Test fun doneKeepsTheToolbarPicturesUntilTheAddonSaysThem() {
         val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
         val home = p.home
         home.forceLive = true
@@ -976,8 +994,8 @@ class HomeEditShotsTest {
         home.editKey("PADBACK"); settle()
         assertEquals("the draft's preview", swapped, cast.roomBar)
         cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + 10_000L)  // the preview's slide done
-        home.editSave(); settle(2)
-        assertEquals("Save: still the saved sides", swapped, cast.roomBar)
+        home.editDone(); settle(2)
+        assertEquals("Done: still the record's sides", swapped, cast.roomBar)
         assertNull("nothing moved", cast.roomMotionK())
         // the add-on still answers with the old `d` (a padmap before the taps landed): the pictures hold
         cast.roomBar = home.roomBarFor(HoldTalk.DEFAULT_DIRS)
@@ -985,11 +1003,11 @@ class HomeEditShotsTest {
         // the confirming `d`: the same pictures, nothing moves
         cast.roomBar = home.roomBarFor(swapped)
         assertEquals(swapped, cast.roomBar); assertNull(cast.roomMotionK())
-        // a Save the add-on never confirms: the host gives up and the pictures cross-fade back to `d` (never a slide)
+        // a Done the add-on never confirms: the host gives up and the pictures cross-fade back to `d` (never a slide)
         assertTrue(home.editOpen(EditStop.CHAT)); settle()
         home.editKey("PADBACK"); settle()
         cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + 10_000L)
-        home.editSave(); settle(2)
+        home.editDone(); settle(2)
         assertEquals(HoldTalk.DEFAULT_DIRS, cast.roomBar)
         home.roomBarHoldEnd()
         assertEquals(swapped, cast.roomBar)
@@ -1030,7 +1048,7 @@ class HomeEditShotsTest {
         assertNull("Up / Down only: nothing", cast.roomMotionK())
     }
 
-    /** the Layouts sheet's live pictures: the settings stage fed a game (PreviewStage) */
+    /** the settings stage fed a game (PreviewStage: the Settings tiles' live pictures) */
     private fun feedStage() {
         val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
         val nn = JSONArray()

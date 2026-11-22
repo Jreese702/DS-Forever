@@ -14,8 +14,8 @@ import kotlin.math.sin
  * THE iPHONE-STYLE EDIT MODE'S MOTION (HomeEditMotion; the user, 2026-11-21: "resemble more of like an iPhone app edit mode with apps
  * kind of animating zoomed smaller a bit and being more animated generally"): the closed-form springs against a numeric integration,
  * each spring's overshoot, the glides' pace, retargeting without a jump, the wiggle's phases and its corners on every Home layout, the
- * lift / drop, the system's animator scale (0 = still, 2 = half speed), a fight's still(), the map's crop composed with a pose, the flip's
- * cascade and the model's flip / sheet morphs. Pure.
+ * lift / drop, the system's animator scale (0 = still, 2 = half speed), a fight's still(), the map's crop composed with a pose and the
+ * open's ripple. Pure.
  */
 class HomeEditMotionTest {
 
@@ -127,8 +127,8 @@ class HomeEditMotionTest {
      * past WIGGLE_PX (8 px, was 3) on any layout, any part
      */
     @Test fun theWiggleIsNoticeableOnEveryLayout() {
-        val layouts = HomePresets.ALL.map { it.apply(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)) } +
-            HomePresets.ALL.map { it.apply(HomeLayout(cast = HomeLayout.CastDock.ABOVE_MAP)) } +
+        val layouts = HomeArrangements.on(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)).map { it.second } +
+            HomeArrangements.on(HomeLayout(cast = HomeLayout.CastDock.ABOVE_MAP)).map { it.second } +
             HomeLayout(chatSide = HomeLayout.Side.RIGHT, chatShare = HomeLayout.Share.THIRD) +
             HomeLayout(chatShare = HomeLayout.Share.TWO_THIRDS, cast = HomeLayout.CastDock.UNDER_MAP)
         val big = setOf(HomePart.CHAT, HomePart.MAP, HomePart.PARTY, HomePart.QUESTS)
@@ -485,8 +485,7 @@ class HomeEditMotionTest {
         }
     }
 
-    @Test fun theFlipCascadeAndTheOpenRippleAreDeterministic() {
-        assertEquals(listOf(0L, 18L, 36L, 54L, 72L, 72L), (0..5).map { HomeEditMotion.stagger(it) })
+    @Test fun theOpenRippleIsDeterministic() {
         assertEquals(0L, HomeEditMotion.ripple(0f, 900f)); assertEquals(Motion.ENTER_RIPPLE, HomeEditMotion.ripple(900f, 900f))
         // the ripple's delays hold each key still until its turn
         val m = HomeEditMotion()
@@ -495,23 +494,5 @@ class HomeEditMotionTest {
         val p = HomeEditMotion.Pose()
         assertEquals("the chat waits", 1f, m.pose(EditStop.CHAT.ordinal, 50L, 300f, p).scale, 0f)
         assertTrue("the map has started", m.pose(EditStop.MAP.ordinal, 50L, 300f, p).scale < 1f)
-    }
-
-    @Test fun flipsAndTheSheetSayTheirWay() {
-        val flips = HomePresets.ALL.map { p -> HomeEditModel.Flip(p.id, p.available) { l -> p.apply(l) } }
-        val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
-        val m = HomeEditModel(classic, EditStop.CHIP, flips, HomePresets.nameOf(classic), true)
-        val right = m.flip(1).filterIsInstance<HomeEditModel.Fx.Relay>()
-        assertEquals(listOf(1), right.map { it.morph })
-        val left = m.flip(-1).filterIsInstance<HomeEditModel.Fx.Relay>()
-        assertEquals(listOf(-1), left.map { it.morph })
-        // the sheet: a later preset is +1, an earlier one -1
-        val n = HomeEditModel(classic, EditStop.CHIP, flips, HomePresets.nameOf(classic), true)
-        assertEquals(listOf(1), n.sheetUse(2).filterIsInstance<HomeEditModel.Fx.Relay>().map { it.morph })
-        assertEquals(listOf(-1), n.sheetUse(1).filterIsInstance<HomeEditModel.Fx.Relay>().map { it.morph })
-        // anything else is no flip
-        val o = HomeEditModel(classic, EditStop.CHAT, flips, HomePresets.nameOf(classic), true)
-        val step = o.lift(EditStop.CHAT) + o.drop()
-        assertTrue(step.filterIsInstance<HomeEditModel.Fx.Relay>().all { it.morph == 0 })
     }
 }

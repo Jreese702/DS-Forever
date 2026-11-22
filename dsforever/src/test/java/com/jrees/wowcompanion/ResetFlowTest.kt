@@ -241,15 +241,15 @@ class ResetFlowTest {
         seed()
         val mirrored = HomeLayoutJson.json(HomeLayout(chatSide = HomeLayout.Side.RIGHT))
         p("home").m.putAll(mapOf("${HomeLayoutStore.KEY_PREFIX}$me" to mirrored, "${HomeLayoutStore.KEY_PREFIX}$other" to mirrored,
-            HomeLayoutStore.KEY_DEFAULT to mirrored, HomeLayoutStore.KEY_SLOTS to "[null,{},null]", HomeLayoutStore.KEY_MIGRATED to true))
+            HomeLayoutStore.KEY_DEFAULT to mirrored, HomeLayoutStore.KEY_SLOTS_LEGACY to "[null,{},null]", HomeLayoutStore.KEY_MIGRATED to true))
         run().run(ResetPlan.Button.LAYOUTS, me, false, gameRunning = false)
         assertEquals("Classic under my own key", HomeLayout(), HomeLayoutJson.parse(p("home").m["${HomeLayoutStore.KEY_PREFIX}$me"] as String))
         assertEquals("another character's record untouched", mirrored, p("home").m["${HomeLayoutStore.KEY_PREFIX}$other"])
         assertEquals("the first-login seed stays", mirrored, p("home").m[HomeLayoutStore.KEY_DEFAULT])
-        assertEquals("the device's slots stay", "[null,{},null]", p("home").m[HomeLayoutStore.KEY_SLOTS])
+        assertEquals("the device's slots stay", "[null,{},null]", p("home").m[HomeLayoutStore.KEY_SLOTS_LEGACY])
         // Everything, This character: the same
         run().run(ResetPlan.Button.EVERYTHING, me, false, gameRunning = false)
-        assertEquals("[null,{},null]", p("home").m[HomeLayoutStore.KEY_SLOTS])
+        assertEquals("[null,{},null]", p("home").m[HomeLayoutStore.KEY_SLOTS_LEGACY])
         assertEquals(mirrored, p("home").m[HomeLayoutStore.KEY_DEFAULT])
         // the store reads Classic for me (never the default) after the reset
         HomeSettings.startForTest(p("home")); HomeLayoutStore.character(me)
@@ -257,7 +257,7 @@ class ResetFlowTest {
         HomeSettings.startForTest(null)
         // Everything, All characters: every record, the seed and the slots go (nothing written)
         run().run(ResetPlan.Button.EVERYTHING, me, true, gameRunning = false)
-        assertTrue(p("home").m.keys.none { it.startsWith(HomeLayoutStore.KEY_PREFIX) || it == HomeLayoutStore.KEY_DEFAULT || it == HomeLayoutStore.KEY_SLOTS })
+        assertTrue(p("home").m.keys.none { it.startsWith(HomeLayoutStore.KEY_PREFIX) || it == HomeLayoutStore.KEY_DEFAULT || it == HomeLayoutStore.KEY_SLOTS_LEGACY })
     }
 
     @Test fun skillsResetTakesThisCharactersSkillsOnly() {

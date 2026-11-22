@@ -153,19 +153,17 @@ class HomeLayoutShotsTest {
         return b.mapValues { HomeLayoutSolver.Box(it.value.left, it.value.top, it.value.right, it.value.bottom) }
     }
 
-    // ---------------------------------------------------------------- every preset
+    // ---------------------------------------------------------------- every arrangement (1517's six presets, frozen: HomeArrangements)
 
-    @Test fun eachPresetLaysAsTheSolverSays() {
-        val base = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
-        for (preset in HomePresets.OFFERED) {
-            val l = preset.apply(base)
+    @Test fun eachArrangementLaysAsTheSolverSays() {
+        for ((id, l) in HomeArrangements.ALL) {
             for ((state, fight, party) in listOf(Triple("rest", false, false), Triple("fight", true, false), Triple("party", false, true))) {
                 val p = page(l, fight = fight, party = party, dirs = if (l.mirrored) MIRROR else null)
                 val b = boxes(p.home)
                 val chat = b.getValue("CHAT"); val map = b.getValue("MAP")
-                assertEquals("${preset.id} $state: chat side", l.chatSide == HomeLayout.Side.LEFT, chat.left < map.left)
+                assertEquals("$id $state: chat side", l.chatSide == HomeLayout.Side.LEFT, chat.left < map.left)
                 val want = (1216f * l.chatShare.num / l.chatShare.den)
-                assertEquals("${preset.id} $state: chat width", want, chat.width(), 0.6f)
+                assertEquals("$id $state: chat width", want, chat.width(), 0.6f)
                 if (l.cast != HomeLayout.CastDock.OFF && !fight) {
                     val s = b.getValue("STRIP")
                     when (l.cast) {
@@ -173,16 +171,16 @@ class HomeLayoutShotsTest {
                         HomeLayout.CastDock.UNDER_MAP -> assertEquals(map.left, s.left, 0.01f)
                         else -> assertEquals(8f, s.left, 0.01f)
                     }
-                    assertTrue("${preset.id}: the slot size", s.height() <= l.castSize.px + 20.01f)
+                    assertTrue("$id: the slot size", s.height() <= l.castSize.px + 20.01f)
                 }
-                if (fight && l.fight == HomeLayout.FightBand.GROW) assertEquals("${preset.id}: the grow", 416f, b.getValue("BARS").bottom, 0.01f)
+                if (fight && l.fight == HomeLayout.FightBand.GROW) assertEquals("$id: the grow", 416f, b.getValue("BARS").bottom, 0.01f)
                 if (party) {
                     val pv = views(p.home).getValue("PARTY") as PartyModuleView
                     assertEquals(l.chatSide == HomeLayout.Side.RIGHT, pv.tabRight)
                     val pb = b.getValue("PARTY")
                     if (l.chatSide == HomeLayout.Side.RIGHT) assertEquals(1240f, pb.right, 0.01f) else assertEquals(0f, pb.left, 0.01f)
                 }
-                shot(p, "${preset.id.lowercase().replace(' ', '_')}_$state")
+                shot(p, "${id.lowercase().replace(' ', '_')}_$state")
             }
         }
     }
@@ -224,7 +222,7 @@ class HomeLayoutShotsTest {
         val a = page(classic)
         val from = boxes(a.home)
         shot(a, "classic_rest")
-        val p = page(HomePresets.byId(HomePresets.MIRRORED)!!.apply(classic), party = true, dirs = MIRROR)
+        val p = page(HomeArrangements.of(HomeArrangements.MIRRORED, classic), party = true, dirs = MIRROR)
         val to = boxes(p.home)
         p.home.toolbarToast(MIRROR)
         settle(5)
@@ -314,25 +312,29 @@ class HomeLayoutShotsTest {
         assertEquals(HomeLayout.FightBand.SAME, HomeSettings.layout.fight)
         BottomTiles.press(BottomTiles.COMBAT, BottomTiles.COMBAT, 0, env) { }
         assertEquals(HomeLayout.FightBand.GROW, HomeSettings.layout.fight)
-        // the Fighter preset from the Home layout tile: the player's own opt-in
-        BottomTiles.press(BottomTiles.LAYOUT, BottomTiles.LAYOUT, HomePresets.OFFERED.indexOfFirst { it.id == HomePresets.FIGHTER }, env) { }
+        // Top screen from the In fights tile: the player's own opt-in (1518: no Fighter preset; the card's fold is left alone)
+        HomeSettings.questMin = false
+        BottomTiles.press(BottomTiles.COMBAT, BottomTiles.COMBAT, 2, env) { }
         assertEquals(HomeLayout.FightBand.TOP, HomeSettings.layout.fight)
-        assertEquals("Fighter", BottomTiles.value(BottomTiles.LAYOUT, env))
-        assertTrue("Fighter folds the card", HomeSettings.questMin)
-        HomeSettings.questMin = false                      // (HomeSettings keeps its prefs for the whole JVM: the tests after this one)
+        assertFalse("nothing folds the card", HomeSettings.questMin)
     }
 
-    @Test fun theSettingsTileNamesTheLayout() {
-        page(HomeLayout())
-        assertEquals("Classic", BottomTiles.value(BottomTiles.LAYOUT, BottomTiles.Env(null, null)))
-        BottomTiles.press(BottomTiles.LAYOUT, BottomTiles.LAYOUT, 1, BottomTiles.Env(null, null)) { }
-        assertEquals("Mirrored", BottomTiles.value(BottomTiles.LAYOUT, BottomTiles.Env(null, null)))
-        assertTrue(HomeSettings.layout.mirrored)
-        BottomTiles.press(BottomTiles.LAYOUT, "chatside", 0, BottomTiles.Env(null, null)) { }
-        assertFalse(HomeSettings.layout.mirrored)
-        BottomTiles.press(BottomTiles.LAYOUT, "savehere", 2, BottomTiles.Env(null, null)) { }
-        assertEquals(HomeSettings.layout.copy(name = "3"), HomeLayoutStore.slots()[2])
+    /** 1518: Settings' Home tiles name no layout - "Edit Home" first (its A opens edit mode, no value word, no band), "Reset Home" last
+     *  with its two buttons (this character's Home back to Classic; this Home for all characters) */
+    @Test fun theSettingsTilesNameNoLayout() {
+        page(HomeArrangements.of(HomeArrangements.BIG_CHAT, HomeLayout()).swapped())
+        val env = BottomTiles.Env(null, null)
         assertEquals(BottomTiles.LAYOUT, BottomTiles.HOME_TILES.first())
+        assertEquals("Edit Home", BottomTiles.NAMES[BottomTiles.LAYOUT])
+        assertEquals("", BottomTiles.value(BottomTiles.LAYOUT, env))
+        assertTrue(BottomTiles.lines(BottomTiles.LAYOUT, env).isEmpty())
+        assertEquals(BottomTiles.HOME_RESET, BottomTiles.HOME_TILES.last())
+        assertEquals(listOf("Reset Home to Classic", "Use this Home for all characters"),
+            BottomTiles.lines(BottomTiles.HOME_RESET, env).map { it.words.single() })
+        BottomTiles.press(BottomTiles.HOME_RESET, BottomTiles.HOME_CLASSIC, 0, env) { }
+        assertFalse(HomeSettings.layout.mirrored)
+        assertTrue(HomeSettings.layout.classicPlace)
+        assertEquals(HomeLayout.Share.HALF, HomeSettings.layout.chatShare)
         // the bar's place in words that follow the widgets
         BottomTiles.press(BottomTiles.CASTBAR, BottomTiles.CASTBAR, 2, BottomTiles.Env(null, null)) { }
         assertEquals(HomeLayout.CastDock.UNDER_MAP, HomeSettings.layout.cast)

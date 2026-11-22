@@ -345,9 +345,10 @@ object BottomPictures {
         fun shot(lk: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?, w: (Map<String, RectF>) -> RectF?, ww: Int = cw, hh: Int = ch) =
             Shot(lk, fight, toolbar, w, ww, hh)
         when (id) {
-            BottomTiles.LAYOUT -> {
-                // movable Home (final_11): the live miniature of Home in the active layout, the page's whole width from the band down
-                val lay = HomeSettings.layout
+            BottomTiles.LAYOUT, BottomTiles.HOME_RESET -> {
+                // movable Home (final_11): the live miniature of Home in the active layout (Reset Home: the record Reset would make), the
+                // page's whole width from the band down
+                val lay = HomeSettings.layout.let { if (id == BottomTiles.HOME_RESET) it.classic() else it }
                 val b = crop("layout|${HomeLayoutJson.json(lay)}|$sz", shot(player().copy(layout = lay), false, null,
                     { _ -> RectF(0f, 0f, 1240f, minOf(homeH(), 1240f * ch / cw)) }), prio)
                 if (b != null) blit(c, b, r) else fallback(c, r, "Home layout", look, tMs)

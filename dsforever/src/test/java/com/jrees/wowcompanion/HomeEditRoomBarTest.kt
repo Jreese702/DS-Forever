@@ -8,14 +8,14 @@ import org.junit.Test
 
 /**
  * MOVABLE HOME, PHASE 4: THE ROOM BAR IN EDIT MODE (SPEC.txt sections 4, 7, 8; final_08; D3: reorder only, every room stays on the bar):
- * the cursor reaches the bar (Down from the chip / the map), Left / Right walk its rooms; A lifts a room, Left / Right carry it (EDIT_STEP,
- * across the disc too), A drops, B puts the order back; X = its menu (XP bar Show / Hide, Order Reset); a finger taps (select, then the
- * menu) and drags (the others make way after the 80 ms hover; the release lays it); nothing is written before Save. Pure.
+ * the cursor reaches the bar (Down from the map), Left / Right walk its rooms; A lifts a room, Left / Right carry it (EDIT_STEP, across the
+ * disc too), A drops, B puts the order back; X = its menu (XP bar Show / Hide, Order Reset); a finger taps (select, then the menu) and
+ * drags (the others make way after the 80 ms hover; the release lays it); a carried room settles (is saved) only at its drop. Pure.
  */
 class HomeEditRoomBarTest {
     private val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
     private fun model(saved: HomeLayout = classic, start: EditStop = EditStop.CHAT) =
-        HomeEditModel(saved, start, HomePresets.ALL.map { p -> HomeEditModel.Flip(p.id, p.available) { l -> p.apply(l) } }, HomePresets.nameOf(saved), true)
+        HomeEditModel(saved, start, true)
 
     /** the bar's slots as the Strip lays them (1240 wide): 6 left of the 128 px disc, 6 right of it */
     private val slots: List<Float> = run {
@@ -34,7 +34,6 @@ class HomeEditRoomBarTest {
         out[EditStop.MAP] = b.getValue(HomePart.MAP)
         b[HomePart.QUESTS]?.let { out[EditStop.QUEST] = it }
         b[HomePart.STRIP]?.let { out[EditStop.CAST] = it }
-        out[EditStop.CHIP] = HomeLayoutSolver.Box(160f, 937f, 380f, 967f)
         out[EditStop.ROOMS] = HomeLayoutSolver.Box(8f, 935f + Strip.TRACKS, 1232f, 935f + Strip.BAR)
         return out
     }
@@ -60,10 +59,11 @@ class HomeEditRoomBarTest {
         repeat(20) { m.press("PADDRIGHT") }
         assertEquals("the right end holds", RoomBar.DEFAULT.size - 1, m.barSel)
         m.press("PADDUP")
-        assertEquals("Up: the ribbon's chip", EditStop.CHIP, m.cursor)
+        assertTrue("Up: back into Home (1518: the ribbon has no stop)", m.cursor == EditStop.CAST || m.cursor == EditStop.MAP || m.cursor == EditStop.CHAT)
         m.press("PADDDOWN")
+        if (m.cursor != EditStop.ROOMS) m.press("PADDDOWN")
         assertEquals(EditStop.ROOMS, m.cursor)
-        assertTrue("nothing moved", !m.dirty)
+        assertTrue("nothing moved", !m.changed)
     }
 
     @Test fun aLiftsLeftRightCarryADropsBPutsBack() {
@@ -89,15 +89,15 @@ class HomeEditRoomBarTest {
         assertEquals(RoomBar.DEFAULT, m.draft.rooms)
         assertEquals("BAGS", m.draft.rooms[m.barSel])
         assertTrue(back.contains(HomeEditModel.Fx.Relay(Motion.MODULE_CLOSE)))
-        // A ... A: dropped where it is (the draft keeps it), dirty, Save asked on B
-        m.press("PAD1", "PADDLEFT", "PAD1")
-        assertNull(m.lifted)
+        // A ... A: dropped where it is (the draft keeps it: settled, saved now), changed; B is Done
+        m.press("PAD1", "PADDLEFT")
+        assertFalse("carried: not settled yet", m.settled)
+        m.press("PAD1")
+        assertNull(m.lifted); assertTrue(m.settled)
         assertEquals("BAGS", m.draft.rooms[6])
-        assertTrue(m.dirty)
+        assertTrue(m.changed)
         assertEquals(EditStop.ROOMS, m.cursor)
-        m.press("PAD2")
-        assertTrue("B asks Save / Discard / Keep editing", m.prompt)
-        assertEquals(0, m.promptSel)
+        assertEquals(listOf(HomeEditModel.Fx.Done), m.press("PAD2"))
         // the ends never wrap
         val e = model(start = EditStop.ROOMS)
         e.press("PAD1")
@@ -129,7 +129,7 @@ class HomeEditRoomBarTest {
         m.press("PAD2")
         assertNull(m.menu)
         assertEquals(EditStop.ROOMS, m.cursor)
-        assertTrue("the hidden XP track waits for Save", m.dirty)
+        assertTrue("the hidden XP track is a change of the session's", m.changed)
     }
 
     @Test fun aFingerTapsThenDragsARoom() {
@@ -169,11 +169,11 @@ class HomeEditRoomBarTest {
         assertEquals("SETTINGS", m.draft.rooms[0])
     }
 
-    @Test fun nothingIsWrittenBeforeSaveAndAFightParksTheCarry() {
+    @Test fun theCarryOnlyGlidesAndAFightParksIt() {
         val m = model(start = EditStop.ROOMS)
         val fx = m.press("PAD1", "PADDRIGHT", "PADDRIGHT", "PAD1", "PAD3")
         assertEquals(EditStop.ROOMS, m.menu)
-        assertTrue("only draft glides and the lift: no Press, no Save", fx.all { it is HomeEditModel.Fx.Relay || it == HomeEditModel.Fx.Lift })
+        assertTrue("only draft glides and the lift: no Press, no Done", fx.all { it is HomeEditModel.Fx.Relay || it == HomeEditModel.Fx.Lift })
         // a fight mid-carry: the lift goes, the draft (and its order) waits
         m.press("PAD2")                                                        // the menu closes
         m.press("PAD1")
@@ -182,7 +182,7 @@ class HomeEditRoomBarTest {
         assertTrue(m.press("PADDLEFT").isEmpty())
         m.resume()
         assertEquals("MAP", m.draft.rooms[2])
-        // Start saves from the bar
-        assertEquals(listOf(HomeEditModel.Fx.Save), m.press("PADFORWARD"))
+        // Start is Done from the bar
+        assertEquals(listOf(HomeEditModel.Fx.Done), m.press("PADFORWARD"))
     }
 }

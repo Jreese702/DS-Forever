@@ -7,9 +7,10 @@ import java.io.File
 
 /**
  * MOVABLE HOME, PHASE 2: EDIT MODE'S WIRING (the user's D4: three ways in; SPEC.txt sections 3, 4 and 12), read from the sources: the
- * host's routes in (Settings > Bottom screen's first tile, Y on the Home disc, Home first from a room), Start = Save, the disc's tick =
- * Save, the class wheel / LB picture / toolbar words suspended while editing, Home's guest "home" held for it (not in a fight), B and
- * Party mode's D-pad left alone, no tap of the add-on's before Save except the guest's own hold. Text-only, as the other host tests.
+ * host's routes in (Settings > Bottom screen's first tile, Y on the Home disc, Home first from a room), Start = Done, the disc's tick =
+ * Done, the class wheel / LB picture / toolbar words suspended while editing, Home's guest "home" held for it (not in a fight), B and
+ * Party mode's D-pad left alone; 1518: the autosave through the store's rules, Discard's write back, a held B on the direct feed, and no
+ * tap of the add-on's while edit mode is live except the guest's own hold. Text-only, as the other host tests.
  */
 class HomeEditWiringTest {
     private val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
@@ -33,7 +34,7 @@ class HomeEditWiringTest {
         // Settings > Bottom screen: the FIRST tile, its A (a touch) = Edit Home, no band
         assertTrue(tiles.contains("val HOME_TILES = listOf(LAYOUT,"))
         assertTrue(tiles.contains("if (id == BottomTiles.LAYOUT) BottomTiles.editHome?.let { go -> focusIdx = i; selected = null; go(); return true }"))
-        assertTrue(host.contains("BottomTiles.editHome = { editHome(\"Settings' Home layout tile\") }"))
+        assertTrue(host.contains("BottomTiles.editHome = { editHome(\"Settings' Edit Home tile\") }"))
         // Y on the Home disc from the bar cursor
         assertTrue(bar.contains("\"PAD4\" -> if (at == Room.HOME && onEditHome != null) { val go = onEditHome; close(); go?.invoke(); return }"))
         assertTrue(host.contains("barSelect.onEditHome = { editHome(\"Y on the Home disc\") }"))
@@ -51,9 +52,9 @@ class HomeEditWiringTest {
         assertTrue("never armed in a fight (a slow touch there stays today's tap)", hold.contains("if (fightShown()) return null"))
     }
 
-    @Test fun saveAndTheSuspensions() {
+    @Test fun doneAndTheSuspensions() {
         assertTrue(body(host, "private fun startPressed()").contains("if (room == Room.HOME && homeView.editing) { startReadAt = SystemClock.uptimeMillis(); homeView.editKey(\"PADFORWARD\"); return }"))
-        assertTrue(body(host, "private fun swirlTouched()").contains("if (room == Room.HOME && homeView.editing) { homeView.editSave(); return }"))
+        assertTrue(body(host, "private fun swirlTouched()").contains("if (room == Room.HOME && homeView.editing) { homeView.editDone(); return }"))
         // the class wheel and the LB picture share the host's overlay gate
         assertTrue(body(host, "private fun overlayUp()").contains("(room == Room.HOME && homeView.editing)"))
         assertTrue(host.contains("if (room == Room.HOME && homeView.editing) return@dpad"))
@@ -121,8 +122,9 @@ class HomeEditWiringTest {
         val reset = body(host, "private fun resetApply(")
         val cancel = reset.indexOf("homeView.editCancel()")
         assertTrue(cancel > 0 && cancel < reset.indexOf("resetRun.run(b, who, all, localGame)"))
-        // edit mode knows the fold it opened with (a landing with no fold of its own puts it back)
-        assertTrue(body(home, "fun editOpen(").contains("foldOpen = HomeSettings.questMin"))
+        // 1518: no layouts - edit mode opens on the record and the toolbar's word only (no flips, no slots, no fold of a preset's)
+        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start, toolbarNow = padMap?.dpad?.want)"))
+        assertFalse(body(home, "fun editOpen(").contains("foldOpen"))
         // the cursor's widget gone: the clock too (the model's set), not only the card and the bar
         assertTrue(body(home, "private fun editCursorCheck(").contains("if (m.cursor !in HomeEditModel.GONE_CHECKED) return"))
         // the push to / from Home moves by Home's FRAME (less the XP track's place) and clips Home's page to it; the clip goes at the end
@@ -134,17 +136,32 @@ class HomeEditWiringTest {
         assertTrue(body(host, "private fun roomMotionEnd(").contains("roomAnimClipped?.clipBounds = null"))
     }
 
-    @Test fun nothingReachesTheAddOnBeforeSave() {
-        // edit mode taps only its guest hold / free (GuestPad); Save is the one writer (the toolbar's switch through the host's own route)
+    @Test fun theAutosaveAndNothingSentWhileLive() {
+        // edit mode taps only its guest hold / free (GuestPad); the store is the one writer (the toolbar's switch at Done, the host's route)
         val section = home.substring(home.indexOf("MOVABLE HOME, PHASE 2: EDIT MODE"), home.indexOf("movable Home: the D-pad toast"))
         assertFalse("no TapBridge call of its own", section.contains("TapBridge."))
         assertTrue(section.contains("homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = hold))"))
-        val leave = body(home, "private fun editLeave(save: Boolean)")
-        // fix round 1: only to the record the draft was read under (HomeLayoutStore.editSave), never the preset's fold at Save
-        assertTrue(leave.contains("HomeLayoutStore.editSave(o, m.saved, m.draft)"))
-        assertTrue(leave.contains("HomeSettings.saveLayout(rec, all = m.allChars)"))
-        assertFalse("a preset's fold is applied when picked, never at Save", leave.contains("folded?.let"))
-        assertTrue(leave.contains("m.toolbarWant?.let { if (it != m.toolbarNow) onEditToolbar?.invoke(it) }"))
+        // 1518, the autosave: a settled draft (nothing lifted, no finger down) through the store's per-character rules, every effect batch
+        val persist = body(home, "private fun editPersist(")
+        assertTrue(persist.contains("if (!now && (m.parked || !m.settled)) return"))
+        assertTrue(persist.contains("HomeLayoutStore.editSave(o, prev, m.draft)"))
+        assertTrue(persist.contains("HomeSettings.saveLayout(rec)"))
+        assertTrue(body(home, "private fun editRun(").contains("m?.let { editPersist(it) }"))
+        // Done: the last write, then the toolbar's switch; Discard: the opening record back over the session's own changes
+        val end = body(home, "private fun editEnd(")
+        assertTrue(end.contains("if (write && !discard) editPersist(m, now = true)"))
+        assertTrue(end.contains("HomeLayoutStore.editSave(o, prev, m.saved)"))
+        assertTrue(end.contains("if (done) m.toolbarWant?.let { if (it != m.toolbarNow) onEditToolbar?.invoke(it) }"))
+        assertFalse("no All characters from edit mode", end.contains("all ="))
+        // the add-on hears the record's sides / fight bar only once edit mode is not live
+        assertTrue(body(host, "private fun mirrorCheck(").contains("if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }"))
+        assertTrue(body(host, "private fun topCheck(").contains("if (homeView.editing) { ui.removeCallbacks(topAgain); return }"))
+        assertTrue(host.contains("homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it) } } }"))
+        // a held B on the direct feed (press and release) is Discard; the relayed guest's B stays the plain ladder
+        assertTrue(host.contains("if (k == \"PAD2\" && !setupPad && room == Room.HOME && homeView.editing) homeView.editB(down) else homeKey(k, down, rep)"))
+        assertTrue(body(home, "fun editB(").contains("if (!editHoldUp()) editKey(\"PAD2\")"))
+        // a Layouts reset ends edit mode with nothing written
+        assertTrue(home.contains("fun editCancel() { if (edit != null) editEnd(discard = false, write = false) }"))
         // never opened in a fight; a fight parks it
         assertTrue(body(home, "fun editOpen(").contains("if (fightShown()) { editRefuse(start); return false }"))
         assertTrue(body(home, "private fun editFightCheck(").contains("m.park()"))

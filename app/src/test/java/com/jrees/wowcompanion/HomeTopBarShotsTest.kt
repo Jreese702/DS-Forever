@@ -282,7 +282,7 @@ class HomeTopBarShotsTest {
         // Save: the record (this character's) holds it; Classic never does
         home.editKey("PADFORWARD"); settle()
         assertEquals(HomeLayout.CastDock.ABOVE_MAP, HomeSettings.layout.cast)
-        assertEquals(HomePresets.CUSTOM, HomePresets.nameOf(HomeSettings.layout))
+        assertFalse("not Classic's places", HomeSettings.layout.classicPlace)
     }
 
     @Test fun theTopBarsMenuOpensBelowIt() {

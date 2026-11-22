@@ -96,8 +96,8 @@ class RoomBarTest {
             HomeLayoutStore.character("Iselle-Thrall")
             assertEquals("SETTINGS", HomeLayoutStore.active().rooms[0])
             assertEquals("SETTINGS", HomeLayoutStore.default().rooms[0])
-            // a preset never touches the bar
-            val big = HomePresets.byId(HomePresets.BIG_MAP)!!.apply(HomeLayoutStore.active())
+            // an arrangement of the columns never touches the bar (1517's Big map preset's fields)
+            val big = HomeArrangements.of(HomeArrangements.BIG_MAP, HomeLayoutStore.active())
             assertEquals("SETTINGS", big.rooms[0])
             assertFalse(big.xpBar)
         } finally { HomeSettings.startForTest(null) }

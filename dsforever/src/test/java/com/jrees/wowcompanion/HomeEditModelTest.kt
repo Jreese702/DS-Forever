@@ -8,18 +8,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * MOVABLE HOME, PHASE 2: EDIT MODE'S STATE MACHINE (SPEC.txt section 15 HomeEditModelTest): the B ladder (put back, close, then Save /
- * Discard / Keep editing); the cursor's spatial moves over Home's real boxes; lift / drop / put back and each widget's docks; Select's swap
- * from any stop; a finger's drag with the 48 px hysteresis and the 80 ms hover; the divider's snap; Y's size steps; the chip's flips
- * (Fighter skipped until phase 3); remove and "+"; a fight's park and resume; Start = Save; and nothing that reaches the add-on or a
- * setting before Save (the toolbar's switch and All characters wait in the draft). Pure.
+ * MOVABLE HOME, PHASE 2: EDIT MODE'S STATE MACHINE (SPEC.txt section 15 HomeEditModelTest): the B ladder (put back, close, then Done:
+ * test build 1518, no prompt - every change is saved as it is made); Discard (Done's long press, a held B) back to the opening record;
+ * the cursor's spatial moves over Home's real boxes; lift / drop / put back and each widget's docks; Select's swap from any stop; a
+ * finger's drag with the 48 px hysteresis and the 80 ms hover; the divider's snap; Y's size steps; no layouts (the shoulders do
+ * nothing); remove and "+"; a fight's park and resume; Start = Done; and the toolbar's switch waiting for Done. Pure.
  */
 class HomeEditModelTest {
     private val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
-    private fun flips(): List<HomeEditModel.Flip> =
-        HomePresets.ALL.map { p -> HomeEditModel.Flip(p.id, p.available) { l -> p.apply(l) } }
     private fun model(saved: HomeLayout = classic, start: EditStop = EditStop.CHAT, toolbar: Boolean? = true) =
-        HomeEditModel(saved, start, flips(), HomePresets.nameOf(saved), toolbar)
+        HomeEditModel(saved, start, toolbar)
 
     /** Home's boxes for [l] (the solver's, a focused quest shown) as the edit view gives the cursor, the ribbon under the frame */
     private fun stops(l: HomeLayout, plus: Boolean = false): Map<EditStop, HomeLayoutSolver.Box> {
@@ -37,8 +35,7 @@ class HomeEditModelTest {
         val x = (minOf(c.r, m.r) + maxOf(c.l, m.l)) / 2f
         val top = minOf(c.t, m.t)
         out[EditStop.DIVIDER] = HomeLayoutSolver.Box(x - 2f, top, x + 2f, top + 40f)
-        out[EditStop.CHIP] = HomeLayoutSolver.Box(160f, 937f, 380f, 967f)
-        if (plus) out[EditStop.PLUS] = HomeLayoutSolver.Box(394f, 937f, 440f, 967f)
+        if (plus) out[EditStop.PLUS] = HomeLayoutSolver.Box(14f, 937f, 60f, 967f)
         return out
     }
 
@@ -56,13 +53,13 @@ class HomeEditModelTest {
 
     // ---------------------------------------------------------------- the B ladder
 
-    @Test fun bLeavesAtOnceWhenNothingChanged() {
+    @Test fun bIsDoneWhenNothingIsOpen() {
         val m = model()
-        assertEquals(listOf(HomeEditModel.Fx.Leave), m.press("PAD2"))
-        assertFalse(m.dirty)
+        assertEquals(listOf(HomeEditModel.Fx.Done), m.press("PAD2"))
+        assertFalse(m.changed)
     }
 
-    @Test fun bStepsBackOneLevelThenAsksWithSaveHighlighted() {
+    @Test fun bStepsBackOneLevelThenIsDone() {
         val m = model()
         m.press("PAD1")                                         // A on Chat: lifted
         assertEquals(EditStop.CHAT, m.lifted)
@@ -71,35 +68,85 @@ class HomeEditModelTest {
         m.press("PAD2")                                         // B: put back
         assertNull(m.lifted)
         assertEquals(HomeLayout.Side.LEFT, m.draft.chatSide)
-        assertFalse(m.dirty)
+        assertFalse(m.changed)
         m.press("PAD3")                                         // X: the chat's menu
         assertEquals(EditStop.CHAT, m.menu)
         m.press("PAD2")                                         // B: the menu closes
         assertNull(m.menu)
         m.press("PADBACK")                                      // Select: the swap
-        assertTrue(m.dirty)
-        val fx = m.press("PAD2")                                // B with a change: the prompt, Save highlighted, nothing written
-        assertTrue(m.prompt); assertEquals(0, m.promptSel); assertTrue(fx.isEmpty())
-        m.press("PAD2")                                         // B on the prompt: keep editing
-        assertFalse(m.prompt); assertTrue(m.dirty)
+        assertTrue(m.changed)
+        assertEquals("B with a change: Done at once (no prompt: it is saved already)", listOf(HomeEditModel.Fx.Done), m.press("PAD2"))
+        assertTrue("Done keeps the change", m.draft.mirrored)
     }
 
-    @Test fun thePromptSavesDiscardsOrKeepsEditing() {
-        val m = model(); m.press("PADBACK", "PAD2")
-        assertEquals(listOf(HomeEditModel.Fx.Save), m.press("PAD1"))
-        val d = model(); d.press("PADBACK", "PAD2", "PADDRIGHT")
-        assertEquals(1, d.promptSel)
-        assertEquals(listOf(HomeEditModel.Fx.Leave), d.press("PAD1"))
-        assertEquals("Discard puts the saved layout back", classic, d.draft)
-        val k = model(); k.press("PADBACK", "PAD2", "PADDLEFT")
-        assertEquals(2, k.promptSel)
-        assertTrue(k.press("PAD1").isEmpty()); assertFalse(k.prompt); assertTrue(k.dirty)
+    /** 1518: Discard (Done's long press, a held B) from any level - the opening record and the toolbar's switch back, nothing lifted /
+     *  open, the glide back first */
+    @Test fun discardPutsTheOpeningRecordBack() {
+        val m = model(start = EditStop.BAND)
+        m.press("PADBACK", "PAD4")                               // the swap, the thin row
+        m.press("PAD1", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDRIGHT")   // the band's menu: the DS toolbar Off
+        assertEquals(false, m.toolbarWant)
+        assertEquals(EditStop.BAND, m.menu)
+        assertTrue(m.changed)
+        assertEquals(listOf(HomeEditModel.Fx.Relay(Motion.MODULE_CLOSE), HomeEditModel.Fx.Discard), m.discard())
+        assertEquals(classic, m.draft)
+        assertNull(m.toolbarWant); assertNull(m.menu); assertNull(m.lifted)
+        assertFalse(m.changed)
+        // lifted mid-move: the lift goes with it
+        val l = model()
+        l.press("PAD1", "PADDRIGHT")
+        assertEquals(EditStop.CHAT, l.lifted)
+        l.discard()
+        assertNull(l.lifted); assertEquals(classic, l.draft)
+        assertTrue(l.settled)
     }
 
-    @Test fun startSavesFromEveryLevel() {
-        assertEquals(listOf(HomeEditModel.Fx.Save), model().press("PADFORWARD"))
-        val lifted = model(); lifted.press("PAD1"); assertTrue(HomeEditModel.Fx.Save in lifted.press("PADFORWARD")); assertNull(lifted.lifted)
-        val menu = model(); menu.press("PAD3"); assertTrue(HomeEditModel.Fx.Save in menu.press("PADFORWARD"))
+    @Test fun startIsDoneFromEveryLevel() {
+        assertEquals(listOf(HomeEditModel.Fx.Done), model().press("PADFORWARD"))
+        val lifted = model(); lifted.press("PAD1", "PADDRIGHT")
+        assertTrue(HomeEditModel.Fx.Done in lifted.press("PADFORWARD")); assertNull(lifted.lifted)
+        assertTrue("a lift Start ends keeps its dock", lifted.draft.mirrored)
+        val menu = model(); menu.press("PAD3"); assertTrue(HomeEditModel.Fx.Done in menu.press("PADFORWARD")); assertNull(menu.menu)
+        val tray = model(start = EditStop.CAST); tray.remove(EditStop.CAST); tray.tap(EditStop.PLUS)
+        assertEquals(HomeEditModel.Sheet.ADD, tray.sheet)
+        assertEquals(listOf(HomeEditModel.Fx.Done), tray.press("PADFORWARD")); assertNull(tray.sheet)
+    }
+
+    /** 1518: the session knows what it changed (Discard has something to put back); a change undone by hand is no change */
+    @Test fun theSessionKnowsWhatItChanged() {
+        val m = model()
+        assertFalse(m.changed)
+        m.press("PADBACK"); assertTrue(m.changed)
+        m.press("PADBACK"); assertFalse("swapped back: the opening record again", m.changed)
+        val t = model(start = EditStop.BAND)
+        t.press("PAD1", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDRIGHT")
+        assertTrue("the toolbar's switch is a change too", t.changed)
+    }
+
+    /** 1518, the autosave's moment: the draft is settled (written now) only with nothing lifted and no finger down */
+    @Test fun theDraftSettlesOnlyAtTheDrop() {
+        val m = model()
+        assertTrue(m.settled)
+        m.press("PAD1"); assertFalse("lifted: its steps wait for the drop", m.settled)
+        m.press("PADDRIGHT"); assertFalse(m.settled)
+        m.press("PAD1"); assertTrue("dropped", m.settled)
+        val chat = stops(classic).getValue(EditStop.CHAT)
+        m.dragStart(EditStop.CHAT, chat.cx, 500f, chat); assertFalse("a finger down", m.settled)
+        m.dragEnd(chat.cx, 500f, 10L, geo); assertTrue(m.settled)
+    }
+
+    /** 1518: a change made while edit mode waited (another room's Settings, the late key's real record) is the session's new base:
+     *  Discard undoes only the session's own changes */
+    @Test fun aRebaseKeepsDiscardToTheSessionsOwnChanges() {
+        val m = model()
+        m.press("PADBACK")                                       // the session's own: the swap
+        val outside = m.draft.copy(castSize = HomeLayout.SlotSize.M)
+        m.rebase(outside, HomeLayoutStore.layOn(m.saved, m.draft, outside))
+        assertEquals(outside, m.draft)
+        assertTrue(m.changed)
+        m.discard()
+        assertEquals("the swap undone, the outside change kept", classic.copy(castSize = HomeLayout.SlotSize.M), m.draft)
+        assertFalse(m.changed)
     }
 
     // ---------------------------------------------------------------- the cursor
@@ -113,8 +160,7 @@ class HomeEditModelTest {
         m.press("PADDLEFT"); assertEquals(EditStop.BAND, m.cursor)
         m.press("PADDDOWN"); assertEquals(EditStop.CHAT, m.cursor)
         m.press("PADDDOWN"); assertEquals("the bar under the chat", EditStop.CAST, m.cursor)
-        m.press("PADDDOWN"); assertEquals("the ribbon's layout chip", EditStop.CHIP, m.cursor)
-        m.press("PADDUP"); assertEquals(EditStop.CAST, m.cursor)
+        m.press("PADDDOWN"); assertEquals("nothing under it (1518: the ribbon's Done is no stop - B and Start are Done)", EditStop.CAST, m.cursor)
         m.press("PADDUP"); assertEquals(EditStop.CHAT, m.cursor)
         m.press("PADDUP"); assertEquals("Up from the chat: the band, never the divider", EditStop.BAND, m.cursor)
         // the divider is reached from above (the clock over the columns' gap), Left / Right there step the width
@@ -126,7 +172,7 @@ class HomeEditModelTest {
         d.press(if (col == EditStop.CHAT) "PADDLEFT" else "PADDRIGHT"); assertEquals("nothing beyond the outer column", col, d.cursor)
     }
 
-    @Test fun theDividerStepsTheWidthAndTheChipFlips() {
+    @Test fun theDividerStepsTheWidthAndTheShouldersDoNothing() {
         val m = model(start = EditStop.DIVIDER)
         m.press("PADDLEFT")
         assertEquals("the left column (the chat) one step narrower", HomeLayout.Share.THIRD, m.draft.chatShare)
@@ -138,10 +184,12 @@ class HomeEditModelTest {
         val r = model(saved = classic.swapped(), start = EditStop.DIVIDER)
         r.press("PADDRIGHT")
         assertEquals(HomeLayout.Share.THIRD, r.draft.chatShare)
-        val c = model(start = EditStop.CHIP)
-        c.press("PADDRIGHT")
-        assertEquals(HomePresets.MIRRORED, c.chipName)
-        assertEquals(HomeLayout.Side.RIGHT, c.draft.chatSide)
+        // 1518: no layouts - LB / RB flip nothing, from any stop
+        for (s in listOf(EditStop.CHAT, EditStop.MAP, EditStop.BAND, EditStop.CAST, EditStop.DIVIDER)) {
+            val c = model(start = s)
+            assertTrue(s.name, c.press("PADLSHOULDER", "PADRSHOULDER").isEmpty())
+            assertEquals(classic, c.draft); assertEquals(s, c.cursor)
+        }
     }
 
     // ---------------------------------------------------------------- lift, docks, size, swap
@@ -273,7 +321,7 @@ class HomeEditModelTest {
     }
 
     @Test fun selectSwapsFromAnyStop() {
-        for (s in listOf(EditStop.BAND, EditStop.CLOCK, EditStop.MAP, EditStop.CAST, EditStop.CHIP)) {
+        for (s in listOf(EditStop.BAND, EditStop.CLOCK, EditStop.MAP, EditStop.CAST, EditStop.DIVIDER)) {
             val m = model(start = s)
             m.press("PADBACK")
             assertEquals(s.name, HomeLayout.Side.RIGHT, m.draft.chatSide)
@@ -366,7 +414,6 @@ class HomeEditModelTest {
         m.tap(EditStop.MAP); assertEquals(EditStop.MAP, m.cursor); assertNull(m.menu)
         m.tap(EditStop.MAP); assertEquals(EditStop.MAP, m.menu)
         m.tap(EditStop.CHAT); assertNull("a tap elsewhere closes the menu first", m.menu)
-        m.tap(EditStop.CHIP); assertEquals(HomeEditModel.Sheet.LAYOUTS, m.sheet)
     }
 
     // ---------------------------------------------------------------- remove and "+"
@@ -414,7 +461,7 @@ class HomeEditModelTest {
         band.press("PADDDOWN", "PADDDOWN")                      // DS WoW toolbar: kept for Save, nothing sent
         assertTrue(band.press("PADDRIGHT").isEmpty())
         assertEquals(false, band.toolbarWant)
-        assertTrue(band.dirty)
+        assertTrue(band.changed)
     }
 
     @Test fun theMenusRowsFollowTheRulings() {
@@ -435,92 +482,6 @@ class HomeEditModelTest {
         assertEquals(5, HomeWidgetMenus.rows(EditStop.CLOCK, classic, v).size)
     }
 
-    // ---------------------------------------------------------------- flips, the Layouts sheet
-
-    @Test fun flipsIncludeFighterSincePhaseThree() {
-        val m = model(start = EditStop.CHIP)
-        val seen = ArrayList<String>()
-        repeat(HomePresets.ALL.size + 1) { m.press("PADRSHOULDER"); seen += m.chipName }
-        assertEquals(listOf(HomePresets.MIRRORED, HomePresets.BIG_MAP, HomePresets.BIG_CHAT, HomePresets.COMPACT, HomePresets.FIGHTER,
-            HomePresets.CLASSIC, HomePresets.MIRRORED), seen)
-        m.press("PADLSHOULDER")
-        assertEquals(HomePresets.CLASSIC, m.chipName)
-        m.press("PADLSHOULDER")
-        assertEquals("Fighter: In fights = Top screen in the draft (D1: the player's own opt-in)", HomeLayout.FightBand.TOP, m.draft.fight)
-        // every flip is made from the layout edit mode opened with (Compact's thin row does not stay on Classic)
-        val c = model(start = EditStop.CHIP)
-        repeat(4) { c.press("PADDRIGHT") }
-        assertEquals(HomeRest.ROW, c.draft.rest)
-        c.press("PADDRIGHT")
-        assertEquals(HomeRest.DIAMONDS, c.draft.rest)
-    }
-
-    /** fix round 3 (finding 6): the chip's Left / Right (and LB / RB) never throw the player's own changes away - the draft is the
-     *  cycle's own "Edited" stop after the last flip, so the press back the other way brings it back exactly */
-    @Test fun aFlipAwayFromTheDraftCanAlwaysComeBack() {
-        val m = model(start = EditStop.CHIP)
-        // the player's own layout: the bar off, the chat a third wide (not any preset)
-        val own = m.draft.copy(cast = HomeLayout.CastDock.OFF, chatShare = HomeLayout.Share.THIRD)
-        val f = HomeEditModel::class.java.getDeclaredField("draft").apply { isAccessible = true }
-        f.set(m, own)
-        assertEquals(HomeEditModel.EDITED, m.chipName)
-        m.press("PADDRIGHT")                                                // Right on the chip: the next layout, as always
-        assertEquals(HomePresets.MIRRORED, m.chipName)
-        assertFalse(m.draft.samePlace(own))
-        m.press("PADDLEFT")                                                 // and back: the player's own, exactly
-        assertEquals(own, m.draft)
-        assertEquals(HomeEditModel.EDITED, m.chipName)
-        // the other way round: Left from it goes to the layout it was made from, Right brings it back
-        m.press("PADDLEFT")
-        assertEquals(HomePresets.CLASSIC, m.chipName)
-        m.press("PADDRIGHT")
-        assertEquals(own, m.draft)
-        // a whole lap with RB passes every preset and comes back to it
-        val seen = ArrayList<String>()
-        repeat(HomePresets.ALL.size + 1) { m.press("PADRSHOULDER"); seen += m.chipName }
-        assertEquals(HomeEditModel.EDITED, seen.last()); assertEquals(own, m.draft)
-        assertEquals(HomePresets.ALL.map { it.id }.toSet(), seen.dropLast(1).toSet())
-        // the sheet's pick keeps it too (a flip back reaches it), and the sheet never opens on the "Edited" stop
-        m.press("PAD1")
-        assertEquals(0, m.sheetSel)
-        m.press("PADDRIGHT", "PAD1")
-        assertEquals(HomePresets.MIRRORED, m.chipName)
-        m.flip(-1)                                                          // Mirrored -> the player's own (made from Classic)
-        assertEquals(own, m.draft)
-        // nothing changed (the saved layout a preset names): no extra stop, the cycle as before
-        val n = model(start = EditStop.CHIP)
-        val lap = ArrayList<String>()
-        repeat(HomePresets.ALL.size) { n.press("PADRSHOULDER"); lap += n.chipName }
-        assertEquals(HomePresets.CLASSIC, lap.last())
-        assertTrue(HomeEditModel.EDITED !in lap)
-    }
-
-    @Test fun theSheetUsesSavesHereAndCopiesToAllCharacters() {
-        val m = model(start = EditStop.CHIP)
-        m.press("PAD1")
-        assertEquals(HomeEditModel.Sheet.LAYOUTS, m.sheet)
-        assertEquals("the sheet opens on the layout in use", 0, m.sheetSel)
-        m.press("PADDRIGHT", "PADDRIGHT")                       // Big map
-        m.press("PAD1")
-        assertNull(m.sheet)
-        assertEquals(HomePresets.BIG_MAP, m.chipName)
-        m.press("PAD1")
-        m.sheetSel = 5
-        assertEquals(listOf(HomeEditModel.Fx.Relay(Motion.MODULE_OPEN, morph = 1)), m.press("PAD1"))   // Fighter: offered since phase 3 (a later preset: +1)
-        assertNull(m.sheet)
-        assertEquals(HomePresets.FIGHTER, m.chipName)
-        assertEquals(HomeLayout.FightBand.TOP, m.draft.fight)
-        m.press("PAD1")                                          // the sheet again
-        m.sheetSel = 6
-        assertEquals(listOf(HomeEditModel.Fx.SaveSlot(0)), m.press("PAD3"))         // X on slot 1: Save here
-        m.sheetSel = m.sheetCount() - 1
-        m.press("PAD1")
-        assertTrue(m.allChars)
-        assertTrue(m.dirty)
-        m.press("PAD2")
-        assertNull(m.sheet)
-    }
-
     // ---------------------------------------------------------------- a fight mid-edit
 
     @Test fun aFightParksTheDraftAndItsEndBringsItBack() {
@@ -538,7 +499,7 @@ class HomeEditModelTest {
         assertTrue("the draft came back as it was", m.draft.mirrored)
     }
 
-    @Test fun nothingReachesTheAddOnBeforeSave() {
+    @Test fun theToolbarWaitsForDone() {
         val m = model(start = EditStop.BAND)
         val fx = ArrayList<HomeEditModel.Fx>()
         fx += m.press("PADBACK", "PAD4", "PAD1", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDRIGHT", "PAD2")
@@ -546,74 +507,31 @@ class HomeEditModelTest {
         assertTrue(fx.all { it is HomeEditModel.Fx.Relay || it is HomeEditModel.Fx.Lift || it is HomeEditModel.Fx.Press })
         assertTrue("only app-wide behaviour rows press setters", fx.filterIsInstance<HomeEditModel.Fx.Press>().none { it.key == BottomTiles.TOOLBAR })
         assertEquals(false, m.toolbarWant)
-        assertEquals(listOf(HomeEditModel.Fx.Save), m.press("PADFORWARD"))
+        assertEquals(listOf(HomeEditModel.Fx.Done), m.press("PADFORWARD"))
     }
 
     // ---------------------------------------------------------------- the fix pass (review findings)
 
-    @Test fun startOnThePromptSaves() {
-        val m = model()
-        m.press("PADBACK", "PAD2")
-        assertTrue(m.prompt)
-        assertEquals("Start = Save in every edit context (section 12), the prompt too", listOf(HomeEditModel.Fx.Save), m.press("PADFORWARD"))
-        assertFalse(m.prompt)
+    /** 1518, Settings' "Reset Home to Classic": from every arrangement, Classic's places, the diamonds, L slots, no top-screen fight, the
+     *  room bar as today; the bar's own column and Same size stay the player's (as 1517's Classic preset kept them) */
+    @Test fun classicIsTheWayBackFromEveryArrangement() {
+        for (b in listOf(classic, classic.copy(cast = HomeLayout.CastDock.ABOVE_MAP), classic.copy(cast = HomeLayout.CastDock.OFF),
+                classic.copy(fight = HomeLayout.FightBand.SAME, xpBar = false, rooms = RoomBar.DEFAULT.reversed())))
+            for ((id, l) in HomeArrangements.on(b)) {
+                val c = l.classic()
+                assertTrue("$id: Classic's places", c.classicPlace)
+                assertEquals(id, HomeArrangements.of(HomeArrangements.CLASSIC, l).copy(xpBar = true, rooms = RoomBar.DEFAULT), c)
+                assertEquals(HomeRest.DIAMONDS, c.rest); assertEquals(HomeLayout.SlotSize.L, c.castSize)
+                assertTrue(c.fight != HomeLayout.FightBand.TOP); assertTrue(c.xpBar); assertEquals(RoomBar.DEFAULT, c.rooms)
+            }
+        val fighter = HomeArrangements.of(HomeArrangements.FIGHTER, classic).classic()
+        assertEquals(HomeLayout.FightBand.GROW, fighter.fight); assertEquals(HomeLayout.CastDock.UNDER_CHAT, fighter.cast)
+        assertEquals("Same size stays the player's", HomeLayout.FightBand.SAME, classic.copy(fight = HomeLayout.FightBand.SAME).classic().fight)
+        assertEquals("the bar's column stays", HomeLayout.CastDock.UNDER_MAP, classic.copy(cast = HomeLayout.CastDock.ABOVE_MAP).classic().cast)
+        assertEquals("a Classic record is unchanged", classic, classic.classic())
     }
 
-    @Test fun classicIsTheWayBackFromEveryPreset() {
-        val cl = HomePresets.byId(HomePresets.CLASSIC)!!
-        val fighter = HomePresets.byId(HomePresets.FIGHTER)!!.apply(classic)
-        val a = cl.apply(fighter)
-        assertEquals(HomeLayout.FightBand.GROW, a.fight)
-        assertEquals(HomeLayout.CastDock.UNDER_CHAT, a.cast)
-        assertEquals(HomePresets.CLASSIC, HomePresets.nameOf(a))
-        val b = cl.apply(HomePresets.byId(HomePresets.COMPACT)!!.apply(classic))
-        assertEquals(HomeRest.DIAMONDS, b.rest)
-        assertEquals(HomeLayout.SlotSize.L, b.castSize)
-        assertEquals(HomePresets.CLASSIC, HomePresets.nameOf(b))
-        assertEquals("Same size stays the player's", HomeLayout.FightBand.SAME, cl.apply(classic.copy(fight = HomeLayout.FightBand.SAME)).fight)
-        // saved as Fighter: Classic from the sheet, and the record Save would write is named Classic, the top-screen bar off
-        val m = model(saved = fighter, start = EditStop.CHIP)
-        m.press("PAD1"); m.sheetUse(0)
-        assertEquals(HomePresets.CLASSIC, m.chipName)
-        assertEquals(HomePresets.CLASSIC, HomePresets.nameOf(m.draft))
-        assertTrue(m.draft.fight != HomeLayout.FightBand.TOP)
-    }
-
-    @Test fun theSheetsMineRowIsARowOfItsOwn() {
-        val m = model(start = EditStop.CHIP)
-        m.press("PAD1")
-        val p = HomePresets.ALL.size
-        m.sheetSel = p
-        m.press("PADDDOWN"); assertEquals("Down on Mine stays (never sideways to All characters)", p, m.sheetSel)
-        m.sheetSel = p + HomePresets.SLOTS
-        m.press("PADDUP"); assertEquals("Up from All characters: the preset above it", p - 1, m.sheetSel)
-        m.sheetSel = p
-        m.press("PADDUP"); assertEquals("Up from slot 1: the last presets' row, its first", ((p - 1) / HomeEditModel.SHEET_COLS) * HomeEditModel.SHEET_COLS, m.sheetSel)
-        m.sheetSel = 1
-        m.press("PADDDOWN"); assertEquals(1 + HomeEditModel.SHEET_COLS, m.sheetSel)
-        m.press("PADDDOWN"); assertEquals("the last presets' row: down to Mine, same column", p + 1, m.sheetSel)
-    }
-
-    @Test fun aSlotSavedThisSessionIsUsedOnEveryRoute() {
-        val slots = arrayOfNulls<HomeLayout>(HomePresets.SLOTS)
-        val fl = flips() + (0 until HomePresets.SLOTS).map { i ->
-            HomeEditModel.Flip("${HomeEditModel.SLOT_MARK}${i + 1}", { slots[i] != null }) { l -> slots[i]?.copy(name = l.name) ?: l } }
-        val m = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, slotNow = { slots[it] })
-        m.press("PAD1")
-        val p = HomePresets.ALL.size
-        m.sheetSel = p
-        assertEquals("an empty slot: refused", listOf(HomeEditModel.Fx.Refuse(EditStop.CHIP)), m.press("PAD1"))
-        assertEquals(listOf(HomeEditModel.Fx.SaveSlot(0)), m.press("PAD3"))
-        slots[0] = classic.swapped()                              // what Save here kept
-        m.press("PAD1")
-        assertTrue("A uses the slot as it is NOW", m.draft.mirrored)
-        assertEquals("the chip says 1 (as the Settings tile), never #1", "1", m.chipName)
-        m.press("PADLSHOULDER")
-        m.press("PADRSHOULDER")
-        assertEquals("the chip's flips reach it too", "1", m.chipName)
-    }
-
-    /** fix round 1: Off picked in the bar's / the card's OWN menu moves the cursor as the red X does ("+", else the chip); the map's
+    /** fix round 1: Off picked in the bar's / the card's OWN menu moves the cursor as the red X does ("+", else the chat); the map's
      *  "Quest card" row leaves it on the map; a widget left with no box (Party mode's Hide) moves it at the next check */
     @Test fun offFromItsOwnMenuMovesTheCursor() {
         val v = HomeWidgetMenus.Values(toolbar = true, toolbarCan = true)
@@ -643,96 +561,31 @@ class HomeEditModelTest {
         val mr = HomeWidgetMenus.rows(EditStop.MAP, mm.draft, v)
         mm.menuTouch(mr.indexOfFirst { it.key == HomeEditModel.K_CARD }, HomeWidgetMenus.CARD_DOCKS.indexOf(HomeLayout.CardDock.OFF), mr)
         assertEquals(EditStop.MAP, mm.cursor); assertEquals(EditStop.MAP, mm.menu)
-        // the bar slid away by Party mode's Hide (a Press: the draft keeps the bar): no CAST box -> the cursor to the chip ("+" not shown)
+        // the bar slid away by Party mode's Hide (a Press: the draft keeps the bar): no CAST box -> the cursor to the chat ("+" not shown)
         val p = model()
         p.openMenu(EditStop.CAST); p.closeMenu()
         assertEquals(EditStop.CAST, p.cursor)
         assertFalse("its box is there: nothing moves", p.cursorCheck(stops(p.draft)))
         val gone = stops(p.draft).filterKeys { it != EditStop.CAST }
         assertTrue(p.cursorCheck(gone))
-        assertEquals(EditStop.CHIP, p.cursor)
+        assertEquals(EditStop.CHAT, p.cursor)
         assertFalse(p.cursorCheck(gone))
-        // the chip's D-pad works from there as always (no jump to the first stop)
+        // the D-pad works from there as always (no jump to the first stop)
         p.press("PADDUP")
-        assertTrue(p.cursor != EditStop.CHIP)
-    }
-
-    /** fix round 1: a preset's fold (Compact, Fighter: folded) is pressed LIVE when it is picked - never at Save because the saved record
-     *  still holds the preset (the player's own unfold kept) */
-    @Test fun aPresetsFoldOnlyWhenPicked() {
-        val fl = HomePresets.ALL.map { p -> HomeEditModel.Flip(p.id, p.available, p.folded) { l -> p.apply(l) } }
-        val compact = HomePresets.byId(HomePresets.COMPACT)!!.apply(classic)
-        val m = HomeEditModel(compact, EditStop.QUEST, fl, HomePresets.nameOf(compact), true)
-        assertEquals(HomePresets.COMPACT, m.chipName)
-        val y = m.sizeStep(EditStop.QUEST)
-        assertEquals("Y on the card: the fold toggled (app-wide), the draft untouched", listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, -1)), y)
-        assertEquals(listOf(HomeEditModel.Fx.Save), m.saveLeave())
-        assertFalse("nothing picked: Save leaves the fold alone", m.foldPicked)
-        // picking Compact from Classic: the fold pressed with the flip (the preview shows it), Mirrored presses none
-        val n = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true)
-        var fx: List<HomeEditModel.Fx> = emptyList()
-        repeat(fl.size) { if (n.chipName != HomePresets.COMPACT) fx = n.flip(1) }
-        assertEquals(HomePresets.COMPACT, n.chipName)
-        assertTrue(fx.contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)))
-        assertTrue(n.foldPicked)
-        val r = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true)
-        val mir = r.flip(1)
-        assertEquals(HomePresets.MIRRORED, r.chipName)
-        assertTrue(mir.none { it is HomeEditModel.Fx.Press })
-        assertFalse(r.foldPicked)
-        // the Layouts sheet too
-        val s = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true)
-        val fi = fl.filter { !it.name.startsWith(HomeEditModel.SLOT_MARK) }.indexOfFirst { it.name == HomePresets.FIGHTER }
-        assertTrue(s.sheetUse(fi).contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)))
+        assertEquals(EditStop.BAND, p.cursor)
     }
 
     @Test fun parkedTouchesDoNothing() {
-        val m = model(start = EditStop.CHIP)
+        val m = model(saved = classic.copy(cast = HomeLayout.CastDock.OFF), start = EditStop.PLUS)
         m.park()
-        assertTrue(m.flip(1).isEmpty())
-        assertTrue(m.tap(EditStop.CHIP).isEmpty())
-        assertNull("no sheet opened behind a fight", m.sheet)
-        assertTrue(m.sheetUse(0).isEmpty())
-        assertEquals(classic, m.draft)
+        assertTrue(m.tap(EditStop.PLUS).isEmpty())
+        assertNull("no tray opened behind a fight", m.sheet)
+        val chat = stops(m.draft).getValue(EditStop.CHAT)
+        assertTrue(m.dragStart(EditStop.CHAT, chat.cx, 500f, chat).isEmpty())
+        assertEquals(classic.copy(cast = HomeLayout.CastDock.OFF), m.draft)
     }
 
-    /** fix round 2: browsing past Compact / Fighter never leaves the card folded - a landing with no fold of its own (a preset whose
-     *  folded is null, a slot) puts back the fold edit mode opened with; the preset that IS landed on keeps its own */
-    @Test fun aPassedOverPresetsFoldIsPutBack() {
-        val fl = HomePresets.ALL.map { p -> HomeEditModel.Flip(p.id, p.available, p.folded) { l -> p.apply(l) } }
-        val m = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, foldOpen = false)
-        val seen = ArrayList<HomeEditModel.Fx>()
-        repeat(fl.size) { if (m.chipName != HomePresets.COMPACT) seen += m.flip(1) }
-        assertEquals(HomePresets.COMPACT, m.chipName)
-        assertTrue("Compact's fold pressed live", seen.contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)))
-        val back = m.flip(-1)
-        assertEquals(HomePresets.BIG_CHAT, m.chipName)
-        assertEquals("back to Big chat (no fold): the card open again, as edit mode opened",
-            listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 1)), back.filterIsInstance<HomeEditModel.Fx.Press>())
-        assertTrue("a second landing without a fold presses nothing more", m.flip(-1).none { it is HomeEditModel.Fx.Press })
-        // Compact -> Fighter (both fold): Fighter's own fold, never the open one in between
-        val f = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, foldOpen = false)
-        repeat(fl.size) { if (f.chipName != HomePresets.COMPACT) f.flip(1) }
-        val toFighter = f.flip(1)
-        assertEquals(HomePresets.FIGHTER, f.chipName)
-        assertEquals(listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)), toFighter.filterIsInstance<HomeEditModel.Fx.Press>())
-        // the card was folded when edit mode opened: the put-back folds it (it never unfolds a card the player had folded)
-        val g = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, foldOpen = true)
-        repeat(fl.size) { if (g.chipName != HomePresets.COMPACT) g.flip(1) }
-        assertEquals(listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)), g.flip(-1).filterIsInstance<HomeEditModel.Fx.Press>())
-        // the Layouts sheet: Compact, then a slot -> the open fold again
-        val slot = HomePresets.byId(HomePresets.MIRRORED)!!.apply(classic)
-        val s = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true, slotNow = { if (it == 0) slot else null }, foldOpen = false)
-        val ci = fl.filter { !it.name.startsWith(HomeEditModel.SLOT_MARK) }.indexOfFirst { it.name == HomePresets.COMPACT }
-        assertTrue(s.sheetUse(ci).contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 0)))
-        assertTrue(s.sheetUse(s.sheetCount() - HomePresets.SLOTS - 1).contains(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, 1)))
-        // the fold not known (a caller that gives none): no put-back, as before
-        val n = HomeEditModel(classic, EditStop.CHIP, fl, HomePresets.nameOf(classic), true)
-        repeat(fl.size) { if (n.chipName != HomePresets.COMPACT) n.flip(1) }
-        assertTrue(n.flip(-1).none { it is HomeEditModel.Fx.Press })
-    }
-
-    /** fix round 2: the cursor on the Clock when LB / RB lands on a thin-row layout (no clock): it falls back to the band (its menu
+    /** fix round 2: the cursor on the Clock when the band goes to the thin row (no clock): it falls back to the band (its menu
      *  closed), never left on a widget with no box (no gold box drawn, A opening a menu for a clock not shown) */
     @Test fun theClockCursorFallsBackToTheBand() {
         val m = model()

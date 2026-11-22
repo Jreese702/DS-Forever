@@ -220,8 +220,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the Thor's own game runs only in Local (streaming, the PC's does: the Thor's Config.wtf can be written now)
         val localGame = LauncherHooks.gameUp() && PlayModes.current != PlayMode.STREAM
         val kinds = b.kinds
-        // movable Home fix round 1: a Layouts reset ends edit mode - open or parked by the Settings room - unwritten, so no Save puts the
-        // pre-reset record back. Fix round 2: BEFORE the reset touches the prefs, so Discard's fold restore (questMin) is wiped by it too
+        // movable Home fix round 1: a Layouts reset ends edit mode - open or parked by the Settings room - with nothing more written, so
+        // no write of its puts the pre-reset record back. Fix round 2: BEFORE the reset touches the prefs
         if (ResetPlan.Kind.LAYOUTS in kinds && ::homeView.isInitialized) homeView.editCancel()
         val r = resetRun.run(b, who, all, localGame)
         if (ResetPlan.Kind.SETTINGS in kinds) { Theme.use("classic"); Tr.setChoice(this, "auto"); Settings.resetDone(); FrameGen.resetDone() }
@@ -792,7 +792,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // ("The full Chat room": one way into chat), up = the consumables radial (batch b; nothing yet). Down is the bar's own
         barSelect.onEditHome = { editHome("Y on the Home disc") }        // P2 (D4): Y on the disc = Edit Home
         barSelect.onDpad = dpad@{ k ->
-            // P2: Home's edit mode holds the controller: no toolbar / router word opens anything meanwhile (Start is its Save)
+            // P2: Home's edit mode holds the controller: no toolbar / router word opens anything meanwhile (Start is its Done)
             if (room == Room.HOME && homeView.editing) return@dpad
             // while the radial shows, its own reader moves round the ring; the router's map / chat / home words wait
             if (::radialView.isInitialized && radialView.isOpen && k != "radial" && !k.startsWith("sradial") && k != "smartor") return@dpad
@@ -1216,15 +1216,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         castView.overlayOpen = { overlayUp() }
         // #540: Home's B watch leaves a B alone while one of these overlays has it (and just after it closed one: overlayClosed)
         homeView.overlayOpen = { radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || barSelect.open }
-        // MOVABLE HOME P2, EDIT MODE: its ribbon in the room bar's XP track and the disc's gold tick (a touch on it saves), the DS toolbar's
-        // switch at Save (the Settings row's own route), the behaviour rows through BottomTiles.press with this host's env, the bar's slots
-        // (the Controller room's Tap-to-cast tab) and the chat's filters (the Chat room's checklist) after a Save
+        // MOVABLE HOME P2, EDIT MODE: its ribbon in the room bar's XP track and the disc's gold tick (a touch on it is Done), the DS
+        // toolbar's switch at Done (the Settings row's own route), the behaviour rows through BottomTiles.press with this host's env, the
+        // bar's slots (the Controller room's Tap-to-cast tab) and the chat's filters (the Chat room's checklist)
         homeView.onEditChrome = { v ->
             strip.editRibbon = v?.let { ev -> { c: android.graphics.Canvas, w: Float, top: Float, g0: Float, g1: Float -> ev.drawRibbon(c, w, top, g0, g1) } }
             strip.editTick = v != null
             // the iPhone-style edit mode: the ribbon slides over the XP track, the rooms shrink and wiggle
             strip.editRibbonK = v?.let { ev -> { ev.ribbonK() } }
-            strip.editTouch = v?.let { ev -> { x: Float, y: Float, up: Boolean -> ev.ribbonTouch(x, y, up) } }
+            strip.editTouch = v?.let { ev -> { x: Float, y: Float, action: Int -> ev.ribbonTouch(x, y, action) } }
             // P4: the room bar is a widget of edit mode (D3: reorder only): its chrome and its rooms' row's touches
             strip.editBar = v?.let { ev -> { c: android.graphics.Canvas, layer: Int -> ev.drawBar(c, layer) } }
             strip.editBarTouch = v?.let { ev -> { e: MotionEvent -> ev.barTouch(e) } }
@@ -1235,6 +1235,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onEditPress = { key, k -> BottomTiles.press("", key, k, BottomTiles.Env(lastDpad, GameUi.character)) { on -> dpadSet(on) } }
         homeView.onEditSlots = { controllerView.openOnCastBar(); pickRoom(Room.CONTROLLER) }
         homeView.onEditFilters = { show(Room.CHAT); chatView.post { chatView.openFilters() } }
+        // 1518 (the autosave): the add-on hears the record's D-pad sides and fight bar only once edit mode is not live (Done, Discard,
+        // a fight, another room); while it is, the pictures preview the draft
+        homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it) } } }
         homeView.onEditChanged = { on ->
             lbEval(); trackSync(); strip.invalidate()
             // the 1515 merge: a key question that waited for edit mode is looked at again once edit mode has ended
@@ -1242,7 +1245,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         // the 1515 merge: edit mode never opens while the key question is up (shown, or waiting for the controller)
         homeView.editBlocked = { !KeyPick.editMayOpen(keyAskOpen) }
-        BottomTiles.editHome = { editHome("Settings' Home layout tile") }
+        BottomTiles.editHome = { editHome("Settings' Edit Home tile") }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> slideBarsUp = true; pauseSlideAll(t) }          // feat/pause-power: Home's controller goes up
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button
@@ -1992,8 +1995,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     private fun swirlTouched() {
-        // MOVABLE HOME P2: the disc's gold tick while editing: save and leave
-        if (room == Room.HOME && homeView.editing) { homeView.editSave(); return }
+        // MOVABLE HOME P2: the disc's gold tick while editing: Done (every change is saved already)
+        if (room == Room.HOME && homeView.editing) { homeView.editDone(); return }
         // PARTY MODE (4.2): on Home the disc shows red with B while Party mode is on; a touch on it is B: Party mode OFF
         if (room == Room.HOME && homeView.partyOnRest()) {
             val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } } == true
@@ -2441,8 +2444,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             active = { live("bar")() || (barSelect.open && barSelect.early) }, onKey = synth("bar") { barSelect.onPad(it) }))
         // b98: D-pad Down that no room takes, on Home with nobody holding: the bar comes up at once (the game's command confirms it)
         DirectPad.unclaimed = { k, down -> padUnclaimed(k, down) }
-        DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), active = live("home"),
-            onKey = synth("home") { if (setupPad) setupView.padKey(it.optString("k")) else homeView.auraPad(it) }))
+        // 1518: edit mode's B on this feed is read press AND release (held = Discard, HomeView.editB); every other key as before
+        val homeKey = synth("home") { if (setupPad) setupView.padKey(it.optString("k")) else homeView.auraPad(it) }
+        DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), wantsRelease = true, active = live("home")) { k, down, rep ->
+            if (k == "PAD2" && !setupPad && room == Room.HOME && homeView.editing) homeView.editB(down) else homeKey(k, down, rep)
+        })
         // the Track Pad & Keyboard: LB / RB the tabs, ZL / ZR the clicks (the user, 2026-10-16)
         DirectPad.register(DirectPad.Reg("tool", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT), active = live("tool"),
             onKey = synth("tool") { homeView.toolPad(it) }))
@@ -4012,7 +4018,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun startPressed() {
         if (shell.hostGone()) return
-        // MOVABLE HOME P2: Start in edit mode = save and leave
+        // MOVABLE HOME P2: Start in edit mode = Done
         if (room == Room.HOME && homeView.editing) { startReadAt = SystemClock.uptimeMillis(); homeView.editKey("PADFORWARD"); return }
         // the chat's board (the keyboard's Send, quick chat's Send; its voice page: Start is their Send): the Chat room, and Home's own chat module (the same ChatView lent)
         if ((room == Room.CHAT || (room == Room.HOME && homeView.chatModuleOn)) && chatView.ownsStart()) {
@@ -4998,6 +5004,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the 1514 merge (CharKey): no key = the layout is not this character's (Home shows the default) and the add-on refuses the
         // bit ("no character"): nothing is sent until the key comes (PadMap m181 sends the padmap again then)
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); homeView.roomBarHoldEnd(); return }
+        // 1518 (edit mode saves as it goes): nothing is sent while edit mode is live - the D-pad pictures preview the draft - and the
+        // record's sides go to the add-on once it is not (onEditLive: Done, Discard, a fight, another room)
+        if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }
         val want = HomeLayoutSolver.mirrorBit(HomeSettings.layout)
         if (mirrorSentWant != want) { mirrorSentAt = null; mirrorTries = 0 }
         val now = SystemClock.elapsedRealtime()
@@ -5027,6 +5036,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun topCheck(d: PadMapModel.Dpad) {
         if (!mirrorCurrent) return
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(topAgain); return }      // the 1514 merge: as mirrorCheck
+        if (homeView.editing) { ui.removeCallbacks(topAgain); return }                       // 1518: as mirrorCheck (edit mode live)
         val want = TopCombatBar.wanted(HomeSettings.layout)
         if (topSentWant != want) { topSentAt = null; topTries = 0 }
         val now = SystemClock.elapsedRealtime()

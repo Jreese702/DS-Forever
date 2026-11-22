@@ -125,7 +125,7 @@ class BottomTilesRoomTest {
 
     // ---------------------------------------------------------------- the tab
 
-    /** the Bottom screen tab: Home's 9 tiles (11-20: Spell rank badges) and Map & chat's 3, each group ONE tile part; the old Tap-to-cast and Chat groups gone; no
+    /** the Bottom screen tab: Home's 11 tiles (11-20: Spell rank badges; 1518: Reset Home) and Map & chat's 3, each group ONE tile part; the old Tap-to-cast and Chat groups gone; no
      *  "What it does" panel (the tiles are the pictures, as on Top screen) */
     @Test fun bottomTabIsTwoGroupsOfTiles() {
         val r = room()
@@ -139,7 +139,7 @@ class BottomTilesRoomTest {
             assertEquals("$g not shown", View.GONE, r.groupBoxes.single { it.group == g }.box.visibility)
         // five columns of Top's 232 x 184 tiles on the 1240 px page
         val b = tileBoxes(r)
-        assertEquals(13, b.size)                                             // movable Home: Home layout first
+        assertEquals(14, b.size)                                             // movable Home: Edit Home first; 1518: Reset Home last of Home's
         for (t in b.values) { assertEquals(GameUiTiles.TILE_W, t.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, t.height(), 0.01f) }
         assertEquals(16f, b.getValue(BottomTiles.LAYOUT).left, 0.5f)
         assertEquals(W - 16f, b.getValue(BottomTiles.QUEST).right, 0.5f)
@@ -159,7 +159,7 @@ class BottomTilesRoomTest {
         assertTrue(r.pad.onTabRow)
         press(r, "PADDDOWN")
         val boxes = tileBoxes(r)
-        var tile = boxes.getValue(BottomTiles.LAYOUT)                   // movable Home (D4): Home layout is the first tile
+        var tile = boxes.getValue(BottomTiles.LAYOUT)                   // movable Home (D4): Edit Home is the first tile
         // (pick 5: no heading stops - the first stop under the tab row is a tile)
         repeat(4) { if (r.pad.focusBox() != tile) press(r, "PADDLEFT") }
         assertEquals("the first tile: top-left", tile, r.pad.focusBox())

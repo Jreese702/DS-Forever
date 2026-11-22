@@ -21,7 +21,7 @@ import kotlin.math.sqrt
  *    no corner past [Motion.WIGGLE_PX]) the whole time edit mode is open (no idle rest: the user's pick 2026-11-21, "Never rest");
  *  - a lifted widget grows to [Motion.LIFT] (a little past it) and stops wiggling; dropped, it plops a hair below its rest and its finger
  *    offset springs into the dock;
- *  - the gold cursor's box flies between widgets; the menus, the sheets, the prompt, the X chip and the edit ribbon pop or slide in.
+ *  - the gold cursor's box flies between widgets; the menus, the Add tray, the X chip and the edit ribbon pop or slide in.
  *
  * Time runs at t / [scale] (the system's animator duration scale); 0 = no motion at all (the static shrink). [still] is identity at
  * once (a fight, a room over Home). The model's geometry never sees any of this: it is drawn only (HomeView's views' properties and the
@@ -90,7 +90,7 @@ class HomeEditMotion {
     private val envTo = FloatArray(KEYS)
     private val envAt = LongArray(KEYS)
     private val envMs = LongArray(KEYS)
-    /** quieter while a menu / sheet / prompt is open (1 .. CALM) */
+    /** quieter while a menu / the Add tray is open (1 .. CALM) */
     private var calmFrom = 1f
     private var calmTo = 1f
     private var calmAt = 0L
@@ -153,10 +153,9 @@ class HomeEditMotion {
         for (k in 0 until KEYS) { base[k].snap(1f); lift[k].snap(1f); offX[k].snap(0f); offY[k].snap(0f); envFrom[k] = 0f; envTo[k] = 0f; envMs[k] = 0L }
         for (p in pops) p.snap(1f)
         for (c in cursor) c.snap(0f)
-        chipAt = Long.MIN_VALUE / 2
     }
 
-    /** a menu, sheet or prompt open: the wiggle calms to [Motion.WIGGLE_CALM] */
+    /** a menu or the Add tray open: the wiggle calms to [Motion.WIGGLE_CALM] */
     fun modal(open: Boolean, now: Long) {
         val to = if (open) Motion.WIGGLE_CALM else 1f
         if (to == calmTo) return
@@ -225,7 +224,7 @@ class HomeEditMotion {
         val isIdentity: Boolean get() = scale == 1f && rot == 0f && dx == 0f && dy == 0f
     }
 
-    // ---------------------------------------------------------------- the cursor, the pops, the chip
+    // ---------------------------------------------------------------- the cursor, the pops
 
     /** the gold box's flight: its four edges (l, t, r, b, px), then its turn (deg) */
     private val cursor = Array(5) { Spring(0f, if (it == TURN) 0.01f else 0.25f) }
@@ -245,27 +244,17 @@ class HomeEditMotion {
     fun cursorTurn(now: Long): Float = if (on) cursor[TURN].value(now) else 0f
 
     private val pops = Array(POPS) { Spring(1f, 0.002f) }
-    /** a menu / sheet / prompt / chip opening: its pop from 0 (1 = landed; past 1 a little on its overshoot) */
+    /** a menu / the Add tray / the X chip opening: its pop from 0 (1 = landed; past 1 a little on its overshoot) */
     fun pop(kind: Int, now: Long) {
         if (kind == RIBBON) return
         val (z, w) = when (kind) {
             MENU -> Motion.MENU_ZETA to Motion.MENU_W
             SHEET -> Motion.SHEET_ZETA to Motion.SHEET_W
-            PROMPT -> Motion.PROMPT_ZETA to Motion.PROMPT_W
             else -> Motion.CHIP_ZETA to Motion.CHIP_W
         }
         pops[kind].jump(0f, 1f, 0f, now, z, w)
     }
     fun popK(kind: Int, now: Long): Float = if (!on && kind != RIBBON) 1f else pops[kind].value(now)
-
-    private var chipAt = Long.MIN_VALUE / 2
-    /** -1 / +1: the way the last flip went */
-    var chipDir = 0
-        private set
-    /** the chip's layout name slides out [dir]-wards, the new one in from the other side */
-    fun chipFlip(dir: Int, now: Long) { chipDir = dir; chipAt = now }
-    /** the flip's progress (0 .. 1; 1 = landed) */
-    fun chipK(now: Long): Float = if (!on || scale <= 0f) 1f else ramp(0f, 1f, chipAt, Motion.CHIP_FLIP, now)
 
     // ---------------------------------------------------------------- the clock
 
@@ -278,7 +267,6 @@ class HomeEditMotion {
         }
         for (p in pops) if (!p.done(now)) return true
         for (c in cursor) if (!c.done(now)) return true
-        if (chipK(now) < 1f) return true
         if (leaving) { on = false; return false }
         return wiggling(now)
     }
@@ -309,7 +297,7 @@ class HomeEditMotion {
         /** the pops */
         const val MENU = 0
         const val SHEET = 1
-        const val PROMPT = 2
+        /** (2 was 1517's Save / Discard prompt: gone in 1518, the indices kept) */
         const val CHIP = 3
         const val RIBBON = 4
         private const val POPS = 5
@@ -420,8 +408,6 @@ class HomeEditMotion {
         fun hz(k: Int): Float = Motion.WIGGLE_HZ * (1f + 0.06f * sin(k * 1.7f + 0.4f))
         fun phase(k: Int): Float = k * 2.39996f
 
-        /** a layout flip's cascade: the module [rank]-th nearest the cursor starts this many ms later */
-        fun stagger(rank: Int): Long = min(Motion.FLIP_STAGGER_MAX, Motion.FLIP_STAGGER * rank.coerceAtLeast(0))
         /** the open's ripple: a widget [d] px from the one it opened on (of [far] at most) starts this many ms later */
         fun ripple(d: Float, far: Float): Long = if (far <= 0f) 0L else (Motion.ENTER_RIPPLE * (d / far).coerceIn(0f, 1f)).toLong()
 

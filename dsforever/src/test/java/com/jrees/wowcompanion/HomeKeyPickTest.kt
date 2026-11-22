@@ -313,11 +313,11 @@ class HomeKeyPickTest {
 
     @Test fun resetKeepsHomesKeysAndNeverTheAddOnsWhoRecords() {
         val L = setOf(ResetPlan.Kind.LAYOUTS)
-        val keys = setOf("homeLayout.$k7", "homeLayout.$k8", "homeLayout.Thrandil-$r7", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS,
+        val keys = setOf("homeLayout.$k7", "homeLayout.$k8", "homeLayout.Thrandil-$r7", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS_LEGACY,
             HomeLayoutStore.KEY_MIGRATED, HomeLayoutStore.KEY_HELD)
         assertEquals("This character: its own record only", setOf("homeLayout.$k8"), ResetPlan.prefKeys("home", keys, L, k8, false))
         assertEquals("All characters: every record, the default and the slots",
-            setOf("homeLayout.$k7", "homeLayout.$k8", "homeLayout.Thrandil-$r7", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS,
+            setOf("homeLayout.$k7", "homeLayout.$k8", "homeLayout.Thrandil-$r7", HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS_LEGACY,
                 HomeLayoutStore.KEY_HELD),
             ResetPlan.prefKeys("home", keys, L, k8, true))
         assertTrue("asking (no key): This character takes nothing of Home's", ResetPlan.prefKeys("home", keys, L, null, false).isEmpty())

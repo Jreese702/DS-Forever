@@ -127,7 +127,7 @@ class HomeView(
         partyView.boxShown = { !editLive() }                              // fix round 1: never a second gold box beside edit mode's
         HomeSettings.onChange { post {
             if (flow.setRest(restWanted())) changed()
-            // MOVABLE HOME: a new layout record (a preset, the swap, a facade setter, another character): the page glides there on the one
+            // MOVABLE HOME: a new layout record (a reset, a facade setter, another character): the page glides there on the one
             // motion (240 / 200 ms, Motion.curve); the D-pad's word follows in the add-on ([HomeLayoutStore], ToolbarMirror)
             else if (laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true) shown?.let { apply(it, animate = isShown) }
             // the focused quest moved (Settings > Home): the parts go to their new places
@@ -644,13 +644,13 @@ class HomeView(
         val c = HomeLayoutSolver.columns(laidLayout ?: layoutNow(), w, UiKit.MODULE_GAP)
         return c.first.second to c.second.first
     }
-    /** fix/menus-fit: the laid record is Classic's (HomePresets' Classic holds it): the LB picture keeps 1516's place at rest (LbFit:
+    /** fix/menus-fit: the laid record is Classic's ([HomeLayout.classicPlace]): the LB picture keeps 1516's place at rest (LbFit:
      *  under a grown band it is fitted like every layout, the user's pick 2026-11-21 "Fix in Classic too", as the map's paint during the
      *  LB / pause slides), the D-pad toast its spot on the grown diamonds' foot (not yet ruled on).
      *  The player's OWN record decides: a Top screen record laid as Grow while the add-on's Wings are not confirmed
      *  (TopCombatBar.honoured) is not Classic, so it keeps the fitted looks whatever the add-on's flag */
     private fun classicLook(): Boolean {
-        if (HomePresets.byId(HomePresets.CLASSIC)?.holds(laidLayout ?: layoutNow()) != true) return false
+        if (!(laidLayout ?: layoutNow()).classicPlace) return false
         if (renderLook != null) return true
         return HomeLayoutRules.shown(editDraft() ?: HomeSettings.layout).fight != HomeLayout.FightBand.TOP
     }
@@ -1977,14 +1977,12 @@ class HomeView(
         // Map's call order: morph(0) BEFORE start (else one frame draws the new mode un-glided), morph(k) per frame, morph(1) at the end
         if (morphing) { flightClip(true); mapView.morph(0f, mFrom!!, mTo!!, isMap, card) }
         // THE iPHONE-STYLE EDIT MODE: under edit mode every box glides on a spring (HomeEditMotion.glide: its centre a little past, its
-        // size never past its target), starting at the speed it had (a quick D-pad run never stops and starts again); a layout flip
-        // cascades out from the cursor. Outside edit mode (Classic, every fight, a module opening) the one curve as before
+        // size never past its target), starting at the speed it had (a quick D-pad run never stops and starts again). Outside edit mode
+        // (Classic, every fight, a module opening) the one curve as before
         val springs = !morphing && !combat && !gliding && editGlides() && motion.on && motion.scale > 0f
         if (!springs) partVel.clear()
         val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
-        val delays = if (springs && applyMorph != 0) flipDelays(to) else emptyMap()
-        // a flip's cascade starts some parts later: the animator runs that much longer, so each lands on its own spring, not snapped
-        val dur = if (springs) HomeEditMotion.glideMs(ms) + (delays.values.maxOrNull() ?: 0L) else ms
+        val dur = if (springs) HomeEditMotion.glideMs(ms) else ms
         var cancelled = false
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = dur
@@ -1992,7 +1990,7 @@ class HomeView(
             addUpdateListener { a ->
                 val k = a.animatedValue as Float
                 if (morphing) mapView.morph(k, mFrom!!, mTo!!, isMap, card)
-                if (springs) springFrame(a.animatedFraction, dur, ms, from, to, v0, delays)
+                if (springs) springFrame(a.animatedFraction, dur, ms, from, to, v0)
                 else for (p in from.keys) {
                     val f = from[p]!!
                     val t = to[p] ?: f
@@ -2040,17 +2038,17 @@ class HomeView(
 
     /**
      * One frame of an edit-mode spring glide at [fraction] of [dur] (the old glide [ms] sets the spring's pace): each part's centre and
-     * size from [from] (at its speed [v0]) to [to], [delays] (a flip's cascade) later; its speed kept ([partVel]); landed exactly at 1
+     * size from [from] (at its speed [v0]) to [to]; its speed kept ([partVel]); landed exactly at 1
      */
     private fun springFrame(fraction: Float, dur: Long, ms: Long, from: Map<Part, RectF>, to: Map<Part, RectF>,
-                            v0: Map<Part, FloatArray>, delays: Map<Part, Long>) {
+                            v0: Map<Part, FloatArray>) {
         val tSec = fraction * dur / 1000f
         for ((p, f) in from) {
             val tt = to[p] ?: f
             val r = now[p] ?: RectF().also { now[p] = it }
             if (fraction >= 1f) { r.set(tt); partVel.remove(p); continue }
             if (ridesIn(p, from, to)) continue                          // a rider inside its host: after the host (below)
-            val t = tSec - (delays[p] ?: 0L) / 1000f
+            val t = tSec
             val v = v0[p] ?: ZERO4
             val vel = partVel.getOrPut(p) { FloatArray(4) }
             HomeEditMotion.glide(f.centerX(), tt.centerX(), v[0], ms, t, false, glideOut); val cx = glideOut[0]; vel[0] = glideOut[1]
@@ -2061,14 +2059,14 @@ class HomeView(
         }
         if (fraction >= 1f) return
         // THE RIDERS (the card on the map, the buffs): their edges' offsets from the host glide (never past their ends: inside the host
-        // at both ends = inside it on every frame), on the host's delay, laid on the host's gliding box
+        // at both ends = inside it on every frame), laid on the host's gliding box
         for ((p, f) in from) {
             if (!ridesIn(p, from, to)) continue
             val hp = RIDER_HOST[p] ?: continue
             val hf = from.getValue(hp); val ht = to.getValue(hp); val hn = now[hp] ?: continue
             val tt = to[p] ?: f
             val r = now[p] ?: RectF().also { now[p] = it }
-            val t = tSec - (delays[hp] ?: 0L) / 1000f
+            val t = tSec
             HomeEditMotion.glide(f.left - hf.left, tt.left - ht.left, 0f, ms, t, true, glideOut); val l = glideOut[0]
             HomeEditMotion.glide(f.top - hf.top, tt.top - ht.top, 0f, ms, t, true, glideOut); val tp = glideOut[0]
             HomeEditMotion.glide(f.right - hf.right, tt.right - ht.right, 0f, ms, t, true, glideOut); val rr = glideOut[0]
@@ -2085,29 +2083,6 @@ class HomeView(
         return within(f, hf) && within(t, ht)
     }
     private fun within(a: RectF, b: RectF) = a.left >= b.left - 0.5f && a.top >= b.top - 0.5f && a.right <= b.right + 0.5f && a.bottom <= b.bottom + 0.5f
-    /** a layout flip's cascade: each part's start by its rank of distance from the cursor's widget (the chip: the ribbon's corner) */
-    private fun flipDelays(to: Map<Part, RectF>): Map<Part, Long> {
-        val m = edit ?: return emptyMap()
-        val c = stopBox(m.cursor)
-        val cx = c?.centerX() ?: editView.ribbon(width.toFloat()).chip.centerX()
-        val cy = c?.centerY() ?: frameH
-        // ranked by widget, not by part: a rider (the card on the map, the buffs, the party module with the chat, a Split bar's second
-        // half) starts with its host, so it never leaves it mid-flip
-        val order = to.entries.filter { (p, _) -> flipHost(p, to) == null }.sortedBy { (_, r) -> kotlin.math.hypot(r.centerX() - cx, r.centerY() - cy) }
-        val out = HashMap<Part, Long>()
-        for ((i, e) in order.withIndex()) out[e.key] = HomeEditMotion.stagger(i)
-        for (p in to.keys) flipHost(p, to)?.let { h -> out[p] = out[h] ?: 0L }
-        return out
-    }
-    /** the widget [p] belongs to in a flip (null = its own): the card on the map (where it lands) and the buffs the map's, the party
-     *  module the chat's, a Split bar's second half the first's */
-    private fun flipHost(p: Part, to: Map<Part, RectF>): Part? = when (p) {
-        Part.AURAS -> Part.MAP
-        Part.QUESTS -> to[Part.MAP]?.let { m -> to[Part.QUESTS]?.takeIf { within(it, m) }?.let { Part.MAP } }
-        Part.PARTY -> Part.CHAT
-        Part.CAST2 -> Part.STRIP
-        else -> null
-    }?.takeIf { it in to }
     /** the riders that lie inside their host (the card on the map, the buffs = the map's box) */
     private val RIDER_HOST: Map<Part, Part> = mapOf(Part.QUESTS to Part.MAP, Part.AURAS to Part.MAP)
 
@@ -2422,8 +2397,9 @@ class HomeView(
      * lift, the menus; [HomeEditView] draws the chrome over every part and takes every touch; the host draws the ribbon in the room bar's
      * XP track and the disc's gold tick ([onEditChrome]). Three ways in: a 450 ms hold on the chat's or the map's body ([holdWatch], the
      * ring from 150 ms; hold, drag and release is one swap gesture), Settings > Bottom screen's first tile and Y on the Home disc (the
-     * host's [editOpen]). Never in a fight: a request then flashes the widget's edge red; a fight mid-edit parks the draft (the chrome
-     * fades out, Home plays the SAVED layout's fight) and brings it back after. Nothing is written or sent before Save.
+     * host's [editOpen]). Never in a fight: a request then flashes the widget's edge red; a fight mid-edit parks it (the chrome fades
+     * out, Home plays the record's fight) and brings it back after. 1518: every settled change is written as it is made ([editPersist]);
+     * Done ends, Discard (Done's long press, a held B) writes the opening record back; nothing is sent to the add-on while it is live.
      */
     private var edit: HomeEditModel? = null
     /** edit mode's timers (the hold, the hover, the flash) on the main looper: they run whether or not Home is attached yet */
@@ -2479,12 +2455,6 @@ class HomeView(
     private var seenCursor: EditStop? = null
     private var seenMenu: EditStop? = null
     private var seenSheet: HomeEditModel.Sheet? = null
-    private var seenPrompt = false
-    private var seenChip: String? = null
-    /** the chip's name before the last flip (it slides out as the new one slides in) */
-    private var chipWas: String? = null
-    /** the next apply's flip (-1 / +1: its cascade; 0 = none) */
-    private var applyMorph = 0
     /** each part's speed at the last glide frame (px/s: centre x, y, width, height): a new glide starts at it (no stop, no stutter) */
     private val partVel = HashMap<Part, FloatArray>()
     private val glideOut = FloatArray(2)
@@ -2498,8 +2468,8 @@ class HomeView(
     /** a transform of edit mode's is on a view (one reset pass after edit mode ends) */
     private var decorDirty = false
 
-    /** the host's hooks: the ribbon + the disc's tick (the chrome, null = gone), the DS toolbar's switch at Save, the bar's slots
-     *  (Save, then the Controller room's Tap-to-cast tab), the chat's filters (Save, then the Chat room's checklist) */
+    /** the host's hooks: the ribbon + the disc's tick (the chrome, null = gone), the DS toolbar's switch at Done, the bar's slots
+     *  (the Controller room's Tap-to-cast tab), the chat's filters (the Chat room's checklist) */
     var onEditChrome: ((HomeEditView?) -> Unit)? = null
     var onEditToolbar: ((Boolean) -> Unit)? = null
     var onEditSlots: (() -> Unit)? = null
@@ -2508,12 +2478,15 @@ class HomeView(
     var onEditPress: ((String, Int) -> Unit)? = null
     /** edit mode opened / closed (the host re-reads its guards) */
     var onEditChanged: ((Boolean) -> Unit)? = null
+    /** 1518: edit mode is LIVE (open, not parked) or not any more (Done, Discard, a fight, another room): the host tells the add-on the
+     *  record's D-pad sides and fight bar only while it is not live (the autosave writes every change; the pictures preview it meanwhile) */
+    var onEditLive: ((Boolean) -> Unit)? = null
 
     private fun editDraft(): HomeLayout? = edit?.takeIf { !it.parked || editBackDue }?.draft
     /** fix round 3: Home is back over a room-parked session and its resume is posted ([borrow]): the page is laid with the draft already */
     private var editBackDue = false
     /** the band's rest Home is laid with: the draft's while edit mode is live (Y on the band, the menu's Rest row preview live), else the
-     *  saved record's (a fight's park, Discard and Leave put it back) */
+     *  record's (a fight's park; Discard puts the opening record back) */
     private fun restWanted(): HomeRest = editDraft()?.rest ?: HomeSettings.rest
     /** HomeFlow's rest to [restWanted]; true = it changed (the next lay reads it: [layoutNow], CastView's look, [solveFor]) */
     private fun editRestSync(): Boolean = flow.setRest(restWanted())
@@ -2536,7 +2509,7 @@ class HomeView(
         return dirs + mapOf(1 to dirs.getValue(3), 3 to dirs.getValue(1))
     }
     /**
-     * fix round 3 (SPEC section 10: "after Save (new d arrives): 120 ms cross-fade if they differ"): Save keeps the saved record's sides
+     * fix round 3 (SPEC section 10: "after Save (new d arrives): 120 ms cross-fade if they differ"): Done keeps the saved record's sides
      * (its mirror bit) on the pictures until the add-on's `d` says them - the swap the player previewed never slides back and forth
      * while ToolbarMirror's taps are on their way. The host's [roomBarHoldEnd] (the resend gave up, no key to send for) puts `d` back with
      * the cross-fade. Null = `d` as it is
@@ -2580,9 +2553,8 @@ class HomeView(
         override fun cursorOffset(out: FloatArray) = motion.cursorOffset(motionNow(), out)
         override fun cursorTurn(): Float = motion.cursorTurn(motionNow())
         override fun popK(kind: Int): Float = motion.popK(kind, motionNow())
-        override fun chipFlip(): Float = motion.chipK(motionNow())
-        override val chipDir: Int get() = motion.chipDir
-        override val chipWas: String? get() = this@HomeView.chipWas
+        override fun holdK(): Float? = editHoldK()
+        override fun holdDone(down: Boolean): Boolean = if (down) { editHoldDown(); false } else editHoldUp()
         override fun roomPose(r: Room, out: FloatArray): Boolean {
             if (!motion.on) return false
             motion.pose(HomeEditMotion.roomKey(r.ordinal), motionNow(), ROOM_HALF_DIAG, pose)
@@ -2595,8 +2567,6 @@ class HomeView(
         override val geo: HomeEditModel.Geo get() = editGeo
         override fun run(fx: List<HomeEditModel.Fx>) = editRun(fx)
         override fun menuRows(s: EditStop): List<MenuRow> = editMenuRows(s)
-        override fun thumb(l: HomeLayout, w: Int, h: Int): android.graphics.Bitmap? = editThumb(l, w, h)
-        override fun slots(): List<HomeLayout?> = HomeLayoutStore.slots()
         override val stripH: Int get() = Strip.HEIGHT
         override val flash: Pair<EditStop, Long>? get() = editFlash
         override fun bar(): Strip? = roomBar
@@ -2666,26 +2636,6 @@ class HomeView(
         return HomeWidgetMenus.rows(s, m.draft, editValues(), m.toolbarWant)
     }
 
-    /** a Layouts sheet picture: PreviewStage's offscreen Home at that layout (null: the stage has no game document yet) */
-    private fun editThumb(l: HomeLayout, w: Int, h: Int): android.graphics.Bitmap? {
-        if (!PreviewStage.ready || w <= 0 || h <= 0) return null
-        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
-        val look = Companion.Look(l.rest, l.fight == HomeLayout.FightBand.GROW, l.card == HomeLayout.CardDock.ON_MAP,
-            HomeSettings.swingTimer, layout = l)
-        return if (PreviewStage.render(context, look, fight = false, toolbar = null, into = bmp) != null) bmp else null
-    }
-
-    /** the layout chip's list: the presets (Fighter offered since phase 3), then the device slots that hold a layout */
-    private fun editFlips(): List<HomeEditModel.Flip> {
-        val out = ArrayList<HomeEditModel.Flip>()
-        for (p in HomePresets.ALL) out += HomeEditModel.Flip(p.id, p.available, p.folded) { l -> p.apply(l) }
-        // every device slot, read LIVE (one kept by "Save here" this session is on the chip at once; an empty one is skipped)
-        for (i in 0 until HomePresets.SLOTS)
-            out += HomeEditModel.Flip("${HomeEditModel.SLOT_MARK}${i + 1}", { HomeLayoutStore.slots().getOrNull(i) != null }) { l ->
-                HomeLayoutStore.slots().getOrNull(i)?.copy(name = l.name) ?: l }
-        return out
-    }
-
     /**
      * EDIT MODE OPENS on Home's rest page with the cursor on [start] ([lift]: the held widget, lifted). Refused in a fight (the widget's
      * edge red for FLASH_MS); a full-screen module closes first. Returns whether it opened.
@@ -2700,13 +2650,11 @@ class HomeView(
         if (classOpen) classLayerShow(false)
         val saved = HomeSettings.layout
         chromeModel = null
-        val m = HomeEditModel(saved, start, editFlips(), HomeLayoutStore.nameOf(saved), toolbarNow = padMap?.dpad?.want,
-            slotNow = { HomeLayoutStore.slots().getOrNull(it) }, foldOpen = HomeSettings.questMin)
+        val m = HomeEditModel(saved, start, toolbarNow = padMap?.dpad?.want)
         edit = m
-        editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (Save goes only there)
-        editFoldOpen = HomeSettings.questMin
+        editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (it is saved only there)
+        editPersisted = saved
         editAway = false
-        editView.dropThumbs()
         editView.visibility = View.VISIBLE
         chromeFade(1f, HomeEditModel.CHROME_IN)
         editGuest(true)
@@ -2716,61 +2664,153 @@ class HomeView(
         editRun(m.startOn(start, lift))
         liveDraft = m.draft
         onEditChanged?.invoke(true)
+        onEditLive?.invoke(true)
         onStateChanged?.invoke()
         return true
     }
 
-    /** Save (the draft written; All characters; the DS toolbar's switch) or Discard, then edit mode ends: the chrome out (200 ms) */
-    private fun editLeave(save: Boolean) {
+    /**
+     * 1518, THE AUTOSAVE: the draft as last written ([editPersist]: the base of the next write, so only the fields a change changed are
+     * laid on the record the store holds - a change made meanwhile is kept)
+     */
+    private var editPersisted: HomeLayout? = null
+
+    /**
+     * a settled draft change is written now (nothing lifted, no finger down: a lifted widget's steps and a finger's hover lays are
+     * written at the drop), through the store's per-character rules: the record edit mode opened on only (another character's: nothing
+     * written - edit mode ends then, [editOwnerCheck]), the session's own fields laid on the record as it is now, a pending name's edit
+     * held until its key comes. Nothing is sent to the add-on while edit mode is live ([onEditLive]). [now] = whatever its state (edit
+     * mode parks or ends: the draft as it stands)
+     */
+    private fun editPersist(m: HomeEditModel, now: Boolean = false) {
+        if (!now && (m.parked || !m.settled)) return
+        val prev = editPersisted ?: return
+        if (m.draft == prev) return
+        val o = editOwner ?: return
+        val rec = HomeLayoutStore.editSave(o, prev, m.draft) ?: run {
+            Log.i(TAG, "home edit: NOT saved (the record it was read under is not the active one now)"); return }
+        HomeSettings.saveLayout(rec)
+        editPersisted = m.draft
+        Log.i(TAG, "home edit: saved ${HomeLayoutJson.json(rec)}${if (rec != m.draft) " (laid on the record as it is now)" else ""}")
+        // the pending name's key came while a widget was lifted (its rebase waited for the drop): the session is the real record's now
+        if (!m.parked && HomeLayoutStore.editSaveFor(o) == HomeLayoutStore.EditSave.LAY_ON) { editRebase(m); editRelay(Motion.MODULE_OPEN) }
+    }
+
+    /**
+     * the store's record changed while edit mode waited (a fight, another room, the pending name's key that arrived: its real record
+     * with the held edit laid on): the draft follows it, and the record Discard puts back takes that outside change too (only this
+     * session's own changes are undone). A late key's owner becomes the session's (its writes are its own record's from here)
+     */
+    private fun editRebase(m: HomeEditModel) {
+        val prev = editPersisted ?: return
+        val now = HomeLayoutStore.active()
+        if (HomeLayoutStore.editSaveFor(editOwner ?: return) == HomeLayoutStore.EditSave.LAY_ON) editOwner = HomeLayoutStore.owner()
+        if (now == prev) return
+        m.rebase(now, HomeLayoutStore.layOn(m.saved, prev, now))
+        editPersisted = now
+        Log.i(TAG, "home edit: rebased on the record as it is now ${HomeLayoutJson.json(now)}")
+    }
+
+    /**
+     * EDIT MODE ENDS: Done (every change is written already; the DS toolbar's switch sent now) or Discard (the record it opened on
+     * written back over the session's own changes; Home glides back to it); the chrome out (200 ms). [write] false = end only, nothing
+     * written (Home is leaving for a Layouts reset, or another character's record is active now)
+     */
+    private fun editEnd(discard: Boolean, write: Boolean = true) {
         val m = edit ?: return
-        // fix round 1: the draft goes only to the record it was read under (the same owner as it is; the pending name's key that
-        // arrived: the session's own changes on top of the real record); another character's record is never written (nor its toolbar)
-        val rec = if (!save) null else editOwner.let { o -> if (o == null) m.draft else HomeLayoutStore.editSave(o, m.saved, m.draft) }
-        if (rec != null) {
-            HomeSettings.saveLayout(rec, all = m.allChars)
-            m.toolbarWant?.let { if (it != m.toolbarNow) onEditToolbar?.invoke(it) }
-            Log.i(TAG, "home edit: saved ${HomeLayoutJson.json(rec)}${if (m.allChars) " (all characters)" else ""}${if (rec != m.draft) " (laid on the record as it is now)" else ""}")
-        } else if (save) Log.i(TAG, "home edit: NOT saved (the record it was read under is not the active one now)")
-        else Log.i(TAG, "home edit: closed${if (m.dirty) " (discarded)" else ""}")
-        // a preset's fold is applied live when it is picked (as the Settings tile does); Discard puts the fold back as it was
-        if (rec == null && m.foldPicked) HomeSettings.questMin = editFoldOpen
-        val wrote = rec != null
+        hold.cancel()
+        if (write && !discard) editPersist(m, now = true)
+        // Discard: the opening record back, laid as the inverse of the session's net change over the record the store holds now (a
+        // change made meanwhile kept); only to the record it was read under (another character's is never written)
+        val back = if (write && discard) editPersisted?.let { prev -> editOwner?.let { o -> HomeLayoutStore.editSave(o, prev, m.saved) } } else null
+        if (back != null) HomeSettings.saveLayout(back)
+        val done = write && !discard
+        if (done) m.toolbarWant?.let { if (it != m.toolbarNow) onEditToolbar?.invoke(it) }
+        Log.i(TAG, "home edit: ${when { done -> "done"; back != null -> "discarded, back to ${HomeLayoutJson.json(back)}"; discard -> "discard NOT written (another record is active)"; else -> "ended" }}")
         edit = null
         editBackDue = false
-        roomBarHold = rec?.let { HomeLayoutSolver.mirrorBit(it) }             // fix round 3: the saved sides until `d` says them
+        editPersisted = null
+        roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null   // fix round 3: the record's sides until `d` says them
         editOwner = null
         liveDraft = null
-        editRestSync()                                                    // the saved record's rest again (Save: the draft's, now saved)
-        editRoomBarSync()                                                 // the add-on's own `d` again (Save's mirror follows it)
-        editBarSync(Motion.MODULE_CLOSE)                                  // P4: the room bar's saved order (Discard glides it back)
+        editRestSync()                                                    // the record's rest
+        editRoomBarSync()                                                 // the add-on's own `d` again (the record's mirror follows it)
+        editBarSync(Motion.MODULE_CLOSE)                                  // P4: the room bar's order (Discard glides it back)
         chromeModel = m
         editAway = false
         if (!m.parked) editGuest(false)                                   // parked (a fight, a room): the guest was freed then
         motion.leave(motionNow()); editKick()                             // every widget grows back to 1, the wiggle out, the ribbon down
-        chromeFade(0f, Motion.MODULE_CLOSE) { chromeModel = null; editView.visibility = View.GONE; onEditChrome?.invoke(null); editView.dropThumbs() }
-        // every part back to the saved rects (Discard) or kept where the draft put them (Save: the record is the draft now)
-        if (!wrote && !m.draft.samePlace(m.saved)) editRelay(Motion.MODULE_CLOSE) else editRelay(Motion.MODULE_CLOSE, force = true)
+        chromeFade(0f, Motion.MODULE_CLOSE) { chromeModel = null; editView.visibility = View.GONE; onEditChrome?.invoke(null) }
+        // every part to the record's rects (Discard: its glide back already runs; Done: kept where the draft put them, the chrome's settle)
+        if (discard) editRelay(Motion.MODULE_CLOSE) else editRelay(Motion.MODULE_CLOSE, force = true)
         onEditChanged?.invoke(false)
+        onEditLive?.invoke(false)
         onStateChanged?.invoke()
     }
 
-    /** the host's: Home is leaving (Settings' route back, a Layouts reset - open or parked): edit mode ends without writing */
-    fun editCancel() { if (edit != null) editLeave(save = false) }
-    /** the record edit mode opened on ([HomeLayoutStore.owner]) and the quest card's fold then (a preset's fold is put back by Discard) */
+    /** the host's: Home is leaving for a Layouts reset (open or parked): edit mode ends, nothing written (the reset decides the record) */
+    fun editCancel() { if (edit != null) editEnd(discard = false, write = false) }
+    /** the record edit mode opened on ([HomeLayoutStore.owner]; a late key's once it came) */
     private var editOwner: HomeLayoutStore.Owner? = null
-    private var editFoldOpen = true
-    /** the active record's owner is another now (another character, the key let go): edit mode - open or parked - ends unwritten; the
-     *  pending name's key that arrived keeps it (Save lays the session's own changes on the real record). True = it ended */
+    /** the active record's owner is another now (another character, the key let go): edit mode - open or parked - ends, nothing more
+     *  written (what it saved stays that character's); the pending name's key that arrived keeps it (its real record, with the held
+     *  edit laid on, is the session's from here: [editRebase]). True = it ended */
     private fun editOwnerCheck(why: String): Boolean {
-        if (edit == null) return false
+        val m = edit ?: return false
         val o = editOwner ?: return false
-        if (HomeLayoutStore.editSaveFor(o) != HomeLayoutStore.EditSave.NONE) return false
-        Log.i(TAG, "home edit: ended unwritten ($why: the draft's record is not the active one)")
-        editLeave(save = false)
+        when (HomeLayoutStore.editSaveFor(o)) {
+            HomeLayoutStore.EditSave.SAME -> return false
+            HomeLayoutStore.EditSave.LAY_ON -> {
+                // live and settled: at once (lifted / a finger down: at the drop, editPersist; parked: at the resume)
+                if (!m.parked && m.settled) { editRebase(m); editRelay(Motion.MODULE_OPEN); editBarSync(Motion.MODULE_OPEN); editView.invalidate() }
+                return false
+            }
+            HomeLayoutStore.EditSave.NONE -> {}
+        }
+        Log.i(TAG, "home edit: ended ($why: the draft's record is not the active one)")
+        editEnd(discard = false, write = false)
         return true
     }
-    /** the disc's gold tick / the host's Start: save and leave */
-    fun editSave() { edit?.let { editRun(it.saveLeave()) } }
+    /** the disc's gold tick: Done */
+    fun editDone() { edit?.let { editRun(it.done()) } }
+
+    // ---------------------------------------------------------------- Done's long press / a held B = Discard (1518)
+
+    /** the hold on Done (a finger) or on B (the direct feed): Discard when it lasts [HomeEditModel.DISCARD_HOLD_MS] */
+    private inner class Hold : Runnable {
+        /** since when (uptime ms), -1 = none */
+        var at = -1L
+        /** it ran out this hold: Discard ran, the release does nothing */
+        var fired = false
+        fun start() { cancel(); at = android.os.SystemClock.uptimeMillis(); fired = false; editUi.postDelayed(this, HomeEditModel.DISCARD_HOLD_MS); editKick(); editRibbonRedraw?.invoke() }
+        fun cancel() { editUi.removeCallbacks(this); at = -1L }
+        override fun run() {
+            at = -1L; fired = true
+            val m = edit?.takeIf { !it.parked } ?: return
+            Log.i(TAG, "home edit: Done held: discard")
+            editRun(m.discard())
+        }
+    }
+    private val hold = Hold()
+    /** the hold's progress now (0 .. 1), null = none */
+    private fun editHoldK(): Float? {
+        val at = hold.at.takeIf { it >= 0 } ?: return null
+        return ((android.os.SystemClock.uptimeMillis() - at).toFloat() / HomeEditModel.DISCARD_HOLD_MS).coerceIn(0f, 1f)
+    }
+    private fun editHoldDown() { if (edit?.parked == false) hold.start() }
+    /** true = the hold had fired (Discard ran): the release does nothing */
+    private fun editHoldUp(): Boolean { val f = hold.fired; hold.cancel(); hold.fired = false; editRibbonRedraw?.invoke(); return f }
+
+    /**
+     * B on the controller's DIRECT feed while edit mode is live ([down] its press, then its release): held [HomeEditModel.DISCARD_HOLD_MS]
+     * = Discard; a shorter press is B (on its release): one step back, then Done. The relayed guest's B (release only, no hold to see)
+     * stays [editKey]'s plain B
+     */
+    fun editB(down: Boolean) {
+        if (edit?.parked != false) return
+        if (down) { editHoldDown(); return }
+        if (!editHoldUp()) editKey("PAD2")
+    }
 
     /** the guest "home" while edit mode holds the controller (its presses: [editPad]) */
     private fun editGuest(hold: Boolean) {
@@ -2789,7 +2829,7 @@ class HomeView(
         editKey(msg.optString("k"))
     }
 
-    /** the cursor on a widget with no box now (the card / the bar Off, Party mode's Hide): to "+" or the chip ([HomeEditModel.cursorCheck]) */
+    /** the cursor on a widget with no box now (the card / the bar Off, Party mode's Hide): to "+" or the chat ([HomeEditModel.cursorCheck]) */
     private fun editCursorCheck(m: HomeEditModel) {
         if (m.cursor !in HomeEditModel.GONE_CHECKED) return
         if (m.cursorCheck(editView.stops())) { Log.i(TAG, "home edit: the cursor's widget is gone: on ${m.cursor.name.lowercase()}"); editView.invalidate() }
@@ -2799,9 +2839,7 @@ class HomeView(
     fun editKey(k: String) {
         val m = edit ?: return
         if (settled) editCursorCheck(m)
-        val wasSheet = m.sheet
         editRun(m.key(k, editView.stops()) { s -> editMenuRows(s) })
-        if (m.sheet == HomeEditModel.Sheet.LAYOUTS && wasSheet == null) editView.dropThumbs()
         editView.invalidate()
     }
 
@@ -2809,22 +2847,20 @@ class HomeView(
     private fun editRun(fx: List<HomeEditModel.Fx>) {
         val m = edit
         for (f in fx) when (f) {
-            is HomeEditModel.Fx.Relay -> {
-                if (f.morph != 0) { chipWas = seenChip; motion.chipFlip(f.morph, motionNow()) }    // the chip's name slides over
-                liveDraft = m?.draft; editRestSync(); editRelay(f.ms, morph = f.morph); editRoomBarSync()
-            }
-            HomeEditModel.Fx.Save -> { editLeave(save = true); return }
-            HomeEditModel.Fx.Leave -> { editLeave(save = false); return }
+            is HomeEditModel.Fx.Relay -> { liveDraft = m?.draft; editRestSync(); editRelay(f.ms); editRoomBarSync() }
+            HomeEditModel.Fx.Done -> { editEnd(discard = false); return }
+            HomeEditModel.Fx.Discard -> { editEnd(discard = true); return }
             is HomeEditModel.Fx.Press -> editPress(f.key, f.k)
-            is HomeEditModel.Fx.SaveSlot -> m?.let { HomeLayoutStore.saveSlot(f.i, it.draft); editView.dropThumbs() }
-            // the bar's slots / the chat's filters (another room): an unchanged draft leaves; a changed one WAITS (the room's
-            // giveBack parks it, editAwayPark) and edit mode is back where it was with Home - nothing is written without Save
-            HomeEditModel.Fx.EditSlots -> { if (m?.dirty != true) editLeave(save = false); onEditSlots?.invoke(); return }
-            HomeEditModel.Fx.Filters -> { if (m?.dirty != true) editLeave(save = false); onEditFilters?.invoke(); return }
+            // the bar's slots / the chat's filters (another room): the draft is saved first; a session that changed nothing ends, one
+            // that did WAITS (the room's giveBack parks it, editAwayPark) so Discard can still put it back, and edit mode is back where
+            // it was with Home
+            HomeEditModel.Fx.EditSlots -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditSlots?.invoke(); return }
+            HomeEditModel.Fx.Filters -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditFilters?.invoke(); return }
             is HomeEditModel.Fx.Refuse -> editRefuse(f.stop)
             HomeEditModel.Fx.Lift -> editLift(m?.lifted)
         }
         m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
+        m?.let { editPersist(it) }                                        // 1518: a settled change is saved as it is made
         editBarSync(fx.lastOrNull { it is HomeEditModel.Fx.Relay }?.let { (it as HomeEditModel.Fx.Relay).ms } ?: Motion.MODULE_OPEN)
         editNotice()
         editDecor()
@@ -2840,7 +2876,7 @@ class HomeView(
         motion.scale = motionScale()
         motion.enter(t, from?.let { rippleFrom(it) }); cardOwnTo(0f, t, 0L)
         val m = edit
-        seenCursor = m?.cursor; seenMenu = m?.menu; seenSheet = m?.sheet; seenPrompt = m?.prompt == true; seenChip = m?.chipName
+        seenCursor = m?.cursor; seenMenu = m?.menu; seenSheet = m?.sheet
         editKick()
     }
 
@@ -2893,7 +2929,7 @@ class HomeView(
     private val seatInv = android.graphics.Matrix()
     private val seatPt = FloatArray(2)
 
-    /** the model moved on: a new cursor flies there (and the X chip pops), a menu / sheet / prompt pops open, the wiggle calms */
+    /** the model moved on: a new cursor flies there (and the X chip pops), a menu / the Add tray pops open, the wiggle calms */
     private fun editNotice() {
         val m = edit?.takeIf { !it.parked } ?: return
         val t = motionNow()
@@ -2925,10 +2961,7 @@ class HomeView(
         seenMenu = m.menu
         if (m.sheet != null && m.sheet != seenSheet) motion.pop(HomeEditMotion.SHEET, t)
         seenSheet = m.sheet
-        if (m.prompt && !seenPrompt) motion.pop(HomeEditMotion.PROMPT, t)
-        seenPrompt = m.prompt
-        seenChip = m.chipName
-        motion.modal(m.menu != null || m.sheet != null || m.prompt, t)
+        motion.modal(m.menu != null || m.sheet != null, t)
         editKick()
     }
 
@@ -2972,7 +3005,7 @@ class HomeView(
         // the wiggle never rests while edit mode is open (the user's pick 2026-11-21): the window hidden (the screen off, the app gone
         // behind another) stops the ticker too; onWindowVisibilityChanged starts it again
         if (isAttachedToWindow && windowVisibility != View.VISIBLE) return
-        edit?.takeIf { !it.parked }?.let { motion.modal(it.menu != null || it.sheet != null || it.prompt, t) }
+        edit?.takeIf { !it.parked }?.let { motion.modal(it.menu != null || it.sheet != null, t) }
         editDecor()
         roomBar?.invalidate()
         if (motion.busy(t)) editKick()
@@ -3076,8 +3109,8 @@ class HomeView(
 
     /**
      * P4, THE ROOM BAR UNDER EDIT MODE ([roomBar], the host's Strip): its order is the draft's while edit mode is live (each change glides
-     * on [ms]: EDIT_STEP a controller step, MODULE_OPEN a change, MODULE_CLOSE a drop / put back), the saved record's otherwise (a fight's
-     * park, Discard: back on MODULE_CLOSE); the lifted room and a finger's carry ride along. Nothing is written before Save.
+     * on [ms]: EDIT_STEP a controller step, MODULE_OPEN a change, MODULE_CLOSE a drop / put back), the record's otherwise (a fight's
+     * park, Discard: back on MODULE_CLOSE); the lifted room and a finger's carry ride along. A carried room is written at its drop.
      */
     var roomBar: Strip? = null
     private fun editBarSync(ms: Long) {
@@ -3103,12 +3136,12 @@ class HomeView(
     }
 
     /** lay Home again with the draft, gliding [ms]; [force] = a glide even when the draft equals what is laid (the chrome's settle) */
-    private fun editRelay(ms: Long, force: Boolean = false, morph: Int = 0) {
+    private fun editRelay(ms: Long, force: Boolean = false) {
         // the band's rest changed under edit mode (the draft's, or back to the saved one): the page's screen with the flow's rest now
         val s = shown?.let { if (it.rest != flow.rest) flow.screen else it } ?: return
         if (!force && laidLayout == layoutNow(s) && !laidChanged()) { editDecor(); return }
-        applyMs = ms; applyMorph = morph
-        try { apply(s, animate = live) } finally { applyMs = null; applyMorph = 0 }
+        applyMs = ms
+        try { apply(s, animate = live) } finally { applyMs = null }
     }
     /** what [places] laid besides the record: the card's height, the bar's side (a settle lays these again) */
     private fun laidChanged(): Boolean = laidSide != castSideNow() || (layoutNow().cast == HomeLayout.CastDock.SPLIT) != laidSplit ||
@@ -3122,14 +3155,16 @@ class HomeView(
         editUi.postDelayed({ invalidate() }, HomeEditModel.FLASH_MS + 20L)
     }
 
-    /** a fight starting mid-edit parks the draft (chrome out 120 ms, the saved layout's fight laid by the fight's own motion); its end
-     *  with Home on screen brings edit mode back where it was (120 ms in). [relay]: lay the page here (no takeover change to do it) */
+    /** a fight starting mid-edit parks edit mode (chrome out 120 ms, the record's fight laid by the fight's own motion: the draft is
+     *  saved already); its end with Home on screen brings edit mode back where it was (120 ms in), on the record as it is then.
+     *  [relay]: lay the page here (no takeover change to do it) */
     private fun editFightCheck(relay: Boolean = false) {
         val m = edit ?: return
         if (editAway) return
         val fight = fightShown()
         if (fight && !m.parked) {
-            m.park(); liveDraft = null
+            hold.cancel()
+            m.park(); editPersist(m, now = true); liveDraft = null
             editRestSync()                                                // the saved rest for the fight (the draft's waits)
             editRoomBarSync(); editBarSync(Motion.COMBAT_GROW)
             editGuest(false)
@@ -3138,9 +3173,11 @@ class HomeView(
             // the room bar's chrome goes with the rest (the XP track back, no disc tick, no ribbon touches) once the fade is out
             chromeFade(0f, HomeEditModel.CHROME_IN) { if (edit?.parked == true) onEditChrome?.invoke(null) }
             Log.i(TAG, "home edit: parked (a fight)")
+            onEditLive?.invoke(false)
             if (relay) editRelay(Motion.COMBAT_GROW)
         } else if (!fight && m.parked && live) {
             if (editOwnerCheck("the fight ended on another character")) return
+            editRebase(m)
             m.resume(); liveDraft = m.draft
             editRestSync()
             editRoomBarSync(); editBarSync(Motion.COMBAT_SHRINK)
@@ -3149,6 +3186,7 @@ class HomeView(
             chromeFade(1f, HomeEditModel.CHROME_IN)
             editMotionStart(null)
             Log.i(TAG, "home edit: back (the fight ended)")
+            onEditLive?.invoke(true)
             if (relay) editRelay(Motion.COMBAT_SHRINK)
         }
     }
@@ -3157,7 +3195,8 @@ class HomeView(
     private fun editAwayPark() {
         editBackDue = false
         val m = edit ?: return
-        if (!m.parked) { m.park(); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L) }
+        hold.cancel()
+        if (!m.parked) { m.park(); editPersist(m, now = true); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L); onEditLive?.invoke(false) }
         editAway = true
         chromeAnim?.cancel(); chromeA = 0f
         liftStop = null; dragOffsetNow.fill(0f); motion.still(); cardOwnTo(0f, 0L, 0L); editDecor()
@@ -3174,6 +3213,7 @@ class HomeView(
             if (due) { editRestSync(); editRelay(Motion.COMBAT_GROW) }    // the draft laid early goes: the saved record for the fight
             return
         }
+        editRebase(m)
         m.resume(); liveDraft = m.draft
         editRestSync()
         editGuest(true)
@@ -3182,6 +3222,7 @@ class HomeView(
         editMotionStart(null)
         editRelay(Motion.MODULE_CLOSE)
         editBarSync(Motion.MODULE_CLOSE)
+        onEditLive?.invoke(true)
     }
 
     private fun chromeFade(to: Float, ms: Long, end: (() -> Unit)? = null) {
@@ -4769,7 +4810,7 @@ class HomeView(
                         /** the one-time cast bar question's picture (the user, 2026-11-13: "make sure that this pop up uses realistic
                          *  visuals"): the bar laid on this side, Hide in combat, whatever the player's own setting; null = theirs */
                         val castSide: CastStripModel.Side? = null,
-                        /** movable Home: a whole layout record to draw (the Home layout tile's preset pictures); null = the player's */
+                        /** movable Home: a whole layout record to draw (the Settings tiles' pictures); null = the player's */
                         val layout: HomeLayout? = null)
         internal var renderLook: Look? = null
         /** the Track Pad & Keyboard's own controller guest (Quests.lua's "tool": ZL / ZR kept from the game while it holds) */

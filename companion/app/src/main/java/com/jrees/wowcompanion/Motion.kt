@@ -48,10 +48,9 @@ object Motion {
     const val DROP_OFFSET_ZETA = 0.78f; const val DROP_OFFSET_W = 20f
     /** the gold cursor flying between widgets (~180 ms) */
     const val CURSOR_ZETA = 0.85f; const val CURSOR_W = 30f
-    /** a widget's menu, the Layouts sheet / Add tray, the Save prompt, the edit ribbon, the red X chip */
+    /** a widget's menu, the Add tray, the edit ribbon, the red X chip */
     const val MENU_ZETA = 0.70f; const val MENU_W = 26f
     const val SHEET_ZETA = 0.85f; const val SHEET_W = 22f
-    const val PROMPT_ZETA = 0.65f; const val PROMPT_W = 28f
     const val RIBBON_ZETA = 0.80f; const val RIBBON_W = 22f
     const val CHIP_ZETA = 0.50f; const val CHIP_W = 30f
     /** a layout glide under edit mode: the box's centre (a little overshoot) and its size (none: never laid past its target) */
@@ -67,15 +66,11 @@ object Motion {
     const val WIGGLE_BIG = 160f
     const val WIGGLE_PX = 8.0f
     const val WIGGLE_BOB = 0.6f
-    /** the wiggle fading in after the open / out on a lift, a leave; quieter while a menu, sheet or prompt is open. It never rests
+    /** the wiggle fading in after the open / out on a lift, a leave; quieter while a menu or the Add tray is open. It never rests
      *  while edit mode is open (the user's pick 2026-11-21, "Never rest"): a fight, Home off screen and the animations off stop it */
     const val WIGGLE_IN = 140L
     const val WIGGLE_OUT = 90L
     const val WIGGLE_CALM = 0.4f
-    /** the chip's layout name sliding out / in on a flip; a layout flip's cascade per module */
-    const val CHIP_FLIP = 140L
-    const val FLIP_STAGGER = 18L
-    const val FLIP_STAGGER_MAX = 72L
     /** the open's ripple out from the held widget */
     const val ENTER_RIPPLE = 60L
 
