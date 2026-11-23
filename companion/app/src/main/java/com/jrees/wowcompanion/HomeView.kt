@@ -723,10 +723,11 @@ class HomeView(
             if ((!top && now - grewAt < GROW_B_GRACE_MS) || (lent(castView) && castView.triggerHeld())) return
             if (!TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)) return
             val shrank = grow.minimize(now)
-            if (shrank && top) slideByB = true                                // the way down's hold: not behind the add-on (TopSlide.B_HOLD_MS)
             // the user's pick: out of a fight, B also gives A / X / Y back (Spells' give-back); in a fight B only shrinks
             if (HomeFightFace.giveBack(shrank, grow.fighting(now), fightArmed())) giveBackTap(retry = false)
-            if (shrank && flow.combat(false)) { changed(); tick() }
+            // the way down's hold: not behind the add-on (TopSlide.B_HOLD_MS) - marked only for the apply THIS B makes (the review, 11-23:
+            // marked on a shrink that changed no layout it stayed set and gave a later, padmap-started way down the B hold)
+            if (shrank && flow.combat(false)) { slideByB = top; changed(); tick() }
         }
         else if (flow.close()) { changed(); onBHome?.invoke() }
     }

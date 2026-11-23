@@ -5207,10 +5207,12 @@ do
         local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
         local w = num(P.W) or P.W_DEF
         y = y + P.liftFor(P.partyModeOn())                              -- (the guard's lift the block is going to: Hub fades its rows to it)
-        local x = (num(P.x) or 0) + P.cxFor() / s                       -- prd22: the centring shift it is going to (Hub fades to it too)
-        -- (h: the two bars' height, for the solo tab beside the [me][pet] row)
+        local cx = P.cxFor()
+        local x = (num(P.x) or 0) + cx / s                              -- prd22: the centring shift it is going to (Hub fades to it too)
+        -- (h: the two bars' height, for the solo tab beside the [me][pet] row; prd22 cx: that shift in 1080-line px - Hub keeps this table
+        -- as the rows' drawn place (PF.g), so ActionBar reads the shift the rows stand at, which can differ from P.cx mid-fade)
         return { x = (u(x) - u(w) / 2) * s, top = u(y) * s, h = u(P.HH + P.BAR_GAP + P.PH) * s,        -- prd18: the HUD's x
-                 y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s }
+                 y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s, cx = cx }
     end
     -- prd15 THE ON-SCREEN GUARD (the user, 2026-11-12: "KEEP IT ON SCREEN"): in Party mode, the lift (spec px, up) that keeps the block -
     -- the HUD's bars (the combo pips included), and Hub's rows under them (P.partyRoomPx, their rings in it) or the bars' lip while solo -

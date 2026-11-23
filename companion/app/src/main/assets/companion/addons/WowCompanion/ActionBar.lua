@@ -3773,13 +3773,23 @@ function NB.topOurs()
         end
         hud = NB.union(live, geo) or NB.pieceRect(prd.lay, "hud")
         -- nbar14 PARTY MODE CENTRED (NB.top.centre: Party mode's Top-screen fight): the block where it is GOING - its rects less the shift
-        -- Trail has applied (prd22 P.cx, 1080-line px), its centre on the screen's - and that shift wanted (NB.centreDx, whole px)
+        -- each part stands at now, its centre on the screen's - and that shift wanted (NB.centreDx, whole px). The review (11-23): Trail's
+        -- frames and its block stand at the shift it has APPLIED (prd22 P.cx), Hub's rows and tab at the one they were last DRAWN with (PF.g,
+        -- P.partyGeo's cx: told at once, moved at Hub's own fade's bottom) - the two differ mid-fade, and one shift taken off the union of
+        -- both moved the centre half a shift, the next re-fit asked for another shift, the HUD faded again (a loop). Each part less its
+        -- own shift: the same unshifted block whatever stage either fade is at
         if hud and NB.top.centre then
             local W = NB.topScreen()
             local applied = num(rawget(prd, "cx")) or 0
-            local want = math.floor(W / 2 - (hud.x - applied + hud.w / 2) + 0.5)
+            local pg = pf and rawget(pf, "g")
+            local rowsDx = (type(pg) == "table" and num(rawget(pg, "cx"))) or applied
+            local function less(r, d) return r and { x = r.x - d, y = r.y, w = r.w, h = r.h } or nil end
+            local base = less(rows, rowsDx)
+            for i = 1, 4 do base = NB.union(base, less(NB.frameRect(fs[i], true), applied)) end
+            base = NB.union(base, less(geo, applied)) or less(hud, applied)
+            local want = math.floor(W / 2 - (base.x + base.w / 2) + 0.5)
             NB.top.cdx = want
-            hud = { x = hud.x + (want - applied), y = hud.y, w = hud.w, h = hud.h }
+            hud = { x = base.x + want, y = base.y, w = base.w, h = base.h }
         end
         if hud then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hud") end
     elseif rows then

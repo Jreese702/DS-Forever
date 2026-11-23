@@ -3464,19 +3464,21 @@ R.combatCastTop = function(on)
 end
 -- m188 THE GAME'S OWN SWING TIMER (the user's pick 2026-11-23, "Keep ours on the bottom": with the cast bar on the top screen and the
 -- game's swing timer off, our swing strip stays across the top of the bottom screen): READ-ONLY - Edit Mode's account setting
--- ShowSwingTimer (C_EditMode.GetAccountSettings' { setting, value } list; Enum.EditModeAccountSetting.ShowSwingTimer, 37 in this
--- client's docs), 1 = shown. Read out of combat only (Edit Mode cannot change in a fight) and kept; no setting written. An unknown read
--- (no C_EditMode, no entry) = off: the swing then stays ours on the bottom screen, never on neither
+-- ShowSwingTimer (C_EditMode.GetAccountSettings' { setting, value } list; the setting's number from the client's own
+-- Enum.EditModeAccountSetting.ShowSwingTimer only - the review (11-23): no hard-coded number, which on a client without that entry
+-- would read ANOTHER setting), 1 = shown. Read out of combat only (Edit Mode cannot change in a fight) and kept; no setting written. An
+-- unknown read (no C_EditMode, no enum entry, no list entry) = off: the swing then stays ours on the bottom screen, never on neither
 R.gswV = nil
 R.gameSwingRead = function()
     if inCombat() then return R.gswV == true end
     local v = false
     pcall(function()
-        local en = 37
+        local en = nil
         if type(Enum) == "table" and type(Enum.EditModeAccountSetting) == "table" then
             local e = Enum.EditModeAccountSetting.ShowSwingTimer
             if type(e) == "number" and WC.isPlain(e) then en = e end
         end
+        if en == nil then return end
         local list = C_EditMode.GetAccountSettings()
         if type(list) ~= "table" or not WC.isPlain(list) then return end
         for _, s in ipairs(list) do

@@ -130,11 +130,12 @@ W3.execute('IN_SECURE = true; local names = %s.routerButtons(); for _, n in pair
            'b:SetAttribute("wc-given", false) end end; IN_SECURE = false' % pm)
 check(W3.eval(pm + '.fightSw()') is True, "3. ... re-armed (nothing given back again): on")
 W3.execute('fightOff(); tick(0.5); runTimers(NOW + 2)')
-# the game's own swing timer: Edit Mode's account setting, read-only; unknown = off
+# the game's own swing timer: Edit Mode's account setting, read-only; unknown = off (the stub's Enum makes a table for any key and
+# drops plain assignments: rawset, so the client's own enum entry is what is read)
 check(W3.eval(pm + '.gameSwingOn()') is False and W3.eval(pm + '.dpadState().gsw') == 0, "3. m188 no C_EditMode: the game's swing timer unknown = off (gsw 0)")
 n0 = int(W3.eval('#SENT'))
 W3.execute('C_EditMode = { GetAccountSettings = function() return { { setting = 36, value = 0 }, { setting = 37, value = 1 } } end }; '
-           'Enum = Enum or {}; Enum.EditModeAccountSetting = { ShowSwingTimer = 37 }; fire("EDIT_MODE_LAYOUTS_UPDATED"); runTimers(NOW + 1)')
+           'Enum = Enum or {}; rawset(Enum, "EditModeAccountSetting", { ShowSwingTimer = 37 }); fire("EDIT_MODE_LAYOUTS_UPDATED"); runTimers(NOW + 1)')
 check(W3.eval(pm + '.gameSwingOn()') is True and W3.eval(pm + '.dpadState().gsw') == 1, "3. m188 ShowSwingTimer 1: gsw 1")
 gs = []
 for i in range(n0 + 1, int(W3.eval('#SENT')) + 1):
@@ -149,6 +150,10 @@ W3.execute('C_EditMode.GetAccountSettings = function() return { { setting = 37, 
 check(W3.eval(pm + '.gameSwingOn()') is True, "3. ... in a fight nothing is read again (the value kept)")
 W3.execute('fightOff(); fire("PLAYER_REGEN_ENABLED"); tick(0.5); runTimers(NOW + 2)')
 check(W3.eval(pm + '.gameSwingOn()') is False, "3. ... read again after it (0: off)")
+# the review (11-23): a client whose Enum has no ShowSwingTimer entry - no hard-coded number (it would read ANOTHER setting): off
+W3.execute('C_EditMode.GetAccountSettings = function() return { { setting = 37, value = 1 } } end; '
+           'rawset(Enum, "EditModeAccountSetting", { ShowGrid = 0 }); fire("EDIT_MODE_LAYOUTS_UPDATED"); tick(0.5); runTimers(NOW + 3)')
+check(W3.eval(pm + '.gameSwingOn()') is False, "3. ... no ShowSwingTimer in the client's Enum: off (setting 37 = 1 not read as it)")
 clean(W3, "3")
 
 # ------------------------------------------------------------------------------------------------ 2 Hub hub76

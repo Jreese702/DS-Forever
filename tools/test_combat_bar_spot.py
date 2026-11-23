@@ -1032,6 +1032,26 @@ def party_fight_checks():
     hd2 = todict(hud2)
     chk("I. nbar14 ... once Trail has applied it: the same centred block, the same shift (stable)", L.eval("WowCompanion.nbar.centreDx")() == want
         and abs(hd2["x"] - hd["x"]) < 1e-6 and abs(hd2["w"] - hd["w"]) < 1e-6, (hd2, hd))
+    # the review (11-23): mid-fade the two halves of the block stand at DIFFERENT shifts - Trail's bars at the one it applied (P.cx),
+    # Hub's rows at the one they were last drawn with (PF.g = P.partyGeo's table, its cx). One shift taken off the union moved the centre
+    # by half a shift and asked for another (the HUD fading again and again); each part less its own: the same shift at every stage
+    L.execute('local d = %d; local function mv(f) f.r.l = f.r.l - d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
+              'mv(WowCompanion.uf.pf.tab); WowCompanion.uf.pf.g = { x = 0, y = 0, cx = 0 }' % want)
+    ours3, hud3 = L.eval("WowCompanion.nbar.topOurs")()
+    hd3 = todict(hud3)
+    chk("I. review: Trail applied, Hub's rows not moved yet (PF.g cx 0): the same shift, the same centred block",
+        L.eval("WowCompanion.nbar.centreDx")() == want and abs(hd3["x"] - hd["x"]) < 1e-6 and abs(hd3["w"] - hd["w"]) < 1e-6, (hd3, hd))
+    L.execute('local d = %d; local function mv(f) f.r.l = f.r.l + d end; local function back(f) f.r.l = f.r.l - d end; '
+              'WowCompanion.prd.cx = 0; back(WowCompanion.prd.f); back(WowCompanion.prd.box.host); '
+              'for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; mv(WowCompanion.uf.pf.tab); '
+              'WowCompanion.uf.pf.g = { x = 0, y = 0, cx = d }' % want)
+    ours4, hud4 = L.eval("WowCompanion.nbar.topOurs")()
+    hd4 = todict(hud4)
+    chk("I. review: Hub's rows moved first (PF.g cx %+d), Trail not yet (P.cx 0): the same shift, the same centred block" % want,
+        L.eval("WowCompanion.nbar.centreDx")() == want and abs(hd4["x"] - hd["x"]) < 1e-6 and abs(hd4["w"] - hd["w"]) < 1e-6, (hd4, hd))
+    # (back to the state above: Trail applied, everything moved, no PF.g)
+    L.execute('local d = %d; local function mv(f) f.r.l = f.r.l + d end; WowCompanion.prd.cx = d; mv(WowCompanion.prd.f); '
+              'mv(WowCompanion.prd.box.host); WowCompanion.uf.pf.g = nil' % want)
     L.execute('local d = %d; WowCompanion.prd.cx = 0; local function mv(f) f.r.l = f.r.l - d end; mv(WowCompanion.prd.f); '
               'mv(WowCompanion.prd.box.host); for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; mv(WowCompanion.uf.pf.tab)' % want)
     # the review (11-22): our HUD bars switched off, our party frames on - Hub still lays the rows under the HUD's place (PF.want = Party
