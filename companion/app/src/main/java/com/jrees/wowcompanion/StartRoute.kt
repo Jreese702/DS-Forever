@@ -47,6 +47,9 @@ object StartRoute {
         if (start.bound != null) return Route(Kind.WHEEL, "Start is the router's (${start.bound})")
         // issue 588: only an add-on before m186 says "toolbar" (it leaves Start to the game with the toolbar off; a guest was told so)
         if (start.why == "toolbar") return Route(Kind.GAME, "the DS WoW toolbar is off and these add-ons are older (before m186): the game's own wheel")
+        // 1521 audit: an add-on before m160 sends no `why` and never binds Start with the toolbar off (a room's guest was told 35, Start to
+        // the game): the game's, as up to 1.0.38. m160+ always says why when Start is not bound (m186 "guest" for a guest), so no change there
+        if (toolbarWant != true && start.why == null) return Route(Kind.GAME, "the DS WoW toolbar is off and these add-ons are older (before m160, no start.why): the game's own wheel")
         if (start.why == "guest" || capHolder.startsWith("pad:")) return Route(Kind.WHEEL, "a guest holds Start (${capHolder.ifEmpty { "guest" }})")
         return Route(Kind.GAME, "Start is the game's now (${start.why ?: "not bound"}${start.aside?.let { ", aside $it" } ?: ""})")
     }

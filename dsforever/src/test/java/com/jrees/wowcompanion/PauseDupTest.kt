@@ -75,6 +75,14 @@ class PauseDupTest {
         // (never both wheels), even with a guest named (it was told 35: Start to the game)
         assertEquals(StartRoute.Kind.GAME, StartRoute.decide(false, true, true, st(null, "toolbar"), "pad:map", 600_000L).kind)
         assertEquals(StartRoute.Kind.GAME, StartRoute.decide(false, true, true, null, "", 600_000L).kind)            // before m37
+        // 1521 audit: PadMap m37-m159 sends `start` with no `why` (it came in m160) and never binds Start with the toolbar off; a room's
+        // guest holding was told 35 (Start to the game's radial) - so the game's alone, never Home's wheel beside it
+        for (holder in listOf("pad:map", "pad:chat", "")) for (want in listOf(false, null)) {
+            val r = StartRoute.decide(want, true, true, st(null, null, "room"), holder, 600_000L)
+            assertEquals("holder '$holder' want $want", StartRoute.Kind.GAME, r.kind)
+        }
+        // with the toolbar on that older add-on's guest was told 36: our wheel, as before
+        assertEquals(StartRoute.Kind.WHEEL, StartRoute.decide(true, true, true, st(null, null, "room"), "pad:map", 600_000L).kind)
         // what the rooms' guests are told: always our wheel from m186, the toolbar's switch before it
         assertTrue(startFreeOfToolbar("m186")); assertTrue(startFreeOfToolbar("m190")); assertFalse(startFreeOfToolbar("m185"))
         assertFalse(startFreeOfToolbar(null))
