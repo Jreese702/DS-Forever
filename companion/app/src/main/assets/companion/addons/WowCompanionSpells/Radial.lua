@@ -19,7 +19,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r27"                -- bump on every change; r27 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() put the radial pins and the spell radials under "Name-?"): both whoKey()s are Safety k6's WC.charKey(), nil until the realm is known (SRV q8); r26 RESET TO DEFAULTS (the user, 2026-11-19): the pause row's columns 20-27 are PadMap m175's WC.dsfReset (pr3); nothing else changed; r25 PET RECALL ONLY (the user, 2026-11-18: "I like the pet recall but I think we need to remove the pet smart attack, its obnoxious"): r24's Smart pet casts on the spell radials are gone (sradial q7 = q5's cells: a harmful spell is the plain spell cell again, no /petattack text, no WC.spResync); r23 THE 11-16 TEST BUILD MERGE: fix/party-radials and feat/class-wheel-sticks both tagged r22, both kept (r22p = the party wheels, r22c = the class wheels); r22c CLASS WHEELS AIM WITH BOTH STICKS (feat/class-wheel-sticks; the user 2026-11-16: "one other thing to note on this would be its awkward only working from the right stick. I think that either stick should work those wheels.", pick: "Both sticks aim, no walking"): while the class wheel's guest "pad:class" holds, the stick catch keeps BOTH sticks, Left / Movement too, as the item / spell / pause wheels do -- this REPLACES r15's class-only pass ("On the class radial only the right control stick should be locked"); r22p THE PARTY WHEELS (the user, 2026-11-16: "the control sticks arent working on the party inspect radials, they are still walking and looking around"): the stick catch also shows while a Party mode wheel is open (the party pad's wc-pmenu, read only; or MENU HOLD clicked, until MENU DONE), both sticks kept, at most 60 s; r21 PET SPELLS (#234, the user: "build it"): the spell radials' cells cast a PET spell by its NAME (q5); r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
+local RV = "r28"                -- bump on every change; r28 THE PET'S HAPPINESS ON HOME (feat/extras-polish; the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): the itemcd doc carries pet = { h } (GetPetHappiness: 1 unhappy, 2 content, 3 happy - a plain read, nothing written) while a pet with happiness is out, re-sent change-only on UNIT_HAPPINESS / UNIT_PET / PET_UI_UPDATE; the HUD's face is gone (Trail prd22); r27 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() put the radial pins and the spell radials under "Name-?"): both whoKey()s are Safety k6's WC.charKey(), nil until the realm is known (SRV q8); r26 RESET TO DEFAULTS (the user, 2026-11-19): the pause row's columns 20-27 are PadMap m175's WC.dsfReset (pr3); nothing else changed; r25 PET RECALL ONLY (the user, 2026-11-18: "I like the pet recall but I think we need to remove the pet smart attack, its obnoxious"): r24's Smart pet casts on the spell radials are gone (sradial q7 = q5's cells: a harmful spell is the plain spell cell again, no /petattack text, no WC.spResync); r23 THE 11-16 TEST BUILD MERGE: fix/party-radials and feat/class-wheel-sticks both tagged r22, both kept (r22p = the party wheels, r22c = the class wheels); r22c CLASS WHEELS AIM WITH BOTH STICKS (feat/class-wheel-sticks; the user 2026-11-16: "one other thing to note on this would be its awkward only working from the right stick. I think that either stick should work those wheels.", pick: "Both sticks aim, no walking"): while the class wheel's guest "pad:class" holds, the stick catch keeps BOTH sticks, Left / Movement too, as the item / spell / pause wheels do -- this REPLACES r15's class-only pass ("On the class radial only the right control stick should be locked"); r22p THE PARTY WHEELS (the user, 2026-11-16: "the control sticks arent working on the party inspect radials, they are still walking and looking around"): the stick catch also shows while a Party mode wheel is open (the party pad's wc-pmenu, read only; or MENU HOLD clicked, until MENU DONE), both sticks kept, at most 60 s; r21 PET SPELLS (#234, the user: "build it"): the spell radials' cells cast a PET spell by its NAME (q5); r20a (review of feat/item-cooldowns; the user 2026-11-13: "honour enable=0 (held potion: dim, no number)", "Persist the hearthstone end time per name-realm"): held only with a length (the game's duration > 0 and enable 0; an item with no cooldown never dims), the itemcd doc says whose it is (`who`, name-realm: the app never keeps one character's Hearthstone under another's name); r20: ITEM COOLDOWNS (feat/item-cooldowns; the user's picks 2026-11-13: "cooldowns on radial slices AND bag slots: dark pie sweep + seconds"; "LEARNED LENGTHS in the style of the existing facecd"; "Counts only on stackable consumables/reagents/ammo/items with charges"): the `itemcd` document (event-driven only, change-only, never collect / pad.retain / buildCells), BAG_UPDATE_COOLDOWN off the radial's rebuild list, the radial doc's items / pins carry `st` (stackable) and no `cd`; r19: SEVERAL SPELL RADIALS back (feat/multi-radial-v2): q3 = 1.0.18's q2 (6 radials x 8, 40 shared cells, the radial buttons 2..6 armed) with r17e's guard (the row rebuilt only on a change) and NO cooldown sweep (r18 / q1b: one sradialcd per cast); r18: the spell radial (q1b) has NO cooldown sweep (no SPELL_UPDATE_COOLDOWN): its cooldowns come once per cast (sradialcd); r17 (1.0.18, reverted): the spell radials (q2); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -455,7 +455,8 @@ end
 -- the fight keeps running"; "itemcd document per 1a: event-driven only ... 0.3 s merge, change-only, NEVER calls collect()/pad.retain/
 -- buildCells"; "honour enable=0 (held potion: dim, no number)".
 --   { type = "itemcd", v, t = { ["<item id>"] = { d, l, e? } | { h = true } (held) | { x = true } (running, length unknown) },
---     hs = { have, i } (the Hearthstone), tp = { id, n, i, cd = { d, l, e? } | x } (the class teleport the player knows), fight }
+--     hs = { have, i } (the Hearthstone), tp = { id, n, i, cd = { d, l, e? } | x } (the class teleport the player knows),
+--     pet = { h } (r28: the pet's happiness, 1 unhappy / 2 content / 3 happy, only while a pet with happiness is out), fight }
 -- An id that is not in `t` is ready (out of a fight; in a fight the app keeps what it counts). It reads ONLY the ids collect() left in
 -- cdWatch (and the Hearthstone): no bag walk, no cell, no pad call. Sent on BAG_UPDATE_COOLDOWN / PLAYER_REGEN_ENABLED / _DISABLED /
 -- PLAYER_ENTERING_WORLD, and on the player's cast of an item's Use spell or the teleport (the read that starts a learned length), 0.3 s
@@ -568,10 +569,22 @@ local function cdEmit(force)
     local hs = { i = TN(function() return C_Item.GetItemIconByID(HEARTH) end) }
     if have ~= nil then hs.have = have > 0 end                       -- nil = not readable now (the app shows it)
     sig[#sig + 1] = "hs" .. tostring(hs.have) .. (fight and "f" or "")
+    -- r28: the pet's happiness (Home's clock extras; the HUD's face moved there, Trail prd22): a plain number 1..3 only (a secret, none,
+    -- a pet without happiness - a warlock's demon - or no pet: no `pet`); read-only, the same calls the HUD's face made
+    local happy = TN(function()
+        if type(C_PetInfo) == "table" and type(C_PetInfo.GetPetHappiness) == "function" then return C_PetInfo.GetPetHappiness() end
+        if type(GetPetHappiness) == "function" then return GetPetHappiness() end
+    end)
+    local petDoc = nil
+    if happy and happy >= 1 and happy <= 3 then
+        petDoc = { h = math.floor(happy) }
+        sig[#sig + 1] = "pet" .. petDoc.h
+    end
     local key = table.concat(sig, ",")
     if key == cdLastKey and not force then return false end
     cdLastKey = key
-    WC.send(WC.encode({ type = "itemcd", v = RV, who = whoKey(), t = next(t) and t or nil, hs = hs, tp = tpDoc, fight = fight or nil }))
+    WC.send(WC.encode({ type = "itemcd", v = RV, who = whoKey(), t = next(t) and t or nil, hs = hs, tp = tpDoc, pet = petDoc,
+        fight = fight or nil }))
     WC.push()
     return true
 end
@@ -587,6 +600,8 @@ for _, e in ipairs({ "BAG_UPDATE_COOLDOWN", "PLAYER_REGEN_ENABLED", "PLAYER_REGE
     pcall(function() cdFrame:RegisterEvent(e) end)
 end
 pcall(function() cdFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
+-- r28: the pet's happiness (and a pet called / dismissed) - the same change-only doc, nothing else read
+for _, e in ipairs({ "UNIT_HAPPINESS", "UNIT_PET", "PET_UI_UPDATE" }) do pcall(function() cdFrame:RegisterEvent(e) end) end
 cdFrame:SetScript("OnEvent", function(_, e, unit, _, spellID)
     if e == "UNIT_SPELLCAST_SUCCEEDED" then
         if unit ~= "player" then return end
@@ -599,6 +614,8 @@ cdFrame:SetScript("OnEvent", function(_, e, unit, _, spellID)
         end
         return
     end
+    -- r28: the pet's events only when something changed (change-only: UNIT_PET fires for party members' pets too)
+    if e == "UNIT_HAPPINESS" or e == "UNIT_PET" or e == "PET_UI_UPDATE" then cdSoon(false); return end
     cdSoon(e ~= "BAG_UPDATE_COOLDOWN")
 end)
 if type(WC.snapshot) == "function" and type(hooksecurefunc) == "function" then
