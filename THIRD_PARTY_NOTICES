@@ -573,6 +573,7 @@ when a player picks "Test: Mesa 26.3.1"; the default "Recommended" never uses it
 |---|---|---|---|
 | Mesa Turnip (`libvulkan_freedreno.so`, freedreno Vulkan, KGSL) | https://archive.mesa3d.org/mesa-26.3.1.tar.xz | Mesa 26.3.1 release, tarball sha256 `4e4e438eac7b840a9383988cbb7c08dad8041da544b9319fc26d319fa7348961` | Mostly MIT; individual files carry their own SPDX terms (`licenses/turnip-test-mesa-26.3.1/`: MIT, Apache-2.0, BSL-1.0, SGI-B-2.0, GPL-2.0-only, GPL-1.0-or-later, Mesa's `docs/license.rst`) |
 | vk_icd export patch (`tools/turnip-test/0001-android-export-vk_icd-entrypoints.diff`) | this project | - | the patched files' terms (MIT) |
+| LLVM libc++ / libc++abi (linked statically by the NDK, `-static-libstdc++`) | Android NDK r27c | 27.2.12479018 | Apache-2.0 WITH LLVM-exception (`licenses/ndk/NDK-TOOLCHAIN-NOTICE.txt`) |
 
 - Built by DS Forever from the official release tarball with ONE change, the patch above (it exports
   `vk_icdGetInstanceProcAddr`, `vk_icdGetPhysicalDeviceProcAddr` and `vk_icdNegotiateLoaderICDInterfaceVersion` next to `HMI`;

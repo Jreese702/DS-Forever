@@ -98,6 +98,35 @@ class GraphicsDriverTest {
         assertEquals("?", GraphicsDriver.processLabel(""))
     }
 
+    @Test fun theScanSkipsOurOwnProcessOtherUidsAndProcessesFromBeforeThisLaunch() {
+        val proc = kotlin.io.path.createTempDirectory("proc").toFile()
+        try {
+            fun p(pid: Int, uid: Int, so: String, exe: String) = File(proc, "$pid").apply {
+                mkdirs()
+                File(this, "status").writeText("Name:\tx\nUid:\t$uid\t$uid\t$uid\t$uid\n")
+                File(this, "maps").writeText("1-2 r-xp 0 0:0 1 $so\n")
+                File(this, "cmdline").writeText("$exe\u0000")
+            }
+            val app = "/data/user/0/x/files/contents/adrenotools"
+            p(10, 10123, "$app/Turnip-WoW-scheduler-test/libvulkan_freedreno.so", "self")
+            p(20, 10123, "$app/Turnip-WoW-scheduler-test/libvulkan_freedreno.so", "G:\\old\\Wow.exe")
+            p(30, 10999, "$app/Other/libvulkan_freedreno.so", "other-uid")
+            File(proc, "self").mkdirs()
+            val before = GraphicsDriver.ourPids(10123, proc)
+            assertEquals(setOf(10, 20), before)
+            assertEquals("without the snapshot a previous run's game answers", "Turnip-WoW-scheduler-test" to "Wow.exe",
+                GraphicsDriver.scan(10, 10123, emptySet(), proc))
+            assertNull("only our own, another uid's and a previous run's processes so far", GraphicsDriver.scan(10, 10123, before, proc))
+            p(40, 10123, "/vendor/lib64/hw/vulkan.adreno.so", "G:\\new\\Wow.exe")
+            assertEquals(GraphicsDriver.SYSTEM to "Wow.exe", GraphicsDriver.scan(10, 10123, before, proc))
+            p(50, 10123, "$app/Turnip-Test-Mesa-26.3.1/libvulkan_freedreno.so", "G:\\new\\Wow.exe")
+            assertEquals("an adrenotools driver wins over the system one", "Turnip-Test-Mesa-26.3.1" to "Wow.exe",
+                GraphicsDriver.scan(10, 10123, before, proc))
+        } finally { proc.deleteRecursively() }
+        // the report's launch line keeps its "Launch: " words
+        assertTrue("\"Launch: \${LauncherHooks.launchState" in read("companion/app/src/main/java/com/jrees/wowcompanion/StartupDiag.kt"))
+    }
+
     @Test fun theDriversOwnMetaGivesItsVersion() {
         val test = read("licenses/turnip-test-mesa-26.3.1/meta.json")
         assertEquals(TEST.version, GraphicsDriver.metaVersion(test))

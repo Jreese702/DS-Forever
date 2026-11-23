@@ -122,4 +122,7 @@ Output: libvulkan_freedreno.so d93b06280c1d4bada8117cceb812f1b10165a2a44918bc236
 (14,423,088 B); zip 3272d6189aa4202898457503236dad88980691fc0347fe56c60888cc73d09a33 (2,698,400 B),
 pinned in tools/components-test-drivers.sha256 and checked by app/build.gradle.kts (checkTestDrivers)
 and tools/build_release.py. meta.json name "Turnip-Test-Mesa-26.3.1" (its unpack folder),
-driverVersion "26.3.1-dsf-icd", minApi 29.
+driverVersion "26.3.1-dsf-icd", minApi 29. The launcher's TU_DEBUG=noconform (kept so only the driver changes
+between A/B runs) names no option in 26.3.1: `parse_debug_string` (src/util/u_debug.c) skips unknown names silently,
+and 26.3.1 reports Vulkan 1.4 on every a7xx and 1.3 on a6xx without it (src/freedreno/vulkan/tu_device.cc).
+The C++ runtime (LLVM libc++) is linked statically from the NDK (`-static-libstdc++`; licenses/ndk/).

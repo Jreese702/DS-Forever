@@ -189,15 +189,24 @@ object GraphicsDriver {
 
     // ---- the watch (the device)
 
-    /** one look over our uid's processes (not [myPid]): the first one with a Vulkan driver mapped, (driver, process label) */
-    fun scan(myPid: Int, myUid: Int, proc: File = File("/proc")): Pair<String, String>? {
+    /** a /proc/<pid> folder's real uid (its status' "Uid:" line), null = unreadable */
+    private fun uidOf(d: File): Int? = runCatching { File(d, "status").readLines() }.getOrNull()
+        ?.firstOrNull { it.startsWith("Uid:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toIntOrNull()
+
+    /** our uid's process ids now (the watch's start: processes alive BEFORE this launch's game, e.g. a previous run's, are not its evidence) */
+    fun ourPids(myUid: Int, proc: File = File("/proc")): Set<Int> =
+        (proc.listFiles() ?: emptyArray()).mapNotNull { d -> d.name.toIntOrNull()?.takeIf { uidOf(d) == myUid } }.toSet()
+
+    /**
+     * one look over our uid's processes (not [myPid], none in [skip]: alive before this launch): the first one with a Vulkan driver
+     * mapped, (driver, process label)
+     */
+    fun scan(myPid: Int, myUid: Int, skip: Set<Int> = emptySet(), proc: File = File("/proc")): Pair<String, String>? {
         var system: Pair<String, String>? = null
         for (d in proc.listFiles() ?: emptyArray()) {
             val pid = d.name.toIntOrNull() ?: continue
-            if (pid == myPid) continue
-            val st = runCatching { File(d, "status").readLines() }.getOrNull() ?: continue
-            val uid = st.firstOrNull { it.startsWith("Uid:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toIntOrNull()
-            if (uid != myUid) continue
+            if (pid == myPid || pid in skip) continue
+            if (uidOf(d) != myUid) continue
             val found = runCatching { File(d, "maps").useLines { driverInMaps(it) } }.getOrNull() ?: continue
             val label = runCatching { processLabel(File(d, "cmdline").readText()) }.getOrDefault("?")
             if (found != SYSTEM) return found to label
@@ -209,10 +218,13 @@ object GraphicsDriver {
     /**
      * after Play: every [everyMs] for at most [forMs], one [scan]; the first driver seen (or none) is [loaded], logged and kept
      * ([keep]: Settings' [KEY_RAN]). A newer launch ends an older watch. [appFiles] = the app's files dir (the drivers' meta.json).
+     * Called before the game's processes start: the ones already alive then are skipped ([ourPids]).
      */
     fun watch(launch: Launch, appFiles: File, keep: (String) -> Unit, everyMs: Long = 5_000L, forMs: Long = 180_000L) {
         keep(ranLine(launch, null))
         val myPid = android.os.Process.myPid(); val myUid = android.os.Process.myUid()
+        // before this launch's game starts: a process already alive (a previous run's game still closing) is not this launch's evidence
+        val before = runCatching { ourPids(myUid) }.getOrDefault(emptySet())
         Thread({
             var looks = 0
             val t0 = System.currentTimeMillis()
@@ -220,7 +232,7 @@ object GraphicsDriver {
                 runCatching { Thread.sleep(everyMs) }
                 if (launched !== launch) return@Thread
                 looks++
-                val hit = runCatching { scan(myPid, myUid) }.getOrNull()
+                val hit = runCatching { scan(myPid, myUid, before) }.getOrNull()
                 val after = System.currentTimeMillis() - t0
                 if (hit != null || after >= forMs) {
                     val version = hit?.first?.takeIf { it != SYSTEM }?.let { name ->
