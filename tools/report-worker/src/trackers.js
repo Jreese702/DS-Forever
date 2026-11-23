@@ -12,8 +12,11 @@ export const COMMENT_WORDS = 400;
 export const TYPED_MAX = 300;
 /** at most this many key lines in a comment */
 export const KEY_LINES = 12;
-/** the memory lines a low-memory comment quotes at most (memory work #56: the stamp, 3 samples, 6 trims and reliefs) */
-export const MEM_KEY_LINES = 10;
+/** the memory lines a low-memory comment quotes at most (memory work #56: the stamp, 3 samples, 6 trims and reliefs; 11-23: and the
+ *  last 2 "Mem owners" lines, DS Forever's memory by owner) */
+export const MEM_KEY_LINES = 12;
+/** at most this many key lines in a freeze comment (#153, 11-23: 12 cut the main thread before its first frame in our code) */
+export const ANR_KEY_LINES = 20;
 
 const AUTO = "Automatic crash report: ";
 
@@ -28,16 +31,20 @@ export const TRACKERS = [
     auto: /^Android closed DS Forever because the device ran low on memory\b/,
     // memory work #56 (D5): then the killed run's memory in short (the app's StartupDiag.memKeyLines: the exit record's stamp, the
     // last 3 memory lines, the last trims and reliefs); an older app sends none
-    maxKeys: 22,
+    // 11-23: the "Low-memory graphics on / off" words sit at the end of the app's "Thor model: ...; lighter mode ...; low-memory
+    // graphics on" line (StartupDiag.interiors); the old /^low-memory graphics / matched no line of any report
+    maxKeys: 24,
     keys: (r) => [
-      ...diagLines(r.diag, [/^RAM: /, /^low-memory graphics /, /^Exits Android recorded/, /^ {2}\S.*: LOW_MEMORY /]),
-      ...diagLines(r.diag, [/^Mem (stamp|line|event): /], MEM_KEY_LINES),
+      ...diagLines(r.diag, [/^RAM: /, /^Thor model: /, /^Exits Android recorded/, /^ {2}\S.*: LOW_MEMORY /]),
+      ...diagLines(r.diag, [/^Mem (stamp|line|event|owners): /], MEM_KEY_LINES),
     ],
   },
   {
     id: "anr", issue: 153,
     auto: /^DS Forever stopped responding\b/,
-    keys: (r) => traceLines(r.logs, KEY_LINES),
+    // 11-23: 20 lines (1.0.38's reordered stacks put our own first frame past the 12th line)
+    maxKeys: ANR_KEY_LINES,
+    keys: (r) => traceLines(r.logs, ANR_KEY_LINES),
   },
   {
     // the button-art (kit) build crashing inside libcasc.so (#472): the newest crash record's crashing thread is in libcasc
@@ -96,7 +103,9 @@ function traceLines(logs, n) {
   const desc = rec.split("\n").find((l) => l.startsWith("Description: "));
   const at = rec.indexOf("---------- Trace");
   const trace = at < 0 ? [] : rec.slice(at).split("\n").slice(1).map((l) => l.trim())
-    .filter((l) => /^"main"|^native: #\d+|^at |^- (waiting|locked|sleeping)/.test(l)).map(shortFrame);
+    // 11-23 (#153): the garbage collector's thread too (the app's LogSieve.traceFirst puts it after the main thread's): a main thread
+    // waiting in the runtime (WaitHoldingLocks) is often waiting on it
+    .filter((l) => /^"main"|^"HeapTaskDaemon"|^native: #\d+|^at |^- (waiting|locked|sleeping)/.test(l)).map(shortFrame);
   return [desc && desc.slice(0, 240), ...trace].filter(Boolean).slice(0, n);
 }
 
