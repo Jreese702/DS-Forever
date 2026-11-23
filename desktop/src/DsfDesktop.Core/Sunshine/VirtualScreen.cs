@@ -115,6 +115,18 @@ namespace DsfDesktop.Sunshine
         public const string EnableSudoVda = "SudoMaker display adapter is turned off";
         public const string ProblemScreenDisabled = "screen_disabled";
 
+        /// <summary>
+        /// stream smoothness (the user's pick 2026-11-23, "Keep the higher rate"): our own screen's refresh rate - the stream's frame rate
+        /// or the PC's real monitors' top rate, whichever is higher (a 144 Hz monitor's PC gets a 144 Hz screen of ours, so WoW with
+        /// V-sync keeps its own cap), within 24-240. [realMaxHz] 0 = no real monitor (headless): the stream's rate. Pure
+        /// </summary>
+        public static int OwnHz(int streamFps, int realMaxHz)
+        {
+            int fps = streamFps < 24 || streamFps > 240 ? 60 : streamFps;
+            int real = realMaxHz > 240 ? 240 : realMaxHz;
+            return Math.Max(fps, real);
+        }
+
         /// <summary>the Thor's stream mode as SudoVDA's: 1920x1080 at 60 unless the Thor said otherwise; sane bounds</summary>
         public static (int w, int h, int hz) Mode(int w, int h, int fps)
         {

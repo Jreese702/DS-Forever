@@ -40,7 +40,8 @@ namespace DsfDesktop.Sunshine
         /// <summary>the display device id Sunshine captures ("{...}", from its own display list); null = the primary display</summary>
         public string OutputName;
         public string AppName = "WoW Forever";
-        /// <summary>Sunshine sets the streamed screen to the client's resolution and rate, and back when the client disconnects</summary>
+        /// <summary>Sunshine sets the streamed screen to the client's resolution (its own refresh rate kept), and back when the client
+        /// disconnects</summary>
         public bool MatchStream;
     }
 
@@ -72,13 +73,17 @@ namespace DsfDesktop.Sunshine
         /// <summary>
         /// "Match PC screen to stream" in Sunshine's own display-device options (the bundled v2026.914 build's names, from its web
         /// config and locale): dd_configuration_option = ensure_active (the captured screen is switched on, no other screen is turned
-        /// off: ensure_only_display would blank the player's other monitors), dd_resolution_option / dd_refresh_rate_option = auto (the
-        /// Thor's own request: its launch sends mode=WxHxFPS with sops=1, which "auto" needs), dd_config_revert_on_disconnect = enabled
+        /// off: ensure_only_display would blank the player's other monitors), dd_resolution_option = auto (the Thor's own request: its
+        /// launch sends mode=WxHxFPS with sops=1, which "auto" needs), dd_refresh_rate_option = disabled (stream smoothness, the user's
+        /// pick 2026-11-23, "Keep the higher rate": "Match changes only the resolution and keeps the monitor's own higher refresh rate";
+        /// "auto" set a 120 Hz monitor to the Thor's 60 and WoW with V-sync then ran at half its cap), dd_config_revert_on_disconnect = enabled
         /// (back when the Thor goes, not only when the app closes), dd_config_revert_delay = <see cref="RevertDelayMs"/> (a Thor that
         /// reconnects at once keeps the mode), dd_hdr_option = disabled (HDR left as the player has it: the Thor never asks for HDR).
         /// With "Stream on its own screen" the captured screen (output_name) is our virtual one, so that is what is matched.
         /// </summary>
         public const int RevertDelayMs = 3000;
+        /// <summary>the refresh rate is never changed by Match (the monitor keeps its own): Sunshine's "disabled"</summary>
+        public const string RefreshOption = "disabled";
 
         static string P(string path) => path.Replace('\\', '/');
 
@@ -109,7 +114,7 @@ namespace DsfDesktop.Sunshine
             if (o.MatchStream)
             {
                 kv.Add(new KeyValuePair<string, string>("dd_resolution_option", "auto"));
-                kv.Add(new KeyValuePair<string, string>("dd_refresh_rate_option", "auto"));
+                kv.Add(new KeyValuePair<string, string>("dd_refresh_rate_option", RefreshOption));
                 kv.Add(new KeyValuePair<string, string>("dd_config_revert_on_disconnect", "enabled"));
                 kv.Add(new KeyValuePair<string, string>("dd_config_revert_delay", RevertDelayMs.ToString()));
                 kv.Add(new KeyValuePair<string, string>("dd_hdr_option", "disabled"));

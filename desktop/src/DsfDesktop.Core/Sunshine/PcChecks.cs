@@ -205,6 +205,18 @@ namespace DsfDesktop.Sunshine
 
         // ---------------------------------------------------------------- the live system
 
+        /// <summary>a display's current size and refresh rate (EnumDisplaySettings' current settings); zeros = unreadable</summary>
+        public static (int w, int h, int hz) CurrentMode(string gdi)
+        {
+            try
+            {
+                var cur = New();
+                if (EnumDisplaySettings(gdi, -1, ref cur)) return (cur.dmPelsWidth, cur.dmPelsHeight, cur.dmDisplayFrequency);
+            }
+            catch (Exception) { }
+            return (0, 0, 0);
+        }
+
         /// <summary>a display's (\\.\DISPLAYn) top refresh at its current size; 0 = unreadable</summary>
         public static int MaxHz(string gdi)
         {

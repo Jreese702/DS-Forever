@@ -88,8 +88,12 @@ namespace DsfDesktop.Tests
         [Test]
         public static void TheLogLines()
         {
-            A.Eq("match screen: Sunshine sets the PC's screen to the Thor's 1920x1080@120 for this stream (back 3 s after it ends)",
+            A.Eq("match screen: Sunshine sets the PC's screen to the Thor's 1920x1080 for this 120 fps stream, its own refresh rate kept (back 3 s after it ends)",
                  AppController.MatchLine(true, false, 1920, 1080, 120));
+            A.Eq("match screen: the stream is on our own screen (made at the Thor's 1920x1080, 144 Hz for a 60 fps stream)",
+                 AppController.MatchLine(false, true, 1920, 1080, 60, 144));
+            A.Eq("match screen: the stream is on our own screen (made at the Thor's 1920x1080, 120 Hz for a 120 fps stream)",
+                 AppController.MatchLine(false, true, 1920, 1080, 120, 60));
             A.True(AppController.MatchLine(false, false, 1920, 1080, 120).StartsWith("match screen: off"));
             A.Eq("useUiScale 1, uiScale 0.64", WowConfig.UiScaleWord("SET useUiScale \"1\"\r\nSET uiScale \"0.64\"\r\n"));
             A.True(WowConfig.UiScaleWord(Cfg).StartsWith("not set"));
