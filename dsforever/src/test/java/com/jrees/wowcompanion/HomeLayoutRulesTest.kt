@@ -545,8 +545,11 @@ class HomeLayoutRulesTest {
                     if (want == null && (r.partyRowH < PartyLayout.FIGHT_H - 0.01f || r.partyRowH > PartyLayout.FILL_MAX_H + 0.01f)) bad("fill rows ${r.partyRowH}")
                     if (!r.partyWide) bad("not across")
                     // today's picks: today's page
+                    // (review: against the mode's own rows handed in - not the record against itself - so a default that drifts from
+                    // plateH shows; a Top fight's Fill has no fixed rows: its fill is pinned by HomePartyTopTest)
                     if (g == HomeLayout.PartyGrow.FIGHTS && t == HomeLayout.PartyTopFight.FILL && bt == HomeLayout.PartyBottomFight.GROW &&
-                        S.places(def, s).boxes != r.boxes) bad("the defaults moved the page")
+                        mode != PartyLayout.Mode.FIGHT_TOP &&
+                        S.places(def, s.copy(party = s.party!!.copy(rowH = PartyLayout.plateH(mode)))).boxes != r.boxes) bad("the defaults moved the page")
                 }
             }
         }

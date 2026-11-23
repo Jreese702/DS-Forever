@@ -234,6 +234,11 @@ class PartySizingShotsTest {
         val party = boxes(p.home).getValue("PARTY")
         val pen = ev.partyPenBox()!!
         assertTrue("the pencil on the list's far corner ($pen / $party)", pen.right <= party.right && pen.left > party.centerX() && pen.top >= party.top)
+        // (review: on the list as DRAWN - edit mode's 0.94 pose - never hanging off its edge)
+        val drawn = HomeEditView::class.java.getDeclaredMethod("posedRect", EditStop::class.java, RectF::class.java, RectF::class.java)
+            .apply { isAccessible = true }.invoke(ev, EditStop.PARTY, RectF(party), RectF()) as RectF
+        assertTrue("the drawn list is posed ($drawn / $party)", drawn.right < party.right - 10f)
+        assertTrue("the pencil inside the drawn list ($pen / $drawn)", drawn.contains(pen))
         assertTrue(EditStop.PARTY_PEN in ev.stops())
         p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
         assertEquals(EditStop.PARTY_PEN, p.home.editModel()!!.menu)
@@ -267,6 +272,10 @@ class PartySizingShotsTest {
         f.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
         val fb = editView(f).menuBox(EditStop.PARTY_PEN); val fp = boxes(f.home).getValue("PARTY")
         assertTrue("over a foot list ($fb / $fp)", fb.bottom < fp.top && !RectF.intersects(fb, fp))
+        val fd = HomeEditView::class.java.getDeclaredMethod("posedRect", EditStop::class.java, RectF::class.java, RectF::class.java)
+            .apply { isAccessible = true }.invoke(editView(f), EditStop.PARTY, RectF(fp), RectF()) as RectF
+        val fpen = editView(f).partyPenBox()!!
+        assertTrue("the pencil on the drawn list's far (left) corner ($fpen / $fd)", fd.contains(fpen) && fpen.right < fd.centerX())
         render(f, "edit_party_bubble_foot_list")
         f.home.editCancel(); settle(40)
         // Party mode off: the bubble lays the list as Party mode does (across), closing it puts the column back

@@ -248,15 +248,22 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /**
      * PARTY SIZING (the user's pick 2026-11-23): the party list's pencil in Home's px - [BandEdit.PEN] square on the list's far top
      * corner from its Select tab (the tab on the screen's left edge: the box starts at x 0 - the pencil at its right), [PARTY_PEN_IN] in
-     * from its edges, over the corner plate like a badge; null = no party list on Home
+     * from its edges, over the corner plate like a badge; null = no party list on Home. (Review: the corner as DRAWN - the list's pose,
+     * edit mode's REST_SCALE 0.94 springs, its lift - so the pencil rides the drawn list and never hangs off its edge; the pencil
+     * itself never turns. Its taps read this same box)
      */
     fun partyPenBox(p: Map<HomePart, RectF> = host.parts()): RectF? {
         val b = p[HomePart.PARTY] ?: return null
         if (b.width() < BandEdit.PEN * 2f || b.height() < BandEdit.PEN) return null
         val tabLeft = b.left <= 0.5f
-        val l = if (tabLeft) b.right - PARTY_PEN_IN - BandEdit.PEN else b.left + PARTY_PEN_IN
-        return RectF(l, b.top + PARTY_PEN_IN, l + BandEdit.PEN, b.top + PARTY_PEN_IN + BandEdit.PEN)
+        penPt[0] = if (tabLeft) b.right else b.left; penPt[1] = b.top
+        if (host.pose(HomePart.PARTY, penMtx)) penMtx.mapPoints(penPt)
+        val l = if (tabLeft) penPt[0] - PARTY_PEN_IN - BandEdit.PEN else penPt[0] + PARTY_PEN_IN
+        val t = penPt[1] + PARTY_PEN_IN
+        return RectF(l, t, l + BandEdit.PEN, t + BandEdit.PEN)
     }
+    private val penPt = FloatArray(2)
+    private val penMtx = android.graphics.Matrix()
     /** the extras' cells and their "+" spot as one box (null = no extras row shown) */
     private fun extrasUnion(g: BandGeo): RectF? {
         if (g.extras.isEmpty() && g.plus == null) return null
