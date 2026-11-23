@@ -51,7 +51,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "p28"          -- bump on every change; the app shows it, so a stale build is visible; p28 GATHERING TRACKING FROM THE CARDS (issue 87's follow-up, the player 2026-11-23: "is there any to enable herb/ore tracking? Option seems greyed out in my professions tab"; the developer: "Yeah I can turn that back on"): a card button whose spell is one of the game's minimap tracking types (Find Herbs, Find Minerals, any other the character knows) is live again: two cells per tracking on the secure open row, ON and OFF, with no secure action; the tap's own click calls the game's C_Minimap.SetTracking (the call the game's minimap tracking menu makes), out of a fight only; the button carries trk (1 on / 0 off) and its ton / toff columns; MINIMAP_UPDATE_TRACKING re-sends the document; p27 ENCHANTING FROM THE ROOM (#541, "cant enchant": every Enchanting recipe was refused, "needs an item to enchant"): ctl ench casts the selected enchant once (the game's own CraftRecipe, as Create) and the game asks for its item; the ack says pick = true and the app opens the Bags room's "Choose an item" (Bags.lua's pick: what the enchant can go on, worn first; its Replace question answered there); p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
+local PV = "p28"          -- bump on every change; the app shows it, so a stale build is visible; p28 GATHERING TRACKING FROM THE CARDS (issue 87's follow-up, the player 2026-11-23: "is there any to enable herb/ore tracking? Option seems greyed out in my professions tab"; the developer: "Yeah I can turn that back on"): a card button whose spell is one of the game's minimap tracking types (Find Herbs, Find Minerals, any other the character knows) is live again: two cells per tracking on the secure open row, ON and OFF, with no secure action; the tap's own click calls the game's C_Minimap.SetTracking (the call the game's minimap tracking menu makes), on the PRESS (the open row's onPress), out of a fight only; the button carries trk (1 on / 0 off) and its ton / toff columns; MINIMAP_UPDATE_TRACKING re-sends the document; p27 ENCHANTING FROM THE ROOM (#541, "cant enchant": every Enchanting recipe was refused, "needs an item to enchant"): ctl ench casts the selected enchant once (the game's own CraftRecipe, as Create) and the game asks for its item; the ack says pick = true and the app opens the Bags room's "Choose an item" (Bags.lua's pick: what the enchant can go on, worn first; its Replace question answered there); p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
 local MAKE_MAX = 26      -- make:1 .. make:26 on the control row; more than that is Create All
 local SEL_COLS = 40      -- columns of the "profsel" row (TapPad's COLS)
 local BASIC = 1          -- Enum.CraftingReagentType.Basic (profession constants documentation)
@@ -1449,6 +1449,11 @@ local function onOpenTap(col)
     ack("open", openLine[col] or nil, openSpell[col] and true or false, (not openSpell[col]) and "nothing in that column" or nil)
 end
 
+-- p28: a cell with NO secure action (a tracking cell; an empty one) answers on the PRESS (TapPad pad6b), as every other room's
+-- action-less secure cells do: its whole action is onOpenTap, and a release can land off the cell when controller freelook puts the
+-- hidden cursor back (TapPad pad5: 2 taps in 10 lost). Cells with a secure action (the casts, close, book) keep the template's phase.
+TRK.OPEN_OPTS = { onPress = true }      -- in TRK: the main chunk keeps clear of the 200-local limit
+
 local function ncolsOpen()
     local n = math.max(CLOSE_COL, BOOK_COL) + 1
     for col in pairs(openSpell) do if col + 1 > n then n = col + 1 end end
@@ -1459,7 +1464,7 @@ end
 WC.professionsOpenRow = function()
     if not WC.pad then return end
     openDirty = false
-    WC.pad.secureRow("profopen", ncolsOpen(), initOpen, onOpenTap)
+    WC.pad.secureRow("profopen", ncolsOpen(), initOpen, onOpenTap, TRK.OPEN_OPTS)
 end
 
 if WC.pad then
@@ -1479,7 +1484,7 @@ if WC.pad then
     -- 2026-09-28: demand is over pad4's cap). Say so once, and in every prof doc, so the room
     -- can tell the player "the tap pad is full" instead of waiting for an answer that never comes.
     -- the secure open row is reserved now, empty, so its place in the pad is fixed; its cells come with the professions
-    local rowOpen = WC.pad.secureRow("profopen", 0, initOpen, onOpenTap)
+    local rowOpen = WC.pad.secureRow("profopen", 0, initOpen, onOpenTap, TRK.OPEN_OPTS)
     if not rowCtl or not rowSel or not rowOpen then
         padFull = {}
         if not rowCtl then padFull[#padFull + 1] = "prof" end

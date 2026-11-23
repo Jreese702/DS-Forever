@@ -115,7 +115,7 @@ WowCompanion = {
     send = function(t) SENT[#SENT + 1] = t end, encode = function(t) return t end, push = function() end,
     isPlain = function() return true end, ABSENT = {}, SECRET = {}, THREW = {},
     pad = { op = function(name, ns, h) ROWS[name] = h; return {} end,
-            secureRow = function(name, n, init, onClick) SECURE[name] = { n = n, init = init, onClick = onClick }; build(name); return {} end,
+            secureRow = function(name, n, init, onClick, opts) SECURE[name] = { n = n, init = init, onClick = onClick, opts = opts }; build(name); return {} end,
             slotFor = function(ns, key)
                 SLOTS[ns] = SLOTS[ns] or {}
                 if SLOTS[ns][key] == nil then nslot[ns] = (nslot[ns] or -1) + 1; SLOTS[ns][key] = nslot[ns] end
@@ -212,6 +212,8 @@ check(isinstance(L.eval('card(D8, 182).btn[2].ton'), int), "after the fight's re
 L.execute('PROFS[1][5] = 1; BOOK[12] = nil; TRACKING[4] = nil')
 
 # 7. the rest unchanged; tags; no trace
+check(L.eval('SECURE.profopen.opts and SECURE.profopen.opts.onPress') is True,
+      "the open row answers an action-less cell (a tracking tap) on the PRESS (TapPad pad6b: a lost release never loses the tap)")
 check(L.eval('REGISTERED["MINIMAP_UPDATE_TRACKING"]') is True, "MINIMAP_UPDATE_TRACKING registered (a switch re-sends the doc)")
 check(L.eval('SLOTS.profctl.ench') == 37 and L.eval('SLOTS.profctl["gather"]') is None, "no new control key: ench keeps column 37")
 check('local PV = "p28"' in SRC and "Option seems greyed out in my professions tab" in SRC and "p27 ENCHANTING" in SRC,
