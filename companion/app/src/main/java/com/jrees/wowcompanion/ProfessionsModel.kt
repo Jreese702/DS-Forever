@@ -41,8 +41,18 @@ object ProfessionsModel {
      * One of the game's spell buttons on a book card (user ruling 2026-09-30, "Copy the game"): the camelot book draws each
      * profession's spells as square buttons. [opens] = the one the secure open cell casts (it has a recipe window); every other
      * button is shown but INERT in the room (the user's "no spell casting" ruling: Fishing, Find Minerals).
+     *
+     * p28 (issue 87's follow-up; the player, 2026-11-23: "is there any to enable herb/ore tracking? Option seems greyed out in my
+     * professions tab"; the developer: "Yeah I can turn that back on"): EXCEPT a TRACKING button (Find Herbs, Find Minerals, any other
+     * of the game's minimap tracking types the character has). [trk] = 1 on / 0 off (null = no tracking: inert, greyed); [ton] / [toff]
+     * = its ON / OFF cells on the secure open row (no secure action: the add-on's tap calls the game's own C_Minimap.SetTracking).
      */
-    class Btn(val name: String, val icon: Int, val rec: Boolean, val opens: Boolean)
+    class Btn(val name: String, val icon: Int, val rec: Boolean, val opens: Boolean,
+              val trk: Int? = null, val ton: Int? = null, val toff: Int? = null) {
+        /** a tracking the character has (p28): shown live, its state [on] */
+        val tracking: Boolean get() = trk != null
+        val on: Boolean get() = trk == 1
+    }
 
     class Profession(val pos: Int, val id: Int, val name: String, val icon: Int, val rank: Int, val max: Int,
                      val mod: Int, val main: Boolean, val craft: Boolean,
@@ -141,7 +151,7 @@ object ProfessionsModel {
             o.optJSONArray("btn")?.let { b ->
                 for (k in 0 until b.length()) {
                     val x = b.optJSONObject(k) ?: continue
-                    btn.add(Btn(x.str("n") ?: "", x.optInt("icon"), x.optBoolean("rec"), x.optBoolean("o")))
+                    btn.add(Btn(x.str("n") ?: "", x.optInt("icon"), x.optBoolean("rec"), x.optBoolean("o"), x.int("trk"), x.int("ton"), x.int("toff")))
                 }
             }
             list.add(Profession(o.optInt("pos"), id, o.str("name") ?: "", o.optInt("icon"), o.optInt("rank"),
@@ -556,6 +566,29 @@ object ProfessionsModel {
         val col = ov.cslot ?: return null
         return if (ROW_OPEN in ov.padRows) Tap(ROW_OPEN, col) else null
     }
+
+    /**
+     * p28 GATHERING TRACKING (issue 87's follow-up): the tap that switches the game's own tracking [b] (Find Herbs, Find Minerals...) to
+     * [want] - ONE explicit cell, never a toggle; null when it is already so, the button is no tracking, its cell is not on the row yet,
+     * or the row is missing. The add-on refuses it in a fight (the room says "After the fight" first).
+     */
+    fun gatherTap(ov: Overview?, b: Btn?, want: Boolean): Tap? {
+        if (ov == null || b == null || !b.tracking || b.on == want) return null
+        val col = (if (want) b.ton else b.toff) ?: return null
+        return if (ROW_OPEN in ov.padRows) Tap(ROW_OPEN, col) else null
+    }
+
+    /** p28: a tracking button the room can switch now (both its cells on the row): drawn live, the glow stops on it */
+    fun gatherLive(ov: Overview?, b: Btn?): Boolean =
+        ov != null && b != null && b.tracking && b.ton != null && b.toff != null && ROW_OPEN in ov.padRows
+
+    /**
+     * p28: the line by a tracking button (terse; issue 87: add-ons cannot read the herb / ore dots, so they show on the game's own
+     * minimap on the TOP screen, never on our bottom map) and where that minimap is turned on: Settings > Top screen > Minimap, its
+     * On mode, or its Tracking mode (shown while Find Herbs, Minerals or Treasure is on: LATER 25)
+     */
+    const val GATHER_NOTE = "Dots show on the top screen's minimap, not on our map."
+    const val GATHER_WHERE = "Settings > Top screen > Minimap: On or Tracking"
 
     /**
      * The game's own Professions button (the book cell): ONE click opens the game's window on its BOOK, the way that readies its
