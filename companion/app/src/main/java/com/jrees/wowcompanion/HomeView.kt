@@ -2056,7 +2056,7 @@ class HomeView(
             castView.swingOn = renderLook?.swing ?: HomeSettings.swingTimer
             // P4: the preview's stand-in swing (no swing of the game's running); always false outside edit mode
             castView.swingPreview = editFightLook()
-            // Edit Home (the user, 2026-11-23): the L / R shoulder plates out while edit mode's chrome is in
+            // Edit Home (the user, 2026-11-23): the L / R shoulder plates and the ZL / ZR chips out while edit mode's chrome is in
             editPlatesSync()
             // LATER item 16 (the user: "under the controller area ... the trigger modifiers ... light them up like in the cast menu when
             // they get pressed but dimmed when they arent"): Cast's trigger strip under the diamonds (cast 197ec48, DIAMONDS only)
@@ -3673,8 +3673,9 @@ class HomeView(
             start()
         }
     }
-    /** Edit Home (the user, 2026-11-23: "declutter it in that mode we can hide them"): the band's L / R shoulder plates fade out as the
-     *  chrome fades in and back as it goes (Done, Discard, a fight's park); a band another room holds keeps them */
+    /** Edit Home (the user, 2026-11-23: "declutter it in that mode we can hide them"; the ZL / ZR chips "Hide them too"): the band's L / R
+     *  shoulder plates and ZL / ZR chips fade out as the chrome fades in and back as it goes (Done, Discard, a fight's park); a band
+     *  another room holds keeps them */
     private fun editPlatesSync() { castView.platesAlpha = if (lent(castView)) 1f - chromeA else 1f }
     /** the host's: redraw the ribbon (it lives in the room bar) */
     var editRibbonRedraw: (() -> Unit)? = null

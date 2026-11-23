@@ -245,8 +245,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      *  loops along the line ([PREVIEW_SWING_MS]) so Swing timer On / Off shows; false (always outside edit mode) = nothing changes */
     var swingPreview = false
         set(v) { if (field != v) { field = v; invalidate() } }
-    /** Edit Home (the user, 2026-11-23: "I was just meaning to declutter it in that mode we can hide them"): the band's L / R shoulder
-     *  plates' strength, 1 = drawn as ever, 0 = not drawn (Home fades it with edit mode's chrome). Their room stays: nothing else moves */
+    /** Edit Home (the user, 2026-11-23: "I was just meaning to declutter it in that mode we can hide them"; then "Hide them too" for the
+     *  ZL / ZR chips): the band's L / R shoulder plates' and ZL / ZR trigger chips' strength (Party mode's trigger plates too, a held
+     *  trigger's glow with them), 1 = drawn as ever, 0 = not drawn (Home fades it with edit mode's chrome). Their room stays: nothing
+     *  else moves */
     var platesAlpha = 1f
         set(v) { val a = v.coerceIn(0f, 1f); if (field != a) { field = a; invalidate() } }
 
@@ -3327,7 +3329,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 if (fb != null && fb.k == "spell" && !isTrigFight(fb)) fightCdLeft(src, now) else -1f))
             c.restoreToCount(slotSave)
         }
-        // Edit Home: the L / R plates (and their bumper glyphs) fade out with the chrome, at 0 not drawn at all
+        // Edit Home: the L / R plates (and their bumper glyphs) and the ZL / ZR chips fade out with the chrome, at 0 not drawn at all
         val plateA = (platesAlpha * 255f + 0.5f).toInt()
         val plateSave = if (plateA in 1..254) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), plateA) else c.save()
         if (plateA > 0) for (side in 0..1) {
@@ -3343,10 +3345,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 UiKit.pad(c, if (side == 0) "${padSet()}_lshoulder" else "${padSet()}_rshoulder", gx, pb - 9f * ps, BUMPER_GLYPH * ps)
             }
         }
-        c.restoreToCount(plateSave)
         // Party mode: the ZL / ZR trigger PLATES (v13) in place of today's trigger words
-        if (partyStrip && layout == Layout.DIAMONDS) drawPartyPlates(c)
-        else if (triggerStrip && layout == Layout.DIAMONDS) next = min(next, drawTriggerStrip(c, now))
+        if (plateA > 0) {
+            if (partyStrip && layout == Layout.DIAMONDS) drawPartyPlates(c)
+            else if (triggerStrip && layout == Layout.DIAMONDS) next = min(next, drawTriggerStrip(c, now))
+        }
+        c.restoreToCount(plateSave)
         if (bottomLine) next = min(next, drawSwingLine(c, now))
         val focusLeft = FOCUS_MS - (now - focusAtMs)
         if (focusLeft > 0 || flashing) next = 0
@@ -3388,6 +3392,23 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val g = BUMPER_GLYPH * ps / 2f
             out.union(gx - g, gy - g, gx + g, gy + g)
         }
+    }
+
+    /** the off-device checks: the ZL / ZR chip [side]'s box (0 = ZL) at rest under its bumper in this view's px (Party mode: its trigger
+     *  plate's), false (and [out] emptied) when the band draws none (the Thin row, no strip) */
+    fun triggerChipRect(side: Int, out: RectF): Boolean {
+        val ps = width / FRAME_W
+        when {
+            layout != Layout.DIAMONDS -> { out.setEmpty(); return false }
+            partyStrip -> { val l = if (side == 0) 14f * ps else width - 140f * ps; out.set(l, partyPlateTop, l + 126f * ps, partyPlateTop + 78f * ps) }
+            triggerStrip -> {
+                val cy = height - stripH() - TRIG_BOTTOM * ps
+                val cx = if (side == 0) TRIG_X * ps else width - TRIG_X * ps
+                out.set(cx - TRIG_W * ps / 2f, cy - TRIG_H * ps / 2f, cx + TRIG_W * ps / 2f, cy + TRIG_H * ps / 2f)
+            }
+            else -> { out.setEmpty(); return false }
+        }
+        return true
     }
 
     /** the line along the bottom edge: the swing timer while a swing runs, the plain divider otherwise */
