@@ -27,7 +27,8 @@ import com.jrees.wowcompanion.ProfessionsModel as M
  * 2026-09-28: "Yes, build them as drawn", recipes in "One column, detail beside it"). The book of cards, and a crafting
  * page per profession with its recipes on the left, the chosen recipe on the right and the game's foot at the bottom.
  *
- * WHAT REACHES THE GAME, and nothing else: a tap on Open, Create, Create All, Track (one game action each), and the
+ * WHAT REACHES THE GAME, and nothing else: a tap on Open, Create, Create All, Track, a card's tracking button (p28: Find Herbs /
+ * Find Minerals on or off; one game action each), and the
  * no-action "select" tap that tells the addon which recipe Create means (SPEC 5; the addon names what it selected, and
  * Create stays disabled until that is the recipe on screen). Tabs, cards, headings, recipes, the count, search and the
  * filter are the room's own.
@@ -55,6 +56,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     // what the room is waiting for from the game
     private var opening = 0; private var openingAt = 0L
+    /** p28: the tracking tap in flight (the button's profession and index) and when; the last tracking refusal (the book's header) */
+    private var gathering: Fk.Btn? = null; private var gatheringAt = 0L
+    private var gatherWhy: String? = null; private var gatherWhyAt = 0L
     private var pendingTap = 0L                               // a Create / Create All / Track tap in flight: no second one
     /** FORGET's ask (the user's pick "Forget, then Tap again"): the profession whose button said "Tap again", and when */
     private var forgetAsk = 0; private var forgetAskAt = 0L
@@ -228,6 +232,10 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         if (live && op == "ench" && msg.optBoolean("ok") && msg.optBoolean("pick")) { leaveForPick = true; if (!onPickItem()) leaveForPick = false }
         if (op == "open") { openAnsweredAt = SystemClock.uptimeMillis(); if (!msg.optBoolean("ok")) opening = 0 }
         if (op == "close") closingAt = 0L
+        if (op == "gather") {                                        // p28: the tracking tap answered; a refusal shows in the header
+            gathering = null
+            if (!msg.optBoolean("ok")) { gatherWhy = msg.optString("why").takeIf { it.isNotEmpty() && it[0].code > 3 }; gatherWhyAt = SystemClock.uptimeMillis() }
+        }
         // the addon's answer to the entry: "open now" (or held) -> the ONE book tap; `noopen` (queued behind another room, or a fight's
         // pending take) -> never open the window then (p19)
         if ((op == "book" || op == "page") && msg.optBoolean("noopen")) bookPendingAt = 0L
@@ -289,6 +297,23 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
      * button do exactly that). Never a second cast while one is in flight: a cast of the open profession would close it.
      * 0 = the book (the game's Overview tab): no game action.
      */
+    /**
+     * p28 GATHERING TRACKING (issue 87's follow-up): a tracking button (Find Herbs, Find Minerals...) pressed - ONE tap to the opposite of
+     * what the game shows, on that state's own cell (never a toggle); one in flight at a time; in a fight nothing is sent ("After the
+     * fight", as the room's search keyboard says). The add-on's refusal shows by the button (gatherNote).
+     */
+    private fun gatherPress(p: M.Profession, i: Int, b: M.Btn) {
+        val ov = ProfessionsStore.overview
+        val now = SystemClock.uptimeMillis()
+        if (ov?.combat == true) {
+            gatherWhy = "After the fight"; gatherWhyAt = now; board.postInvalidateDelayed(MESSAGE_MS + 50); board.invalidate(); return
+        }
+        val key = Fk.Btn(p.id, i)
+        if (gathering == key && now - gatheringAt < GATHER_WAIT) return
+        if (send(M.gatherTap(ov, b, !b.on))) { gathering = key; gatheringAt = now; board.postInvalidateDelayed(GATHER_WAIT + 50) }
+        board.invalidate()
+    }
+
     /** Forget's two presses: the first asks (3 s), the second sends the add-on's forget tap */
     private fun forgetPress(p: M.Profession) {
         val now = SystemClock.uptimeMillis()
@@ -394,6 +419,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             val title = if (viewed == 0) ov?.word("title", "Professions") ?: "Professions" else prof?.name ?: ""
             val note = if (viewed != 0) M.seenAgo(System.currentTimeMillis(), ProfessionsStore.seenAt(viewed), live(viewed)) else null
             UiKit.header(c, w, title, note)
+            if (viewed == 0) gatherNote(c, ov, title, w)
             val tabsX = w - 118f
             val right = tabsX - 4f
             UiKit.professionGround(c, RectF(0f, 62f, right, h), page = viewed != 0)
@@ -522,20 +548,46 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         /**
          * One of the game's spell buttons. LIVE = the one that opens the profession's recipes (the game's own cast, through the
          * secure cell): a touch or A selects the profession, as the game's button does. Every other button is INERT (the user's
-         * "no spell casting" ruling): shown dim, no touch, the glow skips it.
+         * "no spell casting" ruling): shown dim, no touch, the glow skips it - except, since add-on p28, a TRACKING button the
+         * character has (Find Herbs, Find Minerals...): live, checked while the game tracks it, a touch or A switches it (gatherPress).
          */
         private fun spellButton(c: Canvas, box: RectF, p: M.Profession, i: Int, b: M.Btn) {
-            val live = b.opens && p.craft
+            val ov = ProfessionsStore.overview
+            val opens = b.opens && p.craft
+            // p28: a tracking button (Find Herbs, Find Minerals...) the character has switches the game's own tracking; checked while on
+            val gather = !opens && M.gatherLive(ov, b)
+            val live = opens || gather
             val key = Fk.Btn(p.id, i)
-            val chosen = live && ProfessionsStore.overview?.held == true && focus == key
+            val chosen = live && ov?.held == true && focus == key
             val pushed = live && isDown(key)
-            val down = live && (opening == p.id || pushed)
+            val waiting = gather && gathering == key && SystemClock.uptimeMillis() - gatheringAt < GATHER_WAIT
+            val down = live && ((opens && opening == p.id) || pushed || waiting)
             UiKit.pressed(c, box, pushed) {
-                UiKit.professionButton(c, box, Icons.get(b.icon), b.name, inert = !live, chosen = chosen, down = down)
+                UiKit.professionButton(c, box, Icons.get(b.icon), b.name, inert = !live, chosen = chosen, down = down, on = gather && b.on)
             }
             if (!live) return
-            hits.add(Hit(RectF(box), key) { select(p.id) })
-            nav(key, box, { select(p.id) })
+            val act = if (gather) ({ gatherPress(p, i, b) }) else ({ select(p.id) })
+            hits.add(Hit(RectF(box), key, act))
+            nav(key, box, act)
+        }
+
+        /**
+         * p28: the book's note while a card has a live tracking button (issue 87: the dots show on the game's own minimap on the TOP
+         * screen, never on our map), and the setting that shows that minimap - two terse lines in the header beside the title, over the
+         * cards (a two-button card such as Mining has no room for them); the add-on's refusal of the last tracking tap in their place
+         * for 3 s
+         */
+        private fun gatherNote(c: Canvas, ov: M.Overview?, title: String, w: Float) {
+            if (ov?.cards?.none { p -> p.btn.any { M.gatherLive(ov, it) } } != false) return
+            val now = SystemClock.uptimeMillis()
+            val msg = gatherWhy?.takeIf { now - gatherWhyAt <= MESSAGE_MS }
+            val x = 24f + UiKit.titlePaint(62f * 0.8f).measureText(Tr.t(title)) + 28f
+            val pt = UiKit.bodyPaint(20f, if (msg != null) Theme.text else Theme.dim)
+            val width = w - 24f - x
+            val lines = if (msg != null) listOf(fit(msg, pt, width))
+                else listOf(fit(M.GATHER_NOTE, pt, width), fit(M.GATHER_WHERE, pt, width))
+            var y = if (lines.size == 1) 38f else 26f
+            for (l in lines) { c.drawText(l, x, y, pt); y += 25f }
         }
 
         /**
@@ -1164,6 +1216,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         const val SPLIT = 600f
         private const val TAG = "WCPROF"
         private const val MESSAGE_MS = 3000L
+        /** p28: a tracking tap's answer is awaited this long (the button shows pressed meanwhile) */
+        private const val GATHER_WAIT = 1500L
         /** the search keyboard's D-pad repeat, as Bags' (DirectPad's rooms) */
         private const val KB_REPEAT_FIRST_MS = 280L
         private const val KB_REPEAT_MS = 70L
