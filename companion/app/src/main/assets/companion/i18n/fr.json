@@ -2317,7 +2317,8 @@
 "Soulbound: the auction house won't take it": "Lié : l'hôtel des ventes ne le prend pas",
 "A quest item: the auction house won't take it": "Objet de quête : l'hôtel des ventes ne le prend pas",
 "Damaged: repair it to sell it": "Abîmé : réparez-le pour le vendre",
-"The auction house won't take this": "L'hôtel des ventes ne prend pas ceci"
+"The auction house won't take this": "L'hôtel des ventes ne prend pas ceci",
+"Desktop's add-ons are older: update DS Forever Desktop": "Les add-ons de Desktop sont plus anciens : mettez à jour DS Forever Desktop"
 },
 "templates": {
 "Empty: slot %s's own": "Vide : celui de l'emplacement %s",

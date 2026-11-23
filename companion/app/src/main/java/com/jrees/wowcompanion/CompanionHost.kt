@@ -530,6 +530,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         DiagLog.init(this)
         Tr.init(this)                              // 2026-11-07: Spanish / French (the Thor's language, or Settings > System > Language)
         DataStaleness.init(this)                   // issues #8 / #9: is the game folder's Data the build's?
+        DesktopAddons.init(this)                   // issue 453: the bundled add-ons' tags (PadMap, ActionBar), to know older PC add-ons
         if (LauncherHooks.pkg != null && !LauncherHooks.gameUp()) GameLife.launcherBack()     // issue #12
         DiagLog.event("app", "bottom screen up (inside the launcher: ${LauncherHooks.pkg != null})")
         ArtHarvest.onState { s ->
@@ -3517,6 +3518,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // backlog (its `_gt` stamp after the game's start: a host that came up mid-game); an older run's says nothing about now
                 if (current || padmapOfThisRun(msg.optLong("_gt", -1L))) { padmapRunAt = System.currentTimeMillis(); runStart = it.start }
                 if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
+                if (current) { lastPadMapV = it.version; desktopOlderCheck() }   // issue 453: older add-ons on the PC (streaming)
                 // B: pet recall (PadMap m165 / m174), told when it differs - for THIS padmap's character (the review: GameUi.character is
                 // set further down, so a first padmap after a start / a character switch read the default or the last character's setting)
                 if (current) { petBNow = it.petB; petBWho = PetRecall.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
@@ -3579,7 +3581,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             // GitHub #43 THE TAP-TO-CAST BAR (ActionBar cb1): the slots (a state: a replayed one counts, the last one wins); its cooldowns
             // current only (as facecd); the edit's answer only logged (the next castbar document shows it)
-            "castbar" -> CastStripModel.parse(msg)?.let { CastStripModel.Live.set(it); homeView.onCastBar(it) }
+            "castbar" -> CastStripModel.parse(msg)?.let { CastStripModel.Live.set(it); homeView.onCastBar(it); if (current) desktopOlderCheck() }
             "castcd" -> if (current) CastStripModel.parseCd(msg)?.let { homeView.onCastCd(it) }
             "castbarack" -> if (current) Log.i(HomeView.TAG, "cast bar: ${msg.optString("op")} ok=${msg.optBoolean("ok")} slot=${msg.optInt("s")} " +
                 "queued=${msg.optInt("q") == 1} ${msg.optString("why")}")
@@ -4137,6 +4139,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val sent = padTabTap(PauseOver.cells(game))
         if (sent) pauseOverSentAt = SystemClock.elapsedRealtime()
         Log.i("WCHOME", "start over game windows: ${if (game) "game's wheel" else "our wheel"} told ($why)${if (sent) "" else ": not sent"}")
+    }
+    /** issue 453: the last current padmap's tag, and whether the PC's add-ons were last seen older (one WCSETUP line per change) */
+    private var lastPadMapV: String? = null
+    private var desktopOlderSaid: Boolean? = null
+    private fun desktopOlderCheck() {
+        val older = DesktopAddons.older(PlayGate.streamingNow(), lastPadMapV, CastStripModel.Live.bar?.version)
+        if (older == desktopOlderSaid) return
+        desktopOlderSaid = older
+        if (older) Log.i("WCSETUP", DesktopAddons.line(lastPadMapV, CastStripModel.Live.bar?.version))
+        else if (PlayGate.streamingNow()) Log.i("WCSETUP", "streaming: the PC's add-ons are not older than the Thor's")
+        if (::spellsOverlay.isInitialized) spellsOverlay.invalidate()
     }
     /** StartRoute: the last current document's wall time; the last padmap of this game run's wall time and its Start state (0 = none) */
     private var docLiveAt = 0L

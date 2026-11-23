@@ -2339,7 +2339,8 @@
 "Soulbound: the auction house won't take it": "Ligado: la casa de subastas no lo acepta",
 "A quest item: the auction house won't take it": "Objeto de misión: la casa de subastas no lo acepta",
 "Damaged: repair it to sell it": "Dañado: repáralo para venderlo",
-"The auction house won't take this": "La casa de subastas no acepta esto"
+"The auction house won't take this": "La casa de subastas no acepta esto",
+"Desktop's add-ons are older: update DS Forever Desktop": "Los accesorios de Desktop son más antiguos: actualiza DS Forever Desktop"
 },
 "templates": {
 "Empty: slot %s's own": "Vacío: lo del espacio %s",
