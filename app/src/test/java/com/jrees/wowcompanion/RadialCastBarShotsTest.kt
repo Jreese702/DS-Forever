@@ -31,13 +31,14 @@ import java.time.Duration
  * bar shown (it stays on the bottom), in a fight with the bar hidden and with Party mode on. Under each radial over Home - the middle
  * wheel (D-pad Up / the spell radials), both class wheels (the pet wheels), the LB picture, the pause wheel's slide and the target
  * radial's - checked on the page as drawn (each laid box moved by its view's translation):
- *  - no bar drawn over the radial (the pause / target slides: every bar off the screen);
+ *  - no bar drawn over the radial (the pause / target slides: every bar off the screen, Across's straight down below the page as for
+ *    the other wheels - the user, 2026-11-23: "All wheels move the Across bar the same way" - never off to the left with the chat);
  *  - the radial at its FULL size: as large a square (the LB picture: the same scale) as on the same page with the bar Off (Across's bar
  *    drops when it would make it smaller; a radial that fits above it at that size leaves it where it is);
  *  - no tap reaches a bar dropped out of the radial's way; every bar is back in its place, tappable, once the radial has closed.
  * With RADIAL_CASTBAR_SHOTS=<dir> (and CLOCK_ART_ROOT for the real art) the pictures of each radial at the four docks the user named
- * (Under the chat, Across, Above the chat, Above the map; L slots), the LB picture in a grown fight with the bar shown, and a frame
- * halfway through that picture's open. [shots] uses only what the published build had, so the same test draws the "before" pictures there.
+ * (Under the chat, Across, Above the chat, Above the map; L slots), the LB picture in a grown fight with the bar shown, the pause
+ * wheel's and the target radial's slides, and frames partway through that picture's open and the pause wheel's slide. [shots] uses only what the published build had, so the same test draws the "before" pictures there.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -168,6 +169,13 @@ class RadialCastBarShotsTest {
         }
     }
     private fun barShown(home: HomeView): Boolean = barsDrawn(home).isNotEmpty()
+    /** Across's bar part(s) laid on the page (no column's: across the whole page, under the band, above the page's foot) and their tops */
+    private fun acrossLaid(home: HomeView): Map<String, Float> {
+        val b = boxes(home); val v = views(home)
+        val bb = b["BARS"]?.bottom ?: 0f
+        return b.filter { (k, r) -> (k == "STRIP" || k == "CAST2") && v[k]?.visibility == View.VISIBLE && r.left <= G + 1f && r.right >= W - G - 1f &&
+            r.top < H - 0.5f && r.bottom > bb + 0.5f }.mapValues { it.value.top }
+    }
     private fun overlaps(a: RectF, b: RectF): Boolean = a.left < b.right - 0.5f && b.left < a.right - 0.5f && a.top < b.bottom - 0.5f && b.top < a.bottom - 0.5f
     private fun r(x: RectF) = "${x.left.toInt()}..${x.right.toInt()} x ${x.top.toInt()}..${x.bottom.toInt()}"
 
@@ -249,11 +257,19 @@ class RadialCastBarShotsTest {
         held(tag, "LB picture", home)
         home.pauseSlide(0f, LbPartyView.SIDE_PX); home.pauseSlide(0f)
         back(tag, "LB picture", home, tappable)
-        // the pause wheel (the controller up) and the target radial (it stays): every bar off the screen
+        // the pause wheel (the controller up) and the target radial (it stays): every bar off the screen; Across's (laid on the page,
+        // no column's) straight down below it, as the other wheels drop it - never sideways
+        val acrossBars = acrossLaid(home)
+        if (p.layout.cast == HomeLayout.CastDock.ACROSS && barShown(home) && acrossBars.isEmpty()) no(tag, "Across's bar not found on the page")
         for (up in listOf(true, false)) {
             val nm = if (up) "pause" else "target radial"
             home.pauseSlide(UiKit.PAUSE_OPEN_MS, barsUp = up)
             for ((k, d) in barsDrawn(home)) no(tag, "$nm: $k still on the screen ${r(d)}")
+            for ((k, top) in acrossBars) {
+                val v = views(home).getValue(k)
+                if (kotlin.math.abs(v.translationX) > 0.5f) no(tag, "$nm: Across's $k slid ${v.translationX} sideways")
+                if (kotlin.math.abs(top + v.translationY - H) > 0.5f) no(tag, "$nm: Across's $k not dropped below the page (${top + v.translationY})")
+            }
             held(tag, nm, home)
             home.pauseSlide(0f, barsUp = up)
             back(tag, nm, home, tappable)
@@ -303,6 +319,19 @@ class RadialCastBarShotsTest {
         p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
         assertTrue("LB at rest: it stays (${s.translationX}, ${s.translationY})", s.translationY == 0f && s.translationX == 0f && s.takesTouch)
         p.home.pauseSlide(0f, LbPartyView.SIDE_PX)
+        // the pause wheel (the controller up) and the target radial: straight down on the slide's own curve, back up on the close
+        for (up in listOf(true, false)) {
+            var last = 0f
+            for (k in listOf(0.2f, 0.45f, 0.7f, 1f)) {
+                p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * k, barsUp = up)
+                assertTrue("${if (up) "pause" else "target"} at $k: straight down (${s.translationX}, ${s.translationY})",
+                    s.translationX == 0f && s.translationY >= last && laid.top + s.translationY <= H + 0.5f && !s.takesTouch)
+                last = s.translationY
+            }
+            assertTrue("${if (up) "pause" else "target"}: below the page ${s.translationY}", kotlin.math.abs(laid.top + s.translationY - H) < 0.5f)
+            p.home.pauseSlide(0f, barsUp = up)
+            assertTrue("${if (up) "pause" else "target"}: back (${s.translationX}, ${s.translationY})", s.translationX == 0f && s.translationY == 0f && s.takesTouch)
+        }
         val f = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS), STATES[1])
         val fs = strips(f.home)[0]
         val flaid = boxes(f.home).getValue("STRIP")
@@ -334,7 +363,7 @@ class RadialCastBarShotsTest {
     @Test fun aFightUnderAnOpenRadial() {
         for (d in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.ABOVE_MAP, HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT))
             for (top in listOf(false, true)) for (stay in listOf(false, true)) for (inFight in listOf(false, true))
-            for (what in listOf("middle wheel", "LB+LT", "RB+RT", "LB picture")) {
+            for (what in listOf("middle wheel", "LB+LT", "RB+RT", "LB picture", "pause", "target radial")) {
                 val tag = "${d.name.lowercase()} ${if (top) "Top screen" else "grown"} fight, ${if (stay) "shown" else "hidden"} in it, " +
                     "${if (inFight) "opened in a fight, the fight ends" else "opened at rest, a fight begins"} $what"
                 val band = if (top) HomeLayout.FightBand.TOP else HomeLayout.FightBand.GROW
@@ -342,7 +371,9 @@ class RadialCastBarShotsTest {
                 val p = page(l, St(if (inFight) "fight" else "rest", fight = inFight, stay = stay, ct = if (top) 1 else null, band = band))
                 val home = p.home
                 fun clear(when_: String) {
-                    val boxes = if (what == "LB picture") LbFit.bars(home.lbPlace()).values.map { RectF(it.l, it.t, it.r, it.b) }
+                    // (the pause wheel / the target radial: every bar off the screen)
+                    val boxes = if (what == "pause" || what == "target radial") listOf(RectF(0f, 0f, W.toFloat(), H.toFloat()))
+                        else if (what == "LB picture") LbFit.bars(home.lbPlace()).values.map { RectF(it.l, it.t, it.r, it.b) }
                         else if (what == "middle wheel") listOf(RectF(field(home, "wheelRect") as RectF))
                         else listOf(RectF(field(home, "classRect") as Rect))
                     for (b in boxes) for ((k, dr) in barsDrawn(home)) if (overlaps(dr, b)) no(tag, "$when_: $k drawn ${r(dr)} over ${r(b)}")
@@ -360,6 +391,7 @@ class RadialCastBarShotsTest {
                 named(inFight, "at the open")
                 when (what) {
                     "LB picture" -> home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
+                    "pause", "target radial" -> home.pauseSlide(UiKit.PAUSE_OPEN_MS, barsUp = what == "pause")
                     "middle wheel" -> { home.wheelSlot(true); settle() }
                     else -> classOpen(p, what == "LB+LT")
                 }
@@ -369,6 +401,7 @@ class RadialCastBarShotsTest {
                 clear("the page laid again under it")
                 when (what) {
                     "LB picture" -> { home.pauseSlide(0f, LbPartyView.SIDE_PX); home.pauseSlide(0f) }
+                    "pause", "target radial" -> home.pauseSlide(0f, barsUp = what == "pause")
                     "middle wheel" -> { home.wheelSlot(false); settle() }
                     else -> classClose(p)
                 }
@@ -465,8 +498,18 @@ class RadialCastBarShotsTest {
             p.home.pauseSlide(0f, LbPartyView.SIDE_PX)
             p = page(l)
             p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, barsUp = true)
-            save(p, "${tag}_4_pause_slide", "$tag, L: pause wheel's slide (the target radial's is the same)")
+            save(p, "${tag}_4_pause_slide", "$tag, L: pause wheel's slide (the controller up)")
             p.home.pauseSlide(0f, barsUp = true)
+            p = page(l)
+            p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, barsUp = false)
+            save(p, "${tag}_5_target_radial", "$tag, L: target radial's slide (the controller stays)")
+            p.home.pauseSlide(0f, barsUp = false)
+        }
+        // partway through the pause wheel's slide (Across, L: the bar on its way straight down, the chat's curve)
+        run {
+            val p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L))
+            p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * 0.3f, barsUp = true)
+            save(p, "across_7_pause_slide_midslide", "across, L: pause wheel's slide (30 %)")
         }
         // halfway through the LB picture's open (Across, L, a grown fight with the bar shown: it drops on the sides' curve). The
         // middle and class wheels' opens run on view animators, which the off-device clock does not stop halfway

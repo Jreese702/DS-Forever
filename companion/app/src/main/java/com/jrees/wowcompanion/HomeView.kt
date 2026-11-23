@@ -616,9 +616,10 @@ class HomeView(
     private var lbDrop = false
     /** feat/radial-castbar: the bar dropped out of a radial's way is away: no tap reaches its slots until it is back (CastStripView.away,
      *  its trip back up too); its cooldowns keep running. A bar that stays, or goes with its column, is as it was */
-    private fun barAwaySync() {
-        val drop = wheelOpen && wheelDrop || classOpen && classDrop || pauseT > 0f && pauseSide > 0f && lbDrop
-        for ((p, v) in views) if (v is CastStripView) v.away = drop && barDrop(p, now[p]) > 0f
+    private fun barAwaySync(places: Map<Part, RectF> = now) {
+        // (the pause wheel's / the target radial's full slide: Across's bar always drops, pauseSlide)
+        val drop = wheelOpen && wheelDrop || classOpen && classDrop || pauseT > 0f && (pauseSide > 0f && lbDrop || pauseSide <= 0f)
+        for ((p, v) in views) if (v is CastStripView) v.away = drop && barDrop(p, places[p]) > 0f
     }
     /**
      * the middle wheel's square for the page laid as [places]: as tall as the space under the bars allows (the user on test18: "I want
@@ -2249,6 +2250,7 @@ class HomeView(
         // fix/radials-clip-castbar: an open middle wheel follows the page laid again (a fight's start / end), never over the bar
         if (s.full == null || s.takeover) wheelRefit(to)
         if (s.full == null || s.takeover) classRefit(to)
+        if (s.full == null || s.takeover) pauseRefit(to)
         if (!animate || before == null) {
             if (lent(castView)) castView.away = away                           // laid at once (no motion): away now
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
@@ -2734,6 +2736,24 @@ class HomeView(
      *  the selections"): the side parts move only that far, eased, a little dimmed; the controller bars as the pause has them */
     private var pauseSide = 0f
     private var pauseUp = false
+    /** feat/radial-castbar: how far along the full slide's drop of Across's bar is (0 .. 1, the chat's curve: pauseSlide) */
+    private var pauseDropK = 0f
+    /**
+     * feat/radial-castbar: the page laid again under the pause wheel's / the target radial's full slide (a fight beginning or ending
+     * while it is open, as [wheelRefit] / [classRefit] for the other wheels): Across's bar laid on the page as it will be ([places])
+     * is dropped below it again from its new place - one coming back from below after a fight (opened with it slid away, it had
+     * cb3's left slide) never rises into sight over the wheel. A bar the page lays below it (a fight's start) keeps its offset
+     */
+    private fun pauseRefit(places: Map<Part, RectF>) {
+        if (pauseT <= 0f || pauseSide > 0f) return
+        for (p in listOf(Part.STRIP, Part.CAST2)) {
+            val v = views[p] ?: continue
+            val dy = barDrop(p, places[p])
+            if (dy <= 0f) continue
+            v.animate().cancel(); v.translationX = 0f; v.translationY = dy * pauseDropK
+        }
+        barAwaySync(places)
+    }
     /** [barsUp] (feat/pause-power: the PAUSE menu's; the user, 2026-11-18: "I want the pause radial to also push the top controller bar
      *  up out of the way so that it can be a bit larger"): the controller slides up off the screen on the kit's PAUSE_TOP curve, the
      *  reverse bringing it back down; false = the target radial's / the LB picture's rule below */
@@ -2751,6 +2771,9 @@ class HomeView(
         val half = width / 2f
         // fix/menus-fit: the LB picture's place on the page as laid: each side moves only as far as it needs to clear it
         val lb = if (sidePx > 0f) lbFit().also { lbDrop = it.second }.first else null
+        // feat/radial-castbar: the full slide's drop on the chat's own curve (how far along its way off the chat is: 0 .. 1)
+        val leftEnd = UiKit.pauseOut(UiKit.PAUSE_LEFT, UiKit.PAUSE_OPEN_MS, screen)[0]
+        pauseDropK = if (leftEnd != 0f) (left[0] / leftEnd).coerceIn(0f, 1f) else if (t > 0f) 1f else 0f
         for ((p, v) in views) {
             // MOVABLE HOME (SPEC section 6 item 2): the side is the part's HALF, not its name: the left column slides left whatever it
             // holds (the map after a swap). A part across the whole page (a full-screen module) keeps its own side. fix/menus-fit: a
@@ -2782,6 +2805,16 @@ class HomeView(
             if (v.visibility == View.VISIBLE) v.alpha = o[2]
             // the LB picture (the user: "don't make the top controller part shift away"): the controller stays as it is
             if (sidePx > 0f && p == Part.BARS) { v.translationX = 0f; v.translationY = 0f; if (v.visibility == View.VISIBLE) v.alpha = 1f }
+            // feat/radial-castbar (the user, 2026-11-23, "All wheels move the Across bar the same way"): the pause wheel's and the target
+            // radial's full slide DROP Across's bar (no column's) straight down below the page, where the other wheels lay it (barDrop),
+            // on the chat's curve - no longer off to the left with the chat (cb3); t = 0 brings it back up. A column's bar (Under / Above
+            // the chat or the map, Split's halves) still goes with its column; one slid away for a fight (below the page) keeps cb3's
+            if (sidePx <= 0f && (p == Part.STRIP || p == Part.CAST2)) {
+                // (a bar still on its way back from a wheel just closed - its animator - is stopped: this slide places it now)
+                if (t > 0f) v.animate().cancel()
+                val dy = barDrop(p, r)
+                if (dy > 0f) { v.translationX = 0f; v.translationY = dy * pauseDropK }
+            }
             if (sidePx > 0f && p != Part.BARS) {
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
                 val ee = 1f - (1f - e) * (1f - e)
@@ -5554,9 +5587,10 @@ internal object ClassSlot {
  * width, its centre is the page's middle (not left of it), so it counted as the RIGHT column: RB + RT's wheel took the union of the right
  * column AND the full-width bar as its area (a square as tall as the page) and slid the bar away with the map. Now the cast bar's half
  * is its side: Left goes with the chat, Right with the minimap, Both with neither (it stays); a bar slid away for a fight is no
- * column's (it is below the page). The pause wheel's full slide keeps cb3's choice (Both goes left with the chat, pauseSlide).
+ * column's (it is below the page). The pause wheel's full slide kept cb3's choice (Both went left with the chat, pauseSlide).
  * feat/radial-castbar (2026-11-23): Both's (Across's) bar still never slides sideways in these, but when a radial would be smaller with
- * it there it slides DOWN out of the way ([barDrop], [makesRoom]) so each radial keeps its full size.
+ * it there it slides DOWN out of the way ([barDrop], [makesRoom]) so each radial keeps its full size; the pause wheel's and the target
+ * radial's full slide always drop it the same way ("All wheels move the Across bar the same way").
  */
 internal object HomeSlide {
     enum class Half { LEFT, RIGHT, NONE }

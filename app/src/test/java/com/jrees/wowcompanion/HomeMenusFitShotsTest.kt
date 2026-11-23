@@ -232,10 +232,13 @@ class HomeMenusFitShotsTest {
         home.pauseSlide(UiKit.PAUSE_OPEN_MS)
         for ((k, d) in drawn(home)) {
             val l0 = laid.getValue(k)
-            if (d.right > 0.5f && d.left < W - 0.5f) no(tag, "pause: $k still on screen ${r(d)}")
+            // (feat/radial-castbar: Across's bar drops straight down below the page - off the screen, never sideways)
+            if (d.right > 0.5f && d.left < W - 0.5f && d.top < H - 0.5f) no(tag, "pause: $k still on screen ${r(d)}")
+            if ((k == "STRIP" || k == "CAST2") && l0.left <= G + 1f && l0.right >= W - G - 1f) {
+                if (kotlin.math.abs(d.left - l0.left) > 0.5f) no(tag, "pause: Across's $k slid ${(d.left - l0.left).toInt()} sideways")
+                continue
+            }
             if (l0.left <= G + 1f && l0.right >= W - G - 1f) continue                 // a full-screen module keeps its own side
-            // the Both bar's own rule (cb3: it goes left with the chat) is kept
-            if (k == "STRIP" && l0.width() > W / 2f) continue
             val dir = d.left - l0.left
             if (dir != 0f && (dir < 0f) != (l0.centerX() < W / 2f)) no(tag, "pause: $k (centre ${l0.centerX().toInt()}) slid ${dir.toInt()} across the page")
         }

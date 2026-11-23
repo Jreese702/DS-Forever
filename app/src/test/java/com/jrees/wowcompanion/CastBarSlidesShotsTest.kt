@@ -131,14 +131,30 @@ class CastBarSlidesShotsTest {
         }
     }
 
-    /** the pause wheel's full slide: Left / Both go with the chat (cb3's choice), Right with the minimap */
+    /** the pause wheel's and the target radial's full slide: Left goes with the chat, Right with the minimap; Both's bar (feat/radial-
+     *  castbar, the user: "All wheels move the Across bar the same way") drops straight down below the page, never sideways (it went
+     *  left with the chat, cb3's choice), and comes back up on the close */
     @Test fun pauseSlideCarriesTheBarWithItsColumn() {
-        for (side in listOf(L, R, B)) {
+        for (up in listOf(true, false)) for (side in listOf(L, R, B)) {
             val home = page(side)
-            home.pauseSlide(UiKit.PAUSE_OPEN_MS)
             val s = castStrip(home)
-            if (side == R) assertTrue("$side", s.translationX > 0f) else assertTrue("$side", s.translationX < 0f)
-            assertTrue("off the screen", s.left + s.translationX >= W - 1f || s.right + s.translationX <= 1f)
+            val top = boxes(home).entries.first { it.key.toString() == "STRIP" }.value.top
+            home.pauseSlide(UiKit.PAUSE_OPEN_MS / 3f, barsUp = up)
+            if (side == B) assertTrue("$side partway down: ${s.translationY}", s.translationX == 0f && s.translationY > 0f && top + s.translationY < H)
+            home.pauseSlide(UiKit.PAUSE_OPEN_MS, barsUp = up)
+            when (side) {
+                R -> assertTrue("$side", s.translationX > 0f)
+                L -> assertTrue("$side", s.translationX < 0f)
+                else -> {
+                    assertEquals("$side never sideways", 0f, s.translationX, 0.5f)
+                    assertEquals("$side below the page", H.toFloat(), top + s.translationY, 0.5f)
+                    assertTrue("$side takes no tap", !s.takesTouch)
+                }
+            }
+            if (side != B) assertTrue("off the screen", s.left + s.translationX >= W - 1f || s.right + s.translationX <= 1f)
+            home.pauseSlide(0f, barsUp = up)
+            assertEquals(0f, s.translationX, 0.5f); assertEquals(0f, s.translationY, 0.5f)
+            assertTrue("$side back: takes taps", s.takesTouch)
         }
     }
 
