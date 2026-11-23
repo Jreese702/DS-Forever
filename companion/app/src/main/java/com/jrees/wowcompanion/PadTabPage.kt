@@ -67,8 +67,8 @@ import kotlin.math.abs
  * row, Clear, padtab 3 / 4 / 5): the add-on puts it on the cast bar's slot.
  *
  * p55 CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal; PadTabCtl p55, ActionBar cb14): "castbar" is WoW Defaults >
- * Tap to cast and "cbfight" In combat > Tap to cast (the bar's in-combat layer, [CastStripModel.Bar.fslots]): an empty fight slot shows
- * the slot's own thing faded, a set one carries the crossed swords. The host's sub-tab row (and In combat's check boxes) sit above the
+ * Tap to cast and "cbfight" In combat > Tap to cast (the bar's in-combat layer, [CastStripModel.Bar.fslots]): an empty fight slot draws
+ * blank (2026-11-23, see p56), a set one carries the crossed swords. The host's sub-tab row (and In combat's check boxes) sit above the
  * left page's content, which moves down [leftDy] (the right page does not). Show in combat off: In combat > Tap to cast is locked
  * (its slots grey, "Hidden in fights", no Change / Move). The bar Off in Settings: both Tap to cast pages dimmed, "Bar is off" and a
  * "Turn on" button ([onTurnOn]: the host sets the setting, D2).

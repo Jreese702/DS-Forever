@@ -50,8 +50,13 @@ class ControllerEmptySlotsTest {
         seedIcons()
         HomeSettings.init(app); sideWas = HomeSettings.castBarSide; combatWas = HomeSettings.castBarCombat; partyWas = HomeSettings.castBarPartyShow
         HomeSettings.castBarSide = CastStripModel.Side.BOTH; HomeSettings.castBarCombat = CastStripModel.Combat.STAY; HomeSettings.castBarPartyShow = true
+        // Party mode's tab must be there (its default; another test may have left the switch off): never a silent skip
+        pmodeWas = GameUi.partyModeOn()
+        if (!pmodeWas) GameUi.setSwitch(GameUi.SW_PMODE, true)
+        assertTrue("Party mode's tab is on for this test", GameUi.partyModeOn())
         ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
     }
+    private var pmodeWas = true
     /** the bar's icons as plain colour squares when no art root has them (a set slot must show a picture, the art or not) */
     private fun seedIcons() {
         val ids = Regex("\"i\":([0-9]+)").findAll(ControllerSituationsShotsTest.BAR).map { it.groupValues[1].toInt() }.toSet()
@@ -60,7 +65,10 @@ class ControllerEmptySlotsTest {
         for ((n, id) in ids.withIndex()) if (Icons.get(id) == null)
             cache.put(id, Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.rgb(40 + n * 20, 200 - n * 15, 90)) })
     }
-    @After fun down() { HomeSettings.castBarSide = sideWas; HomeSettings.castBarCombat = combatWas; HomeSettings.castBarPartyShow = partyWas }
+    @After fun down() {
+        HomeSettings.castBarSide = sideWas; HomeSettings.castBarCombat = combatWas; HomeSettings.castBarPartyShow = partyWas
+        if (!pmodeWas) GameUi.setSwitch(GameUi.SW_PMODE, false)
+    }
 
     /** the shots test's Shaman bar with its layers: [fight] / [party] = the layers' entries (null = that layer empty) */
     private fun bar(own: Boolean = true, fight: Boolean = false, party: Boolean = false): CastStripModel.Bar {
@@ -121,7 +129,6 @@ class ControllerEmptySlotsTest {
         val ref = room(bar(own = false), onController("normal"), "a0_out_of_combat_empty_bar")
         room(bar(), onController("normal"), "a1_out_of_combat")
         for (view in listOf("combat", "party")) {
-            if (view == "party" && !GameUi.partyModeOn()) continue
             val tag = if (view == "combat") "b" else "c"
             val word = if (view == "combat") "in_combat" else "party_mode"
             // the layer empty, the bar's own slots all set beneath it: every slot blank, as Out of combat's empty ones
@@ -137,16 +144,23 @@ class ControllerEmptySlotsTest {
     @Test fun anEmptyLayerSlotsDetailReadsAsOutOfCombats() {
         // the cursor on empty slot 3: the right page's name and help line read as on Out of combat (the "On" line names the
         // situation, above them); "Empty: slot 3's own in fights" is gone
-        val rightHelp = RectF(780f, 410f, w - 56f, 690f)
+        // (down to the foot: the A button, "Choose", takes the empty slot as on Out of combat: a spell can be put on it)
+        val rightHelp = RectF(780f, 410f, w - 56f, 930f)
         val ref = room(bar(own = false), ctl("castbar", pos = 3), "a2_out_of_combat_empty_slot_cursor")
         for ((view, cbv) in listOf("combat" to "cbfight", "party" to "pbar")) {
-            if (view == "party" && !GameUi.partyModeOn()) continue
             val extra = if (view == "party") ""","pbar":{"ppos":8,"pset":1}""" else ""
             val tag = if (view == "combat") "b" else "c"
             val word = if (view == "combat") "in_combat" else "party_mode"
             val v = room(bar(), ctl(cbv, pos = 3, extra = extra), "${tag}3_${word}_empty_slot_cursor")
             assertTrue("$cbv: the empty slot's help line as Out of combat's", same(ref, v, rightHelp))
             assertEquals("$cbv: the empty slot's name", "Empty", last!!.page().shownName())
+            // the blank slot still takes a spell: a finger on Choose opens the chooser for it
+            val lv = last!!
+            val act = RectF(780f, h - 141f, w - 56f, h - 30f)
+            val t = android.os.SystemClock.uptimeMillis()
+            lv.onTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, act.centerX(), act.centerY(), 0))
+            lv.onTouchEvent(android.view.MotionEvent.obtain(t, t + 40, android.view.MotionEvent.ACTION_UP, act.centerX(), act.centerY(), 0))
+            assertTrue("$cbv: Choose on the empty slot opens the chooser", lv.page().chooserOpen())
         }
     }
 

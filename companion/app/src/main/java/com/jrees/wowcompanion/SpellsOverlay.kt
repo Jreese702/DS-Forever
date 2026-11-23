@@ -36,7 +36,7 @@ import android.view.View
  * Book b70 CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal D7-D9): TWO TAB ROWS, Out of combat | In combat (D7:
  * the old first tab renamed), then Controller | Tap to cast; LB / RB walk all four in reading order ([CastStripModel.stepBind]): Out + Controller
  * (bf-off), Out + Tap to cast (padtab 39 then 26), In + Controller (bf-on), In + Tap to cast (39 then 4: the bar's IN-COMBAT layer, its
- * set slots with the crossed swords, an empty one showing the slot's own thing faded). Macros and Bags get Tap to cast too (D8). Show in
+ * set slots with the crossed swords, an empty one blank, as on Out of combat: 2026-11-23). Macros and Bags get Tap to cast too (D8). Show in
  * combat off: In combat + Tap to cast is dimmed with a lock, its slots grey, "Hidden in fights" (the add-on refuses with one red pulse).
  * The bar Off in Settings: both Tap to cast tabs dimmed, "Bar is off" and "Turn on" (a finger, or the add-on's `cbon` for A: D2).
  */
