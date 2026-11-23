@@ -34,7 +34,9 @@ Checks:
     the chord rows), raids too; the cfg PadMap sent last (cfg() - the spellbook walk - never called in the fight); a Select press mid-fight
     swaps the layer in place (re-fit against ours, redrawn that tick, still shown); Hub's rows and Select tab in the HUD block; nbar14
     PARTY MODE CENTRED: the block's shift to the screen's centre told to Trail (NB.centreDx), the Wings either side of the centred
-    block, stable once Trail has applied it, back to 0 at the fight's end.
+    block, stable once Trail has applied it, back to 0 at the fight's end; nbar15 (the user's pick 11-23, "Centre the rows"): our HUD
+    bars off - Hub's rows and Select tab alone centred (less the shift PF.g says they were drawn with), the Wings either side of
+    them, stable at every stage of Hub's fade; no Trail P.partyGeo to carry it: the rows an obstacle where they stand, as before.
   D NINTENDO MODE: the bar glides from its stock spot to the wings and back (alpha 1 all the way) and ends at the stock spot again.
   E THE EDITOR: the flag on, Nintendo off, the editor open out of combat -> the bar shows at its piece's spot; a placed spot = the fight's.
   F LEAVE NO TRACE: no Secure template, EnableMouse never true, no SetBinding / CVar / macro call, nothing of Blizzard's moved, shown or
@@ -300,7 +302,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar12 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar14"' in src
+    chk("0. ActionBar's tag nbar12 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar15"' in src
         and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)
@@ -1055,12 +1057,13 @@ def party_fight_checks():
     L.execute('local d = %d; WowCompanion.prd.cx = 0; local function mv(f) f.r.l = f.r.l - d end; mv(WowCompanion.prd.f); '
               'mv(WowCompanion.prd.box.host); for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; mv(WowCompanion.uf.pf.tab)' % want)
     # the review (11-22): our HUD bars switched off, our party frames on - Hub still lays the rows under the HUD's place (PF.want = Party
-    # mode and partyOk, PF.geo from P.partyGeo): they stay an obstacle of their own ("partyhud", with the rim and the tab), no HUD block
+    # mode and partyOk, PF.geo from P.partyGeo). nbar15: no Trail P.partyGeo to carry a shift (this stub's prd has none) -> the rows stay
+    # an obstacle of their own where they stand ("partyhud", with the rim and the tab), no HUD block, nothing centred
     G.HUD_ON = False
     ours, hud = L.eval("WowCompanion.nbar.topOurs")()
     od = [todict(o) for o in ours.values()]
     ph = [o for o in od if o.get("id") == "partyhud"]
-    chk("I. HUD bars off, Party mode's rows under the HUD's place: no HUD block, the rows (rim) and the tab an obstacle of their own",
+    chk("I. HUD bars off, no Trail P.partyGeo: no HUD block, the rows (rim) and the tab an obstacle of their own where they stand",
         hud is None and len(ph) == 1 and ph[0]["x"] <= 700 + 1e-6 and ph[0]["x"] + ph[0]["w"] >= 740 + 330 + 300 + rim - 1e-6
         and ph[0]["y"] <= 860 + 1e-6 and ph[0]["y"] + ph[0]["h"] >= 870 + 76 + 64 + rim - 1e-6, (hud and todict(hud), od))
     sp = todict(L.eval("WowCompanion.nbar.topSolve")(False))
@@ -1068,6 +1071,52 @@ def party_fight_checks():
     hits = [(h, rw) for h in sp["rects"].values() for rw in rows
             if h["x"] < rw[0] + rw[2] and rw[0] < h["x"] + h["w"] and h["y"] < rw[1] + rw[3] and rw[1] < h["y"] + h["h"]]
     chk("I. ... the fight's solve keeps the Wings off every row and the tab (case %s)" % sp["case"], not hits, hits)
+    # nbar15 THE ROWS CENTRED WITH OUR HUD BARS OFF (the user's pick 11-23, "Centre the rows": "The party rows move to the centre and
+    # the controller goes either side"): Trail there (P.partyGeo), Party mode's Top fight (NB.top.centre) - the rows + tab block alone
+    # (700 .. 1370 + rim) told to stand centred, the solver's HUD block = that block, the Wings either side of it, HUD_MARGIN clear
+    L.execute('WowCompanion.prd.partyGeo = function() return { x = 0, y = 0, cx = WowCompanion.nbar.centreDx() } end')
+    ours, hud = L.eval("WowCompanion.nbar.topOurs")()
+    hd5 = todict(hud)
+    r0, r1 = 700, 740 + 330 + 300 + rim
+    want5 = math.floor(960 - (r0 + r1) / 2 + 0.5)
+    dx5 = L.eval("WowCompanion.nbar.centreDx")()
+    od = [todict(o) for o in ours.values()]
+    ph = [o for o in od if o.get("id") == "partyhud"]
+    chk("I. nbar15 HUD bars off, Party mode's Top fight: the rows + tab block alone centred (NB.centreDx %+d = 960 - its centre %+d), "
+        "it IS the solver's HUD block (the obstacle \"partyhud\" at the same place)" % (dx5, want5),
+        NB.top.centre is True and hd5 is not None and dx5 == want5 and abs(hd5["x"] + hd5["w"] / 2 - 960) <= 0.5
+        and abs(hd5["x"] - (r0 + want5)) < 1e-6 and abs(hd5["w"] - (r1 - r0)) < 1e-6 and abs(hd5["y"] - (870 - rim)) < 1e-6
+        and len(ph) == 1 and abs(ph[0]["x"] - hd5["x"]) < 1e-6, (NB.top.centre, dx5, want5, hd5, ph))
+    sp5 = todict(L.eval("WowCompanion.nbar.topSolve")(False))
+    chk("I. nbar15 ... the Wings either side of the centred rows, %d px clear, at k 1 (case %s)" % (NB.TOP.HUD_MARGIN, sp5["case"]),
+        sp5["form"] == "wings" and (sp5.get("k") or 1) == 1
+        and sp5["rects"][1]["x"] + sp5["rects"][1]["w"] <= hd5["x"] - NB.TOP.HUD_MARGIN + 1e-6
+        and sp5["rects"][2]["x"] >= hd5["x"] + hd5["w"] + NB.TOP.HUD_MARGIN - 1e-6, sp5)
+    rows5 = [(740 + (i % 2) * 330 + want5, 870 + (i // 2) * 76, 300, 64) for i in range(4)] + [(700 + want5, 860, 22, 140)]
+    hits = [(h, rw) for h in sp5["rects"].values() for rw in rows5
+            if h["x"] < rw[0] + rw[2] and rw[0] < h["x"] + h["w"] and h["y"] < rw[1] + rw[3] and rw[1] < h["y"] + h["h"]]
+    chk("I. nbar15 ... off every row and the tab where Hub takes them", not hits, hits)
+    # Hub draws them there (PF.g = P.partyGeo's table with the cx it was drawn with; the frames moved): the same block, the same shift -
+    # and Trail's own P.cx (none of its frames show) plays no part
+    L.execute('local d = %d; local function mv(f) f.r.l = f.r.l + d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
+              'mv(WowCompanion.uf.pf.tab); WowCompanion.uf.pf.g = { x = 0, y = 0, cx = d }; WowCompanion.prd.cx = -37' % want5)
+    ours, hud = L.eval("WowCompanion.nbar.topOurs")()
+    hd6 = todict(hud)
+    chk("I. nbar15 ... once Hub has drawn the rows there (PF.g cx %+d; a stale P.cx -37 ignored): the same centred block, the same shift"
+        % want5, L.eval("WowCompanion.nbar.centreDx")() == want5 and abs(hd6["x"] - hd5["x"]) < 1e-6 and abs(hd6["w"] - hd5["w"]) < 1e-6,
+        (hd6, hd5))
+    sp6 = todict(L.eval("WowCompanion.nbar.topSolve")(False))
+    chk("I. nbar15 ... the same spot (no re-fit loop)", abs(sp6["l"]["x"] - sp5["l"]["x"]) < 1e-6 and abs(sp6["r"]["x"] - sp5["r"]["x"]) < 1e-6,
+        (sp6["l"], sp5["l"]))
+    # mid-fade the other way: PF.g says the new shift, the frames still where they were (Hub moves them at its fade's bottom) - each
+    # stage less its own drawn shift: still the same block
+    L.execute('local d = %d; local function mv(f) f.r.l = f.r.l - d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
+              'mv(WowCompanion.uf.pf.tab); WowCompanion.uf.pf.g = { x = 0, y = 0, cx = 0 }' % want5)
+    ours, hud = L.eval("WowCompanion.nbar.topOurs")()
+    hd7 = todict(hud)
+    chk("I. nbar15 ... back where they stood (PF.g cx 0): the same block, the same shift",
+        L.eval("WowCompanion.nbar.centreDx")() == want5 and abs(hd7["x"] - hd5["x"]) < 1e-6, (hd7, hd5))
+    L.execute('WowCompanion.uf.pf.g = nil; WowCompanion.prd.cx = 0')
     G.HUD_ON = True
     # the fight's end: gone
     G.COMBAT, G.TG = False, False
@@ -1076,6 +1125,14 @@ def party_fight_checks():
         and not f.plate[1].shown and not f.chord[1][1].shown, (NB.top.shown, NB.party))
     chk("I. nbar14 ... and the centring off: NB.centreDx 0 (Trail fades the HUD block back)", NB.top.centre is False
         and L.eval("WowCompanion.nbar.centreDx")() == 0, (NB.top.centre, L.eval("WowCompanion.nbar.centreDx")()))
+    G.HUD_ON = False
+    ours, hud = L.eval("WowCompanion.nbar.topOurs")()
+    od = [todict(o) for o in ours.values()]
+    ph = [o for o in od if o.get("id") == "partyhud"]
+    chk("I. nbar15 ... with our HUD bars off after the fight: no shift (NB.centreDx 0), the rows an obstacle where they stand, no block",
+        L.eval("WowCompanion.nbar.centreDx")() == 0 and hud is None and len(ph) == 1 and abs(ph[0]["x"] - 700) < 1e-6,
+        (hud and todict(hud), ph))
+    G.HUD_ON = True
     chk("I. ... nothing raised, no binding / CVar / macro call, no mouse", G.RAISED == 0 and len(G.SPY) == 0 and G.BADMOUSE == 0,
         (G.RAISED, list(G.SPY.values()), G.BADMOUSE))
 

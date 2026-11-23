@@ -205,7 +205,7 @@ check('local BV = "b77"' in SRC["book"] and "b74 THE STICKY REALM'S QUESTION" in
       "0. Book b74: the third page's 9 / 10-19 (the sticky realm's question)")
 check('local PV = "m188"' in TEXT["padmap"] and "m180 THE STICKY REALM" in TEXT["padmap"] and "m181 (Safety k11" in TEXT["padmap"] and "m182 (Safety k12" in TEXT["padmap"] and 'local CBV = "cb16"' in AB and 'local SV = "s18"' in TEXT["spells"]
       and 'local RV = "r27"' in TEXT["radial"] and 'local SRV = "q8"' in TEXT["radial"] and 'local PV = "p27"' in TEXT["prof"] and 'p26 NO PARTIAL CHARACTER KEY' in TEXT["prof"]
-      and 'local PADV = "pad27"' in TEXT["tappad"] and 'WC.prd = { V = "prd22"' in TEXT["trail"] and 'local HV = "hub76"' in TEXT["hub"]
+      and 'local PADV = "pad27"' in TEXT["tappad"] and 'WC.prd = { V = "prd23"' in TEXT["trail"] and 'local HV = "hub76"' in TEXT["hub"]
       and 'v = "pq2"' in TEXT["map"], "0. the tags: PadMap m182, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p27 (its p26 note kept), TapPad pad27, Trail prd21, Hub hub75, Map pq2")
 # every per-character builder goes through WC.charKey: no file but Safety concatenates GetRealmName() into a key any more
 for k, s in list(TEXT.items()) + [("actionbar", AB)]:

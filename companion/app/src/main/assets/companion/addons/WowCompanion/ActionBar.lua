@@ -2,7 +2,7 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
--- nbar14 (the user, 2026-11-23, Top screen in fights): the band's size / shape, B rule, Party centred, one swing - at "nbar14 THE WINGS MATCH THE BAND".
+-- nbar14 (the user, 2026-11-23, Top screen in fights): the band's size / shape, B rule, Party centred, one swing - at "nbar14 THE WINGS MATCH THE BAND"; nbar15 ("Centre the rows"): our HUD bars off, the rows + tab centred alone (NB.topOurs).
 -- nbar13 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23): "Cast bar in fights" Bottom / Top screen - at NB.castFight.
 -- nbar12 THE WINGS' PLATES AND PARTY MODE (the user's rulings 2026-11-22, after the shots): (A) the band's L / R corner plates on
 -- the Wings, the ZL / ZR chips under them; (C) Party mode keeps the Top screen in its fights - the Wings carry the Party layer.
@@ -2514,7 +2514,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar14", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar15", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              OFF = 50, DX = 160, GLYPH = 17, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
@@ -3793,6 +3793,23 @@ function NB.topOurs()
         end
         if hud then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hud") end
     elseif rows then
+        -- nbar15 THE ROWS CENTRED WITH OUR HUD BARS OFF (the user's pick 11-23, "Centre the rows": "The party rows move to the centre
+        -- and the controller goes either side"): in Party mode's Top-screen fight (NB.top.centre) Hub's rows and Select tab - the whole
+        -- block while our HUD bars are off - are told to stand centred, exactly as the HUD + rows block: their rects less the shift they
+        -- were last DRAWN with (PF.g, P.partyGeo's cx; Trail's own P.cx plays no part, none of its frames show), the shift wanted
+        -- (NB.centreDx) to the screen's centre, and the solver gets them where they are going AS the HUD block, so the Wings stand either
+        -- side of them (beside / pushed / raised, HUD_MARGIN off). Trail prd23 reads Party mode live with its bars off, so P.partyGeo
+        -- carries the shift and Hub fades its rows to it (hub42's move: our plain frames, no secure template, moved in fights since
+        -- hub42). No Trail to carry it (no P.partyGeo): the rows stay an obstacle where they stand, as before
+        if NB.top.centre and type(prd) == "table" and type(rawget(prd, "partyGeo")) == "function" then
+            local W = NB.topScreen()
+            local pg = pf and rawget(pf, "g")
+            local rowsDx = (type(pg) == "table" and num(rawget(pg, "cx"))) or 0
+            local want = math.floor(W / 2 - (rows.x - rowsDx + rows.w / 2) + 0.5)
+            NB.top.cdx = want
+            rows = { x = rows.x - rowsDx + want, y = rows.y, w = rows.w, h = rows.h }
+            hud = rows
+        end
         add(rows, "partyhud")                                           -- our HUD bars off: the rows still stand there, kept clear
     end
     local cp = rawget(WC, "compass")
@@ -4028,7 +4045,8 @@ function NB.topSwitch(party)
     return S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true
 end
 -- nbar14 PARTY MODE CENTRED: the horizontal shift (1080-line px, + = right) Trail prd22 gives its HUD block (and Hub's rows with it) for
--- Party mode's Top-screen fight; 0 otherwise. Worked out by NB.topOurs from the block's own rects (no game frame read)
+-- Party mode's Top-screen fight; 0 otherwise. Worked out by NB.topOurs from the block's own rects (no game frame read); nbar15: with our
+-- HUD bars off, from Hub's rows and tab alone
 function NB.centreDx()
     local T = NB.top
     if T.centre == true and type(T.cdx) == "number" then return T.cdx end

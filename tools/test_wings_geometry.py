@@ -24,6 +24,9 @@ Checks:
     2-unit drop, the glyph badges, the L / R plate with its bumper glyph (nbar12), the ZL / ZR chip under it with its gold disc, Party
     mode's chord row and the swing lines - computed from the bar's constants and its placement code (NB.outerGeo), not NB.halfBox -
     inside the solved boxes and >= MARGIN from every resolved HUD frame.
+  1d nbar15 OUR HUD BARS OFF (the user's pick 11-23, "Centre the rows"): in every Party state Hub's rows and Select tab alone, centred
+    on the screen as NB.topOurs hands them to the solver, the Wings either side of them, >= HUD_MARGIN from every row and the tab; and
+    (6) Trail prd23's P.partyGeo carries the shift with its bars off (Party mode read live), none of its frames moved.
   1b nbar12 PARTY MODE'S ROWS (the Wings show in Party mode's fights now): Hub's grid under the HUD (its rows from Trail's P.partyGeo at
     Hub's own PF constants, two columns, with the rings' rim) and its Select tab at the grid's left edge join the HUD block as NB.topOurs
     reads them; the Wings (boxes and art) >= MARGIN from every row and the tab, never the case-5 fallback, in every Party state.
@@ -516,6 +519,7 @@ def main():
     bad_block, bad_solve, bad_slide, bad_art, bad_hub, bad_order = [], [], [], [], [], []
     ks = {}
     bad_centre, n_centre, n_centre_w, keep_c = [], 0, 0, {}
+    bad_off, n_off, n_off_w = [], 0, 0
     n_hub = 0
     n_states = n_solves = 0
     cases = {}
@@ -591,6 +595,31 @@ def main():
                     n_centre_w += 1
                 if pc_:
                     bad_centre.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), pc_[:2]))
+                # nbar15 1d OUR HUD BARS OFF (the user's pick 11-23, "Centre the rows"): Hub's rows and tab alone (NB.topOurs' "partyhud",
+                # its rects less the shift they were drawn with) shifted to the screen's centre and handed to the solver as the HUD block
+                # (NB.centreDx: P.partyGeo carries it with Trail's bars off, prd23) - the Wings either side of them, clear of every row
+                ro_u = None
+                for n_, q in fr_p.items():
+                    if n_.startswith("hub"):
+                        ro_u = union(ro_u, q)
+                dxr = math.floor(960 - (ro_u[0] + ro_u[2] / 2) + 0.5)
+                mvr = lambda q: (q[0] + dxr, q[1], q[2], q[3])  # noqa: E731
+                ro_c = {n_: mvr(q) for n_, q in fr_p.items() if n_.startswith("hub")}
+                raw_r = {n_: mvr(q) for n_, q in raw.items() if n_.startswith("hub")}
+                rr_, obst_r = solve_case(NBL, ro_c, mvr(ro_u), s)
+                rr_["s_used"] = s * (rr_.get("k") or 1)
+                n_off += 1
+                hr = mvr(ro_u)
+                po_ = problems(rr_, raw_r, obst_r, s) + art_problems(NBL, rr_, raw_r)
+                if abs(hr[0] + hr[2] / 2 - 960) > 0.5:
+                    po_.append("the rows not centred")
+                if rr_["form"] == "wings" and not (rr_["rects"][1]["x"] + rr_["rects"][1]["w"] <= hr[0] - HUD_MARGIN + 0.01
+                                                   and rr_["rects"][2]["x"] >= hr[0] + hr[2] + HUD_MARGIN - 0.01):
+                    po_.append("the Wings not either side of the centred rows")
+                if rr_["form"] == "wings":
+                    n_off_w += 1
+                if po_:
+                    bad_off.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), po_[:2]))
                 if (ui_h, pet, up, pips, party, lift, sc, wd, y) in CENTRE_SHOT:
                     keep_c[(ui_h, pet, up, pips, party, lift, sc, wd, y)] = (fr_p, block, rp, fr_c, mv(block), rc, dxc)
             key = (ui_h, pet, up, pips, party, lift, sc, wd, y)
@@ -640,6 +669,9 @@ def main():
     chk("1c. nbar14 Party mode centred: the block (the HUD with Hub's rows and tab) on the screen's centre, the Wings either side of it "
         ">= %d px from the HUD and every row, never the case-5 fallback (%d Party states, %d as wings)" % (HUD_MARGIN, n_centre, n_centre_w),
         not bad_centre and n_centre > 0 and n_centre_w >= 0.8 * n_centre, bad_centre[:3])
+    chk("1d. nbar15 our HUD bars off: Hub's rows and tab alone on the screen's centre, the Wings either side of them >= %d px from every "
+        "row and the tab, never the case-5 fallback (%d Party states, %d as wings)" % (HUD_MARGIN, n_off, n_off_w),
+        not bad_off and n_off > 0 and n_off_w >= 0.8 * n_off, bad_off[:3])
     hw_, hh_, ax_, ay_ = hb
     chk("2. nbar14: one half 228 x 135 (the flattened diamond: the outer column to 142.5, the inner glow 85.5, up 63, the swing lines "
         "down to 72)", (hw_, hh_, ax_, ay_) == (228, 135, 142.5, 63), (hw_, hh_, ax_, ay_))
@@ -715,6 +747,25 @@ def main():
     L6.execute("WowCompanion.prd.f.IsProtected = nil; CDX = -84; WowCompanion.padMap = nil")
     st6["run"](0.6)
     chk("6. prd22: Party mode off -> no shift whatever ActionBar says", (P6.cx or 0) == 0, P6.cx)
+    # prd23 (the user's pick 11-23, "Centre the rows"): our HUD bars OFF (P.wanted false: P.tick returns before it reads Party mode, so
+    # P.partyOn keeps its last word - false here) and Party mode turned on after: P.cxFor reads Party mode live, so P.partyGeo (Hub's
+    # rows and tab) carries ActionBar nbar15's shift; none of Trail's frames move (P.cx left as it is, the bars hidden)
+    L6.execute("WowCompanion.npWant.prd = false")
+    st6["run"](0.3)
+    g2 = P6.partyGeo()
+    L6.execute("WowCompanion.padMap = { party = { on = function() return true end, live = function() return true end } }")
+    st6["run"](1 / 30)
+    g3 = P6.partyGeo()
+    chk("6. prd23 our HUD bars off, Party mode on after (P.partyOn stale %s): P.partyGeo carries the shift (cx %s, x %+.1f px), P.cx "
+        "untouched, the bars hidden" % (P6.partyOn, g3.cx, (g3.x - g2.x) / k6),
+        P6.partyOn is not True and g3.cx == -84 and abs((g3.x - g2.x) / k6 + 84) < 0.6 and (P6.cx or 0) == 0
+        and not P6.f.IsShown(P6.f), (P6.partyOn, g3.cx, (g3.x - g2.x) / k6, P6.cx))
+    L6.execute("CDX = 0")
+    chk("6. prd23 ... the fight's end / B (NB.centreDx 0): the rows' shift back to 0", P6.partyGeo().cx == 0, P6.partyGeo().cx)
+    L6.execute("CDX = -84; WowCompanion.padMap = nil")
+    chk("6. prd23 ... Party mode off with our HUD bars off: no shift whatever ActionBar says", P6.partyGeo().cx == 0, P6.partyGeo().cx)
+    L6.execute("WowCompanion.npWant.prd = nil; CDX = 0")
+    st6["run"](0.6)
     # ------------------------------------------------------------------------------------------------ 4 NB.topOurs: the block, any alpha
     NBL.execute('''
         local F = getmetatable(UIParent)
