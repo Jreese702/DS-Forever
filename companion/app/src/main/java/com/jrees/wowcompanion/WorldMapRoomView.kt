@@ -1486,7 +1486,8 @@ class WorldMapRoomView(context: Context) : View(context) {
     // (the game's SoftCursor OnUpdate: its spot + speed x elapsed), the RIGHT stick zooms (the user, 2026-10-17: "use the right stick to
     // zoom in and out"): up in, down out, by how far, smoothly - in toward the cursor, out about the view; LB / RB keep their 1.6x steps
     private val sticks = MapStickDriver(this, CURSOR_PX_S, object : MapStickDriver.Host {
-        override fun sticksLive() = isShown && !modal()
+        // #584: only while the room holds the controller (MapHoldClaim): else the stick is the game's and the cursor stays
+        override fun sticksLive() = isShown && !modal() && claimLive()
         override fun cursorLive() = region == MapRoomKeys.Region.MAP
         override fun overMarker() = hoverQuest != null
         override fun moveCursor(dx: Float, dy: Float) {
@@ -1506,7 +1507,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             afterZoom()
         }
         override fun leftVector(x: Float, y: Float) {
-            if (steps.update(x, y)) { if (region == MapRoomKeys.Region.LIST) { stickStep(); postStickRepeat(DirectPadKeys.REPEAT_FIRST_MS) } }
+            if (steps.update(x, y)) { if (region == MapRoomKeys.Region.LIST && claimLive()) { stickStep(); postStickRepeat(DirectPadKeys.REPEAT_FIRST_MS) } }
             else if (!steps.engaged) removeCallbacks(stickRepeat)
         }
     })
@@ -1525,7 +1526,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun postStickRepeat(ms: Long) { removeCallbacks(stickRepeat); postDelayed(stickRepeat, ms) }
     private fun stickStep() {
         val d = steps.dir ?: return
-        if (!isShown || modal() || region != MapRoomKeys.Region.LIST) return
+        if (!isShown || modal() || region != MapRoomKeys.Region.LIST || !claimLive()) return
         if (d.second != 0f && d.first == 0f) moveList(if (d.second > 0f) 1 else -1) else if (d.first < 0f) key("PADDLEFT")
         syncB(); invalidate()
     }
@@ -1556,13 +1557,15 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** the hand-over's take (RoomHandOver MAP_ENTER, every route in; after onShown): the hold, asked again until answered */
     fun touchedIn() {
+        claim.shown(); claimNoted = false
         holdAsk.shown(); askHold()
         startStick()
     }
 
     /** the hand-over's let-go (RoomHandOver MAP_LEAVE, every route out but a fight's leave; before onHidden) */
     fun touchedOut() {
-        holdAsk.hidden(); removeCallbacks(holdTick)
+        holdAsk.hidden(); removeCallbacks(holdTick); removeCallbacks(roundEnd)
+        claim.hidden()
         if (ownRow()) freeAgain() else guestTap(GuestPad.cells(padDoc, "map", hold = false))
     }
 
@@ -1571,9 +1574,9 @@ class WorldMapRoomView(context: Context) : View(context) {
         // test build 1489 (#56): with the game running they go right after the room closes ([MapRoomLetGo.afterMs])
         letGoAfter = MapRoomLetGo.afterMs(runCatching { PlayGate.gameActiveNow() }.getOrDefault(false))
         roomOn = false; letGoClock.removeCallbacks(letGoLater); letGoClock.postDelayed(letGoLater, letGoAfter)
-        held = false
+        claim.hidden()
         closePsMenu(); stepChoice.close()                    // pm1: the add-on told the Polestar menu is closed
-        holdAsk.hidden(); removeCallbacks(holdTick)     // the let-go itself is the hand-over's (touchedOut)
+        holdAsk.hidden(); removeCallbacks(holdTick); removeCallbacks(roundEnd)     // the let-go itself is the hand-over's (touchedOut)
         stopStick()
     }
 
@@ -2752,7 +2755,28 @@ class WorldMapRoomView(context: Context) : View(context) {
     // ---------------------------------------------------------------- the controller
     // Map.lua mr1 (the user's v2): the room holds the controller as "map" itself, on its own pad row "mapw" (MapRoomPad), and opens
     // the game's world map behind it once the hold is real; an older Map.lua without the row: the generic guest "map", as before
-    private var held = false
+    /**
+     * #584 THE ROOM'S CLAIM (MapHoldClaim): held = the add-on said so (mapwin active, a hold ack that holds, a press); the cursor, the
+     * right stick's zoom and the list's stick steps move only while it holds AND the game's stick catch shows (once this add-on has
+     * shown it). Every ask and answer is a WCMAP line.
+     */
+    private val claim = MapHoldClaim("map room") { android.util.Log.i("WCMAP", it) }
+    private val held: Boolean get() = claim.held
+    /** the sticks are the room's now: held, and the stick caught (the own row's catch; the older guest route has none) */
+    private fun claimLive(): Boolean = claim.cursorLive(needCatch = ownRow())
+    /** the tests: the claim's state, whether the sticks are the room's */
+    fun claimState(): MapHoldClaim.St = claim.st
+    fun claimSticks(): Boolean = claimLive()
+    /** the tests: the free cursor in the canvas's 0..1 */
+    fun cursorNow(): FloatArray = floatArrayOf(ccx, ccy)
+    /** the note "the game kept the controller" said once per show */
+    private var claimNoted = false
+    /** after every claim event: the sticks came back to the room -> the driver starts from the stick as it is pushed now */
+    private fun claimed(wasLive: Boolean) {
+        val now = claimLive()
+        if (now && !wasLive) sticks.resume()
+        if (now != wasLive) invalidate()
+    }
     private var win: MapRoomPad.Win? = null
     private var openTapped = false
     /** the open cell tapped and the map not yet said open (mapwin): the way out then closes too (MapRoomPad.leaveCols) */
@@ -2767,9 +2791,53 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun askHold() {
         removeCallbacks(holdTick)
         if (!holdAsk.due()) return
-        val sent = if (ownRow()) rowTap(MapRoomPad.HOLD) else guestTap(GuestPad.cells(padDoc, "map", hold = true))
+        val own = ownRow()
+        val sent = if (own) rowTap(MapRoomPad.HOLD) else guestTap(GuestPad.cells(padDoc, "map", hold = true))
+        claim.asked(holdAsk.asksSent + (if (sent) 1 else 0), HoldAsk.MAX, sent,
+            when { padDoc == null -> "no pad document yet"; own -> "the room's row"; else -> "the guest map" })
+        if (sent) lastAskAt = android.os.SystemClock.uptimeMillis()
         if (holdAsk.asked(sent)) postDelayed(holdTick, HoldAsk.EVERY_MS)
+        else if (holdAsk.spent()) { removeCallbacks(roundEnd); postDelayed(roundEnd, HoldAsk.EVERY_MS) }   // the last ask's answer may still come
     }
+    /** the round's last ask had its time: still nothing held -> the claim says so (once a show, a short note for the player) */
+    private val roundEnd = Runnable {
+        if (holdAsk.spent() && isShown) {
+            claim.roundOver(holdAsk.asksSent)
+            if (!held && !claimNoted) { claimNoted = true; say(NO_HOLD_NOTE) }
+        }
+    }
+    /** a new round of asks (a dropped hold, the exit guard's re-ask) */
+    private fun askAgain(reason: String) {
+        if (!isShown || !roomOn) return
+        claim.again(reason)
+        holdAsk.shown(); removeCallbacks(roundEnd)
+        lastAskAt = android.os.SystemClock.uptimeMillis()
+        removeCallbacks(holdTick); postDelayed(holdTick, HoldAsk.EVERY_MS)
+    }
+    /** the last hold ask that went out (or the round queued: [askAgain]); uptime ms */
+    private var lastAskAt = Long.MIN_VALUE / 2
+    /** a round of asks is still out: unanswered and its last ask recent (the next one, or the last one's answer, still to come) */
+    private fun roundAsking(): Boolean = holdAsk.asking && android.os.SystemClock.uptimeMillis() - lastAskAt <= HoldAsk.EVERY_MS * 2
+    /**
+     * the host's exit guard (CompanionHost.guardStep): the capture has named nobody for its grace while the room shows, out of a fight
+     * and paced by ExitGuard.RETRY_MS. The room believed it held -> not any more; the hold is asked again - BOUNDED (#584's review:
+     * MapHoldClaim.guard): never over a round still out (its end says the note), never after a refusal another ask will not change,
+     * [MapHoldClaim.MAX_GUARD_ASKS] re-asks at most until a hold lands; then the note ("press B to go Home": the guard's B reader).
+     */
+    fun guardReask() {
+        if (!isShown || !roomOn) return
+        val was = claimLive()
+        when (claim.guard(roundAsking())) {
+            MapHoldClaim.Guard.ASK -> askAgain("the exit guard: nobody holds (${claim.guardAsks}/${MapHoldClaim.MAX_GUARD_ASKS})")
+            MapHoldClaim.Guard.FIXED, MapHoldClaim.Guard.SPENT -> if (!held && !claimNoted) { claimNoted = true; say(NO_HOLD_NOTE) }
+            else -> {}
+        }
+        claimed(was)
+    }
+    /** the tests: the note on the room now (null = none) */
+    fun noteNow(): String? = note
+    /** the tests: the exit guard's re-asks this show */
+    fun claimGuardAsks(): Int = claim.guardAsks
     private fun guestTap(cells: List<Pair<String, Int>>?): Boolean = cells != null && TapBridge.taps(context, padDoc, cells)
 
     /** where B leads, for the Home button's glyph: "back" (a menu, or something browsed) or "home" */
@@ -2791,8 +2859,11 @@ class WorldMapRoomView(context: Context) : View(context) {
         val before = win
         val w = MapRoomPad.Win.from(d)
         win = w
+        val was = claimLive()
         if (w.held) holdAsk.answered()
-        held = w.active
+        claim.stick(w.stick)
+        if (claim.win(w.held, w.pend)) askAgain("the hold dropped")
+        claimed(was)
         if (w.open) openPending = false
         if (isShown && MapRoomPad.wantOpen(w, openTapped) && rowTap(MapRoomPad.OPEN)) { openTapped = true; openPending = true }
         if (held && isShown) syncB()
@@ -2803,13 +2874,14 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** Map.lua's "mappad": a press, the hold lost, or BACK (the player's B closed the game's map: the room leaves for Home) */
     fun onMapPad(msg: JSONObject) {
         holdAsk.answered()
-        if (msg.has("lost")) { held = false; invalidate(); return }
+        val was = claimLive()
+        if (msg.has("lost")) { if (claim.lost(msg.optString("lost"))) askAgain("the hold lost"); claimed(was); invalidate(); return }
         val n = msg.optInt("n", -1)
         if (n == lastMapN) return
         lastMapN = n
         val k = msg.optString("k")
         if (k == "BACK") { onLeave?.invoke(); return }
-        held = true
+        claim.press(); claimed(was)
         if (key(k)) leave()
         syncB()
         invalidate()
@@ -2818,7 +2890,13 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** Map.lua's "mapack": the hold's answer (either way the add-on has spoken) and the pin's (placed / removed / cleared / refused) */
     fun onMapAck(msg: JSONObject) {
         when (msg.optString("op")) {
-            "hold" -> holdAsk.answered()
+            // #584: a refusal is an answer only in a fight (asking again then is the guard's, after it); else the round goes on
+            "hold" -> {
+                val was = claimLive()
+                val again = claim.answer(msg.optBoolean("ok"), msg.optString("why"), waits = msg.optBoolean("waits"))
+                if (!again) holdAsk.answered()
+                claimed(was)
+            }
             "pin" -> pinNote = if (msg.optBoolean("ok")) null else msg.optString("why").ifEmpty { null }
         }
         invalidate()
@@ -2840,19 +2918,26 @@ class WorldMapRoomView(context: Context) : View(context) {
     fun onGuestAck(msg: JSONObject) {
         when (msg.optString("op")) {
             // combat_nav Step 1 (the user, 2026-11-11): "pending" (a fight's take until the ENTER tap) is not held; onPad holds
-            "hold" -> { holdAsk.answered(); if (msg.optBoolean("ok")) { held = MapExitGuard.ackHeld(true, msg.optString("why")); bSaid = "home"; syncB() } }
-            "free", "leave" -> held = false
+            "hold" -> {
+                val was = claimLive()
+                val ok = msg.optBoolean("ok")
+                if (!claim.answer(ok, msg.optString("why"))) holdAsk.answered()
+                if (ok && held) { bSaid = "home"; syncB() }
+                claimed(was)
+            }
+            "free", "leave" -> { val was = claimLive(); claim.freed(); claimed(was) }
         }
         invalidate()
     }
 
     fun onPad(msg: JSONObject) {
         holdAsk.answered()
-        if (msg.has("lost")) { held = false; invalidate(); return }
+        val was = claimLive()
+        if (msg.has("lost")) { if (claim.lost(msg.optString("lost"))) askAgain("the hold lost"); claimed(was); invalidate(); return }
         val n = msg.optInt("n", -1)
         if (n == lastPadN) return
         lastPadN = n
-        held = true
+        claim.press(); claimed(was)
         if (key(msg.optString("k"))) leave()
         syncB()
         invalidate()
@@ -3181,6 +3266,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         const val PRESS_MS = 160L         // the toggle's pressed picture after Y / a touch
         const val QUEST_GAP_MS = 150L     // track + focus = two pick + act pairs: the pick cell twice, 0.3 s apart (the pad's guard)
         const val CURSOR_PX_S = 900f      // the cursor at full tilt (the game's SoftCursor max speed at our scale: the map in ~1.3 s)
+        /** #584: a round of hold asks went unanswered (once a show; es / fr in i18n) */
+        const val NO_HOLD_NOTE = "The game kept the controller: press B to go Home"
         const val RETICLE_PX = 54f        // the game's 30 px reticle at our scale (UI Art: x1.8)
         const val LINE_PX = 4f            // the golden lines (the game's 2 px)
         const val INTRO_MS = 250L         // the reticle's fade-in as the map opens

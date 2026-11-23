@@ -824,6 +824,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the Home button's B follows Home's own state at once (a module full screen shows B; user 15:08)
             homeView.onStateChanged = { discB("Home's state"); petBTell("Home's state"); if (::dialogView.isInitialized) dialogView.fightCheck(); trackSync() }     // B: pet follow follows Home's own state; loot-pop: a fight's end grows the rolls
         homeView.onBHome = { strip.homePressed() }
+        homeView.capHolderNow = { capHolder }                             // #584: the module asks again after a "taken" loss only once nobody holds
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.fightNow = { homeView.inFight() || lastBook?.combat == true }   // #56: the timed relief waits out a fight (UI thread)
@@ -3088,6 +3089,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             "mapwin" -> {
                 questsView.onMapWin(MapRoomPad.Win.from(msg))
+                homeView.onMapStick(msg.optBoolean("stick", false))      // #584: the game's stick catch (Home's map controls' answer)
                 val opened = worldMapRoom.onMapWin(msg)
                 if (current && opened && room != Room.MAP) show(Room.MAP)
             }
@@ -3848,6 +3850,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!ExitGuard.on(needs, capHolder, now - guardUnheldSince)) return
         guardOn()
         if (room == Room.HOME && ExitGuard.retry(true, homeView.inFight(), now - guardAskAt)) { guardAskAt = now; homeView.guardReask() }
+        // #584: the Map room with nobody holding asks for its hold again too (its cursor waits meanwhile: MapHoldClaim)
+        if (room == Room.MAP && ExitGuard.retry(true, homeView.inFight(), now - guardAskAt)) { guardAskAt = now; worldMapRoom.guardReask() }
     }
     private fun guardOn() {
         if (guardReader != null) return

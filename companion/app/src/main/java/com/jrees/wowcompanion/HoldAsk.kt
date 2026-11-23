@@ -31,6 +31,13 @@ class HoldAsk(private val max: Int = MAX) {
     /** true = tap the hold now */
     fun due(): Boolean = waiting && asks < max
 
+    /** the round has no answer yet (its asks may all be out: [spent]) */
+    val asking: Boolean get() = waiting
+    /** the taps that went out since the show (the claim's log: "ask n of [MAX]") */
+    val asksSent: Int get() = asks
+    /** every ask of the round went out and none was answered (#584: the claim says so, the cursor keeps waiting) */
+    fun spent(): Boolean = waiting && asks >= max
+
     /** the hold tap went out ([sent]) or not; true = ask again in [EVERY_MS] */
     fun asked(sent: Boolean): Boolean {
         if (!sent) return false

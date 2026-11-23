@@ -350,6 +350,153 @@ class HomeMapControlsShotsTest {
         assertFalse("... no art under it", st(r)[4] == 1f)
     }
 
+    // ---------------------------------------------------------------- #584: the sticks only while the map holds the controller
+
+    @Test fun homesSticksWaitForTheModulesHold() {
+        val r = rig()
+        val m = mapBox(r.home)
+        tap(r.home, m.left + m.width() * 0.72f, m.top + m.height() * 0.55f)      // the controls by touch: no press, no hold answer yet
+        assertEquals(HomeMapPages.Page.CONTROLS, r.home.mapPageNow())
+        settle(); draw(r.home)
+        assertFalse("asked, not answered: the sticks are the game's", r.home.mapSticksLive())
+        val s0 = st(r)
+        stick(r, 0, 0.9f, 0f, 400)
+        assertEquals("#584: the stick walks the character, the cursor stays", s0[0], st(r)[0], 0.0001f)
+        val z0 = st(r)[2]
+        stick(r, 1, 0f, -1f, 600)
+        // (the module's own framing may still ease a little after the touch: the stick's zoom in is x1.5 and more in 600 ms)
+        assertTrue("... and the right stick zooms nothing ($z0 -> ${st(r)[2]})", st(r)[2] < z0 * 1.15f)
+        r.home.auraGuestAck(JSONObject().put("type", "guestack").put("op", "hold").put("ok", true))
+        assertEquals(MapHoldClaim.St.HELD, r.home.mapClaimState())
+        assertTrue("held: the sticks are the map's", r.home.mapSticksLive())
+        stick(r, 0, 0.9f, 0f, 400)
+        assertTrue("the left stick moves the cursor now (${s0[0]} -> ${st(r)[0]})", st(r)[0] > s0[0] + 0.01f)
+        // the hold lost (an unexplained loss): not held, asked again, the cursor waits
+        r.home.auraPad(JSONObject().put("lost", "lost"))
+        assertFalse(r.home.mapSticksLive())
+        assertEquals("asked again at once", MapHoldClaim.St.ASKING, r.home.mapClaimState())
+        val s1 = st(r)
+        stick(r, 0, 0.9f, 0f, 400)
+        assertEquals(s1[0], st(r)[0], 0.0001f)
+        key(r.home, "PADDDOWN")                                  // a press reached the module: held again
+        assertTrue(r.home.mapSticksLive())
+    }
+
+    @Test fun theMapRoomsSticksWaitForItsHold() {
+        val r = rig()
+        val room = r.room
+        room.visibility = View.VISIBLE
+        lay(room, W, H)
+        room.onShown()
+        settle()
+        room.draw(Canvas(Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)))
+        room.touchedIn()
+        assertEquals("the room asks for its hold", MapHoldClaim.St.ASKING, room.claimState())
+        assertFalse(room.claimSticks())
+        val c0 = room.cursorNow()
+        roomStick(room, 0.9f, 0f, 400)
+        assertEquals("#584: no hold yet: the cursor stays (the stick is the game's)", c0[0], room.cursorNow()[0], 0.0001f)
+        room.onMapAck(JSONObject().put("type", "mapack").put("op", "hold").put("ok", false).put("why", "busy"))
+        assertEquals("refused: logged, still not held", MapHoldClaim.St.REFUSED, room.claimState())
+        roomStick(room, 0.9f, 0f, 400)
+        assertEquals(c0[0], room.cursorNow()[0], 0.0001f)
+        room.onMapAck(JSONObject().put("type", "mapack").put("op", "hold").put("ok", true))
+        assertTrue("held: the sticks are the room's", room.claimSticks())
+        roomStick(room, 0.9f, 0f, 400)
+        assertTrue("the cursor moves now (${c0[0]} -> ${room.cursorNow()[0]})", room.cursorNow()[0] > c0[0] + 0.01f)
+        // the exit guard: the capture named nobody -> not held, asked again
+        room.guardReask()
+        assertFalse(room.claimSticks())
+        val c1 = room.cursorNow()
+        roomStick(room, 0.9f, 0f, 400)
+        assertEquals(c1[0], room.cursorNow()[0], 0.0001f)
+        room.onPad(JSONObject().put("k", "PADDDOWN").put("n", 99))     // a press: held again
+        assertTrue(room.claimSticks())
+        room.touchedOut(); room.onHidden()
+        assertEquals(MapHoldClaim.St.OFF, room.claimState())
+    }
+    // #584's review: an NPC window's loss leaves B to the window (one B never closes the loot window AND the map module)
+    @Test fun anNpcWindowsLossLeavesBToTheWindowUntilNobodyHolds() {
+        val r = rig()
+        var holder: String? = "pad:home"
+        r.home.capHolderNow = { holder }
+        r.home.auraGuestAck(JSONObject().put("type", "guestack").put("op", "hold").put("ok", true))
+        assertEquals(MapHoldClaim.St.HELD, r.home.mapClaimState())
+        assertFalse(r.home.mapFallbackReading())
+        holder = "npc"                                           // a loot window opens: Interact's guestLost("npc")
+        r.home.auraPad(JSONObject().put("lost", "npc"))
+        assertEquals(MapHoldClaim.St.LOST, r.home.mapClaimState())
+        settle(250)                                              // 4 s: far past the module's first ask
+        assertFalse("the NPC window holds: Home reads no B of its own (its B closes the window only)", r.home.mapFallbackReading())
+        assertTrue("... the module stays open", r.home.mapGuarding())
+        holder = ""                                              // the window closed, nobody holds: the hold asked again
+        settle(80)
+        assertEquals("asked again once nobody holds", MapHoldClaim.St.ASKING, r.home.mapClaimState())
+        assertTrue("nobody holding, no hold: B read by Home closes the map (no other holder's B to share)", r.home.mapFallbackReading())
+        assertEquals("out of a fight: the note says so (no 'In a fight')", HomeView.KEPT_MAP_NOTE, r.home.mapNoteSaid)
+        r.home.auraGuestAck(JSONObject().put("type", "guestack").put("op", "hold").put("ok", true))
+        assertFalse("held again: the reader off", r.home.mapFallbackReading())
+        // a fight takes it, the re-ask refused "combat": the fight's note, as before
+        r.home.auraPad(JSONObject().put("lost", "lost"))
+        r.home.auraGuestAck(JSONObject().put("type", "guestack").put("op", "hold").put("ok", false).put("why", "combat"))
+        assertTrue(r.home.mapFallbackReading())
+        assertEquals(HomeView.FIGHT_MAP_NOTE, r.home.mapNoteSaid)
+    }
+
+    // #584's review: the Map room's exit-guard re-asks are bounded and the note shows (never the hold cell tapped all visit)
+    @Test fun theMapRoomsExitGuardReAsksAreBounded() {
+        val r = rig()
+        val room = r.room
+        room.visibility = View.VISIBLE
+        lay(room, W, H)
+        room.onShown()
+        settle()
+        room.touchedIn()
+        // a refusal another ask will not change: the guard leaves it, the note shows
+        room.onMapAck(JSONObject().put("type", "mapack").put("op", "hold").put("ok", false).put("why", "no controller capture"))
+        assertEquals(MapHoldClaim.St.REFUSED, room.claimState())
+        settle(200)
+        for (i in 0 until 5) { room.guardReask(); settle(190) }
+        assertEquals("not asked again by the guard", 0, room.claimGuardAsks())
+        assertEquals(MapHoldClaim.St.REFUSED, room.claimState())
+        assertEquals(WorldMapRoomView.NO_HOLD_NOTE, room.noteNow())
+        room.touchedOut(); room.onHidden()
+
+        // a take that only ever answers "ok, waits" (the stale pend): MAX_GUARD_ASKS re-asks, then left at that with the note
+        WorldMapRoomView::class.java.getDeclaredField("note").apply { isAccessible = true }.set(room, null)
+        room.onShown(); settle()
+        room.touchedIn()
+        room.onMapAck(JSONObject().put("type", "mapack").put("op", "hold").put("ok", true).put("waits", true))
+        assertEquals(MapHoldClaim.St.PENDING, room.claimState())
+        for (i in 1..MapHoldClaim.MAX_GUARD_ASKS) {
+            room.guardReask()
+            assertEquals(i, room.claimGuardAsks())
+            room.guardReask()
+            assertEquals("a round still out is left to finish", i, room.claimGuardAsks())
+            room.onMapAck(JSONObject().put("type", "mapack").put("op", "hold").put("ok", true).put("waits", true))
+            settle(190)
+        }
+        assertEquals("no note while the guard still asks", null, room.noteNow())
+        room.guardReask(); room.guardReask()
+        assertEquals("bounded", MapHoldClaim.MAX_GUARD_ASKS, room.claimGuardAsks())
+        assertEquals(MapHoldClaim.St.UNANSWERED, room.claimState())
+        assertFalse(room.claimSticks())
+        assertEquals(WorldMapRoomView.NO_HOLD_NOTE, room.noteNow())
+        // a hold that lands starts the count again (a later NPC window's loss may be asked for again)
+        room.onMapAck(JSONObject().put("type", "mapack").put("op", "hold").put("ok", true))
+        assertEquals(MapHoldClaim.St.HELD, room.claimState())
+        assertEquals(0, room.claimGuardAsks())
+        room.guardReask()
+        assertEquals(1, room.claimGuardAsks())
+        room.touchedOut(); room.onHidden()
+    }
+    private fun roomStick(room: WorldMapRoomView, x: Float, y: Float, ms: Int) {
+        feed(0, x, y)
+        for (t in 0 until ms step 16) { ShadowSystemClock.advanceBy(Duration.ofMillis(16)); ShadowLooper.idleMainLooper() }
+        feed(0, 0f, 0f)
+        settle(4)
+    }
+
     @Test fun withoutTheArtTheZoomStopsAtTheZoneAsBefore() {
         val r = rig(world = false)
         key(r.home, "PADDRIGHT")

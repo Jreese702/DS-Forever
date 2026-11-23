@@ -5654,8 +5654,15 @@ class MapView(context: Context) : View(context) {
     private val worldZr = RectF()
     private val worldClip = RectF()
 
+    /**
+     * #584: the map module holds the controller and the game's stick catch is up (HomeView's MapHoldClaim): else the stick is the
+     * game's (the character walks) and the cursor stays. True for a MapView without Home (the tests' bare map)
+     */
+    var sticksClaim: () -> Boolean = { true }
+    /** the claim came back: the sticks' frame loops start from the stick as it is pushed now */
+    fun sticksResume() = sticks.resume()
     private val sticks = MapStickDriver(this, WorldMapRoomView.CURSOR_PX_S, object : MapStickDriver.Host {
-        override fun sticksLive() = controls && isShown && !compact && !morphOn && !filterOpen && panelId == 0 && !pmenu.open
+        override fun sticksLive() = controls && isShown && !compact && !morphOn && !filterOpen && panelId == 0 && !pmenu.open && sticksClaim()
         override fun overMarker() = bubbleUnderCursor() >= 0
         override fun moveCursor(dx: Float, dy: Float) = controlsMove(dx, dy)
         override fun zoomBy(f: Float, dtS: Float) = controlsZoom(f, min(1f, dtS * 3f))

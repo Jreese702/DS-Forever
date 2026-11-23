@@ -67,6 +67,8 @@ object MapRoomPad {
     class Win(
         val held: Boolean = false, val via: String? = null, val pend: Boolean = false, val open: Boolean = false,
         val openN: Int = 0, val armed: Boolean = false, val note: String? = null, val bnext: String? = null,
+        /** mr7 / mr8: the game's stick catch shows (the stick is the map's, the character does not walk) */
+        val stick: Boolean = false,
     ) {
         /** the room really holds (not queued behind another holder, not a fight's pending ENTER) */
         val active get() = held && !pend
@@ -77,7 +79,7 @@ object MapRoomPad {
                 held = d.optBoolean("held", false), via = d.optString("via", "").ifEmpty { null },
                 pend = d.optBoolean("pend", false), open = d.optBoolean("open", false), openN = d.optInt("openN", 0),
                 armed = d.optBoolean("armed", false), note = d.optString("note", "").ifEmpty { null },
-                bnext = d.optString("bnext", "").ifEmpty { null },
+                bnext = d.optString("bnext", "").ifEmpty { null }, stick = d.optBoolean("stick", false),
             )
         }
     }
