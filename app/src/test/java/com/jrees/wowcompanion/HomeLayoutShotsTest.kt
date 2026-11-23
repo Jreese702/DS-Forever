@@ -408,6 +408,81 @@ class HomeLayoutShotsTest {
         }
     }
 
+    /**
+     * the review (THE CAST BAR IN A TOP-SCREEN FIGHT, the user's ruling 2026-11-23): the DEFAULT Cast bar in fights = Bottom screen on the
+     * real animator - the fight strip carries the band's line from the up-slide's first frame (the band's own line left out), glides up
+     * with the columns, every frame a gap over the chat and the map; it stays at the top all through the down-slide's hold (the cast on the
+     * bottom screen the whole time: Home holds it, the rooms' bar leaves it out) and the band's line comes back only once it has landed
+     */
+    @Test fun topScreenTheFightStripRidesTheSlide() {
+        val delayWas = org.robolectric.shadows.ShadowChoreographer.getFrameDelay()
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
+        try { stripFrames() } finally {
+            org.robolectric.shadows.ShadowChoreographer.setPaused(false)
+            org.robolectric.shadows.ShadowChoreographer.setFrameDelay(delayWas)
+        }
+    }
+
+    private fun stripFrames() {
+        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+        assertTrue(HomeLayoutSolver.hasFightStrip(l))
+        val p = page(l, ct = 1)
+        val home = p.home
+        val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        act.setContentView(home, android.view.ViewGroup.LayoutParams(W, H))
+        ShadowLooper.idleMainLooper(); lay(home); settle(10)
+        assertTrue(home.isShown)
+        val strip = views(home).getValue("FIGHT_CAST") as FightCastStripView
+        val top = RectF(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
+        val rest = boxes(home)
+        assertFalse("at rest: the band draws its own line", strip.on || p.cast.lineAway)
+        assertEquals("at rest: the strip lies at the band's foot", rest.getValue("BARS").bottom, rest.getValue("FIGHT_CAST").bottom, 0.01f)
+        fun near(a: RectF, b: RectF) = kotlin.math.abs(a.left - b.left) < 0.05f && kotlin.math.abs(a.top - b.top) < 0.05f &&
+            kotlin.math.abs(a.right - b.right) < 0.05f && kotlin.math.abs(a.bottom - b.bottom) < 0.05f
+        fun gap(what: String, b: Map<String, RectF>) {
+            val s = b.getValue("FIGHT_CAST")
+            for (part in listOf("CHAT", "MAP")) assertTrue("$what: $part a gap under the strip (${b.getValue(part).top} vs ${s.bottom})",
+                b.getValue(part).top >= s.bottom + 8f - 0.01f)
+            assertTrue("$what: the strip never under the band's foot", s.bottom >= b.getValue("BARS").bottom - 0.01f)
+        }
+        fightSignal(home, true)
+        val stripT = ArrayList<Float>()
+        for (i in 0 until 24) {
+            frame()
+            val b = boxes(home)
+            gap("up frame $i", b)
+            stripT += b.getValue("FIGHT_CAST").top
+            assertTrue("up frame $i: the strip carries the line (the band's own left out)", strip.on && p.cast.lineAway && p.cast.ownCastBarShown())
+        }
+        for (i in 1 until stripT.size) assertTrue("up: the strip never goes back down ($stripT)", stripT[i] <= stripT[i - 1] + 0.01f)
+        assertTrue("landed: the strip across the top (${boxes(home).getValue("FIGHT_CAST")})", near(top, boxes(home).getValue("FIGHT_CAST")))
+        assertTrue(p.cast.away && strip.on)
+        // the fight's end: the hold (the band above the page), then the way down - the strip with the cast until the band has landed
+        fightSignal(home, false)
+        var landedAt = -1
+        for (i in 0 until 400) {
+            frame()
+            if (i % 8 == 0) home.tick()
+            val b = boxes(home)
+            gap("down frame $i", b)
+            val bb = b.getValue("BARS").bottom
+            if (bb <= -16f + 0.01f) {
+                assertTrue("down frame $i, inside the hold: the strip stays at the top", near(top, b.getValue("FIGHT_CAST")))
+                assertTrue("down frame $i, inside the hold: the strip still carries the cast (Home holds it)", strip.on && p.cast.ownCastBarShown())
+            } else if (bb < rest.getValue("BARS").bottom - 0.5f) {
+                assertTrue("down frame $i, on the way: the strip carries the line until the band lands", strip.on && p.cast.lineAway)
+            } else { landedAt = i; break }
+        }
+        assertTrue("landed at rest", landedAt >= 0)
+        for (i in 0 until 4) frame()
+        for (part in listOf("BARS", "CHAT", "MAP", "FIGHT_CAST")) {
+            val a = rest.getValue(part); val n = boxes(home).getValue(part)
+            assertEquals("$part back at rest", a.top, n.top, 0.05f); assertEquals("$part back at rest", a.bottom, n.bottom, 0.05f)
+        }
+        assertFalse("landed: the band's line again", strip.on || p.cast.lineAway || p.cast.away)
+    }
+
     private fun slideFrames() {
         val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
         val p = page(l, ct = 1)

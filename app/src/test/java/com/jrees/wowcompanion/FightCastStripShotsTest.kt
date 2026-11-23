@@ -258,4 +258,42 @@ class FightCastStripShotsTest {
         render(p, "fight_preview_bubble")
         p.home.editCancel()
     }
+
+    /** the review: the fight bubble with Top screen (its new Cast bar row) in Spanish and French - every row's buttons inside the row and
+     *  clear of its label (a long row puts them under it), the bubble on the screen */
+    @Suppress("UNCHECKED_CAST")
+    @Test fun theFightBubbleFitsInSpanishAndFrench() {
+        val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+        try {
+            for (lang in listOf("es", "fr")) {
+                val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP), fight = false)
+                listOf(File("../companion/app/src/main/assets/companion/i18n/$lang.json"), File("companion/app/src/main/assets/companion/i18n/$lang.json"))
+                    .firstOrNull { it.canRead() }?.let { Tr.load(lang, it.readText()) }
+                Tr.setChoice(app, lang)
+                assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+                p.home.editKey("PAD1"); settle(40)
+                p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
+                render(p, "fight_preview_bubble_$lang")
+                val ev = p.home.editChrome
+                val box = ev.menuBox(EditStop.FIGHT_PEN)
+                assertTrue("$lang: the bubble on the screen ($box)", box.left >= 0f && box.right <= W.toFloat() && box.bottom <= H.toFloat())
+                val btns = field(ev, "menuBoxes") as List<List<RectF>>
+                val rows = field(ev, "menuRowBoxes") as List<RectF>
+                val words = rowsOf.invoke(p.home, EditStop.FIGHT_PEN) as List<MenuRow>
+                assertEquals("$lang: In fights, Cast bar, Swing timer", listOf(BottomTiles.COMBAT, BottomTiles.FIGHT_CAST, BottomTiles.SWING), words.map { it.key })
+                assertEquals("$lang: one row box per row", words.size, rows.size)
+                val lp = UiKit.bodyPaint(28f)
+                for ((i, r) in words.withIndex()) {
+                    val rr = rows[i]
+                    val labelRight = rr.left + 18f + lp.measureText(Tr.t(r.label))
+                    for (b in btns[i]) {
+                        assertTrue("$lang '${Tr.t(r.label)}': button inside its row ($b in $rr)", b.left >= rr.left - 1f && b.right <= rr.right + 1f)
+                        assertTrue("$lang '${Tr.t(r.label)}': buttons clear of the label ($b vs $labelRight)",
+                            b.left >= labelRight - 1f || b.top >= rr.top + 0.3f * rr.height())
+                    }
+                }
+                p.home.editCancel()
+            }
+        } finally { Tr.setChoice(app, "auto") }
+    }
 }

@@ -354,6 +354,18 @@ local function cbCasting(fr)
     return rawget(fr, "casting") == true or rawget(fr, "channeling") == true or rawget(fr, "reverseChanneling") == true
 end
 
+-- hub76 review: hidden again while a fade already plays (the fight's last cast finishing / interrupted as the fight ends) - the fade drives
+-- the alpha itself (HoldFadeOutAnim: 1 for a second), so it is stopped as the OnPlay hook above does, else the bar lingers up to ~1.5 s
+local function cbStopFades(fr)
+    for _, key in ipairs({ "HoldFadeOutAnim", "FadeOutAnim" }) do
+        local ag = rawget(fr, key)
+        if type(ag) == "table" and type(ag.IsPlaying) == "function" and type(ag.Stop) == "function" then
+            local ok, playing = pcall(ag.IsPlaying, ag)
+            if ok and playing == true then pcall(ag.Stop, ag) end
+        end
+    end
+end
+
 -- every bar to the state now (hub76: the player's Hide less the fight's reveal)
 local function cbApply()
     local hide = cbHid()
@@ -361,7 +373,7 @@ local function cbApply()
         local fr = riderFrame(name)
         if fr then
             cbHook(name, fr)
-            if hide then cbZero(fr)
+            if hide then cbStopFades(fr); cbZero(fr)
             elseif cbCasting(fr) then pcall(fr.SetAlpha, fr, 1) end
         end
     end

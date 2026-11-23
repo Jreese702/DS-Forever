@@ -120,12 +120,21 @@ check(re.search(r'local HV = "hub76"', HUB) is not None and "hub76 THE GAME'S CA
 # the game's casting bar: a plain table with the methods Hub uses; every other call is logged (none may come)
 PRE = r'''
 CB_CALLS = {}
+ANIM_STOPS = 0
 local function bar(name)
     local f = { alpha = 1, casting = false, hooks = {}, name = name }
     f.SetAlpha = function(self, a) self.alpha = a; CB_CALLS[#CB_CALLS + 1] = "SetAlpha" end
     f.GetAlpha = function(self) return self.alpha end
     f.ApplyAlpha = function(self, a) self.alpha = a end
     f.HookScript = function(self, e, fn) self.hooks[e] = fn end
+    -- the game's fade animations (hub76 review: one already playing when the bar is hidden again is stopped)
+    for _, key in ipairs({ "HoldFadeOutAnim", "FadeOutAnim" }) do
+        local ag = { playing = false, hooks = {} }
+        ag.IsPlaying = function(self) return self.playing end
+        ag.Stop = function(self) self.playing = false; ANIM_STOPS = ANIM_STOPS + 1 end
+        ag.HookScript = function(self, e, fn) self.hooks[e] = fn end
+        f[key] = ag
+    end
     for _, m in ipairs({ "Hide", "Show", "SetParent", "SetPoint", "ClearAllPoints", "SetShown" }) do
         f[m] = function() CB_CALLS[#CB_CALLS + 1] = m end
     end
@@ -172,6 +181,14 @@ L.execute('WowCompanion.hubCastFight(false)')
 check(L.eval('CBF.alpha') == 0, "2. the fight's end: back at alpha 0 (a cast still running too)", L.eval('CBF.alpha'))
 L.execute('CBF:ApplyAlpha(1)')
 check(L.eval('CBF.alpha') == 0, "2. ... and the hooks zero it again", L.eval('CBF.alpha'))
+# hub76 review: the fight ends while the last cast's fade plays (an interrupt's HoldFadeOutAnim drives the alpha itself): stopped at once
+L.execute('WowCompanion.hubCastFight(true); CBF.alpha = 1; CBF.HoldFadeOutAnim.playing = true; ANIM_STOPS = 0')
+L.execute('WowCompanion.hubCastFight(false)')
+check(L.eval('CBF.HoldFadeOutAnim.playing') is False and L.eval('ANIM_STOPS') == 1 and L.eval('CBF.alpha') == 0,
+      "2. the fight's end stops a fade already playing (no lingering bar) and zeroes the bar",
+      (L.eval('CBF.HoldFadeOutAnim.playing'), L.eval('ANIM_STOPS'), L.eval('CBF.alpha')))
+L.execute('ANIM_STOPS = 0; WowCompanion.hubCastFight(true); WowCompanion.hubCastFight(false)')
+check(L.eval('ANIM_STOPS') == 0, "2. ... nothing stopped when no fade plays", L.eval('ANIM_STOPS'))
 d = hubdoc()
 cbd = (d or {}).get("cb") or {}
 check(cbd.get("hidden") is True and "ft" not in cbd, "2. the document: no ft after the fight", cbd)
