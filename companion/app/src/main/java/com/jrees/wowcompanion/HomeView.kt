@@ -3289,8 +3289,20 @@ class HomeView(
         if (m.cursorCheck(editView.stops())) {
             Log.i(TAG, "home edit: the cursor's widget is gone: on ${m.cursor.name.lowercase()}")
             if (was != null && m.lifted == null) editLift(null)            // 1518: its lift ended too: no stale lifted pose
+            // the review (2026-11-23): the party list gone with its bubble open - the frame's check closed it (no key, no run): its Fight
+            // preview and Party look end on the page too, laid next turn (not inside this frame's decor pass)
+            editUi.post { if (edit === m) editBubbleLookSync() }
             editView.invalidate()
         }
+    }
+
+    /** the party list's bubble closed (any way: a key, a tap, the frame's cursor check) - the page follows the model: */
+    private fun editBubbleLookSync() {
+        // the bubble closed with the Fight its Preview row chose (the user's pick 2026-11-23, "Off on close"): the model ended the
+        // preview with no Fx.Preview - the D-pad's own pictures and the band's rest look again
+        if (previewEnded()) editRelay(Motion.COMBAT_SHRINK, force = true)
+        // party sizing's preview: the party list's bubble opened or closed - the page laid again as Party mode (or not) lays it
+        if (editPartyLook() != laidPartyPen) editRelay(Motion.MODULE_OPEN, force = true)
     }
 
     /** one key of edit mode's (the guest's, Start from the host's reader, the tests) */
@@ -3328,11 +3340,7 @@ class HomeView(
         m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
         m?.let { editPersist(it) }                                        // 1518: a settled change is saved as it is made
         m?.let { editBandFeed(it); if (it.settled) editCursorCheck(it) } // P2: Settings' extras as they are now; a piece gone: the cursor on
-        // the party bubble closed with the Fight its Preview row chose (the user's pick 2026-11-23, "Off on close"): the model ended the
-        // preview with no Fx.Preview - the D-pad's own pictures and the band's rest look again
-        if (previewEnded()) editRelay(Motion.COMBAT_SHRINK, force = true)
-        // party sizing's preview: the party list's bubble opened or closed - the page laid again as Party mode (or not) lays it
-        if (editPartyLook() != laidPartyPen) editRelay(Motion.MODULE_OPEN, force = true)
+        editBubbleLookSync()
         editBarSync(fx.lastOrNull { it is HomeEditModel.Fx.Relay }?.let { (it as HomeEditModel.Fx.Relay).ms } ?: Motion.MODULE_OPEN)
         editNotice()
         editDecor()

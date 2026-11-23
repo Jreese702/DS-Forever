@@ -201,6 +201,15 @@ class PartySizingShotsTest {
         // the list at the top over the same bar: across
         val top = page(HomeLayout(party = HomeLayout.PartyDock.ABOVE_MAP, cast = HomeLayout.CastDock.UNDER_MAP), fight = false)
         assertTrue(boxes(top.home).getValue("PARTY").width() > 1200f)
+        // the review: the head dock's mirror case - the list at the top over a bar ABOVE one column - has no gap: across, the bar under
+        // the list in its column and the other column's part right under the list
+        val head = page(HomeLayout(party = HomeLayout.PartyDock.ABOVE_CHAT, cast = HomeLayout.CastDock.ABOVE_MAP), fight = false)
+        val hb = boxes(head.home)
+        val hp = hb.getValue("PARTY")
+        assertTrue(hp.width() > 1200f)
+        assertEquals("the chat right under the list", hp.bottom + PartyLayout.CHAT_GAP, hb.getValue("CHAT").top, 0.5f)
+        assertTrue("the bar under the list in the map's column", hb.getValue("STRIP").top >= hp.bottom)
+        render(head, "wide_above_chat_bar_above_map")
     }
 
     /** the controller stays on the bottom screen (In fights = Grow): Grow (88, today's) / Same size (64) / Shrink to make room (56) */
@@ -401,6 +410,26 @@ class PartySizingShotsTest {
             assertFalse(how, field(p.home, "previewLaid") as Boolean)
         }
         render(p, "edit_party_bubble_closed_preview_off")
+        p.home.editCancel(); settle(40)
+    }
+
+    /** the review: the party gone with the bubble's Fight on - the frame's cursor check closes the bubble (no key, no run): the preview
+     *  ends on the page too (the D-pad's own pictures, the rest look), not at the next key */
+    @Test fun thePartyGoneEndsTheBubblesFightPreviewOnThePage() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), fight = false)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
+        p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
+        p.home.editAct { it.menuTouch(3, 1, rows(p)) }; settle(40)
+        assertTrue(p.home.editModel()!!.fightPreview)
+        assertTrue(field(p.home, "previewLaid") as Boolean)
+        setField(PartyModel.live, "party", null); p.home.partyChanged(); settle(60)
+        // (one frame of the edit motion: the wiggle's ticker runs editDecor every frame on the device)
+        HomeView::class.java.getDeclaredMethod("editDecor").apply { isAccessible = true }.invoke(p.home); settle(60)
+        val m = p.home.editModel()!!
+        assertNull(m.menu)
+        assertFalse(m.fightPreview)
+        assertFalse("the page's preview look ended too", field(p.home, "previewLaid") as Boolean)
+        assertFalse("the page out of the bubble's Party look", field(p.home, "laidPartyPen") as Boolean)
         p.home.editCancel(); settle(40)
     }
 
