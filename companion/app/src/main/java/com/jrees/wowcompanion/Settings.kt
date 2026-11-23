@@ -292,6 +292,20 @@ object Settings {
         get() = prefs?.getBoolean(BrowserLogin.KEY, false) ?: false
         set(v) { if (v != browserLogin) { prefs?.edit()?.putBoolean(BrowserLogin.KEY, v)?.apply(); changed() } }
 
+    /**
+     * GRAPHICS DRIVER (the user, 2026-11-23: an opt-in test driver beside today's default): "recommended" (the default: the driver each
+     * GPU profile always used) or a test driver's id ([GraphicsDriver.Choice]); this device's, from the next Play. Reset settings puts it
+     * back to Recommended (ResetPlan). The launcher reads it at each start (WoWForeverScreen.withDriverChoice).
+     */
+    var graphicsDriver: GraphicsDriver.Choice
+        get() = GraphicsDriver.sanitize(prefs?.getString(GraphicsDriver.KEY, null))
+        set(v) { if (v != graphicsDriver) { prefs?.edit()?.putString(GraphicsDriver.KEY, v.id)?.apply(); changed() } }
+
+    /** the last game start's driver line (the launcher's watch writes it; the report reads it when no game started in this run) */
+    var graphicsDriverRan: String?
+        get() = prefs?.getString(GraphicsDriver.KEY_RAN, null)
+        set(v) { prefs?.edit()?.apply { if (v == null) remove(GraphicsDriver.KEY_RAN) else putString(GraphicsDriver.KEY_RAN, v) }?.apply() }
+
     /** what the last game start used (the launcher writes it; the report reads it): (mode, time ms, applied ok); null = none yet */
     var windowsIdRan: Triple<String, Long, Boolean>?
         get() = prefs?.takeIf { it.contains(WindowsId.KEY_RAN) }?.let { p ->

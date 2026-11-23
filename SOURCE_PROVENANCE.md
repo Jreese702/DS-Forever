@@ -100,3 +100,29 @@ Trimmed SHA-256, pinned in tools/components-trimmed.sha256 and checked by tools/
 untrimmed original): 4512cd6dd092e038d99a8856076a7a339dab81499135d85e74db3cad2ef4614a. Made on Windows with Python 3.13.3
 and the zstandard module 0.25.0 (level 19, single-threaded); two runs were byte-identical. Another zstd/xz build may give
 other bytes: the release check then fails and the pin must be renewed from a verified run.
+
+## Opt-in test graphics driver (turnip-test-mesa-26.3.1.zip), 2026-11-23
+
+Source: the official Mesa 26.3.1 release tarball, https://archive.mesa3d.org/mesa-26.3.1.tar.xz,
+SHA-256 4e4e438eac7b840a9383988cbb7c08dad8041da544b9319fc26d319fa7348961 (the value in
+https://docs.mesa3d.org/relnotes/26.3.1.html). Its detached signature (key 4C95FAAB3EB073EC) was
+downloaded but not verified. ONE local change: `tools/turnip-test/0001-android-export-vk_icd-entrypoints.diff`
+(made by `mkpatch.py`): vulkan-android.sym / vulkan-icd-android-symbols.txt also export the three
+vk_icd* loader entrypoints the Vulkan wrapper loads through. The IR3 scheduler fix our default driver
+carries by hand is upstream (2f8dc9eaba06, in 26.3.0; ir3_sched.c:531 in 26.3.1) and is not re-applied;
+the default driver's CODEX_* scheduler diagnostics are not carried.
+
+Toolchain: WSL Ubuntu 26.04, Android NDK r27c 27.2.12479018 (clang 18.0.3), target
+aarch64-linux-android29, meson 1.10.1, ninja 1.13.2, `--wrap-mode=nofallback` (no Meson download;
+NEEDED: libhardware, liblog, libnativewindow, libsync, libm, libz, libdl, libc). Recipe:
+`tools/turnip-test/build_mesa.sh`, then `python -I tools/turnip-test/pack.py <input> <out>`, which
+reproduces the shipped zip byte-for-byte from the build's library, the diff and Mesa's licence texts.
+
+Output: libvulkan_freedreno.so d93b06280c1d4bada8117cceb812f1b10165a2a44918bc236f11703f7459d8b0
+(14,423,088 B); zip 3272d6189aa4202898457503236dad88980691fc0347fe56c60888cc73d09a33 (2,698,400 B),
+pinned in tools/components-test-drivers.sha256 and checked by app/build.gradle.kts (checkTestDrivers)
+and tools/build_release.py. meta.json name "Turnip-Test-Mesa-26.3.1" (its unpack folder),
+driverVersion "26.3.1-dsf-icd", minApi 29. The launcher's TU_DEBUG=noconform (kept so only the driver changes
+between A/B runs) names no option in 26.3.1: `parse_debug_string` (src/util/u_debug.c) skips unknown names silently,
+and 26.3.1 reports Vulkan 1.4 on every a7xx and 1.3 on a6xx without it (src/freedreno/vulkan/tu_device.cc).
+The C++ runtime (LLVM libc++) is linked statically from the NDK (`-static-libstdc++`; licenses/ndk/).

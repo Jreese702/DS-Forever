@@ -34,8 +34,9 @@ package com.jrees.wowcompanion
  *
  * APP PREFERENCES (SharedPreferences files)
  *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
- *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme
- *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk, gameAccountPick (the sign-in), polestarGuide, polestarOffBoot,
+ *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme,
+ *                        graphicsDriver (an opt-in test driver: back to Recommended)
+ *               NEVER    browserLogin, windowsId (+ windowsIdRan*), graphicsDriverRan, gameAccountAsk, gameAccountPick (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
  *                        swapScreensFails, settingsTab, the migration marks
  *  framegen     SETTINGS enabled, multiplier, flowScale, performance, fpsLimitContainer, fpsLimitAsk   NEVER fpsLimit108, fpsLimitNote
@@ -162,8 +163,11 @@ object ResetPlan {
 
     val PREFS: List<PrefKey> = listOf(
         exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
-            "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme"),
-        exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", "gameAccountAsk", "gameAccountPick",
+            "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme",
+            // 2026-11-23: an opt-in test graphics driver goes back to Recommended with the other settings
+            GraphicsDriver.KEY),
+        exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", GraphicsDriver.KEY_RAN,
+            "gameAccountAsk", "gameAccountPick",
             "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",
             "theme_custom", "swapScreensFails", "settingsTab"),
         exact("framegen", Kind.SETTINGS, "enabled", "multiplier", "flowScale", "performance", "fpsLimitContainer", "fpsLimitAsk"),

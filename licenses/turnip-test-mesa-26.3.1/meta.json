@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Turnip-Test-Mesa-26.3.1",
+  "description": "OPT-IN TEST: official Mesa 26.3.1 Turnip (KGSL), upstream IR3 scheduler fix 2f8dc9eaba06 included; only local change exports vk_icd* loader entrypoints. Not yet validated on Thor.",
+  "author": "Mesa contributors; DS Forever local build (vk_icd export patch only)",
+  "packageVersion": "1",
+  "vendor": "Mesa",
+  "driverVersion": "26.3.1-dsf-icd",
+  "minApi": 29,
+  "libraryName": "libvulkan_freedreno.so"
+}

@@ -20,6 +20,21 @@ verbatim under licenses/; their presence does not establish matching source.
 | turnip-wow-scheduler-test.zip | Mesa fe067b17d9, scheduler/diagnostic/ICD patches. Archive includes MIT, Apache2, SGI-B2, BSL1 and GPL notices. Mesa says individual file terms apply. | Supply exact patches and build configuration for this driver; establish which compiled pieces/terms apply. |
 | turnip-V32-RP6sched.zip | Metadata: whitebelyash turnip/gen8 9c7e022, barycentric scheduler and vk_icd export patches. Archive contains ONLY meta.json and driver binary, no licence text. | Missing exact notice/source/patch bundle; short revision is not a verified full commit. Resolve before public redistribution. |
 
+### Opt-in test driver (2026-11-23)
+
+Built by DS Forever, pinned in its own tools/components-test-drivers.sha256 (the
+four originals above and fetch_components.sh stay unchanged). Used only when a
+player picks Settings > General > Graphics driver > "Test: Mesa 26.3.1"; the
+default "Recommended" is the four archives above, exactly as before.
+
+| Archive | Observed provenance and terms | Remaining source/notice work |
+|---|---|---|
+| turnip-test-mesa-26.3.1.zip | Official Mesa 26.3.1 ([archive.mesa3d.org](https://archive.mesa3d.org/mesa-26.3.1.tar.xz), sha256 4e4e438e...8961, the 26.3.1 release notes' value) + one local patch exporting the vk_icd* entrypoints on Android (tools/turnip-test/ and in the zip). NDK r27c, API 29, KGSL only; no Meson subproject linked. Archive includes Mesa's licence texts (licenses/turnip-test-mesa-26.3.1/). | Source, patch and recipe recorded. Verify the tarball's release signature (key 4C95FAAB3EB073EC, not yet checked) before public redistribution. |
+
+Banners-Turnip Standard v27.0.0-20261123 was downloaded and inspected but is NOT
+bundled: it lacks the vk_icd* exports, needs API 30 symbols despite minApi 28,
+ships no licence texts, and its build recipes are GPL-3.0.
+
 Download sources: [upstream components-v1](https://github.com/jaredgei/wow-forever-android/releases/tag/components-v1)
 for the first three, and the original
 [V32 URL](https://raw.githubusercontent.com/arusiasotto/wow-forever-a840/main/driver/turnip-V32-RP6sched.zip).

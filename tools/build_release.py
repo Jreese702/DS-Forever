@@ -19,6 +19,10 @@ COMPONENT_NAMES = (
     "turnip-V32-RP6sched.zip",
 )
 COMPONENT_PREFIX = "assets/bundled_components/"
+# OPT-IN TEST DRIVERS (2026-11-23; GraphicsDriver.kt): extra bundled components built by DS Forever itself (tools/turnip-test/),
+# pinned in their own tools/components-test-drivers.sha256 so the original manifest and fetch script stay byte-for-byte upstream's.
+TEST_DRIVERS = ("turnip-test-mesa-26.3.1.zip",)
+BUNDLED = COMPONENT_NAMES + TEST_DRIVERS
 # The Proton package ships trimmed of its unused 32-bit Windows files (tools/trim_proton_i386.py, after WoW Forever for Android
 # v2.4.4 55b0bd23): tools/components.sha256 still pins the original download, tools/components-trimmed.sha256 the shipped file.
 TRIMMED = ("proton-11.0-90624-arm64ec.wcp",)
@@ -55,11 +59,22 @@ def verified_components(launcher):
     if set(trimmed) != set(TRIMMED):
         raise ValueError("components-trimmed.sha256 must pin the trimmed Proton package")
     pinned.update(trimmed)
+    tests = {}
+    for line in (launcher / "tools/components-test-drivers.sha256").read_text(encoding="ascii").splitlines():
+        if not line.strip():
+            continue
+        match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *]([^/\\\s]+)", line)
+        if not match or match[2] not in TEST_DRIVERS or match[2] in tests or match[2] in pinned:
+            raise ValueError("Invalid or duplicate test driver entry")
+        tests[match[2]] = match[1].lower()
+    if set(tests) != set(TEST_DRIVERS):
+        raise ValueError("components-test-drivers.sha256 must pin every test driver")
+    pinned.update(tests)
     folder = launcher / "app/src/main/assets/bundled_components"
-    if not folder.is_dir() or {path.name for path in folder.iterdir()} != set(COMPONENT_NAMES):
-        raise ValueError("Expected exactly all four bundled runtime files")
+    if not folder.is_dir() or {path.name for path in folder.iterdir()} != set(BUNDLED):
+        raise ValueError("Expected exactly the four bundled runtime files and the test drivers")
     components = []
-    for name in COMPONENT_NAMES:
+    for name in BUNDLED:
         source = folder / name
         if not source.is_file():
             raise ValueError("Missing bundled component file: " + name)
@@ -100,9 +115,9 @@ def verify_addon_manifest(companion):
 
 def verify_packaged_components(archive, components):
     names = [name for name in archive.namelist() if name.startswith(COMPONENT_PREFIX)]
-    expected = {COMPONENT_PREFIX + name for name in COMPONENT_NAMES}
+    expected = {COMPONENT_PREFIX + name for name in BUNDLED}
     if set(names) != expected or len(names) != len(expected):
-        raise ValueError("APK must contain exactly all four bundled runtime files")
+        raise ValueError("APK must contain exactly the four bundled runtime files and the test drivers")
     for component in components:
         entry = COMPONENT_PREFIX + component["file"]
         with archive.open(entry) as stream:
@@ -125,7 +140,8 @@ def source_stamp(launcher, companion):
             files.update(root / name for name in ("app/build.gradle.kts", "app/proguard-rules.pro",
                                                   "dsforever/build.gradle.kts", "gradle.properties", "local.properties",
                                                   "tools/components.sha256", "tools/fetch_components.sh",
-                                                  "tools/components-trimmed.sha256", "tools/trim_proton_i386.py")
+                                                  "tools/components-trimmed.sha256", "tools/trim_proton_i386.py",
+                                                  "tools/components-test-drivers.sha256")
                          if (root / name).is_file())
         for path in sorted(files):
             with path.open("rb") as source:

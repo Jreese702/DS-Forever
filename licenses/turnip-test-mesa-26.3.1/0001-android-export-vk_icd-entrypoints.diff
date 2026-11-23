@@ -1,0 +1,26 @@
+--- a/src/vulkan/vulkan-android.sym
++++ b/src/vulkan/vulkan-android.sym
+@@ -5,6 +5,12 @@
+ 		# instance of struct hwvulkan_module_t.
+ 		HMI;
+ 
++		# DS Forever: the Vulkan wrapper ICD loads this .so directly and
++		# needs the standard loader-ICD entrypoints too.
++		vk_icdGetInstanceProcAddr;
++		vk_icdGetPhysicalDeviceProcAddr;
++		vk_icdNegotiateLoaderICDInterfaceVersion;
++
+ 	local:
+ 		# When static linking LLVM, all its symbols are public API.
+ 		# That may cause symbol collision, so explicitly demote everything.
+--- a/src/vulkan/vulkan-icd-android-symbols.txt
++++ b/src/vulkan/vulkan-icd-android-symbols.txt
+@@ -2,3 +2,8 @@
+ # as HAL_MODULE_INFO_SYM (which is just a #define for HMI) and it's an
+ # instance of struct hwvulkan_module_t.
+ HMI
++
++# DS Forever: loader-ICD entrypoints for the Vulkan wrapper ICD.
++vk_icdGetInstanceProcAddr
++vk_icdGetPhysicalDeviceProcAddr
++vk_icdNegotiateLoaderICDInterfaceVersion
