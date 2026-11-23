@@ -72,7 +72,7 @@ class HomeView(
     /** the controller layout has come at least once: until then the Cast view says "Waiting" where the clock would stand */
     private var barsSeen = false
 
-    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL, CAST2 }
+    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL, CAST2, FIGHT_CAST }
 
     private val questPane = QuestPane(context)
     private val chatPane = ChatPane(context)
@@ -103,10 +103,14 @@ class HomeView(
      *  castbar cells 1-8: no new cell, nothing new in the add-on */
     private val castStrip2 = CastStripView(context) { i -> castStripTap(i) }.apply { splitHalf = 2 }
     private val strips get() = listOf(castStrip, castStrip2)
+    /** THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23; HomeLayoutSolver.hasFightStrip): the band's own cast bar and
+     *  swing timer drawn across the top of Home while the band is away ([FightCastStripView], the Cast view's painter) */
+    private val fightStrip = FightCastStripView(context, castView)
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
         Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.PARTY to partyView, Part.MAP to mapSlot,
         Part.AURAS to auraPane, Part.STRIP to castStrip, Part.CAST2 to castStrip2, Part.CHAT_FULL to chatSlot,
+        Part.FIGHT_CAST to fightStrip,
     )
 
     /** where each part is now, in px of the frame; animated towards the state's places */
@@ -261,6 +265,7 @@ class HomeView(
         castView.onClassStick = { if (classOpen) classLayer.invalidate() }      // b-class-radial-stick: the pointed slice follows
         castView.onTriggers = { lt, rt -> trigHold(lt || rt) }                  // feat/clock-extras-v2: the clock band fades under a trigger
         castView.onInfoShrink = { infoCheck() }                                 // feat/home-info-block: a cast / L+R makes the block small
+        castView.onLine = { fightStrip.invalidate() }                           // the fight strip redraws on every cast / swing change
         infoCheck(instant = true)
         // ARRIVING MID-FIGHT (the user, 2026-10-01: "going back home by what ever means, engages the combat transition at that time"):
         // the takeover was already on while Home was hidden, so Home lands at its rest and the combat transition PLAYS from there
@@ -290,6 +295,8 @@ class HomeView(
         }
         if (lent(castView)) {
             castView.away = false                                        // (Top screen's fight: the Cast room draws it again)
+            castView.lineAway = false; fightStrip.on = false; castView.onLine = null   // (the fight strip's line: back on the band)
+            castView.lineTop = false; castView.stripNoCast = false
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
             castView.onClassRadial = null; castView.onClassStick = null; classLayerShow(false)   // the Cast room draws its own radial
             castView.onTriggers = null; trigHold(false)
@@ -493,12 +500,12 @@ class HomeView(
         val col = ArrayList<Pair<View, RectF>>()
         val half = if (left) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
         for ((p, v) in views) {
-            if (p == Part.BARS) continue
+            if (bandPart(p)) continue
             val r = now[p] ?: continue
             if (halfOf(p, r, w) == half) col += v to r
         }
         val parts = col.filter { it.first.visibility == View.VISIBLE }.map { (_, r) -> ClassSlot.Area(r.left, r.top, r.right, r.bottom) }
-        val bb = (now[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f)
+        val bb = barsBottom()                                                   // (feat/fight-castbar: under a Top-screen fight's strip)
         // feat/radial-castbar: Across's bar (no column's) drops below the page when the wheel is smaller with it there - the wheel then
         // takes its column's own square, down to where the column ended (as with no bar); a wheel that fits above it leaves it be
         val across = acrossBox(now)
@@ -509,7 +516,7 @@ class HomeView(
         classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + slot.side).toInt(), (slot.top + slot.side).toInt())
         // the wheel lies UNDER its column (raised while it shows) and is uncovered as the column slides away; on release the column
         // slides back OVER it (the frozen picture rides it out, CastView), and the wheel goes when it is covered (a dropped bar the same)
-        for ((p, v) in views) if (p != Part.BARS) {
+        for ((p, v) in views) if (!bandPart(p)) {
             val r = now[p]
             val mine = r != null && (halfOf(p, r, w) == half || classDrop && barDrop(p, r) > 0f)
             v.translationZ = if (mine && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
@@ -634,7 +641,7 @@ class HomeView(
         val w = width.toFloat(); val h = frameH
         val g = UiKit.MODULE_GAP
         val line = columnsLine(w)
-        val bb = (places[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f)
+        val bb = barsFoot(places)                                               // (feat/fight-castbar: under a Top-screen fight's strip)
         val mid = (line.first + line.second) / 2f
         val across = acrossBox(places)
         val full = ClassSlot.middle(w, h, bb, g, w * WHEEL_SLOT_MAX, mid = mid)
@@ -690,7 +697,7 @@ class HomeView(
     private fun wheelPart(places: Map<Part, RectF>, open: Boolean) {
         val w = width.toFloat()
         for ((p, v) in views) {
-            if (p == Part.BARS) continue
+            if (bandPart(p)) continue
             if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f; if (v is CastStripView) v.translationY = 0f }; continue }
             val r = places[p] ?: continue
             val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush, wheelPushR)
@@ -839,17 +846,22 @@ class HomeView(
         if (auraPane.open != null) { if (!auraPane.padHeld) { auraPane.close(); onBHome?.invoke() }; return }
         if (flow.takeover) {
             val now = System.currentTimeMillis()
+            // THE B RULE (the user, 2026-11-23: "our combat ruls where we press B and it grows back downwards"): In fights = Top screen
+            // follows Grow's rules - B brings the band back down in a fight too (TopCombatBar.bShrinks), the add-on's secure B hands the
+            // Wings back at the same press
+            val top = TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct)
             // p-grow-glitch (a player: "they expand then return to normal after the first second"): B in a fight shrinks the big
             // controller (the user's own design), but B is a fight button too. Not in the first GROW_B_GRACE_MS after it grew (the
-            // pull's opening presses), and never with ZL / ZR held (that B is a layer's ability)
-            if (now - grewAt < GROW_B_GRACE_MS || (lent(castView) && castView.triggerHeld())) return
-            // movable Home phase 3 (SPEC section 11): In fights = Top screen grew nothing - B in the fight has no new meaning (no shrink,
-            // no red reminder); out of a fight (an attack armed) it still gives the faces back, as today
+            // pull's opening presses) - Grow only: the add-on's give-back has no grace, so Top screen follows it at once (its padmap
+            // edge would bring the band down anyway) - and never with ZL / ZR held (that B is a layer's ability)
+            if ((!top && now - grewAt < GROW_B_GRACE_MS) || (lent(castView) && castView.triggerHeld())) return
             if (!TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)) return
             val shrank = grow.minimize(now)
             // the user's pick: out of a fight, B also gives A / X / Y back (Spells' give-back); in a fight B only shrinks
             if (HomeFightFace.giveBack(shrank, grow.fighting(now), fightArmed())) giveBackTap(retry = false)
-            if (shrank && flow.combat(false)) { changed(); tick() }
+            // the way down's hold: not behind the add-on (TopSlide.B_HOLD_MS) - marked only for the apply THIS B makes (the review, 11-23:
+            // marked on a shrink that changed no layout it stayed set and gave a later, padmap-started way down the B hold)
+            if (shrank && flow.combat(false)) { slideByB = top; changed(); tick() }
         }
         else if (flow.close()) { changed(); onBHome?.invoke() }
     }
@@ -911,17 +923,23 @@ class HomeView(
     /** every padmap (MainActivity's route): Cast's fight faces and their switch (the host's, never a constant), and the map kept */
     fun onPadMap(map: PadMapModel.Map) {
         val ctWas = padMap?.dpad?.ct
+        val ccWas = padMap?.dpad?.cc
+        val gswWas = padMap?.dpad?.gsw
         padMap = map
-        // the 1515 merge's review: the Wings' flag changed (the add-on said it, or a key came / went) - Top screen's band follows it
-        if (map.dpad?.ct != ctWas && laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true)
+        // the 1515 merge's review: the Wings' flag changed (the add-on said it, or a key came / went) - Top screen's band follows it;
+        // the cast bar's screen (`cc`) and the game's swing timer (`gsw`, PadMap m188: the swing strip) the same way
+        if ((map.dpad?.ct != ctWas || map.dpad?.cc != ccWas || map.dpad?.gsw != gswWas) && laidLayout != null && laidLayout != layoutNow()
+            && shown?.let { it.full == null || it.takeover } == true)
             shown?.let { apply(it, animate = isShown) }
         HomeAttackSwitch.note(map)                      // Spells' start-attack switch, drawn in Home's Settings section
         castView.fightFace = HomeFightFace.icons(map)
         castView.fightFaceOn = HomeFightFace.on(map)
         castView.fishName = map.fish?.name; castView.fishIcon = map.fish?.icon ?: 0        // m59: X fishes while a pole is in the main hand
         castView.smartYIcon = map.qitem?.icon?.takeIf { it > 0 } ?: map.smartY?.icon ?: 0     // m61: Smart Y's food / drink; m74: a quest item first
+        val fightWas = fightNow
         fightNow = map.fight                                            // m49: A / X / Y's switch (start attack / auto-repeat / combat)
         applyDpad()                                                      // Track C: the D-pad's In-combat spells, in fights only
+        topFightSync(fightWas, map.fight, map.combat)                    // the 11-23 B rule: the band follows the add-on's give-back / re-arm
         castView.commands = HomeFightFace.commandIcons(map)             // Track C: the companion's commands (overlays: the game's slot is empty)
         castView.overMacro = PadMapModel.overMacroKeys(map)            // PadMap m188: our overlay over the player's own macro (a corner mark)
     }
@@ -931,7 +949,40 @@ class HomeView(
     private var fightNow = false
     private var dpadSaid: Map<Int, Int>? = null
 
-    fun onFightWord(fight: Boolean) { if (fight != fightNow) { fightNow = fight; applyDpad() } }
+    fun onFightWord(fight: Boolean) {
+        if (fight == fightNow) return
+        val was = fightNow
+        fightNow = fight; applyDpad()
+        topFightSync(was, fight, null)                                   // (facewatch carries no combat word: its re-arm edge only)
+    }
+
+    /**
+     * THE TWO SIDES IN STEP (the user's 11-23 B rule, Top screen live only): the router's switch - the padmap's `fight`, the Wings' own
+     * word (ActionBar nbar14 reads PadMap m188's fightSw) - turned against what Home shows:
+     *  - 1 -> 0 while Home's grow is up in a fight (the padmap says `combat` still): the game handed the buttons back without an app B
+     *    (a B the app read inside an overlay of its own, or one the app missed) - the Wings are leaving, so the band comes down too
+     *    ([HomeGrow.minimize], Grow's red reminder); never at the fight's own end (`combat` false then: both drop together as ever);
+     *  - 0 -> 1 while the grow is minimized in the fight ([HomeGrow.red]): the router re-armed on a harmful press that started no
+     *    auto-attack (a caster's next spell) - the Wings come back up, so the band goes away again ([HomeGrow.rearm]).
+     * Nothing is sent: the app follows the add-on, never the reverse. Party mode has no takeover (R0): nothing here
+     */
+    private fun topFightSync(was: Boolean, isNow: Boolean, combat: Boolean?) {
+        if (was == isNow || !TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct) || partyOnHere() || editLive()) return
+        val t = System.currentTimeMillis()
+        if (!grow.fighting(t)) return
+        if (was && !isNow) {
+            if (combat != true || !flow.takeover) return
+            if (grow.minimize(t)) {
+                Log.i("WCLOG", "home: top fight given back by the game (padmap fight 0): the band slides down")
+                if (flow.combat(false)) { changed(); tick() }
+            }
+        } else if (!was && isNow && grow.red(t)) {
+            if (grow.rearm()) {
+                Log.i("WCLOG", "home: top fight re-armed by the game (padmap fight 1): the band slides away")
+                if (flow.combat(takeoverWanted(t))) { grewAt = t; changed() }
+            }
+        }
+    }
     /** wk-dpad: the fight switch the D-pad's In-combat picture follows (the router's own `sw`): the host's early-bar gate reads it */
     fun dpadFight(): Boolean = fightNow
 
@@ -1889,8 +1940,9 @@ class HomeView(
     private fun touchOpen(m: HomeModule): Boolean {
         val now = System.currentTimeMillis()
         val fighting = flow.takeover || grow.fighting(now)
-        // In fights = Top screen in the fight: the grow stays (the Wings stay up top); closing the module brings the takeover back
-        val keepGrow = !TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)
+        // In fights = Top screen: a finger keeps the grow (it never reaches the add-on's give-back: the Wings stay up top); closing the
+        // module brings the takeover back (TopCombatBar.touchKeepsGrow)
+        val keepGrow = flow.takeover && TopCombatBar.touchKeepsGrow(HomeSettings.layout, padMap?.dpad?.ct)
         if (!HomeTouch.open(flow, grow, m, now, keepGrow)) return false
         if (fighting && flow.full != null) openedInFight = true
         Log.i("WCLOG", "home: $m opened by touch${if (fighting) " (in a fight)" else ""}")
@@ -2048,6 +2100,11 @@ class HomeView(
         for ((p, b) in r.boxes) PART_OF[p]?.let { out[it] = RectF(b.l, b.t, b.r, b.b) }
         return out
     }
+    /** the fight strip carries the band's cast bar and swing timer ([on]) or the band draws them itself */
+    private fun fightLine(on: Boolean) {
+        if (lent(castView)) castView.lineAway = on
+        fightStrip.on = on && lent(castView)
+    }
     /** the layout record the page was last laid with (a change of it glides the page there) */
     private var laidLayout: HomeLayout? = null
     /** In fights = Top screen: the page [apply] laid last has the band above the page (the fight's takeover with the Wings on: TopSlide);
@@ -2069,6 +2126,13 @@ class HomeView(
     private var holdUp = false
     /** the wall-clock start of the last up-slide (TopSlide.reversalHoldMs: how far in the Wings had got when the fight's end cut it); -1 = none */
     private var upSlideAt = -1L
+    /** the 11-23 B rule: the next [apply]'s way down was started by B on Home (TopSlide.holdMs byB: not behind the add-on); one apply.
+     *  [holdByB] the held slide's own, [slideCutByB] a cut one's (its rest keeps the B hold's bound) */
+    private var slideByB = false
+    private var holdByB = false
+    private var slideCutByB = false
+    /** the last [layoutNow]: the fight strip paints the swing alone (TopCombatBar.swingOnly: the cast is the game's own bar on top) */
+    private var swingOnlyNow = false
     /** a held slide this apply cuts inside its hold: never started (a cancel would tell its listeners nothing), it is ended as a
      *  running one is - its cancel and end run (the motion's clean-up), then the hold it had left is noted for the next motion */
     private fun holdCut() {
@@ -2078,6 +2142,7 @@ class HomeView(
         a?.listeners?.toList()?.forEach { it.onAnimationCancel(a); it.onAnimationEnd(a) }
         slideCutAt = holdFrom; slideCutUp = holdUp
         slideCutHold = (holdUntil - SystemClock.uptimeMillis()).coerceAtLeast(1L)
+        slideCutByB = holdByB                                              // (a B hold's rest keeps the B hold's bound)
     }
     /** P2: the last [places] laid the tap-to-cast bar split in two halves */
     private var laidSplit = false
@@ -2102,7 +2167,13 @@ class HomeView(
         if (s != null) l = l.copy(rest = s.rest)
         // the 1515 merge's review (P5): Top screen only while the add-on's Wings are on (`ct` 1); no key / not confirmed = Grow. The
         // Fight preview (the 1519 audit) lays what the first fight after Done lays: Top screen whenever the add-on has the flag
-        if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, padMap?.dpad?.ct) else TopCombatBar.honoured(l, padMap?.dpad?.ct)
+        val d = padMap?.dpad
+        // the user's pick 2026-11-23 ("Keep ours on the bottom"): the cast bar on the Top screen with the game's swing timer off keeps the
+        // bottom strip for the swing alone (TopCombatBar.swingOnly; `gsw` PadMap m188)
+        swingOnlyNow = look == null && (if (editFightLook()) TopCombatBar.swingOnlyPreview(l, d?.ct, d?.cc, d?.gsw)
+            else TopCombatBar.swingOnly(l, d?.ct, d?.cc, d?.gsw))
+        if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, d?.ct, d?.cc, d?.gsw)
+            else TopCombatBar.honoured(l, d?.ct, d?.cc, d?.gsw)
         if (look != null) {
             l = l.copy(fight = if (look.grow) HomeLayout.FightBand.GROW
                 else (if (l.fight == HomeLayout.FightBand.GROW) HomeLayout.FightBand.SAME else l.fight))
@@ -2269,7 +2340,7 @@ class HomeView(
         // everywhere else B comes through the Cast view's reader
         watchB((s.full == HomeModule.CHAT || s.full == HomeModule.MAP) && !s.takeover && lent(mapView))
         val w = width.toFloat(); val h = frameH
-        slideCutAt = -1f; slideCutHold = 0L
+        slideCutAt = -1f; slideCutHold = 0L; slideCutByB = false
         holdCut()
         anim?.cancel()
         // a slide THIS cancel just cut short (its overall fraction and way; -1 = none; the hold it had left)
@@ -2279,6 +2350,11 @@ class HomeView(
         val to = places(s, w, h)
         laidAway = placedAway
         val away = laidAway
+        // the fight strip (HomeLayoutSolver.hasFightStrip): this record has one; it carries the band's line while the page is away and
+        // all through a slide (up from the band's foot into its place, back down with it), the band's own line left out meanwhile
+        val stripRec = to.containsKey(Part.FIGHT_CAST)
+        // Party mode's Top fight has no takeover (R0) but is a fight all the same: the strip shows its swing too, as the Wings did
+        if (lent(castView) && away && stripRec) castView.castOnly = false
         // IN FIGHTS = TOP SCREEN (TopSlide): the band leaving the page for the fight / coming back after it. Only the takeover's own change
         // (no full module before or now): a module opened from a Top fight / closed back into one keeps the module's time and curve, the
         // map's morph in step with its box (the 11-22 review)
@@ -2295,7 +2371,8 @@ class HomeView(
         // as long as the Wings, reversed from as far in as they had got, need (its wall-clock age; an early cut: at once)
         val clock = SystemClock.uptimeMillis()
         val upMs = if (cutUp && cutAt >= 0f && upSlideAt >= 0L) clock - upSlideAt else -1L
-        val hold = if (sliding) TopSlide.holdMs(slide, away, TopSlide.bandOff(now[Part.BARS]?.bottom), cutUp, cutHold, resumeAt, upMs) else 0L
+        val byB = slideByB || (cutHold > 0L && slideCutByB); slideByB = false; slideCutByB = false
+        val hold = if (sliding) TopSlide.holdMs(slide, away, TopSlide.bandOff(now[Part.BARS]?.bottom), cutUp, cutHold, resumeAt, upMs, byB) else 0L
         if (slide) upSlideAt = if (away) clock else -1L
         // the down-slide's start (or the band on the page); held, the band stays away above the page - its cast bar given to the rooms'
         // bar - until the hold ends (below), so the player's cast never leaves the bottom screen
@@ -2309,8 +2386,14 @@ class HomeView(
         if (s.full == null || s.takeover) wheelRefit(to)
         if (s.full == null || s.takeover) classRefit(to)
         if (s.full == null || s.takeover) pauseRefit(to)
+        fightLine(stripRec && (away || sliding))
+        // Cast bar in fights = Top screen: the game's own bar on the top screen for the fight; the rooms' bar shows nothing of it meanwhile
+        if (lent(castView)) castView.lineTop = away && !stripRec
+        // ... and with the game's swing timer off, the strip keeps the swing alone (its cast is the game's bar's)
+        if (lent(castView)) castView.stripNoCast = stripRec && swingOnlyNow
         if (!animate || before == null) {
             if (lent(castView)) castView.away = away                           // laid at once (no motion): away now
+            fightLine(stripRec && away)
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
             chatReturn()
@@ -2451,6 +2534,7 @@ class HomeView(
                     // there, not only a whole up-slide (the 11-22 review: a re-lay inside the slide's 240 ms cancelled it, and the glide
                     // that took over never set it - the band sat off the page with its cast bar claimed, the bottom screen had none)
                     if (!cancelled && lent(castView)) castView.away = away
+                    if (!cancelled) fightLine(stripRec && away)                  // the fight strip: landed back on the page = the band's line again
                     // fires on cancel too: the morph always ends (Map's safety net would after 700 ms anyway)
                     if (morphing) { mapView.morph(1f, mFrom!!, mTo!!, isMap, card); flightClip(false) }
                     if (gliding) { chatGlideBox.setEmpty(); chatSlot.clipToOutline = false; chatSlot.invalidateOutline() }
@@ -2472,7 +2556,7 @@ class HomeView(
                 // animator duration scale): every part stands where it is until the slide starts
                 val va = this
                 val r = object : Runnable { override fun run() { if (holdRun === this) { holdRun = null; va.start() } } }
-                holdRun = r; holdUntil = clock + hold; holdFrom = slideFrom; holdUp = away
+                holdRun = r; holdUntil = clock + hold; holdFrom = slideFrom; holdUp = away; holdByB = byB
                 holdHandler.postDelayed(r, hold)
             } else start()
         }
@@ -2782,7 +2866,16 @@ class HomeView(
     /** f-pause-bars: the controller's alpha under the open pause menu (the user's pick B: 40 %, "so the menu reads as on top") */
     var pauseBarsDim = 0.4f
     /** f-pause-bars: the bottom of the controller (the bars) in Home's px, 0 = none laid out */
-    fun barsBottom(): Float = (now[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f)     // (Top screen's fight: the band above the page)
+    fun barsBottom(): Float = barsFoot(now)                                         // (Top screen's fight: the band above the page)
+    /** the band's foot in [places]: the band's bottom, or (a Top-screen fight with the fight strip carrying the cast bar) the strip's - the
+     *  menus and wheels that hang under the band (the LB picture, the middle and class wheels, the D-pad toast) hang under the strip */
+    private fun barsFoot(places: Map<Part, RectF>): Float {
+        val b = (places[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f)
+        val s = places[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.bottom ?: 0f
+        return maxOf(b, s)
+    }
+    /** the band and the fight strip (its line): never a column's part - they stay put when the columns part or slide */
+    private fun bandPart(p: Part): Boolean = p == Part.BARS || p == Part.FIGHT_CAST
     private var pauseMap = floatArrayOf(0f, 0f, 1f)
 
     /**
@@ -2843,7 +2936,7 @@ class HomeView(
             val y0 = v.translationY                                  // (where the bar is before this frame: the drop's way below)
             val across = r == null || HomeSlide.fullWidth(r.left, r.right, width.toFloat(), UiKit.MODULE_GAP)
             val o = when {
-                p == Part.BARS -> pauseTop
+                bandPart(p) -> pauseTop                                                             // (the fight strip with the band)
                 p == Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
                 !across -> if (r!!.centerX() < half) left else pauseMap
                 p == Part.QUESTS -> if (cardOverMap()) pauseMap else left
@@ -2852,7 +2945,7 @@ class HomeView(
             }
             // FULLY OFF, whatever the part's size (the user 2026-10-09: the FULL-SCREEN map "only slide[s] ... half way out"): the kit's
             // distance is for the compact parts; a bigger one goes as far as it needs to leave the screen, on the same curve
-            val endX = UiKit.pauseOut(if (p == Part.BARS) UiKit.PAUSE_TOP else if (o === left) UiKit.PAUSE_LEFT else UiKit.PAUSE_MAP,
+            val endX = UiKit.pauseOut(if (bandPart(p)) UiKit.PAUSE_TOP else if (o === left) UiKit.PAUSE_LEFT else UiKit.PAUSE_MAP,
                 UiKit.PAUSE_OPEN_MS, screen)
             val kx = when {
                 endX[0] > 0f -> ((width - v.left) / endX[0]).coerceAtLeast(1f)
@@ -2865,7 +2958,7 @@ class HomeView(
             // the state's own fades leave every shown part at 1 when settled: the pause's alpha is the only one meanwhile
             if (v.visibility == View.VISIBLE) v.alpha = o[2]
             // the LB picture (the user: "don't make the top controller part shift away"): the controller stays as it is
-            if (sidePx > 0f && p == Part.BARS) { v.translationX = 0f; v.translationY = 0f; if (v.visibility == View.VISIBLE) v.alpha = 1f }
+            if (sidePx > 0f && bandPart(p)) { v.translationX = 0f; v.translationY = 0f; if (v.visibility == View.VISIBLE) v.alpha = 1f }
             // feat/radial-castbar (the user, 2026-11-23, "All wheels move the Across bar the same way"): the pause wheel's and the target
             // radial's full slide DROP Across's bar (no column's) straight down below the page, where the other wheels lay it (barDrop),
             // on the chat's curve - no longer off to the left with the chat (cb3); t = 0 brings it back up. A column's bar (Under / Above
@@ -2885,7 +2978,7 @@ class HomeView(
                     v.translationY = if (t <= 0f) 0f else if (opening) maxOf(at, to) else minOf(at, to)
                 }
             }
-            if (sidePx > 0f && p != Part.BARS) {
+            if (sidePx > 0f && !bandPart(p)) {
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
                 val ee = 1f - (1f - e) * (1f - e)
                 // fix/castbar-slides (the user on 1.0.31: "it should only slide the direction if its on that half. If its set to both it
@@ -3224,7 +3317,7 @@ class HomeView(
             folded = HomeSettings.questMin, zoomOut = Settings.minimapYd, zoomIn = Settings.minimapIndoorYd,
             castShowInFight = CastStripModel.showOf(HomeSettings.castBarCombat), castParty = HomeSettings.castBarPartyShow,
             toolbarOn = d?.want == true, toolbarAvail = d?.colOn != null, rest = HomeSettings.rest, rankBadges = HomeSettings.rankBadges,
-            fightBand = HomeSettings.fightBand, swing = HomeSettings.swingTimer, ct = d?.ct)
+            fightBand = HomeSettings.fightBand, swing = HomeSettings.swingTimer, ct = d?.ct, fightCast = HomeSettings.fightCast, cc = d?.cc)
     }
     private fun editMenuRows(s: EditStop): List<MenuRow> {
         val m = edit ?: chromeModel ?: return emptyList()
@@ -3683,6 +3776,7 @@ class HomeView(
         Part.STRIP, Part.CAST2 -> EditStop.CAST.key
         Part.PARTY -> HomeEditMotion.PARTY
         Part.CHAT_FULL -> -1
+        Part.FIGHT_CAST -> -1                                             // the fight strip: no widget (the band's line, laid by the fight)
     }
     /** the box [p]'s pose turns about (its key's widget: the map for its riders, both halves for a Split bar) into [out] */
     private fun ownerBox(p: Part, out: RectF): Boolean {
@@ -3802,7 +3896,7 @@ class HomeView(
         }
         val m = edit
         when (key) {
-            BottomTiles.REST, BottomTiles.COMBAT -> if (m != null && !m.parked) {
+            BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.FIGHT_CAST -> if (m != null && !m.parked) {
                 // the session's own settled change first (a widget dropped by this very tap), then the record as it is now
                 editPersist(m)
                 editRebase(m); liveDraft = m.draft
@@ -4209,7 +4303,7 @@ class HomeView(
      */
     fun toastBox(wsum: Float, h: Float = 54f): RectF {
         val cx = width / 2f
-        val bb = (now[Part.BARS]?.bottom ?: 226f).coerceAtLeast(0f)
+        val bb = if (now[Part.BARS] == null) 226f else barsBottom()
         val diamonds = 8f + REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP
         val l = cx - wsum / 2f - 28f; val r = cx + wsum / 2f + 28f
         // Classic's diamonds grown for a fight: 1516's pill on the band's foot (a thin-row record is not 1516's Classic look: under it)

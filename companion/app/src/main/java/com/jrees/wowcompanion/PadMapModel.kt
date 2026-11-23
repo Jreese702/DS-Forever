@@ -315,6 +315,8 @@ object PadMapModel {
                     aside = textOrNull(d, "aside"),
                     undone = sides("undone"),
                     ct = if (d.has("ct")) d.optInt("ct", 0).coerceIn(0, 1) else null,
+                    cc = if (d.has("cc")) d.optInt("cc", 0).coerceIn(0, 1) else null,
+                    gsw = if (d.has("gsw")) d.optInt("gsw", 0).coerceIn(0, 1) else null,
                     realmSource = who?.let { textOrNull(it, "rs") },
                     realmHint = who?.let { textOrNull(it, "rh") },
                     cls = who?.let { textOrNull(it, "c") },
@@ -353,12 +355,14 @@ object PadMapModel {
      *  (the once-per-character prompt); [dirs] D-pad position -> what it does (1 "left", 3 "right"; a missing position = the game's own);
      *  [aside] "room" / a game window's name while the router steps aside; [undone] what the one-time ZL+ZR cleanup took on this character
      *  ("left" / "up" / "right": the old m24 DS Bar commands); [ct] m179: this character's top-screen combat bar flag (1 on, 0 off,
-     *  null = an older add-on without it).
+     *  null = an older add-on without it); [cc] m187: this character's "Cast bar in fights" (1 Top screen, 0 Bottom screen, null = an
+     *  older add-on without it); [gsw] m188: the game's own swing timer shown (Edit Mode's ShowSwingTimer, read-only: 1 on, 0 off, null =
+     *  an older add-on).
      *  m24's slot fields ([placed] / [skipped] / [taken]) are empty from m25 on. */
     data class Dpad(val on: Boolean, val placed: kotlin.collections.Map<String, Boolean>, val skipped: List<String>, val taken: List<String>,
                     val want: Boolean?, val colOn: Int?, val colOff: Int?, val name: String?, val realm: String?,
                     val dirs: kotlin.collections.Map<Int, String> = emptyMap(), val aside: String? = null,
-                    val undone: List<String> = emptyList(), val ct: Int? = null,
+                    val undone: List<String> = emptyList(), val ct: Int? = null, val cc: Int? = null, val gsw: Int? = null,
                     /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"; m180, Safety k10: "guid", "guid-id",
                      *  "sticky", "live", "hint", "picked", "new", "ask", "none"), null from an older add-on. [realm] is the STORED key's */
                     val realmSource: String? = null,
@@ -787,6 +791,10 @@ object PadMapModel {
      *  22 (off) / 23 (on) */
     const val P3_TOP_OFF = 22
     const val P3_TOP_ON = 23
+    /** the user's ruling 2026-11-23 (Book b77, PadMap m187): "Cast bar in fights" for this character with In fights = Top screen, page-3
+     *  codes 24 (Bottom screen) / 25 (Top screen: the add-on shows the game's own casting bar for the Wings' fight) */
+    const val P3_CAST_OFF = 24
+    const val P3_CAST_ON = 25
     /** the sticky realm question's codes (Book b74, test build 1515): [KeyPick.NEW_CODE] 9 = "a new character", [KeyPick.FIRST_CODE] 10
      *  .. 19 = the add-on's candidates 1-10 (KeyPick sends them; HomeLayoutStoreTest keeps these two equal to KeyPick's) */
     const val P3_KEY_NEW = 9
@@ -795,9 +803,11 @@ object PadMapModel {
      *  22-23): PadTabCodesTest keeps them apart */
     val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8,
         "key question" to P3_KEY_NEW..P3_KEY_LAST,
-        "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON)
+        "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
+        "fight cast bar" to P3_CAST_OFF..P3_CAST_ON)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
+    fun fightCastCells(top: Boolean): List<Pair<String, Int>> = page3(if (top) P3_CAST_ON else P3_CAST_OFF)
     /** the tab's index (1-4) by its name */
     fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; "cbfight" -> 7; "pbar" -> 8; else -> 1 }
     /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode; p53: the 6th, the Cast bar, opened by padtab 39 then 29) */

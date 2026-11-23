@@ -12,20 +12,28 @@ Checks:
     on-screen lift) x HUD scale 70 / 100 / 160 x width 180 / 280 / 400 x height -470 / -350 / -170, at UIParent heights 768 / 900 / 1080
     / 1200 (the UI scale: the px per UI unit kk).
   2 THE WINGS CLEAR IT: NB.fightSolve on the inputs NB.topInputs builds (the block unioned with the live frames, the compass, the target
-    bar, the left party column, the minimap, the reserved cast bar / Cooldown Manager) at the bar's scale s = stock scale x the piece's
-    size x kk: both halves inside the screen, off the tap pad's band, at least MARGIN (24 px) from every RESOLVED HUD frame (not the
-    block), and never the case-5 stock fallback (the solver shrinks first: k 1 / 0.9 / 0.8 beside, raised at 0.8, joined above at 1 /
-    0.8, the grid at 0.7 then 0.55 in the lower 60 %, then 0.55 anywhere); the other axes (stock scale 0.8 / 1 / 1.2, the piece's size 70 / 100 / 150, the target
-    bar / compass / party column on / off, the reserved frames on / off) over a spread of HUD states.
+    bar, the left party column, the minimap, the reserved cast bar / Cooldown Manager) at the bar's scale s = nbar14's MATCH_S (1.75 px
+    per unit: the band's physical size, whatever the UI scale) x the piece's size: both halves inside the screen, off the tap pad's band,
+    at least HUD_MARGIN (60 px) from every RESOLVED HUD frame (not the block), and never the case-5 stock fallback (nbar14: the solver
+    MOVES BEFORE IT SHRINKS - beside at k 1 with GAP 60, pushed outward to 228, raised with the push, joined above at 1; only then
+    beside / raised at 0.9 / 0.8; the grid at 0.8 in the lower 60 %, then anywhere; never under k 0.8); the other axes (the stock
+    scale - no longer in s, so one value -, the piece's size 70 / 100 / 150, the target bar / compass / party column on / off, the
+    reserved frames on / off) over a spread of HUD states. 2c nbar14 THE BAND'S SIZE: a square slot 46 x MATCH_S px = 5.54 mm (+-3 %)
+    on the Thor's top panel (0.06918 mm / px); the default HUD at the Thor's UI (UIParent 817) solves beside at k 1, ~6 mm clear.
   2b WHAT IS DRAWN (the 11-22 review: the focus glow reached 15 units past the solved box): every slot's focus glow, a held slot's
     2-unit drop, the glyph badges, the L / R plate with its bumper glyph (nbar12), the ZL / ZR chip under it with its gold disc, Party
     mode's chord row and the swing lines - computed from the bar's constants and its placement code (NB.outerGeo), not NB.halfBox -
     inside the solved boxes and >= MARGIN from every resolved HUD frame.
+  1d nbar15 OUR HUD BARS OFF (the user's pick 11-23, "Centre the rows"): in every Party state Hub's rows and Select tab alone, centred
+    on the screen as NB.topOurs hands them to the solver, the Wings either side of them, >= HUD_MARGIN from every row and the tab; and
+    (6) Trail prd23's P.partyGeo carries the shift with its bars off (Party mode read live), none of its frames moved.
   1b nbar12 PARTY MODE'S ROWS (the Wings show in Party mode's fights now): Hub's grid under the HUD (its rows from Trail's P.partyGeo at
     Hub's own PF constants, two columns, with the rings' rim) and its Select tab at the grid's left edge join the HUD block as NB.topOurs
     reads them; the Wings (boxes and art) >= MARGIN from every row and the tab, never the case-5 fallback, in every Party state.
   3 THE SLIDE NEVER CROSSES IT: where the solve says `lane`, the slide (from wholly below the screen's bottom edge up to the spot on
-    NB.easeOut, sampled every 1/60 s) rises monotonically and never touches a HUD frame.
+    nbar14's NB.slideIn, IN_C; a spot under k 1 easing its scale from k 1 on the same progress; sampled every 1/60 s) rises
+    monotonically and never touches a HUD frame. 3b nbar14 THE SEAM'S SPEED: the default HUD's slide starts at the band's exit speed
+    (Motion.TOP_SLIDE_UP 240 ms on (0.4, 0, 1, 1), its ~242 bottom px x 0.06055 mm) within 10 %, in the same 0.26 s.
   4 THE INPUTS: NB.topOurs unions P.lay.block with the live frames read at ANY alpha (the HUD faded out of combat still counts).
   5 THE FIGHT'S EDGE AT ONCE: a state sent at t = 0, then PLAYER_REGEN_DISABLED at t = 0.1 (before the lockdown reads true): the next
     frame's state goes out at t = 0.1 with c = true (not at the 0.5 s window's end).
@@ -54,6 +62,10 @@ NB_SCENE = re.search(r"\nSCENE = r'''(.*?)'''", NBT, re.S).group(1)
 SCRATCH = "C:/Users/Jrees/AppData/Local/Temp/claude/6c5148a90427b4bc/789b5138-341f-4ef8-8102-099551ca3a8a/scratchpad"
 SHOTS = SCRATCH + "/topbar/build"
 MARGIN = 24
+HUD_MARGIN = 60                         # nbar14: the HUD block's own margin
+MM_TOP = 0.06918                        # the Thor's top panel: 6.0", 1920 x 1080 (367.2 ppi)
+MM_BOTTOM = 0.06055                     # its bottom panel: 3.92", 1240 x 1080 (419.5 ppi)
+BAND_SQUARE_MM = 91.5 * MM_BOTTOM       # the band's square slot at rest (Diamonds: 200 px tall, its scale 200 / 354)
 BAND = (718, 22, 484, 158)
 
 # ---------------------------------------------------------------------------------------------------------------- the anchor resolver
@@ -313,7 +325,7 @@ def solve_case(NBL, hud_frames, block, s, target=True, compass=True, partycol=Fa
     game = [R(MINIMAP, "g.MinimapCluster")]
     if reserved:
         game += [R(CASTBAR, "g.PlayerCastingBarFrame"), R(COOLDOWNS, "g.EssentialCooldownViewer")]
-    inp = {"W": 1920, "H": 1080, "s": s, "hud": R(hud), "ours": ours, "game": game, "band": R(BAND), "stock": {"x": 960, "y": 984}}
+    inp = {"W": 1920, "H": 1080, "s": s, "size": s / (NBL.globals().WowCompanion.nbar.TOP.MATCH_S or 1.75), "hud": R(hud), "ours": ours, "game": game, "band": R(BAND), "stock": {"x": 960, "y": 984}}
     r = todict(NBL.eval("WowCompanion.nbar.fightSolve")(tbl(NBL, inp)))
     return r, ours + game
 
@@ -329,8 +341,10 @@ def problems(r, hud_frames, obst, s):
         if over(x, BAND):
             out.append("over the tap pad band %s" % (x,))
         for n, h in hud_frames.items():
-            if over(x, h, MARGIN - 1e-6):
-                out.append("within %d px of the HUD's %s %s / %s" % (MARGIN, n, x, h))
+            if over(x, h, HUD_MARGIN - 1e-6):
+                out.append("within %d px of the HUD's %s %s / %s" % (HUD_MARGIN, n, x, h))
+    if (r.get("k") or 1) < 0.8 / max(1.0, s / 1.75) - 1e-9:      # (MIN_K of the size step; one over 100 %: of the band's match size)
+        out.append("shrunk under 0.8 of the band's size (k %s, s %s)" % (r.get("k"), s))
     return out
 
 
@@ -342,7 +356,8 @@ def art_rects(NBL, r):
     NB = NBL.globals().WowCompanion.nbar
     T = NB.TOP
     s = r["s_used"]
-    off, d2 = NB.OFF, NB.OFF + NB.B / 2
+    offx, offy = T.OFF_X, T.OFF_Y                               # nbar14: the Wings' flattened diamond
+    d2 = offy + NB.B / 2
     ga = NB.GLYPH_AT
     out = {}
     for h, c in ((1, r["l"]), (2, r["r"])):
@@ -350,7 +365,7 @@ def art_rects(NBL, r):
         rects = []
         for ax, ay in ((-1, 0), (0, 1), (1, 0), (0, -1)):
             for drop in (0, 2):
-                cx, cy = c["x"] + ax * off * s, c["y"] - ay * off * s + drop * s
+                cx, cy = c["x"] + ax * offx * s, c["y"] - ay * offy * s + drop * s
                 g = (sz + NB.FOCUS) / 2 * s
                 rects.append((cx - g, cy - g, 2 * g, 2 * g))
                 gy = ga[2] if h == 1 else ga[3]
@@ -375,7 +390,7 @@ def art_rects(NBL, r):
             rb = T.CHORD / 2 * s
             rects.append((tx - rb, ty - rb, 2 * rb, 2 * rb))
         if h == 2:
-            dw = (2 * NB.OFF + NB.B) * s
+            dw = (2 * offx + NB.B) * s
             top = c["y"] + (d2 + T.SW_GAP) * s
             rects.append((c["x"] - dw / 2, top, dw, (2 * T.SW_H + T.SW_SEP) * s))
         out[h] = rects
@@ -395,8 +410,8 @@ def art_problems(NBL, r, hud_frames):
             if not inside(x, box, 0.01):
                 out.append("half %d draws %s outside its box %s" % (h, tuple(round(v, 1) for v in x), tuple(round(v, 1) for v in box)))
             for n, hf in hud_frames.items():
-                if over(x, hf, MARGIN - 1e-6):
-                    out.append("half %d's art %s within %d px of the HUD's %s" % (h, tuple(round(v, 1) for v in x), MARGIN, n))
+                if over(x, hf, HUD_MARGIN - 1e-6):
+                    out.append("half %d's art %s within %d px of the HUD's %s" % (h, tuple(round(v, 1) for v in x), HUD_MARGIN, n))
     return out
 
 
@@ -405,29 +420,55 @@ def slide_problems(NBL, r, hud_frames):
     if not r["lane"] or r["case"] == 5:                 # (case 5 is check 2's failure already)
         return []
     out = []
-    ease = NBL.eval("WowCompanion.nbar.easeOut")
+    ease = NBL.eval("WowCompanion.nbar.slideIn")                 # nbar14: IN_C
     hb = NBL.eval("WowCompanion.nbar.halfBox")()
     s = r["s_used"]
-    ay = hb[3] * s
+    kk_ = r.get("k") or 1
+    ay = hb[3] * s / kk_                                         # (the drop at the k 1 size: a shrunk spot starts at k 1)
     to_y = min(r["l"]["y"], r["r"]["y"])
     d = 1080 + ay - to_y + 2
     prev = None
     n = int(math.ceil(0.26 * 60))
     for i in range(n + 1):
         t = min(1.0, i / 60 / 0.26)
-        off = d * (1 - ease(t))
+        e = ease(t)
+        off = d * (1 - e)
+        m = (1 + (kk_ - 1) * e) / kk_                            # nbar14: this frame's scale over the spot's
         if prev is not None and off > prev + 1e-9:
             out.append("not monotonic at %d" % i)
         prev = off
-        for k in (1, 2):
+        for k, cen in ((1, r["l"]), (2, r["r"])):
             rr = r["rects"][k]
-            x = (rr["x"], rr["y"] + off, rr["w"], rr["h"])
+            # the half's box at this frame's scale round its diamond's centre (the box's own offsets scaled)
+            bx = cen["x"] + (rr["x"] - cen["x"]) * m
+            by = cen["y"] + (rr["y"] - cen["y"]) * m
+            x = (bx, by + off, rr["w"] * m, rr["h"] * m)
             for nme, h in hud_frames.items():
                 if over(x, h):
                     out.append("frame %d: half %d on the HUD's %s" % (i, k, nme))
     if r["rects"][1]["y"] + d < 1080 or r["rects"][2]["y"] + d < 1080:
         out.append("does not start wholly below the edge")
     return out
+
+
+UI_HS = (768, 817, 900, 1080, 1200)      # nbar14: the Thor's own UI (UIParent 817, scale 0.94) too
+
+
+def note_k(NBL, r, fr, block, s, kw, ks, bad_order, key):
+    """nbar14 MOVE BEFORE SHRINKING: count (case, k); a solve under k 1 (or the grid) only when nothing at k 1 fits - the same inputs
+    with the shrink and the grid taken away (KS { 1 }, KG {}) must fall through to the case-5 fallback"""
+    k = r.get("k") or 1
+    ks[(r["case"], round(k, 2))] = ks.get((r["case"], round(k, 2)), 0) + 1
+    if k < 1 - 1e-9 or r["case"] == 4:
+        T = NBL.globals().WowCompanion.nbar.TOP
+        old_ks, old_kg, old_mk = T.KS, T.KG, T.MIN_K
+        T.KS, T.KG, T.MIN_K = tbl(NBL, [1]), tbl(NBL, []), 0
+        try:
+            r1, _ = solve_case(NBL, fr, block, s, **kw)
+        finally:
+            T.KS, T.KG, T.MIN_K = old_ks, old_kg, old_mk
+        if r1["case"] != 5:
+            bad_order.append((key, r["case"], k, "k 1 fits as case %s" % r1["case"]))
 
 
 def hub_pf():
@@ -475,12 +516,16 @@ def main():
     NB = NBG.WowCompanion.nbar
     hb = NBL.eval("WowCompanion.nbar.halfBox")()
     # ------------------------------------------------------------------------------------------------ 1-3 the matrix
-    bad_block, bad_solve, bad_slide, bad_art, bad_hub = [], [], [], [], []
+    bad_block, bad_solve, bad_slide, bad_art, bad_hub, bad_order = [], [], [], [], [], []
+    ks = {}
+    bad_centre, n_centre, n_centre_w, keep_c = [], 0, 0, {}
+    bad_off, n_off, n_off_w = [], 0, 0
     n_hub = 0
     n_states = n_solves = 0
     cases = {}
     keep = {}
-    for ui_h in (768, 900, 1080, 1200):
+    MATCH = NB.TOP.MATCH_S
+    for ui_h in UI_HS:
         st = boot_trail(ui_h)
         kk = 1080 / ui_h
         matrix = itertools.product(("none", "under", "beside"), (False, True), (False, True), (0, 1, 2), (False, True),
@@ -493,12 +538,13 @@ def main():
             for n, r in fr.items():
                 if not inside(r, block):
                     bad_block.append((ui_h, pet, up, pips, party, lift, sc, wd, y, n, r, block))
-            # the default axes: stock scale 1, the piece's size 100 %, target / compass on, reserved on
-            s = 1.0 * 1.0 * kk
+            # the default axes: the piece's size 100 % (nbar14: s = MATCH_S, the UI scale not in it), target / compass on, reserved on
+            s = MATCH * 1.0
             r, obst = solve_case(NBL, fr, block, s)
             r["s_used"] = s * (r.get("k") or 1)
             n_solves += 1
             cases[r["case"]] = cases.get(r["case"], 0) + 1
+            note_k(NBL, r, fr, block, s, {}, ks, bad_order, (ui_h, pet, up, pips, party, lift, sc, wd, y))
             p = problems(r, fr, obst, s)
             if p:
                 bad_solve.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), p[:2]))
@@ -526,6 +572,56 @@ def main():
                 pp = problems(rp, raw, obst_p, s) + art_problems(NBL, rp, raw)
                 if pp:
                     bad_hub.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), pp[:2]))
+                # nbar14 1c PARTY MODE CENTRED: the whole block (Trail's HUD + Hub's rows and tab) shifted to the screen's centre (what
+                # NB.topOurs hands the solver in Party mode's Top fight, NB.centreDx), the Wings either side of it, clear of every row
+                hud_u = block
+                for rr in fr_p.values():
+                    hud_u = union(hud_u, rr)
+                dxc = 960 - (hud_u[0] + hud_u[2] / 2)
+                mv = lambda q: (q[0] + dxc, q[1], q[2], q[3])  # noqa: E731
+                fr_c = {n: mv(q) for n, q in fr_p.items()}
+                raw_c = {n: mv(q) for n, q in raw.items()}
+                rc, obst_c = solve_case(NBL, fr_c, mv(block), s)
+                rc["s_used"] = s * (rc.get("k") or 1)
+                n_centre += 1
+                hc = mv(hud_u)
+                pc_ = problems(rc, raw_c, obst_c, s) + art_problems(NBL, rc, raw_c)
+                if abs(hc[0] + hc[2] / 2 - 960) > 0.01:
+                    pc_.append("the block not centred")
+                if rc["form"] == "wings" and not (rc["rects"][1]["x"] + rc["rects"][1]["w"] <= hc[0] - HUD_MARGIN + 0.01
+                                                  and rc["rects"][2]["x"] >= hc[0] + hc[2] + HUD_MARGIN - 0.01):
+                    pc_.append("the Wings not either side of the centred block")
+                if rc["form"] == "wings":
+                    n_centre_w += 1
+                if pc_:
+                    bad_centre.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), pc_[:2]))
+                # nbar15 1d OUR HUD BARS OFF (the user's pick 11-23, "Centre the rows"): Hub's rows and tab alone (NB.topOurs' "partyhud",
+                # its rects less the shift they were drawn with) shifted to the screen's centre and handed to the solver as the HUD block
+                # (NB.centreDx: P.partyGeo carries it with Trail's bars off, prd23) - the Wings either side of them, clear of every row
+                ro_u = None
+                for n_, q in fr_p.items():
+                    if n_.startswith("hub"):
+                        ro_u = union(ro_u, q)
+                dxr = math.floor(960 - (ro_u[0] + ro_u[2] / 2) + 0.5)
+                mvr = lambda q: (q[0] + dxr, q[1], q[2], q[3])  # noqa: E731
+                ro_c = {n_: mvr(q) for n_, q in fr_p.items() if n_.startswith("hub")}
+                raw_r = {n_: mvr(q) for n_, q in raw.items() if n_.startswith("hub")}
+                rr_, obst_r = solve_case(NBL, ro_c, mvr(ro_u), s)
+                rr_["s_used"] = s * (rr_.get("k") or 1)
+                n_off += 1
+                hr = mvr(ro_u)
+                po_ = problems(rr_, raw_r, obst_r, s) + art_problems(NBL, rr_, raw_r)
+                if abs(hr[0] + hr[2] / 2 - 960) > 0.5:
+                    po_.append("the rows not centred")
+                if rr_["form"] == "wings" and not (rr_["rects"][1]["x"] + rr_["rects"][1]["w"] <= hr[0] - HUD_MARGIN + 0.01
+                                                   and rr_["rects"][2]["x"] >= hr[0] + hr[2] + HUD_MARGIN - 0.01):
+                    po_.append("the Wings not either side of the centred rows")
+                if rr_["form"] == "wings":
+                    n_off_w += 1
+                if po_:
+                    bad_off.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), po_[:2]))
+                if (ui_h, pet, up, pips, party, lift, sc, wd, y) in CENTRE_SHOT:
+                    keep_c[(ui_h, pet, up, pips, party, lift, sc, wd, y)] = (fr_p, block, rp, fr_c, mv(block), rc, dxc)
             key = (ui_h, pet, up, pips, party, lift, sc, wd, y)
             if key in SHOT_STATES:
                 keep[key] = (fr, block, r)
@@ -535,13 +631,15 @@ def main():
                   ("under", False, False, 0, False, 160, 280, -470), ("none", True, True, 2, False, 100, 400, -170)]
         for hs in spread:
             fr, block, e = hud_state(st, *hs)
-            for stock, size, tg, cp, pc, res in itertools.product((0.8, 1.0, 1.2), (0.7, 1.0, 1.5), (False, True), (False, True),
+            for stock, size, tg, cp, pc, res in itertools.product((1.0,), (0.7, 1.0, 1.5), (False, True), (False, True),
                                                                  (False, True), (False, True)):
-                s = stock * size * kk
+                s = MATCH * size                                  # nbar14: the stock scale no longer in it (the axis kept: no effect)
                 r, obst = solve_case(NBL, fr, block, s, target=tg, compass=cp, partycol=pc, reserved=res)
                 r["s_used"] = s * (r.get("k") or 1)
                 n_solves += 1
                 cases[r["case"]] = cases.get(r["case"], 0) + 1
+                note_k(NBL, r, fr, block, s, dict(target=tg, compass=cp, partycol=pc, reserved=res), ks, bad_order,
+                       (ui_h,) + hs + (stock, size, tg, cp, pc, res))
                 p = problems(r, fr, obst, s)
                 if p:
                     bad_solve.append(((ui_h,) + hs + (stock, size, tg, cp, pc, res), p[:2]))
@@ -552,20 +650,122 @@ def main():
                 if sp:
                     bad_slide.append(((ui_h,) + hs + (stock, size, tg, cp, pc, res), sp[:2]))
     print("states %d, solves %d, cases %s" % (n_states, n_solves, sorted(cases.items(), key=lambda kv: str(kv[0]))))
+    print("(case, k): %s" % sorted(ks.items(), key=lambda kv: str(kv[0])))
+    nk = sum(ks.values())
+    k1 = sum(v for (c, k), v in ks.items() if k == 1 and c in (1, 2, 3))
+    print("at k 1 beside / raised / joined: %d of %d (%.1f %%)" % (k1, nk, 100.0 * k1 / max(1, nk)))
     chk("1. P.lay.block holds every resolved HUD frame (bars + pips + pet under + Party room, the pet beside, the aura host under / "
-        "above) in %d HUD states x 4 UI heights" % (n_states // 4), not bad_block, bad_block[:3])
-    chk("2. the Wings: inside the screen, off the tap pad band, >= 24 px from every RESOLVED HUD frame, never the case-5 fallback "
-        "(%d solves)" % n_solves, not bad_solve, bad_solve[:4])
-    chk("2b. review: what the halves DRAW (the focus glow, a held slot's 2-unit drop, the glyph badges, the ZL / ZR chip's gold disc, "
-        "the swing lines) inside the solved boxes and >= 24 px from every resolved HUD frame (%d solves)" % n_solves, not bad_art, bad_art[:3])
-    chk("2. ... the bar shrinks before it moves: some states solved at k < 1 (cases seen %s)" % sorted(cases, key=str), any(c for c in cases))
+        "above) in %d HUD states x %d UI heights" % (n_states // len(UI_HS), len(UI_HS)), not bad_block, bad_block[:3])
+    chk("2. the Wings: inside the screen, off the tap pad band, >= %d px from every RESOLVED HUD frame, never the case-5 fallback, never "
+        "under k 0.8 (%d solves)" % (HUD_MARGIN, n_solves), not bad_solve, bad_solve[:4])
+    chk("2b. review: what the halves DRAW (the focus glow, a held slot's 2-unit drop, the glyph badges, the L / R plate, the ZL / ZR "
+        "chip's gold disc, the swing lines) inside the solved boxes and >= %d px from every resolved HUD frame (%d solves)"
+        % (HUD_MARGIN, n_solves), not bad_art, bad_art[:3])
+    chk("2. nbar14 moves before it shrinks: every solve under k 1 (or on the grid) has nothing at k 1 beside / pushed / raised / joined "
+        "(%d shrunk or grid solves checked)" % sum(v for (c, k), v in ks.items() if k < 1 or c == 4), not bad_order, bad_order[:3])
+    chk("2. nbar14 ... and most solves stand at the band's size (k 1 beside / raised / joined: %d of %d)" % (k1, nk), k1 >= 0.8 * nk)
     chk("1b. nbar12 Party mode: Hub's rows (both columns, their rim in the block) and its Select tab - the Wings' boxes and art >= %d px "
-        "from every one, never the case-5 fallback (%d Party states)" % (MARGIN, n_hub), not bad_hub and n_hub > 0, bad_hub[:3])
+        "from every one, never the case-5 fallback (%d Party states)" % (HUD_MARGIN, n_hub), not bad_hub and n_hub > 0, bad_hub[:3])
+    chk("1c. nbar14 Party mode centred: the block (the HUD with Hub's rows and tab) on the screen's centre, the Wings either side of it "
+        ">= %d px from the HUD and every row, never the case-5 fallback (%d Party states, %d as wings)" % (HUD_MARGIN, n_centre, n_centre_w),
+        not bad_centre and n_centre > 0 and n_centre_w >= 0.8 * n_centre, bad_centre[:3])
+    chk("1d. nbar15 our HUD bars off: Hub's rows and tab alone on the screen's centre, the Wings either side of them >= %d px from every "
+        "row and the tab, never the case-5 fallback (%d Party states, %d as wings)" % (HUD_MARGIN, n_off, n_off_w),
+        not bad_off and n_off > 0 and n_off_w >= 0.8 * n_off, bad_off[:3])
     hw_, hh_, ax_, ay_ = hb
-    chk("2. nbar12: one half 221 x 185 (the outer column to 133), its diamond's centre 133 / 88 from its top-left", (hw_, hh_, ax_, ay_) == (221, 185, 133, 88),
-        (hw_, hh_, ax_, ay_))
-    chk("3. the slide (lane true): wholly below the edge at the start, monotonic, never on a HUD frame (sampled every 1/60 s)",
-        not bad_slide, bad_slide[:3])
+    chk("2. nbar14: one half 228 x 135 (the flattened diamond: the outer column to 142.5, the inner glow 85.5, up 63, the swing lines "
+        "down to 72)", (hw_, hh_, ax_, ay_) == (228, 135, 142.5, 63), (hw_, hh_, ax_, ay_))
+    # 2c nbar14 the band's size on the Thor's top panel
+    sq = NB.B * MATCH * MM_TOP
+    rd = NB.BC * MATCH * MM_TOP
+    chk("2c. nbar14: a square slot %.2f mm, a round one %.2f mm on the top panel - the band's square %.2f mm within 3 %%"
+        % (sq, rd, BAND_SQUARE_MM), abs(sq / BAND_SQUARE_MM - 1) <= 0.03 and abs(rd / (88.1 * MM_BOTTOM) - 1) <= 0.03)
+    T_ = NB.TOP
+    dpad_mm = ((2 * T_.OFF_X + NB.B) * MATCH * MM_TOP, (2 * T_.OFF_Y + NB.B) * MATCH * MM_TOP)
+    chk("2c. nbar14: the flattened D-pad diamond %.1f x %.1f mm (the band's 17.0 x 11.6 within 5 %%), the plate %.1f x %.1f mm (7.8 x 6.1)"
+        % (dpad_mm + (T_.PLATE_W * MATCH * MM_TOP, T_.PLATE_H * MATCH * MM_TOP)),
+        abs(dpad_mm[0] / 17.0 - 1) <= 0.05 and abs(dpad_mm[1] / 11.6 - 1) <= 0.05
+        and abs(T_.PLATE_W * MATCH * MM_TOP / 7.8 - 1) <= 0.05 and abs(T_.PLATE_H * MATCH * MM_TOP / 6.1 - 1) <= 0.05)
+    st817 = boot_trail(817)
+    fr0, block0, _ = hud_state(st817, "none", False, False, 0, False, 100, 280, -350)
+    r0, _ = solve_case(NBL, fr0, block0, MATCH)
+    gap0 = min(min(abs(r0["rects"][1]["x"] + r0["rects"][1]["w"] - block0[0]), abs(r0["rects"][2]["x"] - (block0[0] + block0[2]))), 1e9)
+    chk("2c. nbar14: the default HUD at the Thor's UI (817): beside at k 1, 60 px off the block, level (case %s, k %s, gap %.1f)"
+        % (r0["case"], r0.get("k"), gap0), r0["case"] == 1 and (r0.get("k") or 1) == 1 and abs(gap0 - 60) < 0.01)
+    chk("3. the slide (lane true): wholly below the edge at the start, monotonic, never on a HUD frame (sampled every 1/60 s; a shrunk "
+        "spot easing from k 1)", not bad_slide, bad_slide[:3])
+    # 3b nbar14 the seam's speed: the band's exit speed (its UP curve's last slope 1 / 0.6 over its travel) = the Wings' first speed
+    band_mm = 242 * MM_BOTTOM
+    v_band = (1 / 0.6) * band_mm / 240.0
+    drop_px = 1080 + hb[3] * MATCH - min(r0["l"]["y"], r0["r"]["y"]) + 2
+    ease = NBL.eval("WowCompanion.nbar.slideIn")
+    h_ = 1e-4
+    slope0 = ease(h_) / h_
+    v_wings = slope0 * drop_px * MM_TOP / 260.0
+    chk("3b. nbar14 the seam's speed: the Wings start at %.3f mm / ms, the band leaves at %.3f (within 10 %%; the old ease-out: %.3f)"
+        % (v_wings, v_band, 5 * drop_px * MM_TOP / 260.0), abs(v_wings / v_band - 1) <= 0.10)
+    peak = max((ease((i + 1) / 200.0) - ease(i / 200.0)) * 200 for i in range(200))
+    chk("3b. ... and eases in from there (its speed never more than 3 %% over the first: peak %.3f / first %.3f), in the same 0.26 s"
+        % (peak, slope0), peak <= slope0 * 1.03 and NB.TOP.IN_S == 0.26)
+    # ------------------------------------------------------------------------------------------------ 6 nbar14 / prd22: Trail centres
+    # the REAL Trail HUD (Party mode on, two rows' room): ActionBar's NB.centreDx asks for a shift; P.partyGeo (Hub's rows) goes to it at
+    # once, the bars fade out, move, fade in (P.cx applied in P.place and P.lay.block); a protected frame in the lockdown makes it wait
+    st6 = boot_trail(817)
+    L6, G6 = st6["L"], st6["G"]
+    P6 = G6.WowCompanion.prd
+    hud_state(st6, "none", False, False, 2, False, 100, 280, -350)
+    L6.execute('CDX = 0; WowCompanion.nbar = { centreDx = function() return CDX end }; '
+               'WowCompanion.padMap = { party = { on = function() return true end, live = function() return true end } }')
+    st6["run"](0.6)
+    PXR6 = L6.eval("PXR")
+    e6 = L6.eval("function() return WowCompanionDB.lay['Yes-Lander'].hud end")()
+    f0 = PXR6(P6.f)
+    b0 = P6.lay.block(e6)
+    g0 = P6.partyGeo()
+    L6.execute("CDX = -84")
+    st6["run"](1 / 30)
+    g1 = P6.partyGeo()
+    k6 = 817 / 1080.0
+    chk("6. prd22: Hub's rows told the shift at once (P.partyGeo's x %+.1f px; the bars not moved yet: they fade first)"
+        % ((g1.x - g0.x) / k6), abs((g1.x - g0.x) / k6 + 84) < 0.6 and (P6.cx or 0) == 0, ((g1.x - g0.x) / k6, P6.cx))
+    st6["run"](0.6)
+    f1 = PXR6(P6.f)
+    b1 = P6.lay.block(e6)
+    chk("6. prd22: after the fade the bars and the block stand 84 px left (P.cx applied: P.place, P.lay.block), alpha back",
+        P6.cx == -84 and abs((f1.x - f0.x) + 84) < 0.6 and abs((b1.x - b0.x) + 84) < 1e-6 and P6.petFadeA is None,
+        (P6.cx, f1.x - f0.x, b1.x - b0.x, P6.petFadeA))
+    # the lockdown with a protected frame (never expected: all ours): the shift waits, the one applied kept
+    L6.execute("GAME.fight = true; WowCompanion.prd.f.IsProtected = function() return true end; CDX = 0")
+    st6["run"](0.6)
+    chk("6. prd22: in the lockdown a protected HUD frame makes it wait (P.cx kept, no fade loop)", P6.cx == -84 and P6.petFadeA is None,
+        (P6.cx, P6.petFadeA))
+    L6.execute("GAME.fight = false")
+    st6["run"](0.6)
+    f2 = PXR6(P6.f)
+    chk("6. prd22: out of the lockdown the shift goes back to 0 (the fight's end / B: NB.centreDx 0)", (P6.cx or 0) == 0
+        and abs(f2.x - f0.x) < 0.6, (P6.cx, f2.x - f0.x))
+    L6.execute("WowCompanion.prd.f.IsProtected = nil; CDX = -84; WowCompanion.padMap = nil")
+    st6["run"](0.6)
+    chk("6. prd22: Party mode off -> no shift whatever ActionBar says", (P6.cx or 0) == 0, P6.cx)
+    # prd23 (the user's pick 11-23, "Centre the rows"): our HUD bars OFF (P.wanted false: P.tick returns before it reads Party mode, so
+    # P.partyOn keeps its last word - false here) and Party mode turned on after: P.cxFor reads Party mode live, so P.partyGeo (Hub's
+    # rows and tab) carries ActionBar nbar15's shift; none of Trail's frames move (P.cx left as it is, the bars hidden)
+    L6.execute("WowCompanion.npWant.prd = false")
+    st6["run"](0.3)
+    g2 = P6.partyGeo()
+    L6.execute("WowCompanion.padMap = { party = { on = function() return true end, live = function() return true end } }")
+    st6["run"](1 / 30)
+    g3 = P6.partyGeo()
+    chk("6. prd23 our HUD bars off, Party mode on after (P.partyOn stale %s): P.partyGeo carries the shift (cx %s, x %+.1f px), P.cx "
+        "untouched, the bars hidden" % (P6.partyOn, g3.cx, (g3.x - g2.x) / k6),
+        P6.partyOn is not True and g3.cx == -84 and abs((g3.x - g2.x) / k6 + 84) < 0.6 and (P6.cx or 0) == 0
+        and not P6.f.IsShown(P6.f), (P6.partyOn, g3.cx, (g3.x - g2.x) / k6, P6.cx))
+    L6.execute("CDX = 0")
+    chk("6. prd23 ... the fight's end / B (NB.centreDx 0): the rows' shift back to 0", P6.partyGeo().cx == 0, P6.partyGeo().cx)
+    L6.execute("CDX = -84; WowCompanion.padMap = nil")
+    chk("6. prd23 ... Party mode off with our HUD bars off: no shift whatever ActionBar says", P6.partyGeo().cx == 0, P6.partyGeo().cx)
+    L6.execute("WowCompanion.npWant.prd = nil; CDX = 0")
+    st6["run"](0.6)
     # ------------------------------------------------------------------------------------------------ 4 NB.topOurs: the block, any alpha
     NBL.execute('''
         local F = getmetatable(UIParent)
@@ -639,6 +839,9 @@ SHOT_STATES = {
     (900, "beside", True, True, 1, False, 70, 180, -170): "HUD high and small, pet beside",
     (1200, "none", False, False, 0, False, 160, 400, -470): "a big HUD low (1200-line UI)",
 }
+
+
+CENTRE_SHOT = {(817, "none", False, False, 2, False, 100, 280, -350): "Party mode, 2 rows (4 members), the default HUD"}
 
 
 def render(out_dir, NBL, keep):

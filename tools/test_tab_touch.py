@@ -161,7 +161,7 @@ if len(T) >= 2:
 
 # ================================================================ d. the tags
 check('local CV = "p58"' in SRC["padtabctl"] and "p57 A FINGER ON A CHOOSER TAB" in SRC["padtabctl"], "d. PadTabCtl p57 and its note")
-check('local BV = "b76"' in SRC["book"] and "b72 A FINGER ON A TAB MOVES THE CURSOR'S TAB TOO" in SRC["book"], "d. Book b72 and its note")
+check('local BV = "b77"' in SRC["book"] and "b72 A FINGER ON A TAB MOVES THE CURSOR'S TAB TOO" in SRC["book"], "d. Book b72 and its note")
 
 print("\n%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -7,9 +7,12 @@ package com.jrees.wowcompanion
  * With the layout's In fights = Top screen ([HomeLayout.FightBand.TOP]) live ([live]) the bottom band SLIDES UP off the bottom screen's
  * top edge in a fight while the chat / map columns glide up into the freed strip (the user, 2026-11-22: "It should be a slick animation
  * looking like it slides up to the top screen"; [TopSlide], [HomeLayoutSolver.away]) and back down after it - the slide is the cue (the
- * old 1.5 s "up" plate is gone) - and B in the fight never shrinks anything (no red reminder). On the top screen the add-on's Nintendo
- * bar slides in upward from the screen's bottom edge as two halves around our HUD (ActionBar nbar7 / nbar11, the bottom band's ring
- * look), by itself, on the router's own fight switch.
+ * old 1.5 s "up" plate is gone). THE B RULE (the user, 2026-11-23: "The controller bar top grow is working off of being in combat again
+ * instead of our combat ruls where we press B and it grows back downwards"): Top screen follows OUR takeover exactly as Grow does - up on
+ * the takeover, B on Home brings the band back down even mid-fight (with Grow's red reminder), the next attack / harmful press re-arms
+ * it ([bShrinks], [touchKeepsGrow], HomeView's padmap `fight` sync). On the top screen the add-on's Nintendo bar slides in upward from
+ * the screen's bottom edge as two halves around our HUD (ActionBar nbar7 / nbar11 / nbar14, the bottom band's size, shape and ring
+ * look), by itself, on the router's own fight switch - which B gives back in a fight too (PadMap m188 fightSw), so both sides go down.
  *
  * THE CHANNEL: the add-on's per-character flag (PadMap m179 WowCompanionSpellsDB.ctop; its `ct` in the padmap's dpad state) set with
  * padtab 39, 38, 37 then 22 (off) / 23 (on) (Book b76; PadMapModel.P3_TOP_OFF / P3_TOP_ON). The app is the source of truth: OUT OF COMBAT ONLY (a fight waits; the add-on
@@ -30,15 +33,56 @@ object TopCombatBar {
      * grows as Grow does (the default), and B shrinks as ever
      */
     fun live(l: HomeLayout, ct: Int?): Boolean = wanted(l) && ct == 1
-    /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow */
-    fun honoured(l: HomeLayout, ct: Int?): HomeLayout = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
+    /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow; Cast bar in fights = Top screen kept only
+     *  while the add-on SAYS so ([cc] 1, PadMap m187: it shows the game's own casting bar then), else the bottom screen's strip - a cast
+     *  bar never left on neither screen */
+    fun honoured(l: HomeLayout, ct: Int?, cc: Int? = null, gsw: Int? = null): HomeLayout {
+        val r = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
+        // the user's pick 2026-11-23 ("Keep ours on the bottom"): Top screen's cast bar with the GAME's own swing timer off ([gsw] 0,
+        // PadMap m188) keeps the bottom screen's strip for the swing ([swingOnly]: the strip paints no cast, the game's bar has it)
+        return if (r.fightCast == HomeLayout.FightCast.TOP && (cc != 1 || gsw == 0)) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
+    }
+    /**
+     * THE SWING IN ONE PLACE (the user's picks 2026-11-23: with the cast bar on the Top screen and WoW's own swing timer off, "Keep ours
+     * on the bottom" - "When WoW's own swing timer is off, our swing strip stays across the top of the bottom screen"; and "One place"):
+     * Cast bar in fights = Top screen confirmed ([cc] 1) with the game's swing timer OFF ([gsw] 0, PadMap m188's read-only gameSwingOn)
+     * - the bottom screen's fight strip stays and paints the SWING only (the cast is the game's own bar on the top screen), and the Wings
+     * draw no swing line (ActionBar nbar14). With the game's swing timer on ([gsw] 1) or an older add-on (null): as built - no strip.
+     * [l] the layout as the player set it (not [honoured])
+     */
+    fun swingOnly(l: HomeLayout, ct: Int?, cc: Int?, gsw: Int?): Boolean =
+        live(l, ct) && l.fightCast == HomeLayout.FightCast.TOP && cc == 1 && gsw == 0
+    /** [swingOnly] for edit mode's Fight preview (Top screen and its cast bar whenever the add-on HAS the flags, as [previewed]) */
+    fun swingOnlyPreview(l: HomeLayout, ct: Int?, cc: Int?, gsw: Int?): Boolean =
+        wanted(l) && ct != null && l.fightCast == HomeLayout.FightCast.TOP && cc != null && gsw == 0
     /**
      * the 1519 audit: edit mode's FIGHT PREVIEW shows "what a fight would" - the first fight after Done. A character that never used Top
      * screen has the add-on's flag off (`ct` 0): the menu offers Top screen (only `ct` null greys it), and CompanionHost.topCheck sends
      * nothing while edit mode is live, so `ct` turns 1 only after Done (within a resend). The preview therefore keeps Top screen whenever
      * the add-on HAS the flag ([ct] not null); with no flag (no key, an older add-on) the Wings cannot show, so Grow as [honoured]
      */
-    fun previewed(l: HomeLayout, ct: Int?): HomeLayout = if (wanted(l) && ct == null) l.copy(fight = HomeLayout.FightBand.GROW) else l
+    fun previewed(l: HomeLayout, ct: Int?, cc: Int? = null, gsw: Int? = null): HomeLayout {
+        val r = if (wanted(l) && ct == null) l.copy(fight = HomeLayout.FightBand.GROW) else l
+        // (the same rule for the cast bar's screen: Top screen previewed whenever the add-on HAS the flag, cc not null; the game's swing
+        // timer off keeps the swing strip, as [honoured])
+        return if (r.fightCast == HomeLayout.FightCast.TOP && (cc == null || gsw == 0)) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
+    }
+
+    // ---------------------------------------------------------------- the cast bar in a Top-screen fight (the user's ruling 2026-11-23)
+    /**
+     * CAST BAR IN FIGHTS (the user, 2026-11-23: "When the controller moves to the top, the cast bar should still show across the top of
+     * the bottom screen. We can add a setting for if the combat bars move to the top screen to have the cast bar be on the top or the
+     * bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically instead of trying to remake
+     * ours and position it just above the health hud. Same thing with the swing timer"): only with In fights = Top screen.
+     * BOTTOM (the default): our cast bar and swing timer run across the top of the bottom screen in the fight (HomeLayoutSolver's fight
+     * strip), the Wings draw no swing line. TOP: nothing of ours on the bottom screen; the add-on shows the GAME'S OWN casting bar for
+     * the Wings' fight (Hub hub76, alpha only, the player's Hide back after it) and the Wings keep their own swing lines under the faces
+     * (ActionBar nbar13). THE CHANNEL: a second per-character flag beside `ct` (PadMap m187 ctcb, `cc` in the padmap), page-3 codes 24
+     * (Bottom) / 25 (Top) (Book b77), sent as `ct` is: out of combat, re-sent until `cc` says it ([decide] with `cc`)
+     */
+    fun castWanted(l: HomeLayout): Boolean = wanted(l) && l.fightCast == HomeLayout.FightCast.TOP
+    /** the taps for "Cast bar in fights" [top] */
+    fun castCells(top: Boolean): List<Pair<String, Int>> = PadMapModel.fightCastCells(top)
 
     /**
      * PARTY MODE KEEPS THE TOP SCREEN (the user's ruling C, 11-22: "It should stay at the top in party mode but the party bars should fill
@@ -71,9 +115,19 @@ object TopCombatBar {
     /** the taps for [on] */
     fun cells(on: Boolean): List<Pair<String, Int>> = PadMapModel.combatTopCells(on)
 
-    /** B on Home with the takeover on: shrinks it unless In fights = Top screen and the fight is on (nothing grew). Out of a fight (an
-     *  attack armed) B keeps today's meaning there too: the takeover goes and the faces are given back (the add-on's wings follow) */
-    fun bShrinks(l: HomeLayout, fighting: Boolean, ct: Int?): Boolean = !(live(l, ct) && fighting)
+    /** B on Home with the takeover on: shrinks it - in and out of a fight, Top screen too (the user's 11-23 ruling, "our combat ruls
+     *  where we press B and it grows back downwards": the band slides back down with Grow's red reminder, the add-on's Wings leave on
+     *  the router's own give-back). Out of a fight (an attack armed) the faces are given back too, as ever. Kept as a function so the
+     *  call sites read the rule (8d6153b9's "unless Top screen and the fight is on" is gone) */
+    @Suppress("UNUSED_PARAMETER")
+    fun bShrinks(l: HomeLayout, fighting: Boolean, ct: Int?): Boolean = true
+    /**
+     * A FINGER KEEPS THE GROW (the 11-22 review, kept by the 11-23 B rule): a touch that opens a Home module in Top screen's takeover
+     * ([live]) never minimizes the grow - a finger never reaches the add-on's give-back (`wc-given`), so the Wings stay up on the top
+     * screen and the band must go back above the page when the module closes (HomeView's re-takeover). B, by contrast, shrinks
+     * ([bShrinks]): the add-on's secure B gives the buttons back at the same press
+     */
+    fun touchKeepsGrow(l: HomeLayout, ct: Int?): Boolean = live(l, ct)
 
     /**
      * THE TAP-TO-CAST BAR STAYS IN A TOP-SCREEN FIGHT (the 11-22 check of the slide's shots: the bar under the chat was gone in the

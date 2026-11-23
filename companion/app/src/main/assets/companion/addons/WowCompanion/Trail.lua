@@ -3909,7 +3909,21 @@ end
 -- from the top screen HUD"): the pet strip keeps its portrait, its health and its power (prd12's unit, centred as before); the happiness
 -- face (prd11 / prd12 / prd13: PET_HAPPY past the unit's right rim, P.petHappyOn in the centring width) is gone, with its read. The app's
 -- Home shows it now, in the clock extras row (Spells' Radial r28 sends GetPetHappiness in the itemcd document).
-WC.prd = { V = "prd22", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
+-- prd22 PARTY MODE CENTRED ON THE TOP SCREEN (the user, 2026-11-23, in a Party-mode Top-screen fight: "it sort of needs to shift the
+-- HUD to be centered and the controller bars still also need to shift around them to make space for the shifted party frames"): while
+-- ActionBar nbar14 says so (WC.nbar.centreDx: Party mode's Top-screen fight, the Wings up) the HUD block - the bars, the pet strip, the
+-- aura row, and Hub's party rows and Select tab hanging under it (P.partyGeo carries the shift, as the on-screen lift) - stands with
+-- its centre on the screen's: P.cx (1080-line px, + = right) is added in P.place and P.lay.block (the shift APPLIED) and in
+-- P.partyGeo (the shift WANTED, so Hub fades its rows to it at the same moment). It moves the way the lift does - faded out
+-- (PET_FADE_S), moved while unseen, faded in (P.petMoveStep) - and back to 0 when the fight ends, B hands the controls back or Party
+-- mode goes off. COMBAT SAFETY: P.f, its pet strip and its aura host are OUR plain frames (CreateFrame "Frame" / "StatusBar", no
+-- secure template; the game's AuraContainer inside the host is filled by the game and never anchors a protected frame to ours), so a
+-- SetPoint on them is legal in a fight - the lift has done it since prd15. P.cxFor checks anyway: in the lockdown, if any of them
+-- reports IsProtected, the shift waits (the one applied is kept) until the fight ends; nothing else changes.
+-- prd23 (the user's pick 11-23, "Centre the rows"): with our HUD bars off (P.wanted false: P.tick returns before it reads Party mode,
+-- so P.partyOn kept its last word) P.cxFor reads Party mode live (P.partyModeOn), so P.partyGeo still carries ActionBar nbar15's
+-- shift and Hub's rows and Select tab fade to the centre alone; none of Trail's frames move (P.cx is left as it is).
+WC.prd = { V = "prd23", cx = 0, PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
@@ -4323,7 +4337,40 @@ do
         if not P.f then return end
         P.f:ClearAllPoints()
         local y = P.y or P.loadY()
-        P.f:SetPoint("TOP", UIParent, "CENTER", u(num(P.x) or 0), u(y + (P.dy or 0) + (num(P.lift) or 0)))   -- prd15: the guard's lift
+        -- prd22: Party mode's centring shift applied (1080-line px; P.x is in the bars' own scaled px)
+        local x = (num(P.x) or 0) + (num(P.cx) or 0) / (((num(P.sc) or P.S_DEF) / 100))
+        P.f:SetPoint("TOP", UIParent, "CENTER", u(x), u(y + (P.dy or 0) + (num(P.lift) or 0)))   -- prd15: the guard's lift
+    end
+    -- prd22 THE CENTRING SHIFT WANTED (1080-line px): ActionBar nbar14's NB.centreDx while Party mode is on (plain number only), 0
+    -- otherwise; in the lockdown with one of the HUD's frames protected (never expected: all are ours) the shift applied is kept
+    function P.cxFor()
+        local want = 0
+        -- prd23: our HUD bars off (P.on false: P.tick never read Party mode) - read it live, for Hub's rows
+        local party = P.partyOn == true
+        if P.on ~= true then party = P.partyModeOn() == true end
+        if party then
+            local nb = rawget(WC, "nbar")
+            local fn = type(nb) == "table" and rawget(nb, "centreDx") or nil
+            if type(fn) == "function" then
+                local ok, v = pcall(fn)
+                want = (ok and num(v)) or 0
+            end
+        end
+        if math.abs(want - (num(P.cx) or 0)) > 0.5 and P.protectedNow() then return num(P.cx) or 0 end
+        return want
+    end
+    -- prd22: one of the HUD's frames would refuse a move now (the lockdown, IsProtected true); false out of combat
+    function P.protectedNow()
+        local okC, c = pcall(InCombatLockdown)
+        if not (okC and c == true) then return false end
+        local box = P.box
+        for _, f in ipairs({ P.f or false, P.petL or false, (type(box) == "table" and box.host) or false }) do
+            if f and type(f.IsProtected) == "function" then
+                local ok, p = pcall(f.IsProtected, f)
+                if ok and p == true then return true end
+            end
+        end
+        return false
     end
     -- prd18 THE HUD AS A LAYOUT PIECE (Hub's editor gathers it): its anchor is the bars' top-centre, 1080-line pixels from the top-left
     P.lay = {
@@ -4351,7 +4398,7 @@ do
     P.lay.block = function(e)
         local sc = ((e and num(e.s)) or num(P.sc) or P.S_DEF) / 100
         local bx, by = P.lay.base()
-        local ax = bx + ((e and num(e.dx)) or 0)
+        local ax = bx + ((e and num(e.dx)) or 0) + (num(P.cx) or 0)     -- prd22: Party mode's centring shift applied
         local ay = by + ((e and num(e.dy)) or 0) - (num(P.lift) or 0) * sc
         local w = num(P.W) or num(P.wd) or P.W_DEF
         local base = P.HH + P.BAR_GAP + P.PH
@@ -5155,9 +5202,12 @@ do
         local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
         local w = num(P.W) or P.W_DEF
         y = y + P.liftFor(P.partyModeOn())                              -- (the guard's lift the block is going to: Hub fades its rows to it)
-        -- (h: the two bars' height, for the solo tab beside the [me][pet] row)
-        return { x = (u(num(P.x) or 0) - u(w) / 2) * s, top = u(y) * s, h = u(P.HH + P.BAR_GAP + P.PH) * s,        -- prd18: the HUD's x
-                 y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s }
+        local cx = P.cxFor()
+        local x = (num(P.x) or 0) + cx / s                              -- prd22: the centring shift it is going to (Hub fades to it too)
+        -- (h: the two bars' height, for the solo tab beside the [me][pet] row; prd22 cx: that shift in 1080-line px - Hub keeps this table
+        -- as the rows' drawn place (PF.g), so ActionBar reads the shift the rows stand at, which can differ from P.cx mid-fade)
+        return { x = (u(x) - u(w) / 2) * s, top = u(y) * s, h = u(P.HH + P.BAR_GAP + P.PH) * s,        -- prd18: the HUD's x
+                 y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s, cx = cx }
     end
     -- prd15 THE ON-SCREEN GUARD (the user, 2026-11-12: "KEEP IT ON SCREEN"): in Party mode, the lift (spec px, up) that keeps the block -
     -- the HUD's bars (the combo pips included), and Hub's rows under them (P.partyRoomPx, their rings in it) or the bars' lip while solo -
@@ -5212,13 +5262,18 @@ do
         local L = P.petL
         local lift = P.liftFor(on)
         local lifts = math.abs((num(P.lift) or 0) - lift) > 0.01
-        local moved = P.petSide ~= want or P.auraUp ~= on or lifts
-        if lifts then P.hudFade = true end                               -- (the bars themselves move: they fade too)
+        local cx = P.cxFor()                                             -- prd22: Party mode's centring shift
+        local shifts = math.abs((num(P.cx) or 0) - cx) > 0.5
+        local moved = P.petSide ~= want or P.auraUp ~= on or lifts or shifts
+        if lifts or shifts then P.hudFade = true end                     -- (the bars themselves move: they fade too)
         local function swap()
             P.petSide, P.auraUp = want, on
             if P.f then P.petLayout(P.dropFor(), true) end
             P.cache = nil                                                -- (the aura row drawn again at its new place)
-            if math.abs((num(P.lift) or 0) - lift) > 0.01 then P.lift = lift; P.place() end
+            local re = false
+            if math.abs((num(P.lift) or 0) - lift) > 0.01 then P.lift = lift; re = true end
+            if math.abs((num(P.cx) or 0) - cx) > 0.5 then P.cx = cx; re = true end
+            if re then P.place() end
         end
         local hudShown = P.hudFade and P.f ~= nil and P.f:IsShown() and (num(P.alpha) or 0) > 0
         if not ((L and L:IsShown()) or P.aurasShown() or hudShown) then

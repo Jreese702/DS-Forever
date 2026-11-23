@@ -232,8 +232,9 @@ class HomeMenusFitShotsTest {
         home.pauseSlide(UiKit.PAUSE_OPEN_MS)
         for ((k, d) in drawn(home)) {
             val l0 = laid.getValue(k)
-            // (feat/radial-castbar: Across's bar drops straight down below the page - off the screen, never sideways)
-            if (d.right > 0.5f && d.left < W - 0.5f && d.top < H - 0.5f) no(tag, "pause: $k still on screen ${r(d)}")
+            // (feat/radial-castbar: Across's bar drops straight down below the page - off the screen, never sideways;
+            //  feat/fight-castbar: the fight strip of a Top-screen fight goes up with the band - off the top edge is off the screen too)
+            if (d.right > 0.5f && d.left < W - 0.5f && d.top < H - 0.5f && d.bottom > 0.5f) no(tag, "pause: $k still on screen ${r(d)}")
             if ((k == "STRIP" || k == "CAST2") && l0.left <= G + 1f && l0.right >= W - G - 1f) {
                 if (kotlin.math.abs(d.left - l0.left) > 0.5f) no(tag, "pause: Across's $k slid ${(d.left - l0.left).toInt()} sideways")
                 continue

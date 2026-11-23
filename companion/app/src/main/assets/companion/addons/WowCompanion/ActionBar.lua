@@ -2,6 +2,8 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar14 (the user, 2026-11-23, Top screen in fights): the band's size / shape, B rule, Party centred, one swing - at "nbar14 THE WINGS MATCH THE BAND"; nbar15 ("Centre the rows"): our HUD bars off, the rows + tab centred alone (NB.topOurs).
+-- nbar13 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23): "Cast bar in fights" Bottom / Top screen - at NB.castFight.
 -- nbar13 THE CONTROLLER CHANGED (PadMap m188; the user's pick 2026-11-23 "Re-wire the trigger reading when a controller connects or
 -- changes"): GAME_PAD_CONNECTED / _DISCONNECTED / _ACTIVE_CHANGED / _CONFIGS_CHANGED drop NB.idx, so the held layer's button numbers
 -- are looked up again (display only: a plain table of ours, nothing of the game's written).
@@ -31,9 +33,9 @@
 -- key arriving mid-fight, left the opted-in player with no bar for the whole fight: NB.build is display-only, legal in combat); the
 -- driver reads the flag at its first tick and then every FLAG_S (0.5 s), not every frame, and does nothing more while it is off.
 -- nbar8 (the fix pass on movable Home): a "Combat bar" entry counts as PLACED only when it moves the piece (dx / dy not 0) - a size
--- alone (the editor's size step) keeps the Wings at their auto spot, scaled; in a fight (InCombatLockdown / the player in combat) the
--- Wings stay for the WHOLE fight whatever B gave back (SPEC section 11: tgGrown only decides out of combat - an attack armed before the
--- pull, B's give-back); a settled frame of the motion does no work (no spot, no string rebuilt per frame).
+-- alone (the editor's size step) keeps the Wings at their auto spot, scaled; (nbar14: its in-fight override - the Wings kept for the WHOLE
+-- fight whatever B gave back - is gone: B hands them back in a fight too, the user's 11-23 ruling); a settled frame of the motion does no
+-- work (no spot, no string rebuilt per frame).
 -- nbar7 THE COMBAT BAR ON THE TOP SCREEN (movable Home phase 3, SPEC.txt section 11; the user's rulings 2026-11-20: D1 opt-in, D7 Wings):
 -- with this character's flag on (PadMap m179 ctop, the app's "In fights: Top screen") the Nintendo bar shows in fights as two halves around
 -- our HUD at a spot worked out out of combat (NB.fightSolve), frozen in the fight and re-fit only against our own frames; display only.
@@ -2515,7 +2517,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar13", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar15", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -2604,8 +2606,9 @@ function NB.anchor(b, lay)
     local cx = (NB.hx or { -NB.DX, NB.DX })[h]                       -- nbar7: each half's centre (the Wings move them apart)
     local cy = (NB.hy or { 0, 0 })[h]
     pcall(b.ClearAllPoints, b)
-    -- nbar11: a held button sits 2 units lower (the band's press)
-    b:SetPoint("CENTER", b.nbParent, "CENTER", cx + a[1] * NB.OFF, cy + a[2] * NB.OFF - (b.down and 2 or 0))
+    -- nbar11: a held button sits 2 units lower (the band's press). nbar14: the diamond's spacing across / up (NB.ox / NB.oy) - the Wings'
+    -- flattened diamond (NB.TOP.OFF_X / OFF_Y, the band's shape) while they show, the Nintendo bar's square OFF otherwise
+    b:SetPoint("CENTER", b.nbParent, "CENTER", cx + a[1] * (NB.ox or NB.OFF), cy + a[2] * (NB.oy or NB.OFF) - (b.down and 2 or 0))
     b.alay = lay
 end
 
@@ -2896,19 +2899,32 @@ function NB.place()
         return
     end
     local ox, oy, sc = NB.layEntry()
-    -- nbar2: the stock bar's own scale on ours (its buttons the stock size); nbar3: times the layout's size, the offsets in our own units
-    pcall(f.SetScale, f, k * sc)
-    NB.scale, NB.lsc = k, sc
+    -- nbar2: the stock bar's own scale on ours (its buttons the stock size); nbar3: times the layout's size, the offsets in our own units.
+    -- nbar14: the top layout editor's preview of the Wings (the flag on, Nintendo mode off: NB.topEdit) is drawn at the FIGHT's size - the
+    -- band's match (NB.TOP.MATCH_S px per unit) - and in its flattened shape, so the piece placed is what the fight shows
+    local kf = k
+    if NB.top and NB.top.edit and not NB.on then
+        local _, _, kk = NB.topScreen()
+        kf = NB.TOP.MATCH_S / kk
+        NB.ox, NB.oy = NB.TOP.OFF_X, NB.TOP.OFF_Y
+    elseif not (NB.top and NB.top.shown) then
+        NB.ox, NB.oy = nil, nil
+    end
+    pcall(f.SetScale, f, kf * sc)
+    NB.scale, NB.lsc = kf, sc
     pcall(f.ClearAllPoints, f)
+    -- (the stock centre in UIParent units is cx * k; in our frame's units cx * k / (kf * sc) - cx / sc at the stock scale)
+    local r = (kf == k) and 1 or k / kf
     if cx and cy then
         NB.lastC = { cx, cy, k }
-        -- (the stock centre in UIParent units is cx * k; ours = that plus the layout's offset, in our frame's units)
-        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx / sc + ox / (k * sc), cy / sc - oy / (k * sc))
+        -- ours = that plus the layout's offset, in our frame's units
+        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx * r / sc + ox / (kf * sc), cy * r / sc - oy / (kf * sc))
         NB.at = "stock"
     else
-        f:SetPoint("BOTTOM", UIParent, "BOTTOM", ox / (k * sc), NB.Y_DEF / sc - oy / (k * sc))
+        f:SetPoint("BOTTOM", UIParent, "BOTTOM", ox / (kf * sc), NB.Y_DEF * r / sc - oy / (kf * sc))
         NB.at = "default"
     end
+    if f.btn then local lay = NB.layout(); for p = 1, 8 do if f.btn[p] then NB.anchor(f.btn[p], lay) end end end
 end
 -- nbar3 THE NINTENDO BAR AS A LAYOUT PIECE (Hub's editor gathers it): its anchor is the bar's centre, 1080-line pixels from the top-left
 local function layK()
@@ -2921,9 +2937,14 @@ local function barSize()
     -- L / R plates, the chips, Party mode's chord row) - the editor's box the size of what shows in the fight
     if type(NB.topFlag) == "function" and NB.topFlag() and type(NB.halfBox) == "function" then
         local _, _, ax = NB.halfBox()
-        return 2 * (NB.DX + ax), 2 * NB.OFF + NB.B
+        return 2 * (NB.DX + ax), 2 * NB.TOP.OFF_Y + NB.B                -- nbar14: the flattened diamond's height
     end
     return 2 * NB.DX + 2 * NB.OFF + NB.B, 2 * NB.OFF + NB.B
+end
+-- nbar14: the piece's px per bar unit - the Wings' match size while the top-screen flag is on, else the stock bar's (k x kk)
+function NB.pieceS(k, kk)
+    if type(NB.topFlag) == "function" and NB.topFlag() and NB.TOP then return NB.TOP.MATCH_S end
+    return k * kk
 end
 NB.lay = {
     id = "nbar", sn = NB.S_MIN, sx = NB.S_MAX, ss = NB.S_STEP,
@@ -2941,7 +2962,8 @@ NB.lay = {
         local _, _, k = NB.stock()
         local sc = ((e and num(e.s)) or 100) / 100
         local bw, bh = barSize()
-        return bw * k * sc * kk, bh * k * sc * kk
+        local ps = NB.pieceS(k, kk)
+        return bw * ps * sc, bh * ps * sc
     end,
     off = function(w, h) return -w / 2, -h / 2 end,
     on = function() return NB.on == true end,
@@ -3305,15 +3327,21 @@ end
 -- still counts; the compass; the target bar with its cast strip, ToT, Y prompt and aura host; the left party column; Polestar's arrow
 -- and guide), the game's frames shown then and the fight-only game frames RESERVED (NB.RESERVE: the cast bars always, the Cooldown
 -- Manager, mirror timers, extra ability, boss frames and swing timers once seen this session) - WC.gameLay.rectNow, a plain read, OUT OF
--- COMBAT ONLY - never over the tap pad's band (WC.lay.forbidden's "pad" zone with x 720-1200, y 24-178 at least); margin 24 px.
--- nbar11 SHRINK FIRST, THEN MOVE - the first candidate that fits wins:
---   1 wings beside the HUD block, level with its middle, 34 px gap each side (clamped 16 px above the bottom), at k 1, then 0.9, 0.8
---   2 wings raised in 24 px steps (up to 300 px) at k 0.8 until both halves clear, staying level
---   3 the halves joined into one bar, centred above the HUD block, at k 1, then 0.8
---   4 a grid scan at k 0.7 over the lower 60 % of the screen (24 px steps, bottom rows first, centre outward), then at 0.55 there,
---     then at 0.55 over the whole screen (a big bar on a small UI): the first joined spot clear
---   5 the Combat bar piece's own spot (the stock bar's) - the last resort, always accepted (pushed under the tap pad's band if it would
---     cover it; the geometry test fails any HUD state that lands here)
+-- COMBAT ONLY - never over the tap pad's band (WC.lay.forbidden's "pad" zone with x 720-1200, y 24-178 at least); margin 24 px, and
+-- nbar14's HUD_MARGIN (60 px) from the HUD block itself (ids "hud" / "partyhud").
+-- nbar14 MOVE BEFORE SHRINKING (the user, 11-23: the Wings at the band's own size; "a bit to close to the HUD") - the first candidate
+-- that fits wins, the bar's scale never under MIN_K (0.8):
+--   1 wings beside the HUD block, level with its middle (clamped 16 px above the bottom), GAP 60 px each side at k 1; then pushed
+--     outward in 24 px steps (the gap up to PUSH_MAX 228: past the reserved cast bar / Cooldown Manager beside a narrow HUD)
+--   2 raised in 24 px steps (up to 300 px) at k 1, with the same outward push, staying level
+--   3 the halves joined into one bar, centred above the HUD block (60 px over it), at k 1
+--   then only SHRINK: 1 / 2 again at k 0.9, then 0.8 (case 1 / 2 with k < 1)
+--   4 a grid scan at k 0.8 over the lower 60 % of the screen (24 px steps, bottom rows first, centre outward), then over the whole
+--     screen: the first joined spot clear
+--   5 the Combat bar piece's own spot (the stock bar's) at the match size - the last resort, always accepted (pushed under the tap pad's
+--     band if it would cover it; the geometry test fails any HUD state that lands here)
+-- (nbar11-13 shrank first: k 1 / 0.9 / 0.8 beside, raised at 0.8, the grid at 0.7 / 0.55 - at the band's size that left a quarter of
+-- the layouts under 0.7)
 -- The result's k scales the bar (NB.topSolve); its `lane` says the column under each half down to the screen's bottom edge is clear
 -- (the slide's path, below).
 -- A spot the player placed (an entry for "nbar" in WowCompanionDB.lay = Auto off; the editor's Reset = Auto again) ALWAYS wins: the
@@ -3322,8 +3350,11 @@ end
 -- layout save (the piece's apply), UI_SCALE_CHANGED / DISPLAY_SIZE_CHANGED, every REFIT_S against ours and every SOLVE_S with the game's
 -- frames read again.
 -- MOTION (nbar11, the user 2026-11-22: "a slick animation looking like it slides up to the top screen"): with a clear lane the bar
--- SLIDES IN UPWARD from fully below the top screen's bottom edge - a HOLD_IN (60 ms) wait, then IN_S (0.26 s) on the ease-out cubic
--- (0, 0, 0.2, 1), alpha 1 all the way - as the app's band slides up off the bottom screen's top edge, so it reads as one object crossing
+-- SLIDES IN UPWARD from fully below the top screen's bottom edge - a HOLD_IN (60 ms) wait, then IN_S (0.26 s) on IN_C (nbar14, the
+-- user's pick "Even it out": (1/3, 0.5, 2/3, 1) = 1.5 u - 0.5 u^3, its first speed the band's exit speed at the seam - the old
+-- ease-out (0, 0, 0.2, 1) entered ~3x faster than the band left), alpha 1 all the way - as the app's band slides up off the bottom
+-- screen's top edge, so it
+-- reads as one object crossing
 -- the seam; out it slides back down past the edge over OUT_S (0.20 s) on the ease-in (0.4, 0, 1, 1) (the app's Motion.curveOut), then
 -- hides; a reversal mid-way goes on from where it is. No lane (the joined bar above the HUD, a placed spot over something): today's fade
 -- in + rise 24 px. With the Nintendo bar already shown out of combat ("Controller UI = Nintendo") the bar GLIDES from its spot to the
@@ -3360,16 +3391,58 @@ end
 -- round sweeps' SetSwipeTexture / SetUseCircularEdge run at build, pcall'd. Nothing depends on PLAYER_REGEN_DISABLED firing before the
 -- lockdown (the reserved rects are read only while InCombatLockdown() is false).
 -- The app sends nothing in combat: the add-on switches by itself.
+-- nbar14 THE WINGS MATCH THE BAND (the user, 2026-11-23, in a Top-screen fight: "The controller bars are still a bit too small, they look
+-- smaller than the bottom screen so the transition effect looks odd, they also are a bit to close to the HUD"; picks "Match the shape"
+-- and "Even it out"):
+-- (1) SIZE: the Wings' px per bar unit is MATCH_S (1.75) times the piece's size step, whatever the game's UI scale (the stock bar's scale
+-- and UIParent's px per unit no longer in it): a square slot 46 x 1.75 = 80.5 px = 5.57 mm on the Thor's top panel (0.06918 mm / px),
+-- the band's 5.54 mm at rest (Diamonds, 91.5 bottom px x 0.06055 mm); a round one 5.33 mm (the band's 5.34).
+-- (2) SHAPE: the band's diamonds are flattened (11.5 x 6.0 mm between the outer slots' centres): the Wings' diamond spaces its slots
+-- OFF_X (47.5) across and OFF_Y (25) up / down (47.5 > 46: no two slots touch); the L / R plates 64 x 50 (the band's 7.8 x 6.1 mm), the
+-- outer column OUTER_W 68; one half 228 x 135 units (the outer column to 142.5, the inner glow 85.5, up 63, the swing lines down to 72).
+-- The Nintendo bar out of a fight keeps the stock bar's square diamond (OFF); the glide between them eases the spacing and the scale.
+-- (3) GAP: 60 px from the HUD block (HUD_MARGIN in the fit, for the block only; MARGIN 24 for everything else) - the slot's edge ~6 mm
+-- off the HUD at the match size (3.7 mm before).
+-- (4) THE SOLVER MOVES BEFORE IT SHRINKS (the order above). A solve that ends under k 1 SCALES DURING THE SLIDE: the bar starts at k 1
+-- under the edge and eases to its k on the slide's own progress (a per-frame SetScale on our frame, as the re-fit glide has done in
+-- fights since 1518), so the band's size crosses the seam and the bar settles to the size that fits.
+-- (5) THE SEAM'S SPEED: the band leaves the bottom screen at ~0.10 mm / ms (Motion.TOP_SLIDE_UP 240 ms on (0.4, 0, 1, 1), ~242 bottom px);
+-- the Wings' default drop (~260 px = 18 mm at the match size) on IN_C starts at 1.5 x its mean speed = ~0.10 mm / ms and eases in,
+-- the same IN_S (0.26 s) in all; the app's TopSlide.WINGS_IN mirrors IN_C for its reversal hold (WINGS_OUT_MS / HAND_BACK_MS unchanged:
+-- OUT_S and its curve are as before).
+-- nbar14 THE B RULE (the user, 11-23: "The controller bar top grow is working off of being in combat again instead of our combat ruls
+-- where we press B and it grows back downwards"): the Wings follow OUR takeover exactly as Grow does - up on the router's switch (a
+-- fight, or an attack / auto-repeat armed), B on Home gives them back IN A FIGHT TOO (the router's secure B snippet already gives the
+-- buttons back there, m50 / m99 - nbar8's "stay to the fight's end" override threw that away), the next harmful press / attack start
+-- re-arms them. NB.topSwitch reads PadMap's WC.padMap.fightSw first (m188: the router's own switch over every router button, so an
+-- unbound Y still counts), then WC.tgGrown, then the armed attack / the fight. Party mode keeps its real-fight rule (ruling C).
+-- The Wings are plain display frames: shown / hidden / moved in a fight as ever; no secure binding or attribute is touched.
+-- nbar14 PARTY MODE CENTRED (the user, 11-23: "When using party mode with the top bar shift, it sort of needs to shift the HUD to be
+-- centered and the controller bars still also need to shift around them to make space for the shifted party frames"): in Party mode's
+-- Top-screen fight (NB.top.centre: the flag on, Party mode live, its fight) the HUD block - Trail's bars with the pet strip and the aura
+-- row, Hub's party rows and Select tab under them (Hub's party top layout) - is told to stand CENTRED on the top screen: NB.centreDx() is
+-- the horizontal shift (1080-line px) Trail prd22 fades its HUD to (Hub's rows follow P.partyGeo, as for the on-screen lift), and the
+-- solver gets the block where it is going (the live rects less the shift applied, plus the one wanted), so the Wings stand either side
+-- of the centred block, clear of the party frames. The fight's end / B / Party mode off: the shift goes back to 0 the same way. Trail's
+-- and Hub's frames are our own plain frames (no secure template; Trail checks IsProtected and waits in a fight if one ever is).
+-- nbar14 SWING (the user's picks 11-23, "Keep ours on the bottom" / "One place"): with the cast bar on the top screen (ctcb) the Wings
+-- draw their swing lines only while the GAME's own swing timer is on (PadMap m188's read-only gameSwingOn: Edit Mode's account setting
+-- ShowSwingTimer); off, the app's strip keeps the swing across the top of the bottom screen (its cast left to the game's bar). The
+-- default Bottom screen: no swing lines on the Wings (one place), as nbar13.
 ---------------------------------------------------------------------------------------------------
-NB.TOP = { HOLD_IN = 0.06, IN_S = 0.26, OUT_S = 0.20, RISE = 24, KS = { 1, 0.9, 0.8 }, KJ = { 1, 0.8 }, KG = { { 0.7, 0.4 }, { 0.55, 0.4 }, { 0.55, 0 } }, GAP = 34, MARGIN = 24, STEP = 24, RAISE_MAX = 300, FLOOR = 16, DIP = 0.35,
+NB.TOP = { HOLD_IN = 0.06, IN_S = 0.26, OUT_S = 0.20, RISE = 24, KS = { 1, 0.9, 0.8 }, KJ = { 1 }, KG = { { 0.8, 0.4 }, { 0.8, 0 } }, GAP = 60, MARGIN = 24, STEP = 24, RAISE_MAX = 300, FLOOR = 16, DIP = 0.35,
+           -- nbar14: the band's match (px per unit at size 100 %), the Wings' flattened diamond, the HUD block's own margin, the push's
+           -- widest gap, the smallest shrink, the slide's way-up curve (its first slope 1.5: the band's exit speed, then only slower)
+           MATCH_S = 1.75, OFF_X = 47.5, OFF_Y = 25, HUD_MARGIN = 60, PUSH_MAX = 228, MIN_K = 0.8, IN_C = { 1 / 3, 0.5, 2 / 3, 1 },
            REFIT_S = 0.5, SOLVE_S = 5, FLAG_S = 0.5, BAND = { x = 720, y = 24, w = 480, h = 154 },
            -- one half, in the bar's own units: the diamond (2 OFF + B), the ZL / ZR chip outside it, the two swing lines under it
            CHIP_W = 40, CHIP_H = 28, CHIP_GAP = 4, SW_GAP = 8, SW_H = 6, SW_SEP = 4,
-           -- nbar12: the outer column (OUTER_W wide, PLATE_GAP past the diamond): the L / R plate (the game atlas's own 50 x 45) at the top,
-           -- the chip CHIP_GAP under it, Party mode's chord row (three round icons CHORD across, CHORD_GAP apart) CHORD_SEP under that; the
-           -- plate's bumper glyph at its inner bottom corner (PLATE_GX in, PLATE_GY down from its centre); Hub's party rows' drawn rim (the
-           -- rings and the chevron past each row's frame) while Party mode is on
-           PLATE_W = 50, PLATE_H = 45, PLATE_GAP = 6, OUTER_W = 54, CHORD = 16, CHORD_GAP = 3, CHORD_SEP = 4, PLATE_GX = 15, PLATE_GY = -13.5,
+           -- nbar12: the outer column (OUTER_W wide, PLATE_GAP past the diamond): the L / R plate at the top, the chip CHIP_GAP under it,
+           -- Party mode's chord row (three round icons CHORD across, CHORD_GAP apart) CHORD_SEP under that; the plate's bumper glyph at its
+           -- inner bottom corner (PLATE_GX in, PLATE_GY down from its centre); Hub's party rows' drawn rim (the rings and the chevron past
+           -- each row's frame) while Party mode is on. nbar14: the plate the band's size (64 x 50; the atlas's 50 x 45 before), its glyph
+           -- at the same corner share (0.6), the column 68 wide
+           PLATE_W = 64, PLATE_H = 50, PLATE_GAP = 6, OUTER_W = 68, CHORD = 16, CHORD_GAP = 3, CHORD_SEP = 4, PLATE_GX = 19.2, PLATE_GY = -15,
            HUB_RIM = 12 }
 NB.top = { want = false, shown = false, edit = false, t = 0, dir = 0, form = "fade", solveAcc = 0, gameAcc = 0, game = {}, gameAt = nil,
            frozen = false, dirty = true, gameDirty = true, spot = nil, cur = nil, from = nil, mt = 1, alpha = 1, key = nil, n = 0, reads = 0, gameReads = 0 }
@@ -3392,10 +3465,12 @@ function NB.ease(u) return NB.cubic(u, 0.4, 0, 0.2, 1) end
 -- Motion.curveOut, what leaves the screen)
 function NB.easeOut(u) return NB.cubic(u, 0, 0, 0.2, 1) end
 function NB.easeIn(u) return NB.cubic(u, 0.4, 0, 1, 1) end
+-- nbar14 the way up's curve (NB.TOP.IN_C: its first speed the band's exit speed at the seam, then it eases in)
+function NB.slideIn(u) local c = NB.TOP.IN_C; return NB.cubic(u, c[1], c[2], c[3], c[4]) end
 -- the slide's progress (0 below the edge .. 1 at the spot) at T.t for the way it goes ([dir] 1 in, -1 out: out runs T.t 1 -> 0)
 function NB.slideK(t, dir)
     if dir == -1 then return 1 - NB.easeIn(1 - t) end
-    return NB.easeOut(t)
+    return NB.slideIn(t)
 end
 -- the T.t on the other way's curve that gives the same progress [k] (a reversal mid-way goes on from where the bar is: no jump)
 function NB.slideT(k, dir)
@@ -3420,37 +3495,40 @@ end
 -- disc (CHIP_H + 8 round the chip) 4 above it - the solver kept only the diamond clear of the HUD, so the glow could flash over it.
 -- NB.halfArt gives the drawn reach on each side; the box is the larger of it and the diamond / chip / swing-line layout
 -- nbar12 THE OUTER COLUMN (one half, from its diamond's centre, x outward, y up): the plate's, the chip's and the chord row's centres
-function NB.outerGeo()
+-- nbar14: the Wings' flattened diamond (OFF_X across, OFF_Y up / down); [ox] / [oy] another spacing (the glide's eased one)
+function NB.outerGeo(ox, oy)
     local T = NB.TOP
-    local d2 = NB.OFF + NB.B / 2
-    local x = d2 + T.PLATE_GAP + T.OUTER_W / 2                                  -- 106
-    local plateY = d2 - T.PLATE_H / 2                                            -- +50.5: its top level with the diamond's top slot
-    local chipY = plateY - T.PLATE_H / 2 - T.CHIP_GAP - T.CHIP_H / 2             -- +10
-    local chordY = chipY - T.CHIP_H / 2 - T.CHORD_SEP - T.CHORD / 2              -- -16
+    ox, oy = ox or T.OFF_X, oy or T.OFF_Y
+    local d2x, d2y = ox + NB.B / 2, oy + NB.B / 2
+    local x = d2x + T.PLATE_GAP + T.OUTER_W / 2                                 -- 110.5
+    local plateY = d2y - T.PLATE_H / 2                                           -- +23: its top level with the diamond's top slot
+    local chipY = plateY - T.PLATE_H / 2 - T.CHIP_GAP - T.CHIP_H / 2             -- -20
+    local chordY = chipY - T.CHIP_H / 2 - T.CHORD_SEP - T.CHORD / 2              -- -46
     return { x = x, plateY = plateY, chipY = chipY, chordY = chordY, chordDX = T.CHORD + T.CHORD_GAP }
 end
 function NB.halfArt()
     local T = NB.TOP
-    -- the outermost slot's glow (a slot sits OFF from the centre on each axis; a held one 2 lower)
-    local glow = NB.OFF + math.max(NB.B, NB.BC) / 2 + NB.FOCUS / 2
+    -- the outermost slots' glow (a slot sits OFF_X across / OFF_Y up from the centre; a held one 2 lower)
+    local r = math.max(NB.B, NB.BC) / 2 + NB.FOCUS / 2
+    local glowX, glowY = T.OFF_X + r, T.OFF_Y + r
     local disc = (T.CHIP_H + 8) / 2
     local g = NB.outerGeo()                                                      -- NB.topDeco's places (outward, up)
     return {
-        up = math.max(glow, g.plateY + T.PLATE_H / 2, g.chipY + math.max(T.CHIP_H / 2, disc)),
-        down = math.max(glow + 2, -(g.chordY - T.CHORD / 2)),
-        inner = glow,
+        up = math.max(glowY, g.plateY + T.PLATE_H / 2, g.chipY + math.max(T.CHIP_H / 2, disc)),
+        down = math.max(glowY + 2, -(g.chordY - T.CHORD / 2), -(g.chipY - math.max(T.CHIP_H / 2, disc))),
+        inner = glowX,
         -- (the plate, the chip and its held disc, the chord row's outer icon: always counted, so a Party toggle never resizes the bar)
-        outer = math.max(glow, g.x + T.PLATE_W / 2, g.x + math.max(T.CHIP_W / 2, disc), g.x + g.chordDX + T.CHORD / 2),
+        outer = math.max(glowX, g.x + T.PLATE_W / 2, g.x + math.max(T.CHIP_W / 2, disc), g.x + g.chordDX + T.CHORD / 2),
     }
 end
 function NB.halfBox()
     local T = NB.TOP
-    local d = 2 * NB.OFF + NB.B
+    local dx, dy = 2 * T.OFF_X + NB.B, 2 * T.OFF_Y + NB.B
     local a = NB.halfArt()
-    local outer = math.max(d + T.CHIP_GAP + T.CHIP_W - d / 2, a.outer)
-    local inner = math.max(d / 2, a.inner)
-    local up = math.max(d / 2, a.up)
-    local down = math.max(d / 2 + T.SW_GAP + 2 * T.SW_H + T.SW_SEP, a.down)
+    local outer = math.max(dx + T.CHIP_GAP + T.CHIP_W - dx / 2, a.outer)
+    local inner = math.max(dx / 2, a.inner)
+    local up = math.max(dy / 2, a.up)
+    local down = math.max(dy / 2 + T.SW_GAP + 2 * T.SW_H + T.SW_SEP, a.down)
     return outer + inner, up + down, outer, up
 end
 
@@ -3470,8 +3548,8 @@ end
 -- THE SOLVER (pure; 1080-line pixels from the top-left). [inp]: W, H, s (px per bar unit), hud (the HUD block's rect, nil = none),
 -- ours / game (rects to keep clear of), band (the tap pad's), placed (the player's own centre for the joined bar, nil = Auto), stock (the
 -- piece's default centre). -> { case = 1 / 2 / 3 / 4 / 5 / "placed", form = "wings" / "joined", l / r = the two diamonds' centres,
--- rects = the two halves' boxes, raise = px raised (case 2), k = the shrink (the bar's scale times it), lane = the column under each
--- half to the bottom edge clear (the slide's path) }
+-- rects = the two halves' boxes, raise = px raised (case 2), push = px pushed outward past GAP (cases 1 / 2, nbar14), k = the shrink
+-- (the bar's scale times it; never under MIN_K), lane = the column under each half to the bottom edge clear (the slide's path) }
 function NB.fightSolve(inp)
     local T = NB.TOP
     local W, H, s0 = inp.W or 1920, inp.H or 1080, inp.s or 1
@@ -3487,10 +3565,14 @@ function NB.fightSolve(inp)
     end
     local function lrect(g, cx, cy) return { x = cx - g.ax, y = cy - g.ay, w = g.hw, h = g.hh } end
     local function rrect(g, cx, cy) return { x = cx - (g.hw - g.ax), y = cy - g.ay, w = g.hw, h = g.hh } end
+    -- nbar14: the HUD block (ours: "hud", or Party mode's rows alone, "partyhud") kept HUD_MARGIN off; everything else MARGIN
     local function fits(r)
         if r.x < 0 or r.y < 0 or r.x + r.w > W or r.y + r.h > H then return false end
         if NB.overlaps(r, band, T.MARGIN) then return false end
-        for _, o in ipairs(obst) do if NB.overlaps(r, o, T.MARGIN) then return false end end
+        for _, o in ipairs(obst) do
+            local m = (o.id == "hud" or o.id == "partyhud") and T.HUD_MARGIN or T.MARGIN
+            if NB.overlaps(r, o, m) then return false end
+        end
         return true
     end
     -- the slide's lane: nothing of ours or the game's in the column under a half, down to the screen's bottom edge
@@ -3499,9 +3581,9 @@ function NB.fightSolve(inp)
         for _, o in ipairs(obst) do if NB.overlaps(col, o, 0) then return false end end
         return true
     end
-    local function out(case, form, g, k, lx, ly, rx, ry, raise)
+    local function out(case, form, g, k, lx, ly, rx, ry, raise, push)
         local rects = { lrect(g, lx, ly), rrect(g, rx, ry) }
-        return { case = case, form = form, l = { x = lx, y = ly }, r = { x = rx, y = ry }, raise = raise or 0, k = k,
+        return { case = case, form = form, l = { x = lx, y = ly }, r = { x = rx, y = ry }, raise = raise or 0, push = push or 0, k = k,
                  rects = rects, lane = clearUnder(rects[1]) and clearUnder(rects[2]) }
     end
     -- the joined bar centred on [c], kept on the screen FIRST, then moved under the tap pad's band if it would come within MARGIN of it
@@ -3518,41 +3600,64 @@ function NB.fightSolve(inp)
     end
     if inp.placed then return joined("placed", inp.placed) end
     local hud = inp.hud
+    -- nbar14: the smallest shrink - MIN_K of the band's match size: a size step over 100 % (inp.size) may shrink further, never under it
+    local kmin = T.MIN_K / math.max(1, inp.size or 1)
+    local beside = nil
     if hud then
         local function level(g) return math.min(hud.y + hud.h / 2, H - T.FLOOR - (g.hh - g.ay)) end
-        -- 1: level beside the block, the full size first, then a little smaller
-        for _, k in ipairs(T.KS) do
+        -- nbar14: at size [k], beside the block level with its middle (raise 0) or raised, the gap from GAP pushed outward in STEP to
+        -- PUSH_MAX - the least push first, then the least raise with the least push
+        beside = function(k)
             local g = geo(k)
-            local lx, rx = hud.x - T.GAP - (g.hw - g.ax), hud.x + hud.w + T.GAP + (g.hw - g.ax)
             local cy = level(g)
-            if fits(lrect(g, lx, cy)) and fits(rrect(g, rx, cy)) then return out(1, "wings", g, k, lx, cy, rx, cy) end
-        end
-        -- 2: raised at the smallest of those sizes
-        do
-            local k = T.KS[#T.KS]
-            local g = geo(k)
-            local lx, rx = hud.x - T.GAP - (g.hw - g.ax), hud.x + hud.w + T.GAP + (g.hw - g.ax)
-            local cy = level(g)
+            local function try(gap, d)
+                local lx, rx = hud.x - gap - (g.hw - g.ax), hud.x + hud.w + gap + (g.hw - g.ax)
+                if fits(lrect(g, lx, cy - d)) and fits(rrect(g, rx, cy - d)) then
+                    return out(d > 0 and 2 or 1, "wings", g, k, lx, cy - d, rx, cy - d, d, gap - T.GAP)
+                end
+                return nil
+            end
+            local gap = T.GAP
+            while gap <= T.PUSH_MAX do
+                local r = try(gap, 0)
+                if r then return r end
+                gap = gap + T.STEP
+            end
             local d = T.STEP
             while d <= T.RAISE_MAX do
-                if fits(lrect(g, lx, cy - d)) and fits(rrect(g, rx, cy - d)) then return out(2, "wings", g, k, lx, cy - d, rx, cy - d, d) end
+                gap = T.GAP
+                while gap <= T.PUSH_MAX do
+                    local r = try(gap, d)
+                    if r then return r end
+                    gap = gap + T.STEP
+                end
                 d = d + T.STEP
             end
+            return nil
         end
-        -- 3: joined above the block
+        -- 1 / 2: beside (pushed out, then raised) at the full size
+        local r1 = beside(1)
+        if r1 then return r1 end
+        -- 3: joined above the block, at the full size
         for _, k in ipairs(T.KJ) do
             local g = geo(k)
             local jx, jy = hud.x + hud.w / 2, hud.y - T.GAP - (g.hh - g.ay)
             if fits(lrect(g, jx - g.dx, jy)) and fits(rrect(g, jx + g.dx, jy)) then return out(3, "joined", g, k, jx - g.dx, jy, jx + g.dx, jy) end
         end
+        -- only now shrink: beside / raised at 0.9, then 0.8 (never under MIN_K)
+        for _, k in ipairs(T.KS) do
+            if k < 1 and k >= T.MIN_K then
+                local r = beside(k)
+                if r then return r end
+            end
+        end
     end
-    -- 4: a grid scan of the lower 60 % at k 0.7, then 0.55, then the whole screen at 0.55 (bottom rows first, from the middle outward):
-    -- the first clear joined spot
-    for _, kt in ipairs(T.KG) do
-        local k = kt[1]
+    -- 4: a grid scan at MIN_K (nbar14: 0.8; 0.7 / 0.55 before) over the lower 60 %, then the whole screen (bottom rows first, from the
+    -- middle outward): the first clear joined spot
+    local function grid(k, frac)
         local g = geo(k)
         local x0, x1 = g.dx + g.ax, W - g.dx - g.ax
-        local yBottom, yTop = H - T.FLOOR - (g.hh - g.ay), H * kt[2] + g.ay
+        local yBottom, yTop = H - T.FLOOR - (g.hh - g.ay), H * frac + g.ay
         local mid = (hud and (hud.x + hud.w / 2)) or W / 2
         local y = yBottom
         while y >= yTop do
@@ -3571,6 +3676,17 @@ function NB.fightSolve(inp)
             end
             y = y - T.STEP
         end
+        return nil
+    end
+    for _, kt in ipairs(T.KG) do
+        local r = grid(math.max(T.MIN_K, kt[1]), kt[2])
+        if r then return r end
+    end
+    -- nbar14: a size step over 100 % that fits nowhere at 0.8 of itself: down to 0.8 of the band's match size (beside, then the grid)
+    if kmin < T.MIN_K - 1e-9 then
+        if beside then local r = beside(kmin); if r then return r end end
+        local r = grid(kmin, 0)
+        if r then return r end
     end
     local g1 = geo(1)
     return joined(5, inp.stock or { x = W / 2, y = H - 64 * s0 - g1.hh / 2 })
@@ -3635,6 +3751,15 @@ function NB.pieceOn(p)
     return ok and v == true
 end
 -- OUR pieces' rects now (live frames first, else the piece's own rect) -> list, the HUD block
+-- nbar15 (the review, 11-23): the centring shift wanted for a block whose centre now leaves [raw] (1080-line px) to the screen's
+-- centre - the shift already told (NB.top.cdx) kept while [raw] is within 1 px of it. The block is read back from frames Hub and Trail
+-- placed on the pixel grid, less the shift they stand at: a centre on a half pixel read back a hair either side by the float sums
+-- would round to two shifts 1 px apart in turn - each a move that fades the rows (geoMoved) and the HUD (P.cx) out and in again
+function NB.centreKeep(raw)
+    local old = NB.top.cdx
+    if type(old) == "number" and math.abs(raw - old) < 1 then return old end
+    return math.floor(raw + 0.5)
+end
 function NB.topOurs()
     local out, hud = {}, nil
     local function add(r, id) if r then r.id = id; out[#out + 1] = r end end
@@ -3668,8 +3793,44 @@ function NB.topOurs()
             if okB and type(r) == "table" and type(r.x) == "number" and type(r.w) == "number" and r.w > 0 and r.h > 0 then geo = r end
         end
         hud = NB.union(live, geo) or NB.pieceRect(prd.lay, "hud")
+        -- nbar14 PARTY MODE CENTRED (NB.top.centre: Party mode's Top-screen fight): the block where it is GOING - its rects less the shift
+        -- each part stands at now, its centre on the screen's - and that shift wanted (NB.centreDx, whole px). The review (11-23): Trail's
+        -- frames and its block stand at the shift it has APPLIED (prd22 P.cx), Hub's rows and tab at the one they were last DRAWN with (PF.g,
+        -- P.partyGeo's cx: told at once, moved at Hub's own fade's bottom) - the two differ mid-fade, and one shift taken off the union of
+        -- both moved the centre half a shift, the next re-fit asked for another shift, the HUD faded again (a loop). Each part less its
+        -- own shift: the same unshifted block whatever stage either fade is at
+        if hud and NB.top.centre then
+            local W = NB.topScreen()
+            local applied = num(rawget(prd, "cx")) or 0
+            local pg = pf and rawget(pf, "g")
+            local rowsDx = (type(pg) == "table" and num(rawget(pg, "cx"))) or applied
+            local function less(r, d) return r and { x = r.x - d, y = r.y, w = r.w, h = r.h } or nil end
+            local base = less(rows, rowsDx)
+            for i = 1, 4 do base = NB.union(base, less(NB.frameRect(fs[i], true), applied)) end
+            base = NB.union(base, less(geo, applied)) or less(hud, applied)
+            local want = NB.centreKeep(W / 2 - (base.x + base.w / 2))
+            NB.top.cdx = want
+            hud = { x = base.x + want, y = base.y, w = base.w, h = base.h }
+        end
         if hud then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hud") end
     elseif rows then
+        -- nbar15 THE ROWS CENTRED WITH OUR HUD BARS OFF (the user's pick 11-23, "Centre the rows": "The party rows move to the centre
+        -- and the controller goes either side"): in Party mode's Top-screen fight (NB.top.centre) Hub's rows and Select tab - the whole
+        -- block while our HUD bars are off - are told to stand centred, exactly as the HUD + rows block: their rects less the shift they
+        -- were last DRAWN with (PF.g, P.partyGeo's cx; Trail's own P.cx plays no part, none of its frames show), the shift wanted
+        -- (NB.centreDx) to the screen's centre, and the solver gets them where they are going AS the HUD block, so the Wings stand either
+        -- side of them (beside / pushed / raised, HUD_MARGIN off). Trail prd23 reads Party mode live with its bars off, so P.partyGeo
+        -- carries the shift and Hub fades its rows to it (hub42's move: our plain frames, no secure template, moved in fights since
+        -- hub42). No Trail to carry it (no P.partyGeo): the rows stay an obstacle where they stand, as before
+        if NB.top.centre and type(prd) == "table" and type(rawget(prd, "partyGeo")) == "function" then
+            local W = NB.topScreen()
+            local pg = pf and rawget(pf, "g")
+            local rowsDx = (type(pg) == "table" and num(rawget(pg, "cx"))) or 0
+            local want = NB.centreKeep(W / 2 - (rows.x - rowsDx + rows.w / 2))
+            NB.top.cdx = want
+            rows = { x = rows.x - rowsDx + want, y = rows.y, w = rows.w, h = rows.h }
+            hud = rows
+        end
         add(rows, "partyhud")                                           -- our HUD bars off: the rows still stand there, kept clear
     end
     local cp = rawget(WC, "compass")
@@ -3769,7 +3930,6 @@ function NB.topBand()
 end
 function NB.topInputs()
     local W, H, kk = NB.topScreen()
-    local _, _, k = NB.stock()
     local L = WC.lay
     local e = (type(L) == "table" and type(L.get) == "function") and L.get("nbar") or nil
     local sc = math.max(NB.S_MIN, math.min(NB.S_MAX, (e and num(e.s)) or 100)) / 100
@@ -3778,13 +3938,15 @@ function NB.topInputs()
     -- nbar8: placed = the entry MOVES the piece (a size alone is the Wings' scale, Auto stays on)
     local dx, dy = (e and num(e.dx)) or 0, (e and num(e.dy)) or 0
     local placed = (e ~= nil and (dx ~= 0 or dy ~= 0)) and { x = bx + dx, y = by + dy } or nil
-    return { W = W, H = H, s = k * sc * kk, fsc = k * sc, kk = kk, hud = hud, ours = ours, game = NB.top.game or {}, band = NB.topBand(),
+    -- nbar14: the band's match (MATCH_S px per unit) times the piece's size step - the stock bar's scale and the UI scale no longer in it
+    local s = NB.TOP.MATCH_S * sc
+    return { W = W, H = H, s = s, fsc = s / kk, kk = kk, size = sc, hud = hud, ours = ours, game = NB.top.game or {}, band = NB.topBand(),
              placed = placed, stock = { x = bx, y = by } }
 end
 -- the solve's inputs as one string (nil = not keyable)
 function NB.inputKey(inp)
     local ok, k = pcall(function()
-        local out = { string.format("%.4f %.4f %.1f %.1f|", inp.s, inp.fsc, inp.W, inp.H) }
+        local out = { string.format("%.4f %.4f %.1f %.1f %.3f|", inp.s, inp.fsc, inp.W, inp.H, inp.size or 1) }
         local function rk(r) out[#out + 1] = r and string.format("%.1f,%.1f,%.1f,%.1f;", r.x, r.y, r.w or 0, r.h or 0) or "-;" end
         rk(inp.hud); rk(inp.band); rk(inp.placed); rk(inp.stock)
         for _, r in ipairs(inp.ours or {}) do rk(r) end
@@ -3826,6 +3988,45 @@ function NB.topFlag()
     end
     return false
 end
+-- nbar13 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should
+-- still show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom. If its on
+-- the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): PadMap
+-- m187's per-character flag (combatCastTopOn, the app's "Cast bar in fights"), read with ctop every FLAG_S. Bottom screen (the default,
+-- flag off): the Wings draw NO swing lines - the app's strip across the top of the bottom screen carries the cast bar and the swing
+-- timer, so neither shows in both places. Top screen (flag on): the Wings keep their split swing lines under the faces (the add-on's own
+-- top-screen swing timer, in its usual place: no re-made bar above the HUD) and their fight's start / end is told to Hub hub76
+-- (WC.hubCastFight(true / false)), which lets the game's OWN casting bar show for the fight (alpha only) and puts the player's Hide back
+-- after it. The game's own swing timer (Blizzard_SwingTimer, its "showSwingTimer" option) is never touched here: no CVar is written.
+-- nbar13: "Cast bar in fights: Top screen" for this character (PadMap m187; an older PadMap: off = the bottom screen's strip)
+function NB.castTopFlag()
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.combatCastTopOn) == "function" then
+        local ok, v = pcall(pm.combatCastTopOn)
+        return ok and v == true
+    end
+    return false
+end
+-- nbar14 (the user's pick 11-23, "Keep ours on the bottom"): the game's own swing timer on (PadMap m188's read-only gameSwingOn: Edit
+-- Mode's account setting ShowSwingTimer) - with the cast bar on the top screen the Wings draw their swing lines only then; off (or an
+-- older PadMap: unknown), the app's strip keeps the swing on the bottom screen
+function NB.gameSwingOn()
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.gameSwingOn) == "function" then
+        local ok, v = pcall(pm.gameSwingOn)
+        return ok and v == true
+    end
+    return false
+end
+-- nbar13: the Wings' fight with the cast bar on the top screen -> Hub hub76 shows the game's own casting bar for it (and hides it again
+-- after): told once per change, [want] the Wings' switch
+function NB.castFight(want)
+    local T = NB.top
+    local on = want == true and T.castTop == true
+    if (T.cfOn == true) == on then return end                         -- (never told yet = off: nothing to undo)
+    T.cfOn = on
+    local f = rawget(WC, "hubCastFight")
+    if type(f) == "function" then pcall(f, on) end
+end
 -- the router's own fight switch (the fight or an attack / auto-repeat armed, not given back by B), else the fight itself
 -- nbar11: Party mode on - the bottom band keeps the controls (ruling R0: no takeover in Party mode), so the Wings stay off: the bar is
 -- never in both places. nbar11 review: the SAME rule the app reads off the party document (PartyModel.onLive = on && (aside == null ||
@@ -3847,8 +4048,14 @@ end
 function NB.topSwitch(party)
     if party == nil then party = NB.partyOn() end
     if party then return S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true end
-    -- nbar8: in a fight the Wings stay to its end (B's give-back drops the bottom grow's word, never the top screen's bar)
-    if S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true then return true end
+    -- nbar14 THE B RULE (the user, 11-23: "our combat ruls where we press B and it grows back downwards"): the router's own switch in
+    -- AND out of a fight - PadMap m188's fightSw (the fight or an attack / auto-repeat armed, nothing given back by B over every router
+    -- button); nbar8's in-fight override (the Wings kept to the fight's end whatever B gave back) is gone
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.fightSw) == "function" then
+        local ok, g = pcall(pm.fightSw)
+        if ok and (g == true or g == false) then return g end
+    end
     if type(WC.tgGrown) == "function" then
         local ok, g = pcall(WC.tgGrown)
         if ok and (g == true or g == false) then return g end
@@ -3858,6 +4065,14 @@ function NB.topSwitch(party)
     if autoAttack == true or autoRepeat == true then return true end
     return S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true
 end
+-- nbar14 PARTY MODE CENTRED: the horizontal shift (1080-line px, + = right) Trail prd22 gives its HUD block (and Hub's rows with it) for
+-- Party mode's Top-screen fight; 0 otherwise. Worked out by NB.topOurs from the block's own rects (no game frame read); nbar15: with our
+-- HUD bars off, from Hub's rows and tab alone
+function NB.centreDx()
+    local T = NB.top
+    if T.centre == true and type(T.cdx) == "number" then return T.cdx end
+    return 0
+end
 function NB.chatUp()
     local ct = rawget(WC, "chatTop")
     return type(ct) == "table" and NB.pieceOn(ct.lay)
@@ -3866,13 +4081,14 @@ function NB.lerpSpot(a, b, k)
     return { l = { x = a.l.x + (b.l.x - a.l.x) * k, y = a.l.y + (b.l.y - a.l.y) * k },
              r = { x = a.r.x + (b.r.x - a.r.x) * k, y = a.r.y + (b.r.y - a.r.y) * k } }
 end
--- the joined bar where it stands out of a fight (the Nintendo bar's spot), at the fight's scale
-function NB.joinedNow(sp)
+-- the joined bar where it stands out of a fight (the Nintendo bar's spot); [s0] its px per unit (nbar14: the stock bar's size, the
+-- glide easing it to the Wings'), else the fight's
+function NB.joinedNow(sp, s0)
     local bx, by = NB.lay.base()
     local L = WC.lay
     local e = (type(L) == "table" and type(L.get) == "function") and L.get("nbar") or nil
     local cx, cy = bx + ((e and num(e.dx)) or 0), by + ((e and num(e.dy)) or 0)
-    local dx = NB.DX * (sp.s or 1)
+    local dx = NB.DX * (s0 or sp.s or 1)
     return { l = { x = cx - dx, y = cy }, r = { x = cx + dx, y = cy } }
 end
 -- the chips and the swing lines (built with the bar, out of combat)
@@ -3945,7 +4161,7 @@ function NB.topParts(f)
             f.chord[i][j] = t
         end
     end
-    local dw = 2 * NB.OFF + NB.B
+    local dw = 2 * T.OFF_X + NB.B                                     -- nbar14: the flattened diamond's width
     for i = 1, 2 do
         local b = CreateFrame("Frame", nil, f)
         pcall(b.EnableMouse, b, false)
@@ -3967,9 +4183,10 @@ end
 function NB.topDeco()
     local f, T = NB.f, NB.TOP
     if not (f and f.chip) then return end
-    local d2 = NB.OFF + NB.B / 2
+    -- nbar14: the diamond's spacing now (the Wings' flattened one; the glide's eased one)
+    local d2 = (NB.oy or T.OFF_Y) + NB.B / 2
     -- nbar12: the outer column - the plate at the top, the chip under it, the chord row under that (NB.outerGeo)
-    local g = NB.outerGeo()
+    local g = NB.outerGeo(NB.ox, NB.oy)
     for i = 1, 2 do
         local sgn = (i == 1) and -1 or 1
         local x, y = NB.hx[i] + sgn * g.x, NB.hy[i]
@@ -4159,9 +4376,15 @@ function NB.topChords(ctx)
     end
 end
 -- the split swing lines under the faces (WC.swingDoc: plain numbers of our own; a line shows while its swing runs)
+-- nbar13: only with "Cast bar in fights: Top screen" (the default Bottom screen: the app's strip carries the swing timer). nbar14: and
+-- only while the game's own swing timer is on (off: the app's strip keeps the swing on the bottom screen - one place)
 function NB.topSwing()
     local f = NB.f
     if not (f and f.sw) then return end
+    if NB.top.castTop ~= true or NB.top.gsw ~= true then
+        for i = 1, 2 do if f.sw[i] then f.sw[i].k = nil; f.sw[i]:Hide() end end
+        return
+    end
     local now = SN(GetTime) or 0
     local ok, sw, so = pcall(WC.swingDoc, now)
     for i, r in ipairs({ ok and sw or false, ok and so or false }) do
@@ -4176,13 +4399,15 @@ function NB.topSwing()
         end
     end
 end
--- the halves at [at] (two centres, px): the frame at their middle, each half's buttons round its own centre
-function NB.topPlace(at, sp)
+-- the halves at [at] (two centres, px): the frame at their middle, each half's buttons round its own centre. nbar14 [m]: this frame's
+-- scale over the spot's (the slide easing a shrunk spot from k 1, the glide from the Nintendo bar's size; 1 = the spot's)
+function NB.topPlace(at, sp, m)
     local f, T = NB.f, NB.top
-    local s, fsc, kk, H = sp.s, sp.fsc, sp.kk, sp.H
+    m = m or 1
+    local s, fsc, kk, H = sp.s and sp.s * m, sp.fsc and sp.fsc * m, sp.kk, sp.H
     if not (f and s and s > 0 and fsc and fsc > 0 and kk and kk > 0) then return end
     local mx, my = (at.l.x + at.r.x) / 2, (at.l.y + at.r.y) / 2
-    local key = string.format("%.1f %.1f %.1f %.1f %.4f", at.l.x, at.l.y, at.r.x, at.r.y, fsc)
+    local key = string.format("%.1f %.1f %.1f %.1f %.4f %.2f %.2f", at.l.x, at.l.y, at.r.x, at.r.y, fsc, NB.ox or 0, NB.oy or 0)
     if key == T.key then return end
     T.key = key
     pcall(f.SetScale, f, fsc)
@@ -4208,6 +4433,7 @@ function NB.topHide()
     local f, T = NB.f, NB.top
     T.shown, T.key, T.cur, T.from, T.mt = false, nil, nil, nil, 1
     NB.hx, NB.hy = { -NB.DX, NB.DX }, { 0, 0 }
+    NB.ox, NB.oy = nil, nil                                             -- nbar14: the Nintendo bar's square diamond (NB.place: the editor's)
     for i = 1, 2 do
         f.chip[i]:Hide(); f.sw[i]:Hide()
         if f.plate then f.plate[i]:Hide(); for j = 1, 3 do f.chord[i][j]:Hide() end end                 -- nbar12
@@ -4258,15 +4484,26 @@ function NB.topApply()
     T.cur = to
     local e = NB.ease(T.t)
     local from
-    if T.form == "glide" then from = NB.joinedNow(sp)
+    local m = 1                                                          -- nbar14: this frame's scale over the spot's
+    local TT = NB.TOP
+    NB.ox, NB.oy = TT.OFF_X, TT.OFF_Y                                    -- nbar14: the Wings' flattened diamond
+    if T.form == "glide" then
+        -- nbar14: from the Nintendo bar's own size and square diamond (the stock bar's) to the Wings' match size and shape
+        local s0 = (NB.scale or 1) * (NB.lsc or 1) * (sp.kk or 1)
+        from = NB.joinedNow(sp, s0)
+        if sp.s and sp.s > 0 then m = (s0 + (sp.s - s0) * e) / sp.s end
+        NB.ox, NB.oy = NB.OFF + (TT.OFF_X - NB.OFF) * e, NB.OFF + (TT.OFF_Y - NB.OFF) * e
     elseif T.form == "slide" then
-        -- nbar11: from wholly below the top screen's bottom edge, straight up (in: ease-out; out: ease-in back down)
-        local d = NB.slideDrop(to, sp)
-        from = { l = { x = to.l.x, y = to.l.y + d }, r = { x = to.r.x, y = to.r.y + d } }
+        -- nbar11: from wholly below the top screen's bottom edge, straight up (in: IN_C; out: ease-in back down). nbar14: a spot solved
+        -- under k 1 starts at k 1 (the band's size) and eases to its k on the slide's own progress; the drop at the k 1 size
         e = NB.slideK(T.t, T.sd or 1)
+        local k = sp.k or 1
+        local d = NB.slideDrop(to, (k < 1 and sp.s) and { s = sp.s / k, H = sp.H } or sp)
+        from = { l = { x = to.l.x, y = to.l.y + d }, r = { x = to.r.x, y = to.r.y + d } }
+        if k < 1 then m = (1 + (k - 1) * e) / k end
     else from = { l = { x = to.l.x, y = to.l.y + NB.TOP.RISE }, r = { x = to.r.x, y = to.r.y + NB.TOP.RISE } } end
-    T.k = e
-    NB.topPlace(NB.lerpSpot(from, to, e), sp)
+    T.k, T.m = e, m
+    NB.topPlace(NB.lerpSpot(from, to, e), sp, m)
     local a = (T.form == "fade") and e or 1
     if NB.chatUp() then a = a * NB.TOP.DIP end
     T.alpha = a
@@ -4293,7 +4530,7 @@ end
 -- the lift, the pet's side, the aura row) - plain fields of our own tables (rawget, no frame read). -> true when one changed since the
 -- last tick (never on the first read); no table made per tick
 NB.MOVE_KEYS = { { "uf", "at" }, { "uf", "want" }, { "uf", "room" }, { "prd", "partyRoomPx" }, { "prd", "lift" }, { "prd", "petSide" },
-                 { "prd", "auraUp" } }
+                 { "prd", "auraUp" }, { "prd", "cx" } }                   -- nbar14: Trail's centring shift applied
 function NB.topMoved()
     local T = NB.top
     local uf, prd = rawget(WC, "uf"), rawget(WC, "prd")
@@ -4316,7 +4553,12 @@ function NB.topTick(el)
     -- nbar9: the flag (PadMap's ctop under the character key) read at the first tick, then every FLAG_S, never every frame (it
     -- changes only on a padtab code or a key that arrives late); with it off and nothing shown, fading or previewed: nothing more
     T.flagAcc = (T.flagAcc or 0) + el
-    if T.flag == nil or T.flagAcc >= NB.TOP.FLAG_S then T.flagAcc = 0; T.flag = NB.topFlag() end
+    if T.flag == nil or T.flagAcc >= NB.TOP.FLAG_S then
+        T.flagAcc = 0; T.flag = NB.topFlag()
+        T.castTop = T.flag and NB.castTopFlag() or false                 -- nbar13: the cast bar's screen, read with the flag
+        T.gsw = T.castTop and NB.gameSwingOn() or false                  -- nbar14: the game's own swing timer (read-only)
+        if T.want ~= nil then NB.castFight(T.want) end
+    end
     local flag = T.flag
     if not flag and not T.want and not T.shown and not T.edit and T.dir == 0 and T.t <= 0 then return end
     T.solveAcc, T.gameAcc = T.solveAcc + el, T.gameAcc + el
@@ -4338,6 +4580,12 @@ function NB.topTick(el)
     -- block; the fade-out's end: the rows laid under the HUD at alpha 0, then faded in) - a re-fit on the tick each move shows
     if NB.topMoved() then T.dirty = true end
     local sw = NB.topSwitch(party)
+    -- nbar14 PARTY MODE CENTRED: Party mode's Top-screen fight centres the HUD block (NB.centreDx) - a change re-fits this tick
+    local centre = flag == true and party == true and sw == true and NB.built == true
+    if centre ~= (T.centre == true) then
+        T.centre, T.dirty, T.inKey = centre, true, nil
+        if not centre then T.cdx = nil end
+    end
     local leaving = T.shown and not sw
     if flag and NB.built and not leaving then
         -- the game's frames read again only out of combat, on their events or every SOLVE_S; ours on a change (a layout save, the
@@ -4353,6 +4601,7 @@ function NB.topTick(el)
     local want = flag and NB.built and T.spot ~= nil and sw
     if want ~= T.want then
         T.want = want
+        NB.castFight(want)                                               -- nbar13: the game's cast bar for the Wings' fight (Hub hub76)
         local was = T.dir
         T.dir = want and 1 or -1
         if want then

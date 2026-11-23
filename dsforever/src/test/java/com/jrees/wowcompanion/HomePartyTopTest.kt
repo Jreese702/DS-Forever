@@ -16,7 +16,8 @@ import org.junit.Test
 class HomePartyTopTest {
     private val S = HomeLayoutSolver
     private val CARD_H = 118.75f
-    private val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
+    // (the game's own cast bar on the top screen: no fight strip - FightCastBarTest pins the strip with Party mode's fight over every dock)
+    private val top = HomeLayout(fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
 
     private fun party(mode: PartyLayout.Mode, n: Int, pet: Boolean = false) = HomeLayoutSolver.Party(mode, n, pet)
     private fun fightState(n: Int, pet: Boolean = false, card: Boolean = false) = HomeLayoutSolver.State(card = card, cardH = if (card) CARD_H else 0f,
@@ -81,7 +82,8 @@ class HomePartyTopTest {
         val bad = ArrayList<String>()
         for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values()) for (card in HomeLayout.CardDock.values())
             for (cast in HomeLayout.CastDock.values()) for (rest in HomeRest.values()) {
-                val l = HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, rest = rest, fight = HomeLayout.FightBand.TOP)
+                val l = HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, rest = rest, fight = HomeLayout.FightBand.TOP,
+                    fightCast = HomeLayout.FightCast.TOP)
                 for (cnt in 1..6) for (pet in listOf(false, true)) for (shown in listOf(false, true)) {
                     if (pet && cnt == 1) continue
                     val s = fightState(cnt, pet, card = shown)
@@ -152,7 +154,7 @@ class HomePartyTopTest {
         for (dock in HomeLayout.PartyDock.values()) for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values())
             for (card in HomeLayout.CardDock.values()) for (cast in HomeLayout.CastDock.values()) for (rest in HomeRest.values()) {
                 val l = HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, rest = rest, party = dock,
-                    fight = HomeLayout.FightBand.TOP)
+                    fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
                 for (cnt in 1..6) for (pet in listOf(false, true)) for (shown in listOf(false, true)) {
                     if (pet && cnt == 1) continue
                     val s = fightState(cnt, pet, card = shown)

@@ -148,10 +148,12 @@ object TopSlide {
     fun wingsOff(ms: Long): Float = cubic(ms / WINGS_OUT_MS.toFloat(), WINGS_OUT)
     fun wingsOff(ms: Float): Float = cubic(ms / WINGS_OUT_MS.toFloat(), WINGS_OUT)
 
-    /** the Wings' way up: ActionBar NB.TOP.HOLD_IN (0.06 s) then NB.TOP.IN_S (0.26 s) on NB.easeOut (0, 0, 0.2, 1), the same curve as [DOWN] */
+    /** the Wings' way up: ActionBar NB.TOP.HOLD_IN (0.06 s) then NB.TOP.IN_S (0.26 s) on nbar14's NB.TOP.IN_C (1/3, 0.5, 2/3, 1) - the
+     *  user's pick 2026-11-23 "Even it out": 1.5 u - 0.5 u^3, its first speed the band's exit speed at the seam (~0.10 mm / ms), only
+     *  slower after; the same total time (the old ease-out (0, 0, 0.2, 1) entered ~3x faster than the band left) */
     const val WINGS_HOLD_IN_MS = 60L
     const val WINGS_IN_MS = 260L
-    val WINGS_IN = floatArrayOf(0f, 0f, 0.2f, 1f)
+    val WINGS_IN = floatArrayOf(1f / 3f, 0.5f, 2f / 3f, 1f)
     /** how far in the Wings are (0 under the edge .. 1 at their spot) [upMs] after the fight's start, counted on the band's clock: the
      *  add-on hears both edges of the fight before the app by about the same channel delay, so the Wings' age at their reversal is the
      *  band's up-slide age at its own */
@@ -159,9 +161,23 @@ object TopSlide {
     /** where on a whole way down ([wingsOff]'s ms) the Wings reversed from [k] in stand: the add-on goes on from where they are (NB.slideT) */
     fun wingsOutAt(k: Float): Long = (0L..WINGS_OUT_MS).first { 1f - wingsOff(it) <= k }
     /** an up-slide [upMs] old (wall clock) turned back down by the fight's end: the hand-back from where the Wings, reversed, stood -
-     *  their way left less [HAND_BACK_LEAD_MS]; 0..[HAND_BACK_MS], continuous */
-    fun reversalHoldMs(upMs: Long): Long =
-        if (upMs < 0L) 0L else (WINGS_OUT_MS - wingsOutAt(wingsIn(upMs)) - HAND_BACK_LEAD_MS).coerceIn(0L, HAND_BACK_MS)
+     *  their way left less [HAND_BACK_LEAD_MS]; 0..[HAND_BACK_MS], continuous. [byB] (the 11-23 B rule): turned back by B on Home -
+     *  the add-on's secure B reverses the Wings at the same press, so no channel delay is in the lead: [CHANNEL_MIN_MS] more, up to
+     *  [B_HOLD_MS] */
+    fun reversalHoldMs(upMs: Long, byB: Boolean = false): Long = when {
+        upMs < 0L -> 0L
+        byB -> (WINGS_OUT_MS - wingsOutAt(wingsIn(upMs)) - (HAND_BACK_LEAD_MS - CHANNEL_MIN_MS)).coerceIn(0L, B_HOLD_MS)
+        else -> (WINGS_OUT_MS - wingsOutAt(wingsIn(upMs)) - HAND_BACK_LEAD_MS).coerceIn(0L, HAND_BACK_MS)
+    }
+
+    /**
+     * B BRINGS IT DOWN (the user, 2026-11-23: "our combat ruls where we press B and it grows back downwards"): a way down started by B on
+     * Home is not behind the add-on - the app reads B from the pad itself and the add-on's secure B hands the controller back (the Wings
+     * start down) at the same press, no 40-90 ms channel - so the hold is the Wings' whole way down less the animator's start and one
+     * frame of overlap only: 149 ms. A way down the padmap's edge started (the fight's end, a give-back the app did not see) keeps
+     * [HAND_BACK_MS]
+     */
+    const val B_HOLD_MS = WINGS_OUT_MS - START_FRAMES_MS - OVERLAP_MS
 
     /**
      * the hold before this motion's parts move: a fresh way down ([slide], not [isAway]) with the band wholly above the page now
@@ -170,10 +186,11 @@ object TopSlide {
      * [reversalHoldMs]; a down-slide re-laid inside its hold ([resumeAt] >= 0, the cut one going down) waits what was left of it
      * ([cutHold]); the way up, a glide: none
      */
-    fun holdMs(slide: Boolean, isAway: Boolean, bandOff: Boolean, cutUp: Boolean, cutHold: Long, resumeAt: Float, upMs: Long = -1L): Long = when {
+    fun holdMs(slide: Boolean, isAway: Boolean, bandOff: Boolean, cutUp: Boolean, cutHold: Long, resumeAt: Float, upMs: Long = -1L,
+               byB: Boolean = false): Long = when {
         isAway -> 0L
-        slide -> if (bandOff) HAND_BACK_MS else if (cutUp) reversalHoldMs(upMs) else 0L
-        resumeAt >= 0f && !cutUp -> cutHold.coerceIn(0L, HAND_BACK_MS)
+        slide -> if (bandOff) (if (byB) B_HOLD_MS else HAND_BACK_MS) else if (cutUp) reversalHoldMs(upMs, byB) else 0L
+        resumeAt >= 0f && !cutUp -> cutHold.coerceIn(0L, if (byB) B_HOLD_MS else HAND_BACK_MS)   // (what was left of the hold)
         else -> 0L
     }
     /** the band's box bottom [bottom] lies wholly above the page (laid away: -[HomeLayoutSolver.AWAY_PAST]) */
