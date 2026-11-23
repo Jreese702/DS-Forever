@@ -94,6 +94,14 @@ class WowPatchAnswerTest {
         assertTrue(e.message!!.startsWith(WowClientDownloader.PATCH_NO_ANSWER + ": the connection was blocked"))
     }
 
+    @Test fun aFailureThatIsNotIoNeverEscapes() {
+        // the old callers' runCatching took every failure (a bad address is IllegalArgumentException): still a plain answer
+        WowClientDownloader.patchUrlFor = { "not a url" }
+        val e = failure()
+        assertEquals(PatchFail.OTHER, e.why.fail)
+        assertEquals(null, WowClientDownloader.regionNeedsDownload(File("no-such-folder"), "us"))
+    }
+
     @Test fun eachFailureHasItsKind() {
         assertEquals(PatchFail.DNS, WowClientDownloader.patchWhy(java.net.UnknownHostException("x")).fail)
         assertEquals(PatchFail.CONNECT, WowClientDownloader.patchWhy(java.net.ConnectException("x")).fail)

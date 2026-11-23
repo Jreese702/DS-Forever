@@ -439,8 +439,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** the launcher's restart from Settings (and its Restart anyway, #576): Home first, the start screen's notice, the restart */
     private var restartFromSettings: () -> Unit = {}
-    /** issue 585: the downloading card is up for a saved login's restart (its log words), not Settings' (null) */
-    private var restartAskLogin: String? = null
+    /** issue 585: what the downloading card's Restart anyway restarts for ([restartAskFirst]: a saved login's restart, the Browser
+     *  login offer's); null = Settings' own ([restartFromSettings]) */
+    private var restartAskThen: (() -> Unit)? = null
 
     private fun noticeShow(s: ReportNotice.State) {
         reportNotice.show(s)
@@ -672,7 +673,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 Log.i("WCSETUP", "restart from Settings: pressed in $room while the game downloads; asked first")
                 SetupBridge.log?.invoke("restart: asked first (the game is downloading)")
                 if (room != Room.HOME) show(Room.HOME)
-                restartAskLogin = null
+                restartAskThen = null
                 noticeShow(ReportNotice.State.RestartDownloading)
             } else restartFromSettings()
         }
@@ -1021,11 +1022,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Settings.browserLogin = true
             val s = if (::loginWatch.isInitialized) loginWatch.state else null
             val why = if (s != null && BrowserLogin.offerLine(s.reason, s.captcha) == BrowserLogin.CAPTCHA_LINE) "captcha timeout (325)" else "BLZ51914400"
-            NativeLogin.logEvent("sign-in: Browser login turned on from the $why offer; restarting the game")
             startView.login = StartView.Login.NONE
-            val restart = SetupBridge.restartGame
-            if (restart == null) Log.w("WCSETUP", "browser login offer: no launcher hook, nothing restarts")
-            else { restartNotice(); restart() }
+            val go: () -> Unit = {
+                NativeLogin.logEvent("sign-in: Browser login turned on from the $why offer; restarting the game")
+                val restart = SetupBridge.restartGame
+                if (restart == null) Log.w("WCSETUP", "browser login offer: no launcher hook, nothing restarts")
+                else { restartNotice(); restart() }
+            }
+            // issue 237 shows the offer during a download too: its restart asks first there, as every restart does (#576); Wait
+            // keeps Browser login on for the next start
+            if (restartAskFirst(go)) NativeLogin.logEvent("sign-in: Browser login turned on from the $why offer; the game is downloading, asked first")
+            else go()
         }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()
@@ -1453,10 +1460,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // #576: Restart anyway on the downloading card
                 onRestartAnyway = {
                     SetupBridge.log?.invoke("restart: anyway (the game was downloading)")
-                    // issue 585: the card asked for a saved login's restart, or for Settings' own
-                    val login = restartAskLogin
-                    restartAskLogin = null
-                    if (login != null) loginRestart(login) else restartFromSettings()
+                    // issue 585: the card asked for a saved login's (or the Browser login offer's) restart, or for Settings' own; a
+                    // game gone meanwhile restarts nothing (its next start uses the new login / Browser login anyway)
+                    val then = restartAskThen
+                    restartAskThen = null
+                    when {
+                        then == null -> restartFromSettings()
+                        LauncherHooks.gameUp() -> then()
+                        else -> SetupBridge.log?.invoke("restart: the game is gone already, nothing restarts")
+                    }
                 }
                 onDismiss = { SetupBridge.noticeAsking = false }
                 onOpenUrl = { url -> if (openUrlOnTop(url)) ReportFlow.clearPending() }
@@ -3813,16 +3825,26 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * Settings' restart does (#576: Wait / Restart anyway, on Home); else [loginRestart] at once
      */
     private fun loginRestartOrAsk(why: String) {
-        if (ReportNotice.restartAsks(NativeLogin.downloadingNow, LauncherHooks.gameUp())) {
-            NativeLogin.logEvent("sign-in: $why; the game is downloading, asked first")
-            if (room != Room.HOME) show(Room.HOME)
-            restartAskLogin = why
-            noticeShow(ReportNotice.State.RestartDownloading)
-        } else loginRestart(why)
+        if (restartAskFirst { loginRestart(why) }) NativeLogin.logEvent("sign-in: $why; the game is downloading, asked first")
+        else loginRestart(why)
+    }
+
+    /**
+     * #576's card for a restart other than Settings' own: while the game downloads, Home and Wait / Restart anyway, whose Restart
+     * anyway runs [then]. false = no download (or no card yet): the caller restarts at once
+     */
+    private fun restartAskFirst(then: () -> Unit): Boolean {
+        if (!::reportNotice.isInitialized || !ReportNotice.restartAsks(NativeLogin.downloadingNow, LauncherHooks.gameUp())) return false
+        if (room != Room.HOME) show(Room.HOME)
+        restartAskThen = then
+        noticeShow(ReportNotice.State.RestartDownloading)
+        return true
     }
 
     /** the saved login's restart: RESTARTING for the sign-in check, the start screen's restart line, then the launcher's restart */
     private fun loginRestart(why: String) {
+        // Home first, as Settings' restart (b-addons-restart): the form can be saved from Settings' Account row
+        if (room != Room.HOME) show(Room.HOME)
         signInCheck.restarting(System.currentTimeMillis())
         NativeLogin.logEvent("sign-in: $why, restarting the game")
         signInStep()

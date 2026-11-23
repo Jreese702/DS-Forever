@@ -318,7 +318,8 @@ object HomeLogin {
         }
 
         fun note(e: Event): Boolean {
-            val before = listOf(screen, phase, queue, queueAt, reason, inWorld, signingIn)
+            // issue 569: the captcha counts as a change (the offer's line reads it)
+            val before = listOf(screen, phase, queue, queueAt, reason, inWorld, signingIn, captcha)
             when (e) {
                 is Event.Screen -> {
                     // another screen: whatever ran is over (it signed in, or the game moved on); the login screen again keeps a failure
@@ -334,7 +335,7 @@ object HomeLogin {
                 is Event.Failed -> { phase = Phase.FAILED; reason = e.reason; signingIn = false }
                 Event.World -> { inWorld = true; pastLogin = true; phase = Phase.IDLE }
             }
-            return before != listOf(screen, phase, queue, queueAt, reason, inWorld, signingIn)
+            return before != listOf(screen, phase, queue, queueAt, reason, inWorld, signingIn, captcha)
         }
 
         /** a new log (the client restarted, or no game runs): nothing known until it says so */

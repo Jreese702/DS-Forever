@@ -1021,9 +1021,10 @@ object WowClientDownloader {
                     Timber.w("patch server $base: HTTP ${response.code}")
                     if (why?.fail != PatchFail.HTTP) why = PatchWhy(PatchFail.HTTP, response.code)
                 }
-            } catch (e: IOException) {
+            } catch (e: Exception) {
+                // any failure, not only IO (the old callers' runCatching took them all: the start's check must never throw)
                 Timber.w("patch server $base: ${e.message}")
-                failure = e
+                failure = e as? IOException ?: IOException(e.message, e)
                 if (why?.fail != PatchFail.HTTP) why = patchWhy(e)
             }
         }

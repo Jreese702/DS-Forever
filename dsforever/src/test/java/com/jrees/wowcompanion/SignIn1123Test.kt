@@ -60,17 +60,25 @@ class SignIn1123Test {
             assertTrue(w, w in gate)
         // a download asks first with #576's card; its Restart anyway restarts for the login, not Settings
         val ask = host.substringAfter("private fun loginRestartOrAsk(why: String) {").substringBefore("\n    }\n")
-        assertTrue("ReportNotice.restartAsks(NativeLogin.downloadingNow, LauncherHooks.gameUp())" in ask)
-        assertTrue("restartAskLogin = why" in ask && "noticeShow(ReportNotice.State.RestartDownloading)" in ask)
+        assertTrue("restartAskFirst { loginRestart(why) }" in ask)
         assertTrue("else loginRestart(why)" in ask)
-        val anyway = host.substringAfter("onRestartAnyway = {").substringBefore("\n                }")
-        assertTrue("if (login != null) loginRestart(login) else restartFromSettings()" in anyway)
+        val first = host.substringAfter("private fun restartAskFirst(then: () -> Unit): Boolean {").substringBefore("\n    }\n")
+        assertTrue("ReportNotice.restartAsks(NativeLogin.downloadingNow, LauncherHooks.gameUp())" in first)
+        assertTrue("Home first", "if (room != Room.HOME) show(Room.HOME)" in first)
+        assertTrue("restartAskThen = then" in first && "noticeShow(ReportNotice.State.RestartDownloading)" in first)
+        val anyway = host.substringAfter("onRestartAnyway = {").substringBefore("\n                }\n")
+        assertTrue("then == null -> restartFromSettings()" in anyway)
+        assertTrue("a game gone meanwhile restarts nothing", "LauncherHooks.gameUp() -> then()" in anyway)
         // Settings' own card restarts Settings' way
         val settingsAsk = host.substringAfter("settingsRest.onRestart = {").substringBefore("restartFromSettings = {")
-        assertTrue("restartAskLogin = null" in settingsAsk)
+        assertTrue("restartAskThen = null" in settingsAsk)
+        // the Browser login offer (shown during downloads since issue 237) asks first the same way
+        val offer = host.substringAfter("startView.onBrowserLogin = {").substringBefore("\n        }\n")
+        assertTrue("if (restartAskFirst(go))" in offer && "else go()" in offer)
         // the restart itself: the sign-in check's RESTARTING, the restart's line, the launcher's restart
         val restart = host.substringAfter("private fun loginRestart(why: String) {").substringBefore("\n    }\n")
         assertTrue("signInCheck.restarting(" in restart && "restartNotice()" in restart && "SetupBridge.restartGame" in restart)
+        assertTrue("Home first (the form opens from Settings too)", restart.indexOf("if (room != Room.HOME) show(Room.HOME)") in 0 until restart.indexOf("restartNotice()"))
         // the note: no "next time" while it restarts now; kept while the card asks
         assertTrue("loginNote = if (restartNow && !asks) null else \"Saved. The game signs in by itself the next time it starts.\"" in save)
     }
@@ -127,7 +135,9 @@ class SignIn1123Test {
         // a new sign-in starts without the captcha
         s.note(HomeLogin.parse(captchaRun[1])!!)
         assertFalse(s.captcha)
-        s.note(HomeLogin.Event.Captcha); s.reset(); assertFalse(s.captcha)
+        assertTrue("the captcha alone is a change (the row is published)", s.note(HomeLogin.Event.Captcha))
+        assertFalse("no change the second time", s.note(HomeLogin.Event.Captcha))
+        s.reset(); assertFalse(s.captcha)
     }
 
     @Test fun theOfferRowPassesTheCaptcha() {
