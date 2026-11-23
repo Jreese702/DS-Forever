@@ -37,6 +37,8 @@
 "Tap to return to the game": "Toca para volver al juego",
 "Game running": "Juego en marcha",
 "Shown while the game runs, so Android keeps it running when you switch apps.": "Se muestra mientras el juego está en marcha, para que Android lo mantenga abierto al cambiar de app.",
+"Building indoor maps": "Creando mapas interiores",
+"Shown while indoor maps build, so Android lets them finish.": "Se muestra mientras se crean los mapas interiores, para que Android los deje terminar.",
 "No macros yet": "Aún no hay macros",
 "Extra": "Extra",
 "DS Forever": "DS Forever",
@@ -2342,6 +2344,7 @@
 "Install failed: Blizzard's patch server did not answer: the connection failed. Try again, or try another Wi-Fi.": "Error de instalación: el servidor de parches de Blizzard no respondió: falló la conexión. Vuelve a intentarlo o prueba otro Wi-Fi."
 },
 "templates": {
+"%s/%s ready": "%s/%s listos",
 "Empty: slot %s's own": "Vacío: lo del espacio %s",
 "\"%s\" is its own button: put it on your bars (Out of combat: Change, Extra).": "\"%s\" es su propio botón: ponlo en tus barras (Fuera de combate: Cambiar, Extra).",
 "Tap slot %s, Party mode": "Espacio %s, modo grupo",

@@ -245,6 +245,8 @@ class MainActivity : ComponentActivity() {
         // the game may have finished booting while the app was in the background, when Android refuses to start a foreground
         // service (upstream v2.4.4): before the move to the top screen below, which returns early
         if (PluviaApp.xEnvironment != null) GameSessionService.ensureStarted(applicationContext)
+        // issue 568: DS Forever's screen shown again: the indoor maps wait, so their quiet service goes
+        com.jrees.wowcompanion.IndoorKeepAlive.shown(applicationContext, true, "DS Forever in front")
         // DS Forever fork: an existing task brought back on the bottom screen (singleTop: no onCreate) moves to the top screen too
         if (com.jrees.wowcompanion.fork.DsForeverScreen.moveToTop(this, PluviaApp.xEnvironment != null)) return
         com.jrees.wowcompanion.fork.DsForeverScreen.current?.show()
@@ -284,16 +286,21 @@ class MainActivity : ComponentActivity() {
     // this activity resumed while another display has the focus, and a Home press then reaches us as onUserLeaveHint / onStop only
     // #384 review: hideFor = this activity's own DS Forever only (after a Restart the new activity's is up before this one stops)
     override fun onUserLeaveHint() {
+        // issue 568: still in front - the moment Android lets the indoor maps' quiet service start before they build
+        com.jrees.wowcompanion.IndoorKeepAlive.shown(applicationContext, false, "DS Forever minimized")
         com.jrees.wowcompanion.fork.DsForeverScreen.hideFor(this)
         super.onUserLeaveHint()
     }
 
     override fun onStop() {
+        com.jrees.wowcompanion.IndoorKeepAlive.shown(applicationContext, false, "DS Forever stopped")   // issue 568 (see onPause)
         com.jrees.wowcompanion.fork.DsForeverScreen.hideFor(this)
         super.onStop()
     }
 
     override fun onPause() {
+        // issue 568: the screen turning off reaches us here (no leave hint), within Android's few seconds after the front
+        com.jrees.wowcompanion.IndoorKeepAlive.shown(applicationContext, false, "DS Forever paused")
         com.jrees.wowcompanion.fork.DsForeverScreen.hideFor(this)
         PluviaApp.isActivityInForeground = false
         if (hasReadyGameLifecycleState("pause")) {

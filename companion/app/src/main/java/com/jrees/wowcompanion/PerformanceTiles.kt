@@ -641,7 +641,10 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             M.L_MAP -> Settings.homeMapFull = k == 0
             M.L_STYLE -> Settings.homeMapTerrain = k == 0
             M.L_VRAM -> { Settings.vramCap = k == 0; vramChanged = true }
-            M.L_BUILD -> if (k == 0) { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() } else Settings.indoorBuild = false
+            M.L_BUILD -> if (k == 0) { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() } else {
+                Settings.indoorBuild = false
+                IndoorKeepAlive.update(context, why = "off in Settings")         // issue 568: the quiet service goes at once
+            }
             M.L_DEFERRED -> deferredOpen = !deferredOpen
             M.L_CODEC, M.L_RES, M.L_FPS, M.L_RATE, M.L_SOUND, M.L_TOOLS -> streamPress(line.key, k)
         }

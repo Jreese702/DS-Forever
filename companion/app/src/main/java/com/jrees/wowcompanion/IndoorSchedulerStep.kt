@@ -86,6 +86,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             tmp.writeText(s.toJson().toString()); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
         }
         for (l in listeners) runCatching { l() }
+        // issue 568: the quiet service follows the builder (on while it has work after a game, off for a game, Off, the end)
+        runCatching { IndoorKeepAlive.update(ctx, why = "${s.phase.name.lowercase()} ${s.note}".trim()) }
     }
 
     // ------------------------------------------------------------------ feeds
@@ -95,6 +97,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     @Volatile internal var gameBusy = false
         private set
     @Volatile private var stopping = false
+    /** the thread is past its "nothing to do" checks (Off, stamped, no generator) with buildings to make: [IndoorKeepAlive] */
+    @Volatile private var working = false
+    /** issue 568: the builder has work now (its thread runs past the checks, and no stop is asked) */
+    val hasWork: Boolean get() = working && !stopping && thread != null
     /** while it may not build, how often it looks again (the game files closed meanwhile) */
     private const val WAIT_POLL_MS = 5_000L
 
@@ -147,6 +153,13 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             Action.STOP -> stop()
             Action.KEEP -> Log.i(TAG, "interiors: ${e.name.lowercase()}, the step keeps running")
         }
+        // issue 568: the game's close is an in-front moment: the quiet service may be asked for now (the builder's thread also asks
+        // once it has looked at its work); the app's exit ends it
+        when (e) {
+            Event.GAME_CLOSED -> runCatching { IndoorKeepAlive.gameClosed(context) }
+            Event.APP_EXIT -> runCatching { IndoorKeepAlive.update(context, why = "the app's exit") }
+            else -> {}
+        }
     }
 
     /**
@@ -165,7 +178,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     fun appExit() = handle(Event.APP_EXIT, null)
 
     /** stop cleanly: the bake ends at its next yield point; finished buildings are kept */
-    fun stop() { stopping = true }
+    fun stop() { stopping = true; runCatching { IndoorKeepAlive.update(null, why = "stopped") } }
     override fun stopDetached() = stop()
 
     // ------------------------------------------------------------------ running
@@ -187,6 +200,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         if (thread != null) { again = true; return }
         val ctx = context.applicationContext
         appCtx = ctx
+        // issue 568 review: a thread that ended normally leaves [working] set (its loop clears [thread] first); the new one has not
+        // looked at its work yet, so the quiet service is not asked for until it has
+        working = false
         thread = Thread({
             try {
                 do {
@@ -194,7 +210,11 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                     body(ctx)
                 // decided under the lock [start] takes: a later start sees null and makes a new thread
                 } while (synchronized(this) { (again && !stopping).also { if (!it) thread = null } })
-            } finally { synchronized(this) { if (thread === Thread.currentThread()) thread = null } }
+            } finally {
+                synchronized(this) { if (thread === Thread.currentThread()) { thread = null; working = false } }
+                // issue 568: the build is done, failed, stopped or has nothing to do: the quiet service goes
+                runCatching { IndoorKeepAlive.update(ctx, why = "the builder ended") }
+            }
         }, "interiors-bake").apply {
             priority = Thread.MIN_PRIORITY
             isDaemon = true
@@ -203,6 +223,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     }
 
     private fun body(ctx: Context) {
+        working = false
         runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_LOWEST) }
         Settings.init(ctx)
         if (!Settings.indoorBuild) { offInSettings(ctx); return }
@@ -212,6 +233,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, 0, 0, note = "generator not in this build"))
             return
         }
+        working = true
+        runCatching { IndoorKeepAlive.update(ctx, why = "the builder has work") }
         // 2026-11-08 (the native heap profile on the Thor: CascNative.open from here held 499 MB for the whole session while it sat
         // "paused (game busy)"; on the 8 / 12 GB Thors it is ALWAYS busy, so they carried it for nothing - the 1.0.17 low-memory
         // kills): the game files are opened only when it may build, and let go again after a long pause
