@@ -609,7 +609,9 @@ W.execute('COMBAT = false')
 check(W.eval('#SNIPERR') == 0 and W.eval('#SPY') == 0, "no snippet error, no spied call", (W.eval('SNIPERR[1]'), W.eval('SPY[1]')))
 
 # ================================================================ 4. THE BINDINGS (the binding table is a spy: only overrides on our owners)
-OURKEYS = ["PAD1", "PAD2", "PAD3", "PAD4", "PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN", "PADBACK", "SHIFT-PAD1", "PADFORWARD"]
+# PadMap m186 (issue 588): Start (PADFORWARD) is bound by its own rules with the DS WoW toolbar off too (this world's toolbar is off):
+# tools/test_pause_start.py proves them; Party mode's keys are the eight and Select
+OURKEYS = ["PAD1", "PAD2", "PAD3", "PAD4", "PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN", "PADBACK", "SHIFT-PAD1"]
 
 
 def keys(L):

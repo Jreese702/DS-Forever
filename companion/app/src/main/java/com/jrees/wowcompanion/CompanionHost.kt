@@ -3564,7 +3564,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
-                    if (current && d.want != startToldWant) startTell(d.want == true)
+                    // issue 588 (the user's ruling 2026-11-23): with PadMap m186+ Start is our wheel with the toolbar off too: always 36
+                    if (current) startToRooms(d.want, it.version).let { rooms -> if (rooms != startToldWant) startTell(rooms) }
                     // Cast's toolbar group: while the router holds the bare D-pad, AND while it only stepped aside for a room's or the
                     // bar's hold (b51, the user: "my dpad shows my normal spells" - the router says on=false whenever a guest holds, and
                     // the app kept the last one replayed at its start, with no padmap after it for 12 minutes). A GAME WINDOW (aside =
@@ -4063,7 +4064,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     /**
-     * START OPENS THE PAUSE WHEEL FROM EVERY ROOM (the user 2026-10-09: "Wheel everywhere"; DS WoW toolbar on - off, Start stays the
+     * START OPENS THE PAUSE WHEEL FROM EVERY ROOM (the user 2026-10-09: "Wheel everywhere"; issue 588, 2026-11-23: the DS WoW toolbar on OR off; was: off, Start stays the
      * game's own wheel), read by the app itself (DirectPad: Start is no room's registered key any more), ONE route everywhere. An open
      * keyboard keeps Start (Chat's Send, Bags' Search key: their ownsStart); an open wheel reads Start itself (it closes); the start
      * screen / setup take it. The router's own "pause" word that follows is dropped ([START_DEDUPE_MS]).

@@ -56,6 +56,32 @@ class PauseDupTest {
         assertEquals(StartRoute.Kind.WHEEL, StartRoute.decide(true, true, true, null, "", 600_000L).kind)
     }
 
+    // ---------------------------------------------------------------- issue 588: Start with the DS WoW toolbar OFF (the user's ruling 2026-11-23)
+    @Test fun theToolbarOffStartOpensOurWheelByTheSettings() {
+        // up to 1.0.38 the toolbar's switch alone sent every press to the game, before the add-on's own start state was read
+        val oldRule = { want: Boolean? -> want != true }
+        assertTrue(oldRule(false))
+        // PadMap m186 binds Start with the toolbar off: its padmap says bound "pause" -> Home's wheel, as with the toolbar on
+        assertEquals(StartRoute.Kind.WHEEL, StartRoute.decide(false, true, true, st("pause"), "", 600_000L).kind)
+        assertEquals(StartRoute.Kind.WHEEL, StartRoute.decide(null, true, true, st("pause"), "", 600_000L).kind)
+        assertEquals(StartRoute.Kind.WHEEL, StartRoute.decide(false, true, true, st("menu"), "", 600_000L).kind)      // the Game Menu arm
+        // a room's guest keeps Start (told 36): our wheel
+        assertEquals(StartRoute.Kind.WHEEL, StartRoute.decide(false, true, true, st(null, "guest", "room"), "pad:map", 600_000L).kind)
+        // the settings still decide: Game's wheel over a game window, the Game Menu / the game's radial open -> the game's
+        for (why in listOf("window", "menu", "radial", "combat")) {
+            assertEquals("why $why", StartRoute.Kind.GAME, StartRoute.decide(false, true, true, st(null, why, "MerchantFrame"), "", 600_000L).kind)
+        }
+        // an older add-on set (a Desktop not updated, streaming): it still leaves Start to the game with the toolbar off -> the game's only
+        // (never both wheels), even with a guest named (it was told 35: Start to the game)
+        assertEquals(StartRoute.Kind.GAME, StartRoute.decide(false, true, true, st(null, "toolbar"), "pad:map", 600_000L).kind)
+        assertEquals(StartRoute.Kind.GAME, StartRoute.decide(false, true, true, null, "", 600_000L).kind)            // before m37
+        // what the rooms' guests are told: always our wheel from m186, the toolbar's switch before it
+        assertTrue(startFreeOfToolbar("m186")); assertTrue(startFreeOfToolbar("m190")); assertFalse(startFreeOfToolbar("m185"))
+        assertFalse(startFreeOfToolbar(null))
+        assertTrue(startToRooms(false, "m186")); assertTrue(startToRooms(null, "m186"))
+        assertFalse(startToRooms(false, "m185")); assertTrue(startToRooms(true, "m185"))
+    }
+
     @Test fun thePadmapCarriesStart() {
         val m = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m160","m":{"start":{"key":"PADFORWARD","aside":"GameMenuFrame","why":"menu"}}}"""))
         assertNotNull(m); val s = m!!.start!!

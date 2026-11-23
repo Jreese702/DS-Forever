@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m185"               -- bump on every change; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m186"               -- bump on every change; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -1954,8 +1954,9 @@ end
 -- the game's Start (the key of its OPENRADIAL binding, PADFORWARD) -> Hub's plain button WowCompanionPadPause (barcmd "pause": Home opens
 -- OUR wheel; the game's GamepadRadial stays shut). Bound as the D-pad layout is: while nothing holds and no game window is open, out of
 -- combat, carried at a fight's start; a guest that holds keeps Start (the router is aside, as today).
--- m38 (the user 2026-10-08, Q7 "(a) Follow toolbar switch"): ONLY while the character's DS WoW toolbar is on (the D-pad layout's own
--- switch: one switch for the whole layout). Off: Start is the game's own (its radial, with the Game Menu), and menuArm has nothing to arm.
+-- m38 (the user 2026-10-08, Q7 "(a) Follow toolbar switch") bound it ONLY while the DS WoW toolbar was on; m186 (issue 588, the user's
+-- ruling 2026-11-23, reversing Q7): the toolbar's switch no longer decides - Start is ours on or off, by R.startWanted's rules alone
+-- (the "Start over game windows" setting, the Game Menu, the game's radial, a guest), and menuArm arms either way.
 -- THE GAME MENU, THE SECURE WAY (the pause row's column 10, Radial.lua): menuArm() points Start at the game's own TOGGLEGAMEMENU binding for
 -- ONE press (until the Game Menu shows, or MENU_S pass): the hardware press runs Blizzard's own binding, nothing of Blizzard's is called
 -- from here. Out of combat only (a binding change).
@@ -2385,12 +2386,13 @@ local function routerBind(why, fightStart)
     end
     -- m37 START: our pause wheel (or, armed, the game's own Game Menu binding for one press)
     R.sbound, R.skey = nil, nil
-    -- m38: with the DS WoW toolbar only; m43: also while a ROOM holds (aside "room", or a game window a room opened behind itself); a
+    -- m38: with the DS WoW toolbar only (m186: on or off now); m43: also while a ROOM holds (aside "room", or a game window a room opened behind itself); a
     -- window the player opened with no room holding, or a guest, takes it
     -- m160: over a game window too (R.startWanted: not the Game Menu, the game's radial or a guest)
+    -- m186 (issue 588): the DS WoW toolbar's switch (rbOn) no longer gates Start
     R.swhy = nil
-    if rbOn and not R.startWanted(aside, holder) then R.swhy = R.startWhyNot(aside, holder) end
-    if R.startWanted(aside, holder) and rbOn then
+    if not R.startWanted(aside, holder) then R.swhy = R.startWhyNot(aside, holder) end
+    if R.startWanted(aside, holder) then
         local key = startKey()
         R.skey = key
         if menuArmed() then
@@ -2401,7 +2403,7 @@ local function routerBind(why, fightStart)
             if sb and carry(sb, key) then R.sbound = "pause" end
         end
         if not R.sbound then R.swhy = R.sbtn and "refused" or "combat" end      -- m160: the button not made (a login in a fight) / refused
-    elseif not rbOn then R.swhy = "toolbar" end
+    end
     -- m34 THE BINDINGS ON A BUTTON: the chord points at the game's binding (Jump, Interact, Auto Run, Walk / Run)
     R.cbound = {}
     -- m150 (review): a stick is "bound fine" (st "ok") only from the bind just below; one stepped aside (a room / a window / Party
@@ -2519,7 +2521,7 @@ local function routerCheck()
     if not aside and OV.pm and OV.pm.lost and OV.pm.lost() then lost = true end   -- m77: Party mode's keys and Select
     -- m37: the menu arm is spent once the Game Menu shows (the router is aside then) or MENU_S pass; Start goes back to our wheel
     if R.menuAt and (not menuArmed() or windowOpen() == "GameMenuFrame") then R.menuAt = nil; lost = true; R.lastBind = 0 end
-    if R.startWanted(aside, roomHolder()) and dpadWant() == true then   -- m38: the DS WoW toolbar only; m43: in rooms too; m160: over game windows
+    if R.startWanted(aside, roomHolder()) then                          -- m43: in rooms too; m160: over game windows; m186: toolbar on or off
         local key = R.skey or startKey()
         local want = menuArmed() and "TOGGLEGAMEMENU" or (R.sbtn and routerAct(R.sbtn:GetName())) or nil
         if want == nil or TS(function() return GetBindingAction(key, true) end) ~= want then lost = true end
@@ -4946,7 +4948,6 @@ WC.padMap = {
     -- m37: Start's next press opens the game's own Game Menu (the pause row's column 10); out of combat only
     menuArm = function()
         if inCombat() then return false, "combat" end
-        if dpadWant() ~= true then return false, "toolbar off" end      -- m38: Start is the game's own (its radial has the Game Menu)
         R.menuAt = GetTime()
         routerBind("menu")
         pcall(emit, true); WC.push()

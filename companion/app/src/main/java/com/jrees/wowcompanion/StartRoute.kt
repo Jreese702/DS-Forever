@@ -11,6 +11,12 @@ package com.jrees.wowcompanion
  *  - a game window open with nobody holding (PadMap m159 left Start to the game then; m160 holds it there too).
  * Now the wheel opens only while the add-ons speak in this game run and its own padmap says Start is the router's (or a guest holds it,
  * q35); otherwise the press is the game's alone, and with the add-ons silent past [NOTICE_AFTER_MS] Home says so (the add-ons notice). Pure.
+ *
+ * ISSUE 588 (the user's ruling 2026-11-23, reversing 2026-10-08's Q7 "Follow toolbar switch"): with the DS WoW toolbar OFF Start opens
+ * Home's wheel too, by the same rules as with it on (the Pause menu (Start) settings: Over windows = Game's wheel keeps a game window's
+ * Start the game's). The add-on decides it (PadMap m186 binds Start on or off: its padmap's start.bound); an OLDER add-on set (a Desktop
+ * that streams the PC's add-ons and was not updated) still leaves Start to the game with the toolbar off (start.why "toolbar"), so the
+ * press stays the game's then - never both wheels.
  */
 object StartRoute {
     enum class Kind { WHEEL, GAME, NOTICE }
@@ -35,9 +41,12 @@ object StartRoute {
         // issue #278: the login probe said so ("WowCompanionSpells:DISABLED"): Home says which add-on is off
         if (!runPadmap) return if (spellsOff) Route(Kind.NOTICE, "DS Forever: Spells is not loaded (the login probe)")
             else Route(Kind.GAME, "no padmap this game run (Spells' router not heard from)")
-        if (toolbarWant != true) return Route(Kind.GAME, "the DS WoW toolbar is off: the game's own wheel")
-        if (start == null) return Route(Kind.WHEEL, "an add-on without the start state")
+        // an add-on before m37 (no start state) bound Start only with the toolbar on
+        if (start == null) return if (toolbarWant == true) Route(Kind.WHEEL, "an add-on without the start state")
+            else Route(Kind.GAME, "the DS WoW toolbar is off and the add-on has no start state: the game's own wheel")
         if (start.bound != null) return Route(Kind.WHEEL, "Start is the router's (${start.bound})")
+        // issue 588: only an add-on before m186 says "toolbar" (it leaves Start to the game with the toolbar off; a guest was told so)
+        if (start.why == "toolbar") return Route(Kind.GAME, "the DS WoW toolbar is off and these add-ons are older (before m186): the game's own wheel")
         if (start.why == "guest" || capHolder.startsWith("pad:")) return Route(Kind.WHEEL, "a guest holds Start (${capHolder.ifEmpty { "guest" }})")
         return Route(Kind.GAME, "Start is the game's now (${start.why ?: "not bound"}${start.aside?.let { ", aside $it" } ?: ""})")
     }
@@ -51,6 +60,13 @@ object StartRoute {
  * account-wide and says it back (start.over), so the app taps padtab 39 then 32 / 33 (Book b61) whenever a current padmap disagrees -
  * at every connect, after a change, after a /reload - at most every [RESEND_MS]. Pure.
  */
+/** issue 588: whether this padmap's add-on (its version, "m186") binds Start with the DS WoW toolbar off; then the rooms' guests keep Start
+ *  (Quests q35: told 36) whatever the toolbar, else they follow the toolbar (35 while it is off). Pure. */
+fun startFreeOfToolbar(version: String?): Boolean = (version?.removePrefix("m")?.takeWhile { it.isDigit() }?.toIntOrNull() ?: 0) >= 186
+
+/** what the rooms' guests are told for Start (true = our wheel, qact 36; false = the game, 35); null = nothing to tell yet */
+fun startToRooms(toolbarWant: Boolean?, version: String?): Boolean = toolbarWant == true || startFreeOfToolbar(version)
+
 object PauseOver {
     const val ROW_ID = "Start over game windows"
     val SEGMENTS = listOf("Our wheel", "Game's wheel")

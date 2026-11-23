@@ -11,9 +11,11 @@ vendor, a pop-up, a panel, a frame of the controller manager) while the app open
 
 Proves: (1) THE CAUSE at m159's rule, re-run here as the old predicate: a game window with nobody holding = Start NOT ours; (2) m160:
 Start stays ours over every game window, managed frames and UI panels too, and the padmap says so (start.bound "pause"); (3) the Game
-Menu and the game's own radial keep Start the game's, with start.why "menu" / "radial"; a guest keeps its own (why "guest"); the toolbar
-off = the game's ("toolbar"); (4) routerCheck follows a window opening and closing with no flapping; (5) nothing of ours is bound with
-the toolbar off; no spied call. Needs lupa. Exit code 1 on any failure."""
+Menu and the game's own radial keep Start the game's, with start.why "menu" / "radial"; a guest keeps its own (why "guest");
+(4) routerCheck follows a window opening and closing with no flapping; (5) issue 588 (the user's ruling 2026-11-23, PadMap m186): the
+DS WoW toolbar OFF changes nothing for Start - ours on plain Home and over a game window, the game's with Game's wheel over a window
+and with the Game Menu open, the Game Menu arm works - and the D-pad still has nothing of ours; no spied call. Needs lupa. Exit code 1
+on any failure."""
 import sys
 
 from wowstub import boot, docs, nsent, SRC
@@ -54,7 +56,7 @@ def settle(L):
 OURS = "CLICK WowCompanionFaceStart:LeftButton"
 
 check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172, "PadMap says m162 (m161 + the 1.0.32 merge)")
-check('function R.startWanted(aside, holder)' in SRC["padmap"] and SRC["padmap"].count('R.startWanted(aside, holder) and rbOn') == 1
+check('function R.startWanted(aside, holder)' in SRC["padmap"] and SRC["padmap"].count('if R.startWanted(aside, holder) then') == 1
       and SRC["padmap"].count('R.startWanted(aside, roomHolder())') == 1,
       "routerBind and routerCheck both ask R.startWanted (one rule for the bind and its check)")
 
@@ -139,14 +141,45 @@ check(start_bind(W) == OURS and len(pm) <= 1, "a vendor left open for 3 s: Start
 W.execute('MerchantFrame = nil')
 settle(W)
 
-# ---------------------------------------------------------------- (5) the toolbar off: Start is the game's, nothing of ours
+# ---------------------------------------------------------------- (5) issue 588: the toolbar off, Start follows the settings (m186)
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 186 and "m186 START WITH THE TOOLBAR OFF" in SRC["padmap"],
+      "PadMap m186 (Start with the toolbar off) and its note")
+check('if dpadWant() ~= true then return false, "toolbar off" end' not in SRC["padmap"] and 'R.swhy = "toolbar"' not in SRC["padmap"],
+      "no Start rule asks the toolbar's switch any more (menuArm, the why)")
 T = world(toolbar=False)
 st = last_start(T)
-check(T.eval('BIND["PADFORWARD"]') is None and st is not None and st.get('why') == 'toolbar' and st.get('bound') is None,
-      "the DS WoW toolbar off: Start is the game's own wheel (nothing of ours bound), why toolbar", (T.eval('BIND["PADFORWARD"]'), st))
+check(T.eval('BIND["PADFORWARD"]') == OURS and st is not None and st.get('bound') == 'pause' and st.get('why') is None,
+      "the DS WoW toolbar off: Start is OURS on plain Home (Home's wheel; was: the game's, why toolbar)", (T.eval('BIND["PADFORWARD"]'), st))
+DPAD = ("PADDUP", "PADDDOWN", "PADDLEFT", "PADDRIGHT")
+check(all(T.eval('BIND["%s"]' % k) is None for k in DPAD),
+      "the toolbar off: the bare D-pad still has nothing of ours", [T.eval('BIND["%s"]' % k) for k in DPAD])
 T.execute('MerchantFrame = { IsShown = function() return true end }')
 settle(T)
-check(T.eval('BIND["PADFORWARD"]') is None, "the toolbar off over a vendor: still the game's", T.eval('BIND["PADFORWARD"]'))
+check(T.eval('BIND["PADFORWARD"]') == OURS, "the toolbar off over a vendor (Our wheel): ours", T.eval('BIND["PADFORWARD"]'))
+T.execute('WowCompanion.pad.rows["padtab"].handler(nil, 39); NOW = NOW + 0.1; WowCompanion.pad.rows["padtab"].handler(nil, 33); NOW = NOW + 0.1')
+n0 = nsent(T)
+settle(T)
+st = last_start(T, n0) or last_start(T)
+check(T.eval('BIND["PADFORWARD"]') is None and st is not None and st.get('why') == 'window',
+      "the toolbar off, Game's wheel over a vendor: the game's own radial (why window)", (T.eval('BIND["PADFORWARD"]'), st))
+T.execute('WowCompanion.pad.rows["padtab"].handler(nil, 39); NOW = NOW + 0.1; WowCompanion.pad.rows["padtab"].handler(nil, 32); NOW = NOW + 0.1; MerchantFrame = nil')
+settle(T)
+T.execute('GameMenuFrame = { IsShown = function() return true end }')
+n0 = nsent(T)
+settle(T)
+st = last_start(T, n0) or last_start(T)
+check(T.eval('BIND["PADFORWARD"]') is None and st is not None and st.get('why') == 'menu',
+      "the toolbar off, the Game Menu open: the game's (its own close)", (T.eval('BIND["PADFORWARD"]'), st))
+T.execute('GameMenuFrame = nil')
+settle(T)
+check(T.eval('BIND["PADFORWARD"]') == OURS, "the toolbar off, the Game Menu closed: ours again", T.eval('BIND["PADFORWARD"]'))
+T.execute('ARM = { WowCompanion.padMap.menuArm() }')
+check(T.eval('ARM[1]') is True and T.eval('BIND["PADFORWARD"]') == 'TOGGLEGAMEMENU',
+      "the toolbar off: the pause wheel's Game Menu arms Start for one press (was: refused, toolbar off)",
+      (T.eval('ARM[1]'), T.eval('ARM[2]'), T.eval('BIND["PADFORWARD"]')))
+T.execute('NOW = NOW + 10')
+settle(T)
+check(T.eval('BIND["PADFORWARD"]') == OURS, "the arm spent: Start is ours again", T.eval('BIND["PADFORWARD"]'))
 
 # ---------------------------------------------------------------- the fight: carried at the pull over a game window, the Game Menu not
 F = world()
