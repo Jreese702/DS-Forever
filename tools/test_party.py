@@ -1199,6 +1199,17 @@ for db, adv, want in (('{ aclOurs = true, aclReset1 = true }', "1", "0"), ('{}',
 
 # ================================================================ 7. THE DOCUMENTS (key for key with PARTY_BUILD.md section 1)
 W7 = world()
+# m185: nil before the first partycfg, then the very table sent
+WC0 = world(pre='BOOK = { 331 }')
+sent0 = docs(WC0, 0, 'partycfg')
+check(WC0.eval('WowCompanion.padMap.party.cfgLast') is not None and (sent0 or WC0.eval('WowCompanion.padMap.party.cfgLast()') is None),
+      "m185: the party export has cfgLast; nil before the first partycfg", len(sent0))
+WC0.eval('WowCompanion.snapshot')("manual")
+sent1 = docs(WC0, 0, 'partycfg')
+lc = WC0.eval('WowCompanion.padMap.party.cfgLast()')
+check(sent1 and lc is not None and sorted(lc.slots.keys()) == sorted(sent1[-1]['c']['slots'].keys())
+      and (lc.slots.a and lc.slots.a.n) == sent1[-1]['c']['slots'].get('a', {}).get('n'),
+      "m185: after a send, cfgLast is the cfg sent (slots key for key)", (sent1 and sorted(sent1[-1]['c']['slots'].keys())))
 W7.eval('party')(W7.table_from([W7.table_from(["Brannoc", "WARRIOR", True, "TANK", "RAGE"])]))
 W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m", "res", "pd"}     # m150: Smart Res armed, a Hunter's dead pet
@@ -1394,6 +1405,12 @@ W9.execute('UNITS.party3 = { name = "Doran", cls = "ROGUE", alive = true, role =
 c = docs(W9, n0, 'partycfg')
 check(W9.eval('PADA("wc-pb-party2")') is None and W9.eval('#VIOL') == 0 and c and not (c[-1]['c']['sy'].get('pick') or {}).get('party2'),
       "m133: a member joins in the fight: the party picks are dropped (tokens may have moved), partycfg follows", (W9.eval('PADA("wc-pb-party2")'), c and c[-1]['c']['sy'].get('pick')))
+# m185 (ActionBar nbar12's Party layer on the top-screen Wings): the export's cfgLast is the partycfg SENT last - in the fight too (the
+# roster's pick drop above went out through picksSync / sendCfg), a table the Wings read without resolving anything
+last = W9.eval('WowCompanion.padMap.party.cfgLast()')
+check(last is not None and c and set((last.sy.pick or {}).keys() if last.sy.pick else []) == set((c[-1]['c']['sy'].get('pick') or {}).keys())
+      and last.slots is not None and W9.eval('WowCompanion.padMap.party.cfgLast() == WowCompanion.padMap.party.cfgLast()'),
+      "m185: cfgLast = the partycfg sent last (in the fight: the dropped picks seen)", (last and last.sy.pick and dict(last.sy.pick), c and c[-1]['c']['sy'].get('pick')))
 W9.execute('UNITS.party3 = nil; fire("GROUP_ROSTER_UPDATE"); driveStates()')
 W9.execute('local c = WowCompanion.pad.rows.party.cells[11]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false); NOW = NOW + 0.3')
 W9.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')

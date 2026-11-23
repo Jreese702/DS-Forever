@@ -612,7 +612,7 @@ class HomeEditShotsTest {
     }
 
     /** P4: THE FIGHT PREVIEW SENDS NOTHING - no behaviour press, no fight state (Home shows no fight, edit mode never parks, the guest is
-     *  kept), and each In fights look renders: Grow grows the band, Same size keeps its box, Top screen (the Wings word on) loops its cue */
+     *  kept), and each In fights look renders: Grow grows the band, Same size keeps its box, Top screen (the Wings word on) slides the band away */
     @Test fun theFightPreviewSendsNothing() {
         val sizes = HashMap<HomeLayout.FightBand, Float>()
         for (band in HomeLayout.FightBand.values()) {
@@ -637,7 +637,8 @@ class HomeEditShotsTest {
                 HomeLayout.FightBand.SAME -> assertEquals("Same size: its box", rest, sizes[band]!!, 0.5f)
                 HomeLayout.FightBand.TOP -> {
                     assertEquals("Top screen: its box", rest, sizes[band]!!, 0.5f)
-                    assertTrue("Top screen: the up cue loops", p.home.topCueAlpha() > 0f || run { ShadowSystemClock.advanceBy(Duration.ofMillis(300)); p.home.topCueAlpha() > 0f })
+                    // (the merge with feat/topbar-fight: no "up" cue any more - the band slides up off the page, TopSlide)
+                    assertTrue("Top screen: the band laid above the page", boxes(p.home).getValue("BARS").bottom <= 0f)
                 }
             }
             assertTrue("$band: the fight pencil", EditStop.FIGHT_PEN in p.home.editChrome.stops())
@@ -905,7 +906,9 @@ class HomeEditShotsTest {
     @Test fun theSameSizePreviewDrawsTheFightsClockRow() {
         val clock = HomeView::class.java.getDeclaredMethod("editClock").apply { isAccessible = true }
         val pose = HomeView::class.java.getDeclaredMethod("extraPoseAt", String::class.java).apply { isAccessible = true }
-        for (band in listOf(HomeLayout.FightBand.SAME, HomeLayout.FightBand.TOP)) {
+        // (the merge with feat/topbar-fight: Top screen's preview lays the band above the page - TopSlide - so only Same size keeps the
+        // band's clock block on the page)
+        for (band in listOf(HomeLayout.FightBand.SAME)) {
             val p = bandPage(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = band), ct = 1)
             HomeSettings.clockAmmo = false; HomeSettings.clockBags = true             // "+" exists, the bags said nothing yet
             assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)

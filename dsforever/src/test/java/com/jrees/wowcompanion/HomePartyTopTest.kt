@@ -1,0 +1,123 @@
+package com.jrees.wowcompanion
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * PARTY MODE KEEPS THE TOP SCREEN (the user's ruling C, 2026-11-22: "It should stay at the top in party mode but the party bars should
+ * fill the area"): with In fights = Top screen, a fight with Party mode on lays the band above the page as any Top fight does (no
+ * takeover: [HomeLayoutSolver.away] by [HomeLayoutSolver.State.partyFight]), the map's column grows up to the top gap, and the party module
+ * ("the party bars") takes the chat column's freed strip - its well from the column's new top down to the foot it had in b1e28506's Party
+ * fight, the rows sharing the height ([PartyLayout.fillH]: 88..192 px; a solo or two-row party gives the rest to the chat). Out of
+ * Party mode, Grow / Same size and the takeover: nothing changes.
+ */
+class HomePartyTopTest {
+    private val S = HomeLayoutSolver
+    private val CARD_H = 118.75f
+    private val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
+
+    private fun party(mode: PartyLayout.Mode, n: Int, pet: Boolean = false) = HomeLayoutSolver.Party(mode, n, pet)
+    private fun fightState(n: Int, pet: Boolean = false, card: Boolean = false) = HomeLayoutSolver.State(card = card, cardH = if (card) CARD_H else 0f,
+        party = party(PartyLayout.Mode.FIGHT_TOP, n, pet), partyOn = true, partyFight = true)
+    /** b1e28506's Party fight (the band on the page, FIGHT_ON rows): the reference the filled module keeps its foot from */
+    private fun refState(s: HomeLayoutSolver.State) = s.copy(partyFight = false, party = s.party!!.copy(mode = PartyLayout.Mode.FIGHT_ON))
+    private fun rowCount(p: HomeLayoutSolver.Party) = PartyModel.rows(p.n, p.pet).size
+
+    @Test fun thePartyFightLaysTheBandAwayAndTheRowsFillTheStrip() {
+        val s = fightState(3)
+        assertTrue(S.away(top, s)); assertTrue(S.partyAway(top, s))
+        val r = S.places(top, s)
+        val ref = S.places(top, refState(s))
+        assertTrue("the band away (b1e28506 laid it on the page)", r.away); assertFalse(ref.away)
+        assertEquals(-HomeLayoutSolver.AWAY_PAST, r.boxes.getValue(HomePart.BARS).b, 0f)
+        val p = r.boxes.getValue(HomePart.PARTY); val rp = ref.boxes.getValue(HomePart.PARTY)
+        assertEquals("the well from the top gap", 8f, p.t, 0.01f)
+        assertEquals("its foot where the Party fight had it", rp.b, p.b, 0.01f)
+        assertEquals("the Diamonds' Party fight well: 234..538", 234f, rp.t, 0.01f); assertEquals(538f, rp.b, 0.01f)
+        assertEquals("three rows of 163.3", (530f - 24f - 16f) / 3f, PartyLayout.rowsFit(3, p.h), 0.01f)
+        assertEquals("the chat where it was", ref.boxes.getValue(HomePart.CHAT).t, r.boxes.getValue(HomePart.CHAT).t, 0.01f)
+        assertEquals("the map grows up", 8f, r.boxes.getValue(HomePart.MAP).t, 0f)
+        assertTrue(HomeLayoutRules.problems(top, s, r).isEmpty())
+        // a two-row and a one-row party: capped at FILL_MAX_H, the rest to the chat
+        for ((n, rows) in listOf(2 to 2, 1 to 1)) {
+            val s2 = fightState(n)
+            val r2 = S.places(top, s2); val ref2 = S.places(top, refState(s2))
+            val p2 = r2.boxes.getValue(HomePart.PARTY)
+            assertEquals("n=$n: capped", PartyLayout.FILL_MAX_H, PartyLayout.rowsFit(rows, p2.h), 0.01f)
+            assertEquals(8f + 2 * PartyLayout.IN + rows * PartyLayout.FILL_MAX_H + (rows - 1) * PartyLayout.GAP, p2.b, 0.01f)
+            assertTrue("n=$n: the chat grows up", r2.boxes.getValue(HomePart.CHAT).t < ref2.boxes.getValue(HomePart.CHAT).t - 1f)
+            assertEquals(p2.b + PartyLayout.CHAT_GAP, r2.boxes.getValue(HomePart.CHAT).t, 0.01f)
+        }
+    }
+
+    @Test fun onlyTheFightWithTopScreenAndPartyModeOn() {
+        val s = fightState(3)
+        assertFalse("no fight", S.away(top, s.copy(partyFight = false)))
+        assertFalse("Party mode off", S.away(top, s.copy(partyOn = false)))
+        assertFalse("a module full screen", S.away(top, s.copy(full = HomeModule.MAP)))
+        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) {
+            val l = top.copy(fight = f)
+            assertFalse(S.away(l, s))
+            // Grow / Same size: a Party fight lays as before (partyFight changes nothing)
+            assertEquals(S.places(l, refState(s)).boxes, S.places(l, refState(s).copy(partyFight = true)).boxes)
+        }
+        // the takeover with Party mode on (R0) and without it: unchanged
+        val tk = HomeLayoutSolver.State(takeover = true, partyOn = true, party = party(PartyLayout.Mode.FIGHT_OFF, 3))
+        assertFalse(S.away(top, tk)); assertFalse(S.away(top, tk.copy(partyFight = true)))
+        assertEquals(S.places(top, tk).boxes, S.places(top, tk.copy(partyFight = true)).boxes)
+        val tk2 = HomeLayoutSolver.State(takeover = true)
+        assertTrue(S.away(top, tk2)); assertEquals(S.places(top, tk2).boxes, S.places(top, tk2.copy(partyFight = true)).boxes)
+        // no party module (QOL > Party mode off): the columns grow as in any Top fight
+        val noModule = S.places(top, HomeLayoutSolver.State(partyOn = true, partyFight = true))
+        assertTrue(noModule.away)
+        assertEquals(8f, noModule.boxes.getValue(HomePart.CHAT).t, 0f); assertEquals(8f, noModule.boxes.getValue(HomePart.MAP).t, 0f)
+    }
+
+    /** the sweep: every side x width x card dock x bar dock x party shape x rest, with a card shown and without */
+    @Test fun everyRecordLaysTheFilledModuleValidly() {
+        var n = 0
+        val bad = ArrayList<String>()
+        for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values()) for (card in HomeLayout.CardDock.values())
+            for (cast in HomeLayout.CastDock.values()) for (rest in HomeRest.values()) {
+                val l = HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, rest = rest, fight = HomeLayout.FightBand.TOP)
+                for (cnt in 1..6) for (pet in listOf(false, true)) for (shown in listOf(false, true)) {
+                    if (pet && cnt == 1) continue
+                    val s = fightState(cnt, pet, card = shown)
+                    val r = S.places(l, s); val ref = S.places(l, refState(s)); n++
+                    fun bad(m: String) { if (bad.size < 12) bad += "$l n=$cnt pet=$pet card=$shown: $m" }
+                    if (!r.away) bad("not away")
+                    val pr = HomeLayoutRules.problems(l, s, r)
+                    if (pr.isNotEmpty()) bad("$pr")
+                    val p = r.boxes.getValue(HomePart.PARTY); val rp = ref.boxes.getValue(HomePart.PARTY)
+                    val chat = r.boxes.getValue(HomePart.CHAT); val map = r.boxes.getValue(HomePart.MAP)
+                    val rows = PartyLayout.rowsFit(rowCount(s.party!!), p.h)
+                    if (rows < PartyLayout.FIGHT_H - 0.01f || rows > PartyLayout.FILL_MAX_H + 0.01f) bad("rows $rows")
+                    if (p.b > rp.b + 0.01f) bad("the well's foot ${p.b} below the reference's ${rp.b}")
+                    if (rows < PartyLayout.FILL_MAX_H - 0.01f && kotlin.math.abs(p.b - rp.b) > 0.01f) bad("foot ${p.b} vs ${rp.b} (not capped)")
+                    if (p.t > rp.t - 100f) bad("the well did not grow up: ${p.t} vs ${rp.t}")
+                    if (chat.t > ref.boxes.getValue(HomePart.CHAT).t + 0.01f) bad("chat top ${chat.t} under the reference's")
+                    if (r.f1 != ref.f1 || r.f2 != ref.f2) bad("fallbacks ${r.f1}/${r.f2} vs ${ref.f1}/${ref.f2}")
+                    // the well inside the chat's column (the tab on the screen's outer edge)
+                    val chatLeft = side == HomeLayout.Side.LEFT
+                    if (chatLeft && p.r > chat.r + 0.01f || !chatLeft && p.l < chat.l - 0.01f) bad("the well out of the chat column: $p / $chat")
+                    // the map's column as in the Top fight out of Party mode
+                    val plain = S.places(l, HomeLayoutSolver.State(takeover = true, card = shown, cardH = if (shown) CARD_H else 0f))
+                    if (kotlin.math.abs(map.t - plain.boxes.getValue(HomePart.MAP).t) > 0.01f && !r.f1) bad("map top ${map.t}")
+                }
+            }
+        assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
+        assertTrue(n > 5000)
+    }
+
+    /** the thin-row rest: the strip freed is the thin band's (138), the rows 134 / 157 / 192 */
+    @Test fun theThinRowRest() {
+        val l = top.copy(rest = HomeRest.ROW)
+        for ((cnt, want) in listOf(3 to 134f, 2 to 157f, 1 to 192f)) {
+            val r = S.places(l, fightState(cnt))
+            val p = r.boxes.getValue(HomePart.PARTY)
+            assertEquals("n=$cnt", want, PartyLayout.rowsFit(PartyModel.rows(cnt).size, p.h), 1f)
+        }
+    }
+}

@@ -27,7 +27,10 @@ object PartyLayout {
         fun offset(dx: Float, dy: Float) = Box(l + dx, t + dy, r + dx, b + dy)
     }
 
-    enum class Mode { REST, FIGHT_ON, FIGHT_OFF }
+    /** REST; FIGHT_ON a fight with Party mode on (88 px rows); FIGHT_OFF the takeover (Party mode off, 56); FIGHT_TOP a fight with Party
+     *  mode on and In fights = Top screen (the user's ruling C, 11-22: "the party bars should fill the area" - the band slid up, the rows
+     *  fill the freed strip: [fillH]) */
+    enum class Mode { REST, FIGHT_ON, FIGHT_OFF, FIGHT_TOP }
 
     /** [cells] = the plates in box order (index 0 = you); [tag] = the Select tab (always there); [rows] = each cell's row (0-based) */
     data class Module(val well: Box, val cells: List<Box>, val tag: Box, val chatTop: Float, val rows: List<Int> = cells.indices.toList())
@@ -54,16 +57,23 @@ object PartyLayout {
     const val PET_SHARE = 0.33f
 
     fun defaultTop(mode: Mode) = if (mode == Mode.FIGHT_OFF) FIGHT_TOP else REST_TOP
-    fun plateH(mode: Mode) = when (mode) { Mode.REST -> REST_H; Mode.FIGHT_ON -> FIGHT_H; Mode.FIGHT_OFF -> TAKEOVER_H }
+    fun plateH(mode: Mode) = when (mode) { Mode.REST -> REST_H; Mode.FIGHT_ON, Mode.FIGHT_TOP -> FIGHT_H; Mode.FIGHT_OFF -> TAKEOVER_H }
+
+    /** ruling C: a Party-mode Top fight's row height - [rows] rows sharing the well from [top] to [bottom] (its margins and gaps out), no
+     *  shorter than a Party fight's ([FIGHT_H]), no taller than [FILL_MAX_H] (a solo or two-row party leaves the rest to the chat) */
+    const val FILL_MAX_H = 192f
+    fun fillH(rows: Int, top: Float, bottom: Float): Float = rowsFit(rows, bottom - top).coerceIn(FIGHT_H, FILL_MAX_H)
+    /** the row height that fills a well [h] high with [rows] rows exactly (no clamp: the module's view while its box glides) */
+    fun rowsFit(rows: Int, h: Float): Float { val r = rows.coerceAtLeast(1); return (h - 2f * IN - (r - 1) * GAP) / r }
 
     /**
      * the module for [n] entries (1..6) in [mode], its well's top at [top]; [pet] = the second entry is your pet (m134: on your right
      * in the first row, the smaller cell); [left] = the screen's edge where the tab stands, [right] = the well's right
      */
     fun module(mode: Mode, n: Int, pet: Boolean = false, top: Float = defaultTop(mode), left: Float = EDGE, right: Float = RIGHT,
-               tabRight: Boolean = false): Module {
+               tabRight: Boolean = false, rowH: Float = plateH(mode)): Module {
         val m = n.coerceIn(1, PartyModel.MAX_N)
-        val h = plateH(mode)
+        val h = rowH
         // movable Home (SPEC section 6 item 9): with the chat on the right the module mirrors: the tab flush on the RIGHT screen edge
         // ([right]), the well from [left] to the tab's gap
         val wl = if (tabRight) left else left + TAB_W + TAB_GAP
@@ -91,16 +101,42 @@ object PartyLayout {
 
     /** the class-colour stripe, 6 px down the plate's left (a person's plate only: m134, never the pet's) */
     fun stripe(p: Box) = Box(p.l, p.t, p.l + 6f, p.b)
-    /** the class / role icon (the pet's portrait): 40 px (48 in a fight), 14 in, centred */
-    fun icon(p: Box, mode: Mode): Box { val s = if (big(mode)) 48f else 40f; return Box(p.l + 14f, p.cy - s / 2f, p.l + 14f + s, p.cy + s / 2f) }
-    /** the name's left and size (24 px, 28 in a fight), its vertical centre the plate's */
-    fun nameX(p: Box, mode: Mode) = icon(p, mode).r + 12f
-    fun nameSize(mode: Mode) = if (big(mode)) 28f else 24f
+    /**
+     * rulings C / D (the 11-22 review: at the fight's end the mode is the rest's at once while the slide still holds the rows full height,
+     * so the icon and name shrank in one frame; on the way up FIGHT_TOP's 48 / 28 started on the rest's 64 px rows, and its name stepped
+     * 28 -> 32 at 120 px): [filled] plates size their parts from the ROW's height on one continuous rule - a Party-mode Top fight's filled
+     * rows always, and a Top-screen slide's rows (REST or FIGHT_TOP, [PartyModuleView.stretch]) while they move; never the other fights'
+     */
+    fun filledParts(mode: Mode, stretch: Boolean): Boolean =
+        mode == Mode.FIGHT_TOP || (stretch && mode == Mode.REST)
+    /** the row height where a filled row's name reaches its largest (32) */
+    const val FILL_NAME_H = 120f
+    /** a filled row [h] high: its icon - the rest's 40 at [REST_H], a Party fight's 48 at [FIGHT_H], then half the plate up to 72 */
+    fun fillIcon(h: Float): Float = when {
+        h <= REST_H -> 40f
+        h < FIGHT_H -> 40f + 8f * (h - REST_H) / (FIGHT_H - REST_H)
+        else -> (h * 0.5f).coerceIn(48f, 72f)
+    }
+    /** a filled row [h] high: its name - the rest's 24 at [REST_H], a Party fight's 28 at [FIGHT_H], then evenly up to 32 at [FILL_NAME_H] */
+    fun fillName(h: Float): Float = when {
+        h <= REST_H -> 24f
+        h < FIGHT_H -> 24f + 4f * (h - REST_H) / (FIGHT_H - REST_H)
+        else -> 28f + 4f * ((h - FIGHT_H) / (FILL_NAME_H - FIGHT_H)).coerceAtMost(1f)
+    }
+    /** the class / role icon (the pet's portrait): 40 px (48 in a fight; [filled] rows: [fillIcon] of the plate's height), 14 in, centred */
+    fun icon(p: Box, mode: Mode, filled: Boolean = mode == Mode.FIGHT_TOP): Box {
+        val s = if (filled) fillIcon(p.h) else if (big(mode)) 48f else 40f
+        return Box(p.l + 14f, p.cy - s / 2f, p.l + 14f + s, p.cy + s / 2f)
+    }
+    /** the name's left and size (24 px, 28 in a fight, [filled] rows: [fillName] of the row's height [h]), its vertical centre the plate's */
+    fun nameX(p: Box, mode: Mode, filled: Boolean = mode == Mode.FIGHT_TOP) = icon(p, mode, filled).r + 12f
+    fun nameSize(mode: Mode, h: Float = plateH(mode), filled: Boolean = mode == Mode.FIGHT_TOP) =
+        if (filled) fillName(h) else if (big(mode)) 28f else 24f
     /**
      * the room the name has before the plate's end. m134 (the user, 2026-11-11: "the a button glyph on them needs to be removed since
      * highlighting it should target and a will be whatever spell is bound"): no A / X / Y chips and no LB + button glyph on the plates
      */
-    fun nameRoom(p: Box, mode: Mode): Float = p.r - 8f - 10f - nameX(p, mode)
+    fun nameRoom(p: Box, mode: Mode, filled: Boolean = mode == Mode.FIGHT_TOP): Float = p.r - 8f - 10f - nameX(p, mode, filled)
     /** a state icon (skull: dead / ghost; plug: offline) after the name, 28 px */
     fun state(p: Box, x: Float) = Box(x + 8f, p.cy - 14f, x + 36f, p.cy + 14f)
 

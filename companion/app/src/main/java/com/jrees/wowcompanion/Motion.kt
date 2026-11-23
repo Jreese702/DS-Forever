@@ -16,6 +16,10 @@ object Motion {
     /** the controller band growing for combat / shrinking after */
     const val COMBAT_GROW = 240L
     const val COMBAT_SHRINK = 200L
+    /** In fights = Top screen (TopSlide; the user 2026-11-22: "a slick animation looking like it slides up to the top screen"): the band
+     *  sliding up off the bottom screen's top edge as the columns grow up, and back down after the fight */
+    const val TOP_SLIDE_UP = 240L
+    const val TOP_SLIDE_DOWN = 240L
     /** Chat's controller keyboard sliding up / down */
     const val KEYBOARD_UP = 200L
     const val KEYBOARD_DOWN = 160L
@@ -84,4 +88,7 @@ object Motion {
 
     /** for what leaves the screen (the keyboard going down, HARMONY_SPEC section 3): fast out, linear in */
     fun curveOut(): Interpolator = PathInterpolator(0.4f, 0f, 1f, 1f)
+
+    /** for what comes onto the screen (the band sliding back down after a Top screen fight, TopSlide): fast in, slow at the end */
+    fun curveEnter(): Interpolator = PathInterpolator(0f, 0f, 0.2f, 1f)
 }

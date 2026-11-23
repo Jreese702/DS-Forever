@@ -120,6 +120,86 @@ class PartyLayoutTest {
         assertTrue(PartyLayout.nameRoom(pet, Mode.REST) > 60f)
     }
 
+    /** the user's ruling C (11-22): a Party-mode Top fight's rows fill the freed strip - 88..192 px, the module laid with them */
+    @Test fun theFilledRows() {
+        // the Diamonds: a Party fight's well 234..538 (3 rows) / ..442 (2) / ..346 (1); the band away: the top gap at 8
+        assertEquals((530f - 24f - 16f) / 3f, PartyLayout.fillH(3, 8f, 538f), 0.001f)
+        assertEquals(PartyLayout.FILL_MAX_H, PartyLayout.fillH(2, 8f, 442f), 0f)
+        assertEquals(PartyLayout.FILL_MAX_H, PartyLayout.fillH(1, 8f, 346f), 0f)
+        assertEquals("never under a Party fight's rows", PartyLayout.FIGHT_H, PartyLayout.fillH(3, 300f, 400f), 0f)
+        assertEquals(192f, PartyLayout.FILL_MAX_H, 0f)
+        // rowsFit gives each mode's own rows back exactly at its own well
+        for ((n, pet) in shapes) for (mode in listOf(Mode.REST, Mode.FIGHT_ON, Mode.FIGHT_OFF)) {
+            val m = PartyLayout.module(mode, n, pet)
+            val rows = PartyModel.rows(n, pet).size
+            assertEquals("$mode $n $pet", PartyLayout.plateH(mode), PartyLayout.rowsFit(rows, m.well.h), 0.001f)
+        }
+        // the module with the filled rows: cells that tall, the well to the foot, the chat under it
+        val h = PartyLayout.fillH(3, 8f, 538f)
+        val m = PartyLayout.module(Mode.FIGHT_TOP, 3, top = 8f, rowH = h)
+        assertTrue(m.cells.all { kotlin.math.abs(it.h - h) < 0.001f })
+        assertEquals(538f, m.well.b, 0.01f); assertEquals(546f, m.chatTop, 0.01f)
+        assertEquals("the tab takes its tall layout", false, PartyLayout.tabParts(m.tag).bOnArrow)
+        // a FIGHT_TOP module without rows given: a Party fight's
+        assertEquals(PartyLayout.FIGHT_H, PartyLayout.plateH(Mode.FIGHT_TOP), 0f)
+        // the plate's parts grow with the row: the icon half the plate (48..72), the name 32 from 120 px
+        val tall = b(68, 20, 603, 183)
+        assertEquals(72f, PartyLayout.icon(tall, Mode.FIGHT_TOP).w, 0.01f)
+        assertEquals(48f, PartyLayout.icon(b(68, 20, 603, 108), Mode.FIGHT_TOP).w, 0.01f)
+        assertEquals(60f, PartyLayout.icon(b(68, 20, 603, 140), Mode.FIGHT_TOP).w, 0.01f)
+        assertEquals(32f, PartyLayout.nameSize(Mode.FIGHT_TOP, 163f), 0f)
+        assertEquals(28f, PartyLayout.nameSize(Mode.FIGHT_TOP, 88f), 0f)
+        assertEquals("the 11-22 review: no step at 120 px - 28 at 88 up to 32 at 120", 29.5f, PartyLayout.nameSize(Mode.FIGHT_TOP, 100f), 0.001f)
+        assertEquals(32f, PartyLayout.nameSize(Mode.FIGHT_TOP, 120f), 0f)
+        assertEquals("the other modes unchanged", 28f, PartyLayout.nameSize(Mode.FIGHT_ON, 163f), 0f)
+        assertEquals(24f, PartyLayout.nameSize(Mode.REST, 163f), 0f)
+        assertEquals(48f, PartyLayout.icon(tall, Mode.FIGHT_ON).w, 0f)
+    }
+
+    /**
+     * the 11-22 review (rulings C / D, "no jump at either end"): while Home's Top-screen slide moves the module ([PartyModuleView.stretch])
+     * the plates' icon and name follow the ROW's height on one continuous rule - at the fight's end the mode is the rest's at once while
+     * the rows are still full height, and on the way up FIGHT_TOP starts from the rest's 64 px rows. Every frame's step is small, and
+     * each end is what the settled mode draws
+     */
+    @Test fun aSlidesRowsGrowAndShrinkTheirPartsWithNoStep() {
+        // which plates size from their row: a Top fight's filled rows always; a slide's (REST or FIGHT_TOP); never the other fights'
+        assertTrue(PartyLayout.filledParts(Mode.FIGHT_TOP, false))
+        assertTrue(PartyLayout.filledParts(Mode.REST, true)); assertTrue(PartyLayout.filledParts(Mode.FIGHT_TOP, true))
+        assertFalse(PartyLayout.filledParts(Mode.REST, false))
+        assertFalse(PartyLayout.filledParts(Mode.FIGHT_ON, true)); assertFalse(PartyLayout.filledParts(Mode.FIGHT_OFF, true))
+        fun plate(h: Float) = Box(68f, 20f, 603f, 20f + h)
+        for (mode in listOf(Mode.REST, Mode.FIGHT_TOP)) {
+            // the way down / up: rows from 192 to the rest's 64 in 1 px frames (a 240 ms slide moves a row far more than 1 px a frame;
+            // the bound is per px of height)
+            var h = PartyLayout.FILL_MAX_H
+            var lastI = PartyLayout.icon(plate(h), mode, filled = true).w
+            var lastN = PartyLayout.nameSize(mode, h, filled = true)
+            while (h > PartyLayout.REST_H) {
+                h -= 1f
+                val i = PartyLayout.icon(plate(h), mode, filled = true).w
+                val n = PartyLayout.nameSize(mode, h, filled = true)
+                assertTrue("$mode icon at $h: $lastI -> $i", i <= lastI + 1e-4f && lastI - i <= 0.51f)
+                assertTrue("$mode name at $h: $lastN -> $n", n <= lastN + 1e-4f && lastN - n <= 0.21f)
+                lastI = i; lastN = n
+            }
+        }
+        // the ends: the rest's 64 px row = the rest's own 40 / 24; a Party fight's 88 = 48 / 28; a 163 px filled row = 72 / 32
+        assertEquals(PartyLayout.icon(plate(64f), Mode.REST).w, PartyLayout.icon(plate(64f), Mode.REST, filled = true).w, 0f)
+        assertEquals(PartyLayout.nameSize(Mode.REST), PartyLayout.nameSize(Mode.REST, 64f, filled = true), 0f)
+        assertEquals(48f, PartyLayout.icon(plate(88f), Mode.REST, filled = true).w, 0.001f)
+        assertEquals(28f, PartyLayout.nameSize(Mode.REST, 88f, filled = true), 0.001f)
+        assertEquals(72f, PartyLayout.icon(plate(163f), Mode.REST, filled = true).w, 0.001f)
+        assertEquals(32f, PartyLayout.nameSize(Mode.REST, 163f, filled = true), 0f)
+        // the fight's end's first frame: REST at once, the rows still 163 px - the same parts as the Top fight drew the frame before
+        assertEquals(PartyLayout.icon(plate(163f), Mode.FIGHT_TOP).w, PartyLayout.icon(plate(163f), Mode.REST, filled = true).w, 0f)
+        assertEquals(PartyLayout.nameSize(Mode.FIGHT_TOP, 163f), PartyLayout.nameSize(Mode.REST, 163f, filled = true), 0f)
+        assertEquals(PartyLayout.nameX(plate(163f), Mode.FIGHT_TOP), PartyLayout.nameX(plate(163f), Mode.REST, filled = true), 0f)
+        // the way up's first frame: FIGHT_TOP at once, the rows still the rest's 64 px - the rest's parts
+        assertEquals(40f, PartyLayout.icon(plate(64f), Mode.FIGHT_TOP, filled = true).w, 0f)
+        assertEquals(24f, PartyLayout.nameSize(Mode.FIGHT_TOP, 64f, filled = true), 0f)
+    }
+
     /** the drawn cells are the NAV cells: Down goes to a cell drawn lower, Right to one drawn right in the same row */
     @Test fun navFollowsTheDrawing() {
         for ((n, pet) in shapes) {

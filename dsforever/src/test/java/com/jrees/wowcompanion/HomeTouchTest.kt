@@ -109,4 +109,33 @@ class HomeTouchTest {
         assertFalse(HomeTouch.open(flow, grow, HomeModule.CHAT, t0))
         assertEquals(HomeModule.MAP, flow.full)
     }
+
+    /** the 11-22 review: In fights = Top screen live in the fight (TopCombatBar.bShrinks false): a touch opens the module WITHOUT
+     *  minimizing the grow, so closing it brings the takeover straight back (the band away again, no red reminder) */
+    @Test fun aTopScreenFightKeepsTheGrowOverAModule() {
+        val (flow, grow) = fight()
+        val l = HomeLayout(fight = HomeLayout.FightBand.TOP)
+        val keep = !TopCombatBar.bShrinks(l, grow.fighting(t0 + 5), ct = 1)
+        assertTrue(keep)
+        assertTrue(HomeTouch.open(flow, grow, HomeModule.MAP, t0 + 5, keepGrow = keep))
+        assertEquals(HomeModule.MAP, flow.full)
+        assertFalse("the module covers the page", flow.takeover)
+        assertTrue("the grow kept (the Wings stay up top)", grow.shown(t0 + 5))
+        assertFalse("no red reminder", grow.red(t0 + 5))
+        // open: no takeover over the module opened in the fight
+        assertFalse(HomeTouch.takeover(grow.shown(t0 + 6), partyOn = false, full = flow.full, openedInFight = true))
+        // closed: the mark lapses with the module, the takeover is wanted again at once
+        assertTrue(flow.close())
+        val mark = HomeTouch.keepOpened(true, flow.full, grow.fighting(t0 + 7))
+        assertFalse(mark)
+        assertTrue(HomeTouch.takeover(grow.shown(t0 + 7), partyOn = false, full = flow.full, openedInFight = mark))
+        // Grow (and Top screen not live: ct 0 / null) as before: the touch minimizes
+        for (ct in listOf(null, 0)) {
+            val (f2, g2) = fight()
+            val k2 = !TopCombatBar.bShrinks(l, g2.fighting(t0 + 5), ct)
+            assertFalse(k2)
+            HomeTouch.open(f2, g2, HomeModule.MAP, t0 + 5, keepGrow = k2)
+            assertFalse(g2.shown(t0 + 5)); assertTrue(g2.red(t0 + 5))
+        }
+    }
 }

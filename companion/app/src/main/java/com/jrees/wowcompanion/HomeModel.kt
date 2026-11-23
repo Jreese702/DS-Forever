@@ -110,11 +110,15 @@ object HomeTouch {
      * ([HomeGrow.minimize], then the takeover off: no taps, nothing secure; the guest hold and PadOwnerSync's ENTER follow from the
      * layout as after B), without B's grace or trigger checks (those guard a FIGHT BUTTON; a finger on the bottom screen never is).
      * A module the takeover was covering shows again. True = something changed.
+     * [keepGrow] (In fights = Top screen live in a fight: [TopCombatBar.bShrinks] false, the review of 11-22): the grow is NOT minimized -
+     * nothing grew on the bottom screen and the add-on's Wings stay on the top screen to the fight's end, so the module only covers the
+     * page; closed, the takeover comes straight back ([takeover]: the opened-in-fight mark lapses with the module) and the band slides
+     * back above the page instead of sitting at its rest box (with a red reminder) under the Wings.
      */
-    fun open(flow: HomeFlow, grow: HomeGrow, m: HomeModule, now: Long): Boolean {
+    fun open(flow: HomeFlow, grow: HomeGrow, m: HomeModule, now: Long, keepGrow: Boolean = false): Boolean {
         var changed = false
         if (flow.takeover) {
-            grow.minimize(now)
+            if (!keepGrow) grow.minimize(now)
             changed = flow.combat(false)
         }
         val opened = when (m) {

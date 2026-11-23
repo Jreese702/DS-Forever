@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m183"               -- bump on every change; m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m185"               -- bump on every change; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -7736,13 +7736,18 @@ local function partyMode()
     -- m110: box = Party mode's state (on, the picked unit "u"); lb = each unit's button under LB (self / p1..p4), as last read
     -- m129 (party_design.md E / A.4): selWant = what Select is now ("bound" / "off" / "dialog" / "aside": Hub's top tab), rng(unit) =
     -- the one range answer (true / false / nil), grouped = in a party (Hub's own row: grouped or Party mode on, the user 2026-11-11)
+    -- nbar11 review: live = Party mode as the app reads this party document (PartyModel.onLive: on, and not aside unless in a fight;
+    -- raids included) - ActionBar's Wings switch on the same predicate, so the controls are never on both screens or on neither
     WC.padMap.party = { cfg = function() return PM.cfgNow and PM.cfgNow() or PM.resolve() end, put = PM.put, on = PM.on,
+                        live = function() return (PM.on() and (R.aside == nil or fighting())) and true or false end,
                         box = PM.box, lb = function() return OV.lbmap.last end,
                         selWant = function() return PM.sel or PM.selWant(R.aside, false) end, rng = function(u) return PM.rngOf(u) end,
                         grouped = function() return PM.grouped() end,
                         -- m131: the entries in pick order (you, the pet while out, party1..4) and the moves over them
                         units = function() return PM.units() end, nav = function(n, box, dir, pet) return OV.partyNav(n, box, dir, pet) end,
                         slots = PM.SLOTS, cols = PM.COL,
+                        -- m185: the partycfg last sent (nil before the first): ActionBar nbar12's Party layer in fights (no resolve there)
+                        cfgLast = function() return PM.cfgLast end,
                         pbRemove = function(k) return PM.pbRemove and PM.pbRemove(k) end, padd = function(id) return PM.padd and PM.padd(id) end }
 
     -- ---------------------------------------------------------------- Smart Y's party buffs (3.6, 4.5): picks per unit, the list's ops
@@ -7880,7 +7885,9 @@ local function partyMode()
         return c
     end
     function PM.sendCfg(why, noPush)
-        WC.send(WC.encode({ type = "partycfg", v = PV, c = PM.cfgNow() }))
+        local c = PM.cfgNow()
+        PM.cfgLast = c                                                  -- m185: the Wings' Party layer reads the one sent (cfgLast)
+        WC.send(WC.encode({ type = "partycfg", v = PV, c = c }))
         if not noPush then WC.push() end
     end
 
