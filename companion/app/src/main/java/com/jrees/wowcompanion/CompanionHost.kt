@@ -2669,7 +2669,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the review: the game's traffic quiet (character select after a normal logout, its memory still high) holds a new word back
         val mode = if (!free) AddonSilence.StartMode.KEEP else AddonSilence.startMode(startView.line, startView.login != StartView.Login.NONE,
             signedIn, NativeLogin.downloading, silence.silent, worldMem.inWorld, NativeLogin.trafficQuiet, shown = startView.addons != null,
-            downloadingAfter = NativeLogin.downloadingAfter)
+            downloadingAfter = NativeLogin.downloadingAfter, outOfWorld = NativeLogin.outOfWorld)   // issue 560: a disconnect's re-login
         when (mode) {
             AddonSilence.StartMode.ADDONS -> {
                 if (startView.addons == null) startCause = addonsCause()
@@ -4599,7 +4599,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the triage (2026-11-14): this game run's silence (documents "seen" may be an earlier run's)
         val now = System.currentTimeMillis()
         val quiet = if (silence.silent) "; add-ons silent ${GameLife.minutes(silence.silentMs(now))} (since ${silence.clock.words}" +
-            "${if (worldMem.inWorld) ", the game's memory says the world" else ""}${if (NativeLogin.trafficQuiet) ", its traffic quiet" else ""})" else ""
+            "${if (worldMem.inWorld) ", the game's memory says the world" else ""}${if (NativeLogin.trafficQuiet) ", its traffic quiet" else ""}${if (NativeLogin.outOfWorld) ", out of the world since a logout or a disconnect" else ""})" else ""
         return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}$docs$quiet" +
             (if (over.isEmpty()) "" else "; over it: ${over.joinToString()}") + setup
     }

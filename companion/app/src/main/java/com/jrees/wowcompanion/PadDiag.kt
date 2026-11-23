@@ -317,11 +317,16 @@ object AddonSilence {
      * The review (2026-11-14): a normal logout to character select is a bye with no hello too, and the game's memory may stay over
      * [IN_WORLD_MB] there, so [trafficQuiet] (NativeLogin.trafficQuiet: the game's traffic stopped, which the world's never does) holds
      * a NEW word back; one already on show ([shown]) stays - character select is where the player switches them back on.
+     * ISSUE 560: after a DISCONNECT the automatic re-login lands on character select, where the game's keepalives (a few hundred bytes
+     * every 1-3 s, SignInCheck) keep [trafficQuiet] from holding, its memory still high from the world: the start screen said "the
+     * add-ons aren't running" while they were fine. [outOfWorld] (NativeLogin.outOfWorld: this run reached the world WITH our add-ons,
+     * then left it, and their documents have not come back yet) holds a new word back the same way, until the world is back.
      */
     fun startMode(line: String, rowUp: Boolean, signedIn: Boolean, downloading: Boolean, silent: Boolean, inWorld: Boolean,
-                  trafficQuiet: Boolean = false, shown: Boolean = false, downloadingAfter: Boolean = false): StartMode = when {
+                  trafficQuiet: Boolean = false, shown: Boolean = false, downloadingAfter: Boolean = false,
+                  outOfWorld: Boolean = false): StartMode = when {
         !isWaitLine(line) || rowUp -> StartMode.KEEP
-        silent && inWorld && (!trafficQuiet || shown) -> StartMode.ADDONS
+        silent && inWorld && (!(trafficQuiet || outOfWorld) || shown) -> StartMode.ADDONS
         // #579: past the login screen and still downloading: "Game downloading (N MB a minute): leave it running"
         signedIn && downloadingAfter && (line == PreLoginTraffic.WAITING_LINE || line == WORLD_LINE || isDownloadAfterLine(line)) ->
             StartMode.DOWNLOAD_LINE

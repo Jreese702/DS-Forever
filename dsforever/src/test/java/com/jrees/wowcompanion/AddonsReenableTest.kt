@@ -296,6 +296,24 @@ class AddonsReenableTest {
             inWorld = true, trafficQuiet = true))
     }
 
+    @Test fun characterSelectAfterADisconnectsReloginHoldsANewWordBack() {
+        // issue 560: a disconnect, the automatic re-login, character select: its keepalives keep the traffic from reading quiet and the
+        // memory is still the world's - the start screen said "the add-ons aren't running" while they were fine
+        val world = AddonSilence.WORLD_LINE
+        assertEquals("the old rule (traffic not quiet): the false word", S.ADDONS,
+            AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, trafficQuiet = false))
+        assertEquals("out of the world since the disconnect, the add-ons' documents not back: held", S.KEEP,
+            AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, trafficQuiet = false, outOfWorld = true))
+        // the plain waiting line still becomes "Waiting for the world." (never the add-ons word)
+        assertEquals(S.WORLD_LINE, AddonSilence.startMode(PreLoginTraffic.WAITING_LINE, false, signedIn = true, downloading = false, silent = true,
+            inWorld = true, outOfWorld = true))
+        // one already on show stays (as with quiet traffic); the world back (outOfWorld false) and still silent: the word shows
+        assertEquals(S.ADDONS, AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, outOfWorld = true, shown = true))
+        assertEquals(S.ADDONS, AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, outOfWorld = false))
+        // the add-ons speaking ends it either way
+        assertEquals(S.KEEP, AddonSilence.startMode(world, false, true, false, silent = false, inWorld = true, outOfWorld = true, shown = true))
+    }
+
     @Test fun theStartScreenSaysWhatTheCardSays() {
         val c = ReportNotice.card(ReportNotice.State.AddonsOff(null))
         assertEquals(ReportNotice.ADDONS_TITLE, c.title); assertEquals(ReportNotice.ADDONS_DEFAULT, c.text)
