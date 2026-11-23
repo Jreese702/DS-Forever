@@ -503,8 +503,13 @@ class HomeView(
             val r = now[p] ?: continue
             if (halfOf(p, r, w) == half) col += v to r
         }
-        val area = ClassSlot.column(col.filter { it.first.visibility == View.VISIBLE }.map { (_, r) -> ClassSlot.Area(r.left, r.top, r.right, r.bottom) },
+        val area0 = ClassSlot.column(col.filter { it.first.visibility == View.VISIBLE }.map { (_, r) -> ClassSlot.Area(r.left, r.top, r.right, r.bottom) },
             barsBottom(), h, g, left, w)
+        // (full width in Party mode, 2026-11-23: the list across both columns stays - the wheel in its column's part under a top list,
+        // over a foot one)
+        val pw = now[Part.PARTY]?.takeIf { laidPartyWide && views[Part.PARTY]?.visibility == View.VISIBLE }
+        val area = if (pw == null) area0 else if (pw.centerY() < h / 2f) area0.copy(top = maxOf(area0.top, pw.bottom + g))
+            else area0.copy(bottom = minOf(area0.bottom, pw.top - g))
         val slot = ClassSlot.inColumn(area)
         classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + slot.side).toInt(), (slot.top + slot.side).toInt())
         // the wheel lies UNDER its column (raised while it shows) and is uncovered as the column slides away; on release the column
@@ -554,7 +559,12 @@ class HomeView(
     /** fix/castbar-slides: the half a laid part belongs to for a side slide: the cast bar by its side (Both = neither), any other part by
      *  its centre ([HomeSlide.half]) */
     private fun halfOf(p: Part, r: RectF, w: Float): HomeSlide.Half =
-        HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w, split = laidSplit)
+        // FULL WIDTH (Party mode, 2026-11-23): a party list across both columns is neither column's, as Both's bar (it stays: the class
+        // wheel takes its own column's area under / over it, the middle wheel sits under / over it - wheelFit)
+        if (p == Part.PARTY && laidPartyWide) HomeSlide.Half.NONE
+        else HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w, split = laidSplit)
+    /** the party list was laid across both columns ([HomeLayoutSolver.wideParty]) */
+    private var laidPartyWide = false
 
     /**
      * f-radial-middle (1.0.9, the user: "The Dpad up radial, and spell radial should slideup between the middle of the modules like the
@@ -582,8 +592,12 @@ class HomeView(
         val w = width.toFloat(); val h = frameH
         val g = UiKit.MODULE_GAP
         val line = columnsLine(w)
-        val s = ClassSlot.middle(w, h, barsFoot(places), g, w * WHEEL_SLOT_MAX,
-            bottom = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g), mid = (line.first + line.second) / 2f)
+        // (a full-width party list stays where it is: the wheel under it at the top, over it at the foot)
+        val pw = places[Part.PARTY]?.takeIf { laidPartyWide }
+        val top = maxOf(barsFoot(places), pw?.takeIf { it.centerY() < h / 2f }?.bottom ?: 0f)
+        val foot = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g)
+        val s = ClassSlot.middle(w, h, top, g, w * WHEEL_SLOT_MAX,
+            bottom = pw?.takeIf { it.centerY() >= h / 2f }?.let { minOf(foot, it.top - g) } ?: foot, mid = (line.first + line.second) / 2f)
         wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
         wheelPush = s.push; wheelPushR = s.pushRight
     }
@@ -1845,8 +1859,13 @@ class HomeView(
         // page as its fight does, the party list filling the strip (the 1519 integration)
         val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(w, h, UiKit.MODULE_GAP, full = s.full, takeover = s.takeover || previewTakeover(),
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
-            partyOn = partyOnHere(), castHidden = !full && castHiddenNow(), partyFight = partyFightNow() || previewPartyFight()))
+            partyOn = partyLaidOn(), castHidden = !full && castHiddenNow(), partyFight = partyFightNow() || previewPartyFight()))
         placedAway = !full && r.away
+        laidPartyPen = editPartyLook()
+        if (!full) laidPartyWide = r.partyWide
+        // party sizing: the rows' height the picks laid when it is not the mode's own (a Top fight's fill: the view fills its box)
+        if (partyIn != null) partyView.sizedH = r.partyRowH.takeIf { it > 0f && partyIn.mode != PartyLayout.Mode.FIGHT_TOP &&
+            kotlin.math.abs(it - PartyLayout.plateH(partyIn.mode)) > 0.01f }
         if (full) laidSide = CastStripModel.Side.OFF
         else {
             laidLayout = l
@@ -2360,7 +2379,7 @@ class HomeView(
     private val RIDER_HOST: Map<Part, Part> = mapOf(Part.QUESTS to Part.MAP, Part.AURAS to Part.MAP)
 
     /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
-    private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover || editFightLook(), partyOn = partyOnHere()))
+    private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover || editFightLook(), partyOn = partyLaidOn()))
 
     /**
      * P4 (the user's ruling 2026-11-22): edit mode's fight PREVIEW is on (the ribbon's Fight toggle; live, not parked): the band, its
@@ -2370,8 +2389,17 @@ class HomeView(
     private fun editFightLook(): Boolean = edit?.let { !it.parked && it.fightPreview } == true
     /** the preview's fight as the page lays it: the takeover with Party mode off; with it on the Party-mode fight (no takeover: R0 -
      *  Top screen's band away and the party list filling the strip, the user's ruling C) */
-    private fun previewTakeover(): Boolean = editFightLook() && !partyOnHere()
-    private fun previewPartyFight(): Boolean = editFightLook() && partyOnHere()
+    private fun previewTakeover(): Boolean = editFightLook() && !partyLaidOn()
+    private fun previewPartyFight(): Boolean = editFightLook() && partyLaidOn()
+    /** PARTY SIZING'S PREVIEW (the user's pick 2026-11-23: "the party list's pencil bubble in Edit Home with a fight preview"): the party
+     *  list's pencil bubble is open in edit mode (live) - the page lays the list as Party mode lays it (full width, the picks' rows) so
+     *  the player sees what the picks do, with Party mode off too; display only (the add-on, the Select tab's look and the taps hear
+     *  nothing of it) */
+    private fun editPartyLook(): Boolean = edit?.let { !it.parked && it.menu == EditStop.PARTY_PEN } == true
+    /** Party mode as the page is laid: live, or [editPartyLook]'s preview */
+    private fun partyLaidOn(): Boolean = partyOnHere() || editPartyLook()
+    /** [editPartyLook] as [places] last laid it (the bubble opened or closed: the page is laid again) */
+    private var laidPartyPen = false
     /** P4 fix round: the preview's look was given to the D-pad and the band (the toggle's Fx.Preview) and not taken back yet */
     private var previewLaid = false
     /**
@@ -2544,7 +2572,9 @@ class HomeView(
         wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
         // fix/menus-fit: over the party list's column as laid (any share, either side: the chat's for Classic's dock; after 1518 the
         // map's when it sits there), under the band as it is now
-        val partyCol = now[if (laidPartyInMap) Part.MAP else Part.CHAT]?.let { c -> RectF(c).also { u -> now[Part.PARTY]?.let { u.union(it) } } }
+        // (full width in Party mode: the column's own width, the list's height - never across the whole page)
+        val partyCol = now[if (laidPartyInMap) Part.MAP else Part.CHAT]?.let { c -> RectF(c).also { u -> now[Part.PARTY]?.let {
+            if (laidPartyWide) { u.top = minOf(u.top, it.top); u.bottom = maxOf(u.bottom, it.bottom) } else u.union(it) } } }
         PartyMenuView.place(partyCol, barsBottom(), frameH, laidChatRight, (r - l).toFloat()).let { m ->
             partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
             targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
@@ -2660,6 +2690,8 @@ class HomeView(
             val o = when {
                 bandPart(p) -> pauseTop                                                             // (the fight strip with the band)
                 p == Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
+                // full width in Party mode (2026-11-23): the list across both columns goes with its own column (its tab's side)
+                p == Part.PARTY && laidPartyWide -> if (laidChatRight) pauseMap else left
                 !across -> if (r!!.centerX() < half) left else pauseMap
                 p == Part.QUESTS -> if (cardOverMap()) pauseMap else left
                 p == Part.MAP || p == Part.AURAS -> pauseMap
@@ -2689,7 +2721,9 @@ class HomeView(
                 // fix/menus-fit: every part by its column (its half), each side by its own distance (LbFit: Classic's 340 both)
                 val pl = (lb?.pushLeft ?: sidePx) * ee; val pr = (lb?.pushRight ?: sidePx) * ee
                 val bar = p == Part.STRIP || p == Part.CAST2
-                v.translationX = if (r != null && (!across || bar)) HomeSlide.dx(halfOf(p, r, width.toFloat()), pl, pr)
+                // (full width in Party mode, 2026-11-23: the list across both columns would still cover the picture's middle after a
+                // side's step: it leaves the page its own column's way, as for the pause wheel - the translation set above)
+                if (!(p == Part.PARTY && laidPartyWide)) v.translationX = if (r != null && (!across || bar)) HomeSlide.dx(halfOf(p, r, width.toFloat()), pl, pr)
                     else if (o === left) -pl else pr
                 v.translationY = 0f
                 if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
@@ -2988,7 +3022,7 @@ class HomeView(
         val partyIn = if (PARTY_MODULE && p != null) HomeLayoutSolver.Party(partyModeNow(flow.screen), p.view.size, p.viewPet) else null
         return HomeLayoutSolver.State(width.toFloat(), frameH, UiKit.MODULE_GAP, takeover = flow.takeover,
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
-            partyOn = partyOnHere(), castHidden = castHiddenNow(), partyFight = partyFightNow())
+            partyOn = partyLaidOn(), castHidden = castHiddenNow(), partyFight = partyFightNow())
     }
     private fun solveFor(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> =
         HomeLayoutSolver.places(HomeLayoutRules.shown(l.copy(rest = flow.rest)), solveState(l)).boxes
@@ -3008,7 +3042,8 @@ class HomeView(
             folded = HomeSettings.questMin, zoomOut = Settings.minimapYd, zoomIn = Settings.minimapIndoorYd,
             castShowInFight = CastStripModel.showOf(HomeSettings.castBarCombat), castParty = HomeSettings.castBarPartyShow,
             toolbarOn = d?.want == true, toolbarAvail = d?.colOn != null, rest = HomeSettings.rest, rankBadges = HomeSettings.rankBadges,
-            fightBand = HomeSettings.fightBand, swing = HomeSettings.swingTimer, ct = d?.ct, fightCast = HomeSettings.fightCast, cc = d?.cc)
+            fightBand = HomeSettings.fightBand, swing = HomeSettings.swingTimer, ct = d?.ct, fightCast = HomeSettings.fightCast, cc = d?.cc,
+            fightPreview = edit?.fightPreview == true)
     }
     private fun editMenuRows(s: EditStop): List<MenuRow> {
         val m = edit ?: chromeModel ?: return emptyList()
@@ -3293,6 +3328,8 @@ class HomeView(
         m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
         m?.let { editPersist(it) }                                        // 1518: a settled change is saved as it is made
         m?.let { editBandFeed(it); if (it.settled) editCursorCheck(it) } // P2: Settings' extras as they are now; a piece gone: the cursor on
+        // party sizing's preview: the party list's bubble opened or closed - the page laid again as Party mode (or not) lays it
+        if (editPartyLook() != laidPartyPen) editRelay(Motion.MODULE_OPEN, force = true)
         editBarSync(fx.lastOrNull { it is HomeEditModel.Fx.Relay }?.let { (it as HomeEditModel.Fx.Relay).ms } ?: Motion.MODULE_OPEN)
         editNotice()
         editDecor()

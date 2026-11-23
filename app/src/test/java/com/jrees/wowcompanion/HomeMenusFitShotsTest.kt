@@ -311,8 +311,12 @@ class HomeMenusFitShotsTest {
         val b = boxes(p.home)
         val party = b["PARTY"] ?: return no(tag, "no party list")
         val col = b.getValue(if (p.layout.party.column == HomeModule.MAP) "MAP" else "CHAT")
-        if (party.centerX() < col.left || party.centerX() > col.right) no(tag, "party list ${r(party)} not in its column ${r(col)}")
         val other = b.getValue(if (p.layout.party.column == HomeModule.MAP) "CHAT" else "MAP")
+        // (full width in Party mode, 2026-11-23: the list spans both columns - its tab still on its own column's outer edge)
+        val wide = party.width() > W * 0.9f
+        if (wide && (party.left > minOf(col.left, other.left) + 1.5f || party.right < maxOf(col.right, other.right) - 1.5f))
+            no(tag, "party list ${r(party)} not across both columns")
+        if (!wide && (party.centerX() < col.left || party.centerX() > col.right)) no(tag, "party list ${r(party)} not in its column ${r(col)}")
         val right = col.left > other.left
         if (right && kotlin.math.abs(party.right - W) > 0.5f || !right && kotlin.math.abs(party.left) > 0.5f)
             no(tag, "party list ${r(party)}: its tab off its column's outer edge")

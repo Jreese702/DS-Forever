@@ -61,13 +61,21 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     var stretch = false
         set(v) { if (field != v) { field = v; invalidate() } }
 
+    /** PARTY SIZING (2026-11-23): the rows' height Home laid for the player's picks when it is not [mode]'s own (88 at rest with Grows =
+     *  Whenever Party mode is on, 64 in a fight with Same size or Grows = Off, 56 with Shrink), null = [mode]'s; such rows size their
+     *  parts from their height (PartyLayout.fillIcon / fillName: the rest's look at 64, a Party fight's at 88) */
+    var sizedH: Float? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** the plates' parts follow the rows' height (a Top fight's fill, a slide, or the picks' own height) */
+    private fun sizedParts(): Boolean = PartyLayout.filledParts(mode, stretch) || sizedH != null
+
     /** the module in this view's own px: the view's left (or, [tabRight], its right) is the screen's edge (the tab's place, m134); a
      *  Party-mode Top fight ([PartyLayout.Mode.FIGHT_TOP]) or a slide ([stretch]): the rows fill the view's height */
     fun module(): PartyLayout.Module {
         val n = live.party?.view?.size ?: 1
         val pet = live.party?.viewPet == true
         val rowH = if ((mode == PartyLayout.Mode.FIGHT_TOP || stretch) && height > 0)
-            PartyLayout.rowsFit(PartyModel.rows(n.coerceIn(1, PartyModel.MAX_N), pet).size, height.toFloat()) else PartyLayout.plateH(mode)
+            PartyLayout.rowsFit(PartyModel.rows(n.coerceIn(1, PartyModel.MAX_N), pet).size, height.toFloat()) else sizedH ?: PartyLayout.plateH(mode)
         return PartyLayout.module(mode, n, pet = pet, top = 0f, left = 0f, right = width.toFloat(), tabRight = tabRight, rowH = rowH)
     }
 
@@ -193,7 +201,7 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
             pFill.style = Paint.Style.FILL
         }
         // the 11-22 review (rulings C / D): a Top fight's filled rows and a Top-screen slide's size their parts from the row's height
-        val sized = PartyLayout.filledParts(mode, stretch)
+        val sized = sizedParts()
         val ib = PartyLayout.icon(p, mode, sized)
         // the pet: its portrait (the game's GetPetIcon, m134) or nothing - never a drawn dot; a person: the role, else the class icon
         val icon = if (mem.isPet) mem.ic?.let { Icons.get(it) } else {

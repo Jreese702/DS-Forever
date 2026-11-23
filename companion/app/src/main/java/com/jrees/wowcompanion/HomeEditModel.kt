@@ -57,7 +57,12 @@ enum class EditStop {
      *  extras row as apps (one stop with its own cursor [HomeEditModel.extraSel] over the extras shown and the "+" spot), [FIGHT_PEN] the
      *  fight look's pencil (only while the ribbon's [FIGHT] preview is on: In fights, the swing timer). [FIGHT] = the ribbon's Fight
      *  toggle (the top bar's combat look while editing: a preview only - nothing is sent to the game) */
-    PAD_PEN, FACE_PEN, LOOK, EXTRAS, FIGHT_PEN, FIGHT;
+    PAD_PEN, FACE_PEN, LOOK, EXTRAS, FIGHT_PEN, FIGHT,
+    /** PARTY SIZING (the user's pick 2026-11-23: "Settings + Edit Home" - the party list's pencil bubble with a fight preview): the
+     *  party list's own pencil, on its far corner from the Select tab (still, no wiggle: the top bar's pencils' look) - its speech
+     *  bubble holds Grows, Controller on top / on bottom (fights) and the preview (Rest / Fight; the page lays the list as Party mode
+     *  does while the bubble is open: HomeView.editPartyLook). A stop while the party list is on Home, in the fight preview too */
+    PARTY_PEN;
     /** one of the top bar's pieces (the band's own left-to-right walk: [HomeEditModel.BAND_ORDER]) */
     val band: Boolean get() = this == PAD_PEN || this == FACE_PEN || this == LOOK || this == EXTRAS || this == FIGHT_PEN
     /** a widget a finger or A can lift and dock elsewhere */
@@ -66,15 +71,17 @@ enum class EditStop {
     val removable: Boolean get() = this == QUEST || this == CAST
     /** a widget with a menu (X; on the room bar X hides the room under the cursor instead) */
     val hasMenu: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST || this == PARTY || this == PAD_PEN ||
-        this == FACE_PEN || this == FIGHT_PEN
-    /** a pencil: its menu is a speech bubble popping out of its part (the band's pieces) */
-    val pencil: Boolean get() = this == PAD_PEN || this == FACE_PEN || this == FIGHT_PEN
+        this == FACE_PEN || this == FIGHT_PEN || this == PARTY_PEN
+    /** a pencil: its menu is a speech bubble popping out of its part (the band's pieces, the party list's) */
+    val pencil: Boolean get() = this == PAD_PEN || this == FACE_PEN || this == FIGHT_PEN || this == PARTY_PEN
     /** its motion key (HomeEditMotion: spelled out, the keys 1518 gave each stop - the wiggle phases and paces stay as they were; the
      *  party list keeps the key it wiggled on in 1518, [HomeEditMotion.PARTY]) */
     val key: Int get() = when (this) {
         CHAT -> 2; MAP -> 3; QUEST -> 4; DIVIDER -> 5; CAST -> 6; PARTY -> HomeEditMotion.PARTY; PLUS -> 7; ROOMS -> 8; DONE -> 13
         // the top bar's pieces (the keys 1518 left free under 16; the extras wiggle on their own keys: HomeEditMotion.extraKey)
         FIGHT_PEN -> 1; PAD_PEN -> 9; FACE_PEN -> 11; LOOK -> 12; EXTRAS -> 14; FIGHT -> 15
+        // the party list's pencil (2026-11-23): the one key left free under 16 (a pencil never wiggles)
+        PARTY_PEN -> 0
     }
     /** the tag drawn on its dashed frame (terse: the widget's name; the bar's rooms none) */
     val tag: String get() = when (this) {
@@ -277,7 +284,7 @@ class HomeEditModel(
         EditStop.ROOMS -> if (barOnPlus) openRoomTray() else lift(cursor)
         // the band's pieces: a pencil its bubble, the Look chip the other resting look, "+" the extras' tray (an extra: nothing - X or
         // its "-" hides it), the ribbon's Fight the preview
-        EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.FIGHT_PEN -> openMenu(cursor)
+        EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.FIGHT_PEN, EditStop.PARTY_PEN -> openMenu(cursor)
         EditStop.LOOK -> lookFlip()
         EditStop.EXTRAS -> if (extraOnPlus) openExtraTray() else emptyList()
         EditStop.FIGHT -> toggleFight()
@@ -379,6 +386,14 @@ class HomeEditModel(
         fightPreview = !fightPreview
         cursor = EditStop.FIGHT
         return dropped + Fx.Preview(fightPreview)
+    }
+
+    /** the party list's bubble's Preview row (Rest / Fight): the ribbon's fight preview on / off with the bubble kept open (the cursor
+     *  stays on its row) - the page lays the list in its fight size; nothing is sent to the game */
+    private fun partyPreview(on: Boolean): List<Fx> {
+        if (parked || fightPreview == on) return emptyList()
+        fightPreview = on
+        return listOf(Fx.Preview(on))
     }
 
     /** B one step back at the top level: Done (every change is saved already) */
@@ -645,6 +660,11 @@ class HomeEditModel(
             // the party list's column (its edge kept) and its edge in that column
             K_PARTY_PLACE -> change(l.copy(party = l.party.withColumn(if (k == 0) HomeModule.CHAT else HomeModule.MAP)), Motion.MODULE_OPEN)
             K_PARTY_EDGE -> change(l.copy(party = l.party.withTop(k == 0)), Motion.MODULE_OPEN)
+            // party sizing (2026-11-23): the record's picks (this character's; Discard puts them back), and the bubble's preview
+            K_PARTY_GROW -> change(l.copy(partyGrow = HomeLayout.PartyGrow.values()[k]), Motion.MODULE_OPEN)
+            K_PARTY_TOP -> change(l.copy(partyTop = HomeLayout.PartyTopFight.values()[k]), Motion.MODULE_OPEN)
+            K_PARTY_BOTTOM -> change(l.copy(partyBottom = HomeLayout.PartyBottomFight.values()[k]), Motion.MODULE_OPEN)
+            K_PARTY_PREVIEW -> partyPreview(k == 1)
             K_SIZE -> change(l.copy(castSize = SIZES[k]), Motion.MODULE_OPEN)
             K_SLOTS -> { menu = null; listOf(Fx.EditSlots) }
             K_FILTERS -> { menu = null; listOf(Fx.Filters) }
@@ -1059,7 +1079,7 @@ class HomeEditModel(
         const val K_FOLD = "fold"
         /** the stops whose box can go while edit mode is open (the cursor on one is moved by [cursorCheck]) */
         val GONE_CHECKED = setOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.LOOK,
-            EditStop.EXTRAS, EditStop.FIGHT_PEN)
+            EditStop.EXTRAS, EditStop.FIGHT_PEN, EditStop.PARTY_PEN)
         /** the top bar's pieces left to right (P1 - P4): at rest the D-pad's pencil, the Look chip, the extras, the ABXY's pencil; with the
          *  fight preview the D-pad's pencil, the fight pencil, the ABXY's pencil (the Thin row has no extras) */
         val BAND_ORDER = listOf(EditStop.PAD_PEN, EditStop.LOOK, EditStop.FIGHT_PEN, EditStop.EXTRAS, EditStop.FACE_PEN)
@@ -1069,6 +1089,11 @@ class HomeEditModel(
         /** the party list's menu rows: its column (Chat / Map) and its edge in it (Above / Below) */
         const val K_PARTY_PLACE = "partyplace"
         const val K_PARTY_EDGE = "partyedge"
+        /** the party list's pencil bubble (2026-11-23): Grows, Controller on top / on bottom (fights), the preview */
+        const val K_PARTY_GROW = "partygrow"
+        const val K_PARTY_TOP = "partytop"
+        const val K_PARTY_BOTTOM = "partybottom"
+        const val K_PARTY_PREVIEW = "partypreview"
         const val K_CAST_FIGHT = "castfight"
         const val K_CAST_PARTY = "castparty"
         const val K_SLOTS = "slots"
@@ -1144,6 +1169,8 @@ object HomeWidgetMenus {
         /** the user's ruling 2026-11-23: "Cast bar in fights" (offered with Top screen only); the add-on's word (`cc`, PadMap m187; null =
          *  an add-on without it: Top screen cannot be picked, the bar stays on the bottom screen) */
         val fightCast: HomeLayout.FightCast = HomeLayout.FightCast.BOTTOM, val cc: Int? = null,
+        /** the fight preview is on (the party list's bubble's Preview row: Fight) */
+        val fightPreview: Boolean = false,
     )
 
     val CARD_DOCKS = listOf(HomeLayout.CardDock.ON_MAP, HomeLayout.CardDock.ABOVE_CHAT, HomeLayout.CardDock.OFF)
@@ -1221,8 +1248,31 @@ object HomeWidgetMenus {
                     off = if (v.cc == null && v.fightCast != HomeLayout.FightCast.TOP) setOf(HomeLayout.FightCast.TOP.ordinal) else emptySet()))
             add(onOff(BottomTiles.SWING, "Swing timer", v.swing))
         }
+        // PARTY SIZING (2026-11-23): the party list's pencil bubble - its three picks (the record's, this character's) and the preview
+        EditStop.PARTY_PEN -> partySizingRows(l) +
+            MenuRow(HomeEditModel.K_PARTY_PREVIEW, "Preview", PREVIEW_WORDS, if (v.fightPreview) 1 else 0)
         else -> emptyList()
     }
+    /** the party list's bubble's Preview row: the rest, or the fight (the ribbon's Fight toggle) */
+    val PREVIEW_WORDS = listOf("Rest", "Fight")
+    /** party sizing's words (Settings > Bottom screen > Party's lines too: BottomTiles), in the record's enums' order */
+    val PARTY_GROW_WORDS = listOf("Off", "In fights", "Whenever Party mode is on")
+    val PARTY_TOP_WORDS = listOf("Fill the freed space", "Grow a bit", "Same size")
+    val PARTY_BOTTOM_WORDS = listOf("Grow", "Same size", "Shrink to make room")
+    /** the same picks' words on Settings' tile band (its game buttons hold about ten letters: the bubble keeps the long ones) */
+    val PARTY_GROW_TILE = listOf("Off", "In fights", "Party mode on")
+    val PARTY_TOP_TILE = listOf("Fill", "Grow a bit", "Same size")
+    val PARTY_BOTTOM_TILE = listOf("Grow", "Same size", "Shrink")
+    const val PARTY_GROW_LABEL = "Grows"
+    const val PARTY_TOP_LABEL = "Controller on top (fights)"
+    const val PARTY_BOTTOM_LABEL = "Controller on bottom (fights)"
+    /** the three sizing rows for record [l] (the bubble's and the Settings tile's) */
+    fun partySizingRows(l: HomeLayout): List<MenuRow> = listOf(
+        MenuRow(HomeEditModel.K_PARTY_GROW, PARTY_GROW_LABEL, PARTY_GROW_WORDS, l.partyGrow.ordinal),
+        MenuRow(HomeEditModel.K_PARTY_TOP, PARTY_TOP_LABEL, PARTY_TOP_WORDS, l.partyTop.ordinal),
+        MenuRow(HomeEditModel.K_PARTY_BOTTOM, PARTY_BOTTOM_LABEL, PARTY_BOTTOM_WORDS, l.partyBottom.ordinal),
+    )
+
     /** the party list's columns ([HomeEditModel.K_PARTY_PLACE]) */
     val PARTY_WORDS = listOf("Chat", "Map")
     /** the resting looks in HomeRest's order (Settings' Rest controller words) */
@@ -1232,6 +1282,7 @@ object HomeWidgetMenus {
     fun title(s: EditStop): String = when (s) {
         EditStop.CHAT -> "Chat"; EditStop.MAP -> "Map"
         EditStop.QUEST -> "Quest card"; EditStop.CAST -> "Tap-to-cast bar"; EditStop.PARTY -> "Party"
-        EditStop.PAD_PEN -> "D-pad"; EditStop.FACE_PEN -> "Buttons"; EditStop.FIGHT_PEN -> "Fight"; else -> ""
+        EditStop.PAD_PEN -> "D-pad"; EditStop.FACE_PEN -> "Buttons"; EditStop.FIGHT_PEN -> "Fight"; EditStop.PARTY_PEN -> "Party list"
+        else -> ""
     }
 }

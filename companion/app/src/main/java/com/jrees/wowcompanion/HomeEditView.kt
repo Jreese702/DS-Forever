@@ -240,7 +240,22 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         // P4 (decision D4): while the fight preview shows, only the band, the ribbon and the room bar are edited (the columns are laid
         // under the grown band: nothing of theirs is reached)
         if (host.model?.fightPreview == true) for (s in PREVIEW_GONE) out.remove(s)
+        // party sizing (2026-11-23): the party list's pencil, in the fight preview too (its bubble's Preview row shows the fight)
+        partyPenBox()?.let { out[EditStop.PARTY_PEN] = HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }
         return out
+    }
+
+    /**
+     * PARTY SIZING (the user's pick 2026-11-23): the party list's pencil in Home's px - [BandEdit.PEN] square on the list's far top
+     * corner from its Select tab (the tab on the screen's left edge: the box starts at x 0 - the pencil at its right), [PARTY_PEN_IN] in
+     * from its edges, over the corner plate like a badge; null = no party list on Home
+     */
+    fun partyPenBox(p: Map<HomePart, RectF> = host.parts()): RectF? {
+        val b = p[HomePart.PARTY] ?: return null
+        if (b.width() < BandEdit.PEN * 2f || b.height() < BandEdit.PEN) return null
+        val tabLeft = b.left <= 0.5f
+        val l = if (tabLeft) b.right - PARTY_PEN_IN - BandEdit.PEN else b.left + PARTY_PEN_IN
+        return RectF(l, b.top + PARTY_PEN_IN, l + BandEdit.PEN, b.top + PARTY_PEN_IN + BandEdit.PEN)
     }
     /** the extras' cells and their "+" spot as one box (null = no extras row shown) */
     private fun extrasUnion(g: BandGeo): RectF? {
@@ -256,10 +271,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** [s]'s box on the band now (a pencil, the Look chip, the extra under the cursor: its picture - the readability pass: the cursor
      *  hugs the 28 px picture, not the taller cell under it), null = none */
     fun bandBox(s: EditStop): RectF? {
+        if (s == EditStop.PARTY_PEN) return partyPenBox()
         val g = host.band() ?: return null
         val m = host.model
         return when (s) {
             EditStop.PAD_PEN -> g.padPen; EditStop.FACE_PEN -> g.facePen; EditStop.LOOK -> g.look; EditStop.FIGHT_PEN -> g.fightPen
+            EditStop.PARTY_PEN -> partyPenBox()
             EditStop.EXTRAS -> m?.let { extraBox(g, it) } ?: extrasUnion(g)
             else -> null
         }?.let { RectF(it) }
@@ -274,13 +291,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * a).toInt()) else -1
         drawWidgets(c, m)
         drawBandPieces(c, m)
+        drawPartyPen(c, m)
         // the menu pops out of its widget's side (0.92 -> 1 with a little overshoot), the Add tray rises; a pencil's bubble out of its tail
         m.menu?.let { s ->
             val k = host.popK(HomeEditMotion.MENU)
             val sv = c.save()
             if (abs(k - 1f) > 0.001f) {
                 val box = menuBox(s)
-                if (s.pencil) popIn(c, k, box, bubbleTailX(s, box), box.top, MENU_FROM)
+                if (s.pencil) popIn(c, k, box, bubbleTailX(s, box), if (partyBubbleUp) box.bottom else box.top, MENU_FROM)
                 else {
                     val wb = boxesNow(host.parts())[s] ?: RectF(box.centerX(), height.toFloat(), box.centerX(), height.toFloat())
                     popIn(c, k, box, wb.centerX().coerceIn(box.left, box.right), wb.centerY().coerceIn(box.top, box.bottom), MENU_FROM)
@@ -659,7 +677,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** a menu laid out: its box, each row's rect, which segmented rows wrap (label above, buttons below), the buttons' text size */
     private class MenuLay(val box: RectF, val rows: List<RectF>, val wrap: List<Boolean>, val segText: List<Float>,
                           /** a pencil's bubble hangs right under the band (its tail up to its part); false = a bar pushed it down */
-                          val tail: Boolean = false)
+                          val tail: Boolean = false,
+                          /** the party list's bubble stands ABOVE the list (a list at the foot): its tail on its foot, pointing down */
+                          val tailDown: Boolean = false)
 
     /** a segmented row's button widths at text size [ts] */
     private fun segWidths(r: MenuRow, ts: Float): List<Float> {
@@ -693,7 +713,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val top = max(bars?.bottom ?: 226f, 0f) + g
         val cardHost = if (host.model?.draft?.card == HomeLayout.CardDock.ABOVE_CHAT) map else chat
         val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST || s == EditStop.PARTY
-        val bubbleOf = if (s.pencil) bandBox(s) else null
+        val bubbleOf = if (s.pencil && s != EditStop.PARTY_PEN) bandBox(s) else null
         // the party list's over the column it is not in
         val partyHost = if (host.model?.draft?.party?.column == HomeModule.MAP) chat else map
         val hostCol = when (s) { EditStop.CHAT -> map; EditStop.MAP -> chat; EditStop.QUEST -> cardHost; EditStop.PARTY -> partyHost; else -> null }
@@ -701,11 +721,35 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         // the horizontal extent and the room it has vertically
         var box: RectF
         var tail = false
+        var tailDown = false
         when {
+            // PARTY SIZING: the party list's bubble beside the list, never on it (the preview shows the list's size) - under it, or over
+            // it when there is more room there (a list at the foot); [PARTY_BUBBLE_W] wide (its long words on one line), centred on the
+            // pencil, 16 px clear of the screen's edges; its tail points at the list
+            s == EditStop.PARTY_PEN -> {
+                val pb = p[HomePart.PARTY] ?: RectF(g, top, w - g, top)
+                val pen = partyPenBox(p) ?: RectF(pb.centerX(), pb.top, pb.centerX(), pb.top)
+                val bw = min(PARTY_BUBBLE_W, w - 2f * BUBBLE_EDGE)
+                val cx = pen.centerX().coerceIn(BUBBLE_EDGE + bw / 2f, w - BUBBLE_EDGE - bw / 2f)
+                // (over the list it may cover the band: a list at the foot leaves too little room under the band for four rows)
+                val below = (h - g) - (pb.bottom + 4f + BUBBLE_TAIL)
+                val above = (pb.top - 4f - BUBBLE_TAIL) - g
+                tailDown = above > below
+                box = if (tailDown) RectF(cx - bw / 2f, g, cx + bw / 2f, pb.top - 4f - BUBBLE_TAIL)
+                    else RectF(cx - bw / 2f, pb.bottom + 4f + BUBBLE_TAIL, cx + bw / 2f, h - g)
+                tail = true
+            }
             column -> {
                 box = hostCol?.let { RectF(it.left, top, it.right, it.bottom) } ?: RectF(g, top, w / 2f, h - g)
                 if (box.width() < MENU_MIN_W) {
                     if (box.centerX() < w / 2f) box.right = min(w - g, box.left + MENU_MIN_W) else box.left = max(g, box.right - MENU_MIN_W)
+                }
+                // (full width in Party mode, 2026-11-23: the party list spans the other column too - its menu under it at the top, over
+                // it at the foot, never on it)
+                if (s == EditStop.PARTY) p[HomePart.PARTY]?.let { pb ->
+                    if (pb.left < box.right && box.left < pb.right) {
+                        if (pb.centerY() < h / 2f) box.top = max(box.top, pb.bottom + g) else box.bottom = min(box.bottom, pb.top - g)
+                    }
                 }
                 clearBars(box, p, top, g)
             }
@@ -765,16 +809,20 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         // short of room: the rows tighten (to MENU_K_MIN); past that the menu runs on below its column (the words stay readable)
         val k = if (MENU_HEAD + sum + 24f <= avail || sum <= 0f) 1f else ((avail - MENU_HEAD - 24f) / sum).coerceIn(MENU_K_MIN, 1f)
         val boxH = MENU_HEAD + sum * k + 24f
-        box = when (s) {
-            EditStop.CAST -> if (topBar != null) RectF(box.left, box.top, box.right, box.top + boxH)
+        box = when {
+            s == EditStop.CAST -> if (topBar != null) RectF(box.left, box.top, box.right, box.top + boxH)
                 else RectF(box.left, max(top, box.bottom - boxH), box.right, box.bottom)
+            tailDown -> RectF(box.left, max(g, box.bottom - boxH), box.right, box.bottom)
             else -> RectF(box.left, box.top, box.right, box.top + boxH)
         }
         val out = ArrayList<RectF>()
         var y = box.top + MENU_HEAD
         for (u in unit) { out += RectF(box.left + 16f, y, box.right - 16f, y + u * k - 10f); y += u * k }
-        return MenuLay(box, out, wrap, segText, tail)
+        partyBubbleUp = tailDown
+        return MenuLay(box, out, wrap, segText, tail, tailDown)
     }
+    /** the last laid party bubble stood over its list (the pop grows from its foot) */
+    private var partyBubbleUp = false
     /**
      * fix round 2: a menu box never lies on a tap-to-cast bar its FINAL width crosses (a column menu widened to MENU_MIN_W reaches into
      * the other column; the band's and the clock's are centred): a bar at a column's top ([top] = the columns' top) - the menu starts
@@ -797,6 +845,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val lay = menuLay(s, host.menuRows(s))
         if (!lay.tail) return null
         val ax = bubbleTailX(s, lay.box)
+        if (lay.tailDown) return RectF(ax - 16f, lay.box.bottom - 2f, ax + 16f, lay.box.bottom + BUBBLE_TAIL - 2f)
         return RectF(ax - 16f, lay.box.top - BUBBLE_TAIL + 2f, ax + 16f, lay.box.top + 2f)
     }
 
@@ -804,8 +853,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private fun bubbleTailX(s: EditStop, box: RectF): Float =
         (bandBox(s)?.centerX() ?: box.centerX()).coerceIn(box.left + UiKit.MODULE_R + 16f, box.right - UiKit.MODULE_R - 16f)
 
-    /** the speech bubble's tail: from the bubble's top edge up towards its pencil ([BUBBLE_TAIL] tall), the bubble's own ink and edge */
-    private fun bubbleTail(c: Canvas, box: RectF, ax: Float) {
+    /** the speech bubble's tail: from the bubble's top edge up towards its pencil ([BUBBLE_TAIL] tall), the bubble's own ink and edge;
+     *  [down] = from its foot down towards the party list under it */
+    private fun bubbleTail(c: Canvas, box: RectF, ax: Float, down: Boolean = false) {
+        if (down) {
+            val sv = c.save()
+            c.scale(1f, -1f, 0f, (box.top + box.bottom) / 2f)
+            bubbleTail(c, box, ax)
+            c.restoreToCount(sv)
+            return
+        }
         path.reset()
         path.moveTo(ax - 16f, box.top + 2f); path.lineTo(ax, box.top - BUBBLE_TAIL + 2f); path.lineTo(ax + 16f, box.top + 2f); path.close()
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
@@ -824,7 +881,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
         c.drawRoundRect(box, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
         UiKit.module(c, box)
-        if (s.pencil && lay.tail) bubbleTail(c, box, bubbleTailX(s, box))
+        if (s.pencil && lay.tail) bubbleTail(c, box, bubbleTailX(s, box), lay.tailDown)
         val tp = titleP(40f, Theme.gold)
         c.drawText(Tr.t(HomeWidgetMenus.title(s)), box.left + 28f, box.top + 56f, tp)
         UiKit.paneRule(c, box.left + 20f, box.top + MENU_HEAD - 12f, box.right - 20f)
@@ -1014,6 +1071,23 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             if (s.band && t in 0 until HomeEditModel.FLASH_MS) bandBox(s)?.let {
                 edgeColour(c, it, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
             }
+        }
+    }
+
+    /** PARTY SIZING: the party list's pencil (the band's pencils' look: [pencil]), the golden cursor on it, a refusal's red pulse */
+    private fun drawPartyPen(c: Canvas, m: HomeEditModel) {
+        if (m.parked) return
+        val r = partyPenBox() ?: return
+        pencil(c, r, m.menu == EditStop.PARTY_PEN)
+        val free = m.menu == null && m.sheet == null && m.lifted == null
+        if (m.cursor == EditStop.PARTY_PEN && (free || m.menu == EditStop.PARTY_PEN)) {
+            val box = scratch2; box.set(r); box.inset(-6f, -6f)
+            UiKit.focus(c, box)
+        }
+        host.flash?.let { (s, at) ->
+            val t = SystemClock.uptimeMillis() - at
+            if (s == EditStop.PARTY_PEN && t in 0 until HomeEditModel.FLASH_MS)
+                edgeColour(c, r, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
         }
     }
 
@@ -1709,6 +1783,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             else host.run(m.addBack(m.removed.getOrNull(i)))
             return
         }
+        // PARTY SIZING: the party list's pencil opens (or closes) its bubble
+        if ((m.menu == null || m.menu!!.pencil) && partyPenBox()?.let { r ->
+                val dx = max(0f, (TOUCH_MIN - r.width()) / 2f); val dy = max(0f, (TOUCH_MIN - r.height()) / 2f)
+                x >= r.left - dx && x <= r.right + dx && y >= r.top - dy && y <= r.bottom + dy } == true) {
+            host.run(m.pencilTap(EditStop.PARTY_PEN)); return
+        }
         // THE TOP BAR (P1 - P4): a pencil or its buttons open the bubble, the Look chip flips, a "-" hides, an extra is selected, "+" its tray
         if (m.menu == null || m.menu!!.pencil) host.band()?.let { g -> bandAt(g, x, y) }?.let { (s, what) ->
             when {
@@ -1751,6 +1831,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         private val PREVIEW_GONE = listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.DIVIDER)
         /** a pencil's speech bubble: its width, its least clearance from the screen's edges, its tail's height */
         const val BUBBLE_W = 640f
+        /** the party list's bubble (2026-11-23): wider (its rows' long words on one line), its pencil this far in from the list's corner */
+        const val PARTY_BUBBLE_W = 960f
+        const val PARTY_PEN_IN = 6f
         const val BUBBLE_EDGE = 16f
         const val BUBBLE_TAIL = 18f
         /** the ribbon's Fight toggle: its least width, its dot's radius */
