@@ -60,7 +60,8 @@ object NetStall {
     fun linkWords(transport: String, rssi: Int?, linkMbps: Int?, freqMhz: Int?): String {
         if (transport != "wifi") return transport
         val parts = buildList {
-            add(if (rssi != null && rssi in -127..0) "wifi $rssi dBm" else "wifi signal ?")
+            // -127 is WifiInfo.INVALID_RSSI (no reading), not a signal (review 11-23)
+            add(if (rssi != null && rssi in -126..-1) "wifi $rssi dBm" else "wifi signal ?")
             if (linkMbps != null && linkMbps > 0) add("$linkMbps Mb/s")
             if (freqMhz != null && freqMhz > 0) add(when { freqMhz >= 5925 -> "6 GHz"; freqMhz >= 4900 -> "5 GHz"; else -> "2.4 GHz" })
         }
@@ -84,19 +85,26 @@ object NetStall {
             "network ${if (s.netAt == null || netNow == null) "?" else if (s.netAt == netNow) "same" else "changed ($netNow)"}; $latWords; " +
             "stall $count this run, the longest $longest s"
 
-    // ---------------------------------------------------------------- on the device (NativeLogin's traffic second, main thread)
+    // ---------------------------------------------------------------- on the device: everything on this one thread (review 11-23: the
+    // link read is a few binder calls, never on the main thread, where NativeLogin's traffic second runs; and [runEnds] / [runStarts]
+    // come from other threads than [second], so the tracker is touched by this thread only)
     @Volatile var count = 0; private set
     @Volatile var longest = 0; private set
     @Volatile private var ctx: Context? = null
     private val tracker = Tracker { snapshotNow() }
+    private val worker: android.os.Handler by lazy { android.os.Handler(android.os.HandlerThread("WCNET").also { it.start() }.looper) }
+    private fun onWorker(r: () -> Unit) { runCatching { worker.post { runCatching(r) } } }
 
-    /** one second of the game's traffic ([NativeLogin.onTraffic]'s main-thread part) */
+    /** one second of the game's traffic ([NativeLogin.onTraffic]'s main-thread part): handed to this object's own thread */
     fun second(c: Context?, rx: Long, tx: Long, inWorld: Boolean) {
         if (c != null) ctx = c.applicationContext
-        tracker.feed(rx, tx, inWorld)?.let { said(it) }
+        onWorker { tracker.feed(rx, tx, inWorld)?.let { said(it) } }
     }
     /** the game screen went: a stall under way is said now */
-    fun runEnds() { tracker.end()?.let { said(it) } }
+    fun runEnds() = onWorker { tracker.end()?.let { said(it) } }
+    /** a new client run ([NativeLogin.prepare]): the count, the longest and the [MAX_LINES] cap are this run's (review 11-23: they
+     *  counted the whole app's life, so a long day's 61st stall was never said) */
+    fun runStarts() = onWorker { tracker.end(); count = 0; longest = 0 }
 
     private fun said(s: Stall) {
         count++; if (s.seconds > longest) longest = s.seconds

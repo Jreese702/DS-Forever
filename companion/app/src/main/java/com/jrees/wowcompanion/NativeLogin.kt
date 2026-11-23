@@ -218,6 +218,7 @@ object NativeLogin {
         browserMode = browser; browserHold = browser; holdEndSec = 0L
         consumed = false; firstReadAt = 0L; pastLogin = false; pastLoginAt = 0L; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
+        runCatching { NetStall.runStarts() }               // issues 582 / 560 (review 11-23): the stall count is this run's
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
         downloading = false; downloadingAfter = false; holdFrom = 0L; capHeld = false
         downloadAtRead = false; lastHeavyAt = 0L; heavyNoted = false; readMs = 0L

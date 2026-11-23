@@ -131,6 +131,8 @@ class BetterReports1123Test {
         assertEquals("wifi -67 dBm, 433 Mb/s, 5 GHz", NetStall.linkWords("wifi", -67, 433, 5180))
         assertEquals("wifi -40 dBm, 2.4 GHz", NetStall.linkWords("wifi", -40, -1, 2437))
         assertEquals("wifi signal ?", NetStall.linkWords("wifi", -127 - 1, null, null))
+        assertEquals("wifi signal ?", NetStall.linkWords("wifi", -127, null, null))                  // WifiInfo.INVALID_RSSI: no reading
+        assertEquals("wifi -126 dBm", NetStall.linkWords("wifi", -126, null, null))
         assertEquals("cellular", NetStall.linkWords("cellular", -90, 10, 1800))
         assertEquals("game latency ? / 60 ms (0 s old)", NetStall.latencyWords(Triple(-1, 60, 5_000L), 1_000L))
         // never the network's name or address
@@ -143,6 +145,10 @@ class BetterReports1123Test {
         val login = File(src, "NativeLogin.kt").readText()
         assertTrue(login.contains("NetStall.second(appCtx, rxBytes, txBytes, reachedWorld && !outOfWorld && !GameLife.awayNow)"))
         assertTrue(login.contains("NetStall.runEnds()"))
+        // review 11-23: the count is per client run, and the tracker and the link read run on NetStall's own thread (never main)
+        assertTrue(login.contains("NetStall.runStarts()"))
+        assertTrue(ns.contains("onWorker { tracker.feed(rx, tx, inWorld)?.let { said(it) } }"))
+        assertTrue(ns.contains("fun runEnds() = onWorker {") && ns.contains("fun runStarts() = onWorker { tracker.end(); count = 0; longest = 0 }"))
         assertTrue(host.contains("NetStall.latency(n.optInt(\"h\", -1), n.optInt(\"w\", -1), System.currentTimeMillis())"))
     }
 
@@ -151,7 +157,12 @@ class BetterReports1123Test {
     @Test fun aFreezesTraceShowsTheCollectorRightAfterTheMainThread() {
         val rec = "DS Forever: how the last run ended\n---------- Trace ----------\n" +
             "\"Binder:1_1\" prio=5 tid=9 Native\n  at a.b(C.kt:1)\n\n" +
-            "\"HeapTaskDaemon\" daemon prio=5 tid=7 WaitingForTaskProcessor\n  at dalvik.system.VMRuntime.runHeapTasks(Native method)\n" +
+            "\"HeapTaskDaemon\" daemon prio=5 tid=7 WaitingForTaskProcessor\n" +
+            "  native: #00 pc 0001 /apex/com.android.art/lib64/bionic/libc.so (syscall+28)\n" +
+            "  native: #01 pc 0002 /apex/com.android.art/lib64/libart.so (art::ConditionVariable::WaitHoldingLocks+1)\n" +
+            "  native: #02 pc 0003 /apex/com.android.art/lib64/libart.so (art::gc::TaskProcessor::GetTask+1)\n" +
+            "  native: #03 pc 0004 /apex/com.android.art/lib64/libart.so (art::gc::TaskProcessor::RunAllTasks+1)\n" +
+            "  at dalvik.system.VMRuntime.runHeapTasks(Native method)\n" +
             "  at java.lang.Daemons\$HeapTaskDaemon.runInternal(Daemons.java:609)\n\n" +
             "\"main\" prio=5 tid=1 Native\n  native: #00 pc 0001 /apex/com.android.art/lib64/libart.so (art::ConditionVariable::WaitHoldingLocks+1)\n" +
             "  at android.view.Choreographer.doFrame(Choreographer.java:1)\n"
@@ -161,6 +172,9 @@ class BetterReports1123Test {
         assertTrue(t, main in 0 until gc)
         assertTrue(t, gc < t.indexOf("[the rest of the trace]"))
         assertEquals(1, Regex("\"HeapTaskDaemon\"").findAll(t).count())                  // moved, not copied
+        // review 11-23: in full - its native frames say what the collection waits on (in short only 2 were kept, and lost)
+        assertTrue(t, t.indexOf("TaskProcessor::RunAllTasks") in gc until t.indexOf("[the rest of the trace]"))
+        assertTrue(t, t.contains("Daemons\$HeapTaskDaemon.runInternal"))
         assertTrue(t.indexOf("\"Binder:1_1\"") > t.indexOf("[the rest of the trace]"))
     }
 }

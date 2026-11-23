@@ -243,9 +243,22 @@ object MemWatch {
             n.startsWith("/dmabuf") || n.startsWith("dmabuf") -> "dmabuf"
             n.startsWith("/dev/ashmem") -> "ashmem"
             n.startsWith("/memfd:") -> "memfd:" + n.removePrefix("/memfd:").substringBefore(' ').substringBefore('/').take(24)
-            else -> n.substringBefore(" (deleted)").substringAfterLast('/').take(40).ifEmpty { "file" }
+            else -> {
+                // review 11-23: a file keeps its own name only when it is code or a font (libraries, the APK, the runtime's images);
+                // any other file is its kind alone ("*.dat"), so no data file's name (a character's store, say) can reach a line
+                val f = n.substringBefore(" (deleted)").substringAfterLast('/')
+                val ext = f.substringAfterLast('.', "").lowercase()
+                when {
+                    f.isEmpty() -> "file"
+                    ext in CODE_EXTS && f.length <= 40 && f.all { it.isLetterOrDigit() || it in "._+-" } -> f
+                    ext.length in 1..5 && ext.all { it.isLetterOrDigit() } -> "*.$ext"
+                    else -> "file"
+                }
+            }
         }
     }
+    /** the file kinds whose own name an owners line keeps ([ownerName]) */
+    private val CODE_EXTS = setOf("so", "apk", "jar", "dex", "odex", "vdex", "oat", "art", "ttf", "otf", "ttc")
 
     /** /proc/self/smaps' lines -> "owners (pss+swap MB): a 180, b 140, ...; rest 40; 3456 maps" (the top [top] of at least 1 MB);
      *  "" = no mapping read. Pure (the tests) */
