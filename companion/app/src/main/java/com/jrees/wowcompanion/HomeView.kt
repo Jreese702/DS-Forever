@@ -2057,7 +2057,7 @@ class HomeView(
             // P4: the preview's stand-in swing (no swing of the game's running); always false outside edit mode
             castView.swingPreview = editFightLook()
             // Edit Home (the user, 2026-11-23): the L / R shoulder plates out while edit mode's chrome is in
-            castView.platesAlpha = 1f - chromeA
+            editPlatesSync()
             // LATER item 16 (the user: "under the controller area ... the trigger modifiers ... light them up like in the cast menu when
             // they get pressed but dimmed when they arent"): Cast's trigger strip under the diamonds (cast 197ec48, DIAMONDS only)
             castView.triggerStrip = true

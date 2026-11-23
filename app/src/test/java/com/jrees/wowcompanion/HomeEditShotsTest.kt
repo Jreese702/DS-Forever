@@ -445,7 +445,7 @@ class HomeEditShotsTest {
             for (r in listOfNotNull(g.padPen, g.facePen, g.look, g.plus, g.chip) + g.extras.map { it.second }) allowed += RectF(r).apply { inset(-16f, -16f) }
             for (r in listOf(g.pad, g.face)) allowed += RectF(r).apply { inset(-32f, -32f) }          // a button's glow round it
             // 2026-11-23 ("declutter it in that mode we can hide them"): the L / R shoulder plates are gone in edit mode (and nothing else)
-            for (side in 0..1) allowed += RectF().also { p.cast.plateRect(side, it); it.offset(bars.left, bars.top); it.inset(-8f, -8f) }
+            for (side in 0..1) allowed += RectF().also { p.cast.shoulderPlateRect(side, it); it.offset(bars.left, bars.top); it.inset(-8f, -8f) }
             val block = RectF(g.chip!!); for ((_, r) in g.extras) block.union(r); g.plus?.let { block.union(it) }; allowed += block.apply { inset(-16f, -16f) }
             fun inside(k: Int): Boolean { val x = bars.left + k % w; val y = bars.top + k / w; return allowed.any { it.contains(x, y) } }
             val a = bandPx(p, bars)
@@ -499,7 +499,7 @@ class HomeEditShotsTest {
             assertEquals("$look: drawn outside edit mode", 1f, p.cast.platesAlpha, 0f)
             val bars = boxes(home).getValue("BARS")
             val w = bars.width().toInt()
-            val plates = (0..1).map { RectF().also { r -> p.cast.plateRect(it, r) } }
+            val plates = (0..1).map { RectF().also { r -> p.cast.shoulderPlateRect(it, r) } }
             for (r in plates) assertTrue("$look: the plate inside the band: $r", r.left >= 0f && r.top >= 0f && r.right <= w && r.bottom <= bars.height())
             fun inPlate(k: Int) = plates.any { it.contains((k % w).toFloat(), (k / w).toFloat()) }
             val off = bandPx(p, bars)
@@ -519,7 +519,7 @@ class HomeEditShotsTest {
             val changed = plateK.count { on[it] != off[it] }
             assertTrue("$look: the plates' pixels gone ($changed of ${plateK.size})", changed > plateK.size / 3)
             for (i in 0 until 8) assertEquals("$look: button $i unmoved", slots0[i], RectF().also { p.cast.slotRect(i, it) })
-            for (side in 0..1) assertEquals("$look: plate $side's room kept", plates[side], RectF().also { p.cast.plateRect(side, it) })
+            for (side in 0..1) assertEquals("$look: plate $side's room kept", plates[side], RectF().also { p.cast.shoulderPlateRect(side, it) })
             // no stop of edit mode's on a plate
             for ((s, bx) in home.editChrome.stops()) for (r in plates) {
                 val hr = RectF(r).apply { offset(bars.left, bars.top) }

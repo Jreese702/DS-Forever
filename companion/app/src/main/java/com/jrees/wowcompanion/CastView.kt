@@ -3376,7 +3376,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
     private val plateBuf = FloatArray(3)
     /** the off-device checks: plate [side]'s box (0 = L) in this view's px, with its bumper glyph's box (Diamonds' trigger strip) */
-    fun plateRect(side: Int, out: RectF) {
+    fun shoulderPlateRect(side: Int, out: RectF) {
         plateAt(side, plateBuf)
         val px = plateBuf[0]; val py = plateBuf[1]; val unit = plateBuf[2]
         out.set(px - 19.5f * unit, py - 15.5f * unit, px + 19.5f * unit, py + 15.5f * unit)
