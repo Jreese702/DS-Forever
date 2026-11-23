@@ -12,6 +12,10 @@ import org.junit.Test
  * ("the party bars") takes the chat column's freed strip - its well from the column's new top down to the foot it had in b1e28506's Party
  * fight, the rows sharing the height ([PartyLayout.fillH]: 88..192 px; a solo or two-row party gives the rest to the chat). Out of
  * Party mode, Grow / Same size and the takeover: nothing changes.
+ *
+ * FULL WIDTH (the user, 2026-11-23): with Party mode on the list spans both columns, so both the chat and the map keep the heights the
+ * Party fight's reference page gives them (the list takes the whole freed strip); PARTY SIZING (the same day): "Controller on top
+ * (fights)" = Grow a bit / Same size lay the away page with 88 / the rest's rows instead (both columns grow up), Grows = Off never fills.
  */
 class HomePartyTopTest {
     private val S = HomeLayoutSolver
@@ -39,7 +43,9 @@ class HomePartyTopTest {
         assertEquals("the Diamonds' Party fight well: 234..538", 234f, rp.t, 0.01f); assertEquals(538f, rp.b, 0.01f)
         assertEquals("three rows of 163.3", (530f - 24f - 16f) / 3f, PartyLayout.rowsFit(3, p.h), 0.01f)
         assertEquals("the chat where it was", ref.boxes.getValue(HomePart.CHAT).t, r.boxes.getValue(HomePart.CHAT).t, 0.01f)
-        assertEquals("the map grows up", 8f, r.boxes.getValue(HomePart.MAP).t, 0f)
+        // full width (2026-11-23): the map under the list too, where the reference had it
+        assertEquals("the map where it was", ref.boxes.getValue(HomePart.MAP).t, r.boxes.getValue(HomePart.MAP).t, 0.01f)
+        assertEquals("the list across both columns", 1231f, p.r, 0.01f)
         assertTrue(HomeLayoutRules.problems(top, s, r).isEmpty())
         // a two-row and a one-row party: capped at FILL_MAX_H, the rest to the chat
         for ((n, rows) in listOf(2 to 2, 1 to 1)) {
@@ -50,6 +56,7 @@ class HomePartyTopTest {
             assertEquals(8f + 2 * PartyLayout.IN + rows * PartyLayout.FILL_MAX_H + (rows - 1) * PartyLayout.GAP, p2.b, 0.01f)
             assertTrue("n=$n: the chat grows up", r2.boxes.getValue(HomePart.CHAT).t < ref2.boxes.getValue(HomePart.CHAT).t - 1f)
             assertEquals(p2.b + PartyLayout.CHAT_GAP, r2.boxes.getValue(HomePart.CHAT).t, 0.01f)
+            assertEquals("n=$n: the map too", p2.b + PartyLayout.CHAT_GAP, r2.boxes.getValue(HomePart.MAP).t, 0.01f)
         }
     }
 
@@ -101,12 +108,13 @@ class HomePartyTopTest {
                     if (p.t > rp.t - 100f) bad("the well did not grow up: ${p.t} vs ${rp.t}")
                     if (chat.t > ref.boxes.getValue(HomePart.CHAT).t + 0.01f) bad("chat top ${chat.t} under the reference's")
                     if (r.f1 != ref.f1 || r.f2 != ref.f2) bad("fallbacks ${r.f1}/${r.f2} vs ${ref.f1}/${ref.f2}")
-                    // the well inside the chat's column (the tab on the screen's outer edge)
+                    // full width (2026-11-23): the well across both columns (the tab on the chat column's outer edge), the map under it -
+                    // never lower than the reference had it
                     val chatLeft = side == HomeLayout.Side.LEFT
-                    if (chatLeft && p.r > chat.r + 0.01f || !chatLeft && p.l < chat.l - 0.01f) bad("the well out of the chat column: $p / $chat")
-                    // the map's column as in the Top fight out of Party mode
-                    val plain = S.places(l, HomeLayoutSolver.State(takeover = true, card = shown, cardH = if (shown) CARD_H else 0f))
-                    if (kotlin.math.abs(map.t - plain.boxes.getValue(HomePart.MAP).t) > 0.01f && !r.f1) bad("map top ${map.t}")
+                    if (chatLeft && (p.l != 0f || p.r < map.r - 1.01f) || !chatLeft && (p.r != 1240f || p.l > map.l + 1.01f))
+                        bad("the well not across both columns: $p / $chat / $map")
+                    if (map.t < p.b + PartyLayout.CHAT_GAP - 0.01f) bad("map top ${map.t} over the list ${p.b}")
+                    if (map.t > ref.boxes.getValue(HomePart.MAP).t + 0.01f) bad("map top ${map.t} under the reference's")
                 }
             }
         assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
@@ -143,7 +151,12 @@ class HomePartyTopTest {
                 assertEquals("$dock: the well's foot on the column's foot", rp.b, p.b, 0.01f)
                 assertEquals("$dock: the well under the $part", c.b + PartyLayout.CHAT_GAP, p.t + PartyModuleView.RISE, 0.01f)
             }
-            assertEquals("$dock: the other column grows up", 8f, r.boxes.getValue(other).t, 0.01f)
+            // full width (2026-11-23): the other column under / over the list as the dock's own - it keeps its height too
+            val o = r.boxes.getValue(other); val ro = ref.boxes.getValue(other)
+            assertEquals("$dock: the other column keeps its height", ro.h, o.h, 0.01f)
+            // across both columns, the tab on its own column's outer edge (the chat on the left: the map's on the right)
+            if (dock.column == HomeModule.CHAT) { assertEquals("$dock: across", 1231f, p.r, 0.01f); assertEquals(0f, p.l, 0.01f) }
+            else { assertEquals("$dock: across", 9f, p.l, 0.01f); assertEquals(1240f, p.r, 0.01f) }
         }
     }
 
@@ -176,18 +189,66 @@ class HomePartyTopTest {
                     if (dock.top && p.b > rp.b + 0.01f) bad("the well's foot ${p.b} below the reference's ${rp.b}")
                     if (dock.top && !capped && kotlin.math.abs(p.b - rp.b) > 0.01f) bad("foot ${p.b} vs ${rp.b} (not capped)")
                     if (!dock.top && kotlin.math.abs(p.b - rp.b) > 0.01f) bad("a foot dock's foot ${p.b} vs ${rp.b}")
-                    if (r.boxes.getValue(other).t > ref.boxes.getValue(other).t - 100f) bad("the $other did not grow up")
+                    // full width: the other column keeps its height (it rides up with a foot dock's column); a foot dock over a bar
+                    // under one column keeps its column (the user's pick 2026-11-23, "Stay in its column"): the other column grows up
+                    // as in any Top fight (the 1519 integration's arithmetic)
+                    val wide = dock.top || !S.oneColumnFootBar(l)
+                    if (r.partyWide != wide) bad("across ${r.partyWide}")
+                    val o = r.boxes.getValue(other); val ro = ref.boxes.getValue(other)
+                    if (o.h < ro.h - 0.01f) bad("the $other shrank: ${o.h} vs ${ro.h}")
+                    if (wide && !capped && kotlin.math.abs(o.h - ro.h) > 0.01f) bad("the $other took the strip (not capped): ${o.h} vs ${ro.h}")
+                    if (!wide && o.t > ro.t - 100f) bad("the $other did not grow up")
                     if (r.f1 != ref.f1 || r.f2 != ref.f2 || r.f3 != ref.f3) bad("fallbacks ${r.f1}/${r.f2}/${r.f3} vs ${ref.f1}/${ref.f2}/${ref.f3}")
                     // the 1519 audit (finding 3): the tap-to-cast bar kept in a Top fight (castHidden false) is never slid away by an F2 /
                     // F3 the away page inherits - the band-on reference needs neither in any record x party shape (at most three rows)
                     if (r.castHidden || ref.f2 || ref.f3) bad("the bar slid away on the away page (F2 ${ref.f2} / F3 ${ref.f3})")
-                    // the well inside its column, its tab on the screen's outer edge
-                    if (S.partyRight(l) && p.l < c.l - 0.01f || !S.partyRight(l) && p.r > c.r + 0.01f) bad("the well out of its column: $p / $c")
+                    // full width: the well across both columns, its tab on its own column's outer screen edge (else inside its column)
+                    val lo = minOf(c.l, o.l); val hi = maxOf(c.r, o.r)
+                    if (wide && (S.partyRight(l) && (p.r != 1240f || kotlin.math.abs(p.l - (lo + 1f)) > 0.01f) ||
+                        !S.partyRight(l) && (p.l != 0f || kotlin.math.abs(p.r - (hi - 1f)) > 0.01f))) bad("the well not across both columns: $p / $c / $o")
+                    if (!wide && (S.partyRight(l) && kotlin.math.abs(p.l - (c.l + 1f)) > 0.01f ||
+                        !S.partyRight(l) && kotlin.math.abs(p.r - (c.r - 1f)) > 0.01f)) bad("the well out of its column: $p / $c")
                     if (r.partyTabRight != S.partyRight(l)) bad("the tab's edge")
                 }
             }
         assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
         assertTrue("$n", n > 15000)
+    }
+
+    /**
+     * PARTY SIZING (the user's picks 2026-11-23): "Controller on top (fights)" - Fill (today's, above) / Grow a bit (a Party fight's 88 px
+     * rows) / Same size (the rows out of the fight: 64, or 88 with Grows = Whenever Party mode is on); Grows = Off: Fill and Grow a bit keep
+     * the rest's 64. Not filling, the band still goes away and both columns grow up under (over) the list; every dock, both sides
+     */
+    @Test fun theTopPicksGrowABitAndSameSize() {
+        val want = listOf(Triple(HomeLayout.PartyGrow.FIGHTS, HomeLayout.PartyTopFight.GROW, 88f), Triple(HomeLayout.PartyGrow.FIGHTS, HomeLayout.PartyTopFight.SAME, 64f), Triple(HomeLayout.PartyGrow.ALWAYS, HomeLayout.PartyTopFight.SAME, 88f),
+            Triple(HomeLayout.PartyGrow.ALWAYS, HomeLayout.PartyTopFight.GROW, 88f), Triple(HomeLayout.PartyGrow.OFF, HomeLayout.PartyTopFight.FILL, 64f), Triple(HomeLayout.PartyGrow.OFF, HomeLayout.PartyTopFight.GROW, 64f), Triple(HomeLayout.PartyGrow.OFF, HomeLayout.PartyTopFight.SAME, 64f))
+        for (dock in HomeLayout.PartyDock.values()) for (side in HomeLayout.Side.values()) for ((g, t, h) in want) for (cnt in listOf(1, 3, 5)) {
+            val l = top.copy(party = dock, chatSide = side, partyGrow = g, partyTop = t)
+            val s = fightState(cnt)
+            val r = S.places(l, s)
+            val tag = "$dock $side $g $t n=$cnt"
+            assertTrue("$tag: away", r.away)
+            assertTrue("$tag: ${HomeLayoutRules.problems(l, s, r)}", HomeLayoutRules.problems(l, s, r).isEmpty())
+            val p = r.boxes.getValue(HomePart.PARTY)
+            assertEquals("$tag: the rows", h, PartyLayout.rowsFit(rowCount(s.party!!), p.h), 0.01f)
+            assertEquals("$tag: the laid rows' height", h, r.partyRowH, 0.01f)
+            assertTrue(r.partyWide)
+            val chat = r.boxes.getValue(HomePart.CHAT); val map = r.boxes.getValue(HomePart.MAP)
+            if (dock.top) {
+                assertEquals("$tag: from the top gap", 8f, p.t, 0.01f)
+                assertEquals("$tag: the chat under it", p.b + PartyLayout.CHAT_GAP, chat.t, 0.01f)
+                assertEquals("$tag: the map under it", p.b + PartyLayout.CHAT_GAP, map.t, 0.01f)
+            } else {
+                assertEquals("$tag: on the page's foot", 927f, p.b, 0.01f)
+                assertEquals("$tag: the chat from the top gap", 8f, chat.t, 0.01f); assertEquals(8f, map.t, 0.01f)
+                assertEquals("$tag: the columns over it", p.t - PartyLayout.CHAT_GAP, chat.b, 0.01f)
+                assertEquals(p.t - PartyLayout.CHAT_GAP, map.b, 0.01f)
+            }
+        }
+        // the default (Fill) keeps today's fill exactly: the record with the picks spelled out lays the same page
+        val s = fightState(3)
+        assertEquals(S.places(top, s).boxes, S.places(top.copy(partyGrow = HomeLayout.PartyGrow.FIGHTS, partyTop = HomeLayout.PartyTopFight.FILL, partyBottom = HomeLayout.PartyBottomFight.SHRINK), s).boxes)
     }
 
     /** the thin-row rest: the strip freed is the thin band's (138), the rows 134 / 157 / 192 */

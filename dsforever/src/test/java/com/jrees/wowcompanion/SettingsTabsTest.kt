@@ -52,7 +52,8 @@ class SettingsTabsTest {
         // 2026-11-19: Reset (folds on its own) above Support the Project (a headless group, the page's last row)
         assertEquals(listOf("Look", "Account", "Help", "Reset", "Support"), SettingsTabs.groups(T.GENERAL).map { it.heading })
         // GitHub #43 cb3 (the user: "the tap to cast bar should get its own bottom screen section")
-        assertEquals(listOf("Home", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
+        // party sizing (the user's pick 2026-11-23: "Settings + Edit Home"): Party, the party list's tile, under Home
+        assertEquals(listOf("Home", "Party list", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
         // the layout editor (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI
         // menu"; the design's pick): a first group "Layout" on Top screen
         assertEquals(listOf("Layout", "Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })
@@ -81,6 +82,8 @@ class SettingsTabsTest {
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
                 "Free bag slots", "Ammo", "Pet happiness", "DS WoW toolbar", "Spell rank badges", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk; 11-20: rank badges; feat/extras-polish: Pet happiness
+            // party sizing (the user, 2026-11-23): the party list's tile's three picks
+            G.PARTY_LIST to listOf("Grows", "Controller on top (fights)", "Controller on bottom (fights)"),
             G.CAST_BAR to listOf("Tap-to-cast bar", "Show in combat"),     // cb14 (D5b): the row renamed
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
@@ -111,7 +114,7 @@ class SettingsTabsTest {
                 "Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
-        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.GRAPHICS, G.HELP, G.RESET, G.SUPPORT), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
+        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.GRAPHICS, G.HELP, G.RESET, G.SUPPORT), T.BOTTOM to listOf(G.HOME, G.PARTY_LIST, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
             T.ADDONS to listOf(G.IMPORT, G.CARDS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
@@ -191,7 +194,9 @@ class SettingsTabsTest {
             listOf("Graphics driver") +
             // feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"):
             // Bottom screen > Home, the clock extras' new row after Ammo
-            listOf("Pet happiness")
+            listOf("Pet happiness") +
+            // party sizing (the user, 2026-11-23): Bottom screen > Party, the party list's three picks
+            listOf("Grows", "Controller on top (fights)", "Controller on bottom (fights)")
         val now = B.values().flatMap { it.rows }
         // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
         val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")

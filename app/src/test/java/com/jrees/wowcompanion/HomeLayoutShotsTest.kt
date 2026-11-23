@@ -215,6 +215,7 @@ class HomeLayoutShotsTest {
         val v = views(p.home)
         assertTrue("the map (left) goes left", v.getValue("MAP").translationX < 0f)
         assertTrue("the chat (right) goes right", v.getValue("CHAT").translationX > 0f)
+        // (full width in Party mode: the list goes with its own column, the chat's)
         assertTrue("the party module with the chat", v.getValue("PARTY").translationX > 0f)
         assertTrue("the bar under the chat (right) with it", v.getValue("STRIP").translationX > 0f)
         shot(p, "swapped_lb_picture")
@@ -937,7 +938,9 @@ class HomeLayoutShotsTest {
         assertEquals("the party well from the top gap", 8f, pb.top, 0.01f)
         assertEquals("its foot where a Party fight has it (234 + 3 rows of 88)", 538f, pb.bottom, 0.01f)
         assertEquals("the chat where it was", 546f, b.getValue("CHAT").top, 0.01f)
-        assertEquals("the map grown up", 8f, b.getValue("MAP").top, 0.01f)
+        // full width in Party mode (2026-11-23): the list across both columns, the map under it too
+        assertEquals("the map under the list", 546f, b.getValue("MAP").top, 0.01f)
+        assertEquals("the list across", 1231f, pb.right, 0.01f)
         val pv = views(p.home).getValue("PARTY") as PartyModuleView
         assertEquals(PartyLayout.Mode.FIGHT_TOP, pv.mode)
         val m = pv.module()
@@ -981,10 +984,20 @@ class HomeLayoutShotsTest {
                 assertEquals("$tag: the $part ridden up to the top gap", 8f, b.getValue(part).top, 0.01f)
                 assertEquals("$tag: the well's foot where it was", rp.bottom, pb.bottom, 0.01f)
             }
-            assertEquals("$tag: the $other grown up", 8f, b.getValue(other).top, 0.01f)
-            val col = b.getValue(part)
-            assertTrue("$tag: the party list in its column ($pb / $col)", if (HomeLayoutSolver.partyRight(l)) pb.left >= col.left - 0.5f
-                else pb.right <= col.right + 0.5f)
+            // full width in Party mode (2026-11-23): the list across both columns, the other column under / over it keeping its height;
+            // a foot dock over the bar under the chat alone keeps its column (the user's pick 2026-11-23, "Stay in its column"): the
+            // other column grows up as in any Top fight
+            val o = b.getValue(other)
+            if (dock.top) {
+                assertEquals("$tag: the $other keeps its height", ref.getValue(other).height(), b.getValue(other).height(), 0.5f)
+                assertTrue("$tag: the party list across both columns ($pb / $o)", if (HomeLayoutSolver.partyRight(l)) pb.right >= 1239.5f && pb.left <= o.left + 1.5f
+                    else pb.left <= 0.5f && pb.right >= o.right - 1.5f)
+            } else {
+                assertEquals("$tag: the $other grown up", 8f, o.top, 0.01f)
+                val col = b.getValue(part)
+                assertTrue("$tag: the party list in its column ($pb / $col)", if (HomeLayoutSolver.partyRight(l)) pb.left >= col.left - 0.5f
+                    else pb.right <= col.right + 0.5f)
+            }
             val pv = views(p.home).getValue("PARTY") as PartyModuleView
             assertEquals(PartyLayout.Mode.FIGHT_TOP, pv.mode)
             assertEquals("$tag: the tab on its column's outer edge", HomeLayoutSolver.partyRight(l), pv.tabRight)

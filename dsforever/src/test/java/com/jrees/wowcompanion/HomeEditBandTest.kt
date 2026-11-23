@@ -66,7 +66,9 @@ class HomeEditBandTest {
         assertEquals(EditStop.values().size, EditStop.values().map { it.key }.toSet().size)
         assertTrue("every key under the rooms'", EditStop.values().all { it.key < HomeEditMotion.roomKey(0) })
         assertTrue("nothing on the band moves or is removed", band.none { it.movable || it.removable } && !EditStop.FIGHT.movable)
-        assertEquals(setOf(EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.FIGHT_PEN), EditStop.values().filter { it.pencil }.toSet())
+        // (party sizing, 2026-11-23: the party list's own pencil too - no band piece)
+        assertEquals(setOf(EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.FIGHT_PEN, EditStop.PARTY_PEN), EditStop.values().filter { it.pencil }.toSet())
+        assertFalse(EditStop.PARTY_PEN.band || EditStop.PARTY_PEN.movable || EditStop.PARTY_PEN.removable)
         assertTrue(HomeEditModel.GONE_CHECKED.containsAll(band))
         // the extras' wiggle keys: after the room bar's "+", each its own, all small pictures' pace
         val keys = HomeEditModel.EXTRA_KEYS.indices.map { HomeEditMotion.extraKey(it) } + HomeEditMotion.PLUS_EXTRA

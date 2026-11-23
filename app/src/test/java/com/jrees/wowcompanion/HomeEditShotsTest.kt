@@ -834,7 +834,9 @@ class HomeEditShotsTest {
             assertEquals("$n: the band laid above the page", -HomeLayoutSolver.AWAY_PAST, b.getValue("BARS").bottom, 0.01f)
             assertTrue("$n: the band draws nothing on the page", p.cast.away)
             // (Cast bar in fights = Bottom screen, the default: the fight strip across the top, the columns a gap under it)
-            assertEquals("$n: the map grown up to under the fight strip", (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), b.getValue("MAP").top, 0.01f)
+            // (full width in Party mode, 2026-11-23: the map under the list across both columns)
+            assertEquals("$n: the map grown up to under the fight strip (Party mode: under the list)", if (party) b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP
+                else (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), b.getValue("MAP").top, 0.01f)
             assertEquals("$n: the fight strip", RectF(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H), b.getValue("FIGHT_CAST"))
             val strip = b.getValue("STRIP")
             assertTrue("$n: the tap-to-cast bar stays in its dock ($strip)", strip.bottom <= H + 0.5f && strip.top > b.getValue("CHAT").top)
@@ -897,7 +899,9 @@ class HomeEditShotsTest {
             assertEquals("$n: the band laid above the page (not Grow's grown band)", -HomeLayoutSolver.AWAY_PAST, b.getValue("BARS").bottom, 0.01f)
             assertTrue("$n: the band draws nothing on the page", p.cast.away)
             // (Cast bar in fights = Bottom screen, the default: the fight strip across the top, the columns a gap under it)
-            assertEquals("$n: the map grown up to under the fight strip", (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), b.getValue("MAP").top, 0.01f)
+            // (full width in Party mode, 2026-11-23: the map under the list across both columns)
+            assertEquals("$n: the map grown up to under the fight strip (Party mode: under the list)", if (party) b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP
+                else (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), b.getValue("MAP").top, 0.01f)
             assertEquals("$n: the fight strip", RectF(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H), b.getValue("FIGHT_CAST"))
             if (party) {
                 assertEquals("Party mode: the Party-mode Top fight's rows", PartyLayout.Mode.FIGHT_TOP, (views(p.home).getValue("PARTY") as PartyModuleView).mode)
@@ -1432,8 +1436,11 @@ class HomeEditShotsTest {
         p.home.editKey("PADDRIGHT"); settle(30)
         b = boxes(p.home)
         assertEquals(HomeLayout.PartyDock.UNDER_MAP, model(p).draft.party)
+        // (the bar under the chat alone: a foot list keeps its column even in Party mode - the user's pick 2026-11-23, "Stay in its
+        // column" - so it lies on the map's own foot, no gap under it)
         assertEquals(927f, b.getValue("PARTY").bottom, 0.5f)
         assertEquals(1240f, b.getValue("PARTY").right, 0.5f)
+        assertEquals(b.getValue("MAP").left + 1f, b.getValue("PARTY").left, 0.5f)
         assertTrue(pv.tabRight)
         assertTrue("the card on the map ends over it", b.getValue("QUESTS").bottom <= b.getValue("PARTY").top)
         shot(p, "30d_party_list_under_map", frames = 1)
@@ -1499,7 +1506,9 @@ class HomeEditShotsTest {
         assertNull(model(p).lifted)
         assertEquals(HomeLayout.PartyDock.UNDER_MAP, HomeSettings.layout.party)
         party = boxes(p.home).getValue("PARTY")
+        // (the bar under the chat alone: its column, the map's own foot - "Stay in its column")
         assertEquals(927f, party.bottom, 0.5f); assertEquals(1240f, party.right, 0.5f)
+        assertEquals(boxes(p.home).getValue("MAP").left + 1f, party.left, 0.5f)
         shot(p, "31a_party_list_dropped_under_map", frames = 1)
         // and back over the chat's top
         val x1 = party.centerX(); val y1 = party.centerY()

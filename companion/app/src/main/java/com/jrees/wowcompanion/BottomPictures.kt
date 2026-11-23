@@ -397,6 +397,7 @@ object BottomPictures {
             BottomTiles.CASTBAR -> castBar(c, r, tMs)
             BottomTiles.RANK -> ranks(c, r, HomeSettings.rankBadges)
             BottomTiles.XP -> xpTrack(c, r, HomeSettings.layout.xpBar)
+            BottomTiles.PARTY -> partyList(c, r, tMs)
             BottomTiles.ZOOM -> zoom(c, r, Settings.minimapYd, Settings.minimapIndoorYd, look.zoomIndoor)
             BottomTiles.WORLD -> world(c, r, Settings.worldMapFog == "all", look, tMs)
             BottomTiles.INPUT -> input(c, ctx, r, Settings.chatDefaultInput == "quick", big)
@@ -740,6 +741,64 @@ object BottomPictures {
             pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawRect(box, pS)
             if (on) UiKit.spellRank(c, box, badges[j])
         }
+        c.restore()
+    }
+
+    // ---- Party list (party sizing, 2026-11-23): the whole page in miniature as the solver lays it for this character's record with
+    // ---- Party mode on and a party of four (full width), the band's loop going from the rest into the fight its In fights gives and
+    // ---- back - so the picks show as the list's rows grow, keep or shrink
+
+    private val PARTY_COLS = intArrayOf(Color.rgb(196, 30, 58), Color.rgb(245, 140, 186), Color.rgb(105, 204, 240), Color.rgb(0, 112, 222))
+
+    private fun partyList(c: Canvas, r: RectF, tMs: Long?) {
+        val l = HomeLayoutRules.shown(HomeSettings.layout)
+        val n = 4
+        val top = l.fight == HomeLayout.FightBand.TOP
+        fun lay(fight: Boolean): Map<HomePart, HomeLayoutSolver.Box> {
+            val mode = if (!fight) PartyLayout.Mode.REST else if (top) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
+            return HomeLayoutSolver.places(l, HomeLayoutSolver.State(party = HomeLayoutSolver.Party(mode, n, false), partyOn = true,
+                partyFight = fight)).boxes
+        }
+        val rest = lay(false); val fight = lay(true)
+        // the tile: the fight (as COMBAT's); the band loops rest - fight - rest
+        val k = if (tMs == null) 1f else loop(tMs / 1000f + 4.4f * 0.45f, 4.4f)
+        fun at(p: HomePart): RectF? {
+            val a = rest[p]; val b = fight[p] ?: a
+            if (a == null || b == null) return null
+            return RectF(a.l + (b.l - a.l) * k, a.t + (b.t - a.t) * k, a.r + (b.r - a.r) * k, a.b + (b.b - a.b) * k)
+        }
+        val pageW = 1240f; val pageH = 935f
+        val kk = r.height() / pageH
+        c.save(); c.translate(r.left + (r.width() - pageW * kk) / 2f, r.top); c.scale(kk, kk)
+        c.clipRect(0f, 0f, pageW, pageH)
+        pF.color = Theme.panel; c.drawRect(0f, 0f, pageW, pageH, pF)
+        at(HomePart.BARS)?.let { pF.color = Theme.raised; c.drawRoundRect(it, 16f, 16f, pF) }
+        at(HomePart.CHAT)?.let { pF.color = Theme.field; c.drawRect(it, pF); chat(c, it, 40f) }
+        at(HomePart.MAP)?.let { m -> c.save(); c.clipRect(m); if (!terrain(c, m, 160f)) mapDrawn(c, m); arrow(c, m.centerX(), m.centerY(), 60f); c.restore() }
+        for (p in listOf(HomePart.STRIP, HomePart.CAST2, HomePart.FIGHT_CAST)) at(p)?.let {
+            if (it.bottom <= 0f || it.top >= pageH) return@let
+            pF.color = Theme.field; c.drawRoundRect(it, 10f, 10f, pF)
+            pS.color = Theme.gold; pS.strokeWidth = 4f; c.drawRoundRect(it, 10f, 10f, pS)
+        }
+        at(HomePart.PARTY)?.let { pb ->
+            // the well and its plates (the module's own arithmetic over the box: its rows fill the box as it glides)
+            val rows = PartyModel.rows(n).size
+            val tabLeft = pb.left <= 0.5f
+            val mod = PartyLayout.module(PartyLayout.Mode.FIGHT_ON, n, top = pb.top, left = if (tabLeft) pb.left else pb.left,
+                right = pb.right, tabRight = !tabLeft, rowH = PartyLayout.rowsFit(rows, pb.height()))
+            pF.color = Theme.ink; c.drawRoundRect(RectF(mod.well.l, mod.well.t, mod.well.r, mod.well.b), 14f, 14f, pF)
+            pS.color = Theme.bronze; pS.strokeWidth = 4f; c.drawRoundRect(RectF(mod.well.l, mod.well.t, mod.well.r, mod.well.b), 14f, 14f, pS)
+            pF.color = Theme.gold; c.drawRoundRect(RectF(mod.tag.l, mod.tag.t, mod.tag.r, mod.tag.b), 10f, 10f, pF)
+            for ((i, cell) in mod.cells.withIndex()) {
+                val b = RectF(cell.l, cell.t, cell.r, cell.b)
+                pF.color = Theme.raised; c.drawRoundRect(b, 8f, 8f, pF)
+                pF.color = PARTY_COLS[i % PARTY_COLS.size]; c.drawRect(b.left, b.top, b.left + 10f, b.bottom, pF)
+                val s = (b.height() * 0.5f).coerceIn(20f, 72f)
+                pF.color = Theme.textDim; c.drawCircle(b.left + 24f + s / 2f, b.centerY(), s / 2f, pF)
+                pF.color = Theme.text; c.drawRect(b.left + 40f + s, b.centerY() - s * 0.16f, b.left + 40f + s + b.width() * 0.4f, b.centerY() + s * 0.16f, pF)
+            }
+        }
+        if (k > 0f) UiKit.combatGlow(c, RectF(0f, 0f, pageW, pageH), 0.75f * k, 60f)
         c.restore()
     }
 

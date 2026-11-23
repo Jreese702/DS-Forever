@@ -130,16 +130,19 @@ class BottomTilesRoomTest {
     @Test fun bottomTabIsTwoGroupsOfTiles() {
         val r = room()
         lay(r)                                                            // (pick 5: the tab does not fold, both groups open)
-        assertEquals(setOf(SettingsTabs.Group.HOME, SettingsTabs.Group.MAP), r.open)
+        // party sizing (2026-11-23): Party, the party list's tile, between Home and Map & chat
+        assertEquals(setOf(SettingsTabs.Group.HOME, SettingsTabs.Group.PARTY_LIST, SettingsTabs.Group.MAP), r.open)
         val home = r.groupBoxes.single { it.group == SettingsTabs.Group.HOME }
+        val party = r.groupBoxes.single { it.group == SettingsTabs.Group.PARTY_LIST }
         val map = r.groupBoxes.single { it.group == SettingsTabs.Group.MAP }
         assertEquals(BottomTiles.HOME_TILES, (home.parts.single() as BottomTilesView).tileIds())
+        assertEquals(BottomTiles.PARTY_TILES, (party.parts.single() as BottomTilesView).tileIds())
         assertEquals(BottomTiles.MAP_TILES, (map.parts.single() as BottomTilesView).tileIds())
         for (g in listOf(SettingsTabs.Group.CAST_BAR, SettingsTabs.Group.CHAT))
             assertEquals("$g not shown", View.GONE, r.groupBoxes.single { it.group == g }.box.visibility)
         // five columns of Top's 232 x 184 tiles on the 1240 px page
         val b = tileBoxes(r)
-        assertEquals(15, b.size)                                             // movable Home: Edit Home first; 1518: Reset Home last of Home's, the XP bar before it
+        assertEquals(16, b.size)                                             // movable Home: Edit Home first; 1518: Reset Home last of Home's, the XP bar before it; 2026-11-23: Party list
         for (t in b.values) { assertEquals(GameUiTiles.TILE_W, t.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, t.height(), 0.01f) }
         assertEquals(16f, b.getValue(BottomTiles.LAYOUT).left, 0.5f)
         assertEquals(W - 16f, b.getValue(BottomTiles.QUEST).right, 0.5f)
