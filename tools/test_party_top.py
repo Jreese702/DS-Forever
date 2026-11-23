@@ -101,7 +101,7 @@ PM = { on = false, u = nil, sel = "bound", rng = {} }
 WowCompanion.padMap = { party = {
     on = function() return PM.on end,
     box = function() return { u = PM.u } end,
-    lb = function() return { self = "PAD1", p1 = "PADDUP", p2 = "PADDDOWN" } end,
+    lb = function() return { self = "PAD1", p1 = "PADDUP", p2 = "PADDDOWN", fb = PM.fb } end,
     rng = function(u) return PM.rng[u] end,
     units = function() return PM.units end,
     selWant = function() return PM.sel end,
@@ -248,6 +248,19 @@ def main():
     f = frames()
     chk("Party mode on: each row's LB glyph (p1, p2)", [f[i].look.glyph for i in sorted(f)] == ["PADDUP", "PADDDOWN"],
         [f[i].look.glyph for i in sorted(f)])
+    # hub76 (fix/lbrb-wheels): the label names the FRIENDLY bumper PadMap m187 read (fb "RB" while the game swaps its target bumpers)
+    chk("hub76: the glyph's label is LB with no fb (an older PadMap; this stub draws no atlas: the word)", [f[i].lb.text for i in sorted(f)] == ["LB Up", "LB Down"],
+        [f[i].lb.text for i in sorted(f)])
+    G.PM.fb = "RB"
+    step()
+    f = frames()
+    chk("hub76: ... RB once the game swaps its target bumpers (fb = RB), the glyph kept", [f[i].lb.text for i in sorted(f)] == ["RB Up", "RB Down"]
+        and [f[i].look.glyph for i in sorted(f)] == ["PADDUP", "PADDDOWN"], [f[i].lb.text for i in sorted(f)])
+    G.PM.fb = "LB"
+    step()
+    f = frames()
+    chk("hub76: ... and LB again when the swap is undone", [f[i].lb.text for i in sorted(f)] == ["LB Up", "LB Down"], [f[i].lb.text for i in sorted(f)])
+    G.PM.fb = None
     chk("Party mode on: the GOLD ring on the pick (party1), none on your target; the white chevron at your target (party2)",
         f[1].look.ring == "gold" and f[2].look.ring is None and f[2].look.chev is True and f[1].look.chev is False,
         [(f[i].look.ring, f[i].look.chev) for i in sorted(f)])

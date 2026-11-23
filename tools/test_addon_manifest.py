@@ -50,7 +50,7 @@ def src(rel):
     return (ADDONS / rel).read_text(encoding="utf-8")
 
 
-check('local HV = "hub75"' in src("WowCompanionHub/Hub.lua"), "d. Hub hub75")
+check('local HV = "hub76"' in src("WowCompanionHub/Hub.lua"), "d. Hub hub76")
 check('local PV = "m187"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m187")
 check('local IV = "i173"' in src("WowCompanionInteract/Interact.lua"), "d. Interact i173")
 check("-- bags-kit6 " in src("WowCompanion/Bags.lua"), "d. Bags bags-kit6")

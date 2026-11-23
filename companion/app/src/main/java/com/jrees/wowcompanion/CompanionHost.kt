@@ -1337,7 +1337,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 p.copy(cx = p.cx + (a[0] - b[0]), top = p.top + if (p.classic) 0 else a[1] - b[1])
             }
         }
-        castView.onShoulders = { lb, rb -> lbAloneNow = lb && !rb; lbEval() }
+        // fix/lbrb-wheels: the FRIENDLY bumper alone (RB while the game swaps its target bumpers), and again when the swap changes
+        castView.onShoulders = { lb, rb -> shLb = lb; shRb = rb; lbAloneNow = LbPartyView.friendlyAlone(lb, rb, castView.swapTargets()); lbEval() }
+        castView.onSwapTargets = { sw -> lbAloneNow = LbPartyView.friendlyAlone(shLb, shRb, sw); lbEval() }
         // hold to talk's pop-up: a finger on a chat tab picks it (as LB / RB do)
         castView.onTalkTab = { key -> if (talkPanelUp() && talkTabs.pick(key)) {
             holdTalk.tabTouched(SystemClock.uptimeMillis()); Log.i("WCHOME", "hold to talk: chat $key (touch)"); talkDraw() } }
@@ -4278,8 +4280,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var slideT = 0f
 
     /** Home's panels, the bar and the room on show, at [t] of the pause wheel's open (0 = at rest) */
-    /** LB alone held now (CastView's reader) */
+    /** LB alone held now (CastView's reader); fix/lbrb-wheels: the friendly bumper alone (RB while the game swaps its target bumpers) */
     private var lbAloneNow = false
+    /** fix/lbrb-wheels: the bumpers as CastView last said (each alone of the triggers), for a swap that changes while one is held */
+    private var shLb = false
+    private var shRb = false
     /** the LB picture shows while LB alone is held and nothing else has the screen: only in the world (1.0.19: never over the start-up
      *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy).
      *  fix/lb-home-only (the user 2026-11-19: "Pressing LB in menus like the auction house shows the party selected. That should only
