@@ -14,7 +14,9 @@
  * the process checks what it is (dsf_pageout.h po_image_check: a known Wine helper, nothing naming the game; the game itself is never
  * asked either, and in its process nothing is installed), pages out at most 32 MiB of its own idle private anonymous memory (po_run)
  * and writes one line to <dir>/res-<pid>.
- * Inside the handler: raw system calls only (no libc, no allocation, no lock), static buffers behind a busy flag, errno untouched.
+ * Inside the handler: raw system calls only (no libc, no allocation, no lock), static buffers behind a busy flag, errno untouched,
+ * Wine's asynchronous signals held until it returns. Built without the stack protector (Android.mk): its canary is read through
+ * the thread pointer, and the handler runs on whatever Wine thread the signal lands on.
  */
 #define _GNU_SOURCE
 #include <signal.h>
@@ -125,6 +127,11 @@ __attribute__((constructor)) static void po_init(void) {
     memset(&sa, 0, sizeof sa);
     sa.sa_sigaction = po_on_urg;
     sa.sa_flags = SA_SIGINFO | SA_RESTART | SA_ONSTACK;
+    /* while a request runs, Wine's own asynchronous signals wait (the set Wine itself blocks around every wineserver call:
+     * SIGALRM, SIGIO, SIGINT, SIGHUP, SIGUSR1, SIGUSR2, SIGCHLD), so Wine's thread suspend (SIGUSR1) never lands inside the
+     * handler and saves its registers as the thread's context; the synchronous ones (SIGSEGV, SIGBUS, ...) stay open */
     sigemptyset(&sa.sa_mask);
+    sigaddset(&sa.sa_mask, SIGALRM); sigaddset(&sa.sa_mask, SIGIO); sigaddset(&sa.sa_mask, SIGINT); sigaddset(&sa.sa_mask, SIGHUP);
+    sigaddset(&sa.sa_mask, SIGUSR1); sigaddset(&sa.sa_mask, SIGUSR2); sigaddset(&sa.sa_mask, SIGCHLD);
     sigaction(SIGURG, &sa, NULL);
 }

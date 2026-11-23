@@ -84,7 +84,8 @@ include $(CLEAR_VARS)
 LOCAL_PATH := $(MY_LOCAL_PATH)
 LOCAL_MODULE := dsf-pageout
 LOCAL_SRC_FILES := dsf/dsf_pageout_hook.c
-LOCAL_CFLAGS := -O2 -Wall -Wextra -fvisibility=hidden
+# no stack protector: the handler runs on any Wine thread, and the canary is read through the thread pointer
+LOCAL_CFLAGS := -O2 -Wall -Wextra -fvisibility=hidden -fno-stack-protector
 LOCAL_LDFLAGS += -Wl,-z,max-page-size=16384
 LOCAL_BRANCH_PROTECTION := standard
 include $(BUILD_SHARED_LIBRARY)

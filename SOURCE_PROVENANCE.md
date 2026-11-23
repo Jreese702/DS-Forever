@@ -95,7 +95,11 @@ page-out half of `dsf_heap.c`; `companion/.../PageOut.kt`. DS Forever's own
 code, written from the Linux man pages madvise(2) (MADV_PAGEOUT), mincore(2) and
 proc(5). The idea (a process paging out its own idle memory into the device's
 existing zram on request) was seen in DroidDeck (GPL-3.0); none of DroidDeck's
-code, structure or text is used. Built from source by the dsforever ndkBuild
+code or text is used. A few design choices match its published description
+(SIGURG installed only while at its default, 1 MiB chunks, 32 MiB per request,
+chunks that come straight back skipped for a while); the code differs throughout
+(sigqueue with our own value, mincore instead of pagemap, no worker thread, an
+allow list of Wine helpers, our own request and answer files). Built from source by the dsforever ndkBuild
 (no prebuilt binary is committed). Host tests: `wsl -e bash tools/pageout/test.sh`.
 
 ## Proton without its 32-bit Windows files, 2026-11-20

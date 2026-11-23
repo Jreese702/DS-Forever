@@ -96,7 +96,9 @@ static inline void po_close(long fd) { po_sc(SYS_close, fd, 0, 0, 0, 0, 0); }
 static inline long po_madvise(uintptr_t a, size_t n, int advice) { return po_sc(SYS_madvise, (long) a, (long) n, advice, 0, 0, 0); }
 static inline long po_mincore(uintptr_t a, size_t n, unsigned char *vec) { return po_sc(SYS_mincore, (long) a, (long) n, (long) vec, 0, 0, 0); }
 static inline long po_getpid(void) { return po_sc(SYS_getpid, 0, 0, 0, 0, 0, 0); }
-static inline long po_rename(const char *from, const char *to) { return po_sc(SYS_renameat2, PO_AT_FDCWD, (long) from, PO_AT_FDCWD, (long) to, 0, 0); }
+/* renameat, not renameat2: the call bionic's own rename() makes, so it is in every Android version's app seccomp list (a call
+ * outside that list kills the process with SIGSYS) */
+static inline long po_rename(const char *from, const char *to) { return po_sc(SYS_renameat, PO_AT_FDCWD, (long) from, PO_AT_FDCWD, (long) to, 0, 0); }
 
 /* monotonic milliseconds (CLOCK_MONOTONIC = 1) */
 static inline uint64_t po_ms(void) {
@@ -204,8 +206,10 @@ static inline int po_parse_maps_line(const char *l, size_t n, po_map *m) {
  * a region worth paging out for [mode]: private, readable, writable, not executable, anonymous (no file, device 00:00, inode 0),
  * at least [PO_MIN_REGION], and by name:
  *  PO_HELPER: unnamed (a Windows heap, VirtualAlloc'd memory), [heap], or the native allocator's ([anon:scudo:...],
- *             [anon:libc_malloc]); never a stack ([stack], [anon:stack_and_tls:...], [anon:thread signal stack]), [vdso] / [vvar],
- *             a library's .bss or any other named kind.
+ *             [anon:libc_malloc]); never a named stack ([stack], [anon:stack_and_tls:...], [anon:thread signal stack]), [vdso] /
+ *             [vvar], a library's .bss or any other named kind. Wine allocates its threads' stacks itself (unnamed, like a heap):
+ *             those are eligible, and an idle thread's cold stack pages may be paged (MADV_PAGEOUT never loses data; a touch
+ *             brings them back); only the request's own stack is kept ([po_region]).
  *  PO_SELF:   DS Forever's own native allocator only ([anon:scudo:...], [anon:libc_malloc]): never the Java heap ([anon:dalvik-...]),
  *             the JIT, stacks, unnamed memory or anything a driver maps (kgsl, dmabuf, ashmem, memfd: files, never anonymous).
  * Guard pages (---p), shared memory ('s'), file mappings and device memory fail the first checks.
@@ -324,6 +328,7 @@ typedef struct {
     uint32_t req;               /* requests served */
     uintptr_t cursor;           /* where the last request stopped (0 = from the start) */
     int supported;              /* 0 = not probed, 1 = MADV_PAGEOUT works, -1 = not in this kernel */
+    uintptr_t sp;               /* this request's own stack pointer: the chunks around it are never paged (they would come straight back) */
     size_t page;                /* the page size */
     int ndone, nhot;
     po_done done[PO_DONE_MAX];
@@ -345,7 +350,7 @@ typedef struct {
 } po_result;
 
 static inline void po_state_init(po_state *st, size_t page) {
-    st->req = 0; st->cursor = 0; st->supported = 0; st->ndone = 0; st->nhot = 0;
+    st->req = 0; st->cursor = 0; st->supported = 0; st->sp = 0; st->ndone = 0; st->nhot = 0;
     st->page = (page >= 4096 && page <= 65536 && (page & (page - 1)) == 0) ? page : 4096;
 }
 
@@ -402,6 +407,9 @@ static inline int po_region(po_state *st, const po_map *m, uintptr_t from, uintp
         if (next > m->end || next <= c) next = m->end;
         if (c >= from && (to == 0 || c < to)) {
             if (po_is_hot(st, c)) { res->hot_skipped++; c = next; continue; }
+            /* the stack this request runs on (a Wine helper's signal stack or thread stack is unnamed anonymous memory, so it is
+             * eligible like any heap): 64 KiB below to 256 KiB above the stack pointer stay */
+            if (st->sp && c < st->sp + ((uintptr_t) 256 << 10) && next > st->sp - ((uintptr_t) 64 << 10)) { c = next; continue; }
             long r = po_resident(st, c, next - c);
             if (r >= PO_MIN_PAGES) {
                 res->resident_kb += (uint64_t) r * st->page / 1024u;
@@ -463,6 +471,7 @@ static inline void po_run(po_state *st, int mode, uint64_t cap, po_result *res) 
     res->rc = PO_OK; res->regions = 0; res->eligible_kb = 0; res->resident_kb = 0; res->paged_kb = 0; res->back_kb = 0;
     res->hot_skipped = 0; res->ms = 0;
     if (cap > PO_CAP_MAX) cap = PO_CAP_MAX;
+    st->sp = (uintptr_t) __builtin_frame_address(0);
     int sup = po_probe(st);
     if (sup < 0) { res->rc = PO_UNSUPPORTED; return; }
     po_age(st, res);

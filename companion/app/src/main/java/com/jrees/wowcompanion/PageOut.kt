@@ -229,6 +229,9 @@ object PageOut {
     @Volatile private var helperKb = 0L
     @Volatile private var selfN = 0
     @Volatile private var selfKb = 0L
+    /** helpers that did not answer a request: never asked again in this game run (whatever handles SIGURG in them, it is not ours
+     *  or it is stuck: one signal is the most it gets) */
+    private val silent: MutableSet<Int> = java.util.Collections.synchronizedSet(HashSet())
 
     /**
      * THE LAUNCH (BionicProgramLauncherComponent, the container's start): with Compress idle memory on and the library in the APK, the
@@ -237,6 +240,7 @@ object PageOut {
      */
     @JvmStatic fun launchEnv(ctx: Context): Map<String, String>? {
         armedDir = null
+        silent.clear()
         val on = runCatching { DeviceTier.init(ctx); Settings.init(ctx); Settings.pageOut }.getOrDefault(false)
         if (!on || unsupported) return null
         val lib = File(ctx.applicationInfo.nativeLibraryDir ?: return null, LIB)
@@ -261,7 +265,7 @@ object PageOut {
         val now = SystemClock.uptimeMillis()
         val why = pressure(s.availKb, s.fileKb, s.swapFreeKb, DeviceTier.totalMb, if (warnAt == 0L) -1L else now - warnAt) ?: return
         if (armedDir != null && !collecting && helperLimit.due(now) && runCatching { LauncherHooks.gameUp() }.getOrDefault(false))
-            runCatching { askHelpers(why, h, now) }.onFailure { collecting = false }
+            runCatching { askHelpers(why, h, now) }.onFailure { collecting = false; helperLimit.done(now, 0, 0) }
         if (!unsupported && selfLimit.due(now) && !GameLife.loadingNow) runCatching { pageSelf(why, now) }
     }
 
@@ -274,7 +278,7 @@ object PageOut {
         val out = ArrayList<Cand>()
         for (d in File("/proc").listFiles() ?: emptyArray()) {
             val pid = d.name.toIntOrNull() ?: continue
-            if (pid == me) continue
+            if (pid == me || pid in silent) continue
             val st = runCatching { File(d, "status").readLines() }.getOrNull() ?: continue
             if (uidOf(st) != uid) continue
             val a = args(runCatching { File(d, "cmdline").readText() }.getOrDefault(""))
@@ -301,7 +305,7 @@ object PageOut {
         cands.forEach { File(dir, "res-${it.pid}").delete() }
         val tmp = File(dir, "req.tmp")
         tmp.writeText("DSFPO1 $n $CAP_KIB\n")
-        if (!tmp.renameTo(File(dir, "req"))) return
+        if (!tmp.renameTo(File(dir, "req"))) { helperLimit.done(now, 0, 0); return }
         val asked = cands.filter { NativeHeap.pageOutSignalNow(it.pid) == 0 }
         collecting = true
         val loading = runCatching { GameLife.loadingNow }.getOrDefault(false)
@@ -312,6 +316,7 @@ object PageOut {
                     val after = runCatching { anonKb(File("/proc/${c.pid}/status").readLines()) }.getOrNull() ?: -1L
                     Helper(c.pid, c.name, c.beforeKb, after, res)
                 }
+                hs.filter { it.res == null }.forEach { silent += it.pid }
                 if (hs.any { it.res?.rc == Res.UNSUPPORTED }) unsupported = true
                 val ok = hs.mapNotNull { it.res }.filter { it.rc == Res.OK }
                 helperN++; helperKb += ok.sumOf { it.pagedKb }
