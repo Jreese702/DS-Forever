@@ -32,6 +32,8 @@ JNIEXPORT jint JNICALL Java_com_jrees_wowcompanion_NativeHeap_purge(JNIEnv *env,
  */
 #include <pthread.h>
 #include <signal.h>
+#include <string.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #include "dsf_pageout.h"
 
@@ -63,4 +65,30 @@ JNIEXPORT jint JNICALL Java_com_jrees_wowcompanion_NativeHeap_pageOutSignal(JNIE
     union sigval v;
     v.sival_int = 0x44534650;      /* PO_MAGIC */
     return sigqueue((pid_t) pid, SIGURG, v) == 0 ? 0 : -errno;
+}
+
+/*
+ * THE GAME CLIENT'S REQUEST (PageOut.kt GamePageOut, the user's pick 2026-11-23 "Yes, carefully"): SIGURG with DS Forever's GAME value
+ * to the game client [pid] (our own uid, checked by name and by its handler), sent to its thread [tid] (one asleep and nearly idle,
+ * so no busy game thread runs the request) with rt_tgsigqueueinfo, the call bionic's own pthread_sigqueue makes (in every app's
+ * seccomp list since Android 10); if that thread is gone or [tid] <= 0, to the process. libdsf-pageout.so's handler serves this value
+ * only in the game client, cold-only. 0 = sent to the thread, 1 = sent to the process, else -errno.
+ */
+JNIEXPORT jint JNICALL Java_com_jrees_wowcompanion_NativeHeap_pageOutSignalGame(JNIEnv *env, jclass cls, jint pid, jint tid) {
+    (void) env; (void) cls;
+    if (pid <= 1 || pid == getpid()) return -22;
+    const int magic = 0x44534647;  /* PO_MAGIC_GAME */
+    if (tid > 0) {
+        siginfo_t si;
+        memset(&si, 0, sizeof si);
+        si.si_signo = SIGURG;
+        si.si_code = SI_QUEUE;
+        si.si_pid = getpid();
+        si.si_uid = getuid();
+        si.si_value.sival_int = magic;
+        if (syscall(__NR_rt_tgsigqueueinfo, (pid_t) pid, (pid_t) tid, SIGURG, &si) == 0) return 0;
+    }
+    union sigval v;
+    v.sival_int = magic;
+    return sigqueue((pid_t) pid, SIGURG, v) == 0 ? 1 : -errno;
 }

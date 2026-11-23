@@ -1,5 +1,7 @@
 /*
- * DS FOREVER'S IDLE MEMORY INTO THE DEVICE'S OWN ZRAM (the user's pick, 2026-11-23: "Wine helpers" + "Our own app", never the game).
+ * DS FOREVER'S IDLE MEMORY INTO THE DEVICE'S OWN ZRAM (the user's picks, 2026-11-23: "Wine helpers" + "Our own app"; then "Yes,
+ * carefully" for the WoW client itself: only idle (cold) memory, only at character select before Enter World and when memory is
+ * critically low in the world, capped).
  * DS Forever's own code, written from the Linux man pages madvise(2) (MADV_PAGEOUT, Linux 5.4), mincore(2) and proc(5)
  * (/proc/self/maps). No root, no system setting: a process asks the kernel to reclaim ITS OWN private anonymous pages; the kernel
  * moves them into the swap device the firmware already has (zram on every Thor) and faults them back in on the next touch, so
@@ -13,6 +15,17 @@
  * stopped; a chunk with fewer than [PO_MIN_PAGES] resident pages is skipped; at most [cap] bytes of resident pages per request.
  * A chunk whose pages were mostly back in memory by the next request is in use: it is skipped for the next [PO_HOT_FOR] requests.
  * The kernel itself refuses locked (mlock), huge-TLB and PFN-mapped ranges (EINVAL) and leaves shared and pinned pages alone.
+ *
+ * THE GAME CLIENT (PO_CLIENT, [po_g_run]): a separate, COLD-ONLY mode, never the budgeted sweep above. A pass is two steps some
+ * seconds apart: the probe sends a few sample pages of each resident 1 MiB chunk out ([PO_G_SLICES] slices of [PO_G_SLICE_PAGES]);
+ * the commit pages a chunk out only if NONE of its sample pages came back in the meantime (nothing in it was touched: cold). A chunk
+ * whose samples came back is in use and is skipped for [PO_G_HOT_FOR] passes, as is a chunk whose paged memory came straight back.
+ * At most [PO_G_REQ_MAX] per request and [PO_G_PASS_MAX] per pass, samples included; never the whole process.
+ * WHAT THIS CODE DOES IN THE GAME'S PROCESS, AND NOTHING ELSE (the ToS note): it reads /proc/self/maps (address ranges and their
+ * kinds), /proc/self/cmdline and /proc/self/comm (to know it is the game), asks mincore(2) which of its own pages are resident and
+ * calls madvise(MADV_PAGEOUT) on its own private anonymous ranges. It never reads or writes the game's memory contents, never
+ * patches, hooks or calls a game function, and only answers DS Forever's own signal; the kernel brings every page back, unchanged,
+ * on its next touch.
  */
 #ifndef DSF_PAGEOUT_H
 #define DSF_PAGEOUT_H
@@ -33,7 +46,7 @@
 #define PO_HOT_MAX 128
 #define PO_HOT_FOR 4
 #define PO_VEC_MAX (PO_CHUNK / 4096)            /* mincore's answer for one chunk at the smallest page size */
-#define PO_LINE_MAX 320                         /* a result line's room */
+#define PO_LINE_MAX 512                         /* a result line's room (the game's is the longer) */
 
 /* the request's answers (the result line's rc=) */
 #define PO_OK 0
@@ -43,9 +56,10 @@
 #define PO_BAD_REQUEST 4
 #define PO_NO_MAPS 5
 
-/* the region rules: a Wine helper's heaps, or DS Forever's own native allocator only */
+/* the region rules: a Wine helper's heaps, DS Forever's own native allocator only, or the game client's heaps (cold-only, po_g_run) */
 #define PO_HELPER 1
 #define PO_SELF 2
+#define PO_CLIENT 3
 
 /* ------------------------------------------------------------------------------------------------ raw system calls */
 
@@ -93,8 +107,17 @@ static inline long po_read(long fd, void *buf, size_t n) {
 }
 static inline long po_write(long fd, const void *buf, size_t n) { return po_sc(SYS_write, fd, (long) buf, (long) n, 0, 0, 0); }
 static inline void po_close(long fd) { po_sc(SYS_close, fd, 0, 0, 0, 0, 0); }
+#ifdef PO_TEST_HOOKS
+/* tools/pageout/test_game.c: a simulated memory (residency without a swap device) and the regions it may see */
+static long po_test_madvise(uintptr_t a, size_t n, int advice);
+static long po_test_mincore(uintptr_t a, size_t n, unsigned char *vec);
+static int po_test_region(uintptr_t start, uintptr_t end);
+static inline long po_madvise(uintptr_t a, size_t n, int advice) { return po_test_madvise(a, n, advice); }
+static inline long po_mincore(uintptr_t a, size_t n, unsigned char *vec) { return po_test_mincore(a, n, vec); }
+#else
 static inline long po_madvise(uintptr_t a, size_t n, int advice) { return po_sc(SYS_madvise, (long) a, (long) n, advice, 0, 0, 0); }
 static inline long po_mincore(uintptr_t a, size_t n, unsigned char *vec) { return po_sc(SYS_mincore, (long) a, (long) n, (long) vec, 0, 0, 0); }
+#endif
 static inline long po_getpid(void) { return po_sc(SYS_getpid, 0, 0, 0, 0, 0, 0); }
 /* renameat, not renameat2: the call bionic's own rename() makes, so it is in every Android version's app seccomp list (a call
  * outside that list kills the process with SIGSYS) */
@@ -220,8 +243,13 @@ static inline int po_region_ok(const po_map *m, int mode) {
     if (m->end - m->start < PO_MIN_REGION) return 0;
     const char *s = m->name; size_t n = m->name_len;
     int alloc = (po_starts(s, n, "[anon:scudo:") && !po_icontains(s, n, "reserve")) || po_ieq(s, n, "[anon:libc_malloc]");
+#ifdef PO_TEST_HOOKS
+    if (!po_test_region(m->start, m->end)) return 0;
+#endif
     if (mode == PO_SELF) return alloc;
-    if (mode == PO_HELPER) return n == 0 || po_ieq(s, n, "[heap]") || alloc;
+    /* the game client: the same kinds as a helper's (Wine's VirtualAlloc'd and heap memory is unnamed anonymous); every GPU, dmabuf,
+     * kgsl, memfd, ashmem, file, shared or executable mapping failed above */
+    if (mode == PO_HELPER || mode == PO_CLIENT) return n == 0 || po_ieq(s, n, "[heap]") || alloc;
     return 0;
 }
 
@@ -498,6 +526,393 @@ static inline size_t po_result_line(uint64_t seq, const po_result *r, char *out)
     PO_PUT(" paged_kb="); PO_NUM(r->paged_kb);
     PO_PUT(" back_kb="); PO_NUM(r->back_kb);
     PO_PUT(" hot="); PO_NUM(r->hot_skipped);
+    PO_PUT(" ms="); PO_NUM(r->ms);
+    PO_PUT("\n");
+#undef PO_PUT
+#undef PO_NUM
+    return n;
+}
+
+/* ------------------------------------------------------------------------------------------------ the game client (cold-only) */
+
+/*
+ * THE GAME CLIENT'S OWN EXE NAMES (with or without ".exe"), or one of the launcher's ([games]): only such a process, with the
+ * launcher's game mode on, is ever paged as the game, and only cold-only ([po_g_run]). Everything else that names the game stays
+ * refused as before: Battle.net and its Agent, anything Blizzard, our sign-in bridge (wow-session-bridge.exe), explorer.exe or
+ * start.exe starting the game.
+ */
+static const char *const PO_CLIENTS[] = {
+    "wow", "wow-arm64", "wowb", "wowb-arm64", "wowt", "wowt-arm64", "wowclassic", "wowclassic-arm64", 0
+};
+static inline int po_is_client_name(const char *b, size_t n, const char *games) {
+    size_t m = n;
+    if (m > 4 && po_ieq(b + m - 4, 4, ".exe")) m -= 4;
+    for (int i = 0; PO_CLIENTS[i]; i++) if (po_ieq(b, m, PO_CLIENTS[i])) return 1;
+    if (games) {
+        const char *g = games;
+        while (*g) {
+            const char *e = g; while (*e && *e != ':') e++;
+            size_t gn = (size_t) (e - g), i = 0;
+            if (gn > 0 && gn == n) { for (; i < n; i++) if (po_lc(b[i]) != po_lc(g[i])) break; if (i == n) return 1; }
+            g = *e ? e + 1 : e;
+        }
+    }
+    return 0;
+}
+
+/*
+ * THIS PROCESS IS THE GAME CLIENT: its image (the first argument that is not Wine's loader, as its last path part) is one of the
+ * client's exe names, and its comm is either still Wine's loader's ("wine...", before Wine renames the process) or the start of that
+ * same image name (the kernel keeps 15 characters). 1 = the client; 0 = anything else, unsure included.
+ */
+static inline int po_client_check(const char *cmd, size_t n, const char *comm, size_t cn, const char *games) {
+    while (cn > 0 && (comm[cn - 1] == '\n' || comm[cn - 1] == 0)) cn--;
+    const char *img = 0; size_t imgn = 0;
+    size_t i = 0;
+    while (i < n && !img) {
+        size_t e = i; while (e < n && cmd[e]) e++;
+        size_t bn; const char *b = po_base(cmd + i, e - i, &bn);
+        if (bn > 0 && !po_is_loader(b, bn)) { img = b; imgn = bn; }
+        i = e + 1;
+    }
+    if (!img || !po_is_client_name(img, imgn, games)) return 0;
+    if (cn == 0 || po_istarts(comm, cn, "wine")) return 1;
+    if (cn > imgn) return 0;
+    for (size_t k = 0; k < cn; k++) if (po_lc(comm[k]) != po_lc(img[k])) return 0;
+    return 1;
+}
+
+#define PO_G_SLICES 4                           /* sample slices per chunk, at 1/8, 3/8, 5/8 and 7/8 of it */
+#define PO_G_SLICE_PAGES 2                      /* pages per slice */
+#define PO_G_MIN_SAMPLE 4                       /* fewer sample pages sent out: no verdict, the chunk is never paged */
+#define PO_G_MIN_CHUNK ((uintptr_t) 256 << 10)  /* a chunk piece under 256 KiB is not probed */
+#define PO_G_PROBE_MAX 512                      /* chunks probed per pass (the table) */
+#define PO_G_PROBE_REQ 128                      /* chunks probed per request */
+#define PO_G_SCAN_REQ 4096                      /* chunks looked at per request */
+#define PO_G_REQ_MAX ((uint64_t) 32 << 20)      /* a commit request: at most 32 MiB of resident pages */
+#define PO_G_PASS_MAX ((uint64_t) 256 << 20)    /* a pass: at most 256 MiB, its samples included */
+#define PO_G_DONE_MAX 320
+#define PO_G_HOT_MAX 512
+#define PO_G_HOT_FOR 4                          /* passes a chunk in use is left alone */
+
+/* the game's answers beyond the shared ones */
+#define PO_NOT_CLIENT 6     /* a game request in a process that is not the game client: nothing done */
+#define PO_NO_PASS 7        /* a probe / commit with no pass started: nothing done */
+
+typedef struct { uintptr_t addr, end; uint8_t mask, used; } po_gprobe;  /* a probed chunk: which sample pages went out */
+typedef struct { uintptr_t addr, end; uint32_t pages, left; } po_gdone; /* a chunk a commit paged out: pages moved, pages left */
+typedef struct { uintptr_t addr; uint32_t until; } po_ghot;             /* a chunk in use: left alone until pass [until] */
+
+typedef struct {
+    po_state *st;               /* the page size, the probe of MADV_PAGEOUT, the maps buffers (shared with the helper mode) */
+    uint32_t pass;              /* passes started */
+    int inpass;                 /* a pass is open (its probe started) */
+    uintptr_t gcursor;          /* where the next pass's probe starts (0 = the start) */
+    uintptr_t pstart, pcur;     /* this pass's probe: where it started, where it goes on */
+    int leg;                    /* 0 = [pstart, end), 1 = [0, pstart) */
+    int pdone;                  /* the probe walked everything (or the table / the pass is full) */
+    uint64_t pass_spent;        /* bytes of this pass: samples sent out and resident pages a commit paged */
+    uint64_t pass_paged_kb;
+    int nprobe, ndone, nhot;
+    po_gprobe probe[PO_G_PROBE_MAX];
+    po_gdone done[PO_G_DONE_MAX];
+    po_ghot hot[PO_G_HOT_MAX];
+} po_gstate;
+
+typedef struct {
+    int rc;
+    char op;                    /* 'P' a new pass's probe, 'p' its probe goes on, 'c' a commit, 'k' a check only */
+    uint32_t probed;            /* the pass's table size */
+    uint64_t sampled_kb;        /* sample pages sent out by this request */
+    uint32_t cold;              /* chunks paged out by this request */
+    uint32_t inuse;             /* chunks found in use (samples back) or skipped as in use by this request */
+    uint64_t resident_kb;       /* resident pages of the chunks this request paged */
+    uint64_t paged_kb;          /* pages that left memory (this request, samples included) */
+    uint64_t back_kb;           /* pages of the last pass's committed chunks found back in memory ('P' / 'k') */
+    uint64_t pass_kb;           /* KiB this pass has sent out so far */
+    int more;                   /* 1 = ask again (the probe goes on / the commit has more cold chunks) */
+    uint64_t ms;
+} po_gresult;
+
+static inline void po_g_init(po_gstate *g, po_state *st) {
+    g->st = st; g->pass = 0; g->inpass = 0; g->gcursor = 0; g->pstart = 0; g->pcur = 0; g->leg = 0; g->pdone = 0;
+    g->pass_spent = 0; g->pass_paged_kb = 0; g->nprobe = 0; g->ndone = 0; g->nhot = 0;
+}
+
+/* "DSFPO2 <seq> <op> <cap KiB>" -> [seq], [op] (P p c k), [cap] bytes (a commit's: 1 MiB .. [PO_G_REQ_MAX]); 0 = not a game request */
+static inline int po_parse_greq(const char *s, size_t n, uint64_t *seq, char *op, uint64_t *cap) {
+    if (!po_starts(s, n, "DSFPO2 ")) return 0;
+    size_t i = 7; uint64_t a = 0, b = 0; int any = 0;
+    while (i < n && s[i] >= '0' && s[i] <= '9') { a = a * 10 + (uint64_t) (s[i] - '0'); i++; any = 1; if (a > 1000000000000ull) return 0; }
+    if (!any || i + 2 >= n || s[i] != ' ') return 0;
+    char o = s[i + 1];
+    if (o != 'P' && o != 'p' && o != 'c' && o != 'k') return 0;
+    if (s[i + 2] != ' ') return 0;
+    i += 3; any = 0;
+    while (i < n && s[i] >= '0' && s[i] <= '9') { b = b * 10 + (uint64_t) (s[i] - '0'); i++; any = 1; if (b > 100000000ull) return 0; }
+    if (!any) return 0;
+    if (i < n && s[i] != '\n' && s[i] != ' ' && s[i] != 0) return 0;
+    uint64_t bytes = b * 1024u;
+    if (bytes < PO_CHUNK) bytes = PO_CHUNK;
+    if (bytes > PO_G_REQ_MAX) bytes = PO_G_REQ_MAX;
+    *seq = a; *op = o; *cap = bytes;
+    return 1;
+}
+
+static inline int po_g_is_hot(const po_gstate *g, uintptr_t a) {
+    for (int i = 0; i < g->nhot; i++) if (g->hot[i].addr == a) return 1;
+    return 0;
+}
+static inline void po_g_mark_hot(po_gstate *g, uintptr_t a) {
+    if (po_g_is_hot(g, a) || g->nhot >= PO_G_HOT_MAX) return;
+    g->hot[g->nhot].addr = a; g->hot[g->nhot].until = g->pass + PO_G_HOT_FOR; g->nhot++;
+}
+
+/* the chunks around the request's own stack pointer (64 KiB below to 256 KiB above it): never probed or paged */
+static inline int po_g_near_sp(const po_gstate *g, uintptr_t c, uintptr_t next) {
+    uintptr_t sp = g->st->sp;
+    return sp && c < sp + ((uintptr_t) 256 << 10) && next > sp - ((uintptr_t) 64 << 10);
+}
+
+/* slice [k] of the chunk piece [c, next): its first page and its length (page multiples; 0 = none) */
+static inline uintptr_t po_g_slice(const po_gstate *g, uintptr_t c, uintptr_t next, int k, size_t *len) {
+    size_t page = g->st->page;
+    uintptr_t span = next - c;
+    uintptr_t at = c + (span * (uintptr_t) (2 * k + 1) / (2 * PO_G_SLICES));
+    at &= ~((uintptr_t) page - 1);
+    if (at < c) at = c;
+    size_t l = (size_t) PO_G_SLICE_PAGES * page;
+    if (at + l > next) l = (next > at) ? ((size_t) (next - at) / page) * page : 0;
+    *len = l;
+    return at;
+}
+
+/* the resident pages of the sample slices as a bit mask (bit k * PO_G_SLICE_PAGES + j); -1 = a slice is not mapped any more */
+static inline int po_g_sample_bits(po_gstate *g, uintptr_t c, uintptr_t next) {
+    int bits = 0;
+    for (int k = 0; k < PO_G_SLICES; k++) {
+        size_t len; uintptr_t at = po_g_slice(g, c, next, k, &len);
+        if (len == 0) continue;
+        if (po_mincore(at, len, g->st->vec) != 0) return -1;
+        size_t pages = len / g->st->page;
+        for (size_t j = 0; j < pages && j < PO_G_SLICE_PAGES; j++) if (g->st->vec[j] & 1) bits |= 1 << (k * PO_G_SLICE_PAGES + (int) j);
+    }
+    return bits;
+}
+
+static inline int po_popcount8(int v) { int n = 0; for (int i = 0; i < 8; i++) n += (v >> i) & 1; return n; }
+
+/* the chunks the last pass paged out: how much came back; a chunk half back or more is in use (left alone for a while) */
+static inline void po_g_age(po_gstate *g, po_gresult *res) {
+    for (int i = 0; i < g->ndone; i++) {
+        long r = po_resident(g->st, g->done[i].addr, (size_t) (g->done[i].end - g->done[i].addr));
+        if (r < 0) continue;
+        uint32_t back = (uint32_t) r > g->done[i].left ? (uint32_t) r - g->done[i].left : 0;
+        if (back > g->done[i].pages) back = g->done[i].pages;
+        res->back_kb += (uint64_t) back * g->st->page / 1024u;
+        if (back * 2u >= g->done[i].pages) po_g_mark_hot(g, g->done[i].addr);
+    }
+    g->ndone = 0;
+    int k = 0;
+    for (int i = 0; i < g->nhot; i++) if (g->hot[i].until > g->pass) g->hot[k++] = g->hot[i];
+    g->nhot = k;
+}
+
+/* one chunk piece probed: its resident sample pages sent out; into the table when enough went out. 1 = probed */
+static inline int po_g_probe_chunk(po_gstate *g, uintptr_t c, uintptr_t next, po_gresult *res) {
+    if (g->nprobe >= PO_G_PROBE_MAX) return 0;
+    long r = po_resident(g->st, c, (size_t) (next - c));
+    long chunk_pages = (long) ((next - c) / g->st->page);
+    if (r < 0 || r * 4 < chunk_pages || r < PO_MIN_PAGES) return 0;    /* under a quarter resident: not worth it */
+    int before = po_g_sample_bits(g, c, next);
+    if (before < 0 || po_popcount8(before) < PO_G_MIN_SAMPLE) return 0;
+    for (int k = 0; k < PO_G_SLICES; k++) {
+        size_t len; uintptr_t at = po_g_slice(g, c, next, k, &len);
+        if (len > 0) po_madvise(at, len, MADV_PAGEOUT);
+    }
+    int after = po_g_sample_bits(g, c, next);
+    if (after < 0) return 0;
+    int out = before & ~after;
+    int nout = po_popcount8(out);
+    uint64_t kb = (uint64_t) nout * g->st->page / 1024u;
+    res->sampled_kb += kb; res->paged_kb += kb;
+    g->pass_spent += (uint64_t) nout * g->st->page; g->pass_paged_kb += kb;
+    if (nout < PO_G_MIN_SAMPLE) return 1;                              /* the samples did not leave: no verdict */
+    po_gprobe *p = &g->probe[g->nprobe++];
+    p->addr = c; p->end = next; p->mask = (uint8_t) out; p->used = 0;
+    return 1;
+}
+
+/* the table in address order (a probe's second leg comes before its first): insertion sort, nearly sorted already */
+static inline void po_g_sort(po_gstate *g) {
+    for (int i = 1; i < g->nprobe; i++) {
+        po_gprobe t = g->probe[i]; int j = i - 1;
+        while (j >= 0 && g->probe[j].addr > t.addr) { g->probe[j + 1] = g->probe[j]; j--; }
+        g->probe[j + 1] = t;
+    }
+}
+static inline po_gprobe *po_g_find(po_gstate *g, uintptr_t c, uintptr_t next) {
+    int lo = 0, hi = g->nprobe - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (g->probe[mid].addr == c) return g->probe[mid].end == next ? &g->probe[mid] : 0;
+        if (g->probe[mid].addr < c) lo = mid + 1; else hi = mid - 1;
+    }
+    return 0;
+}
+
+/* walk /proc/self/maps' game-client regions ([po_region_ok] PO_CLIENT, read again by every request: a chunk is only ever touched
+ * while it is still such a region), calling [each] on every chunk piece; it returns 1 to stop the walk. 1 = stopped */
+typedef int (*po_g_each_fn)(po_gstate *g, uintptr_t c, uintptr_t next, void *arg);
+static inline int po_g_walk(po_gstate *g, po_g_each_fn each, void *arg, po_gresult *res) {
+    po_state *st = g->st;
+    long fd = po_open("/proc/self/maps", PO_O_RDONLY, 0);
+    if (fd < 0) { res->rc = PO_NO_MAPS; return 1; }
+    size_t ln = 0; int stop = 0;
+    while (!stop) {
+        long got = po_read(fd, st->buf, sizeof st->buf);
+        if (got <= 0) break;
+        for (long i = 0; i < got && !stop; i++) {
+            char ch = st->buf[i];
+            if (ch != 10) { if (ln < sizeof st->line) st->line[ln++] = ch; continue; }   /* 10 = '\n' */
+            po_map m;
+            if (po_parse_maps_line(st->line, ln, &m) && po_region_ok(&m, PO_CLIENT)) {
+                uintptr_t c = m.start;
+                while (c < m.end && !stop) {
+                    uintptr_t next = (c & ~(PO_CHUNK - 1)) + PO_CHUNK;
+                    if (next > m.end || next <= c) next = m.end;
+                    stop = each(g, c, next, arg);
+                    c = next;
+                }
+            }
+            ln = 0;
+        }
+    }
+    po_close(fd);
+    return stop;
+}
+
+typedef struct { po_gresult *res; uint32_t probed, scanned; uintptr_t lo, hi; } po_g_probe_arg;
+static inline int po_g_probe_each(po_gstate *g, uintptr_t c, uintptr_t next, void *argp) {
+    po_g_probe_arg *a = (po_g_probe_arg *) argp;
+    if (c < a->lo || (a->hi && c >= a->hi)) return 0;
+    if (a->probed >= PO_G_PROBE_REQ || a->scanned >= PO_G_SCAN_REQ || g->nprobe >= PO_G_PROBE_MAX ||
+        g->pass_spent + (uint64_t) PO_G_SLICES * PO_G_SLICE_PAGES * g->st->page > PO_G_PASS_MAX) { g->pcur = c; return 1; }
+    a->scanned++;
+    if (po_g_is_hot(g, c)) { a->res->inuse++; return 0; }
+    if (next - c < PO_G_MIN_CHUNK || po_g_near_sp(g, c, next)) return 0;
+    if (po_g_probe_chunk(g, c, next, a->res)) a->probed++;
+    return 0;
+}
+
+/* the probe: from where it goes on, at most [PO_G_PROBE_REQ] chunks this request */
+static inline void po_g_probe(po_gstate *g, po_gresult *res) {
+    po_g_probe_arg a = { res, 0, 0, g->pcur, g->leg == 0 ? 0 : g->pstart };
+    int stopped = po_g_walk(g, po_g_probe_each, &a, res);
+    if (res->rc != PO_OK) return;
+    if (!stopped) {                                            /* the end of this leg */
+        if (g->leg == 0 && g->pstart > 0) { g->leg = 1; g->pcur = 0; }
+        else { g->pdone = 1; g->gcursor = 0; }
+    } else if (g->nprobe >= PO_G_PROBE_MAX || g->pass_spent + (uint64_t) PO_G_SLICES * PO_G_SLICE_PAGES * g->st->page > PO_G_PASS_MAX) {
+        g->pdone = 1; g->gcursor = g->pcur;                    /* the next pass probes on from here */
+    }
+    po_g_sort(g);
+    res->more = !g->pdone;
+}
+
+typedef struct { po_gresult *res; uint64_t budget, pass_left; } po_g_commit_arg;
+static inline int po_g_commit_each(po_gstate *g, uintptr_t c, uintptr_t next, void *argp) {
+    po_g_commit_arg *a = (po_g_commit_arg *) argp;
+    po_gprobe *p = po_g_find(g, c, next);
+    if (!p || p->used) return 0;
+    if (a->budget == 0) { a->res->more = a->pass_left > 0; return 1; }   /* a probed chunk is left: ask again */
+    p->used = 1;
+    if (po_g_is_hot(g, c) || po_g_near_sp(g, c, next)) return 0;
+    int now = po_g_sample_bits(g, c, next);
+    if (now < 0) return 0;                                     /* not mapped as it was: left alone */
+    if (now & p->mask) { po_g_mark_hot(g, c); a->res->inuse++; return 0; }   /* touched since the probe: in use */
+    long r = po_resident(g->st, c, (size_t) (next - c));
+    if (r < PO_MIN_PAGES) return 0;
+    uint64_t spent = (uint64_t) r * g->st->page;
+    /* the caps are hard: a chunk that does not fit the pass ends it; one that does not fit this request waits for the next */
+    if (spent > a->pass_left) { p->used = 0; a->res->more = 0; a->pass_left = 0; return 1; }
+    if (spent > a->budget) { p->used = 0; a->res->more = 1; return 1; }
+    long ad = po_madvise(c, (size_t) (next - c), MADV_PAGEOUT);
+    if (ad != 0) return 0;                                     /* locked / huge / PFN: the kernel refused, nothing moved */
+    long r2 = po_resident(g->st, c, (size_t) (next - c));
+    long moved = (r2 >= 0 && r2 < r) ? r - r2 : 0;
+    a->res->cold++;
+    a->res->resident_kb += (uint64_t) r * g->st->page / 1024u;
+    uint64_t kb = (uint64_t) moved * g->st->page / 1024u;
+    a->res->paged_kb += kb; g->pass_paged_kb += kb;
+    if (moved > 0 && g->ndone < PO_G_DONE_MAX) {
+        po_gdone *d = &g->done[g->ndone++];
+        d->addr = c; d->end = next; d->pages = (uint32_t) moved; d->left = (uint32_t) (r - moved);
+    }
+    g->pass_spent += spent;
+    a->budget -= spent; a->pass_left -= spent;
+    return 0;
+}
+
+/* the commit: the probed chunks whose samples stayed out (cold), at most [cap] of resident pages and what the pass has left */
+static inline void po_g_commit(po_gstate *g, uint64_t cap, po_gresult *res) {
+    uint64_t left = g->pass_spent >= PO_G_PASS_MAX ? 0 : PO_G_PASS_MAX - g->pass_spent;
+    po_g_commit_arg a = { res, cap < left ? cap : left, left };
+    if (a.budget == 0) { res->more = 0; return; }
+    po_g_walk(g, po_g_commit_each, &a, res);
+    if (a.pass_left == 0) res->more = 0;
+}
+
+/*
+ * ONE GAME REQUEST ([op]; [cap] a commit's bytes, at most [PO_G_REQ_MAX]): 'P' starts a pass (the last one's paged chunks checked
+ * for what came back, the table emptied, the probe begun), 'p' probes on, 'c' pages out cold chunks, 'k' only checks what came back.
+ * Only system calls: safe inside a signal handler; not reentrant (the hook's busy flag).
+ */
+static inline void po_g_run(po_gstate *g, char op, uint64_t cap, po_gresult *res) {
+    uint64_t t0 = po_ms();
+    res->rc = PO_OK; res->op = op; res->probed = 0; res->sampled_kb = 0; res->cold = 0; res->inuse = 0; res->resident_kb = 0;
+    res->paged_kb = 0; res->back_kb = 0; res->pass_kb = 0; res->more = 0; res->ms = 0;
+    if (cap > PO_G_REQ_MAX) cap = PO_G_REQ_MAX;
+    g->st->sp = (uintptr_t) __builtin_frame_address(0);
+    int sup = po_probe(g->st);
+    if (sup < 0) { res->rc = PO_UNSUPPORTED; return; }
+    if (op == 'k') {
+        po_g_age(g, res);
+    } else if (op == 'P') {
+        po_g_age(g, res);
+        g->pass++; g->inpass = 1; g->nprobe = 0; g->pass_spent = 0; g->pass_paged_kb = 0;
+        g->pstart = g->gcursor; g->pcur = g->gcursor; g->leg = 0; g->pdone = 0;
+        po_g_probe(g, res);
+    } else if (!g->inpass) {
+        res->rc = PO_NO_PASS;
+    } else if (op == 'p') {
+        if (!g->pdone) po_g_probe(g, res);
+    } else if (op == 'c') {
+        po_g_commit(g, cap, res);
+    }
+    res->probed = (uint32_t) g->nprobe;
+    res->pass_kb = g->pass_paged_kb;
+    res->ms = po_ms() - t0;
+}
+
+/* "DSFPO2 seq=5 rc=0 op=c probed=412 sampled_kb=.. cold=.. inuse=.. resident_kb=.. paged_kb=.. back_kb=.. pass_kb=.. more=1 ms=12\n"
+ *  -> [out] (at least PO_LINE_MAX bytes); its length */
+static inline size_t po_gresult_line(uint64_t seq, const po_gresult *r, char *out) {
+    size_t n = 0;
+#define PO_PUT(s) do { const char *_s = (s); while (*_s) out[n++] = *_s++; } while (0)
+#define PO_NUM(v) do { n += po_utoa((uint64_t) (v), out + n); } while (0)
+    PO_PUT("DSFPO2 seq="); PO_NUM(seq);
+    PO_PUT(" rc="); PO_NUM(r->rc);
+    PO_PUT(" op="); out[n++] = r->op ? r->op : '?';
+    PO_PUT(" probed="); PO_NUM(r->probed);
+    PO_PUT(" sampled_kb="); PO_NUM(r->sampled_kb);
+    PO_PUT(" cold="); PO_NUM(r->cold);
+    PO_PUT(" inuse="); PO_NUM(r->inuse);
+    PO_PUT(" resident_kb="); PO_NUM(r->resident_kb);
+    PO_PUT(" paged_kb="); PO_NUM(r->paged_kb);
+    PO_PUT(" back_kb="); PO_NUM(r->back_kb);
+    PO_PUT(" pass_kb="); PO_NUM(r->pass_kb);
+    PO_PUT(" more="); PO_NUM(r->more);
     PO_PUT(" ms="); PO_NUM(r->ms);
     PO_PUT("\n");
 #undef PO_PUT
