@@ -290,13 +290,19 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         if (proot32) envVars.put("PROOT_LOADER_32", nativeLibraryDir + "/libproot-loader32.so");
 
         // ProcessHelper.exec(nativeLibraryDir+"/libproot.so ulimit -a", envVars.toStringArray(), rootDir);
+        // #577 (DS Forever): the game's start keeps its output's last lines (GuestOutput): a game that closes as it starts says why
+        Callback<String> output = null;
+        if (terminationCallback != null) {
+            com.jrees.wowcompanion.GuestOutput.started();
+            output = com.jrees.wowcompanion.GuestOutput::line;
+        }
         return ProcessHelper.exec(command, envVars.toStringArray(), workingDir != null ? workingDir : rootDir, (status) -> {
             Log.d("GuestProgramLauncherComponent", "Process terminated " + pid + " with status " + status);
             synchronized (lock) {
                 pid = -1;
             }
             if (terminationCallback != null) terminationCallback.call(status);
-        });
+        }, output);
     }
 
     private void extractBox86_64Files() {

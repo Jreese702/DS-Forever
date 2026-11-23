@@ -412,6 +412,53 @@ object WowClientDownloader {
         ))
     }
 
+    /**
+     * REPAIR, THE LAUNCHER'S PART (#577, 1.0.37: damaged game files after an unclean stop, and no way back but a reinstall). For the
+     * build the folder RUNS (its .build.info row: never an update), every file DS Forever's own install puts in the folder is checked
+     * against its checksum and only a damaged or missing one is downloaded again: the build and CDN configs (their MD5 is their name),
+     * the client's own files (their MD5 in the install manifest; staged, then moved over together, the exe last) and the CDN archive
+     * indexes in Data/indices (checked by their footer). The same for Install directly's folder and a folder copied from a PC. The
+     * number of files downloaded again. [stopped] between files ([UpdateStopped]: nothing of the old install deleted).
+     */
+    fun repairFiles(gameRoot: File, onStatus: (String) -> Unit, stopped: () -> Boolean = { false }): Int {
+        val choice = activeBuild(gameRoot)
+        val row = choice.row
+        val product = checkNotNull(choice.product) { "Incompatible game product: ${row["Product"]}" }
+        val cdn = Cdn(servers = CdnHttps.servers(row["CDN Servers"], row["CDN Hosts"].orEmpty()), path = row["CDN Path"].orEmpty().ifEmpty { DEFAULT_CDN_PATH })
+        val buildKey = row["Build Key"].orEmpty()
+        val cdnKey = row["CDN Key"].orEmpty()
+        var fixed = 0
+        onStatus("Checking the game's own files...")
+        // the configs: a kept copy that is not its name's is downloaded again
+        val configs = listOf(buildKey, cdnKey).filter { Regex("[0-9a-f]{32}").matches(it) }.associateWith { key ->
+            val f = File(gameRoot, "Data/config/${key.substring(0, 2)}/${key.substring(2, 4)}/$key")
+            val kept = f.takeIf { it.isFile }?.readBytes()?.takeIf { configOk(it, key) }
+            kept ?: cdn.require("config", key).also { saveConfig(gameRoot, key, it); fixed++ }
+        }
+        if (stopped()) throw UpdateStopped()
+        val buildConfig = parseConfig(String(configs[buildKey] ?: throw IOException("the game folder names no build config")))
+        val cdnConfig = configs[cdnKey]?.let { parseConfig(String(it)) }
+        val moves = syncClient(
+            gameRoot = gameRoot, product = product, cdn = cdn, buildConfig = buildConfig,
+            archives = lazy { cdnConfig?.let { ArchiveLocator(cdn, gameRoot, it.getValue("archives")) } },
+            onStatus = onStatus, stopped = stopped,
+        )
+        commit(moves)
+        fixed += moves.size
+        cdnConfig?.let { cfg ->
+            val dir = File(gameRoot, "Data/indices")
+            val required = listOf("archives", "patch-archives").flatMap { cfg[it].orEmpty() } +
+                listOf("file-index", "patch-file-index", "archive-group", "patch-archive-group").mapNotNull { cfg[it]?.firstOrNull() }
+            // only a folder that keeps the CDN's indexes (Install directly's, a copy that brought them): a missing one is fetched there too
+            if (dir.isDirectory) {
+                val bad = required.distinct().count { !indexFileOk(File(dir, "$it.index"), it) }
+                if (bad > 0) { syncIndices(gameRoot, cdn, cfg, onStatus, stopped); fixed += bad }
+            }
+        }
+        runCatching { android.util.Log.i("WCSETUP", "repair: the game's own files checked; $fixed downloaded again") }
+        return fixed
+    }
+
     /** the client's changed files, staged ([stage]): the temp -> file moves for [commit], the exe last; empty = nothing to change */
     private fun syncClient(
         gameRoot: File,

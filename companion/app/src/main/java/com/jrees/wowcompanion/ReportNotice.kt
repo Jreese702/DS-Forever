@@ -24,6 +24,8 @@ class ReportNotice(c: Context) : View(c) {
         /** the user relaying a player (2026-11-13: "the pause radial is appearing on the top and bottom ..."): the add-ons are silent
          *  (StartRoute NOTICE, or the add-on install failed); [cause] AddonSilence.cause's words (null = the default); [how] the steps shown */
         data class AddonsOff(val cause: String?, val how: Boolean = false) : State()
+        /** #576: a restart pressed while the game downloads (NativeLogin.downloadingNow): Restart anyway / Wait */
+        object RestartDownloading : State()
     }
 
     /** the words and buttons for a state (pure: the tests read it) */
@@ -36,6 +38,13 @@ class ReportNotice(c: Context) : View(c) {
         const val ADDONS_TITLE = "DS Forever add-ons aren't running"
         const val ADDONS_DEFAULT = "Enable them in AddOns at character select."
         const val ADDONS_HOW = "Character select: AddOns, tick every DS Forever add-on and Load out of date AddOns, then Okay."
+        const val RESTART_ANYWAY = "Restart anyway"
+        const val WAIT = "Wait"
+        const val RESTART_TITLE = "The game is still downloading"
+        const val RESTART_TEXT = "A restart stops the download. Leave it running until it's done."
+
+        /** #576: a restart asks first while the game is up and downloading (before or past its login screen) */
+        fun restartAsks(downloading: Boolean, gameUp: Boolean): Boolean = downloading && gameUp
         fun card(s: State): Card = when (s) {
             State.Compiling -> Card("Compiling your report…", "You can keep playing.", emptyList())
             State.Sending -> Card("Sending your report…", "You can keep playing.", emptyList())
@@ -45,6 +54,7 @@ class ReportNotice(c: Context) : View(c) {
             is State.Failed -> Card("Couldn't save the report", s.why, listOf(OK))
             is State.AddonsOff -> if (s.how) Card(ADDONS_TITLE, ADDONS_HOW, listOf(OK))
                 else Card(ADDONS_TITLE, s.cause ?: ADDONS_DEFAULT, listOf(HOW, OK))
+            State.RestartDownloading -> Card(RESTART_TITLE, RESTART_TEXT, listOf(WAIT, RESTART_ANYWAY))
         }
     }
 
@@ -55,6 +65,8 @@ class ReportNotice(c: Context) : View(c) {
     var onDismiss: () -> Unit = {}
     /** Couldn't send > Open issue: the pre-filled issue in the browser */
     var onOpenUrl: (String) -> Unit = {}
+    /** #576: the downloading card's Restart anyway */
+    var onRestartAnyway: () -> Unit = {}
 
     private var focus = 0
     private val boxes = ArrayList<Pair<RectF, String>>()
@@ -71,6 +83,7 @@ class ReportNotice(c: Context) : View(c) {
         if (label == HOW && s is State.AddonsOff) { show(s.copy(how = true)); return }      // the steps, on the same card
         if (label == OPEN && s is State.Ready) onOpen(s)
         if (label == OPEN && s is State.SendFailed) onOpenUrl(s.url)
+        if (label == RESTART_ANYWAY && s is State.RestartDownloading) { hide(); onDismiss(); onRestartAnyway(); return }
         // the user before 1.0.7: dismissing here clears the note in Settings and on the setup screen too (ReportFlow is the one state)
         if (s is State.Ready || s is State.Sent || s is State.SendFailed) { ReportFlow.init(context); ReportFlow.clearPending() }
         hide(); onDismiss()

@@ -294,7 +294,20 @@ object AddonSilence {
     const val SIGNED_WORLD_LINE = "Signed in. Waiting for the world."
     val WAIT_LINES = setOf(PreLoginTraffic.WAITING_LINE, PreLoginTraffic.DOWNLOADING_LINE, WORLD_LINE, SIGNED_WORLD_LINE)
 
-    enum class StartMode { KEEP, WORLD_LINE, ADDONS }
+    /**
+     * #579 / #576 (1.0.37): past the login screen the game went on downloading 232-386 MB a minute under "Waiting for the world.", and
+     * players restarted it again and again. The line while it downloads there ([NativeLogin.downloadingAfter]): its rate once a whole
+     * minute has passed ([mbMinute] > 0), and to leave it running.
+     */
+    const val DOWNLOAD_AFTER_LINE = "Game downloading: leave it running"
+    fun downloadAfterLine(mbMinute: Long): String =
+        if (mbMinute > 0) "Game downloading ($mbMinute MB a minute): leave it running" else DOWNLOAD_AFTER_LINE
+    fun isDownloadAfterLine(line: String): Boolean =
+        line == DOWNLOAD_AFTER_LINE || (line.startsWith("Game downloading (") && line.endsWith(" MB a minute): leave it running"))
+    /** one of the plain waiting lines ([WAIT_LINES]) or the download line past the login screen ([downloadAfterLine]) */
+    fun isWaitLine(line: String): Boolean = line in WAIT_LINES || isDownloadAfterLine(line)
+
+    enum class StartMode { KEEP, WORLD_LINE, ADDONS, DOWNLOAD_LINE }
 
     /**
      * THE START SCREEN STILL UP AFTER THE SIGN-IN (the triage; Home's add-ons card never shows over it): [line] its line now; [rowUp]
@@ -306,10 +319,14 @@ object AddonSilence {
      * a NEW word back; one already on show ([shown]) stays - character select is where the player switches them back on.
      */
     fun startMode(line: String, rowUp: Boolean, signedIn: Boolean, downloading: Boolean, silent: Boolean, inWorld: Boolean,
-                  trafficQuiet: Boolean = false, shown: Boolean = false): StartMode = when {
-        line !in WAIT_LINES || rowUp -> StartMode.KEEP
+                  trafficQuiet: Boolean = false, shown: Boolean = false, downloadingAfter: Boolean = false): StartMode = when {
+        !isWaitLine(line) || rowUp -> StartMode.KEEP
         silent && inWorld && (!trafficQuiet || shown) -> StartMode.ADDONS
-        signedIn && !downloading && line == PreLoginTraffic.WAITING_LINE -> StartMode.WORLD_LINE
+        // #579: past the login screen and still downloading: "Game downloading (N MB a minute): leave it running"
+        signedIn && downloadingAfter && (line == PreLoginTraffic.WAITING_LINE || line == WORLD_LINE || isDownloadAfterLine(line)) ->
+            StartMode.DOWNLOAD_LINE
+        // ... and back to "Waiting for the world." once that download ends
+        signedIn && !downloading && (line == PreLoginTraffic.WAITING_LINE || isDownloadAfterLine(line)) -> StartMode.WORLD_LINE
         else -> StartMode.KEEP
     }
 

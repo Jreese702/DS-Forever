@@ -81,7 +81,7 @@ object DependencyAddons {
      * Checks / installs every dependency for the game's [flavorRoot] (the `_classic_beta_` folder); [cache] = the app's private cache,
      * [state] = a small private file remembering the last check. One line for the top screen.
      */
-    fun run(flavorRoot: File, cache: File, state: File, now: Long = System.currentTimeMillis()): String {
+    fun run(flavorRoot: File, cache: File, state: File, now: Long = System.currentTimeMillis(), onStep: (String) -> Unit = {}): String {
         val addons = File(flavorRoot, "Interface/AddOns")
         val last = runCatching { JSONObject(state.readText()) }.getOrNull()
         val results = DEPS.filter { wanted(it) }.map { dep ->
@@ -99,7 +99,8 @@ object DependencyAddons {
             .put("rule", STATE_RULE))
         runCatching { state.parentFile?.mkdirs(); state.writeText(out.toString()) }
         // the third-party add-ons the player opted into (Settings > Add-ons, Map's Polestar): in / out with the game closed
-        val third = runCatching { ThirdPartyAddons.applyAtStart(flavorRoot) }.getOrElse { "add-ons skipped (${reason(it)})" }
+        // #556: [onStep] = the start screen's add-ons line while a package goes in (Spoken Quests' 1.5 GB unpack: its percent)
+        val third = runCatching { ThirdPartyAddons.applyAtStart(flavorRoot, onStep = onStep) }.getOrElse { "add-ons skipped (${reason(it)})" }
         return (results.map { it.line } + listOfNotNull(third.ifEmpty { null })).joinToString("; ")
     }
 
@@ -252,6 +253,75 @@ object DependencyAddons {
         }
         require(files > 0) { "the package is empty" }
         if (progress != null && shown != 100) progress(100)
+    }
+
+    /**
+     * THE BIG PACK'S UNPACK GOES ON WHERE IT STOPPED (#556, 1.0.35: "stuck at installing Spoken Quests add-on"; the app was closed 5.7 min
+     * into the ~7-min unpack of the 1.5 GB pack, and the next start threw the staging copy away and unpacked it from 0, again and again).
+     * The zip into [to] by its central directory (java.util.zip.ZipFile: no pass over the whole zip first, an entry is reached without
+     * reading the ones before it). An entry already in [to] at its size AND its CRC-32 (read back from the file, so a file cut short or
+     * zero-filled by an unclean stop is never taken as whole) is kept; any other is written again, its CRC-32 checked as it is written (a
+     * mismatch throws, as ZipInputStream's own check does). The same rules as [unpack]: one "<folder>/" around everything is dropped, no
+     * path outside [to], at most [maxFiles] files and [maxBytes] unpacked. [progress]: the whole percent of the zip's compressed bytes
+     * done (kept ones count), 0 - 100, each value once; [wrote] each entry written (the tests). The number of files written.
+     */
+    internal fun unpackResume(zip: File, to: File, folder: String, maxFiles: Int = MAX_FILES, maxBytes: Long = MAX_UNPACKED,
+                              progress: ((Int) -> Unit)? = null, wrote: ((String) -> Unit)? = null): Int {
+        to.mkdirs()
+        val root = to.canonicalFile
+        var files = 0; var bytes = 0L; var written = 0
+        var shown = -1
+        java.util.zip.ZipFile(zip).use { z ->
+            val entries = z.entries().toList()
+            val names = entries.map { it.name.replace('\\', '/') }
+            val prefix = "$folder/".takeIf { p -> folder.isNotEmpty() && names.isNotEmpty() && names.all { it.startsWith(p) } } ?: ""
+            val total = entries.sumOf { it.compressedSize.coerceAtLeast(0L) }.coerceAtLeast(1L)
+            var done = 0L
+            val buf = ByteArray(65536)
+            for (e in entries) {
+                if (progress != null) {
+                    val pct = (done * 100 / total).toInt().coerceIn(0, 100)
+                    if (pct != shown) { shown = pct; progress(pct) }
+                }
+                done += e.compressedSize.coerceAtLeast(0L)
+                val name = e.name.replace('\\', '/').removePrefix(prefix)
+                if (name.isEmpty()) continue
+                val out = File(to, name).canonicalFile
+                require(out.path.startsWith(root.path + File.separator)) { "the package has a bad path ($name)" }
+                if (e.isDirectory) { out.mkdirs(); continue }
+                require(++files <= maxFiles) { "the package has too many files" }
+                bytes += e.size.coerceAtLeast(0L)
+                require(bytes <= maxBytes) { "the package unpacks too large" }
+                if (e.size >= 0 && out.isFile && out.length() == e.size && crc32(out, buf) == e.crc) continue
+                out.parentFile?.mkdirs()
+                val crc = java.util.zip.CRC32()
+                var n0 = 0L
+                z.getInputStream(e).use { i ->
+                    out.outputStream().use { o ->
+                        while (true) {
+                            val n = i.read(buf); if (n < 0) break
+                            n0 += n
+                            require(n0 <= maxBytes) { "the package unpacks too large" }
+                            crc.update(buf, 0, n); o.write(buf, 0, n)
+                        }
+                    }
+                }
+                if ((e.crc >= 0 && crc.value != e.crc) || (e.size >= 0 && n0 != e.size)) {
+                    out.delete(); throw java.util.zip.ZipException("invalid entry CRC or size ($name)")
+                }
+                written++
+                wrote?.invoke(name)
+            }
+        }
+        require(files > 0) { "the package is empty" }
+        if (progress != null && shown != 100) progress(100)
+        return written
+    }
+
+    private fun crc32(f: File, buf: ByteArray): Long {
+        val crc = java.util.zip.CRC32()
+        f.inputStream().use { i -> while (true) { val n = i.read(buf); if (n < 0) break; crc.update(buf, 0, n) } }
+        return crc.value
     }
 
     /** a stream that counts what it gave (the unpack's progress: the zip's bytes read so far) */
