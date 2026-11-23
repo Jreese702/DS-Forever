@@ -845,6 +845,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.fightNow = { homeView.inFight() || lastBook?.combat == true }   // #56: the timed relief waits out a fight (UI thread)
+        // #24 (11-23): the game's exact memory walk only while the add-ons are silent (their silence check reads it); else counters
+        MemWatch.gameWalkWanted = { silence.silent }
         MemWatch.start(this)                                              // WCMEM: where the memory goes (the 1.0.17 low-memory kills); 1.0.28: Android's trims
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
@@ -2630,6 +2632,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * every minute until a current document comes. The start screen's line follows it ([startAddonsStep]).
      */
     private val silence = AddonSilence.Watch(System.currentTimeMillis())
+    /** issues 558 / 476 (11-23): the last aura-container word logged (AuraProbe.wordLine) */
+    private var aboxLast: String? = null
     private val worldMem = AddonSilence.WorldByMemory()
     /** the clock [worldMem] was started for, and the uptime it started (a memory sample from before it does not count) */
     private var silenceFrom = 0L
@@ -2947,6 +2951,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // prd16 / uf16 (issue #181): what a fight's aura reads gave the top screen's HUD row / target bar, once per kind (WCLOG: the report
         // carries it)
         if (msg.optString("probe") == "aurasec") Log.i("WCLOG", AuraProbe.line(msg))
+        // issues 558 / 476 (11-23): whether the game made the fight-aura containers on the top screen (Trail's ab1 probe, once per piece and
+        // outcome a login); logging only
+        if (msg.optString("probe") == "aurabox") AuraProbe.boxLine(msg).let { l -> Log.i("WCLOG", l); DiagLog.event("addons", l) }
         // chat29: what the game says its chat style is, and what the switch did (the chat bar on the top screen, 2026-11-04)
         if (msg.optString("probe") == "chatstyle") Log.i("WCCHAT", "chat style: now ${msg.optString("now")} default ${msg.optString("default")} " +
             "set ${msg.optString("set")} after ${msg.optString("now2")} ${msg.optString("why")}")
@@ -3379,7 +3386,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // b-release-spirit: the dialogs' tap row could not be had (the tap pad has no row left): every dialog button would tap nothing
             "dialogpad" -> if (current) android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
-            "hub" -> GameUi.onHub(msg, current)
+            "hub" -> {
+                GameUi.onHub(msg, current)
+                // issues 558 / 476 (11-23): the aura containers' word (hub71's abox) once each time it changes; and the game's own latency
+                // for the network stall lines (hub75's net, read-only GetNetStats)
+                if (current) msg.optJSONObject("hub")?.let { h ->
+                    AuraProbe.wordLine(h.optJSONObject("abox"))?.let { l -> if (l != aboxLast) { aboxLast = l; Log.i("WCLOG", l); DiagLog.event("addons", l) } }
+                    h.optJSONObject("net")?.let { n -> NetStall.latency(n.optInt("h", -1), n.optInt("w", -1), System.currentTimeMillis()) }
+                }
+            }
             "padrx" -> GameUi.onPadRx(msg, current)           // fix/desk-click-switch: Hub hub70, a press's word at once
             // the layout editor (Hub hub55): its document, CURRENT or replayed (a replay only shows; the page taps only while it is open)
             "lay" -> LayoutModel.Live.note(msg)
@@ -3610,6 +3625,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "facecd" -> if (current) PadMapModel.parseCd(msg)?.let { homeView.onFaceCd(it) }
             // the fight flag also from Spells' facewatch (Tracking after test18): Home's D-pad picture follows the newest word
             "facewatch" -> if (current) homeView.onFightWord(msg.optBoolean("fight", false))
+            // issues 580 / 539 (11-23): where each press went (the last 30 for the report; one WCLOG line for a press that did nothing),
+            // and whether the fight buttons are ours (one line when it changes); logging only (WCPAD: off the start-up log's 200 lines)
+            "facecast" -> if (current) PressLog.press(msg, System.currentTimeMillis())?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
+            "faceswap" -> if (current) PressLog.swap(msg)?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
             // m127: Smart Y's list edits answered (a refusal said on its Add row; the user, 2026-11-11: it was never read)
             "smartyack" -> if (current && ::settingsView.isInitialized) settingsView.onSmartAck(msg.optString("op"), msg.optBoolean("ok", false), msg.optString("why").ifEmpty { null })
             "padack" -> if (current) PadMapModel.parseAck(msg)?.let {
@@ -3617,6 +3636,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (it.op == "rankup") newSpellRankAck(it)                      // PadMap m143: the rank-up prompt's A answered
                 // issue #136 (2026-11-11): the toolbar switch refused by the game (a fight, no character) is logged; DpadChoice re-sends it
                 if (!it.ok && (it.op == "dpad-on" || it.op == "dpad-off")) Log.w(HomeView.TAG, "dpad: the game refused ${it.op} (${it.why ?: "no reason"}); kept, sent again")
+                // issue 580 (11-23): every other refusal too, one WCLOG line each (the report's log); kept for its Controller section
+                else if (!it.ok) PressLog.refused(it.op, it.why, it.storage, it.idx, it.kind, System.currentTimeMillis())?.let { l -> Log.w("WCLOG", l); DiagLog.event("pad", l) }
                 // the player changed an In-combat setting: the backup follows the store from now on (test22 P0)
                 if (msg.optBoolean("ok") && msg.optString("op") in setOf("combat", "cface", "uncombat", "uncface", "clear", "rankup") &&
                     ::combatKeep.isInitialized) combatKeep.onPlayerChange()
@@ -4003,6 +4024,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         IndoorSchedulerStep.companionGone()
         ui.removeCallbacks(signInTick)
         NativeLogin.onTrafficSample = null
+        MemWatch.gameWalkWanted = { true }                              // #24 (11-23): no host, the walk as before
         SetupBridge.keyboard(false)
         ui.removeCallbacks(rootCheck)
         if (PlayModes.onChanged === sourceChanged) PlayModes.onChanged = null

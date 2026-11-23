@@ -308,8 +308,8 @@ def part1(chk):
     chk("the hub document's word (abox): every piece ok", w.v == "ab1" and w.b.hud == "ok" and w.b.tdeb == "ok" and w.b.tbuf == "ok", dict(w.b))
     # TAGS
     hub = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
-    chk("tags: Trail prd21 / ab1 / tt6, Hub hub74 / uf26", P.V == "prd21" and A.V == "ab1" and T.V == "tt6" and UF.V == "uf26"
-        and re.search(r'local HV = "hub74"', hub) is not None, (P.V, A.V, T.V, UF.V))
+    chk("tags: Trail prd21 / ab1 / tt6, Hub hub75 / uf26", P.V == "prd21" and A.V == "ab1" and T.V == "tt6" and UF.V == "uf26"
+        and re.search(r'local HV = "hub75"', hub) is not None, (P.V, A.V, T.V, UF.V))
 
     # A CLIENT WITHOUT THE CONTAINER (CreateFrame refuses the type): the old rows, as before, and the probe says so
     old = boot(refuse=True)

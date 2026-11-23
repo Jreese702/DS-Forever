@@ -99,6 +99,8 @@ object MemWatch {
                 runCatching { stampExit() }
                 runCatching { maybeDump(lastPssMb) }
                 runCatching { timedTick(h) }                              // #56: the long session's own relief
+                // #56 (11-23): DS Forever's memory by owner, every 5 minutes (the first at the watch's first line)
+                runCatching { if (ownersAt == 0L || SystemClock.uptimeMillis() - ownersAt >= OWNERS_EVERY_MS) ownersLine("") }
                 h.postDelayed(this, EVERY_MS)
             }
         }
@@ -139,12 +141,167 @@ object MemWatch {
     @Volatile private var lowKb = -1L
     private val SPACES = Regex("\\s+")
     private fun sampleFree() {
-        val kb = java.io.File("/proc/meminfo").useLines { ls -> ls.firstOrNull { it.startsWith("MemAvailable:") } }
-            ?.split(SPACES)?.getOrNull(1)?.toLongOrNull() ?: return
-        lowKb = lowest(lowKb, kb)
+        val s = java.io.File("/proc/meminfo").useLines { lmkOf(it, SystemClock.uptimeMillis() / 1000) } ?: return
+        lowKb = lowest(lowKb, s.availKb)
+        // #56 (11-23): the killer's own numbers, the last [RING] seconds, and their lows since the last line
+        val ringNow = synchronized(ring) { ring.addLast(s); while (ring.size > RING) ring.removeFirst(); ring.toList() }
+        frLowKb = lowest(frLowKb, s.freeKb); fcLowKb = lowest(fcLowKb, s.fileKb); sfLowKb = lowest(sfLowKb, s.swapFreeKb); shNowKb = s.shmemKb
+        // ... and the exit record's stamp from here, every second (a kill came 1 - 2 s after the last 5 s line; a trim never stamped)
+        val head = summaryHead
+        if (head.isNotEmpty()) { summaryNow = ringStamp(head, summaryHeadUpS, ringNow); runCatching { stampExit() } }
     }
     /** the low-water mark: [kb] when none yet ([was] < 0) or lower */
     fun lowest(was: Long, kb: Long): Long = if (was < 0 || kb < was) kb else was
+
+    // ---------------------------------------------------------------- #56 (11-23): the numbers Android's low-memory killer reads
+    /**
+     * ONE SECOND OF THE DEVICE'S MEMORY AS THE KILLER SEES IT (#56, 11-23: the first 1.0.38 kill came with 2615 MB available a second
+     * before it, so the kill acted on something no line recorded). Android's killer (lmkd) weighs free pages, the file cache, free
+     * swap and the kernel's pressure; [lmkOf] reads the first three (and shared memory) from the /proc/meminfo the 1 s sampler already
+     * read - no new file, no new read. The kernel's pressure stays at the trims and reliefs only ([psiNow]: a denial is logged even
+     * when its read works). kB. [upS] = uptime seconds.
+     */
+    class Lmk(val upS: Long, val availKb: Long, val freeKb: Long, val fileKb: Long, val shmemKb: Long, val swapFreeKb: Long)
+    /** the last [RING] seconds of [Lmk] samples, oldest first */
+    const val RING = 10
+    private val ring = ArrayDeque<Lmk>()
+    @Volatile private var frLowKb = -1L
+    @Volatile private var fcLowKb = -1L
+    @Volatile private var sfLowKb = -1L
+    @Volatile private var shNowKb = -1L
+
+    /** /proc/meminfo's lines -> one [Lmk] (the file cache = Active(file) + Inactive(file)); null = no MemAvailable. Pure (the tests) */
+    fun lmkOf(lines: Sequence<String>, upS: Long): Lmk? {
+        val want = setOf("MemAvailable", "MemFree", "Active(file)", "Inactive(file)", "Shmem", "SwapFree")
+        val v = HashMap<String, Long>()
+        for (l in lines) {
+            val k = l.substringBefore(':', "")
+            if (k !in want) continue
+            l.substringAfter(':').trim().split(SPACES).firstOrNull()?.toLongOrNull()?.let { v[k] = it }
+            if (v.size == want.size) break
+        }
+        val avail = v["MemAvailable"] ?: return null
+        val file = if (v["Active(file)"] == null && v["Inactive(file)"] == null) -1L else (v["Active(file)"] ?: 0L) + (v["Inactive(file)"] ?: 0L)
+        return Lmk(upS, avail, v["MemFree"] ?: -1L, file, v["Shmem"] ?: -1L, v["SwapFree"] ?: -1L)
+    }
+
+    /** the 5 s line's part: the lows since the last line (free, file cache, free swap) and shared memory now, MB:
+     *  "lmk fr 310 fc 1800 sh 120 sf 3100"; "" = no sample yet. Pure */
+    fun lmkPart(frLowKb: Long, fcLowKb: Long, shKb: Long, sfLowKb: Long): String {
+        if (frLowKb < 0) return ""
+        fun m(kb: Long) = if (kb < 0) "?" else mb(kb).toString()
+        return "lmk fr ${m(frLowKb)} fc ${m(fcLowKb)} sh ${m(shKb)} sf ${m(sfLowKb)}"
+    }
+
+    /**
+     * THE EXIT STAMP WITH THE LAST SECONDS (#56, 11-23), at most [SUMMARY_MAX] bytes: [head] (the 5 s line's [stateSummary], no free /
+     * low / caches: the mem.log lines carry those), then the newest second's killer numbers "| +3 fr 310 fc 1800 sh 120 sf 3100" (+3 =
+     * seconds after the head's line), then MemAvailable newest first, one a second, as many as fit: "| av 2615 2610 2577 ...". [ring]
+     * oldest first; empty = the head alone. Pure (the tests).
+     */
+    fun ringStamp(head: String, headUpS: Long, ring: List<Lmk>): String {
+        val last = ring.lastOrNull() ?: return head.take(SUMMARY_MAX)
+        fun m(kb: Long) = if (kb < 0) "?" else mb(kb).toString()
+        val now = "$head | +${(last.upS - headUpS).coerceAtLeast(0L)} fr ${m(last.freeKb)} fc ${m(last.fileKb)} sh ${m(last.shmemKb)} sf ${m(last.swapFreeKb)}"
+        if (now.length > SUMMARY_MAX) return now.take(SUMMARY_MAX).substringBeforeLast(' ')
+        val out = StringBuilder(now)
+        var any = false
+        for (s in ring.asReversed()) {
+            val add = (if (!any) " | av " else " ") + m(s.availKb)
+            if (out.length + add.length > SUMMARY_MAX) break
+            out.append(add); any = true
+        }
+        return out.toString()
+    }
+
+    // ---------------------------------------------------------------- #56 (11-23): DS Forever's memory by owner
+    /**
+     * WHO HOLDS DS FOREVER'S MEMORY (#56, 11-23: the only split was Android's java / native / graphics, and a 16 GB Thor's PSS grows
+     * ~1.5 MB a minute in native and graphics memory nothing counts): every [OWNERS_EVERY_MS] and at each relief, DS Forever's OWN
+     * memory map (/proc/self/smaps, never the game's) summed by owner - the allocator (scudo), the GPU driver (kgsl), dmabuf, the Java
+     * heap's spaces, each library and file by name - the top [OWNERS_TOP] in mem.log:
+     * "owners (pss+swap MB): scudo 180, kgsl 140, anon 60, dalvik-main 50, dmabuf 20, libfoo.so 12; rest 40; 3456 maps in 38 ms".
+     */
+    const val OWNERS_EVERY_MS = 5 * 60_000L
+    const val OWNERS_TOP = 6
+    @Volatile private var ownersAt = 0L
+
+    /** a mapping's name -> its owner (pure): anonymous names by their kind, devices by driver, files by their own name only */
+    fun ownerName(raw: String): String {
+        val n = raw.trim()
+        return when {
+            n.isEmpty() -> "anon"
+            n.startsWith("[anon:") -> {
+                val inner = n.removePrefix("[anon:").removeSuffix("]").trim()
+                if (inner.startsWith("dalvik-")) {
+                    val rest = inner.removePrefix("dalvik-")
+                    if (rest.startsWith("/")) "dalvik-art" else "dalvik-" + rest.split(' ', ':', '(').first()
+                } else inner.split(':', ' ', '(').first().ifEmpty { "anon" }
+            }
+            n.startsWith("[") -> n.removePrefix("[").substringBefore(']').substringBefore(':').ifEmpty { "anon" }
+            n.startsWith("/dev/kgsl") -> "kgsl"
+            n.startsWith("/dmabuf") || n.startsWith("dmabuf") -> "dmabuf"
+            n.startsWith("/dev/ashmem") -> "ashmem"
+            n.startsWith("/memfd:") -> "memfd:" + n.removePrefix("/memfd:").substringBefore(' ').substringBefore('/').take(24)
+            else -> {
+                // review 11-23: a file keeps its own name only when it is code or a font (libraries, the APK, the runtime's images);
+                // any other file is its kind alone ("*.dat"), so no data file's name (a character's store, say) can reach a line
+                val f = n.substringBefore(" (deleted)").substringAfterLast('/')
+                val ext = f.substringAfterLast('.', "").lowercase()
+                when {
+                    f.isEmpty() -> "file"
+                    ext in CODE_EXTS && f.length <= 40 && f.all { it.isLetterOrDigit() || it in "._+-" } -> f
+                    ext.length in 1..5 && ext.all { it.isLetterOrDigit() } -> "*.$ext"
+                    else -> "file"
+                }
+            }
+        }
+    }
+    /** the file kinds whose own name an owners line keeps ([ownerName]) */
+    private val CODE_EXTS = setOf("so", "apk", "jar", "dex", "odex", "vdex", "oat", "art", "ttf", "otf", "ttc")
+
+    /** /proc/self/smaps' lines -> "owners (pss+swap MB): a 180, b 140, ...; rest 40; 3456 maps" (the top [top] of at least 1 MB);
+     *  "" = no mapping read. Pure (the tests) */
+    fun owners(lines: Sequence<String>, top: Int = OWNERS_TOP): String {
+        val head = Regex("^[0-9a-f]+-[0-9a-f]+ ")
+        val kb = HashMap<String, Long>()
+        var cur: String? = null
+        var maps = 0
+        for (l in lines) {
+            if (head.containsMatchIn(l)) {
+                // "start-end perms offset dev inode   name": the name is everything after the 5th field (may hold spaces)
+                val f = l.split(SPACES, limit = 6)
+                cur = ownerName(f.getOrNull(5).orEmpty()); maps++
+                continue
+            }
+            val c = cur ?: continue
+            if (l.startsWith("Pss:") || l.startsWith("SwapPss:")) {
+                val v = l.substringAfter(':').trim().split(SPACES).firstOrNull()?.toLongOrNull() ?: continue
+                kb[c] = (kb[c] ?: 0L) + v
+            }
+        }
+        if (maps == 0) return ""
+        val sorted = kb.entries.sortedByDescending { it.value }
+        val shown = sorted.take(top).filter { it.value >= 1024 }
+        val rest = sorted.drop(shown.size).sumOf { it.value }
+        return "owners (pss+swap MB): " + shown.joinToString(", ") { "${it.key} ${mb(it.value)}" } + "; rest ${mb(rest)}; $maps maps"
+    }
+
+    /** this process's owners now (this watch's thread), the read timed: "" = unreadable */
+    private fun ownersNow(): String {
+        val t0 = SystemClock.uptimeMillis()
+        val o = runCatching { java.io.File("/proc/self/smaps").useLines { owners(it) } }.getOrDefault("")
+        return if (o.isEmpty()) "" else "$o in ${SystemClock.uptimeMillis() - t0} ms"
+    }
+    private fun ownersLine(why: String) {
+        ownersAt = SystemClock.uptimeMillis()
+        val o = ownersNow()
+        if (o.isEmpty()) return
+        val l = if (why.isEmpty()) o else "$o ($why)"
+        Log.i(TAG, l); keep(l)
+    }
+    /** an owners line ([owners]) */
+    fun isOwners(l: String): Boolean = l.startsWith("owners (")
 
     /**
      * THE SYSTEM'S OWN WARNINGS (onTrimMemory): logged at once with the level, and handed to what registered a trim ([onTrim]: the Map
@@ -236,8 +393,10 @@ object MemWatch {
                 h.post { runCatching {
                     val gc = collect(collectNow)
                     val purge = NativeHeap.purgeLine()
-                    val l = trimLine("relief ($why)", freed, listOf(gc, purge).filter { it.isNotEmpty() }.joinToString("; "), psiNow())
+                    val game = gameWalkNote()                                 // #24 (11-23): the game's exact memory at a relief only
+                    val l = trimLine("relief ($why)", freed, listOf(gc, purge, game).filter { it.isNotEmpty() }.joinToString("; "), psiNow())
                     Log.i(TAG, l); keep(l)
+                    ownersLine("relief")                                      // #56 (11-23): and who holds ours
                 } }
             }, delayMs.coerceAtLeast(0L))
         }
@@ -304,9 +463,11 @@ object MemWatch {
                 val gc = collect(true)
                 val purge = NativeHeap.purgeLine()
                 val after = pssMbNow()
-                val l = trimLine("relief ($why)", freed, listOf(gc, purge, pssNote(before, after)).filter { it.isNotEmpty() }.joinToString("; "), psiNow())
+                val game = gameWalkNote()                                     // #24 (11-23): the game's exact memory at a relief only
+                val l = trimLine("relief ($why)", freed, listOf(gc, purge, pssNote(before, after), game).filter { it.isNotEmpty() }.joinToString("; "), psiNow())
                 Log.i(TAG, l); keep(l)
                 runCatching { DiagLog.event("memory", l.take(600)) }
+                ownersLine("relief")                                          // #56 (11-23): and who holds ours
             } }
         }
     }
@@ -443,11 +604,12 @@ object MemWatch {
     internal fun gpuReset() { gpuDead = false; gpuAt = Long.MIN_VALUE / 2; gpuLast = null }
 
     /** the line's last part: "low 317 MB, jheap 133/512 MB, gpu 880 MB, trim running-low 12 s ago" (pure: the tests) */
-    fun extras(lowKb: Long, jUsed: Long, jMax: Long, gpu: Long?, trimLevel: Int, trimAgoMs: Long): String = buildList {
+    fun extras(lowKb: Long, jUsed: Long, jMax: Long, gpu: Long?, trimLevel: Int, trimAgoMs: Long, lmk: String = ""): String = buildList {
         if (lowKb >= 0) add("low ${mb(lowKb)} MB")
         add("jheap ${mbB(jUsed)}/${mbB(jMax)} MB")
         gpu?.let { add("gpu ${mbB(it)} MB") }
         if (trimLevel >= 0) add("trim ${trimName(trimLevel)} ${trimAgoMs / 1000} s ago")
+        if (lmk.isNotEmpty()) add(lmk)                                // #56 (11-23): [lmkPart]
     }.joinToString(", ")
 
     /** the history in its own file (the 8 GB test, 2026-11-08: the low-memory killer's thousands of log lines pushed WCMEM out of the
@@ -478,9 +640,14 @@ object MemWatch {
     fun withEvents(history: String, whenMs: Long, max: Int = BEFORE_LINES): List<String> {
         val all = linesUpTo(history, whenMs, Int.MAX_VALUE)
         val tail = all.takeLast(max)
-        val earlier = all.dropLast(max).filter { it.length > 15 && isEvent(it.substring(15)) }.takeLast(EARLIER_EVENTS)
-        return earlier + tail
+        val before = all.dropLast(max)
+        val events = before.indices.filter { before[it].length > 15 && isEvent(before[it].substring(15)) }.takeLast(EARLIER_EVENTS)
+        // #56 (11-23): and the earlier owners lines ([EARLIER_OWNERS]), so the record shows what grew since
+        val owners = before.indices.filter { before[it].length > 15 && isOwners(before[it].substring(15)) }.takeLast(EARLIER_OWNERS)
+        return (events + owners).sorted().map { before[it] } + tail
     }
+    /** #56 (11-23): the owners lines before the last [BEFORE_LINES] lines a record keeps, at most this many ([withEvents]) */
+    const val EARLIER_OWNERS = 3
     fun linesUpTo(history: String, whenMs: Long, max: Int = BEFORE_LINES): List<String> {
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = whenMs }
         val year = cal.get(java.util.Calendar.YEAR)
@@ -506,7 +673,7 @@ object MemWatch {
         if (stamped.length < 16) return null
         val time = stamped.substring(6, 14)
         val l = stamped.substring(15)
-        if (isEvent(l)) return "$time $l"
+        if (isEvent(l) || isOwners(l)) return "$time $l"
         if (!l.startsWith("pss ")) return null
         fun num(re: String) = Regex(re).find(l)?.groupValues?.get(1)
         val parts = l.split(" | ")
@@ -523,6 +690,8 @@ object MemWatch {
             num("low (\\d+) MB")?.let { append(" low ").append(it) }
             num("gpu (\\d+) MB")?.let { append(" gpu ").append(it) }
             num("psi some ([\\d.]+)")?.let { append(" psi ").append(it) }
+            num("vcap (\\d+)")?.let { append(" vcap ").append(it) }      // #56 (11-23): the launch's video memory cap
+            num("(lmk fr \\S+ fc \\S+ sh \\S+ sf \\S+)")?.let { append(" ").append(it.removeSuffix(",")) }   // ... and the killer's numbers
             if (caches.isNotEmpty()) append(" | ").append(caches.joinToString(" ") { "${it.first} ${it.second}" })
         }
     }
@@ -533,11 +702,13 @@ object MemWatch {
      * THE KEY LINES OF A KILLED RUN'S MEMORY (memory work #56, D5): of [lines] (mem.log's, oldest first, stamped) the last [samples]
      * samples and the last [events] trims and reliefs, each [shortLine], in time order. Pure (the tests).
      */
-    fun keyLines(lines: List<String>, samples: Int = 3, events: Int = 6): List<String> {
+    fun keyLines(lines: List<String>, samples: Int = 3, events: Int = 6, owners: Int = 2): List<String> {
         val idx = lines.indices.filter { shortLine(lines[it]) != null }
         val sampleIdx = idx.filter { lines[it].substring(15).startsWith("pss ") }.takeLast(samples)
         val eventIdx = idx.filter { isEvent(lines[it].substring(15)) }.takeLast(events)
-        return (sampleIdx + eventIdx).sorted().mapNotNull { shortLine(lines[it]) }
+        // #56 (11-23): the last [owners] owners lines (an earlier one and the newest: what grew)
+        val ownerIdx = idx.filter { isOwners(lines[it].substring(15)) }.takeLast(owners)
+        return (sampleIdx + eventIdx + ownerIdx).sorted().mapNotNull { shortLine(lines[it]) }
     }
 
     // ---------------------------------------------------------------- memory work #56 (D5): the exit record carries the memory
@@ -550,6 +721,9 @@ object MemWatch {
     const val SUMMARY_MAX = 128
     @Volatile private var am: android.app.ActivityManager? = null
     @Volatile private var summaryNow: String = ""
+    /** #56 (11-23): the last 5 s line's stamp head ([stateSummary] without free / low / caches) and its uptime second */
+    @Volatile private var summaryHead: String = ""
+    @Volatile private var summaryHeadUpS: Long = 0L
     @Volatile private var lastFreeMb = -1L
     @Volatile private var summaryDead = false
     private fun stampExit() {
@@ -612,11 +786,21 @@ object MemWatch {
         val low = lowKb; lowKb = -1L                                  // the low since the last line, then the next window
         val dev = device() + if (l8) gameAge(gameSample?.second, SystemClock.uptimeMillis()) else ""
         runCatching {
-            summaryNow = stateSummary(System.currentTimeMillis() / 1000, mb(pss), mb(stat("summary.java-heap")), mb(stat("summary.native-heap")),
-                mb(stat("summary.graphics")), gameMb, lastFreeMb, if (low >= 0) mb(low) else -1L, gpuBytes()?.let { mbB(it) } ?: -1L, sized, swp)
+            val epoch = System.currentTimeMillis() / 1000
+            val gpuMb = gpuBytes()?.let { mbB(it) } ?: -1L
+            // #56 (11-23): the stamp's head (no free / low / caches: the 1 s sampler puts the last seconds' numbers after it, [ringStamp])
+            summaryHead = stateSummary(epoch, mb(pss), mb(stat("summary.java-heap")), mb(stat("summary.native-heap")), mb(stat("summary.graphics")),
+                gameMb, -1L, -1L, gpuMb, emptyList(), swp)
+            summaryHeadUpS = SystemClock.uptimeMillis() / 1000
+            val ringNow = synchronized(ring) { ring.toList() }
+            summaryNow = if (ringNow.isEmpty()) stateSummary(epoch, mb(pss), mb(stat("summary.java-heap")), mb(stat("summary.native-heap")),
+                mb(stat("summary.graphics")), gameMb, lastFreeMb, if (low >= 0) mb(low) else -1L, gpuMb, sized, swp)
+            else ringStamp(summaryHead, summaryHeadUpS, ringNow)
         }
+        // #56 (11-23): the killer's numbers since the last line, then the next window
+        val lmk = lmkPart(frLowKb, fcLowKb, shNowKb, sfLowKb); frLowKb = -1L; fcLowKb = -1L; sfLowKb = -1L
         val more = extras(low, rt.totalMemory() - rt.freeMemory(), rt.maxMemory(), gpuBytes(), trimLevel,
-            if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L)
+            if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L, lmk)
         val bm = beatMax; beatMax = 0L                                // issue #230: the main thread's worst beat and touch since the last line
         val lag = listOf(beatNote(bm), runCatching { TouchLag.take() }.getOrDefault("")).filter { it.isNotEmpty() }.joinToString(", ")
         if (lag.isNotEmpty()) return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more, $lag"
@@ -640,33 +824,69 @@ object MemWatch {
      */
     @Volatile var gameSample: Pair<Long, Long>? = null; private set
     private const val GAME_EVERY_MS = 30_000L
+    /**
+     * #24 (11-23, "something is eating up performance"): the 30 s read of the game's memory walked every page table of a 4 GB process
+     * (smaps_rollup holds that process's memory-map lock while it walks, and Wine / box64 map and unmap all the time). Now the 30 s
+     * trend is the kernel's own counters from the status file the walk already read (RssAnon + RssShmem: no walk) - "game 3900 MB
+     * (13, rss)" - and the exact walk ("game 2850 MB (13, pss 42 ms)", timed) runs only while this says so (the host: the add-ons are
+     * silent, so the add-ons' silence check reads the same PSS as before, AddonSilence.WorldByMemory), on Light 8 (its game age counts
+     * from the walk, as before), and at each relief ([gameWalkNote]). Only a walk's number is a [gameSample]. Default (no host): walk.
+     */
+    @Volatile var gameWalkWanted: () -> Boolean = { true }
+    @Volatile private var gameHow = ""
     private fun device(): String {
         val now = android.os.SystemClock.uptimeMillis()
-        if (now - gameAt >= GAME_EVERY_MS || gameAt == 0L) { gameAt = now; runCatching { gameNow(); gameSample = gameMb to now } }
+        if (now - gameAt >= GAME_EVERY_MS || gameAt == 0L) {
+            gameAt = now
+            val walk = light8() || runCatching { gameWalkWanted() }.getOrDefault(true)
+            runCatching { gameNow(walk); if (walk) gameSample = gameMb to now }
+        }
         val mem = runCatching { java.io.File("/proc/meminfo").readLines() }.getOrDefault(emptyList())
         fun kb(k: String) = mem.firstOrNull { it.startsWith("$k:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()
         val avail = kb("MemAvailable"); val swapT = kb("SwapTotal"); val swapF = kb("SwapFree")
-        val game = if (gameMb >= 0) "game $gameMb MB ($gameN)" else "game ?"
+        val game = if (gameMb >= 0) "game $gameMb MB ($gameN$gameHow)" else "game ?"
         lastFreeMb = avail?.let { mb(it) } ?: -1L
         val free = avail?.let { "free ${mb(it)} MB" } ?: "free ?"
         val swap = if (swapT != null && swapF != null) "swap ${mb(swapF)}/${mb(swapT)} MB" else "swap ?"
         return "$game, $free, $swap"
     }
-    private fun gameNow() {
+    /** the game's memory now ([walk] = each process's smaps_rollup PSS, else the status file's counters, [statusKb]) */
+    private fun gameNow(walk: Boolean) {
         val me = android.os.Process.myPid(); val uid = android.os.Process.myUid()
         var kb = 0L; var n = 0
+        val t0 = SystemClock.uptimeMillis()
         for (d in java.io.File("/proc").listFiles() ?: emptyArray()) {
             val pid = d.name.toIntOrNull() ?: continue
             if (pid == me) continue
             val st = runCatching { java.io.File(d, "status").readLines() }.getOrNull() ?: continue
             val u = st.firstOrNull { it.startsWith("Uid:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toIntOrNull()
             if (u != uid) continue
-            val pss = runCatching { java.io.File(d, "smaps_rollup").readLines() }.getOrNull()
-                ?.firstOrNull { it.startsWith("Pss:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull() ?: continue
-            kb += pss; n++
+            val v = if (walk) runCatching { java.io.File(d, "smaps_rollup").readLines() }.getOrNull()
+                ?.firstOrNull { it.startsWith("Pss:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()
+            else statusKb(st)
+            kb += v ?: continue; n++
         }
         gameMb = mb(kb); gameN = n
+        gameHow = if (walk) ", pss ${SystemClock.uptimeMillis() - t0} ms" else ", rss"
     }
+
+    /** a process's resident memory from its status file's counters, no page walk: RssAnon + RssShmem (kB); null = neither. Pure */
+    fun statusKb(status: List<String>): Long? {
+        fun kb(k: String) = status.firstOrNull { it.startsWith("$k:") }?.substringAfter(':')?.trim()?.split(SPACES)?.firstOrNull()?.toLongOrNull()
+        val anon = kb("RssAnon"); val shm = kb("RssShmem")
+        if (anon == null && shm == null) return null
+        return (anon ?: 0L) + (shm ?: 0L)
+    }
+
+    /** a relief's note: the game's exact memory (the walk, timed; a [gameSample]): "game pss 3964 MB (13, walk 52 ms)", "" = no game */
+    private fun gameWalkNote(): String = runCatching {
+        val now = SystemClock.uptimeMillis()
+        val t0 = now
+        gameNow(true)
+        if (gameN == 0) return@runCatching ""
+        gameAt = now; gameSample = gameMb to now
+        "game pss $gameMb MB ($gameN, walk ${SystemClock.uptimeMillis() - t0} ms)"
+    }.getOrDefault("")
 }
 
 /**

@@ -5,7 +5,8 @@ import { classify, buildComment, ramTier, crashingFrames, TRACKERS, TYPED_MAX } 
 import { handle, safe, validate, deviceKey, LIMITS } from "../src/worker.js";
 
 const DIAG = ["=== App ===", "DS Forever 1.0.33 (1482), package app.dsforever.companion", "=== Device ===",
-  "RAM: 3248 MB free of 7191 MB, low at 216 MB", "low-memory graphics on",
+  "RAM: 3248 MB free of 7191 MB, low at 216 MB",
+  "Thor model: AYN Thor (8 GB); lighter mode true; low-memory graphics on",
   "Exits Android recorded (newest first): 2",
   "  2026-11-17 13:52:42 (12 min ago): LOW_MEMORY (status 0, importance 100, process main, pss 1256 MB): lmk",
   "  2026-11-16 10:00:00 (1 days ago): USER_REQUESTED (status 0, importance 400, process main, pss 10 MB)",
@@ -207,4 +208,38 @@ test("memory work #56 (D5): a low-memory comment quotes the killed run's memory 
   // an older app's diagnostics: no memory lines, the comment as before
   const old = buildComment(validate(report(LOWMEM)).report, classify(validate(report(LOWMEM)).report), safe, 0);
   assert.ok(!old.includes("Mem "));
+});
+
+const NL = String.fromCharCode(10);
+test("11-23: the low-memory comment carries the Low-memory graphics line, the memory owners, and a freeze comment 20 lines", () => {
+  // the app's real line (StartupDiag.interiors): the old /^low-memory graphics / pattern never matched it
+  const r = validate(report(LOWMEM)).report;
+  const c = buildComment(r, classify(r), safe, 0);
+  assert.ok(c.includes("Thor model: AYN Thor (8 GB); lighter mode true; low-memory graphics on"), c);
+  const owners = ["Mem owners: 18:45:00 owners (pss+swap MB): scudo 180, kgsl 140, anon 60; rest 40; 3456 maps in 38 ms",
+    "Mem owners: 18:50:00 owners (pss+swap MB): scudo 260, kgsl 150, anon 61; rest 41; 3480 maps in 40 ms"];
+  const mem = ["Mem stamp: dsf 1763600000 pss 390 j 31 n 210 gx 40 game 4120 gpu 880 | +3 fr 310 fc 1800 sh 120 sf 3100 | av 2615 2610",
+    ...Array.from({ length: 10 }, (_, i) => `Mem event: 18:4${i}:10 relief (world): let go voice ${i} MB`), ...owners];
+  const r2 = validate(report(LOWMEM, { diag: DIAG + NL + mem.join(NL) })).report;
+  const c2 = buildComment(r2, classify(r2), safe, 0);
+  assert.ok(c2.includes(mem[0]), "the stamp");
+  // 12 memory lines at most: the stamp, the first 10 events and the first owners line fit; the second does not
+  assert.ok(c2.includes(owners[0]));
+  assert.ok(!c2.includes(owners[1]));
+  // a freeze: 20 key lines, the garbage collector's thread among them
+  const frames = Array.from({ length: 22 }, (_, i) => `  at java.lang.Runtime${i}.x(R.java:${i})`);
+  const anr = ["log tail", "===== crashes/anr-2026-11-23.txt =====", "Reason: anr (6)", "Description: Input dispatching timed out", "---------- Trace ----------",
+    '"main" prio=5 tid=1 Waiting', ...frames.slice(0, 5), "", '"HeapTaskDaemon" daemon prio=5 tid=7 Waiting', "  at dalvik.system.VMRuntime.runHeapTasks(Native method)",
+    "", '"WCMEM" prio=5 tid=12 Native', ...frames.slice(5)].join(NL);
+  const r3 = validate(report(AUTO + "DS Forever stopped responding. The game was running.", { logs: anr })).report;
+  const t = classify(r3);
+  assert.equal(t.id, "anr");
+  const keys = t.keys(r3);
+  assert.equal(keys.length, 20);
+  assert.ok(keys.some((l) => l.startsWith('"HeapTaskDaemon"')));
+  // review 11-23: every thread's name line, so a later thread's frames never read as the main thread's
+  assert.ok(keys.some((l) => l.startsWith('"WCMEM" prio=5 tid=12')), keys.join(NL));
+  assert.ok(keys.indexOf('"WCMEM" prio=5 tid=12 Native') < keys.findIndex((l) => l.includes("Runtime5.x")));
+  const c3 = buildComment(r3, t, safe, 0);
+  assert.ok(c3.includes("Runtime14.x"), "past the old 12-line cut");
 });

@@ -218,6 +218,7 @@ object NativeLogin {
         browserMode = browser; browserHold = browser; holdEndSec = 0L
         consumed = false; firstReadAt = 0L; pastLogin = false; pastLoginAt = 0L; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
+        runCatching { NetStall.runStarts() }               // issues 582 / 560 (review 11-23): the stall count is this run's
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
         downloading = false; downloadingAfter = false; holdFrom = 0L; capHeld = false
         downloadAtRead = false; lastHeavyAt = 0L; heavyNoted = false; readMs = 0L
@@ -360,6 +361,8 @@ object NativeLogin {
             // still while the device sleeps
             afterReadDue()
             worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes)
+            // issues 582 / 560 (11-23): one line per stall in the world (how long, what was sent, the Wi-Fi, the game's latency)
+            runCatching { NetStall.second(appCtx, rxBytes, txBytes, reachedWorld && !outOfWorld && !GameLife.awayNow) }
             val counts = PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)
             if (counts) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
             // issue #215: past the login screen and still downloading before the world: the minute's line and the bottom screen's state
@@ -547,6 +550,7 @@ object NativeLogin {
 
     /** the game screen went: the file goes and the watching stops */
     fun end(ctx: Context? = null) {
+        runCatching { NetStall.runEnds() }                 // issues 582 / 560: a stall under way is said now
         outOfWorld = false
         browserStopped("the game screen went")
         if (downloading || downloadingAfter) { downloading = false; downloadingAfter = false; changed() }
