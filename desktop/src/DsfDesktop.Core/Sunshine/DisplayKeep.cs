@@ -7,9 +7,9 @@ namespace DsfDesktop.Sunshine
     /// <summary>
     /// THE PC'S SCREEN MODE PUT BACK AFTER A STREAM (the user, 2026-11-18: "the PC resolution should also be restored after streaming is
     /// done"). What changes it today: "Match PC screen to stream" (AppSettings.MatchStreamResolution, stood down only while Apollo streams) writes our
-    /// Sunshine's display-device options (SunshineConfig: dd_configuration_option = ensure_active, dd_resolution_option and
-    /// dd_refresh_rate_option = auto, dd_config_revert_on_disconnect = enabled), so Sunshine itself sets the captured monitor to the
-    /// Thor's resolution and rate as a stream starts and reverts it when the client goes. Sunshine keeps that revert in its own state
+    /// Sunshine's display-device options (SunshineConfig: dd_configuration_option = ensure_active, dd_resolution_option = auto,
+    /// dd_refresh_rate_option = disabled since 2026-11-23, dd_config_revert_on_disconnect = enabled), so Sunshine itself sets the captured
+    /// monitor to the Thor's resolution (its own rate kept) as a stream starts and reverts it when the client goes. Sunshine keeps that revert in its own state
     /// file and retries it at its next start; this is the net under it, for a revert that didn't happen (Sunshine killed with Desktop,
     /// its revert refused, Desktop gone before Sunshine came back):
     ///  - while no stream runs, the captured monitor's mode (size, rate, place) is watched; the one that has held for

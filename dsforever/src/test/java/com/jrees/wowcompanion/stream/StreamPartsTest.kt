@@ -188,7 +188,7 @@ class StreamPartsTest {
         assertEquals(0x0001, hevc.copy(codec = StreamQuality.Codec.H264).videoFormats(true, true))
         assertEquals(120, StreamQuality.step(StreamQuality.FPS, 60, 1))
         assertEquals("no 120 here: 60 wraps to 30", 30, StreamQuality.step(StreamQuality.offeredFps(false), 60, 1))
-        assertEquals(50_000, StreamQuality.step(StreamQuality.BITRATES_KBPS, 5_000, -1))
+        assertEquals(150_000, StreamQuality.step(StreamQuality.BITRATES_KBPS, 5_000, -1))
     }
 
     // ---------------------------------------------------------------- finding the PC

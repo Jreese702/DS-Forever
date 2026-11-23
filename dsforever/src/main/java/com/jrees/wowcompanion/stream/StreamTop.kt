@@ -69,6 +69,25 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun playable(q: StreamQuality = quality) = StreamQuality.forDevice(q, q.fps != 120 || can120(q))
     /** the running stream's frame rate (the refresh it asked for) */
     private var streamFps = 0
+    /** stream smoothness (StreamSmooth.kt): the Wi-Fi low-latency lock, held only from a stream's start to its end */
+    private val wifiLock by lazy { StreamWifiLock(activity) }
+    /** the PC search (mDNS) is stopped for the running stream ("discovery: paused"); started again when it ends */
+    private var discoveryPaused = false
+    /** the stats line's last reading (null = not streaming) and the running stream's RFI words */
+    private var statsLast: StatsSnap? = null
+    @Volatile private var smoothLabel = ""
+    private val statsTick = object : Runnable {
+        override fun run() {
+            val v = liveVideo ?: return
+            val a = statsLast ?: return
+            val b = v.snap(android.os.SystemClock.elapsedRealtime())
+            val rtt = try { if (MoonBridge.loaded) MoonBridge.getEstimatedRttInfo() else -1L } catch (_: Throwable) { -1L }
+            val (link, rssi) = StreamStats.wifiLink(activity)
+            Log.i(TAG, StreamStats.line(a, b, rtt, link, rssi, smoothLabel + if (wifiLock.held) ", wifi lock" else ""))
+            statsLast = b
+            main.postDelayed(this, StreamStats.EVERY_MS)
+        }
+    }
 
     private lateinit var surface: SurfaceView
     /** black round the zoomed window; a touch on the black goes nowhere */
@@ -618,11 +637,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         streamFps = q.fps
         worker.execute {
             val id = store.identity()
+            // stream smoothness: reference-frame invalidation for HEVC / AV1 on a decoder that qualifies, unless it tripped on this build
+            val offWhy = RfiStore.offWhy(activity)
+            val caps = RfiPolicy.capabilities(q.codec, offWhy == null, VideoDecoder.rfiOk("video/hevc"), VideoDecoder.rfiOk("video/av01"))
+            val label = RfiPolicy.label(caps, offWhy ?: RfiPolicy.offReason(q.codec))
             main.post {
                 if (session != null || !surfaceReady || !isOpen) return@post
                 val video = VideoDecoder(surface.holder.surface).also { liveVideo = it }
+                smoothLabel = label
                 session = StreamSession(h, id, q, video, AudioOut(q.audioOnThor), events, mode = mode,
-                    httpPort = { host?.httpPort?.takeIf { it > 0 } ?: h.httpPort }).also { it.start() }
+                    httpPort = { host?.httpPort?.takeIf { it > 0 } ?: h.httpPort }, videoCapabilities = caps, capsLabel = label).also { it.start() }
             }
         }
     }
@@ -639,6 +663,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         heal.reset()
         main.removeCallbacks(healTimeout)
         if (streamFps >= 100) StreamRate.request(activity, surface.holder.surface, streamFps)
+        smoothStart()
         padSent = 0
         show(Screen.STREAMING)
         val k = StreamKeys(MoonBridge.INPUT, w, h).also { keys = it }
@@ -665,6 +690,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         val wasStreaming = screen == Screen.STREAMING
         val mode = session?.mode
         val failedStage = session?.failedStage.orEmpty()
+        // stream smoothness, the safe default: an RFI stream that may have gone wrong because of it turns RFI off on this Thor
+        session?.let { s -> liveVideo?.let { v ->
+            RfiPolicy.trips(s.videoCapabilities, error, v.decoderErrors, v.framesOut, v.codecMime)?.let { why -> worker.execute { RfiStore.trip(activity, why) } }
+        } }
         teardown()
         Log.i(TAG, "stream ended ($error, paired ${!notPaired}): $message; " + PadNote.sent(padSent, padDriver))
         if (!isOpen) return
@@ -836,6 +865,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         seen = false
         if (streamFps >= 100) StreamRate.release(activity, surface.holder.surface)
         streamFps = 0
+        smoothStop()
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
         SetupBridge.endSession = null; SetupBridge.endStream = null
@@ -848,6 +878,29 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
         keys = null
         DsForeverScreen.current?.detachGame()
+    }
+
+    /**
+     * STREAM SMOOTHNESS at a stream's start (StreamSmooth.kt; the user's picks 2026-11-23): the Wi-Fi low-latency lock, the PC search
+     * stopped (Moonlight stops polling during a stream), the stats line every 5 s
+     */
+    private fun smoothStart() {
+        Log.i(TAG, wifiLock.acquire())
+        if (discovery != null && !discoveryPaused) { discovery?.stop(); discoveryPaused = true; Log.i(TAG, "discovery: paused for the stream") }
+        main.removeCallbacks(statsTick)
+        statsLast = liveVideo?.snap(android.os.SystemClock.elapsedRealtime())
+        main.postDelayed(statsTick, StreamStats.EVERY_MS)
+    }
+
+    /** its end (every end: stop, Home, a pause, the screen closing, a lost connection): the lock let go, the search back while open */
+    private fun smoothStop() {
+        main.removeCallbacks(statsTick)
+        statsLast = null
+        wifiLock.release("the stream ended").takeIf { it.isNotEmpty() }?.let { Log.i(TAG, it) }
+        if (discoveryPaused) {
+            discoveryPaused = false
+            if (isOpen) { discovery?.start(); Log.i(TAG, "discovery: on again") }
+        }
     }
 
     // ---------------------------------------------------------------- pairing

@@ -42,7 +42,9 @@ namespace DsfDesktop.Tests
             var c = Conf(MatchScreen.Write(true, streaming));
             A.True(c.Contains("dd_configuration_option = ensure_active"), c);
             A.True(c.Contains("dd_resolution_option = auto"), "the Thor's resolution");
-            A.True(c.Contains("dd_refresh_rate_option = auto"), "the Thor's rate");
+            // stream smoothness (the user's pick 2026-11-23, "Keep the higher rate"): the monitor keeps its own refresh rate
+            A.True(c.Contains("dd_refresh_rate_option = disabled"), "the monitor's own rate kept");
+            A.False(c.Contains("dd_refresh_rate_option = auto"), "never the Thor's rate (a 120 Hz monitor went to 60)");
             A.True(c.Contains("dd_config_revert_on_disconnect = enabled"), "back when the Thor goes");
             A.True(c.Contains("dd_config_revert_delay = 3000"));
             A.True(c.Contains("dd_hdr_option = disabled"), "HDR left as the player has it");

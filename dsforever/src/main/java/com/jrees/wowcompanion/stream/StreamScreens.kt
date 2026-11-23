@@ -304,8 +304,10 @@ internal class QualityView(ctx: Context, private var q: StreamQuality, private v
         val v = listOf("Video: ${q.codec.label}", "Resolution: ${q.height}p", "Frame rate: ${q.fps} fps", "Bit rate: ${q.bitrateKbps / 1000} Mbps",
             "Sound: ${if (q.audioOnThor) "on the Thor" else "on the PC"}")
         rows.forEachIndexed { i, t -> t.text = (if (i == row) "‹  " else "") + v[i] + (if (i == row) "  ›" else ""); t.setTextColor(if (i == row) StreamLook.GOLD else StreamLook.INK) }
-        note120.text = if (q.fps == 120) StreamQuality.NOTE_120 else ""
-        note120.visibility = if (q.fps == 120) View.VISIBLE else View.GONE
+        // the 120 fps note and the Wi-Fi one above 50 Mbps (the user's pick 2026-11-23), each its own words for Tr
+        val notes = listOfNotNull(StreamQuality.NOTE_120.takeIf { q.fps == 120 }, StreamQuality.wifiNote(q)).map { com.jrees.wowcompanion.Tr.t(it) }
+        note120.text = notes.joinToString("  ·  ")
+        note120.visibility = if (notes.isNotEmpty()) View.VISIBLE else View.GONE
     }
 
     fun pad(keyCode: Int): Boolean {

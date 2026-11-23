@@ -100,13 +100,20 @@ class PerformanceTileModelTest {
         // the bit rate's ends; 120 offered; a change waiting; a test running
         val low = s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 5_000)))
         assertEquals(setOf(0), M.lines(M.STREAM, low)[3].off)
-        val high = s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 50_000, fps = 120), listOf(30, 60, 120), restarts = true,
+        // the top step is 150 Mbps now (the user's pick 2026-11-23); above 50 the Wi-Fi note is in the status line
+        val mid = M.lines(M.STREAM, s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 50_000))))
+        assertTrue("50 Mbps is no end any more", mid[3].off.isEmpty())
+        assertEquals(emptyList<String>(), M.statusParts(M.STREAM, s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 50_000)))))
+        assertEquals(listOf(com.jrees.wowcompanion.stream.StreamQuality.NOTE_WIFI),
+            M.statusParts(M.STREAM, s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 60_000)))))
+        val high = s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 150_000, fps = 120), listOf(30, 60, 120), restarts = true,
             test = com.jrees.wowcompanion.StreamTest(emptyList(), running = true)))
         val hl = M.lines(M.STREAM, high)
         assertEquals(setOf(1), hl[3].off)
         assertEquals(listOf("30 fps", "60 fps", "120 fps"), hl[2].words); assertEquals(2, hl[2].chosen)
         assertEquals(setOf(1), hl[5].off)
-        assertEquals(listOf(com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, M.RESTARTS, M.TESTING), M.statusParts(M.STREAM, high))
+        assertEquals(listOf(com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, com.jrees.wowcompanion.stream.StreamQuality.NOTE_WIFI, M.RESTARTS, M.TESTING),
+            M.statusParts(M.STREAM, high))
         // the test's list: its rows, then the reason and the fix
         val t = com.jrees.wowcompanion.StreamTest(listOf(com.jrees.wowcompanion.StreamTest.Row("PC found", "", com.jrees.wowcompanion.StreamTest.Mark.PASS),
             com.jrees.wowcompanion.StreamTest.Row("Paired", "no", com.jrees.wowcompanion.StreamTest.Mark.FAIL)), "no", "Pair again")
