@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m187"               -- bump on every change; m187 THE ROUTER FOLLOWS THE GAME'S STANCE / POSSESS BAR (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's question: a WoW setting for LT + RT): the game's Gamepad settings Stance Bar / Possess Bar move that bar to the LT / RT / LT + RT layer at once, and the router kept its last wiring until a form change or a fight's end - now GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED / GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED and CVAR_UPDATE for GamepadStanceBarOverride / GamepadPossessBarOverride / GamepadUseCompactActionBar wire every routed button again (R.rewireAll: out of combat; in a fight at PLAYER_REGEN_ENABLED; read only, nothing written), and each routed press's facecast says its layer (lay: bare / lt / rt / ltrt), the bar it clicked (bar: page<N> / stance / possess / override / ours / room / none) and that button's slot (OV.pressAt; the app's PressLog); (feat/fight-castbar's follow-up may take m187 too: the integration renumbers); m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m188"               -- bump on every change; m188 THE LT / RT MACRO FIXES (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's picks: "Re-read the controller", "Say what was pressed", "Show what's on top", and "In combat wins" - the fight order is kept): (1) GAME_PAD_CONNECTED / GAME_PAD_DISCONNECTED / GAME_PAD_CONFIGS_CHANGED wire every routed button again and GAME_PAD_ACTIVE_CHANGED does when the triggers' button numbers differ from the ones wired (R.padEvent, R.trWired; Party mode's pad too; out of combat, a fight waits for PLAYER_REGEN_ENABLED; read only); (2) each routed key-down's facecast also says the two triggers as the snippet read them (tr: "L1R0", "-" = no button number, "none" = no controller state), the press's way (path: slotfight / slotmacro / native / command / room / none) and om (one of ours ran over the player's own macro on that slot); a slotfight names its bar now (not "ours"); (3) the padmap's combat and command views carry um (the slot holds the player's own macro under our In combat entry / command: Home and the Controller room mark it); m187 THE ROUTER FOLLOWS THE GAME'S STANCE / POSSESS BAR (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's question: a WoW setting for LT + RT): the game's Gamepad settings Stance Bar / Possess Bar move that bar to the LT / RT / LT + RT layer at once, and the router kept its last wiring until a form change or a fight's end - now GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED / GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED and CVAR_UPDATE for GamepadStanceBarOverride / GamepadPossessBarOverride / GamepadUseCompactActionBar wire every routed button again (R.rewireAll: out of combat; in a fight at PLAYER_REGEN_ENABLED; read only, nothing written), and each routed press's facecast says its layer (lay: bare / lt / rt / ltrt), the bar it clicked (bar: page<N> / stance / possess / override / ours / room / none) and that button's slot (OV.pressAt; the app's PressLog); (feat/fight-castbar's follow-up may take m187 too: the integration renumbers); m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -1095,13 +1095,19 @@ function OV.view(set, pos, s)
     if base.kind == "spell" then o = { n = base.n, id = base.id, i = base.i }
     elseif base.kind == "item" then o = { n = base.n, id = base.id, i = base.i, item = true }
     elseif base.kind ~= "none" then o = { n = base.n or base.key, i = base.i } end
-    return { kind = "combat", s = s, c = c, o = o, ov = true, base = base.kind, key = base.key, sa = base.sa }
+    -- m188 SHOW WHAT'S ON TOP (the user's picks 2026-11-23: "Show what's on top"; "In combat wins" - the order stays): `um` = the slot
+    -- holds the player's OWN macro under this entry (the router casts the In combat entry there in fights, the macro otherwise)
+    return { kind = "combat", s = s, c = c, o = o, ov = true, base = base.kind, key = base.key, sa = base.sa,
+             um = (base.kind == "macro" or base.um) and true or nil }
 end
 cmdSlot = function(s)
     local e = OV.at(s)
     if not e then return nil end
     local c = OV.byKey(e.k)
-    return { kind = "command", key = c.key, n = commandName(c), i = c.icon, b = c.body, s = s, ov = true }
+    -- m188: `um` = one of our commands sits over the player's own macro on this slot (the router runs the command, in and out of fights)
+    local under = readSlot(s)
+    return { kind = "command", key = c.key, n = commandName(c), i = c.icon, b = c.body, s = s, ov = true,
+             um = (under and under.kind == "macro") and true or nil }
 end
 -- the positions whose bare key the router owns for the overlay (any page / set): pos -> true
 -- the player's own spell / item / mount put on a slot takes the overlay command off it (it is what the button does now)
@@ -1401,13 +1407,17 @@ local ANCHORS = { top = "TopCenteredAnchor", left = "LeftCenteredAnchor", right 
 local PRE = [=[
     if down then
         local lt, rt = false, false
+        local trs = "none"                                          -- m188: the two triggers as read ("none" = no controller state)
         local st = GetGamePadState and GetGamePadState()
         local bt = st and st.buttons
         if bt then
             local li, ri = self:GetAttribute("wc-lt"), self:GetAttribute("wc-rt")
             lt = (li and bt[li]) and true or false
             rt = (ri and bt[ri]) and true or false
+            -- m188: 1 held, 0 not, "-" no button number for it (the trigger cannot be read: the press is the bare one)
+            trs = "L" .. (li and (lt and "1" or "0") or "-") .. "R" .. (ri and (rt and "1" or "0") or "-")
         end
+        self:SetAttribute("wc-tr", trs)
         local anchor = "top"
         if lt and rt then anchor = "bottom" elseif lt then anchor = "left" elseif rt then anchor = "right" end
         local n = self:GetAttribute("wc-n-" .. anchor) or 0
@@ -1779,6 +1789,8 @@ local function padIndex(name)
     v = ok and tonumber(v) or nil
     return (v and v >= 0) and math.floor(v) + 1 or nil
 end
+-- m188: the two triggers' button numbers now, as one plain word ("11/12"; "nil" for one the game has no number for)
+R.trNow = function() return tostring(padIndex("PADLTRIGGER")) .. "/" .. tostring(padIndex("PADRTRIGGER")) end
 -- wire one face button to the router (out of combat): the bars' buttons for its position, the triggers' indexes, the snippet, the driver
 -- Forever's buttons for one bar position (1-4 the D-pad, 5-8 the faces), per anchor, plus the triggers' indexes and the key's name
 local function routerWire(b, pos, key)
@@ -1813,6 +1825,7 @@ local function routerWire(b, pos, key)
     if R.hdr then pcall(SecureHandlerSetFrameRef, b, "wc-hdr", R.hdr) end          -- m26: the slots' macro texts
     b:SetAttribute("wc-lt", padIndex("PADLTRIGGER"))
     b:SetAttribute("wc-rt", padIndex("PADRTRIGGER"))
+    R.trWired = R.trNow()                                             -- m188: the button numbers wired (a controller change compares)
     b:SetAttribute("wc-key", key)                                     -- the key's name: room mode sends it (Interact's contract)
 end
 -- m187 THE PRESS LOG'S WHERE (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid
@@ -1829,14 +1842,34 @@ OV.pressAt = function(b)
     local bar
     if not bi then bar = "room"
     elseif kind == "none" then bar = "none"
-    elseif kind ~= "native" and kind ~= "slotmacro" then bar = "ours"
+    elseif kind ~= "native" and kind ~= "slotmacro" and kind ~= "slotfight" then bar = "ours"      -- m188: a slotfight read that bar's slot
     else bar = e and e.k or "page" end
     if bar == "page" then
         local pg = TN(function() return _G.GamepadMainActionBarFrame.PageUnit:GetCurrentPage() end)
         bar = "page" .. tostring(pg and pg > 0 and math.floor(pg) or 1)
     end
     local slot = e and TN(function() local f = _G[e.n]; return f and (tonumber(f.action) or f:GetID()) end) or nil
-    return OV.LAYW[lay], bar, (slot and slot > 0) and math.floor(slot) or nil
+    slot = (slot and slot > 0) and math.floor(slot) or nil
+    -- m188 (the tester's LT / RT + face report, the user's picks 2026-11-23 "Say what was pressed"): the two triggers as the snippet read
+    -- them (OV.trWord), which way the press went (OV.pathOf) and whether one of ours ran over the player's own macro on that slot
+    local path = OV.pathOf(kind, bi ~= nil, slot)
+    local om = (path == "slotfight" or path == "command") and slot ~= nil and readSlot(slot).kind == "macro" or nil
+    return OV.LAYW[lay], bar, slot, OV.trWord(TS(function() return b:GetAttribute("wc-tr") end)), path, om
+end
+-- m188: the snippet's trigger word ("L1R0": held / not / "-" no button number; "none": no controller state), only those shapes
+OV.trWord = function(s)
+    if s == "none" then return s end
+    return type(s) == "string" and s:match("^L[01%-]R[01%-]$") and s or nil
+end
+-- m188: the press's way - "slotfight" (an In combat entry over the slot: it wins in fights, the user's ruling 2026-11-23 "In combat
+-- wins"), "slotmacro" (the slot's own macro text), "native" (the game's own button), "command" (one of DS Forever's own: an overlay
+-- command's text on the slot, or our own action), "room" (a room / Party mode had it), "none"
+OV.pathOf = function(kind, onBar, slot)
+    if not onBar then return "room" end
+    if kind == "none" or kind == nil then return "none" end
+    if kind == "slotfight" or kind == "native" then return kind end
+    if kind == "slotmacro" then return (slot and OV.at and OV.at(slot)) and "command" or "slotmacro" end
+    return "command"
 end
 local function routerKey(pos)
     local ctx = bindCtx()
@@ -1914,13 +1947,13 @@ local function routerMake(pos, name, role, why)
         b:HookScript("PostClick", function(_, _, down)
             if why then pcall(routerAfterClick, why) end
             pcall(function()
-                local lay, bar, slot = nil, nil, nil
-                if down then lay, bar, slot = OV.pressAt(b) end                 -- m187: the layer, the bar, the slot (PressLog)
+                local lay, bar, slot, tr, path, om = nil, nil, nil, nil, nil, nil
+                if down then lay, bar, slot, tr, path, om = OV.pressAt(b) end   -- m187: the layer, the bar, the slot; m188: tr / path / om
                 WC.send(WC.encode({ type = "facecast", v = PV, pos = pos, down = down and true or nil, fight = inCombat() or nil,
                                     kind = TS(function() return b:GetAttribute("wc-kind") end),
                                     at = TS(function() return b:GetAttribute("wc-at") end), holder = capHolder(),
                                     pf = (down and TB(function() return b:GetAttribute("wc-pf") end)) or nil,     -- m165
-                                    lay = lay, bar = bar, slot = slot }))
+                                    lay = lay, bar = bar, slot = slot, tr = tr, path = path, om = om }))
             end)
         end)
         made = b
@@ -2738,13 +2771,14 @@ faceSetup = function()
                             b:HookScript("PostClick", function(_, button, down)
                                 if down then pcall(routerAfterClick, "rearm") end
                                 pcall(function()
-                                    local lay, bar, slot = nil, nil, nil
-                                    if down then lay, bar, slot = OV.pressAt(b) end      -- m187: the layer, the bar, the slot (PressLog)
+                                    local lay, bar, slot, tr, path, om = nil, nil, nil, nil, nil, nil
+                                    if down then lay, bar, slot, tr, path, om = OV.pressAt(b) end    -- m187 / m188 (PressLog)
                                     WC.send(WC.encode({ type = "facecast", v = PV, pos = p, down = down and true or nil,
                                                         fight = inCombat() or nil, n = (faceStore()[p] or {}).n,
                                                         kind = TS(function() return b:GetAttribute("wc-kind") end),
                                                         at = TS(function() return b:GetAttribute("wc-at") end),
-                                                        holder = capHolder(), lay = lay, bar = bar, slot = slot }))
+                                                        holder = capHolder(), lay = lay, bar = bar, slot = slot,
+                                                        tr = tr, path = path, om = om }))
                                     WC.push()
                                 end)
                             end)
@@ -5343,6 +5377,25 @@ function R.rewireAll()
     for pos, b in pairs(face.buttons) do if R.wrapped[pos] then pcall(routerWire, b, pos, R.keys[pos]) end end
     for i = 1, 4 do if R.dbtn[i] then pcall(routerWire, R.dbtn[i], i, R.keys[i]) end end
     if R.bbtn then pcall(routerWire, R.bbtn, 7, R.keys[7]) end
+    -- m188: a controller change also re-reads Party mode's pad's trigger numbers (PM.link: its own copy of them; out of combat)
+    if R.padRelink then R.padRelink = nil; if OV.pm and OV.pm.link then pcall(OV.pm.link) end end
+end
+-- m188 THE CONTROLLER CHANGED (the tester's LT / RT + face report; the user's pick 2026-11-23 "Re-wire the trigger reading when a
+-- controller connects or changes"): the router reads LT / RT from the controller's state by the button numbers routerWire saved
+-- (C_GamePad.ButtonBindingToIndex), and nothing read them again when a controller came or went - streaming, the PC's pad can appear
+-- after WoW has loaded, or another pad can become the active one. Now the game's GAME_PAD_CONNECTED / GAME_PAD_DISCONNECTED /
+-- GAME_PAD_CONFIGS_CHANGED wire every routed button again (and Party mode's pad), and GAME_PAD_ACTIVE_CHANGED (it comes with every
+-- mouse <-> pad switch) does so only when the numbers differ from the ones wired (R.trWired). Out of combat; in a fight it waits for
+-- PLAYER_REGEN_ENABLED (attributes cannot change in the lockdown). READ ONLY: no CVar, binding or macro is written
+-- (Blizzard_APIDocumentationGenerated/GamePadDocumentation.lua's events)
+R.PAD_EV = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true }
+R.padEvent = function(e)
+    if e == "GAME_PAD_ACTIVE_CHANGED" and R.trWired ~= nil and R.trWired == R.trNow() then return false end
+    R.padWhy = e
+    R.padRelink = true
+    if inCombat() then R.rewireFight = true; return true end
+    if not R.rewireQueued then R.rewireQueued = true; C_Timer.After(0.3, R.rewireAll) end
+    return true
 end
 -- m187 THE ROUTER FOLLOWS THE GAME'S BAR SETTINGS (the tester's report, 2026-11-23, and the read-only investigation): the game's Gamepad
 -- settings Stance Bar / Possess Bar (GamepadStanceBarOverride / GamepadPossessBarOverride: Page 1 Left / Right / Bottom = the LT, RT,
@@ -5356,8 +5409,10 @@ R.layoutCv = function(name) return type(name) == "string" and R.LAYOUT_CV[name:l
 R.fs = CreateFrame("Frame")
 for _, e in ipairs({ "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "PLAYER_REGEN_ENABLED", "UPDATE_BONUS_ACTIONBAR",
                      "PLAYER_ENTERING_WORLD", "GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED", "GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED",
-                     "CVAR_UPDATE" }) do pcall(function() R.fs:RegisterEvent(e) end) end
+                     "CVAR_UPDATE", "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED",
+                     "GAME_PAD_CONFIGS_CHANGED" }) do pcall(function() R.fs:RegisterEvent(e) end) end
 R.fs:SetScript("OnEvent", function(_, e, a1)
+    if R.PAD_EV[e] then pcall(R.padEvent, e); return end              -- m188: the controller came / went / changed (above)
     -- m187: of CVAR_UPDATE only the bar settings (every other setting goes by); the game's two bar events and those: said in R.layoutWhy
     if e == "CVAR_UPDATE" and not R.layoutCv(TS(function() return a1 end)) then return end
     if e == "CVAR_UPDATE" or e == "GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED" or e == "GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED" then

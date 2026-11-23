@@ -15,6 +15,9 @@ import org.json.JSONObject
  *   says its layer (`lay`: bare / lt / rt / ltrt), the bar it clicked (`bar`: page<N> / stance / possess / override / ours / room / none)
  *   and that button's slot. Kept in the words ("via LT stance slot 78"), and one WCPAD line per routed press (the same position, layer
  *   and bar again within [ROUTED_EVERY_MS] is not logged again: a held or mashed button is one line).
+ * - PadMap m188 (the user's pick 2026-11-23 "Say what was pressed"): the words also carry the two triggers as the router read them
+ *   (`tr`: "trig L1R0"), the press's way when it differs from its kind (`path`: "path command") and "over-macro" (`om`: one of ours
+ *   ran over the player's own macro on that slot); the rate limit goes by the kind too.
  * Our own words and the add-on's plain codes only (positions, kinds, button frame names, counts): never a spell, macro or
  * character name. Any thread (synchronized).
  */
@@ -50,7 +53,20 @@ object PressLog {
             code(msg.optString("bar", ""))?.let { append(' ').append(it) }
             msg.optInt("slot", 0).takeIf { it > 0 }?.let { append(" slot ").append(it) }
         }
+        // m188: the two triggers as the router read them ("trig L1R0"; "-" = no button number, "none" = no controller state), the
+        // press's way when it is not the kind's own word ("path command": our command's text on the slot), and one of ours over the
+        // player's own macro there ("over-macro": an In combat entry wins in fights, the user's ruling 2026-11-23)
+        trigWord(msg.optString("tr", ""))?.let { append(" trig ").append(it) }
+        pathWord(msg.optString("path", ""))?.takeIf { it != msg.optString("kind", "") }?.let { append(" path ").append(it) }
+        if (msg.optBoolean("om", false)) append(" over-macro")
     }
+
+    /** m188: the add-on's trigger word ("L1R0", "L-R0", "none"); null for anything else */
+    fun trigWord(tr: String?): String? = tr?.takeIf { it == "none" || Regex("L[01-]R[01-]").matches(it) }
+
+    /** m188: the add-on's press way; null for an unknown one */
+    fun pathWord(p: String?): String? = p?.takeIf { it in PATHS }
+    val PATHS = setOf("slotfight", "slotmacro", "native", "command", "room", "none")
 
     /** m187: the add-on's layer code as the controller says it ("lt" -> "LT"); null for none or an unknown one */
     fun layerWord(lay: String?): String? = when (lay) { "bare" -> "bare"; "lt" -> "LT"; "rt" -> "RT"; "ltrt" -> "LT+RT"; else -> null }
@@ -64,7 +80,8 @@ object PressLog {
         if (msg.optString("kind", "") != "none") {
             // m187: a routed press (it names its layer): one line, the same position / layer / bar again within ROUTED_EVERY_MS is not
             val lay = layerWord(msg.optString("lay", "")) ?: return null
-            val key = "$pos|$lay|${code(msg.optString("bar", "")) ?: ""}"
+            // m188: the way too (a fight's start turning the same press from the macro to the In combat entry is its own line)
+            val key = "$pos|$lay|${code(msg.optString("bar", "")) ?: ""}|${code(msg.optString("kind", "")) ?: ""}|${msg.optBoolean("om", false)}"
             val last = routedAt[key]
             if (last != null && nowMs - last < ROUTED_EVERY_MS) return null
             routedAt[key] = nowMs

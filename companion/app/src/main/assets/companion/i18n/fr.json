@@ -1,5 +1,6 @@
 {
 "plain": {
+"In combat: a spell casts here in fights, over your macro": "En combat : un sort est lancé ici pendant les combats, par-dessus votre macro",
 "WoW's Stance Bar is on LT: in a form, LT + buttons cast your form bar": "La Barre des postures de WoW est sur LT : en forme, LT + boutons lancent votre barre de forme",
 "WoW's Possess Bar is on LT: in a vehicle, LT + buttons cast its bar": "La Barre de possession de WoW est sur LT : en véhicule, LT + boutons lancent sa barre",
 "WoW's Stance Bar is on RT: in a form, RT + buttons cast your form bar": "La Barre des postures de WoW est sur RT : en forme, RT + boutons lancent votre barre de forme",
@@ -2336,6 +2337,8 @@
 "Desktop's add-ons are older: update DS Forever Desktop": "Les add-ons de Desktop sont plus anciens : mettez à jour DS Forever Desktop"
 },
 "templates": {
+"DS Forever's %s runs here, over your macro": "%s de DS Forever s’utilise ici, par-dessus votre macro",
+"In combat: %s casts here in fights, over your macro": "En combat : %s est lancé ici pendant les combats, par-dessus votre macro",
 "%s/%s ready": "%s/%s prêtes",
 "Empty: slot %s's own": "Vide : celui de l'emplacement %s",
 "\"%s\" is its own button: put it on your bars (Out of combat: Change, Extra).": "« %s » est son propre bouton : placez-le sur vos barres (Hors combat : Changer, Extra).",

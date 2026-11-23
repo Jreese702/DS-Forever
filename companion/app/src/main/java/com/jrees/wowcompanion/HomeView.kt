@@ -789,6 +789,7 @@ class HomeView(
         fightNow = map.fight                                            // m49: A / X / Y's switch (start attack / auto-repeat / combat)
         applyDpad()                                                      // Track C: the D-pad's In-combat spells, in fights only
         castView.commands = HomeFightFace.commandIcons(map)             // Track C: the companion's commands (overlays: the game's slot is empty)
+        castView.overMacro = PadMapModel.overMacroKeys(map)            // PadMap m188: our overlay over the player's own macro (a corner mark)
     }
 
     /** the fight as the latest word says it: the padmap's `combat`, or a newer CURRENT `facewatch`'s `fight` (Tracking after test18:
