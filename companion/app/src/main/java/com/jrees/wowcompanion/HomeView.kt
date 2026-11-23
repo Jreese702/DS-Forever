@@ -523,13 +523,18 @@ class HomeView(
         }
         // the column: off its own edge (open) / back (close); the other column never moves
         var last: android.view.ViewPropertyAnimator? = null
+        // feat/radial-castbar: on the release every bar comes back to no offset (unless the middle wheel holds it): a dropped one up, and
+        // one the page laid elsewhere under the wheel (a fight's start: a column's bar slid away with its column, then laid below the
+        // page by Hide in combat, is no column's any more and was left off the screen's edge after the fight)
+        val barsBack = !open && !wheelOpen
         for ((v, r) in col) {
             // a part not shown does not slide; on a close it is put back at once (a card hidden mid-slide kept its offset)
-            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
+            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f; if (barsBack && v is CastStripView) v.translationY = 0f }; continue }
             val to = if (open) ClassSlot.away(left, r.left, r.right, w, g) else 0f
             v.animate().cancel()
             val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
+            if (barsBack && v is CastStripView) a.translationY(0f)
             // the map's well edge and zone band are Home's own paint (dispatchDraw): a redraw per frame of ITS slide (no layout)
             if (v === mapSlot) a.setUpdateListener { invalidate() } else a.setUpdateListener(null)
             a.setListener(null)
@@ -537,12 +542,16 @@ class HomeView(
         }
         // feat/radial-castbar: the dropped bar on the column's motion (down on the open, back up on the release); the middle wheel's own
         // drop (wheelPart) is left as it is
+        val riding = col.map { it.first }
         val drops = if (!open || !classDrop) emptyList()
-            else views.mapNotNull { (p, v) -> barDrop(p, now[p]).takeIf { it > 0f && v.visibility == View.VISIBLE }?.let { v to it } }
-        val back = if (open || wheelOpen) emptyList() else strips.filter { it.translationY != 0f }.map { it as View to 0f }
+            else views.mapNotNull { (p, v) -> barDrop(p, now[p]).takeIf { it > 0f && v.visibility == View.VISIBLE && v !in riding }?.let { v to it } }
+        val back = if (!barsBack) emptyList()
+            else strips.filter { it !in riding && (it.translationY != 0f || it.translationX != 0f) }.map { it as View to 0f }
         for ((v, to) in if (open) drops else back) {
             v.animate().cancel()
-            v.animate().translationY(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
+            val a = v.animate().translationY(to)
+            if (!open) a.translationX(0f)
+            a.setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer().setUpdateListener(null).setListener(null).start()
         }
         barAwaySync()
@@ -584,9 +593,12 @@ class HomeView(
         barAwaySync()
         return if (open) RectF(wheelRect) else null
     }
-    /** feat/radial-castbar: how far part [p] laid at [r] slides down for an open radial (a tap-to-cast bar of no column: HomeSlide.barDrop) */
+    /** feat/radial-castbar: how far part [p] laid at [r] slides down for an open radial (a tap-to-cast bar of no column: HomeSlide.barDrop).
+     *  A bar slid away for a fight (Hide in combat) never: it is no column's (HomeSlide.half) but already off the page - Across's below
+     *  it, a top bar (Above the chat / the map) UP behind the grown band, which a drop swept down across the page over the radial */
     private fun barDrop(p: Part, r: RectF?): Float =
-        if (r == null || (p != Part.STRIP && p != Part.CAST2)) 0f else HomeSlide.barDrop(true, halfOf(p, r, width.toFloat()), r.top, frameH)
+        if (r == null || laidHidden || (p != Part.STRIP && p != Part.CAST2)) 0f
+        else HomeSlide.barDrop(true, halfOf(p, r, width.toFloat()), r.top, frameH)
     /** feat/radial-castbar: the box of the bar of no column (Across) laid on the page as [places] has it - the one a radial may ask to
      *  drop ([barDrop]); null = none there (Off, a column's bar, Split's halves, slid away for a fight) */
     private fun acrossBox(places: Map<Part, RectF>): RectF? {
@@ -645,6 +657,31 @@ class HomeView(
         barAwaySync()
         if (was != wheelRect) onWheelSlot?.invoke(RectF(wheelRect))
     }
+    /**
+     * feat/radial-castbar: the page laid again under an open class wheel (a fight beginning or ending, as [wheelRefit] for the middle
+     * wheel): a tap-to-cast bar coming back onto the page from below it (Hide in combat's, the fight over) never rises over the wheel -
+     * Across's stays below the page (dropped, as at an open with it there), a bar of the wheel's own column goes off its edge with that
+     * column. The held wheel keeps its square. [places] = the page as it will be; [now] is still the page as it is
+     */
+    private fun classRefit(places: Map<Part, RectF>) {
+        if (!classOpen || width == 0) return
+        val w = width.toFloat(); val g = UiKit.MODULE_GAP
+        val half = if (classLeft) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
+        val sq = RectF(classRect)
+        for ((p, v) in views) {
+            if (v !is CastStripView || v.visibility != View.VISIBLE) continue
+            val r = places[p] ?: continue
+            val cur = now[p] ?: continue
+            // only a bar below the page now (as drawn) that the page lays back on it
+            if (cur.top + v.translationY < frameH - 0.5f || r.top >= frameH - 0.5f) continue
+            val dy = barDrop(p, r)
+            if (dy > 0f && RectF.intersects(sq, r)) { v.animate().cancel(); v.translationY = dy; classDrop = true }
+            else if (dy <= 0f && halfOf(p, r, w) == half) { v.animate().cancel(); v.translationX = ClassSlot.away(classLeft, r.left, r.right, w, g) }
+            else continue
+            v.translationZ = CLASS_COVER_Z
+        }
+        barAwaySync()
+    }
     /** fix/radials-clip-castbar: the open wheel's square changed ([wheelRefit]), in Home's coordinates */
     var onWheelSlot: ((RectF) -> Unit)? = null
     /** the columns part for the middle wheel ([open]) by [places], or come back */
@@ -661,9 +698,12 @@ class HomeView(
             // feat/radial-castbar: Across's bar (no column's) slides down out of the way on the same motion, back up on the close
             if (p == Part.STRIP || p == Part.CAST2) {
                 val dy = if (open && wheelDrop) barDrop(p, r) else 0f
+                val below = (now[p]?.top ?: v.top.toFloat()) + v.translationY >= frameH - 0.5f
                 // a bar coming back up from below the page (a fight's end: wheelRefit) under the open wheel stays below it
-                if (dy > 0f && v.top + v.translationY >= frameH - 0.5f) v.translationY = dy
-                a.translationY(dy)
+                if (dy > 0f && below) v.translationY = dy
+                // a dropped bar the page now lays below it (a fight's start, Hide in combat) stays down: its own way down (the fight's
+                // curve, a Top screen slide's) never lifts it into sight on the way
+                if (!(open && dy == 0f && below && r.top >= frameH - 0.5f)) a.translationY(dy)
             }
             // the map's well edge and zone band are Home's own paint (dispatchDraw): a redraw per frame of ITS slide (no layout)
             if (v === mapSlot) a.setUpdateListener { invalidate() } else a.setUpdateListener(null)
@@ -720,7 +760,38 @@ class HomeView(
      * (no column's) stays when the picture fits above it at its full size (1.0.31: "If its set to both it can stay in place"), else it
      * slides down out of the way (pauseSlide) and the picture takes the page down to its foot (it was scaled to fit above that bar)
      */
-    fun lbPlace(): LbFit.Place = lbFit().first
+    fun lbPlace(): LbFit.Place {
+        val (place, drop) = lbFit()
+        if (pauseT > 0f && pauseSide > 0f) lbBars(drop)
+        return place
+    }
+    /** the sides' offsets (eased) the LB picture's last pauseSlide frame gave the left and the right column */
+    private var lbPushL = 0f
+    private var lbPushR = 0f
+    /**
+     * feat/radial-castbar: the page laid again under the open LB picture (a fight beginning or ending while LB is held: the band grows,
+     * the bar shows or hides). The picture asks for its place again as it draws ([lbPlace]); pauseSlide is not called while it is still,
+     * so the bars follow the same answer here: Across's dropped for a full-size picture ([drop]), back up for one that fits above it
+     * (only once the page has landed: on its way it only ever goes down, never up into sight), and a column's bar with its side (one
+     * that came back from below the page after the fight)
+     */
+    private fun lbBars(drop: Boolean) {
+        val e = (pauseT / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
+        val ee = 1f - (1f - e) * (1f - e)
+        val w = width.toFloat()
+        var down = drop
+        for (p in listOf(Part.STRIP, Part.CAST2)) {
+            val v = views[p] ?: continue
+            val r = now[p] ?: continue
+            val below = r.top + v.translationY >= frameH - 0.5f
+            val y = if (drop) barDrop(p, r) * ee else if (!settled && below) v.translationY.also { if (it > 0f) down = true } else 0f
+            val half = halfOf(p, r, w)
+            val x = if (half == HomeSlide.Half.NONE) v.translationX else HomeSlide.dx(half, lbPushL, lbPushR)
+            if (v.translationX != x || v.translationY != y) { v.animate().cancel(); v.translationX = x; v.translationY = y }
+        }
+        lbDrop = down
+        barAwaySync()
+    }
     /** [lbPlace] and whether Across's bar drops for it */
     private fun lbFit(): Pair<LbFit.Place, Boolean> {
         val w = width.toFloat(); val g = UiKit.MODULE_GAP
@@ -2177,6 +2248,7 @@ class HomeView(
         }
         // fix/radials-clip-castbar: an open middle wheel follows the page laid again (a fight's start / end), never over the bar
         if (s.full == null || s.takeover) wheelRefit(to)
+        if (s.full == null || s.takeover) classRefit(to)
         if (!animate || before == null) {
             if (lent(castView)) castView.away = away                           // laid at once (no motion): away now
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
@@ -2717,11 +2789,14 @@ class HomeView(
                 // can stay in place"): the cast bar by its side (Left with the chat, Right with the minimap), Both's bar stays.
                 // fix/menus-fit: every part by its column (its half), each side by its own distance (LbFit: Classic's 340 both)
                 val pl = (lb?.pushLeft ?: sidePx) * ee; val pr = (lb?.pushRight ?: sidePx) * ee
+                lbPushL = pl; lbPushR = pr
                 val bar = p == Part.STRIP || p == Part.CAST2
                 v.translationX = if (r != null && (!across || bar)) HomeSlide.dx(halfOf(p, r, width.toFloat()), pl, pr)
                     else if (o === left) -pl else pr
                 // feat/radial-castbar: Across's bar (no column's: never sideways, fix/castbar-slides) slides down out of the picture's
                 // way on the sides' curve when the picture needs the room (lbFit), so it keeps its full size
+                // (a bar still on its way back from a wheel just closed - its animator - is stopped: this slide places it now)
+                if (bar && t > 0f) v.animate().cancel()
                 v.translationY = if (lbDrop) barDrop(p, r) * ee else 0f
                 if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
             }

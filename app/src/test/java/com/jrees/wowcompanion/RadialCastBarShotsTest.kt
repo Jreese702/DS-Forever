@@ -315,6 +315,92 @@ class RadialCastBarShotsTest {
         assertTrue(fs.translationY == 0f && fs.takesTouch)
     }
 
+    /** a fight beginning / ending on [p] as the page's own feeds say it (the controller's state, the quests' "cb") */
+    private fun fight(p: Page, on: Boolean) {
+        p.home.onFull(JSONObject().put("type", "full").put("actionbar", JSONObject().put("hud", JSONObject().put("ok", true))
+            .put("hudS", JSONObject().put("c", on))), true)
+        val q = quests(on)
+        QuestItem.Cd.onQuests(q, true); p.home.onQuests(q, true)
+        p.home.tick()
+        settle(60)
+    }
+
+    /**
+     * review of feat/radial-castbar: a fight beginning or ending UNDER an open radial, grown and live Top screen (Hide in combat: the
+     * bar slides below the page with the fight's start, comes back up at its end; Show in combat: it stays and the band grows over the
+     * page). No bar drawn over the open middle wheel, class wheel or LB picture as the page is laid again under it; after the close and
+     * the fight's end every bar is back in its place (no offset left, a column's bar included) and takes taps
+     */
+    @Test fun aFightUnderAnOpenRadial() {
+        for (d in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.ABOVE_MAP, HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT))
+            for (top in listOf(false, true)) for (stay in listOf(false, true)) for (inFight in listOf(false, true))
+            for (what in listOf("middle wheel", "LB+LT", "RB+RT", "LB picture")) {
+                val tag = "${d.name.lowercase()} ${if (top) "Top screen" else "grown"} fight, ${if (stay) "shown" else "hidden"} in it, " +
+                    "${if (inFight) "opened in a fight, the fight ends" else "opened at rest, a fight begins"} $what"
+                val band = if (top) HomeLayout.FightBand.TOP else HomeLayout.FightBand.GROW
+                val l = HomeLayout(cast = d, castSize = HomeLayout.SlotSize.L, fight = band)
+                val p = page(l, St(if (inFight) "fight" else "rest", fight = inFight, stay = stay, ct = if (top) 1 else null, band = band))
+                val home = p.home
+                fun clear(when_: String) {
+                    val boxes = if (what == "LB picture") LbFit.bars(home.lbPlace()).values.map { RectF(it.l, it.t, it.r, it.b) }
+                        else if (what == "middle wheel") listOf(RectF(field(home, "wheelRect") as RectF))
+                        else listOf(RectF(field(home, "classRect") as Rect))
+                    for (b in boxes) for ((k, dr) in barsDrawn(home)) if (overlaps(dr, b)) no(tag, "$when_: $k drawn ${r(dr)} over ${r(b)}")
+                    held(tag, when_, home)
+                }
+                // the state is the one named: the band grown / gone up to the Top screen in the fight, the bar shown or slid away
+                fun named(fightOn: Boolean, when_: String) {
+                    val bb = boxes(home).getValue("BARS").bottom
+                    // (slid away: below the page, or a top bar up behind the band; a Top screen fight keeps the bar on the bottom)
+                    val laid = boxes(home).filter { (k, b) -> (k == "STRIP" || k == "CAST2") && b.top < H - 0.5f && b.bottom > bb + 0.5f }.isNotEmpty()
+                    if (fightOn && top && bb > 0f) no(tag, "$when_: not a Top screen fight (band foot $bb)")
+                    if (fightOn && !top && bb < 300f) no(tag, "$when_: not a grown fight (band foot $bb)")
+                    if (laid != (stay || !fightOn || top)) no(tag, "$when_: the bar ${if (laid) "on" else "off"} the page")
+                }
+                named(inFight, "at the open")
+                when (what) {
+                    "LB picture" -> home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
+                    "middle wheel" -> { home.wheelSlot(true); settle() }
+                    else -> classOpen(p, what == "LB+LT")
+                }
+                clear("open")
+                fight(p, !inFight)
+                named(!inFight, "laid again")
+                clear("the page laid again under it")
+                when (what) {
+                    "LB picture" -> { home.pauseSlide(0f, LbPartyView.SIDE_PX); home.pauseSlide(0f) }
+                    "middle wheel" -> { home.wheelSlot(false); settle() }
+                    else -> classClose(p)
+                }
+                if (!inFight) fight(p, false)
+                settle(40)
+                back(tag, "after the close and the fight", home, true)
+            }
+        assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
+    }
+
+    /**
+     * review of feat/radial-castbar: a bar slid away for a fight (Hide in combat: Across's below the page, a top bar - Above the chat /
+     * the map - UP behind the grown band) is no column's but already off the page: no radial moves it (a drop swept the top bar down
+     * across the page, over the radial, on every open and back up on every close)
+     */
+    @Test fun aBarSlidAwayForAFightStaysPut() {
+        for (d in DOCKS) {
+            val tag = "${d.name.lowercase()} hidden in a grown fight"
+            val p = page(HomeLayout(cast = d, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW),
+                St("fight_grow_hidden", fight = true, band = HomeLayout.FightBand.GROW))
+            fun still(what: String) { for (s in strips(p.home)) if (s.visibility == View.VISIBLE && (s.translationX != 0f || s.translationY != 0f))
+                no(tag, "$what: the bar moved (${s.translationX}, ${s.translationY})") }
+            p.home.wheelSlot(true); settle(); still("middle wheel"); p.home.wheelSlot(false); settle()
+            classOpen(p, true); still("LB+LT"); classClose(p)
+            classOpen(p, false); still("RB+RT"); classClose(p)
+            p.home.pauseSlide(UiKit.PAUSE_OPEN_MS / 2f, LbPartyView.SIDE_PX); p.home.lbPlace(); still("LB picture halfway")
+            p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX); p.home.lbPlace(); still("LB picture")
+            p.home.pauseSlide(0f, LbPartyView.SIDE_PX)
+        }
+        assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
+    }
+
     // ---------------------------------------------------------------- the pictures
 
     private val pCyan = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f; color = Color.CYAN }
