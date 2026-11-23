@@ -162,6 +162,9 @@ b = L.eval('rawget(_G, "%s")' % YB)
 b.a['wc-lt'] = 99                                                    # a marker: does the next event wire again?
 L.execute('fire("GAME_PAD_ACTIVE_CHANGED", false); advance(1)')
 check(attr('wc-lt') == 99, "1. GAME_PAD_ACTIVE_CHANGED with the same numbers (every mouse <-> pad switch): nothing wired", attr('wc-lt'))
+# m188 review: before the first wiring (R.trWired nil) a mouse <-> pad switch runs no re-wire / Party link either (R is a chunk local)
+check('if e == "GAME_PAD_ACTIVE_CHANGED" and (R.trWired == nil or R.trWired == R.trNow()) then return false end' in pm,
+      "1. GAME_PAD_ACTIVE_CHANGED before anything was wired: no re-wire (source)")
 L.execute('fire("GAME_PAD_CONNECTED"); advance(1)')
 check(attr('wc-lt') == 15, "1. GAME_PAD_CONNECTED: always wired again", attr('wc-lt'))
 b.a['wc-lt'] = 99

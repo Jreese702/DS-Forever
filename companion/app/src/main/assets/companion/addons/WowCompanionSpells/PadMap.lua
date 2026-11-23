@@ -5390,7 +5390,9 @@ end
 -- (Blizzard_APIDocumentationGenerated/GamePadDocumentation.lua's events)
 R.PAD_EV = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true }
 R.padEvent = function(e)
-    if e == "GAME_PAD_ACTIVE_CHANGED" and R.trWired ~= nil and R.trWired == R.trNow() then return false end
+    -- m188 review: nothing wired yet (R.trWired nil: the first wiring reads the numbers of the moment) is no reason either - every
+    -- mouse <-> pad switch would otherwise run the whole re-wire and Party mode's link for nothing
+    if e == "GAME_PAD_ACTIVE_CHANGED" and (R.trWired == nil or R.trWired == R.trNow()) then return false end
     R.padWhy = e
     R.padRelink = true
     if inCombat() then R.rewireFight = true; return true end

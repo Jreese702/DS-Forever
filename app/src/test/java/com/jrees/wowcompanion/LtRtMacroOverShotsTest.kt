@@ -104,8 +104,11 @@ class LtRtMacroOverShotsTest {
     }
 
     /** Cast's bars alone, on [lt] / [rt], every slot a spell, the m188 cells marked (as HomeView.onPadMap feeds them) */
-    private fun bars(name: String, lt: Boolean, rt: Boolean) {
+    private fun bars(name: String, lt: Boolean, rt: Boolean, rooms: Boolean = false, row: Boolean = false) {
         val cast = CastView(app) { }
+        if (row) cast.layout = CastView.Layout.ROW                            // m188 review: Home's band at rest (not the full bars)
+        // m188 review: the DS WoW toolbar's room bar on the bare D-pad - those presses open rooms, so no mark over them
+        if (rooms) { cast.roomBar = mapOf(1 to "map", 2 to "chat", 3 to "home", 4 to "radial"); cast.roomBarOn = true }
         val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
         fun layer() = JSONArray().apply { for (p in 1..8) put(JSONObject().put("p", p).put("k", if (p in 5..8) "macro" else "spell").put("id", 400 + p).put("i", icons[p - 1])) }
         cast.update(JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1).put("pages", JSONArray().put(true).put(true).put(true))
@@ -138,5 +141,8 @@ class LtRtMacroOverShotsTest {
         bars("m5_home_bars_lt_layer", lt = true, rt = false)
         bars("m6_home_bars_bare_layer", lt = false, rt = false)
         bars("m7_home_bars_rt_layer", lt = false, rt = true)
+        bars("m8_home_band_bare_layer", lt = false, rt = false, row = true)
+        bars("m9_home_band_bare_room_bar_no_mark", lt = false, rt = false, rooms = true, row = true)
+        bars("m10_home_band_lt_layer", lt = true, rt = false, row = true)
     }
 }

@@ -771,6 +771,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var overMacro: Set<Int>? = null
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** m188 review: [b] stands for the game's slot (its own button, or one of our overlays on it) - not Party mode's strip (it takes
+     *  every press while it routes), the DS WoW toolbar's room bar or its page arrows (those presses open rooms) */
+    private fun overSlotDrawn(b: Btn?): Boolean =
+        !partyStrip && (b == null || (roomBtns.none { it === b } && barBtns.none { it === b }))
 
     /** [HomeFightFace.trigFights]: in a fight, the trigger sets' In-combat spells by [HomeFightFace.cmdKey] -> (icon, spell id) */
     var trigFights: Map<Int, Pair<Int, Int>>? = null
@@ -2719,7 +2723,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (!(drawCollapsed && keyText == null) && b?.noBadge != true) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
         // PadMap m188: our overlay over the player's own macro takes that corner (the two never meet: an overlay is not a DS Bar slot)
-        val over = memKey >= 0 && overMacro?.contains(memKey) == true && !(drawCollapsed && keyText == null)
+        // m188 review: not over a picture that is not the game's slot's at all (Party mode's strip, the DS WoW toolbar's room bar /
+        // its page arrows): the press goes to Party mode / the room there, never to the slot's macro or our overlay on it
+        val over = memKey >= 0 && overMacro?.contains(memKey) == true && !(drawCollapsed && keyText == null) && overSlotDrawn(b)
         if (over) UiKit.overMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.36f)
         else if (b != null && b.ds) drawDsMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.34f)
         // #471 the rank badge, top LEFT (the glyph is top right, a reagent count bottom right, the DS mark a macro's): a ranked spell only
