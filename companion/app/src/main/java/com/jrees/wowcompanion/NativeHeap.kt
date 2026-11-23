@@ -18,8 +18,8 @@ object NativeHeap {
     @JvmStatic private external fun pageOutSelf(capKib: Int): LongArray?
     /** PageOut: the Wine helper [pid]'s request (SIGURG with DS Forever's value); 0 = sent */
     @JvmStatic private external fun pageOutSignal(pid: Int): Int
-    /** GamePageOut: the game client [pid]'s request (SIGURG with DS Forever's GAME value) to its thread [tid] (0 = the process);
-     *  0 = sent to the thread, 1 = to the process */
+    /** GamePageOut: the game client [pid]'s request (SIGURG with DS Forever's GAME value) to its thread [tid] only, never to the
+     *  process (its main thread); 0 = sent, -3 = that thread is gone (ESRCH), else -errno */
     @JvmStatic private external fun pageOutSignalGame(pid: Int, tid: Int): Int
 
     /** the library is in the APK */
@@ -42,7 +42,7 @@ object NativeHeap {
     fun pageOutSelfNow(capKib: Int): LongArray? = if (!loaded) null else runCatching { pageOutSelf(capKib) }.getOrNull()
     /** PageOut: the request to one helper, 0 = sent; without the library -1 */
     fun pageOutSignalNow(pid: Int): Int = if (!loaded) -1 else runCatching { pageOutSignal(pid) }.getOrDefault(-1)
-    /** GamePageOut: the request to the game client, 0 / 1 = sent (to the thread / the process); without the library -1 */
+    /** GamePageOut: the request to the game client's thread [tid], 0 = sent, -3 = the thread is gone; without the library -1 */
     fun pageOutSignalGameNow(pid: Int, tid: Int): Int = if (!loaded) -1 else runCatching { pageOutSignalGame(pid, tid) }.getOrDefault(-1)
 
     /** the purge with its line for the relief's mem.log line, "" without the library; any thread (MemWatch's own) */

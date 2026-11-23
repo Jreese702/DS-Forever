@@ -98,6 +98,40 @@ class GamePageOutTest {
         assertNotNull("16 GB below its threshold", G.charselectWhy(3904 * 1024, swap, 15255, true, t0, t0 + 60_000, false, true, rss, true, false))
     }
 
+    /** review 2026-11-23: Enter World pressed during a character select pass (GameLife knows the world only once the add-ons run) */
+    @Test fun aCharSelectPassStopsWhenTheWorldStartsLoading() {
+        val before = 1900L * 1024
+        assertFalse("as the pass left it", G.climbing(before, before - 200L * 1024, 200L * 1024))
+        assertFalse("a few samples back", G.climbing(before, before - 180L * 1024, 200L * 1024))
+        assertTrue("the world loading: 300 MB more", G.climbing(before, before + 100L * 1024, 200L * 1024))
+        assertTrue("climbing before anything was paged", G.climbing(before, before + 65L * 1024, 0))
+        assertFalse("unknown memory: no verdict", G.climbing(-1, before, 0))
+        assertFalse(G.climbing(before, -1, 0))
+        val gpo = src("../companion/app/src/main/java/com/jrees/wowcompanion/GamePageOut.kt", "companion/app/src/main/java/com/jrees/wowcompanion/GamePageOut.kt")
+        assertTrue("the gate before every probe and commit step", "climbing(run.rssBefore, rssKb(run.pid), ps.totalKb)" in gpo)
+    }
+
+    /** review 2026-11-23: the world's backoff counts the commits' pages, not the probe's samples */
+    @Test fun aPassOfOnlySamplesBacksOff() {
+        val p = GamePageOut.Pass(GamePageOut.Phase.WORLD); p.first()
+        p.next(r('P', false, probed = 300, sampled = 9_600))
+        p.next(r('c', false, probed = 300, paged = 0, cold = 0, inuse = 300))
+        assertEquals(0L, p.pagedKb); assertTrue(p.totalKb > 1024)
+        val l = PageOut.Limiter(G.WORLD_EVERY_MS, G.WORLD_MAX_EVERY_MS)
+        l.done(1_000, p.pagedKb, 0); assertEquals(20_000L, l.every)
+        val gpo = src("../companion/app/src/main/java/com/jrees/wowcompanion/GamePageOut.kt", "companion/app/src/main/java/com/jrees/wowcompanion/GamePageOut.kt")
+        assertTrue("worldLimit.done(now, ps.pagedKb, " in gpo)
+    }
+
+    /** review 2026-11-23: a request goes to an idle thread only, never to the process (the kernel gives that to the main thread) */
+    @Test fun neverToTheProcess() {
+        val heap = src("../dsforever/src/main/jni/dsf/dsf_heap.c", "dsforever/src/main/jni/dsf/dsf_heap.c")
+        val fn = heap.substringAfter("NativeHeap_pageOutSignalGame(")
+        assertTrue("tid <= 0) return -22" in fn)
+        assertFalse("sigqueue(" in fn)
+        assertTrue("__NR_rt_tgsigqueueinfo" in fn)
+    }
+
     @Test fun steadyMemoryOnly() {
         val t = GamePageOut.Trend()
         t.add(0, 1_900_000); assertFalse(t.steady(0))
@@ -176,7 +210,7 @@ class GamePageOutTest {
         val ts = listOf(GamePageOut.Th(100, 'S', 9000, false), GamePageOut.Th(101, 'R', 5, false), GamePageOut.Th(102, 'S', 40, false), GamePageOut.Th(103, 'S', 2, true),
             GamePageOut.Th(104, 'S', 40, false), GamePageOut.Th(105, 'D', 1, false))
         assertEquals("asleep, SIGURG open, not the main thread, least CPU (the newer on a tie)", 104, G.pickThread(100, ts))
-        assertEquals("none fit: to the process", 0, G.pickThread(100, listOf(GamePageOut.Th(100, 'S', 1, false), GamePageOut.Th(101, 'R', 1, false))))
+        assertEquals("none fit: no request (never to the process: its main thread)", 0, G.pickThread(100, listOf(GamePageOut.Th(100, 'S', 1, false), GamePageOut.Th(101, 'R', 1, false))))
         assertEquals('S' to 30L, G.parseStat("1234 (Wow-arm64.exe) S 1 2 3 4 5 6 7 8 9 10 20 10 0 0 20 0 50 0"))
         assertEquals('S' to 7L, G.parseStat("77 (a b) c)) S 1 2 3 4 5 6 7 8 9 10 3 4 0"))
         assertNull(G.parseStat("garbage"))
@@ -198,15 +232,15 @@ class GamePageOutTest {
         val p = GamePageOut.Pass(GamePageOut.Phase.CHARSELECT); p.first()
         p.next(r('P', false, probed = 512, sampled = 16 * 1024, inuse = 0, back = 0))
         p.next(r('c', false, probed = 512, paged = 224 * 1024, cold = 230, inuse = 140))
-        val l = G.passLine(1, "free 3900 MB < 4303", p, 1890L * 1024, 1650L * 1024, 2100L * 1024, 2340L * 1024, "done", toThread = true)
+        val l = G.passLine(1, "free 3900 MB < 4303", p, 1890L * 1024, 1650L * 1024, 2100L * 1024, 2340L * 1024, "done")
         assertEquals("pageout (game, charselect, 1, free 3900 MB < 4303): rss anon 1890 -> 1650 MB; paged 240 MB cold-only (probed 512 chunks: " +
             "230 cold, 140 in use; samples 16 MB); came back 0 MB; swap used 2100 -> 2340 MB; 2 requests, longest 5 ms", l)
         assertTrue(MemWatch.isEvent(l))
         assertTrue("a key line of the report", MemWatch.shortLine("11-23 12:00:00 $l")!!.startsWith("12:00:00 pageout (game"))
         val w = GamePageOut.Pass(GamePageOut.Phase.WORLD); w.first(); w.next(r('P', false, probed = 0, back = 2048))
         assertEquals("pageout (game, world-critical, 2, free 340 MB < 359): rss anon ? -> ? MB; paged 0 MB cold-only (probed 0 chunks: 0 cold, " +
-            "0 in use; samples 0 MB); came back 2 MB; swap used ? -> ? MB; 1 requests, longest 5 ms; to the process; stopped: loading screen",
-            G.passLine(2, "free 340 MB < 359", w, -1, -1, -1, -1, "stopped: loading screen", toThread = false))
+            "0 in use; samples 0 MB); came back 2 MB; swap used ? -> ? MB; 1 requests, longest 5 ms; thread re-picked; stopped: loading screen",
+            G.passLine(2, "free 340 MB < 359", w, -1, -1, -1, -1, "stopped: loading screen", threadChanged = true))
         assertEquals("pageout (game, check after charselect 1): came back 12 MB of 240 MB in 15 s",
             G.checkLine(GamePageOut.Phase.CHARSELECT, 1, 12 * 1024, 240 * 1024, 15_000))
         assertEquals("Compress idle memory: on (this Thor's default); Wine helpers: 3 requests, 54 MB paged; ours: 2 requests, 30 MB paged; " +

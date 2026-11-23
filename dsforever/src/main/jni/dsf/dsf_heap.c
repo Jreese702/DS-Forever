@@ -69,26 +69,22 @@ JNIEXPORT jint JNICALL Java_com_jrees_wowcompanion_NativeHeap_pageOutSignal(JNIE
 
 /*
  * THE GAME CLIENT'S REQUEST (PageOut.kt GamePageOut, the user's pick 2026-11-23 "Yes, carefully"): SIGURG with DS Forever's GAME value
- * to the game client [pid] (our own uid, checked by name and by its handler), sent to its thread [tid] (one asleep and nearly idle,
- * so no busy game thread runs the request) with rt_tgsigqueueinfo, the call bionic's own pthread_sigqueue makes (in every app's
- * seccomp list since Android 10); if that thread is gone or [tid] <= 0, to the process. libdsf-pageout.so's handler serves this value
- * only in the game client, cold-only. 0 = sent to the thread, 1 = sent to the process, else -errno.
+ * to the game client [pid] (our own uid, checked by name and by its handler), sent ONLY to its thread [tid] (one asleep and nearly
+ * idle, so no busy game thread runs the request) with rt_tgsigqueueinfo, the call bionic's own pthread_sigqueue makes (in every app's
+ * seccomp list since Android 10). Never to the process as a whole: the kernel would hand that one to the first thread not blocking
+ * it, the game's main (render) thread first, which would then run the page-out between two frames. A thread that is gone answers
+ * -ESRCH (GamePageOut picks another). libdsf-pageout.so's handler serves this value only in the game client, cold-only.
+ * 0 = sent, else -errno (-EINVAL for no thread).
  */
 JNIEXPORT jint JNICALL Java_com_jrees_wowcompanion_NativeHeap_pageOutSignalGame(JNIEnv *env, jclass cls, jint pid, jint tid) {
     (void) env; (void) cls;
-    if (pid <= 1 || pid == getpid()) return -22;
-    const int magic = 0x44534647;  /* PO_MAGIC_GAME */
-    if (tid > 0) {
-        siginfo_t si;
-        memset(&si, 0, sizeof si);
-        si.si_signo = SIGURG;
-        si.si_code = SI_QUEUE;
-        si.si_pid = getpid();
-        si.si_uid = getuid();
-        si.si_value.sival_int = magic;
-        if (syscall(__NR_rt_tgsigqueueinfo, (pid_t) pid, (pid_t) tid, SIGURG, &si) == 0) return 0;
-    }
-    union sigval v;
-    v.sival_int = magic;
-    return sigqueue((pid_t) pid, SIGURG, v) == 0 ? 1 : -errno;
+    if (pid <= 1 || pid == getpid() || tid <= 0) return -22;
+    siginfo_t si;
+    memset(&si, 0, sizeof si);
+    si.si_signo = SIGURG;
+    si.si_code = SI_QUEUE;
+    si.si_pid = getpid();
+    si.si_uid = getuid();
+    si.si_value.sival_int = 0x44534647;   /* PO_MAGIC_GAME */
+    return syscall(__NR_rt_tgsigqueueinfo, (pid_t) pid, (pid_t) tid, SIGURG, &si) == 0 ? 0 : -errno;
 }

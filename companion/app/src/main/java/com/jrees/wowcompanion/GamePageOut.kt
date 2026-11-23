@@ -31,7 +31,10 @@ import java.io.File
  *    screen or while the world is closed (a logout); at most once per [WORLD_EVERY_MS], doubling up to [WORLD_MAX_EVERY_MS] while the
  *    paged memory comes straight back or there is nothing cold to page.
  *  Never without [SWAP_ROOM_KB] of free swap. Each step is checked again before it is sent: a loading screen (or the world, for the
- *  character select pass) ends the pass at once.
+ *  character select pass) ends the pass at once, and so does the game's memory climbing during a character select pass ([climbing]:
+ *  Enter World pressed, the world loading before the add-ons can say so).
+ *  WHICH THREAD: every request goes to one idle (asleep, least CPU) thread of the game, never to the process: the kernel hands a
+ *  process signal to the main thread first, the game's busiest. No idle thread: no pass; the thread gone: one other idle thread.
  *
  * MEASURED: each pass is one mem.log line ([passLine], a report key line: the game's memory before and after, paged, came back, the
  * swap used before and after, its phase) and [CHECK_AFTER_MS] later one more ([checkLine]): what of it came back by then.
@@ -130,6 +133,15 @@ object GamePageOut {
         }
     }
 
+    /**
+     * THE WORLD ENTRY HAS BEGUN DURING A CHARACTER SELECT PASS (pure): the game's private memory [nowKb] has climbed more than
+     * [STEADY_KB] above what the pass left it at (its start [beforeKb] less the [sentKb] it sent out). GameLife only knows the world
+     * once the add-ons run, after the world entry's loading screen; Enter World pressed during the pass shows here first, as the climb
+     * of the world loading, and the pass stops before its next step (never paging during the world entry's burst)
+     */
+    fun climbing(beforeKb: Long, nowKb: Long, sentKb: Long): Boolean =
+        beforeKb >= 0 && nowKb >= 0 && nowKb - (beforeKb - sentKb.coerceAtLeast(0)) > STEADY_KB
+
     /** the game client's private memory over the last seconds: [steady] when it moved by at most [STEADY_KB] over [STEADY_MS] (pure) */
     class Trend {
         private val at = ArrayDeque<Pair<Long, Long>>()
@@ -147,7 +159,8 @@ object GamePageOut {
     /** one thread of the game ([state] from its stat, [cpuTicks] utime + stime, [blocksUrg] SIGURG in its SigBlk) */
     data class Th(val tid: Int, val state: Char, val cpuTicks: Long, val blocksUrg: Boolean)
 
-    /** the thread a request goes to: asleep, not blocking SIGURG, not the main thread, the least CPU; 0 = none (to the process) (pure) */
+    /** the thread a request goes to: asleep, not blocking SIGURG, not the main thread, the least CPU; 0 = none: no request at all (a
+     *  request is never sent to the process, whose signal the kernel hands to the main thread first) (pure) */
     fun pickThread(pid: Int, ts: List<Th>): Int =
         ts.filter { it.tid != pid && it.state == 'S' && !it.blocksUrg }.minWithOrNull(compareBy<Th>({ it.cpuTicks }, { -it.tid }))?.tid ?: 0
 
@@ -250,10 +263,11 @@ object GamePageOut {
 
     /**
      * "pageout (game, charselect, 1, free 3900 MB < 4303): rss anon 1890 -> 1650 MB; paged 240 MB cold-only (probed 512 chunks: 230 cold,
-     * 140 in use; samples 16 MB); came back 0 MB; swap used 2100 -> 2340 MB; 11 requests, longest 41 ms" (pure)
+     * 140 in use; samples 16 MB); came back 0 MB; swap used 2100 -> 2340 MB; 11 requests, longest 41 ms" (pure); [threadChanged]: the
+     * first idle thread ended during the pass and another one took the rest
      */
     fun passLine(n: Int, why: String, p: Pass, rssBeforeKb: Long, rssAfterKb: Long, swapBeforeKb: Long, swapAfterKb: Long, end: String,
-                 toThread: Boolean): String {
+                 threadChanged: Boolean = false): String {
         fun m(kb: Long) = if (kb < 0) "?" else MemWatch.mb(kb).toString()
         return buildString {
             append("pageout (game, ").append(p.phase.words).append(", ").append(n).append(", ").append(why).append("): ")
@@ -263,7 +277,7 @@ object GamePageOut {
             append("; came back ").append(m(p.backKb)).append(" MB")
             append("; swap used ").append(m(swapBeforeKb)).append(" -> ").append(m(swapAfterKb)).append(" MB")
             append("; ").append(p.requests).append(" requests, longest ").append(p.maxMs).append(" ms")
-            if (!toThread) append("; to the process")
+            if (threadChanged) append("; thread re-picked")
             if (end != "done") append("; ").append(end)
         }
     }
@@ -347,8 +361,10 @@ object GamePageOut {
             if (rss >= 0) trend.add(now, rss)
             val why = charselectWhy(s.availKb, s.swapFreeKb, DeviceTier.totalMb, gameUp, started, System.currentTimeMillis(), inWorld,
                 runCatching { signedIn() }.getOrDefault(false), rss, trend.steady(now), charselectDone) ?: return
+            val tid = thread(p)
+            if (tid <= 0) return                                        // no idle thread now: the next sample tries again
             charselectDone = true
-            start(Phase.CHARSELECT, why, p, h, dir)
+            start(Phase.CHARSELECT, why, p, tid, h, dir)
             return
         }
         if (!inWorld) return
@@ -357,14 +373,21 @@ object GamePageOut {
         if (!worldLimit.due(now)) return
         val p = clientPid(now)
         if (p <= 0) return
-        start(Phase.WORLD, why, p, h, dir)
+        val tid = thread(p)
+        if (tid <= 0) return
+        start(Phase.WORLD, why, p, tid, h, dir)
     }
 
-    /** the pass may go on: the character select one only before the world, the world's only in it with no loading screen up */
-    private fun gate(phase: Phase): String? {
+    /** the pass may go on: the character select one only before the world and while the game's memory is not climbing (the world
+     *  entry under way: [climbing]), the world's only in it with no loading screen up */
+    private fun gate(ps: Pass, run: Run): String? {
         if (!runCatching { LauncherHooks.gameUp() }.getOrDefault(false)) return "stopped: the game closed"
-        return when (phase) {
-            Phase.CHARSELECT -> if (GameLife.worldNow) "stopped: in the world" else null
+        return when (run.phase) {
+            Phase.CHARSELECT -> when {
+                GameLife.worldNow -> "stopped: in the world"
+                climbing(run.rssBefore, rssKb(run.pid), ps.totalKb) -> "stopped: the game's memory is climbing (the world loading)"
+                else -> null
+            }
             Phase.WORLD -> when {
                 GameLife.loadingNow -> "stopped: loading screen"
                 !GameLife.worldNow || GameLife.awayNow -> "stopped: out of the world"
@@ -373,13 +396,25 @@ object GamePageOut {
         }
     }
 
-    private class Run(val phase: Phase, val why: String, val pid: Int, val tid: Int, val dir: File, val rssBefore: Long, val swapBefore: Long)
+    private class Run(val phase: Phase, val why: String, val pid: Int, var tid: Int, val dir: File, val rssBefore: Long, val swapBefore: Long) {
+        var threadChanged = false
+    }
 
-    private fun start(phase: Phase, why: String, p: Int, h: Handler, dir: File) {
+    private fun start(phase: Phase, why: String, p: Int, tid: Int, h: Handler, dir: File) {
         val ps = Pass(phase)
         pass = ps
-        val run = Run(phase, why, p, thread(p), dir, rssKb(p), swapUsed())
+        val run = Run(phase, why, p, tid, dir, rssKb(p), swapUsed())
         send(ps.first(), ps, run, h)
+    }
+
+    /** the request's signal to the pass's idle thread; that thread gone (-3, ESRCH): once more to another idle one. 0 = sent */
+    private fun signal(run: Run): Int {
+        val sent = NativeHeap.pageOutSignalGameNow(run.pid, run.tid)
+        if (sent != -3) return sent
+        val t = thread(run.pid)
+        if (t <= 0 || t == run.tid) return sent
+        run.tid = t; run.threadChanged = true
+        return NativeHeap.pageOutSignalGameNow(run.pid, t)
     }
 
     private fun send(step: Step, ps: Pass, run: Run, h: Handler) {
@@ -388,23 +423,20 @@ object GamePageOut {
             is Step.Send -> h.postDelayed({
                 runCatching {
                     // a commit or a further probe only while the pass's moment lasts (the start was checked by the trigger itself)
-                    val stop = if (step.op == 'P') null else gate(run.phase)
+                    val stop = if (step.op == 'P') null else gate(ps, run)
                     if (stop != null) { finish(ps, run, stop, h); return@runCatching }
                     val n = ++passSeq
                     File(run.dir, "gres-${run.pid}").delete()
                     val tmp = File(run.dir, "greq.tmp")
                     tmp.writeText("DSFPO2 $n ${step.op} ${step.capKib}\n")
                     if (!tmp.renameTo(File(run.dir, "greq"))) { finish(ps, run, "stopped: request not written", h); return@runCatching }
-                    val sent = NativeHeap.pageOutSignalGameNow(run.pid, run.tid)
-                    if (sent < 0) { finish(ps, run, "stopped: signal $sent", h); return@runCatching }
-                    if (sent == 1) toThread = false
+                    val sent = signal(run)
+                    if (sent != 0) { finish(ps, run, "stopped: signal $sent", h); return@runCatching }
                     await(n, SystemClock.uptimeMillis(), ps, run, h)
                 }.onFailure { finish(ps, run, "stopped: ${it.javaClass.simpleName}", h) }
             }, step.delayMs)
         }
     }
-
-    private var toThread = true
 
     private fun await(n: Long, since: Long, ps: Pass, run: Run, h: Handler) {
         h.postDelayed({
@@ -425,10 +457,10 @@ object GamePageOut {
         val now = SystemClock.uptimeMillis()
         passes++; pagedKb += ps.totalKb
         val n = passes
-        if (run.phase == Phase.WORLD) worldLimit.done(now, ps.totalKb, ps.backKb + checkBackKb)
+        // the commits' pages only: a pass that sent out its probe's samples and found nothing cold backs off like one that paged nothing
+        if (run.phase == Phase.WORLD) worldLimit.done(now, ps.pagedKb, ps.backKb + checkBackKb)
         checkBackKb = 0L
-        val l = passLine(n, run.why, ps, run.rssBefore, rssKb(run.pid), run.swapBefore, swapUsed(), end, toThread)
-        toThread = true
+        val l = passLine(n, run.why, ps, run.rssBefore, rssKb(run.pid), run.swapBefore, swapUsed(), end, run.threadChanged)
         MemWatch.note(l)
         runCatching { DiagLog.event("memory", l.take(600)) }
         if (unsupported) MemWatch.note("pageout: this kernel has no MADV_PAGEOUT; off for this run")
@@ -442,7 +474,7 @@ object GamePageOut {
                 File(run.dir, "gres-${run.pid}").delete()
                 val tmp = File(run.dir, "greq.tmp")
                 tmp.writeText("DSFPO2 $m k 0\n")
-                if (!tmp.renameTo(File(run.dir, "greq")) || NativeHeap.pageOutSignalGameNow(run.pid, run.tid) < 0) return@runCatching
+                if (!tmp.renameTo(File(run.dir, "greq")) || signal(run) != 0) return@runCatching
                 h.postDelayed({
                     runCatching {
                         val r = File(run.dir, "gres-${run.pid}").readText().let { parseGRes(it, m) } ?: return@runCatching

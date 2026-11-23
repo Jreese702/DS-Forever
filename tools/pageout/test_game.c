@@ -18,7 +18,8 @@ static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
 /* ------------------------------------------------------------------ the simulated memory */
-#define PG 4096u
+static unsigned sim_pg = 4096u;          /* the simulated page size (64 KiB in test_big_pages) */
+#define PG sim_pg
 static uintptr_t sim_lo, sim_hi;            /* the simulated region */
 static unsigned char *sim_res;              /* one byte a page: 1 = resident */
 static long sim_madvise_calls;
@@ -222,6 +223,27 @@ static void test_caps(void) {
     CHECK(g.pstart == chunk(PO_G_PROBE_MAX));
 }
 
+/* 64 KiB pages (and 16 KiB ones): a chunk's samples are 512 KiB, so 128 chunks' would be 64 MiB; the probe still stops at 32 MiB a
+ * request and 256 MiB a pass */
+static void test_big_pages(void) {
+    sim_pg = 65536u;
+    sim_make(600);
+    po_state_init(&st, PG); po_g_init(&g, &st);
+    po_gresult r;
+    run('P', 0, &r);
+    int probes = 1;
+    printf("64 KiB pages: probe 1 probed=%u sampled=%llu KB more=%d\n", r.probed, (unsigned long long) r.sampled_kb, r.more);
+    CHECK(r.rc == PO_OK && r.more == 1);
+    CHECK(r.sampled_kb == 32u * 1024 && r.probed == 64);                          /* 64 chunks of 512 KiB: the request's 32 MiB */
+    while (r.more && probes < 40) {
+        run('p', 0, &r); probes++;
+        CHECK(r.rc == PO_OK && r.sampled_kb <= 32u * 1024);
+    }
+    CHECK(r.more == 0 && r.pass_kb <= 256u * 1024);
+    CHECK(sim_paged_bytes / 1024u == r.pass_kb);
+    sim_pg = 4096u;
+}
+
 static void test_line(void) {
     po_gresult r = {0, 'c', 412, 3264, 33, 4, 32768, 32736, 1024, 40000, 1, 41};
     char out[PO_LINE_MAX];
@@ -239,6 +261,7 @@ int main(void) {
     test_rules();
     test_cold_only();
     test_caps();
+    test_big_pages();
     test_line();
     printf("game mode: %d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;

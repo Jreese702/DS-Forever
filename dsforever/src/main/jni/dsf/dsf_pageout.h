@@ -796,8 +796,11 @@ typedef struct { po_gresult *res; uint32_t probed, scanned; uintptr_t lo, hi; } 
 static inline int po_g_probe_each(po_gstate *g, uintptr_t c, uintptr_t next, void *argp) {
     po_g_probe_arg *a = (po_g_probe_arg *) argp;
     if (c < a->lo || (a->hi && c >= a->hi)) return 0;
+    uint64_t sample = (uint64_t) PO_G_SLICES * PO_G_SLICE_PAGES * g->st->page;    /* the most one chunk's probe sends out */
+    /* the caps hold for the probe too, whatever the page size: [PO_G_REQ_MAX] a request (with 16 or 64 KiB pages 128 chunks' samples
+     * would pass it), [PO_G_PASS_MAX] a pass */
     if (a->probed >= PO_G_PROBE_REQ || a->scanned >= PO_G_SCAN_REQ || g->nprobe >= PO_G_PROBE_MAX ||
-        g->pass_spent + (uint64_t) PO_G_SLICES * PO_G_SLICE_PAGES * g->st->page > PO_G_PASS_MAX) { g->pcur = c; return 1; }
+        a->res->sampled_kb * 1024u + sample > PO_G_REQ_MAX || g->pass_spent + sample > PO_G_PASS_MAX) { g->pcur = c; return 1; }
     a->scanned++;
     if (po_g_is_hot(g, c)) { a->res->inuse++; return 0; }
     if (next - c < PO_G_MIN_CHUNK || po_g_near_sp(g, c, next)) return 0;
