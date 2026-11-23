@@ -210,10 +210,11 @@ object PerformanceTileModel {
         else -> ""
     }
 
-    /** the stream band's state: the 120 fps note, a change that reconnects the stream when the band closes, a test under way */
+    /** the stream band's state: the 120 fps note, the Wi-Fi note above 50 Mbps, a change that reconnects the stream when the band
+     *  closes, a test under way */
     private fun streamStatus(s: State): List<String> {
         val st = s.stream ?: return emptyList()
-        return listOfNotNull(StreamQuality.NOTE_120.takeIf { st.q.fps == 120 }, RESTARTS.takeIf { st.restarts },
+        return listOfNotNull(StreamQuality.NOTE_120.takeIf { st.q.fps == 120 }, StreamQuality.wifiNote(st.q), RESTARTS.takeIf { st.restarts },
             TESTING.takeIf { st.test?.running == true })
     }
     const val RESTARTS = "The stream restarts on close"

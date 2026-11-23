@@ -100,6 +100,10 @@ class StreamSession(
     val mode: StreamMode.Choice = StreamMode.HOME,
     /** Sunshine's base (http) port as Desktop last reported it, for the "no video" line's ports */
     private val httpPort: () -> Int = { host.httpPort },
+    /** the video capabilities the core is told (stream smoothness: [RfiPolicy.capabilities]; direct submit alone = as before) */
+    val videoCapabilities: Int = MoonBridge.CAPABILITY_DIRECT_SUBMIT,
+    /** the log's words for [videoCapabilities] ("RFI HEVC", "RFI off (...)") */
+    private val capsLabel: String = "",
 ) {
     interface Events {
         fun stage(text: String)
@@ -160,11 +164,12 @@ class StreamSession(
 
             val formats = quality.videoFormats(decoders("video/hevc"), decoders("video/av01"))
             MoonBridge.setup(video, audio, listener)
-            Log.i(TAG, "stream: ${host.address} app ${app.second} ($verb) ${quality.label} formats 0x${Integer.toHexString(formats)} ${mode.label}")
+            Log.i(TAG, "stream: ${host.address} app ${app.second} ($verb) ${quality.label} formats 0x${Integer.toHexString(formats)} ${mode.label}" +
+                if (capsLabel.isNotEmpty()) ", $capsLabel" else "")
             val ret = synchronized(MoonBridge::class.java) {
                 MoonBridge.startConnection(host.address, appVersion, gfe, rtsp, codecSupport, quality.width, quality.height, quality.fps,
                     quality.bitrateKbps, mode.packetSize, mode.config, MoonBridge.AUDIO_CONFIGURATION_STEREO, formats,
-                    quality.fps * 100, riKey, LaunchPlan.riIv(riKeyId), MoonBridge.CAPABILITY_DIRECT_SUBMIT,
+                    quality.fps * 100, riKey, LaunchPlan.riIv(riKeyId), videoCapabilities,
                     MoonBridge.COLORSPACE_REC_709, MoonBridge.COLOR_RANGE_LIMITED)
             }
             if (ret != 0) { if (!stopped) events.ended(ret, false, "The stream didn't start (error $ret)."); return }

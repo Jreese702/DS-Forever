@@ -41,7 +41,15 @@ data class StreamQuality(
         val HEIGHTS = listOf(720, 900, 1080)
         /** 120 only where this Thor can show it ([offeredFps]): its decoder at the stream's size and a 120 Hz top screen */
         val FPS = listOf(30, 60, 120)
-        val BITRATES_KBPS = listOf(5_000, 10_000, 15_000, 20_000, 30_000, 40_000, 50_000)
+        /** up to 150 Mbps (the user's pick 2026-11-23, "Up to 150": a tester's Artemis ran 100-500 Mbps to the same Thor). Nothing
+         *  else caps it: moonlight-common-c sends the picked rate to a Sunshine host as is (its 100 Mbps cap is GFE's alone), and
+         *  Desktop's sunshine.conf sets no max_bitrate */
+        val BITRATES_KBPS = listOf(5_000, 10_000, 15_000, 20_000, 30_000, 40_000, 50_000, 60_000, 80_000, 100_000, 120_000, 150_000)
+        /** the steps above this need a strong Wi-Fi link: [NOTE_WIFI] says so */
+        const val KBPS_PLAIN_MAX = 50_000
+        const val NOTE_WIFI = "Needs strong 5/6 GHz Wi-Fi"
+        /** the picker's note for [q]: the Wi-Fi one above [KBPS_PLAIN_MAX], else null */
+        fun wifiNote(q: StreamQuality): String? = NOTE_WIFI.takeIf { q.bitrateKbps > KBPS_PLAIN_MAX }
         /** 120 fps sends twice the frames: the bit rate suggested with it */
         const val KBPS_FOR_120 = 30_000
         const val NOTE_120 = "120 fps: 30+ Mbps"

@@ -246,6 +246,13 @@ JNIEXPORT void JNICALL JNI_FN(interruptConnection)(JNIEnv* env, jclass clazz) { 
 JNIEXPORT jstring JNICALL JNI_FN(getStageName)(JNIEnv* env, jclass clazz, jint stage) { return (*env)->NewStringUTF(env, LiGetStageName(stage)); }
 JNIEXPORT jstring JNICALL JNI_FN(getLaunchUrlQueryParameters)(JNIEnv* env, jclass clazz) { return (*env)->NewStringUTF(env, LiGetLaunchUrlQueryParameters()); }
 JNIEXPORT jint JNICALL JNI_FN(getPendingVideoFrames)(JNIEnv* env, jclass clazz) { return LiGetPendingVideoFrames(); }
+/* stream-smooth (the stream stats line every 5 s): the core's ENet estimate of the round trip to the PC, (rtt << 32) | variance in
+ * ms; -1 = none yet (no control stream) */
+JNIEXPORT jlong JNICALL JNI_FN(getEstimatedRttInfo)(JNIEnv* env, jclass clazz) {
+    uint32_t rtt = 0, var = 0;
+    if (!LiGetEstimatedRttInfo(&rtt, &var)) return -1;
+    return (jlong)(((uint64_t)rtt << 32) | (uint64_t)var);
+}
 JNIEXPORT jint JNICALL JNI_FN(getPortFlagsFromTerminationErrorCode)(JNIEnv* env, jclass clazz, jint errorCode) { return LiGetPortFlagsFromTerminationErrorCode(errorCode); }
 
 /* ---------------------------------------------------------------- input: keyboard, mouse, the Xbox pad */

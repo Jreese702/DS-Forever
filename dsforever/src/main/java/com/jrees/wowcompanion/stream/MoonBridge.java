@@ -59,6 +59,10 @@ public final class MoonBridge {
     public static final int COLORSPACE_REC_709 = 1;
     public static final int COLOR_RANGE_LIMITED = 0;
     public static final int CAPABILITY_DIRECT_SUBMIT = 1;
+    /** reference-frame invalidation (Limelight.h): a lost frame is recovered from an older one instead of a whole new picture */
+    public static final int CAPABILITY_REFERENCE_FRAME_INVALIDATION_AVC = 0x2;
+    public static final int CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC = 0x4;
+    public static final int CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1 = 0x40;
     public static final byte KEY_ACTION_DOWN = 0x03;
     public static final byte KEY_ACTION_UP = 0x04;
     public static final byte BUTTON_ACTION_PRESS = 0x07;
@@ -116,6 +120,8 @@ public final class MoonBridge {
     public static native String getLaunchUrlQueryParameters();
     public static native int getPendingVideoFrames();
     public static native int getPortFlagsFromTerminationErrorCode(int errorCode);
+    /** stream-smooth: the core's round-trip estimate, (rtt &lt;&lt; 32) | variance in ms; -1 = none yet */
+    public static native long getEstimatedRttInfo();
     public static native void sendKeyboardInput(short keyCode, byte keyAction, byte modifiers, byte flags);
     public static native void sendMousePosition(short x, short y, short referenceWidth, short referenceHeight);
     public static native void sendMouseMove(short deltaX, short deltaY);
