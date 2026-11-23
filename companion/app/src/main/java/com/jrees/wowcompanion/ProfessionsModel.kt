@@ -390,7 +390,8 @@ object ProfessionsModel {
     /** a tap on the shared pad: the row's name and the column */
     class Tap(val row: String, val col: Int)
 
-    enum class Kind { NONE, OPEN, CREATE }
+    /** ENCHANT (#541): an Enchanting recipe - cast once, then the item picked in the Bags room's "Choose an item" */
+    enum class Kind { NONE, OPEN, CREATE, ENCHANT }
 
     /** what the room's single action place shows, and what a press sends */
     class Action(val kind: Kind, val enabled: Boolean, val why: String?, val tap: Tap?)
@@ -432,7 +433,9 @@ object ProfessionsModel {
             return Action(Kind.OPEN, tap != null, if (tap == null) missing(ov, ROW_OPEN) else null, tap)
         }
         if (ov.foreign || book?.foreign == true) return Action(Kind.NONE, false, "not your own profession", null)
-        fun no(why: String) = Action(Kind.CREATE, false, why, null)
+        // an enchant's button is Enchant (#541), whatever stops it
+        val kind = if (recipe?.ench == true) Kind.ENCHANT else Kind.CREATE
+        fun no(why: String) = Action(kind, false, why, null)
         if (recipe == null) return no("pick a recipe")
         if (ov.sel != recipe.id) return no(when {
             // without the select row the addon can never confirm the recipe: say so, never wait forever
@@ -441,13 +444,20 @@ object ProfessionsModel {
             else -> "waiting for the game"
         })
         ov.busy?.let { return no("crafting") }
-        if (recipe.ench) return no("needs an item to enchant")
         if (recipe.cooldown > 0) return no("cooldown")
         recipe.req.filter { !it.met }.takeIf { it.isNotEmpty() }?.let { m ->
             return no("requires " + m.joinToString(", ") { it.name })
         }
         val can = canMake(recipe, counts, isLive(ov, book))
         if (can < 1) return no("missing reagents")
+        // ENCHANT, THEN PICK THE ITEM (#541, "cant enchant": every enchant used to be refused here, "needs an item to enchant"): one
+        // cast (add-on p27's ctl ench), the game asks for its item, and the Bags room's "Choose an item" answers it. One at a time:
+        // the count box does not apply. An older add-on without the key says so
+        if (recipe.ench) {
+            if (ROW_CTL !in ov.padRows) return no(missing(ov, ROW_CTL))
+            val tap = ctlTap(ov, "ench") ?: return no("needs the add-on update")
+            return Action(Kind.ENCHANT, true, null, tap)
+        }
         if (count !in countRange(can)) return no("too many")
         val tap = ctlTap(ov, "make:$count") ?: return no(missing(ov, ROW_CTL))
         return Action(Kind.CREATE, true, null, tap)
@@ -456,6 +466,8 @@ object ProfessionsModel {
     /** Create All: the same checks as Create, for every one that can be made */
     fun createAll(ov: Overview?, viewed: Profession?, book: Book?, recipe: Recipe?, counts: Map<Int, Int>): Action {
         val one = action(ov, viewed, book, recipe, 1, counts)
+        // an enchant goes on one item at a time (#541): no Create All
+        if (one.kind == Kind.ENCHANT) return Action(Kind.ENCHANT, false, one.why ?: "one item at a time", null)
         if (one.kind != Kind.CREATE || !one.enabled || ov == null) return Action(one.kind, false, one.why, null)
         val tap = ctlTap(ov, "all") ?: return Action(Kind.CREATE, false, missing(ov, ROW_CTL), null)
         return Action(Kind.CREATE, true, null, tap)
@@ -487,6 +499,13 @@ object ProfessionsModel {
      */
     fun forgetTap(ov: Overview?, p: Profession?): Tap? =
         if (ov != null && p != null && p.main && p.pos in 1..2) ctlTap(ov, "forget:${p.pos}") else null
+
+    /**
+     * #541: entering the room again after the enchant's item pick keeps the page it left on ([viewed], its recipe, search and scroll)
+     * instead of the entry's book: only when the pick left the game's window open ([pickOpen]) and the game still shows that profession
+     * ([Overview.open]); else the usual entry on the book
+     */
+    fun keepsPickPage(pickOpen: Boolean, viewed: Int, ov: Overview?): Boolean = pickOpen && viewed != 0 && ov != null && ov.open == viewed
 
     /**
      * Entering the room on its book (addon p19, the order every room uses since R1): the `enter` key, with which the addon answers

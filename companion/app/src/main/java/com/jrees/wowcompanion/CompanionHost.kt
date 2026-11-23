@@ -913,7 +913,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ProfessionsStore.init(this)
         // B that leaves the Professions room goes HOME (user ruling 2026-09-28 23:12: "Pressing be to leave the cursor should take
         // me back to the home by default for everything")
-        professionsView = ProfessionsView(this).apply { onLeave = { roomLeft(Room.PROFESSIONS) }; lastHandOverAt = { capHolderAt } }
+        professionsView = ProfessionsView(this).apply { onLeave = { roomLeft(Room.PROFESSIONS) }; lastHandOverAt = { capHolderAt }
+            onPickItem = { enchantPick() } }
         // the Calendar room (calendar session). B that leaves it goes HOME (user ruling)
         calendarView = CalendarView(this).apply {
             onLeave = { roomLeft(Room.CALENDAR) }
@@ -2727,6 +2728,20 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         } else if (room == Room.BAGS && docCurrent && why != "room" && why != "free" && why != "character" && why != "lootwait") show(Room.HOME)
     }
 
+    /**
+     * ENCHANT, THEN PICK THE ITEM (#541, "cant enchant"): the Professions room cast an enchant and the game asks for its item: the Bags
+     * room, whose "Choose an item" lists what the enchant can go on (worn first; Bags.lua's pick, the game's Replace question there),
+     * and back to Professions once the pick ends (the enchant put on, or B's /stopspelltarget)
+     */
+    private var enchPickBack = false
+    private fun enchantPick(): Boolean {
+        if (room != Room.PROFESSIONS || !docCurrent) return false
+        enchPickBack = true
+        Log.i("WCKIT", "professions: the enchant asks for its item: the Bags room's pick")
+        show(Room.BAGS)
+        return true
+    }
+
     /** when the Settings' reload key went out (0 = no reload pending): the start screen waits for the game's new hello */
     private var reloadAt = 0L
 
@@ -2976,6 +2991,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // bags-kit3: the pick's type and what the game said of it (cx), for a later device check of kits / stones
                 if (msg.optBoolean("on")) Log.i("WCKIT", "itarget: ctx=${msg.optString("ctx")} wornOk=${msg.optString("wornOk")} cx=${msg.optJSONObject("cx")}")
                 characterView.onItarget(msg.optBoolean("on"), msg)
+                // #541: the Professions room's enchant was put on its item (or its pick stopped): back to Professions from the Bags
+                // room; ended in another room (the Character room's worn-slot pick, Home), the game's window left open for the pick
+                // is closed there (ProfessionsView.pickEndedAway: one close tap, the leave's), never left shown and held by nobody
+                if (!msg.optBoolean("on") && enchPickBack) {
+                    enchPickBack = false
+                    if (room == Room.BAGS) show(Room.PROFESSIONS) else if (room != Room.PROFESSIONS) professionsView.pickEndedAway()
+                }
             }
             // PadMap m104: which LB button targets whom, from the game's own bindings (the LB picture)
             "lbmap" -> LbMap.update(msg)
@@ -3446,7 +3468,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 professionsView.refresh()
             }
             "profrec" -> msg.optJSONObject("p")?.let { if (ProfessionsStore.onBook(it, System.currentTimeMillis())) professionsView.refresh() }
-            "profack" -> { ProfessionsStore.onAck(msg); professionsView.onAck(msg) }
+            "profack" -> { ProfessionsStore.onAck(msg); professionsView.onAck(msg, live = current) }
             "profmade" -> { ProfessionsStore.onMade(msg); professionsView.refresh() }
             // never an old, replayed press; a live press while the room is not shown (the addon still holds the controller for it,
             // e.g. after the app was killed) hands the controller back: the player's own press, one no-action tap

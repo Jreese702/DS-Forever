@@ -39,7 +39,38 @@ object CityExits {
      */
     val TABLE = listOf(
         Exit(1453, "Deeprun Tram", x = 0.690, y = 0.310, toMap = 1455, rideYd = TRAM_YD),
+        // #578 ("in undercity ... the quest plugin was making me run in loops"): the Undercity's way up, its elevators to the Ruins of
+        // Lordaeron. MEASURED on a player's Thor (1.0.37, 11-21: "learned a way out of map 1421 to 1458 (Undercity) on foot: world 1631,
+        // 224" - the game's own position where its map turned to the Undercity, riding down). World yards: the Undercity's 0..1 frame is
+        // the game's map data on the device (MapView turns it). Into Tirisfal Glades, the Undercity's parent map (the harness's
+        // "the Undercity entrance" link 1420 - 1458 at (1648, 240), 23 yd off). An elevator runs both ways: it is a way in as well
+        // (TravelLinks). Every other way out (the sewers) is learned.
+        Exit(UNDERCITY, UNDERCITY_LIFTS, wx = 1631.0, wy = 224.0, toMap = 1420),
     )
+    const val UNDERCITY = 1458
+    const val UNDERCITY_LIFTS = "Elevators up"
+
+    /**
+     * the capitals UNDER THE GROUND (#578): the map's edge is no way out (only its elevators and sewers lead up), and the way up is
+     * never "back where the player came from" to be ruled out (CityExits.choose's cameFrom): every way on from there goes up first
+     */
+    val UNDERGROUND = setOf(UNDERCITY)
+
+    /** the map the "never back where the player came from" rule keeps out of the route from [mapId] (0 = no such rule): none when
+     *  the goal lies in [cameFrom] itself ([goalThere]) or the player is under the ground ([UNDERGROUND], #578) */
+    fun backRule(mapId: Int, cameFrom: Int, goalThere: Boolean): Int = if (goalThere || mapId in UNDERGROUND) 0 else cameFrom
+
+    /** does a walk on foot from [from] into [to] teach the way back as well (the Learner, #578)? Only into or out of a capital UNDER THE
+     *  GROUND ([UNDERGROUND]): its ways are elevators and sewers, walked both ways. Any other border, a capital's too, may be a drop
+     *  (a jump off a Thunder Bluff mesa into Mulgore lands at a cliff's foot, no way up): one way only, the one walked */
+    fun backToo(from: Int, to: Int): Boolean = from in UNDERGROUND || to in UNDERGROUND
+
+    /** a table entry's place on its map, in that map's 0..1 ([at] turns world yards x, y into it): its own x / y, else its world yards */
+    fun tableAt(e: Exit, at: (Double, Double) -> DoubleArray): DoubleArray? = when {
+        !e.x.isNaN() && !e.y.isNaN() -> doubleArrayOf(e.x, e.y)
+        !e.wx.isNaN() && !e.wy.isNaN() -> at(e.wx, e.wy)
+        else -> null
+    }
 
     /** a way out of the current map, in ITS 0..1: where to walk, and where the way ends (the transport's far end, or the same).
      *  [tailYd]: a ride to ANOTHER continent, the yards from where it lands to the quest there (its end cannot be put on this map) */
@@ -124,6 +155,12 @@ object CityExits {
                 learned = if (gap <= FOOT_YD) Exit(lastMap, "", wx = lastWx, wy = lastWy, toMap = map, learned = true)
                     else Exit(lastMap, "", wx = lastWx, wy = lastWy, toMap = map, toWx = wx, toWy = wy, rideYd = TRAM_YD, learned = true)
                 keep(learned)
+                // #578: the Undercity's elevator (or sewer) walked through is a way BACK as well (walked into the Undercity, its way
+                // out is known; the reverse kept on the new map's side). Only UNDER THE GROUND ([backToo]): anywhere else a walk across
+                // a border can be a drop down a cliff (off a Thunder Bluff mesa, a city wall), no way back up - and the document
+                // carries no height to tell the two apart
+                if (!learned.transport && backToo(lastMap, map))
+                    keep(Exit(map, "", wx = wx, wy = wy, toMap = lastMap, learned = true))
             }
             // leaving the continent on foot (a tram / boat / portal into its own instance): remember where
             if (lastMap != 0 && cont != lastCont && lastCont >= 0 && !taxi && !lastTaxi && rideMap == 0) {

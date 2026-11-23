@@ -46,7 +46,7 @@ object PreviewStage {
     /** the companion's own keyboard, drawn at [w] x [h] (the Message input row): a board of its own, never wired to anything */
     private var kb: ChatKeyboard? = null
     fun keyboard(ctx: Context, c: Canvas, w: Float, h: Float) {
-        val k = kb ?: ChatKeyboard(ctx).also { it.open(); kb = it }
+        val k = kb ?: ChatKeyboard(ctx).also { it.open(); it.scaleOverride = 1f; kb = it }
         val fh = ChatKeyboard.fullHeight()
         k.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(fh, View.MeasureSpec.EXACTLY))
         k.layout(0, 0, 1240, fh)

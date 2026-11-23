@@ -139,7 +139,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
         kb.onClose = { closeKeyboard() }
         kb.onVoice = { invalidate() }
         addView(preview, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply { topMargin = 110 })
-        addView(kb, LayoutParams(LayoutParams.MATCH_PARENT, ChatKeyboard.fullHeight(), android.view.Gravity.BOTTOM))
+        addView(kb, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))     // its own height (#557)
         visibility = View.GONE
     }
 
@@ -346,7 +346,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
         UiKit.cover(c, RectF(0f, 0f, w, height.toFloat()), 0.9f)
         // the rest layout (box 110..310, buttons under it) and, with the keyboard up, the same pieces right above the board
         val k = if (kb.visibility == View.VISIBLE) kbK else 0f
-        val boardTop = height - ChatKeyboard.fullHeight().toFloat()
+        val boardTop = height - (if (kb.height > 0) kb.height else kb.boardHeight()).toFloat()
         val upButtonsTop = boardTop - 16f - BUTTON_H
         val upBoxBottom = upButtonsTop - 20f
         val upBoxTop = maxOf(20f + BACK_H + 12f, upBoxBottom - BOX_UP_H)      // under the Back button

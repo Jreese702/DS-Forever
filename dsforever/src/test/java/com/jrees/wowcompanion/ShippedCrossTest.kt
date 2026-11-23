@@ -17,6 +17,8 @@ import org.junit.Test
  * shipped net is not taken), the legs on the network and the steps' words.
  */
 class ShippedCrossTest {
+    /** the measured table's RIDES only (the tram): its ways on foot are in the game's world yards (#578's Undercity elevators), which this synthetic world does not have */
+    private val synthTable = CityExits.TABLE.filter { it.transport }
     // ---- the synthetic world (TravelLinksTest's): map -> (continent, its box's corner); each box 1000 x 1000 yd
     private val boxes = LinkedHashMap<Int, DoubleArray>()
     private fun box(map: Int, cont: Int) { val i = boxes.size; boxes[map] = doubleArrayOf(cont.toDouble(), (i % 8) * 2000.0, (i / 8) * 2000.0) }
@@ -116,7 +118,7 @@ class ShippedCrossTest {
 
     /** the device's inputs with NO drafted nets: every walk must come from the shipped files */
     private fun base(learned: Map<Int, List<CityExits.Exit>> = learnedTram) = TravelLinks.Inputs(
-        mapAt = ::mapAt, mapName = ::name, nets = emptyList(), learnedMaps = learned.keys, learned = { learned[it].orEmpty() },
+        table = synthTable, mapAt = ::mapAt, mapName = ::name, nets = emptyList(), learnedMaps = learned.keys, learned = { learned[it].orEmpty() },
         rides = rides, masters = masters, taxiKnown = { it in taxi }, taxiConnected = { a, b -> a != b && a in taxi && b in taxi },
         tableAt = ::tableAt, portals = portals, manual = listOf(sgGate, sgGate.back("Through the Searing Gorge gate back", "SG-GATE")))
 
@@ -203,18 +205,18 @@ class ShippedCrossTest {
         // the device's draft of 1453 has a crossing into 1424 nobody shipped; the shipped net of 1453 wins
         val draft = SafePath.Net(1453, 0, "device", listOf(SafePath.Node(1, at(1453)[0], at(1453)[1], SafePath.EXIT)), emptyList(),
             listOf(SafePath.Exit(1, 1424, "walk", "")))
-        val b = base(); val inp = ShippedCross.inputs(TravelLinks.Inputs(b.mapAt, b.mapName, listOf(draft)), zones(A))
+        val b = base(); val inp = ShippedCross.inputs(TravelLinks.Inputs(b.mapAt, b.mapName, listOf(draft), table = synthTable), zones(A))
         assertFalse(TravelLinks.build(inp, TravelLinks.Character(A)).links.any { it.key == "w:1453>1424" })
         // a map with no shipped net keeps its draft
         val draft2 = SafePath.Net(1445, 1, "device", listOf(SafePath.Node(1, at(1445)[0], at(1445)[1], SafePath.EXIT)), emptyList(),
             listOf(SafePath.Exit(1, 1413, "walk", "")))
-        val inp2 = ShippedCross.inputs(TravelLinks.Inputs(b.mapAt, b.mapName, listOf(draft2)), zones(A))
+        val inp2 = ShippedCross.inputs(TravelLinks.Inputs(b.mapAt, b.mapName, listOf(draft2), table = synthTable), zones(A))
         assertTrue(TravelLinks.build(inp2, TravelLinks.Character(A)).links.any { it.key == "w:1445>1413" })
     }
 
     @Test fun anAvoidedShippedCrossingCostsItsWayThrough() {
         val zs = listOf(ShippedCross.Zone(1429, pack(1429, listOf(X(1429, 1453, at(1429, 500.0, 990.0), "the gate", avoid = true)), emptyList()).section(A)!!))
-        val g = TravelLinks.build(ShippedCross.inputs(TravelLinks.Inputs(::mapAt, ::name), zs), TravelLinks.Character(A))
+        val g = TravelLinks.build(ShippedCross.inputs(TravelLinks.Inputs(::mapAt, ::name, table = synthTable), zs), TravelLinks.Character(A))
         val l = g.links.first { it.fromMap == 1429 }
         assertTrue(l.avoid); assertEquals((TravelLinks.AVOID_K - 1) * TravelLinks.CROSS_YD, l.yd, 1e-9)
     }
@@ -327,7 +329,7 @@ class ShippedCrossTest {
         assertTrue(slim.all { z -> z.net.nodes.none { it.kind == SafePath.HUB } })            // the towns' hubs are not the graph's
         // an avoided crossing stays avoided
         val av = ShippedCross.slim(pack(1429, listOf(X(1429, 1453, at(1429, 500.0, 990.0), "the gate", avoid = true)), emptyList()).section(A)!!)
-        assertTrue(TravelLinks.build(TravelLinks.Inputs(::mapAt, ::name, listOf(av.net)), TravelLinks.Character(A)).links.all { it.avoid })
+        assertTrue(TravelLinks.build(TravelLinks.Inputs(::mapAt, ::name, listOf(av.net), table = synthTable), TravelLinks.Character(A)).links.all { it.avoid })
     }
 
     @Test fun theLegsOnTheShippedRoute() {

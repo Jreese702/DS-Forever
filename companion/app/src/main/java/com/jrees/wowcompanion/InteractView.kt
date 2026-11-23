@@ -1413,7 +1413,7 @@ class InteractView(context: Context) : View(context) {
      */
     private fun typingLine(c: Canvas, r: RectF, now: Long) {
         val field = kbField ?: return
-        val kh = keyboard?.let { if (it.height > 0) it.height else ChatKeyboard.fullHeight() } ?: return
+        val kh = keyboard?.let { if (it.height > 0) it.height else it.boardHeight() } ?: return
         val box = RectF(r.left + 8f, r.bottom - kh - 86f, r.right - 8f, r.bottom - kh - 6f)
         UiKit.menu(c, box, solid = true)
         val lab = (fieldWords[field] ?: "Text") + ":"
