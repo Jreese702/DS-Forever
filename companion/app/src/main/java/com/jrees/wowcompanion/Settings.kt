@@ -222,20 +222,24 @@ object Settings {
     /**
      * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
      * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
-     * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered":
-     * Config.wtf as the game left it, plus (the user's ruling 2026-11-20, A) the player's last-picked game account marked "!" in its
-     * accountList at every start ([gameAccountPick]; GameConfigWtf.markAccount). Account labels are never logged.
+     * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered"
+     * (shown as "Skip (Browser login)", the user's ruling 2026-11-23): Config.wtf as the game left it (no "!" is written since the
+     * 2026-11-20 pick); on Browser login the helper hands the remembered game account ([gameAccountPick]) to the game, which then
+     * skips its list (GameAccountHandover). The saved login (login.txt) still shows the list: the game's kiosk login never takes an
+     * account. A change of this setting lifts a held hand-over. Account labels are never logged.
      */
     var gameAccountAsk: Boolean
         get() = prefs?.getBoolean("gameAccountAsk", false) ?: false
-        set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); changed() } }
+        set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); GameAccountHandover.liftHold(); changed() } }
 
     /**
      * THE LAST-PICKED GAME ACCOUNT (the user's ruling 2026-11-20, A: "Learn the pick automatically ... Store only the account LABEL, in
      * the app's private prefs"): the label the game itself marked in Config.wtf's accountList (WoW1, WoW2 or the account's own name;
-     * GameConfigWtf.accountPickIn), learned at each Play before Config.wtf is written; never typed by the player. Used only with
-     * "Remembered". Never logged, never in a report or diagnostics (write "set" / "unset"); never reset by Reset settings (the sign-in,
-     * as [gameAccountAsk]); forgotten with the saved login ([forgetGameAccountPick]). Null = none learned yet.
+     * GameConfigWtf.accountPickIn), learned at a Play before Config.wtf is written when the game wrote that mark anew; and (the user's
+     * ruling 2026-11-23) the row the player picked in the game's list on Browser login, learned at the next Browser login from the
+     * account folder the game wrote (GameAccountHandover.learn). Never typed by the player. Used only with "Remembered". Never logged,
+     * never in a report or diagnostics (write "set" / "unset"); never reset by Reset settings (the sign-in, as [gameAccountAsk]);
+     * forgotten with the saved login ([forgetGameAccountPick]). Null = none learned yet.
      */
     var gameAccountPick: String?
         get() = prefs?.getString("gameAccountPick", null)?.let(GameConfigWtf::cleanAccountLabel)
@@ -245,7 +249,16 @@ object Settings {
         }
 
     /** the saved login forgotten or changed: the next Battle.net login's game accounts may be others, so the pick is learned again */
-    fun forgetGameAccountPick() { gameAccountPick = null }
+    fun forgetGameAccountPick() { gameAccountPick = null; GameAccountHandover.forget() }
+
+    /**
+     * THE HAND-OVER'S OWN STATE (the user's ruling 2026-11-23; GameAccountHandover.State as JSON: held, strikes, an unseen outcome, when
+     * a Browser-login pick waits to be learned, a hash of the last "!" mark seen). No account name in it. Private prefs; never reset
+     * by Reset settings (the sign-in); null = none yet.
+     */
+    var gameAccountHandover: String?
+        get() = prefs?.getString(GameAccountHandover.KEY, null)
+        set(v) { if (v != gameAccountHandover) prefs?.edit()?.apply { if (v == null) remove(GameAccountHandover.KEY) else putString(GameAccountHandover.KEY, v) }?.apply() }
 
     /**
      * SWAP SCREENS (GitHub #232; ScreenSwap): true = the game on the second screen, DS Forever on the main one (display 0). Off by

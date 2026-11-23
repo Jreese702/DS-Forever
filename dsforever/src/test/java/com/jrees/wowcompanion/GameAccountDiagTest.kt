@@ -47,6 +47,10 @@ class GameAccountDiagTest {
         assertEquals(GameAccountDiag.Learned.SAME, GameAccountDiag.learned(a, a))
         assertEquals(GameAccountDiag.Learned.NEW, GameAccountDiag.learned(b, a))
         assertEquals(GameAccountDiag.Learned.NEW, GameAccountDiag.learned(a, null))
+        // 2026-11-23: a mark the game did not write anew never replaces the pick
+        assertEquals(GameAccountDiag.Learned.KEPT, GameAccountDiag.learned(b, a, fresh = false))
+        assertEquals(GameAccountDiag.Learned.SAME, GameAccountDiag.learned(a, a, fresh = false))
+        assertEquals(GameAccountDiag.Learned.NONE, GameAccountDiag.learned(null, a, fresh = false))
     }
 
     /** the client's glue code: only a typed login with a saved login name and a marked list skips the list */
@@ -54,7 +58,9 @@ class GameAccountDiagTest {
         val saved = GameAccountDiag.Shape(GameAccountDiag.ListState.MARKED, 2, true)
         val remembered = GameAccountDiag.Play(ask = false, pickSet = true, learned = GameAccountDiag.Learned.SAME, before = saved, marked = false)
         assertTrue(GameAccountDiag.verdict(remembered, GameAccountDiag.Route.SAVED_LOGIN).startsWith("list expected"))
-        assertTrue(GameAccountDiag.verdict(remembered, GameAccountDiag.Route.BROWSER).startsWith("list expected"))
+        // 2026-11-23: Browser login hands the remembered account over (when Battle.net lists it); Ask each time keeps the list
+        assertTrue(GameAccountDiag.verdict(remembered, GameAccountDiag.Route.BROWSER).startsWith("the helper hands the remembered game account over"))
+        assertTrue(GameAccountDiag.verdict(remembered.copy(ask = true), GameAccountDiag.Route.BROWSER).startsWith("list expected (Ask each time"))
         assertEquals("a typed login preselects the marked account", GameAccountDiag.verdict(remembered, GameAccountDiag.Route.OWN_SCREEN))
         val noName = remembered.copy(before = saved.copy(list = GameAccountDiag.ListState.UNMARKED, savedName = false), marked = true)
         assertTrue(GameAccountDiag.verdict(noName, GameAccountDiag.Route.OWN_SCREEN).contains("no saved login name"))
@@ -80,8 +86,10 @@ class GameAccountDiagTest {
         assertTrue(report, report.startsWith("T1000: remembered; pick set;"))
         assertTrue(report.endsWith("; Config.wtf now: accountList marked (2), saved login name yes"))
         for (s in listOf(l, report)) assertFalse(s, s.contains(a) || s.contains(b) || s.contains(mail) || s.contains("example"))
-        assertEquals("(no Play in this run); game's log: no account count read; auto-pick off (no timely signal); Config.wtf now: missing",
+        assertEquals("(no Play in this run); game's log: no account count read; hand-over: none; Config.wtf now: missing",
             GameAccountDiag.reportLine(null, null) { "" })
+        assertTrue(GameAccountDiag.reportLine(null, null, handover = "handed over (4 characters, region US); ready") { "" }
+            .contains("; hand-over: handed over (4 characters, region US); ready;"))
     }
 
     @Test fun markedAndAskWords() {
@@ -93,13 +101,17 @@ class GameAccountDiagTest {
 
     // ------------------------------------------------------------------------------------------------ the list in the game's log
 
-    /** sample lines in the client's format (WoW Forever 2026-10-09; account names replaced by fakes) */
+    /** sample lines in the client's format (WoW Forever 2026-10-09 and the user's Thor 2026-11-07, two game accounts; the order and
+     *  the gaps as measured, account names replaced by fakes) */
     private val logonOne = "10/9 14:55:19.712  [N][Connection] Battle.net logon completed result=\"ERROR_OK (0)\" numGameAccounts=\"1\""
     private val logonTwo = "11/20 09:12:03.250  [N][Connection] Battle.net logon completed result=\"ERROR_OK (0)\" numGameAccounts=\"2\""
     private val gameInfo = "11/20 09:12:03.430  [N][Connection] Battle.net account service game info received responseType=\"GameInfo\" " +
         "responseTypeValue=\"4\" code=\"ERROR_OK (0)\" name=\"$a\" numGameAccounts=\"2\" numGameAccountNames=\"0\""
-    private val selecting = "11/20 09:12:07.900  [N][Connection] Selecting game account"
-    private val complete = "11/20 09:12:08.010  [N][Connection] Battle.net complete login requested hasGameAccount=\"true\""
+    /** 176 ms after the count: no account yet, the game asks (the old parse ended the list here: "up 0 s, picked") */
+    private val asks = "11/20 09:12:03.426  [N][Connection] Battle.net complete login requested hasGameAccount=\"false\""
+    private val listUp = "11/20 09:12:03.426  [N][Connection] Battle.net login requires additional info infoType=\"(enum)4\""
+    private val complete = "11/20 09:12:15.010  [N][Connection] Battle.net complete login requested hasGameAccount=\"true\""
+    private val notSaved = "11/20 09:12:15.010  [N][Connection] Game account list not saved because accountName CVar is empty"
 
     @Test fun theLogonLineGivesTheCountAndTheClock() {
         assertEquals(1, GameAccountDiag.accountCount(logonOne))
@@ -119,24 +131,48 @@ class GameAccountDiagTest {
         assertNull(GameAccountDiag.noteLog(complete))                         // no list: nothing more to tell
     }
 
-    /** the list's count, how late the buffered log was read, and how long the list stayed up; never a name */
+    /**
+     * the list's count, how late the buffered log was read, and how long the list stayed up; never a name. FIX 2026-11-23 (the user's
+     * ruling): the real two-account sequence - count, hasGameAccount="false", infoType 4, then hasGameAccount="true" at the pick -
+     * reads "up 12 s, picked", not "up 0 s, picked"
+     */
     @Test fun aListIsRecordedWithItsTiming() {
         GameAccountDiag.newRun()
         val readAt = GameAccountDiag.clockMs(logonTwo)!! + 31_000L               // the ~48 KiB buffer: read half a minute late
-        assertEquals("Game account list: list seen (2 accounts), read 31 s after the game wrote it", GameAccountDiag.noteLog(logonTwo, readAt))
+        assertEquals("Game account list: 2 accounts, read 31 s after the game wrote it", GameAccountDiag.noteLog(logonTwo, readAt))
         assertNull(GameAccountDiag.noteLog(logonTwo, readAt + 5_000L))          // Connection.log's copy of the same line: the first read stands
         assertNull(GameAccountDiag.noteLog(gameInfo, readAt))
-        assertEquals("Game account list: list seen (2 accounts), read 31 s after the game wrote it, up 5 s",
-            GameAccountDiag.noteLog(selecting, readAt))
+        assertEquals("Game account list: list seen (2 accounts), read 31 s after the game wrote it", GameAccountDiag.noteLog(asks, readAt))
+        assertFalse(GameAccountDiag.logList!!.done)                             // the old bug: "up 0 s, picked" here
+        assertNull(GameAccountDiag.noteLog(listUp, readAt))                     // the same list: told once
+        assertNull(GameAccountDiag.noteLog(asks, readAt))                       // Connection.log's copy
+        assertEquals("Game account list: list seen (2 accounts), read 31 s after the game wrote it, up 12 s, picked",
+            GameAccountDiag.noteLog(complete, readAt))
+        assertTrue(GameAccountDiag.logList!!.done && GameAccountDiag.logList!!.shown)
         assertNull(GameAccountDiag.noteLog(complete, readAt))                  // told once
+        assertNull(GameAccountDiag.noteLog(notSaved, readAt))
         val report = GameAccountDiag.reportLine(null, null, GameAccountDiag.logList) { "" }
-        assertTrue(report, report.contains("game's log: list seen (2 accounts), read 31 s after the game wrote it, up 5 s; auto-pick off"))
+        assertTrue(report, report.contains("game's log: list seen (2 accounts), read 31 s after the game wrote it, up 12 s, picked; hand-over:"))
         for (s in listOf(report, GameAccountDiag.logList!!.words())) assertFalse(s, s.contains(a) || s.contains("name="))
         GameAccountDiag.newRun()
         assertNull(GameAccountDiag.logList)
-        // without a "Selecting" line, the login going on ends the list too
+        // the additional-info line alone also says the list is up
         GameAccountDiag.noteLog(logonTwo, readAt)
-        assertTrue(GameAccountDiag.noteLog(complete, readAt)!!.endsWith("up 5 s"))
+        assertTrue(GameAccountDiag.noteLog(listUp, readAt)!!.startsWith("Game account list: list seen (2 accounts)"))
+        assertTrue(GameAccountDiag.noteLog(complete, readAt)!!.endsWith("up 12 s, picked"))
+        GameAccountDiag.newRun()
+    }
+
+    /** a hand-over that worked (2026-11-23): the first "complete login" already has its account - no list with two accounts */
+    @Test fun aPassedAccountIsNoList() {
+        GameAccountDiag.newRun()
+        val readAt = GameAccountDiag.clockMs(logonTwo)!! + 2_000L
+        GameAccountDiag.noteLog(logonTwo, readAt)
+        assertEquals("Game account list: no list (2 accounts: the game had its account), read 2 s after the game wrote it",
+            GameAccountDiag.noteLog(complete, readAt))
+        val l = GameAccountDiag.logList!!
+        assertTrue(l.done && !l.shown && l.upMs == null)
+        assertNull(GameAccountDiag.noteLog(asks, readAt))                       // after the login has its account: nothing more
         GameAccountDiag.newRun()
     }
 

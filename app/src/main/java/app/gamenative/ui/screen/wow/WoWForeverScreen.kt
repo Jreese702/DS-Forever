@@ -1312,12 +1312,15 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         val screen = gameScreenSize(context)
         Timber.i("Config.wtf: the game's window fills its screen (gxMaximize 1, gxWindowedResolution %s)", screen ?: "1920x1080: size unread")
         // A (the user's ruling 2026-11-20): the game account the game itself marked after the last login, learned BEFORE anything is
-        // written (both routes: saved login and Browser login), kept as a label in the app's private settings; never logged
+        // written (both routes: saved login and Browser login), kept as a label in the app's private settings; never logged.
+        // 2026-11-23: only a mark the game wrote ANEW replaces the pick (GameAccountHandover.markIsNew), so a stale one never undoes a
+        // pick learned from the game's list on Browser login
         val learned = com.jrees.wowcompanion.GameConfigWtf.accountPickIn(gameRoot, product)
         val pickBefore = com.jrees.wowcompanion.Settings.gameAccountPick
+        val markNew = com.jrees.wowcompanion.GameAccountHandover.markIsNew(learned)
         // bug 2026-11-20 (test 1513): the file's account keys as the game left them, before any write (states and counts only)
         val shapeBefore = com.jrees.wowcompanion.GameAccountDiag.shape(com.jrees.wowcompanion.GameAccountDiag.configWtf(gameRoot, product))
-        if (learned != null && learned != pickBefore) com.jrees.wowcompanion.Settings.gameAccountPick = learned
+        if (learned != null && markNew && learned != pickBefore) com.jrees.wowcompanion.GameAccountHandover.remember(learned)
         val ask = com.jrees.wowcompanion.Settings.gameAccountAsk
         val pick = com.jrees.wowcompanion.Settings.gameAccountPick
         val accountKeys = com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row,
@@ -1329,9 +1332,9 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
             // with a saved login name, and a list the game did not write may be what broke logins with BLZ51914400 (the fork's #62).
             // The pick is still LEARNED above from a mark the game wrote itself; Ask each time still clears a marked list
             accountPick = null, lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
-        val learnedWord = when { learned == null -> "none marked"; learned == pickBefore -> "same"; else -> "new" }
-        accountPlay = com.jrees.wowcompanion.GameAccountDiag.Play(ask, pick != null,
-            com.jrees.wowcompanion.GameAccountDiag.learned(learned, pickBefore), shapeBefore, !ask && accountKeys.isNotEmpty())
+        val learnedState = com.jrees.wowcompanion.GameAccountDiag.learned(learned, pickBefore, markNew)
+        val learnedWord = learnedState.word
+        accountPlay = com.jrees.wowcompanion.GameAccountDiag.Play(ask, pick != null, learnedState, shapeBefore, !ask && accountKeys.isNotEmpty())
         if (ask) {
             Timber.i("Config.wtf game account: ask each time; cleared %s; pick %s (learned: %s)", accountKeys.joinToString(" ").ifEmpty { "nothing (no remembered choice)" },
                 if (pick != null) "set" else "unset", learnedWord)

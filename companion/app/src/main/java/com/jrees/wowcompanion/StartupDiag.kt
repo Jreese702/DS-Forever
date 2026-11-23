@@ -204,8 +204,9 @@ object StartupDiag {
         // now (what the game left at its exit); states and counts only, never a label
         out += "Game account: " + runCatching {
             val p = choice?.product ?: WowProduct.of(root)
+            // 2026-11-23: Browser login's hand-over (GameAccountHandover: lengths, regions and states only)
             GameAccountDiag.reportLine(GameAccountDiag.last, GameAccountDiag.shape(GameAccountDiag.configWtf(root, p)),
-                GameAccountDiag.logList) { stamp(it) }
+                GameAccountDiag.logList, GameAccountHandover.reportWords()) { stamp(it) }
         }.getOrElse { "? (${it.message})" }
         // #56 G2: what the low-memory keys hold now (numbers only), so a report shows whether the game kept them
         out += "Low-memory keys: " + runCatching {

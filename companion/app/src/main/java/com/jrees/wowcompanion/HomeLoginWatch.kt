@@ -58,7 +58,11 @@ class HomeLoginWatch(
     /** one line of either log: its trail line ([HomeLogin.trail]) to the sign-in log, once per client run */
     private fun trail(line: String) {
         // the game's account list (the user's pick 2026-11-20): its count and timing only, once per client run (both logs carry it)
-        runCatching { GameAccountDiag.noteLog(line) }.getOrNull()?.let { NativeLogin.logEvent(it) }
+        runCatching { GameAccountDiag.noteLog(line) }.getOrNull()?.let {
+            NativeLogin.logEvent(it)
+            // 2026-11-23: what became of Browser login's hand-over (the list skipped, or still shown: held), once per run
+            runCatching { GameAccountHandover.observe(GameAccountDiag.logList) }.getOrNull()?.let(NativeLogin::logEvent)
+        }
         val t = HomeLogin.trail(line) ?: return
         if (!trailSeen.add(t)) return
         while (trailSeen.size > TRAIL_KEEP) trailSeen.remove(trailSeen.first())

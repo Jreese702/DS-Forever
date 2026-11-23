@@ -6,6 +6,7 @@ import java.io.IOException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -179,6 +180,70 @@ class BgsClientTest {
         client.close()
         assertThrows(BgsException::class.java) { client.connect() }
         assertEquals(0, transport.output.size())
+    }
+
+    // ---- DS Forever (the user's ruling 2026-11-23): this login's game accounts, after the credential (placeholder names only)
+
+    private fun handle(id: Long, region: Long, title: Long = BgsClient.WOW_TITLE) =
+        BgsProtocol.integer(1, id) + BgsProtocol.integer(2, title) + BgsProtocol.integer(3, region)
+    private fun logonWith(vararg handles: ByteArray) = notification(1, BgsProtocol.integer(1, 0) +
+        BgsProtocol.bytes(2, BgsProtocol.integer(1, 42) + handles.fold(byteArrayOf()) { acc, h -> acc + BgsProtocol.bytes(2, h) }))
+    private fun info(token: Long, name: String, status: Long = 0) =
+        response(token, BgsProtocol.bytes(1, BgsProtocol.integer(1, 7) + BgsProtocol.text(2, name)), status = status)
+    private val signedIn = connectReply() + response(2) + challenge()
+
+    @Test fun gameAccountsAreNamedAsTheGameKnowsThemAfterTheCredential() {
+        val gameToken = "fresh-game-credential".toByteArray()
+        val transport = FakeTransport(signedIn + logonWith(handle(11, 1), handle(12, 2), handle(99, 1, title = 0x417070L)) +
+            response(3) + response(4, BgsProtocol.bytes(1, gameToken)) + info(5, "WoW1") + info(6, "WoW2"))
+        BgsClient(transport).use { client ->
+            client.connect()
+            client.webChallenge(DEVICE, BUILD)
+            assertArrayEquals(gameToken, client.verifyAndGenerateGameToken(TICKET))
+            val accounts = client.gameAccounts()!!
+            assertEquals(listOf("WoW1" to "US", "WoW2" to "EU"), accounts.map { it.name to it.region })
+            assertFalse(accounts.toString().contains("WoW"))                       // never a name in a log line
+            assertEquals("GameAccount(4 characters, US)", accounts[0].toString())
+        }
+        val requests = transport.requests()
+        assertEquals(listOf(1L, 1L, 2L, 3L, 201L, 201L), requests.map { it.first.integer(2) })
+        assertEquals(BgsClient.ACCOUNT_SERVICE, requests[4].first.fixed32(11))
+        assertArrayEquals(handle(11, 1), requests[4].second.bytes(1))              // the handle as the LogonRecord gave it
+        assertArrayEquals(handle(12, 2), requests[5].second.bytes(1))              // the non-WoW handle is not asked about
+    }
+
+    @Test fun aFailedLookupIsNullAndNeverCostsTheSignIn() {
+        val gameToken = "fresh-game-credential".toByteArray()
+        fun run(vararg tail: ByteArray): List<BgsClient.GameAccount>? {
+            val transport = FakeTransport(signedIn + logonWith(handle(11, 1), handle(12, 2)) + response(3) +
+                response(4, BgsProtocol.bytes(1, gameToken)) + tail.fold(byteArrayOf()) { a, b -> a + b })
+            return BgsClient(transport).use { client ->
+                client.connect()
+                client.webChallenge(DEVICE, BUILD)
+                assertArrayEquals(gameToken, client.verifyAndGenerateGameToken(TICKET))
+                client.gameAccounts()
+            }
+        }
+        assertNull(run(info(5, "WoW1"), info(6, "WoW2", status = 3)))             // refused: none, never a part list
+        assertNull(run(info(5, "WoW1")))                                          // the connection ended
+        assertNull(run(info(5, " WoW1"), info(6, "WoW2")))                        // a name the launch settings cannot hold
+        assertNull(run(info(5, "x".repeat(65)), info(6, "WoW2")))
+        val unknownRegion = FakeTransport(signedIn + logonWith(handle(11, 9)) + response(3) + response(4, BgsProtocol.bytes(1, gameToken)) +
+            info(5, "WoW1"))
+        BgsClient(unknownRegion).use { c -> c.connect(); c.webChallenge(DEVICE, BUILD); c.verifyAndGenerateGameToken(TICKET); assertNull(c.gameAccounts()) }
+    }
+
+    @Test fun noLookupBeforeTheCredentialOrAfterClose() {
+        val transport = FakeTransport(signedIn)
+        BgsClient(transport).use { client ->
+            assertNull(client.gameAccounts())
+            client.connect()
+            client.webChallenge(DEVICE, BUILD)
+            assertNull(client.gameAccounts())
+        }
+        assertEquals(listOf(1L, 1L), transport.requests().map { it.first.integer(2) })
+        assertTrue(BgsClient.GameAccount.launchName("WoW1"))
+        for (bad in listOf("", " a", "a ", "a\u0001", "é")) assertFalse(bad, BgsClient.GameAccount.launchName(bad))
     }
 
     private class FakeTransport(bytes: ByteArray) : BgsTransport {

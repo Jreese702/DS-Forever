@@ -18,8 +18,9 @@ import java.io.File
  *    ~2 s NativeLogin measured): AccountLogin_CheckAutoLogin calls C_Login.Login alone - no SelectGameAccount, no saved login name -
  *    so with several game accounts the game always shows WoWAccountSelectDialog (first row selected).
  *  - Browser login is the launcher sign-in (C_Login.LauncherLogin): the game account comes from the registry's GAME_ACCOUNT ("Attempt
- *    to launcher login, but no game account"), which the bundled helper deletes before the start ("allowing account choice").
- * So no Config.wtf write can skip the list on either of DS Forever's sign-ins ([verdict]).
+ *    to launcher login, but no game account"). Since the user's ruling 2026-11-23 the helper WRITES it (with REGION) when the player
+ *    remembers an account Battle.net lists for the login (GameAccountHandover), as the PC Battle.net app does; else it deletes it.
+ * So no Config.wtf write can skip the list on either of DS Forever's sign-ins ([verdict]); only Browser login's hand-over can.
  */
 object GameAccountDiag {
     enum class ListState(val word: String) { NONE("none"), UNMARKED("unmarked"), MARKED("marked") }
@@ -30,7 +31,7 @@ object GameAccountDiag {
             ", saved login name ${if (savedName) "yes" else "no"}"
     }
 
-    enum class Learned(val word: String) { NONE("none marked"), SAME("same"), NEW("new") }
+    enum class Learned(val word: String) { NONE("none marked"), SAME("same"), NEW("new"), KEPT("an old mark: the pick kept") }
 
     /** this start's sign-in: the saved login (login.txt, the kiosk auto-login), Browser login (the helper), or the game's own screen */
     enum class Route(val word: String) { SAVED_LOGIN("saved login (login.txt)"), BROWSER("browser login"), OWN_SCREEN("the game's own login screen") }
@@ -65,8 +66,11 @@ object GameAccountDiag {
     /** [root]'s Config.wtf for [product] (the file Play reads and writes) */
     fun configWtf(root: File, product: WowProduct): File = File(File(root, product.flavorDir), "WTF/Config.wtf")
 
-    /** what the learn step found against the stored pick (labels compared here, only the word leaves). Pure */
-    fun learned(learned: String?, before: String?): Learned = when { learned == null -> Learned.NONE; learned == before -> Learned.SAME; else -> Learned.NEW }
+    /** what the learn step found against the stored pick (labels compared here, only the word leaves); [fresh] = the game wrote the
+     *  mark anew (GameAccountHandover.markIsNew: only then does it replace the pick). Pure */
+    fun learned(learned: String?, before: String?, fresh: Boolean = true): Learned = when {
+        learned == null -> Learned.NONE; learned == before -> Learned.SAME; fresh -> Learned.NEW; else -> Learned.KEPT
+    }
 
     /**
      * Will the game skip its account list on [route] after [play]? Only a typed login with a saved login name and a marked list does
@@ -76,7 +80,8 @@ object GameAccountDiag {
         val markedNow = !play.ask && (play.marked || play.before?.list == ListState.MARKED)
         return when (route) {
             Route.SAVED_LOGIN -> "list expected (the login.txt sign-in never reads accountList)"
-            Route.BROWSER -> "list expected (the helper clears GAME_ACCOUNT)"
+            Route.BROWSER -> if (play.ask) "list expected (Ask each time: the helper clears GAME_ACCOUNT)"
+                else "the helper hands the remembered game account over when Battle.net lists it for this login, else the list"
             Route.OWN_SCREEN -> when {
                 play.ask -> "list expected (Ask each time)"
                 !markedNow -> "list expected (no marked account)"
@@ -106,9 +111,9 @@ object GameAccountDiag {
     }
 
     /** the report's line: the last Play in this process (or none) and the file's shape now (what the game left at its exit). Pure */
-    fun reportLine(last: Pair<Long, String>?, now: Shape?, list: LogList? = null, stamp: (Long) -> String): String =
+    fun reportLine(last: Pair<Long, String>?, now: Shape?, list: LogList? = null, handover: String? = null, stamp: (Long) -> String): String =
         (last?.let { (at, l) -> "${stamp(at)}: ${l.removePrefix("Game account: ")}" } ?: "(no Play in this run)") +
-            "; game's log: ${list?.words() ?: "no account count read"}; auto-pick off (no timely signal)" +
+            "; game's log: ${list?.words() ?: "no account count read"}; hand-over: ${handover ?: "none"}" +
             "; Config.wtf now: ${now?.words() ?: "missing"}"
 
     private const val ACCOUNT_NAME = "accountName"
@@ -121,16 +126,25 @@ object GameAccountDiag {
      *   [N][Connection] Battle.net logon completed result="ERROR_OK (0)" numGameAccounts="1"
      *   [N][Connection] Battle.net complete login requested hasGameAccount="true"
      *   [N][Connection] Game account list not saved because accountName CVar is empty      (the saved login: no list is ever saved)
-     * With numGameAccounts 2 or more and no account passed, the client shows its list (C_Login.SelectGameAccount from the list's own
-     * Accept is the client's "Selecting game account" line). BUT the client writes General.log and Connection.log through a ~48 KiB
-     * buffer: the authenticator's line arrived 25-45 s after the game asked (SignInKeyboard, HomeLoginWatch). So this line says THAT
-     * the list came, never in time to press anything while it is up: the app only RECORDS it ([noteLog]), with how late it was read
-     * and how long the list stayed up. Counts and seconds only; nothing of a line is kept.
+     * With numGameAccounts 2 or more and no account passed, the client shows its list (the user's Thor 2026-11-07, two game accounts):
+     *   11:52:45.656 Battle.net logon completed result="ERROR_OK (0)" numGameAccounts="2"
+     *   11:52:45.832 Battle.net complete login requested hasGameAccount="false"        <- no account yet: it asks
+     *   11:52:45.832 Battle.net login requires additional info infoType="(enum)4"       <- the list is up
+     *   11:52:57.384 Battle.net complete login requested hasGameAccount="true"         <- a row picked
+     * FIX 2026-11-23 (the user's ruling): the list ENDS only on hasGameAccount="true"; the "false" line or the additional-info line
+     * says it is SHOWN (the old parse ended it at the "false" line, 176 ms in, so every 2-account login read "up 0 s, picked", and
+     * waited for a "Selecting game account" line the client never writes). A first "true" with no list before it = the game had its
+     * account (a hand-over that worked). BUT the client writes General.log and Connection.log through a ~48 KiB buffer: the
+     * authenticator's line arrived 25-45 s after the game asked (SignInKeyboard, HomeLoginWatch). So these lines say THAT the list
+     * came, never in time to press anything while it is up: the app only RECORDS it ([noteLog]), with how late it was read and how
+     * long the list stayed up. Counts and seconds only; nothing of a line is kept.
      */
     private val COUNT = Regex("""Battle\.net logon completed result="[^"]*" numGameAccounts="(\d{1,2})"""")
     private val CLOCK = Regex("""^\s*\d{1,2}/\d{1,2} (\d\d):(\d\d):(\d\d)\.(\d{1,3})""")
-    private const val PICKED = "Selecting game account"
     private const val COMPLETE = "Battle.net complete login requested"
+    private const val HAS_ACCOUNT = "hasGameAccount=\"true\""
+    private const val NO_ACCOUNT = "hasGameAccount=\"false\""
+    private const val LIST_UP = "Battle.net login requires additional info infoType=\"(enum)4\""
 
     /** the game's own clock in [line] as ms of the day; null = none. Pure */
     fun clockMs(line: String): Long? = CLOCK.find(line)?.groupValues?.let { g ->
@@ -140,12 +154,24 @@ object GameAccountDiag {
     /** [line]'s game-account count when it is the sign-in's "logon completed" line; null = another line. Pure */
     fun accountCount(line: String): Int? = COUNT.find(line)?.groupValues?.get(1)?.toIntOrNull()
 
-    /** this client run's list, as the log told it (null = no count line yet) */
-    data class LogList(val accounts: Int, val shownAtMs: Long?, val readLagMs: Long?, val upMs: Long? = null, val done: Boolean = false) {
-        /** "list seen (2 accounts), read 31 s after the game wrote it, up 4 s" / "no list (1 account)". Pure */
-        fun words(): String = if (accounts < 2) "no list ($accounts account${if (accounts == 1) "" else "s"})" else
-            "list seen ($accounts accounts)" + (readLagMs?.let { ", read ${secs(it)} after the game wrote it" } ?: "") +
-                when { upMs != null -> ", up ${secs(upMs)}"; done -> ", picked"; else -> "" }
+    /**
+     * this client run's list, as the log told it (null = no count line yet): [countAtMs] the count line's clock, [readLagMs] how late
+     * it was read, [shown] the game asked (the list is up) at [shownAtMs], [upMs] how long until a row was picked, [done] the login has
+     * its game account
+     */
+    data class LogList(val accounts: Int, val countAtMs: Long?, val readLagMs: Long?, val upMs: Long? = null, val done: Boolean = false,
+                       val shown: Boolean = false, val shownAtMs: Long? = null) {
+        /** "list seen (2 accounts), read 31 s after the game wrote it, up 12 s, picked" / "no list (1 account)" / "no list (2 accounts:
+         *  the game had its account)" / "2 accounts, read 31 s after ..." (nothing after the count yet). Pure */
+        fun words(): String {
+            if (accounts < 2) return "no list ($accounts account${if (accounts == 1) "" else "s"})"
+            val read = readLagMs?.let { ", read ${secs(it)} after the game wrote it" } ?: ""
+            return when {
+                shown -> "list seen ($accounts accounts)$read" + (upMs?.let { ", up ${secs(it)}" } ?: "") + (if (done) ", picked" else "")
+                done -> "no list ($accounts accounts: the game had its account)$read"
+                else -> "$accounts accounts$read"
+            }
+        }
     }
 
     @Volatile var logList: LogList? = null
@@ -163,15 +189,22 @@ object GameAccountDiag {
         accountCount(line)?.let { n ->
             val at = clockMs(line)
             // the same line again (Connection.log carries General.log's lines): the first read stands
-            logList?.let { if (it.accounts == n && it.shownAtMs == at) return null }
+            logList?.let { if (it.accounts == n && it.countAtMs == at) return null }
             val l = LogList(n, at, at?.let { lag(it, nowMs) }, done = n < 2)
             logList = l
             return "Game account list: ${l.words()}"
         }
         val cur = logList ?: return null
-        if (cur.done || cur.accounts < 2 || (PICKED !in line && COMPLETE !in line)) return null
-        val end = clockMs(line)
-        val l = cur.copy(upMs = if (end != null && cur.shownAtMs != null) lag(cur.shownAtMs, end) else null, done = true)
+        if (cur.done || cur.accounts < 2) return null
+        val at = clockMs(line)
+        val l = when {
+            // the game asks (no account yet, or the list itself): shown, once (both logs carry the same lines)
+            (COMPLETE in line && NO_ACCOUNT in line) || LIST_UP in line -> if (cur.shown) return null else cur.copy(shown = true, shownAtMs = at)
+            // the login has its account: a row picked (after the list), or none was asked for (the account was passed)
+            COMPLETE in line && HAS_ACCOUNT in line ->
+                cur.copy(done = true, upMs = if (cur.shown && at != null && cur.shownAtMs != null) lag(cur.shownAtMs, at) else null)
+            else -> return null
+        }
         logList = l
         return "Game account list: ${l.words()}"
     }

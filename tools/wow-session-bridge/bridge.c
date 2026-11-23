@@ -122,6 +122,22 @@ static int receive_token(SOCKET peer, BYTE token[BRIDGE_TOKEN_LIMIT], DWORD *len
     return 1;
 }
 
+/* DS Forever: the launcher's game-account frame, right after the token ("-" or "<REGION>:<name>", protocol.h). A frame that
+ * does not parse counts as none, so the game asks as before; only a broken socket stops the launch. */
+static int receive_account(SOCKET peer, char name[BRIDGE_ACCOUNT_LIMIT + 1], char region[BRIDGE_REGION_SIZE + 1],
+                           int *handed) {
+    BYTE header[4], bytes[BRIDGE_ACCOUNT_FRAME_LIMIT];
+    *handed = 0;
+    if (!transfer(peer, header, sizeof(header), 0)) return 0;
+    uint32_t size = bridge_decode_length(header);
+    if (size == 0 || size > sizeof(bytes) || !transfer(peer, bytes, size, 0)) return 0;
+    int parsed = bridge_parse_account(bytes, size, name, region);
+    SecureZeroMemory(bytes, sizeof(bytes));
+    if (parsed < 0) diag("game account: the hand-over did not parse; none written (the game asks)");
+    *handed = parsed == 1;
+    return 1;
+}
+
 static int make_proof(const char *domain, const BYTE nonce[BRIDGE_NONCE_SIZE], BYTE proof[32]) {
     HCRYPTPROV provider = 0;
     HCRYPTHASH hash = 0;
@@ -205,6 +221,8 @@ int wmain(int argc, WCHAR **argv) {
     SOCKET peer = INVALID_SOCKET;
     PROCESS_INFORMATION child = {0};
     int result = 2, winsock_started = 0, mutex_owned = 0, authenticated = 0, owns_token = 0;
+    char game_account[BRIDGE_ACCOUNT_LIMIT + 1] = {0}, game_region[BRIDGE_REGION_SIZE + 1] = {0};
+    int handed = 0, owns_account = 0;
     WCHAR directory[32768], command[BRIDGE_COMMAND_LIMIT] = {0};
     if (argc >= 3) diag_init(argv[2]);
     diag("started (%d arguments)", argc);
@@ -255,6 +273,7 @@ int wmain(int argc, WCHAR **argv) {
     result = 8;
     if (!receive_token(peer, token, &token_size)) goto done;
     diag("received the game session");
+    if (!receive_account(peer, game_account, game_region, &handed)) goto done;
 
     result = 9;
     if (wcslen(argv[2]) >= sizeof(directory) / sizeof(directory[0])) goto done;
@@ -287,8 +306,21 @@ int wmain(int argc, WCHAR **argv) {
     if (now < 0) goto done;
     snprintf(timestamp, sizeof(timestamp), "%lld", (long long)now);
     if (RegSetValueExA(key, "ACCOUNT_TS", 0, REG_SZ,
-                       (BYTE *)timestamp, (DWORD)strlen(timestamp) + 1) ||
-        !remove_value(key, "GAME_ACCOUNT") || !remove_value(key, "REGION") || RegFlushKey(key)) goto done;
+                       (BYTE *)timestamp, (DWORD)strlen(timestamp) + 1)) goto done;
+    /* DS Forever: the game account the player remembers goes beside the credential, as the Battle.net app writes it (GAME_ACCOUNT
+     * with REGION; nyrda/scuffle 5efccb44 bridge/auth_bridge.c, MIT): the game then skips its list. Without one, both are removed
+     * so an earlier start's choice cannot linger and the game asks. The log says only the name's length, never the name. */
+    if (handed) {
+        owns_account = 1;
+        if (RegSetValueExA(key, "GAME_ACCOUNT", 0, REG_SZ, (const BYTE *)game_account, (DWORD)strlen(game_account) + 1) ||
+            RegSetValueExA(key, "REGION", 0, REG_SZ, (const BYTE *)game_region, (DWORD)strlen(game_region) + 1)) goto done;
+        diag("game account: handed over (%u characters, region %s)", (unsigned)strlen(game_account), game_region);
+    } else {
+        if (!remove_value(key, "GAME_ACCOUNT") || !remove_value(key, "REGION")) goto done;
+        diag("game account: none handed over (the game asks)");
+    }
+    SecureZeroMemory(game_account, sizeof(game_account));
+    if (RegFlushKey(key)) goto done;
 
     result = 12;
     STARTUPINFOW startup = {.cb = sizeof(startup)};
@@ -313,6 +345,7 @@ done:
     SecureZeroMemory(received_proof, sizeof(received_proof));
     SecureZeroMemory(token, sizeof(token));
     SecureZeroMemory(device_json, sizeof(device_json));
+    SecureZeroMemory(game_account, sizeof(game_account));
     if (protected_token.pbData) {
         SecureZeroMemory(protected_token.pbData, protected_token.cbData);
         LocalFree(protected_token.pbData);
@@ -321,6 +354,10 @@ done:
         if (owns_token) {
             remove_value(key, "WEB_TOKEN");
             remove_value(key, "ACCOUNT_TS");
+            if (owns_account) {
+                remove_value(key, "GAME_ACCOUNT");
+                remove_value(key, "REGION");
+            }
             RegFlushKey(key);
         }
         RegCloseKey(key);

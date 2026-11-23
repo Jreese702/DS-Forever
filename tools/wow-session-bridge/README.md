@@ -27,14 +27,22 @@ listening before starting the helper.
    followed by the bytes (maximum 4096 bytes).
 3. Launcher sends a fresh game token with the same framing (1–2048 printable ASCII
    bytes). Browser authentication may take up to 15 minutes.
+   DS Forever: then one game-account frame with the same framing: `-` for none,
+   or `<REGION>:<name>` (two capital letters, then 1–64 printable ASCII
+   characters, no leading or trailing space). A frame that does not parse counts
+   as none.
 4. Helper writes `WEB_TOKEN` as DPAPI-protected `REG_BINARY` and `ACCOUNT_TS` as a
    Unix timestamp string under
    `HKCU\Software\Blizzard Entertainment\Battle.net\Launch Options\WoW`.
-   Stale `GAME_ACCOUNT` and `REGION` values are removed, allowing account choice.
+   DS Forever: with a game account it also writes `GAME_ACCOUNT` and `REGION`
+   (`REG_SZ`), as the Battle.net app does, so the game skips its account list;
+   with none, stale `GAME_ACCOUNT` and `REGION` values are removed, allowing
+   account choice. The log names only the account name's length and the region.
 5. It refuses to launch when `login.txt` exists beside the game, starts the child
    directly in its directory, sends the framed ASCII message `STARTED`, and closes
    the socket. Authenticated failures send only `ERROR:<stage>`, never credentials.
-6. On normal child exit or a handoff error it removes its token/timestamp. Abrupt
+6. On normal child exit or a handoff error it removes its token/timestamp (and the
+   game account and region it wrote). Abrupt
    termination can leave DPAPI-protected registry state; no plaintext token is
    written to a file, log, process argument, or environment variable.
 

@@ -4,6 +4,7 @@ import android.content.Context
 import app.gamenative.PluviaApp
 import app.gamenative.events.AndroidEvent
 import com.jrees.wowcompanion.BrowserLogin
+import com.jrees.wowcompanion.GameAccountHandover
 import com.jrees.wowcompanion.GameRegion
 import com.jrees.wowcompanion.NativeLogin
 import com.jrees.wowcompanion.Settings
@@ -78,6 +79,7 @@ internal object BattleNetBrowserLogin {
         val browser = enabled(context) && !seeding
         thisRun = browser
         runCatching { BrowserLogin.markLaunched(browser) }
+        GameAccountHandover.beginRun(browser)
         return browser
     }
 
@@ -117,7 +119,7 @@ internal object BattleNetBrowserLogin {
                 "Cannot protect the browser login request"
             }
             val log = File(gameRoot, "${product.flavorDir}/Logs/BrowserLogin.log")
-            val attempt = Attempt(bridge, request, "$portal.actual.battle.net", build, log)
+            val attempt = Attempt(bridge, request, "$portal.actual.battle.net", build, log, File(gameRoot, "${product.flavorDir}/WTF/Account"))
             diag(attempt, "browser login started (app ${app.gamenative.BuildConfig.VERSION_NAME}, $portal, build $build)")
             active = attempt
             mutableUi.value = Ui.Waiting(WAIT_START)
@@ -163,15 +165,19 @@ internal object BattleNetBrowserLogin {
                 try {
                     publish(attempt, Ui.Waiting(WAIT_SESSION))
                     // A fresh connection avoids holding a BGS socket open while the user handles CAPTCHA or 2FA.
+                    var account = SessionBridge.Peer.NO_ACCOUNT
                     val token = withClient(attempt) { client ->
                         client.connect()
                         client.webChallenge(device, attempt.build)
-                        client.verifyAndGenerateGameToken(ticket)
+                        client.verifyAndGenerateGameToken(ticket).also {
+                            // DS Forever (the user's ruling 2026-11-23): after the credential, so it never costs the sign-in
+                            account = handover(attempt, client.gameAccounts())
+                        }
                     }
                     try {
                         diag(attempt, "Battle.net issued a game session; handing it to the helper")
                         publish(attempt, Ui.Waiting(WAIT_GAME))
-                        peer.launch(token)
+                        peer.launch(token, account)
                     } finally {
                         token.fill(0)
                     }
@@ -201,6 +207,19 @@ internal object BattleNetBrowserLogin {
             attempt.close()
             synchronized(this) { if (active === attempt) active = null }
         }
+    }
+
+    /**
+     * BROWSER LOGIN HANDS THE GAME ACCOUNT OVER (the user's ruling 2026-11-23; GameAccountHandover): this login's game accounts
+     * ([accounts], null = unread) against the remembered pick; the helper's frame ("-" = none, the game asks). Any error = none.
+     * The log says the decision with a length and a region, never a name.
+     */
+    private fun handover(attempt: Attempt, accounts: List<BgsClient.GameAccount>?): ByteArray {
+        val choice = runCatching {
+            GameAccountHandover.decide(attempt.accountDir, accounts?.map { GameAccountHandover.Account(it.name, it.region) })
+        }.getOrElse { GameAccountHandover.Choice.None("an error (${it.javaClass.simpleName})") }
+        diag(attempt, "game account: ${accounts?.size?.let { "$it listed" } ?: "list unread"}; ${GameAccountHandover.words(choice)}")
+        return GameAccountHandover.frame(choice)
     }
 
     private fun <T> withClient(attempt: Attempt, action: (BgsClient) -> T): T {
@@ -328,6 +347,7 @@ internal object BattleNetBrowserLogin {
         val host: String,
         val build: Int,
         val log: File,
+        val accountDir: File,
     ) {
         // The request filename's random ID is independent of the private socket capability.
         val id = request.name.removePrefix("request-").removeSuffix(".txt")

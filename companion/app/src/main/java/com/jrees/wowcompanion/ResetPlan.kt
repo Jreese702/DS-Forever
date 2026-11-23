@@ -35,7 +35,7 @@ package com.jrees.wowcompanion
  * APP PREFERENCES (SharedPreferences files)
  *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
  *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme
- *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk, gameAccountPick (the sign-in), polestarGuide, polestarOffBoot,
+ *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk, gameAccountPick, gameAccountHandover (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
  *                        swapScreensFails, settingsTab, the migration marks
  *  framegen     SETTINGS enabled, multiplier, flowScale, performance, fpsLimitContainer, fpsLimitAsk   NEVER fpsLimit108, fpsLimitNote
@@ -76,8 +76,8 @@ package com.jrees.wowcompanion
  *  - every start: gxApi, ResampleQuality, GamePadEnable, InputDeviceInterfaceStyle, gxMaximize, gxWindowedResolution (#305), the portal /
  *    agentUID when wrong; the defaults only where missing (CONFIG_DEFAULTS, RenderScale #489); the old defaults once per folder (#293)
  *  - Low-memory graphics: the textures (LOW_MEMORY_GRAPHICS) and, on 8 / 12 GB Thors, LOW_MEMORY_8GB (recorded: Reset gives them back)
- *  - Game account (#47): "Ask each time" removes a marked accountList; "Remembered" (the user's ruling 2026-11-20, A) marks the
- *    learned label "!" in accountList (Settings.gameAccountPick; no recorded original: the game rewrites the list itself; not reset)
+ *  - Game account (#47): "Ask each time" removes a marked accountList; "Remembered" writes nothing (the "!" write went 2026-11-20;
+ *    Browser login hands the account to the game in the Wine registry instead, never Config.wtf: GameAccountHandover, 2026-11-23)
  *  - ClientSettings_WORK_OPTIMS_BY_API_MASK (the user's ruling 2026-11-20, B): the server's value "16001,0xe,0x0,0x1ff", launch client
  *    only, only where missing (recorded: GameConfigWtf.WORK_OPTIMS_SAVED; Reset removes it again while it is still our value)
  */
@@ -164,7 +164,7 @@ object ResetPlan {
         exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
             "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme"),
         exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", "gameAccountAsk", "gameAccountPick",
-            "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",
+            "gameAccountHandover", "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",
             "theme_custom", "swapScreensFails", "settingsTab"),
         exact("framegen", Kind.SETTINGS, "enabled", "multiplier", "flowScale", "performance", "fpsLimitContainer", "fpsLimitAsk"),
         exact("framegen", null, "fpsLimit108", "fpsLimitNote"),
