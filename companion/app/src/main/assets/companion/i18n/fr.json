@@ -2310,7 +2310,13 @@
 "Restart anyway": "Redémarrer quand même",
 "Wait": "Attendre",
 "Game downloading: leave it running": "Jeu en téléchargement : laissez-le tourner",
-"Installing. Keep DS Forever open": "Installation. Gardez DS Forever ouvert"
+"Installing. Keep DS Forever open": "Installation. Gardez DS Forever ouvert",
+"Install failed: Blizzard's patch server did not answer: its name could not be found. Check the Wi-Fi, a VPN or an ad blocker.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : son nom est introuvable. Vérifiez le Wi-Fi, un VPN ou un bloqueur de publicités.",
+"Install failed: Blizzard's patch server did not answer: the connection was blocked. Try another Wi-Fi, or turn off a VPN.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : la connexion a été bloquée. Essayez un autre Wi-Fi ou coupez le VPN.",
+"Install failed: Blizzard's patch server did not answer: the secure connection failed. Check the date and time, or try another Wi-Fi.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : la connexion sécurisée a échoué. Vérifiez la date et l'heure, ou essayez un autre Wi-Fi.",
+"Install failed: Blizzard's patch server did not answer: it took too long. Try again, or try another Wi-Fi.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : il a mis trop de temps. Réessayez ou essayez un autre Wi-Fi.",
+"Install failed: Blizzard's patch server did not answer: it listed no build to install. Try again later.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : il n'a indiqué aucune version à installer. Réessayez plus tard.",
+"Install failed: Blizzard's patch server did not answer: the connection failed. Try again, or try another Wi-Fi.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : la connexion a échoué. Réessayez ou essayez un autre Wi-Fi."
 },
 "templates": {
 "Empty: slot %s's own": "Vide : celui de l'emplacement %s",
@@ -2562,6 +2568,8 @@
 "Game downloading (%s MB a minute): leave it running": "Jeu en téléchargement (%s Mo par minute) : laissez-le tourner",
 "Installing add-ons: %s... Keep DS Forever open": "Installation des add-ons : %s... Gardez DS Forever ouvert",
 "Installing: %s%. Keep DS Forever open": "Installation : %s %. Gardez DS Forever ouvert",
-"The game closed as it started (%s). A problem report holds what it said: please send one.": "Le jeu s'est fermé au démarrage (%s). Un rapport de problème contient ce qu'il a dit : envoyez-en un, s'il vous plaît."
+"The game closed as it started (%s). A problem report holds what it said: please send one.": "Le jeu s'est fermé au démarrage (%s). Un rapport de problème contient ce qu'il a dit : envoyez-en un, s'il vous plaît.",
+"Install failed: Blizzard's patch server did not answer: it sent back an error (HTTP %s). Try again later.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : il a renvoyé une erreur (HTTP %s). Réessayez plus tard.",
+"Checking the latest build... (try %s of %s)": "Vérification de la dernière version... (essai %s sur %s)"
 }
 }

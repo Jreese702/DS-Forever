@@ -2332,7 +2332,13 @@
 "Restart anyway": "Reiniciar de todos modos",
 "Wait": "Esperar",
 "Game downloading: leave it running": "Juego descargando: déjalo en marcha",
-"Installing. Keep DS Forever open": "Instalando. Mantén DS Forever abierto"
+"Installing. Keep DS Forever open": "Instalando. Mantén DS Forever abierto",
+"Install failed: Blizzard's patch server did not answer: its name could not be found. Check the Wi-Fi, a VPN or an ad blocker.": "Error de instalación: el servidor de parches de Blizzard no respondió: no se encontró su nombre. Revisa el Wi-Fi, una VPN o un bloqueador de anuncios.",
+"Install failed: Blizzard's patch server did not answer: the connection was blocked. Try another Wi-Fi, or turn off a VPN.": "Error de instalación: el servidor de parches de Blizzard no respondió: la conexión se bloqueó. Prueba otro Wi-Fi o apaga la VPN.",
+"Install failed: Blizzard's patch server did not answer: the secure connection failed. Check the date and time, or try another Wi-Fi.": "Error de instalación: el servidor de parches de Blizzard no respondió: falló la conexión segura. Revisa la fecha y la hora, o prueba otro Wi-Fi.",
+"Install failed: Blizzard's patch server did not answer: it took too long. Try again, or try another Wi-Fi.": "Error de instalación: el servidor de parches de Blizzard no respondió: tardó demasiado. Vuelve a intentarlo o prueba otro Wi-Fi.",
+"Install failed: Blizzard's patch server did not answer: it listed no build to install. Try again later.": "Error de instalación: el servidor de parches de Blizzard no respondió: no indicó ninguna versión para instalar. Inténtalo más tarde.",
+"Install failed: Blizzard's patch server did not answer: the connection failed. Try again, or try another Wi-Fi.": "Error de instalación: el servidor de parches de Blizzard no respondió: falló la conexión. Vuelve a intentarlo o prueba otro Wi-Fi."
 },
 "templates": {
 "Empty: slot %s's own": "Vacío: lo del espacio %s",
@@ -2581,6 +2587,8 @@
 "Game downloading (%s MB a minute): leave it running": "Juego descargando (%s MB por minuto): déjalo en marcha",
 "Installing add-ons: %s... Keep DS Forever open": "Instalando accesorios: %s... Mantén DS Forever abierto",
 "Installing: %s%. Keep DS Forever open": "Instalando: %s%. Mantén DS Forever abierto",
-"The game closed as it started (%s). A problem report holds what it said: please send one.": "El juego se cerró al iniciarse (%s). Un informe de problema guarda lo que dijo: envía uno, por favor."
+"The game closed as it started (%s). A problem report holds what it said: please send one.": "El juego se cerró al iniciarse (%s). Un informe de problema guarda lo que dijo: envía uno, por favor.",
+"Install failed: Blizzard's patch server did not answer: it sent back an error (HTTP %s). Try again later.": "Error de instalación: el servidor de parches de Blizzard no respondió: devolvió un error (HTTP %s). Inténtalo más tarde.",
+"Checking the latest build... (try %s of %s)": "Comprobando la última versión... (intento %s de %s)"
 }
 }

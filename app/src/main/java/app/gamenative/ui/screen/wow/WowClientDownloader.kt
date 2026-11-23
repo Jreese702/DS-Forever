@@ -118,23 +118,27 @@ object WowClientDownloader {
     /** [product]'s build on its patch server for the install whose .build.info row is [row] and the region [region]; null = no answer */
     private fun remoteCheck(
         product: WowProduct, row: Map<String, String>, localVersion: String, localBuildKey: String, region: String? = null,
-    ): VersionCheckResult? {
-        val versions = runCatching { fetchPatch(product, "versions") }.getOrElse {
-            Timber.w(it, "checkVersion: http call failed")
-            return null
-        } ?: run {
-            Timber.w("checkVersion: response body is null or unsuccessful")
-            return null
+    ): VersionCheckResult? = remoteAnswer(product, row, localVersion, localBuildKey, region, patchHttp).result
+
+    /** [remoteCheck]'s result, or why there is none ([PatchWhy]); [http] = the client of this try */
+    private fun remoteAnswer(
+        product: WowProduct, row: Map<String, String>, localVersion: String, localBuildKey: String, region: String?,
+        http: okhttp3.OkHttpClient,
+    ): PatchAnswer {
+        val fetched = fetchPatchWhy(product, "versions", http)
+        val versions = fetched.text ?: run {
+            Timber.w("checkVersion: the patch server did not answer (${fetched.why?.logWords ?: "?"})")
+            return PatchAnswer(null, fetched.why ?: PatchWhy(PatchFail.OTHER))
         }
         val remoteRow = remoteRow(parsePsv(versions), "Region", region, row["Branch"])
             ?: run {
                 Timber.w("checkVersion: no remote row in $versions")
-                return null
+                return PatchAnswer(null, PatchWhy(PatchFail.NO_BUILD))
             }
         val remoteVersion = remoteRow["VersionsName"] ?: remoteRow["VersionName"] ?: remoteRow["Version"]
             ?: run {
                 Timber.w("checkVersion: no remoteVersion in $remoteRow")
-                return null
+                return PatchAnswer(null, PatchWhy(PatchFail.NO_BUILD))
             }
         val remoteBuildKey = remoteRow["BuildConfig"].orEmpty()
 
@@ -144,13 +148,13 @@ object WowClientDownloader {
             Timber.w("checkVersion: no '$region' row; using '${rowRegion ?: "?"}' (the install's ${row["Branch"]})")
         }
 
-        val cdns = runCatching { fetchPatch(product, "cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
+        val cdns = fetchPatchWhy(product, "cdns", http).text?.let(::parsePsv).orEmpty()
         val cdnsRow = remoteRow(cdns, "Name", rowRegion, row["Branch"])
 
         val isOutdated = needsDownload(localVersion, localBuildKey, remoteVersion, remoteBuildKey)
         Timber.i("checkVersion: ${product.code} region=$rowRegion (Branch ${row["Branch"]}) localVersion=$localVersion, " +
             "remoteVersion=$remoteVersion, isOutdated=$isOutdated")
-        return VersionCheckResult(
+        return PatchAnswer(VersionCheckResult(
             localVersion = localVersion,
             remoteVersion = remoteVersion,
             isOutdated = isOutdated,
@@ -162,7 +166,7 @@ object WowClientDownloader {
             remoteCdnServers = cdnsRow?.get("Servers"),
             remoteKeyRing = remoteRow["KeyRing"],
             region = rowRegion,
-        )
+        ), null)
     }
 
     /** a remote build is another than the install's: its version differs, or its BuildConfig (when the row names one). Pure */
@@ -334,12 +338,120 @@ object WowClientDownloader {
     fun install(gameRoot: File, region: String? = null, onStatus: (String) -> Unit) {
         onStatus("Checking the latest build...")
         // [region]: the player's pick (regions fix), else the device's country's region
-        val target = remoteCheck(WowProduct.LAUNCH, mapOf("Branch" to directBranch(region)), "", "")
-            ?.takeIf { it.remoteBuildConfig.isNotBlank() && it.remoteCdnConfig.isNotBlank() }
-            ?: throw IOException("Blizzard's patch server did not answer")
+        val target = installTarget(mapOf("Branch" to directBranch(region)), onStatus)
         listOf("Data/data", "Data/indices", "Data/config").forEach { check(File(gameRoot, it).run { isDirectory || mkdirs() }) { "can't write to $gameRoot" } }
         WowSwitch.replace(File(gameRoot, com.jrees.wowcompanion.DataStaleness.STREAMED), ByteArray(0))
         sync(gameRoot, target, fresh = true, onStatus)
+    }
+
+    // ------------------------------------------------------------------------------------------------ issue 150: why, and again
+
+    /** what kept the patch server's answer away, in the player's words ([patchFailText]) */
+    internal enum class PatchFail { DNS, CONNECT, TLS, TIMEOUT, HTTP, NO_BUILD, OTHER }
+
+    /** [fail], and the server's HTTP code for [PatchFail.HTTP] */
+    internal data class PatchWhy(val fail: PatchFail, val http: Int = 0) {
+        /** the setup log's words (no address, no host: the kind and the code) */
+        val logWords: String get() = when (fail) {
+            PatchFail.DNS -> "the server's name was not found (DNS)"
+            PatchFail.CONNECT -> "the connection was refused or blocked"
+            PatchFail.TLS -> "the secure connection (TLS) failed"
+            PatchFail.TIMEOUT -> "timed out"
+            PatchFail.HTTP -> "HTTP $http"
+            PatchFail.NO_BUILD -> "no build row in its answer"
+            PatchFail.OTHER -> "the connection failed"
+        }
+    }
+
+    /** a build check's result, or why there is none */
+    internal class PatchAnswer(val result: VersionCheckResult?, val why: PatchWhy?)
+
+    /** the install's patch check came to nothing after [tries] tries: [message] is the player's line, [detail] the setup log's */
+    class PatchServerException internal constructor(internal val why: PatchWhy, val tries: Int) : IOException(patchFailText(why)) {
+        val detail: String get() = "patch server: ${why.logWords}, $tries ${if (tries == 1) "try" else "tries"}"
+    }
+
+    /** the line every reason starts with (the words players and replies already know) */
+    const val PATCH_NO_ANSWER = "Blizzard's patch server did not answer"
+
+    /** the player's line for [why]: what failed, then what to try. Pure */
+    internal fun patchFailText(why: PatchWhy?): String = PATCH_NO_ANSWER + ": " + when (why?.fail) {
+        PatchFail.DNS -> "its name could not be found. Check the Wi-Fi, a VPN or an ad blocker."
+        PatchFail.CONNECT -> "the connection was blocked. Try another Wi-Fi, or turn off a VPN."
+        PatchFail.TLS -> "the secure connection failed. Check the date and time, or try another Wi-Fi."
+        PatchFail.TIMEOUT -> "it took too long. Try again, or try another Wi-Fi."
+        PatchFail.HTTP -> "it sent back an error (HTTP ${why.http}). Try again later."
+        PatchFail.NO_BUILD -> "it listed no build to install. Try again later."
+        PatchFail.OTHER, null -> "the connection failed. Try again, or try another Wi-Fi."
+    }
+
+    /** a network failure's kind, from the exception or its causes. Pure */
+    internal fun patchWhy(e: Throwable): PatchWhy {
+        var c: Throwable? = e
+        var depth = 0
+        while (c != null && depth++ < 8) {
+            when (c) {
+                is java.net.UnknownHostException -> return PatchWhy(PatchFail.DNS)
+                is javax.net.ssl.SSLException, is java.security.cert.CertificateException -> return PatchWhy(PatchFail.TLS)
+                is java.net.SocketTimeoutException -> return PatchWhy(PatchFail.TIMEOUT)
+                is java.net.ConnectException, is java.net.NoRouteToHostException, is java.net.PortUnreachableException ->
+                    return PatchWhy(PatchFail.CONNECT)
+            }
+            // OkHttp's call timeout is a bare InterruptedIOException("timeout")
+            if (c is java.io.InterruptedIOException) return PatchWhy(PatchFail.TIMEOUT)
+            c = c.cause
+        }
+        return PatchWhy(PatchFail.OTHER)
+    }
+
+    /** a try worth repeating: a network failure or a server's passing trouble (408, 429, 5xx); not another 4xx or a missing build. Pure */
+    internal fun patchRetries(why: PatchWhy?): Boolean = when (why?.fail) {
+        PatchFail.HTTP -> why.http == 408 || why.http == 429 || why.http >= 500
+        PatchFail.NO_BUILD -> false
+        else -> true
+    }
+
+    /** the install's tries of the patch check: the first, then two more ([patchBackoffMs] apart) with the longer [patchHttpSlow] */
+    const val PATCH_TRIES = 3
+
+    /** the waits before the second and the third try (the tests set them to 0) */
+    @Volatile internal var patchBackoffMs: List<Long> = listOf(2_000L, 5_000L)
+
+    /** a weak link's client for the retries: 15 s a call, not 6 */
+    private val patchHttpSlow by lazy {
+        Net.http.newBuilder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * the direct install's build ([install]): up to [PATCH_TRIES] tries of the patch check (the status line says which), until one gives
+     * a build with both configs. Each try's reason goes to the log; the last one's is the [PatchServerException] the player reads
+     */
+    internal fun installTarget(row: Map<String, String>, onStatus: (String) -> Unit): VersionCheckResult {
+        var why: PatchWhy? = null
+        var tries = 0
+        for (attempt in 0 until PATCH_TRIES) {
+            if (attempt > 0) {
+                if (!patchRetries(why)) break
+                onStatus("Checking the latest build... (try ${attempt + 1} of $PATCH_TRIES)")
+                val wait = patchBackoffMs.getOrElse(attempt - 1) { patchBackoffMs.lastOrNull() ?: 0L }
+                if (wait > 0) Thread.sleep(wait)
+            }
+            tries++
+            val a = remoteAnswer(WowProduct.LAUNCH, row, "", "", null, if (attempt == 0) patchHttp else patchHttpSlow)
+            val r = a.result
+            if (r != null && r.remoteBuildConfig.isNotBlank() && r.remoteCdnConfig.isNotBlank()) {
+                if (attempt > 0) Timber.i("install: the patch server answered on try ${attempt + 1}")
+                return r
+            }
+            val w = a.why ?: PatchWhy(PatchFail.NO_BUILD)
+            why = w
+            Timber.w("install: patch check try ${attempt + 1} of $PATCH_TRIES: ${w.logWords}")
+        }
+        throw PatchServerException(why ?: PatchWhy(PatchFail.OTHER), tries)
     }
 
     /** [stopped]: asked between files; true = stop ([UpdateStopped]; the old install as it was, nothing of it deleted) */
@@ -887,25 +999,36 @@ object WowClientDownloader {
      * a server answered, none with it; a network failure on every one throws the last failure
      */
     private fun fetchPatch(product: WowProduct, table: String): String? {
+        val f = fetchPatchWhy(product, table, patchHttp)
+        f.failure?.takeIf { f.text == null && f.why?.fail != PatchFail.HTTP }?.let { throw it }
+        return f.text
+    }
+
+    /** one patch server's answer: its [text], else [why] there is none and the network [failure] behind it (null = it answered) */
+    private class PatchFetch(val text: String?, val why: PatchWhy?, val failure: IOException? = null)
+
+    /**
+     * [fetchPatch] that keeps WHY nothing came (issue 150: "Blizzard's patch server did not answer" said nothing of the cause): each of
+     * [patchUrlsFor] in turn through [http]; a server's error reply (its HTTP code) wins over a later server's network failure, as before
+     */
+    private fun fetchPatchWhy(product: WowProduct, table: String, http: okhttp3.OkHttpClient): PatchFetch {
         var failure: IOException? = null
-        var answered = false
+        var why: PatchWhy? = null
         for (base in patchUrlsFor(product)) {
             try {
-                fetchText("$base/$table")?.let { return it }
-                answered = true
+                http.newCall(Request.Builder().url("$base/$table").build()).execute().use { response ->
+                    if (response.isSuccessful) response.body?.string()?.let { return PatchFetch(it, null) }
+                    Timber.w("patch server $base: HTTP ${response.code}")
+                    if (why?.fail != PatchFail.HTTP) why = PatchWhy(PatchFail.HTTP, response.code)
+                }
             } catch (e: IOException) {
                 Timber.w("patch server $base: ${e.message}")
                 failure = e
+                if (why?.fail != PatchFail.HTTP) why = patchWhy(e)
             }
         }
-        if (!answered && failure != null) throw failure
-        return null
+        return PatchFetch(null, why ?: PatchWhy(PatchFail.OTHER), failure)
     }
-
-    private fun fetchText(url: String): String? =
-        patchHttp.newCall(Request.Builder().url(url).build()).execute().use { response ->
-            if (response.isSuccessful) response.body?.string() else null
-        }
 
     /** the row the game runs and its client: [WowProduct.choose], the one order the launcher and the companion share */
     private fun activeBuild(gameRoot: File, today: java.time.LocalDate = java.time.LocalDate.now()): WowProduct.Choice {

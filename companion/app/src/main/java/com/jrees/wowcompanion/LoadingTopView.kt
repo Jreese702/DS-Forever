@@ -68,7 +68,8 @@ class LoadingTopView(context: Context) : View(context) {
         val textW = w - (ROW_X + 64f + 60f) * k
         // each row's lines (a red row wraps; an OK / waiting row is one line)
         val laid = rows.map { r -> r to if (r.mark == SetupFlow.Mark.BAD) SetupPanel.wrap(r.label, rowP, textW) else listOf(r.label) }
-        val errLines = err?.let { SetupPanel.wrap("Error: $it", rowP, textW) } ?: emptyList()
+        // issue 150: the error is translated WHOLE before it wraps (a wrapped piece never matches the es / fr words)
+        val errLines = err?.let { SetupPanel.wrap("Error: ${Tr.t(it)}", rowP, textW) } ?: emptyList()
         var h = TITLE_H * k + laid.sumOf { it.second.size } * ROW_H * k + 24f * k + bars.count { it != null } * BAR_ROW * k
         h += LINE_H * k
         h += errLines.size * ROW_H * k
