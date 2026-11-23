@@ -388,16 +388,17 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }.getOrDefault(null to emptySet())
 
     /**
-     * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"), as Settings > Game account says:
-     * "Ask each time" sends nothing to remember; "Remembered" sends the pick the Thor's own Config.wtf remembers, if any (an account
-     * name: never logged)
+     * The Thor's remembered game account for DS Forever Desktop (the user's pick 2026-11-17, "Yes, remember it"), as Settings > Game
+     * account says: "Ask each time" sends nothing; "Remembered" sends the pick the Thor's own Config.wtf remembers, if any (an account
+     * name: never logged). Desktop uses it only to find the WTF/Account folder our settings tables follow: since the user's ruling
+     * 2026-11-23 it writes nothing into the PC's Config.wtf
      */
     private fun gameAccount(): BridgeProtocol.GameAccount {
         com.jrees.wowcompanion.Settings.init(activity)
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) return BridgeProtocol.GameAccount(ask = true)
         val root = runCatching { com.jrees.wowcompanion.GameFiles.gameRoot(activity) }.getOrNull()
-        // A (the user's ruling 2026-11-20): the Thor's marked list, else the learned pick alone ("!WoW2|"); Desktop writes it into the
-        // PC's Config.wtf only where the PC remembers no pick of its own (WowAccount.Apply)
+        // A (the user's ruling 2026-11-20): the Thor's marked list, else the learned pick alone ("!WoW2|"), for Desktop's settings
+        // follow (WowSvSync.PickAccount); never written into the PC's Config.wtf (the user's ruling 2026-11-23)
         val list = root?.let { com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList(it) }
             ?: com.jrees.wowcompanion.Settings.gameAccountPick?.let { com.jrees.wowcompanion.GameConfigWtf.accountListValue(null, it) }
         return BridgeProtocol.GameAccount(ask = false, list = list)

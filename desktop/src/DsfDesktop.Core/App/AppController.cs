@@ -1655,7 +1655,8 @@ namespace DsfDesktop.App
         int? loginRunPid;
         /// <summary>the login.txt run reached character select or the world (WowFlow.LoginRunSettled): no run to ask again for</summary>
         bool loginRunSettled;
-        /// <summary>the Thor's remembered game account (WowAccount; never logged), for the PC's Config.wtf before WoW starts; null = none</summary>
+        /// <summary>the Thor's remembered game account (WowAccount; never logged): only which WTF/Account folder our settings tables follow
+        /// (WowSvSync.PickAccount). Never written into the PC's Config.wtf (the user's ruling 2026-11-23); null = none</summary>
         string gameAccountList;
         readonly object loginGate = new object();
 
@@ -1663,12 +1664,12 @@ namespace DsfDesktop.App
         {
             lock (loginGate)
             {
-                // the game account first: a login that is not wanted now still tells which game account the Thor remembers
+                // the game account first: a login that is not wanted now still tells which game account the Thor remembers (for the
+                // settings follow only: nothing goes into the PC's Config.wtf, the user's ruling 2026-11-23)
                 gameAccountList = WowAccount.Valid(accountList) ? accountList : null;
                 var dir = FlavorDirOrNull;
                 if (dir == null) return;
                 var s = ScreenNow();
-                if (s == WowScreen.None && gameAccountList != null) RememberGameAccount(dir);
                 if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(s)) return;
                 var why = WowLoginFile.Write(dir, email, password);
                 if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; loginRunSettled = false; loginFileUnread = false; }
@@ -1738,17 +1739,9 @@ namespace DsfDesktop.App
             }
         }
 
-        /// <summary>the Thor's remembered game account into the PC's Config.wtf (WowAccount: only that key, the PC's own pick wins); only
-        /// while no client runs (WoW writes the file when it closes)</summary>
-        void RememberGameAccount(string flavorDir)
-        {
-            var list = gameAccountList;
-            if (list == null || flavorDir == null) return;
-            Log.I("game account: " + WowAccount.Ensure(Path.Combine(flavorDir, "WTF", "Config.wtf"), list));
-        }
-
         /// <summary>
-        /// Just before Desktop starts WoW: the remembered game account goes in, and when the client of the last login.txt run closed
+        /// Just before Desktop starts WoW (the PC's Config.wtf is left alone: no remembered game account goes in any more, the user's
+        /// ruling 2026-11-23): when the client of the last login.txt run closed
         /// itself (a refused region, 2026-11-17), its file goes (it was for that run only) and the Thor is asked for the login again
         /// ("login_again"; the user's pick 2026-11-17: "Ask the Thor again"). Its answer is an ordinary login_file: written for the new
         /// run, deleted by the same rule.
@@ -1764,8 +1757,6 @@ namespace DsfDesktop.App
             {
                 try
                 {
-                    // the started client's own folder (a start through Battle.net works in Battle.net's folder)
-                    RememberGameAccount(p?.Flavor != null && Wow != null ? Wow.FlavorDir(p.Flavor) : FlavorDirOrNull);
                     var dir = FlavorDirOrNull;
                     int? pidNow = null;
                     using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
