@@ -404,6 +404,9 @@ private:
     std::mutex        dirtyMutex;
     std::condition_variable dirtyCV;
     std::shared_mutex frameMutex;
+    // #153: one frame-generation setter at a time. The render thread never takes it, so a setter can build its shaders
+    // while holding only this lock (never frameMutex or renderMutex) and swap them in afterwards.
+    std::mutex        framegenSetMutex;
 
     void createInstance();
     void createSurface();
@@ -438,7 +441,8 @@ private:
     void destroyOneComposite(VkCompositeTarget& c);
     void destroyCompositeTargets();
     bool compositeFormatSupported();
-    void createLsfg();
+    VkrLsfg* buildLsfg(const std::string& cachePath) const;
+    void configureLsfg();
     void destroyLsfg();
     uint32_t framegenExtraImages() const;
     void blitCompositeToSwapchain(VkCommandBuffer cmd, const VkCompositeTarget& src, VkImage dst);

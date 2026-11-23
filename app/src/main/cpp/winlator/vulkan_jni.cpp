@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 #include "../extras/adrenotools/include/adrenotools/driver.h"
 #include "VulkanRendererContext.h"
 
@@ -145,13 +146,18 @@ Java_com_winlator_renderer_VulkanRenderer_nativeSetRenderList(
     auto* r=reinterpret_cast<VulkanRendererContext*>(handle);
     if (!r||count<=0) return;
 
-    jlong* ids=(jlong*)env->GetPrimitiveArrayCritical(jids,nullptr);
-    jint*  xs =(jint*) env->GetPrimitiveArrayCritical(jxs, nullptr);
-    jint*  ys =(jint*) env->GetPrimitiveArrayCritical(jys, nullptr);
-    r->setRenderList(reinterpret_cast<const int64_t*>(ids),xs,ys,count);
-    env->ReleasePrimitiveArrayCritical(jys, ys,  JNI_ABORT);
-    env->ReleasePrimitiveArrayCritical(jxs, xs,  JNI_ABORT);
-    env->ReleasePrimitiveArrayCritical(jids,ids, JNI_ABORT);
+    if (!jids||!jxs||!jys) return;
+    if (env->GetArrayLength(jids)<count||env->GetArrayLength(jxs)<count||env->GetArrayLength(jys)<count) return;
+
+    // #153: copy the list out first, then hand it over. setRenderList waits on the renderer's lock, and a critical array
+    // section held across that wait stops the garbage collector: every thread that needs memory then waits too, the main
+    // thread included ("stopped responding").
+    std::vector<jlong> ids((size_t)count);
+    std::vector<jint>  xs((size_t)count), ys((size_t)count);
+    env->GetLongArrayRegion(jids,0,count,ids.data());
+    env->GetIntArrayRegion(jxs, 0,count,xs.data());
+    env->GetIntArrayRegion(jys, 0,count,ys.data());
+    r->setRenderList(reinterpret_cast<const int64_t*>(ids.data()),xs.data(),ys.data(),count);
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_winlator_renderer_VulkanRenderer_nativeRemoveWindow(JNIEnv*, jobject, jlong handle, jlong id) {
