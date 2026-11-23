@@ -41,7 +41,8 @@ class BrowserLoginTest {
         val host = read("CompanionHost.kt")
         val row = host.substringAfter("private fun nativeRow(").substringBefore("private var loginRevealed")
         val offer = row.indexOf("BrowserLogin.offer(")
-        assertTrue("the offer row", offer > 0 && "StartView.Login.BROWSER to BrowserLogin.OFFER_LINE" in row)
+        // issue 569: the line is BLZ51914400's or the captcha timeout's (BrowserLogin.offerLine)
+        assertTrue("the offer row", offer > 0 && "StartView.Login.BROWSER to BrowserLogin.offerLine(s.reason, s.captcha)" in row)
         assertTrue("before the first-time row", offer < row.indexOf("StartView.Login.FIRST"))
         assertTrue("browser login: no saved-login rows", row.indexOf("NativeLogin.browserMode -> null") in offer until row.indexOf("StartView.Login.FIRST"))
         // the button turns Browser login on and restarts the game through the launcher's own restart

@@ -753,7 +753,8 @@ fun WoWForeverScreen(
             } catch (e: Exception) {
                 Timber.e(e, "Error installing game")
                 installStartedAt = 0L
-                setupLog("install: failed: ${e.message}")
+                // issue 150: the patch check's reason and its tries in the log too (the player's line says what failed in plain words)
+                setupLog("install: failed: ${e.message}" + ((e as? WowClientDownloader.PatchServerException)?.let { "; ${it.detail}" } ?: ""))
                 if (e.isPermissionDenied()) denyStorageAccess()
                 errorMessage = "Install failed: ${e.message}"
                 isUpdating = false
