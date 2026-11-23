@@ -8,8 +8,8 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Compress idle memory (PageOut, the user's picks 2026-11-23: the Wine helpers' and DS Forever's own idle memory into zram, never the
- * game), off-device: which process may be asked (the same cases as tools/pageout/test_pageout.c's for the preload's own check), when
+ * Compress idle memory (PageOut, the user's picks 2026-11-23: the Wine helpers' and DS Forever's own idle memory into zram; the game
+ * client's own cold-only mode is GamePageOutTest's), off-device: which process may be asked (the same cases as tools/pageout/test_pageout.c's for the preload's own check), when
  * memory is short, the rate limit and its backoff, the answers and the mem.log / report lines, the default by model, the launch.
  * The native half: wsl -e bash tools/pageout/test.sh.
  */
@@ -134,8 +134,8 @@ class PageOutTest {
         assertEquals("pageout (ours, 2, free 612 MB < 719): rss anon 612 -> 590 MB; paged 12 MB of 14 regions, came back 2 MB; 7 ms",
             PageOut.selfLine(2, "free 612 MB < 719", ok, 612 * 1024, 590 * 1024))
         assertEquals("pageout (ours, 1, x): rc 3", PageOut.selfLine(1, "x", ok.copy(rc = 3), 1, 1))
-        assertEquals("Compress idle memory: on (this Thor's default); Wine helpers: 3 requests, 54 MB paged; ours: 2 requests, 30 MB paged",
-            PageOut.reportLine(true, true, true, 3, 54 * 1024, 2, 30 * 1024, false))
+        assertEquals("Compress idle memory: on (this Thor's default); Wine helpers: 3 requests, 54 MB paged; ours: 2 requests, 30 MB paged; " +
+            "WoW (cold only): 0 passes, 0 MB paged", PageOut.reportLine(true, true, true, 3, 54 * 1024, 2, 30 * 1024, false))
         assertEquals("Compress idle memory: off", PageOut.reportLine(false, false, false, 0, 0, 0, 0, false))
         assertEquals("Compress idle memory: on; Wine helpers: not in this game run; ours: 0 requests, 0 MB paged",
             PageOut.reportLine(true, false, false, 0, 0, 0, 0, false))
@@ -156,7 +156,7 @@ class PageOutTest {
         assertEquals(M.L_PAGEOUT, lines.last().key)
         assertEquals("Compress idle memory", lines.last().label); assertEquals(0, lines.last().chosen)
         assertEquals(1, M.lines(M.MEM, PerformanceTileModel.State(pageOut = false)).last().chosen)
-        assertEquals("Compress idle memory: from the next game start", M.status(M.MEM, PerformanceTileModel.State(pageOutChanged = true)))
+        assertEquals("Compress idle memory, the game's too: from the next game start", M.status(M.MEM, PerformanceTileModel.State(pageOutChanged = true)))
         assertEquals(setOf("pageOut"), ResetPlan.prefKeys("settings", setOf("pageOut"), setOf(ResetPlan.Kind.SETTINGS), "me", false))
     }
 

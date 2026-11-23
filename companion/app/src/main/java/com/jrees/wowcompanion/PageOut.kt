@@ -9,14 +9,16 @@ import java.io.File
 /**
  * IDLE MEMORY INTO THE THOR'S OWN ZRAM (the user's picks, 2026-11-23, after asking how DroidDeck compresses memory: "Wine helpers
  * (Recommended)" = "Only Wine's idle background processes next to WoW (not WoW itself), only when memory runs low; measured in
- * reports", and "Our own app" = "DS Forever's own idle memory when memory runs low"). Our own code (DroidDeck is GPL-3.0; nothing of
+ * reports", and "Our own app" = "DS Forever's own idle memory when memory runs low"; then, once the research showed DroidDeck pages
+ * out WoW itself, "Yes, carefully" for the game client's COLD memory: [GamePageOut], its own cold-only mode, at character select and
+ * when memory is critically low in the world). Our own code (DroidDeck is GPL-3.0; nothing of
  * it is used): the kernel's MADV_PAGEOUT on a process's OWN private anonymous pages, which the kernel moves into the swap the firmware
  * already set up (zram on every Thor). No root, no system setting, no permission; the memory's content is never read.
  *
  *  - The Wine helpers (services.exe, winedevice.exe, plugplay.exe, svchost.exe, rpcss.exe, ...): libdsf-pageout.so is preloaded into
  *    the container's Wine processes ([launchEnv], from the next game start). On a request each checks what it is and pages out at most
- *    [CAP_KIB] of its idle heaps (dsf_pageout.h). The game is never asked ([who] here, and the process's own check there), and in the
- *    game's process the library installs nothing at all. Not wineserver (every call of the game goes through it).
+ *    [CAP_KIB] of its idle heaps (dsf_pageout.h). The game is never sent THIS request ([who] here, and the process's own check there
+ *    refuses it); the game client has its own cold-only one ([GamePageOut]). Not wineserver (every call of the game goes through it).
  *  - DS Forever itself: its native allocator's regions only (never the Java heap), at most [CAP_KIB] (NativeHeap.pageOutSelf), never
  *    while a loading screen draws (its pictures are native memory), on MemWatch's thread.
  *
@@ -205,13 +207,15 @@ object PageOut {
 
     /** the problem report's line: "Compress idle memory: on (this Thor's default); Wine helpers: 3 requests, 54 MB paged; ours: 2
      *  requests, 30 MB paged" (pure) */
-    fun reportLine(on: Boolean, byDefault: Boolean, armed: Boolean, helperN: Int, helperKb: Long, selfN: Int, selfKb: Long, unsupported: Boolean): String =
+    fun reportLine(on: Boolean, byDefault: Boolean, armed: Boolean, helperN: Int, helperKb: Long, selfN: Int, selfKb: Long, unsupported: Boolean,
+                   gameN: Int = 0, gameKb: Long = 0L): String =
         buildString {
             append("Compress idle memory: ").append(if (on) "on" else "off").append(if (byDefault) " (this Thor's default)" else "")
             if (unsupported) { append("; not supported by this kernel"); return@buildString }
             if (on || helperN > 0 || selfN > 0) {
                 append("; Wine helpers: ").append(if (armed) "$helperN requests, ${MemWatch.mb(helperKb)} MB paged" else "not in this game run")
                 append("; ours: ").append(selfN).append(" requests, ").append(MemWatch.mb(selfKb)).append(" MB paged")
+                append(GamePageOut.reportPart(armed, gameN, gameKb))
             }
         }
 
@@ -249,8 +253,9 @@ object PageOut {
         runCatching { dir.mkdirs(); dir.listFiles()?.forEach { it.delete() } }
         if (!dir.isDirectory) return null
         armedDir = dir
-        MemWatch.note("launch: compress idle memory on (Wine helpers, at most ${CAP_KIB / 1024} MB each per request)")
-        return mapOf("preload" to lib.path, ENV_DIR to dir.path, ENV_GAME to gameNames().joinToString(":"))
+        MemWatch.note("launch: compress idle memory on (Wine helpers, at most ${CAP_KIB / 1024} MB each per request; the game's cold " +
+            "memory at character select and when critically low, at most ${GamePageOut.PASS_KIB / 1024} MB a pass)")
+        return mapOf("preload" to lib.path, ENV_DIR to dir.path, ENV_GAME to gameNames().joinToString(":"), GamePageOut.ENV_MODE to "1")
     }
 
     /** Android's warning (MemWatch.trimmed, any thread): running-critical or onLowMemory */
@@ -263,7 +268,10 @@ object PageOut {
         if (unsupported || !NativeHeap.available) return
         if (!runCatching { Settings.pageOut }.getOrDefault(false)) return
         val now = SystemClock.uptimeMillis()
-        val why = pressure(s.availKb, s.fileKb, s.swapFreeKb, DeviceTier.totalMb, if (warnAt == 0L) -1L else now - warnAt) ?: return
+        val warnAgo = if (warnAt == 0L) -1L else now - warnAt
+        // the game client's cold-only passes (character select; critically low in the world): their own triggers, before the helpers'
+        armedDir?.let { d -> runCatching { GamePageOut.tick(s, h, d, warnAgo) } }
+        val why = pressure(s.availKb, s.fileKb, s.swapFreeKb, DeviceTier.totalMb, warnAgo) ?: return
         if (armedDir != null && !collecting && helperLimit.due(now) && runCatching { LauncherHooks.gameUp() }.getOrDefault(false))
             runCatching { askHelpers(why, h, now) }.onFailure { collecting = false; helperLimit.done(now, 0, 0) }
         if (!unsupported && selfLimit.due(now) && !GameLife.loadingNow) runCatching { pageSelf(why, now) }
@@ -345,5 +353,5 @@ object PageOut {
 
     /** the problem report's line ([reportLine]) */
     fun reportLine(): String = reportLine(runCatching { Settings.pageOut }.getOrDefault(false), !runCatching { Settings.pageOutSet }.getOrDefault(false),
-        armedDir != null, helperN, helperKb, selfN, selfKb, unsupported)
+        armedDir != null, helperN, helperKb, selfN, selfKb, unsupported || GamePageOut.unsupported, GamePageOut.passes, GamePageOut.pagedKb)
 }

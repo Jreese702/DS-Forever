@@ -212,8 +212,9 @@ object Settings {
 
     /**
      * COMPRESS IDLE MEMORY (the user's picks 2026-11-23: the Wine helpers' and DS Forever's own idle memory into the Thor's zram when
-     * memory runs low, never the game; PageOut). Unset = on for the 8 GB Thors (DeviceTier.pageOutDefault), off for the 12 / 16 GB.
-     * The helpers' part from the next game start (the preload is added at the launch), ours at once.
+     * memory runs low, PageOut; then "Yes, carefully": the game client's COLD memory too, at character select and when memory is
+     * critically low in the world, GamePageOut). Unset = on for the 8 GB Thors (DeviceTier.pageOutDefault), off for the 12 / 16 GB.
+     * The helpers' and the game's part from the next game start (the preload is added at the launch), ours at once.
      */
     var pageOut: Boolean
         get() = prefs?.takeIf { it.contains("pageOut") }?.getBoolean("pageOut", false) ?: DeviceTier.pageOutDefault()

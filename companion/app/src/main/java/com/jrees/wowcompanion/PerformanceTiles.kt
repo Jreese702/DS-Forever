@@ -137,7 +137,8 @@ object PerformanceTileModel {
             add(Line(L_STYLE, "Map style when zoomed out", null, listOf("Terrain", "Painted"), if (s.mapTerrain) 0 else 1, Kind.CHOICE))
             // #56 G1 (the user's approval 2026-11-19): the container's video memory cap, the last line (an advanced switch, on by default)
             add(Line(L_VRAM, "Video memory cap", null, ON_OFF, if (s.vramCap) 0 else 1, Kind.CHOICE))
-            // 2026-11-23 (the user's picks: the Wine helpers' and our own idle memory into zram when memory runs low; PageOut)
+            // 2026-11-23 (the user's picks: the Wine helpers' and our own idle memory into zram when memory runs low, PageOut; and the
+            // game's cold memory at character select and when critically low, GamePageOut)
             add(Line(L_PAGEOUT, "Compress idle memory", null, ON_OFF, if (s.pageOut) 0 else 1, Kind.CHOICE))
         }
         INDOOR -> buildList {
@@ -207,7 +208,7 @@ object PerformanceTileModel {
             s.lighterFixed -> "Lighter mode: always on for this Thor"
             s.lowGfxChanged -> "Low-memory graphics: from the next game start"
             s.vramChanged -> "Video memory cap: from the next game start"
-            s.pageOutChanged -> "Compress idle memory: from the next game start"
+            s.pageOutChanged -> "Compress idle memory, the game's too: from the next game start"
             else -> ""
         }
         INDOOR -> listOfNotNull(s.progress.takeIf { it.isNotEmpty() }, s.terrain).joinToString(" · ")

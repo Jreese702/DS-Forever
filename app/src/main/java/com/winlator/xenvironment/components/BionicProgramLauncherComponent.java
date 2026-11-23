@@ -337,8 +337,9 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
         if (new File(dnsV4MappedPath).exists()) {
             ld_preload += ":" + dnsV4MappedPath;
         }
-        // DS Forever (the user's picks, 2026-11-23: "Wine helpers" + "Our own app"): with Settings > Performance > Memory > Compress
-        // idle memory on, the Wine helpers' page-out preload (libdsf-pageout.so, PageOut); off = nothing added, the launch as before
+        // DS Forever (the user's picks, 2026-11-23: "Wine helpers" + "Our own app", then "Yes, carefully" for the game's cold memory):
+        // with Settings > Performance > Memory > Compress idle memory on, the page-out preload (libdsf-pageout.so, PageOut, GamePageOut);
+        // off = nothing added, the launch as before
         java.util.Map<String, String> pageOut = null;
         try {
             pageOut = com.jrees.wowcompanion.PageOut.launchEnv(context);
@@ -349,6 +350,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
             ld_preload += ":" + pageOut.get("preload");
             envVars.put(com.jrees.wowcompanion.PageOut.ENV_DIR, pageOut.get(com.jrees.wowcompanion.PageOut.ENV_DIR));
             envVars.put(com.jrees.wowcompanion.PageOut.ENV_GAME, pageOut.get(com.jrees.wowcompanion.PageOut.ENV_GAME));
+            envVars.put(com.jrees.wowcompanion.GamePageOut.ENV_MODE, pageOut.get(com.jrees.wowcompanion.GamePageOut.ENV_MODE));
         }
         if (replacePath != null) ld_preload += ":" + replacePath;
 
