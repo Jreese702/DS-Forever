@@ -92,6 +92,9 @@ class SpellsOverlay(
     private fun fightTap(): Boolean = CastStripModel.bindFightTab(CastStripModel.Live.bar, macro = ctl?.bindItem?.mac == true)
     /** b71: Party mode's bar stop (the add-on has the party layer) */
     private fun partyTap(): Boolean = CastStripModel.bindPartyTab(CastStripModel.Live.bar, macro = ctl?.bindItem?.mac == true)
+    /** issue 453: streaming with older PC add-ons (DS Forever Desktop not updated) took the tab away with no word: it stays on show,
+     *  dimmed, with the note (never a stop: nothing can be placed on a bar the PC's add-on cannot take) */
+    private fun olderTab(): Boolean = !three() && DesktopAddons.older(PlayGate.streamingNow(), padMap?.version, CastStripModel.Live.bar?.version)
     /** b70 (D2): the bar is Off in Settings: the bar veiled, "Turn on" */
     private fun barOff(): Boolean = CastStripModel.barOff(HomeSettings.castBarSide)
     /** b70 (D5): Show in combat off: In combat's bar locked */
@@ -412,12 +415,13 @@ class SpellsOverlay(
         // TAP-TO-CAST BAR: the situation's layer (Out of combat the bar's own, In combat its fight layer, Party mode its party layer): a
         // set slot wears its badge, an empty one shows what it falls through to, faded; the stop's slot lit and showing the thing where
         // it would go, the slot it is on already glowing green (picking that one takes it off); locked: veiled with ONE word
-        if (three()) {
+        val older = olderTab()                                          // issue 453: dimmed with the note, never gone
+        if (three() || older) {
             darkSection(c, "Tap-to-cast bar", SituationPage.Icon.TAP, BAR_HEAD, box.left + 70f, box.right - 70f, lit = cbOn)
             val bar = CastStripModel.Live.bar
             val at = (ctl?.bindCb ?: 1) - 1
             val layer = when (sit) { 1 -> bar?.fslots; 2 -> bar?.pslots; else -> bar?.slots }
-            val locked = barOff() || (sit == 1 && fightHidden()) || (sit == 2 && partyHidden())
+            val locked = older || barOff() || (sit == 1 && fightHidden()) || (sit == 2 && partyHidden())
             val mac = item?.takeIf { it.mac }
             val bagItem = item?.takeIf { !it.mac }
             val here = when {
@@ -444,8 +448,8 @@ class SpellsOverlay(
                 if (cbOn && i == at) UiKit.focus(c, RectF(sr).apply { inset(-6f, -6f) })
             }
             if (locked) {
-                SituationPage.veilAt(c, well, if (barOff()) "Bar is off" else if (sit == 2) PadTabPage.PARTY_OFF_LINE else PadTabPage.HIDDEN_LINE)
-                if (barOff() && cbOn) {
+                SituationPage.veilAt(c, well, if (older) DesktopAddons.NOTE else if (barOff()) "Bar is off" else if (sit == 2) PadTabPage.PARTY_OFF_LINE else PadTabPage.HIDDEN_LINE)
+                if (!older && barOff() && cbOn) {
                     val tr = RectF(w / 2f - 170f, HINT_Y - 40f, w / 2f + 170f, HINT_Y + 40f)          // the foot, under the well
                     UiKit.button(c, tr, "Turn on", UiKit.okGlyph(), UiKit.Button.UP)
                     turnOnRect = tr

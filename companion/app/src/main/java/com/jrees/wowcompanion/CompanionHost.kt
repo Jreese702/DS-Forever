@@ -533,6 +533,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         DiagLog.init(this)
         Tr.init(this)                              // 2026-11-07: Spanish / French (the Thor's language, or Settings > System > Language)
         DataStaleness.init(this)                   // issues #8 / #9: is the game folder's Data the build's?
+        DesktopAddons.init(this)                   // issue 453: the bundled add-ons' tags (PadMap, ActionBar), to know older PC add-ons
         if (LauncherHooks.pkg != null && !LauncherHooks.gameUp()) GameLife.launcherBack()     // issue #12
         DiagLog.event("app", "bottom screen up (inside the launcher: ${LauncherHooks.pkg != null})")
         ArtHarvest.onState { s ->
@@ -2696,7 +2697,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the review: the game's traffic quiet (character select after a normal logout, its memory still high) holds a new word back
         val mode = if (!free) AddonSilence.StartMode.KEEP else AddonSilence.startMode(startView.line, startView.login != StartView.Login.NONE,
             signedIn, NativeLogin.downloading, silence.silent, worldMem.inWorld, NativeLogin.trafficQuiet, shown = startView.addons != null,
-            downloadingAfter = NativeLogin.downloadingAfter)
+            downloadingAfter = NativeLogin.downloadingAfter, outOfWorld = NativeLogin.outOfWorldHold)   // issue 560: a disconnect's re-login (until the world is back)
         when (mode) {
             AddonSilence.StartMode.ADDONS -> {
                 if (startView.addons == null) startCause = addonsCause()
@@ -3556,6 +3557,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // backlog (its `_gt` stamp after the game's start: a host that came up mid-game); an older run's says nothing about now
                 if (current || padmapOfThisRun(msg.optLong("_gt", -1L))) { padmapRunAt = System.currentTimeMillis(); runStart = it.start }
                 if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
+                if (current) { lastPadMapV = it.version; desktopOlderCheck() }   // issue 453: older add-ons on the PC (streaming)
                 // B: pet recall (PadMap m165 / m174), told when it differs - for THIS padmap's character (the review: GameUi.character is
                 // set further down, so a first padmap after a start / a character switch read the default or the last character's setting)
                 if (current) { petBNow = it.petB; petBWho = PetRecall.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
@@ -3603,7 +3605,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
-                    if (current && d.want != startToldWant) startTell(d.want == true)
+                    // issue 588 (the user's ruling 2026-11-23): with PadMap m186+ Start is our wheel with the toolbar off too: always 36
+                    if (current) startToRooms(d.want, it.version).let { rooms -> if (rooms != startToldWant) startTell(rooms) }
                     // Cast's toolbar group: while the router holds the bare D-pad, AND while it only stepped aside for a room's or the
                     // bar's hold (b51, the user: "my dpad shows my normal spells" - the router says on=false whenever a guest holds, and
                     // the app kept the last one replayed at its start, with no padmap after it for 12 minutes). A GAME WINDOW (aside =
@@ -3617,7 +3620,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             // GitHub #43 THE TAP-TO-CAST BAR (ActionBar cb1): the slots (a state: a replayed one counts, the last one wins); its cooldowns
             // current only (as facecd); the edit's answer only logged (the next castbar document shows it)
-            "castbar" -> CastStripModel.parse(msg)?.let { CastStripModel.Live.set(it); homeView.onCastBar(it) }
+            "castbar" -> CastStripModel.parse(msg)?.let { CastStripModel.Live.set(it); homeView.onCastBar(it); if (current) desktopOlderCheck() }
             "castcd" -> if (current) CastStripModel.parseCd(msg)?.let { homeView.onCastCd(it) }
             "castbarack" -> if (current) Log.i(HomeView.TAG, "cast bar: ${msg.optString("op")} ok=${msg.optBoolean("ok")} slot=${msg.optInt("s")} " +
                 "queued=${msg.optInt("q") == 1} ${msg.optString("why")}")
@@ -4156,7 +4159,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     /**
-     * START OPENS THE PAUSE WHEEL FROM EVERY ROOM (the user 2026-10-09: "Wheel everywhere"; DS WoW toolbar on - off, Start stays the
+     * START OPENS THE PAUSE WHEEL FROM EVERY ROOM (the user 2026-10-09: "Wheel everywhere"; issue 588, 2026-11-23: the DS WoW toolbar on OR off; was: off, Start stays the
      * game's own wheel), read by the app itself (DirectPad: Start is no room's registered key any more), ONE route everywhere. An open
      * keyboard keeps Start (Chat's Send, Bags' Search key: their ownsStart); an open wheel reads Start itself (it closes); the start
      * screen / setup take it. The router's own "pause" word that follows is dropped ([START_DEDUPE_MS]).
@@ -4229,6 +4232,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val sent = padTabTap(PauseOver.cells(game))
         if (sent) pauseOverSentAt = SystemClock.elapsedRealtime()
         Log.i("WCHOME", "start over game windows: ${if (game) "game's wheel" else "our wheel"} told ($why)${if (sent) "" else ": not sent"}")
+    }
+    /** issue 453: the last current padmap's tag, and whether the PC's add-ons were last seen older (one WCSETUP line per change) */
+    private var lastPadMapV: String? = null
+    private var desktopOlderSaid: Boolean? = null
+    private fun desktopOlderCheck() {
+        val older = DesktopAddons.older(PlayGate.streamingNow(), lastPadMapV, CastStripModel.Live.bar?.version)
+        if (older == desktopOlderSaid) return
+        desktopOlderSaid = older
+        if (older) Log.i("WCSETUP", DesktopAddons.line(lastPadMapV, CastStripModel.Live.bar?.version))
+        else if (PlayGate.streamingNow()) Log.i("WCSETUP", "streaming: the PC's add-ons are not older than the Thor's")
+        if (::spellsOverlay.isInitialized) spellsOverlay.invalidate()
     }
     /** StartRoute: the last current document's wall time; the last padmap of this game run's wall time and its Start state (0 = none) */
     private var docLiveAt = 0L
@@ -4681,7 +4695,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the triage (2026-11-14): this game run's silence (documents "seen" may be an earlier run's)
         val now = System.currentTimeMillis()
         val quiet = if (silence.silent) "; add-ons silent ${GameLife.minutes(silence.silentMs(now))} (since ${silence.clock.words}" +
-            "${if (worldMem.inWorld) ", the game's memory says the world" else ""}${if (NativeLogin.trafficQuiet) ", its traffic quiet" else ""})" else ""
+            "${if (worldMem.inWorld) ", the game's memory says the world" else ""}${if (NativeLogin.trafficQuiet) ", its traffic quiet" else ""}${if (NativeLogin.outOfWorld) ", out of the world since a logout or a disconnect${if (NativeLogin.outOfWorldHold) "" else " (its traffic back)"}" else ""})" else ""
         return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}$docs$quiet" +
             (if (over.isEmpty()) "" else "; over it: ${over.joinToString()}") + setup
     }

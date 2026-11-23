@@ -296,6 +296,47 @@ class AddonsReenableTest {
             inWorld = true, trafficQuiet = true))
     }
 
+    @Test fun characterSelectAfterADisconnectsReloginHoldsANewWordBack() {
+        // issue 560: a disconnect, the automatic re-login, character select: its keepalives keep the traffic from reading quiet and the
+        // memory is still the world's - the start screen said "the add-ons aren't running" while they were fine
+        val world = AddonSilence.WORLD_LINE
+        assertEquals("the old rule (traffic not quiet): the false word", S.ADDONS,
+            AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, trafficQuiet = false))
+        assertEquals("out of the world since the disconnect, the add-ons' documents not back: held", S.KEEP,
+            AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, trafficQuiet = false, outOfWorld = true))
+        // the plain waiting line still becomes "Waiting for the world." (never the add-ons word)
+        assertEquals(S.WORLD_LINE, AddonSilence.startMode(PreLoginTraffic.WAITING_LINE, false, signedIn = true, downloading = false, silent = true,
+            inWorld = true, outOfWorld = true))
+        // one already on show stays (as with quiet traffic); the world back (outOfWorld false) and still silent: the word shows
+        assertEquals(S.ADDONS, AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, outOfWorld = true, shown = true))
+        assertEquals(S.ADDONS, AddonSilence.startMode(world, false, true, false, silent = true, inWorld = true, outOfWorld = false))
+        // the add-ons speaking ends it either way
+        assertEquals(S.KEEP, AddonSilence.startMode(world, false, true, false, silent = false, inWorld = true, outOfWorld = true, shown = true))
+    }
+
+    @Test fun theWorldBackByItsTrafficEndsTheDisconnectHold() {
+        // issue 560, the review: the hold ended only when the documents came back, so add-ons really switched off at character select
+        // never got their word for the rest of the run. The world's own traffic (never under ~2 KB/s) ends it too
+        val w = AddonSilence.WorldTraffic()
+        // character select's keepalives (SignInCheck: a few hundred bytes every 1-3 s) and its list's one short burst: still out
+        repeat(120) { s -> w.second(if (s % 3 == 0) 393L else if (s == 40) 47_000L else 0L) }
+        assertFalse("character select's keepalives and its list's burst are no world", w.back)
+        // a download's pace there (PreLoginTraffic.BUSY_MB a minute and over) is no world either
+        repeat(60) { w.second(400_000L) }
+        assertFalse("a download at character select is no world", w.back)
+        // the world: over ~2 KB/s every second; one quiet second starts the count again
+        repeat(AddonSilence.WORLD_S - 1) { w.second(2_400L) }
+        w.second(300L)
+        repeat(AddonSilence.WORLD_S - 1) { w.second(2_400L) }
+        assertFalse("not yet: a keepalive second broke the run", w.back)
+        w.second(2_400L)
+        assertTrue("${AddonSilence.WORLD_S} s of the world's traffic in a row: the world is back", w.back)
+        w.second(0L)
+        assertTrue("it holds until the next time out of the world", w.back)
+        w.reset()
+        assertFalse("the next time out: counted afresh", w.back)
+    }
+
     @Test fun theStartScreenSaysWhatTheCardSays() {
         val c = ReportNotice.card(ReportNotice.State.AddonsOff(null))
         assertEquals(ReportNotice.ADDONS_TITLE, c.title); assertEquals(ReportNotice.ADDONS_DEFAULT, c.text)

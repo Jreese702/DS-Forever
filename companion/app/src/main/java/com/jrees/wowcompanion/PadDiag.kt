@@ -317,11 +317,18 @@ object AddonSilence {
      * The review (2026-11-14): a normal logout to character select is a bye with no hello too, and the game's memory may stay over
      * [IN_WORLD_MB] there, so [trafficQuiet] (NativeLogin.trafficQuiet: the game's traffic stopped, which the world's never does) holds
      * a NEW word back; one already on show ([shown]) stays - character select is where the player switches them back on.
+     * ISSUE 560: after a DISCONNECT the automatic re-login lands on character select, where the game's keepalives (a few hundred bytes
+     * every 1-3 s, SignInCheck) keep [trafficQuiet] from holding, its memory still high from the world: the start screen said "the
+     * add-ons aren't running" while they were fine. [outOfWorld] (NativeLogin.outOfWorld: this run reached the world WITH our add-ons,
+     * then left it, and their documents have not come back yet) holds a new word back the same way, until the world is back.
+     * The review: "the world is back" by its traffic too ([WorldTraffic], NativeLogin.outOfWorldHold): add-ons really switched off at
+     * character select send no document again, so the documents alone would hold the word for the rest of the run.
      */
     fun startMode(line: String, rowUp: Boolean, signedIn: Boolean, downloading: Boolean, silent: Boolean, inWorld: Boolean,
-                  trafficQuiet: Boolean = false, shown: Boolean = false, downloadingAfter: Boolean = false): StartMode = when {
+                  trafficQuiet: Boolean = false, shown: Boolean = false, downloadingAfter: Boolean = false,
+                  outOfWorld: Boolean = false): StartMode = when {
         !isWaitLine(line) || rowUp -> StartMode.KEEP
-        silent && inWorld && (!trafficQuiet || shown) -> StartMode.ADDONS
+        silent && inWorld && (!(trafficQuiet || outOfWorld) || shown) -> StartMode.ADDONS
         // #579: past the login screen and still downloading: "Game downloading (N MB a minute): leave it running"
         signedIn && downloadingAfter && (line == PreLoginTraffic.WAITING_LINE || line == WORLD_LINE || isDownloadAfterLine(line)) ->
             StartMode.DOWNLOAD_LINE
@@ -329,6 +336,25 @@ object AddonSilence {
         signedIn && !downloading && (line == PreLoginTraffic.WAITING_LINE || isDownloadAfterLine(line)) -> StartMode.WORLD_LINE
         else -> StartMode.KEEP
     }
+
+    /**
+     * ISSUE 560, THE REVIEW: the world back BY ITS TRAFFIC after a logout / a disconnect (NativeLogin.outOfWorld). The world never drops
+     * under ~2 KB/s (NativeLogin.trafficQuiet's measure); character select's keepalives are a few hundred bytes every 1-3 s
+     * (SignInCheck), with one short burst for its list at most. So [WORLD_S] seconds in a row of at least [WORLD_RX] received bytes =
+     * the world again: [back] holds until [reset] (the next time out of the world). A second over [WORLD_RX_MAX] (a download's pace,
+     * PreLoginTraffic.BUSY_MB a minute, which character select may run too) counts as no world. Fed one second's bytes at a time. Pure.
+     */
+    class WorldTraffic {
+        private var busyFor = 0
+        var back = false; private set
+        fun second(rx: Long) {
+            if (rx in WORLD_RX..WORLD_RX_MAX) { if (++busyFor >= WORLD_S) back = true } else busyFor = 0
+        }
+        fun reset() { busyFor = 0; back = false }
+    }
+    const val WORLD_RX = 1_500L
+    const val WORLD_RX_MAX = PreLoginTraffic.BUSY_MB * (1L shl 20) / 60
+    const val WORLD_S = 15
 
     /** issue #231: the local reader in one line ([sinceFedMs] -1 = nothing read yet); only the file's name, never the folder's */
     fun reader(path: String, exists: Boolean, len: Long, mtime: Long, nowWall: Long, fed: Long, sinceFedMs: Long,

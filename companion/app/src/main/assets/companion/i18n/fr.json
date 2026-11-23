@@ -2319,7 +2319,15 @@
 "Install failed: Blizzard's patch server did not answer: the secure connection failed. Check the date and time, or try another Wi-Fi.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : la connexion sécurisée a échoué. Vérifiez la date et l'heure, ou essayez un autre Wi-Fi.",
 "Install failed: Blizzard's patch server did not answer: it took too long. Try again, or try another Wi-Fi.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : il a mis trop de temps. Réessayez ou essayez un autre Wi-Fi.",
 "Install failed: Blizzard's patch server did not answer: it listed no build to install. Try again later.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : il n'a indiqué aucune version à installer. Réessayez plus tard.",
-"Install failed: Blizzard's patch server did not answer: the connection failed. Try again, or try another Wi-Fi.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : la connexion a échoué. Réessayez ou essayez un autre Wi-Fi."
+"Install failed: Blizzard's patch server did not answer: the connection failed. Try again, or try another Wi-Fi.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : la connexion a échoué. Réessayez ou essayez un autre Wi-Fi.",
+"Bound": "Lié",
+"Damaged": "Abîmé",
+"Can't sell": "Invendable",
+"Soulbound: the auction house won't take it": "Lié : l'hôtel des ventes ne le prend pas",
+"A quest item: the auction house won't take it": "Objet de quête : l'hôtel des ventes ne le prend pas",
+"Damaged: repair it to sell it": "Abîmé : réparez-le pour le vendre",
+"The auction house won't take this": "L'hôtel des ventes ne prend pas ceci",
+"Desktop's add-ons are older: update DS Forever Desktop": "Les add-ons de Desktop sont plus anciens : mettez à jour DS Forever Desktop"
 },
 "templates": {
 "%s/%s ready": "%s/%s prêtes",
@@ -2574,6 +2582,7 @@
 "Installing: %s%. Keep DS Forever open": "Installation : %s %. Gardez DS Forever ouvert",
 "The game closed as it started (%s). A problem report holds what it said: please send one.": "Le jeu s'est fermé au démarrage (%s). Un rapport de problème contient ce qu'il a dit : envoyez-en un, s'il vous plaît.",
 "Install failed: Blizzard's patch server did not answer: it sent back an error (HTTP %s). Try again later.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : il a renvoyé une erreur (HTTP %s). Réessayez plus tard.",
-"Checking the latest build... (try %s of %s)": "Vérification de la dernière version... (essai %s sur %s)"
+"Checking the latest build... (try %s of %s)": "Vérification de la dernière version... (essai %s sur %s)",
+"%s · %s can't sell": "%s · %s invendables"
 }
 }
