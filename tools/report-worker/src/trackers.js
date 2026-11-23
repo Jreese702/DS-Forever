@@ -104,8 +104,9 @@ function traceLines(logs, n) {
   const at = rec.indexOf("---------- Trace");
   const trace = at < 0 ? [] : rec.slice(at).split("\n").slice(1).map((l) => l.trim())
     // 11-23 (#153): the garbage collector's thread too (the app's LogSieve.traceFirst puts it after the main thread's): a main thread
-    // waiting in the runtime (WaitHoldingLocks) is often waiting on it
-    .filter((l) => /^"main"|^"HeapTaskDaemon"|^native: #\d+|^at |^- (waiting|locked|sleeping)/.test(l)).map(shortFrame);
+    // waiting in the runtime (WaitHoldingLocks) is often waiting on it. Review 11-23: EVERY thread's name line, so the 20 lines past the
+    // main thread never show another thread's frames as if they were the main thread's
+    .filter((l) => /^"[^"]*" .*\btid=\d+|^native: #\d+|^at |^- (waiting|locked|sleeping)/.test(l)).map(shortFrame);
   return [desc && desc.slice(0, 240), ...trace].filter(Boolean).slice(0, n);
 }
 

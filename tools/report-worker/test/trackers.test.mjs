@@ -230,13 +230,16 @@ test("11-23: the low-memory comment carries the Low-memory graphics line, the me
   const frames = Array.from({ length: 22 }, (_, i) => `  at java.lang.Runtime${i}.x(R.java:${i})`);
   const anr = ["log tail", "===== crashes/anr-2026-11-23.txt =====", "Reason: anr (6)", "Description: Input dispatching timed out", "---------- Trace ----------",
     '"main" prio=5 tid=1 Waiting', ...frames.slice(0, 5), "", '"HeapTaskDaemon" daemon prio=5 tid=7 Waiting', "  at dalvik.system.VMRuntime.runHeapTasks(Native method)",
-    "", ...frames.slice(5)].join(NL);
+    "", '"WCMEM" prio=5 tid=12 Native', ...frames.slice(5)].join(NL);
   const r3 = validate(report(AUTO + "DS Forever stopped responding. The game was running.", { logs: anr })).report;
   const t = classify(r3);
   assert.equal(t.id, "anr");
   const keys = t.keys(r3);
   assert.equal(keys.length, 20);
   assert.ok(keys.some((l) => l.startsWith('"HeapTaskDaemon"')));
+  // review 11-23: every thread's name line, so a later thread's frames never read as the main thread's
+  assert.ok(keys.some((l) => l.startsWith('"WCMEM" prio=5 tid=12')), keys.join(NL));
+  assert.ok(keys.indexOf('"WCMEM" prio=5 tid=12 Native') < keys.findIndex((l) => l.includes("Runtime5.x")));
   const c3 = buildComment(r3, t, safe, 0);
-  assert.ok(c3.includes("Runtime15.x"), "past the old 12-line cut");
+  assert.ok(c3.includes("Runtime14.x"), "past the old 12-line cut");
 });
