@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m186"               -- bump on every change; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m187"               -- bump on every change; m187 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): a second per-character flag beside ctop, WowCompanionSpellsDB.ctcb[name-realm] = 1 (Top screen) / 0 (Bottom screen, the default; none = off), set by Book b77's page-3 codes 24 off / 25 on, read ONLY by ActionBar nbar13 (the Wings' swing lines and the fight's word to Hub hub76, which shows the game's own casting bar for the fight) - display only, no binding, no attribute, nothing secure: remembered at once, in a fight too; `cc` in dpadState says it (nil while no key, as `ct`); the Layouts reset clears it with ctop; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -3441,6 +3441,27 @@ R.combatTop = function(on)
     soon()
     return true
 end
+-- m187 THE CAST BAR IN A TOP-SCREEN FIGHT: this character's "Cast bar in fights" (WowCompanionSpellsDB.ctcb[name-realm] = 1 = Top screen;
+-- 0 / none = Bottom screen, the default), set by Book b77's page-3 codes 24 off / 25 on. Read only by ActionBar nbar13 (with ctop on, the
+-- Wings' fight shows the game's own casting bar through Hub hub76 and keeps the Wings' swing lines; off, both stay on the bottom screen).
+-- A display flag like ctop: no binding, no attribute - remembered at once, in a fight too. `cc` in dpadState says it.
+R.ctcbDB = function()
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.ctcb) ~= "table" then db.ctcb = {} end
+    return db.ctcb
+end
+R.ctcbOn = function()
+    local k = whoKey()
+    return k ~= nil and R.ctcbDB()[k] == 1
+end
+R.combatCastTop = function(on)
+    local k = whoKey()
+    if not k then return false, "no character" end
+    R.ctcbDB()[k] = on and 1 or 0
+    soon()
+    return true
+end
 -- the switch: true / false for this character, remembered; refused in a fight (no binding change then; one red pulse)
 local function dpadSet(on)
     local op = on and "dpad-on" or "dpad-off"
@@ -3527,6 +3548,7 @@ dpadState = function()
              nc = ki.nc, uc = ki.uc, gs = ki.gs, pk = (not k) and ki.pk or nil, ls = ki.ls, ad = k and ki.ad or nil } or nil, d = d,
              m = (rbT == R.RB_M) and 1 or 0,
              ct = k and (R.ctopOn() and 1 or 0) or nil,                          -- m179: the top-screen combat bar's flag; m181: nil while no key (not "off")
+             cc = k and (R.ctcbOn() and 1 or 0) or nil,                          -- m187: "Cast bar in fights: Top screen" (nil while no key)
              aside = (want == true and R.aside) or nil, undone = type(z) == "table" and #z.undone > 0 and z.undone or nil }
 end
 
@@ -4996,6 +5018,8 @@ WC.padMap = {
     dpadMirror = function(on) return R.dpadMirror(on) end,              -- m178: Book b74's page-3 codes 9 / 10
     combatTop = function(on) return R.combatTop(on) end,                -- m179: Book b75's page-3 codes 11 / 12
     combatTopOn = function() return R.ctopOn() end,                     -- m179: ActionBar nbar7's Wings read it
+    combatCastTop = function(on) return R.combatCastTop(on) end,        -- m187: Book b77's page-3 codes 24 / 25
+    combatCastTopOn = function() return R.ctcbOn() end,                 -- m187: ActionBar nbar13 reads it
     zlClean = function() return zlClean() end,
     -- m45: the m23 class starter "suggestion" is gone (the user: remove it): nothing is ever suggested; empty means empty
     -- m22, Interact's contract: the keys the router can carry and their buttons (stable names, made at login, never destroyed)
@@ -6749,7 +6773,7 @@ end
 -- route. Nothing of the game's own is touched (bars, bindings, macros, CVars: the leave-no-trace rule). Answer: {type = "dsfreset"}.
 do
     local SPELLS = {
-        layouts = { "dpad", "rbm", "ctop" },                                      -- m178: the DS toolbar's mirror bit (none = off); m179: the top-screen combat bar's flag
+        layouts = { "dpad", "rbm", "ctop", "ctcb" },                              -- m178: the DS toolbar's mirror bit (none = off); m179: the top-screen combat bar's flag; m187: its cast bar's screen
         skills = { "faceBy", "fightBy", "formFightBy", "cmdBy", "binds", "stickBy", "attackBy", "ccOff", "lowPickBy", "smartOn",
                    "smartBuffs", "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight", "castBarParty" },   -- m176
     }

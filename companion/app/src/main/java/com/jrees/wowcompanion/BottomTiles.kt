@@ -113,7 +113,10 @@ object BottomTiles {
         HOME_RESET -> resetLines()
         REST -> listOf(Line(REST, null, listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest)))
         // movable Home phase 3 (SPEC section 11, final_11; the user's D1: Grow the default, Top screen opt-in): the old Combat layout tile
-        COMBAT -> listOf(Line(COMBAT, null, FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)))
+        COMBAT -> listOfNotNull(Line(COMBAT, null, FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)),
+            // the user's ruling 2026-11-23: with Top screen, the cast bar and swing timer on the bottom screen's top or the game's own
+            if (HomeSettings.fightBand == HomeLayout.FightBand.TOP)
+                Line(FIGHT_CAST, "Cast bar", FIGHT_CAST_WORDS, HomeLayout.FightCast.values().indexOf(HomeSettings.fightCast)) else null)
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))
         RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
         XP -> listOf(Line(XP, null, SHOW_HIDE, if (HomeSettings.layout.xpBar) 0 else 1, listOf(UiMode.ON, UiMode.OFF)))
@@ -221,6 +224,9 @@ object BottomTiles {
     val SIZE_WORDS = listOf("S", "M", "L")
     /** "In fights" in [HomeLayout.FightBand]'s order */
     val FIGHT_WORDS = listOf("Grow", "Same size", "Top screen")
+    /** the In fights band's second line with Top screen: "Cast bar" in [HomeLayout.FightCast]'s order */
+    const val FIGHT_CAST = "fightcast"
+    val FIGHT_CAST_WORDS = listOf("Bottom screen", "Top screen")
 
     /** the Reset Home band's buttons (1518): this character's Home back to Classic; this character's Home for every character. BOTH
      *  only once a WHOLE character key is known: the store writes no pending name's record (a reset held against the pending view
@@ -243,6 +249,7 @@ object BottomTiles {
             "castsize" -> HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.values()[k]) }
             REST -> HomeSettings.rest = HomeRest.values()[k]
             COMBAT -> HomeLayout.FightBand.values().getOrNull(k)?.let { HomeSettings.fightBand = it }
+            FIGHT_CAST -> HomeLayout.FightCast.values().getOrNull(k)?.let { HomeSettings.fightCast = it }
             SWING -> HomeSettings.swingTimer = k == 0
             RANK -> HomeSettings.rankBadges = k == 0
             XP -> HomeLayoutStore.update { it.copy(xpBar = k == 0) }

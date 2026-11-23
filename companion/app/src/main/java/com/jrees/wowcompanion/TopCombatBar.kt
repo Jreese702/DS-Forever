@@ -30,15 +30,40 @@ object TopCombatBar {
      * grows as Grow does (the default), and B shrinks as ever
      */
     fun live(l: HomeLayout, ct: Int?): Boolean = wanted(l) && ct == 1
-    /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow */
-    fun honoured(l: HomeLayout, ct: Int?): HomeLayout = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
+    /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow; Cast bar in fights = Top screen kept only
+     *  while the add-on SAYS so ([cc] 1, PadMap m187: it shows the game's own casting bar then), else the bottom screen's strip - a cast
+     *  bar never left on neither screen */
+    fun honoured(l: HomeLayout, ct: Int?, cc: Int? = null): HomeLayout {
+        val r = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
+        return if (r.fightCast == HomeLayout.FightCast.TOP && cc != 1) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
+    }
     /**
      * the 1519 audit: edit mode's FIGHT PREVIEW shows "what a fight would" - the first fight after Done. A character that never used Top
      * screen has the add-on's flag off (`ct` 0): the menu offers Top screen (only `ct` null greys it), and CompanionHost.topCheck sends
      * nothing while edit mode is live, so `ct` turns 1 only after Done (within a resend). The preview therefore keeps Top screen whenever
      * the add-on HAS the flag ([ct] not null); with no flag (no key, an older add-on) the Wings cannot show, so Grow as [honoured]
      */
-    fun previewed(l: HomeLayout, ct: Int?): HomeLayout = if (wanted(l) && ct == null) l.copy(fight = HomeLayout.FightBand.GROW) else l
+    fun previewed(l: HomeLayout, ct: Int?, cc: Int? = null): HomeLayout {
+        val r = if (wanted(l) && ct == null) l.copy(fight = HomeLayout.FightBand.GROW) else l
+        // (the same rule for the cast bar's screen: Top screen previewed whenever the add-on HAS the flag, cc not null)
+        return if (r.fightCast == HomeLayout.FightCast.TOP && cc == null) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
+    }
+
+    // ---------------------------------------------------------------- the cast bar in a Top-screen fight (the user's ruling 2026-11-23)
+    /**
+     * CAST BAR IN FIGHTS (the user, 2026-11-23: "When the controller moves to the top, the cast bar should still show across the top of
+     * the bottom screen. We can add a setting for if the combat bars move to the top screen to have the cast bar be on the top or the
+     * bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically instead of trying to remake
+     * ours and position it just above the health hud. Same thing with the swing timer"): only with In fights = Top screen.
+     * BOTTOM (the default): our cast bar and swing timer run across the top of the bottom screen in the fight (HomeLayoutSolver's fight
+     * strip), the Wings draw no swing line. TOP: nothing of ours on the bottom screen; the add-on shows the GAME'S OWN casting bar for
+     * the Wings' fight (Hub hub76, alpha only, the player's Hide back after it) and the Wings keep their own swing lines under the faces
+     * (ActionBar nbar13). THE CHANNEL: a second per-character flag beside `ct` (PadMap m187 ctcb, `cc` in the padmap), page-3 codes 24
+     * (Bottom) / 25 (Top) (Book b77), sent as `ct` is: out of combat, re-sent until `cc` says it ([decide] with `cc`)
+     */
+    fun castWanted(l: HomeLayout): Boolean = wanted(l) && l.fightCast == HomeLayout.FightCast.TOP
+    /** the taps for "Cast bar in fights" [top] */
+    fun castCells(top: Boolean): List<Pair<String, Int>> = PadMapModel.fightCastCells(top)
 
     /**
      * PARTY MODE KEEPS THE TOP SCREEN (the user's ruling C, 11-22: "It should stay at the top in party mode but the party bars should fill

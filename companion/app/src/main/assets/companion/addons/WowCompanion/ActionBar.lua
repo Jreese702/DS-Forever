@@ -2,6 +2,7 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar13 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23): "Cast bar in fights" Bottom / Top screen - at NB.castFight.
 -- nbar12 THE WINGS' PLATES AND PARTY MODE (the user's rulings 2026-11-22, after the shots): (A) the band's L / R corner plates on
 -- the Wings, the ZL / ZR chips under them; (C) Party mode keeps the Top screen in its fights - the Wings carry the Party layer.
 -- The full note at "nbar12 THE PLATES AND THE PARTY LAYER" (the Wings' section). nbar12 review (11-22): B / pre-cfg Y draw the TOP
@@ -2512,7 +2513,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar12", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar13", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              OFF = 50, DX = 160, GLYPH = 17, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
@@ -3814,6 +3815,34 @@ function NB.topFlag()
     end
     return false
 end
+-- nbar13 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should
+-- still show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom. If its on
+-- the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): PadMap
+-- m187's per-character flag (combatCastTopOn, the app's "Cast bar in fights"), read with ctop every FLAG_S. Bottom screen (the default,
+-- flag off): the Wings draw NO swing lines - the app's strip across the top of the bottom screen carries the cast bar and the swing
+-- timer, so neither shows in both places. Top screen (flag on): the Wings keep their split swing lines under the faces (the add-on's own
+-- top-screen swing timer, in its usual place: no re-made bar above the HUD) and their fight's start / end is told to Hub hub76
+-- (WC.hubCastFight(true / false)), which lets the game's OWN casting bar show for the fight (alpha only) and puts the player's Hide back
+-- after it. The game's own swing timer (Blizzard_SwingTimer, its "showSwingTimer" option) is never touched here: no CVar is written.
+-- nbar13: "Cast bar in fights: Top screen" for this character (PadMap m187; an older PadMap: off = the bottom screen's strip)
+function NB.castTopFlag()
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.combatCastTopOn) == "function" then
+        local ok, v = pcall(pm.combatCastTopOn)
+        return ok and v == true
+    end
+    return false
+end
+-- nbar13: the Wings' fight with the cast bar on the top screen -> Hub hub76 shows the game's own casting bar for it (and hides it again
+-- after): told once per change, [want] the Wings' switch
+function NB.castFight(want)
+    local T = NB.top
+    local on = want == true and T.castTop == true
+    if (T.cfOn == true) == on then return end                         -- (never told yet = off: nothing to undo)
+    T.cfOn = on
+    local f = rawget(WC, "hubCastFight")
+    if type(f) == "function" then pcall(f, on) end
+end
 -- the router's own fight switch (the fight or an attack / auto-repeat armed, not given back by B), else the fight itself
 -- nbar11: Party mode on - the bottom band keeps the controls (ruling R0: no takeover in Party mode), so the Wings stay off: the bar is
 -- never in both places. nbar11 review: the SAME rule the app reads off the party document (PartyModel.onLive = on && (aside == null ||
@@ -4147,9 +4176,14 @@ function NB.topChords(ctx)
     end
 end
 -- the split swing lines under the faces (WC.swingDoc: plain numbers of our own; a line shows while its swing runs)
+-- nbar13: only with "Cast bar in fights: Top screen" (the default Bottom screen: the app's strip carries the swing timer)
 function NB.topSwing()
     local f = NB.f
     if not (f and f.sw) then return end
+    if NB.top.castTop ~= true then
+        for i = 1, 2 do if f.sw[i] then f.sw[i].k = nil; f.sw[i]:Hide() end end
+        return
+    end
     local now = SN(GetTime) or 0
     local ok, sw, so = pcall(WC.swingDoc, now)
     for i, r in ipairs({ ok and sw or false, ok and so or false }) do
@@ -4304,7 +4338,11 @@ function NB.topTick(el)
     -- nbar9: the flag (PadMap's ctop under the character key) read at the first tick, then every FLAG_S, never every frame (it
     -- changes only on a padtab code or a key that arrives late); with it off and nothing shown, fading or previewed: nothing more
     T.flagAcc = (T.flagAcc or 0) + el
-    if T.flag == nil or T.flagAcc >= NB.TOP.FLAG_S then T.flagAcc = 0; T.flag = NB.topFlag() end
+    if T.flag == nil or T.flagAcc >= NB.TOP.FLAG_S then
+        T.flagAcc = 0; T.flag = NB.topFlag()
+        T.castTop = T.flag and NB.castTopFlag() or false                 -- nbar13: the cast bar's screen, read with the flag
+        if T.want ~= nil then NB.castFight(T.want) end
+    end
     local flag = T.flag
     if not flag and not T.want and not T.shown and not T.edit and T.dir == 0 and T.t <= 0 then return end
     T.solveAcc, T.gameAcc = T.solveAcc + el, T.gameAcc + el
@@ -4341,6 +4379,7 @@ function NB.topTick(el)
     local want = flag and NB.built and T.spot ~= nil and sw
     if want ~= T.want then
         T.want = want
+        NB.castFight(want)                                               -- nbar13: the game's cast bar for the Wings' fight (Hub hub76)
         local was = T.dir
         T.dir = want and 1 or -1
         if want then

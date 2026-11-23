@@ -135,6 +135,11 @@ TG, CTOP = false, false
 WC.tgGrown = function() return TG end
 FLAGREADS = 0
 WC.padMap.combatTopOn = function() FLAGREADS = FLAGREADS + 1; return CTOP end
+-- nbar13: PadMap m187's "Cast bar in fights: Top screen" and Hub hub76's word (a spy: every call's value)
+CCB = false
+WC.padMap.combatCastTopOn = function() return CCB end
+HUBCF = {}
+WC.hubCastFight = function(on) HUBCF[#HUBCF + 1] = on end
 function DRV(dt) local d = WC.nbar.drv; d.onOnUpdate(d, dt); local f = WC.nbar.f; if f and f.shown and f.onOnUpdate then f.onOnUpdate(f, dt) end end
 function EV(e) local d = WC.nbar.drv; d.onOnEvent(d, e) end
 function RUN(sec, dt) dt = dt or 0.02; local n = math.floor(sec / dt + 0.5); for _ = 1, n do NOW = NOW + dt; DRV(dt) end end
@@ -285,7 +290,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar12 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar12"' in src
+    chk("0. ActionBar's tag nbar12 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar13"' in src
         and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)
@@ -480,6 +485,13 @@ def main():
     chk("C. the ZL / ZR chips at the outer ends, level with the diamonds' tops", zl[0] < lx - 73 and zr[0] > rx + 73 and zl[1] < ly and zr[1] < ry
         and f.chip[1].shown and f.chip[2].shown, (zl, zr))
     chk("C. the layer word is the chips' (none over the middle)", f.layer.text == "", f.layer.text)
+    # nbar13: "Cast bar in fights" Bottom screen (the default): no swing lines on the Wings (the app's strip carries them), Hub told nothing
+    chk("C. nbar13 Cast bar in fights = Bottom screen (default): the Wings draw no swing line, Hub's game cast bar not asked for",
+        not f.sw[1].shown and not f.sw[2].shown and len(list(L.eval("HUBCF").values())) == 0, (f.sw[1].shown, todict(L.eval("HUBCF"))))
+    G.CCB = True
+    L.execute('RUN(0.6, 0.02)')                                   # the flag is read every FLAG_S (0.5 s)
+    chk("C. nbar13 Top screen: Hub told once that the Wings' fight shows the game's cast bar (WC.hubCastFight(true))",
+        list(L.eval("HUBCF").values()) == [True], todict(L.eval("HUBCF")))
     chk("C. the swing line under the faces runs (main hand)", f.sw[1].shown and 0 < f.sw[1].k < 1 and not f.sw[2].shown, (f.sw[1].shown, f.sw[1].k))
     sx, sy = L.eval("PARTCENTRE")(f.sw[1])
     chk("C. ... under the faces' diamond", abs(sx - rx) < 0.01 and sy > ry + 73, (sx, sy, rx, ry))
@@ -535,6 +547,10 @@ def main():
     L.execute('RUN(0.12, 0.02)')
     chk("C. ... gone after 0.2 s (below the edge): hidden, the chips and swing lines too", not NB.top.shown and f.shown is False and not f.chip[1].shown
         and not f.sw[1].shown, (NB.top.shown, f.shown))
+    chk("C. nbar13: the fight's end told Hub once (WC.hubCastFight(false): the player's Hide back on the game's cast bar)",
+        list(L.eval("HUBCF").values()) == [True, False], todict(L.eval("HUBCF")))
+    G.CCB = False
+    L.execute('RUN(0.6, 0.02)')
     L.execute('RUN(0.1)')
     chk("C. after the fight: the spot solved again with the game's frames (ChatFrame1 now shown)", G.RECTNOW > reads0 and not NB.top.frozen,
         (G.RECTNOW, reads0))

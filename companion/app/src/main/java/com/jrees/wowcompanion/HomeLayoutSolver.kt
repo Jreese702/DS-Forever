@@ -37,7 +37,8 @@ object HomeLayoutSolver {
      *  Top screen live, the fight's takeover or Party mode's fight: [away]) */
     data class Result(val boxes: Map<HomePart, Box>, val castSide: CastStripModel.Side, val partyTabRight: Boolean,
                       val card: HomeLayout.CardDock, val castHidden: Boolean, val f1: Boolean = false, val f2: Boolean = false,
-                      val barsBottom: Float = 0f, val castTop: Boolean = false, val f3: Boolean = false, val away: Boolean = false)
+                      val barsBottom: Float = 0f, val castTop: Boolean = false, val f3: Boolean = false, val away: Boolean = false,
+                      val fightStrip: Boolean = false)
 
     /** the band's bottom: the fight's grow (only GROW, never with Party mode on: R0), the diamonds or the thin row at rest */
     fun big(l: HomeLayout, s: State): Boolean = s.takeover && l.fight == HomeLayout.FightBand.GROW && !s.partyOn
@@ -52,6 +53,18 @@ object HomeLayoutSolver {
      */
     fun away(l: HomeLayout, s: State): Boolean = l.fight == HomeLayout.FightBand.TOP &&
         ((s.takeover && !s.partyOn) || (s.partyOn && s.partyFight && !s.takeover && s.full == null))
+    /**
+     * THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still
+     * show across the top of the bottom screen ... Same thing with the swing timer"): with In fights = Top screen and Cast bar in fights =
+     * Bottom screen (the default, [HomeLayout.fightCast]) the record has the FIGHT STRIP ([HomePart.FIGHT_CAST]): in the fight's away page
+     * ([away]) a full-width strip across the very top of Home ([FIGHT_STRIP_H] at the frame's top gap, the columns' top a gap under it -
+     * chat, map, tap-to-cast, a card and the party list never reach it); out of the away page it lies over the band's own cast strip (its
+     * rest line, hidden: the band draws the line itself), so the page's one motion carries it up from the band's foot into its place as
+     * the band slides away, and back down with it. Top screen = no strip (the game's own bar on the top screen: TopCombatBar.castTop)
+     */
+    fun hasFightStrip(l: HomeLayout): Boolean = l.fight == HomeLayout.FightBand.TOP && l.fightCast == HomeLayout.FightCast.BOTTOM
+    /** the strip shows: [hasFightStrip] and the page laid away */
+    fun fightStrip(l: HomeLayout, s: State): Boolean = hasFightStrip(l) && away(l, s)
     /** the Party-mode fight's away page ([away] without the takeover) */
     fun partyAway(l: HomeLayout, s: State): Boolean = away(l, s) && s.partyOn && !s.takeover
     /** the band's rest bottom for [l] (the diamonds or the thin row with its cast strip) */
@@ -124,7 +137,9 @@ object HomeLayoutSolver {
             return Result(b, CastStripModel.Side.OFF, pRight, l.card, false, barsBottom = 0f)
         }
         val bb = barsBottom(l, s)
-        val top = bb + g
+        val strip = fightStrip(l, s)
+        // the fight strip (see [hasFightStrip]): the columns start a gap under it
+        val top = if (strip) g + FIGHT_STRIP_H + g else bb + g
         val (lc, rc) = columns(l, w, g)
         val chatCol = if (chatLeft) lc else rc
         val mapCol = if (chatLeft) rc else lc
@@ -134,6 +149,9 @@ object HomeLayoutSolver {
         // Top screen's fight: the band's rest box moved up past the frame's top edge by its own bottom + 16 (the same size: no re-measure)
         out[HomePart.BARS] = if (away) restBottom(l).let { rb -> Box(0f, 8f - (rb + AWAY_PAST), w, -AWAY_PAST) }
             else Box(0f, if (big(l, s)) 10f else 8f, w, bb)
+        // the fight strip: its place, or (not away) over the band's own cast strip at its foot - hidden there, the start of its glide
+        if (hasFightStrip(l)) out[HomePart.FIGHT_CAST] = if (strip) Box(g, g, w - g, g + FIGHT_STRIP_H)
+            else Box(g, bb - CastBarPlace.REST_STRIP, w - g, bb)
         val hidden = s.castHidden || f2 || f3
         // THE TOP BAR (Above chat / Above map): first under the band in its column, the column's parts stacked under it (the card, the
         // party module, the chat); hidden in a fight (or by F2 / F3) it slides up behind the band and the column keeps the band's top
@@ -184,13 +202,15 @@ object HomeLayoutSolver {
         // fight (or by F2 / F3) it lies below the page and no column is cut
         val side = l.castSide
         if (aboveBar != null) {
-            out[HomePart.STRIP] = if (hidden) CastStripModel.hiddenAbove(CastStripModel.Box(aboveBar.l, aboveBar.t, aboveBar.r, aboveBar.b), g)
+            // (hidden under the fight strip: from where it would lie without the strip, so it still goes wholly above the page)
+            val hideFrom = if (strip) castBoxes(l, w, h, g, bb + g).first() else aboveBar
+            out[HomePart.STRIP] = if (hidden) CastStripModel.hiddenAbove(CastStripModel.Box(hideFrom.l, hideFrom.t, hideFrom.r, hideFrom.b), g)
                 .let { Box(it.l, it.t, it.r, it.b) } else aboveBar
             partyUnder(l, s, out, pRight, w, fill)
-            return Result(out, side, pRight, card, hidden, f1, f2, bb, castTop = true, f3 = f3, away = away)
+            return Result(out, side, pRight, card, hidden, f1, f2, bb, castTop = true, f3 = f3, away = away, fightStrip = strip)
         }
         val bars = castBoxes(l, w, h, g)
-        if (bars.isEmpty()) { partyUnder(l, s, out, pRight, w, fill); return Result(out, side, pRight, card, false, f1, f2, bb, f3 = f3, away = away) }
+        if (bars.isEmpty()) { partyUnder(l, s, out, pRight, w, fill); return Result(out, side, pRight, card, false, f1, f2, bb, f3 = f3, away = away, fightStrip = strip) }
         val base = LinkedHashMap(out)
         for ((i, b0) in bars.withIndex()) {
             val b = if (hidden) Box(b0.l, h, b0.r, h + b0.h) else b0
@@ -203,7 +223,7 @@ object HomeLayoutSolver {
             }
         }
         partyUnder(l, s, out, pRight, w, fill)
-        return Result(out, side, pRight, card, hidden, f1, f2, bb, f3 = f3, away = away)
+        return Result(out, side, pRight, card, hidden, f1, f2, bb, f3 = f3, away = away, fightStrip = strip)
     }
 
     /** the party list's box and module with its well's top at [top] in column [col], its Select tab on that column's outer screen edge
@@ -292,10 +312,12 @@ object HomeLayoutSolver {
     const val COLUMN_GAP = 8f
     /** Top screen's fight: how far past the frame's top edge the band's bottom lies (wholly off the page) */
     const val AWAY_PAST = 16f
+    /** the fight strip's height: the band's fight bar (twice the rest line, CastBarPlace.BAR), the cast's name inside it */
+    const val FIGHT_STRIP_H = 2f * CastBarPlace.BAR
 }
 
 /** Home's parts by name (HomeView's own Part enum maps to these one to one; CAST2 = Split's second half, phase 3's view) */
-enum class HomePart { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL, CAST2 }
+enum class HomePart { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL, CAST2, FIGHT_CAST }
 
 /**
  * THE RULES (SPEC section 5): R0 (no fight grow while Party mode is on) is in [HomeLayoutSolver.big]; F1 / F2 fire only while Party mode
@@ -343,9 +365,11 @@ object HomeLayoutRules {
         if (l.cast != HomeLayout.CastDock.OFF && HomePart.STRIP !in b) out += "STRIP not placed"
         if (l.cast == HomeLayout.CastDock.SPLIT && HomePart.CAST2 !in b) out += "CAST2 not placed"
         if (s.party != null && HomePart.PARTY !in b) out += "PARTY not placed"
-        // (Top screen's fight: the band laid above the page is not on it)
+        // (Top screen's fight: the band laid above the page is not on it; the fight strip out of it lies hidden over the band's own)
+        if (HomeLayoutSolver.fightStrip(l, s) && HomePart.FIGHT_CAST !in b) out += "FIGHT_CAST not placed"
+        if (r.fightStrip != HomeLayoutSolver.fightStrip(l, s)) out += "fightStrip ${r.fightStrip} for a page that says ${HomeLayoutSolver.fightStrip(l, s)}"
         val shown = b.filter { (p, x) -> p != HomePart.AURAS && !(r.castHidden && (p == HomePart.STRIP || p == HomePart.CAST2))
-            && !(r.away && p == HomePart.BARS) }
+            && !(r.away && p == HomePart.BARS) && !(p == HomePart.FIGHT_CAST && !r.fightStrip) }
         for ((p, x) in shown) {
             if (x.l < -0.01f || x.r > s.w + 0.01f || x.t < -0.01f || x.b > s.h + 0.01f) out += "$p outside the frame: $x"
             if (x.w <= 0f || x.h <= 0f) out += "$p empty: $x"

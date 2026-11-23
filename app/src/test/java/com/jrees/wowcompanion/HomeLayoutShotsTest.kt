@@ -102,7 +102,8 @@ class HomeLayoutShotsTest {
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
         home.borrow()
-        ct?.let { home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":$it}}}"""))!!) }
+        // (cc: PadMap m187's "Cast bar in fights" as the add-on says it - the same as ct here: Top screen's pages keep the game's own bar)
+        ct?.let { home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m187","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":$it,"cc":$it}}}"""))!!) }
         lay(home)
         cast.roomBarOn = true
         cast.roomBar = dirs ?: HoldTalk.DEFAULT_DIRS
@@ -290,7 +291,7 @@ class HomeLayoutShotsTest {
      * once away; the reverse at the fight's end; a reversal mid-way goes on from where the parts are. No Wings (ct null / 0): Grow.
      */
     @Test fun topScreenSlidesTheBandUpAndColumnsGrow() {
-        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
         val restPage = page(l, ct = 1)
         val rest = boxes(restPage.home)
         val p = page(l, fight = true, ct = 1)
@@ -355,19 +356,19 @@ class HomeLayoutShotsTest {
      * there as well - with Bar in Party mode on or off, Show in combat Off (the 1519 audit: tap-to-cast stays in Top fights "always")
      */
     @Test fun topScreenKeepsTheTapToCastBarInItsDock() {
-        val above = page(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT, fight = HomeLayout.FightBand.TOP), fight = true, ct = 1)
+        val above = page(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP), fight = true, ct = 1)
         assertTrue(above.cast.away)
         val a = boxes(above.home)
         assertEquals("Above chat: the bar at the top of the grown column", 8f, a.getValue("STRIP").top, 0.01f)
         assertTrue("the chat's column under it", a.getValue("CHAT").top >= a.getValue("STRIP").bottom + 8f - 0.01f)
         assertTrue((views(above.home).getValue("STRIP") as CastStripView).takesTouch)
         shot(above, "bottom_fight_top_away_above_chat")
-        val underMap = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP, fight = HomeLayout.FightBand.TOP), fight = true, ct = 1)
+        val underMap = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_MAP, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP), fight = true, ct = 1)
         val m = boxes(underMap.home)
         assertTrue("Under map: under the grown map", m.getValue("STRIP").top >= m.getValue("MAP").bottom + 8f - 0.01f && m.getValue("STRIP").bottom <= H + 0.01f)
         assertEquals("in the map's column", m.getValue("MAP").left, m.getValue("STRIP").left, 0.01f)
         assertTrue((views(underMap.home).getValue("STRIP") as CastStripView).takesTouch)
-        val party = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP), fight = true, party = true, ct = 1)
+        val party = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP), fight = true, party = true, ct = 1)
         assertTrue("Party mode's fight: the band slides up too (the user's ruling C, 11-22)", party.cast.away)
         val ps = views(party.home).getValue("STRIP") as CastStripView
         assertFalse("Party mode: Bar in Party mode (on by default) keeps it, as ever", ps.fightHidden)
@@ -408,7 +409,7 @@ class HomeLayoutShotsTest {
     }
 
     private fun slideFrames() {
-        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
         val p = page(l, ct = 1)
         val home = p.home
         val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
@@ -597,7 +598,7 @@ class HomeLayoutShotsTest {
         org.robolectric.shadows.ShadowChoreographer.setPaused(true)
         org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         try {
-            val p = page(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT, fight = HomeLayout.FightBand.TOP), ct = 1)
+            val p = page(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP), ct = 1)
             val home = p.home
             val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
             act.setContentView(home, android.view.ViewGroup.LayoutParams(W, H))
@@ -708,7 +709,9 @@ class HomeLayoutShotsTest {
             assertTrue("cut at $cutAt: the band left the page's top ($bandB)", bandB.first() < rb.bottom + 0.01f)
             assertEquals("cut at $cutAt: landed away", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
             assertTrue("cut at $cutAt: the band's view is away (it gives up its cast bar)", p.cast.away)
-            assertFalse("cut at $cutAt: its cast bar is not the shown one", p.cast.ownCastBarShown())
+            // Cast bar in fights = Top screen (this page's record, cc 1): the game's own bar shows the cast on the top screen, so the
+            // rooms' bar leaves it out too (CastView.lineTop: Home "has" it) - nothing of it on the bottom screen
+            assertTrue("cut at $cutAt: the game's bar up top: the rooms' bar leaves the cast out", p.cast.lineTop && p.cast.ownCastBarShown())
             // a re-lay once landed (laid away already): away stays
             applyNow(home, home.flow.screen, animate = true)
             for (i in 0 until 20) frame()
@@ -765,7 +768,7 @@ class HomeLayoutShotsTest {
      * rest as ever. Shots: bottom_fight_top_party, its real frames _start / _mid / _end and the way back's _return.
      */
     @Test fun topScreenPartyModeFillsTheStrip() {
-        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
         val p = page(l, fight = true, party = true, ct = 1)
         val b = boxes(p.home)
         assertTrue("the band away", p.cast.away)
@@ -797,7 +800,7 @@ class HomeLayoutShotsTest {
      */
     @Test fun topScreenPartyModeFillsTheStripForEveryDock() {
         for (dock in HomeLayout.PartyDock.values()) for (side in HomeLayout.Side.values()) {
-            val l = HomeLayout(chatSide = side, cast = HomeLayout.CastDock.UNDER_CHAT, party = dock, fight = HomeLayout.FightBand.TOP)
+            val l = HomeLayout(chatSide = side, cast = HomeLayout.CastDock.UNDER_CHAT, party = dock, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
             val tag = "$dock chat ${side.name.lowercase()}"
             val g = page(l.copy(fight = HomeLayout.FightBand.GROW), fight = true, party = true, ct = 1)
             val ref = boxes(g.home)
@@ -838,7 +841,7 @@ class HomeLayoutShotsTest {
         org.robolectric.shadows.ShadowChoreographer.setPaused(true)
         org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         try {
-            val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+            val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
             val p = page(l, party = true, ct = 1)
             val home = p.home
             val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
@@ -904,11 +907,13 @@ class HomeLayoutShotsTest {
         val env = BottomTiles.Env(null, null)
         assertEquals("In fights", BottomTiles.NAMES[BottomTiles.COMBAT])
         assertEquals("D1: Grow by default", "Grow", BottomTiles.value(BottomTiles.COMBAT, env))
-        assertEquals(listOf("Grow", "Same size", "Top screen"), BottomTiles.lines(BottomTiles.COMBAT, env).single().words)
+        assertEquals(listOf("Grow", "Same size", "Top screen"), BottomTiles.lines(BottomTiles.COMBAT, env).first().words)
         BottomTiles.press(BottomTiles.COMBAT, BottomTiles.COMBAT, 2, env) { }
         assertEquals(HomeLayout.FightBand.TOP, HomeSettings.layout.fight)
         assertEquals("Top screen", BottomTiles.value(BottomTiles.COMBAT, env))
-        assertEquals(2, BottomTiles.lines(BottomTiles.COMBAT, env).single().picked)
+        assertEquals(2, BottomTiles.lines(BottomTiles.COMBAT, env).first().picked)
+        // with Top screen the band's second line: Cast bar in fights (the user's ruling 2026-11-23)
+        assertEquals(BottomTiles.FIGHT_CAST, BottomTiles.lines(BottomTiles.COMBAT, env)[1].key)
         // an add-on without the flag says so (state only); with it, nothing
         val old = PadMapModel.Dpad(true, emptyMap(), emptyList(), emptyList(), true, 1, 2, "Korvash", "Realm")
         assertEquals("Needs the newer Spells add-on", BottomTiles.status(BottomTiles.COMBAT, BottomTiles.Env(old, null)))

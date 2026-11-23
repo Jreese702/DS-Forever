@@ -1,7 +1,7 @@
 """1521 integration (add-on set 424): the add-on manifest matches the add-on files byte for byte, off-device.
 - manifest.txt's md5s are the REAL files' (LauncherSetup only copies a set whose md5s match; build_release refuses a stale one);
 - every add-on .toc says "Set N" for manifest.txt's set N, and the set is 424 or higher (1.0.38 shipped 423 with older files);
-- the tags the 1521 merges carry: Hub hub75, PadMap m186, Interact i173, Bags bags-kit6 (its notes; Bags has no tag line).
+- the tags the 1521 merges carry (and feat/fight-castbar's: Hub hub76, PadMap m187): Hub hub75 -> hub76, PadMap m186 -> m187, Interact i173, Bags bags-kit6 (its notes; Bags has no tag line).
 No lupa needed. Exit code 1 on any failure."""
 import hashlib
 import os
@@ -50,8 +50,8 @@ def src(rel):
     return (ADDONS / rel).read_text(encoding="utf-8")
 
 
-check('local HV = "hub75"' in src("WowCompanionHub/Hub.lua"), "d. Hub hub75")
-check('local PV = "m186"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m186")
+check('local HV = "hub76"' in src("WowCompanionHub/Hub.lua"), "d. Hub hub76")
+check('local PV = "m187"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m187")
 check('local IV = "i173"' in src("WowCompanionInteract/Interact.lua"), "d. Interact i173")
 check("-- bags-kit6 " in src("WowCompanion/Bags.lua"), "d. Bags bags-kit6")
 

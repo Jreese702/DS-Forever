@@ -94,7 +94,9 @@ class TopCombatBarTest {
                 for (p in listOf(HomePart.CHAT, HomePart.MAP)) {
                     val a = rest.boxes.getValue(p); val b = fight.boxes.getValue(p)
                     assertEquals("$l: $p's x", a.l, b.l, 0f); assertEquals(a.r, b.r, 0f)
-                    assertTrue("$l: $p grown up", b.t <= a.t - rest.barsBottom + 0.01f)
+                    // (the default Cast bar in fights = Bottom screen keeps the fight strip at the top: the columns grow up to under it)
+                    val strip = if (HomeLayoutSolver.hasFightStrip(l)) HomeLayoutSolver.FIGHT_STRIP_H + 8f else 0f
+                    assertTrue("$l: $p grown up", b.t <= a.t - rest.barsBottom + strip + 0.01f)
                 }
                 assertTrue("$l: valid in the fight", HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), HomeLayoutSolver.places(l,
                     HomeLayoutSolver.State(takeover = true))).isEmpty())
@@ -160,7 +162,8 @@ class TopCombatBarTest {
         // HomeView lays and shrinks by the CURRENT padmap's flag (no cue any more: the band slides)
         val home = java.io.File(listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"),
             java.io.File("companion/app/src/main/java/com/jrees/wowcompanion")).first { it.isDirectory }, "HomeView.kt").readText()
-        assertTrue(home.contains("if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, padMap?.dpad?.ct) else TopCombatBar.honoured(l, padMap?.dpad?.ct)"))
+        assertTrue(home.contains("if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, padMap?.dpad?.ct, padMap?.dpad?.cc)"))
+        assertTrue(home.contains("else TopCombatBar.honoured(l, padMap?.dpad?.ct, padMap?.dpad?.cc)"))
         assertFalse(home.contains("cueStarts")); assertFalse(home.contains("topCueAlpha"))
         assertTrue(home.contains("TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)"))
     }
@@ -207,7 +210,7 @@ class TopCombatBarTest {
         assertNull("a reset = off (no entry): the band grows", k.default)
         // the add-on's own Layouts reset clears it too (PadMap m179)
         val pm = java.io.File(addons(), "WowCompanionSpells/PadMap.lua").readText()
-        assertTrue(pm.contains("layouts = { \"dpad\", \"rbm\", \"ctop\" }"))
+        assertTrue(pm.contains("layouts = { \"dpad\", \"rbm\", \"ctop\", \"ctcb\" }"))           // m187: the fight cast bar's flag too
     }
 
     @Test fun theWordsAreTranslated() {

@@ -47,6 +47,12 @@ data class HomeLayout(
      *  mode's module) at the top or the foot of the chat's or the map's column (it names a module, so a swap carries it); Above chat =
      *  today's (Classic) */
     val party: PartyDock = PartyDock.ABOVE_CHAT,
+    /** THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still
+     *  show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom ... Same thing
+     *  with the swing timer"): with In fights = Top screen, where the cast bar and the swing timer go in the fight - BOTTOM (the default):
+     *  our strip across the top of the bottom screen (HomeLayoutSolver.fightStrip); TOP: the game's own casting bar shown again on the
+     *  top screen and the Wings' swing lines (the add-on, TopCombatBar.castTop). Meaningless with Grow / Same size */
+    val fightCast: FightCast = FightCast.BOTTOM,
 ) {
     enum class Side { LEFT, RIGHT; fun other() = if (this == LEFT) RIGHT else LEFT }
     enum class Share(val num: Int, val den: Int) { THIRD(1, 3), HALF(1, 2), TWO_THIRDS(2, 3) }
@@ -93,6 +99,8 @@ data class HomeLayout(
     /** the tap-to-cast slot's side (L = CastStripModel.MAX_SIDE, today's) */
     enum class SlotSize(val px: Float) { S(88f), M(100f), L(112f) }
     enum class FightBand { GROW, SAME, TOP }
+    /** "Cast bar in fights" (Top-screen fights only): the bottom screen's strip, or the top screen (the game's own bar) */
+    enum class FightCast { BOTTOM, TOP }
 
     /** the map is left of the chat: the add-on's DS toolbar mirror bit (D-pad Left = the map, Right = the chat) */
     val mirrored: Boolean get() = chatSide == Side.RIGHT
@@ -126,7 +134,7 @@ data class HomeLayout(
         rest = HomeRest.DIAMONDS, castSize = SlotSize.L,
         cast = if (cast == CastDock.SPLIT) CastDock.UNDER_CHAT else cast.withTop(false),
         fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList(),
-        party = PartyDock.ABOVE_CHAT)
+        party = PartyDock.ABOVE_CHAT, fightCast = FightCast.BOTTOM)
 
     companion object {
         const val VERSION = 1
@@ -154,6 +162,8 @@ object HomeLayoutJson {
         .also { o -> RoomBar.hiddenOf(l.hidden).takeIf { it.isNotEmpty() }?.let { o.put("hide", org.json.JSONArray(it)) } }
         // after 1518: the party list's dock only when it is not above the chat (a Classic record's text is unchanged)
         .also { o -> if (l.party != HomeLayout.PartyDock.ABOVE_CHAT) o.put("party", l.party.name) }
+        // the cast bar's screen in a Top-screen fight only when it is not the bottom's (a Classic record's text is unchanged)
+        .also { o -> if (l.fightCast != HomeLayout.FightCast.BOTTOM) o.put("fcast", l.fightCast.name) }
         .toString()
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
@@ -178,6 +188,7 @@ object HomeLayoutJson {
                 rooms = o.optJSONArray("rooms")?.let { a -> RoomBar.normalize((0 until a.length()).map { a.optString(it, "") }) } ?: d.rooms,
                 hidden = o.optJSONArray("hide")?.let { a -> RoomBar.hiddenOf((0 until a.length()).map { a.optString(it, "") }) } ?: d.hidden,
                 party = en(HomeLayout.PartyDock.values(), "party", d.party),
+                fightCast = en(HomeLayout.FightCast.values(), "fcast", d.fightCast),
             )
         } catch (e: Exception) { fallback }
     }

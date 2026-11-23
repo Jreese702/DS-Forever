@@ -498,7 +498,7 @@ object SettingsPreview {
         val k = min((r.width() - 20f) / pw, (r.height() - 20f) / ph)
         val ox = r.centerX() - pw * k / 2f; val oy = r.centerY() - ph * k / 2f
         for ((p, b) in res.boxes) {
-            if (p == HomePart.AURAS) continue
+            if (p == HomePart.AURAS || (p == HomePart.FIGHT_CAST && !res.fightStrip)) continue      // (the fight strip only in its fight)
             val rr = RectF(ox + b.l * k, oy + b.t * k, ox + b.r * k, oy + b.b * k)
             pFill.color = when (p) { HomePart.MAP -> Color.rgb(86, 98, 54); HomePart.QUESTS -> Color.rgb(70, 54, 22); HomePart.BARS -> Color.rgb(30, 26, 20)
                 HomePart.STRIP, HomePart.CAST2 -> Color.rgb(40, 52, 90); else -> Theme.panel }

@@ -232,7 +232,8 @@ class HomeMenusFitShotsTest {
         home.pauseSlide(UiKit.PAUSE_OPEN_MS)
         for ((k, d) in drawn(home)) {
             val l0 = laid.getValue(k)
-            if (d.right > 0.5f && d.left < W - 0.5f) no(tag, "pause: $k still on screen ${r(d)}")
+            // (the fight strip of a Top-screen fight goes up with the band: off the top edge is off the screen too)
+            if (d.right > 0.5f && d.left < W - 0.5f && d.bottom > 0.5f) no(tag, "pause: $k still on screen ${r(d)}")
             if (l0.left <= G + 1f && l0.right >= W - G - 1f) continue                 // a full-screen module keeps its own side
             // the Both bar's own rule (cb3: it goes left with the chat) is kept
             if (k == "STRIP" && l0.width() > W / 2f) continue

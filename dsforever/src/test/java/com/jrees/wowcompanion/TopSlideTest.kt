@@ -126,8 +126,12 @@ class TopSlideTest {
             assertFalse(calm.away); assertTrue("$rest: away in the fight", fight.away)
             assertEquals("$rest: the band's bottom 16 over the frame's top", -16f, b.b, 0f)
             assertEquals("$rest: the same size (no re-measure)", a.h, b.h, 0.001f); assertEquals(a.w, b.w, 0f)
-            assertEquals("$rest: the chat's column from the top gap", 8f, fight.boxes.getValue(HomePart.CHAT).t, 0f)
-            assertEquals("$rest: the map's", 8f, fight.boxes.getValue(HomePart.MAP).t, 0f)
+            // (Cast bar in fights = Bottom screen, the default: the fight strip at the top gap, the columns a gap under it)
+            assertEquals("$rest: the chat's column under the fight strip", (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), fight.boxes.getValue(HomePart.CHAT).t, 0f)
+            assertEquals("$rest: the map's", (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), fight.boxes.getValue(HomePart.MAP).t, 0f)
+            val gameBar = HomeLayoutSolver.places(l.copy(fightCast = HomeLayout.FightCast.TOP), HomeLayoutSolver.State(takeover = true))
+            assertEquals("$rest: the game's bar: the chat's column from the top gap", 8f, gameBar.boxes.getValue(HomePart.CHAT).t, 0f)
+            assertEquals("$rest: the map's", 8f, gameBar.boxes.getValue(HomePart.MAP).t, 0f)
             assertEquals(0f, fight.barsBottom, 0f)
             assertTrue(HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), fight).isEmpty())
         }
@@ -332,7 +336,7 @@ class TopSlideTest {
             assertTrue("$cast: on the page (${b.t}..${b.b} of ${st.h})", b.t >= 0f && b.b <= st.h + 0.01f)
             assertTrue("$cast: ${HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), r)}",
                 HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), r).isEmpty())
-            if (cast.top) assertEquals("$cast: at the top of its grown column (the top gap)", 8f, b.t, 0.01f)
+            if (cast.top) assertEquals("$cast: at the top of its grown column (under the fight strip)", (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), b.t, 0.01f)
         }
     }
 }

@@ -1141,6 +1141,9 @@ object HomeWidgetMenus {
         val toolbarOn: Boolean = false, val toolbarAvail: Boolean = false, val rest: HomeRest = HomeRest.DIAMONDS,
         val rankBadges: Boolean = false, val fightBand: HomeLayout.FightBand = HomeLayout.FightBand.GROW, val swing: Boolean = true,
         val ct: Int? = null,
+        /** the user's ruling 2026-11-23: "Cast bar in fights" (offered with Top screen only); the add-on's word (`cc`, PadMap m187; null =
+         *  an add-on without it: Top screen cannot be picked, the bar stays on the bottom screen) */
+        val fightCast: HomeLayout.FightCast = HomeLayout.FightCast.BOTTOM, val cc: Int? = null,
     )
 
     val CARD_DOCKS = listOf(HomeLayout.CardDock.ON_MAP, HomeLayout.CardDock.ABOVE_CHAT, HomeLayout.CardDock.OFF)
@@ -1207,12 +1210,17 @@ object HomeWidgetMenus {
             MenuRow(BottomTiles.REST, "Rest controller", REST_WORDS, HomeRest.values().indexOf(v.rest)),
             onOff(BottomTiles.RANK, "Spell rank badges", v.rankBadges),
         )
-        EditStop.FIGHT_PEN -> listOf(
+        EditStop.FIGHT_PEN -> buildList {
             // Top screen needs the add-on's Wings word (TopCombatBar: no `ct` = laid as Grow); the preview shows what a fight would
-            MenuRow(BottomTiles.COMBAT, "In fights", BottomTiles.FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(v.fightBand),
-                off = if (v.ct == null && v.fightBand != HomeLayout.FightBand.TOP) setOf(HomeLayout.FightBand.TOP.ordinal) else emptySet()),
-            onOff(BottomTiles.SWING, "Swing timer", v.swing),
-        )
+            add(MenuRow(BottomTiles.COMBAT, "In fights", BottomTiles.FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(v.fightBand),
+                off = if (v.ct == null && v.fightBand != HomeLayout.FightBand.TOP) setOf(HomeLayout.FightBand.TOP.ordinal) else emptySet()))
+            // the user's ruling 2026-11-23: with Top screen, the cast bar and swing timer across the bottom screen's top or the game's own
+            // on the top screen (Top screen needs the add-on's `cc`, as Top screen above needs `ct`)
+            if (v.fightBand == HomeLayout.FightBand.TOP)
+                add(MenuRow(BottomTiles.FIGHT_CAST, "Cast bar", BottomTiles.FIGHT_CAST_WORDS, HomeLayout.FightCast.values().indexOf(v.fightCast),
+                    off = if (v.cc == null && v.fightCast != HomeLayout.FightCast.TOP) setOf(HomeLayout.FightCast.TOP.ordinal) else emptySet()))
+            add(onOff(BottomTiles.SWING, "Swing timer", v.swing))
+        }
         else -> emptyList()
     }
     /** the party list's columns ([HomeEditModel.K_PARTY_PLACE]) */

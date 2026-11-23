@@ -217,7 +217,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var flashKind = 0
     private var flashAtMs = 0L
 
-    private fun flash(kind: Int) { flashKind = kind; flashAtMs = SystemClock.elapsedRealtime(); invalidate() }
+    private fun flash(kind: Int) { flashKind = kind; flashAtMs = SystemClock.elapsedRealtime(); invalidate(); onLine?.invoke() }
 
     /**
      * Home sets this while it shows the band in combat: the view then draws the line along its own
@@ -269,6 +269,22 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var away = false
         set(v) { if (field != v) { field = v; invalidate(); onCastState?.invoke() } }
+    /**
+     * THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still
+     * show across the top of the bottom screen ... Same thing with the swing timer"): Home's fight strip (HomeLayoutSolver.hasFightStrip,
+     * FightCastStripView) carries this view's line - the cast bar, the swing timer, both hands - while the band is away and through its
+     * slide: the band draws no line of its own, the strip paints it ([drawFightStrip]), and the cast stays Home's ([ownCastBarShown]:
+     * the rooms' bar leaves it out). Set by Home
+     */
+    var lineAway = false
+        set(v) { if (field != v) { field = v; invalidate(); onCastState?.invoke(); onLine?.invoke() } }
+    /** the line's state moved (a hud state document, a flash, a predicted cast): Home's fight strip redraws */
+    var onLine: (() -> Unit)? = null
+    /** Cast bar in fights = Top screen in a Top-screen fight (the band away, no fight strip): the GAME's own casting bar shows the cast on
+     *  the top screen (the add-on, Hub hub76), so nothing of ours on the bottom screen - the rooms' bar leaves it out ([ownCastBarShown]).
+     *  Set by Home */
+    var lineTop = false
+        set(v) { if (field != v) { field = v; onCastState?.invoke() } }
 
     /** while true the band draws NO presses (no push-down, no flash): Home's Select cursor owns the pad then
      *  (user 2026-09-30, LATER item 23a). Layers and the triggers still follow the pad. */
@@ -1455,6 +1471,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         // feat/wk-itemcast: a cast that began, moved, ended or flashed redraws the rooms' bar (its cast band, [drawRoomCast])
         if (wasStart.compareTo(castStartMs) != 0 || wasEnd.compareTo(castEndMs) != 0 || wasFlash != flashAtMs) { onCastState?.invoke(); onInfoShrink?.invoke() }
+        onLine?.invoke()                                                     // the fight strip: the swing / cast as this document says
         val bu = ji(o.opt("bu"), 1) != 0
         if (bu != barsUsable) { barsUsable = bu; setLayer(computeLayer()) }
         liveF = o.optJSONObject("F")
@@ -3349,7 +3366,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         // Party mode: the ZL / ZR trigger PLATES (v13) in place of today's trigger words
         if (partyStrip && layout == Layout.DIAMONDS) drawPartyPlates(c)
         else if (triggerStrip && layout == Layout.DIAMONDS) next = min(next, drawTriggerStrip(c, now))
-        if (bottomLine) next = min(next, drawSwingLine(c, now))
+        if (bottomLine && !lineAway) next = min(next, drawSwingLine(c, now))      // (the fight strip carries it: [lineAway])
         val focusLeft = FOCUS_MS - (now - focusAtMs)
         if (focusLeft > 0 || flashing) next = 0
         if (pressedPos >= 0 && now < pressedUntilMs) next = min(next, pressedUntilMs - now)
@@ -3474,7 +3491,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val fa = now - flashAtMs
         val castFx = predicted || ((flashKind == FLASH_CAST || flashKind == FLASH_FAIL) && fa >= 0 &&
             fa < (if (flashKind == FLASH_FAIL) CastFx.FAIL_MS else CastFx.FINISH_MS))
-        return SwingLine.dual(swingOn && !castOnly && !roomPass && !into, now.toDouble(), castStartMs, castEndMs, castFx,
+        return SwingLine.dual(swingOn && !castOnly && !roomPass && !(into && !intoSwing), now.toDouble(), castStartMs, castEndMs, castFx,
             offStartMs, offDurMs, SWING_GRACE)
     }
     /** true for the length of the off hand's line: [drawCastBar] draws hudS.so's swing (and its own flash), never a cast */
@@ -3541,6 +3558,46 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val fa = now - flashAtMs
         return (flashKind == FLASH_CAST || flashKind == FLASH_FAIL) && fa >= 0 && fa < (if (flashKind == FLASH_FAIL) CastFx.FAIL_MS else CastFx.FINISH_MS)
     }
+
+    /**
+     * THE FIGHT STRIP'S PAINT (see [lineAway]): this view's whole line - the cast bar (its name inside it), the swing timer, the dual
+     * wield's two lines, the finish and restart flashes, the predicted cast, edit mode's stand-in swing - into [r] of Home's strip
+     * ([FightCastStripView]'s canvas), the same state, art and code as the band's own line. Draw only; returns the next redraw delay
+     * (0 = every frame, Long.MAX_VALUE = nothing runs)
+     */
+    fun drawFightStrip(c: Canvas, r: RectF, now: Long = SystemClock.elapsedRealtime()): Long {
+        if (r.width() <= 0f || r.height() <= 0f) return Long.MAX_VALUE
+        val bh0 = curBh; val pl0 = curPlate
+        into = true; intoSwing = true; intoW = r.width(); intoH = r.height()
+        curPlate = false
+        val save = c.save()
+        try {
+            if (dualShown(now)) {
+                // sw-dual's two lines in the strip's box: the main hand's on top, the off hand's thinner and dimmer under it
+                val rows = SwingLine.rows(0f, r.height(), r.width() / FRAME_W)
+                curBh = rows[1] - rows[0]
+                c.save(); c.translate(r.left, r.top + rows[1] - intoH)
+                var next = try { drawCastBar(c, now, r.width(), Double.NaN, 0.0) } finally { c.restore() }
+                curBh = rows[3] - rows[2]
+                val s2 = c.save()
+                try {
+                    c.translate(r.left, r.top + rows[3] - intoH)
+                    c.saveLayerAlpha(-8f, intoH - curBh - 8f, r.width() + 8f, intoH + 8f, SwingLine.OFF_ALPHA)
+                    offPass = true
+                    next = min(next, drawCastBar(c, now, r.width(), Double.NaN, 0.0))
+                } finally { offPass = false; c.restoreToCount(s2) }
+                return next
+            }
+            curBh = r.height()
+            c.translate(r.left, r.top)
+            return drawSwingLineIn(c, now, r.width())
+        } finally {
+            c.restoreToCount(save)
+            into = false; intoSwing = false; curBh = bh0; curPlate = pl0
+        }
+    }
+    /** [drawFightStrip] is painting: the swing comes too ([drawCastInto] paints the cast only) */
+    private var intoSwing = false
 
     /** [drawCastInto] is painting: the box's own size stands in for the view's (Home's draw: false, the view's own) */
     private var into = false
@@ -3626,7 +3683,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var roomNamePaint: Paint? = null
 
     /** Home draws this cast bar itself now (on screen, its band layout, a layout to draw): the rooms' bar leaves it out */
-    fun ownCastBarShown(): Boolean = isShown && !away && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
+    fun ownCastBarShown(): Boolean = isShown && (!away || lineAway || lineTop) && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
 
     /**
      * review fix: when this view leaves the screen or comes back (a room opens, a Home module covers the band, Home returns) the answer
@@ -3700,7 +3757,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val flashLen = when (fk) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
         // P4: edit mode's fight preview with no real swing: the stand-in loops (the main hand's line only)
         val standIn = swingPreview && !offPass && swingStartMs.isNaN()
-        val parts = SwingLine.parts(swingOn && !castOnly && !roomPass && !into, now.toDouble(), castStartMs, castEndMs,
+        val parts = SwingLine.parts(swingOn && !castOnly && !roomPass && !(into && !intoSwing), now.toDouble(), castStartMs, castEndMs,
             if (standIn) (now - now % PREVIEW_SWING_MS).toDouble() else if (offPass) offStartMs else swingStartMs,
             if (standIn) PREVIEW_SWING_MS.toDouble() else if (offPass) offDurMs else swingDurMs, SWING_GRACE,
             fk != 0, fk == FLASH_SWING, fa, flashLen)

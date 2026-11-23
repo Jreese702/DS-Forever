@@ -191,7 +191,11 @@ class HomeLayoutRulesTest {
             assertTrue(r.away)
             assertEquals("$rest: the rest size", S.restBottom(top.copy(rest = rest)) - 8f, bars.h, 0.001f)
             assertEquals(-HomeLayoutSolver.AWAY_PAST, bars.b, 0f)
-            assertEquals(8f, r.boxes.getValue(HomePart.CHAT).t, 0f); assertEquals(8f, r.boxes.getValue(HomePart.MAP).t, 0f)
+            // (the default Cast bar in fights = Bottom screen: the fight strip at the top, the columns a gap under it; Top screen: the top gap)
+            val colTop = 8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f
+            assertEquals(colTop, r.boxes.getValue(HomePart.CHAT).t, 0f); assertEquals(colTop, r.boxes.getValue(HomePart.MAP).t, 0f)
+            val rt = S.places(top.copy(rest = rest, fightCast = HomeLayout.FightCast.TOP), fight)
+            assertEquals(8f, rt.boxes.getValue(HomePart.CHAT).t, 0f); assertEquals(8f, rt.boxes.getValue(HomePart.MAP).t, 0f)
         }
         // every record x the takeover with Top screen: valid (the band away is not on the page), and its card / party / bar follow
         var n = 0
@@ -203,7 +207,8 @@ class HomeLayoutRulesTest {
             if (p.isNotEmpty() && bad.size < 5) bad += "$l / $s: $p"
             if (!r.away && bad.size < 5) bad += "$l / $s: not away"
             val c = r.boxes.getValue(HomePart.CHAT); val m = r.boxes.getValue(HomePart.MAP)
-            if (minOf(c.t, m.t) > 8f + 0.01f && l.cast.top.not() && !s.card && bad.size < 5) bad += "$l / $s: the columns did not grow up"
+            val gap = if (S.hasFightStrip(l)) 8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f else 8f
+            if (minOf(c.t, m.t) > gap + 0.01f && l.cast.top.not() && !s.card && bad.size < 5) bad += "$l / $s: the columns did not grow up"
         }
         assertTrue("checked $n: ${bad.joinToString("; ")}", bad.isEmpty())
     }
@@ -284,7 +289,8 @@ class HomeLayoutRulesTest {
                 // Top screen's fight: the band is above the page; the hidden bar above it too (its foot at the page's top), the column from 8
                 assertTrue(r.away && strip.b <= 0.01f)
                 val col = r.boxes.getValue(if (dock == HomeLayout.CastDock.ABOVE_CHAT) HomePart.CHAT else HomePart.MAP)
-                assertEquals(8f, col.t, 0.01f)
+                // (Cast bar in fights = Bottom screen, the default: the fight strip first, the column a gap under it)
+                assertEquals(if (S.hasFightStrip(l)) (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f) else 8f, col.t, 0.01f)
                 continue
             }
             assertEquals("its foot on the band's foot", bars.b, strip.b, 0.01f)
