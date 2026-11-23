@@ -430,6 +430,66 @@ class RadialCastBarShotsTest {
             p.home.pauseSlide(UiKit.PAUSE_OPEN_MS / 2f, LbPartyView.SIDE_PX); p.home.lbPlace(); still("LB picture halfway")
             p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX); p.home.lbPlace(); still("LB picture")
             p.home.pauseSlide(0f, LbPartyView.SIDE_PX)
+            // review: the pause wheel and the target radial leave Across's slid-away bar where it is too ("All wheels move the Across
+            // bar the same way"; it went off to the left with the chat). A column's bar still goes with its column
+            if (d == HomeLayout.CastDock.ACROSS) for (up in listOf(true, false)) {
+                val nm = if (up) "pause" else "target radial"
+                p.home.pauseSlide(UiKit.PAUSE_OPEN_MS / 2f, barsUp = up); still("$nm halfway")
+                p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, barsUp = up); still(nm)
+                p.home.pauseSlide(0f, barsUp = up); still("$nm closed")
+            }
+        }
+        assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
+    }
+
+    /**
+     * review: the pause wheel's / the target radial's slide never lifts Across's bar on its open - a bar still on its way back up from
+     * a wheel just closed goes on down from where it is (it jumped back onto the page first), and a fight beginning mid-open (Hide in
+     * combat: the page lays the bar below it) keeps it going down, never sideways (it popped back up onto the page and slid left with
+     * the chat); on the close it only comes back up, then takes taps again
+     */
+    @Test fun theSlideNeverLiftsAcrossBar() {
+        for (up in listOf(true, false)) {
+            val nm = if (up) "pause" else "target radial"
+            var p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW))
+            var s = strips(p.home)[0]
+            s.translationY = 70f                                         // (a wheel's bar on its way back up)
+            p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * 0.05f, barsUp = up)
+            if (s.translationY < 70f - 0.5f || s.translationX != 0f) no(nm, "opened under a bar on its way up: lifted to (${s.translationX}, ${s.translationY})")
+            p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * 0.6f, barsUp = up)
+            var last = s.translationY
+            for (k in listOf(0.5f, 0.3f, 0.1f)) {
+                p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * k, barsUp = up)
+                if (s.translationY > last + 0.5f || s.translationX != 0f) no(nm, "closing at $k: down again (${s.translationX}, ${s.translationY} after $last)")
+                last = s.translationY
+            }
+            p.home.pauseSlide(0f, barsUp = up)
+            back(nm, "after the close", p.home, true)
+            // a fight beginning mid-open, Hide in combat
+            p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW))
+            s = strips(p.home)[0]
+            val home = p.home
+            fun drawnTop() = boxes(home).getValue("STRIP").top + s.translationY
+            home.pauseSlide(UiKit.PAUSE_OPEN_MS * 0.3f, barsUp = up)
+            var top = drawnTop()
+            home.onFull(JSONObject().put("type", "full").put("actionbar", JSONObject().put("hud", JSONObject().put("ok", true))
+                .put("hudS", JSONObject().put("c", true))), true)
+            val q = quests(true)
+            QuestItem.Cd.onQuests(q, true); home.onQuests(q, true)
+            home.tick()
+            for (i in 1..30) {
+                settle(1)
+                home.pauseSlide((UiKit.PAUSE_OPEN_MS * (0.3f + i * 0.03f)).coerceAtMost(UiKit.PAUSE_OPEN_MS), barsUp = up)
+                val d = drawnTop()
+                if (d < top - 0.5f || s.translationX != 0f) no(nm, "a fight beginning mid-open, frame $i: the bar rose / slid to (${s.translationX}, $d after $top)")
+                top = d
+            }
+            settle(60)
+            for ((k, d) in barsDrawn(home)) no(nm, "in the fight: $k on the page ${r(d)}")
+            home.pauseSlide(0f, barsUp = up)
+            fight(p, false)
+            settle(40)
+            back(nm, "after the close and the fight", home, true)
         }
         assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
     }

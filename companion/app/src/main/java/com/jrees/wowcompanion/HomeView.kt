@@ -2759,6 +2759,8 @@ class HomeView(
      *  reverse bringing it back down; false = the target radial's / the LB picture's rule below */
     fun pauseSlide(t: Float, sidePx: Float = 0f, barsUp: Boolean = false) {
         if (t == pauseT && sidePx == pauseSide && barsUp == pauseUp) return
+        // (the way the slide goes this frame: on its open (or still) Across's bar only ever goes down, on its close only up)
+        val opening = t >= pauseT
         pauseT = t; pauseSide = sidePx; pauseUp = barsUp
         val screen = RectF(0f, 0f, width.toFloat(), frameH)
         // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
@@ -2780,6 +2782,7 @@ class HomeView(
             // 1/3 or 2/3 column straddles the middle but is NOT across: it goes by its centre (the swapped Big map's map flew right,
             // across the open wheel and under the LB picture)
             val r = now[p]
+            val y0 = v.translationY                                  // (where the bar is before this frame: the drop's way below)
             val across = r == null || HomeSlide.fullWidth(r.left, r.right, width.toFloat(), UiKit.MODULE_GAP)
             val o = when {
                 p == Part.BARS -> pauseTop
@@ -2809,11 +2812,20 @@ class HomeView(
             // radial's full slide DROP Across's bar (no column's) straight down below the page, where the other wheels lay it (barDrop),
             // on the chat's curve - no longer off to the left with the chat (cb3); t = 0 brings it back up. A column's bar (Under / Above
             // the chat or the map, Split's halves) still goes with its column; one slid away for a fight (below the page) keeps cb3's
+            // (review: Across's bar never goes sideways here, even one slid below the page for a fight - Hide in combat: the other
+            // wheels leave that one where it is, so does this slide; it went left with the chat, cb3's. On the open it never rises: a
+            // bar still on its way back up from a wheel just closed, or one the page is laying below it - a fight beginning mid-open -
+            // goes on down from where it is; on the close it only comes back up)
             if (sidePx <= 0f && (p == Part.STRIP || p == Part.CAST2)) {
                 // (a bar still on its way back from a wheel just closed - its animator - is stopped: this slide places it now)
                 if (t > 0f) v.animate().cancel()
                 val dy = barDrop(p, r)
-                if (dy > 0f) { v.translationX = 0f; v.translationY = dy * pauseDropK }
+                if (dy > 0f || r != null && laidSide == CastStripModel.Side.BOTH && !laidSplit) {
+                    val to = dy * pauseDropK
+                    val at = y0.coerceAtLeast(0f)
+                    v.translationX = 0f
+                    v.translationY = if (t <= 0f) 0f else if (opening) maxOf(at, to) else minOf(at, to)
+                }
             }
             if (sidePx > 0f && p != Part.BARS) {
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
