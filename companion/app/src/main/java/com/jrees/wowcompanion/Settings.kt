@@ -211,6 +211,18 @@ object Settings {
         set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
 
     /**
+     * COMPRESS IDLE MEMORY (the user's picks 2026-11-23: the Wine helpers' and DS Forever's own idle memory into the Thor's zram when
+     * memory runs low, PageOut; then "Yes, carefully": the game client's COLD memory too, at character select and when memory is
+     * critically low in the world, GamePageOut). Unset = on for the 8 GB Thors (DeviceTier.pageOutDefault), off for the 12 / 16 GB.
+     * The helpers' and the game's part from the next game start (the preload is added at the launch), ours at once.
+     */
+    var pageOut: Boolean
+        get() = prefs?.takeIf { it.contains("pageOut") }?.getBoolean("pageOut", false) ?: DeviceTier.pageOutDefault()
+        set(v) { prefs?.edit()?.putBoolean("pageOut", v)?.apply(); changed() }
+    /** the player chose it (the report says "this Thor's default" otherwise) */
+    val pageOutSet: Boolean get() = prefs?.contains("pageOut") ?: false
+
+    /**
      * VIDEO MEMORY CAP (#56 G1, the user's approval 2026-11-19; Settings > Performance > Memory): our container tells the game a
      * smaller video memory, by the Thor's RAM (GameVideoMemory.capMb). Our emulator's config, not a game setting. On by default;
      * Off = the driver's own size, as before. From the next game start; Local play only.

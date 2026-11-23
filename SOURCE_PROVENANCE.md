@@ -103,6 +103,35 @@ af9a7fd5dd986e26beb41903e075623b57afe57a3048831862b49e7e7b3f9e49):
 Output: fe752fbd6a2584c37920698719f70c8c3f0f74566025da4ba4d781d88079a00e.
 Host test: `wsl -e sh tools/dns-shim/test.sh` (Linux/glibc, LD_PRELOAD).
 
+## Idle-memory page-out (libdsf-pageout.so, NativeHeap.pageOutSelf), 2026-11-23
+
+Sources: `dsforever/src/main/jni/dsf/dsf_pageout.h`, `dsf_pageout_hook.c` and the
+page-out half of `dsf_heap.c`; `companion/.../PageOut.kt`. DS Forever's own
+code, written from the Linux man pages madvise(2) (MADV_PAGEOUT), mincore(2) and
+proc(5). The idea (a process paging out its own idle memory into the device's
+existing zram on request) was seen in DroidDeck (GPL-3.0); none of DroidDeck's
+code or text is used. A few design choices match its published description
+(SIGURG installed only while at its default, 1 MiB chunks, 32 MiB per request,
+chunks that come straight back skipped for a while); the code differs throughout
+(sigqueue with our own value, mincore instead of pagemap, no worker thread, an
+allow list of Wine helpers, our own request and answer files). Built from source by the dsforever ndkBuild
+(no prebuilt binary is committed). Host tests: `wsl -e bash tools/pageout/test.sh`.
+
+The game client's cold-only mode (the user's pick 2026-11-23, "Yes, carefully"; `dsf_pageout.h` po_g_run,
+`dsf_pageout_hook.c` po_gserve, `dsf_heap.c` pageOutSignalGame, `companion/.../GamePageOut.kt`) is DS Forever's own
+code from the same man pages plus rt_tgsigqueueinfo(2). DroidDeck's published description also trims the game's cold
+memory with a cap per pass (256 MiB), a critical level at half its floor and a 10 s spacing; those numbers match
+(and unlike DroidDeck, ours never drops the cold-only check when memory is critical), the rest differs (a two-step probe-and-commit idle check with mincore instead of a single trim, our own request file and
+answer line, the request sent to an idle thread of the game, the character select trigger from DS Forever's own
+signals). No DroidDeck code or text is used.
+
+WHAT THE LIBRARY DOES INSIDE THE GAME'S PROCESS (the ToS note): it reads `/proc/self/maps` (address ranges and their
+kinds), `/proc/self/cmdline` and `/proc/self/comm` (to know it is the game client), asks mincore(2) which of its own
+pages are resident and calls madvise(MADV_PAGEOUT) on its own private anonymous ranges, then writes one answer line to
+DS Forever's private folder. It never reads or writes the game's memory contents, never hooks, patches or calls a game
+function and looks up no game symbol; its only entry points are its constructor and a SIGURG handler that serves only
+DS Forever's own signal value. The kernel brings every paged-out page back unchanged on its next touch.
+
 ## Proton without its 32-bit Windows files, 2026-11-20
 
 The shipped `proton-11.0-90624-arm64ec.wcp` is the pinned original (tools/components.sha256, unchanged, still fetched and

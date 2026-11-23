@@ -2165,6 +2165,8 @@
 "Skip (Browser login)": "Omitir (inicio en navegador)",
 "From the next game start": "Desde el próximo inicio del juego",
 "Low-memory graphics": "Gráficos de poca memoria",
+"Compress idle memory": "Comprimir memoria inactiva",
+"Compress idle memory, the game's too: from the next game start": "Comprimir memoria inactiva, también la del juego: desde el próximo inicio del juego",
 "Smaller game textures, so Android does not close the game for memory. From the next game start": "Texturas del juego más pequeñas, para que Android no cierre el juego por falta de memoria. Desde el próximo inicio del juego",
 "Name this radial": "Nombra esta rueda",
 "Icon": "Icono",

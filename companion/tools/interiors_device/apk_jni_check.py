@@ -48,13 +48,21 @@ CALLBACKS = [
     ("Lcom/jrees/wowcompanion/WhisperNative;", "free", "(J)V"),
     # test build 1489 (#56): libdsf-heap.so binds NativeHeap.purge by its JNI name (dsforever/src/main/jni/dsf/dsf_heap.c)
     ("Lcom/jrees/wowcompanion/NativeHeap;", "purge", "()I"),
+    # 2026-11-23 (PageOut): our own idle memory into zram and the Wine helpers' request (dsf_heap.c)
+    ("Lcom/jrees/wowcompanion/NativeHeap;", "pageOutSelf", "(I)[J"),
+    ("Lcom/jrees/wowcompanion/NativeHeap;", "pageOutSignal", "(I)I"),
+    # 2026-11-23 (GamePageOut, the user's "Yes, carefully"): the game client's cold-only request
+    ("Lcom/jrees/wowcompanion/NativeHeap;", "pageOutSignalGame", "(II)I"),
 ]
 
 # native libraries the APK must carry for arm64-v8a, each with the JNI symbols it must define (llvm-nm -D --defined-only)
 LIBS = [
     ("lib/arm64-v8a/libdsfwhisper.so", ["Java_com_jrees_wowcompanion_WhisperNative_" + n for n in
                                         ("version", "load", "transcribe", "abort", "free")]),
-    ("lib/arm64-v8a/libdsf-heap.so", ["Java_com_jrees_wowcompanion_NativeHeap_purge"]),
+    ("lib/arm64-v8a/libdsf-heap.so", ["Java_com_jrees_wowcompanion_NativeHeap_" + n for n in ("purge", "pageOutSelf", "pageOutSignal",
+                                                                                                  "pageOutSignalGame")]),
+    # the Wine helpers' preload (PageOut, BionicProgramLauncherComponent): no JNI, only present
+    ("lib/arm64-v8a/libdsf-pageout.so", []),
 ]
 
 

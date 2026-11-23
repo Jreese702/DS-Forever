@@ -143,6 +143,7 @@ object MemWatch {
     private fun sampleFree() {
         val s = java.io.File("/proc/meminfo").useLines { lmkOf(it, SystemClock.uptimeMillis() / 1000) } ?: return
         lowKb = lowest(lowKb, s.availKb)
+        handler?.let { h -> runCatching { PageOut.tick(s, h) } }      // 2026-11-23: idle memory into zram when short (PageOut)
         // #56 (11-23): the killer's own numbers, the last [RING] seconds, and their lows since the last line
         val ringNow = synchronized(ring) { ring.addLast(s); while (ring.size > RING) ring.removeFirst(); ring.toList() }
         frLowKb = lowest(frLowKb, s.freeKb); fcLowKb = lowest(fcLowKb, s.fileKb); sfLowKb = lowest(sfLowKb, s.swapFreeKb); shNowKb = s.shmemKb
@@ -321,6 +322,7 @@ object MemWatch {
     fun trimmed(level: Int) {
         trimLevel = level; trimAt = SystemClock.uptimeMillis()
         warned(level)
+        runCatching { PageOut.warned(level) }
         val freed = letGo(level)
         val h = handler
         if (h == null) { Log.i(TAG, trimLine("trim from Android: ${trimName(level)}", freed, "", "")); return }
@@ -696,7 +698,7 @@ object MemWatch {
         }
     }
     /** a trim from Android or a relief (the lines the low-memory reports need beside the samples) */
-    fun isEvent(l: String): Boolean = l.startsWith("trim from Android") || l.startsWith("relief (")
+    fun isEvent(l: String): Boolean = l.startsWith("trim from Android") || l.startsWith("relief (") || l.startsWith("pageout (")
 
     /**
      * THE KEY LINES OF A KILLED RUN'S MEMORY (memory work #56, D5): of [lines] (mem.log's, oldest first, stamped) the last [samples]
