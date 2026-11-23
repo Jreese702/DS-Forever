@@ -24,8 +24,12 @@ Checks:
     shown mid-fight is never read (rectNow not called, no secret touched) and does not move it; Party mode's lift (our own frames) re-fits
     it with a 0.24 s glide; the top chat strip dips it to 35 %; the chips light with ZL / ZR; the swing lines run; B's give-back (the
     router's switch false) / the fight's end slides it back down past the edge over 0.2 s (ease-in) and hides it; no lane = the fade +
-    rise; Party mode on = no Wings (the 11-22 review: on PadMap's `live`, pinned to the app's PartyModel.onLive over on / aside / fight /
-    raid); the router's Y unbound (tgGrown nil) = the armed auto-attack / auto-repeat, as the app's grow.
+    rise; Party mode (nbar12, the user's ruling C 11-22: "It should stay at the top in party mode"): the Wings in its FIGHTS only (on
+    PadMap's `live`, pinned to the app's PartyModel.onLive over on / aside / fight / raid) - an attack armed before the pull keeps them
+    off; the router's Y unbound (tgGrown nil) = the armed auto-attack / auto-repeat, as the app's grow.
+  I nbar12 PARTY MODE'S FIGHT: the Wings shown with the PARTY layer (the pick's arrows, the party spells by layer, Y's chain, B fixed,
+    the chord rows), raids too; the cfg PadMap sent last (cfg() - the spellbook walk - never called in the fight); a Select press mid-fight
+    swaps the layer in place (re-fit against ours, redrawn that tick, still shown); Hub's rows and Select tab in the HUD block.
   D NINTENDO MODE: the bar glides from its stock spot to the wings and back (alpha 1 all the way) and ends at the stock spot again.
   E THE EDITOR: the flag on, Nintendo off, the editor open out of combat -> the bar shows at its piece's spot; a placed spot = the fight's.
   F LEAVE NO TRACE: no Secure template, EnableMouse never true, no SetBinding / CVar / macro call, nothing of Blizzard's moved, shown or
@@ -281,8 +285,8 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar11 and nbar7's / nbar8's / nbar9's / nbar10's notes", 'local NB = { V = "nbar11"' in src
-        and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
+    chk("0. ActionBar's tag nbar12 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar12"' in src
+        and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)
     chk("0. nbar9: the build gate has no combat test (display-only frames are legal in a fight)",
@@ -292,9 +296,14 @@ def main():
     # ------------------------------------------------------------------------------------------------ A the solver
     hw, hh, ax, ay = L.eval("WowCompanion.nbar.halfBox")()
     # the 11-22 review: the box holds what a half DRAWS - the slots' focus glow (OFF 50 + the 46 slot / 2 + FOCUS 30 / 2 = 88 from the
-    # diamond's centre) on its top and its inner side, the glow + the 2-unit press below it, the chip side as before (117)
-    chk("A. one half: outer 117 (the diamond's 73 + the trigger chip 4 + 40), inner 88 / up 88 (the focus glow), down 97 (the swing "
-        "lines 73 + 8 + 6 + 4 + 6); the diamond's centre", (hw, hh, ax, ay) == (205, 185, 117, 88), (hw, hh, ax, ay))
+    # diamond's centre) on its top and its inner side, the glow + the 2-unit press below it; nbar12 (ruling A): the outer column - the
+    # L / R plate (50 wide at 106), the chip under it, Party mode's chord row reaching 106 + 19 + 8 = 133
+    chk("A. nbar12 one half: outer 133 (the plate / chip / chord column at 73 + 6 + 27 = 106; its chord row to 133), inner 88 / up 88 "
+        "(the focus glow), down 97 (the swing lines 73 + 8 + 6 + 4 + 6); the diamond's centre", (hw, hh, ax, ay) == (221, 185, 133, 88),
+        (hw, hh, ax, ay))
+    og = todict(L.eval("WowCompanion.nbar.outerGeo")())
+    chk("A. nbar12 the outer column: x 106, the plate at +50.5 (its top level with the diamond's), the chip at +10, the chord row at -16",
+        og == {"x": 106, "plateY": 50.5, "chipY": 10, "chordY": -16, "chordDX": 19}, og)
     hud = R(820, 890, 280, 58)                                   # the bars + the aura host
     ours = [R(820, 890, 280, 58, "hud"), R(530, 4, 860, 76, "compass"), R(790, 86, 372, 94, "target")]
     game = [R(1590, 0, 330, 390, "g.MinimapCluster")]
@@ -358,19 +367,19 @@ def main():
     chk("A5. a placed spot over the tap pad band: moved under it", r["case"] == "placed" and not any(over(rect(x), BAND) for x in r["rects"].values())
         and r["rects"][1]["y"] >= 22 + 158, r["rects"])
     # nbar10: the screen clamp runs BEFORE the band test (a top-left spot the clamp moves right never lands on the band), at MARGIN 24.
-    # The editor keeps the piece (466 units wide) on the screen, so its centre x >= 233 s; the joined bar is 562 units wide
+    # The editor keeps the piece (nbar12: the Wings' joined bar, 2 x (160 + 133) = 586 units wide) on the screen, so its centre x >= 293 s
     bad = []
     for s in (1.0, 1.281, 1.3, 1.336, 1.36, 1.392, 1.4, 1.406, 1.5):
-        for cx in range(int(233 * s) + 1, 720, 4):
+        for cx in range(int(293 * s) + 1, 720, 4):
             for cy in (int(73 * s) + 1, 100, 150, 200):
                 rr = fsolve(L, s=s, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(cx, cy, 0, 0))
-                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 117 * s < -1e-6:
+                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 133 * s < -1e-6:
                     bad.append((s, cx, cy))
     chk("A5. nbar10: a placed spot near the left edge at band height, s 1.0-1.5 (UI scale x size): never within 24 px of the band, on screen",
         not bad, bad[:5])
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(312, 150, 0, 0))
-    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 277 s)",
-        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 277 * 1.336) < 1e-6
+    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 293 s: nbar12's wider half)",
+        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 293 * 1.336) < 1e-6
         and rr["rects"][1]["y"] >= 24 + 154 + 24 - 1e-6, rr)
     # case 5 (the stock fallback) too: a stock spot moved to the top-left (the whole screen taken, so the grid finds nothing)
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[R(0, 0, 1920, 1080, "g.Wall")], stock=R(300, 150, 0, 0))
@@ -399,7 +408,7 @@ def main():
     chk("A6. the HUD at the left edge: no room for the D-pad's half beside it nor joined above it -> the grid's spot (case 4), never the stock "
         "fallback", edge["case"] == 4, edge["case"])
     big = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0), s=1.5)
-    chk("A6. the size scales the halves (150 %: 307.5 x 277.5)", abs(big["rects"][1]["w"] - 307.5) < 0.01 and abs(big["rects"][1]["h"] - 277.5) < 0.01
+    chk("A6. the size scales the halves (150 %: 331.5 x 277.5)", abs(big["rects"][1]["w"] - 331.5) < 0.01 and abs(big["rects"][1]["h"] - 277.5) < 0.01
         and big["k"] == 1, big["rects"][1])
     chk("A7. the solver is pure: no frame read, no event, nothing created", G.RAISED == 0 and NB.top.reads == 0 and G.RECTNOW == 0)
 
@@ -418,6 +427,9 @@ def main():
     L.execute('EV("PLAYER_REGEN_ENABLED")')
     G.CTOP = True
     chk("B. the flag on: the piece is listed in the top layout editor (so it can be placed)", NB.lay.want() is True and NB.lay.on() is False)
+    pw, ph = L.eval("WowCompanion.nbar.lay.size")(None)
+    chk("B. nbar12: the piece is the Wings' joined bar while the flag is on (2 x (160 + 133) wide, the diamonds' 146 high)",
+        abs(pw - 586) < 1e-6 and abs(ph - 146) < 1e-6, (pw, ph))
 
     # ------------------------------------------------------------------------------------------------ C the live bar
     L.execute('RUN(0.6)')                                         # nbar9: the flag is read every FLAG_S (0.5 s)
@@ -741,6 +753,8 @@ def main():
     chk("H. ... every SetPoint's relative frame ours or UIParent (nothing protected in our anchor family)", not rels, rels)
     chk("H. ... EnableMouse never true, nothing raised", G4.BADMOUSE == 0 and G4.RAISED == 0, (G4.BADMOUSE, G4.RAISED))
 
+    party_fight_checks()
+
     # ------------------------------------------------------------------------------------------------ the renders
     scenes_pin()
     hold_pin()
@@ -754,9 +768,9 @@ def main():
 # ---------------------------------------------------------------------------------------------------------------- the renders
 SCENES = [
     ("p3_top_01_default_wings", "In fights: Top screen - Wings beside the HUD (case 1, final_07)", {}),
-    # Party mode LIVE (PadMap's party export `live`, the app's PartyModel.onLive): no Wings - the band keeps the controls on the bottom
-    # screen (R0), only the HUD lifts for the rows. The mock sets padMap.party (it used to leave it out: the Wings drew under Party mode)
-    ("p3_top_02_party_no_wings", "Party mode live: the HUD lifted for the rows, NO Wings (the band stays on the bottom screen, R0)",
+    # nbar12 (the user's ruling C, 11-22: "It should stay at the top in party mode"): Party mode LIVE in a fight - the HUD lifted for the
+    # rows, the Wings beside the whole block (Hub's rows and tab in it) carrying the PARTY layer, the band slid up off the bottom screen
+    ("p3_top_02_party_wings", "Party mode in a fight: the HUD lifted for the rows, the Wings carry the Party layer (ruling C)",
      {"party": True}),
     ("p3_top_03_stockbar_raised", "Controller UI On (the stock bar shown): raised in 24 px steps (case 2)", {"stock": True}),
     ("p3_top_04_blocked_joined", "Game chat and tracker on both sides: joined above the HUD (case 3)", {"walls": True}),
@@ -765,6 +779,137 @@ SCENES = [
     ("p3_top_07_glide_mid", "Nintendo mode: half way through the glide from the stock spot to the wings", {"glide": True}),
     ("p3_top_08_fade_in_mid", "nbar11 the slide in: 0.19 s of 0.06 + 0.26 s (up from below the edge)", {"fadein": True}),
     ]
+
+
+# nbar12: PadMap's party export as the Wings read it in Party mode's fight - the cfg it SENT last (cfg(), the spellbook walk, raises in a
+# fight and is counted), the entries, the pick, the range, the moves (three full rows: you, party1, party2)
+PARTY_MOCK = r'''
+PLIVE, PBOX, PRNG, CFGCALLS = false, 1, nil, 0
+PUNITS = { "player", "party1", "party2" }
+DEAD = {}
+function UnitIsDeadOrGhost(u) return DEAD[u] == true end
+PCFG = { slots = { a = { id = 331, n = "Healing Wave", i = 136052, k = true }, x = { id = 324, n = "Lightning Shield", i = 136051, k = false },
+                   zla = { id = 8017, n = "Rockbiter Weapon", i = 136086, k = true }, zlx = { id = 403, n = "Lightning Bolt", i = 136048, k = true },
+                   zra = { id = 2008, n = "Ancestral Spirit", i = 136077, k = true, res = true } },
+         sy = { on = true, pick = { party1 = { id = 8017, n = "Rockbiter Weapon", i = 136086 } } } }
+WowCompanion.padMap.party = {
+    live = function() return PLIVE end, on = function() return PLIVE end,
+    cfg = function() CFGCALLS = CFGCALLS + 1; if InCombatLockdown() then error("cfg() in a fight: the spellbook walk") end; return PCFG end,
+    cfgLast = function() return PCFG end, units = function() return PUNITS end, box = function() return { box = PBOX } end,
+    rng = function(u) return PRNG end,
+    nav = function(n, box, dir, pet)
+        if dir == "up" and box > 1 then return box - 1 end
+        if dir == "down" and box < n then return box + 1 end
+        return box
+    end }
+'''
+
+
+def party_fight_checks():
+    """I nbar12 PARTY MODE'S FIGHT (the user's ruling C, 11-22): the Wings shown with the Party layer, raids too, cfg() never called in
+    the fight, a Select press mid-fight swapping the layer in place, Hub's rows and tab in the HUD block"""
+    L = boot("ROT = {}; getmetatable(UIParent).SetRotation = function(self, r) self.rotv = r end")
+    G = L.globals()
+    NB = G.WowCompanion.nbar
+    L.execute(PARTY_MOCK)
+    G.CTOP = True
+    L.execute('RUN(0.6)')
+    # Party mode live, an attack armed before the pull (out of combat): no Wings - Party mode has no takeover, the band stays below
+    G.PLIVE = True
+    G.TG = True
+    L.execute('RUN(0.5)')
+    chk("I. nbar12: Party mode live + an attack armed out of combat -> no Wings (no takeover: the app keeps the band)",
+        NB.top.want is False and not NB.top.shown, (NB.top.want, NB.top.shown))
+    # the fight: the Wings with the Party layer
+    G.COMBAT = True
+    L.execute('EV("PLAYER_REGEN_DISABLED"); RUN(0.5)')
+    f = NB.f
+    chk("I. nbar12: Party mode's fight -> the Wings show (ruling C: \"It should stay at the top in party mode\")", NB.top.want is True
+        and NB.top.shown, (NB.top.want, NB.top.shown))
+    chk("I. ... carrying the Party layer (NB.party)", NB.party is not None and NB.party.box == 1 and NB.party.n == 3, NB.party)
+    b = f.btn
+    chk("I. ... the D-pad = the pick's moves: the game's arrows (left back, up / right / down the forward one turned), no badge",
+        b[1].icon.atlas == "common-icon-backarrow" and b[2].icon.atlas == "common-icon-forwardarrow" and b[3].icon.atlas == "common-icon-forwardarrow"
+        and b[4].icon.atlas == "common-icon-forwardarrow" and abs((b[2].icon.rotv or 0) - math.pi / 2) < 1e-9 and abs((b[4].icon.rotv or 0) + math.pi / 2) < 1e-9
+        and (b[3].icon.rotv or 0) == 0 and all(b[p].glyph.shown is False for p in range(1, 5)),
+        [(b[p].icon.atlas, b[p].icon.rotv, b[p].glyph.shown) for p in range(1, 5)])
+    chk("I. ... the pick on you (1 of 3): only Down lit, the rest at 0.28", [b[p].ia for p in range(1, 5)] == [0.28, 0.28, 0.28, 1],
+        [b[p].ia for p in range(1, 5)])
+    sh = NB.shown
+    chk("I. ... A = slot a (Healing Wave), X = slot x not learned: dim (grey)", sh[8].id == 331 and sh[8].icon == 136052 and b[8].look == "ok"
+        and sh[5].id == 324 and b[5].look == "unusable", (sh[8].id, b[8].look, sh[5].id, b[5].look))
+    chk("I. ... Y with no In combat spell and no Smart Y pick for you: Target (the friendly reticle)", b[6].icon.atlas == "gamepad-targeting-friendly",
+        b[6].icon.atlas)
+    chk("I. ... B = the game's own Back (its slot)", sh[7].kind in ("icon", "slot", "empty") and b[7].icon.atlas != "common-icon-forwardarrow", sh[7].kind)
+    back = (sh[7].kind, sh[7].icon, sh[7].s)
+    chk("I. ... the chord rows: Party mode's trigger spells under the chips (ZL: zla / zlx; ZR: zra; an Empty place not drawn)",
+        f.chord[1][1].shown and f.chord[1][1].tex == 136086 and f.chord[1][2].shown and not f.chord[1][3].shown and f.chord[2][1].shown
+        and not f.chord[2][2].shown, [(c.shown, c.tex) for c in list(f.chord[1].values()) + list(f.chord[2].values())])
+    chk("I. ... the L / R plates shown, the targeting pictures as the band's", f.plate[1].shown and f.plate[2].shown
+        and f.plate[1].kind == "friendly" and f.plate[2].kind == "hostile", (f.plate[1].kind, f.plate[2].kind))
+    # the pick moves to party1: Y = Smart Y's pick for it; Up lit
+    G.PBOX = 2
+    L.execute('RUN(0.3)')
+    chk("I. the pick on party1: Smart Y's pick for it on Y (Rockbiter), Up and Down lit", NB.shown[6].id == 8017 and [b[p].ia for p in range(1, 5)] == [0.28, 1, 0.28, 1],
+        (NB.shown[6].id, [b[p].ia for p in range(1, 5)]))
+    # ZR held: A = zra (a res) dim on a living member; dead: the res lit, the others dim
+    G.RT = True
+    L.execute('RUN(0.1)')
+    chk("I. ZR held: A = zra (Ancestral Spirit, a res): dim on a living member", NB.set == 3 and NB.shown[8].id == 2008 and b[8].look == "unusable",
+        (NB.set, NB.shown[8].id, b[8].look))
+    chk("I. ... B still the base layer's Back on the ZR layer (the party pad keeps it on every layer)",
+        (NB.shown[7].kind, NB.shown[7].icon, NB.shown[7].s) == back, ((NB.shown[7].kind, NB.shown[7].icon, NB.shown[7].s), back))
+    L.execute('DEAD.party1 = true; RUN(0.3)')
+    chk("I. ... the picked member dead: the res lit", b[8].look == "ok", b[8].look)
+    G.RT = False
+    L.execute('RUN(0.3)')
+    chk("I. ... back on the base layer, dead: Healing Wave (not a res) dim", NB.shown[8].id == 331 and b[8].look == "unusable", b[8].look)
+    L.execute('DEAD.party1 = nil')
+    # both triggers: the faces empty, B still Back
+    G.LT, G.RT = True, True
+    L.execute('RUN(0.1)')
+    chk("I. both triggers: the faces empty (nothing), B the game's Back", NB.set == 4 and NB.shown[8].kind == "empty" and NB.shown[5].kind == "empty"
+        and NB.shown[6].kind == "empty", [NB.shown[p].kind for p in range(5, 9)])
+    G.LT, G.RT = False, False
+    # range: the picked member out of range -> the glyph red (range only), never the target's
+    G.PRNG = False
+    L.execute('RUN(0.3)')
+    chk("I. the picked member out of range (PadMap's rng false): A's glyph red", b[8].range is False, b[8].range)
+    G.PRNG = None
+    L.execute('RUN(0.3)')
+    chk("I. ... in range again (nil = unknown): not red", b[8].range is True, b[8].range)
+    chk("I. cfg() (the spellbook walk) never called in the fight: the cfg PadMap sent last", G.CFGCALLS == 0, G.CFGCALLS)
+    # a raid: Trail's raid-gated partyModeOn false, PadMap's live true -> still the Party layer (one predicate with the app)
+    L.execute('WowCompanion.prd.partyModeOn = function() return false end; RUN(0.3)')
+    chk("I. a raid (Trail's gate false, PadMap's live true): the Wings with the Party layer still", NB.top.shown and NB.party is not None)
+    # Select mid-fight: Party mode off -> re-fit, the layer swapped in place (still shown: the fight keeps the Wings)
+    n0 = NB.top.n
+    G.PLIVE = False
+    L.execute('DRV(0.02)')
+    chk("I. Select mid-fight (Party mode off): marked for a re-fit and a redraw that tick", NB.top.n > n0 or NB.top.dirty, (n0, NB.top.n))
+    L.execute('RUN(0.3)')
+    chk("I. ... the Wings still shown, the bar's own layer back (no arrows, no turn, the badges back)", NB.top.shown and NB.party is None
+        and b[1].icon.atlas != "common-icon-backarrow" and (b[2].icon.rotv or 0) == 0 and b[2].ia == 1 and b[1].glyph.shown is True
+        and not f.chord[1][1].shown, (NB.party, b[1].icon.atlas, b[2].icon.rotv, b[1].glyph.shown))
+    G.PLIVE = True
+    L.execute('RUN(0.3)')
+    chk("I. ... and on again mid-fight: the Party layer back at once", NB.top.shown and NB.party is not None and b[1].icon.atlas == "common-icon-backarrow")
+    # Hub's rows and its Select tab join the HUD block in Party mode (read at any alpha; the rows with their rim)
+    L.execute('WowCompanion.uf.pf.at = "hud"; for i = 1, 4 do local c = (i - 1) % 2; local r = math.floor((i - 1) / 2); '
+              'WowCompanion.uf.pf.frames[i] = MOCKF(740 + c * 330, 870 + r * 76, 300, 64) end; '
+              'WowCompanion.uf.pf.tab = MOCKF(700, 860, 22, 140); WowCompanion.uf.pf.tab.alpha = 0')
+    ours, hud = L.eval("WowCompanion.nbar.topOurs")()
+    hd = todict(hud)
+    rim = NB.TOP.HUB_RIM
+    chk("I. Hub's rows (with their %d px rim) and its Select tab (alpha 0 too) in the HUD block" % rim, hd["x"] <= 700 + 1e-6
+        and hd["x"] + hd["w"] >= 740 + 330 + 300 + rim - 1e-6 and hd["y"] + hd["h"] >= 870 + 76 + 64 + rim - 1e-6, hd)
+    # the fight's end: gone
+    G.COMBAT, G.TG = False, False
+    L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.5)')
+    chk("I. the fight's end in Party mode: the Wings leave, the Party layer gone, the plates hidden", not NB.top.shown and NB.party is None
+        and not f.plate[1].shown and not f.chord[1][1].shown, (NB.top.shown, NB.party))
+    chk("I. ... nothing raised, no binding / CVar / macro call, no mouse", G.RAISED == 0 and len(G.SPY) == 0 and G.BADMOUSE == 0,
+        (G.RAISED, list(G.SPY.values()), G.BADMOUSE))
 
 
 def hold_pin():
@@ -791,15 +936,24 @@ def hold_pin():
         (hold_in and hold_in.group(1), in_s and in_s.group(1), k_hold and k_hold.group(1), k_in and k_in.group(1)))
     chk("C. hold pin: TopSlide.WINGS_IN is NB.easeOut's (0, 0, 0.2, 1)",
         "val WINGS_IN = floatArrayOf(0f, 0f, 0.2f, 1f)" in kt and "function NB.easeOut(u) return NB.cubic(u, 0, 0, 0.2, 1) end" in ab)
-    off = float(re.search(r"const val WINGS_MOSTLY_OFF = ([0-9.]+)f", kt).group(1))
-    allow = int(re.search(r"const val LATENCY_ALLOWANCE_MS = (\d+)L", kt).group(1))
+    # nbar12 / ruling D THE HAND-BACK: the hold is the Wings' whole way down less the fastest channel, the animator's start and one frame
+    # of overlap - so on the fastest channel the band's first moving frame comes in the Wings' last frame (they are mostly off by the
+    # add-on's own NB.easeIn), on the slowest 2 frames or less after they are gone
+    cm = int(re.search(r"const val CHANNEL_MIN_MS = (\d+)L", kt).group(1))
+    sf = int(re.search(r"const val START_FRAMES_MS = (\d+)L", kt).group(1))
+    ov = int(re.search(r"const val OVERLAP_MS = (\d+)L", kt).group(1))
+    chk("C. hold pin: HAND_BACK_MS = WINGS_OUT_MS - CHANNEL_MIN_MS - START_FRAMES_MS - OVERLAP_MS in TopSlide",
+        "const val HAND_BACK_MS = WINGS_OUT_MS - CHANNEL_MIN_MS - START_FRAMES_MS - OVERLAP_MS" in kt)
     L = boot()
     ease_in = L.eval("WowCompanion.nbar.easeIn")
-    # the hold as TopSlide computes it: the first whole ms the Wings are WINGS_MOSTLY_OFF off, + the allowance
     out_ms = int(ms.group(1))
-    first = next(t for t in range(0, out_ms + 1) if ease_in(t / out_ms) >= off)
-    chk("C. hold pin: the Wings are %d %% off when the band may start (%d ms + %d ms allowance)" % (off * 100, first, allow),
-        ease_in(first / out_ms) >= off and 150 <= first + allow <= 260, (first, allow))
+    hand = out_ms - cm - sf - ov
+    fast = cm + hand + sf                                           # the band's first moving frame on the fastest channel
+    slow = 90 + hand + sf
+    chk("C. hold pin: the band's first frame on the fastest channel (%d ms) comes as the Wings leave (%.0f %% off by NB.easeIn)"
+        % (fast, ease_in(fast / out_ms) * 100), 0 <= out_ms - fast <= 17 and ease_in(fast / out_ms) >= 0.8, (fast, out_ms))
+    chk("C. hold pin: ... on the slowest (90 ms) at most 2 frames after they are gone (%d ms)" % (slow - out_ms), 0 <= slow - out_ms <= 34,
+        (slow, out_ms))
 
 
 def scene_run(o):
@@ -812,8 +966,9 @@ def scene_run(o):
         L.execute('SETR(WowCompanion.prd.f, 820, 790, 280, 32); SETR(WowCompanion.prd.box.host, 820, 762, 280, 26); WowCompanion.uf.pf.at = "hud"; '
                   'for i = 1, 4 do local c = (i - 1) % 2; local r = math.floor((i - 1) / 2); '
                   'WowCompanion.uf.pf.frames[i] = MOCKF(740 + c * 330, 864 + r * 76, 300, 64) end')
-        # Party mode LIVE as PadMap exports it (the Wings' switch reads it: NB.partyOn)
-        L.execute('WowCompanion.padMap.party = { live = function() return true end, on = function() return true end }')
+        # Party mode LIVE as PadMap exports it (the Wings' switch reads it: NB.partyOn), with the cfg it sent last (the Party layer)
+        L.execute(PARTY_MOCK)
+        L.execute('PLIVE = true')
     if o.get("stock"):
         L.execute('GAME["g.GamepadMainActionBarFrame"].shown = true')
     if o.get("walls"):
@@ -842,14 +997,16 @@ def scene_run(o):
 
 
 def scenes_pin():
-    """the renders follow the rules: every scene's Wings shown exactly when its caption says so (Party mode live = no Wings)"""
+    """the renders follow the rules: every scene's Wings shown exactly when its caption says so (nbar12: Party mode's fight = the Wings
+    with the Party layer)"""
     for name, title, o in SCENES:
         L = scene_run(o)
         T = L.globals().WowCompanion.nbar.top
         shown = bool(T.shown)
         if o.get("party"):
-            chk("R. render scene %s: Party mode live -> no Wings (and its caption says so)" % name,
-                not shown and T.want is False and "NO Wings" in title and "wings" not in name.replace("no_wings", ""), (shown, title))
+            nb = L.globals().WowCompanion.nbar
+            chk("R. render scene %s: Party mode's fight -> the Wings with the Party layer (and its caption says so)" % name,
+                shown and nb.party is not None and "Party layer" in title, (shown, title))
         else:
             chk("R. render scene %s: the Wings shown" % name, shown, shown)
 
@@ -984,6 +1141,29 @@ def render(out_dir):
                 bd.rounded_rectangle((cx - w2 * 0.8, cy - h2 * 0.75, cx + w2 * 0.8, cy + h2 * 0.75), radius=int(h2 * 0.7), outline=col,
                                      width=max(2, int(2 * sc)))
                 bd.text((cx, cy), "ZL" if i == 1 else "ZR", fill=col, font=small, anchor="mm")
+            # nbar12: the L / R plates over the chips (the targeting picture's word, the bumper letter at the inner bottom corner) and
+            # Party mode's chord rows under them
+            for i in (1, 2):
+                pl = f.plate[i]
+                if pl.shown:
+                    cx, cy = L.eval("PARTCENTRE")(pl)
+                    w2, h2 = W.nbar.TOP.PLATE_W * sc / 2, W.nbar.TOP.PLATE_H * sc / 2
+                    bd.rounded_rectangle((cx - w2, cy - h2, cx + w2, cy + h2), radius=int(h2 * 0.35), fill=(24, 20, 14, 235),
+                                         outline=(176, 140, 90, 255), width=max(1, int(2 * sc)))
+                    kind = {"friendly": (96, 214, 90, 255), "hostile": (230, 70, 60, 255)}.get(pl.kind, (220, 200, 120, 255))
+                    rr = h2 * 0.45
+                    bd.ellipse((cx - rr, cy - rr - 2 * sc, cx + rr, cy + rr - 2 * sc), outline=kind, width=max(2, int(3 * sc)))
+                    gx = cx + (W.nbar.TOP.PLATE_GX if i == 1 else -W.nbar.TOP.PLATE_GX) * sc
+                    gy = cy - W.nbar.TOP.PLATE_GY * sc
+                    gr = W.nbar.GLYPH * sc / 2
+                    bd.ellipse((gx - gr, gy - gr, gx + gr, gy + gr), fill=(245, 245, 245, 255), outline=(30, 30, 30, 255), width=1)
+                    bd.text((gx, gy), "L" if i == 1 else "R", fill=(20, 20, 20, 255), font=small, anchor="mm")
+                for j in (1, 2, 3):
+                    t = f.chord[i][j]
+                    if t.shown:
+                        cx, cy = L.eval("PARTCENTRE")(t)
+                        rr = W.nbar.TOP.CHORD * sc / 2
+                        bd.ellipse((cx - rr, cy - rr, cx + rr, cy + rr), fill=(90, 120, 200, 255), outline=(176, 140, 90, 255), width=1)
             for i in (1, 2):
                 s_ = f.sw[i]
                 if s_.shown:

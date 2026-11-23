@@ -1605,12 +1605,16 @@ class HomeView(
     /** Party mode on with Home's rest page shown (no module full screen): the disc's touch = Party mode off */
     fun partyOnRest(): Boolean = partyOnHere() && flow.full == null
 
-    /** the module's mode for [s]: the takeover = the fight with Party mode off; a fight with it on = 150 px rows; else at rest */
+    /** the module's mode for [s]: the takeover = the fight with Party mode off; a fight with it on = 88 px rows, or - In fights = Top
+     *  screen (the layout as the page lays it: TopCombatBar.honoured keeps TOP only while the add-on's Wings are on) - the rows filling
+     *  the band's freed strip (the user's ruling C, 11-22: HomeLayoutSolver.away, PartyLayout.Mode.FIGHT_TOP); else at rest */
     private fun partyModeNow(s: HomeScreen): PartyLayout.Mode = when {
         s.takeover -> PartyLayout.Mode.FIGHT_OFF
-        partyOnHere() && grow.fighting(System.currentTimeMillis()) -> PartyLayout.Mode.FIGHT_ON
+        partyFightNow() -> if (layoutNow(s).fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
         else -> PartyLayout.Mode.REST
     }
+    /** Party mode on in a fight (the add-on's fight word: never an attack armed before the pull - no takeover in Party mode) */
+    private fun partyFightNow(): Boolean = partyOnHere() && grow.fighting(System.currentTimeMillis())
     private var laidPartyMode = PartyLayout.Mode.REST
     private var laidPartyN = 0
     /** m131: a pet in place of a party member at the same n changes the cells' widths */
@@ -1705,7 +1709,7 @@ class HomeView(
         }
         val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(w, h, UiKit.MODULE_GAP, full = s.full, takeover = s.takeover,
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
-            partyOn = partyOnHere(), castHidden = !full && castHiddenNow()))
+            partyOn = partyOnHere(), castHidden = !full && castHiddenNow(), partyFight = partyFightNow()))
         placedAway = !full && r.away
         if (full) laidSide = CastStripModel.Side.OFF
         else {
@@ -2006,6 +2010,11 @@ class HomeView(
         val fadeMs = if (combat) 60f else FADE_MS
         val from = HashMap<Part, RectF>()
         for ((p, r) in now) from[p] = RectF(r)
+        // THE HAND-BACK (ruling D): a way down from the band wholly above the page starts it from the page's top edge (moved there unseen),
+        // so its curve's first, small frames are on the page (TopSlide.edgeShift)
+        if (sliding && !away) from[Part.BARS]?.let { b -> b.offset(0f, TopSlide.edgeShift(b.bottom)) }
+        // ruling C: the party module's rows follow its box while the slide grows / shrinks it (no jump at either end)
+        if (sliding) partyView.stretch = true
         val coming = to.keys.filter { !now.containsKey(it) }
         for ((p, r) in to) if (!from.containsKey(p)) from[p] = shrunk(r)
         val gone = from.keys.filter { !to.containsKey(it) }
@@ -2071,7 +2080,8 @@ class HomeView(
                     val f = from[p]!!
                     val t = to[p] ?: f
                     // (a hold ran before the animator started: every part stood where it was; now the slide's own time)
-                    val q = TopSlide.resumeK(a.animatedFraction, slideFrom, away)
+                    // (the band on its own curve; every other part on the columns' - up: braking into the top gap, ruling D)
+                    val q = TopSlide.resumeK(a.animatedFraction, slideFrom, away, band = p == Part.BARS)
                     if (hold > 0L && !away && q > 0f && lent(castView)) castView.away = false    // the hold over: the band draws again
                     now[p] = RectF(lerp(f.left, t.left, q), lerp(f.top, t.top, q), lerp(f.right, t.right, q), lerp(f.bottom, t.bottom, q))
                 }
@@ -2106,6 +2116,7 @@ class HomeView(
                 override fun onAnimationEnd(a: Animator) {
                     // a spring glide cut short keeps its parts' speeds for the next one; landed, they are still
                     if (!cancelled) partVel.clear()
+                    if (sliding) partyView.stretch = false                 // (landed or cut: the next motion sets it again)
                     // the motion landed with the band laid above the page: it draws nothing more (CastView.away). Any motion that lands
                     // there, not only a whole up-slide (the 11-22 review: a re-lay inside the slide's 240 ms cancelled it, and the glide
                     // that took over never set it - the band sat off the page with its cast bar claimed, the bottom screen had none)
@@ -2800,7 +2811,7 @@ class HomeView(
         val partyIn = if (PARTY_MODULE && p != null) HomeLayoutSolver.Party(partyModeNow(flow.screen), p.view.size, p.viewPet) else null
         return HomeLayoutSolver.State(width.toFloat(), frameH, UiKit.MODULE_GAP, takeover = flow.takeover,
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
-            partyOn = partyOnHere(), castHidden = castHiddenNow())
+            partyOn = partyOnHere(), castHidden = castHiddenNow(), partyFight = partyFightNow())
     }
     private fun solveFor(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> =
         HomeLayoutSolver.places(HomeLayoutRules.shown(l.copy(rest = flow.rest)), solveState(l)).boxes

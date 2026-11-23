@@ -2,6 +2,9 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar12 THE WINGS' PLATES AND PARTY MODE (the user's rulings 2026-11-22, after the shots): (A) the band's L / R corner plates on
+-- the Wings, the ZL / ZR chips under them; (C) Party mode keeps the Top screen in its fights - the Wings carry the Party layer.
+-- The full note at "nbar12 THE PLATES AND THE PARTY LAYER" (the Wings' section).
 -- nbar11 THE WINGS REWORK (the user, 2026-11-22, after trying Top screen: "The square icons don't look anything like ours on the bottom
 -- screen in the circles and it overlaps with my hud ... It should be a slick animation looking like it slides up to the top screen"):
 -- (a) THE RING LOOK - every button wears the bottom band's controller look (CastView.drawSlot's layers, the game's own gamepad atlases
@@ -2491,7 +2494,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar11", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar12", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              OFF = 50, DX = 160, GLYPH = 17, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
@@ -2610,6 +2613,12 @@ function NB.heldSet()
         if i and S(function() return bt[i] end) == true then held = held + 2 ^ (p - 1) end
     end
     NB.held = held
+    -- nbar12: the bumpers' own held state (the L / R plates: their pressed look and the targeting pictures they open; the same plain read)
+    for _, key in ipairs({ "PADLSHOULDER", "PADRSHOULDER" }) do
+        if NB.idx[key] == nil then NB.idx[key] = NB.padIdx(key) or false end
+    end
+    local lbI, rbI = NB.idx.PADLSHOULDER, NB.idx.PADRSHOULDER
+    NB.sh = { l = lbI ~= false and S(function() return bt[lbI] end) == true, r = rbI ~= false and S(function() return bt[rbI] end) == true }
     local li, ri = NB.padIdx("PADLTRIGGER"), NB.padIdx("PADRTRIGGER")
     if not li or not ri then return 1 end
     local lt = S(function() return bt[li] end) == true
@@ -2877,7 +2886,15 @@ local function layK()
     if type(L) == "table" and type(L.screen) == "function" then local W, _, kk = L.screen(); return W, kk end
     return 1920, 1
 end
-local function barSize() return 2 * NB.DX + 2 * NB.OFF + NB.B, 2 * NB.OFF + NB.B end
+local function barSize()
+    -- nbar12: while the top-screen flag is on, the piece is the Wings' joined bar: the diamonds' spread plus each half's outer reach (the
+    -- L / R plates, the chips, Party mode's chord row) - the editor's box the size of what shows in the fight
+    if type(NB.topFlag) == "function" and NB.topFlag() and type(NB.halfBox) == "function" then
+        local _, _, ax = NB.halfBox()
+        return 2 * (NB.DX + ax), 2 * NB.OFF + NB.B
+    end
+    return 2 * NB.DX + 2 * NB.OFF + NB.B, 2 * NB.OFF + NB.B
+end
 NB.lay = {
     id = "nbar", sn = NB.S_MIN, sx = NB.S_MAX, ss = NB.S_STEP,
     -- the stock bar's centre (no entry), else the default spot's
@@ -3080,6 +3097,10 @@ function NB.glyph(b)
     local key = NB.KEY_OF[b.p]
     local lay = NB.layout()
     if b.alay ~= lay then NB.anchor(b, lay) end          -- nbar2: the faces follow the ABXY location
+    if b.noBadge then                                    -- nbar12: Party mode's pick arrows wear no badge (the band's noBadge)
+        if b.gkey ~= false then b.gkey = false; b.glyph:Hide(); b.word:SetText(""); if b.gdisc then b.gdisc:Hide() end end
+        return
+    end
     local down = b.down == true
     if b.gkey == key and b.glay == lay and b.gdown == down then return end
     b.gkey, b.glay, b.gdown = key, lay, down
@@ -3122,22 +3143,45 @@ function NB.refresh()
     end
     f.layer:SetText((NB.top.shown or NB.top.edit) and "" or (NB.LAYER_WORD[set] or ""))  -- nbar7: the chips say it in the Wings
     if NB.top.shown or NB.top.edit then NB.topChips(set) end
+    NB.swapT = readCV("GamepadSwapTargetModifiers")                                    -- nbar12: the plates' pair (a read only)
+    -- nbar12 THE PARTY LAYER (ruling C): the Wings shown with Party mode on carry what the band would show in Party mode
+    local party = (NB.top.shown and NB.partyOn()) and NB.partyCtx() or nil
+    NB.party = party
+    NB.topChords(party)
     if NB.setWas ~= nil and NB.setWas ~= set then NB.focusAt = SN(GetTime) end   -- nbar11: the layer changed: the focus glow flashes
     NB.setWas = set
     NB.stats = { ok = 0, fail = 0, ch = 0, dim = 0, n = 0 }
     NB.shown = {}
     for p = 1, 8 do
         local b = f.btn[p]
-        local e = NB.resolve(set, p, lay, page, fightSw, dpadOn, hasTarget, form)
+        local pic = party and NB.partyPic(p, set, party) or nil
+        local e
+        if pic and pic.kind == "fixed" then
+            -- the game's own button there on EVERY layer (B's Back; Y's Inspect before a cfg): the base layer's fixed slot, as the router's
+            -- party pad keeps it whatever trigger is held
+            local base = layers[NB.LAYER_OF[1]]
+            e = slotEntry(base and base.d and base.d[p] or nil, hasTarget)
+        elseif pic then e = pic
+        else e = NB.resolve(set, p, lay, page, fightSw, dpadOn, hasTarget, form) end
+        b.noBadge = pic ~= nil and pic.noBadge == true
         NB.glyph(b)
         local st = nil
-        if e.kind == "slot" then st = buttonState(e.d, combat, hasTarget)
+        if pic and pic.kind == "spell" and e.id then
+            -- the party spell on the PICKED member: its own usable / mana; dim by PartyStrip.lit (grey, the ring disabled); range = the
+            -- picked member's (PadMap's rng), never the target's
+            local o = spellState(e.id, false) or {}
+            st = { u = pic.dim and 0 or o.u, m = (not pic.dim) and o.m or nil, r = (party.rng == false) and 0 or nil, ch = o.ch, cnt = o.cnt }
+        elseif e.kind == "slot" then st = buttonState(e.d, combat, hasTarget)
         elseif e.kind == "spell" and e.id then st = spellState(e.id, hasTarget) end
         if e.kind == "empty" or not NB.paint(b.icon, e.icon) then
             b.icon:Hide()
         else
             b.icon:Show()
         end
+        -- nbar12: an arrow's turn (up / down from the forward arrow) and the dimmed moves; set only on a change
+        local rot, ia = (pic and pic.rot) or 0, (pic and pic.alpha) or 1
+        if b.rot ~= rot then b.rot = rot; pcall(b.icon.SetRotation, b.icon, rot) end
+        if b.ia ~= ia then b.ia = ia; pcall(b.icon.SetAlpha, b.icon, ia) end
         NB.tint(b, st)
         local route = NB.cool(b, e, st)
         if route then NB.stats.n = NB.stats.n + 1 end
@@ -3182,6 +3226,7 @@ function NB.tick(el)
     local set = (bu == false) and 1 or NB.heldSet()
     local held = (bu == false) and 0 or (NB.held or 0)
     if held ~= (NB.heldWas or 0) then NB.heldWas = held; pcall(NB.pressLook, held) end     -- nbar11: the pressed rings at once
+    if NB.top.shown or NB.top.edit then pcall(NB.topPlates, (bu ~= false) and NB.sh or nil, set ~= 1) end  -- nbar12: the L / R plates
     if NB.focusAt then pcall(NB.focusTick) end
     if set ~= NB.set or NB.accS >= NB.STATE_S then
         NB.accS = 0
@@ -3253,10 +3298,29 @@ end
 -- hides; a reversal mid-way goes on from where it is. No lane (the joined bar above the HUD, a placed spot over something): today's fade
 -- in + rise 24 px. With the Nintendo bar already shown out of combat ("Controller UI = Nintendo") the bar GLIDES from its spot to the
 -- wings and back; a re-fit glides IN_S. The top chat strip shown: the bar dips to 35 % alpha instead of moving. In the top layout editor
--- (out of combat) the bar shows at its piece's spot so it can be placed. Party mode: no Wings (NB.topSwitch; the band stays below).
+-- (out of combat) the bar shows at its piece's spot so it can be placed. Party mode (nbar12): the Wings in its fights only, the Party
+-- layer on them (NB.topSwitch, NB.partyPic).
 -- LIMITS: display only - plain frames, EnableMouse(false), no secure template, anchored to UIParent and our own frames only; nothing of
 -- the game's moved, shown or hidden (the stock bar keeps whatever its own switch says, and is an obstacle when shown); no SetBinding /
 -- CVar / macro / action-slot write; no secret compared (every rect read through WC.isPlain; the game's never in a fight).
+-- nbar12 THE PLATES AND THE PARTY LAYER (the user's rulings 2026-11-22, after the shots):
+-- (A) "ADD L/R PLATES to the top-screen bar, like the bottom band's L/R corner plates (with ZL/ZR under them)": each half wears the
+-- band's shoulder plate at its outer top (the game's gamepad-targeting-left / -right-shoulder-bg, the -pressed overlay while held, the
+-- targeting picture the held bumpers open - friendly / hostile / shortcuts, swapped with GamepadSwapTargetModifiers: the band's
+-- drawPlate / Blizzard's SetShoulderIcons - and the bumper glyph at its inner bottom corner), the ZL / ZR chip moved under it, Party
+-- mode's chord row (the trigger's three party spells) under that. Atlas refused -> a dark plate with "L" / "R", gold while held. The
+-- half box grows 16 units outward (221 x 185); the solver is unchanged (it shrinks before it moves), so the wider bar never covers the
+-- HUD or a reserved game frame. LB / RB keep the game's targeting (their pictures say so) in Party mode too: the party spells ride ZL /
+-- ZR, as on the band.
+-- (C) "It should stay at the top in party mode but the party bars should fill the area": Party mode no longer keeps the Wings off -
+-- in a FIGHT (the lockdown or the player in combat; never an attack armed before the pull: Party mode has no takeover, so the app does
+-- not move then) they show as in any fight and carry the PARTY layer (NB.partyPic, PartyStrip's rules): the D-pad = the pick's moves
+-- (the game's arrows, dimmed where the pick cannot go, no badge), A / X / Y = the Controller room's Party spells on the held trigger's
+-- layer (Y in a fight: its In combat spell, else Smart Y's pick for the picked member, else Target), B = the game's Back, both triggers =
+-- nothing; lit / dim as the band (not learned, dead = res only, alive = no res), range red off the picked member's own range. The cfg is
+-- the LAST one PadMap sent (m185 cfgLast: never the spellbook walk in a fight). A Select press mid-fight swaps the layer in place and
+-- re-fits against our frames (Hub's rows and its Select tab join the HUD block while Party mode is on). Display only, as ever: every
+-- cast, nav and toggle stays PadMap's secure party pad.
 -- nbar11 COMBAT SAFETY OF THE SLIDE: the Wings are insecure, display-only frames, so their motion in a fight is a per-frame SetPoint /
 -- SetScale / SetAlpha on WowCompanionNintendoBar (our own frame, parented and anchored to UIParent only - never to a protected frame,
 -- so nothing protected joins its anchor family) and SetAtlas / SetVertexColor on our own textures; no AnimationGroup (nothing on the
@@ -3270,7 +3334,13 @@ end
 NB.TOP = { HOLD_IN = 0.06, IN_S = 0.26, OUT_S = 0.20, RISE = 24, KS = { 1, 0.9, 0.8 }, KJ = { 1, 0.8 }, KG = { { 0.7, 0.4 }, { 0.55, 0.4 }, { 0.55, 0 } }, GAP = 34, MARGIN = 24, STEP = 24, RAISE_MAX = 300, FLOOR = 16, DIP = 0.35,
            REFIT_S = 0.5, SOLVE_S = 5, FLAG_S = 0.5, BAND = { x = 720, y = 24, w = 480, h = 154 },
            -- one half, in the bar's own units: the diamond (2 OFF + B), the ZL / ZR chip outside it, the two swing lines under it
-           CHIP_W = 40, CHIP_H = 28, CHIP_GAP = 4, SW_GAP = 8, SW_H = 6, SW_SEP = 4 }
+           CHIP_W = 40, CHIP_H = 28, CHIP_GAP = 4, SW_GAP = 8, SW_H = 6, SW_SEP = 4,
+           -- nbar12: the outer column (OUTER_W wide, PLATE_GAP past the diamond): the L / R plate (the game atlas's own 50 x 45) at the top,
+           -- the chip CHIP_GAP under it, Party mode's chord row (three round icons CHORD across, CHORD_GAP apart) CHORD_SEP under that; the
+           -- plate's bumper glyph at its inner bottom corner (PLATE_GX in, PLATE_GY down from its centre); Hub's party rows' drawn rim (the
+           -- rings and the chevron past each row's frame) while Party mode is on
+           PLATE_W = 50, PLATE_H = 45, PLATE_GAP = 6, OUTER_W = 54, CHORD = 16, CHORD_GAP = 3, CHORD_SEP = 4, PLATE_GX = 15, PLATE_GY = -13.5,
+           HUB_RIM = 12 }
 NB.top = { want = false, shown = false, edit = false, t = 0, dir = 0, form = "fade", solveAcc = 0, gameAcc = 0, game = {}, gameAt = nil,
            frozen = false, dirty = true, gameDirty = true, spot = nil, cur = nil, from = nil, mt = 1, alpha = 1, key = nil, n = 0, reads = 0, gameReads = 0 }
 NB.hx, NB.hy = { -NB.DX, NB.DX }, { 0, 0 }
@@ -3319,18 +3389,28 @@ end
 -- alpha 0.4 at rest and 1 on every layer flash) reached 15 units past the diamond on its top and its inner side, and the held ZL / ZR
 -- disc (CHIP_H + 8 round the chip) 4 above it - the solver kept only the diamond clear of the HUD, so the glow could flash over it.
 -- NB.halfArt gives the drawn reach on each side; the box is the larger of it and the diamond / chip / swing-line layout
-function NB.halfArt()
+-- nbar12 THE OUTER COLUMN (one half, from its diamond's centre, x outward, y up): the plate's, the chip's and the chord row's centres
+function NB.outerGeo()
     local T = NB.TOP
     local d2 = NB.OFF + NB.B / 2
+    local x = d2 + T.PLATE_GAP + T.OUTER_W / 2                                  -- 106
+    local plateY = d2 - T.PLATE_H / 2                                            -- +50.5: its top level with the diamond's top slot
+    local chipY = plateY - T.PLATE_H / 2 - T.CHIP_GAP - T.CHIP_H / 2             -- +10
+    local chordY = chipY - T.CHIP_H / 2 - T.CHORD_SEP - T.CHORD / 2              -- -16
+    return { x = x, plateY = plateY, chipY = chipY, chordY = chordY, chordDX = T.CHORD + T.CHORD_GAP }
+end
+function NB.halfArt()
+    local T = NB.TOP
     -- the outermost slot's glow (a slot sits OFF from the centre on each axis; a held one 2 lower)
     local glow = NB.OFF + math.max(NB.B, NB.BC) / 2 + NB.FOCUS / 2
     local disc = (T.CHIP_H + 8) / 2
-    local chipX, chipY = d2 + T.CHIP_GAP + T.CHIP_W / 2, d2 - T.CHIP_H / 2       -- NB.topDeco's chip centre (outward, up)
+    local g = NB.outerGeo()                                                      -- NB.topDeco's places (outward, up)
     return {
-        up = math.max(glow, chipY + math.max(T.CHIP_H / 2, disc)),
-        down = glow + 2,
+        up = math.max(glow, g.plateY + T.PLATE_H / 2, g.chipY + math.max(T.CHIP_H / 2, disc)),
+        down = math.max(glow + 2, -(g.chordY - T.CHORD / 2)),
         inner = glow,
-        outer = math.max(glow, chipX + math.max(T.CHIP_W / 2, disc)),
+        -- (the plate, the chip and its held disc, the chord row's outer icon: always counted, so a Party toggle never resizes the bar)
+        outer = math.max(glow, g.x + T.PLATE_W / 2, g.x + math.max(T.CHIP_W / 2, disc), g.x + g.chordDX + T.CHORD / 2),
     }
 end
 function NB.halfBox()
@@ -3539,7 +3619,14 @@ function NB.topOurs()
         local fs = { prd.f, prd.petL, type(prd.box) == "table" and prd.box.host or nil, host("hud") }
         for i = 1, 4 do live = NB.union(live, NB.frameRect(fs[i], true)) end        -- (holes: not ipairs)
         if pf and pf.at == "hud" and type(pf.frames) == "table" then
-            for _, f in pairs(pf.frames) do live = NB.union(live, NB.frameRect(f, true)) end
+            -- nbar12: Party mode's rows (the Wings show in Party mode now): each row with its drawn rim (the rings past its frame), and
+            -- Hub's Select tab at the grid's left edge - read at any alpha, the rows can reach past Trail's block
+            local rim = NB.TOP.HUB_RIM
+            for _, f in pairs(pf.frames) do
+                local r = NB.frameRect(f, true)
+                if r then live = NB.union(live, { x = r.x - rim, y = r.y - rim, w = r.w + 2 * rim, h = r.h + 2 * rim }) end
+            end
+            if type(pf.tab) == "table" then live = NB.union(live, NB.frameRect(pf.tab, true)) end
         end
         local geo = nil
         if type(prd.lay.block) == "function" then
@@ -3720,8 +3807,12 @@ function NB.partyOn()
     local ok, v = pcall(fn)
     return ok and v == true
 end
-function NB.topSwitch()
-    if NB.partyOn() then return false end
+-- nbar12 (the user's ruling C, 11-22: "It should stay at the top in party mode"): Party mode on -> the fight alone (the lockdown or the
+-- player in combat): the Wings carry the Party layer up top while the app's band slides away on the same fight word (TopCombatBar.
+-- partyTop); out of a fight nothing (no takeover in Party mode: an attack armed before the pull keeps the band below, so no Wings)
+function NB.topSwitch(party)
+    if party == nil then party = NB.partyOn() end
+    if party then return S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true end
     -- nbar8: in a fight the Wings stay to its end (B's give-back drops the bottom grow's word, never the top screen's bar)
     if S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true then return true end
     if type(WC.tgGrown) == "function" then
@@ -3781,6 +3872,45 @@ function NB.topParts(f)
         c:Hide()
         f.chip[i] = c
     end
+    -- nbar12 THE L / R PLATES (ruling A: "like the bottom band's L/R corner plates (with ZL/ZR under them)"): one per half at its outer
+    -- top - the game's shoulder plate, its -pressed overlay while held, the targeting picture, the bumper glyph; refused: a dark plate
+    -- with "L" / "R", gold while held. Under the chip: Party mode's chord row (three round icons, masked like the faces)
+    f.plate, f.chord = {}, {}
+    for i = 1, 2 do
+        local p = CreateFrame("Frame", nil, f)
+        pcall(p.EnableMouse, p, false)
+        p:SetSize(T.PLATE_W, T.PLATE_H)
+        p.side = (i == 1) and "left" or "right"
+        p.bg = p:CreateTexture(nil, "BACKGROUND")
+        p.bg:SetAllPoints(p)
+        p.bgOn = NB.atlasOn(p.bg, "gamepad-targeting-" .. p.side .. "-shoulder-bg")
+        if not p.bgOn then pcall(p.bg.SetColorTexture, p.bg, 0.08, 0.07, 0.05, 0.8) end
+        p.held = p:CreateTexture(nil, "BORDER")
+        p.held:SetAllPoints(p)
+        p.heldOn = p.bgOn and NB.atlasOn(p.held, "gamepad-targeting-" .. p.side .. "-shoulder-pressed")
+        p.held:Hide()
+        p.icon = p:CreateTexture(nil, "ARTWORK")
+        p.icon:SetAllPoints(p)
+        p.icon:Hide()
+        p.glyph = p:CreateTexture(nil, "OVERLAY")
+        p.glyph:SetSize(NB.GLYPH, NB.GLYPH)
+        p.glyph:SetPoint("CENTER", p, "CENTER", (i == 1) and T.PLATE_GX or -T.PLATE_GX, T.PLATE_GY)     -- the inner bottom corner
+        p.glyph:Hide()
+        p.word = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        p.word:SetPoint("CENTER", p.glyph, "CENTER", 0, 0)
+        p.word:SetText("")
+        p:Hide()
+        f.plate[i] = p
+        f.chord[i] = {}
+        for j = 1, 3 do
+            local t = f:CreateTexture(nil, "ARTWORK")
+            t:SetSize(T.CHORD, T.CHORD)
+            local m = NB.maskFor(f, t, true)
+            if m then pcall(t.AddMaskTexture, t, m) else pcall(t.SetTexCoord, t, 0.08, 0.92, 0.08, 0.92) end
+            t:Hide()
+            f.chord[i][j] = t
+        end
+    end
     local dw = 2 * NB.OFF + NB.B
     for i = 1, 2 do
         local b = CreateFrame("Frame", nil, f)
@@ -3804,9 +3934,19 @@ function NB.topDeco()
     local f, T = NB.f, NB.TOP
     if not (f and f.chip) then return end
     local d2 = NB.OFF + NB.B / 2
-    local cx, cy = d2 + T.CHIP_GAP + T.CHIP_W / 2, d2 - T.CHIP_H / 2
-    pcall(f.chip[1].ClearAllPoints, f.chip[1]); f.chip[1]:SetPoint("CENTER", f, "CENTER", NB.hx[1] - cx, NB.hy[1] + cy)
-    pcall(f.chip[2].ClearAllPoints, f.chip[2]); f.chip[2]:SetPoint("CENTER", f, "CENTER", NB.hx[2] + cx, NB.hy[2] + cy)
+    -- nbar12: the outer column - the plate at the top, the chip under it, the chord row under that (NB.outerGeo)
+    local g = NB.outerGeo()
+    for i = 1, 2 do
+        local sgn = (i == 1) and -1 or 1
+        local x, y = NB.hx[i] + sgn * g.x, NB.hy[i]
+        pcall(f.chip[i].ClearAllPoints, f.chip[i]); f.chip[i]:SetPoint("CENTER", f, "CENTER", x, y + g.chipY)
+        local p = f.plate and f.plate[i]
+        if p then pcall(p.ClearAllPoints, p); p:SetPoint("CENTER", f, "CENTER", x, y + g.plateY) end
+        for j = 1, 3 do
+            local t = f.chord and f.chord[i] and f.chord[i][j]
+            if t then pcall(t.ClearAllPoints, t); t:SetPoint("CENTER", f, "CENTER", x + (j - 2) * g.chordDX, y + g.chordY) end
+        end
+    end
     for i = 1, 2 do
         local b = f.sw[i]
         pcall(b.ClearAllPoints, b)
@@ -3829,6 +3969,158 @@ function NB.topChips(set)
             end
             pcall(c.g.SetAlpha, c.g, c.lit and 1 or 0.55)
             if c.lit then c.disc:Show() else c.disc:Hide() end
+        end
+    end
+end
+-- nbar12 THE PLATES' PICTURES (the band's drawPlate, Blizzard's SetShoulderIcons): the shoulder layer the held bumpers open - both =
+-- shortcuts, LB = friendly, RB = hostile (the other way round with GamepadSwapTargetModifiers) - and its pair, swapped too; a trigger
+-- held: the base pair (the triggers' layers win the bar). Pure. -> the left plate's picture, the right one's
+function NB.plateKinds(lb, rb, swap, trig)
+    local layer = "n"
+    if not trig then
+        if lb and rb then layer = "sc"
+        elseif lb then layer = swap and "ho" or "fr"
+        elseif rb then layer = swap and "fr" or "ho" end
+    end
+    local l, r = "friendly", "hostile"
+    if layer == "fr" then l, r = "friendly", "shortcuts"
+    elseif layer == "ho" then l, r = "shortcuts", "hostile"
+    elseif layer == "sc" then l, r = "shortcuts", "shortcuts" end
+    if swap then l, r = r, l end
+    return l, r
+end
+NB.PLATE_ICON = { friendly = "gamepad-targeting-friendly", hostile = "gamepad-targeting-hostile", shortcuts = "gamepad-targeting-shortcuts" }
+-- the bumper's glyph: the Switch shoulder letters (the Nintendo layout), the xbox bumpers (plain); [pressed] the held look
+function NB.plateGlyph(i, pressed, lay)
+    if (lay or NB.layout()) == "plain" then return "gamepad-xbox1-trigger-" .. ((i == 1) and "lb" or "rb") .. (pressed and "-down" or "-normal") end
+    return "gamepad-switch-128x-shoulder-" .. ((i == 1) and "l" or "r") .. (pressed and "-pressed" or "-normal")
+end
+-- the plates now: [sh] the held bumpers ({ l, r }; nil = none: a window owns the pad), [trig] a trigger held. SetAtlas only on a change
+function NB.topPlates(sh, trig)
+    local f = NB.f
+    if not (f and f.plate) then return end
+    sh = sh or {}
+    local kl, kr = NB.plateKinds(sh.l == true, sh.r == true, NB.swapT == true, trig == true)
+    local lay = NB.layout()
+    for i = 1, 2 do
+        local p = f.plate[i]
+        local held = (i == 1 and sh.l == true) or (i == 2 and sh.r == true)
+        local kind = (i == 1) and kl or kr
+        local key = kind .. (held and "+" or "-") .. lay
+        if p.key ~= key then
+            p.key, p.kind, p.down = key, kind, held
+            p.iconOn = NB.atlasOn(p.icon, NB.PLATE_ICON[kind])
+            if p.iconOn then p.icon:Show() else p.icon:Hide() end                -- (refused: the plate and its glyph alone)
+            if p.heldOn then
+                if held then p.held:Show() else p.held:Hide() end
+            elseif not p.bgOn then
+                if held then pcall(p.bg.SetColorTexture, p.bg, 0.45, 0.34, 0.08, 0.9) else pcall(p.bg.SetColorTexture, p.bg, 0.08, 0.07, 0.05, 0.8) end
+            end
+            local g = nil
+            for _, a in ipairs({ NB.plateGlyph(i, held, lay), held and NB.plateGlyph(i, false, lay) or false }) do
+                if a and NB.atlasOn(p.glyph, a) then g = a; break end
+            end
+            p.gatlas = g
+            if g then p.glyph:Show(); p.word:SetText("") else p.glyph:Hide(); p.word:SetText((i == 1) and "L" or "R") end
+            if held then p.word:SetTextColor(1, 0.82, 0) else p.word:SetTextColor(0.85, 0.85, 0.85) end
+        end
+    end
+end
+
+-- nbar12 THE PARTY LAYER'S CONTEXT (reads only, in fights too): the cfg PadMap SENT last (m185 cfgLast - never cfg() / PM.resolve in a
+-- fight: that walks the spellbook), the entries in pick order (you, your pet while out, party1..4), the pick, its unit, dead (a plain
+-- true only; anything else = alive), its range (PadMap's rng: true / false / nil), the moves. nil = no PadMap party export
+function NB.partyCtx()
+    local pm = rawget(WC, "padMap")
+    local p = type(pm) == "table" and pm.party or nil
+    if type(p) ~= "table" then return nil end
+    local function call(fn, ...)
+        if type(fn) ~= "function" then return nil end
+        local ok, v = pcall(fn, ...)
+        if ok then return v end
+        return nil
+    end
+    local cfg = call(p.cfgLast)
+    local units = call(p.units)
+    if type(units) ~= "table" or #units == 0 then units = { "player" } end
+    local bx = call(p.box)
+    local n = #units
+    local box = math.floor(num(type(bx) == "table" and bx.box or nil) or 1)
+    box = math.max(1, math.min(n, box))
+    local u = units[box]
+    local dead = type(u) == "string" and S(UnitIsDeadOrGhost, u) == true or false
+    local rng = nil
+    if type(u) == "string" then rng = call(p.rng, u) end
+    if rng ~= true and rng ~= false then rng = nil end                  -- (only a plain answer counts)
+    return { cfg = type(cfg) == "table" and cfg or nil, units = units, n = n, box = box, u = u, pet = units[2] == "pet", dead = dead,
+             rng = rng, nav = p.nav }
+end
+-- the pick's move [dir] ("left" / "up" / "right" / "down") goes somewhere (PadMap's nav, the PARTYPAD snippet's own body)
+local function partyMoves(ctx, dir)
+    if type(ctx.nav) ~= "function" then return false end
+    local ok, nb = pcall(ctx.nav, ctx.n, ctx.box, dir, ctx.pet)
+    return ok and type(nb) == "number" and nb ~= ctx.box
+end
+NB.PARTY_DIR = { "left", "up", "right", "down" }
+NB.PARTY_FACE = { [5] = "x", [6] = "y", [7] = "b", [8] = "a" }
+NB.PARTY_PRE = { "", "zl", "zr", "" }
+-- a party spell's lit / dim on the picked member (PartyStrip.lit): not learned dim; dead: only a res lit; alive: a res dim
+function NB.partyLit(sp, dead)
+    if type(sp) ~= "table" or sp.k == false then return false end
+    if dead then return sp.res == true end
+    return sp.res ~= true
+end
+-- WHAT POSITION [p] SHOWS IN PARTY MODE on layer [set] (1 none, 2 ZL, 3 ZR, 4 both) for [ctx] (NB.partyCtx) - PartyStrip.face /
+-- arrows. Pure. -> an entry: "icon" (the arrows: rot / alpha / noBadge; Target), "spell" (id, icon, dim), "empty", or "fixed" (the
+-- game's own button there: B's Back, Y's Inspect with no cfg)
+function NB.partyPic(p, set, ctx)
+    if p <= 4 then
+        local dir = NB.PARTY_DIR[p]
+        local moves = partyMoves(ctx, dir)
+        local icon = (dir == "left") and "atlas:common-icon-backarrow" or "atlas:common-icon-forwardarrow"
+        local rot = (dir == "up" and math.pi / 2) or (dir == "down" and -math.pi / 2) or 0
+        return { kind = "icon", icon = icon, rot = rot, alpha = moves and 1 or 0.28, noBadge = true, dir = dir, lit = moves }
+    end
+    local face = NB.PARTY_FACE[p]
+    if face == "b" then return { kind = "fixed" } end                       -- Back, on every layer
+    if set == 4 then return { kind = "empty" } end                          -- both triggers: nothing
+    local cfg = ctx.cfg
+    if cfg == nil then
+        if face == "y" and set == 1 then return { kind = "fixed" } end    -- the game's own Y
+        return { kind = "empty" }
+    end
+    local function spell(sp)
+        if type(sp) ~= "table" or sp.id == nil then return { kind = "empty" } end
+        return { kind = "spell", id = num(sp.id), icon = sp.i, dim = not NB.partyLit(sp, ctx.dead), res = sp.res == true }
+    end
+    if face == "y" and set == 1 then
+        -- in a fight (the Wings show in Party mode only then): the In combat spell, else Smart Y's pick for the picked member, else Target
+        if type(cfg.yc) == "table" and cfg.yc.id ~= nil then return { kind = "spell", id = num(cfg.yc.id), icon = cfg.yc.i, dim = false } end
+        local sy = type(cfg.sy) == "table" and cfg.sy or nil
+        local pick = (sy and sy.on == true and type(sy.pick) == "table" and type(ctx.u) == "string") and sy.pick[ctx.u] or nil
+        if type(pick) == "table" and pick.id ~= nil then return { kind = "spell", id = num(pick.id), icon = pick.i, dim = false, smart = true } end
+        return { kind = "icon", icon = "atlas:gamepad-targeting-friendly", target = true }
+    end
+    local slots = type(cfg.slots) == "table" and cfg.slots or {}
+    return spell(slots[NB.PARTY_PRE[set] .. face])
+end
+-- the ZL / ZR chord rows: in Party mode the trigger's three party spells (zla / zlx / zly, zra / zrx / zry; an Empty place not drawn),
+-- not learned at the band's 130 / 255; out of Party mode hidden
+function NB.topChords(ctx)
+    local f = NB.f
+    if not (f and f.chord) then return end
+    local slots = (ctx and type(ctx.cfg) == "table" and type(ctx.cfg.slots) == "table") and ctx.cfg.slots or nil
+    for i = 1, 2 do
+        local pre = (i == 1) and "zl" or "zr"
+        for j, face in ipairs({ "a", "x", "y" }) do
+            local t = f.chord[i][j]
+            local sp = slots and slots[pre .. face] or nil
+            if NB.top.shown and type(sp) == "table" and sp.i ~= nil and NB.paint(t, sp.i) then
+                pcall(t.SetAlpha, t, (sp.k == false) and (130 / 255) or 1)
+                t:Show()
+            else
+                t:Hide()
+            end
         end
     end
 end
@@ -3872,7 +4164,7 @@ end
 -- the wings start showing / are gone
 function NB.topShow()
     local f = NB.f
-    for i = 1, 2 do f.chip[i]:Show() end
+    for i = 1, 2 do f.chip[i]:Show(); if f.plate then f.plate[i]:Show(); f.plate[i].key = nil end end       -- nbar12: the plates too
     f.layer:SetText("")
     f:Show()
     NB.set = 0
@@ -3882,9 +4174,22 @@ function NB.topHide()
     local f, T = NB.f, NB.top
     T.shown, T.key, T.cur, T.from, T.mt = false, nil, nil, nil, 1
     NB.hx, NB.hy = { -NB.DX, NB.DX }, { 0, 0 }
-    for i = 1, 2 do f.chip[i]:Hide(); f.sw[i]:Hide() end
+    for i = 1, 2 do
+        f.chip[i]:Hide(); f.sw[i]:Hide()
+        if f.plate then f.plate[i]:Hide(); for j = 1, 3 do f.chord[i][j]:Hide() end end                 -- nbar12
+    end
     local lay = NB.layout()
-    for p = 1, 8 do if f.btn[p] then NB.anchor(f.btn[p], lay) end end
+    NB.party = nil
+    for p = 1, 8 do
+        local b = f.btn[p]
+        if b then
+            -- nbar12: out of the Wings no Party layer: the arrows' turn, alpha and the missing badge back to the bar's own
+            if b.noBadge then b.noBadge = false; b.gkey = nil end
+            if b.rot and b.rot ~= 0 then b.rot = 0; pcall(b.icon.SetRotation, b.icon, 0) end
+            if b.ia and b.ia ~= 1 then b.ia = 1; pcall(b.icon.SetAlpha, b.icon, 1) end
+            NB.anchor(b, lay)
+        end
+    end
     if NB.on or T.edit then
         NB.place()
         pcall(f.SetAlpha, f, 1)
@@ -3943,9 +4248,12 @@ function NB.topEdit(flag, combat)
     T.edit = edit
     if edit then
         NB.place(); pcall(f.SetAlpha, f, 1); f:Show(); NB.set = 0; pcall(NB.refresh)
+        -- nbar12: the plates at the halves' places (the joined bar), so the piece shows the Wings' size
+        if f.plate then pcall(NB.topDeco); for i = 1, 2 do f.plate[i]:Show(); f.plate[i].key = nil end end
     elseif not NB.on and not T.shown and f then
         f:Hide()
     end
+    if not edit and f and f.plate and not T.shown then for i = 1, 2 do f.plate[i]:Hide() end end
 end
 -- the driver's tick (every frame): the solve's cadence, the switch, the motion
 function NB.topTick(el)
@@ -3964,7 +4272,15 @@ function NB.topTick(el)
     if flag and not NB.built then pcall(NB.build) end
     -- nbar11: while the bar leaves (shown, the switch off) the spot stays as it was - it slides straight down from where it stands; the
     -- fresh solve (the fight's end marks the game's frames dirty) waits until it is gone
-    local sw = NB.topSwitch()
+    -- nbar12: Party mode on / off (a Select press, in a fight too): re-fit against our frames (Hub's rows join the HUD block), the
+    -- layer redrawn this tick, the focus glow's flash
+    local party = NB.partyOn()
+    if T.party ~= nil and party ~= T.party then
+        T.dirty, T.inKey, NB.set = true, nil, 0
+        NB.focusAt = SN(GetTime)
+    end
+    T.party = party
+    local sw = NB.topSwitch(party)
     local leaving = T.shown and not sw
     if flag and NB.built and not leaving then
         -- the game's frames read again only out of combat, on their events or every SOLVE_S; ours on a change (a layout save, the

@@ -217,6 +217,19 @@ class TopCombatBarTest {
         }
     }
 
+    /** the user's ruling C (11-22): Party mode keeps the Top screen in its FIGHT - only with the Wings live, Party mode on and the fight */
+    @Test fun partyModeKeepsTheTopScreenInItsFight() {
+        val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
+        for (ct in listOf(null, 0, 1)) for (on in listOf(false, true)) for (fighting in listOf(false, true))
+            for (f in HomeLayout.FightBand.values()) {
+                val want = f == HomeLayout.FightBand.TOP && ct == 1 && on && fighting
+                assertEquals("$f ct=$ct on=$on fighting=$fighting", want, TopCombatBar.partyTop(top.copy(fight = f), ct, on, fighting))
+            }
+        // Party mode still never keeps the tap-to-cast bar by the Top screen's rule (its own settings rule), and B is unchanged
+        assertFalse(TopCombatBar.stripStays(top, partyOn = true))
+        assertFalse(TopCombatBar.bShrinks(top, fighting = true, ct = 1))
+    }
+
     private fun addons(): java.io.File = listOf(java.io.File("../companion/app/src/main/assets/companion/addons"),
         java.io.File("companion/app/src/main/assets/companion/addons")).first { it.isDirectory }
 }

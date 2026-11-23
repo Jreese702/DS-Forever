@@ -33,6 +33,16 @@ object TopCombatBar {
     /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow */
     fun honoured(l: HomeLayout, ct: Int?): HomeLayout = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
 
+    /**
+     * PARTY MODE KEEPS THE TOP SCREEN (the user's ruling C, 11-22: "It should stay at the top in party mode but the party bars should fill
+     * the area"): with Top screen [live] and Party mode on ([partyOn]: PartyModel.onLive), the FIGHT ([fighting]: the add-on's fight word,
+     * never an attack armed before the pull - Party mode has no takeover, so the app would not move then) slides the band up as any Top
+     * fight does, the add-on's Wings carry the Party-mode layer on the top screen (ActionBar nbar12: the same fight-only switch), and the
+     * party module grows up into the freed strip ([HomeLayoutSolver.away], PartyLayout.Mode.FIGHT_TOP). Nothing is sent in a fight: the
+     * add-on switches by itself, as ever
+     */
+    fun partyTop(l: HomeLayout, ct: Int?, partyOn: Boolean, fighting: Boolean): Boolean = live(l, ct) && partyOn && fighting
+
     sealed class Act {
         /** `ct` already says the layout's choice */
         object Matched : Act()

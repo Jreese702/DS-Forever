@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m184"               -- bump on every change; m184 THE D-PAD ORDER (test build 1518 build 3, the user's ruling 2026-11-21: the top bar's D-pad icons are apps - dragging one onto another D-pad spot swaps what those two directions open): a per-character ORDER of the DS toolbar's four directions, WowCompanionSpellsDB.rbp[charKey] = 1 + the order's rank 0-23 over ROOMBAR's words (chat, radial, map, home; 0 = none: rbm's table as before), set by Book b77's page-3 code 24 then the rank (R.dpadPerm), read and written ONLY under whoKey() (nil: refused, "no character"), BOUND OUT OF COMBAT ONLY (routerBind; a change in a fight is bound by the router's next out-of-combat check) - only the router D-pad buttons' "wc-roombar" attribute changes, through the override bindings the router already owns (no SetBinding, no CVar, no macro, nothing protected in a fight); each order's table is built once (R.RB_P: rank 0 IS ROOMBAR and 14 IS R.RB_M, so the by-reference checks - the re-bind test, `m` - keep working); the mirror bit's codes 20 / 21 clear rbp (0, never nil: m180's sync rule), so they always win back; the dpad state says pp = 1 (the app sends any order only then) and `d` stays the table last bound; "rbp" joins the layouts reset; m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m185"               -- bump on every change; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; m184 THE D-PAD ORDER (test build 1518 build 3, the user's ruling 2026-11-21: the top bar's D-pad icons are apps - dragging one onto another D-pad spot swaps what those two directions open): a per-character ORDER of the DS toolbar's four directions, WowCompanionSpellsDB.rbp[charKey] = 1 + the order's rank 0-23 over ROOMBAR's words (chat, radial, map, home; 0 = none: rbm's table as before), set by Book b77's page-3 code 24 then the rank (R.dpadPerm), read and written ONLY under whoKey() (nil: refused, "no character"), BOUND OUT OF COMBAT ONLY (routerBind; a change in a fight is bound by the router's next out-of-combat check) - only the router D-pad buttons' "wc-roombar" attribute changes, through the override bindings the router already owns (no SetBinding, no CVar, no macro, nothing protected in a fight); each order's table is built once (R.RB_P: rank 0 IS ROOMBAR and 14 IS R.RB_M, so the by-reference checks - the re-bind test, `m` - keep working); the mirror bit's codes 20 / 21 clear rbp (0, never nil: m180's sync rule), so they always win back; the dpad state says pp = 1 (the app sends any order only then) and `d` stays the table last bound; "rbp" joins the layouts reset; m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -7786,6 +7786,8 @@ local function partyMode()
                         -- m131: the entries in pick order (you, the pet while out, party1..4) and the moves over them
                         units = function() return PM.units() end, nav = function(n, box, dir, pet) return OV.partyNav(n, box, dir, pet) end,
                         slots = PM.SLOTS, cols = PM.COL,
+                        -- m185: the partycfg last sent (nil before the first): ActionBar nbar12's Party layer in fights (no resolve there)
+                        cfgLast = function() return PM.cfgLast end,
                         pbRemove = function(k) return PM.pbRemove and PM.pbRemove(k) end, padd = function(id) return PM.padd and PM.padd(id) end }
 
     -- ---------------------------------------------------------------- Smart Y's party buffs (3.6, 4.5): picks per unit, the list's ops
@@ -7923,7 +7925,9 @@ local function partyMode()
         return c
     end
     function PM.sendCfg(why, noPush)
-        WC.send(WC.encode({ type = "partycfg", v = PV, c = PM.cfgNow() }))
+        local c = PM.cfgNow()
+        PM.cfgLast = c                                                  -- m185: the Wings' Party layer reads the one sent (cfgLast)
+        WC.send(WC.encode({ type = "partycfg", v = PV, c = c }))
         if not noPush then WC.push() end
     end
 

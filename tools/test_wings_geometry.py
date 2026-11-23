@@ -18,8 +18,12 @@ Checks:
     0.8, the grid at 0.7 then 0.55 in the lower 60 %, then 0.55 anywhere); the other axes (stock scale 0.8 / 1 / 1.2, the piece's size 70 / 100 / 150, the target
     bar / compass / party column on / off, the reserved frames on / off) over a spread of HUD states.
   2b WHAT IS DRAWN (the 11-22 review: the focus glow reached 15 units past the solved box): every slot's focus glow, a held slot's
-    2-unit drop, the glyph badges, the ZL / ZR chip with its gold disc and the swing lines - computed from the bar's constants and its
-    placement code, not NB.halfBox - inside the solved boxes and >= MARGIN from every resolved HUD frame.
+    2-unit drop, the glyph badges, the L / R plate with its bumper glyph (nbar12), the ZL / ZR chip under it with its gold disc, Party
+    mode's chord row and the swing lines - computed from the bar's constants and its placement code (NB.outerGeo), not NB.halfBox -
+    inside the solved boxes and >= MARGIN from every resolved HUD frame.
+  1b nbar12 PARTY MODE'S ROWS (the Wings show in Party mode's fights now): Hub's grid under the HUD (its rows from Trail's P.partyGeo at
+    Hub's own PF constants, two columns, with the rings' rim) and its Select tab at the grid's left edge join the HUD block as NB.topOurs
+    reads them; the Wings (boxes and art) >= MARGIN from every row and the tab, never the case-5 fallback, in every Party state.
   3 THE SLIDE NEVER CROSSES IT: where the solve says `lane`, the slide (from wholly below the screen's bottom edge up to the spot on
     NB.easeOut, sampled every 1/60 s) rises monotonically and never touches a HUD frame.
   4 THE INPUTS: NB.topOurs unions P.lay.block with the live frames read at ANY alpha (the HUD faded out of combat still counts).
@@ -42,6 +46,7 @@ from lupa import lua51 as lupa  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ADDONS = os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons")
 SAFETY = os.path.join(ADDONS, "WowCompanion", "Safety.lua")
+HUB_SRC = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
 AB = os.path.join(ADDONS, "WowCompanion", "ActionBar.lua")
 NBT = open(os.path.join(ROOT, "tools", "test_nintendo_bar.py"), encoding="utf-8").read()
 NB_STUB = re.search(r"\nSTUB = r'''(.*?)'''", NBT, re.S).group(1)
@@ -331,8 +336,9 @@ def problems(r, hud_frames, obst, s):
 
 def art_rects(NBL, r):
     """the 11-22 review: what each half DRAWS, in px, from the bar's own constants and NB.anchor / NB.button / NB.topDeco's placement
-    (not NB.halfBox): every slot's focus glow (slot + FOCUS, centred; a held slot 2 units lower), its glyph badge, the ZL / ZR chip with
-    its held gold disc (CHIP_H + 8), the two swing lines under the faces' diamond. -> {1: [rects], 2: [rects]} (top-left origin)"""
+    (not NB.halfBox): every slot's focus glow (slot + FOCUS, centred; a held slot 2 units lower), its glyph badge, nbar12's L / R plate
+    with its bumper glyph, the ZL / ZR chip under it with its held gold disc (CHIP_H + 8), Party mode's chord row, the two swing lines
+    under the faces' diamond. -> {1: [rects], 2: [rects]} (top-left origin)"""
     NB = NBL.globals().WowCompanion.nbar
     T = NB.TOP
     s = r["s_used"]
@@ -351,11 +357,23 @@ def art_rects(NBL, r):
                 b = NB.GLYPH / 2 * s
                 rects.append((cx + ga[1] * s - b, cy - gy * s - b, 2 * b, 2 * b))
         sgn = -1 if h == 1 else 1
-        ccx = c["x"] + sgn * (d2 + T.CHIP_GAP + T.CHIP_W / 2) * s
-        ccy = c["y"] - (d2 - T.CHIP_H / 2) * s
+        # nbar12 the outer column (NB.topDeco's places, NB.outerGeo): the plate at the top, the chip under it, the chord row under that
+        g = NB.outerGeo()
+        ox = c["x"] + sgn * g.x * s
+        pcy = c["y"] - g.plateY * s
+        rects.append((ox - T.PLATE_W / 2 * s, pcy - T.PLATE_H / 2 * s, T.PLATE_W * s, T.PLATE_H * s))
+        gb = NB.GLYPH / 2 * s
+        gcx = ox + (-sgn) * T.PLATE_GX * s                      # (toward the bar's middle)
+        gcy = pcy - T.PLATE_GY * s
+        rects.append((gcx - gb, gcy - gb, 2 * gb, 2 * gb))
+        ccx, ccy = ox, c["y"] - g.chipY * s
         hw = max(T.CHIP_W, T.CHIP_H + 8) / 2 * s
         hh = max(T.CHIP_H, T.CHIP_H + 8) / 2 * s
         rects.append((ccx - hw, ccy - hh, 2 * hw, 2 * hh))
+        for j in (1, 2, 3):
+            tx, ty = ox + (j - 2) * g.chordDX * s, c["y"] - g.chordY * s
+            rb = T.CHORD / 2 * s
+            rects.append((tx - rb, ty - rb, 2 * rb, 2 * rb))
         if h == 2:
             dw = (2 * NB.OFF + NB.B) * s
             top = c["y"] + (d2 + T.SW_GAP) * s
@@ -412,6 +430,43 @@ def slide_problems(NBL, r, hud_frames):
     return out
 
 
+def hub_pf():
+    """Hub's party grid constants (hub42's PF), read from Hub.lua itself"""
+    m = re.search(r"local PF = \{(.*?)cells = \{\} \}", HUB_SRC, re.S)
+    out = {}
+    for k, v in re.findall(r"\b([A-Z_]+) = ([0-9.]+)\b", m.group(1)):
+        out.setdefault(k, float(v))
+    return out
+
+
+def hub_rows(st, party, ui_h, lift=False):
+    """nbar12 1b: Hub's grid under the HUD in Party mode (PF.place at P.partyGeo: TOPLEFT at the HP bar's left - BAR_X, the second
+    column COL_W + COL_GAP to the right, PITCH a row; each row BAR_X + w + 30 by NAME_H + HP + GAP + MP 1080-line px) and its Select tab
+    (PF.tabStep: TOPRIGHT TAB_GAP left of the first column's glyph slot, TAB_W wide, the rows' height) - in px from the top-left.
+    party = the rows (each with both columns: the widest grid)"""
+    pf = hub_pf()
+    # (Party mode on as PadMap says it: P.partyGeo follows the on-screen guard's lift the block is laid with)
+    st["L"].execute("WowCompanion.padMap = %s" % ("{ party = { on = function() return true end } }" if lift else "nil"))
+    g = st["G"].WowCompanion.prd.partyGeo()
+    st["L"].execute("WowCompanion.padMap = nil")
+    k = ui_h / 1080.0                                       # Hub's K: UI units per 1080-line px
+    ww = ui_h * 16 / 9
+    gx, gy = g.x / k, g.y / k                               # px from UIParent's CENTER, y up
+    w = min(pf["W_BAR"], pf["COL_W"] - pf["BAR_X"] - 30)
+    rw, rh = pf["BAR_X"] + w + 30, pf["NAME_H"] + pf["HP"] + pf["GAP"] + pf["MP"]
+    rows = []
+    for r in range(party):
+        for side in (0, 1):
+            dx = side * (pf["COL_W"] + pf["COL_GAP"])
+            x = ww / k / 2 + gx - pf["BAR_X"] + dx
+            y = 540 - gy + r * pf["PITCH"]
+            rows.append((x, y, rw, rh))
+    th = party * pf["PITCH"] - (pf["PITCH"] - pf["HP"] - pf["GAP"] - pf["MP"]) + 4
+    tr = ww / k / 2 + gx - (pf["BAR_X"] + pf["TAB_GAP"])
+    tab = (tr - pf["TAB_W"], 540 - gy + (pf["NAME_H"] - 4), pf["TAB_W"], th)
+    return rows, tab
+
+
 def main():
     shots = "--shots" in sys.argv or os.environ.get("WINGS_SHOTS")
     out_dir = sys.argv[sys.argv.index("--shots") + 1] if "--shots" in sys.argv and len(sys.argv) > sys.argv.index("--shots") + 1 else SHOTS
@@ -420,7 +475,8 @@ def main():
     NB = NBG.WowCompanion.nbar
     hb = NBL.eval("WowCompanion.nbar.halfBox")()
     # ------------------------------------------------------------------------------------------------ 1-3 the matrix
-    bad_block, bad_solve, bad_slide, bad_art = [], [], [], []
+    bad_block, bad_solve, bad_slide, bad_art, bad_hub = [], [], [], [], []
+    n_hub = 0
     n_states = n_solves = 0
     cases = {}
     keep = {}
@@ -452,6 +508,24 @@ def main():
             sp = slide_problems(NBL, r, fr)
             if sp:
                 bad_slide.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), sp[:2]))
+            # nbar12 1b: Party mode's rows and tab with the Wings (NB.topOurs unions them, the rows with HUB_RIM, into the HUD block)
+            if party > 0:
+                rows, tab = hub_rows(st, party, ui_h, lift)
+                rim = NB.TOP.HUB_RIM
+                fr_p = dict(fr)
+                for i, rr in enumerate(rows):
+                    fr_p["hubrow%d" % i] = (rr[0] - rim, rr[1] - rim, rr[2] + 2 * rim, rr[3] + 2 * rim)
+                fr_p["hubtab"] = tab
+                rp, obst_p = solve_case(NBL, fr_p, block, s)
+                rp["s_used"] = s * (rp.get("k") or 1)
+                n_hub += 1
+                raw = dict(fr)
+                for i, rr in enumerate(rows):
+                    raw["hubrow%d" % i] = rr
+                raw["hubtab"] = tab
+                pp = problems(rp, raw, obst_p, s) + art_problems(NBL, rp, raw)
+                if pp:
+                    bad_hub.append(((ui_h, pet, up, pips, party, lift, sc, wd, y), pp[:2]))
             key = (ui_h, pet, up, pips, party, lift, sc, wd, y)
             if key in SHOT_STATES:
                 keep[key] = (fr, block, r)
@@ -485,6 +559,11 @@ def main():
     chk("2b. review: what the halves DRAW (the focus glow, a held slot's 2-unit drop, the glyph badges, the ZL / ZR chip's gold disc, "
         "the swing lines) inside the solved boxes and >= 24 px from every resolved HUD frame (%d solves)" % n_solves, not bad_art, bad_art[:3])
     chk("2. ... the bar shrinks before it moves: some states solved at k < 1 (cases seen %s)" % sorted(cases, key=str), any(c for c in cases))
+    chk("1b. nbar12 Party mode: Hub's rows (both columns, their rim in the block) and its Select tab - the Wings' boxes and art >= %d px "
+        "from every one, never the case-5 fallback (%d Party states)" % (MARGIN, n_hub), not bad_hub and n_hub > 0, bad_hub[:3])
+    hw_, hh_, ax_, ay_ = hb
+    chk("2. nbar12: one half 221 x 185 (the outer column to 133), its diamond's centre 133 / 88 from its top-left", (hw_, hh_, ax_, ay_) == (221, 185, 133, 88),
+        (hw_, hh_, ax_, ay_))
     chk("3. the slide (lane true): wholly below the edge at the start, monotonic, never on a HUD frame (sampled every 1/60 s)",
         not bad_slide, bad_slide[:3])
     # ------------------------------------------------------------------------------------------------ 4 NB.topOurs: the block, any alpha

@@ -23,11 +23,12 @@ object HomeLayoutSolver {
      * the page now. [w] x [h] the frame (Home's 1240 x 935 on the Thor), [gap] UiKit.MODULE_GAP; [full] a module full screen (with no
      * takeover); [takeover] the fight's takeover; [card] a focused quest to show ([cardH] its height at Home's scale); [auraOpen] the
      * buff / debuff list open over the map (no card on the map then, b128); [party] the module; [partyOn] Party mode live (R0, F1, F2);
-     * [castHidden] the bar slid away for a fight (cb7: Hide in combat)
+     * [castHidden] the bar slid away for a fight (cb7: Hide in combat); [partyFight] the fight with Party mode on (the add-on's fight word:
+     * In fights = Top screen then lays the band away and the party module fills the strip, [away])
      */
     data class State(val w: Float = 1240f, val h: Float = 935f, val gap: Float = 8f, val full: HomeModule? = null, val takeover: Boolean = false,
                      val card: Boolean = false, val cardH: Float = 0f, val auraOpen: Boolean = false, val party: Party? = null,
-                     val partyOn: Boolean = false, val castHidden: Boolean = false)
+                     val partyOn: Boolean = false, val castHidden: Boolean = false, val partyFight: Boolean = false)
 
     /** the laid page: [boxes] every part, [castSide] the bar's geometric side (CastStripView), [partyTabRight] the Select tab on the
      *  right screen edge (chat on the right), [card] the dock used (F1 may move "Above chat" onto the map), [castHidden] the bar slid
@@ -43,9 +44,15 @@ object HomeLayoutSolver {
      * IN FIGHTS = TOP SCREEN (TopSlide; the user 2026-11-22: "slides up to the top screen", the pick "Chat and map grow up"): the fight's
      * takeover with Top screen lays the band ABOVE the page - its rest size, its bottom 16 px over the frame's top edge - and the columns
      * start at the frame's top gap. TOP reaches the solver only while the add-on's Wings are on (HomeView.layoutNow: TopCombatBar.honoured
-     * lays Grow otherwise); Party mode has no takeover (R0), so the band stays there
+     * lays Grow otherwise). PARTY MODE (the user's ruling C, 11-22: "It should stay at the top in party mode but the party bars should
+     * fill the area"): Party mode has no takeover (R0), so its FIGHT ([State.partyFight]) lays the band away with Top screen too
+     * (TopCombatBar.partyTop) - the Wings carry the Party-mode layer up top - and the party module grows up into the freed strip
+     * ([partyAway]); a module full screen lays its own frame
      */
-    fun away(l: HomeLayout, s: State): Boolean = s.takeover && l.fight == HomeLayout.FightBand.TOP && !s.partyOn
+    fun away(l: HomeLayout, s: State): Boolean = l.fight == HomeLayout.FightBand.TOP &&
+        ((s.takeover && !s.partyOn) || (s.partyOn && s.partyFight && !s.takeover && s.full == null))
+    /** the Party-mode fight's away page ([away] without the takeover) */
+    fun partyAway(l: HomeLayout, s: State): Boolean = away(l, s) && s.partyOn && !s.takeover
     /** the band's rest bottom for [l] (the diamonds or the thin row with its cast strip) */
     fun restBottom(l: HomeLayout): Float =
         if (l.rest == HomeRest.DIAMONDS) 8f + HomeView.REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP else 120f + CastBarPlace.REST_STRIP
@@ -67,6 +74,14 @@ object HomeLayoutSolver {
     }
 
     fun places(l0: HomeLayout, s: State): Result {
+        // THE PARTY BARS FILL THE STRIP (ruling C): the Party-mode fight's page with the band on it first (b1e28506's: the module's rows
+        // FIGHT_ON high, its F1 / F2), then the band away - the module's well from the chat column's new top down to the very foot it had
+        // there, its rows sharing the height (PartyLayout.fillH: no shorter than FIGHT_H, no taller than FILL_MAX_H - a solo or two-row
+        // party gives the rest to the chat); the map's column grows up as in any Top fight
+        if (partyAway(l0, s) && s.party != null) {
+            val ref = places(l0, s.copy(partyFight = false, party = s.party.copy(mode = PartyLayout.Mode.FIGHT_ON)))
+            return solve(l0, s, ref.f1, ref.f2, partyBottom = ref.boxes[HomePart.PARTY]?.b)
+        }
         val first = solve(l0, s, f1 = false, f2 = false)
         if (!HomeLayoutRules.cramped(first, s)) return first
         // F1: an "Above chat" card shows on the map while Party mode is on and the chat's column is too short
@@ -77,7 +92,7 @@ object HomeLayoutSolver {
         return if (HomeLayoutRules.cutsChat(l0)) solve(l0, s, f1 = withF1.f1, f2 = true) else withF1
     }
 
-    private fun solve(l: HomeLayout, s: State, f1: Boolean, f2: Boolean): Result {
+    private fun solve(l: HomeLayout, s: State, f1: Boolean, f2: Boolean, partyBottom: Float? = null): Result {
         val w = s.w; val h = s.h; val g = s.gap
         val chatLeft = l.chatSide == HomeLayout.Side.LEFT
         // a module full screen (not the takeover): the frame is its own (no bar, no party, no card)
@@ -130,14 +145,17 @@ object HomeLayoutSolver {
         // THE PARTY MODULE (m134): the top of the chat's column, its Select tab flush on the screen's OUTER edge of that column
         s.party?.let { p ->
             val c = out.getValue(HomePart.CHAT)
+            // the Party-mode Top fight: the rows fill from the column's top to the reference page's well foot (ruling C)
+            val rowH = if (partyBottom != null) PartyLayout.fillH(PartyModel.rows(p.n.coerceIn(1, PartyModel.MAX_N), p.pet).size, c.t, partyBottom)
+                else PartyLayout.plateH(p.mode)
             if (chatLeft) {
                 val right = c.r - 1f
-                val m = PartyLayout.module(p.mode, p.n, pet = p.pet, top = c.t, left = PartyLayout.EDGE, right = right)
+                val m = PartyLayout.module(p.mode, p.n, pet = p.pet, top = c.t, left = PartyLayout.EDGE, right = right, rowH = rowH)
                 out[HomePart.PARTY] = Box(PartyLayout.EDGE, c.t - PartyModuleView.RISE, right, m.well.b)
                 out[HomePart.CHAT] = c.copy(t = minOf(m.chatTop, c.b - 1f))
             } else {
                 val left = c.l + 1f
-                val m = PartyLayout.module(p.mode, p.n, pet = p.pet, top = c.t, left = left, right = w, tabRight = true)
+                val m = PartyLayout.module(p.mode, p.n, pet = p.pet, top = c.t, left = left, right = w, tabRight = true, rowH = rowH)
                 out[HomePart.PARTY] = Box(left, c.t - PartyModuleView.RISE, w, m.well.b)
                 out[HomePart.CHAT] = c.copy(t = minOf(m.chatTop, c.b - 1f))
             }

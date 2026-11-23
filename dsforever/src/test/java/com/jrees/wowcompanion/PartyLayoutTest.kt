@@ -120,6 +120,40 @@ class PartyLayoutTest {
         assertTrue(PartyLayout.nameRoom(pet, Mode.REST) > 60f)
     }
 
+    /** the user's ruling C (11-22): a Party-mode Top fight's rows fill the freed strip - 88..192 px, the module laid with them */
+    @Test fun theFilledRows() {
+        // the Diamonds: a Party fight's well 234..538 (3 rows) / ..442 (2) / ..346 (1); the band away: the top gap at 8
+        assertEquals((530f - 24f - 16f) / 3f, PartyLayout.fillH(3, 8f, 538f), 0.001f)
+        assertEquals(PartyLayout.FILL_MAX_H, PartyLayout.fillH(2, 8f, 442f), 0f)
+        assertEquals(PartyLayout.FILL_MAX_H, PartyLayout.fillH(1, 8f, 346f), 0f)
+        assertEquals("never under a Party fight's rows", PartyLayout.FIGHT_H, PartyLayout.fillH(3, 300f, 400f), 0f)
+        assertEquals(192f, PartyLayout.FILL_MAX_H, 0f)
+        // rowsFit gives each mode's own rows back exactly at its own well
+        for ((n, pet) in shapes) for (mode in listOf(Mode.REST, Mode.FIGHT_ON, Mode.FIGHT_OFF)) {
+            val m = PartyLayout.module(mode, n, pet)
+            val rows = PartyModel.rows(n, pet).size
+            assertEquals("$mode $n $pet", PartyLayout.plateH(mode), PartyLayout.rowsFit(rows, m.well.h), 0.001f)
+        }
+        // the module with the filled rows: cells that tall, the well to the foot, the chat under it
+        val h = PartyLayout.fillH(3, 8f, 538f)
+        val m = PartyLayout.module(Mode.FIGHT_TOP, 3, top = 8f, rowH = h)
+        assertTrue(m.cells.all { kotlin.math.abs(it.h - h) < 0.001f })
+        assertEquals(538f, m.well.b, 0.01f); assertEquals(546f, m.chatTop, 0.01f)
+        assertEquals("the tab takes its tall layout", false, PartyLayout.tabParts(m.tag).bOnArrow)
+        // a FIGHT_TOP module without rows given: a Party fight's
+        assertEquals(PartyLayout.FIGHT_H, PartyLayout.plateH(Mode.FIGHT_TOP), 0f)
+        // the plate's parts grow with the row: the icon half the plate (48..72), the name 32 from 120 px
+        val tall = b(68, 20, 603, 183)
+        assertEquals(72f, PartyLayout.icon(tall, Mode.FIGHT_TOP).w, 0.01f)
+        assertEquals(48f, PartyLayout.icon(b(68, 20, 603, 108), Mode.FIGHT_TOP).w, 0.01f)
+        assertEquals(60f, PartyLayout.icon(b(68, 20, 603, 140), Mode.FIGHT_TOP).w, 0.01f)
+        assertEquals(32f, PartyLayout.nameSize(Mode.FIGHT_TOP, 163f), 0f)
+        assertEquals(28f, PartyLayout.nameSize(Mode.FIGHT_TOP, 100f), 0f)
+        assertEquals("the other modes unchanged", 28f, PartyLayout.nameSize(Mode.FIGHT_ON, 163f), 0f)
+        assertEquals(24f, PartyLayout.nameSize(Mode.REST, 163f), 0f)
+        assertEquals(48f, PartyLayout.icon(tall, Mode.FIGHT_ON).w, 0f)
+    }
+
     /** the drawn cells are the NAV cells: Down goes to a cell drawn lower, Right to one drawn right in the same row */
     @Test fun navFollowsTheDrawing() {
         for ((n, pet) in shapes) {

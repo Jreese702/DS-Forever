@@ -97,7 +97,7 @@ NORMAL = {1: "chat", 2: "radial", 3: "map", 4: "home"}
 MIRROR = {1: "map", 2: "radial", 3: "chat", 4: "home"}
 
 # ------------------------------------------------------------------------------------------------ 0 the tags and the app's table
-check('local PV = "m184"' in SRC["padmap"] and "m184 THE D-PAD ORDER" in SRC["padmap"] and "m178 MOVABLE HOME'S SWAP" in SRC["padmap"],
+check('local PV = "m185"' in SRC["padmap"] and "m184 THE D-PAD ORDER" in SRC["padmap"] and "m178 MOVABLE HOME'S SWAP" in SRC["padmap"],
       "0. PadMap's tag m184 (m178's swap note kept)")
 check('local BV = "b77"' in SRC["book"] and "b77 THE D-PAD ORDER" in SRC["book"] and "P3[24] = function()" in SRC["book"]
       and "for k = 0, 23 do P2.P4[k]" in SRC["book"], "0. Book's tag b77: code 24 then the rank 0-23")
