@@ -242,6 +242,20 @@ check(start_bind(G) is None, "after the fight, a vendor open: the game's (Game's
 G.execute('MerchantFrame = nil'); settle(G)
 padtab(G, 39, 32)
 
+# ---------------------------------------------------------------- issue 555's side finding: smartModel is no setting (m186)
+S = world()
+S.execute('tick(5)')
+n0 = nsent(S)
+S.execute('WowCompanionSpellsDB.smartModel = { ["Korvash-Realm"] = { hp = 100, mp = 50, t = 1000 } }; tick(5)')
+S.execute('WowCompanionSpellsDB.smartModel["Korvash-Realm"].t = 1010; tick(5)')
+S.execute('WowCompanionSpellsDB.smartModel["Korvash-Realm"].t = 1020; tick(5)')
+sv = [x for x in docs(S, n0, 'svkeep') if x.get('var') == 'WowCompanionSpellsDB']
+check(not sv, "smartModel rewritten every 10 s (Smart Y's reload estimate): NO new svkeep for it (was one every 10 s)", len(sv))
+S.execute('WowCompanionSpellsDB.startOver = "game"; tick(5)')
+sv = [x for x in docs(S, n0, 'svkeep') if x.get('var') == 'WowCompanionSpellsDB']
+check(len(sv) == 1 and '["startOver"]="game"' in sv[-1]['lua'] and 'smartModel' not in sv[-1]['lua'],
+      "a real setting changed: one svkeep, without smartModel", sv and sv[-1]['lua'][:120])
+
 for L in (W, T, F, G):
     check(L.eval('#SPY') == 0 and L.eval('#SNIPERR') == 0, "no spied call, no snippet error", (L.eval('SPY[1]'), L.eval('SNIPERR[1]')))
 
