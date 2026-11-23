@@ -106,13 +106,17 @@ object LogSieve {
         }
         val main = blocks.firstOrNull { lines[it.first].startsWith("\"main\"") } ?: return text
         val ours = blocks.filter { b -> b != main && b.any { k -> OUR_FRAME.containsMatchIn(lines[k]) } }
-        val moved = HashSet<Int>().apply { (listOf(main) + ours).forEach { addAll(it) } }
+        // #153 (11-23): the garbage collector's thread right after the main one (1.0.37's new freeze: the main thread waited in the
+        // runtime, WaitHoldingLocks, most likely on a collection), in short
+        val gc = blocks.firstOrNull { it != main && it !in ours && lines[it.first].startsWith("\"HeapTaskDaemon\"") }
+        val moved = HashSet<Int>().apply { (listOf(main) + ours + listOfNotNull(gc)).forEach { addAll(it) } }
         val out = StringBuilder(head).append("\n[the main thread first, then the threads in our code; the full trace follows]\n")
         // #153: the main thread in short first (its callers in our code within the report's first lines), in full at the end
         val mainLines = main.map { lines[it] }
         val short = compactFrames(mainLines)
         for (l in short) out.append(l).append('\n')
         out.append('\n')
+        gc?.let { b -> for (l in compactFrames(b.map { lines[it] })) out.append(l).append('\n'); out.append('\n') }
         for (b in ours) { for (k in b) out.append(lines[k]).append('\n'); out.append('\n') }
         out.append("[the rest of the trace]\n")
         lines.forEachIndexed { k, l -> if (k !in moved) out.append(l).append('\n') }

@@ -94,6 +94,8 @@ object StartupDiag {
         sec("Game art") { art(ctx, now) },
         sec("Interiors") { interiors(ctx) },
         sec("Crashes and exits") { crashes(ctx, now) },
+        // issues 580 / 539 (11-23): where the last controller presses went, and what the add-on refused (PressLog)
+        sec("Controller (the last presses and refusals)") { PressLog.lines() },
         sec("Log (our start-up tags, newest last)") { log(now) },
     )
 
@@ -126,6 +128,7 @@ object StartupDiag {
             "App running for ${dur(up)}; the device up for ${dur(SystemClock.elapsedRealtime())}",
             "Installed ${ago(pkg?.firstInstallTime ?: 0, now)}; this version since ${ago(pkg?.lastUpdateTime ?: 0, now)}",
             "Report made ${stamp(now)} (${java.util.TimeZone.getDefault().id})",
+            line { NetStall.summary() },                              // issues 582 / 560 (11-23): the stalls' count and the longest
         )
     }
 
@@ -378,7 +381,8 @@ object StartupDiag {
         val mem = record?.let { ReportUpload.splitMemory(it).second }
         if (mem != null) for (l in MemWatch.keyLines(mem.lines().filter { it.isNotBlank() })) {
             val e = l.length > 9 && MemWatch.isEvent(l.substring(9))
-            out += (if (e) "Mem event: " else "Mem line: ") + l
+            val o = l.length > 9 && MemWatch.isOwners(l.substring(9))         // #56 (11-23): DS Forever's memory by owner
+            out += (if (e) "Mem event: " else if (o) "Mem owners: " else "Mem line: ") + l
         }
         return out.map { it.take(230) }
     }

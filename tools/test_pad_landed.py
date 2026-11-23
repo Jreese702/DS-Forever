@@ -55,7 +55,7 @@ check(d.n == 10 and d.last == " ".join("uisw:%d" % c for c in range(2, 10)), "c.
 # hub69: the document carries the ring; a press alone is never a send of its own
 doc = L.eval('(function() local out; local s = WowCompanion.send; WowCompanion.send = function(x) out = x end; '
              'local ok = pcall(WowCompanion.snapshot, "manual"); WowCompanion.send = s; return out end)()')
-check("rx = WC.pad and type(WC.pad.rxDoc)" in HUB and "doc.shotlog, doc.rx = nil, nil" in HUB, "d. hub's document: rx, out of the change key")
+check("rx = WC.pad and type(WC.pad.rxDoc)" in HUB and "doc.shotlog, doc.rx, doc.net = nil, nil, nil" in HUB, "d. hub's document: rx, out of the change key")
 
 # hub70: when the count moved, one small "padrx" document of its own; nothing while it stands still
 def rx_tick():

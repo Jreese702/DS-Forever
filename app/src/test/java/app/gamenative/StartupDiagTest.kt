@@ -67,9 +67,9 @@ class StartupDiagTest {
         StartupTrace.mark("checks: game version"); StartupTrace.mark("art: 60%", "eplaguelands")
         val text = StartupDiag.text(ctx, emptyList())
         for (t in listOf("App", "Device", "GPU and container", "Game folder", "Start-up screen", "Start-up stages", "Updates", "Game art",
-                "Interiors", "Crashes and exits", "Log (our start-up tags"))
+                "Interiors", "Crashes and exits", "Controller (the last presses", "Log (our start-up tags"))
             assertTrue("no \"$t\" in:\n$text", text.contains("=== $t"))
-        assertTrue(text, text.contains("DS Forever ") && text.contains("Android ") && text.contains("ABIs:") && text.contains("RAM:"))
+        assertTrue(text, text.contains("DS Forever ") && text.contains("Android ") && text.contains("ABIs:") && text.contains("RAM:") && text.contains("Network stalls this run"))
         assertTrue(text, text.contains("art: 60%  (eplaguelands)"))
         assertTrue(text.length <= StartupDiag.MAX)
     }
