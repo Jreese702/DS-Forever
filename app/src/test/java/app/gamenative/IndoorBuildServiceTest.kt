@@ -55,6 +55,55 @@ class IndoorBuildServiceTest {
         assertFalse(IndoorBuildService.inForeground)
     }
 
+    @Test fun anOldInstanceEndingAfterANewStartLeavesTheNewOneCounted() {
+        // review: stop, then a quick new start; Android ends the old instance only after the new start was asked for. Its end must
+        // not count the service as off (the keep-alive would never stop the new one: on beside a game), and a stop before the new
+        // instance's startForeground still waits for it
+        val lost = ArrayList<String>()
+        IndoorBuildService.onLost = { lost += it }
+        try {
+            IndoorBuildService.stopWanted = false
+            IndoorBuildService.Control.start(app, 0, 0)
+            val old = Robolectric.buildService(IndoorBuildService::class.java, Intent().putExtra("gen", IndoorBuildService.gen))
+                .create().startCommand(0, 1)
+            assertTrue(IndoorBuildService.inForeground)
+            IndoorBuildService.Control.stop(app)
+            IndoorBuildService.Control.start(app, 1, 10)
+            assertFalse("the new start is not in the foreground yet", IndoorBuildService.inForeground)
+            old.destroy()
+            assertEquals("the old instance's end says nothing", emptyList<String>(), lost)
+            IndoorBuildService.Control.stop(app)
+            assertTrue("waits for the new instance", IndoorBuildService.stopWanted)
+            val fresh = Robolectric.buildService(IndoorBuildService::class.java, Intent().putExtra("gen", IndoorBuildService.gen))
+                .create().startCommand(0, 2)
+            assertNotNull(shadowOf(fresh.get()).lastForegroundNotification)
+            assertTrue(shadowOf(fresh.get()).isStoppedBySelf)
+            fresh.destroy()
+            assertEquals("the newest instance's end is told", listOf("the service ended"), lost)
+            assertFalse(IndoorBuildService.inForeground)
+        } finally {
+            IndoorBuildService.onLost = { com.jrees.wowcompanion.IndoorKeepAlive.lost(it) }
+            IndoorBuildService.inForeground = false
+            IndoorBuildService.stopWanted = false
+        }
+    }
+
+    @Test fun progressOnlyRefreshesTheForegroundNotification() {
+        // review: a notify before (or without) startForeground would leave an ongoing notification no service end removes
+        val nm = app.getSystemService(NotificationManager::class.java)
+        nm.cancelAll()
+        IndoorBuildService.inForeground = false
+        IndoorBuildService.Control.progress(app, 5, 10)
+        assertNull(shadowOf(nm).getNotification(IndoorBuildService.NOTIFICATION_ID))
+        IndoorBuildService.inForeground = true
+        try {
+            IndoorBuildService.Control.progress(app, 5, 10)
+            val n = shadowOf(nm).getNotification(IndoorBuildService.NOTIFICATION_ID)
+            assertNotNull(n)
+            assertEquals("5/10 ready", n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+        } finally { IndoorBuildService.inForeground = false; nm.cancelAll() }
+    }
+
     @Test fun goesToTheForegroundWithAQuietProgressNotification() {
         IndoorBuildService.stopWanted = false
         val intent = Intent().putExtra("ready", 120).putExtra("total", 1853)

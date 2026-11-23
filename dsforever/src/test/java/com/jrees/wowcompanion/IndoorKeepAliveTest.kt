@@ -191,6 +191,8 @@ class IndoorKeepAliveTest {
         val step = src("companion/app/src/main/java/com/jrees/wowcompanion/IndoorSchedulerStep.kt")
         assertTrue("every status change", step.substringAfter("private fun publishStatus(").substringBefore("// ---").contains("IndoorKeepAlive.update("))
         assertTrue("the thread's end", step.substringAfter("} finally {").substringBefore("\"interiors-bake\"").contains("IndoorKeepAlive.update("))
+        // review: a new thread starts with no work counted (an old thread that ended normally left the flag set)
+        assertTrue("a new thread", step.substringAfter("fun start(context: Context)").substringBefore("thread = Thread(").contains("working = false"))
         assertTrue("the game's close", step.contains("Event.GAME_CLOSED -> runCatching { IndoorKeepAlive.gameClosed(context) }"))
         val hooks = src("companion/app/src/main/java/com/jrees/wowcompanion/LauncherHooks.kt")
         assertTrue("Play", hooks.substringAfter("fun holdForPlay()").substringBefore("\n").contains("IndoorKeepAlive.gameStarting()"))

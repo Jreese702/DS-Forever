@@ -200,6 +200,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         if (thread != null) { again = true; return }
         val ctx = context.applicationContext
         appCtx = ctx
+        // issue 568 review: a thread that ended normally leaves [working] set (its loop clears [thread] first); the new one has not
+        // looked at its work yet, so the quiet service is not asked for until it has
+        working = false
         thread = Thread({
             try {
                 do {

@@ -28,7 +28,11 @@ import timber.log.Timber
 class IndoorBuildService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** the [Control.start] this instance last ran for ([gen] at that start) */
+    private var myGen = -1
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        myGen = intent?.getIntExtra(EXTRA_GEN, gen) ?: gen
         try {
             val n = notification(this, intent?.getIntExtra(EXTRA_READY, 0) ?: 0, intent?.getIntExtra(EXTRA_TOTAL, 0) ?: 0)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -40,10 +44,12 @@ class IndoorBuildService : Service() {
             Timber.i("Indoor maps service: in the foreground")
             // a stop that came before Android ran this (a game started at once): only now, as Android crashes an app whose
             // startForegroundService ends before its startForeground
-            if (stopWanted) { stopWanted = false; stopSelf() }
+            // review: by its start id, so a start that came after this stop keeps the service (and Android's wait for that start's
+            // startForeground is never cut short)
+            if (stopWanted) { stopWanted = false; stopSelf(startId) }
         } catch (e: Exception) {
             Timber.w(e, "Indoor maps service: couldn't go to the foreground")
-            IndoorKeepAlive.lost("no foreground: ${e.javaClass.simpleName}")
+            onLost("no foreground: ${e.javaClass.simpleName}")
             stopSelf()
         }
         // the builder's process gone = nothing to keep: never restarted by Android on its own
@@ -51,8 +57,14 @@ class IndoorBuildService : Service() {
     }
 
     override fun onDestroy() {
-        inForeground = false
-        IndoorKeepAlive.lost("the service ended")
+        // review: a stop then a quick new start (DS Forever back in front and away again, the builder's own status) ends THIS instance
+        // after the new start was asked for; Android makes a new instance for it. Only the newest start's instance may say the
+        // service is gone, or the keep-alive would count the new one as off and never stop it (it would stay on beside a game)
+        if (myGen == gen) {
+            inForeground = false
+            runCatching { getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID) }
+            onLost("the service ended")
+        }
         super.onDestroy()
     }
 
@@ -60,7 +72,11 @@ class IndoorBuildService : Service() {
     object Control : IndoorKeepAlive.Service {
         override fun start(ctx: Context, ready: Int, total: Int): Boolean = try {
             stopWanted = false
-            ctx.startForegroundService(Intent(ctx, IndoorBuildService::class.java).putExtra(EXTRA_READY, ready).putExtra(EXTRA_TOTAL, total))
+            // review: not in the foreground until this start's onStartCommand (a stop meanwhile waits for it, see there)
+            inForeground = false
+            val g = ++gen
+            ctx.startForegroundService(Intent(ctx, IndoorBuildService::class.java).putExtra(EXTRA_READY, ready).putExtra(EXTRA_TOTAL, total)
+                .putExtra(EXTRA_GEN, g))
             true
         } catch (e: Exception) {
             // Android 12+: ForegroundServiceStartNotAllowedException while DS Forever is not in front; asked again when it is
@@ -69,6 +85,9 @@ class IndoorBuildService : Service() {
         }
 
         override fun progress(ctx: Context, ready: Int, total: Int) {
+            // review: only the foreground notification is refreshed; a notify before (or without) startForeground would leave a plain
+            // ongoing "Building indoor maps" behind that no service end removes
+            if (!inForeground) return
             runCatching { ctx.getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification(ctx, ready, total)) }
                 .onFailure { Timber.w(it, "Indoor maps service: progress") }
         }
@@ -85,6 +104,10 @@ class IndoorBuildService : Service() {
         /** the service reached startForeground (a stop before that waits for it) */
         @Volatile internal var inForeground = false
         @Volatile internal var stopWanted = false
+        /** bumped by every [Control.start]: which instance is the newest start's ([onDestroy]) */
+        @Volatile internal var gen = 0
+        /** what the service's own end tells (the keep-alive; the tests listen here) */
+        @Volatile internal var onLost: (String) -> Unit = { IndoorKeepAlive.lost(it) }
         const val CHANNEL_ID = "indoor_maps"
         const val NOTIFICATION_ID = 1002
         const val TITLE = "Building indoor maps"
@@ -94,6 +117,7 @@ class IndoorBuildService : Service() {
         const val CHANNEL_DESCRIPTION = "Shown while indoor maps build, so Android lets them finish."
         private const val EXTRA_READY = "ready"
         private const val EXTRA_TOTAL = "total"
+        private const val EXTRA_GEN = "gen"
 
         fun progressText(ready: Int, total: Int): String? = if (total > 0) Tr.t(PROGRESS.replaceFirst("%s", "$ready").replaceFirst("%s", "$total")) else null
 
