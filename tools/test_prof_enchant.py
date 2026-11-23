@@ -216,7 +216,8 @@ check(L.eval('#CRAFTS') == 0 and L.eval('lastAck("ench").why') == "already craft
 cols = {k: L.eval('SLOTS.profctl["%s"]' % k) for k in ("make:1", "forget:2", "kbd", "nokbd", "ench")}
 check(cols["ench"] is not None and cols["ench"] == cols["nokbd"] + 1, "ench appended after nokbd (the old keys keep their columns)", cols)
 check(cols["ench"] < 40, "inside the control row's 40 columns", cols["ench"])
-check('local PV = "p27"' in SRC and '#541' in SRC and '"cant enchant"' in SRC, "the version tag p27, its note quotes the player")
+check('local PV = "p28"' in SRC and 'p27 ENCHANTING' in SRC and '#541' in SRC and '"cant enchant"' in SRC,
+      "the version tag (p28 now), p27's note quotes the player")
 check(L.eval('#TRACE') == 0, "no trace: no binding, macro, CVar, window call, nothing targeted or applied",
       [L.eval('TRACE[%d]' % (i + 1)) for i in range(L.eval('#TRACE'))])
 

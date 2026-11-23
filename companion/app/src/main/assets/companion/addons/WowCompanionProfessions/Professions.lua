@@ -28,13 +28,16 @@
 --   "profopen" a SECURE row (user, 2026-09-28 23:12: "The game's own way, clicked securely"): one cell per profession with
 --             a crafting page, each casting that profession's own spell, the way the game's book opens it. Published per
 --             profession as `oslot`. The game opens its window in its own code; this file calls no open function.
+--             p28: and two cells per GATHERING TRACKING a card shows (Find Herbs, Find Minerals...), ON and OFF, published on
+--             the card's button as `ton` / `toff`; they carry no secure action (see TRK below).
 --   "profsel" SELECTS a recipe of the open profession. No game action. Its 40 columns are mapped by
 --             this file and published per recipe as `slot`. A stale tap can only select a different
 --             recipe; the ack names it, and the app enables Create only once `sel` in the prof doc is
 --             the recipe the player picked. The confirm the player reads is the addon's own
 --             understanding of the target, as with Quests' abandon.
 -- ONE TAP = AT MOST ONE GAME ACTION: select = none; make / all = one CraftRecipe; track / untrack =
--- one SetRecipeTracked; an open cell = one cast of the profession's spell, by the secure template (not by this file).
+-- one SetRecipeTracked; an open cell = one cast of the profession's spell, by the secure template (not by this file);
+-- a tracking cell (p28) = one C_Minimap.SetTracking to that cell's explicit on / off, out of a fight.
 -- NOTHING HERE OPENS OR CLOSES A GAME WINDOW BY A FUNCTION CALL (user's answer 23:12, after Bags' taint flood): open = the
 -- secure cell above; close = the game's own close button, clicked by the capture (version 2 `spec.back`) when B is pressed
 -- on the room's book.
@@ -48,7 +51,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "p27"          -- bump on every change; the app shows it, so a stale build is visible; p27 ENCHANTING FROM THE ROOM (#541, "cant enchant": every Enchanting recipe was refused, "needs an item to enchant"): ctl ench casts the selected enchant once (the game's own CraftRecipe, as Create) and the game asks for its item; the ack says pick = true and the app opens the Bags room's "Choose an item" (Bags.lua's pick: what the enchant can go on, worn first; its Replace question answered there); p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
+local PV = "p28"          -- bump on every change; the app shows it, so a stale build is visible; p28 GATHERING TRACKING FROM THE CARDS (issue 87's follow-up, the player 2026-11-23: "is there any to enable herb/ore tracking? Option seems greyed out in my professions tab"; the developer: "Yeah I can turn that back on"): a card button whose spell is one of the game's minimap tracking types (Find Herbs, Find Minerals, any other the character knows) is live again: two cells per tracking on the secure open row, ON and OFF, with no secure action; the tap's own click calls the game's C_Minimap.SetTracking (the call the game's minimap tracking menu makes), out of a fight only; the button carries trk (1 on / 0 off) and its ton / toff columns; MINIMAP_UPDATE_TRACKING re-sends the document; p27 ENCHANTING FROM THE ROOM (#541, "cant enchant": every Enchanting recipe was refused, "needs an item to enchant"): ctl ench casts the selected enchant once (the game's own CraftRecipe, as Create) and the game asks for its item; the ack says pick = true and the app opens the Bags room's "Choose an item" (Bags.lua's pick: what the enchant can go on, worn first; its Replace question answered there); p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
 local MAKE_MAX = 26      -- make:1 .. make:26 on the control row; more than that is Create All
 local SEL_COLS = 40      -- columns of the "profsel" row (TapPad's COLS)
 local BASIC = 1          -- Enum.CraftingReagentType.Basic (profession constants documentation)
@@ -167,6 +170,83 @@ local castNow                  -- below, with the document
 -- its cell casts its spell, so a tap can never open another profession while a rebuild waits for the end of a fight (pad owner)
 local builtSpell = {}
 
+-- p28 GATHERING TRACKING ON THE CARDS (issue 87's follow-up; the player, 2026-11-23: "is there any to enable herb/ore tracking? Option
+-- seems greyed out in my professions tab"; the developer: "Yeah I can turn that back on"). The game's book draws Find Herbs / Find
+-- Minerals as buttons on the Herbalism / Mining cards, and the room showed them inert. A card button whose spell is one of the game's
+-- MINIMAP TRACKING types (matched by spell id, else by name, against C_Minimap.GetTrackingInfo) now switches that tracking:
+--   * two cells per tracking on the secure "profopen" row, ON and OFF (one explicit want per tap, never a toggle), each with NO secure
+--     action (type nil: the secure template does nothing); TapPad's post-hook runs onOpenTap inside the tap's own hardware click, and
+--     that calls C_Minimap.SetTracking(index, want), the plain engine call the game's own minimap tracking menu makes;
+--   * out of a fight only (refused, "not in a fight": nothing is called then);
+--   * no CVar, binding or macro; nothing written on a Blizzard frame; nothing remembered or put back (the player's own switch, as in
+--     the game's menu). A button the character has no tracking for stays inert (greyed).
+-- The dots it turns on are the game's TOP-SCREEN minimap's (issue 87: add-ons cannot read them for the bottom map).
+-- One table: the main chunk keeps clear of Lua 5.1's 200-local limit.
+local TRK = {
+    SCAN = 40,
+    col = {},       -- key (spell id, else name) -> { on = column, off = column } on the "profopen" row, for the session
+    at = {},        -- column -> { key, sid, n = name, want }
+    built = {},     -- column -> key, once TapPad's init has put the cell on the row (only then is it published)
+    bk = {},        -- a card button's table (this collect) -> its key
+    now = nil,      -- the last read of the game's tracking list: { bySpell = {}, byName = {} } of { i, on, name }
+}
+-- the setter the game has (C_Minimap.SetTracking; the old global SetTracking), or nil
+function TRK.setter()
+    if type(C_Minimap) == "table" and type(C_Minimap.SetTracking) == "function" then return C_Minimap.SetTracking end
+    if type(_G.SetTracking) == "function" then return _G.SetTracking end
+end
+-- the game's tracking list now (a table per index, or the old name, texture, active returns); a secret field counts as nothing
+function TRK.read()
+    local out = { bySpell = {}, byName = {} }
+    local get = (type(C_Minimap) == "table" and C_Minimap.GetTrackingInfo) or _G.GetTrackingInfo
+    if type(get) ~= "function" then TRK.now = out return out end
+    local n = TRK.SCAN
+    if type(C_Minimap) == "table" and type(C_Minimap.GetNumTrackingTypes) == "function" then
+        local okN, c = CALL(C_Minimap.GetNumTrackingTypes)
+        c = okN and VN(c) or nil
+        if c then n = math.min(c, TRK.SCAN) end
+    end
+    for i = 1, n do
+        local ok, a, _, c = CALL(get, i)
+        if not ok or a == nil then break end
+        local name, act, sid
+        if type(a) == "table" then
+            name = TS(function() return a.name end)
+            act = TB(function() return a.active end)
+            sid = TN(function() return a.spellID end)
+        else
+            name, act = VS(a), VB(c)
+        end
+        local e = { i = i, on = act == true, name = name }
+        if sid then out.bySpell[sid] = e end
+        if name then out.byName[name] = e end
+    end
+    TRK.now = out
+    return out
+end
+-- the tracking a card button stands for: its entry in the last read, by spell id first, then by name
+function TRK.entry(sid, name)
+    local now = TRK.now
+    if not now then return nil end
+    return (sid and now.bySpell[sid]) or (name and now.byName[name]) or nil
+end
+-- the button's cells (made once per tracking, for the session: a column is never given to anything else)
+function TRK.cells(key, sid, name)
+    local c = TRK.col[key]
+    if c then return c end
+    local function free()
+        local col = 0
+        while openLine[col] ~= nil do col = col + 1 end
+        return col
+    end
+    c = {}
+    c.on = free(); openLine[c.on] = "trk"; TRK.at[c.on] = { key = key, sid = sid, n = name, want = true }
+    c.off = free(); openLine[c.off] = "trk"; TRK.at[c.off] = { key = key, sid = sid, n = name, want = false }
+    TRK.col[key] = c
+    openDirty = true
+    return c
+end
+
 -- The "profsel" row's columns are mapped here, not by TapPad's slot namespace: key c = column c,
 -- claimed once at load so the namespace never frees or quarantines anything.
 local function claimSelColumns()
@@ -192,6 +272,7 @@ end
 -- on its card (camelot ProfessionsBookFrameMixin:FormatProfession: 1..numSpells, at most 2). A button whose spell has a recipe
 -- window opens it (ProfessionSpellButtonMixin:OnClick casts it); the others do their own thing in the game (Fishing, Find
 -- Minerals) and stay inert in the room (the user's "no spell casting" ruling). `o` marks the one the secure open cell casts.
+-- p28: except a TRACKING button (Find Herbs, Find Minerals...): `trk` 1 / 0, and `ton` / `toff` = its cells (see TRK above).
 local BTN_MAX = 2
 cardButtons = function(off, n, openSpellID)
     local out = {}
@@ -201,6 +282,14 @@ cardButtons = function(off, n, openSpellID)
                     icon = TN(function() return C_SpellBook.GetSpellBookItemTexture(off + k, Enum.SpellBookSpellBank.Player) end) }
         b.rec = (sp and TB(function() return C_TradeSkillUI.CanTradeSkillShowCraftingUI(sp) end)) or false
         b.o = (openSpellID ~= nil and sp == openSpellID) or nil
+        -- p28: a tracking the character has (and a setter the game has): trk 1 on / 0 off, and its ON / OFF cells once on the row
+        local te = (not b.rec) and TRK.setter() and TRK.entry(sp, b.n) or nil
+        if te then
+            local key = sp or b.n
+            TRK.cells(key, sp, b.n)
+            b.trk = te.on and 1 or 0
+            TRK.bk[b] = key             -- its cells are published after the row's rebuild (collectProfessions' end)
+        end
         out[#out + 1] = b
     end
     return out
@@ -212,6 +301,8 @@ function WC.collectProfessions()
     local list = {}
     local ok, p1, p2, p3, p4, p5, p6, p7 = CALL(GetProfessions)
     if not ok then return list end
+    TRK.read()                          -- p28: the game's tracking list, once per collect (the card buttons read it)
+    TRK.bk = {}
     local idx = { p1, p2, p3, p4, p5, p6, p7 }
     for pos = 1, 7 do
         local i = VN(idx[pos])
@@ -253,6 +344,15 @@ function WC.collectProfessions()
     if openDirty and WC.professionsOpenRow then WC.professionsOpenRow() end
     for _, e in ipairs(list) do
         if e.oslot ~= nil and builtSpell[e.oslot] ~= e.ospell then e.oslot = nil end
+        -- p28: a tracking button's ON / OFF cells, only once they really sit on the row (a fight's rebuild waits)
+        for _, b in ipairs(e.btn or {}) do
+            local key = TRK.bk[b]
+            local c = key and TRK.col[key]
+            if c then
+                b.ton = (TRK.built[c.on] == key) and c.on or nil
+                b.toff = (TRK.built[c.off] == key) and c.off or nil
+            end
+        end
     end
     return list
 end
@@ -816,6 +916,7 @@ local WANT = {
     "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_SUCCEEDED",
     "BAG_UPDATE_DELAYED", "GET_ITEM_INFO_RECEIVED",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+    "MINIMAP_UPDATE_TRACKING",          -- p28: a tracking switched (from the room or the game's own menu): the cards' trk again
 }
 local missing = {}
 for _, e in ipairs(WANT) do
@@ -1303,6 +1404,7 @@ local function initOpen(btn, col)
     end
     local spell = openSpell[col]
     builtSpell[col] = spell or false
+    TRK.built[col] = TRK.at[col] and TRK.at[col].key or nil     -- p28: a tracking cell (no secure action) is on the row now
     if spell then
         btn:SetAttribute("type", "spell")
         btn:SetAttribute("spell", spell)
@@ -1312,7 +1414,23 @@ local function initOpen(btn, col)
     end
 end
 
+-- p28: a TRACKING cell's tap (no secure action: this runs inside the tap's own hardware click). ONE SetTracking to the cell's want,
+-- out of a fight; already so = nothing called, ok. The answer names the tracking; MINIMAP_UPDATE_TRACKING re-sends the document.
+function TRK.tap(col)
+    local a = TRK.at[col]
+    lastActionAt = GetTime()        -- the game's error text in the next seconds answers this tap
+    if InCombatLockdown() then return ack("gather", a.sid, false, "not in a fight", { on = a.want, name = a.n }) end
+    TRK.read()
+    local e = TRK.entry(a.sid, a.n)
+    if not e then return ack("gather", a.sid, false, "not known", { on = a.want, name = a.n }) end
+    if e.on == a.want then return ack("gather", a.sid, true, nil, { on = a.want, name = e.name or a.n }) end
+    local set = TRK.setter()
+    local ok = set ~= nil and CALL(set, e.i, a.want)
+    ack("gather", a.sid, ok, (not ok) and "the game refused" or nil, { on = a.want, name = e.name or a.n })
+end
+
 local function onOpenTap(col)
+    if TRK.at[col] then return TRK.tap(col) end
     if col == BOOK_COL then
         lastActionAt = GetTime()
         ack("win", nil, builtBook, (not builtBook) and "the game's Professions button is not there" or nil)
@@ -1334,6 +1452,7 @@ end
 local function ncolsOpen()
     local n = math.max(CLOSE_COL, BOOK_COL) + 1
     for col in pairs(openSpell) do if col + 1 > n then n = col + 1 end end
+    for col in pairs(TRK.at) do if col + 1 > n then n = col + 1 end end          -- p28: the tracking cells
     return n
 end
 
