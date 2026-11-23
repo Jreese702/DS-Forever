@@ -89,7 +89,7 @@ class LtRtStanceBarTest {
         assertTrue("moved off the triggers (None): nothing to say", PadLayerNote.onBars(s, "c:a", bars(1, 1)).isEmpty())
         assertTrue("pages 2-3: not LT / RT on the player's page", PadLayerNote.onBars(s, "c:a", bars(6, 1)).isEmpty())
         assertEquals(listOf("WoW's Stance Bar is on LT + RT: in a form, LT + RT + buttons cast your form bar",
-            "WoW's Possess Bar is on RT: in a vehicle, RT + buttons cast its bar"), PadLayerNote.onBars(s, "c:a", bars(4, 3)))
+            "WoW's Possess Bar is on RT: with a pet, RT + buttons cast your pet bar"), PadLayerNote.onBars(s, "c:a", bars(4, 3)))
         assertEquals("st=4;ps=3", s.m["c:a"])
     }
 
@@ -101,8 +101,21 @@ class LtRtStanceBarTest {
         assertEquals(2, s.m.size)
         assertTrue("no values (an older add-on): nothing", PadLayerNote.onBars(s, "c:a", JSONObject()).isEmpty())
         // one value missing keeps the last seen one
-        assertEquals(listOf("WoW's Possess Bar is on LT + RT: in a vehicle, LT + RT + buttons cast its bar"), PadLayerNote.onBars(s, "c:a", bars(null, 4)))
+        assertEquals(listOf("WoW's Possess Bar is on LT + RT: with a pet, LT + RT + buttons cast your pet bar"), PadLayerNote.onBars(s, "c:a", bars(null, 4)))
         assertEquals("st=3;ps=4", s.m["c:a"])
+    }
+
+    @Test fun aCharacterSwitchNeverMovesOneCharactersValuesIntoAnother() {
+        // the review: GameUi.character comes from the padmap; the next character's first "full" can come before it
+        assertEquals("Ann-Realm", PadLayerNote.whoFor("Ann-Realm", "Ann"))
+        assertNull("the document is another character's: nobody's", PadLayerNote.whoFor("Ann-Realm", "Bob"))
+        assertEquals("no name in the document (an older add-on): the key", "Ann-Realm", PadLayerNote.whoFor("Ann-Realm", null))
+        assertNull(PadLayerNote.whoFor(null, "Ann"))
+        val s = Mem()
+        PadLayerNote.onBars(s, PadLayerNote.whoFor("Ann-Realm", "Ann"), bars(3, 1))
+        assertTrue("Bob's values before his padmap: nothing said", PadLayerNote.onBars(s, PadLayerNote.whoFor("Ann-Realm", "Bob"), bars(2, 1)).isEmpty())
+        assertEquals("Ann's memo is untouched", "st=3;ps=1", s.m["Ann-Realm"])
+        assertTrue("Ann back: no false change", PadLayerNote.onBars(s, PadLayerNote.whoFor("Ann-Realm", "Ann"), bars(3, 1)).isEmpty())
     }
 
     @Test fun itGoesByItself() {
@@ -133,7 +146,9 @@ class LtRtStanceBarTest {
     @Test fun theHostAndHomeAreWired() {
         val host = File(src, "CompanionHost.kt").readText()
         val home = File(src, "HomeView.kt").readText()
-        assertTrue("the current hud document's bars", host.contains("if (current) msg.optJSONObject(\"actionbar\")?.optJSONObject(\"hud\")?.optJSONObject(\"bars\")?.let { padLayerNote(it) }"))
+        assertTrue("the current hud document's bars", host.contains("if (current) msg.optJSONObject(\"actionbar\")?.optJSONObject(\"hud\")?.optJSONObject(\"bars\")?.let {"))
+        assertTrue("with the document's own character", host.contains("padLayerNote(it, msg.optJSONObject(\"player\")?.optString(\"name\", \"\")") &&
+            host.contains("val who = PadLayerNote.whoFor(GameUi.character, docName)"))
         assertTrue("its own prefs file", host.contains("getSharedPreferences(\"padnote\", MODE_PRIVATE)"))
         assertTrue("B lets it go", host.contains("if (PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) ui.post { homeView.padNoteB() }"))
         assertTrue("drawn translated", home.contains("val text = Tr.t(words)") && home.contains("drawPadNote(c)"))

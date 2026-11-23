@@ -1,12 +1,12 @@
 {
 "plain": {
 "In combat: a spell casts here in fights, over your macro": "En combat : un sort est lancé ici pendant les combats, par-dessus votre macro",
-"WoW's Stance Bar is on LT: in a form, LT + buttons cast your form bar": "La Barre des postures de WoW est sur LT : en forme, LT + boutons lancent votre barre de forme",
-"WoW's Possess Bar is on LT: in a vehicle, LT + buttons cast its bar": "La Barre de possession de WoW est sur LT : en véhicule, LT + boutons lancent sa barre",
-"WoW's Stance Bar is on RT: in a form, RT + buttons cast your form bar": "La Barre des postures de WoW est sur RT : en forme, RT + boutons lancent votre barre de forme",
-"WoW's Possess Bar is on RT: in a vehicle, RT + buttons cast its bar": "La Barre de possession de WoW est sur RT : en véhicule, RT + boutons lancent sa barre",
-"WoW's Stance Bar is on LT + RT: in a form, LT + RT + buttons cast your form bar": "La Barre des postures de WoW est sur LT + RT : en forme, LT + RT + boutons lancent votre barre de forme",
-"WoW's Possess Bar is on LT + RT: in a vehicle, LT + RT + buttons cast its bar": "La Barre de possession de WoW est sur LT + RT : en véhicule, LT + RT + boutons lancent sa barre",
+"WoW's Stance Bar is on LT: in a form, LT + buttons cast your form bar": "La Barre des postures de WoW est sur LT : sous une forme, LT + boutons lancent votre barre de forme",
+"WoW's Possess Bar is on LT: with a pet, LT + buttons cast your pet bar": "La Barre de possession de WoW est sur LT : avec un familier, LT + boutons lancent sa barre",
+"WoW's Stance Bar is on RT: in a form, RT + buttons cast your form bar": "La Barre des postures de WoW est sur RT : sous une forme, RT + boutons lancent votre barre de forme",
+"WoW's Possess Bar is on RT: with a pet, RT + buttons cast your pet bar": "La Barre de possession de WoW est sur RT : avec un familier, RT + boutons lancent sa barre",
+"WoW's Stance Bar is on LT + RT: in a form, LT + RT + buttons cast your form bar": "La Barre des postures de WoW est sur LT + RT : sous une forme, LT + RT + boutons lancent votre barre de forme",
+"WoW's Possess Bar is on LT + RT: with a pet, LT + RT + buttons cast your pet bar": "La Barre de possession de WoW est sur LT + RT : avec un familier, LT + RT + boutons lancent sa barre",
 "Ready. Close other apps for smoother play": "Prêt. Fermez les autres applis pour un jeu plus fluide",
 "In fights": "En combat",
 "Combat bar": "Barre de combat",

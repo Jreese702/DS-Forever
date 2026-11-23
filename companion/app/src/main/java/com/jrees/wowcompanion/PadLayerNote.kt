@@ -6,8 +6,8 @@ import org.json.JSONObject
  * A WOW SETTING MOVED A BAR ONTO LT / RT (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button"; the user:
  * "I wonder if he changed a ... setting for lt+rt in the wow settings and if thats something that we need to consider"). The game's
  * Gamepad settings Stance Bar and Possess Bar (GamepadStanceBarOverride / GamepadPossessBarOverride: 2 / 3 / 4 = Page 1 Left / Right /
- * Bottom, the LT / RT / LT + RT layers) lay that bar over a trigger layer: in a form (a vehicle) LT / RT + a face button then cast the
- * form's (vehicle's) bar, not the player's own. That is the game's own behaviour; Home says so once, in a short note that goes by itself
+ * Bottom, the LT / RT / LT + RT layers) lay that bar over a trigger layer: in a form (with a pet: the game's Possess Bar is its gamepad pet
+ * bar, shown whenever the pet bar is) LT / RT + a face button then cast the form's (pet's) bar, not the player's own. That is the game's own behaviour; Home says so once, in a short note that goes by itself
  * after [HOLD_MS] (or on B), when the setting CHANGES onto a trigger layer for this character.
  *
  * The values come read only in ActionBar's hud document (`bars.st.v` / `bars.ps.v`, [GameBars]); this keeps each character's last seen
@@ -45,7 +45,7 @@ object PadLayerNote {
     fun stanceWords(layer: String): String = "WoW's Stance Bar is on $layer: in a form, $layer + buttons cast your form bar"
 
     /** the note's words for the Possess Bar on [layer] */
-    fun possessWords(layer: String): String = "WoW's Possess Bar is on $layer: in a vehicle, $layer + buttons cast its bar"
+    fun possessWords(layer: String): String = "WoW's Possess Bar is on $layer: with a pet, $layer + buttons cast your pet bar"
 
     /** every note's words (the translations' keys; a test proves es / fr have each) */
     val ALL: List<String> = listOf("LT", "RT", "LT + RT").flatMap { listOf(stanceWords(it), possessWords(it)) }
@@ -62,6 +62,17 @@ object PadLayerNote {
         if (st != null && st != pst) layer(st)?.let { notes += stanceWords(it) }
         if (ps != null && ps != pps) layer(ps)?.let { notes += possessWords(it) }
         return keep to notes
+    }
+
+    /**
+     * the review (a character switch): the key to keep [docName]'s values under - [key] (GameUi.character, set from the padmap) only
+     * while it is the character the "full" document names (its `player.name`); a document of the next character that comes before
+     * its padmap is nobody's (null: nothing kept, nothing said), so one character's values never land in another's memo as a "change"
+     */
+    fun whoFor(key: String?, docName: String?): String? {
+        if (key.isNullOrEmpty()) return null
+        if (docName.isNullOrEmpty()) return key
+        return key.takeIf { CharKey.nameOf(it) == docName }
     }
 
     /** one hud document for [who] (a character key; null = not known yet: nothing kept, nothing said): the notes to show */

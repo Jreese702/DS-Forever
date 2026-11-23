@@ -453,8 +453,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     /** a current hud document's `bars` (ActionBar's read-only Stance / Possess Bar values): a change onto LT / RT is Home's note, once */
-    private fun padLayerNote(bars: JSONObject) {
-        val notes = runCatching { PadLayerNote.onBars(padNoteStore, GameUi.character, bars) }.getOrDefault(emptyList())
+    private fun padLayerNote(bars: JSONObject, docName: String?) {
+        val who = PadLayerNote.whoFor(GameUi.character, docName)            // the review: only the document's own character
+        val notes = runCatching { PadLayerNote.onBars(padNoteStore, who, bars) }.getOrDefault(emptyList())
         for (w in notes) {
             val l = PadLayerNote.logLine(w)
             Log.i("WCSETUP", l); DiagLog.event("pad", l)
@@ -2992,7 +2993,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 }
                 msg.optJSONObject("actionbar")?.let { castView.update(it); bagsView.castTick() }      // bags-de1: the grid's bar too
                 // PadMap m187's report: a WoW Stance / Possess Bar setting moved onto LT / RT for this character: Home's note, once
-                if (current) msg.optJSONObject("actionbar")?.optJSONObject("hud")?.optJSONObject("bars")?.let { padLayerNote(it) }
+                if (current) msg.optJSONObject("actionbar")?.optJSONObject("hud")?.optJSONObject("bars")?.let {
+                    padLayerNote(it, msg.optJSONObject("player")?.optString("name", "")?.takeIf { n -> n.isNotEmpty() })
+                }
                 homeView.onFull(msg, current)
                 if (castAskOpen && homeView.inFight()) castBarAsk()          // a fight: the cast bar question goes at once (back after)
                 if (keyAskOpen && homeView.inFight()) keyAskTick.run()       // Safety k10: the key question too (asked again after it)
