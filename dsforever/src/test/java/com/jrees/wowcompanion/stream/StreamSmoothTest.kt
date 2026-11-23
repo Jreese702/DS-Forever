@@ -79,16 +79,29 @@ class StreamSmoothTest {
         assertEquals("RFI HEVC", RfiPolicy.label(ds or 0x4))
         assertEquals("RFI off (no decoder for it)", RfiPolicy.label(ds, "no decoder for it"))
         assertTrue(RfiPolicy.has(ds or 0x4)); assertFalse(RfiPolicy.has(ds))
+        // review 2026-11-23: by the player's codec - none for H.264, HEVC for HEVC, both for AV1 (HEVC is its fallback)
+        assertEquals(ds, RfiPolicy.capabilities(StreamQuality.Codec.H264, true, true, true))
+        assertEquals(ds or 0x4, RfiPolicy.capabilities(StreamQuality.Codec.HEVC, true, true, true))
+        assertEquals(ds or 0x4 or 0x40, RfiPolicy.capabilities(StreamQuality.Codec.AV1, true, true, true))
+        assertEquals(ds, RfiPolicy.capabilities(StreamQuality.Codec.AV1, false, true, true))
+        assertEquals("H.264", RfiPolicy.offReason(StreamQuality.Codec.H264))
+        assertEquals("no decoder for it", RfiPolicy.offReason(StreamQuality.Codec.HEVC))
     }
 
     @Test fun rfiTripsOnlyAfterAPictureAndATrouble() {
         val rfi = MoonBridge.CAPABILITY_DIRECT_SUBMIT or MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC
-        assertNotNull(RfiPolicy.trips(rfi, 0, decoderErrors = 2, shown = 500))
-        assertEquals("the pictures stopped", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 0, 500))
-        assertNull("a normal end", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_GRACEFUL_TERMINATION, 0, 500))
-        assertNull("no video at all is the network's (the no-QoS retry's), not RFI's", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC, 0, 0))
-        assertNull("never a picture: not RFI's", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 3, 0))
-        assertNull("RFI was off", RfiPolicy.trips(MoonBridge.CAPABILITY_DIRECT_SUBMIT, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 3, 500))
+        val hevc = "video/hevc"
+        assertNotNull(RfiPolicy.trips(rfi, 0, decoderErrors = 2, shown = 500, mime = hevc))
+        assertEquals("the pictures stopped", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 0, 500, hevc))
+        assertNull("a normal end", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_GRACEFUL_TERMINATION, 0, 500, hevc))
+        assertNull("no video at all is the network's (the no-QoS retry's), not RFI's", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC, 0, 0, hevc))
+        assertNull("never a picture: not RFI's", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 3, 0, hevc))
+        assertNull("RFI was off", RfiPolicy.trips(MoonBridge.CAPABILITY_DIRECT_SUBMIT, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 3, 500, hevc))
+        // review 2026-11-23: the PC answered an HEVC ask with H.264 (or no decoder was set up): RFI never ran, so it is not blamed
+        assertNull("an H.264 stream", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 3, 500, "video/avc"))
+        assertNull("no decoder set up", RfiPolicy.trips(rfi, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 3, 500, null))
+        assertNull("RFI for AV1 only, an HEVC stream", RfiPolicy.trips(MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 0, 500, hevc))
+        assertNotNull(RfiPolicy.trips(MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1, MoonBridge.ML_ERROR_NO_VIDEO_FRAME, 0, 500, "video/av01"))
         // tripped: off on that build, tried again on the next
         assertTrue(RfiPolicy.allowed(0L, 1522L))
         assertFalse(RfiPolicy.allowed(1522L, 1522L))
@@ -97,7 +110,9 @@ class StreamSmoothTest {
 
     @Test fun rfiIsLoggedAndPassedToTheCore() {
         val top = src("StreamTop.kt"); val ses = src("StreamSession.kt")
-        assertTrue(top.contains("RfiPolicy.capabilities(offWhy == null, VideoDecoder.rfiOk(\"video/hevc\"), VideoDecoder.rfiOk(\"video/av01\"))"))
+        assertTrue(top.contains("RfiPolicy.capabilities(q.codec, offWhy == null, VideoDecoder.rfiOk(\"video/hevc\"), VideoDecoder.rfiOk(\"video/av01\"))"))
+        assertTrue("the trip reads the codec that ran", top.contains("v.decoderErrors, v.framesOut, v.codecMime)"))
+        assertTrue(src("StreamMedia.kt").contains("codecMime = mime"))
         assertTrue(top.contains("videoCapabilities = caps, capsLabel = label"))
         assertTrue("the session hands them to the core", ses.contains("LaunchPlan.riIv(riKeyId), videoCapabilities,"))
         assertFalse(ses.contains("LaunchPlan.riIv(riKeyId), MoonBridge.CAPABILITY_DIRECT_SUBMIT,"))

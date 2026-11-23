@@ -638,8 +638,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             val id = store.identity()
             // stream smoothness: reference-frame invalidation for HEVC / AV1 on a decoder that qualifies, unless it tripped on this build
             val offWhy = RfiStore.offWhy(activity)
-            val caps = RfiPolicy.capabilities(offWhy == null, VideoDecoder.rfiOk("video/hevc"), VideoDecoder.rfiOk("video/av01"))
-            val label = RfiPolicy.label(caps, offWhy ?: "no decoder for it")
+            val caps = RfiPolicy.capabilities(q.codec, offWhy == null, VideoDecoder.rfiOk("video/hevc"), VideoDecoder.rfiOk("video/av01"))
+            val label = RfiPolicy.label(caps, offWhy ?: RfiPolicy.offReason(q.codec))
             main.post {
                 if (session != null || !surfaceReady || !isOpen) return@post
                 val video = VideoDecoder(surface.holder.surface).also { liveVideo = it }
@@ -691,7 +691,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         val failedStage = session?.failedStage.orEmpty()
         // stream smoothness, the safe default: an RFI stream that may have gone wrong because of it turns RFI off on this Thor
         session?.let { s -> liveVideo?.let { v ->
-            RfiPolicy.trips(s.videoCapabilities, error, v.decoderErrors, v.framesOut)?.let { why -> worker.execute { RfiStore.trip(activity, why) } }
+            RfiPolicy.trips(s.videoCapabilities, error, v.decoderErrors, v.framesOut, v.codecMime)?.let { why -> worker.execute { RfiStore.trip(activity, why) } }
         } }
         teardown()
         Log.i(TAG, "stream ended ($error, paired ${!notPaired}): $message; " + PadNote.sent(padSent, padDriver))

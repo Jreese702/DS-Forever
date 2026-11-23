@@ -94,8 +94,30 @@ object RfiPolicy {
         return c
     }
 
+    /**
+     * the same for the player's [codec] (review 2026-11-23): only the codecs that stream can run - HEVC for an HEVC or AV1 pick (AV1's
+     * fallback), AV1 for an AV1 pick, none for H.264. Without it an H.264 stream was logged "RFI HEVC" and its "pictures stopped" end
+     * turned RFI off for the HEVC streams after it
+     */
+    fun capabilities(codec: StreamQuality.Codec, on: Boolean, hevcOk: Boolean, av1Ok: Boolean): Int =
+        capabilities(on, hevcOk && codec != StreamQuality.Codec.H264, av1Ok && codec == StreamQuality.Codec.AV1)
+
+    /** the log's reason when [capabilities] for [codec] has no RFI and it was not tripped off */
+    fun offReason(codec: StreamQuality.Codec): String = if (codec == StreamQuality.Codec.H264) "H.264" else "no decoder for it"
+
     fun has(caps: Int): Boolean = caps and (MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_AVC or
         MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC or MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1) != 0
+
+    /**
+     * RFI was on for the codec the decoder actually ran ([mime], VideoDecoder.codecMime: the PC may answer an HEVC ask with H.264);
+     * null = no decoder set up
+     */
+    fun inUse(caps: Int, mime: String?): Boolean = when (mime) {
+        "video/hevc" -> caps and MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC != 0
+        "video/av01" -> caps and MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1 != 0
+        "video/avc" -> caps and MoonBridge.CAPABILITY_REFERENCE_FRAME_INVALIDATION_AVC != 0
+        else -> false
+    }
 
     /** the log's words: "RFI HEVC+AV1", "RFI off (...)" */
     fun label(caps: Int, offWhy: String = ""): String {
@@ -107,10 +129,11 @@ object RfiPolicy {
     /**
      * THE SAFE DEFAULT: an RFI stream that showed pictures and then went wrong in a way RFI could cause - the decoder threw, or the PC
      * "stopped sending pictures" ([MoonBridge.ML_ERROR_NO_VIDEO_FRAME]) - turns RFI off on this Thor for later streams (the old keyframe
-     * recovery), until the next DS Forever build tries again. The reason, or null = no trip.
+     * recovery), until the next DS Forever build tries again. Only when RFI was on for the codec that ran ([mime], [inUse]). The reason,
+     * or null = no trip.
      */
-    fun trips(caps: Int, error: Int, decoderErrors: Long, shown: Long): String? = when {
-        !has(caps) || shown <= 0 -> null
+    fun trips(caps: Int, error: Int, decoderErrors: Long, shown: Long, mime: String?): String? = when {
+        !inUse(caps, mime) || shown <= 0 -> null
         decoderErrors > 0 -> "the decoder failed $decoderErrors times"
         error == MoonBridge.ML_ERROR_NO_VIDEO_FRAME -> "the pictures stopped"
         else -> null

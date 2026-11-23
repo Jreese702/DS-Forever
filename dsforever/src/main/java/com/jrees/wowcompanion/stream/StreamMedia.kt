@@ -42,6 +42,8 @@ class VideoDecoder(private val surface: Surface, private val onFirstFrame: () ->
     /** the decoder threw (queue or drain): [RfiPolicy.trips] reads it */
     @Volatile var decoderErrors = 0L; private set
     private var inputLogged = false
+    /** the codec the PC's answer set the decoder up for ("video/hevc"; null = not set up): [RfiPolicy.trips] reads it */
+    @Volatile var codecMime: String? = null; private set
 
     fun snap(nowMs: Long): StatsSnap = StatsSnap(nowMs, framesRx, framesDecoded, framesOut, framesDropped + framesUnqueued, bytesRx, keyframeAsks)
 
@@ -75,6 +77,7 @@ class VideoDecoder(private val surface: Surface, private val onFirstFrame: () ->
                 }
             }
             codec = c
+            codecMime = mime
             Log.i(TAG, "video: $name $mime ${width}x$height@$fps ($how, input up to ${maxIn / 1024} KB)")
             0
         } catch (t: Throwable) { Log.w(TAG, "video setup: ${t.message}"); -1 }
