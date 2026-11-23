@@ -15,6 +15,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -220,15 +221,9 @@ class HomeEditShotsTest {
         assertTrue("no room opened", p.rooms.isEmpty())
         assertTrue(p.strip.editTick)
         shot(p, "02_edit_mode_map")
-        // the controller: Left to the chat, Up to a D-pad icon (1518 build 3: the band is no stop, its icons are), Right to the clock
+        // the controller: Left to the chat (the band has no stops: the top bar stays still - the user's ruling 2026-11-22)
         home.editKey("PADDLEFT"); settle(); assertEquals(EditStop.CHAT, model(p).cursor)
         shot(p, "03_cursor_chat")
-        home.editKey("PADDUP"); settle()
-        assertTrue("Up from the chat: one of the toolbar's D-pad icons (${model(p).cursor})", model(p).cursor.pad > 0)
-        shot(p, "04_cursor_dpad_icon")
-        for (i in 0 until 4) if (model(p).cursor != EditStop.CLOCK) home.editKey("PADDRIGHT")
-        settle(); assertEquals(EditStop.CLOCK, model(p).cursor)
-        shot(p, "04b_cursor_clock")
         // a FINGER drags the map across the centre: past 48 px, after 80 ms the chat glides right; the drop well; the release settles
         val m1 = boxes(home).getValue("MAP")
         val dy = m1.top + 400f
@@ -280,14 +275,6 @@ class HomeEditShotsTest {
         assertEquals(EditStop.QUEST, model(p).cursor)
         home.editKey("PAD3"); settle(); shot(p, "12_menu_quest")
         home.editKey("PAD2")
-        home.editKey("PADDUP"); settle()
-        assertTrue("Up from the card: one of the band's pieces (${model(p).cursor})", model(p).cursor.piece)
-        for (i in 0 until 4) if (model(p).cursor != EditStop.CLOCK) home.editKey("PADDRIGHT")
-        settle(); assertEquals(EditStop.CLOCK, model(p).cursor)
-        // 1518 build 3: no Clock menu, no Controller menu - X does nothing on the band's pieces
-        home.editKey("PAD3"); settle()
-        assertNull("no menu on the clock", model(p).menu)
-        shot(p, "13_clock_no_menu")
         // THE TAP-TO-CAST BAR'S EDITOR: Place = Split (two 4-slot halves, no scroll, the same cells), Size M, the remove chip
         val m = model(p)
         home.editAct { it.tap(EditStop.CAST) }; settle()
@@ -322,7 +309,7 @@ class HomeEditShotsTest {
         shot(p, "19_add_tray")
         home.editKey("PAD1"); settle()
         assertEquals(HomeLayout.CastDock.SPLIT, m.draft.cast)
-        // the divider (reached from the clock above it) steps the width; the map's picture scales along the glide
+        // the divider (Up from a column's top reaches it) steps the width; the map's picture scales along the glide
         home.editAct { it.tap(EditStop.DIVIDER) }; settle()
         shot(p, "20_divider")
         home.editKey("PADDRIGHT")
@@ -369,7 +356,7 @@ class HomeEditShotsTest {
         assertTrue(HomeSettings.layout.samePlace(draft))
         assertFalse(p.strip.editTick)
         // fix round 3: after Done the pictures keep the record's sides until the add-on's `d` says them (no slide back and forth)
-        assertEquals(HomeLayoutSolver.dpadDirs(HomeSettings.layout)[1], p.cast.roomBar?.get(1))
+        assertEquals(if (HomeLayoutSolver.mirrorBit(HomeSettings.layout) == 1) "map" else "chat", p.cast.roomBar?.get(1))
         shot(p, "29_saved")
         contact()
     }
@@ -392,86 +379,648 @@ class HomeEditShotsTest {
         assertFalse(p.home.editing)
     }
 
-    /**
-     * 1518 build 3 (the user's ruling 2026-11-21: "I think the box in the middle is confusing"): the band is no widget - never posed as
-     * one, no stop, no menu, no Clock box; its four D-pad icons and its clock chip are apps (each its own stop and its own wiggle). A
-     * D-pad icon lifted and sent Up swaps two directions (the band previews the draft's order: P5's one exception), saved as it is made;
-     * the clock steps to a spot left of the middle; Discard puts both back
-     */
-    @Test fun theTopBarsIconsAreApps() {
-        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))
+    // ---------------------------------------------------------------- the top bar's pieces (the user's rulings 2026-11-22, ALL FOUR)
+
+    /** a D-pad Left with an In-combat spell (PadMap m44: the bare set's COMBAT overlay slot): Lightning Bolt in fights, Healing Wave else */
+    private val fightSets = """[{"set":1,"slots":[{"pos":1,"s":1,"kind":"combat","ov":true,"base":"spell","c":{"n":"Lightning Bolt","id":403,"i":136048},"o":{"n":"Healing Wave","id":331,"i":136052}}]}]"""
+    private fun padMapDoc(ct: Int? = null, sets: String = "[]") = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":$sets,"dpad":{"on":true,"want":true,
+        "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}${if (ct != null) ",\"ct\":$ct" else ""}}}}"""))!!
+    /** a page whose band has the toolbar's word (a character's key, the DS WoW toolbar on), Diamonds at rest unless [l] says */
+    private fun bandPage(l: HomeLayout = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), ct: Int? = null, roomBar: Boolean = false,
+                         sets: String = "[]"): Page {
+        ItemCd.reset()                                                      // the extras' own data: none (another test's must not show)
+        val p = page(l, roomBar = roomBar)
         HomeLayoutStore.character("Korvash-Realm")
-        p.home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m184","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
-            "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"pp":1,"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
-        settle()
-        val bars = boxes(p.home).getValue("BARS")
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(70)                // past the open: the wiggle runs
-        shot(p, "32_top_bar_apps", frames = 1)
-        val ev = p.home.editChrome
-        // the review: the clock's box at Centre is the chip as DRAWN (grown with the band), its size kept between frames
+        HomeLayoutStore.set(l)
+        p.home.onPadMap(padMapDoc(ct, sets))
         setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
-        p.home.draw(Canvas(Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)))
-        val sizeOf = HomeView::class.java.getDeclaredMethod("clockChipSizeNow").apply { isAccessible = true }
-        val cs = sizeOf.invoke(p.home) as FloatArray
-        assertTrue("the chip's size is kept", cs === sizeOf.invoke(p.home))
-        val drawnK = field(p.home, "clockChipDrawnK") as Float
-        assertTrue(drawnK >= 1f)
-        val clockBox = HomeView::class.java.getDeclaredMethod("editPieceBox", EditStop::class.java).apply { isAccessible = true }
-            .invoke(p.home, EditStop.CLOCK) as RectF
-        assertEquals("the box's height is the drawn chip's (x $drawnK)", cs[1] * drawnK, clockBox.height(), 0.5f)
-        assertEquals(cs[0] * drawnK, clockBox.width(), 0.5f)
-        assertEquals(HomeEditMotion.roomKey(Room.values().size), HomeEditMotion.PLUS_ROOM)
-        val wb = ev.widgetBoxes()
-        for (s in HomeEditView.PIECES) {
-            val b = wb[s]
-            assertNotNull("$s: a stop of its own", b)
-            // (the clock at Centre: the chip as drawn, grown with the band - the review)
-            assertTrue("$s: a small piece inside the band ($b in $bars)", b!!.width() < (if (s == EditStop.CLOCK) 260f else 200f) &&
-                b.top >= bars.top - 1f && b.bottom <= bars.bottom + 1f)
+        settle()
+        return p
+    }
+    /** the band's pixels as Home draws it now */
+    private fun bandPx(p: Page, bars: RectF): IntArray {
+        setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
+        // the band's own clock: its hud as just received (a hud older than CastView's STALE_MS draws the bar greyed; a new hud document
+        // would play its own focus glow)
+        setField(p.cast, "lastRxMs", android.os.SystemClock.elapsedRealtime())
+        lay(p.home)
+        val img = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        val c = Canvas(img); c.drawColor(Theme.ink); p.home.draw(c)
+        val w = bars.width().toInt(); val h = bars.height().toInt()
+        return IntArray(w * h).also { img.getPixels(it, 0, w, bars.left.toInt(), bars.top.toInt(), w, h) }
+    }
+    /** a failed pixel check's two pictures and their difference (red) side by side, with HOME_EDIT_SHOTS */
+    private fun dumpDiff(name: String, a: IntArray, b: IntArray, w: Int, h: Int) {
+        val d = out ?: return
+        val img = Bitmap.createBitmap(w, h * 3, Bitmap.Config.ARGB_8888)
+        img.setPixels(a, 0, w, 0, 0, w, h); img.setPixels(b, 0, w, 0, h, w, h)
+        val x = IntArray(a.size) { if (a[it] != b[it]) android.graphics.Color.RED else android.graphics.Color.BLACK }
+        img.setPixels(x, 0, w, 0, 2 * h, w, h)
+        File(d, "$name.png").outputStream().use { img.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+    private fun geo(p: Page): HomeEditView.BandGeo? = HomeView::class.java.getDeclaredMethod("editBand").apply { isAccessible = true }.invoke(p.home) as HomeEditView.BandGeo?
+
+    /**
+     * the user's ruling 2026-11-22 after 1518 ("What the hell is the dpad swapping buttons or clock move? ... remove that") kept with the
+     * picker's ALL FOUR: in edit mode THE BAND ITSELF STAYS STILL - no transform on it, its buttons where they were, and its pixels at two
+     * wiggle times differ only inside its pieces (the pencils, the Look chip, the extras with their badges and "+", the gold line): only
+     * the extras wiggle; the pencils and the chip are still. Every stop on the band is one of its pieces, and each piece stands inside it
+     */
+    @Test fun theTopBarStaysStillOutsideItsPieces() {
+        for (cast in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.ABOVE_MAP)) {
+            val p = bandPage(HomeLayout(cast = cast))
+            val bars = boxes(p.home).getValue("BARS")
+            val w = bars.width().toInt(); val h = bars.height().toInt()
+            val off = bandPx(p, bars)
+            val slots0 = (0 until 8).map { RectF().also { r -> p.cast.slotRect(it, r) } }
+            assertTrue(p.home.editOpen(EditStop.ROOMS)); settle(70)               // past the open: the wiggle runs
+            shot(p, "40_band_pieces_${cast.name.lowercase()}", frames = 1)
+            val g = geo(p) ?: error("$cast: no band pieces")
+            assertTrue("$cast: Diamonds at rest: the extras shown", g.extras.isNotEmpty())
+            // where the pieces may change the band: each piece, a badge and a wiggle round it (Home px -> band px)
+            val allowed = ArrayList<RectF>()
+            // the clock block: edit mode's row shows every extra turned on (and the gold line), so the block's grown size is laid for them;
+            // the buttons' pictures are CastView's own (the toolbar's `d` pictures and their cross-fade run on their own clock): their
+            // place is checked below (unmoved), not their pictures
+            for (r in listOfNotNull(g.padPen, g.facePen, g.look, g.plus, g.chip) + g.extras.map { it.second }) allowed += RectF(r).apply { inset(-16f, -16f) }
+            for (r in listOf(g.pad, g.face)) allowed += RectF(r).apply { inset(-32f, -32f) }          // a button's glow round it
+            val block = RectF(g.chip!!); for ((_, r) in g.extras) block.union(r); g.plus?.let { block.union(it) }; allowed += block.apply { inset(-16f, -16f) }
+            fun inside(k: Int): Boolean { val x = bars.left + k % w; val y = bars.top + k / w; return allowed.any { it.contains(x, y) } }
+            val a = bandPx(p, bars)
+            val outside = a.indices.filter { a[it] != off[it] && !inside(it) }
+            if (outside.isNotEmpty()) dumpDiff("40_diff_${cast.name.lowercase()}", off, a, w, h)
+            if (outside.isNotEmpty()) fail("$cast: ${outside.size} band px changed outside the pieces, x ${outside.minOf { it % w }}..${outside.maxOf { it % w }} " +
+                "y ${outside.minOf { it / w }}..${outside.maxOf { it / w }}")
+            settle(7)
+            val b = bandPx(p, bars)
+            var moved = 0
+            for (k in a.indices) if (a[k] != b[k]) {
+                moved++
+                val x = bars.left + k % w; val y = bars.top + k / w
+                // the extras wiggle; the buttons' pictures run on CastView's own clock (the toolbar's pictures' cross-fade, their glow)
+                assertTrue("$cast: ($x, $y) moved between two wiggle times outside the extras",
+                    g.extras.any { RectF(it.second).apply { inset(-16f, -16f) }.contains(x, y) } || g.plus?.let { RectF(it).apply { inset(-16f, -16f) }.contains(x, y) } == true ||
+                        listOf(g.pad, g.face).any { RectF(it).apply { inset(-32f, -32f) }.contains(x, y) })
+                fun core(r: RectF?) = r != null && RectF(r).apply { inset(6f, 6f) }.contains(x, y)
+                assertFalse("$cast: a pencil or the Look chip moved", core(g.padPen) || core(g.facePen) || core(g.look))
+            }
+            // the extras wiggle (a small picture's turn is a pixel or less at its edge: its pose, not only its pixels)
+            val poseAt = HomeView::class.java.getDeclaredMethod("extraPoseAt", String::class.java).apply { isAccessible = true }
+            assertTrue("$cast: the extras wiggle", moved > 0 || g.extras.any { poseAt.invoke(p.home, it.first) as Boolean })
+            assertTrue("$cast: the Hearthstone wiggles", poseAt.invoke(p.home, "hearth") as Boolean)
+            val v = views(p.home).getValue("BARS")
+            assertEquals(0f, v.rotation, 0f); assertEquals(1f, v.scaleX, 0f); assertEquals(0f, v.translationX, 0f)
+            for (i in 0 until 8) { val r = RectF().also { p.cast.slotRect(i, it) }; assertEquals("$cast: button $i unmoved", slots0[i], r) }
+            val ev = p.home.editChrome
+            for ((s, bx) in ev.stops()) {
+                if (s.band) assertTrue("$cast: $s inside the band", bx.t >= bars.top - 0.5f && bx.b <= bars.bottom + 0.5f)
+                else assertTrue("$cast: $s at ${bx.t} below the band (${bars.bottom})", bx.t >= bars.bottom - 0.5f)
+            }
+            for (s in listOf(EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.LOOK, EditStop.EXTRAS)) assertTrue("$cast: $s a stop", s in ev.stops())
+            p.home.editCancel()
         }
-        val views = (HomeView::class.java.getDeclaredField("views").apply { isAccessible = true }.get(p.home) as Map<*, *>)
-            .entries.first { (it.key as Enum<*>).name == "BARS" }.value as View
-        assertEquals("the band itself never wiggles", 0f, views.rotation, 1e-4f); assertEquals(1f, views.scaleX, 1e-4f)
-        // each D-pad icon is posed on its own (CastView's hook: the shrink here; HomeEditMotionShotsTest: their wiggles apart)
-        val hook = p.cast.editPiece!!
-        val a = FloatArray(4)
-        for (src in 0..3) assertTrue("D-pad $src posed", hook(src, a))
-        // the Left icon lifted and sent Up: the two directions swap, the band previews it
-        p.home.editAct { it.startOn(EditStop.PAD_L, false) }; settle()
-        p.home.editKey("PAD1"); settle()
-        assertEquals(EditStop.PAD_L, model(p).lifted)
-        p.home.editKey("PADDUP"); settle()
-        assertEquals(mapOf(1 to "radial", 2 to "chat", 3 to "map", 4 to "home"), HomeLayoutSolver.dpadDirs(model(p).draft))
-        assertEquals("the band previews the draft's order", "chat", p.cast.roomBar?.get(2))
-        assertEquals(EditStop.PAD_U, model(p).lifted)
-        // the review: the swap's Hint is the four-way cross; the icon that came into Left wiggles as its own (never posed as the lifted
-        // one); the lifted icon's box in the Up spot stays on screen
-        assertEquals(HomeEditView.DPAD4, ev.hintsFor(model(p)).first().first)
-        settle(20)
-        val poseOf = HomeView::class.java.getDeclaredMethod("piecePose", EditStop::class.java, FloatArray::class.java).apply { isAccessible = true }
-        val pl = FloatArray(4); val pu = FloatArray(4)
-        poseOf.invoke(p.home, EditStop.PAD_L, pl); poseOf.invoke(p.home, EditStop.PAD_U, pu)
-        assertTrue("the lifted Up icon (${pu[0]}) over the Left one that came in (${pl[0]})", pu[0] > pl[0] + 0.02f)
-        val upBox = ev.pieceCursorDrawn(EditStop.PAD_U)!!
-        assertTrue("the lifted Up icon's box on screen (${upBox.top})", upBox.top >= HomeEditView.PIECE_BOX_TOP - 0.5f)
-        shot(p, "33_dpad_icon_swapped_up", frames = 1)
-        p.home.editKey("PAD1"); settle()
-        assertEquals("saved as it is made", model(p).draft.pad, HomeSettings.layout.pad)
-        // the clock to the spot left of the middle
-        p.home.editAct { it.startOn(EditStop.CLOCK, false) }; settle()
-        p.home.editKey("PAD1"); settle()
-        assertEquals("the diamonds offer the clock its spots", EditStop.CLOCK, model(p).lifted)
-        p.home.editKey("PADDLEFT"); settle(10)
-        assertEquals(HomeLayout.ClockPlace.LEFT, model(p).draft.clock)
-        p.home.editKey("PAD1"); settle()
-        shot(p, "34_clock_left_of_middle")
-        assertEquals(HomeLayout.ClockPlace.LEFT, HomeSettings.layout.clock)
-        assertTrue(ev.widgetBoxes().getValue(EditStop.CLOCK).centerX() < bars.centerX() - 20f)
-        // Discard: the opening order and spot back (the add-on is told once edit mode is not live)
-        p.home.editAct { it.discard() }; settle()
-        assertEquals(HomeLayout.PAD_DEFAULT, HomeSettings.layout.pad)
-        assertEquals(HomeLayout.ClockPlace.CENTRE, HomeSettings.layout.clock)
+    }
+
+    /** CLASSIC IS PIXEL-IDENTICAL OUTSIDE EDIT MODE: a session that used every piece (each bubble, a hide and its "+", the Look chip both
+     *  ways, the fight preview and its bubble on and off) and set everything back, then Done: the band drawn exactly as after a session
+     *  that touched nothing (an open and Done: the toolbar's pictures keep the record's sides until the add-on's `d` says them - 1518's
+     *  own rule), each on its own Home at the same point of its clock */
+    @Test fun classicIsPixelIdenticalOutsideEditMode() {
+        for (l in listOf(HomeLayout(), HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT))) {
+            var lastCast: CastView? = null
+            fun session(full: Boolean): IntArray {
+                val p = bandPage(l)
+                lastCast = p.cast
+                // the row's extras show by their own data (ItemCd's, app-wide): only the gold line is on here (no purse said: no line),
+                // so the row is the same whatever another test left in that data
+                HomeSettings.clockHearth = false; HomeSettings.clockTeleport = false; HomeSettings.clockBags = false; HomeSettings.clockAmmo = false
+                assertTrue(p.home.editOpen(EditStop.CHAT)); settle(40)
+                val m = model(p)
+                var frames = 0
+                fun st(n: Int) { settle(n); frames += n }
+                if (full) {
+                    for (s in listOf(EditStop.PAD_PEN, EditStop.FACE_PEN)) { p.home.editAct { it.pencilTap(s) }; st(4); p.home.editKey("PAD2"); st(4) }
+                    p.home.editAct { it.hideExtra("gold") }; st(4)
+                    p.home.editAct { it.openExtraTray() }; st(4)
+                    assertEquals("the tray lists every hidden extra", HomeEditModel.EXTRA_KEYS, m.extrasOff)
+                    p.home.editKey("PADDRIGHT"); p.home.editKey("PADDRIGHT"); p.home.editKey("PAD1"); st(4)
+                    assertTrue("gold back", HomeSettings.clockGold)
+                    assertFalse(HomeSettings.clockHearth)
+                    p.home.editAct { it.lookFlip() }; st(20); p.home.editAct { it.lookFlip() }; st(20)
+                    p.home.editAct { it.toggleFight() }; st(20)
+                    assertTrue(p.cast.swingPreview)
+                    p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; st(4); p.home.editKey("PAD2")
+                    p.home.editAct { it.toggleFight() }; st(20)
+                    assertFalse(m.fightPreview)
+                    // fix round: the session ends (Done) with the preview SHOWING - the page after it is still Classic's
+                    p.home.editAct { it.toggleFight() }; st(20)
+                    assertTrue(m.fightPreview)
+                }
+                settle(200 - frames)
+                p.home.editKey("PADFORWARD"); settle(40)
+                assertFalse(p.home.editing)
+                assertFalse("the stand-in swing is edit mode's only", p.cast.swingPreview)
+                val items = HomeView::class.java.getDeclaredMethod("bandItems").apply { isAccessible = true }.invoke(p.home) as List<*>
+                return bandPx(p, boxes(p.home).getValue("BARS"))
+            }
+            val before = session(false)
+            val after = session(true)
+            val home = homes.last()
+            val bars = boxes(home).getValue("BARS")
+            val bw = bars.width().toInt(); val bh = bars.height().toInt()
+            // the buttons' own pictures run on CastView's own clock (the toolbar's `d` pictures and their hold, the hud's age): their
+            // boxes are left out here (the session never draws on them: theTopBarStaysStillOutsideItsPieces); the band's look is checked
+            val cv = lastCast!!
+            assertEquals(CastView.Layout.DIAMONDS, cv.layout); assertFalse(cv.castTop); assertTrue(cv.castOnly); assertFalse(cv.swingPreview)
+            val buttons = (0 until 8).map { i -> RectF().also { cv.slotRect(i, it); it.inset(-32f, -32f) } }
+            val diff = before.indices.filter { k -> before[k] != after[k] && buttons.none { it.contains((k % bw).toFloat(), (k / bw).toFloat()) } }
+            if (diff.isNotEmpty()) {
+                dumpDiff("49_diff_${l.cast.name.lowercase()}", before, after, bw, bh)
+                fail("${l.cast}: the band drawn as after a session that touched nothing: ${diff.size} px differ, x ${diff.minOf { it % bw }}..${diff.maxOf { it % bw }} y ${diff.minOf { it / bw }}..${diff.maxOf { it / bw }}")
+            }
+        }
+    }
+
+    /** THE BAND'S CHOICES AUTOSAVE AND SURVIVE DISCARD (1518's ruling for behaviour rows, kept for the top bar's: they are Settings'
+     *  own setters, app-wide or the character's band look - not the layout): hide Gold and the Hearthstone, the Thin row, the rank badges,
+     *  Same size, the swing off; a widget moved too; then Discard (Done's long press): the widget goes back, every band choice stays and
+     *  Settings > Bottom screen's tiles show it */
+    @Test fun bandChoicesAutosaveAndSurviveDiscard() {
+        val p = bandPage()
+        val env = BottomTiles.Env(null, null)
+        assertTrue(p.home.editOpen(EditStop.EXTRAS)); settle(20)
+        p.home.editAct { it.hideExtra("gold") }
+        p.home.editAct { it.hideExtra("hearth") }
+        p.home.editAct { it.pencilTap(EditStop.FACE_PEN) }; settle(4)
+        p.home.editKey("PADDDOWN"); p.home.editKey("PADDLEFT")                   // rank badges On
+        p.home.editKey("PAD2")
+        p.home.editAct { it.toggleFight() }; settle(10)
+        p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }
+        p.home.editKey("PADDRIGHT")                                              // Same size
+        p.home.editKey("PADDDOWN"); p.home.editKey("PADDRIGHT")                  // the swing timer Off
+        p.home.editKey("PAD2"); p.home.editAct { it.toggleFight() }; settle(10)
+        p.home.editAct { it.lookFlip() }; settle(20)                             // the Thin row, live
+        assertEquals(HomeRest.ROW, HomeSettings.rest)
+        assertEquals(CastView.Layout.ROW, p.cast.layout)
+        assertFalse("the band's choices are no change Discard undoes", model(p).changed)
+        p.home.editAct { it.swap() }; settle(20)                                 // a layout change: Discard's
+        assertTrue(HomeSettings.layout.mirrored)
+        p.home.editAct { it.discard() }; settle(40)
         assertFalse(p.home.editing)
+        assertFalse("Discard put the swap back", HomeSettings.layout.mirrored)
+        assertFalse(HomeSettings.clockGold); assertFalse(HomeSettings.clockHearth)
+        assertTrue(HomeSettings.rankBadges); assertFalse(HomeSettings.swingTimer)
+        assertEquals(HomeLayout.FightBand.SAME, HomeSettings.fightBand)
+        assertEquals("the resting look stays the Thin row (a behaviour row: 1518's ruling)", HomeRest.ROW, HomeSettings.rest)
+        assertEquals(CastView.Layout.ROW, p.cast.layout)
+        // Settings > Bottom screen says the same (one setter: the two never disagree)
+        val clock = BottomTiles.lines(BottomTiles.CLOCK, env).associate { it.key to it.picked }
+        assertEquals(1, clock["gold"]); assertEquals(1, clock["hearth"]); assertEquals(0, clock["bags"])
+        assertEquals(0, BottomTiles.lines(BottomTiles.REST, env).single().picked)
+        assertEquals(0, BottomTiles.lines(BottomTiles.RANK, env).single().picked)
+        assertEquals(1, BottomTiles.lines(BottomTiles.COMBAT, env).single().picked)
+        assertEquals(1, BottomTiles.lines(BottomTiles.SWING, env).single().picked)
+    }
+
+    /** P3: the Look chip flips the resting look and the band redraws live (no Done): Diamonds -> the Thin row -> Diamonds; the cursor
+     *  stays on the chip, the extras' stop goes with the Diamonds */
+    @Test fun theLookChipRedrawsLive() {
+        val p = bandPage()
+        assertTrue(p.home.editOpen(EditStop.LOOK)); settle(30)
+        val tall = boxes(p.home).getValue("BARS").height()
+        p.home.editKey("PAD1"); settle(30)
+        assertEquals(CastView.Layout.ROW, p.cast.layout)
+        assertTrue("the band is the thin row now", boxes(p.home).getValue("BARS").height() < tall - 40f)
+        assertEquals(EditStop.LOOK, model(p).cursor)
+        assertFalse("no extras in the thin row", EditStop.EXTRAS in p.home.editChrome.stops())
+        shot(p, "41_look_thin_row")
+        p.home.editKey("PAD1"); settle(30)
+        assertEquals(CastView.Layout.DIAMONDS, p.cast.layout)
+        assertEquals(tall, boxes(p.home).getValue("BARS").height(), 0.5f)
+        assertTrue(p.home.editing)
+        // a finger on the chip while the chat is lifted and carried over: the chat drops where it is, the move is kept (and saved), the
+        // look flips
+        p.home.editAct { it.lift(EditStop.CHAT) }
+        p.home.editKey("PADDRIGHT"); settle(10)
+        assertTrue(model(p).draft.mirrored)
+        p.home.editAct { it.lookFlip() }; settle(30)
+        assertNull(model(p).lifted)
+        assertTrue("the carried move kept", model(p).draft.mirrored)
+        assertTrue("and saved", HomeSettings.layout.mirrored)
+        assertEquals(HomeRest.ROW, HomeSettings.rest)
+        assertEquals(HomeRest.ROW, model(p).draft.rest)
+    }
+
+    /** P4: THE FIGHT PREVIEW SENDS NOTHING - no behaviour press, no fight state (Home shows no fight, edit mode never parks, the guest is
+     *  kept), and each In fights look renders: Grow grows the band, Same size keeps its box, Top screen (the Wings word on) loops its cue */
+    @Test fun theFightPreviewSendsNothing() {
+        val sizes = HashMap<HomeLayout.FightBand, Float>()
+        for (band in HomeLayout.FightBand.values()) {
+            val p = bandPage(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = band), ct = 1)
+            var presses = 0; var lives = 0
+            p.home.onEditPress = { _, _ -> presses++ }
+            assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+            p.home.onEditLive = { lives++ }
+            val rest = boxes(p.home).getValue("BARS").height()
+            p.home.editKey("PAD1"); settle(40)
+            assertTrue(model(p).fightPreview)
+            assertFalse("$band: Home shows no fight", p.home.fightShown())
+            assertFalse("$band: never parked", model(p).parked)
+            assertTrue(p.home.editing)
+            assertEquals("$band: no press reached the host", 0, presses)
+            assertEquals("$band: edit mode stayed live", 0, lives)
+            assertTrue("$band: the stand-in swing", p.cast.swingPreview)
+            assertFalse("$band: the swing line shows", p.cast.castOnly)
+            sizes[band] = boxes(p.home).getValue("BARS").height()
+            when (band) {
+                HomeLayout.FightBand.GROW -> { assertTrue("Grow: the band grows", sizes[band]!! > rest + 100f); assertTrue(p.cast.castTop) }
+                HomeLayout.FightBand.SAME -> assertEquals("Same size: its box", rest, sizes[band]!!, 0.5f)
+                HomeLayout.FightBand.TOP -> {
+                    assertEquals("Top screen: its box", rest, sizes[band]!!, 0.5f)
+                    assertTrue("Top screen: the up cue loops", p.home.topCueAlpha() > 0f || run { ShadowSystemClock.advanceBy(Duration.ofMillis(300)); p.home.topCueAlpha() > 0f })
+                }
+            }
+            assertTrue("$band: the fight pencil", EditStop.FIGHT_PEN in p.home.editChrome.stops())
+            assertFalse("$band: no column in the preview (D4)", EditStop.CHAT in p.home.editChrome.stops())
+            p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
+            shot(p, "42_fight_preview_${band.name.lowercase()}")
+            p.home.editKey("PAD2")
+            p.home.editAct { it.toggleFight() }; settle(40)
+            assertEquals("$band: back to the rest look", rest, boxes(p.home).getValue("BARS").height(), 0.5f)
+            assertFalse(p.cast.swingPreview)
+            p.home.editCancel()
+        }
+    }
+
+    /**
+     * fix round (the review, two findings): THE PREVIEW ENDS CLEAN BY EVERY WAY, not only by its toggle - Done (Start), B at the top level,
+     * a Discard that changed nothing, a cancel, another room over Home (the session parked; the room takes the band next) and a real fight:
+     * the D-pad's own pictures again (no In-combat spell drawn - nor read by the bar's prediction - out of a fight), no stand-in swing,
+     * the cast bar alone at rest, the band at its rest size and look
+     */
+    @Test fun thePreviewEndsCleanByEveryWay() {
+        val ways = listOf<Pair<String, (Page) -> Unit>>(
+            "Done (Start)" to { p -> p.home.editKey("PADFORWARD") },
+            "B at the top level" to { p -> p.home.editKey("PAD2") },
+            "Discard with no change" to { p -> p.home.editAct { it.discard() } },
+            "a cancel" to { p -> p.home.editCancel() },
+            "another room" to { p -> p.home.giveBack() },
+            "a real fight" to { p -> p.home.onFull(full(true), true); p.home.onQuests(quests(true), true); p.home.tick() })
+        for ((n, end) in ways) {
+            val p = bandPage(sets = fightSets)
+            assertTrue("$n: out of a fight, no In-combat picture", p.cast.fightDpad.isNullOrEmpty())
+            val rest = boxes(p.home).getValue("BARS").height()
+            assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+            p.home.editKey("PAD1"); settle(40)
+            assertTrue(model(p).fightPreview)
+            assertEquals("$n: the preview draws the In-combat picture", 136048, p.cast.fightDpad?.get(1))
+            assertTrue(p.cast.swingPreview); assertTrue(p.cast.castTop); assertFalse(p.cast.castOnly)
+            end(p); settle(40)
+            when (n) {
+                "another room", "a real fight" -> assertTrue("$n: parked", model(p).parked)
+                else -> assertFalse("$n: ended", p.home.editing)
+            }
+            assertFalse("$n: no stand-in swing", p.cast.swingPreview)
+            if (n == "a real fight") {
+                // the fight's own look (the takeover), then its end: the D-pad's own pictures again
+                p.home.onFull(full(false), true); p.home.onQuests(quests(false), true)
+                ShadowSystemClock.advanceBy(Duration.ofSeconds(25)); p.home.tick(); settle(40)
+                assertFalse(model(p).fightPreview)
+            }
+            assertTrue("$n: the D-pad's own pictures (${p.cast.fightDpad})", p.cast.fightDpad.isNullOrEmpty())
+            assertTrue("$n: no In-combat spell id", p.cast.fightIds.isNullOrEmpty())
+            assertTrue("$n: the cast bar alone", p.cast.castOnly)
+            assertFalse("$n: the strip, not the top edge", p.cast.castTop)
+            // (another room: the band is that room's now - its own layout; Home's look comes back with Home)
+            if (n != "another room") {
+                assertEquals("$n: the rest look", CastView.Layout.DIAMONDS, p.cast.layout)
+                assertEquals("$n: the rest size", rest, boxes(p.home).getValue("BARS").height(), 0.5f)
+            }
+            if (p.home.editing) { if (n == "another room") p.home.borrow(); settle(); p.home.editCancel(); settle() }
+        }
+    }
+
+    /**
+     * fix round (the review: the room bar's 52 px badge reach on a 28 px picture covered most of it, so a tap meant to select the
+     * Hearthstone hid it): on an extra's picture only its drawn "-" disc hides it - the picture's centre and most of it select the extra;
+     * off the picture the badge keeps its full reach
+     */
+    @Test fun aTapOnAnExtrasPictureSelectsIt() {
+        val p = bandPage()
+        HomeSettings.clockHearth = true; HomeSettings.clockTeleport = true
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
+        val m = model(p)
+        val ev = p.home.editChrome
+        val g = geo(p)!!
+        for (k in listOf("hearth", "teleport")) {
+            val r = g.extras.first { it.first == k }.second
+            val pic = ev.extraPicture(k, r)
+            assertEquals("$k: the 28 px picture at the cell's scale", ClockBand.ICON * r.height() / ClockBand.CELL_H, pic.width(), 0.5f)
+            var hides = 0; var all = 0
+            var y = pic.top + 0.5f
+            while (y < pic.bottom) { var x = pic.left + 0.5f; while (x < pic.right) { all++; if (ev.extraBadgeHit(k, r, x, y)) hides++; x += 1f }; y += 1f }
+            assertTrue("$k: at most a quarter of the picture hides it ($hides of $all)", hides * 4 <= all)
+            assertFalse("$k: its centre selects", ev.extraBadgeHit(k, r, pic.centerX(), pic.centerY()))
+            assertTrue("$k: the badge's own centre hides", ev.extraBadgeHit(k, r, r.left + HomeEditView.BADGE_IN, r.top + HomeEditView.BADGE_IN))
+            assertTrue("$k: off the picture the full reach", ev.extraBadgeHit(k, r, r.left - 14f, r.top - 14f))
+        }
+        // a finger on the Hearthstone's picture: the extra selected, nothing hidden
+        val hr = ev.extraPicture("hearth", g.extras.first { it.first == "hearth" }.second)
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, hr.centerX() + 3f, hr.centerY() + 3f); touch(p, MotionEvent.ACTION_UP, hr.centerX() + 3f, hr.centerY() + 3f)
+        settle(8)
+        assertTrue("still on", HomeSettings.clockHearth)
+        assertEquals(EditStop.EXTRAS, m.cursor); assertEquals("hearth", m.extra)
+        // the readability pass: the cursor hugs the 28 px picture (not the taller cell with the picture at its top)
+        val cur = ev.bandBox(EditStop.EXTRAS)!!
+        assertEquals("the cursor's box is the picture", hr, cur)
+        assertTrue("the cell is taller than its picture", g.extras.first { it.first == "hearth" }.second.height() > cur.height() + 8f)
+        p.home.editCancel()
+    }
+
+    /** fix round 3 (the review: an extra's "-" badge kept its full reach off its picture, ON the D-pad's Right button too, so a tap on
+     *  that button's lower part hid the first extra): on the D-pad's and the ABXY's buttons (their pencils' too) an extra takes a finger
+     *  only on its own cell or its drawn badge; every other point of a button opens that button's bubble */
+    @Test fun theDpadsButtonsKeepTheirTapsBesideTheExtras() {
+        val p = bandPage()
+        HomeSettings.clockHearth = true; HomeSettings.clockTeleport = true; HomeSettings.clockGold = true; HomeSettings.clockBags = true
+        HomeSettings.clockAmmo = true
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
+        val ev = p.home.editChrome
+        val g = geo(p)!!
+        assertTrue(g.extras.isNotEmpty())
+        val bars = boxes(p.home).getValue("BARS")
+        fun badge(k: String, r: RectF) = if (k == "gold") Pair(r.left - HomeEditView.EXTRA_BADGE_R - 2f, r.centerY())
+            else Pair(r.left + HomeEditView.BADGE_IN, r.top + HomeEditView.BADGE_IN)
+        fun grown(r: RectF?) = r?.let { RectF(it).apply { inset(-maxOf(0f, (HomeEditView.TOUCH_MIN - width()) / 2f), -maxOf(0f, (HomeEditView.TOUCH_MIN - height()) / 2f)) } }
+        val own = listOfNotNull(grown(g.look), grown(g.fightPen), g.plus)
+        var bad = 0; var first: String? = null; var near = 0
+        val slot = RectF()
+        for (pos in 0 until 8) {
+            p.cast.slotRect(pos, slot); slot.offset(bars.left, bars.top)
+            val want = if (pos < 4) EditStop.PAD_PEN else EditStop.FACE_PEN
+            var y = slot.top + 0.5f
+            while (y < slot.bottom) {
+                var x = slot.left + 0.5f
+                while (x < slot.right) {
+                    val onExtra = g.extras.any { (k, r) -> r.contains(x, y) ||
+                        badge(k, r).let { (bx, by) -> kotlin.math.hypot(x - bx, y - by) <= HomeEditView.EXTRA_BADGE_R + HomeEditView.EXTRA_BADGE_SLOP } }
+                    if (!onExtra && own.none { it.contains(x, y) }) {
+                        if (g.extras.any { (k, r) -> badge(k, r).let { (bx, by) -> kotlin.math.hypot(x - bx, y - by) <= Strip.BADGE_HIT / 2f } }) near++
+                        val got = ev.stopAt(x, y)
+                        if (got != want) { bad++; if (first == null) first = "slot $pos at ($x, $y): $got" }
+                    }
+                    x += 1f
+                }
+                y += 1f
+            }
+        }
+        assertTrue("the badges' reach does come onto the buttons (the case checked: $near points)", near > 0)
+        assertEquals("every point of a button off the extras opens its bubble (first: $first)", 0, bad)
+        p.home.editCancel()
+    }
+
+    /** fix round (the review: the Fight toggle right of the disc took about 130 px of the hints): the Fight toggle sits left of the disc,
+     *  clear of "+", and the hints have their 1518 room again; the readability pass: a state's hints are all kept at a smaller text
+     *  before anything is dropped, so EVERY hint shows in every state in English, Spanish and French (French lifts excepted: their
+     *  three never fit beside "Abandonner"'s Done, as in 1518) */
+    /** a failed state's hints' widths at the smallest and the full text (the message's reading) */
+    private fun hintWidths(ev: HomeEditView, pairs: List<Pair<String, String>>): String {
+        val hw = HomeEditView::class.java.getDeclaredMethod("hintsW", List::class.java, Int::class.javaPrimitiveType, android.graphics.Paint::class.java).apply { isAccessible = true }
+        val bp = HomeEditView::class.java.declaredMethods.first { it.name.startsWith("bodyP") && it.parameterTypes.size == 3 }.apply { isAccessible = true }
+        val p18 = bp.invoke(ev, 18f, Theme.text, android.graphics.Paint.Align.LEFT)
+        val p22 = bp.invoke(ev, 22f, Theme.text, android.graphics.Paint.Align.LEFT)
+        return "w18=${hw.invoke(ev, pairs, pairs.size, p18)} w22=${hw.invoke(ev, pairs, pairs.size, p22)} done=${ev.ribbon(W.toFloat()).done.width()} words=${pairs.map { Tr.t(it.second) }}"
+    }
+    @Test fun theRibbonKeepsEveryHintInEveryLanguage() {
+        val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+        val lost = ArrayList<String>()
+        try {
+            for (l in listOf("en", "es", "fr")) {
+                lang(l)
+                val p = bandPage(roomBar = true)
+                drawStrip(p)
+                assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+                val ev = p.home.editChrome
+                val g1 = W / 2f + Strip.GAP_HALF
+                val r = ev.ribbon(W.toFloat())
+                assertTrue("$l: Fight left of the disc", r.fight.right <= W / 2f - Strip.GAP_HALF)
+                assertTrue("$l: Fight clear of +", r.fight.left > r.plusHit.right)
+                val states = listOf<Pair<String, (HomeEditModel) -> List<HomeEditModel.Fx>>>(
+                    "top" to { m -> m.startOn(EditStop.CHAT, false) },
+                    "top map" to { m -> m.startOn(EditStop.MAP, false) },
+                    "top card" to { m -> m.startOn(EditStop.QUEST, false) },
+                    "top bar" to { m -> m.startOn(EditStop.CAST, false) },
+                    "top room" to { m -> m.startOn(EditStop.ROOMS, false) },
+                    "the D-pad's pencil" to { m -> m.startOn(EditStop.PAD_PEN, false) },
+                    "the Look chip" to { m -> m.startOn(EditStop.LOOK, false) },
+                    "an extra" to { m -> HomeSettings.clockGold = true; m.startOn(EditStop.EXTRAS, false) },
+                    "Fight" to { m -> m.startOn(EditStop.FIGHT, false) },
+                    "Done" to { m -> m.startOn(EditStop.DONE, false) },
+                    "the divider" to { m -> m.startOn(EditStop.DIVIDER, false) },
+                    "lifted chat" to { m -> m.startOn(EditStop.CHAT, true) },
+                    "lifted card" to { m -> m.startOn(EditStop.QUEST, true) },
+                    "lifted bar" to { m -> m.startOn(EditStop.CAST, true) },
+                    "lifted room" to { m -> m.startOn(EditStop.ROOMS, true) },
+                    "chat menu" to { m -> m.openMenu(EditStop.CHAT); emptyList() },
+                    "D-pad bubble" to { m -> m.startOn(EditStop.PAD_PEN, false); m.pencilTap(EditStop.PAD_PEN) },
+                    "ABXY bubble" to { m -> m.startOn(EditStop.FACE_PEN, false); m.pencilTap(EditStop.FACE_PEN) },
+                    "extras tray" to { m -> HomeSettings.clockGold = false; m.startOn(EditStop.EXTRAS, false); m.openExtraTray() })
+                for ((n, f) in states) {
+                    p.home.editAct { it.drop(); it.closeMenu(); it.closeSheet(); f(it) }; settle()
+                    val m = model(p)
+                    @Suppress("UNCHECKED_CAST")
+                    val pairs = ev.hintsFor(m, m.menu?.let { s -> (rowsOf.invoke(p.home, s) as List<MenuRow>).getOrNull(m.menuRow)?.kind })
+                    val c = Canvas(Bitmap.createBitmap(W, Strip.TRACKS, Bitmap.Config.ARGB_8888))
+                    ev.hintsKeptDrawn = -1; ev.hintsLeftDrawn = Float.NaN
+                    ev.drawRibbon(c, W.toFloat(), 0f, W / 2f - Strip.GAP_HALF, g1)
+                    assertTrue("$l $n: clear of the disc", ev.hintsLeftDrawn >= g1)
+                    if (m.menu != null || m.sheet != null || m.lifted != null)
+                        assertEquals("$l $n: B's hint is there", UiKit.backGlyph(), pairs.last().first)
+                    // the readability pass (the shots: only "A Move" with the chat selected, room to spare): EVERY hint of every state
+                    // shows in all three languages (the text shrinks to RIBBON_TEXT_MIN before any is dropped)
+                    // the one exception: French lifts (Côté / Déplacer, Lâcher, Remettre beside "Abandonner"'s wide Done: 356 px of
+                    // hints at the smallest text in a 322 px room) never fitted, in 1518 either - the least needed (B's) goes there
+                    if (l == "fr" && m.lifted != null) assertTrue("$l $n: Move and Drop kept", ev.hintsKeptDrawn >= pairs.size - 1)
+                    else if (pairs.size != ev.hintsKeptDrawn) lost += "$l $n: ${ev.hintsKeptDrawn} of ${pairs.map { it.second }} " +
+                        "(room ${ev.ribbon(W.toFloat()).done.left - 18f - g1 - HomeEditView.HINT_GAP}) needs ${hintWidths(ev, pairs)}"
+                }
+                p.home.editCancel()
+            }
+        } finally { Tr.setChoice(app, "auto") }
+        assertTrue("hints lost: $lost", lost.isEmpty())
+    }
+
+    /** fix round (the review: under a tap-to-cast bar at a column's top a pencil bubble's tail landed on that bar): the bubble a bar pushed
+     *  down has no tail; with no bar there, its tail hangs from the band */
+    @Test fun aBubbleUnderATopCastBarHasNoTail() {
+        for (cast in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_CHAT.withTop(true))) {
+            val p = bandPage(l = HomeLayout(cast = cast))
+            assertTrue(p.home.editOpen(EditStop.PAD_PEN)); settle(30)
+            p.home.editAct { it.pencilTap(EditStop.PAD_PEN) }; settle(8)
+            val ev = p.home.editChrome
+            val box = ev.menuBox(EditStop.PAD_PEN)
+            val bars = boxes(p.home).getValue("BARS")
+            val tail = ev.bubbleTailBox(EditStop.PAD_PEN)
+            if (cast.top) {
+                assertTrue("$cast: the bubble under the bar", box.top > bars.bottom + 60f)
+                assertNull("$cast: no tail onto the bar", tail)
+                shot(p, "50_bubble_under_top_cast_bar", frames = 1)
+            } else {
+                assertNotNull("$cast: the tail", tail)
+                assertTrue("$cast: the tail's tip at the band", tail!!.top >= bars.bottom - 1f && tail.top <= bars.bottom + UiKit.MODULE_GAP + 2f)
+            }
+            p.home.editCancel()
+        }
+    }
+
+    /** fix round 3 (the review: a pencil's 640 px bubble overhangs the other column by about 12 px, so a top tap-to-cast bar THERE pushed
+     *  it about 140 px down, tailless, over its own empty column): a bar the bubble only overhangs narrows the bubble instead - it still
+     *  hangs from the band under its pencil, with its tail, clear of the bar, at least MENU_MIN_W wide */
+    @Test fun aBubbleKeepsItsTailBesideATopCastBarInTheOtherColumn() {
+        for ((cast, pen) in listOf(HomeLayout.CastDock.ABOVE_MAP to EditStop.PAD_PEN, HomeLayout.CastDock.ABOVE_CHAT to EditStop.FACE_PEN)) {
+            val p = bandPage(l = HomeLayout(cast = cast))
+            assertTrue(p.home.editOpen(pen)); settle(30)
+            p.home.editAct { it.pencilTap(pen) }; settle(8)
+            val ev = p.home.editChrome
+            val box = ev.menuBox(pen)
+            val all = boxes(p.home)
+            val bars = all.getValue("BARS")
+            val bar = all.getValue("STRIP")
+            assertTrue("$cast: the bar at its column's top", bar.top < bars.bottom + 40f)
+            assertFalse("$cast: the bubble clear of the bar ($box, $bar)", RectF.intersects(box, bar))
+            assertTrue("$cast: the bubble hangs from the band ($box)", box.top <= bars.bottom + UiKit.MODULE_GAP + HomeEditView.BUBBLE_TAIL + 1f)
+            assertTrue("$cast: still a bubble's width (${box.width()})", box.width() >= HomeEditView.MENU_MIN_W)
+            val tail = ev.bubbleTailBox(pen)
+            assertNotNull("$cast: the tail", tail)
+            val pc = ev.bandBox(pen)!!.centerX()
+            assertTrue("$cast: the tail under its pencil", kotlin.math.abs(tail!!.centerX() - pc) < 1f)
+            if (pen == EditStop.PAD_PEN) shot(p, "51_bubble_beside_other_column_bar", frames = 1)
+            p.home.editCancel()
+        }
+    }
+
+    /** fix round (the review, two findings): while the Same size / Top screen preview shows, the clock block is a fight's - the extras
+     *  with data only, no "+" cell, nothing wiggling (no piece of it can be edited then) */
+    @Test fun theSameSizePreviewDrawsTheFightsClockRow() {
+        val clock = HomeView::class.java.getDeclaredMethod("editClock").apply { isAccessible = true }
+        val pose = HomeView::class.java.getDeclaredMethod("extraPoseAt", String::class.java).apply { isAccessible = true }
+        for (band in listOf(HomeLayout.FightBand.SAME, HomeLayout.FightBand.TOP)) {
+            val p = bandPage(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = band), ct = 1)
+            HomeSettings.clockAmmo = false; HomeSettings.clockBags = true             // "+" exists, the bags said nothing yet
+            assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+            lay(p.home)
+            p.home.draw(Canvas(Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)))
+            val editKeys = field(p.home, "editRowDrawn") as List<*>
+            assertTrue("$band: the edit row has the bags and + ($editKeys)", "bags" in editKeys && editKeys.size > 1)
+            p.home.editKey("PAD1"); settle(40)
+            assertTrue(model(p).fightPreview)
+            assertFalse("$band: the clock block is not edit mode's", clock.invoke(p.home) as Boolean)
+            for (k in HomeEditModel.EXTRA_KEYS) assertFalse("$band: $k still", pose.invoke(p.home, k) as Boolean)
+            val g = geo(p)!!
+            assertTrue("$band: no extras pieces", g.extras.isEmpty()); assertNull(g.plus)
+            // two frames a wiggle apart draw the band the same outside its buttons (nothing on the clock block turns)
+            val bars = boxes(p.home).getValue("BARS")
+            val a = bandPx(p, bars)
+            ShadowSystemClock.advanceBy(Duration.ofMillis(110))
+            val b = bandPx(p, bars)
+            val cv = p.cast
+            val buttons = (0 until 8).map { i -> RectF().also { cv.slotRect(i, it); it.inset(-32f, -32f) } } +
+                listOfNotNull(g.fightPen?.let { RectF(it).apply { offset(-bars.left, -bars.top); inset(-6f, -6f) } })
+            // the clock block's column (the spot between the D-pad and the faces; the swing line's stand-in loops along the foot)
+            val sp = cv.clockSpot()!!
+            val bw = bars.width().toInt()
+            val foot = bars.height() - 24f                                         // the band's foot: the swing line and Top screen's cue
+            val diff = a.indices.filter { k -> a[k] != b[k] && (k % bw) >= sp[0] && (k % bw) <= sp[2] && (k / bw) < foot &&
+                buttons.none { it.contains((k % bw).toFloat(), (k / bw).toFloat()) } }
+            if (diff.isNotEmpty()) dumpDiff("51_preview_clock_${band.name.lowercase()}", a, b, bw, bars.height().toInt())
+            assertEquals("$band: nothing on the clock block moves (x ${diff.minOfOrNull { it % bw }}..${diff.maxOfOrNull { it % bw }} " +
+                "y ${diff.minOfOrNull { it / bw }}..${diff.maxOfOrNull { it / bw }}, chip ${g.chip}, bars $bars)", 0, diff.size)
+            p.home.editCancel()
+        }
+    }
+
+    /** a finger over the band (P1 - P4): a pencil opens its bubble (its buttons too), the Look chip flips, a "-" badge hides, "+" opens
+     *  the tray, a tray row puts it back; the ribbon's Fight toggles the preview; every bubble hangs under the band, on the screen */
+    @Test fun aFingerOnTheBandsPieces() {
+        val p = bandPage(roomBar = true)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(40)
+        val m = model(p)
+        fun tap(r: RectF) { t0 = android.os.SystemClock.uptimeMillis(); touch(p, MotionEvent.ACTION_DOWN, r.centerX(), r.centerY()); touch(p, MotionEvent.ACTION_UP, r.centerX(), r.centerY()); settle(8) }
+        val bars = boxes(p.home).getValue("BARS")
+        var g = geo(p)!!
+        tap(g.padPen); assertEquals(EditStop.PAD_PEN, m.menu)
+        val bubble = p.home.editChrome.menuBox(EditStop.PAD_PEN)
+        assertTrue("the bubble under the band", bubble.top >= bars.bottom)
+        assertTrue("on the screen", bubble.left >= 16f && bubble.right <= W - 16f && bubble.bottom <= H)
+        shot(p, "43_bubble_dpad", frames = 1)
+        tap(g.padPen); assertNull("the same tap closes it", m.menu)
+        // the faces' buttons are their pencil's too
+        val f = RectF(g.face).apply { set(centerX() - 4f, bottom - 30f, centerX() + 4f, bottom - 22f) }
+        tap(f); assertEquals(EditStop.FACE_PEN, m.menu)
+        shot(p, "44_bubble_buttons", frames = 1)
+        tap(RectF(600f, 900f, 602f, 902f)); assertNull("a tap off it closes it", m.menu)
+        // a "-" badge hides that extra
+        val hearth = g.extras.first { it.first == "hearth" }.second
+        tap(RectF(hearth.left + 1f, hearth.top + 1f, hearth.left + 3f, hearth.top + 3f))
+        assertFalse(HomeSettings.clockHearth)
+        settle(10); g = geo(p)!!
+        assertNotNull("the + spot", g.plus)
+        tap(g.plus!!); assertEquals(HomeEditModel.Sheet.EXTRAS, m.sheet)
+        val tray = p.home.editChrome.extraTrayBox()!!
+        assertTrue("the tray on the screen, under the band", tray.top >= bars.bottom && tray.bottom <= H && tray.left >= 16f && tray.right <= W - 16f)
+        shot(p, "45_extras_tray", frames = 1)
+        // a frame drawn (as the screen does: the tray's rows are hit where they were drawn - with HOME_EDIT_SHOTS the shot drew one)
+        p.home.draw(Canvas(Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)))
+        val row = RectF(tray.left + 40f, tray.top + HomeEditView.TRAY_HEAD + 20f, tray.left + 42f, tray.top + HomeEditView.TRAY_HEAD + 22f)
+        tap(row); assertTrue("back", HomeSettings.clockHearth); assertNull(m.sheet)
+        // the Look chip
+        g = geo(p)!!
+        tap(g.look!!); assertEquals(HomeRest.ROW, HomeSettings.rest); settle(20)
+        shot(p, "46_thin_row_pieces", frames = 1)
+        tap(geo(p)!!.look!!); assertEquals(HomeRest.DIAMONDS, HomeSettings.rest); settle(20)
+        // the ribbon's Fight
+        val ev = p.home.editChrome
+        val fr = ev.ribbon(W.toFloat()).fight
+        assertTrue("Fight left of the disc (fix round)", fr.right <= W / 2f - Strip.GAP_HALF)
+        ev.ribbonTouch(fr.centerX(), fr.centerY(), MotionEvent.ACTION_DOWN); ev.ribbonTouch(fr.centerX(), fr.centerY(), MotionEvent.ACTION_UP)
+        settle(30)
+        assertTrue(m.fightPreview)
+        shot(p, "47_fight_preview_grow")
+        // the controller reaches the band from the ribbon, B closes a bubble
+        p.home.editKey("PADDUP"); assertTrue(m.cursor.band)
+        p.home.editKey("PAD1"); p.home.editKey("PAD2"); assertNull(m.menu)
+        p.home.editKey("PADFORWARD"); settle(30)
+        assertFalse(p.home.editing)
+    }
+
+    /** the bubbles and the ribbon's Fight in Spanish and French: every row inside its bubble, the Fight toggle clear of the disc and the
+     *  hints clear of it */
+    @Test fun theBandsBubblesInSpanishAndFrench() {
+        try {
+            for (l in listOf("es", "fr")) {
+                lang(l)
+                val p = bandPage()
+                assertTrue(p.home.editOpen(EditStop.PAD_PEN)); settle(30)
+                for (s in listOf(EditStop.PAD_PEN, EditStop.FACE_PEN)) {
+                    p.home.editAct { it.pencilTap(s) }; settle(8)
+                    val box = p.home.editChrome.menuBox(s)
+                    assertTrue("$l $s on the screen", box.left >= 16f && box.right <= W - 16f && box.bottom <= H)
+                    shot(p, "48_${l}_bubble_${s.name.lowercase()}", frames = 1)
+                    p.home.editKey("PAD2")
+                }
+                p.home.editAct { it.toggleFight() }; settle(20)
+                p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(8)
+                val fb = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
+                assertTrue("$l fight bubble under the grown band", fb.top >= boxes(p.home).getValue("BARS").bottom)
+                shot(p, "48_${l}_bubble_fight", frames = 1)
+                val ev = p.home.editChrome
+                val r = ev.ribbon(W.toFloat())
+                assertTrue("$l: Fight left of the disc (fix round)", r.fight.right <= W / 2f - Strip.GAP_HALF)
+                assertTrue("$l: Fight right of +", r.fight.left > r.plusHit.right)
+                p.home.editCancel()
+            }
+        } finally { lang("en") }
     }
 
     private fun lang(l: String) {
@@ -537,21 +1086,169 @@ class HomeEditShotsTest {
         } finally { Tr.setChoice(app, "auto") }
     }
 
-    @Test fun partyModeIsFramedNeverPicked() {
-        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT).swapped(), party = true)
+    /**
+     * after 1518, the user's ruling 2026-11-22 ("Why can't I move the party mode or the tap to cast to the top?"): the party list is a
+     * widget - the D-pad walks to it, A lifts it (it grows and stops wiggling), the D-pad carries it to the foot of the chat's column,
+     * the map's foot, the map's top (its Select tab on that column's outer edge), A drops it (saved as it goes), Select carries it with
+     * the map, X its menu over the other column, and Discard puts the opening record back; its own gold row box stays hidden
+     */
+    @Test fun thePartyListMovesWithTheController() {
+        val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+        val p = page(classic, party = true)
         p.home.forceLive = true
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(40)
         assertFalse("Party mode's D-pad waits while editing", p.home.partyHoldsDpad())
-        val party = boxes(p.home).getValue("PARTY")
-        assertTrue("the party module follows the chat (right)", party.right >= 1239f)
-        assertTrue("never a stop", EditStop.values().none { it.name == "PARTY" })
         val pv = field(p.home, "partyView") as PartyModuleView
         assertFalse("fix round 1: the party's own gold row box hidden while editing (no second cursor)", pv.boxShown())
-        shot(p, "30_party_mode_edit_mirrored")
-        p.home.editKey("PAD3"); settle()
-        shot(p, "30b_party_mode_chat_menu")
-        p.home.editCancel(); settle()
+        val ev = p.home.editChrome
+        assertTrue("a stop now", EditStop.PARTY in ev.stops())
+        assertEquals(boxes(p.home).getValue("PARTY"), ev.widgetBoxes()[EditStop.PARTY])
+        shot(p, "30_party_list_edit")
+        p.home.editKey("PADDUP"); settle()
+        assertEquals("Up from the chat: the party list over it", EditStop.PARTY, model(p).cursor)
+        assertEquals(listOf(UiKit.okGlyph() to "Move", UiKit.xGlyph() to "Options"), ev.hintsFor(model(p)))
+        shot(p, "30a_party_list_picked", frames = 1)
+        p.home.editKey("PAD1"); settle(20)
+        assertEquals(EditStop.PARTY, model(p).lifted)
+        assertEquals("the four-way Move", HomeEditView.DPAD4 to "Move", ev.hintsFor(model(p)).first())
+        assertTrue("lifted: it grows over the others", pv.scaleX > views(p.home).getValue("CHAT").scaleX + 0.01f)
+        assertTrue("raised over the others", pv.translationZ > views(p.home).getValue("CHAT").translationZ)
+        shot(p, "30b_party_list_lifted", frames = 1)
+        // Down: the chat's foot, over the bar under the chat
+        p.home.editKey("PADDDOWN"); settle(30)
+        var b = boxes(p.home)
+        assertEquals(HomeLayout.PartyDock.UNDER_CHAT, model(p).draft.party)
+        assertEquals(b.getValue("STRIP").top - 8f, b.getValue("PARTY").bottom, 0.5f)
+        assertEquals(b.getValue("PARTY").top - PartyLayout.CHAT_GAP, b.getValue("CHAT").bottom, 0.5f)
+        assertEquals(0f, b.getValue("PARTY").left, 0.5f)
+        assertEquals("lifted: not saved yet", classic, HomeSettings.layout)
+        shot(p, "30c_party_list_under_chat", frames = 1)
+        // Right: the map's foot (the page's foot: no bar there), its tab on the right edge
+        p.home.editKey("PADDRIGHT"); settle(30)
+        b = boxes(p.home)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, model(p).draft.party)
+        assertEquals(927f, b.getValue("PARTY").bottom, 0.5f)
+        assertEquals(1240f, b.getValue("PARTY").right, 0.5f)
+        assertTrue(pv.tabRight)
+        assertTrue("the card on the map ends over it", b.getValue("QUESTS").bottom <= b.getValue("PARTY").top)
+        shot(p, "30d_party_list_under_map", frames = 1)
+        // Up: the map's top (the card under the map's zone band below it)
+        p.home.editKey("PADDUP"); settle(30)
+        b = boxes(p.home)
+        assertEquals(HomeLayout.PartyDock.ABOVE_MAP, model(p).draft.party)
+        assertEquals(b.getValue("BARS").bottom + 8f, b.getValue("PARTY").top, 0.5f)
+        assertEquals(b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP, b.getValue("MAP").top, 0.5f)
+        assertEquals(b.getValue("MAP").top + HomeView.ZONE_BAND_BOTTOM + 4f, b.getValue("QUESTS").top, 0.5f)
+        // A: dropped and saved
+        p.home.editKey("PAD1"); settle(30)
+        assertNull(model(p).lifted)
+        assertEquals(classic.copy(party = HomeLayout.PartyDock.ABOVE_MAP), HomeSettings.layout)
+        shot(p, "30e_party_list_above_map", frames = 1)
+        // Select: the modules swap, the party list stays the map's (now on the left, its tab on the left edge)
+        p.home.editKey("PADBACK"); settle(30)
+        b = boxes(p.home)
+        assertEquals(0f, b.getValue("PARTY").left, 0.5f)
+        assertFalse(pv.tabRight)
+        assertTrue(b.getValue("MAP").left < b.getValue("CHAT").left)
+        assertEquals(b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP, b.getValue("MAP").top, 0.5f)
+        shot(p, "30f_party_list_swapped", frames = 1)
+        // X: its menu over the chat's column (the one it is not in), inside the screen, under the band
+        p.home.editKey("PAD3"); settle(20)
+        assertEquals(EditStop.PARTY, model(p).menu)
+        val menu = ev.menuBox(EditStop.PARTY)
+        assertTrue("menu $menu over the chat's column", menu.left >= b.getValue("CHAT").left - 1f && menu.right <= b.getValue("CHAT").right + 1f)
+        assertTrue(menu.top >= b.getValue("BARS").bottom && menu.bottom <= H)
+        assertFalse("never over the party list", RectF.intersects(menu, b.getValue("PARTY")))
+        shot(p, "30g_party_list_menu", frames = 1)
+        // its Edge row: Below = the map's foot
+        p.home.editKey("PADDDOWN"); p.home.editKey("PADDRIGHT"); settle(30)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, model(p).draft.party)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, HomeSettings.layout.party)
+        p.home.editKey("PAD2"); settle()
+        // Discard: the opening record back, the party list over the chat again
+        p.home.editB(true); settle(45)
+        assertFalse(p.home.editing)
+        assertEquals(classic, HomeSettings.layout)
+        b = boxes(p.home)
+        assertEquals(0f, b.getValue("PARTY").left, 0.5f)
+        assertEquals(b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP, b.getValue("CHAT").top, 0.5f)
         assertTrue("edit mode over: the row box again", pv.boxShown())
+    }
+
+    /** a finger drags the party list: from the chat's top down to the map's foot (the release lays the dock under it), and back up
+     *  over the chat; the drop well shows where it goes */
+    @Test fun thePartyListMovesWithAFinger() {
+        val classic = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+        val p = page(classic, party = true)
+        p.home.forceLive = true
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(40)
+        var party = boxes(p.home).getValue("PARTY")
+        val x0 = party.centerX(); val y0 = party.centerY()
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x0, y0)
+        for (i in 1..12) { touch(p, MotionEvent.ACTION_MOVE, x0 + 52f * i, y0 + 48f * i); settle(2) }
+        assertEquals("a drag lifts it", EditStop.PARTY, model(p).lifted)
+        assertNotNull(model(p).drag)
+        shot(p, "31_party_list_dragged", frames = 1)
+        touch(p, MotionEvent.ACTION_UP, x0 + 52f * 12, y0 + 48f * 12); settle(40)
+        assertNull(model(p).lifted)
+        assertEquals(HomeLayout.PartyDock.UNDER_MAP, HomeSettings.layout.party)
+        party = boxes(p.home).getValue("PARTY")
+        assertEquals(927f, party.bottom, 0.5f); assertEquals(1240f, party.right, 0.5f)
+        shot(p, "31a_party_list_dropped_under_map", frames = 1)
+        // and back over the chat's top
+        val x1 = party.centerX(); val y1 = party.centerY()
+        t0 = android.os.SystemClock.uptimeMillis()
+        touch(p, MotionEvent.ACTION_DOWN, x1, y1)
+        for (i in 1..12) { touch(p, MotionEvent.ACTION_MOVE, x1 - 52f * i, y1 - 48f * i); settle(2) }
+        touch(p, MotionEvent.ACTION_UP, x1 - 52f * 12, y1 - 48f * 12); settle(40)
+        assertEquals(classic, HomeSettings.layout)
+        party = boxes(p.home).getValue("PARTY")
+        assertEquals(0f, party.left, 0.5f)
+        assertEquals(party.bottom + PartyLayout.CHAT_GAP, boxes(p.home).getValue("CHAT").top, 0.5f)
+        p.home.editCancel()
+    }
+
+    /** the party list's menu fits in English, Spanish and French, at a third of the width, from each column */
+    @Suppress("UNCHECKED_CAST")
+    @Test fun thePartyListsMenuFitsInSpanishAndFrench() {
+        val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+        try {
+            for (l in listOf("en", "es", "fr")) {
+                lang(l)
+                for (dock in HomeLayout.PartyDock.values()) for (base in listOf(HomeArrangements.of(HomeArrangements.BIG_MAP, HomeLayout()),
+                        HomeArrangements.of(HomeArrangements.BIG_CHAT, HomeLayout()).swapped())) {
+                    val layout = base.copy(party = dock)
+                    val p = page(layout, party = true)
+                    assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
+                    p.home.editAct { it.openMenu(EditStop.PARTY); emptyList() }; settle()
+                    val img = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+                    p.home.draw(Canvas(img))
+                    val ev = p.home.editChrome
+                    val btns = field(ev, "menuBoxes") as List<List<RectF>>
+                    val rows = field(ev, "menuRowBoxes") as List<RectF>
+                    val words = rowsOf.invoke(p.home, EditStop.PARTY) as List<MenuRow>
+                    val tag = "$l $dock ${layout.chatSide} ${layout.chatShare}"
+                    assertEquals(tag, 2, words.size); assertEquals(tag, words.size, rows.size)
+                    val lp = UiKit.bodyPaint(28f)
+                    for ((i, r) in words.withIndex()) {
+                        val rr = rows[i]
+                        val labelRight = rr.left + 18f + lp.measureText(Tr.t(r.label))
+                        for (bt in btns[i]) {
+                            assertTrue("$tag '${Tr.t(r.label)}': button inside its row", bt.left >= rr.left - 1f && bt.right <= rr.right + 1f)
+                            assertTrue("$tag '${Tr.t(r.label)}': buttons clear of the label", bt.left >= labelRight - 1f || bt.top >= rr.top + 0.3f * rr.height())
+                        }
+                    }
+                    val box = ev.menuBox(EditStop.PARTY)
+                    val b = boxes(p.home)
+                    assertTrue("$tag: inside the screen, under the band", box.left >= -0.5f && box.right <= W + 0.5f &&
+                        box.top >= b.getValue("BARS").bottom - 0.5f && box.bottom <= H + 0.5f)
+                    for (c in ev.castBoxes()) assertFalse("$tag: never over the bar", RectF.intersects(box, c))
+                    if (l != "en") shot(p, "33p_menu_${l}_${dock.name.lowercase()}_${layout.chatShare.name.lowercase()}")
+                    p.home.editCancel()
+                }
+            }
+        } finally { Tr.setChoice(app, "auto") }
     }
 
     @Test fun aShortTapStillOpensTheChatRoom() {
@@ -675,12 +1372,6 @@ class HomeEditShotsTest {
         p.home.editKey("PAD3"); settle()
         assertFalse("X on Done: discarded", p.home.editing)
         assertEquals(classic, HomeSettings.layout)
-        // no padmap: the D-pad icons cannot move - no "A Move" on them
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
-        p.home.editAct { it.startOn(EditStop.PAD_U, false) }; settle()
-        assertFalse(model(p).pieceMovable(EditStop.PAD_U))
-        assertTrue("no promise of a move", ev.hintsFor(model(p)).isEmpty())
-        p.home.editCancel()
     }
 
     /** 1518 (F3): the ribbon's slop (the rooms' row's top 14 px, so "+" and Done meet 48 px) never takes a down a room's "-" badge
@@ -796,8 +1487,8 @@ class HomeEditShotsTest {
                 lang(l)
                 val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), roomBar = true)
                 HomeLayoutStore.character("Korvash-Realm")
-                p.home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m184","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
-                    "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"pp":1,"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
+                p.home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,
+                    "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}}}}"""))!!)
                 settle()
                 drawStrip(p)
                 assertTrue(p.home.editOpen(EditStop.CHAT)); settle()
@@ -805,9 +1496,18 @@ class HomeEditShotsTest {
                 val g1 = W / 2f + 64f + 6f + 2f
                 val states = listOf<Pair<String, (HomeEditModel) -> List<HomeEditModel.Fx>>>(
                     "top" to { m -> m.startOn(EditStop.CHAT, false) },
+                    "top map" to { m -> m.startOn(EditStop.MAP, false) },
+                    "top card" to { m -> m.startOn(EditStop.QUEST, false) },
+                    "top bar" to { m -> m.startOn(EditStop.CAST, false) },
+                    "top room" to { m -> m.startOn(EditStop.ROOMS, false) },
+                    "the D-pad's pencil" to { m -> m.startOn(EditStop.PAD_PEN, false) },
+                    "the Look chip" to { m -> m.startOn(EditStop.LOOK, false) },
+                    "an extra" to { m -> HomeSettings.clockGold = true; m.startOn(EditStop.EXTRAS, false) },
+                    "Fight" to { m -> m.startOn(EditStop.FIGHT, false) },
+                    "Done" to { m -> m.startOn(EditStop.DONE, false) },
+                    "the divider" to { m -> m.startOn(EditStop.DIVIDER, false) },
                     "lifted chat" to { m -> m.startOn(EditStop.CHAT, true) },
                     "lifted room" to { m -> m.startOn(EditStop.ROOMS, true) },
-                    "lifted pad" to { m -> m.startOn(EditStop.PAD_L, true) },
                     "menu" to { m -> m.openMenu(EditStop.CHAT); emptyList() })
                 for ((n, f) in states) {
                     p.home.editAct { it.drop(); it.closeMenu(); f(it) }; settle()
@@ -1453,17 +2153,8 @@ class HomeEditShotsTest {
         assertNotNull(cast.roomMotionK())
         assertFalse("not a swap: a cross-fade", cast.roomMotionSwap)
         assertNull("120 ms", cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + CastView.ROOM_FADE_MS + 20))
-        assertNull(cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + CastView.ROOM_FADE_MS + 20))
-        // 1518 build 3: Up and Down are the toolbar's too - a swap there slides as Left / Right do, any other change cross-fades
-        cast.roomBar = HoldTalk.DEFAULT_DIRS
-        cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + Motion.MODULE_OPEN + 20)
-        cast.roomBar = HoldTalk.DEFAULT_DIRS + mapOf(2 to "home", 4 to "radial")
-        assertNotNull("Up <-> Down: a motion", cast.roomMotionK())
-        assertTrue("a swap: a slide", cast.roomMotionSwap)
-        cast.roomMotionK(android.os.SystemClock.elapsedRealtime() + Motion.MODULE_OPEN + 20)
         cast.roomBar = cast.roomBar!! + mapOf(2 to "open")
-        assertNotNull("Up alone changed: a cross-fade", cast.roomMotionK())
-        assertFalse(cast.roomMotionSwap)
+        assertNull("Up / Down only: nothing", cast.roomMotionK())
     }
 
     /** the settings stage fed a game (PreviewStage: the Settings tiles' live pictures) */

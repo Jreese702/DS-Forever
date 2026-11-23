@@ -20,12 +20,11 @@ import kotlin.math.min
  * part, the frame's size: Home stays LIVE and FULL SIZE under it (D6) - what you edit is what you get, touch targets keep their size.
  *
  *  - every widget that is not selected is dimmed (black 70 / 255) with a soft dashed ink frame and its terse tag; a rider inside a
- *    widget (the quest card on the map) a lighter inner frame; the party module (Party mode) a dashed frame only (it follows the chat:
- *    never a stop);
- *  - THE TOP BAR'S SMALL ICONS AS APPS (1518 build 3, the user's ruling 2026-11-21): the band wears nothing - no dim, no dashed frame, no
- *    "Controller" tag, no Clock box; its four D-pad toolbar icons and its clock chip wiggle on their own (Home draws them through their
- *    own poses: CastView.editPiece, the clock block) and take the app's golden cursor box; the L / R targets, ZL / ZR and the face never
- *    move and are no stops;
+ *    widget (the quest card on the map) a lighter inner frame; the party list (Party mode's module) is a widget like the others since
+ *    the user's ruling 2026-11-22 after 1518 (the top or the foot of either column), its tag clear of its Select tab;
+ *  - THE TOP BAR STAYS STILL (1518 build 3, the user's ruling 2026-11-21; the user's ruling 2026-11-22 after 1518: "What the hell is the
+ *    dpad swapping buttons or clock move? ... remove that"): the band wears nothing - no dim, no dashed frame, no tag, no Clock box, no
+ *    wiggle, no badge - and has no stops: a finger on it finds nothing; its options live in Settings > Bottom screen;
  *  - the selected widget wears the GOLDEN BOX (the app's cursor look: a thick gold box with its glow, never a thin outline), at once;
  *    lifted, the kit's gold arrows point at the docks it can reach, and a finger's drop well shows the dock under it (red: refused);
  *  - the divider's handle between the columns, the red X chip on a selected removable widget ("Remove?" first);
@@ -75,12 +74,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         fun plusPose(out: FloatArray): Boolean = false
         /** an input reached the chrome (the edit ticker runs on: the wiggle never rests while edit mode is open) */
         fun poke() {}
-        /** 1518 build 3: a band piece's box in Home's px as laid (a D-pad icon's spot, the clock chip; null = none drawn now: the thin row
-         *  has no clock, no band) */
-        fun pieceBox(s: EditStop): RectF? = null
-        /** a band piece's whole pose now as a matrix in Home's px (its shrink, wiggle, lift and the finger's carry; false = none): the
-         *  golden box rides it */
-        fun piecePose(s: EditStop, out: android.graphics.Matrix): Boolean = false
         /** the bars each widget has in the state now, for [l] (the drop well's box) */
         fun solve(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box>
         val geo: HomeEditModel.Geo
@@ -92,7 +85,21 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val flash: Pair<EditStop, Long>?
         /** phase 4: the room bar under Home (null = none: no Room bar stop) */
         fun bar(): Strip? = null
+        /** THE TOP BAR'S PIECES now in Home's px (P1 - P4; null = the band is not laid on Home now) */
+        fun band(): BandGeo? = null
+        /** P2: extra [key]'s wiggle ("plus" = the extras' "+" spot) as a matrix in Home's px; false = none */
+        fun extraPose(key: String, out: android.graphics.Matrix): Boolean = false
     }
+
+    /**
+     * THE TOP BAR'S PIECES (the user's rulings 2026-11-22, the picker's ALL FOUR), Home's px: the band, the D-pad's and the faces' button
+     * groups ([pad], [face]: a finger on either opens its pencil's bubble too), the two pencils, the Look chip (null in the fight preview),
+     * the fight pencil (the preview only), the clock's extras shown in edit mode (key, box: the chip's gold line "gold" among them) and the
+     * extras' "+" spot (null = none hidden, or no extras row: the thin row, the preview); the clock chip as drawn (null = none)
+     */
+    class BandGeo(val band: RectF, val pad: RectF, val face: RectF, val padPen: RectF, val facePen: RectF, val look: RectF?,
+                  val fightPen: RectF?, val extras: List<Pair<String, RectF>>, val plus: RectF?, val diamonds: Boolean,
+                  val chip: RectF? = null, val keys: List<RectF> = emptyList())
 
     init { isClickable = true }
 
@@ -127,8 +134,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private fun bodyP(size: Float, colour: Int = Theme.text, align: Paint.Align = Paint.Align.LEFT) = textP(0, size, colour, align)
     private fun titleP(size: Float, colour: Int = Theme.gold, align: Paint.Align = Paint.Align.LEFT) = textP(1, size, colour, align)
     private fun numberP(size: Float, colour: Int = Theme.text, align: Paint.Align = Paint.Align.LEFT) = textP(2, size, colour, align)
+    /** the fight pencil's own colours (the readability pass): a fight-red ring and tip on a dark red disc */
+    private val FIGHT_RED = Color.rgb(200, 60, 40)
+    private val FIGHT_INK = Color.rgb(58, 16, 12)
     private val dash = DashPathEffect(floatArrayOf(14f, 9f), 0f)
     private val dashFine = DashPathEffect(floatArrayOf(8f, 7f), 0f)
+    private val dashPlus = DashPathEffect(floatArrayOf(5f, 4f), 0f)
     private val path = Path()
     /** the motion's scratch (no allocation per frame) */
     private val mtx = android.graphics.Matrix()
@@ -145,11 +156,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
      */
     private fun boxesNow(p: Map<HomePart, RectF>): Map<EditStop, RectF> {
         wbNow.clear()
-        // the band itself is no widget (1518 build 3): only its pieces are
-        for (s in PIECES) host.pieceBox(s)?.let { putBox(s, it) }
+        // the band is no widget (1518 build 3) and has no stops (the user's ruling 2026-11-22: it stays still)
         p[HomePart.CHAT]?.let { putBox(EditStop.CHAT, it) }
         p[HomePart.MAP]?.let { putBox(EditStop.MAP, it) }
         p[HomePart.QUESTS]?.let { putBox(EditStop.QUEST, it) }
+        // after 1518: the party list is a widget (the top or the foot of either column)
+        p[HomePart.PARTY]?.let { putBox(EditStop.PARTY, it) }
         val bs = castNow(p)
         if (bs.isNotEmpty()) { val o = putBox(EditStop.CAST, bs[0]); for (i in 1 until bs.size) o.union(bs[i]) }
         return wbNow
@@ -196,14 +208,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return divBox
     }
 
-    /** the cursor's stops in Home's px (the band's pieces each their own: the D-pad walks between them spatially) */
+    /** the cursor's stops in Home's px (the D-pad walks between them spatially; the band has none) */
     fun stops(): Map<EditStop, HomeLayoutSolver.Box> {
         val out = LinkedHashMap<EditStop, HomeLayoutSolver.Box>()
         val wb = widgetBoxes()
         for ((s, r) in wb) out[s] = HomeLayoutSolver.Box(r.left, r.top, r.right, r.bottom)
-        // the divider's D-pad stop is the columns' top (reached from the band above it; Left / Right there step the width)
+        // the divider's D-pad stop is the columns' top (Up from either column's top reaches it; Left / Right there step the width)
         dividerBox()?.let { d -> val top = listOfNotNull(host.parts()[HomePart.CHAT], host.parts()[HomePart.MAP]).minOfOrNull { it.top } ?: d.top
-            // only the gap's middle: never straight above / below a column (Up from the chat goes to the band, not here)
+            // only the gap's middle: never straight above / below a column
             out[EditStop.DIVIDER] = HomeLayoutSolver.Box(d.centerX() - 2f, top, d.centerX() + 2f, top + 40f) }
         val rib = ribbon(width.toFloat().takeIf { it > 0f } ?: 1240f)
         val y0 = height.toFloat()
@@ -213,7 +225,43 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         out[EditStop.DONE] = HomeLayoutSolver.Box(rib.done.left, y0 + rib.done.top, rib.done.right, y0 + rib.done.bottom)
         // phase 4: the room bar's rooms' row, under the ribbon (Down from the columns; Left / Right there walk its rooms)
         if (host.bar() != null) out[EditStop.ROOMS] = HomeLayoutSolver.Box(8f, y0 + Strip.TRACKS, (width.toFloat().takeIf { it > 0f } ?: 1240f) - 8f, y0 + Strip.BAR)
+        // P4: the ribbon's Fight toggle (between "+" and Done: Right from "+", Left from Done, Up from the room bar)
+        out[EditStop.FIGHT] = HomeLayoutSolver.Box(rib.fight.left, y0 + rib.fight.top, rib.fight.right, y0 + rib.fight.bottom)
+        // THE TOP BAR'S PIECES (P1 - P4): the two pencils, the Look chip or the fight pencil, the extras' row (one stop: its own cursor)
+        host.band()?.let { g ->
+            fun put(s: EditStop, r: RectF) { out[s] = HomeLayoutSolver.Box(r.left, r.top, r.right, r.bottom) }
+            put(EditStop.PAD_PEN, g.padPen); put(EditStop.FACE_PEN, g.facePen)
+            g.look?.let { put(EditStop.LOOK, it) }
+            g.fightPen?.let { put(EditStop.FIGHT_PEN, it) }
+            val cells = extrasUnion(g)
+            if (cells != null) put(EditStop.EXTRAS, cells)
+        }
+        // P4 (decision D4): while the fight preview shows, only the band, the ribbon and the room bar are edited (the columns are laid
+        // under the grown band: nothing of theirs is reached)
+        if (host.model?.fightPreview == true) for (s in PREVIEW_GONE) out.remove(s)
         return out
+    }
+    /** the extras' cells and their "+" spot as one box (null = no extras row shown) */
+    private fun extrasUnion(g: BandGeo): RectF? {
+        if (g.extras.isEmpty() && g.plus == null) return null
+        val u = RectF(g.plus ?: g.extras.first().second)
+        for ((_, r) in g.extras) u.union(r)
+        return u
+    }
+    /** the box of the extra under the stop's cursor (or of "+"), as drawn: null = none */
+    private fun extraBox(g: BandGeo, m: HomeEditModel): RectF? =
+        if (m.extraOnPlus) g.plus?.let { extraPicture(EXTRA_PLUS, it) }
+        else m.extra?.let { k -> g.extras.firstOrNull { it.first == k }?.let { (_, r) -> extraPicture(k, r) } }
+    /** [s]'s box on the band now (a pencil, the Look chip, the extra under the cursor: its picture - the readability pass: the cursor
+     *  hugs the 28 px picture, not the taller cell under it), null = none */
+    fun bandBox(s: EditStop): RectF? {
+        val g = host.band() ?: return null
+        val m = host.model
+        return when (s) {
+            EditStop.PAD_PEN -> g.padPen; EditStop.FACE_PEN -> g.facePen; EditStop.LOOK -> g.look; EditStop.FIGHT_PEN -> g.fightPen
+            EditStop.EXTRAS -> m?.let { extraBox(g, it) } ?: extrasUnion(g)
+            else -> null
+        }?.let { RectF(it) }
     }
 
     // ---------------------------------------------------------------- drawing
@@ -224,19 +272,31 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (a <= 0.01f) return
         val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * a).toInt()) else -1
         drawWidgets(c, m)
-        // the menu pops out of its widget's side (0.92 -> 1 with a little overshoot), the Add tray rises
+        drawBandPieces(c, m)
+        // the menu pops out of its widget's side (0.92 -> 1 with a little overshoot), the Add tray rises; a pencil's bubble out of its tail
         m.menu?.let { s ->
             val k = host.popK(HomeEditMotion.MENU)
             val sv = c.save()
             if (abs(k - 1f) > 0.001f) {
                 val box = menuBox(s)
-                val wb = boxesNow(host.parts())[s] ?: RectF(box.centerX(), height.toFloat(), box.centerX(), height.toFloat())
-                popIn(c, k, box, wb.centerX().coerceIn(box.left, box.right), wb.centerY().coerceIn(box.top, box.bottom), MENU_FROM)
+                if (s.pencil) popIn(c, k, box, bubbleTailX(s, box), box.top, MENU_FROM)
+                else {
+                    val wb = boxesNow(host.parts())[s] ?: RectF(box.centerX(), height.toFloat(), box.centerX(), height.toFloat())
+                    popIn(c, k, box, wb.centerX().coerceIn(box.left, box.right), wb.centerY().coerceIn(box.top, box.bottom), MENU_FROM)
+                }
             }
             drawMenu(c, m)
             c.restoreToCount(sv)
         }
-        if (m.sheet == HomeEditModel.Sheet.ROOMS) {
+        if (m.sheet == HomeEditModel.Sheet.EXTRAS) {
+            // P2: the tray of the hidden extras pops out of the extras' "+" spot (as the room bar's out of its own)
+            val k = host.popK(HomeEditMotion.SHEET)
+            val sv = c.save()
+            val lay = extraTray(m)
+            if (lay != null && abs(k - 1f) > 0.001f) popIn(c, k, lay.panel, lay.ax, lay.panel.top, MENU_FROM)
+            drawExtraTray(c, m, lay)
+            c.restoreToCount(sv)
+        } else if (m.sheet == HomeEditModel.Sheet.ROOMS) {
             // the bar's tray of hidden rooms pops out of its "+" spot (0.92 -> 1, as a menu out of its widget)
             val k = host.popK(HomeEditMotion.SHEET)
             val sv = c.save()
@@ -272,21 +332,17 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
     }
 
-    /** the part whose pose [s]'s chrome follows (a rider: its host's, which HomeView resolves; a band piece: its own, [Host.piecePose]) */
+    /** the part whose pose [s]'s chrome follows (a rider: its host's, which HomeView resolves) */
     private fun poseOf(s: EditStop): HomePart? = when (s) {
         EditStop.CHAT -> HomePart.CHAT
         EditStop.MAP -> HomePart.MAP
         EditStop.QUEST -> HomePart.QUESTS
         EditStop.CAST -> HomePart.STRIP
+        EditStop.PARTY -> HomePart.PARTY
         else -> null
     }
     /** a canvas save with [s]'s pose on it (restore with the count returned) */
-    private fun posed(c: Canvas, s: EditStop): Int {
-        if (!s.piece) return posed(c, poseOf(s))
-        val sv = c.save()
-        if (host.piecePose(s, mtx)) c.concat(mtx)
-        return sv
-    }
+    private fun posed(c: Canvas, s: EditStop): Int = posed(c, poseOf(s))
     private fun posed(c: Canvas, p: HomePart?): Int {
         val sv = c.save()
         if (p != null && host.pose(p, mtx)) c.concat(mtx)
@@ -295,27 +351,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** [r] (a box of [s]'s) as drawn now: its pose applied (the bounds of it), into [o] */
     private fun posedRect(s: EditStop, r: RectF, o: RectF = RectF()): RectF {
         o.set(r)
-        if (s.piece) { if (host.piecePose(s, mtx)) mtx.mapRect(o); return o }
         val p = poseOf(s)
         if (p != null && host.pose(p, mtx)) mtx.mapRect(o)
         return o
-    }
-
-    /** the review: a piece's cursor box (Home's px, drawn through [s]'s pose) has its DRAWN top at [PIECE_BOX_TOP] at least - the Up
-     *  spot's lifted box ran off the screen's top; only the box's top edge comes down (the icon is CastView's, untouched) */
-    private val onScreen = RectF()
-    private fun pieceCursor(s: EditStop, b: RectF, out: RectF): RectF {
-        out.set(b); out.inset(-8f, -8f)
-        val d = posedRect(s, out, onScreen)
-        if (d.top >= PIECE_BOX_TOP || out.height() <= 0f) return out
-        val k = (d.height() / out.height()).coerceAtLeast(0.1f)
-        out.top = min(out.top + (PIECE_BOX_TOP - d.top) / k, out.centerY())
-        return out
-    }
-    /** piece [s]'s cursor box as drawn now (its pose applied; null = no box): the tests' check that it stays on screen */
-    fun pieceCursorDrawn(s: EditStop): RectF? {
-        val b = host.pieceBox(s) ?: return null
-        return posedRect(s, pieceCursor(s, b, RectF()))
     }
 
     /** the lifted widget's drawn boxes (the drawing's own: good until the next frame) */
@@ -340,11 +378,11 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val under = c.save()
         for (i in liftOut.indices) c.clipOutRect(liftOut[i])
         if (lk > 0f) for (i in liftOut.indices) shadow(c, liftOut[i], lk)
-        // 1. the dim over every widget that is not the selected one (black 70): a rider is dimmed with its host unless picked; the band's
-        // pieces never (1518 build 3: the band wears nothing - its fixed parts show the physical buttons, undimmed)
+        // 1. the dim over every widget that is not the selected one (black 70): a rider is dimmed with its host unless picked; the band
+        // never (it is no widget: it shows the physical buttons, undimmed)
         pFill.style = Paint.Style.FILL; pFill.color = Color.argb(DIM, 0, 0, 0)
         for ((s, r) in wb) {
-            if (s.piece || (s == EditStop.QUEST && cardOnMap)) continue          // riders: inside their host's dim
+            if (s == EditStop.QUEST && cardOnMap) continue                       // riders: inside their host's dim
             if (s == lifted) continue
             val keep = when (s) {
                 EditStop.MAP -> if (sel == EditStop.QUEST && cardOnMap) card else if (sel == EditStop.MAP) r else null
@@ -355,34 +393,19 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             if (s == EditStop.CAST) { for (i in cast.indices) dimRect(c, cast[i], null) } else dimRect(c, r, keep)
             c.restoreToCount(sv)
         }
-        // the party module (Party mode): its dashed frame only, never a stop (it follows the chat)
-        // its tag on the rows' end, clear of the Select tab (on the screen's edge side: PartyLayout's tab)
-        p[HomePart.PARTY]?.let {
-            val sv = posed(c, HomePart.PARTY)
-            // fix round 1: dimmed as every widget that is not picked (it never is: its own gold row box must not read as a second cursor)
-            dimRect(c, it, null)
-            frame(c, it, light = false)
-            val tabRight = it.right > width - UiKit.MODULE_GAP - 8f
-            val tabLeft = it.left < UiKit.MODULE_GAP + 8f
-            val inner = scratch2; inner.set(it)
-            if (tabRight) inner.right -= PartyLayout.TAB_W + PartyLayout.TAB_GAP
-            else if (tabLeft) inner.left += PartyLayout.TAB_W + PartyLayout.TAB_GAP
-            tag(c, inner, "Party", false, Corner.TOP_RIGHT)
-            c.restoreToCount(sv)
-        }
         // 2. the dashed ink frames and the tags (where they hide nothing: the map's bottom left, the card's top right, the bar's on its top
-        // edge); a rider moves with its lifted host; the band's pieces wear neither
+        // edge); a rider moves with its lifted host
         tagN = 0
-        for ((s, r) in wb) {
-            if (s.piece) continue
+        // P4 (D4): with the fight preview the page's widgets are not edited: dimmed only, no frame, no tag, no handle
+        if (!m.fightPreview) for ((s, r) in wb) {
             val rider = s == EditStop.QUEST && cardOnMap
             val sv = posed(c, s)                                            // a rider rides its host's pose (HomeView resolves it)
             if (s != sel) { if (s == EditStop.CAST) for (i in cast.indices) frame(c, cast[i], light = rider) else frame(c, r, light = rider) }
             c.restoreToCount(sv)
-            addTag(s, if (s == EditStop.CAST && cast.isNotEmpty()) cast[0] else r, s == sel)
+            addTag(s, if (s == EditStop.CAST && cast.isNotEmpty()) cast[0] else if (s == EditStop.PARTY) partyRows(r) else r, s == sel)
         }
         // the divider's handle
-        dividerNow(p)?.let { d -> handle(c, d, sel == EditStop.DIVIDER || m.drag?.stop == EditStop.DIVIDER) }
+        if (!m.fightPreview) dividerNow(p)?.let { d -> handle(c, d, sel == EditStop.DIVIDER || m.drag?.stop == EditStop.DIVIDER) }
         // 3. a finger's drop well: the dock under it (gold; red = refused, it would break a size rule)
         m.drag?.let { d -> d.cand?.let { cand -> wellFor(d.stop, cand)?.forEach { well(c, it, d.bad) } } }
         c.restoreToCount(under)
@@ -407,17 +430,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 if (selN > 1 && pivot != null) c.rotate(turn, pivot.centerX() + (cur[0] + cur[2]) / 2f, pivot.centerY() + (cur[1] + cur[3]) / 2f)
                 else c.rotate(turn, b.centerX(), b.centerY())
             }
-            // a band piece: the room bar's own cursor look (an app's icon, as the rooms'), a module the golden box
-            if (sel.piece) UiKit.focus(c, pieceCursor(sel, b, scratch2)) else goldBox(c, b)
-            c.restoreToCount(sv)
-        }
-        // a lifted clock: the kit's gold arrows to the spots it can still step to
-        if (lifted == EditStop.CLOCK && m.drag == null && one != null) {
-            val spots = m.env.clockPlaces
-            val i = spots.indexOf(m.draft.clock)
-            val sv = posed(c, lifted)
-            scratch2.set(one); scratch2.inset(-8f, -8f)
-            UiKit.moveArrows(c, scratch2, left = i > 0, right = i in 0 until spots.size - 1, words = false)
+            goldBox(c, b)
             c.restoreToCount(sv)
         }
         if (lifted != null && m.drag == null && selN > 0) (if (sel == EditStop.CAST) cast[0] else one!!).let { b ->
@@ -465,6 +478,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             }
         }
     }
+    /** the party list's box less its Select tab (its tag on the rows' end, clear of the tab on the screen's edge: PartyLayout's) */
+    private fun partyRows(r: RectF): RectF {
+        val inner = scratch3; inner.set(r)
+        val w = width.toFloat().takeIf { it > 0f } ?: 1240f
+        if (r.right > w - UiKit.MODULE_GAP - 8f) inner.right -= PartyLayout.TAB_W + PartyLayout.TAB_GAP
+        else if (r.left < UiKit.MODULE_GAP + 8f) inner.left += PartyLayout.TAB_W + PartyLayout.TAB_GAP
+        return inner
+    }
+    private val scratch3 = RectF()
     /** a tag drawn over the lifted widget (its own, or the card's riding the lifted map) */
     private fun liftedTag(s: EditStop, lifted: EditStop?, cardOnMap: Boolean) =
         s == lifted || (lifted == EditStop.MAP && s == EditStop.QUEST && cardOnMap)
@@ -478,6 +500,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             EditStop.MAP -> b[HomePart.MAP]?.let { listOf(r(it)) }
             EditStop.QUEST -> b[HomePart.QUESTS]?.let { listOf(r(it)) }
             EditStop.CAST -> listOfNotNull(b[HomePart.STRIP], b[HomePart.CAST2]).map { r(it) }
+            EditStop.PARTY -> b[HomePart.PARTY]?.let { listOf(r(it)) }
             else -> null
         }
     }
@@ -511,13 +534,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, BOTTOM_CENTRE, FOOT_LEFT, TOP_EDGE, TOP_EDGE_RIGHT }
     /** where each widget's tag stands (clear of what it shows) */
     private val CORNERS = mapOf(EditStop.CHAT to Corner.TOP_RIGHT, EditStop.MAP to Corner.BOTTOM_LEFT, EditStop.QUEST to Corner.TOP_RIGHT,
-        EditStop.CAST to Corner.TOP_EDGE)
+        EditStop.CAST to Corner.TOP_EDGE, EditStop.PARTY to Corner.TOP_RIGHT)
 
     /** fix round 1: where [s]'s tag stands on its box [r]: the chat's and the card's top right inside a wide column, ON the frame's top
      *  edge in a narrow one (a third: the card's title and the chat's lines reach that corner there; the tag must hide nothing) */
     fun cornerOf(s: EditStop, r: RectF): Corner {
         // a bar at the top of its column: its tag on its FOOT edge (the top edge is the band's foot 8 px over it)
         if (s == EditStop.CAST && host.model?.draft?.cast?.top == true) return Corner.FOOT_LEFT
+        // the party list's inside its rows' top right at any width (its top edge may be the band's foot, 8 px over it)
+        if (s == EditStop.PARTY) return Corner.TOP_RIGHT
         val at = CORNERS[s] ?: Corner.TOP_LEFT
         return if (at == Corner.TOP_RIGHT && r.width() < NARROW_TAG_W) Corner.TOP_EDGE_RIGHT else at
     }
@@ -631,7 +656,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     // ---------------------------------------------------------------- the menu (over the OTHER column or area)
 
     /** a menu laid out: its box, each row's rect, which segmented rows wrap (label above, buttons below), the buttons' text size */
-    private class MenuLay(val box: RectF, val rows: List<RectF>, val wrap: List<Boolean>, val segText: List<Float>)
+    private class MenuLay(val box: RectF, val rows: List<RectF>, val wrap: List<Boolean>, val segText: List<Float>,
+                          /** a pencil's bubble hangs right under the band (its tail up to its part); false = a bar pushed it down */
+                          val tail: Boolean = false)
 
     /** a segmented row's button widths at text size [ts] */
     private fun segWidths(r: MenuRow, ts: Float): List<Float> {
@@ -663,11 +690,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val bars = p[HomePart.BARS]
         val top = (bars?.bottom ?: 226f) + g
         val cardHost = if (host.model?.draft?.card == HomeLayout.CardDock.ABOVE_CHAT) map else chat
-        val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST
-        val hostCol = when (s) { EditStop.CHAT -> map; EditStop.MAP -> chat; EditStop.QUEST -> cardHost; else -> null }
+        val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST || s == EditStop.PARTY
+        val bubbleOf = if (s.pencil) bandBox(s) else null
+        // the party list's over the column it is not in
+        val partyHost = if (host.model?.draft?.party?.column == HomeModule.MAP) chat else map
+        val hostCol = when (s) { EditStop.CHAT -> map; EditStop.MAP -> chat; EditStop.QUEST -> cardHost; EditStop.PARTY -> partyHost; else -> null }
         val topBar = topCastBox(p)
         // the horizontal extent and the room it has vertically
         var box: RectF
+        var tail = false
         when {
             column -> {
                 box = hostCol?.let { RectF(it.left, top, it.right, it.bottom) } ?: RectF(g, top, w / 2f, h - g)
@@ -675,6 +706,27 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                     if (box.centerX() < w / 2f) box.right = min(w - g, box.left + MENU_MIN_W) else box.left = max(g, box.right - MENU_MIN_W)
                 }
                 clearBars(box, p, top, g)
+            }
+            // P1 / P4: a pencil's speech bubble hangs under the band from its part (its tail up to the pencil), 16 px clear of the screen's
+            // edges, never on a tap-to-cast bar it crosses
+            bubbleOf != null -> {
+                val bw = min(BUBBLE_W, w - 2f * BUBBLE_EDGE)
+                val cx = bubbleOf.centerX().coerceIn(BUBBLE_EDGE + bw / 2f, w - BUBBLE_EDGE - bw / 2f)
+                box = RectF(cx - bw / 2f, top + BUBBLE_TAIL, cx + bw / 2f, h - g)
+                val hung = box.top
+                // fix round 3 (the review: the 640 px bubble overhangs the other column by about 12 px, so a top bar THERE pushed it about
+                // 140 px down, tailless, over its own empty column): a bar wholly to one side of the pencil narrows the bubble to end a gap
+                // short of it while the bubble stays MENU_MIN_W wide; only a bar it still crosses moves it ([clearBars])
+                val ax = bubbleOf.centerX()
+                for (b in castNow(p)) {
+                    if (b.left >= box.right || box.left >= b.right) continue
+                    if (b.left > ax && b.left - g - box.left >= MENU_MIN_W) box.right = b.left - g
+                    else if (b.right < ax && box.right - (b.right + g) >= MENU_MIN_W) box.left = b.right + g
+                }
+                clearBars(box, p, top, g)
+                // fix round (the review: under a tap-to-cast bar at a column's top the tail landed on that bar): a bubble a bar pushed down
+                // has no tail - it would point at the bar, not at the D-pad or the buttons
+                tail = box.top == hung
             }
             // the bar's menu over the columns above it; a top bar's opens BELOW it, down to the page's foot
             s == EditStop.CAST -> box = if (topBar != null) RectF(g + 100f, topBar.bottom + g, w - g - 100f, h - g) else {
@@ -718,7 +770,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val out = ArrayList<RectF>()
         var y = box.top + MENU_HEAD
         for (u in unit) { out += RectF(box.left + 16f, y, box.right - 16f, y + u * k - 10f); y += u * k }
-        return MenuLay(box, out, wrap, segText)
+        return MenuLay(box, out, wrap, segText, tail)
     }
     /**
      * fix round 2: a menu box never lies on a tap-to-cast bar its FINAL width crosses (a column menu widened to MENU_MIN_W reaches into
@@ -736,6 +788,29 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
 
     /** where [s]'s menu opens with its rows now (the tests' and the shots' reading of [menuLay]) */
     fun menuBox(s: EditStop): RectF = menuLay(s, host.menuRows(s)).box
+    /** [s]'s bubble tail as it is drawn now (its tip's box, the Strip-free Home px), null = none (no pencil, or a bar pushed the bubble) */
+    fun bubbleTailBox(s: EditStop): RectF? {
+        if (!s.pencil) return null
+        val lay = menuLay(s, host.menuRows(s))
+        if (!lay.tail) return null
+        val ax = bubbleTailX(s, lay.box)
+        return RectF(ax - 16f, lay.box.top - BUBBLE_TAIL + 2f, ax + 16f, lay.box.top + 2f)
+    }
+
+    /** a pencil's bubble: its tail's x on the bubble's top (under its pencil, inside the bubble's straight edge) */
+    private fun bubbleTailX(s: EditStop, box: RectF): Float =
+        (bandBox(s)?.centerX() ?: box.centerX()).coerceIn(box.left + UiKit.MODULE_R + 16f, box.right - UiKit.MODULE_R - 16f)
+
+    /** the speech bubble's tail: from the bubble's top edge up towards its pencil ([BUBBLE_TAIL] tall), the bubble's own ink and edge */
+    private fun bubbleTail(c: Canvas, box: RectF, ax: Float) {
+        path.reset()
+        path.moveTo(ax - 16f, box.top + 2f); path.lineTo(ax, box.top - BUBBLE_TAIL + 2f); path.lineTo(ax + 16f, box.top + 2f); path.close()
+        pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
+        c.drawPath(path, pFill)
+        pLine.strokeWidth = 3f; pLine.color = Theme.bronze; pLine.alpha = 255; pLine.pathEffect = null
+        c.drawLine(ax - 16f, box.top + 1f, ax, box.top - BUBBLE_TAIL + 2f, pLine)
+        c.drawLine(ax, box.top - BUBBLE_TAIL + 2f, ax + 16f, box.top + 1f, pLine)
+    }
 
     private fun drawMenu(c: Canvas, m: HomeEditModel) {
         val s = m.menu ?: return
@@ -746,6 +821,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
         c.drawRoundRect(box, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
         UiKit.module(c, box)
+        if (s.pencil && lay.tail) bubbleTail(c, box, bubbleTailX(s, box))
         val tp = titleP(40f, Theme.gold)
         c.drawText(Tr.t(HomeWidgetMenus.title(s)), box.left + 28f, box.top + 56f, tp)
         UiKit.paneRule(c, box.left + 20f, box.top + MENU_HEAD - 12f, box.right - 20f)
@@ -785,7 +861,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                     var x = rr.right - 10f - sizes.sum() - 6f * (sizes.size - 1)
                     for ((k, word) in r.words.withIndex()) {
                         val b = RectF(x, btnTop, x + sizes[k], btnTop + btnH)
-                        UiKit.choice(c, b, word, k == r.picked, r.enabled, textSize = ts)
+                        UiKit.choice(c, b, word, k == r.picked, r.enabled && k !in r.off, textSize = ts)
                         btns += b
                         x += sizes[k] + 6f
                     }
@@ -894,14 +970,198 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         trayHit.addAll(lay.rows)
     }
 
+    // ---------------------------------------------------------------- the top bar's pieces (P1 - P4)
+
+    /**
+     * THE TOP BAR'S PIECES (the user's rulings 2026-11-22): the D-pad's and the ABXY's pencils (still: no wiggle), the Look chip (a thin
+     * row's pictogram or two diamonds - the look a press gives), the fight pencil while the preview shows, each extra's "-" badge and the
+     * extras' "+" spot (those wiggle with their extra: [Host.extraPose]), the golden cursor on the piece under it, a refusal's red pulse.
+     * Nothing while parked; nothing of the band itself is dimmed, framed or moved
+     */
+    private fun drawBandPieces(c: Canvas, m: HomeEditModel) {
+        if (m.parked) return
+        val g = host.band() ?: return
+        val free = m.menu == null && m.sheet == null && m.lifted == null
+        pencil(c, g.padPen, m.menu == EditStop.PAD_PEN)
+        pencil(c, g.facePen, m.menu == EditStop.FACE_PEN)
+        g.fightPen?.let { pencil(c, it, m.menu == EditStop.FIGHT_PEN, fight = true) }
+        g.look?.let { lookChip(c, it, if (g.diamonds) HomeRest.DIAMONDS else HomeRest.ROW) }
+        for ((k, r) in g.extras) {
+            val sv = c.save()
+            if (host.extraPose(k, mtx)) c.concat(mtx)
+            // the gold line's badge at its left end (its top left is the battery's line), a cell's on its top left
+            if (k == "gold") minusBadge(c, r.left - EXTRA_BADGE_R - 2f, r.centerY()) else minusBadge(c, r.left + BADGE_IN, r.top + BADGE_IN)
+            c.restoreToCount(sv)
+        }
+        g.plus?.let { r ->
+            val sv = c.save()
+            if (host.extraPose("plus", mtx)) c.concat(mtx)
+            // the readability pass: on the cell's picture square (the blank frame the clock draws there), not the cell's middle
+            val pic = extraPicture(EXTRA_PLUS, r)
+            plusSpot(c, pic.centerX(), pic.centerY(), min(pic.width(), pic.height()))
+            c.restoreToCount(sv)
+        }
+        val cur = m.cursor
+        if (cur.band && (free || m.menu == cur || m.sheet == HomeEditModel.Sheet.EXTRAS)) bandBox(cur)?.let { b ->
+            val box = scratch2; box.set(b); box.inset(-6f, -6f)
+            UiKit.focus(c, box)
+        }
+        host.flash?.let { (s, at) ->
+            val t = SystemClock.uptimeMillis() - at
+            if (s.band && t in 0 until HomeEditModel.FLASH_MS) bandBox(s)?.let {
+                edgeColour(c, it, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
+            }
+        }
+    }
+
+    /** a pencil badge (P1, drawn in vectors: no pencil art in the kit): an ink disc in a bronze ring (gold while its bubble is open), a
+     *  cream pencil across it; [fight] = the fight look's: the readability pass (the shots: it read as a third copy of the other two,
+     *  only its tip red) - a fight-red disc and ring, the pencil's tip red too, so it reads as the fight's own at a glance */
+    private fun pencil(c: Canvas, r: RectF, open: Boolean, fight: Boolean = false) {
+        val cx = r.centerX(); val cy = r.centerY(); val rad = min(r.width(), r.height()) / 2f
+        pFill.style = Paint.Style.FILL; pFill.color = if (fight) FIGHT_INK else Theme.ink; pFill.alpha = 235
+        c.drawCircle(cx, cy, rad, pFill)
+        pLine.pathEffect = null; pLine.strokeWidth = if (fight) 3f else 2.5f
+        pLine.color = if (open) Theme.gold else if (fight) FIGHT_RED else Theme.bronze; pLine.alpha = 255
+        c.drawCircle(cx, cy, rad - 1.5f, pLine)
+        val sv = c.save()
+        c.rotate(-45f, cx, cy)
+        val len = rad * 1.15f; val th = rad * 0.30f
+        // the body, the ferrule, the sharpened tip and its lead
+        pFill.color = Theme.text; pFill.alpha = 255
+        scratch.set(cx - len / 2f + th, cy - th / 2f, cx + len / 2f, cy + th / 2f); c.drawRect(scratch, pFill)
+        pFill.color = if (fight) FIGHT_RED else Theme.gold
+        scratch.set(cx + len / 2f - th * 0.9f, cy - th / 2f, cx + len / 2f, cy + th / 2f); c.drawRect(scratch, pFill)
+        path.reset(); path.moveTo(cx - len / 2f + th, cy - th / 2f); path.lineTo(cx - len / 2f, cy); path.lineTo(cx - len / 2f + th, cy + th / 2f); path.close()
+        pFill.color = Theme.bronze; c.drawPath(path, pFill)
+        pFill.color = Theme.ink; c.drawCircle(cx - len / 2f + th * 0.25f, cy, th * 0.18f, pFill)
+        c.restoreToCount(sv)
+    }
+
+    /**
+     * the Look chip (P3): a raised plate split in two like the bubbles' own two-word switch (Rest controller: Thin row / Diamonds) - a thin
+     * row's pictogram on its left, two diamonds on its right, the look the band has [now] lit (gold on a gold wash), the other dim. The
+     * readability pass (the shots: a plate of dots did not read as a switch): both looks shown, so it reads as "this or that", no text
+     */
+    private fun lookChip(c: Canvas, r: RectF, now: HomeRest) {
+        pFill.style = Paint.Style.FILL; pFill.color = Theme.raised; pFill.alpha = 240
+        c.drawRoundRect(r, 8f, 8f, pFill)
+        val mid = r.centerX()
+        // the lit half's wash
+        val litRow = now == HomeRest.ROW
+        scratch.set(if (litRow) r.left else mid, r.top, if (litRow) mid else r.right, r.bottom); scratch.inset(3f, 3f)
+        pFill.color = Theme.gold; pFill.alpha = 70
+        c.drawRoundRect(scratch, 6f, 6f, pFill)
+        pLine.pathEffect = null; pLine.strokeWidth = 2f; pLine.color = Theme.bronze; pLine.alpha = 255
+        c.drawRoundRect(r, 8f, 8f, pLine)
+        pLine.strokeWidth = 1.5f; pLine.alpha = 200
+        c.drawLine(mid, r.top + 6f, mid, r.bottom - 6f, pLine)
+        val cy = r.centerY(); val half = r.width() / 2f
+        // the thin row: four buttons in a row
+        pFill.color = if (litRow) Theme.gold else Theme.dim; pFill.alpha = 255
+        val n = 4; val d = (half - 8f) / n; val sq = min(d * 0.72f, r.height() * 0.30f)
+        for (i in 0 until n) { val x = r.left + 4f + d * (i + 0.5f); scratch.set(x - sq / 2f, cy - sq / 2f, x + sq / 2f, cy + sq / 2f); c.drawRoundRect(scratch, 1.5f, 1.5f, pFill) }
+        // the diamonds: two of four
+        pFill.color = if (litRow) Theme.dim else Theme.gold
+        val ds = min(r.height() * 0.065f, half * 0.06f)
+        for (side in 0..1) {
+            val gx = mid + half * (if (side == 0) 0.28f else 0.72f)
+            for ((dx, dy) in DIAMOND) c.drawCircle(gx + dx * ds * 2f, cy + dy * ds * 2f, ds, pFill)
+        }
+    }
+
+    /** an extra's "-" badge (the room bar's look: an ink disc, a bronze ring, a cream bar) */
+    private fun minusBadge(c: Canvas, bx: Float, by: Float) {
+        pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 255
+        c.drawCircle(bx, by, EXTRA_BADGE_R, pFill)
+        pLine.strokeWidth = 2f; pLine.color = Theme.bronze; pLine.alpha = 255; pLine.pathEffect = null
+        c.drawCircle(bx, by, EXTRA_BADGE_R - 1f, pLine)
+        pFill.color = Theme.text
+        scratch2.set(bx - EXTRA_BADGE_R * 0.5f, by - 1.8f, bx + EXTRA_BADGE_R * 0.5f, by + 1.8f)
+        c.drawRoundRect(scratch2, 1.8f, 1.8f, pFill)
+    }
+
+    /** the extras' "+" spot: an empty picture slot (the readability pass: a rounded square over the blank frame the clock draws, the
+     *  same size as the pictures beside it - the circle left the frame's corners showing under it), a dashed bronze edge, a gold "+" */
+    private fun plusSpot(c: Canvas, cx: Float, cy: Float, size: Float) {
+        val r = size * 0.5f
+        scratch2.set(cx - r, cy - r, cx + r, cy + r)
+        pFill.style = Paint.Style.FILL; pFill.color = Theme.raised; pFill.alpha = 255
+        c.drawRoundRect(scratch2, 4f, 4f, pFill)
+        pLine.pathEffect = dashPlus; pLine.strokeWidth = 2f; pLine.color = Theme.bronze; pLine.alpha = 255
+        scratch2.inset(1f, 1f)
+        c.drawRoundRect(scratch2, 3f, 3f, pLine)
+        pLine.pathEffect = null
+        pFill.color = Theme.gold
+        val arm = r * 0.5f; val th = 2.6f
+        scratch2.set(cx - arm, cy - th, cx + arm, cy + th); c.drawRoundRect(scratch2, th, th, pFill)
+        scratch2.set(cx - th, cy - arm, cx + th, cy + arm); c.drawRoundRect(scratch2, th, th, pFill)
+    }
+
+    /** the extras' tray laid out (Home's px): its panel, each row's box, the "+" spot's centre x it pops out of */
+    private class ExtraTray(val panel: RectF, val rows: List<RectF>, val ax: Float)
+
+    /** P2: the tray of the hidden extras under the band, under the extras' "+" spot (16 px clear of the screen's edges, never on a
+     *  tap-to-cast bar it crosses), one row each (its Settings icon and name); null = nothing hidden */
+    private fun extraTray(m: HomeEditModel): ExtraTray? {
+        val keys = m.extrasOff
+        if (keys.isEmpty()) return null
+        val w = width.toFloat().takeIf { it > 0f } ?: 1240f
+        val h = height.toFloat().takeIf { it > 0f } ?: 935f
+        val p = host.parts()
+        val g = host.band()
+        val ax = g?.plus?.centerX() ?: (w / 2f)
+        val top0 = (p[HomePart.BARS]?.bottom ?: 226f) + UiKit.MODULE_GAP
+        val pw = TRAY_W + 32f
+        val left = (ax - pw / 2f).coerceIn(16f, w - 16f - pw)
+        val probe = RectF(left, top0, left + pw, h - UiKit.MODULE_GAP)
+        clearBars(probe, p, top0, UiKit.MODULE_GAP)
+        val rowH = min(TRAY_ROW, (probe.height() - TRAY_HEAD - 10f) / keys.size - 10f).coerceAtLeast(56f)
+        val panel = RectF(left, probe.top, left + pw, probe.top + TRAY_HEAD + keys.size * (rowH + 10f) + 10f)
+        val rows = keys.indices.map { i -> val y = panel.top + TRAY_HEAD + i * (rowH + 10f); RectF(panel.left + 16f, y, panel.right - 16f, y + rowH) }
+        return ExtraTray(panel, rows, ax.coerceIn(panel.left, panel.right))
+    }
+
+    /** the extras' tray's box (the tests' and the shots' reading; null = not open) */
+    fun extraTrayBox(): RectF? = host.model?.takeIf { it.sheet == HomeEditModel.Sheet.EXTRAS }?.let { extraTray(it)?.panel?.let { p -> RectF(p) } }
+
+    private fun drawExtraTray(c: Canvas, m: HomeEditModel, lay: ExtraTray?) {
+        trayHit.clear()
+        if (lay == null) return
+        val panel = lay.panel
+        pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
+        c.drawRoundRect(panel, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
+        UiKit.module(c, panel)
+        c.drawText(Tr.t("Add"), panel.left + 24f, panel.top + 52f, titleP(40f, Theme.gold))
+        for ((i, k) in m.extrasOff.withIndex()) {
+            val b = lay.rows[i]
+            pFill.color = Theme.raised; pFill.alpha = 230
+            c.drawRoundRect(b, 8f, 8f, pFill)
+            pLine.strokeWidth = 2f; pLine.color = Theme.bronze; pLine.alpha = 255
+            c.drawRoundRect(b, 8f, 8f, pLine)
+            val line = BottomTiles.CLOCK_LINES.firstOrNull { it.first == k }
+            val pic = b.height() - 20f
+            val ib = scratch2; ib.set(b.left + 12f, b.centerY() - pic / 2f, b.left + 12f + pic, b.centerY() + pic / 2f)
+            val icon = line?.let { Icons.get(it.third) }
+            if (icon != null) c.drawBitmap(icon, null, ib, null)
+            else { pFill.color = Theme.bronze; pFill.alpha = 140; c.drawRoundRect(ib, 4f, 4f, pFill) }
+            val tp = bodyP(28f, Theme.text)
+            c.drawText(Tr.t(line?.second ?: k), ib.right + 14f, b.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+            if (i == m.sheetSel) UiKit.focus(c, b)
+        }
+        trayHit.addAll(lay.rows)
+    }
+
     // ---------------------------------------------------------------- the edit ribbon (in the XP bar's place, drawn by the Strip)
 
-    /** the ribbon's pieces (the Strip's px): "+" at its left (drawn only while something is off Home), Done at its right; their touch
-     *  boxes [plusHit] / [doneHit] are [TOUCH_MIN] square at least (the review: the ribbon is only [Strip.TRACKS] tall, the Strip's
-     *  top edge - a down just below it over "+" or Done, the rooms' row's top [Strip.RIBBON_SLOP], is the ribbon's too) */
-    class Ribbon(val plus: RectF, val done: RectF) {
+    /** the ribbon's pieces (the Strip's px): "+" at its left (drawn only while something is off Home), the Fight toggle left of the
+     *  disc (P4), Done at its right; their touch boxes [plusHit] / [fightHit] / [doneHit] are [TOUCH_MIN] square at least (the review:
+     *  the ribbon is only [Strip.TRACKS] tall, the Strip's top edge - a down just below it over "+" or Done, the rooms' row's top
+     *  [Strip.RIBBON_SLOP], is the ribbon's too) */
+    class Ribbon(val plus: RectF, val done: RectF, val fight: RectF) {
         val plusHit: RectF get() = grown(plus)                           // made on a touch only (the ribbon is made every frame)
         val doneHit: RectF get() = grown(done)
+        val fightHit: RectF get() = grown(fight)
         private fun grown(r: RectF): RectF {
             val dx = max(8f, (TOUCH_MIN - r.width()) / 2f)
             return RectF(r.left - dx, 0f, r.right + dx, max(r.bottom + 6f, TOUCH_MIN))
@@ -913,9 +1173,32 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val h = Strip.TRACKS.toFloat()
         val plus = RectF(14f, 2f, 14f + 46f, h - 2f)
         val tp = bodyP(RIBBON_TEXT)
-        val dw = max(DONE_MIN_W, max(tp.measureText(Tr.t("Done")), tp.measureText(Tr.t("Discard"))) + GLYPH + 40f)
+        val dw = max(DONE_MIN_W, max(tp.measureText(Tr.t("Done")), tp.measureText(Tr.t("Discard"))) + GLYPH + DONE_PAD)
         val done = RectF(w - 10f - dw, 2f, w - 10f, h - 2f)
-        return Ribbon(plus, done)
+        // P4: the Fight toggle. Fix round (the review: right of the disc it took about 130 px of the hints, so "B Put back" - and in French
+        // a bubble's "B Back" - no longer fitted): just LEFT of the disc's gap, where the ribbon has nothing but "+" at its far left - still
+        // left of the hints, and the ribbon row reads "+", Fight, the disc, Done left to right as the controller walks it
+        val fw = max(FIGHT_MIN_W, tp.measureText(Tr.t("Fight")) + 2f * FIGHT_DOT + 34f)
+        val f1 = w / 2f - Strip.GAP_HALF - HINT_GAP
+        val fight = RectF(max(plus.right + HINT_GAP + 8f, f1 - fw), 2f, f1, h - 2f)
+        return Ribbon(plus, done, fight)
+    }
+
+    /** the Fight toggle: a raised plate, a dot (gold while the preview shows) and its word (gold while on) */
+    private fun drawFight(c: Canvas, b: RectF, h: Float, on: Boolean) {
+        pFill.style = Paint.Style.FILL; pFill.color = if (on) Theme.gold else Theme.raised; pFill.alpha = if (on) 90 else 255
+        c.drawRoundRect(b, 6f, 6f, pFill)
+        if (on) { pFill.color = Theme.raised; pFill.alpha = 200; scratch.set(b); scratch.inset(3f, 3f); c.drawRoundRect(scratch, 5f, 5f, pFill) }
+        pLine.strokeWidth = 2f; pLine.color = if (on) Theme.gold else Theme.bronze; pLine.alpha = 255; pLine.pathEffect = null
+        c.drawRoundRect(b, 6f, 6f, pLine)
+        val tp = bodyP(RIBBON_TEXT, if (on) Theme.gold else Theme.text, align = Paint.Align.LEFT)
+        val word = Tr.t("Fight")
+        val tw = tp.measureText(word)
+        val x0 = b.centerX() - (2f * FIGHT_DOT + 8f + tw) / 2f
+        pFill.color = if (on) Theme.gold else Theme.dim; pFill.alpha = 255
+        c.drawCircle(x0 + FIGHT_DOT, h / 2f, FIGHT_DOT, pFill)
+        pLine.color = Theme.bronze; c.drawCircle(x0 + FIGHT_DOT, h / 2f, FIGHT_DOT, pLine)
+        c.drawText(word, x0 + 2f * FIGHT_DOT + 8f, h / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
     }
 
     /** the ribbon's slide (1 = up over the XP track; the Strip draws the track under it while it is below 1) */
@@ -950,7 +1233,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
         drawDone(c, r.done, h, doneGlyph(m))
         if (m.cursor == EditStop.DONE && m.menu == null && m.sheet == null && m.lifted == null) UiKit.focus(c, r.done)
-        // the hints, one word each, right of the disc and left of Done (the review: never under the disc - the least needed go first)
+        drawFight(c, r.fight, h, m.fightPreview)
+        if (m.cursor == EditStop.FIGHT && m.menu == null && m.sheet == null && m.lifted == null) UiKit.focus(c, r.fight)
+        // the hints, one word each, right of the disc and left of Done (the review: never under the disc - the least needed go first, B's last)
         hints(c, g1 + HINT_GAP, r.done.left - 18f, h / 2f, hintsFor(m, m.menu?.let { host.menuRows(it).getOrNull(m.menuRow)?.kind }))
         c.restoreToCount(save)
     }
@@ -1007,17 +1292,22 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.cursor == EditStop.ROOMS && m.barOnPlus -> listOf(a to "Add")
             m.cursor == EditStop.ROOMS && m.barRoom?.let { RoomBar.canHide(it) } == true -> listOf(a to "Move", x to "Hide")
             m.cursor == EditStop.ROOMS -> listOf(a to "Move")
-            // 1518 build 3: a lifted D-pad icon swaps with the direction pressed; the clock steps along its spots
-            (m.lifted?.pad ?: 0) > 0 -> listOf(DPAD4 to "Swap", a to "Drop", b to "Put back")
-            m.lifted == EditStop.CLOCK -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
-            m.lifted != null -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
+            // the chat and the map move sideways only; the card, the bar and the party list all four ways (after 1518: the bar's way to
+            // the top was never shown)
+            m.lifted == EditStop.CHAT || m.lifted == EditStop.MAP -> listOf(DPAD to "Side", a to "Drop", b to "Put back")
+            m.lifted != null -> listOf(DPAD4 to "Move", a to "Drop", b to "Put back")
+            // THE TOP BAR'S PIECES (P1 - P4): a pencil its bubble, the Look chip and the Fight toggle switch, an extra hides, "+" adds
+            m.cursor.pencil -> listOf(a to "Options")
+            m.cursor == EditStop.LOOK || m.cursor == EditStop.FIGHT -> listOf(a to "Switch")
+            m.cursor == EditStop.EXTRAS && m.extraOnPlus -> listOf(a to "Add")
+            m.cursor == EditStop.EXTRAS -> listOf(x to "Hide")
             // at the top level B is Done: the Done button wears its glyph (no "Done" hint beside it)
             m.cursor == EditStop.PLUS -> listOf(a to "Add")
             // Done as a stop: A is Done (its button says so), X Discard
             m.cursor == EditStop.DONE -> listOf(x to "Discard")
             m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width")
-            // a piece that cannot move now (the toolbar off, Party mode's pictures, one spot for the clock ...): no promise of a move
-            m.cursor.piece -> if (m.pieceMovable(m.cursor)) listOf(a to "Move") else emptyList()
+            // the party list has no size (its rows are Party mode's)
+            m.cursor == EditStop.PARTY -> listOf(a to "Move", x to "Options")
             else -> listOf(a to "Move", x to "Options", y to "Size")
         }
     }
@@ -1027,13 +1317,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** the hints' width with the first [n] of [pairs] in paint [p] */
     private fun hintsW(pairs: List<Pair<String, String>>, n: Int, p: Paint): Float {
         var w = 0f
-        for (i in 0 until n) w += p.measureText(Tr.t(pairs[i].second)) + 6f + glyphW(pairs[i].first) + (if (i > 0) 18f else 0f)
+        for (i in 0 until n) w += p.measureText(Tr.t(pairs[i].second)) + 6f + glyphW(pairs[i].first) + (if (i > 0) HINT_SEP else 0f)
         return w
     }
 
     /**
-     * the hints right-aligned to [right], never left of [left] (the disc's gap: the review found ES / FR running under it): the last
-     * pairs (the least needed: Size, then Options; Put back, then Drop) go first, then the text shrinks to [RIBBON_TEXT_MIN]
+     * the hints right-aligned to [right], never left of [left] (the disc's gap: the review found ES / FR running under it): the text
+     * shrinks to [RIBBON_TEXT_MIN] to keep them all ([hintsKept]); only past that do the last pairs (the least needed: Size, then
+     * Options; Put back, then Drop) go
      */
     private fun hints(c: Canvas, left: Float, right: Float, cy: Float, pairs: List<Pair<String, String>>) {
         if (pairs.isEmpty() || right <= left) return
@@ -1055,24 +1346,31 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 DPAD4 -> dpad4(c, x, cy, GLYPH)
                 else -> UiKit.pad(c, glyph, x, cy, GLYPH)
             }
-            x -= GLYPH / 2f + 18f
+            x -= GLYPH / 2f + HINT_SEP
         }
-        hintsLeftDrawn = x + 18f
+        hintsLeftDrawn = x + HINT_SEP
+        hintsKeptDrawn = n
         c.restoreToCount(sv)
     }
     /** the last drawn hints' left edge (the tests' check that they stay clear of the disc) */
     var hintsLeftDrawn = Float.NaN
+    /** how many hints the last drawn ribbon kept (the tests' check that every one fits, B's last one too) */
+    var hintsKeptDrawn = -1
 
     /** how many of [pairs] (from the first) fit [room] px at [RIBBON_TEXT] (one at least: the text shrinks for it) */
     fun hintsKept(pairs: List<Pair<String, String>>, room: Float): Int {
         val p = bodyP(RIBBON_TEXT, Theme.text)
+        // fix round (the review: B's hint went first) and the readability pass (every hint that fits shows): ALL of a state's hints are
+        // kept at a smaller text, down to [RIBBON_TEXT_MIN], before any pair is dropped ([hints] shrinks the text for them)
+        if (pairs.size > 1 && hintsW(pairs, pairs.size, p) > room &&
+            hintsW(pairs, pairs.size, bodyP(RIBBON_TEXT_MIN, Theme.text)) <= room) return pairs.size
         var n = pairs.size
         while (n > 1 && hintsW(pairs, n, p) > room) n--
         return n
     }
 
-    /** the review: a lifted D-pad icon swaps all four ways - ONE cross with its four arms lit (each direction's glyph lights its own
-     *  arm: each drawn clipped to its arm's quarter, the triangles from the cross's centre) */
+    /** a lifted widget that moves all four ways (the card, the bar, the party list): ONE cross with its four arms lit (each direction's
+     *  glyph lights its own arm: each drawn clipped to its arm's quarter, the triangles from the cross's centre) */
     private val armClip = Path()
     private fun dpad4(c: Canvas, cx: Float, cy: Float, size: Float) {
         val h = size / 2f
@@ -1128,10 +1426,11 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (!up && (y < 0f || y > Strip.TRACKS + Strip.RIBBON_SLOP)) return false
         val onDone = r.doneHit.contains(x, y)
         val onPlus = m.plusShown && r.plusHit.contains(x, y)
+        val onFight = r.fightHit.contains(x, y)
         if (!up) {
             if (onDone) { doneDown = true; host.holdDone(true); invalidate(); return true }
-            // an open tray closes first (its UP is the ribbon's too); just off the ribbon only "+" and Done are its
-            return (m.sheet != null && y >= 0f && y <= Strip.TRACKS) || onPlus
+            // an open tray closes first (its UP is the ribbon's too); just off the ribbon only "+", Fight and Done are its
+            return (m.sheet != null && y >= 0f && y <= Strip.TRACKS) || onPlus || onFight
         }
         if (doneDown) {
             doneDown = false
@@ -1142,6 +1441,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
         if (m.sheet != null) { m.closeSheet(); invalidate(); return true }
         if (onPlus) { host.run(m.tap(EditStop.PLUS)); invalidate(); return true }
+        if (onFight) { host.run(m.toggleFight()); invalidate(); return true }
         return false
     }
 
@@ -1310,7 +1610,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             MotionEvent.ACTION_POINTER_DOWN -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null }
             MotionEvent.ACTION_MOVE -> {
                 val s = downStop
-                if (!dragging && s != null && (s.movable || s == EditStop.DIVIDER || s.piece) &&
+                if (!dragging && s != null && (s.movable || s == EditStop.DIVIDER) &&
                     (abs(x - downX) > HomeEditModel.DRAG_SLOP || abs(y - downY) > HomeEditModel.DRAG_SLOP)) {
                     val b = if (s == EditStop.DIVIDER) dividerBox() else widgetBoxes()[s]
                     if (b != null) {
@@ -1331,8 +1631,11 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return true
     }
 
-    /** the widget under a finger (the divider's handle first, the band's pieces, the card and the bar before the columns) */
+    /** the widget under a finger (the top bar's pieces first; the divider's handle, the card and the bar before the columns; with the
+     *  fight preview none of the page's: decision D4) */
     fun stopAt(x: Float, y: Float): EditStop? {
+        host.band()?.let { g -> bandAt(g, x, y)?.let { return it.first } }
+        if (host.model?.fightPreview == true) return null
         dividerBox()?.let { if (RectF(it).apply { inset(-18f, -10f) }.contains(x, y)) return EditStop.DIVIDER }
         val wb = widgetBoxes()
         for (s in TOUCH_ORDER) {
@@ -1342,12 +1645,76 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         return null
     }
 
+    /**
+     * the top bar's piece under a finger (P1 - P4) and what it is: (the stop, the extra's key / "badge:key" for its "-" badge / "plus"),
+     * null = none. The pieces' touch boxes are [TOUCH_MIN] at least; the D-pad's and the faces' buttons are their pencils' too
+     */
+    private fun bandAt(g: BandGeo, x: Float, y: Float): Pair<EditStop, String?>? {
+        fun hit(r: RectF?, grow: Boolean = true): Boolean {
+            if (r == null) return false
+            if (!grow) return r.contains(x, y)
+            val dx = max(0f, (TOUCH_MIN - r.width()) / 2f); val dy = max(0f, (TOUCH_MIN - r.height()) / 2f)
+            return x >= r.left - dx && x <= r.right + dx && y >= r.top - dy && y <= r.bottom + dy
+        }
+        if (hit(g.padPen)) return EditStop.PAD_PEN to null
+        if (hit(g.facePen)) return EditStop.FACE_PEN to null
+        if (hit(g.look)) return EditStop.LOOK to null
+        if (hit(g.fightPen)) return EditStop.FIGHT_PEN to null
+        val m = host.model
+        if (m?.fightPreview != true) {
+            // fix round 3 (the review: the first extra's badge reach covered the D-pad's Right button's lower part): on one of the D-pad's
+            // or the ABXY's buttons ([BandGeo.keys]) an extra takes the finger only on its own cell or its drawn badge
+            val onKey = g.keys.any { it.contains(x, y) }
+            // an extra's "-" badge first (on its top left), then the extra, then "+"
+            for ((k, r) in g.extras) if (extraBadgeHit(k, r, x, y, onKey)) return EditStop.EXTRAS to "badge:$k"
+            for ((k, r) in g.extras) if (hit(r, grow = !onKey)) return EditStop.EXTRAS to k
+            if (hit(g.plus, grow = !onKey)) return EditStop.EXTRAS to "plus"
+        }
+        if (hit(g.pad, grow = false)) return EditStop.PAD_PEN to null
+        if (hit(g.face, grow = false)) return EditStop.FACE_PEN to null
+        return null
+    }
+
+    /**
+     * extra [k]'s "-" badge under a finger at [x], [y] ([r] its cell). Fix round (the review: the room bar's [Strip.BADGE_HIT] reach round
+     * a badge on a 28 px picture covered most of the picture, so a tap meant to select the Hearthstone hid it): off the extra's picture the
+     * badge keeps that reach; ON the picture only the drawn badge itself (its disc and [EXTRA_BADGE_SLOP]) is the badge's - the rest of the
+     * picture selects the extra. The gold line's picture is its line ([r]). [onKey]: the finger on one of the band's buttons (fix round 3)
+     * - there too only the drawn badge is the badge's (the rest is the button's: its pencil's bubble)
+     */
+    fun extraBadgeHit(k: String, r: RectF, x: Float, y: Float, onKey: Boolean = false): Boolean {
+        val bx = if (k == "gold") r.left - EXTRA_BADGE_R - 2f else r.left + BADGE_IN
+        val by = if (k == "gold") r.centerY() else r.top + BADGE_IN
+        val d = kotlin.math.hypot(x - bx, y - by)
+        if (d > Strip.BADGE_HIT / 2f) return false
+        return (!onKey && !extraPicture(k, r).contains(x, y)) || d <= EXTRA_BADGE_R + EXTRA_BADGE_SLOP
+    }
+    /** extra [k]'s picture in its cell [r] (the icon: [ClockBand.ICON] at the cell's scale, centred, at its top; the gold line: the line;
+     *  [EXTRA_PLUS]: its "+" spot's square, the blank frame's place) */
+    fun extraPicture(k: String, r: RectF): RectF {
+        if (k == "gold") return r
+        val side = ClockBand.ICON * r.height() / ClockBand.CELL_H
+        return RectF(r.centerX() - side / 2f, r.top, r.centerX() + side / 2f, r.top + side)
+    }
+
     private fun tapAt(m: HomeEditModel, x: Float, y: Float) {
         if (m.sheet != null) {
             val i = trayHit.indexOfFirst { it.contains(x, y) }
             if (i < 0) m.closeSheet()
             else if (m.sheet == HomeEditModel.Sheet.ROOMS) host.run(m.unhideRoom(m.hiddenRooms.getOrNull(i)))
+            else if (m.sheet == HomeEditModel.Sheet.EXTRAS) host.run(m.unhideExtra(m.extrasOff.getOrNull(i)))
             else host.run(m.addBack(m.removed.getOrNull(i)))
+            return
+        }
+        // THE TOP BAR (P1 - P4): a pencil or its buttons open the bubble, the Look chip flips, a "-" hides, an extra is selected, "+" its tray
+        if (m.menu == null || m.menu!!.pencil) host.band()?.let { g -> bandAt(g, x, y) }?.let { (s, what) ->
+            when {
+                s.pencil -> host.run(m.pencilTap(s))
+                s == EditStop.LOOK -> { m.closeMenu(); host.run(m.lookFlip()) }
+                what == "plus" -> { m.closeMenu(); host.run(m.openExtraTray()) }
+                what != null && what.startsWith("badge:") -> host.run(m.hideExtra(what.removePrefix("badge:")))
+                what != null -> m.extrasOn.indexOf(what).takeIf { it >= 0 }?.let { host.run(m.extraTap(it)) }
+            }
             return
         }
         if (m.menu != null) {
@@ -1375,10 +1742,26 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     companion object {
-        /** the band's pieces (1518 build 3): the D-pad toolbar icons, then the clock chip */
-        val PIECES = listOf(EditStop.PAD_L, EditStop.PAD_U, EditStop.PAD_R, EditStop.PAD_D, EditStop.CLOCK)
-        /** the stops a finger finds, first first (the pieces over the modules; the band itself is none) */
-        private val TOUCH_ORDER = PIECES + listOf(EditStop.QUEST, EditStop.CAST, EditStop.CHAT, EditStop.MAP)
+        /** the stops a finger finds, first first (the riders over the modules; the band's pieces before them all: [bandAt]) */
+        private val TOUCH_ORDER = listOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.CHAT, EditStop.MAP)
+        /** P4 (decision D4): the stops the fight preview takes away (the page's widgets, laid under the grown band) */
+        private val PREVIEW_GONE = listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.DIVIDER)
+        /** a pencil's speech bubble: its width, its least clearance from the screen's edges, its tail's height */
+        const val BUBBLE_W = 640f
+        const val BUBBLE_EDGE = 16f
+        const val BUBBLE_TAIL = 18f
+        /** the ribbon's Fight toggle: its least width, its dot's radius */
+        const val FIGHT_MIN_W = 110f
+        const val FIGHT_DOT = 7f
+        /** an extra's "-" badge: its centre in from the cell's top left, its radius */
+        const val BADGE_IN = 2f
+        const val EXTRA_BADGE_R = 11f
+        /** an extra's badge over its picture: the drawn disc and this much round it is the badge's ([extraBadgeHit]) */
+        const val EXTRA_BADGE_SLOP = 3f
+        /** the extras' "+" spot's key ([BandGeo.plus]: [extraPicture]) */
+        const val EXTRA_PLUS = "plus"
+        /** the Look chip's diamond pictogram: four buttons round a centre */
+        private val DIAMOND = listOf(-1f to 0f, 0f to -1f, 1f to 0f, 0f to 1f)
         /** the dim over a widget that is not selected (SPEC section 4: alpha 70 / 255 black) */
         const val DIM = 70
         const val TAG_SIZE = 24f
@@ -1403,20 +1786,24 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val MENU_K_MIN = 0.8f
         const val TAP_SLOP = 24f
         const val RIBBON_TEXT = 22f
-        /** the least the hints shrink to before they are cut (after the least needed pairs went) */
+        /** the least the hints shrink to before any is cut (the readability pass: all of a state's hints shrink first, then the least
+         *  needed pairs go) */
         const val RIBBON_TEXT_MIN = 18f
         /** the hints' room past the disc's gap */
         const val HINT_GAP = 12f
+        /** between two hints (the readability pass: 18 -> 14, so Spanish and French keep all three: the glyphs part them) */
+        const val HINT_SEP = 14f
+        /** Done's room round its glyph and word (the readability pass: 40 -> 28 - French "Abandonner" sized it 199 px wide, the hints'
+         *  room) */
+        const val DONE_PAD = 28f
         /** the ribbon's "+" and Done: the least touch box (px, both ways) */
         const val TOUCH_MIN = 48f
-        /** a piece's cursor box: its drawn top never above this (the gold edge and glow reach ~9 px out) */
-        const val PIECE_BOX_TOP = 10f
         /** the ribbon's Done button's least width */
         const val DONE_MIN_W = 150f
         const val GLYPH = 28f
         /** the D-pad's hint: Left and Right glyphs side by side */
         const val DPAD = "dpad"
-        /** the D-pad's four-way hint (a lifted D-pad icon's Swap): one cross, its four arms lit */
+        /** the D-pad's four-way hint (a lifted card, bar or party list's Move): one cross, its four arms lit */
         const val DPAD4 = "dpad4"
         private val DPAD4_ARMS = arrayOf("gen_left", "gen_up", "gen_right", "gen_down")
         /** a menu's pop's starting scale, the Add tray's rise (px) */

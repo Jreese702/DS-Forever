@@ -35,7 +35,7 @@ class HomeKeyPickTest {
     private fun fresh(): HomeLayoutStoreTest.Prefs { val p = HomeLayoutStoreTest.Prefs(); HomeSettings.startForTest(p); return p }
 
     private fun dpad(who: String) = PadMapModel.parse(JSONObject(
-        """{"type":"padmap","v":"m184","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"cols":{"on":1,"off":2},"who":$who}}}"""))!!.dpad!!
+        """{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"cols":{"on":1,"off":2},"who":$who}}}"""))!!.dpad!!
 
     private val asking = """{"n":"Korvash","rs":"ask","rr":"empty","rh":"none","nc":2,"uc":0,"gs":"new",
         "pk":[{"r":"$r7","n":4},{"r":"$r8","n":5}]}"""
@@ -321,7 +321,7 @@ class HomeKeyPickTest {
                 HomeLayoutStore.KEY_HELD),
             ResetPlan.prefKeys("home", keys, L, k8, true))
         assertTrue("asking (no key): This character takes nothing of Home's", ResetPlan.prefKeys("home", keys, L, null, false).isEmpty())
-        for (top in listOf("rbm", "rbp", "ctop")) {
+        for (top in listOf("rbm", "ctop")) {
             val k = ResetPlan.SV_KEYS.first { it.top == top }
             assertEquals("WowCompanionSpellsDB", k.variable); assertEquals(ResetPlan.Kind.LAYOUTS, k.kind); assertTrue(k.perChar)
         }

@@ -1,10 +1,7 @@
 package com.jrees.wowcompanion
 
 import com.jrees.wowcompanion.PadMapModel.Kind
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -91,57 +88,12 @@ class DownHomeBarTest {
         assertFalse(bar(map(downWithFight, combat = true, cc = null), toolbar = true))
     }
 
-    // ---------------------------------------------------------------- 1518 build 3: the D-pad icons swap (the add-on's `d`)
-
-    private fun key(m: PadMapModel.Map?, dirs: Map<Int, String>?, toolbar: Boolean = true) =
-        HomeFightFace.homeBarKey(m, toolbar, dirs, m?.fight == true)
-
-    @Test fun theDefaultOrderKeepsDown() {
-        assertEquals("PADDDOWN", key(null, null))
-        assertEquals("PADDDOWN", key(map(downPlain, combat = false), mapOf(1 to "chat", 2 to "radial", 3 to "map", 4 to "home")))
-        // the mirror bit (chat / map crossed) leaves the Home bar on Down
-        assertEquals("PADDDOWN", key(map(downPlain, combat = false), mapOf(1 to "map", 3 to "chat")))
-    }
-
-    @Test fun anUpDownSwapMovesTheEarlyOpenToUp() {
-        val swapped = mapOf(1 to "chat", 2 to "home", 3 to "map", 4 to "radial")
-        assertEquals("Up is the Home bar now: Down (the radial) gives no early bar", "PADDUP", key(map(downPlain, combat = false), swapped))
-    }
-
-    @Test fun chatOnDownGivesNoEarlyBarOnDown() {
-        val d = mapOf(4 to "chat", 1 to "home", 2 to "radial", 3 to "map")
-        assertEquals("PADDLEFT", key(map(downPlain, combat = false), d))
-        // the hold to talk is Down's now; the two never fire on one press
-        assertEquals("PADDDOWN", HoldTalk.chatKey(map(downPlain, combat = false), true, d, false))
-        assertNotEquals(HoldTalk.chatKey(map(downPlain, combat = false), true, d, false), key(map(downPlain, combat = false), d))
-    }
-
-    @Test fun aFightsEntryOnTheMovedHomeBarDecides() {
-        // the Home bar on Left; Left holds a fight spell with the In-combat overlay: no early bar in the fight switch, the bar out of it
-        val left = PadMapModel.Slot(1, 1, Kind.COMBAT, null, null, 0, combat = shock, otherwise = PadMapModel.Ref(331, "Healing Wave", 136052), ov = true)
-        val d = mapOf(1 to "home", 4 to "chat")
-        assertNull(key(map(left, combat = true), d))
-        assertEquals("PADDLEFT", key(map(left, combat = false), d))
-        // Down's own fight entry no longer matters to the bar
-        assertEquals("PADDLEFT", key(map(downWithFight, combat = true), d))
-    }
-
-    @Test fun noHomeWordNoEarlyBar() = assertNull(key(null, mapOf(1 to "chat", 2 to "radial", 3 to "map", 4 to "map")))
-
-    @Test fun withoutTheToolbarOnlyDownsCommandCounts() {
-        val cmd = PadMapModel.Slot(4, 4, Kind.COMMAND, null, "Home Bar", 0, key = PadMapModel.HOME_KEY)
-        assertEquals("PADDDOWN", key(map(cmd, combat = false), mapOf(1 to "home"), toolbar = false))
-        assertNull(key(map(downPlain, combat = false), mapOf(1 to "home"), toolbar = false))
-    }
-
     @Test fun theHostsEarlyBarUsesThisRule() {
         val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
             .map { File(it) }.first { it.isDirectory }
         val h = File(src, "CompanionHost.kt").readText()
-        assertTrue(h.contains("HomeFightFace.homeBarKey(lastPadMap, lastDpad?.want == true, lastDpad?.dirs, homeView.dpadFight())"))
-        // 1518 build 3's review: the early open follows the toolbar's order, never a hard-wired Down
-        assertTrue(h.contains("down && k == homeBarKey() && room == Room.HOME"))
-        assertFalse(h.contains("k == \"PADDDOWN\" && room == Room.HOME"))
+        assertTrue(h.contains("HomeFightFace.downIsHomeBar(lastPadMap, lastDpad?.want == true, homeView.dpadFight())"))
+        assertTrue(Regex("k == \"PADDDOWN\"[^\\n]*downIsHomeBar\\(\\)").containsMatchIn(h))
         assertTrue(File(src, "HomeView.kt").readText().contains("fun dpadFight(): Boolean = fightNow"))
     }
 }

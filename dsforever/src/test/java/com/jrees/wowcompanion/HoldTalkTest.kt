@@ -202,6 +202,6 @@ class HoldTalkTest {
         assertEquals(HoldTalk.LEFT_KEY, HoldTalk.chatKey(map(leftPlain.copy(kind = Kind.COMBAT, combat = chatCmd, ov = true), true), false, null, true))
         assertNull(HoldTalk.chatKey(map(leftFight, true), true, normal, true))
         // the key and the Settings row's arrow agree
-        for (d in listOf(normal, mirrored, null)) assertEquals(HoldTalk.chatPos(d) == HoldTalk.RIGHT, HoldTalk.chatKey(map(leftPlain, false), true, d, false) == HoldTalk.RIGHT_KEY)
+        for (d in listOf(normal, mirrored, null)) assertEquals(HoldTalk.chatArrowRight(d), HoldTalk.chatKey(map(leftPlain, false), true, d, false) == HoldTalk.RIGHT_KEY)
     }
 }

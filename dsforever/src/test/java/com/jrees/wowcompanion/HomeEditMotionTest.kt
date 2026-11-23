@@ -121,6 +121,23 @@ class HomeEditMotionTest {
         for (k in keys) assertTrue("${HomeEditMotion.hz(k)} Hz", HomeEditMotion.hz(k) in Motion.WIGGLE_HZ * 0.94f..Motion.WIGGLE_HZ * 1.06f)
     }
 
+    /** 1518 feel pass (the user, 2026-11-22: "a bit too fast and jarring especially on the bigger things"): a small picture wiggles at
+     *  about 4.5 Hz, a big module at about 2.2 Hz and turns under half a degree - its corners within 4.5 px */
+    @Test fun theWiggleIsCalmerOnTheBiggerThings() {
+        val keys = (0 until 11) + (0 until 12).map { HomeEditMotion.roomKey(it) }
+        for (k in keys) {
+            val small = HomeEditMotion.hzFor(k, 50f); val big = HomeEditMotion.hzFor(k, 460f)
+            assertTrue("$small Hz", small in Motion.WIGGLE_HZ * 0.94f..Motion.WIGGLE_HZ * 1.06f)
+            assertTrue("$big Hz", big in Motion.WIGGLE_HZ_BIG * 0.94f..Motion.WIGGLE_HZ_BIG * 1.06f)
+            assertTrue("a big module is the slower: $big < $small", big < small * 0.6f)
+            assertTrue("no faster than before the feel pass", small <= 5f)
+        }
+        assertTrue(Motion.WIGGLE_DEG_BIG < 0.5f)
+        // a half-width chat column ~608 x 700: its corners move under 4 px
+        val hd = 0.5f * hypot(608f, 700f)
+        assertTrue(hd * HomeEditMotion.amp(hd) * PI.toFloat() / 180f < 4f)
+    }
+
     /**
      * the user's pick 2026-11-21, "Noticeable": a big module (the chat, the map, the party module, the card) turns about 0.8 deg, its
      * corners ~6-8 px (the chat's and the map's columns); a room's picture stays at 1.2 deg; a size between turns between; no corner
@@ -142,14 +159,14 @@ class HomeEditMotionTest {
                 val deg = HomeEditMotion.amp(hd)
                 val corner = hd * deg * PI.toFloat() / 180f
                 assertTrue("$p on ${l.name}: $corner px", corner <= Motion.WIGGLE_PX + 1e-3f)
-                assertTrue("$p on ${l.name}: $deg deg", deg in 0.7f..Motion.WIGGLE_DEG)
-                if (p in big) assertEquals("$p on ${l.name} (half-diagonal $hd) turns ~0.8 deg", Motion.WIGGLE_DEG_BIG, deg, 0.06f)
+                assertTrue("$p on ${l.name}: $deg deg", deg in (Motion.WIGGLE_DEG_BIG - 0.06f)..Motion.WIGGLE_DEG)
+                if (p in big) assertEquals("$p on ${l.name} (half-diagonal $hd) turns ~${Motion.WIGGLE_DEG_BIG} deg", Motion.WIGGLE_DEG_BIG, deg, 0.06f)
                 // the chat's and the map's columns (a module's own column, not the full-width chat): corners ~5.5-8 px at a half, a
                 // third's narrower column a little less at the same 0.8 deg
                 if ((p == HomePart.CHAT || p == HomePart.MAP) && b.r - b.l < 900f && b.b - b.t > 500f) {
                     columns++
                     val half = kotlin.math.abs((b.r - b.l) - 608f) < 20f
-                    assertTrue("$p on ${l.name}: its corners $corner px", corner in (if (half) 5.5f else 4.5f)..Motion.WIGGLE_PX + 1e-3f)
+                    assertTrue("$p on ${l.name}: its corners $corner px", corner in (if (half) 3.2f else 2.6f)..Motion.WIGGLE_PX + 1e-3f)
                 }
             }
         }
@@ -165,11 +182,11 @@ class HomeEditMotionTest {
             assertTrue("$hd px: $a after $was", a < was && a > Motion.WIGGLE_DEG_BIG - 1e-4f)
             was = a
         }
-        assertEquals(1.0f, HomeEditMotion.amp(100f), 1e-4f)
+        assertEquals((Motion.WIGGLE_DEG + Motion.WIGGLE_DEG_BIG) / 2f, HomeEditMotion.amp(100f), 1e-4f)
         // past the corners' budget (the band across the page): a hair under 0.8, its corner at 8 px
         val band = 0.5f * hypot(1240f, 226f)
         assertEquals(Motion.WIGGLE_PX, band * HomeEditMotion.amp(band) * PI.toFloat() / 180f, 1e-3f)
-        assertTrue(HomeEditMotion.amp(band) in 0.7f..0.8f)
+        assertTrue(HomeEditMotion.amp(band) in 0.35f..Motion.WIGGLE_DEG_BIG)
     }
 
     @Test fun theWiggleFadesInAfterTheOpenAndOutOnTheLift() {
@@ -209,7 +226,7 @@ class HomeEditMotionTest {
         m.enter(0L)
         for (at in listOf(14_000L, 15_500L, 16_000L, 30_000L, 60_000L, 600_000L)) {
             var most = 0f; var room1 = 0f
-            for (t in at..at + 200L) {
+            for (t in at..at + 500L) {   // 1518 feel pass: a big module's calmer pace (2.2 Hz) needs a longer look for its full turn
                 most = maxOf(most, abs(m.pose(chat, t, 460f, p).rot))
                 room1 = maxOf(room1, abs(m.pose(room, t, 40f, p).rot))
             }
@@ -220,7 +237,7 @@ class HomeEditMotionTest {
         // the calm under a menu stays (40 %), and it never rests under it either
         m.modal(true, 700_000L)
         var calm = 0f
-        for (t in 760_000L..760_200L) calm = maxOf(calm, abs(m.pose(chat, t, 460f, p).rot))
+        for (t in 760_000L..760_500L) calm = maxOf(calm, abs(m.pose(chat, t, 460f, p).rot))
         assertEquals(Motion.WIGGLE_DEG_BIG * Motion.WIGGLE_CALM, calm, 0.02f)
         assertTrue(m.busy(760_200L))
         // a fight: still at once, nothing to tick

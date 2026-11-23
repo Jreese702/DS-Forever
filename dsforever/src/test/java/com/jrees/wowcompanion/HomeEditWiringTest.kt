@@ -112,8 +112,9 @@ class HomeEditWiringTest {
         val glide = body(host, "private fun chatGlideStart(")
         assertTrue(glide.contains("content.height - (lp?.let { it.topMargin + it.bottomMargin } ?: 0)"))
         assertFalse(glide.contains("?: content.height)"))
-        // the party module dimmed in edit mode (its own gold row box is never a second cursor)
-        assertTrue(editView.contains("dimRect(c, it, null)\n            frame(c, it, light = false)"))
+        // the party module's own gold row box is never a second cursor in edit mode; after 1518 it is a widget (dimmed, framed and
+        // tagged as the others, a stop: the user's ruling 2026-11-22)
+        assertTrue(editView.contains("p[HomePart.PARTY]?.let { putBox(EditStop.PARTY, it) }"))
         assertTrue(home.contains("partyView.boxShown = { !editLive() }"))
     }
 
@@ -122,12 +123,12 @@ class HomeEditWiringTest {
         val reset = body(host, "private fun resetApply(")
         val cancel = reset.indexOf("homeView.editCancel()")
         assertTrue(cancel > 0 && cancel < reset.indexOf("resetRun.run(b, who, all, localGame)"))
-        // 1518: no layouts - edit mode opens on the record only (no flips, no slots, no fold of a preset's); build 3: the band's pieces'
-        // conditions (the toolbar drawn, the character key, the add-on's pp, the clock's spots) and CastView's pose hook
-        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start, editEnv)"))
-        assertTrue(body(home, "fun editOpen(").contains("castView.editPiece = castPieceHook"))
+        // 1518: no layouts - edit mode opens on the record only (no flips, no slots, no fold of a preset's); the band has no pieces
+        // to move (the user's ruling 2026-11-22: the top bar stays still)
+        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start)"))
+        assertFalse(home.contains("editPiece"))
         assertFalse(body(home, "fun editOpen(").contains("foldOpen"))
-        // the cursor's widget gone: the clock too (the model's set), not only the card and the bar
+        // the cursor's widget gone: the card and the bar (the model's set)
         assertTrue(body(home, "private fun editCursorCheck(").contains("if (m.cursor !in HomeEditModel.GONE_CHECKED) return"))
         // the push to / from Home moves by Home's FRAME (less the XP track's place) and clips Home's page to it; the clip goes at the end
         val push = body(host, "private fun roomMotionStart(")
@@ -153,10 +154,10 @@ class HomeEditWiringTest {
         val end = body(home, "private fun editEnd(")
         assertTrue(end.contains("if (write && !discard) editPersist(m, now = true)"))
         assertTrue(end.contains("HomeLayoutStore.editSave(o, prev, m.saved)"))
-        // 1518 build 3: no toolbar switch in edit mode (the band's menu is gone: Settings > Bottom screen has it); the record's D-pad
-        // order is held on the pictures until the add-on's `d` says it
+        // 1518 build 3: no toolbar switch in edit mode (the band's menu is gone: Settings > Bottom screen has it); the record's sides
+        // (its mirror bit) are held on the pictures until the add-on's `d` says them
         assertFalse(home.contains("onEditToolbar"))
-        assertTrue(end.contains("roomBarHold = if (write) HomeLayoutSolver.dpadDirs(HomeSettings.layout) else null"))
+        assertTrue(end.contains("roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null"))
         assertFalse("no All characters from edit mode", end.contains("all ="))
         // the add-on hears the record's sides / fight bar only once edit mode is not live
         assertTrue(body(host, "private fun mirrorCheck(").contains("if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }"))

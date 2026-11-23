@@ -12,7 +12,7 @@ import kotlin.math.abs
  * THE DRAFT: a [HomeLayout] Home is laid with while editing (HomeView.layoutNow); every change glides there on the one motion. It SAVES
  * AS IT GOES (1518): each settled change ([settled]: nothing lifted, no finger down) is written by the view through the store's own
  * per-character rules (HomeLayoutStore.editSave: the whole key only, the session's own fields laid on, a pending name's edit held).
- * [saved] stays the record edit mode opened on: DISCARD (a long press on Done, a held B) puts it back (the D-pad order with it). The
+ * [saved] stays the record edit mode opened on: DISCARD (a long press on Done, a held B) puts it back. The
  * menus' BEHAVIOUR rows (hold to talk, the zoom ...) write at once through the same setters as Settings > Bottom screen ([Fx.Press] ->
  * BottomTiles.press): they are app-wide settings, not the layout, and Discard leaves them.
  *
@@ -21,53 +21,65 @@ import kotlin.math.abs
  * step back: put back, close the menu / tray, then Done. A held B (the controller's direct feed) or a long press on Done = Discard.
  *
  * THE TOP BAR (1518 build 3, the user's ruling 2026-11-21: "on the top bar we are also implying that it can move as well ... I think the
- * box in the middle is confusing"): the band is no widget any more - no frame, no "Controller" tag, no menu, no Clock box (its options
- * live in Settings > Bottom screen). Its small icons are apps: the four D-pad toolbar icons ([EditStop.PAD_L] .. [EditStop.PAD_D], each
- * wiggling on its own) and the clock chip ([EditStop.CLOCK]). A lifts one; a lifted D-pad icon goes where the D-pad points (it SWAPS
- * with the icon there: that direction opens it from now on - [HomeLayout.pad], sent to the add-on once edit mode is not live, out of
- * combat, for this character only), a lifted clock steps Left / Right through the spots the band offers ([Env.clockPlaces]); a finger
- * drags either. The L / R targets, ZL / ZR and the ABXY face never move (they show the physical buttons): they are no stops.
+ * box in the middle is confusing"; after 1518, the user's ruling 2026-11-22: "What the hell is the dpad swapping buttons or clock move? ...
+ * remove that"): the band is not a widget and never moves - no wiggle of its own, no dim, no frame. The user's rulings 2026-11-22 (the
+ * picker, ALL FOUR: nothing moves or swaps - they only change what the top bar shows and how it looks): P1 a PENCIL on the D-pad cluster
+ * and one on the ABXY buttons (they stay still) opening a speech bubble of that part's options; P2 the clock's EXTRAS as apps (each
+ * wiggles with a "-" badge, a "+" spot opens the tray of hidden ones); P3 the LOOK chip flipping the resting look; P4 the ribbon's FIGHT
+ * toggle previewing the combat look (nothing sent to the game) with its own pencil (In fights, the swing timer). The band's walk:
+ * Left / Right along [BAND_ORDER] (no wrap), Up nothing, Down to the page. Every one of them is a BEHAVIOUR row (the same setters as
+ * Settings > Bottom screen: [Fx.Press]): saved at once, never undone by Discard.
  *
  * THE ROOM BAR (1518 build 2, the user's ruling 2026-11-21: "just have the individual icons wiggle like their own apps"): the bar is no
  * widget of its own - no frame, no tag, no menu. Each room is an app: the cursor walks the rooms ([barSel], over the VISIBLE rooms and
  * the "+" spot at the end while a room is hidden); A lifts a room (Left / Right carry it, A drops, B puts it back), X hides it (its "-"
  * badge; Settings never: a red pulse), A on "+" opens the small tray of hidden rooms (A puts one back where it was). A finger: a tap
  * moves the cursor, a drag carries the room, a tap on a badge hides it, a tap on "+" opens the tray.
+ *
+ * THE PARTY LIST AND THE BAR AT THE TOP (after 1518, the user's ruling 2026-11-22: "Why can't I move the party mode or the tap to cast to
+ * the top?"): the party list (Party mode's module) is a widget - the top or the foot of the chat's or the map's column ([nextDock], a
+ * finger's [dockUnder], its menu's Place / edge rows); an Across or Split bar dragged straight up goes to the top of the column it last
+ * sat in; a lifted card, bar or party list shows the four-way Move.
  */
 enum class EditStop {
     /** [ROOMS] = the room bar's rooms (1518 build 2: each one an app): A lifts the room under its own cursor ([HomeEditModel.barSel]),
-     *  X hides it, A on its "+" opens the hidden rooms' tray - never the bar itself (no frame, no tag, no menu). [CLOCK] = the band's
-     *  clock chip and [PAD_L] .. [PAD_D] = the DS toolbar's D-pad icons (1518 build 3: each one an app, no frame, no tag, no menu).
+     *  X hides it, A on its "+" opens the hidden rooms' tray - never the bar itself (no frame, no tag, no menu). The band has no stops.
      *  [DONE] = the ribbon's Done (the review's controller path to Discard that needs no held button: the relayed feed sees no hold) -
      *  reached only by Right from the room bar's right end (or from the ribbon's "+"), never by the D-pad's spatial walk: A is Done,
-     *  X Discard */
-    CLOCK, CHAT, MAP, QUEST, DIVIDER, CAST, PLUS, ROOMS, PAD_L, PAD_U, PAD_R, PAD_D, DONE;
-    /** a widget a finger or A can lift and dock elsewhere (the band's small pieces are [piece]s: they swap / step, never dock) */
-    val movable: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST
+     *  X Discard.
+     *  [PARTY] = the party list (Party mode's module; after 1518, the user's ruling 2026-11-22: "Why can't I move the party mode or the
+     *  tap to cast to the top?"): a widget like the others - A lifts it, the D-pad carries it to the top or the foot of the chat's or
+     *  the map's column, A drops, B puts it back; a finger drags it; X its menu. Never removed (its presence is QOL > Party mode) */
+    CHAT, MAP, QUEST, DIVIDER, CAST, PARTY, PLUS, ROOMS, DONE,
+    /** THE TOP BAR'S PIECES (the user's rulings 2026-11-22, the picker's ALL FOUR: nothing on the band moves or swaps - they only change
+     *  what the top bar shows and how it looks): [PAD_PEN] the D-pad cluster's pencil and [FACE_PEN] the ABXY buttons' (each opens its
+     *  speech bubble; they never wiggle), [LOOK] the chip that flips the resting look (Thin row <-> Diamonds), [EXTRAS] the clock's
+     *  extras row as apps (one stop with its own cursor [HomeEditModel.extraSel] over the extras shown and the "+" spot), [FIGHT_PEN] the
+     *  fight look's pencil (only while the ribbon's [FIGHT] preview is on: In fights, the swing timer). [FIGHT] = the ribbon's Fight
+     *  toggle (the top bar's combat look while editing: a preview only - nothing is sent to the game) */
+    PAD_PEN, FACE_PEN, LOOK, EXTRAS, FIGHT_PEN, FIGHT;
+    /** one of the top bar's pieces (the band's own left-to-right walk: [HomeEditModel.BAND_ORDER]) */
+    val band: Boolean get() = this == PAD_PEN || this == FACE_PEN || this == LOOK || this == EXTRAS || this == FIGHT_PEN
+    /** a widget a finger or A can lift and dock elsewhere */
+    val movable: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST || this == PARTY
     /** a widget with the red X chip (it can be taken off Home and brought back with "+") */
     val removable: Boolean get() = this == QUEST || this == CAST
-    /** a widget with a menu (X; on the room bar X hides the room under the cursor instead; the band's pieces have none) */
-    val hasMenu: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST
-    /** a D-pad toolbar icon's position (1 Left, 2 Up, 3 Right, 4 Down; 0 = not one) */
-    val pad: Int get() = when (this) { PAD_L -> 1; PAD_U -> 2; PAD_R -> 3; PAD_D -> 4; else -> 0 }
-    /** one of the band's small pieces (an app of its own: the D-pad icons, the clock chip) */
-    val piece: Boolean get() = pad > 0 || this == CLOCK
-    /** its motion key (HomeEditMotion: the modules keep 1517's keys; the pieces' are HomeEditMotion.PAD0 .. / CLOCK_PIECE - a D-pad
-     *  icon's own key follows the icon, not the spot: [HomeEditModel.keyOf]) */
-    val key: Int get() = when {
-        this == CLOCK -> HomeEditMotion.CLOCK_PIECE
-        pad > 0 -> HomeEditMotion.PAD0 + pad - 1
-        else -> ordinal + 1
+    /** a widget with a menu (X; on the room bar X hides the room under the cursor instead) */
+    val hasMenu: Boolean get() = this == CHAT || this == MAP || this == QUEST || this == CAST || this == PARTY || this == PAD_PEN ||
+        this == FACE_PEN || this == FIGHT_PEN
+    /** a pencil: its menu is a speech bubble popping out of its part (the band's pieces) */
+    val pencil: Boolean get() = this == PAD_PEN || this == FACE_PEN || this == FIGHT_PEN
+    /** its motion key (HomeEditMotion: spelled out, the keys 1518 gave each stop - the wiggle phases and paces stay as they were; the
+     *  party list keeps the key it wiggled on in 1518, [HomeEditMotion.PARTY]) */
+    val key: Int get() = when (this) {
+        CHAT -> 2; MAP -> 3; QUEST -> 4; DIVIDER -> 5; CAST -> 6; PARTY -> HomeEditMotion.PARTY; PLUS -> 7; ROOMS -> 8; DONE -> 13
+        // the top bar's pieces (the keys 1518 left free under 16; the extras wiggle on their own keys: HomeEditMotion.extraKey)
+        FIGHT_PEN -> 1; PAD_PEN -> 9; FACE_PEN -> 11; LOOK -> 12; EXTRAS -> 14; FIGHT -> 15
     }
-    /** the tag drawn on its dashed frame (terse: the widget's name; the pieces and the bar's rooms none) */
+    /** the tag drawn on its dashed frame (terse: the widget's name; the bar's rooms none) */
     val tag: String get() = when (this) {
-        CHAT -> "Chat"; MAP -> "Map"; QUEST -> "Quest"; CAST -> "Tap-to-cast"
+        CHAT -> "Chat"; MAP -> "Map"; QUEST -> "Quest"; CAST -> "Tap-to-cast"; PARTY -> "Party"
         else -> ""
-    }
-    companion object {
-        /** the D-pad icon at position [p] (1-4) */
-        fun padStop(p: Int): EditStop? = when (p) { 1 -> PAD_L; 2 -> PAD_U; 3 -> PAD_R; 4 -> PAD_D; else -> null }
-        val PADS = listOf(PAD_L, PAD_U, PAD_R, PAD_D)
     }
 }
 
@@ -75,20 +87,7 @@ class HomeEditModel(
     saved: HomeLayout,
     /** where the cursor starts: Chat from Settings and Y on the disc, the held widget from a hold */
     start: EditStop = EditStop.CHAT,
-    /** what the band's pieces may do now (the view's: the toolbar's state, the add-on's word, the clock's spots) */
-    val env: Env = Env.ALL,
 ) {
-    /** the band's pieces' conditions (1518 build 3), read at each lift and step */
-    interface Env {
-        /** the D-pad icons: [PadCan.NONE] = not movable now (the toolbar off or not drawn, Party mode's pictures, a fight's spell on the
-         *  D-pad, no character key), [PadCan.SIMPLE] = only Left <-> Right (an older Spells add-on: the mirror bit's codes), [PadCan.FULL] */
-        val pads: PadCan get() = PadCan.FULL
-        /** the clock chip's spots the band offers now, left to right (fewer than two: it does not move; none: no clock piece) */
-        val clockPlaces: List<HomeLayout.ClockPlace> get() = HomeLayout.ClockPlace.values().toList()
-        companion object { val ALL = object : Env {} }
-    }
-    enum class PadCan { NONE, SIMPLE, FULL }
-
     // ---------------------------------------------------------------- the state
     /** the record Home showed when edit mode opened: Discard puts it back ([rebase] lays a change made while edit mode waited onto it) */
     var saved: HomeLayout = saved
@@ -107,7 +106,7 @@ class HomeEditModel(
         private set
     var menuRow = 0
     /** the open sheet: the Add tray ("+": the card or the bar back on Home), the room bar's tray of hidden rooms (its "+" spot) */
-    enum class Sheet { ADD, ROOMS }
+    enum class Sheet { ADD, ROOMS, EXTRAS }
     var sheet: Sheet? = null
         private set
     var sheetSel = 0
@@ -117,9 +116,6 @@ class HomeEditModel(
     /** a fight came (or another room): the chrome is away, Home plays the record's fight (the draft is saved already), edit mode waits
      *  ([park] / [resume]) */
     var parked = false
-        private set
-    /** the D-pad icon lifted now (its piece: it keeps its own motion key while it swaps from spot to spot), null = none */
-    var padLifted: HomeLayout.PadKey? = null
         private set
     /** the bar's / the card's last dock, for "+" (they come back where they were) */
     private var lastCast = if (saved.cast != HomeLayout.CastDock.OFF) saved.cast else HomeLayout.CastDock.UNDER_CHAT
@@ -146,14 +142,32 @@ class HomeEditModel(
     /** the bar cursor's last place: the last room, or "+" after it */
     private fun barMax(): Int = barRooms.size - 1 + (if (barPlus) 1 else 0)
 
+    /** THE CLOCK'S EXTRAS (P2; the host feeds them: [bandIs] - HomeSettings' clock rows, Settings' own): the ones on (shown in edit mode,
+     *  with or without their data today) and the ones hidden (the tray's), each in [EXTRA_KEYS]' order */
+    var extrasOn: List<String> = EXTRA_KEYS
+        private set
+    var extrasOff: List<String> = emptyList()
+        private set
+    /** the extras stop's own cursor: an index into [extrasOn], or [extrasOn].size = the "+" spot while one is hidden ([extraPlus]) */
+    var extraSel = 0
+        private set
+    val extraPlus: Boolean get() = extrasOff.isNotEmpty()
+    val extraOnPlus: Boolean get() = extraPlus && extraSel == extrasOn.size
+    /** the extra under the stop's cursor (null: the "+" spot) */
+    val extra: String? get() = extrasOn.getOrNull(extraSel)
+    private fun extraMax(): Int = (extrasOn.size - 1 + (if (extraPlus) 1 else 0)).coerceAtLeast(0)
+    /** the host's feed: the extras [on] and [off] now (Settings may have changed them meanwhile) */
+    fun bandIs(on: List<String>, off: List<String>) {
+        extrasOn = EXTRA_KEYS.filter { it in on }; extrasOff = EXTRA_KEYS.filter { it in off }
+        extraSel = extraSel.coerceIn(0, extraMax())
+        if (sheet == Sheet.EXTRAS && extrasOff.isEmpty()) sheet = null
+    }
+    /** P4: the ribbon's Fight toggle - Home shows the top bar's combat look while editing (a preview only: no fight state, nothing sent) */
+    var fightPreview = false
+        private set
+
     /** the session changed something against the record it opened on (Discard has something to put back) */
     val changed: Boolean get() = !draft.samePlace(saved)
-
-    /** [s]'s motion key now: a D-pad spot's is its icon's ([HomeLayout.pad] at that spot: the icon keeps its wiggle and its lift when it
-     *  swaps), every other stop's its own [EditStop.key] */
-    fun keyOf(s: EditStop): Int = if (s.pad > 0) HomeEditMotion.PAD0 + draft.pad[s.pad - 1].ordinal else s.key
-    /** the position (1-4) of the lifted D-pad icon in the draft (0 = none) */
-    val padAt: Int get() = padLifted?.let { draft.pad.indexOf(it) + 1 } ?: 0
 
     /** nothing is lifted and no finger is down: the draft is settled (the view saves it now) */
     val settled: Boolean get() = lifted == null && drag == null
@@ -171,7 +185,7 @@ class HomeEditModel(
         /** the draft changed: lay Home again, gliding [ms] (EDIT_STEP 120 a lifted step, MODULE_OPEN 240 a change, MODULE_CLOSE 200 a
          *  settle); the view saves a settled draft ([settled]) */
         data class Relay(val ms: Long) : Fx()
-        /** leave: every change is saved already (the D-pad order goes to the add-on now that edit mode is not live) */
+        /** leave: every change is saved already (the toolbar's sides go to the add-on now that edit mode is not live) */
         object Done : Fx()
         /** leave, putting back the record edit mode opened on ([saved]): Home glides back to it */
         object Discard : Fx()
@@ -186,6 +200,8 @@ class HomeEditModel(
         data class Refuse(val stop: EditStop?) : Fx()
         /** the lift changed (scale 1.0 <-> LIFT_SCALE, the shadow: HomeEditMotion's spring) */
         object Lift : Fx()
+        /** P4: the fight preview on / off ([fightPreview]): Home lays the band's combat look (or its rest look again), nothing is sent */
+        data class Preview(val on: Boolean) : Fx()
     }
 
     // ---------------------------------------------------------------- the controller
@@ -207,6 +223,27 @@ class HomeEditModel(
                 val dy = when (k) { "PADDUP" -> -1; "PADDDOWN" -> 1; else -> 0 }
                 // on the divider Left / Right step the width
                 if (cursor == EditStop.DIVIDER && dx != 0) return widthStep(dx)
+                // THE TOP BAR (P1 - P4): Left / Right along its pieces (the extras' own cursor first), Up nothing, Down to the page
+                if (cursor.band) { bandKey(stops, dx, dy); return emptyList() }
+                // Up from the divider: the band's piece nearest the page's centre
+                if (cursor == EditStop.DIVIDER && dy < 0) {
+                    val cx = stops[EditStop.DIVIDER]?.cx
+                    BAND_ORDER.filter { it in stops }.minByOrNull { abs((stops.getValue(it).cx) - (cx ?: 0f)) }?.let { enterBand(it, 0); return emptyList() }
+                }
+                // THE RIBBON'S ROW (P4): "+" <-> Fight <-> Done; Up from the room bar is Fight, Down from Fight the room bar
+                if (cursor == EditStop.FIGHT) {
+                    when {
+                        dx > 0 -> if (EditStop.DONE in stops) cursor = EditStop.DONE
+                        dx < 0 -> if (EditStop.PLUS in stops) cursor = EditStop.PLUS
+                        dy > 0 -> if (EditStop.ROOMS in stops) cursor = EditStop.ROOMS
+                        else -> nearest(stops.filterKeys { it != EditStop.ROOMS && it != EditStop.PLUS && it != EditStop.DONE }, cursor, 0, -1)
+                            ?.let { if (it.band) enterBand(it, 0) else cursor = it }
+                    }
+                    return emptyList()
+                }
+                if (cursor == EditStop.PLUS && dx > 0 && EditStop.FIGHT in stops) { cursor = EditStop.FIGHT; return emptyList() }
+                if (cursor == EditStop.ROOMS && dy < 0 && EditStop.FIGHT in stops) { cursor = EditStop.FIGHT; return emptyList() }
+                if (cursor == EditStop.DONE && dx < 0 && EditStop.FIGHT in stops) { cursor = EditStop.FIGHT; return emptyList() }
                 // on the room bar Left / Right walk its rooms (the Home disc is no stop: the cursor steps over it); Right past its right
                 // end: the ribbon's Done (A Done, X Discard)
                 if (cursor == EditStop.ROOMS && dx != 0) {
@@ -217,12 +254,13 @@ class HomeEditModel(
                 if (cursor == EditStop.DONE && (dx < 0 || dy > 0) && EditStop.ROOMS in stops) {
                     cursor = EditStop.ROOMS; barSel = barMax().coerceAtLeast(0); return emptyList()
                 }
-                nearest(stops, cursor, dx, dy)?.let { cursor = it }
+                nearest(stops, cursor, dx, dy)?.let { if (it.band) enterBand(it, dx) else cursor = it }
                 emptyList()
             }
             "PAD1" -> a()
             "PAD3" -> if (cursor == EditStop.DONE) discard()
                 else if (cursor == EditStop.ROOMS) barRoom?.let { hideRoom(it) } ?: emptyList()
+                else if (cursor == EditStop.EXTRAS) extra?.let { hideExtra(it) } ?: emptyList()
                 else if (cursor.hasMenu && cursor in stops) openMenu(cursor) else emptyList()
             "PAD4" -> sizeStep(cursor)
             "PADBACK" -> swap()
@@ -237,14 +275,116 @@ class HomeEditModel(
         EditStop.DIVIDER -> emptyList()
         EditStop.DONE -> done()
         EditStop.ROOMS -> if (barOnPlus) openRoomTray() else lift(cursor)
+        // the band's pieces: a pencil its bubble, the Look chip the other resting look, "+" the extras' tray (an extra: nothing - X or
+        // its "-" hides it), the ribbon's Fight the preview
+        EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.FIGHT_PEN -> openMenu(cursor)
+        EditStop.LOOK -> lookFlip()
+        EditStop.EXTRAS -> if (extraOnPlus) openExtraTray() else emptyList()
+        EditStop.FIGHT -> toggleFight()
         else -> lift(cursor)
+    }
+
+    // ---------------------------------------------------------------- the top bar's pieces (P1 - P4)
+
+    /** the band's walk: Left / Right along [BAND_ORDER] (the extras' own cursor first; no wrap), Up nothing, Down to the page below the
+     *  piece (never another of the band's) */
+    private fun bandKey(stops: Map<EditStop, HomeLayoutSolver.Box>, dx: Int, dy: Int) {
+        if (dy < 0) return
+        if (dy > 0) {
+            nearest(stops.filterKeys { !it.band || it == cursor }, cursor, 0, 1)?.let { cursor = it }
+            return
+        }
+        if (cursor == EditStop.EXTRAS) {
+            val to = extraSel + dx
+            if (to in 0..extraMax()) { extraSel = to; return }
+        }
+        val order = BAND_ORDER.filter { it in stops }
+        val i = order.indexOf(cursor)
+        order.getOrNull(if (i < 0) 0 else i + dx)?.let { enterBand(it, dx) }
+    }
+
+    /** the cursor onto band piece [s], coming from the left ([dx] > 0: the extras' first), the right (< 0: their last) or below (0) */
+    private fun enterBand(s: EditStop, dx: Int) {
+        cursor = s
+        if (s == EditStop.EXTRAS) extraSel = if (dx < 0) extraMax() else if (dx > 0) 0 else extraSel.coerceIn(0, extraMax())
+    }
+
+    /** P3: the Look chip - the other resting look (Thin row <-> Diamonds), the same setter as Settings' Rest controller */
+    fun lookFlip(): List<Fx> {
+        if (parked) return emptyList()
+        val dropped = if (lifted != null) drop() else emptyList()          // a lifted widget stays where the draft put it
+        menu = null; sheet = null; removeAsk = null
+        val to = HomeRest.values().first { it != draft.rest }
+        cursor = EditStop.LOOK
+        return dropped + Fx.Press(BottomTiles.REST, HomeRest.values().indexOf(to))
+    }
+
+    /** P2: extra [k] off the band (X on it, a tap on its "-" badge): Settings' own row Off; the cursor stays at its place (the next slides
+     *  in, or "+") */
+    fun hideExtra(k: String): List<Fx> {
+        if (parked || k !in extrasOn) return emptyList()
+        val dropped = if (lifted != null) drop() else emptyList()
+        val at = extrasOn.indexOf(k)
+        menu = null; sheet = null; removeAsk = null
+        cursor = EditStop.EXTRAS
+        extrasOn = extrasOn - k; extrasOff = EXTRA_KEYS.filter { it in extrasOff || it == k }
+        extraSel = at.coerceIn(0, extraMax())
+        return dropped + Fx.Press(k, 1)
+    }
+
+    /** P2: "+" at the extras' end: the small tray of the hidden ones (A / a tap puts one back) */
+    fun openExtraTray(): List<Fx> {
+        if (parked || !extraPlus) return emptyList()
+        val dropped = if (lifted != null) drop() else emptyList()
+        menu = null; removeAsk = null
+        cursor = EditStop.EXTRAS; extraSel = extrasOn.size
+        sheet = Sheet.EXTRAS; sheetSel = 0
+        return dropped
+    }
+
+    /** P2: the tray's pick: extra [k] On again (Settings' row), the cursor on it; the tray closes */
+    fun unhideExtra(k: String?): List<Fx> {
+        sheet = null
+        if (parked || k == null || k !in extrasOff) return emptyList()
+        cursor = EditStop.EXTRAS
+        extrasOff = extrasOff - k; extrasOn = EXTRA_KEYS.filter { it in extrasOn || it == k }
+        extraSel = extrasOn.indexOf(k).coerceIn(0, extraMax())
+        return listOf(Fx.Press(k, 0))
+    }
+
+    /** a finger on extra [i] of the shown ones (or the "+" spot: [extrasOn].size): the cursor goes there; an open tray / menu closes */
+    fun extraTap(i: Int): List<Fx> {
+        if (parked) return emptyList()
+        removeAsk = null
+        if (sheet != null) { sheet = null; return emptyList() }
+        menu = null
+        val dropped = if (lifted != null) drop() else emptyList()
+        cursor = EditStop.EXTRAS; extraSel = i.coerceIn(0, extraMax())
+        return dropped + (if (extraOnPlus) openExtraTray() else emptyList())
+    }
+
+    /** P1 / P4: a finger on a pencil (or on its part): its bubble opens at once (the same tap again closes it); an open tray closes */
+    fun pencilTap(s: EditStop): List<Fx> {
+        if (parked || !s.pencil) return emptyList()
+        removeAsk = null; sheet = null
+        if (menu == s) { menu = null; return emptyList() }
+        return openMenu(s)
+    }
+
+    /** P4: the ribbon's Fight toggle (A on it, its tap): the preview on / off; the cursor on the toggle. Nothing is sent to the game */
+    fun toggleFight(): List<Fx> {
+        if (parked) return emptyList()
+        val dropped = if (lifted != null) drop() else emptyList()
+        menu = null; sheet = null; removeAsk = null
+        fightPreview = !fightPreview
+        cursor = EditStop.FIGHT
+        return dropped + Fx.Preview(fightPreview)
     }
 
     /** B one step back at the top level: Done (every change is saved already) */
     private fun back(): List<Fx> = done()
 
     fun lift(s: EditStop): List<Fx> {
-        if (s.piece) return liftPiece(s)
         if (s == EditStop.ROOMS) {
             // the room under the bar's cursor (the bar itself never moves; "+" is no room)
             val r = barRoom ?: return emptyList()
@@ -263,69 +403,22 @@ class HomeEditModel(
     private fun dropOther(s: EditStop, room: String? = null): List<Fx> =
         if (lifted != null && (lifted != s || barLifted != room)) drop() else emptyList()
 
-    /**
-     * a band piece picked up (A, a finger): a D-pad icon while [Env.pads] lets it (else one red pulse: the toolbar is off, Party mode's
-     * pictures show, no character key ...), the clock while the band offers it two spots or more
-     */
-    private fun liftPiece(s: EditStop): List<Fx> {
-        if (!pieceMovable(s)) { cursor = s; return listOf(Fx.Refuse(s)) }
-        val dropped = dropOther(s)                                        // 1518: a lift over another drops that one first
-        if (s.pad > 0) {
-            cursor = s; lifted = s; liftFrom = draft; menu = null; padLifted = draft.pad[s.pad - 1]
-            return dropped + Fx.Lift
-        }
-        cursor = s; lifted = s; liftFrom = draft; menu = null
-        return dropped + Fx.Lift
-    }
-
-    /** a band piece A or a finger can pick up now: a D-pad icon while [Env.pads] lets it, the clock with two spots or more (the review:
-     *  a piece that cannot move wears no "A Move" hint and no wiggle) */
-    fun pieceMovable(s: EditStop): Boolean = when {
-        s.pad > 0 -> env.pads != PadCan.NONE
-        s == EditStop.CLOCK -> env.clockPlaces.size >= 2
-        else -> false
-    }
-
-    /**
-     * the lifted D-pad icon to position [to] (1-4): it SWAPS with the icon there (EDIT_STEP: the two glide past each other); the cursor and
-     * the lift ride with it. An older Spells add-on ([PadCan.SIMPLE]) takes only today's two tables: any other order is one red pulse
-     */
-    fun padTo(to: Int): List<Fx> {
-        val from = padAt
-        if (from == 0 || to !in 1..4 || to == from) return emptyList()
-        val next = draft.padSwapped(from, to)
-        if (env.pads == PadCan.SIMPLE && !next.padSimple) return listOf(Fx.Refuse(lifted))
-        return change(next, EDIT_STEP)
-    }
-
-    /** the lifted clock one offered spot left / right ([d] -1 / 1; none past the ends) */
-    fun clockStep(d: Int): List<Fx> {
-        val spots = env.clockPlaces
-        val i = spots.indexOf(draft.clock).takeIf { it >= 0 } ?: spots.indexOf(HomeLayout.ClockPlace.CENTRE)
-        if (i < 0) return emptyList()
-        val to = spots.getOrNull(i + d) ?: return emptyList()
-        return change(draft.copy(clock = to), EDIT_STEP)
-    }
-
     /** A with a widget lifted: it stays where the draft put it */
     fun drop(): List<Fx> {
         if (lifted == null) return emptyList()
-        lifted = null; liftFrom = null; barLifted = null; padLifted = null
+        lifted = null; liftFrom = null; barLifted = null
         return listOf(Fx.Lift)
     }
 
     private fun putBack(): List<Fx> {
         val from = liftFrom ?: draft
         val room = barLifted
-        val pad = padLifted
-        lifted = null; liftFrom = null; barLifted = null; padLifted = null
+        lifted = null; liftFrom = null; barLifted = null
         val moved = !from.samePlace(draft)
         draft = from
         from.cast.column?.let { barColumn = it }
         // a room put back: the bar's cursor stays on it, where it stood
         if (room != null) RoomBar.visible(from.rooms, from.hidden).indexOf(room).takeIf { it >= 0 }?.let { barSel = it }
-        // a D-pad icon put back: the cursor on its own spot again
-        if (pad != null) EditStop.padStop(from.pad.indexOf(pad) + 1)?.let { cursor = it }
         return if (moved) listOf(Fx.Lift, Fx.Relay(Motion.MODULE_CLOSE)) else listOf(Fx.Lift)
     }
 
@@ -376,24 +469,7 @@ class HomeEditModel(
         return fx
     }
 
-    private fun liftedKey(s: EditStop, k: String): List<Fx> = if (s.pad > 0) when (k) {
-        "PADDLEFT" -> padTo(1)
-        "PADDUP" -> padTo(2)
-        "PADDRIGHT" -> padTo(3)
-        "PADDDOWN" -> padTo(4)
-        "PAD1" -> drop()
-        "PAD2" -> putBack()
-        "PADBACK" -> swap()
-        "PADFORWARD" -> { drop(); done() }
-        else -> emptyList()
-    } else if (s == EditStop.CLOCK) when (k) {
-        "PADDLEFT", "PADDRIGHT" -> clockStep(if (k == "PADDLEFT") -1 else 1)
-        "PAD1" -> drop()
-        "PAD2" -> putBack()
-        "PADBACK" -> swap()
-        "PADFORWARD" -> { drop(); done() }
-        else -> emptyList()
-    } else if (s == EditStop.ROOMS) when (k) {
+    private fun liftedKey(s: EditStop, k: String): List<Fx> = if (s == EditStop.ROOMS) when (k) {
         "PADDLEFT", "PADDRIGHT" -> moveRoom(if (k == "PADDLEFT") -1 else 1)
         "PAD1" -> drop()
         "PAD2" -> putBack()
@@ -418,7 +494,8 @@ class HomeEditModel(
     }
 
     /** the dock a lifted widget goes to: Left / Right = the column on that side (chat and map swap; the bar keeps its edge); Up / Down =
-     *  the next dock (the card On map <-> Above chat; the bar's ladder, no wrap: Above its column <-> Under it <-> Across <-> Split) */
+     *  the next dock (the card On map <-> Above chat; the bar's ladder, no wrap: Above its column <-> Under it <-> Across <-> Split; the
+     *  party list the top <-> the foot of its column) */
     fun nextDock(s: EditStop, l: HomeLayout, d: Int, horizontal: Boolean): HomeLayout? {
         val side = if (d < 0) HomeLayout.Side.LEFT else HomeLayout.Side.RIGHT
         return when (s) {
@@ -435,6 +512,11 @@ class HomeEditModel(
                 val to = if (horizontal) l.cast.withColumn(if (side == l.chatSide) HomeModule.CHAT else HomeModule.MAP)
                     else castLadder(l.cast, d < 0)
                 if (to == null || to == l.cast) null else l.copy(cast = to)
+            }
+            // the party list: Left / Right the column on that side (its edge kept), Up / Down the top or the foot of its column (no wrap)
+            EditStop.PARTY -> {
+                val to = if (horizontal) l.party.withColumn(if (side == l.chatSide) HomeModule.CHAT else HomeModule.MAP) else l.party.withTop(d < 0)
+                if (to == l.party) null else l.copy(party = to)
             }
             else -> null
         }
@@ -480,8 +562,6 @@ class HomeEditModel(
         if (to.card != HomeLayout.CardDock.OFF) lastCard = to.card
         // the bar's cursor rides with the lifted room (and stays on the bar whatever the order)
         barLifted?.let { r -> barRooms.indexOf(r).takeIf { it >= 0 }?.let { barSel = it } }
-        // the lifted D-pad icon's spot is the cursor's (and the lift's)
-        if ((lifted?.pad ?: 0) > 0) EditStop.padStop(padAt)?.let { cursor = it; lifted = it }
         barSel = barSel.coerceIn(0, barMax().coerceAtLeast(0))
         return listOf(Fx.Relay(ms))
     }
@@ -507,13 +587,29 @@ class HomeEditModel(
             "PADDLEFT", "PADDRIGHT" -> {
                 val d = if (k == "PADDLEFT") -1 else 1
                 when (r.kind) {
-                    MenuRow.Kind.SEG -> (r.picked + d).let { to -> if (to in r.words.indices && to != r.picked) row(s, r, to) else emptyList() }
+                    // fix round (the review): a dimmed word is stepped over (In fights' Top screen without the Wings word); only dimmed
+                    // words that way: refused as before (the flash says why nothing moved)
+                    MenuRow.Kind.SEG -> {
+                        var to = r.picked + d
+                        while (to in r.words.indices && to in r.off) to += d
+                        when {
+                            to in r.words.indices && to != r.picked -> row(s, r, to)
+                            (r.picked + d) in r.words.indices -> listOf(Fx.Refuse(s))
+                            else -> emptyList()
+                        }
+                    }
                     MenuRow.Kind.STEP -> row(s, r, if (d < 0) 0 else 1)
                     MenuRow.Kind.BUTTON -> emptyList()
                 }
             }
             "PAD1" -> when (r.kind) {
-                MenuRow.Kind.SEG -> row(s, r, (r.picked + 1).mod(r.words.size))
+                // fix round (the review: A from Same size stuck on a dimmed Top screen, refused every time): the cycle steps over the
+                // dimmed words and wraps; every other word dimmed: refused
+                MenuRow.Kind.SEG -> {
+                    var to = (r.picked + 1).mod(r.words.size)
+                    while (to in r.off && to != r.picked) to = (to + 1).mod(r.words.size)
+                    if (to == r.picked && r.words.size > 1) listOf(Fx.Refuse(s)) else row(s, r, to)
+                }
                 MenuRow.Kind.STEP -> emptyList()
                 MenuRow.Kind.BUTTON -> row(s, r, 0)
             }
@@ -534,7 +630,7 @@ class HomeEditModel(
 
     /** row [r] set to choice [k]: a layout row changes the draft (live, the glide), a behaviour row is one press of its setter */
     private fun row(s: EditStop, r: MenuRow, k: Int): List<Fx> {
-        if (!r.enabled) return listOf(Fx.Refuse(s))
+        if (!r.enabled || k in r.off) return listOf(Fx.Refuse(s))
         val l = draft
         return when (r.key) {
             K_CHAT_SIDE -> change(l.copy(chatSide = HomeLayout.Side.values()[k]), Motion.MODULE_OPEN)
@@ -546,6 +642,9 @@ class HomeEditModel(
             K_PLACE -> HomeWidgetMenus.CAST_DOCKS[k].let { c -> change(l.copy(cast = c.column?.let { l.cast.withColumn(it) } ?: c), Motion.MODULE_OPEN) }
                 .also { offed(s, EditStop.CAST, draft.cast == HomeLayout.CastDock.OFF) }
             K_CAST_EDGE -> change(l.copy(cast = l.cast.withTop(k == 0)), Motion.MODULE_OPEN)
+            // the party list's column (its edge kept) and its edge in that column
+            K_PARTY_PLACE -> change(l.copy(party = l.party.withColumn(if (k == 0) HomeModule.CHAT else HomeModule.MAP)), Motion.MODULE_OPEN)
+            K_PARTY_EDGE -> change(l.copy(party = l.party.withTop(k == 0)), Motion.MODULE_OPEN)
             K_SIZE -> change(l.copy(castSize = SIZES[k]), Motion.MODULE_OPEN)
             K_SLOTS -> { menu = null; listOf(Fx.EditSlots) }
             K_FILTERS -> { menu = null; listOf(Fx.Filters) }
@@ -569,15 +668,25 @@ class HomeEditModel(
         if (parked || sheet != null) return false
         val c = cursor
         if (c !in GONE_CHECKED) return false
-        // [stops] laid (the chat always has a box on Home): only then is a missing box a widget gone
-        if (c in stops || EditStop.CHAT !in stops) return false
+        // THE TOP BAR's pieces come and go with the look (the extras with Diamonds at rest, the fight pencil with the preview): the cursor
+        // to the Look chip, else the D-pad's pencil (the band laid: its pencils always have a box)
+        if (c.band) {
+            if (c in stops || EditStop.PAD_PEN !in stops) return false
+            if (menu == c) menu = null
+            cursor = if (EditStop.LOOK in stops) EditStop.LOOK else EditStop.PAD_PEN
+            return true
+        }
+        // [stops] laid (the chat always has a box on Home; with the Fight preview none of the page's has, the ribbon's Fight always
+        // has: fix round 3): only then is a missing box a widget gone
+        val preview = fightPreview && EditStop.FIGHT in stops
+        if (c in stops || (EditStop.CHAT !in stops && !preview)) return false
         if (menu == c) menu = null
         if (lifted == c) drop()                                           // 1518: every lift field (the view plops it: editCursorCheck)
-        // fix round 2: the clock (only on the small-diamonds rest: the thin row takes it away) falls back to the D-pad's Up icon beside
-        // it (1518 build 3: the band is no stop any more); the card and the bar to "+" when shown (and drawn), else the chat
+        // the card and the bar to "+" when shown (and drawn), else the chat (the preview: the ribbon's Fight); the party list (QOL >
+        // Party mode off, the party gone) to the chat
         cursor = when {
-            c == EditStop.CLOCK && EditStop.PAD_U in stops -> EditStop.PAD_U
-            plusShown && EditStop.PLUS in stops -> EditStop.PLUS
+            c != EditStop.PARTY && plusShown && EditStop.PLUS in stops -> EditStop.PLUS
+            EditStop.CHAT !in stops -> EditStop.FIGHT
             else -> EditStop.CHAT
         }
         return true
@@ -588,12 +697,14 @@ class HomeEditModel(
     /** a press while the Add tray (or the bar's tray of hidden rooms) is open (its list runs down: Up / Down, Left / Right alike) */
     private fun trayKey(k: String): List<Fx> {
         val rooms = sheet == Sheet.ROOMS
-        val n = if (rooms) hiddenRooms.size else removed.size
+        val extras = sheet == Sheet.EXTRAS
+        val n = if (rooms) hiddenRooms.size else if (extras) extrasOff.size else removed.size
         if (n == 0) { sheet = null; return emptyList() }
         when (k) {
             "PADDLEFT", "PADDUP" -> sheetSel = (sheetSel - 1).coerceAtLeast(0)
             "PADDRIGHT", "PADDDOWN" -> sheetSel = (sheetSel + 1).coerceAtMost(n - 1)
-            "PAD1" -> return if (rooms) unhideRoom(hiddenRooms.getOrNull(sheetSel)) else addBack(removed.getOrNull(sheetSel))
+            "PAD1" -> return if (rooms) unhideRoom(hiddenRooms.getOrNull(sheetSel))
+                else if (extras) unhideExtra(extrasOff.getOrNull(sheetSel)) else addBack(removed.getOrNull(sheetSel))
             "PAD2" -> sheet = null
             "PADFORWARD" -> { sheet = null; return done() }
         }
@@ -605,11 +716,15 @@ class HomeEditModel(
     /** "+" tray's A: the widget back in its last dock (today's slide in: the part comes from 80 % and fades in) */
     fun addBack(s: EditStop?): List<Fx> {
         sheet = null
-        return when (s) {
+        val fx = when (s) {
             EditStop.CAST -> { cursor = EditStop.CAST; change(draft.copy(cast = lastCast), Motion.MODULE_OPEN) }
             EditStop.QUEST -> { cursor = EditStop.QUEST; change(draft.copy(card = lastCard), Motion.MODULE_OPEN) }
             else -> emptyList()
         }
+        // fix round 3 (the review): during the Fight preview the page's widgets have no stop (D4): the cursor stays on "+" while it is
+        // shown, else on the ribbon's Fight - never on the widget just brought back (A would lift it, Y resize it under the grown band)
+        if (fightPreview && (s == EditStop.CAST || s == EditStop.QUEST)) cursor = if (plusShown) EditStop.PLUS else EditStop.FIGHT
+        return fx
     }
 
     // ---------------------------------------------------------------- remove (the red X chip, touch)
@@ -640,14 +755,14 @@ class HomeEditModel(
     /** Done (its tap, B at the top level, Start, the Home disc's gold tick): a lift stays where the draft put it, every change is saved
      *  already, edit mode ends */
     fun done(): List<Fx> {
-        lifted = null; liftFrom = null; barLifted = null; padLifted = null; drag = null; menu = null; sheet = null; removeAsk = null
+        lifted = null; liftFrom = null; barLifted = null; drag = null; menu = null; sheet = null; removeAsk = null; fightPreview = false
         return listOf(Fx.Done)
     }
 
-    /** Discard (a long press on Done, a held B): the record edit mode opened on comes back - the draft (its D-pad order too: sent back
-     *  to the add-on once edit mode is not live) - and edit mode ends; the view writes [saved] back over the session's own changes */
+    /** Discard (a long press on Done, a held B): the record edit mode opened on comes back - the draft - and edit mode ends; the view
+     *  writes [saved] back over the session's own changes */
     fun discard(): List<Fx> {
-        lifted = null; liftFrom = null; barLifted = null; padLifted = null; drag = null; menu = null; sheet = null; removeAsk = null
+        lifted = null; liftFrom = null; barLifted = null; drag = null; menu = null; sheet = null; removeAsk = null; fightPreview = false
         draft = saved
         return listOf(Fx.Relay(Motion.MODULE_CLOSE), Fx.Discard)
     }
@@ -680,8 +795,6 @@ class HomeEditModel(
         if (s == EditStop.PLUS) { cursor = s; if (plusShown) { sheet = Sheet.ADD; sheetSel = 0 }; return dropped }
         if (s != cursor) { cursor = s; return dropped }
         if (lifted == s) return drop()
-        // a band piece is an app: a tap only moves the cursor (a drag carries it); no menu
-        if (s.piece) return dropped
         return dropped + openMenu(s)
     }
 
@@ -734,22 +847,11 @@ class HomeEditModel(
         val colBottom: Float get() = 927f
         /** phase 4: the room bar's slots' centres left to right (the drag's x), empty = no bar */
         fun barSlots(): List<Float> = emptyList()
-        /** 1518 build 3: the D-pad icons' spots now (position 1-4 -> its box in Home's px), empty = no toolbar on the band */
-        fun padSlots(): Map<Int, HomeLayoutSolver.Box> = emptyMap()
-        /** 1518 build 3: the clock chip's offered spots' centre x in Home's px (empty = no clock piece) */
-        fun clockXs(): Map<HomeLayout.ClockPlace, Float> = emptyMap()
     }
 
     fun dragStart(s: EditStop, x: Float, y: Float, box: HomeLayoutSolver.Box): List<Fx> {
-        if (parked || (!s.movable && s != EditStop.DIVIDER && s != EditStop.ROOMS && !s.piece)) return emptyList()
+        if (parked || (!s.movable && s != EditStop.DIVIDER && s != EditStop.ROOMS)) return emptyList()
         menu = null; sheet = null; removeAsk = null
-        if (s.piece) {
-            // a refused piece (a red pulse) is never carried
-            val fx = lift(s)
-            if (lifted != s) return fx
-            drag = Drag(s, x, y, box, HomeLayout.CastDock.ACROSS)
-            return fx
-        }
         val mid = if (draft.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.SPLIT else HomeLayout.CastDock.ACROSS
         // 1518: the divider's drag ends a lift (with its drop's effects); a widget's lift(s) drops another itself
         val dropped = if (s == EditStop.DIVIDER && lifted != null) drop() else emptyList()
@@ -790,7 +892,7 @@ class HomeEditModel(
         val want = if (d.moved) dockUnder(d, draft, geo) else null
         if (want != null && want != draft && geo.valid(want)) out += change(want, Motion.MODULE_CLOSE)
         else out += Fx.Relay(Motion.MODULE_CLOSE)                          // the widget slides back into its dock
-        if (d.stop != EditStop.DIVIDER) { lifted = null; liftFrom = null; barLifted = null; padLifted = null; out += Fx.Lift }
+        if (d.stop != EditStop.DIVIDER) { lifted = null; liftFrom = null; barLifted = null; out += Fx.Lift }
         return out
     }
 
@@ -803,24 +905,11 @@ class HomeEditModel(
     /**
      * the layout the dragged widget's CENTRE asks for (the finger keeps its grab): chat / map swap sides once the centre is
      * [HYSTERESIS_PX] beyond the divider; the card docks to the column under it; the bar to the left / right column (above it in the
-     * columns' upper half, under it in the lower), or across (Split when it was split) in the middle third of the lower half; the divider snaps the chat's width to the nearest third / half / two thirds
+     * columns' upper half, under it in the lower), or across (Split when it was split) in the middle third of the lower half (in the
+     * upper half there: the top of the column it last sat in); the party list to the column under it, its top or its foot by the columns'
+     * halves; the divider snaps the chat's width to the nearest third / half / two thirds
      */
     fun dockUnder(d: Drag, l: HomeLayout, geo: Geo): HomeLayout? {
-        if (d.stop.pad > 0) {
-            // the lifted D-pad icon swaps with the spot its centre is over (that spot's box grown by its half); elsewhere it stays where
-            // it is now (a let go slides it back there)
-            val p = padLifted ?: return null
-            val from = l.pad.indexOf(p) + 1
-            val to = geo.padSlots().entries.filter { (_, b) ->
-                val hw = b.r - b.l; val hh = b.b - b.t
-                d.cx > b.l - hw / 2f && d.cx < b.r + hw / 2f && d.cy > b.t - hh / 2f && d.cy < b.b + hh / 2f
-            }.minByOrNull { (_, b) -> abs(b.cx - d.cx) + abs((b.t + b.b) / 2f - d.cy) }?.key ?: return null
-            if (to == from) return null
-            val next = l.padSwapped(from, to)
-            return if (env.pads == PadCan.SIMPLE && !next.padSimple) null else next
-        }
-        // the clock chip goes to the offered spot nearest its centre's x
-        if (d.stop == EditStop.CLOCK) return geo.clockXs().minByOrNull { abs(it.value - d.cx) }?.key?.let { l.copy(clock = it) }
         if (d.stop == EditStop.ROOMS) {
             // the lifted room goes to the slot its centre is over (the others close up; the disc and "+" are no slots)
             val r = barLifted ?: return null
@@ -868,12 +957,23 @@ class HomeEditModel(
                     else -> if (cx < b1 - h) -1 else if (cx > b2 + h) 1 else 0
                 }
                 val dock = when (to) {
-                    // across (or split) only from the lower half: dragging along the top never drops the bar at the foot
-                    0 -> if (!up) d.midDock else if (l.cast.column != null) l.cast.withTop(true) else l.cast
+                    // across (or split) only from the lower half: dragging along the top never drops the bar at the foot; an Across /
+                    // Split bar dragged straight up goes to the top of the column it last sat in (after 1518: "Why can't I move ... the
+                    // tap to cast to the top?" - it stayed Across and slid back)
+                    0 -> if (!up) d.midDock else if (l.cast.column != null) l.cast.withTop(true)
+                        else HomeLayout.CastDock.ABOVE_CHAT.withColumn(barColumn)
                     -1 -> (if (l.chatSide == HomeLayout.Side.LEFT) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP).withTop(up)
                     else -> (if (l.chatSide == HomeLayout.Side.RIGHT) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.UNDER_MAP).withTop(up)
                 }
                 l.copy(cast = dock)
+            }
+            // the party list: the column under its centre (past the divider by the hysteresis), the top in the columns' upper half, the
+            // foot in the lower (the edge kept within the hysteresis)
+            EditStop.PARTY -> {
+                val to = sideOver(if (l.party.column == HomeModule.CHAT) l.chatSide else mapSide)
+                val midY = (geo.colTop + geo.colBottom) / 2f
+                val up = when { d.cy < midY - HYSTERESIS_PX -> true; d.cy > midY + HYSTERESIS_PX -> false; else -> l.party.top }
+                l.copy(party = HomeLayout.PartyDock.of(if (to == l.chatSide) HomeModule.CHAT else HomeModule.MAP, up))
             }
             EditStop.DIVIDER -> {
                 val gap = lc.first
@@ -891,8 +991,12 @@ class HomeEditModel(
 
     /** a fight started: the chrome goes (120 ms), Home plays the record's fight (the draft is saved already); the cursor waits */
     fun park() {
-        parked = true; drag = null; if (lifted != null) { lifted = null; liftFrom = null; barLifted = null; padLifted = null }; removeAsk = null
-        if (sheet == Sheet.ROOMS) sheet = null                                // the bar's tray: the rooms open as always in a fight
+        parked = true; drag = null; if (lifted != null) { lifted = null; liftFrom = null; barLifted = null }; removeAsk = null
+        if (sheet == Sheet.ROOMS || sheet == Sheet.EXTRAS) sheet = null       // the bar's tray: the rooms open as always in a fight
+        // P4: a real fight (or another room) ends the preview: back, edit mode shows the band's rest look again
+        fightPreview = false
+        if (cursor == EditStop.FIGHT_PEN) cursor = EditStop.FIGHT
+        if (menu == EditStop.FIGHT_PEN) menu = null
     }
     /** the fight ended with Home on screen: edit mode where it was left */
     fun resume() { parked = false }
@@ -954,7 +1058,17 @@ class HomeEditModel(
         const val K_SIZE = "size"
         const val K_FOLD = "fold"
         /** the stops whose box can go while edit mode is open (the cursor on one is moved by [cursorCheck]) */
-        val GONE_CHECKED = setOf(EditStop.QUEST, EditStop.CAST, EditStop.CLOCK, EditStop.PAD_L, EditStop.PAD_U, EditStop.PAD_R, EditStop.PAD_D)
+        val GONE_CHECKED = setOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.LOOK,
+            EditStop.EXTRAS, EditStop.FIGHT_PEN)
+        /** the top bar's pieces left to right (P1 - P4): at rest the D-pad's pencil, the Look chip, the extras, the ABXY's pencil; with the
+         *  fight preview the D-pad's pencil, the fight pencil, the ABXY's pencil (the Thin row has no extras) */
+        val BAND_ORDER = listOf(EditStop.PAD_PEN, EditStop.LOOK, EditStop.FIGHT_PEN, EditStop.EXTRAS, EditStop.FACE_PEN)
+        /** the clock's extras (Settings > Bottom screen > Clock band's rows: BottomTiles.CLOCK_LINES), left to right as the band draws
+         *  them (the gold line, under the battery, is the middle one) */
+        val EXTRA_KEYS = listOf("hearth", "teleport", "gold", "bags", "ammo")
+        /** the party list's menu rows: its column (Chat / Map) and its edge in it (Above / Below) */
+        const val K_PARTY_PLACE = "partyplace"
+        const val K_PARTY_EDGE = "partyedge"
         const val K_CAST_FIGHT = "castfight"
         const val K_CAST_PARTY = "castparty"
         const val K_SLOTS = "slots"
@@ -974,6 +1088,9 @@ class HomeEditModel(
                 if (s == from || (s == EditStop.DIVIDER && dx != 0)) continue
                 // Done is reached by Right only (from the room bar's end: the caller; from the ribbon's "+" here)
                 if (s == EditStop.DONE && !(from == EditStop.PLUS && dx > 0)) continue
+                // the ribbon's Fight (P4) by its own row only (Right from "+", Left from Done, Up from the room bar: [key]), never by the
+                // walk down the page (Down from a column stays the room bar's, as 1518)
+                if (s == EditStop.FIGHT) continue
                 val cx = b.cx; val cy = (b.t + b.b) / 2f
                 val along = (cx - acx) * dx + (cy - acy) * dy
                 if (along <= 1f) continue
@@ -999,7 +1116,9 @@ class HomeEditModel(
 
 /** one row of a widget's menu: a segmented choice (SEG: [words], [picked] lit), a stepper (STEP: [value] between − and +), a button */
 data class MenuRow(val key: String, val label: String, val words: List<String>, val picked: Int, val kind: Kind = Kind.SEG,
-                   val value: String? = null, val enabled: Boolean = true) {
+                   val value: String? = null, val enabled: Boolean = true,
+                   /** the words that cannot be picked now (dimmed; a press on one is refused: In fights' Top screen with no Wings word) */
+                   val off: Set<Int> = emptySet()) {
     enum class Kind { SEG, STEP, BUTTON }
 }
 
@@ -1017,6 +1136,11 @@ object HomeWidgetMenus {
         val folded: Boolean = false,
         val zoomOut: Int = 80, val zoomIn: Int = 60,
         val castShowInFight: Boolean = false, val castParty: Boolean = true,
+        /** the top bar's pieces (P1, P4): the DS WoW toolbar's switch (and whether the add-on can switch it), the resting look, the rank
+         *  badges, In fights, the swing timer, the add-on's Wings word (`ct`, null = none: Top screen cannot be picked) */
+        val toolbarOn: Boolean = false, val toolbarAvail: Boolean = false, val rest: HomeRest = HomeRest.DIAMONDS,
+        val rankBadges: Boolean = false, val fightBand: HomeLayout.FightBand = HomeLayout.FightBand.GROW, val swing: Boolean = true,
+        val ct: Int? = null,
     )
 
     val CARD_DOCKS = listOf(HomeLayout.CardDock.ON_MAP, HomeLayout.CardDock.ABOVE_CHAT, HomeLayout.CardDock.OFF)
@@ -1065,12 +1189,41 @@ object HomeWidgetMenus {
             }
             add(MenuRow(HomeEditModel.K_SLOTS, "Edit slots", listOf("Edit slots"), -1, MenuRow.Kind.BUTTON))
         }
+        // the party list (after 1518): its column and its edge there, as the bar's Place and edge rows
+        EditStop.PARTY -> listOf(
+            MenuRow(HomeEditModel.K_PARTY_PLACE, "Place", PARTY_WORDS, if (l.party.column == HomeModule.CHAT) 0 else 1),
+            MenuRow(HomeEditModel.K_PARTY_EDGE, if (l.party.column == HomeModule.CHAT) "Chat" else "Map", EDGE_WORDS, if (l.party.top) 0 else 1),
+        )
+        // THE TOP BAR'S BUBBLES (P1, P4): Settings > Bottom screen's own rows (BottomTiles.press: one setter, so the two never disagree)
+        EditStop.PAD_PEN -> buildList {
+            add(onOff(BottomTiles.TOOLBAR, "DS WoW toolbar", v.toolbarOn, enabled = v.toolbarAvail))
+            // hold to talk only while the toolbar is on (its D-pad holds it), On release only while it is on
+            v.talk?.let { on ->
+                add(onOff(BottomTiles.TALK, "Hold to talk", on))
+                if (on) add(MenuRow("release", "On release", listOf("Show, A sends", "Send now"), if (v.talkSendNow) 1 else 0))
+            }
+        }
+        EditStop.FACE_PEN -> listOf(
+            MenuRow(BottomTiles.REST, "Rest controller", REST_WORDS, HomeRest.values().indexOf(v.rest)),
+            onOff(BottomTiles.RANK, "Spell rank badges", v.rankBadges),
+        )
+        EditStop.FIGHT_PEN -> listOf(
+            // Top screen needs the add-on's Wings word (TopCombatBar: no `ct` = laid as Grow); the preview shows what a fight would
+            MenuRow(BottomTiles.COMBAT, "In fights", BottomTiles.FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(v.fightBand),
+                off = if (v.ct == null && v.fightBand != HomeLayout.FightBand.TOP) setOf(HomeLayout.FightBand.TOP.ordinal) else emptySet()),
+            onOff(BottomTiles.SWING, "Swing timer", v.swing),
+        )
         else -> emptyList()
     }
+    /** the party list's columns ([HomeEditModel.K_PARTY_PLACE]) */
+    val PARTY_WORDS = listOf("Chat", "Map")
+    /** the resting looks in HomeRest's order (Settings' Rest controller words) */
+    val REST_WORDS = listOf("Thin row", "Diamonds")
 
     /** the menu's title */
     fun title(s: EditStop): String = when (s) {
         EditStop.CHAT -> "Chat"; EditStop.MAP -> "Map"
-        EditStop.QUEST -> "Quest card"; EditStop.CAST -> "Tap-to-cast bar"; else -> ""
+        EditStop.QUEST -> "Quest card"; EditStop.CAST -> "Tap-to-cast bar"; EditStop.PARTY -> "Party"
+        EditStop.PAD_PEN -> "D-pad"; EditStop.FACE_PEN -> "Buttons"; EditStop.FIGHT_PEN -> "Fight"; else -> ""
     }
 }

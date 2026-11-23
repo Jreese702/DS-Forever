@@ -33,8 +33,6 @@ class HomeEditRoomBarTest {
     private fun stops(l: HomeLayout): Map<EditStop, HomeLayoutSolver.Box> {
         val b = HomeLayoutSolver.places(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f)).boxes
         val out = LinkedHashMap<EditStop, HomeLayoutSolver.Box>()
-        out[EditStop.PAD_U] = HomeLayoutSolver.Box(285f, 4f, 381f, 100f)
-        out[EditStop.CLOCK] = HomeLayoutSolver.Box(550f, 10f, 690f, 94f)
         out[EditStop.CHAT] = b.getValue(HomePart.CHAT)
         out[EditStop.MAP] = b.getValue(HomePart.MAP)
         b[HomePart.QUESTS]?.let { out[EditStop.QUEST] = it }
@@ -318,7 +316,7 @@ class HomeEditRoomBarTest {
     }
 
     @Test fun theSpatialWalkNeverLandsOnDone() {
-        for (start in listOf(EditStop.CHAT, EditStop.MAP, EditStop.CAST, EditStop.ROOMS, EditStop.CLOCK, EditStop.PAD_U)) {
+        for (start in listOf(EditStop.CHAT, EditStop.MAP, EditStop.CAST, EditStop.ROOMS)) {
             val m = model(start = start)
             for (k in listOf("PADDDOWN", "PADDDOWN", "PADDUP", "PADDLEFT", "PADDRIGHT", "PADDDOWN", "PADDUP", "PADDUP")) {
                 if (m.cursor == EditStop.ROOMS && k == "PADDRIGHT") continue           // the bar's own walk (its end leads to Done)

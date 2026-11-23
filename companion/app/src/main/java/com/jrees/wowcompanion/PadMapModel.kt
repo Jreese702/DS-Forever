@@ -329,8 +329,7 @@ object PadMapModel {
                         }
                     } ?: emptyList(),
                     loginStamp = who?.takeIf { it.has("ls") }?.optLong("ls", -1L)?.takeIf { it > 0L },
-                    adopt = who?.optInt("ad", 0) == 1,
-                    pp = d.optInt("pp", 0) == 1)
+                    adopt = who?.optInt("ad", 0) == 1)
             },
             start = m.optJSONObject("start")?.let { st ->
                 StartState(textOrNull(st, "key"), textOrNull(st, "bound"), textOrNull(st, "aside"), st.optBoolean("menu", false), textOrNull(st, "why"),
@@ -377,10 +376,7 @@ object PadMapModel {
                     val loginStamp: Long? = null,
                     /** m182 (Safety k12): the add-on built this key fresh and nobody chose it (no question asked): only then may the app
                      *  put this name's In-combat backup under another realm into it ([CombatKeep.mayAdopt]); false from an older add-on */
-                    val adopt: Boolean = false,
-                    /** PadMap m184 (1518 build 3): the add-on binds ANY D-pad order (page-3 code 24 then its rank: rbp); false from an
-                     *  older add-on (only today's two tables, the mirror bit's codes 20 / 21) */
-                    val pp: Boolean = false)
+                    val adopt: Boolean = false)
     val DPAD_SIDES = listOf("left", "up", "right")
 
     /** m37 / m160 START (the padmap's `start`): [key] the game's OPENRADIAL key; [bound] "pause" = Start is the router's (Home's wheel, the
@@ -770,9 +766,6 @@ object PadMapModel {
      *  22 (off) / 23 (on) */
     const val P3_TOP_OFF = 22
     const val P3_TOP_ON = 23
-    /** 1518 build 3 (Book b77, PadMap m184): the D-pad order's pick, page-3 code 24; the padtab column right after it is the order's rank
-     *  0-23 (ToolbarMirror.rank: 0 = today's table, 14 = the mirrored one) */
-    const val P3_PERM_PICK = 24
     /** the sticky realm question's codes (Book b74, test build 1515): [KeyPick.NEW_CODE] 9 = "a new character", [KeyPick.FIRST_CODE] 10
      *  .. 19 = the add-on's candidates 1-10 (KeyPick sends them; HomeLayoutStoreTest keeps these two equal to KeyPick's) */
     const val P3_KEY_NEW = 9
@@ -781,11 +774,9 @@ object PadMapModel {
      *  22-23): PadTabCodesTest keeps them apart */
     val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8,
         "key question" to P3_KEY_NEW..P3_KEY_LAST,
-        "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON, "D-pad order" to P3_PERM_PICK..P3_PERM_PICK)
+        "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
-    /** 1518 build 3: the D-pad order of rank [rank] (0-23) for this character: padtab 39, 38, 37, 24, then [rank] (Book b77's fourth step) */
-    fun permCells(rank: Int): List<Pair<String, Int>> = page3(P3_PERM_PICK) + (ROW_PADTAB to rank.coerceIn(0, 23))
     /** the tab's index (1-4) by its name */
     fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; "cbfight" -> 7; "pbar" -> 8; else -> 1 }
     /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode; p53: the 6th, the Cast bar, opened by padtab 39 then 29) */

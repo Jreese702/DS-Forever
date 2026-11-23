@@ -1086,5 +1086,7 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         const val BADGE_HIT = 52f
         private const val HOME = 128f       // HOME's disc
         private const val RING = 6f         // the ring round it
+        /** the disc's gap in the tracking bar: half its width either side of the bar's centre (the ribbon's g0 .. g1) */
+        const val GAP_HALF = HOME / 2f + RING + 2f
     }
 }

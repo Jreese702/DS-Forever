@@ -58,13 +58,18 @@ object Motion {
     /** the wiggle (the user's pick 2026-11-21, "Noticeable"): Hz; a room's small picture turns [WIGGLE_DEG], a big module (the chat, the
      *  map, the party module, the card...) [WIGGLE_DEG_BIG] - a box of half-diagonal [WIGGLE_SMALL] or less the first, [WIGGLE_BIG] or
      *  more the second, a size between in between - and no corner travels past [WIGGLE_PX] (the band across the page a hair under
-     *  0.8 deg); the bob (px) */
-    const val WIGGLE_HZ = 6.5f
+     *  0.8 deg); the bob (px).
+     *  1518 feel pass (the user, 2026-11-22: "a bit too fast and jarring especially on the bigger things"): slower everywhere - a small
+     *  picture (a room, a chip: half-diagonal under [WIGGLE_PACE_SPLIT]) at [WIGGLE_HZ], a big module at the calmer [WIGGLE_HZ_BIG] - and
+     *  a big module turns less ([WIGGLE_DEG_BIG], its corners no further than [WIGGLE_PX]) */
+    const val WIGGLE_HZ = 4.5f
+    const val WIGGLE_HZ_BIG = 2.2f
+    const val WIGGLE_PACE_SPLIT = 100f
     const val WIGGLE_DEG = 1.2f
-    const val WIGGLE_DEG_BIG = 0.8f
+    const val WIGGLE_DEG_BIG = 0.45f
     const val WIGGLE_SMALL = 40f
     const val WIGGLE_BIG = 160f
-    const val WIGGLE_PX = 8.0f
+    const val WIGGLE_PX = 4.5f
     const val WIGGLE_BOB = 0.6f
     /** the wiggle fading in after the open / out on a lift, a leave; quieter while a menu or the Add tray is open. It never rests
      *  while edit mode is open (the user's pick 2026-11-21, "Never rest"): a fight, Home off screen and the animations off stop it */

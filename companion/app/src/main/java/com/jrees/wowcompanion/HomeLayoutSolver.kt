@@ -29,12 +29,13 @@ object HomeLayoutSolver {
                      val card: Boolean = false, val cardH: Float = 0f, val auraOpen: Boolean = false, val party: Party? = null,
                      val partyOn: Boolean = false, val castHidden: Boolean = false)
 
-    /** the laid page: [boxes] every part, [castSide] the bar's geometric side (CastStripView), [partyTabRight] the Select tab on the
-     *  right screen edge (chat on the right), [card] the dock used (F1 may move "Above chat" onto the map), [castHidden] the bar slid
-     *  away (cb7, or F2), [f1] / [f2] which fallback fired, [castTop] the bar laid at the top of its column (hidden = up behind the band) */
+    /** the laid page: [boxes] every part, [castSide] the bar's geometric side (CastStripView), [partyTabRight] the party list's Select
+     *  tab on the right screen edge (its column on the right: the chat's on the right for Classic's dock), [card] the dock used (F1 may
+     *  move "Above chat" onto the map), [castHidden] the bar slid away (cb7, or F2 / F3), [f1] / [f2] / [f3] which fallback fired,
+     *  [castTop] the bar laid at the top of its column (hidden = up behind the band) */
     data class Result(val boxes: Map<HomePart, Box>, val castSide: CastStripModel.Side, val partyTabRight: Boolean,
                       val card: HomeLayout.CardDock, val castHidden: Boolean, val f1: Boolean = false, val f2: Boolean = false,
-                      val barsBottom: Float = 0f, val castTop: Boolean = false)
+                      val barsBottom: Float = 0f, val castTop: Boolean = false, val f3: Boolean = false)
 
     /** the band's bottom: the fight's grow (only GROW, never with Party mode on: R0), the diamonds or the thin row at rest */
     fun big(l: HomeLayout, s: State): Boolean = s.takeover && l.fight == HomeLayout.FightBand.GROW && !s.partyOn
@@ -55,6 +56,15 @@ object HomeLayoutSolver {
     }
 
     fun places(l0: HomeLayout, s: State): Result {
+        val r = placesF12(l0, s)
+        // F3 (after 1518: the party list in the map's column): the map under its 240 minimum (the takeover's party rows over a bar shown
+        // in combat in the map's column, or across): the bar's part in the map's column slides away until the fight ends. Never with the
+        // party list in the chat's column (Classic: the golden's 630 states)
+        if (!HomeLayoutRules.mapShort(l0, r, s)) return r
+        return solve(l0, s, f1 = r.f1, f2 = r.f2, f3 = true)
+    }
+
+    private fun placesF12(l0: HomeLayout, s: State): Result {
         val first = solve(l0, s, f1 = false, f2 = false)
         if (!HomeLayoutRules.cramped(first, s)) return first
         // F1: an "Above chat" card shows on the map while Party mode is on and the chat's column is too short
@@ -65,9 +75,13 @@ object HomeLayoutSolver {
         return if (HomeLayoutRules.cutsChat(l0)) solve(l0, s, f1 = withF1.f1, f2 = true) else withF1
     }
 
-    private fun solve(l: HomeLayout, s: State, f1: Boolean, f2: Boolean): Result {
+    /** the party list's column is the right one ([l]'s dock: the chat's or the map's column) */
+    fun partyRight(l: HomeLayout): Boolean = (l.party.column == HomeModule.CHAT) == (l.chatSide == HomeLayout.Side.RIGHT)
+
+    private fun solve(l: HomeLayout, s: State, f1: Boolean, f2: Boolean, f3: Boolean = false): Result {
         val w = s.w; val h = s.h; val g = s.gap
         val chatLeft = l.chatSide == HomeLayout.Side.LEFT
+        val pRight = partyRight(l)
         // a module full screen (not the takeover): the frame is its own (no bar, no party, no card)
         if (!s.takeover) s.full?.let { m ->
             val all = Box(0f, 0f, w, h)
@@ -76,7 +90,7 @@ object HomeLayoutSolver {
                 HomeModule.MAP -> mapOf(HomePart.MAP to all, HomePart.AURAS to all)
                 HomeModule.BARS -> mapOf(HomePart.BARS to all)
             }
-            return Result(b, CastStripModel.Side.OFF, !chatLeft, l.card, false, barsBottom = 0f)
+            return Result(b, CastStripModel.Side.OFF, pRight, l.card, false, barsBottom = 0f)
         }
         val bb = barsBottom(l, s)
         val top = bb + g
@@ -86,20 +100,31 @@ object HomeLayoutSolver {
         val card = if (f1) HomeLayout.CardDock.ON_MAP else l.card
         val out = LinkedHashMap<HomePart, Box>()
         out[HomePart.BARS] = Box(0f, if (big(l, s)) 10f else 8f, w, bb)
-        val hidden = s.castHidden || f2
+        val hidden = s.castHidden || f2 || f3
         // THE TOP BAR (Above chat / Above map): first under the band in its column, the column's parts stacked under it (the card, the
-        // party module, the chat); hidden in a fight (or by F2) it slides up behind the band and the column keeps the band's top
+        // party module, the chat); hidden in a fight (or by F2 / F3) it slides up behind the band and the column keeps the band's top
         val aboveBar = if (l.cast.top) castBoxes(l, w, h, g, top).firstOrNull() else null
         val aboveCol = l.cast.column
         val lift = if (aboveBar != null && !hidden) aboveBar.h + g else 0f
-        val map = Box(mapCol.first, top + if (aboveCol == HomeModule.MAP) lift else 0f, mapCol.second, h - g)
+        var map = Box(mapCol.first, top + if (aboveCol == HomeModule.MAP) lift else 0f, mapCol.second, h - g)
         var chat = Box(chatCol.first, top + if (aboveCol == HomeModule.CHAT) lift else 0f, chatCol.second, h - g)
+        val party = s.party
+        // after 1518: the party list at the TOP of the map's column - under a bar above the map, over the map (the card's zone band
+        // follows the map's top down)
+        if (party != null && l.party == HomeLayout.PartyDock.ABOVE_MAP) {
+            val (pb, m) = partyAt(party, map, map.t, pRight, w)
+            out[HomePart.PARTY] = pb
+            map = map.copy(t = minOf(m.chatTop, map.b - 1f))
+        }
+        val partyInMap = party != null && l.party.column == HomeModule.MAP
         when (card) {
             HomeLayout.CardDock.ON_MAP -> if (s.card && !s.auraOpen) {
                 // b121: the card over the map under its zone band, inset as the band (map.t == top unless a bar sits above the map)
                 val qTop = map.t + HomeView.ZONE_BAND_BOTTOM + 4f
-                // a bar above the map pushes the card down: it ends at the map's foot as a bar under the map would cut it
-                val qBottom = if (aboveCol == HomeModule.MAP && lift > 0f) maxOf(qTop + 1f, minOf(qTop + s.cardH, map.b)) else qTop + s.cardH
+                // a bar above the map pushes the card down: it ends at the map's foot as a bar under the map would cut it (the party
+                // list in the map's column too)
+                val qBottom = if (aboveCol == HomeModule.MAP && lift > 0f || partyInMap) maxOf(qTop + 1f, minOf(qTop + s.cardH, map.b))
+                    else qTop + s.cardH
                 out[HomePart.QUESTS] = Box(map.l + 8f, qTop, map.r - 8f, qBottom)
             }
             HomeLayout.CardDock.ABOVE_CHAT -> if (s.card) {
@@ -112,8 +137,9 @@ object HomeLayoutSolver {
         out[HomePart.CHAT] = chat
         out[HomePart.MAP] = map
         out[HomePart.AURAS] = map
-        // THE PARTY MODULE (m134): the top of the chat's column, its Select tab flush on the screen's OUTER edge of that column
-        s.party?.let { p ->
+        // THE PARTY MODULE (m134): the top of the chat's column (Classic's dock), its Select tab flush on the screen's OUTER edge of that
+        // column
+        if (l.party == HomeLayout.PartyDock.ABOVE_CHAT) party?.let { p ->
             val c = out.getValue(HomePart.CHAT)
             if (chatLeft) {
                 val right = c.r - 1f
@@ -128,15 +154,16 @@ object HomeLayoutSolver {
             }
         }
         // THE TAP-TO-CAST BAR (cb3 / cb7): above the page's foot under its column(s); the parts above it end a gap over it; hidden in a
-        // fight (or by F2) it lies below the page and no column is cut
+        // fight (or by F2 / F3) it lies below the page and no column is cut
         val side = l.castSide
         if (aboveBar != null) {
             out[HomePart.STRIP] = if (hidden) CastStripModel.hiddenAbove(CastStripModel.Box(aboveBar.l, aboveBar.t, aboveBar.r, aboveBar.b), g)
                 .let { Box(it.l, it.t, it.r, it.b) } else aboveBar
-            return Result(out, side, !chatLeft, card, hidden, f1, f2, bb, castTop = true)
+            partyUnder(l, s, out, pRight, w)
+            return Result(out, side, pRight, card, hidden, f1, f2, bb, castTop = true, f3 = f3)
         }
         val bars = castBoxes(l, w, h, g)
-        if (bars.isEmpty()) return Result(out, side, !chatLeft, card, false, f1, f2, bb)
+        if (bars.isEmpty()) { partyUnder(l, s, out, pRight, w); return Result(out, side, pRight, card, false, f1, f2, bb, f3 = f3) }
         val base = LinkedHashMap(out)
         for ((i, b0) in bars.withIndex()) {
             val b = if (hidden) Box(b0.l, h, b0.r, h + b0.h) else b0
@@ -148,7 +175,39 @@ object HomeLayoutSolver {
                 if (r.b > top0 - g) out[p] = r.copy(b = CastStripModel.columnBottom(maxOf(r.t + 1f, top0 - g), r.b, hidden))
             }
         }
-        return Result(out, side, !chatLeft, card, hidden, f1, f2, bb)
+        partyUnder(l, s, out, pRight, w)
+        return Result(out, side, pRight, card, hidden, f1, f2, bb, f3 = f3)
+    }
+
+    /** the party list's box and module with its well's top at [top] in column [col], its Select tab on that column's outer screen edge
+     *  (x 0 on the left, [w] on the right: [right] = the right column) - Classic's arithmetic for either column */
+    private fun partyAt(p: Party, col: Box, top: Float, right: Boolean, w: Float): Pair<Box, PartyLayout.Module> = if (!right) {
+        val r = col.r - 1f
+        val m = PartyLayout.module(p.mode, p.n, pet = p.pet, top = top, left = PartyLayout.EDGE, right = r)
+        Box(PartyLayout.EDGE, top - PartyModuleView.RISE, r, m.well.b) to m
+    } else {
+        val left = col.l + 1f
+        val m = PartyLayout.module(p.mode, p.n, pet = p.pet, top = top, left = left, right = w, tabRight = true)
+        Box(left, top - PartyModuleView.RISE, w, m.well.b) to m
+    }
+
+    /** after 1518: the party list at the FOOT of its column (Under chat / Under map), laid after the bar cut the columns - its well ends
+     *  at the column's foot (over a foot bar; the page's foot with none, or with the bar slid away), the module ends
+     *  [PartyLayout.CHAT_GAP] over it: moved, never squashed; a card on the map ends over it */
+    private fun partyUnder(l: HomeLayout, s: State, out: LinkedHashMap<HomePart, Box>, right: Boolean, w: Float) {
+        val p = s.party ?: return
+        if (l.party.top) return
+        val part = if (l.party.column == HomeModule.CHAT) HomePart.CHAT else HomePart.MAP
+        val c = out.getValue(part)
+        val wellH = PartyLayout.module(p.mode, p.n, pet = p.pet, top = 0f).well.b
+        val t = maxOf(c.t + 1f, c.b - wellH)
+        out[HomePart.PARTY] = partyAt(p, c, t, right, w).first
+        val col = c.copy(b = maxOf(c.t + 1f, t - PartyLayout.CHAT_GAP))
+        out[part] = col
+        if (part == HomePart.MAP) {
+            out[HomePart.AURAS] = col
+            out[HomePart.QUESTS]?.let { q -> if (q.b > col.b) out[HomePart.QUESTS] = q.copy(b = maxOf(q.t + 1f, col.b)) }
+        }
     }
 
     /** the bar's box(es) laid (not hidden): one under its column, one across, or Split's two (slots 1-4 left, 5-8 right); a top dock's
@@ -179,21 +238,11 @@ object HomeLayoutSolver {
         }
     }
 
-    /** the outer screen edge the party module's Select tab stands on (and PartyMenuView's side): the chat's column's */
-    fun partyEdgeRight(l: HomeLayout): Boolean = l.chatSide == HomeLayout.Side.RIGHT
-    /**
-     * 1518 build 3: what each bare D-pad direction of the DS toolbar opens for [l] (position 1-4 -> PadMap's words "chat", "radial", "map",
-     * "home"): its [HomeLayout.pad] with the columns' modules put in (the left column's is the chat unless the chat is on the right).
-     * Classic gives today's two tables exactly (ROOMBAR, the mirror bit off; RB_M on): the add-on's `d` is compared with it
-     */
-    fun dpadDirs(l: HomeLayout): Map<Int, String> {
-        val left = if (l.chatSide == HomeLayout.Side.LEFT) "chat" else "map"
-        val right = if (left == "chat") "map" else "chat"
-        return l.pad.withIndex().associate { (i, k) ->
-            (i + 1) to when (k) { HomeLayout.PadKey.LEFT_COL -> left; HomeLayout.PadKey.RIGHT_COL -> right
-                HomeLayout.PadKey.RADIAL -> "radial"; HomeLayout.PadKey.HOME -> "home" }
-        }
-    }
+    /** the outer screen edge the party module's Select tab stands on (and PartyMenuView's side): its own column's (the chat's for
+     *  Classic's dock) */
+    fun partyEdgeRight(l: HomeLayout): Boolean = partyRight(l)
+    /** the add-on's DS toolbar mirror bit: 1 = the map is left of the chat (D-pad Left = map, Right = chat) */
+    fun mirrorBit(l: HomeLayout): Int = if (l.mirrored) 1 else 0
 
     /** the order withStrip cut the columns in (kept: the golden's boxes) */
     private val CUT_ORDER = listOf(HomePart.CHAT, HomePart.QUESTS, HomePart.PARTY, HomePart.MAP, HomePart.AURAS)
@@ -220,6 +269,17 @@ object HomeLayoutRules {
 
     fun cutsChat(l: HomeLayout): Boolean = l.cast == HomeLayout.CastDock.UNDER_CHAT || l.cast == HomeLayout.CastDock.ABOVE_CHAT ||
         l.cast == HomeLayout.CastDock.ACROSS || l.cast == HomeLayout.CastDock.SPLIT
+    fun cutsMap(l: HomeLayout): Boolean = l.cast == HomeLayout.CastDock.UNDER_MAP || l.cast == HomeLayout.CastDock.ABOVE_MAP ||
+        l.cast == HomeLayout.CastDock.ACROSS || l.cast == HomeLayout.CastDock.SPLIT
+
+    /** F3's trigger (after 1518): the party list in the map's column, a bar shown in that column and the map under [MAP_MIN] (any
+     *  state: the takeover's party rows come with Party mode off) */
+    fun mapShort(l: HomeLayout, r: HomeLayoutSolver.Result, s: HomeLayoutSolver.State): Boolean {
+        if (s.party == null || l.party.column != HomeModule.MAP || !cutsMap(l) || r.castHidden) return false
+        if (s.full != null && !s.takeover) return false
+        val m = r.boxes[HomePart.MAP] ?: return false
+        return m.h < MAP_MIN
+    }
 
     /** F1 / F2's trigger: Party mode on and the chat's column under the hard floor */
     fun cramped(r: HomeLayoutSolver.Result, s: HomeLayoutSolver.State): Boolean {
@@ -267,13 +327,14 @@ object HomeLayoutRules {
     fun valid(l: HomeLayout, s: HomeLayoutSolver.State): Boolean = problems(l, s, HomeLayoutSolver.places(l, s)).isEmpty()
 
     /** every record the editor can make (SPEC section 2: 2 sides x 3 widths x 3 card docks x 7 bar docks x 3 slot sizes x 2 rests x
-     *  3 fight modes = 2,268; the 7 docks count Above chat / Above map) */
+     *  3 fight modes = 2,268; the 7 docks count Above chat / Above map; after 1518 x the party list's 4 docks = 9,072) */
     fun all(): List<HomeLayout> {
-        val out = ArrayList<HomeLayout>(2268)
+        val out = ArrayList<HomeLayout>(9072)
         for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values()) for (card in HomeLayout.CardDock.values())
             for (cast in HomeLayout.CastDock.values()) for (size in HomeLayout.SlotSize.values()) for (rest in HomeRest.values())
-                for (fight in HomeLayout.FightBand.values())
-                    out += HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, castSize = size, rest = rest, fight = fight)
+                for (fight in HomeLayout.FightBand.values()) for (party in HomeLayout.PartyDock.values())
+                    out += HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, castSize = size, rest = rest, fight = fight,
+                        party = party)
         return out
     }
 

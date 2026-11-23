@@ -219,29 +219,19 @@ class HoldTalk {
             isChat(map, toolbar, dirs, fight, LEFT)
 
         /**
-         * MOVABLE HOME (SPEC section 6 item 7): the toolbar's Chat is where the layout put it (the add-on's `dirs` say so: the chat's
-         * column's side, or - 1518 build 3 - any direction the player dragged the Chat icon to): the bare D-pad key whose word is "chat"
-         * right now ([LEFT_KEY], [UP_KEY], [RIGHT_KEY], [DOWN_KEY]), by the same rule as [leftIsChat]; null = none (no hold to talk). Fix
-         * round 2: another direction than Left is the chat's only when the toolbar's own `dirs` put the chat there ([chatPos], the
-         * Settings row's arrow); every other case is 1514's Left only (a DS Chat command on another direction's In-combat entry or bare
-         * button never arms the hold)
+         * MOVABLE HOME (SPEC section 6 item 7): the toolbar's Chat is on the side the chat's column is (the add-on's mirror bit makes
+         * `dirs` say so): the bare D-pad key whose word is "chat" right now ([LEFT_KEY] or [RIGHT_KEY]), by the same rule as [leftIsChat];
+         * null = neither (no hold to talk). Fix round 2: Right is the side only when the toolbar's own `dirs` put the chat there (the
+         * mirrored layout, as [chatArrowRight] - the Settings row's arrow - reads it); every other case is 1514's Left only (a DS Chat
+         * command on Right's In-combat entry or on the bare Right never arms the hold)
          */
         fun chatKey(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean): String? {
-            val pos = if (toolbar) chatPos(dirs) else LEFT
+            val pos = if (toolbar && chatArrowRight(dirs)) RIGHT else LEFT
             if (!isChat(map, toolbar, dirs, fight, pos)) return null
-            return KEYS[pos]
+            return if (pos == RIGHT) RIGHT_KEY else LEFT_KEY
         }
-        /** the D-pad position (1-4) whose toolbar word is "chat" in [dirs] (one only), Left when unknown */
-        fun chatPos(dirs: Map<Int, String>?): Int = dirs?.entries?.filter { it.value == "chat" && it.key in 1..4 }?.singleOrNull()?.key ?: LEFT
-        /** the hold's direction's word for the Settings row and its glyph's name ("gen_left" ...), from [dirs] */
-        fun chatWord(dirs: Map<Int, String>?): String = WORDS.getValue(chatPos(dirs))
-        fun chatGlyph(dirs: Map<Int, String>?): String = GLYPHS.getValue(chatPos(dirs))
-        private val KEYS = mapOf(1 to "PADDLEFT", 2 to "PADDUP", 3 to "PADDRIGHT", 4 to "PADDDOWN")
-        private val WORDS = mapOf(1 to "Hold D-pad Left to talk.", 2 to "Hold D-pad Up to talk.", 3 to "Hold D-pad Right to talk.",
-            4 to "Hold D-pad Down to talk.")
-        private val GLYPHS = mapOf(1 to "gen_left", 2 to "gen_up", 3 to "gen_right", 4 to "gen_down")
-        /** every key the toolbar's Chat can be on (the app reader's names) */
-        val CHAT_KEYS: Set<String> get() = KEYS.values.toSet()
+        /** the hold's arrow for the Settings row ("Hold [arrow] to talk"): the chat key's side, Left when unknown */
+        fun chatArrowRight(dirs: Map<Int, String>?): Boolean = dirs?.get(RIGHT) == "chat" && dirs[LEFT] != "chat"
 
         private fun isChat(map: PadMapModel.Map?, toolbar: Boolean, dirs: Map<Int, String>?, fight: Boolean, pos: Int): Boolean {
             val f = if (fight && map != null) HomeFightFace.dpadFight(map, pos) else null
@@ -254,10 +244,8 @@ class HoldTalk {
 
         const val LEFT = 1
         const val RIGHT = 3
-        /** the toolbar's Chat after a swap (D-pad Right, the app reader's name; 1518 build 3: Up / Down too) */
+        /** the toolbar's Chat after a swap (D-pad Right, the app reader's name) */
         const val RIGHT_KEY = "PADDRIGHT"
-        const val UP_KEY = "PADDUP"
-        const val DOWN_KEY = "PADDDOWN"
         /** Spells' DS Chat command (PadMap.lua's commands: /click WowCompanionPadChat) */
         const val CHAT_KEY = "DSCHAT"
 
