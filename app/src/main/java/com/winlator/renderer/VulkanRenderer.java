@@ -46,6 +46,13 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     private final XServer xServer;
     private long nativeHandle = 0;
     private final Object lock = new Object();
+    /** #153: held for a frame-generation push to the native renderer, which can take seconds (it waits on the frame being
+     * drawn and builds shaders), so it never holds {@link #lock}: window updates, the render list, the pointer and the X server
+     * threads behind them keep going. Creating, re-attaching and destroying the native renderer take it too, so the handle a
+     * push uses stays alive. Order: frameGenLock, then lock; never the other way round. */
+    private final Object frameGenLock = new Object();
+    /** #153: the frame-generation values the native renderer already has (guarded by frameGenLock). */
+    private final FrameGenPushes frameGenPushes = new FrameGenPushes();
 
     public final ViewTransformation viewTransformation = new ViewTransformation();
     private boolean fullscreen = false;
@@ -186,22 +193,30 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
         }
         initExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
-        initExecutor.execute(() -> {
+        initExecutor.execute(() -> { synchronized (frameGenLock) {
+            boolean reattached = false;
             synchronized (lock) {
                 if (nativeHandle != 0) {
                     boolean ok = nativeReattachSurface(nativeHandle, surface);
                     if (!ok) {
                         nativeDestroy(nativeHandle);
                         nativeHandle = 0;
+                        frameGenPushes.forget();
                     } else {
-                        applyFrameGenerationSettingsLocked();
-                        initComplete = true;
-                        xServerView.queueEvent(this::updateScene);
-                        return;
+                        reattached = true;
                     }
                 }
+            }
+            if (reattached) {
+                applyFrameGenerationSettings();
+                initComplete = true;
+                xServerView.queueEvent(this::updateScene);
+                return;
+            }
+            synchronized (lock) {
                 // Review follow-up to the 11-12 cursor crash: build the cursor texture (blank 128x128) BEFORE the
                 // handle is published, so the render thread is still asleep when ensureCursorTex runs.
+                frameGenPushes.forget();
                 nativeHandle = CursorCanvas.initPrimed(
                     () -> nativeInit(surface, xServer.screenInfo.width, xServer.screenInfo.height, driverPath, driverLibraryName, nativeLibDir, frameGenArmed),
                     cursorCanvas, this::nativeUpdateCursorImage);
@@ -211,7 +226,6 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                     nativeSetSwapRB(nativeHandle, pendingSwapRB);
                     nativeSetEffect(nativeHandle, pendingEffectId, pendingSharpness,
                         pendingEffectMask, pendingBrightness, pendingContrast, pendingGamma);
-                    applyFrameGenerationSettingsLocked();
                     updateTransform();
                     nativeSetCursorVisible(nativeHandle, cursorVisible);
                     if (nativeMode && !effectsRequireCompositor) {
@@ -253,6 +267,7 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                     }
                 }
             }
+            applyFrameGenerationSettings();
             synchronized (lock) {
                 if (nativeHandle != 0) {
                     nativeSetVerboseLog(nativeHandle, true);
@@ -261,7 +276,7 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             }
             initComplete = true;
             xServerView.queueEvent(this::updateScene);
-        });
+        } });
     }
 
     public void onSurfaceChanged(int width, int height) {
@@ -283,14 +298,17 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
             initExecutor = null;
         }
-        synchronized (lock) {
-            if (nativeHandle != 0) {
-                if (nativeMode) {
-                    nativeDestroyScanout(nativeHandle);
-                    nativeDestroy(nativeHandle);
-                    nativeHandle = 0;
-                } else {
-                    nativeDetachSurface(nativeHandle);
+        synchronized (frameGenLock) {
+            synchronized (lock) {
+                if (nativeHandle != 0) {
+                    if (nativeMode) {
+                        nativeDestroyScanout(nativeHandle);
+                        nativeDestroy(nativeHandle);
+                        nativeHandle = 0;
+                        frameGenPushes.forget();
+                    } else {
+                        nativeDetachSurface(nativeHandle);
+                    }
                 }
             }
         }
@@ -797,7 +815,10 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
 
     public void setFilterMode(int mode) {
         pendingFilterMode = mode;
-        synchronized (lock) { if (nativeHandle != 0) nativeSetFilterMode(nativeHandle, mode); }
+        // it waits for the GPU like a frame-generation push does, so the two never run at once (as when both took lock)
+        synchronized (frameGenLock) {
+            synchronized (lock) { if (nativeHandle != 0) nativeSetFilterMode(nativeHandle, mode); }
+        }
     }
 
     public void setSwapRB(boolean enabled) {
@@ -856,27 +877,41 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             || pendingFilterMode != 0;
     }
 
-    private void applyFrameGenerationSettingsLocked() {
-        if (nativeHandle == 0) return;
-        if (frameGenShadersCachePath != null) {
-            nativeSetFrameGenerationShaders(nativeHandle, frameGenShadersCachePath);
+    /** #153: called holding {@link #frameGenLock} only, never {@link #lock} (see there); values the renderer already has are skipped. */
+    private void applyFrameGenerationSettings() {
+        final long handle = nativeHandle;
+        if (handle == 0) return;
+        if (frameGenShadersCachePath != null && frameGenPushes.shaders(frameGenShadersCachePath)) {
+            nativeSetFrameGenerationShaders(handle, frameGenShadersCachePath);
         }
-        nativeSetFrameGenerationMode(nativeHandle, frameGenMultiplier, frameGenTargetRate, frameGenFlowScalePct);
-        nativeSetFrameGenerationRefreshRate(nativeHandle, frameGenRefreshRate);
-        nativeSetFrameGenerationEnabled(nativeHandle, frameGenEnabled);
+        if (frameGenPushes.mode(frameGenMultiplier, frameGenTargetRate, frameGenFlowScalePct)) {
+            nativeSetFrameGenerationMode(handle, frameGenMultiplier, frameGenTargetRate, frameGenFlowScalePct);
+        }
+        if (frameGenPushes.refreshRate(frameGenRefreshRate)) {
+            nativeSetFrameGenerationRefreshRate(handle, frameGenRefreshRate);
+        }
+        if (frameGenPushes.enabled(frameGenEnabled)) {
+            nativeSetFrameGenerationEnabled(handle, frameGenEnabled);
+        }
     }
 
     public void setFrameGenerationEnabled(boolean enabled) {
-        synchronized (lock) {
-            this.frameGenEnabled = enabled;
-            boolean wasRequireCompositor = effectsRequireCompositor;
-            effectsRequireCompositor = computeEffectsRequireCompositor();
-            if (nativeHandle != 0) {
-                nativeSetFrameGenerationEnabled(nativeHandle, enabled);
+        synchronized (frameGenLock) {
+            final boolean wasRequireCompositor;
+            synchronized (lock) {
+                this.frameGenEnabled = enabled;
+                wasRequireCompositor = effectsRequireCompositor;
+                effectsRequireCompositor = computeEffectsRequireCompositor();
             }
-            if (nativeMode && wasRequireCompositor != effectsRequireCompositor) {
-                if (effectsRequireCompositor) tearDownScanout();
-                else establishScanout();
+            final long handle = nativeHandle;
+            if (handle != 0 && frameGenPushes.enabled(enabled)) {
+                nativeSetFrameGenerationEnabled(handle, enabled);
+            }
+            synchronized (lock) {
+                if (nativeMode && wasRequireCompositor != effectsRequireCompositor) {
+                    if (effectsRequireCompositor) tearDownScanout();
+                    else establishScanout();
+                }
             }
         }
     }
@@ -891,30 +926,33 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     }
 
     public void setFrameGenerationShaders(String cachePath) {
-        synchronized (lock) {
+        synchronized (frameGenLock) {
             this.frameGenShadersCachePath = cachePath;
-            if (nativeHandle != 0) {
-                nativeSetFrameGenerationShaders(nativeHandle, cachePath);
+            final long handle = nativeHandle;
+            if (handle != 0 && frameGenPushes.shaders(cachePath)) {
+                nativeSetFrameGenerationShaders(handle, cachePath);
             }
         }
     }
 
     public void setFrameGenerationMode(int multiplier, int targetRate, int flowScalePct) {
-        synchronized (lock) {
+        synchronized (frameGenLock) {
             this.frameGenMultiplier = multiplier;
             this.frameGenTargetRate = targetRate;
             this.frameGenFlowScalePct = flowScalePct;
-            if (nativeHandle != 0) {
-                nativeSetFrameGenerationMode(nativeHandle, multiplier, targetRate, flowScalePct);
+            final long handle = nativeHandle;
+            if (handle != 0 && frameGenPushes.mode(multiplier, targetRate, flowScalePct)) {
+                nativeSetFrameGenerationMode(handle, multiplier, targetRate, flowScalePct);
             }
         }
     }
 
     public void setFrameGenerationRefreshRate(float hz) {
-        synchronized (lock) {
+        synchronized (frameGenLock) {
             this.frameGenRefreshRate = hz;
-            if (nativeHandle != 0) {
-                nativeSetFrameGenerationRefreshRate(nativeHandle, hz);
+            final long handle = nativeHandle;
+            if (handle != 0 && frameGenPushes.refreshRate(hz)) {
+                nativeSetFrameGenerationRefreshRate(handle, hz);
             }
         }
     }
