@@ -82,6 +82,37 @@ class AhSellGridTest {
         assertTrue(cells.all { it.box.right <= 330f - AhSellGrid.BAR_W })
     }
 
+    @Test fun theCursorBringsItsBagsGreyedTilesIntoView() {
+        // issue 590, the review: the greyed tiles are never a cursor stop and the scroll only follows the cursor, so the ones after a
+        // bag's last sellable row stayed out of view for a controller. The cursor on that row (or on a header of greyed tiles only)
+        // brings them in; anywhere above, only its own cell
+        val no = (6..13).map { item(0, it, 30 + it).put("no", "bound") } + listOf(item(2, 1, 40).put("no", "no"))
+        val groups = listOf(group(0, 5).put("x", 8), group(1, 1), group(2, 0).put("x", 1))
+        val cells = AhSellGrid.layout(bags, groups, 4, 330f, no)
+        val first = cells.indexOfFirst { it.cmd == "ahsitem 0 1 10" }
+        val last = cells.indexOfFirst { it.cmd == "ahsitem 0 5 14" }
+        val lastNo = cells.last { it.cmd.startsWith("ahsno 0 ") }
+        assertEquals("a row with sellable items below: its own cell", cells[first].box, AhSellGrid.followBox(cells, first, 2000f))
+        val fb = AhSellGrid.followBox(cells, last, 2000f)
+        assertEquals("the bag's last sellable row: down to its last greyed tile", lastNo.box.bottom, fb.bottom, 0.01f)
+        assertEquals(cells[last].box.top, fb.top, 0.01f)
+        // a view that holds the cursor's row and the greyed rows but not the whole bag: the old follow (the cell only) stayed at the
+        // top with the greyed rows below the panel; now it scrolls them in
+        val view = lastNo.box.bottom - cells[last].box.top + 16f
+        assertEquals("the old follow: no scroll", 0f, AhSellGrid.follow(cells[last].box, 0f, view), 0.01f)
+        val s = AhSellGrid.follow(AhSellGrid.followBox(cells, last, view), 0f, view)
+        assertTrue("now scrolled so the last greyed tile shows", lastNo.box.bottom <= s + view)
+        assertTrue("the cursor's cell still shows", cells[last].box.top >= s)
+        // never past the cell's own top: a view too short for all of them keeps the cursor's cell in it
+        val tight = AhSellGrid.followBox(cells, last, 150f)
+        assertTrue(tight.bottom <= cells[last].box.top + 150f && AhSellGrid.follow(tight, 0f, 150f) <= cells[last].box.top)
+        // a header over greyed tiles only brings them in too
+        val h2 = cells.indexOfFirst { it.cmd == "ahsfold 2" }
+        assertEquals(cells.last().box.bottom, AhSellGrid.followBox(cells, h2, 2000f).bottom, 0.01f)
+        // a header with sellable items under it: its own box
+        assertEquals(cells[0].box, AhSellGrid.followBox(cells, 0, 2000f))
+    }
+
     @Test fun startIsPostOnlyWithAnItemInTheSellForm() {
         assertTrue(AhSellGrid.ownsStart(padHeld = true, tab = "sell", hasItem = true))
         assertFalse("no item: Start is the pause wheel as everywhere", AhSellGrid.ownsStart(true, "sell", false))

@@ -124,6 +124,14 @@ object NativeLogin {
     private const val REARM_LIFE_MS = 300_000L
     /** the client run left the world (a logout, or its traffic stopped) and has not come back: a re-login file may be waiting */
     @Volatile var outOfWorld = false; private set
+    /** issue 560 (the review): the world back by its traffic while [outOfWorld] (AddonSilence.WorldTraffic); main thread */
+    private val worldAgain = AddonSilence.WorldTraffic()
+    /**
+     * issue 560: the start screen's add-ons word waits while this holds - out of the world since a logout / a disconnect (the
+     * re-login's character select) and the world's traffic not back yet. The documents back end it too ([worldBack]); the traffic
+     * back ends it for add-ons that stay silent (switched off at character select), so their word is not held for the whole run.
+     */
+    val outOfWorldHold: Boolean get() = outOfWorld && !worldAgain.back
     /**
      * this client run has been IN THE WORLD (the add-on's documents current: [worldSeen]); only then can leaving it write the re-login
      * file. NOT character select's traffic: measured 2026-10-09 10:30, the first character select (after the sign-in, before the world)
@@ -464,6 +472,7 @@ object NativeLogin {
         val fl = flavorDir ?: return
         val ctx = appCtx ?: return
         outOfWorld = true
+        worldAgain.reset()                              // issue 560 (the review): this time out counts afresh (main thread)
         val login = savedFor(ctx) ?: run { logEvent("out of the world ($why); ${if (browserMode) "browser login" else "no saved login"}, nothing written"); return }
         try {
             val f = File(fl, FILE)
@@ -567,6 +576,7 @@ object NativeLogin {
     /** the game's traffic stopping after the world (a disconnect: in the world it never drops under ~2 KB/s) writes the re-login file */
     private fun worldTraffic(rx: Long) {
         if (!pastLogin) return
+        if (outOfWorld) worldAgain.second(rx)           // issue 560 (the review): the world back by its traffic
         if (rx < 200) {
             if (++quietFor == 5 && !quiet) { quiet = true; rearm("the world's traffic stopped") }
         }

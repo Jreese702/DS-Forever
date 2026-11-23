@@ -3161,7 +3161,7 @@ class InteractView(context: Context) : View(context) {
         val ci = cells.indexOfFirst { it.cmd == cur }
         if (ci >= 0 && cur != shownCatCur) {
             shownCatCur = cur
-            scrollB = AhSellGrid.follow(cells[ci].box, scrollB, view.height())
+            scrollB = AhSellGrid.follow(AhSellGrid.followBox(cells, ci, view.height()), scrollB, view.height())   // issue 590: its greyed tiles too
         }
         scrollB = scrollB.coerceIn(0f, max(0f, contentB - view.height()))
         val chosen = item?.let { "ahsitem ${it.optInt("bag")} ${it.optInt("s")} ${it.optInt("id")}" }

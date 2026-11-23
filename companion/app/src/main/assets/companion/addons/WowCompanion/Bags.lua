@@ -140,6 +140,9 @@
 -- (a crate, a supply box: not a kit, a stone or an oil - KIT.isKit) listed only gear, so the trade goods a crate takes never showed.
 -- It now lists the bags' trade goods, reagents, quest and misc items and consumables first (the used item itself left out), then the
 -- gear as before; the game itself says no on the click to anything the pick cannot take. A kit's list is unchanged (gear only).
+-- bags-kit6 (the review of bags-kit5): the crate's list holds for the WHOLE pick (KIT.crate: the use just now, else KIT.pickKit kept as
+-- the pick started), not only the 2 s after the use - the list is made again on every D-pad move; and a crate is no kit because the
+-- pick it started "learned" it (WC._kitLearned holds every item that started a pick): only the item's class or the game's own fits say kit.
 -- bags-merge1 (the 1.0.30 test build merge, code 1453): bags-act1 / bags-act2 (feat/bags-actions), bags-kit3 (fix/kit-filter) and uneq1 / uneq2 (feat/unequip) side by side, each kept as written.
 -- bags-nocmp1 (the user, 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do want to see
 -- the stat changes at the bottom of that weapon if I equip it"): the room asks Interact for its tooltips WITHOUT the worn pieces' own
@@ -2415,12 +2418,23 @@ function KIT.food()
     return rows
 end
 -- bags-kit5: an item that is applied TO gear (an armor kit, a stone, an oil: Item Enhancement, class 8 or consumable sub 6) or one
--- learned as a kit (WC._kitLearned): its pick keeps the gear-only list
+-- the game said fits a worn piece (WC._kitFits, an enchant / item-condition pick's answers): its pick keeps the gear-only list.
+-- bags-kit6 (review): NOT WC._kitLearned - KIT.step learns EVERY bag item whose use starts a pick, the crate too, so a crate read as
+-- a kit the moment its pick started and its list was gear only again
 function KIT.isKit(id)
-    if WC._kitLearned and WC._kitLearned[id] then return true end
+    local fits = WC._kitFits and WC._kitFits[id]
+    if type(fits) == "table" then for _, r in pairs(fits) do if type(r) == "table" and r.ok == true then return true end end end
     local okI, _, _, _, _, _, cls, sub = CALL(function() return C_Item.GetItemInfoInstant(id) end)
     cls, sub = okI and SN(function() return cls end) or nil, okI and SN(function() return sub end) or nil
     return cls == 8 or (cls == 0 and sub == 6)
+end
+-- bags-kit6 (review): the crate / supply box whose use started THIS pick, for the whole pick: the use just now (2 s), else the one
+-- KIT.step kept as the pick started (KIT.pickKit, nil once it ends). The list is made again on every D-pad move and bag change, long
+-- after those 2 s: bags-kit5's trade goods went from the list at the first move. nil = a kit's pick, a spell's pick, or none
+function KIT.crate()
+    local id = (KIT.last and GetTime() - KIT.last.t < 2) and KIT.last.id or (KIT.on() and KIT.pickKit) or nil
+    if type(id) == "number" and not KIT.isKit(id) then return id end
+    return nil
 end
 -- bags-kit5: the item classes a crate / supply pick may take (consumable, reagent, trade goods, quest, misc)
 KIT.CRATE_CLS = { [0] = true, [5] = true, [7] = true, [12] = true, [15] = true }
@@ -2436,7 +2450,9 @@ function KIT.list(ctx)
     -- (the player's report, 2026-11-10, issue 90: "feed pet brings up item select, but doesnt show consumables"): a pick a SPELL started
     -- (not an armor kit or stone used from the bags just now) and not an enchant / item-condition pick lists the bags' consumables too,
     -- food and drink first; the game itself says no on the click to anything the spell cannot take
-    if ctx == "spell" and not (KIT.last and GetTime() - KIT.last.t < 2) then
+    -- bags-kit6: a crate's pick lists its consumables below (with its trade goods), never twice
+    local crate = ctx == "spell" and KIT.crate() or nil
+    if ctx == "spell" and not (KIT.last and GetTime() - KIT.last.t < 2) and not crate then
         local food, other = {}, {}
         for _, e in ipairs(layout()) do
             local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
@@ -2463,15 +2479,15 @@ function KIT.list(ctx)
         local room = math.max(0, KIT.MAX - #out - 10)
         for i = math.min(#front, room), 1, -1 do table.insert(out, 1, front[i]) end
     end
-    -- bags-kit5 (issue 368): a plain pick a bag item's use started just now, that item not a kit: the non-gear items a crate takes
-    local used = KIT.last
-    if ctx == "spell" and used and GetTime() - used.t < 2 and not KIT.isKit(used.id) then
+    -- bags-kit5 (issue 368): a plain pick a bag item's use started, that item not a kit: the non-gear items a crate takes
+    -- (bags-kit6: for the whole pick, KIT.crate)
+    if crate then
         local front = {}
         for _, e in ipairs(layout()) do
             local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
             for s = 1, n do
                 local id = bagItemID(e.bag, s)
-                if id and id ~= used.id then
+                if id and id ~= crate then
                     local okI, _, _, _, _, _, cls = CALL(function() return C_Item.GetItemInfoInstant(id) end)
                     cls = okI and SN(function() return cls end) or nil
                     if cls and KIT.CRATE_CLS[cls] then

@@ -246,6 +246,31 @@ check(got == [('inv', 5), ('inv', 10), ('bag', 2)], "issue 368: a kit's use stil
 L.execute('NOW = NOW + 30')
 got = rowsOf(L.eval('WowCompanion._kit.list()'))
 check(('bag', 6) not in got, "issue 368: a pick long after the crate (no bag use just now): the spell list as before (consumables, gear)", got)
+# bags-kit6 (the review): the crate's pick as the game runs it - the pick STARTS after the use (KIT.step learns the crate as it starts,
+# WC._kitLearned) and the list is made again on every D-pad move, seconds later: the trade goods stay for the whole pick, nothing twice
+L.execute('KEPTKIT = WowCompanion._kit.pickKit; PICKING = false')
+step()
+L.execute('WowCompanion._kit.used(0, 5); PICKING = true')
+step()
+check(L.eval('WowCompanion._kitLearned[21001]') is True and L.eval('WowCompanion._kit.pickKit') == 21001,
+      "bags-kit6: the crate's pick started: the crate learned (as every item that starts a pick) and kept as the pick's item")
+got = rowsOf(L.eval('WowCompanion._kit.list()'))
+check(('bag', 6) in got and ('bag', 7) in got and ('bag', 8) in got and ('bag', 5) not in got,
+      "bags-kit6: as the crate's pick starts (learned by it): its trade goods and quest item listed, the crate not", got)
+L.execute('NOW = NOW + 5')
+got = rowsOf(L.eval('WowCompanion._kit.list()'))
+check(('bag', 6) in got and ('bag', 7) in got and ('bag', 8) in got,
+      "bags-kit6: 5 s into the crate's pick (a D-pad move makes the list again): the trade goods still listed", got)
+check(got.count(('bag', 3)) == 1 and got.count(('bag', 4)) == 1 and got[-3:] == [('inv', 5), ('inv', 10), ('bag', 2)],
+      "bags-kit6: the consumables once (not the spell list's too), the gear after them", got)
+L.execute('PICKING = false')
+step()
+check(L.eval('WowCompanion._kit.pickKit') is None, "bags-kit6: the pick ended: no crate kept")
+L.execute('PICKING = true; WowCompanion._kit.was = true; WowCompanion._kit.pickKit = KEPTKIT; WowCompanion._kitLearned[21001] = nil')
+L.execute('WowCompanion._kit.used(0, 1)')
+got = rowsOf(L.eval('WowCompanion._kit.list()'))
+check(got == [('inv', 5), ('inv', 10), ('bag', 2)], "bags-kit6: the armor kit's pick again: gear only (no trade goods)", got)
+L.execute('NOW = NOW + 30')
 L.execute(r'''
 for k = 5, 8 do BAG[0][k] = nil end
 C_Container.GetContainerNumSlots = function(b) return b == 0 and 4 or 0 end; WowCompanion._bagsLayout = { { bag = 0, slots = 4 } }

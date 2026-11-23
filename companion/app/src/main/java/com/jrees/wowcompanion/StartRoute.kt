@@ -52,6 +52,14 @@ object StartRoute {
     }
 }
 
+/** issue 588: whether this padmap's add-on (its version, "m186") binds Start with the DS WoW toolbar off; then the rooms' guests keep Start
+ *  (Quests q35: told 36) whatever the toolbar, else they follow the toolbar (35 while it is off). Pure. */
+fun startFreeOfToolbar(version: String?): Boolean = (version?.removePrefix("m")?.takeWhile { it.isDigit() }?.toIntOrNull() ?: 0) >= 186
+
+/** what the rooms' guests are told for Start (true = our wheel, qact 36; false = the game, 35); an older add-on whose padmap never said the toolbar's state
+ *  (null) is told 35, as with it off */
+fun startToRooms(toolbarWant: Boolean?, version: String?): Boolean = toolbarWant == true || startFreeOfToolbar(version)
+
 /**
  * START OVER GAME WINDOWS, THE SETTING (the user's pick, 2026-11-13: "Make it a setting toggle defaulted to our wheel"): Settings >
  * Controller > Pause menu (Start). Our wheel (the default) = PadMap m160: Start stays ours over a game window, Home's wheel opens. Game's
@@ -60,13 +68,6 @@ object StartRoute {
  * account-wide and says it back (start.over), so the app taps padtab 39 then 32 / 33 (Book b61) whenever a current padmap disagrees -
  * at every connect, after a change, after a /reload - at most every [RESEND_MS]. Pure.
  */
-/** issue 588: whether this padmap's add-on (its version, "m186") binds Start with the DS WoW toolbar off; then the rooms' guests keep Start
- *  (Quests q35: told 36) whatever the toolbar, else they follow the toolbar (35 while it is off). Pure. */
-fun startFreeOfToolbar(version: String?): Boolean = (version?.removePrefix("m")?.takeWhile { it.isDigit() }?.toIntOrNull() ?: 0) >= 186
-
-/** what the rooms' guests are told for Start (true = our wheel, qact 36; false = the game, 35); null = nothing to tell yet */
-fun startToRooms(toolbarWant: Boolean?, version: String?): Boolean = toolbarWant == true || startFreeOfToolbar(version)
-
 object PauseOver {
     const val ROW_ID = "Start over game windows"
     val SEGMENTS = listOf("Our wheel", "Game's wheel")

@@ -80,6 +80,24 @@ object AhSellGrid {
 
     fun height(cells: List<Cell>): Float = (cells.maxOfOrNull { it.box.bottom } ?: 0f) + 8f
 
+    /**
+     * issue 590 (the review): the box the scroll keeps in view for the cursor on [cells][ci]: the cell itself and, when no sellable row
+     * of its bag lies below it, that bag's greyed tiles under it too (they are never a cursor stop, so with the scroll following the
+     * cursor only a controller never reached the ones after a bag's last sellable row), as far as the cell's own top stays in a view
+     * [viewH] tall
+     */
+    fun followBox(cells: List<Cell>, ci: Int, viewH: Float): Box {
+        val c = cells[ci]
+        var bottom = c.box.bottom
+        for (k in ci + 1 until cells.size) {
+            val n = cells[k]
+            if (n.head) break
+            if (n.no == null) { if (n.box.top > c.box.top) return c.box else continue }   // a sellable row below: the cursor goes there
+            bottom = max(bottom, n.box.bottom)
+        }
+        return Box(c.box.left, c.box.top, c.box.right, bottom.coerceAtMost(c.box.top + viewH - 8f).coerceAtLeast(c.box.bottom))
+    }
+
     /** the scroll that keeps [box] in a view [viewH] tall, moved as little as possible from [scroll] (never back to the top) */
     fun follow(box: Box, scroll: Float, viewH: Float): Float = when {
         box.top - 4f < scroll -> max(0f, box.top - 4f)
