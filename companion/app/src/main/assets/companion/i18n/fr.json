@@ -2339,7 +2339,9 @@
 "A quest item: the auction house won't take it": "Objet de quête : l'hôtel des ventes ne le prend pas",
 "Damaged: repair it to sell it": "Abîmé : réparez-le pour le vendre",
 "The auction house won't take this": "L'hôtel des ventes ne prend pas ceci",
-"Desktop's add-ons are older: update DS Forever Desktop": "Les add-ons de Desktop sont plus anciens : mettez à jour DS Forever Desktop"
+"Desktop's add-ons are older: update DS Forever Desktop": "Les add-ons de Desktop sont plus anciens : mettez à jour DS Forever Desktop",
+"Pet happiness": "Bonheur du familier",
+"In the row under the clock, with a hunter's pet.": "Dans la rangée sous l'horloge, avec le familier d'un chasseur."
 },
 "templates": {
 "%s/%s ready": "%s/%s prêtes",

@@ -182,6 +182,13 @@ class HomeEditMotion {
         envSet(k, if (on && !leaving) 1f else 0f, now, Motion.WIGGLE_IN, DROP_WIGGLE_AFTER)
     }
 
+    /** feat/extras-polish: [k] laid [dx] px further along than it was drawn (its row's order changed): it glides there from where it
+     *  stood (the offset, its speed carried, springs to 0 on the cursor's spring: the room bar's glide's pace) */
+    fun slide(k: Int, dx: Float, now: Long) {
+        if (k !in 0 until KEYS || dx == 0f) return
+        offX[k].jump(offX[k].value(now) + dx, 0f, offX[k].velocity(now), now, Motion.CURSOR_ZETA, Motion.CURSOR_W)
+    }
+
     /** the lift's share now (0 .. 1: the shadow, the depth) of [k] */
     fun liftK(k: Int, now: Long): Float = if (k in 0 until KEYS && on) liftShare(lift[k].value(now)) else 0f
     private fun liftShare(v: Float) = ((v - 1f) / (Motion.LIFT / Motion.REST_SCALE - 1f)).coerceIn(0f, 1f)

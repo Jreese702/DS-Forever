@@ -2361,7 +2361,9 @@
 "A quest item: the auction house won't take it": "Objeto de misión: la casa de subastas no lo acepta",
 "Damaged: repair it to sell it": "Dañado: repáralo para venderlo",
 "The auction house won't take this": "La casa de subastas no acepta esto",
-"Desktop's add-ons are older: update DS Forever Desktop": "Los accesorios de Desktop son más antiguos: actualiza DS Forever Desktop"
+"Desktop's add-ons are older: update DS Forever Desktop": "Los accesorios de Desktop son más antiguos: actualiza DS Forever Desktop",
+"Pet happiness": "Felicidad de la mascota",
+"In the row under the clock, with a hunter's pet.": "En la fila bajo el reloj, con la mascota de un cazador."
 },
 "templates": {
 "%s/%s ready": "%s/%s listos",

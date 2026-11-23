@@ -106,7 +106,7 @@ object SettingsTabs {
             // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
             "Focused quest",
             // the clock extras (the user's picks 2026-11-13): one row each
-            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "DS WoW toolbar",
+            "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "Pet happiness", "DS WoW toolbar",
             // the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): #471's rank badges (BottomTiles.RANK)
             "Spell rank badges",
             // hold to talk (the user, 2026-11-16): under the toolbar, "On release" under its switch (HoldTalk)

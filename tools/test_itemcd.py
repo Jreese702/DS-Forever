@@ -68,6 +68,10 @@ CDS = {}
 C_Spell.GetSpellCooldown = function(id) local c = CDS[id]; if c == "secret" then return { startTime = SECRETV, duration = SECRETV, isActive = true } end
     return c or { startTime = 0, duration = 0, isActive = false } end
 C_Spell.GetSpellInfo = function(id) return { name = SPELLNAME[id], iconID = 130000 + id, spellID = id } end
+-- r28: the pet's happiness (GetPetHappiness: 1 unhappy, 2 content, 3 happy; nil = no pet with happiness); "secret" = a secret answer
+HAPPY = nil
+HAPPYREADS = 0
+function GetPetHappiness() HAPPYREADS = HAPPYREADS + 1; if HAPPY == "secret" then return SECRETV end; return HAPPY, 0, 0 end
 '''
 
 
@@ -189,6 +193,40 @@ n0 = nsent(L)
 L.execute('COMBAT = true; CDS[556] = "secret"; fire("PLAYER_REGEN_DISABLED"); runTimers(NOW + 1); COMBAT = false')
 tp = (last(L, n0, 'itemcd') or {}).get('tp')
 check(tp and tp.get('cd', {}).get('d') == 900, "in a fight (secret): the teleport's countdown keeps running", tp)
+
+# ---------------------------------------------------------------- 5b. r28: the pet's happiness (feat/extras-polish; the user,
+# 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): pet = { h } while a pet with happiness is
+# out, change-only on UNIT_HAPPINESS / UNIT_PET / PET_UI_UPDATE, nothing written; none / a secret: no `pet`
+check('local RV = "r28"' in SRC, "Radial's tag is r28")
+d = last(L, 0, 'itemcd')
+check(d is not None and 'pet' not in d, "no pet out: no pet in the itemcd", d and d.get('pet'))
+n0 = nsent(L)
+L.execute('HAPPY = 3; fire("UNIT_PET", "player"); runTimers(NOW + 1)')
+d = last(L, n0, 'itemcd')
+check(d and d.get('pet') == {"h": 3}, "a happy hunter's pet called: pet { h = 3 }", d and d.get('pet'))
+n0 = nsent(L)
+L.execute('fire("UNIT_HAPPINESS", "pet"); fire("PET_UI_UPDATE"); fire("UNIT_PET", "party1"); runTimers(NOW + 1)')
+check(not docs(L, n0, 'itemcd'), "the same happiness again (and a party member's pet): nothing (change-only)", docs(L, n0, 'itemcd'))
+n0 = nsent(L)
+L.execute('HAPPY = 2; fire("UNIT_HAPPINESS", "pet"); runTimers(NOW + 1)')
+d = last(L, n0, 'itemcd')
+check(d and d.get('pet') == {"h": 2} and d.get('tp', {}).get('id') == 556 and d.get('hs', {}).get('have') is True,
+      "content now: pet { h = 2 }, the rest of the doc as before", d)
+n0 = nsent(L)
+L.execute('HAPPY = 1; COMBAT = true; fire("UNIT_HAPPINESS", "pet"); runTimers(NOW + 1); COMBAT = false')
+d = last(L, n0, 'itemcd')
+check(d and d.get('pet') == {"h": 1}, "unhappy, in a fight (a plain read): pet { h = 1 }", d and d.get('pet'))
+check(L.eval('#VIOL') == 0 and L.eval('#SPY') == 0, "nothing protected, no game window call, for the pet's happiness",
+      (L.eval('VIOL[1]'), L.eval('SPY[1]')))
+n0 = nsent(L)
+L.execute('HAPPY = "secret"; fire("UNIT_HAPPINESS", "pet"); runTimers(NOW + 1)')
+d = last(L, n0, 'itemcd')
+check(d and 'pet' not in d, "a secret answer: no pet (never a guess)", d and d.get('pet'))
+n0 = nsent(L)
+L.execute('HAPPY = 3; fire("UNIT_PET", "player"); runTimers(NOW + 1); HAPPY = nil; fire("UNIT_PET", "player"); runTimers(NOW + 1)')
+d = last(L, n0, 'itemcd')
+check(d and 'pet' not in d, "the pet dismissed: the next itemcd has no pet (the app hides the face)", d and d.get('pet'))
+check(L.eval('ERRS[1]') is None, "no error on the pet's paths", L.eval('ERRS[1]'))
 
 # ---------------------------------------------------------------- 6. the snapshot (an app start) forces the doc
 n0 = nsent(L)

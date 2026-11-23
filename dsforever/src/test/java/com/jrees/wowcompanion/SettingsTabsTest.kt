@@ -80,7 +80,7 @@ class SettingsTabsTest {
             G.SUPPORT to listOf("Support the Project"),
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
-                "Free bag slots", "Ammo", "DS WoW toolbar", "Spell rank badges", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk; 11-20: rank badges
+                "Free bag slots", "Ammo", "Pet happiness", "DS WoW toolbar", "Spell rank badges", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk; 11-20: rank badges; feat/extras-polish: Pet happiness
             G.CAST_BAR to listOf("Tap-to-cast bar", "Show in combat"),     // cb14 (D5b): the row renamed
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
@@ -188,7 +188,10 @@ class SettingsTabsTest {
             // the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): Bottom screen > Home, after the toolbar
             listOf("Spell rank badges") +
             // the user's pick 2026-11-23 ("Both (Recommended)"): General > Graphics > Graphics driver (Recommended / the test drivers)
-            listOf("Graphics driver")
+            listOf("Graphics driver") +
+            // feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"):
+            // Bottom screen > Home, the clock extras' new row after Ammo
+            listOf("Pet happiness")
         val now = B.values().flatMap { it.rows }
         // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
         val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")

@@ -598,11 +598,15 @@ object BottomPictures {
         val gold = HomeSettings.clockGold
         val cx = 216f
         UiKit.clockChip(c, cx, 6f, "12:30", 76, gold = if (gold) SAMPLE_GOLD else null)
-        val items = ArrayList<UiKit.BandItem>()
-        if (HomeSettings.clockHearth) items += UiKit.BandItem.Icon(Icons.get(ItemCd.HEARTH_ICON), "", glow = true)
-        if (HomeSettings.clockTeleport) items += UiKit.BandItem.Icon(Icons.get(TELEPORT_ICON), "")
-        if (HomeSettings.clockBags) items += UiKit.BandItem.Icon(Icons.get(BAG_ICON), "52/80")
-        if (HomeSettings.clockAmmo) items += UiKit.BandItem.Icon(Icons.get(AMMO_ICON), "812/1000")
+        // feat/extras-polish: in this character's order (HomeLayout.extras), the pet's face too
+        val on = BottomTiles.CLOCK_LINES.mapNotNull { (k, _, _) -> ClockBand.kindOf(k)?.takeIf { BottomTiles.clockOn(k) } }.toSet()
+        val items = ClockBand.kinds(HomeSettings.layout.extras, on).map { k -> when (k) {
+            ClockBand.Kind.HEARTH -> UiKit.BandItem.Icon(Icons.get(ItemCd.HEARTH_ICON), "", glow = true)
+            ClockBand.Kind.TELEPORT -> UiKit.BandItem.Icon(Icons.get(TELEPORT_ICON), "")
+            ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(BAG_ICON), "52/80")
+            ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(Icons.get(AMMO_ICON), "812/1000")
+            ClockBand.Kind.PET -> UiKit.BandItem.Icon(UiKit.petMood(3) ?: Icons.get(BottomTiles.PET_ICON), "")
+        } }
         val floor = 6f + ClockBand.chipBottom(gold) + ClockBand.CHIP_PAD
         // the row 1.6x Home's size here (the tile is small), centred under the chip
         c.save(); c.translate(cx, floor); c.scale(1.6f, 1.6f); c.translate(-cx, -floor)
@@ -919,7 +923,7 @@ object BottomPictures {
         holdTalk = HomeSettings.holdTalk(look.env.who), talkSendNow = HomeSettings.talkSendNow(look.env.who),
         miniOutYd = Settings.minimapYd, miniInYd = Settings.minimapIndoorYd, quickChat = Settings.chatDefaultInput == "quick",
         clockHearth = HomeSettings.clockHearth, clockTeleport = HomeSettings.clockTeleport, clockGold = HomeSettings.clockGold,
-        clockBags = HomeSettings.clockBags, clockAmmo = HomeSettings.clockAmmo,
+        clockBags = HomeSettings.clockBags, clockAmmo = HomeSettings.clockAmmo, clockPet = HomeSettings.clockPet,
         castBar = CastStripModel.Side.values().indexOf(HomeSettings.castBarSide),
         castCombatHide = HomeSettings.castBarCombat == CastStripModel.Combat.HIDE, worldMapAll = Settings.worldMapFog == "all")
 

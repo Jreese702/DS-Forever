@@ -659,8 +659,9 @@ class HomeEditShotsTest {
                     for (s in listOf(EditStop.PAD_PEN, EditStop.FACE_PEN)) { p.home.editAct { it.pencilTap(s) }; st(4); p.home.editKey("PAD2"); st(4) }
                     p.home.editAct { it.hideExtra("gold") }; st(4)
                     p.home.editAct { it.openExtraTray() }; st(4)
-                    assertEquals("the tray lists every hidden extra", HomeEditModel.EXTRA_KEYS, m.extrasOff)
-                    p.home.editKey("PADDRIGHT"); p.home.editKey("PADDRIGHT"); p.home.editKey("PAD1"); st(4)
+                    // feat/extras-polish: the tray in the walk's order (the gold line first); no pet out: no pet happiness in it
+                    assertEquals("the tray lists every hidden extra", HomeEditModel.EXTRA_KEYS.filter { it != "pet" }.sortedBy { it != "gold" }, m.extrasOff)
+                    p.home.editKey("PAD1"); st(4)
                     assertTrue("gold back", HomeSettings.clockGold)
                     assertFalse(HomeSettings.clockHearth)
                     p.home.editAct { it.lookFlip() }; st(20); p.home.editAct { it.lookFlip() }; st(20)

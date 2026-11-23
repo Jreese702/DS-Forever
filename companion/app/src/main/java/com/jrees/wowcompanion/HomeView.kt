@@ -1438,8 +1438,14 @@ class HomeView(
         val tp = ItemCd.teleport.takeIf { HomeSettings.clockTeleport }
         val bags = HomeSettings.clockBags && bagCount != null
         val am = ammo.takeIf { HomeSettings.clockAmmo }
-        return ClockBand.kinds(hs, tp != null, bags, am != null).mapNotNull { k -> bandItem(k) }      // ItemCd is written off the main thread
+        // feat/extras-polish: the pet's happiness face while a pet with happiness is out (ItemCd.petMood), in the player's order
+        val pet = HomeSettings.clockPet && ItemCd.petMood != null
+        val on = setOfNotNull(ClockBand.Kind.HEARTH.takeIf { hs }, ClockBand.Kind.TELEPORT.takeIf { tp != null },
+            ClockBand.Kind.BAGS.takeIf { bags }, ClockBand.Kind.AMMO.takeIf { am != null }, ClockBand.Kind.PET.takeIf { pet })
+        return ClockBand.kinds(extrasOrder(), on).mapNotNull { k -> bandItem(k) }      // ItemCd is written off the main thread
     }
+    /** feat/extras-polish: the row's order now - edit mode's draft while it runs (each change glides), else this character's record */
+    private fun extrasOrder(): List<String> = (edit?.takeIf { !it.parked }?.draft ?: HomeSettings.layout).extras
     /** one extra as the row draws it from its data now (null = no data: the row leaves it out) */
     private fun bandItem(k: ClockBand.Kind): UiKit.BandItem? = when (k) {
         ClockBand.Kind.HEARTH -> if (ItemCd.hearthHave == false) null else {
@@ -1454,6 +1460,9 @@ class HomeView(
         ClockBand.Kind.BAGS -> bagCount?.let { b ->                                              // the backpack's icon, used / total
             UiKit.BandItem.Icon(Icons.get(VendorSlots.BAG_ICON), ClockBand.outOf(b.used, b.total), out = b.full) }
         ClockBand.Kind.AMMO -> ammo?.let { am -> UiKit.BandItem.Icon(Icons.get(am.icon), ClockBand.outOf(am.count, am.of), cooling = am.empty, out = am.empty) }
+        // feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): the kit's
+        // face for the game's three states (Happy / Content / Unhappy), no value under it (the face says it)
+        ClockBand.Kind.PET -> ItemCd.petMood?.let { mood -> UiKit.BandItem.Icon(UiKit.petMood(mood) ?: Icons.get(BottomTiles.PET_ICON), "") }
     }
 
     /**
@@ -1462,13 +1471,21 @@ class HomeView(
      * chrome draws its "+" on); [editRowKeys] their keys in the same order. Outside edit mode the row is [bandItems]' (unchanged)
      */
     private fun editRowKeys(): List<String> = buildList {
-        for (k in HomeEditModel.EXTRA_KEYS) if (k != "gold" && BottomTiles.clockOn(k)) add(k)
-        if (HomeEditModel.EXTRA_KEYS.any { !BottomTiles.clockOn(it) }) add(EDIT_PLUS)
+        // feat/extras-polish: in the draft's order (a drag or a step glides there); the pet's face only for a character with a pet that
+        // has happiness out (never a dimmed paw on a mage's row: [editExtras])
+        val (on, off) = editExtras()
+        for (k in ClockBand.order(extrasOrder())) if (k in on) add(k)
+        if (off.isNotEmpty()) add(EDIT_PLUS)
+    }
+    /** the extras edit mode shows (on) and keeps in its "+" tray (off), Settings' rows; the pet's happiness in neither while no pet with
+     *  happiness is out (it hides itself: nothing to arrange) */
+    private fun editExtras(): Pair<List<String>, List<String>> {
+        val keys = HomeEditModel.EXTRA_KEYS.filter { it != "pet" || ItemCd.petMood != null }
+        return keys.filter { BottomTiles.clockOn(it) } to keys.filter { !BottomTiles.clockOn(it) }
     }
     private fun editBandItems(keys: List<String>): List<UiKit.BandItem> = keys.map { k ->
-        val kind = when (k) { "hearth" -> ClockBand.Kind.HEARTH; "teleport" -> ClockBand.Kind.TELEPORT; "bags" -> ClockBand.Kind.BAGS; "ammo" -> ClockBand.Kind.AMMO; else -> null }
-        kind?.let { bandItem(it) } ?: UiKit.BandItem.Icon(if (k == EDIT_PLUS) null else BottomTiles.CLOCK_LINES.firstOrNull { it.first == k }?.let { Icons.get(it.third) },
-            "", cooling = true)
+        val kind = ClockBand.kindOf(k)
+        kind?.let { bandItem(it) } ?: UiKit.BandItem.Icon(if (k == EDIT_PLUS) null else UiKit.clockLinePicture(k), "", cooling = true)
     }
     /** edit mode's gold line: the purse while Gold is on (0 until the bags say it: the line still shows, wiggles and hides) */
     private fun editChipGold(): Long? = if (HomeSettings.clockGold) (goldCopper ?: 0L) else null
@@ -1482,17 +1499,54 @@ class HomeView(
     private val extraPoser = object : UiKit.CellPose {
         override fun apply(c: Canvas, i: Int, cx: Float, cy: Float) {
             val k = if (i < 0) "gold" else editRowDrawn.getOrNull(i) ?: return
-            if (!extraPoseAt(k)) return
+            if (!extraPoseAtCell(k, cx, cy)) return
             val p = extraPoseBuf
             c.translate(p.dx, p.dy); c.rotate(p.rot, cx, cy); c.scale(p.scale, p.scale, cx, cy)
         }
     }
-    /** extra [k]'s pose now into [extraPoseBuf]; false = none */
-    private fun extraPoseAt(k: String): Boolean {
+    /** extra [k]'s motion key (its place in EXTRA_KEYS: never reordered; "+" its own) */
+    private fun extraKeyOf(k: String): Int =
+        if (k == EDIT_PLUS) HomeEditMotion.PLUS_EXTRA else HomeEditMotion.extraKey(HomeEditModel.EXTRA_KEYS.indexOf(k).coerceAtLeast(0))
+    /** extra [k]'s pose now into [extraPoseBuf] (its cell's centre [cx], [cy] - NaN: the last laid cell's); false = none. feat/extras-polish:
+     *  the extra a finger carries rides it (its grab kept: the drag's centre less its cell's), the others glide to a new place */
+    private fun extraPoseAt(k: String): Boolean = extraPoseAtCell(k, Float.NaN, Float.NaN)
+    private fun extraPoseAtCell(k: String, cx: Float, cy: Float): Boolean {
         if (!motion.on || !editPaintPosed() || !editClock()) return false          // the fight preview: nothing wiggles
-        val key = if (k == EDIT_PLUS) HomeEditMotion.PLUS_EXTRA else HomeEditMotion.extraKey(HomeEditModel.EXTRA_KEYS.indexOf(k).coerceAtLeast(0))
-        motion.pose(key, motionNow(), EXTRA_HALF_DIAG, extraPoseBuf)
+        motion.pose(extraKeyOf(k), motionNow(), EXTRA_HALF_DIAG, extraPoseBuf)
+        val m = edit
+        val d = m?.drag
+        if (d != null && d.stop == EditStop.EXTRAS && m.extraLifted == k) {
+            val ccx = if (cx.isNaN()) bandCells[k]?.centerX() else cx
+            val ccy = if (cy.isNaN()) bandCells[k]?.centerY() else cy
+            if (ccx != null && ccy != null) {
+                extraDragOff[0] = d.cx - ccx; extraDragOff[1] = d.cy - ccy
+                extraPoseBuf.dx += extraDragOff[0]; extraPoseBuf.dy += extraDragOff[1]
+            }
+        }
         return !extraPoseBuf.isIdentity
+    }
+    /** the carried extra's finger offset from its cell at the last frame (its drop plops in from there) */
+    private val extraDragOff = FloatArray(2)
+    /** the row's cells' centres as last laid, by key (a new order's glide starts from them) */
+    private val extraLaidX = HashMap<String, Float>()
+    /**
+     * feat/extras-polish: after each edit input, the row's cells laid again ([editBand]); an extra whose place moved (the order changed)
+     * glides there from where it stood (HomeEditMotion.slide) - the carried one rides the finger instead
+     */
+    private fun editExtrasGlide() {
+        if (edit?.takeIf { !it.parked } == null) { extraLaidX.clear(); return }
+        val before = HashMap(extraLaidX)
+        editBand()
+        extraLaidX.clear()
+        for ((k, r) in bandCells) if (k != "gold") extraLaidX[k] = r.centerX()
+        val t = motionNow()
+        val carried = edit?.takeIf { it.drag?.stop == EditStop.EXTRAS }?.extraLifted
+        for ((k, x) in extraLaidX) {
+            val was = before[k] ?: continue
+            if (k == carried || kotlin.math.abs(was - x) < 0.5f) continue
+            motion.slide(extraKeyOf(k), was - x, t)
+        }
+        if (motion.busy(t)) editKick()
     }
 
     /** the purse under the battery (the Gold row On and the bags said), else null: no line, the chip as before */
@@ -3114,7 +3168,8 @@ class HomeView(
     /** P2: the extras now for edit mode's model (Settings' clock rows: on, hidden) - fed before every input reaches it */
     private fun editBandFeed(m: HomeEditModel? = edit) {
         m ?: return
-        m.bandIs(HomeEditModel.EXTRA_KEYS.filter { BottomTiles.clockOn(it) }, HomeEditModel.EXTRA_KEYS.filter { !BottomTiles.clockOn(it) })
+        val (on, off) = editExtras()
+        m.bandIs(on, off)
     }
     private val editView: HomeEditView by lazy { HomeEditView(context, editHost) }
     /** the host's Strip draws the ribbon through this */
@@ -3135,6 +3190,11 @@ class HomeView(
         override val colTop: Float get() = barsBottom() + UiKit.MODULE_GAP
         override val colBottom: Float get() = frameH - UiKit.MODULE_GAP
         override fun barSlots(): List<Float> = roomBar?.slotCentres() ?: emptyList()
+        override fun extraSlots(): List<Float> {
+            val m = edit ?: return emptyList()
+            editBand()
+            return m.extraRow.mapNotNull { bandCells[it]?.centerX() }
+        }
     }
 
     /** the page's state now, as [places] hands it to the solver (for a drop well and a drop's check) */
@@ -3448,6 +3508,7 @@ class HomeView(
         m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
         m?.let { editPersist(it) }                                        // 1518: a settled change is saved as it is made
         m?.let { editBandFeed(it); if (it.settled) editCursorCheck(it) } // P2: Settings' extras as they are now; a piece gone: the cursor on
+        editExtrasGlide()                                                 // feat/extras-polish: a reordered extra glides to its new cell
         editBarSync(fx.lastOrNull { it is HomeEditModel.Fx.Relay }?.let { (it as HomeEditModel.Fx.Relay).ms } ?: Motion.MODULE_OPEN)
         editNotice()
         editDecor()
@@ -3462,6 +3523,7 @@ class HomeView(
         val t = motionNow()
         motion.scale = motionScale()
         motion.enter(t, from?.let { rippleFrom(it) }); cardOwnTo(0f, t, 0L)
+        extraLaidX.clear()                                                // feat/extras-polish: a new session's row starts where it is
         val m = edit
         seenCursor = m?.cursor; seenMenu = m?.menu; seenSheet = m?.sheet
         editKick()
@@ -3555,7 +3617,8 @@ class HomeView(
     private fun editLift(s: EditStop?) {
         val t = motionNow()
         if (s != null) {
-            val k = s.key
+            // feat/extras-polish: a lifted extra on its own wiggle key (the band never moves)
+            val k = if (s == EditStop.EXTRAS) edit?.extraLifted?.let { extraKeyOf(it) } ?: s.key else s.key
             // 1518: the drop's Lift and the new one come in one run (the model's state is the new lift's by then): once is enough
             if (liftStop == s && liftKey == k && motion.lifted == k) { editKick(); editDecor(); return }
             // 1518: another widget still in its lifted pose (a lift that replaced it): it plops into its dock first
@@ -3565,8 +3628,10 @@ class HomeView(
             motion.lift(liftKey, t); if (s == EditStop.QUEST) cardOwnTo(1f, t, Motion.WIGGLE_IN)
         }
         else liftStop?.let { was ->
-            val ox = if (edit?.drag == null) dragOffsetNow[0] else 0f; val oy = if (edit?.drag == null) dragOffsetNow[1] else 0f
+            var ox = if (edit?.drag == null) dragOffsetNow[0] else 0f; var oy = if (edit?.drag == null) dragOffsetNow[1] else 0f
             dragOffsetNow.fill(0f)
+            // feat/extras-polish: a carried extra plops into its (maybe new) cell from where the finger let it go
+            if (was == EditStop.EXTRAS) { ox = extraDragOff[0]; oy = extraDragOff[1]; extraDragOff.fill(0f) }
             motion.drop(liftKey, ox, oy, t)
             // dropped (on the map): it rides the map's pose again over its plop
             if (was == EditStop.QUEST) cardOwnTo(0f, t, CARD_RIDE_BACK)

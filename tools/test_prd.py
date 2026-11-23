@@ -43,7 +43,9 @@ function UnitExists(u) if u == "pet" then if PET_EXISTS_SECRET then return secre
 function HasPetUI() return PET ~= nil, PET and PET.hunter or false end
 function UnitIsDead(u) if u == "pet" then return PET ~= nil and PET.dead == true end return ME.dead end
 function GetPetIcon() return PET and PET.icon or nil end
+HAPPYREADS = 0                                    -- prd22: the HUD never reads the happiness any more
 C_PetInfo = { GetPetHappiness = function()
+    HAPPYREADS = HAPPYREADS + 1
     if not PET or not PET.happy then return nil end
     if PET.happySecret then return secret(PET.happy) end
     return PET.happy
@@ -566,34 +568,31 @@ def main():
     chk("prd12: the round portrait %.1f spec px (>= 34), a thin rim (face %.1f): GetPetIcon's file (%s), masked round; NO name (%s)"
         % (o.ring.w / sk, o.face.w / sk, o.face.tex, o.name), o.ring.w >= 34 * sk and near(o.ring.w, o.ring.h) and near(o.ring.w - o.face.w, 4 * sk)
         and o.face.tex == 132203 and o.face.masked is not None and o.ring.masked is not None and o.name is None and P.PET_NAME is None)
-    chk("prd11: the happiness face, plain 3 (happy): the game's PetFrame texture, its first face (%s)" % (o.happy.coord and list(o.happy.coord.values())),
-        o.happy.shown is True and o.happy.tex.endswith("UI-PetHappiness") and list(o.happy.coord.values()) == [0, 0.1875, 0, 0.359375])
+    # prd22 (feat/extras-polish; the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): a
+    # hunter's pet, happiness plain 3 - NO face on the strip any more (Home's clock extras row shows it: Radial r28's itemcd `pet`)
+    chk("prd22: a happy hunter's pet: no happiness face on the HUD's pet strip (%s), nothing of it built" % o.happy,
+        o.happy is None and L.eval("WowCompanion.prd.PET_HAPPY") is None and L.eval("WowCompanion.prd.petHappyOn") is None)
     # prd12: the rects in spec px across the strip (x from its left), from the anchors the code set
     g = P.petGeo()
     ring = (o.ring.point[4] / sk, o.ring.point[4] / sk + o.ring.w / sk)
     hpL = o.hp.point[4] / sk
-    hapL = hpL + o.unit.w / sk + o.happy.point[4] / sk
-    hap = (hapL, hapL + o.happy.w / sk)
-    chk("prd12: the happiness face %.1f spec px (18-20), past the unit's right rim at x %.1f, clear of the portrait (%.1f..%.1f)"
-        % (o.happy.w / sk, hap[0], ring[0], ring[1]), 18 * sk <= o.happy.w <= 20 * sk and near(o.happy.w, o.happy.h)
-        and o.happy.point[1] == "LEFT" and o.happy.point[3] == "RIGHT" and L.eval("rawequal(WowCompanion.prd.pet.happy.point[2], WowCompanion.prd.pet.unit)")
-        and o.happy.point[4] >= o.frame.right.w and (hap[0] >= ring[1] or hap[1] <= ring[0]) and hap[1] <= 280)
-    grp = (ring[0], hap[1])
-    chk("prd13: portrait + unit + happiness face centred under the player's bars (%.2f .. %.2f of 280)" % grp,
+    # prd22: the group is the portrait and the unit (its right rim) alone
+    grp = (ring[0], hpL + o.unit.w / sk + o.frame.right.w / sk)
+    chk("prd22: portrait + unit centred under the player's bars, no face past the rim (%.2f .. %.2f of 280)" % grp,
         near(grp[0], 280 - grp[1]) and grp[0] > 0 and o.ring.point[1] == "TOPLEFT" and o.hp.point[1] == "TOPLEFT"
         and near(hpL - ring[1], P.PET_IGAP) and hpL - ring[1] >= o.frame.left.w / sk)
     ringMid = -o.ring.point[5] / sk + o.ring.h / sk / 2
     unitMid = -o.hp.point[5] / sk + o.unit.h / sk / 2
     chk("prd12: the portrait vertically centred on the bars (%.2f = %.2f spec px from the strip's top), its top inside the strip"
         % (ringMid, unitMid), near(ringMid, unitMid) and o.ring.point[5] <= 0 and near(g.iconTop, 0))
-    # prd13 (review, 2026-11-11): at the minimum width the happiness face inside the HUD frame (the pet bars narrowed to fit)
+    # prd13 (review, 2026-11-11): at the minimum width the group inside the HUD frame (the pet bars narrowed to fit); prd22: no face
     P.W = P.W_MIN; P.petLayout(P.petDrop, True)
     hpL2 = o.hp.point[4] / sk
-    hap2 = hpL2 + o.unit.w / sk + o.happy.point[4] / sk + o.happy.w / sk
+    end2 = hpL2 + o.unit.w / sk + o.frame.right.w / sk
     ring2 = o.ring.point[4] / sk
-    chk("prd13: W = %s: the happiness face inside the frame (its right %.2f), portrait from %.2f, bars %.1f wide (<= 60 %%), centred"
-        % (P.W_MIN, hap2, ring2, o.unit.w / sk), P.W_MIN == 180 and hap2 <= 180 + 1e-6 and ring2 >= 0 and o.unit.w <= 0.6 * 180 * sk + 1e-6
-        and near(o.hp.w, o.unit.w) and near(o.pw.w, o.unit.w) and near(ring2, 180 - hap2) and o.happy.shown is True)
+    chk("prd13: W = %s: the group inside the frame (its right %.2f), portrait from %.2f, bars %.1f wide (<= 60 %%), centred"
+        % (P.W_MIN, end2, ring2, o.unit.w / sk), P.W_MIN == 180 and end2 <= 180 + 1e-6 and ring2 >= 0 and o.unit.w <= 0.6 * 180 * sk + 1e-6
+        and near(o.hp.w, o.unit.w) and near(o.pw.w, o.unit.w) and near(ring2, 180 - end2))
     P.W = 280; P.petLayout(P.petDrop, True)
     chk("prd13: back at 280: the bars 60 %% again (%.1f)" % (o.unit.w / sk), near(o.unit.w, 0.6 * 280 * sk))
     run(0.3)
@@ -612,12 +611,12 @@ def main():
         % P.petRow(), near(P.petRow(), 39.5) and near(P.petL.h, 39.5 * sk) and near(g.row, max(g.iconTop + 36, g.unitTop + 13 + 15))
         and near(-o.hp.point[5] + o.unit.h + o.frame.bot.h, P.petL.h) and (P.ROW_GAP * sk) >= 0)
     chk("prd11: no lag chunk for the pet (its queue would keep a secret in a table)", o.lag is None)
-    vals = [P.pex[k] for k in ("has", "src", "dead", "ptok", "happy", "cbad", "icon", "a")]
-    chk("prd11: the probe's pet (has / src / ptok / happy) holds no secret", all(not Lg.issecretvalue(v) for v in vals)
-        and P.pex.ptok == "FOCUS" and P.pex.happy == 3)
-    Lg.PET.happySecret = True; run(0.3)
-    chk("prd11: happiness SECRET: no face (%s)" % o.happy.shown, o.happy.shown is False and P.pex.happy is None)
-    Lg.PET.happySecret = None
+    vals = [P.pex[k] for k in ("has", "src", "dead", "ptok", "cbad", "icon", "a")]
+    chk("prd11: the probe's pet (has / src / ptok) holds no secret; prd22: no happiness in it (not read)",
+        all(not Lg.issecretvalue(v) for v in vals) and P.pex.ptok == "FOCUS" and P.pex.happy is None)
+    n0 = L.eval("HAPPYREADS or 0")
+    run(0.6)
+    chk("prd22: the HUD never asks the pet's happiness (%s reads)" % (L.eval("HAPPYREADS or 0") - n0), L.eval("HAPPYREADS or 0") == n0)
     # a pet's cast is never the player's
     sp0 = P.spentAt
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_START", "pet", "guid", 8936)
@@ -630,10 +629,10 @@ def main():
     Lg.PET = L.table_from({"hp": 900, "hpMax": 900, "pw": 200, "pwMax": 400, "ptype": 0, "tok": "MANA", "name": "Voidwalker", "icon": 136221})
     fire("UNIT_PET", "player"); run(0.3)
     chk("prd11: a demon: MANA's blue %s, no happiness face, its own portrait (%s)" % (list(o.pw.color.values()), o.face.tex),
-        list(o.pw.color.values()) == [0, 0.45, 1] and o.happy.shown is False and o.face.tex == 136221 and o.name is None)
+        list(o.pw.color.values()) == [0, 0.45, 1] and o.happy is None and o.face.tex == 136221 and o.name is None)
     dr = o.hp.point[4] / sk + o.unit.w / sk + o.frame.right.w / sk
-    chk("prd13: no face can show: portrait + unit alone centred again (%.2f .. %.2f of 280)" % (o.ring.point[4] / sk, dr),
-        P.petHappyOn is False and near(o.ring.point[4] / sk, 280 - dr) and near(o.unit.w, 0.6 * 280 * sk))
+    chk("prd13: portrait + unit alone centred (%.2f .. %.2f of 280)" % (o.ring.point[4] / sk, dr),
+        near(o.ring.point[4] / sk, 280 - dr) and near(o.unit.w, 0.6 * 280 * sk))
     Lg.PET.tok = None; Lg.PET.ptype = 2; run(0.3)
     chk("prd11: no plain token: the type's number says FOCUS (%s)" % P.pex.ptok, P.pex.ptok == "FOCUS" and list(o.pw.color.values()) == [1, 0.5, 0.25])
     Lg.PET.tok = "MANA"; Lg.PET.ptype = 0

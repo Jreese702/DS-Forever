@@ -10,7 +10,8 @@ import org.json.JSONObject
  * cooling"; "honour enable=0 (held potion: dim, no number)"; "Persist the hearthstone end time per name-realm").
  *
  * The add-on says each item's cooldown once, on an event: t = { "<id>" = { d, l, e? } | { h } (held) | { x } (running, length unknown) },
- * hs = { have, i } (the Hearthstone), tp = { id, n, i, cd | x } (the class teleport the player knows), fight. Out of a fight an id that is
+ * hs = { have, i } (the Hearthstone), tp = { id, n, i, cd | x } (the class teleport the player knows), pet = { h } (feat/extras-polish:
+ * the pet's happiness, while a pet with happiness is out), fight. Out of a fight an id that is
  * not there is READY; in a fight it is "not known": what is counted stays (a countdown started before the fight keeps running). Only
  * LIVE documents are trusted (a replayed one is an old life's). Counted on the monotonic clock ([clock], ms). Keyed by ITEM id (its own
  * map: item and spell ids can collide), apart from [RadialModel.Cd] (the spell radials').
@@ -35,6 +36,11 @@ object ItemCd {
     @Volatile var teleport: Teleport? = null; private set
     private var tpE: E? = null
 
+    /** feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): the pet's
+     *  happiness, the doc's `pet.h` (Radial r28: GetPetHappiness, a plain read; 1 unhappy, 2 content, 3 happy); null = no pet with
+     *  happiness out (no `pet`: a warlock's demon, no pet, an older add-on) - the clock extras' pet face is not shown */
+    @Volatile var petMood: Int? = null; private set
+
     /** what is kept across app lives: the Hearthstone's end time per character (name-realm) */
     interface Store { fun get(key: String): String?; fun put(key: String, v: String?) }
     @Volatile var store: Store? = null
@@ -57,11 +63,11 @@ object ItemCd {
         }
     }
 
-    @Synchronized fun reset() { at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON; who = null; liveWho = null }
+    @Synchronized fun reset() { at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON; petMood = null; who = null; liveWho = null }
 
     /** another character than the one counted: everything counted was the old one's (review r20a: never shown or kept as the new one's) */
     private fun switchTo(key: String) {
-        if (who != null && who != key) { at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON }
+        if (who != null && who != key) { at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON; petMood = null }
         who = key
     }
 
@@ -110,6 +116,8 @@ object ItemCd {
                     else -> null
                 }
             }
+            // feat/extras-polish: every document says the pet's happiness while there is one (no `pet` = none now)
+            petMood = ClockBand.petMood(msg.optJSONObject("pet")?.optInt("h", 0))
             keepHearth(now)
         }
         changed()
@@ -167,7 +175,7 @@ object ItemCd {
      *  any name until the whole key comes; true = it changed */
     @Synchronized private fun noCharacter(): Boolean {
         if (who == null && liveWho == null) return false
-        at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON; who = null; liveWho = null
+        at.clear(); tpE = null; teleport = null; hearthHave = null; hearthIcon = HEARTH_ICON; petMood = null; who = null; liveWho = null
         return true
     }
 

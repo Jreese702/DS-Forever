@@ -12,8 +12,57 @@ import org.json.JSONObject
  * as before, with its own show / fade rules; the row stays under it ([CHIP_TOP] + [CHIP_H]). Pure (no android.*): checked off-device.
  */
 object ClockBand {
-    /** the items, left to right: the travel pair and the packs (the purse is the gold line under the battery, [GOLD_H]) */
-    enum class Kind { HEARTH, TELEPORT, BAGS, AMMO }
+    /** the items, in today's (Classic) order left to right: the travel pair, the packs, the pet's happiness (feat/extras-polish); the
+     *  purse is the gold line under the battery, [GOLD_H]. Each one's [key] is its Settings row's (BottomTiles.CLOCK_LINES) */
+    enum class Kind(val key: String) { HEARTH("hearth"), TELEPORT("teleport"), BAGS("bags"), AMMO("ammo"), PET("pet") }
+
+    // ------------------------------------------------------------------ THE ORDER (feat/extras-polish)
+
+    /**
+     * THE ROW'S ORDER IS THE PLAYER'S (the user, 2026-11-23: "I also want to be able to change the order on these"): a list of [Kind.key]s
+     * in the layout record (HomeLayout.extras: per character, with the rest of Home's arrangement), dragged in Edit Home as the room bar's
+     * icons are. [DEFAULT] = today's (Kind's own order); Reset Home to Classic puts it back. [order] makes any saved list a WHOLE order
+     * (unknown or doubled keys go, a key the list does not know - one added by a later build - comes back after the one it follows in
+     * [DEFAULT]), as RoomBar.normalize does for the rooms.
+     */
+    val DEFAULT: List<String> = Kind.values().map { it.key }
+
+    fun order(saved: List<String>?): List<String> {
+        if (saved == null) return DEFAULT
+        val out = ArrayList<String>()
+        for (k in saved) if (k in DEFAULT && k !in out) out += k
+        if (out.size == DEFAULT.size) return out
+        for ((i, k) in DEFAULT.withIndex()) {
+            if (k in out) continue
+            val prev = (i - 1 downTo 0).map { DEFAULT[it] }.firstOrNull { it in out }
+            out.add(if (prev == null) 0 else out.indexOf(prev) + 1, k)
+        }
+        return out
+    }
+
+    fun isDefault(saved: List<String>): Boolean = order(saved) == DEFAULT
+
+    /** the kind of a row key (null: none, e.g. "gold" - the chip's line) */
+    fun kindOf(key: String): Kind? = Kind.values().firstOrNull { it.key == key }
+
+    /** [saved]'s whole order with [key] moved to where [to] stands among the keys [shown] (the others close up), as a drag or a step
+     *  along the shown row asks; a key not shown, or [to] outside the shown row: unchanged */
+    fun moveShown(saved: List<String>, shown: List<String>, key: String, to: Int): List<String> {
+        val o = order(saved)
+        val vis = o.filter { it in shown }
+        val from = vis.indexOf(key)
+        if (from < 0 || to !in vis.indices || from == to) return o
+        val target = vis[to]
+        val out = o.toMutableList()
+        out.remove(key)
+        val at = out.indexOf(target)
+        out.add(if (to > from) at + 1 else at, key)
+        return out
+    }
+
+    /** THE PET'S HAPPINESS (feat/extras-polish; the game's three states, GetPetHappiness: 1 unhappy, 2 content, 3 happy); anything else
+     *  = no pet with happiness (a warlock's demon, no pet out, an older add-on): the extra is not shown */
+    fun petMood(h: Int?): Int? = h?.takeIf { it in 1..3 }
 
     /** the top clock chip (UiKit.clockChip at the band's centre x, band top + [CHIP_TOP], [CHIP_H] high; unchanged since LATER 18) */
     const val CHIP_TOP = 10f
@@ -43,23 +92,42 @@ object ClockBand {
     }
 
     /**
-     * Items [widths] wide in the spot [left]..[right], the row centred on [cx] (the join's centre): equal gaps, as wide as there is room
-     * for up to [GAP_MAX]; a row too wide even at [GAP_MIN] is scaled down (each item and gap by [Placement.scale]) to fit.
+     * Items [widths] wide in the spot [left]..[right], the row centred on [cx] (the join's centre). THE EVEN-PITCH RULE (feat/extras-polish;
+     * the user, 2026-11-23: "The badges on the home page when there are 3 for hearth bags and ammo are not centered and look like poop when
+     * I use 3 with the ammo"): every cell is CENTRED on its own slot and the slots stand at ONE pitch, centred on [cx] - so the icons are
+     * evenly spaced and the middle one (an odd count) stands right under the clock, whatever each value's width. (The old rule kept equal
+     * gaps between the cells' EDGES and centred their whole extent: a wide value - the ammo's "1843/3200" - pushed every icon left and
+     * spread its own gap, a ready Hearthstone (no value) pulled its neighbour in.) The pitch is the widest NEIGHBOURING pair's half widths
+     * plus a [gap] as wide as there is room for, up to [GAP_MAX] (so no two values ever touch); a row too wide even at [GAP_MIN] is scaled
+     * down (each item and gap by [Placement.scale]) to fit.
      */
     fun place(widths: FloatArray, left: Float, right: Float, cx: Float): Placement {
         val n = widths.size
         if (n == 0) return Placement(FloatArray(0), 0f, 1f)
         val room = 2f * minOf(cx - left, right - cx)                      // centred on cx: the nearer edge sets the room
-        val total = widths.sum()
-        var gap = if (n == 1) 0f else ((room - total) / (n - 1)).coerceAtMost(GAP_MAX)
-        var scale = 1f
+        val pair = pairWidth(widths)
+        val edge = edgeHalf(widths)
+        var gap = if (n == 1) 0f else ((room / 2f - edge) / ((n - 1) / 2f) - pair).coerceAtMost(GAP_MAX)
         if (n > 1 && gap < GAP_MIN) gap = GAP_MIN
-        val whole = total + gap * (n - 1)
-        if (whole > room && whole > 0f) scale = room / whole
-        val lefts = FloatArray(n)
-        var x = cx - whole * scale / 2f
-        for (i in 0 until n) { lefts[i] = x; x += (widths[i] + gap) * scale }
-        return Placement(lefts, gap * scale, scale)
+        val half = (n - 1) * (pair + gap) / 2f + edge
+        val scale = if (2f * half > room && half > 0f) room / (2f * half) else 1f
+        return Placement(evenLefts(widths, cx, (pair + gap) * scale, scale), gap * scale, scale)
+    }
+
+    /** the even pitch's base: the widest NEIGHBOURING pair's half widths summed (0 for one cell) */
+    fun pairWidth(widths: FloatArray): Float {
+        var m = 0f
+        for (i in 0 until widths.size - 1) m = maxOf(m, (widths[i] + widths[i + 1]) / 2f)
+        return m
+    }
+
+    /** the outer half cell past the end slots' centres (the wider end's: the row's box is symmetric round its centre) */
+    fun edgeHalf(widths: FloatArray): Float = if (widths.isEmpty()) 0f else maxOf(widths.first(), widths.last()) / 2f
+
+    /** each cell's LEFT on the even row: slot i's centre at [cx] + (i - (n - 1) / 2) x [pitch], the cell ([widths] x [scale]) centred on it */
+    fun evenLefts(widths: FloatArray, cx: Float, pitch: Float, scale: Float): FloatArray {
+        val n = widths.size
+        return FloatArray(n) { i -> cx + (i - (n - 1) / 2f) * pitch - widths[i] * scale / 2f }
     }
 
     /**
@@ -144,7 +212,9 @@ object ClockBand {
      */
     fun grow(spot: FloatArray, chipTop: Float, chipW: Float, chipH: Float, cells: FloatArray): Grown? {
         val cx = spot[4]; val bottom = spot[3]
-        fun rowW(q: Float) = (cells.sum() + GROWN_GAP * (cells.size - 1).coerceAtLeast(0)) * q
+        // feat/extras-polish: the even-pitch row's box (symmetric round cx), at least GROWN_GAP between the widest neighbours
+        val pair = pairWidth(cells); val edge = edgeHalf(cells)
+        fun rowW(q: Float) = ((cells.size - 1).coerceAtLeast(0) * (pair + GROWN_GAP) + 2f * edge) * q
         // ONE scale for both (each capped at its own most), the biggest that fits: the row bottom-aligned on the spot's bottom, the chip
         // over it with the clearance between, neither on a button
         var q = 0f; var chip = 0f; var rowTop = bottom
@@ -159,15 +229,15 @@ object ClockBand {
             t -= STEP
         }
         if (chip == 0f) return null
-        val lefts = FloatArray(cells.size)
+        var lefts = FloatArray(cells.size)
         if (cells.isNotEmpty()) {
-            // equal gaps across the bottom's free span, as wide as there is room for (up to GAP_MAX), centred on the spot's centre
+            // feat/extras-polish: the EVEN PITCH ([place]'s rule) across the bottom's free span, the gap between the widest neighbours as
+            // wide as there is room for (GROWN_GAP .. GAP_MAX), the slots centred on the spot's centre (the middle icon under the clock)
             val span = room(spot, rowTop, bottom)
             val roomW = 2f * minOf(cx - span[0], span[1] - cx)
-            val total = cells.sum() * q
-            val gap = if (cells.size == 1) 0f else ((roomW - total) / (cells.size - 1)).coerceIn(GROWN_GAP * q, GAP_MAX * q)
-            var x = cx - (total + gap * (cells.size - 1)) / 2f
-            for (i in cells.indices) { lefts[i] = x; x += cells[i] * q + gap }
+            val n = cells.size
+            val gap = if (n == 1) 0f else ((roomW / 2f - edge * q) / ((n - 1) / 2f) - pair * q).coerceIn(GROWN_GAP * q, GAP_MAX * q)
+            lefts = evenLefts(cells, cx, pair * q + gap, q)
         }
         return Grown(chip, rowTop, if (cells.isEmpty()) 1f else q, lefts)
     }
@@ -279,13 +349,11 @@ object ClockBand {
     /** a figure out of its total, numbers only (terse rule): "68/80", "0/1000", "1.8k/3.2k"; [of] <= 0 = the total not known: "264" */
     fun outOf(have: Int, of: Int): String = if (of > 0) "${VendorSlots.num(have)}/${VendorSlots.num(of)}" else VendorSlots.num(have)
 
-    /** which items show, in order: the player's rows (and the data there); none = no row (the clock chip is apart) */
-    fun kinds(hearth: Boolean, teleport: Boolean, bags: Boolean, ammo: Boolean): List<Kind> {
-        val k = ArrayList<Kind>(4)
-        if (hearth) k += Kind.HEARTH
-        if (teleport) k += Kind.TELEPORT
-        if (bags) k += Kind.BAGS
-        if (ammo) k += Kind.AMMO
-        return k
-    }
+    /** which items show, in today's order: the player's rows (and the data there); none = no row (the clock chip is apart) */
+    fun kinds(hearth: Boolean, teleport: Boolean, bags: Boolean, ammo: Boolean, pet: Boolean = false): List<Kind> =
+        kinds(DEFAULT, setOfNotNull(Kind.HEARTH.takeIf { hearth }, Kind.TELEPORT.takeIf { teleport }, Kind.BAGS.takeIf { bags },
+            Kind.AMMO.takeIf { ammo }, Kind.PET.takeIf { pet }))
+
+    /** feat/extras-polish: the items [on] in the player's [order] (HomeLayout.extras, made whole: [order]) */
+    fun kinds(order: List<String>, on: Set<Kind>): List<Kind> = order(order).mapNotNull { k -> kindOf(k)?.takeIf { it in on } }
 }

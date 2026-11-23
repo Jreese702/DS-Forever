@@ -3905,9 +3905,12 @@ do
     end
 end
 
-WC.prd = { V = "prd21", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
-           PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
-           PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
+-- prd22 THE PET'S HAPPINESS LEFT THE HUD (feat/extras-polish; the user, 2026-11-23: "we should add pet happiness to this and remove it
+-- from the top screen HUD"): the pet strip keeps its portrait, its health and its power (prd12's unit, centred as before); the happiness
+-- face (prd11 / prd12 / prd13: PET_HAPPY past the unit's right rim, P.petHappyOn in the centring width) is gone, with its read. The app's
+-- Home shows it now, in the clock extras row (Spells' Radial r28 sends GetPetHappiness in the itemcd document).
+WC.prd = { V = "prd22", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
+           PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
@@ -4878,16 +4881,16 @@ do
         local mid = math.max(P.PET_ICON / 2, 3 * k + unit / 2)
         local g = { k = k, unit = unit, unitTop = mid - unit / 2, iconTop = mid - P.PET_ICON / 2 }
         g.row = math.max(g.iconTop + P.PET_ICON, g.unitTop + unit + 8 * k)
-        -- prd13 (review, 2026-11-11): the happiness face (2 + PET_HAPPY past the right rim) counted while it can show; the bars narrowed
-        -- when the whole group would not fit (W_MIN = 180), so the face stays inside the HUD frame
-        local fixed = P.PET_ICON + P.PET_IGAP + 7 * k + (P.petHappyOn and (2 + P.PET_HAPPY) or 0)
+        -- prd13 (review, 2026-11-11): the bars narrowed when the whole group would not fit (W_MIN = 180); prd22: no happiness face
+        -- past the right rim any more (Home shows it), so the portrait + the unit alone are centred
+        local fixed = P.PET_ICON + P.PET_IGAP + 7 * k
         g.barW = math.max(0, math.min(P.W * P.PET_W, P.W - fixed))
         g.x0 = math.max(0, (P.W - (fixed + g.barW)) / 2)
         if P.petSide == "beside" then g.x0 = 0 end                   -- prd15: beside the HP bar, from its own left
         return g
     end
     function P.petRow() return P.petGeo().row end
-    -- built with the bars, hidden until a pet is out: the round portrait, the green health, the power (one frame), the happiness face
+    -- built with the bars, hidden until a pet is out: the round portrait, the green health, the power (one frame); prd22: no happiness face
     function P.petBuild()
         if P.petL or not P.f then return P.petL end
         local L = CreateFrame("Frame", nil, P.f)                    -- beside P.g, never under it (the player's curve would hide it)
@@ -4931,13 +4934,7 @@ do
         -- prd13: the shade over the pet's HEALTH as the player's over theirs (45 % of the health bar, not of the whole unit)
         o.frame = P.frameFor(o.unit, L, o.lip, o.k, u(P.PET_HH) * 0.45)
         pcall(function() o.lip:SetFrameLevel(o.hp:GetFrameLevel() + 20) end)
-        -- a hunter's pet's happiness: the game's own faces (PetFrame's texture), PET_HAPPY big, past the unit's right rim (7 texels),
-        -- level with the bars (prd12: never over the portrait)
-        o.happy = o.lip:CreateTexture(nil, "OVERLAY", nil, 3)
-        o.happy:SetTexture(P.PET_HAPPY_TEX)
-        o.happy:SetSize(u(P.PET_HAPPY), u(P.PET_HAPPY))
-        o.happy:SetPoint("LEFT", o.unit, "RIGHT", 7 * o.k + u(2), 0)
-        o.happy:Hide()
+        -- prd22: no happiness face here (Home's clock extras row shows it: Radial r28's itemcd `pet`)
         P.petLayout(0, true)
         return L
     end
@@ -5032,16 +5029,8 @@ do
         end
         pcall(function() o.pw:SetMinMaxValues(0, UnitPowerMax("pet", pt)) end)
         pcall(function() o.pw:SetValue(UnitPower("pet", pt)) end)
-        -- happiness: only a plain answer (1 unhappy, 2 content, 3 happy); a secret or none: no face
-        local okH, hv = pcall(function()
-            if type(C_PetInfo) == "table" and type(C_PetInfo.GetPetHappiness) == "function" then return C_PetInfo.GetPetHappiness() end
-            return GetPetHappiness()
-        end)
-        local h = okH and num(hv) or nil
-        local uv = h and P.PET_HAPPY_U[h]
-        if uv then o.happy:SetTexCoord(uv[1], uv[2], 0, P.PET_HAPPY_V); o.happy:Show() else o.happy:Hide() end
-        if (uv ~= nil) ~= (P.petHappyOn == true) then P.petHappyOn = uv ~= nil; P.petLayout(P.petDrop, true) end   -- prd13: re-centred
-        x.dead, x.ptok, x.happy, x.icon = dead or nil, tok, uv and h or nil, o.icon ~= nil or nil
+        -- prd22: the happiness is no longer read here (Home shows it: Radial r28)
+        x.dead, x.ptok, x.icon = dead or nil, tok, o.icon ~= nil or nil
     end
     -- out of combat on the curve route: the strip's alpha the pet's own UnitHealthPercent through the same curve; its OWN bad flag (a
     -- refused pet call - no pet, a client without - never turns the player's curve off); otherwise plainly shown (it fades with the HUD)
