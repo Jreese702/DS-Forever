@@ -5,7 +5,8 @@ package com.jrees.wowcompanion
  * OPT-IN). Settings > General > Account > Browser login: Off (the default: the saved login's private login.txt, as before) or On (the
  * game signs in with a Battle.net session from Blizzard's own sign-in page, shown on the BOTTOM screen; no login.txt is ever written).
  * It is also offered when the game's sign-in is refused with BLZ51914400 ([offer]): one button on the start screen, which turns it On and
- * restarts the game.
+ * restarts the game. Issue 569: also when a captcha ran out of time (the game's refusal 325 right after a captcha): Blizzard's own page
+ * takes the captcha by touch on the bottom screen.
  *
  * The launcher (app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin) reads [Settings.browserLogin] at each game start and says which
  * way that start signed in ([markLaunched]): the Settings row offers "Restart the game" while the running game started the other way.
@@ -23,15 +24,32 @@ object BrowserLogin {
     const val OFFER_BUTTON = "Sign in with Blizzard's page"
     const val OFFER_LINE = "Sign-in refused (BLZ51914400)"
 
+    /** issue 569: the line over the button after a captcha ran out of time */
+    const val CAPTCHA_LINE = "Captcha timed out (325)"
+
     /** the game's own result code for BLZ51914400 ("Status has no name. (14400)") */
     const val BLZ_14400 = "14400"
 
+    /** the game's result code when the sign-in timed out (issue 569: exactly 60 s after the captcha came) */
+    const val TIMEOUT_325 = "325"
+
     /**
-     * the start screen offers [OFFER_BUTTON]: the game refused this run's sign-in with BLZ51914400 ([failed], [reason] = HomeLogin's
-     * short reason), browser login is Off, and no restart is already under way. Pure.
+     * the start screen offers [OFFER_BUTTON]: the game refused this run's sign-in with BLZ51914400, or with 325 after its form asked for
+     * a captcha ([captcha], HomeLogin.State.captcha: the captcha ran out of time) ([failed], [reason] = HomeLogin's short reason), browser
+     * login is Off, and no restart is already under way. Pure.
      */
-    fun offer(failed: Boolean, reason: String?, browserOn: Boolean, restarting: Boolean): Boolean =
-        failed && !browserOn && !restarting && isBlz14400(reason)
+    fun offer(failed: Boolean, reason: String?, browserOn: Boolean, restarting: Boolean, captcha: Boolean = false): Boolean =
+        failed && !browserOn && !restarting && (isBlz14400(reason) || (captcha && isTimeout325(reason)))
+
+    /** the line over the offer's button: the captcha's when it ran out of time, else BLZ51914400's. Pure. */
+    fun offerLine(reason: String?, captcha: Boolean): String =
+        if (!isBlz14400(reason) && captcha && isTimeout325(reason)) CAPTCHA_LINE else OFFER_LINE
+
+    /** [reason] is the game's 325 ("(325)", as HomeLogin shortens it) */
+    fun isTimeout325(reason: String?): Boolean {
+        val r = reason ?: return false
+        return Regex("""\(\s*$TIMEOUT_325\s*\)""").containsMatchIn(r)
+    }
 
     /** [reason] is the game's BLZ51914400 ("... (14400)", or the BLZ code itself) */
     fun isBlz14400(reason: String?): Boolean {

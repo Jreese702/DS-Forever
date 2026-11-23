@@ -2311,6 +2311,7 @@
 "Wait": "Attendre",
 "Game downloading: leave it running": "Jeu en téléchargement : laissez-le tourner",
 "Installing. Keep DS Forever open": "Installation. Gardez DS Forever ouvert",
+"Captcha timed out (325)": "Captcha expiré (325)",
 "Install failed: Blizzard's patch server did not answer: its name could not be found. Check the Wi-Fi, a VPN or an ad blocker.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : son nom est introuvable. Vérifiez le Wi-Fi, un VPN ou un bloqueur de publicités.",
 "Install failed: Blizzard's patch server did not answer: the connection was blocked. Try another Wi-Fi, or turn off a VPN.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : la connexion a été bloquée. Essayez un autre Wi-Fi ou coupez le VPN.",
 "Install failed: Blizzard's patch server did not answer: the secure connection failed. Check the date and time, or try another Wi-Fi.": "Échec de l'installation : le serveur de correctifs de Blizzard n'a pas répondu : la connexion sécurisée a échoué. Vérifiez la date et l'heure, ou essayez un autre Wi-Fi.",

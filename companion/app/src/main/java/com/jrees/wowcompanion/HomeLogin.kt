@@ -98,6 +98,8 @@ object HomeLogin {
         object Authenticator : Event()
         /** it failed: the game's own reason, short */
         data class Failed(val reason: String) : Event()
+        /** issue 569: the sign-in form came with a captcha (the game's "logon form received ... hasCaptcha="true""); it lasts 1 minute */
+        object Captcha : Event()
         /** a companion addon line (WCB1): addons run only in the world, so the login is behind us */
         object World : Event()
     }
@@ -106,6 +108,7 @@ object HomeLogin {
     private val QUEUE = Regex("""logon queue update received position="(\d+)"""")
     private val FATAL = Regex("""Fatal login error received result="([^"]*)"""")
     private val FORM = Regex("""logon form submission response received result="([^"]*)".*?authenticatorRequired="(true|false)"""")
+    private val CAPTCHA = Regex("""logon form received\b.*?\bhasCaptcha="true"""")
 
     /** one General.log line -> what it says about signing in, or null */
     fun parse(line: String): Event? {
@@ -116,6 +119,7 @@ object HomeLogin {
         QUEUE.find(line)?.let { m -> return m.groupValues[1].toIntOrNull()?.let { Event.Queue(it, clock(line)) } }
         FATAL.find(line)?.let { return Event.Failed(reason(it.groupValues[1])) }
         FORM.find(line)?.let { if (it.groupValues[2] == "true") return Event.Authenticator }
+        if (CAPTCHA.containsMatchIn(line)) return Event.Captcha
         return null
     }
 
@@ -125,7 +129,7 @@ object HomeLogin {
      */
     fun connectionEvents(text: String): List<Event> = text.split('\n').mapNotNull { raw ->
         val line = raw.trimEnd('\r').let { if ("[Connection]" in it) it else "[Connection] $it" }
-        parse(line)?.takeIf { it is Event.Authenticator || it is Event.Failed || it is Event.Queue }
+        parse(line)?.takeIf { it is Event.Authenticator || it is Event.Failed || it is Event.Queue || it is Event.Captcha }
     }
 
     /** "10/5 17:47:34.789  [N]..." -> "17:47", or "" */
@@ -213,6 +217,20 @@ object HomeLogin {
     fun signingIn(read: Boolean, fileActive: Boolean, phase: Phase): Boolean = read && fileActive && phase != Phase.FAILED
 
     /**
+     * ISSUE 585 (the user's ruling, 2026-11-23): a login saved from the start screen's login form while this run's game waits at its own
+     * login screen restarts the game by itself, as Update login does (the game never re-reads login.txt in place, test4) - before, it
+     * was used only at the next start and the player sat at an empty login screen. Only when the restart can sign in and nothing is lost:
+     * the game is up ([gameUp]) and no restart is under way ([restarting]); Auto login is on ([autoLogin]) and Browser login off
+     * ([browser]: no login.txt then); no realm connection ([realm]: character select or later) and no sign-in under way ([signingIn]).
+     * Then either the game refused this run's sign-in ([refused]: its refusal proves it is back at its login screen), or the run never
+     * read a login.txt ([read]), is not past its login screen ([pastLogin]) and its window is up ([windowUp]: before that, the window's
+     * own write gives the game the new login without a restart, NativeLogin.gameWindowUp). A download asks first (ReportNotice). Pure.
+     */
+    fun saveRestarts(gameUp: Boolean, restarting: Boolean, autoLogin: Boolean, browser: Boolean, realm: Boolean, signingIn: Boolean,
+                     refused: Boolean, read: Boolean, pastLogin: Boolean, windowUp: Boolean): Boolean =
+        gameUp && !restarting && autoLogin && !browser && !realm && !signingIn && (refused || (!read && !pastLogin && windowUp))
+
+    /**
      * WHY THIS RUN HAS NO SAVED SIGN-IN FILE, in the sign-in log's words (diagnostics only; the sign-in triage of 2026-11-16: #399 saved
      * a login, then every start said "no saved login", and #424 had one start without the file - Auto login unticked, the install's
      * first start or a saved login that no longer opens all read the same). [saved]: a saved login is on the device; [autoLogin]: the
@@ -264,6 +282,8 @@ object HomeLogin {
         var pastLogin = false; private set
         /** the followed log has not been written for [LOGIN_AGAIN_QUIET_S]: in the world the addons write every few seconds */
         var quiet = false; private set
+        /** issue 569: this sign-in's form asked for a captcha ([Event.Captcha]); a new sign-in ("Glue login started") starts without */
+        var captcha = false; private set
         val atLogin get() = screen == LOGIN_SCREEN
         val showRow get() = clientUp && !inWorld && ((beforeWorld && screenUp) || atLogin)
         /**
@@ -307,7 +327,8 @@ object HomeLogin {
                     if (e.name != LOGIN_SCREEN || phase != Phase.FAILED) phase = Phase.IDLE
                     if (e.name == LOGIN_SCREEN) signingIn = false
                 }
-                Event.Started -> { phase = Phase.RUNNING; reason = ""; started = true; signingIn = true }
+                Event.Started -> { phase = Phase.RUNNING; reason = ""; started = true; signingIn = true; captcha = false }
+                Event.Captcha -> captcha = true
                 is Event.Queue -> { phase = Phase.QUEUE; queue = e.position; queueAt = e.at; signingIn = true }
                 Event.Authenticator -> { phase = Phase.AUTH; signingIn = true }
                 is Event.Failed -> { phase = Phase.FAILED; reason = e.reason; signingIn = false }
@@ -320,7 +341,7 @@ object HomeLogin {
         fun reset() {
             screen = null; phase = Phase.IDLE; queue = 0; queueAt = ""; reason = ""; started = false
             clientUp = false; beforeWorld = false; inWorld = false; signingIn = false; realm = false; screenUp = false
-            pastLogin = false; quiet = false
+            pastLogin = false; quiet = false; captcha = false
         }
 
         /**
@@ -330,12 +351,12 @@ object HomeLogin {
         fun backAtLogin(): Boolean {
             if (!pastLogin) return false
             screen = null; phase = Phase.IDLE; queue = 0; queueAt = ""; reason = ""; started = false
-            inWorld = false; signingIn = false; realm = false; pastLogin = false; screenUp = true
+            inWorld = false; signingIn = false; realm = false; pastLogin = false; screenUp = true; captcha = false
             return true
         }
 
         /** our own script began (before the game's "Glue login started" line arrives): no second run until it is known how it ended */
-        fun running() { phase = Phase.RUNNING; reason = ""; started = false; signingIn = true }
+        fun running() { phase = Phase.RUNNING; reason = ""; started = false; signingIn = true; captcha = false }
 
         /** our run failed or got no answer from the game at all (see [NO_ANSWER_MS]): shown like the game's own failures; Login may
          *  type again (the user's next press) */
