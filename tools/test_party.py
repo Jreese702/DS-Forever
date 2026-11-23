@@ -2046,6 +2046,49 @@ check(bool(lm) and d.get('mod') == 'CTRL' and d.get('self') == 'PAD1' and d.get(
       and d.get('p3') == 'PADDDOWN' and d.get('p4') == 'PADDLEFT',
       "m104: lbmap from the game's bindings: LB = Ctrl, A = you, D-pad = party1..4", {k: d.get(k) for k in ('mod', 'self', 'p1', 'p2', 'p3', 'p4')})
 check(d.get('keys', {}).get('p1') == ['F2', 'CTRL-PADDUP'], "m104: every key found is in the document (a keyboard key is not LB's)", d.get('keys', {}).get('p1'))
+check(d.get('swap') is False and d.get('fb') == 'LB' and WL.eval('WowCompanion.padMap.party.lb().fb') == 'LB',
+      "m187: not swapped: swap false, fb LB (the document and OV.lbmap.last, Hub's word)", (d.get('swap'), d.get('fb')))
+
+# m187 (fix/lbrb-wheels, a tester 2026-11-23 with the game's target bumpers swapped: "LB ... is now target enemy for me"): the map reads
+# the FRIENDLY bumper - RB while GamepadSwapTargetModifiers is on - its modifier (LB's when no GamePadEmulate* CVar names RB), its tap
+LBSWAP = ('CVARS = { GamePadEmulateCtrl = "PADLSHOULDER", GamePadEmulateShift = "PADLTRIGGER", GamepadSwapTargetModifiers = "1" }; '
+          'function GetCVar(n) return CVARS[n] end; '
+          'LBKEYS = { TARGETSELF = { "CTRL-PAD1" }, TARGETPARTYMEMBER1 = { "CTRL-PADDUP" }, TARGETPARTYMEMBER2 = { "CTRL-PADDRIGHT" }, '
+          'TARGETPARTYMEMBER3 = { "CTRL-PADDDOWN" }, TARGETPARTYMEMBER4 = { "CTRL-PADDLEFT" } }; '
+          'function GetBindingKey(b) local t = LBKEYS[b]; if t then return unpack(t) end; return KEYOF and KEYOF[b] end; '
+          'BIND = BIND or {}; BIND["PADLSHOULDER"] = "TARGETNEARESTENEMY"; BIND["PADRSHOULDER"] = "TARGETNEARESTFRIEND"; '
+          'BINDING_NAME_TARGETNEARESTFRIEND = "Target Nearest Friend"')
+WS = world(pre=LBSWAP)
+n0 = nsent(WS)
+WS.execute('fire("PLAYER_ENTERING_WORLD", false, true); advance(3)')
+lm = docs(WS, n0, 'lbmap')
+d = lm[-1] if lm else {}
+check(bool(lm) and d.get('swap') is True and d.get('fb') == 'RB' and d.get('mod') == 'CTRL' and d.get('self') == 'PAD1'
+      and d.get('p1') == 'PADDUP' and d.get('p4') == 'PADDLEFT',
+      "m187: swapped, the CVars as they were: fb RB, the buttons read under LB's Ctrl (the fallback)", {k: d.get(k) for k in ('swap', 'fb', 'mod', 'self', 'p1', 'p4')})
+check(d.get('tap') == 'TARGETNEARESTFRIEND' and d.get('tapn') == 'Target Nearest Friend' and WS.eval('WowCompanion.padMap.party.lb().fb') == 'RB',
+      "m187: ... the tap is the friendly bumper's (RB's) binding; OV.lbmap.last.fb = RB (Hub's word)", (d.get('tap'), d.get('tapn')))
+# RB its own emulated modifier: read under it (LB's Ctrl is not the friendly one now)
+WS.execute('CVARS.GamePadEmulateAlt = "PADRSHOULDER"; LBKEYS.TARGETSELF = { "CTRL-PAD1", "ALT-PAD2" }; LBKEYS.TARGETPARTYMEMBER1 = { "ALT-PADDDOWN" }')
+n0 = nsent(WS)
+WS.execute('fire("CVAR_UPDATE", "GamePadEmulateAlt"); advance(3)')
+lm = docs(WS, n0, 'lbmap')
+d = lm[-1] if lm else {}
+check(bool(lm) and d.get('mod') == 'ALT' and d.get('self') == 'PAD2' and d.get('p1') == 'PADDDOWN' and d.get('p2') is None,
+      "m187: RB its own modifier (Alt): the buttons read under it, an unbound one nil", {k: d.get(k) for k in ('mod', 'self', 'p1', 'p2')})
+# the swap switched off: a CVAR_UPDATE for it (any case) resends; another CVar does not
+WS.execute('CVARS.GamepadSwapTargetModifiers = "0"')
+n0 = nsent(WS)
+WS.execute('fire("CVAR_UPDATE", "GAMEPADSWAPTARGETMODIFIERS"); advance(3)')
+lm = docs(WS, n0, 'lbmap')
+d = lm[-1] if lm else {}
+check(bool(lm) and d.get('swap') is False and d.get('fb') == 'LB' and d.get('mod') == 'CTRL' and d.get('self') == 'PAD1'
+      and d.get('tap') == 'TARGETNEARESTENEMY',
+      "m187: the swap CVar's change (case-blind) resends: LB's Ctrl and LB's tap again", {k: d.get(k) for k in ('swap', 'fb', 'mod', 'self', 'tap')})
+n0 = nsent(WS)
+WS.execute('fire("CVAR_UPDATE", "cameraDistanceMaxZoomFactor"); advance(3)')
+check(docs(WS, n0, 'lbmap') == [], "m187: another CVar's change sends no lbmap")
+check(WS.eval('#VIOL') == 0 and list(WS.eval('ERRS').values()) == [], "m187: no error, no secure write", list(WS.eval('ERRS').values())[:2])
 
 
 # p34 render aids: CTL_DUMP=<dir> writes the documents the app's ControllerShotsTest draws (never committed fixtures)

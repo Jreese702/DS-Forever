@@ -1230,7 +1230,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val nb = h.layers[li][pos]
             if (nb == null || !nb.same(old?.layers?.get(li)?.get(pos))) clearMemory(li * 8 + pos)
         }
+        val swapWas = old?.swapT
         hud = h
+        if (swapWas != h.swapT) onSwapTargets?.invoke(h.swapT)
         layoutAtMs = now
         applyLive()                 // the layout carries the live buttons bare; re-dress them
         resolveIcons()
@@ -1651,8 +1653,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     // =================================================================== controller -> layer
 
-    /** 1.0.18: LB / RB held, for Home's LB party picture (LbPartyView) */
+    /** 1.0.18: LB / RB held, for Home's LB party picture (LbPartyView). fix/lbrb-wheels: each one ALONE of the triggers and of an open
+     *  class wheel (LB + LT / RB + RT are the class wheels' chords), so the picture can follow the game's friendly bumper either way */
     var onShoulders: ((lb: Boolean, rb: Boolean) -> Unit)? = null
+    /** fix/lbrb-wheels (a tester: "LB ... is now target enemy for me"): the game swaps its target bumpers (GamepadSwapTargetModifiers,
+     *  the hud document's cv.swapT, read only) - RB is the friendly one; before the first hud document, the lbmap document's word */
+    fun swapTargets(): Boolean = hud?.swapT ?: (LbMap.swap == true)
+    /** fix/lbrb-wheels: [swapTargets] changed with a hud document (the LB picture's bumper follows) */
+    var onSwapTargets: ((swapped: Boolean) -> Unit)? = null
     /** 1.0.18: a second listener on the held buttons (the LB picture's press feedback) */
     var onButtonsAlso: ((held: Int) -> Unit)? = null
 
@@ -1666,7 +1674,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         noteClassRadial()                                                 // f-class-radial: Home's mirror
         // 1.0.20 (the user: "the LB and class radial on L and L2 are conflicting and overlapping"): LB + a trigger is the class radial's
         // chord, so the LB picture shows for LB ALONE - never with LT / RT held or a class radial open
-        onShoulders?.invoke(lb && !lt && !rt && !classOpen, rb)
+        onShoulders?.invoke(lb && !lt && !rt && !classOpen, rb && !lt && !rt && !classOpen)
         noteJoin(SystemClock.elapsedRealtime())
         setLayer(computeLayer())
         invalidate()

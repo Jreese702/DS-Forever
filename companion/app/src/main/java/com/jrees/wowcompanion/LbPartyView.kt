@@ -149,6 +149,14 @@ class LbPartyView(context: Context) : View(context) {
          *  CompanionHost.overlayUp, or the target radial) - it goes at once instead of fading */
         fun dropNow(onHome: Boolean, covered: Boolean): Boolean = !onHome || covered
 
+        /** fix/lbrb-wheels (a tester, bumpers swapped in the game: "holding LB shows the party picture ... LB is now target enemy for
+         *  me"): the picture is the FRIENDLY bumper's - LB, or RB while the game swaps its target bumpers ([swapped], CastView.swapTargets)
+         *  - held alone ([lb] / [rb]: CastView's, each already alone of the triggers and of an open class wheel) */
+        fun friendlyAlone(lb: Boolean, rb: Boolean, swapped: Boolean): Boolean = if (swapped) rb && !lb else lb && !rb
+
+        /** the friendly bumper's word ("LB" / "RB") */
+        fun bumperWord(swapped: Boolean): String = if (swapped) "RB" else "LB"
+
         private val SLOT_KEY = listOf(PadInput.SLOT_FACE_BOTTOM to "PAD1", PadInput.SLOT_DPAD_UP to "PADDUP", PadInput.SLOT_DPAD_RIGHT to "PADDRIGHT",
             PadInput.SLOT_DPAD_DOWN to "PADDDOWN", PadInput.SLOT_DPAD_LEFT to "PADDLEFT", PadInput.SLOT_FACE_RIGHT to "PAD2",
             PadInput.SLOT_FACE_LEFT to "PAD3", PadInput.SLOT_FACE_TOP to "PAD4")
@@ -178,8 +186,12 @@ object LbMap {
         private set
     @Volatile var tapName: String? = null
         private set
+    /** fix/lbrb-wheels (PadMap m187): the game swaps its target bumpers (the document's `swap`; null = an older add-on set, no word) */
+    @Volatile var swap: Boolean? = null
+        private set
 
     fun update(d: JSONObject) {
+        swap = if (d.has("swap")) d.optBoolean("swap", false) else null
         tap = d.optString("tap", "").ifEmpty { null }
         tapName = d.optString("tapn", "").ifEmpty { null }
         val m = HashMap<String, String>()

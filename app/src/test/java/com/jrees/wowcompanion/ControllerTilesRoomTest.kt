@@ -271,6 +271,19 @@ class ControllerTilesRoomTest {
             GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, cls)
             assertFalse(cls, GameUi.SHOT_ID in c.tileIds())
         }
+        // fix/lbrb-wheels: a class wheel's tile only for a class with that wheel (Druid / Paladin left, Warrior right, Hunter / Warlock both)
+        val w = partOf(r, "pause")
+        for ((cls, want) in listOf("MAGE" to listOf("pause", "item", "spell"), "PRIEST" to listOf("pause", "item", "spell"),
+                "DRUID" to listOf("pause", "item", "spell", "classL"), "PALADIN" to listOf("pause", "item", "spell", "classL"),
+                "WARRIOR" to listOf("pause", "item", "spell", "classR"), "HUNTER" to listOf("pause", "item", "spell", "classL", "classR"),
+                "WARLOCK" to listOf("pause", "item", "spell", "classL", "classR"))) {
+            GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, cls)
+            w.refresh(); lay(r)
+            assertEquals(cls, want, w.tileIds())
+        }
+        GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, null)
+        w.refresh(); lay(r)
+        assertEquals(listOf("pause", "item", "spell", "classL", "classR"), w.tileIds())
     }
 
     /** Smart Y: dim "..." before the game; On / Off through Smart Y's own taps; "List" opens the list as a sub-page that lands on its

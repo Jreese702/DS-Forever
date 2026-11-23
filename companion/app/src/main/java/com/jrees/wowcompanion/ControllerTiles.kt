@@ -28,7 +28,8 @@ import kotlin.math.max
  * ([SmartYPage]: the list moved as it is). No sub-captions (the terse rule): the picture says what it does. Wheels are app-wide;
  * the pet's B, Smart Y and the GameUi helpers are per character (their stores, unchanged). Combat helpers keep Top's game-state badges
  * (ON / OFF / SENT / REFUSED / WAITING); the app-local tiles carry none. A slot that does not apply is not drawn (B: pet follow on a
- * class without a pet, Smart Res on a class without a res, Auto Shot on a class that can never hold a bow, gun or wand - design 0.4).
+ * class without a pet, Smart Res on a class without a res, Auto Shot on a class that can never hold a bow, gun or wand, a class wheel on
+ * a class without that wheel - design 0.4).
  *
  * The tile engine of the shared core (TileSource / TileDraw) had not landed when this was built (core and the areas ran side by side):
  * this view keeps the TileSource shape ([slots] / [name] / [value] / [lines] / [badge] / [dimmed] / [press] / the sub-page) so the
@@ -51,7 +52,9 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         SettingsTabs.Group.BUTTONS -> listOfNotNull(Slot(ControllerPictures.ABXY), Slot(ControllerPictures.GLYPHS),
             Slot(ControllerPictures.PET_B).takeIf { PetRecall.shown(hub.petB()) }, Slot(ControllerPictures.SMART_Y, wide = true))
         // one tile per wheel block (SettingsTabs.Block: a later radial adds a tile, not a redesign)
-        SettingsTabs.Group.WHEELS -> SettingsTabs.blocks(SettingsTabs.Group.WHEELS).mapNotNull { WHEELS[it] }.map { Slot(it) }
+        // fix/lbrb-wheels: a class wheel's tile only for a class that has that wheel ([wheelClass]; design 0.4)
+        SettingsTabs.Group.WHEELS -> SettingsTabs.blocks(SettingsTabs.Group.WHEELS).mapNotNull { WHEELS[it] }
+            .filter { wheelClass(it, GameUi.playerClass) }.map { Slot(it) }
         SettingsTabs.Group.COMBAT -> listOfNotNull(Slot(GameUi.PMODE_ID),
             Slot(GameUi.SRES_ID).takeIf { GameUi.sresClass(GameUi.playerClass) != false },
             Slot(GameUi.ATK_ID), Slot(ControllerPictures.ATTACK_CAST),
@@ -545,6 +548,20 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
 
         /** Auto Shot's tile applies to [cls] (unknown yet = shown, as before the game says) */
         fun shotClass(cls: String?): Boolean = cls.isNullOrBlank() || cls.uppercase() !in NO_SHOT
+
+        /** fix/lbrb-wheels (a tester: the class wheels "never appear", their tiles shown all the same): the class wheels each class has -
+         *  ActionBar.lua's classActions (hud.ca): its CLASS_FLYOUT Druid / Paladin on the left (LB + LT), Warrior on the right (RB + RT);
+         *  Hunter / Warlock both (the pet's commands left, its spells right); every other class none */
+        val CLASS_WHEEL_L = setOf("DRUID", "PALADIN", "HUNTER", "WARLOCK")
+        val CLASS_WHEEL_R = setOf("WARRIOR", "HUNTER", "WARLOCK")
+
+        /** the Wheels tile [id] applies to [cls]: a class wheel's only for a class with that wheel (unknown yet = shown, as before the
+         *  game says); the other wheels always */
+        fun wheelClass(id: String, cls: String?): Boolean = when (id) {
+            ControllerPictures.CLASS_L -> cls.isNullOrBlank() || cls.uppercase() in CLASS_WHEEL_L
+            ControllerPictures.CLASS_R -> cls.isNullOrBlank() || cls.uppercase() in CLASS_WHEEL_R
+            else -> true
+        }
 
         private val LOCATIONS = CastSettings.AbxyLocation.values().toList()
         private val LAYOUTS = CastSettings.ButtonLayout.values().toList()
