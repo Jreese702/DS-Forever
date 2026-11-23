@@ -91,6 +91,8 @@ object GeneralTiles {
     }
     /** a row that is ONE button across it, its words on the button (Support the Project, the Reset buttons) */
     fun wide(r: Row): Boolean = r == Row.SUPPORT || resetOf(r) != null
+    /** Game account's "Remembered" (gameAccountAsk = false): the user's ruling 2026-11-23, its words say where it skips the list */
+    const val REMEMBERED = "Skip (Browser login)"
     /** the note on Reset layouts / skills with no character known yet */
     const val NO_CHARACTER = "No character yet"
 
@@ -804,6 +806,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         const val SLOP = 24f
         const val ARM_MS = 3000L
         const val SEG_TEXT = 24f
-        val GAME_ACCOUNT = listOf("Ask each time", "Remembered")
+        // the user's ruling 2026-11-23: the remembered one is handed over on Browser login only (the saved login still shows the
+        // game's list), so the second word says where it skips (GameAccountHandover); its prefs value stays gameAccountAsk = false
+        val GAME_ACCOUNT = listOf("Ask each time", GeneralTiles.REMEMBERED)
     }
 }

@@ -39,12 +39,38 @@ class SessionBridgeTest {
                     val input = DataInputStream(child.getInputStream())
                     val token = ByteArray(input.readInt()).also(input::readFully)
                     assertEquals("test-game-ticket", token.toString(Charsets.US_ASCII))
+                    // DS Forever: the game-account frame follows the credential: none ("-") unless one is handed over
+                    assertEquals("-", ByteArray(input.readInt()).also(input::readFully).toString(Charsets.US_ASCII))
                     output.writeInt(7)
                     output.writeBytes("STARTED")
                     launch.get(2, TimeUnit.SECONDS)
                 }
             }
         } finally { executor.shutdownNow() }
+    }
+
+    /** DS Forever (the user's ruling 2026-11-23): the hand-over frame as given, or none when unusable (placeholder names only) */
+    @Test fun theGameAccountFrameFollowsTheCredential() {
+        for ((given, sent) in listOf("US:WoW1" to "US:WoW1", "EU:" + "x".repeat(64) to "EU:" + "x".repeat(64),
+                "US:" + "x".repeat(65) to "-", "" to "-", "US:W\u0000" to "-", "US:Wé" to "-")) {
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                SessionBridge().use { bridge ->
+                    val peer = executor.submit<SessionBridge.Peer> { bridge.accept() }
+                    connect(bridge).use { child ->
+                        val output = DataOutputStream(child.getOutputStream())
+                        val accepted = peer.get(2, TimeUnit.SECONDS)
+                        val launch = executor.submit { accepted.launch("t".toByteArray(), given.toByteArray(Charsets.UTF_8)) }
+                        val input = DataInputStream(child.getInputStream())
+                        assertEquals("t", ByteArray(input.readInt()).also(input::readFully).toString(Charsets.US_ASCII))
+                        assertEquals(given, sent, ByteArray(input.readInt()).also(input::readFully).toString(Charsets.US_ASCII))
+                        output.writeInt(7)
+                        output.writeBytes("STARTED")
+                        launch.get(2, TimeUnit.SECONDS)
+                    }
+                }
+            } finally { executor.shutdownNow() }
+        }
     }
 
     @Test fun unauthenticatedClientCannotReceiveCapabilityOrConsumeTheLaunch() {

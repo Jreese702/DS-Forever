@@ -803,51 +803,24 @@ namespace DsfDesktop.Tests
             A.True(WowFlow.LoginAgainWaitS > 0 && WowFlow.LoginAgainWaitS <= 5, "a start waits a moment, never long");
         }
 
-        /// <summary>the user's pick 2026-11-17 ("Yes, remember it"): the PC's Config.wtf remembers the Thor's game account, only that key,
-        /// and the PC's own remembered pick wins (fake names only)</summary>
+        /// <summary>the user's ruling 2026-11-23 ("Remove it (Recommended)"): Desktop no longer writes a remembered-account "!" into the
+        /// PC's Config.wtf. Only the read-side checks of the Thor's list stay (for the settings follow's folder); fake names only</summary>
         [Test]
-        public static void ThePcRemembersTheGameAccount()
+        public static void ThePcsConfigWtfIsNeverGivenAnAccountMark()
         {
-            const string list = "Fake1|!Fake2|";
-            var cfg = "SET portal \"eu\"\r\nSET accountName \"fake@example.invalid\"\r\nSET GamePadEnable \"1\"\r\n";
-            var added = WowAccount.Apply(cfg, list);
-            A.Eq(cfg + "SET accountList \"Fake1|!Fake2|\"\r\n", added, "added; every other line as it was (portal, accountName)");
-            var unmarked = "SET accountList \"Fake1|Fake2|\"\nSET portal \"us\"\n";
-            A.Eq("SET accountList \"Fake1|!Fake2|\"\nSET portal \"us\"\n", WowAccount.Apply(unmarked, list), "an unmarked list remembers nothing: replaced");
-            var own = "SET accountList \"!Fake1|Fake2|\"\nSET portal \"us\"\n";
-            A.Eq(own, WowAccount.Apply(own, list), "WoW's own remembered pick on the PC wins");
-            A.Eq(cfg, WowAccount.Apply(cfg, "Fake1|Fake2|"), "a list with no pick is no choice");
-            A.Eq(cfg, WowAccount.Apply(cfg, null));
-            A.Eq(cfg, WowAccount.Apply(cfg, "Fake1|!Fake2\"\r\nSET portal \"kr"), "nothing but one plain value");
-            A.Eq(cfg, WowAccount.Apply(cfg, new string('!', 600)));
-            using (var t = new Tmp())
-            {
-                var f = t.P("Config.wtf");
-                A.Eq("no Config.wtf yet", WowAccount.Ensure(f, list), "a game never started: the client writes its own");
-                A.False(File.Exists(f));
-                File.WriteAllText(f, cfg);
-                A.True(WowAccount.Ensure(f, list).StartsWith("accountList written"), "written");
-                A.Eq(added, File.ReadAllText(f));
-                A.Eq(cfg, File.ReadAllText(f + WowAccount.Backup), "backed up first");
-                A.False(File.Exists(f + ".dsf-tmp"));
-                A.Eq("kept (the PC's own)", WowAccount.Ensure(f, list), "the second start changes nothing");
-                // WoW later saved a list without a pick: written again, and the backup stays the file from before Desktop's first write
-                File.WriteAllText(f, unmarked);
-                A.Eq("accountList written (backup kept)", WowAccount.Ensure(f, list));
-                A.Eq(cfg, File.ReadAllText(f + WowAccount.Backup), "the first backup is kept");
-                // a read-only Config.wtf: not written, and no temp copy (it holds the whole file) stays behind
-                File.WriteAllText(f, unmarked);
-                File.SetAttributes(f, FileAttributes.ReadOnly);
-                try
-                {
-                    A.True(WowAccount.Ensure(f, list).StartsWith("not written"), "read-only");
-                    A.False(File.Exists(f + ".dsf-tmp"), "the temp copy goes");
-                    A.Eq(unmarked, File.ReadAllText(f));
-                }
-                finally { File.SetAttributes(f, FileAttributes.Normal); }
-                foreach (var said in new[] { WowAccount.Ensure(f, list), WowAccount.Ensure(f, "x") })
-                    A.False(said.Contains("Fake"), "the log never names an account");
-            }
+            var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static |
+                System.Reflection.BindingFlags.DeclaredOnly;
+            var methods = typeof(WowAccount).GetMethods(flags).Select(m => m.Name).OrderBy(n => n).ToArray();
+            A.Eq("Remembers,Valid", string.Join(",", methods), "the writer (Apply / Ensure) is gone");
+            A.Eq(0, typeof(WowAccount).GetFields(flags).Length, "no Config.wtf key or backup name left");
+            var inst = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+            A.True(typeof(DsfDesktop.App.AppController).GetMethod("RememberGameAccount", inst) == null, "no start writes the mark");
+            // what stays: the Thor's list is only checked, never changed
+            A.True(WowAccount.Valid("Fake1|!Fake2|"));
+            A.False(WowAccount.Valid("Fake1|Fake2|"), "a list with no pick is no choice");
+            A.False(WowAccount.Valid("Fake1|!Fake2\"\r\nSET portal \"kr"), "nothing but one plain value");
+            A.False(WowAccount.Valid(new string('!', 600)));
+            A.False(WowAccount.Valid(null));
         }
     }
 }

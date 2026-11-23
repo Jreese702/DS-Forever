@@ -34,6 +34,8 @@ class BgsClient internal constructor(
     private var clientId: ByteArray? = null
     private val pending = ArrayDeque<Packet>()
     private var queueStarted: Long? = null
+    /** the LogonRecord's game account handles (field 2), kept in memory for [gameAccounts] only; cleared on [close] */
+    private var handles: List<ByteArray> = emptyList()
 
     init {
         require(platform == "Wn64" || platform == "WinA") { "Unsupported Battle.net platform." }
@@ -108,7 +110,7 @@ class BgsClient internal constructor(
             if (status != 0L) reject(status)
             val record = packet.body.bytes(2)
             if (record == null || record.isEmpty()) protocolError()
-            BgsProtocol.parse(record)
+            handles = BgsProtocol.parse(record).fields.filter { it.number == 2 && it.wire == 2 }.mapNotNull { it.bytes }.take(MAX_HANDLES)
             authenticated = true
             break
         }
@@ -120,7 +122,48 @@ class BgsClient internal constructor(
         credential
     }
 
+    /**
+     * DS FOREVER (the user's ruling 2026-11-23, "Browser login hands it over"): this login's WoW game accounts, named as the game
+     * knows them, after [verifyAndGenerateGameToken]. Scuffle's game_accounts (auth/bgs.py, 5efccb44, MIT): each WoW handle of the
+     * LogonRecord, named by GetGameAccountInfo (method 201 of bnet.protocol.account.v2.client.AccountService, the call the game's own
+     * account list makes), its region as the launch settings name it. NEVER THROWS and never costs the sign-in: the credential is
+     * already issued; null = the names could not be read (not an empty list). Names stay in memory: never logged.
+     */
+    fun gameAccounts(): List<GameAccount>? = try {
+        // the player waits on "Completing sign-in": a few seconds per account at most, then the game just asks
+        val end = afterSeconds(LOOKUP_SECONDS)
+        if (state != State.FINISHED) null else handles.mapNotNull { handle ->
+            val items = BgsProtocol.parse(handle)
+            if (items.integer(2) != WOW_TITLE) return@mapNotNull null
+            // review 2026-11-23: each call gets only what is left of the whole lookup's time, so the wait stays within LOOKUP_SECONDS
+            val left = (end - nanoTime()) / 1_000_000_000L
+            if (left < 1L) throw BgsException("too slow")
+            val info = call(ACCOUNT_SERVICE, GET_GAME_ACCOUNT_INFO, BgsProtocol.bytes(1, handle), seconds = minOf(left, 5L).toInt()).bytes(1)
+                ?: throw BgsException("no info")
+            val raw = BgsProtocol.parse(info).bytes(2) ?: throw BgsException("no name")
+            val name = String(raw, Charsets.UTF_8)
+            val region = GAME_REGIONS[items.integer(3)] ?: throw BgsException("unknown region")
+            if (!GameAccount.launchName(name)) throw BgsException("unusable name")
+            // the handle's game-account id (field 1), as Scuffle keeps it: GameAccountHandover.registryValues may need it once the PC look
+            // shows GAME_ACCOUNT's format (account_skip_pc_look.md); never logged
+            GameAccount(name, region, items.integer(1))
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** a WoW game account under this Battle.net login: [name] as the game knows it, [region] as the launch settings write it, [id]
+     *  the handle's game-account id (null = none given). No generated toString: the name and the id are account data */
+    class GameAccount(val name: String, val region: String, val id: Long? = null) {
+        override fun toString() = "GameAccount(${name.length} characters, $region)"
+        companion object {
+            /** Scuffle's launch_name: 1-64 printable ASCII characters, no leading or trailing space */
+            fun launchName(name: String): Boolean = name.length in 1..64 && name.trim() == name && name.all { it.code in 32..126 }
+        }
+    }
+
     override fun close() {
+        handles = emptyList()
         state = State.CLOSED
         // Do not lock: cancellation must interrupt a blocked read/handshake from another thread.
         transport.close()
@@ -141,7 +184,7 @@ class BgsClient internal constructor(
         throw BgsException("The Battle.net connection ended. Check your connection and try again.")
     }
 
-    private fun call(service: Long, method: Long, body: ByteArray): BgsProtocol.Message {
+    private fun call(service: Long, method: Long, body: ByteArray, seconds: Int = 30): BgsProtocol.Message {
         val requestToken = ++token
         var header = BgsProtocol.integer(1, 0) + BgsProtocol.integer(2, method) +
             BgsProtocol.integer(3, requestToken) + BgsProtocol.integer(5, body.size.toLong()) +
@@ -153,7 +196,7 @@ class BgsClient internal constructor(
         output.write(header)
         output.write(body)
         output.flush()
-        val deadline = afterSeconds(30)
+        val deadline = afterSeconds(seconds)
         repeat(64) {
             val packet = readWire(deadline)
             if (packet.serviceId == RESPONSE_SERVICE) {
@@ -249,6 +292,13 @@ class BgsClient internal constructor(
         internal const val AUTHENTICATION_LISTENER = 0x9da8116bL
         internal const val RESPONSE_SERVICE = 254L
         internal const val WOW_TITLE = 0x576f57L
+        // bnet.protocol.account.v2.client.AccountService (Scuffle's ACCOUNT_SERVICE) and its GetGameAccountInfo
+        internal const val ACCOUNT_SERVICE = 0x22dc2464L
+        internal const val GET_GAME_ACCOUNT_INFO = 201L
+        /** Battle.net's game account regions as the launch settings name them (Scuffle: "Battle.net writes REGION=EU for region 2") */
+        internal val GAME_REGIONS = mapOf(1L to "US", 2L to "EU", 3L to "KR", 4L to "TW", 5L to "CN")
+        private const val MAX_HANDLES = 16
+        private const val LOOKUP_SECONDS = 10
         private const val MAX_NOTIFICATIONS = 4096
 
         fun isTrustedSignInUrl(url: String): Boolean = try {

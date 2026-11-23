@@ -66,6 +66,21 @@ head aba66f9c). The portable C protocol tests (`test.sh`) pass. The app build
 refuses any helper with other bytes (`checkSessionBridge`, app/build.gradle.kts).
 Rebuild: `sh tools/wow-session-bridge/build_dsf.sh` (Git Bash).
 
+Changed by DS Forever, 2026-11-23 (the user's ruling: Browser login hands the
+game account to the game, as the PC Battle.net app does). bridge.c, protocol.c,
+protocol.h, test_protocol.c, test_integration.py and README.md are NO LONGER
+byte-identical to upstream's aba66f9c: the launcher sends one more frame after
+the token ("-" or "<REGION>:<name>"), and the helper writes GAME_ACCOUNT and
+REGION beside the credential, or removes both as before (each changed source file
+says so at its top, and every change is marked "DS Forever"). That follows nyrda/scuffle
+5efccb44 bridge/auth_bridge.c (MIT; the same commit as the device ID). The
+same toolchain still builds upstream's unchanged sources to 0098d642... (checked
+again on 2026-11-23). The changed sources build to
+099b867e195bb10f0ac0f184dcfd46eb7c1143457443c566b71ac73c15f98b7b, the new pin
+in `wow-session-bridge.sha256`; a repeat build is byte-identical. Upstream's CI
+printed no hash for this source. `test.sh` passes with the new frame tests.
+The Wine integration test was updated but not run: there is no Wine on this PC.
+
 ## DNS shim (libgamenative_dns_v4mapped.so), 2026-11-20
 
 Source: `app/src/main/cpp/gamenative_dns_v4mapped.c`. The prebuilt

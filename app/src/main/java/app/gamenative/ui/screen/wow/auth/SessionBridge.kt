@@ -63,12 +63,20 @@ internal class SessionBridge : Closeable {
 
         fun device(): ByteArray = readFrame(4096)
 
-        fun launch(token: ByteArray) {
+        /**
+         * The credential, then (DS Forever, the user's ruling 2026-11-23) the game-account frame: [NO_ACCOUNT] ("-", the game asks) or
+         * "<REGION>:<name>" (GameAccountHandover.frame; the helper writes GAME_ACCOUNT and REGION beside the credential).
+         */
+        fun launch(token: ByteArray, account: ByteArray = NO_ACCOUNT) {
             require(token.size in 1..2048 && token.all { (it.toInt() and 255) in 32..126 }) {
                 "Invalid game credential"
             }
+            // an unusable frame would only be read as none by the helper: never sent, the game asks instead
+            val frame = account.takeIf { it.size in 1..ACCOUNT_FRAME_LIMIT && it.all { b -> (b.toInt() and 255) in 32..126 } } ?: NO_ACCOUNT
             output.writeInt(token.size)
             output.write(token)
+            output.writeInt(frame.size)
+            output.write(frame)
             output.flush()
             val status = readFrame(128).toString(Charsets.US_ASCII)
             if (status != "STARTED") {
@@ -84,5 +92,12 @@ internal class SessionBridge : Closeable {
         }
 
         override fun close() = socket.close()
+
+        companion object {
+            /** no game account handed over: the helper removes GAME_ACCOUNT and REGION, and the game shows its list */
+            val NO_ACCOUNT: ByteArray get() = byteArrayOf('-'.code.toByte())
+            /** the helper's BRIDGE_ACCOUNT_FRAME_LIMIT: "XX:" and a 64-character name */
+            const val ACCOUNT_FRAME_LIMIT = 67
+        }
     }
 }

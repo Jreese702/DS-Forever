@@ -94,7 +94,7 @@ class GameAccountAskTest {
             .map { File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             val plain = org.json.JSONObject(File(dir, "$l.json").readText()).getJSONObject("plain")
-            for (w in listOf("Game account", "Ask each time", "Remembered", "From the next game start"))
+            for (w in listOf("Game account", "Ask each time", GeneralTiles.REMEMBERED, "From the next game start"))
                 assertTrue("$l: $w", plain.has(w) && plain.getString(w) != w)
         }
     }

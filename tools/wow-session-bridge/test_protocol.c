@@ -1,3 +1,5 @@
+/* Modified by DS Forever, 2026-11-23 (GPL-3.0 section 5a): the launcher's game-account frame after the token, and
+ * GAME_ACCOUNT / REGION written beside the credential (SOURCE_PROVENANCE.md). Changes are marked "DS Forever". */
 #include "protocol.h"
 #include <assert.h>
 #include <stdio.h>
@@ -101,10 +103,45 @@ static void test_arguments(void) {
     assert(!bridge_append_argument(unterminated, 2, L"a"));
 }
 
+/* DS Forever: the game-account frame (placeholder names only). */
+static int account(const char *frame, char name[BRIDGE_ACCOUNT_LIMIT + 1], char region[BRIDGE_REGION_SIZE + 1]) {
+    return bridge_parse_account((const unsigned char *)frame, strlen(frame), name, region);
+}
+
+static void test_account(void) {
+    char name[BRIDGE_ACCOUNT_LIMIT + 1], region[BRIDGE_REGION_SIZE + 1];
+    assert(account("-", name, region) == 0);
+    assert(account("US:WoW1", name, region) == 1);
+    assert(strcmp(name, "WoW1") == 0 && strcmp(region, "US") == 0);
+    assert(account("EU:My Old:Name", name, region) == 1);          /* inner spaces and colons are the name's */
+    assert(strcmp(name, "My Old:Name") == 0 && strcmp(region, "EU") == 0);
+    char longest[BRIDGE_ACCOUNT_FRAME_LIMIT + 2];
+    memcpy(longest, "KR:", 3);
+    memset(longest + 3, 'x', BRIDGE_ACCOUNT_LIMIT);
+    longest[3 + BRIDGE_ACCOUNT_LIMIT] = 0;
+    assert(account(longest, name, region) == 1 && strlen(name) == BRIDGE_ACCOUNT_LIMIT);
+    longest[3 + BRIDGE_ACCOUNT_LIMIT] = 'x';
+    longest[4 + BRIDGE_ACCOUNT_LIMIT] = 0;
+    assert(account(longest, name, region) == -1);                  /* 65 characters */
+    /* malformed: never partly written */
+    memset(name, 'Q', sizeof(name));
+    memset(region, 'Q', sizeof(region));
+    const char *bad[] = {"", "--", "US", "US:", "us:WoW1", "U1:WoW1", "USA:WoW1", "US-WoW1", "US: WoW1", "US:WoW1 ", "US:Wo\tW1"};
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) assert(account(bad[i], name, region) == -1);
+    const unsigned char control[] = {'U', 'S', ':', 'W', 0x7f, '1'};
+    assert(bridge_parse_account(control, sizeof(control), name, region) == -1);
+    const unsigned char nul[] = {'U', 'S', ':', 'W', 0, '1'};
+    assert(bridge_parse_account(nul, sizeof(nul), name, region) == -1);
+    for (size_t i = 0; i < sizeof(name); i++) assert(name[i] == 'Q');
+    for (size_t i = 0; i < sizeof(region); i++) assert(region[i] == 'Q');
+    assert(bridge_parse_account(NULL, 1, name, region) == -1);
+}
+
 int main(void) {
     test_config();
     test_frames_and_tokens();
     test_arguments();
+    test_account();
     puts("Session bridge protocol tests passed");
     return 0;
 }

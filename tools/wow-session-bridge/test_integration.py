@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Modified by DS Forever, 2026-11-23 (GPL-3.0 section 5a): the launcher's game-account frame after the token
+# (SOURCE_PROVENANCE.md). Changes are marked "DS Forever".
 """Disposable Wine integration: synthetic token, loopback server, dummy child.
 
 Usage: python3 test_integration.py --wine /path/to/wine64 --compiler /path/to/mingw-gcc
@@ -55,7 +57,7 @@ def main():
         init = subprocess.run([args.wine, str(bridge)], env=env, capture_output=True, timeout=90)
         assert init.returncode == 2, (init.returncode, init.stderr.decode(errors="replace"))
 
-        def attempt(name, token=b"synthetic-unit-test-token", bad_nonce=False, login_file=False):
+        def attempt(name, token=b"synthetic-unit-test-token", bad_nonce=False, login_file=False, account=b"-"):
             config, marker = root / (name + ".cfg"), root / (name + ".marker")
             nonce = secrets.token_bytes(32)
             stale = root / "login.txt"
@@ -86,6 +88,8 @@ def main():
                             device = json.loads(read_frame(peer))
                             assert len(device) == 23 and all(isinstance(v, int) for v in device.values())
                             peer.sendall(struct.pack("!I", len(token)) + token)
+                            # DS Forever: the game-account frame ("-" = none, else "<REGION>:<name>"; placeholders only)
+                            peer.sendall(struct.pack("!I", len(account)) + account)
                             status = read_frame(peer)
                             if status == b"STARTED":
                                 assert process.poll() is None, "Helper did not wait for child"
@@ -110,6 +114,8 @@ def main():
         assert attempt("invalid_ascii", token=b"test\0token") == b"ERROR:8"
         assert attempt("stale_file", login_file=True) == b"ERROR:9"
         assert attempt("success") == b"STARTED"
+        assert attempt("account", account=b"US:WoW1") == b"STARTED"
+        assert attempt("account_malformed", account=b"us:WoW1") == b"STARTED"     # unusable: none written, the game asks
         clean_marker = root / "clean.marker"
         probe = subprocess.run([args.wine, str(child), "--probe-clean", windows(clean_marker)],
                                env=env, capture_output=True, timeout=30)

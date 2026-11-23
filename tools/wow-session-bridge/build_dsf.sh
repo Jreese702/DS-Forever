@@ -5,7 +5,8 @@
 #                        (GitHub's published release-asset digest; upstream's workflow pins only the Linux archive)
 #   Linux (or WSL):      llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz  SHA-256 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
 #                        (upstream's release.yml pin, the same as GitHub's digest)
-# Both toolchains build the same bytes, which match wow-session-bridge.sha256 (and upstream's v2.4.5 CI log for aba66f9c).
+# Both toolchains build the same bytes, which match wow-session-bridge.sha256. Since 2026-11-23 the sources carry DS Forever's
+# game-account change, so the pin is no longer upstream's v2.4.5 CI hash for aba66f9c (SOURCE_PROVENANCE.md).
 # Usage: tools/wow-session-bridge/build_dsf.sh [toolchains-dir]   (default C:/dsf-work/toolchains on Windows, ~/.cache/dsf-toolchains else)
 set -eu
 bridge_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

@@ -1,3 +1,5 @@
+/* Modified by DS Forever, 2026-11-23 (GPL-3.0 section 5a): the launcher's game-account frame after the token, and
+ * GAME_ACCOUNT / REGION written beside the credential (SOURCE_PROVENANCE.md). Changes are marked "DS Forever". */
 #include "protocol.h"
 #include <string.h>
 
@@ -96,4 +98,24 @@ int bridge_append_argument(wchar_t *command, size_t capacity, const wchar_t *arg
         if (!append_character(command, capacity, &used, *p)) return 0;
     }
     return append_character(command, capacity, &used, L'"');
+}
+
+int bridge_parse_account(const unsigned char *bytes, size_t length,
+                         char name[BRIDGE_ACCOUNT_LIMIT + 1], char region[BRIDGE_REGION_SIZE + 1]) {
+    if (!bytes || !name || !region) return -1;
+    if (length == 1 && bytes[0] == '-') return 0;
+    if (length < BRIDGE_REGION_SIZE + 2 || length > BRIDGE_ACCOUNT_FRAME_LIMIT) return -1;
+    for (size_t i = 0; i < BRIDGE_REGION_SIZE; i++)
+        if (bytes[i] < 'A' || bytes[i] > 'Z') return -1;
+    if (bytes[BRIDGE_REGION_SIZE] != ':') return -1;
+    const unsigned char *value = bytes + BRIDGE_REGION_SIZE + 1;
+    size_t count = length - BRIDGE_REGION_SIZE - 1;
+    if (value[0] == ' ' || value[count - 1] == ' ') return -1;
+    for (size_t i = 0; i < count; i++)
+        if (value[i] < 32 || value[i] >= 127) return -1;
+    memcpy(region, bytes, BRIDGE_REGION_SIZE);
+    region[BRIDGE_REGION_SIZE] = 0;
+    memcpy(name, value, count);
+    name[count] = 0;
+    return 1;
 }
