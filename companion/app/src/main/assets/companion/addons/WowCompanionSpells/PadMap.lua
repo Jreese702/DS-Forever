@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m186"               -- bump on every change; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m187"               -- bump on every change; m187 THE SAVED-SETTINGS PACK ONLY AFTER A CHANGE (stream smoothness, a tester's "stutters every few seconds" while streaming, the user's pick 2026-11-23): m51's svkeep serialized and sorted ALL of both saved tables every 5 s whatever happened - a few ms each time inside the PC's game, a hitch at 120 fps (8 ms a frame). Now the 5 s tick packs only when something may have changed since the last pack: a tap from the app (TapPad's landed count, WC.pad.rx.n: every room's action is one), a mouse click in the game (GLOBAL_MOUSE_UP), a fight's end (the work a fight queued), a new world or a spec change; never in a fight (it waits for the fight's end, then packs); and once every 30 s out of combat whatever happened (the net for a write by any other route); send(true) (login, a reset) is unchanged, and so is the "only when the text changed" rule. Nothing of the game's is written (no CVar, binding, macro); m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -6655,7 +6655,7 @@ end
 -- m51 THE SETTINGS' OWN SAVE FILE, KEPT BY THE APP (the user's pick after test22, "Write the add-on's save file"): this client writes
 -- SavedVariables only on a clean exit, and Android kills it, so nothing the player set ever reached the disk. Every 5 s (and at once
 -- at login) each of OUR saved tables is written out as Lua source - sorted keys, plain values only - and sent as `svkeep` when it
--- changed; the app keeps it in Documents/DS Forever and writes OUR OWN WowCompanion*.lua before the next game start, only when the
+-- changed (m187: the 5 s pack only after a tap, a click, a fight's end or a new world, never in a fight, else every 30 s: svkeepTick); the app keeps it in Documents/DS Forever and writes OUR OWN WowCompanion*.lua before the next game start, only when the
 -- game has nothing newer. Left out: what is not a setting (crash-recovery key state, probes, learned cooldowns, chat lines).
 do
     -- m186 (issue 555's side finding): smartModel is Smart Y's health / mana estimate kept for a /reload (OV.hmStep, rewritten with the
@@ -6732,9 +6732,38 @@ do
         WC.send(WC.encode({ type = "padfix", v = PV, slot = FIX.slot, what = what }))
         if type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end
     end
-    WC.svKeep = { send = send, ser = ser, fix181 = fix181, FIX = FIX }
+    -- m187 THE PACK ONLY AFTER A CHANGE (see the tag): st.dirty = something may have changed since the last pack. The signals are
+    -- cheap reads (a counter, a few plain events); the pack itself stays m51's (the same text compare, so nothing unchanged is sent).
+    -- In a function of its own: this file's main chunk is at Lua's 200-local limit
+    WC.svKeep = (function()
+        local st = { dirty = true, at = -1, taps = -1, packs = 0, skips = 0 }
+        local K = { send = send, ser = ser, fix181 = fix181, FIX = FIX, state = st, SAFETY_S = 30 }
+        local function tapsNow()
+            local p = type(WC.pad) == "table" and type(WC.pad.rx) == "table" and WC.pad.rx.n or nil
+            return type(p) == "number" and p or -1
+        end
+        function K.tick()
+            local n = tapsNow()
+            if n ~= st.taps then st.taps = n; st.dirty = true end
+            if inCombat() then st.skips = st.skips + 1; return end                  -- a fight: never packed (its end marks dirty)
+            local okT, t = pcall(GetTime)
+            t = okT and type(t) == "number" and t or 0
+            if not st.dirty and st.at >= 0 and t - st.at < K.SAFETY_S then st.skips = st.skips + 1; return end
+            st.dirty = false
+            st.at = t
+            st.packs = st.packs + 1
+            send(false)
+        end
+        local f = CreateFrame("Frame")
+        for _, e in ipairs({ "GLOBAL_MOUSE_UP", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "LOADING_SCREEN_DISABLED",
+                             "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_SPECIALIZATION_CHANGED" }) do
+            pcall(function() f:RegisterEvent(e) end)
+        end
+        f:SetScript("OnEvent", function() st.dirty = true end)
+        return K
+    end)()
     if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
-        pcall(C_Timer.NewTicker, 5, function() pcall(send, false) end)
+        pcall(C_Timer.NewTicker, 5, function() local k = WC.svKeep; if type(k) == "table" and k.tick then pcall(k.tick) end end)
     end
 end
 

@@ -251,7 +251,8 @@ S.execute('WowCompanionSpellsDB.smartModel["Korvash-Realm"].t = 1010; tick(5)')
 S.execute('WowCompanionSpellsDB.smartModel["Korvash-Realm"].t = 1020; tick(5)')
 sv = [x for x in docs(S, n0, 'svkeep') if x.get('var') == 'WowCompanionSpellsDB']
 check(not sv, "smartModel rewritten every 10 s (Smart Y's reload estimate): NO new svkeep for it (was one every 10 s)", len(sv))
-S.execute('WowCompanionSpellsDB.startOver = "game"; tick(5)')
+# m187: a pack follows a sign that something changed (here a mouse click in the game; a tap from the app counts the same)
+S.execute('WowCompanionSpellsDB.startOver = "game"; fire("GLOBAL_MOUSE_UP"); tick(5)')
 sv = [x for x in docs(S, n0, 'svkeep') if x.get('var') == 'WowCompanionSpellsDB']
 check(len(sv) == 1 and '["startOver"]="game"' in sv[-1]['lua'] and 'smartModel' not in sv[-1]['lua'],
       "a real setting changed: one svkeep, without smartModel", sv and sv[-1]['lua'][:120])
