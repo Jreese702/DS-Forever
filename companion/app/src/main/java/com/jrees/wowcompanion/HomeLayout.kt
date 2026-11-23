@@ -47,6 +47,10 @@ data class HomeLayout(
      *  mode's module) at the top or the foot of the chat's or the map's column (it names a module, so a swap carries it); Above chat =
      *  today's (Classic) */
     val party: PartyDock = PartyDock.ABOVE_CHAT,
+    /** feat/extras-polish (the user, 2026-11-23: "I also want to be able to change the order on these"): the clock's extras row's WHOLE
+     *  order, ClockBand.Kind keys left to right (ClockBand.order: a hidden or data-less extra keeps its place in it); dragged in Edit
+     *  Home as the room bar's icons are. Which extras are ON stays Settings' (app-wide); the order is this character's. Classic = today's */
+    val extras: List<String> = ClockBand.DEFAULT,
 ) {
     enum class Side { LEFT, RIGHT; fun other() = if (this == LEFT) RIGHT else LEFT }
     enum class Share(val num: Int, val den: Int) { THIRD(1, 3), HALF(1, 2), TWO_THIRDS(2, 3) }
@@ -120,13 +124,14 @@ data class HomeLayout(
      * Settings' "Reset Home to Classic" (1518, this character): 1517's Classic preset's fields (chat left at half, the card on the map,
      * the diamonds, L slots, a Split bar back under the chat and a bar above its column back at its foot, a top-screen fight back to
      * Grow - the bar's own column and Same size stay the player's, as Classic always kept them), plus today's room bar (its order, every
-     * room on it - none hidden - and the XP track shown) and the party list back above the chat
+     * room on it - none hidden - and the XP track shown), the party list back above the chat and the clock's extras in today's order
+     * (feat/extras-polish; which of them are on is Settings', untouched)
      */
     fun classic(): HomeLayout = copy(name = LEGACY_CLASSIC, chatSide = Side.LEFT, chatShare = Share.HALF, card = CardDock.ON_MAP,
         rest = HomeRest.DIAMONDS, castSize = SlotSize.L,
         cast = if (cast == CastDock.SPLIT) CastDock.UNDER_CHAT else cast.withTop(false),
         fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList(),
-        party = PartyDock.ABOVE_CHAT)
+        party = PartyDock.ABOVE_CHAT, extras = ClockBand.DEFAULT)
 
     companion object {
         const val VERSION = 1
@@ -154,6 +159,8 @@ object HomeLayoutJson {
         .also { o -> RoomBar.hiddenOf(l.hidden).takeIf { it.isNotEmpty() }?.let { o.put("hide", org.json.JSONArray(it)) } }
         // after 1518: the party list's dock only when it is not above the chat (a Classic record's text is unchanged)
         .also { o -> if (l.party != HomeLayout.PartyDock.ABOVE_CHAT) o.put("party", l.party.name) }
+        // feat/extras-polish: the extras' order only when it is not today's (a Classic record's text is unchanged)
+        .also { o -> if (!ClockBand.isDefault(l.extras)) o.put("extras", org.json.JSONArray(ClockBand.order(l.extras))) }
         .toString()
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
@@ -178,6 +185,7 @@ object HomeLayoutJson {
                 rooms = o.optJSONArray("rooms")?.let { a -> RoomBar.normalize((0 until a.length()).map { a.optString(it, "") }) } ?: d.rooms,
                 hidden = o.optJSONArray("hide")?.let { a -> RoomBar.hiddenOf((0 until a.length()).map { a.optString(it, "") }) } ?: d.hidden,
                 party = en(HomeLayout.PartyDock.values(), "party", d.party),
+                extras = o.optJSONArray("extras")?.let { a -> ClockBand.order((0 until a.length()).map { a.optString(it, "") }) } ?: d.extras,
             )
         } catch (e: Exception) { fallback }
     }

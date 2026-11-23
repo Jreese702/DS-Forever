@@ -127,6 +127,29 @@ class ItemCooldownsTest {
         assertNull(ItemCd.teleport)
     }
 
+    /** feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): the pet's
+     *  happiness from the doc's `pet.h` (Radial r28), 1..3 only; no `pet` (no pet, a demon, an older add-on) = none; a switch drops it */
+    @Test fun thePetsHappiness() {
+        assertNull(ItemCd.petMood)
+        ItemCd.onDoc(doc("""{"type":"itemcd","v":"r28","who":"Korvash-Realm","pet":{"h":3}}"""), now = 0L)
+        assertEquals(3, ItemCd.petMood)
+        ItemCd.onDoc(doc("""{"type":"itemcd","v":"r28","who":"Korvash-Realm","pet":{"h":1},"fight":true}"""), now = 1_000L)
+        assertEquals("in a fight too (a plain read)", 1, ItemCd.petMood)
+        ItemCd.onDoc(doc("""{"type":"itemcd","v":"r28","who":"Korvash-Realm","pet":{"h":7}}"""), now = 2_000L)
+        assertNull("not one of the three: none", ItemCd.petMood)
+        ItemCd.onDoc(doc("""{"type":"itemcd","v":"r28","who":"Korvash-Realm","pet":{"h":2}}"""), now = 3_000L)
+        ItemCd.onDoc(doc("""{"type":"itemcd","v":"r28","who":"Korvash-Realm"}"""), now = 4_000L)
+        assertNull("dismissed: the next doc has no pet", ItemCd.petMood)
+        ItemCd.onDoc(doc("""{"type":"itemcd","v":"r27","who":"Korvash-Realm"}"""), now = 5_000L)
+        assertNull("an older add-on: none", ItemCd.petMood)
+        ItemCd.onDoc(doc("""{"type":"itemcd","v":"r28","who":"Korvash-Realm","pet":{"h":3}}"""), now = 6_000L)
+        ItemCd.character("Thrandil-Realm", now = 7_000L)
+        assertNull("another character: not this one's pet", ItemCd.petMood)
+        ItemCd.onDoc(doc("""{"type":"itemcd","v":"r28","who":"Thrandil-Realm","pet":{"h":2}}"""), now = 8_000L)
+        ItemCd.reset()
+        assertNull(ItemCd.petMood)
+    }
+
     @Test fun mmss() {
         assertEquals("10:00", ItemCd.mmss(600.0))
         assertEquals("0:05", ItemCd.mmss(4.2))

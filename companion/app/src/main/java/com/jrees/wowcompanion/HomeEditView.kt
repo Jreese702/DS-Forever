@@ -990,6 +990,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         g.fightPen?.let { pencil(c, it, m.menu == EditStop.FIGHT_PEN, fight = true) }
         g.look?.let { lookChip(c, it, if (g.diamonds) HomeRest.DIAMONDS else HomeRest.ROW) }
         for ((k, r) in g.extras) {
+            if (k == m.extraLifted) continue                              // feat/extras-polish: a lifted extra shows no badge (a room's way)
             val sv = c.save()
             if (host.extraPose(k, mtx)) c.concat(mtx)
             // the gold line's badge at its left end (its top left is the battery's line), a cell's on its top left
@@ -1005,9 +1006,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             c.restoreToCount(sv)
         }
         val cur = m.cursor
-        if (cur.band && (free || m.menu == cur || m.sheet == HomeEditModel.Sheet.EXTRAS)) bandBox(cur)?.let { b ->
+        // feat/extras-polish: a lifted extra keeps the cursor, riding its pose (the lift, the finger's carry)
+        val liftedExtra = cur == EditStop.EXTRAS && m.lifted == EditStop.EXTRAS
+        if (cur.band && (free || m.menu == cur || m.sheet == HomeEditModel.Sheet.EXTRAS || liftedExtra)) bandBox(cur)?.let { b ->
+            val sv = c.save()
+            if (liftedExtra) m.extraLifted?.let { if (host.extraPose(it, mtx)) c.concat(mtx) }
             val box = scratch2; box.set(b); box.inset(-6f, -6f)
             UiKit.focus(c, box)
+            c.restoreToCount(sv)
         }
         host.flash?.let { (s, at) ->
             val t = SystemClock.uptimeMillis() - at
@@ -1145,7 +1151,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             val line = BottomTiles.CLOCK_LINES.firstOrNull { it.first == k }
             val pic = b.height() - 20f
             val ib = scratch2; ib.set(b.left + 12f, b.centerY() - pic / 2f, b.left + 12f + pic, b.centerY() + pic / 2f)
-            val icon = line?.let { Icons.get(it.third) }
+            val icon = UiKit.clockLinePicture(k)                         // feat/extras-polish: the pet's own face
             if (icon != null) c.drawBitmap(icon, null, ib, null)
             else { pFill.color = Theme.bronze; pFill.alpha = 140; c.drawRoundRect(ib, 4f, 4f, pFill) }
             val tp = bodyP(28f, Theme.text)
@@ -1290,7 +1296,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             // fix round 3: a stepper row (the Map's Zoom out / in) changes with Left / Right only: the D-pad's glyph, never A's
             m.menu != null && row == MenuRow.Kind.STEP -> listOf(DPAD to "Change", b to "Back")
             m.menu != null -> listOf(a to "Change", b to "Back")
-            m.lifted == EditStop.ROOMS -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
+            // feat/extras-polish: a lifted extra moves along its row as a room does along the bar
+            m.lifted == EditStop.ROOMS || m.lifted == EditStop.EXTRAS -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
             // a room is an app: A carries it, X hides it (Settings stays); the "+" spot: A its tray
             m.cursor == EditStop.ROOMS && m.barOnPlus -> listOf(a to "Add")
             m.cursor == EditStop.ROOMS && m.barRoom?.let { RoomBar.canHide(it) } == true -> listOf(a to "Move", x to "Hide")
@@ -1303,6 +1310,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.cursor.pencil -> listOf(a to "Options")
             m.cursor == EditStop.LOOK || m.cursor == EditStop.FIGHT -> listOf(a to "Switch")
             m.cursor == EditStop.EXTRAS && m.extraOnPlus -> listOf(a to "Add")
+            // feat/extras-polish: an extra of the row is an app as a room is (A carries it); the gold line only hides (it is the chip's)
+            m.cursor == EditStop.EXTRAS && m.extra in m.extraRow -> listOf(a to "Move", x to "Hide")
             m.cursor == EditStop.EXTRAS -> listOf(x to "Hide")
             // at the top level B is Done: the Done button wears its glyph (no "Done" hint beside it)
             m.cursor == EditStop.PLUS -> listOf(a to "Add")
@@ -1585,6 +1594,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private var downX = 0f
     private var downY = 0f
     private var downStop: EditStop? = null
+    /** feat/extras-polish: the row's extra under the finger's down (null: none, its badge, "+", the gold line) */
+    private var downExtra: String? = null
     private var dragging = false
     /** a gesture that came in already lifted (the entry hold): it drags at once */
     private var carried = false
@@ -1609,10 +1620,19 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 downX = x; downY = y; dragging = false; carried = false
                 downStop = if (m.menu == null && m.sheet == null) stopAt(x, y) else null
+                downExtra = if (downStop == EditStop.EXTRAS) host.band()?.let { g -> bandAt(g, x, y)?.second }?.takeIf { it in m.extraRow } else null
             }
             MotionEvent.ACTION_POINTER_DOWN -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null }
             MotionEvent.ACTION_MOVE -> {
                 val s = downStop
+                // feat/extras-polish: an extra dragged along its row (past the slop sideways, as a room on the bar) - the others make way
+                val ek = downExtra
+                if (!dragging && s == EditStop.EXTRAS && ek != null && abs(x - downX) > HomeEditModel.DRAG_SLOP) {
+                    host.band()?.extras?.firstOrNull { it.first == ek }?.second?.let { b ->
+                        dragging = true
+                        host.run(m.extraDragStart(m.extraRow.indexOf(ek), downX, downY, HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom)))
+                    }
+                }
                 if (!dragging && s != null && (s.movable || s == EditStop.DIVIDER) &&
                     (abs(x - downX) > HomeEditModel.DRAG_SLOP || abs(y - downY) > HomeEditModel.DRAG_SLOP)) {
                     val b = if (s == EditStop.DIVIDER) dividerBox() else widgetBoxes()[s]
@@ -1626,9 +1646,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             MotionEvent.ACTION_UP -> {
                 if (dragging) { host.run(m.dragEnd(x, y, now, host.geo)); dragging = false }
                 else if (abs(x - downX) <= TAP_SLOP && abs(y - downY) <= TAP_SLOP) tapAt(m, x, y)
-                downStop = null
+                downStop = null; downExtra = null
             }
-            MotionEvent.ACTION_CANCEL -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null }
+            MotionEvent.ACTION_CANCEL -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null; downExtra = null }
         }
         invalidate()
         return true

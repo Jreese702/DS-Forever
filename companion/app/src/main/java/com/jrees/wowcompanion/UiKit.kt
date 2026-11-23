@@ -4629,6 +4629,15 @@ object UiKit {
         c.drawRect(r, pFlat)
     }
 
+    /** the kit's pet happiness face for [mood] (1 unhappy, 2 content, 3 happy: the game's three), null = none / not in the kit (the pet
+     *  page's face and, feat/extras-polish, the clock extras row's pet badge) */
+    fun petMood(mood: Int): Bitmap? = if (mood in 1..3) tex(when (mood) { 1 -> "pet_mad"; 2 -> "pet_neutral"; else -> "pet_happy" }) else null
+
+    /** a clock extra's own picture by its Settings key (BottomTiles.CLOCK_LINES): its icon; the pet's happiness the kit's happy face
+     *  (feat/extras-polish; the line's icon when the kit has none) - edit mode's data-less cell and the "+" tray's row */
+    fun clockLinePicture(key: String): Bitmap? =
+        (if (key == "pet") petMood(3) else null) ?: BottomTiles.CLOCK_LINES.firstOrNull { it.first == key }?.let { Icons.get(it.third) }
+
     /** a class's own picture ([classFile] as the game gives it, "HUNTER"), or null when the kit has none */
     fun classIcon(classFile: String): Bitmap? = tex("classicon_" + classFile.lowercase())
 
@@ -4644,7 +4653,7 @@ object UiKit {
         val s = minOf(r.width() * 0.5f, r.height() * 0.4f)
         val top = r.top + r.height() * 0.12f
         framed(c, icon, r.centerX() - s / 2f, top, s)
-        if (mood in 1..3) tex(when (mood) { 1 -> "pet_mad"; 2 -> "pet_neutral"; else -> "pet_happy" })?.let {
+        petMood(mood)?.let {
             c.drawBitmap(it, null, RectF(r.left + 18f, r.top + 18f, r.left + 18f + 96f, r.top + 18f + 96f), pBmp)
         }
         return RectF(r.left + 24f, top + s + 20f, r.right - 24f, r.bottom - 20f)

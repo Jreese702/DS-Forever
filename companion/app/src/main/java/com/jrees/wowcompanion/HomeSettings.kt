@@ -332,6 +332,11 @@ object HomeSettings {
     var clockAmmo: Boolean
         get() = prefs?.getBoolean(KEY_CLOCK_AMMO, true) ?: true
         set(v) { if (v != clockAmmo) { prefs?.edit()?.putBoolean(KEY_CLOCK_AMMO, v)?.apply(); for (l in listeners) l() } }
+    /** feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): the pet's
+     *  happiness face in the row (shown only while a pet with happiness is out: a hunter's); on by default, as the HUD's face was */
+    var clockPet: Boolean
+        get() = prefs?.getBoolean(KEY_CLOCK_PET, true) ?: true
+        set(v) { if (v != clockPet) { prefs?.edit()?.putBoolean(KEY_CLOCK_PET, v)?.apply(); for (l in listeners) l() } }
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
     /** a reset (ResetRun) removed saved values: every listener reads them again */
@@ -349,6 +354,7 @@ object HomeSettings {
     private const val KEY_CLOCK_GOLD = "clockGold"
     private const val KEY_CLOCK_BAGS = "clockBags"
     private const val KEY_CLOCK_AMMO = "clockAmmo"
+    private const val KEY_CLOCK_PET = "clockPet"
     private const val KEY_COMBAT_GROW = "combatGrow"
     private const val KEY_SWING = "swingTimer"
     private const val KEY_PAUSE_TAP = "pauseTap"
@@ -718,6 +724,8 @@ class HomeSettingsSection(context: Context,
             listOf({ HomeSettings.clockBags = true }, { HomeSettings.clockBags = false }))
         y = row(c, y + GAP, "Ammo", listOf("In the row under the clock."), listOf("On", "Off"), if (HomeSettings.clockAmmo) 0 else 1,
             listOf({ HomeSettings.clockAmmo = true }, { HomeSettings.clockAmmo = false }))
+        y = row(c, y + GAP, "Pet happiness", listOf("In the row under the clock, with a hunter's pet."), listOf("On", "Off"),
+            if (HomeSettings.clockPet) 0 else 1, listOf({ HomeSettings.clockPet = true }, { HomeSettings.clockPet = false }))
         // START ATTACK ON CAST (Spells' m13): Off / On, from the add-on's word (null = an older add-on: no row); its notes under it
         HomeAttackSwitch.state?.let { s ->
             y = row(c, y + GAP, "Start the attack when a spell is cast",

@@ -113,20 +113,66 @@ class ClockBandTest {
         assertEquals(60f - ClockBand.CELL_H / 2f, ClockBand.rowTop(s, 600f, 640f, ClockBand.CELL_H), 0.01f)   // no floor: on the join
     }
 
+    /**
+     * THE EVEN-PITCH RULE (feat/extras-polish; the user, 2026-11-23: "The badges on the home page when there are 3 for hearth bags and
+     * ammo are not centered and look like poop when I use 3 with the ammo"): for every count and every mix of widths, each cell is centred
+     * on its slot, the slots stand at ONE pitch, centred on the join (the middle icon of an odd count right under the clock), the closest
+     * neighbours [gap] apart (GAP_MIN .. GAP_MAX), the whole row inside the spot
+     */
     @Test fun itemsAreSpacedEvenlyAndCentredForEveryCount() {
-        for (n in 1..4) {
-            val w = all.copyOfRange(0, n)
+        val mixes = listOf(all, floatArrayOf(28f, 52f, 86f, 46f, 28f), floatArrayOf(86f, 28f, 28f, 52f, 46f), FloatArray(6) { 28f + 11f * it })
+        for (ws in mixes) for (n in 1..ws.size) {
+            val w = ws.copyOfRange(0, n)
             val pl = ClockBand.place(w, spot[0], spot[2], spot[4])
-            assertEquals(1f, pl.scale, 0f)
-            val first = pl.lefts[0]; val last = pl.lefts[n - 1] + w[n - 1]
-            assertEquals("n=$n centred", spot[4], (first + last) / 2f, 0.01f)
-            for (i in 1 until n) assertEquals("n=$n gap $i", pl.gap, pl.lefts[i] - (pl.lefts[i - 1] + w[i - 1]), 0.01f)
-            assertTrue(pl.gap <= ClockBand.GAP_MAX && (n == 1 || pl.gap >= ClockBand.GAP_MIN))
-            assertTrue(first >= spot[0] - 0.01f && last <= spot[2] + 0.01f)
+            if (n <= 4 && ws === all) assertEquals(1f, pl.scale, 0f)
+            val c = FloatArray(n) { pl.lefts[it] + w[it] * pl.scale / 2f }
+            val mid = (c.first() + c.last()) / 2f
+            assertEquals("n=$n the icons centred on the join", spot[4], mid, 0.01f)
+            if (n % 2 == 1) assertEquals("n=$n the middle icon on the join", spot[4], c[n / 2], 0.01f)
+            if (n > 1) {
+                val pitch = c[1] - c[0]
+                for (i in 1 until n) assertEquals("n=$n pitch $i", pitch, c[i] - c[i - 1], 0.01f)
+                val tightest = (1 until n).minOf { pl.lefts[it] - (pl.lefts[it - 1] + w[it - 1] * pl.scale) }
+                assertEquals("n=$n the closest neighbours gap apart", pl.gap, tightest, 0.01f)
+            }
+            assertTrue(pl.gap <= ClockBand.GAP_MAX + 0.01f && (n == 1 || pl.gap >= ClockBand.GAP_MIN * pl.scale - 0.01f))
+            assertTrue(pl.lefts[0] >= spot[0] - 0.01f && pl.lefts[n - 1] + w[n - 1] * pl.scale <= spot[2] + 0.01f)
         }
         // fewer items stand closer to the middle; never wider apart than GAP_MAX
         val two = ClockBand.place(floatArrayOf(46f, 46f), spot[0], spot[2], spot[4])
         assertEquals(ClockBand.GAP_MAX, two.gap, 0.01f)
+    }
+
+    /**
+     * THE USER'S CASE (2026-11-23): the Hearthstone ready (no value: the icon's 28), the bags "60/66" and the ammo "1843/3200" (a quiver)
+     * - the old rule (equal gaps between the cells' EDGES, their extent centred) put the bags' icon ~28 px left of the clock (these widths) and
+     * the gaps 40 vs 40 between the edges but 77 vs 105 between the icons; now the bags' icon is ON the join and the icons evenly apart
+     */
+    @Test fun theUsersThreeAreBalanced() {
+        val w = floatArrayOf(28f, 46f, 84f)
+        val pl = ClockBand.place(w, spot[0], spot[2], spot[4])
+        val c = FloatArray(3) { pl.lefts[it] + w[it] * pl.scale / 2f }
+        assertEquals("the bags under the clock", spot[4], c[1], 0.01f)
+        assertEquals("evenly apart", c[1] - c[0], c[2] - c[1], 0.01f)
+        // the ammo's wide value never touches the bags': the closest pair GAP_MIN at least
+        assertTrue(pl.lefts[2] - (pl.lefts[1] + w[1] * pl.scale) >= ClockBand.GAP_MIN * pl.scale - 0.01f)
+        // the old rule, for the record (equal edge gaps of GAP_MAX, the extent centred)
+        val oldWhole = w.sum() + 2f * ClockBand.GAP_MAX
+        val oldBags = spot[4] - oldWhole / 2f + w[0] + ClockBand.GAP_MAX + w[1] / 2f
+        assertTrue("the old rule put the bags left of the clock (${spot[4] - oldBags} px)", spot[4] - oldBags > 15f)
+    }
+
+    /** the GROWN row (the info block grown into the empty column) keeps the same rule: the icons evenly apart, the middle under the clock */
+    @Test fun theGrownRowIsEvenToo() {
+        val chip = floatArrayOf(160f, 108f)
+        for (ws in listOf(floatArrayOf(28f, 46f, 84f), floatArrayOf(28f, 52f, 46f, 84f, 28f), floatArrayOf(84f))) {
+            val g = ClockBand.grow(spot, ClockBand.CHIP_TOP, chip[0], chip[1], ws) ?: continue
+            val c = FloatArray(ws.size) { g.lefts[it] + ws[it] * g.rowScale / 2f }
+            assertEquals("${ws.size}: centred", spot[4], (c.first() + c.last()) / 2f, 0.01f)
+            for (i in 2 until ws.size) assertEquals("${ws.size}: pitch $i", c[1] - c[0], c[i] - c[i - 1], 0.01f)
+            for (i in 1 until ws.size)
+                assertTrue("${ws.size}: no overlap $i", g.lefts[i] >= g.lefts[i - 1] + ws[i - 1] * g.rowScale + ClockBand.GROWN_GAP * g.rowScale - 0.01f)
+        }
     }
 
     @Test fun aRowTooWideScalesDownToFitTheSpot() {
@@ -182,10 +228,67 @@ class ClockBandTest {
 
     @Test fun theOrderAndNoClockOrGoldInTheRow() {
         val k = ClockBand.Kind.values().toList()
-        assertEquals(4, k.size)                                               // the clock + the gold are the top chip, not row items
+        assertEquals(5, k.size)                                               // the clock + the gold are the top chip, not row items
         assertFalse(k.any { it.name == "CLOCK" || it.name == "GOLD" })
-        assertEquals(k, ClockBand.kinds(true, true, true, true))
+        assertEquals(k, ClockBand.kinds(true, true, true, true, true))
+        assertEquals(k - ClockBand.Kind.PET, ClockBand.kinds(true, true, true, true))
         assertEquals(emptyList<ClockBand.Kind>(), ClockBand.kinds(false, false, false, false))
         assertEquals(listOf(ClockBand.Kind.HEARTH, ClockBand.Kind.AMMO), ClockBand.kinds(true, false, false, true))
+        // each kind's key is its Settings row's (BottomTiles.CLOCK_LINES), the gold line's row has no kind
+        assertEquals(listOf("hearth", "teleport", "bags", "ammo", "pet"), ClockBand.DEFAULT)
+        assertEquals(BottomTiles.CLOCK_LINES.map { it.first } - "gold", ClockBand.DEFAULT)
+        assertNull(ClockBand.kindOf("gold"))
+    }
+
+    /** feat/extras-polish (the user, 2026-11-23: "I also want to be able to change the order on these"): the player's order */
+    @Test fun thePlayersOrder() {
+        val on = setOf(ClockBand.Kind.HEARTH, ClockBand.Kind.BAGS, ClockBand.Kind.AMMO)
+        assertEquals(listOf(ClockBand.Kind.AMMO, ClockBand.Kind.HEARTH, ClockBand.Kind.BAGS),
+            ClockBand.kinds(listOf("ammo", "hearth", "teleport", "bags", "pet"), on))
+        // a saved order made whole: unknown / doubled keys go, a missing one comes back after the one it follows today
+        assertEquals(listOf("ammo", "pet", "hearth", "teleport", "bags"), ClockBand.order(listOf("ammo", "x", "hearth", "ammo", "bags")))
+        assertEquals(ClockBand.DEFAULT, ClockBand.order(listOf("pet")))
+        assertEquals(ClockBand.DEFAULT, ClockBand.order(null))
+        assertEquals(ClockBand.DEFAULT, ClockBand.order(emptyList()))
+        assertTrue(ClockBand.isDefault(listOf("hearth", "teleport", "bags")))
+        // a move among the SHOWN ones (a hidden one keeps its place in the whole order)
+        val shown = listOf("hearth", "bags", "ammo")
+        assertEquals(listOf("teleport", "bags", "ammo", "hearth", "pet"), ClockBand.moveShown(ClockBand.DEFAULT, shown, "hearth", 2))
+        assertEquals(listOf("ammo", "hearth", "teleport", "bags", "pet"), ClockBand.moveShown(ClockBand.DEFAULT, shown, "ammo", 0))
+        assertEquals(listOf("hearth", "teleport", "ammo", "bags", "pet"), ClockBand.moveShown(ClockBand.DEFAULT, shown, "ammo", 1))
+        assertEquals("not shown: unchanged", ClockBand.DEFAULT, ClockBand.moveShown(ClockBand.DEFAULT, shown, "teleport", 0))
+        assertEquals("outside the row: unchanged", ClockBand.DEFAULT, ClockBand.moveShown(ClockBand.DEFAULT, shown, "hearth", 3))
+        // the pet's three states, nothing else
+        assertEquals(listOf(1, 2, 3), (1..3).map { ClockBand.petMood(it) })
+        assertNull(ClockBand.petMood(0)); assertNull(ClockBand.petMood(4)); assertNull(ClockBand.petMood(null))
+    }
+
+    /** feat/extras-polish: the pet happiness row's words in Spanish and French (CRLF i18n files) */
+    @Test fun thePetWordsAreInSpanishAndFrench() {
+        val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n")
+            .map { java.io.File(it) }.first { it.isDirectory }
+        for (l in listOf("es", "fr")) {
+            Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
+            for (w in listOf("Pet happiness", "In the row under the clock, with a hunter's pet.")) assertTrue("$l: $w", Tr.t(w, l) != w)
+        }
+    }
+
+    /** the order rides the layout record: written only when not today's (a Classic record's text unchanged), read tolerantly, and
+     *  Reset Home to Classic puts today's back */
+    @Test fun theOrderIsInTheLayoutRecord() {
+        val classic = HomeLayout()
+        assertFalse(HomeLayoutJson.json(classic).contains("extras"))
+        val mine = classic.copy(extras = listOf("ammo", "pet", "hearth", "teleport", "bags"))
+        val j = HomeLayoutJson.json(mine)
+        assertTrue(j.contains("\"extras\":[\"ammo\",\"pet\",\"hearth\",\"teleport\",\"bags\"]"))
+        assertEquals(mine, HomeLayoutJson.parse(j))
+        assertEquals(listOf("bags", "ammo", "pet", "hearth", "teleport"),
+            HomeLayoutJson.parse("""{"v":1,"extras":["bags","nope","hearth","bags"]}""").extras)
+        assertEquals(ClockBand.DEFAULT, mine.classic().extras)
+        assertFalse(mine.samePlace(classic))
+        // the record store's field-by-field merge carries it (edit mode's autosave over a record changed meanwhile)
+        val other = classic.copy(chatSide = HomeLayout.Side.RIGHT)
+        assertEquals(mine.extras, HomeLayoutStore.layOn(other, classic, mine).extras)
+        assertEquals(HomeLayout.Side.RIGHT, HomeLayoutStore.layOn(other, classic, mine).chatSide)
     }
 }

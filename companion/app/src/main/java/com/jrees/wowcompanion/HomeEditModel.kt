@@ -143,7 +143,8 @@ class HomeEditModel(
     private fun barMax(): Int = barRooms.size - 1 + (if (barPlus) 1 else 0)
 
     /** THE CLOCK'S EXTRAS (P2; the host feeds them: [bandIs] - HomeSettings' clock rows, Settings' own): the ones on (shown in edit mode,
-     *  with or without their data today) and the ones hidden (the tray's), each in [EXTRA_KEYS]' order */
+     *  with or without their data today) and the ones hidden (the tray's), each in [extraWalk]'s order (feat/extras-polish: the gold line
+     *  first - it is the chip's, over the row - then the row in the draft's own order, HomeLayout.extras) */
     var extrasOn: List<String> = EXTRA_KEYS
         private set
     var extrasOff: List<String> = emptyList()
@@ -158,10 +159,20 @@ class HomeEditModel(
     private fun extraMax(): Int = (extrasOn.size - 1 + (if (extraPlus) 1 else 0)).coerceAtLeast(0)
     /** the host's feed: the extras [on] and [off] now (Settings may have changed them meanwhile) */
     fun bandIs(on: List<String>, off: List<String>) {
-        extrasOn = EXTRA_KEYS.filter { it in on }; extrasOff = EXTRA_KEYS.filter { it in off }
+        val walk = extraWalk()
+        extrasOn = walk.filter { it in on }; extrasOff = walk.filter { it in off }
+        extraLifted?.let { k -> if (k in extrasOn) extraSel = extrasOn.indexOf(k) else { lifted = null; liftFrom = null; extraLifted = null } }
         extraSel = extraSel.coerceIn(0, extraMax())
         if (sheet == Sheet.EXTRAS && extrasOff.isEmpty()) sheet = null
     }
+    /** feat/extras-polish: the extras' walk - the gold line (the chip's, over the row), then the row in the draft's order */
+    private fun extraWalk(): List<String> = listOf("gold") + ClockBand.order(draft.extras)
+    /** the row's extras as edit mode draws them (the shown ones, the gold line not: it is the chip's), left to right */
+    val extraRow: List<String> get() = extrasOn.filter { it != "gold" }
+    /** feat/extras-polish (the user, 2026-11-23: "I also want to be able to change the order on these"): the extra lifted on the row (A,
+     *  a finger), as a room is on the room bar: Left / Right carry it, A drops, B puts the order back ([liftFrom]); null = none */
+    var extraLifted: String? = null
+        private set
     /** P4: the ribbon's Fight toggle - Home shows the top bar's combat look while editing (a preview only: no fight state, nothing sent) */
     var fightPreview = false
         private set
@@ -275,11 +286,12 @@ class HomeEditModel(
         EditStop.DIVIDER -> emptyList()
         EditStop.DONE -> done()
         EditStop.ROOMS -> if (barOnPlus) openRoomTray() else lift(cursor)
-        // the band's pieces: a pencil its bubble, the Look chip the other resting look, "+" the extras' tray (an extra: nothing - X or
-        // its "-" hides it), the ribbon's Fight the preview
+        // the band's pieces: a pencil its bubble, the Look chip the other resting look, "+" the extras' tray, an extra of the row LIFTED
+        // (feat/extras-polish: the room bar's way - Left / Right carry it, A drops, B puts it back; the gold line stays the chip's), the
+        // ribbon's Fight the preview
         EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.FIGHT_PEN -> openMenu(cursor)
         EditStop.LOOK -> lookFlip()
-        EditStop.EXTRAS -> if (extraOnPlus) openExtraTray() else emptyList()
+        EditStop.EXTRAS -> if (extraOnPlus) openExtraTray() else lift(EditStop.EXTRAS)
         EditStop.FIGHT -> toggleFight()
         else -> lift(cursor)
     }
@@ -327,7 +339,7 @@ class HomeEditModel(
         val at = extrasOn.indexOf(k)
         menu = null; sheet = null; removeAsk = null
         cursor = EditStop.EXTRAS
-        extrasOn = extrasOn - k; extrasOff = EXTRA_KEYS.filter { it in extrasOff || it == k }
+        extrasOn = extrasOn - k; extrasOff = extraWalk().filter { it in extrasOff || it == k }
         extraSel = at.coerceIn(0, extraMax())
         return dropped + Fx.Press(k, 1)
     }
@@ -347,7 +359,7 @@ class HomeEditModel(
         sheet = null
         if (parked || k == null || k !in extrasOff) return emptyList()
         cursor = EditStop.EXTRAS
-        extrasOff = extrasOff - k; extrasOn = EXTRA_KEYS.filter { it in extrasOn || it == k }
+        extrasOff = extrasOff - k; extrasOn = extraWalk().filter { it in extrasOn || it == k }
         extraSel = extrasOn.indexOf(k).coerceIn(0, extraMax())
         return listOf(Fx.Press(k, 0))
     }
@@ -385,6 +397,14 @@ class HomeEditModel(
     private fun back(): List<Fx> = done()
 
     fun lift(s: EditStop): List<Fx> {
+        if (s == EditStop.EXTRAS) {
+            // feat/extras-polish: the extra under the stop's cursor (the row's: not the gold line, not "+"); the band itself never moves
+            val k = extra?.takeIf { it in extraRow } ?: return emptyList()
+            if (parked) return emptyList()
+            val dropped = dropOther(s, extra = k)
+            cursor = s; lifted = s; liftFrom = draft; menu = null; sheet = null; extraLifted = k
+            return dropped + Fx.Lift
+        }
         if (s == EditStop.ROOMS) {
             // the room under the bar's cursor (the bar itself never moves; "+" is no room)
             val r = barRoom ?: return emptyList()
@@ -400,22 +420,25 @@ class HomeEditModel(
 
     /** 1518: a lift that replaces another (a drag or a tap while one is lifted): the old one is dropped where the draft put it, and
      *  its drop's effects go first (the view plops it: no widget left in its lifted pose); the same lift again ([s], room [room]) is none */
-    private fun dropOther(s: EditStop, room: String? = null): List<Fx> =
-        if (lifted != null && (lifted != s || barLifted != room)) drop() else emptyList()
+    private fun dropOther(s: EditStop, room: String? = null, extra: String? = null): List<Fx> =
+        if (lifted != null && (lifted != s || barLifted != room || extraLifted != extra)) drop() else emptyList()
 
     /** A with a widget lifted: it stays where the draft put it */
     fun drop(): List<Fx> {
         if (lifted == null) return emptyList()
-        lifted = null; liftFrom = null; barLifted = null
+        lifted = null; liftFrom = null; barLifted = null; extraLifted = null
         return listOf(Fx.Lift)
     }
 
     private fun putBack(): List<Fx> {
         val from = liftFrom ?: draft
         val room = barLifted
-        lifted = null; liftFrom = null; barLifted = null
+        val ex = extraLifted
+        lifted = null; liftFrom = null; barLifted = null; extraLifted = null
         val moved = !from.samePlace(draft)
         draft = from
+        // an extra put back: the walk in the order it had, the stop's cursor on it
+        if (ex != null) { extrasRewalk(); extrasOn.indexOf(ex).takeIf { it >= 0 }?.let { extraSel = it } }
         from.cast.column?.let { barColumn = it }
         // a room put back: the bar's cursor stays on it, where it stood
         if (room != null) RoomBar.visible(from.rooms, from.hidden).indexOf(room).takeIf { it >= 0 }?.let { barSel = it }
@@ -430,6 +453,25 @@ class HomeEditModel(
         val j = i + d
         if (i < 0 || j !in vis.indices) return emptyList()
         return change(draft.copy(rooms = RoomBar.moveVisible(draft.rooms, draft.hidden, i, j)), EDIT_STEP)
+    }
+
+    /** feat/extras-polish: the lifted extra one place left / right along the row (EDIT_STEP: the others glide; never onto "+" nor the
+     *  gold line) - the draft's order (HomeLayout.extras), saved per character at the drop */
+    fun moveExtra(d: Int): List<Fx> {
+        val k = extraLifted ?: return emptyList()
+        val row = extraRow
+        val i = row.indexOf(k)
+        val j = i + d
+        if (i < 0 || j !in row.indices) return emptyList()
+        return change(draft.copy(extras = ClockBand.moveShown(draft.extras, row, k, j)), EDIT_STEP)
+    }
+
+    /** the walk again in the draft's order (the same extras on and off) */
+    private fun extrasRewalk() {
+        val walk = extraWalk()
+        extrasOn = walk.filter { it in extrasOn }; extrasOff = walk.filter { it in extrasOff }
+        extraLifted?.let { k -> extrasOn.indexOf(k).takeIf { it >= 0 }?.let { extraSel = it } }
+        extraSel = extraSel.coerceIn(0, extraMax())
     }
 
     /**
@@ -469,8 +511,8 @@ class HomeEditModel(
         return fx
     }
 
-    private fun liftedKey(s: EditStop, k: String): List<Fx> = if (s == EditStop.ROOMS) when (k) {
-        "PADDLEFT", "PADDRIGHT" -> moveRoom(if (k == "PADDLEFT") -1 else 1)
+    private fun liftedKey(s: EditStop, k: String): List<Fx> = if (s == EditStop.ROOMS || s == EditStop.EXTRAS) when (k) {
+        "PADDLEFT", "PADDRIGHT" -> if (s == EditStop.EXTRAS) moveExtra(if (k == "PADDLEFT") -1 else 1) else moveRoom(if (k == "PADDLEFT") -1 else 1)
         "PAD1" -> drop()
         "PAD2" -> putBack()
         "PADBACK" -> swap()
@@ -563,6 +605,7 @@ class HomeEditModel(
         // the bar's cursor rides with the lifted room (and stays on the bar whatever the order)
         barLifted?.let { r -> barRooms.indexOf(r).takeIf { it >= 0 }?.let { barSel = it } }
         barSel = barSel.coerceIn(0, barMax().coerceAtLeast(0))
+        extrasRewalk()                                                    // feat/extras-polish: the walk rides the order
         return listOf(Fx.Relay(ms))
     }
 
@@ -673,6 +716,7 @@ class HomeEditModel(
         if (c.band) {
             if (c in stops || EditStop.PAD_PEN !in stops) return false
             if (menu == c) menu = null
+            if (lifted == c) drop()                                       // feat/extras-polish: a lifted extra (the row went) drops
             cursor = if (EditStop.LOOK in stops) EditStop.LOOK else EditStop.PAD_PEN
             return true
         }
@@ -755,15 +799,18 @@ class HomeEditModel(
     /** Done (its tap, B at the top level, Start, the Home disc's gold tick): a lift stays where the draft put it, every change is saved
      *  already, edit mode ends */
     fun done(): List<Fx> {
-        lifted = null; liftFrom = null; barLifted = null; drag = null; menu = null; sheet = null; removeAsk = null; fightPreview = false
+        lifted = null; liftFrom = null; barLifted = null; extraLifted = null; drag = null; menu = null; sheet = null; removeAsk = null
+        fightPreview = false
         return listOf(Fx.Done)
     }
 
     /** Discard (a long press on Done, a held B): the record edit mode opened on comes back - the draft - and edit mode ends; the view
      *  writes [saved] back over the session's own changes */
     fun discard(): List<Fx> {
-        lifted = null; liftFrom = null; barLifted = null; drag = null; menu = null; sheet = null; removeAsk = null; fightPreview = false
+        lifted = null; liftFrom = null; barLifted = null; extraLifted = null; drag = null; menu = null; sheet = null; removeAsk = null
+        fightPreview = false
         draft = saved
+        extrasRewalk()
         return listOf(Fx.Relay(Motion.MODULE_CLOSE), Fx.Discard)
     }
 
@@ -778,6 +825,7 @@ class HomeEditModel(
         now.cast.column?.let { barColumn = it }
         if (now.card != HomeLayout.CardDock.OFF) lastCard = now.card
         barSel = barSel.coerceIn(0, barMax().coerceAtLeast(0))
+        extrasRewalk()
     }
     /** 1518: the record Discard puts back is [s] now (the pending name's key came: the character's real record, HomeLayoutStore.lateAdopt);
      *  the draft stays as it is */
@@ -819,6 +867,15 @@ class HomeEditModel(
         return dragStart(EditStop.ROOMS, x, y, box)
     }
 
+    /** feat/extras-polish: a finger lifts shown extra [i] of the row ([extraRow]; [box] = its cell, in the drag's x): it follows the
+     *  finger, the others make way after the hover ([dockUnder]: [Geo.extraSlots]), the drop settles it - the room bar's drag */
+    fun extraDragStart(i: Int, x: Float, y: Float, box: HomeLayoutSolver.Box): List<Fx> {
+        val k = extraRow.getOrNull(i) ?: return emptyList()
+        if (parked) return emptyList()
+        extraSel = extrasOn.indexOf(k)
+        return dragStart(EditStop.EXTRAS, x, y, box)
+    }
+
     /** a drag: [Drag] keeps the finger; the draft follows the dock under it ([HYSTERESIS_PX] past the divider, after [HOVER_MS]) */
     class Drag(val stop: EditStop, val downX: Float, val downY: Float, val box0: HomeLayoutSolver.Box, val midDock: HomeLayout.CastDock) {
         var x = downX
@@ -847,10 +904,12 @@ class HomeEditModel(
         val colBottom: Float get() = 927f
         /** phase 4: the room bar's slots' centres left to right (the drag's x), empty = no bar */
         fun barSlots(): List<Float> = emptyList()
+        /** feat/extras-polish: the extras row's cells' centres left to right as drawn now ([extraRow]'s), empty = no row */
+        fun extraSlots(): List<Float> = emptyList()
     }
 
     fun dragStart(s: EditStop, x: Float, y: Float, box: HomeLayoutSolver.Box): List<Fx> {
-        if (parked || (!s.movable && s != EditStop.DIVIDER && s != EditStop.ROOMS)) return emptyList()
+        if (parked || (!s.movable && s != EditStop.DIVIDER && s != EditStop.ROOMS && s != EditStop.EXTRAS)) return emptyList()
         menu = null; sheet = null; removeAsk = null
         val mid = if (draft.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.SPLIT else HomeLayout.CastDock.ACROSS
         // 1518: the divider's drag ends a lift (with its drop's effects); a widget's lift(s) drops another itself
@@ -892,7 +951,7 @@ class HomeEditModel(
         val want = if (d.moved) dockUnder(d, draft, geo) else null
         if (want != null && want != draft && geo.valid(want)) out += change(want, Motion.MODULE_CLOSE)
         else out += Fx.Relay(Motion.MODULE_CLOSE)                          // the widget slides back into its dock
-        if (d.stop != EditStop.DIVIDER) { lifted = null; liftFrom = null; barLifted = null; out += Fx.Lift }
+        if (d.stop != EditStop.DIVIDER) { lifted = null; liftFrom = null; barLifted = null; extraLifted = null; out += Fx.Lift }
         return out
     }
 
@@ -910,6 +969,16 @@ class HomeEditModel(
      * halves; the divider snaps the chat's width to the nearest third / half / two thirds
      */
     fun dockUnder(d: Drag, l: HomeLayout, geo: Geo): HomeLayout? {
+        if (d.stop == EditStop.EXTRAS) {
+            // feat/extras-polish: the lifted extra goes to the row's slot its centre is over (the others close up; "+" is no slot)
+            val k = extraLifted ?: return null
+            val slots = geo.extraSlots()
+            val row = ClockBand.order(l.extras).filter { it in extraRow }
+            val from = row.indexOf(k)
+            if (slots.size != row.size || from < 0) return null
+            val to = slots.indices.minByOrNull { abs(slots[it] - d.cx) } ?: return null
+            return l.copy(extras = ClockBand.moveShown(l.extras, row, k, to))
+        }
         if (d.stop == EditStop.ROOMS) {
             // the lifted room goes to the slot its centre is over (the others close up; the disc and "+" are no slots)
             val r = barLifted ?: return null
@@ -991,7 +1060,7 @@ class HomeEditModel(
 
     /** a fight started: the chrome goes (120 ms), Home plays the record's fight (the draft is saved already); the cursor waits */
     fun park() {
-        parked = true; drag = null; if (lifted != null) { lifted = null; liftFrom = null; barLifted = null }; removeAsk = null
+        parked = true; drag = null; if (lifted != null) { lifted = null; liftFrom = null; barLifted = null; extraLifted = null }; removeAsk = null
         if (sheet == Sheet.ROOMS || sheet == Sheet.EXTRAS) sheet = null       // the bar's tray: the rooms open as always in a fight
         // P4: a real fight (or another room) ends the preview: back, edit mode shows the band's rest look again
         fightPreview = false
@@ -1063,9 +1132,10 @@ class HomeEditModel(
         /** the top bar's pieces left to right (P1 - P4): at rest the D-pad's pencil, the Look chip, the extras, the ABXY's pencil; with the
          *  fight preview the D-pad's pencil, the fight pencil, the ABXY's pencil (the Thin row has no extras) */
         val BAND_ORDER = listOf(EditStop.PAD_PEN, EditStop.LOOK, EditStop.FIGHT_PEN, EditStop.EXTRAS, EditStop.FACE_PEN)
-        /** the clock's extras (Settings > Bottom screen > Clock band's rows: BottomTiles.CLOCK_LINES), left to right as the band draws
-         *  them (the gold line, under the battery, is the middle one) */
-        val EXTRA_KEYS = listOf("hearth", "teleport", "gold", "bags", "ammo")
+        /** the clock's extras (Settings > Bottom screen > Clock band's rows: BottomTiles.CLOCK_LINES), each one's place here its wiggle
+         *  key (HomeEditMotion.extraKey: never reordered - feat/extras-polish appends the pet's happiness); the row's order is the
+         *  draft's (HomeLayout.extras), the walk [HomeEditModel.extrasOn]'s */
+        val EXTRA_KEYS = listOf("hearth", "teleport", "gold", "bags", "ammo", "pet")
         /** the party list's menu rows: its column (Chat / Map) and its edge in it (Above / Below) */
         const val K_PARTY_PLACE = "partyplace"
         const val K_PARTY_EDGE = "partyedge"

@@ -164,12 +164,16 @@ class BottomTilesTest {
         assertEquals(CastStripModel.Side.BOTH, HomeSettings.castBarSide)
         assertEquals("the place, its size (movable Home), Show in combat", 3, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
         HomeSettings.castBarSide = CastStripModel.Side.OFF
-        // the clock band: five On / Off lines with their icons
-        assertEquals(5, BottomTiles.lines(BottomTiles.CLOCK, on).size)
+        // the clock band: six On / Off lines with their icons (feat/extras-polish: the pet's happiness)
+        assertEquals(6, BottomTiles.lines(BottomTiles.CLOCK, on).size)
         assertTrue(BottomTiles.lines(BottomTiles.CLOCK, on).all { it.icon != null && it.modes != null })
         BottomTiles.press(BottomTiles.CLOCK, "gold", 1, on) { }
         assertFalse(HomeSettings.clockGold)
-        assertEquals("4 / 5", BottomTiles.value(BottomTiles.CLOCK, on))
+        assertEquals("5 / 6", BottomTiles.value(BottomTiles.CLOCK, on))
+        BottomTiles.press(BottomTiles.CLOCK, "pet", 1, on) { }
+        assertFalse(HomeSettings.clockPet)
+        assertEquals("4 / 6", BottomTiles.value(BottomTiles.CLOCK, on))
+        HomeSettings.clockPet = true
         HomeSettings.clockGold = true
         // the minimap's steppers: one step
         val out = Settings.minimapYd

@@ -44,7 +44,7 @@ package com.jrees.wowcompanion
  *  cast         SETTINGS buttonLayout, abxyLocation
  *  home         SETTINGS pauseOverGame, rankBadges   LAYOUTS (app-wide: Home has no per-character store) rest, questMin, questOverMap, combatGrow,
  *                        swingTimer, castBarSide, castStrip, castBarCombat, castBarPartyShow (Bar in Party mode), clockHearth,
- *                        clockTeleport, clockGold, clockBags, clockAmmo,
+ *                        clockTeleport, clockGold, clockBags, clockAmmo, clockPet,
  *                        and the wheels' open / pick: radialTap, radialPickA, spellTap, spellPickA, classTapL, classPickAL, classTapR,
  *                        classPickAR, pauseTap, pausePickA; movable Home (SPEC section 9): per char homeLayout.<who> (a reset = Classic
  *                        WRITTEN under that key: the default stays), and ONLY with "All characters" (fix round 3: they belong to no one
@@ -175,7 +175,7 @@ object ResetPlan {
         exact("home", Kind.SETTINGS, "pauseOverGame", "rankBadges"),
         exact("home", Kind.LAYOUTS, "rest", "questMin", "questOverMap", "combatGrow", "swingTimer", "castBarSide", "castStrip", "castBarCombat",
             "castBarPartyShow",
-            "clockHearth", "clockTeleport", "clockGold", "clockBags", "clockAmmo", "radialTap", "radialPickA", "spellTap", "spellPickA",
+            "clockHearth", "clockTeleport", "clockGold", "clockBags", "clockAmmo", "clockPet", "radialTap", "radialPickA", "spellTap", "spellPickA",
             "classTapL", "classPickAL", "classTapR", "classPickAR", "pauseTap", "pausePickA"),
         // fix round 3: the first-login seed and 1517's unread "Mine" slots are the device's, never one character's ("This character" keeps them)
         device("home", Kind.LAYOUTS, HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS_LEGACY, HomeLayoutStore.KEY_HELD),

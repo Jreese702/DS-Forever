@@ -81,10 +81,11 @@ class HomeEditBandTest {
         val m = model(start = EditStop.PAD_PEN)
         m.press("PADDRIGHT"); assertEquals(EditStop.LOOK, m.cursor)
         m.press("PADDRIGHT"); assertEquals(EditStop.EXTRAS, m.cursor); assertEquals(0, m.extraSel)
-        m.press("PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT"); assertEquals(EditStop.EXTRAS, m.cursor); assertEquals("ammo", m.extra)
+        assertEquals("feat/extras-polish: the gold line first (the chip's, over the row)", "gold", m.extra)
+        m.press("PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT"); assertEquals(EditStop.EXTRAS, m.cursor); assertEquals("pet", m.extra)
         m.press("PADDRIGHT"); assertEquals(EditStop.FACE_PEN, m.cursor)
         m.press("PADDRIGHT"); assertEquals("no wrap", EditStop.FACE_PEN, m.cursor)
-        m.press("PADDLEFT"); assertEquals(EditStop.EXTRAS, m.cursor); assertEquals("from the right: the last", "ammo", m.extra)
+        m.press("PADDLEFT"); assertEquals(EditStop.EXTRAS, m.cursor); assertEquals("from the right: the last", "pet", m.extra)
         m.press("PADDUP"); assertEquals("Up on the band: nothing", EditStop.EXTRAS, m.cursor)
         m.press("PADDDOWN"); assertFalse("Down: the page", m.cursor.band)
         // Up from the divider: the piece nearest the page's centre
@@ -132,7 +133,7 @@ class HomeEditBandTest {
         // a press: the toolbar Off - Settings' own key
         assertEquals(listOf(HomeEditModel.Fx.Press(BottomTiles.TOOLBAR, 1)), m.press("PADDRIGHT"))
         m.press("PAD2"); assertNull("B closes the bubble", m.menu); assertEquals(EditStop.PAD_PEN, m.cursor)
-        m.press("PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT")
+        m.press("PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT")
         assertEquals(EditStop.FACE_PEN, m.cursor)
         m.press("PAD3"); assertEquals("X opens it too", EditStop.FACE_PEN, m.menu)
         assertEquals(listOf(BottomTiles.REST, BottomTiles.RANK), HomeWidgetMenus.rows(EditStop.FACE_PEN, m.draft, values).map { it.key })
@@ -181,28 +182,106 @@ class HomeEditBandTest {
      *  hidden ones (those with no data today and the gold line too), A puts one back where it was; B closes the tray */
     @Test fun extrasHideAndTheTrayBringsThemBack() {
         val m = model(start = EditStop.EXTRAS)
-        assertEquals(HomeEditModel.EXTRA_KEYS, m.extrasOn)
+        // feat/extras-polish: the walk is the gold line, then the row in the draft's order
+        assertEquals(WALK, m.extrasOn)
         assertFalse(m.extraPlus)
-        m.press("PADDRIGHT", "PADDRIGHT"); assertEquals("gold", m.extra)
+        assertEquals("gold", m.extra)
         assertEquals(listOf(HomeEditModel.Fx.Press("gold", 1)), m.press("PAD3"))
-        assertEquals(listOf("gold"), m.extrasOff); assertEquals("bags", m.extra)
+        assertEquals(listOf("gold"), m.extrasOff); assertEquals("hearth", m.extra)
+        m.press("PADDRIGHT", "PADDRIGHT"); assertEquals("bags", m.extra)
         assertEquals(listOf(HomeEditModel.Fx.Press("hearth", 1)), m.hideExtra("hearth"))
-        assertEquals(listOf("hearth", "gold"), m.extrasOff)
+        assertEquals(listOf("gold", "hearth"), m.extrasOff)
         assertTrue(m.extraPlus)
-        assertTrue("A on an extra does nothing (decision D3)", m.press("PAD1").isEmpty())
-        m.press("PADDRIGHT", "PADDRIGHT", "PADDRIGHT"); assertTrue(m.extraOnPlus)
+        // feat/extras-polish (the user, 2026-11-23: "I also want to be able to change the order on these"): A LIFTS the extra, as A lifts
+        // a room on the room bar (decision D3's "A does nothing" is the reorder's now); B puts it back where it was
+        assertEquals("the cursor kept the hidden one's place", "teleport", m.extra)
+        assertEquals(listOf(HomeEditModel.Fx.Lift), m.press("PAD1")); assertEquals(EditStop.EXTRAS, m.lifted); assertEquals("teleport", m.extraLifted)
+        m.press("PAD2"); assertNull(m.lifted); assertNull(m.extraLifted)
+        m.press("PADDRIGHT", "PADDRIGHT", "PADDRIGHT", "PADDRIGHT"); assertTrue(m.extraOnPlus)
         m.press("PAD1"); assertEquals(HomeEditModel.Sheet.EXTRAS, m.sheet)
-        m.press("PADDDOWN")
         assertEquals(listOf(HomeEditModel.Fx.Press("gold", 0)), m.press("PAD1"))
         assertNull(m.sheet); assertEquals("gold", m.extra); assertEquals(listOf("hearth"), m.extrasOff)
         m.openExtraTray(); m.press("PAD2"); assertNull("B closes the tray", m.sheet); assertEquals(EditStop.EXTRAS, m.cursor)
         // the host's feed wins (Settings changed it meanwhile): all on again, the tray closes with nothing to show
         m.openExtraTray(); m.bandIs(HomeEditModel.EXTRA_KEYS, emptyList()); assertNull(m.sheet); assertFalse(m.extraPlus)
-        // every one hidden: only "+" is left, the tray lists all five
+        // every one hidden: only "+" is left, the tray lists all six (the walk's order)
         val all = model(start = EditStop.EXTRAS)
         for (k in HomeEditModel.EXTRA_KEYS) all.hideExtra(k)
         assertTrue(all.extraOnPlus)
-        all.press("PAD1"); assertEquals(HomeEditModel.EXTRA_KEYS, all.extrasOff); assertEquals(HomeEditModel.Sheet.EXTRAS, all.sheet)
+        all.press("PAD1"); assertEquals(WALK, all.extrasOff); assertEquals(HomeEditModel.Sheet.EXTRAS, all.sheet)
+    }
+    /** the extras' walk with today's order: the gold line, then the row */
+    private val WALK = listOf("gold", "hearth", "teleport", "bags", "ammo", "pet")
+
+    /**
+     * feat/extras-polish (the user, 2026-11-23: "I also want to be able to change the order on these"): the extras are reordered as the
+     * room bar's icons are - A lifts the extra under the cursor, Left / Right carry it along the ROW (never onto the gold line, never past
+     * "+"), A drops; B puts the order back; Start drops and is Done. The order is the DRAFT's (HomeLayout.extras: per character, saved as it
+     * goes, Discard puts it back); a hidden extra keeps its place in the whole order; the walk rides the order.
+     */
+    @Test fun extrasReorderWithTheController() {
+        val m = model(start = EditStop.EXTRAS)
+        m.press("PADDRIGHT")                                                     // the Hearthstone (the gold line is first)
+        assertEquals("hearth", m.extra)
+        assertEquals(listOf(HomeEditModel.Fx.Lift), m.press("PAD1"))
+        assertEquals("hearth", m.extraLifted)
+        assertTrue("Left at the row's start: nothing (never onto the gold line)", m.press("PADDLEFT").isEmpty())
+        assertEquals(listOf(HomeEditModel.Fx.Relay(HomeEditModel.EDIT_STEP)), m.press("PADDRIGHT"))
+        assertEquals(listOf("teleport", "hearth", "bags", "ammo", "pet"), m.draft.extras)
+        assertEquals("the cursor rides with it", "hearth", m.extra)
+        m.press("PADDRIGHT", "PADDRIGHT", "PADDRIGHT")
+        assertEquals(listOf("teleport", "bags", "ammo", "pet", "hearth"), m.draft.extras)
+        assertTrue("Right at the row's end: nothing (never onto \"+\")", m.press("PADDRIGHT").isEmpty())
+        assertEquals(listOf("gold", "teleport", "bags", "ammo", "pet", "hearth"), m.extrasOn)
+        assertEquals(listOf(HomeEditModel.Fx.Lift), m.press("PAD1"))             // A drops it there
+        assertNull(m.lifted); assertNull(m.extraLifted)
+        assertTrue("the draft changed (saved as it goes; Discard can put it back)", m.changed)
+        // B puts a carried extra's order back
+        m.press("PAD1", "PADDLEFT", "PADDLEFT")
+        assertEquals(listOf("teleport", "bags", "hearth", "ammo", "pet"), m.draft.extras)
+        m.press("PAD2")
+        assertEquals(listOf("teleport", "bags", "ammo", "pet", "hearth"), m.draft.extras)
+        assertEquals("hearth", m.extra)
+        // a hidden extra keeps its place in the whole order: the ammo off, the Hearthstone carried one left lands before the pet
+        m.hideExtra("ammo")
+        m.press("PADDRIGHT")                                                     // after the hide the cursor slid onto the pet
+        while (m.extra != "hearth") m.press("PADDRIGHT")
+        m.press("PAD1", "PADDLEFT", "PAD1")
+        assertEquals(listOf("teleport", "bags", "ammo", "hearth", "pet"), m.draft.extras)
+        // the gold line never lifts, "+" opens its tray
+        m.press("PADDLEFT", "PADDLEFT", "PADDLEFT")
+        assertEquals("gold", m.extra)
+        assertTrue("A on the gold line: nothing (it is the chip's)", m.press("PAD1").isEmpty())
+        // Discard: the order edit mode opened on
+        assertTrue(m.discard().contains(HomeEditModel.Fx.Discard))
+        assertEquals(ClockBand.DEFAULT, m.draft.extras)
+    }
+
+    /** feat/extras-polish: a finger carries an extra along the row - the slot under its centre after the hover, the drop lays it */
+    @Test fun extrasReorderWithAFinger() {
+        val m = model(start = EditStop.EXTRAS)
+        val xs = listOf(500f, 560f, 620f, 680f, 740f)                            // the row's cells' centres (hearth .. pet)
+        val geo = object : HomeEditModel.Geo {
+            override fun columns(l: HomeLayout) = (0f to 600f) to (640f to 1240f)
+            override fun valid(l: HomeLayout) = true
+            override val w = 1240f
+            override fun extraSlots(): List<Float> = xs
+        }
+        val box = B(486f, 130f, 514f, 178f)                                      // the Hearthstone's cell
+        assertEquals(listOf(HomeEditModel.Fx.Lift), m.extraDragStart(0, 500f, 150f, box))
+        assertEquals("hearth", m.extraLifted)
+        m.dragMove(560f, 150f, 1000L, geo)
+        assertEquals("not before the hover", ClockBand.DEFAULT, m.draft.extras)
+        m.dragMove(676f, 152f, 1100L, geo)
+        val fx = m.dragTick(1100L + HomeEditModel.HOVER_MS)
+        assertTrue(fx.isNotEmpty())
+        assertEquals(listOf("teleport", "bags", "ammo", "hearth", "pet"), m.draft.extras)
+        val end = m.dragEnd(740f, 150f, 1300L, geo)
+        assertTrue(end.contains(HomeEditModel.Fx.Lift))
+        assertEquals("the release over the last slot lays it there", listOf("teleport", "bags", "ammo", "pet", "hearth"), m.draft.extras)
+        assertNull(m.extraLifted); assertNull(m.drag)
+        // the gold line and "+" are no slots: a drag of the gold line starts nothing
+        assertTrue(m.extraDragStart(-1, 0f, 0f, box).isEmpty())
     }
 
     /** P3 / P4 and Discard (1518's ruling for behaviour rows): the Look chip's A is Settings' Rest controller (a Press, never the draft),

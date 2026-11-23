@@ -89,7 +89,11 @@ object BottomTiles {
 
     /** the clock band's lines: key, label, its icons.pak icon */
     val CLOCK_LINES = listOf(Triple("hearth", "Hearthstone", ItemCd.HEARTH_ICON), Triple("teleport", "Class teleport", 136010),
-        Triple("gold", "Gold", 133784), Triple("bags", "Free bag slots", 133633), Triple("ammo", "Ammo", 132382))
+        Triple("gold", "Gold", 133784), Triple("bags", "Free bag slots", 133633), Triple("ammo", "Ammo", 132382),
+        // feat/extras-polish: the pet's happiness (its picture is the kit's face, UiKit.petMood; this icon stands in for the tile's line)
+        Triple("pet", "Pet happiness", PET_ICON))
+    /** the pet happiness line's icon (the game's Ability_Hunter_BeastTaming) */
+    const val PET_ICON = 132164
 
     /** one line of a band: a choice ([words], [picked] lit; [modes] = Top's On / Off signs), or a stepper ([stepper]: [words] are its
      *  buttons, [value] its value) */
@@ -104,7 +108,7 @@ object BottomTiles {
 
     fun clockOn(key: String): Boolean = when (key) {
         "hearth" -> HomeSettings.clockHearth; "teleport" -> HomeSettings.clockTeleport; "gold" -> HomeSettings.clockGold
-        "bags" -> HomeSettings.clockBags; else -> HomeSettings.clockAmmo
+        "bags" -> HomeSettings.clockBags; "pet" -> HomeSettings.clockPet; else -> HomeSettings.clockAmmo
     }
 
     /** [id]'s band: its choices, then its lines that can act now */
@@ -252,6 +256,7 @@ object BottomTiles {
             "gold" -> HomeSettings.clockGold = k == 0
             "bags" -> HomeSettings.clockBags = k == 0
             "ammo" -> HomeSettings.clockAmmo = k == 0
+            "pet" -> HomeSettings.clockPet = k == 0
             TOOLBAR -> env.dpad?.let { d -> if (d.colOn != null) { val on = k == 0; if ((d.want == true) != on) onDpad(on) } }
             TALK -> env.who?.let { HomeSettings.setHoldTalk(it, k == 0) }
             "release" -> env.who?.let { HomeSettings.setTalkSendNow(it, k == 1) }

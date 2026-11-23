@@ -38,7 +38,7 @@ object SettingsPreview {
         // 2026-11-13 (the user: "a lot of these new options and settings need visuals"): the extras row, the cast bar, the world map, the
         // Controller tab's helpers. [castBar] = CastStripModel.Side's index (Off, Left, Right, Both); [autoShot] = GameUi.SHOT_WORDS' index
         val clockHearth: Boolean = true, val clockTeleport: Boolean = true, val clockGold: Boolean = true, val clockBags: Boolean = true,
-        val clockAmmo: Boolean = true, val castBar: Int = 0, val worldMapAll: Boolean = true, val smartY: Boolean? = null,
+        val clockAmmo: Boolean = true, val clockPet: Boolean = true, val castBar: Int = 0, val worldMapAll: Boolean = true, val smartY: Boolean? = null,
         val partyMode: Boolean = true, val smartRes: Boolean = true, val attackHostile: Boolean = false, val autoShot: Int = 1,
         // the tap-to-cast bar in a fight: Hide (the default, true) / Stay
         val castCombatHide: Boolean = true,
@@ -79,6 +79,7 @@ object SettingsPreview {
     private val SHOT_NAMES = listOf("Off", "On", "Smart")
     private fun extraOn(id: String, s: State) = when (id) {
         "Hearthstone" -> s.clockHearth; "Class teleport" -> s.clockTeleport; "Gold" -> s.clockGold; "Free bag slots" -> s.clockBags
+        "Pet happiness" -> s.clockPet
         else -> s.clockAmmo }
     // FrameGen's values (kept here so this file draws on its own, for the off-device renders)
     private val MULTIPLIERS = listOf(2, 3, 4)
@@ -140,7 +141,7 @@ object SettingsPreview {
             "Flow scale" -> flow(c, r, s.flow, t, live)
             "Build in the background" -> indoor(c, r, s, t, live)
             "Gold" -> goldLine(c, r, s)
-            "Hearthstone", "Class teleport", "Free bag slots", "Ammo" -> extras(c, r, id, s)
+            "Hearthstone", "Class teleport", "Free bag slots", "Ammo", "Pet happiness" -> extras(c, r, id, s)
             "Tap-to-cast bar" -> castBar(c, r, s.castBar)
             "In combat", "Show in combat" -> castCombat(c, r, s, t)          // cb14 (D5b): the row renamed
             "World map" -> worldMap(c, r, s.worldMapAll)
@@ -951,7 +952,7 @@ object SettingsPreview {
     // ---- Bottom screen > Home: THE EXTRAS ROW (ClockBand) under the clock chip, between the controller's two groups
 
     private val EXTRA_KIND = mapOf("Hearthstone" to ClockBand.Kind.HEARTH, "Class teleport" to ClockBand.Kind.TELEPORT,
-        "Free bag slots" to ClockBand.Kind.BAGS, "Ammo" to ClockBand.Kind.AMMO)
+        "Free bag slots" to ClockBand.Kind.BAGS, "Ammo" to ClockBand.Kind.AMMO, "Pet happiness" to ClockBand.Kind.PET)
 
     /** a stand-in icon drawn here (no icon is asked of the game's art for a picture): an arrow (ammo) or a swirl (a teleport) */
     private val arrowIcon by lazy { drawnIcon { c, p ->
@@ -975,6 +976,7 @@ object SettingsPreview {
         ClockBand.Kind.TELEPORT -> UiKit.BandItem.Icon(ItemCd.teleport?.let { Icons.get(it.icon) } ?: swirlIcon, "12:04", cooling = true)
         ClockBand.Kind.BAGS -> UiKit.BandItem.Icon(Icons.get(133633), "52/80")
         ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(arrowIcon, "812/1000")
+        ClockBand.Kind.PET -> UiKit.BandItem.Icon(UiKit.petMood(3) ?: Icons.get(BottomTiles.PET_ICON), "")
     }
 
     /**
