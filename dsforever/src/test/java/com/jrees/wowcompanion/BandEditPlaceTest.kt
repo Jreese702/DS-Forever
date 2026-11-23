@@ -76,6 +76,29 @@ class BandEditPlaceTest {
         check("grown", HomeLayoutSolver.Box(0f, top, W, top + gh), slots(true, gh, top, true), null, true, true, true)
     }
 
+    /** the 1519 integration: Top screen's preview lays the band above the page (HomeLayoutSolver.away) - the fight pencil stands at the
+     *  PAGE's top centre, PEN square, AWAY_TOP down; the band's other pieces stay with the band (above the page); out of the preview, or
+     *  with the band on the page, [BandEdit.place]'s away changes nothing */
+    @Test fun topScreensPreviewPutsTheFightPencilWhereTheBandWent() {
+        for (diamonds in listOf(false, true)) {
+            val h = if (diamonds) 200f else CastBarPlace.ROW_H
+            val rb = 8f + h
+            val band = HomeLayoutSolver.Box(0f, 8f - (rb + HomeLayoutSolver.AWAY_PAST), W, -HomeLayoutSolver.AWAY_PAST)
+            val sl = slots(diamonds, h, band.t, false)
+            val p = BandEdit.place(band, sl, null, diamonds, false, true, away = true)
+            val f = p.fightPen!!
+            assertTrue("diamonds=$diamonds: at the page's top centre ($f)", kotlin.math.abs(f.cx - W / 2f) < 0.5f && f.t == BandEdit.AWAY_TOP &&
+                kotlin.math.abs(f.w - BandEdit.PEN) < 0.5f && kotlin.math.abs(f.h - BandEdit.PEN) < 0.5f)
+            assertNull(p.look)
+            assertTrue("the band's pencils above the page with it", p.padPen.b <= 0f && p.facePen.b <= 0f)
+            // the band on the page: away changes nothing; out of the preview: no fight pencil
+            val on = HomeLayoutSolver.Box(0f, 8f, W, rb)
+            val a = BandEdit.place(on, slots(diamonds, h, 8f, false), null, diamonds, false, true)
+            assertTrue(a.fightPen!!.t >= on.t)
+            assertNull(BandEdit.place(band, sl, null, diamonds, false, false, away = true).fightPen)
+        }
+    }
+
     /** the empty space between two boxes (0 = touching or overlapping) */
     private fun gap(a: HomeLayoutSolver.Box, b: HomeLayoutSolver.Box): Float {
         val dx = maxOf(0f, maxOf(a.l - b.r, b.l - a.r)); val dy = maxOf(0f, maxOf(a.t - b.b, b.t - a.b))

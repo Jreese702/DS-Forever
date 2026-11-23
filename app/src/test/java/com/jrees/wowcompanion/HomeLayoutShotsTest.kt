@@ -785,6 +785,50 @@ class HomeLayoutShotsTest {
         assertEquals(PartyLayout.Mode.FIGHT_ON, (views(g.home).getValue("PARTY") as PartyModuleView).mode)
     }
 
+    /**
+     * THE 1519 INTEGRATION (feat/home-apps2's party docks x ruling C's fill): a Party-mode Top fight fills the freed strip for EVERY
+     * party dock - the top or the foot of the chat's or the map's column, either side - in the column the party list lives in: its box
+     * grows by the strip the band freed (234 -> 8), the column's other part keeps the height it has in the Party fight with the band on
+     * the page (Grow: b1e28506's), a top dock's well from the top gap, a foot dock's foot where it was with the chat / map ridden up to
+     * the top gap; the module's rows fill its view, its tab on its column's outer edge. Shots: bottom_fight_top_party_<dock>_<side>.
+     */
+    @Test fun topScreenPartyModeFillsTheStripForEveryDock() {
+        for (dock in HomeLayout.PartyDock.values()) for (side in HomeLayout.Side.values()) {
+            val l = HomeLayout(chatSide = side, cast = HomeLayout.CastDock.UNDER_CHAT, party = dock, fight = HomeLayout.FightBand.TOP)
+            val tag = "$dock chat ${side.name.lowercase()}"
+            val g = page(l.copy(fight = HomeLayout.FightBand.GROW), fight = true, party = true, ct = 1)
+            val ref = boxes(g.home)
+            assertFalse("$tag: the Party fight with the band on the page", g.cast.away)
+            val p = page(l, fight = true, party = true, ct = 1)
+            val b = boxes(p.home)
+            assertTrue("$tag: the band away", p.cast.away)
+            assertEquals(-16f, b.getValue("BARS").bottom, 0.01f)
+            val pb = b.getValue("PARTY"); val rp = ref.getValue("PARTY")
+            val part = if (dock.column == HomeModule.CHAT) "CHAT" else "MAP"
+            val other = if (part == "CHAT") "MAP" else "CHAT"
+            assertEquals("$tag: the party list takes the freed strip", rp.height() + 226f, pb.height(), 0.5f)
+            assertEquals("$tag: the $part keeps its height", ref.getValue(part).height(), b.getValue(part).height(), 0.5f)
+            if (dock.top) {
+                assertEquals("$tag: the well from the top gap", 8f, pb.top, 0.01f)
+                assertEquals("$tag: its foot where the Party fight has it", rp.bottom, pb.bottom, 0.01f)
+            } else {
+                assertEquals("$tag: the $part ridden up to the top gap", 8f, b.getValue(part).top, 0.01f)
+                assertEquals("$tag: the well's foot where it was", rp.bottom, pb.bottom, 0.01f)
+            }
+            assertEquals("$tag: the $other grown up", 8f, b.getValue(other).top, 0.01f)
+            val col = b.getValue(part)
+            assertTrue("$tag: the party list in its column ($pb / $col)", if (HomeLayoutSolver.partyRight(l)) pb.left >= col.left - 0.5f
+                else pb.right <= col.right + 0.5f)
+            val pv = views(p.home).getValue("PARTY") as PartyModuleView
+            assertEquals(PartyLayout.Mode.FIGHT_TOP, pv.mode)
+            assertEquals("$tag: the tab on its column's outer edge", HomeLayoutSolver.partyRight(l), pv.tabRight)
+            val m = pv.module()
+            assertEquals("$tag: the rows fill the view", pv.height.toFloat(), m.well.b, 1f)
+            assertTrue("$tag: taller rows than the Party fight's", m.cells[0].h > PartyLayout.FIGHT_H + 40f)
+            shot(p, "bottom_fight_top_party_${dock.name.lowercase()}_${side.name.lowercase()}")
+        }
+    }
+
     @Config(qualifiers = "w1240dp-h1080dp-mdpi")
     @Test fun topScreenPartyModeSlidesRealFrames() {
         val delayWas = org.robolectric.shadows.ShadowChoreographer.getFrameDelay()

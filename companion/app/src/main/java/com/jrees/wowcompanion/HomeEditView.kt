@@ -229,7 +229,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         out[EditStop.FIGHT] = HomeLayoutSolver.Box(rib.fight.left, y0 + rib.fight.top, rib.fight.right, y0 + rib.fight.bottom)
         // THE TOP BAR'S PIECES (P1 - P4): the two pencils, the Look chip or the fight pencil, the extras' row (one stop: its own cursor)
         host.band()?.let { g ->
-            fun put(s: EditStop, r: RectF) { out[s] = HomeLayoutSolver.Box(r.left, r.top, r.right, r.bottom) }
+            // (Top screen's preview: the band slid up off the page - its pieces with it are no stops; the fight pencil stands on the page)
+            fun put(s: EditStop, r: RectF) { if (r.bottom > 0f) out[s] = HomeLayoutSolver.Box(r.left, r.top, r.right, r.bottom) }
             put(EditStop.PAD_PEN, g.padPen); put(EditStop.FACE_PEN, g.facePen)
             g.look?.let { put(EditStop.LOOK, it) }
             g.fightPen?.let { put(EditStop.FIGHT_PEN, it) }
@@ -688,7 +689,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val g = UiKit.MODULE_GAP
         val chat = p[HomePart.CHAT]; val map = p[HomePart.MAP]
         val bars = p[HomePart.BARS]
-        val top = (bars?.bottom ?: 226f) + g
+        // (Top screen's preview: the band laid above the page - the page's own top)
+        val top = max(bars?.bottom ?: 226f, 0f) + g
         val cardHost = if (host.model?.draft?.card == HomeLayout.CardDock.ABOVE_CHAT) map else chat
         val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST || s == EditStop.PARTY
         val bubbleOf = if (s.pencil) bandBox(s) else null
@@ -712,7 +714,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             bubbleOf != null -> {
                 val bw = min(BUBBLE_W, w - 2f * BUBBLE_EDGE)
                 val cx = bubbleOf.centerX().coerceIn(BUBBLE_EDGE + bw / 2f, w - BUBBLE_EDGE - bw / 2f)
-                box = RectF(cx - bw / 2f, top + BUBBLE_TAIL, cx + bw / 2f, h - g)
+                // (under the band - or under its pencil when that stands lower: Top screen's preview, the band above the page)
+                box = RectF(cx - bw / 2f, max(top, bubbleOf.bottom + 4f) + BUBBLE_TAIL, cx + bw / 2f, h - g)
                 val hung = box.top
                 // fix round 3 (the review: the 640 px bubble overhangs the other column by about 12 px, so a top bar THERE pushed it about
                 // 140 px down, tailless, over its own empty column): a bar wholly to one side of the pencil narrows the bubble to end a gap

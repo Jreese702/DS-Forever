@@ -387,9 +387,9 @@ class HomeEditShotsTest {
         "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}${if (ct != null) ",\"ct\":$ct" else ""}}}}"""))!!
     /** a page whose band has the toolbar's word (a character's key, the DS WoW toolbar on), Diamonds at rest unless [l] says */
     private fun bandPage(l: HomeLayout = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), ct: Int? = null, roomBar: Boolean = false,
-                         sets: String = "[]"): Page {
+                         sets: String = "[]", party: Boolean = false): Page {
         ItemCd.reset()                                                      // the extras' own data: none (another test's must not show)
-        val p = page(l, roomBar = roomBar)
+        val p = page(l, roomBar = roomBar, party = party)
         HomeLayoutStore.character("Korvash-Realm")
         HomeLayoutStore.set(l)
         p.home.onPadMap(padMapDoc(ct, sets))
@@ -649,6 +649,64 @@ class HomeEditShotsTest {
             p.home.editAct { it.toggleFight() }; settle(40)
             assertEquals("$band: back to the rest look", rest, boxes(p.home).getValue("BARS").height(), 0.5f)
             assertFalse(p.cast.swingPreview)
+            p.home.editCancel()
+        }
+    }
+
+    /**
+     * THE 1519 INTEGRATION (feat/home-apps2's Fight preview x feat/topbar-fight's slide): with the add-on's Wings word on, Top screen's
+     * preview shows what the Top fight shows - the band slid up off the page (no "up" cue any more: the slide is the cue), the chat and
+     * the map grown up into the freed strip, the tap-to-cast bar staying in its dock - and with Party mode on the Party-mode Top fight's
+     * page: no takeover, the band away all the same, the party list filling the strip (PartyLayout.Mode.FIGHT_TOP). Edit mode keeps a
+     * way to its In fights choice: the band's pieces left with the band (no stop above the page), the fight pencil stands at the page's
+     * top centre where the band went, its bubble hangs under it on the screen. The preview off: the band back at its rest box
+     */
+    @Test fun theTopScreenPreviewSlidesTheBandAway() {
+        for (party in listOf(false, true)) {
+            val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+            val p = bandPage(l, ct = 1, party = party)
+            val n = if (party) "Party mode" else "solo"
+            assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+            val rest = boxes(p.home)
+            assertTrue("$n: the band on the page at rest", rest.getValue("BARS").bottom > 100f)
+            p.home.editKey("PAD1"); settle(40)
+            assertTrue(model(p).fightPreview)
+            assertFalse("$n: Home shows no fight", p.home.fightShown())
+            val b = boxes(p.home)
+            assertEquals("$n: the band laid above the page", -HomeLayoutSolver.AWAY_PAST, b.getValue("BARS").bottom, 0.01f)
+            assertTrue("$n: the band draws nothing on the page", p.cast.away)
+            assertEquals("$n: the map grown up", 8f, b.getValue("MAP").top, 0.01f)
+            val strip = b.getValue("STRIP")
+            assertTrue("$n: the tap-to-cast bar stays in its dock ($strip)", strip.bottom <= H + 0.5f && strip.top > b.getValue("CHAT").top)
+            if (party) {
+                val pv = views(p.home).getValue("PARTY") as PartyModuleView
+                assertEquals("Party mode: the Party-mode Top fight's rows", PartyLayout.Mode.FIGHT_TOP, pv.mode)
+                assertEquals("Party mode: the party list from the top gap", 8f, b.getValue("PARTY").top, 0.01f)
+                assertTrue("Party mode: the party list fills the freed strip", b.getValue("PARTY").height() > rest.getValue("PARTY").height() + 150f)
+                assertEquals("Party mode: the chat where the Party fight has it", b.getValue("PARTY").bottom + PartyLayout.CHAT_GAP, b.getValue("CHAT").top, 0.01f)
+            } else assertEquals("solo: the chat grown up", 8f, b.getValue("CHAT").top, 0.01f)
+            val stops = p.home.editChrome.stops()
+            for ((st, x) in stops) assertTrue("$n: $st on the page ($x)", x.t >= -0.01f && x.b <= H + Strip.HEIGHT + 0.5f)
+            assertFalse("$n: the D-pad's pencil left with the band", EditStop.PAD_PEN in stops)
+            assertFalse("$n: the buttons' pencil left with the band", EditStop.FACE_PEN in stops)
+            val pen = stops[EditStop.FIGHT_PEN]
+            assertNotNull("$n: the fight pencil stays reachable", pen)
+            assertEquals("$n: at the page's top centre", W / 2f, pen!!.cx, 1f)
+            assertTrue("$n: on the page's top ($pen)", pen.t >= 0f && pen.b <= 60f)
+            p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
+            assertEquals(EditStop.FIGHT_PEN, model(p).menu)
+            val bubble = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
+            assertTrue("$n: the bubble under the pencil, on the screen ($bubble / $pen)", bubble.top >= pen.b && bubble.bottom <= H + 0.5f && bubble.height() > 150f)
+            val tail = p.home.editChrome.bubbleTailBox(EditStop.FIGHT_PEN)
+            assertNotNull("$n: its tail up to the pencil", tail)
+            assertTrue("$n: the tail's tip at the pencil ($tail / $pen)", tail!!.top >= pen.b - 0.5f && tail.top <= pen.b + 8f)
+            shot(p, "43_fight_preview_top_${if (party) "party" else "solo"}")
+            p.home.editKey("PAD2")
+            p.home.editAct { it.toggleFight() }; settle(40)
+            assertFalse(model(p).fightPreview)
+            assertEquals("$n: the band back at its rest box", rest.getValue("BARS"), boxes(p.home).getValue("BARS"))
+            assertFalse("$n: the band draws again", p.cast.away)
+            if (party) assertEquals(PartyLayout.Mode.REST, (views(p.home).getValue("PARTY") as PartyModuleView).mode)
             p.home.editCancel()
         }
     }

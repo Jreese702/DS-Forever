@@ -111,6 +111,80 @@ class HomePartyTopTest {
         assertTrue(n > 5000)
     }
 
+    /**
+     * THE 1519 INTEGRATION (feat/home-apps2's party docks x feat/topbar-fight's fill): the strip the band frees goes to the party list
+     * in ITS column for every dock - Above chat / Above map: the well from the column's new top down to the reference page's foot (the
+     * chat / map under it where it was); Under chat / Under map: the chat / map rides up into the strip keeping its height and the well's
+     * top follows it up as far, its foot on the column's foot. The numbers for Diamonds, the chat on the left, three members
+     */
+    @Test fun everyPartyDockFillsTheStripInItsColumn() {
+        for (dock in HomeLayout.PartyDock.values()) {
+            val l = top.copy(party = dock)
+            val s = fightState(3)
+            val r = S.places(l, s); val ref = S.places(l, refState(s))
+            val part = if (dock.column == HomeModule.CHAT) HomePart.CHAT else HomePart.MAP
+            val other = if (part == HomePart.CHAT) HomePart.MAP else HomePart.CHAT
+            val p = r.boxes.getValue(HomePart.PARTY); val rp = ref.boxes.getValue(HomePart.PARTY)
+            val c = r.boxes.getValue(part); val rc = ref.boxes.getValue(part)
+            assertTrue("$dock: away", r.away)
+            assertTrue("$dock: ${HomeLayoutRules.problems(l, s, r)}", HomeLayoutRules.problems(l, s, r).isEmpty())
+            val freed = 234f - 8f                                         // the Diamonds' rest band: the column tops 234 -> 8
+            assertEquals("$dock: its well grew by the freed strip", rp.h + freed, p.h, 0.01f)
+            assertEquals("$dock: three rows of 163.3", (530f - 24f - 16f) / 3f, PartyLayout.rowsFit(3, p.h - PartyModuleView.RISE), 0.01f)
+            assertEquals("$dock: the column's other part keeps its height", rc.h, c.h, 0.01f)
+            if (dock.top) {
+                assertEquals("$dock: the well from the top gap", 8f, p.t + PartyModuleView.RISE, 0.01f)
+                assertEquals("$dock: its foot where the Party fight had it", rp.b, p.b, 0.01f)
+                assertEquals("$dock: the $part where it was", rc.t, c.t, 0.01f)
+            } else {
+                assertEquals("$dock: the $part from the top gap", 8f, c.t, 0.01f)
+                assertEquals("$dock: the well's foot on the column's foot", rp.b, p.b, 0.01f)
+                assertEquals("$dock: the well under the $part", c.b + PartyLayout.CHAT_GAP, p.t + PartyModuleView.RISE, 0.01f)
+            }
+            assertEquals("$dock: the other column grows up", 8f, r.boxes.getValue(other).t, 0.01f)
+        }
+    }
+
+    /** the sweep for every party dock: side x width x card dock x bar dock x rest x party shape x card shown */
+    @Test fun everyDockLaysTheFilledModuleValidly() {
+        var n = 0
+        val bad = ArrayList<String>()
+        for (dock in HomeLayout.PartyDock.values()) for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values())
+            for (card in HomeLayout.CardDock.values()) for (cast in HomeLayout.CastDock.values()) for (rest in HomeRest.values()) {
+                val l = HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, rest = rest, party = dock,
+                    fight = HomeLayout.FightBand.TOP)
+                for (cnt in 1..6) for (pet in listOf(false, true)) for (shown in listOf(false, true)) {
+                    if (pet && cnt == 1) continue
+                    val s = fightState(cnt, pet, card = shown)
+                    val r = S.places(l, s); val ref = S.places(l, refState(s)); n++
+                    fun bad(m: String) { if (bad.size < 12) bad += "$l n=$cnt pet=$pet card=$shown: $m" }
+                    if (!r.away) bad("not away")
+                    val pr = HomeLayoutRules.problems(l, s, r)
+                    if (pr.isNotEmpty()) bad("$pr")
+                    val part = if (dock.column == HomeModule.CHAT) HomePart.CHAT else HomePart.MAP
+                    val other = if (part == HomePart.CHAT) HomePart.MAP else HomePart.CHAT
+                    val p = r.boxes.getValue(HomePart.PARTY); val rp = ref.boxes.getValue(HomePart.PARTY)
+                    val c = r.boxes.getValue(part); val rc = ref.boxes.getValue(part)
+                    val rows = PartyLayout.rowsFit(rowCount(s.party!!), p.h - PartyModuleView.RISE)
+                    val capped = rows > PartyLayout.FILL_MAX_H - 0.01f
+                    if (rows < PartyLayout.FIGHT_H - 0.01f || rows > PartyLayout.FILL_MAX_H + 0.01f) bad("rows $rows")
+                    if (p.t > rp.t - 100f) bad("the well did not grow up into the strip: ${p.t} vs ${rp.t}")
+                    if (c.h < rc.h - 0.01f) bad("the $part shrank: ${c.h} vs ${rc.h}")
+                    if (!capped && kotlin.math.abs(c.h - rc.h) > 0.01f) bad("the $part took the strip (not capped): ${c.h} vs ${rc.h}")
+                    if (dock.top && p.b > rp.b + 0.01f) bad("the well's foot ${p.b} below the reference's ${rp.b}")
+                    if (dock.top && !capped && kotlin.math.abs(p.b - rp.b) > 0.01f) bad("foot ${p.b} vs ${rp.b} (not capped)")
+                    if (!dock.top && kotlin.math.abs(p.b - rp.b) > 0.01f) bad("a foot dock's foot ${p.b} vs ${rp.b}")
+                    if (r.boxes.getValue(other).t > ref.boxes.getValue(other).t - 100f) bad("the $other did not grow up")
+                    if (r.f1 != ref.f1 || r.f2 != ref.f2 || r.f3 != ref.f3) bad("fallbacks ${r.f1}/${r.f2}/${r.f3} vs ${ref.f1}/${ref.f2}/${ref.f3}")
+                    // the well inside its column, its tab on the screen's outer edge
+                    if (S.partyRight(l) && p.l < c.l - 0.01f || !S.partyRight(l) && p.r > c.r + 0.01f) bad("the well out of its column: $p / $c")
+                    if (r.partyTabRight != S.partyRight(l)) bad("the tab's edge")
+                }
+            }
+        assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
+        assertTrue("$n", n > 15000)
+    }
+
     /** the thin-row rest: the strip freed is the thin band's (138), the rows 134 / 157 / 192 */
     @Test fun theThinRowRest() {
         val l = top.copy(rest = HomeRest.ROW)

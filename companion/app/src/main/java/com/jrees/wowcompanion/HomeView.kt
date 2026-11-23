@@ -1734,7 +1734,8 @@ class HomeView(
      *  the band's freed strip (the user's ruling C, 11-22: HomeLayoutSolver.away, PartyLayout.Mode.FIGHT_TOP); else at rest */
     private fun partyModeNow(s: HomeScreen): PartyLayout.Mode = when {
         s.takeover -> PartyLayout.Mode.FIGHT_OFF
-        partyFightNow() -> if (layoutNow(s).fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
+        partyFightNow() || previewPartyFight() ->
+            if (layoutNow(s).fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
         else -> PartyLayout.Mode.REST
     }
     /** Party mode on in a fight (the add-on's fight word: never an attack armed before the pull - no takeover in Party mode) */
@@ -1831,10 +1832,12 @@ class HomeView(
                 partyIn = HomeLayoutSolver.Party(mode, p.view.size, p.viewPet)
             }
         }
-        // P4: edit mode's fight preview lays the band's combat look (the real fight state stays as it is: nothing parks, nothing is sent)
-        val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(w, h, UiKit.MODULE_GAP, full = s.full, takeover = s.takeover || editFightLook(),
+        // P4: edit mode's fight preview lays the band's combat look (the real fight state stays as it is: nothing parks, nothing is sent):
+        // the takeover's, or with Party mode on the Party-mode fight's (no takeover, R0) - so Top screen's preview lays the band above the
+        // page as its fight does, the party list filling the strip (the 1519 integration)
+        val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(w, h, UiKit.MODULE_GAP, full = s.full, takeover = s.takeover || previewTakeover(),
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
-            partyOn = partyOnHere(), castHidden = !full && castHiddenNow(), partyFight = partyFightNow()))
+            partyOn = partyOnHere(), castHidden = !full && castHiddenNow(), partyFight = partyFightNow() || previewPartyFight()))
         placedAway = !full && r.away
         if (full) laidSide = CastStripModel.Side.OFF
         else {
@@ -2340,8 +2343,10 @@ class HomeView(
      * Display only: [fightShown], the bar's fight gate, Party mode and the add-on hear nothing of it
      */
     private fun editFightLook(): Boolean = edit?.let { !it.parked && it.fightPreview } == true
-    /** when the preview came on (its Top screen cue loops from here) */
-    private var previewAt = 0L
+    /** the preview's fight as the page lays it: the takeover with Party mode off; with it on the Party-mode fight (no takeover: R0 -
+     *  Top screen's band away and the party list filling the strip, the user's ruling C) */
+    private fun previewTakeover(): Boolean = editFightLook() && !partyOnHere()
+    private fun previewPartyFight(): Boolean = editFightLook() && partyOnHere()
     /** P4 fix round: the preview's look was given to the D-pad and the band (the toggle's Fx.Preview) and not taken back yet */
     private var previewLaid = false
     /**
@@ -2910,7 +2915,8 @@ class HomeView(
             }
         }
         val pieces = BandEdit.place(HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom), slots,
-            chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview)
+            chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview,
+            away = b.bottom <= 0f)                                        // Top screen's preview: the band above the page
         fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
         return HomeEditView.BandGeo(RectF(b), pad, face, rf(pieces.padPen), rf(pieces.facePen), pieces.look?.let { rf(it) },
             pieces.fightPen?.let { rf(it) }, extras, plus, diamonds, chip, keys)
@@ -3244,7 +3250,6 @@ class HomeView(
             HomeEditModel.Fx.Lift -> editLift(m?.lifted)
             // P4: the fight preview on / off: the page laid again with the band's combat (or rest) look - nothing sent, no fight state
             is HomeEditModel.Fx.Preview -> {
-                previewAt = android.os.SystemClock.uptimeMillis()
                 Log.i(TAG, "home edit: fight preview ${if (f.on) "on" else "off"}")
                 previewLaid = editFightLook()
                 applyDpad()
@@ -5247,8 +5252,6 @@ class HomeView(
         /** P2: an extra's wiggle size (a small picture: the room bar's pace and turn) and the edit row's "+" cell's key */
         private const val EXTRA_HALF_DIAG = 24f
         private const val EDIT_PLUS = "plus"
-        /** P4: the fight preview's Top screen cue loops this often (ms) */
-        private const val CUE_LOOP_MS = 2400L
         /** P2: a lifted widget's depth (above the others, under the chrome) */
         private const val LIFT_Z = 30f
         /** P2: the hold's gold ring round the finger (final_12) */
