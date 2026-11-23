@@ -61,8 +61,8 @@ package com.jrees.wowcompanion
  *  dsf_lang     SETTINGS lang         dsf_stream  SETTINGS quality   NEVER host, client_id, client_cert, client_key (pairing)
  *  NEVER (whole files) addons (the add-ons the player installed), polestar_qol, polestar_handoff, newspells, wc_itemcd, questwatch,
  *        taxinet, questme, cityexits, interact, chat_filter, chat_talk (decision: chat not named), data_staleness, dsf_art_near, report,
- *        dsf_last_run, dsf_region, voice, home_login_prefs, dsf_conn_test, wow_forever, battle_net_login, crash_logs, the GameNative
- *        DataStore (PluviaPreferences)
+ *        dsf_last_run, dsf_region, voice, home_login_prefs, dsf_conn_test, wow_forever, battle_net_login, crash_logs, padnote (the game's
+ *        Stance / Possess Bar settings last seen per character: PadLayerNote's one-time note), the GameNative DataStore (PluviaPreferences)
  *
  * APP FILES
  *  Documents/DS Forever/combat/<who>.json   SKILLS (per char): the In-combat backup the app puts back when the store is empty at login
@@ -199,7 +199,7 @@ object ResetPlan {
     /** whole files a reset never opens */
     val NEVER_FILES = setOf("addons", "polestar_qol", "polestar_handoff", "newspells", "wc_itemcd", "questwatch", "taxinet", "questme",
         "cityexits", "interact", "chat_filter", "chat_talk", "data_staleness", "dsf_art_near", "report", "dsf_last_run", "dsf_region", "voice",
-        "home_login_prefs", "dsf_conn_test", "wow_forever", "battle_net_login", "crash_logs")
+        "home_login_prefs", "dsf_conn_test", "wow_forever", "battle_net_login", "crash_logs", "padnote")
 
     /** [key] of [file] matches [r]: exact; a per-character prefix ("sw.*." = "sw.<part>."; "mode." takes any element) followed by
      *  [who] (or, with [all], any character key); the "*" whole file */

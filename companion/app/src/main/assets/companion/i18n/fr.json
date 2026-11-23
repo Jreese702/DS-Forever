@@ -4,6 +4,13 @@
 "Graphics driver": "Pilote graphique",
 "Test: Mesa 26.3.1": "Test : Mesa 26.3.1",
 "Installing the test graphics driver...": "Installation du pilote graphique de test...",
+"In combat: a spell casts here in fights, over your macro": "En combat : un sort est lancé ici pendant les combats, par-dessus votre macro",
+"WoW's Stance Bar is on LT: in a form, LT + buttons cast your form bar": "La Barre des postures de WoW est sur LT : sous une forme, LT + boutons lancent votre barre de forme",
+"WoW's Possess Bar is on LT: with a pet, LT + buttons cast your pet bar": "La Barre de possession de WoW est sur LT : avec un familier, LT + boutons lancent sa barre",
+"WoW's Stance Bar is on RT: in a form, RT + buttons cast your form bar": "La Barre des postures de WoW est sur RT : sous une forme, RT + boutons lancent votre barre de forme",
+"WoW's Possess Bar is on RT: with a pet, RT + buttons cast your pet bar": "La Barre de possession de WoW est sur RT : avec un familier, RT + boutons lancent sa barre",
+"WoW's Stance Bar is on LT + RT: in a form, LT + RT + buttons cast your form bar": "La Barre des postures de WoW est sur LT + RT : sous une forme, LT + RT + boutons lancent votre barre de forme",
+"WoW's Possess Bar is on LT + RT: with a pet, LT + RT + buttons cast your pet bar": "La Barre de possession de WoW est sur LT + RT : avec un familier, LT + RT + boutons lancent sa barre",
 "Ready. Close other apps for smoother play": "Prêt. Fermez les autres applis pour un jeu plus fluide",
 "In fights": "En combat",
 "Combat bar": "Barre de combat",
@@ -2344,6 +2351,8 @@
 "In the row under the clock, with a hunter's pet.": "Dans la rangée sous l'horloge, avec le familier d'un chasseur."
 },
 "templates": {
+"DS Forever's %s runs here, over your macro": "%s de DS Forever s’utilise ici, par-dessus votre macro",
+"In combat: %s casts here in fights, over your macro": "En combat : %s est lancé ici pendant les combats, par-dessus votre macro",
 "%s/%s ready": "%s/%s prêtes",
 "\"%s\" is its own button: put it on your bars (Out of combat: Change, Extra).": "« %s » est son propre bouton : placez-le sur vos barres (Hors combat : Changer, Extra).",
 "Tap slot %s, Party mode": "Emplacement %s, mode groupe",

@@ -443,6 +443,26 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  login offer's); null = Settings' own ([restartFromSettings]) */
     private var restartAskThen: (() -> Unit)? = null
 
+    /** PadLayerNote's per-character memory: prefs `padnote`, "bars.<character key>" = the two values last seen ("st=3;ps=1") */
+    private val padNoteStore: PadLayerNote.Store by lazy {
+        val p = getSharedPreferences("padnote", MODE_PRIVATE)
+        object : PadLayerNote.Store {
+            override fun get(who: String): String? = p.getString("bars.$who", null)
+            override fun put(who: String, memo: String) { p.edit().putString("bars.$who", memo).apply() }
+        }
+    }
+
+    /** a current hud document's `bars` (ActionBar's read-only Stance / Possess Bar values): a change onto LT / RT is Home's note, once */
+    private fun padLayerNote(bars: JSONObject, docName: String?) {
+        val who = PadLayerNote.whoFor(GameUi.character, docName)            // the review: only the document's own character
+        val notes = runCatching { PadLayerNote.onBars(padNoteStore, who, bars) }.getOrDefault(emptyList())
+        for (w in notes) {
+            val l = PadLayerNote.logLine(w)
+            Log.i("WCSETUP", l); DiagLog.event("pad", l)
+            ui.post { homeView.padNote(w) }
+        }
+    }
+
     private fun noticeShow(s: ReportNotice.State) {
         reportNotice.show(s)
         SetupBridge.noticeAsking = reportNotice.asking
@@ -867,6 +887,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // our own sign-in's row on the start screen takes the pad while it shows (LATER 29); then Interact's loot ring
             // (the edge is taken on EVERY mask, whatever the route, so a press held through a route change is not swallowed later)
             val down = m and loginPadHeld.inv(); loginPadHeld = m
+            // PadLayerNote: B lets Home's game-setting note go (seen only: B still does what it does below / in the game)
+            if (PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) ui.post { homeView.padNoteB() }
             // loot-pop review: the rolls read the presses while they cover the screen, or while the fight's small panel shows a roll's bind
             // confirm with the GAME's focus (its A / B are the game's pop-up's: never also the loot window's under it); every other mask is
             // only SEEN, so the first press after the panel grows / opens is a real edge (DialogView.padSeen)
@@ -2972,6 +2994,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current) GameUi.onTracking(it.optJSONObject("track"))     // LATER 25: the "While tracking" minimap
                 }
                 msg.optJSONObject("actionbar")?.let { castView.update(it); bagsView.castTick() }      // bags-de1: the grid's bar too
+                // PadMap m187's report: a WoW Stance / Possess Bar setting moved onto LT / RT for this character: Home's note, once
+                if (current) msg.optJSONObject("actionbar")?.optJSONObject("hud")?.optJSONObject("bars")?.let {
+                    padLayerNote(it, msg.optJSONObject("player")?.optString("name", "")?.takeIf { n -> n.isNotEmpty() })
+                }
                 homeView.onFull(msg, current)
                 if (castAskOpen && homeView.inFight()) castBarAsk()          // a fight: the cast bar question goes at once (back after)
                 if (keyAskOpen && homeView.inFight()) keyAskTick.run()       // Safety k10: the key question too (asked again after it)

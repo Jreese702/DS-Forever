@@ -2,6 +2,9 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar13 THE CONTROLLER CHANGED (PadMap m188; the user's pick 2026-11-23 "Re-wire the trigger reading when a controller connects or
+-- changes"): GAME_PAD_CONNECTED / _DISCONNECTED / _ACTIVE_CHANGED / _CONFIGS_CHANGED drop NB.idx, so the held layer's button numbers
+-- are looked up again (display only: a plain table of ours, nothing of the game's written).
 -- nbar12 THE WINGS' PLATES AND PARTY MODE (the user's rulings 2026-11-22, after the shots): (A) the band's L / R corner plates on
 -- the Wings, the ZL / ZR chips under them; (C) Party mode keeps the Top screen in its fights - the Wings carry the Party layer.
 -- The full note at "nbar12 THE PLATES AND THE PARTY LAYER" (the Wings' section). nbar12 review (11-22): B / pre-cfg Y draw the TOP
@@ -2512,7 +2515,10 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar12", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar13", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+             -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
+             PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
+             PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
              OFF = 50, DX = 160, GLYPH = 17, Y_DEF = 64, S_MIN = 70, S_MAX = 150, S_STEP = 10,
              POLL_S = 0.05, STATE_S = 0.2, set = 1, acc = 0, accS = 0, probed = {}, stats = nil,
              LAYER_OF = { "n", "lt", "rt", "lr" }, LAYER_WORD = { "", "ZL", "ZR", "ZL+ZR" },
@@ -2838,7 +2844,13 @@ function NB.build()
     -- nbar2: the stock bar's spot / scale again when the UI scale or the screen changes
     pcall(f.RegisterEvent, f, "UI_SCALE_CHANGED")
     pcall(f.RegisterEvent, f, "DISPLAY_SIZE_CHANGED")
-    f:SetScript("OnEvent", function() if NB.on then pcall(NB.place) end end)
+    -- nbar13 (PadMap m188, the user's pick 2026-11-23 "Re-wire the trigger reading when a controller connects or changes"): the held
+    -- layer's button numbers (NB.idx, looked up once) are read again after a controller comes, goes or changes (a plain table of ours)
+    for _, e in ipairs(NB.PAD_EV) do pcall(f.RegisterEvent, f, e) end
+    f:SetScript("OnEvent", function(_, e)
+        if NB.PAD_SET[e] then NB.idx = nil; return end
+        if NB.on then pcall(NB.place) end
+    end)
     NB.f, NB.built = f, true
     NB.place()
     return f

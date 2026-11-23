@@ -769,6 +769,19 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         set(v) { if (field != v) { field = v; cmdBtns.fill(null); invalidate() } }
     private val cmdBtns = arrayOfNulls<Btn>(32)
 
+    /**
+     * PadMap m188 SHOW WHAT'S ON TOP (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button"; the user's pick
+     * "Mark a slot on Home and in the Controller room when an In combat spell or our command sits over a macro"): the cells
+     * ([HomeFightFace.cmdKey] = layer * 8 + position) where one of our overlays sits over the player's own macro
+     * ([PadMapModel.overMacroKeys]); each wears [UiKit.overMark] in its lower-left corner, in and out of fights
+     */
+    var overMacro: Set<Int>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** m188 review: [b] stands for the game's slot (its own button, or one of our overlays on it) - not Party mode's strip (it takes
+     *  every press while it routes), the DS WoW toolbar's room bar or its page arrows (those presses open rooms) */
+    private fun overSlotDrawn(b: Btn?): Boolean =
+        !partyStrip && (b == null || (roomBtns.none { it === b } && barBtns.none { it === b }))
+
     /** [HomeFightFace.trigFights]: in a fight, the trigger sets' In-combat spells by [HomeFightFace.cmdKey] -> (icon, spell id) */
     var trigFights: Map<Int, Pair<Int, Int>>? = null
         set(v) { if (field != v) { field = v; trigBtns.fill(null); invalidate() } }
@@ -2723,7 +2736,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         // a collapsed bar hides its prompts (mainactionbarframe.lua HideButtonIcons)
         if (!(drawCollapsed && keyText == null) && b?.noBadge != true) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
-        if (b != null && b.ds) drawDsMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.34f)
+        // PadMap m188: our overlay over the player's own macro takes that corner (the two never meet: an overlay is not a DS Bar slot)
+        // m188 review: not over a picture that is not the game's slot's at all (Party mode's strip, the DS WoW toolbar's room bar /
+        // its page arrows): the press goes to Party mode / the room there, never to the slot's macro or our overlay on it
+        val over = memKey >= 0 && overMacro?.contains(memKey) == true && !(drawCollapsed && keyText == null) && overSlotDrawn(b)
+        if (over) UiKit.overMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.36f)
+        else if (b != null && b.ds) drawDsMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.34f)
         // #471 the rank badge, top LEFT (the glyph is top right, a reagent count bottom right, the DS mark a macro's): a ranked spell only
         if (b != null && !empty && b.k == "spell" && !(drawCollapsed && keyText == null)) SpellRanks.of(if (b.rk > 0) b.rk else b.id)?.let { rb ->
             rect.set(cx - iconHalf, cy - iconHalf, cx + iconHalf, cy + iconHalf)

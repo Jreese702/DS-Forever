@@ -923,6 +923,7 @@ class HomeView(
         fightNow = map.fight                                            // m49: A / X / Y's switch (start attack / auto-repeat / combat)
         applyDpad()                                                      // Track C: the D-pad's In-combat spells, in fights only
         castView.commands = HomeFightFace.commandIcons(map)             // Track C: the companion's commands (overlays: the game's slot is empty)
+        castView.overMacro = PadMapModel.overMacroKeys(map)            // PadMap m188: our overlay over the player's own macro (a corner mark)
     }
 
     /** the fight as the latest word says it: the padmap's `combat`, or a newer CURRENT `facewatch`'s `fight` (Tracking after test18:
@@ -4260,6 +4261,52 @@ class HomeView(
         postInvalidateOnAnimation()
     }
 
+    // ================================================================ PadLayerNote: a WoW setting put a bar on LT / RT (PadMap m187's report)
+
+    /** the notes waiting (the first on show), at most [PAD_NOTES_MAX]; each lives PadLayerNote.SHOW_MS from its FIRST DRAW (a note that
+     *  came while Home was not on screen waits for it), or until B ([padNoteB]) */
+    private val padNotes = ArrayDeque<String>()
+    private var padNoteAt = 0L
+    private val PAD_NOTES_MAX = 3
+    fun padNote(words: String) {
+        if (words in padNotes) return
+        padNotes.addLast(words); while (padNotes.size > PAD_NOTES_MAX) padNotes.removeFirst()
+        invalidate()
+    }
+    /** B (the host's pad reader on Home): the note on show goes; true = there was one */
+    fun padNoteB(): Boolean {
+        if (padNotes.isEmpty() || padNoteAt == 0L) return false
+        padNotes.removeFirst(); padNoteAt = 0L
+        invalidate()
+        return true
+    }
+    /** the note in the D-pad toast's pill and spot (after the toast: one at a time), its words shrunk to fit Home's width */
+    private fun drawPadNote(c: Canvas) {
+        val words = padNotes.firstOrNull() ?: return
+        if (toastWords.isNotEmpty()) { postInvalidateOnAnimation(); return }
+        val now = SystemClock.uptimeMillis()
+        if (padNoteAt == 0L) padNoteAt = now
+        val a = PadLayerNote.alpha(now - padNoteAt)
+        if (a <= 0f) {
+            padNotes.removeFirst(); padNoteAt = 0L
+            if (padNotes.isNotEmpty()) postInvalidateOnAnimation()
+            return
+        }
+        val text = Tr.t(words)
+        pToast.textSize = 26f; UiKit.asBody(pToast); pToast.color = Theme.text; pToast.alpha = (255 * a).toInt()
+        val room = (width - 2f * (UiKit.MODULE_GAP + 28f) - 16f).coerceAtLeast(120f)
+        while (pToast.textSize > 18f && pToast.measureText(text) > room) pToast.textSize -= 1f
+        val shown = TextUtils.ellipsize(text, TextPaint(pToast), room, TextUtils.TruncateAt.END).toString()
+        val h = 54f
+        val box = toastBox(pToast.measureText(shown), h)
+        pToastEdge.color = Theme.gold; pToastEdge.alpha = (255 * a).toInt()
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.ink; alpha = (235 * a).toInt() }
+        c.drawRoundRect(box, h / 2f, h / 2f, fill)
+        c.drawRoundRect(box, h / 2f, h / 2f, pToastEdge)
+        c.drawText(shown, box.left + 28f, box.centerY() - (pToast.ascent() + pToast.descent()) / 2f, pToast)
+        postInvalidateOnAnimation()
+    }
+
     /** P2: edit mode's chrome is drawn LAST, over Home's own paint (the zone band, the clock block, the wells' edges) */
     override fun dispatchDraw(c: Canvas) {
         dispatchDrawHome(c)
@@ -4394,6 +4441,7 @@ class HomeView(
         }
         if (pauseSave >= 0) c.restoreToCount(pauseSave)
         drawToast(c)                                                      // the D-pad toast over the clock block's chips (final_05)
+        drawPadNote(c)                                                    // PadLayerNote: a WoW bar setting on LT / RT, once
     }
 
     // ================================================================ the bars: a tap opens them full screen

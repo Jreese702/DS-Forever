@@ -56,7 +56,10 @@ object PadMapModel {
                     val taken: Boolean = false,
                     /** m155 (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default"): an empty stick's
                      *  GAME binding (the doc's gd / gn / gi: the action, its name, an icon fileID or 0), shown until one of ours is put */
-                    val game: Bind? = null)
+                    val game: Bind? = null,
+                    /** m188 SHOW WHAT'S ON TOP (the user's pick 2026-11-23): the game's slot holds the player's OWN macro under our overlay
+                     *  (an In combat entry, [Kind.COMBAT] with [ov], or a command, [Kind.COMMAND]); the padmap's `um` */
+                    val overMacro: Boolean = false)
     /** m13 START ATTACK ON CAST (the user 2026-10-01): [on]; [n] buttons converted; [full] / [user] / [refused] buttons left plain (no
      *  Character Macro free / a macro of that name is the user's own / the game refused); [pending] waits for the fight to end; [colOn] /
      *  [colOff] the `spells` row's columns Home's Settings room taps (no-action notes, idempotent) */
@@ -221,7 +224,7 @@ object PadMapModel {
                 PadSet(s.optInt("set", 0), objects(s.optJSONArray("slots")).map { o ->
                     Slot(o.optInt("pos", 0), intOrNull(o, "s"), kind(o.optString("kind", "")), intOrNull(o, "id"), textOrNull(o, "n"), o.optInt("i", 0),
                         ref(o.optJSONObject("c")), ref(o.optJSONObject("o")), ref(o.optJSONObject("cf")), o.optBoolean("sa", false), key = textOrNull(o, "key"),
-                        ov = o.optBoolean("ov", false))
+                        ov = o.optBoolean("ov", false), overMacro = o.optBoolean("um", false))
                 })
             },
             general = count(macros?.optJSONObject("general")),
@@ -741,6 +744,24 @@ object PadMapModel {
         sl.kind == Kind.COMBAT && sl.ov -> sl.combat
         else -> null
     }
+
+    /**
+     * m188 SHOW WHAT'S ON TOP (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button"; the user's picks "Show
+     * what's on top" and "In combat wins" - the order is kept, only shown): one of our overlays sits over the player's own macro on
+     * [sl] - an In combat entry (it casts there in fights) or a command (it runs there, in and out of fights). Null = none (or an older
+     * add-on without `um`). The Controller room's line and the mark on Home's and the room's button.
+     */
+    fun overMacro(sl: Slot?): String? = when {
+        sl == null || !sl.overMacro -> null
+        sl.kind == Kind.COMBAT && sl.ov -> sl.combat?.name?.let { "In combat: $it casts here in fights, over your macro" }
+            ?: "In combat: a spell casts here in fights, over your macro"
+        sl.kind == Kind.COMMAND -> "DS Forever's ${sl.name ?: sl.key ?: "command"} runs here, over your macro"
+        else -> null
+    }
+    /** m188: every set's slot (sets 1-4, positions 1-8) with [overMacro], by HomeFightFace.cmdKey (Home's bars, Cast's cell index) */
+    fun overMacroKeys(map: Map): Set<Int> = map.sets.filter { it.set in 1..4 }.flatMap { st ->
+        st.slots.filter { it.pos in 1..8 && overMacro(it) != null }.map { (st.set - 1) * 8 + (it.pos - 1) }
+    }.toSet()
 
     /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null */
     fun formFight(map: Map, form: Int, pos: Int): Ref? = map.formFights.firstOrNull { it.form == form && it.pos == pos }?.ref

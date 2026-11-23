@@ -3406,6 +3406,29 @@ object UiKit {
     }
 
     /**
+     * PadMap m188 ON TOP OF YOUR MACRO (the user's pick 2026-11-23: "Mark a slot on Home and in the Controller room when an In combat
+     * spell or our command sits over a macro"): a small badge centred at ([cx], [cy]), radius [r] - the kit's dark gold-rimmed disc (as
+     * [wornMark] and Cast's DS mark) holding two stacked cards, the gold one in front: "something of ours lies over what you put here".
+     * Drawn by hand (no picture to miss), at any size.
+     */
+    fun overMark(c: Canvas, cx: Float, cy: Float, r: Float) {
+        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(230, 12, 10, 8)
+        c.drawCircle(cx, cy, r, pFlat)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = maxOf(1f, r * 0.14f); pFlat.color = Theme.gold
+        c.drawCircle(cx, cy, r, pFlat)
+        val s = r * 0.78f; val o = r * 0.2f
+        // the card behind (the player's macro): an outline, lower left
+        pFlat.strokeWidth = maxOf(1f, r * 0.11f); pFlat.color = Color.rgb(236, 226, 200)
+        c.drawRect(cx - s / 2f - o, cy - s / 2f + o, cx + s / 2f - o, cy + s / 2f + o, pFlat)
+        // the card in front (ours): gold, upper right, edged dark so the two read apart
+        pFlat.style = Paint.Style.FILL; pFlat.color = Theme.gold
+        c.drawRect(cx - s / 2f + o, cy - s / 2f - o, cx + s / 2f + o, cy + s / 2f - o, pFlat)
+        pFlat.style = Paint.Style.STROKE; pFlat.color = Color.argb(230, 12, 10, 8); pFlat.strokeWidth = maxOf(1f, r * 0.08f)
+        c.drawRect(cx - s / 2f + o, cy - s / 2f - o, cx + s / 2f + o, cy + s / 2f - o, pFlat)
+        pFlat.style = Paint.Style.FILL
+    }
+
+    /**
      * AN ITEM IN THE HAND: it rides on the focused slot's lower right corner, the way it rides on
      * the game's cursor. [slot] is the slot the focus is on. The slot it came from is the room's
      * to grey (the game greys a locked slot).

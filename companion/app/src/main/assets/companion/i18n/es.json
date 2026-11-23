@@ -4,6 +4,13 @@
 "Graphics driver": "Controlador gráfico",
 "Test: Mesa 26.3.1": "Prueba: Mesa 26.3.1",
 "Installing the test graphics driver...": "Instalando el controlador gráfico de prueba...",
+"In combat: a spell casts here in fights, over your macro": "En combate: un hechizo se lanza aquí en los combates, por encima de tu macro",
+"WoW's Stance Bar is on LT: in a form, LT + buttons cast your form bar": "La Barra de actitudes de WoW está en LT: en una forma, LT + botones lanzan tu barra de forma",
+"WoW's Possess Bar is on LT: with a pet, LT + buttons cast your pet bar": "La Barra de posesión de WoW está en LT: con mascota, LT + botones lanzan su barra",
+"WoW's Stance Bar is on RT: in a form, RT + buttons cast your form bar": "La Barra de actitudes de WoW está en RT: en una forma, RT + botones lanzan tu barra de forma",
+"WoW's Possess Bar is on RT: with a pet, RT + buttons cast your pet bar": "La Barra de posesión de WoW está en RT: con mascota, RT + botones lanzan su barra",
+"WoW's Stance Bar is on LT + RT: in a form, LT + RT + buttons cast your form bar": "La Barra de actitudes de WoW está en LT + RT: en una forma, LT + RT + botones lanzan tu barra de forma",
+"WoW's Possess Bar is on LT + RT: with a pet, LT + RT + buttons cast your pet bar": "La Barra de posesión de WoW está en LT + RT: con mascota, LT + RT + botones lanzan su barra",
 "Ready. Close other apps for smoother play": "Listo. Cierra otras apps para jugar con más fluidez",
 "In fights": "En combate",
 "Combat bar": "Barra de combate",
@@ -2366,6 +2373,8 @@
 "In the row under the clock, with a hunter's pet.": "En la fila bajo el reloj, con la mascota de un cazador."
 },
 "templates": {
+"DS Forever's %s runs here, over your macro": "%s de DS Forever se usa aquí, por encima de tu macro",
+"In combat: %s casts here in fights, over your macro": "En combate: %s se lanza aquí en los combates, por encima de tu macro",
 "%s/%s ready": "%s/%s listos",
 "\"%s\" is its own button: put it on your bars (Out of combat: Change, Extra).": "\"%s\" es su propio botón: ponlo en tus barras (Fuera de combate: Cambiar, Extra).",
 "Tap slot %s, Party mode": "Espacio %s, modo grupo",
