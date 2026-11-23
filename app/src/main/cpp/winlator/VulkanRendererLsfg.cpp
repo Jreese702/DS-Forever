@@ -175,14 +175,22 @@ void VulkanRendererContext::destroyLsfg() {
     framegenMadeFrames = 0;
 }
 
-void VulkanRendererContext::createLsfg() {
-    if (lsfg || lsfgCachePath.empty() || !device || !physicalDevice || !vkd.CreateComputePipelines) return;
+// #153: builds a new frame-generation set from the shader cache. Reading and building the shaders can take seconds, so the
+// setters call this holding only framegenSetMutex: it creates shader modules on the device and touches nothing the render
+// thread, the window updates or the render list use.
+VkrLsfg* VulkanRendererContext::buildLsfg(const std::string& cachePath) const {
+    if (cachePath.empty() || !device || !physicalDevice || !vkd.CreateComputePipelines) return nullptr;
 
-    lsfg = vkr_lsfg_create(device, physicalDevice, lsfgCachePath.c_str());
-    if (!lsfg) {
-        RLOG_E("LSFG shaders unavailable at %s; frame generation stays off", lsfgCachePath.c_str());
-        return;
+    VkrLsfg* built = vkr_lsfg_create(device, physicalDevice, cachePath.c_str());
+    if (!built) {
+        RLOG_E("LSFG shaders unavailable at %s; frame generation stays off", cachePath.c_str());
     }
+    return built;
+}
+
+// Call with frameMutex held exclusively (the render thread reads the set while it draws).
+void VulkanRendererContext::configureLsfg() {
+    if (!lsfg) return;
     vkr_lsfg_configure(lsfg, framegenMultiplier ? framegenMultiplier : 2u,
                        framegenTargetRate,
                        framegenFlowScale > 0.0f ? framegenFlowScale : 0.7f,
@@ -245,18 +253,31 @@ void VulkanRendererContext::setFrameGenerationEnabled(bool enabled) {
         }
         return;
     }
+    std::lock_guard<std::mutex> sl(framegenSetMutex);
     if (framegenRequested == enabled) return;
-    std::unique_lock<std::shared_mutex> fl(frameMutex);
-    std::lock_guard<std::mutex> lk(renderMutex);
-    framegenRequested = enabled;
-    if (!enabled) {
-        if (device) vk_.DeviceWaitIdle(device);
-        destroyLsfg();
-    } else if (device && !lsfgCachePath.empty()) {
-        createLsfg();
+    // #153: build before taking the renderer's locks (see buildLsfg).
+    VkrLsfg* fresh = (enabled && !lsfg) ? buildLsfg(lsfgCachePath) : nullptr;
+    VkrLsfg* old = nullptr;
+    {
+        std::unique_lock<std::shared_mutex> fl(frameMutex);
+        framegenRequested = enabled;
+        if (!enabled) {
+            if (lsfg) {
+                { std::lock_guard<std::mutex> lk(renderMutex); if (device) vk_.DeviceWaitIdle(device); }
+                old = lsfg;
+                lsfg = nullptr;
+                framegenRealFrames = 0;
+                framegenMadeFrames = 0;
+            }
+        } else if (fresh) {
+            lsfg = fresh;
+            configureLsfg();
+        }
+        fbResized.store(true);
     }
-    fbResized.store(true);
     dirtyCV.notify_one();
+    // The GPU is idle and no frame can reach the old set any more: free it outside the locks.
+    if (old) vkr_lsfg_destroy(old);
     RLOG("Frame generation composite path %s (supported=%d)",
          enabled ? "enabled" : "disabled", (int)framegenSupported);
 }
@@ -267,16 +288,28 @@ bool VulkanRendererContext::isFrameGenerationSupported() const {
 
 void VulkanRendererContext::setFrameGenerationShaders(const std::string& cachePath) {
     if (!framegenArmed) return;
-    std::unique_lock<std::shared_mutex> fl(frameMutex);
-    std::lock_guard<std::mutex> lk(renderMutex);
-    if (device) vk_.DeviceWaitIdle(device);
-    destroyLsfg();
-    lsfgCachePath = cachePath;
-    if (framegenRequested && device && !lsfgCachePath.empty()) {
-        createLsfg();
+    std::lock_guard<std::mutex> sl(framegenSetMutex);
+    // #153: every settings push sends the same cache again. Unchanged, there is nothing to rebuild and no reason to wait
+    // on the frame being drawn.
+    if (cachePath == lsfgCachePath) return;
+    // Build the new set before taking the renderer's locks (see buildLsfg), then swap it in.
+    VkrLsfg* fresh = framegenRequested ? buildLsfg(cachePath) : nullptr;
+    VkrLsfg* old = nullptr;
+    {
+        std::unique_lock<std::shared_mutex> fl(frameMutex);
+        if (lsfg) {
+            { std::lock_guard<std::mutex> lk(renderMutex); if (device) vk_.DeviceWaitIdle(device); }
+            old = lsfg;
+            framegenRealFrames = 0;
+            framegenMadeFrames = 0;
+        }
+        lsfg = fresh;
+        lsfgCachePath = cachePath;
+        configureLsfg();
+        fbResized.store(true);
     }
-    fbResized.store(true);
     dirtyCV.notify_one();
+    if (old) vkr_lsfg_destroy(old);
 }
 
 void VulkanRendererContext::setSourceFrameCount(uint64_t count) {
@@ -290,12 +323,19 @@ void VulkanRendererContext::setFrameGenerationRefreshRate(float hz) {
 
 void VulkanRendererContext::setFrameGenerationMode(int multiplier, int targetRate, int flowScalePct) {
     if (!framegenArmed) return;
+    const uint32_t nextMultiplier = multiplier < 2 ? 2u : (uint32_t)multiplier;
+    const uint32_t nextTargetRate = targetRate < 0 ? 0u : (uint32_t)targetRate;
+    const float nextFlowScale = flowScalePct <= 0 ? 0.7f : (float)flowScalePct / 100.0f;
+    std::lock_guard<std::mutex> sl(framegenSetMutex);
+    // #153: every settings push sends the mode again; unchanged, the frame being drawn is never waited on.
+    if (nextMultiplier == framegenMultiplier && nextTargetRate == framegenTargetRate
+        && nextFlowScale == framegenFlowScale) return;
+    // The render thread reads these under frameMutex only (renderFrame, createSwapchain), so renderMutex is not needed.
     std::unique_lock<std::shared_mutex> fl(frameMutex);
-    std::lock_guard<std::mutex> lk(renderMutex);
     const uint32_t previous_images = framegenExtraImages();
-    framegenMultiplier = multiplier < 2 ? 2u : (uint32_t)multiplier;
-    framegenTargetRate = targetRate < 0 ? 0u : (uint32_t)targetRate;
-    framegenFlowScale = flowScalePct <= 0 ? 0.7f : (float)flowScalePct / 100.0f;
+    framegenMultiplier = nextMultiplier;
+    framegenTargetRate = nextTargetRate;
+    framegenFlowScale = nextFlowScale;
     if (lsfg) {
         vkr_lsfg_configure(lsfg, framegenMultiplier, framegenTargetRate,
                            framegenFlowScale, framegenRefreshRate);
