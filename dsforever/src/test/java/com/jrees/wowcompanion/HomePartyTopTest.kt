@@ -189,18 +189,25 @@ class HomePartyTopTest {
                     if (dock.top && p.b > rp.b + 0.01f) bad("the well's foot ${p.b} below the reference's ${rp.b}")
                     if (dock.top && !capped && kotlin.math.abs(p.b - rp.b) > 0.01f) bad("foot ${p.b} vs ${rp.b} (not capped)")
                     if (!dock.top && kotlin.math.abs(p.b - rp.b) > 0.01f) bad("a foot dock's foot ${p.b} vs ${rp.b}")
-                    // full width: the other column keeps its height (it rides up with a foot dock's column)
+                    // full width: the other column keeps its height (it rides up with a foot dock's column); a foot dock over a bar
+                    // under one column keeps its column (the user's pick 2026-11-23, "Stay in its column"): the other column grows up
+                    // as in any Top fight (the 1519 integration's arithmetic)
+                    val wide = dock.top || !S.oneColumnFootBar(l)
+                    if (r.partyWide != wide) bad("across ${r.partyWide}")
                     val o = r.boxes.getValue(other); val ro = ref.boxes.getValue(other)
                     if (o.h < ro.h - 0.01f) bad("the $other shrank: ${o.h} vs ${ro.h}")
-                    if (!capped && kotlin.math.abs(o.h - ro.h) > 0.01f) bad("the $other took the strip (not capped): ${o.h} vs ${ro.h}")
+                    if (wide && !capped && kotlin.math.abs(o.h - ro.h) > 0.01f) bad("the $other took the strip (not capped): ${o.h} vs ${ro.h}")
+                    if (!wide && o.t > ro.t - 100f) bad("the $other did not grow up")
                     if (r.f1 != ref.f1 || r.f2 != ref.f2 || r.f3 != ref.f3) bad("fallbacks ${r.f1}/${r.f2}/${r.f3} vs ${ref.f1}/${ref.f2}/${ref.f3}")
                     // the 1519 audit (finding 3): the tap-to-cast bar kept in a Top fight (castHidden false) is never slid away by an F2 /
                     // F3 the away page inherits - the band-on reference needs neither in any record x party shape (at most three rows)
                     if (r.castHidden || ref.f2 || ref.f3) bad("the bar slid away on the away page (F2 ${ref.f2} / F3 ${ref.f3})")
-                    // full width: the well across both columns, its tab on its own column's outer screen edge
+                    // full width: the well across both columns, its tab on its own column's outer screen edge (else inside its column)
                     val lo = minOf(c.l, o.l); val hi = maxOf(c.r, o.r)
-                    if (S.partyRight(l) && (p.r != 1240f || kotlin.math.abs(p.l - (lo + 1f)) > 0.01f) ||
-                        !S.partyRight(l) && (p.l != 0f || kotlin.math.abs(p.r - (hi - 1f)) > 0.01f)) bad("the well not across both columns: $p / $c / $o")
+                    if (wide && (S.partyRight(l) && (p.r != 1240f || kotlin.math.abs(p.l - (lo + 1f)) > 0.01f) ||
+                        !S.partyRight(l) && (p.l != 0f || kotlin.math.abs(p.r - (hi - 1f)) > 0.01f))) bad("the well not across both columns: $p / $c / $o")
+                    if (!wide && (S.partyRight(l) && kotlin.math.abs(p.l - (c.l + 1f)) > 0.01f ||
+                        !S.partyRight(l) && kotlin.math.abs(p.r - (c.r - 1f)) > 0.01f)) bad("the well out of its column: $p / $c")
                     if (r.partyTabRight != S.partyRight(l)) bad("the tab's edge")
                 }
             }

@@ -53,7 +53,7 @@ class SettingsTabsTest {
         assertEquals(listOf("Look", "Account", "Help", "Reset", "Support"), SettingsTabs.groups(T.GENERAL).map { it.heading })
         // GitHub #43 cb3 (the user: "the tap to cast bar should get its own bottom screen section")
         // party sizing (the user's pick 2026-11-23: "Settings + Edit Home"): Party, the party list's tile, under Home
-        assertEquals(listOf("Home", "Party", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
+        assertEquals(listOf("Home", "Party list", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
         // the layout editor (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI
         // menu"; the design's pick): a first group "Layout" on Top screen
         assertEquals(listOf("Layout", "Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })

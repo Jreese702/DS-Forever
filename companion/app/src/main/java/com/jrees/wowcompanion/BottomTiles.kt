@@ -100,7 +100,9 @@ object BottomTiles {
     /** one line of a band: a choice ([words], [picked] lit; [modes] = Top's On / Off signs), or a stepper ([stepper]: [words] are its
      *  buttons, [value] its value) */
     class Line(val key: String, val label: String?, val words: List<String>, val picked: Int, val modes: List<UiMode>? = null,
-               val value: String? = null, val icon: Int? = null, val enabled: Boolean = true, val stepper: Boolean = false)
+               val value: String? = null, val icon: Int? = null, val enabled: Boolean = true, val stepper: Boolean = false,
+               /** the words that do nothing now (dimmed, no cursor stop, a press refused: party sizing's fight words with Grows = Off) */
+               val off: Set<Int> = emptySet())
 
     private val ONOFF = listOf("On", "Off")
     private val SHOW_HIDE = listOf("Show", "Hide")
@@ -128,7 +130,7 @@ object BottomTiles {
         XP -> listOf(Line(XP, null, SHOW_HIDE, if (HomeSettings.layout.xpBar) 0 else 1, listOf(UiMode.ON, UiMode.OFF)))
         // party sizing: the three picks, the party list's bubble's own rows (one wording)
         PARTY -> HomeWidgetMenus.partySizingRows(HomeSettings.layout).zip(listOf(HomeWidgetMenus.PARTY_GROW_TILE, HomeWidgetMenus.PARTY_TOP_TILE,
-            HomeWidgetMenus.PARTY_BOTTOM_TILE)).map { (r, words) -> Line(r.key, r.label, words, r.picked) }
+            HomeWidgetMenus.PARTY_BOTTOM_TILE)).map { (r, words) -> Line(r.key, r.label, words, r.picked, off = r.off) }
         QUEST -> listOf(Line(QUEST, null, CARD_WORDS, CARD_DOCKS.indexOf(HomeSettings.layout.card)))
         CLOCK -> CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
         TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null))
@@ -265,8 +267,11 @@ object BottomTiles {
             XP -> HomeLayoutStore.update { it.copy(xpBar = k == 0) }
             // party sizing (2026-11-23): this character's record
             HomeEditModel.K_PARTY_GROW -> HomeLayout.PartyGrow.values().getOrNull(k)?.let { v -> HomeLayoutStore.update { it.copy(partyGrow = v) } }
-            HomeEditModel.K_PARTY_TOP -> HomeLayout.PartyTopFight.values().getOrNull(k)?.let { v -> HomeLayoutStore.update { it.copy(partyTop = v) } }
-            HomeEditModel.K_PARTY_BOTTOM -> HomeLayout.PartyBottomFight.values().getOrNull(k)?.let { v -> HomeLayoutStore.update { it.copy(partyBottom = v) } }
+            // (a word dimmed by Grows = Off writes nothing: HomeWidgetMenus.partyTopOff / partyBottomOff)
+            HomeEditModel.K_PARTY_TOP -> HomeLayout.PartyTopFight.values().getOrNull(k)?.takeIf { k !in HomeWidgetMenus.partyTopOff(HomeSettings.layout) }
+                ?.let { v -> HomeLayoutStore.update { it.copy(partyTop = v) } }
+            HomeEditModel.K_PARTY_BOTTOM -> HomeLayout.PartyBottomFight.values().getOrNull(k)?.takeIf { k !in HomeWidgetMenus.partyBottomOff(HomeSettings.layout) }
+                ?.let { v -> HomeLayoutStore.update { it.copy(partyBottom = v) } }
             QUEST -> CARD_DOCKS.getOrNull(k)?.let { d -> HomeLayoutStore.update { it.copy(card = d) } }
             "hearth" -> HomeSettings.clockHearth = k == 0
             "teleport" -> HomeSettings.clockTeleport = k == 0
@@ -360,7 +365,11 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         val l = layout(width.toFloat())
         val out = ArrayList<RectF>()
         l.grid.tiles.forEach { out.add(it.rect()) }
-        l.band?.lines?.forEach { line -> line.buttons.forEach { out.add(it.rect()) } }
+        // (a dimmed word is no stop: the cursor steps over it, as Performance's tiles)
+        l.band?.lines?.forEachIndexed { i, line ->
+            val off = l.lines.getOrNull(i)?.off.orEmpty()
+            line.buttons.forEachIndexed { k, b -> if (k !in off) out.add(b.rect()) }
+        }
         return out
     }
 
@@ -413,7 +422,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
                     if (k >= 0) {
                         val ln = l.lines[i]
                         lineFocus = ln.key
-                        if (ln.enabled) BottomTiles.press(selected ?: return true, ln.key, k, env(), onDpad)
+                        if (ln.enabled && k !in ln.off) BottomTiles.press(selected ?: return true, ln.key, k, env(), onDpad)
                         requestLayout(); invalidate()
                         return true
                     }
@@ -603,8 +612,9 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
             }
             for ((k, b) in line.buttons.withIndex()) {
                 val m = ln.modes?.getOrNull(k)
-                if (m != null) modeChoice(c, b.rect(), m, k == ln.picked, ln.enabled)
-                else UiKit.choice(c, b.rect(), Tr.t(ln.words.getOrElse(k) { "" }), k == ln.picked, ln.enabled, textSize = if (ln.stepper) 40f else 27f)
+                val on = ln.enabled && k !in ln.off
+                if (m != null) modeChoice(c, b.rect(), m, k == ln.picked, on)
+                else UiKit.choice(c, b.rect(), Tr.t(ln.words.getOrElse(k) { "" }), k == ln.picked, on, textSize = if (ln.stepper) 40f else 27f)
             }
         }
         BottomTiles.status(id, e)?.let { say ->

@@ -150,8 +150,9 @@ class PartySizingShotsTest {
     private fun rowH(p: Page): Float { lay(p.home); return pv(p).module().cells[0].h }
 
     @Test fun fullWidthFromEveryDockBothSwaps() {
+        // (a foot dock over the bar Across: a bar under ONE column keeps a foot list in its column - [aFootListOverAOneColumnBar])
         for (dock in HomeLayout.PartyDock.values()) for (side in HomeLayout.Side.values()) {
-            val l = HomeLayout(chatSide = side, party = dock, cast = HomeLayout.CastDock.UNDER_CHAT)
+            val l = HomeLayout(chatSide = side, party = dock, cast = if (dock.top) HomeLayout.CastDock.UNDER_CHAT else HomeLayout.CastDock.ACROSS)
             val p = page(l, fight = false)
             val b = boxes(p.home)
             val tag = "$dock chat ${side.name.lowercase()}"
@@ -174,6 +175,32 @@ class PartySizingShotsTest {
         val off = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), fight = false, on = false)
         assertEquals(615f, boxes(off.home).getValue("PARTY").right, 0.5f)
         render(off, "narrow_party_mode_off")
+    }
+
+    /** STAY IN ITS COLUMN (the user's pick 2026-11-23): a foot list over a bar under one column (Under chat / Under map) keeps its
+     *  column - its foot on its column's foot, no gap under it - in Party mode at rest and in a fight; the list at the top stays across */
+    @Test fun aFootListOverAOneColumnBar() {
+        for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP))
+            for (cast in listOf(HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP)) {
+                val l = HomeLayout(party = dock, cast = cast)
+                val tag = "$dock $cast"
+                for (fight in listOf(false, true)) {
+                    val p = page(l, fight = fight)
+                    val b = boxes(p.home)
+                    val party = b.getValue("PARTY")
+                    val col = b.getValue(if (dock.column == HomeModule.CHAT) "CHAT" else "MAP")
+                    assertTrue("$tag: in its column ($party / $col)", party.width() < 700f)
+                    assertEquals(tag, party.top - PartyLayout.CHAT_GAP, col.bottom, 0.5f)
+                    val strip = b.getValue("STRIP")
+                    val under = strip.left <= col.centerX() && col.centerX() <= strip.right
+                    assertEquals("$tag: on its column's foot", if (under) strip.top - 8f else (H - 8f), party.bottom, 0.5f)
+                    if (!fight) render(p, "column_${dock.name.lowercase()}_bar_${cast.name.lowercase()}")
+                    else render(p, "column_${dock.name.lowercase()}_bar_${cast.name.lowercase()}_fight")
+                }
+            }
+        // the list at the top over the same bar: across
+        val top = page(HomeLayout(party = HomeLayout.PartyDock.ABOVE_MAP, cast = HomeLayout.CastDock.UNDER_MAP), fight = false)
+        assertTrue(boxes(top.home).getValue("PARTY").width() > 1200f)
     }
 
     /** the controller stays on the bottom screen (In fights = Grow): Grow (88, today's) / Same size (64) / Shrink to make room (56) */
@@ -266,8 +293,8 @@ class PartySizingShotsTest {
         assertEquals(88f, rowH(p), 0.5f)
         render(p, "edit_party_bubble_fight_preview_grow")
         p.home.editCancel(); settle(40)
-        // a list at the foot: the bubble over it
-        val f = page(l.copy(party = HomeLayout.PartyDock.UNDER_MAP), fight = false)
+        // a list at the foot (across: the bar Across): the bubble over it
+        val f = page(l.copy(party = HomeLayout.PartyDock.UNDER_MAP, cast = HomeLayout.CastDock.ACROSS), fight = false)
         assertTrue(f.home.editOpen(EditStop.CHAT)); settle(30)
         f.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
         val fb = editView(f).menuBox(EditStop.PARTY_PEN); val fp = boxes(f.home).getValue("PARTY")
@@ -322,7 +349,59 @@ class PartySizingShotsTest {
             out?.let { o -> File(o, "settings_party_tile.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
             BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_BOTTOM, 2, BottomTiles.Env(null, null)) { }
             assertEquals(HomeLayout.PartyBottomFight.SHRINK, HomeSettings.layout.partyBottom)
+            // Grows = Off (the pick "Grey them out"): Fill / Grow a bit / Grow dimmed, no cursor stop on them; Same size lit on top
+            val stops = part.focusTargets().size
+            BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_GROW, 0, BottomTiles.Env(null, null)) { }
+            HomeLayoutStore.update { it.copy(partyBottom = HomeLayout.PartyBottomFight.GROW) }
+            part.requestLayout(); layR()
+            assertEquals("three words fewer to stop on", stops - 3, part.focusTargets().size)
+            val ls = BottomTiles.lines(BottomTiles.PARTY, part.env())
+            assertEquals(listOf(emptySet(), setOf(0, 1), setOf(0)), ls.map { it.off })
+            assertEquals(listOf(0, 2, 1), ls.map { it.picked })
+            Thread.sleep(200); layR()
+            val c2 = Canvas(bmp); c2.drawColor(Theme.ink); r.draw(c2)
+            out?.let { o -> File(o, "settings_party_tile_grows_off.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
         } finally { GameUi.character = null; BottomPictures.drop() }
+    }
+
+    /** GROWS = OFF (the user's pick 2026-11-23, "Grey them out"): the bubble's fight words that do nothing dimmed (Fill, Grow a bit,
+     *  Grow), Same size lit; Shrink to make room active - in Edit Home's bubble and on Settings' tile */
+    @Test fun growsOffDimsTheFightWords() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, partyGrow = HomeLayout.PartyGrow.OFF), fight = false)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
+        p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
+        val r = rows(p)
+        assertEquals(setOf(0, 1), r[1].off); assertEquals(setOf(0), r[2].off)
+        assertEquals(listOf(0, 2, 1, 0), r.map { it.picked })
+        // a finger on a dimmed word: refused, nothing written
+        p.home.editAct { it.menuTouch(2, 0, rows(p)) }; settle(10)
+        assertEquals(HomeLayout.PartyBottomFight.GROW, p.home.editModel()!!.draft.partyBottom)
+        render(p, "edit_party_bubble_grows_off")
+        p.home.editCancel(); settle(40)
+    }
+
+    /** OFF ON CLOSE (the user's pick 2026-11-23): Fight chosen in the bubble's Preview row ends with the bubble - B, or a tap off it -
+     *  the list's rest rows and the band's rest look again; the ribbon's own Fight preview is the toggle's */
+    @Test fun theBubblesFightPreviewEndsWithTheBubble() {
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), fight = false)
+        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
+        for (how in listOf("B", "a tap off it")) {
+            p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
+            p.home.editAct { it.menuTouch(3, 1, rows(p)) }; settle(40)
+            assertTrue(how, p.home.editModel()!!.fightPreview)
+            assertEquals(how, PartyLayout.Mode.FIGHT_ON, pv(p).mode)
+            assertEquals(how, 88f, rowH(p), 0.5f)
+            if (how == "B") p.home.editAct { it.key("PAD2", emptyMap()) { emptyList() } } else p.home.editAct { it.closeMenu() }
+            settle(40)
+            val m = p.home.editModel()!!
+            assertNull(how, m.menu)
+            assertFalse("$how: the preview off", m.fightPreview)
+            assertEquals(how, PartyLayout.Mode.REST, pv(p).mode)
+            assertEquals(how, 64f, rowH(p), 0.5f)
+            assertFalse(how, field(p.home, "previewLaid") as Boolean)
+        }
+        render(p, "edit_party_bubble_closed_preview_off")
+        p.home.editCancel(); settle(40)
     }
 
     /** a Top-screen fight's Fight preview from the bubble: the band away, the list filling the strip under the fight strip */

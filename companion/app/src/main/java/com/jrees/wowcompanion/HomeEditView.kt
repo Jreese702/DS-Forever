@@ -1800,8 +1800,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (m.menu == null || m.menu!!.pencil) host.band()?.let { g -> bandAt(g, x, y) }?.let { (s, what) ->
             when {
                 s.pencil -> host.run(m.pencilTap(s))
-                s == EditStop.LOOK -> { m.closeMenu(); host.run(m.lookFlip()) }
-                what == "plus" -> { m.closeMenu(); host.run(m.openExtraTray()) }
+                s == EditStop.LOOK -> host.run(m.closeMenu() + m.lookFlip())
+                what == "plus" -> host.run(m.closeMenu() + m.openExtraTray())
                 what != null && what.startsWith("badge:") -> host.run(m.hideExtra(what.removePrefix("badge:")))
                 what != null -> m.extrasOn.indexOf(what).takeIf { it >= 0 }?.let { host.run(m.extraTap(it)) }
             }
@@ -1816,7 +1816,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 menuRowBoxes.indexOfFirst { it.contains(x, y) }.takeIf { it >= 0 }?.let { m.menuRow = it }
                 return
             }
-            m.closeMenu()
+            // (through the host: a party bubble closing lays the page again - its Party look, its Fight preview off on close)
+            host.run(m.closeMenu())
             return
         }
         // the red X chip, then its pill

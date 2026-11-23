@@ -108,9 +108,16 @@ class HomeEditModel(
         private set
     /** the draft when the lift began: B puts it back */
     private var liftFrom: HomeLayout? = null
-    /** the open menu's widget and its row */
+    /** the open menu's widget and its row. OFF ON CLOSE (the user's pick 2026-11-23): the party list's bubble closing - by any way: B, a
+     *  tap off it, another pencil, a lift, Done - ends the fight preview its Preview row turned on ([bubbleFight]); a preview the
+     *  ribbon's Fight toggle turned on stays (the view lays the rest look again: HomeView.previewEnded) */
     var menu: EditStop? = null
-        private set
+        private set(v) {
+            if (field == EditStop.PARTY_PEN && v != EditStop.PARTY_PEN) { if (bubbleFight) fightPreview = false; bubbleFight = false }
+            field = v
+        }
+    /** the fight preview on now was turned on by the party bubble's Preview row (it ends with the bubble: [menu]) */
+    private var bubbleFight = false
     var menuRow = 0
     /** the open sheet: the Add tray ("+": the card or the bar back on Home), the room bar's tray of hidden rooms (its "+" spot) */
     enum class Sheet { ADD, ROOMS, EXTRAS }
@@ -382,6 +389,7 @@ class HomeEditModel(
     fun toggleFight(): List<Fx> {
         if (parked) return emptyList()
         val dropped = if (lifted != null) drop() else emptyList()
+        bubbleFight = false                                                // the toggle flips the preview as it is (never the bubble's close)
         menu = null; sheet = null; removeAsk = null
         fightPreview = !fightPreview
         cursor = EditStop.FIGHT
@@ -393,6 +401,7 @@ class HomeEditModel(
     private fun partyPreview(on: Boolean): List<Fx> {
         if (parked || fightPreview == on) return emptyList()
         fightPreview = on
+        bubbleFight = on
         return listOf(Fx.Preview(on))
     }
 
@@ -590,7 +599,8 @@ class HomeEditModel(
         return dropped
     }
 
-    fun closeMenu() { menu = null }
+    /** the menu closed (a tap off it): no effect of its own - the host's run lays the page again (the party bubble's preview ended) */
+    fun closeMenu(): List<Fx> { menu = null; return emptyList() }
 
     private fun menuKey(s: EditStop, k: String, rows: List<MenuRow>): List<Fx> {
         if (rows.isEmpty()) { menu = null; return emptyList() }
@@ -1266,12 +1276,28 @@ object HomeWidgetMenus {
     const val PARTY_GROW_LABEL = "Grows"
     const val PARTY_TOP_LABEL = "Controller on top (fights)"
     const val PARTY_BOTTOM_LABEL = "Controller on bottom (fights)"
-    /** the three sizing rows for record [l] (the bubble's and the Settings tile's) */
+    /** the three sizing rows for record [l] (the bubble's and the Settings tile's). GROWS = OFF (the user's pick 2026-11-23, "Grey them
+     *  out": only the choices that do something stay active): a fight never makes the list bigger then, so the fight choices that would
+     *  grow it do nothing - Fill the freed space and Grow a bit on top, Grow on the bottom - and are dimmed ([partyTopOff] /
+     *  [partyBottomOff]: a press refused, the cursor steps over them); the row lights what the list does (Same size) while the record
+     *  keeps its pick, so Grows back on brings it back. Shrink to make room still shrinks: it stays active */
     fun partySizingRows(l: HomeLayout): List<MenuRow> = listOf(
         MenuRow(HomeEditModel.K_PARTY_GROW, PARTY_GROW_LABEL, PARTY_GROW_WORDS, l.partyGrow.ordinal),
-        MenuRow(HomeEditModel.K_PARTY_TOP, PARTY_TOP_LABEL, PARTY_TOP_WORDS, l.partyTop.ordinal),
-        MenuRow(HomeEditModel.K_PARTY_BOTTOM, PARTY_BOTTOM_LABEL, PARTY_BOTTOM_WORDS, l.partyBottom.ordinal),
+        MenuRow(HomeEditModel.K_PARTY_TOP, PARTY_TOP_LABEL, PARTY_TOP_WORDS, partyTopShown(l).ordinal, off = partyTopOff(l)),
+        MenuRow(HomeEditModel.K_PARTY_BOTTOM, PARTY_BOTTOM_LABEL, PARTY_BOTTOM_WORDS, partyBottomShown(l).ordinal, off = partyBottomOff(l)),
     )
+    /** "Controller on top (fights)"'s words that do nothing for [l] (Grows = Off: Fill and Grow a bit keep the size, as Same size) */
+    fun partyTopOff(l: HomeLayout): Set<Int> = if (l.partyGrow != HomeLayout.PartyGrow.OFF) emptySet()
+        else setOf(HomeLayout.PartyTopFight.FILL.ordinal, HomeLayout.PartyTopFight.GROW.ordinal)
+    /** "Controller on bottom (fights)"'s words that do nothing for [l] (Grows = Off: Grow keeps the size, as Same size) */
+    fun partyBottomOff(l: HomeLayout): Set<Int> = if (l.partyGrow != HomeLayout.PartyGrow.OFF) emptySet()
+        else setOf(HomeLayout.PartyBottomFight.GROW.ordinal)
+    /** the top row's lit word: the record's pick, or Same size while that pick is dimmed (what the list does) */
+    fun partyTopShown(l: HomeLayout): HomeLayout.PartyTopFight =
+        if (l.partyTop.ordinal in partyTopOff(l)) HomeLayout.PartyTopFight.SAME else l.partyTop
+    /** the bottom row's lit word: the record's pick, or Same size while that pick is dimmed */
+    fun partyBottomShown(l: HomeLayout): HomeLayout.PartyBottomFight =
+        if (l.partyBottom.ordinal in partyBottomOff(l)) HomeLayout.PartyBottomFight.SAME else l.partyBottom
 
     /** the party list's columns ([HomeEditModel.K_PARTY_PLACE]) */
     val PARTY_WORDS = listOf("Chat", "Map")

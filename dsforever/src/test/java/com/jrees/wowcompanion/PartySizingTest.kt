@@ -121,7 +121,10 @@ class PartySizingTest {
     @Test fun theSettingsTileWritesThisCharactersRecord() {
         assertEquals(listOf(BottomTiles.PARTY), BottomTiles.tiles(SettingsTabs.Group.PARTY_LIST))
         assertEquals(SettingsTabs.Tab.BOTTOM, SettingsTabs.Group.PARTY_LIST.tab)
-        assertEquals("Party", SettingsTabs.Group.PARTY_LIST.heading)
+        // (headed "Party list": Top screen has its own "Party" group, the game's party frames)
+        assertEquals("Party list", SettingsTabs.Group.PARTY_LIST.heading)
+        assertEquals("Party", SettingsTabs.Group.PARTY.heading)
+        assertEquals("Party list", SettingsTabs.Block.PARTY_LIST.heading)
         assertEquals("Party list", BottomTiles.NAMES[BottomTiles.PARTY])
         assertTrue(BottomTiles.PARTY in BottomTiles.ALL)
         val p = HomeLayoutStoreTest.Prefs()
@@ -206,6 +209,168 @@ class PartySizingTest {
         // Discard: the picks back
         assertTrue(m.discard().contains(HomeEditModel.Fx.Discard))
         assertEquals(saved, m.draft)
+    }
+
+    /**
+     * GROWS = OFF GREYS WHAT DOES NOTHING (the user's pick 2026-11-23, "Grey them out": only the choices that do something stay active):
+     * on top Fill the freed space and Grow a bit (they keep the size, as Same size), on the bottom Grow - dimmed in the bubble and on the
+     * Settings tile, a press refused (nothing written), the cursor stepping over them; the row lights Same size (what the list does) while
+     * the record keeps its pick; Shrink to make room still shrinks and stays active; Grows back on: every word, the pick lit again
+     */
+    @Test fun growsOffGreysTheChoicesThatDoNothing() {
+        // every Grows x pick: the dimmed words are exactly those whose rows equal Same size's in that mode (and are not Same size)
+        fun sameTop(l: HomeLayout, t: HomeLayout.PartyTopFight) = listOf(false, true).all { on ->
+            PartyLayout.sizedH(PartyLayout.Mode.FIGHT_TOP, on, l.copy(partyTop = t)) ==
+                PartyLayout.sizedH(PartyLayout.Mode.FIGHT_TOP, on, l.copy(partyTop = HomeLayout.PartyTopFight.SAME)) }
+        fun sameBottom(l: HomeLayout, b: HomeLayout.PartyBottomFight) = listOf(false, true).all { on ->
+            PartyLayout.sizedH(PartyLayout.Mode.FIGHT_ON, on, l.copy(partyBottom = b)) ==
+                PartyLayout.sizedH(PartyLayout.Mode.FIGHT_ON, on, l.copy(partyBottom = HomeLayout.PartyBottomFight.SAME)) }
+        for (g in G) for (t in T) for (b in B) {
+            val l = HomeLayout(partyGrow = g, partyTop = t, partyBottom = b)
+            val rows = HomeWidgetMenus.partySizingRows(l)
+            val tag = "$g $t $b"
+            assertEquals(tag, T.filter { it != HomeLayout.PartyTopFight.SAME && sameTop(l, it) }.map { it.ordinal }.toSet(), rows[1].off)
+            assertEquals(tag, B.filter { it != HomeLayout.PartyBottomFight.SAME && sameBottom(l, it) }.map { it.ordinal }.toSet(), rows[2].off)
+            assertTrue(tag, rows[0].off.isEmpty())
+            assertEquals(tag, g == HomeLayout.PartyGrow.OFF, rows[1].off.isNotEmpty())
+            // the lit word: the pick, or Same size while the pick is dimmed
+            assertEquals(tag, if (t.ordinal in rows[1].off) HomeLayout.PartyTopFight.SAME.ordinal else t.ordinal, rows[1].picked)
+            assertEquals(tag, if (b.ordinal in rows[2].off) HomeLayout.PartyBottomFight.SAME.ordinal else b.ordinal, rows[2].picked)
+            assertFalse(tag, rows[1].picked in rows[1].off); assertFalse(tag, rows[2].picked in rows[2].off)
+            assertFalse("$tag: Shrink stays", HomeLayout.PartyBottomFight.SHRINK.ordinal in rows[2].off)
+        }
+        // the bubble: a dimmed word refused, A / Left / Right step over them
+        val m = HomeEditModel(HomeLayout(partyGrow = HomeLayout.PartyGrow.OFF), EditStop.CHAT)
+        m.pencilTap(EditStop.PARTY_PEN)
+        val rows = { HomeWidgetMenus.rows(EditStop.PARTY_PEN, m.draft, HomeWidgetMenus.Values(fightPreview = m.fightPreview)) }
+        val refused = listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Refuse(EditStop.PARTY_PEN))
+        assertEquals(listOf(0, 2, 1, 0), rows().map { it.picked })
+        assertEquals(refused, m.menuTouch(1, 0, rows()))
+        assertEquals(refused, m.menuTouch(1, 1, rows()))
+        assertEquals(refused, m.menuTouch(2, 0, rows()))
+        assertEquals("the record keeps its picks", HomeLayout.PartyTopFight.FILL, m.draft.partyTop)
+        assertEquals(HomeLayout.PartyBottomFight.GROW, m.draft.partyBottom)
+        m.menuRow = 1
+        assertEquals("top: only Same size - A refused", refused, m.key("PAD1", emptyMap()) { rows() })
+        assertEquals(refused, m.key("PADDLEFT", emptyMap()) { rows() })
+        assertEquals(HomeLayout.PartyTopFight.FILL, m.draft.partyTop)
+        m.menuRow = 2
+        m.key("PADDRIGHT", emptyMap()) { rows() }
+        assertEquals("Shrink stays active", HomeLayout.PartyBottomFight.SHRINK, m.draft.partyBottom)
+        m.key("PAD1", emptyMap()) { rows() }
+        assertEquals("A wraps past Grow to Same size", HomeLayout.PartyBottomFight.SAME, m.draft.partyBottom)
+        assertEquals(refused, m.key("PADDLEFT", emptyMap()) { rows() })
+        assertEquals(HomeLayout.PartyBottomFight.SAME, m.draft.partyBottom)
+        // Grows back on: every word, the record's picks lit (Fill kept)
+        m.menuRow = 0
+        m.key("PADDRIGHT", emptyMap()) { rows() }
+        assertEquals(HomeLayout.PartyGrow.FIGHTS, m.draft.partyGrow)
+        assertTrue(rows()[1].off.isEmpty() && rows()[2].off.isEmpty())
+        assertEquals(listOf(1, 0, 1, 0), rows().map { it.picked })
+        // Settings' tile: the same dimmed words, a press on one writes nothing; the others write
+        HomeSettings.startForTest(HomeLayoutStoreTest.Prefs())
+        HomeLayoutStore.character("Korvash-Realm")
+        val env = BottomTiles.Env(null, "Korvash-Realm")
+        BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_GROW, 0, env) { }
+        val lines = BottomTiles.lines(BottomTiles.PARTY, env)
+        assertEquals(listOf(emptySet(), setOf(0, 1), setOf(0)), lines.map { it.off })
+        assertEquals(listOf(0, 2, 1), lines.map { it.picked })
+        BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_TOP, 1, env) { }
+        BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_BOTTOM, 0, env) { }
+        assertEquals(HomeLayout.PartyTopFight.FILL, HomeSettings.layout.partyTop)
+        assertEquals(HomeLayout.PartyBottomFight.GROW, HomeSettings.layout.partyBottom)
+        BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_BOTTOM, 2, env) { }
+        assertEquals(HomeLayout.PartyBottomFight.SHRINK, HomeSettings.layout.partyBottom)
+        BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_GROW, 1, env) { }
+        assertTrue(BottomTiles.lines(BottomTiles.PARTY, env).all { it.off.isEmpty() })
+        assertEquals(listOf(1, 0, 2), BottomTiles.lines(BottomTiles.PARTY, env).map { it.picked })
+    }
+
+    /**
+     * OFF ON CLOSE (the user's pick 2026-11-23): Fight chosen in the party bubble's Preview row ends when the bubble closes - B, X, the
+     * same pencil again, a tap off it (closeMenu), another pencil, the Look chip, Done; a preview the ribbon's Fight toggle turned on stays
+     * when the bubble closes; the ribbon's toggle while the bubble's Fight is on turns it off (never on again)
+     */
+    @Test fun theBubblesFightPreviewEndsWithTheBubble() {
+        val box = mapOf(EditStop.PARTY_PEN to HomeLayoutSolver.Box(1180f, 240f, 1220f, 280f))
+        fun model(): Pair<HomeEditModel, () -> List<MenuRow>> {
+            val m = HomeEditModel(HomeLayout(), EditStop.CHAT)
+            return m to { HomeWidgetMenus.rows(EditStop.PARTY_PEN, m.draft, HomeWidgetMenus.Values(fightPreview = m.fightPreview)) }
+        }
+        val closes: List<Pair<String, (HomeEditModel) -> Unit>> = listOf(
+            "B" to { m -> m.key("PAD2", emptyMap()) { emptyList() } },
+            "X" to { m -> m.key("PAD3", emptyMap()) { emptyList() } },
+            "the pencil again" to { m -> m.pencilTap(EditStop.PARTY_PEN) },
+            "a tap off it" to { m -> m.closeMenu() },
+            "another pencil" to { m -> m.pencilTap(EditStop.FIGHT_PEN) },
+            "the Look chip" to { m -> m.lookFlip() })
+        for ((how, close) in closes) {
+            val (m, rows) = model()
+            m.pencilTap(EditStop.PARTY_PEN)
+            m.menuTouch(3, 1, rows())
+            assertTrue(how, m.fightPreview)
+            close(m)
+            assertTrue(how, m.menu != EditStop.PARTY_PEN)
+            assertFalse("$how: the preview off with the bubble", m.fightPreview)
+            // opened again: Rest lit
+            m.pencilTap(EditStop.PARTY_PEN)
+            assertEquals(how, EditStop.PARTY_PEN, m.menu)
+            assertEquals(how, 0, rows()[3].picked)
+        }
+        // Done ends it too (as before)
+        model().let { (m, rows) -> m.pencilTap(EditStop.PARTY_PEN); m.menuTouch(3, 1, rows()); m.done(); assertFalse(m.fightPreview) }
+        // the bubble's Rest, then closing: nothing to end
+        model().let { (m, rows) ->
+            m.pencilTap(EditStop.PARTY_PEN); m.menuTouch(3, 1, rows()); m.menuTouch(3, 0, rows())
+            m.key("PAD2", emptyMap()) { rows() }; assertFalse(m.fightPreview); assertNull(m.menu)
+        }
+        // the ribbon's Fight first: the bubble opened over it and closed again leaves it on
+        model().let { (m, rows) ->
+            assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Preview(true)), m.toggleFight())
+            m.pencilTap(EditStop.PARTY_PEN)
+            assertEquals(EditStop.PARTY_PEN, m.menu); assertEquals(1, rows()[3].picked)
+            m.key("PAD2", box) { rows() }
+            assertNull(m.menu)
+            assertTrue("the ribbon's preview stays", m.fightPreview)
+        }
+        // the ribbon's toggle with the bubble's Fight on: the preview off (the bubble closes), not on again
+        model().let { (m, rows) ->
+            m.pencilTap(EditStop.PARTY_PEN); m.menuTouch(3, 1, rows())
+            assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Preview(false)), m.toggleFight())
+            assertFalse(m.fightPreview); assertNull(m.menu)
+        }
+    }
+
+    /**
+     * STAY IN ITS COLUMN (the user's pick 2026-11-23): a party list at the FOOT keeps its column whenever the record's tap-to-cast bar
+     * lies under one column (Under chat / Under map) - no gap under a list across on the bar-free side - and the sizing picks still lay
+     * its rows; across with no bar, Across, Split, or a bar above a column; a top dock always across
+     */
+    @Test fun aFootListOverAOneColumnBarStaysInItsColumn() {
+        val p5 = HomeLayoutSolver.Party(PartyLayout.Mode.FIGHT_ON, 5, false)
+        val s = HomeLayoutSolver.State(party = p5, partyOn = true, partyFight = true)
+        for (dock in HomeLayout.PartyDock.values()) for (cast in HomeLayout.CastDock.values()) for (side in HomeLayout.Side.values()) {
+            val l = HomeLayout(party = dock, cast = cast, chatSide = side, partyBottom = HomeLayout.PartyBottomFight.SHRINK)
+            val r = S.places(l, s)
+            val tag = "$dock $cast $side"
+            assertTrue("$tag: ${HomeLayoutRules.problems(l, s, r)}", HomeLayoutRules.problems(l, s, r).isEmpty())
+            val oneCol = cast == HomeLayout.CastDock.UNDER_CHAT || cast == HomeLayout.CastDock.UNDER_MAP
+            assertEquals(tag, oneCol, S.oneColumnFootBar(l))
+            assertEquals(tag, dock.top || !oneCol, r.partyWide)
+            assertEquals(tag, dock.top || !oneCol, S.wideParty(l, s))
+            assertEquals(tag, PartyLayout.TAKEOVER_H, r.partyRowH, 0.01f)
+            if (r.partyWide) continue
+            // in its column: no gap under it (its foot the column's foot), the column's part a gap over it
+            val party = r.boxes.getValue(HomePart.PARTY)
+            val col = r.boxes.getValue(if (dock.column == HomeModule.CHAT) HomePart.CHAT else HomePart.MAP)
+            assertEquals(tag, party.t - PartyLayout.CHAT_GAP, col.b, 0.01f)
+            val strip = r.boxes.getValue(HomePart.STRIP)
+            val under = strip.l <= col.cx && col.cx <= strip.r
+            assertEquals(tag, if (under) strip.t - 8f else 927f, party.b, 0.01f)
+            assertTrue(tag, party.w < 700f)
+        }
+        // Party mode off: never across, any record
+        for (dock in HomeLayout.PartyDock.values()) assertFalse(S.wideParty(HomeLayout(party = dock), s.copy(partyOn = false)))
     }
 
     /** the cursor on the pencil when the party list goes (QOL > Party mode off): to the chat, its bubble closed */

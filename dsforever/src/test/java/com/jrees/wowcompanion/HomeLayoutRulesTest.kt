@@ -58,10 +58,10 @@ class HomeLayoutRulesTest {
             val p = HomeLayoutRules.problems(l, s, r)
             if (p.isNotEmpty() && bad.size < 10) bad += "$l / $s: $p"
             val chat = r.boxes.getValue(HomePart.CHAT).h
-            // (full width in Party mode, 2026-11-23: a list across at the foot rides over a bar under the MAP alone in the chat's column
-            // too - the gap under it there - so that chat keeps the hard floor, F1 / F2's)
-            val floor = if (r.partyWide && !l.party.top && l.cast == HomeLayout.CastDock.UNDER_MAP) HomeLayoutRules.CHAT_HARD_MIN
-                else minOf(HomeLayoutRules.CHAT_MIN, classicChat(l, s))
+            // (full width in Party mode, 2026-11-23: a list across at the foot never rides over a bar under one column - it keeps its
+            // column there, the user's pick "Stay in its column" - so no chat keeps a gap under a list across)
+            if (r.partyWide && !l.party.top && S.oneColumnFootBar(l) && bad.size < 10) bad += "across over a one-column bar: $l / $s"
+            val floor = minOf(HomeLayoutRules.CHAT_MIN, classicChat(l, s))
             if (chat + 0.01f < floor && bad.size < 10) bad += "$l / $s: chat $chat under $floor"
             if ((r.f1 || r.f2) && bad.size < 10) bad += "a fallback fired on the Thor's page: $l / $s"
             // F3 only with the party list in the map's column (Classic's dock never - but in Party mode the list spans the map's column
@@ -372,7 +372,7 @@ class HomeLayoutRulesTest {
             for (s in st) {
                 // (full width in Party mode, 2026-11-23: a list across at the foot rides over the twin's foot bar in BOTH columns - the
                 // gap under it in the bar-free one - so a foot dock's twins differ there by design; a top dock's stay equal)
-                if (S.wideParty(s) && !l.party.top) continue
+                if (S.wideParty(l, s) && !l.party.top) continue
                 val a = S.places(l, s).boxes; val b = S.places(twin, s).boxes
                 for (p in listOf(HomePart.CHAT, HomePart.MAP)) assertEquals("$l $p / $s", b.getValue(p).h, a.getValue(p).h, 0.01f)
                 n++
@@ -467,7 +467,9 @@ class HomeLayoutRulesTest {
      * screen if its in the top or bottom possitions"): every side x width x dock x bar dock - the list spans both columns (its tab on its
      * own column's outer screen edge, its well to the other column's outer edge), its height as in its column, the chat and the map
      * under it (a top dock: a bar above either column under the list) or over it (a foot dock: over the higher of the columns' feet);
-     * the shared rows' cells each half the well; Party mode off: its column as before
+     * the shared rows' cells each half the well; Party mode off: its column as before. A FOOT dock over a bar under ONE column (Under
+     * chat / Under map: the user's pick 2026-11-23, "Stay in its column") keeps its column, exactly as with Party mode off - no gap
+     * under a list across on the bar-free side
      */
     @Test fun thePartyListSpansBothColumnsInPartyMode() {
         val p5 = HomeLayoutSolver.Party(PartyLayout.Mode.REST, 5, false)
@@ -481,8 +483,21 @@ class HomeLayoutRulesTest {
                 val b = r.boxes
                 val tag = "$side $share $dock $cast"
                 assertTrue("$tag: ${HomeLayoutRules.problems(l, s, r)}", HomeLayoutRules.problems(l, s, r).isEmpty())
-                assertTrue(tag, r.partyWide)
                 assertEquals(tag, PartyLayout.REST_H, r.partyRowH, 0.01f)
+                if (!dock.top && (cast == HomeLayout.CastDock.UNDER_CHAT || cast == HomeLayout.CastDock.UNDER_MAP)) {
+                    // its column: the very page Party mode off lays (the rows' height the same: rest), its tab on that column's edge
+                    assertFalse(tag, r.partyWide)
+                    assertEquals(tag, S.places(l, s.copy(partyOn = false)).boxes, b)
+                    val col = b.getValue(if (dock.column == HomeModule.CHAT) HomePart.CHAT else HomePart.MAP)
+                    val party = b.getValue(HomePart.PARTY)
+                    if (r.partyTabRight) { assertEquals(tag, 1240f, party.r, 0.01f); assertEquals(tag, col.l + 1f, party.l, 0.01f) }
+                    else { assertEquals(tag, 0f, party.l, 0.01f); assertEquals(tag, col.r - 1f, party.r, 0.01f) }
+                    // the column's foot: over its own bar, or the page's foot - no gap under it
+                    val foot = (b.filterKeys { it == HomePart.STRIP }.values.filter { it.l <= col.cx && col.cx <= it.r }).minOfOrNull { it.t - 8f } ?: 927f
+                    assertEquals("$tag: at its column's foot", foot, party.b, 0.01f)
+                    continue
+                }
+                assertTrue(tag, r.partyWide)
                 val party = b.getValue(HomePart.PARTY); val chat = b.getValue(HomePart.CHAT); val map = b.getValue(HomePart.MAP)
                 val leftCol = if (chat.l < map.l) chat else map; val rightCol = if (leftCol === chat) map else chat
                 assertEquals("$tag: the tab on its own column's outer edge", S.partyRight(l), r.partyTabRight)
@@ -543,7 +558,8 @@ class HomeLayoutRulesTest {
                     val want = PartyLayout.sizedH(mode, true, l)
                     if (want != null && kotlin.math.abs(r.partyRowH - want) > 0.01f) bad("rows ${r.partyRowH}, the picks say $want")
                     if (want == null && (r.partyRowH < PartyLayout.FIGHT_H - 0.01f || r.partyRowH > PartyLayout.FILL_MAX_H + 0.01f)) bad("fill rows ${r.partyRowH}")
-                    if (!r.partyWide) bad("not across")
+                    // (across, but a foot dock over a bar under one column: its column, the pick "Stay in its column")
+                    if (r.partyWide != (l.party.top || !S.oneColumnFootBar(l))) bad("across ${r.partyWide}")
                     // today's picks: today's page
                     // (review: against the mode's own rows handed in - not the record against itself - so a default that drifts from
                     // plateH shows; a Top fight's Fill has no fixed rows: its fill is pinned by HomePartyTopTest)

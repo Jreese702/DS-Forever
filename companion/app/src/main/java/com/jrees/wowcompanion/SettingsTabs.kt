@@ -40,8 +40,9 @@ object SettingsTabs {
         SUPPORT(Tab.GENERAL, "Support", headless = true),
         // GitHub #43 cb3 (the user, 2026-11-13: "the tap to cast bar should get its own bottom screen section"): its own group
         HOME(Tab.BOTTOM, "Home"),
-        // party sizing (the user's pick 2026-11-23: "Settings + Edit Home" - Settings > Party, per character): the party list's tile
-        PARTY_LIST(Tab.BOTTOM, "Party"),
+        // party sizing (the user's pick 2026-11-23: "Settings + Edit Home" - Settings > Party, per character): the party list's tile;
+        // headed "Party list" (Top screen has its own "Party" group: the game's party frames)
+        PARTY_LIST(Tab.BOTTOM, "Party list"),
         CAST_BAR(Tab.BOTTOM, "Tap-to-cast bar"), MAP(Tab.BOTTOM, "Map"), CHAT(Tab.BOTTOM, "Chat"),
         // the layout editor (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI
         // menu"; the design's pick: a first group "Layout" on Top screen, so it is the one that opens; Your HUD then opens folded)
@@ -111,7 +112,7 @@ object SettingsTabs {
         // GitHub #43 cb3: Off / Left / Right / Both (Home's section draws it, as it drew the old Home row)
         // the bar in a fight (the user 2026-11-13: "a settings toggle to make them Hide/stay in combat"): Hide (the default) / Stay
         // party sizing (2026-11-23): the party list's tile (BottomTiles.PARTY), its band's three lines - this character's record
-        PARTY_LIST(Group.PARTY_LIST, "Party", listOf(HomeWidgetMenus.PARTY_GROW_LABEL, HomeWidgetMenus.PARTY_TOP_LABEL,
+        PARTY_LIST(Group.PARTY_LIST, "Party list", listOf(HomeWidgetMenus.PARTY_GROW_LABEL, HomeWidgetMenus.PARTY_TOP_LABEL,
             HomeWidgetMenus.PARTY_BOTTOM_LABEL), Drawer.HOME),
         CAST_BAR(Group.CAST_BAR, "Tap-to-cast bar", listOf("Tap-to-cast bar", "Show in combat"), Drawer.HOME),     // cb14 (D5b)
         MAP(Group.MAP, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map")),
