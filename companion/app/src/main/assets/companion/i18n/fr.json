@@ -38,6 +38,8 @@
 "Tap to return to the game": "Toucher pour revenir au jeu",
 "Game running": "Jeu en cours",
 "Shown while the game runs, so Android keeps it running when you switch apps.": "Affiché pendant que le jeu tourne, pour qu'Android le garde ouvert quand vous changez d'appli.",
+"Building indoor maps": "Création des cartes d'intérieur",
+"Shown while indoor maps build, so Android lets them finish.": "Affiché pendant la création des cartes d'intérieur, pour qu'Android les laisse finir.",
 "No macros yet": "Pas encore de macros",
 "Extra": "Extra",
 "DS Forever": "DS Forever",
@@ -2313,6 +2315,7 @@
 "Installing. Keep DS Forever open": "Installation. Gardez DS Forever ouvert"
 },
 "templates": {
+"%s/%s ready": "%s/%s prêtes",
 "Empty: slot %s's own": "Vide : celui de l'emplacement %s",
 "\"%s\" is its own button: put it on your bars (Out of combat: Change, Extra).": "« %s » est son propre bouton : placez-le sur vos barres (Hors combat : Changer, Extra).",
 "Tap slot %s, Party mode": "Emplacement %s, mode groupe",

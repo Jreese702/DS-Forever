@@ -48,6 +48,8 @@ class PluviaApp : Application() {
         PrefManager.init(this)
         // the user's ruling 2026-11-18: old backups / dumps / reports past their caps go, in the background, never while the game runs
         runCatching { com.jrees.wowcompanion.AppTidy.startInBackground(this) }
+        // issue 568: the indoor maps' quiet service (IndoorBuildService), asked for by the builder's keep-alive only after a game
+        com.jrees.wowcompanion.IndoorKeepAlive.service = IndoorBuildService.Control
     }
 
     companion object {

@@ -107,6 +107,17 @@
                 android:value="Keeps a running game session alive, including its server connection, while the player switches apps." />
         </service>
 
+        <!-- Issue 568: runs only while the indoor-maps builder builds after a game (IndoorBuildService.kt, IndoorKeepAlive.kt), so Android
+             does not kill the cached app for the builder's CPU use. Not exported; the same permissions as the game-running service. -->
+        <service
+            android:name=".IndoorBuildService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Finishes building the player's indoor maps from the installed game's files after a game, while the player has switched apps or turned the screen off." />
+        </service>
+
         <!-- FileProvider for secure file sharing (for APK installation) -->
         <provider
             android:name="androidx.core.content.FileProvider"

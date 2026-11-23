@@ -37,7 +37,11 @@ object LauncherHooks {
     /** when [launchState] last changed (epoch ms), 0 = no launch yet: the launch window [PlayGate] holds the heavy work back in
      *  (issues #104 / #108 cluster, 2026-11-11: the game's processes grow while the container boots, before the game screen is up) */
     @Volatile var launchAtMs = 0L
-    fun launchEvent(what: String) { launchState = what; launchAtMs = System.currentTimeMillis(); StartupTrace.mark("launch: ${what.take(60)}", what) }
+    fun launchEvent(what: String) {
+        launchState = what; launchAtMs = System.currentTimeMillis(); StartupTrace.mark("launch: ${what.take(60)}", what)
+        // issue 568: a launch ends the indoor maps' quiet service at once (the builder lets go of the game files by itself)
+        runCatching { IndoorKeepAlive.update(null, why = "launch: ${what.take(40)}") }
+    }
     /**
      * No launch is under way any more (review of the #108-cluster fix, 2026-11-11): the launcher's screen is back in front (the game
      * screen went, or never came up: the container failed, the player backed out) or Play starts a new launch. Ends [PlayGate]'s launch
@@ -51,5 +55,5 @@ object LauncherHooks {
      * PLAY HOLDS THE ART (test build 1489, #361 / #56): Play's wait for the art before Play is over and the game starts next - every
      * art step lets go of the game files now and waits for the game to close ([PlayGate.held] until the launch's first step takes over)
      */
-    fun holdForPlay() { playHoldAtMs = System.currentTimeMillis() }
+    fun holdForPlay() { playHoldAtMs = System.currentTimeMillis(); runCatching { IndoorKeepAlive.gameStarting() } }
 }

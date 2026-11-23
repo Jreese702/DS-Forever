@@ -113,6 +113,7 @@ class DsForeverScreen(private val context: Context) {
         LauncherHooks.gameStartSec = System.currentTimeMillis() / 1000
         lastRx = -1L; note("game screen up"); main.removeCallbacks(traffic); main.post(traffic)
         com.jrees.wowcompanion.GameLife.started()             // issue #12: the game's life in DS Forever's own log
+        runCatching { com.jrees.wowcompanion.IndoorKeepAlive.gameStarting() }   // issue 568: never the indoor maps' service beside a game
         // the waiting screen's Keyboard, as in Streaming (the user, 2026-10-30: "On the local side I want that same keyboard button")
         signInClose = { signInBoard(false) }
         com.jrees.wowcompanion.SetupBridge.openPcKeyboard = { signInBoard(true) }
@@ -129,6 +130,7 @@ class DsForeverScreen(private val context: Context) {
         val route = TapSinks.wire(PlayMode.STREAM, null, sink)
         gameOn = true
         LauncherHooks.gameStartSec = System.currentTimeMillis() / 1000
+        runCatching { com.jrees.wowcompanion.IndoorKeepAlive.gameStarting() }   // issue 568: none while streaming either
         note("stream up")
         Log.i(TAG, "stream attached (input: $route)")
     }
