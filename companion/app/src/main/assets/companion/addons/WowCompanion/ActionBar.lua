@@ -4,7 +4,9 @@
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
 -- nbar12 THE WINGS' PLATES AND PARTY MODE (the user's rulings 2026-11-22, after the shots): (A) the band's L / R corner plates on
 -- the Wings, the ZL / ZR chips under them; (C) Party mode keeps the Top screen in its fights - the Wings carry the Party layer.
--- The full note at "nbar12 THE PLATES AND THE PARTY LAYER" (the Wings' section).
+-- The full note at "nbar12 THE PLATES AND THE PARTY LAYER" (the Wings' section). nbar12 review (11-22): B / pre-cfg Y draw the TOP
+-- bar's own Back / Inspect (topFixed, never a form or vehicle bar's slot); Hub's rows under the HUD's place kept clear with our HUD bars
+-- off ("partyhud"); the re-fit follows Hub's and Trail's party move on the tick it shows (NB.topMoved).
 -- nbar11 THE WINGS REWORK (the user, 2026-11-22, after trying Top screen: "The square icons don't look anything like ours on the bottom
 -- screen in the circles and it overlaps with my hud ... It should be a slick animation looking like it slides up to the top screen"):
 -- (a) THE RING LOOK - every button wears the bottom band's controller look (CastView.drawSlot's layers, the game's own gamepad atlases
@@ -470,6 +472,22 @@ local function resolveAll(pu)
         end
     end
     return out
+end
+
+-- nbar12 (the review, 11-22): the plain top bar's OWN fixed button at [p] (5-8: Interact / Inspect / Back / Jump) as resolveAll describes
+-- it, whatever bar overrides the base layer now (a form's stance bar, a vehicle's possess bar, the special page): Party mode's B (Back)
+-- and its pre-cfg Y (Inspect) are these on every layer. nil past the top bar's four or without one. Reads only
+local function topFixed(pu, p)
+    if not FX[p] then return nil end
+    local top = field(field(pu, "actionBars"), "topBar")
+    if top == nil then return nil end
+    local d = describe(barButtons(top)[p], p, "fx")
+    local lv = LIVE.n[p]
+    if lv and d.btn ~= nil then
+        d.live = lv
+        d.k, d.e = "fixed", true
+    end
+    return d
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -3157,10 +3175,10 @@ function NB.refresh()
         local pic = party and NB.partyPic(p, set, party) or nil
         local e
         if pic and pic.kind == "fixed" then
-            -- the game's own button there on EVERY layer (B's Back; Y's Inspect before a cfg): the base layer's fixed slot, as the router's
-            -- party pad keeps it whatever trigger is held
-            local base = layers[NB.LAYER_OF[1]]
-            e = slotEntry(base and base.d and base.d[p] or nil, hasTarget)
+            -- the game's own button there on EVERY layer (B's Back; Y's Inspect before a cfg), as the router's party pad keeps it whatever
+            -- trigger is held: the plain TOP bar's own fixed button (the review, 11-22: never the base layer's slot - a form's stance bar
+            -- or a vehicle's possess bar over it puts an action there, while the pad's B still turns Party mode off)
+            e = slotEntry(topFixed(pu, p), hasTarget)
         elseif pic then e = pic
         else e = NB.resolve(set, p, lay, page, fightSw, dpadOn, hasTarget, form) end
         b.noBadge = pic ~= nil and pic.noBadge == true
@@ -3612,22 +3630,24 @@ function NB.topOurs()
     local pf = type(uf) == "table" and type(uf.pf) == "table" and uf.pf or nil
     local boxes = type(ab) == "table" and type(ab.boxes) == "table" and ab.boxes or {}
     local function host(key) local b = boxes[key]; return type(b) == "table" and b.host or nil end
+    -- nbar12: Party mode's rows under the HUD's place (the Wings show in Party mode now): each row with its drawn rim (the rings past its
+    -- frame), and Hub's Select tab at the grid's left edge - read at any alpha, the rows can reach past Trail's block. Hub lays them there
+    -- whenever Party mode and our party frames are on (PF.want, PF.geo from P.partyGeo), our HUD bars on or off (the review, 11-22)
+    local rows = nil
+    if pf and pf.at == "hud" and type(pf.frames) == "table" then
+        local rim = NB.TOP.HUB_RIM
+        for _, f in pairs(pf.frames) do
+            local r = NB.frameRect(f, true)
+            if r then rows = NB.union(rows, { x = r.x - rim, y = r.y - rim, w = r.w + 2 * rim, h = r.h + 2 * rim }) end
+        end
+        if type(pf.tab) == "table" then rows = NB.union(rows, NB.frameRect(pf.tab, true)) end
+    end
     -- the HUD block: the bars, the pet strip, the aura host, and Party mode's rows hanging under it. nbar11: read at any alpha, and
     -- unioned with the block's own geometry (Trail P.lay.block: every part the HUD can show in a fight, wherever it is now)
     if type(prd) == "table" and NB.pieceOn(prd.lay) then
-        local live = nil
+        local live = rows
         local fs = { prd.f, prd.petL, type(prd.box) == "table" and prd.box.host or nil, host("hud") }
         for i = 1, 4 do live = NB.union(live, NB.frameRect(fs[i], true)) end        -- (holes: not ipairs)
-        if pf and pf.at == "hud" and type(pf.frames) == "table" then
-            -- nbar12: Party mode's rows (the Wings show in Party mode now): each row with its drawn rim (the rings past its frame), and
-            -- Hub's Select tab at the grid's left edge - read at any alpha, the rows can reach past Trail's block
-            local rim = NB.TOP.HUB_RIM
-            for _, f in pairs(pf.frames) do
-                local r = NB.frameRect(f, true)
-                if r then live = NB.union(live, { x = r.x - rim, y = r.y - rim, w = r.w + 2 * rim, h = r.h + 2 * rim }) end
-            end
-            if type(pf.tab) == "table" then live = NB.union(live, NB.frameRect(pf.tab, true)) end
-        end
         local geo = nil
         if type(prd.lay.block) == "function" then
             local L = WC.lay
@@ -3637,6 +3657,8 @@ function NB.topOurs()
         end
         hud = NB.union(live, geo) or NB.pieceRect(prd.lay, "hud")
         if hud then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hud") end
+    elseif rows then
+        add(rows, "partyhud")                                           -- our HUD bars off: the rows still stand there, kept clear
     end
     local cp = rawget(WC, "compass")
     if type(cp) == "table" and NB.pieceOn(cp.lay) then add(NB.pieceRect(cp.lay, "compass"), "compass") end
@@ -4255,6 +4277,26 @@ function NB.topEdit(flag, combat)
     end
     if not edit and f and f.plate and not T.shown then for i = 1, 2 do f.plate[i]:Hide() end end
 end
+-- nbar12 (the review, 11-22): Party mode's move as it stands - Hub's rows (PF.at / want / room) and Trail's block (its room for them,
+-- the lift, the pet's side, the aura row) - plain fields of our own tables (rawget, no frame read). -> true when one changed since the
+-- last tick (never on the first read); no table made per tick
+NB.MOVE_KEYS = { { "uf", "at" }, { "uf", "want" }, { "uf", "room" }, { "prd", "partyRoomPx" }, { "prd", "lift" }, { "prd", "petSide" },
+                 { "prd", "auraUp" } }
+function NB.topMoved()
+    local T = NB.top
+    local uf, prd = rawget(WC, "uf"), rawget(WC, "prd")
+    local pf = type(uf) == "table" and type(rawget(uf, "pf")) == "table" and rawget(uf, "pf") or nil
+    local first = T.mv == nil
+    if first then T.mv = {} end
+    local moved = false
+    for i, k in ipairs(NB.MOVE_KEYS) do
+        local t = (k[1] == "uf") and pf or (type(prd) == "table" and prd or nil)
+        local v = t and rawget(t, k[2]) or nil
+        if type(v) == "number" and not WC.isPlain(v) then v = nil end
+        if T.mv[i] ~= v then T.mv[i] = v; moved = true end
+    end
+    return moved and not first
+end
 -- the driver's tick (every frame): the solve's cadence, the switch, the motion
 function NB.topTick(el)
     local T = NB.top
@@ -4280,6 +4322,9 @@ function NB.topTick(el)
         NB.focusAt = SN(GetTime)
     end
     T.party = party
+    -- nbar12 (the review, 11-22): the toggle comes first, the rows move later (Hub's 0.1 s step: the room under the HUD and Trail's
+    -- block; the fade-out's end: the rows laid under the HUD at alpha 0, then faded in) - a re-fit on the tick each move shows
+    if NB.topMoved() then T.dirty = true end
     local sw = NB.topSwitch(party)
     local leaving = T.shown and not sw
     if flag and NB.built and not leaving then

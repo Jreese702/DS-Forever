@@ -192,7 +192,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
             c.drawRoundRect(RectF(p.l + 1.5f, p.t + 1.5f, p.r - 1.5f, p.b - 1.5f), 6f, 6f, pFill)
             pFill.style = Paint.Style.FILL
         }
-        val ib = PartyLayout.icon(p, mode)
+        // the 11-22 review (rulings C / D): a Top fight's filled rows and a Top-screen slide's size their parts from the row's height
+        val sized = PartyLayout.filledParts(mode, stretch)
+        val ib = PartyLayout.icon(p, mode, sized)
         // the pet: its portrait (the game's GetPetIcon, m134) or nothing - never a drawn dot; a person: the role, else the class icon
         val icon = if (mem.isPet) mem.ic?.let { Icons.get(it) } else {
             val roleArt = when (mem.role) { "TANK" -> "role_small_tank"; "HEALER" -> "role_small_heal"; "DAMAGER" -> "role_small_dps"; else -> null }
@@ -202,13 +204,13 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         else if (!mem.isPet) { pFill.color = col; c.drawCircle(ib.cx, ib.cy, ib.w * 0.34f, pFill) }
         // m134 (the user, 2026-11-11: "the a button glyph on them needs to be removed since highlighting it should target"): no button
         // glyph on a plate - the game's LB + button targeting hint (an A on your own plate) is gone with the chips; the pick targets
-        val nx = if (mem.isPet && icon == null) p.l + 14f else PartyLayout.nameX(p, mode)
-        val room = PartyLayout.nameRoom(p, mode) + (PartyLayout.nameX(p, mode) - nx)
-        nameP.textSize = PartyLayout.nameSize(mode, p.h)
+        val nx = if (mem.isPet && icon == null) p.l + 14f else PartyLayout.nameX(p, mode, sized)
+        val room = PartyLayout.nameRoom(p, mode, sized) + (PartyLayout.nameX(p, mode, sized) - nx)
+        nameP.textSize = PartyLayout.nameSize(mode, p.h, sized)
         nameP.color = if (mem.dead) Color.rgb(150, 150, 150) else col
         // the pet: its short name alone (m134: "its portrait/icon + short name"); a person: the level after the name
         val lv = if (mem.isPet) "" else mem.lv?.let { " $it" } ?: ""
-        lvP.textSize = PartyLayout.nameSize(mode, p.h) * 0.72f
+        lvP.textSize = PartyLayout.nameSize(mode, p.h, sized) * 0.72f
         val lvW = if (lv.isEmpty()) 0f else lvP.measureText(lv)
         // the skull / plug's room only when it is drawn
         val name = fit(Tr.t(mem.n), nameP, (room - lvW - (if (mem.dead || mem.off) 40f else 0f)).coerceAtLeast(40f))

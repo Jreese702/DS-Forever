@@ -101,20 +101,42 @@ object PartyLayout {
 
     /** the class-colour stripe, 6 px down the plate's left (a person's plate only: m134, never the pet's) */
     fun stripe(p: Box) = Box(p.l, p.t, p.l + 6f, p.b)
-    /** the class / role icon (the pet's portrait): 40 px (48 in a fight; a Party-mode Top fight's filled rows: half the plate, 48..72),
-     *  14 in, centred */
-    fun icon(p: Box, mode: Mode): Box {
-        val s = if (mode == Mode.FIGHT_TOP) (p.h * 0.5f).coerceIn(48f, 72f) else if (big(mode)) 48f else 40f
+    /**
+     * rulings C / D (the 11-22 review: at the fight's end the mode is the rest's at once while the slide still holds the rows full height,
+     * so the icon and name shrank in one frame; on the way up FIGHT_TOP's 48 / 28 started on the rest's 64 px rows, and its name stepped
+     * 28 -> 32 at 120 px): [filled] plates size their parts from the ROW's height on one continuous rule - a Party-mode Top fight's filled
+     * rows always, and a Top-screen slide's rows (REST or FIGHT_TOP, [PartyModuleView.stretch]) while they move; never the other fights'
+     */
+    fun filledParts(mode: Mode, stretch: Boolean): Boolean =
+        mode == Mode.FIGHT_TOP || (stretch && mode == Mode.REST)
+    /** the row height where a filled row's name reaches its largest (32) */
+    const val FILL_NAME_H = 120f
+    /** a filled row [h] high: its icon - the rest's 40 at [REST_H], a Party fight's 48 at [FIGHT_H], then half the plate up to 72 */
+    fun fillIcon(h: Float): Float = when {
+        h <= REST_H -> 40f
+        h < FIGHT_H -> 40f + 8f * (h - REST_H) / (FIGHT_H - REST_H)
+        else -> (h * 0.5f).coerceIn(48f, 72f)
+    }
+    /** a filled row [h] high: its name - the rest's 24 at [REST_H], a Party fight's 28 at [FIGHT_H], then evenly up to 32 at [FILL_NAME_H] */
+    fun fillName(h: Float): Float = when {
+        h <= REST_H -> 24f
+        h < FIGHT_H -> 24f + 4f * (h - REST_H) / (FIGHT_H - REST_H)
+        else -> 28f + 4f * ((h - FIGHT_H) / (FILL_NAME_H - FIGHT_H)).coerceAtMost(1f)
+    }
+    /** the class / role icon (the pet's portrait): 40 px (48 in a fight; [filled] rows: [fillIcon] of the plate's height), 14 in, centred */
+    fun icon(p: Box, mode: Mode, filled: Boolean = mode == Mode.FIGHT_TOP): Box {
+        val s = if (filled) fillIcon(p.h) else if (big(mode)) 48f else 40f
         return Box(p.l + 14f, p.cy - s / 2f, p.l + 14f + s, p.cy + s / 2f)
     }
-    /** the name's left and size (24 px, 28 in a fight, 32 on a filled row [h] 120 or more), its vertical centre the plate's */
-    fun nameX(p: Box, mode: Mode) = icon(p, mode).r + 12f
-    fun nameSize(mode: Mode, h: Float = plateH(mode)) = if (mode == Mode.FIGHT_TOP && h >= 120f) 32f else if (big(mode)) 28f else 24f
+    /** the name's left and size (24 px, 28 in a fight, [filled] rows: [fillName] of the row's height [h]), its vertical centre the plate's */
+    fun nameX(p: Box, mode: Mode, filled: Boolean = mode == Mode.FIGHT_TOP) = icon(p, mode, filled).r + 12f
+    fun nameSize(mode: Mode, h: Float = plateH(mode), filled: Boolean = mode == Mode.FIGHT_TOP) =
+        if (filled) fillName(h) else if (big(mode)) 28f else 24f
     /**
      * the room the name has before the plate's end. m134 (the user, 2026-11-11: "the a button glyph on them needs to be removed since
      * highlighting it should target and a will be whatever spell is bound"): no A / X / Y chips and no LB + button glyph on the plates
      */
-    fun nameRoom(p: Box, mode: Mode): Float = p.r - 8f - 10f - nameX(p, mode)
+    fun nameRoom(p: Box, mode: Mode, filled: Boolean = mode == Mode.FIGHT_TOP): Float = p.r - 8f - 10f - nameX(p, mode, filled)
     /** a state icon (skull: dead / ghost; plug: offline) after the name, 28 px */
     fun state(p: Box, x: Float) = Box(x + 8f, p.cy - 14f, x + 36f, p.cy + 14f)
 

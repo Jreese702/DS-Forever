@@ -857,7 +857,7 @@ def party_fight_checks():
     L.execute('RUN(0.1)')
     chk("I. ZR held: A = zra (Ancestral Spirit, a res): dim on a living member", NB.set == 3 and NB.shown[8].id == 2008 and b[8].look == "unusable",
         (NB.set, NB.shown[8].id, b[8].look))
-    chk("I. ... B still the base layer's Back on the ZR layer (the party pad keeps it on every layer)",
+    chk("I. ... B still the top bar's own Back on the ZR layer (the party pad keeps it on every layer)",
         (NB.shown[7].kind, NB.shown[7].icon, NB.shown[7].s) == back, ((NB.shown[7].kind, NB.shown[7].icon, NB.shown[7].s), back))
     L.execute('DEAD.party1 = true; RUN(0.3)')
     chk("I. ... the picked member dead: the res lit", b[8].look == "ok", b[8].look)
@@ -871,6 +871,16 @@ def party_fight_checks():
     chk("I. both triggers: the faces empty (nothing), B the game's Back", NB.set == 4 and NB.shown[8].kind == "empty" and NB.shown[5].kind == "empty"
         and NB.shown[6].kind == "empty", [NB.shown[p].kind for p in range(5, 9)])
     G.LT, G.RT = False, False
+    # the review (11-22): a form / vehicle bar over the base layer (a Druid's Bear form mid-fight) - B is still the top bar's own Back
+    # (the party pad's pos 7 = Party mode off), never that bar's 7th action; Y before a cfg the top bar's own Inspect, never its 6th
+    L.execute('OVERRIDE.stanceBar = "topBar"; RUN(0.3)')
+    chk("I. a form's bar over the base layer: B still the top bar's own Back (not the form bar's 7th action)",
+        (NB.shown[7].kind, NB.shown[7].icon, NB.shown[7].s) == back and b[7].icon.tex == 136245,
+        ((NB.shown[7].kind, NB.shown[7].icon, NB.shown[7].s), back))
+    L.execute('PCFG_KEEP = PCFG; PCFG = nil; RUN(0.3)')
+    chk("I. ... no cfg sent yet: Y the top bar's own Inspect (its crosshair), not the form bar's 6th action",
+        NB.shown[6].kind == "icon" and str(NB.shown[6].icon).startswith("atlas:crosshair_"), (NB.shown[6].kind, NB.shown[6].icon, NB.shown[6].s))
+    L.execute('PCFG = PCFG_KEEP; OVERRIDE.stanceBar = nil; RUN(0.3)')
     # range: the picked member out of range -> the glyph red (range only), never the target's
     G.PRNG = False
     L.execute('RUN(0.3)')
@@ -891,6 +901,26 @@ def party_fight_checks():
     chk("I. ... the Wings still shown, the bar's own layer back (no arrows, no turn, the badges back)", NB.top.shown and NB.party is None
         and b[1].icon.atlas != "common-icon-backarrow" and (b[2].icon.rotv or 0) == 0 and b[2].ia == 1 and b[1].glyph.shown is True
         and not f.chord[1][1].shown, (NB.party, b[1].icon.atlas, b[2].icon.rotv, b[1].glyph.shown))
+    # the review (11-22): Select on mid-fight - PadMap flips first, Hub's rows move later (its 0.1 s step: the room; the fade-out's end:
+    # PF.at "hud", the rows laid under the HUD at alpha 0, then faded in). The re-fit follows each of Hub's moves on the tick it shows,
+    # not the next REFIT_S
+    L.execute('SOLVES = 0; local o = WowCompanion.nbar.topSolve; WowCompanion.nbar.topSolve = function(...) SOLVES = SOLVES + 1; return o(...) end')
+    G.PLIVE = True
+    L.execute('DRV(0.02); RUN(0.08)')
+    c0 = G.SOLVES
+    L.execute('WowCompanion.uf.pf.want = "hud"; WowCompanion.uf.pf.room = 150; WowCompanion.uf.pf.fdir = -1; WowCompanion.prd.partyRoomPx = 150; DRV(0.02)')
+    chk("I. Select on mid-fight: Hub's room step (PF.room, Trail's partyRoomPx) re-fits that tick", G.SOLVES > c0, (c0, G.SOLVES))
+    L.execute('RUN(0.1)')
+    c1 = G.SOLVES
+    L.execute('WowCompanion.uf.pf.at = "hud"; WowCompanion.uf.pf.fdir = 1; for i = 1, 4 do local c = (i - 1) % 2; local r = math.floor((i - 1) / 2); '
+              'WowCompanion.uf.pf.frames[i] = MOCKF(740 + c * 330, 870 + r * 76, 300, 64); WowCompanion.uf.pf.frames[i].alpha = 0 end; DRV(0.02)')
+    sp = todict(NB.top.spot)
+    rows4 = [(740 + (i % 2) * 330, 870 + (i // 2) * 76, 300, 64) for i in range(4)]
+    hits = [(h, rw) for h in sp["rects"].values() for rw in rows4
+            if h["x"] < rw[0] + rw[2] and rw[0] < h["x"] + h["w"] and h["y"] < rw[1] + rw[3] and rw[1] < h["y"] + h["h"]]
+    chk("I. ... the fade-out's end (PF.at \"hud\", the rows laid there at alpha 0): re-fit that tick, the spot off every row",
+        G.SOLVES > c1 and not hits, (c1, G.SOLVES, hits))
+    L.execute('WowCompanion.uf.pf.fdir = nil; RUN(0.3)')
     G.PLIVE = True
     L.execute('RUN(0.3)')
     chk("I. ... and on again mid-fight: the Party layer back at once", NB.top.shown and NB.party is not None and b[1].icon.atlas == "common-icon-backarrow")
@@ -903,6 +933,21 @@ def party_fight_checks():
     rim = NB.TOP.HUB_RIM
     chk("I. Hub's rows (with their %d px rim) and its Select tab (alpha 0 too) in the HUD block" % rim, hd["x"] <= 700 + 1e-6
         and hd["x"] + hd["w"] >= 740 + 330 + 300 + rim - 1e-6 and hd["y"] + hd["h"] >= 870 + 76 + 64 + rim - 1e-6, hd)
+    # the review (11-22): our HUD bars switched off, our party frames on - Hub still lays the rows under the HUD's place (PF.want = Party
+    # mode and partyOk, PF.geo from P.partyGeo): they stay an obstacle of their own ("partyhud", with the rim and the tab), no HUD block
+    G.HUD_ON = False
+    ours, hud = L.eval("WowCompanion.nbar.topOurs")()
+    od = [todict(o) for o in ours.values()]
+    ph = [o for o in od if o.get("id") == "partyhud"]
+    chk("I. HUD bars off, Party mode's rows under the HUD's place: no HUD block, the rows (rim) and the tab an obstacle of their own",
+        hud is None and len(ph) == 1 and ph[0]["x"] <= 700 + 1e-6 and ph[0]["x"] + ph[0]["w"] >= 740 + 330 + 300 + rim - 1e-6
+        and ph[0]["y"] <= 860 + 1e-6 and ph[0]["y"] + ph[0]["h"] >= 870 + 76 + 64 + rim - 1e-6, (hud and todict(hud), od))
+    sp = todict(L.eval("WowCompanion.nbar.topSolve")(False))
+    rows = [(740 + (i % 2) * 330, 870 + (i // 2) * 76, 300, 64) for i in range(4)] + [(700, 860, 22, 140)]
+    hits = [(h, rw) for h in sp["rects"].values() for rw in rows
+            if h["x"] < rw[0] + rw[2] and rw[0] < h["x"] + h["w"] and h["y"] < rw[1] + rw[3] and rw[1] < h["y"] + h["h"]]
+    chk("I. ... the fight's solve keeps the Wings off every row and the tab (case %s)" % sp["case"], not hits, hits)
+    G.HUD_ON = True
     # the fight's end: gone
     G.COMBAT, G.TG = False, False
     L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.5)')
