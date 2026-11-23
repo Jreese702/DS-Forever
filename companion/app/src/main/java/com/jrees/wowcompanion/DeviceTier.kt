@@ -83,6 +83,14 @@ object DeviceTier {
     fun lowMemCuts(): Boolean = lowMemCuts(totalMb, runCatching { isLite() }.getOrDefault(false))
 
     /**
+     * COMPRESS IDLE MEMORY BY MODEL (PageOut, 2026-11-23; Settings.pageOut while the player never picked): on for the 8 GB Thors
+     * ([eightGb]: Base, Lite), where the reports' free memory reaches 317 MB and the kills cost most; off for the 12 / 16 GB Thors (their
+     * lowest free memory in the reports stays above the trigger anyway) and an unknown RAM until device reports measure it
+     */
+    fun pageOutDefault(mb: Long, lite: Boolean = false): Boolean = eightGb(mb, lite)
+    fun pageOutDefault(): Boolean = pageOutDefault(totalMb, runCatching { isLite() }.getOrDefault(false))
+
+    /**
      * LIGHT 8 (the approved plan LIGHT8_PLAN.md; the user's answers 2026-11-21: Q1 no Settings switch, automatic on 8 GB, the report
      * header says it is on): the 8 GB Thors (Base, Lite) count every cache, hold 3 loading pictures at lower colour depth, cap the
      * per-zone data (trimmed to the player's zone and its neighbours on a memory warning), hold the danger re-read and other zones'

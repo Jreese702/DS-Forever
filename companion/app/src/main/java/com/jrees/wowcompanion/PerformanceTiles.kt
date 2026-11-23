@@ -68,6 +68,8 @@ object PerformanceTileModel {
         val lowGfxChanged: Boolean = false,
         /** #56 G1: the video memory cap (Settings.vramCap) and whether it was changed in this visit (from the next game start) */
         val vramCap: Boolean = true, val vramChanged: Boolean = false,
+        /** 2026-11-23: Compress idle memory (Settings.pageOut, PageOut) and whether it was changed in this visit */
+        val pageOut: Boolean = false, val pageOutChanged: Boolean = false,
         /** [progress] the bake's phase only (the count is the tile's value and the ring, the deferred count its own line) */
         val indoorOn: Boolean = true, val ready: Int = 0, val total: Int = 0, val deferred: Int = 0, val progress: String = "",
         val terrain: String? = null,
@@ -97,7 +99,7 @@ object PerformanceTileModel {
     const val L_LIMIT = "limit"; const val L_RESTART = "restart"
     const val L_FG = "fg"; const val L_MULT = "mult"; const val L_FLOW = "flow"; const val L_PERF = "perf"; const val L_DLL = "dll"
     const val L_LIGHTER = "lighter"; const val L_LOWGFX = "lowgfx"; const val L_MAP = "homemap"; const val L_STYLE = "homestyle"
-    const val L_VRAM = "vram"
+    const val L_VRAM = "vram"; const val L_PAGEOUT = "pageout"
     const val L_BUILD = "build"; const val L_DEFERRED = "deferred"
     const val L_CODEC = "codec"; const val L_RES = "res"; const val L_FPS = "fps"; const val L_RATE = "rate"; const val L_SOUND = "sound"
     const val L_TOOLS = "tools"
@@ -135,6 +137,8 @@ object PerformanceTileModel {
             add(Line(L_STYLE, "Map style when zoomed out", null, listOf("Terrain", "Painted"), if (s.mapTerrain) 0 else 1, Kind.CHOICE))
             // #56 G1 (the user's approval 2026-11-19): the container's video memory cap, the last line (an advanced switch, on by default)
             add(Line(L_VRAM, "Video memory cap", null, ON_OFF, if (s.vramCap) 0 else 1, Kind.CHOICE))
+            // 2026-11-23 (the user's picks: the Wine helpers' and our own idle memory into zram when memory runs low; PageOut)
+            add(Line(L_PAGEOUT, "Compress idle memory", null, ON_OFF, if (s.pageOut) 0 else 1, Kind.CHOICE))
         }
         INDOOR -> buildList {
             add(Line(L_BUILD, "Build in the background", null, ON_OFF, if (s.indoorOn) 0 else 1, Kind.CHOICE))
@@ -203,6 +207,7 @@ object PerformanceTileModel {
             s.lighterFixed -> "Lighter mode: always on for this Thor"
             s.lowGfxChanged -> "Low-memory graphics: from the next game start"
             s.vramChanged -> "Video memory cap: from the next game start"
+            s.pageOutChanged -> "Compress idle memory: from the next game start"
             else -> ""
         }
         INDOOR -> listOfNotNull(s.progress.takeIf { it.isNotEmpty() }, s.terrain).joinToString(" · ")
@@ -310,8 +315,9 @@ object PerformanceTileModel {
     /** the band's boxes for [lines] (GameUiTiles.band; a label widened while its buttons keep [BTN_MIN]; an action's one button
      *  [ACTION_W] wide after its label) */
     fun band(left: Float, top: Float, width: Float, lines: List<Line>): GameUiTiles.Band {
-        // #56 G1: Memory's five with the Video memory cap stack too (Frame generation's five keep Top's layout)
-        val b = if (lines.size == STACK || lines.size == STACK + 1 || (lines.size == STACK + 2 && lines.any { it.key == L_VRAM }))
+        // #56 G1: Memory's five with the Video memory cap stack too (Frame generation's five keep Top's layout); 2026-11-23: and its
+        // six with Compress idle memory
+        val b = if (lines.size == STACK || lines.size == STACK + 1 || (lines.size in STACK + 2..STACK + 3 && lines.any { it.key == L_VRAM }))
             stacked(left, top, width, lines)
             else GameUiTiles.band(left, top, width, lines.map { GameUiTiles.Line(it.key, it.words.size, it.label != null) })
         val out = b.lines.mapIndexed { i, lb ->
@@ -412,6 +418,8 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
     private var lowGfxChanged = false
     /** Video memory cap pressed this visit (#56 G1) */
     private var vramChanged = false
+    /** Compress idle memory pressed this visit (PageOut) */
+    private var pageOutChanged = false
     private var progress: IndoorScheduler.Status? = null
     private var downX = 0f
     private var downY = 0f
@@ -474,7 +482,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             perfMode = FrameGen.performance, lastPick = FrameGen.lastPick, limitNote = FrameGen.limitNote,
             lighter = Settings.lighterMode, lighterFixed = DeviceTier.smallModel(), lowGfx = Settings.lowMemGraphics,
             mapFull = Settings.homeMapFull, mapTerrain = Settings.homeMapTerrain, lowGfxChanged = lowGfxChanged,
-            vramCap = Settings.vramCap, vramChanged = vramChanged,
+            vramCap = Settings.vramCap, vramChanged = vramChanged, pageOut = Settings.pageOut, pageOutChanged = pageOutChanged,
             indoorOn = Settings.indoorBuild, ready = p?.ready ?: 0, total = p?.total ?: 0,
             deferred = if (p == null || p.list.isEmpty()) 0 else maxOf(p.deferred, p.list.size),
             progress = phase(p, Settings.indoorBuild),
@@ -641,6 +649,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             M.L_MAP -> Settings.homeMapFull = k == 0
             M.L_STYLE -> Settings.homeMapTerrain = k == 0
             M.L_VRAM -> { Settings.vramCap = k == 0; vramChanged = true }
+            M.L_PAGEOUT -> { Settings.pageOut = k == 0; pageOutChanged = true }
             M.L_BUILD -> if (k == 0) { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() } else {
                 Settings.indoorBuild = false
                 IndoorKeepAlive.update(context, why = "off in Settings")         // issue 568: the quiet service goes at once

@@ -14,6 +14,10 @@ object NativeHeap {
     private val loaded: Boolean by lazy { runCatching { System.loadLibrary("dsf-heap"); true }.getOrDefault(false) }
 
     @JvmStatic private external fun purge(): Int
+    /** 2026-11-23 (PageOut): DS Forever's own allocator regions into zram, at most [capKib]: the answer's 8 numbers (dsf_heap.c) */
+    @JvmStatic private external fun pageOutSelf(capKib: Int): LongArray?
+    /** PageOut: the Wine helper [pid]'s request (SIGURG with DS Forever's value); 0 = sent */
+    @JvmStatic private external fun pageOutSignal(pid: Int): Int
 
     /** the library is in the APK */
     val available: Boolean get() = loaded
@@ -30,6 +34,11 @@ object NativeHeap {
         before < 0 || after < 0 -> "native purge: done"
         else -> "native purge: rss ${MemWatch.mbB(before)} -> ${MemWatch.mbB(after)} MB"
     }
+
+    /** PageOut: our own idle native memory paged out (its thread), null = no library */
+    fun pageOutSelfNow(capKib: Int): LongArray? = if (!loaded) null else runCatching { pageOutSelf(capKib) }.getOrNull()
+    /** PageOut: the request to one helper, 0 = sent; without the library -1 */
+    fun pageOutSignalNow(pid: Int): Int = if (!loaded) -1 else runCatching { pageOutSignal(pid) }.getOrDefault(-1)
 
     /** the purge with its line for the relief's mem.log line, "" without the library; any thread (MemWatch's own) */
     fun purgeLine(): String {

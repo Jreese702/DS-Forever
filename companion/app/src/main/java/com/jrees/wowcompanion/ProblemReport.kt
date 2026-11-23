@@ -164,6 +164,7 @@ object ProblemReport {
         val settings = buildList {
             runCatching { FrameGen.init(ctx); add("Frame generation: ${if (FrameGen.enabled && FrameGen.hasDll()) "on ${FrameGen.multiplier}x" else "off"}${if (FrameGen.hasDll()) "" else " (no DLL)"}") }
             runCatching { Settings.init(ctx); add("Indoor maps in the background: ${if (Settings.indoorBuild) "on" else "off"}") }
+            runCatching { add(PageOut.reportLine()) }           // 2026-11-23: idle memory into zram (PageOut)
             runCatching { add(IndoorSchedulerStep.readiness(ctx).label) }
             runCatching { add("SafePath network: ${ShippedNets.line}") }         // the shipped network's word (its "may be out of date")
             runCatching { add("Game art: ${ArtHarvest.state.javaClass.simpleName}" + ((ArtHarvest.state as? ArtHarvest.State.Failed)?.let { " (${it.why})" } ?: "")) }

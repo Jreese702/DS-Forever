@@ -337,6 +337,19 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
         if (new File(dnsV4MappedPath).exists()) {
             ld_preload += ":" + dnsV4MappedPath;
         }
+        // DS Forever (the user's picks, 2026-11-23: "Wine helpers" + "Our own app"): with Settings > Performance > Memory > Compress
+        // idle memory on, the Wine helpers' page-out preload (libdsf-pageout.so, PageOut); off = nothing added, the launch as before
+        java.util.Map<String, String> pageOut = null;
+        try {
+            pageOut = com.jrees.wowcompanion.PageOut.launchEnv(context);
+        } catch (Throwable t) {
+            Log.w("BionicProgramLauncherComponent", "compress idle memory: not added (" + t.getClass().getSimpleName() + ")");
+        }
+        if (pageOut != null) {
+            ld_preload += ":" + pageOut.get("preload");
+            envVars.put(com.jrees.wowcompanion.PageOut.ENV_DIR, pageOut.get(com.jrees.wowcompanion.PageOut.ENV_DIR));
+            envVars.put(com.jrees.wowcompanion.PageOut.ENV_GAME, pageOut.get(com.jrees.wowcompanion.PageOut.ENV_GAME));
+        }
         if (replacePath != null) ld_preload += ":" + replacePath;
 
         envVars.put("LD_PRELOAD", ld_preload);

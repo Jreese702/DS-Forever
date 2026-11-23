@@ -33,7 +33,7 @@ package com.jrees.wowcompanion
  *                                 chatStyleSet2, cursorSoftSet (one-time moves, probes, calibrations: a reset would run them again)
  *
  * APP PREFERENCES (SharedPreferences files)
- *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
+ *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), pageOut, homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
  *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme
  *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk, gameAccountPick (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
@@ -161,7 +161,7 @@ object ResetPlan {
     private fun char(file: String, kind: Kind?, vararg prefixes: String) = prefixes.map { PrefKey(file, it, kind, perChar = true) }
 
     val PREFS: List<PrefKey> = listOf(
-        exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
+        exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "pageOut", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
             "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme"),
         exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", "gameAccountAsk", "gameAccountPick",
             "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",
