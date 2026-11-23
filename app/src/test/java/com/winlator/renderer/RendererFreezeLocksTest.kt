@@ -120,6 +120,35 @@ class RendererFreezeLocksTest {
         }
     }
 
+    @Test fun noRenderListGoesInWhileAShaderOrSwitchPushRuns() {
+        // the shipped library (not rebuilt from this source) still waits on its renderer lock inside critical array sections,
+        // and its shader and on/off setters hold that lock for the whole GPU wait and shader build
+        val r = renderer
+        val slow = Regex("""nativeSetFrameGeneration(Shaders|Enabled)\((handle|nativeHandle)\b""").findAll(r).map { it.range.first }.toList()
+        assertTrue(slow.size >= 4)
+        for (at in slow) {
+            val line = r.substring(r.lastIndexOf('\n', at), at)
+            assertTrue(line, line.contains("slowFrameGenPush(() -> "))
+        }
+        val push = body(r, "private void slowFrameGenPush(Runnable push)")
+        // the flag goes up under lock (an X-thread render-list call already inside native finishes first) before the push
+        val up = push.indexOf("synchronized (lock) { frameGenPushing = true; }")
+        assertTrue(up in 0 until push.indexOf("push.run();"))
+        // and comes down in finally, with the held list sent again
+        val fin = push.indexOf("finally")
+        assertTrue(fin > push.indexOf("push.run();"))
+        assertTrue(push.indexOf("frameGenPushing = false;") > fin)
+        assertTrue(push.indexOf("if (resend) xServerView.queueEvent(this::updateScene);") > fin)
+        val list = body(r, "private void pushRenderList(ArrayList<RenderableWindow> list)")
+        val held = list.indexOf("if (frameGenPushing) { renderListHeld = true; return; }")
+        assertTrue(held in 0 until list.indexOf("nativeSetRenderList("))
+        // pushRenderList runs only under lock, so the flag is never read without it
+        val calls = all(r, "pushRenderList(").filter { !r.startsWith("private void pushRenderList(", it - "private void ".length) }
+        assertTrue(calls.isNotEmpty())
+        val sceneLock = blocks(r, "synchronized (lock)")
+        for (at in calls) assertTrue(sceneLock.any { at in it })
+    }
+
     @Test fun theNativeRendererIsCreatedAndDestroyedUnderTheFrameGenerationLock() {
         val r = renderer
         val fg = blocks(r, "synchronized (frameGenLock)")

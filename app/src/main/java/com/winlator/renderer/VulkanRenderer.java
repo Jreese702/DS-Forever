@@ -53,6 +53,9 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     private final Object frameGenLock = new Object();
     /** #153: the frame-generation values the native renderer already has (guarded by frameGenLock). */
     private final FrameGenPushes frameGenPushes = new FrameGenPushes();
+    /** #153: a shader or on/off push is inside the native renderer, and a render list that came meanwhile is held back
+     * (both guarded by lock; see {@link #slowFrameGenPush}). */
+    private boolean frameGenPushing = false, renderListHeld = false;
 
     public final ViewTransformation viewTransformation = new ViewTransformation();
     private boolean fullscreen = false;
@@ -425,6 +428,8 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
 
     private void pushRenderList(ArrayList<RenderableWindow> list) {
         if (nativeHandle == 0) return;
+        // #153: sent again as soon as the frame-generation push is done (slowFrameGenPush)
+        if (frameGenPushing) { renderListHeld = true; return; }
         int screenW = xServer.screenInfo.width, screenH = xServer.screenInfo.height;
 
         int start = 0;
@@ -877,12 +882,29 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             || pendingFilterMode != 0;
     }
 
+    /** #153, for the renderer library the app ships: a shader or on/off push holds the native renderer's own lock while it waits
+     * for the GPU and builds shaders, and that library's render-list call waits on the same lock while it blocks Android's memory
+     * cleanup (the whole app then stops). So no render list goes in while such a push runs; the newest one goes in right after
+     * (that renderer draws nothing during the push anyway; a rebuilt one builds outside its locks, so there a window-list change
+     * waits for the build at most). Called holding {@link #frameGenLock} only. */
+    private void slowFrameGenPush(Runnable push) {
+        // taking lock also waits out a render-list call that is already inside the native renderer
+        synchronized (lock) { frameGenPushing = true; }
+        try {
+            push.run();
+        } finally {
+            final boolean resend;
+            synchronized (lock) { frameGenPushing = false; resend = renderListHeld; renderListHeld = false; }
+            if (resend) xServerView.queueEvent(this::updateScene);
+        }
+    }
+
     /** #153: called holding {@link #frameGenLock} only, never {@link #lock} (see there); values the renderer already has are skipped. */
     private void applyFrameGenerationSettings() {
         final long handle = nativeHandle;
         if (handle == 0) return;
         if (frameGenShadersCachePath != null && frameGenPushes.shaders(frameGenShadersCachePath)) {
-            nativeSetFrameGenerationShaders(handle, frameGenShadersCachePath);
+            slowFrameGenPush(() -> nativeSetFrameGenerationShaders(handle, frameGenShadersCachePath));
         }
         if (frameGenPushes.mode(frameGenMultiplier, frameGenTargetRate, frameGenFlowScalePct)) {
             nativeSetFrameGenerationMode(handle, frameGenMultiplier, frameGenTargetRate, frameGenFlowScalePct);
@@ -891,7 +913,7 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             nativeSetFrameGenerationRefreshRate(handle, frameGenRefreshRate);
         }
         if (frameGenPushes.enabled(frameGenEnabled)) {
-            nativeSetFrameGenerationEnabled(handle, frameGenEnabled);
+            slowFrameGenPush(() -> nativeSetFrameGenerationEnabled(handle, frameGenEnabled));
         }
     }
 
@@ -905,7 +927,7 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             }
             final long handle = nativeHandle;
             if (handle != 0 && frameGenPushes.enabled(enabled)) {
-                nativeSetFrameGenerationEnabled(handle, enabled);
+                slowFrameGenPush(() -> nativeSetFrameGenerationEnabled(handle, enabled));
             }
             synchronized (lock) {
                 if (nativeMode && wasRequireCompositor != effectsRequireCompositor) {
@@ -930,7 +952,7 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             this.frameGenShadersCachePath = cachePath;
             final long handle = nativeHandle;
             if (handle != 0 && frameGenPushes.shaders(cachePath)) {
-                nativeSetFrameGenerationShaders(handle, cachePath);
+                slowFrameGenPush(() -> nativeSetFrameGenerationShaders(handle, cachePath));
             }
         }
     }
