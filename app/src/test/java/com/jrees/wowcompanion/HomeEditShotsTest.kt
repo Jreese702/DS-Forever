@@ -444,6 +444,10 @@ class HomeEditShotsTest {
             // place is checked below (unmoved), not their pictures
             for (r in listOfNotNull(g.padPen, g.facePen, g.look, g.plus, g.chip) + g.extras.map { it.second }) allowed += RectF(r).apply { inset(-16f, -16f) }
             for (r in listOf(g.pad, g.face)) allowed += RectF(r).apply { inset(-32f, -32f) }          // a button's glow round it
+            // 2026-11-23 ("declutter it in that mode we can hide them"): the L / R shoulder plates are gone in edit mode (and nothing else)
+            for (side in 0..1) allowed += RectF().also { p.cast.shoulderPlateRect(side, it); it.offset(bars.left, bars.top); it.inset(-8f, -8f) }
+            // ... and the ZL / ZR chips ("Hide them too"), with a lit chip's glow
+            for (side in 0..1) RectF().takeIf { p.cast.triggerChipRect(side, it) }?.let { it.offset(bars.left, bars.top); it.inset(-16f, -16f); allowed += it }
             val block = RectF(g.chip!!); for ((_, r) in g.extras) block.union(r); g.plus?.let { block.union(it) }; allowed += block.apply { inset(-16f, -16f) }
             fun inside(k: Int): Boolean { val x = bars.left + k % w; val y = bars.top + k / w; return allowed.any { it.contains(x, y) } }
             val a = bandPx(p, bars)
@@ -478,6 +482,159 @@ class HomeEditShotsTest {
             }
             for (s in listOf(EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.LOOK, EditStop.EXTRAS)) assertTrue("$cast: $s a stop", s in ev.stops())
             p.home.editCancel()
+        }
+    }
+
+    /**
+     * THE SHOULDER PLATES HIDE IN EDIT MODE (the user, 2026-11-23: "I dont literally want to be able to move the shoulders in edit mode I
+     * was just meaning to declutter it in that mode we can hide them"; then, of the ZL / ZR chips left in the corners, "Hide them too"):
+     * in both looks the band's L / R plates - and Diamonds' ZL / ZR trigger chips (Party mode's trigger plates), a held trigger's glow
+     * with them - fade out with the chrome as edit mode opens, stay out through the Fight preview, come back for a fight that parks it
+     * (and go again after), and fade back in on Done - drawn then exactly as before, a held trigger lighting its chip again. Their room
+     * stays: nothing else on the band moves, no stop or piece points at them. The Thin row draws no trigger chips
+     */
+    @Test fun theShoulderPlatesHideWhileEditing() {
+        for ((rest, party) in listOf(HomeRest.DIAMONDS to false, HomeRest.ROW to false, HomeRest.DIAMONDS to true)) {
+            val p = bandPage(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, rest = rest), party = party)
+            val look = rest.name.lowercase() + if (party) "_party" else ""
+            val home = p.home
+            home.forceLive = true
+            assertEquals(if (rest == HomeRest.ROW) CastView.Layout.ROW else CastView.Layout.DIAMONDS, p.cast.layout)
+            assertEquals("$look: the party strip", party, p.cast.partyStrip)
+            assertEquals("$look: drawn outside edit mode", 1f, p.cast.platesAlpha, 0f)
+            val bars = boxes(home).getValue("BARS")
+            val w = bars.width().toInt()
+            val plates = (0..1).map { RectF().also { r -> p.cast.shoulderPlateRect(it, r) } }
+            for (r in plates) assertTrue("$look: the plate inside the band: $r", r.left >= 0f && r.top >= 0f && r.right <= w && r.bottom <= bars.height())
+            // the ZL / ZR chips (Diamonds only: the Thin row has none)
+            val chips = (0..1).mapNotNull { side -> RectF().takeIf { p.cast.triggerChipRect(side, it) } }
+            assertEquals("$look: the trigger chips", if (rest == HomeRest.ROW) 0 else 2, chips.size)
+            for (r in chips) assertTrue("$look: the chip inside the band: $r", r.left >= 0f && r.top >= 0f && r.right <= w && r.bottom <= bars.height())
+            fun at(k: Int, rs: List<RectF>) = rs.any { it.contains((k % w).toFloat(), (k / w).toFloat()) }
+            fun inPlate(k: Int) = at(k, plates)
+            // a lit chip's glow round it
+            val chipsGlow = chips.map { RectF(it).apply { inset(-12f, -12f) } }
+            val off = bandPx(p, bars)
+            val slots0 = (0 until 8).map { RectF().also { r -> p.cast.slotRect(it, r) } }
+            // the buttons' own pictures run on CastView's own clock (the toolbar's pictures, their glow) and a held trigger shows its layer
+            // on them: a button's glow box is left out, as classicIsPixelIdenticalOutsideEditMode leaves it
+            val glow = slots0.map { RectF(it).apply { inset(-40f, -40f) } }
+            val chipK = off.indices.filter { at(it, chipsGlow) && !at(it, glow) }
+            if (chips.isNotEmpty()) assertTrue("$look: chip pixels to check (${chipK.size})", chipK.size > 400)
+            fun held(on: Boolean) { setField(p.cast, "padLt", on); p.cast.invalidate() }
+            // outside edit mode a held ZL lights its chip (hold-to-light as ever)
+            if (chips.isNotEmpty()) {
+                held(true); val lit = bandPx(p, bars); held(false)
+                assertTrue("$look: a held ZL lights its chip outside edit mode", chipK.any { lit[it] != off[it] })
+                assertTrue("$look: let go, unlit again", bandPx(p, bars).let { a -> chipK.all { a[it] == off[it] } })
+            }
+            // Diamonds' trigger strip: ZL + ZR held = the lit pair (and its "+") fades in at the band's centre, the same y as the chips
+            val joinK = if (chips.isEmpty() || party) emptyList() else {
+                val jw = chips[0].width() / 2f + 64f * w / 1240f + 12f
+                val join = RectF(w / 2f - jw, chips[0].top - 12f, w / 2f + jw, chips[0].bottom + 12f)
+                off.indices.filter { at(it, listOf(join)) && !at(it, glow) }
+            }
+            fun heldBoth(on: Boolean) { setField(p.cast, "padLt", on); setField(p.cast, "padRt", on); p.cast.invalidate(); bandPx(p, bars); settle(20) }
+            if (joinK.isNotEmpty()) {
+                heldBoth(true); val both = bandPx(p, bars); heldBoth(false)
+                assertTrue("$look: ZL + ZR held join in the middle outside edit mode", joinK.any { both[it] != off[it] })
+                assertTrue("$look: let go, apart again", bandPx(p, bars).let { a -> (chipK + joinK).all { a[it] == off[it] } })
+            }
+            shot(p, "60_plates_${look}_home")
+            assertTrue(home.editOpen(EditStop.CHAT))
+            // the chrome's fade seeked half-way (the off-device clock runs an animator to its end in one idle): the plates half out
+            (field(home, "chromeAnim") as android.animation.ValueAnimator).setCurrentFraction(0.5f)
+            val outK = p.cast.platesAlpha
+            assertEquals("$look: fading out with the chrome", 1f - (field(home, "chromeA") as Float), outK, 1e-4f)
+            assertTrue("$look: half out: $outK", outK > 0f && outK < 1f)
+            if (chips.isNotEmpty()) {
+                val half = bandPx(p, bars)
+                assertTrue("$look: the chips fading with the plates", chipK.any { half[it] != off[it] })
+            }
+            shot(p, "61a_plates_${look}_edit_fading", frames = 1)
+            settle(30)
+            assertEquals("$look: gone in edit mode", 0f, p.cast.platesAlpha, 0f)
+            val on = bandPx(p, bars)
+            val plateK = on.indices.filter { inPlate(it) }
+            val changed = plateK.count { on[it] != off[it] }
+            assertTrue("$look: the plates' pixels gone ($changed of ${plateK.size})", changed > plateK.size / 3)
+            if (chips.isNotEmpty()) {
+                val chipCore = on.indices.filter { at(it, chips) && !at(it, glow) }
+                val gone = chipCore.count { on[it] != off[it] }
+                assertTrue("$look: the chips' pixels gone ($gone of ${chipCore.size})", gone > chipCore.size / 10)
+                // a held trigger lights nothing while editing (no chip, no glow)
+                held(true); val litEdit = bandPx(p, bars); held(false)
+                val shows = chipK.filter { litEdit[it] != on[it] }
+                assertEquals("$look: a held ZL draws nothing in edit mode, at ${shows.take(8).map { it % w to it / w }}", 0, shows.size)
+            }
+            if (joinK.isNotEmpty()) {
+                // ... nor ZL + ZR held (the joined pair in the middle stays out with the chips): the band's own drawing (Home's edit chrome
+                // over it - the row's extras, the selection's glow - runs on its own clock as the time goes by)
+                fun castPx(): IntArray {
+                    setField(p.cast, "lastRxMs", android.os.SystemClock.elapsedRealtime())
+                    val img = Bitmap.createBitmap(p.cast.width, p.cast.height, Bitmap.Config.ARGB_8888)
+                    p.cast.draw(Canvas(img))
+                    return IntArray(p.cast.width * p.cast.height).also { img.getPixels(it, 0, p.cast.width, 0, 0, p.cast.width, p.cast.height) }
+                }
+                assertEquals("$look: the band's view is the BARS box", w, p.cast.width)
+                val base = castPx()
+                heldBoth(true); val bothEdit = castPx(); heldBoth(false)
+                val shows = (chipK + joinK).filter { bothEdit[it] != base[it] }
+                if (shows.isNotEmpty()) dumpDiff("64_diff_join_$look", base, bothEdit, w, p.cast.height)
+                assertEquals("$look: ZL + ZR held draw nothing in edit mode, at ${shows.take(8).map { it % w to it / w }}", 0, shows.size)
+            }
+            for (i in 0 until 8) assertEquals("$look: button $i unmoved", slots0[i], RectF().also { p.cast.slotRect(i, it) })
+            for (side in 0..1) assertEquals("$look: plate $side's room kept", plates[side], RectF().also { p.cast.shoulderPlateRect(side, it) })
+            for ((side, r) in chips.withIndex()) assertEquals("$look: chip $side's room kept", r, RectF().also { p.cast.triggerChipRect(side, it) })
+            // no stop of edit mode's on a plate or a chip
+            for ((s, bx) in home.editChrome.stops()) for (r in plates + chips) {
+                val hr = RectF(r).apply { offset(bars.left, bars.top) }
+                assertFalse("$look: $s on a plate or a chip $r", RectF(bx.l, bx.t, bx.r, bx.b).let { it.intersect(hr) && it.width() * it.height() > hr.width() * hr.height() / 4f })
+            }
+            shot(p, "61_plates_${look}_edit")
+            // the Fight preview is still edit mode: still hidden
+            home.editAct { it.toggleFight() }; settle(40)
+            assertTrue(model(p).fightPreview)
+            assertEquals("$look: hidden in the Fight preview", 0f, p.cast.platesAlpha, 0f)
+            shot(p, "62_plates_${look}_fight_preview")
+            home.editAct { it.toggleFight() }; settle(40)
+            assertFalse(model(p).fightPreview)
+            // a real fight parks edit mode: the plates back for it; its end: gone again
+            val m = model(p)
+            home.onFull(full(true), true); home.onQuests(quests(true), true); home.tick(); settle(40)
+            assertTrue(m.parked)
+            assertEquals("$look: back in a fight (edit mode parked)", 1f, p.cast.platesAlpha, 0f)
+            home.onFull(full(false), true); home.onQuests(quests(false), true)
+            ShadowSystemClock.advanceBy(Duration.ofSeconds(25)); home.tick(); settle(40)
+            assertFalse(m.parked)
+            assertEquals("$look: gone again after the fight", 0f, p.cast.platesAlpha, 0f)
+            // Done: fading back in, then drawn exactly as before
+            home.editKey("PADFORWARD")
+            (field(home, "chromeAnim") as android.animation.ValueAnimator).setCurrentFraction(0.5f)
+            val inK = p.cast.platesAlpha
+            assertTrue("$look: fading back in: $inK", inK > 0f && inK < 1f)
+            settle(40)
+            assertFalse(home.editing)
+            assertEquals("$look: back after Done", 1f, p.cast.platesAlpha, 0f)
+            val after = bandPx(p, bars)
+            val diff = (plateK + chipK).distinct().filter { k -> after[k] != off[k] && !at(k, glow) }
+            if (diff.isNotEmpty()) dumpDiff("63_diff_$look", off, after, w, bars.height().toInt())
+            assertEquals("$look: the plates and chips drawn as before edit mode, at ${diff.take(12).map { it % w to it / w }} in $plates $chips", 0, diff.size)
+            // and a held ZL lights its chip again
+            if (chips.isNotEmpty()) {
+                held(true); val lit = bandPx(p, bars); held(false)
+                assertTrue("$look: a held ZL lights its chip after Done", chipK.any { lit[it] != after[it] })
+            }
+            if (joinK.isNotEmpty()) {
+                heldBoth(true); val both = bandPx(p, bars); heldBoth(false)
+                assertTrue("$look: ZL + ZR held join in the middle again after Done", joinK.any { both[it] != after[it] })
+            }
+            shot(p, "63_plates_${look}_done")
+            // Discard brings them back too
+            assertTrue(home.editOpen(EditStop.CHAT)); settle(30)
+            assertEquals(0f, p.cast.platesAlpha, 0f)
+            home.editCancel(); settle(40)
+            assertEquals("$look: back after a cancel", 1f, p.cast.platesAlpha, 0f)
         }
     }
 

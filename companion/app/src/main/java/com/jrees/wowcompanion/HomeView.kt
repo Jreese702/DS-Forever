@@ -233,6 +233,7 @@ class HomeView(
         val i = loans.indexOfLast { it.view === v }
         if (i < 0) return
         val l = loans.removeAt(i)
+        if (v === castView) castView.platesAlpha = 1f                    // the room that takes the band back draws its plates
         (v.parent as? ViewGroup)?.removeView(v)
         l.parent.addView(v, min(l.index, l.parent.childCount), l.lp)
         v.visibility = l.vis
@@ -2055,6 +2056,8 @@ class HomeView(
             castView.swingOn = renderLook?.swing ?: HomeSettings.swingTimer
             // P4: the preview's stand-in swing (no swing of the game's running); always false outside edit mode
             castView.swingPreview = editFightLook()
+            // Edit Home (the user, 2026-11-23): the L / R shoulder plates and the ZL / ZR chips out while edit mode's chrome is in
+            editPlatesSync()
             // LATER item 16 (the user: "under the controller area ... the trigger modifiers ... light them up like in the cast menu when
             // they get pressed but dimmed when they arent"): Cast's trigger strip under the diamonds (cast 197ec48, DIAMONDS only)
             castView.triggerStrip = true
@@ -3633,7 +3636,7 @@ class HomeView(
         // at once, while the band is still Home's - the room that takes it next never gets the preview's look
         if (previewEnded()) shown?.let { apply(if (it.rest != flow.rest) flow.screen else it, animate = false) }
         editAway = true
-        chromeAnim?.cancel(); chromeA = 0f
+        chromeAnim?.cancel(); chromeA = 0f; editPlatesSync()
         liftStop = null; dragOffsetNow.fill(0f); motion.still(); cardOwnTo(0f, 0L, 0L); editDecor()
         onEditChrome?.invoke(null)
     }
@@ -3662,14 +3665,18 @@ class HomeView(
 
     private fun chromeFade(to: Float, ms: Long, end: (() -> Unit)? = null) {
         chromeAnim?.cancel()
-        if (!live || ms <= 0L) { chromeA = to; editView.invalidate(); end?.invoke(); return }
+        if (!live || ms <= 0L) { chromeA = to; editPlatesSync(); editView.invalidate(); end?.invoke(); return }
         chromeAnim = ValueAnimator.ofFloat(chromeA, to).apply {
             duration = ms; interpolator = Motion.curve()
-            addUpdateListener { chromeA = it.animatedValue as Float; editView.invalidate(); onEditChrome?.let { _ -> editRibbonRedraw?.invoke() } }
-            addListener(object : AnimatorListenerAdapter() { override fun onAnimationEnd(a: Animator) { chromeA = to; end?.invoke() } })
+            addUpdateListener { chromeA = it.animatedValue as Float; editPlatesSync(); editView.invalidate(); onEditChrome?.let { _ -> editRibbonRedraw?.invoke() } }
+            addListener(object : AnimatorListenerAdapter() { override fun onAnimationEnd(a: Animator) { chromeA = to; editPlatesSync(); end?.invoke() } })
             start()
         }
     }
+    /** Edit Home (the user, 2026-11-23: "declutter it in that mode we can hide them"; the ZL / ZR chips "Hide them too"): the band's L / R
+     *  shoulder plates and ZL / ZR chips fade out as the chrome fades in and back as it goes (Done, Discard, a fight's park); a band
+     *  another room holds keeps them */
+    private fun editPlatesSync() { castView.platesAlpha = if (lent(castView)) 1f - chromeA else 1f }
     /** the host's: redraw the ribbon (it lives in the room bar) */
     var editRibbonRedraw: (() -> Unit)? = null
 
