@@ -54,6 +54,13 @@ object GraphicsDriver {
 
     val DEFAULT = Choice.RECOMMENDED
 
+    /** the 1523 test build (the es review): the row's word for [c]. "Recommended" alone is a shared key - Polestar's guide reads it as
+     *  "Recomendada" (la ruta) - but el controlador wants "Recomendado", so the driver row's Recommended has its own key
+     *  ([RECOMMENDED_KEY]); English (or a language without it) shows the label */
+    const val RECOMMENDED_KEY = "Recommended (graphics driver)"
+    fun words(c: Choice): String =
+        if (c != Choice.RECOMMENDED) c.label else Tr.t(RECOMMENDED_KEY).let { if (it == RECOMMENDED_KEY) c.label else it }
+
     /** a saved or passed id as a choice (anything else = Recommended) */
     fun sanitize(id: String?): Choice = Choice.values().firstOrNull { it.id == id } ?: DEFAULT
 

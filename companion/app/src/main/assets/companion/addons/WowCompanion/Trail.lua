@@ -3905,6 +3905,9 @@ do
     end
 end
 
+-- prd24 THE 1523 TEST BUILD MERGE: feat/extras-polish's prd22 (the pet's happiness left the HUD) and feat/fight-castbar's prd22 +
+-- prd23 (Party mode centred on the top screen; centre the rows) took the same numbers from prd21; all kept, their notes as each
+-- wrote them below; nothing else changed.
 -- prd22 THE PET'S HAPPINESS LEFT THE HUD (feat/extras-polish; the user, 2026-11-23: "we should add pet happiness to this and remove it
 -- from the top screen HUD"): the pet strip keeps its portrait, its health and its power (prd12's unit, centred as before); the happiness
 -- face (prd11 / prd12 / prd13: PET_HAPPY past the unit's right rim, P.petHappyOn in the centring width) is gone, with its read. The app's
@@ -3923,7 +3926,7 @@ end
 -- prd23 (the user's pick 11-23, "Centre the rows"): with our HUD bars off (P.wanted false: P.tick returns before it reads Party mode,
 -- so P.partyOn kept its last word) P.cxFor reads Party mode live (P.partyModeOn), so P.partyGeo still carries ActionBar nbar15's
 -- shift and Hub's rows and Select tab fade to the centre alone; none of Trail's frames move (P.cx is left as it is).
-WC.prd = { V = "prd23", cx = 0, PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
+WC.prd = { V = "prd24", cx = 0, PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,

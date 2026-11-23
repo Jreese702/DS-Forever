@@ -37,14 +37,20 @@ class HomeMenusFitTest {
     private class Page(val l: HomeLayout, val s: HomeLayoutSolver.State, val r: HomeLayoutSolver.Result) {
         val split get() = l.cast == HomeLayout.CastDock.SPLIT
         /** the band's foot as Home's followers read it (HomeView.barsBottom: Top screen's fight lays the band above the page, foot 0) */
-        val bb get() = maxOf(0f, r.boxes.getValue(HomePart.BARS).b)
+        val bb get() = maxOf(0f, r.boxes.getValue(HomePart.BARS).b,
+            // (the 1523 merge, as HomeView.barsFoot: a Top-screen fight's strip carrying the cast bar is the band's foot then)
+            r.boxes[HomePart.FIGHT_CAST]?.takeIf { r.fightStrip && it.t >= -0.5f }?.b ?: 0f)
         /** the parts on the page (the buff list lies inside the map; a bar hidden for a fight lies below the page, or up behind the band) */
-        val shown: Map<HomePart, HomeLayoutSolver.Box> get() = r.boxes.filter { (p, b) -> p != HomePart.BARS && p != HomePart.AURAS && b.t < s.h &&
+        val shown: Map<HomePart, HomeLayoutSolver.Box> get() = r.boxes.filter { (p, b) -> p != HomePart.BARS && p != HomePart.FIGHT_CAST && p != HomePart.AURAS && b.t < s.h &&
             !((p == HomePart.STRIP || p == HomePart.CAST2) && b.b <= bb + 0.5f) }
-        fun half(p: HomePart, b: HomeLayoutSolver.Box): HomeSlide.Half =
+        /** the 1523 merge (party sizing x feat/radial-castbar): Party mode's full-width list is no column's (HomeView.halfOf: NONE) */
+        fun half(p: HomePart, b: HomeLayoutSolver.Box): HomeSlide.Half = if (p == HomePart.PARTY && r.partyWide) HomeSlide.Half.NONE else
             HomeSlide.half(p == HomePart.STRIP || p == HomePart.CAST2, r.castSide, r.castHidden && r.castSide != CastStripModel.Side.OFF,
                 b.cx, 1240f, split = split)
         fun line(): Pair<Float, Float> = HomeLayoutSolver.columns(l, 1240f, 8f).let { it.first.second to it.second.first }
+        /** Party mode's full-width list on the page (HomeView's pw), or null: the radials stand under a top list, over a foot one */
+        val wide: HomeLayoutSolver.Box? get() = r.boxes[HomePart.PARTY]?.takeIf { r.partyWide && it.t < s.h }
+        val wideTop: Boolean get() = wide.let { it != null && (it.t + it.b) / 2f < s.h / 2f }
     }
 
     private fun pages(): List<Page> {
@@ -56,6 +62,8 @@ class HomeMenusFitTest {
     private fun box(b: LbFit.Box) = HomeLayoutSolver.Box(b.l, b.t, b.r, b.b)
     private fun moved(b: HomeLayoutSolver.Box, dx: Float, dy: Float = 0f) = b.copy(l = b.l + dx, r = b.r + dx, t = b.t + dy, b = b.b + dy)
     private fun bar(p: HomePart) = p == HomePart.STRIP || p == HomePart.CAST2
+    /** the band and feat/fight-castbar's fight strip (its line): never a column's part, they stay put (HomeView.bandPart; the 1523 merge) */
+    private fun band(p: HomePart) = p == HomePart.BARS || p == HomePart.FIGHT_CAST
     /** feat/radial-castbar: how far [part] drops for an open radial that asked for the room (Across's bar below the page), as HomeView.barDrop */
     private fun drop(pg: Page, part: HomePart, b: HomeLayoutSolver.Box) = HomeSlide.barDrop(bar(part), pg.half(part, b), b.t, pg.s.h)
     /** a part as drawn under an open radial: by its half ([pl] / [pr]) and, [dropped], its drop; a full-screen module keeps its own place */
@@ -82,19 +90,29 @@ class HomeMenusFitTest {
     private fun middle(p: Page): Pair<ClassSlot.Middle, Boolean> {
         val line = p.line(); val mid = (line.first + line.second) / 2f
         val a = across(p)
-        val full = ClassSlot.middle(W, p.s.h, p.bb, G, W * 0.6f, mid = mid)
-        val kept = ClassSlot.middle(W, p.s.h, p.bb, G, W * 0.6f, bottom = HomeSlide.stayFoot(a?.t, p.s.h, G), mid = mid)
+        // (the 1523 merge, as HomeView.wheelFit: a full-width party list cuts both squares - under a top list, over a foot one)
+        val pw = p.wide
+        val bb = maxOf(p.bb, if (pw != null && p.wideTop) pw.b else 0f)
+        val pwFoot = if (pw != null && !p.wideTop) pw.t - G else null
+        val fullFoot = if (pwFoot == null) p.s.h - G else minOf(p.s.h - G, pwFoot)
+        val keptFoot = HomeSlide.stayFoot(a?.t, p.s.h, G).let { if (pwFoot == null) it else minOf(it, pwFoot) }
+        val full = ClassSlot.middle(W, p.s.h, bb, G, W * 0.6f, bottom = fullFoot, mid = mid)
+        val kept = ClassSlot.middle(W, p.s.h, bb, G, W * 0.6f, bottom = keptFoot, mid = mid)
         val drop = HomeSlide.makesRoom(a?.t, kept.side, full.side, kept.top + kept.side, G)
         return (if (drop) full else kept) to drop
     }
     /** a class wheel's square as HomeView.classLayerShow takes it (its column's parts; down to Across's foot when that bar drops for it) */
     private fun classSlot(p: Page, left: Boolean): Pair<ClassSlot.Slot, Boolean> {
         val want = if (left) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
-        val col = p.r.boxes.filter { (part, b) -> part != HomePart.BARS && part != HomePart.AURAS && p.half(part, b) == want }
+        val col = p.r.boxes.filter { (part, b) -> !band(part) && part != HomePart.AURAS && p.half(part, b) == want }
             .values.map { ClassSlot.Area(it.l, it.t, it.r, it.b) }
         val a = across(p)
-        val kept = ClassSlot.inColumn(ClassSlot.column(col, p.bb, p.s.h, G, left, W))
-        val full = ClassSlot.inColumn(ClassSlot.column(col, p.bb, p.s.h, G, left, W, reach = a?.b ?: 0f))
+        // (the 1523 merge, as HomeView.classLayerShow: a full-width party list cuts the column - its part under a top list, over a foot one)
+        val pw = p.wide
+        val clip = { c: ClassSlot.Area -> if (pw == null) c else if (p.wideTop) c.copy(top = maxOf(c.top, pw.b + G))
+            else c.copy(bottom = minOf(c.bottom, pw.t - G)) }
+        val kept = ClassSlot.inColumn(clip(ClassSlot.column(col, p.bb, p.s.h, G, left, W)))
+        val full = ClassSlot.inColumn(clip(ClassSlot.column(col, p.bb, p.s.h, G, left, W, reach = a?.b ?: 0f)))
         val drop = HomeSlide.makesRoom(a?.t, kept.side, full.side, kept.top + kept.side, G)
         return (if (drop) full else kept) to drop
     }
@@ -183,6 +201,10 @@ class HomeMenusFitTest {
             val q = Page(o, s, S.places(o, s))
             fun no(x: String) { if (bad.size < 12) bad += "$l / $sn: $x" }
             if (p.bb != q.bb) { skipped++; continue }                     // the band itself moved (an F-rule): not the radial's making
+            // (the 1523 merge: party sizing lays its list by the bar - a foot list keeps its column over a one-column bar, and a full-width
+            // foot list stands over Across's bar but at the page's foot with the bar Off; that list stays put for every radial (party
+            // sizing's rule), so the bar dropping frees nothing under it - the party list itself moved, not the radial's making either)
+            if (p.r.partyWide != q.r.partyWide || p.wide != q.wide) { skipped++; continue }
             val (m, md) = middle(p)
             if (kotlin.math.abs(m.side - middle(q).first.side) > 0.5f) no("middle wheel ${m.side}, with no bar ${middle(q).first.side}")
             for (left in listOf(true, false)) {

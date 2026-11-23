@@ -2,6 +2,7 @@
 "plain": {
 "Graphics": "Graphismes",
 "Graphics driver": "Pilote graphique",
+"Recommended (graphics driver)": "Recommandé",
 "Test: Mesa 26.3.1": "Test : Mesa 26.3.1",
 "Installing the test graphics driver...": "Installation du pilote graphique de test...",
 "In combat: a spell casts here in fights, over your macro": "En combat : un sort est lancé ici pendant les combats, par-dessus votre macro",

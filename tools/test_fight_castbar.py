@@ -67,7 +67,7 @@ def sent_cc(L, n0):
 
 
 # ------------------------------------------------------------------------------------------------ 0 the tags
-check('local PV = "m188"' in SRC["padmap"] and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
+check('local PV = "m189"' in SRC["padmap"] and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
       and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap m188 (m187's and m179's notes kept)")
 check('local BV = "b77"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]
       and "for k = 0, 1 do P3[24 + k]" in SRC["book"], "0. Book b77 and its codes 24 / 25")
@@ -160,7 +160,7 @@ clean(W3, "3")
 from wowstub import ADDONS, boot_world      # noqa: E402
 
 HUB = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
-check(re.search(r'local HV = "hub76"', HUB) is not None and "hub76 THE GAME'S CAST BAR BACK FOR A TOP-SCREEN FIGHT" in HUB
+check(re.search(r'local HV = "hub77"', HUB) is not None and "hub76 THE GAME'S CAST BAR BACK FOR A TOP-SCREEN FIGHT" in HUB
       and "hub75 THE GAME'S LATENCY" in HUB, "2. Hub hub76 and its note (hub75's kept)")
 
 # the game's casting bar: a plain table with the methods Hub uses; every other call is logged (none may come)

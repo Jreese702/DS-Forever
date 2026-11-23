@@ -383,7 +383,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 GeneralTiles.Row.BROWSER_LOGIN -> segs(room, BrowserLogin.SEGMENTS).forEachIndexed { k, b ->
                     out += Control(r, b, { Settings.browserLogin = k == 1 }) }
                 GeneralTiles.Row.GRAPHICS_DRIVER -> GraphicsDriver.offered().let { list ->
-                    segs(room, list.map { it.label }).forEachIndexed { k, b ->
+                    segs(room, list.map { GraphicsDriver.words(it) }).forEachIndexed { k, b ->
                         out += Control(r, b, {
                             Settings.graphicsDriver = list[k]
                             DiagLog.event("app", "Graphics driver set ${list[k].id} (from the next Play)")
@@ -621,7 +621,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             GeneralTiles.Row.LOGIN -> UiKit.button(c, cs[0], if (host.loginSaved()) "Change" else "Save", UiKit.Button.UP)
             GeneralTiles.Row.BROWSER_LOGIN -> seg(c, cs, BrowserLogin.SEGMENTS, if (Settings.browserLogin) 1 else 0)
             GeneralTiles.Row.GRAPHICS_DRIVER -> GraphicsDriver.offered().let { list ->
-                seg(c, cs, list.map { it.label }, GraphicsDriver.segment(Settings.graphicsDriver, list)) }
+                seg(c, cs, list.map { GraphicsDriver.words(it) }, GraphicsDriver.segment(Settings.graphicsDriver, list)) }
             GeneralTiles.Row.WINDOWS_RESTART -> UiKit.button(c, cs[0], "Restart", UiKit.Button.UP)
             GeneralTiles.Row.REPORT -> {
                 val rec = DiagLog.recording()

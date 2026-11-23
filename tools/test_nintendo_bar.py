@@ -711,7 +711,7 @@ def plate_checks(chk):
     G = L.globals()
     W = G.WowCompanion
     NB = W.nbar
-    chk("nbar13: the version tag", NB.V == "nbar15", NB.V)
+    chk("nbar13: the version tag", NB.V == "nbar16", NB.V)
     G.ROWS["uisw"](None, 35)
     f = NB.f
     chk("nbar14 plates: built with the bar, one per half (64 x 50: the band's plate size), never the mouse", f.plate is not None and f.plate[1].w == 64 and f.plate[1].h == 50

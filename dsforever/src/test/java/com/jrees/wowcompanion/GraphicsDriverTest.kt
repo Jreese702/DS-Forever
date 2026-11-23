@@ -222,4 +222,22 @@ class GraphicsDriverTest {
         assertEquals(read("tools/turnip-test/0001-android-export-vk_icd-entrypoints.diff"),
             read("licenses/turnip-test-mesa-26.3.1/0001-android-export-vk_icd-entrypoints.diff"))
     }
+
+    /** the 1523 integration (the es review: "Recomendada" sat next to "Controlador gráfico"): the driver row's Recommended has its own
+     *  key, masculine in Spanish; the shared "Recommended" (Polestar's guide) keeps its feminine word; English shows the label */
+    @Test fun theRowsRecommendedAgreesWithElControlador() {
+        val dir = File(root, "companion/app/src/main/assets/companion/i18n")
+        for (l in listOf("es", "fr")) Tr.load(l, File(dir, "$l.json").readText(Charsets.UTF_8))
+        assertEquals("Recomendado", Tr.t(GraphicsDriver.RECOMMENDED_KEY, "es"))
+        assertEquals("Recommandé", Tr.t(GraphicsDriver.RECOMMENDED_KEY, "fr"))
+        assertEquals("Recomendada", Tr.t("Recommended", "es"))                 // (the shared key: untouched)
+        assertEquals("Controlador gráfico", Tr.t(GraphicsDriver.ROW_ID, "es"))
+        // English (the JVM's usual language): the row shows the plain labels; a test driver's words are always its label
+        if (Tr.lang() == "en") assertEquals(listOf("Recommended", "Test: Mesa 26.3.1"), GraphicsDriver.Choice.values().map { GraphicsDriver.words(it) })
+        assertEquals(TEST.label, GraphicsDriver.words(TEST))
+        // both drawings of the row use the row's words, never the bare label
+        val gt = read("companion/app/src/main/java/com/jrees/wowcompanion/GeneralTiles.kt")
+        assertEquals(2, Regex("""list\.map \{ GraphicsDriver\.words\(it\) \}""").findAll(gt).count())
+        assertFalse("list.map { it.label }, GraphicsDriver.segment" in gt)
+    }
 }

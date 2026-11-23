@@ -2,6 +2,7 @@
 "plain": {
 "Graphics": "Gráficos",
 "Graphics driver": "Controlador gráfico",
+"Recommended (graphics driver)": "Recomendado",
 "Test: Mesa 26.3.1": "Prueba: Mesa 26.3.1",
 "Installing the test graphics driver...": "Instalando el controlador gráfico de prueba...",
 "In combat: a spell casts here in fights, over your macro": "En combate: un hechizo se lanza aquí en los combates, por encima de tu macro",
