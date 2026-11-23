@@ -1116,6 +1116,27 @@ def party_fight_checks():
     hd7 = todict(hud)
     chk("I. nbar15 ... back where they stood (PF.g cx 0): the same block, the same shift",
         L.eval("WowCompanion.nbar.centreDx")() == want5 and abs(hd7["x"] - hd5["x"]) < 1e-6, (hd7, hd5))
+    # the review (11-23, NB.centreKeep): the block read back a hair off where it was (Hub's frames on the pixel grid, float sums) - the
+    # shift already told is kept while the block's centre is within 1 px of it (a half-pixel centre rounding to two shifts in turn
+    # would fade the rows out and in again, a loop); past 1 px the new shift is told
+    raw5 = 960 - (r0 + r1) / 2
+    n8 = raw5 - want5 + 0.9                                     # the centre now leaves want5 - 0.9 (rounds to want5 - 1)
+    L.execute('local d = %.6f; local function mv(f) f.r.l = f.r.l + d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
+              'mv(WowCompanion.uf.pf.tab)' % n8)
+    L.eval("WowCompanion.nbar.topOurs")()
+    dx8 = L.eval("WowCompanion.nbar.centreDx")()
+    chk("I. review NB.centreKeep: the rows read back 0.9 px off their centre: the shift told kept (%+d, not %+d)" % (want5, want5 - 1),
+        dx8 == want5, (dx8, want5, raw5))
+    L.execute('local d = 0.3; local function mv(f) f.r.l = f.r.l + d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
+              'mv(WowCompanion.uf.pf.tab)')
+    L.eval("WowCompanion.nbar.topOurs")()
+    dx9 = L.eval("WowCompanion.nbar.centreDx")()
+    chk("I. review NB.centreKeep: ... 1.2 px off: the new shift told (%+d)" % (want5 - 1), dx9 == want5 - 1, (dx9, want5))
+    L.execute('local d = %.6f; local function mv(f) f.r.l = f.r.l - d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
+              'mv(WowCompanion.uf.pf.tab)' % (n8 + 0.3))
+    L.eval("WowCompanion.nbar.topOurs")()
+    chk("I. review NB.centreKeep: ... back where they stood: %+d again" % want5, L.eval("WowCompanion.nbar.centreDx")() == want5,
+        L.eval("WowCompanion.nbar.centreDx")())
     L.execute('WowCompanion.uf.pf.g = nil; WowCompanion.prd.cx = 0')
     G.HUD_ON = True
     # the fight's end: gone

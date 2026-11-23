@@ -3739,6 +3739,15 @@ function NB.pieceOn(p)
     return ok and v == true
 end
 -- OUR pieces' rects now (live frames first, else the piece's own rect) -> list, the HUD block
+-- nbar15 (the review, 11-23): the centring shift wanted for a block whose centre now leaves [raw] (1080-line px) to the screen's
+-- centre - the shift already told (NB.top.cdx) kept while [raw] is within 1 px of it. The block is read back from frames Hub and Trail
+-- placed on the pixel grid, less the shift they stand at: a centre on a half pixel read back a hair either side by the float sums
+-- would round to two shifts 1 px apart in turn - each a move that fades the rows (geoMoved) and the HUD (P.cx) out and in again
+function NB.centreKeep(raw)
+    local old = NB.top.cdx
+    if type(old) == "number" and math.abs(raw - old) < 1 then return old end
+    return math.floor(raw + 0.5)
+end
 function NB.topOurs()
     local out, hud = {}, nil
     local function add(r, id) if r then r.id = id; out[#out + 1] = r end end
@@ -3787,7 +3796,7 @@ function NB.topOurs()
             local base = less(rows, rowsDx)
             for i = 1, 4 do base = NB.union(base, less(NB.frameRect(fs[i], true), applied)) end
             base = NB.union(base, less(geo, applied)) or less(hud, applied)
-            local want = math.floor(W / 2 - (base.x + base.w / 2) + 0.5)
+            local want = NB.centreKeep(W / 2 - (base.x + base.w / 2))
             NB.top.cdx = want
             hud = { x = base.x + want, y = base.y, w = base.w, h = base.h }
         end
@@ -3805,7 +3814,7 @@ function NB.topOurs()
             local W = NB.topScreen()
             local pg = pf and rawget(pf, "g")
             local rowsDx = (type(pg) == "table" and num(rawget(pg, "cx"))) or 0
-            local want = math.floor(W / 2 - (rows.x - rowsDx + rows.w / 2) + 0.5)
+            local want = NB.centreKeep(W / 2 - (rows.x - rowsDx + rows.w / 2))
             NB.top.cdx = want
             rows = { x = rows.x - rowsDx + want, y = rows.y, w = rows.w, h = rows.h }
             hud = rows
