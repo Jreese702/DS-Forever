@@ -45,7 +45,12 @@ class ExtrasEditShotsTest {
     private val H = 1080 - Strip.HEIGHT
     private val homes = ArrayList<HomeView>()
 
+    /** the art root before this class set CLOCK_ART_ROOT's (a static: put back after each test, or the next class's pictures - e.g.
+     *  HomeEditShotsTest.theTopBarStaysStillOutsideItsPieces - are drawn with the real art and its own clocks) */
+    private val artWas: File? = ArtHarvest.rootDir
+
     @After fun down() {
+        ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, artWas)
         for (h in homes) h.editCancel()
         HomeView::class.java.getDeclaredField("liveDraft").apply { isAccessible = true }.set(null, null)
         HomeLayoutStore.character(null); HomeLayoutStore.set(HomeLayout())

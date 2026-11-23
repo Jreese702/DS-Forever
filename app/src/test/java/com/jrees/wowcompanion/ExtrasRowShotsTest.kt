@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.FrameLayout
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +34,10 @@ class ExtrasRowShotsTest {
     private val out: File? = System.getenv("EXTRAS_SHOTS_DIR")?.let { File(it) }
     private val tag = System.getenv("EXTRAS_SHOTS_TAG") ?: "after"
     private val app get() = RuntimeEnvironment.getApplication()
+
+    /** the art root before [artRoot] (a static: put back after the test, so no later class draws with this one's art) */
+    private val artWas: File? = ArtHarvest.rootDir
+    @After fun down() { ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, artWas) }
 
     private fun artRoot() {
         val root = System.getenv("CLOCK_ART_ROOT") ?: return
