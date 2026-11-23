@@ -2310,7 +2310,14 @@
 "Restart anyway": "Redémarrer quand même",
 "Wait": "Attendre",
 "Game downloading: leave it running": "Jeu en téléchargement : laissez-le tourner",
-"Installing. Keep DS Forever open": "Installation. Gardez DS Forever ouvert"
+"Installing. Keep DS Forever open": "Installation. Gardez DS Forever ouvert",
+"Bound": "Lié",
+"Damaged": "Abîmé",
+"Can't sell": "Invendable",
+"Soulbound: the auction house won't take it": "Lié : l'hôtel des ventes ne le prend pas",
+"A quest item: the auction house won't take it": "Objet de quête : l'hôtel des ventes ne le prend pas",
+"Damaged: repair it to sell it": "Abîmé : réparez-le pour le vendre",
+"The auction house won't take this": "L'hôtel des ventes ne prend pas ceci"
 },
 "templates": {
 "Empty: slot %s's own": "Vide : celui de l'emplacement %s",
@@ -2562,6 +2569,7 @@
 "Game downloading (%s MB a minute): leave it running": "Jeu en téléchargement (%s Mo par minute) : laissez-le tourner",
 "Installing add-ons: %s... Keep DS Forever open": "Installation des add-ons : %s... Gardez DS Forever ouvert",
 "Installing: %s%. Keep DS Forever open": "Installation : %s %. Gardez DS Forever ouvert",
-"The game closed as it started (%s). A problem report holds what it said: please send one.": "Le jeu s'est fermé au démarrage (%s). Un rapport de problème contient ce qu'il a dit : envoyez-en un, s'il vous plaît."
+"The game closed as it started (%s). A problem report holds what it said: please send one.": "Le jeu s'est fermé au démarrage (%s). Un rapport de problème contient ce qu'il a dit : envoyez-en un, s'il vous plaît.",
+"%s · %s can't sell": "%s · %s invendables"
 }
 }

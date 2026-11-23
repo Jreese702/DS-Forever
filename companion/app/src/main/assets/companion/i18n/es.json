@@ -2332,7 +2332,14 @@
 "Restart anyway": "Reiniciar de todos modos",
 "Wait": "Esperar",
 "Game downloading: leave it running": "Juego descargando: déjalo en marcha",
-"Installing. Keep DS Forever open": "Instalando. Mantén DS Forever abierto"
+"Installing. Keep DS Forever open": "Instalando. Mantén DS Forever abierto",
+"Bound": "Ligado",
+"Damaged": "Dañado",
+"Can't sell": "No se vende",
+"Soulbound: the auction house won't take it": "Ligado: la casa de subastas no lo acepta",
+"A quest item: the auction house won't take it": "Objeto de misión: la casa de subastas no lo acepta",
+"Damaged: repair it to sell it": "Dañado: repáralo para venderlo",
+"The auction house won't take this": "La casa de subastas no acepta esto"
 },
 "templates": {
 "Empty: slot %s's own": "Vacío: lo del espacio %s",
@@ -2581,6 +2588,7 @@
 "Game downloading (%s MB a minute): leave it running": "Juego descargando (%s MB por minuto): déjalo en marcha",
 "Installing add-ons: %s... Keep DS Forever open": "Instalando accesorios: %s... Mantén DS Forever abierto",
 "Installing: %s%. Keep DS Forever open": "Instalando: %s%. Mantén DS Forever abierto",
-"The game closed as it started (%s). A problem report holds what it said: please send one.": "El juego se cerró al iniciarse (%s). Un informe de problema guarda lo que dijo: envía uno, por favor."
+"The game closed as it started (%s). A problem report holds what it said: please send one.": "El juego se cerró al iniciarse (%s). Un informe de problema guarda lo que dijo: envía uno, por favor.",
+"%s · %s can't sell": "%s · %s no se venden"
 }
 }

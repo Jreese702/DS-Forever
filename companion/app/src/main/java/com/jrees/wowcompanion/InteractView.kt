@@ -3152,7 +3152,11 @@ class InteractView(context: Context) : View(context) {
         // i167 (the user 2026-11-19: "Instead of an item list let's show a grid with collapsible bags"): the Bags room's slot tiles, a header
         // per bag (A or a touch folds it), the add-on's own column count (AH.SCOLS: its cursor walks exactly these rows). The scroll is
         // the view's own and only follows the cursor, so a post never sends it back to the top
-        val cells = AhSellGrid.layout(bags, arr(sl, "groups"), sl.optInt("cols", AhSellGrid.COLS), view.width())
+        // issue 590: the items the game refuses (greyed, the game's reason), and a scroll bar when the grid is taller than the panel
+        val refused = arr(sl, "no")
+        val gcols = sl.optInt("cols", AhSellGrid.COLS)
+        var cells = AhSellGrid.layout(bags, arr(sl, "groups"), gcols, view.width(), refused)
+        if (AhSellGrid.height(cells) > view.height() + 2f) cells = AhSellGrid.layout(bags, arr(sl, "groups"), gcols, view.width() - AhSellGrid.BAR_W, refused)
         viewB = view; contentB = AhSellGrid.height(cells)
         val ci = cells.indexOfFirst { it.cmd == cur }
         if (ci >= 0 && cur != shownCatCur) {
@@ -3173,6 +3177,16 @@ class InteractView(context: Context) : View(context) {
                 bagHead(c, rr, o)
                 hits.add(hr to if (s0 >= 0) "act:${cell.cmd}|$s0" else "why:The game gave this no tap cell")
                 if (cur == cell.cmd) UiKit.focus(c, rr)
+            } else if (cell.no != null) {
+                // issue 590: greyed, its word along the bottom; a touch says the game's reason (never picked: the game refuses it)
+                val shown = JSONObject().put("quality", o.optInt("q", 1)).put("count", o.optInt("n", 1)).put("id", o.optInt("id"))
+                if (o.has("icon")) shown.put("icon", o.optInt("icon"))
+                BagsView.drawSlot(c, rr, shown, bagPaints, dimmed = true)
+                val wp = UiKit.bodyPaint(15f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
+                pFill.style = Paint.Style.FILL; pFill.color = Color.argb(170, 0, 0, 0)
+                c.drawRect(rr.left + 3f, rr.bottom - 22f, rr.right - 3f, rr.bottom - 3f, pFill)
+                c.drawText(fit(wp, AhSellGrid.noWord(cell.no), rr.width() - 8f), rr.centerX(), rr.bottom - 8f, wp)
+                hits.add(hr to "why:${AhSellGrid.noWhy(cell.no)}")
             } else {
                 val shown = JSONObject().put("quality", o.optInt("q", 1)).put("count", o.optInt("n", 1)).put("id", o.optInt("id"))
                     .put("locked", o.optBoolean("locked"))
@@ -3185,7 +3199,10 @@ class InteractView(context: Context) : View(context) {
         }
         curBox?.let { UiKit.slotFocus(c, it) }
         c.restore()
-        if (bags.isEmpty()) {
+        AhSellGrid.bar(scrollB, contentB, view.height())?.let { (from, to) ->
+            UiKit.scrollBar(c, RectF(view.right - 14f, view.top, view.right - 2f, view.bottom), from, to)
+        }
+        if (bags.isEmpty() && refused.isEmpty()) {
             val lay = layout("Nothing in your bags can be sold at auction", UiKit.bodyPaint(24f, Theme.dim), (left.width() - 36f).toInt(), 4f)
             drawLayout(c, lay, left.left + 18f, view.top + 20f)
         }
@@ -3349,10 +3366,10 @@ class InteractView(context: Context) : View(context) {
         path.close()
         pFill.color = Theme.gold; c.drawPath(path, pFill)
         val np = UiKit.bodyPaint(23f, Theme.gold)
-        val cp = UiKit.numberPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-        val n = g.optInt("n", 0).toString()
+        val cp = (if (g.optInt("x", 0) > 0) UiKit.bodyPaint(19f, Theme.dim) else UiKit.numberPaint(22f, Theme.dim)).apply { textAlign = Paint.Align.RIGHT }
+        val n = Tr.t(AhSellGrid.headCount(g))                           // issue 590: "2 · 4 can't sell" when the game refuses some
         c.drawText(Tr.t(fit(np, g.optString("name", ""), r.width() - 70f - cp.measureText(n))), r.left + 38f, r.centerY() - (np.ascent() + np.descent()) / 2f, np)
-        c.drawText(Tr.t(n), r.right - 12f, r.centerY() - (cp.ascent() + cp.descent()) / 2f, cp)
+        c.drawText(n, r.right - 12f, r.centerY() - (cp.ascent() + cp.descent()) / 2f, cp)
     }
 
     private fun timeWord(n: Int) = when (n) { 0 -> "Short"; 1 -> "Medium"; 2 -> "Long"; 3 -> "Very Long"; else -> "" }
