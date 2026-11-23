@@ -2331,12 +2331,10 @@
 },
 "templates": {
 "%s/%s ready": "%s/%s prêtes",
-"Empty: slot %s's own": "Vide : celui de l'emplacement %s",
 "\"%s\" is its own button: put it on your bars (Out of combat: Change, Extra).": "« %s » est son propre bouton : placez-le sur vos barres (Hors combat : Changer, Extra).",
 "Tap slot %s, Party mode": "Emplacement %s, mode groupe",
 "Tap slot %s, in combat": "Emplacement %s, en combat",
 "Tap slot %s": "Emplacement %s",
-"Empty: slot %s's own in fights": "Vide : en combat, celui de l’emplacement %s",
 "Switch to %s?": "Passer à %s ?",
 "Downloads the %s game": "Télécharge le jeu %s",
 "Switching to %s": "Passage à %s",

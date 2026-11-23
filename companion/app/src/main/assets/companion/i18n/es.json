@@ -2353,12 +2353,10 @@
 },
 "templates": {
 "%s/%s ready": "%s/%s listos",
-"Empty: slot %s's own": "Vacío: lo del espacio %s",
 "\"%s\" is its own button: put it on your bars (Out of combat: Change, Extra).": "\"%s\" es su propio botón: ponlo en tus barras (Fuera de combate: Cambiar, Extra).",
 "Tap slot %s, Party mode": "Espacio %s, modo grupo",
 "Tap slot %s, in combat": "Espacio %s, en combate",
 "Tap slot %s": "Espacio %s",
-"Empty: slot %s's own in fights": "Vacío: en combate, lo del espacio %s",
 "Switch to %s?": "¿Cambiar a %s?",
 "Downloads the %s game": "Descarga el juego de %s",
 "Switching to %s": "Cambiando a %s",

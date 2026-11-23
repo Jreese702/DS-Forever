@@ -67,8 +67,8 @@ import kotlin.math.abs
  * row, Clear, padtab 3 / 4 / 5): the add-on puts it on the cast bar's slot.
  *
  * p55 CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal; PadTabCtl p55, ActionBar cb14): "castbar" is WoW Defaults >
- * Tap to cast and "cbfight" In combat > Tap to cast (the bar's in-combat layer, [CastStripModel.Bar.fslots]): an empty fight slot shows
- * the slot's own thing faded, a set one carries the crossed swords. The host's sub-tab row (and In combat's check boxes) sit above the
+ * Tap to cast and "cbfight" In combat > Tap to cast (the bar's in-combat layer, [CastStripModel.Bar.fslots]): an empty fight slot draws
+ * blank (2026-11-23, see p56), a set one carries the crossed swords. The host's sub-tab row (and In combat's check boxes) sit above the
  * left page's content, which moves down [leftDy] (the right page does not). Show in combat off: In combat > Tap to cast is locked
  * (its slots grey, "Hidden in fights", no Change / Move). The bar Off in Settings: both Tap to cast pages dimmed, "Bar is off" and a
  * "Turn on" button ([onTurnOn]: the host sets the setting, D2).
@@ -77,8 +77,10 @@ import kotlin.math.abs
  * devices ([SituationPage]): the section "Controller" with the controller at 0.8 (the normal layers' own geometry through one canvas
  * transform; a finger's place is turned back into it), then the section "Tap-to-cast bar" with the situation's layer of the bar -
  * Out of combat the bar's own slots, In combat its fight layer, Party mode its party layer ("pbar"; the host draws Party mode's
- * controller): a set slot of the layer wears its badge (the swords, the party), an empty one shows what it falls through to,
- * faded. ONE cursor (the add-on's): on the controller (a controller view) or on a slot (a bar view: "castbar", "cbfight", "pbar").
+ * controller): a set slot of the layer wears its badge (the swords, the party), an empty one draws blank, as an empty Out of combat
+ * slot (the user, 2026-11-23: "just show them blank and be consistent like the controller bar out of combat"; what it casts still
+ * falls through, Party > In combat > own, and Home's strip in a fight still shows that). ONE cursor (the add-on's): on the
+ * controller (a controller view) or on a slot (a bar view: "castbar", "cbfight", "pbar").
  * A finger on a slot from the controller sends the bar view's pick first (39 then 29 / 1, or 39, 38 then 1), on the controller from
  * the bar the situation's tab first. Locks: Show in combat off = In combat's bar veiled "Hidden in fights", Bar in Party mode off =
  * Party mode's bar veiled "Off in Party mode", the bar Off = veiled "Bar is off" with ONE "Turn on" on the right page.
@@ -604,7 +606,7 @@ class PadTabPage(
     private fun cbTile(p: Int): RectF = SituationPage.tile(p)
     private fun cbWell() = SituationPage.well()
     /** p56 THE BAR'S SECTION of the situation on show: its heading, its well, the layer's 8 (a set one with its badge, an empty one
-     *  showing what it falls through to, faded), the numbers; the cursor only while it is on the bar; veiled while locked */
+     *  blank as on Out of combat: the user, 2026-11-23), the numbers; the cursor only while it is on the bar; veiled while locked */
     fun drawBar(c: Canvas) {
         val m = map ?: return
         val bv = barView() ?: return
@@ -622,13 +624,11 @@ class PadTabPage(
             val r = cbTile(p)
             val bs = layer?.getOrNull(p - 1)?.takeIf { it.filled }
             val spent = bs?.kind == CastStripModel.Kind.ITEM && bs.count == 0
-            // p55 / p56: an empty slot of a layer falls through (Party > In combat > own): what it casts then, drawn faded; a set one
-            // wears its layer's badge (the crossed swords, the party)
-            // (Party mode's page shows its fall-through out of a fight: the slot's own; In combat's the slot's own too)
-            val under = if (bs == null && bv != "castbar") bar?.slots?.getOrNull(p - 1)?.takeIf { it.filled } else null
-            val icon = if (bs != null) cbIcon(bs) else under?.let { cbIcon(it) }
-            UiKit.slot(c, icon, r.left, r.top, r.width(), count = (bs ?: under)?.countShown ?: 0,
-                dim = locked || under != null || spent || bs?.queued == true)
+            // p55 / p56: a set one wears its layer's badge (the crossed swords, the party). An empty slot of a layer still falls
+            // through when cast (Party > In combat > own) but draws blank, exactly as an empty Out of combat slot (the user,
+            // 2026-11-23: "No caption needed, just show them blank and be consistent like the controller bar out of combat")
+            UiKit.slot(c, bs?.let { cbIcon(it) }, r.left, r.top, r.width(), count = bs?.countShown ?: 0,
+                dim = locked || spent || bs?.queued == true)
             if (bs != null && !locked) {
                 if (bv == "cbfight") swords(c, r.right - 6f, r.top + 6f, 30f)
                 else if (bv == "pbar") Icons2.draw(c, SituationPage.Icon.PARTY, r.right - 6f, r.top + 6f, 30f)
@@ -652,7 +652,7 @@ class PadTabPage(
         if (carry != null) UiKit.carried(c, carryIcon(m, carry), cbTile(pos))
         drawFly(c)
     }
-    /** p55: a cast bar slot's own picture (the out-of-combat thing under an empty fight slot) */
+    /** p55: a cast bar slot's own picture */
     private fun cbIcon(s: CastStripModel.Slot): android.graphics.Bitmap? =
         if (s.kind == CastStripModel.Kind.COMMAND && PadMapModel.kitArt(s.key) != null) UiKit.tex(PadMapModel.kitArt(s.key)!!)
         else (s.icon ?: CastStripView.MACRO_QMARK.takeIf { s.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }
@@ -1701,8 +1701,6 @@ class PadTabPage(
             fixed && sl?.fight != null -> "Out of combat the game keeps this button for itself. In a fight it casts ${sl.fight.name} (In combat, above)."
             PadMapModel.isFace(sl) -> "Out of combat the game keeps this button for itself. In combat (above) it can cast a spell in fights."
             fixed -> "The game keeps this button for itself in the base set: it cannot change. Hold $l or $r for buttons you can set."
-            cbFight() && sl?.kind == PadMapModel.Kind.NONE -> "Empty: slot $pos's own in fights"      // p55 (D10, terse)
-            cbParty() && sl?.kind == PadMapModel.Kind.NONE -> "Empty: slot $pos's own"               // p56 (it falls through)
             cbParty() && sl?.kind == PadMapModel.Kind.SPELL -> "Casts on your pick"                   // p56: Party mode's soft target
             castBar() -> "Spells, items, mounts and commands"                                        // p53 (terse)
             else -> "Change puts a spell from your book, or one of the game's commands, on this button."
