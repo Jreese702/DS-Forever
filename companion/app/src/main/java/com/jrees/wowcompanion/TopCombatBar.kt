@@ -32,6 +32,13 @@ object TopCombatBar {
     fun live(l: HomeLayout, ct: Int?): Boolean = wanted(l) && ct == 1
     /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow */
     fun honoured(l: HomeLayout, ct: Int?): HomeLayout = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
+    /**
+     * the 1519 audit: edit mode's FIGHT PREVIEW shows "what a fight would" - the first fight after Done. A character that never used Top
+     * screen has the add-on's flag off (`ct` 0): the menu offers Top screen (only `ct` null greys it), and CompanionHost.topCheck sends
+     * nothing while edit mode is live, so `ct` turns 1 only after Done (within a resend). The preview therefore keeps Top screen whenever
+     * the add-on HAS the flag ([ct] not null); with no flag (no key, an older add-on) the Wings cannot show, so Grow as [honoured]
+     */
+    fun previewed(l: HomeLayout, ct: Int?): HomeLayout = if (wanted(l) && ct == null) l.copy(fight = HomeLayout.FightBand.GROW) else l
 
     /**
      * PARTY MODE KEEPS THE TOP SCREEN (the user's ruling C, 11-22: "It should stay at the top in party mode but the party bars should fill
@@ -79,13 +86,15 @@ object TopCombatBar {
      * cb-hidden), so CastStripModel.shownSlot / tapCell fall through to each slot's own entry - what is drawn is what is cast. Keeping the
      * bar never arms that layer behind the player's back: Show in combat IS the add-on's castBarShow (D4), the Controller room's In combat
      * check box and its lock, which ControllerView re-asserts from the app's setting. [l] the record as the page lays it
-     * (TopCombatBar.honoured: Top screen only while the add-on's Wings are on); Party mode ([partyOn]) has no Top-screen takeover (the
-     * band stays: the setting and Bar in Party mode rule as ever). Grow and Same size keep Show in combat as it is.
+     * (TopCombatBar.honoured: Top screen only while the add-on's Wings are on). PARTY MODE TOO (the 1519 audit): ruling C sends the
+     * band up in Party mode's fight as well ([partyTop]), so the bar stays there whatever Show in combat or Bar in Party mode says (Bar in
+     * Party mode still decides its Party layer: CastStripModel.shownSlot). Out of the fight nothing hides it anyway (hiddenIn needs the
+     * fight). Grow and Same size keep Show in combat as it is.
      */
-    fun stripStays(l: HomeLayout, partyOn: Boolean): Boolean = wanted(l) && !partyOn
+    fun stripStays(l: HomeLayout): Boolean = wanted(l)
     /** the tap-to-cast bar's fight rule for [l]: STAY when [stripStays], else the player's [setting] */
-    fun stripCombat(l: HomeLayout, partyOn: Boolean, setting: CastStripModel.Combat): CastStripModel.Combat =
-        if (stripStays(l, partyOn)) CastStripModel.Combat.STAY else setting
+    fun stripCombat(l: HomeLayout, setting: CastStripModel.Combat): CastStripModel.Combat =
+        if (stripStays(l)) CastStripModel.Combat.STAY else setting
 
     /** the Settings band's status for the In fights tile: Top screen chosen but the add-on has no flag yet */
     fun status(l: HomeLayout, ct: Int?, haveDpad: Boolean): String? =

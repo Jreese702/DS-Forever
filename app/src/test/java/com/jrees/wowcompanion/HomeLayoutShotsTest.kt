@@ -351,8 +351,8 @@ class HomeLayoutShotsTest {
 
     /**
      * the tap-to-cast bar's docks keep working in a Top-screen fight (the 11-22 shots): Above chat rides up with its grown column (at the
-     * top gap, the chat under it), Under map stays under the map; Party mode (no Top-screen takeover: the band stays) keeps the player's
-     * Show in combat Off
+     * top gap, the chat under it), Under map stays under the map; Party mode's fight sends the band up too (ruling C), so the bar stays
+     * there as well - with Bar in Party mode on or off, Show in combat Off (the 1519 audit: tap-to-cast stays in Top fights "always")
      */
     @Test fun topScreenKeepsTheTapToCastBarInItsDock() {
         val above = page(HomeLayout(cast = HomeLayout.CastDock.ABOVE_CHAT, fight = HomeLayout.FightBand.TOP), fight = true, ct = 1)
@@ -374,7 +374,10 @@ class HomeLayoutShotsTest {
         try {
             HomeSettings.castBarPartyShow = false
             party.home.tick(); settle()
-            assertTrue("Party mode, Bar in Party mode off: Show in combat Off slides the bar away as ever (no Top-screen keep)", ps.fightHidden)
+            assertFalse("Party mode, Bar in Party mode off: the Top fight keeps the bar all the same (Show in combat Off)", ps.fightHidden)
+            assertTrue("Party mode, Bar in Party mode off: it takes touches", ps.takesTouch)
+            val b = boxes(party.home).getValue("STRIP")
+            assertTrue("Party mode: the bar on the page ($b)", b.top >= 0f && b.bottom <= H + 0.01f)
         } finally { HomeSettings.castBarPartyShow = true }
     }
 

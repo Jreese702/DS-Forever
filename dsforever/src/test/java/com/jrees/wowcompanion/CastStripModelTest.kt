@@ -546,7 +546,7 @@ class CastStripModelTest {
      */
     @Test fun aTopScreenFightKeepsTheBarOnTheLayerShowArms() {
         val top = HomeLayout(fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.UNDER_CHAT)
-        val mode = TopCombatBar.stripCombat(top, partyOn = false, setting = CastStripModel.Combat.HIDE)
+        val mode = TopCombatBar.stripCombat(top, setting = CastStripModel.Combat.HIDE)
         assertFalse("kept: not hidden in the Top fight", CastStripModel.hiddenIn(mode, fighting = true))
         val fightNow = CastStripModel.showOf(mode)                            // CastStripView.fight's fightNow in the fight
         val off = bar(fightDoc.replace("\"show\":1,", ""))

@@ -306,24 +306,25 @@ class TopSlideTest {
 
     /**
      * THE TAP-TO-CAST BAR STAYS IN A TOP-SCREEN FIGHT (the 11-22 shots: Show in combat Off, the default, slid it away under the room
-     * bar while the band left too - the bottom screen had no fight control at all): Top screen with Party mode off keeps it (STAY),
-     * Grow / Same size and Party mode keep the player's setting. The solver then lays it on the page in the fight, in its dock.
+     * bar while the band left too - the bottom screen had no fight control at all): Top screen keeps it (STAY) - Party mode's fight too
+     * (the 1519 audit: ruling C sends the band up there as well) - Grow / Same size keep the player's setting. The solver then lays it on the page in the fight, in its dock.
      */
     @Test fun theTapToCastBarStaysInATopFight() {
         val top = HomeLayout(fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.UNDER_CHAT)
-        assertTrue(TopCombatBar.stripStays(top, partyOn = false))
-        assertFalse("Party mode: no Top-screen takeover, the setting rules", TopCombatBar.stripStays(top, partyOn = true))
-        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) assertFalse(TopCombatBar.stripStays(top.copy(fight = f), false))
-        assertEquals(CastStripModel.Combat.STAY, TopCombatBar.stripCombat(top, false, CastStripModel.Combat.HIDE))
-        assertEquals(CastStripModel.Combat.HIDE, TopCombatBar.stripCombat(top, true, CastStripModel.Combat.HIDE))
-        assertEquals(CastStripModel.Combat.HIDE, TopCombatBar.stripCombat(top.copy(fight = HomeLayout.FightBand.GROW), false, CastStripModel.Combat.HIDE))
-        assertEquals(CastStripModel.Combat.STAY, TopCombatBar.stripCombat(top.copy(fight = HomeLayout.FightBand.GROW), false, CastStripModel.Combat.STAY))
+        assertTrue(TopCombatBar.stripStays(top))
+        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) assertFalse(TopCombatBar.stripStays(top.copy(fight = f)))
+        assertEquals(CastStripModel.Combat.STAY, TopCombatBar.stripCombat(top, CastStripModel.Combat.HIDE))
+        assertEquals(CastStripModel.Combat.HIDE, TopCombatBar.stripCombat(top.copy(fight = HomeLayout.FightBand.GROW), CastStripModel.Combat.HIDE))
+        assertEquals(CastStripModel.Combat.STAY, TopCombatBar.stripCombat(top.copy(fight = HomeLayout.FightBand.GROW), CastStripModel.Combat.STAY))
+        // Party mode's Top fight (ruling C: the band away there too): Show in combat Off and Bar in Party mode Off keep it all the same
+        assertFalse("Party mode's Top fight: kept", CastStripModel.hiddenIn(TopCombatBar.stripCombat(top, CastStripModel.Combat.HIDE),
+            fighting = true, partyOn = true, partyShow = false))
         // the fight's page with the bar kept (castHidden false): every dock on the page, under its column(s), nothing below the frame
         val st = HomeLayoutSolver.State()
         for (cast in HomeLayout.CastDock.values()) {
             if (cast == HomeLayout.CastDock.OFF) continue
             val l = top.copy(cast = cast)
-            val hidden = CastStripModel.hiddenIn(TopCombatBar.stripCombat(l, false, CastStripModel.Combat.HIDE), fighting = true)
+            val hidden = CastStripModel.hiddenIn(TopCombatBar.stripCombat(l, CastStripModel.Combat.HIDE), fighting = true)
             assertFalse("$cast: not hidden in the Top fight", hidden)
             val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(takeover = true, castHidden = hidden))
             assertTrue(r.away); assertFalse(r.castHidden)

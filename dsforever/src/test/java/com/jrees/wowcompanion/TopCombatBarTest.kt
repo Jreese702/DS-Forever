@@ -151,10 +151,16 @@ class TopCombatBarTest {
             "pk":[{"r":"Realm 7","n":4},{"r":"Realm 8","n":5}]}}}}"""))!!.dpad!!
         assertNull(asking.realm); assertNull(asking.ct)
         assertEquals(HomeLayout.FightBand.GROW, TopCombatBar.honoured(top, asking.ct).fight)
+        // the 1519 audit: the Fight preview (edit mode: topCheck holds the send until Done) keeps Top screen whenever the add-on has the
+        // flag - `ct` 0 previews the Top look the first fight after Done lays; no flag (null) previews Grow
+        assertEquals(top, TopCombatBar.previewed(top, 0)); assertEquals(top, TopCombatBar.previewed(top, 1))
+        assertEquals(HomeLayout.FightBand.GROW, TopCombatBar.previewed(top, null).fight)
+        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) for (ct in listOf(null, 0, 1))
+            assertEquals("$f is never changed", f, TopCombatBar.previewed(HomeLayout(fight = f), ct).fight)
         // HomeView lays and shrinks by the CURRENT padmap's flag (no cue any more: the band slides)
         val home = java.io.File(listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"),
             java.io.File("companion/app/src/main/java/com/jrees/wowcompanion")).first { it.isDirectory }, "HomeView.kt").readText()
-        assertTrue(home.contains("if (look == null) l = TopCombatBar.honoured(l, padMap?.dpad?.ct)"))
+        assertTrue(home.contains("if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, padMap?.dpad?.ct) else TopCombatBar.honoured(l, padMap?.dpad?.ct)"))
         assertFalse(home.contains("cueStarts")); assertFalse(home.contains("topCueAlpha"))
         assertTrue(home.contains("TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)"))
     }
@@ -225,8 +231,9 @@ class TopCombatBarTest {
                 val want = f == HomeLayout.FightBand.TOP && ct == 1 && on && fighting
                 assertEquals("$f ct=$ct on=$on fighting=$fighting", want, TopCombatBar.partyTop(top.copy(fight = f), ct, on, fighting))
             }
-        // Party mode still never keeps the tap-to-cast bar by the Top screen's rule (its own settings rule), and B is unchanged
-        assertFalse(TopCombatBar.stripStays(top, partyOn = true))
+        // the 1519 audit: Party mode's Top fight sends the band up too, so the tap-to-cast bar stays by the Top screen's rule there as
+        // well (TopCombatBar.stripStays has no Party-mode exception any more); B is unchanged
+        assertTrue(TopCombatBar.stripStays(top))
         assertFalse(TopCombatBar.bShrinks(top, fighting = true, ct = 1))
     }
 

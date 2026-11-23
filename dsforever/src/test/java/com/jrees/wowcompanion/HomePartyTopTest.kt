@@ -176,6 +176,9 @@ class HomePartyTopTest {
                     if (!dock.top && kotlin.math.abs(p.b - rp.b) > 0.01f) bad("a foot dock's foot ${p.b} vs ${rp.b}")
                     if (r.boxes.getValue(other).t > ref.boxes.getValue(other).t - 100f) bad("the $other did not grow up")
                     if (r.f1 != ref.f1 || r.f2 != ref.f2 || r.f3 != ref.f3) bad("fallbacks ${r.f1}/${r.f2}/${r.f3} vs ${ref.f1}/${ref.f2}/${ref.f3}")
+                    // the 1519 audit (finding 3): the tap-to-cast bar kept in a Top fight (castHidden false) is never slid away by an F2 /
+                    // F3 the away page inherits - the band-on reference needs neither in any record x party shape (at most three rows)
+                    if (r.castHidden || ref.f2 || ref.f3) bad("the bar slid away on the away page (F2 ${ref.f2} / F3 ${ref.f3})")
                     // the well inside its column, its tab on the screen's outer edge
                     if (S.partyRight(l) && p.l < c.l - 0.01f || !S.partyRight(l) && p.r > c.r + 0.01f) bad("the well out of its column: $p / $c")
                     if (r.partyTabRight != S.partyRight(l)) bad("the tab's edge")

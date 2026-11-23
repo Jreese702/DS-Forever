@@ -94,13 +94,13 @@ class HomeEditShotsTest {
         """{"u":"player","i":0,"n":"Korvash","c":"SHAMAN","role":"HEALER","pt":"MANA","lv":20,"dead":false,"off":false,"col":"ff0070dd"}""",
         """{"u":"party1","i":1,"n":"Brannoc","c":"WARRIOR","role":"TANK","pt":"RAGE","lv":21,"dead":false,"off":false,"col":"ffc69b6d"}""",
         """{"u":"party2","i":2,"n":"Seraphine","c":"MAGE","role":"DAMAGER","pt":"MANA","lv":20,"dead":false,"off":false,"col":"ff3fc7eb"}""")
-    private fun partyDoc(): JSONObject {
+    private fun partyDoc(on: Boolean = true): JSONObject {
         val m = JSONArray(); for (r in roster) m.put(JSONObject(r))
         return JSONObject().put("type", "party").put("v", "m77").put("rs", 1)
-            .put("p", JSONObject().put("on", true).put("box", 1).put("fight", false).put("grp", true).put("sel", "bound").put("m", m))
+            .put("p", JSONObject().put("on", on).put("box", 1).put("fight", false).put("grp", true).put("sel", "bound").put("m", m))
     }
 
-    private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false, roomBar: Boolean = false): Page {
+    private fun page(layout: HomeLayout, fight: Boolean = false, party: Boolean = false, roomBar: Boolean = false, partyOn: Boolean = true): Page {
         art()
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app)
@@ -108,7 +108,7 @@ class HomeEditShotsTest {
         HomeLayoutStore.set(layout)
         CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null
         setField(PartyModel.live, "party", null)
-        if (party) PartyModel.live.onParty(PartyModel.parseParty(partyDoc())!!, true, System.currentTimeMillis())
+        if (party) PartyModel.live.onParty(PartyModel.parseParty(partyDoc(partyOn))!!, true, System.currentTimeMillis())
         val holder = FrameLayout(app)
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
         holder.addView(map); holder.addView(cast); holder.addView(chat)
@@ -387,9 +387,9 @@ class HomeEditShotsTest {
         "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}${if (ct != null) ",\"ct\":$ct" else ""}}}}"""))!!
     /** a page whose band has the toolbar's word (a character's key, the DS WoW toolbar on), Diamonds at rest unless [l] says */
     private fun bandPage(l: HomeLayout = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), ct: Int? = null, roomBar: Boolean = false,
-                         sets: String = "[]", party: Boolean = false): Page {
+                         sets: String = "[]", party: Boolean = false, partyOn: Boolean = true, fight: Boolean = false): Page {
         ItemCd.reset()                                                      // the extras' own data: none (another test's must not show)
-        val p = page(l, roomBar = roomBar, party = party)
+        val p = page(l, fight = fight, roomBar = roomBar, party = party, partyOn = partyOn)
         HomeLayoutStore.character("Korvash-Realm")
         HomeLayoutStore.set(l)
         p.home.onPadMap(padMapDoc(ct, sets))
@@ -707,6 +707,88 @@ class HomeEditShotsTest {
             assertEquals("$n: the band back at its rest box", rest.getValue("BARS"), boxes(p.home).getValue("BARS"))
             assertFalse("$n: the band draws again", p.cast.away)
             if (party) assertEquals(PartyLayout.Mode.REST, (views(p.home).getValue("PARTY") as PartyModuleView).mode)
+            p.home.editCancel()
+        }
+    }
+
+    /**
+     * the 1519 audit (finding 1): THE FIRST PICK OF TOP SCREEN PREVIEWS THE TOP LOOK. A character that never used Top screen: the add-on
+     * has the flag (`ct` 0 - the menu offers Top as a live choice, only `ct` null greys it), and edit mode holds the flag's send back
+     * (CompanionHost.topCheck waits while edit mode is live: `ct` turns 1 only after Done). The Fight preview shows what the first fight
+     * after Done shows - the band slid up off the page, the columns grown, with Party mode on the party list filling the strip - never
+     * Grow's grown band. No flag at all (`ct` null): Top screen greyed and nothing to preview but Grow, as ever
+     */
+    /** the fight pencil's In fights row as its bubble lists it */
+    private fun fightRow(home: HomeView): MenuRow = (HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java)
+        .apply { isAccessible = true }.invoke(home, EditStop.FIGHT_PEN) as List<*>).filterIsInstance<MenuRow>().first { it.key == BottomTiles.COMBAT }
+    @Test fun aFirstTopScreenPickPreviewsTheTopLook() {
+        for (party in listOf(false, true)) {
+            val n = if (party) "Party mode" else "solo"
+            val p = bandPage(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.GROW), ct = 0, party = party)
+            assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+            val rest = boxes(p.home)
+            val row = fightRow(p.home)
+            assertFalse("$n: ct 0 offers Top screen", HomeLayout.FightBand.TOP.ordinal in row.off)
+            p.home.editAct { listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, HomeLayout.FightBand.TOP.ordinal)) }; settle(20)
+            assertEquals(HomeLayout.FightBand.TOP, HomeSettings.fightBand)
+            p.home.editKey("PAD1"); settle(40)
+            assertTrue(model(p).fightPreview)
+            val b = boxes(p.home)
+            assertEquals("$n: the band laid above the page (not Grow's grown band)", -HomeLayoutSolver.AWAY_PAST, b.getValue("BARS").bottom, 0.01f)
+            assertTrue("$n: the band draws nothing on the page", p.cast.away)
+            assertEquals("$n: the map grown up", 8f, b.getValue("MAP").top, 0.01f)
+            if (party) {
+                assertEquals("Party mode: the Party-mode Top fight's rows", PartyLayout.Mode.FIGHT_TOP, (views(p.home).getValue("PARTY") as PartyModuleView).mode)
+                assertEquals("Party mode: the party list from the top gap", 8f, b.getValue("PARTY").top, 0.01f)
+            } else assertEquals("solo: the chat grown up", 8f, b.getValue("CHAT").top, 0.01f)
+            p.home.editAct { it.toggleFight() }; settle(40)
+            assertEquals("$n: the band back at its rest box", rest.getValue("BARS"), boxes(p.home).getValue("BARS"))
+            p.home.editCancel()
+        }
+        // no flag (an add-on without it / no key): Top screen greyed; a record that says Top previews Grow (the Wings cannot show)
+        val g = bandPage(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.GROW), ct = null)
+        assertTrue(g.home.editOpen(EditStop.FIGHT)); settle(20)
+        assertTrue(HomeLayout.FightBand.TOP.ordinal in fightRow(g.home).off)
+        g.home.editCancel()
+        val t = bandPage(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP), ct = null)
+        assertTrue(t.home.editOpen(EditStop.FIGHT)); settle(20)
+        val restT = boxes(t.home).getValue("BARS").height()
+        t.home.editKey("PAD1"); settle(40)
+        assertTrue(model(t).fightPreview)
+        assertTrue("no flag: Grow's band", boxes(t.home).getValue("BARS").height() > restT + 100f)
+        assertFalse(t.cast.away)
+        t.home.editCancel()
+    }
+
+    /**
+     * the 1519 audit (finding 2): the solo Fight preview lays the party list as the TAKEOVER does. Grouped with Party mode off, the party
+     * module shows (QOL > Party mode on, a party document); a real fight is the takeover and lays it FIGHT_OFF (56 px rows). The preview
+     * gives the solver the takeover, so the party list takes the takeover's mode and box too - not the rest's 64 px rows - for every
+     * In fights look (Top screen with the Wings word, Grow, Same size). (Show in combat On here: the preview never slides the bar - P4,
+     * display only - so the pages are compared with a bar both keep)
+     */
+    @Test fun theSoloPreviewLaysThePartyListAsTheTakeoverDoes() {
+        // HomeSettings keeps its prefs across tests: the default (Hide) put back whatever happens
+        try { soloPreviewParty() } finally { HomeSettings.castBarCombat = CastStripModel.Combat.HIDE }
+    }
+    private fun soloPreviewParty() {
+        for (band in HomeLayout.FightBand.values()) for (dock in listOf(HomeLayout.PartyDock.ABOVE_CHAT, HomeLayout.PartyDock.UNDER_MAP)) {
+            val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = band, party = dock)
+            val n = "$band $dock"
+            val real = bandPage(l, ct = 1, party = true, partyOn = false, fight = true)
+            HomeSettings.castBarCombat = CastStripModel.Combat.STAY; real.home.tick(); settle()
+            assertTrue("$n: the real fight is the takeover", real.home.flow.takeover)
+            val want = boxes(real.home)
+            assertEquals("$n: the takeover's rows", PartyLayout.Mode.FIGHT_OFF, (views(real.home).getValue("PARTY") as PartyModuleView).mode)
+            val p = bandPage(l, ct = 1, party = true, partyOn = false)
+            HomeSettings.castBarCombat = CastStripModel.Combat.STAY
+            assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+            p.home.editKey("PAD1"); settle(40)
+            assertTrue(model(p).fightPreview)
+            assertFalse("$n: Home shows no fight", p.home.fightShown())
+            assertEquals("$n: the preview's rows are the takeover's", PartyLayout.Mode.FIGHT_OFF, (views(p.home).getValue("PARTY") as PartyModuleView).mode)
+            val b = boxes(p.home)
+            for (part in listOf("PARTY", "CHAT", "MAP")) assertEquals("$n: $part as the takeover lays it", want.getValue(part), b.getValue(part))
             p.home.editCancel()
         }
     }

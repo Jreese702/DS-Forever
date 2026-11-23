@@ -1731,9 +1731,10 @@ class HomeView(
 
     /** the module's mode for [s]: the takeover = the fight with Party mode off; a fight with it on = 88 px rows, or - In fights = Top
      *  screen (the layout as the page lays it: TopCombatBar.honoured keeps TOP only while the add-on's Wings are on) - the rows filling
-     *  the band's freed strip (the user's ruling C, 11-22: HomeLayoutSolver.away, PartyLayout.Mode.FIGHT_TOP); else at rest */
+     *  the band's freed strip (the user's ruling C, 11-22: HomeLayoutSolver.away, PartyLayout.Mode.FIGHT_TOP); else at rest. The Fight
+     *  preview lays each as its fight does (the 1519 audit: the solo preview hands the solver the takeover, so the takeover's rows) */
     private fun partyModeNow(s: HomeScreen): PartyLayout.Mode = when {
-        s.takeover -> PartyLayout.Mode.FIGHT_OFF
+        s.takeover || previewTakeover() -> PartyLayout.Mode.FIGHT_OFF
         partyFightNow() || previewPartyFight() ->
             if (layoutNow(s).fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
         else -> PartyLayout.Mode.REST
@@ -1910,8 +1911,9 @@ class HomeView(
             // P4: the room bar's fields are the bar's, not the page's (its order glides in the Strip; the XP track's place is [trackInset])
             .copy(rooms = RoomBar.DEFAULT, xpBar = true, hidden = emptyList())
         if (s != null) l = l.copy(rest = s.rest)
-        // the 1515 merge's review (P5): Top screen only while the add-on's Wings are on (`ct` 1); no key / not confirmed = Grow
-        if (look == null) l = TopCombatBar.honoured(l, padMap?.dpad?.ct)
+        // the 1515 merge's review (P5): Top screen only while the add-on's Wings are on (`ct` 1); no key / not confirmed = Grow. The
+        // Fight preview (the 1519 audit) lays what the first fight after Done lays: Top screen whenever the add-on has the flag
+        if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, padMap?.dpad?.ct) else TopCombatBar.honoured(l, padMap?.dpad?.ct)
         if (look != null) {
             l = l.copy(fight = if (look.grow) HomeLayout.FightBand.GROW
                 else (if (l.fight == HomeLayout.FightBand.GROW) HomeLayout.FightBand.SAME else l.fight))
@@ -1964,11 +1966,11 @@ class HomeView(
 
     /** the bar's side and its fight rule now: the player's, or a preview look's (Hide with it) */
     private fun castSideNow(): CastStripModel.Side = layoutNow().castSide
-    // In fights = Top screen (TopCombatBar.stripStays): the band leaves the bottom screen in the fight, the bar stays whatever Show in
-    // combat says (its touches, its dock; its In-combat layer only when Show in combat armed it, else its own slots); the cast bar question's
+    // In fights = Top screen (TopCombatBar.stripStays): the band leaves the bottom screen in the fight (Party mode's too, ruling C), the
+    // bar stays whatever Show in combat says (its touches, its dock; its In-combat layer only when Show in combat armed it, else its own slots); the cast bar question's
     // picture keeps its own Hide
     private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE
-        else TopCombatBar.stripCombat(layoutNow(), partyOnHere(), HomeSettings.castBarCombat)
+        else TopCombatBar.stripCombat(layoutNow(), HomeSettings.castBarCombat)
 
     /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
     private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
