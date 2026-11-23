@@ -136,6 +136,10 @@
 -- bags-kit4 (issue #332, 1.0.32: "mage comprehension skill does not work, it opens the backpack room but states that there are no
 -- elligible items in bags despite unread scrolls"): an item-condition pick ("cond") lists the bags' non-gear items the game says it can go
 -- on (DoesItemMatchSpellItemCondition true), first; before, only gear was ever listed for it (KIT.list).
+-- bags-kit5 (issue 368, "Waylaid crates: the item list is empty"): a plain item pick ("spell") that a bag item's use started just now
+-- (a crate, a supply box: not a kit, a stone or an oil - KIT.isKit) listed only gear, so the trade goods a crate takes never showed.
+-- It now lists the bags' trade goods, reagents, quest and misc items and consumables first (the used item itself left out), then the
+-- gear as before; the game itself says no on the click to anything the pick cannot take. A kit's list is unchanged (gear only).
 -- bags-merge1 (the 1.0.30 test build merge, code 1453): bags-act1 / bags-act2 (feat/bags-actions), bags-kit3 (fix/kit-filter) and uneq1 / uneq2 (feat/unequip) side by side, each kept as written.
 -- bags-nocmp1 (the user, 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do want to see
 -- the stat changes at the bottom of that weapon if I equip it"): the room asks Interact for its tooltips WITHOUT the worn pieces' own
@@ -2410,6 +2414,16 @@ function KIT.food()
     for _, r in ipairs(rows) do r.at = nil end
     return rows
 end
+-- bags-kit5: an item that is applied TO gear (an armor kit, a stone, an oil: Item Enhancement, class 8 or consumable sub 6) or one
+-- learned as a kit (WC._kitLearned): its pick keeps the gear-only list
+function KIT.isKit(id)
+    if WC._kitLearned and WC._kitLearned[id] then return true end
+    local okI, _, _, _, _, _, cls, sub = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+    cls, sub = okI and SN(function() return cls end) or nil, okI and SN(function() return sub end) or nil
+    return cls == 8 or (cls == 0 and sub == 6)
+end
+-- bags-kit5: the item classes a crate / supply pick may take (consumable, reagent, trade goods, quest, misc)
+KIT.CRATE_CLS = { [0] = true, [5] = true, [7] = true, [12] = true, [15] = true }
 function KIT.list(ctx)
     ctx = ctx or KIT.ctx() or "spell"
     if ctx == "feed" then
@@ -2446,6 +2460,30 @@ function KIT.list(ctx)
         for _, r in ipairs(food) do front[#front + 1] = r end
         for _, r in ipairs(other) do front[#front + 1] = r end
         -- (issue #126) the consumables before the worn gear, never past the cap: 10 rows are left for the bags' gear
+        local room = math.max(0, KIT.MAX - #out - 10)
+        for i = math.min(#front, room), 1, -1 do table.insert(out, 1, front[i]) end
+    end
+    -- bags-kit5 (issue 368): a plain pick a bag item's use started just now, that item not a kit: the non-gear items a crate takes
+    local used = KIT.last
+    if ctx == "spell" and used and GetTime() - used.t < 2 and not KIT.isKit(used.id) then
+        local front = {}
+        for _, e in ipairs(layout()) do
+            local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
+            for s = 1, n do
+                local id = bagItemID(e.bag, s)
+                if id and id ~= used.id then
+                    local okI, _, _, _, _, _, cls = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+                    cls = okI and SN(function() return cls end) or nil
+                    if cls and KIT.CRATE_CLS[cls] then
+                        local info = infoAt(e.bag, s)
+                        front[#front + 1] = { src = "bag", bag = e.bag, s = s, id = id,
+                            name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                            icon = info and SN(function() return info.iconFileID end) or nil,
+                            q = info and SN(function() return info.quality end) or nil, ok = true }
+                    end
+                end
+            end
+        end
         local room = math.max(0, KIT.MAX - #out - 10)
         for i = math.min(#front, room), 1, -1 do table.insert(out, 1, front[i]) end
     end
