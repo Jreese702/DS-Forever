@@ -210,4 +210,31 @@ class FightCastBarTest {
         // the old two-argument calls lay Bottom screen as before (the default record)
         assertEquals(TOP, TopCombatBar.honoured(TOP, 1))
     }
+
+    /** the user's picks 2026-11-23 ("Keep ours on the bottom" / "One place"): Top screen's cast bar with the game's swing timer OFF
+     *  (`gsw` 0, PadMap m188) keeps the strip for the swing alone; on (1) or unknown (an older add-on): as built */
+    @Test fun theGamesSwingTimerOffKeepsOurSwingOnTheBottom() {
+        val want = TOP.copy(fightCast = HomeLayout.FightCast.TOP)
+        assertEquals("gsw 0: the strip (the swing)", HomeLayout.FightCast.BOTTOM, TopCombatBar.honoured(want, 1, 1, 0).fightCast)
+        assertTrue(S.hasFightStrip(TopCombatBar.honoured(want, 1, 1, 0)))
+        assertTrue("... painting the swing alone", TopCombatBar.swingOnly(want, 1, 1, 0))
+        for (g in listOf(1, null)) {
+            assertEquals("gsw $g: the game's bar, no strip", HomeLayout.FightCast.TOP, TopCombatBar.honoured(want, 1, 1, g).fightCast)
+            assertFalse(TopCombatBar.swingOnly(want, 1, 1, g))
+        }
+        // never the swing alone unless Top screen's cast bar is confirmed: Bottom screen / cc not 1 / the Wings off
+        assertFalse(TopCombatBar.swingOnly(TOP, 1, 1, 0))
+        for (cc in listOf(null, 0)) assertFalse(TopCombatBar.swingOnly(want, 1, cc, 0))
+        for (ct in listOf(null, 0)) assertFalse(TopCombatBar.swingOnly(want, ct, 1, 0))
+        assertFalse(TopCombatBar.swingOnly(want.copy(fight = HomeLayout.FightBand.GROW), 1, 1, 0))
+        // the Fight preview: the same, whenever the add-on HAS the flags
+        assertTrue(TopCombatBar.swingOnlyPreview(want, 0, 0, 0))
+        assertEquals(HomeLayout.FightCast.BOTTOM, TopCombatBar.previewed(want, 0, 0, 0).fightCast)
+        assertEquals(HomeLayout.FightCast.TOP, TopCombatBar.previewed(want, 0, 0, 1).fightCast)
+        assertFalse(TopCombatBar.swingOnlyPreview(want, null, 0, 0))
+        // the padmap's gsw
+        val d = PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","m":{"dpad":{"on":true,"ct":1,"cc":1,"gsw":0}}}"""))?.dpad
+        assertEquals(0, d!!.gsw)
+        assertNull(PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","m":{"dpad":{"on":true,"ct":1}}}"""))?.dpad?.gsw)
+    }
 }

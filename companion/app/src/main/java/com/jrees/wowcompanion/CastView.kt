@@ -285,6 +285,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      *  Set by Home */
     var lineTop = false
         set(v) { if (field != v) { field = v; onCastState?.invoke() } }
+    /** THE SWING ALONE (the user's pick 2026-11-23, "Keep ours on the bottom": Cast bar in fights = Top screen with the GAME's own swing
+     *  timer off - TopCombatBar.swingOnly): Home's fight strip paints the swing timer only ([drawFightStrip]), the cast being the game's
+     *  own casting bar on the top screen (the rooms' bar quiet too: [lineAway]). Set by Home */
+    var stripNoCast = false
+        set(v) { if (field != v) { field = v; invalidate(); onLine?.invoke() } }
 
     /** while true the band draws NO presses (no push-down, no flash): Home's Select cursor owns the pad then
      *  (user 2026-09-30, LATER item 23a). Layers and the triggers still follow the pad. */
@@ -3570,6 +3575,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val bh0 = curBh; val pl0 = curPlate
         into = true; intoSwing = true; intoW = r.width(); intoH = r.height()
         curPlate = false
+        // [stripNoCast]: the swing alone - the cast, its prediction and its finish / fail flash left out for this paint only (the game's
+        // own bar on the top screen has them); restored after, so the band and the rooms' bar keep the real state
+        val cs0 = castStartMs; val ce0 = castEndMs; val pr0 = predOn; val fk0 = flashKind
+        if (stripNoCast) {
+            castStartMs = Double.NaN; castEndMs = Double.NaN; predOn = false
+            if (flashKind == FLASH_CAST || flashKind == FLASH_FAIL) flashKind = 0
+        }
         val save = c.save()
         try {
             if (dualShown(now)) {
@@ -3594,6 +3606,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         } finally {
             c.restoreToCount(save)
             into = false; intoSwing = false; curBh = bh0; curPlate = pl0
+            if (stripNoCast) { castStartMs = cs0; castEndMs = ce0; predOn = pr0; flashKind = fk0 }
         }
     }
     /** [drawFightStrip] is painting: the swing comes too ([drawCastInto] paints the cast only) */

@@ -110,10 +110,11 @@ object HomeTouch {
      * ([HomeGrow.minimize], then the takeover off: no taps, nothing secure; the guest hold and PadOwnerSync's ENTER follow from the
      * layout as after B), without B's grace or trigger checks (those guard a FIGHT BUTTON; a finger on the bottom screen never is).
      * A module the takeover was covering shows again. True = something changed.
-     * [keepGrow] (In fights = Top screen live in a fight: [TopCombatBar.bShrinks] false, the review of 11-22): the grow is NOT minimized -
-     * nothing grew on the bottom screen and the add-on's Wings stay on the top screen to the fight's end, so the module only covers the
+     * [keepGrow] (In fights = Top screen live: [TopCombatBar.touchKeepsGrow], the review of 11-22 kept by the 11-23 B rule): the grow is
+     * NOT minimized - a finger never reaches the add-on's give-back, so its Wings stay on the top screen and the module only covers the
      * page; closed, the takeover comes straight back ([takeover]: the opened-in-fight mark lapses with the module) and the band slides
-     * back above the page instead of sitting at its rest box (with a red reminder) under the Wings.
+     * back above the page instead of sitting at its rest box (with a red reminder) under the Wings. (B does minimize: the add-on's own
+     * secure B gives the Wings back at the same press.)
      */
     fun open(flow: HomeFlow, grow: HomeGrow, m: HomeModule, now: Long, keepGrow: Boolean = false): Boolean {
         var changed = false
@@ -231,6 +232,17 @@ class HomeGrow(staleMs: Long = 20_000L) {
     fun minimize(now: Long): Boolean {
         if (minimized || !on(now)) return false
         minimized = true
+        return true
+    }
+
+    /**
+     * THE ADD-ON RE-ARMED (In fights = Top screen, the user's 11-23 B rule): after B shrank it mid-fight, the game's router armed its
+     * buttons again on a harmful press that started no auto-attack (a caster's next spell: no `aa` start the app could see) - the
+     * padmap's `fight` 0 -> 1. The grow shows again as at a new start; false when nothing was minimized
+     */
+    fun rearm(): Boolean {
+        if (!minimized) return false
+        minimized = false
         return true
     }
 

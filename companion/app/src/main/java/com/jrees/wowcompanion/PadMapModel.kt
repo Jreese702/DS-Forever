@@ -313,6 +313,7 @@ object PadMapModel {
                     undone = sides("undone"),
                     ct = if (d.has("ct")) d.optInt("ct", 0).coerceIn(0, 1) else null,
                     cc = if (d.has("cc")) d.optInt("cc", 0).coerceIn(0, 1) else null,
+                    gsw = if (d.has("gsw")) d.optInt("gsw", 0).coerceIn(0, 1) else null,
                     realmSource = who?.let { textOrNull(it, "rs") },
                     realmHint = who?.let { textOrNull(it, "rh") },
                     cls = who?.let { textOrNull(it, "c") },
@@ -352,12 +353,13 @@ object PadMapModel {
      *  [aside] "room" / a game window's name while the router steps aside; [undone] what the one-time ZL+ZR cleanup took on this character
      *  ("left" / "up" / "right": the old m24 DS Bar commands); [ct] m179: this character's top-screen combat bar flag (1 on, 0 off,
      *  null = an older add-on without it); [cc] m187: this character's "Cast bar in fights" (1 Top screen, 0 Bottom screen, null = an
-     *  older add-on without it).
+     *  older add-on without it); [gsw] m188: the game's own swing timer shown (Edit Mode's ShowSwingTimer, read-only: 1 on, 0 off, null =
+     *  an older add-on).
      *  m24's slot fields ([placed] / [skipped] / [taken]) are empty from m25 on. */
     data class Dpad(val on: Boolean, val placed: kotlin.collections.Map<String, Boolean>, val skipped: List<String>, val taken: List<String>,
                     val want: Boolean?, val colOn: Int?, val colOff: Int?, val name: String?, val realm: String?,
                     val dirs: kotlin.collections.Map<Int, String> = emptyMap(), val aside: String? = null,
-                    val undone: List<String> = emptyList(), val ct: Int? = null, val cc: Int? = null,
+                    val undone: List<String> = emptyList(), val ct: Int? = null, val cc: Int? = null, val gsw: Int? = null,
                     /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"; m180, Safety k10: "guid", "guid-id",
                      *  "sticky", "live", "hint", "picked", "new", "ask", "none"), null from an older add-on. [realm] is the STORED key's */
                     val realmSource: String? = null,

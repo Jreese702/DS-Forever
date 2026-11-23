@@ -110,12 +110,13 @@ class HomeTouchTest {
         assertEquals(HomeModule.MAP, flow.full)
     }
 
-    /** the 11-22 review: In fights = Top screen live in the fight (TopCombatBar.bShrinks false): a touch opens the module WITHOUT
-     *  minimizing the grow, so closing it brings the takeover straight back (the band away again, no red reminder) */
+    /** the 11-22 review, kept by the 11-23 B rule: In fights = Top screen live (TopCombatBar.touchKeepsGrow): a touch opens the module
+     *  WITHOUT minimizing the grow (a finger never reaches the add-on's give-back: the Wings stay up), so closing it brings the takeover
+     *  straight back (the band away again, no red reminder) */
     @Test fun aTopScreenFightKeepsTheGrowOverAModule() {
         val (flow, grow) = fight()
         val l = HomeLayout(fight = HomeLayout.FightBand.TOP)
-        val keep = !TopCombatBar.bShrinks(l, grow.fighting(t0 + 5), ct = 1)
+        val keep = TopCombatBar.touchKeepsGrow(l, ct = 1)
         assertTrue(keep)
         assertTrue(HomeTouch.open(flow, grow, HomeModule.MAP, t0 + 5, keepGrow = keep))
         assertEquals(HomeModule.MAP, flow.full)
@@ -132,10 +133,27 @@ class HomeTouchTest {
         // Grow (and Top screen not live: ct 0 / null) as before: the touch minimizes
         for (ct in listOf(null, 0)) {
             val (f2, g2) = fight()
-            val k2 = !TopCombatBar.bShrinks(l, g2.fighting(t0 + 5), ct)
+            val k2 = TopCombatBar.touchKeepsGrow(l, ct)
             assertFalse(k2)
             HomeTouch.open(f2, g2, HomeModule.MAP, t0 + 5, keepGrow = k2)
             assertFalse(g2.shown(t0 + 5)); assertTrue(g2.red(t0 + 5))
         }
+    }
+
+    /** the 11-23 B rule: B in a Top-screen fight minimizes as Grow does (the red reminder while the fight runs); the router re-armed by a
+     *  harmful press that started no auto-attack (the padmap's `fight` 0 -> 1) brings it back ([HomeGrow.rearm]); the fight's end clears all */
+    @Test fun bInATopFightThenTheAddonReArms() {
+        val (flow, grow) = fight()
+        assertTrue(grow.minimize(t0 + 5)); assertTrue(flow.combat(false))
+        assertFalse(grow.shown(t0 + 5)); assertTrue("Grow's red reminder", grow.red(t0 + 5))
+        assertTrue("re-armed", grow.rearm())
+        assertTrue(grow.shown(t0 + 6)); assertFalse(grow.red(t0 + 6))
+        assertFalse("nothing minimized: no re-arm", grow.rearm())
+        // B again, then the fight ends by itself: nothing stays minimized
+        assertTrue(grow.minimize(t0 + 7))
+        grow.noteFight(false, true, t0 + 8)
+        assertFalse(grow.shown(t0 + 8)); assertFalse(grow.red(t0 + 8))
+        grow.noteFight(true, true, t0 + 9)
+        assertTrue("a new fight grows again", grow.shown(t0 + 9))
     }
 }

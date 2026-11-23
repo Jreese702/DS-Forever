@@ -80,7 +80,7 @@ class FightCastStripShotsTest {
 
     /** a Home page for [layout] ([fight] = the add-on's fight word; [party] = Party mode on with a three-player party) with the add-on's
      *  padmap: the Wings flag `ct` 1 and the cast bar's screen [cc] */
-    private fun page(layout: HomeLayout, fight: Boolean, party: Boolean = false, cc: Int? = 0, hudS: JSONObject? = null): Page {
+    private fun page(layout: HomeLayout, fight: Boolean, party: Boolean = false, cc: Int? = 0, hudS: JSONObject? = null, gsw: Int? = null): Page {
         art()
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app); Tr.init(app)
@@ -94,8 +94,8 @@ class FightCastStripShotsTest {
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
         home.borrow()
-        val ccJson = if (cc == null) "" else ",\"cc\":$cc"
-        home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m187","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":1$ccJson}}}"""))!!)
+        val ccJson = (if (cc == null) "" else ",\"cc\":$cc") + (if (gsw == null) "" else ",\"gsw\":$gsw")
+        home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m188","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":1$ccJson}}}"""))!!)
         lay(home)
         cast.roomBarOn = true
         cast.roomBar = HoldTalk.DEFAULT_DIRS
@@ -233,6 +233,35 @@ class FightCastStripShotsTest {
             assertEquals("cc $cc: the strip", STRIP, boxes(q.home).getValue("FIGHT_CAST"))
             assertTrue(q.cast.lineAway)
         }
+    }
+
+    /** the user's picks 2026-11-23 ("Keep ours on the bottom" / "One place"): Cast bar in fights = Top screen with WoW's own swing timer
+     *  OFF (PadMap m188 `gsw` 0) - the strip stays across the top of the bottom screen with the SWING alone (the cast is the game's own bar
+     *  on the top screen, so the strip paints none of it); with the game's swing timer on (`gsw` 1, or an older add-on): as built, no strip */
+    @Test fun topScreenCastWithTheGamesSwingOffKeepsTheSwingStrip() {
+        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
+        val cast = page(l, fight = true, cc = 1, gsw = 0, hudS = JSONObject().put("aa", true).put("cs", casting("Frostbolt")))
+        assertEquals("the swing strip across the very top", STRIP, boxes(cast.home).getValue("FIGHT_CAST"))
+        assertTrue("it carries the line, the swing alone", cast.cast.lineAway && cast.cast.stripNoCast)
+        assertEquals(44f, boxes(cast.home).getValue("CHAT").top, 0.01f)
+        val cm = render(cast, "fight_top_cast_swing_off_casting")
+        assertEquals("a cast alone: nothing in the strip (the game's bar on the top screen has it)", 0,
+            inked(cm, RectF(STRIP.left + 20f, STRIP.top + 2f, STRIP.right - 20f, STRIP.bottom - 2f)))
+        val swing = page(l, fight = true, cc = 1, gsw = 0, hudS = JSONObject().put("aa", true).put("sw", sw(0, 1.2, 2.6)).put("cs", casting("Frostbolt")))
+        val sm = render(swing, "fight_top_cast_swing_off_swing")
+        assertTrue("the swing painted through the cast (${inked(sm, STRIP)} px)", inked(sm, STRIP) > 2000)
+        assertFalse("the band's own state keeps the cast (restored after the strip's paint)", (field(swing.cast, "castStartMs") as Double).isNaN())
+        // the game's swing timer on: as built (the game's bar and the Wings' swing lines up top, nothing here)
+        for (g in listOf(1, null)) {
+            val q = page(l, fight = true, cc = 1, gsw = g, hudS = JSONObject().put("aa", true).put("sw", sw(0, 1.2, 2.6)))
+            assertNull("gsw $g: no strip", boxes(q.home)["FIGHT_CAST"])
+            assertFalse(q.cast.stripNoCast)
+        }
+        // Bottom screen (the default): the strip carries both, never the swing alone
+        val b = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP), fight = true, gsw = 0,
+            hudS = JSONObject().put("aa", true).put("cs", casting("Frostbolt")))
+        assertFalse(b.cast.stripNoCast)
+        assertTrue("Bottom screen: the cast painted (${inked(render(b, null), STRIP)} px)", inked(render(b, null), STRIP) > 4000)
     }
 
     @Test fun theFightPreviewShowsTheStrip() {

@@ -711,10 +711,10 @@ def plate_checks(chk):
     G = L.globals()
     W = G.WowCompanion
     NB = W.nbar
-    chk("nbar12: the version tag", NB.V == "nbar13", NB.V)
+    chk("nbar12: the version tag", NB.V == "nbar14", NB.V)
     G.ROWS["uisw"](None, 35)
     f = NB.f
-    chk("nbar12 plates: built with the bar, one per half (50 x 45), never the mouse", f.plate is not None and f.plate[1].w == 50 and f.plate[1].h == 45
+    chk("nbar14 plates: built with the bar, one per half (64 x 50: the band's plate size), never the mouse", f.plate is not None and f.plate[1].w == 64 and f.plate[1].h == 50
         and f.plate[1].mouse is False and f.plate[2].mouse is False)
     chk("nbar12 plates: the game's shoulder plates (left / right -shoulder-bg) and their -pressed overlays",
         f.plate[1].bg.atlas == "gamepad-targeting-left-shoulder-bg" and f.plate[2].bg.atlas == "gamepad-targeting-right-shoulder-bg"
@@ -726,12 +726,13 @@ def plate_checks(chk):
     p1, p2 = f.plate[1].pts[1], f.plate[2].pts[1]
     c1 = f.chip[1].pts[1]
     t1 = [f.chord[1][j].pts[1] for j in (1, 2, 3)]
-    chk("nbar12 places: the plate at each half's outer top (x 160 + 106, y +50.5), the chip under it (+10), the chord row (-16, 19 apart)",
-        (p1[4], p1[5]) == (-266, 50.5) and (p2[4], p2[5]) == (266, 50.5) and (c1[4], c1[5]) == (-266, 10)
-        and [(t[4], t[5]) for t in t1] == [(-285, -16), (-266, -16), (-247, -16)], ((p1[4], p1[5]), (c1[4], c1[5]), [(t[4], t[5]) for t in t1]))
+    chk("nbar14 places: the plate at each half's outer top (x 160 + 110.5, y +23: the flattened diamond's top), the chip under it (-20), "
+        "the chord row (-46, 19 apart)",
+        (p1[4], p1[5]) == (-270.5, 23) and (p2[4], p2[5]) == (270.5, 23) and (c1[4], c1[5]) == (-270.5, -20)
+        and [(t[4], t[5]) for t in t1] == [(-289.5, -46), (-270.5, -46), (-251.5, -46)], ((p1[4], p1[5]), (c1[4], c1[5]), [(t[4], t[5]) for t in t1]))
     g1 = f.plate[1].glyph.pts[1]
-    chk("nbar12 places: the bumper glyph (17) at the plate's inner bottom corner (15 in, 13.5 down)", (g1[4], g1[5]) == (15, -13.5)
-        and f.plate[2].glyph.pts[1][4] == -15, (g1[4], g1[5]))
+    chk("nbar14 places: the bumper glyph (17) at the plate's inner bottom corner (19.2 in, 15 down: the 64 x 50 plate's 0.6)", (g1[4], g1[5]) == (19.2, -15)
+        and f.plate[2].glyph.pts[1][4] == -19.2, (g1[4], g1[5]))
     # the pictures: the band's table
     kinds = L.eval("WowCompanion.nbar.plateKinds")
     want = {(False, False, False): ("friendly", "hostile"), (True, False, False): ("friendly", "shortcuts"),

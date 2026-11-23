@@ -17,6 +17,10 @@ Proven here:
     re-taps) and says ft = 1; WC.hubCastFight(false) zeroes it again (a cast still running too) and the hooks zero it again; a bar the
     player SHOWS (cb.hidden false) is never touched by the fight's word; only SetAlpha is called on the game's bar (no Hide / Show /
     SetParent / SetPoint), no CVar or binding written;
+  3 PadMap m188 (ActionBar nbar14's reads, the user's 11-23 B rule and swing pick): WC.padMap.fightSw is the router's own switch - off
+    out of a fight, on in one, off once B gave the buttons back IN the fight (wc-given, as the router's secure snippet sets it), on again
+    when re-armed; WC.padMap.gameSwingOn / dpadState `gsw` read Edit Mode's ShowSwingTimer (read-only; unknown = off), a change sends a
+    padmap, nothing is read in a fight;
 plus no spied call, no lockdown breach, no snippet error, no Lua error. Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -63,8 +67,8 @@ def sent_cc(L, n0):
 
 
 # ------------------------------------------------------------------------------------------------ 0 the tags
-check('local PV = "m187"' in SRC["padmap"] and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
-      and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap m187 and its note (m179's kept)")
+check('local PV = "m188"' in SRC["padmap"] and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
+      and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap m188 (m187's and m179's notes kept)")
 check('local BV = "b77"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]
       and "for k = 0, 1 do P3[24 + k]" in SRC["book"], "0. Book b77 and its codes 24 / 25")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")
@@ -109,6 +113,43 @@ check(keys is not None and "ctcb" in [keys[i] for i in range(1, len(keys) + 1)],
 W.execute('WowCompanion.dsfReset(21)')
 check(W.eval('(WowCompanionSpellsDB.ctcb or {})[WHO .. "-" .. REALM]') is None and st(W)[1] == 0, "1. Layouts reset: the flag gone (Bottom)")
 clean(W, "1 (reset)")
+
+# ------------------------------------------------------------------------------------------------ 3 PadMap m188 (ActionBar nbar14's reads)
+check("m188 THE B RULE AND THE GAME'S SWING TIMER" in SRC["padmap"], "3. PadMap m188's note")
+W3 = boot()
+W3.execute(pm + '.dpadBar(true); runTimers(NOW + 1)')
+check(W3.eval('type(%s.fightSw)' % pm) == "function" and W3.eval(pm + '.fightSw()') is False,
+      "3. m188 fightSw: the router's switch, off out of a fight with nothing armed")
+W3.execute('fightOn(); tick(0.5)')
+check(W3.eval(pm + '.fightSw()') is True, "3. ... in a fight: on (nothing given back)")
+# B's give-back: the router's secure snippet sets wc-given on its buttons (here on one, as the snippet does through its frame refs)
+W3.execute('IN_SECURE = true; local names = %s.routerButtons(); for _, n in pairs(names) do local b = _G[n]; if b then '
+           'b:SetAttribute("wc-given", true); break end end; IN_SECURE = false' % pm)
+check(W3.eval(pm + '.fightSw()') is False, "3. ... B gave the buttons back IN the fight: off (ActionBar's Wings slide down)")
+W3.execute('IN_SECURE = true; local names = %s.routerButtons(); for _, n in pairs(names) do local b = _G[n]; if b then '
+           'b:SetAttribute("wc-given", false) end end; IN_SECURE = false' % pm)
+check(W3.eval(pm + '.fightSw()') is True, "3. ... re-armed (nothing given back again): on")
+W3.execute('fightOff(); tick(0.5); runTimers(NOW + 2)')
+# the game's own swing timer: Edit Mode's account setting, read-only; unknown = off
+check(W3.eval(pm + '.gameSwingOn()') is False and W3.eval(pm + '.dpadState().gsw') == 0, "3. m188 no C_EditMode: the game's swing timer unknown = off (gsw 0)")
+n0 = int(W3.eval('#SENT'))
+W3.execute('C_EditMode = { GetAccountSettings = function() return { { setting = 36, value = 0 }, { setting = 37, value = 1 } } end }; '
+           'Enum = Enum or {}; Enum.EditModeAccountSetting = { ShowSwingTimer = 37 }; fire("EDIT_MODE_LAYOUTS_UPDATED"); runTimers(NOW + 1)')
+check(W3.eval(pm + '.gameSwingOn()') is True and W3.eval(pm + '.dpadState().gsw') == 1, "3. m188 ShowSwingTimer 1: gsw 1")
+gs = []
+for i in range(n0 + 1, int(W3.eval('#SENT')) + 1):
+    try:
+        d = json.loads(W3.eval('SENT[%d]' % i))
+    except Exception:      # noqa: BLE001
+        continue
+    if isinstance(d, dict) and d.get('type') == 'padmap':
+        gs.append(((d.get('m') or {}).get('dpad') or {}).get('gsw'))
+check(1 in gs, "3. ... the change sends a padmap with gsw 1 (the app's strip follows)", gs)
+W3.execute('C_EditMode.GetAccountSettings = function() return { { setting = 37, value = 0 } } end; fightOn(); fire("EDIT_MODE_LAYOUTS_UPDATED"); tick(0.5)')
+check(W3.eval(pm + '.gameSwingOn()') is True, "3. ... in a fight nothing is read again (the value kept)")
+W3.execute('fightOff(); fire("PLAYER_REGEN_ENABLED"); tick(0.5); runTimers(NOW + 2)')
+check(W3.eval(pm + '.gameSwingOn()') is False, "3. ... read again after it (0: off)")
+clean(W3, "3")
 
 # ------------------------------------------------------------------------------------------------ 2 Hub hub76
 from wowstub import ADDONS, boot_world      # noqa: E402

@@ -10,9 +10,10 @@ prompt, the party column and Party mode's rows under the HUD; WC.abox's aura hos
 frames (WC.gameLay: MinimapCluster, ObjectiveTrackerFrame, the stock gamepad bar, ChatFrame1 - their rects SECRET in a fight), the layout
 store (WC.lay: entries, the tap pad's forbidden band, the editor), PadMap's flag (combatTopOn) and the router's switch (WC.tgGrown).
 Checks:
-  A THE SOLVER (NB.fightSolve, pure; nbar11 shrink first, then move): 1 wings beside the HUD level with its middle, 34 px gaps,
-    clamped 16 px above the bottom, at k 1 / 0.9 / 0.8; 2 raised in 24 px steps at k 0.8 (the stock bar shown); 3 joined above the HUD
-    at k 1 / 0.8 (both sides blocked); 4 a grid scan at k 0.7 over the lower 60 %; 5 the piece's own spot (nothing fits) - and a placed
+  A THE SOLVER (NB.fightSolve, pure; nbar14 MOVE BEFORE SHRINKING): 1 wings beside the HUD level with its middle, 60 px gaps (HUD_MARGIN
+    60 from the block), clamped 16 px above the bottom, at k 1, pushed outward in 24 px steps (the stock bar shown); 2 raised in 24 px
+    steps at k 1 (a frame under them); 3 joined above the HUD at k 1 (both sides blocked); only then 1 / 2 at k 0.9 / 0.8; 4 a grid scan
+    at k 0.8 over the lower 60 %; 5 the piece's own spot (nothing fits) - and a placed
     spot ALWAYS wins (pushed under the tap pad's band if it would cover it); the lane (the column under each half clear: the slide's
     path); several top layouts (the HUD moved / resized, Party mode's taller block, the target bar lowered, a left party column): every
     result inside the screen, never over the tap pad band, cases 1-4 never within 24 px of an obstacle.
@@ -24,12 +25,16 @@ Checks:
     shown mid-fight is never read (rectNow not called, no secret touched) and does not move it; Party mode's lift (our own frames) re-fits
     it with a 0.24 s glide; the top chat strip dips it to 35 %; the chips light with ZL / ZR; the swing lines run; B's give-back (the
     router's switch false) / the fight's end slides it back down past the edge over 0.2 s (ease-in) and hides it; no lane = the fade +
-    rise; Party mode (nbar12, the user's ruling C 11-22: "It should stay at the top in party mode"): the Wings in its FIGHTS only (on
+    rise; nbar14 THE B RULE: B's give-back IN the fight (the router's switch false) slides the Wings down too, the next armed press brings
+    them back up, PadMap's fightSw wins over tgGrown; Party mode (nbar12, the user's ruling C 11-22: "It should stay at the top in party
+    mode"): the Wings in its FIGHTS only (on
     PadMap's `live`, pinned to the app's PartyModel.onLive over on / aside / fight / raid) - an attack armed before the pull keeps them
     off; the router's Y unbound (tgGrown nil) = the armed auto-attack / auto-repeat, as the app's grow.
   I nbar12 PARTY MODE'S FIGHT: the Wings shown with the PARTY layer (the pick's arrows, the party spells by layer, Y's chain, B fixed,
     the chord rows), raids too; the cfg PadMap sent last (cfg() - the spellbook walk - never called in the fight); a Select press mid-fight
-    swaps the layer in place (re-fit against ours, redrawn that tick, still shown); Hub's rows and Select tab in the HUD block.
+    swaps the layer in place (re-fit against ours, redrawn that tick, still shown); Hub's rows and Select tab in the HUD block; nbar14
+    PARTY MODE CENTRED: the block's shift to the screen's centre told to Trail (NB.centreDx), the Wings either side of the centred
+    block, stable once Trail has applied it, back to 0 at the fight's end.
   D NINTENDO MODE: the bar glides from its stock spot to the wings and back (alpha 1 all the way) and ends at the stock spot again.
   E THE EDITOR: the flag on, Nintendo off, the editor open out of combat -> the bar shows at its piece's spot; a placed spot = the fight's.
   F LEAVE NO TRACE: no Secure template, EnableMouse never true, no SetBinding / CVar / macro call, nothing of Blizzard's moved, shown or
@@ -122,6 +127,7 @@ GAMEF("g.MinimapCluster", 1590, 0, 330, 390)
 GAMEF("g.ObjectiveTrackerFrame", 1560, 420, 340, 300, false)
 GAMEF("g.GamepadMainActionBarFrame", 640, 944, 640, 120, false)
 GAMEF("g.ChatFrame1", 20, 660, 560, 380, false)
+GAMEF("g.LowStrip", 300, 1060, 1320, 20, false)       -- nbar14: a thin frame under the halves (no lane: the fade + rise)
 WC.gameLay = { ids = GAMEIDS, find = function() end,
                shown = function(id) local g = GAME[id]; return g ~= nil and g.shown end,
                frame = function(id) return GAME[id] end,
@@ -138,6 +144,10 @@ WC.padMap.combatTopOn = function() FLAGREADS = FLAGREADS + 1; return CTOP end
 -- nbar13: PadMap m187's "Cast bar in fights: Top screen" and Hub hub76's word (a spy: every call's value)
 CCB = false
 WC.padMap.combatCastTopOn = function() return CCB end
+-- nbar14: PadMap m188's read-only word on the game's own swing timer, and its router switch (nil = an older PadMap: tgGrown decides)
+GSW, FSW = false, nil
+WC.padMap.gameSwingOn = function() return GSW end
+WC.padMap.fightSw = function() return FSW end
 HUBCF = {}
 WC.hubCastFight = function(on) HUBCF[#HUBCF + 1] = on end
 function DRV(dt) local d = WC.nbar.drv; d.onOnUpdate(d, dt); local f = WC.nbar.f; if f and f.shown and f.onOnUpdate then f.onOnUpdate(f, dt) end end
@@ -242,8 +252,8 @@ def invariants(name, r, inp_obst, s=1):
     chk(name + ": both halves inside the screen", ok_in, rects)
     chk(name + ": never over the tap pad band", not any(over(x, BAND) or over(x, BAND_SPEC) for x in rects), rects)
     if r["case"] in (1, 2, 3):
-        hit = [o for o in inp_obst for x in rects if over(x, rect(o), 24)]
-        chk(name + ": case %s clears every obstacle by 24 px" % r["case"], not hit, hit)
+        hit = [o for o in inp_obst for x in rects if over(x, rect(o), 60 if o.get("id") in ("hud", "partyhud") else 24)]
+        chk(name + ": case %s clears every obstacle by 24 px (nbar14: the HUD block by 60)" % r["case"], not hit, hit)
 
 
 def party_pin(L):
@@ -290,7 +300,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar12 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar13"' in src
+    chk("0. ActionBar's tag nbar12 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar14"' in src
         and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)
@@ -300,24 +310,28 @@ def main():
 
     # ------------------------------------------------------------------------------------------------ A the solver
     hw, hh, ax, ay = L.eval("WowCompanion.nbar.halfBox")()
-    # the 11-22 review: the box holds what a half DRAWS - the slots' focus glow (OFF 50 + the 46 slot / 2 + FOCUS 30 / 2 = 88 from the
-    # diamond's centre) on its top and its inner side, the glow + the 2-unit press below it; nbar12 (ruling A): the outer column - the
-    # L / R plate (50 wide at 106), the chip under it, Party mode's chord row reaching 106 + 19 + 8 = 133
-    chk("A. nbar12 one half: outer 133 (the plate / chip / chord column at 73 + 6 + 27 = 106; its chord row to 133), inner 88 / up 88 "
-        "(the focus glow), down 97 (the swing lines 73 + 8 + 6 + 4 + 6); the diamond's centre", (hw, hh, ax, ay) == (221, 185, 133, 88),
-        (hw, hh, ax, ay))
+    # the 11-22 review: the box holds what a half DRAWS - the slots' focus glow on its top and its inner side, the glow + the 2-unit press
+    # below it; nbar12 (ruling A): the outer column - the L / R plate, the chip under it, Party mode's chord row. nbar14 THE BAND'S SHAPE:
+    # the flattened diamond (OFF_X 47.5 across, OFF_Y 25 up / down): the inner glow 47.5 + 23 + 15 = 85.5, up 25 + 23 + 15 = 63; the
+    # plate 64 x 50 at 70.5 + 6 + 34 = 110.5 (out to 142.5); down: the swing lines 48 + 8 + 6 + 4 + 6 = 72
+    chk("A. nbar14 one half: outer 142.5 (the 64-wide plate at 110.5), inner 85.5 / up 63 (the focus glow of the flattened diamond), down 72 "
+        "(the swing lines); the diamond's centre", (hw, hh, ax, ay) == (228, 135, 142.5, 63), (hw, hh, ax, ay))
     og = todict(L.eval("WowCompanion.nbar.outerGeo")())
-    chk("A. nbar12 the outer column: x 106, the plate at +50.5 (its top level with the diamond's), the chip at +10, the chord row at -16",
-        og == {"x": 106, "plateY": 50.5, "chipY": 10, "chordY": -16, "chordDX": 19}, og)
+    chk("A. nbar14 the outer column: x 110.5, the plate at +23 (its top level with the diamond's top slot), the chip at -20, the chord "
+        "row at -46", og == {"x": 110.5, "plateY": 23, "chipY": -20, "chordY": -46, "chordDX": 19}, og)
+    chk("A. nbar14 the band's size and shape: MATCH_S 1.75, OFF_X 47.5 / OFF_Y 25, GAP 60, HUD_MARGIN 60, MIN_K 0.8, PUSH_MAX 228",
+        (NB.TOP.MATCH_S, NB.TOP.OFF_X, NB.TOP.OFF_Y, NB.TOP.GAP, NB.TOP.HUD_MARGIN, NB.TOP.MIN_K, NB.TOP.PUSH_MAX) == (1.75, 47.5, 25, 60, 60, 0.8, 228))
     hud = R(820, 890, 280, 58)                                   # the bars + the aura host
     ours = [R(820, 890, 280, 58, "hud"), R(530, 4, 860, 76, "compass"), R(790, 86, 372, 94, "target")]
     game = [R(1590, 0, 330, 390, "g.MinimapCluster")]
     r = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0))
     chk("A1. default (final_07): case 1, the wings", r["case"] == 1 and r["form"] == "wings", (r["case"], r["form"]))
     lr, rr = rect(r["rects"][1]), rect(r["rects"][2])
-    chk("A1. 34 px each side of the HUD block", abs(lr[0] + lr[2] - (820 - 34)) < 0.01 and abs(rr[0] - (1100 + 34)) < 0.01, (lr, rr))
+    chk("A1. nbar14: 60 px each side of the HUD block", abs(lr[0] + lr[2] - (820 - 60)) < 0.01 and abs(rr[0] - (1100 + 60)) < 0.01, (lr, rr))
     chk("A1. level with the block's middle (y 919), both halves on one line", r["l"]["y"] == r["r"]["y"] == 919, (r["l"], r["r"]))
-    chk("A1. the D-pad's diamond left (x 698), the faces' right (x 1222)", (r["l"]["x"], r["r"]["x"]) == (698, 1222), (r["l"], r["r"]))
+    chk("A1. the D-pad's diamond left (x 760 - 85.5 = 674.5), the faces' right (x 1245.5)", (r["l"]["x"], r["r"]["x"]) == (674.5, 1245.5),
+        (r["l"], r["r"]))
+    chk("A1. nbar14: not pushed (push 0), not raised", r["push"] == 0 and r["raise"] == 0, (r["push"], r["raise"]))
     invariants("A1", r, ours + game)
     chk("A1. nbar11: full size (k 1) and the lane under both halves clear (the slide's path)", r["k"] == 1 and r["lane"] is True, (r["k"], r["lane"]))
     # the bottom clamp: a HUD low on the screen
@@ -325,34 +339,42 @@ def main():
     r = fsolve(L, hud=low, ours=[dict(low, id="hud")], stock=R(960, 984, 0, 0))
     chk("A1. clamped 16 px above the bottom edge", abs(r["rects"][1]["y"] + r["rects"][1]["h"] - (1080 - 16)) < 0.01 and r["case"] == 1,
         (r["case"], r["rects"][1]))
-    # A2: the stock bar shown (Controller UI On) under the wings: raised in 24 px steps
+    # A2: the stock bar shown (Controller UI On) beside the HUD: nbar14 pushes the halves outward past it at k 1 (never shrunk first)
     stockbar = R(640, 944, 640, 120, "g.GamepadMainActionBarFrame")
     r = fsolve(L, hud=hud, ours=ours, game=game + [stockbar], stock=R(960, 984, 0, 0))
-    chk("A2. the stock bar shown: nbar11 shrinks first (k 0.9 / 0.8 level fail), then case 2 at k 0.8, raised by 24 px steps",
-        r["case"] == 2 and r["k"] == 0.8 and r["raise"] % 24 == 0 and r["raise"] > 0, (r["case"], r["k"], r["raise"]))
-    chk("A2. the least raise that clears it (footprint 24 px above it)", r["rects"][1]["y"] + r["rects"][1]["h"] <= 944 - 24
-        and r["rects"][1]["y"] + r["rects"][1]["h"] + 24 > 944 - 24, r["rects"][1])
-    chk("A2. still level and beside the HUD (34 px off its side at k 0.8)", r["l"]["y"] == r["r"]["y"] and abs(r["l"]["x"] - (820 - 34 - 88 * 0.8)) < 1e-6,
-        (r["l"], r["r"]))
-    chk("A2. the stock bar under the halves: no lane (the fade + rise instead)", r["lane"] is False, r["lane"])
+    chk("A2. nbar14 the stock bar shown: moved before shrunk - case 1 at k 1, pushed outward in 24 px steps (not raised at 0.8)",
+        r["case"] == 1 and r["k"] == 1 and r["push"] > 0 and r["push"] % 24 == 0 and r["raise"] == 0, (r["case"], r["k"], r["push"], r["raise"]))
+    chk("A2. ... the least push that clears it (24 px off its side, the next smaller push would not)",
+        r["rects"][1]["x"] + r["rects"][1]["w"] <= 640 - 24 + 1e-6 and r["rects"][1]["x"] + r["rects"][1]["w"] + 24 > 640 - 24, r["rects"][1])
+    chk("A2. ... still level with the HUD's middle, both halves pushed alike", r["l"]["y"] == r["r"]["y"] == 919
+        and abs((820 - r["rects"][1]["x"] - r["rects"][1]["w"]) - (r["rects"][2]["x"] - 1100)) < 1e-6, (r["l"], r["r"]))
+    chk("A2. ... the stock bar not under the pushed halves: the lane clear (the slide)", r["lane"] is True, r["lane"])
     invariants("A2", r, ours + game + [stockbar])
-    # nbar11: a little crowding (a frame just under the full-size halves) -> the same spot, a little smaller (k 0.9), never moved
-    nudge = [R(500, 1035, 920, 40, "g.SomethingLow")]
+    # nbar14: a frame under the full-size halves across the whole width (no push clears it) -> raised at k 1 (24 px steps), never shrunk
+    nudge = [R(380, 960, 1160, 120, "g.SomethingLow")]
     r = fsolve(L, hud=hud, ours=ours, game=game + nudge, stock=R(960, 984, 0, 0))
-    chk("A1. nbar11 shrink first: a frame under the full-size halves -> case 1 at k 0.9 (level, beside)", r["case"] == 1 and r["k"] == 0.9
-        and r["l"]["y"] == r["r"]["y"] == 919, (r["case"], r["k"], r["l"]))
-    invariants("A1 k 0.9", r, ours + game + nudge)
+    chk("A2. nbar14 move before shrink: a frame under the halves no push clears -> case 2 at k 1, raised 72 px (24 px steps), level, beside",
+        r["case"] == 2 and r["k"] == 1 and r["raise"] == 72 and r["l"]["y"] == r["r"]["y"] == 919 - 72 and r["push"] == 0,
+        (r["case"], r["k"], r["raise"], r["l"], r["push"]))
+    chk("A2. ... no lane (the frame under them: the fade + rise)", r["lane"] is False, r["lane"])
+    invariants("A2 raised", r, ours + game + nudge)
+    # nbar14: only when nothing fits at k 1 (beside, pushed, raised, joined): 0.9
+    tight = [R(380, 960, 1160, 120, "g.SomethingLow"), R(0, 0, 1920, 780, "g.Ceiling")]
+    r = fsolve(L, hud=hud, ours=ours, game=game + tight, stock=R(960, 984, 0, 0))
+    chk("A2. nbar14: k 1 blocked everywhere (a ceiling at 780, a floor at 960: 132 px for the 135-px halves) -> only then shrunk, never under 0.8 (case %s, k %s)"
+        % (r["case"], r["k"]), r["k"] < 1 and r["k"] >= 0.8 and r["case"] in (1, 2, 4), (r["case"], r["k"]))
+    invariants("A2 shrunk", r, ours + game + tight)
     # A3: both sides blocked over the whole raise: joined above the HUD
-    walls = [R(0, 560, 640, 520, "g.ChatFrame1"), R(1280, 560, 640, 520, "g.ObjectiveTrackerFrame")]
+    walls = [R(0, 560, 620, 520, "g.ChatFrame1"), R(1300, 560, 620, 520, "g.ObjectiveTrackerFrame")]
     r = fsolve(L, hud=hud, ours=ours, game=game + walls, stock=R(960, 984, 0, 0))
     chk("A3. both sides blocked: case 3, the halves joined above the HUD", r["case"] == 3 and r["form"] == "joined", (r["case"], r["form"]))
-    chk("A3. centred over the HUD, 34 px above it", abs((r["l"]["x"] + r["r"]["x"]) / 2 - 960) < 0.01
-        and abs(r["rects"][1]["y"] + r["rects"][1]["h"] - (890 - 34)) < 0.01, r)
+    chk("A3. centred over the HUD, 60 px above it", abs((r["l"]["x"] + r["r"]["x"]) / 2 - 960) < 0.01
+        and abs(r["rects"][1]["y"] + r["rects"][1]["h"] - (890 - 60)) < 0.01, r)
     chk("A3. joined above the HUD: the HUD under it, so no lane (the fade + rise)", r["lane"] is False and r["k"] == 1, (r["lane"], r["k"]))
     invariants("A3", r, ours + game + walls)
     # A4: no HUD, or nothing fits: the piece's own spot, always accepted
     r = fsolve(L, ours=ours[1:], game=game, stock=R(960, 984, 0, 0))
-    chk("A4. nbar11 no HUD: case 4, the grid scan at k 0.7 - the bottom row, the middle first", r["case"] == 4 and r["k"] == 0.7
+    chk("A4. nbar14 no HUD: case 4, the grid scan at k 0.8 (MIN_K) - the bottom row, the middle first", r["case"] == 4 and r["k"] == 0.8
         and abs((r["l"]["x"] + r["r"]["x"]) / 2 - 960) < 1e-6 and abs(r["rects"][1]["y"] + r["rects"][1]["h"] - (1080 - 16)) < 1e-6, r)
     invariants("A4", r, ours[1:] + game)
     # the grid: the lower middle taken (a frame across it) -> the first clear spot outward / upward, inside the lower 60 %
@@ -372,19 +394,19 @@ def main():
     chk("A5. a placed spot over the tap pad band: moved under it", r["case"] == "placed" and not any(over(rect(x), BAND) for x in r["rects"].values())
         and r["rects"][1]["y"] >= 22 + 158, r["rects"])
     # nbar10: the screen clamp runs BEFORE the band test (a top-left spot the clamp moves right never lands on the band), at MARGIN 24.
-    # The editor keeps the piece (nbar12: the Wings' joined bar, 2 x (160 + 133) = 586 units wide) on the screen, so its centre x >= 293 s
+    # The editor keeps the piece (nbar14: the Wings' joined bar, 2 x (160 + 142.5) = 605 units wide) on the screen, so its centre x >= 302.5 s
     bad = []
-    for s in (1.0, 1.281, 1.3, 1.336, 1.36, 1.392, 1.4, 1.406, 1.5):
-        for cx in range(int(293 * s) + 1, 720, 4):
+    for s in (1.0, 1.281, 1.3, 1.336, 1.36, 1.392, 1.4, 1.406, 1.5, 1.75):
+        for cx in range(int(302.5 * s) + 1, 720, 4):
             for cy in (int(73 * s) + 1, 100, 150, 200):
                 rr = fsolve(L, s=s, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(cx, cy, 0, 0))
-                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 133 * s < -1e-6:
+                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 142.5 * s < -1e-6:
                     bad.append((s, cx, cy))
-    chk("A5. nbar10: a placed spot near the left edge at band height, s 1.0-1.5 (UI scale x size): never within 24 px of the band, on screen",
+    chk("A5. nbar10: a placed spot near the left edge at band height, s 1.0-1.75 (the match x size): never within 24 px of the band, on screen",
         not bad, bad[:5])
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(312, 150, 0, 0))
-    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 293 s: nbar12's wider half)",
-        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 293 * 1.336) < 1e-6
+    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 302.5 s: nbar14's half)",
+        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 302.5 * 1.336) < 1e-6
         and rr["rects"][1]["y"] >= 24 + 154 + 24 - 1e-6, rr)
     # case 5 (the stock fallback) too: a stock spot moved to the top-left (the whole screen taken, so the grid finds nothing)
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[R(0, 0, 1920, 1080, "g.Wall")], stock=R(300, 150, 0, 0))
@@ -406,14 +428,14 @@ def main():
         r = fsolve(L, hud=h, ours=ob, game=game, stock=R(960, 984, 0, 0))
         invariants("A6 " + name + " (case %s)" % r["case"], r, ob + game)
     rp = fsolve(L, hud=R(735, 795, 610, 215), ours=[R(735, 795, 610, 215, "hud")], game=game, stock=R(960, 984, 0, 0))
-    chk("A6. Party mode: the wings re-hug the wider block (34 px off its sides, level with its middle)", rp["case"] == 1
-        and abs(rp["rects"][1]["x"] + rp["rects"][1]["w"] - (735 - 34)) < 0.01 and abs(rp["rects"][2]["x"] - (1345 + 34)) < 0.01
+    chk("A6. Party mode: the wings re-hug the wider block (60 px off its sides, level with its middle)", rp["case"] == 1
+        and abs(rp["rects"][1]["x"] + rp["rects"][1]["w"] - (735 - 60)) < 0.01 and abs(rp["rects"][2]["x"] - (1345 + 60)) < 0.01
         and rp["l"]["y"] == 795 + 215 / 2, rp)
     edge = fsolve(L, hud=R(10, 890, 280, 58), ours=[R(10, 890, 280, 58, "hud")], game=game, stock=R(960, 984, 0, 0))
     chk("A6. the HUD at the left edge: no room for the D-pad's half beside it nor joined above it -> the grid's spot (case 4), never the stock "
         "fallback", edge["case"] == 4, edge["case"])
     big = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0), s=1.5)
-    chk("A6. the size scales the halves (150 %: 331.5 x 277.5)", abs(big["rects"][1]["w"] - 331.5) < 0.01 and abs(big["rects"][1]["h"] - 277.5) < 0.01
+    chk("A6. the size scales the halves (150 %: 342 x 202.5)", abs(big["rects"][1]["w"] - 342) < 0.01 and abs(big["rects"][1]["h"] - 202.5) < 0.01
         and big["k"] == 1, big["rects"][1])
     chk("A7. the solver is pure: no frame read, no event, nothing created", G.RAISED == 0 and NB.top.reads == 0 and G.RECTNOW == 0)
 
@@ -433,8 +455,8 @@ def main():
     G.CTOP = True
     chk("B. the flag on: the piece is listed in the top layout editor (so it can be placed)", NB.lay.want() is True and NB.lay.on() is False)
     pw, ph = L.eval("WowCompanion.nbar.lay.size")(None)
-    chk("B. nbar12: the piece is the Wings' joined bar while the flag is on (2 x (160 + 133) wide, the diamonds' 146 high)",
-        abs(pw - 586) < 1e-6 and abs(ph - 146) < 1e-6, (pw, ph))
+    chk("B. nbar14: the piece is the Wings' joined bar at the match size while the flag is on (2 x (160 + 142.5) x 1.75 wide, the "
+        "flattened diamonds' 96 x 1.75 high)", abs(pw - 605 * 1.75) < 1e-6 and abs(ph - 96 * 1.75) < 1e-6, (pw, ph))
 
     # ------------------------------------------------------------------------------------------------ C the live bar
     L.execute('RUN(0.6)')                                         # nbar9: the flag is read every FLAG_S (0.5 s)
@@ -442,8 +464,9 @@ def main():
         and not NB.top.shown and NB.f.shown is False, (NB.built, NB.top.spot is not None, NB.top.shown))
     chk("C. out of combat the game's shown frames were read (plain)", G.RECTNOW >= 1 and G.RECTNOW_COMBAT == 0, (G.RECTNOW, G.RECTNOW_COMBAT))
     sp = todict(NB.top.spot)
-    chk("C. the live spot: case 1 beside the live HUD block (bars + aura host: 820-1100 x 890-952)", sp["case"] == 1 and sp["l"]["x"] == 698
-        and sp["l"]["y"] == 921, (sp["case"], sp["l"], sp["r"]))
+    chk("C. the live spot: case 1 beside the live HUD block (bars + aura host: 820-1100 x 890-952), nbar14 at the match size (1.75 px per "
+        "unit: 760 - 85.5 x 1.75)", sp["case"] == 1 and sp["l"]["x"] == 760 - 85.5 * 1.75 and sp["l"]["y"] == 921 and sp["s"] == 1.75
+        and sp["k"] == 1, (sp["case"], sp["l"], sp["r"], sp["s"]))
     W.swingNote(2.0, 0)                                           # a main-hand swing running
     # the fight: PLAYER_REGEN_DISABLED (frozen), the router's switch on
     G.COMBAT = True
@@ -470,8 +493,8 @@ def main():
         L.execute('RUN(0.02, 0.02)')
         seq.append(L.eval("DIAMOND")(1)[1])
     t_ = NB.top.t
-    k_ = L.eval("WowCompanion.nbar.easeOut")(t_)
-    chk("C. ... rising every frame (straight up, x fixed), on the ease-out (0, 0, 0.2, 1)", all(b < a for a, b in zip(seq, seq[1:]))
+    k_ = L.eval("WowCompanion.nbar.slideIn")(t_)
+    chk("C. ... rising every frame (straight up, x fixed), on nbar14's IN_C (1/3, 0.5, 2/3, 1)", all(b < a for a, b in zip(seq, seq[1:]))
         and abs(seq[-1] - (sp["l"]["y"] + d0 * (1 - k_))) < 0.6 and abs(L.eval("DIAMOND")(1)[0] - sp["l"]["x"]) < 0.01, (seq, t_, k_))
     chk("C. ... alpha 1 all the way (the slide is the cue, no fade)", abs(f.alpha - 1) < 1e-6, f.alpha)
     L.execute('RUN(0.14, 0.02)')
@@ -482,8 +505,14 @@ def main():
         and abs(rx - sp["r"]["x"]) < 0.01 and abs(ry - sp["r"]["y"]) < 0.01, ((lx, ly), (rx, ry), sp["l"], sp["r"]))
     zl = L.eval("PARTCENTRE")(f.chip[1])
     zr = L.eval("PARTCENTRE")(f.chip[2])
-    chk("C. the ZL / ZR chips at the outer ends, level with the diamonds' tops", zl[0] < lx - 73 and zr[0] > rx + 73 and zl[1] < ly and zr[1] < ry
-        and f.chip[1].shown and f.chip[2].shown, (zl, zr))
+    pl = L.eval("PARTCENTRE")(f.plate[1])
+    chk("C. nbar14 the ZL / ZR chips at the outer ends (past the flattened diamond's 70.5), under the L / R plates, the plates' tops level "
+        "with the diamond's top slot", zl[0] < lx - 70.5 * 1.75 and zr[0] > rx + 70.5 * 1.75 and zl[1] > pl[1] and abs(zl[1] - (ly + 20 * 1.75)) < 0.01
+        and abs(pl[1] - (ly - 23 * 1.75)) < 0.01 and f.chip[1].shown and f.chip[2].shown, (zl, zr, pl, (lx, ly)))
+    b2 = L.eval("BCENTRE")(2)
+    b1 = L.eval("BCENTRE")(1)
+    chk("C. nbar14 the flattened diamond: Up 25 units over the centre, Left 47.5 across (x 1.75)", abs(b2[1] - (ly - 25 * 1.75)) < 0.01
+        and abs(b1[0] - (lx - 47.5 * 1.75)) < 0.01, (b1, b2, (lx, ly)))
     chk("C. the layer word is the chips' (none over the middle)", f.layer.text == "", f.layer.text)
     # nbar13: "Cast bar in fights" Bottom screen (the default): no swing lines on the Wings (the app's strip carries them), Hub told nothing
     chk("C. nbar13 Cast bar in fights = Bottom screen (default): the Wings draw no swing line, Hub's game cast bar not asked for",
@@ -492,7 +521,14 @@ def main():
     L.execute('RUN(0.6, 0.02)')                                   # the flag is read every FLAG_S (0.5 s)
     chk("C. nbar13 Top screen: Hub told once that the Wings' fight shows the game's cast bar (WC.hubCastFight(true))",
         list(L.eval("HUBCF").values()) == [True], todict(L.eval("HUBCF")))
-    chk("C. the swing line under the faces runs (main hand)", f.sw[1].shown and 0 < f.sw[1].k < 1 and not f.sw[2].shown, (f.sw[1].shown, f.sw[1].k))
+    # nbar14 (the user's pick "Keep ours on the bottom"): the game's own swing timer OFF -> no swing line on the Wings (the app's strip
+    # keeps the swing on the bottom screen: one place)
+    chk("C. nbar14 Top screen, the game's swing timer off (PadMap's gameSwingOn false): no swing line on the Wings (the bottom strip has it)",
+        not f.sw[1].shown and not f.sw[2].shown and NB.top.gsw is False, (f.sw[1].shown, NB.top.gsw))
+    G.GSW = True
+    L.execute('RUN(0.6, 0.02)')                                   # (read with the flag every FLAG_S)
+    chk("C. nbar14 ... the game's swing timer on: the Wings' swing line under the faces runs (main hand), as built",
+        f.sw[1].shown and 0 < f.sw[1].k < 1 and not f.sw[2].shown and NB.top.gsw is True, (f.sw[1].shown, f.sw[1].k))
     sx, sy = L.eval("PARTCENTRE")(f.sw[1])
     chk("C. ... under the faces' diamond", abs(sx - rx) < 0.01 and sy > ry + 73, (sx, sy, rx, ry))
     G.LT = True
@@ -531,12 +567,36 @@ def main():
     G.CHAT_UP = False
     L.execute('RUN(0.1)')
     chk("C. the strip gone: alpha 1 again", abs(f.alpha - 1) < 1e-6, f.alpha)
-    # nbar8: B gave the buttons back IN the fight (the router's switch false): the Wings stay to the fight's end (SPEC section 11)
+    # nbar14 THE B RULE (the user, 11-23): B gave the buttons back IN the fight (the router's switch false) -> the Wings slide back down
+    # (nbar8 kept them to the fight's end); the next armed press (the router's switch true again) slides them back up
+    spb = todict(NB.top.spot)
     G.TG = False
+    L.execute('RUN(0.1, 0.02)')
+    yb = L.eval("DIAMOND")(1)[1]
+    chk("C. nbar14 B's give-back in the fight: the Wings slide back down (half way at 0.1 s, alpha 1)", NB.top.shown and NB.top.dir == -1
+        and yb > spb["l"]["y"] + 1 and abs(f.alpha - 1) < 1e-6, (NB.top.dir, yb, spb["l"]["y"]))
+    L.execute('RUN(0.14, 0.02)')
+    chk("C. nbar14 ... gone after 0.2 s though the fight goes on (the lockdown still true)", not NB.top.shown and f.shown is False
+        and G.COMBAT is True, (NB.top.shown, f.shown))
+    chk("C. nbar14 ... the game's cast bar handed back to the player's Hide with them (WC.hubCastFight(false))",
+        list(L.eval("HUBCF").values()) == [True, False], todict(L.eval("HUBCF")))
+    G.TG = True
+    L.execute('RUN(0.4, 0.02)')
+    chk("C. nbar14 a harmful press re-arms the router (its switch true again, still in the fight): the Wings slide back up, settled",
+        NB.top.shown and NB.top.t == 1 and abs(L.eval("DIAMOND")(1)[1] - spb["l"]["y"]) < 0.01, (NB.top.shown, NB.top.t))
+    chk("C. nbar14 ... and Hub asked again for the game's cast bar", list(L.eval("HUBCF").values()) == [True, False, True], todict(L.eval("HUBCF")))
+    # PadMap m188's fightSw (the router's switch over every button) wins over tgGrown (Y's alone): false there -> down, whatever Y says
+    G.FSW = False
     L.execute('RUN(0.3, 0.02)')
-    chk("C. B's give-back in the fight: the Wings stay, alpha 1 (nbar8)", NB.top.shown and abs(f.alpha - 1) < 1e-6 and f.shown is True, f.alpha)
-    # the fight's end: out over 0.2 s, then hidden
-    G.COMBAT = False
+    chk("C. nbar14 PadMap's fightSw false (B gave back) wins over tgGrown true: the Wings down", not NB.top.shown and NB.top.want is False,
+        (NB.top.shown, NB.top.want))
+    G.FSW, G.TG = True, False
+    L.execute('RUN(0.4, 0.02)')
+    chk("C. nbar14 ... fightSw true (Y unbound: tgGrown false / nil) -> up again", NB.top.shown and NB.top.want is True, (NB.top.shown, NB.top.want))
+    G.FSW, G.TG = None, True
+    L.execute('RUN(0.4, 0.02)')
+    # the fight's end (the router's switch drops with it): out over 0.2 s, then hidden
+    G.COMBAT, G.TG = False, False
     L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.1, 0.02)')
     lyb = L.eval("DIAMOND")(1)[1]
     k_out = L.eval("WowCompanion.nbar.slideK")(NB.top.t, -1)
@@ -548,7 +608,7 @@ def main():
     chk("C. ... gone after 0.2 s (below the edge): hidden, the chips and swing lines too", not NB.top.shown and f.shown is False and not f.chip[1].shown
         and not f.sw[1].shown, (NB.top.shown, f.shown))
     chk("C. nbar13: the fight's end told Hub once (WC.hubCastFight(false): the player's Hide back on the game's cast bar)",
-        list(L.eval("HUBCF").values()) == [True, False], todict(L.eval("HUBCF")))
+        list(L.eval("HUBCF").values()) == [True, False, True, False, True, False], todict(L.eval("HUBCF")))
     G.CCB = False
     L.execute('RUN(0.6, 0.02)')
     L.execute('RUN(0.1)')
@@ -620,9 +680,9 @@ def main():
     L.execute('for _, x in ipairs(EVENTS["STOP_AUTOREPEAT_SPELL"] or {}) do if x.onOnEvent then x.onOnEvent(x, "STOP_AUTOREPEAT_SPELL") end end')
     L.execute('WowCompanion.tgGrown = function() return TG end; RUN(0.5)')
     chk("C. review: ... stopped, the router's switch back -> no Wings", NB.top.want is False and not NB.top.shown, (NB.top.want, NB.top.shown))
-    # nbar11: no lane (the stock bar under the halves) -> today's fade + rise
-    L.execute('GAME["g.GamepadMainActionBarFrame"].shown = true; WowCompanion.nbar.top.gameDirty = true; RUN(0.1)')
-    chk("C. nbar11: the stock bar under the halves -> no lane", NB.top.spot.lane is False, NB.top.spot.lane)
+    # nbar11: no lane (a frame under the halves: nbar14's pushes go round the stock bar, so a thin strip across the bottom) -> the fade + rise
+    L.execute('GAME["g.LowStrip"].shown = true; WowCompanion.nbar.top.gameDirty = true; RUN(0.1)')
+    chk("C. nbar11: a frame under the halves -> raised over it, no lane", NB.top.spot.lane is False and NB.top.spot.case == 2, NB.top.spot.lane)
     G.TG = True
     L.execute('RUN(0.12, 0.02)')
     chk("C. nbar11 no lane: the fade + rise (no hold, the alpha follows the cubic)", NB.top.form == "fade" and NB.top.shown and 0 < f.alpha < 1,
@@ -630,7 +690,7 @@ def main():
     L.execute('RUN(0.3, 0.02)')
     chk("C. ... in: alpha 1", abs(f.alpha - 1) < 1e-6, f.alpha)
     G.TG = False
-    L.execute('RUN(0.4); GAME["g.GamepadMainActionBarFrame"].shown = false; WowCompanion.nbar.top.gameDirty = true; RUN(0.1)')
+    L.execute('RUN(0.4); GAME["g.LowStrip"].shown = false; WowCompanion.nbar.top.gameDirty = true; RUN(0.1)')
 
     # ------------------------------------------------------------------------------------------------ D Nintendo mode: the glide
     W.nbarSet(True)
@@ -661,8 +721,9 @@ def main():
     # ------------------------------------------------------------------------------------------------ E the editor, a placed spot
     G.WowCompanion.lay.editing = True
     L.execute('RUN(0.1)')
-    chk("E. the editor open (flag on, Nintendo off, out of combat): the bar shows at its piece's spot", NB.top.edit and f.shown is True
-        and f.pts[1][4] == 960, (NB.top.edit, f.shown))
+    chk("E. the editor open (flag on, Nintendo off, out of combat): the bar shows at its piece's spot - nbar14 at the fight's size (the "
+        "match: scale 1.75 here) and its flattened diamond", NB.top.edit and f.shown is True and abs(f.pts[1][4] * f.scale - 960) < 1e-6
+        and abs(f.scale - 1.75) < 1e-9 and NB.ox == 47.5 and NB.oy == 25, (NB.top.edit, f.shown, f.scale, NB.ox))
     n0 = G.RECTNOW
     L.execute('for i = 1, 30 do WowCompanion.nbar.lay.apply(); RUN(0.016, 0.016) end')
     chk("E. the editor's eased view (the piece applied every frame): ours re-solved, the game's frames not read every frame",
@@ -676,8 +737,9 @@ def main():
     L.execute('EV("PLAYER_REGEN_DISABLED"); RUN(0.4)')
     lx, ly = L.eval("DIAMOND")(1)
     rx, ry = L.eval("DIAMOND")(2)
-    chk("E. a placed spot (Auto off) wins in the fight: the joined bar there", todict(NB.top.spot)["case"] == "placed"
-        and abs((lx + rx) / 2 - 460) < 0.01 and abs(ly - 684) < 0.01 and abs(rx - lx - 2 * NB.DX) < 0.01, ((lx, ly), (rx, ry)))
+    # (the spot dx -500 from the stock centre 960 = 460, kept on the screen: the joined bar's half width (160 + 142.5) x 1.75 = 529.375)
+    chk("E. a placed spot (Auto off) wins in the fight: the joined bar there (kept on the screen at the match size)", todict(NB.top.spot)["case"] == "placed"
+        and abs((lx + rx) / 2 - 302.5 * 1.75) < 0.01 and abs(ly - 684) < 0.01 and abs(rx - lx - 2 * NB.DX * 1.75) < 0.01, ((lx, ly), (rx, ry)))
     G.TG, G.COMBAT = False, False
     L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.4); LAYE.nbar = nil; WowCompanion.nbar.lay.apply(); RUN(0.1)')
     chk("E. Reset in the editor (no entry) = Auto again", todict(NB.top.spot)["case"] == 1, todict(NB.top.spot)["case"])
@@ -931,10 +993,12 @@ def party_fight_checks():
     L.execute('WowCompanion.uf.pf.at = "hud"; WowCompanion.uf.pf.fdir = 1; for i = 1, 4 do local c = (i - 1) % 2; local r = math.floor((i - 1) / 2); '
               'WowCompanion.uf.pf.frames[i] = MOCKF(740 + c * 330, 870 + r * 76, 300, 64); WowCompanion.uf.pf.frames[i].alpha = 0 end; DRV(0.02)')
     sp = todict(NB.top.spot)
-    rows4 = [(740 + (i % 2) * 330, 870 + (i // 2) * 76, 300, 64) for i in range(4)]
+    dxc = L.eval("WowCompanion.nbar.centreDx")()                   # nbar14: where Trail / Hub are taking the block (no Trail here: 0 applied)
+    rows4 = [(740 + (i % 2) * 330 + dxc, 870 + (i // 2) * 76, 300, 64) for i in range(4)]
     hits = [(h, rw) for h in sp["rects"].values() for rw in rows4
             if h["x"] < rw[0] + rw[2] and rw[0] < h["x"] + h["w"] and h["y"] < rw[1] + rw[3] and rw[1] < h["y"] + h["h"]]
-    chk("I. ... the fade-out's end (PF.at \"hud\", the rows laid there at alpha 0): re-fit that tick, the spot off every row",
+    chk("I. ... the fade-out's end (PF.at \"hud\", the rows laid there at alpha 0): re-fit that tick, the spot off every row (nbar14: "
+        "where the centring takes them, %+d px)" % dxc,
         G.SOLVES > c1 and not hits, (c1, G.SOLVES, hits))
     L.execute('WowCompanion.uf.pf.fdir = nil; RUN(0.3)')
     G.PLIVE = True
@@ -947,8 +1011,29 @@ def party_fight_checks():
     ours, hud = L.eval("WowCompanion.nbar.topOurs")()
     hd = todict(hud)
     rim = NB.TOP.HUB_RIM
-    chk("I. Hub's rows (with their %d px rim) and its Select tab (alpha 0 too) in the HUD block" % rim, hd["x"] <= 700 + 1e-6
-        and hd["x"] + hd["w"] >= 740 + 330 + 300 + rim - 1e-6 and hd["y"] + hd["h"] >= 870 + 76 + 64 + rim - 1e-6, hd)
+    dxc = L.eval("WowCompanion.nbar.centreDx")()
+    chk("I. Hub's rows (with their %d px rim) and its Select tab (alpha 0 too) in the HUD block (nbar14: at the centred place, %+d px)"
+        % (rim, dxc), hd["x"] <= 700 + dxc + 1e-6 and hd["x"] + hd["w"] >= 740 + 330 + 300 + rim + dxc - 1e-6
+        and hd["y"] + hd["h"] >= 870 + 76 + 64 + rim - 1e-6, hd)
+    # nbar14 PARTY MODE CENTRED (the user, 11-23): the block (the HUD bars 820-1100 + its aura host, Hub's rows 740-1370 with the rim, the
+    # tab at 700) told to stand centred: the shift is 960 - its centre, the solver's HUD block is centred, the Wings either side of it
+    x0 = min(700, 740 - rim, 820)
+    x1 = max(740 + 330 + 300 + rim, 1100)
+    want = math.floor(960 - (x0 + x1) / 2 + 0.5)
+    chk("I. nbar14 Party mode's Top fight: NB.top.centre on, the shift told to Trail (NB.centreDx = 960 - the block's centre = %+d)" % want,
+        NB.top.centre is True and dxc == want and abs(hd["x"] + hd["w"] / 2 - 960) <= 0.5, (NB.top.centre, dxc, want, hd))
+    spc = todict(L.eval("WowCompanion.nbar.topSolve")(False))
+    chk("I. nbar14 ... the Wings either side of the centred block, 60 px clear (case %s)" % spc["case"], spc["form"] == "wings"
+        and spc["rects"][1]["x"] + spc["rects"][1]["w"] <= hd["x"] - 60 + 1e-6 and spc["rects"][2]["x"] >= hd["x"] + hd["w"] + 60 - 1e-6, spc)
+    # Trail applies it (prd22: P.cx, our frames moved with Hub's rows): the block read there, the shift stays the same (no feedback)
+    L.execute('local d = %d; WowCompanion.prd.cx = d; local function mv(f) f.r.l = f.r.l + d end; mv(WowCompanion.prd.f); '
+              'mv(WowCompanion.prd.box.host); for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; mv(WowCompanion.uf.pf.tab)' % want)
+    ours2, hud2 = L.eval("WowCompanion.nbar.topOurs")()
+    hd2 = todict(hud2)
+    chk("I. nbar14 ... once Trail has applied it: the same centred block, the same shift (stable)", L.eval("WowCompanion.nbar.centreDx")() == want
+        and abs(hd2["x"] - hd["x"]) < 1e-6 and abs(hd2["w"] - hd["w"]) < 1e-6, (hd2, hd))
+    L.execute('local d = %d; WowCompanion.prd.cx = 0; local function mv(f) f.r.l = f.r.l - d end; mv(WowCompanion.prd.f); '
+              'mv(WowCompanion.prd.box.host); for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; mv(WowCompanion.uf.pf.tab)' % want)
     # the review (11-22): our HUD bars switched off, our party frames on - Hub still lays the rows under the HUD's place (PF.want = Party
     # mode and partyOk, PF.geo from P.partyGeo): they stay an obstacle of their own ("partyhud", with the rim and the tab), no HUD block
     G.HUD_ON = False
@@ -969,6 +1054,8 @@ def party_fight_checks():
     L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.5)')
     chk("I. the fight's end in Party mode: the Wings leave, the Party layer gone, the plates hidden", not NB.top.shown and NB.party is None
         and not f.plate[1].shown and not f.chord[1][1].shown, (NB.top.shown, NB.party))
+    chk("I. nbar14 ... and the centring off: NB.centreDx 0 (Trail fades the HUD block back)", NB.top.centre is False
+        and L.eval("WowCompanion.nbar.centreDx")() == 0, (NB.top.centre, L.eval("WowCompanion.nbar.centreDx")()))
     chk("I. ... nothing raised, no binding / CVar / macro call, no mouse", G.RAISED == 0 and len(G.SPY) == 0 and G.BADMOUSE == 0,
         (G.RAISED, list(G.SPY.values()), G.BADMOUSE))
 
@@ -995,8 +1082,12 @@ def hold_pin():
         None not in (hold_in, in_s, k_hold, k_in) and abs(float(hold_in.group(1)) * 1000 - int(k_hold.group(1))) < 0.5
         and abs(float(in_s.group(1)) * 1000 - int(k_in.group(1))) < 0.5,
         (hold_in and hold_in.group(1), in_s and in_s.group(1), k_hold and k_hold.group(1), k_in and k_in.group(1)))
-    chk("C. hold pin: TopSlide.WINGS_IN is NB.easeOut's (0, 0, 0.2, 1)",
-        "val WINGS_IN = floatArrayOf(0f, 0f, 0.2f, 1f)" in kt and "function NB.easeOut(u) return NB.cubic(u, 0, 0, 0.2, 1) end" in ab)
+    chk("C. hold pin: TopSlide.WINGS_IN is nbar14's NB.TOP.IN_C (1/3, 0.5, 2/3, 1: the way up's curve, NB.slideIn)",
+        "val WINGS_IN = floatArrayOf(1f / 3f, 0.5f, 2f / 3f, 1f)" in kt and "IN_C = { 1 / 3, 0.5, 2 / 3, 1 }" in ab
+        and "function NB.slideIn(u) local c = NB.TOP.IN_C; return NB.cubic(u, c[1], c[2], c[3], c[4]) end" in ab
+        and "return NB.slideIn(t)" in ab)
+    chk("C. hold pin: nbar14's B hold - TopSlide.B_HOLD_MS = WINGS_OUT_MS - START_FRAMES_MS - OVERLAP_MS (no channel: the add-on's B "
+        "hands the Wings back at the same press)", "const val B_HOLD_MS = WINGS_OUT_MS - START_FRAMES_MS - OVERLAP_MS" in kt)
     # nbar12 / ruling D THE HAND-BACK: the hold is the Wings' whole way down less the fastest channel, the animator's start and one frame
     # of overlap - so on the fastest channel the band's first moving frame comes in the Wings' last frame (they are mostly off by the
     # add-on's own NB.easeIn), on the slowest 2 frames or less after they are gone

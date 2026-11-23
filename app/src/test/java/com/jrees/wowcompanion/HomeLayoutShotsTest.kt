@@ -321,12 +321,14 @@ class HomeLayoutShotsTest {
         assertTrue("it takes touches in the fight", strip.takesTouch)
         assertTrue("its fight layer shows", strip.fightNow)
         shot(p, "bottom_fight_top_away")
-        // B in the fight: nothing changes (no shrink, no red reminder)
+        // the user's 11-23 B rule: B in the fight brings Top screen's band back down as Grow does (the real frames: bInATopFight)
         setField(p.home, "grewAt", 0L)
         HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(p.home)
-        assertTrue("B in the fight does not shrink Top screen", p.home.flow.takeover)
-        settle(20)
-        assertEquals("B: the band still away", -16f, boxes(p.home).getValue("BARS").bottom, 0.01f)
+        assertFalse("B in the fight shrinks Top screen (the 11-23 B rule)", p.home.flow.takeover)
+        settle(40)
+        assertTrue("B: the band back on the page", boxes(p.home).getValue("BARS").bottom > 100f)
+        p.home.tick()
+        assertTrue("B mid-fight: Grow's red reminder", field(p.home, "redShown") as Boolean)
 
         // the same layout with Grow (D1's default) grows and B shrinks it, as today
         val g = page(l.copy(fight = HomeLayout.FightBand.GROW), fight = true)
@@ -579,6 +581,7 @@ class HomeLayoutShotsTest {
         reLayMidSlide(p, rb)
         moduleInATopFight(p)
         lateCutHolds(p, rest)
+        bInATopFight(p, rest)
         // the hold is WALL-clock time (the 11-22 review: folded into the animator it was scaled by the system's animator duration scale,
         // the add-on's Wings never are): at 0.5x the band still waits HAND_BACK_MS after the fight's end, then slides at the scaled pace
         animScale(0.5f)
@@ -661,6 +664,88 @@ class HomeLayoutShotsTest {
         for (i in 0 until 40) frame()
         assertEquals("back at rest", rest.getValue("BARS"), boxes(home).getValue("BARS"))
         assertFalse(p.cast.away)
+    }
+
+    /** the add-on's padmap with the router's switch [fight] (`fight`) and the lockdown's word [combat] (`combat`); the Wings' flags on */
+    private fun padFight(home: HomeView, fight: Boolean, combat: Boolean = true) {
+        home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m188","m":{"page":1,"sets":[],"combat":$combat,"fight":$fight,""" +
+            """"dpad":{"on":true,"want":true,"ct":1,"cc":1}}}"""))!!)
+    }
+
+    /** the band away; the ms (16 ms frames) from now until its bottom is on the page again, then it lands at [rest] */
+    private fun downFrom(p: Page, rest: Map<String, RectF>, shotAt: String? = null): Long {
+        val home = p.home
+        var downAt = -1
+        val downB = ArrayList<Float>()
+        for (i in 0 until 400) {
+            frame()
+            if (i % 8 == 0) home.tick()
+            val b = boxes(home).getValue("BARS").bottom
+            if (downAt < 0 && b <= -16f + 0.01f) assertEquals("frame $i inside the hold: the columns wait grown", 8f, boxes(home).getValue("CHAT").top, 0.01f)
+            if (downAt < 0 && b > 0.01f) downAt = i
+            if (downAt >= 0) { downB += b; if (downB.size == 6 && shotAt != null) shotNow(p, shotAt) }
+            if (downAt >= 0 && downB.size > 24) break
+        }
+        assertTrue("the band came down", downAt >= 0)
+        assertTrue("its first frame on the page is small (${downB.first()} px)", downB.first() <= 8f)
+        for (i in 1 until downB.size) assertTrue("down: never back up ($downB)", downB[i] >= downB[i - 1] - 0.01f)
+        for (i in 0 until 20) frame()
+        assertEquals("landed at rest", rest.getValue("BARS"), boxes(home).getValue("BARS"))
+        return (downAt + 1) * 16L
+    }
+
+    /**
+     * THE B RULE (the user, 2026-11-23: "The controller bar top grow is working off of being in combat again instead of our combat ruls
+     * where we press B and it grows back downwards"): Top screen follows Grow's rules on the real animator - B on Home mid-fight (no grace:
+     * the add-on has none) slides the band back down after TopSlide.B_HOLD_MS (the add-on's B hands its Wings back at the same press),
+     * Grow's red reminder on it while the fight goes on; the game's own give-back word after it changes nothing; the router re-armed by a
+     * harmful press (the padmap's `fight` 1 in the fight) slides it away again; a give-back the app did not see (the padmap's `fight` 0
+     * with `combat` still on: a B inside an overlay of the app's) brings it down after HAND_BACK_MS; the fight's end by itself then moves
+     * nothing and clears the reminder. Shots: bottom_fight_top_b_away / _b_down / _b_rest_red / _b_rearmed
+     */
+    private fun bInATopFight(p: Page, rest: Map<String, RectF>) {
+        val home = p.home
+        padFight(home, fight = true)
+        fightSignal(home, true)
+        for (i in 0 until 24) frame()
+        assertTrue("the Top fight: the band away", p.cast.away && home.flow.takeover)
+        shot(p, "bottom_fight_top_b_away")
+        // B at once (inside Grow's 2 s grace: Top screen has none)
+        HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(home)
+        assertFalse("B mid-fight: the takeover off (the band comes back down)", home.flow.takeover)
+        val held = downFrom(p, rest, "bottom_fight_top_b_down")
+        assertTrue("B: the band on the page after the B hold ($held ms, ${TopSlide.B_HOLD_MS})",
+            held >= TopSlide.B_HOLD_MS && held <= TopSlide.B_HOLD_MS + 48L)
+        home.tick()
+        assertTrue("B mid-fight: Grow's red reminder", field(home, "redShown") as Boolean)
+        assertFalse(p.cast.away)
+        shot(p, "bottom_fight_top_b_rest_red")
+        // the game's router gave back with it (`fight` 0, still in the fight): nothing more moves
+        padFight(home, fight = false)
+        for (i in 0 until 20) frame()
+        assertEquals("the add-on's own give-back after B: nothing moves", rest.getValue("BARS"), boxes(home).getValue("BARS"))
+        // a harmful press re-arms the router (`fight` 1 in the fight): away again, no reminder
+        padFight(home, fight = true)
+        assertTrue("re-armed: the takeover back", home.flow.takeover)
+        for (i in 0 until 24) frame()
+        home.tick()
+        assertTrue("re-armed: the band slid away again", p.cast.away && boxes(home).getValue("BARS").bottom <= -16f + 0.01f)
+        assertFalse(field(home, "redShown") as Boolean)
+        shot(p, "bottom_fight_top_b_rearmed")
+        // the game gave back without an app B (`fight` 0, `combat` on): the band follows the Wings down after the hand-back
+        padFight(home, fight = false)
+        assertFalse("given back by the game: the takeover off", home.flow.takeover)
+        val held2 = downFrom(p, rest)
+        assertTrue("the padmap's edge: the hand-back hold ($held2 ms, ${TopSlide.HAND_BACK_MS})",
+            held2 >= TopSlide.HAND_BACK_MS && held2 <= TopSlide.HAND_BACK_MS + 48L)
+        // the fight ends by itself: nothing moves, the reminder goes
+        padFight(home, fight = false, combat = false)
+        fightSignal(home, false)
+        for (i in 0 until 30) { frame(); if (i % 8 == 0) home.tick() }
+        home.tick()
+        assertEquals("the fight's end after B: nothing moves", rest.getValue("BARS"), boxes(home).getValue("BARS"))
+        assertFalse("the reminder gone with the fight", field(home, "redShown") as Boolean)
+        assertFalse(home.flow.takeover)
     }
 
     /**

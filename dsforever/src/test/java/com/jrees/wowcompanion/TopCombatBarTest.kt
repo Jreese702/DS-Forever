@@ -109,15 +109,23 @@ class TopCombatBarTest {
         assertEquals("3,024 Top-screen records (7 bar docks, Above chat / map too; x 4 party list docks after 1518) x 4", 3024 * 4, n)
     }
 
-    @Test fun bNeverShrinksTopScreenInTheFight() {
+    /** the user's 11-23 B rule ("our combat ruls where we press B and it grows back downwards"): B shrinks Top screen in AND out of a
+     *  fight, as Grow (8d6153b9's "B in the fight never shrinks" is gone) */
+    @Test fun bShrinksTopScreenInAndOutOfAFight() {
         val top = HomeLayout(fight = HomeLayout.FightBand.TOP)
-        assertFalse("in the fight: nothing grew, no shrink, no red reminder", TopCombatBar.bShrinks(top, fighting = true, ct = 1))
+        assertTrue("in the fight: the band slides back down (Grow's red reminder)", TopCombatBar.bShrinks(top, fighting = true, ct = 1))
         assertTrue("an attack armed out of a fight: today's B (the faces given back)", TopCombatBar.bShrinks(top, fighting = false, ct = 1))
-        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) for (ct in listOf(null, 0, 1)) {
-            assertTrue(TopCombatBar.bShrinks(HomeLayout(fight = f), true, ct)); assertTrue(TopCombatBar.bShrinks(HomeLayout(fight = f), false, ct))
+        for (f in HomeLayout.FightBand.values()) for (ct in listOf(null, 0, 1)) for (fighting in listOf(false, true))
+            assertTrue("$f ct=$ct fighting=$fighting", TopCombatBar.bShrinks(HomeLayout(fight = f), fighting, ct))
+    }
+
+    /** the 11-22 review kept by the 11-23 B rule: a finger never reaches the add-on's give-back, so a touch keeps Top screen's grow
+     *  (the Wings stay up, the band goes back above the page when the module closes); only with Top screen live */
+    @Test fun aTouchKeepsTopScreensGrow() {
+        for (f in HomeLayout.FightBand.values()) for (ct in listOf(null, 0, 1)) {
+            val want = f == HomeLayout.FightBand.TOP && ct == 1
+            assertEquals("$f ct=$ct", want, TopCombatBar.touchKeepsGrow(HomeLayout(fight = f), ct))
         }
-        // the 1515 merge's review: no Wings on the top screen (no key, Later, an older add-on, not confirmed): the band grew, B shrinks it
-        for (ct in listOf(null, 0)) assertTrue("ct=$ct", TopCombatBar.bShrinks(top, fighting = true, ct = ct))
     }
 
     /** nbar11 / TopSlide (the user, 2026-11-22: "It should be a slick animation looking like it slides up to the top screen"): the old
@@ -162,10 +170,14 @@ class TopCombatBarTest {
         // HomeView lays and shrinks by the CURRENT padmap's flag (no cue any more: the band slides)
         val home = java.io.File(listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"),
             java.io.File("companion/app/src/main/java/com/jrees/wowcompanion")).first { it.isDirectory }, "HomeView.kt").readText()
-        assertTrue(home.contains("if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, padMap?.dpad?.ct, padMap?.dpad?.cc)"))
-        assertTrue(home.contains("else TopCombatBar.honoured(l, padMap?.dpad?.ct, padMap?.dpad?.cc)"))
+        assertTrue(home.contains("if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, d?.ct, d?.cc, d?.gsw)"))
+        assertTrue(home.contains("else TopCombatBar.honoured(l, d?.ct, d?.cc, d?.gsw)"))
         assertFalse(home.contains("cueStarts")); assertFalse(home.contains("topCueAlpha"))
         assertTrue(home.contains("TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)"))
+        // the 11-23 B rule: no grace for Top screen (the add-on has none), a touch keeps the grow, the padmap's edges keep both in step
+        assertTrue(home.contains("if ((!top && now - grewAt < GROW_B_GRACE_MS) || (lent(castView) && castView.triggerHeld())) return"))
+        assertTrue(home.contains("val keepGrow = flow.takeover && TopCombatBar.touchKeepsGrow(HomeSettings.layout, padMap?.dpad?.ct)"))
+        assertTrue(home.contains("topFightSync(fightWas, map.fight, map.combat)") && home.contains("topFightSync(was, fight, null)"))
     }
 
     // ---------------------------------------------------------------- the channel
@@ -237,7 +249,6 @@ class TopCombatBarTest {
         // the 1519 audit: Party mode's Top fight sends the band up too, so the tap-to-cast bar stays by the Top screen's rule there as
         // well (TopCombatBar.stripStays has no Party-mode exception any more); B is unchanged
         assertTrue(TopCombatBar.stripStays(top))
-        assertFalse(TopCombatBar.bShrinks(top, fighting = true, ct = 1))
     }
 
     private fun addons(): java.io.File = listOf(java.io.File("../companion/app/src/main/assets/companion/addons"),
