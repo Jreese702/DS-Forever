@@ -413,7 +413,7 @@ class SpellsOverlay(
         if (cbOn) c.drawRect(RectF(box.left + 20f, CTL_HEAD + 22f, box.right - 20f, BAR_HEAD - 22f), pRecede)
 
         // TAP-TO-CAST BAR: the situation's layer (Out of combat the bar's own, In combat its fight layer, Party mode its party layer): a
-        // set slot wears its badge, an empty one shows what it falls through to, faded; the stop's slot lit and showing the thing where
+        // set slot wears its badge, an empty one draws blank as on Out of combat (the user, 2026-11-23); the stop's slot lit and showing the thing where
         // it would go, the slot it is on already glowing green (picking that one takes it off); locked: veiled with ONE word
         val older = olderTab()                                          // issue 453: dimmed with the note, never gone
         if (three() || older) {
@@ -434,12 +434,11 @@ class SpellsOverlay(
             for (i in 0 until CastStripModel.SLOTS) {
                 val sr = cbSlotRect(i, w)
                 val own = layer?.getOrNull(i)?.takeIf { it.filled }
-                val under = if (sit != 0 && own == null) bar?.slots?.getOrNull(i)?.takeIf { it.filled } else null
-                val sl = own ?: under
+                // an empty slot of In combat's / Party mode's layer: blank, no faded fall-through (what it casts is unchanged)
                 val showThing = cbOn && i == at && here != i && !locked
                 val bmp = if (showThing) thingIcon
-                          else (sl?.icon ?: CastStripView.MACRO_QMARK.takeIf { sl?.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }
-                UiKit.slot(c, bmp, sr.left, sr.top, sr.width(), dim = locked || (under != null && !showThing))
+                          else (own?.icon ?: CastStripView.MACRO_QMARK.takeIf { own?.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }
+                UiKit.slot(c, bmp, sr.left, sr.top, sr.width(), dim = locked)
                 if (own != null && !locked && !showThing) {
                     if (sit == 1) UiKit.tex("combat_swords")?.let { sw -> c.drawBitmap(sw, null, RectF(sr.right - 22f, sr.top - 16f, sr.right + 18f, sr.top + 22f), pBmp) }
                     else if (sit == 2) Icons2.draw(c, SituationPage.Icon.PARTY, sr.right - 2f, sr.top + 2f, 34f)
