@@ -88,6 +88,16 @@ af9a7fd5dd986e26beb41903e075623b57afe57a3048831862b49e7e7b3f9e49):
 Output: fe752fbd6a2584c37920698719f70c8c3f0f74566025da4ba4d781d88079a00e.
 Host test: `wsl -e sh tools/dns-shim/test.sh` (Linux/glibc, LD_PRELOAD).
 
+## Idle-memory page-out (libdsf-pageout.so, NativeHeap.pageOutSelf), 2026-11-23
+
+Sources: `dsforever/src/main/jni/dsf/dsf_pageout.h`, `dsf_pageout_hook.c` and the
+page-out half of `dsf_heap.c`; `companion/.../PageOut.kt`. DS Forever's own
+code, written from the Linux man pages madvise(2) (MADV_PAGEOUT), mincore(2) and
+proc(5). The idea (a process paging out its own idle memory into the device's
+existing zram on request) was seen in DroidDeck (GPL-3.0); none of DroidDeck's
+code, structure or text is used. Built from source by the dsforever ndkBuild
+(no prebuilt binary is committed). Host tests: `wsl -e bash tools/pageout/test.sh`.
+
 ## Proton without its 32-bit Windows files, 2026-11-20
 
 The shipped `proton-11.0-90624-arm64ec.wcp` is the pinned original (tools/components.sha256, unchanged, still fetched and

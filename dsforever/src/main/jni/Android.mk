@@ -75,3 +75,16 @@ LOCAL_CFLAGS := -O2
 LOCAL_LDFLAGS += -Wl,-z,max-page-size=16384
 LOCAL_BRANCH_PROTECTION := standard
 include $(BUILD_SHARED_LIBRARY)
+
+# 2026-11-23 (the user's pick: "Wine helpers" + "Our own app"): libdsf-pageout.so, preloaded into the container's Wine processes by
+# BionicProgramLauncherComponent (Settings > Performance > Memory > Compress idle memory): a Wine helper's idle memory paged out into
+# the device's zram on DS Forever's request (dsf/dsf_pageout_hook.c, dsf/dsf_pageout.h; dsf_heap.c holds DS Forever's own half). No
+# prebuilt inputs, libc only; a build without this ndkBuild has neither and nothing else changes
+include $(CLEAR_VARS)
+LOCAL_PATH := $(MY_LOCAL_PATH)
+LOCAL_MODULE := dsf-pageout
+LOCAL_SRC_FILES := dsf/dsf_pageout_hook.c
+LOCAL_CFLAGS := -O2 -Wall -Wextra -fvisibility=hidden
+LOCAL_LDFLAGS += -Wl,-z,max-page-size=16384
+LOCAL_BRANCH_PROTECTION := standard
+include $(BUILD_SHARED_LIBRARY)
