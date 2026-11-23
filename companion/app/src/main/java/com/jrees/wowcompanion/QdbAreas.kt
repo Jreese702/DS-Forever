@@ -17,7 +17,11 @@ object QdbAreas {
     private const val CIRCLE_N = 12   // the widening circle's points
 
     /** one objective's spots on a map: quest [qid], objective [obj], spots [pts] (x, y in the map's 0..1) */
-    class Obj(val qid: Int, val obj: Int, val pts: List<DoubleArray>)
+    class Obj(val qid: Int, val obj: Int, val pts: List<DoubleArray>) {
+        /** #153: its [groups] for the last two scales asked ([groupsOf]), newest first */
+        @Volatile internal var memo: List<Memo> = emptyList()
+    }
+    internal class Memo(val ax: Double, val ay: Double, val groups: List<Group>)
     class Areas(val m: Int, val set: Int, val objs: List<Obj>)
 
     /** a {"type":"qdbareas"} document, or null (an error, no map); spots without both coordinates are left out */
@@ -88,10 +92,27 @@ object QdbAreas {
         val yd = pts.map { doubleArrayOf(it[0] * ax, it[1] * ay) }
         val parent = IntArray(yd.size) { it }
         fun root(i: Int): Int { var r = i; while (parent[r] != r) r = parent[r]; var k = i; while (parent[k] != r) { val n = parent[k]; parent[k] = r; k = n }; return r }
-        for (i in yd.indices) for (j in i + 1 until yd.size) {
-            if (Math.hypot(yd[i][0] - yd[j][0], yd[i][1] - yd[j][1]) <= JOIN_YD) { val a = root(i); val b = root(j); if (a != b) parent[a] = b }
+        // #153 (an ANR inside this loop on the UI thread): only the spots in the same or a neighbouring JOIN_YD cell are compared -
+        // every pair within JOIN_YD is among them, so the same groups as every spot against every other ([groupsPairwise]), in about
+        // n steps instead of n * n
+        fun cell(cx: Long, cy: Long): Long = (cx shl 32) xor (cy and 0xffffffffL)
+        val cx = LongArray(yd.size) { Math.floor(yd[it][0] / JOIN_YD).toLong() }
+        val cy = LongArray(yd.size) { Math.floor(yd[it][1] / JOIN_YD).toLong() }
+        val cells = HashMap<Long, MutableList<Int>>()
+        for (i in yd.indices) cells.getOrPut(cell(cx[i], cy[i])) { ArrayList() }.add(i)
+        for (i in yd.indices) for (dx in -1L..1L) for (dy in -1L..1L) {
+            val near = cells[cell(cx[i] + dx, cy[i] + dy)] ?: continue
+            for (j in near) {
+                if (j <= i) continue
+                if (Math.hypot(yd[i][0] - yd[j][0], yd[i][1] - yd[j][1]) <= JOIN_YD) { val a = root(i); val b = root(j); if (a != b) parent[a] = b }
+            }
         }
-        val groups = yd.indices.groupBy { root(it) }.values.sortedByDescending { it.size }
+        return outlines(yd, ax, ay) { root(it) }
+    }
+
+    /** the groups' outlines from [yd] (yards) and each spot's group [rootOf], the biggest group first */
+    private fun outlines(yd: List<DoubleArray>, ax: Double, ay: Double, rootOf: (Int) -> Int): List<Group> {
+        val groups = yd.indices.groupBy { rootOf(it) }.values.sortedByDescending { it.size }
         return groups.map { g ->
             val r = if (g.size <= 2) SMALL_YD else PAD_YD
             val ring = ArrayList<DoubleArray>(g.size * CIRCLE_N)
@@ -100,6 +121,86 @@ object QdbAreas {
                 ring.add(doubleArrayOf(yd[i][0] + r * Math.cos(t), yd[i][1] + r * Math.sin(t)))
             }
             Group(hull(ring).map { doubleArrayOf(it[0] / ax, it[1] / ay) }, g.size)
+        }
+    }
+
+    /** the old grouping, every spot against every other (the tests: [groups] must give the same groups, and how much faster) */
+    internal fun groupsPairwise(pts: List<DoubleArray>, ax: Double, ay: Double): List<Group> {
+        if (pts.isEmpty() || ax <= 0.0 || ay <= 0.0) return emptyList()
+        val yd = pts.map { doubleArrayOf(it[0] * ax, it[1] * ay) }
+        val parent = IntArray(yd.size) { it }
+        fun root(i: Int): Int { var r = i; while (parent[r] != r) r = parent[r]; var k = i; while (parent[k] != r) { val n = parent[k]; parent[k] = r; k = n }; return r }
+        for (i in yd.indices) for (j in i + 1 until yd.size) {
+            if (Math.hypot(yd[i][0] - yd[j][0], yd[i][1] - yd[j][1]) <= JOIN_YD) { val a = root(i); val b = root(j); if (a != b) parent[a] = b }
+        }
+        return outlines(yd, ax, ay) { root(it) }
+    }
+
+    // ---------------------------------------------------------------- #153: the groups cached, the big ones worked out off the UI thread
+    /**
+     * THE AREAS' GROUPS, CACHED AND OFF THE UI THREAD (#153, 1.0.37: an ANR with the UI thread in [groups] from MapView.deriveQuestAreas,
+     * which ran it again for every quest of every quests document; the Map room ran it on every frame). An objective's groups are kept
+     * per scale ([Obj.memo], the last two: Home's map and the Map room may ask with their own); an objective of at most [INLINE_MAX]
+     * spots is worked out where it is asked (well under a millisecond), a bigger one on the areas thread ("WCQDB"), and the asker is
+     * told when it is ready ([groupsFor]'s ready, on that thread: the view posts its redraw). Pure (no Android): the tests drive it.
+     */
+    const val INLINE_MAX = 300
+
+    /** [o]'s groups at this scale when already worked out, else null */
+    fun cached(o: Obj, ax: Double, ay: Double): List<Group>? = o.memo.firstOrNull { it.ax == ax && it.ay == ay }?.groups
+
+    /** [o]'s groups at this scale, worked out now when not cached (any thread) and kept */
+    fun groupsOf(o: Obj, ax: Double, ay: Double): List<Group> {
+        cached(o, ax, ay)?.let { return it }
+        val g = groups(o.pts, ax, ay)
+        o.memo = (listOf(Memo(ax, ay, g)) + o.memo.filter { it.ax != ax || it.ay != ay }).take(2)
+        return g
+    }
+
+    /**
+     * Quest [qid]'s groups (all its objectives in [a]) at this scale, or null while a big objective is still being worked out on the
+     * areas thread; [ready] runs (on that thread) once it is, so the asker draws again. Small objectives are worked out at once.
+     */
+    fun groupsFor(a: Areas, qid: Int, ax: Double, ay: Double, ready: () -> Unit): List<Group>? {
+        var missing = false
+        val out = ArrayList<Group>()
+        for (o in a.objs) {
+            if (o.qid != qid) continue
+            val c = cached(o, ax, ay) ?: if (o.pts.size <= INLINE_MAX) groupsOf(o, ax, ay) else null
+            if (c == null) missing = true else out.addAll(c)
+        }
+        if (!missing) return out
+        prepare(a, ax, ay, ready)
+        return null
+    }
+
+    private class Job(val a: Areas, val ax: Double, val ay: Double) {
+        override fun equals(other: Any?) = other is Job && other.a === a && other.ax == ax && other.ay == ay
+        override fun hashCode() = System.identityHashCode(a) * 31 + ax.hashCode() * 17 + ay.hashCode()
+    }
+    private val jobs = HashMap<Job, MutableList<() -> Unit>>()
+    private val worker by lazy {
+        java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "WCQDB").apply { isDaemon = true; priority = Thread.MIN_PRIORITY + 1 } }
+    }
+    /** how long the last document took on the areas thread, ms (-1 = none yet; the tests) */
+    @Volatile var lastPrepareMs = -1L
+        private set
+
+    /** every objective of [a] worked out at this scale on the areas thread, then [done] (there); one job per document and scale */
+    fun prepare(a: Areas, ax: Double, ay: Double, done: () -> Unit) {
+        if (a.objs.all { cached(it, ax, ay) != null }) { done(); return }
+        val job = Job(a, ax, ay)
+        synchronized(jobs) {
+            val waiting = jobs[job]
+            if (waiting != null) { waiting.add(done); return }
+            jobs[job] = arrayListOf(done)
+        }
+        worker.execute {
+            val t0 = System.nanoTime()
+            runCatching { for (o in a.objs) groupsOf(o, ax, ay) }
+            lastPrepareMs = (System.nanoTime() - t0) / 1_000_000L
+            val told = synchronized(jobs) { jobs.remove(job) }.orEmpty()
+            for (f in told) runCatching { f() }
         }
     }
 

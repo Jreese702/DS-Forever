@@ -108,11 +108,79 @@ object LogSieve {
         val ours = blocks.filter { b -> b != main && b.any { k -> OUR_FRAME.containsMatchIn(lines[k]) } }
         val moved = HashSet<Int>().apply { (listOf(main) + ours).forEach { addAll(it) } }
         val out = StringBuilder(head).append("\n[the main thread first, then the threads in our code; the full trace follows]\n")
-        for (b in listOf(main) + ours) { for (k in b) out.append(lines[k]).append('\n'); out.append('\n') }
+        // #153: the main thread in short first (its callers in our code within the report's first lines), in full at the end
+        val mainLines = main.map { lines[it] }
+        val short = compactFrames(mainLines)
+        for (l in short) out.append(l).append('\n')
+        out.append('\n')
+        for (b in ours) { for (k in b) out.append(lines[k]).append('\n'); out.append('\n') }
         out.append("[the rest of the trace]\n")
         lines.forEachIndexed { k, l -> if (k !in moved) out.append(l).append('\n') }
+        if (short.size < mainLines.size) {
+            out.append("\n[the main thread in full]\n")
+            for (l in mainLines.drop(1).take(MAIN_FULL_MAX)) out.append(l).append('\n')
+        }
         return out.toString().trimEnd() + "\n"
     }
+
+    /**
+     * A THREAD'S STACK IN SHORT (#153, 1.0.37: three freeze reports showed only the lock's own frames - Unsafe.park, LockSupport,
+     * AbstractQueuedSynchronizer, ReentrantLock - before the report's 12 key lines ran out, so it never said who waited: a touch or a
+     * pad button). [block] = the header line, then its lines: the first frame stays (what it is blocked in), every frame in our code
+     * stays (com.jrees / app.gamenative / com.winlator, not R8's lambda shims), a run of 2 or more other frames becomes one
+     * "at ... (N runtime frames)" line, a frame repeating the one before it (R8's "<init>(SourceFile:0)") goes, native frames past the
+     * first [NATIVE_KEEP] become one line, the "|" and "-" lines stay. Pure.
+     */
+    fun compactFrames(block: List<String>): List<String> {
+        if (block.isEmpty()) return block
+        val out = ArrayList<String>(block.size)
+        out.add(block[0])
+        val pending = ArrayList<String>()
+        var natives = 0
+        var nativeFrom = -1
+        var nativeTo = -1
+        var nativeIndent = ""
+        var lastKey: String? = null
+        var frames = 0
+        fun indentOf(l: String) = l.substring(0, l.length - l.trimStart().length)
+        fun flushRun() {
+            if (pending.size == 1) out.add(pending[0])
+            else if (pending.size > 1) out.add("${indentOf(pending[0])}at ... (${pending.size} runtime frames)")
+            pending.clear()
+        }
+        fun flushNative() {
+            if (nativeFrom >= 0) out.add("${nativeIndent}native: #%02d-#%02d (${nativeTo - nativeFrom + 1} more native frames)".format(nativeFrom, nativeTo))
+            nativeFrom = -1
+        }
+        for (l in block.drop(1)) {
+            val t = l.trim()
+            val nm = NATIVE_FRAME.find(t)
+            if (nm != null) {
+                flushRun()
+                natives++
+                if (natives <= NATIVE_KEEP) out.add(l)
+                else { val n = nm.groupValues[1].toInt(); if (nativeFrom < 0) { nativeFrom = n; nativeIndent = indentOf(l) }; nativeTo = n }
+                continue
+            }
+            flushNative()
+            if (!t.startsWith("at ")) { flushRun(); out.add(l); continue }
+            val key = t.substringBefore('(')
+            if (key == lastKey) continue
+            frames++
+            val ours = OUR_FRAME.containsMatchIn(l) && !SHIM.containsMatchIn(t)
+            if (frames == 1 || ours) { flushRun(); out.add(l); lastKey = key } else { pending.add(l); lastKey = key }
+        }
+        flushNative()
+        flushRun()
+        return out
+    }
+    /** native frames kept before the rest become one line */
+    const val NATIVE_KEEP = 2
+    /** the main thread's full stack at the end, at most this many lines */
+    const val MAIN_FULL_MAX = 120
+    private val NATIVE_FRAME = Regex("""^native: #(\d+) """)
+    /** R8's lambda shims: in our packages, but they say nothing ("$r8$lambda$...", "...$$ExternalSyntheticLambda12.run") */
+    private val SHIM = Regex("""r8.lambda.|ExternalSyntheticLambda""")
     private const val TRACE_MARK = "---------- Trace ----------"
     private val THREAD_START = Regex("""^"[^"]*".*\b(prio=\d+|tid=\d+)""")
     private val OUR_FRAME = Regex("""\bat (com\.jrees\.|app\.gamenative\.|com\.winlator\.)""")

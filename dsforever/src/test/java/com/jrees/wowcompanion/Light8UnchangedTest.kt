@@ -114,9 +114,11 @@ class Light8UnchangedTest {
             assertFalse(freed.any { it.first == "unchanged8" })
         }
         assertEquals(0, asked)
-        // the line's new parts and caches only behind Light 8
+        // the line's new caches only behind Light 8; its counting fields (stk / oth / sys; swp) on every Thor since #56 11-22
+        // (counting only: MemTimedReliefTest)
         val mem = File(src, "MemWatch.kt").readText()
-        assertTrue(mem.contains("\"code \${mb(stat(\"summary.code\"))}\" + if (l8) light8Parts("))
+        assertTrue(mem.contains("sources.toList() + if (l8) sources8.toList() else emptyList()"))
+        assertTrue(mem.contains("\"code \${mb(stat(\"summary.code\"))}\" + light8Parts("))
     }
 
     @Test fun theZoneCachesBumpAsBeforeAndTheWindowsNeverHold() {

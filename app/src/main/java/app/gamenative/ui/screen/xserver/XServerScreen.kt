@@ -2512,14 +2512,12 @@ fun XServerScreen(
                 }
                 override fun tap(fx: Float, fy: Float) {
                     // ONE click on the cell's centre (a real press AND release on the same spot: secure cells act on the release),
-                    // then the pointer goes back where it was, never left parked on a cell (Quests' pad rules)
+                    // then the pointer goes back where it was, never left parked on a cell (Quests' pad rules). #153 review: the
+                    // spot to go back to is read on the input thread when the press runs (in order with queued moves and taps),
+                    // and the 30 ms hold is kept there even when the queue ran behind
                     val xs = xServerView.getxServer()
-                    val backX = xs.pointer.getX().toInt(); val backY = xs.pointer.getY().toInt()
-                    xs.injectPointerMove((fx * xs.screenInfo.width).toInt(), (fy * xs.screenInfo.height).toInt())
-                    xs.injectPointerButtonPress(com.winlator.xserver.Pointer.Button.BUTTON_LEFT)
-                    Thread.sleep(30)
-                    xs.injectPointerButtonRelease(com.winlator.xserver.Pointer.Button.BUTTON_LEFT)
-                    xs.injectPointerMove(backX, backY)
+                    xs.injectClickAt((fx * xs.screenInfo.width).toInt(), (fy * xs.screenInfo.height).toInt(),
+                        com.winlator.xserver.Pointer.Button.BUTTON_LEFT, 30L)
                 }
                 // f-trackpad-keyboard: the bottom screen's trackpad (relative moves) and its Left / Right click, where the pointer is
                 override fun moveBy(dx: Int, dy: Int) { xServerView.getxServer().injectPointerMoveDelta(dx, dy) }
