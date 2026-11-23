@@ -135,22 +135,26 @@ class BgsClient internal constructor(
         if (state != State.FINISHED) null else handles.mapNotNull { handle ->
             val items = BgsProtocol.parse(handle)
             if (items.integer(2) != WOW_TITLE) return@mapNotNull null
-            if (nanoTime() >= end) throw BgsException("too slow")
-            val info = call(ACCOUNT_SERVICE, GET_GAME_ACCOUNT_INFO, BgsProtocol.bytes(1, handle), seconds = 5).bytes(1)
+            // review 2026-11-23: each call gets only what is left of the whole lookup's time, so the wait stays within LOOKUP_SECONDS
+            val left = (end - nanoTime()) / 1_000_000_000L
+            if (left < 1L) throw BgsException("too slow")
+            val info = call(ACCOUNT_SERVICE, GET_GAME_ACCOUNT_INFO, BgsProtocol.bytes(1, handle), seconds = minOf(left, 5L).toInt()).bytes(1)
                 ?: throw BgsException("no info")
             val raw = BgsProtocol.parse(info).bytes(2) ?: throw BgsException("no name")
             val name = String(raw, Charsets.UTF_8)
             val region = GAME_REGIONS[items.integer(3)] ?: throw BgsException("unknown region")
             if (!GameAccount.launchName(name)) throw BgsException("unusable name")
-            GameAccount(name, region)
+            // the handle's game-account id (field 1), as Scuffle keeps it: GameAccountHandover.registryValues may need it once the PC look
+            // shows GAME_ACCOUNT's format (account_skip_pc_look.md); never logged
+            GameAccount(name, region, items.integer(1))
         }
     } catch (_: Exception) {
         null
     }
 
-    /** a WoW game account under this Battle.net login: [name] as the game knows it, [region] as the launch settings write it.
-     *  No generated toString: the name is account data */
-    class GameAccount(val name: String, val region: String) {
+    /** a WoW game account under this Battle.net login: [name] as the game knows it, [region] as the launch settings write it, [id]
+     *  the handle's game-account id (null = none given). No generated toString: the name and the id are account data */
+    class GameAccount(val name: String, val region: String, val id: Long? = null) {
         override fun toString() = "GameAccount(${name.length} characters, $region)"
         companion object {
             /** Scuffle's launch_name: 1-64 printable ASCII characters, no leading or trailing space */

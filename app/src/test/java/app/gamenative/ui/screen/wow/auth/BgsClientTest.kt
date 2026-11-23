@@ -204,6 +204,8 @@ class BgsClientTest {
             assertEquals(listOf("WoW1" to "US", "WoW2" to "EU"), accounts.map { it.name to it.region })
             assertFalse(accounts.toString().contains("WoW"))                       // never a name in a log line
             assertEquals("GameAccount(4 characters, US)", accounts[0].toString())
+            assertEquals(listOf(11L, 12L), accounts.map { it.id })                   // the handle's id goes along, never in toString
+            assertFalse(accounts.toString().contains("11"))
         }
         val requests = transport.requests()
         assertEquals(listOf(1L, 1L, 2L, 3L, 201L, 201L), requests.map { it.first.integer(2) })

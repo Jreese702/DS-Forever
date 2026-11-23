@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Modified by DS Forever, 2026-11-23 (GPL-3.0 section 5a): the launcher's game-account frame after the token
+# (SOURCE_PROVENANCE.md). Changes are marked "DS Forever".
 """Disposable Wine integration: synthetic token, loopback server, dummy child.
 
 Usage: python3 test_integration.py --wine /path/to/wine64 --compiler /path/to/mingw-gcc

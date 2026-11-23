@@ -1,3 +1,5 @@
+/* Modified by DS Forever, 2026-11-23 (GPL-3.0 section 5a): the launcher's game-account frame after the token, and
+ * GAME_ACCOUNT / REGION written beside the credential (SOURCE_PROVENANCE.md). Changes are marked "DS Forever". */
 #ifndef WOW_SESSION_PROTOCOL_H
 #define WOW_SESSION_PROTOCOL_H
 

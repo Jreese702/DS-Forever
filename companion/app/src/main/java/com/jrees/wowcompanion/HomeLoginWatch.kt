@@ -63,6 +63,8 @@ class HomeLoginWatch(
             // 2026-11-23: what became of Browser login's hand-over (the list skipped, or still shown: held), once per run
             runCatching { GameAccountHandover.observe(GameAccountDiag.logList) }.getOrNull()?.let(NativeLogin::logEvent)
         }
+        // review 2026-11-23: a hand-over is a good one only once the realm accepts the account (once per run; both logs carry it)
+        if (GameAccountHandover.realmOk(line)) runCatching { GameAccountHandover.realmAccepted() }.getOrNull()?.let(NativeLogin::logEvent)
         val t = HomeLogin.trail(line) ?: return
         if (!trailSeen.add(t)) return
         while (trailSeen.size > TRAIL_KEEP) trailSeen.remove(trailSeen.first())

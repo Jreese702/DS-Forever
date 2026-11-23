@@ -71,7 +71,8 @@ game account to the game, as the PC Battle.net app does). bridge.c, protocol.c,
 protocol.h, test_protocol.c, test_integration.py and README.md are NO LONGER
 byte-identical to upstream's aba66f9c: the launcher sends one more frame after
 the token ("-" or "<REGION>:<name>"), and the helper writes GAME_ACCOUNT and
-REGION beside the credential, or removes both as before. That follows nyrda/scuffle
+REGION beside the credential, or removes both as before (each changed source file
+says so at its top, and every change is marked "DS Forever"). That follows nyrda/scuffle
 5efccb44 bridge/auth_bridge.c (MIT; the same commit as the device ID). The
 same toolchain still builds upstream's unchanged sources to 0098d642... (checked
 again on 2026-11-23). The changed sources build to

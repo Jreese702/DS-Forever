@@ -86,10 +86,45 @@ class GameAccountHandoverTest {
         File(dir, "SavedVariables").mkdirs()
         val sv = File(two, "SavedVariables").apply { mkdirs() }
         File(one, "config-cache.wtf").apply { writeText("x"); setLastModified(1_000_000L) }; one.setLastModified(1_000_000L)
-        File(sv, "WowCompanion.lua").apply { writeText("x"); setLastModified(3_000_000L) }; two.setLastModified(1_000_000L); sv.setLastModified(1_000_000L)
+        File(sv, "Blizzard_Console.lua").apply { writeText("x"); setLastModified(3_000_000L) }; two.setLastModified(1_000_000L); sv.setLastModified(1_000_000L)
         assertEquals("11111111#2", GameAccountHandover.newestFolder(dir, 2_000_000L))
         assertNull(GameAccountHandover.newestFolder(dir, 4_000_000L))              // nothing written since the pick: nothing learned
         assertNull(GameAccountHandover.newestFolder(File(dir, "none"), 0L))
+    }
+
+    /**
+     * review 2026-11-23: DS Forever's own writes into an account folder at Play (SvKeep's WowCompanion*.lua stamped with the table's
+     * save time, PsSync's Polestar.lua, LauncherSetup's AddOns.txt) come BEFORE the next Browser login decides and go into the folder
+     * used last: they never count as the game's save, or a game Android closed before it saved would "learn" the previous account
+     */
+    @Test fun ourOwnWritesAreNotThePick() {
+        val dir = Files.createTempDirectory("acct").toFile()
+        val old = File(dir, "11111111#1").apply { mkdirs() }
+        val sv = File(old, "SavedVariables").apply { mkdirs() }
+        File(old, "config-cache.wtf").apply { writeText("x"); setLastModified(1_000_000L) }
+        File(sv, "Blizzard_Console.lua").apply { writeText("x"); setLastModified(1_000_000L) }
+        // after the pick (2_000_000): only our own writes in the old folder, and its folder times
+        for (n in SvKeep.FILES.values + PsSync.FILE) File(sv, n).apply { writeText("x"); setLastModified(3_000_000L) }
+        File(sv, "WowCompanion.lua.bak").apply { writeText("x"); setLastModified(3_000_000L) }
+        File(old, "AddOns.txt").apply { writeText("x"); setLastModified(3_000_000L) }
+        File(old, "AddOns.txt" + LauncherSetup.NEW).apply { writeText("x"); setLastModified(3_000_000L) }
+        old.setLastModified(3_000_000L); sv.setLastModified(3_000_000L)
+        assertNull(GameAccountHandover.newestFolder(dir, 2_000_000L))
+        // the game's own save of the picked account does count: a SavedVariables file of another add-on, or its cache file
+        val picked = File(dir, "11111111#2/SavedVariables").apply { mkdirs() }
+        File(picked, "Blizzard_Console.lua.bak").apply { writeText("x"); setLastModified(4_000_000L) }
+        assertEquals("11111111#2", GameAccountHandover.newestFolder(dir, 2_000_000L))
+        File(old, "config-cache.wtf").setLastModified(5_000_000L)
+        assertEquals("11111111#1", GameAccountHandover.newestFolder(dir, 2_000_000L))
+    }
+
+    /** the handle's id goes along (for registryValues, if the PC look needs it) and is never in a log line */
+    @Test fun theIdIsKeptAndNeverShown() {
+        val a = GameAccountHandover.Account("WoW1", "US", 123456789L)
+        assertEquals(123456789L, a.id)
+        assertFalse(a.toString().contains("123456789"))
+        assertFalse(GameAccountHandover.words(GameAccountHandover.Choice.Hand(a)).contains("123456789"))
+        assertEquals("US:WoW1", String(GameAccountHandover.frame(GameAccountHandover.Choice.Hand(a)), Charsets.US_ASCII))
     }
 
     /** Play's "!" mark: only a mark the game wrote anew replaces the pick; a stale one never undoes a Browser-login pick */
@@ -123,9 +158,63 @@ class GameAccountHandoverTest {
         assertEquals("WoW2", (c as GameAccountHandover.Choice.Hand).account.name)
         assertEquals("WoW2", Settings.gameAccountPick)
         assertTrue(GameAccountHandover.handedThisRun && GameAccountHandover.state().unseen)
-        assertEquals("Game account hand-over: the game skipped its list", GameAccountHandover.observe(list(shown = false)))
-        assertEquals(GameAccountHandover.State(mark = ""), GameAccountHandover.state())
-        assertTrue(GameAccountHandover.reportWords().startsWith("handed over (4 characters, region US); ready"))
+        assertEquals("Game account hand-over: the game skipped its list (the realm's answer is awaited)",
+            GameAccountHandover.observe(list(shown = false)))
+        assertTrue(GameAccountHandover.state().unseen)                              // a skipped list alone is not yet a good sign-in
+        assertTrue(GameAccountHandover.reportWords().startsWith("handed over (4 characters, region US); outcome pending"))
+        assertTrue(GameAccountHandover.realmOk(realmOk))
+        assertEquals("Game account hand-over: the realm accepted the handed-over account", GameAccountHandover.realmAccepted())
+        assertNull(GameAccountHandover.realmAccepted())                             // once per run (both logs carry the line)
+        val st = GameAccountHandover.state()
+        assertTrue(!st.unseen && !st.held && st.strikes == 0 && st.learnAfter == 0L && st.good.isNotEmpty() && !st.good.contains("WoW"))
+        assertEquals("handed over (4 characters, region US); the realm accepted it before", GameAccountHandover.reportWords())
+        assertFalse((p.m[GameAccountHandover.KEY] as String).contains("WoW"))
+    }
+
+    /** the game's realm line, as the user's Thor logged it 2026-11-07 (no account data in it) */
+    private val realmOk = "11/7 11:53:00.681  [N][Connection] Realm authentication completed result=\"ERROR_OK (0)\""
+
+    /** review 2026-11-23: the list skipped, then the sign-in failed (a refused account, a disconnect before the realm): held at the
+     *  next Browser login, so the list shows and the player picks; never a loop of failed starts */
+    @Test fun aSkipThatNeverReachesTheRealmHolds() {
+        assertFalse(GameAccountHandover.realmOk("11/7 11:53:00.681  [N][Connection] Realm authentication completed result=\"ERROR_DENIED (3)\""))
+        assertFalse(GameAccountHandover.realmOk("11/7 11:52:59.557  [N][Connection] Realm connection connected realmAddress=\"91-1-7\""))
+        Settings.gameAccountPick = "WoW2"
+        GameAccountHandover.beginRun(true)
+        assertTrue(GameAccountHandover.decide(null, listOf(w1, w2)) is GameAccountHandover.Choice.Hand)
+        GameAccountHandover.observe(list(shown = false))                            // skipped ... then refused: no realm line
+        GameAccountHandover.beginRun(true)
+        assertEquals(GameAccountHandover.Choice.None("held after an earlier hand-over (the list showed, or no outcome was seen)"),
+            GameAccountHandover.decide(null, listOf(w1, w2)))
+        assertNull(GameAccountHandover.realmAccepted())                             // nothing handed this run: nothing changes
+        assertTrue(GameAccountHandover.state().held)
+        // a realm line on the saved login changes nothing either
+        GameAccountHandover.beginRun(false)
+        assertNull(GameAccountHandover.realmAccepted())
+    }
+
+    /** a pick the realm already accepted: one start whose log lines never reached the disk does not hold it, two in a row do */
+    @Test fun anAcceptedPickToleratesOneEarlyExit() {
+        Settings.gameAccountPick = "WoW1"
+        GameAccountHandover.beginRun(true)
+        assertTrue(GameAccountHandover.decide(null, listOf(w1, w2)) is GameAccountHandover.Choice.Hand)
+        GameAccountHandover.realmAccepted()
+        GameAccountHandover.beginRun(true)
+        assertTrue(GameAccountHandover.decide(null, listOf(w1, w2)) is GameAccountHandover.Choice.Hand)   // the app closed early
+        GameAccountHandover.beginRun(true)
+        assertTrue(GameAccountHandover.decide(null, listOf(w1, w2)) is GameAccountHandover.Choice.Hand)   // one strike: still handed
+        assertEquals(1, GameAccountHandover.state().strikes)
+        GameAccountHandover.beginRun(true)
+        assertTrue(GameAccountHandover.decide(null, listOf(w1, w2)) is GameAccountHandover.Choice.None)   // two in a row: held
+        // another pick is not "accepted before": one unseen start holds it
+        GameAccountHandover.remember("WoW2")
+        GameAccountHandover.beginRun(true)
+        assertTrue(GameAccountHandover.decide(null, listOf(w1, w2)) is GameAccountHandover.Choice.Hand)
+        GameAccountHandover.beginRun(true)
+        assertTrue(GameAccountHandover.decide(null, listOf(w1, w2)) is GameAccountHandover.Choice.None)
+        // forgetting the login forgets what the realm accepted
+        Settings.forgetGameAccountPick()
+        assertEquals("", GameAccountHandover.state().good)
     }
 
     /** the game still showed its list after a hand-over: held, the player picks as before; no hand-over again until something changes */
@@ -159,12 +248,15 @@ class GameAccountHandoverTest {
         assertEquals(GameAccountHandover.Choice.None("held after an earlier hand-over (the list showed, or no outcome was seen)"),
             GameAccountHandover.decide(null, listOf(w1, w2)))
         assertEquals(1, GameAccountHandover.state().strikes)
-        // a skip seen clears the strikes
+        // a new pick is tried once; the realm's acceptance clears the strikes
         GameAccountHandover.remember("WoW2")
         GameAccountHandover.beginRun(true)
         assertTrue(GameAccountHandover.decide(null, listOf(w1, w2)) is GameAccountHandover.Choice.Hand)
         GameAccountHandover.observe(list(shown = false))
+        assertTrue(GameAccountHandover.state().unseen)
+        GameAccountHandover.realmAccepted()
         assertEquals(0, GameAccountHandover.state().strikes)
+        assertFalse(GameAccountHandover.state().unseen)
     }
 
     @Test fun theSavedLoginAndAskEachTimeAreLeftAsTheyWere() {
@@ -201,7 +293,10 @@ class GameAccountHandoverTest {
         assertTrue(token > 0 && login.indexOf("account = handover(attempt, client.gameAccounts())", token) > token)
         assertTrue(login.contains("peer.launch(token, account)"))
         assertTrue(login.contains("GameAccountHandover.beginRun(browser)"))
-        assertTrue(src("companion/app/src/main/java/com/jrees/wowcompanion/HomeLoginWatch.kt").contains("GameAccountHandover.observe(GameAccountDiag.logList)"))
+        val watch = src("companion/app/src/main/java/com/jrees/wowcompanion/HomeLoginWatch.kt")
+        assertTrue(watch.contains("GameAccountHandover.observe(GameAccountDiag.logList)"))
+        assertTrue(watch.contains("if (GameAccountHandover.realmOk(line)) runCatching { GameAccountHandover.realmAccepted() }"))
+        assertTrue(login.contains("GameAccountHandover.Account(it.name, it.region, it.id)"))
         val play = src("app/src/main/java/app/gamenative/ui/screen/wow/WoWForeverScreen.kt")
         assertTrue(play.contains("if (learned != null && markNew && learned != pickBefore) com.jrees.wowcompanion.GameAccountHandover.remember(learned)"))
     }

@@ -163,6 +163,33 @@ class GameAccountDiagTest {
         GameAccountDiag.newRun()
     }
 
+    /**
+     * review 2026-11-23: the user's Thor 2026-11-07 (two game accounts), line for line in the client's own order and clock (the two
+     * GameInfo names replaced by placeholders): the list is up from 45.832 to 57.384 - "up 12 s, picked", never "up 0 s"
+     */
+    @Test fun theRealTwoAccountSequence() {
+        GameAccountDiag.newRun()
+        val c = "[N][Connection] Battle.net"
+        val lines = listOf(
+            "11/7 11:52:45.656  $c logon completed result=\"ERROR_OK (0)\" numGameAccounts=\"2\"",
+            "11/7 11:52:45.657  $c login waiting for server response",
+            "11/7 11:52:45.832  $c account service game info received responseType=\"GameInfo\" responseTypeValue=\"4\" code=\"ERROR_OK (0)\" name=\"WoW2\" numGameAccounts=\"2\" numGameAccountNames=\"0\"",
+            "11/7 11:52:45.832  $c account service game info received responseType=\"GameInfo\" responseTypeValue=\"4\" code=\"ERROR_OK (0)\" name=\"WoW1\" numGameAccounts=\"2\" numGameAccountNames=\"1\"",
+            "11/7 11:52:45.832  $c complete login requested hasGameAccount=\"false\"",
+            "11/7 11:52:45.832  $c login requires additional info infoType=\"(enum)4\"",
+            "11/7 11:52:51.482  [N][BleepPinger] Sending ping results from timeout",
+            "11/7 11:52:57.384  $c complete login requested hasGameAccount=\"true\"",
+            "11/7 11:52:57.384  [N][Connection] Game account list not saved because accountName CVar is empty",
+            "11/7 11:52:57.384  $c logon completed in glue")
+        val readAt = GameAccountDiag.clockMs(lines[0])!! + 30_000L
+        val said = lines.mapNotNull { GameAccountDiag.noteLog(it, readAt) }
+        assertEquals(listOf("Game account list: 2 accounts, read 30 s after the game wrote it",
+            "Game account list: list seen (2 accounts), read 30 s after the game wrote it",
+            "Game account list: list seen (2 accounts), read 30 s after the game wrote it, up 12 s, picked"), said)
+        for (l in said) assertFalse(l, l.contains("WoW") || l.contains("name="))
+        GameAccountDiag.newRun()
+    }
+
     /** a hand-over that worked (2026-11-23): the first "complete login" already has its account - no list with two accounts */
     @Test fun aPassedAccountIsNoList() {
         GameAccountDiag.newRun()

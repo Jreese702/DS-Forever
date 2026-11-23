@@ -216,7 +216,7 @@ internal object BattleNetBrowserLogin {
      */
     private fun handover(attempt: Attempt, accounts: List<BgsClient.GameAccount>?): ByteArray {
         val choice = runCatching {
-            GameAccountHandover.decide(attempt.accountDir, accounts?.map { GameAccountHandover.Account(it.name, it.region) })
+            GameAccountHandover.decide(attempt.accountDir, accounts?.map { GameAccountHandover.Account(it.name, it.region, it.id) })
         }.getOrElse { GameAccountHandover.Choice.None("an error (${it.javaClass.simpleName})") }
         diag(attempt, "game account: ${accounts?.size?.let { "$it listed" } ?: "list unread"}; ${GameAccountHandover.words(choice)}")
         return GameAccountHandover.frame(choice)

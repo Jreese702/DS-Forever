@@ -1,3 +1,5 @@
+/* Modified by DS Forever, 2026-11-23 (GPL-3.0 section 5a): the launcher's game-account frame after the token, and
+ * GAME_ACCOUNT / REGION written beside the credential (SOURCE_PROVENANCE.md). Changes are marked "DS Forever". */
 /* WoW Forever's one-shot, loopback-only Wine session handoff.
  * The token is received in memory and protected in the game's Wine prefix.
  * No credential is accepted in an argument, environment variable, or file. */
