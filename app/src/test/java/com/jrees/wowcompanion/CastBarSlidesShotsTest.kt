@@ -111,7 +111,8 @@ class CastBarSlidesShotsTest {
 
     // ---------------------------------------------------------------- the offsets
 
-    /** the LB picture: Left goes with the chat (left), Right with the minimap (right), Both stays */
+    /** the LB picture: Left goes with the chat (left), Right with the minimap (right), Both never sideways (feat/radial-castbar: the
+     *  picture fits above it at rest, so it stays; it drops only when the picture needs the room - RadialCastBarShotsTest) */
     @Test fun lbPictureMovesTheBarWithItsHalfOnly() {
         for ((side, sign) in listOf(L to -1f, R to 1f, B to 0f)) {
             val home = page(side)
@@ -122,23 +123,43 @@ class CastBarSlidesShotsTest {
             assertEquals(LbPartyView.SIDE_PX, map(home).translationX, 0.5f)
             if (side == L) assertEquals(chat(home).translationX, s.translationX, 0.5f)
             if (side == R) assertEquals(map(home).translationX, s.translationX, 0.5f)
+            val top = boxes(home).entries.first { it.key.toString() == "STRIP" }.value.top
+            assertEquals("$side bar stays at its height (top $top)", 0f, s.translationY, 0.5f)
             home.pauseSlide(0f, LbPartyView.SIDE_PX)
             assertEquals(0f, s.translationX, 0.5f)
+            assertEquals(0f, s.translationY, 0.5f)
         }
     }
 
-    /** the pause wheel's full slide: Left / Both go with the chat (cb3's choice), Right with the minimap */
+    /** the pause wheel's and the target radial's full slide: Left goes with the chat, Right with the minimap; Both's bar (feat/radial-
+     *  castbar, the user: "All wheels move the Across bar the same way") drops straight down below the page, never sideways (it went
+     *  left with the chat, cb3's choice), and comes back up on the close */
     @Test fun pauseSlideCarriesTheBarWithItsColumn() {
-        for (side in listOf(L, R, B)) {
+        for (up in listOf(true, false)) for (side in listOf(L, R, B)) {
             val home = page(side)
-            home.pauseSlide(UiKit.PAUSE_OPEN_MS)
             val s = castStrip(home)
-            if (side == R) assertTrue("$side", s.translationX > 0f) else assertTrue("$side", s.translationX < 0f)
-            assertTrue("off the screen", s.left + s.translationX >= W - 1f || s.right + s.translationX <= 1f)
+            val top = boxes(home).entries.first { it.key.toString() == "STRIP" }.value.top
+            home.pauseSlide(UiKit.PAUSE_OPEN_MS / 3f, barsUp = up)
+            if (side == B) assertTrue("$side partway down: ${s.translationY}", s.translationX == 0f && s.translationY > 0f && top + s.translationY < H)
+            home.pauseSlide(UiKit.PAUSE_OPEN_MS, barsUp = up)
+            when (side) {
+                R -> assertTrue("$side", s.translationX > 0f)
+                L -> assertTrue("$side", s.translationX < 0f)
+                else -> {
+                    assertEquals("$side never sideways", 0f, s.translationX, 0.5f)
+                    assertEquals("$side below the page", H.toFloat(), top + s.translationY, 0.5f)
+                    assertTrue("$side takes no tap", !s.takesTouch)
+                }
+            }
+            if (side != B) assertTrue("off the screen", s.left + s.translationX >= W - 1f || s.right + s.translationX <= 1f)
+            home.pauseSlide(0f, barsUp = up)
+            assertEquals(0f, s.translationX, 0.5f); assertEquals(0f, s.translationY, 0.5f)
+            assertTrue("$side back: takes taps", s.takesTouch)
         }
     }
 
-    /** RB + RT's class wheel: the right column only; Both's bar stays and the wheel is the right column's square, not the page's */
+    /** RB + RT's class wheel: the right column only; Both's bar never sideways (feat/radial-castbar: it drops below the page) and the
+     *  wheel is the right column's square, not the page's */
     @Test fun rightClassWheelLeavesBothsBarAndKeepsItsSize() {
         for (side in listOf(B, R, L)) {
             val home = page(side)
@@ -151,7 +172,7 @@ class CastBarSlidesShotsTest {
             assertTrue("$side: no bigger than the right column ($r)", r.width() <= mapBox.width() + 1)
             assertTrue("$side: the map slides off", map(home).translationX >= W - mapBox.left - 1f)
             when (side) {
-                B -> { assertEquals(0f, s.translationX, 0.5f); assertTrue("above Both's bar", r.bottom <= strip!!.top + 1f) }
+                B -> { assertEquals(0f, s.translationX, 0.5f); assertEquals("Both's bar below the page", H.toFloat(), strip!!.top + s.translationY, 0.5f) }
                 R -> assertEquals(map(home).translationX, s.translationX, 1f)
                 L -> assertEquals(0f, s.translationX, 0.5f)
                 else -> {}
@@ -159,7 +180,7 @@ class CastBarSlidesShotsTest {
         }
     }
 
-    /** LB + LT's class wheel: the left column only; Both's bar stays */
+    /** LB + LT's class wheel: the left column only; Both's bar never sideways (it drops below the page) */
     @Test fun leftClassWheelLeavesBothsBar() {
         for (side in listOf(B, L, R)) {
             val home = page(side)
@@ -175,7 +196,8 @@ class CastBarSlidesShotsTest {
         }
     }
 
-    /** the middle wheel parts the columns: Left / Right bars with theirs, Both stays and the wheel sits above it */
+    /** the middle wheel parts the columns: Left / Right bars with theirs, Both never sideways - it drops below the page (feat/radial-castbar)
+     *  and the wheel reaches the page's foot */
     @Test fun middleWheelPartsTheBarWithItsHalf() {
         for (side in listOf(L, R, B)) {
             val home = page(side)
@@ -188,10 +210,12 @@ class CastBarSlidesShotsTest {
             when (side) {
                 L -> assertEquals(c, s.translationX, 0.5f)
                 R -> assertEquals(m, s.translationX, 0.5f)
-                else -> { assertEquals(0f, s.translationX, 0.5f); assertTrue("above Both's bar", slot.bottom <= stripTop + 0.5f) }
+                else -> { assertEquals(0f, s.translationX, 0.5f); assertEquals("Both's bar below the page", H.toFloat(), stripTop + s.translationY, 0.5f)
+                    assertTrue("the wheel down to the foot", slot.bottom > stripTop) }
             }
             home.wheelSlot(false); settle()
             assertEquals(0f, s.translationX, 0.5f)
+            assertEquals(0f, s.translationY, 0.5f)
         }
     }
 

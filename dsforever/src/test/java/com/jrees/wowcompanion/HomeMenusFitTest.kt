@@ -15,6 +15,9 @@ import org.junit.Test
  *  - no column is "across" the page (only a full-screen module keeps its name's side in the slides).
  * Classic at rest stays 1516's ([classicIs1516]); under a grown band it is fitted like every layout (the user's pick 2026-11-21, "Fix in
  * Classic too": [classicsGrownFightSitsUnderTheBand]).
+ * feat/radial-castbar (the user, 2026-11-23: "it should still move out of the way to make space for the full sized radials"): Across's
+ * bar drops below the page for each of them (HomeSlide.barDrop), so every bar is checked moved as it is drawn, and each radial is the
+ * size it has on the same page with the bar Off ([everyRadialIsFullSize]).
  */
 class HomeMenusFitTest {
     private val S = HomeLayoutSolver
@@ -51,16 +54,49 @@ class HomeMenusFitTest {
     }
 
     private fun box(b: LbFit.Box) = HomeLayoutSolver.Box(b.l, b.t, b.r, b.b)
-    private fun moved(b: HomeLayoutSolver.Box, dx: Float) = b.copy(l = b.l + dx, r = b.r + dx)
+    private fun moved(b: HomeLayoutSolver.Box, dx: Float, dy: Float = 0f) = b.copy(l = b.l + dx, r = b.r + dx, t = b.t + dy, b = b.b + dy)
+    private fun bar(p: HomePart) = p == HomePart.STRIP || p == HomePart.CAST2
+    /** feat/radial-castbar: how far [part] drops for an open radial that asked for the room (Across's bar below the page), as HomeView.barDrop */
+    private fun drop(pg: Page, part: HomePart, b: HomeLayoutSolver.Box) = HomeSlide.barDrop(bar(part), pg.half(part, b), b.t, pg.s.h)
+    /** a part as drawn under an open radial: by its half ([pl] / [pr]) and, [dropped], its drop; a full-screen module keeps its own place */
+    private fun drawn(pg: Page, part: HomePart, b: HomeLayoutSolver.Box, pl: Float, pr: Float, dropped: Boolean): HomeLayoutSolver.Box? {
+        if (!bar(part) && HomeSlide.fullWidth(b.l, b.r, W, G)) return null
+        return moved(b, HomeSlide.dx(pg.half(part, b), pl, pr), if (dropped) drop(pg, part, b) else 0f)
+    }
     private fun overlap(a: HomeLayoutSolver.Box, b: HomeLayoutSolver.Box) =
         a.l < b.r - 0.5f && b.l < a.r - 0.5f && a.t < b.b - 0.5f && b.t < a.b - 0.5f
+    /** the bar of no column (Across) on the page, the one a radial may ask to drop (HomeView.acrossBox) */
+    private fun across(p: Page): HomeLayoutSolver.Box? = p.shown.entries.firstOrNull { (part, b) -> drop(p, part, b) > 0f }?.value
 
-    /** the LB picture's bottom limit HomeView.lbPlace uses: the top of a bar that stays (no column's), else the frame's foot */
-    private fun lbBottom(p: Page): Float {
-        var bottom = p.s.h - G
-        for ((part, b) in p.shown) if ((part == HomePart.STRIP || part == HomePart.CAST2) && p.half(part, b) == HomeSlide.Half.NONE)
-            bottom = minOf(bottom, b.t - G)
-        return bottom
+    /** the LB picture as HomeView.lbFit places it (fitted, not Classic's held look) and whether Across's bar drops for it */
+    private fun lb(p: Page): Pair<LbFit.Place, Boolean> {
+        val line = p.line()
+        fun at(bottom: Float) = LbFit.place(W, p.bb, line.first, line.second, bottom, classic = false, staleBars = 0f)
+        val full = at(p.s.h - G)
+        val a = across(p) ?: return full to false
+        val kept = at(HomeSlide.stayFoot(a.t, p.s.h, G))
+        val drop = HomeSlide.makesRoom(a.t, kept.k * LbPartyView.PICT_H, full.k * LbPartyView.PICT_H, LbFit.bars(kept).values.maxOf { it.b }, G)
+        return (if (drop) full else kept) to drop
+    }
+    /** the middle wheel as HomeView.wheelFit takes it, and whether Across's bar drops for it */
+    private fun middle(p: Page): Pair<ClassSlot.Middle, Boolean> {
+        val line = p.line(); val mid = (line.first + line.second) / 2f
+        val a = across(p)
+        val full = ClassSlot.middle(W, p.s.h, p.bb, G, W * 0.6f, mid = mid)
+        val kept = ClassSlot.middle(W, p.s.h, p.bb, G, W * 0.6f, bottom = HomeSlide.stayFoot(a?.t, p.s.h, G), mid = mid)
+        val drop = HomeSlide.makesRoom(a?.t, kept.side, full.side, kept.top + kept.side, G)
+        return (if (drop) full else kept) to drop
+    }
+    /** a class wheel's square as HomeView.classLayerShow takes it (its column's parts; down to Across's foot when that bar drops for it) */
+    private fun classSlot(p: Page, left: Boolean): Pair<ClassSlot.Slot, Boolean> {
+        val want = if (left) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
+        val col = p.r.boxes.filter { (part, b) -> part != HomePart.BARS && part != HomePart.AURAS && p.half(part, b) == want }
+            .values.map { ClassSlot.Area(it.l, it.t, it.r, it.b) }
+        val a = across(p)
+        val kept = ClassSlot.inColumn(ClassSlot.column(col, p.bb, p.s.h, G, left, W))
+        val full = ClassSlot.inColumn(ClassSlot.column(col, p.bb, p.s.h, G, left, W, reach = a?.b ?: 0f))
+        val drop = HomeSlide.makesRoom(a?.t, kept.side, full.side, kept.top + kept.side, G)
+        return (if (drop) full else kept) to drop
     }
 
     @Test fun noColumnIsAcrossThePage() {
@@ -80,8 +116,7 @@ class HomeMenusFitTest {
         val bad = ArrayList<String>()
         var n = 0
         for (p in pages()) {
-            val line = p.line()
-            val pl = LbFit.place(W, p.bb, line.first, line.second, lbBottom(p), classic = false, staleBars = 0f)
+            val (pl, dropped) = lb(p)
             val bars = LbFit.bars(pl).values.map { box(it) }
             n++
             fun no(m: String) { if (bad.size < 12) bad += "${p.l} / ${p.s}: $m" }
@@ -91,9 +126,7 @@ class HomeMenusFitTest {
                 if (b.t < p.bb) no("bar $b under the band (bottom ${p.bb})")
             }
             for ((part, b) in p.shown) {
-                val h = if (HomeSlide.fullWidth(b.l, b.r, W, G)) null else p.half(part, b)
-                val dx = HomeSlide.dx(h ?: continue, pl.pushLeft, pl.pushRight)
-                val m = moved(b, dx)
+                val m = drawn(p, part, b, pl.pushLeft, pl.pushRight, dropped) ?: continue
                 for (x in bars) if (overlap(m, x)) no("$part ${m} covers the picture's bar $x (push ${pl.pushLeft} / ${pl.pushRight})")
             }
         }
@@ -103,16 +136,12 @@ class HomeMenusFitTest {
     @Test fun theMiddleWheelFitsEveryLayout() {
         val bad = ArrayList<String>()
         for (p in pages()) {
-            val line = p.line()
-            val m = ClassSlot.middle(W, p.s.h, p.bb, G, W * 0.6f,
-                bottom = HomeSlide.middleBottom(p.r.castSide, p.r.castHidden && p.r.castSide != CastStripModel.Side.OFF,
-                    p.r.boxes[HomePart.STRIP]?.t, p.s.h, G), mid = (line.first + line.second) / 2f)
+            val (m, dropped) = middle(p)
             val sq = HomeLayoutSolver.Box(m.left, m.top, m.left + m.side, m.top + m.side)
             fun no(x: String) { if (bad.size < 12) bad += "${p.l} / ${p.s}: $x" }
             if (sq.l < G - 0.5f || sq.r > W - G + 0.5f || sq.b > p.s.h - G + 0.5f || sq.t < p.bb) no("square $sq off the frame / under the band")
             for ((part, b) in p.shown) {
-                if (HomeSlide.fullWidth(b.l, b.r, W, G)) continue
-                val mv = moved(b, HomeSlide.dx(p.half(part, b), m.push, m.pushRight))
+                val mv = drawn(p, part, b, m.push, m.pushRight, dropped) ?: continue
                 if (overlap(mv, sq)) no("$part $mv covers the wheel $sq")
             }
         }
@@ -123,13 +152,68 @@ class HomeMenusFitTest {
         val bad = ArrayList<String>()
         for (p in pages()) for (left in listOf(true, false)) {
             val want = if (left) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
-            val col = p.r.boxes.filter { (part, b) -> part != HomePart.BARS && part != HomePart.AURAS && p.half(part, b) == want }
-            val a = ClassSlot.column(col.values.map { ClassSlot.Area(it.l, it.t, it.r, it.b) }, p.bb, p.s.h, G, left, W)
-            val sl = ClassSlot.inColumn(a)
+            val (sl, dropped) = classSlot(p, left)
             if (sl.left < 0f || sl.left + sl.side > W || sl.top < p.bb || sl.top + sl.side > p.s.h - G + 0.5f)
                 if (bad.size < 12) bad += "${p.l} / ${p.s} ${if (left) "LB+LT" else "RB+RT"}: ${sl}"
+            // feat/radial-castbar: no bar over it once its column slid off its edge and Across's bar dropped (the other column stays)
+            val sq = HomeLayoutSolver.Box(sl.left, sl.top, sl.left + sl.side, sl.top + sl.side)
+            for ((part, b) in p.shown) if (bar(part)) {
+                val away = if (p.half(part, b) == want) ClassSlot.away(left, b.l, b.r, W, G) else 0f
+                val mv = moved(b, away, if (dropped) drop(p, part, b) else 0f)
+                if (overlap(mv, sq) && bad.size < 12) bad += "${p.l} / ${p.s} ${if (left) "LB+LT" else "RB+RT"}: $part $mv covers the wheel $sq"
+            }
         }
         assertTrue(bad.joinToString("\n"), bad.isEmpty())
+    }
+
+    /**
+     * feat/radial-castbar: THE FULL SIZE - over every record x state, the middle wheel, both class wheels and the LB picture are as large
+     * as on the same page with the bar Off, whatever the bar's dock and slot size (the bar drops when it would make one smaller; one that
+     * fits above Across's bar at that size leaves it where it is)
+     */
+    @Test fun everyRadialIsFullSize() {
+        val bad = ArrayList<String>()
+        var n = 0
+        var skipped = 0
+        var drops = 0
+        for (l in HomeLayoutRules.all()) for ((sn, s) in states()) {
+            if (l.cast == HomeLayout.CastDock.OFF) continue
+            val p = Page(l, s, S.places(l, s))
+            val o = l.copy(cast = HomeLayout.CastDock.OFF)
+            val q = Page(o, s, S.places(o, s))
+            fun no(x: String) { if (bad.size < 12) bad += "$l / $sn: $x" }
+            if (p.bb != q.bb) { skipped++; continue }                     // the band itself moved (an F-rule): not the radial's making
+            val (m, md) = middle(p)
+            if (kotlin.math.abs(m.side - middle(q).first.side) > 0.5f) no("middle wheel ${m.side}, with no bar ${middle(q).first.side}")
+            for (left in listOf(true, false)) {
+                val (a, ad) = classSlot(p, left); val b = classSlot(q, left).first
+                if (kotlin.math.abs(a.side - b.side) > 0.5f) no("${if (left) "LB+LT" else "RB+RT"} $a, with no bar $b")
+                if (ad) drops++
+            }
+            val (pl, ld) = lb(p)
+            if (kotlin.math.abs(pl.k - lb(q).first.k) > 1e-4f) no("LB picture at ${pl.k}, with no bar ${lb(q).first.k}")
+            if (md) drops++
+            if (ld) drops++
+            n++
+        }
+        assertTrue("checked $n pages ($skipped skipped, $drops drops):\n${bad.joinToString("\n")}", bad.isEmpty() && n > 10_000 && drops > 1000)
+    }
+
+    /** Across's bar stays where a radial fits above it at its full size: Classic's LB picture at rest (1.0.31: "If its set to both it can
+     *  stay in place"); the middle wheel and the class wheels it would shrink - it drops for them */
+    @Test fun acrossDropsOnlyWhenARadialNeedsTheRoom() {
+        val l = HomeLayout(cast = HomeLayout.CastDock.ACROSS)
+        val st = HomeLayoutSolver.State()
+        val p = Page(l, st, S.places(l, st))
+        assertTrue("there is an Across bar", across(p) != null)
+        assertTrue("the LB picture fits above it", !lb(p).second)
+        assertEquals(1f, lb(p).first.k, 0f)
+        assertTrue("the middle wheel needs the room", middle(p).second)
+        assertTrue("the class wheels need the room", classSlot(p, true).second && classSlot(p, false).second)
+        // Split's halves go with their columns: nothing drops, the middle wheel is full size already
+        val sp = l.copy(cast = HomeLayout.CastDock.SPLIT)
+        val q = Page(sp, st, S.places(sp, st))
+        assertTrue(across(q) == null && !middle(q).second)
     }
 
     /** the bar above its column moves no menu: the LB picture and the middle wheel stand where its Under twin's do, in every state
@@ -140,8 +224,7 @@ class HomeMenusFitTest {
             if (!p.l.cast.top) continue
             val t = Page(p.l.copy(cast = p.l.cast.withTop(false)), p.s, S.places(p.l.copy(cast = p.l.cast.withTop(false)), p.s))
             val line = p.line()
-            assertEquals("${p.l} / ${p.s}", LbFit.place(W, t.bb, line.first, line.second, lbBottom(t), classic = false, staleBars = 0f),
-                LbFit.place(W, p.bb, line.first, line.second, lbBottom(p), classic = false, staleBars = 0f))
+            assertEquals("${p.l} / ${p.s} (${line})", lb(t).first, lb(p).first)
             // the top bar goes with its column (shown), no column's when hidden
             val strip = p.r.boxes.getValue(HomePart.STRIP)
             val col = p.r.boxes.getValue(if (p.l.cast.column == HomeModule.CHAT) HomePart.CHAT else HomePart.MAP)
@@ -211,16 +294,23 @@ class HomeMenusFitTest {
         assertTrue(LbFit.place(W, same, c.first.second, c.second.first, 927f, classic = true, staleBars = 0f).classic)
     }
 
-    /** the picture under a grown band scales to fit above a bar that stays (Compact's Both bar in a fight), never under the band */
-    @Test fun theLbPictureScalesAboveABothBar() {
+    /** feat/radial-castbar: Compact's Across bar in a fight no longer shrinks the picture under a grown band - the bar drops below the
+     *  page and the picture is as large as the space under the band allows (it scaled to fit above that bar) */
+    @Test fun theLbPictureNoLongerScalesAboveABothBar() {
         val l = HomeArrangements.of(HomeArrangements.COMPACT, HomeLayout())
-        val r = S.places(l, HomeLayoutSolver.State(takeover = true))
+        val st = HomeLayoutSolver.State(takeover = true)
+        val r = S.places(l, st)
         val strip = r.boxes.getValue(HomePart.STRIP)
+        val p = Page(l, st, r)
+        assertEquals("Across's bar", HomeSlide.Half.NONE, p.half(HomePart.STRIP, strip))
+        assertEquals("drops below the page", st.h, strip.t + drop(p, HomePart.STRIP, strip), 0.01f)
         val bb = r.boxes.getValue(HomePart.BARS).b
         val c = HomeLayoutSolver.columns(l, W, G)
-        val pl = LbFit.place(W, bb, c.first.second, c.second.first, strip.t - G, classic = false, staleBars = 0f)
+        val (pl, dropped) = lb(p)
+        assertTrue("it drops for the picture", dropped)
+        val old = LbFit.place(W, bb, c.first.second, c.second.first, strip.t - G, classic = false, staleBars = 0f)
         assertEquals(bb + 10f, pl.top, 0f)
-        val bars = LbFit.bars(pl).values
-        assertTrue("above the bar: ${bars.maxOf { it.b }} vs ${strip.t}", bars.maxOf { it.b } <= strip.t - G + 0.5f || pl.k <= LbFit.K_MIN)
+        assertTrue("larger than above the bar: ${pl.k} vs ${old.k}", pl.k > old.k || pl.k == 1f)
+        for (b in LbFit.bars(pl).values) assertTrue("inside the frame: ${b.b}", b.b <= st.h - G + 0.5f)
     }
 }

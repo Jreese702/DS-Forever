@@ -146,7 +146,10 @@ class RadialsClipShotsTest {
             val what = "$src#$r ${if (tap) "tap" else "hold"} $side: wheel $paint bar $bar"
             assertTrue(what, !RectF.intersects(paint, bar))
             when (side) {
-                B -> assertEquals("$what: Both's bar stays", barRest.left, bar.left, 0.5f)
+                // feat/radial-castbar (the user, 2026-11-23: "it should still move out of the way to make space for the full sized
+                // radials"): Both's bar never goes sideways; it drops below the page
+                B -> { assertEquals("$what: Both's bar never sideways", barRest.left, bar.left, 0.5f)
+                    assertTrue("$what: Both's bar below the page", bar.top >= H - 0.5f) }
                 L -> assertTrue("$what: Left's bar goes left", bar.left < barRest.left)
                 else -> assertTrue("$what: Right's bar goes right", bar.left > barRest.left)
             }
@@ -154,6 +157,7 @@ class RadialsClipShotsTest {
             assertTrue("$what: normal size", slot.width() >= H / 3f)
             p.wheel.close(); settle()
             assertEquals("$what: the bar is back", barRest.left, barBox(p.home).left, 0.5f)
+            assertEquals("$what: the bar is back up", barRest.top, barBox(p.home).top, 0.5f)
         }
     }
 
@@ -194,6 +198,7 @@ class RadialsClipShotsTest {
                 p.wheel.close(); settle()
                 fight(p.home, false)
                 assertEquals("$what: the bar back in place", 0f, castStrip(p.home).translationX, 0.5f)
+                assertEquals("$what: the bar back up", 0f, castStrip(p.home).translationY, 0.5f)
             }
         }
     }

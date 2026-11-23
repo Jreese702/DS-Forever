@@ -103,6 +103,10 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
         get() = fightGate.sliding
         set(v) { if (fightGate.sliding != v) { fightGate.sliding = v; if (v) dropTouch(); invalidate() } }
 
+    /** feat/radial-castbar: dropped out of a radial's way (HomeView.barAwaySync): no touch reaches the slots, the cooldowns run on */
+    var away = false
+        set(v) { if (field != v) { field = v; if (v) dropTouch() } }
+
     private fun dropTouch() {
         if (downAt >= 0 || moved) parent?.requestDisallowInterceptTouchEvent(false)
         downAt = -1; moved = false; caught = false; pressedUntil = 0L; flingAt = -1L
@@ -119,8 +123,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     /** hidden by the fight (Hide in combat): no touch reaches the slots */
     val fightHidden: Boolean get() = fightGate.hidden
 
-    /** a touch reaches the slots now (not hidden, not sliding) */
-    val takesTouch: Boolean get() = fightGate.takesTouch()
+    /** a touch reaches the slots now (not hidden, not sliding; feat/radial-castbar: not dropped for a radial, not on its way back up) */
+    val takesTouch: Boolean get() = fightGate.takesTouch() && !away && translationY <= 0.5f
 
     /** a fling is running */
     val flinging: Boolean get() = flingAt >= 0L
@@ -265,6 +269,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         // hidden in a fight or sliding (cb7): no touch at all (the finger goes to what is under the bar)
         if (!fightGate.takesTouch()) return false
+        // feat/radial-castbar: dropped for a radial, or still on its way back up from under the page after one ([takesTouch])
+        if (!takesTouch) return false
         val w = width.toFloat()
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
