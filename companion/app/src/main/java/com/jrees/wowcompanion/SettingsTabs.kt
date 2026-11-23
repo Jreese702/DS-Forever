@@ -32,7 +32,10 @@ object SettingsTabs {
      *  heading: nothing to fold, no heading stop, always open (Add-ons' Import button: the user, 2026-11-16, "Import addons should be a
      *  single button at the top of the list"); the first group that opens is then the first one WITH a heading */
     enum class Group(val tab: Tab, val heading: String, val headless: Boolean = false, val foldsAlone: Boolean = false) {
-        LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"), HELP(Tab.GENERAL, "Help"),
+        LOOK(Tab.GENERAL, "Look"), ACCOUNT(Tab.GENERAL, "Account"),
+        // 2026-11-23 (the user's pick "Both (Recommended)": an opt-in test driver): one row, shown only where a test driver applies
+        GRAPHICS(Tab.GENERAL, "Graphics"),
+        HELP(Tab.GENERAL, "Help"),
         // the user's pick, 2026-11-19 ("reset to defaults buttons, split into four"): a FOLDING group on a tab that does not fold, just
         // above Support the Project; it shows folded (four destructive buttons stay out of the way until asked for)
         RESET(Tab.GENERAL, "Reset", foldsAlone = true),
@@ -88,6 +91,9 @@ object SettingsTabs {
         // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start; the same "Restart the game"
         // row under Windows ID while the running game signed in the other way
         BROWSER_LOGIN(Group.ACCOUNT, BrowserLogin.ROW_ID, listOf(BrowserLogin.ROW_ID)),
+        // 2026-11-23: Recommended (today's driver, the default) / the test drivers this APK carries, from the next Play (GraphicsDriver);
+        // the same "Restart the game" row under it while the running game started with the other one
+        GRAPHICS_DRIVER(Group.GRAPHICS, GraphicsDriver.ROW_ID, listOf(GraphicsDriver.ROW_ID)),
         HELP(Group.HELP, "Help", listOf("Problem report", "Reload game UI")),
         COMPANION(Group.HELP, "Companion", listOf("Status"), Drawer.GAME_UI),
         // the user, 2026-11-19 ("add a link to my Kofi to the bottom of the General tab. just a simple button at the bottom that says
@@ -214,6 +220,8 @@ object SettingsTabs {
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */
     fun shown(b: Block): Boolean = when {
         b == Block.ADDON_VOICE -> VoiceModels.offered()
+        // only in the launcher, on a GPU profile that takes test drivers, with one in this APK
+        b == Block.GRAPHICS_DRIVER -> GraphicsDriver.rowShown()
         !Settings.ROUTE_MODES_ON -> b != Block.ADDON_POLESTAR && b != Block.ADDON_QUESTTRAIL
         // 2026-11-12 (the user: "remove ... quest trail from the options"): QuestTrail is never offered; a copy a player installed keeps
         // its block (its Uninstall) while it is there or on its way in

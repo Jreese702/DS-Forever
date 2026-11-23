@@ -72,6 +72,8 @@ class SettingsTabsTest {
             G.LOOK to listOf("Theme", "Language", "Voice typing", "Swap screens", "Restart DS Forever"),     // 11-16: Voice typing     // #232: Swap screens (only with a second screen)
             // the user, 2026-11-14 ("build it"): Windows ID under Game account
             G.ACCOUNT to listOf("Battle.net login", "Game account", "Windows ID", "Browser login"),
+            // the user's pick 2026-11-23 ("Both (Recommended)"): the opt-in test graphics driver, its own group under Account
+            G.GRAPHICS to listOf("Graphics driver"),
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
             // 2026-11-19: Reset to defaults, four buttons; Support the Project last, under them
             G.RESET to listOf("Reset settings", "Reset layouts", "Reset skills", "Reset everything"),
@@ -109,7 +111,7 @@ class SettingsTabsTest {
                 "Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
-        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP, G.RESET, G.SUPPORT), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
+        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.GRAPHICS, G.HELP, G.RESET, G.SUPPORT), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
             T.ADDONS to listOf(G.IMPORT, G.CARDS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
@@ -184,7 +186,9 @@ class SettingsTabsTest {
             // the user, 2026-11-19 ("reset to defaults buttons, split into four"): General > Reset
             listOf("Reset settings", "Reset layouts", "Reset skills", "Reset everything") +
             // the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): Bottom screen > Home, after the toolbar
-            listOf("Spell rank badges")
+            listOf("Spell rank badges") +
+            // the user's pick 2026-11-23 ("Both (Recommended)"): General > Graphics > Graphics driver (Recommended / the test drivers)
+            listOf("Graphics driver")
         val now = B.values().flatMap { it.rows }
         // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
         val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")

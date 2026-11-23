@@ -155,7 +155,10 @@ object StartupDiag {
 
     private fun container(ctx: Context): List<String> = listOf(
         "GPU profile: ${LauncherHooks.gpuLine.ifEmpty { "(not picked yet in this run)" }}",
-        "Launch: ${LauncherHooks.launchState.ifEmpty { "(no launch in this run)" }}",
+        // 2026-11-23 (the opt-in test driver): the choice, the driver this run's start REQUESTED and the one the game's processes LOADED
+        line { Settings.init(ctx); GraphicsDriver.reportLine(Settings.graphicsDriver, GraphicsDriver.launched, GraphicsDriver.loaded,
+            Settings.graphicsDriverRan) { stamp(it) } },
+        "Launch:${LauncherHooks.launchState.ifEmpty { "(no launch in this run)" }}",
         "Game screen up: ${LauncherHooks.gameUp()}" + (if (LauncherHooks.gameStartSec > 0) ", since ${stamp(LauncherHooks.gameStartSec * 1000)}" else ""),
         "Last clean exit: ${LauncherHooks.lastCleanExit.ifEmpty { "(none)" }}",
         // issues #132 / #42 / #57: downloading before the login screen, or a login screen that never read login.txt

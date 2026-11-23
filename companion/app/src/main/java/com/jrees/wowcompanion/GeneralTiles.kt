@@ -60,6 +60,8 @@ object GeneralTiles {
         LANGUAGE("Language"), LOGIN("Battle.net login"), GAME_ACCOUNT("Game account"), WINDOWS_ID(WindowsId.ROW_ID),
         // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start
         BROWSER_LOGIN(BrowserLogin.ROW_ID),
+        // 2026-11-23: Recommended / the test drivers this APK carries (GraphicsDriver), from the next Play
+        GRAPHICS_DRIVER(GraphicsDriver.ROW_ID),
         WINDOWS_RESTART("Restart the game"), REPORT("Problem report"), RELOAD("Reload game UI"), STATUS("Status"),
         // the user, 2026-11-19 ("reset to defaults buttons, split into four"): General > Reset, one full-width button each (ResetPlan)
         RESET_SETTINGS("Reset settings"), RESET_LAYOUTS("Reset layouts"), RESET_SKILLS("Reset skills"), RESET_ALL("Reset everything"),
@@ -68,11 +70,14 @@ object GeneralTiles {
     }
 
     /** [g]'s compact rows now: the login row only when the host has it; Restart the game only while the running game used the other ID
-     *  or signed in the other way (Browser login) */
-    fun rows(g: SettingsTabs.Group, loginRow: Boolean, winIdRestart: Boolean): List<Row> = when (g) {
+     *  or signed in the other way (Browser login), and under Graphics driver while it started with the other driver ([driverRestart]);
+     *  Graphics driver only where a test driver applies ([GraphicsDriver.rowShown]) */
+    fun rows(g: SettingsTabs.Group, loginRow: Boolean, winIdRestart: Boolean, driverRestart: Boolean = false,
+             driverRow: Boolean = GraphicsDriver.rowShown()): List<Row> = when (g) {
         SettingsTabs.Group.LOOK -> listOf(Row.LANGUAGE)
         SettingsTabs.Group.ACCOUNT -> listOfNotNull(if (loginRow) Row.LOGIN else null, Row.GAME_ACCOUNT, Row.WINDOWS_ID,
             Row.BROWSER_LOGIN, if (winIdRestart) Row.WINDOWS_RESTART else null)
+        SettingsTabs.Group.GRAPHICS -> if (!driverRow) emptyList() else listOfNotNull(Row.GRAPHICS_DRIVER, if (driverRestart) Row.WINDOWS_RESTART else null)
         SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS)
         SettingsTabs.Group.RESET -> listOf(Row.RESET_SETTINGS, Row.RESET_LAYOUTS, Row.RESET_SKILLS, Row.RESET_ALL)
         SettingsTabs.Group.SUPPORT -> listOf(Row.SUPPORT)
@@ -239,6 +244,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         ReportFlow.onChange { postInvalidate() }
         WindowsId.onChange { post { relayout() } }
         BrowserLogin.onChange { post { relayout() } }
+        GraphicsDriver.onChange { post { relayout() } }
         if (group == SettingsTabs.Group.HELP) StatusLine.onChange = { post { invalidate() } }
     }
 
@@ -264,7 +270,9 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
     // ---------------------------------------------------------------- the model now
 
     private fun slots(): List<GeneralTiles.Slot> = if (group == SettingsTabs.Group.LOOK) GeneralTiles.slots(ScreenSwap.offered) else emptyList()
-    private fun rows(): List<GeneralTiles.Row> = GeneralTiles.rows(group, host.loginRow, winIdRestart())
+    private fun rows(): List<GeneralTiles.Row> = GeneralTiles.rows(group, host.loginRow, winIdRestart(), driverRestart())
+    private fun driverRestart(): Boolean =
+        GraphicsDriver.showRestart(host.gameRunning(), SetupBridge.restarting, GraphicsDriver.launched?.choice, Settings.graphicsDriver)
 
     private fun winIdRestart(): Boolean = WindowsId.showRestart(host.gameRunning(), SetupBridge.restarting, WindowsId.launched, Settings.windowsId) ||
         BrowserLogin.showRestart(host.gameRunning(), SetupBridge.restarting, BrowserLogin.launched, Settings.browserLogin)
@@ -372,6 +380,12 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                     out += Control(r, b, { Settings.windowsId = WindowsId.VALUES[k] }) }
                 GeneralTiles.Row.BROWSER_LOGIN -> segs(room, BrowserLogin.SEGMENTS).forEachIndexed { k, b ->
                     out += Control(r, b, { Settings.browserLogin = k == 1 }) }
+                GeneralTiles.Row.GRAPHICS_DRIVER -> GraphicsDriver.offered().let { list ->
+                    segs(room, list.map { it.label }).forEachIndexed { k, b ->
+                        out += Control(r, b, {
+                            Settings.graphicsDriver = list[k]
+                            DiagLog.event("app", "Graphics driver set ${list[k].id} (from the next Play)")
+                        }) } }
                 GeneralTiles.Row.WINDOWS_RESTART -> out += Control(r, GeneralTiles.button(room).rect(), { host.onRestart() })
                 GeneralTiles.Row.REPORT -> out += Control(r, GeneralTiles.button(room).rect(), { reportPress() })
                 GeneralTiles.Row.RELOAD -> out += Control(r, GeneralTiles.button(room).rect(), { reloadPress() }, reload = true)
@@ -604,6 +618,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             GeneralTiles.Row.WINDOWS_ID -> seg(c, cs, WindowsId.SEGMENTS, WindowsId.VALUES.indexOf(Settings.windowsId))
             GeneralTiles.Row.LOGIN -> UiKit.button(c, cs[0], if (host.loginSaved()) "Change" else "Save", UiKit.Button.UP)
             GeneralTiles.Row.BROWSER_LOGIN -> seg(c, cs, BrowserLogin.SEGMENTS, if (Settings.browserLogin) 1 else 0)
+            GeneralTiles.Row.GRAPHICS_DRIVER -> GraphicsDriver.offered().let { list ->
+                seg(c, cs, list.map { it.label }, GraphicsDriver.segment(Settings.graphicsDriver, list)) }
             GeneralTiles.Row.WINDOWS_RESTART -> UiKit.button(c, cs[0], "Restart", UiKit.Button.UP)
             GeneralTiles.Row.REPORT -> {
                 val rec = DiagLog.recording()

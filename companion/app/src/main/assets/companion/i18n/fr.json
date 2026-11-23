@@ -1,5 +1,9 @@
 {
 "plain": {
+"Graphics": "Graphismes",
+"Graphics driver": "Pilote graphique",
+"Test: Mesa 26.3.1": "Test : Mesa 26.3.1",
+"Installing the test graphics driver...": "Installation du pilote graphique de test...",
 "Ready. Close other apps for smoother play": "Prêt. Fermez les autres applis pour un jeu plus fluide",
 "In fights": "En combat",
 "Combat bar": "Barre de combat",
