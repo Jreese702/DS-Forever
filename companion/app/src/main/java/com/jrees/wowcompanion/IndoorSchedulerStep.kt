@@ -60,11 +60,12 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         val n = if (s.total > 0) "${s.ready}/${s.total}" else ""
         val ready = if (n.isEmpty()) "" else "$n ready"
         val text = when (s.phase) {
-            IndoorScheduler.Phase.CATALOGUE -> "Listing buildings"
+            // 1525: after a game update, what the carry-over kept ("Updated for the new game build: 1,600 kept, 253 to rebuild")
+            IndoorScheduler.Phase.CATALOGUE -> carriedLine(s) ?: "Listing buildings"
             // (the settled ones are no retry: "can't be mapped" once finished)
             IndoorScheduler.Phase.BAKING -> (if (n.isEmpty()) "Building" else "Building $n") +
                 (s.deferred - s.rejected).let { if (it > 0) " - $it to retry" else "" }
-            IndoorScheduler.Phase.PAUSED -> listOf(ready, cap(s.note.ifEmpty { "paused" })).filter { it.isNotEmpty() }.joinToString(" - ")
+            IndoorScheduler.Phase.PAUSED -> carriedLine(s) ?: listOf(ready, cap(s.note.ifEmpty { "paused" })).filter { it.isNotEmpty() }.joinToString(" - ")
             // D1 (the user's pick, 2026-11-23): "Finished: 1,632 maps, 221 places can't be mapped"
             // the user's "Build last, leave out of count" (2026-11-23): the dungeons and raids go on under the finished row
             IndoorScheduler.Phase.DONE -> finished(s.ready, s.rejected) + if (s.dungeons > 0) DUNGEONS_BUILDING else ""
@@ -75,6 +76,21 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     }
 
     private fun cap(t: String) = t.replaceFirstChar { it.uppercaseChar() }
+
+    /**
+     * 1525 (the user's pick, 2026-11-24, "Reuse what didn't change"): the row after a game update's carry-over, terse: what it kept and
+     * what is left to build now (the count goes down as the bake builds the rest); null without a carry-over for this build. es / fr:
+     * the i18n templates
+     */
+    internal fun carriedLine(s: IndoorScheduler.Status): String? {
+        if (s.keptFor.isEmpty() || s.kept < 0) return null
+        return carried(s.kept, (s.total - s.ready - s.rejected).coerceAtLeast(0))
+    }
+
+    /** "Updated for the new game build: 1,600 kept, 253 to rebuild" (nothing left: the first half alone) */
+    internal fun carried(kept: Int, rebuild: Int): String =
+        "$UPDATED${count(kept)} kept" + if (rebuild > 0) ", ${count(rebuild)} to rebuild" else ""
+    const val UPDATED = "Updated for the new game build: "
 
     /** the finished row's terse tail while the dungeons and raids still build (es / fr: the i18n templates) */
     const val DUNGEONS_BUILDING = " + dungeons building"
@@ -97,7 +113,25 @@ object IndoorSchedulerStep : ArtHarvest.Step {
      */
     internal fun waitStatus(s: IndoorScheduler.Status?, why: String, key: String?): IndoorScheduler.Status {
         if (s != null && key != null && s.finishedFor.isNotEmpty() && s.finishedFor == key) return finishedStatus(s) ?: s
-        return IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, why, rejected = s?.rejected ?: 0)
+        // 1525: the carry-over's line stays while the game build is the one it was for ([key]: "<game build>|<builder>")
+        val keep = s != null && key != null && s.keptFor.isNotEmpty() && s.kept >= 0 && key.startsWith(s.keptFor + "|")
+        return IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, why, rejected = s?.rejected ?: 0,
+            kept = if (keep) s!!.kept else -1, keptFor = if (keep) s!!.keptFor else "")
+    }
+
+    /**
+     * the status the waits and failures start from (on the builder's thread): [status], or - when it has no count (1524's device read:
+     * status.json PAUSED 0/0 after the game update, written by an older version and kept by every wait since) - the count of the
+     * buildings on disk (IndoorScheduler.countsOnDisk: the cached listing and the receipts)
+     */
+    private fun countedStatus(ctx: Context): IndoorScheduler.Status? {
+        val s = status(ctx)
+        if (s != null && s.total > 0) return s
+        val c = runCatching {
+            val build = GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second ?: return s
+            IndoorScheduler.countsOnDisk(ArtHarvest.root(ctx), dataDir(ctx), build)
+        }.getOrNull() ?: return s
+        return (s ?: IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, 0, 0)).copy(ready = c.ready, total = c.total)
     }
 
     /** a failure before or around a run ([note]): a row finished for this build and builder stays finished; else the count with it */
@@ -131,12 +165,17 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         IndoorScheduler.Status.of(JSONObject(File(dataDir(ctx), IndoorScheduler.STATUS_FILE).readText()))
     }.getOrNull()
 
+    /** 1525: the carry-over (the art run's thread) and the builder's thread both write status.json: one at a time */
+    private val statusLock = Any()
+
     private fun publishStatus(ctx: Context, s: IndoorScheduler.Status) {
         if (status?.phase != s.phase || status?.note != s.note) DiagLog.event("interiors", "${s.phase} ${s.ready}/${s.total} ${s.note}".trim())
-        status = s
-        runCatching {
-            val f = File(dataDir(ctx), IndoorScheduler.STATUS_FILE); val tmp = File(f.path + ".part")
-            tmp.writeText(s.toJson().toString()); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+        synchronized(statusLock) {
+            status = s
+            runCatching {
+                val f = File(dataDir(ctx), IndoorScheduler.STATUS_FILE); val tmp = File(f.path + ".part")
+                tmp.writeText(s.toJson().toString()); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+            }
         }
         for (l in listeners) runCatching { l() }
         // issue 568: the quiet service follows the builder (on while it has work after a game, off for a game, Off, the end)
@@ -337,7 +376,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                 said = why
                 // fix 2 (2026-11-23): the count from disk when this process has not run the step yet (it published 0/0 at every start)
                 // 2026-11-23: finished for this game build and builder (the dungeons and raids still to build): the row stays finished
-                val s = status(ctx)
+                val s = countedStatus(ctx)
                 val w = waitStatus(s, why, finishKey(ctx))
                 if (w != s) publishStatus(ctx, w) else if (status == null) status = w
                 Log.i(TAG, "interiors: waiting ($why), the game files not open")
@@ -351,7 +390,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         try {
             val game = GameFiles.open(ctx) ?: run {
                 // fix 2: a failure keeps the count on the row (never 0/0)
-                publishStatus(ctx, failedStatus(status(ctx), GameFiles.lastWhy ?: "the game files could not be read", finishKey(ctx)))
+                publishStatus(ctx, failedStatus(countedStatus(ctx), GameFiles.lastWhy ?: "the game files could not be read", finishKey(ctx)))
                 return null
             }
             return game.use { g ->
@@ -363,9 +402,11 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                     // version line and the library's own bytes ([builderKey]; it was the constant "gen", so a new generator never re-armed
                     // them), not the APK: a new APK with the same library keeps them
                     val app = builderKey(ctx)
+                    // 1525: the listing's memory across game updates (an unchanged file is neither read nor parsed again)
                     val scheduler = IndoorScheduler(IndoorBakeStore(root), root, g.buildKey, gen, signals, dataDir(ctx),
-                        onStatus = { publishStatus(ctx, it) }, log = { Log.i(TAG, it) }, app = app)
-                    val outcome = scheduler.run()
+                        onStatus = { publishStatus(ctx, it) }, log = { Log.i(TAG, it) }, app = app,
+                        memo = IndoorCatalogueMemo.forBuilder(dataDir(ctx), app, gen.algorithm))
+                    val outcome = try { inRun = true; scheduler.run() } finally { inRun = false }
                     if (!Settings.indoorBuild) offInSettings(ctx)
                     Log.i(TAG, "interiors $outcome; ${scheduler.publishes} publications, max ${scheduler.maxPublishMs} ms; wake lock taken " +
                         "${scheduler.wakeAcquires}x, let go ${scheduler.wakeReleases}x")
@@ -379,10 +420,68 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             // optional: logged and shown on its own row, never in the harvest's state. Throwable, not Exception: an Error
             // (out of memory in a big building) escaping this thread would kill the whole app (Track D's finding)
             Log.w(TAG, "interiors failed", e)
-            publishStatus(ctx, failedStatus(status(ctx), "failed: ${e.message ?: e.javaClass.simpleName}; retried next start",
+            publishStatus(ctx, failedStatus(runCatching { countedStatus(ctx) }.getOrNull(), "failed: ${e.message ?: e.javaClass.simpleName}; retried next start",
                 runCatching { finishKey(ctx) }.getOrNull()))
             return null
         }
+    }
+
+    /** 1525: the builder's own run has the game files open now (the carry-over then leaves the listing and the publication to it) */
+    @Volatile private var inRun = false
+
+    // ------------------------------------------------------------------ 1525: the carry-over after a game update
+
+    /**
+     * THE CARRY-OVER (1525; the user's pick, 2026-11-24: "Reuse what didn't change": "Right after an update, check each building's files.
+     * Ones that didn't change are carried over straight away, and only changed buildings get rebuilt. Most maps show again within
+     * minutes."). Run by [IndoorCarryStep] on the art run's own thread, with the game files the art run already has open (no second
+     * open: ~500 MB), right after a game update or at the next start - never beside the game (the art run's own pause: [job]'s
+     * checkpoint, at every one of the listing's yield points). [IndoorScheduler.carryOver] lists the new build's buildings (with the
+     * listing's memory: content keys for every unchanged file, no reads) and publishes every unchanged one under the new build at once.
+     * Nothing is built here: the bake builds the changed ones as before (near you first, dungeons last). True = done (or nothing to do);
+     * false = it failed and is tried again at the art run's next pass.
+     */
+    internal fun carryOver(job: ArtHarvest.Job): Boolean {
+        val ctx = job.ctx
+        Settings.init(ctx)
+        if (!Settings.indoorBuild) { Log.i(TAG, "carry-over: off in Settings"); return true }
+        val factory = factory ?: run { Log.i(TAG, "carry-over: no builder in this build"); return true }
+        if (inRun) { Log.i(TAG, "carry-over: the builder is running, it lists and publishes this build itself"); return true }
+        val root = job.out
+        val dir = dataDir(ctx)
+        val build = job.game.buildKey
+        if (!IndoorScheduler.carryDue(root, dir, build)) { Log.i(TAG, "carry-over: nothing to carry for $build"); return true }
+        val app = builderKey(ctx)
+        return try {
+            val r = factory.open(job.game).use { gen ->
+                IndoorScheduler(IndoorBakeStore(root), root, build, gen, CarrySignals(), dir, onStatus = { publishStatus(ctx, it) },
+                    log = { Log.i(TAG, it) }, app = app, memo = IndoorCatalogueMemo.forBuilder(dir, app, gen.algorithm),
+                    checkpoint = { job.checkpoint() }).carryOver()
+            }
+            // nothing left at all (the dungeons too): stamped finished for this build and builder, no bake run needed
+            if (r != null && r.published && r.finished && r.dungeons == 0) ArtHarvest.markDetachedDone(ctx, this, build, app)
+            r == null || r.published
+        } catch (e: InterruptedException) {
+            throw e                                                // the art run's own stops (the game, the update, a required step)
+        } catch (e: IndoorGenerator.Stopped) {
+            // Settings' Off while it listed: the row says so; the builder lists and publishes once it is on again
+            offInSettings(ctx); true
+        } catch (e: Throwable) {
+            Log.w(TAG, "carry-over failed", e)
+            publishStatus(ctx, failedStatus(runCatching { countedStatus(ctx) }.getOrNull(), "failed: ${e.message ?: e.javaClass.simpleName}",
+                runCatching { finishKey(ctx) }.getOrNull()))
+            false
+        }
+    }
+
+    /** the carry-over's signals: it waits for nothing itself (the art run pauses for the game), and ends for Settings' Off */
+    private class CarrySignals : IndoorScheduler.Signals {
+        override fun position(): IndoorBakeQueue.Position? = live
+        override fun busy(): Boolean = false
+        override fun hot(): Boolean = false
+        override fun stop(): Boolean = !Settings.indoorBuild
+        override fun now(): Long = System.currentTimeMillis()
+        override fun sleep(ms: Long) = Thread.sleep(ms)
     }
 
     /** Settings' switch is Off: nothing builds; the row says so and keeps the count of what is ready */
@@ -496,6 +595,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             return hotValue
         }
 
+        /** 1525: the game folder's build now (.build.info, a small file: asked once a building and at each publication, never cached) */
+        override fun activeBuild(): String? =
+            runCatching { GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second?.takeIf { it.isNotEmpty() } }.getOrNull()
+
         override fun memory(): Pair<Long, Long> {
             val rt = Runtime.getRuntime()
             return (rt.totalMemory() - rt.freeMemory()) to android.os.Debug.getNativeHeapAllocatedSize()
@@ -522,4 +625,26 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         override fun now(): Long = System.currentTimeMillis()
         override fun sleep(ms: Long) = Thread.sleep(ms)
     }
+}
+
+/**
+ * 1525: THE CARRY-OVER AS AN ART STEP (the user's pick, 2026-11-24: "Reuse what didn't change"). A background step of the art run, right
+ * after the maps (ArtHarvest.carryAfterMaps): a game update makes every step due, so it runs right after the update (or at the next start,
+ * or when the game has closed - the art run's own rules), with the game files the art run has open. [IndoorSchedulerStep.carryOver] does
+ * the work. Its stamp's inputs hold the game build, so the art run's "unchanged files" shortcut never re-stamps it for a new build; a
+ * failed carry-over is stamped with "failed" (stale: tried again at the next pass) and never fails the art run.
+ */
+object IndoorCarryStep : ArtHarvest.Step {
+    override val id = "interiorscarry"
+    override val version = 1
+    override val beforePlay = false
+    override val weight = 1
+    override fun inputs(ctx: Context, build: String): String = inputKey(build)
+    override fun run(job: ArtHarvest.Job) {
+        val ok = IndoorSchedulerStep.carryOver(job)
+        job.inputKey = if (ok) inputKey(job.game.buildKey) else inputKey(job.game.buildKey) + "|failed"
+    }
+
+    /** the stamp's inputs for [build] */
+    internal fun inputKey(build: String) = "carry|$build"
 }

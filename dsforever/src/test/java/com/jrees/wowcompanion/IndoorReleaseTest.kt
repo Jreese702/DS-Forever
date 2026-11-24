@@ -11,10 +11,14 @@ import java.nio.file.Files
  * A pause longer than RELEASE_AFTER_MS now ends the run with RELEASED (the step closes the files and waits without them).
  */
 class IndoorReleaseTest {
+    /** one building (1525: a listing that finds none is a failure - it would hide every building of the game build) */
     private class Gen : IndoorGenerator {
         override val algorithm = 1
-        override fun catalogue(yield: IndoorGenerator.Yield): List<IndoorBakeStore.Work> { yield.point(); return emptyList() }
-        override fun produce(work: IndoorBakeStore.Work, out: File, yield: IndoorGenerator.Yield) {}
+        override fun catalogue(yield: IndoorGenerator.Yield): List<IndoorBakeStore.Work> {
+            yield.point()
+            return listOf(IndoorBakeStore.Work("wmo_a", "%064x".format(1), 1, listOf(IndoorBakeStore.Location(0, 0.0, 10.0, 0.0, 10.0))))
+        }
+        override fun produce(work: IndoorBakeStore.Work, out: File, yield: IndoorGenerator.Yield) { IndoorFinishTest.building(out, work.key) }
         override fun close() {}
     }
 
@@ -40,7 +44,7 @@ class IndoorReleaseTest {
 
     @Test fun noPauseRunsToTheEnd() {
         val root = Files.createTempDirectory("indoor2").toFile()
-        val s = IndoorScheduler(IndoorBakeStore(root), root, "build", Gen(), Sig(busyNow = false), File(root, "data"))
+        val s = IndoorScheduler(IndoorBakeStore(root), root, "0123456789abcdef0123456789abcdef", Gen(), Sig(busyNow = false), File(root, "data"))
         assertEquals(IndoorScheduler.Outcome.COMPLETE, s.run())
     }
 }

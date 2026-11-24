@@ -119,7 +119,21 @@ object ArtHarvest {
         // while the game runs (PlayGate, every Thor since 1.0.25), the maps waited for all ~30,000 icons (31 packs) in the few
         // game-closed minutes, and every report showed "allicons running, worldmap / minimap never stamped" hours after the install.
         // The maps go first now ([mapsFirst]); an icon not packed yet is still asked for on its own (IconRequirements)
-        mapsFirst(listOf<Step>(KitSteps.Kit, KitSteps.Cast, KitSteps.Icons, AllIconsStep) + MapHarvestSteps.STEPS + IndoorSchedulerStep) { it.id }
+        // 1525: the indoor maps' carry-over after a game update right after the maps ([carryAfterMaps])
+        carryAfterMaps(mapsFirst(listOf<Step>(KitSteps.Kit, KitSteps.Cast, KitSteps.Icons, AllIconsStep) + MapHarvestSteps.STEPS + IndoorSchedulerStep) { it.id },
+            IndoorCarryStep) { it.id }
+    }
+
+    /**
+     * 1525 (the user's pick, 2026-11-24, "Reuse what didn't change"): [carry] (the indoor maps' carry-over, IndoorCarryStep) right after
+     * the maps ([MAPS_FIRST]): a game update hides every indoor map until it has run, and it only lists and publishes (no building), so
+     * it goes before the icon packs and the rest. Pure, for the tests: after the last of the maps present, else before the all-icons
+     * step, else last.
+     */
+    internal fun <T> carryAfterMaps(steps: List<T>, carry: T, id: (T) -> String): List<T> {
+        val rest = steps.filter { id(it) != id(carry) }
+        val at = rest.indexOfLast { id(it) in MAPS_FIRST }.let { if (it >= 0) it + 1 else rest.indexOfFirst { s -> id(s) == "allicons" } }
+        return if (at < 0) rest + carry else rest.subList(0, at) + carry + rest.subList(at, rest.size)
     }
 
     /** the background steps the player SEES missing, in this order: the Map room's world map, then Home's map (nearest zone first) */

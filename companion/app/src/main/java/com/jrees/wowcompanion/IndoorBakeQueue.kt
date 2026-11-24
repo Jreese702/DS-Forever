@@ -13,7 +13,9 @@ internal class IndoorBakeQueue(
      * the dungeons and raids (signatures; the user's pick, 2026-11-23: "Build last, leave out of count"): built after every other
      * building, near-me-first or not
      */
-    private val last: Set<String> = emptySet()
+    private val last: Set<String> = emptySet(),
+    /** 1525: asked before each building's check below (the scheduler's yield point: every receipt is hashed, seconds on a Thor) */
+    onEach: () -> Unit = {}
 ) {
     data class Position(val continent: Int, val x: Double, val y: Double) {
         init { require(continent >= 0 && x.isFinite() && y.isFinite()) }
@@ -23,7 +25,7 @@ internal class IndoorBakeQueue(
 
     init {
         require(catalogue.map { it.key }.distinct().size == catalogue.size)
-        for (work in catalogue) if (store.completed(work) != null) finished.add(work.signature)
+        for (work in catalogue) { onEach(); if (store.completed(work) != null) finished.add(work.signature) }
     }
 
     val total: Int get() = catalogue.size
@@ -85,7 +87,8 @@ internal class IndoorBakeQueue(
         return work
     }
 
-    fun publishCompleted(): Int = store.publish(build, catalogue)
+    /** [mayPublish]: asked under the store's lock (false: nothing published, -1) */
+    fun publishCompleted(mayPublish: () -> Boolean = { true }): Int = store.publish(build, catalogue, mayPublish)
 
     /** squared yards from [position] to [work]'s nearest footprint on the same continent (0 inside; infinite elsewhere) */
     fun distance(work: IndoorBakeStore.Work, position: Position?): Double {

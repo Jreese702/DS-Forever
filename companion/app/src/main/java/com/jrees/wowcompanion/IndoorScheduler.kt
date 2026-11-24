@@ -24,7 +24,11 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
  *   ([IndoorGenerator.instanceMaps]) is built after every other one and left out of the numbers: the run is FINISHED ([Phase.DONE],
  *   [Status.finishedFor]) once every other building is settled, and the dungeons go on building under that finished row;
  * - publish: batched (every publish rehashes the whole catalogue), but at once for the building the player is near;
- * - storage: [IndoorSchedulerCleanup] after the first and the last publication.
+ * - storage: [IndoorSchedulerCleanup] after the first and the last publication;
+ * - a game update (1525, the user's pick 2026-11-24: "Reuse what didn't change"): [carryOver], run by the art harvest right after the
+ *   update ([IndoorCarryStep], the game files it already has open), lists the buildings of the new build (cheaply: [IndoorCatalogueMemo])
+ *   and publishes every unchanged one under the new build at once; the bake then builds only the changed and the new ones. A building's
+ *   signature holds no game build, so its receipt is the same; a rule turn-down of unchanged inputs stays settled ([IndoorDeferrals]).
  */
 internal class IndoorScheduler(
     private val store: IndoorBakeStore,
@@ -37,6 +41,10 @@ internal class IndoorScheduler(
     private val log: (String) -> Unit = {},
     /** the app install a deferral is good for (version + install time): a new APK tries deferred buildings once more */
     private val app: String = "",
+    /** 1525: the listing's memory across game updates (null = none: every file read and parsed again) */
+    private val memo: IndoorCatalogueMemo? = null,
+    /** 1525: asked at every yield point before anything else (the carry-over's: the art run's own stop, which throws) */
+    private val checkpoint: () -> Unit = {},
 ) {
     interface Signals {
         /** the player's latest position, or the last saved one; null = unknown (key order) */
@@ -62,6 +70,11 @@ internal class IndoorScheduler(
         fun memory(): Pair<Long, Long>? = null
         /** D4: the CPU's wake lock, held only while a building is being made (null = none: the tests, the PC) */
         fun wakeLock(): WakeLock? = null
+        /**
+         * 1525: the game folder's active build now (cheap; null = not known): a run whose build is no longer the game's publishes nothing
+         * more (a game update meanwhile: its carry-over publishes the new build, never overwritten by the old one) and stops
+         */
+        fun activeBuild(): String? = null
     }
 
     /**
@@ -87,18 +100,33 @@ internal class IndoorScheduler(
                       /** the dungeons and raids still to build (left out of [ready] / [total]: the user's pick, 2026-11-23) */
                       val dungeons: Int = 0,
                       /** "<game build>|<builder>" the finished row holds for ("" = not finished): kept by the waits, the failures, Off */
-                      val finishedFor: String = "") {
+                      val finishedFor: String = "",
+                      /** 1525: the buildings the carry-over kept for the new game build [keptFor] (-1 / "" = none: the row's "Updated ...") */
+                      val kept: Int = -1,
+                      val keptFor: String = "") {
         fun toJson(): JSONObject = JSONObject().put("phase", phase.name).put("ready", ready).put("total", total)
             .put("deferred", deferred).put("note", note).put("now", now).put("list", org.json.JSONArray(list)).put("rejected", rejected)
-            .put("dungeons", dungeons).put("finished_for", finishedFor)
+            .put("dungeons", dungeons).put("finished_for", finishedFor).put("kept", kept).put("kept_for", keptFor)
+        /** the same without the carry-over's line (another game build's) */
+        fun withoutCarry(): Status = if (keptFor.isEmpty() && kept < 0) this else copy(kept = -1, keptFor = "")
         companion object {
             fun of(o: JSONObject): Status? = runCatching {
                 val a = o.optJSONArray("list")
                 Status(Phase.valueOf(o.optString("phase")), o.optInt("ready"), o.optInt("total"), o.optInt("deferred"), o.optString("note"),
                     o.optString("now"), if (a == null) emptyList() else List(a.length()) { a.optString(it) }, o.optInt("rejected"),
-                    o.optInt("dungeons"), o.optString("finished_for"))
+                    o.optInt("dungeons"), o.optString("finished_for"), o.optInt("kept", -1), o.optString("kept_for"))
             }.getOrNull()
         }
+    }
+
+    /**
+     * 1525: what [carryOver] did for the new game build. [kept]: the counted buildings shown under it at once; [rebuild]: the counted
+     * ones to build (changed, new, or a failure tried again); [rejected]: the builder's turn-downs that stay settled; [dungeons]: the
+     * dungeons and raids still to build (out of the count); [published]: the publication went through (false: it failed, e.g. a full
+     * disk - the old one stays readable and the bake publishes later)
+     */
+    data class Carried(val kept: Int, val rebuild: Int, val total: Int, val rejected: Int, val dungeons: Int, val published: Boolean) {
+        val finished: Boolean get() = rebuild == 0
     }
 
     /** measured each run for the storage-policy report (the publish cost Codex flagged) */
@@ -111,7 +139,12 @@ internal class IndoorScheduler(
     private val runId = "r" + java.util.UUID.randomUUID().toString().take(8)
     /** the game build and builder a finished row holds for ([Status.finishedFor]) */
     private val finishKey = finishKey(build, app)
-    private fun emit(s: Status) { status = s; runCatching { onStatus(s) } }
+    /** 1525: the carry-over's count for this very build ([Status.kept]): every status of this run carries it */
+    private var carried: Int = -1
+    private fun emit(s: Status) {
+        val t = if (carried >= 0 && s.keptFor.isEmpty()) s.copy(kept = carried, keptFor = build) else s
+        status = t; runCatching { onStatus(t) }
+    }
 
     /** blocks while busy or hot; throws [IndoorGenerator.Stopped] on stop */
     private val yieldPoint = IndoorGenerator.Yield { gate() }
@@ -151,6 +184,7 @@ internal class IndoorScheduler(
      * the next point, mid-building; the building waits with its work so far and goes on when the player stands still again.
      */
     private fun gate() {
+        checkpoint()
         val t = signals.now()
         if (t - memoryAt >= MEMORY_EVERY_MS) {
             memoryAt = t
@@ -188,6 +222,7 @@ internal class IndoorScheduler(
 
     fun run(): Outcome {
         dataDir.mkdirs()
+        runCatching { generator.memory(memo) }
         var outcome: Outcome? = null
         try {
             return runInner().also { outcome = it }
@@ -214,7 +249,9 @@ internal class IndoorScheduler(
         try {
             // review of 2026-11-23 (fix 2's other half): the listing starts from the last run's count (status.json), so a pause or a
             // kill while it lists (minutes after a game update) never leaves 0/0 on disk, the row or the problem report
-            val last = runCatching { Status.of(JSONObject(File(dataDir, STATUS_FILE).readText())) }.getOrNull()
+            val last = lastStatus()
+            // 1525: the carry-over's count for this build stays on the row while it builds the rest (another build's goes)
+            if (last != null && last.keptFor == build && last.kept >= 0) carried = last.kept
             // a row finished for this very game build and builder stays finished while the dungeons go on (another one lists again)
             if (last != null && last.phase == Phase.DONE && last.finishedFor == finishKey) emit(last.copy(now = ""))
             else emit(Status(Phase.CATALOGUE, last?.ready ?: 0, last?.total ?: 0, last?.deferred ?: 0, rejected = last?.rejected ?: 0))
@@ -247,7 +284,7 @@ internal class IndoorScheduler(
             // D1: this run's outcomes - settled (the builder's rule, or the last of 3 failed runs) and the failures that may pass
             val settledNow = HashSet<String>()
             val failedNow = HashSet<String>()
-            val queue = IndoorBakeQueue(store, build, catalogue, skip, last = dungeons)
+            val queue = IndoorBakeQueue(store, build, catalogue, skip, last = dungeons, onEach = { gate() })
             fun settled(w: IndoorBakeStore.Work) = w.signature in skip || w.signature in settledNow
             val total = catalogue.count(::counted)
             fun ready() = catalogue.count { counted(it) && queue.isReady(it) }
@@ -271,6 +308,8 @@ internal class IndoorScheduler(
             try {
                 while (true) {
                     gate()
+                    // 1525: the game moved to another build meanwhile: this run's buildings are the old build's; its carry-over takes over
+                    if (buildChanged()) { log("the game is now another build: this run stops"); throw IndoorGenerator.Stopped() }
                     val here = signals.position()
                     val pick = queue.next(here) ?: break
                     // Settings' "building now": how far the nearest-first pick is from the player
@@ -349,7 +388,8 @@ internal class IndoorScheduler(
     private fun publish(queue: IndoorBakeQueue, catalogue: List<IndoorBakeStore.Work>) {
         val t0 = signals.now()
         try {
-            queue.publishCompleted()
+            // 1525: never over a newer game build's publication (decided under the store's lock, with the publication itself)
+            if (queue.publishCompleted { !buildChanged() } < 0) { log("publish skipped: the game is now another build"); return }
             // fix 5 (2026-11-23): the game's indoor art index (the wmominimap step) is collected again when this set of roots grows
             runCatching { writeRoots(File(dataDir, ROOTS_FILE), store.lastPublished) }
             lastPublishMs = signals.now() - t0
@@ -368,15 +408,79 @@ internal class IndoorScheduler(
 
     var publishFailures = 0; private set
 
-    /** a failed publication's staging folder (the store writes the indexes there first); this scheduler is the only publisher */
-    private fun dropStaging() {
+    /** a failed publication's staging folder (the store writes the indexes there first); one publisher at a time (the store's lock) */
+    private fun dropStaging() = synchronized(IndoorBakeStore.PUBLISH_LOCK) {
         File(artRoot, "interiors/snapshots").listFiles()?.filter { it.name.startsWith(".pending_") }?.forEach { it.deleteRecursively() }
     }
 
+    /** the sweep, under the store's lock, and never with an old game build's catalogue (1525: it would drop the new one's receipts) */
     private fun cleanup(catalogue: List<IndoorBakeStore.Work>) = runCatching {
-        val r = IndoorSchedulerCleanup.sweep(artRoot, catalogue, now = signals.now())
-        if (r.removed > 0) log("cleanup: $r")
+        synchronized(IndoorBakeStore.PUBLISH_LOCK) {
+            if (buildChanged()) return@runCatching
+            val r = IndoorSchedulerCleanup.sweep(artRoot, catalogue, now = signals.now())
+            if (r.removed > 0) log("cleanup: $r")
+        }
     }.onFailure { log("cleanup failed: ${it.message}") }
+
+    /** 1525: the game folder's build is known and is not this run's */
+    private fun buildChanged(): Boolean = runCatching { signals.activeBuild() }.getOrNull().let { it != null && it != build }
+
+    /** the last status on disk; a 0/0 one (1524's device read: written by an older version, kept by every wait) counted from disk */
+    private fun lastStatus(): Status? {
+        val last = runCatching { Status.of(JSONObject(File(dataDir, STATUS_FILE).readText())) }.getOrNull()
+        if (last != null && last.total > 0) return last
+        val c = countsOnDisk(artRoot, dataDir, build) ?: return last
+        return (last ?: Status(Phase.CATALOGUE, 0, 0)).copy(ready = c.ready, total = c.total, rejected = 0, deferred = 0)
+    }
+
+    /**
+     * 1525: THE CARRY-OVER AFTER A GAME UPDATE (the user's pick, 2026-11-24, "Reuse what didn't change"). Due ([carryDue]) when the
+     * published buildings are another build's (MapView shows none of them until a publication for the game's build exists): the
+     * buildings of this build are listed ([catalogue]: the memory makes that a matter of content keys for every unchanged file; cached,
+     * so the bake that follows does not list again), the deferrals are carried to it ([IndoorDeferrals.prune]: the builder's turn-downs
+     * of unchanged inputs stay settled), and ONE publication makes every unchanged building visible under the new build - the store's
+     * own publication (staging + atomic pointer: never a half-published generation; a failure, e.g. a full disk, leaves the old one).
+     * Nothing is built here. The status says "Updated for the new game build: N kept, M to rebuild" (FINISHED when nothing is left).
+     * Null when not due. A stop ([checkpoint], [Signals.stop]) goes to the caller: nothing of a half listing is kept but the memory.
+     */
+    fun carryOver(): Carried? {
+        dataDir.mkdirs()
+        runCatching { generator.memory(memo) }
+        if (!carryDue(artRoot, dataDir, build)) { log("carry-over: nothing to carry (published for this build, or nothing built yet)"); return null }
+        val last = lastStatus()?.withoutCarry()
+        emit(Status(Phase.CATALOGUE, last?.ready ?: 0, last?.total ?: 0, last?.deferred ?: 0, rejected = last?.rejected ?: 0))
+        gate()
+        val t0 = signals.now()
+        val listed = catalogue()
+        val works = listed.works
+        val deferrals = IndoorDeferrals(File(dataDir, "deferred.json"), build, app)
+        deferrals.prune(works)
+        val dungeons = works.filter { instanceOnly(it, listed.instances) }.mapTo(HashSet()) { it.signature }
+        fun counted(w: IndoorBakeStore.Work) = w.signature !in dungeons
+        val skip = works.filter { deferrals.skip(it) && store.completed(it) == null }.mapTo(HashSet()) { it.signature }
+        val queue = IndoorBakeQueue(store, build, works, skip, last = dungeons, onEach = { gate() })
+        cleanup(works)
+        val before = publishes
+        publish(queue, works)
+        val published = publishes > before
+        val total = works.count(::counted)
+        val kept = works.count { counted(it) && queue.isReady(it) }
+        val rejected = works.count { counted(it) && !queue.isReady(it) && it.signature in skip }
+        val rebuild = total - kept - rejected
+        val openDungeons = works.count { !counted(it) && !queue.isReady(it) && it.signature !in skip }
+        val list = deferrals.reasons().take(IndoorProgress.LIST_MAX).map { (k, why) -> IndoorProgress.deferredLine(k, why) }
+        // the row: what is visible now (a failed publication shows nothing new: no "Updated" line, the count as before)
+        if (published) carried = kept
+        emit(if (published && rebuild == 0)
+            Status(Phase.DONE, kept, total, rejected, list = list, rejected = rejected, dungeons = openDungeons, finishedFor = finishKey)
+        else Status(Phase.PAUSED, kept, total, queue.deferred(::counted), if (published) CARRIED_NOTE else PUBLISH_FAILED_NOTE,
+            list = list, rejected = rejected, dungeons = openDungeons))
+        log("carry-over for the new game build $build: $kept kept, $rebuild to rebuild, $rejected can't be mapped (unchanged), " +
+            "dungeons and raids (not counted): ${works.count { !counted(it) && queue.isReady(it) }} kept, $openDungeons to build; " +
+            "${if (published) "published" else "NOT published"} in ${signals.now() - t0} ms" +
+            (memo?.let { "; listing from memory ${it.hits}, read ${it.misses}" } ?: ""))
+        return Carried(kept, rebuild, total, rejected, openDungeons, published)
+    }
 
     /** the catalogue and its dungeon and raid maps ([IndoorGenerator.instanceMaps]; null = not known) */
     internal class Listed(val works: List<IndoorBakeStore.Work>, val instances: Set<Int>?)
@@ -393,7 +497,11 @@ internal class IndoorScheduler(
                 return Listed(cached.works, inst)
             }
         }
-        val list = generator.catalogue(yieldPoint)
+        // 1525: the memory across game updates (an unchanged file is neither read nor parsed again); what a stopped listing learned is kept
+        val list = try { generator.catalogue(yieldPoint, memo) } catch (e: Throwable) { memo?.let { runCatching { it.save(complete = false) } }; throw e }
+        // 1525: an empty listing (the game files not readable yet) is never cached nor published: it would hide every building of the build
+        if (list.isEmpty()) { memo?.let { runCatching { it.save(complete = false) } }; throw IllegalStateException(EMPTY_LISTING) }
+        memo?.let { m -> if (!m.save(complete = true)) log("the listing's memory was not saved"); m.release() }
         val inst = runCatching { generator.instanceMaps() }.getOrNull()
         writeCatalogue(file, generator.algorithm, list, inst)
         // one cached catalogue: the active build's
@@ -429,6 +537,38 @@ internal class IndoorScheduler(
 
         /** the reason a run killed inside a building leaves (IndoorDeferrals.killed): a failure that may pass */
         const val KILLED = "stopped mid-build: the app was closed or ran out of memory"
+
+        /** 1525: the carry-over's note (Settings' progress line: "1600 / 1853 ready · updated for the new game build"); es / fr plain */
+        const val CARRIED_NOTE = "updated for the new game build"
+        /** 1525: the carry-over's publication failed (a full disk): the bake publishes later */
+        const val PUBLISH_FAILED_NOTE = "publish failed: tried again later"
+
+        /** 1525: a listing that found no building at all */
+        const val EMPTY_LISTING = "no buildings listed: the game files are not readable yet"
+
+        /**
+         * 1525: a carry-over is due for [build]: buildings were published before (receipts on disk) and the publication is another
+         * build's, or this build's buildings were never listed (its catalogue not cached). Cheap: two small files and a folder listing
+         */
+        fun carryDue(artRoot: File, dataDir: File, build: String): Boolean {
+            val pointer = runCatching { JSONObject(File(artRoot, "interiors/current.json").readText()) }.getOrNull() ?: return false
+            if (pointer.optString("build") == build && File(dataDir, "catalogue-$build.json").isFile) return false
+            return File(artRoot, "interiors/receipts").listFiles()?.any { it.isFile && it.name.endsWith(".json") } == true
+        }
+
+        /** 1525: a count from disk (the cached catalogue of [build], else the newest one; its buildings with a receipt): never 0/0 */
+        internal data class Counts(val ready: Int, val total: Int)
+
+        internal fun countsOnDisk(artRoot: File, dataDir: File, build: String): Counts? = runCatching {
+            val file = File(dataDir, "catalogue-$build.json").takeIf { it.isFile }
+                ?: dataDir.listFiles()?.filter { it.isFile && it.name.startsWith("catalogue-") && it.name.endsWith(".json") }
+                    ?.maxByOrNull { it.lastModified() } ?: return null
+            val cached = readCatalogue(file) ?: return null
+            val counted = cached.works.filter { !instanceOnly(it, cached.instances) }
+            if (counted.isEmpty()) return null
+            val receipts = File(artRoot, "interiors/receipts")
+            Counts(counted.count { File(receipts, it.signature + ".json").isFile }, counted.size)
+        }.getOrNull()
 
         /** the deferral line of a failure that may pass, by its count of failed runs (the T3 parsers read "tried again next run") */
         internal fun triesText(tries: Int): String = if (tries >= IndoorDeferrals.MAX_TRIES) "can't be mapped ($tries failed runs)"

@@ -153,8 +153,17 @@ internal class IndoorBakeStore(artRoot: File) {
     @Volatile var lastPublished: List<String> = emptyList()
         private set
 
-    /** Only currently verified work is visible; unfinished/changed buildings show outdoors. */
-    @Synchronized fun publish(build: String, catalogue: List<Work>): Int {
+    /**
+     * Only currently verified work is visible; unfinished/changed buildings show outdoors. One publication at a time in the process
+     * ([PUBLISH_LOCK]: 1525's carry-over publishes from the art run's thread while the bake's own store may finish one); [mayPublish] is
+     * asked under that lock (false: nothing written, -1 - the game moved to another build meanwhile, so this one is stale)
+     */
+    fun publish(build: String, catalogue: List<Work>, mayPublish: () -> Boolean = { true }): Int = synchronized(PUBLISH_LOCK) {
+        if (!mayPublish()) return -1
+        publishLocked(build, catalogue)
+    }
+
+    @Synchronized private fun publishLocked(build: String, catalogue: List<Work>): Int {
         require(build.matches(Regex("[0-9a-f]{32}")))
         require(catalogue.map { it.key }.distinct().size == catalogue.size)
         val models = linkedMapOf<String, JSONObject>()
@@ -261,6 +270,8 @@ internal class IndoorBakeStore(artRoot: File) {
     }
 
     companion object {
+        /** every publication and every sweep of art/interiors in this process holds it (the stores are per caller; the folder is one) */
+        val PUBLISH_LOCK = Any()
         private val INDEXES = setOf("models.json", "places.json", "interiors.json")
         private const val MAX_FILE = 32L * 1024 * 1024
         private const val MAX_BUILDING = 128L * 1024 * 1024

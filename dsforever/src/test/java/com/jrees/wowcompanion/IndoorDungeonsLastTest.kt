@@ -50,10 +50,11 @@ class IndoorDungeonsLastTest {
     private val app = "gen|a1|lib:aa"
 
     /** as on the device: every status written to status.json (IndoorSchedulerStep.publishStatus), the next run starts from it */
-    private fun run(root: File, gen: IndoorGenerator, sig: Sig = Sig(), b: String = build, st: MutableList<IndoorScheduler.Status>? = null) =
+    private fun run(root: File, gen: IndoorGenerator, sig: Sig = Sig(), b: String = build, st: MutableList<IndoorScheduler.Status>? = null,
+                    builder: String = app) =
         IndoorScheduler(IndoorBakeStore(root), root, b, gen, sig, File(root, "interiors_sched"), onStatus = {
             st?.add(it); File(root, "interiors_sched/" + IndoorScheduler.STATUS_FILE).writeText(it.toJson().toString())
-        }, app = app).run()
+        }, app = builder).run()
 
     @Test fun dungeonsAreBuiltAfterEverythingElse() {
         val root = Files.createTempDirectory("dng").toFile()
@@ -145,7 +146,9 @@ class IndoorDungeonsLastTest {
         assertEquals(IndoorScheduler.Outcome.COMPLETE, run(root, Gen(rule = setOf("w_hall", "d_boss"))))
         val st = ArrayList<IndoorScheduler.Status>()
         val g = Gen(rule = setOf("w_hall", "d_boss"))
-        assertEquals(IndoorScheduler.Outcome.COMPLETE, run(root, g, b = "fedcba9876543210fedcba9876543210", st = st))
+        // a new builder with the game update (an update that leaves every building's files as they were keeps them settled: 1525,
+        // IndoorUpdateReuseTest): both rule rejections tried again, the world one first
+        assertEquals(IndoorScheduler.Outcome.COMPLETE, run(root, g, b = "fedcba9876543210fedcba9876543210", st = st, builder = "gen|a1|lib:bb"))
         assertEquals("both rule rejections tried again, the world one first", listOf("w_hall", "d_boss"), g.made)
         assertEquals("a finished row of the old build is not shown for the new one", IndoorScheduler.Phase.CATALOGUE, st.first().phase)
     }

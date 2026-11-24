@@ -21,6 +21,12 @@ import java.io.File
  * [MAX_TRIES]th failed RUN for the same identity settles it like a rule ([skip]). One failure per run counts once ([Entry.run]);
  * another identity (a game update, a new builder) starts the count over. A run killed inside a building (Android's low-memory kill, a
  * native crash) leaves its [ATTEMPT_FILE] behind: the next run counts it as that run's failure ([killed]).
+ *
+ * 1525 (the user's pick, 2026-11-24: "Reuse what didn't change"): a RULE rejection holds across a game update when the building's
+ * signature (its algorithm, key and input digest - no game build in it) and the builder are unchanged: the same inputs through the same
+ * builder are turned down the same way, so it stays settled and is re-keyed to the new build ([prune]) instead of being tried again. A
+ * new builder, or changed inputs, still tries it again; a failure that may pass (and its count of failed runs) is still tried again after
+ * a game update, as the "Give up after 3 tries" pick says.
  */
 internal class IndoorDeferrals(private val file: File, private val build: String, private val app: String,
                                private val legacyApp: String? = LEGACY_APP) {
@@ -49,11 +55,18 @@ internal class IndoorDeferrals(private val file: File, private val build: String
     /** the identity a deferral of [work] is good for */
     fun identity(work: IndoorBakeStore.Work): String = "$build|$app|${work.signature}"
 
-    /** [work] was turned down by the builder's rule, or failed on [MAX_TRIES] runs, with this very identity: settled, skip it */
+    /**
+     * [work] was turned down by the builder's rule (for this builder and these very inputs, any game build: 1525), or failed on
+     * [MAX_TRIES] runs with this very identity: settled, skip it
+     */
     fun skip(work: IndoorBakeStore.Work): Boolean {
         val e = entries[work.key] ?: return false
-        return e.identity == identity(work) && (e.rule || e.tries >= MAX_TRIES)
+        return if (e.rule) sameInputs(e.identity, app, work) else e.identity == identity(work) && e.tries >= MAX_TRIES
     }
+
+    /** [identity] ("<build>|<builder>|<signature>") is [builder]'s with [work]'s signature, whatever its game build */
+    private fun sameInputs(identity: String, builder: String, work: IndoorBakeStore.Work): Boolean =
+        identity.indexOf('|') == BUILD_LEN && identity.substring(BUILD_LEN + 1) == "$builder|${work.signature}"
 
     /** the deferred entry of [work] whatever its identity (for the log), or null */
     fun entry(work: IndoorBakeStore.Work): Entry? = entries[work.key]
@@ -116,8 +129,12 @@ internal class IndoorDeferrals(private val file: File, private val build: String
         val keys = catalogue.mapTo(HashSet()) { it.key }
         var dirty = entries.keys.retainAll(keys)
         for (work in catalogue) {
+            // 1525: a rule rejection of another game build with the same builder and inputs is this build's now (settled, [skip])
+            val r = entries[work.key]?.takeIf { it.rule && !it.legacy && it.identity != identity(work) && sameInputs(it.identity, app, work) }
+            if (r != null) { entries[work.key] = r.copy(identity = identity(work)); dirty = true; continue }
             val e = entries[work.key]?.takeIf { it.legacy } ?: continue
-            val same = legacyApp != null && e.identity == "$build|$legacyApp|${work.signature}"
+            // (1525: any game build - the same inputs; the old builder's line was "gen" whatever its library)
+            val same = legacyApp != null && sameInputs(e.identity, legacyApp, work)
             // a transient one from before starts its count of failed runs here (tries 0: its next failure is the first counted)
             entries[work.key] = e.copy(identity = if (same) identity(work) else e.identity, rule = e.rule && same, legacy = false, tries = 0)
             dirty = true
@@ -149,5 +166,7 @@ internal class IndoorDeferrals(private val file: File, private val build: String
         const val MAX_TRIES = 3
         /** the building being built now and its run (interiors_sched/attempt.json): left behind only by a kill */
         const val ATTEMPT_FILE = "attempt.json"
+        /** a game build key's length (32 hex): the first part of an identity */
+        private const val BUILD_LEN = 32
     }
 }

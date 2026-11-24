@@ -109,7 +109,7 @@ class IndoorFinishTest {
             assertFalse("$why", IndoorGenerator.isRule(why))
     }
 
-    @Test fun aNewBuilderOrAGameUpdateTriesTheRuleRejectionsAgain() {
+    @Test fun aNewBuilderTriesTheRuleRejectionsAgainAGameUpdateOnlyTheChangedOnes() {
         val root = Files.createTempDirectory("finish3").toFile()
         assertEquals(IndoorScheduler.Outcome.COMPLETE, run(root, Gen(listOf("wmo_a", "wmo_b"), rule = setOf("wmo_b"))))
         val sameBuilder = Gen(listOf("wmo_a", "wmo_b"), rule = setOf("wmo_b"))
@@ -119,10 +119,11 @@ class IndoorFinishTest {
         val newLib = Gen(listOf("wmo_a", "wmo_b"), rule = setOf("wmo_b"))
         assertEquals(IndoorScheduler.Outcome.COMPLETE, run(root, newLib, app = "gen|a1|lib:bb"))
         assertEquals(listOf("wmo_b"), newLib.made)
-        // a game update (another build): once more
+        // a game update (another build) that left the building's files as they were (1525, the user's "Reuse what didn't change"): the
+        // same inputs and the same builder turn it down the same way, so it stays settled
         val newGame = Gen(listOf("wmo_a", "wmo_b"), rule = setOf("wmo_b"))
         run(root, newGame, app = "gen|a1|lib:bb", b = "fedcba9876543210fedcba9876543210")
-        assertEquals(listOf("wmo_b"), newGame.made)
+        assertEquals(emptyList<String>(), newGame.made)
     }
 
     @Test fun theBuildersKeyHoldsItsLibraryNotTheApk() {

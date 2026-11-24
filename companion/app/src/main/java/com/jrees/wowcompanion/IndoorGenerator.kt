@@ -82,6 +82,18 @@ internal interface IndoorGenerator : AutoCloseable {
     fun catalogue(yield: Yield): List<IndoorBakeStore.Work>
 
     /**
+     * [catalogue] with the listing's memory across game updates (1525, [IndoorCatalogueMemo]: a file whose content key did not change is
+     * not read or parsed again); the same list. A generator without a use for it lists as [catalogue] does
+     */
+    fun catalogue(yield: Yield, memo: IndoorCatalogueMemo?): List<IndoorBakeStore.Work> = catalogue(yield)
+
+    /**
+     * 1525: the memory a listing of the generator's own may use (the native one lists inside [produce] when the scheduler's catalogue
+     * came from its cache and the units are not known yet); the scheduler hands its own over before it lists or builds. Default: none
+     */
+    fun memory(memo: IndoorCatalogueMemo?) {}
+
+    /**
      * The map ids of this game build's dungeons and raids (the user's pick, 2026-11-23: "Build last, leave out of count"): a building
      * placed only on these maps is built after every other one and left out of "finished". Null = not known (everything counts).
      */
