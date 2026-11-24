@@ -535,9 +535,10 @@ class HomeLayoutRulesTest {
     }
 
     /**
-     * PARTY SIZING (the user's picks 2026-11-23): every pick x every record x Party mode's rest and fight (the controller on the bottom
-     * screen with Grow / Same size, on the top screen with Top screen) x a party of 1 / 5 / 6 with the pet x a card: valid, no F1 / F2 on
-     * the Thor's page, the rows the picks give ([PartyLayout.sizedH]; Fill: the strip's), and the defaults lay today's page exactly
+     * PARTY SIZING (the user's picks 2026-11-23; one "Size in fights" since test 1523): every pick (Grows x Grow / Same size) x every
+     * record x Party mode's rest and fight (the controller on the bottom screen with Grow / Same size, on the top screen with Top screen) x
+     * a party of 1 / 5 / 6 with the pet x a card: valid, no F1 / F2 on the Thor's page, the rows the picks give ([PartyLayout.sizedH];
+     * Grow on top: the strip's fill), and the defaults lay today's page exactly
      */
     @Test fun everySizingPickIsValid() {
         var n = 0
@@ -545,8 +546,8 @@ class HomeLayoutRulesTest {
         for (l0 in HomeLayoutRules.all()) {
             if (l0.castSize != HomeLayout.SlotSize.L) continue
             val def = l0
-            for (g in HomeLayout.PartyGrow.values()) for (t in HomeLayout.PartyTopFight.values()) for (bt in HomeLayout.PartyBottomFight.values()) {
-                val l = l0.copy(partyGrow = g, partyTop = t, partyBottom = bt)
+            for (g in HomeLayout.PartyGrow.values()) for (z in HomeLayout.PartySize.values()) {
+                val l = l0.copy(partyGrow = g, partySize = z)
                 for (card in listOf(0f, CARD_H)) for ((cnt, pet) in listOf(1 to false, 5 to false, 6 to true)) for (fight in listOf(false, true)) {
                     val mode = if (!fight) PartyLayout.Mode.REST else if (l.fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
                     val s = HomeLayoutSolver.State(card = card > 0f, cardH = card, party = HomeLayoutSolver.Party(mode, cnt, pet), partyOn = true, partyFight = fight)
@@ -563,14 +564,14 @@ class HomeLayoutRulesTest {
                     // today's picks: today's page
                     // (review: against the mode's own rows handed in - not the record against itself - so a default that drifts from
                     // plateH shows; a Top fight's Fill has no fixed rows: its fill is pinned by HomePartyTopTest)
-                    if (g == HomeLayout.PartyGrow.FIGHTS && t == HomeLayout.PartyTopFight.FILL && bt == HomeLayout.PartyBottomFight.GROW &&
+                    if (g == HomeLayout.PartyGrow.FIGHTS && z == HomeLayout.PartySize.GROW &&
                         mode != PartyLayout.Mode.FIGHT_TOP &&
                         S.places(def, s.copy(party = s.party!!.copy(rowH = PartyLayout.plateH(mode)))).boxes != r.boxes) bad("the defaults moved the page")
                 }
             }
         }
         assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
-        assertTrue("$n", n > 900_000)
+        assertTrue("$n", n > 200_000)
     }
 
     /** Classic's dock is today's arithmetic, to the float; the record's text only changes for another dock; Reset Home to Classic puts

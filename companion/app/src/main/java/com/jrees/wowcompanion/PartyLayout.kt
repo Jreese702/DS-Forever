@@ -60,36 +60,28 @@ object PartyLayout {
     fun plateH(mode: Mode) = when (mode) { Mode.REST -> REST_H; Mode.FIGHT_ON, Mode.FIGHT_TOP -> FIGHT_H; Mode.FIGHT_OFF -> TAKEOVER_H }
 
     /**
-     * PARTY SIZING (the user, 2026-11-23; HomeLayout.partyGrow / partyTop / partyBottom, the player's picks): the rows' height in [mode]
-     * with Party mode [on] (a REST page with it off, and the takeover - Party mode off - keep today's 64 / 56 whatever is picked); null =
-     * FILL (a Party-mode Top fight's rows fill the strip the band frees: ruling C, [fillH]). Out of a fight the list is 64 high, 88 with
-     * Grows = Whenever Party mode is on. In a fight: the controller on the top screen ([Mode.FIGHT_TOP]) - Fill / Grow a bit (88) / Same
-     * size; on the bottom screen ([Mode.FIGHT_ON]) - Grow (88) / Same size / Shrink (56: the takeover's rows, room for the chat and the
-     * map). Grows = Off: a fight never makes the list bigger than out of it (Fill and Grow keep its size; Shrink still shrinks).
-     * The defaults (In fights, Fill, Grow) are today's exactly: REST 64, FIGHT_ON 88, FIGHT_TOP the fill, FIGHT_OFF 56
+     * PARTY SIZING (the user, 2026-11-23; HomeLayout.partyGrow / partySize, the player's picks): the rows' height in [mode] with Party
+     * mode [on] (a REST page with it off, and the takeover - Party mode off - keep today's 64 / 56 whatever is picked); null = FILL (a
+     * Party-mode Top fight's rows fill the strip the band frees: ruling C, [fillH]). Out of a fight the list is 64 high, 88 with Grows =
+     * Whenever Party mode is on. In a fight, "Size in fights" (ONE setting, the user's ruling on test 1523: "just consolidate that into
+     * one setting"): Grow - the room the fight frees: the fill with the controller on the top screen ([Mode.FIGHT_TOP]), a Party
+     * fight's 88 with it on the bottom screen ([Mode.FIGHT_ON]); Same size - the rows out of the fight, both screens. Grows = Off: a
+     * fight never makes the list bigger than out of it (Grow keeps its size, as Same size).
+     * The defaults (In fights, Grow) are today's exactly: REST 64, FIGHT_ON 88, FIGHT_TOP the fill, FIGHT_OFF 56
      */
     fun sizedH(mode: Mode, on: Boolean, grow: HomeLayout.PartyGrow = HomeLayout.PartyGrow.FIGHTS,
-               top: HomeLayout.PartyTopFight = HomeLayout.PartyTopFight.FILL,
-               bottom: HomeLayout.PartyBottomFight = HomeLayout.PartyBottomFight.GROW): Float? {
+               size: HomeLayout.PartySize = HomeLayout.PartySize.GROW): Float? {
         val base = if (on && grow == HomeLayout.PartyGrow.ALWAYS) FIGHT_H else REST_H
-        val grows = grow != HomeLayout.PartyGrow.OFF
+        val grows = grow != HomeLayout.PartyGrow.OFF && size == HomeLayout.PartySize.GROW
         return when (mode) {
             Mode.REST -> base
             Mode.FIGHT_OFF -> TAKEOVER_H
-            Mode.FIGHT_ON -> when (bottom) {
-                HomeLayout.PartyBottomFight.GROW -> if (grows) maxOf(base, FIGHT_H) else base
-                HomeLayout.PartyBottomFight.SAME -> base
-                HomeLayout.PartyBottomFight.SHRINK -> TAKEOVER_H
-            }
-            Mode.FIGHT_TOP -> when (top) {
-                HomeLayout.PartyTopFight.FILL -> if (grows) null else base
-                HomeLayout.PartyTopFight.GROW -> if (grows) maxOf(base, FIGHT_H) else base
-                HomeLayout.PartyTopFight.SAME -> base
-            }
+            Mode.FIGHT_ON -> if (grows) maxOf(base, FIGHT_H) else base
+            Mode.FIGHT_TOP -> if (grows) null else base
         }
     }
     /** [sizedH] for record [l]'s picks */
-    fun sizedH(mode: Mode, on: Boolean, l: HomeLayout): Float? = sizedH(mode, on, l.partyGrow, l.partyTop, l.partyBottom)
+    fun sizedH(mode: Mode, on: Boolean, l: HomeLayout): Float? = sizedH(mode, on, l.partyGrow, l.partySize)
 
     /** ruling C: a Party-mode Top fight's row height - [rows] rows sharing the well from [top] to [bottom] (its margins and gaps out), no
      *  shorter than a Party fight's ([FIGHT_H]), no taller than [FILL_MAX_H] (a solo or two-row party leaves the rest to the chat) */

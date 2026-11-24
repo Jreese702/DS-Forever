@@ -97,8 +97,8 @@ object HomeLayoutSolver {
         // at the foot (Under chat / Under map) the chat / map rides up into the strip and the well's top follows it up the same distance,
         // its foot on the column's foot. The rows share the height (PartyLayout.fillH: no shorter than FIGHT_H, no taller than FILL_MAX_H
         // - a solo or two-row party gives the rest to the column's other part); the other column grows up as in any Top fight
-        // (party sizing, 2026-11-23: only with "Controller on top (fights)" = Fill the freed space - today's - and the list growing;
-        // Grow a bit / Same size lay the away page with the record's rows, the columns growing up as in any Top fight)
+        // (party sizing, 2026-11-23: only with "Size in fights" = Grow - today's - and the list growing; Same size or Grows = Off lay
+        // the away page with the record's rest rows, the columns growing up as in any Top fight)
         if (partyAway(l0, s) && s.party != null && s.party.rowH == null && PartyLayout.sizedH(s.party.mode, s.partyOn, l0) == null) {
             val ref = places(l0, s.copy(partyFight = false, party = s.party.copy(mode = PartyLayout.Mode.FIGHT_ON, rowH = PartyLayout.FIGHT_H)))
             return solve(l0, s, ref.f1, ref.f2, ref.f3, fill = ref)

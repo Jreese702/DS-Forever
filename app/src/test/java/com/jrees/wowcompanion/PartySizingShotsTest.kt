@@ -28,9 +28,10 @@ import java.time.Duration
  * THE PARTY LIST ACROSS AND ITS SIZES ON THE REAL [HomeView] (the user, 2026-11-23: "the party frames should also expand across the
  * opposit right or left side of the screen if its in the top or bottom possitions"; "dynamic sizing options to the party mode windows"
  * - the picks: Player picks, all three; Settings + Edit Home). Pinned on the laid page: in Party mode the list spans both columns from
- * each dock (either swap), the chat and the map under / over it, its plates across ([PartyModuleView.module] over its view); each pick's
- * rows in a fight with the controller on the bottom screen (Grow / Same size / Shrink to make room) and on the top screen (Fill the freed
- * space / Grow a bit / Same size), Grows = Whenever Party mode is on at rest and Off in a fight; Edit Home's party pencil and its bubble
+ * each dock (either swap), the chat and the map under / over it, its plates across ([PartyModuleView.module] over its view); the one
+ * "Size in fights" (test 1523's two rows made one, the user: "just consolidate that into one setting") - Grow / Same size - in a fight
+ * with the controller on the bottom screen and on the top screen, Grows = Whenever Party mode is on at rest and Off in a fight; Edit
+ * Home's party pencil and its bubble
  * (beside the list, never on it), its Fight preview, and its preview of Party mode's look with Party mode off; Settings > Bottom screen >
  * Party's tile. With PARTY_SIZING_SHOTS set (and HOME_LAYOUT_ART = an art root) the pictures.
  */
@@ -212,17 +213,18 @@ class PartySizingShotsTest {
         render(head, "wide_above_chat_bar_above_map")
     }
 
-    /** the controller stays on the bottom screen (In fights = Grow): Grow (88, today's) / Same size (64) / Shrink to make room (56) */
+    /** the controller stays on the bottom screen (In fights = Grow): Size in fights = Grow (88, today's) / Same size (64) */
     @Test fun theBottomControllersPicksInAFight() {
         val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.GROW)
-        val want = mapOf(HomeLayout.PartyBottomFight.GROW to 88f, HomeLayout.PartyBottomFight.SAME to 64f, HomeLayout.PartyBottomFight.SHRINK to 56f)
+        val want = mapOf(HomeLayout.PartySize.GROW to 88f, HomeLayout.PartySize.SAME to 64f)
+        assertEquals(HomeLayout.PartySize.values().toSet(), want.keys)
         for ((pick, h) in want) {
-            val p = page(l.copy(partyBottom = pick), fight = true)
+            val p = page(l.copy(partySize = pick), fight = true)
             assertFalse("Party mode: no takeover", p.home.flow.takeover)
             assertEquals(PartyLayout.Mode.FIGHT_ON, pv(p).mode)
             assertEquals(pick.name, h, rowH(p), 0.5f)
-            assertEquals(if (pick == HomeLayout.PartyBottomFight.GROW) null else h, pv(p).sizedH)
-            render(p, "fight_bottom_${pick.name.lowercase()}")
+            assertEquals(if (pick == HomeLayout.PartySize.GROW) null else h, pv(p).sizedH)
+            render(p, "fight_bottom_${if (pick == HomeLayout.PartySize.GROW) "grow" else "same_size"}")
         }
         // Grows = Whenever Party mode is on: 88 at rest; Grows = Off: Grow keeps the rest's 64 in the fight
         val always = page(l.copy(partyGrow = HomeLayout.PartyGrow.ALWAYS), fight = false)
@@ -236,23 +238,22 @@ class PartySizingShotsTest {
         render(never, "fight_bottom_grows_off")
     }
 
-    /** the controller on the top screen (In fights = Top screen): Fill the freed space (today's) / Grow a bit (88) / Same size (64) */
+    /** the controller on the top screen (In fights = Top screen): Size in fights = Grow (the fill: today's) / Same size (64) */
     @Test fun theTopControllersPicksInAFight() {
         val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
-        for (pick in HomeLayout.PartyTopFight.values()) {
-            val p = page(l.copy(partyTop = pick), fight = true)
+        for (pick in HomeLayout.PartySize.values()) {
+            val p = page(l.copy(partySize = pick), fight = true)
             val b = boxes(p.home)
             assertTrue("${pick.name}: the band away", p.cast.away)
             assertEquals(PartyLayout.Mode.FIGHT_TOP, pv(p).mode)
             val party = b.getValue("PARTY")
             assertEquals("${pick.name}: under the fight strip", 8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f, party.top, 0.5f)
             when (pick) {
-                HomeLayout.PartyTopFight.FILL -> assertTrue("the fill (${rowH(p)})", rowH(p) > 88f)
-                HomeLayout.PartyTopFight.GROW -> assertEquals(88f, rowH(p), 0.5f)
-                HomeLayout.PartyTopFight.SAME -> assertEquals(64f, rowH(p), 0.5f)
+                HomeLayout.PartySize.GROW -> assertTrue("the fill (${rowH(p)})", rowH(p) > 88f)
+                HomeLayout.PartySize.SAME -> assertEquals(64f, rowH(p), 0.5f)
             }
             for (c in listOf("CHAT", "MAP")) assertEquals("${pick.name}: the $c under the list", party.bottom + PartyLayout.CHAT_GAP, b.getValue(c).top, 0.5f)
-            render(p, "fight_top_${pick.name.lowercase()}")
+            render(p, "fight_top_${if (pick == HomeLayout.PartySize.GROW) "grow" else "same_size"}")
         }
     }
 
@@ -261,7 +262,8 @@ class PartySizingShotsTest {
         .invoke(p.home, EditStop.PARTY_PEN) as List<*>).filterIsInstance<MenuRow>()
 
     /** Edit Home: the party list's pencil on its far corner from the tab; its bubble beside the list (under a top list, over a foot
-     *  one), its three picks and the preview; Fight lays the list in its fight size; with Party mode off the bubble shows Party mode's look */
+     *  one), its two picks and the preview (three rows since test 1523); Fight lays the list in its fight size; with Party mode off the
+     *  bubble shows Party mode's look */
     @Test fun editHomesPartyPencilAndItsPreview() {
         val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
         val p = page(l, fight = false)
@@ -278,29 +280,69 @@ class PartySizingShotsTest {
         assertTrue(EditStop.PARTY_PEN in ev.stops())
         p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
         assertEquals(EditStop.PARTY_PEN, p.home.editModel()!!.menu)
-        assertEquals(listOf(HomeEditModel.K_PARTY_GROW, HomeEditModel.K_PARTY_TOP, HomeEditModel.K_PARTY_BOTTOM, HomeEditModel.K_PARTY_PREVIEW), rows(p).map { it.key })
+        assertEquals(listOf(HomeEditModel.K_PARTY_GROW, HomeEditModel.K_PARTY_SIZE, HomeEditModel.K_PARTY_PREVIEW), rows(p).map { it.key })
+        assertEquals(listOf("Grows", "Size in fights", "Preview"), rows(p).map { it.label })
+        assertEquals(listOf(1, 0, 0), rows(p).map { it.picked })
         val bubble = ev.menuBox(EditStop.PARTY_PEN)
         assertFalse("the bubble never on the list ($bubble / $party)", RectF.intersects(bubble, party))
         assertTrue("under it", bubble.top > party.bottom)
+        assertTrue("on the screen ($bubble)", bubble.left >= 0f && bubble.right <= W.toFloat() && bubble.bottom <= H.toFloat())
         assertTrue(ev.bubbleTailBox(EditStop.PARTY_PEN) != null)
         render(p, "edit_party_bubble")
-        // a pick: the page lays it at once (Shrink: nothing at rest; Grows = Whenever Party mode is on: 88 at rest)
-        p.home.editAct { it.menuTouch(0, 2, rows(p)) }; settle(30)
-        assertEquals(HomeLayout.PartyGrow.ALWAYS, HomeSettings.layout.partyGrow)
-        assertEquals(88f, rowH(p), 0.5f)
-        render(p, "edit_party_bubble_grows_whenever")
-        // the preview: Fight (Grow: the Party fight's 88; Shrink: 56)
-        p.home.editAct { it.menuTouch(2, 2, rows(p)) }; settle(10)
-        p.home.editAct { it.menuTouch(3, 1, rows(p)) }; settle(40)
+        // the bubble one row shorter: three row boxes (each button inside its row, clear of its label), its height theirs
+        @Suppress("UNCHECKED_CAST") val btns = field(ev, "menuBoxes") as List<List<RectF>>
+        @Suppress("UNCHECKED_CAST") val rowBoxes = field(ev, "menuRowBoxes") as List<RectF>
+        assertEquals(3, rowBoxes.size)
+        assertEquals(listOf(3, 2, 2), btns.map { it.size })
+        val lp = UiKit.bodyPaint(28f)
+        for ((i, r) in rows(p).withIndex()) {
+            val rr = rowBoxes[i]
+            assertTrue("'${r.label}': in the bubble ($rr / $bubble)", bubble.contains(rr))
+            val labelRight = rr.left + 18f + lp.measureText(Tr.t(r.label))
+            for (bt in btns[i]) {
+                assertTrue("'${r.label}': button inside its row ($bt in $rr)", bt.left >= rr.left - 1f && bt.right <= rr.right + 1f)
+                assertTrue("'${r.label}': buttons clear of the label", bt.left >= labelRight - 1f || bt.top >= rr.top + 0.3f * rr.height())
+            }
+        }
+        assertTrue("the bubble's foot right under its last row (${bubble.bottom} / ${rowBoxes.last().bottom})",
+            bubble.bottom - rowBoxes.last().bottom < 60f)
+        // TOUCH: a finger on Size in fights' Same size - the record's pick, the bubble kept open
+        fun tap(r: RectF) {
+            for ((act, t) in listOf(android.view.MotionEvent.ACTION_DOWN to 0L, android.view.MotionEvent.ACTION_UP to 40L)) {
+                val e = android.view.MotionEvent.obtain(0, t, act, r.centerX(), r.centerY(), 0); ev.touch(e); e.recycle()
+            }
+            settle(30)
+        }
+        tap(btns[1][1])
+        assertEquals(HomeLayout.PartySize.SAME, HomeSettings.layout.partySize)
+        assertEquals(EditStop.PARTY_PEN, p.home.editModel()!!.menu)
+        assertEquals(listOf(1, 1, 0), rows(p).map { it.picked })
+        assertEquals("at rest Same size changes nothing", 64f, rowH(p), 0.5f)
+        render(p, "edit_party_bubble_same_size")
+        // the preview: Fight (Same size: the rest's 64; Grow: the Party fight's 88)
+        tap(btns[2][1])
         val m = p.home.editModel()!!
         assertTrue(m.fightPreview); assertEquals(EditStop.PARTY_PEN, m.menu)
         assertEquals(PartyLayout.Mode.FIGHT_ON, pv(p).mode)
-        assertEquals(56f, rowH(p), 0.5f)
+        assertEquals(64f, rowH(p), 0.5f)
         assertFalse(p.home.fightShown())
-        render(p, "edit_party_bubble_fight_preview_shrink")
-        p.home.editAct { it.menuTouch(2, 0, rows(p)) }; settle(40)
+        render(p, "edit_party_bubble_fight_preview_same_size")
+        // THE CONTROLLER: the cursor's walk is Grows, Size in fights, Preview (Down stops on the last); Left on Size in fights = Grow
+        m.menuRow = 0
+        p.home.editKey("PADDDOWN"); settle(5)
+        assertEquals(1, m.menuRow)
+        p.home.editKey("PADDLEFT"); settle(40)
+        assertEquals(HomeLayout.PartySize.GROW, HomeSettings.layout.partySize)
         assertEquals(88f, rowH(p), 0.5f)
         render(p, "edit_party_bubble_fight_preview_grow")
+        p.home.editKey("PADDDOWN"); p.home.editKey("PADDDOWN"); settle(5)
+        assertEquals("three rows: the preview is the last stop", 2, m.menuRow)
+        // Grows = Whenever Party mode is on: 88 at rest too
+        p.home.editAct { it.menuTouch(0, 2, rows(p)) }; settle(30)
+        p.home.editAct { it.menuTouch(2, 0, rows(p)) }; settle(30)
+        assertEquals(HomeLayout.PartyGrow.ALWAYS, HomeSettings.layout.partyGrow)
+        assertEquals(88f, rowH(p), 0.5f)
+        render(p, "edit_party_bubble_grows_whenever")
         p.home.editCancel(); settle(40)
         // a list at the foot (across: the bar Across): the bubble over it
         val f = page(l.copy(party = HomeLayout.PartyDock.UNDER_MAP, cast = HomeLayout.CastDock.ACROSS), fight = false)
@@ -326,7 +368,7 @@ class PartySizingShotsTest {
         o.home.editCancel()
     }
 
-    /** Settings > Bottom screen > Party: its one tile, "Party list", its band's three lines (this character's record); a press writes it */
+    /** Settings > Bottom screen > Party: its one tile, "Party list", its band's two lines (this character's record); a press writes it */
     @Test fun theSettingsTile() {
         Settings.init(app); SettingsTabs.init(app); GameUi.init(app); HomeSettings.init(app); Tr.init(app)
         art()
@@ -356,35 +398,48 @@ class PartySizingShotsTest {
             Thread.sleep(200); layR()
             val c = Canvas(bmp); c.drawColor(Theme.ink); r.draw(c)
             out?.let { o -> File(o, "settings_party_tile.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
-            BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_BOTTOM, 2, BottomTiles.Env(null, null)) { }
-            assertEquals(HomeLayout.PartyBottomFight.SHRINK, HomeSettings.layout.partyBottom)
-            // Grows = Off (the pick "Grey them out"): Fill / Grow a bit / Grow dimmed, no cursor stop on them; Same size lit on top
+            // the band's two lines: Grows, Size in fights (one line since test 1523)
+            assertEquals(listOf("Grows", "Size in fights"), BottomTiles.lines(BottomTiles.PARTY, part.env()).map { it.label })
+            assertEquals(listOf(listOf("Off", "In fights", "Party mode on"), listOf("Grow", "Same size")),
+                BottomTiles.lines(BottomTiles.PARTY, part.env()).map { it.words })
             val stops = part.focusTargets().size
-            BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_GROW, 0, BottomTiles.Env(null, null)) { }
-            HomeLayoutStore.update { it.copy(partyBottom = HomeLayout.PartyBottomFight.GROW) }
+            BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_SIZE, 1, BottomTiles.Env(null, null)) { }
+            assertEquals(HomeLayout.PartySize.SAME, HomeSettings.layout.partySize)
             part.requestLayout(); layR()
-            assertEquals("three words fewer to stop on", stops - 3, part.focusTargets().size)
+            assertEquals(listOf(1, 1), BottomTiles.lines(BottomTiles.PARTY, part.env()).map { it.picked })
+            Thread.sleep(200); layR()
+            val c1 = Canvas(bmp); c1.drawColor(Theme.ink); r.draw(c1)
+            out?.let { o -> File(o, "settings_party_tile_same_size.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+            // Grows = Off (the pick "Grey them out"): Grow dimmed, no cursor stop on it; Same size lit
+            BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_GROW, 0, BottomTiles.Env(null, null)) { }
+            HomeLayoutStore.update { it.copy(partySize = HomeLayout.PartySize.GROW) }
+            part.requestLayout(); layR()
+            assertEquals("one word fewer to stop on", stops - 1, part.focusTargets().size)
             val ls = BottomTiles.lines(BottomTiles.PARTY, part.env())
-            assertEquals(listOf(emptySet(), setOf(0, 1), setOf(0)), ls.map { it.off })
-            assertEquals(listOf(0, 2, 1), ls.map { it.picked })
+            assertEquals(listOf(emptySet(), setOf(0)), ls.map { it.off })
+            assertEquals(listOf(0, 1), ls.map { it.picked })
             Thread.sleep(200); layR()
             val c2 = Canvas(bmp); c2.drawColor(Theme.ink); r.draw(c2)
             out?.let { o -> File(o, "settings_party_tile_grows_off.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
         } finally { GameUi.character = null; BottomPictures.drop() }
     }
 
-    /** GROWS = OFF (the user's pick 2026-11-23, "Grey them out"): the bubble's fight words that do nothing dimmed (Fill, Grow a bit,
-     *  Grow), Same size lit; Shrink to make room active - in Edit Home's bubble and on Settings' tile */
+    /** GROWS = OFF (the user's pick 2026-11-23, "Grey them out"): Size in fights' Grow does nothing then - dimmed, Same size lit - in
+     *  Edit Home's bubble (on Settings' tile: [theSettingsTile]); the controller's cursor steps over it */
     @Test fun growsOffDimsTheFightWords() {
         val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, partyGrow = HomeLayout.PartyGrow.OFF), fight = false)
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
         p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
         val r = rows(p)
-        assertEquals(setOf(0, 1), r[1].off); assertEquals(setOf(0), r[2].off)
-        assertEquals(listOf(0, 2, 1, 0), r.map { it.picked })
-        // a finger on a dimmed word: refused, nothing written
-        p.home.editAct { it.menuTouch(2, 0, rows(p)) }; settle(10)
-        assertEquals(HomeLayout.PartyBottomFight.GROW, p.home.editModel()!!.draft.partyBottom)
+        assertEquals(3, r.size)
+        assertEquals(setOf(0), r[1].off)
+        assertEquals(listOf(0, 1, 0), r.map { it.picked })
+        // a finger on the dimmed word: refused, nothing written; A on the row: refused (Same size the only word)
+        p.home.editAct { it.menuTouch(1, 0, rows(p)) }; settle(10)
+        assertEquals(HomeLayout.PartySize.GROW, p.home.editModel()!!.draft.partySize)
+        p.home.editModel()!!.menuRow = 1
+        p.home.editKey("PAD1"); settle(10)
+        assertEquals(HomeLayout.PartySize.GROW, p.home.editModel()!!.draft.partySize)
         render(p, "edit_party_bubble_grows_off")
         p.home.editCancel(); settle(40)
     }
@@ -396,7 +451,7 @@ class PartySizingShotsTest {
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
         for (how in listOf("B", "a tap off it")) {
             p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
-            p.home.editAct { it.menuTouch(3, 1, rows(p)) }; settle(40)
+            p.home.editAct { it.menuTouch(2, 1, rows(p)) }; settle(40)
             assertTrue(how, p.home.editModel()!!.fightPreview)
             assertEquals(how, PartyLayout.Mode.FIGHT_ON, pv(p).mode)
             assertEquals(how, 88f, rowH(p), 0.5f)
@@ -419,7 +474,7 @@ class PartySizingShotsTest {
         val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), fight = false)
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
         p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
-        p.home.editAct { it.menuTouch(3, 1, rows(p)) }; settle(40)
+        p.home.editAct { it.menuTouch(2, 1, rows(p)) }; settle(40)
         assertTrue(p.home.editModel()!!.fightPreview)
         assertTrue(field(p.home, "previewLaid") as Boolean)
         setField(PartyModel.live, "party", null); p.home.partyChanged(); settle(60)
@@ -438,15 +493,15 @@ class PartySizingShotsTest {
         val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP), fight = false)
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
         p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
-        p.home.editAct { it.menuTouch(3, 1, rows(p)) }; settle(40)
+        p.home.editAct { it.menuTouch(2, 1, rows(p)) }; settle(40)
         val b = boxes(p.home)
         assertEquals(-HomeLayoutSolver.AWAY_PAST, b.getValue("BARS").bottom, 0.5f)
         assertEquals(PartyLayout.Mode.FIGHT_TOP, pv(p).mode)
         assertTrue(rowH(p) > 88f)
-        render(p, "edit_party_bubble_fight_preview_top_fill")
-        p.home.editAct { it.menuTouch(1, 2, rows(p)) }; settle(40)
+        render(p, "edit_party_bubble_fight_preview_top_grow")
+        p.home.editAct { it.menuTouch(1, 1, rows(p)) }; settle(40)
         assertEquals(64f, rowH(p), 0.5f)
-        render(p, "edit_party_bubble_fight_preview_top_same")
+        render(p, "edit_party_bubble_fight_preview_top_same_size")
         p.home.editCancel()
     }
 }

@@ -60,20 +60,21 @@ data class HomeLayout(
     /** PARTY SIZING (the user, 2026-11-23: "We should add some dynamic sizing options to the party mode windows, so if it goes while in
      *  combat like the combat bar or only in party mode and then if the controlls are on the top or bottom screens"; the picks: Player
      *  picks, all three; Settings + Edit Home): when the party list grows ([partyGrow]: Off / In fights - today's / Whenever Party mode is
-     *  on), what it does in a fight with the controller on the top screen ([partyTop]: fill the strip the band frees - today's, ruling C /
-     *  grow a bit / same size) and with the controller staying on the bottom screen ([partyBottom]: grow - today's / same size / shrink to
-     *  make room). Per character (the record). The defaults lay every page exactly as before: PartyLayout.sizedH */
+     *  on) and its size in a fight ([partySize]). Per character (the record). The defaults lay every page exactly as before:
+     *  PartyLayout.sizedH */
     val partyGrow: PartyGrow = PartyGrow.FIGHTS,
-    val partyTop: PartyTopFight = PartyTopFight.FILL,
-    val partyBottom: PartyBottomFight = PartyBottomFight.GROW,
+    /** ONE SETTING (the user, test 1523, 2026-11-23: "I dont understand why there is controller on top vs controller on bottom settings,
+     *  just consolidate that into one setting"; the pick "Grow / Same size"): "Size in fights" - GROW (today's): the list uses whatever
+     *  room the fight frees - all of the strip the band frees with the controller on the top screen (ruling C's fill), a Party fight's
+     *  88 px rows with it staying on the bottom screen; SAME: the list keeps its rest size in every fight. (1523's two rows "Controller
+     *  on top / on bottom (fights)" - their Grow a bit / Shrink to make room gone - are read once into it: [HomeLayoutJson.parse]) */
+    val partySize: PartySize = PartySize.GROW,
 ) {
     /** "Grows": never (the rows keep the rest's 64 px - a shrink still shrinks), in fights (today's), whenever Party mode is on (the
      *  fight's 88 px rows at rest too) */
     enum class PartyGrow { OFF, FIGHTS, ALWAYS }
-    /** "Controller on top (fights)": the rows fill the strip the band frees (today's), a Party fight's 88 px rows, or the size out of it */
-    enum class PartyTopFight { FILL, GROW, SAME }
-    /** "Controller on bottom (fights)": a Party fight's 88 px rows (today's), the size out of it, or the takeover's 56 px rows */
-    enum class PartyBottomFight { GROW, SAME, SHRINK }
+    /** "Size in fights": grow into the room the fight frees (today's), or the size out of it */
+    enum class PartySize { GROW, SAME }
     enum class Side { LEFT, RIGHT; fun other() = if (this == LEFT) RIGHT else LEFT }
     enum class Share(val num: Int, val den: Int) { THIRD(1, 3), HALF(1, 2), TWO_THIRDS(2, 3) }
     enum class CardDock { ON_MAP, ABOVE_CHAT, OFF }
@@ -156,7 +157,7 @@ data class HomeLayout(
         cast = if (cast == CastDock.SPLIT) CastDock.UNDER_CHAT else cast.withTop(false),
         fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList(),
         party = PartyDock.ABOVE_CHAT, extras = ClockBand.DEFAULT, fightCast = FightCast.BOTTOM, partyGrow = PartyGrow.FIGHTS,
-        partyTop = PartyTopFight.FILL, partyBottom = PartyBottomFight.GROW)
+        partySize = PartySize.GROW)
 
     companion object {
         const val VERSION = 1
@@ -190,8 +191,8 @@ object HomeLayoutJson {
         .also { o -> if (l.fightCast != HomeLayout.FightCast.BOTTOM) o.put("fcast", l.fightCast.name) }
         // party sizing (2026-11-23) only where it is not today's (a Classic record's text is unchanged)
         .also { o -> if (l.partyGrow != HomeLayout.PartyGrow.FIGHTS) o.put("pgrow", l.partyGrow.name) }
-        .also { o -> if (l.partyTop != HomeLayout.PartyTopFight.FILL) o.put("ptop", l.partyTop.name) }
-        .also { o -> if (l.partyBottom != HomeLayout.PartyBottomFight.GROW) o.put("pbot", l.partyBottom.name) }
+        // (the one "Size in fights"; 1523's "ptop" / "pbot" are never written again: [partySizeOf])
+        .also { o -> if (l.partySize != HomeLayout.PartySize.GROW) o.put("psize", l.partySize.name) }
         .toString()
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
@@ -219,10 +220,19 @@ object HomeLayoutJson {
                 extras = o.optJSONArray("extras")?.let { a -> ClockBand.order((0 until a.length()).map { a.optString(it, "") }) } ?: d.extras,
                 fightCast = en(HomeLayout.FightCast.values(), "fcast", d.fightCast),
                 partyGrow = en(HomeLayout.PartyGrow.values(), "pgrow", d.partyGrow),
-                partyTop = en(HomeLayout.PartyTopFight.values(), "ptop", d.partyTop),
-                partyBottom = en(HomeLayout.PartyBottomFight.values(), "pbot", d.partyBottom),
+                partySize = partySizeOf(o),
             )
         } catch (e: Exception) { fallback }
+    }
+
+    /** "Size in fights" from the record: its own "psize" when it has one; else, ONCE, test 1523's two picks - Same size or Shrink to make
+     *  room in either of "ptop" (Controller on top) / "pbot" (Controller on bottom) -> Same size, anything else (Fill the freed space,
+     *  Grow a bit, Grow, none) -> Grow. The old keys are never written back ([json]), so the record's next save drops them and only
+     *  "psize" is read from then on */
+    internal fun partySizeOf(o: JSONObject): HomeLayout.PartySize {
+        if (o.has("psize")) return HomeLayout.PartySize.values().firstOrNull { it.name == o.optString("psize", "") } ?: HomeLayout.PartySize.GROW
+        val old = o.optString("ptop", "") == "SAME" || o.optString("pbot", "") in setOf("SAME", "SHRINK")
+        return if (old) HomeLayout.PartySize.SAME else HomeLayout.PartySize.GROW
     }
 }
 

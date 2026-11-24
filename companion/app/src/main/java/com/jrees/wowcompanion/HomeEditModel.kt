@@ -60,7 +60,7 @@ enum class EditStop {
     PAD_PEN, FACE_PEN, LOOK, EXTRAS, FIGHT_PEN, FIGHT,
     /** PARTY SIZING (the user's pick 2026-11-23: "Settings + Edit Home" - the party list's pencil bubble with a fight preview): the
      *  party list's own pencil, on its far corner from the Select tab (still, no wiggle: the top bar's pencils' look) - its speech
-     *  bubble holds Grows, Controller on top / on bottom (fights) and the preview (Rest / Fight; the page lays the list as Party mode
+     *  bubble holds Grows, Size in fights and the preview (Rest / Fight; the page lays the list as Party mode
      *  does while the bubble is open: HomeView.editPartyLook). A stop while the party list is on Home, in the fight preview too */
     PARTY_PEN;
     /** one of the top bar's pieces (the band's own left-to-right walk: [HomeEditModel.BAND_ORDER]) */
@@ -715,8 +715,7 @@ class HomeEditModel(
             K_PARTY_EDGE -> change(l.copy(party = l.party.withTop(k == 0)), Motion.MODULE_OPEN)
             // party sizing (2026-11-23): the record's picks (this character's; Discard puts them back), and the bubble's preview
             K_PARTY_GROW -> change(l.copy(partyGrow = HomeLayout.PartyGrow.values()[k]), Motion.MODULE_OPEN)
-            K_PARTY_TOP -> change(l.copy(partyTop = HomeLayout.PartyTopFight.values()[k]), Motion.MODULE_OPEN)
-            K_PARTY_BOTTOM -> change(l.copy(partyBottom = HomeLayout.PartyBottomFight.values()[k]), Motion.MODULE_OPEN)
+            K_PARTY_SIZE -> change(l.copy(partySize = HomeLayout.PartySize.values()[k]), Motion.MODULE_OPEN)
             K_PARTY_PREVIEW -> partyPreview(k == 1)
             K_SIZE -> change(l.copy(castSize = SIZES[k]), Motion.MODULE_OPEN)
             K_SLOTS -> { menu = null; listOf(Fx.EditSlots) }
@@ -1169,10 +1168,9 @@ class HomeEditModel(
         /** the party list's menu rows: its column (Chat / Map) and its edge in it (Above / Below) */
         const val K_PARTY_PLACE = "partyplace"
         const val K_PARTY_EDGE = "partyedge"
-        /** the party list's pencil bubble (2026-11-23): Grows, Controller on top / on bottom (fights), the preview */
+        /** the party list's pencil bubble (2026-11-23): Grows, Size in fights (one row since test 1523), the preview */
         const val K_PARTY_GROW = "partygrow"
-        const val K_PARTY_TOP = "partytop"
-        const val K_PARTY_BOTTOM = "partybottom"
+        const val K_PARTY_SIZE = "partysize"
         const val K_PARTY_PREVIEW = "partypreview"
         const val K_CAST_FIGHT = "castfight"
         const val K_CAST_PARTY = "castparty"
@@ -1328,7 +1326,7 @@ object HomeWidgetMenus {
                     off = if (v.cc == null && v.fightCast != HomeLayout.FightCast.TOP) setOf(HomeLayout.FightCast.TOP.ordinal) else emptySet()))
             add(onOff(BottomTiles.SWING, "Swing timer", v.swing))
         }
-        // PARTY SIZING (2026-11-23): the party list's pencil bubble - its three picks (the record's, this character's) and the preview
+        // PARTY SIZING (2026-11-23): the party list's pencil bubble - its two picks (the record's, this character's) and the preview
         EditStop.PARTY_PEN -> partySizingRows(l) +
             MenuRow(HomeEditModel.K_PARTY_PREVIEW, "Preview", PREVIEW_WORDS, if (v.fightPreview) 1 else 0)
         else -> emptyList()
@@ -1337,37 +1335,30 @@ object HomeWidgetMenus {
     val PREVIEW_WORDS = listOf("Rest", "Fight")
     /** party sizing's words (Settings > Bottom screen > Party's lines too: BottomTiles), in the record's enums' order */
     val PARTY_GROW_WORDS = listOf("Off", "In fights", "Whenever Party mode is on")
-    val PARTY_TOP_WORDS = listOf("Fill the freed space", "Grow a bit", "Same size")
-    val PARTY_BOTTOM_WORDS = listOf("Grow", "Same size", "Shrink to make room")
+    /** "Size in fights" (ONE setting since test 1523, the user: "just consolidate that into one setting"; the pick "Grow / Same size"):
+     *  Grow uses whatever room the fight frees (all of it with the controller on top, a bit with it on the bottom); Same size never
+     *  changes. Short enough for Settings' tile band as they are */
+    val PARTY_SIZE_WORDS = listOf("Grow", "Same size")
     /** the same picks' words on Settings' tile band (its game buttons hold about ten letters: the bubble keeps the long ones) */
     val PARTY_GROW_TILE = listOf("Off", "In fights", "Party mode on")
-    val PARTY_TOP_TILE = listOf("Fill", "Grow a bit", "Same size")
-    val PARTY_BOTTOM_TILE = listOf("Grow", "Same size", "Shrink")
+    val PARTY_SIZE_TILE = PARTY_SIZE_WORDS
     const val PARTY_GROW_LABEL = "Grows"
-    const val PARTY_TOP_LABEL = "Controller on top (fights)"
-    const val PARTY_BOTTOM_LABEL = "Controller on bottom (fights)"
-    /** the three sizing rows for record [l] (the bubble's and the Settings tile's). GROWS = OFF (the user's pick 2026-11-23, "Grey them
-     *  out": only the choices that do something stay active): a fight never makes the list bigger then, so the fight choices that would
-     *  grow it do nothing - Fill the freed space and Grow a bit on top, Grow on the bottom - and are dimmed ([partyTopOff] /
-     *  [partyBottomOff]: a press refused, the cursor steps over them); the row lights what the list does (Same size) while the record
-     *  keeps its pick, so Grows back on brings it back. Shrink to make room still shrinks: it stays active */
+    /** (not "In fights": that is one of Grows' own words) */
+    const val PARTY_SIZE_LABEL = "Size in fights"
+    /** the two sizing rows for record [l] (the bubble's and the Settings tile's). GROWS = OFF (the user's pick 2026-11-23, "Grey them
+     *  out": only the choices that do something stay active): a fight never makes the list bigger then, so Grow does nothing and is
+     *  dimmed ([partySizeOff]: a press refused, the cursor steps over it); the row lights what the list does (Same size) while the record
+     *  keeps its pick, so Grows back on brings it back */
     fun partySizingRows(l: HomeLayout): List<MenuRow> = listOf(
         MenuRow(HomeEditModel.K_PARTY_GROW, PARTY_GROW_LABEL, PARTY_GROW_WORDS, l.partyGrow.ordinal),
-        MenuRow(HomeEditModel.K_PARTY_TOP, PARTY_TOP_LABEL, PARTY_TOP_WORDS, partyTopShown(l).ordinal, off = partyTopOff(l)),
-        MenuRow(HomeEditModel.K_PARTY_BOTTOM, PARTY_BOTTOM_LABEL, PARTY_BOTTOM_WORDS, partyBottomShown(l).ordinal, off = partyBottomOff(l)),
+        MenuRow(HomeEditModel.K_PARTY_SIZE, PARTY_SIZE_LABEL, PARTY_SIZE_WORDS, partySizeShown(l).ordinal, off = partySizeOff(l)),
     )
-    /** "Controller on top (fights)"'s words that do nothing for [l] (Grows = Off: Fill and Grow a bit keep the size, as Same size) */
-    fun partyTopOff(l: HomeLayout): Set<Int> = if (l.partyGrow != HomeLayout.PartyGrow.OFF) emptySet()
-        else setOf(HomeLayout.PartyTopFight.FILL.ordinal, HomeLayout.PartyTopFight.GROW.ordinal)
-    /** "Controller on bottom (fights)"'s words that do nothing for [l] (Grows = Off: Grow keeps the size, as Same size) */
-    fun partyBottomOff(l: HomeLayout): Set<Int> = if (l.partyGrow != HomeLayout.PartyGrow.OFF) emptySet()
-        else setOf(HomeLayout.PartyBottomFight.GROW.ordinal)
-    /** the top row's lit word: the record's pick, or Same size while that pick is dimmed (what the list does) */
-    fun partyTopShown(l: HomeLayout): HomeLayout.PartyTopFight =
-        if (l.partyTop.ordinal in partyTopOff(l)) HomeLayout.PartyTopFight.SAME else l.partyTop
-    /** the bottom row's lit word: the record's pick, or Same size while that pick is dimmed */
-    fun partyBottomShown(l: HomeLayout): HomeLayout.PartyBottomFight =
-        if (l.partyBottom.ordinal in partyBottomOff(l)) HomeLayout.PartyBottomFight.SAME else l.partyBottom
+    /** "Size in fights"'s words that do nothing for [l] (Grows = Off: Grow keeps the size, as Same size) */
+    fun partySizeOff(l: HomeLayout): Set<Int> = if (l.partyGrow != HomeLayout.PartyGrow.OFF) emptySet()
+        else setOf(HomeLayout.PartySize.GROW.ordinal)
+    /** the row's lit word: the record's pick, or Same size while that pick is dimmed (what the list does) */
+    fun partySizeShown(l: HomeLayout): HomeLayout.PartySize =
+        if (l.partySize.ordinal in partySizeOff(l)) HomeLayout.PartySize.SAME else l.partySize
 
     /** the party list's columns ([HomeEditModel.K_PARTY_PLACE]) */
     val PARTY_WORDS = listOf("Chat", "Map")

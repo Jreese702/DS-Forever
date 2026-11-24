@@ -128,7 +128,7 @@ class RadialRefitAuditShotsTest {
             "foot grow" to HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, fight = HomeLayout.FightBand.GROW),
             "foot grow, bar across" to HomeLayout(party = HomeLayout.PartyDock.UNDER_MAP, cast = HomeLayout.CastDock.ACROSS, fight = HomeLayout.FightBand.GROW),
             "top fill" to HomeLayout(party = HomeLayout.PartyDock.ABOVE_CHAT, fight = HomeLayout.FightBand.TOP),
-            "top grow" to HomeLayout(party = HomeLayout.PartyDock.ABOVE_MAP, fight = HomeLayout.FightBand.TOP, partyTop = HomeLayout.PartyTopFight.GROW))
+            "top same size" to HomeLayout(party = HomeLayout.PartyDock.ABOVE_MAP, fight = HomeLayout.FightBand.TOP, partySize = HomeLayout.PartySize.SAME))
         for ((name, l) in cases) for (left in listOf(true, false)) {
             val tag = "$name ${if (left) "LB+LT" else "RB+RT"}"
             val p = page(l, party = true)
