@@ -66,7 +66,7 @@ object PressLog {
 
     /** m188: the add-on's press way; null for an unknown one */
     fun pathWord(p: String?): String? = p?.takeIf { it in PATHS }
-    val PATHS = setOf("slotfight", "slotmacro", "native", "command", "room", "none")
+    val PATHS = setOf("slotfight", "slotmacro", "native", "command", "room", "none", "slothold")     // m190: a hold to cast press
 
     /** m187: the add-on's layer code as the controller says it ("lt" -> "LT"); null for none or an unknown one */
     fun layerWord(lay: String?): String? = when (lay) { "bare" -> "bare"; "lt" -> "LT"; "rt" -> "RT"; "ltrt" -> "LT+RT"; else -> null }

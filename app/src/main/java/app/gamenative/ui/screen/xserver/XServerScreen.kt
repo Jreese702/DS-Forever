@@ -1702,6 +1702,9 @@ fun XServerScreen(
                         if (event == Lifecycle.Event.ON_RESUME) {
                             xServerView?.getxServer()?.winHandler?.reassertPrimaryController()
                         }
+                        // DS Forever, hold to cast: the app losing the game screen lets every held-back press go (nothing sticks down)
+                        if (event == Lifecycle.Event.ON_PAUSE) com.jrees.wowcompanion.HoldCast.focusLost()
+                        else com.jrees.wowcompanion.HoldCast.focusBack()
                     }
                     else -> Unit
                 }

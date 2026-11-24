@@ -91,6 +91,17 @@ object CastSettings {
         get() = false
         @Suppress("UNUSED_PARAMETER") set(v) {}
 
+    /**
+     * HOLD TO CAST'S HOLD TIME (the user's pick 2026-11-24, "At the hold time, Settings: 0.3/0.4/0.55 s"): how long a button with a hold
+     * spell must be held for the hold spell; it fires at that moment, still held. Normal by default. The Settings row "Hold time".
+     */
+    enum class HoldTime(val label: String, val ms: Long) {
+        SHORT("Short", HoldGate.SHORT_MS), NORMAL("Normal", HoldGate.NORMAL_MS), LONG("Long", HoldGate.LONG_MS)
+    }
+    var holdTime: HoldTime
+        get() = enumOr(prefs?.getString("holdTime", null), HoldTime.NORMAL)
+        set(v) { prefs?.edit()?.putString("holdTime", v.name)?.apply(); changed() }
+
     fun onChange(l: () -> Unit) { if (l !in listeners) listeners.add(l) }
     fun removeOnChange(l: () -> Unit) { listeners.remove(l) }
 
