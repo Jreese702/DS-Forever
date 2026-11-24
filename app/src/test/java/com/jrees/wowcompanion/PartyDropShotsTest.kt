@@ -380,18 +380,18 @@ class PartyDropShotsTest {
         assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
     }
 
-    /** review: every In fights band (Grow / Same size / Top screen, its cast bar on either screen) x the list's fight sizing (Grows /
-     *  Same / Shrink; a Top-screen fight's Fill / Grow / Same) x the bar shown or hidden in fights, each wheel held through a whole fight (its start AND its end):
+    /** review: every In fights band (Grow / Same size / Top screen, its cast bar on either screen) x the list's "Size in fights" (Grow /
+     *  Same size: one setting for both screens since 1524) x the bar shown or hidden in fights, each wheel held through a whole fight (its start AND its end):
      *  on no frame the list or the bar drawn over the held wheel, and both back where they lie once it closes */
     @Test fun aWheelHeldThroughAnyFightKeepsClearOfTheList() {
         for (cast in BARS) for (band in HomeLayout.FightBand.values()) for (fc in if (band == HomeLayout.FightBand.TOP) HomeLayout.FightCast.values().toList() else listOf(HomeLayout.FightCast.BOTTOM))
-            // (the list's sizing pick that applies: In fights = Top screen reads partyTop, the others partyBottom)
-            for (sz in if (band == HomeLayout.FightBand.TOP) HomeLayout.PartyTopFight.values().toList() else HomeLayout.PartyBottomFight.values().toList())
+            // (the list's one "Size in fights" pick: it applies to every band, the controller on either screen)
+            for (sz in HomeLayout.PartySize.values())
             for (stay in listOf(true, false)) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
                 val tag = "$cast $band/$fc/$sz ${if (stay) "shown" else "hidden"} in fights, $what"
                 val base = HomeLayout(party = HomeLayout.PartyDock.UNDER_MAP, cast = cast, castSize = HomeLayout.SlotSize.L,
                     fight = band, fightCast = fc)
-                val l = if (sz is HomeLayout.PartyTopFight) base.copy(partyTop = sz) else base.copy(partyBottom = sz as HomeLayout.PartyBottomFight)
+                val l = base.copy(partySize = sz)
                 val p = page(l, 5, stay)
                 if (!footOverAcross(tag, p)) continue
                 fun sq(): RectF = if (what == "middle wheel") RectF(field(p.home, "wheelRect") as RectF) else classRect(p)
