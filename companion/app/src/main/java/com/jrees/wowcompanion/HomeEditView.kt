@@ -1075,7 +1075,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (cur.band && (free || m.menu == cur || m.sheet == HomeEditModel.Sheet.EXTRAS || liftedExtra)) bandBox(cur)?.let { b ->
             val sv = c.save()
             if (liftedExtra) m.extraLifted?.let { if (host.extraPose(it, mtx)) c.concat(mtx) }
-            val box = scratch2; box.set(b); box.inset(-6f, -6f)
+            val box = scratch2; box.set(b); box.inset(-BandEdit.CURSOR_OUT, -BandEdit.CURSOR_OUT)
             UiKit.focus(c, box)
             c.restoreToCount(sv)
         }

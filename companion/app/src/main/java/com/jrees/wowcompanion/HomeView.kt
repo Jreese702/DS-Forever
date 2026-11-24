@@ -3302,7 +3302,8 @@ class HomeView(
         }
         val pieces = BandEdit.place(HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom), slots,
             chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview,
-            away = b.bottom <= 0f)                                        // Top screen's preview: the band above the page
+            away = b.bottom <= 0f,                                        // Top screen's preview: the band above the page
+            strip = now[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) })
         fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
         return HomeEditView.BandGeo(RectF(b), pad, face, rf(pieces.padPen), rf(pieces.facePen), pieces.look?.let { rf(it) },
             pieces.fightPen?.let { rf(it) }, extras, plus, diamonds, chip, keys)
