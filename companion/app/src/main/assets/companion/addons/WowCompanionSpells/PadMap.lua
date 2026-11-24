@@ -1184,6 +1184,16 @@ function OV.hold.ref(e) return e and OV.ftRef(e) or nil end
 -- attack on cast is on), a whole-button thing its fight text; nil = nothing to run
 function OV.hold.body(e) return e and OV.ftBody(e, attackOn()) or nil end
 -- the positions whose key the router carries for the holds (any page / set); none while hold to cast is unavailable
+-- the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already" - the place does something of
+-- its own (a spell, an item, a macro, a mount, a command, a binding, an In combat entry over it) or is a base face (its game action:
+-- Jump / Interact / Inspect / Back - a tap does that, so a hold there is the second action the feature is for)
+function OV.hold.has(page, set, pos)
+    if set == 1 and type(pos) == "number" and pos >= FIRST_RESERVED and pos <= 8 then return true end
+    local s = type(page) == "number" and storage(page, set, pos) or nil
+    if not s then return false end
+    local ok, v = pcall(OV.view, set, pos, s)
+    return ok and type(v) == "table" and v.kind ~= nil and v.kind ~= "none" or false
+end
 function OV.hold.positions()
     local out = {}
     if not OV.hold.usable() then return out end
@@ -4935,6 +4945,7 @@ WC.padMap = {
         end
         local k = OV.hold.key(page, set, pos)
         if k == nil then ack("hold", false, "no slot") return false, "no slot" end
+        if not OV.hold.has(page, set, pos) then ack("hold", false, "empty") return false, "empty" end      -- a hold needs a press
         if not whoKey() then ack("hold", false, "no character") return false, "no character" end
         local e, why = OV.hold.entry(kind, v)
         if not e then ack("hold", false, why) return false, why end
@@ -4956,6 +4967,7 @@ WC.padMap = {
         return true
     end,
     holdAt = function(page, set, pos) return OV.hold.at(OV.hold.key(page, set, pos)) end,
+    holdOk = function(page, set, pos) return OV.hold.has(page, set, pos) end,            -- the place may take a hold (it has a press)
     -- the app's hold marker is down NOW (add-on code's read of the controller; the Bind box asks at the press: Book b78)
     holdMarked = function()
         local gi = OV.hold.idx()
@@ -8797,7 +8809,25 @@ function OV.hold.mapNow()
     if #out == 0 then return nil, "none" end
     return table.concat(out, ","), "on"
 end
+-- a hold whose button has nothing any more (its press cleared or moved away, the game's bar emptied - or saved before the rule) is
+-- dropped with it, out of combat, once the bars are loaded (a login's first reads are empty): store, router texts, keys
+function OV.hold.sweep()
+    if inCombat() or not barsLoaded() then return false end
+    local t = OV.hold.db()
+    local gone = false
+    for k, e in pairs(t) do
+        local keep
+        if type(k) == "number" then
+            keep = type(e) == "table" and type(e.set) == "number" and type(e.pos) == "number"
+                and (function() local ok, v = pcall(OV.view, e.set, e.pos, k); return ok and type(v) == "table" and v.kind ~= nil and v.kind ~= "none" end)()
+        else keep = type(k) == "string" and k:match("^f[5-8]$") ~= nil end
+        if not keep then t[k] = nil; gone = true end
+    end
+    if gone then pcall(routerMacros); pcall(routerBind, "hold"); soon() end
+    return gone
+end
 function OV.hold.tick(force)
+    pcall(OV.hold.sweep)
     -- a binding put on the Guide's name since the probe (the player, another add-on): hold to cast off at once (the map says it; the
     -- kept answer dropped out of combat), as the probe would have said
     local g = OV.hold.guide()

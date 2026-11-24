@@ -438,6 +438,10 @@ object PadMapModel {
         return out
     }
 
+    /** m190 (the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"): the button does
+     *  something - its own spell / item / macro / command / binding, an In combat entry, or a base face's game action (PadMap holdOk) */
+    fun holdable(sl: Slot?): Boolean = sl != null && (sl.kind != Kind.NONE || sl.fight != null || sl.combat != null)
+
     /** m190: the hold spell at set (1-4) / position (1-8) of [map] (its slot's `h`), or null */
     fun holdAt(map: Map, set: Int, pos: Int): Ref? = slot(map, set, pos)?.hold
 

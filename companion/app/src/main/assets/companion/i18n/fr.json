@@ -1,5 +1,8 @@
 {
 "plain": {
+"Bind hold": "Assigner le maintien",
+"Bind combat spell": "Assigner le sort de combat",
+"Bind puts a spell from your book, or one of the game's commands, on this button.": "Assigner place un sort de votre grimoire, ou une commande du jeu, sur ce bouton.",
 "hold": "maintien",
 "Change hold": "Changer le maintien",
 "Fight buttons unavailable: the game is not taking key changes right now": "Boutons de combat indisponibles : le jeu n'accepte pas de changement de touches pour l'instant",

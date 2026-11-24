@@ -67,6 +67,10 @@ function IsMounted() return MOUNTED end
 function IsFlying() return false end
 function IsSwimming() return false end
 SPELLNAME[8042] = "Earth Shock"
+-- the player's own bar (the slots that HAVE something: LT + X 17, LT + Y 18, LT + A 20; LT + B 19 and the rest empty)
+ACTIONINFO = { [17] = { "spell", 403 }, [18] = { "spell", 331 }, [20] = { "spell", 403 } }
+function GetActionInfo(s) local a = ACTIONINFO[s]; if a then return a[1], a[2] end end
+function GetActionTexture(s) local a = ACTIONINFO[s]; return a and 130000 + a[2] or nil end
 '''
 AFTER = r'''
 WowCompanion.spellsStorageFor = function(page, set, pos) return (page - 1) * 48 + (set - 1) * 12 + pos end
@@ -394,6 +398,37 @@ L7.execute('OTHER = {}; SetOverrideBinding(OTHER, false, "PADSYSTEM", "TOGGLEGAM
 check(last(L7, 'holdmap').get('why') == 'bound' and last(L7, 'holdmap').get('on') is None and L7.eval('WowCompanionSpellsDB.holdGuide') is None
       and L7.eval('HB("WowCompanionCombatFace6").a["wc-gd"]') is None,
       '8b. a binding put on PADSYSTEM mid-session: the map off at once ("bound"), the kept answer and the marker number dropped', last(L7, 'holdmap'))
+
+# ---------------------------------------------------------------- (10) A HOLD ONLY ON A BUTTON THAT HAS SOMETHING (the user, 2026-11-24:
+# "You should only be able to bind a hold on a button that has something already")
+check(L.eval('(WowCompanion.padMap.putHold(1, 2, 7, "spell", 2))') is False and last(L, 'padack').get('why') == 'empty',
+      '10. an empty button (LT + B, slot 19): no hold (refused: empty)', last(L, 'padack'))
+check(L.eval('(WowCompanion.padMap.putHold(1, 1, 7, "spell", 3))') is True, '10. a base face (B: the game own Back) counts as something')
+check('if not (pm and type(pm.holdOk) == "function" and pm.holdOk(pm.page(), shownSet(), tc.pos)) then report("hold-empty") return true end' in ptc,
+      '10. the room: Y on an empty button says hold-empty, nothing opens')
+check(L.eval('WowCompanion.padMap.holdOk(1, 2, 7)') is False and L.eval('WowCompanion.padMap.holdOk(1, 2, 6)') is True
+      and L.eval('WowCompanion.padMap.holdOk(1, 1, 8)') is True, '10. holdOk: empty no, a spell yes, a base face yes')
+# the press taken off (here: the game's own bar emptied; Clear / Move do the same): its hold goes too
+check(L.eval('WowCompanion.padMap.holdAt(1, 2, 6) ~= nil'), '10. (LT + Y has its hold)')
+L.execute('ACTIONINFO[18] = nil; fire("ACTIONBAR_SLOT_CHANGED", 18); WowCompanion.padMapHold().tick(); advance(1)')
+check(L.eval('HDB()[18]') is None and L.eval('HDR("wc-ht-18")') is None, '10. the press gone: its hold dropped (store and router)',
+      (L.eval('HDB()[18]'), L.eval('HDR("wc-ht-18")')))
+L.execute('ACTIONINFO[18] = { "spell", 331 }')
+# an orphan saved before this rule (a hold on an empty slot): dropped at the login
+L9 = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM", holdBy = { ["Korvash-Realm"] = { [19] = { id = 331, n = "Healing Wave", i = 1, page = 1, set = 2, pos = 7 }, [18] = { id = 1064, n = "Chain Heal", i = 1, page = 1, set = 2, pos = 6 } } } }')
+L9.execute('WowCompanion.padMapHold().tick(); advance(1)')
+check(L9.eval('HDB()[19]') is None and L9.eval('HDB()[18] ~= nil'), '10. a saved orphan (empty slot 19) dropped at the login; slot 18 (a spell) kept')
+# the Bind box: HOLDING an empty button places the spell as its normal press (never a hold on nothing)
+LB = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM" }; C_GamepadUI = { GetFirstGamepadActionBarStorageSlotIndexForActiveStance = function() return 0 end, IsValidGamepadActionStorageSlotIndex = function() return true end }; CURSOR = nil; function GetCursorInfo() if CURSOR then return CURSOR[1], CURSOR[2] end end; function ClearCursor() CURSOR = nil end; C_SpellBook.PickupSpellBookItem = function(slot) local id = BOOK[slot]; if id then CURSOR = { "spell", id } end end')
+LB.execute('BK = WowCompanion._spellsBook; BK.ctl.on = true; BK.ctl.pg = "book"; BK.startBind({ t = 1, slot = 1, id = 403 })')
+nb = nsent(LB)
+LB.execute('PADSTATE = { [LT_I] = true, [17] = true }; BK.press("PADDLEFT"); PADSTATE = {}')
+ab = [d for d in docs(LB, nb, 'spellsack') if d.get('op') == 'bind']
+ab = ab[-1] if ab else {}
+# (this stub game has no cursor road: the normal bind's own pick-up answers "failed" - what matters is the road it took)
+check(ab.get('op') == 'bind' and not (ab.get('pad') or {}).get('hold') and (ab.get('probe') or {}).get('slotSrc') == 'formula'
+      and (ab.get('probe') or {}).get('pad') == 2 and LB.eval('HDB() == nil or HDB()[13] == nil'),
+      '10. Bind box: LT + D-pad Left (empty) HELD = the normal bind road (the bar slot), never a hold', ab)
 
 # ---------------------------------------------------------------- (9) no trace
 check(not lst(L, 'SPY'), '9. no SetBinding / SetCVar / macro write / game window call', lst(L, 'SPY'))

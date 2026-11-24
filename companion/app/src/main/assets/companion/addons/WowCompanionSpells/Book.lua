@@ -1432,7 +1432,10 @@ onPress = function(key)
         -- b78 HOLD TO CAST: the button HELD for the hold time (the app's marker at the press) = place as that button's hold spell
         local why
         local pmh = WC.padMap
-        if type(pmh) == "table" and type(pmh.holdMarked) == "function" and pmh.holdMarked() and POS[key] then
+        -- (the user, 2026-11-24: "only ... a button that has something already": an EMPTY button held takes the spell as its press)
+        local hset = padSet() or activeFromGame() or 1
+        if type(pmh) == "table" and type(pmh.holdMarked) == "function" and pmh.holdMarked() and POS[key]
+            and type(pmh.holdOk) == "function" and pmh.holdOk(gamePage(), hset, POS[key]) then
             if TB(function() return InCombatLockdown() end) then ack(false, ctl.bind.id, "combat"); WC.spellsRefusedCombat() why = "combat"
             else why = UNDO.holdPlace(ctl.bind, key, nil) end
         else

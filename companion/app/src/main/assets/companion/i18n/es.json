@@ -1,5 +1,8 @@
 {
 "plain": {
+"Bind hold": "Asignar al mantener",
+"Bind combat spell": "Asignar hechizo de combate",
+"Bind puts a spell from your book, or one of the game's commands, on this button.": "Asignar pone un hechizo de tu libro, o uno de los comandos del juego, en este botón.",
 "hold": "mantener",
 "Change hold": "Cambiar al mantener",
 "Fight buttons unavailable: the game is not taking key changes right now": "Botones de combate no disponibles: el juego no acepta cambios de teclas ahora",

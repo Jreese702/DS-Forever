@@ -866,6 +866,8 @@ local function pressButtons(key)
         local pm = PM()
         if not (pm and type(pm.holdOn) == "function" and pm.holdOn()) then report("hold-off") return true end
         if inCombat() then refusedCombat() return true end
+        -- the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"
+        if not (pm and type(pm.holdOk) == "function" and pm.holdOk(pm.page(), shownSet(), tc.pos)) then report("hold-empty") return true end
         tc.lock = shownSet(); tc.chooser = { list = "spells", row = 1, hold = true }; report("chooser")
         return true
     end
