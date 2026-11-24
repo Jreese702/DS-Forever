@@ -198,8 +198,10 @@ class PausePowerTest {
         assertTrue("A closes", view.contains("pressed(PadInput.SLOT_FACE_BOTTOM) -> powerAct(power.confirm(), \"A\")"))
         assertTrue("B: one step back", view.contains("pressed(PadInput.SLOT_FACE_RIGHT) -> powerAct(power.cancel(), \"B\")"))
         assertTrue("the wheel opens roomy", view.contains("UiKit.pauseRoomy = true"))
-        assertTrue("the host runs the sequence", host.contains("pauseView.onPower = { powerOff.run() }"))
-        assertTrue("a fight refuses", host.contains("if (homeView.inFight()) PausePower.FIGHT_LINE else null"))
+        // the user's pick (2026-11-24): "Keep the confirm, allow in fights" - Close runs the immediate exit (ExitNow), as the Menu's Exit game
+        assertTrue("Close = the immediate exit; the old sequence only without the launcher",
+            host.contains("pauseView.onPower = { LauncherHooks.exitNow?.invoke(ExitNow.POWER) ?: powerOff.run() }"))
+        assertFalse("no refusal in a fight any more", host.contains("pauseView.powerRefusal ="))
         assertTrue("the pause pushes the bars up, the target radial keeps them",
             host.contains("pauseView.onSlide = { t -> slideBarsUp = true;") && host.contains("targetRadial.onSlide = { t -> slideBarsUp = false;"))
         // feat/exit-now (the user, 2026-11-24): the waiting screen's Exit game closes DS Forever at once (ExitNow); the clean disconnect

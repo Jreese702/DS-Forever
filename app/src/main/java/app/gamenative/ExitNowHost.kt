@@ -33,7 +33,7 @@ object ExitNowHost {
     fun start(ctx: Context, why: String) {
         val app = ctx.applicationContext
         // ours, not Android's: in place before anything else can end the game (the guest's end reads it)
-        GameLife.closer = ExitNow.CLOSER
+        GameLife.closer = ExitNow.closer(why)
         Thread({ ExitNow.Sequence(steps(app, why)).run() }, "dsf-exit-now").start()
     }
 
@@ -46,9 +46,9 @@ object ExitNowHost {
             }, "dsf-exit-now-watchdog").apply { isDaemon = true; start() }
         },
         mark = {
-            GameLife.closer = ExitNow.CLOSER
+            GameLife.closer = ExitNow.closer(why)
             LastRun.ownExit(app)
-            DiagLog.event("app", "Exit game ($why): DS Forever closes at once (the game ends without its own Exit Game)")
+            DiagLog.event("app", "${ExitNow.closer(why)}: DS Forever closes at once (the game ends without its own Exit Game)")
             IndoorSchedulerStep.appExit()
             ScreenSwap.ownExit(app)
             NativeLogin.clear(app)

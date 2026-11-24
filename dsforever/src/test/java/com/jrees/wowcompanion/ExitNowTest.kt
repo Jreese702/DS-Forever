@@ -129,6 +129,14 @@ class ExitNowTest {
         assertEquals(null, LastRun.words(null, wasRunning = true, inWorld = true, ranMs = 60_000L))
     }
 
+    /** the user's pick (2026-11-24): the pause wheel's power button runs the same immediate exit; its own words in the game's end */
+    @Test fun thePowerButtonsCloserIsItsOwn() {
+        assertEquals(ExitNow.CLOSER, ExitNow.closer(ExitNow.MENU))
+        assertEquals("Close DS Forever from the pause menu", ExitNow.closer(ExitNow.POWER))
+        assertFalse(GameLife.abnormal(137, ExitNow.closer(ExitNow.POWER)))
+        assertTrue(GameLife.describe(137, ExitNow.closer(ExitNow.POWER)).startsWith("was closed by DS Forever (Close DS Forever from the pause menu"))
+    }
+
     @Test fun theIndoorMapsStandDownWhileDsForeverGoes() {
         assertEquals(IndoorSchedulerStep.Action.START, IndoorSchedulerStep.on(IndoorSchedulerStep.Event.GAME_CLOSED, exiting = false))
         assertEquals("the game's close during the exit starts nothing", IndoorSchedulerStep.Action.KEEP,
@@ -165,7 +173,8 @@ class ExitNowTest {
         assertTrue(main.contains("com.jrees.wowcompanion.LauncherHooks.exitNow = { why -> ExitNowHost.start(applicationContext, why) }"))
         assertFalse("never the game's own Exit Game first", exitHost.contains("cleanExit"))
         val mark = exitHost.substringAfter("mark = {").substringBefore("},\n")
-        assertTrue("the closer", mark.contains("GameLife.closer = ExitNow.CLOSER"))
+        assertTrue("the closer, by who asked", mark.contains("GameLife.closer = ExitNow.closer(why)"))
+        assertTrue(exitHost.substringAfter("fun start(").substringBefore("Thread(").contains("GameLife.closer = ExitNow.closer(why)"))
         assertTrue("the own-exit mark (commit)", mark.contains("LastRun.ownExit(app)"))
         assertTrue("the indoor maps' kill marker goes", mark.contains("IndoorSchedulerStep.appExit()"))
         assertTrue("a written login.txt goes", mark.contains("NativeLogin.clear(app)"))

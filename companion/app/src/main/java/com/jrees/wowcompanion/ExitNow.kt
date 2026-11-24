@@ -2,10 +2,11 @@ package com.jrees.wowcompanion
 
 /**
  * EXIT GAME CLOSES DS FOREVER AT ONCE (feat/exit-now; the user, 2026-11-24: "I want our built in close game button to completly close
- * the app immidiatly"). The waiting screen's Menu > Exit game used to run the game's own Exit Game first (its 20 s countdown, the safe
+ * the app immidiatly"; then the pick "Pause wheel power button": its Close after its one "Close DS Forever?" runs this too, in a fight
+ * as well). The waiting screen's Menu > Exit game used to run the game's own Exit Game first (its 20 s countdown, the safe
  * close up to ~65 s) and then only ended the game's environment: DS Forever stayed open on its launcher screen. Now the whole app goes,
  * Local or Streaming, in under 2 s:
- *  1. [Steps.mark]: "Exit game from the menu" as the game's closer (GameLife: the next report never calls it a crash), our own exit's
+ *  1. [Steps.mark]: "Exit game from the menu" (or the power button's [POWER_CLOSER]) as the game's closer (GameLife: the next report never calls it a crash), our own exit's
  *     mark for the next start (LastRun: Android's signal-9 record of it is no "ended unexpectedly"), the indoor maps' kill marker gone
  *     (not a failed bake), a written login.txt deleted, Swap screens' start count taken back;
  *  2. [Steps.flush]: DS Forever's pending writes on disk (every SharedPreferences apply(), the background logs), at most [FLUSH_MS].
@@ -27,8 +28,14 @@ package com.jrees.wowcompanion
 object ExitNow {
     /** the Menu's press ([LauncherHooks.exitNow]'s why) */
     const val MENU = "menu"
+    /** the pause wheel's power button, its "Close DS Forever?" answered Close (the user's pick 2026-11-24: "Keep the confirm, allow in
+     *  fights"): the same exit */
+    const val POWER = "power"
     /** the game's closer (GameLife.closer): ours, not Android's */
     const val CLOSER = "Exit game from the menu"
+    const val POWER_CLOSER = "Close DS Forever from the pause menu"
+    /** the closer for who asked ([MENU], [POWER]) */
+    fun closer(why: String): String = if (why == POWER) POWER_CLOSER else CLOSER
     /** DS Forever's pending writes, at most */
     const val FLUSH_MS = 300L
     /** the stream's end: the send to Desktop, at most */

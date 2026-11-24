@@ -92,7 +92,7 @@ class PausePowerShotsTest {
         }
         pause.onClose = { _ -> home.pauseSlide(0f, barsUp = true); strip.translationY = 0f }
         pause.streaming = { streaming }
-        pause.powerRefusal = { if (fight) PausePower.FIGHT_LINE else null }
+        // the user's pick (2026-11-24, "Keep the confirm, allow in fights"): the host sets no refusal, so [fight] wires nothing
         pause.onPower = { did += "power" }
         return Stage(root, home, strip, pause, did)
     }
@@ -209,13 +209,25 @@ class PausePowerShotsTest {
         assertEquals(listOf("power"), s.did)
     }
 
-    @Test fun aFightRefusesIt() {
+    /** the user's pick (2026-11-24): in a fight the prompt still asks, and its Yes closes DS Forever */
+    @Test fun aFightStillAsksAndYesCloses() {
         val s = stage(fight = true)
         s.pause.open(byStart = false); settle()
         press(s.pause, PadInput.SLOT_FACE_TOP)
+        assertEquals("the one confirm", PausePower.State.ASKING, s.pause.powerState)
+        assertEquals("no refusal line", null, field(s.pause, "line"))
+        press(s.pause, PadInput.SLOT_FACE_BOTTOM)
+        assertEquals(listOf("power"), s.did)
+    }
+
+    @Test fun noDoesNothing() {
+        val s = stage(fight = true)
+        s.pause.open(byStart = false); settle()
+        press(s.pause, PadInput.SLOT_FACE_TOP)
+        press(s.pause, PadInput.SLOT_FACE_RIGHT)
         assertEquals(PausePower.State.NONE, s.pause.powerState)
-        assertEquals(PausePower.FIGHT_LINE, field(s.pause, "line"))
-        assertTrue(s.did.isEmpty())
+        assertTrue("B: nothing closes", s.did.isEmpty())
+        assertTrue("the wheel stays", s.pause.isOpen)
     }
 
     // ---------------------------------------------------------------- the pictures
