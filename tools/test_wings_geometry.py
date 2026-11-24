@@ -38,7 +38,7 @@ Checks:
     11-23, testing 1523: "the top slides out faster than the bottom slides up"): the Wings ride the band's own curve until it has left
     the bottom screen: the same speed mm for mm the whole way (within 3 %), the band's exit speed at the seam (within 10 %), then the even
     brake; the default HUD's whole way up the bottom's own (TopSlide.COLS_UP_MS ~311 within 5 %). The plate checks (2c): what is DRAWN,
-    the band's 39 x 31 plate at 7.51 x 5.97 mm (tools/test_wings_match.py A pins every texture's aspect).
+    the band's 39 x 31 plate at 0.75 x its 7.51 x 5.97 mm = 5.63 x 4.48 (nbar18; tools/test_wings_match.py A pins every texture's aspect).
   4 THE INPUTS: NB.topOurs unions P.lay.block with the live frames read at ANY alpha (the HUD faded out of combat still counts).
   5 THE FIGHT'S EDGE AT ONCE: a state sent at t = 0, then PLAYER_REGEN_DISABLED at t = 0.1 (before the lockdown reads true): the next
     frame's state goes out at t = 0.1 with c = true (not at the 0.5 s window's end).
@@ -680,8 +680,9 @@ def main():
         "row and the tab, never the case-5 fallback (%d Party states, %d as wings)" % (HUD_MARGIN, n_off, n_off_w),
         not bad_off and n_off > 0 and n_off_w >= 0.8 * n_off, bad_off[:3])
     hw_, hh_, ax_, ay_ = hb
-    chk("2. nbar17: one half 227 x 135 (the flattened diamond: the outer column to 141.5 - the band's 62-wide plate -, the inner glow "
-        "85.5, up 63, the swing lines down to 72)", (hw_, hh_, ax_, ay_) == (227, 135, 141.5, 63), (hw_, hh_, ax_, ay_))
+    chk("2. nbar18: one half 215.25 x 135 (the flattened diamond: the outer column to 129.75 - Party mode's chord row past the 0.75-size "
+        "46.5-wide plate -, the inner glow 85.5, up 63, the swing lines down to 72; nbar17's 227 x 135)",
+        (hw_, hh_, ax_, ay_) == (215.25, 135, 129.75, 63), (hw_, hh_, ax_, ay_))
     # 2c nbar14 the band's size on the Thor's top panel
     sq = NB.B * MATCH * MM_TOP
     rd = NB.BC * MATCH * MM_TOP
@@ -689,11 +690,11 @@ def main():
         % (sq, rd, BAND_SQUARE_MM), abs(sq / BAND_SQUARE_MM - 1) <= 0.03 and abs(rd / (88.1 * MM_BOTTOM) - 1) <= 0.03)
     T_ = NB.TOP
     dpad_mm = ((2 * T_.OFF_X + NB.B) * MATCH * MM_TOP, (2 * T_.OFF_Y + NB.B) * MATCH * MM_TOP)
-    chk("2c. nbar17: the flattened D-pad diamond %.1f x %.1f mm (the band's 17.0 x 11.6 within 5 %%), the plate %.2f x %.2f mm (the band's "
-        "124 x 98.6 bottom px: 7.51 x 5.97 within 3 %%, its 39 : 31)" % (dpad_mm + (T_.PLATE_W * MATCH * MM_TOP, T_.PLATE_H * MATCH * MM_TOP)),
+    chk("2c. nbar18: the flattened D-pad diamond %.1f x %.1f mm (the band's 17.0 x 11.6 within 5 %%), the plate %.2f x %.2f mm (0.75 x the "
+        "band's 124 x 98.6 bottom px: 5.63 x 4.48 within 3 %%, its 39 : 31)" % (dpad_mm + (T_.PLATE_W * MATCH * MM_TOP, T_.PLATE_H * MATCH * MM_TOP)),
         abs(dpad_mm[0] / 17.0 - 1) <= 0.05 and abs(dpad_mm[1] / 11.6 - 1) <= 0.05
-        and abs(T_.PLATE_W * MATCH * MM_TOP / (124 * MM_BOTTOM) - 1) <= 0.03
-        and abs(T_.PLATE_H * MATCH * MM_TOP / (124 * 31 / 39 * MM_BOTTOM) - 1) <= 0.03 and abs(T_.PLATE_W / T_.PLATE_H / (39 / 31) - 1) < 1e-9)
+        and abs(T_.PLATE_W * MATCH * MM_TOP / (0.75 * 124 * MM_BOTTOM) - 1) <= 0.03
+        and abs(T_.PLATE_H * MATCH * MM_TOP / (0.75 * 124 * 31 / 39 * MM_BOTTOM) - 1) <= 0.03 and abs(T_.PLATE_W / T_.PLATE_H / (39 / 31) - 1) < 1e-9)
     st817 = boot_trail(817)
     fr0, block0, _ = hud_state(st817, "none", False, False, 0, False, 100, 280, -350)
     r0, _ = solve_case(NBL, fr0, block0, MATCH)

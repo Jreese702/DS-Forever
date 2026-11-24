@@ -302,7 +302,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar13 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar17"' in src
+    chk("0. ActionBar's tag nbar18 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar18"' in src
         and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)
@@ -316,15 +316,17 @@ def main():
     # below it; nbar12 (ruling A): the outer column - the L / R plate, the chip under it, Party mode's chord row. nbar14 THE BAND'S SHAPE:
     # the flattened diamond (OFF_X 47.5 across, OFF_Y 25 up / down): the inner glow 47.5 + 23 + 15 = 85.5, up 25 + 23 + 15 = 63; the
     # plate 64 x 50 at 70.5 + 6 + 34 = 110.5 (out to 142.5); down: the swing lines 48 + 8 + 6 + 4 + 6 = 72. nbar17: the band's own plate
-    # 62 x 49.28 at 110.5 (out to 141.5), the chip (its 25.8 glyph) 42.4 under the plate's centre (the band's 84.7 bottom px)
-    chk("A. nbar17 one half: outer 141.5 (the band's 62-wide plate at 110.5), inner 85.5 / up 63 (the focus glow of the flattened "
-        "diamond), down 72 (the swing lines); the diamond's centre", (hw, hh, ax, ay) == (227, 135, 141.5, 63), (hw, hh, ax, ay))
+    # 62 x 49.28 at 110.5 (out to 141.5), the chip (its 25.8 glyph) 42.4 under the plate's centre (the band's 84.7 bottom px).
+    # nbar18 (the user, 11-24: "About a quarter smaller"): the plate 46.5 x 36.96 at 102.75 (its inner edge 9 past the slot as before; out
+    # to 126), the chip 19.35 31.8 under it; Party mode's chord row (16 + 3, unchanged) out to 102.75 + 19 + 8 = 129.75 is the reach now
+    chk("A. nbar18 one half: outer 129.75 (the chord row past the 0.75-size plate at 102.75), inner 85.5 / up 63 (the focus glow of the "
+        "flattened diamond), down 72 (the swing lines); the diamond's centre", (hw, hh, ax, ay) == (215.25, 135, 129.75, 63), (hw, hh, ax, ay))
     og = todict(L.eval("WowCompanion.nbar.outerGeo")())
-    py_ = 48 - 62 * 31 / 39 / 2
-    cy_ = py_ - 62 * 31 / 39 / 2 - 4.86 - 25.8 / 2
-    chk("A. nbar17 the outer column: x 110.5, the plate at +23.36 (its top level with the diamond's top slot), the chip 42.4 under it "
-        "(-19.04), the chord row under that (-43.94)", og["x"] == 110.5 and abs(og["plateY"] - py_) < 1e-9 and abs(og["chipY"] - cy_) < 1e-9
-        and abs(og["chordY"] - (cy_ - 12.9 - 4 - 8)) < 1e-9 and og["chordDX"] == 19 and abs((py_ - cy_) - 42.4) < 0.01, og)
+    py_ = 48 - 46.5 * 31 / 39 / 2
+    cy_ = py_ - 46.5 * 31 / 39 / 2 - 4.86 * 0.75 - 19.35 / 2
+    chk("A. nbar18 the outer column: x 102.75, the plate at +29.52 (its top level with the diamond's top slot), the chip 31.8 under it "
+        "(-2.28), the chord row under that (-23.96)", og["x"] == 102.75 and abs(og["plateY"] - py_) < 1e-9 and abs(og["chipY"] - cy_) < 1e-9
+        and abs(og["chordY"] - (cy_ - 19.35 / 2 - 4 - 8)) < 1e-9 and og["chordDX"] == 19 and abs((py_ - cy_) - 31.8) < 0.01, og)
     chk("A. nbar14 the band's size and shape: MATCH_S 1.75, OFF_X 47.5 / OFF_Y 25, GAP 60, HUD_MARGIN 60, MIN_K 0.8, PUSH_MAX 228",
         (NB.TOP.MATCH_S, NB.TOP.OFF_X, NB.TOP.OFF_Y, NB.TOP.GAP, NB.TOP.HUD_MARGIN, NB.TOP.MIN_K, NB.TOP.PUSH_MAX) == (1.75, 47.5, 25, 60, 60, 0.8, 228))
     hud = R(820, 890, 280, 58)                                   # the bars + the aura host
@@ -400,20 +402,20 @@ def main():
     chk("A5. a placed spot over the tap pad band: moved under it", r["case"] == "placed" and not any(over(rect(x), BAND) for x in r["rects"].values())
         and r["rects"][1]["y"] >= 22 + 158, r["rects"])
     # nbar10: the screen clamp runs BEFORE the band test (a top-left spot the clamp moves right never lands on the band), at MARGIN 24.
-    # The editor keeps the piece (nbar14: the Wings' joined bar, 2 x (160 + 141.5) = 603 units wide, nbar17) on the screen, so its centre
-    # x >= 301.5 s
+    # The editor keeps the piece (nbar14: the Wings' joined bar, 2 x (160 + 129.75) = 579.5 units wide, nbar18) on the screen, so its
+    # centre x >= 289.75 s
     bad = []
     for s in (1.0, 1.281, 1.3, 1.336, 1.36, 1.392, 1.4, 1.406, 1.5, 1.75):
-        for cx in range(int(301.5 * s) + 1, 720, 4):
+        for cx in range(int(289.75 * s) + 1, 720, 4):
             for cy in (int(73 * s) + 1, 100, 150, 200):
                 rr = fsolve(L, s=s, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(cx, cy, 0, 0))
-                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 141.5 * s < -1e-6:
+                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 129.75 * s < -1e-6:
                     bad.append((s, cx, cy))
     chk("A5. nbar10: a placed spot near the left edge at band height, s 1.0-1.75 (the match x size): never within 24 px of the band, on screen",
         not bad, bad[:5])
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(312, 150, 0, 0))
-    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 301.5 s: nbar17's half)",
-        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 301.5 * 1.336) < 1e-6
+    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 289.75 s: nbar18's half)",
+        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 289.75 * 1.336) < 1e-6
         and rr["rects"][1]["y"] >= 24 + 154 + 24 - 1e-6, rr)
     # case 5 (the stock fallback) too: a stock spot moved to the top-left (the whole screen taken, so the grid finds nothing)
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[R(0, 0, 1920, 1080, "g.Wall")], stock=R(300, 150, 0, 0))
@@ -442,7 +444,7 @@ def main():
     chk("A6. the HUD at the left edge: no room for the D-pad's half beside it nor joined above it -> the grid's spot (case 4), never the stock "
         "fallback", edge["case"] == 4, edge["case"])
     big = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0), s=1.5)
-    chk("A6. the size scales the halves (150 %: 340.5 x 202.5)", abs(big["rects"][1]["w"] - 340.5) < 0.01 and abs(big["rects"][1]["h"] - 202.5) < 0.01
+    chk("A6. the size scales the halves (150 %: 322.875 x 202.5, nbar18)", abs(big["rects"][1]["w"] - 322.875) < 0.01 and abs(big["rects"][1]["h"] - 202.5) < 0.01
         and big["k"] == 1, big["rects"][1])
     chk("A7. the solver is pure: no frame read, no event, nothing created", G.RAISED == 0 and NB.top.reads == 0 and G.RECTNOW == 0)
 
@@ -462,8 +464,8 @@ def main():
     G.CTOP = True
     chk("B. the flag on: the piece is listed in the top layout editor (so it can be placed)", NB.lay.want() is True and NB.lay.on() is False)
     pw, ph = L.eval("WowCompanion.nbar.lay.size")(None)
-    chk("B. nbar14: the piece is the Wings' joined bar at the match size while the flag is on (2 x (160 + 141.5) x 1.75 wide, the "
-        "flattened diamonds' 96 x 1.75 high)", abs(pw - 603 * 1.75) < 1e-6 and abs(ph - 96 * 1.75) < 1e-6, (pw, ph))
+    chk("B. nbar14: the piece is the Wings' joined bar at the match size while the flag is on (2 x (160 + 129.75) x 1.75 wide (nbar18), the "
+        "flattened diamonds' 96 x 1.75 high)", abs(pw - 579.5 * 1.75) < 1e-6 and abs(ph - 96 * 1.75) < 1e-6, (pw, ph))
 
     # ------------------------------------------------------------------------------------------------ C the live bar
     L.execute('RUN(0.6)')                                         # nbar9: the flag is read every FLAG_S (0.5 s)
@@ -746,9 +748,10 @@ def main():
     L.execute('EV("PLAYER_REGEN_DISABLED"); RUN(0.4)')
     lx, ly = L.eval("DIAMOND")(1)
     rx, ry = L.eval("DIAMOND")(2)
-    # (the spot dx -500 from the stock centre 960 = 460, kept on the screen: the joined bar's half width (160 + 141.5) x 1.75 = 527.625)
+    # (the spot dx -500 from the stock centre 960 = 460, kept on the screen: the joined bar's half width (160 + 129.75) x 1.75 = 507.0625,
+    # nbar18)
     chk("E. a placed spot (Auto off) wins in the fight: the joined bar there (kept on the screen at the match size)", todict(NB.top.spot)["case"] == "placed"
-        and abs((lx + rx) / 2 - 301.5 * 1.75) < 0.01 and abs(ly - 684) < 0.01 and abs(rx - lx - 2 * NB.DX * 1.75) < 0.01, ((lx, ly), (rx, ry)))
+        and abs((lx + rx) / 2 - 289.75 * 1.75) < 0.01 and abs(ly - 684) < 0.01 and abs(rx - lx - 2 * NB.DX * 1.75) < 0.01, ((lx, ly), (rx, ry)))
     G.TG, G.COMBAT = False, False
     L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.4); LAYE.nbar = nil; WowCompanion.nbar.lay.apply(); RUN(0.1)')
     chk("E. Reset in the editor (no entry) = Auto again", todict(NB.top.spot)["case"] == 1, todict(NB.top.spot)["case"])

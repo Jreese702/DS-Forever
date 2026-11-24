@@ -49,8 +49,9 @@ BLOCK = m.group(1)
 # ---------------------------------------------------------------- a. the version, the notes, the wiring
 v = re.search(r'local NB = \{ V = "nbar(\d+)"', AB)
 check(v is not None and int(v.group(1)) >= 5, "a. ActionBar's tag is nbar5 or later", v and v.group(0))
-# (the 1523 merge: nbar13-16's header notes pushed nbar5's quote to line 46 - the header is the file's first 60 lines now)
-check(QUOTE in "\n".join(AB.split("\n")[:60]) and QUOTE in BLOCK, "a. the header note and the block quote the user")
+# (the 1523 merge: nbar13-16's header notes pushed nbar5's quote to line 46 - the header is the file's first 60 lines now; nbar18 and
+# the integrations after it: 80)
+check(QUOTE in "\n".join(AB.split("\n")[:80]) and QUOTE in BLOCK, "a. the header note and the block quote the user")
 check('\ndo\n' in BLOCK and BLOCK.rstrip().endswith('end'), "a. the block is one do ... end (its locals scoped)")
 check(AB.count('elseif event == "PLAYER_SWING" then\n        WC.swingNote(a1, a2)') == 1, "a. PLAYER_SWING -> WC.swingNote")
 check('RegisterUnitEvent("UNIT_ATTACK_SPEED", "player")' in AB and 'elseif event == "UNIT_ATTACK_SPEED" then' in AB,

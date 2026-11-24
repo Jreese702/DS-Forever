@@ -7,10 +7,15 @@ Everything at one physical scale (mm on each panel: top 0.06918 mm a px, bottom 
 
     python -B tools/render_wings_match.py [OUT_DIR]          (default C:/dsf-work/r1524-shots/wings)
 
+  (nbar18: WINGS_BEFORE / WINGS_BEFORE_NAME / WINGS_NOW_NAME pick the "before" revision and the two runs' labels - nbar18's shots:
+  WINGS_BEFORE=94e79938c WINGS_BEFORE_NAME="1.0.40 (nbar17)" WINGS_NOW_NAME="now (nbar18)"; the before file goes to the temp dir)
+
   01_plates_band_vs_wings.png   the band's L / R plates and ZL / ZR chips vs the Wings' - 1523 and now - on a 1 mm grid, with what each
                                 measures (the plate's drawn body, its aspect, every texture's stretch)
   02_slide_timeline.png         both screens stacked as on the Thor at 0 / 25 / 50 / 75 / 100 % of the way up (the switch to the band's
                                 landing), 1523 above, now below, with each side's travel in mm
+  04_mid_slide.png              nbar18: one frame mid-way up (65 %: the band leaving the bottom screen, the Wings coming in), larger, before
+                                above, now below - both panels at one physical scale
   03_party_<n>_members.png      Party-mode Top fights (2 / 3 / 5 members; the block right of the centre): the top screen at the fight's
                                 start, mid-move, settled and after a late join / pet, 1523 vs now - every frame's hits counted
 Needs lupa and PIL, and the harvested game art (ART below: the band's art root's ui folder)."""
@@ -32,7 +37,9 @@ MEDIA = twm.MEDIA
 OUT = sys.argv[1] if len(sys.argv) > 1 else "C:/dsf-work/r1524-shots/wings"
 MM_TOP, MM_BOT = twm.MM_TOP, twm.MM_BOTTOM
 B2T = MM_BOT / MM_TOP
-BEFORE_REV = "0f57b547"
+BEFORE_REV = os.environ.get("WINGS_BEFORE", "0f57b547")
+BEFORE_NAME = os.environ.get("WINGS_BEFORE_NAME", "1523 (nbar16)")
+NOW_NAME = os.environ.get("WINGS_NOW_NAME", "now (nbar17)")
 AB_REL = "companion/app/src/main/assets/companion/addons/WowCompanion/ActionBar.lua"
 ATLAS_FILE = {
     "gamepad-targeting-left-shoulder-bg": "cast/badge_shoulder_left_bg.png", "gamepad-targeting-right-shoulder-bg": "cast/badge_shoulder_right_bg.png",
@@ -284,7 +291,7 @@ def shot_plates():
     La, NBa = wings_state(None)
     s = 1.75
     cellw, cellh = 760, 560
-    cols = [("BOTTOM band (CastView)", None), ("TOP Wings 1523 (nbar16)", NBb), ("TOP Wings now (nbar17)", NBa)]
+    cols = [("BOTTOM band (CastView)", None), ("TOP Wings " + BEFORE_NAME, NBb), ("TOP Wings " + NOW_NAME, NBa)]
     out = Image.new("RGBA", (20 + 3 * (cellw + 20), 80 + 2 * (cellh + 150)), (44, 50, 44, 255))
     d = ImageDraw.Draw(out)
     d.text((20, 18), "The L / R plates and ZL / ZR chips at ONE physical scale (grid = 1 mm; top px x 0.06918 mm, bottom px x 0.06055 mm), "
@@ -403,7 +410,7 @@ def shot_timeline():
     band_img = band_strip(1240, bot_s)
     total = twm.BAND_START_MS + twm.cols_up_ms()
     fr = [0, 0.25, 0.5, 0.75, 1.0]
-    runs = [("1523 (nbar16)", before_ab()), ("now (nbar17)", None)]
+    runs = [(BEFORE_NAME, before_ab()), (NOW_NAME, None)]
     colw = int(TW) + 20
     VH = int(TH * TC) + 6 + int(BH * BC)
     out = Image.new("RGBA", (40 + len(fr) * colw, 110 + len(runs) * (VH + 80)), (24, 24, 24, 255))
@@ -439,6 +446,49 @@ def shot_timeline():
             d.text((x0, yb + VH + 8), "%s  %3.0f%%  t %3.0f ms" % (name, k * 100, t), fill=(240, 230, 200), font=font(17))
             d.text((x0, yb + VH + 30), "band %5.1f mm   Wings %5.1f mm" % (bmm, wmm), fill=(220, 220, 210), font=font(17))
     p = os.path.join(OUT, "02_slide_timeline.png")
+    out.convert("RGB").save(p)
+    return p
+
+
+def shot_mid(k=0.65):
+    """nbar18: one frame [k] of the way up (the switch to the band's landing), larger (12 px a mm): the top panel's lower part over the
+    bottom panel's upper part, as stacked on the Thor, before above and now below - the band and the Wings at one physical scale"""
+    mmpx = 12.0
+    TC, BC = 0.40, 0.30
+    top_s, bot_s = mmpx * MM_TOP, mmpx * MM_BOT
+    TW, TH = 1920 * top_s, 1080 * top_s
+    BW, BH = 1240 * bot_s, 1080 * bot_s
+    band_img = band_strip(1240, bot_s)
+    total = twm.BAND_START_MS + twm.cols_up_ms()
+    t = k * total
+    runs = [(BEFORE_NAME, before_ab()), (NOW_NAME, None)]
+    VH = int(TH * TC) + 6 + int(BH * BC)
+    out = Image.new("RGBA", (int(TW) + 40, 100 + len(runs) * (VH + 60)), (24, 24, 24, 255))
+    d = ImageDraw.Draw(out)
+    d.text((20, 16), "Mid-slide, %.0f ms after the fight's switch (%.0f %% of %d ms): the top panel's lower part above the bottom panel's "
+                     "upper part, one physical scale (1 mm = %.0f px), real art" % (t, k * 100, total, mmpx), fill=(240, 230, 200), font=font(19))
+    for ri, (name, ab) in enumerate(runs):
+        L, NB, seq, y_end, drop = wings_track(ab)
+        f = NB.f
+        s_px = 1.75 * top_s
+        y0 = y_end + drop
+        lx, rx = seq[-1][2], seq[-1][3]
+        yb = 70 + ri * (VH + 60)
+        top = Image.new("RGBA", (int(TW), int(TH)), (52, 62, 74, 255))
+        ImageDraw.Draw(top).rectangle((820 * top_s, 890 * top_s, 1100 * top_s, 1030 * top_s), fill=(110, 40, 40, 255))
+        ly = y_at(seq, t, y0)
+        for i, cx in ((1, lx), (2, rx)):
+            draw_wings_half(top, NB, f, i, cx * top_s, ly * top_s, s_px)
+        bot = Image.new("RGBA", (int(BW), int(BH)), (36, 30, 24, 255))
+        bk = twm.cubic((t - twm.BAND_START_MS) / twm.BAND_UP_MS, 0.4, 0, 1, 1)
+        bot.alpha_composite(band_img, (0, int((8 - bk * 242) * bot_s)))
+        out.alpha_composite(top.crop((0, int(TH * (1 - TC)), int(TW), int(TH))), (20, yb))
+        out.alpha_composite(bot.crop((0, 0, int(BW), int(BH * BC))), (20 + int((TW - BW) / 2), yb + int(TH * TC) + 6))
+        T = NB.TOP
+        d.text((20, yb + VH + 8), "%s - band %.1f mm up, Wings %.1f mm in; top plate %.2f x %.2f mm, ZL / ZR glyph %.2f mm" % (
+            name, bk * 242 * MM_BOT, (y0 - ly) * MM_TOP, float(T.PLATE_W) * 1.75 * MM_TOP, float(T.PLATE_H) * 1.75 * MM_TOP,
+            float(T.CHIP_G) * 1.75 * MM_TOP), fill=(235, 235, 225), font=font(20))
+    p = os.path.join(OUT, "04_mid_slide.png")
     out.convert("RGB").save(p)
     return p
 
@@ -498,7 +548,7 @@ def shot_party(members):
     at = (0.10, 0.20, 0.40, 1.0, 1.60, 2.60)
     labels = {0.10: "0.10 s: the fight starts", 0.20: "0.20 s: the HUD fades out", 0.40: "0.40 s: it fades in, centred",
               1.0: "1.0 s: settled", 1.60: "1.60 s: a member joins", 2.60: "2.6 s: settled again"}
-    runs = [("1523 (nbar16)", before_ab()), ("now (nbar17)", None)]
+    runs = [(BEFORE_NAME, before_ab()), (NOW_NAME, None)]
     out = Image.new("RGBA", (20 + len(at) * (W + 12), 100 + len(runs) * (H + 70)), (22, 22, 22, 255))
     d = ImageDraw.Draw(out)
     d.text((20, 14), "Party mode, Top screen fight, %d members (the HUD block right of the centre): the Wings vs the centred HUD + party "
@@ -545,7 +595,7 @@ def shot_party(members):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    made = [shot_plates(), shot_timeline()]
+    made = [shot_plates(), shot_timeline(), shot_mid()]
     for m in (2, 3, 5):
         made.append(shot_party(m))
     for p in made:

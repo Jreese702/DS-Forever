@@ -1,5 +1,5 @@
 set 426
-4087403fbbe069d277e1d0b72b1372cb  WowCompanion/ActionBar.lua
+23b8da9993408d7bdb9d4ca5b36b35d3  WowCompanion/ActionBar.lua
 fa7c9554ace1e551fa2c9c02411b05c6  WowCompanion/Bags.lua
 46f82d8e20a3c731f5f0b8983c8d2820  WowCompanion/Chat.lua
 737413c5fe597fe3a9182316cea7ad04  WowCompanion/Coords.lua

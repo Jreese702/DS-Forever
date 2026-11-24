@@ -711,12 +711,14 @@ def plate_checks(chk):
     G = L.globals()
     W = G.WowCompanion
     NB = W.nbar
-    chk("nbar17: the version tag", NB.V == "nbar17", NB.V)
+    chk("nbar18: the version tag", NB.V == "nbar18", NB.V)
     G.ROWS["uisw"](None, 35)
     f = NB.f
     MEDIA_ = "Interface\\AddOns\\WowCompanion\\Media\\"
-    chk("nbar17 plates: built with the bar, one per half (62 x 49.28: the band's 39 x 31 plate, 124 bottom px), never the mouse",
-        f.plate is not None and f.plate[1].w == 62 and abs(f.plate[1].h - 62 * 31 / 39) < 1e-9
+    # nbar18 (the user, 11-24: "About a quarter smaller"): every plate / chip size and offset TK (0.75) x nbar17's
+    TK = 0.75
+    chk("nbar18 plates: built with the bar, one per half (46.5 x 36.96: 0.75 x the band's 39 x 31 plate at 124 bottom px), never the mouse",
+        f.plate is not None and f.plate[1].w == 62 * TK and abs(f.plate[1].h - 62 * TK * 31 / 39) < 1e-9
         and f.plate[1].mouse is False and f.plate[2].mouse is False, (f.plate[1].w, f.plate[1].h))
     tl = [f.plate[1].bg.tcoord[k] for k in range(1, 5)] if f.plate[1].bg.tcoord else None
     tr = [f.plate[2].bg.tcoord[k] for k in range(1, 5)] if f.plate[2].bg.tcoord else None
@@ -731,26 +733,29 @@ def plate_checks(chk):
     p1, p2 = f.plate[1].pts[1], f.plate[2].pts[1]
     c1 = f.chip[1].pts[1]
     t1 = [f.chord[1][j].pts[1] for j in (1, 2, 3)]
-    py = 48 - 62 * 31 / 39 / 2
-    cy = py - 62 * 31 / 39 / 2 - 4.86 - 25.8 / 2
-    chk("nbar17 places: the plate at each half's outer top (x 160 + 110.5, its top level with the diamond's top slot: +23.36), the chip "
-        "42.4 under its centre (the band's 84.7 bottom px), the chord row under that",
-        (p1[4], round(p1[5], 6)) == (-270.5, round(py, 6)) and (p2[4], round(p2[5], 6)) == (270.5, round(py, 6))
-        and (c1[4], round(c1[5], 6)) == (-270.5, round(cy, 6)) and abs((py - cy) - 42.4) < 0.01
-        and [t[4] for t in t1] == [-289.5, -270.5, -251.5], ((p1[4], p1[5]), (c1[4], c1[5]), [(t[4], t[5]) for t in t1]))
+    py = 48 - 62 * TK * 31 / 39 / 2
+    cy = py - 62 * TK * 31 / 39 / 2 - 4.86 * TK - 25.8 * TK / 2
+    chk("nbar18 places: the plate at each half's outer top (x 160 + 102.75: its inner edge 9 past the diamond's slot as before, its top "
+        "level with the diamond's top slot: +29.52), the chip 31.8 under its centre (0.75 x 42.4), the chord row under that",
+        (p1[4], round(p1[5], 6)) == (-262.75, round(py, 6)) and (p2[4], round(p2[5], 6)) == (262.75, round(py, 6))
+        and (c1[4], round(c1[5], 6)) == (-262.75, round(cy, 6)) and abs((py - cy) - 42.4 * TK) < 0.01
+        and [t[4] for t in t1] == [-281.75, -262.75, -243.75], ((p1[4], p1[5]), (c1[4], c1[5]), [(t[4], t[5]) for t in t1]))
     g1 = f.plate[1].glyph.pts[1]
-    chk("nbar17 places: the bumper glyph (23 square: the band's 46 px) at the plate's inner bottom corner (26 in, 20.15 down: the band's "
-        "inner edge - 10, bottom - 9)", (g1[4], g1[5]) == (26, -20.15) and f.plate[2].glyph.pts[1][4] == -26
-        and f.plate[1].glyph.w == 23 and f.plate[1].glyph.h == 23, (g1[4], g1[5]))
+    chk("nbar18 places: the bumper glyph (17.25 square: 0.75 x the band's 46 px) at the plate's inner bottom corner (19.5 in, 15.11 down: "
+        "0.75 x nbar17's 26 / 20.15)", abs(g1[4] - 26 * TK) < 1e-9 and abs(g1[5] + 20.15 * TK) < 1e-9
+        and abs(f.plate[2].glyph.pts[1][4] + 26 * TK) < 1e-9
+        and f.plate[1].glyph.w == 23 * TK and f.plate[1].glyph.h == 23 * TK, (g1[4], g1[5]))
     ic = f.plate[1].icon
-    chk("nbar17 places: the reticle square (18 plate units = 28.6) raised one plate unit (the band's (0, -1)), never SetAllPoints",
-        abs(ic.w - 18 * 62 / 39) < 1e-9 and ic.w == ic.h and ic.pts[1][1] == "CENTER" and abs(ic.pts[1][5] - 62 / 39) < 1e-9,
+    chk("nbar18 places: the reticle square (18 plate units = 21.46) raised one plate unit (1.19: the band's (0, -1)), never SetAllPoints",
+        abs(ic.w - 18 * 62 * TK / 39) < 1e-9 and ic.w == ic.h and ic.pts[1][1] == "CENTER" and abs(ic.pts[1][5] - 62 * TK / 39) < 1e-9,
         (ic.w, ic.h, list(ic.pts[1].values())))
     cg = f.chip[1].g
-    chk("nbar17 chips: the trigger glyph square (25.8: the band's 51.5 px), centred, the band's Gamepad_Rev_LTrigger_64 / RTrigger at "
-        "0.55; the held glow our soft disc (50.4)", cg.w == 25.8 and cg.h == 25.8 and cg.pts[1][1] == "CENTER"
+    chk("nbar18 chips: the trigger glyph square (19.35: 0.75 x the band's 51.5 px), centred, in a 19.35 box, the band's "
+        "Gamepad_Rev_LTrigger_64 / RTrigger at 0.55; the held glow our soft disc (37.8)",
+        abs(cg.w - 25.8 * TK) < 1e-9 and cg.w == cg.h and cg.pts[1][1] == "CENTER"
+        and abs(f.chip[1].w - 25.8 * TK) < 1e-9 and f.chip[1].w == f.chip[1].h
         and cg.atlas == "Gamepad_Rev_LTrigger_64" and f.chip[2].g.atlas == "Gamepad_Rev_RTrigger_64" and cg.alpha == 0.55
-        and f.chip[1].disc.tex == MEDIA_ + "wings_glow" and f.chip[1].disc.w == 50.4, (cg.w, cg.h, cg.atlas, cg.alpha, f.chip[1].disc.tex))
+        and f.chip[1].disc.tex == MEDIA_ + "wings_glow" and abs(f.chip[1].disc.w - 50.4 * TK) < 1e-9, (cg.w, cg.h, cg.atlas, cg.alpha, f.chip[1].disc.tex))
     # the pictures: the band's table
     kinds = L.eval("WowCompanion.nbar.plateKinds")
     want = {(False, False, False): ("friendly", "hostile"), (True, False, False): ("friendly", "shortcuts"),

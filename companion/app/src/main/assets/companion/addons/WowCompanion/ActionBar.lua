@@ -2,6 +2,9 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar18 THE TOP-SCREEN TRIGGERS A QUARTER SMALLER (the user, 2026-11-24: "I dont like how much bigger that the triggers are in the
+-- transition from the bottom screen to the top"; "Both", "About a quarter smaller"): the L / R plates and ZL / ZR chips 0.75 x nbar17's
+-- (TRIG_K), aspect kept, the solver on the smaller box; nothing else changed - at "nbar18 THE TRIGGERS A QUARTER SMALLER".
 -- nbar17 THE WINGS AS THE BAND ON THE DEVICE (the user, 2026-11-23, testing 1523 on the Thor: "The triggers look weird and stretched
 -- on both sides and nothing like the bottom. It also looks like the top slides out faster than the bottom slides up"; "The buttons need
 -- to shift in party mode to make space for the hud shifting out"): (1) the L / R plates and the ZL / ZR chips are the band's own art at
@@ -2529,7 +2532,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar17", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar18", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -3456,18 +3459,23 @@ NB.TOP = { HOLD_IN = 0.08, IN_S = 0.26, OUT_S = 0.20, RISE = 24, KS = { 1, 0.9, 
            REFIT_S = 0.5, SOLVE_S = 5, FLAG_S = 0.5, BAND = { x = 720, y = 24, w = 480, h = 154 },
            -- one half, in the bar's own units: the diamond (2 OFF + B), the ZL / ZR chip outside it, the two swing lines under it
            -- (nbar17: the chip's box is its square glyph now - CHIP_W / CHIP_H / CHIP_GAP below, with the plates')
-           CHIP_W = 25.8, CHIP_H = 25.8, CHIP_GAP = 4.86, SW_GAP = 8, SW_H = 6, SW_SEP = 4,
+           -- nbar18 THE TRIGGERS A QUARTER SMALLER: TRIG_K (0.75) times nbar17's plate / chip sizes and their offsets (see below)
+           TRIG_K = 0.75, CHIP_W = 25.8 * 0.75, CHIP_H = 25.8 * 0.75, CHIP_GAP = 4.86 * 0.75, SW_GAP = 8, SW_H = 6, SW_SEP = 4,
            -- nbar12: the outer column (OUTER_W wide, PLATE_GAP past the diamond): the L / R plate at the top, the chip CHIP_GAP under it,
            -- Party mode's chord row (three round icons CHORD across, CHORD_GAP apart) CHORD_SEP under that; the plate's bumper glyph at its
            -- inner bottom corner (PLATE_GX in, PLATE_GY down from its centre); Hub's party rows' drawn rim (the rings and the chevron past
            -- each row's frame) while Party mode is on. nbar14: the plate the band's size (64 x 50; the atlas's 50 x 45 before), its glyph
            -- at the same corner share (0.6), the column 68 wide. nbar17: the band's plate exactly (62 x 49.28: its 39 x 31 at 124 bottom
            -- px), its bumper glyph 23 square at 26 in / 20.15 down (the band's 46 px at its inner edge - 10, bottom - 9)
-           PLATE_W = 62, PLATE_H = 62 * 31 / 39, PLATE_GAP = 6, OUTER_W = 68, CHORD = 16, CHORD_GAP = 3, CHORD_SEP = 4, PLATE_GX = 26,
-           PLATE_GY = -20.15, HUB_RIM = 12,
+           -- nbar18: all of it x TRIG_K (0.75): the plate 46.5 x 36.96, its glyph 17.25 at 19.5 in / 15.11 down; the column the plate
+           -- + 6 (52.5: its inner edge 9 past the diamond's slot, as before; its top still level with the top slot's); the chord row as it was
+           PLATE_W = 62 * 0.75, PLATE_H = 62 * 0.75 * 31 / 39, PLATE_GAP = 6, OUTER_W = 62 * 0.75 + 6, CHORD = 16, CHORD_GAP = 3,
+           CHORD_SEP = 4, PLATE_GX = 26 * 0.75, PLATE_GY = -20.15 * 0.75, HUB_RIM = 12,
            -- nbar17: the ZL / ZR glyph (square) and its held glow's disc, the bumper glyph, the reticle's square canvas (18 plate units)
            -- and its rise (one plate unit), our media, the plate texture's used rect (the L plate; R mirrored), the reticles
-           CHIP_G = 25.8, CHIP_GLOW = 50.4, PLATE_GLYPH = 23, PLATE_RET = 18 * 62 / 39, PLATE_RET_DY = 62 / 39,
+           -- (nbar18: x TRIG_K: the glyph 19.35, the glow 37.8, the bumper glyph 17.25, the reticle 21.46 raised 1.19)
+           CHIP_G = 25.8 * 0.75, CHIP_GLOW = 50.4 * 0.75, PLATE_GLYPH = 23 * 0.75, PLATE_RET = 18 * 62 * 0.75 / 39,
+           PLATE_RET_DY = 62 * 0.75 / 39,
            MEDIA = "Interface\\AddOns\\WowCompanion\\Media\\", PLATE_TC = { 0, 234 / 256, 0, 186 / 256 },
            RET_TEX = { friendly = "wings_ret_friendly", hostile = "wings_ret_hostile", shortcuts = "wings_ret_shortcuts" } }
 -- nbar17 THE PLATES AND THE CHIPS AS THE BAND DRAWS THEM (the user, 2026-11-23, testing 1523: "The triggers look weird and stretched
@@ -3483,6 +3491,17 @@ NB.TOP = { HOLD_IN = 0.08, IN_S = 0.26, OUT_S = 0.20, RISE = 24, KS = { 1, 0.9, 
 -- down from the plate's centre (the band's inner edge - 10 px, bottom - 9 px), the ZL / ZR glyph 25.8 (56 x 0.92 px) 42.4 under the
 -- plate's centre (the band's 140 - 55.3 px), its held glow a 50.4-unit soft disc (0.9 x the 56-px box's height, a radius). Display only:
 -- SetTexture / SetAtlas / SetTexCoord / SetSize / SetVertexColor on our own textures (legal in a fight, as ever)
+-- nbar18 THE TRIGGERS A QUARTER SMALLER (the user, 2026-11-24, playing 1.0.40: "I dont like how much bigger that the triggers are in
+-- the transition from the bottom screen to the top"; picks "Both" and "About a quarter smaller" - "Keep everything else, shrink just
+-- these by ~25%"): nbar17's band-sized plate (7.51 x 5.97 mm on the top panel) and chip read bigger than the band beside them as the
+-- bars cross the seam. Now every plate / chip size above is TRIG_K (0.75) x nbar17's, uniformly (no texture changes shape): the plate
+-- 46.5 x 36.96 units = 5.63 x 4.48 mm, the reticle 21.46 (raised 1.19), the bumper glyph 17.25 = 2.09 mm at 19.5 in / 15.11 down,
+-- the ZL / ZR glyph and chip box 19.35 = 2.34 mm, 31.8 under the plate's centre (0.75 x 42.4), the held glow 37.8. Their anchors: the
+-- plate's inner edge stays 9 units past the diamond's outer slot and its top level with the top slot's (OUTER_W = PLATE_W + 6), so it
+-- tucks in at the cluster's outer top as before and its outer edge comes in 15.5; Party mode's chord row (not a trigger part) keeps
+-- its size under the chip. NB.halfBox reads the same constants: one half 215.25 x 135 (the chord row's outer icon its reach now,
+-- 129.75; was 227 x 135), so the solver's pushes / raises / lanes are on the smaller box. The faces, the D-pad, the diamonds' spacing
+-- (OFF_X / OFF_Y), MATCH_S, the slide's curve and the app's bottom band are unchanged. Display only: SetSize / SetPoint on our frames.
 -- our own texture on [tex] ([name] in Media; [tc] its texcoords): false when the client refuses it
 function NB.mediaOn(tex, name, tc)
     local ok, r = pcall(tex.SetTexture, tex, NB.TOP.MEDIA .. name)
