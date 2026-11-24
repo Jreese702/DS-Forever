@@ -72,7 +72,7 @@ class SettingsTabsTest {
         val want: Map<G, List<String>> = mapOf(
             G.LOOK to listOf("Theme", "Language", "Voice typing", "Swap screens", "Restart DS Forever"),     // 11-16: Voice typing     // #232: Swap screens (only with a second screen)
             // the user, 2026-11-14 ("build it"): Windows ID under Game account
-            G.ACCOUNT to listOf("Battle.net login", "Game account", "Windows ID", "Browser login"),
+            G.ACCOUNT to listOf("Battle.net login", "Game account", "Windows ID", "Battle.net sign-in"),
             // the user's pick 2026-11-23 ("Both (Recommended)"): the opt-in test graphics driver, its own group under Account
             G.GRAPHICS to listOf("Graphics driver"),
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
@@ -183,7 +183,7 @@ class SettingsTabsTest {
             // hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager"): Top screen > Game windows
             listOf("Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars") +
             // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): General > Account, under Windows ID
-            listOf("Browser login") +
+            listOf("Battle.net sign-in") +              // 2026-11-24: Browser login's words, the start screen Menu's too
             // the user, 2026-11-19 ("a simple button at the bottom that says 'Support the Project'"): General > Help, last
             listOf("Support the Project") +
             // the user, 2026-11-19 ("reset to defaults buttons, split into four"): General > Reset

@@ -58,7 +58,8 @@ object GeneralTiles {
     /** the compact rows, in their groups' order */
     enum class Row(val label: String) {
         LANGUAGE("Language"), LOGIN("Battle.net login"), GAME_ACCOUNT("Game account"), WINDOWS_ID(WindowsId.ROW_ID),
-        // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start
+        // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start; 2026-11-24 its words are
+        // the start screen Menu's: "Battle.net sign-in: Saved login / Blizzard's page" (one setting)
         BROWSER_LOGIN(BrowserLogin.ROW_ID),
         // 2026-11-23: Recommended / the test drivers this APK carries (GraphicsDriver), from the next Play
         GRAPHICS_DRIVER(GraphicsDriver.ROW_ID),
@@ -91,8 +92,9 @@ object GeneralTiles {
     }
     /** a row that is ONE button across it, its words on the button (Support the Project, the Reset buttons) */
     fun wide(r: Row): Boolean = r == Row.SUPPORT || resetOf(r) != null
-    /** Game account's "Remembered" (gameAccountAsk = false): the user's ruling 2026-11-23, its words say where it skips the list */
-    const val REMEMBERED = "Skip (Browser login)"
+    /** Game account's "Remembered" (gameAccountAsk = false): the user's ruling 2026-11-23, its words say where it skips the list
+     *  (2026-11-24: Browser login is now Battle.net sign-in's "Blizzard's page", so the words name that) */
+    const val REMEMBERED = "Skip (Blizzard's page)"
     /** the note on Reset layouts / skills with no character known yet */
     const val NO_CHARACTER = "No character yet"
 

@@ -7,6 +7,11 @@ import android.graphics.RectF
  * THE MENU (the user 2026-11-01), on the waiting screen ([StartView]) and the chooser ([ChooserPanel]): Auto login's tick and Change login,
  * Forget login, Report issue, the controller's two settings; on the waiting screen also Stream settings or Restart game, Switch mode and
  * Exit game. The Menu button turned into an X, B or a touch outside shuts it. The host fills in the actions; one app, one menu. Main thread.
+ *
+ * BATTLE.NET SIGN-IN (the user, 2026-11-24: "Maybe we add a battlenet sign in setting to the menu"): one button beside Region on both
+ * menus, the setting's name over its value ("Saved login" / "Blizzard's page"); a press switches it, as ABXY and Glyphs do. It IS
+ * Settings' "Battle.net sign-in" row (Settings.browserLogin, one saved setting), from the next game start: while the running game
+ * started the other way the start screen says to use Restart game (BrowserLogin.startHint); nothing restarts by itself.
  */
 object StartMenu {
     /** the Menu shows; shutting it shuts the region list / card with no change */
@@ -25,6 +30,8 @@ object StartMenu {
     var onRestart: (() -> Unit)? = null
     var canSwitch: () -> Boolean = { false }
     var onSwitch: (() -> Unit)? = null
+    /** the Battle.net sign-in switched from the Menu (true = Blizzard's page), after it is saved: the host's log line and start screen */
+    var onSignIn: ((Boolean) -> Unit)? = null
     /** the game's region (GameRegion's code) and its change (the user, 2026-11-07: "There should be a change region option in the menu
      *  when starting the app"). The bottom row's Region button opens the list ([picker]; the user 2026-11-17: each press of the old
      *  button saved the next region at once and its build downloaded); [onRegion] is called ONLY by the card's Switch. The portal is
@@ -89,13 +96,34 @@ object StartMenu {
         put(RectF(inner.left, inner.bottom - rowH, inner.right, inner.bottom), "Glyphs: ${CastSettings.buttonLayout.label}", GLYPHS, true)
         faceDiamond(c, RectF(inner.right, box.top, box.right, box.bottom))
         y += CONTROLLER_H + gap
-        // the bottom row: Region (both screens), and Exit game beside it on the waiting screen
+        // the bottom row: Region and the Battle.net sign-in beside it (both screens), and Exit game after them on the waiting screen (in
+        // thirds there: the waiting screen's Menu has no room for another row on the 1080 px bottom screen)
         val rg = GameRegion.ALL.firstOrNull { it.code == region() } ?: GameRegion.ALL[0]
         val rWord = "${Tr.t("Region")}: ${Tr.t(rg.label)}"
-        if (game) {
-            put(half(false), rWord, REGION, true)
-            put(half(true), "Exit game", EXIT, canExit())
-        } else put(RectF(inL, y, inR, y + bh), rWord, REGION, true)
+        val w3 = (inR - inL - gap * 2) / 3f
+        fun third(i: Int) = RectF(inL + i * (w3 + gap), y, inL + i * (w3 + gap) + w3, y + bh)
+        val sign = if (game) third(1) else half(true)
+        put(if (game) third(0) else half(false), rWord, REGION, true)
+        signInButton(c, sign, down(SIGNIN))
+        hits += sign to SIGNIN
+        if (game) put(third(2), "Exit game", EXIT, canExit())
+    }
+
+    /** the Battle.net sign-in's button: the setting's name (small, gold) over its value, each shrunk to fit; translated here */
+    private fun signInButton(c: Canvas, r: RectF, state: UiKit.Button) {
+        UiKit.button(c, r, "", state)
+        UiKit.pressed(c, r, state == UiKit.Button.DOWN) {
+            val room = r.width() - SIGN_PAD * 2
+            val nudge = if (state == UiKit.Button.DOWN) r.height() * 0.03f else 0f
+            fun line(words: String, size: Float, colour: Int, cy: Float) {
+                val p = UiKit.bodyPaint(size, colour).apply { textAlign = android.graphics.Paint.Align.CENTER }
+                val w = p.measureText(words)
+                if (w > room && w > 0f) p.textSize = size * room / w
+                c.drawText(words, r.centerX() + nudge, cy + nudge - (p.ascent() + p.descent()) / 2f, p)
+            }
+            line(Tr.t(BrowserLogin.ROW_ID), SIGN_NAME, Theme.gold, r.top + r.height() * 0.35f)
+            line(Tr.t(BrowserLogin.words(Settings.browserLogin)), SIGN_VALUE, Theme.btnLabel, r.top + r.height() * 0.66f)
+        }
     }
 
     /**
@@ -192,9 +220,11 @@ object StartMenu {
     }
 
     /** the cursor's next place from ([x], [y]) on a D-pad press ([dx], [dy] = its direction, one of them 0): the nearest in that direction,
-     *  off to the side counting double; null = nothing there */
+     *  off to the side counting double; null = nothing there. A place on the same line (no step to the side) comes first: Region's
+     *  right is the Battle.net sign-in beside it, not Glyphs over it (2026-11-24) */
     fun nearest(places: List<Triple<Int, Float, Float>>, x: Float, y: Float, dx: Int, dy: Int): Int? = places
         .filter { (_, px, py) -> (px - x) * dx + (py - y) * dy > 1f }
+        .let { ahead -> ahead.filter { (_, px, py) -> kotlin.math.abs((px - x) * dy) + kotlin.math.abs((py - y) * dx) < 1f }.ifEmpty { ahead } }
         .minByOrNull { (_, px, py) ->
             val along = kotlin.math.abs((px - x) * dx + (py - y) * dy)
             val side = kotlin.math.abs((px - x) * dy) + kotlin.math.abs((py - y) * dx)
@@ -219,6 +249,8 @@ object StartMenu {
             SWITCH -> { open = false; onSwitch?.invoke() }
             REPORT -> { open = false; onReport?.invoke() }
             EXIT -> { open = false; onExit?.invoke() }
+            // the one setting (Settings' row too); the Menu stays, its button showing the new value
+            SIGNIN -> { Settings.browserLogin = !Settings.browserLogin; onSignIn?.invoke(Settings.browserLogin) }
             // the list, the cursor on the region in use: nothing changes until the card's Switch (the user, 2026-11-17)
             REGION -> picker.open(region())
             REGION_CANCEL -> handle(picker.cancel())
@@ -241,6 +273,8 @@ object StartMenu {
     const val REGION = 15
     const val REGION_CANCEL = 16
     const val REGION_SWITCH = 17
+    /** the Battle.net sign-in's button */
+    const val SIGNIN = 18
     /** the list's rows: ROW0 + the region's index in GameRegion.ALL */
     const val ROW0 = 20
     private const val TITLE_SIZE = 52f
@@ -254,4 +288,8 @@ object StartMenu {
     private const val INSET = 18f
     private const val FACE = 72f
     private const val ARM = 72f
+    /** the sign-in button: its two lines' sizes (the name over the value) and their room from the button's ends */
+    private const val SIGN_NAME = 22f
+    private const val SIGN_VALUE = 31f
+    private const val SIGN_PAD = 34f
 }

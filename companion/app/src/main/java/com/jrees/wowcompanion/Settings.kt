@@ -235,7 +235,7 @@ object Settings {
      * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
      * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
      * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered"
-     * (shown as "Skip (Browser login)", the user's ruling 2026-11-23): Config.wtf as the game left it (no "!" is written since the
+     * (shown as "Skip (Blizzard's page)", the user's ruling 2026-11-23): Config.wtf as the game left it (no "!" is written since the
      * 2026-11-20 pick); on Browser login the helper hands the remembered game account ([gameAccountPick]) to the game, which then
      * skips its list (GameAccountHandover). The saved login (login.txt) still shows the list: the game's kiosk login never takes an
      * account. A change of this setting lifts a held hand-over. Account labels are never logged.
@@ -311,7 +311,8 @@ object Settings {
     /**
      * BROWSER LOGIN (the user, 2026-11-18: upstream v2.4.5's Browser login, opt-in): Off (the default) = the saved login's private
      * login.txt; On = Blizzard's own sign-in page on the bottom screen, no login.txt. From the next game start. See [BrowserLogin]; the
-     * launcher reads it at each start (BattleNetBrowserLogin).
+     * launcher reads it at each start (BattleNetBrowserLogin). 2026-11-24: shown as "Battle.net sign-in: Saved login / Blizzard's page",
+     * in Settings and on the start screen's Menu (StartMenu.SIGNIN), both this one value.
      */
     var browserLogin: Boolean
         get() = prefs?.getBoolean(BrowserLogin.KEY, false) ?: false

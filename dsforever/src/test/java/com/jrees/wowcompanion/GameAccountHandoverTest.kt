@@ -276,7 +276,7 @@ class GameAccountHandoverTest {
 
     /** the setting's words no longer promise a skip where none happens (es / fr too) */
     @Test fun theRememberedWordsSayWhereItSkips() {
-        assertEquals("Skip (Browser login)", GeneralTiles.REMEMBERED)
+        assertEquals("Skip (Blizzard's page)", GeneralTiles.REMEMBERED)
         val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n").map { File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             val plain = org.json.JSONObject(File(dir, "$l.json").readText()).getJSONObject("plain")
