@@ -15,11 +15,16 @@ import org.json.JSONObject
  * Manners a row of its own): ONE ordered list of typed rows - Food, Water, Manners and the buff rows - moved and removed the same way;
  * Add then the kind's own select cell ([Doc.kinds]) adds Food / Water / Manners back. An add-on before m127 sends buff rows only (no
  * `k`): read as buff rows, with Food and Water [Doc.fixedFood] above them as before.
+ *
+ * m190 SIT BY THE FIRE (the user, 2026-11-24: "I want to add a smart y option to sit when the player has the nearby campfire buff"): a
+ * kind row of its own ([FIRE]), moved and removed like Food; the add-on adds it at the end of every list once (a removed one stays
+ * gone) and Add brings it back by its own select cell. Y sits while the player has the campfire's Cozy Fire aura, out of combat,
+ * standing, still and on foot (the add-on decides).
  */
 object SmartYModel {
     data class Buff(val id: Int, val name: String, val icon: Int, val imbue: Boolean)
 
-    /** one row of the list: [kind] "buff" (its [ids], one = a buff, more = an OR row), "food", "drink" or "manners" */
+    /** one row of the list: [kind] "buff" (its [ids], one = a buff, more = an OR row), "food", "drink", "manners" or "fire" */
     data class Row(val kind: String, val ids: List<Int> = emptyList()) {
         val isBuff: Boolean get() = kind == BUFF
     }
@@ -49,7 +54,7 @@ object SmartYModel {
                 val kind = r.optString("k", "")
                 if (kind.isNotEmpty()) typed = true
                 when (kind) {
-                    FOOD, DRINK, MANNERS -> rows += Row(kind)
+                    FOOD, DRINK, MANNERS, FIRE -> rows += Row(kind)
                     "", BUFF -> {
                         val ids = r.optJSONArray("ids") ?: continue
                         val list = (0 until ids.length()).map { ids.optInt(it, 0) }.filter { it > 0 }
@@ -89,7 +94,7 @@ object SmartYModel {
     fun label(doc: Doc, row: Int): String = names(doc, row).joinToString(" or ")
 
     /** the short name of a kind row (terse: the page says what, the spec says how) */
-    fun kindName(kind: String): String = when (kind) { FOOD -> "Food"; DRINK -> "Water"; MANNERS -> "Manners"; else -> kind }
+    fun kindName(kind: String): String = when (kind) { FOOD -> "Food"; DRINK -> "Water"; MANNERS -> "Manners"; FIRE -> "Sit by the fire"; else -> kind }
 
     /** a kind row's tag ("< 80%"); none for the rest */
     fun kindTag(kind: String): String? = when (kind) { FOOD, DRINK -> "< 80%"; MANNERS -> "others"; else -> null }
@@ -107,10 +112,11 @@ object SmartYModel {
     /** what Add offers: the character's self-buffs not on any row yet */
     fun addChoices(doc: Doc): List<Buff> = doc.list.filter { b -> doc.rows.none { b.id in it.ids } }
 
-    /** m127: the kinds Add offers back: Food / Water / Manners (installed) not on the list, each with its own cell */
+    /** m127: the kinds Add offers back: Food / Water / Manners (installed) / m190 Sit by the fire not on the list, each with its own
+     *  cell (an add-on without the kind's cell: never offered) */
     fun kindChoices(doc: Doc): List<String> {
         if (doc.fixedFood) return emptyList()
-        return listOf(FOOD, DRINK, MANNERS).filter { k ->
+        return listOf(FOOD, DRINK, MANNERS, FIRE).filter { k ->
             doc.kinds.containsKey(k) && doc.rows.none { it.kind == k } && (k != MANNERS || doc.manners)
         }
     }
@@ -168,7 +174,7 @@ object SmartYModel {
     /** m76: the section shows its rows and Add only while Smart Y is on */
     fun rowsShown(doc: Doc?): Boolean = doc?.on == true
 
-    /** m127: the row Y would act on now, from the padmap's `smarty` kind ([nowKind]: food / drink / both / manners / buff / or) */
+    /** m127: the row Y would act on now, from the padmap's `smarty` kind ([nowKind]: food / drink / both / manners / buff / or; m190 fire) */
     fun nowRow(doc: Doc, nowKind: String?): Int? {
         val k = when (nowKind) { null -> return null; "both" -> FOOD; "or" -> BUFF; else -> nowKind }
         if (k == BUFF) return doc.at?.minus(1)?.takeIf { it in doc.rows.indices && doc.rows[it].isBuff }
@@ -179,6 +185,8 @@ object SmartYModel {
     const val FOOD = "food"
     const val DRINK = "drink"
     const val MANNERS = "manners"
+    /** m190: Sit by the fire (the campfire's Cozy Fire aura) */
+    const val FIRE = "fire"
     const val MAX_ROWS = 16
     const val MAX_OR = 10
 }

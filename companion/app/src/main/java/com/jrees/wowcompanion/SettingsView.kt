@@ -472,7 +472,7 @@ class SettingsView(context: Context, val onReload: () -> Unit) : View(context) {
                     val kind = line.removePrefix("k:")
                     rowHits.add(RectF(box) to SmartYModel.kindName(kind))
                     pFill.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pFill)
-                    UiKit.auraRow(c, box, Icons.get(d.icons[kind] ?: 0), SmartYModel.kindName(kind))
+                    UiKit.auraRow(c, box, Icons.get(d.icons[kind] ?: 0), Tr.t(SmartYModel.kindName(kind)))     // a kind's name is ours
                     sbHits += RectF(box) to { sbSend(SmartYModel.addKindTaps(d, kind), "Added") }
                 }
                 line is SmartYModel.Buff && d != null -> {
