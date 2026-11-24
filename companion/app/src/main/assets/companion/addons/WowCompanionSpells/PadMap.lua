@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m190"               -- bump on every change; m190 THE SWING WITH OUR TOP CAST BAR (the user, 2026-11-24: our own cast bar above the HUD with the swing over it): this character's ctsw flag (Book b78's page-3 codes 26 / 27, `cs` in dpadState, combatCastSwingOn for ActionBar nbar18; the Layouts reset clears it); m188's read of the game's own swing timer (`gsw`, gameSwingOn) removed; m189 THE 1523 TEST BUILD MERGE: five branches took the next numbers from m186 at once, all kept, their notes below as each wrote them: feat/stream-smooth's m187 (the saved-settings pack only after a change), fix/lbrb-wheels' m187 (the friendly bumper: lbmap swap / fb), fix/ltrt-stancebar's m187 + m188 (the router follows the game's Stance / Possess Bar; the LT / RT macro fixes: the press log, the over-macro marks) and feat/fight-castbar's m187 + m188 (the cast bar in a Top-screen fight: ctcb / cc; the B rule and the game's swing timer: fightSw / gsw); the app reads m189 as all of them (each read is a field of its own, none keyed on one number); nothing else changed; m187 THE SAVED-SETTINGS PACK ONLY AFTER A CHANGE (stream smoothness, a tester's "stutters every few seconds" while streaming, the user's pick 2026-11-23): m51's svkeep serialized and sorted ALL of both saved tables every 5 s whatever happened - a few ms each time inside the PC's game, a hitch at 120 fps (8 ms a frame). Now the 5 s tick packs only when something may have changed since the last pack: a tap from the app (TapPad's landed count, WC.pad.rx.n: every room's action is one), a mouse click in the game (GLOBAL_MOUSE_UP), a fight's end (the work a fight queued), a new world or a spec change; never in a fight (it waits for the fight's end, then packs); and once every 30 s out of combat whatever happened (the net for a write by any other route); send(true) (login, a reset) is unchanged, and so is the "only when the text changed" rule. Nothing of the game's is written (no CVar, binding, macro); m187 THE FRIENDLY BUMPER (fix/lbrb-wheels, a tester 2026-11-23 with the game's target bumpers swapped: "LB ... is now target enemy for me"): the lbmap document follows GamepadSwapTargetModifiers (read only) - the party-target buttons are read under the FRIENDLY bumper's modifier (RB while swapped; LB's when no GamePadEmulate* CVar names RB), its tap is that bumper's binding, the document says swap / fb ("LB" / "RB") and OV.lbmap.last.fb tells Hub's party frames the word; a change of the swap CVar resends it (the CVAR_UPDATE filter is case-blind now); nothing of the game's is written; m188 THE LT / RT MACRO FIXES (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's picks: "Re-read the controller", "Say what was pressed", "Show what's on top", and "In combat wins" - the fight order is kept): (1) GAME_PAD_CONNECTED / GAME_PAD_DISCONNECTED / GAME_PAD_CONFIGS_CHANGED wire every routed button again and GAME_PAD_ACTIVE_CHANGED does when the triggers' button numbers differ from the ones wired (R.padEvent, R.trWired; Party mode's pad too; out of combat, a fight waits for PLAYER_REGEN_ENABLED; read only); (2) each routed key-down's facecast also says the two triggers as the snippet read them (tr: "L1R0", "-" = no button number, "none" = no controller state), the press's way (path: slotfight / slotmacro / native / command / room / none) and om (one of ours ran over the player's own macro on that slot); a slotfight names its bar now (not "ours"); (3) the padmap's combat and command views carry um (the slot holds the player's own macro under our In combat entry / command: Home and the Controller room mark it); m187 THE ROUTER FOLLOWS THE GAME'S STANCE / POSSESS BAR (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's question: a WoW setting for LT + RT): the game's Gamepad settings Stance Bar / Possess Bar move that bar to the LT / RT / LT + RT layer at once, and the router kept its last wiring until a form change or a fight's end - now GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED / GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED and CVAR_UPDATE for GamepadStanceBarOverride / GamepadPossessBarOverride / GamepadUseCompactActionBar wire every routed button again (R.rewireAll: out of combat; in a fight at PLAYER_REGEN_ENABLED; read only, nothing written), and each routed press's facecast says its layer (lay: bare / lt / rt / ltrt), the bar it clicked (bar: page<N> / stance / possess / override / ours / room / none) and that button's slot (OV.pressAt; the app's PressLog); (feat/fight-castbar's follow-up may take m187 too: the integration renumbers); m188 THE B RULE AND THE GAME'S SWING TIMER (the user, 2026-11-23: "The controller bar top grow is working off of being in combat again instead of our combat ruls where we press B and it grows back downwards"; the swing pick "Keep ours on the bottom"): WC.padMap.fightSw - the router's own switch (fightNow.now: the fight or an attack / auto-repeat armed, nothing given back by B over every router button), read by ActionBar nbar14's Wings so B hands them back in a fight too; WC.padMap.gameSwingOn + dpadState `gsw` - the game's own swing timer shown (Edit Mode's account setting ShowSwingTimer, read-only, out of combat, kept), so the Wings and the app's strip keep the swing in one place; nothing written; m187 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): a second per-character flag beside ctop, WowCompanionSpellsDB.ctcb[name-realm] = 1 (Top screen) / 0 (Bottom screen, the default; none = off), set by Book b77's page-3 codes 24 off / 25 on, read ONLY by ActionBar nbar13 (the Wings' swing lines and the fight's word to Hub hub76, which shows the game's own casting bar for the fight) - display only, no binding, no attribute, nothing secure: remembered at once, in a fight too; `cc` in dpadState says it (nil while no key, as `ct`); the Layouts reset clears it with ctop; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m190"               -- bump on every change; m190 THE SWING WITH OUR TOP CAST BAR (the user, 2026-11-24: our own cast bar above the HUD with the swing over it): this character's ctsw flag (Book b78's page-3 codes 26 / 27, `cs` in dpadState, combatCastSwingOn for ActionBar nbar18; the Layouts reset clears it); m188's read of the game's own swing timer (`gsw`, gameSwingOn) removed; m190 SIT BY THE FIRE (the user, 2026-11-24: "I want to add a smart y option to sit when the player has the nearby campfire buff"): a Smart Y row of its own (kind "fire", Add's select cell sel0 + 3), added once at the end of every list (removable: fireOff; never while the list is full); due out of combat while the player wears Cozy Fire (by spell id: 7353 Basic Campfire, 7358 Bright Campfire; by the names those ids give only when an aura's id is not readable), stands (our seat tracker: Y's own sit, an eating / drinking aura, the game's sit / stand / jump, a move, a cast, a fight, a mount), is not mounted / on a taxi / in a vehicle / flying / swimming / moving / casting / dead; Y then runs the client's own sit emote command as a secure macro (type macro, the command armed out of combat; mounted / swimming / channeling at the press: never); nothing saved but our list, no macro, binding or CVar written; m189 THE 1523 TEST BUILD MERGE: five branches took the next numbers from m186 at once, all kept, their notes below as each wrote them: feat/stream-smooth's m187 (the saved-settings pack only after a change), fix/lbrb-wheels' m187 (the friendly bumper: lbmap swap / fb), fix/ltrt-stancebar's m187 + m188 (the router follows the game's Stance / Possess Bar; the LT / RT macro fixes: the press log, the over-macro marks) and feat/fight-castbar's m187 + m188 (the cast bar in a Top-screen fight: ctcb / cc; the B rule and the game's swing timer: fightSw / gsw); the app reads m189 as all of them (each read is a field of its own, none keyed on one number); nothing else changed; m187 THE SAVED-SETTINGS PACK ONLY AFTER A CHANGE (stream smoothness, a tester's "stutters every few seconds" while streaming, the user's pick 2026-11-23): m51's svkeep serialized and sorted ALL of both saved tables every 5 s whatever happened - a few ms each time inside the PC's game, a hitch at 120 fps (8 ms a frame). Now the 5 s tick packs only when something may have changed since the last pack: a tap from the app (TapPad's landed count, WC.pad.rx.n: every room's action is one), a mouse click in the game (GLOBAL_MOUSE_UP), a fight's end (the work a fight queued), a new world or a spec change; never in a fight (it waits for the fight's end, then packs); and once every 30 s out of combat whatever happened (the net for a write by any other route); send(true) (login, a reset) is unchanged, and so is the "only when the text changed" rule. Nothing of the game's is written (no CVar, binding, macro); m187 THE FRIENDLY BUMPER (fix/lbrb-wheels, a tester 2026-11-23 with the game's target bumpers swapped: "LB ... is now target enemy for me"): the lbmap document follows GamepadSwapTargetModifiers (read only) - the party-target buttons are read under the FRIENDLY bumper's modifier (RB while swapped; LB's when no GamePadEmulate* CVar names RB), its tap is that bumper's binding, the document says swap / fb ("LB" / "RB") and OV.lbmap.last.fb tells Hub's party frames the word; a change of the swap CVar resends it (the CVAR_UPDATE filter is case-blind now); nothing of the game's is written; m188 THE LT / RT MACRO FIXES (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's picks: "Re-read the controller", "Say what was pressed", "Show what's on top", and "In combat wins" - the fight order is kept): (1) GAME_PAD_CONNECTED / GAME_PAD_DISCONNECTED / GAME_PAD_CONFIGS_CHANGED wire every routed button again and GAME_PAD_ACTIVE_CHANGED does when the triggers' button numbers differ from the ones wired (R.padEvent, R.trWired; Party mode's pad too; out of combat, a fight waits for PLAYER_REGEN_ENABLED; read only); (2) each routed key-down's facecast also says the two triggers as the snippet read them (tr: "L1R0", "-" = no button number, "none" = no controller state), the press's way (path: slotfight / slotmacro / native / command / room / none) and om (one of ours ran over the player's own macro on that slot); a slotfight names its bar now (not "ours"); (3) the padmap's combat and command views carry um (the slot holds the player's own macro under our In combat entry / command: Home and the Controller room mark it); m187 THE ROUTER FOLLOWS THE GAME'S STANCE / POSSESS BAR (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's question: a WoW setting for LT + RT): the game's Gamepad settings Stance Bar / Possess Bar move that bar to the LT / RT / LT + RT layer at once, and the router kept its last wiring until a form change or a fight's end - now GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED / GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED and CVAR_UPDATE for GamepadStanceBarOverride / GamepadPossessBarOverride / GamepadUseCompactActionBar wire every routed button again (R.rewireAll: out of combat; in a fight at PLAYER_REGEN_ENABLED; read only, nothing written), and each routed press's facecast says its layer (lay: bare / lt / rt / ltrt), the bar it clicked (bar: page<N> / stance / possess / override / ours / room / none) and that button's slot (OV.pressAt; the app's PressLog); (feat/fight-castbar's follow-up may take m187 too: the integration renumbers); m188 THE B RULE AND THE GAME'S SWING TIMER (the user, 2026-11-23: "The controller bar top grow is working off of being in combat again instead of our combat ruls where we press B and it grows back downwards"; the swing pick "Keep ours on the bottom"): WC.padMap.fightSw - the router's own switch (fightNow.now: the fight or an attack / auto-repeat armed, nothing given back by B over every router button), read by ActionBar nbar14's Wings so B hands them back in a fight too; WC.padMap.gameSwingOn + dpadState `gsw` - the game's own swing timer shown (Edit Mode's account setting ShowSwingTimer, read-only, out of combat, kept), so the Wings and the app's strip keep the swing in one place; nothing written; m187 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): a second per-character flag beside ctop, WowCompanionSpellsDB.ctcb[name-realm] = 1 (Top screen) / 0 (Bottom screen, the default; none = off), set by Book b77's page-3 codes 24 off / 25 on, read ONLY by ActionBar nbar13 (the Wings' swing lines and the fight's word to Hub hub76, which shows the game's own casting bar for the fight) - display only, no binding, no attribute, nothing secure: remembered at once, in a fight too; `cc` in dpadState says it (nil while no key, as `ct`); the Layouts reset clears it with ctop; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -1592,6 +1592,13 @@ local PRE = [=[
             or SecureCmdOptionParse("[@target,exists] 1") == "1") then
             smart = nil
         end
+        -- m190 SIT BY THE FIRE: the sit (a macro of the client's own sit command, armed out of combat by OV.fireStep) never while mounted,
+        -- swimming or channeling at the press - the press's own checks; moving, casting, a taxi and the rest are the evaluator's (events)
+        if smart and self:GetAttribute("wc-smarty-t") == "sit" and SecureCmdOptionParse then
+            for _, c in ipairs(newtable("mounted", "swimming", "channeling")) do
+                if SecureCmdOptionParse("[" .. c .. "] 1") == "1" then smart = nil end
+            end
+        end
         -- m93 (the user, 2026-11-07: "smart Y for buffs does not work in combat ... I dont currently have a Y spell in combat, plus if I
         -- press B and drop the combat bars ... it should be able to [work]"): in a fight, a bare Y that reaches here (no fight spell,
         -- or given back) casts the top buff of the Smart buff list on yourself. The snippet cannot see auras, so it casts it each press
@@ -1665,6 +1672,9 @@ local PRE = [=[
                 self:SetAttribute("type", "spell"); self:SetAttribute("spell", smart); self:SetAttribute("unit", "player")
             elseif st == "or" then
                 self:SetAttribute("type", "macro"); self:SetAttribute("macrotext", "/click WowCompanionPadSmartyOr")
+            elseif st == "sit" then
+                -- m190: the value IS the client's own sit command (the SIT emote's first command word), set out of combat
+                self:SetAttribute("type", "macro"); self:SetAttribute("macrotext", smart)
             elseif st == "manners" then
                 -- m78: Manners' own lines for this press (OV.mannersPre copied them off its prompt, after its own PreClick armed them);
                 -- none = nothing to cast this press (Manners says why in its chat line)
@@ -2775,6 +2785,11 @@ faceSetup = function()
                             pcall(function()
                                 b:HookScript("PreClick", function(self, _, down) if down then pcall(OV.mannersPre, self) end end)
                                 b:HookScript("PostClick", function(self, _, down) if down then pcall(OV.mannersPost, self) end end)
+                                -- m190: Y's own sit (the fire row) seats the player (the seat tracker; the DoEmote hook hears it too)
+                                b:HookScript("PostClick", function(self, _, down)
+                                    if down and TS(function() return self:GetAttribute("wc-kind") end) == "smarty"
+                                        and TS(function() return self:GetAttribute("wc-smarty-t") end) == "sit" then pcall(OV.seatOn, "sit") end
+                                end)
                                 -- m101: the radial's press: the target's menu for it (Quests q51, src "radial")
                                 b:HookScript("PostClick", function(self, _, down)
                                     if down and TS(function() return self:GetAttribute("wc-kind") end) == "tradial" then pcall(OV.tg.read) end
@@ -5586,8 +5601,8 @@ end
 -- SMARTY-ORDER-END
 -- SMARTY-WALK-BEGIN (pure: tools/test_smarty.py) m127 ANY ORDER (the user, 2026-11-11: "it shouldnt hardcode food and water as first and
 -- second, let people move spell priorities above them"): ONE ordered list, walked top to bottom; the first row with something due wins.
--- [rows] = the player's list ({ k = "food" | "drink" | "manners" } or a buff row { ids }); [due] = what each kind would do now (a step,
--- or nil): due.food / due.drink / due.manners, and due.buff for the row due.buffAt (the first unsatisfied buff row: sbFirst's); a
+-- [rows] = the player's list ({ k = "food" | "drink" | "manners" | "fire" } or a buff row { ids }); [due] = what each kind would do now
+-- (a step, or nil): due.food / due.drink / due.manners / due.fire (m190), and due.buff for the row due.buffAt (the first unsatisfied buff row: sbFirst's); a
 -- step's [cost] = its mana cost (nil = none). m75's rule KEPT in the one place it still means something with an explicit order: a buff
 -- the mana does not cover gives way to Food / Water FURTHER DOWN (Y would only say "not enough mana"; the drink brings the mana back).
 -- A buff below Food is never lifted above it any more: the order is the player's. -> the step, its kind ("food" / "drink" / "manners"
@@ -5597,7 +5612,7 @@ OV.smartWalk = function(rows, due, mana)
     for r, row in ipairs(rows or {}) do
         local k = type(row) == "table" and row.k or nil
         local st
-        if k == "food" or k == "drink" or k == "manners" then st = due[k]
+        if k == "food" or k == "drink" or k == "manners" or k == "fire" then st = due[k]
         elseif k == nil and r == due.buffAt then st = due.buff end
         if st then list[#list + 1] = { k = k or "buff", st = st } end
     end
@@ -5876,6 +5891,179 @@ function OV.setSmartOn(on)
     if OV.pm and OV.pm.smartChanged then pcall(OV.pm.smartChanged) end   -- m77: Smart Y's party picks follow the switch
     pcall(faceSetup)                                                      -- m87: Y routed (or given back) with the switch
 end
+-- m190 SIT BY THE FIRE (the user, 2026-11-24: "I want to add a smart y option to sit when the player has the nearby campfire buff"): a
+-- row of the list ({ k = "fire" }). Due out of combat while the player wears a campfire's Cozy Fire aura, stands, and is still and on
+-- foot; Y then runs the client's own sit emote command as a secure macro (the router's "sit" kind: the command armed out of combat,
+-- never while mounted / swimming / channeling at the press). The game has no "am I sitting" reader, so the seat is OURS to follow
+-- (OV.seated): Y's own sit, an eating / drinking aura and the game's own /sit set it; the game's own stand (DoEmote, the sit / stand
+-- key), a jump, a move, a cast, a fight, a mount, a taxi, death and a new world end it - post-hooks and events only, nothing of the
+-- game's changed. Seated = the row is not due: Y goes on down the list, and with nothing due below it Y is as with no pick (Forever's
+-- own Inspect). A wrong guess is harmless either way: a second sit keeps you seated; a stale seat ends at the next move or jump.
+-- FIRE-BEGIN (pure: tools/test_smarty_fire.py)
+-- the Cozy Fire auras by spell id (the 3.3.5 server's Spell.dbc / gameobject_template: the Basic Campfire's trap object 31442 casts
+-- 7353, +4 Spirit; the Bright Campfire's 31510 casts 7358, +8); no other "near a fire" aura exists in that data
+OV.FIRE_IDS = { 7353, 7358 }
+-- [auras] = the player's helpful auras ({ id = spell id, nil when the client keeps it hidden; n = name }); [names] = name -> id for
+-- OV.FIRE_IDS (the names the ids themselves give: GetSpellInfo) -> the campfire aura's id, nil = none. A readable id decides alone;
+-- the name only stands in for an id the client keeps hidden
+OV.fireAura = function(auras, names)
+    local ids = {}
+    for _, id in ipairs(OV.FIRE_IDS) do ids[id] = true end
+    for _, a in ipairs(auras or {}) do
+        if type(a) == "table" then
+            if type(a.id) == "number" then
+                if ids[a.id] then return a.id end
+            elseif type(a.n) == "string" and type(names) == "table" and names[a.n] then
+                return names[a.n]
+            end
+        end
+    end
+    return nil
+end
+-- s = { fire, combat, dead, seated, eating, drinking, mounted, taxi, vehicle, flying, swimming, moving, casting } -> true, or false and
+-- the first reason ("no fire" or the flag's name)
+OV.FIRE_NOT = { "combat", "dead", "seated", "eating", "drinking", "mounted", "taxi", "vehicle", "flying", "swimming", "moving", "casting" }
+OV.fireDue = function(s)
+    if type(s) ~= "table" or not s.fire then return false, "no fire" end
+    for _, k in ipairs(OV.FIRE_NOT) do if s[k] then return false, k end end
+    return true
+end
+-- the seat: [seated] now, [ev] what happened -> seated after it ("sit" / "eat": seated; "toggle": the game's sit / stand key flips it;
+-- "stand" / "move" / "jump" / "cast" / "combat" / "mount" / "dead" / "world": standing; anything else: as it was)
+OV.SEAT_UP = { stand = true, move = true, jump = true, cast = true, combat = true, mount = true, dead = true, world = true }
+OV.seatNext = function(seated, ev)
+    if ev == "sit" or ev == "eat" then return true end
+    if ev == "toggle" then return not seated end
+    if OV.SEAT_UP[ev] then return false end
+    return seated and true or false
+end
+-- the client's own sit command: the emote table's SIT token, its first command (a localized client's own word), one slash word only;
+-- else /sit
+OV.sitCmd = function(G, max)
+    for i = 1, max or 1000 do
+        if G["EMOTE" .. i .. "_TOKEN"] == "SIT" then
+            local c = G["EMOTE" .. i .. "_CMD1"]
+            if type(c) == "string" and c:match("^/[^%s]+$") then return c end
+            break
+        end
+    end
+    return "/sit"
+end
+-- FIRE-END
+OV.seated = false
+-- the seat after [ev]; a change out of combat re-arms Y (the row comes or goes)
+function OV.seatOn(ev)
+    local was = OV.seated
+    OV.seated = OV.seatNext(OV.seated, ev)
+    if OV.seated ~= was and not inCombat() then OV.smartLater() end
+end
+-- one smartApply per 0.3 s, however many events (the same gate as OV.smartF's)
+function OV.smartLater()
+    if OV.smartSoon then return end
+    OV.smartSoon = true
+    C_Timer.After(0.3, function() OV.smartSoon = nil; pcall(OV.smartApply) end)
+end
+-- the Cozy Fire ids' own names (name -> id), for an aura whose id the client keeps hidden
+function OV.fireNames()
+    local m = {}
+    for _, id in ipairs(OV.FIRE_IDS) do
+        local n = TS(function() return OV.sbName(id) end)
+        if n and not m[n] then m[n] = id end
+    end
+    return m
+end
+-- the player's helpful auras as { id, n } (each read alone through the safe readers: a secret one is left out, never put in a table)
+function OV.fireAuras()
+    local out = {}
+    local ca = type(C_UnitAuras) == "table" and type(C_UnitAuras.GetAuraDataByIndex) == "function"
+    for i = 1, 40 do
+        local id, n
+        if ca then
+            local a = T(function() return C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL") end)
+            if type(a) ~= "table" then break end
+            id, n = TN(function() return a.spellId end), TS(function() return a.name end)
+        else
+            if type(T(function() return (UnitBuff("player", i)) end)) == "nil" then break end
+            id, n = TN(function() return (select(10, UnitBuff("player", i))) end), TS(function() return (UnitBuff("player", i)) end)
+        end
+        out[#out + 1] = { id = id, n = n }
+    end
+    return out
+end
+-- the fire row's step now ([state] = smartState's: eating / drinking), nil = not due (OV.fireWhy says why)
+function OV.fireStep(state)
+    local id = OV.fireAura(OV.fireAuras(), OV.fireNames())
+    if state and (state.eating or state.drinking) then OV.seated = OV.seatNext(OV.seated, "eat") end   -- eating / drinking sits you
+    local mounted = TB(function() return IsMounted() end) == true
+    local taxi = TB(function() return UnitOnTaxi("player") end) == true
+    if mounted or taxi then OV.seated = OV.seatNext(OV.seated, "mount") end
+    local dead = TB(function() return UnitIsDeadOrGhost("player") end) == true
+    if dead then OV.seated = OV.seatNext(OV.seated, "dead") end
+    local sp = TN(function() return (GetUnitSpeed("player")) end)
+    local s = {
+        fire = id ~= nil, combat = inCombat(), dead = dead, seated = OV.seated == true,
+        eating = state ~= nil and state.eating == true, drinking = state ~= nil and state.drinking == true,
+        mounted = mounted, taxi = taxi,
+        vehicle = TB(function() return UnitInVehicle and UnitInVehicle("player") end) == true,
+        flying = TB(function() return IsFlying and IsFlying() end) == true,
+        swimming = TB(function() return IsSwimming() end) == true,
+        moving = (sp ~= nil and sp > 0) or TB(function() return IsPlayerMoving and IsPlayerMoving() end) == true,
+        casting = type(T(function() return (UnitCastingInfo("player")) end)) ~= "nil"
+            or type(T(function() return (UnitChannelInfo("player")) end)) ~= "nil",
+    }
+    local ok, why = OV.fireDue(s)
+    local w = ok and ("due " .. id) or why
+    if w ~= OV.fireWhy and (id ~= nil or (OV.fireWhy ~= nil and OV.fireWhy ~= "no fire")) then
+        pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV, smartfire = w })) end)    -- near a fire only: why Y sits or not
+    end
+    OV.fireWhy = w
+    if not ok then return nil end
+    if not OV.sitText then
+        local okc, c = pcall(OV.sitCmd, _G, TN(function() return MAXEMOTEINDEX end) or 1000)
+        OV.sitText = okc and c or "/sit"
+    end
+    local icon = TN(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)) or GetSpellTexture(id) end) or 0
+    return { val = OV.sitText, typ = "sit", shown = { id = id, n = TS(function() return OV.sbName(id) end) or "Cozy Fire", i = icon, k = "fire" } }
+end
+-- the game's own sit / stand / jump, heard after the fact (post-hooks: the game's functions run as they always do, nothing changed)
+function OV.fireHooks()
+    if OV.fireHooked then return end
+    OV.fireHooked = true
+    pcall(function()
+        hooksecurefunc("DoEmote", function(token)
+            local t = type(token) == "string" and WC.isPlain(token) and token:upper() or nil
+            if t == "SIT" then OV.seatOn("sit") elseif t == "STAND" then OV.seatOn("stand") end
+        end)
+    end)
+    pcall(function() hooksecurefunc("SitStandOrDescendStart", function() OV.seatOn("toggle") end) end)
+    pcall(function() hooksecurefunc("JumpOrAscendStart", function() OV.seatOn("jump") end) end)
+end
+pcall(OV.fireHooks)
+-- the events that move the seat or change what the row needs (the player's own casts only); re-armed out of combat only, and only
+-- while the fire row is on the list (smartApply itself waits for a fight's end)
+OV.FIRE_EV = { PLAYER_STARTED_MOVING = "move", PLAYER_REGEN_DISABLED = "combat", UNIT_SPELLCAST_START = "cast",
+               UNIT_SPELLCAST_CHANNEL_START = "cast", UNIT_SPELLCAST_SUCCEEDED = "cast", PLAYER_MOUNT_DISPLAY_CHANGED = "mount",
+               PLAYER_CONTROL_LOST = "mount", PLAYER_DEAD = "dead", PLAYER_ENTERING_WORLD = "world" }
+OV.fireF = CreateFrame("Frame")
+for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP",
+                     "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED" }) do
+    pcall(function()
+        if OV.fireF.RegisterUnitEvent then OV.fireF:RegisterUnitEvent(e, "player") else OV.fireF:RegisterEvent(e) end
+    end)
+end
+for _, e in ipairs({ "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING", "PLAYER_MOUNT_DISPLAY_CHANGED", "PLAYER_CONTROL_LOST",
+                     "PLAYER_CONTROL_GAINED", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST", "PLAYER_REGEN_DISABLED",
+                     "PLAYER_ENTERING_WORLD" }) do
+    pcall(function() OV.fireF:RegisterEvent(e) end)
+end
+OV.fireF:SetScript("OnEvent", function(_, e, unit)
+    if e:sub(1, 15) == "UNIT_SPELLCAST_" and unit ~= "player" then return end
+    local ev = OV.FIRE_EV[e]
+    if ev then OV.seated = OV.seatNext(OV.seated, ev) end
+    if inCombat() or not OV.sbHas(OV.sbdb().rows, "fire") then return end
+    OV.smartLater()
+end)
+-- m190 END
 function OV.smartApply()
     if inCombat() then OV.smartPending = true; return end
     OV.smartPending = nil
@@ -5896,6 +6084,11 @@ function OV.smartApply()
     if OV.sbHas(rows, "manners") then
         local ms, mw = OV.mannersArmed()
         if ms then due.manners = { val = "manners", typ = "manners", shown = { id = 0, n = mw and (ms .. " on " .. mw) or ms, i = OV.mannersIcon(ms), k = "manners" } } end
+    end
+    -- m190 SIT BY THE FIRE: its row's step (OV.fireStep: the Cozy Fire aura, standing, still and on foot)
+    if OV.sbHas(rows, "fire") then
+        local okf, fs = pcall(function() return OV.fireStep(state) end)
+        if okf and fs then due.fire = fs end
     end
     local st, sk = OV.smartWalk(rows, due, OV.smartMana())
     -- m128 (review of m127): the why line and the model's eating / drinking rate from the step the walk CHOSE (m70's rate per kind)
@@ -6183,7 +6376,8 @@ function OV.sbdb()
     local k = whoKey()
     if not k then return OV.sbMigrate({ rows = {} }, false) end
     if type(db.smartBuffs[k]) ~= "table" then db.smartBuffs[k] = { rows = {} } end
-    return OV.sbMigrate(db.smartBuffs[k], OV.mannersOn())
+    local mn = OV.mannersOn()
+    return OV.sbFire(OV.sbMigrate(db.smartBuffs[k], mn), mn)            -- m190: the fire row once
 end
 -- SB-MIGRATE-BEGIN (pure: tools/test_smarty.py) m127 THE TYPED LIST, v2 (the user, 2026-11-11: food and water movable; Manners a row of
 -- its own): rows = { { k = "food" }, { k = "drink" }, { k = "manners" }, { ids = { spell id, ... } } } in the player's order. v1 (rows
@@ -6191,7 +6385,8 @@ end
 -- installed. Manners' row is added (at the end) whenever Manners is installed and the list has none, unless the player removed it
 -- (mnOff); it stays in the list while Manners is not installed, hidden (OV.sbVis). Every call drops a malformed row and a second row
 -- of the same kind.
-OV.SB_KINDS = { "food", "drink", "manners" }                        -- after Add, select cell sel0 + 0 / 1 / 2 adds that kind
+-- m190 SIT BY THE FIRE: { k = "fire" } is a kind like Food (kept, moved, removed); OV.sbFire adds it.
+OV.SB_KINDS = { "food", "drink", "manners", "fire" }                -- after Add, select cell sel0 + 0 / 1 / 2 / 3 adds that kind
 OV.sbMigrate = function(e, mannersOn)
     if type(e.rows) ~= "table" then e.rows = {} end
     if e.v ~= 2 then
@@ -6202,7 +6397,7 @@ OV.sbMigrate = function(e, mannersOn)
     local out, seen = {}, {}
     for _, row in ipairs(e.rows) do
         local k = type(row) == "table" and row.k or nil
-        if k == "food" or k == "drink" or k == "manners" then
+        if k == "food" or k == "drink" or k == "manners" or k == "fire" then
             if not seen[k] then seen[k] = true; out[#out + 1] = { k = k } end
         elseif type(row) == "table" and k == nil and type(row.ids) == "table" and #row.ids > 0 then
             out[#out + 1] = row
@@ -6223,6 +6418,14 @@ end
 OV.sbHas = function(rows, kind)
     for _, row in ipairs(rows or {}) do if row.k == kind then return true end end
     return false
+end
+-- m190 SIT BY THE FIRE: its row added at the end of the list (an existing list keeps its order) unless the player removed it (fireOff)
+-- or the list is full (the 16 selects); always shown. Its own step after sbMigrate (that one's contract unchanged)
+OV.sbFire = function(e, mannersOn)
+    if e.fireOff or OV.sbHas(e.rows, "fire") then return e end
+    if #OV.sbVis(e.rows, mannersOn) >= (OV.SB_MAX or 16) then return e end
+    e.rows[#e.rows + 1] = { k = "fire" }
+    return e
 end
 -- SB-MIGRATE-END
 -- the self-buffs this character knows (the book's spells, by name): { id, n, i, k = "aura" | "imbue" }, SB_IDS' order; byName for checks
@@ -6314,6 +6517,7 @@ function OV.sbOp(col)
     if not sel or not rows[sel] then OV.sbAck("row", false, "no row picked") return end
     if col == OV.SB_OPS.remove then
         if rows[sel].k == "manners" then e.mnOff = true end             -- removed by the player: not added back by itself
+        if rows[sel].k == "fire" then e.fireOff = true end              -- m190: the same for Sit by the fire
         table.remove(rows, sel)
     elseif col == OV.SB_OPS.up and sv > 1 then rows[sel], rows[vis[sv - 1]] = rows[vis[sv - 1]], rows[sel]
     elseif col == OV.SB_OPS.down and sv < #vis then rows[sel], rows[vis[sv + 1]] = rows[vis[sv + 1]], rows[sel]
@@ -6335,6 +6539,7 @@ function OV.sbAddKind(kind)
     if #OV.sbVis(e.rows, mn) >= OV.SB_MAX then OV.sbAck("add", false, OV.SB_MAX .. " rows at most") return end
     e.rows[#e.rows + 1] = { k = kind }
     if kind == "manners" then e.mnOff = nil end
+    if kind == "fire" then e.fireOff = nil end                         -- m190
     OV.sbAck("add", true)
     pcall(OV.smartApply); pcall(emit, true); WC.push()
 end
@@ -6424,12 +6629,15 @@ function OV.sbDoc()
         if r == OV.sbAt then at = v end
     end
     local mi = (OV.smarty and OV.smarty.k == "manners" and OV.smarty.i) or T(function() return C_Spell.GetSpellTexture(1126) end) or 0
+    -- m190: the fire row's picture: the Cozy Fire spell's own icon
+    local fi = T(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(OV.FIRE_IDS[1])) or GetSpellTexture(OV.FIRE_IDS[1]) end)
     local kinds = {}
     for k, kind in ipairs(OV.SB_KINDS) do kinds[kind] = OV.SB_SEL0 + k - 1 end
     OV.sbDocNow = { v = 2, rows = rows, list = list, at = at, row = "gamemenu", pad = OV.sbRow ~= nil,
                     sel0 = OV.SB_SEL0, ops = OV.SB_OPS, on = OV.smartOn(), onCol = OV.SMART_ON_COL, offCol = OV.SMART_OFF_COL,
                     mn = mn, kinds = kinds, max = OV.SB_MAX,
-                    icons = { food = OV.sbItemIcon(4540), drink = OV.sbItemIcon(159), manners = type(mi) == "number" and mi or 0 } }
+                    icons = { food = OV.sbItemIcon(4540), drink = OV.sbItemIcon(159), manners = type(mi) == "number" and mi or 0,
+                              fire = type(fi) == "number" and fi or 0 } }
 end
 -- m72: the vitals DIAGNOSTIC (m65-m69, rounds 2-5) is GONE (the user on test41: "I keep getting lua errors from wow companion": round 4's
 -- secure snippet called UnitHealth, which the restricted environment does not have). What it found built m70's model below.

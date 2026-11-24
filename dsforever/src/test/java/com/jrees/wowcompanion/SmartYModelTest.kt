@@ -107,6 +107,48 @@ class SmartYModelTest {
         assertNull(SmartYModel.nowRow(typed, null))
     }
 
+    /** m190 SIT BY THE FIRE (the user, 2026-11-24: "I want to add a smart y option to sit when the player has the nearby campfire
+     *  buff"): a kind row of its own - read, named (terse), pictured, offered back by Add (select cell sel0 + 3), moved / removed like
+     *  any row, no Or; Y's pick "fire" lights it */
+    private val fire = JSONObject("""
+        {"v":2,"rows":[{"k":"food","ids":[]},{"k":"drink","ids":[]},{"k":"buff","ids":[1459]},{"k":"fire","ids":[]}],
+         "list":$list, "at":null,"row":"gamemenu","pad":true,"sel0":8,"ops":$ops,"on":true,
+         "mn":false,"kinds":{"food":8,"drink":9,"manners":10,"fire":11},
+         "icons":{"food":133964,"drink":132794,"manners":136078,"fire":135805},"max":16}""")
+
+    @Test fun sitByTheFire() {
+        val d = SmartYModel.parse(fire)!!
+        assertEquals(listOf(Row("food"), Row("drink"), Row("buff", listOf(1459)), Row("fire")), d.rows)
+        assertEquals("Sit by the fire", SmartYModel.label(d, 3))
+        assertEquals(listOf(135805), SmartYModel.icons(d, 3))              // the Cozy Fire spell's own picture
+        assertNull(SmartYModel.kindTag(SmartYModel.FIRE))                    // terse: the name says it
+        assertFalse(SmartYModel.isOr(d, 3))
+        assertEquals(emptyList<Any>(), SmartYModel.orChoices(d, 3))          // no Or on it
+        assertEquals(listOf("gamemenu" to 11, "gamemenu" to 25), SmartYModel.rowTaps(d, 3, "up"))
+        assertEquals(listOf("gamemenu" to 11, "gamemenu" to 24), SmartYModel.rowTaps(d, 3, "remove"))
+        assertNull(SmartYModel.rowTaps(d, 3, "down"))                        // the last row
+        assertEquals(3, SmartYModel.nowRow(d, "fire"))                       // Y sits now: its row is gold
+        assertEquals(emptyList<String>(), SmartYModel.kindChoices(d))        // on the list already (Manners not installed)
+        // removed: Add offers it back, by its own select cell
+        val gone = SmartYModel.parse(JSONObject(fire.toString()).put("rows", org.json.JSONArray("""[{"k":"food","ids":[]}]""")))!!
+        assertEquals(listOf("drink", "fire"), SmartYModel.kindChoices(gone))
+        assertEquals(listOf("gamemenu" to 27, "gamemenu" to 11), SmartYModel.addKindTaps(gone, "fire"))
+        assertNull(SmartYModel.nowRow(gone, "fire"))
+        // an add-on before m190 (no "fire" cell): never offered
+        val old = SmartYModel.parse(JSONObject(fire.toString()).put("kinds", JSONObject("""{"food":8,"drink":9,"manners":10}"""))
+            .put("rows", org.json.JSONArray("[]")))!!
+        assertEquals(listOf("food", "drink"), SmartYModel.kindChoices(old))
+    }
+
+    /** m190: Y's pick of the fire row keeps its kind on its way through the padmap */
+    @Test fun firePickKeepsItsKind() {
+        val msg = JSONObject("""{"type":"padmap","v":"m190","m":{"smarty":{"id":7353,"n":"Cozy Fire","i":135805,"k":"fire"}}}""")
+        val ref = PadMapModel.parse(msg)?.smartY
+        assertEquals("fire", ref?.kind)
+        assertEquals(135805, ref?.icon)
+        assertFalse(ref?.manners == true)
+    }
+
     /** m127: Smart Y's pick keeps its kind (PadMapModel dropped it: a Manners pick looked like Smart Y's own) */
     @Test fun pickKeepsItsKind() {
         val msg = JSONObject("""{"type":"padmap","v":"m127","m":{"smarty":{"id":0,"n":"Arcane Intellect on Bob","i":135932,"k":"manners"}}}""")
