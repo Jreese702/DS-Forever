@@ -34,8 +34,40 @@ class IndoorCityArtTest {
         assertEquals("Orgrimmar", IndoorCityArt.cityAt(1, 1630.0, -4400.0)?.name)
         assertEquals("Undercity", IndoorCityArt.cityAt(0, 1590.0, 240.0)?.name)
         assertEquals("Stormwind", IndoorCityArt.cityAt(0, -8830.0, 620.0)?.name)
-        // the art set's own painted rect wins when it has one
-        assertNull(IndoorCityArt.cityAt(0, RING[0], RING[1]) { doubleArrayOf(0.0, -1.0, 0.0, -1.0) })
+        // 1526: the footprints are the cities' own map rects (the Map room's worldmap/<uiMap>/index.json, the PC's art set of 1524)
+        val maps = mapOf(1453 to doubleArrayOf(-7995.8301, -9154.1699, 1722.92, -14.584), 1454 to doubleArrayOf(2273.8772, 1338.4606, -3680.6011, -5083.2056),
+            1455 to doubleArrayOf(-4569.2412, -5096.8457, -713.5914, -1504.2164), 1458 to doubleArrayOf(1877.9453, 1237.8412, 873.1926, -86.1824))
+        for (c in IndoorCityArt.CAPITALS) assertTrue(c.name, maps.getValue(c.uiMap).contentEquals(c.rect))
+    }
+
+    /**
+     * 1526 (the user on test 1525: "Why can I see the actual map background in iron forge? ... it's weird and I hate it"; the pick "Plain
+     * dark background"): inside every capital's footprint, indoors, the ground under the indoor map is the indoor scrim's own dark, opaque
+     */
+    @Test fun theCapitalsIndoorGroundIsTheIndoorScrimsDark() {
+        assertEquals("the indoor scrim's colour, opaque", 0xFF100C08.toInt(), IndoorCityArt.BACKING)
+        assertEquals(0x100C08, IndoorCityArt.DARK_RGB)
+        // all four capitals, indoors (MapView's indoors: Ironforge and the Undercity by position already folded in)
+        assertEquals("Ironforge", IndoorCityArt.backingAt(0, RING[0], RING[1], indoors = true)?.name)
+        assertEquals("Undercity", IndoorCityArt.backingAt(0, 1590.0, 240.0, indoors = true)?.name)
+        assertEquals("Stormwind", IndoorCityArt.backingAt(0, -8830.0, 620.0, indoors = true)?.name)
+        assertEquals("Orgrimmar", IndoorCityArt.backingAt(1, 1630.0, -4400.0, indoors = true)?.name)
+        // outdoors (Stormwind's streets, the Ruins of Lordaeron), out of the footprints, another continent, no position: no dark
+        assertNull(IndoorCityArt.backingAt(0, -8830.0, 620.0, indoors = false))
+        assertNull(IndoorCityArt.backingAt(0, 1590.0, 240.0, indoors = false))
+        assertNull("a Kharanos inn: as every other indoor map", IndoorCityArt.backingAt(0, -5601.0, -531.0, indoors = true))
+        assertNull("Thunder Bluff is not one of the four", IndoorCityArt.backingAt(1, -1280.0, 120.0, indoors = true))
+        assertNull(IndoorCityArt.backingAt(1, RING[0], RING[1], indoors = true))
+        assertNull(IndoorCityArt.backingAt(0, Double.NaN, Double.NaN, indoors = true))
+    }
+
+    /** 1526: the painted city map's lookup (PaintedIndex) is gone with the painted base; the Map room keeps its own world map */
+    @Test fun thePaintedLookupIsGone() {
+        assertTrue(IndoorCityArt::class.java.declaredClasses.none { it.simpleName == "PaintedIndex" })
+        val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion/MapView.kt", "companion/app/src/main/java/com/jrees/wowcompanion/MapView.kt")
+            .map { java.io.File(it) }.firstOrNull { it.isFile } ?: return
+        val text = src.readText()
+        assertFalse("MapView reads no painted city map", text.contains("citymap:") || text.contains("worldmap/"))
     }
 
     @Test fun theRootsOwnPlacementTurnsTheLocalBoxes() {

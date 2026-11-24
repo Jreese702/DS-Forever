@@ -958,12 +958,11 @@ class MapView(context: Context) : View(context) {
     }
 
     // ---- THE CAPITALS BY POSITION (2026-11-23, Ironforge; the user's D2 pick "Game's art now, slice later"): IndoorCityArt picks the
-    // groups the player is in, by the root's own placement; drawn under any built room. Their painted map is the base (B).
+    // groups the player is in, by the root's own placement; drawn under any built room. Under them the indoor dark (1526: the city's
+    // painted map, 1524's base B, is gone - the user's pick "Plain dark background").
 
-    /** this frame's game tiles drawn for a capital by position, its painted map drawn, the "no indoor map" note drawn (the tests) */
+    /** this frame's game tiles drawn for a capital by position, the "no indoor map" note drawn (the tests) */
     var cityArtDrawn = 0
-        private set
-    var cityPaintedDrawn = false
         private set
     var indoorNoteDrawn = false
         private set
@@ -977,7 +976,7 @@ class MapView(context: Context) : View(context) {
     private var cityZAt = 0L
     private var cityZRoot = 0
     private val CITY_Z_MS = 4_000L
-    /** more of the game's tiles than this in view (a whole city at once): the painted map alone ([IndoorCityArt.halfSize]: half or full) */
+    /** more of the game's tiles than this in view (a whole city at once): the indoor dark alone ([IndoorCityArt.halfSize]: half or full) */
     private val CITY_TILES_MAX = 64
 
     /** a capital's built room and the height its tracker knows (that room's root and its own space), or null */
@@ -996,7 +995,7 @@ class MapView(context: Context) : View(context) {
     private fun cityArtHere(m: JSONObject, indoors: Boolean, place: Place?): CitySel? {
         val r = rect ?: return null
         val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
-        val city = IndoorCityArt.cityAt(r.continent, wx, wy) { paintedOf(it.uiMap)?.rect } ?: run { cityTracker.reset(); return null }
+        val city = IndoorCityArt.cityAt(r.continent, wx, wy) ?: run { cityTracker.reset(); return null }
         if (!IndoorCityArt.shows(city, indoors, m.optInt("mapID", 0), m.optInt("onTaxi", 0) == 1)) return null
         val groups = gameArtNow()[city.root.toString()]?.filter { it.tiles.isNotEmpty() }?.takeIf { it.isNotEmpty() } ?: return null
         val t = cityTransform(city)
@@ -1010,43 +1009,14 @@ class MapView(context: Context) : View(context) {
         return CitySel(city, t, groups, pick)
     }
 
-    /**
-     * one city's painted map (the Map room's art: worldmap/<uiMap>/): its continent and world rect (top, bottom, left, right). Read on the
-     * plans thread, never in the draw (review of 2026-11-23); a city with no painted map is looked up again only after a minute
-     */
-    private val painted by lazy {
-        IndoorCityArt.PaintedIndex(read = { id ->
-            val a = JSONObject(ArtHarvest.file("worldmap/$id/index.json").readText()).getJSONArray("rect")
-            IndoorCityArt.PaintedIndex.Painted(id, a.getInt(0), doubleArrayOf(a.getDouble(1), a.getDouble(2), a.getDouble(3), a.getDouble(4)))
-        }, background = { planDecoder.execute(it) }, post = { mainHandler.post(it) }, now = { android.os.SystemClock.elapsedRealtime() },
-            onArrive = { invalidate() })
-    }
-    private fun paintedOf(id: Int): IndoorCityArt.PaintedIndex.Painted? = painted.get(id)
-
-    /** B: indoors in a capital (CityExits.CITIES; [indoors] is [indoorsNow]: a capital by position too), its painted map, else null */
-    private fun cityPaintedHere(m: JSONObject, indoors: Boolean): IndoorCityArt.PaintedIndex.Painted? {
-        val r = rect ?: return null
-        val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
-        if (!wx.isFinite() || !wy.isFinite()) return null
-        for (id in CityExits.CITIES) {
-            val p = paintedOf(id) ?: continue
-            if (p.continent != r.continent || !IndoorCityArt.inRect(p.rect, wx, wy)) continue
-            // 1525: [indoors] is the map's own ([indoorsNow]: Ironforge and the Undercity by position on their own map)
-            return if (indoors) p else null
-        }
-        return null
-    }
-
     private val cityDst = RectF()
-    /** B: the painted map at its world rect, through the one projection */
-    private fun drawCityPainted(c: Canvas, p: IndoorCityArt.PaintedIndex.Painted, sx: (Double) -> Float, sy: (Double) -> Float) {
+    private val pCityDark = Paint().apply { color = IndoorCityArt.BACKING }
+    /** 1526: the capital's footprint in the indoor dark ([IndoorCityArt.BACKING]), through the one projection: the ground under its art */
+    private fun drawCityDark(c: Canvas, city: IndoorCityArt.City, sx: (Double) -> Float, sy: (Double) -> Float) {
         val r = rect ?: return
-        val bm = planBitmap("citymap:${p.id}", from = ArtHarvest.file("worldmap/${p.id}/base.webp")) ?: return
-        cityDst.set(sx(r.nx(p.rect[2])), sy(r.ny(p.rect[0])), sx(r.nx(p.rect[3])), sy(r.ny(p.rect[1])))
+        cityDst.set(sx(r.nx(city.rect[2])), sy(r.ny(city.rect[0])), sx(r.nx(city.rect[3])), sy(r.ny(city.rect[1])))
         cityDst.sort()
-        pArt.alpha = 255
-        c.drawBitmap(bm, null, cityDst, pArt)
-        cityPaintedDrawn = true
+        c.drawRect(cityDst, pCityDark)
     }
 
     /** A: the game's tiles of the picked groups that are in view (the player's group first), unsure at 55 % */
@@ -1232,14 +1202,14 @@ class MapView(context: Context) : View(context) {
      * THE MAP'S INDOORS (1525; the device read on test 1524: Ironforge's ring says "indoors": false, so the city's art never drew there;
      * the user's pick "Ironforge + Undercity"): the add-on's own flag, or Ironforge / the Undercity by position - inside the city's
      * footprint AND on the city's own map (the gates are Dun Morogh's, the Ruins of Lordaeron above the Undercity Tirisfal's), never on a
-     * taxi ([IndoorCityArt.indoorsHere]). Every indoor decision asks it: the built rooms, the game's art, the painted base, the note, the
+     * taxi ([IndoorCityArt.indoorsHere]). Every indoor decision asks it: the built rooms, the game's art, the dark under them, the note, the
      * framing and the small map's indoor width. (The walked-ground record keeps the game's own flag.)
      */
     private fun indoorsNow(m: JSONObject): Boolean {
         if (m.optBoolean("indoors", false)) return true
         val r = rect ?: return false
         return IndoorCityArt.indoorsHere(false, m.optInt("mapID", 0), r.continent, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN),
-            m.optInt("onTaxi", 0) == 1) { paintedOf(it.uiMap)?.rect }
+            m.optInt("onTaxi", 0) == 1)
     }
 
     /** zoom factor that shows [yards] across the map width in the current zone, or NaN */
@@ -7687,28 +7657,32 @@ class MapView(context: Context) : View(context) {
         val tilesShown = HomeMapNote.terrainShown(terrain, drew || worldDrew, allAbsent && !worldDrew, artNote != null)
         artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT
             else if (HomeMapNote.otherShows(morphOn, offOwn, worldDrew)) HomeMapNote.NOT_BUILT else null
-        // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
-        artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it
         // lines up with the world by construction rather than by a second transform
         val flPlace = placeHere(m)
-        // 2026-11-23 (Ironforge: "I cant see iron forges map at all when walking around in it"): indoors in a capital, the city's painted
-        // map is the base instead of the outdoor tiles zoomed in (B), the game's own indoor art of the groups the player is in over it,
-        // by position (A: IndoorCityArt), our built room on top where there is one
+        // 2026-11-23 (Ironforge: "I cant see iron forges map at all when walking around in it"): indoors in a capital, the game's own
+        // indoor art of the groups the player is in, by position (A: IndoorCityArt), our built room on top where there is one. Under them
+        // (1526, the user's pick "Plain dark background"): the indoor dark over the city's footprint, never its painted map (1524's B)
+        // nor the outdoor tiles zoomed in
         val indoorsNow = indoorsNow(m)
         val citySel = if (rect != null) cityArtHere(m, indoorsNow, flPlace) else null
-        val paintedNow = if (rect != null) cityPaintedHere(m, indoorsNow) else null
-        cityArtDrawn = 0; cityPaintedDrawn = false; indoorNoteDrawn = false
-        if ((citySel != null || paintedNow != null) && flPlace == null && rect != null) {
+        val cityDark = rect?.let { IndoorCityArt.backingAt(it.continent, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), indoorsNow) }
+        // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list; 1526: over a
+        // capital's dark, below, where it covers the outdoor map)
+        if (cityDark == null) artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
+        cityArtDrawn = 0; indoorNoteDrawn = false
+        if ((citySel != null || cityDark != null) && flPlace == null && rect != null) {
             c.save()
             c.clipRect(left, top, left + fw, top + fh)
-            if (paintedNow != null) drawCityPainted(c, paintedNow, ::sx, ::sy)
+            if (cityDark != null) drawCityDark(c, cityDark, ::sx, ::sy)
             if (citySel != null) {
-                pScrim.color = 0x70100C08
+                pScrim.color = (0x70 shl 24) or IndoorCityArt.DARK_RGB
                 c.drawRect(left, top, left + fw, top + fh, pScrim)
                 drawCityArt(c, citySel, left, top, fw, fh, ::sx, ::sy)
             }
             c.restore()
+            // the outdoor map's own note (its pictures still being made) where nothing indoor covers the dark: said, not hidden under it
+            if (citySel == null) artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
         }
         // 4 (2026-11-23): indoors with no indoor map at all here, said on the map, not a silent blur (Home's column and the open map)
         if (HomeMapNote.indoorShows(morphOn, indoorsNow, flPlace != null, citySel != null, artNote != null, indoorNoteDue(m))) {
@@ -7727,12 +7701,12 @@ class MapView(context: Context) : View(context) {
             val artHi = if (lo >= 0 && u > 0f) levelArtOf(flPlace, hiIdx) else null
             c.save()
             c.clipRect(left, top, left + fw, top + fh)
-            // a capital: its painted map under the room (B) and the game's art of the groups around it (A)
-            if (paintedNow != null) drawCityPainted(c, paintedNow, ::sx, ::sy)
+            // a capital: the indoor dark under the room (1526) and the game's art of the groups around it (A)
+            if (cityDark != null) drawCityDark(c, cityDark, ::sx, ::sy)
             // Indoors the frame is ~60 yd wide, and 0.96 px/yd terrain at 34x is a smear that
             // fights the plan for attention. Scrim it: the roof and the road outside still
             // give you your bearings, just quietly. No plan decoded yet: the outdoor map as it is.
-            pScrim.color = 0xA0100C08.toInt()
+            pScrim.color = (0xA0 shl 24) or IndoorCityArt.DARK_RGB
             if (bmLo != null || bmHi != null || artLo != null || citySel != null) c.drawRect(left, top, left + fw, top + fh, pScrim)
             if (citySel != null) drawCityArt(c, citySel, left, top, fw, fh, ::sx, ::sy)
             // ALWAYS DRAW THE WHOLE BUILDING. The storeys you are not on are stroked as

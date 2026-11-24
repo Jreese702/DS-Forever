@@ -25,15 +25,21 @@ import kotlin.math.abs
  * footprint AND on the city's own map (the add-on's mapID, the game's own word for where the player is: [byPosition]), never on a taxi:
  * out of Ironforge's gates the game says Dun Morogh, and on the Ruins of Lordaeron - ABOVE the Undercity, inside its footprint - it says
  * Tirisfal Glades, so neither gets the city's art. There MapView is indoors for everything ([indoorsHere]): the built rooms, the game's
- * art, the painted base, the note and the indoor widths.
+ * art, the dark under them, the note and the indoor widths.
+ *
+ * NO PAINTED MAP UNDER THEM (1526; the user on test 1525, 2026-11-24: "Why can I see the actual map background in iron forge? ... it's
+ * weird and I hate it", and the pick "Plain dark background": "Remove the painted map. Only the game's indoor map art and our own room
+ * maps show; gaps stay dark, like every other indoor map."): inside a capital's footprint, indoors, the ground under the game's art and
+ * our plans is [BACKING] - the indoor scrim's own dark, opaque - never the city's painted map (1524's base, B) nor the outdoor map
+ * zoomed in. Where nothing covers the spot the note still says so.
  *
  * Pure (the tests): MapView reads the art index (wmominimap.json) and draws.
  */
 internal object IndoorCityArt {
     /**
      * One capital. [l2w]: its root's placement as MapView's Place reads it (ox, oy, cos, sin; the PC host bake 2026-10-13, the same for
-     * every one of its rooms; a built room of the root on this continent wins over it). [rect]: the city's painted map's world rect
-     * (top, bottom, left, right: worldmap/<uiMap>/index.json), the footprint when the art set has no index for it.
+     * every one of its rooms; a built room of the root on this continent wins over it). [rect]: its footprint, the world rect (top,
+     * bottom, left, right) of the city's own map (the Map room's worldmap/<uiMap>/index.json, the same numbers)
      */
     class City(val name: String, val root: Int, val uiMap: Int, val continent: Int, val l2w: DoubleArray, val rect: DoubleArray,
                val positionOnly: Boolean = false) {
@@ -54,6 +60,14 @@ internal object IndoorCityArt {
 
     fun byRoot(root: Int): City? = CAPITALS.firstOrNull { it.root == root }
 
+    /** the indoor scrim's colour (MapView draws it at 0x70 / 0xA0 over the outdoor map indoors) */
+    const val DARK_RGB = 0x100C08
+    /** 1526: the ground under a capital's indoor map - the indoor scrim's own dark, opaque */
+    const val BACKING = (0xFF shl 24) or DARK_RGB
+
+    /** 1526: the capital whose footprint is drawn [BACKING] under the indoor map: indoors ([indoors], MapView's own), in its footprint */
+    fun backingAt(continent: Int, wx: Double, wy: Double, indoors: Boolean): City? = if (indoors) cityAt(continent, wx, wy) else null
+
     /**
      * more tiles than this in view: decoded at half size whatever the zoom (memory: MapView keeps 24 MB of pictures in all, a built
      * room's storeys up to ~3 MB each among them; 24 full 256 px tiles are 6 MB)
@@ -70,10 +84,10 @@ internal object IndoorCityArt {
     /** a world point inside a (top, bottom, left, right) rect: x north between bottom and top, y west between right and left */
     fun inRect(r: DoubleArray, wx: Double, wy: Double): Boolean = wx in r[1]..r[0] && wy in r[3]..r[2]
 
-    /** the capital whose footprint holds the player ([rectOf]: the painted map's rect if the art set has it, else the city's own) */
-    fun cityAt(continent: Int, wx: Double, wy: Double, rectOf: (City) -> DoubleArray? = { null }): City? {
+    /** the capital whose footprint ([City.rect]) holds the player */
+    fun cityAt(continent: Int, wx: Double, wy: Double): City? {
         if (!wx.isFinite() || !wy.isFinite()) return null
-        return CAPITALS.firstOrNull { it.continent == continent && inRect(rectOf(it) ?: it.rect, wx, wy) }
+        return CAPITALS.firstOrNull { it.continent == continent && inRect(it.rect, wx, wy) }
     }
 
     /**
@@ -87,61 +101,16 @@ internal object IndoorCityArt {
 
     /**
      * the capital the player is in by position alone (1525): a [City.positionOnly] one whose own map the game says the player is on
-     * ([mapId]) and whose footprint ([rectOf], as [cityAt]) holds them; never on a taxi. Null = the game's own `indoors` decides
+     * ([mapId]) and whose footprint ([City.rect]) holds them; never on a taxi. Null = the game's own `indoors` decides
      */
-    fun byPosition(mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false,
-                   rectOf: (City) -> DoubleArray? = { null }): City? {
+    fun byPosition(mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false): City? {
         if (onTaxi || !wx.isFinite() || !wy.isFinite()) return null
-        return CAPITALS.firstOrNull { it.positionOnly && it.uiMap == mapId && it.continent == continent && inRect(rectOf(it) ?: it.rect, wx, wy) }
+        return CAPITALS.firstOrNull { it.positionOnly && it.uiMap == mapId && it.continent == continent && inRect(it.rect, wx, wy) }
     }
 
     /** the map's indoors (MapView's every indoor decision): the add-on's own flag, or a capital by position ([byPosition]) */
-    fun indoorsHere(indoors: Boolean, mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false,
-                    rectOf: (City) -> DoubleArray? = { null }): Boolean =
-        indoors || byPosition(mapId, continent, wx, wy, onTaxi, rectOf) != null
-
-    /**
-     * THE CITIES' PAINTED MAPS, LOOKED UP OFF THE DRAWING THREAD (review of 2026-11-23: MapView read worldmap/<id>/index.json inside its
-     * draw, and a city with no painted map was read again about every 10 s, on every frame after that). [get] answers from memory only:
-     * a city not looked up yet is read once on [background] (MapView's plans thread), its answer lands through [post] on the drawing
-     * thread and [onArrive] redraws; a miss (no Map room art for it yet) is asked again only after [MISS_MS]. Drawing-thread only, but
-     * [read] runs on [background]. Pure (the tests drive the three hooks).
-     */
-    class PaintedIndex(
-        private val read: (Int) -> Painted?,
-        private val background: (Runnable) -> Unit,
-        private val post: (Runnable) -> Unit,
-        private val now: () -> Long,
-        private val onArrive: () -> Unit = {},
-    ) {
-        /** one city's painted map: its continent and world rect (top, bottom, left, right) */
-        class Painted(val id: Int, val continent: Int, val rect: DoubleArray)
-
-        private val hits = HashMap<Int, Painted>()
-        private val missedAt = HashMap<Int, Long>()
-        private val asking = HashSet<Int>()
-
-        fun get(id: Int): Painted? {
-            hits[id]?.let { return it }
-            if (id in asking) return null
-            val miss = missedAt[id]
-            if (miss != null && now() - miss < MISS_MS) return null
-            asking.add(id)
-            background(Runnable {
-                val p = runCatching { read(id) }.getOrNull()
-                post(Runnable {
-                    asking.remove(id)
-                    if (p != null) { hits[id] = p; missedAt.remove(id); onArrive() } else missedAt[id] = now()
-                })
-            })
-            return null
-        }
-
-        companion object {
-            /** a city with no painted map is looked up again after this long (the Map room's art may be built meanwhile) */
-            const val MISS_MS = 60_000L
-        }
-    }
+    fun indoorsHere(indoors: Boolean, mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false): Boolean =
+        indoors || byPosition(mapId, continent, wx, wy, onTaxi) != null
 
     /** a group's box ([x1, y1, z1, x2, y2, z2], the building's own space) holds the local point */
     fun holds(bb: FloatArray, lx: Double, ly: Double): Boolean = lx >= bb[0] && lx <= bb[3] && ly >= bb[1] && ly <= bb[4]
