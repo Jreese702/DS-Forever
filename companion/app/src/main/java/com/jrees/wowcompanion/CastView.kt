@@ -1728,8 +1728,43 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * when a cast bar pops up or L+R"): Home's centre info block is small now - a cast (its bar, its prediction or its finish) shows,
      * LB + RB are held (the shortcuts layer) or ZL + ZR are (their join in the middle). [onInfoShrink] = something here may have changed it.
      */
-    fun infoShrink(now: Long = SystemClock.elapsedRealtime()): Boolean = castShowing(now) || (padLb && padRb) || (padLt && padRt)
+    fun infoShrink(now: Long = SystemClock.elapsedRealtime()): Boolean = castHoldLeft(now) > 0L || (padLb && padRb) || (padLt && padRt)
     var onInfoShrink: (() -> Unit)? = null
+
+    /**
+     * fix/badges-cast (the user on 1523, 2026-11-23: "The shift back also doesn't happen correctly when completing a cast"): how long from
+     * [now] a cast keeps Home's info block small with nothing new said, ms (0 = no cast does): its bar (to its end + the bar's own 100 ms
+     * tail, then [CastFx.END_WAIT_MS] for its end word), its prediction, its finish or interrupt - the name fades with the bar and is gone
+     * exactly when that ends ([CastFx.FINISH_MS] / [CastFx.FAIL_MS]). None of these ends comes with an event, so Home looks again at this
+     * very moment (its old 100 ms look-again was armed only from Home's own draw, which the cast bar's frames never run: the block stayed
+     * small until something else redrew Home, then jumped back late). Covers [castShowing] whole.
+     */
+    fun castHoldLeft(now: Long = SystemClock.elapsedRealtime()): Long {
+        var left = 0.0
+        if (!castStartMs.isNaN()) left = maxOf(left, castEndMs + maxOf(100.0, CastFx.END_WAIT_MS.toDouble()) - now)
+        if (predOn && predPressAt > 0L) left = maxOf(left, (predPressAt + CastPredict.CONFIRM_MS - now).toDouble())
+        if (flashKind == FLASH_CAST || flashKind == FLASH_FAIL) {
+            val fa = now - flashAtMs
+            if (fa >= 0) left = maxOf(left, ((if (flashKind == FLASH_FAIL) CastFx.FAIL_MS else CastFx.FINISH_MS) - fa).toDouble())
+        }
+        return if (left > 0.0) kotlin.math.ceil(left).toLong() else 0L
+    }
+
+    /**
+     * fix/badges-cast (the user on 1523: "The icons shift smaller when casting but still overlap with the cast text instead of shifting
+     * up"): at rest the cast's name stands ON the bar in its TextBox plate, centred in the gap between the two button groups and at most
+     * that gap wide ([drawCastLine]); this is that lane - for any name, short or long - down to the view's bottom (the bar under it), into
+     * [out] in this view's px. false = no such plate here now (the fight's bar along the top edge, the fight strip carrying the line, the
+     * full room, a gap too narrow for the plate: the name inside the bar's strip, which the clock's spot clears already).
+     */
+    fun restNameLane(out: RectF): Boolean {
+        if (!bottomLine || lineAway || castTop || layout == Layout.FULL || width <= 0 || height <= 0) return false
+        val s = width / FRAME_W
+        if (!restGap(s)) return false
+        val barTop = height - (CastBarPlace.GAP + CastBarPlace.BAR) * s
+        out.set(gapL, barTop - 2f * s - CastBarPlace.PLATE_H * s, gapR, height.toFloat())
+        return true
+    }
 
     /** feat/clock-extras-v2: where Home's clock band goes (CastBarPlace.clockSpot) in this view's px; null = not the diamonds band */
     fun clockSpot(): FloatArray? =
@@ -4697,6 +4732,9 @@ internal object CastFx {
     const val FINISH_MS = 500L
     /** an interrupt / failure: HoldFadeOutAnim holds 1.0 s, then fades over 0.3 s */
     const val FAIL_MS = 1300L
+    /** fix/badges-cast: a cast run past its end with no end word yet keeps Home's info block small this long after its end (the bar's own
+     *  100 ms tail, then the word's wait: a late word's finish shows with no grow-and-shrink-again in between; no word at all, back then) */
+    const val END_WAIT_MS = 400L
     /** StandardFinish loops: its longest piece (Flakes03) starts 0.25 s in and runs 0.5 s */
     const val LOOP_MS = 750L
     /** the game's bar width in units (the outer glow is 222 = 208 + its 7-unit halo each side) */

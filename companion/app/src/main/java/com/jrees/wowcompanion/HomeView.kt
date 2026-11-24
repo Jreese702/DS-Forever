@@ -1498,12 +1498,37 @@ class HomeView(
     private val infoRecheck = Runnable { infoCheck() }
     private fun infoCheck(instant: Boolean = false) {
         val now = android.os.SystemClock.elapsedRealtime()
+        // fix/badges-cast: a cast's bar, its finish and its interrupt end with no event: look again at that very moment (CastView.
+        // castHoldLeft), from here - the old look-again was armed only from Home's own draw, which the cast bar's frames never run
+        val castLeft = castView.castHoldLeft(now)
+        removeCallbacks(infoRecheck)
+        if (castLeft > 0L) postDelayed(infoRecheck, castLeft.coerceAtMost(INFO_LOOK_MAX_MS))
         val grown = !castView.infoShrink(now)
+        infoLift(now, castLeft > 0L, grown, instant)
         if (instant) { infoGrown = grown; infoFrom = if (grown) 1f else 0f; infoAt = now; invalidate(); return }
         if (grown == infoGrown) return
         infoFrom = infoLinear(now); infoGrown = grown; infoAt = now
         invalidate()
     }
+
+    /**
+     * fix/badges-cast: how far the block's SMALL end is a cast's (1 = the extras row lifted clear of the cast's name: ClockBand.lift;
+     * 0 = today's small row, as LB + RB hold it), linear over the shrink's time. A cast: toward the lifted row - at once from a settled
+     * grown block (its shrink goes straight there); no cast with the block held small (LB + RB, ZL + ZR): back to today's small row; no
+     * cast and the block growing back: held where it is (the grow starts from where the row stands - no jump), and 0 again once grown.
+     */
+    private var liftFrom = 0f
+    private var liftTo = 0f
+    private var liftAt = 0L
+    private fun liftK(now: Long): Float = liftFrom + (liftTo - liftFrom) * ((now - liftAt) / ClockBand.GROW_MS_OUT).coerceIn(0f, 1f)
+    private fun infoLift(now: Long, cast: Boolean, grown: Boolean, instant: Boolean) {
+        val at = liftK(now)
+        val to = when { cast -> 1f; !grown -> 0f; else -> at }
+        if (instant || (cast && infoGrown && infoLinear(now) >= 1f)) { liftFrom = to; liftTo = to; liftAt = now; return }
+        if (to != liftTo) { liftFrom = at; liftTo = to; liftAt = now; invalidate() }
+    }
+    /** the cast name's lane in Home's px (CastView.restNameLane), set in place each draw */
+    private val nameLane = RectF()
 
     /**
      * THE EXTRAS ROW's items (feat/clock-extras-v2; the user's picks 2026-11-13, each by its own Bottom > Home row), in ClockBand's
@@ -4560,8 +4585,11 @@ class HomeView(
         if (trigA != (if (trigHeld) 0f else 1f)) postInvalidateOnAnimation()
         val lin = infoLinear(tNow)
         if (lin != (if (infoGrown) 1f else 0f)) postInvalidateOnAnimation()
-        // a cast's finish ends with no event: look again while small for a cast
-        if (!infoGrown) { removeCallbacks(infoRecheck); postDelayed(infoRecheck, 100L) }
+        // (a cast's end: infoCheck looks again at that moment itself - fix/badges-cast)
+        // fix/badges-cast: grown again, the small end is today's again (unseen: the block is all grown)
+        if (infoGrown && lin >= 1f && liftTo != 0f) { liftFrom = 0f; liftTo = 0f; liftAt = tNow }
+        val lift = liftK(tNow)
+        if (lift != liftTo) postInvalidateOnAnimation()
         val g = infoCurve.getInterpolation(lin)
         val chipOn = clockA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0
         val bandA = clockA * trigA
@@ -4578,10 +4606,17 @@ class HomeView(
                 for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
             } else null
             // the band itself never moves in edit mode (1518 build 3; the user's ruling 2026-11-22): only the extras wiggle
+            // fix/badges-cast (the user on 1523: "The icons shift smaller when casting but still overlap with the cast text instead of
+            // shifting up"): the cast name's lane at rest (its plate on the bar, between the button groups); while a cast holds the block
+            // small its row is lifted over it (ClockBand.lift, eased in with [liftK]), and nothing of the block is drawn into the lane
+            // while the bar or its name may show (the shrink from the grown block passes behind the name). Edit mode exactly as before.
+            val lane = if (!ed && spot != null && castView.restNameLane(nameLane)) nameLane.apply { offset(b.left, b.top) } else null
+            val keep = lane?.let { it.top - CastBarPlace.CLOCK_PAD * castView.width / CastBarPlace.FRAME_W } ?: Float.NaN
             val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
             UiKit.clockBlock(c, b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, if (ed) editChipGold() else chipGold(),
                 spot, items, g, rowAlpha = if (rowOn) (trigA * 255).toInt() else 0, chipAlpha = if (chipOn) 255 else 0,
-                pose = if (ed) extraPoser else null)
+                pose = if (ed) extraPoser else null, keep = keep, lift = if (lane != null) lift else 0f,
+                clip = lane?.takeIf { castView.castShowing(tNow) })
             if (save >= 0) c.restoreToCount(save)
             // the mm:ss counts (as the auras' times); nothing ticks otherwise
             if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
@@ -5747,6 +5782,8 @@ class HomeView(
         const val ZONE_BAND_BOTTOM = 72f
         /** the page's fade at a move's start (out) and end (in) (HARMONY_SPEC section 3) */
         const val FADE_MS = 120f
+        /** fix/badges-cast: the info block's look-again at a cast's end comes at least this often (ms) while the cast holds it small */
+        const val INFO_LOOK_MAX_MS = 1000L
         /** the buff button, below the small map's zone bar */
         const val BTN_TOP = ZONE_BAND_BOTTOM + 8f
         /** b129, UI Art: the open map's auras - right-aligned at w - FULL_RIGHT (left of the filter corner and its Start glyph),
