@@ -25,6 +25,7 @@ class IndoorStartupCountTest {
     private fun field(n: String) = step.getDeclaredField(n).apply { isAccessible = true }
 
     @After fun stop() {
+        LauncherHooks.gameUp = { false }
         IndoorSchedulerStep.stop()
         val until = System.currentTimeMillis() + 10_000L
         while (field("thread").get(IndoorSchedulerStep) != null && System.currentTimeMillis() < until) Thread.sleep(20)
@@ -42,18 +43,19 @@ class IndoorStartupCountTest {
         // a generator is registered (CompanionHost does it); never opened before the first game
         val factoryType = Class.forName("com.jrees.wowcompanion.IndoorGenerator\$Factory")
         val factory = java.lang.reflect.Proxy.newProxyInstance(factoryType.classLoader, arrayOf(factoryType)) { _, m, _ ->
-            if (m.name == "open") error("never opened before Play") else null
+            if (m.name == "open") error("never opened while the game runs") else null
         }
         field("factory").set(IndoorSchedulerStep, factory)
+        // (2026-11-24: it builds on the start screen now; the game up holds it - "Waiting: game running" - with the game files closed)
+        LauncherHooks.gameUp = { true }
         IndoorSchedulerStep.start(app)
-        // before the first game of the run it waits ("Builds after you play") with the game files closed
         val until = System.currentTimeMillis() + 10_000L
         while (System.currentTimeMillis() < until && runCatching { JSONObject(status.readText()).optString("phase") }.getOrNull() != "PAUSED") Thread.sleep(20)
         val disk = JSONObject(status.readText())
         assertEquals("PAUSED", disk.optString("phase"))
         assertEquals("status.json keeps the count, not 0/0", 1616, disk.optInt("ready"))
         assertEquals(1837, disk.optInt("total"))
-        assertEquals("Indoor Maps (Optional): 1616/1837 ready - Builds after you play", IndoorSchedulerStep.readiness(app).label)
+        assertEquals("Indoor Maps (Optional): 1616/1837 ready - Waiting: game running", IndoorSchedulerStep.readiness(app).label)
         game.deleteRecursively()
     }
 

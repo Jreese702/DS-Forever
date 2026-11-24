@@ -18,9 +18,15 @@ import java.io.File
  *
  * Feeds (CompanionHost): [noteAlive] from every live document (with whether the game is busy: a fight, a loading or setup
  * screen), [notePosition] from every "pos" map document (the add-on's inst / wx / wy); [companionUp] / [stop] with the companion.
- * The game itself ([LauncherHooks], [PlayGate]; issue #108 cluster, 2026-11-11): NEVER beside the game on any Thor - a run lets the game
- * files go the moment the game is up or launching, waits without them, and bakes again once the game has closed (not before the first
- * game of the run: the user's 2026-11-07 "sluggish before I ever press update"). While streaming it bakes (the game is on the PC).
+ * The game itself ([LauncherHooks], [PlayGate]; issue #108 cluster, 2026-11-11): never beside the game on its own - a run lets the game
+ * files go the moment the game is up or launching (or Play is pressed: [LauncherHooks.playPressed], [letGoForPlay]), waits without them,
+ * and bakes again once the game has closed. While streaming it bakes (the game is on the PC).
+ *
+ * THE USER'S RULING OF 2026-11-24 ("The indoor maps just never builds. I want it to show the bar and build on the first screen if people
+ * wait there and I also want a button in game to force building in game"): it builds on DS Forever's own first screen too (the start
+ * screen with its checks, the chooser) - before the first Play and after a game ([PlayGate.indoorWait]) - and Play stops it at once; and
+ * Settings > Performance > Indoor maps > Build now ([buildNow], "Stop": [stopBuildNow]) lets it build DURING PLAY, only while the player
+ * is idle ([IndoorIdle.Beside]: standing still, out of a fight, not loading or flying, the memory there), pausing the moment they move.
  */
 object IndoorSchedulerStep : ArtHarvest.Step {
     private const val TAG = "WCINTERIORS"
@@ -56,7 +62,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
      */
     internal fun readiness(s: IndoorScheduler.Status?): Readiness {
         val head = "Indoor Maps (Optional)"
-        if (s == null) return Readiness("$head: ${cap(PlayGate.AFTER_PLAY)}", false)
+        // (2026-11-24: it builds on the first screen too - no status yet is the moment before the builder's first word)
+        if (s == null) return Readiness("$head: $STARTING", false)
         val n = if (s.total > 0) "${s.ready}/${s.total}" else ""
         val ready = if (n.isEmpty()) "" else "$n ready"
         val text = when (s.phase) {
@@ -76,6 +83,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     }
 
     private fun cap(t: String) = t.replaceFirstChar { it.uppercaseChar() }
+
+    /** the row before the builder's first status (es / fr: the i18n's plain words) */
+    const val STARTING = "Starting"
 
     /**
      * 1525 (the user's pick, 2026-11-24, "Reuse what didn't change"): the row after a game update's carry-over, terse: what it kept and
@@ -170,6 +180,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     private fun publishStatus(ctx: Context, s: IndoorScheduler.Status) {
         if (status?.phase != s.phase || status?.note != s.note) DiagLog.event("interiors", "${s.phase} ${s.ready}/${s.total} ${s.note}".trim())
+        // 2026-11-24: finished (every counted building built or settled) ends Build now - the dungeons go on after the game, as before
+        if (s.phase == IndoorScheduler.Phase.DONE && armed) disarm("finished")
         synchronized(statusLock) {
             status = s
             runCatching {
@@ -200,7 +212,20 @@ object IndoorSchedulerStep : ArtHarvest.Step {
      * Every live document from the add-on (it sends "pos" only while the player moves, a full snapshot every 15 s even when
      * standing still): the game is there, and whether it is busy (a fight, a loading or setup screen).
      */
-    fun noteAlive(gameBusy: Boolean) { this.gameBusy = gameBusy }
+    fun noteAlive(gameBusy: Boolean, fight: Boolean = gameBusy) {
+        val t = System.currentTimeMillis()
+        this.gameBusy = gameBusy
+        aliveAt = t
+        if (fighting && !fight) fightEndAt = t
+        fighting = fight
+    }
+
+    /** 2026-11-24 (Build now in game): the add-on's last live document (epoch ms; 0 = none), and its word on a fight and when one ended */
+    @Volatile private var aliveAt = 0L
+    @Volatile private var fighting = false
+    @Volatile private var fightEndAt = 0L
+    /** the last position was on a flight (the add-on's `onTaxi` on the cheap tick) */
+    @Volatile private var taxi = false
 
     /** standing still or moving (b-interiors-stutter): fed by every position, asked by the bake's gate */
     private val motion = IndoorIdle.Motion()
@@ -216,6 +241,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     fun notePosition(map: JSONObject) {
         val p = positionOf(map) ?: return
         live = p
+        taxi = map.optInt("onTaxi", 0) == 1
         synchronized(motion) { motion.note(p, System.currentTimeMillis()) }
     }
 
@@ -288,7 +314,79 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     }
 
     /** stop cleanly: the bake ends at its next yield point; finished buildings are kept */
-    fun stop() { stopping = true; runCatching { IndoorKeepAlive.update(null, why = "stopped") } }
+    fun stop() { stopping = true; nudge(); runCatching { IndoorKeepAlive.update(null, why = "stopped") } }
+
+    // ------------------------------------------------------------------ 2026-11-24: Build now in game, and Play
+
+    /**
+     * BUILD NOW (the user, 2026-11-24: "I also want a button in game to force building in game"; picks: Settings > Performance > Indoor
+     * maps, "Only while I'm idle"). Armed until the build is finished ([publishStatus]: DONE), the builder's thread ends (nothing left this
+     * run, a failure, Off) or [stopBuildNow]. In this process only: a /reload keeps it (the process lives on), an app restart does not -
+     * the restart may be Android's kill while it built beside the game, and building beside the game is the player's call each session.
+     */
+    @Volatile var armed = false
+        private set
+
+    fun buildNow(context: Context) {
+        if (!Settings.indoorBuild) return
+        if (!armed) { armed = true; Log.i(TAG, "interiors: Build now pressed: it builds while the player is idle") }
+        for (l in listeners) runCatching { l() }
+        start(context)
+        nudge()
+    }
+
+    fun stopBuildNow() {
+        if (!armed) return
+        disarm("Stop pressed")
+        nudge()
+    }
+
+    private fun disarm(why: String) {
+        armed = false
+        runCatching { Log.i(TAG, "interiors: Build now off ($why)") }
+        for (l in listeners) runCatching { l() }
+    }
+
+    /** the builder builds beside the game now (Build now; the keep-alive's [IndoorKeepAlive.State.beside]) */
+    val buildingBeside: Boolean get() = armed && status?.let { it.phase == IndoorScheduler.Phase.BAKING && it.note == PlayGate.IDLE_BUILDING } == true
+
+    /** waits the builder's naps short ([nudge]: Play, Build now, Stop, a stop): a press is seen within a step, not a poll later */
+    private val nudges = java.util.concurrent.Semaphore(0)
+    internal fun nudge() = nudges.release()
+    private fun nap(ms: Long) { if (nudges.tryAcquire(ms, java.util.concurrent.TimeUnit.MILLISECONDS)) nudges.drainPermits() }
+
+    /** Play pressed ([LauncherHooks.playPressed]): the builder lets the game files go at its next step */
+    internal fun playPressed() { nudge(); if (filesOpen) runCatching { Log.i(TAG, "interiors: Play pressed: letting the game files go") } }
+    /** the launch stopped before the game came up: the builder may build on the start screen again */
+    internal fun playStopped(why: String) { nudge(); runCatching { Log.i(TAG, "interiors: the launch stopped ($why): it builds on the start screen again") } }
+
+    /** the builder holds the game files now (between its open and its close) */
+    @Volatile internal var filesOpen = false
+        private set
+    /** when it last let them go (epoch ms) */
+    @Volatile private var closedAt = 0L
+
+    /** how long Play waits for the builder to let go of the game files, at most (the launch goes on after it whatever happened) */
+    const val PLAY_WAIT_MS = 1_000L
+
+    /**
+     * PLAY'S BOUNDED WAIT (2026-11-24: "Pressing Play must not be delayed"): right before the launch, after Play's own steps (the art, the
+     * add-ons, the build info), Play waits until the builder has let go of the game files - CascLib's ~500 MB of index tables - for at
+     * most [maxMs]; the builder was asked at the press itself. The ms waited; the log line has how long after Play the files went.
+     */
+    fun letGoForPlay(maxMs: Long = PLAY_WAIT_MS): Long {
+        val t0 = System.currentTimeMillis()
+        nudge()
+        while (filesOpen && System.currentTimeMillis() - t0 < maxMs) runCatching { Thread.sleep(10) }
+        val waited = System.currentTimeMillis() - t0
+        val press = LauncherHooks.playPressAtMs
+        runCatching {
+            if (filesOpen) Log.w(TAG, "interiors: Play waited $waited ms and goes on; the builder is still letting go of the game files")
+            else Log.i(TAG, "interiors: Play waited $waited ms; the game files " +
+                if (press > 0L && closedAt >= press) "were let go ${closedAt - press} ms after Play" else "were not open")
+        }
+        return waited
+    }
     override fun stopDetached() = stop()
 
     // ------------------------------------------------------------------ running
@@ -321,7 +419,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                 // decided under the lock [start] takes: a later start sees null and makes a new thread
                 } while (synchronized(this) { (again && !stopping).also { if (!it) thread = null } })
             } finally {
-                synchronized(this) { if (thread === Thread.currentThread()) { thread = null; working = false } }
+                val ended = synchronized(this) { (thread === Thread.currentThread()).also { if (it) { thread = null; working = false } } }
+                // 2026-11-24: nothing more for this run (finished, a failure, Off, a stop): Build now goes with it
+                if (ended && armed) disarm("the builder ended")
                 // issue 568: the build is done, failed, stopped or has nothing to do: the quiet service goes
                 runCatching { IndoorKeepAlive.update(ctx, why = "the builder ended") }
             }
@@ -381,7 +481,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                 if (w != s) publishStatus(ctx, w) else if (status == null) status = w
                 Log.i(TAG, "interiors: waiting ($why), the game files not open")
             }
-            runCatching { Thread.sleep(WAIT_POLL_MS) }
+            nap(WAIT_POLL_MS)
         }
     }
 
@@ -393,7 +493,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                 publishStatus(ctx, failedStatus(countedStatus(ctx), GameFiles.lastWhy ?: "the game files could not be read", finishKey(ctx)))
                 return null
             }
-            return game.use { g ->
+            filesOpen = true
+            // 2026-11-24: a damaged read beside the running game (Build now; the game may write its Data then) is not marked as damage
+            game.besideGame = { LauncherHooks.gameUp() && !PlayGate.streamingNow() }
+            return try { game.use { g ->
                 factory.open(g).use { gen ->
                     val root = ArtHarvest.root(ctx)
                     // 1.0.22 (the user: "the indoor maps are just not completing ... it does not progress" - 1616/1837, all 221 left DEFERRED by
@@ -415,6 +518,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                     if (outcome == IndoorScheduler.Outcome.COMPLETE) ArtHarvest.markDetachedDone(ctx, this, g.buildKey, app)
                     outcome
                 }
+            } } finally {
+                filesOpen = false
+                closedAt = System.currentTimeMillis()
+                LauncherHooks.playPressAtMs.takeIf { it > 0L && closedAt >= it }?.let { Log.i(TAG, "interiors: the game files closed ${closedAt - it} ms after Play") }
             }
         } catch (e: Throwable) {
             // optional: logged and shown on its own row, never in the harvest's state. Throwable, not Exception: an Error
@@ -556,15 +663,39 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
         private fun streaming() = PlayGate.streamingNow()
 
-        /** the game up or launching (never while streaming: the game is on the PC): the run lets the game files go at once */
-        override fun gameRunning(): Boolean = PlayGate.gameActiveNow()
-
         /**
-         * Review of this fix (2026-11-11): after a game, nobody is looking at DS Forever's launcher screen - the device screen is off, or
-         * the launcher is not the window in front (the user went to the home screen). The 2026-11-07 ruling's sluggishness was on that
-         * very screen, so the bake builds there only then
+         * the game up or launching (never while streaming: the game is on the PC), or Play pressed (2026-11-24: from the press itself):
+         * the run lets the game files go at once - unless the player pressed Build now and the game is up ([beside])
          */
-        private fun quiet(): Boolean = power?.isInteractive == false || !LauncherHooks.inFront()
+        override fun gameRunning(): Boolean =
+            PlayGate.pressHeld(LauncherHooks.playPressAtMs, LauncherHooks.gameStartSec, now()) || (PlayGate.gameActiveNow() && !beside())
+
+        /** 2026-11-24: Build now, with this device's game up (not streaming, not a launch still under way) */
+        override fun beside(): Boolean = armed && LauncherHooks.gameUp() && !streaming()
+
+        private var memAt = Long.MIN_VALUE
+        private var memValue: Long? = null
+        /** MemAvailable, read at most every [IndoorScheduler.MEMORY_EVERY_MS] (asked at every yield point beside the game) */
+        private fun memAvailable(t: Long): Long? {
+            if (t - memAt >= IndoorScheduler.MEMORY_EVERY_MS) { memAt = t; memValue = NativeIndoorGenerator.memAvailable() }
+            return memValue
+        }
+
+        /** 2026-11-24: why it may not build beside the game now (the user's "Only while I'm idle"); the inputs as [IndoorIdle.Beside] reads them */
+        override fun besideReason(): String? {
+            val t = now()
+            val small = runCatching { DeviceTier.lowMemCuts() }.getOrDefault(true)
+            val since = { at: Long -> if (at == 0L) Long.MAX_VALUE else (t - at).coerceAtLeast(0L) }
+            return IndoorIdle.Beside.reason(IndoorIdle.Beside.Now(
+                inWorld = GameLife.worldNow, calmMs = GameLife.calmMs(t), loading = gameBusy && !fighting, aliveAgoMs = since(aliveAt),
+                fight = fighting, sinceFightMs = if (fighting) 0L else since(fightEndAt),
+                sinceMoveMs = synchronized(motion) { motion.sinceMove(t) }, taxi = taxi,
+                memAvailable = memAvailable(t), filesOpen = filesOpen, small = small,
+                pressure = IndoorIdle.Beside.pressure(small, MemWatch.pressureAt, GameLife.startedAtMs, t),
+                artRunning = ArtHarvest.workingNow(),
+                // the files were let go once already in this game (a walk of a minute, a load): the open again waits longer
+                reopen = closedAt > 0L && GameLife.startedAtMs > 0L && closedAt >= GameLife.startedAtMs))
+        }
 
         override fun busy(): Boolean = busyReason() != null
 
@@ -577,8 +708,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             // in 5 s, then Android's kill): never while the game is up or launching on ANY model (it was only the 8 / 12 GB ones, 1.0.17's
             // "Pause while playing, always"); it builds once the game has closed, while nobody looks at the launcher screen ([quiet]).
             // An art run (icons too) still goes first - one that really works, not one parked for the game ([ArtHarvest.workingNow])
+            // 2026-11-24 (the user: "build on the first screen if people wait there"): no longer only after a game and unseen; never while
+            // the game's own files are written (its update, an install, Repair)
             return PlayGate.indoorWait(streaming(), ArtHarvest.workingNow(), PlayGate.gameActiveNow(),
-                playedThisRun = LauncherHooks.gameStartSec != 0L, quiet = quiet())
+                filesBusy = runCatching { LauncherHooks.filesBusy() }.getOrDefault(false))
         }
 
         /** the player moved in the last few seconds while the game runs (before Play there is no player: never "moving") */
@@ -633,7 +766,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         /** 2026-11-11: a game that closed no longer stops the bake: that is when it builds now ([gameRunning] lets the files go) */
         override fun stop(): Boolean = stopping || !Settings.indoorBuild      // Off in Settings: ends at the next yield point
         override fun now(): Long = System.currentTimeMillis()
-        override fun sleep(ms: Long) = Thread.sleep(ms)
+        /** 2026-11-24: a nap Play, Build now or Stop cut short ([nudge]) */
+        override fun sleep(ms: Long) = nap(ms)
     }
 }
 

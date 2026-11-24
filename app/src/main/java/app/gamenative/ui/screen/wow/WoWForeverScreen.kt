@@ -159,6 +159,11 @@ fun WoWForeverScreen(
     var isCheckingVersion by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
     var installStartedAt by remember { mutableStateOf(0L) }
+    // 2026-11-24: the indoor maps build on this screen now; never while the game's own files are written (its update, an install, Repair)
+    DisposableEffect(Unit) {
+        com.jrees.wowcompanion.LauncherHooks.filesBusy = { isUpdating || isRepairing || installStartedAt != 0L }
+        onDispose { com.jrees.wowcompanion.LauncherHooks.filesBusy = { false } }
+    }
     var artStartedAt by remember { mutableStateOf(0L) }
     /** Update was pressed while an art step or a launch ran: it starts by itself when they end (SetupFlow.updateGate) */
     var updateQueued by remember { mutableStateOf(false) }
@@ -338,6 +343,8 @@ fun WoWForeverScreen(
         // art before Play (PlayGate.artMayOpen), or Play would sit at "Preparing your game art..."
         com.jrees.wowcompanion.LauncherHooks.endLaunchWindow()
         isLaunching = true
+        // 2026-11-24 (the indoor maps build on this screen while the player waits): Play stops them at once, before its wait for the art
+        com.jrees.wowcompanion.LauncherHooks.playPressed()
         errorMessage = null
         statusText = "Preparing components..."
 
@@ -352,6 +359,7 @@ fun WoWForeverScreen(
                     errorMessage = artStatusText ?: "Game art is required before Play"
                     statusText = "Game art is not ready"
                     isLaunching = false
+                    com.jrees.wowcompanion.LauncherHooks.playStopped("game art not ready")
                     PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
                     return@launch
                 }
@@ -380,6 +388,8 @@ fun WoWForeverScreen(
                     // #361: the game never starts beside open game files (a step lets go within one file; a stuck one is logged)
                     step("Pausing the game art...")
                     com.jrees.wowcompanion.ArtHarvest.letGoForPlay()
+                    // 2026-11-24: the indoor maps were asked at the press; the launch waits at most a second for their game files to close
+                    com.jrees.wowcompanion.IndoorSchedulerStep.letGoForPlay()
                 }
                 com.jrees.wowcompanion.LauncherHooks.launchEvent("preparing the container (${gpu.label}, by $by)")
                 val containerId = withContext(Dispatchers.IO) {
@@ -395,12 +405,14 @@ fun WoWForeverScreen(
                 throw e
             } catch (_: StorageAccessDeniedException) {
                 com.jrees.wowcompanion.LauncherHooks.launchEvent("launch stopped: storage access denied")
+                com.jrees.wowcompanion.LauncherHooks.playStopped("storage access denied")
                 isLaunching = false
                 statusText = READY_STATUS
                 denyStorageAccess()
             } catch (e: Exception) {
                 refused("launch failed: ${e.message}")
                 com.jrees.wowcompanion.LauncherHooks.launchEvent("launch failed: ${e.javaClass.simpleName}: ${e.message}")
+                com.jrees.wowcompanion.LauncherHooks.playStopped("launch failed")
                 Timber.e(e, "Error launching WoW Forever")
                 errorMessage = e.message ?: "Launch failed"
                 statusText = "Launch failed"

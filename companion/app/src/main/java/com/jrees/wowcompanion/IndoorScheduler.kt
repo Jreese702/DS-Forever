@@ -75,6 +75,15 @@ internal class IndoorScheduler(
          * more (a game update meanwhile: its carry-over publishes the new build, never overwritten by the old one) and stops
          */
         fun activeBuild(): String? = null
+        /**
+         * 2026-11-24, BUILD NOW IN GAME (the user's "I also want a button in game to force building in game", "Only while I'm idle"): the
+         * game is up and the player pressed Build now, so [gameRunning] does not let the files go; it builds beside the game only while
+         * [besideReason] is null, and a building under way is cancelled ([IndoorGenerator.Cancelled]) the moment the player moves or a
+         * fight starts (after [IndoorIdle.Beside.CANCEL_GRACE_MS])
+         */
+        fun beside(): Boolean = false
+        /** why it may not build beside the game now ([IndoorIdle.Beside.reason]); null = the player is idle. Asked only while [beside] */
+        fun besideReason(): String? = null
     }
 
     /**
@@ -183,6 +192,14 @@ internal class IndoorScheduler(
      * most every [MEMORY_EVERY_MS] (it boxed a pair at every point: GC churn on the Thor, b-interiors-stutter). A move pauses at
      * the next point, mid-building; the building waits with its work so far and goes on when the player stands still again.
      */
+    /** 2026-11-24: when a reason to cancel the building under way beside the game was first seen (0 = none now) */
+    private var cancelSeenAt = 0L
+    /** 2026-11-24: the run lets the game files go at once (Play, the game, a load, low memory): no last publication, no stats walk */
+    @Volatile private var hurry = false
+
+    /** the row's note while it builds: beside the game, "building while you're idle" */
+    private fun buildingNote(): String = if (runCatching { signals.beside() }.getOrDefault(false)) PlayGate.IDLE_BUILDING else ""
+
     private fun gate() {
         checkpoint()
         val t = signals.now()
@@ -195,8 +212,27 @@ internal class IndoorScheduler(
         var said: String? = null
         while (true) {
             if (signals.stop()) throw IndoorGenerator.Stopped()
-            if (signals.gameRunning()) { asleep("the game is running"); log("the game is running: the game files let go at once"); throw IndoorGenerator.Released() }
-            val why = pauseReason(signals) ?: break
+            if (signals.gameRunning()) { hurry = true; asleep("the game is running"); log("the game is running: the game files let go at once"); throw IndoorGenerator.Released() }
+            val why = pauseReason(signals)
+            if (why == null) { cancelSeenAt = 0L; break }
+            // 2026-11-24: a game update / install / Repair writing the game's files, or beside the game a load or low memory: let go now
+            if (letGoAtOnce(why)) {
+                hurry = true
+                asleep("paused: $why")
+                if (status.phase != Phase.DONE) emit(status.copy(phase = Phase.PAUSED, note = why, now = ""))
+                log("paused: $why: the game files let go at once")
+                throw IndoorGenerator.Released()
+            }
+            // 2026-11-24 (Build now in game, "pauses the moment you move"): beside the game the building under way is not held in memory
+            // through a walk or a fight: it gets a moment to finish, then it is cancelled (not counted) and built again once idle
+            if (marked != null && runCatching { signals.beside() }.getOrDefault(false)) {
+                val seen = signals.now()
+                if (cancelSeenAt == 0L) cancelSeenAt = seen
+                if (seen - cancelSeenAt < IndoorIdle.Beside.CANCEL_GRACE_MS) return
+                cancelSeenAt = 0L
+                asleep("cancelled: $why")
+                throw IndoorGenerator.Cancelled(why)
+            }
             // a kill while it waits is not the building's (the player, the device, the game): its kill marker goes until it resumes
             if (!paused) { paused = true; pausedAt = signals.now(); asleep("paused: $why"); marked?.let { (d, _) -> d.attempted() } }
             // #568: a new reason shows at once (the row kept the first one: "game busy" after the player had minimized)
@@ -208,7 +244,7 @@ internal class IndoorScheduler(
             signals.sleep(PAUSE_POLL_MS)
         }
         if (paused) {
-            if (status.phase != Phase.DONE) emit(status.copy(phase = Phase.BAKING, note = ""))
+            if (status.phase != Phase.DONE) emit(status.copy(phase = Phase.BAKING, note = buildingNote()))
             log("resumed")
             if (building) awake("resumed")
             marked?.let { (d, w) -> d.attempting(w, runId, signals.now()) }
@@ -223,6 +259,8 @@ internal class IndoorScheduler(
     fun run(): Outcome {
         dataDir.mkdirs()
         runCatching { generator.memory(memo) }
+        // 2026-11-24: the input fetches before a building ask too (Play, the game, a stop: no further download)
+        runCatching { generator.letGo { runCatching { signals.stop() || signals.gameRunning() }.getOrDefault(true) } }
         var outcome: Outcome? = null
         try {
             return runInner().also { outcome = it }
@@ -230,7 +268,8 @@ internal class IndoorScheduler(
             // D4: whatever ended it (the end, a stop, a release, a failure thrown past runInner), the lock goes with the run
             building = false
             asleep(outcome?.let { "the run ended (${it.name.lowercase()})" } ?: "the run failed")
-            runCatching { stats() }
+            // (letting go for Play or the game: the game files close first, the storage walk waits for the next run)
+            if (!hurry) runCatching { stats() }
         }
     }
 
@@ -297,7 +336,7 @@ internal class IndoorScheduler(
             // the row now: FINISHED once no counted building is open, else building (its numbers: the counted ones only)
             fun progress(now: String = ""): Status = if (open(true) == 0)
                 Status(Phase.DONE, ready(), total, rejected(), list = list, rejected = rejected(), dungeons = open(false), finishedFor = finishKey)
-            else Status(Phase.BAKING, ready(), total, queue.deferred(::counted), now = now, list = list, rejected = rejected())
+            else Status(Phase.BAKING, ready(), total, queue.deferred(::counted), note = buildingNote(), now = now, list = list, rejected = rejected())
             // the sweep FIRST (a run whose publications fail still trims), then unchanged buildings are visible at once
             cleanup(catalogue)
             publish(queue, catalogue)
@@ -315,6 +354,9 @@ internal class IndoorScheduler(
                     // Settings' "building now": how far the nearest-first pick is from the player
                     emit(progress(IndoorProgress.nowText(if (here == null) null else kotlin.math.sqrt(queue.distance(pick, here)))))
                     val t0 = signals.now()
+                    // 2026-11-24: made beside the game (Build now): a failure that may pass is not counted then (the game's memory, its
+                    // files being written: the device's state beside it, not the building's) - tried again after the game
+                    val besideAtStart = runCatching { signals.beside() }.getOrDefault(false)
                     building = true
                     awake("building ${pick.key}")
                     // a kill from here to the end of the building leaves the marker: the next run counts it (IndoorDeferrals.killed)
@@ -322,7 +364,15 @@ internal class IndoorScheduler(
                     val done = try {
                         runCatching { queue.runOne(here, publish = false) { w, dir -> generator.produce(w, dir, yieldPoint) } }
                     } finally { building = false; marked = null; deferrals.attempted() }
-                    done.exceptionOrNull()?.let { e ->
+                    val failure = done.exceptionOrNull()
+                    // 2026-11-24 (Build now in game): the player moved or a fight started: given up, nothing counted, built again when idle
+                    if (failure is IndoorGenerator.Cancelled) {
+                        queue.putBack(pick)
+                        log("cancelled ${pick.key} after ${signals.now() - t0} ms: ${failure.message?.substringAfter(": ")} (not counted; built again when idle)")
+                        emit(progress())
+                        continue
+                    }
+                    failure?.let { e ->
                         // 2026-11-11: a release mid-building is not that building's failure (it was deferred for good, "paused long")
                         if (e is IndoorGenerator.Stopped || e is IndoorGenerator.Released) throw e
                         // D1: the builder's rule is settled until the game or the builder changes; anything else is tried again next
@@ -330,6 +380,11 @@ internal class IndoorScheduler(
                         val rule = e is IndoorGenerator.Rejected
                         // (the line's shape is the T3 parsers'; its kind on a line of its own)
                         log("deferred ${pick.key}: ${e.message}")
+                        if (!rule && (besideAtStart || runCatching { signals.beside() }.getOrDefault(false))) {
+                            log("deferral ${pick.key}: failed beside the game: tried again after it (not counted)")
+                            failedNow.add(pick.signature)
+                            return@let
+                        }
                         val entry = deferrals.defer(pick, e.message ?: e.javaClass.simpleName, signals.now(), rule, run = runId)
                         val gaveUp = !rule && entry.tries >= IndoorDeferrals.MAX_TRIES
                         log("deferral ${pick.key}: ${if (rule) "settled (the builder's rule)" else triesText(entry.tries)}")
@@ -350,8 +405,9 @@ internal class IndoorScheduler(
                     signals.sleep(BREATHER_MS)
                 }
             } finally {
-                // Finished buildings are kept on disk anyway; this makes them visible before a stop or the end.
-                if (unpublished > 0) runCatching { publish(queue, catalogue) }
+                // Finished buildings are kept on disk anyway; this makes them visible before a stop or the end. 2026-11-24: not while it
+                // lets go for Play or the game (the game files close first; the next run publishes them before anything else)
+                if (unpublished > 0 && !hurry) runCatching { publish(queue, catalogue) }
             }
             cleanup(catalogue)
             // D1 (the user's pick, 2026-11-23: "Done when all mappable built"): FINISHED once every counted building is built or settled
@@ -513,12 +569,18 @@ internal class IndoorScheduler(
         /** why the bake waits now, the cheapest test first; null = it may go on */
         internal fun pauseReason(s: Signals): String? = when {
             s.gameRunning() -> PlayGate.GAME_RUNNING
+            // 2026-11-24: Build now in game - only while the player is idle (and the device cool)
+            s.beside() -> s.besideReason() ?: if (s.hot()) PlayGate.DEVICE_WARM else null
             else -> s.busyReason() ?: when {
                 s.moving() -> PlayGate.PLAYER_MOVING
                 s.hot() -> PlayGate.DEVICE_WARM
                 else -> null
             }
         }
+
+        /** 2026-11-24: a wait that lets the game files go at once, not after [RELEASE_AFTER_MS] (the game's files written; a load or
+         *  low memory beside the game) */
+        internal fun letGoAtOnce(why: String?): Boolean = why == PlayGate.FILES_BUSY || IndoorIdle.Beside.letGoNow(why)
 
         const val MEMORY_EVERY_MS = 1_000L
         const val PAUSE_POLL_MS = 2_000L

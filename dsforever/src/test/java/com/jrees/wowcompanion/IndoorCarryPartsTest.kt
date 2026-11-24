@@ -246,8 +246,9 @@ class IndoorCarryPartsTest {
             val raw = f.readText()
             Tr.load(lang, raw)
             for (en in listOf(IndoorSchedulerStep.carried(1600, 253), IndoorSchedulerStep.carried(1632, 0),
-                    "Indoor maps (builds while the game is closed): " + IndoorSchedulerStep.carried(1600, 253),
-                    "Indoor maps (builds while the game is closed): " + IndoorSchedulerStep.carried(12, 0))) {
+                    // (2026-11-24: the start row's name is "Indoor maps (optional)" now: it builds on the first screen too)
+                    SetupFlow.INDOOR_ROW + ": " + IndoorSchedulerStep.carried(1600, 253),
+                    SetupFlow.INDOOR_ROW + ": " + IndoorSchedulerStep.carried(12, 0))) {
                 val t = Tr.t(en, lang)
                 assertTrue("$lang: $en -> $t", t != en && !t.contains("Updated") && t.contains(if (en.contains("1,600")) "1,600" else if (en.contains("1,632")) "1,632" else "12"))
             }

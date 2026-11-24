@@ -108,21 +108,31 @@ internal object PlayGate {
         LauncherHooks.gameStartSec, System.currentTimeMillis())
 
     /**
-     * Why the indoor maps wait, null = they may build. [streaming]: the game runs on the PC (the Thor only shows video): it builds,
-     * after an art run. Otherwise never while the game is up or launching; and (the user 2026-11-07: "sluggish ... before I ever press
-     * update") not on DS Forever's own screens before the first game of this run: it builds once a game has closed ([playedThisRun]).
-     * [quiet]: review of this fix, 2026-11-11 - after a game, DS Forever's launcher screen is the same screen the user called sluggish
-     * (interiors-bake 74 % CPU there), so it builds only while nobody looks at it: the screen off, or the launcher not in front.
-     * [artRunning] = an art run that is really working (one parked for the game does not count).
+     * Why the indoor maps wait, null = they may build. THE USER'S RULING OF 2026-11-24 ("The indoor maps just never builds. I want it to
+     * show the bar and build on the first screen if people wait there"): they build whenever the game is not up or launching - on DS
+     * Forever's own first screen (the start screen with its checks, the chooser) before Play too, and as before after a game, minimized
+     * or with the screen off. It supersedes the 2026-11-07 "not before the first Play" and the 2026-11-11 "only while nobody looks at the
+     * launcher screen" (the builder stays on its lowest-priority thread). [streaming]: the game runs on the PC (the Thor only shows
+     * video): it builds, after an art run. [filesBusy]: the game's own files are being written (the game's update, an install, Repair):
+     * never read beside that. [artRunning] = an art run that is really working (one parked for the game does not count). While the game
+     * runs it waits ([GAME_RUNNING]) unless the player asked for it in game (Settings > Performance > Indoor maps > Build now: the
+     * scheduler's beside mode, [IndoorIdle.Beside], only while the player is idle).
      */
-    fun indoorWait(streaming: Boolean, artRunning: Boolean, gameActive: Boolean, playedThisRun: Boolean, quiet: Boolean = true): String? = when {
+    fun indoorWait(streaming: Boolean, artRunning: Boolean, gameActive: Boolean, filesBusy: Boolean = false): String? = when {
+        filesBusy -> FILES_BUSY
         streaming -> if (artRunning) ART_FIRST else null
         gameActive -> GAME_RUNNING
-        !playedThisRun -> AFTER_PLAY
-        !quiet -> IN_BACKGROUND
         artRunning -> ART_FIRST
         else -> null
     }
+
+    /**
+     * PLAY LETS THE INDOOR MAPS GO AT ONCE (2026-11-24): from the press of Play ([pressAtMs], LauncherHooks.playPressed - before Play's
+     * own wait for the art, so the builder never builds while Play waits) until the game screen came up ([gameStartSec]: then the game
+     * up decides), the start screen is back or the launch stopped (the press cleared), never past [LAUNCH_WINDOW_MS]
+     */
+    fun pressHeld(pressAtMs: Long, gameStartSec: Long, nowMs: Long): Boolean =
+        pressAtMs > 0L && gameStartSec < pressAtMs / 1000L && nowMs - pressAtMs in 0L until LAUNCH_WINDOW_MS
 
     /*
      * #568 / #573 (2026-11-20): every wait used to read "game busy", also on the Ready screen with the game closed. Each reason now
@@ -130,14 +140,30 @@ internal object PlayGate {
      */
     /** the game is up, launching or held by Play: nothing is open, nothing builds */
     const val GAME_RUNNING = "waiting: game running"
-    /** no game yet in this run (the 2026-11-07 ruling: not on DS Forever's own screens before Play) */
+    /** 1.0.25 - 1.0.40's wait before the first Play (superseded 2026-11-24): kept for an old status.json and the row with no status */
     const val AFTER_PLAY = "builds after you play"
-    /** after a game, DS Forever's launcher screen is in front (the 2026-11-11 review): it builds once minimized or the screen is off */
+    /** 1.0.38 - 1.0.40's wait on the launcher screen after a game (superseded 2026-11-24): kept for an old status.json */
     const val IN_BACKGROUND = "builds when minimized or screen off"
+    /** the game's own files are being written (its update, an install, Repair): nothing is read beside it */
+    const val FILES_BUSY = "waiting: game update"
     /** an art run that really works goes first */
     const val ART_FIRST = "waiting: game art"
     /** a [IndoorScheduler.Signals] that only says busy, no reason (the add-on's fight / loading word; the off-device fakes) */
     const val GAME_BUSY = "waiting: game busy"
     const val PLAYER_MOVING = "waiting: player moving"
     const val DEVICE_WARM = "waiting: device warm"
+
+    /*
+     * BUILD NOW, IN GAME (the user, 2026-11-24: "I also want a button in game to force building in game"; picks: Settings > Performance,
+     * "Only while I'm idle"): what the row says while the game runs with Build now pressed (terse; Spanish and French in the app's i18n)
+     */
+    /** building beside the game: the player stands still, out of a fight */
+    const val IDLE_BUILDING = "building while you're idle"
+    const val PAUSED_MOVING = "paused: moving"
+    const val PAUSED_FIGHT = "paused: in a fight"
+    /** a loading screen, the character list, a /reload, or the world's first minute after one (the game takes its memory then) */
+    const val PAUSED_LOADING = "paused: loading"
+    const val PAUSED_FLIGHT = "paused: on a flight"
+    /** too little free memory beside the game (stricter on the 8 / 12 GB Thors), or Android warned it is running low */
+    const val PAUSED_MEMORY = "paused: low memory"
 }

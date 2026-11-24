@@ -73,8 +73,7 @@ class PlayGateTest {
         assertTrue(PlayGate.streamingNow())
         assertFalse(PlayGate.gameActiveNow())
         assertFalse(PlayGate.artMustPause(gameActive = PlayGate.gameActiveNow()))
-        assertNull(PlayGate.indoorWait(PlayGate.streamingNow(), artRunning = false, gameActive = PlayGate.gameActiveNow(),
-            playedThisRun = true, quiet = false))
+        assertNull(PlayGate.indoorWait(PlayGate.streamingNow(), artRunning = false, gameActive = PlayGate.gameActiveNow()))
         // the local game's attach (attachGame): the same "game up" is a game on this Thor
         TapSinks.wire(PlayMode.LOCAL, Sink("container"), null)
         assertFalse(PlayGate.streamingNow())
@@ -101,28 +100,27 @@ class PlayGateTest {
         assertEquals("the last step stays for the problem report", "booting the game (container 3)", LauncherHooks.launchState)
     }
 
-    /** after a game the launcher screen is the one the user called sluggish (2026-11-07): it bakes only while nobody looks at it */
-    @Test fun afterAGameIndoorBuildsOnlyWhileTheLauncherScreenIsQuiet() {
-        assertEquals(PlayGate.IN_BACKGROUND, PlayGate.indoorWait(false, artRunning = false, gameActive = false, playedThisRun = true, quiet = false))
-        assertNull(PlayGate.indoorWait(false, artRunning = false, gameActive = false, playedThisRun = true, quiet = true))
-        // before the first game it still waits, quiet or not
-        assertEquals(PlayGate.AFTER_PLAY, PlayGate.indoorWait(false, artRunning = false, gameActive = false, playedThisRun = false, quiet = true))
+    /**
+     * the user's ruling of 2026-11-24 ("build on the first screen if people wait there") supersedes 2026-11-07 / 2026-11-11: on the
+     * launcher's screen, before the first game and after one, it builds (IndoorBuildAnywhereTest has the rest)
+     */
+    @Test fun theLauncherScreenBuildsBeforeAndAfterAGame() {
+        assertNull(PlayGate.indoorWait(false, artRunning = false, gameActive = false))
+        assertEquals(PlayGate.FILES_BUSY, PlayGate.indoorWait(false, artRunning = false, gameActive = false, filesBusy = true))
     }
 
     // ------------------------------------------------------------------ the indoor maps
 
     @Test fun indoorWaitsWhileTheGameRunsAndBuildsAfterItClosed() {
-        assertEquals(PlayGate.GAME_RUNNING, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = true, playedThisRun = true))
-        assertNull(PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = false, playedThisRun = true))
-        // before the first game of this run: DS Forever's own screens (the user 2026-11-07, "sluggish before I press update")
-        assertEquals(PlayGate.AFTER_PLAY, PlayGate.indoorWait(false, false, gameActive = false, playedThisRun = false))
+        assertEquals(PlayGate.GAME_RUNNING, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = true))
+        assertNull(PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = false))
         // an art run goes first
-        assertEquals(PlayGate.ART_FIRST, PlayGate.indoorWait(false, artRunning = true, gameActive = false, playedThisRun = true))
+        assertEquals(PlayGate.ART_FIRST, PlayGate.indoorWait(false, artRunning = true, gameActive = false))
     }
 
     @Test fun indoorBuildsWhileStreaming() {
-        assertNull(PlayGate.indoorWait(streaming = true, artRunning = false, gameActive = false, playedThisRun = false))
-        assertEquals(PlayGate.ART_FIRST, PlayGate.indoorWait(streaming = true, artRunning = true, gameActive = false, playedThisRun = false))
+        assertNull(PlayGate.indoorWait(streaming = true, artRunning = false, gameActive = false))
+        assertEquals(PlayGate.ART_FIRST, PlayGate.indoorWait(streaming = true, artRunning = true, gameActive = false))
     }
 
     // ------------------------------------------------------------------ the scheduler lets the game files go at once

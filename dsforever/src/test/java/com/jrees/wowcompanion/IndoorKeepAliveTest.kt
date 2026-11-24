@@ -93,12 +93,12 @@ class IndoorKeepAliveTest {
         var t = 0L
         for (x in evening) {
             when (x.event?.let(IndoorSchedulerStep::on)) { Action.START -> alive = true; Action.STOP -> alive = false; else -> {} }
-            val builds = setting && alive && PlayGate.indoorWait(false, false, x.gameActive, x.played, quiet = !x.shown) == null
+            val builds = setting && alive && PlayGate.indoorWait(false, false, x.gameActive) == null
             if (withService) {
                 // every hook asks (front), then the builder's own status change right after (not front)
                 for (front in x.hooks.map { true } + false) {
                     val want = IndoorKeepAlive.wanted(State(setting, hasWork = alive, gameActive = x.gameActive, streaming = false,
-                        playedThisRun = x.played, shown = x.shown))
+                        shown = x.shown))
                     t += 1_000L
                     if (m.next(want, front, 0, t) == Op.START) { starts++; m.started(x.front, 0, t) }
                 }
@@ -112,20 +112,22 @@ class IndoorKeepAliveTest {
 
     @Test fun before_theBuilderBuiltOnlyAsACachedAppAndWasKilledForCpu() {
         val n = replay(withService = false)
-        assertEquals(listOf("minimized", "the screen times out", "the screen turns off on the Ready screen"), n.building)
-        assertEquals("1.0.38: every building moment cached = the CPU kill", n.building, n.cachedWhileBuilding)
+        // (2026-11-24: it builds on DS Forever's own screen too - in front, never cached there)
+        val unseen = listOf("minimized", "the screen times out", "the screen turns off on the Ready screen")
+        assertEquals("1.0.38: every unseen building moment cached = the CPU kill", unseen, n.cachedWhileBuilding)
     }
 
     @Test fun now_theServiceCoversEveryBuildingMoment() {
         val n = replay(withService = true)
         assertEquals(emptyList<String>(), n.cachedWhileBuilding)
-        assertEquals("only while the builder builds", n.building, n.service)
+        // only while the builder builds unseen (on DS Forever's own screen it is in front: no service, no notification)
+        assertEquals("only while the builder builds", n.building.filter { b -> evening.first { it.what == b }.let { !it.shown } }, n.service)
         assertEquals("one start per leave after a game", 2, n.starts)
     }
 
-    @Test fun neverWithTheGameOrBeforeTheFirstGameOrWithTheSettingOff() {
+    @Test fun neverWithTheGameOrWithTheSettingOff() {
         val n = replay(withService = true)
-        for (x in evening.filter { it.gameActive || !it.played }) assertFalse(x.what, x.what in n.service)
+        for (x in evening.filter { it.gameActive }) assertFalse(x.what, x.what in n.service)
         val off = replay(withService = true, setting = false)
         assertEquals(emptyList<String>(), off.service)
         assertEquals(0, off.starts)
@@ -133,15 +135,18 @@ class IndoorKeepAliveTest {
 
     // ------------------------------------------------------------------ the decision
 
-    private val base = State(setting = true, hasWork = true, gameActive = false, streaming = false, playedThisRun = true, shown = false)
+    private val base = State(setting = true, hasWork = true, gameActive = false, streaming = false, shown = false)
 
-    @Test fun wantedOnlyAfterAGameWhileBuildingUnseen() {
+    @Test fun wantedWhileBuildingUnseen() {
         assertTrue(IndoorKeepAlive.wanted(base))
         assertFalse("Off in Settings", IndoorKeepAlive.wanted(base.copy(setting = false)))
         assertFalse("done, failed, stopped or nothing to do", IndoorKeepAlive.wanted(base.copy(hasWork = false)))
         assertFalse("a game is up or launching", IndoorKeepAlive.wanted(base.copy(gameActive = true)))
         assertFalse("streaming", IndoorKeepAlive.wanted(base.copy(streaming = true)))
-        assertFalse("before the first game", IndoorKeepAlive.wanted(base.copy(playedThisRun = false)))
+        // 2026-11-24: before the first game it builds too, so the service covers it then (no "played this run" any more)
+        assertFalse("the game up, Build now armed but not building beside it", IndoorKeepAlive.wanted(base.copy(gameActive = true, beside = false)))
+        assertTrue("building beside the minimized game (Build now)", IndoorKeepAlive.wanted(base.copy(gameActive = true, beside = true)))
+        assertFalse("beside the game in front: no service", IndoorKeepAlive.wanted(base.copy(gameActive = true, beside = true, shown = true)))
         assertFalse("DS Forever's screen shown: the builder waits", IndoorKeepAlive.wanted(base.copy(shown = true)))
         assertFalse("lighter mode stood down", IndoorKeepAlive.wanted(base.copy(stoodDown = true)))
     }
