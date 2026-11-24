@@ -136,9 +136,11 @@ class RadialRefitAuditShotsTest {
             assertTrue("$tag: the list across at rest ($rest)", rest.width() > 1200f)
             val at = classOpen(p, left)
             fight(p, true)
-            val pw = boxes(p.home).getValue("PARTY")
+            val laid = boxes(p.home).getValue("PARTY")
+            // (fix/party-drop-wheels: the list as DRAWN - a foot list over Across's bar went down with the bar for the wheel)
+            val pw = RectF(laid).apply { val v = field(p.home, "partyView") as View; offset(v.translationX, v.translationY) }
             val sq = classRect(p)
-            assertTrue("$tag: the list laid again for the fight ($rest -> $pw)", pw.height() > rest.height() + 0.5f || pw.top != rest.top)
+            assertTrue("$tag: the list laid again for the fight ($rest -> $laid)", laid.height() > rest.height() + 0.5f || laid.top != rest.top)
             if (l.party.top) assertTrue("$tag: the wheel $sq under the grown list $pw", sq.top >= pw.bottom + gap - 1f)
             else assertTrue("$tag: the wheel $sq over the grown list $pw", sq.bottom <= pw.top - gap + 1f)
             assertTrue("$tag: the wheel kept in its square or smaller ($at -> $sq)", sq.width() <= at.width() + 0.5f && sq.width() >= H / 4f)
