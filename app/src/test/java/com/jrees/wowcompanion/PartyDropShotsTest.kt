@@ -36,7 +36,10 @@ import java.time.Duration
  *    bar Off it leaves sideways); one that fits over both leaves both where they are (the ruling "Stay when it fits");
  *  - the pause wheel's and the target radial's full slides: the list goes straight down below the page with the bar, never sideways;
  *  - a wheel held into a fight (Grow: the list's rows grow) - the list never drawn over the wheel, on any frame of the page's motion;
- *  - a top-docked full-width list is not moved by any of them.
+ *  - a top-docked full-width list is not moved by any of them;
+ *  - the user's picks 2026-11-23: "Split bar too" - every one of the above over Split's two halves as over Across's bar (the halves
+ *    under the list are one bar of no column: they drop with it, never part sideways); "Bar Off: stay when it fits" - with no bar
+ *    under the foot list the LB picture leaves the list where it is when it fits over it, else the list leaves sideways as before.
  * With PARTY_DROP_SHOTS=<dir> (and CLOCK_ART_ROOT for the real art) the pictures: rest, the middle wheel, the class wheels, the LB
  * picture, the LB picture partway through its open, a held wheel in a Grow fight. [shots] uses only what 0f57b547 had, so the same test
  * draws the "before" pictures there.
@@ -198,12 +201,15 @@ class PartyDropShotsTest {
         }
     }
 
+    /** the bars the list drops with: Across's, and Split's two halves (the user's pick "Split bar too") */
+    private val BARS = listOf(HomeLayout.CastDock.ACROSS, HomeLayout.CastDock.SPLIT)
     private val FOOT_CASES: List<Pair<String, HomeLayout>> = run {
         val out = ArrayList<Pair<String, HomeLayout>>()
-        for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP))
+        // (the user's pick 2026-11-23, "Split bar too": the list over Split's halves the same as over Across's bar)
+        for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP))
             for ((bn, base) in listOf("" to HomeLayout(), " swapped" to HomeLayout().swapped(), " third" to HomeLayout(chatShare = HomeLayout.Share.THIRD)))
             for (size in HomeLayout.SlotSize.values())
-                out += "${dock.name.lowercase()}$bn ${size.name}" to base.copy(party = dock, cast = HomeLayout.CastDock.ACROSS, castSize = size)
+                out += "${cast.name.lowercase()} ${dock.name.lowercase()}$bn ${size.name}" to base.copy(party = dock, cast = cast, castSize = size)
         out
     }
 
@@ -303,26 +309,28 @@ class PartyDropShotsTest {
     }
 
     /** "Stay when it fits": an LB picture that fits over the list and the bar both moves neither */
-    @Test fun anLbPictureThatFitsMovesNothing() {
-        // Classic's held LB place (1516's, chat left, half) over a one-row list and a small bar
-        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.S)
+    @Test fun anLbPictureThatFitsMovesNothing() = BARS.forEach { cast ->
+        // Classic's held LB place (1516's, chat left, half) over a one-row list and a small bar (Across's, Split's halves)
+        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = cast, castSize = HomeLayout.SlotSize.S)
         val p = page(l, 1)
-        assertTrue(bad.joinToString(), footOverAcross("fits", p))
+        assertTrue(bad.joinToString(), footOverAcross("fits $cast", p))
         val list = boxes(p.home).getValue("PARTY")
         p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
         val pl = p.home.lbPlace()
         val bottom = LbFit.bars(pl).values.maxOf { it.b }
         val v = partyView(p.home)
         // (review: this page IS one that fits - the test pinned nothing when it took the other branch)
-        assertTrue("the picture fits over the list here (its foot $bottom, the list's top ${list.top})", bottom + G <= list.top + 0.5f)
-        assertTrue("the list stays (${v.translationX}, ${v.translationY})", v.translationX == 0f && v.translationY == 0f)
-        for (s in strips(p.home)) if (s.visibility == View.VISIBLE) assertTrue("the bar stays", s.translationX == 0f && s.translationY == 0f && s.takesTouch)
+        assertTrue("$cast: the picture fits over the list here (its foot $bottom, the list's top ${list.top})", bottom + G <= list.top + 0.5f)
+        assertTrue("$cast: the list stays (${v.translationX}, ${v.translationY})", v.translationX == 0f && v.translationY == 0f)
+        for (s in strips(p.home)) if (s.visibility == View.VISIBLE) assertTrue("$cast: the bar stays (${s.translationX}, ${s.translationY})",
+            s.translationX == 0f && s.translationY == 0f && s.takesTouch)
+        p.home.pauseSlide(0f, LbPartyView.SIDE_PX); p.home.pauseSlide(0f)
     }
 
     @Test fun aTopListIsNotMoved() {
-        for (dock in listOf(HomeLayout.PartyDock.ABOVE_CHAT, HomeLayout.PartyDock.ABOVE_MAP)) {
-            val tag = dock.name.lowercase()
-            val l = HomeLayout(party = dock, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L)
+        for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.ABOVE_CHAT, HomeLayout.PartyDock.ABOVE_MAP)) {
+            val tag = "$cast ${dock.name.lowercase()}"
+            val l = HomeLayout(party = dock, cast = cast, castSize = HomeLayout.SlotSize.L)
             val ref = sizes(page(l.copy(cast = HomeLayout.CastDock.OFF)))
             val p = page(l)
             val list = boxes(p.home).getValue("PARTY")
@@ -345,10 +353,10 @@ class PartyDropShotsTest {
 
     /** a wheel held into a Grow fight: the list's rows grow (and, Hide in combat, the bar goes) - never drawn over the wheel, on any frame */
     @Test fun aWheelHeldIntoAGrowFightKeepsClearOfTheList() {
-        for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP)) for (stay in listOf(true, false))
+        for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP)) for (stay in listOf(true, false))
             for (what in listOf("middle wheel", "LB+LT", "RB+RT")) for (n in listOf(3, 5)) {
-                val tag = "${dock.name.lowercase()} ${if (stay) "shown" else "hidden"} in fights, $n, $what"
-                val l = HomeLayout(party = dock, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW)
+                val tag = "$cast ${dock.name.lowercase()} ${if (stay) "shown" else "hidden"} in fights, $n, $what"
+                val l = HomeLayout(party = dock, cast = cast, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW)
                 val p = page(l, n, stay)
                 if (!footOverAcross(tag, p)) continue
                 val rest = boxes(p.home).getValue("PARTY")
@@ -376,12 +384,12 @@ class PartyDropShotsTest {
      *  Same / Shrink; a Top-screen fight's Fill / Grow / Same) x the bar shown or hidden in fights, each wheel held through a whole fight (its start AND its end):
      *  on no frame the list or the bar drawn over the held wheel, and both back where they lie once it closes */
     @Test fun aWheelHeldThroughAnyFightKeepsClearOfTheList() {
-        for (band in HomeLayout.FightBand.values()) for (fc in if (band == HomeLayout.FightBand.TOP) HomeLayout.FightCast.values().toList() else listOf(HomeLayout.FightCast.BOTTOM))
+        for (cast in BARS) for (band in HomeLayout.FightBand.values()) for (fc in if (band == HomeLayout.FightBand.TOP) HomeLayout.FightCast.values().toList() else listOf(HomeLayout.FightCast.BOTTOM))
             // (the list's sizing pick that applies: In fights = Top screen reads partyTop, the others partyBottom)
             for (sz in if (band == HomeLayout.FightBand.TOP) HomeLayout.PartyTopFight.values().toList() else HomeLayout.PartyBottomFight.values().toList())
             for (stay in listOf(true, false)) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
-                val tag = "$band/$fc/$sz ${if (stay) "shown" else "hidden"} in fights, $what"
-                val base = HomeLayout(party = HomeLayout.PartyDock.UNDER_MAP, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L,
+                val tag = "$cast $band/$fc/$sz ${if (stay) "shown" else "hidden"} in fights, $what"
+                val base = HomeLayout(party = HomeLayout.PartyDock.UNDER_MAP, cast = cast, castSize = HomeLayout.SlotSize.L,
                     fight = band, fightCast = fc)
                 val l = if (sz is HomeLayout.PartyTopFight) base.copy(partyTop = sz) else base.copy(partyBottom = sz as HomeLayout.PartyBottomFight)
                 val p = page(l, 5, stay)
@@ -407,9 +415,9 @@ class PartyDropShotsTest {
 
     /** review: Party mode turned on (the list comes onto the page) while a wheel is held - the list never drawn over the wheel on the way */
     @Test fun theListComingUnderAHeldWheelNeverCoversIt() {
-        for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
-            val tag = what
-            val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L)
+        for (cast in BARS) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
+            val tag = "$cast $what"
+            val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = cast, castSize = HomeLayout.SlotSize.L)
             val p = page(l, 3)
             val pv = partyView(p.home)
             GameUi.init(app); GameUi.setSwitch(GameUi.SW_PMODE, false); p.home.partyChanged(); settle(60); lay(p.home)
@@ -436,9 +444,9 @@ class PartyDropShotsTest {
     /** a wheel opened in a Grow fight with the bar hidden (the list on the page's foot), held as the fight ends: the bar comes back
      *  under it - the list stays down with the bar (no frame with the list or the bar over the wheel), the wheel keeps its size */
     @Test fun aFightEndingUnderAHeldWheelKeepsTheListDown() {
-        for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP)) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
-            val tag = "${dock.name.lowercase()}, $what"
-            val l = HomeLayout(party = dock, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW)
+        for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP)) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
+            val tag = "$cast ${dock.name.lowercase()}, $what"
+            val l = HomeLayout(party = dock, cast = cast, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW)
             val p = page(l, 3, stay = false)
             fightWord(p.home, p.cast, true); p.home.tick(); settle(60); lay(p.home)
             if (barDrawn(p.home) != null) { no(tag, "the bar not slid away in the fight"); continue }
@@ -458,6 +466,98 @@ class PartyDropShotsTest {
             footOverAcross("$tag, after the close", p)
         }
         assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
+    }
+
+    private val classicLook by lazy { HomeView::class.java.getDeclaredMethod("classicLook").apply { isAccessible = true } }
+    /** the LB picture's place on [p]'s page ending at [bottom] (LbFit, as HomeView places it: the page's columns' line, the band's foot) */
+    private fun lbAt(p: Page, l: HomeLayout, bottom: Float): LbFit.Place {
+        val line = HomeLayoutSolver.columns(l, W.toFloat(), G).let { it.first.second to it.second.first }
+        return LbFit.place(W.toFloat(), p.home.barsBottom(), line.first, line.second, bottom, classicLook.invoke(p.home) as Boolean, UiKit.pauseBarsBottom)
+    }
+    /** the LB picture ending a gap over [list] is as large as down to the page's foot, and clears the list (HomeSlide.makesRoom's rule) */
+    private fun lbFitsOver(p: Page, l: HomeLayout, list: RectF): Boolean {
+        val full = lbAt(p, l, H - G); val over = lbAt(p, l, list.top - G)
+        // (HomeSlide.makesRoom: smaller than its full size, or down over the list's top - HomeSlide is internal to the shared sources)
+        return !(over.k * LbPartyView.PICT_H < full.k * LbPartyView.PICT_H - 0.5f || LbFit.bars(over).values.maxOf { it.b } + G > list.top + 0.5f)
+    }
+
+    /**
+     * the user's pick 2026-11-23, "Bar Off: stay when it fits" ("With the bar off, the LB picture leaves the party list where it is when
+     * the picture fits, like it now does over Across."): Party mode's full-width list at the foot with no bar under it (the bar Off; a
+     * bar above a column the same) stays where it is - on every frame of the picture's open - when the picture fits over it at its full
+     * size; when it does not, it leaves the page sideways as before and the picture takes the page down to its foot. Either way the
+     * picture is its full size and the list as drawn never covers it; both back after the close
+     */
+    @Test fun withTheBarOffTheLbPictureLeavesAListThatFits() {
+        var stays = 0; var leaves = 0
+        for (cast in listOf(HomeLayout.CastDock.OFF, HomeLayout.CastDock.ABOVE_MAP)) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP))
+            for ((bn, base) in listOf("" to HomeLayout(), " swapped" to HomeLayout().swapped(), " third" to HomeLayout(chatShare = HomeLayout.Share.THIRD)))
+            for (n in listOf(1, 3, 5)) {
+                val t = "$cast ${dock.name.lowercase()}$bn, $n in the party"
+                val l = base.copy(party = dock, cast = cast)
+                val p = page(l, n)
+                val list = boxes(p.home).getValue("PARTY")
+                if (list.width() < 1200f || list.centerY() < H / 2f) { no(t, "not a foot list across (${r(list)})"); continue }
+                val fits = lbFitsOver(p, l, list)
+                val full = lbAt(p, l, H - G)
+                val v = partyView(p.home)
+                for (k in listOf(0.2f, 0.5f)) {
+                    p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * k, LbPartyView.SIDE_PX); p.home.lbPlace()
+                    if (fits && (v.translationX != 0f || v.translationY != 0f)) no(t, "LB picture at $k: the list moved (${v.translationX}, ${v.translationY}) though the picture fits over it")
+                }
+                p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
+                val pl = p.home.lbPlace()
+                if (kotlin.math.abs(pl.k - full.k) > 1e-3f) no(t, "LB picture at ${pl.k}, not its full size ${full.k}")
+                val d = listDrawn(p.home)
+                for (b in LbFit.bars(pl).values) if (overlaps(d, RectF(b.l, b.t, b.r, b.b))) no(t, "LB picture: the list drawn ${r(d)} over its bar ${b}")
+                if (fits) {
+                    stays++
+                    if (v.translationX != 0f || v.translationY != 0f) no(t, "the picture fits over the list: the list moved (${v.translationX}, ${v.translationY})")
+                } else {
+                    leaves++
+                    if (d.right > 0.5f && d.left < W - 0.5f) no(t, "the picture does not fit over the list: the list still on the page ${r(d)}")
+                }
+                p.home.pauseSlide(0f, LbPartyView.SIDE_PX); p.home.pauseSlide(0f)
+                back(t, "LB picture", p)
+            }
+        assertTrue("${bad.size} misfits ($stays stay, $leaves leave):\n${bad.joinToString("\n")}", bad.isEmpty() && stays > 0 && leaves > 0)
+    }
+
+    /** review: an LB picture opened in a Grow fight with the bar hidden (Hide in combat: the list on the page's foot, the picture fitting
+     *  over it - the list stays), held as the fight ends: the bar comes back under the list and the list rises over it - on no frame the
+     *  list or the bar drawn over the picture's bars (the picture shrinks over them, as a held wheel does); both back after the close */
+    @Test fun anLbPictureHeldThroughAFightsEndKeepsClearOfTheList() {
+        var held = 0; var rose = 0
+        for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP)) for (n in listOf(1, 2))
+            for (size in HomeLayout.SlotSize.values()) {
+            val tag = "$cast ${dock.name.lowercase()} ${size.name}, $n in the party"
+            val l = HomeLayout(party = dock, cast = cast, castSize = size, fight = HomeLayout.FightBand.GROW)
+            val p = page(l, n, stay = false)
+            fightWord(p.home, p.cast, true); p.home.tick(); settle(60); lay(p.home)
+            if (barDrawn(p.home) != null) { no(tag, "the bar not slid away in the fight"); continue }
+            p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
+            p.home.lbPlace()
+            val v = partyView(p.home)
+            if (v.translationX != 0f || v.translationY != 0f) { p.home.pauseSlide(0f, LbPartyView.SIDE_PX); p.home.pauseSlide(0f); continue }
+            held++
+            val foot0 = LbFit.bars(p.home.lbPlace()).values.maxOf { it.b }
+            fightWord(p.home, p.cast, false); p.home.tick()
+            for (i in 0 until 50) {
+                settle(1); lay(p.home)
+                val pl = p.home.lbPlace()
+                val bars = LbFit.bars(pl).values.map { RectF(it.l, it.t, it.r, it.b) }
+                val d = listDrawn(p.home)
+                if (bars.any { overlaps(d, it) }) { no(tag, "frame $i: the list drawn ${r(d)} over the picture"); break }
+                val b = barDrawn(p.home)
+                if (b != null && bars.any { overlaps(b, it) }) { no(tag, "frame $i: the bar drawn ${r(b)} over the picture"); break }
+            }
+            // (the list laid back over the bar rose past where the picture ended at the open: the case this pins)
+            if (boxes(p.home).getValue("PARTY").top < foot0 + G - 0.5f) rose++
+            p.home.pauseSlide(0f, LbPartyView.SIDE_PX); p.home.pauseSlide(0f); settle(60)
+            back(tag, "after the close", p)
+        }
+        assertTrue("${bad.size} misfits ($held held with the list staying, $rose with it rising past the picture's foot):\n${bad.joinToString("\n")}",
+            bad.isEmpty() && held > 0 && rose > 0)
     }
 
     // ---------------------------------------------------------------- the pictures
@@ -489,6 +589,46 @@ class PartyDropShotsTest {
         v.lb(true)
         ShadowSystemClock.advanceBy(Duration.ofMillis(600))
         return v
+    }
+
+    /** the user's picks 2026-11-23 ("Split bar too", "Bar Off: stay when it fits"): Split's halves under the list at rest, the middle
+     *  wheel, a class wheel, the LB picture; with the bar Off the LB picture over a list it fits over (it stays) and one it does not */
+    @Test fun shotsSplitAndBarOff() {
+        if (out == null) return
+        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = HomeLayout.CastDock.SPLIT, castSize = HomeLayout.SlotSize.L)
+        var p = page(l)
+        save(p, "s1_split_rest", "Party mode, list Under chat, Split L: at rest")
+        val slot = p.home.wheelSlot(true)!!
+        p.home.wheelPainter = { c -> c.drawCircle(slot.centerX(), slot.centerY(), slot.width() / 2f, disc) }
+        settle()
+        save(p, "s2_split_middle_wheel", "Split: middle wheel (D-pad Up / spell radial) ${slot.width().toInt()} px") { c -> c.drawRect(slot, pCyan) }
+        p.home.wheelSlot(false); settle(); p.home.wheelPainter = null
+        for (left in listOf(true, false)) {
+            val cr = classOpen(p, left)
+            save(p, "s3_split_class_${if (left) "lb_lt" else "rb_rt"}", "Split: ${if (left) "LB+LT" else "RB+RT"} class wheel ${cr.width().toInt()} px") { c -> c.drawRect(cr, pRed) }
+            classClose(p)
+        }
+        p = page(l)
+        p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
+        val pl = p.home.lbPlace()
+        val lbv = lbView(pl)
+        save(p, "s4_split_lb_picture", "Split: LB picture at ${"%.2f".format(pl.k)}") { c -> lbv.draw(c) }
+        p.home.pauseSlide(0f, LbPartyView.SIDE_PX); p.home.pauseSlide(0f)
+        p = page(l, 1)
+        p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
+        val fl = p.home.lbPlace()
+        val flv = lbView(fl)
+        save(p, "s5_split_lb_picture_fits", "Split, 1 in the party: LB picture fits over the list and the halves (${"%.2f".format(fl.k)})") { c -> flv.draw(c) }
+        p.home.pauseSlide(0f, LbPartyView.SIDE_PX); p.home.pauseSlide(0f)
+        val off = l.copy(cast = HomeLayout.CastDock.OFF)
+        for ((n, nm) in listOf(1 to "fits", 5 to "does_not_fit")) {
+            p = page(off, n)
+            p.home.pauseSlide(UiKit.PAUSE_OPEN_MS, LbPartyView.SIDE_PX)
+            val op = p.home.lbPlace()
+            val ov = lbView(op)
+            save(p, "o${if (n == 1) 1 else 2}_bar_off_lb_picture_$nm", "Bar Off, $n in the party: LB picture ${nm.replace('_', ' ')} (${"%.2f".format(op.k)})") { c -> ov.draw(c) }
+            p.home.pauseSlide(0f, LbPartyView.SIDE_PX); p.home.pauseSlide(0f)
+        }
     }
 
     @Test fun shots() {

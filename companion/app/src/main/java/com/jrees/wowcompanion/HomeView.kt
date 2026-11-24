@@ -598,7 +598,9 @@ class HomeView(
         // wheel takes its own column's area under / over it, the middle wheel sits under / over it - wheelFit; fix/party-drop-wheels: a
         // foot one right over Across's bar goes DOWN with that bar when it drops for a radial - partyDrop)
         if (p == Part.PARTY && laidPartyWide) HomeSlide.Half.NONE
-        else HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w, split = laidSplit)
+        // (fix/party-drop-wheels, the user's pick "Split bar too": Split's halves under a full-width foot list are one bar of no column)
+        else HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w,
+            split = laidSplit && !laidSplitUnderList)
     /** the party list was laid across both columns ([HomeLayoutSolver.wideParty]) */
     private var laidPartyWide = false
 
@@ -626,7 +628,8 @@ class HomeView(
         if (r == null || laidHidden || (p != Part.STRIP && p != Part.CAST2)) 0f
         else HomeSlide.barDrop(true, halfOf(p, r, width.toFloat()), r.top, frameH)
     /** feat/radial-castbar: the box of the bar of no column (Across) laid on the page as [places] has it - the one a radial may ask to
-     *  drop ([barDrop]); null = none there (Off, a column's bar, Split's halves, slid away for a fight) */
+     *  drop ([barDrop]); null = none there (Off, a column's bar, Split's halves - but those under Party mode's full-width foot list,
+     *  [laidSplitUnderList] - slid away for a fight) */
     private fun acrossBox(places: Map<Part, RectF>): RectF? {
         var out: RectF? = null
         for (p in listOf(Part.STRIP, Part.CAST2)) {
@@ -661,7 +664,8 @@ class HomeView(
      * the chat column's width (it rises from below, behind the parting columns). feat/radial-castbar (the user, 2026-11-23: "it should
      * still move out of the way to make space for the full sized radials"): Across's bar no longer holds it up - when the wheel is
      * smaller above it, it slides down out of the way ([wheelPart], HomeSlide.barDrop) and the wheel reaches the page's foot
-     * (fix/castbar-slides sat it above that bar); Split's halves part with their columns (they held it up too)
+     * (fix/castbar-slides sat it above that bar); Split's halves part with their columns (they held it up too) - under Party mode's
+     * full-width foot list they are one bar that drops with the list, as Across's (fix/party-drop-wheels, "Split bar too")
      */
     private fun wheelFit(places: Map<Part, RectF>) {
         val w = width.toFloat(); val h = frameH
@@ -915,12 +919,40 @@ class HomeView(
                 LbFit.bars(kept).values.maxOf { it.b }, g)
             return (if (drop) full else kept) to drop
         }
+        // fix/party-drop-wheels (the user's pick "Bar Off: stay when it fits"): a foot list with no bar under it that drops stays where it
+        // is when the picture fits over it at its full size (chosen at the open, [lbStay]: a fight growing the list under the held picture
+        // then shrinks the picture over it, as the held wheels); otherwise it leaves sideways and the picture takes the page's foot
+        // (held through a fight's end - Hide in combat's bar back on the page under the list: the list stays, the picture over both)
+        if (pauseT > 0f && lbStay) lbList()?.let { list ->
+            return at(minOf(HomeSlide.stayFoot(acrossBox(now)?.top, frameH, g), list.top - g)) to false
+        }
+        if (pauseT <= 0f && lbStayNow()) lbFoot()?.let { foot -> return at(foot.top - g) to false }
         val across = acrossBox(now) ?: return full to false
         val kept = at(HomeSlide.stayFoot(across.top, frameH, g))
         val drop = HomeSlide.makesRoom(across.top, kept.k * LbPartyView.PICT_H, full.k * LbPartyView.PICT_H,
             LbFit.bars(kept).values.maxOf { it.b }, g)
         return (if (drop) full else kept) to drop
     }
+
+    /** fix/party-drop-wheels: Party mode's full-width list shown at the page's foot with no bar under it that drops for a radial (the bar
+     *  Off, a bar above a column, one slid below the page for a fight) - the one the LB picture may leave in place ([lbStay]); else null */
+    private fun lbFoot(): RectF? = if (acrossBox(now) != null) null else lbList()
+    /** Party mode's full-width list shown at the page's foot (a bar under it or not) */
+    private fun lbList(): RectF? {
+        if (!laidPartyWide || views[Part.PARTY]?.visibility != View.VISIBLE) return null
+        return now[Part.PARTY]?.takeIf { it.centerY() >= frameH / 2f && it.top < frameH }
+    }
+    /** fix/party-drop-wheels: the LB picture fits over [lbFoot]'s list at its full size now (HomeSlide.lbListStays) */
+    private fun lbStayNow(): Boolean {
+        val foot = lbFoot() ?: return false
+        val w = width.toFloat(); val g = UiKit.MODULE_GAP
+        val line = columnsLine(w)
+        fun at(bottom: Float) = LbFit.place(w, barsBottom(), line.first, line.second, bottom, classicLook(), UiKit.pauseBarsBottom)
+        val kept = at(foot.top - g)
+        return HomeSlide.lbListStays(foot.top, kept.k, at(frameH - g).k, LbFit.bars(kept).values.maxOf { it.b }, g)
+    }
+    /** fix/party-drop-wheels: this LB picture leaves [lbFoot]'s list where it is (chosen at its open: [pauseSlide]) */
+    private var lbStay = false
 
     /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
     private var grewAt = 0L
@@ -2201,6 +2233,10 @@ class HomeView(
             laidHidden = r.castHidden && r.castSide != CastStripModel.Side.OFF
             // P2: Split = the first view on slots 1-4 under the left column, the second on 5-8 under the right (no scroll)
             laidSplit = l.cast == HomeLayout.CastDock.SPLIT
+            // fix/party-drop-wheels (the user's pick "Split bar too"): the halves right under Party mode's full-width foot list
+            val pb = r.boxes[HomePart.PARTY]
+            laidSplitUnderList = !HomeSlide.splitParts(laidSplit, r.partyWide, pb?.t, pb?.b,
+                listOfNotNull(r.boxes[HomePart.STRIP], r.boxes[HomePart.CAST2]).minOfOrNull { it.t }, h)
             laidTop = r.castTop
             castStrip.splitHalf = if (laidSplit) 1 else 0
             if (laidSplit) { castStrip.side = CastStripModel.Side.LEFT; castStrip2.side = CastStripModel.Side.RIGHT }
@@ -2259,6 +2295,9 @@ class HomeView(
     }
     /** P2: the last [places] laid the tap-to-cast bar split in two halves */
     private var laidSplit = false
+    /** fix/party-drop-wheels: ... with Party mode's full-width list at the foot right over them: the halves are no column's
+     *  ([HomeSlide.splitParts]) - one bar that goes down with the list for every wheel, as Across's */
+    private var laidSplitUnderList = false
     /** the last [places] laid the bar at the top of its column (Above chat / Above map): hidden, it slides up behind the band */
     private var laidTop = false
     /** the party list's column on the right (the party menus mirror with it: the chat's for Classic's dock) */
@@ -3062,7 +3101,9 @@ class HomeView(
         // fix/party-drop-wheels: Party mode's foot list right over Across's bar goes DOWN with the bar in this slide (its way chosen at
         // the open, kept to its close: a fight laying the page again meanwhile never switches it to the sideways one mid-way)
         if (pauseT <= 0f && t > 0f) pauseParty = partyDrop(now, below = true) > 0f
-        if (pauseParty && t > 0f) partyRiding = false
+        // (the user's pick "Bar Off: stay when it fits": the LB picture's way for a foot list with no bar under it, chosen at the open too)
+        if (pauseT <= 0f && t > 0f) lbStay = sidePx > 0f && !pauseParty && lbStayNow()
+        if ((pauseParty || lbStay) && t > 0f) partyRiding = false
         pauseT = t; pauseSide = sidePx; pauseUp = barsUp
         val screen = RectF(0f, 0f, width.toFloat(), frameH)
         // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
@@ -3165,10 +3206,15 @@ class HomeView(
                     v.translationX = 0f
                     v.translationY = if (lbDrop && r != null) (frameH - r.top).coerceAtLeast(0f) * ee else 0f
                 }
+                // (the user's pick "Bar Off: stay when it fits": a foot list with no bar under it, the picture fitting over it - it stays)
+                if (p == Part.PARTY && laidPartyWide && lbStay) {
+                    if (t > 0f) v.animate().cancel()
+                    v.translationX = 0f; v.translationY = 0f
+                }
                 if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
             }
         }
-        if (t <= 0f) pauseParty = false
+        if (t <= 0f) { pauseParty = false; lbStay = false }
         invalidate()
         barAwaySync()
         // 1.0.20: the class wheel that waited for the LB picture's sides opens now they are back
@@ -6055,6 +6101,25 @@ internal object HomeSlide {
         below -> h - top
         else -> h - barTop
     }
+    /**
+     * fix/party-drop-wheels (the user's pick 2026-11-23, "Split bar too": "With a Split bar, the party list and the bar drop out of the
+     * way so the wheel gets full size, same as Across."): Split's halves part with their columns ([half]'s split) - unless Party mode's
+     * full-width list ([wide], laid [listTop]..[listBottom]) lies at the FOOT right over them (the halves laid from [barTop], on the
+     * page): then the two halves are one bar of no column, as Across's, and go down with the list for every wheel ([barDrop],
+     * [partyDrop]). A top list, one laid elsewhere, or halves slid below the page for a fight: they part as before
+     */
+    fun splitParts(split: Boolean, wide: Boolean, listTop: Float?, listBottom: Float?, barTop: Float?, h: Float): Boolean =
+        split && !(wide && listTop != null && listBottom != null && barTop != null && barTop < h &&
+            (listTop + listBottom) / 2f >= h / 2f && listBottom <= barTop + 0.5f)
+    /**
+     * fix/party-drop-wheels (the user's pick 2026-11-23, "Bar Off: stay when it fits": "With the bar off, the LB picture leaves the party
+     * list where it is when the picture fits, like it now does over Across."): Party mode's full-width list at the foot with no bar
+     * under it that drops (the bar Off, a bar above a column, one slid below the page for a fight) stays where it is for the LB picture
+     * when the picture, ending a gap over the list ([keptK] its scale there, [keptBottom] its foot), is as large as with the whole page
+     * ([fullK]) and clears the list's top [listTop]; otherwise it leaves the page sideways, as before
+     */
+    fun lbListStays(listTop: Float, keptK: Float, fullK: Float, keptBottom: Float, gap: Float): Boolean =
+        !makesRoom(listTop, keptK * LbPartyView.PICT_H, fullK * LbPartyView.PICT_H, keptBottom, gap)
 }
 
 /** p-card-invisible: the quest card's state in words, for the WCHOME "quest card:" line (pure, so the JVM tests read it) */
