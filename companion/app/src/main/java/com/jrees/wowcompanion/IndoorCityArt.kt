@@ -78,9 +78,12 @@ internal object IndoorCityArt {
 
     /**
      * the indoors gate: the add-on says indoors, or this city shows its art by position alone ([City.positionOnly]) and the player is on
-     * its own map ([mapId], the add-on's uiMap; the Ruins of Lordaeron above the Undercity are Tirisfal's)
+     * its own map ([mapId], the add-on's uiMap; the Ruins of Lordaeron above the Undercity are Tirisfal's) and not on a taxi ([onTaxi],
+     * review of 1525: a gryphon taking off from Ironforge's Great Forge is still on Ironforge's map - [byPosition] said outdoors there,
+     * this gate drew the city's art over the outdoor map)
      */
-    fun shows(city: City, indoors: Boolean, mapId: Int = city.uiMap): Boolean = indoors || (city.positionOnly && mapId == city.uiMap)
+    fun shows(city: City, indoors: Boolean, mapId: Int = city.uiMap, onTaxi: Boolean = false): Boolean =
+        indoors || (city.positionOnly && !onTaxi && mapId == city.uiMap)
 
     /**
      * the capital the player is in by position alone (1525): a [City.positionOnly] one whose own map the game says the player is on

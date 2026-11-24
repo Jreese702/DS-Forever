@@ -997,7 +997,7 @@ class MapView(context: Context) : View(context) {
         val r = rect ?: return null
         val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
         val city = IndoorCityArt.cityAt(r.continent, wx, wy) { paintedOf(it.uiMap)?.rect } ?: run { cityTracker.reset(); return null }
-        if (!IndoorCityArt.shows(city, indoors, m.optInt("mapID", 0))) return null
+        if (!IndoorCityArt.shows(city, indoors, m.optInt("mapID", 0), m.optInt("onTaxi", 0) == 1)) return null
         val groups = gameArtNow()[city.root.toString()]?.filter { it.tiles.isNotEmpty() }?.takeIf { it.isNotEmpty() } ?: return null
         val t = cityTransform(city)
         val now = android.os.SystemClock.elapsedRealtime()

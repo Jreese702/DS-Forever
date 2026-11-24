@@ -452,6 +452,18 @@ class HomeIndoorMapsTest {
         assertEquals("the Ruins: the outdoor width", Settings.minimapYd, w.minimapYdNow())
     }
 
+    @Test fun aGryphonLeavingIronforgeShowsNoCityArt() {
+        // review of 1525: on a taxi taking off from the Great Forge the game still says Ironforge's map; by position is never on a taxi,
+        // and the game's art gate said yes there (the city's art over the outdoor map)
+        val d = doc(wx(-350.0, -50.0), wy(-350.0, -50.0), indoors = false).put("onTaxi", 1)
+        val v = map(true, 520, 420, d)
+        waitRooms(v, d)
+        val r = settle(v, 520, 420, ms = 3_000L) { it.tiles > 0 }
+        assertEquals("on a taxi: none of the city's art (${r.tiles} tiles)", 0, r.tiles)
+        assertEquals("nor its painted map", 0, r.painted)
+        assertEquals("the outdoor width", Settings.minimapYd, v.minimapYdNow())
+    }
+
     // ---------------------------------------------------------------- the shots (the PC's own data)
 
     @Test fun shots() {

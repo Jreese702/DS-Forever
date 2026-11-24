@@ -87,6 +87,29 @@ class IndoorCarryPartsTest {
         for (s in listOf("", "a\\b", "\\n", "x\ny", "\t\r\n\\")) assertEquals(s, IndoorCatalogueMemo.unescape(IndoorCatalogueMemo.escape(s)))
     }
 
+    @Test fun aSplicedOrCutMemoryNeverAnswers() {
+        // review of 1525: an answer becomes a building's spec, sealed under its own signature; a file changed in place (two saves at
+        // once, a bad flash block) or cut short must never answer - every answer or none
+        val dir = tmp("memo7")
+        val f = File(dir, IndoorCatalogueMemo.FILE)
+        IndoorCatalogueMemo(f, "b").apply {
+            text("places", "aa", "") { "{\"placements\":[1]}" }; text("places", "bb", "") { "{\"placements\":[2]}" }; save(true)
+        }
+        val good = f.readText()
+        assertEquals(2, IndoorCatalogueMemo(f, "b").size)
+        f.writeText(good.replace("[2]", "[3]"))
+        var computed = 0
+        assertEquals("a changed answer is never given", "{\"placements\":[2]}",
+            IndoorCatalogueMemo(f, "b").text("places", "bb", "") { computed++; "{\"placements\":[2]}" })
+        assertEquals(1, computed)
+        f.writeText(good.lines().take(2).joinToString("\n") + "\n")
+        assertEquals("cut after its first answer: nothing", 0, IndoorCatalogueMemo(f, "b").size)
+        f.writeText(good + "places:cc|\t{}\n")
+        assertEquals("a line after the closing one: nothing", 0, IndoorCatalogueMemo(f, "b").size)
+        f.writeText(good)
+        assertEquals(2, IndoorCatalogueMemo(f, "b").size)
+    }
+
     @Test fun aMemoryThatCannotBeWrittenLeavesTheOldOne() {
         val dir = tmp("memo6")
         val f = File(dir, IndoorCatalogueMemo.FILE)

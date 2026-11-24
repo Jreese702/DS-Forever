@@ -3,6 +3,7 @@ package com.jrees.wowcompanion
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -20,7 +21,8 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
  * Held for one builder ([builder]: its algorithm and its native library's bytes; another one starts empty, so an answer of an older
  * library is never reused). [save] after a complete listing keeps only the answers it used (one game build's worth); after an interrupted
  * one it keeps the older answers too. Written atomically (a kill leaves the old file), at most [MAX_BYTES]; a damaged file is an empty
- * memory. Read from disk only when a listing first asks it, and let go after one ([release]: a few MB of text, not held for a whole bake).
+ * memory - and so is one whose closing line ([END]: the count and the SHA-256 of everything above it) does not match (review of 1525:
+ * an answer here becomes a building's spec, and a spec is sealed under its own signature, so a spliced or cut file must never answer). Read from disk only when a listing first asks it, and let go after one ([release]: a few MB of text, not held for a whole bake).
  * Not thread-safe: one listing at a time uses it. Pure (java.io + org.json): the tests drive it.
  */
 internal class IndoorCatalogueMemo(private val file: File, val builder: String) {
@@ -81,15 +83,19 @@ internal class IndoorCatalogueMemo(private val file: File, val builder: String) 
         val tmp = File(file.parentFile, ".pending_" + file.name)
         return try {
             var bytes = 0L
+            val sum = MessageDigest.getInstance("SHA-256")
             FileOutputStream(tmp).use { out ->
                 val w = out.bufferedWriter(Charsets.UTF_8)
-                w.write(JSONObject().put("schema", SCHEMA).put("builder", builder).toString()); w.write("\n")
+                fun put(line: String) { sum.update(line.toByteArray(Charsets.UTF_8)); w.write(line) }
+                put(JSONObject().put("schema", SCHEMA).put("builder", builder).toString() + "\n")
                 for ((k, v) in all) {
                     val line = escape(k) + "\t" + escape(v) + "\n"
                     bytes += line.length
                     if (bytes > MAX_BYTES) error("the listing's memory is over ${MAX_BYTES shr 20} MB")
-                    w.write(line)
+                    put(line)
                 }
+                // the closing line: how many answers and the checksum of everything above it ([load] answers nothing without it)
+                w.write(END + all.size + "\t" + hex(sum.digest()) + "\n")
                 w.flush()
                 out.fd.sync()
             }
@@ -103,21 +109,41 @@ internal class IndoorCatalogueMemo(private val file: File, val builder: String) 
     }
 
     private fun load() {
-        if (!file.isFile || file.length() > MAX_BYTES) return
+        if (!file.isFile || file.length() > MAX_BYTES + END_MAX) return
         file.bufferedReader(Charsets.UTF_8).use { r ->
-            val head = JSONObject(r.readLine() ?: return)
+            val first = r.readLine() ?: return
+            val head = JSONObject(first)
             if (head.optInt("schema") != SCHEMA || head.optString("builder") != builder || builder.isEmpty()) return
+            val sum = MessageDigest.getInstance("SHA-256")
+            sum.update((first + "\n").toByteArray(Charsets.UTF_8))
+            val read = HashMap<String, String>()
+            var count = 0
             while (true) {
-                val line = r.readLine() ?: break
+                val line = r.readLine() ?: error("no closing line: the file was cut")
+                // the closing line: the count and the checksum of every line above it, and nothing after it
+                if (line.startsWith(END)) {
+                    require(line == END + count + "\t" + hex(sum.digest()) && r.readLine() == null) { "the checksum does not match" }
+                    break
+                }
+                sum.update((line + "\n").toByteArray(Charsets.UTF_8))
+                count++
                 val tab = line.indexOf('\t')
                 if (tab <= 0) error("damaged line")
-                old[unescape(line.substring(0, tab))] = unescape(line.substring(tab + 1))
+                read[unescape(line.substring(0, tab))] = unescape(line.substring(tab + 1))
             }
+            // every answer, or none
+            old.putAll(read)
         }
     }
 
     companion object {
-        const val SCHEMA = 1
+        /** 2 (review of 1525): the closing checksum line ([END]); a schema 1 file (never shipped) is an empty memory */
+        const val SCHEMA = 2
+        /** the closing line's start ("#end", TAB, the count, TAB, the SHA-256 in hex); an answer's key starts with its kind, never '#' */
+        internal const val END = "#end\t"
+        private const val END_MAX = 128L
+
+        private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it.toInt() and 255) }
         /** the file's name beside the scheduler's catalogue (interiors_sched/; not "catalogue-*": a new listing deletes the old ones) */
         const val FILE = "listing-memory.txt"
         /** a whole game build's answers are a few MB; past this it is not kept (the listing still works, only slower) */

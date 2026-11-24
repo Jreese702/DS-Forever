@@ -86,6 +86,9 @@ class IndoorCityArtTest {
         val uc = IndoorCityArt.byRoot(7675285)!!
         assertTrue(IndoorCityArt.shows(uc, indoors = false, mapId = 1458))
         assertFalse("never the city's art on the Ruins", IndoorCityArt.shows(uc, indoors = false, mapId = 1420))
+        // review of 1525: the art's gate is the same test as [byPosition]: never on a taxi (the game's own indoors still counts)
+        assertFalse("a gryphon out of the Great Forge, still on Ironforge's map", IndoorCityArt.shows(IF, indoors = false, mapId = 1455, onTaxi = true))
+        assertTrue(IndoorCityArt.shows(IF, indoors = true, mapId = 1455, onTaxi = true))
     }
 
     // the groups: a 90 yd tall hall, a shop on its floor, a shop above it, a cavern under the hall, a ramp down beside it

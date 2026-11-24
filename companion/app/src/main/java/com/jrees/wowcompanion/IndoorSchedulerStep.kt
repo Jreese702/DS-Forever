@@ -406,7 +406,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                     val scheduler = IndoorScheduler(IndoorBakeStore(root), root, g.buildKey, gen, signals, dataDir(ctx),
                         onStatus = { publishStatus(ctx, it) }, log = { Log.i(TAG, it) }, app = app,
                         memo = IndoorCatalogueMemo.forBuilder(dataDir(ctx), app, gen.algorithm))
-                    val outcome = try { inRun = true; scheduler.run() } finally { inRun = false }
+                    val outcome = scheduler.run()
                     if (!Settings.indoorBuild) offInSettings(ctx)
                     Log.i(TAG, "interiors $outcome; ${scheduler.publishes} publications, max ${scheduler.maxPublishMs} ms; wake lock taken " +
                         "${scheduler.wakeAcquires}x, let go ${scheduler.wakeReleases}x")
@@ -426,9 +426,6 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         }
     }
 
-    /** 1525: the builder's own run has the game files open now (the carry-over then leaves the listing and the publication to it) */
-    @Volatile private var inRun = false
-
     // ------------------------------------------------------------------ 1525: the carry-over after a game update
 
     /**
@@ -440,13 +437,18 @@ object IndoorSchedulerStep : ArtHarvest.Step {
      * listing's memory: content keys for every unchanged file, no reads) and publishes every unchanged one under the new build at once.
      * Nothing is built here: the bake builds the changed ones as before (near you first, dungeons last). True = done (or nothing to do);
      * false = it failed and is tried again at the art run's next pass.
+     *
+     * Review of 1525: it no longer gives way to a builder run that merely has the game files open. While the art run works, the builder
+     * waits at its next yield point ("waiting: game art", [PlayGate.indoorWait]) and lets its files go after a minute, so such a run is
+     * never listing or building beside this one; skipping here stamped the carry-over done and left every indoor map hidden until the
+     * art run had finished (all the icon packs). A builder that has already listed and published this build makes [IndoorScheduler.carryDue]
+     * false; the publications are one at a time ([IndoorBakeStore.PUBLISH_LOCK]).
      */
     internal fun carryOver(job: ArtHarvest.Job): Boolean {
         val ctx = job.ctx
         Settings.init(ctx)
         if (!Settings.indoorBuild) { Log.i(TAG, "carry-over: off in Settings"); return true }
         val factory = factory ?: run { Log.i(TAG, "carry-over: no builder in this build"); return true }
-        if (inRun) { Log.i(TAG, "carry-over: the builder is running, it lists and publishes this build itself"); return true }
         val root = job.out
         val dir = dataDir(ctx)
         val build = job.game.buildKey
@@ -454,7 +456,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         val app = builderKey(ctx)
         return try {
             val r = factory.open(job.game).use { gen ->
-                IndoorScheduler(IndoorBakeStore(root), root, build, gen, CarrySignals(), dir, onStatus = { publishStatus(ctx, it) },
+                IndoorScheduler(IndoorBakeStore(root), root, build, gen, CarrySignals { activeBuildOf(ctx) }, dir, onStatus = { publishStatus(ctx, it) },
                     log = { Log.i(TAG, it) }, app = app, memo = IndoorCatalogueMemo.forBuilder(dir, app, gen.algorithm),
                     checkpoint = { job.checkpoint() }).carryOver()
             }
@@ -474,15 +476,24 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         }
     }
 
-    /** the carry-over's signals: it waits for nothing itself (the art run pauses for the game), and ends for Settings' Off */
-    private class CarrySignals : IndoorScheduler.Signals {
+    /**
+     * the carry-over's signals: it waits for nothing itself (the art run pauses for the game), and ends for Settings' Off. [build]: the
+     * game folder's build now (review of 1525: without it the carry-over's "never over a newer build" check, asked under the store's
+     * lock with the publication, always said yes - a game update while it listed could publish the old build over the new one's)
+     */
+    internal class CarrySignals(private val build: () -> String?) : IndoorScheduler.Signals {
         override fun position(): IndoorBakeQueue.Position? = live
         override fun busy(): Boolean = false
         override fun hot(): Boolean = false
         override fun stop(): Boolean = !Settings.indoorBuild
         override fun now(): Long = System.currentTimeMillis()
         override fun sleep(ms: Long) = Thread.sleep(ms)
+        override fun activeBuild(): String? = runCatching { build() }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
+
+    /** the game folder's active build now (.build.info, a small file; null = not known): the builder's and the carry-over's check */
+    private fun activeBuildOf(ctx: Context): String? =
+        runCatching { GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second?.takeIf { it.isNotEmpty() } }.getOrNull()
 
     /** Settings' switch is Off: nothing builds; the row says so and keeps the count of what is ready */
     private fun offInSettings(ctx: Context) {
@@ -596,8 +607,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         }
 
         /** 1525: the game folder's build now (.build.info, a small file: asked once a building and at each publication, never cached) */
-        override fun activeBuild(): String? =
-            runCatching { GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second?.takeIf { it.isNotEmpty() } }.getOrNull()
+        override fun activeBuild(): String? = activeBuildOf(ctx)
 
         override fun memory(): Pair<Long, Long> {
             val rt = Runtime.getRuntime()

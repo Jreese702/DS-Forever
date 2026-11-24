@@ -260,6 +260,72 @@ class IndoorUpdateReuseTest {
         assertEquals(2, st.last().total); assertEquals(1, st.last().ready); assertEquals(1, st.last().dungeons)
     }
 
+    // ------------------------------------------------------------------ review of 1525
+
+    @Test fun theCarryOverNeverPublishesAnOldBuildOverANewerOne() {
+        // the art run's carry-over for B while the game folder already moved on to C (an update while it listed): its signals say so,
+        // and the publication - asked under the store's lock - is skipped (the step's own signals said "not known" before: always yes)
+        val root = Files.createTempDirectory("reuse11").toFile()
+        run(root, Gen(mapOf("wmo_a" to 1, "wmo_b" to 2)), A)
+        assertEquals(C, IndoorSchedulerStep.CarrySignals { C }.activeBuild())
+        assertNull("not known: never a stop", IndoorSchedulerStep.CarrySignals { "" }.activeBuild())
+        assertNull(IndoorSchedulerStep.CarrySignals { error(".build.info unreadable") }.activeBuild())
+        val s = IndoorScheduler(IndoorBakeStore(root), root, B, Gen(mapOf("wmo_a" to 1, "wmo_b" to 2)), IndoorSchedulerStep.CarrySignals { C },
+            dir(root), app = app)
+        val carried = carry(s)
+        assertFalse("nothing published for the old build", prop(carried!!, "published") as Boolean)
+        assertEquals(A, pointerBuild(root))
+        // its own build: published as before
+        val ok = carry(IndoorScheduler(IndoorBakeStore(root), root, B, Gen(mapOf("wmo_a" to 1, "wmo_b" to 2)),
+            IndoorSchedulerStep.CarrySignals { B }, dir(root), app = app))
+        assertTrue(prop(ok!!, "published") as Boolean)
+        assertEquals(B, pointerBuild(root))
+    }
+
+    @Test fun aBuilderRunWaitingForTheArtRunDoesNotHoldTheCarryOverBack() {
+        // review of 1525: the carry-over gave way to a builder run that merely had the game files open (IndoorSchedulerStep's inRun), and
+        // was stamped done - every indoor map hidden until the whole art run had finished. While the art run works the builder waits at
+        // its next yield point ("waiting: game art"), so the carry-over runs beside it safely: here a builder run of B waits in its first
+        // yield while the carry-over lists and publishes B, then goes on and builds only what changed
+        val root = Files.createTempDirectory("reuse12").toFile()
+        run(root, Gen(mapOf("wmo_a" to 1, "wmo_b" to 2, "wmo_c" to 3)), A)
+        val waiting = java.util.concurrent.CountDownLatch(1)
+        val artDone = java.util.concurrent.CountDownLatch(1)
+        val art = object : IndoorScheduler.Signals {
+            @Volatile var t = 0L
+            override fun position(): IndoorBakeQueue.Position? = null
+            override fun busy() = artDone.count > 0
+            override fun busyReason(): String? = if (busy()) PlayGate.ART_FIRST else null
+            override fun hot() = false
+            override fun stop() = false
+            override fun now() = t
+            override fun sleep(ms: Long) { waiting.countDown(); artDone.await(10, java.util.concurrent.TimeUnit.SECONDS); t += ms }
+        }
+        val after = mapOf("wmo_a" to 1, "wmo_b" to 2, "wmo_c" to 33)
+        val builderGen = Gen(after)
+        var outcome: IndoorScheduler.Outcome? = null
+        val builder = Thread { outcome = IndoorScheduler(IndoorBakeStore(root), root, B, builderGen, art, dir(root), app = app).run() }
+        builder.start()
+        assertTrue("the builder waits for the art run", waiting.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        assertEquals("it waits before it lists", 0, builderGen.listed)
+        val carryGen = Gen(after)
+        val carried = carry(scheduler(root, carryGen, B))
+        assertEquals(2, prop(carried!!, "kept")); assertTrue(prop(carried, "published") as Boolean)
+        assertEquals("the unchanged ones show at once", setOf("wmo_a", "wmo_b"), published(root, B))
+        artDone.countDown()
+        builder.join(20_000)
+        assertFalse(builder.isAlive)
+        assertEquals(IndoorScheduler.Outcome.COMPLETE, outcome)
+        assertEquals("the builder lists from the carry-over's cache", 0, builderGen.listed)
+        assertEquals("and builds only the changed one", listOf("wmo_c"), builderGen.made)
+        assertEquals(emptyList<String>(), carryGen.made)
+        assertEquals(setOf("wmo_a", "wmo_b", "wmo_c"), published(root, B))
+        // the step no longer gives way to a run that only has the game files open
+        val step = File("../companion/app/src/main/java/com/jrees/wowcompanion/IndoorSchedulerStep.kt").readText()
+        val body = step.substringAfter("internal fun carryOver(job: ArtHarvest.Job): Boolean {").substringBefore("\n    }\n")
+        assertFalse("carryOver has no 'builder is running' skip", body.contains("inRun") || body.contains("the builder is running"))
+    }
+
     // ------------------------------------------------------------------ never 0/0
 
     @Test fun aZeroCountOnDiskIsReadFromTheBuildingsOnDisk() {
