@@ -333,18 +333,21 @@ public class PresentExtension implements Extension {
                 sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.FLIP, ust, msc);
                 if (window.attributes.isMapped()) {
                     asr.onUpdateWindowContent(window);
+                    LaunchFrameWatch.offer(pixmap.drawable);      // DS Forever: the launch screen's hand-over (LaunchLoad)
                 }
                 if (targetFps > 0) scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, vr);
                 else sendIdleNotify(window, pixmap, serial, idleFence);
             } else if (vr != null && window.attributes.isMapped()) {
                 sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.COPY, ust, msc);
                 vr.onUpdateWindowContentDirect(window, pixmap.drawable, xOff, yOff);
+                LaunchFrameWatch.offer(pixmap.drawable);          // DS Forever: the launch screen's hand-over (LaunchLoad)
                 if (targetFps > 0) scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, vr);
                 else sendIdleNotify(window, pixmap, serial, idleFence);
             } else {
                 // GL Renderer
                 content.copyArea((short)0, (short)0, xOff, yOff,
                         pixmap.drawable.width, pixmap.drawable.height, pixmap.drawable);
+                LaunchFrameWatch.offer(pixmap.drawable);          // DS Forever: the launch screen's hand-over (LaunchLoad)
                 sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.COPY, ust, msc);
                 if (targetFps > 0) scheduleIdleNotify(window, pixmap, serial, idleFence, targetFps, vr);
                 else sendIdleNotify(window, pixmap, serial, idleFence);

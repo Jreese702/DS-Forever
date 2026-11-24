@@ -263,7 +263,7 @@ class MainActivity : ComponentActivity() {
                     Timber.d("Game resume skipped due to suspend policy=never")
                 }
                 PluviaApp.isOverlayPaused -> {
-                    if (PluviaApp.isBootingSplashShowing) {
+                    if (PluviaApp.isBootingSplashShowing || com.jrees.wowcompanion.LaunchLoad.holdsPad()) {
                         // The Resume overlay sits under the booting splash, so the user could
                         // never press it; nothing is being played yet, so just carry on booting.
                         PluviaApp.xEnvironment?.onResume()

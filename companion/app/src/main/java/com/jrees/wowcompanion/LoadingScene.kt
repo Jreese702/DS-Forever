@@ -96,58 +96,71 @@ object LoadingScene {
         val key: LongArray = LongArray(3) { Long.MIN_VALUE }, val lit: BooleanArray = BooleanArray(3))
     private val grids = arrayOf(Grids(), Grids())
 
+    // ------------------------------------------------------------------ the passes: both screens, or the bottom alone (2026-11-24)
+
+    private var schedule = LoadingMath.Schedule(seed, first)
+    /** when a top screen last drew the scene ([draw] with claim), uptime ms; MIN = none yet (the start: both screens assumed) */
+    private var topAt = Long.MIN_VALUE
+    /** the off-device pictures: force the bottom-alone choice (null = from the top screen's draws) */
+    @Volatile var forceSolo: Boolean? = null
+
     /**
-     * Draws [top]'s (or the bottom's) part of the scene over the whole of [r] (the view's size): black, each pass's picture under its
-     * light (oldest first, the newer over it), then the arm's tail, the spark and its motes added on top.
+     * a top screen drew the scene within [TOP_GAP_MS]: new passes span both screens; else (the game is on the top screen: the launch
+     * handed over, or the game runs) they start on the bottom alone, smaller ("to fit on that screen")
      */
-    fun draw(c: Canvas, r: RectF, top: Boolean) {
+    private fun solo(ms: Long): Boolean = forceSolo ?: (topAt != Long.MIN_VALUE && ms - topAt > TOP_GAP_MS)
+    const val TOP_GAP_MS = 400L
+
+    /** the bottom screen is on its own now (new passes start there alone) */
+    fun soloNow(): Boolean = solo(SystemClock.uptimeMillis())
+
+    /**
+     * Draws [top]'s (or the bottom's) part of the scene over the whole of [r] (the view's size): black (PAINTED STAYS: the pictures
+     * kept so far), each pass's picture under its light (oldest first, the newer over it), then the arm's tail, the spark and its motes
+     * added on top. [claim] = this top screen counts as showing the scene (false while it fades out: the launch's hand-over).
+     */
+    fun draw(c: Canvas, r: RectF, top: Boolean, claim: Boolean = true) {
         c.save()
         c.clipRect(r)
         c.drawColor(Color.BLACK)
         val m = maps()
         if (m == null) { c.restore(); return }
         val t = now()
-        val reg = LoadingMath.region(top)
-        val sx = r.width() / reg.width; val sy = r.height() / reg.height
+        val ms = SystemClock.uptimeMillis()
+        if (top && claim) {
+            // a top screen back after a gap (the game closed, a restart): a pass at once, so it is never black until the next one
+            if (forceSolo == null && solo(ms)) schedule.restart(t)
+            topAt = ms
+        }
+        val stays = LoadingMath.paintedStays
         val n = Scene.all.size
-        val passes = LoadingMath.passes(seed, t, n, first)
+        val passes = schedule.at(t, n, solo(ms), stays)
         val g = grids[if (top) 0 else 1]
         val gw = ceil(r.width() / GRID).toInt().coerceAtLeast(2); val gh = ceil(r.height() / GRID).toInt().coerceAtLeast(2)
-        if (g.w != gw || g.h != gh) { g.w = gw; g.h = gh; for (i in 0 until 3) { g.bmp[i]?.recycle(); g.bmp[i] = null; g.px[i] = null; g.key[i] = Long.MIN_VALUE } }
-        // 1. the pictures under their light
-        for ((slot, p) in passes.withIndex()) {
-            if (slot >= 3) break
+        if (g.w != gw || g.h != gh) { g.w = gw; g.h = gh; for (i in 0 until SLOTS) { g.bmp[i]?.recycle(); g.bmp[i] = null; g.px[i] = null; g.key[i] = Long.MIN_VALUE } }
+        // 0. PAINTED STAYS: what earlier passes left painted (this screen's own picture of it)
+        val keep = if (stays) kept(top, r) else { dropKept(top); null }
+        keep?.let { k -> c.drawBitmap(k.bmp, null, r, pKept) }
+        // 1. the pictures under their light (the newest SLOTS: more are alive only for a moment, at a top screen's restart)
+        val shown = if (passes.size > SLOTS) passes.subList(passes.size - SLOTS, passes.size) else passes
+        for ((slot, p) in shown.withIndex()) {
+            val reg = LoadingMath.region(top, p) ?: continue
+            if (keep != null && p.k <= keep.upTo) continue
             val pic = picture(p.picture) ?: continue
-            val px = g.px[slot] ?: IntArray(gw * gh).also { g.px[slot] = it }
-            val key = (t * 1000f / FRAME_MS).toLong() * 1000L + p.k
-            if (g.key[slot] != key || g.bmp[slot] == null) {
-                var any = false
-                for (gy in 0 until gh) {
-                    val vy = reg.top + (gy + 0.5f) * GRID / sy
-                    for (gx in 0 until gw) {
-                        val vx = reg.left + (gx + 0.5f) * GRID / sx
-                        val a = (LoadingMath.lit(m, p, t, vx, vy, tmp) * 255f).toInt().coerceIn(0, 255)
-                        if (a > 0) any = true
-                        px[gy * gw + gx] = (a shl 24) or 0xFFFFFF
-                    }
-                }
-                val bmp = g.bmp[slot] ?: Bitmap.createBitmap(gw, gh, Bitmap.Config.ARGB_8888).also { g.bmp[slot] = it }
-                bmp.setPixels(px, 0, gw, 0, 0, gw, gh)
-                g.key[slot] = key; g.lit[slot] = any
+            if (!fill(g, slot, m, p, t, reg, r, gw, gh, stays)) continue
+            if (keep != null && t >= p.settled()) {
+                // settled: its light never changes again, so it goes into the kept picture (and is drawn from there from now on)
+                pass(Canvas(keep.bmp), RectF(0f, 0f, keep.bmp.width.toFloat(), keep.bmp.height.toFloat()), pic, g.bmp[slot]!!, reg, p, gw, gh, r)
+                keep.upTo = p.k
+                c.drawBitmap(keep.bmp, null, r, pKept)
+                continue
             }
-            if (!g.lit[slot]) continue
-            val bmp = g.bmp[slot]!!
-            val layer = c.saveLayer(r, null)
-            // the picture covers the whole virtual canvas (its shape kept), this screen's part of it
-            val k = max(LoadingMath.VW / pic.width, LoadingMath.VH / pic.height)
-            val vl = (LoadingMath.VW - pic.width * k) / 2f; val vt = (LoadingMath.VH - pic.height * k) / 2f
-            c.drawBitmap(pic, null, RectF(r.left + (vl - reg.left) * sx, r.top + (vt - reg.top) * sy,
-                r.left + (vl + pic.width * k - reg.left) * sx, r.top + (vt + pic.height * k - reg.top) * sy), pPic)
-            c.drawBitmap(bmp, null, RectF(r.left, r.top, r.left + gw * GRID.toFloat(), r.top + gh * GRID.toFloat()), pMask)
-            c.restoreToCount(layer)
+            pass(c, r, pic, g.bmp[slot]!!, reg, p, gw, gh, r)
         }
         // 2. the arm's comet tail, the spark and its motes, in the picture's colour, added
         for (p in passes) {
+            val reg = LoadingMath.region(top, p) ?: continue
+            val sx = r.width() / reg.width; val sy = r.height() / reg.height
             val tc = t - p.start
             if (tc > LoadingMath.JOURNEY + LoadingMath.TAIL + LoadingMath.MOTE_LIFE) continue
             val tint = tint(p.picture)
@@ -155,7 +168,7 @@ object LoadingScene {
             tail(m, p, tc)?.let { tb ->
                 val mx = Matrix()
                 // the maps' square -> virtual (as Pass.toVirtual) -> this screen
-                val kk = LoadingMath.SWIRL / LoadingMath.N
+                val kk = LoadingMath.SWIRL * p.scale / LoadingMath.N
                 mx.postTranslate(-LoadingMath.M / 2f, -LoadingMath.M / 2f)
                 mx.postScale(if (p.mirror) -kk else kk, kk)
                 mx.postRotate(Math.toDegrees(p.angle.toDouble()).toFloat())
@@ -173,7 +186,7 @@ object LoadingScene {
                 LoadingMath.head(m, p, q, tmp)
                 val hx = r.left + (tmp[0] - reg.left) * sx; val hy = r.top + (tmp[1] - reg.top) * sy
                 // v8: the glow small at the middle and growing along the arm (the study's sigma 30 + 40 q), and softer (0.35 tint + 0.3)
-                val rad = (210f + 280f * q) * sx
+                val rad = (210f + 280f * q) * sx * p.scale
                 val glow = Color.rgb(((0.35f * tint[0] + 0.3f).coerceAtMost(1f) * 255).toInt(), ((0.35f * tint[1] + 0.3f).coerceAtMost(1f) * 255).toInt(),
                     ((0.35f * tint[2] + 0.3f).coerceAtMost(1f) * 255).toInt())
                 if (hx > r.left - rad && hx < r.right + rad && hy > r.top - rad && hy < r.bottom + rad) {
@@ -189,7 +202,7 @@ object LoadingScene {
             for (i in i0..i1) {
                 if (!LoadingMath.mote(m, p, i, t, tmp)) continue
                 val mx = r.left + (tmp[0] - reg.left) * sx; val my = r.top + (tmp[1] - reg.top) * sy
-                val rr = (25f * tmp[2] + 3f) * sx * 2.5f
+                val rr = (25f * tmp[2] + 3f) * sx * 2.5f * p.scale
                 if (mx < r.left - rr || mx > r.right + rr || my < r.top - rr || my > r.bottom + rr) continue
                 val a = (255 * 0.6f * tmp[2]).toInt()          // v8: the motes at 0.6
                 pAdd.shader = RadialGradient(mx, my, rr, intArrayOf(Color.argb(a, 255, 255, 255), Color.argb(a / 2, Color.red(col), Color.green(col), Color.blue(col)),
@@ -200,6 +213,68 @@ object LoadingScene {
         }
         c.restore()
     }
+
+    /** grid slot [slot]'s light for pass [p] at [t] (filled once per frame and pass); false = nothing of it lit on this screen */
+    private fun fill(g: Grids, slot: Int, m: LoadingMath.Maps, p: LoadingMath.Pass, t: Float, reg: LoadingMath.Region, r: RectF,
+                     gw: Int, gh: Int, stays: Boolean): Boolean {
+        val sx = r.width() / reg.width; val sy = r.height() / reg.height
+        val px = g.px[slot] ?: IntArray(gw * gh).also { g.px[slot] = it }
+        val key = (t * 1000f / FRAME_MS).toLong() * 1000L + p.k
+        if (g.key[slot] != key || g.bmp[slot] == null) {
+            var any = false
+            for (gy in 0 until gh) {
+                val vy = reg.top + (gy + 0.5f) * GRID / sy
+                for (gx in 0 until gw) {
+                    val vx = reg.left + (gx + 0.5f) * GRID / sx
+                    val a = (LoadingMath.lit(m, p, t, vx, vy, tmp, stays) * 255f).toInt().coerceIn(0, 255)
+                    if (a > 0) any = true
+                    px[gy * gw + gx] = (a shl 24) or 0xFFFFFF
+                }
+            }
+            val bmp = g.bmp[slot] ?: Bitmap.createBitmap(gw, gh, Bitmap.Config.ARGB_8888).also { g.bmp[slot] = it }
+            bmp.setPixels(px, 0, gw, 0, 0, gw, gh)
+            g.key[slot] = key; g.lit[slot] = any
+        }
+        return g.lit[slot]
+    }
+
+    /**
+     * one pass's picture under its light into [dst] (the screen, or the kept picture): the picture covers the pass's whole canvas (its
+     * shape kept), this screen's part of it, masked by the light grid ([view] = the screen's rect the grid was made for)
+     */
+    private fun pass(c: Canvas, dst: RectF, pic: Bitmap, light: Bitmap, reg: LoadingMath.Region, p: LoadingMath.Pass, gw: Int, gh: Int, view: RectF) {
+        val sx = dst.width() / reg.width; val sy = dst.height() / reg.height
+        val layer = c.saveLayer(dst, null)
+        val k = max(p.canvasW / pic.width, p.canvasH / pic.height)
+        val vl = (p.canvasW - pic.width * k) / 2f; val vt = (p.canvasH - pic.height * k) / 2f
+        c.drawBitmap(pic, null, RectF(dst.left + (vl - reg.left) * sx, dst.top + (vt - reg.top) * sy,
+            dst.left + (vl + pic.width * k - reg.left) * sx, dst.top + (vt + pic.height * k - reg.top) * sy), pPic)
+        val gs = dst.width() / view.width()
+        c.drawBitmap(light, null, RectF(dst.left, dst.top, dst.left + gw * GRID * gs, dst.top + gh * GRID * gs), pMask)
+        c.restoreToCount(layer)
+    }
+
+    // ------------------------------------------------------------------ PAINTED STAYS: each screen's kept picture
+
+    /** a screen's kept picture (RGB_565: opaque, half the bytes; at most the scene pictures' own width) and the last pass it holds */
+    private class Kept(val bmp: Bitmap, var upTo: Int)
+    private val keptPics = arrayOfNulls<Kept>(2)
+
+    private fun kept(top: Boolean, r: RectF): Kept {
+        val i = if (top) 0 else 1
+        val s = min(1f, KEPT_MAX_W / r.width())
+        val w = max(2, (r.width() * s).toInt()); val h = max(2, (r.height() * s).toInt())
+        keptPics[i]?.let { if (it.bmp.width == w && it.bmp.height == h) return it; it.bmp.recycle() }
+        return Kept(Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565).also { it.eraseColor(Color.BLACK) }, Int.MIN_VALUE).also { keptPics[i] = it }
+    }
+
+    private fun dropKept(top: Boolean) { val i = if (top) 0 else 1; keptPics[i]?.bmp?.recycle(); keptPics[i] = null }
+
+    /** the kept pictures go (a loading page that shows again starts black, as at the start); main thread */
+    fun letGoKept() { dropKept(true); dropKept(false) }
+    private const val KEPT_MAX_W = 1240f
+    private val pKept = Paint(Paint.FILTER_BITMAP_FLAG)
+    private const val SLOTS = 3
 
     // ------------------------------------------------------------------ the arm's tail (shared by both screens: one per pass and frame)
 
@@ -235,5 +310,10 @@ object LoadingScene {
     /** the off-device pictures: the scene at [t] s with a fixed [seed] and first picture (both screens' frames at the same moment) */
     fun pin(t: Float, seed: Long, first: Int) {
         started = true; t0 = SystemClock.uptimeMillis() - (t * 1000f).toLong(); this.seed = seed; this.first = first; tailKey = Long.MIN_VALUE
+        schedule = LoadingMath.Schedule(seed, first); topAt = Long.MIN_VALUE; letGoKept()
+        for (g in grids) for (i in g.key.indices) g.key[i] = Long.MIN_VALUE
     }
+
+    /** the off-device pictures: the scene's clock moved to [t] s, the passes so far kept (a sequence of frames, a hand-over) */
+    fun clock(t: Float) { started = true; t0 = SystemClock.uptimeMillis() - (t * 1000f).toLong() }
 }
