@@ -114,8 +114,18 @@ class HomeEditModel(
     var menu: EditStop? = null
         private set(v) {
             if (field == EditStop.PARTY_PEN && v != EditStop.PARTY_PEN) { if (bubbleFight) fightPreview = false; bubbleFight = false }
+            // (fix/fight-pencil-strip: the fight pencil's hold ends with its bubble, by any way it closes; a new bubble takes its own)
+            if (v != field) fightPenHold = null
             field = v
         }
+    /**
+     * HOLD STILL UNTIL CLOSED (the user's pick 2026-11-23, "Hold still until closed": "The pencil and bubble stay put while you change
+     * things; the pencil moves to its new place when you close the bubble."): the fight pencil's box (Home's px) while its bubble is
+     * open - Cast bar / Swing timer laying or taking away the fight strip under the preview would move the pencil between the strip's
+     * left end and the page's top centre (BandEdit.place), and its open bubble with it. The view takes the pencil's place at the open
+     * (HomeView.editBand) and keeps it, for the drawing, the cursor and the touches alike, until [menu] changes; null = no hold
+     */
+    var fightPenHold: HomeLayoutSolver.Box? = null
     /** the fight preview on now was turned on by the party bubble's Preview row (it ends with the bubble: [menu]) */
     private var bubbleFight = false
     var menuRow = 0

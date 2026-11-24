@@ -771,4 +771,24 @@ class HomeEditModelTest {
         assertTrue(m.cursorCheck(stops(m.draft).filterKeys { it != EditStop.CAST }))
         assertNull(m.lifted); assertNull(m.barLifted)
     }
+
+    /** fix/fight-pencil-strip (the user's pick 2026-11-23, "Hold still until closed"): the fight pencil's held place lives only while its
+     *  bubble is open - B, a tap off it, another pencil's bubble, a fight parking edit mode: each drops it; a new bubble takes its own */
+    @Test fun theFightPencilsHoldEndsWithItsBubble() {
+        val held = HomeLayoutSolver.Box(15f, 15f, 47f, 47f)
+        val m = model(start = EditStop.FIGHT_PEN)
+        m.toggleFight()
+        for ((way, close) in listOf<Pair<String, (HomeEditModel) -> Unit>>(
+            "B" to { it.press("PAD2") }, "a tap off it" to { it.closeMenu() }, "the same pencil again" to { it.pencilTap(EditStop.FIGHT_PEN) },
+            "another pencil" to { it.pencilTap(EditStop.PAD_PEN) }, "a fight" to { it.park(); it.resume() })) {
+            if (!m.fightPreview) m.toggleFight()
+            m.pencilTap(EditStop.FIGHT_PEN)
+            assertEquals(way, EditStop.FIGHT_PEN, m.menu)
+            m.fightPenHold = held
+            m.press("PADDDOWN")                                                 // a row walked: still held
+            assertEquals("$way: held while open", held, m.fightPenHold)
+            close(m)
+            assertNull("$way: the hold ends with the bubble", m.fightPenHold)
+        }
+    }
 }
