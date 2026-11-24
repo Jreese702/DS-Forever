@@ -46,7 +46,10 @@ object HomeMapNote {
      */
     const val INDOOR = "No indoor map here yet"
 
-    /** the indoor note shows: indoors, no built room here, no game art of a capital here, no other note up, the rooms read ([ready]) */
+    /**
+     * the indoor note shows: indoors, no built room here, the player on none of a capital's game art ([cityArt]; 1526: the city is drawn
+     * around a player between its groups, the note still says the spot has no map), no other note up, the rooms read ([ready])
+     */
     fun indoorShows(morphing: Boolean, indoors: Boolean, room: Boolean, cityArt: Boolean, otherNote: Boolean, ready: Boolean): Boolean =
         !morphing && indoors && !room && !cityArt && !otherNote && ready
 

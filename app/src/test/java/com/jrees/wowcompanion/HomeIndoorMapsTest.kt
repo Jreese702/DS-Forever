@@ -38,10 +38,14 @@ import java.util.zip.Deflater
  *  - inside the city but in no hall group (fix 4: "No indoor map here yet").
  * Everything new is read by reflection so the same file runs (and fails) on the code before the fix (0f57b547).
  *
- * 1526 (the user on test 1525, 2026-11-24: "Why can I see the actual map background in iron forge? ... it's weird and I hate it"; the
- * pick "Plain dark background"): the painted city map is never drawn under a capital's indoor map (B is gone). Inside a capital's
- * footprint, indoors (Ironforge and the Undercity by position), the ground under the game's art and our plans is the indoor scrim's own
- * dark (IndoorCityArt.BACKING, opaque), never the painted map nor the outdoor map zoomed in; the note still says where nothing covers.
+ * 1526 (the user on test 1525, 2026-11-24: "Why can I see the actual map background in iron forge? ... it's weird and I hate it"; then
+ * "I want it to look like its still part of the world around it. Will it show black when I zoom out or the mountain? Can't we just make
+ * it seemless like with stormwind?"): the painted city map is never drawn (B is gone) and there is no dark rectangle over the footprint.
+ * The outdoor map (made-up green tiles here) draws around and over the city as everywhere; the game's art is on it in the city's own
+ * shape, the gaps inside that shape (the floor's groups' turned boxes) in the indoor dark (IndoorCityArt.BACKING), nothing dark outside
+ * it; zoomed out to the open map's widest the floor is one picture (IndoorCityArt.Mosaic), never dropped. The note shows only where the
+ * player stands on neither the game's art nor a plan. The Ruins of Lordaeron (Tirisfal's map) never get the Undercity's art or dark,
+ * even where the game says indoors there (its throne room).
  *
  * With IA_ART_ROOT (an art folder: interiors/, wmominimap.json, wmomm/, worldmap/, minimap/, ui/, fonts/) and IA_SHOTS_DIR, [shots]
  * draws Ironforge's ring, the Great Forge, an entrance hall, a shop and a spot no art covers, the Undercity and a Stormwind building on
@@ -83,6 +87,9 @@ class HomeIndoorMapsTest {
     /** Stormwind's painted map's rect (IndoorCityArt.CAPITALS) and a point in its Trade District (no built room, no game art here) */
     private val SW_RECT = doubleArrayOf(-7995.8301, -9154.1699, 1722.92, -14.584)
     private val SW_SPOT = doubleArrayOf(-8830.0, 620.0)
+    /** 1526: the made-up outdoor map's colour (its minimap tiles; decoded RGB_565) */
+    private val OUT_GREEN = Color.rgb(66, 142, 57)
+    private val HALL_RED = Color.rgb(170, 60, 60)
 
     @Before fun setUp() {
         was = rootField.get(null)
@@ -103,6 +110,7 @@ class HomeIndoorMapsTest {
     }
 
     @After fun tearDown() {
+        if (worldTilesUsed) forgetWorldTiles()
         rootField.set(null, was)
         UiKit.root = UiKit.root                                         // (the kit pictures read from this class's art root go too)
         MinimapTiles.refresh()
@@ -151,7 +159,7 @@ class HomeIndoorMapsTest {
         File(r, "interiors/current.json").writeText(JSONObject().put("schema", 2).put("generation", GEN).put("build", BUILD)
             .put("continents", JSONArray().put(0)).toString())
         // the game's own art: one hall group with one tile (its texture 256 x 256)
-        png(File(r, WmoMinimap.tileFile(TILE_FID)), 256, 256, Color.rgb(170, 60, 60))
+        png(File(r, WmoMinimap.tileFile(TILE_FID)), 256, 256, HALL_RED)
         val g = JSONObject().put("t", JSONArray().put(JSONArray(listOf(0, 0, TILE_FID, 256, 256)))).put("bb", JSONArray(HALL.map { it.toDouble() }))
         File(r, "wmominimap.json").writeText(JSONObject().put("v", 2).put("roots", JSONObject()
             .put("7801267", JSONObject().put("wmo", 20884).put("groups", JSONObject().put("65", g)))).toString())
@@ -174,6 +182,23 @@ class HomeIndoorMapsTest {
         File(r, "worldmap/1453/index.json").writeText(JSONObject().put("uiMapID", 1453).put("name", "Stormwind City").put("w", 1002).put("h", 668)
             .put("rect", JSONArray(listOf(0.0) + SW_RECT.toList())).put("overlays", JSONArray()).toString())
         png(File(r, "worldmap/1453/base.webp"), 1002, 668, Color.rgb(120, 60, 60))
+    }
+
+    /**
+     * 1526: the outdoor map under and around Ironforge and the Undercity (flat green minimap tiles, continent 0), for the tests that look
+     * for the world around the city (the older ones keep their own rig: the open map pans further with a continent's tiles)
+     */
+    private var worldTilesUsed = false
+    private fun worldTiles() {
+        if (System.getenv("IA_ART_ROOT") != null) return
+        worldTilesUsed = true
+        val tiles = JSONArray()
+        for ((cols, rows) in listOf(32..35 to 39..42, 29..33 to 27..30)) for (col in cols) for (row in rows) {
+            png(File(root, "minimap/0/${col}_$row.webp"), 512, 512, OUT_GREEN); tiles.put(JSONArray(listOf(col, row)))
+        }
+        File(root, MinimapTiles.INDEX).writeText(JSONObject().put("px", 512).put("adt", 533.33333)
+            .put("continents", JSONObject().put("0", JSONObject().put("dir", "azeroth").put("tiles", tiles))).toString())
+        MinimapTiles.refresh()
     }
 
     // ---------------------------------------------------------------- the rig
@@ -231,6 +256,29 @@ class HomeIndoorMapsTest {
         return px.count { Math.abs(Color.red(it) - 0x10) <= 1 && Math.abs(Color.green(it) - 0x0C) <= 1 && Math.abs(Color.blue(it) - 0x08) <= 1 }
             .toDouble() / px.size
     }
+
+    /**
+     * MinimapTiles is one object for the whole run (HomeMapNoteViewTest's rule): the green tiles' loads in flight land here, then none of
+     * them is kept for the classes after this one
+     */
+    private fun forgetWorldTiles() {
+        fun field(f: String): Any? = MinimapTiles::class.java.getDeclaredField(f).apply { isAccessible = true }.get(null)
+        val pending = field("pending") as MutableCollection<*>
+        val until = System.currentTimeMillis() + 5_000L
+        while (pending.isNotEmpty() && System.currentTimeMillis() < until) { Thread.sleep(5); ShadowLooper.idleMainLooper() }
+        assertTrue("the outdoor tiles' loads landed", pending.isEmpty())
+        for (f in listOf("cache", "small")) (field(f) as MutableMap<*, *>).clear()
+        MinimapTiles.refresh()
+    }
+
+    /** 1526: the share of the frame within [tol] of [color] in every channel */
+    private fun share(b: Bitmap, color: Int, tol: Int = 12): Double {
+        val w = b.width; val h = b.height
+        val px = IntArray(w * h); b.getPixels(px, 0, w, 0, 0, w, h)
+        return px.count { Math.abs(Color.red(it) - Color.red(color)) <= tol && Math.abs(Color.green(it) - Color.green(color)) <= tol &&
+            Math.abs(Color.blue(it) - Color.blue(color)) <= tol }.toDouble() / px.size
+    }
+    private fun outdoor(b: Bitmap) = share(b, OUT_GREEN)
 
     /** frames until [done] (the rooms, the art index and the pictures read off the UI thread) */
     private fun settle(v: MapView, w: Int, h: Int, ms: Long = 6_000L, done: (Rec) -> Boolean): Rec {
@@ -328,18 +376,20 @@ class HomeIndoorMapsTest {
      * line inside the flat floor, not the floor's own outer edge. [hud]: the open map's own title bar, "N", buttons and scale line
      * are left out
      */
-    private fun hairline(b: Bitmap, hud: Boolean = false): Int {
+    private fun hairline(b: Bitmap, hud: Boolean = false): Int = hairlinePoints(b, hud).size
+
+    private fun hairlinePoints(b: Bitmap, hud: Boolean = false): List<IntArray> {
         val w = b.width; val h = b.height
         val px = IntArray(w * h); b.getPixels(px, 0, w, 0, 0, w, h)
         fun flat(c: Int) = Math.abs(Color.red(c) - 40) + Math.abs(Color.green(c) - 200) + Math.abs(Color.blue(c) - 220) <= 12
-        var n = 0
+        val out = ArrayList<IntArray>()
         val top = if (hud) 120 else 3; val right = if (hud) 130 else 3; val bottom = if (hud) 40 else 3
         for (y in top until h - bottom) for (x in 3 until w - right) {
             val c = px[y * w + x]
             if (flat(c)) continue
-            if ((flat(px[y * w + x - 3]) && flat(px[y * w + x + 3])) || (flat(px[(y - 3) * w + x]) && flat(px[(y + 3) * w + x]))) n++
+            if ((flat(px[y * w + x - 3]) && flat(px[y * w + x + 3])) || (flat(px[(y - 3) * w + x]) && flat(px[(y + 3) * w + x]))) out.add(intArrayOf(x, y))
         }
-        return n
+        return out
     }
 
     private fun seamCase(compact: Boolean, w: Int, h: Int): Rec {
@@ -402,14 +452,15 @@ class HomeIndoorMapsTest {
     }
 
     private fun noMapCase(compact: Boolean, w: Int, h: Int) {
+        worldTiles()
         val d = doc(wx(-150.0, 150.0), wy(-150.0, 150.0))
         val v = map(compact, w, h, d)
         waitRooms(v, d)
-        val r = settle(v, w, h) { it.painted > 0 && it.texts.contains("No indoor map here yet") }
-        assertEquals(0, r.tiles)
+        val r = settle(v, w, h) { it.painted > 0 || (it.texts.contains("No indoor map here yet") && outdoor(it.b) > 0.3) }
         assertEquals("1526: no painted city map", 0, r.painted)
-        assertTrue("1526: the plain indoor dark, not the mountain zoomed in (${backing(r.b)})", backing(r.b) > 0.5)
-        assertTrue("the note: ${r.texts}", r.texts.contains("No indoor map here yet"))
+        assertTrue("1526: the outdoor map around, not a dark block (outdoor ${outdoor(r.b)}, dark ${backing(r.b)})",
+            outdoor(r.b) > 0.3 && backing(r.b) < 0.5)
+        assertTrue("the note: on none of the game's art here (${r.texts})", r.texts.contains("No indoor map here yet"))
     }
 
     @Test fun indoorsWithNoMapSaysSoHome() = noMapCase(true, 520, 420)
@@ -501,8 +552,9 @@ class HomeIndoorMapsTest {
     // ---------------------------------------------------------------- 1526: no painted map, the plain indoor dark
 
     private fun shopCase(compact: Boolean, w: Int, h: Int) {
-        // in Ironforge's built shop (its storey drawn with the hall group's game art): on the plain indoor dark, not on the painted
-        // city map (it was drawn under the room)
+        // in Ironforge's built shop (its storey drawn with the hall group's game art): in the city on the world around it, not on the
+        // painted city map (it was drawn under the room) nor a dark rectangle
+        worldTiles()
         val d = doc(wx(-310.0, 0.0), wy(-310.0, 0.0))
         val v = map(compact, w, h, d)
         waitRooms(v, d)
@@ -512,28 +564,155 @@ class HomeIndoorMapsTest {
         assertTrue("the game's art around it (${r.tiles} tiles)", r.tiles > 0)
         System.getenv("IA_SEAM_SHOTS")?.let { dir -> File(dir).mkdirs()
             File(dir, "shop_${if (compact) "home" else "openmap"}.png").outputStream().use { r.b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
-        // (Home's column is mostly the hall's art; the open map shows the dark beside it)
-        assertTrue("1526: around it the plain indoor dark (${backing(r.b)})", backing(r.b) > if (compact) 0.01 else 0.2)
+        // (Home's column is mostly the hall's art; the open map shows the world beside it - no scrim, no dark rectangle)
+        if (!compact) assertTrue("1526: around it the outdoor map (outdoor ${outdoor(r.b)}, dark ${backing(r.b)})",
+            outdoor(r.b) > 0.15 && backing(r.b) < 0.5)
         assertFalse(r.texts.contains("No indoor map here yet"))
     }
 
-    @Test fun aBuiltShopSitsOnThePlainDarkHome() = shopCase(true, 520, 420)
-    @Test fun aBuiltShopSitsOnThePlainDarkOpenMap() = shopCase(false, 1240, 1000)
+    @Test fun aBuiltShopSitsInTheCityOnTheWorldHome() = shopCase(true, 520, 420)
+    @Test fun aBuiltShopSitsInTheCityOnTheWorldOpenMap() = shopCase(false, 1240, 1000)
 
     private fun stormwindCase(compact: Boolean, w: Int, h: Int) {
-        // inside a Stormwind building with no indoor map of ours or the game's: the dark and the note, never Stormwind's painted map
+        // inside a Stormwind building with no indoor map of ours or the game's: as every other indoor map - the note, never Stormwind's
+        // painted map nor a dark rectangle over the city
         val d = doc(SW_SPOT[0], SW_SPOT[1], indoors = true, mapID = 1453, zone = "Stormwind City", rect = SW_RECT)
         val v = map(compact, w, h, d)
         waitRooms(v, d)
-        val r = settle(v, w, h) { it.painted > 0 || (it.texts.contains("No indoor map here yet") && backing(it.b) > 0.5) }
-        assertEquals(0, r.tiles)
-        assertEquals("1526: not Stormwind's painted map", 0, r.painted)
-        assertTrue("1526: the plain indoor dark (${backing(r.b)})", backing(r.b) > 0.5)
-        assertTrue("the note: ${r.texts}", r.texts.contains("No indoor map here yet"))
+        val r = settle(v, w, h) { it.painted > 0 || it.texts.contains("No indoor map here yet") }
+        val q = settle(v, w, h, ms = 800L) { it.painted > 0 }
+        assertEquals(0, q.tiles)
+        assertEquals("1526: not Stormwind's painted map", 0, q.painted)
+        assertTrue("1526: no dark rectangle (${backing(q.b)})", backing(q.b) < 0.01)
+        assertTrue("the note: ${q.texts}", q.texts.contains("No indoor map here yet"))
     }
 
-    @Test fun insideAStormwindBuildingIsThePlainDarkHome() = stormwindCase(true, 520, 420)
-    @Test fun insideAStormwindBuildingIsThePlainDarkOpenMap() = stormwindCase(false, 1240, 1000)
+    @Test fun insideAStormwindBuildingIsAnOrdinaryIndoorMapHome() = stormwindCase(true, 520, 420)
+    @Test fun insideAStormwindBuildingIsAnOrdinaryIndoorMapOpenMap() = stormwindCase(false, 1240, 1000)
+
+    // ---------------------------------------------------------------- 1526: part of the world around it
+
+    /** the open map zoomed out as far as it goes (the controls' zoom out, many times: the zone, or the world with its art) */
+    private fun zoomOutAll(v: MapView, w: Int, h: Int) {
+        frame(v, w, h)
+        repeat(12) { v.controlsKey("PADLSHOULDER"); frame(v, w, h) }
+    }
+
+    /**
+     * the hall's gaps: its box (150 x 200 yd) holds one 128 yd tile; the rest of the box is the city's own shape with no art - dark - and
+     * outside the box the outdoor map. The open map out at the zone (the whole hall in view): dark only within the box (at most the
+     * box's share over the tile's, by the tile's own pixels), the outdoor map all around; never a dark rectangle over the footprint
+     */
+    @Test fun theGapsAreDarkOnlyInTheCitysOwnShape() {
+        if (System.getenv("IA_ART_ROOT") != null) return
+        worldTiles()
+        val d = doc(wx(-350.0, -50.0), wy(-350.0, -50.0))
+        val v = map(false, 1240, 1000, d)
+        waitRooms(v, d)
+        zoomOutAll(v, 1240, 1000)
+        val r = settle(v, 1240, 1000) { share(it.b, HALL_RED, 2) > 0.005 && outdoor(it.b) > 0.3 }
+        System.getenv("IA_SEAM_SHOTS")?.let { dir -> File(dir).mkdirs()
+            File(dir, "shape_openmap.png").outputStream().use { r.b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        val n = r.b.width * r.b.height
+        val art = share(r.b, HALL_RED, 2) * n; val dark = backing(r.b) * n
+        assertTrue("the hall's art (${art.toInt()} px)", art > 500)
+        assertTrue("1526: the outdoor map all around the city (${outdoor(r.b)})", outdoor(r.b) > 0.3)
+        // the box is 150 x 200 yd, the tile 128 x 128: the gap is 0.83 of the tile's area; its edge a pixel's slack
+        val gap = (150.0 * 200 - 128.0 * 128) / (128.0 * 128)
+        val edge = 4 * Math.sqrt(art) * 2
+        assertTrue("1526: the gap inside the hall's box is dark ($dark px)", dark > art * gap * 0.5)
+        assertTrue("1526: dark only inside the city's own shape ($dark px; the box's gap is ${(art * gap).toInt()} px)", dark <= art * gap * 1.1 + edge)
+        assertEquals("no painted city map", 0, r.painted)
+    }
+
+    /** a floor of [n] x [n] groups, one 128 px tile (64 yd) each from local ([x0], [y0]), in [root] (the zoomed-out city) */
+    private fun floorOf(root: String, n: Int, x0: Double, y0: Double) {
+        val fid = 1000004
+        png(File(this.root, WmoMinimap.tileFile(fid)), 128, 128, SEAM_COLOR)
+        val f = File(this.root, "wmominimap.json")
+        val o = JSONObject(f.readText())
+        val groups = o.getJSONObject("roots").getJSONObject(root).getJSONObject("groups")
+        for (j in 0 until n) for (i in 0 until n) {
+            val gx = x0 + i * 64; val gy = y0 + j * 64
+            groups.put("${200 + j * n + i}", JSONObject().put("t", JSONArray().put(JSONArray(listOf(0, 0, fid, 128, 128))))
+                .put("bb", JSONArray(listOf(gx, gy, -5.0, gx + 64, gy + 64, 80.0))))
+        }
+        f.writeText(o.toString())
+    }
+
+    private val cityMosaicDrawn = MapView::class.java.methods.firstOrNull { it.name == "getCityMosaicDrawn" }
+    @Suppress("UNCHECKED_CAST")
+    private fun planCache(v: MapView) = MapView::class.java.getDeclaredField("planCache").apply { isAccessible = true }.get(v) as Map<String, Bitmap>
+
+    /**
+     * zoomed out to the open map's widest in a city with a whole floor of the game's art (100 tiles: past the 64 the tiles stop at): the
+     * city's art is still drawn (one picture of the floor, built off the UI thread, within its memory bound), the outdoor map shows
+     * around the city, nothing dark (the art covers the shape), no seam, no painted map. Before: past 64 tiles nothing over the dark.
+     */
+    private fun wideCase(root: String, d: JSONObject, x0: Double, y0: Double, name: String) {
+        if (System.getenv("IA_ART_ROOT") != null) return
+        worldTiles()
+        floorOf(root, 10, x0, y0)
+        val v = map(false, 1240, 1000, d)
+        waitRooms(v, d)
+        settle(v, 1240, 1000) { it.tiles > 0 }                         // the default view: the tiles themselves
+        zoomOutAll(v, 1240, 1000)
+        frame(v, 1240, 1000)
+        val firstMosaic = cityMosaicDrawn?.invoke(v)
+        val began = System.currentTimeMillis()
+        val r = settle(v, 1240, 1000, ms = 8_000L) { share(it.b, SEAM_COLOR, 6) > 0.03 && cityMosaicDrawn?.invoke(v) == true }
+        val took = System.currentTimeMillis() - began
+        System.getenv("IA_SEAM_SHOTS")?.let { dir -> File(dir).mkdirs()
+            File(dir, "wide_$name.png").outputStream().use { r.b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        val art = share(r.b, SEAM_COLOR, 6)
+        assertTrue("1526: zoomed out, the city's art is drawn ($art of the frame)", art > 0.03)
+        assertTrue("1526: the outdoor map around the city (${outdoor(r.b)})", outdoor(r.b) > 0.05)
+        assertTrue("1526: no dark block (${backing(r.b)})", backing(r.b) < 0.01)
+        assertEquals("no painted city map", 0, r.painted)
+        // no seam across the floor: the only lines inside it are the player's arrow, one small blob (a seam is a line across it)
+        val hl = hairlinePoints(r.b, hud = true)
+        val cx = hl.map { it[0] }.average(); val cy = hl.map { it[1] }.average()
+        assertTrue("no seam in the floor: ${hl.size} px, ${hl.take(12).map { it.toList() }}",
+            hl.size < 80 && hl.all { Math.hypot(it[0] - cx, it[1] - cy) < 40 })
+        // the floor's one picture: drawn, built off the UI thread (not in the first frame that asked for it), in time, within its bound
+        assertTrue("the floor's one picture is drawn", cityMosaicDrawn?.invoke(v) == true)
+        assertEquals("built off the UI thread: not drawn by the frame that asked for it", false, firstMosaic)
+        assertTrue("it landed in time ($took ms)", took < 6_000L)
+        val mosaics = planCache(v).filterKeys { it.startsWith("citymosaic:") }
+        assertTrue("in the plan cache: $mosaics", mosaics.isNotEmpty())
+        for ((k, b) in mosaics) assertTrue("$k: ${b.byteCount} bytes", b.byteCount <= 4L * 1024 * 1024)            // (IndoorCityArt.Mosaic.MAX_BYTES)
+        val planBytes = MapView::class.java.getDeclaredField("planBytes").apply { isAccessible = true }.getLong(v)
+        assertTrue("the plans' budget holds ($planBytes)", planBytes <= 24L * 1024 * 1024)
+    }
+
+    @Test fun zoomedOutIronforgeStillShowsItsArt() =
+        wideCase("7801267", doc(wx(-312.0, 30.0), wy(-312.0, 30.0)), -632.0, -290.0, "ironforge")
+
+    @Test fun zoomedOutTheUndercityStillShowsItsArt() =
+        wideCase("7675285", doc(UC_HALL[0], UC_HALL[1], indoors = false, mapID = 1458, zone = "Undercity", rect = UC_RECT), -411.0, -167.0, "undercity")
+
+    /**
+     * the Ruins of Lordaeron's throne room: the game says indoors there, on Tirisfal's map, inside the Undercity's footprint - the normal
+     * indoor map of the Ruins (the outdoor map, the note), never the Undercity's underground art nor any dark of it
+     */
+    @Test fun theRuinsThroneRoomIsNotTheUndercity() {
+        worldTiles()
+        val ruins = doc(UC_HALL[0], UC_HALL[1], indoors = true, mapID = 1420, zone = "Tirisfal Glades", rect = TIRISFAL_RECT)
+        val v = map(true, 520, 420, ruins)
+        waitRooms(v, ruins)
+        val r = settle(v, 520, 420, ms = 3_000L) { it.tiles > 0 }
+        assertEquals("the Ruins: none of the Undercity's art (${r.tiles} tiles)", 0, r.tiles)
+        assertTrue("the Ruins: none of its dark (${backing(r.b)})", backing(r.b) < 0.01)
+        assertEquals(0, r.painted)
+        val q = settle(v, 520, 420) { it.texts.contains("No indoor map here yet") }
+        assertTrue("an ordinary indoor map: the note (${q.texts})", q.texts.contains("No indoor map here yet"))
+        assertEquals("the game's indoors: the indoor width", Settings.minimapIndoorYd, v.minimapYdNow())
+        val open = map(false, 1240, 1000, ruins)
+        waitRooms(open, ruins)
+        val o = settle(open, 1240, 1000, ms = 3_000L) { it.tiles > 0 }
+        assertEquals("the open map too", 0, o.tiles)
+        assertTrue(backing(o.b) < 0.01)
+    }
 
     @Test fun stormwindsStreetsAndOtherIndoorMapsKeepTheirLook() {
         // Stormwind's streets (the game says outdoors; Stormwind keeps the indoors gate): the outdoor map, no dark, no note
@@ -570,13 +749,17 @@ class HomeIndoorMapsTest {
         val spots = listOf(Spot("ring", -4840.0, -1140.0), Spot("great_forge", -4910.0, -940.0), Spot("entrance_hall", -4799.0, -889.0),
             Spot("shop", -5028.0, -1127.0), Spot("uncovered", -4970.0, -1100.0),
             Spot("undercity", 1590.0, 240.0, 1458, "Undercity", indoors = false), Spot("undercity_shop", 1639.8, 256.2, 1458, "Undercity", indoors = false),
-            Spot("stormwind_building", -8793.2, 696.7, 1453, "Stormwind City", indoors = true))
+            Spot("stormwind_building", -8793.2, 696.7, 1453, "Stormwind City", indoors = true),
+            Spot("ruins_throne_room", 1640.0, 240.0, 1420, "Tirisfal Glades", indoors = true))
         val log = StringBuilder()
-        for (sp in spots) for ((mode, size) in listOf("home" to intArrayOf(520, 420), "openmap" to intArrayOf(1240, 1000))) {
+        for (sp in spots) for ((mode, size) in listOf("home" to intArrayOf(520, 420), "openmap" to intArrayOf(1240, 1000),
+                "openmap_widest" to intArrayOf(1240, 1000))) {
             val name = sp.name
+            if (mode == "openmap_widest" && name !in setOf("ring", "great_forge", "uncovered", "undercity", "undercity_shop", "ruins_throne_room")) continue
             val d = doc(sp.wx, sp.wy, indoors = sp.indoors, mapID = sp.map, zone = sp.zone, rect = rectOf(sp.map))
             val v = map(mode == "home", size[0], size[1], d)
             waitRooms(v, d)
+            if (mode == "openmap_widest") zoomOutAll(v, size[0], size[1])
             // a few position ticks for the storey tracker, then the pictures
             val trackFromMap = MapView::class.java.getDeclaredMethod("trackFromMap", JSONObject::class.java).apply { isAccessible = true }
             for (i in 0 until 30) { trackFromMap.invoke(v, d); Thread.sleep(20); ShadowLooper.idleMainLooper(); frame(v, size[0], size[1]) }
@@ -585,13 +768,14 @@ class HomeIndoorMapsTest {
             val until = System.currentTimeMillis() + 8_000L
             while (System.currentTimeMillis() < until) {
                 Thread.sleep(40); ShadowLooper.idleMainLooper(); r = frame(v, size[0], size[1])
-                val k = r.tiles * 1000 + r.painted
+                val k = r.tiles * 1000 + r.painted + (if (cityMosaicDrawn?.invoke(v) == true) 500 else 0)
                 if (k == last) { if (++still >= 8) break } else still = 0
                 last = k
             }
             File(out, "${name}_$mode.png").outputStream().use { r.b.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            log.append("$name $mode: room ${pickedKey(v, d)}, game tiles ${r.tiles}, painted ${r.painted}, dark ${"%.3f".format(backing(r.b))}, " +
-                "texts ${r.texts.filter { it.length > 8 }}\n")
+            val mosaicBytes = planCache(v).filterKeys { it.startsWith("citymosaic:") }.values.sumOf { it.byteCount.toLong() }
+            log.append("$name $mode: room ${pickedKey(v, d)}, game tiles ${r.tiles}, mosaic ${cityMosaicDrawn?.invoke(v)} ($mosaicBytes bytes), painted ${r.painted}, " +
+                "dark ${"%.3f".format(backing(r.b))}, texts ${r.texts.filter { it.length > 8 }}\n")
         }
         // fix 4's note on a building with no indoor map (the Thunderbrew Distillery in Kharanos: none in this capitals-only snapshot)
         val dm = JSONObject(File(root, "worldmap/1426/index.json").readText()).getJSONArray("rect")
