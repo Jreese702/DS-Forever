@@ -8,7 +8,12 @@ internal class IndoorBakeQueue(
     private val build: String,
     private val catalogue: List<IndoorBakeStore.Work>,
     /** buildings that failed before with the same input identity (IndoorDeferrals): skipped, still counted as deferred */
-    private val skip: Set<String> = emptySet()
+    private val skip: Set<String> = emptySet(),
+    /**
+     * the dungeons and raids (signatures; the user's pick, 2026-11-23: "Build last, leave out of count"): built after every other
+     * building, near-me-first or not
+     */
+    private val last: Set<String> = emptySet()
 ) {
     data class Position(val continent: Int, val x: Double, val y: Double) {
         init { require(continent >= 0 && x.isFinite() && y.isFinite()) }
@@ -27,6 +32,14 @@ internal class IndoorBakeQueue(
     /** buildings that failed in this instance, plus those deferred from before (until their input identity changes) */
     val deferred: Int get() = attempted.count { it !in finished } + skip.count { it !in finished && it !in attempted }
 
+    /** [work] has verified output (found at start or baked by this instance) */
+    fun isReady(work: IndoorBakeStore.Work): Boolean = work.signature in finished
+
+    /** [deferred], counting only the buildings [which] holds */
+    fun deferred(which: (IndoorBakeStore.Work) -> Boolean): Int = catalogue.count {
+        which(it) && it.signature !in finished && (it.signature in attempted || it.signature in skip)
+    }
+
     /**
      * Nearest first. Footprints nest (a tavern inside its district WMO), so among buildings the player is equally near -
      * typically inside several - the smallest footprint wins: that is the building they are in (MapView's placeHere rule).
@@ -36,9 +49,11 @@ internal class IndoorBakeQueue(
         // NO POSITION EVER (a fresh install's first session: character select / launcher; T3 run 2 baked the big dungeons first,
         // ~6.7 of the first 10.5 min, by key order): open-world buildings before instance-only maps, the smallest footprint first
         // (inns, houses, shops before keeps and cathedrals), the key last. With a position: nearest-first as before
-        if (position == null) return open.minWithOrNull(
-            compareBy<IndoorBakeStore.Work> { if (openWorld(it)) 0 else 1 }.thenBy { smallest(it) }.thenBy { it.key })
-        return open.minWithOrNull(compareBy<IndoorBakeStore.Work> { distance(it, position) }.thenBy { area(it, position) }.thenBy { it.key })
+        // 2026-11-23: the dungeons and raids ([last]) after everything else in both orders: a position never pulls one ahead
+        if (position == null) return open.minWithOrNull(compareBy<IndoorBakeStore.Work> { if (it.signature in last) 1 else 0 }
+            .thenBy { if (openWorld(it)) 0 else 1 }.thenBy { smallest(it) }.thenBy { it.key })
+        return open.minWithOrNull(compareBy<IndoorBakeStore.Work> { if (it.signature in last) 1 else 0 }
+            .thenBy { distance(it, position) }.thenBy { area(it, position) }.thenBy { it.key })
     }
 
     /** continents that hold many buildings are the open world; an instance map has only a few roots of its own */

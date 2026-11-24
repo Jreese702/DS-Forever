@@ -81,6 +81,12 @@ internal interface IndoorGenerator : AutoCloseable {
      */
     fun catalogue(yield: Yield): List<IndoorBakeStore.Work>
 
+    /**
+     * The map ids of this game build's dungeons and raids (the user's pick, 2026-11-23: "Build last, leave out of count"): a building
+     * placed only on these maps is built after every other one and left out of "finished". Null = not known (everything counts).
+     */
+    fun instanceMaps(): Set<Int>? = null
+
     /** Writes [work]'s validated outputs into [out] (an empty staging folder). Throws on any failure: the building is deferred. */
     fun produce(work: IndoorBakeStore.Work, out: File, yield: Yield)
 

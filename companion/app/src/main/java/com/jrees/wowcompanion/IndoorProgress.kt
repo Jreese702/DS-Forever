@@ -41,7 +41,11 @@ internal object IndoorProgress {
             IndoorScheduler.Phase.DEFERRED -> parts.add(s.note.ifEmpty { "some to retry" })
             IndoorScheduler.Phase.STOPPED -> parts.add(if (!buildOn) "off in Settings" else s.note.ifEmpty { "stopped" })
         }
-        if (s.phase == IndoorScheduler.Phase.DONE) { if (s.rejected > 0) parts.add("${s.rejected} can't be mapped") }
+        if (s.phase == IndoorScheduler.Phase.DONE) {
+            if (s.rejected > 0) parts.add("${s.rejected} can't be mapped")
+            // 2026-11-23: the dungeons and raids build after it, out of the count
+            if (s.dungeons > 0) parts.add("dungeons building")
+        }
         else if (s.deferred > 0) parts.add("${s.deferred} deferred")
         return parts.joinToString(" · ")
     }

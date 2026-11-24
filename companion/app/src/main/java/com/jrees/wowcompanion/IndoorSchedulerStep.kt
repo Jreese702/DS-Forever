@@ -61,10 +61,13 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         val ready = if (n.isEmpty()) "" else "$n ready"
         val text = when (s.phase) {
             IndoorScheduler.Phase.CATALOGUE -> "Listing buildings"
-            IndoorScheduler.Phase.BAKING -> (if (n.isEmpty()) "Building" else "Building $n") + if (s.deferred > 0) " - ${s.deferred} to retry" else ""
+            // (the settled ones are no retry: "can't be mapped" once finished)
+            IndoorScheduler.Phase.BAKING -> (if (n.isEmpty()) "Building" else "Building $n") +
+                (s.deferred - s.rejected).let { if (it > 0) " - $it to retry" else "" }
             IndoorScheduler.Phase.PAUSED -> listOf(ready, cap(s.note.ifEmpty { "paused" })).filter { it.isNotEmpty() }.joinToString(" - ")
             // D1 (the user's pick, 2026-11-23): "Finished: 1,632 maps, 221 places can't be mapped"
-            IndoorScheduler.Phase.DONE -> finished(s.ready, s.rejected)
+            // the user's "Build last, leave out of count" (2026-11-23): the dungeons and raids go on under the finished row
+            IndoorScheduler.Phase.DONE -> finished(s.ready, s.rejected) + if (s.dungeons > 0) DUNGEONS_BUILDING else ""
             IndoorScheduler.Phase.DEFERRED, IndoorScheduler.Phase.STOPPED ->
                 listOf(ready, s.note).filter { it.isNotEmpty() }.joinToString(" - ").ifEmpty { "Stopped" }
         }
@@ -73,6 +76,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     private fun cap(t: String) = t.replaceFirstChar { it.uppercaseChar() }
 
+    /** the finished row's terse tail while the dungeons and raids still build (es / fr: the i18n templates) */
+    const val DUNGEONS_BUILDING = " + dungeons building"
+
     /**
      * the status of a build stamped finished (for this game build and builder): the last status's counts as DONE; null when there is
      * none (nothing to show: the row's "after Play" line, never a made-up "Finished")
@@ -80,8 +86,35 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     internal fun finishedStatus(s: IndoorScheduler.Status?): IndoorScheduler.Status? = when {
         s == null || s.total <= 0 -> null
         s.phase == IndoorScheduler.Phase.DONE -> s
-        else -> IndoorScheduler.Status(IndoorScheduler.Phase.DONE, s.ready, s.total, s.rejected, list = s.list, rejected = s.rejected)
+        else -> IndoorScheduler.Status(IndoorScheduler.Phase.DONE, s.ready, s.total, s.rejected, list = s.list, rejected = s.rejected,
+            dungeons = s.dungeons, finishedFor = s.finishedFor)
     }
+
+    /**
+     * what the row shows while the step waits to build ([why]): a row finished for this very game build and builder ([key]: the
+     * scheduler's finishKey; null = not known) stays finished - the dungeons and raids build after it (2026-11-23); anything else waits
+     * with the last count (fix 2: never 0/0)
+     */
+    internal fun waitStatus(s: IndoorScheduler.Status?, why: String, key: String?): IndoorScheduler.Status {
+        if (s != null && key != null && s.finishedFor.isNotEmpty() && s.finishedFor == key) return finishedStatus(s) ?: s
+        return IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, why, rejected = s?.rejected ?: 0)
+    }
+
+    /** a failure before or around a run ([note]): a row finished for this build and builder stays finished; else the count with it */
+    internal fun failedStatus(s: IndoorScheduler.Status?, note: String, key: String?): IndoorScheduler.Status {
+        if (s != null && key != null && s.finishedFor.isNotEmpty() && s.finishedFor == key) return finishedStatus(s) ?: s
+        return IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, note = note, rejected = s?.rejected ?: 0)
+    }
+
+    /** Settings' Off: the row says so with the count, and keeps what it was finished for (On again: finished again) */
+    internal fun offStatus(s: IndoorScheduler.Status?): IndoorScheduler.Status =
+        IndoorScheduler.Status(IndoorScheduler.Phase.STOPPED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, "off in Settings",
+            rejected = s?.rejected ?: 0, dungeons = s?.dungeons ?: 0, finishedFor = s?.finishedFor.orEmpty())
+
+    /** the finishKey of the installed game build and this builder, before the game files open (null: no game build found) */
+    private fun finishKey(ctx: Context): String? = runCatching {
+        GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second?.let { IndoorScheduler.finishKey(it, builderKey(ctx)) }
+    }.getOrNull()
 
     /** D1's finished line: the maps built and the places the builder's own rule cannot map (none: the second half left out) */
     internal fun finished(ready: Int, rejected: Int): String =
@@ -206,8 +239,14 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** the game screen went (DsForeverScreen.detachGame): a step that ended meanwhile starts again; a waiting one sees it itself */
     fun gameClosed(context: Context) = handle(Event.GAME_CLOSED, context)
 
-    /** DS Forever closes for good (MainActivity, right before the process ends) */
-    fun appExit() = handle(Event.APP_EXIT, null)
+    /**
+     * DS Forever closes for good (MainActivity, right before the process ends). The app's own close is no failure of the building being
+     * made: its kill marker goes ("Give up after 3 tries" counts only kills it did not ask for: Android's, a crash)
+     */
+    fun appExit() {
+        appCtx?.let { c -> runCatching { File(dataDir(c), IndoorDeferrals.ATTEMPT_FILE).delete() } }
+        handle(Event.APP_EXIT, null)
+    }
 
     /** stop cleanly: the bake ends at its next yield point; finished buildings are kept */
     fun stop() { stopping = true; runCatching { IndoorKeepAlive.update(null, why = "stopped") } }
@@ -297,9 +336,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             if (why != said) {
                 said = why
                 // fix 2 (2026-11-23): the count from disk when this process has not run the step yet (it published 0/0 at every start)
+                // 2026-11-23: finished for this game build and builder (the dungeons and raids still to build): the row stays finished
                 val s = status(ctx)
-                publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, why,
-                    rejected = s?.rejected ?: 0))
+                val w = waitStatus(s, why, finishKey(ctx))
+                if (w != s) publishStatus(ctx, w) else if (status == null) status = w
                 Log.i(TAG, "interiors: waiting ($why), the game files not open")
             }
             runCatching { Thread.sleep(WAIT_POLL_MS) }
@@ -311,9 +351,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         try {
             val game = GameFiles.open(ctx) ?: run {
                 // fix 2: a failure keeps the count on the row (never 0/0)
-                val s = status(ctx)
-                publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0,
-                    note = GameFiles.lastWhy ?: "the game files could not be read", rejected = s?.rejected ?: 0))
+                publishStatus(ctx, failedStatus(status(ctx), GameFiles.lastWhy ?: "the game files could not be read", finishKey(ctx)))
                 return null
             }
             return game.use { g ->
@@ -341,18 +379,15 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             // optional: logged and shown on its own row, never in the harvest's state. Throwable, not Exception: an Error
             // (out of memory in a big building) escaping this thread would kill the whole app (Track D's finding)
             Log.w(TAG, "interiors failed", e)
-            val s = status(ctx)
-            publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, s?.ready ?: 0, s?.total ?: 0,
-                s?.deferred ?: 0, "failed: ${e.message ?: e.javaClass.simpleName}; retried next start", rejected = s?.rejected ?: 0))
+            publishStatus(ctx, failedStatus(status(ctx), "failed: ${e.message ?: e.javaClass.simpleName}; retried next start",
+                runCatching { finishKey(ctx) }.getOrNull()))
             return null
         }
     }
 
     /** Settings' switch is Off: nothing builds; the row says so and keeps the count of what is ready */
     private fun offInSettings(ctx: Context) {
-        val s = status(ctx)
-        publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.STOPPED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, "off in Settings",
-            rejected = s?.rejected ?: 0))
+        publishStatus(ctx, offStatus(status(ctx)))
         Log.i(TAG, "interiors: off in Settings")
     }
 

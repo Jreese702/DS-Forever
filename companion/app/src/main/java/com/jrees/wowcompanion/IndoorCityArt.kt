@@ -71,6 +71,49 @@ internal object IndoorCityArt {
     /** the indoors gate: the add-on says indoors, or this city shows its art by position alone ([City.positionOnly]) */
     fun shows(city: City, indoors: Boolean): Boolean = indoors || city.positionOnly
 
+    /**
+     * THE CITIES' PAINTED MAPS, LOOKED UP OFF THE DRAWING THREAD (review of 2026-11-23: MapView read worldmap/<id>/index.json inside its
+     * draw, and a city with no painted map was read again about every 10 s, on every frame after that). [get] answers from memory only:
+     * a city not looked up yet is read once on [background] (MapView's plans thread), its answer lands through [post] on the drawing
+     * thread and [onArrive] redraws; a miss (no Map room art for it yet) is asked again only after [MISS_MS]. Drawing-thread only, but
+     * [read] runs on [background]. Pure (the tests drive the three hooks).
+     */
+    class PaintedIndex(
+        private val read: (Int) -> Painted?,
+        private val background: (Runnable) -> Unit,
+        private val post: (Runnable) -> Unit,
+        private val now: () -> Long,
+        private val onArrive: () -> Unit = {},
+    ) {
+        /** one city's painted map: its continent and world rect (top, bottom, left, right) */
+        class Painted(val id: Int, val continent: Int, val rect: DoubleArray)
+
+        private val hits = HashMap<Int, Painted>()
+        private val missedAt = HashMap<Int, Long>()
+        private val asking = HashSet<Int>()
+
+        fun get(id: Int): Painted? {
+            hits[id]?.let { return it }
+            if (id in asking) return null
+            val miss = missedAt[id]
+            if (miss != null && now() - miss < MISS_MS) return null
+            asking.add(id)
+            background(Runnable {
+                val p = runCatching { read(id) }.getOrNull()
+                post(Runnable {
+                    asking.remove(id)
+                    if (p != null) { hits[id] = p; missedAt.remove(id); onArrive() } else missedAt[id] = now()
+                })
+            })
+            return null
+        }
+
+        companion object {
+            /** a city with no painted map is looked up again after this long (the Map room's art may be built meanwhile) */
+            const val MISS_MS = 60_000L
+        }
+    }
+
     /** a group's box ([x1, y1, z1, x2, y2, z2], the building's own space) holds the local point */
     fun holds(bb: FloatArray, lx: Double, ly: Double): Boolean = lx >= bb[0] && lx <= bb[3] && ly >= bb[1] && ly <= bb[4]
 

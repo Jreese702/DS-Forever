@@ -1010,23 +1010,21 @@ class MapView(context: Context) : View(context) {
         return CitySel(city, t, groups, pick)
     }
 
-    /** one city's painted map (the Map room's art: worldmap/<uiMap>/): its continent and world rect (top, bottom, left, right) */
-    private class Painted(val id: Int, val continent: Int, val rect: DoubleArray)
-    private val painted = HashMap<Int, Painted?>()
-    private var paintedAt = 0L
-    private fun paintedOf(id: Int): Painted? {
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (now - paintedAt > 10_000L) { painted.entries.removeAll { it.value == null }; paintedAt = now }   // a miss is asked again later
-        return painted.getOrPut(id) {
-            runCatching {
-                val a = JSONObject(ArtHarvest.file("worldmap/$id/index.json").readText()).getJSONArray("rect")
-                Painted(id, a.getInt(0), doubleArrayOf(a.getDouble(1), a.getDouble(2), a.getDouble(3), a.getDouble(4)))
-            }.getOrNull()
-        }
+    /**
+     * one city's painted map (the Map room's art: worldmap/<uiMap>/): its continent and world rect (top, bottom, left, right). Read on the
+     * plans thread, never in the draw (review of 2026-11-23); a city with no painted map is looked up again only after a minute
+     */
+    private val painted by lazy {
+        IndoorCityArt.PaintedIndex(read = { id ->
+            val a = JSONObject(ArtHarvest.file("worldmap/$id/index.json").readText()).getJSONArray("rect")
+            IndoorCityArt.PaintedIndex.Painted(id, a.getInt(0), doubleArrayOf(a.getDouble(1), a.getDouble(2), a.getDouble(3), a.getDouble(4)))
+        }, background = { planDecoder.execute(it) }, post = { mainHandler.post(it) }, now = { android.os.SystemClock.elapsedRealtime() },
+            onArrive = { invalidate() })
     }
+    private fun paintedOf(id: Int): IndoorCityArt.PaintedIndex.Painted? = painted.get(id)
 
     /** B: indoors in a capital (CityExits.CITIES; a capital by position when its switch says so), its painted map, else null */
-    private fun cityPaintedHere(m: JSONObject, indoors: Boolean): Painted? {
+    private fun cityPaintedHere(m: JSONObject, indoors: Boolean): IndoorCityArt.PaintedIndex.Painted? {
         val r = rect ?: return null
         val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
         if (!wx.isFinite() || !wy.isFinite()) return null
@@ -1041,7 +1039,7 @@ class MapView(context: Context) : View(context) {
 
     private val cityDst = RectF()
     /** B: the painted map at its world rect, through the one projection */
-    private fun drawCityPainted(c: Canvas, p: Painted, sx: (Double) -> Float, sy: (Double) -> Float) {
+    private fun drawCityPainted(c: Canvas, p: IndoorCityArt.PaintedIndex.Painted, sx: (Double) -> Float, sy: (Double) -> Float) {
         val r = rect ?: return
         val bm = planBitmap("citymap:${p.id}", from = ArtHarvest.file("worldmap/${p.id}/base.webp")) ?: return
         cityDst.set(sx(r.nx(p.rect[2])), sy(r.ny(p.rect[0])), sx(r.nx(p.rect[3])), sy(r.ny(p.rect[1])))
