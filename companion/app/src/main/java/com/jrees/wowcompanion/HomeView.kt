@@ -686,12 +686,23 @@ class HomeView(
      * feat/radial-castbar: the page laid again under an open class wheel (a fight beginning or ending, as [wheelRefit] for the middle
      * wheel): a tap-to-cast bar coming back onto the page from below it (Hide in combat's, the fight over) never rises over the wheel -
      * Across's stays below the page (dropped, as at an open with it there), a bar of the wheel's own column goes off its edge with that
-     * column. The held wheel keeps its square. [places] = the page as it will be; [now] is still the page as it is
+     * column. The held wheel keeps its square - unless (the 1523 audit) Party mode's full-width list, which stays where it is (no column's),
+     * is laid again larger into it (a fight's Grow at the foot, a Top-screen fight's Fill at the top): the square is cut as at the open,
+     * over a foot list / under a top one. [places] = the page as it will be; [now] is still the page as it is
      */
     private fun classRefit(places: Map<Part, RectF>) {
         if (!classOpen || width == 0) return
         val w = width.toFloat(); val g = UiKit.MODULE_GAP
         val half = if (classLeft) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
+        places[Part.PARTY]?.takeIf { laidPartyWide && views[Part.PARTY]?.visibility == View.VISIBLE }?.let { pw ->
+            val a = ClassSlot.Area(classRect.left.toFloat(), classRect.top.toFloat(), classRect.right.toFloat(), classRect.bottom.toFloat())
+            val cut = if (pw.centerY() < frameH / 2f) a.copy(top = maxOf(a.top, pw.bottom + g)) else a.copy(bottom = minOf(a.bottom, pw.top - g))
+            if (cut == a || cut.bottom - cut.top < 1f) return@let
+            val s = ClassSlot.inColumn(cut)
+            classRect.set(s.left.toInt(), s.top.toInt(), (s.left + s.side).toInt(), (s.top + s.side).toInt())
+            classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
+            classLayer.invalidate()
+        }
         val sq = RectF(classRect)
         for ((p, v) in views) {
             if (v !is CastStripView || v.visibility != View.VISIBLE) continue
@@ -2403,11 +2414,13 @@ class HomeView(
             if (v.visibility != View.VISIBLE && !classOpen && pauseT == 0f) { v.animate().cancel(); v.translationX = 0f; v.translationZ = restZ(p) }
             v.visibility = View.VISIBLE; v.alpha = 1f
         }
+        // the 1523 audit: the fight strip's line first - the refits below fit under it (barsFoot reads fightStrip.on: set after them, a
+        // middle wheel held into a Top-screen fight was refitted as if there were no strip, its square from the page's top gap)
+        fightLine(stripRec && (away || sliding))
         // fix/radials-clip-castbar: an open middle wheel follows the page laid again (a fight's start / end), never over the bar
         if (s.full == null || s.takeover) wheelRefit(to)
         if (s.full == null || s.takeover) classRefit(to)
         if (s.full == null || s.takeover) pauseRefit(to)
-        fightLine(stripRec && (away || sliding))
         // Cast bar in fights = Top screen: the game's own bar on the top screen for the fight; the rooms' bar shows nothing of it meanwhile
         if (lent(castView)) castView.lineTop = away && !stripRec
         // ... and with the game's swing timer off, the strip keeps the swing alone (its cast is the game's bar's)
