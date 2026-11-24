@@ -675,6 +675,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         // and the PC is put back by Desktop, then the stream and the bridge stop
         SetupBridge.endSession = { why, asked, done -> main.post { endSession(why, asked, closeOnAck = true, then = done) } }
         SetupBridge.endStream = { main.post { endSession("the menu's Exit game", false) { back() } } }
+        // feat/exit-now: the Menu's Exit game closes DS Forever at once (ExitNow): Desktop told (it closes the PC's WoW and puts the PC
+        // back on its own), the send bounded, the stream and the bridge stopped; nothing waits for Desktop's word
+        SetupBridge.quitStream = { boundMs ->
+            val b = bridge
+            val sent = java.util.concurrent.atomic.AtomicBoolean(false)
+            val t = Thread({ sent.set(runCatching { b?.endSession(false) == true }.getOrDefault(false)) }, "dsf-stream-quit").apply { isDaemon = true; start() }
+            runCatching { t.join(boundMs) }
+            Log.i(TAG, "exit now: end_session ${if (sent.get()) "sent: Desktop closes WoW and puts the PC back on its own" else "not sent (no bridge connection, or not within $boundMs ms)"}")
+            main.post { stopStream("Exit game: DS Forever closes"); runCatching { bridge?.stop() } }
+        }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -868,7 +878,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         smoothStop()
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
-        SetupBridge.endSession = null; SetupBridge.endStream = null
+        SetupBridge.endSession = null; SetupBridge.endStream = null; SetupBridge.quitStream = null
         boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null

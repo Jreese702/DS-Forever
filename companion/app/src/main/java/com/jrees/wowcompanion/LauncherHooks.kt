@@ -29,6 +29,12 @@ object LauncherHooks {
      * MainActivity; null = no launcher (nothing closes)
      */
     @Volatile var quitApp: ((force: Boolean) -> Unit)? = null
+    /**
+     * feat/exit-now (the user, 2026-11-24: "I want our built in close game button to completly close the app immidiatly"): THE MENU'S
+     * EXIT GAME - DS Forever closes at once, Local or Streaming ([ExitNow]: no Exit Game, no countdown; the game killed, every screen
+     * and service gone, the process ended). [why] = who asked ([ExitNow.MENU]). Set by the launcher's MainActivity; null = no launcher
+     */
+    @Volatile var exitNow: ((why: String) -> Unit)? = null
     /** the container's graphics profile as the launcher picked it (the problem report's GPU / driver line), "" = not known yet */
     @Volatile var gpuLine: String = ""
     /** the launch's last step and its result ("preparing the container", "booting", "launch failed: ..."), "" = no launch yet */

@@ -202,8 +202,10 @@ class PausePowerTest {
         assertTrue("a fight refuses", host.contains("if (homeView.inFight()) PausePower.FIGHT_LINE else null"))
         assertTrue("the pause pushes the bars up, the target radial keeps them",
             host.contains("pauseView.onSlide = { t -> slideBarsUp = true;") && host.contains("targetRadial.onSlide = { t -> slideBarsUp = false;"))
-        assertTrue("the waiting screen's Exit game is the clean disconnect while streaming",
-            host.contains("StartMenu.onExit = { (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }"))
+        // feat/exit-now (the user, 2026-11-24): the waiting screen's Exit game closes DS Forever at once (ExitNow); the clean disconnect
+        // stays only for the companion app without the launcher
+        assertTrue("the waiting screen's Exit game is the immediate exit; the old routes without the launcher",
+            host.contains("StartMenu.onExit = { LauncherHooks.exitNow?.invoke(ExitNow.MENU) ?: (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }"))
     }
 
     @Test fun everyLineIsInSpanishAndFrench() {

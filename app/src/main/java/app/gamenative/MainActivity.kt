@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         createdGen++
+        live++                    // feat/exit-now: the exit waits until no launcher activity is left
 
         // DS Forever fork: the game belongs on the top screen; opened on another one (Cocoon's bottom grid) = moved there first
         if (com.jrees.wowcompanion.fork.DsForeverScreen.moveToTop(this, PluviaApp.xEnvironment != null)) return
@@ -131,6 +132,9 @@ class MainActivity : ComponentActivity() {
                 closeFallback(if (force) 1_500L else 0L)
             }
         }
+        // feat/exit-now (the user, 2026-11-24: "I want our built in close game button to completly close the app immidiatly"): the
+        // waiting screen's Menu > Exit game closes all of DS Forever at once, Local or Streaming - no Exit Game, no countdown (ExitNow)
+        com.jrees.wowcompanion.LauncherHooks.exitNow = { why -> ExitNowHost.start(applicationContext, why) }
 
         setContent {
             val snackbarController = remember { SnackbarHostController() }
@@ -174,6 +178,8 @@ class MainActivity : ComponentActivity() {
         const val CLOSE_FALLBACK_MS = 5_000L
         /** bumped by every MainActivity onCreate (the fallback stands down for a DS Forever opened again) */
         @Volatile var createdGen = 0
+        /** feat/exit-now: launcher activities made and not yet destroyed (ExitNow ends the process once none is left) */
+        @Volatile var live = 0
     }
 
     // a home-screen shortcut tapped while DS Forever runs (singleTop): its mode, unless the game runs (ModeBridge decides)
@@ -224,6 +230,7 @@ class MainActivity : ComponentActivity() {
         PluviaApp.events.off<AndroidEvent.SetSystemUIVisibility, Unit>(onSetSystemUi)
         PluviaApp.events.off<AndroidEvent.SetAllowedOrientation, Unit>(onSetAllowedOrientation)
         PluviaApp.events.off<AndroidEvent.EndProcess, Unit>(onEndProcess)
+        live--
     }
 
     private fun hasReadyGameLifecycleState(action: String): Boolean {

@@ -245,14 +245,20 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     internal enum class Event { COMPANION_UP, COMPANION_GONE, GAME_CLOSED, APP_EXIT }
     internal enum class Action { START, KEEP, STOP }
 
-    internal fun on(e: Event): Action = when (e) {
-        Event.COMPANION_UP, Event.GAME_CLOSED -> Action.START
+    internal fun on(e: Event, exiting: Boolean = false): Action = when (e) {
+        // feat/exit-now: DS Forever is going (its own exit, [appExit]): the game's close on the way starts nothing (the builder would
+        // start again and ask for its foreground service as the process ends)
+        Event.COMPANION_UP, Event.GAME_CLOSED -> if (exiting) Action.KEEP else Action.START
         Event.COMPANION_GONE -> Action.KEEP                  // #568: was a stop
         Event.APP_EXIT -> Action.STOP
     }
 
+    /** feat/exit-now: DS Forever's own exit has begun ([appExit]); the process ends a moment later, so it is never cleared */
+    @Volatile var exiting = false
+        private set
+
     private fun handle(e: Event, context: Context?) {
-        when (on(e)) {
+        when (on(e, exiting)) {
             Action.START -> if (context != null && factory != null) start(context)
             Action.STOP -> stop()
             Action.KEEP -> Log.i(TAG, "interiors: ${e.name.lowercase()}, the step keeps running")
@@ -283,6 +289,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
      * made: its kill marker goes ("Give up after 3 tries" counts only kills it did not ask for: Android's, a crash)
      */
     fun appExit() {
+        exiting = true
         appCtx?.let { c -> runCatching { File(dataDir(c), IndoorDeferrals.ATTEMPT_FILE).delete() } }
         handle(Event.APP_EXIT, null)
     }

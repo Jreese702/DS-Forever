@@ -1019,8 +1019,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         StartMenu.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); NativeLogin.logEvent("sign-in: Auto login ${if (on) "on" else "off"} (the Menu)"); if (!on) NativeLogin.clear() }
         StartMenu.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
         StartMenu.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
-        // feat/pause-power: Exit game while streaming = the clean disconnect (the PC's WoW closes, the PC put back), then the chooser
-        StartMenu.onExit = { (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
+        // feat/exit-now (the user, 2026-11-24: "I want our built in close game button to completly close the app immidiatly"): Exit game
+        // closes DS Forever at once, Local or Streaming (ExitNow); without the launcher (the companion app alone) the old routes
+        StartMenu.onExit = { LauncherHooks.exitNow?.invoke(ExitNow.MENU) ?: (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
         StartMenu.canForget = { HomeLoginStore.has(this) }
         StartMenu.onForgetLogin = { HomeLoginStore.clear(this); Settings.forgetGameAccountPick(); NativeLogin.logEvent("sign-in: the saved login forgotten (the Menu)"); NativeLogin.clear() }
         StartMenu.canRestart = { LauncherHooks.gameUp() }
