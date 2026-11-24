@@ -138,7 +138,9 @@ object LoadingScene {
         val g = grids[if (top) 0 else 1]
         val gw = ceil(r.width() / GRID).toInt().coerceAtLeast(2); val gh = ceil(r.height() / GRID).toInt().coerceAtLeast(2)
         if (g.w != gw || g.h != gh) { g.w = gw; g.h = gh; for (i in 0 until SLOTS) { g.bmp[i]?.recycle(); g.bmp[i] = null; g.px[i] = null; g.key[i] = Long.MIN_VALUE } }
-        // 0. PAINTED STAYS: what earlier passes left painted (this screen's own picture of it)
+        // 0. PAINTED STAYS: what earlier passes left painted (this screen's own picture of it). The bottom on its own = no top screen
+        //    draws the scene: the top's kept picture goes (the launch's hand-over gives its 1.7 MB back at once)
+        if (!top && solo(ms)) dropKept(true)
         val keep = if (stays) kept(top, r) else { dropKept(top); null }
         keep?.let { k -> c.drawBitmap(k.bmp, null, r, pKept) }
         // 1. the pictures under their light (the newest SLOTS: more are alive only for a moment, at a top screen's restart)
@@ -165,6 +167,21 @@ object LoadingScene {
             if (tc > LoadingMath.JOURNEY + LoadingMath.TAIL + LoadingMath.MOTE_LIFE) continue
             val tint = tint(p.picture)
             val col = Color.rgb((tint[0] * 255).toInt(), (tint[1] * 255).toInt(), (tint[2] * 255).toInt())
+            // PAINTED STAYS' READABLE SPARK (the user's pick 2026-11-24, "the spark is a little harder to spot" on a painted picture): a
+            // soft dark halo under the spark's head and its comet tail's newest part, so its light stands off the painting round it
+            val q = LoadingMath.progress(p, t)
+            val readable = stays && sparkReadable && q in 0f..1f
+            if (readable) {
+                LoadingMath.head(m, p, q, tmp)
+                val hx = r.left + (tmp[0] - reg.left) * sx; val hy = r.top + (tmp[1] - reg.top) * sy
+                val hr = (HALO_R + HALO_GROW * q) * sx * p.scale
+                if (hx > r.left - hr && hx < r.right + hr && hy > r.top - hr && hy < r.bottom + hr) {
+                    pHalo.shader = RadialGradient(hx, hy, hr, intArrayOf(Color.argb(HALO_A, 0, 0, 0), Color.argb(HALO_A * 2 / 3, 0, 0, 0), Color.TRANSPARENT),
+                        floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
+                    c.drawCircle(hx, hy, hr, pHalo)
+                    pHalo.shader = null
+                }
+            }
             tail(m, p, tc)?.let { tb ->
                 val mx = Matrix()
                 // the maps' square -> virtual (as Pass.toVirtual) -> this screen
@@ -181,7 +198,6 @@ object LoadingScene {
                 c.drawBitmap(tb, mx, pAdd)
                 pAdd.colorFilter = null; pAdd.alpha = 255
             }
-            val q = LoadingMath.progress(p, t)
             if (q in 0f..1f) {
                 LoadingMath.head(m, p, q, tmp)
                 val hx = r.left + (tmp[0] - reg.left) * sx; val hy = r.top + (tmp[1] - reg.top) * sy
@@ -194,6 +210,14 @@ object LoadingScene {
                         Color.TRANSPARENT), floatArrayOf(0f, 0.25f, 1f), Shader.TileMode.CLAMP)
                     c.drawCircle(hx, hy, rad, pAdd)
                     pAdd.shader = null
+                    if (readable) {
+                        // ... and a small white-hot core, so the head itself reads as the brightest thing on the screen
+                        val cr = rad * CORE_SHARE
+                        pAdd.shader = RadialGradient(hx, hy, cr, intArrayOf(Color.argb(235, 255, 255, 255), Color.argb(110, 255, 255, 255), Color.TRANSPARENT),
+                            floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
+                        c.drawCircle(hx, hy, cr, pAdd)
+                        pAdd.shader = null
+                    }
                 }
             }
             // the motes thrown off the spark in the last MOTE_LIFE s
@@ -252,6 +276,34 @@ object LoadingScene {
         val gs = dst.width() / view.width()
         c.drawBitmap(light, null, RectF(dst.left, dst.top, dst.left + gw * GRID * gs, dst.top + gh * GRID * gs), pMask)
         c.restoreToCount(layer)
+    }
+
+    /** painted stays' readable spark: on (the default) = the dark halo and the white core; off = the fade's own spark (the before / after) */
+    @Volatile var sparkReadable = true
+    /** the halo: its radius (virtual px, at the inner end and the extra at the tail), its darkness at the middle (0..255) */
+    const val HALO_R = 150f
+    const val HALO_GROW = 170f
+    const val HALO_A = 150
+    /** the core's radius, a share of the glow's */
+    const val CORE_SHARE = 0.16f
+    private val pHalo = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * where the newest running spark is on [top]'s screen (or the bottom's) of [w] x [h] px, null = none on it (the tests: the spark's
+     * contrast). Main thread
+     */
+    fun sparkAt(top: Boolean, w: Int, h: Int): FloatArray? {
+        val m = maps() ?: return null
+        val t = now()
+        for (p in schedule.at(t, Scene.all.size, solo(SystemClock.uptimeMillis()), LoadingMath.paintedStays).asReversed()) {
+            val reg = LoadingMath.region(top, p) ?: continue
+            val q = LoadingMath.progress(p, t)
+            if (q !in 0f..1f) continue
+            LoadingMath.head(m, p, q, tmp)
+            val x = (tmp[0] - reg.left) * w / reg.width; val y = (tmp[1] - reg.top) * h / reg.height
+            if (x in 0f..w.toFloat() && y in 0f..h.toFloat()) return floatArrayOf(x, y, (210f + 280f * q) * w / reg.width * p.scale)
+        }
+        return null
     }
 
     // ------------------------------------------------------------------ PAINTED STAYS: each screen's kept picture

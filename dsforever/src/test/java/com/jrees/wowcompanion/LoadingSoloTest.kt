@@ -46,16 +46,16 @@ class LoadingSoloTest {
 
     /** the most frames in a row [top] (or the bottom) shows nothing, over [from]..[to] s at 30 fps; [solo] at each time */
     private fun worstBlack(s: LoadingMath.Schedule, top: Boolean, from: Float, to: Float, solo: (Float) -> Boolean,
-                           restartAt: Float? = null): Pair<Int, Float> {
+                           restartAt: Float? = null, stays: Boolean = false): Pair<Int, Float> {
         var run = 0; var worst = 0; var at = 0f
         var f = (from * 30).toInt()
         var restarted = false
         while (f < to * 30) {
             val t = f / 30f
             if (restartAt != null && !restarted && t >= restartAt) { s.restart(t); restarted = true }
-            val ps = s.at(t, 8, solo(t), stays = false)
+            val ps = s.at(t, 8, solo(t), stays = stays)
             val count = restartAt == null || t >= restartAt
-            if (showing(top, ps, t)) run = 0 else if (count) { run++; if (run > worst) { worst = run; at = t } }
+            if (showing(top, ps, t, stays)) run = 0 else if (count) { run++; if (run > worst) { worst = run; at = t } }
             f++
         }
         return worst to at
@@ -132,6 +132,30 @@ class LoadingSoloTest {
         val bigIn = (0 until 8).map { inside(LoadingMath.pass(7L, it, 8, 0), LoadingMath.BOTTOM) }.average()
         println("the spark's path on the bottom screen: alone $soloIn, both screens' $bigIn")
         assertTrue("fits the bottom ($soloIn vs $bigIn)", soloIn > bigIn + 0.2)
+    }
+
+    /** the user's pick (2026-11-24): painted stays everywhere, by default */
+    @Test fun paintedStaysIsTheDefault() {
+        assertTrue(LoadingMath.PAINTED_STAYS_DEFAULT)
+        assertTrue(LoadingMath.paintedStays)
+    }
+
+    /**
+     * painted stays at the START (nothing painted yet: only the running passes show, the kept picture is still black) is never black
+     * longer than ~50 ms on either screen, nor on the bottom alone, nor on a top screen that comes back (its kept picture starts black)
+     */
+    @Test fun paintedStaysIsNeverBlackAtTheStart() {
+        for (seed in listOf(1L, 2L, 3L, 4L)) {
+            for (top in listOf(true, false)) {
+                val (w, at) = worstBlack(LoadingMath.Schedule(seed, 0), top, from = 0f, to = 30f, solo = { false }, stays = true)
+                assertTrue("seed $seed ${if (top) "top" else "bottom"} at the start: $w black frames in a row (at $at s)", w <= 1)
+            }
+            val (w, at) = worstBlack(LoadingMath.Schedule(seed, 0), top = false, from = 0f, to = 30f, solo = { true }, stays = true)
+            assertTrue("seed $seed the bottom alone from the start: $w black frames in a row (at $at s)", w <= 1)
+            val (w2, at2) = worstBlack(LoadingMath.Schedule(seed, 0), top = true, from = 0f, to = 32f, solo = { it >= 2f && it < 12.4f },
+                restartAt = 12.4f, stays = true)
+            assertTrue("seed $seed a top screen back: $w2 black frames in a row (at $at2 s)", w2 <= 1)
+        }
     }
 
     @Test fun paintedStaysNeverGoesDarkAndSettles() {

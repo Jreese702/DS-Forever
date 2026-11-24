@@ -337,11 +337,12 @@ object LoadingMath {
     /**
      * PAINTED STAYS (the user's experiment, 2026-11-24: "I also want to try keeping the swirls painted backgrounds instead of fading
      * them to black to see how it looks"): true = the picture a spark reveals STAYS painted (each pass adds more painted area; a newer
-     * picture covers the older where its light is) instead of going dark again in the order it was lit. The approved look (the user,
-     * 2026-10-28, "I love this") fades, so the default stays false until the user picks; LoadingScene keeps what settled ([Pass.settled])
-     * in a picture of its own per screen.
+     * picture covers the older where its light is) instead of going dark again in the order it was lit. THE USER'S PICK (2026-11-24,
+     * after the side-by-side gifs: "Painted stays", everywhere - DS Forever's own start-up loading and the game's launch, both screens
+     * and the bottom alone): on by default. LoadingScene keeps what settled ([Pass.settled]) in a picture of its own per screen and
+     * makes the spark readable on the painting (LoadingScene.sparkReadable); false = the 2026-10-28 fade ("I love this").
      */
-    const val PAINTED_STAYS_DEFAULT = false
+    const val PAINTED_STAYS_DEFAULT = true
     @Volatile @JvmField var paintedStays = PAINTED_STAYS_DEFAULT
 
     /**

@@ -57,8 +57,62 @@ class LaunchScreenShotsTest {
         return r
     }
 
-    @Before fun start() { LaunchLoad.reset(); LoadingScene.forceSolo = null; LoadingMath.paintedStays = LoadingMath.PAINTED_STAYS_DEFAULT }
-    @After fun end() { LaunchLoad.reset(); LoadingScene.forceSolo = null; LoadingMath.paintedStays = LoadingMath.PAINTED_STAYS_DEFAULT; SetupBridge.publish(null) }
+    @Before fun start() { LaunchLoad.reset(); LoadingScene.forceSolo = null; LoadingMath.paintedStays = LoadingMath.PAINTED_STAYS_DEFAULT; LoadingScene.sparkReadable = true }
+    @After fun end() {
+        LaunchLoad.reset(); LoadingScene.forceSolo = null; LoadingMath.paintedStays = LoadingMath.PAINTED_STAYS_DEFAULT; LoadingScene.sparkReadable = true
+        SetupBridge.publish(null); ModeBridge.reset()
+    }
+
+    /** the luma (0..255) of [b] averaged over the ring [r0]..[r1] px round (x, y) */
+    private fun ring(b: Bitmap, x: Float, y: Float, r0: Float, r1: Float): Float {
+        var s = 0f; var n = 0
+        val e = r1.toInt() + 1
+        for (dy in -e..e) for (dx in -e..e) {
+            val d = kotlin.math.hypot(dx.toFloat(), dy.toFloat())
+            if (d < r0 || d > r1) continue
+            val px = (x + dx).toInt(); val py = (y + dy).toInt()
+            if (px !in 0 until b.width || py !in 0 until b.height) continue
+            val c = b.getPixel(px, py)
+            s += 0.299f * Color.red(c) + 0.587f * Color.green(c) + 0.114f * Color.blue(c); n++
+        }
+        return if (n == 0) 0f else s / n
+    }
+
+    /**
+     * PAINTED STAYS' SPARK STAYS EASY TO SPOT (the user's pick 2026-11-24, "the spark is a little harder to spot"): over a painted
+     * picture the spark's head stands off what is round it - its core much brighter than a ring just outside its glow's middle - and
+     * clearly more than the fade's spark would on the same painting
+     */
+    @Test fun theSparkStandsOffAPaintedPicture() {
+        root(ownArt())
+        LaunchLoad.begin(now())
+        assertTrue("painted stays is the default (the user's pick)", LoadingMath.PAINTED_STAYS_DEFAULT && LoadingMath.paintedStays)
+        fun contrast(readable: Boolean): Float {
+            LoadingScene.sparkReadable = readable
+            LoadingScene.pin(0f, 11L, 1)
+            var sum = 0f; var n = 0
+            var t = 0.2f
+            // two passes in: the newer spark runs over the older pass's painting
+            while (t < LoadingMath.EVERY * 3) {
+                LoadingScene.clock(t)
+                val top = render(LaunchTopView(ctx), 1920, 1080)
+                val bottom = render(StartView(ctx), 1240, 1080)
+                for ((isTop, b) in listOf(true to top, false to bottom)) {
+                    val sp = LoadingScene.sparkAt(isTop, b.width, b.height) ?: continue
+                    val bg = ring(b, sp[0], sp[1], sp[2] * 0.35f, sp[2] * 0.5f)
+                    if (t > LoadingMath.EVERY && bg < 25f) continue          // over black: nothing to stand off
+                    sum += ring(b, sp[0], sp[1], 0f, 6f) - bg; n++
+                }
+                t += 0.7f
+            }
+            println("spark contrast (readable=$readable): ${sum / maxOf(1, n)} over $n samples")
+            return sum / maxOf(1, n)
+        }
+        val before = contrast(false)
+        val after = contrast(true)
+        assertTrue("the spark's core stands off the painting ($after)", after >= 90f)
+        assertTrue("more than the fade's own spark on the same painting ($before -> $after)", after >= before + 25f)
+    }
 
     private fun render(v: View, w: Int, h: Int): Bitmap {
         v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
@@ -183,6 +237,7 @@ class LaunchScreenShotsTest {
             frames(File(d, "frames_handover"), game, stays = false, from = LoadingMath.EVERY * 2 - 2f, hand = LoadingMath.EVERY * 2 + 1f,
                 to = LoadingMath.EVERY * 4 + 3f)
         if (part == "all" || part == "compare") comparison(File(d, "compare"), game)
+        if (part == "all" || part == "final") finals(File(d, "final"), game)
     }
 
     private fun stills(d: File, shot: (String, Float, String?, Float) -> Unit, game: Bitmap) {
@@ -242,6 +297,52 @@ class LaunchScreenShotsTest {
         }
         LoadingScene.forceSolo = null
         LoadingMath.paintedStays = LoadingMath.PAINTED_STAYS_DEFAULT
+    }
+
+    private val passed = SetupFlow.Inputs(path = "/storage/emulated/0/WoW Forever", folderFound = true, loginSaved = true,
+        art = SetupFlow.Art.READY, artPercent = 100, addonsInstalled = true, client = "1.60.1.70634 (up to date)",
+        appLine = "DS Forever 1.0.40: up to date")
+
+    /**
+     * THE USER'S PICK, RENDERED (2026-11-24: "Painted stays" everywhere): DS Forever's own start-up loading (the checks on the top, the
+     * chooser on the bottom) and the game's launch (both screens, the hand-over, the bottom alone), with the readable spark; plus the
+     * spark before / after on the same painted moments
+     */
+    private fun finals(dir: File, game: Bitmap) {
+        dir.mkdirs()
+        LoadingMath.paintedStays = true
+        // the start-up: 16 s, 5 frames a second
+        val start = File(dir, "startup_frames").apply { mkdirs() }
+        ModeBridge::class.java.getDeclaredField("route").apply { isAccessible = true }.set(ModeBridge, StartMode.Route.Chooser)
+        SetupBridge.publish(passed)
+        LoadingScene.forceSolo = false
+        LoadingScene.pin(0f, 11L, 1)
+        var t = 0f; var i = 0
+        while (t <= 16f + 1e-3f) {
+            LoadingScene.clock(t)
+            val top = render(LoadingTopView(ctx), 1920, 1080)
+            val chooser = ChooserPanel(ctx).also { it.update() }
+            val bottom = if (chooser.visibility == View.VISIBLE) render(chooser, 1240, 1080) else render(StartView(ctx), 1240, 1080)
+            device(top, bottom, File(start, "f%04d.jpg".format(i)), 0.25f)
+            t += 0.2f; i++
+        }
+        SetupBridge.publish(null); ModeBridge.reset()
+        // the launch: both screens until 10 s, the hand-over, then the bottom alone to 26 s
+        frames(File(dir, "launch_frames"), game, stays = true, from = 0f, hand = 10f, to = 26f)
+        // the spark before / after (the readable spark off / on), the same moments, painted stays
+        LoadingMath.paintedStays = true
+        for (readable in listOf(false, true)) {
+            LoadingScene.sparkReadable = readable
+            LoadingScene.forceSolo = false
+            LoadingScene.pin(0f, 11L, 1)
+            LaunchLoad.reset(); LaunchLoad.begin(now()); LaunchLoad.step("Launching game...", now())
+            for (tt in listOf(LoadingMath.EVERY + 1.2f, LoadingMath.EVERY * 2 + 2.0f, LoadingMath.EVERY * 3 + 1.0f)) {
+                val (top, bottom) = pair(tt)
+                device(top, bottom, File(dir, "spark_${if (readable) "after" else "before"}_t${(tt * 10).toInt()}.png"))
+            }
+        }
+        LoadingScene.sparkReadable = true
+        LoadingScene.forceSolo = null
     }
 
     /**
