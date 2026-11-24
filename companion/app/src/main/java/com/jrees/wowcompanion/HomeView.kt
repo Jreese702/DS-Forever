@@ -125,23 +125,32 @@ class HomeView(
         HomeSettings.init(context)
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
-        HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
+        // every static listener here holds this Home WEAKLY ([weakly], the 1528 blocker): a Home made again never keeps the old one
+        HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } })  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
-        HomeLayoutStore.onOwner { editUi.post { editOwnerCheck("the character changed") } }
+        HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } })
         partyView.boxShown = { !editLive() }                              // fix round 1: never a second gold box beside edit mode's
-        HomeSettings.onChange { post {
-            if (flow.setRest(restWanted())) changed()
-            // MOVABLE HOME: a new layout record (a reset, a facade setter, another character): the page glides there on the one
-            // motion (240 / 200 ms, Motion.curve); the D-pad's word follows in the add-on ([HomeLayoutStore], ToolbarMirror)
-            else if (laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true) shown?.let { apply(it, animate = isShown) }
-            // the focused quest moved (Settings > Home): the parts go to their new places
-            else if (laidOverMap != cardOverMap()) shown?.let { apply(it, animate = isShown) }
-            // r-combat-anim-off: Grow / Same size changed during a fight: the band goes to its new size
-            else if (lent(castView) && castView.swingOn != HomeSettings.swingTimer)
-                castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
-            else if (laidGrow != HomeSettings.combatGrow) { laidGrow = HomeSettings.combatGrow; shown?.let { if (it.takeover) apply(it, animate = isShown) } }
-            invalidate()                                                     // r20: a clock extra switched on / off
-        } }
+        HomeSettings.onChange(weakly(this) { v -> v.post { v.homeSettingsChanged() } })
+        homeInitRest()
+    }
+
+    /** a HomeSettings change (its static listener holds this Home weakly: [weakly]) */
+    private fun homeSettingsChanged() {
+        if (flow.setRest(restWanted())) changed()
+        // MOVABLE HOME: a new layout record (a reset, a facade setter, another character): the page glides there on the one
+        // motion (240 / 200 ms, Motion.curve); the D-pad's word follows in the add-on ([HomeLayoutStore], ToolbarMirror)
+        else if (laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true) shown?.let { apply(it, animate = isShown) }
+        // the focused quest moved (Settings > Home): the parts go to their new places
+        else if (laidOverMap != cardOverMap()) shown?.let { apply(it, animate = isShown) }
+        // r-combat-anim-off: Grow / Same size changed during a fight: the band goes to its new size
+        else if (lent(castView) && castView.swingOn != HomeSettings.swingTimer)
+            castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
+        else if (laidGrow != HomeSettings.combatGrow) { laidGrow = HomeSettings.combatGrow; shown?.let { if (it.takeover) apply(it, animate = isShown) } }
+        invalidate()                                                     // r20: a clock extra switched on / off
+    }
+
+    /** the rest of the constructor's init (after the static listeners), in the same order as before */
+    private fun homeInitRest() {
         ThemeLive.bg(this, Tok.INK)
         setWillNotDraw(false)
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
@@ -2167,7 +2176,7 @@ class HomeView(
     private var laidPartyModule = false
     init {
         // QOL > Party > Party mode flipped: the module comes or goes at once
-        GameUi.onChange { post { if (PARTY_MODULE != laidPartyModule) partyChanged() } }
+        GameUi.onChange(weakly(this) { v -> v.post { if (v.PARTY_MODULE != v.laidPartyModule) v.partyChanged() } })   // weakly: [weakly]
     }
 
     /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
@@ -5024,7 +5033,7 @@ class HomeView(
 
         fun refresh() { cache.keys.retainAll(chat.all.toSet()); invalidate() }
 
-        init { ChatFilter.onChange { postInvalidate() } }
+        init { ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() }) }       // weakly: [weakly]
 
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()
