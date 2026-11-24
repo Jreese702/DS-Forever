@@ -686,7 +686,7 @@ class MapView(context: Context) : View(context) {
     private fun placeHere(m: JSONObject): Place? {
         val cont = rect?.continent ?: return null
         ensurePlaces(cont)
-        if (!m.optBoolean("indoors", false)) return null
+        if (!indoorsNow(m)) return null
         if (placesFor != cont) return null            // still parsing on the other thread
         val wx = m.optDouble("wx", Double.NaN)
         val wy = m.optDouble("wy", Double.NaN)
@@ -997,7 +997,7 @@ class MapView(context: Context) : View(context) {
         val r = rect ?: return null
         val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
         val city = IndoorCityArt.cityAt(r.continent, wx, wy) { paintedOf(it.uiMap)?.rect } ?: run { cityTracker.reset(); return null }
-        if (!IndoorCityArt.shows(city, indoors)) return null
+        if (!IndoorCityArt.shows(city, indoors, m.optInt("mapID", 0))) return null
         val groups = gameArtNow()[city.root.toString()]?.filter { it.tiles.isNotEmpty() }?.takeIf { it.isNotEmpty() } ?: return null
         val t = cityTransform(city)
         val now = android.os.SystemClock.elapsedRealtime()
@@ -1023,7 +1023,7 @@ class MapView(context: Context) : View(context) {
     }
     private fun paintedOf(id: Int): IndoorCityArt.PaintedIndex.Painted? = painted.get(id)
 
-    /** B: indoors in a capital (CityExits.CITIES; a capital by position when its switch says so), its painted map, else null */
+    /** B: indoors in a capital (CityExits.CITIES; [indoors] is [indoorsNow]: a capital by position too), its painted map, else null */
     private fun cityPaintedHere(m: JSONObject, indoors: Boolean): IndoorCityArt.PaintedIndex.Painted? {
         val r = rect ?: return null
         val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
@@ -1031,8 +1031,8 @@ class MapView(context: Context) : View(context) {
         for (id in CityExits.CITIES) {
             val p = paintedOf(id) ?: continue
             if (p.continent != r.continent || !IndoorCityArt.inRect(p.rect, wx, wy)) continue
-            val byPosition = IndoorCityArt.CAPITALS.firstOrNull { it.uiMap == id }?.positionOnly == true
-            return if (indoors || byPosition) p else null
+            // 1525: [indoors] is the map's own ([indoorsNow]: Ironforge and the Undercity by position on their own map)
+            return if (indoors) p else null
         }
         return null
     }
@@ -1224,8 +1224,22 @@ class MapView(context: Context) : View(context) {
     }
 
     private fun noteIndoor(m: JSONObject?) {
-        val ind = m?.optBoolean("indoors", false) ?: return
+        val ind = m?.let { indoorsNow(it) } ?: return
         if (ind != indoorSeen) indoorSeen = ind
+    }
+
+    /**
+     * THE MAP'S INDOORS (1525; the device read on test 1524: Ironforge's ring says "indoors": false, so the city's art never drew there;
+     * the user's pick "Ironforge + Undercity"): the add-on's own flag, or Ironforge / the Undercity by position - inside the city's
+     * footprint AND on the city's own map (the gates are Dun Morogh's, the Ruins of Lordaeron above the Undercity Tirisfal's), never on a
+     * taxi ([IndoorCityArt.indoorsHere]). Every indoor decision asks it: the built rooms, the game's art, the painted base, the note, the
+     * framing and the small map's indoor width. (The walked-ground record keeps the game's own flag.)
+     */
+    private fun indoorsNow(m: JSONObject): Boolean {
+        if (m.optBoolean("indoors", false)) return true
+        val r = rect ?: return false
+        return IndoorCityArt.indoorsHere(false, m.optInt("mapID", 0), r.continent, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN),
+            m.optInt("onTaxi", 0) == 1) { paintedOf(it.uiMap)?.rect }
     }
 
     /** zoom factor that shows [yards] across the map width in the current zone, or NaN */
@@ -1288,7 +1302,7 @@ class MapView(context: Context) : View(context) {
             return floatArrayOf(cx, cy, (0.5f / half), 1f, 1f)
         }
 
-        if (m.optBoolean("indoors", false)) {
+        if (indoorsNow(m)) {
             // frame the actual building when we have its floorplan, not a guessed radius.
             // On the stairs the two storeys' rects are BLENDED by the same u that crossfades
             // them, so the camera travels up the building rather than jumping at the top.
@@ -7681,7 +7695,7 @@ class MapView(context: Context) : View(context) {
         // 2026-11-23 (Ironforge: "I cant see iron forges map at all when walking around in it"): indoors in a capital, the city's painted
         // map is the base instead of the outdoor tiles zoomed in (B), the game's own indoor art of the groups the player is in over it,
         // by position (A: IndoorCityArt), our built room on top where there is one
-        val indoorsNow = m.optBoolean("indoors", false)
+        val indoorsNow = indoorsNow(m)
         val citySel = if (rect != null) cityArtHere(m, indoorsNow, flPlace) else null
         val paintedNow = if (rect != null) cityPaintedHere(m, indoorsNow) else null
         cityArtDrawn = 0; cityPaintedDrawn = false; indoorNoteDrawn = false

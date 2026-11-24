@@ -67,6 +67,13 @@ class HomeIndoorMapsTest {
     private val ROOM_RECT = doubleArrayOf(-280.0, -260.0, 40.0, 60.0)
     private val HALL = floatArrayOf(-400f, -100f, -5f, -250f, 100f, 80f)
     private val TILE_FID = 1000001
+    // the Undercity's root placement (IndoorCityArt.CAPITALS), its painted map's rect, a hall point and a group box around it
+    private val UC_RECT = doubleArrayOf(1877.9453, 1237.8412, 873.1926, -86.1824)
+    private val UC_HALL = doubleArrayOf(1590.0, 240.0)
+    private val UC_GROUP = floatArrayOf(-100f, -50f, -5f, 0f, 50f, 80f)
+    /** Tirisfal Glades' map (the Ruins of Lordaeron, ABOVE the Undercity) and Dun Morogh's (out of Ironforge's gates): made-up rects */
+    private val TIRISFAL_RECT = doubleArrayOf(3000.0, 500.0, 2500.0, -1500.0)
+    private val DUN_MOROGH_RECT = doubleArrayOf(-3500.0, -6500.0, 1000.0, -2000.0)
 
     @Before fun setUp() {
         was = rootField.get(null)
@@ -144,13 +151,23 @@ class HomeIndoorMapsTest {
         File(r, "worldmap/1455/index.json").writeText(JSONObject().put("uiMapID", 1455).put("name", "Ironforge").put("w", 1002).put("h", 668)
             .put("rect", JSONArray(listOf(0.0) + IF_RECT.toList())).put("overlays", JSONArray()).toString())
         png(File(r, "worldmap/1455/base.webp"), 1002, 668, Color.rgb(60, 120, 60))
+        // the Undercity (1525, the pick "Ironforge + Undercity"): one hall group around UC_HALL's point, its painted map
+        val ug = JSONObject().put("t", JSONArray().put(JSONArray(listOf(0, 0, TILE_FID, 256, 256)))).put("bb", JSONArray(UC_GROUP.map { it.toDouble() }))
+        val roots = JSONObject(File(r, "wmominimap.json").readText())
+        roots.getJSONObject("roots").put("7675285", JSONObject().put("wmo", 20900).put("groups", JSONObject().put("12", ug)))
+        File(r, "wmominimap.json").writeText(roots.toString())
+        File(r, "worldmap/1458").mkdirs()
+        File(r, "worldmap/1458/index.json").writeText(JSONObject().put("uiMapID", 1458).put("name", "Undercity").put("w", 1002).put("h", 668)
+            .put("rect", JSONArray(listOf(0.0) + UC_RECT.toList())).put("overlays", JSONArray()).toString())
+        png(File(r, "worldmap/1458/base.webp"), 1002, 668, Color.rgb(60, 60, 120))
     }
 
     // ---------------------------------------------------------------- the rig
 
-    private fun doc(wx: Double, wy: Double, indoors: Boolean = true): JSONObject {
-        val (t, bt, l, rr) = IF_RECT.toList()
-        return JSONObject().put("type", "map").put("ok", true).put("mapID", 1455).put("zone", "Ironforge").put("subzone", "")
+    private fun doc(wx: Double, wy: Double, indoors: Boolean = true, mapID: Int = 1455, zone: String = "Ironforge",
+                    rect: DoubleArray = IF_RECT): JSONObject {
+        val (t, bt, l, rr) = rect.toList()
+        return JSONObject().put("type", "map").put("ok", true).put("mapID", mapID).put("zone", zone).put("subzone", "")
             .put("x", (l - wy) / (l - rr)).put("y", (t - wx) / (t - bt)).put("cont", 0).put("inst", false).put("indoors", indoors)
             .put("wx", wx).put("wy", wy).put("facing", 0.5)
             .put("rect", JSONObject().put("c", 0).put("t", t).put("b", bt).put("l", l).put("r", rr))
@@ -367,12 +384,72 @@ class HomeIndoorMapsTest {
     @Test fun indoorsWithNoMapSaysSoOpenMap() = noMapCase(false, 1240, 1000)
 
     @Test fun outdoorsNothingChanges() {
-        val d = doc(wx(-150.0, 150.0), wy(-150.0, 150.0), indoors = false)
+        // out of Ironforge's gates: Dun Morogh's map (the game's own word for where the player is), outdoors, still inside the city's rect
+        val d = doc(wx(-150.0, 150.0), wy(-150.0, 150.0), indoors = false, mapID = 1426, zone = "Dun Morogh", rect = DUN_MOROGH_RECT)
         val v = map(true, 520, 420, d)
         waitRooms(v, d)
         val r = settle(v, 520, 420, ms = 800L) { false }
         assertEquals(0, r.tiles); assertEquals("outdoors: the outdoor map as before", 0, r.painted)
         assertFalse(r.texts.contains("No indoor map here yet"))
+        assertEquals("the outdoor width", Settings.minimapYd, v.minimapYdNow())
+    }
+
+    // ---------------------------------------------------------------- 1525: Ironforge and the Undercity by position
+
+    /** the open map's framing for [d] (MapView.computeFrame: centre x, centre y, zoom, anchors) */
+    private fun frameZoom(v: MapView, d: JSONObject): Float {
+        val m = MapView::class.java.getDeclaredMethod("computeFrame", JSONObject::class.java, Double::class.javaPrimitiveType, Double::class.javaPrimitiveType)
+            .apply { isAccessible = true }
+        return (m.invoke(v, d, d.getDouble("x"), d.getDouble("y")) as FloatArray)[2]
+    }
+
+    private fun ringCase(compact: Boolean, w: Int, h: Int) {
+        // the device read of 2026-11-24: on Ironforge's ring the add-on says "indoors": false (mapID 1455) - the art shows anyway
+        val d = doc(wx(-350.0, -50.0), wy(-350.0, -50.0), indoors = false)
+        val v = map(compact, w, h, d)
+        waitRooms(v, d)
+        val r = settle(v, w, h) { it.tiles > 0 && it.painted > 0 }
+        assertTrue("the game's art for the hall by position, the game saying outdoors (${r.tiles} tiles)", r.tiles > 0)
+        assertTrue("the painted city map under it", r.painted > 0)
+        assertFalse(r.texts.contains("No indoor map here yet"))
+    }
+
+    @Test fun theRingSaysOutdoorsAndTheArtStillShowsHome() = ringCase(true, 520, 420)
+    @Test fun theRingSaysOutdoorsAndTheArtStillShowsOpenMap() = ringCase(false, 1240, 1000)
+
+    @Test fun theRingIsFramedAsIndoorsAndTheGatesAreNot() {
+        val ring = doc(wx(-350.0, -50.0), wy(-350.0, -50.0), indoors = false)
+        val v = map(true, 520, 420, ring)
+        waitRooms(v, ring)
+        assertEquals("Home's map: the indoor width in the city", Settings.minimapIndoorYd, v.minimapYdNow())
+        val open = map(false, 1240, 1000, ring)
+        waitRooms(open, ring)
+        val said = doc(wx(-350.0, -50.0), wy(-350.0, -50.0), indoors = true)
+        assertEquals("the open map frames the ring as it frames a hall the game calls indoors", frameZoom(open, said), frameZoom(open, ring), 1e-3f)
+        // out through the gates onto Dun Morogh's map: the outdoor map and width again
+        val gates = doc(wx(-350.0, -50.0), wy(-350.0, -50.0), indoors = false, mapID = 1426, zone = "Dun Morogh", rect = DUN_MOROGH_RECT)
+        v.update(gates, 0)
+        assertEquals("out of the city: the outdoor width", Settings.minimapYd, v.minimapYdNow())
+        val r = settle(v, 520, 420, ms = 800L) { false }
+        assertEquals(0, r.tiles); assertEquals(0, r.painted)
+        assertFalse(r.texts.contains("No indoor map here yet"))
+    }
+
+    @Test fun theUndercityShowsByPositionButNotTheRuinsAboveIt() {
+        val uc = doc(UC_HALL[0], UC_HALL[1], indoors = false, mapID = 1458, zone = "Undercity", rect = UC_RECT)
+        val v = map(true, 520, 420, uc)
+        val r = settle(v, 520, 420) { it.tiles > 0 && it.painted > 0 }
+        assertTrue("the Undercity's art by position (${r.tiles} tiles)", r.tiles > 0)
+        assertTrue("its painted map", r.painted > 0)
+        assertEquals(Settings.minimapIndoorYd, v.minimapYdNow())
+        // the same yards on the surface: the Ruins of Lordaeron are Tirisfal's map, outdoors - never the city's underground art
+        val ruins = doc(UC_HALL[0], UC_HALL[1], indoors = false, mapID = 1420, zone = "Tirisfal Glades", rect = TIRISFAL_RECT)
+        val w = map(true, 520, 420, ruins)
+        val q = settle(w, 520, 420, ms = 1_500L) { false }
+        assertEquals("the Ruins: no Undercity art", 0, q.tiles)
+        assertEquals("the Ruins: no Undercity painted map", 0, q.painted)
+        assertFalse(q.texts.contains("No indoor map here yet"))
+        assertEquals("the Ruins: the outdoor width", Settings.minimapYd, w.minimapYdNow())
     }
 
     // ---------------------------------------------------------------- the shots (the PC's own data)

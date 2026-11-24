@@ -59,9 +59,33 @@ class IndoorCityArtTest {
 
     @Test fun theIndoorsGateHasAPerCitySwitch() {
         assertTrue(IndoorCityArt.shows(IF, indoors = true))
-        assertFalse("today: indoors only (the device read decides Ironforge's streets)", IndoorCityArt.shows(IF, indoors = false))
-        val byPosition = IndoorCityArt.City(IF.name, IF.root, IF.uiMap, IF.continent, IF.l2w, IF.rect, positionOnly = true)
-        assertTrue(IndoorCityArt.shows(byPosition, indoors = false))
+        // the device read of 2026-11-24 (test 1524, on Ironforge's ring: "indoors": false, mapID 1455) and the user's pick "Ironforge +
+        // Undercity": the two enclosed capitals you can mount in show their art by position; Stormwind and Orgrimmar keep the gate
+        val byName = IndoorCityArt.CAPITALS.associateBy { it.name }
+        assertEquals("Ironforge and the Undercity by position, Stormwind and Orgrimmar indoors only",
+            mapOf("Stormwind" to false, "Ironforge" to true, "Undercity" to true, "Orgrimmar" to false), byName.mapValues { it.value.positionOnly })
+        assertTrue("Ironforge's ring says outdoors: its art still shows", IndoorCityArt.shows(IF, indoors = false))
+        assertFalse("Stormwind's streets really are outside", IndoorCityArt.shows(byName.getValue("Stormwind"), indoors = false))
+        assertFalse(IndoorCityArt.shows(byName.getValue("Orgrimmar"), indoors = false))
+    }
+
+    @Test fun ironforgeAndTheUndercityByPositionOnTheirOwnMapOnly() {
+        val ring = doubleArrayOf(-4936.0, -930.0)
+        assertEquals("Ironforge", IndoorCityArt.byPosition(1455, 0, ring[0], ring[1])?.name)
+        assertNull("the gates: Dun Morogh's map", IndoorCityArt.byPosition(1426, 0, ring[0], ring[1]))
+        assertNull("on a taxi", IndoorCityArt.byPosition(1455, 0, ring[0], ring[1], onTaxi = true))
+        assertNull("another continent", IndoorCityArt.byPosition(1455, 1, ring[0], ring[1]))
+        assertNull("out of the footprint", IndoorCityArt.byPosition(1455, 0, -5600.0, -500.0))
+        assertEquals("Undercity", IndoorCityArt.byPosition(1458, 0, 1590.0, 240.0)?.name)
+        assertNull("the Ruins of Lordaeron above it: Tirisfal's map", IndoorCityArt.byPosition(1420, 0, 1590.0, 240.0))
+        assertNull("Stormwind keeps the indoors gate", IndoorCityArt.byPosition(1453, 0, -8830.0, 620.0))
+        assertNull("Orgrimmar too", IndoorCityArt.byPosition(1454, 1, 1630.0, -4400.0))
+        assertTrue(IndoorCityArt.indoorsHere(false, 1455, 0, ring[0], ring[1]))
+        assertTrue("the game's own flag always counts", IndoorCityArt.indoorsHere(true, 1426, 0, ring[0], ring[1]))
+        assertFalse(IndoorCityArt.indoorsHere(false, 1420, 0, 1590.0, 240.0))
+        val uc = IndoorCityArt.byRoot(7675285)!!
+        assertTrue(IndoorCityArt.shows(uc, indoors = false, mapId = 1458))
+        assertFalse("never the city's art on the Ruins", IndoorCityArt.shows(uc, indoors = false, mapId = 1420))
     }
 
     // the groups: a 90 yd tall hall, a shop on its floor, a shop above it, a cavern under the hall, a ramp down beside it

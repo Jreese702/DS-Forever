@@ -19,6 +19,14 @@ import kotlin.math.abs
  * unknown the device read settles (the plan's section 5): a city whose streets say outdoors gets [City.positionOnly] = true on its own
  * line below, and its art then shows by position alone.
  *
+ * THE DEVICE READ (test 1524, 2026-11-24, on Ironforge's ring: "indoors": false, mapID 1455) and the user's pick "Ironforge + Undercity"
+ * ("Both are fully enclosed cities you can mount in, so the game probably reports 'outdoors' in both. Stormwind and Orgrimmar keep
+ * needing 'indoors', since their streets really are outside."): those two are [City.positionOnly]. By position means inside the city's
+ * footprint AND on the city's own map (the add-on's mapID, the game's own word for where the player is: [byPosition]), never on a taxi:
+ * out of Ironforge's gates the game says Dun Morogh, and on the Ruins of Lordaeron - ABOVE the Undercity, inside its footprint - it says
+ * Tirisfal Glades, so neither gets the city's art. There MapView is indoors for everything ([indoorsHere]): the built rooms, the game's
+ * art, the painted base, the note and the indoor widths.
+ *
  * Pure (the tests): MapView reads the art index (wmominimap.json) and draws.
  */
 internal object IndoorCityArt {
@@ -37,9 +45,9 @@ internal object IndoorCityArt {
         City("Stormwind", 7962574, 1453, 0, doubleArrayOf(-8931.634114583332, 539.2897135416679, 0.7826081568524139, 0.6225146366376196),
             doubleArrayOf(-7995.8301, -9154.1699, 1722.92, -14.584), positionOnly = false),
         City("Ironforge", 7801267, 1455, 0, doubleArrayOf(-5008.526692708332, -849.4290364583321, 0.6360782202777643, -0.7716245833877197),
-            doubleArrayOf(-4569.2412, -5096.8457, -713.5914, -1504.2164), positionOnly = false),
+            doubleArrayOf(-4569.2412, -5096.8457, -713.5914, -1504.2164), positionOnly = true),
         City("Undercity", 7675285, 1458, 0, doubleArrayOf(1647.7174479166679, 239.83072916666788, -0.9999619230641713, 0.008726535498374403),
-            doubleArrayOf(1877.9453, 1237.8412, 873.1926, -86.1824), positionOnly = false),
+            doubleArrayOf(1877.9453, 1237.8412, 873.1926, -86.1824), positionOnly = true),
         City("Orgrimmar", 7964229, 1454, 1, doubleArrayOf(1500.5026041666679, -4418.192708333332, 0.8290375725550417, 0.5591929034707469),
             doubleArrayOf(2273.8772, 1338.4606, -3680.6011, -5083.2056), positionOnly = false),
     )
@@ -68,8 +76,26 @@ internal object IndoorCityArt {
         return CAPITALS.firstOrNull { it.continent == continent && inRect(rectOf(it) ?: it.rect, wx, wy) }
     }
 
-    /** the indoors gate: the add-on says indoors, or this city shows its art by position alone ([City.positionOnly]) */
-    fun shows(city: City, indoors: Boolean): Boolean = indoors || city.positionOnly
+    /**
+     * the indoors gate: the add-on says indoors, or this city shows its art by position alone ([City.positionOnly]) and the player is on
+     * its own map ([mapId], the add-on's uiMap; the Ruins of Lordaeron above the Undercity are Tirisfal's)
+     */
+    fun shows(city: City, indoors: Boolean, mapId: Int = city.uiMap): Boolean = indoors || (city.positionOnly && mapId == city.uiMap)
+
+    /**
+     * the capital the player is in by position alone (1525): a [City.positionOnly] one whose own map the game says the player is on
+     * ([mapId]) and whose footprint ([rectOf], as [cityAt]) holds them; never on a taxi. Null = the game's own `indoors` decides
+     */
+    fun byPosition(mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false,
+                   rectOf: (City) -> DoubleArray? = { null }): City? {
+        if (onTaxi || !wx.isFinite() || !wy.isFinite()) return null
+        return CAPITALS.firstOrNull { it.positionOnly && it.uiMap == mapId && it.continent == continent && inRect(rectOf(it) ?: it.rect, wx, wy) }
+    }
+
+    /** the map's indoors (MapView's every indoor decision): the add-on's own flag, or a capital by position ([byPosition]) */
+    fun indoorsHere(indoors: Boolean, mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false,
+                    rectOf: (City) -> DoubleArray? = { null }): Boolean =
+        indoors || byPosition(mapId, continent, wx, wy, onTaxi, rectOf) != null
 
     /**
      * THE CITIES' PAINTED MAPS, LOOKED UP OFF THE DRAWING THREAD (review of 2026-11-23: MapView read worldmap/<id>/index.json inside its
