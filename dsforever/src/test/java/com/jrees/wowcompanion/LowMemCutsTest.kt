@@ -48,7 +48,11 @@ class LowMemCutsTest {
         val c = File(repo, "dsforever/src/main/jni/dsf/dsf_heap.c").readText()
         assertTrue(c.contains("Java_com_jrees_wowcompanion_NativeHeap_purge") && c.contains("M_PURGE_ALL") && c.contains("M_PURGE"))
         assertTrue("R8 keeps its JNI name", File(repo, "app/proguard-rules.pro").readText().contains("class com.jrees.wowcompanion.NativeHeap { native <methods>; }"))
-        assertTrue(File(repo, "companion/tools/interiors_device/apk_jni_check.py").readText().contains("Java_com_jrees_wowcompanion_NativeHeap_purge"))
+        // the APK check names libdsf-heap.so's symbols as a prefix + names (purge among the page-out ones since the page-out branch)
+        val heapLib = File(repo, "companion/tools/interiors_device/apk_jni_check.py").readLines()
+            .first { it.contains("\"lib/arm64-v8a/libdsf-heap.so\"") }
+        assertTrue(heapLib.contains("\"Java_com_jrees_wowcompanion_NativeHeap_\" + n for n in (\"purge\"") ||
+            heapLib.contains("\"Java_com_jrees_wowcompanion_NativeHeap_purge\""))
     }
 
     // ------------------------------------------------------------------ (b) the loading pictures
