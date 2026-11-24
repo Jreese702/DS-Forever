@@ -56,6 +56,7 @@ class PartyDropShotsTest {
     @After fun down() {
         setField(PartyModel.live, "party", null); HomeLayoutStore.character(null); HomeLayoutStore.set(HomeLayout())
         CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null; UiKit.pauseBarsBottom = 0f
+        if (!GameUi.swWant(GameUi.SW_PMODE)) GameUi.setSwitch(GameUi.SW_PMODE, true)
     }
 
     private fun lay(v: View, w: Int = W, h: Int = H) {
@@ -312,10 +313,10 @@ class PartyDropShotsTest {
         val pl = p.home.lbPlace()
         val bottom = LbFit.bars(pl).values.maxOf { it.b }
         val v = partyView(p.home)
-        if (bottom + G <= list.top + 0.5f) {
-            assertTrue("the list stays (${v.translationX}, ${v.translationY})", v.translationX == 0f && v.translationY == 0f)
-            for (s in strips(p.home)) if (s.visibility == View.VISIBLE) assertTrue("the bar stays", s.translationX == 0f && s.translationY == 0f && s.takesTouch)
-        } else assertTrue("needs the room: the list below the page", kotlin.math.abs(list.top + v.translationY - H) < 0.5f)
+        // (review: this page IS one that fits - the test pinned nothing when it took the other branch)
+        assertTrue("the picture fits over the list here (its foot $bottom, the list's top ${list.top})", bottom + G <= list.top + 0.5f)
+        assertTrue("the list stays (${v.translationX}, ${v.translationY})", v.translationX == 0f && v.translationY == 0f)
+        for (s in strips(p.home)) if (s.visibility == View.VISIBLE) assertTrue("the bar stays", s.translationX == 0f && s.translationY == 0f && s.takesTouch)
     }
 
     @Test fun aTopListIsNotMoved() {
@@ -368,6 +369,67 @@ class PartyDropShotsTest {
                 fightWord(p.home, p.cast, false); p.home.tick(); settle(60)
                 back(tag, "after the close and the fight", p)
             }
+        assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
+    }
+
+    /** review: every In fights band (Grow / Same size / Top screen, its cast bar on either screen) x the list's fight sizing (Grows /
+     *  Same / Shrink; a Top-screen fight's Fill / Grow / Same) x the bar shown or hidden in fights, each wheel held through a whole fight (its start AND its end):
+     *  on no frame the list or the bar drawn over the held wheel, and both back where they lie once it closes */
+    @Test fun aWheelHeldThroughAnyFightKeepsClearOfTheList() {
+        for (band in HomeLayout.FightBand.values()) for (fc in if (band == HomeLayout.FightBand.TOP) HomeLayout.FightCast.values().toList() else listOf(HomeLayout.FightCast.BOTTOM))
+            // (the list's sizing pick that applies: In fights = Top screen reads partyTop, the others partyBottom)
+            for (sz in if (band == HomeLayout.FightBand.TOP) HomeLayout.PartyTopFight.values().toList() else HomeLayout.PartyBottomFight.values().toList())
+            for (stay in listOf(true, false)) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
+                val tag = "$band/$fc/$sz ${if (stay) "shown" else "hidden"} in fights, $what"
+                val base = HomeLayout(party = HomeLayout.PartyDock.UNDER_MAP, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L,
+                    fight = band, fightCast = fc)
+                val l = if (sz is HomeLayout.PartyTopFight) base.copy(partyTop = sz) else base.copy(partyBottom = sz as HomeLayout.PartyBottomFight)
+                val p = page(l, 5, stay)
+                if (!footOverAcross(tag, p)) continue
+                fun sq(): RectF = if (what == "middle wheel") RectF(field(p.home, "wheelRect") as RectF) else classRect(p)
+                if (what == "middle wheel") { p.home.wheelSlot(true); settle() } else classOpen(p, what == "LB+LT")
+                for (on in listOf(true, false)) {
+                    fightWord(p.home, p.cast, on); p.home.tick()
+                    for (i in 0 until 50) {
+                        settle(1); lay(p.home)
+                        val d = listDrawn(p.home); val s = sq()
+                        if (overlaps(d, s)) { no(tag, "fight ${if (on) "start" else "end"} frame $i: the list drawn ${r(d)} over the wheel ${r(s)}"); break }
+                        val b = barDrawn(p.home)
+                        if (b != null && overlaps(b, s)) { no(tag, "fight ${if (on) "start" else "end"} frame $i: the bar ${r(b)} over the wheel ${r(s)}"); break }
+                    }
+                }
+                if (what == "middle wheel") { p.home.wheelSlot(false); settle() } else classClose(p)
+                settle(60)
+                back(tag, "after the close", p)
+            }
+        assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
+    }
+
+    /** review: Party mode turned on (the list comes onto the page) while a wheel is held - the list never drawn over the wheel on the way */
+    @Test fun theListComingUnderAHeldWheelNeverCoversIt() {
+        for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
+            val tag = what
+            val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L)
+            val p = page(l, 3)
+            val pv = partyView(p.home)
+            GameUi.init(app); GameUi.setSwitch(GameUi.SW_PMODE, false); p.home.partyChanged(); settle(60); lay(p.home)
+            if (pv.visibility == View.VISIBLE) { no(tag, "Party mode off: the list still shown"); continue }
+            fun sq(): RectF = if (what == "middle wheel") RectF(field(p.home, "wheelRect") as RectF) else classRect(p)
+            if (what == "middle wheel") { p.home.wheelSlot(true); settle() } else classOpen(p, what == "LB+LT")
+            GameUi.setSwitch(GameUi.SW_PMODE, true); p.home.partyChanged()
+            var seen = false
+            for (i in 0 until 50) {
+                settle(1); lay(p.home)
+                if (pv.visibility != View.VISIBLE || boxes(p.home)["PARTY"] == null) continue
+                seen = true
+                val d = listDrawn(p.home); val s = sq()
+                if (pv.alpha > 0.05f && overlaps(d, s)) { no(tag, "frame $i: the list drawn ${r(d)} (alpha ${pv.alpha}) over the wheel ${r(s)}"); break }
+            }
+            if (!seen) no(tag, "the list never came")
+            if (what == "middle wheel") { p.home.wheelSlot(false); settle() } else classClose(p)
+            settle(60)
+            back(tag, "after the close", p)
+        }
         assertTrue("${bad.size} misfits:\n${bad.joinToString("\n")}", bad.isEmpty())
     }
 
