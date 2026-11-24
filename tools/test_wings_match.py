@@ -9,8 +9,9 @@ under test_nintendo_bar.py's stub, driven frame by frame through its own driver 
     stretched into it showed a 1.53-wide body; the ZL / ZR glyph (76 x 75) went into a 40 x 28 box, 1.41x wide): every texture of the
     L / R plate (fill, held fill, reticle, bumper glyph) and of the ZL / ZR chip (glyph, held glow) on BOTH sides drawn at its source's
     own aspect (within 2 %: no stretch); the plate's visible body the band's 39 x 31 plate (aspect within 2 %) at its size on the top
-    panel (7.51 x 5.97 mm within 3 %: the band's 124 x 98.6 bottom px); the bumper glyph the band's 46 bottom px (2.79 mm) and the
-    ZL / ZR glyph its 51.5 (3.12 mm) within 5 %; the band's own art (our plate TGA from its vector path, the Gamepad_*_64 glyphs) first.
+    panel (nbar18: 0.75 x the band's 124 x 98.6 bottom px = 5.63 x 4.48 mm within 3 %); the bumper glyph 0.75 x the band's 46 bottom px
+    (2.09 mm) and the ZL / ZR glyph 0.75 x its 51.5 (2.34 mm) within 5 %; the band's own art (our plate TGA from its vector path, the
+    Gamepad_*_64 glyphs) first.
   B THE SLIDE, ON ONE WALL CLOCK: the fight's switch at t = 0 (the add-on's frame that sees it); the band (the app) starts 82 ms later (the 40-90 ms channel's middle,
     65, and the animator's first frame, 17) on Motion.TOP_SLIDE_UP 240 ms over (0.4, 0, 1, 1), 242 bottom px x 0.06055 mm, its whole
     way up TopSlide.COLS_UP_MS; the Wings sampled at 60 fps (and 30 fps) as the add-on's own driver lays them: never ahead of the band
@@ -24,6 +25,10 @@ under test_nintendo_bar.py's stub, driven frame by frame through its own driver 
     pet comes out beside the bars) no Wings half box touches a drawn block part (alpha > 0.02) on any frame; once settled the block
     stands centred, the Wings >= HUD_MARGIN (60 px) either side of it, the shift asked = the shift applied; the Wings visibly move with
     the block (a late resize that moves it moves them).
+  D nbar18 THE TRIGGERS A QUARTER SMALLER (the user, 2026-11-24, playing 1.0.40: "I dont like how much bigger that the triggers are in
+    the transition from the bottom screen to the top"; picks "Both" and "About a quarter smaller"): every plate / chip part and offset
+    0.75 x nbar17's (aspect kept), the plate's inner edge and top where nbar17 had them by the diamond, the chip under it at 0.75 x the
+    gap, nothing else resized, the solver's half box holding them all and narrower than nbar17's 227 (fails on 94e79938c).
 No device is read. Needs lupa and PIL. Exit code 1 on any failure."""
 import math
 import os
@@ -53,6 +58,16 @@ BAND_PLATE_MM = (124 * MM_BOTTOM, 124 * 31 / 39 * MM_BOTTOM)
 BAND_PLATE_ASPECT = 39 / 31
 BAND_BUMPER_MM = 46 * MM_BOTTOM
 BAND_TRIG_MM = 56 * 0.92 * MM_BOTTOM
+# nbar18 THE TRIGGERS A QUARTER SMALLER (the user, 2026-11-24, playing 1.0.40: "I dont like how much bigger that the triggers are in the
+# transition from the bottom screen to the top"; picks "Both" and "About a quarter smaller"): the Top screen's plate and chip parts are
+# TRIG_K x the band's: the plate 5.63 x 4.48 mm, the bumper glyph 2.09 mm, the ZL / ZR glyph 2.34 mm
+TRIG_K = 0.75
+TOP_PLATE_MM = (BAND_PLATE_MM[0] * TRIG_K, BAND_PLATE_MM[1] * TRIG_K)
+TOP_BUMPER_MM = BAND_BUMPER_MM * TRIG_K
+TOP_TRIG_MM = BAND_TRIG_MM * TRIG_K
+# nbar17's sizes (bar units; 94e79938c, the band's size): what nbar18 scales by TRIG_K
+NBAR17 = {"PLATE_W": 62, "PLATE_H": 62 * 31 / 39, "PLATE_GLYPH": 23, "PLATE_GX": 26, "PLATE_GY": -20.15, "PLATE_RET": 18 * 62 / 39,
+          "PLATE_RET_DY": 62 / 39, "CHIP_W": 25.8, "CHIP_H": 25.8, "CHIP_G": 25.8, "CHIP_GLOW": 50.4, "CHIP_GAP": 4.86}
 # the game's atlases these textures may wear: (w, h) native (the harvest manifest, ui/cast/manifest.json) and the plate's opaque body
 # (alpha > 200) inside its 50 x 45 cell; the Gamepad_*_64 glyphs are 64 x 64 (the band's kit pad_* art: the same family)
 ATLAS = {
@@ -290,17 +305,18 @@ def part_a():
             mm = (bw * s * MM_TOP, bh * s * MM_TOP)
             chk("A. %s: the plate's visible body is the band's 39 x 31 plate (aspect %.3f, the band's %.3f, within 2 %%)"
                 % (side, asp, BAND_PLATE_ASPECT), abs(asp / BAND_PLATE_ASPECT - 1) <= 0.02, (name, round(asp, 3)))
-            chk("A. %s: ... at the band's size on the top panel (%.2f x %.2f mm, the band's %.2f x %.2f within 3 %%)"
-                % ((side,) + mm + BAND_PLATE_MM), abs(mm[0] / BAND_PLATE_MM[0] - 1) <= 0.03 and abs(mm[1] / BAND_PLATE_MM[1] - 1) <= 0.03)
+            chk("A. nbar18 %s: ... a quarter under the band's size on the top panel (%.2f x %.2f mm, 0.75 x the band's: %.2f x %.2f "
+                "within 3 %%)" % ((side,) + mm + TOP_PLATE_MM),
+                abs(mm[0] / TOP_PLATE_MM[0] - 1) <= 0.03 and abs(mm[1] / TOP_PLATE_MM[1] - 1) <= 0.03)
         else:
             chk("A. %s: the plate's visible body known (%s %s)" % (side, kind, name), False)
         gw, gh = drawn(p.glyph)
         cw, ch = drawn(c.g)
         gmm = (gw or 0) * s * MM_TOP
         cmm = (ch or 0) * s * MM_TOP
-        chk("A. %s: the bumper glyph %.2f mm (the band's %.2f within 5 %%), the trigger glyph %.2f mm (the band's %.2f within 5 %%)"
-            % (side, gmm, BAND_BUMPER_MM, cmm, BAND_TRIG_MM),
-            abs(gmm / BAND_BUMPER_MM - 1) <= 0.05 and abs(cmm / BAND_TRIG_MM - 1) <= 0.05)
+        chk("A. nbar18 %s: the bumper glyph %.2f mm (0.75 x the band's: %.2f within 5 %%), the trigger glyph %.2f mm (0.75 x the band's: "
+            "%.2f within 5 %%)" % (side, gmm, TOP_BUMPER_MM, cmm, TOP_TRIG_MM),
+            abs(gmm / TOP_BUMPER_MM - 1) <= 0.05 and abs(cmm / TOP_TRIG_MM - 1) <= 0.05)
         chk("A. %s: the band's own art first - the plate our vector plate (not Blizzard's shoulder-bg), the glyphs the band's "
             "Gamepad_*_64 family" % side,
             p.bg.tex is not None and "wings_plate" in str(p.bg.tex) and str(p.glyph.atlas or "").startswith("Gamepad_")
@@ -561,10 +577,96 @@ def part_c():
     chk("C. ... a late join / pet that resizes the block moves the Wings with it", not moved_with, moved_with[:4])
 
 
+# ------------------------------------------------------------------------------------- D: nbar18 the triggers a quarter smaller
+def part_d():
+    """nbar18 (the user, 11-24: "About a quarter smaller" - "Keep everything else, shrink just these by ~25%"): in the live Wings every
+    L / R plate part (plate, held plate, reticle, bumper glyph and their offsets) and ZL / ZR chip part (box, glyph, held glow, the gap
+    under the plate) is TRIG_K x nbar17's, aspect kept; the plate's inner edge 9 units past the diamond's outer slot and its top level
+    with the top slot's (as nbar17); the chip under it, centred; nothing else resized (the slots, the diamond's spacing, MATCH_S); the
+    solver's half box holds every plate / chip rect and is narrower than nbar17's 227."""
+    L = boot()
+    G = L.globals()
+    NB = G.WowCompanion.nbar
+    tick = ticker(L, 1 / 60)
+    tick(30)
+    G.COMBAT = True
+    tick(40)
+    f = NB.f
+    T = NB.TOP
+    if not (f and f.plate and NB.top.shown):
+        chk("D. the Wings up in the fight", False)
+        return
+    K = TRIG_K
+    bad = []
+
+    def near(name, got, want, tol=1e-6):
+        if got is None or abs(float(got) - want) > tol:
+            bad.append("%s %s (want %.4f)" % (name, got, want))
+
+    near("TRIG_K", T.TRIG_K, K)
+    for i in (1, 2):
+        p, c = f.plate[i], f.chip[i]
+        sgn = -1 if i == 1 else 1
+        hx, hy = float(NB.hx[i]), float(NB.hy[i])
+        near("plate w", p.w, NBAR17["PLATE_W"] * K)
+        near("plate h", p.h, NBAR17["PLATE_H"] * K)
+        for nm, t in (("plate fill", p.bg), ("plate held", p.held)):
+            dw, dh = drawn(t)
+            near(nm + " w", dw, NBAR17["PLATE_W"] * K)
+            near(nm + " h", dh, NBAR17["PLATE_H"] * K)
+        near("reticle w", p.icon.w, NBAR17["PLATE_RET"] * K)
+        near("reticle h", p.icon.h, NBAR17["PLATE_RET"] * K)
+        near("reticle dy", p.icon.pts[1][5], NBAR17["PLATE_RET_DY"] * K)
+        near("bumper glyph w", p.glyph.w, NBAR17["PLATE_GLYPH"] * K)
+        near("bumper glyph h", p.glyph.h, NBAR17["PLATE_GLYPH"] * K)
+        near("bumper glyph x", p.glyph.pts[1][4], -sgn * NBAR17["PLATE_GX"] * K)
+        near("bumper glyph y", p.glyph.pts[1][5], NBAR17["PLATE_GY"] * K)
+        near("chip w", c.w, NBAR17["CHIP_W"] * K)
+        near("chip h", c.h, NBAR17["CHIP_H"] * K)
+        near("chip glyph w", c.g.w, NBAR17["CHIP_G"] * K)
+        near("chip glyph h", c.g.h, NBAR17["CHIP_G"] * K)
+        near("chip glow", c.disc.w, NBAR17["CHIP_GLOW"] * K)
+        # the anchors, from the half's diamond centre (bar units; y up)
+        ppx, ppy = float(p.pts[1][4]) - hx, float(p.pts[1][5]) - hy
+        cpx, cpy = float(c.pts[1][4]) - hx, float(c.pts[1][5]) - hy
+        inner = abs(ppx) - float(p.w) / 2
+        near("plate inner edge past the diamond's centre", inner, float(T.OFF_X) + float(NB.B) / 2 + 9)       # 79.5, as nbar17
+        near("plate top", ppy + float(p.h) / 2, float(T.OFF_Y) + float(NB.B) / 2)                            # 48, as nbar17
+        near("chip x under the plate", cpx, ppx)
+        near("chip under the plate's centre", ppy - cpy, (NBAR17["PLATE_H"] + 2 * NBAR17["CHIP_GAP"] + NBAR17["CHIP_H"]) / 2 * K)
+        # the plate clear of the diamond's outer slot, the chip (and its glow's box) clear of the plate's body
+        if inner < float(T.OFF_X) + float(NB.B) / 2:
+            bad.append("plate over the outer slot")
+        if (ppy - float(p.h) / 2) < (cpy + float(c.h) / 2):
+            bad.append("chip box over the plate")
+    chk("D. nbar18: every plate / chip part 0.75 x nbar17's (plate 46.5 x 36.96, reticle 21.46 raised 1.19, bumper glyph 17.25 at 19.5 in "
+        "/ 15.11 down, chip box and glyph 19.35, glow 37.8), the plate's inner edge and top where nbar17 had them, the chip 31.8 under it",
+        not bad, bad[:6])
+    mm = (float(T.PLATE_W) * float(T.MATCH_S) * MM_TOP, float(T.PLATE_H) * float(T.MATCH_S) * MM_TOP)
+    chk("D. nbar18: the plate %.2f x %.2f mm on the top panel (0.75 x the band's 7.51 x 5.97 = %.2f x %.2f within 1 %%), the bumper glyph "
+        "%.2f mm, the ZL / ZR glyph %.2f mm" % (mm + TOP_PLATE_MM + (float(T.PLATE_GLYPH) * 1.75 * MM_TOP, float(T.CHIP_G) * 1.75 * MM_TOP)),
+        abs(mm[0] / TOP_PLATE_MM[0] - 1) <= 0.01 and abs(mm[1] / TOP_PLATE_MM[1] - 1) <= 0.01
+        and abs(float(T.PLATE_GLYPH) * 1.75 * MM_TOP / TOP_BUMPER_MM - 1) <= 0.03
+        and abs(float(T.CHIP_G) * 1.75 * MM_TOP / TOP_TRIG_MM - 1) <= 0.03)
+    keep = (NB.B, NB.BC, NB.INSET, NB.FOCUS, NB.DX, T.OFF_X, T.OFF_Y, T.MATCH_S, T.CHORD, T.CHORD_GAP, T.CHORD_SEP, T.PLATE_GAP,
+            T.IN_S, T.OUT_S, T.HOLD_IN, T.BAND_UP_MS)
+    chk("D. nbar18: everything else as nbar17 (slots 46 / 44, inset, focus, DX 160, the diamond 47.5 / 25, MATCH_S 1.75, the chord row, "
+        "the slide's times)", tuple(float(x) for x in keep) == (46, 44, 3.5, 30, 160, 47.5, 25, 1.75, 16, 3, 4, 6, 0.26, 0.20, 0.08, 240),
+        keep)
+    hw, hh, ax, ay = L.eval("WowCompanion.nbar.halfBox")()
+    g = NB.outerGeo()
+    gx, py, cy = float(g.x), float(g.plateY), float(g.chipY)
+    hold = (gx + float(T.PLATE_W) / 2 <= ax + 1e-9 and gx + float(T.CHIP_GLOW) / 2 <= ax + 1e-9
+            and py + float(T.PLATE_H) / 2 <= ay + 1e-9 and -(cy - float(T.CHIP_GLOW) / 2) <= hh - ay + 1e-9)
+    chk("D. nbar18: the solver's half box (%.2f x %.2f) holds every plate / chip rect and is narrower than nbar17's 227 x 135 (the same "
+        "height)" % (hw, hh), hold and hw < 227 and hh == 135, (hw, hh, ax, ay))
+
+
 def main():
     part_a()
     part_b()
     part_c()
+    part_d()
     print("")
     print("%d passed, %d failed" % (passes, len(fails)))
     sys.exit(1 if fails else 0)
