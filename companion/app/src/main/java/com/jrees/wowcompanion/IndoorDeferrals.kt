@@ -29,7 +29,7 @@ internal class IndoorDeferrals(private val file: File, private val build: String
                 for (k in o.keys()) o.optJSONObject(k)?.let { e ->
                     val why = e.optString("why")
                     entries[k] = if (e.has("rule")) Entry(e.optString("id"), why, e.optLong("at"), e.optBoolean("rule"))
-                        else Entry(e.optString("id"), why, e.optLong("at"), rule = IndoorGenerator.isRule(why), legacy = true)
+                        else Entry(e.optString("id"), why, e.optLong("at"), rule = IndoorGenerator.isKnownRule(why), legacy = true)
                 }
             }
         }

@@ -39,6 +39,12 @@ class MapView(context: Context) : View(context) {
     // (assets/maps, stitched from the same tiles) left the APK with the art harvest (the user 2026-10-09: no game art in the
     // APK); in their place a SMALL copy of each tile is drawn at any width, the full tile over it while the view is close.
     private val pArt = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    /**
+     * the game's indoor minimap tiles (review of 2026-11-23, compare_ring_openmap.png: a dark hairline at every tile edge): drawn turned
+     * through a matrix, an anti-aliased edge is half covered on both sides and the scrim shows through where two tiles meet; without
+     * anti-aliasing each pixel belongs to exactly one tile (the tiles' outer edges are their own transparent slack)
+     */
+    private val pTile = Paint(Paint.FILTER_BITMAP_FLAG)
     private val tileDst = RectF()
     // Full-size tiles only while the view is at most this many yards across (then at most ~4 x 3 are on screen)
     private val TILE_MAX_YD = 1600f
@@ -943,10 +949,10 @@ class MapView(context: Context) : View(context) {
                 planDst[i * 2 + 1] = sy(r.ny(p.worldX(lx[i], ly[i])))
             }
             planMatrix.setPolyToPoly(planSrc, 0, planDst, 0, 3)
-            pArt.alpha = alpha
-            c.drawBitmap(bm, planMatrix, pArt)
+            pTile.alpha = alpha
+            c.drawBitmap(bm, planMatrix, pTile)
         }
-        pArt.alpha = 255
+        pTile.alpha = 255
         planBitmap(f.outline)?.let { drawPlan(c, p, f, it, alpha, sx, sy) }
         return true
     }
@@ -971,9 +977,8 @@ class MapView(context: Context) : View(context) {
     private var cityZAt = 0L
     private var cityZRoot = 0
     private val CITY_Z_MS = 4_000L
-    /** more of the game's tiles than this in view (a whole city at once): the painted map alone; more than [CITY_TILES_FULL]: half size */
+    /** more of the game's tiles than this in view (a whole city at once): the painted map alone ([IndoorCityArt.halfSize]: half or full) */
     private val CITY_TILES_MAX = 64
-    private val CITY_TILES_FULL = 12
 
     /** a capital's built room and the height its tracker knows (that room's root and its own space), or null */
     private fun cityRoomZ(p: Place): Pair<Int, Float>? {
@@ -1070,7 +1075,9 @@ class MapView(context: Context) : View(context) {
             }
         }
         if (vis.size > CITY_TILES_MAX) return
-        val half = vis.size > CITY_TILES_FULL
+        // the view's pixels a yard (one projection for every tile): full size unless a half-size tile loses nothing
+        val pxPerYd = Math.hypot((scrX(1.0, 0.0) - scrX(0.0, 0.0)).toDouble(), (scrY(1.0, 0.0) - scrY(0.0, 0.0)).toDouble())
+        val half = IndoorCityArt.halfSize(vis.size, pxPerYd)
         val alpha = if (sel.pick.sure) 255 else 140
         for ((g, tile) in vis) {
             val bm = planBitmap((if (half) "wmomm2:" else "wmomm:") + tile[2], half = half, from = ArtHarvest.file(WmoMinimap.tileFile(tile[2]))) ?: continue
@@ -1082,11 +1089,11 @@ class MapView(context: Context) : View(context) {
             val lx = doubleArrayOf(q[0], q[2], q[0]); val ly = doubleArrayOf(q[3], q[3], q[1])
             for (i in 0..2) { planDst[i * 2] = scrX(lx[i], ly[i]); planDst[i * 2 + 1] = scrY(lx[i], ly[i]) }
             planMatrix.setPolyToPoly(planSrc, 0, planDst, 0, 3)
-            pArt.alpha = alpha
-            c.drawBitmap(bm, planMatrix, pArt)
+            pTile.alpha = alpha
+            c.drawBitmap(bm, planMatrix, pTile)
             cityArtDrawn++
         }
-        pArt.alpha = 255
+        pTile.alpha = 255
     }
 
     /** the note may show: the rooms of this continent are read (or there is no published snapshot at all) and the player has a place */

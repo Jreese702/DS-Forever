@@ -73,6 +73,16 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     private fun cap(t: String) = t.replaceFirstChar { it.uppercaseChar() }
 
+    /**
+     * the status of a build stamped finished (for this game build and builder): the last status's counts as DONE; null when there is
+     * none (nothing to show: the row's "after Play" line, never a made-up "Finished")
+     */
+    internal fun finishedStatus(s: IndoorScheduler.Status?): IndoorScheduler.Status? = when {
+        s == null || s.total <= 0 -> null
+        s.phase == IndoorScheduler.Phase.DONE -> s
+        else -> IndoorScheduler.Status(IndoorScheduler.Phase.DONE, s.ready, s.total, s.rejected, list = s.list, rejected = s.rejected)
+    }
+
     /** D1's finished line: the maps built and the places the builder's own rule cannot map (none: the second half left out) */
     internal fun finished(ready: Int, rejected: Int): String =
         "Finished: ${count(ready)} map${if (ready == 1) "" else "s"}" +
@@ -85,14 +95,14 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     /** the last status, from memory or (before this process ran the step) from disk (fix 2: also the start-up waits' count) */
     internal fun status(ctx: Context): IndoorScheduler.Status? = status ?: runCatching {
-        IndoorScheduler.Status.of(JSONObject(File(dataDir(ctx), "status.json").readText()))
+        IndoorScheduler.Status.of(JSONObject(File(dataDir(ctx), IndoorScheduler.STATUS_FILE).readText()))
     }.getOrNull()
 
     private fun publishStatus(ctx: Context, s: IndoorScheduler.Status) {
         if (status?.phase != s.phase || status?.note != s.note) DiagLog.event("interiors", "${s.phase} ${s.ready}/${s.total} ${s.note}".trim())
         status = s
         runCatching {
-            val f = File(dataDir(ctx), "status.json"); val tmp = File(f.path + ".part")
+            val f = File(dataDir(ctx), IndoorScheduler.STATUS_FILE); val tmp = File(f.path + ".part")
             tmp.writeText(s.toJson().toString()); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
         }
         for (l in listeners) runCatching { l() }
@@ -252,8 +262,11 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         // stamped for this game build AND this builder (D1: finished; ArtHarvest.pending compares the stamp's inputs with [inputs]):
         // nothing to do (no catalogue rehash). A new builder or game build re-arms the rule's rejections
         if (runCatching { this !in ArtHarvest.pending(ctx, beforePlay = false) }.getOrDefault(false)) {
-            // the row keeps its finished line (fix 2: from disk when this process has not run the step)
-            status(ctx)?.let { if (status == null) status = it }
+            // the row keeps its finished line (fix 2: from disk when this process has not run the step). Review of 2026-11-23: the
+            // stamp says finished, so the row does too - Settings' switch turned Off and On again left "off in Settings" on it for good
+            val s = status(ctx)
+            val done = finishedStatus(s)
+            if (done != null && done != s) publishStatus(ctx, done) else if (s != null && status == null) status = s
             return
         }
         val factory = factory ?: run {

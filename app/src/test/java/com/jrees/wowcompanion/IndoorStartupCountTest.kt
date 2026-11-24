@@ -56,4 +56,33 @@ class IndoorStartupCountTest {
         assertEquals("Indoor Maps (Optional): 1616/1837 ready - Builds after you play", IndoorSchedulerStep.readiness(app).label)
         game.deleteRecursively()
     }
+
+    /**
+     * Review of 2026-11-23 (D1: "the row turns green"): a build stamped finished for this game build and builder keeps saying so. With
+     * Settings' switch turned Off the row read "off in Settings"; turned On again the stamped step returned at once and the row kept
+     * that line for good, never "Finished".
+     */
+    @Test fun aFinishedBuildSaysFinishedAfterTheSwitchWasOffAndOn() {
+        val build = "fedcba9876543210fedcba9876543210"
+        val game = java.nio.file.Files.createTempDirectory("ia-game2").toFile()
+        File(game, ".build.info").writeText("Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|Version!STRING:0|Product!STRING:0\nus|1|$build|1.0|wowf\n")
+        app.getSharedPreferences(GameFiles.PREFS, android.content.Context.MODE_PRIVATE).edit().putString(GameFiles.KEY_GAME_PATH, game.path).commit()
+        val dir = File(ArtHarvest.root(app), "interiors_sched").apply { mkdirs() }
+        val status = File(dir, "status.json")
+        // the finished run's count, then Settings' switch Off: "off in Settings" with that count
+        status.writeText("""{"phase":"STOPPED","ready":1632,"total":1853,"deferred":221,"note":"off in Settings","now":"","list":[],"rejected":221}""")
+        // stamped finished for this game build and this builder
+        ArtHarvest.markDetachedDone(app, IndoorSchedulerStep, build, IndoorSchedulerStep.inputs(app, build))
+        field("status").set(IndoorSchedulerStep, null)
+        val factoryType = Class.forName("com.jrees.wowcompanion.IndoorGenerator\$Factory")
+        field("factory").set(IndoorSchedulerStep, java.lang.reflect.Proxy.newProxyInstance(factoryType.classLoader, arrayOf(factoryType)) { _, _, _ ->
+            error("a finished build never opens the generator") })
+        Settings.init(app); Settings.indoorBuild = true
+        IndoorSchedulerStep.start(app)
+        val until = System.currentTimeMillis() + 10_000L
+        while (System.currentTimeMillis() < until && field("thread").get(IndoorSchedulerStep) != null) Thread.sleep(20)
+        assertEquals("Indoor Maps (Optional): Finished: 1,632 maps, 221 places can't be mapped", IndoorSchedulerStep.readiness(app).label)
+        assertEquals("DONE", JSONObject(status.readText()).optString("phase"))
+        game.deleteRecursively()
+    }
 }

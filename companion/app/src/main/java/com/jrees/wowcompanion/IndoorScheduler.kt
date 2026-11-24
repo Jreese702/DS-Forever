@@ -189,7 +189,10 @@ internal class IndoorScheduler(
 
     private fun runInner(): Outcome {
         try {
-            emit(Status(Phase.CATALOGUE, 0, 0))
+            // review of 2026-11-23 (fix 2's other half): the listing starts from the last run's count (status.json), so a pause or a
+            // kill while it lists (minutes after a game update) never leaves 0/0 on disk, the row or the problem report
+            val last = runCatching { Status.of(JSONObject(File(dataDir, STATUS_FILE).readText())) }.getOrNull()
+            emit(Status(Phase.CATALOGUE, last?.ready ?: 0, last?.total ?: 0, last?.deferred ?: 0, rejected = last?.rejected ?: 0))
             gate()
             // D4: listing the buildings is building work too (once per game update): the CPU held awake for it
             building = true
@@ -358,6 +361,8 @@ internal class IndoorScheduler(
         const val WAKE_LIMIT_MS = 10 * 60_000L
         /** fix 5: the published buildings' roots (interiors_sched/roots.json), the wmominimap step's input */
         const val ROOTS_FILE = "roots.json"
+        /** the last status as the step publishes it (interiors_sched/status.json, IndoorSchedulerStep.publishStatus) */
+        const val STATUS_FILE = "status.json"
 
         /** D1: the builder's identity a rule-rejection and the finished stamp hold for ([libDigest]: the native library's bytes) */
         fun builderKey(identity: String, libDigest: String): String = "gen|$identity|lib:$libDigest"

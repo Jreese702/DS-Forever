@@ -151,6 +151,57 @@ class IndoorFinishTest {
         assertEquals("$build|gen|a1|lib:aa|${works[1].signature}", saved.getJSONObject("wmo_b").getString("id"))
     }
 
+    @Test fun anOldDeferralSettlesOnlyForAKnownRuleOfTheBuilder() {
+        // review of 2026-11-23: 1.0.22 - 1.0.39 recorded ANY Throwable's message (a Java out-of-memory, a full disk, a stale catalogue).
+        // Classified by "not transient-looking" they were settled as the builder's rule: left out until the next game update while the
+        // row said finished. Only the builder's known rules stay settled; the rest are tried once more
+        val root = Files.createTempDirectory("finish5").toFile()
+        val dir = File(root, "interiors_sched").apply { mkdirs() }
+        val keys = listOf("wmo_a", "wmo_b", "wmo_c", "wmo_d", "wmo_e")
+        val works = Gen(keys).catalogue { }
+        val old = JSONObject()
+        fun put(i: Int, why: String) = old.put(keys[i], JSONObject().put("id", "$build|gen|${works[i].signature}").put("why", why).put("at", 1L))
+        put(1, "Failed to allocate a 41943056 byte allocation with 25165824 free bytes and 30MB until OOM, target footprint 536870912")
+        put(2, "/data/user/0/app/files/art/interiors/staging/x/l0.png: write failed: ENOSPC (No space left on device)")
+        put(3, "building wmo_d is not in this game build's catalogue")
+        put(4, "walk-section face budget exceeded or empty walk")
+        File(dir, "deferred.json").writeText(old.toString())
+        val gen = Gen(keys)
+        val st = ArrayList<IndoorScheduler.Status>()
+        assertEquals(IndoorScheduler.Outcome.COMPLETE, run(root, gen, statuses = st))
+        assertEquals("only the known rule stays settled", listOf("wmo_a", "wmo_b", "wmo_c", "wmo_d"), gen.made.sorted())
+        assertEquals(4, st.last().ready); assertEquals(1, st.last().rejected)
+        assertTrue(IndoorGenerator.isKnownRule("room exceeds the bounded layout policy; requires its own spa"))
+        assertFalse(IndoorGenerator.isKnownRule("invalid group bounds"))
+        assertFalse(IndoorGenerator.isKnownRule(""))
+    }
+
+    @Test fun aPauseWhileListingKeepsTheLastCount() {
+        // review of 2026-11-23 (fix 2's other half): each run began with CATALOGUE 0/0, so a pause (or a kill) while it listed the
+        // buildings - minutes after a game update - wrote 0/0 to status.json and the row lost its count
+        val root = Files.createTempDirectory("finish6").toFile()
+        val dir = File(root, "interiors_sched").apply { mkdirs() }
+        File(dir, IndoorScheduler.STATUS_FILE).writeText(IndoorScheduler.Status(IndoorScheduler.Phase.DONE, 1632, 1853, 221, rejected = 221).toJson().toString())
+        var busyUntil = 5_000L
+        val sig = object : IndoorScheduler.Signals {
+            var t = 0L
+            override fun position(): IndoorBakeQueue.Position? = null
+            override fun busy() = t < busyUntil
+            override fun hot() = false
+            override fun stop() = false
+            override fun now() = t
+            override fun sleep(ms: Long) { t += ms }
+        }
+        val st = ArrayList<IndoorScheduler.Status>()
+        IndoorScheduler(IndoorBakeStore(root), root, build, Gen(listOf("wmo_a")), sig, dir, onStatus = { st.add(it) }).run()
+        val paused = st.first { it.phase == IndoorScheduler.Phase.PAUSED }
+        assertEquals("the pause keeps the last count, not 0/0", 1632, paused.ready)
+        assertEquals(1853, paused.total)
+        assertTrue("never 0/0 before the listing ends: ${st.map { "${it.phase} ${it.ready}/${it.total}" }}",
+            st.takeWhile { it.phase != IndoorScheduler.Phase.BAKING }.none { it.total == 0 })
+        assertEquals("Indoor Maps (Optional): 1632/1853 ready - Waiting: game busy", IndoorSchedulerStep.readiness(paused).label)
+    }
+
     @Test fun theStatusKeepsItsRejectedCountOnDisk() {
         val s = IndoorScheduler.Status(IndoorScheduler.Phase.DONE, 1632, 1853, 221, list = listOf("k: why"), rejected = 221)
         assertEquals(s, IndoorScheduler.Status.of(JSONObject(s.toJson().toString())))

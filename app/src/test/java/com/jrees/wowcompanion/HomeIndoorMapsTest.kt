@@ -169,9 +169,12 @@ class HomeIndoorMapsTest {
         val texts = ArrayList<String>()
         var tiles = 0
         var painted = 0
+        /** the width of every flat cyan tile drawn through a matrix (the review's test floors; a tile decoded at half size is half as wide) */
+        val widths = ArrayList<Int>()
         override fun drawText(text: String, x: Float, y: Float, paint: Paint) { texts += text; super.drawText(text, x, y, paint) }
         override fun drawBitmap(bitmap: Bitmap, matrix: Matrix, paint: Paint?) {
             if (bitmap.width == bitmap.height && (bitmap.width == 256 || bitmap.width == 128)) tiles++
+            if (bitmap.getPixel(bitmap.width / 2, bitmap.height / 2) == Color.rgb(40, 200, 220)) widths += bitmap.width
             super.drawBitmap(bitmap, matrix, paint)
         }
         override fun drawBitmap(bitmap: Bitmap, src: Rect?, dst: RectF, paint: Paint?) {
@@ -249,6 +252,101 @@ class HomeIndoorMapsTest {
 
     @Test fun theGamesArtShowsInAHallWithNoBuiltRoomHome() = hallCase(true, 520, 420)
     @Test fun theGamesArtShowsInAHallWithNoBuiltRoomOpenMap() = hallCase(false, 1240, 1000)
+
+    // ---------------------------------------------------------------- review (2026-11-23): seams and blur
+
+    private val SEAM_FID = 1000002
+    private val SEAM_COLOR = Color.rgb(40, 200, 220)
+
+    /** a 3 x 3 block group of one flat colour (a hall floor that runs across its tiles), away from the made-up hall */
+    private fun seamGroup() {
+        png(File(root, WmoMinimap.tileFile(SEAM_FID)), 256, 256, SEAM_COLOR)
+        val t = JSONArray()
+        for (by in 0..2) for (bx in 0..2) t.put(JSONArray(listOf(bx, by, SEAM_FID, 256, 256)))
+        val g = JSONObject().put("t", t).put("bb", JSONArray(listOf(-384.0, -534.0, -5.0, 0.0, -150.0, 80.0)))
+        val f = File(root, "wmominimap.json")
+        val o = JSONObject(f.readText())
+        o.getJSONObject("roots").getJSONObject("7801267").getJSONObject("groups").put("70", g)
+        f.writeText(o.toString())
+    }
+
+    /**
+     * the hairline pixels: off the tile's colour while the pixels 3 px to either side (or above and below) are the tile's colour - a
+     * line inside the flat floor, not the floor's own outer edge. [hud]: the open map's own title bar, "N", buttons and scale line
+     * are left out
+     */
+    private fun hairline(b: Bitmap, hud: Boolean = false): Int {
+        val w = b.width; val h = b.height
+        val px = IntArray(w * h); b.getPixels(px, 0, w, 0, 0, w, h)
+        fun flat(c: Int) = Math.abs(Color.red(c) - 40) + Math.abs(Color.green(c) - 200) + Math.abs(Color.blue(c) - 220) <= 12
+        var n = 0
+        val top = if (hud) 120 else 3; val right = if (hud) 130 else 3; val bottom = if (hud) 40 else 3
+        for (y in top until h - bottom) for (x in 3 until w - right) {
+            val c = px[y * w + x]
+            if (flat(c)) continue
+            if ((flat(px[y * w + x - 3]) && flat(px[y * w + x + 3])) || (flat(px[(y - 3) * w + x]) && flat(px[(y + 3) * w + x]))) n++
+        }
+        return n
+    }
+
+    private fun seamCase(compact: Boolean, w: Int, h: Int): Rec {
+        if (System.getenv("IA_ART_ROOT") != null) return Rec(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
+        seamGroup()
+        // 7 yd from the tile edge at lx = -128, in the middle row: the floor runs on across the edge
+        val d = doc(wx(-135.0, -342.0), wy(-135.0, -342.0))
+        val v = map(compact, w, h, d)
+        waitRooms(v, d)
+        val r = settle(v, w, h) { it.tiles >= 2 }
+        System.getenv("IA_SEAM_SHOTS")?.let { dir -> File(dir).mkdirs()
+            File(dir, "seam_${if (compact) "home" else "openmap"}.png").outputStream().use { r.b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        return r
+    }
+
+    /** a hall floor that runs across two of the game's tiles shows no line where they meet (it drew a dark hairline at every tile edge) */
+    @Test fun theGamesTilesMeetWithoutASeamHome() {
+        val r = seamCase(true, 520, 420)
+        if (r.b.width == 1) return
+        assertTrue("the tiles drew (${r.tiles})", r.tiles >= 2)
+        assertEquals("no hairline where the tiles meet", 0, hairline(r.b))
+    }
+
+    /**
+     * the open map shows a hall's tiles at their own resolution: with more than 12 in view they were decoded at HALF size, upscaled
+     * about 5 x at the open map's ~5 px a yard (the blur on the open map in compare_*_openmap.png); half size only once the view is so
+     * far out that a half-size tile still has a pixel a yard, or when very many are in view (memory)
+     */
+    @Test fun theOpenMapDrawsTheTilesAtFullSize() {
+        if (System.getenv("IA_ART_ROOT") != null) return
+        // a hall floor made of 64 small groups, one 128 px tile (64 yd) each: about 20 tiles in the open map's view
+        val fid = 1000003
+        png(File(root, WmoMinimap.tileFile(fid)), 128, 128, SEAM_COLOR)
+        val f = File(root, "wmominimap.json")
+        val o = JSONObject(f.readText())
+        val groups = o.getJSONObject("roots").getJSONObject("7801267").getJSONObject("groups")
+        for (j in 0 until 8) for (i in 0 until 8) {
+            val x0 = -455.0 + i * 64; val y0 = -622.0 + j * 64
+            groups.put("${100 + j * 8 + i}", JSONObject().put("t", JSONArray().put(JSONArray(listOf(0, 0, fid, 128, 128))))
+                .put("bb", JSONArray(listOf(x0, y0, -5.0, x0 + 64, y0 + 64, 80.0))))
+        }
+        f.writeText(o.toString())
+        val d = doc(wx(-135.0, -342.0), wy(-135.0, -342.0))
+        val v = map(false, 1240, 1000, d)
+        waitRooms(v, d)
+        val r = settle(v, 1240, 1000) { it.widths.size > 12 && it.widths.all { w -> w == 128 } }
+        val drawn = r.widths
+        System.getenv("IA_SEAM_SHOTS")?.let { dir -> File(dir).mkdirs()
+            File(dir, "fullsize_openmap.png").outputStream().use { r.b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        assertTrue("many tiles in view (${drawn.size})", drawn.size > 12)
+        assertEquals("every one at full size, none upscaled from half: $drawn", drawn.size, drawn.count { it == 128 })
+        assertEquals("no hairline where the tiles meet", 0, hairline(r.b, hud = true))
+    }
+
+    @Test fun theGamesTilesMeetWithoutASeamOpenMap() {
+        val r = seamCase(false, 1240, 1000)
+        if (r.b.width == 1) return
+        assertTrue("the tiles drew (${r.tiles})", r.tiles >= 2)
+        assertEquals("no hairline where the tiles meet", 0, hairline(r.b, hud = true))
+    }
 
     private fun noMapCase(compact: Boolean, w: Int, h: Int) {
         val d = doc(wx(-150.0, 150.0), wy(-150.0, 150.0))

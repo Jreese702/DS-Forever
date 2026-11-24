@@ -48,6 +48,15 @@ class IndoorCityArtTest {
         assertTrue("turned ($a)", Math.abs(Math.abs(a) - 50.5) < 2.0)
     }
 
+    @Test fun theTilesAreFullSizeUnlessHalfLosesNothing() {
+        // review of 2026-11-23: the open map (~5 px a yard) drew 13 - 17 tiles at half size, upscaled about 5 x
+        assertFalse("the open map at ~5 px a yard, 17 tiles in view", IndoorCityArt.halfSize(17, 5.1))
+        assertFalse("Home's column", IndoorCityArt.halfSize(6, 9.0))
+        assertFalse("a tile's own resolution", IndoorCityArt.halfSize(20, 2.0))
+        assertTrue("zoomed out to a pixel a yard: half size loses nothing", IndoorCityArt.halfSize(20, 1.0))
+        assertTrue("very many in view (memory)", IndoorCityArt.halfSize(IndoorCityArt.HALF_ABOVE + 1, 5.0))
+    }
+
     @Test fun theIndoorsGateHasAPerCitySwitch() {
         assertTrue(IndoorCityArt.shows(IF, indoors = true))
         assertFalse("today: indoors only (the device read decides Ironforge's streets)", IndoorCityArt.shows(IF, indoors = false))

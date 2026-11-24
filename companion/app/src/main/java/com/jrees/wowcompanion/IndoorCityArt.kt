@@ -46,6 +46,19 @@ internal object IndoorCityArt {
 
     fun byRoot(root: Int): City? = CAPITALS.firstOrNull { it.root == root }
 
+    /**
+     * more tiles than this in view: decoded at half size whatever the zoom (memory: MapView keeps 24 MB of pictures in all, a built
+     * room's storeys up to ~3 MB each among them; 24 full 256 px tiles are 6 MB)
+     */
+    const val HALF_ABOVE = 24
+
+    /**
+     * a tile is decoded at half size (review of 2026-11-23: with more than 12 in view they were, and the open map at ~5 px a yard drew
+     * them upscaled about 5 x, a blur) only when the view has at most a pixel a yard ([pxPerYd]; a tile has [WmoMinimap.PX_PER_YD], so
+     * half size loses nothing there) or more than [HALF_ABOVE] tiles are in view (256 KB a full-size 256 px tile)
+     */
+    fun halfSize(tiles: Int, pxPerYd: Double): Boolean = tiles > HALF_ABOVE || pxPerYd <= WmoMinimap.PX_PER_YD / 2
+
     /** a world point inside a (top, bottom, left, right) rect: x north between bottom and top, y west between right and left */
     fun inRect(r: DoubleArray, wx: Double, wy: Double): Boolean = wx in r[1]..r[0] && wy in r[3]..r[2]
 

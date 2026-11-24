@@ -47,6 +47,28 @@ internal interface IndoorGenerator : AutoCloseable {
             return TRANSIENT.none { m.contains(it, ignoreCase = true) } && !m.startsWith("interiors generator: ")
         }
         private val TRANSIENT = listOf("unavailable", "out of memory", "allocation limit", "low memory", "could not be read", "unreadable")
+
+        /**
+         * a deferral recorded before D1 (1.0.22 - 1.0.39: its reason only, any Throwable's message - a Java out-of-memory "Failed to
+         * allocate ...", a full disk "ENOSPC", a building missing from a stale catalogue) is settled only when its reason is one of the
+         * builder's known rules (the PC full-catalogue run's 221: E:/wc-int-out/d/fc-d7ed255f.log, 2026-10-13; review of 2026-11-23).
+         * Anything else is tried once more and then classified by its kind ([Rejected]): at worst one extra try, never a building that
+         * could be built left out while the row says finished.
+         */
+        fun isKnownRule(reason: String?): Boolean {
+            val m = reason?.trim().orEmpty()
+            return m.isNotEmpty() && KNOWN_RULES.any { m.startsWith(it) }
+        }
+        private val KNOWN_RULES = listOf(
+            "room exceeds the bounded layout policy",
+            "architectural section preview has no storeys",
+            "empty_walk_requires_investigation",
+            "height grid contains surfaces assigned to no storey or stair",
+            "merged Recast span budget exceeded",
+            "no section storey has a supporting kept walk surface",
+            "room has no measured walk at an actual boundary portal",
+            "walk-section face budget exceeded or empty walk",
+        )
     }
 
     /** Bump when unchanged inputs would now give different output; it becomes [IndoorBakeStore.Work.algorithm]. */
