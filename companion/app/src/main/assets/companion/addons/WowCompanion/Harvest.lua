@@ -33,12 +33,22 @@
 -- NOT RECORDED, on the user's ruling (2026-09-27): NPCs the player merely talks to
 -- (GOSSIP_SHOW) and quest givers (QUEST_GREETING). They are not services, the map has no pin
 -- for them, and each one cost a log flush.
+--
+-- hv3 (the user, 2026-11-24, a Hunter on 1.0.40: "Using my pet training is showing up as a trainer on my map and that is not
+-- correct"): Beast Training (spell 5149) opens the game's trainer window with NO NPC behind it, and TRAINER_SHOW (and the umbrella
+-- event's Trainer type) fired the same as at an NPC. hv2 then read "npc", found nothing, BORROWED THE TARGET, and filed a class
+-- trainer where the player stood - named after the pet, the player, or whatever creature was targeted. Now a service an NPC gives
+-- (everything but a mailbox / guild vault) is recorded only when the window's own "npc" unit is a creature that is not the player:
+-- never the target, never a Player- / Pet- GUID. Quest givers (below) likewise refuse a Player / Pet "npc" (a quest shared by a
+-- party member, a quest window opened on the player) - those are not givers standing at the player's spot.
+local HV = "hv3"
 
 local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
--- event -> service label. The event IS the evidence, so no npcflag inference is needed.
+-- event -> service label. The event IS the evidence of WHAT the service is, so no npcflag inference
+-- is needed; WHO gives it is the window's "npc" unit (hv3: serviceNpc below).
 -- Core.lua registers these and calls WC.onInteract(event).
 local SERVICE = {
     MERCHANT_SHOW = "vendor",
@@ -50,6 +60,9 @@ local SERVICE = {
     TAXIMAP_OPENED = "flightmaster",
     CONFIRM_BINDER = "innkeeper",
 }
+
+-- hv3: the services that are OBJECTS, used with no unit at all. Every other service is an NPC's.
+local OBJECT_SVC = { mailbox = true, guildbank = true }
 
 WC.HARVEST_EVENTS = {}
 for k in pairs(SERVICE) do WC.HARVEST_EVENTS[#WC.HARVEST_EVENTS + 1] = k end
@@ -155,6 +168,18 @@ local function npcUnit()
     return guid, name
 end
 
+-- hv3 THE NPC WHOSE WINDOW THIS IS, for a service: the "npc" unit only (the target is NOT borrowed: Beast Training's window has no
+-- "npc", and the target then was the pet, a mob, or nothing), and only a creature (creatureIdOf: Creature- / Vehicle- GUIDs) that is
+-- not the player. Returns the creature id and a plain name (or nil), or nil when no NPC stands behind the window.
+local function serviceNpc()
+    if S(function() return UnitIsUnit("npc", "player") end) == true then return nil end
+    local cid = creatureIdOf(S(function() return UnitGUID("npc") end))
+    if not cid then return nil end
+    local name = S(function() return UnitName("npc") end)
+    if type(name) ~= "string" or name == WC.ABSENT or name == WC.SECRET or name == WC.THREW or name == "" then name = nil end
+    return cid, name
+end
+
 -- WORLD position and continent. The app uses them to check a capture against the bundled
 -- seed: a seed pin is only marked "visited" when the harvested NPC stands where the bundle says
 -- it does. Forever MOVES capital trainers, and a solid pin in the old spot would be wrong.
@@ -170,11 +195,15 @@ function WC.harvest(svc, source)
 
     local mapID, x, y = here()
     if not mapID then return end
-    local guid, name = npcUnit()
 
-    local cid = creatureIdOf(guid)
-    if svc == "mailbox" then cid = nil; name = nil end   -- an object; "npc" may be stale
-    -- Objects (mailboxes) have no unit at all; key those by rounded position instead.
+    -- hv3: an NPC's service needs that NPC (serviceNpc); an object (a mailbox, a guild vault) has no unit at all - "npc" or the
+    -- target may be a stale creature, never its id.
+    local cid, name = nil, nil
+    if not OBJECT_SVC[svc] then
+        cid, name = serviceNpc()
+        if not cid then return end
+    end
+    -- Objects have no unit at all; key those by rounded position instead.
     local key = svc .. "/" .. tostring(cid or (math.floor(x * 1000) .. "_" .. math.floor(y * 1000)))
     if seen[key] and (GetTime() - seen[key]) < 300 then return end
     seen[key] = GetTime()
@@ -336,6 +365,9 @@ function WC.recordQuestGiver(stage)
     local mapID, x, y = here()
     if not mapID then return end
     local guid, name = npcUnit()
+    -- hv3: a Player or a Pet is no quest giver on the map (a party member's shared quest; a window opened on the player / the pet)
+    local gk = type(guid) == "string" and guid:match("^(%a+)-") or nil
+    if gk == "Player" or gk == "Pet" then return end
     local tag, gid = giverOf(guid)
     local offer, turnin, done, offerT = questLists(stage)
     local full = (stage == "gossip" or stage == "greeting")
@@ -425,7 +457,7 @@ end
 
 -- hv2 (the user, 2026-11-13: "when asking a guard for directions, it does not put the arrow and flag to what I am looking for on our
 -- map"): the read moved to Map.lua (WC.gpoi.read, the same plain-number checks, both position forms, the single id), and the flag
--- is now DRAWN: map.gpoi on Home's map and the Map room, the arrow at it. This probe keeps its cap line (v = "hv2").
+-- is now DRAWN: map.gpoi on Home's map and the Map room, the arrow at it. This probe keeps its cap line (v = HV, the file's tag).
 local function readGossipPoi(mapID)
     if not (WC.gpoi and WC.gpoi.read) then return false, nil, {} end
     return WC.gpoi.read(mapID)
@@ -435,7 +467,7 @@ local function reportGossipPoi(trigger)
     local mapID = SN(function() return C_Map.GetBestMapForUnit("player") end)
     local ok, res, pois = readGossipPoi(mapID)
     WC.emit({
-        type = "cap", probe = "gossipPoi", v = "hv2", trigger = trigger, mapID = mapID,
+        type = "cap", probe = "gossipPoi", v = HV, trigger = trigger, mapID = mapID,
         callOK = ok, ret = type(res), pick = lastPick, pois = pois,
     })
     return ok, pois
@@ -459,7 +491,7 @@ end)
 -- What this build actually gave us, once at load, so the device answers these questions
 -- instead of retail documentation: which interaction types resolved, which events exist.
 pcall(function()
-    WC.send(WC.encode({ type = "cap", harvest = {
+    WC.send(WC.encode({ type = "cap", harvest = { v = HV,
         pimResolved = pimResolved, pimMissing = pimMissing, missingEvents = evMissing,
         tradeskillFn = type(IsTradeskillTrainer) == "function",
         repairFn = type(CanMerchantRepair) == "function",

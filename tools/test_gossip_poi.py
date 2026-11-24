@@ -7,7 +7,7 @@ C_GossipInfo / C_Map / C_Minimap, checks:
   - the flag held only on the parent map: m = the parent, hx / hy carried onto the player's map
   - a SECRET answer (the id, the info, the position, the name, the cut): dropped, never sent
   - GetPoiInfo's position as a plain table (no GetXY): still read
-  - Harvest's /wcpoi probe reads through WC.gpoi.read (v = "hv2") and still finds the flag
+  - Harvest's /wcpoi probe reads through WC.gpoi.read (v = "hv3", the file's tag since the pet-training fix) and still finds the flag
   - nothing written (no SetCVar / SetBinding / macro / Blizzard window call)
 Run: python -B tools/test_gossip_poi.py
 """
@@ -185,8 +185,8 @@ L = world()
 L.execute('FLAG[1453] = { id = 31, name = "Bank", x = 0.6, y = 0.7, tex = 5 }')
 L.execute('EM = {}; WowCompanion.emit = function(t) EM[#EM + 1] = t end; SlashCmdList["WCPOI"]()')
 d = L.eval('EM[#EM]')
-check(d is not None and d['probe'] == 'gossipPoi' and d['v'] == 'hv2' and d['pois'][1]['id'] == 31,
-      "/wcpoi: Harvest's probe (hv2) reads the flag through WC.gpoi.read", d and dict(d))
+check(d is not None and d['probe'] == 'gossipPoi' and d['v'] == 'hv3' and d['pois'][1]['id'] == 31,
+      "/wcpoi: Harvest's probe (hv3, tools/test_harvest_npc.py) reads the flag through WC.gpoi.read", d and dict(d))
 check('local function readGossipPoi(mapID)\n    if not (WC.gpoi and WC.gpoi.read)' in HARVEST, "Harvest's own copy of the read is gone")
 
 check(len(list(L.eval('SPY').values())) == 0, "nothing written: no binding / CVar / macro / window call", list(L.eval('SPY').values()))
