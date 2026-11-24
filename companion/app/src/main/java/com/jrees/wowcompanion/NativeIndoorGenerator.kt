@@ -28,6 +28,7 @@ internal class NativeIndoorGenerator(
     private val sleep: (Long) -> kotlin.Unit = Thread::sleep
 ) : IndoorGenerator {
     override val algorithm: Int = ALGORITHM
+    override val identity: String get() = baseIdentity()
 
     private class Unit(val spec: JSONObject, val inputs: IntArray = IntArray(0))
     // JNI looks up read by name; keep a named implementation instead of a shrinker-generated SAM.
@@ -43,6 +44,7 @@ internal class NativeIndoorGenerator(
 
     override fun catalogue(yield: IndoorGenerator.Yield): List<IndoorBakeStore.Work> {
         val maps = (game.db2(MAP_TABLE) ?: error("Map.db2 unreadable: ${game.lastReadWhy}")).rows(setOf(0))
+        instances = dungeonsAndRaids(maps)
         // (root, doodad set) -> placements (continent = map id)
         val placed = LinkedHashMap<Pair<Int, Int>, MutableList<JSONObject>>()
         var skipped = 0
@@ -125,6 +127,7 @@ internal class NativeIndoorGenerator(
         if (unit.inputs.isNotEmpty()) game.prefetch(unit.inputs.toList())
         var started = 0L
         var attempt: String? = null
+        var midStops = 0
         while (true) {
             started = System.nanoTime()
             try {
@@ -136,13 +139,22 @@ internal class NativeIndoorGenerator(
                     yield.point()
                 }
                 // named, @Keep callback objects: native code finds read()/point() by name, which R8 must not strip (IndoorGeneratorNative.kt)
-                attempt = IndoorGeneratorNative.generate(unit.spec.toString(), GameSource(game), NativeYield(guarded), out.path)
+                attempt = try {
+                    IndoorGeneratorNative.generate(unit.spec.toString(), GameSource(game), NativeYield(guarded), out.path)
+                } catch (e: IllegalStateException) {
+                    // D1 (2026-11-23): the builder's own rule (too big, no floors, a budget) is settled, anything else is tried again
+                    if (IndoorGenerator.isRule(e.message)) throw IndoorGenerator.Rejected(e.message!!.trim()) else throw e
+                }
                 break
             } catch (e: LowMemory) {
                 // the T3 parser and the threshold tuning read this exact line
                 Log.w(TAG, "memory guard: stopped (MemAvailable ${e.availableMiB} MiB, phase ${e.phase}) ${work.key}, retry in ${GUARD_BACKOFF_MS / 1000} s")
                 out.listFiles()?.forEach { it.deleteRecursively() }
                 lowMemoryStops++
+                // "Give up after 3 tries" (2026-11-23): a building that runs the device out of memory every time no longer loops here
+                // for good; given up for this run (a failure that may pass: no rule), it is counted as one failed run
+                if (e.phase == "mid" && ++midStops >= GUARD_MAX_MID_STOPS)
+                    throw IllegalStateException("low memory: the building stopped $midStops times mid-build (MemAvailable ${e.availableMiB} MiB)")
                 backoff(yield)
             }
         }
@@ -160,6 +172,16 @@ internal class NativeIndoorGenerator(
     }
 
     override fun close() { units.clear() }
+
+    /** the dungeons and raids of the last Map.db2 read ([catalogue]), or read now (a cached catalogue: one small table) */
+    @Volatile private var instances: Set<Int>? = null
+
+    override fun instanceMaps(): Set<Int>? = instances ?: runCatching {
+        dungeonsAndRaids(game.db2(MAP_TABLE)?.rows(setOf(0)) ?: return null)
+    }.onFailure { Log.w(TAG, "Map.db2: ${it.message}") }.getOrNull()?.also { instances = it }
+
+    private fun dungeonsAndRaids(maps: List<Db2.Row>): Set<Int> =
+        maps.filter { it.int(MAP_INSTANCE_TYPE) in DUNGEON_TYPES }.mapTo(HashSet()) { it.id }
 
     /** low-memory stops so far (each one a backoff and a fresh attempt at the same building) */
     @Volatile var lowMemoryStops = 0
@@ -236,6 +258,14 @@ internal class NativeIndoorGenerator(
         private const val MAP_INSTANCE_TYPE = 8        // 0 world, 1 dungeon, 2 raid, 3 battleground (checked on the PC build)
         private const val MAP_WDT = 21                 // WdtFileDataID (MapHarvest.MAP_WDT)
         private val INSTANCE_TYPES = setOf(0, 1, 2, 3)
+        /** the user's pick (2026-11-23) "Build last, leave out of count": dungeons (1) and raids (2); a battleground is counted */
+        private val DUNGEON_TYPES = setOf(1, 2)
+        /**
+         * a low-memory stop in the MIDDLE of a building (the building itself needs more than the device has: an 8 GB Thor) is tried this
+         * many times in a run, then given up as a failure that may pass (it counts as one failed run: IndoorDeferrals.MAX_TRIES of them
+         * settle it). A stop before it starts is the device's state, not the building's: it waits as before
+         */
+        const val GUARD_MAX_MID_STOPS = 3
         /** The legacy profile of the non-city references (inn, Deadmines, mines, Darnassus, Thunder Bluff): whole portal
          *  components in 150 yd work tiles, one portal hop, Recast 60 yd tiles. */
         val LEGACY = Profile("legacy-r1", workTile = 150.0, roomSpan = 0.0, roomHeight = 0.0, portalHops = 1, contextOnly = false,
@@ -249,6 +279,13 @@ internal class NativeIndoorGenerator(
         fun profileFor(rootFid: Int): Profile = if (rootFid in CITY_ROOTS) CITY_ROOM else LEGACY
 
         val factory = IndoorGenerator.Factory { NativeIndoorGenerator(it) }
+
+        /**
+         * the builder's identity without an open generator (the step's finished stamp is checked before the game files open): the
+         * algorithm and the native library's own version line; the step adds the library's bytes (IndoorSchedulerStep.builderKey)
+         */
+        fun baseIdentity(): String =
+            "a$ALGORITHM|" + (runCatching { if (IndoorGeneratorNative.available) IndoorGeneratorNative.version() else "no-lib" }.getOrNull() ?: "no-lib")
 
         private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it.toInt() and 255) }
     }

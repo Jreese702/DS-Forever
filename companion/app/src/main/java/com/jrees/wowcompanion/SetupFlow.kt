@@ -55,6 +55,8 @@ object SetupFlow {
         val dependencies: String? = null,
         /** the optional interiors step's line, null = no such step registered (the release ships without it) */
         val indoor: String? = null,
+        /** D1 (2026-11-23): the interiors step is finished (every building built or turned down by its rule): the row turns green */
+        val indoorDone: Boolean = false,
         /** the client build line, null = not checked yet */
         val client: String? = null,
         /** the newer client build when the local one is out of date */
@@ -148,6 +150,14 @@ object SetupFlow {
      */
     const val MAPS_WAIT = "Maps: build while the game is closed"
     const val MAPS_READY = "Maps: ready"
+
+    /**
+     * D1 (the user's pick, 2026-11-23: "Done when all mappable built"): the finished row, from the step's "Finished: 1,632 maps, 221
+     * places can't be mapped" - "Indoor maps finished: 1,632 maps, 221 places can't be mapped" (its terse name "Indoor maps finished")
+     */
+    fun indoorDoneRow(line: String): String = "$INDOOR_DONE: " + line.removePrefix("Finished: ").removePrefix("Finished")
+        .trimStart(':', ' ').ifEmpty { "ready" }
+    const val INDOOR_DONE = "Indoor maps finished"
 
     /** the "DS Forever vX is out" pop-up holds Play until Update or Later (board b-update-blocks-play) */
     /**
@@ -448,7 +458,7 @@ object SetupFlow {
         add(i.addonsProblem?.let { Check(it + (i.dependencies?.let { d -> "; $d" } ?: ""), Mark.BAD) }
             ?: Check("Add-ons: ${if (i.addonsInstalled) "installed" else "installed with the first Play"}" +
                 (i.dependencies?.let { "; $it" } ?: ""), if (i.addonsInstalled) Mark.OK else Mark.WAIT))
-        i.indoor?.let { add(Check("Indoor maps (builds while the game is closed): $it", Mark.OPTIONAL)) }
+        i.indoor?.let { add(if (i.indoorDone) Check(indoorDoneRow(it), Mark.OK) else Check("Indoor maps (builds while the game is closed): $it", Mark.OPTIONAL)) }
         i.client?.let { add(Check("Client build: $it", if (i.gameOutdated == null) Mark.OK else Mark.BAD)) }
         // the app's own update: optional, never a warning (an update waits for the player's press on the bottom screen)
         i.appLine?.let { add(Check(it, if (it.endsWith("up to date")) Mark.OK else Mark.OPTIONAL)) }

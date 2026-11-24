@@ -92,6 +92,19 @@ object WmoMinimap {
         return null
     }
 
+    /** the capitals' roots (NativeIndoorGenerator.CITY_ROOTS: Stormwind, Ironforge, Undercity, Orgrimmar): their art always collected */
+    val CITY_ROOTS: Set<Int> get() = NativeIndoorGenerator.CITY_ROOTS
+
+    /** fix 5: the roots the wmominimap step collects for: the builder's published roots ([rootsFile], IndoorScheduler) and the capitals */
+    fun wantedRoots(rootsFile: java.io.File): Set<Int> = java.util.TreeSet(IndoorScheduler.readRoots(rootsFile) + CITY_ROOTS)
+
+    /** the stamp's inputs for a set of roots: their count and a digest (a different set = a different key) */
+    fun rootsKey(roots: Set<Int>): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        md.update(roots.sorted().joinToString(",").toByteArray(Charsets.UTF_8))
+        return "roots:${roots.size}:" + md.digest().take(8).joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
+
     /** the root fileDataIDs of the published interiors snapshot (its models' keys: "<rootFid>_d<set>_...") */
     fun snapshotRoots(interiors: java.io.File): Set<Int> {
         val cur = runCatching { JSONObject(java.io.File(interiors, "current.json").readText()) }.getOrNull() ?: return emptySet()

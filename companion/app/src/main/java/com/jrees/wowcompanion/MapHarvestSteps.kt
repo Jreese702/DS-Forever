@@ -493,7 +493,17 @@ object MapHarvestSteps {
         override val version = 2                    // 2: the tiles' pictures and the groups' boxes, for the drawing
         override val beforePlay = false
         override val weight = 5
+        /**
+         * fix 5 (2026-11-23, Ironforge "I cant see iron forges map at all"): the roots it collects for - the 4 capitals always (their
+         * art is drawn by position, not only inside a built room) and every root the interiors builder has published - so it runs again
+         * when that set grows; it could run before any Ironforge room existed and keep no city art for the whole game build
+         */
+        override fun inputs(ctx: android.content.Context, build: String): String? =
+            WmoMinimap.rootsKey(WmoMinimap.wantedRoots(java.io.File(ArtHarvest.root(ctx), "interiors_sched/" + IndoorScheduler.ROOTS_FILE)))
         override fun run(job: ArtHarvest.Job) {
+            // the stamp's inputs are the roots asked for as the step starts (a root published meanwhile runs it again later)
+            val asked = WmoMinimap.wantedRoots(java.io.File(job.out, "interiors_sched/" + IndoorScheduler.ROOTS_FILE))
+            job.inputKey = WmoMinimap.rootsKey(asked)
             val t = job.game.db2(WmoMinimap.DB_WMO_MINIMAP_TEXTURE)
             if (t == null) {
                 android.util.Log.i("WCMAP", "wmo minimap: the WMOMinimapTexture table did not read (${job.game.lastReadWhy})")
@@ -503,8 +513,10 @@ object MapHarvestSteps {
             val by = WmoMinimap.byWmo(rows)
             android.util.Log.i("WCMAP", "wmo minimap: ${rows.size} tiles, ${by.size} buildings, " +
                 "${by.values.sumOf { ts -> ts.map { it.group }.toSet().size }} groups in the table")
-            val roots = WmoMinimap.snapshotRoots(java.io.File(job.out, "interiors"))
-            if (roots.isEmpty()) android.util.Log.i("WCMAP", "wmo minimap: no interiors snapshot yet: the table's totals only")
+            // the published snapshot's roots, the builder's list of them, and the 4 capitals always (fix 5)
+            val roots = WmoMinimap.snapshotRoots(java.io.File(job.out, "interiors")) + asked
+            android.util.Log.i("WCMAP", "wmo minimap: ${roots.size} roots (the 4 capitals always; ${asked.size - WmoMinimap.CITY_ROOTS.size} " +
+                "more from the published indoor maps)")
             val out = JSONObject()
             var withArt = 0; var groupsAll = 0; var groupsArt = 0; var unread = 0
             val none = ArrayList<Int>(); val sample = ArrayList<Int>()

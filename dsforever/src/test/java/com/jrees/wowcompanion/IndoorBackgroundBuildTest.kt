@@ -171,7 +171,8 @@ class IndoorBackgroundBuildTest {
             IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.PAUSED, PlayGate.GAME_RUNNING)).label)
         assertEquals(head + "Builds when minimized or screen off",
             IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.PAUSED, PlayGate.IN_BACKGROUND, 0, 0)).label)
-        assertEquals(head + "1853/1853 ready", IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.DONE, ready = 1853)).label)
+        // D1 (the user's pick, 2026-11-23): done is "Finished" (IndoorFinishTest: with the places the builder's rule cannot map)
+        assertEquals(head + "Finished: 1,853 maps", IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.DONE, ready = 1853)).label)
         assertTrue(IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.DONE, ready = 1853)).done)
     }
 

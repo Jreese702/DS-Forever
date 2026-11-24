@@ -1008,6 +1008,7 @@ fun WoWForeverScreen(
         addonsProblem = addonsProblem,
         dependencies = dependencies,
         indoor = interiors.label.substringAfter(": "),
+        indoorDone = interiors.done,
         client = versionStatus?.let { if (it.isOutdated) "${it.localVersion} (${it.remoteVersion} needed)" else "${it.localVersion} (up to date)" },
         gameOutdated = versionStatus?.takeIf { it.isOutdated }?.remoteVersion,
         appUpdate = appUpdate?.takeIf { !appUpdateLater }?.let { "v${it.version}" },

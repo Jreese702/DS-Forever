@@ -41,6 +41,11 @@ object ArtHarvest {
          */
         val detached: Boolean get() = false
         fun begin(ctx: Context) { error("$id is not a detached step") }
+        /**
+         * the step's own inputs beyond the game build (2026-11-23: the interiors step's builder, the wmominimap step's interiors roots):
+         * a stamp whose "inputs" differ is stale, and the fingerprint shortcut never re-stamps it. null = the build and version only
+         */
+        fun inputs(ctx: Context, build: String): String? = null
         /** a detached step's thread asked to end at its next yield point (the game folder moved to another build: [restart]) */
         fun stopDetached() {}
         fun run(job: Job)
@@ -253,12 +258,23 @@ object ArtHarvest {
         val st = stamp(ctx)
         val now = System.currentTimeMillis()
         return STEPS.filter { s ->
+            // a background step is never in the before-Play queue, whatever its stamp ([queued]): not even its inputs are read
+            if (beforePlay == true && !s.beforePlay) return@filter false
             val o = st.optJSONObject(s.id)
             val stale = o?.let { it.optString("build") != build || it.optInt("v") != s.version ||
-                (s.id == "icons" && it.optString("inputs") != IconRequirements.inputKey(ctx, build)) } != false
+                (s.id == "icons" && it.optString("inputs") != IconRequirements.inputKey(ctx, build)) ||
+                inputsDiffer(ctx, s, build, it) } != false
             queued(s.beforePlay, beforePlay, stale, !stale && KitSteps.retryDue(o?.optString("inputs"), o?.optLong("at") ?: 0L, now))
         }
     }
+
+    /** the step's own [Step.inputs] are not the stamp's (2026-11-23); a step without its own inputs never differs */
+    private fun inputsDiffer(ctx: Context, s: Step, build: String, stamped: JSONObject): Boolean =
+        inputsStale(stamped.optString("inputs").takeIf { stamped.has("inputs") && !stamped.isNull("inputs") },
+            runCatching { s.inputs(ctx, build) }.getOrNull())
+
+    /** pure (the tests): a stamp made with [stamped] inputs is stale for a step that now wants [want] (null = no inputs of its own) */
+    internal fun inputsStale(stamped: String?, want: String?): Boolean = want != null && stamped != want
 
     /**
      * Is a step in the [query] queue (true = before Play, false = the background, null = any)? [stale]: not built for this build and
@@ -307,6 +323,8 @@ object ArtHarvest {
         val st = stamp(ctx).optJSONObject(s.id) ?: return false
         if (st.optInt("v") != s.version || st.optString("build") == g.buildKey) return false
         if (s.id == "icons" && st.optString("inputs") != IconRequirements.inputKey(ctx, g.buildKey)) return false
+        // 2026-11-23 (fix 5): a step's own inputs changed (the wmominimap step's interiors roots grew): built again, never re-stamped
+        if (inputsDiffer(ctx, s, g.buildKey, st)) return false
         // issues #35/#36/#38 (2026-11-11): a step stamped degraded (pictures that did not read) is built again for a new build, never re-stamped
         if (st.optString("inputs").startsWith(KitSteps.DEGRADED)) return false
         val rec = fpFile(ctx, s).takeIf { it.isFile }?.let { ArtFingerprint.fromJson(it.readText()) } ?: return false
@@ -324,10 +342,10 @@ object ArtHarvest {
         tmp.writeText(st.toString()); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
     }
 
-    /** a [Step.detached] step has finished everything for [build]: stamp it like any other */
-    fun markDetachedDone(ctx: Context, s: Step, build: String) {
+    /** a [Step.detached] step has finished everything for [build] ([inputs]: its own, [Step.inputs]): stamp it like any other */
+    fun markDetachedDone(ctx: Context, s: Step, build: String, inputs: String? = null) {
         require(s.detached && s in STEPS)
-        markDone(ctx, s, build, null)
+        markDone(ctx, s, build, inputs)
         Log.i(TAG, "harvest step ${s.id} v${s.version} done (detached)")
     }
 
