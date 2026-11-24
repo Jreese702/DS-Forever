@@ -125,7 +125,8 @@ class HomeEditWiringTest {
         assertTrue(cancel > 0 && cancel < reset.indexOf("resetRun.run(b, who, all, localGame)"))
         // 1518: no layouts - edit mode opens on the record only (no flips, no slots, no fold of a preset's); the band has no pieces
         // to move (the user's ruling 2026-11-22: the top bar stays still)
-        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start)"))
+        // (edit tabs: it opens on the tab of what Home shows - Party mode on = Party mode's)
+        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start, HomeTab.opening(partyOnHere()), PARTY_MODULE)"))
         assertFalse(home.contains("editPiece"))
         assertFalse(body(home, "fun editOpen(").contains("foldOpen"))
         // the cursor's widget gone: the card and the bar (the model's set)

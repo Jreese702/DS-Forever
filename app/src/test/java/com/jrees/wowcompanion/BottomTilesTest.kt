@@ -136,7 +136,8 @@ class BottomTilesTest {
     @Test fun theModel() {
         HomeSettings.init(app); Settings.init(app)
         val none = BottomTiles.Env(null, "Sample-Realm")
-        assertEquals(listOf(BottomTiles.LAYOUT, BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR,
+        // (edit tabs, 2026-11-24: In fights, Focused quest and Tap-to-cast bar left Settings - each Edit Home tab's own now)
+        assertEquals(listOf(BottomTiles.LAYOUT, BottomTiles.REST, BottomTiles.SWING, BottomTiles.CLOCK,
             BottomTiles.RANK, BottomTiles.XP, BottomTiles.HOME_RESET), BottomTiles.slots(SettingsTabs.Group.HOME, none))
         var want: Boolean? = null
         val d = { on: Boolean -> PadMapModel.Dpad(on, emptyMap(), emptyList(), emptyList(), on, 1, 2, null, null) }
@@ -162,7 +163,7 @@ class BottomTilesTest {
         assertEquals(1, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
         BottomTiles.press(BottomTiles.CASTBAR, BottomTiles.CASTBAR, 3, on) { }
         assertEquals(CastStripModel.Side.BOTH, HomeSettings.castBarSide)
-        assertEquals("the place, its size (movable Home), Show in combat", 3, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
+        assertEquals("the place and Show in combat (edit tabs: no size)", 2, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
         HomeSettings.castBarSide = CastStripModel.Side.OFF
         // the clock band: six On / Off lines with their icons (feat/extras-polish: the pet's happiness)
         assertEquals(6, BottomTiles.lines(BottomTiles.CLOCK, on).size)

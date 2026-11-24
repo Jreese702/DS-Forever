@@ -96,6 +96,7 @@ class PartySizingShotsTest {
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
+        home.pageZoomOn = false                                       // (edit tabs: this suite samples Home's own px; the zoom + tab row: EditTabsShotsTest)
         home.borrow()
         home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m187","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":1,"cc":0}}}"""))!!)
         lay(home)
@@ -280,20 +281,21 @@ class PartySizingShotsTest {
         assertTrue(EditStop.PARTY_PEN in ev.stops())
         p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
         assertEquals(EditStop.PARTY_PEN, p.home.editModel()!!.menu)
-        assertEquals(listOf(HomeEditModel.K_PARTY_GROW, HomeEditModel.K_PARTY_SIZE, HomeEditModel.K_PARTY_PREVIEW), rows(p).map { it.key })
-        assertEquals(listOf("Grows", "Size in fights", "Preview"), rows(p).map { it.label })
-        assertEquals(listOf(1, 0, 0), rows(p).map { it.picked })
+        // (edit tabs: no Preview row - the Party mode tab's Fight toggle)
+        assertEquals(listOf(HomeEditModel.K_PARTY_GROW, HomeEditModel.K_PARTY_SIZE), rows(p).map { it.key })
+        assertEquals(listOf("Grows", "Size in fights"), rows(p).map { it.label })
+        assertEquals(listOf(1, 0), rows(p).map { it.picked })
         val bubble = ev.menuBox(EditStop.PARTY_PEN)
         assertFalse("the bubble never on the list ($bubble / $party)", RectF.intersects(bubble, party))
         assertTrue("under it", bubble.top > party.bottom)
         assertTrue("on the screen ($bubble)", bubble.left >= 0f && bubble.right <= W.toFloat() && bubble.bottom <= H.toFloat())
         assertTrue(ev.bubbleTailBox(EditStop.PARTY_PEN) != null)
         render(p, "edit_party_bubble")
-        // the bubble one row shorter: three row boxes (each button inside its row, clear of its label), its height theirs
+        // two row boxes (edit tabs: the Preview row went - the Party mode tab's Fight toggle), each button inside its row
         @Suppress("UNCHECKED_CAST") val btns = field(ev, "menuBoxes") as List<List<RectF>>
         @Suppress("UNCHECKED_CAST") val rowBoxes = field(ev, "menuRowBoxes") as List<RectF>
-        assertEquals(3, rowBoxes.size)
-        assertEquals(listOf(3, 2, 2), btns.map { it.size })
+        assertEquals(2, rowBoxes.size)
+        assertEquals(listOf(3, 2), btns.map { it.size })
         val lp = UiKit.bodyPaint(28f)
         for ((i, r) in rows(p).withIndex()) {
             val rr = rowBoxes[i]
@@ -316,18 +318,20 @@ class PartySizingShotsTest {
         tap(btns[1][1])
         assertEquals(HomeLayout.PartySize.SAME, HomeSettings.layout.partySize)
         assertEquals(EditStop.PARTY_PEN, p.home.editModel()!!.menu)
-        assertEquals(listOf(1, 1, 0), rows(p).map { it.picked })
+        assertEquals(listOf(1, 1), rows(p).map { it.picked })
         assertEquals("at rest Same size changes nothing", 64f, rowH(p), 0.5f)
         render(p, "edit_party_bubble_same_size")
-        // the preview: Fight (Same size: the rest's 64; Grow: the Party fight's 88)
-        tap(btns[2][1])
+        // the preview: the Party mode tab's Fight toggle (Same size: the rest's 64; Grow: the Party fight's 88), the bubble opened again
         val m = p.home.editModel()!!
+        assertEquals(HomeTab.PARTY, m.tab)
+        p.home.editAct { it.toggleFight() }; settle(40)
+        p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
         assertTrue(m.fightPreview); assertEquals(EditStop.PARTY_PEN, m.menu)
         assertEquals(PartyLayout.Mode.FIGHT_ON, pv(p).mode)
         assertEquals(64f, rowH(p), 0.5f)
         assertFalse(p.home.fightShown())
         render(p, "edit_party_bubble_fight_preview_same_size")
-        // THE CONTROLLER: the cursor's walk is Grows, Size in fights, Preview (Down stops on the last); Left on Size in fights = Grow
+        // THE CONTROLLER: the cursor's walk is Grows, Size in fights (Down stops on the last); Left on Size in fights = Grow
         m.menuRow = 0
         p.home.editKey("PADDDOWN"); settle(5)
         assertEquals(1, m.menuRow)
@@ -335,11 +339,11 @@ class PartySizingShotsTest {
         assertEquals(HomeLayout.PartySize.GROW, HomeSettings.layout.partySize)
         assertEquals(88f, rowH(p), 0.5f)
         render(p, "edit_party_bubble_fight_preview_grow")
-        p.home.editKey("PADDDOWN"); p.home.editKey("PADDDOWN"); settle(5)
-        assertEquals("three rows: the preview is the last stop", 2, m.menuRow)
+        p.home.editKey("PADDDOWN"); settle(5)
+        assertEquals("two rows: Size in fights is the last stop", 1, m.menuRow)
         // Grows = Whenever Party mode is on: 88 at rest too
         p.home.editAct { it.menuTouch(0, 2, rows(p)) }; settle(30)
-        p.home.editAct { it.menuTouch(2, 0, rows(p)) }; settle(30)
+        p.home.editAct { it.closeMenu() }; p.home.editAct { it.toggleFight() }; settle(30)
         assertEquals(HomeLayout.PartyGrow.ALWAYS, HomeSettings.layout.partyGrow)
         assertEquals(88f, rowH(p), 0.5f)
         render(p, "edit_party_bubble_grows_whenever")
@@ -356,19 +360,23 @@ class PartySizingShotsTest {
         assertTrue("the pencil on the drawn list's far (left) corner ($fpen / $fd)", fd.contains(fpen) && fpen.right < fd.centerX())
         render(f, "edit_party_bubble_foot_list")
         f.home.editCancel(); settle(40)
-        // Party mode off: the bubble lays the list as Party mode does (across), closing it puts the column back
+        // Party mode off (edit tabs): Edit Home opens on Out of combat (the list in its column, no party pencil there); the Party mode tab
+        // lays the list as Party mode does (across); Out of combat again puts the column back
         val o = page(l, fight = false, on = false)
         assertTrue(o.home.editOpen(EditStop.CHAT)); settle(30)
+        assertEquals(HomeTab.OUT, o.home.editModel()!!.tab)
         assertEquals(615f, boxes(o.home).getValue("PARTY").right, 0.5f)
-        o.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(40)
-        assertEquals("the preview: across", 1231f, boxes(o.home).getValue("PARTY").right, 0.5f)
+        assertNull(editView(o).partyPenBox())
+        o.home.editAct { it.tabTo(HomeTab.PARTY) }; settle(40)
+        assertEquals("the Party mode tab: across", 1231f, boxes(o.home).getValue("PARTY").right, 0.5f)
         render(o, "edit_party_bubble_party_mode_off")
-        o.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(40)
-        assertEquals("closed: its column again", 615f, boxes(o.home).getValue("PARTY").right, 0.5f)
+        o.home.editAct { it.tabTo(HomeTab.OUT) }; settle(40)
+        assertEquals("Out of combat: its column again", 615f, boxes(o.home).getValue("PARTY").right, 0.5f)
         o.home.editCancel()
     }
 
-    /** Settings > Bottom screen > Party: its one tile, "Party list", its band's two lines (this character's record); a press writes it */
+    /** EDIT TABS (2026-11-24, the proposal's decision 5 A): Settings > Bottom screen's Party list tile left Settings (Edit Home's Party
+     *  mode tab is its one place) - the Party list group has no tile and draws nothing */
     @Test fun theSettingsTile() {
         Settings.init(app); SettingsTabs.init(app); GameUi.init(app); HomeSettings.init(app); Tr.init(app)
         art()
@@ -380,47 +388,9 @@ class PartySizingShotsTest {
             r.homeSection.dpadState = { PadMapModel.Dpad(true, emptyMap(), emptyList(), emptyList(), true, 1, 2, null, null) }
             r.show(SettingsTabs.Tab.BOTTOM, force = true)
             val bmp = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
-            fun layR() { for (k in 0..2) { ShadowLooper.idleMainLooper(); lay(r); r.draw(Canvas(bmp)) } }
-            layR()
-            val part = r.bottomTiles.single { it.group == SettingsTabs.Group.PARTY_LIST }
-            assertEquals(listOf(BottomTiles.PARTY), part.tileIds())
-            val t = part.focusTargets()[0]
-            val d = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, t.centerX(), t.centerY(), 0); part.dispatchTouchEvent(d); d.recycle()
-            val u = android.view.MotionEvent.obtain(0, 40, android.view.MotionEvent.ACTION_UP, t.centerX(), t.centerY(), 0); part.dispatchTouchEvent(u); u.recycle()
-            layR()
-            assertEquals(BottomTiles.PARTY, part.openTile)
-            // the band in view
-            val sc = SettingsRoom::class.java.getDeclaredField("scroll").apply { isAccessible = true }.get(r) as android.widget.ScrollView
-            var y = 0; var cur: View = part
-            while (cur !== sc.getChildAt(0)) { y += cur.top; cur = cur.parent as View }
-            sc.scrollTo(0, (y - 120).coerceAtLeast(0)); layR()
-            repeat(30) { layR(); if (BottomPictures.pendingCount() == 0) return@repeat }
-            Thread.sleep(200); layR()
-            val c = Canvas(bmp); c.drawColor(Theme.ink); r.draw(c)
-            out?.let { o -> File(o, "settings_party_tile.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
-            // the band's two lines: Grows, Size in fights (one line since test 1523)
-            assertEquals(listOf("Grows", "Size in fights"), BottomTiles.lines(BottomTiles.PARTY, part.env()).map { it.label })
-            assertEquals(listOf(listOf("Off", "In fights", "Party mode on"), listOf("Grow", "Same size")),
-                BottomTiles.lines(BottomTiles.PARTY, part.env()).map { it.words })
-            val stops = part.focusTargets().size
-            BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_SIZE, 1, BottomTiles.Env(null, null)) { }
-            assertEquals(HomeLayout.PartySize.SAME, HomeSettings.layout.partySize)
-            part.requestLayout(); layR()
-            assertEquals(listOf(1, 1), BottomTiles.lines(BottomTiles.PARTY, part.env()).map { it.picked })
-            Thread.sleep(200); layR()
-            val c1 = Canvas(bmp); c1.drawColor(Theme.ink); r.draw(c1)
-            out?.let { o -> File(o, "settings_party_tile_same_size.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
-            // Grows = Off (the pick "Grey them out"): Grow dimmed, no cursor stop on it; Same size lit
-            BottomTiles.press(BottomTiles.PARTY, HomeEditModel.K_PARTY_GROW, 0, BottomTiles.Env(null, null)) { }
-            HomeLayoutStore.update { it.copy(partySize = HomeLayout.PartySize.GROW) }
-            part.requestLayout(); layR()
-            assertEquals("one word fewer to stop on", stops - 1, part.focusTargets().size)
-            val ls = BottomTiles.lines(BottomTiles.PARTY, part.env())
-            assertEquals(listOf(emptySet(), setOf(0)), ls.map { it.off })
-            assertEquals(listOf(0, 1), ls.map { it.picked })
-            Thread.sleep(200); layR()
-            val c2 = Canvas(bmp); c2.drawColor(Theme.ink); r.draw(c2)
-            out?.let { o -> File(o, "settings_party_tile_grows_off.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+            for (k in 0..2) { ShadowLooper.idleMainLooper(); lay(r); r.draw(Canvas(bmp)) }
+            assertTrue(r.bottomTiles.none { BottomTiles.PARTY in it.tileIds() })
+            assertEquals(android.view.View.GONE, r.groupBoxes.single { it.group == SettingsTabs.Group.PARTY_LIST }.box.visibility)
         } finally { GameUi.character = null; BottomPictures.drop() }
     }
 
@@ -431,9 +401,9 @@ class PartySizingShotsTest {
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
         p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
         val r = rows(p)
-        assertEquals(3, r.size)
+        assertEquals(2, r.size)
         assertEquals(setOf(0), r[1].off)
-        assertEquals(listOf(0, 1, 0), r.map { it.picked })
+        assertEquals(listOf(0, 1), r.map { it.picked })
         // a finger on the dimmed word: refused, nothing written; A on the row: refused (Same size the only word)
         p.home.editAct { it.menuTouch(1, 0, rows(p)) }; settle(10)
         assertEquals(HomeLayout.PartySize.GROW, p.home.editModel()!!.draft.partySize)
@@ -444,56 +414,15 @@ class PartySizingShotsTest {
         p.home.editCancel(); settle(40)
     }
 
-    /** OFF ON CLOSE (the user's pick 2026-11-23): Fight chosen in the bubble's Preview row ends with the bubble - B, or a tap off it -
-     *  the list's rest rows and the band's rest look again; the ribbon's own Fight preview is the toggle's */
-    @Test fun theBubblesFightPreviewEndsWithTheBubble() {
-        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), fight = false)
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
-        for (how in listOf("B", "a tap off it")) {
-            p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
-            p.home.editAct { it.menuTouch(2, 1, rows(p)) }; settle(40)
-            assertTrue(how, p.home.editModel()!!.fightPreview)
-            assertEquals(how, PartyLayout.Mode.FIGHT_ON, pv(p).mode)
-            assertEquals(how, 88f, rowH(p), 0.5f)
-            if (how == "B") p.home.editAct { it.key("PAD2", emptyMap()) { emptyList() } } else p.home.editAct { it.closeMenu() }
-            settle(40)
-            val m = p.home.editModel()!!
-            assertNull(how, m.menu)
-            assertFalse("$how: the preview off", m.fightPreview)
-            assertEquals(how, PartyLayout.Mode.REST, pv(p).mode)
-            assertEquals(how, 64f, rowH(p), 0.5f)
-            assertFalse(how, field(p.home, "previewLaid") as Boolean)
-        }
-        render(p, "edit_party_bubble_closed_preview_off")
-        p.home.editCancel(); settle(40)
-    }
-
-    /** the review: the party gone with the bubble's Fight on - the frame's cursor check closes the bubble (no key, no run): the preview
-     *  ends on the page too (the D-pad's own pictures, the rest look), not at the next key */
-    @Test fun thePartyGoneEndsTheBubblesFightPreviewOnThePage() {
-        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), fight = false)
-        assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
-        p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
-        p.home.editAct { it.menuTouch(2, 1, rows(p)) }; settle(40)
-        assertTrue(p.home.editModel()!!.fightPreview)
-        assertTrue(field(p.home, "previewLaid") as Boolean)
-        setField(PartyModel.live, "party", null); p.home.partyChanged(); settle(60)
-        // (one frame of the edit motion: the wiggle's ticker runs editDecor every frame on the device)
-        HomeView::class.java.getDeclaredMethod("editDecor").apply { isAccessible = true }.invoke(p.home); settle(60)
-        val m = p.home.editModel()!!
-        assertNull(m.menu)
-        assertFalse(m.fightPreview)
-        assertFalse("the page's preview look ended too", field(p.home, "previewLaid") as Boolean)
-        assertFalse("the page out of the bubble's Party look", field(p.home, "laidPartyPen") as Boolean)
-        p.home.editCancel(); settle(40)
-    }
+    // (edit tabs, 2026-11-24: the bubble's Preview row went - the Party mode tab's ribbon Fight toggle shows the fight, so the bubble's
+    // "Off on close" and the party-gone end of its preview have nothing left to end: HomeEditTabsTest / PartySizingTest cover the toggle)
 
     /** a Top-screen fight's Fight preview from the bubble: the band away, the list filling the strip under the fight strip */
     @Test fun theBubblesFightPreviewWithTheControllerOnTop() {
         val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP), fight = false)
         assertTrue(p.home.editOpen(EditStop.CHAT)); settle(30)
+        p.home.editAct { it.toggleFight() }; settle(40)                              // (edit tabs: the Party mode tab's Fight toggle)
         p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
-        p.home.editAct { it.menuTouch(2, 1, rows(p)) }; settle(40)
         val b = boxes(p.home)
         assertEquals(-HomeLayoutSolver.AWAY_PAST, b.getValue("BARS").bottom, 0.5f)
         assertEquals(PartyLayout.Mode.FIGHT_TOP, pv(p).mode)

@@ -22,7 +22,7 @@ object HomeArrangements {
     /** arrangement [id] laid over [b] */
     fun of(id: String, b: HomeLayout): HomeLayout = when (id) {
         CLASSIC -> b.copy(name = id, chatSide = L, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP,
-            rest = HomeRest.DIAMONDS, castSize = HomeLayout.SlotSize.L,
+            rest = HomeRest.DIAMONDS,
             cast = if (b.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.UNDER_CHAT else b.cast.withTop(false),
             fight = if (b.fight == HomeLayout.FightBand.TOP) HomeLayout.FightBand.GROW else b.fight)
         MIRRORED -> b.copy(name = id, chatSide = R, chatShare = HomeLayout.Share.HALF, card = HomeLayout.CardDock.ON_MAP,
@@ -31,7 +31,7 @@ object HomeArrangements {
             cast = HomeLayout.CastDock.UNDER_MAP)
         BIG_CHAT -> b.copy(name = id, chatSide = L, chatShare = HomeLayout.Share.TWO_THIRDS, card = HomeLayout.CardDock.ON_MAP,
             cast = HomeLayout.CastDock.UNDER_CHAT)
-        COMPACT -> b.copy(name = id, rest = HomeRest.ROW, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.M)
+        COMPACT -> b.copy(name = id, rest = HomeRest.ROW, cast = HomeLayout.CastDock.ACROSS)
         FIGHTER -> b.copy(name = id, fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.SPLIT)
         else -> error("no arrangement $id")
     }

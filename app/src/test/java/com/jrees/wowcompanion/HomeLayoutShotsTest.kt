@@ -188,7 +188,7 @@ class HomeLayoutShotsTest {
                         HomeLayout.CastDock.UNDER_MAP -> assertEquals(map.left, s.left, 0.01f)
                         else -> assertEquals(8f, s.left, 0.01f)
                     }
-                    assertTrue("$id: the slot size", s.height() <= l.castSize.px + 20.01f)
+                    assertTrue("$id: the slot size", s.height() <= (if (l.grow) CastStripModel.GROW_MAX else CastStripModel.MAX_SIDE) + 20.01f)
                 }
                 if (fight && l.fight == HomeLayout.FightBand.GROW) assertEquals("$id: the grow", 416f, b.getValue("BARS").bottom, 0.01f)
                 if (party) {
@@ -312,7 +312,9 @@ class HomeLayoutShotsTest {
         assertEquals("Home's band bottom for its followers: 0, never negative", 0f, p.home.barsBottom(), 0f)
         // THE TAP-TO-CAST BAR STAYS (the 11-22 shots: Show in combat Off, the default, had slid it away under the room bar while the band
         // left too - no fight control on the bottom screen): on the page under the grown chat, where it rests, tappable, its fight layer
-        assertEquals("(the player's setting: Show in combat Off)", CastStripModel.Combat.HIDE, HomeSettings.castBarCombat)
+        // (edit tabs: the In combat tab is a copy of the record's places - its bar where it rests; the migration kept Top screen's bar
+        // whatever Show in combat said: the "Always stay" pick)
+        assertEquals(CastStripModel.Combat.STAY, HomeSettings.castBarCombat)
         val sb = away.getValue("STRIP")
         assertEquals("the bar where it rests", rest.getValue("STRIP"), sb)
         assertTrue("under the grown chat, on the page ($sb)", sb.top >= away.getValue("CHAT").bottom + 8f - 0.01f && sb.bottom <= H + 0.01f)
@@ -332,10 +334,11 @@ class HomeLayoutShotsTest {
         assertTrue("B mid-fight: Grow's red reminder", field(p.home, "redShown") as Boolean)
 
         // the same layout with Grow (D1's default) grows and B shrinks it, as today
-        val g = page(l.copy(fight = HomeLayout.FightBand.GROW), fight = true)
+        // (edit tabs: Show in combat Off = the In combat tab's bar Off)
+        val g = page(l.copy(fight = HomeLayout.FightBand.GROW).onTab(HomeTab.COMBAT) { it.copy(cast = HomeLayout.CastDock.OFF) }, fight = true)
         assertEquals(416f, boxes(g.home).getValue("BARS").bottom, 0.01f)
         assertFalse(g.cast.away)
-        assertTrue("Grow keeps Show in combat Off: the bar slid away below the page", boxes(g.home).getValue("STRIP").top >= H - 0.01f)
+        assertTrue("Grow with the In combat tab's bar Off: the bar slid away below the page", boxes(g.home).getValue("STRIP").top >= H - 0.01f)
         assertTrue((views(g.home).getValue("STRIP") as CastStripView).fightHidden)
         setField(g.home, "grewAt", 0L)
         HomeView::class.java.getDeclaredMethod("onB").apply { isAccessible = true }.invoke(g.home)
@@ -375,13 +378,11 @@ class HomeLayoutShotsTest {
         assertTrue("Party mode's fight: the band slides up too (the user's ruling C, 11-22)", party.cast.away)
         val ps = views(party.home).getValue("STRIP") as CastStripView
         assertFalse("Party mode: Bar in Party mode (on by default) keeps it, as ever", ps.fightHidden)
+        // (edit tabs, 2026-11-24: "Bar in Party mode" is the Party mode tab's place now - Off there slides it away, Top screen or not)
         try {
             HomeSettings.castBarPartyShow = false
             party.home.tick(); settle()
-            assertFalse("Party mode, Bar in Party mode off: the Top fight keeps the bar all the same (Show in combat Off)", ps.fightHidden)
-            assertTrue("Party mode, Bar in Party mode off: it takes touches", ps.takesTouch)
-            val b = boxes(party.home).getValue("STRIP")
-            assertTrue("Party mode: the bar on the page ($b)", b.top >= 0f && b.bottom <= H + 0.01f)
+            assertTrue("Party mode, Bar in Party mode off: the Party mode tab's bar Off - slid away", ps.fightHidden)
         } finally { HomeSettings.castBarPartyShow = true }
     }
 

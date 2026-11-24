@@ -38,8 +38,11 @@ class CastBarCombatTest {
         assertEquals(STAY, HomeSettings.castBarCombat)
         HomeSettings.castBarCombat = HIDE
         assertEquals("HIDE", p.m["castBarCombat"])
-        HomeSettings.startForTest(Prefs(hashMapOf("castBarCombat" to "STAY")))
+        // (edit tabs: the old key is read once into the In combat tab - a bar it keeps: HomeTabsMigration)
+        HomeSettings.startForTest(Prefs(hashMapOf("castBarCombat" to "STAY", "castBarSide" to "LEFT")))
         assertEquals(STAY, HomeSettings.castBarCombat)
+        HomeSettings.startForTest(Prefs(hashMapOf("castBarCombat" to "HIDE", "castBarSide" to "LEFT")))
+        assertEquals(HIDE, HomeSettings.castBarCombat)
     }
 
     @Test fun hideGoesWhenTheFightStartsAndBackWhenItEnds() {
@@ -114,7 +117,8 @@ class CastBarCombatTest {
     @Test fun homeFollowsItsOwnFightSignal() {
         val h = src("HomeView.kt")
         // movable Home P2: both halves of a Split bar (castStrip2) take the same gate
-        assertTrue(h.contains("private fun castStripGate() { for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep()) }"))
+        // (edit tabs: the gate is told whether the tab Home lays has its bar slid away)
+        assertTrue(h.contains("private fun castStripGate() { val h = castHiddenNow(); for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep(), h) }"))
         assertTrue(h.contains("CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)"))     // cb15: Bar in Party mode
         // the player's own rule (a preview look - the cast bar question's picture - shows Hide); In fights = Top screen keeps the bar
         // (the 11-22 shots: TopCombatBar.stripCombat - STAY with Top screen live, Party mode's fight too (the 1519 audit), else the player's setting)

@@ -131,22 +131,22 @@ class BottomTilesRoomTest {
         val r = room()
         lay(r)                                                            // (pick 5: the tab does not fold, both groups open)
         // party sizing (2026-11-23): Party, the party list's tile, between Home and Map & chat
-        assertEquals(setOf(SettingsTabs.Group.HOME, SettingsTabs.Group.PARTY_LIST, SettingsTabs.Group.MAP), r.open)
+        // (edit tabs, 2026-11-24: In fights, Focused quest, Tap-to-cast bar and the Party list left Settings - each Edit Home tab's own
+        // now - so the Party list group has no tile and shows no more)
+        assertEquals(setOf(SettingsTabs.Group.HOME, SettingsTabs.Group.MAP), r.open)
         val home = r.groupBoxes.single { it.group == SettingsTabs.Group.HOME }
-        val party = r.groupBoxes.single { it.group == SettingsTabs.Group.PARTY_LIST }
         val map = r.groupBoxes.single { it.group == SettingsTabs.Group.MAP }
         assertEquals(BottomTiles.HOME_TILES, (home.parts.single() as BottomTilesView).tileIds())
-        assertEquals(BottomTiles.PARTY_TILES, (party.parts.single() as BottomTilesView).tileIds())
         assertEquals(BottomTiles.MAP_TILES, (map.parts.single() as BottomTilesView).tileIds())
-        for (g in listOf(SettingsTabs.Group.CAST_BAR, SettingsTabs.Group.CHAT))
+        for (g in listOf(SettingsTabs.Group.CAST_BAR, SettingsTabs.Group.CHAT, SettingsTabs.Group.PARTY_LIST))
             assertEquals("$g not shown", View.GONE, r.groupBoxes.single { it.group == g }.box.visibility)
         // five columns of Top's 232 x 184 tiles on the 1240 px page
         val b = tileBoxes(r)
-        assertEquals(16, b.size)                                             // movable Home: Edit Home first; 1518: Reset Home last of Home's, the XP bar before it; 2026-11-23: Party list
+        assertEquals(12, b.size)                                             // Home's 9 (Edit Home first, Reset Home last), Map & chat's 3
         for (t in b.values) { assertEquals(GameUiTiles.TILE_W, t.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, t.height(), 0.01f) }
         assertEquals(16f, b.getValue(BottomTiles.LAYOUT).left, 0.5f)
-        assertEquals(W - 16f, b.getValue(BottomTiles.QUEST).right, 0.5f)
-        assertEquals(b.getValue(BottomTiles.LAYOUT).left, b.getValue(BottomTiles.CLOCK).left, 0.01f)
+        assertEquals(W - 16f, b.getValue(BottomTiles.TOOLBAR).right, 0.5f)
+        assertEquals(b.getValue(BottomTiles.LAYOUT).left, b.getValue(BottomTiles.TALK).left, 0.01f)
         // the toolbar off: Hold to talk is not drawn (it cannot act), the Tap-to-cast tile takes its place
         toolbarWant = false; r.refreshGroups(); lay(r)
         assertEquals(BottomTiles.HOME_TILES - BottomTiles.TALK, (home.parts.single() as BottomTilesView).tileIds())
@@ -194,39 +194,25 @@ class BottomTilesRoomTest {
         assertTrue("B on the tab row leaves (Home)", left)
     }
 
-    /** touch = the pad: a tap opens, a band button writes, a line that cannot act is not drawn (no dead stop), a tap on the tile closes */
+    /** touch = the pad: a tap opens, a band button writes, a tap on the tile closes. (Edit tabs, 2026-11-24: the Tap-to-cast bar tile
+     *  left Settings - its place, its Slots and its fights are each Edit Home tab's own - so the Rest controller's band stands in) */
     @Test fun touchAndNoDeadStops() {
         val r = room()
-        HomeSettings.castBarSide = CastStripModel.Side.OFF
-        openByTouch(r, BottomTiles.CASTBAR)
-        val p = partOf(r, BottomTiles.CASTBAR)
-        assertEquals(BottomTiles.CASTBAR, p.openTile)
+        assertTrue(parts(r).none { BottomTiles.CASTBAR in it.tileIds() || BottomTiles.QUEST in it.tileIds() || BottomTiles.COMBAT in it.tileIds() })
+        openByTouch(r, BottomTiles.REST)
+        val p = partOf(r, BottomTiles.REST)
+        assertEquals(BottomTiles.REST, p.openTile)
         var buttons = p.focusTargets().drop(p.tileIds().size)
-        assertEquals("Off / Chat / Map / Across / Split (P2), no In combat while Off", 5, buttons.size)
+        assertEquals("Thin row / Diamonds", 2, buttons.size)
         for (b in buttons) assertTrue(b.height() >= 110f)
-        tap(p, buttons[2].centerX(), buttons[2].centerY()); lay(r)
-        assertEquals(CastStripModel.Side.RIGHT, HomeSettings.castBarSide)
-        assertEquals(HomeLayout.CastDock.UNDER_MAP, HomeSettings.layout.cast)
-        buttons = p.focusTargets().drop(p.tileIds().size)
-        assertEquals("Map Above / Below, Size S / M / L and In combat Hide / Stay now", 12, buttons.size)
-        // the edge line: Above the map (the screen side kept), then Below again
-        tap(p, buttons[5].centerX(), buttons[5].centerY()); lay(r)
-        assertEquals(HomeLayout.CastDock.ABOVE_MAP, HomeSettings.layout.cast)
-        assertEquals("Above map", BottomTiles.value(BottomTiles.CASTBAR, BottomTiles.Env(null, null)))
+        tap(p, buttons[0].centerX(), buttons[0].centerY()); lay(r)
+        assertEquals(HomeRest.ROW, HomeSettings.rest)
         buttons = p.focusTargets().drop(p.tileIds().size)
         tap(p, buttons[1].centerX(), buttons[1].centerY()); lay(r)
-        assertEquals("Chat keeps the edge", HomeLayout.CastDock.ABOVE_CHAT, HomeSettings.layout.cast)
-        buttons = p.focusTargets().drop(p.tileIds().size)
-        tap(p, buttons[6].centerX(), buttons[6].centerY()); lay(r)
-        assertEquals(HomeLayout.CastDock.UNDER_CHAT, HomeSettings.layout.cast)
-        HomeSettings.castBarSide = CastStripModel.Side.RIGHT; lay(r)
-        buttons = p.focusTargets().drop(p.tileIds().size)
-        tap(p, buttons[11].centerX(), buttons[11].centerY()); lay(r)
-        assertEquals(CastStripModel.Combat.STAY, HomeSettings.castBarCombat)
-        HomeSettings.castBarCombat = CastStripModel.Combat.HIDE
+        assertEquals(HomeRest.DIAMONDS, HomeSettings.rest)
         // a tap on the open tile closes it; another tile's tap moves the one band
-        openByTouch(r, BottomTiles.QUEST); assertEquals(BottomTiles.QUEST, openTile(r))
-        openByTouch(r, BottomTiles.QUEST); assertNull(openTile(r))
+        openByTouch(r, BottomTiles.CLOCK); assertEquals(BottomTiles.CLOCK, openTile(r))
+        openByTouch(r, BottomTiles.CLOCK); assertNull(openTile(r))
         // L / R: another tab, the band closed
         hold(r); openByTouch(r, BottomTiles.SWING)
         assertEquals(BottomTiles.SWING, openTile(r))

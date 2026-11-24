@@ -1973,6 +1973,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private fun partyRedraw() {
         homeView.partyChanged()
+        // EDIT TABS: Party mode on / off changes which tab the next fight lays - the add-on's Top screen / Cast bar flags follow it
+        val ft = homeView.fightTab()
+        if (ft != lastFightTab) { lastFightTab = ft; lastDpad?.let { topCheck(it); castCheck(it) } }
         castView.partyChanged()
         controllerView.partyChanged()
         settingsView.partyChanged()
@@ -5220,6 +5223,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     // ---------------------------------------------------------------- movable Home phase 3: the top-screen combat bar's flag
+    /** EDIT TABS (2026-11-24): the fight tab the flags were last checked for (Party mode's or In combat's: HomeView.fightTab) */
+    private var lastFightTab: HomeTab? = null
+    /** EDIT TABS: the page the NEXT fight lays - Party mode's tab while Party mode is on, else In combat's. The add-on keeps ONE Top
+     *  screen flag (`ct`) and ONE Cast bar flag (`cc`) per character and switches by itself in a fight; the app sets them out of combat
+     *  only, so they follow the tab the next fight will use (a Party mode toggled mid-fight waits for the fight's end, as any change) */
+    private fun fightPage(): HomeLayout = HomeSettings.layout.forTab(homeView.fightTab())
     private var topSentAt: Long? = null
     private var topSentWant: Boolean? = null
     private var topTries = 0
@@ -5232,7 +5241,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!mirrorCurrent) return
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(topAgain); return }      // the 1514 merge: as mirrorCheck
         if (homeView.editing) { ui.removeCallbacks(topAgain); return }                       // 1518: as mirrorCheck (edit mode live)
-        val want = TopCombatBar.wanted(HomeSettings.layout)
+        val want = TopCombatBar.wanted(fightPage())
         if (topSentWant != want) { topSentAt = null; topTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(topAgain)
@@ -5262,7 +5271,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!mirrorCurrent) return
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(castAgain); return }
         if (homeView.editing) { ui.removeCallbacks(castAgain); return }
-        val want = TopCombatBar.castWanted(HomeSettings.layout)
+        val want = TopCombatBar.castWanted(fightPage())
         if (castSentWant != want) { castSentAt = null; castTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(castAgain)

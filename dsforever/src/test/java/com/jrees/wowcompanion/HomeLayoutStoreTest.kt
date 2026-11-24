@@ -22,7 +22,8 @@ class HomeLayoutStoreTest {
     // ---------------------------------------------------------------- JSON
 
     @Test fun jsonRoundTripsEveryRecord() {
-        for (l in HomeLayoutRules.all()) assertEquals(l, HomeLayoutJson.parse(HomeLayoutJson.json(l)))
+        // (edit tabs: a record's own Grow is never set - Slots is a fight tab's: HomeEditTabsTest)
+        for (l in HomeLayoutRules.all()) if (!l.grow) assertEquals(l, HomeLayoutJson.parse(HomeLayoutJson.json(l)))
         val named = HomeLayout(name = "2", chatSide = HomeLayout.Side.RIGHT, xpBar = false)
         assertEquals(named, HomeLayoutJson.parse(HomeLayoutJson.json(named)))
     }
@@ -48,7 +49,6 @@ class HomeLayoutStoreTest {
             assertEquals(if (grow) HomeLayout.FightBand.GROW else HomeLayout.FightBand.SAME, l.fight)
             assertEquals(if (over) HomeLayout.CardDock.ON_MAP else HomeLayout.CardDock.ABOVE_CHAT, l.card)
             assertEquals("the bar keeps its screen side", side, l.castSide)
-            assertEquals(HomeLayout.SlotSize.L, l.castSize)
         }
     }
 
@@ -108,13 +108,13 @@ class HomeLayoutStoreTest {
         assertTrue(raw.contains(""""name":"Big map""""))
         val slots = """[null,{"v":1,"name":"2","chat":"RIGHT"},null]"""
         val p = fresh(Prefs(hashMapOf(HomeLayoutStore.KEY_MIGRATED to true, HomeLayoutStore.KEY_DEFAULT to HomeLayoutJson.json(HomeLayout()),
-            "homeLayout.Korvash-Realm" to raw, HomeLayoutStore.KEY_SLOTS_LEGACY to slots)))
+            "homeLayout.Korvash-Realm" to raw, HomeLayoutStore.KEY_SLOTS_LEGACY to slots, HomeLayoutStore.KEY_TABS_MIGRATED to true)))
         HomeLayoutStore.character("Korvash-Realm")
         assertEquals("read as its fields", bigMap, HomeSettings.layout)
         assertEquals("nothing rewritten on reading", raw, p.m["homeLayout.Korvash-Realm"])
         // a change: the name stays as read (no preset names it any more), only the changed field differs
-        HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.M) }
-        assertEquals(bigMap.copy(castSize = HomeLayout.SlotSize.M), HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String))
+        HomeLayoutStore.update { it.copy(xpBar = false) }
+        assertEquals(bigMap.copy(xpBar = false), HomeLayoutJson.parse(p.m["homeLayout.Korvash-Realm"] as String))
         assertEquals("Big map", HomeSettings.layout.name)
         // a lay-on keeps the real record's name
         assertEquals("Big map", HomeLayoutStore.layOn(bigMap, HomeLayout(), HomeLayout(name = "Mirrored", chatSide = HomeLayout.Side.RIGHT)).name)
@@ -210,6 +210,7 @@ class HomeLayoutStoreTest {
         val p = fresh()
         val raw = """{"v":1,"name":"Classic","chat":"RIGHT","share":"HALF","cast":"UNDER_CHAT","pad":["LEFT_COL","HOME","RIGHT_COL","RADIAL"],"clock":"RIGHT"}"""
         p.m["homeLayout.Korvash-Realm"] = raw
+        p.m[HomeLayoutStore.KEY_TABS_MIGRATED] = true                       // (edit tabs: its fight tabs' own migration: HomeEditTabsTest)
         HomeLayoutStore.character("Korvash-Realm")
         assertEquals(HomeLayoutJson.parse(raw.replace(""","pad":["LEFT_COL","HOME","RIGHT_COL","RADIAL"],"clock":"RIGHT"""", "")), HomeSettings.layout)
         assertEquals("nothing rewritten on reading", raw, p.m["homeLayout.Korvash-Realm"])
@@ -333,9 +334,9 @@ class HomeLayoutStoreTest {
         HomeLayoutStore.character("Korvash-Realm")
         assertEquals(HomeLayout.PartyDock.UNDER_MAP, HomeSettings.layout.party)
         // a change from elsewhere meanwhile is kept; Discard puts only the dock back
-        HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.S) }
+        HomeLayoutStore.update { it.copy(xpBar = false) }
         HomeSettings.saveLayout(HomeLayoutStore.editSave(o, moved, opened)!!)
-        assertEquals(opened.copy(castSize = HomeLayout.SlotSize.S), HomeSettings.layout)
+        assertEquals(opened.copy(xpBar = false), HomeSettings.layout)
         assertFalse((p.m["homeLayout.Korvash-Realm"] as String).contains("party"))
         // layOn by key: the dock lands on the real record's other changes
         val base = HomeLayout()
@@ -518,9 +519,9 @@ class HomeLayoutStoreTest {
         val d2 = d1.copy(chatShare = HomeLayout.Share.THIRD)
         HomeSettings.saveLayout(HomeLayoutStore.editSave(o, d1, d2)!!)
         // a change from elsewhere meanwhile (Settings while parked): kept by Discard
-        HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.S) }
+        HomeLayoutStore.update { it.copy(xpBar = false) }
         HomeSettings.saveLayout(HomeLayoutStore.editSave(o, d2, opened)!!)                  // Discard
-        assertEquals(opened.copy(castSize = HomeLayout.SlotSize.S), HomeSettings.layout)
+        assertEquals(opened.copy(xpBar = false), HomeSettings.layout)
         // pending: held (never written under a partial key or the default), the late key gets it laid on its real record
         HomeLayoutStore.character("Thrandil-Realm")
         HomeLayoutStore.set(HomeLayout(rest = HomeRest.ROW))
