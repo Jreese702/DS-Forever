@@ -9,6 +9,47 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
+// ---------------------------------------------------------------- pv2: a service pin needs its NPC
+// The user, 2026-11-24 (a Hunter on 1.0.40): "Using my pet training is showing up as a trainer on my map and that is not correct".
+// Beast Training opens the game's trainer window with no NPC behind it, and Harvest.lua hv2 filed it as a class trainer where the
+// player stood - with no creature id (no "npc" unit, the target the pet / nothing, or "npc" the player). Harvest.lua hv3 records an
+// NPC's service only with that NPC's creature id (tools/test_harvest_npc.py); the app applies the same rule to every line it ingests
+// (an older add-on's too) and, once at load, to what poi_harvest.json already holds. Pure: PetTrainingPoiTest.
+
+/** the services that are OBJECTS, used with no unit: no creature id, matched by position. Every other service is an NPC's. */
+val POI_OBJECT_SVCS = setOf("mailbox", "guildbank")
+
+/** an NPC's service (not a mailbox / guild vault) with no creature id: no NPC stood behind that window (Beast Training's, ...) */
+fun poiNoNpc(svc: String, id: Int?): Boolean = id == null && svc !in POI_OBJECT_SVCS
+
+/** the creature id a "poi" line files [p] under: none for an object (hv2 could hand a guild vault the target's creature id) */
+fun poiIdOf(p: JSONObject): Int? = if (p.has("id") && p.optString("svc", "") !in POI_OBJECT_SVCS) p.optInt("id") else null
+
+/** a "poi" line [p] that names an NPC's service with no NPC behind it */
+fun poiNoNpc(p: JSONObject): Boolean = poiNoNpc(p.optString("svc", ""), poiIdOf(p))
+
+/**
+ * poi_harvest.json's records ([recs], PoiHarvest's stored shape: "id" the creature, "s" the services) without the services no NPC
+ * gave: an id-less record keeps only its object services, and goes when none are left. A record with a creature id is untouched
+ * (Beast Training's window with a creature TARGETED filed that creature: indistinguishable from a real visit, so it stays).
+ * Returns the records kept (the same objects) and how many records were dropped or trimmed.
+ */
+fun poiHarvestCleaned(recs: JSONArray): Pair<JSONArray, Int> {
+    val kept = JSONArray()
+    var n = 0
+    for (i in 0 until recs.length()) {
+        val o = recs.optJSONObject(i) ?: continue
+        val s = o.optJSONArray("s")
+        if (o.has("id") || s == null) { kept.put(o); continue }
+        val left = JSONArray()
+        for (k in 0 until s.length()) s.optString(k).let { if (!poiNoNpc(it, null)) left.put(it) }
+        if (left.length() == s.length()) { kept.put(o); continue }
+        n++
+        if (left.length() > 0) kept.put(o.put("s", left))
+    }
+    return kept to n
+}
+
 /**
  * The harvested service layer: every vendor, trainer, bank, mailbox... the player has actually
  * opened, kept across sessions.
@@ -103,8 +144,14 @@ object PoiHarvest {
         try {
             val f = File(c.filesDir, FILE)
             if (f.exists()) {
-                val a = JSONObject(f.readText()).optJSONArray("recs") ?: JSONArray()
+                val raw = JSONObject(f.readText()).optJSONArray("recs") ?: JSONArray()
+                // pv2: the pins no NPC gave (Beast Training's "trainer" where the player stood) go, once, and the file is rewritten
+                val (a, dropped) = poiHarvestCleaned(raw)
                 for (i in 0 until a.length()) a.optJSONObject(i)?.let { fromJson(it)?.let(recs::add) }
+                if (dropped > 0) {
+                    note = "poi_harvest.json: $dropped pin(s) with no NPC behind them dropped"
+                    save()
+                }
             }
         } catch (t: Throwable) {
             note = "poi_harvest.json unreadable: ${t.message}"
@@ -121,7 +168,8 @@ object PoiHarvest {
         val x = p.optDouble("x", Double.NaN)
         val y = p.optDouble("y", Double.NaN)
         if (mapID < 0 || x.isNaN() || y.isNaN()) return false
-        val id = if (p.has("id") && svc != "mailbox") p.optInt("id") else null
+        val id = poiIdOf(p)
+        if (poiNoNpc(svc, id)) return false          // pv2: an NPC's service with no NPC behind the window (an hv2 add-on's line)
         val wx = p.optDouble("wx", Double.NaN).takeUnless { it.isNaN() }
         val wy = p.optDouble("wy", Double.NaN).takeUnless { it.isNaN() }
         val t = p.optDouble("t", Double.NaN)
