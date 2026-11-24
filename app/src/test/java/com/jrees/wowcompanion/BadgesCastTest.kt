@@ -196,17 +196,23 @@ class BadgesCastTest {
         return b
     }
 
-    /** the block's ink: where [a] and [bare] differ, as a mask */
-    private fun ink(a: Bitmap, bare: Bitmap): Array<BooleanArray> = Array(240) { y -> BooleanArray(W) { x ->
+    /** the block's ink: where [a] and [bare] differ by more than [over] in a channel, as a mask */
+    private fun ink(a: Bitmap, bare: Bitmap, over: Int = 3): Array<BooleanArray> = Array(240) { y -> BooleanArray(W) { x ->
         val u = a.getPixel(x, y); val v = bare.getPixel(x, y)
         var d = 0
         for (sh in intArrayOf(0, 8, 16)) d = maxOf(d, kotlin.math.abs(((u shr sh) and 0xFF) - ((v shr sh) and 0xFF)))
-        d > 3 } }
+        d > over } }
     private fun inkIn(m: Array<BooleanArray>, r: RectF): Int {
         var n = 0
         for (y in maxOf(0, r.top.toInt()) until minOf(m.size, kotlin.math.ceil(r.bottom).toInt()))
             for (x in maxOf(0, r.left.toInt()) until minOf(W, kotlin.math.ceil(r.right).toInt())) if (m[y][x]) n++
         return n
+    }
+    private fun inkAt(m: Array<BooleanArray>, r: RectF): List<Pair<Int, Int>> {
+        val out = ArrayList<Pair<Int, Int>>()
+        for (y in maxOf(0, r.top.toInt()) until minOf(m.size, kotlin.math.ceil(r.bottom).toInt()))
+            for (x in maxOf(0, r.left.toInt()) until minOf(W, kotlin.math.ceil(r.right).toInt())) if (m[y][x] && out.size < 8) out += x to y
+        return out
     }
     private fun inkBox(m: Array<BooleanArray>): RectF? {
         var l = W; var t = m.size; var r = -1; var b = -1
@@ -270,8 +276,13 @@ class BadgesCastTest {
         // (the lane's edge columns are partly outside it: the antialiased clip edge there is not counted)
         if (cast) assertEquals("$what: block ink on the cast name's lane $lane (block $box)", 0,
             inkIn(m, RectF(lane.left + 1f, lane.top, lane.right - 1f, lane.bottom)))
-        for ((i, b) in buttons(p).withIndex()) assertEquals("$what: block ink on ${if (i < 8) "button $i" else "plate ${i - 8}"} $b (block $box)",
-            0, inkIn(m, RectF(b.left + 1f, b.top + 1f, b.right - 1f, b.bottom - 1f)))
+        // the buttons and plates: the block's real ink (its icons, frames, text) - not the faint rim of a ready Hearthstone's halo, which
+        // today's rest and LB + RB rows have always let reach the D-pad's Right's corner (the lifted row keeps even that off: ClockBandTest)
+        val strong = ink(frame, bare, 48)
+        for ((i, b) in buttons(p).withIndex()) {
+            val r = RectF(b.left + 1f, b.top + 1f, b.right - 1f, b.bottom - 1f)
+            assertEquals("$what: block ink on ${if (i < 8) "button $i" else "plate ${i - 8}"} $b (block $box) at ${inkAt(strong, r)}", 0, inkIn(strong, r))
+        }
     }
 
     private fun bandCrop(b: Bitmap) = Bitmap.createBitmap(b, 0, 0, W, 240)
@@ -288,6 +299,13 @@ class BadgesCastTest {
         File(d, "${tag}_${name}_band.png").outputStream().use { Bitmap.createScaledBitmap(band, 1280, 480, true).compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    /**
+     * the player's own order with the Hearthstone in the middle, for the checks made while the block MOVES: a ready Hearthstone at the
+     * left end has its halo (1.1 icons round its middle) reach the D-pad's Right's corner in today's rest and LB + RB rows - as it always
+     * has, not this fix's - and a move starts and ends at those rows. The settled lifted row keeps even the halo off (checked above with
+     * the Hearthstone first, and in ClockBandTest)
+     */
+    private val MIDDLE = HomeLayout(extras = listOf("teleport", "bags", "hearth", "ammo", "pet"))
     private val SHORT = "Frostbolt"
     private val LONG = "Summon Felsteed of the Burning Legion"
 
@@ -318,12 +336,9 @@ class BadgesCastTest {
 
     /** the shrink itself (from the grown block, every frame of it): the name's lane and the bar never under the block's ink */
     @Test fun theShrinkNeverCrossesTheName() {
-        // (five extras do not grow: they stay today's small row, whose ready Hearthstone's halo at the left end has always reached the
-        // D-pad's Right's corner at rest - not this fix's; that row here has the Hearthstone in the middle, the player's order)
-        val middle = HomeLayout(extras = listOf("teleport", "bags", "hearth", "ammo", "pet"))
         for (ex in listOf(setOf("hearth", "teleport", "bags", "ammo"), setOf("hearth", "teleport", "bags", "ammo", "pet"), setOf("bags")))
             for (gold in listOf(true, false)) {
-                val p = page(if (ex.size == 5) middle else HomeLayout(), extras = ex, gold = gold)
+                val p = page(MIDDLE, extras = ex, gold = gold)
                 startCast(p, LONG)
                 for (f in 0 until 15) { run(16); assertClear(p, "$ex gold=$gold frame $f of the shrink") }
             }
@@ -331,14 +346,29 @@ class BadgesCastTest {
 
     /** a cast that starts while LB + RB already hold the block small: it moves up clear too, never jumping */
     @Test fun castWhileShouldersHeld() {
-        // (no ready Hearthstone: today's small row - LB + RB's, unchanged here - has its halo reach the D-pad's Right's corner)
-        val p = page(extras = setOf("teleport", "bags", "ammo", "pet"))
+        val p = page(MIDDLE)
         pad(p, lb = true, rb = true); run(400)
         startCast(p, LONG)
         for (f in 0 until 18) { run(16); assertClear(p, "LB+RB held, frame $f") }
         pad(p); run(400)
         assertFalse("still small while the cast shows", infoGrown(p))
         assertClear(p, "LB+RB let go during the cast")
+    }
+
+    /** a cast that starts again during the grow back (a chain of casts): clear every frame, and grown as before once the last one ends */
+    @Test fun chainedCastsStayClearAndEndGrown() {
+        val p = page(MIDDLE)
+        val before = bandCrop(render(p))
+        startCast(p, LONG, 1000L); run(1000); endCast(p, true); render(p)
+        run(FINISH_MS + ClockBand.GROW_MS_IN.toLong() / 3)
+        assertTrue("growing back", infoGrown(p) && infoLinear(p) in 0.01f..0.99f)
+        render(p)
+        startCast(p, SHORT, 800L)
+        for (f in 0 until 15) { run(16); assertClear(p, "the second cast, frame $f") }
+        run(800 - 15 * 16L); endCast(p, false); render(p)
+        run(FAIL_MS + ClockBand.GROW_MS_IN.toLong() + 40)
+        assertEquals(1f, if (infoGrown(p)) infoLinear(p) else 0f, 0f)
+        assertEquals("the band exactly as before the casts", 0, same(before, bandCrop(render(p))))
     }
 
     private fun pad(p: Page, lt: Boolean = false, rt: Boolean = false, lb: Boolean = false, rb: Boolean = false) {
@@ -354,7 +384,7 @@ class BadgesCastTest {
      * growing from then, and one grow later exactly the layout it had before the cast - with Home drawn only when the end word came
      */
     private fun endsBack(how: String, gold: Boolean = true, end: (Page) -> Long) {
-        val p = page(gold = gold)
+        val p = page(MIDDLE, gold = gold)
         val before = bandCrop(render(p))
         assertTrue("grown at rest", infoGrown(p))
         val started = now()

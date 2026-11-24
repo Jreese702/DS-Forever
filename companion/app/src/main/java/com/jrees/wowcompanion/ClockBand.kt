@@ -269,7 +269,9 @@ object ClockBand {
         val to = if (grown) 1f else 0f
         val ms = if (grown) GROW_MS_IN else GROW_MS_OUT
         val k = (elapsed / ms).coerceIn(0f, 1f)
-        return from + (to - from) * k
+        // fix/badges-cast: exactly its end once there (from a turn half way, from + (to - from) can miss it by a float's last bit, and
+        // Home asks for a frame for as long as the grow is not at its end)
+        return if (k >= 1f) to else from + (to - from) * k
     }
 
     /** the purse the game's way (the gold line): (amount, 0 gold / 1 silver / 2 copper), the leading zero units left out (34s 56c under a gold; 0c) */

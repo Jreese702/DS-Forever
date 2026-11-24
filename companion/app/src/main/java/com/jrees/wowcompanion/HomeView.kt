@@ -1520,7 +1520,10 @@ class HomeView(
     private var liftFrom = 0f
     private var liftTo = 0f
     private var liftAt = 0L
-    private fun liftK(now: Long): Float = liftFrom + (liftTo - liftFrom) * ((now - liftAt) / ClockBand.GROW_MS_OUT).coerceIn(0f, 1f)
+    private fun liftK(now: Long): Float {
+        val k = ((now - liftAt) / ClockBand.GROW_MS_OUT).coerceIn(0f, 1f)
+        return if (k >= 1f) liftTo else liftFrom + (liftTo - liftFrom) * k      // exactly its end once there (no frame asked for ever)
+    }
     private fun infoLift(now: Long, cast: Boolean, grown: Boolean, instant: Boolean) {
         val at = liftK(now)
         val to = when { cast -> 1f; !grown -> 0f; else -> at }
