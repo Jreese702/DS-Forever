@@ -169,12 +169,18 @@ internal class NativeIndoorGenerator(
     @Volatile private var memo: IndoorCatalogueMemo? = null
     override fun memory(memo: IndoorCatalogueMemo?) { this.memo = memo }
 
+    /** 2026-11-24: the scheduler's "let go now" (Play, the game, a stop): the input fetches before a building start no more downloads */
+    @Volatile private var letGoNow: () -> Boolean = { false }
+    override fun letGo(check: () -> Boolean) { letGoNow = check }
+
     override fun produce(work: IndoorBakeStore.Work, out: File, yield: IndoorGenerator.Yield) {
         // (a cached catalogue: the units listed once in this session, from the memory; its answers let go after)
         if (work.key !in units) { val m = memo; try { catalogue(yield, m) } finally { m?.release() } }
         val unit = units[work.key] ?: error("building ${work.key} is not in this game build's catalogue")
         // its input files fetched together, several at a time, when many are missing (after a game update; issue #10)
-        if (unit.inputs.isNotEmpty()) game.prefetch(unit.inputs.toList())
+        // (2026-11-24: Play or the game asks the run to let go: no further download starts, the next yield point ends the building)
+        if (unit.inputs.isNotEmpty()) game.prefetch(unit.inputs.toList(), letGo = { runCatching { letGoNow() }.getOrDefault(false) })
+        yield.point()
         var started = 0L
         var attempt: String? = null
         var midStops = 0

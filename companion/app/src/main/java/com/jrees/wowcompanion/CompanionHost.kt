@@ -2927,8 +2927,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             GameUi.loadReported()
             System.currentTimeMillis().let { t -> if (msg.optBoolean("on", false)) GameInput.load.start(t) else GameInput.load.end(t) }
         }
-        // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
-        if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
+        // the interiors bake (Track C): its word on a fight or a loading / setup screen (2026-11-24: Build now in game builds only while
+        // the player is idle - the fight its own word, "Paused: in a fight")
+        if (current) homeView.inFight().let { fight -> IndoorSchedulerStep.noteAlive(fight || setupLoading || startView.visibility == View.VISIBLE, fight = fight) }
         // a reload from the Settings keeps it up until the new hello (the game writes on for a moment before it reloads)
         // (an art failure kept it up before Play only: with the game live it never holds the bottom screen; p-build-tables-blocks-keyboard)
         if (current) streamLiftCover = false          // in the world: the waiting screen does not come back after Stream settings

@@ -87,6 +87,12 @@ internal class IndoorBakeQueue(
         return work
     }
 
+    /**
+     * 2026-11-24: [work]'s building was cancelled before it finished (the player moved beside the game: [IndoorGenerator.Cancelled]):
+     * it is open again in this run, neither deferred nor counted ([next] may pick it at once)
+     */
+    fun putBack(work: IndoorBakeStore.Work) { if (work.signature !in finished) attempted.remove(work.signature) }
+
     /** [mayPublish]: asked under the store's lock (false: nothing published, -1) */
     fun publishCompleted(mayPublish: () -> Boolean = { true }): Int = store.publish(build, catalogue, mayPublish)
 

@@ -23,6 +23,12 @@ internal interface IndoorGenerator : AutoCloseable {
     /** 2026-11-08: a long pause (the game busy, the player moving): the run lets the game files go and waits outside them */
     class Released : RuntimeException("interiors bake paused long: the game files are let go")
     /**
+     * 2026-11-24 (Build now in game, the user's "Only while I'm idle": "pauses the moment you move"): the building under way is given up
+     * because the player moved or a fight started beside the game. Not that building's failure (nothing counted, nothing deferred): it is
+     * built again once the player is idle. Thrown from [Yield.point] like [Stopped]; the producer lets it propagate
+     */
+    class Cancelled(why: String) : RuntimeException("interiors building cancelled: $why")
+    /**
      * THE BUILDER'S OWN RULE TURNED THIS BUILDING DOWN (the user's D1 pick, 2026-11-23: "Done when all mappable built"): too big for the
      * city rule, no floors found, a budget exceeded... Deterministic for the same inputs and the same builder, so it is SETTLED: it counts
      * toward "finished" and is tried again only when the game build or the builder ([identity]) changes. Anything else that fails
@@ -92,6 +98,13 @@ internal interface IndoorGenerator : AutoCloseable {
      * came from its cache and the units are not known yet); the scheduler hands its own over before it lists or builds. Default: none
      */
     fun memory(memo: IndoorCatalogueMemo?) {}
+
+    /**
+     * 2026-11-24: asked (from any thread, cheap) by work that does not pass a [Yield] point for a while - the missing input files fetched
+     * together before a building (GameFiles.prefetch) - whether the run must let go now (Play, the game, a stop): true = start nothing
+     * more; the next [Yield.point] ends it. The scheduler hands it over before it lists or builds. Default: never asked
+     */
+    fun letGo(check: () -> Boolean) {}
 
     /**
      * The map ids of this game build's dungeons and raids (the user's pick, 2026-11-23: "Build last, leave out of count"): a building

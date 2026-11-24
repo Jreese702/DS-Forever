@@ -16,8 +16,9 @@ import android.util.Log
  * foreground service lifts the process to PROCESS_STATE_FOREGROUND_SERVICE (importance 125), which that check never looks at, and
  * keeps it out of the cached-app freezer too.
  *
- * When: exactly while the builder builds - after a game, with DS Forever's launcher screen not shown (minimized, the screen off),
- * which is when the builder itself may build ([PlayGate.indoorWait]'s quiet). Android 12+ lets an app start a foreground service only
+ * When: exactly while the builder builds with DS Forever's screen not shown (minimized, the screen off; 2026-11-24: before the first
+ * game too, as the builder builds then now) - and while it builds beside the game with Build now (the game minimized: the same check
+ * would count the game's own host as a cached app). On DS Forever's own screen it is in front anyway: no service. Android 12+ lets an app start a foreground service only
  * while it is in front (or a few seconds after it was), so it is asked for at the moment DS Forever leaves the front - the launcher's
  * leave hint, pause and stop ([shown] false) - and by the builder's own status changes right after (a refusal is not asked again
  * until the next such moment). It stops when DS Forever's screen is shown again (the builder waits then), when the build is done or
@@ -48,15 +49,16 @@ object IndoorKeepAlive {
 
     /**
      * [setting]: Build in the background; [hasWork]: the builder's thread runs with buildings to make (not stamped, not stopping);
-     * [gameActive]: the game is up, launching or held by Play; [streaming]: the game runs on the PC; [playedThisRun]: a game has closed
-     * in this run (before it the builder waits by the 2026-11-07 ruling); [shown]: DS Forever's launcher screen is shown (the builder
-     * waits then, "builds when minimized or screen off"); [stoodDown]: lighter mode's stand-down since the last close
+     * [gameActive]: the game is up, launching or held by Play; [streaming]: the game runs on the PC; [shown]: DS Forever's screen is
+     * shown (in front: no service needed); [stoodDown]: lighter mode's stand-down since the last close; [beside]: 2026-11-24, the builder
+     * builds beside the running game now (Build now, the player idle). 2026-11-24: no "a game has closed in this run" any more - the
+     * builder builds before the first game too (the user's "build on the first screen if people wait there")
      */
     data class State(val setting: Boolean, val hasWork: Boolean, val gameActive: Boolean, val streaming: Boolean,
-                     val playedThisRun: Boolean, val shown: Boolean, val stoodDown: Boolean = false)
+                     val shown: Boolean, val stoodDown: Boolean = false, val beside: Boolean = false)
 
     fun wanted(s: State): Boolean =
-        s.setting && s.hasWork && !s.gameActive && !s.streaming && s.playedThisRun && !s.shown && !s.stoodDown
+        s.setting && s.hasWork && (!s.gameActive || s.beside) && !s.streaming && !s.shown && !s.stoodDown
 
     /** lighter mode only: Android's running-critical warning or onLowMemory ([MemWatch.LOW_MEMORY]) */
     fun standsDown(lowMemory: Boolean, level: Int): Boolean =
@@ -118,7 +120,7 @@ object IndoorKeepAlive {
 
     private fun state(): State = State(
         setting = Settings.indoorBuild, hasWork = IndoorSchedulerStep.hasWork, gameActive = PlayGate.gameActiveNow(),
-        streaming = PlayGate.streamingNow(), playedThisRun = LauncherHooks.gameStartSec != 0L, shown = screenShown, stoodDown = stoodDown)
+        streaming = PlayGate.streamingNow(), shown = screenShown, stoodDown = stoodDown, beside = IndoorSchedulerStep.buildingBeside)
 
     /**
      * DS Forever's launcher screen shown again (MainActivity.onResume: off, the builder waits) or leaving it (onUserLeaveHint, onPause,

@@ -21,6 +21,8 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
     private val streamed = File(root, DataStaleness.STREAMED).exists()
     /** the whole file by game path, or null */
     fun readName(path: String): ByteArray? { log?.names?.add(path); return readAsset(path) { CascNative.readName(handle, path) } }
+    /** 2026-11-24: this handle reads beside the running game now (the indoor maps' Build now): a damaged read is not marked ([readAsset]) */
+    @Volatile var besideGame: () -> Boolean = { false }
     @Volatile var status = CascNative.OK
         private set
     @Volatile var lastReadWhy: String? = null
@@ -55,7 +57,12 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         }
         val error = CascNative.lastReadError()
         // a damaged cached table (p-casclib-1000): the next open of the game files drops the cache first (once per run)
-        if (CascHeal.damaged(error)) { readSawDamage = true; readDamagedErr = error; android.util.Log.w("WCHARVEST", "$label: CascLib error $error, the cache goes at the next open") }
+        // 2026-11-24 (the indoor maps built beside the running game, Build now): the game may write its own Data then (a streamed or direct
+        // install fills it as it plays), so a damaged read there is not taken for damaged files - no cache drop, no Repair offer
+        if (CascHeal.damaged(error)) {
+            if (runCatching { besideGame() }.getOrDefault(false)) android.util.Log.w("WCHARVEST", "$label: CascLib error $error beside the running game: not marked as damage")
+            else { readSawDamage = true; readDamagedErr = error; android.util.Log.w("WCHARVEST", "$label: CascLib error $error, the cache goes at the next open") }
+        }
         lastReadWhy = "$label: " + when (status) {
             CascNative.UNKNOWN -> "not in this game build's index (does the folder match its .build.info?)"
             CascNative.NOT_PRESENT -> "not on this device (is the game folder fully copied or downloaded?)"

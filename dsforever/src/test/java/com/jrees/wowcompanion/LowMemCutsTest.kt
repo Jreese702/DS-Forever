@@ -203,6 +203,9 @@ class LowMemCutsTest {
     @Test fun theIndoorMapsLineSaysWhenTheyReallyBuild() {
         val flow = text("SetupFlow.kt")
         assertFalse(flow.contains("builds while playing"))
-        assertTrue(flow.contains("\"Indoor maps (builds while the game is closed): \$it\""))
+        // 2026-11-24 (the user: "build on the first screen if people wait there"): it builds on the start screen too - the row no
+        // longer says it waits for the game to close
+        assertFalse(flow.contains("builds while the game is closed"))
+        assertTrue(flow.contains("const val INDOOR_ROW = \"Indoor maps (optional)\""))
     }
 }

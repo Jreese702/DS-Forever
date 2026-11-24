@@ -47,7 +47,24 @@ object LauncherHooks {
      * screen went, or never came up: the container failed, the player backed out) or Play starts a new launch. Ends [PlayGate]'s launch
      * window; [launchState] stays for the problem report
      */
-    fun endLaunchWindow() { launchAtMs = 0L; playHoldAtMs = 0L }
+    fun endLaunchWindow() { launchAtMs = 0L; playHoldAtMs = 0L; playPressAtMs = 0L }
+
+    /**
+     * PLAY LETS THE INDOOR MAPS GO AT ONCE (the user, 2026-11-24: the indoor maps build on the first screen while people wait there;
+     * "Pressing Play must not be delayed"): when Play was pressed (epoch ms; 0 = no press under way). Set at the press itself, before
+     * Play's wait for the art; the indoor maps builder lets go of the game files at its next step ([PlayGate.pressHeld]) and Play waits for
+     * that at most a second (IndoorSchedulerStep.letGoForPlay). Cleared by [endLaunchWindow] (the start screen back) and [playStopped]
+     */
+    @Volatile var playPressAtMs = 0L
+    fun playPressed() { playPressAtMs = System.currentTimeMillis(); runCatching { IndoorSchedulerStep.playPressed() } }
+    /** the launch stopped before the game came up (the art not ready, a refusal, a failure): the start screen builds again */
+    fun playStopped(why: String) { playPressAtMs = 0L; runCatching { IndoorSchedulerStep.playStopped(why) } }
+
+    /**
+     * 2026-11-24: the game's own files are being written now (its update, an install, Repair: the launcher's screen): the indoor maps
+     * never read beside that ([PlayGate.FILES_BUSY])
+     */
+    @Volatile var filesBusy: () -> Boolean = { false }
 
     /** when Play held the art ([holdForPlay], epoch ms), 0 = no hold: [PlayGate.held] */
     @Volatile var playHoldAtMs = 0L
