@@ -25,15 +25,23 @@ import kotlin.math.abs
  * footprint AND on the city's own map (the add-on's mapID, the game's own word for where the player is: [byPosition]), never on a taxi:
  * out of Ironforge's gates the game says Dun Morogh, and on the Ruins of Lordaeron - ABOVE the Undercity, inside its footprint - it says
  * Tirisfal Glades, so neither gets the city's art. There MapView is indoors for everything ([indoorsHere]): the built rooms, the game's
- * art, the painted base, the note and the indoor widths.
+ * art, the dark in the city's own shape, the note and the indoor widths.
+ *
+ * PART OF THE WORLD AROUND IT (1526; the user on test 1525, 2026-11-24: "Why can I see the actual map background in iron forge? ... it's
+ * weird and I hate it" - the painted city map is gone - and then: "I want it to look like its still part of the world around it. Will it
+ * show black when I zoom out or the mountain? Can't we just make it seemless like with stormwind?"): the outdoor map draws as everywhere
+ * else, around and over the city, at every zoom; the game's indoor art is drawn on it, in place, in the city's own shape; the gaps inside
+ * that shape no art covers are [BACKING] - the indoor scrim's own dark - under the floor's groups' own turned boxes only, never a
+ * rectangle over the footprint. Zoomed out past [TILES_MAX] tiles the floor is one picture ([Mosaic]): the art never drops out. The note
+ * says "No indoor map here yet" only where the player stands on neither the game's art nor a plan of ours ([Pick.own] < 0).
  *
  * Pure (the tests): MapView reads the art index (wmominimap.json) and draws.
  */
 internal object IndoorCityArt {
     /**
      * One capital. [l2w]: its root's placement as MapView's Place reads it (ox, oy, cos, sin; the PC host bake 2026-10-13, the same for
-     * every one of its rooms; a built room of the root on this continent wins over it). [rect]: the city's painted map's world rect
-     * (top, bottom, left, right: worldmap/<uiMap>/index.json), the footprint when the art set has no index for it.
+     * every one of its rooms; a built room of the root on this continent wins over it). [rect]: its footprint, the world rect (top,
+     * bottom, left, right) of the city's own map (the Map room's worldmap/<uiMap>/index.json, the same numbers)
      */
     class City(val name: String, val root: Int, val uiMap: Int, val continent: Int, val l2w: DoubleArray, val rect: DoubleArray,
                val positionOnly: Boolean = false) {
@@ -54,6 +62,11 @@ internal object IndoorCityArt {
 
     fun byRoot(root: Int): City? = CAPITALS.firstOrNull { it.root == root }
 
+    /** the indoor scrim's colour (MapView draws it at 0xA0 over the outdoor map under a built room's plan) */
+    const val DARK_RGB = 0x100C08
+    /** 1526: the city's own shape under its art (the floor's groups' turned boxes) - the indoor scrim's own dark, opaque */
+    const val BACKING = (0xFF shl 24) or DARK_RGB
+
     /**
      * more tiles than this in view: decoded at half size whatever the zoom (memory: MapView keeps 24 MB of pictures in all, a built
      * room's storeys up to ~3 MB each among them; 24 full 256 px tiles are 6 MB)
@@ -67,81 +80,121 @@ internal object IndoorCityArt {
      */
     fun halfSize(tiles: Int, pxPerYd: Double): Boolean = tiles > HALF_ABOVE || pxPerYd <= WmoMinimap.PX_PER_YD / 2
 
+    /** more of the game's tiles than this in view (a whole city at once, the open map zoomed out): the floor's [Mosaic] instead */
+    const val TILES_MAX = 64
+
+    /**
+     * ONE PICTURE OF THE FLOOR, ZOOMED OUT (1526 follow-up: with no painted map under it, the open map zoomed out past [TILES_MAX] tiles
+     * drew nothing over the dark - a dark block where the city is). The picked groups' tiles laid into one bitmap in the root's own space
+     * (its top row the high-y side, as a tile's), built off the UI thread from tiles decoded small, kept in MapView's plan cache (its
+     * 24 MB budget) and drawn through the same placement as the tiles. Its resolution is a level of detail: the view's own pixels a yard
+     * rounded up to a power of two, at most [MAX_PX_PER_YD] (a half-size tile's own: what the half-size path draws there); its size is
+     * bounded ([MAX_SIDE] a side, [MAX_BYTES] in all; Ironforge's or the Undercity's whole floor is about 2 MB at the most). Pure.
+     */
+    object Mosaic {
+        /** a half-size tile's own pixels a yard (WmoMinimap.PX_PER_YD / 2) */
+        const val MAX_PX_PER_YD = 1.0
+        /** the coarsest level (a continent in view: the city is a few pixels) */
+        const val MIN_PX_PER_YD = 0.125
+        const val MAX_SIDE = 2048
+        const val MAX_BYTES = 4L * 1024 * 1024
+
+        /** the level for a view of [viewPxPerYd]: the next power of two up from it, [MIN_PX_PER_YD] .. [MAX_PX_PER_YD] */
+        fun lod(viewPxPerYd: Double): Double {
+            var l = MAX_PX_PER_YD
+            while (l / 2 >= viewPxPerYd && l / 2 >= MIN_PX_PER_YD) l /= 2
+            return l
+        }
+
+        /** one tile's place: its texture [fid] and its rect in the mosaic's pixels (left, top, right, bottom) */
+        class Cell(val fid: Int, val l: Float, val t: Float, val r: Float, val b: Float)
+
+        /**
+         * the mosaic: its local rect ([x0]..[x1], [y0]..[y1], yards; the top row is [y1]), [pxPerYd] (the level, or less to stay in
+         * bounds), its pixels [w] x [h], [sample] (BitmapFactory's inSampleSize for its tiles) and [cells] (the groups in index order)
+         */
+        class Layout(val x0: Double, val y0: Double, val x1: Double, val y1: Double, val pxPerYd: Double, val w: Int, val h: Int,
+                     val sample: Int, val cells: List<Cell>) {
+            val bytes: Long get() = w.toLong() * h * 4
+        }
+
+        /** the mosaic of [pick] (indices into [groups]) at level [lod], or null (no tiles) */
+        fun layout(groups: List<WmoMinimap.Group>, pick: List<Int>, lod: Double): Layout? {
+            var x0 = Double.MAX_VALUE; var y0 = Double.MAX_VALUE; var x1 = -Double.MAX_VALUE; var y1 = -Double.MAX_VALUE
+            val tiles = ArrayList<Pair<Int, DoubleArray>>()
+            for (gi in pick.toSortedSet()) {
+                val g = groups.getOrNull(gi) ?: continue
+                for (t in g.tiles) {
+                    val q = WmoMinimap.tileRect(g.bb, t[0], t[1], t[3], t[4])
+                    if (!(q[2] > q[0] && q[3] > q[1])) continue
+                    tiles.add(t[2] to q)
+                    x0 = minOf(x0, q[0]); y0 = minOf(y0, q[1]); x1 = maxOf(x1, q[2]); y1 = maxOf(y1, q[3])
+                }
+            }
+            if (tiles.isEmpty()) return null
+            val dx = x1 - x0; val dy = y1 - y0
+            // the level, or less: never more than MAX_SIDE a side nor MAX_BYTES in all
+            var px = minOf(lod.coerceAtMost(MAX_PX_PER_YD), (MAX_SIDE - 1) / maxOf(dx, dy), Math.sqrt(MAX_BYTES / 4.0 / (dx * dy)))
+            var w = 1; var h = 1
+            while (true) {
+                w = Math.ceil(dx * px).toInt().coerceIn(1, MAX_SIDE); h = Math.ceil(dy * px).toInt().coerceIn(1, MAX_SIDE)
+                if (w.toLong() * h * 4 <= MAX_BYTES) break
+                px *= 0.97
+            }
+            // the tiles decoded as small as still holds the level (a tile has WmoMinimap.PX_PER_YD)
+            var sample = 1
+            while (WmoMinimap.PX_PER_YD / (sample * 2) >= px) sample *= 2
+            val cells = tiles.map { (fid, q) ->
+                Cell(fid, ((q[0] - x0) * px).toFloat(), ((y1 - q[3]) * px).toFloat(), ((q[2] - x0) * px).toFloat(), ((y1 - q[1]) * px).toFloat())
+            }
+            return Layout(x0, y1 - h / px, x0 + w / px, y1, px, w, h, sample, cells)
+        }
+
+        /** the cache's name for the mosaic of [pick] in [root] at [lod] (the groups and their textures: new art is a new name) */
+        fun key(root: Int, groups: List<WmoMinimap.Group>, pick: List<Int>, lod: Double): String {
+            var h = 1
+            var n = 0
+            for (gi in pick.toSortedSet()) {
+                val g = groups.getOrNull(gi) ?: continue
+                n++
+                h = 31 * h + g.index
+                for (t in g.tiles) for (v in t) h = 31 * h + v
+            }
+            return "citymosaic:$root:$n:${Integer.toHexString(h)}@$lod"
+        }
+    }
+
     /** a world point inside a (top, bottom, left, right) rect: x north between bottom and top, y west between right and left */
     fun inRect(r: DoubleArray, wx: Double, wy: Double): Boolean = wx in r[1]..r[0] && wy in r[3]..r[2]
 
-    /** the capital whose footprint holds the player ([rectOf]: the painted map's rect if the art set has it, else the city's own) */
-    fun cityAt(continent: Int, wx: Double, wy: Double, rectOf: (City) -> DoubleArray? = { null }): City? {
+    /** the capital whose footprint ([City.rect]) holds the player */
+    fun cityAt(continent: Int, wx: Double, wy: Double): City? {
         if (!wx.isFinite() || !wy.isFinite()) return null
-        return CAPITALS.firstOrNull { it.continent == continent && inRect(rectOf(it) ?: it.rect, wx, wy) }
+        return CAPITALS.firstOrNull { it.continent == continent && inRect(it.rect, wx, wy) }
     }
 
     /**
-     * the indoors gate: the add-on says indoors, or this city shows its art by position alone ([City.positionOnly]) and the player is on
-     * its own map ([mapId], the add-on's uiMap; the Ruins of Lordaeron above the Undercity are Tirisfal's) and not on a taxi ([onTaxi],
-     * review of 1525: a gryphon taking off from Ironforge's Great Forge is still on Ironforge's map - [byPosition] said outdoors there,
-     * this gate drew the city's art over the outdoor map)
+     * the indoors gate. Stormwind and Orgrimmar: the add-on says indoors. Ironforge and the Undercity ([City.positionOnly]): the player is
+     * on the city's own map ([mapId], the add-on's uiMap) in EVERY case - the Ruins of Lordaeron above the Undercity are Tirisfal's, and
+     * their throne room says indoors (the user's pick "Ironforge + Undercity": the lift up to the Ruins switches the city's art off) - and
+     * indoors or not on a taxi ([onTaxi], review of 1525: a gryphon taking off from Ironforge's Great Forge is still on Ironforge's map -
+     * [byPosition] said outdoors there, this gate drew the city's art over the outdoor map)
      */
     fun shows(city: City, indoors: Boolean, mapId: Int = city.uiMap, onTaxi: Boolean = false): Boolean =
-        indoors || (city.positionOnly && !onTaxi && mapId == city.uiMap)
+        if (city.positionOnly) mapId == city.uiMap && (indoors || !onTaxi) else indoors
 
     /**
      * the capital the player is in by position alone (1525): a [City.positionOnly] one whose own map the game says the player is on
-     * ([mapId]) and whose footprint ([rectOf], as [cityAt]) holds them; never on a taxi. Null = the game's own `indoors` decides
+     * ([mapId]) and whose footprint ([City.rect]) holds them; never on a taxi. Null = the game's own `indoors` decides
      */
-    fun byPosition(mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false,
-                   rectOf: (City) -> DoubleArray? = { null }): City? {
+    fun byPosition(mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false): City? {
         if (onTaxi || !wx.isFinite() || !wy.isFinite()) return null
-        return CAPITALS.firstOrNull { it.positionOnly && it.uiMap == mapId && it.continent == continent && inRect(rectOf(it) ?: it.rect, wx, wy) }
+        return CAPITALS.firstOrNull { it.positionOnly && it.uiMap == mapId && it.continent == continent && inRect(it.rect, wx, wy) }
     }
 
     /** the map's indoors (MapView's every indoor decision): the add-on's own flag, or a capital by position ([byPosition]) */
-    fun indoorsHere(indoors: Boolean, mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false,
-                    rectOf: (City) -> DoubleArray? = { null }): Boolean =
-        indoors || byPosition(mapId, continent, wx, wy, onTaxi, rectOf) != null
-
-    /**
-     * THE CITIES' PAINTED MAPS, LOOKED UP OFF THE DRAWING THREAD (review of 2026-11-23: MapView read worldmap/<id>/index.json inside its
-     * draw, and a city with no painted map was read again about every 10 s, on every frame after that). [get] answers from memory only:
-     * a city not looked up yet is read once on [background] (MapView's plans thread), its answer lands through [post] on the drawing
-     * thread and [onArrive] redraws; a miss (no Map room art for it yet) is asked again only after [MISS_MS]. Drawing-thread only, but
-     * [read] runs on [background]. Pure (the tests drive the three hooks).
-     */
-    class PaintedIndex(
-        private val read: (Int) -> Painted?,
-        private val background: (Runnable) -> Unit,
-        private val post: (Runnable) -> Unit,
-        private val now: () -> Long,
-        private val onArrive: () -> Unit = {},
-    ) {
-        /** one city's painted map: its continent and world rect (top, bottom, left, right) */
-        class Painted(val id: Int, val continent: Int, val rect: DoubleArray)
-
-        private val hits = HashMap<Int, Painted>()
-        private val missedAt = HashMap<Int, Long>()
-        private val asking = HashSet<Int>()
-
-        fun get(id: Int): Painted? {
-            hits[id]?.let { return it }
-            if (id in asking) return null
-            val miss = missedAt[id]
-            if (miss != null && now() - miss < MISS_MS) return null
-            asking.add(id)
-            background(Runnable {
-                val p = runCatching { read(id) }.getOrNull()
-                post(Runnable {
-                    asking.remove(id)
-                    if (p != null) { hits[id] = p; missedAt.remove(id); onArrive() } else missedAt[id] = now()
-                })
-            })
-            return null
-        }
-
-        companion object {
-            /** a city with no painted map is looked up again after this long (the Map room's art may be built meanwhile) */
-            const val MISS_MS = 60_000L
-        }
-    }
+    fun indoorsHere(indoors: Boolean, mapId: Int, continent: Int, wx: Double, wy: Double, onTaxi: Boolean = false): Boolean =
+        indoors || byPosition(mapId, continent, wx, wy, onTaxi) != null
 
     /** a group's box ([x1, y1, z1, x2, y2, z2], the building's own space) holds the local point */
     fun holds(bb: FloatArray, lx: Double, ly: Double): Boolean = lx >= bb[0] && lx <= bb[3] && ly >= bb[1] && ly <= bb[4]
@@ -158,7 +211,8 @@ internal object IndoorCityArt {
 
     /**
      * what to draw: [groups] (indices into the art list, the player's own first: every group whose height range holds the [floor]),
-     * [own] the player's group, [floor] the height the player is taken to walk at (the root's own space), [sure] = no guess
+     * [own] the player's group (-1: the player is between the groups, on none of them: the floor is still drawn around them),
+     * [floor] the height the player is taken to walk at (the root's own space), [sure] = no guess
      */
     class Pick(val groups: List<Int>, val own: Int, val floor: Float, val sure: Boolean)
 
@@ -181,11 +235,19 @@ internal object IndoorCityArt {
 
         fun pick(root: Int, boxes: List<FloatArray>, lx: Double, ly: Double, z: Float): Pick? {
             if (root != this.root) { reset(); this.root = root }
+            if (boxes.isEmpty()) return null
             val inside = boxes.indices.filter { holds(boxes[it], lx, ly) }
-            if (inside.isEmpty()) return null                     // between the groups (out of the city's halls): nothing here
             // the city's usual floor: the median of its groups' bottoms (Ironforge's ring and halls; the Undercity's walkways, not
             // its canals' bed nor the Ruins above), a little over it
             val usual = boxes.map { it[2] }.sorted().let { it[it.size / 2] } + FLOOR_UP
+            if (inside.isEmpty()) {
+                // between the groups (1526: a step out of a hall's box): the floor walked so far stays drawn around the player (the city
+                // does not vanish), else the city's usual floor, unsure; no group is the player's own (the note says so)
+                if (z.isFinite()) { floor = z; sure = true }
+                else if (!floor.isFinite()) { floor = usual; sure = false }
+                val f = floor
+                return Pick(boxes.indices.filter { atHeight(boxes[it], f) }, -1, f, sure)
+            }
             if (z.isFinite()) { floor = z; sure = true }
             else if (floor.isFinite() && inside.any { atHeight(boxes[it], floor) }) {
                 // the same floor; no question left once every group under the player reaches it

@@ -34,8 +34,63 @@ class IndoorCityArtTest {
         assertEquals("Orgrimmar", IndoorCityArt.cityAt(1, 1630.0, -4400.0)?.name)
         assertEquals("Undercity", IndoorCityArt.cityAt(0, 1590.0, 240.0)?.name)
         assertEquals("Stormwind", IndoorCityArt.cityAt(0, -8830.0, 620.0)?.name)
-        // the art set's own painted rect wins when it has one
-        assertNull(IndoorCityArt.cityAt(0, RING[0], RING[1]) { doubleArrayOf(0.0, -1.0, 0.0, -1.0) })
+        // 1526: the footprints are the cities' own map rects (the Map room's worldmap/<uiMap>/index.json, the PC's art set of 1524)
+        val maps = mapOf(1453 to doubleArrayOf(-7995.8301, -9154.1699, 1722.92, -14.584), 1454 to doubleArrayOf(2273.8772, 1338.4606, -3680.6011, -5083.2056),
+            1455 to doubleArrayOf(-4569.2412, -5096.8457, -713.5914, -1504.2164), 1458 to doubleArrayOf(1877.9453, 1237.8412, 873.1926, -86.1824))
+        for (c in IndoorCityArt.CAPITALS) assertTrue(c.name, maps.getValue(c.uiMap).contentEquals(c.rect))
+    }
+
+    /** 1526: the city's gaps (inside its own shape, MapView) are the indoor scrim's own dark, opaque */
+    @Test fun theCitysGapsAreTheIndoorScrimsDark() {
+        assertEquals("the indoor scrim's colour, opaque", 0xFF100C08.toInt(), IndoorCityArt.BACKING)
+        assertEquals(0x100C08, IndoorCityArt.DARK_RGB)
+    }
+
+    /**
+     * 1526 follow-up (the user's earlier pick "Ironforge + Undercity": the lift up to the Ruins switches the city's art off): Ironforge
+     * and the Undercity need their own map in EVERY case - also where the game says indoors on the surface (the Ruins of Lordaeron's
+     * throne room reports Tirisfal, 1420); Stormwind and Orgrimmar keep the indoors gate, whatever the map
+     */
+    @Test fun theRuinsThroneRoomIsNeverTheUndercityEvenIndoors() {
+        val uc = IndoorCityArt.byRoot(7675285)!!
+        val sw = IndoorCityArt.CAPITALS.first { it.name == "Stormwind" }
+        val org = IndoorCityArt.CAPITALS.first { it.name == "Orgrimmar" }
+        assertFalse("the throne room: indoors, Tirisfal's map", IndoorCityArt.shows(uc, indoors = true, mapId = 1420))
+        assertFalse("Ironforge's art off its map, indoors (the gates' inn is Dun Morogh's)", IndoorCityArt.shows(IF, indoors = true, mapId = 1426))
+        assertFalse("no map known", IndoorCityArt.shows(IF, indoors = true, mapId = 0))
+        assertTrue(IndoorCityArt.shows(uc, indoors = true, mapId = 1458))
+        assertTrue(IndoorCityArt.shows(uc, indoors = false, mapId = 1458))
+        assertTrue("Stormwind: the indoors gate, whatever the map", IndoorCityArt.shows(sw, indoors = true, mapId = 0))
+        assertTrue(IndoorCityArt.shows(org, indoors = true, mapId = 1454))
+        assertFalse(IndoorCityArt.shows(sw, indoors = false, mapId = 1453))
+    }
+
+    /**
+     * 1526 (the user: "I want it to look like its still part of the world around it"): a step out of a hall's box (between the groups)
+     * keeps the floor drawn around the player - the city does not vanish - with no group the player's own (the note says so)
+     */
+    @Test fun betweenTheGroupsTheFloorStaysDrawn() {
+        val t = IndoorCityArt.Tracker()
+        val inHall = t.pick(7801267, boxes, 15.0, 15.0, Float.NaN)!!
+        val out = t.pick(7801267, boxes, 140.0, 80.0, Float.NaN)!!
+        assertEquals("on none of the groups", -1, out.own)
+        assertEquals("the floor walked stays", inHall.floor, out.floor, 0.01f)
+        assertEquals(boxes.indices.filter { IndoorCityArt.atHeight(boxes[it], inHall.floor) }.toSet(), out.groups.toSet())
+        // nothing walked yet: the city's usual floor, unsure
+        val u = IndoorCityArt.Tracker().pick(7801267, boxes, 140.0, 80.0, Float.NaN)!!
+        assertEquals(-1, u.own)
+        assertFalse(u.sure)
+        assertEquals(boxes.map { it[2] }.sorted()[boxes.size / 2] + IndoorCityArt.FLOOR_UP, u.floor, 0.01f)
+        assertNull("no groups: nothing", IndoorCityArt.Tracker().pick(7801267, emptyList(), 0.0, 0.0, Float.NaN))
+    }
+
+    /** 1526: the painted city map's lookup (PaintedIndex) is gone with the painted base; the Map room keeps its own world map */
+    @Test fun thePaintedLookupIsGone() {
+        assertTrue(IndoorCityArt::class.java.declaredClasses.none { it.simpleName == "PaintedIndex" })
+        val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion/MapView.kt", "companion/app/src/main/java/com/jrees/wowcompanion/MapView.kt")
+            .map { java.io.File(it) }.firstOrNull { it.isFile } ?: return
+        val text = src.readText()
+        assertFalse("MapView reads no painted city map", text.contains("citymap:") || text.contains("worldmap/"))
     }
 
     @Test fun theRootsOwnPlacementTurnsTheLocalBoxes() {
@@ -122,7 +177,9 @@ class IndoorCityArtTest {
         // walking on into ground the hall alone covers: no question any more
         val q = t.pick(7801267, boxes, 80.0, 80.0, Float.NaN)!!
         assertEquals(0, q.own); assertTrue(q.sure)
-        assertNull("between the groups (out in Dun Morogh's air): nothing", t.pick(7801267, boxes, 500.0, 500.0, Float.NaN))
+        // between the groups (1526: a step out of every box): the floor stays drawn around, no group the player's own
+        val g = t.pick(7801267, boxes, 500.0, 500.0, Float.NaN)!!
+        assertEquals(-1, g.own); assertEquals(q.floor, g.floor, 0.01f)
     }
 
     @Test fun walkingDownARampTakesTheFloorWithIt() {
