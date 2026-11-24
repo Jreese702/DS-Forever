@@ -1,5 +1,6 @@
 package com.jrees.wowcompanion
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -98,6 +99,40 @@ class BandEditPlaceTest {
             assertNull(BandEdit.place(band, sl, null, diamonds, false, false, away = true).fightPen)
         }
     }
+
+    /**
+     * THE FIGHT PENCIL AT THE FIGHT STRIP'S LEFT END (the user's pick 2026-11-23, "Left end of the strip": at the page's top centre the
+     * pencil covered the middle of the cast bar strip a Top-screen fight lays across the page's top, HomeLayoutSolver.hasFightStrip):
+     * with the strip ([BandEdit.place]'s strip) the pencil stands on the strip's left end - its centre on the strip's height and in the
+     * strip's first [END] px, the strip's middle clear of it, the controller's cursor round it ([BandEdit.RING] out) on the page. Without
+     * the strip (Cast bar in fights = Top screen) the page's top centre as before. Both looks
+     */
+    @Test fun withTheFightStripTheFightPencilStandsOnItsLeftEnd() {
+        val strip = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
+        for (diamonds in listOf(false, true)) {
+            val h = if (diamonds) 200f else CastBarPlace.ROW_H
+            val band = HomeLayoutSolver.Box(0f, 8f - (8f + h + HomeLayoutSolver.AWAY_PAST), W, -HomeLayoutSolver.AWAY_PAST)
+            val sl = slots(diamonds, h, band.t, false)
+            val f = BandEdit.place(band, sl, null, diamonds, false, true, away = true, strip = strip).fightPen!!
+            val n = "diamonds=$diamonds: $f on the strip $strip"
+            assertTrue("$n: at its left end", f.cx >= strip.l && f.cx <= strip.l + END && f.r <= strip.l + END + f.w / 2f)
+            assertTrue("$n: its centre on the strip's height", (f.t + f.b) / 2f > strip.t && (f.t + f.b) / 2f < strip.b)
+            assertTrue("$n: the strip's middle clear (${f.r} vs ${strip.cx})", f.r < strip.cx - strip.w / 4f)
+            assertTrue("$n: the cursor round it on the page", f.l - BandEdit.RING >= -0.01f && f.t - BandEdit.RING >= -0.01f)
+            assertTrue("$n: a pencil's size", f.w >= BandEdit.PEN_ROW - 0.5f && f.h >= BandEdit.PEN_ROW - 0.5f && f.w <= BandEdit.PEN + 0.5f)
+            // no strip: the page's top centre, PEN square, AWAY_TOP down (today's)
+            val c = BandEdit.place(band, sl, null, diamonds, false, true, away = true, strip = null).fightPen!!
+            assertTrue("diamonds=$diamonds: no strip - the page's top centre ($c)", kotlin.math.abs(c.cx - W / 2f) < 0.5f && c.t == BandEdit.AWAY_TOP &&
+                kotlin.math.abs(c.w - BandEdit.PEN) < 0.5f)
+            // the band on the page (out of Top screen's preview): a strip changes nothing
+            val on = HomeLayoutSolver.Box(0f, 8f, W, 8f + h)
+            val os = slots(diamonds, h, 8f, false)
+            assertEquals(BandEdit.place(on, os, null, diamonds, false, true).fightPen!!.toString(),
+                BandEdit.place(on, os, null, diamonds, false, true, strip = strip).fightPen!!.toString())
+        }
+    }
+    /** the strip's "left end": its first 64 px (5 % of the 1224 px strip) */
+    private val END = 64f
 
     /** the empty space between two boxes (0 = touching or overlapping) */
     private fun gap(a: HomeLayoutSolver.Box, b: HomeLayoutSolver.Box): Float {

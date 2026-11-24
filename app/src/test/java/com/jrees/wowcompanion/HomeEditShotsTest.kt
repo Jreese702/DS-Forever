@@ -383,16 +383,18 @@ class HomeEditShotsTest {
 
     /** a D-pad Left with an In-combat spell (PadMap m44: the bare set's COMBAT overlay slot): Lightning Bolt in fights, Healing Wave else */
     private val fightSets = """[{"set":1,"slots":[{"pos":1,"s":1,"kind":"combat","ov":true,"base":"spell","c":{"n":"Lightning Bolt","id":403,"i":136048},"o":{"n":"Healing Wave","id":331,"i":136052}}]}]"""
-    private fun padMapDoc(ct: Int? = null, sets: String = "[]") = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":$sets,"dpad":{"on":true,"want":true,
-        "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}${if (ct != null) ",\"ct\":$ct" else ""}}}}"""))!!
+    private fun padMapDoc(ct: Int? = null, sets: String = "[]", cc: Int? = null, gsw: Int? = null) = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":$sets,"dpad":{"on":true,"want":true,
+        "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}${if (ct != null) ",\"ct\":$ct" else ""}${
+        if (cc != null) ",\"cc\":$cc" else ""}${if (gsw != null) ",\"gsw\":$gsw" else ""}}}}"""))!!
     /** a page whose band has the toolbar's word (a character's key, the DS WoW toolbar on), Diamonds at rest unless [l] says */
     private fun bandPage(l: HomeLayout = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), ct: Int? = null, roomBar: Boolean = false,
-                         sets: String = "[]", party: Boolean = false, partyOn: Boolean = true, fight: Boolean = false): Page {
+                         sets: String = "[]", party: Boolean = false, partyOn: Boolean = true, fight: Boolean = false, cc: Int? = null,
+                         gsw: Int? = null): Page {
         ItemCd.reset()                                                      // the extras' own data: none (another test's must not show)
         val p = page(l, fight = fight, roomBar = roomBar, party = party, partyOn = partyOn)
         HomeLayoutStore.character("Korvash-Realm")
         HomeLayoutStore.set(l)
-        p.home.onPadMap(padMapDoc(ct, sets))
+        p.home.onPadMap(padMapDoc(ct, sets, cc, gsw))
         setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
         settle()
         return p
@@ -817,7 +819,7 @@ class HomeEditShotsTest {
      * the map grown up into the freed strip, the tap-to-cast bar staying in its dock - and with Party mode on the Party-mode Top fight's
      * page: no takeover, the band away all the same, the party list filling the strip (PartyLayout.Mode.FIGHT_TOP). Edit mode keeps a
      * way to its In fights choice: the band's pieces left with the band (no stop above the page), the fight pencil stands at the page's
-     * top centre where the band went, its bubble hangs under it on the screen. The preview off: the band back at its rest box
+     * top (on the fight strip's left end, 2026-11-23), its bubble hangs under it on the screen. The preview off: the band back at its rest box
      */
     @Test fun theTopScreenPreviewSlidesTheBandAway() {
         for (party in listOf(false, true)) {
@@ -853,8 +855,10 @@ class HomeEditShotsTest {
             assertFalse("$n: the buttons' pencil left with the band", EditStop.FACE_PEN in stops)
             val pen = stops[EditStop.FIGHT_PEN]
             assertNotNull("$n: the fight pencil stays reachable", pen)
-            assertEquals("$n: at the page's top centre", W / 2f, pen!!.cx, 1f)
-            assertTrue("$n: on the page's top ($pen)", pen.t >= 0f && pen.b <= 60f)
+            // (the fight strip there - Cast bar in fights = Bottom screen, the default: on the strip's left end, the user's pick
+            // 2026-11-23; theFightPencilSitsAtTheStripsLeftEnd has the cases)
+            assertEquals("$n: on the fight strip's left end", BandEdit.onStrip(HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)), pen)
+            assertTrue("$n: on the page's top ($pen)", pen!!.t >= 0f && pen.b <= 60f)
             p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
             assertEquals(EditStop.FIGHT_PEN, model(p).menu)
             val bubble = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
@@ -871,6 +875,234 @@ class HomeEditShotsTest {
             if (party) assertEquals(PartyLayout.Mode.REST, (views(p.home).getValue("PARTY") as PartyModuleView).mode)
             p.home.editCancel()
         }
+    }
+
+    /**
+     * THE FIGHT PENCIL AT THE FIGHT STRIP'S LEFT END (the user's pick 2026-11-23, "Left end of the strip": with the Fight preview on and
+     * In fights = Top screen the pencil at the page's top centre covered the middle of the cast bar strip). Both looks, both swaps, solo
+     * and Party mode, Cast bar in fights Bottom screen (the strip) and Top screen (no strip): with the strip the pencil stands on its left
+     * end - its centre on the strip's height, the strip's middle clear, the cursor round it on the page, never on the party list's pencil;
+     * without it the page's top centre as before. The controller reaches it (Up from the ribbon's Fight, back Down), a tap on it opens its
+     * bubble, and the party list's bubble's Preview = Fight puts it at the same place. HOME_EDIT_SHOTS: each case with the cursor on it
+     */
+    @Test fun theFightPencilSitsAtTheStripsLeftEnd() {
+        val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+        // the places are gathered (every case drawn first), the rest asserted as it goes
+        val fails = ArrayList<String>()
+        fun at(msg: String, ok: Boolean) { if (!ok) fails += msg }
+        // Cast bar in fights: Bottom screen (the strip), Top screen confirmed by the add-on (`cc` 1: no strip), Top screen with the game's
+        // swing timer off (`gsw` 0: the strip for the swing alone, TopCombatBar.swingOnly)
+        val casts = listOf(Triple("bottom", HomeLayout.FightCast.BOTTOM, null as Int?), Triple("top", HomeLayout.FightCast.TOP, 1),
+            Triple("swingonly", HomeLayout.FightCast.TOP, 0))
+        for (rest in HomeRest.values()) for (side in HomeLayout.Side.values()) for (party in listOf(false, true)) for ((cw, fc, gsw) in casts) {
+            val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, rest = rest, chatSide = side, fightCast = fc)
+            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = if (fc == HomeLayout.FightCast.TOP) 1 else null, gsw = gsw)
+            val n = "${rest.name.lowercase()} chat ${side.name.lowercase()} ${if (party) "party" else "solo"} cast $cw"
+            assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+            p.home.editKey("PAD1"); settle(40)
+            assertTrue("$n: the preview", model(p).fightPreview)
+            // the controller: Up from the ribbon's Fight reaches the pencil (by the party list's pencil in Party mode)
+            var k = 0
+            while (model(p).cursor != EditStop.FIGHT_PEN && k < 4) { p.home.editKey("PADDUP"); settle(4); k++ }
+            assertEquals("$n: Up from Fight reaches the fight pencil", EditStop.FIGHT_PEN, model(p).cursor)
+            settle(20)
+            shot(p, "fightpen_${rest.name.lowercase()}_chat${side.name.lowercase()}_${if (party) "party" else "solo"}_cast$cw")
+            val b = boxes(p.home)
+            val stops = p.home.editChrome.stops()
+            val pen = stops.getValue(EditStop.FIGHT_PEN)
+            val strip = b["FIGHT_CAST"]
+            at("$n: the fight strip laid as the record has it ($strip)", (strip != null) == (cw != "top"))
+            if (strip != null) {
+                at("$n: the fight strip ($strip)", strip == RectF(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H))
+                at("$n: the pencil at the strip's left end ($pen / $strip)", pen.cx >= strip.left && pen.cx <= strip.left + 64f)
+                val cy = (pen.t + pen.b) / 2f
+                at("$n: its centre on the strip's height ($pen / $strip)", cy > strip.top && cy < strip.bottom)
+                at("$n: the strip's middle clear ($pen / $strip)", pen.r < strip.centerX() - strip.width() / 4f)
+                at("$n: the cursor round it on the page ($pen)", pen.l - BandEdit.RING >= -0.01f && pen.t - BandEdit.RING >= -0.01f)
+            } else {
+                at("$n: no strip - the page's top centre ($pen)", kotlin.math.abs(pen.cx - W / 2f) <= 1f)
+                at("$n: no strip - AWAY_TOP down ($pen)", kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f)
+            }
+            stops[EditStop.PARTY_PEN]?.let { q -> at("$n: clear of the party list's pencil ($pen / $q)", !pen.overlaps(q)) }
+            // back Down off it, and a tap on it opens its bubble
+            p.home.editKey("PADDDOWN"); settle(4)
+            assertNotEquals("$n: Down leaves the pencil", EditStop.FIGHT_PEN, model(p).cursor)
+            assertFalse("$n: Down lands on the page, not the band", model(p).cursor.band)
+            p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
+            assertEquals("$n: its bubble", EditStop.FIGHT_PEN, model(p).menu)
+            val bubble = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
+            assertTrue("$n: the bubble under the pencil, on the screen ($bubble / $pen)", bubble.top >= pen.b && bubble.bottom <= H + 0.5f)
+            p.home.editKey("PAD2"); settle(10)
+            // a finger on the pencil: its bubble
+            touch(p, MotionEvent.ACTION_DOWN, pen.cx, (pen.t + pen.b) / 2f); settle(2); touch(p, MotionEvent.ACTION_UP, pen.cx, (pen.t + pen.b) / 2f); settle(10)
+            assertEquals("$n: a tap on the pencil opens its bubble", EditStop.FIGHT_PEN, model(p).menu)
+            p.home.editKey("PAD2"); settle(10)
+            p.home.editAct { it.toggleFight() }; settle(40)
+            assertFalse(model(p).fightPreview)
+            if (party) {
+                // the party list's bubble's Preview = Fight: the same place
+                p.home.editAct { it.pencilTap(EditStop.PARTY_PEN) }; settle(20)
+                @Suppress("UNCHECKED_CAST") val rows = (rowsOf.invoke(p.home, EditStop.PARTY_PEN) as List<*>).filterIsInstance<MenuRow>()
+                val pr = rows.indexOfFirst { it.key == HomeEditModel.K_PARTY_PREVIEW }
+                p.home.editAct { it.menuTouch(pr, 1, rows) }; settle(40)
+                assertTrue("$n: the bubble's Fight preview", model(p).fightPreview)
+                val pen2 = p.home.editChrome.stops().getValue(EditStop.FIGHT_PEN)
+                assertEquals("$n: the bubble's preview - the same place", pen, pen2)
+                val pb = p.home.editChrome.menuBox(EditStop.PARTY_PEN)
+                assertFalse("$n: the party bubble clear of the fight pencil ($pb / $pen2)", RectF.intersects(pb, RectF(pen2.l, pen2.t, pen2.r, pen2.b)))
+                shot(p, "fightpen_${rest.name.lowercase()}_chat${side.name.lowercase()}_party_bubble_cast$cw")
+            }
+            p.home.editCancel()
+        }
+        assertTrue(fails.joinToString("\n"), fails.isEmpty())
+    }
+
+    /**
+     * HOLD STILL UNTIL CLOSED (the user's pick 2026-11-23, "Hold still until closed": "The pencil and bubble stay put while you change
+     * things; the pencil moves to its new place when you close the bubble."). In the Top-screen Fight preview the fight pencil stands on
+     * the fight strip's left end, or at the page's top centre with no strip; the Fight bubble's Cast bar (Bottom screen / Top screen)
+     * and Swing timer (with the game's own swing timer off: the strip for the swing alone) lay the strip or take it away. Both looks,
+     * both swaps, solo and Party mode, each change both ways, the bubble opened by A or by a finger and its row changed by the D-pad or a
+     * finger: on every frame of the page's motion the pencil (its paint, the cursor round it, its tap box) and the bubble keep the place
+     * they had at the open; the D-pad still walks the bubble's rows, a tap on the held pencil closes it (or B does); then the pencil is
+     * at its own new place (the strip's left end, or the top centre) and a new bubble hangs under it there. HOME_EDIT_SHOTS: a few cases
+     * at the open, after the change (held) and after the close (moved)
+     */
+    @Test fun theFightPencilHoldsStillWhileItsBubbleIsOpen() {
+        val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+        val fails = ArrayList<String>()
+        fun at(msg: String, ok: Boolean) { if (!ok && fails.size < 60) fails += msg }
+        val stripBox = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
+        // its own place (theFightPencilSitsAtTheStripsLeftEnd): the strip's left end, or the page's top centre AWAY_TOP down
+        fun ownPlace(pen: HomeLayoutSolver.Box?, strip: Boolean): Boolean = pen != null &&
+            if (strip) pen == BandEdit.onStrip(stripBox) else kotlin.math.abs(pen.cx - W / 2f) <= 1f && kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f
+        // the changes: (name, the record's Cast bar in fights, the game's swing timer `gsw` at the open, Swing timer at the open, the row's
+        // key and pick - or, [gswTo], the add-on's padmap saying the game's own swing timer went on / off: the swing-alone strip comes or
+        // goes; [strip] = the change lays or takes away the strip (Swing timer, ours, paints the strip's swing only)
+        data class Change(val name: String, val fc: HomeLayout.FightCast, val gsw: Int, val swing: Boolean, val key: String?, val pick: Int,
+                          val gswTo: Int? = null, val strip: Boolean = true)
+        val changes = listOf(
+            Change("cast_to_top", HomeLayout.FightCast.BOTTOM, 1, true, BottomTiles.FIGHT_CAST, 1),       // the strip goes
+            Change("cast_to_bottom", HomeLayout.FightCast.TOP, 1, true, BottomTiles.FIGHT_CAST, 0),       // the strip comes
+            Change("swing_off", HomeLayout.FightCast.TOP, 0, true, BottomTiles.SWING, 1, strip = false),  // the swing-alone strip stays
+            Change("swing_on", HomeLayout.FightCast.TOP, 0, false, BottomTiles.SWING, 0, strip = false),
+            Change("game_swing_off", HomeLayout.FightCast.TOP, 1, true, null, 0, gswTo = 0),              // the swing-alone strip comes
+            Change("game_swing_on", HomeLayout.FightCast.TOP, 0, true, null, 0, gswTo = 1))               // ... and goes
+        var n = 0; var shots = 0
+        // (live: Home on the screen - its changes glide, each frame checked; else laid at once)
+        for (live in listOf(false, true)) for (rest in HomeRest.values()) for (side in HomeLayout.Side.values()) for (party in listOf(false, true)) for (c in changes) {
+            val byPad = n % 2 == 0; n++
+            val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, rest = rest, chatSide = side, fightCast = c.fc)
+            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = 1, gsw = c.gsw)
+            HomeSettings.swingTimer = c.swing
+            p.home.forceLive = live
+            val tag = "${if (live) "live " else ""}${rest.name.lowercase()} chat ${side.name.lowercase()} ${if (party) "party" else "solo"} ${c.name} (${if (byPad) "pad" else "finger"})"
+            try {
+                assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+                p.home.editKey("PAD1"); settle(40)
+                assertTrue("$tag: the preview", model(p).fightPreview)
+                var k = 0
+                while (model(p).cursor != EditStop.FIGHT_PEN && k < 4) { p.home.editKey("PADDUP"); settle(4); k++ }
+                assertEquals("$tag: the cursor on the fight pencil", EditStop.FIGHT_PEN, model(p).cursor)
+                val strip0 = boxes(p.home)["FIGHT_CAST"] != null
+                val pen0 = p.home.editChrome.stops().getValue(EditStop.FIGHT_PEN)
+                at("$tag: at the open, its own place ($pen0)", ownPlace(pen0, strip0))
+                // the bubble: A on the pencil, or a finger on it
+                if (byPad) p.home.editKey("PAD1") else { touch(p, MotionEvent.ACTION_DOWN, pen0.cx, (pen0.t + pen0.b) / 2f); settle(2); touch(p, MotionEvent.ACTION_UP, pen0.cx, (pen0.t + pen0.b) / 2f) }
+                settle(10)
+                assertEquals("$tag: the bubble open", EditStop.FIGHT_PEN, model(p).menu)
+                val bub0 = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
+                val shoot = !live && shots < 12 && rest == HomeRest.values().first() && side == HomeLayout.Side.LEFT
+                if (shoot) shot(p, "fightpen_hold_${c.name}_${if (party) "party" else "solo"}_1_open")
+                @Suppress("UNCHECKED_CAST") val rows = (rowsOf.invoke(p.home, EditStop.FIGHT_PEN) as List<*>).filterIsInstance<MenuRow>()
+                val ri = if (c.key == null) 0 else rows.indexOfFirst { it.key == c.key }
+                assertTrue("$tag: the row ${c.key} in ${rows.map { it.key }}", ri >= 0)
+                if (c.gswTo != null) p.home.onPadMap(padMapDoc(1, cc = 1, gsw = c.gswTo))
+                else if (byPad) {
+                    // the D-pad walks to the row and steps its pick
+                    while (model(p).menuRow < ri) { p.home.editKey("PADDDOWN"); settle(1) }
+                    p.home.editKey(if (c.pick > rows[ri].picked) "PADDRIGHT" else "PADDLEFT")
+                } else p.home.editAct { it.menuTouch(ri, c.pick, rows) }
+                // every frame of the page's motion: the pencil and the bubble where they were
+                for (i in 0 until 40) {
+                    settle(1)
+                    val pen = p.home.editChrome.stops()[EditStop.FIGHT_PEN]
+                    if (pen != pen0) { at("$tag: frame $i the pencil moved with its bubble open ($pen0 -> $pen)", false); break }
+                    val bb = p.home.editChrome.bandBox(EditStop.FIGHT_PEN)
+                    if (bb == null || bb.left != pen0.l || bb.top != pen0.t || bb.right != pen0.r || bb.bottom != pen0.b) { at("$tag: frame $i the cursor's box moved ($bb)", false); break }
+                    val bub = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
+                    if (bub.left != bub0.left || bub.top != bub0.top) { at("$tag: frame $i the bubble moved ($bub0 -> $bub)", false); break }
+                }
+                settle(30)
+                val strip1 = boxes(p.home)["FIGHT_CAST"] != null
+                at("$tag: the change ${if (c.strip) "laid the strip ${if (strip0) "away" else "there"}" else "kept the strip"} ($strip0 -> $strip1)",
+                    (strip1 != strip0) == c.strip)
+                at("$tag: the bubble still open", model(p).menu == EditStop.FIGHT_PEN)
+                if (shoot) shot(p, "fightpen_hold_${c.name}_${if (party) "party" else "solo"}_2_changed_held")
+                // the controller still walks the bubble's rows during the hold
+                val r0 = model(p).menuRow
+                p.home.editKey(if (r0 > 0) "PADDUP" else "PADDDOWN"); settle(4)
+                at("$tag: the D-pad walks the bubble's rows in the hold (row $r0 -> ${model(p).menuRow})", model(p).menuRow != r0 || rows.size == 1)
+                at("$tag: the cursor stays on the pencil", model(p).cursor == EditStop.FIGHT_PEN)
+                // close: a finger on the held pencil, or B
+                if (byPad) p.home.editKey("PAD2") else { touch(p, MotionEvent.ACTION_DOWN, pen0.cx, (pen0.t + pen0.b) / 2f); settle(2); touch(p, MotionEvent.ACTION_UP, pen0.cx, (pen0.t + pen0.b) / 2f) }
+                settle(10)
+                at("$tag: the bubble closed by ${if (byPad) "B" else "a tap on the held pencil"}", model(p).menu == null)
+                val pen1 = p.home.editChrome.stops()[EditStop.FIGHT_PEN]
+                at("$tag: closed, the pencil at its new place ($pen1, the strip $strip1)", ownPlace(pen1, strip1))
+                val bb1 = p.home.editChrome.bandBox(EditStop.FIGHT_PEN)
+                at("$tag: closed, the cursor round it there ($bb1)", pen1 != null && bb1 != null && bb1.left == pen1.l && bb1.top == pen1.t)
+                if (shoot) { shot(p, "fightpen_hold_${c.name}_${if (party) "party" else "solo"}_3_closed_moved"); shots++ }
+                // a new bubble hangs under the pencil's new place
+                p.home.editKey("PAD1"); settle(10)
+                val bub2 = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
+                at("$tag: the next bubble under the new place ($bub2 / $pen1)", model(p).menu == EditStop.FIGHT_PEN && pen1 != null && bub2.top >= pen1.b)
+                p.home.editKey("PAD2"); settle(10)
+            } finally { p.home.editCancel(); HomeSettings.swingTimer = true }
+        }
+        assertTrue("${fails.size} misfits:\n${fails.joinToString("\n")}", fails.isEmpty())
+    }
+
+    /** review (races at the open / close): the Fight bubble closed by B straight after its In fights change (Top screen -> Grow: the
+     *  band glides back down onto the page, grown) and opened again by A while the page still glides - it rides the page to where it
+     *  lands (never held where the pencil was passing on the moving band), then holds there; B lets it go */
+    @Test fun aFightBubbleOpenedMidMotionHoldsWhereThePageLands() {
+        val rowsOf = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+        var races = 0
+        for (rest in HomeRest.values()) for (party in listOf(false, true)) for (fc in HomeLayout.FightCast.values()) {
+            val tag = "${rest.name.lowercase()} ${if (party) "party" else "solo"} Cast bar ${fc.name.lowercase()}"
+            val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, rest = rest, fightCast = fc)
+            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = 1, gsw = 1)
+            p.home.forceLive = true                                          // (Home on the screen: its changes glide)
+            try {
+                assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
+                p.home.editKey("PAD1"); settle(40)
+                var k = 0
+                while (model(p).cursor != EditStop.FIGHT_PEN && k < 4) { p.home.editKey("PADDUP"); settle(4); k++ }
+                assertEquals("$tag: the cursor on the fight pencil", EditStop.FIGHT_PEN, model(p).cursor)
+                p.home.editKey("PAD1"); settle(10)
+                @Suppress("UNCHECKED_CAST") val rows = (rowsOf.invoke(p.home, EditStop.FIGHT_PEN) as List<*>).filterIsInstance<MenuRow>()
+                val ri = rows.indexOfFirst { it.key == BottomTiles.COMBAT }
+                // In fights = Grow, B, A - no idle between (the off-device clock runs a glide to its end in one idle): the glide seeked
+                // halfway, the bubble opened and read there (a frame drawn)
+                p.home.editAct { it.menuTouch(ri, HomeLayout.FightBand.GROW.ordinal, rows) }
+                p.home.editKey("PAD2")
+                glideAt(p.home, 0.5f)
+                val passing = p.home.editChrome.stops()[EditStop.FIGHT_PEN]
+                p.home.editKey("PAD1")
+                val moving = (field(p.home, "anim") as? android.animation.ValueAnimator)?.isRunning == true || field(p.home, "holdRun") != null
+                if (moving) races++
+                assertEquals("$tag: the bubble open again", EditStop.FIGHT_PEN, model(p).menu)
+                p.home.editChrome.stops(); p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
+                settle(80)
+                val landed = p.home.editChrome.stops()[EditStop.FIGHT_PEN]
+                // where the same page lays it with no bubble open (the grown band's own place)
+                p.home.editKey("PAD2"); settle(10)
+                val own = p.home.editChrome.stops()[EditStop.FIGHT_PEN]
+                assertEquals("$tag: opened ${if (moving) "mid-motion" else "settled"} - at the place the page landed with ($passing -> $landed)", own, landed)
+            } finally { p.home.editCancel() }
+        }
+        assertTrue("the bubble opened mid-motion in $races cases", races > 0)
     }
 
     /**

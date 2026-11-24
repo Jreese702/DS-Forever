@@ -3471,10 +3471,26 @@ class HomeView(
         }
         val pieces = BandEdit.place(HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom), slots,
             chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview,
-            away = b.bottom <= 0f)                                        // Top screen's preview: the band above the page
+            away = b.bottom <= 0f,                                        // Top screen's preview: the band above the page
+            strip = now[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) })
         fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
+        // fix/fight-pencil-strip (the user's pick 2026-11-23, "Hold still until closed"): with the fight pencil's bubble open the pencil
+        // stays where it was at the open (HomeEditModel.fightPenHold) - the strip laid or taken away by the bubble's Cast bar / Swing timer
+        // moves it only once the bubble has closed. Every reader takes it from here: the pencil's paint, the cursor round it, its taps,
+        // the bubble's anchor. (A bubble opened while the page is still moving - In fights changed and the bubble closed and opened again
+        // at once - rides it to where the page lands and holds there: a place taken mid-motion would leave it hanging where the band was
+        // passing. No fight pencil at all - the preview off - drops the hold: a preview back on takes the place anew)
+        if (pieces.fightPen == null) m.fightPenHold = null
+        val fightPen = pieces.fightPen?.let { live ->
+            when {
+                m.menu != EditStop.FIGHT_PEN -> live
+                m.fightPenHold != null -> m.fightPenHold
+                anim?.isRunning == true || holdRun != null -> live
+                else -> live.also { m.fightPenHold = it }
+            }
+        }
         return HomeEditView.BandGeo(RectF(b), pad, face, rf(pieces.padPen), rf(pieces.facePen), pieces.look?.let { rf(it) },
-            pieces.fightPen?.let { rf(it) }, extras, plus, diamonds, chip, keys)
+            fightPen?.let { rf(it) }, extras, plus, diamonds, chip, keys)
     }
 
     /** P2: the extras now for edit mode's model (Settings' clock rows: on, hidden) - fed before every input reaches it */
