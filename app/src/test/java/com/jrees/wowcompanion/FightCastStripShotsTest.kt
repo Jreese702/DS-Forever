@@ -82,7 +82,13 @@ class FightCastStripShotsTest {
      *  padmap: the Wings flag `ct` 1 and the cast bar's screen [cc] */
     private fun page(layout: HomeLayout, fight: Boolean, party: Boolean = false, cc: Int? = 0, hudS: JSONObject? = null, gsw: Int? = null): Page {
         art()
-        app.getSharedPreferences("home", 0).edit().clear().commit()
+        // the settings objects keep the FIRST test's prefs (init sets them only while null): another class's test left its writes there
+        // (HomeEditShotsTest's band bubble turns Swing timer off - this class's swing checks then painted nothing). Each page starts on
+        // this test's own cleared files, as HomePlacesGoldenTest does
+        for ((o, name) in listOf(HomeSettings to "home", Settings to "settings", CastSettings to "cast")) {
+            val sp = app.getSharedPreferences(name, 0).apply { edit().clear().commit() }
+            o.javaClass.getDeclaredField("prefs").apply { isAccessible = true }.set(null, sp)
+        }
         HomeSettings.init(app); Settings.init(app); Tr.init(app)
         HomeLayoutStore.character(null)
         HomeLayoutStore.set(layout)
