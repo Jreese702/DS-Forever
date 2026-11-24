@@ -80,10 +80,15 @@ class HomeIndoorMapsTest {
         if (!File(root, MinimapTiles.INDEX).isFile) File(root, MinimapTiles.INDEX).apply { parentFile?.mkdirs() }.writeText("""{"continents":{}}""")
         MinimapTiles.refresh()
         Settings.init(app)
+        // 1524 audit: the kit pictures (UiKit.tex: the player's arrow mm_player among them) cached by an earlier class from ITS art
+        // root are let go - this class's art root is its own (the real kit's arrow, kept from HomeEditShotsTest, drew its soft shadow on
+        // the seam pages' flat floor: 6 "hairline" px in a full run, none alone). The setter drops every cached picture
+        UiKit.root = UiKit.root
     }
 
     @After fun tearDown() {
         rootField.set(null, was)
+        UiKit.root = UiKit.root                                         // (the kit pictures read from this class's art root go too)
         MinimapTiles.refresh()
         game.deleteRecursively()
         if (System.getenv("IA_ART_ROOT") == null) root.deleteRecursively()
