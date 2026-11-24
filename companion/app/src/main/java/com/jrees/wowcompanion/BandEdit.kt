@@ -15,7 +15,8 @@ package com.jrees.wowcompanion
  *  - the fight pencil takes the Look chip's place (the preview at the rest size), or the grown band's top centre under the swing line;
  *    Top screen's preview (the 1519 integration: the band slid up off the page as the Top fight lays it, [place]'s away) puts it at the
  *    PAGE's top centre, where the band went - the band's other pieces leave with the band (above the page: no stop); with the fight
- *    strip there (Cast bar in fights = Bottom screen) on the strip's left end instead ([onStrip], the user's pick 2026-11-23).
+ *    strip there (Cast bar in fights = Bottom screen, or Top screen with the game's swing timer off: the swing alone) on the strip's
+ *    left end instead ([onStrip], the user's pick 2026-11-23).
  */
 object BandEdit {
     /** a pencil's side, the Look chip's size (px at 1240 wide) */
@@ -45,7 +46,8 @@ object BandEdit {
      * the clock chip's box (null = none drawn); [diamonds] the look; [grown] the fight's bigger band; [preview] the fight preview is on
      * (no Look chip then, the fight pencil instead); [away] the band laid above the page (Top screen's preview: HomeLayoutSolver.away) -
      * the fight pencil at the page's top centre, [PEN] square, [AWAY_TOP] down; [strip] the fight strip's box on the page then (Cast bar
-     * in fights = Bottom screen: HomeLayoutSolver.hasFightStrip; null = none) - the fight pencil at the strip's left end ([onStrip])
+     * in fights = Bottom screen, or the swing alone: the strip HomeView draws; null = none) - the fight pencil at the strip's left end
+     * ([onStrip])
      */
     fun place(band: HomeLayoutSolver.Box, slots: List<HomeLayoutSolver.Box>, clock: HomeLayoutSolver.Box?, diamonds: Boolean,
               grown: Boolean, preview: Boolean, away: Boolean = false, strip: HomeLayoutSolver.Box? = null): Pieces {
