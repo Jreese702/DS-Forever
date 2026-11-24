@@ -31,9 +31,14 @@ Checks:
     Hub's own PF constants, two columns, with the rings' rim) and its Select tab at the grid's left edge join the HUD block as NB.topOurs
     reads them; the Wings (boxes and art) >= MARGIN from every row and the tab, never the case-5 fallback, in every Party state.
   3 THE SLIDE NEVER CROSSES IT: where the solve says `lane`, the slide (from wholly below the screen's bottom edge up to the spot on
-    nbar14's NB.slideIn, IN_C; a spot under k 1 easing its scale from k 1 on the same progress; sampled every 1/60 s) rises
+    nbar17's NB.slideIn on the spot's own plan (NB.inPlan: the band's curve, then the even brake); a spot under k 1 easing its scale
+    from k 1 on the same progress; sampled every 1/60 s) rises
     monotonically and never touches a HUD frame. 3b nbar14 THE SEAM'S SPEED: the default HUD's slide starts at the band's exit speed
-    (Motion.TOP_SLIDE_UP 240 ms on (0.4, 0, 1, 1), its ~242 bottom px x 0.06055 mm) within 10 %, in the same 0.26 s.
+    (Motion.TOP_SLIDE_UP 240 ms on (0.4, 0, 1, 1), its ~242 bottom px x 0.06055 mm) within 10 %, in the same 0.26 s. nbar17 (the user,
+    11-23, testing 1523: "the top slides out faster than the bottom slides up"): the Wings ride the band's own curve until it has left
+    the bottom screen: the same speed mm for mm the whole way (within 3 %), the band's exit speed at the seam (within 10 %), then the even
+    brake; the default HUD's whole way up the bottom's own (TopSlide.COLS_UP_MS ~311 within 5 %). The plate checks (2c): what is DRAWN,
+    the band's 39 x 31 plate at 7.51 x 5.97 mm (tools/test_wings_match.py A pins every texture's aspect).
   4 THE INPUTS: NB.topOurs unions P.lay.block with the live frames read at ANY alpha (the HUD faded out of combat still counts).
   5 THE FIGHT'S EDGE AT ONCE: a state sent at t = 0, then PLAYER_REGEN_DISABLED at t = 0.1 (before the lockdown reads true): the next
     frame's state goes out at t = 0.1 with c = true (not at the 0.5 s window's end).
@@ -377,13 +382,13 @@ def art_rects(NBL, r):
         ox = c["x"] + sgn * g.x * s
         pcy = c["y"] - g.plateY * s
         rects.append((ox - T.PLATE_W / 2 * s, pcy - T.PLATE_H / 2 * s, T.PLATE_W * s, T.PLATE_H * s))
-        gb = NB.GLYPH / 2 * s
+        gb = T.PLATE_GLYPH / 2 * s                              # nbar17: the band's 46-px bumper glyph (23 units)
         gcx = ox + (-sgn) * T.PLATE_GX * s                      # (toward the bar's middle)
         gcy = pcy - T.PLATE_GY * s
         rects.append((gcx - gb, gcy - gb, 2 * gb, 2 * gb))
         ccx, ccy = ox, c["y"] - g.chipY * s
-        hw = max(T.CHIP_W, T.CHIP_H + 8) / 2 * s
-        hh = max(T.CHIP_H, T.CHIP_H + 8) / 2 * s
+        hw = max(T.CHIP_W, T.CHIP_GLOW) / 2 * s                 # nbar17: the held trigger's soft disc (the band's glow)
+        hh = max(T.CHIP_H, T.CHIP_GLOW) / 2 * s
         rects.append((ccx - hw, ccy - hh, 2 * hw, 2 * hh))
         for j in (1, 2, 3):
             tx, ty = ox + (j - 2) * g.chordDX * s, c["y"] - g.chordY * s
@@ -420,7 +425,7 @@ def slide_problems(NBL, r, hud_frames):
     if not r["lane"] or r["case"] == 5:                 # (case 5 is check 2's failure already)
         return []
     out = []
-    ease = NBL.eval("WowCompanion.nbar.slideIn")                 # nbar14: IN_C
+    ease = NBL.eval("WowCompanion.nbar.slideIn")                 # nbar17: on the spot's own plan
     hb = NBL.eval("WowCompanion.nbar.halfBox")()
     s = r["s_used"]
     kk_ = r.get("k") or 1
@@ -428,10 +433,12 @@ def slide_problems(NBL, r, hud_frames):
     to_y = min(r["l"]["y"], r["r"]["y"])
     d = 1080 + ay - to_y + 2
     prev = None
-    n = int(math.ceil(0.26 * 60))
+    plan = NBL.eval("WowCompanion.nbar.inPlan")(d)
+    tin = plan.ms / 1000.0
+    n = int(math.ceil(tin * 60))
     for i in range(n + 1):
-        t = min(1.0, i / 60 / 0.26)
-        e = ease(t)
+        t = min(1.0, i / 60 / tin)
+        e = ease(t, plan)
         off = d * (1 - e)
         m = (1 + (kk_ - 1) * e) / kk_                            # nbar14: this frame's scale over the spot's
         if prev is not None and off > prev + 1e-9:
@@ -673,8 +680,8 @@ def main():
         "row and the tab, never the case-5 fallback (%d Party states, %d as wings)" % (HUD_MARGIN, n_off, n_off_w),
         not bad_off and n_off > 0 and n_off_w >= 0.8 * n_off, bad_off[:3])
     hw_, hh_, ax_, ay_ = hb
-    chk("2. nbar14: one half 228 x 135 (the flattened diamond: the outer column to 142.5, the inner glow 85.5, up 63, the swing lines "
-        "down to 72)", (hw_, hh_, ax_, ay_) == (228, 135, 142.5, 63), (hw_, hh_, ax_, ay_))
+    chk("2. nbar17: one half 227 x 135 (the flattened diamond: the outer column to 141.5 - the band's 62-wide plate -, the inner glow "
+        "85.5, up 63, the swing lines down to 72)", (hw_, hh_, ax_, ay_) == (227, 135, 141.5, 63), (hw_, hh_, ax_, ay_))
     # 2c nbar14 the band's size on the Thor's top panel
     sq = NB.B * MATCH * MM_TOP
     rd = NB.BC * MATCH * MM_TOP
@@ -682,10 +689,11 @@ def main():
         % (sq, rd, BAND_SQUARE_MM), abs(sq / BAND_SQUARE_MM - 1) <= 0.03 and abs(rd / (88.1 * MM_BOTTOM) - 1) <= 0.03)
     T_ = NB.TOP
     dpad_mm = ((2 * T_.OFF_X + NB.B) * MATCH * MM_TOP, (2 * T_.OFF_Y + NB.B) * MATCH * MM_TOP)
-    chk("2c. nbar14: the flattened D-pad diamond %.1f x %.1f mm (the band's 17.0 x 11.6 within 5 %%), the plate %.1f x %.1f mm (7.8 x 6.1)"
-        % (dpad_mm + (T_.PLATE_W * MATCH * MM_TOP, T_.PLATE_H * MATCH * MM_TOP)),
+    chk("2c. nbar17: the flattened D-pad diamond %.1f x %.1f mm (the band's 17.0 x 11.6 within 5 %%), the plate %.2f x %.2f mm (the band's "
+        "124 x 98.6 bottom px: 7.51 x 5.97 within 3 %%, its 39 : 31)" % (dpad_mm + (T_.PLATE_W * MATCH * MM_TOP, T_.PLATE_H * MATCH * MM_TOP)),
         abs(dpad_mm[0] / 17.0 - 1) <= 0.05 and abs(dpad_mm[1] / 11.6 - 1) <= 0.05
-        and abs(T_.PLATE_W * MATCH * MM_TOP / 7.8 - 1) <= 0.05 and abs(T_.PLATE_H * MATCH * MM_TOP / 6.1 - 1) <= 0.05)
+        and abs(T_.PLATE_W * MATCH * MM_TOP / (124 * MM_BOTTOM) - 1) <= 0.03
+        and abs(T_.PLATE_H * MATCH * MM_TOP / (124 * 31 / 39 * MM_BOTTOM) - 1) <= 0.03 and abs(T_.PLATE_W / T_.PLATE_H / (39 / 31) - 1) < 1e-9)
     st817 = boot_trail(817)
     fr0, block0, _ = hud_state(st817, "none", False, False, 0, False, 100, 280, -350)
     r0, _ = solve_case(NBL, fr0, block0, MATCH)
@@ -694,19 +702,28 @@ def main():
         % (r0["case"], r0.get("k"), gap0), r0["case"] == 1 and (r0.get("k") or 1) == 1 and abs(gap0 - 60) < 0.01)
     chk("3. the slide (lane true): wholly below the edge at the start, monotonic, never on a HUD frame (sampled every 1/60 s; a shrunk "
         "spot easing from k 1)", not bad_slide, bad_slide[:3])
-    # 3b nbar14 the seam's speed: the band's exit speed (its UP curve's last slope 1 / 0.6 over its travel) = the Wings' first speed
+    # 3b nbar17 THE WAY UP RIDES THE BAND: the default HUD's drop, the Wings' px on their plan against the band's own on Motion's 240 ms
+    # (0.4, 0, 1, 1) over its 242 bottom px - in mm on each panel, on the Wings' own clock from their start
     band_mm = 242 * MM_BOTTOM
-    v_band = (1 / 0.6) * band_mm / 240.0
     drop_px = 1080 + hb[3] * MATCH - min(r0["l"]["y"], r0["r"]["y"]) + 2
-    ease = NBL.eval("WowCompanion.nbar.slideIn")
-    h_ = 1e-4
-    slope0 = ease(h_) / h_
-    v_wings = slope0 * drop_px * MM_TOP / 260.0
-    chk("3b. nbar14 the seam's speed: the Wings start at %.3f mm / ms, the band leaves at %.3f (within 10 %%; the old ease-out: %.3f)"
-        % (v_wings, v_band, 5 * drop_px * MM_TOP / 260.0), abs(v_wings / v_band - 1) <= 0.10)
-    peak = max((ease((i + 1) / 200.0) - ease(i / 200.0)) * 200 for i in range(200))
-    chk("3b. ... and eases in from there (its speed never more than 3 %% over the first: peak %.3f / first %.3f), in the same 0.26 s"
-        % (peak, slope0), peak <= slope0 * 1.03 and NB.TOP.IN_S == 0.26)
+    plan = NBL.eval("WowCompanion.nbar.inPlan")(drop_px)
+    inpx = NBL.eval("WowCompanion.nbar.inPx")
+    cub = NBL.eval("WowCompanion.nbar.cubic")
+    ex = NBL.eval("WowCompanion.nbar.bandExitMs")()
+
+    def bmm(ms):
+        return band_mm * cub(ms / 240.0, 0.4, 0, 1, 1)
+    worst = max(abs(inpx(ms, plan) * MM_TOP - bmm(ms)) for ms in range(0, int(ex) + 1))
+    v_w = (inpx(ex - 0.5, plan) - inpx(ex - 1.5, plan)) * MM_TOP
+    v_b = bmm(ex - 0.5) - bmm(ex - 1.5)
+    chk("3b. nbar17 the default HUD's way up rides the band: the same mm for mm until the band has left the bottom screen (%.0f ms; worst "
+        "%.3f mm apart), the same speed at the seam (%.3f / %.3f mm / ms, within 10 %%)" % (ex, worst, v_w, v_b),
+        worst <= 0.05 and abs(v_w / v_b - 1) <= 0.10)
+    cols_up = 180 + 2 * (1 - cub(180 / 240.0, 0.4, 0, 1, 1)) / ((cub(180.01 / 240.0, 0.4, 0, 1, 1) - cub(179.99 / 240.0, 0.4, 0, 1, 1)) / 0.02)
+    vs = [inpx(ms + 1, plan) - inpx(ms, plan) for ms in range(int(ex), int(plan.ms))]
+    chk("3b. ... then brakes evenly to the spot (never faster than at the seam), the whole way up %.0f ms (the bottom's own "
+        "TopSlide.COLS_UP_MS %.0f within 5 %%)" % (plan.ms, cols_up), all(b <= a + 1e-6 for a, b in zip(vs, vs[1:]))
+        and abs(plan.ms / cols_up - 1) <= 0.05, (plan.ms, cols_up))
     # ------------------------------------------------------------------------------------------------ 6 nbar14 / prd22: Trail centres
     # the REAL Trail HUD (Party mode on, two rows' room): ActionBar's NB.centreDx asks for a shift; P.partyGeo (Hub's rows) goes to it at
     # once, the bars fade out, move, fade in (P.cx applied in P.place and P.lay.block); a protected frame in the lockdown makes it wait
@@ -852,7 +869,7 @@ def render(out_dir, NBL, keep):
         f2 = ImageFont.truetype("arial.ttf", 15)
     except Exception:
         f1 = f2 = ImageFont.load_default()
-    ease = NBL.eval("WowCompanion.nbar.easeOut")
+    ease = NBL.eval("WowCompanion.nbar.slideIn")
     hb = NBL.eval("WowCompanion.nbar.halfBox")()
     made = []
     for i, (key, title) in enumerate(SHOT_STATES.items()):
@@ -886,8 +903,9 @@ def render(out_dir, NBL, keep):
         ay = hb[3] * s
         dd = 1080 + ay - min(r["l"]["y"], r["r"]["y"]) + 2
         if r["lane"]:
-            for fi in range(0, 17, 4):
-                off = dd * (1 - ease(min(1.0, fi / 60 / 0.26)))
+            plan_ = NBL.eval("WowCompanion.nbar.inPlan")(dd)
+            for fi in range(0, int(plan_.ms / 1000 * 60) + 1, 4):
+                off = dd * (1 - ease(min(1.0, fi / 60 / (plan_.ms / 1000)), plan_))
                 for k in (1, 2):
                     q = r["rects"][k]
                     d.rectangle((q["x"], q["y"] + off, q["x"] + q["w"], q["y"] + q["h"] + off), outline=(255, 215, 0, 90), width=2)

@@ -647,7 +647,10 @@ class HomeLayoutShotsTest {
         assertFalse("the fight's end heard inside the up-slide", home.flow.takeover)
         val upMs = android.os.SystemClock.uptimeMillis() - t0
         val want = TopSlide.reversalHoldMs(upMs)
-        assertTrue("a late cut holds ($want ms at $upMs ms)", want > 0L && want <= TopSlide.HAND_BACK_MS)
+        // nbar17: the Wings ride the band mm for mm, so when the app hears the fight's end (40-90 ms after the add-on reversed them) the
+        // band is AHEAD of where the Wings turned: a cut while the band is still on its way holds nothing (it comes back as they leave)
+        assertTrue("a late cut holds what the Wings need ($want ms at $upMs ms)", want == TopSlide.reversalHoldMs(upMs)
+            && want in 0L..TopSlide.HAND_BACK_MS)
         var movedAt = -1
         for (i in 0 until 60) {
             frame()
