@@ -111,7 +111,17 @@ class HoldCastUiTest {
         assertTrue(home.contains("castView.holdRefs = PadMapModel.holdRefs(map).takeIf { HoldCast.usable && map.holdOn != false }"))
         assertTrue(home.contains("HoldCast.onChange = { castView.postInvalidateOnAnimation() }"))
         val room = kt("PadTabPage.kt")
-        assertEquals("the Hold block on the three right pages", 3, Regex("drawHoldBlock\\(c, m, sl, w, above").findAll(room).count())
+        // the user's follow-up (2026-11-24): the pane = Press + Hold only, no In combat / Otherwise pair; Y Hold spell a real button
+        assertTrue(room.contains("if (holdHere(m) && talkKind() == TALK_NONE) { drawHoldPane(c, m, s, slc, w, h); return }"))
+        val pane = room.substringAfter("private fun drawHoldPane(").substringBefore("\n    }\n")
+        assertFalse("no Otherwise row in the pane", pane.contains("\"Otherwise\""))
+        assertFalse("no over-macro line in the pane (the grid's mark says it)", pane.contains("overMacro"))
+        assertTrue(pane.contains("Tr.t(\"Press\")") && pane.contains("Tr.t(\"Hold\")"))
+        assertTrue("Y Hold spell / Change hold: the kit's button",
+            pane.contains("UiKit.button(c, holdRect(m, w, h), if (sl?.hold != null) \"Change hold\" else \"Hold spell\", glyph(6)"))
+        assertTrue("its touch: Book b79's page-3 code 26",
+            room.contains("tap(PadMapModel.holdCells())") && PadMapModel.holdCells().last() == (PadMapModel.ROW_PADTAB to 26))
+        assertTrue("the controller's Y pushes it", room.contains("return DOWN_HOLD   // m190: Y Hold spell, pushed at the press"))
         assertTrue(room.contains("HoldArt.badge(c, r.left + 12f * k, r.top + 12f * k, 15f * k, Icons.get(hr.icon), -1f, lit = false)"))
         assertTrue(room.contains("if (holdChooser()) return if (sl?.hold != null) Thing.Unhold else null"))
         assertTrue(kt("SpellsOverlay.kt").contains("holdHint(c, box.left + 80f, HINT_Y)"))
@@ -122,8 +132,9 @@ class HoldCastUiTest {
     }
 
     @Test fun spanishAndFrench() {
-        val words = listOf(PadTabPage.HOLD_HINT, PadTabPage.HOLD_OFF_LINE, "Clear hold spell", "Hold spell on", SpellsOverlay.HOLD_HINT,
-            "Hold time", "Normal", "Short", "Long", "Hold")
+        val words = listOf(PadTabPage.HOLD_HINT, PadTabPage.HOLD_CHANGE, PadTabPage.HOLD_OFF_LINE, "Clear hold spell", "Hold spell on",
+            SpellsOverlay.HOLD_HINT, "Hold time", "Normal", "Short", "Long", "Hold", "hold", "Press",
+            "Fight buttons unavailable: the game is not taking key changes right now")
         for (l in listOf("es", "fr")) {
             val o = JSONObject(File(i18n, "$l.json").readText())
             val plain = o.getJSONObject("plain")

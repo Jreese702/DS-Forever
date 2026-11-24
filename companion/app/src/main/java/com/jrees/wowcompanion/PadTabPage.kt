@@ -219,6 +219,7 @@ class PadTabPage(
         if (chooserList() != null || view == "ds") return null
         if (carryNow() != null) return when (key) { "PAD1" -> DOWN_PLACE; "PAD2" -> DOWN_CANCEL; else -> null }
         if (key == "PAD4" && k.focus == "buttons" && talkKind() != TALK_NONE) return DOWN_TALK          // m170: the talk rows (fights too)
+        if (key == "PAD4" && k.focus == "buttons" && !m.combat && holdButtonShown(m)) return DOWN_HOLD   // m190: Y Hold spell, pushed at the press
         if (k.focus != "buttons" || m.combat) return null
         if (toolAt(shown(), pos) != null) return null                                       // p34: the toolbar's
         if (view == "radial") return when (key) { "PAD1" -> DOWN_CHANGE; "PAD3" -> if (radId(pos) != 0) DOWN_MOVE else null; else -> null }   // p16
@@ -1666,6 +1667,7 @@ class PadTabPage(
         val slc = slotOf(m, s, pos)
         carryNow()?.let { drawMoveRight(c, m, s, it, w, h); return }
         toolAt(s, pos)?.let { drawToolRight(c, it, w, h); return }         // p34
+        if (holdHere(m) && talkKind() == TALK_NONE) { drawHoldPane(c, m, s, slc, w, h); return }     // m190: Press + Hold, the user's two rows
         if (view == "combat" || slc?.kind == PadMapModel.Kind.COMBAT) { drawCombatRight(c, m, s, slc, w, h); return }
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
         val sl = slc
@@ -1748,10 +1750,9 @@ class PadTabPage(
         // m41: no macro count any more: nothing here spends one of the player's macros (the user's no-trace ruling 2026-10-09)
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && !fixed) COMBAT
             else if (sl?.taken == true) "The game keeps this key" else null                          // m150: a stick taken back
-        val held = drawHoldBlock(c, m, sl, w, above, rowFree = talkKind() == TALK_NONE && !(cbParty() && sl?.kind == PadMapModel.Kind.SPELL), note = note != null)
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(it), act.centerX(), if (held) holdHintY(above) else above - 64f, pw)
+            c.drawText(Tr.t(it), act.centerX(), above - 64f, pw)
         }
         val off = m.combat || (sl?.storage == null && sl?.stick == null)                       // m150: a stick has no bar slot
         val moveOff = off || sl?.kind == PadMapModel.Kind.BIND || sl?.stick != null          // m34: a binding rides the key; p52: a stick too
@@ -1764,48 +1765,107 @@ class PadTabPage(
         })
     }
 
-    // ---------------------------------------------------------------- m190 HOLD TO CAST (the study's room mockup, the user's picks 2026-11-24)
-    /** the hint line's centre: under the Hold row's place, or over Move / Change when that is higher (one place on every page) */
-    private fun holdHintY(above: Float) = minOf(above - HOLD_HINT_UP, HOLD_ROW_Y + 120f)
-
-    /** the Hold block belongs on this page: WoW Defaults / In combat's eight buttons (never a bar page, the radial, Party mode, a stick) */
+    // ---------------------------------------------------------------- m190 HOLD TO CAST (the user's picks 2026-11-24, and the follow-up:
+    // "it should just be like the spell assigned and then the hold spell"; the In combat / Otherwise pair was "cluttered and confusing")
+    /** the hold pane belongs on this page: WoW Defaults / In combat's eight buttons (never a bar page, the radial, Party mode, a stick); an
+     *  add-on before m190 (no `hold` in its padmap) keeps the pages as they were */
     private fun holdHere(m: PadMapModel.Map): Boolean = m.holdOn != null && !castBar() && cv() != "party" && view != "radial" && pos in 1..8
+    /** hold to cast works now (the add-on's word and the app's probe) */
+    private fun holdOn(m: PadMapModel.Map): Boolean = m.holdOn == true && HoldCast.usable
+    /** the Hold spell button is on the page now: the pane's, nothing carried, the toolbar not on the button */
+    private fun holdButtonShown(m: PadMapModel.Map): Boolean =
+        holdHere(m) && holdOn(m) && talkKind() == TALK_NONE && carryNow() == null && toolAt(shown(), pos) == null && chooserList() == null
+    /** the Hold spell button: above Move (the same size, the same gap), or in Move's place on a button with no Move */
+    private fun holdRect(m: PadMapModel.Map, w: Float, h: Float): RectF {
+        val sl = slotOf(m, shown(), pos)
+        val moveShown = sl != null && sl.kind != PadMapModel.Kind.NONE && sl.kind != PadMapModel.Kind.FIXED
+        val mv = moveRect(w, h)
+        return if (moveShown) RectF(mv.left, mv.top - (actRect(w, h).top - mv.top), mv.right, mv.bottom - (actRect(w, h).top - mv.top)) else mv
+    }
 
     /**
-     * Above Move / Change: the place's HOLD row - its picture, "Hold" with the hold mark, its name; the third row of the page, as the study
-     * drew it under In combat / Otherwise - when [rowFree] (nothing else drawn there), then the hint line "(Y) Hold spell  hold 0.4 s"
-     * (Settings' hold time); while the probe has not seen the marker work: "Hold to cast isn't available yet" instead. [note] = a note
-     * takes the hint's place now (the caller draws it there). Returns whether the block was drawn (the note's place moves to the hint's).
+     * THE SELECTED BUTTON'S PANE (the user's follow-up, 2026-11-24: "it should just be like the spell assigned and then the hold spell"):
+     * the button and the tab as its title, then TWO rows - PRESS, what the button casts on this tab (WoW Defaults: its own; In combat: its
+     * In combat entry, else its own; a base X / Y / B / A: the game's own, or its In combat action), and HOLD, its hold spell (an empty
+     * row when none; while hold to cast is not available, that line instead). Under them the buttons: Y Hold spell / Change hold, X Move,
+     * A Change. What the old In combat / Otherwise pair said now lives on the grid: the swords mark on a slot with an In combat entry and
+     * the corner mark on one over the player's own macro (left page and Home's bars), and the In combat tab's Press row. A real problem
+     * (the game not taking key changes, no key on a base face) is the red line over the buttons.
      */
-    private fun drawHoldBlock(c: Canvas, m: PadMapModel.Map, sl: PadMapModel.Slot?, w: Float, above: Float, rowFree: Boolean, note: Boolean): Boolean {
-        if (!holdHere(m)) return false
-        val x0 = SPLIT + 40f; val x1 = w - 56f
-        val hintY = holdHintY(above)
-        val on = m.holdOn == true && HoldCast.usable
-        val ref = sl?.hold
-        if (on && ref != null && rowFree) {
-            val y = HOLD_ROW_Y
-            UiKit.spell(c, Icons.get(ref.icon), x0 + 8f, y + 8f, 64f, UiKit.Spell.KNOWN, rank = SpellRanks.of(ref.spellId))
-            val pl = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
-            val label = Tr.t("Hold")
-            c.drawText(label, x0 + 92f, y + 28f, pl)
-            HoldArt.mark(c, x0 + 92f + pl.measureText(label) + 22f, y + 20f, 11f, HOLD_MARK)
-            val ps = UiKit.inkPaint(30f)
-            c.drawText(TextUtils.ellipsize(Tr.t(ref.name), TextPaint(ps), x1 - x0 - 100f, TextUtils.TruncateAt.END).toString(), x0 + 92f, y + 66f, ps)
+    private fun drawHoldPane(c: Canvas, m: PadMapModel.Map, s: Int, sl: PadMapModel.Slot?, w: Float, h: Float) {
+        val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
+        val fightTab = view == "combat"
+        val fixed = sl?.kind == PadMapModel.Kind.FIXED
+        val face = PadMapModel.isFace(sl)
+        val isCombat = sl?.kind == PadMapModel.Kind.COMBAT
+        // the title: the button ("ZL + Y") and the tab
+        val shortButton = if (pos <= 4) arrayOf("Left", "Up", "Right", "Down")[pos - 1] else buttonWord(pos)
+        val title = Tr.t((if (s == 1) "" else setWord(s) + " + ") + shortButton)
+        val pt = UiKit.inkPaint(36f)                                         // (plain ink: the heading face draws its capitals as initials)
+        c.drawText(title, x0 + 8f, top + 46f, pt)
+        val pd = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
+        val tabWord = Tr.t(if (fightTab) "In combat" else "Out of combat")
+        c.drawText(tabWord, x0 + 8f + pt.measureText(title) + 22f, top + 46f, pd)
+        if (fightTab) swords(c, x0 + 8f + pt.measureText(title) + 22f + pd.measureText(tabWord) + 24f, top + 38f, 28f)
+        UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 70f, x1, top + 81f), PBMP) }
+        // PRESS: what the button casts on this tab
+        val entry = if (fightTab) PadMapModel.fightRef(sl) else if (isCombat) sl!!.otherwise else null
+        val pressIcon: Bitmap?; val pressName: String; val pressRank: SpellRanks.Badge?; val pressLevel: Boolean
+        when {
+            entry != null -> { pressIcon = Icons.get(entry.icon); pressName = entry.name; pressRank = SpellRanks.of(entry.spellId); pressLevel = false }
+            !fightTab && isCombat -> { pressIcon = null; pressName = "Nothing"; pressRank = null; pressLevel = false }
+            else -> { pressIcon = iconOf(m, sl, pos); pressName = nameOf(m, sl); pressRank = slotRank(m, sl); pressLevel = fixed }
         }
-        if (note) return true
-        if (!on) {
-            val p = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
-            c.drawText(Tr.t(HOLD_OFF_LINE), x0 + 8f, hintY - (p.ascent() + p.descent()) / 2f, p)
-            return true
+        val pl = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
+        val ps = UiKit.inkPaint(32f)
+        val r1 = top + PANE_ROW1
+        UiKit.spell(c, pressIcon, x0 + 8f, r1 + 8f, 80f, if (pressLevel) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN, rank = pressRank)
+        val pressWord = Tr.t("Press")
+        c.drawText(pressWord, x0 + 112f, r1 + 34f, pl)
+        if (fightTab && entry != null) swords(c, x0 + 112f + pl.measureText(pressWord) + 22f, r1 + 26f, 28f)
+        c.drawText(TextUtils.ellipsize(Tr.t(pressName), TextPaint(ps), x1 - x0 - 128f, TextUtils.TruncateAt.END).toString(), x0 + 112f, r1 + 80f, ps)
+        // HOLD: its hold spell (an empty row when none), or the line while hold to cast is not available
+        val r2 = r1 + PANE_ROW_STEP
+        if (holdOn(m)) {
+            val hr = sl?.hold
+            UiKit.spell(c, hr?.let { Icons.get(it.icon) }, x0 + 8f, r2 + 8f, 80f, UiKit.Spell.KNOWN, rank = SpellRanks.of(hr?.spellId))
+            val holdWord = Tr.t("Hold")
+            c.drawText(holdWord, x0 + 112f, r2 + 34f, pl)
+            HoldArt.mark(c, x0 + 112f + pl.measureText(holdWord) + 22f, r2 + 26f, 11f, HOLD_MARK)
+            val hold = "%s %s".format(Tr.t("hold"), HoldCast.holdWord())
+            c.drawText(hold, x1 - pd.measureText(hold), r2 + 34f, pd)
+            if (hr != null) c.drawText(TextUtils.ellipsize(Tr.t(hr.name), TextPaint(ps), x1 - x0 - 128f, TextUtils.TruncateAt.END).toString(), x0 + 112f, r2 + 80f, ps)
+        } else {
+            c.drawText(Tr.t(HOLD_OFF_LINE), x0 + 8f, r2 + 50f, pd)
         }
-        UiKit.pad(c, glyph(6), x0 + 26f, hintY, 36f)                       // Y, as the room draws its glyphs
-        val ph = UiKit.inkPaint(24f)
-        val word = Tr.t(HOLD_HINT)
-        c.drawText(word, x0 + 52f, hintY - (ph.ascent() + ph.descent()) / 2f, ph)
-        val pd = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
-        c.drawText(Tr.t("hold %s".format(HoldCast.holdWord())), x0 + 52f + ph.measureText(word) + 28f, hintY - (pd.ascent() + pd.descent()) / 2f, pd)
-        return true
+        // the red line over the buttons: a note (a refusal, a fight), else a real problem of a base face
+        val act = actRect(w, h)
+        val filled = sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
+        val holdBtn = holdButtonShown(m)
+        val above = if (holdBtn) holdRect(m, w, h).top else if (filled) moveRect(w, h).top else act.top
+        val problem = if (face && (fightTab || sl?.fight != null)) when {
+            m.faceRefused -> "Fight buttons unavailable: the game is not taking key changes right now"
+            PadMapModel.faceUnbound(m, sl) -> "The game has no key on ${buttonWord(pos)} now: check the game's controller keys"
+            else -> null
+        } else null
+        val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT
+            else if (sl?.taken == true) "The game keeps this key" else problem
+        note?.let {
+            val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
+            c.drawText(TextUtils.ellipsize(Tr.t(it), TextPaint(pw), x1 - x0, TextUtils.TruncateAt.END).toString(), act.centerX(), above - 22f, pw)
+        }
+        // the buttons: Y Hold spell / Change hold, X Move, A Change (the kit's red buttons, one size)
+        if (holdBtn) UiKit.button(c, holdRect(m, w, h), if (sl?.hold != null) "Change hold" else "Hold spell", glyph(6), when {
+            m.combat -> UiKit.Button.DISABLED; isDown(DOWN_HOLD) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+        val moveOff = m.combat || sl?.storage == null || sl.kind == PadMapModel.Kind.BIND
+        if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
+            moveOff -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+        val canChange = if (face && fightTab) !m.combat else !fixed && sl?.storage != null && !m.combat && !(fightTab && m.paused)
+        if (!fixed || (face && fightTab)) UiKit.button(c, act, if (fightTab) "Change combat spell" else if (filled) "Change" else "Choose", glyph(8), when {
+            !canChange || !changeHere() -> UiKit.Button.DISABLED
+            isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
+            else -> UiKit.Button.UP
+        })
     }
 
     /** p56 (Mock C3): a Party mode slot's spell casts on Party mode's pick: the line, then the party as plates (class icon, name in its
@@ -1951,12 +2011,9 @@ class PadTabPage(
         val filled = sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
         val above = if (filled) moveRect(w, h).top else act.top
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT else null
-        // m190: the Hold block (its row only when no problem / over-macro line holds the third row's place)
-        val lineThere = (face && fight != null && (m.faceRefused || PadMapModel.faceUnbound(m, sl))) || (isCombat && PadMapModel.overMacro(sl) != null)
-        val held = drawHoldBlock(c, m, sl, w, above, rowFree = !lineThere, note = note != null)
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(it), act.centerX(), if (held) holdHintY(above) else above - 64f, pw)
+            c.drawText(Tr.t(it), act.centerX(), above - 64f, pw)
         }
         // m32: any button takes a combat spell (no "spell first" gate any more)
         val canChange = if (face) inCombat && !m.combat else !fixed && sl?.storage != null && !m.combat && !m.paused   // m40
@@ -2010,10 +2067,9 @@ class PadTabPage(
         val moveShown = sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
         val above = if (moveShown) moveRect(w, h).top else act.top
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT else null
-        val held = drawHoldBlock(c, m, sl, w, above, rowFree = true, note = note != null)                 // m190
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(it), act.centerX(), if (held) holdHintY(above) else above - (if (why != null || over != null) 14f else 40f), pw)
+            c.drawText(Tr.t(it), act.centerX(), above - (if (why != null || over != null) 14f else 40f), pw)
         }
         // m32: any button takes a combat spell (no "spell first" gate any more)
         val canChange = if (face) !m.combat else !fixed && sl?.storage != null && !m.combat && !m.paused   // m40
@@ -2339,6 +2395,7 @@ class PadTabPage(
                 }
                 return DOWN_NONE
             }
+            if (map?.let { holdButtonShown(it) } == true && holdRect(map!!, w, h).contains(x, y)) return if (map?.combat == true) DOWN_NONE else DOWN_HOLD   // m190
             if (actRect(w, h).contains(x, y)) return if (carrying) DOWN_PLACE else if (changeHere()) DOWN_CHANGE else DOWN_NONE
             if (moveRect(w, h).contains(x, y)) return if (carrying) DOWN_CANCEL else DOWN_MOVE
         }
@@ -2405,6 +2462,11 @@ class PadTabPage(
         }
         if (was == DOWN_CANCEL && moveRect(w, h).contains(x, y)) {
             tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CANCEL)); localFirst(DOWN_CANCEL); return
+        }
+        // m190: Y Hold spell by touch: the add-on's hold chooser for the button the cursor is on (Book b79 page-3 code 26; no game action)
+        if (was == DOWN_HOLD && holdButtonShown(m) && holdRect(m, w, h).contains(x, y)) {
+            if (m.combat) say(COMBAT) else tap(PadMapModel.holdCells())
+            return
         }
         // Move: pick it up (a pick; the addon carries the chosen button)
         if (view == "radial" && was == DOWN_MOVE && radId(pos) == 0) return                     // p16: an empty slice has no Move
@@ -2717,12 +2779,15 @@ class PadTabPage(
         private val PPLATE = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(235, 30, 24, 19) }
         /** the In combat tab's assigned-spell row (m160: where Smart Range's plate was; the first row of the page before m146) */
         private const val FIGHT_ROW_Y = 374f
-        /** m190: the Hold row's top (the right page's third row) and the hint line's height over Move / Change */
-        private const val HOLD_ROW_Y = 566f
-        private const val HOLD_HINT_UP = 22f
+        /** m190: the pane's two rows (under its title), the hold mark's colour, its words */
+        private const val PANE_ROW1 = 104f
+        private const val PANE_ROW_STEP = 116f
         private val HOLD_MARK = Color.rgb(150, 110, 40)
         const val HOLD_HINT = "Hold spell"
+        const val HOLD_CHANGE = "Change hold"
         const val HOLD_OFF_LINE = "Hold to cast isn't available yet"
+        /** m190: the Hold spell button (touch: Book b79's page-3 code 26 opens the add-on's hold chooser) */
+        private const val DOWN_HOLD = 970
     }
 }
 

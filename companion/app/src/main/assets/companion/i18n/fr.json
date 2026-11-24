@@ -1,5 +1,8 @@
 {
 "plain": {
+"hold": "maintien",
+"Change hold": "Changer le maintien",
+"Fight buttons unavailable: the game is not taking key changes right now": "Boutons de combat indisponibles : le jeu n'accepte pas de changement de touches pour l'instant",
 "Hold spell": "Sort maintenu",
 "Hold to cast isn't available yet": "Maintenir pour lancer n'est pas encore disponible",
 "Clear hold spell": "Retirer le sort maintenu",
@@ -2370,6 +2373,7 @@
 "In the row under the clock, with a hunter's pet.": "Dans la rangée sous l'horloge, avec le familier d'un chasseur."
 },
 "templates": {
+"The game has no key on %s now: check the game's controller keys": "Le jeu n'a pas de touche sur %s : vérifiez les touches de manette du jeu",
 "hold %s": "maintien %s",
 "DS Forever's %s runs here, over your macro": "%s de DS Forever s’utilise ici, par-dessus votre macro",
 "In combat: %s casts here in fights, over your macro": "En combat : %s est lancé ici pendant les combats, par-dessus votre macro",

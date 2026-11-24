@@ -816,6 +816,10 @@ object PadMapModel {
     private fun page3(code: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 39, ROW_PADTAB to 38, ROW_PADTAB to 37, ROW_PADTAB to code)
     /** p58: the player's macro [index] (0-based in [Map.macs]): its page pick (0-3 = from 0 / 40 / 80 / 120), then the "extra" row's column */
     fun macroCells(index: Int): List<Pair<String, Int>> = page3((index / 40).coerceIn(0, 3)) + (ROW_EXTRA to index % 40)
+    /** m190 (Book b79): the Controller room's Y Hold spell by touch - the add-on's hold chooser for the button the cursor is on
+     *  (PadTabCtl p60 holdOpen), page-3 code 26 */
+    const val P3_HOLD = 26
+    fun holdCells(): List<Pair<String, Int>> = page3(P3_HOLD)
     /** p58: Extra's category [k] (1-based, ChooserTabs.CATS) folded / opened by touch (codes 4-8) */
     fun foldCells(k: Int): List<Pair<String, Int>> = page3(3 + k.coerceIn(1, 5))
     /** movable Home (Book b74; b76 the 1515 merge: off the sticky realm question's 9-19): the DS toolbar's mirror bit for this character,
@@ -839,7 +843,7 @@ object PadMapModel {
     val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8,
         "key question" to P3_KEY_NEW..P3_KEY_LAST,
         "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
-        "fight cast bar" to P3_CAST_OFF..P3_CAST_ON)
+        "fight cast bar" to P3_CAST_OFF..P3_CAST_ON, "hold chooser" to P3_HOLD..P3_HOLD)        // m190 / Book b79
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
     fun fightCastCells(top: Boolean): List<Pair<String, Int>> = page3(if (top) P3_CAST_ON else P3_CAST_OFF)

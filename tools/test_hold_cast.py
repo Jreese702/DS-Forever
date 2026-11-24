@@ -154,8 +154,8 @@ pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
 check('local PV = "m190"' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m190 and its note (m189 kept)')
-check('local CV = "p59"' in ptc and 'p59 HOLD TO CAST' in ptc and 'p58 THE CHOOSER AS A GRID' in ptc, '0. PadTabCtl p59 and its note')
-check('local BV = "b78"' in bk and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b78 and its note')
+check('local CV = "p60"' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'p59 HOLD TO CAST' in ptc and 'p58 THE CHOOSER AS A GRID' in ptc, '0. PadTabCtl p59 and its note')
+check('local BV = "b79"' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk and 'P3[26] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end' in bk and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b78 and its note')
 check('local NB = { V = "nbar18"' in ab and 'nbar18 HOLD TO CAST' in ab, '0. ActionBar nbar18 and its note')
 
 # ---------------------------------------------------------------- (1) THE PROBE
@@ -361,7 +361,11 @@ check(L.eval('HDB()["f8"]') is None and last(L, 'padack').get('op') == 'unhold',
 # a finger on the hold chooser puts the hold too
 L.execute('WowCompanion.padTabCtl.press("PAD4"); WowCompanion.padTabCtl.touchSpell(403)')
 check(L.eval('HDB()["f8"].n') == 'Lightning Bolt', '7. a finger on a spell of the hold chooser: the hold (never the button\'s own)')
-L.execute('WowCompanion.padTabCtl.leave()')
+# p60: the app's "Hold spell" button by touch (Book b79's code 26) = Y on the button the cursor is on
+L.execute('WowCompanion.padMapHold(); WowCompanion.padTabCtl.press("PAD2")')
+L.execute('WowCompanion.padTabCtl.holdOpen()')
+check((ctl(L).get('chooser') or {}).get('hold') is True, '7. the Hold spell button by touch (holdOpen): the same hold chooser', ctl(L).get('chooser'))
+L.execute('WowCompanion.padTabCtl.press("PAD2"); WowCompanion.padTabCtl.leave()')
 L3.execute('local ctl = WowCompanion._spellsBook.ctl; ctl.croom, ctl.ctrlTab, ctl.onTabs = true, true, true; WowCompanion.padTabCtl.enter(); WowCompanion.padTabCtl.press("PAD4")')
 check(ctl(L3).get('note') == 'hold-off' and ctl(L3).get('chooser') is None, '7. unavailable: Y says hold-off, nothing opens', ctl(L3))
 
