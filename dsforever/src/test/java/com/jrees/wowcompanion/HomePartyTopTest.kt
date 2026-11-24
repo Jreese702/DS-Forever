@@ -14,8 +14,8 @@ import org.junit.Test
  * Party mode, Grow / Same size and the takeover: nothing changes.
  *
  * FULL WIDTH (the user, 2026-11-23): with Party mode on the list spans both columns, so both the chat and the map keep the heights the
- * Party fight's reference page gives them (the list takes the whole freed strip); PARTY SIZING (the same day): "Controller on top
- * (fights)" = Grow a bit / Same size lay the away page with 88 / the rest's rows instead (both columns grow up), Grows = Off never fills.
+ * Party fight's reference page gives them (the list takes the whole freed strip); PARTY SIZING (the same day; one "Size in fights"
+ * since test 1523): Same size lays the away page with the rest's rows instead (both columns grow up), Grows = Off never fills.
  */
 class HomePartyTopTest {
     private val S = HomeLayoutSolver
@@ -216,18 +216,18 @@ class HomePartyTopTest {
     }
 
     /**
-     * PARTY SIZING (the user's picks 2026-11-23): "Controller on top (fights)" - Fill (today's, above) / Grow a bit (a Party fight's 88 px
-     * rows) / Same size (the rows out of the fight: 64, or 88 with Grows = Whenever Party mode is on); Grows = Off: Fill and Grow a bit keep
-     * the rest's 64. Not filling, the band still goes away and both columns grow up under (over) the list; every dock, both sides
+     * PARTY SIZING (the user's picks 2026-11-23; ONE setting since test 1523, the pick "Grow / Same size"): "Size in fights" - Grow (today's
+     * fill, above) / Same size (the rows out of the fight: 64, or 88 with Grows = Whenever Party mode is on); Grows = Off: Grow keeps the
+     * rest's 64. Not filling, the band still goes away and both columns grow up under (over) the list; every dock, both sides
      */
-    @Test fun theTopPicksGrowABitAndSameSize() {
-        val want = listOf(Triple(HomeLayout.PartyGrow.FIGHTS, HomeLayout.PartyTopFight.GROW, 88f), Triple(HomeLayout.PartyGrow.FIGHTS, HomeLayout.PartyTopFight.SAME, 64f), Triple(HomeLayout.PartyGrow.ALWAYS, HomeLayout.PartyTopFight.SAME, 88f),
-            Triple(HomeLayout.PartyGrow.ALWAYS, HomeLayout.PartyTopFight.GROW, 88f), Triple(HomeLayout.PartyGrow.OFF, HomeLayout.PartyTopFight.FILL, 64f), Triple(HomeLayout.PartyGrow.OFF, HomeLayout.PartyTopFight.GROW, 64f), Triple(HomeLayout.PartyGrow.OFF, HomeLayout.PartyTopFight.SAME, 64f))
-        for (dock in HomeLayout.PartyDock.values()) for (side in HomeLayout.Side.values()) for ((g, t, h) in want) for (cnt in listOf(1, 3, 5)) {
-            val l = top.copy(party = dock, chatSide = side, partyGrow = g, partyTop = t)
+    @Test fun theTopPicksSameSize() {
+        val want = listOf(Triple(HomeLayout.PartyGrow.FIGHTS, HomeLayout.PartySize.SAME, 64f), Triple(HomeLayout.PartyGrow.ALWAYS, HomeLayout.PartySize.SAME, 88f),
+            Triple(HomeLayout.PartyGrow.OFF, HomeLayout.PartySize.GROW, 64f), Triple(HomeLayout.PartyGrow.OFF, HomeLayout.PartySize.SAME, 64f))
+        for (dock in HomeLayout.PartyDock.values()) for (side in HomeLayout.Side.values()) for ((g, z, h) in want) for (cnt in listOf(1, 3, 5)) {
+            val l = top.copy(party = dock, chatSide = side, partyGrow = g, partySize = z)
             val s = fightState(cnt)
             val r = S.places(l, s)
-            val tag = "$dock $side $g $t n=$cnt"
+            val tag = "$dock $side $g $z n=$cnt"
             assertTrue("$tag: away", r.away)
             assertTrue("$tag: ${HomeLayoutRules.problems(l, s, r)}", HomeLayoutRules.problems(l, s, r).isEmpty())
             val p = r.boxes.getValue(HomePart.PARTY)
@@ -246,9 +246,11 @@ class HomePartyTopTest {
                 assertEquals(p.t - PartyLayout.CHAT_GAP, map.b, 0.01f)
             }
         }
-        // the default (Fill) keeps today's fill exactly: the record with the picks spelled out lays the same page
+        // the default (Grow) keeps today's fill exactly: the record with the picks spelled out lays the same page; Grow fills with
+        // Grows = Whenever Party mode is on too
         val s = fightState(3)
-        assertEquals(S.places(top, s).boxes, S.places(top.copy(partyGrow = HomeLayout.PartyGrow.FIGHTS, partyTop = HomeLayout.PartyTopFight.FILL, partyBottom = HomeLayout.PartyBottomFight.SHRINK), s).boxes)
+        assertEquals(S.places(top, s).boxes, S.places(top.copy(partyGrow = HomeLayout.PartyGrow.FIGHTS, partySize = HomeLayout.PartySize.GROW), s).boxes)
+        assertEquals(S.places(top, s).boxes, S.places(top.copy(partyGrow = HomeLayout.PartyGrow.ALWAYS), s).boxes)
     }
 
     /** the thin-row rest: the strip freed is the thin band's (138), the rows 134 / 157 / 192 */

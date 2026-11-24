@@ -47,8 +47,8 @@ object BottomTiles {
      *  character's record, [HomeLayout.xpBar]: Home takes its 34 px; every room keeps it) */
     const val XP = "xpbar"
     /** PARTY SIZING (the user, 2026-11-23; the pick "Settings + Edit Home"): Settings > Bottom screen > Party's one tile, "Party list" -
-     *  its band's lines Grows, Controller on top (fights), Controller on bottom (fights): this character's record (HomeLayout.partyGrow /
-     *  partyTop / partyBottom), the same picks as the party list's pencil bubble in Edit Home */
+     *  its band's lines Grows and Size in fights (one line since test 1523): this character's record (HomeLayout.partyGrow /
+     *  partySize), the same picks as the party list's pencil bubble in Edit Home */
     const val PARTY = "party"
     const val ZOOM = "zoom"
     const val WORLD = "worldmap"
@@ -132,9 +132,9 @@ object BottomTiles {
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))
         RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
         XP -> listOf(Line(XP, null, SHOW_HIDE, if (HomeSettings.layout.xpBar) 0 else 1, listOf(UiMode.ON, UiMode.OFF)))
-        // party sizing: the three picks, the party list's bubble's own rows (one wording)
-        PARTY -> HomeWidgetMenus.partySizingRows(HomeSettings.layout).zip(listOf(HomeWidgetMenus.PARTY_GROW_TILE, HomeWidgetMenus.PARTY_TOP_TILE,
-            HomeWidgetMenus.PARTY_BOTTOM_TILE)).map { (r, words) -> Line(r.key, r.label, words, r.picked, off = r.off) }
+        // party sizing: the two picks, the party list's bubble's own rows (one wording)
+        PARTY -> HomeWidgetMenus.partySizingRows(HomeSettings.layout).zip(listOf(HomeWidgetMenus.PARTY_GROW_TILE, HomeWidgetMenus.PARTY_SIZE_TILE))
+            .map { (r, words) -> Line(r.key, r.label, words, r.picked, off = r.off) }
         QUEST -> listOf(Line(QUEST, null, CARD_WORDS, CARD_DOCKS.indexOf(HomeSettings.layout.card)))
         CLOCK -> CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
         TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null))
@@ -271,11 +271,9 @@ object BottomTiles {
             XP -> HomeLayoutStore.update { it.copy(xpBar = k == 0) }
             // party sizing (2026-11-23): this character's record
             HomeEditModel.K_PARTY_GROW -> HomeLayout.PartyGrow.values().getOrNull(k)?.let { v -> HomeLayoutStore.update { it.copy(partyGrow = v) } }
-            // (a word dimmed by Grows = Off writes nothing: HomeWidgetMenus.partyTopOff / partyBottomOff)
-            HomeEditModel.K_PARTY_TOP -> HomeLayout.PartyTopFight.values().getOrNull(k)?.takeIf { k !in HomeWidgetMenus.partyTopOff(HomeSettings.layout) }
-                ?.let { v -> HomeLayoutStore.update { it.copy(partyTop = v) } }
-            HomeEditModel.K_PARTY_BOTTOM -> HomeLayout.PartyBottomFight.values().getOrNull(k)?.takeIf { k !in HomeWidgetMenus.partyBottomOff(HomeSettings.layout) }
-                ?.let { v -> HomeLayoutStore.update { it.copy(partyBottom = v) } }
+            // (a word dimmed by Grows = Off writes nothing: HomeWidgetMenus.partySizeOff)
+            HomeEditModel.K_PARTY_SIZE -> HomeLayout.PartySize.values().getOrNull(k)?.takeIf { k !in HomeWidgetMenus.partySizeOff(HomeSettings.layout) }
+                ?.let { v -> HomeLayoutStore.update { it.copy(partySize = v) } }
             QUEST -> CARD_DOCKS.getOrNull(k)?.let { d -> HomeLayoutStore.update { it.copy(card = d) } }
             "hearth" -> HomeSettings.clockHearth = k == 0
             "teleport" -> HomeSettings.clockTeleport = k == 0

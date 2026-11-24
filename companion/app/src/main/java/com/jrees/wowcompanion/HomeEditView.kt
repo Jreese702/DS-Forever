@@ -738,7 +738,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 val pen = partyPenBox(p) ?: RectF(pb.centerX(), pb.top, pb.centerX(), pb.top)
                 val bw = min(PARTY_BUBBLE_W, w - 2f * BUBBLE_EDGE)
                 val cx = pen.centerX().coerceIn(BUBBLE_EDGE + bw / 2f, w - BUBBLE_EDGE - bw / 2f)
-                // (over the list it may cover the band: a list at the foot leaves too little room under the band for four rows)
+                // (over the list it may cover the band: a list at the foot leaves too little room under the band for its three rows)
                 val below = (h - g) - (pb.bottom + 4f + BUBBLE_TAIL)
                 val above = (pb.top - 4f - BUBBLE_TAIL) - g
                 tailDown = above > below
