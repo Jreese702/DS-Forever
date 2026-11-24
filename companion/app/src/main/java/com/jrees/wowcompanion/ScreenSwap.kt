@@ -65,7 +65,7 @@ object ScreenSwap {
 
     /** the first ask of a run (tests: their own prefs): latches the choice; non-null = it went Off by itself (why) */
     internal fun latch(p: android.content.SharedPreferences): String? {
-        counted = false
+        counted = false; takenBack = false
         val why = if (p.getBoolean(PREF, false) && !keepOn(p.getInt(FAILS_PREF, 0)))
             "the bottom screen did not settle on the last $MAX_FAILS starts".also { off(p, it) } else null
         latched = p.getBoolean(PREF, false)
@@ -94,6 +94,22 @@ object ScreenSwap {
         return true
     }
 
+    /** this run's count was taken back already ([ownExit]) */
+    @Volatile private var takenBack = false
+
+    /**
+     * feat/exit-now: DS Forever ends itself on purpose (the Menu's Exit game, often within [SETTLE_MS] of the start: a quick Play and
+     * Exit). That proves nothing about the bottom screen either way: THIS run's count ([tryStart]) is taken back, once (commit: the
+     * process ends a moment later); an earlier run's unsettled start stays counted
+     */
+    fun ownExit(ctx: Context) = ownExit(prefs(ctx))
+    internal fun ownExit(p: android.content.SharedPreferences) {
+        if (!counted || takenBack) return
+        takenBack = true
+        val n = p.getInt(FAILS_PREF, 0)
+        if (n > 0) p.edit().putInt(FAILS_PREF, n - 1).commit()
+    }
+
     /** the bottom screen settled ([SETTLE_MS] up, the controller at the game): the count starts over */
     fun settled(ctx: Context) = settled(prefs(ctx))
     internal fun settled(p: android.content.SharedPreferences) { if (p.getInt(FAILS_PREF, 0) != 0) p.edit().putInt(FAILS_PREF, 0).apply() }
@@ -113,7 +129,7 @@ object ScreenSwap {
     val inUseNow: Boolean? get() = latched
 
     /** the saved choice becomes this run's (the restart, just before the launcher starts again): a new run, counted anew ([tryStart]) */
-    fun take(saved: Boolean) { latched = saved; counted = false }
+    fun take(saved: Boolean) { latched = saved; counted = false; takenBack = false }
 
     /** the restart that applies the saved choice (the launcher's DsForeverScreen sets it); null = none here */
     @Volatile var restart: (() -> Unit)? = null
@@ -156,5 +172,5 @@ object ScreenSwap {
             (if (offered) "" else " (no second screen)") + "; $last" + (fellBack?.let { "; turned Off: $it" } ?: "")
 
     /** tests */
-    internal fun reset() { latched = null; offered = false; restart = null; gameDisplay = MAIN; last = "not placed yet"; fellBack = null; counted = false }
+    internal fun reset() { latched = null; offered = false; restart = null; gameDisplay = MAIN; last = "not placed yet"; fellBack = null; counted = false; takenBack = false }
 }

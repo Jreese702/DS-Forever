@@ -92,7 +92,7 @@ class PausePowerShotsTest {
         }
         pause.onClose = { _ -> home.pauseSlide(0f, barsUp = true); strip.translationY = 0f }
         pause.streaming = { streaming }
-        pause.powerRefusal = { if (fight) PausePower.FIGHT_LINE else null }
+        // the user's pick (2026-11-24, "Keep the confirm, allow in fights"): the host sets no refusal, so [fight] wires nothing
         pause.onPower = { did += "power" }
         return Stage(root, home, strip, pause, did)
     }
@@ -175,15 +175,15 @@ class PausePowerShotsTest {
 
     // ---------------------------------------------------------------- the power button and its prompt
 
-    @Test fun yAsksBGoesBackAConfirms() {
+    @Test fun selectAsksBGoesBackAConfirms() {
         val s = stage()
         s.pause.open(byStart = false); settle()
-        press(s.pause, PadInput.SLOT_FACE_TOP)
+        press(s.pause, PadInput.SLOT_SELECT)
         assertEquals(PausePower.State.ASKING, s.pause.powerState)
         press(s.pause, PadInput.SLOT_FACE_RIGHT)
         assertEquals("B: back to the wheel", PausePower.State.NONE, s.pause.powerState)
         assertTrue("the wheel stays", s.pause.isOpen)
-        press(s.pause, PadInput.SLOT_FACE_TOP)
+        press(s.pause, PadInput.SLOT_SELECT)
         press(s.pause, PadInput.SLOT_FACE_BOTTOM)
         assertEquals(listOf("power"), s.did)
         assertEquals(PausePower.State.CLOSING, s.pause.powerState)
@@ -197,7 +197,7 @@ class PausePowerShotsTest {
         s.pause.open(byStart = false); settle()
         val screen = RectF(0f, 0f, W.toFloat(), H.toFloat())
         val b = UiKit.pausePowerBox(screen)
-        assertTrue("the top-right corner", b.right > W - 40 && b.top < 40)
+        assertTrue("the top-left corner (the user, 2026-11-24: the power button swapped to the left side)", b.left < 40 && b.top < 40)
         tap(s.pause, b.centerX(), b.centerY())
         assertEquals(PausePower.State.ASKING, s.pause.powerState)
         tap(s.pause, 20f, H - 20f)
@@ -209,13 +209,25 @@ class PausePowerShotsTest {
         assertEquals(listOf("power"), s.did)
     }
 
-    @Test fun aFightRefusesIt() {
+    /** the user's pick (2026-11-24): in a fight the prompt still asks, and its Yes closes DS Forever */
+    @Test fun aFightStillAsksAndYesCloses() {
         val s = stage(fight = true)
         s.pause.open(byStart = false); settle()
-        press(s.pause, PadInput.SLOT_FACE_TOP)
+        press(s.pause, PadInput.SLOT_SELECT)
+        assertEquals("the one confirm", PausePower.State.ASKING, s.pause.powerState)
+        assertEquals("no refusal line", null, field(s.pause, "line"))
+        press(s.pause, PadInput.SLOT_FACE_BOTTOM)
+        assertEquals(listOf("power"), s.did)
+    }
+
+    @Test fun noDoesNothing() {
+        val s = stage(fight = true)
+        s.pause.open(byStart = false); settle()
+        press(s.pause, PadInput.SLOT_SELECT)
+        press(s.pause, PadInput.SLOT_FACE_RIGHT)
         assertEquals(PausePower.State.NONE, s.pause.powerState)
-        assertEquals(PausePower.FIGHT_LINE, field(s.pause, "line"))
-        assertTrue(s.did.isEmpty())
+        assertTrue("B: nothing closes", s.did.isEmpty())
+        assertTrue("the wheel stays", s.pause.isOpen)
     }
 
     // ---------------------------------------------------------------- the pictures
@@ -249,13 +261,13 @@ class PausePowerShotsTest {
         run {
             val s = stage()
             s.pause.open(byStart = false); settle()
-            press(s.pause, PadInput.SLOT_FACE_TOP)
+            press(s.pause, PadInput.SLOT_SELECT)
             save(shot(s), "4-prompt-local.png")
         }
         run {
             val s = stage(streaming = true)
             s.pause.open(byStart = false); settle()
-            press(s.pause, PadInput.SLOT_FACE_TOP)
+            press(s.pause, PadInput.SLOT_SELECT)
             save(shot(s), "5-prompt-streaming.png")
             press(s.pause, PadInput.SLOT_FACE_BOTTOM)
             settle(200)
@@ -264,8 +276,8 @@ class PausePowerShotsTest {
         run {
             val s = stage(fight = true)
             s.pause.open(byStart = false); settle()
-            press(s.pause, PadInput.SLOT_FACE_TOP)
-            save(shot(s), "7-refused-in-a-fight.png")
+            press(s.pause, PadInput.SLOT_SELECT)
+            save(shot(s), "7-prompt-in-a-fight.png")
         }
     }
 }

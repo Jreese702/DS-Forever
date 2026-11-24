@@ -179,7 +179,26 @@ class PausePowerTest {
     @Test fun thePowerButtonIsOneAndAHalfTimesBigger() {
         assertEquals("1.5 x the 1492 button's 78", 78f * 1.5f, UiKit.POWER_SIZE)
         val kit = File(src, "UiKit.kt").readText()
-        assertTrue("still the top-right corner", kit.contains("return RectF(screen.right - m - sz, screen.top + m, screen.right - m, screen.top + m + sz)"))
+        assertTrue("the top-left corner now", kit.substringAfter("fun pausePowerBox(").substringBefore("\n    }").contains("return RectF(screen.left + m, screen.top + m, screen.left + m + sz, screen.top + m + sz)"))
+        assertTrue("Edit in the top-right corner", kit.substringAfter("fun pauseEditBox(").substringBefore("\n    }").contains("return RectF(screen.right - m - sz, screen.top + m, screen.right - m, screen.top + m + sz)"))
+    }
+
+    /** the user, 2026-11-24: Select / Minus is the power button, X the new Edit: neither reaches the game while the wheel holds */
+    @Test fun selectAndXStayOffTheGameWhileTheWheelHolds() {
+        val lua = File(listOf("../companion/app/src/main/assets/companion/addons/WowCompanionQuests/Quests.lua",
+            "companion/app/src/main/assets/companion/addons/WowCompanionQuests/Quests.lua").first { File(it).isFile }).readText()
+        val radial = lua.substringAfter("\n    radial = {").substringBefore("}")
+        assertTrue("Select (PADBACK) in the wheel's guest keys: $radial", radial.contains("\"PADBACK\""))
+        assertTrue("Start and the bumpers kept", radial.contains("\"PADFORWARD\"") && radial.contains("\"PADLSHOULDER\""))
+        // X is a face button: every guest's capture holds A / B / X / Y and the D-pad already (the power button's Y never reached it)
+        assertTrue("the host's Edit pick = Edit Home's own entry", host.contains("HomePauseModel.EDIT.key -> editHome(\"the pause wheel's Edit\")"))
+        val kit = File(src, "UiKit.kt").readText()
+        val edit = kit.substringAfter("fun pauseEdit(c: Canvas").substringBefore("\n    }")
+        assertTrue("X's glyph on Edit", edit.contains("xGlyph()"))
+        assertTrue("the pencil", edit.contains("pencilMark("))
+        val pw = kit.substringAfter("fun pausePower(c: Canvas").substringBefore("\n    }")
+        assertTrue("Minus / Select's glyph on the power button (pad() turns it into the chosen set's)", pw.contains("\"rev_minus\""))
+        assertFalse(pw.contains("yGlyph()"))
     }
 
     @Test fun theBridgeWords() {
@@ -194,16 +213,23 @@ class PausePowerTest {
     // ---------------------------------------------------------------- the routes in the sources
 
     @Test fun thePadRoutes() {
-        assertTrue("Y opens the prompt from the wheel", view.contains("pressed(PadInput.SLOT_FACE_TOP) -> { powerAct(power.press(powerRefusal()), \"Y\"); return }"))
+        // the user, 2026-11-24: "Change the power button to select or minus"; X = Edit (Edit Home)
+        assertTrue("Select opens the prompt from the wheel", view.contains("pressed(PadInput.SLOT_SELECT) -> { powerAct(power.press(powerRefusal()), \"Select\"); return }"))
+        assertTrue("X = Edit Home after the fold", view.contains("pressed(PadInput.SLOT_FACE_LEFT) -> { editPress(\"X\"); return }"))
+        assertFalse("Y no longer the power button", view.contains("pressed(PadInput.SLOT_FACE_TOP) -> { powerAct("))
         assertTrue("A closes", view.contains("pressed(PadInput.SLOT_FACE_BOTTOM) -> powerAct(power.confirm(), \"A\")"))
         assertTrue("B: one step back", view.contains("pressed(PadInput.SLOT_FACE_RIGHT) -> powerAct(power.cancel(), \"B\")"))
         assertTrue("the wheel opens roomy", view.contains("UiKit.pauseRoomy = true"))
-        assertTrue("the host runs the sequence", host.contains("pauseView.onPower = { powerOff.run() }"))
-        assertTrue("a fight refuses", host.contains("if (homeView.inFight()) PausePower.FIGHT_LINE else null"))
+        // the user's pick (2026-11-24): "Keep the confirm, allow in fights" - Close runs the immediate exit (ExitNow), as the Menu's Exit game
+        assertTrue("Close = the immediate exit; the old sequence only without the launcher",
+            host.contains("pauseView.onPower = { LauncherHooks.exitNow?.invoke(ExitNow.POWER) ?: powerOff.run() }"))
+        assertFalse("no refusal in a fight any more", host.contains("pauseView.powerRefusal ="))
         assertTrue("the pause pushes the bars up, the target radial keeps them",
             host.contains("pauseView.onSlide = { t -> slideBarsUp = true;") && host.contains("targetRadial.onSlide = { t -> slideBarsUp = false;"))
-        assertTrue("the waiting screen's Exit game is the clean disconnect while streaming",
-            host.contains("StartMenu.onExit = { (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }"))
+        // feat/exit-now (the user, 2026-11-24): the waiting screen's Exit game closes DS Forever at once (ExitNow); the clean disconnect
+        // stays only for the companion app without the launcher
+        assertTrue("the waiting screen's Exit game is the immediate exit; the old routes without the launcher",
+            host.contains("StartMenu.onExit = { LauncherHooks.exitNow?.invoke(ExitNow.MENU) ?: (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }"))
     }
 
     @Test fun everyLineIsInSpanishAndFrench() {

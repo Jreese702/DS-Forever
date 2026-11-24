@@ -43,6 +43,10 @@ object HomePauseModel {
         return out
     }
 
+    /** feat/exit-now (the user, 2026-11-24: "an edit button added on the right set to the x button that puts them into the home edit
+     *  mode"): the corner's Edit, never a slice - X or a touch folds the wheel, then Edit Home's own entry (CompanionHost.editHome) */
+    val EDIT = Slice("edithome", "Edit", Kind.HOME)
+
     /** the Macros room (Spells s10): page 3's slice where Calendar stood, and the Game Menu's own "Macros" entry (HomePauseView) */
     val MACROS = Slice("macros", "Macros", Kind.ROOM, room = "MACROS")
 

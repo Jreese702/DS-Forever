@@ -5,13 +5,13 @@ package com.jrees.wowcompanion
  * top right corner of the screen I want to add some kind of power button that effectively opens a prompt to close DS forever. When
  * streaming this should also close wow on the PC and revert everything back and be the clean way to disconnect").
  *
- * [Flow] is the button's prompt, pure (HomePauseView drives it): Y on the pad or a tap on the button asks ("Close DS Forever?" and one
- * line of what else closes); A / Close confirms, B / Cancel / a tap outside the box goes back to the wheel (B one step back, the wheel's
+ * [Flow] is the button's prompt, pure (HomePauseView drives it): Select / Minus on the pad (Y before 2026-11-24) or a tap on the
+ * button asks ("Close DS Forever?" and one line of what else closes); A / Close confirms, B / Cancel / a tap outside the box goes back to the wheel (B one step back, the wheel's
  * own B then closes it: the "B in sub-screens" rule); once confirmed the prompt says the close is under way and takes no more input.
- * A fight refuses the button (the game's own Exit Game waits out a fight, and DS Forever never hard-closes a fighting character): the
- * wheel's red line says why.
+ * feat/exit-now (the user's pick 2026-11-24, "Keep the confirm, allow in fights"): Close runs [ExitNow] - DS Forever closes at once,
+ * no Exit Game first, in a fight too (the host passes no refusal; [Flow.press] still takes one).
  *
- * [Sequence] is what Close does, pure (CompanionHost hands it the real pieces; the tests hand it fakes):
+ * [Sequence] is the old Close, pure, kept for the companion app without the launcher (CompanionHost; the tests hand it fakes):
  *  - LOCAL: the game's own Exit Game first ([LauncherHooks.cleanExit], the safe close's route: its save written as it exits), then DS
  *    Forever closes (its task finished, the game's environment shut down: [LauncherHooks.quitApp]); the old close only when the clean
  *    exit says it is needed (it timed out, the login screen, no add-on). No game running: DS Forever closes at once.
@@ -54,7 +54,7 @@ object PausePower {
 
         fun reset() { state = State.NONE }
 
-        /** Y, or a tap on the button; [refusal] = why it can't be used now (a fight), null = it can */
+        /** Select / Minus, or a tap on the button; [refusal] = why it can't be used now (a fight), null = it can */
         fun press(refusal: String?): Act {
             if (state != State.NONE) return Act.None
             if (refusal != null) return Act.Refused(refusal)

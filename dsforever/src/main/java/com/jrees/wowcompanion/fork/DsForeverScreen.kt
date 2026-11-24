@@ -590,6 +590,19 @@ class DsForeverScreen(private val context: Context) {
             current = DsForeverScreen(activity).also { it.start() }
         }
 
+        /**
+         * feat/exit-now: DS Forever closes at once (ExitNow): its bottom screen closed for good - Streaming's and the launcher's own
+         * one under it (never brought back by [endStream] as Streaming's activity goes), the Presentation or Swap screens' activity
+         * on the other display finished. Main thread
+         */
+        fun closeAll() {
+            val prev = beforeStream
+            beforeStream = null
+            prev?.stop()
+            current?.stop()
+            current = null
+        }
+
         fun endStream(activity: Activity) {
             val mine = current?.takeIf { it.context === activity } ?: return
             mine.stop()

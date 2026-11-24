@@ -30,6 +30,8 @@ class BgAppend(
     private val droppedNow = AtomicLong(0)
     /** lines dropped because the queue was full (the run's total) */
     val dropped = AtomicLong(0)
+    // after every field: a flushAll on the writer thread never sees this one half made
+    init { ALL.add(this) }
 
     /** queue [line] (no newline needed); never touches the file, never blocks */
     fun add(line: String) {
@@ -63,6 +65,16 @@ class BgAppend(
         }
         /** the writer thread's name (DiagLog writes at once when it is already on it) */
         const val WRITER = "WCLOGW"
+        /** every file of this kind (a handful of objects' logs, made once each) */
+        private val ALL = java.util.concurrent.CopyOnWriteArrayList<BgAppend>()
+
+        /**
+         * feat/exit-now: DS Forever ends its own process at once: every line still queued - every file's, and DiagLog's own writes
+         * queued on [EXEC] before this - is written now, waited for at most [boundMs]. True = done in time
+         */
+        fun flushAll(boundMs: Long): Boolean = try {
+            EXEC.submit { for (b in ALL) b.drain() }.get(boundMs, TimeUnit.MILLISECONDS); true
+        } catch (_: Throwable) { false }
 
         /** append [lines] in one buffered write; past [rotateAt] bytes the file goes to <name>.1 first */
         fun appendLines(f: File, lines: List<String>, rotateAt: Long) {

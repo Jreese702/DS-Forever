@@ -5958,8 +5958,8 @@ object UiKit {
     // The user, 2026-11-18: "on the top right corner of the screen I want to add some kind of power button that effectively opens a
     // prompt to close DS forever. When streaming this should also close wow on the PC and revert everything back and be the clean way to
     // disconnect." The game's red button plate (the kit's `button_*`, as every red button of ours) with a gold power mark drawn on it in
-    // the colour of the red square buttons' marks, the layout's Y glyph on its lower-left corner (the pad's route, as closeX's B), the gold
-    // box while its prompt is up. The prompt: the kit's dialog over a dimmed stage, the question, one context line, Cancel (B) / Close (A).
+    // the colour of the red square buttons' marks, Select's glyph on its inner corner (2026-11-24: Y before; the top-left corner now,
+    // Edit with X top-right), the gold box while its prompt is up. The prompt: the kit's dialog over a dimmed stage, the question, one context line, Cancel (B) / Close (A).
 
     // fix/1492-feedback (the user, 2026-11-18, test 1492: "the button is a little bit too small"): 1.5x (78 -> 117), still the corner's
     const val POWER_SIZE = 117f
@@ -5975,11 +5975,26 @@ object UiKit {
         else -> "rev_y"
     }
 
-    /** the power button's box in [screen] (the pause view's canvas: the whole bottom screen), its top-right corner */
+    /** the power button's box in [screen] (the pause view's canvas: the whole bottom screen), its top-LEFT corner (the user, 2026-11-24:
+     *  "I want the power button swapped to the left side") */
     fun pausePowerBox(screen: RectF): RectF {
         val k = minOf(screen.width() / 1240f, screen.height() / 1080f)
         val sz = POWER_SIZE * k; val m = POWER_MARGIN * k
+        return RectF(screen.left + m, screen.top + m, screen.left + m + sz, screen.top + m + sz)
+    }
+
+    /** the Edit button's box: the top-RIGHT corner, the power button's size (the user, 2026-11-24: "an edit button added on the right") */
+    fun pauseEditBox(screen: RectF): RectF {
+        val k = minOf(screen.width() / 1240f, screen.height() / 1080f)
+        val sz = POWER_SIZE * k; val m = POWER_MARGIN * k
         return RectF(screen.right - m - sz, screen.top + m, screen.right - m, screen.top + m + sz)
+    }
+
+    /** a finger on the Edit button: its box grown as the power button's */
+    fun pauseEditHit(screen: RectF, x: Float, y: Float): Boolean {
+        val b = pauseEditBox(screen)
+        val grow = maxOf(0f, (96f - b.width()) / 2f) + 8f
+        return x >= b.left - grow && x <= b.right + grow && y >= b.top - grow && y <= b.bottom + grow
     }
 
     /** a finger on the power button: its box grown to the touch floor (96 px) and a little more */
@@ -6005,20 +6020,63 @@ object UiKit {
     }
 
     /**
-     * THE POWER BUTTON in [screen]'s top-right corner while the pause menu is open: [alpha] 0..1 (it comes in with the top row),
-     * [down] = held (the kit's press), [lit] = its prompt is up (the gold box), [glyph] = the Y glyph on its corner
+     * THE POWER BUTTON in [screen]'s top-left corner while the pause menu is open: [alpha] 0..1 (it comes in with the top row),
+     * [down] = held (the kit's press), [lit] = its prompt is up (the gold box), [glyph] = Select's glyph on its lower-right corner (the
+     * inner one; Nintendo's Minus, Xbox's View, PlayStation's Share: pad() draws the chosen set's)
      */
     fun pausePower(c: Canvas, screen: RectF, alpha: Float = 1f, down: Boolean = false, lit: Boolean = false, glyph: Boolean = true) {
         if (alpha <= 0f) return
         val r = pausePowerBox(screen)
-        val l = c.saveLayerAlpha(RectF(r.left - 60f, r.top - 20f, r.right + 20f, r.bottom + 60f), (255 * alpha.coerceIn(0f, 1f)).toInt())
+        val l = c.saveLayerAlpha(RectF(r.left - 20f, r.top - 20f, r.right + 60f, r.bottom + 60f), (255 * alpha.coerceIn(0f, 1f)).toInt())
         if (lit) focus(c, r)
         pressed(c, r, down) {
             buttonPlate(c, r, if (down) Button.DOWN else Button.UP)
             powerMark(c, r, POWER_GOLD)
         }
-        if (glyph) pad(c, yGlyph(), r.left + r.width() * 0.08f, r.bottom - r.height() * 0.08f, r.width() * 0.46f)
+        if (glyph) pad(c, "rev_minus", r.right - r.width() * 0.08f, r.bottom - r.height() * 0.08f, r.width() * 0.46f)
         c.restoreToCount(l)
+    }
+
+    /**
+     * THE EDIT BUTTON in [screen]'s top-right corner while the pause menu is open (the user, 2026-11-24): the power button's red plate
+     * with a gold pencil (Edit Home's pencil badge, in the power mark's gold and outline), X's glyph on its lower-left corner (the inner
+     * one; the chosen set's X). [alpha] / [down] as the power button's
+     */
+    fun pauseEdit(c: Canvas, screen: RectF, alpha: Float = 1f, down: Boolean = false, glyph: Boolean = true) {
+        if (alpha <= 0f) return
+        val r = pauseEditBox(screen)
+        val l = c.saveLayerAlpha(RectF(r.left - 60f, r.top - 20f, r.right + 20f, r.bottom + 60f), (255 * alpha.coerceIn(0f, 1f)).toInt())
+        pressed(c, r, down) {
+            buttonPlate(c, r, if (down) Button.DOWN else Button.UP)
+            pencilMark(c, r, POWER_GOLD)
+        }
+        if (glyph) pad(c, xGlyph(), r.left + r.width() * 0.08f, r.bottom - r.height() * 0.08f, r.width() * 0.46f)
+        c.restoreToCount(l)
+    }
+
+    /** a pencil across [r] (Edit Home's badge pencil: the body, the ferrule, the sharpened tip and its lead), in [colour] with the dark
+     *  outline of the kit's marks (the power mark's) */
+    private fun pencilMark(c: Canvas, r: RectF, colour: Int) {
+        val d = minOf(r.width(), r.height())
+        val cx = r.centerX(); val cy = r.centerY()
+        val len = d * 0.62f; val th = d * 0.17f; val o = d * 0.035f
+        val sv = c.save()
+        c.rotate(-45f, cx, cy)
+        val body = Path()
+        body.moveTo(cx - len / 2f + th, cy - th / 2f); body.lineTo(cx + len / 2f, cy - th / 2f); body.lineTo(cx + len / 2f, cy + th / 2f)
+        body.lineTo(cx - len / 2f + th, cy + th / 2f); body.lineTo(cx - len / 2f, cy); body.close()
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeJoin = Paint.Join.ROUND; pFlat.strokeWidth = o * 2f; pFlat.color = Color.argb(220, 20, 6, 4)
+        c.drawPath(body, pFlat)
+        pFlat.style = Paint.Style.FILL; pFlat.color = colour
+        c.drawPath(body, pFlat)
+        // the ferrule band and the bare wood of the tip, in the outline's dark; the lead's point
+        pFlat.color = Color.argb(220, 20, 6, 4)
+        c.drawRect(cx + len / 2f - th * 1.05f, cy - th / 2f, cx + len / 2f - th * 0.75f, cy + th / 2f, pFlat)
+        c.drawLine(cx - len / 2f + th, cy - th / 2f, cx - len / 2f + th, cy + th / 2f, pFlat.apply { strokeWidth = o; style = Paint.Style.STROKE })
+        pFlat.style = Paint.Style.FILL
+        c.drawCircle(cx - len / 2f + th * 0.22f, cy, th * 0.2f, pFlat)
+        pFlat.strokeJoin = Paint.Join.MITER
+        c.restoreToCount(sv)
     }
     private val POWER_GOLD = Color.rgb(255, 209, 0)           // the red square buttons' mark (square_exit's X)
 

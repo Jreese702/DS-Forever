@@ -322,6 +322,28 @@ class SwapScreensTest {
         assertNull(newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
     }
 
+    /**
+     * feat/exit-now: the Menu's Exit game ends DS Forever on purpose, often within the 15 s the bottom screen needs to settle (a quick
+     * Play and Exit): that run's start is taken back, neither a failed start nor a settled one, so two quick exits never turn Swap
+     * screens Off
+     */
+    @Test fun ourOwnExitTakesThisRunsStartBack() {
+        val p = Prefs(hashMapOf(ScreenSwap.PREF to true))
+        repeat(4) {
+            assertNull(newStart(p)); assertEquals(true, ScreenSwap.inUseNow)
+            assertTrue(ScreenSwap.tryStart(p)); assertEquals(1, fails(p))
+            ScreenSwap.ownExit(p); assertEquals("taken back", 0, fails(p))
+            ScreenSwap.ownExit(p); assertEquals("once per run", 0, fails(p))
+        }
+        // an earlier unsettled start stays counted; only this run's is taken back
+        val q = Prefs(hashMapOf(ScreenSwap.PREF to true, ScreenSwap.FAILS_PREF to 1))
+        newStart(q); assertTrue(ScreenSwap.tryStart(q)); assertEquals(2, fails(q))
+        ScreenSwap.ownExit(q); assertEquals(1, fails(q))
+        // nothing counted this run (Swap screens Off, or settled already): nothing changes
+        val r = Prefs(hashMapOf(ScreenSwap.PREF to true, ScreenSwap.FAILS_PREF to 1))
+        newStart(r); ScreenSwap.ownExit(r); assertEquals(1, fails(r))
+    }
+
     /** the process lived on (no new latch): the ask itself says no at the count, and counts nothing */
     @Test fun theAskSaysNoAtTheCount() {
         val p = Prefs(hashMapOf(ScreenSwap.PREF to true, ScreenSwap.FAILS_PREF to 2))

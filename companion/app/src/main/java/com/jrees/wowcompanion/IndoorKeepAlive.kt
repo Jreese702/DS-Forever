@@ -55,10 +55,11 @@ object IndoorKeepAlive {
      * builder builds before the first game too (the user's "build on the first screen if people wait there")
      */
     data class State(val setting: Boolean, val hasWork: Boolean, val gameActive: Boolean, val streaming: Boolean,
-                     val shown: Boolean, val stoodDown: Boolean = false, val beside: Boolean = false)
+                     val shown: Boolean, val stoodDown: Boolean = false, val beside: Boolean = false, val exiting: Boolean = false)
 
+    /** [State.exiting] (feat/exit-now): DS Forever's own exit runs - no foreground service is asked for as the process ends */
     fun wanted(s: State): Boolean =
-        s.setting && s.hasWork && (!s.gameActive || s.beside) && !s.streaming && !s.shown && !s.stoodDown
+        s.setting && s.hasWork && (!s.gameActive || s.beside) && !s.streaming && !s.shown && !s.stoodDown && !s.exiting
 
     /** lighter mode only: Android's running-critical warning or onLowMemory ([MemWatch.LOW_MEMORY]) */
     fun standsDown(lowMemory: Boolean, level: Int): Boolean =
@@ -120,7 +121,8 @@ object IndoorKeepAlive {
 
     private fun state(): State = State(
         setting = Settings.indoorBuild, hasWork = IndoorSchedulerStep.hasWork, gameActive = PlayGate.gameActiveNow(),
-        streaming = PlayGate.streamingNow(), shown = screenShown, stoodDown = stoodDown, beside = IndoorSchedulerStep.buildingBeside)
+        streaming = PlayGate.streamingNow(), shown = screenShown, stoodDown = stoodDown, beside = IndoorSchedulerStep.buildingBeside,
+        exiting = IndoorSchedulerStep.exiting || ExitNow.underWay)
 
     /**
      * DS Forever's launcher screen shown again (MainActivity.onResume: off, the builder waits) or leaving it (onUserLeaveHint, onPause,

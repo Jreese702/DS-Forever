@@ -50,6 +50,12 @@ object SetupBridge {
     /** feat/pause-power: the waiting screen's Menu > Exit game while streaming: the same clean disconnect, then back to the chooser */
     @Volatile var endStream: (() -> Unit)? = null
     /**
+     * feat/exit-now: THE STREAM'S QUICK END as DS Forever closes at once ([ExitNow]; StreamTop's, null = no stream): "end_session" to
+     * Desktop (it closes the PC's WoW and puts the PC back on its own), sent within [boundMs] or not at all, then the stream and the
+     * bridge stopped - no wait for Desktop's word. Any thread; it blocks up to [boundMs]
+     */
+    @Volatile var quitStream: ((boundMs: Long) -> Unit)? = null
+    /**
      * Streaming's settings while Streaming's top screen is open ([StreamSettingsLink], set by StreamTop): Settings > Performance >
      * Stream settings shows them in its band on the BOTTOM screen (the user, 2026-11-18: "the streaming settings appear on the top screen
      * and the controller inputs get all wacky, they should probably appear on the bottom screen in the stream settings box"); null = Local
