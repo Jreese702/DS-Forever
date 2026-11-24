@@ -28,6 +28,7 @@ internal class NativeIndoorGenerator(
     private val sleep: (Long) -> kotlin.Unit = Thread::sleep
 ) : IndoorGenerator {
     override val algorithm: Int = ALGORITHM
+    override val identity: String get() = baseIdentity()
 
     private class Unit(val spec: JSONObject, val inputs: IntArray = IntArray(0))
     // JNI looks up read by name; keep a named implementation instead of a shrinker-generated SAM.
@@ -136,7 +137,12 @@ internal class NativeIndoorGenerator(
                     yield.point()
                 }
                 // named, @Keep callback objects: native code finds read()/point() by name, which R8 must not strip (IndoorGeneratorNative.kt)
-                attempt = IndoorGeneratorNative.generate(unit.spec.toString(), GameSource(game), NativeYield(guarded), out.path)
+                attempt = try {
+                    IndoorGeneratorNative.generate(unit.spec.toString(), GameSource(game), NativeYield(guarded), out.path)
+                } catch (e: IllegalStateException) {
+                    // D1 (2026-11-23): the builder's own rule (too big, no floors, a budget) is settled, anything else is tried again
+                    if (IndoorGenerator.isRule(e.message)) throw IndoorGenerator.Rejected(e.message!!.trim()) else throw e
+                }
                 break
             } catch (e: LowMemory) {
                 // the T3 parser and the threshold tuning read this exact line
@@ -249,6 +255,13 @@ internal class NativeIndoorGenerator(
         fun profileFor(rootFid: Int): Profile = if (rootFid in CITY_ROOTS) CITY_ROOM else LEGACY
 
         val factory = IndoorGenerator.Factory { NativeIndoorGenerator(it) }
+
+        /**
+         * the builder's identity without an open generator (the step's finished stamp is checked before the game files open): the
+         * algorithm and the native library's own version line; the step adds the library's bytes (IndoorSchedulerStep.builderKey)
+         */
+        fun baseIdentity(): String =
+            "a$ALGORITHM|" + (runCatching { if (IndoorGeneratorNative.available) IndoorGeneratorNative.version() else "no-lib" }.getOrNull() ?: "no-lib")
 
         private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it.toInt() and 255) }
     }

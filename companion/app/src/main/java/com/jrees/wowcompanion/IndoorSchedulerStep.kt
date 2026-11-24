@@ -11,9 +11,10 @@ import java.io.File
  * INTERIORS, THE 7th HARVEST STEP (optional, background; Track C 2026-10-12). Registered in [ArtHarvest.STEPS] as a DETACHED
  * step: [begin] only starts this object's own low-priority thread and returns, so the harvest worker is never held for the hours
  * a whole catalogue can take (the icon step's retries need that worker). It never touches [ArtHarvest.state], so it can never
- * block Play; its status is [status] (Environment Readiness shows it as optional). It stamps itself per game build
- * ([ArtHarvest.markDetachedDone]) only when every building is done; a stop or a deferred building leaves it pending, and the
- * next [ArtHarvest.start] resumes it.
+ * block Play; its status is [status] (Environment Readiness shows it as optional). It stamps itself per game build and builder
+ * ([ArtHarvest.markDetachedDone], [builderKey]) once every building is built or turned down by the builder's own rule (D1, the user's
+ * pick 2026-11-23: "Finished: N maps, M places can't be mapped", the row green); a stop or a failure that may pass leaves it pending,
+ * and the next [ArtHarvest.start] resumes it.
  *
  * Feeds (CompanionHost): [noteAlive] from every live document (with whether the game is busy: a fight, a loading or setup
  * screen), [notePosition] from every "pos" map document (the add-on's inst / wx / wy); [companionUp] / [stop] with the companion.
@@ -44,7 +45,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     fun onChange(l: () -> Unit) { listeners.add(l) }
     fun offChange(l: () -> Unit) { listeners.remove(l) }
 
-    /** the launcher's optional row: never a blocker, so [done] only picks the tick */
+    /** the launcher's optional row: never a blocker, so [done] only picks the tick (D1: finished - the row turns green) */
     data class Readiness(val label: String, val done: Boolean)
 
     fun readiness(ctx: Context): Readiness = readiness(status(ctx))
@@ -62,7 +63,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             IndoorScheduler.Phase.CATALOGUE -> "Listing buildings"
             IndoorScheduler.Phase.BAKING -> (if (n.isEmpty()) "Building" else "Building $n") + if (s.deferred > 0) " - ${s.deferred} to retry" else ""
             IndoorScheduler.Phase.PAUSED -> listOf(ready, cap(s.note.ifEmpty { "paused" })).filter { it.isNotEmpty() }.joinToString(" - ")
-            IndoorScheduler.Phase.DONE -> ready.ifEmpty { "Ready" }
+            // D1 (the user's pick, 2026-11-23): "Finished: 1,632 maps, 221 places can't be mapped"
+            IndoorScheduler.Phase.DONE -> finished(s.ready, s.rejected)
             IndoorScheduler.Phase.DEFERRED, IndoorScheduler.Phase.STOPPED ->
                 listOf(ready, s.note).filter { it.isNotEmpty() }.joinToString(" - ").ifEmpty { "Stopped" }
         }
@@ -71,9 +73,17 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     private fun cap(t: String) = t.replaceFirstChar { it.uppercaseChar() }
 
+    /** D1's finished line: the maps built and the places the builder's own rule cannot map (none: the second half left out) */
+    internal fun finished(ready: Int, rejected: Int): String =
+        "Finished: ${count(ready)} map${if (ready == 1) "" else "s"}" +
+            if (rejected > 0) ", ${count(rejected)} place${if (rejected == 1) "" else "s"} can't be mapped" else ""
+
+    /** 1632 -> "1,632" (the user's own spelling of the line; the same digits in every language, as the other counts) */
+    internal fun count(n: Int): String = String.format(java.util.Locale.US, "%,d", n)
+
     private fun dataDir(ctx: Context) = File(ArtHarvest.root(ctx), "interiors_sched").also { it.mkdirs() }
 
-    /** the last status, from memory or (before this process ran the step) from disk */
+    /** the last status, from memory or (before this process ran the step) from disk (fix 2: also the start-up waits' count) */
     internal fun status(ctx: Context): IndoorScheduler.Status? = status ?: runCatching {
         IndoorScheduler.Status.of(JSONObject(File(dataDir(ctx), "status.json").readText()))
     }.getOrNull()
@@ -116,16 +126,28 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** the player is walking now (the bake's own gate; the road harvest waits on it too: b-route-roads) */
     fun playerMoving(): Boolean = LauncherHooks.gameUp() && synchronized(motion) { motion.moving(System.currentTimeMillis()) }
 
-    /** a "pos" map document: the add-on's `inst` (continent / instance map), `wx`, `wy` */
+    /**
+     * a "pos" map document: the add-on's `cont` (UnitPosition's map id: the catalogue's continent), `wx`, `wy`. Fix 6 (2026-11-23):
+     * this read `inst` as the continent since Track C, but the add-on sends `inst` as a BOOLEAN (IsInInstance, Map.lua) and the map id
+     * as `cont`, so "build what's near me first" never had a position
+     */
     fun notePosition(map: JSONObject) {
-        if (!map.has("inst") || !map.has("wx") || !map.has("wy")) return
-        val c = map.optInt("inst", -1); val x = map.optDouble("wx", Double.NaN); val y = map.optDouble("wy", Double.NaN)
-        if (c >= 0 && x.isFinite() && y.isFinite()) {
-            val p = IndoorBakeQueue.Position(c, x, y)
-            live = p
-            synchronized(motion) { motion.note(p, System.currentTimeMillis()) }
-        }
+        val p = positionOf(map) ?: return
+        live = p
+        synchronized(motion) { motion.note(p, System.currentTimeMillis()) }
     }
+
+    /** the position [notePosition] keeps from a "pos" document, or null (no continent or no finite world position) */
+    internal fun positionOf(map: JSONObject): IndoorBakeQueue.Position? {
+        if (!map.has("cont") || !map.has("wx") || !map.has("wy")) return null
+        val c = (map.opt("cont") as? Number)?.toDouble() ?: return null
+        if (c != Math.floor(c) || c < 0 || c > Int.MAX_VALUE) return null
+        val x = map.optDouble("wx", Double.NaN); val y = map.optDouble("wy", Double.NaN)
+        return if (x.isFinite() && y.isFinite()) IndoorBakeQueue.Position(c.toInt(), x, y) else null
+    }
+
+    /** the last live position (the tests) */
+    internal fun livePosition(): IndoorBakeQueue.Position? = live
 
     /**
      * WHO STARTS AND STOPS THE STEP (#568 / #573, 2026-11-20). Since 1.0.25 the bake may build only while nobody looks at DS Forever
@@ -227,8 +249,13 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_LOWEST) }
         Settings.init(ctx)
         if (!Settings.indoorBuild) { offInSettings(ctx); return }
-        // stamped for this game build: nothing to do (no catalogue rehash)
-        if (runCatching { this !in ArtHarvest.pending(ctx, beforePlay = false) }.getOrDefault(false)) return
+        // stamped for this game build AND this builder (D1: finished; ArtHarvest.pending compares the stamp's inputs with [inputs]):
+        // nothing to do (no catalogue rehash). A new builder or game build re-arms the rule's rejections
+        if (runCatching { this !in ArtHarvest.pending(ctx, beforePlay = false) }.getOrDefault(false)) {
+            // the row keeps its finished line (fix 2: from disk when this process has not run the step)
+            status(ctx)?.let { if (status == null) status = it }
+            return
+        }
         val factory = factory ?: run {
             publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, 0, 0, note = "generator not in this build"))
             return
@@ -256,8 +283,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             // #568: each new reason shows (it kept the first: "game busy" on the Ready screen, still after the player had minimized)
             if (why != said) {
                 said = why
-                val s = status
-                publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, why))
+                // fix 2 (2026-11-23): the count from disk when this process has not run the step yet (it published 0/0 at every start)
+                val s = status(ctx)
+                publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, why,
+                    rejected = s?.rejected ?: 0))
                 Log.i(TAG, "interiors: waiting ($why), the game files not open")
             }
             runCatching { Thread.sleep(WAIT_POLL_MS) }
@@ -268,24 +297,30 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     private fun runOnce(ctx: Context, factory: IndoorGenerator.Factory, signals: AndroidSignals): IndoorScheduler.Outcome? {
         try {
             val game = GameFiles.open(ctx) ?: run {
-                publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, 0, 0,
-                    note = GameFiles.lastWhy ?: "the game files could not be read"))
+                // fix 2: a failure keeps the count on the row (never 0/0)
+                val s = status(ctx)
+                publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0,
+                    note = GameFiles.lastWhy ?: "the game files could not be read", rejected = s?.rejected ?: 0))
                 return null
             }
             return game.use { g ->
                 factory.open(g).use { gen ->
                     val root = ArtHarvest.root(ctx)
-                    // the app install a deferral is good for: a new APK (even a test build with the same version) retries once
                     // 1.0.22 (the user: "the indoor maps are just not completing ... it does not progress" - 1616/1837, all 221 left DEFERRED by
-                    // the generator's own rules, and every new APK re-tried them all: ~10 min of full CPU a start for nothing): a deferral now
-                    // holds until the GAME build or the GENERATOR (its algorithm number, part of each deferral's identity) changes
-                    val app = "gen"
+                    // the generator's own rules, and every new APK re-tried them all: ~10 min of full CPU a start for nothing): a deferral
+                    // holds until the GAME build or the BUILDER changes. D1 (2026-11-23): the builder is its algorithm, its native library's
+                    // version line and the library's own bytes ([builderKey]; it was the constant "gen", so a new generator never re-armed
+                    // them), not the APK: a new APK with the same library keeps them
+                    val app = builderKey(ctx)
                     val scheduler = IndoorScheduler(IndoorBakeStore(root), root, g.buildKey, gen, signals, dataDir(ctx),
                         onStatus = { publishStatus(ctx, it) }, log = { Log.i(TAG, it) }, app = app)
                     val outcome = scheduler.run()
                     if (!Settings.indoorBuild) offInSettings(ctx)
-                    Log.i(TAG, "interiors $outcome; ${scheduler.publishes} publications, max ${scheduler.maxPublishMs} ms")
-                    if (outcome == IndoorScheduler.Outcome.COMPLETE) ArtHarvest.markDetachedDone(ctx, this, g.buildKey)
+                    Log.i(TAG, "interiors $outcome; ${scheduler.publishes} publications, max ${scheduler.maxPublishMs} ms; wake lock taken " +
+                        "${scheduler.wakeAcquires}x, let go ${scheduler.wakeReleases}x")
+                    // D1: finished (every building built or turned down by the builder's rule): stamped for this build and builder, the
+                    // step no longer re-runs until one of them changes
+                    if (outcome == IndoorScheduler.Outcome.COMPLETE) ArtHarvest.markDetachedDone(ctx, this, g.buildKey, app)
                     outcome
                 }
             }
@@ -293,9 +328,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             // optional: logged and shown on its own row, never in the harvest's state. Throwable, not Exception: an Error
             // (out of memory in a big building) escaping this thread would kill the whole app (Track D's finding)
             Log.w(TAG, "interiors failed", e)
-            val s = status
+            val s = status(ctx)
             publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, s?.ready ?: 0, s?.total ?: 0,
-                s?.deferred ?: 0, "failed: ${e.message ?: e.javaClass.simpleName}; retried next start"))
+                s?.deferred ?: 0, "failed: ${e.message ?: e.javaClass.simpleName}; retried next start", rejected = s?.rejected ?: 0))
             return null
         }
     }
@@ -303,9 +338,32 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** Settings' switch is Off: nothing builds; the row says so and keeps the count of what is ready */
     private fun offInSettings(ctx: Context) {
         val s = status(ctx)
-        publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.STOPPED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, "off in Settings"))
+        publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.STOPPED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, "off in Settings",
+            rejected = s?.rejected ?: 0))
         Log.i(TAG, "interiors: off in Settings")
     }
+
+    // ------------------------------------------------------------------ the builder's identity (D1)
+
+    @Volatile private var builderKeyCache: String? = null
+
+    /**
+     * the builder a rule-rejection and the finished stamp hold for: [NativeIndoorGenerator.baseIdentity] (its algorithm, the library's
+     * version line) and the first 16 hex of the SHA-256 of libinteriors.so as installed (the launcher extracts its native libraries:
+     * extractNativeLibs). A new library re-arms them; a new APK with the same library does not (1.0.22's ~10 min a start)
+     */
+    internal fun builderKey(ctx: Context): String = builderKeyCache ?: run {
+        val lib = runCatching { File(ctx.applicationInfo.nativeLibraryDir, "libinteriors.so") }.getOrNull()
+        val digest = runCatching {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            lib!!.inputStream().use { input -> val b = ByteArray(65536); while (true) { val n = input.read(b); if (n < 0) break; md.update(b, 0, n) } }
+            md.digest().take(8).joinToString("") { "%02x".format(it.toInt() and 255) }
+        }.getOrDefault("unread")
+        IndoorScheduler.builderKey(NativeIndoorGenerator.baseIdentity(), digest).also { if (digest != "unread") builderKeyCache = it }
+    }
+
+    /** the stamp's inputs (ArtHarvest.pending / unchanged): the builder, so a new one re-arms a finished build */
+    override fun inputs(ctx: Context, build: String): String? = runCatching { builderKey(ctx) }.getOrNull()
 
     /** thermal status MODERATE+ or headroom >= 0.9 pauses; it resumes only at LIGHT or below and headroom < 0.8 (no flapping) */
     internal fun warm(was: Boolean, thermalStatus: Int, headroom: Float): Boolean =
@@ -394,6 +452,22 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             val rt = Runtime.getRuntime()
             return (rt.totalMemory() - rt.freeMemory()) to android.os.Debug.getNativeHeapAllocatedSize()
         }
+
+        /**
+         * D4 (the user's pick, 2026-11-23: "Keep it awake while building"): a PARTIAL wake lock (the CPU only; the screen still goes
+         * off), held by the scheduler only while a building is being made, with its time limit; WAKE_LOCK is already declared
+         * (dsforever's manifest, the stream's Wi-Fi lock): no new permission. Not reference counted: one release always lets it go
+         */
+        private val lock: IndoorScheduler.WakeLock? by lazy {
+            val wl = runCatching {
+                power?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DSForever:indoor-maps")?.apply { setReferenceCounted(false) }
+            }.getOrNull() ?: return@lazy null
+            object : IndoorScheduler.WakeLock {
+                override fun acquire(timeoutMs: Long) = wl.acquire(timeoutMs)
+                override fun release() { if (wl.isHeld) wl.release() }
+            }
+        }
+        override fun wakeLock(): IndoorScheduler.WakeLock? = lock
 
         /** 2026-11-11: a game that closed no longer stops the bake: that is when it builds now ([gameRunning] lets the files go) */
         override fun stop(): Boolean = stopping || !Settings.indoorBuild      // Off in Settings: ends at the next yield point

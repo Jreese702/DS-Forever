@@ -36,11 +36,13 @@ internal object IndoorProgress {
             IndoorScheduler.Phase.BAKING -> parts.add(if (s.now.isNotEmpty()) "building ${s.now}" else "building")
             // #568: the reason says it all ("waiting: game running", "builds when minimized or screen off")
             IndoorScheduler.Phase.PAUSED -> parts.add(s.note.ifEmpty { "paused" })
-            IndoorScheduler.Phase.DONE -> parts.add("all built")
-            IndoorScheduler.Phase.DEFERRED -> parts.add("finished")
+            // D1 (2026-11-23): finished = every building built or turned down by the builder's rule; DEFERRED = some to retry
+            IndoorScheduler.Phase.DONE -> parts.add("finished")
+            IndoorScheduler.Phase.DEFERRED -> parts.add(s.note.ifEmpty { "some to retry" })
             IndoorScheduler.Phase.STOPPED -> parts.add(if (!buildOn) "off in Settings" else s.note.ifEmpty { "stopped" })
         }
-        if (s.deferred > 0) parts.add("${s.deferred} deferred")
+        if (s.phase == IndoorScheduler.Phase.DONE) { if (s.rejected > 0) parts.add("${s.rejected} can't be mapped") }
+        else if (s.deferred > 0) parts.add("${s.deferred} deferred")
         return parts.joinToString(" · ")
     }
 }

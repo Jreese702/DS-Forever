@@ -17,7 +17,8 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
  * - throttle: before each building and at every [IndoorGenerator.Yield] point it waits while the game is busy or the device
  *   hot, and leaves with [Outcome.STOPPED] on a stop or when the game went away; a breather between buildings;
  * - resume: the store's receipts are per input digest, so finished buildings survive kills and game updates; changed inputs
- *   re-bake; a building that fails is deferred for this run and retried by the next;
+ *   re-bake; a building the builder's own rule turns down is settled until the game build or the builder changes (D1, 2026-11-23),
+ *   one that fails otherwise is deferred for this run and retried by the next;
  * - publish: batched (every publish rehashes the whole catalogue), but at once for the building the player is near;
  * - storage: [IndoorSchedulerCleanup] after the first and the last publication.
  */
@@ -55,6 +56,18 @@ internal class IndoorScheduler(
         fun sleep(ms: Long)
         /** (java heap used, native heap allocated) in bytes, sampled at most every [MEMORY_EVERY_MS] for the stats line; null = not measured */
         fun memory(): Pair<Long, Long>? = null
+        /** D4: the CPU's wake lock, held only while a building is being made (null = none: the tests, the PC) */
+        fun wakeLock(): WakeLock? = null
+    }
+
+    /**
+     * D4 (the user's pick, 2026-11-23: "Keep it awake while building"): Android's partial wake lock, so a screen that turns off does not
+     * put the CPU to sleep in the middle of a building. [acquire] with a hard time limit (re-armed for each building, so one that hangs
+     * holds it at most [WAKE_LIMIT_MS]); [release] at once on a pause, the end, a stop or a failure. Never asked while the game runs.
+     */
+    interface WakeLock {
+        fun acquire(timeoutMs: Long)
+        fun release()
     }
 
     enum class Phase { CATALOGUE, BAKING, PAUSED, DONE, DEFERRED, STOPPED }
@@ -62,17 +75,18 @@ internal class IndoorScheduler(
     /**
      * [now]: the building being built, as Settings shows it (IndoorProgress.nowText: "one 30 yd from you"; "" = none);
      * [list]: the deferred buildings with their reasons, "key: why" (f-map-tracker, Settings > Map's progress row), at most
-     * [IndoorProgress.LIST_MAX].
+     * [IndoorProgress.LIST_MAX]; [rejected]: of [deferred], the buildings the builder's own rule turned down (settled: D1's "can't be
+     * mapped", 2026-11-23).
      */
     data class Status(val phase: Phase, val ready: Int, val total: Int, val deferred: Int = 0, val note: String = "",
-                      val now: String = "", val list: List<String> = emptyList()) {
+                      val now: String = "", val list: List<String> = emptyList(), val rejected: Int = 0) {
         fun toJson(): JSONObject = JSONObject().put("phase", phase.name).put("ready", ready).put("total", total)
-            .put("deferred", deferred).put("note", note).put("now", now).put("list", org.json.JSONArray(list))
+            .put("deferred", deferred).put("note", note).put("now", now).put("list", org.json.JSONArray(list)).put("rejected", rejected)
         companion object {
             fun of(o: JSONObject): Status? = runCatching {
                 val a = o.optJSONArray("list")
                 Status(Phase.valueOf(o.optString("phase")), o.optInt("ready"), o.optInt("total"), o.optInt("deferred"), o.optString("note"),
-                    o.optString("now"), if (a == null) emptyList() else List(a.length()) { a.optString(it) })
+                    o.optString("now"), if (a == null) emptyList() else List(a.length()) { a.optString(it) }, o.optInt("rejected"))
             }.getOrNull()
         }
     }
@@ -87,6 +101,30 @@ internal class IndoorScheduler(
 
     /** blocks while busy or hot; throws [IndoorGenerator.Stopped] on stop */
     private val yieldPoint = IndoorGenerator.Yield { gate() }
+
+    private val wake: WakeLock? = runCatching { signals.wakeLock() }.getOrNull()
+    /** D4: the lock is held now ([awake] / [asleep] log each change with its reason) */
+    var awakeNow = false; private set
+    /** D4: how many times it was taken and let go (the tests) */
+    var wakeAcquires = 0; private set
+    var wakeReleases = 0; private set
+
+    /** D4: a building is about to be made: the CPU held awake, the time limit re-armed. Never while the game runs */
+    private fun awake(why: String) {
+        val w = wake ?: return
+        if (signals.gameRunning()) { asleep("the game is running"); return }
+        if (runCatching { w.acquire(WAKE_LIMIT_MS) }.onFailure { log("wake lock: not taken ($why): ${it.message}") }.isFailure) return
+        if (!awakeNow) { awakeNow = true; wakeAcquires++; log("wake lock acquired: $why (at most ${WAKE_LIMIT_MS / 60_000} min a building)") }
+    }
+
+    /** D4: let go at once (a pause, the end, a stop, a failure) */
+    private fun asleep(why: String) {
+        val w = wake ?: return
+        if (!awakeNow) return
+        awakeNow = false; wakeReleases++
+        runCatching { w.release() }
+        log("wake lock released: $why")
+    }
 
     private var heapPeak = 0L
     private var nativePeak = 0L
@@ -109,9 +147,9 @@ internal class IndoorScheduler(
         var said: String? = null
         while (true) {
             if (signals.stop()) throw IndoorGenerator.Stopped()
-            if (signals.gameRunning()) { log("the game is running: the game files let go at once"); throw IndoorGenerator.Released() }
+            if (signals.gameRunning()) { asleep("the game is running"); log("the game is running: the game files let go at once"); throw IndoorGenerator.Released() }
             val why = pauseReason(signals) ?: break
-            if (!paused) { paused = true; pausedAt = signals.now() }
+            if (!paused) { paused = true; pausedAt = signals.now(); asleep("paused: $why") }
             // #568: a new reason shows at once (the row kept the first one: "game busy" after the player had minimized)
             if (why != said) { said = why; emit(status.copy(phase = Phase.PAUSED, note = why)); log("paused: $why") }
             // 2026-11-08 (the native heap profile: the open game files are ~500 MB of index tables, held through every pause): a pause
@@ -119,14 +157,21 @@ internal class IndoorScheduler(
             if (signals.now() - pausedAt >= RELEASE_AFTER_MS) throw IndoorGenerator.Released()
             signals.sleep(PAUSE_POLL_MS)
         }
-        if (paused) { emit(status.copy(phase = Phase.BAKING, note = "")); log("resumed") }
+        if (paused) { emit(status.copy(phase = Phase.BAKING, note = "")); log("resumed"); if (building) awake("resumed") }
     }
+
+    /** D4: the run is making a building or listing them (a pause in between lets the lock go, a resume takes it again) */
+    private var building = false
 
     fun run(): Outcome {
         dataDir.mkdirs()
+        var outcome: Outcome? = null
         try {
-            return runInner()
+            return runInner().also { outcome = it }
         } finally {
+            // D4: whatever ended it (the end, a stop, a release, a failure thrown past runInner), the lock goes with the run
+            building = false
+            asleep(outcome?.let { "the run ended (${it.name.lowercase()})" } ?: "the run failed")
             runCatching { stats() }
         }
     }
@@ -146,14 +191,22 @@ internal class IndoorScheduler(
         try {
             emit(Status(Phase.CATALOGUE, 0, 0))
             gate()
-            val catalogue = catalogue()
+            // D4: listing the buildings is building work too (once per game update): the CPU held awake for it
+            building = true
+            awake("listing the buildings")
+            val catalogue = try { catalogue() } finally { building = false }
             // T3 run 2: deferrals persist with their input identity (game build, app, algorithm + key + input digest)
             val deferrals = IndoorDeferrals(File(dataDir, "deferred.json"), build, app)
             deferrals.prune(catalogue)
             val skip = catalogue.filter { deferrals.skip(it) && store.completed(it) == null }.mapTo(HashSet()) { it.signature }
             val rearmed = catalogue.count { deferrals.entry(it) != null && !deferrals.skip(it) }
             if (skip.isNotEmpty() || rearmed > 0)
-                log("deferred from before: ${skip.size} skipped (same input), $rearmed tried again (the game, the generator or the app changed)")
+                log("deferred from before: ${skip.size} settled by the builder's rule (skipped), $rearmed tried again " +
+                    "(a failure that may pass, or the game or the builder changed)")
+            // D1: this run's outcomes - the builder's rule (settled) and the failures that may pass (tried again next run)
+            val rejectedNow = HashSet<String>()
+            val failedNow = HashSet<String>()
+            fun rejected() = skip.size + rejectedNow.size
             val queue = IndoorBakeQueue(store, build, catalogue, skip)
             // Settings' deferred list (f-map-tracker): the deferrals on record for this catalogue, with their reasons
             fun deferredList(): List<String> = deferrals.reasons().take(IndoorProgress.LIST_MAX).map { (k, why) -> IndoorProgress.deferredLine(k, why) }
@@ -161,7 +214,7 @@ internal class IndoorScheduler(
             // the sweep FIRST (a run whose publications fail still trims), then unchanged buildings are visible at once
             cleanup(catalogue)
             publish(queue, catalogue)
-            emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred, list = list))
+            emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred, list = list, rejected = rejected()))
             var lastPublish = signals.now()
             var unpublished = 0
             var baked = 0
@@ -172,14 +225,23 @@ internal class IndoorScheduler(
                     val pick = queue.next(here) ?: break
                     // Settings' "building now": how far the nearest-first pick is from the player
                     emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred, now = IndoorProgress.nowText(
-                        if (here == null) null else kotlin.math.sqrt(queue.distance(pick, here))), list = list))
+                        if (here == null) null else kotlin.math.sqrt(queue.distance(pick, here))), list = list, rejected = rejected()))
                     val t0 = signals.now()
-                    val done = runCatching { queue.runOne(here, publish = false) { w, dir -> generator.produce(w, dir, yieldPoint) } }
+                    building = true
+                    awake("building ${pick.key}")
+                    val done = try {
+                        runCatching { queue.runOne(here, publish = false) { w, dir -> generator.produce(w, dir, yieldPoint) } }
+                    } finally { building = false }
                     done.exceptionOrNull()?.let { e ->
                         // 2026-11-11: a release mid-building is not that building's failure (it was deferred for good, "paused long")
                         if (e is IndoorGenerator.Stopped || e is IndoorGenerator.Released) throw e
+                        // D1: the builder's rule is settled until the game or the builder changes; anything else is tried again next run
+                        val rule = e is IndoorGenerator.Rejected
+                        // (the line's shape is the T3 parsers'; its kind on a line of its own)
                         log("deferred ${pick.key}: ${e.message}")
-                        deferrals.defer(pick, e.message ?: e.javaClass.simpleName, signals.now())
+                        log("deferral ${pick.key}: ${if (rule) "settled (the builder's rule)" else "tried again next run"}")
+                        deferrals.defer(pick, e.message ?: e.javaClass.simpleName, signals.now(), rule)
+                        if (rule) rejectedNow.add(pick.signature) else failedNow.add(pick.signature)
                         list = deferredList()
                     } ?: run {
                         if (deferrals.entry(pick) != null) { deferrals.clear(pick); list = deferredList() }
@@ -187,7 +249,7 @@ internal class IndoorScheduler(
                         log("baked ${pick.key} in ${signals.now() - t0} ms")
                         if (baked % STATS_EVERY == 0) runCatching { stats() }
                     }
-                    emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred, list = list))
+                    emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred, list = list, rejected = rejected()))
                     // The building the player stands at shows at once; the rest in batches.
                     val near = done.isSuccess && here != null && queue.distance(pick, here) <= NEAR_YD * NEAR_YD
                     if (unpublished > 0 && (near || signals.now() - lastPublish >= PUBLISH_EVERY_MS)) {
@@ -200,17 +262,23 @@ internal class IndoorScheduler(
                 if (unpublished > 0) runCatching { publish(queue, catalogue) }
             }
             cleanup(catalogue)
-            val end = if (queue.deferred > 0)
-                Status(Phase.DEFERRED, queue.ready, queue.total, queue.deferred, "${queue.deferred} deferred until the game or the app is updated",
-                    list = deferredList())
-            else Status(Phase.DONE, queue.ready, queue.total)
+            // D1 (the user's pick, 2026-11-23: "Done when all mappable built"): FINISHED once every building is built or turned down by the
+            // builder's own rule; only a failure that may pass keeps it open (tried again next run). The rule's ones are tried again
+            // only when the game build or the builder changes (their identity, IndoorDeferrals)
+            val open = failedNow.size
+            val end = if (open > 0)
+                Status(Phase.DEFERRED, queue.ready, queue.total, queue.deferred, "$open to retry", list = deferredList(), rejected = rejected())
+            else Status(Phase.DONE, queue.ready, queue.total, rejected(), list = deferredList(), rejected = rejected())
             emit(end)
-            return if (queue.deferred > 0) Outcome.DEFERRED else Outcome.COMPLETE
+            log("finish line: ${queue.ready} built, ${rejected()} turned down by the builder's rule, $open to retry")
+            return if (open > 0) Outcome.DEFERRED else Outcome.COMPLETE
         } catch (e: IndoorGenerator.Stopped) {
+            asleep("stopped")
             emit(status.copy(phase = Phase.STOPPED, note = "resumes next start", now = ""))
             log("stopped")
             return Outcome.STOPPED
         } catch (e: IndoorGenerator.Released) {
+            asleep("paused long")
             log("paused long: the game files let go")
             return Outcome.RELEASED
         }
@@ -226,6 +294,8 @@ internal class IndoorScheduler(
         val t0 = signals.now()
         try {
             queue.publishCompleted()
+            // fix 5 (2026-11-23): the game's indoor art index (the wmominimap step) is collected again when this set of roots grows
+            runCatching { writeRoots(File(dataDir, ROOTS_FILE), store.lastPublished) }
             lastPublishMs = signals.now() - t0
             maxPublishMs = maxOf(maxPublishMs, lastPublishMs)
             publishes++
@@ -284,6 +354,27 @@ internal class IndoorScheduler(
         const val PUBLISH_EVERY_MS = 60_000L
         const val NEAR_YD = 300.0
         const val STATS_EVERY = 25
+        /** D4: the wake lock's hard limit per building (re-armed at each one; a building that hangs lets it lapse) */
+        const val WAKE_LIMIT_MS = 10 * 60_000L
+        /** fix 5: the published buildings' roots (interiors_sched/roots.json), the wmominimap step's input */
+        const val ROOTS_FILE = "roots.json"
+
+        /** D1: the builder's identity a rule-rejection and the finished stamp hold for ([libDigest]: the native library's bytes) */
+        fun builderKey(identity: String, libDigest: String): String = "gen|$identity|lib:$libDigest"
+
+        /** fix 5: the roots of the published buildings' keys ("<rootFid>_d<set>_..."), sorted, written atomically */
+        internal fun writeRoots(file: File, keys: Collection<String>) {
+            val roots = keys.mapNotNullTo(java.util.TreeSet()) { it.substringBefore('_').toIntOrNull() }
+            val tmp = File(file.path + ".part")
+            tmp.writeText(JSONObject().put("roots", JSONArray(roots.toList())).toString())
+            Files.move(tmp.toPath(), file.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+        }
+
+        /** fix 5: the roots [writeRoots] wrote (empty when none were) */
+        fun readRoots(file: File): Set<Int> = runCatching {
+            val a = JSONObject(file.readText()).optJSONArray("roots") ?: return emptySet()
+            (0 until a.length()).mapNotNullTo(HashSet()) { a.optInt(it, -1).takeIf { r -> r > 0 } }
+        }.getOrDefault(emptySet())
 
         internal fun readCatalogue(file: File): Pair<Int, List<IndoorBakeStore.Work>>? = runCatching {
             val o = JSONObject(file.readText())

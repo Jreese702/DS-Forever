@@ -8,7 +8,9 @@
     <uses-permission android:name="android.permission.REORDER_TASKS" />
     <!-- Stream smoothness (the user's pick 2026-11-23, "Add it": "Declare WAKE_LOCK; hold the Wi-Fi low-latency lock only while a stream
          runs"): WifiManager's WifiLock needs it (a normal install-time permission, no prompt). Held only from a stream's start to its
-         end (StreamWifiLock), as moonlight-android / Artemis do; nothing else takes a wake lock -->
+         end (StreamWifiLock), as moonlight-android / Artemis do. The indoor maps' builder (the user's pick 2026-11-23, "Keep it awake
+         while building") holds a PARTIAL wake lock under the same permission, only while it is making a building, with a 10 minute
+         limit per building, never while the game runs (IndoorScheduler.WakeLock) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application>
         <!-- Streaming mode (S2): WoW on the PC through Moonlight's core, on the top screen; the companion stays on the bottom -->

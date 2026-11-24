@@ -40,6 +40,16 @@ object HomeMapNote {
     fun fit(measured: Float, size: Float, width: Float): Float =
         if (measured <= 0f || width <= 0f || measured <= width) size else (size * width / measured).coerceAtLeast(MIN)
 
+    /**
+     * INDOORS WITH NO INDOOR MAP (the user, 2026-11-23: "I cant see iron forges map at all when walking around in it"; fix 4): the map
+     * showed the outdoor map zoomed right in, a blur, and said nothing. Said on both maps (Home's column and the open map), in es / fr.
+     */
+    const val INDOOR = "No indoor map here yet"
+
+    /** the indoor note shows: indoors, no built room here, no game art of a capital here, no other note up, the rooms read ([ready]) */
+    fun indoorShows(morphing: Boolean, indoors: Boolean, room: Boolean, cityArt: Boolean, otherNote: Boolean, ready: Boolean): Boolean =
+        !morphing && indoors && !room && !cityArt && !otherNote && ready
+
     /** the note's baseline: a little over half way down from the player ([playerY]) to the field's bottom ([bottom]), under the arrow */
     fun baseline(playerY: Float, bottom: Float): Float = playerY + (bottom - playerY) * 0.55f
 }

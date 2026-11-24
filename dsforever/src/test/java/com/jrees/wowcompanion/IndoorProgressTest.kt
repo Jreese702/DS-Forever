@@ -23,9 +23,10 @@ class IndoorProgressTest {
             IndoorProgress.line(st(IndoorScheduler.Phase.PAUSED, note = PlayGate.PLAYER_MOVING), true))
 
     @Test fun doneAndDeferredEnds() {
-        assertEquals("1460 / 1460 ready · all built", IndoorProgress.line(st(IndoorScheduler.Phase.DONE, ready = 1460), true))
-        assertEquals("1455 / 1460 ready · finished · 5 deferred",
-            IndoorProgress.line(st(IndoorScheduler.Phase.DEFERRED, ready = 1455, deferred = 5), true))
+        // D1 (2026-11-23): DONE is finished (the rule's rejections settled); DEFERRED keeps failures that may pass, said by the bake's note
+        assertEquals("1460 / 1460 ready · finished", IndoorProgress.line(st(IndoorScheduler.Phase.DONE, ready = 1460), true))
+        assertEquals("1455 / 1460 ready · 2 to retry · 5 deferred",
+            IndoorProgress.line(st(IndoorScheduler.Phase.DEFERRED, ready = 1455, deferred = 5, note = "2 to retry"), true))
     }
 
     @Test fun stoppedOffInSettings() =

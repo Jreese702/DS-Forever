@@ -22,6 +22,32 @@ internal interface IndoorGenerator : AutoCloseable {
     class Stopped : RuntimeException("interiors bake stopped")
     /** 2026-11-08: a long pause (the game busy, the player moving): the run lets the game files go and waits outside them */
     class Released : RuntimeException("interiors bake paused long: the game files are let go")
+    /**
+     * THE BUILDER'S OWN RULE TURNED THIS BUILDING DOWN (the user's D1 pick, 2026-11-23: "Done when all mappable built"): too big for the
+     * city rule, no floors found, a budget exceeded... Deterministic for the same inputs and the same builder, so it is SETTLED: it counts
+     * toward "finished" and is tried again only when the game build or the builder ([identity]) changes. Anything else that fails
+     * (out of memory, an unreadable file, a kill) is transient and tried again on the next run.
+     */
+    class Rejected(reason: String) : RuntimeException(reason)
+
+    /**
+     * Everything that decides the builder's output besides the inputs: its [algorithm] and, for the native one, the library's version
+     * and bytes. A rule-rejection and the finished stamp hold for this identity only (a new builder re-arms them).
+     */
+    val identity: String get() = "a$algorithm"
+
+    companion object {
+        /**
+         * a native geometry / contract failure ([IndoorGeneratorNative.generate]'s IllegalStateException) that is the builder's own rule,
+         * not the device's state: everything but an input that did not read, an allocation or memory failure, or an unexpected error
+         */
+        fun isRule(message: String?): Boolean {
+            val m = message?.trim().orEmpty()
+            if (m.isEmpty()) return false
+            return TRANSIENT.none { m.contains(it, ignoreCase = true) } && !m.startsWith("interiors generator: ")
+        }
+        private val TRANSIENT = listOf("unavailable", "out of memory", "allocation limit", "low memory", "could not be read", "unreadable")
+    }
 
     /** Bump when unchanged inputs would now give different output; it becomes [IndoorBakeStore.Work.algorithm]. */
     val algorithm: Int
