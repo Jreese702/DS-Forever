@@ -156,7 +156,7 @@ def open_box(L, rights=1):
 
 # ================================================================ a. versions, notes, the block's code
 check('local CBV = "cb16"' in BLOCK and "cb13 A PLAYER'S MACRO ON THE BAR (GitHub #553" in AB, "a. ActionBar cb13 and its header note")
-check('local BV = "b77"' in SRC["book"] and 'b69 A MACRO ONTO THE CAST BAR (GitHub #553' in SRC["book"], "a. Book b69 and its note")
+check('local BV = "b78"' in SRC["book"] and 'b69 A MACRO ONTO THE CAST BAR (GitHub #553' in SRC["book"], "a. Book b69 and its note")
 code = '\n'.join(l.split('--', 1)[0] for l in BLOCK.split('\n'))
 bad = [w for w in ('SetAttribute("macro"', "SetAttribute('macro'", 'CreateMacro', 'EditMacro', 'DeleteMacro', 'SetBinding', 'SaveBindings',
                    'SetCVar', 'PickupMacro', 'PlaceAction', 'RunMacro') if w in code]

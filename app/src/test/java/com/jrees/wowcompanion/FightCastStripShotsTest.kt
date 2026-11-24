@@ -80,7 +80,7 @@ class FightCastStripShotsTest {
 
     /** a Home page for [layout] ([fight] = the add-on's fight word; [party] = Party mode on with a three-player party) with the add-on's
      *  padmap: the Wings flag `ct` 1 and the cast bar's screen [cc] */
-    private fun page(layout: HomeLayout, fight: Boolean, party: Boolean = false, cc: Int? = 0, hudS: JSONObject? = null, gsw: Int? = null): Page {
+    private fun page(layout: HomeLayout, fight: Boolean, party: Boolean = false, cc: Int? = 0, hudS: JSONObject? = null): Page {
         art()
         // the settings objects keep the FIRST test's prefs (init sets them only while null): another class's test left its writes there
         // (HomeEditShotsTest's band bubble turns Swing timer off - this class's swing checks then painted nothing). Each page starts on
@@ -100,7 +100,7 @@ class FightCastStripShotsTest {
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
         home.borrow()
-        val ccJson = (if (cc == null) "" else ",\"cc\":$cc") + (if (gsw == null) "" else ",\"gsw\":$gsw")
+        val ccJson = if (cc == null) "" else ",\"cc\":$cc"
         home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m188","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":1$ccJson}}}"""))!!)
         lay(home)
         cast.roomBarOn = true
@@ -223,16 +223,25 @@ class FightCastStripShotsTest {
         render(a, "fight_bottom_swapped_bar_above_chat_swing")
     }
 
+    /** feat/top-castbar (the user, 2026-11-24): Cast bar in fights = Top screen in the takeover - no strip, nothing of the band's line on
+     *  the bottom screen (the add-on's own bar above the HUD has the cast AND the swing: TopCombatBar.lineAt's TOP), the rooms' bar quiet
+     *  too; the columns take the strip's room */
     @Test fun topScreenLeavesTheBottomScreenToTheColumns() {
         val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
         val hud = JSONObject().put("aa", true).put("sw", sw(0, 1.2, 2.6)).put("cs", casting("Frostbolt"))
         val p = page(l, fight = true, cc = 1, hudS = hud)
         val b = boxes(p.home)
-        assertNull("the game's bar on the top screen: no strip", b["FIGHT_CAST"])
+        assertNull("our bar on the top screen: no strip", b["FIGHT_CAST"])
         assertEquals(8f, b.getValue("CHAT").top, 0.01f); assertEquals(8f, b.getValue("MAP").top, 0.01f)
-        assertFalse(p.cast.lineAway)
-        assertTrue("the game's own bar shows the cast up top (the rooms' bar leaves it out: CastView.lineTop)", p.cast.lineTop)
-        render(p, "fight_top_setting_casting")
+        assertTrue("the band's line is away (on the top screen: nothing of it here)", p.cast.lineAway)
+        assertFalse("... and no strip carries it", (views(p.home).getValue("FIGHT_CAST") as FightCastStripView).on)
+        // (the rooms' bar leaves the cast out: CastView.ownCastBarShown's (!away || lineAway) - the rest of it needs a window this harness has not)
+        assertTrue("the rooms' bar leaves the cast out (lineAway: Home 'has' it)", !p.cast.away || p.cast.lineAway)
+        val bm = render(p, "fight_top_setting_casting")
+        // the columns stand there now: the same ink as the same page with no cast and no swing (nothing of either painted here)
+        val top0 = STRIP.let { RectF(it.left + 20f, it.top + 2f, it.right - 20f, it.bottom - 2f) }
+        val idle = render(page(l, fight = true, cc = 1, hudS = JSONObject().put("aa", true)), null)
+        assertEquals("nothing of the cast or the swing painted across the bottom screen's top", inked(idle, top0), inked(bm, top0))
         // the add-on not saying it yet (cc 0) or an older add-on (no cc): the strip stays (a cast bar never on neither screen)
         for (cc in listOf(0, null)) {
             val q = page(l, fight = true, cc = cc, hudS = JSONObject(hud.toString()))
@@ -241,33 +250,34 @@ class FightCastStripShotsTest {
         }
     }
 
-    /** the user's picks 2026-11-23 ("Keep ours on the bottom" / "One place"): Cast bar in fights = Top screen with WoW's own swing timer
-     *  OFF (PadMap m188 `gsw` 0) - the strip stays across the top of the bottom screen with the SWING alone (the cast is the game's own bar
-     *  on the top screen, so the strip paints none of it); with the game's swing timer on (`gsw` 1, or an older add-on): as built, no strip */
-    @Test fun topScreenCastWithTheGamesSwingOffKeepsTheSwingStrip() {
-        val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
-        val cast = page(l, fight = true, cc = 1, gsw = 0, hudS = JSONObject().put("aa", true).put("cs", casting("Frostbolt")))
-        assertEquals("the swing strip across the very top", STRIP, boxes(cast.home).getValue("FIGHT_CAST"))
-        assertTrue("it carries the line, the swing alone", cast.cast.lineAway && cast.cast.stripNoCast)
-        assertEquals(44f, boxes(cast.home).getValue("CHAT").top, 0.01f)
-        val cm = render(cast, "fight_top_cast_swing_off_casting")
-        assertEquals("a cast alone: nothing in the strip (the game's bar on the top screen has it)", 0,
-            inked(cm, RectF(STRIP.left + 20f, STRIP.top + 2f, STRIP.right - 20f, STRIP.bottom - 2f)))
-        val swing = page(l, fight = true, cc = 1, gsw = 0, hudS = JSONObject().put("aa", true).put("sw", sw(0, 1.2, 2.6)).put("cs", casting("Frostbolt")))
-        val sm = render(swing, "fight_top_cast_swing_off_swing")
-        assertTrue("the swing painted through the cast (${inked(sm, STRIP)} px)", inked(sm, STRIP) > 2000)
-        assertFalse("the band's own state keeps the cast (restored after the strip's paint)", (field(swing.cast, "castStartMs") as Double).isNaN())
-        // the game's swing timer on: as built (the game's bar and the Wings' swing lines up top, nothing here)
-        for (g in listOf(1, null)) {
-            val q = page(l, fight = true, cc = 1, gsw = g, hudS = JSONObject().put("aa", true).put("sw", sw(0, 1.2, 2.6)))
-            assertNull("gsw $g: no strip", boxes(q.home)["FIGHT_CAST"])
-            assertFalse(q.cast.stripNoCast)
-        }
-        // Bottom screen (the default): the strip carries both, never the swing alone
-        val b = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP), fight = true, gsw = 0,
-            hudS = JSONObject().put("aa", true).put("cs", casting("Frostbolt")))
-        assertFalse(b.cast.stripNoCast)
-        assertTrue("Bottom screen: the cast painted (${inked(render(b, null), STRIP)} px)", inked(render(b, null), STRIP) > 4000)
+    /** feat/top-castbar: casts OUT of the takeover stay on the bottom screen whatever the setting ("Not with stuff like dienchanting or
+     *  opening ... that can stay on the bottom screen") - the band's own line; and the swing follows the cast bar both ways (the user,
+     *  2026-11-24: "the option for the cast bar and swing timer to appear on the bottom screen if everything else is on top" - Bottom
+     *  screen: the strip paints the cast AND the swing; Top screen: neither here) */
+    @Test fun nonCombatCastsStayOnTheBottomAndTheSwingFollowsTheCastBar() {
+        val top = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP)
+        val de = page(top, fight = false, cc = 1, hudS = JSONObject().put("cs", casting("Disenchant")))
+        assertFalse("a Disenchant out of the takeover: the band's own line (not away)", de.cast.lineAway)
+        assertNull("no strip out of the fight", boxes(de.home)["FIGHT_CAST"])
+        assertFalse("the band draws it on the bottom screen (not away)", de.cast.away)
+        render(de, "out_of_fight_top_setting_disenchant")
+        // Bottom screen in the takeover: the strip carries the cast and the swing
+        val bl = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
+        val bs = page(bl, fight = true, hudS = JSONObject().put("aa", true).put("sw", sw(0, 1.2, 2.6)))
+        assertTrue("Bottom screen: the swing in the strip (${inked(render(bs, null), STRIP)} px)", inked(render(bs, null), STRIP) > 2000)
+        val bc = page(bl, fight = true, hudS = JSONObject().put("aa", true).put("cs", casting("Frostbolt")))
+        assertTrue("Bottom screen: the cast in the strip (${inked(render(bc, null), STRIP)} px)", inked(render(bc, null), STRIP) > 4000)
+        // Top screen in the takeover: the swing NOT here (with our top bar)
+        val ts = page(top, fight = true, cc = 1, hudS = JSONObject().put("aa", true).put("sw", sw(0, 1.2, 2.6)))
+        assertNull(boxes(ts.home)["FIGHT_CAST"])
+        val top0 = RectF(STRIP.left + 20f, STRIP.top + 2f, STRIP.right - 20f, STRIP.bottom - 2f)
+        val idle = render(page(top, fight = true, cc = 1, hudS = JSONObject().put("aa", true)), null)
+        assertEquals("Top screen: no swing on the bottom screen (the same ink as no swing)", inked(idle, top0),
+            inked(render(ts, "fight_top_setting_swing"), top0))
+        // the 1523 swing-alone path is gone from the sources
+        val src = java.io.File(listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"),
+            java.io.File("companion/app/src/main/java/com/jrees/wowcompanion")).first { it.isDirectory }, "CastView.kt").readText()
+        assertFalse(src.contains("var stripNoCast")); assertFalse(src.contains("var lineTop"))
     }
 
     @Test fun theFightPreviewShowsTheStrip() {

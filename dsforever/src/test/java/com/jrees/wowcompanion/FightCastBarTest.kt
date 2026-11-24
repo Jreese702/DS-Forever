@@ -211,30 +211,59 @@ class FightCastBarTest {
         assertEquals(TOP, TopCombatBar.honoured(TOP, 1))
     }
 
-    /** the user's picks 2026-11-23 ("Keep ours on the bottom" / "One place"): Top screen's cast bar with the game's swing timer OFF
-     *  (`gsw` 0, PadMap m188) keeps the strip for the swing alone; on (1) or unknown (an older add-on): as built */
-    @Test fun theGamesSwingTimerOffKeepsOurSwingOnTheBottom() {
-        val want = TOP.copy(fightCast = HomeLayout.FightCast.TOP)
-        assertEquals("gsw 0: the strip (the swing)", HomeLayout.FightCast.BOTTOM, TopCombatBar.honoured(want, 1, 1, 0).fightCast)
-        assertTrue(S.hasFightStrip(TopCombatBar.honoured(want, 1, 1, 0)))
-        assertTrue("... painting the swing alone", TopCombatBar.swingOnly(want, 1, 1, 0))
-        for (g in listOf(1, null)) {
-            assertEquals("gsw $g: the game's bar, no strip", HomeLayout.FightCast.TOP, TopCombatBar.honoured(want, 1, 1, g).fightCast)
-            assertFalse(TopCombatBar.swingOnly(want, 1, 1, g))
-        }
-        // never the swing alone unless Top screen's cast bar is confirmed: Bottom screen / cc not 1 / the Wings off
-        assertFalse(TopCombatBar.swingOnly(TOP, 1, 1, 0))
-        for (cc in listOf(null, 0)) assertFalse(TopCombatBar.swingOnly(want, 1, cc, 0))
-        for (ct in listOf(null, 0)) assertFalse(TopCombatBar.swingOnly(want, ct, 1, 0))
-        assertFalse(TopCombatBar.swingOnly(want.copy(fight = HomeLayout.FightBand.GROW), 1, 1, 0))
-        // the Fight preview: the same, whenever the add-on HAS the flags
-        assertTrue(TopCombatBar.swingOnlyPreview(want, 0, 0, 0))
-        assertEquals(HomeLayout.FightCast.BOTTOM, TopCombatBar.previewed(want, 0, 0, 0).fightCast)
-        assertEquals(HomeLayout.FightCast.TOP, TopCombatBar.previewed(want, 0, 0, 1).fightCast)
-        assertFalse(TopCombatBar.swingOnlyPreview(want, null, 0, 0))
-        // the padmap's gsw
-        val d = PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","m":{"dpad":{"on":true,"ct":1,"cc":1,"gsw":0}}}"""))?.dpad
-        assertEquals(0, d!!.gsw)
-        assertNull(PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","m":{"dpad":{"on":true,"ct":1}}}"""))?.dpad?.gsw)
+    /**
+     * feat/top-castbar (the user, 2026-11-24: "I only want to see it on the top screen when everything else is also on the top screen
+     * during or engaging in combat. Not with stuff like dienchanting or opening shit, that can stay on the bottom screen"; then "I kind of
+     * want the option for the cast bar and swing timer to appear on the bottom screen if everything else is on top"): which casts go where
+     * - TopCombatBar.lineAt over the record (as honoured) x the takeover (away) x a slide. Both directions pinned: Bottom screen = the
+     * strip carries the cast AND the swing in the takeover; Top screen = nothing of the line on the bottom screen in the takeover (the
+     * add-on's own bar above the HUD has both); out of the takeover the band's own line whatever the choice; never both screens.
+     */
+    @Test fun whichCastsGoWhere() {
+        val bottom = TopCombatBar.honoured(TOP, 1, 0)
+        val top = TopCombatBar.honoured(TOP.copy(fightCast = HomeLayout.FightCast.TOP), 1, 1)
+        assertEquals(HomeLayout.FightCast.TOP, top.fightCast)
+        val L = TopCombatBar.Line.BAND; val S_ = TopCombatBar.Line.STRIP; val T = TopCombatBar.Line.TOP
+        // out of the takeover (disenchanting, opening, the Hearthstone): the band's line on the bottom screen, either choice
+        for (r in listOf(bottom, top)) assertEquals("${r.fightCast} out of the takeover: the band", L, TopCombatBar.lineAt(r, away = false, sliding = false))
+        // the takeover: Bottom screen = the strip (cast + swing), Top screen = the top screen's bar (nothing here)
+        assertEquals(S_, TopCombatBar.lineAt(bottom, away = true, sliding = false))
+        assertEquals(T, TopCombatBar.lineAt(top, away = true, sliding = false))
+        // the way up (away from the slide's first frame): Top screen leaves this screen at once - a cast that starts the takeover never
+        // shows down here after it; the strip rides both slides
+        assertEquals(T, TopCombatBar.lineAt(top, away = true, sliding = true))
+        assertEquals(S_, TopCombatBar.lineAt(bottom, away = true, sliding = true))
+        // the way down (B mid-cast, the fight's end mid-channel): the band brings the line back with it (Top) / the strip until it lands
+        assertEquals(L, TopCombatBar.lineAt(top, away = false, sliding = true))
+        assertEquals(S_, TopCombatBar.lineAt(bottom, away = false, sliding = true))
+        // Top screen not confirmed by the add-on (cc not 1): the strip - the cast never left on neither screen
+        for (cc in listOf(null, 0)) assertEquals(S_, TopCombatBar.lineAt(TopCombatBar.honoured(TOP.copy(fightCast = HomeLayout.FightCast.TOP), 1, cc),
+            away = true, sliding = false))
+        // Grow / Same size: never away - the band, whatever the cast bar choice says
+        for (f in listOf(HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)) for (fc in HomeLayout.FightCast.values())
+            assertEquals(L, TopCombatBar.lineAt(HomeLayout(fight = f, fightCast = fc), away = false, sliding = false))
+        // the 1523 rule on the GAME's own swing timer is gone: Top screen confirmed stays Top screen (no swing-alone strip)
+        assertTrue(!S.hasFightStrip(top))
+    }
+
+    /** the swing goes where the cast bar goes, by the app's own Swing timer: Top screen sends it to the add-on's top bar (PadMap m190
+     *  `cs`, Book b78 codes 26 / 27); Bottom screen paints it here by the same setting (nothing to send) */
+    @Test fun theSwingFollowsTheCastBar() {
+        val top = TOP.copy(fightCast = HomeLayout.FightCast.TOP)
+        assertEquals(true, TopCombatBar.swingWanted(top, true))
+        assertEquals(false, TopCombatBar.swingWanted(top, false))
+        assertNull("Bottom screen: nothing to send", TopCombatBar.swingWanted(TOP, false))
+        assertNull("Grow: nothing to send", TopCombatBar.swingWanted(HomeLayout(fightCast = HomeLayout.FightCast.TOP), false))
+        assertEquals(PadMapModel.ROW_PADTAB to 26, TopCombatBar.swingCells(false).last())
+        assertEquals(PadMapModel.ROW_PADTAB to 27, TopCombatBar.swingCells(true).last())
+        assertEquals(listOf(39, 38, 37), TopCombatBar.swingCells(true).dropLast(1).map { it.second })
+        // the padmap's cs (none = an older add-on)
+        val d = PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","m":{"dpad":{"on":true,"ct":1,"cc":1,"cs":0}}}"""))?.dpad
+        assertEquals(0, d!!.cs)
+        assertNull(PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","m":{"dpad":{"on":true,"ct":1}}}"""))?.dpad?.cs)
+        // decided as `cc` is: matched, a fight waits, re-sent after RESEND_MS
+        assertEquals(TopCombatBar.Act.Matched, TopCombatBar.decide(false, 0, inFight = false, sinceSendMs = null))
+        assertEquals(TopCombatBar.Act.Send(false), TopCombatBar.decide(false, 1, inFight = false, sinceSendMs = null))
+        assertEquals(TopCombatBar.Act.Wait, TopCombatBar.decide(false, 1, inFight = true, sinceSendMs = null))
     }
 }

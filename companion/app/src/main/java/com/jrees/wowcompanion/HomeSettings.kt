@@ -693,9 +693,11 @@ class HomeSettingsSection(context: Context,
             listOf("Grow", "Same size", "Top screen"), HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand),
             listOf({ HomeSettings.fightBand = HomeLayout.FightBand.GROW }, { HomeSettings.fightBand = HomeLayout.FightBand.SAME },
                 { HomeSettings.fightBand = HomeLayout.FightBand.TOP }))
-        // the user's ruling 2026-11-23: with Top screen, where the cast bar and the swing timer go in the fight
+        // the user's ruling 2026-11-23: with Top screen, where the cast bar and the swing timer go in the fight (feat/top-castbar, the
+        // user 2026-11-24: Top screen = our own bar above the HUD in the takeover, the swing with it; other casts stay on this screen)
         if (HomeSettings.fightBand == HomeLayout.FightBand.TOP)
-            y = row(c, y + GAP, "Cast bar in fights", listOf("With the controller on the top screen: the cast bar and swing timer."),
+            y = row(c, y + GAP, "Cast bar in fights", listOf("With the controller on top: the cast bar and swing timer in fights.",
+                "Top screen puts both above your HUD. Other casts stay here."),
                 listOf("Bottom screen", "Top screen"), HomeLayout.FightCast.values().indexOf(HomeSettings.fightCast),
                 listOf({ HomeSettings.fightCast = HomeLayout.FightCast.BOTTOM }, { HomeSettings.fightCast = HomeLayout.FightCast.TOP }))
         // p-swing-timer: the swing line under the controller in a fight (batch 12: the cast bar is not this setting)

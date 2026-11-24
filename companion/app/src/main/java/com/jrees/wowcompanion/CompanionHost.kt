@@ -647,7 +647,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView.onTalkChannel = { if (talkPanelUp()) talkTabs.refresh(chatView.talkTabs()); talkDraw() }
         HomeSettings.onChange { ui.post { talkDraw() } }
         // movable Home: a new layout (a preset, the swap, another character's) tells the add-on its DS toolbar sides (out of combat)
-        HomeLayoutStore.onChange { ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it) } } }
+        HomeLayoutStore.onChange { ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it); swingCheck(it) } } }
+        // feat/top-castbar: the Swing timer setting goes to the add-on's top bar too (PadMap m190), on its change as on the layout's
+        HomeSettings.onChange { ui.post { lastDpad?.let { swingCheck(it) } } }
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
@@ -1293,7 +1295,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onEditFilters = { show(Room.CHAT); chatView.post { chatView.openFilters() } }
         // 1518 (the autosave): the add-on hears the record's D-pad sides and fight bar only once edit mode is not live (Done, Discard,
         // a fight, another room); while it is, the pictures preview the draft
-        homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it) } } }
+        homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it); swingCheck(it) } } }
         homeView.onEditChanged = { on ->
             lbEval(); trackSync(); strip.invalidate()
             // the 1515 merge: a key question that waited for edit mode is looked at again once edit mode has ended
@@ -3636,7 +3638,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the 1514 merge (CharKey): the WHOLE key only; named with no realm = pending (no record read or written, the
                     // previous character's key let go; an edit meanwhile is laid on the real record once the key comes)
                     if (current && named) HomeLayoutStore.character(ck, d.name)
-                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d); castCheck(d) }
+                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d); castCheck(d); swingCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
                     // issue 588 (the user's ruling 2026-11-23): with PadMap m186+ Start is our wheel with the toolbar off too: always 36
@@ -5282,6 +5284,39 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val sent = padTabTap(TopCombatBar.castCells(a.on))
                 Log.i(HomeView.TAG, "fight cast bar: ${if (a.on) "top screen" else "bottom screen"} ${if (sent) "sent" else "not sent"}")
                 if (++castTries < MIRROR_TRIES) ui.postDelayed(castAgain, TopCombatBar.RESEND_MS + 200L)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- feat/top-castbar: the swing with our top cast bar (PadMap m190, Book b78)
+    private var swingSentAt: Long? = null
+    private var swingSentWant: Boolean? = null
+    private var swingTries = 0
+    private val swingAgain = Runnable { lastDpad?.let { swingCheck(it) } }
+
+    /** TopCombatBar.swingWanted (Settings > Home "Swing timer", only while "Cast bar in fights: Top screen" is wanted: the add-on draws
+     *  the swing over our top bar then) vs the add-on's `cs`: [castCheck]'s rules (out of combat, re-sent every TopCombatBar.RESEND_MS
+     *  until `cs` says it, nothing while edit mode is live or with no key, an older add-on without `cs`: nothing to send), after the cast
+     *  bar's own taps (the same page-3 cells: TapPad's 0.25 s repeat guard) */
+    private fun swingCheck(d: PadMapModel.Dpad) {
+        if (!mirrorCurrent) return
+        if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(swingAgain); return }
+        if (homeView.editing) { ui.removeCallbacks(swingAgain); return }
+        val want = TopCombatBar.swingWanted(HomeSettings.layout, HomeSettings.swingTimer)
+        ui.removeCallbacks(swingAgain)
+        if (want == null) { swingSentAt = null; swingSentWant = null; swingTries = 0; return }
+        if (swingSentWant != want) { swingSentAt = null; swingTries = 0 }
+        val now = SystemClock.elapsedRealtime()
+        val after = listOfNotNull(topSentAt, castSentAt).maxOrNull()
+        if (after != null && now - after < CAST_AFTER_TOP_MS) { ui.postDelayed(swingAgain, CAST_AFTER_TOP_MS); return }
+        when (val a = TopCombatBar.decide(want, d.cs, homeView.inFight(), swingSentAt?.let { now - it })) {
+            TopCombatBar.Act.Matched -> { swingSentAt = null; swingSentWant = null; swingTries = 0 }
+            TopCombatBar.Act.Wait -> if (d.cs != null) ui.postDelayed(swingAgain, TopCombatBar.RESEND_MS)
+            is TopCombatBar.Act.Send -> {
+                swingSentAt = now; swingSentWant = want
+                val sent = padTabTap(TopCombatBar.swingCells(a.on))
+                Log.i(HomeView.TAG, "top cast bar swing: ${if (a.on) "on" else "off"} ${if (sent) "sent" else "not sent"}")
+                if (++swingTries < MIRROR_TRIES) ui.postDelayed(swingAgain, TopCombatBar.RESEND_MS + 200L)
             }
         }
     }

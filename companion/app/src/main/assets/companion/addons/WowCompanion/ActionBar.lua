@@ -2,6 +2,10 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar18 OUR OWN CAST BAR ABOVE THE HUD (the user, 2026-11-24: "I want to build our own that appears right above the HUD ... only
+-- ... on the top screen when everything else is also on the top screen during or engaging in combat"): with "Cast bar in fights: Top
+-- screen" our own plain bar (the game's casting bar art by atlas, the name under it, the swing over it) above the HUD block in the
+-- takeover only; the game's own casting bar never shown again (nbar13 / nbar14's game paths gone). At "nbar18 THE TOP CAST BAR".
 -- nbar17 THE WINGS AS THE BAND ON THE DEVICE (the user, 2026-11-23, testing 1523 on the Thor: "The triggers look weird and stretched
 -- on both sides and nothing like the bottom. It also looks like the top slides out faster than the bottom slides up"; "The buttons need
 -- to shift in party mode to make space for the hud shifting out"): (1) the L / R plates and the ZL / ZR chips are the band's own art at
@@ -2170,7 +2174,16 @@ local function noteCast(event)
     elseif not castNow then
         return
     elseif event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED" then
-        castNow, castEnd = nil, { x = 0, t = now, h = castNow.k == "h" and 1 or nil }
+        -- nbar18 (the top bar's review): a FAILED / INTERRUPTED of ANOTHER press while this cast runs (a spell pressed mid-cast: "Another
+        -- action is in progress" - the game's own bar checks its castID) leaves this one alone: the player's cast read again with the
+        -- same start is still running (a plain read of the player's own cast, as above)
+        local fn = (castNow.k == "h") and _G.UnitChannelInfo or _G.UnitCastingInfo
+        if type(fn) == "function" then
+            local st = castTimes(fn)
+            if st and math.floor(st + 0.5) / 1000 == castNow.s then return end
+        end
+        -- (f: a failure, not an interrupt - the top bar's word; never in the state document, which copies x / t / h only)
+        castNow, castEnd = nil, { x = 0, t = now, h = castNow.k == "h" and 1 or nil, f = (event == "UNIT_SPELLCAST_FAILED") and 1 or nil }
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" and castNow.k == "c" then
         castNow, castEnd = nil, { x = 1, t = now }
     elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
@@ -2529,7 +2542,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar17", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar18", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -3762,7 +3775,9 @@ function NB.fightSolve(inp)
     local kmin = T.MIN_K / math.max(1, inp.size or 1)
     local beside = nil
     if hud then
-        local function level(g) return math.min(hud.y + hud.h / 2, H - T.FLOOR - (g.hh - g.ay)) end
+        -- nbar18: level with the HUD block's OWN middle (inp.hudMid: the block without our cast bar's room over it, so the room never
+        -- lifts the Wings)
+        local function level(g) return math.min(inp.hudMid or (hud.y + hud.h / 2), H - T.FLOOR - (g.hh - g.ay)) end
         -- nbar14: at size [k], beside the block level with its middle (raise 0) or raised, the gap from GAP pushed outward in STEP to
         -- PUSH_MAX - the least push first, then the least raise with the least push
         beside = function(k)
@@ -3921,6 +3936,7 @@ end
 -- nbar17 [force]: the shift to work the block out at (0: the block uncentred) instead of the one wanted
 function NB.topOurs(force)
     local out, hud = {}, nil
+    local cbg, mid = nil, nil                                          -- nbar18: our cast bar's spot, the block's own middle
     local function add(r, id) if r then r.id = id; out[#out + 1] = r end end
     local uf, prd, ab = rawget(WC, "uf"), rawget(WC, "prd"), rawget(WC, "abox")
     local pf = type(uf) == "table" and type(uf.pf) == "table" and uf.pf or nil
@@ -3979,9 +3995,10 @@ function NB.topOurs(force)
             local dest = { x = base.x + want, y = base.y, w = base.w, h = base.h }
             local transit = math.abs(applied - want) > 0.5 or (rows ~= nil and math.abs(rowsDx - want) > 0.5)
             if force == nil then NB.top.transit = transit end
-            if transit then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hudnow") end
+            if transit then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hudnow"); add(NB.cbNowRect(), "hudnow") end
             hud = dest
         end
+        hud, cbg, mid = NB.cbRoom(hud)                                  -- nbar18: the bar's room over the block, part of it
         if hud then add({ x = hud.x, y = hud.y, w = hud.w, h = hud.h }, "hud") end
     elseif rows then
         -- nbar15 THE ROWS CENTRED WITH OUR HUD BARS OFF (the user's pick 11-23, "Centre the rows": "The party rows move to the centre
@@ -4001,11 +4018,18 @@ function NB.topOurs(force)
             local dest = { x = rows.x - rowsDx + want, y = rows.y, w = rows.w, h = rows.h }
             local transit = math.abs(rowsDx - want) > 0.5                       -- nbar17: in transit, where they stand kept clear too
             if force == nil then NB.top.transit = transit end
-            if transit then add({ x = rows.x, y = rows.y, w = rows.w, h = rows.h }, "hudnow") end
+            if transit then add({ x = rows.x, y = rows.y, w = rows.w, h = rows.h }, "hudnow"); add(NB.cbNowRect(), "hudnow") end
             rows = dest
-            hud = rows
         end
+        rows, cbg, mid = NB.cbRoom(rows)                                -- nbar18: the bar over the rows (our HUD bars off), part of them
+        if NB.top.centre and type(prd) == "table" and type(rawget(prd, "partyGeo")) == "function" then hud = rows end
         add(rows, "partyhud")                                           -- our HUD bars off: the rows still stand there, kept clear
+    end
+    -- nbar18: no HUD block at all (our HUD bars and Party mode's rows off): the bar at the game's own spot, kept clear as any piece of ours
+    if cbg == nil and NB.cbWanted() then
+        local W, H, kk = NB.topScreen()
+        cbg = NB.cbGeo(nil, W, H, kk, NB.cbTimeOn())
+        add({ x = cbg.x, y = cbg.y, w = cbg.w, h = cbg.h }, "castbar")
     end
     local cp = rawget(WC, "compass")
     if type(cp) == "table" and NB.pieceOn(cp.lay) then add(NB.pieceRect(cp.lay, "compass"), "compass") end
@@ -4036,6 +4060,7 @@ function NB.topOurs(force)
             if NB.pieceOn(ps.pieces[id]) then add(NB.pieceRect(ps.pieces[id], id), id) end
         end
     end
+    out.cb, out.mid = cbg, mid                                         -- nbar18: (on the list: topOurs' two returns kept)
     return out, hud
 end
 -- nbar11 THE RESERVED GAME FRAMES: the ones that show only in a fight (all in Hub's G.REG). Read out of combat even while hidden (an
@@ -4108,6 +4133,7 @@ function NB.topInputs(force)
     local e = (type(L) == "table" and type(L.get) == "function") and L.get("nbar") or nil
     local sc = math.max(NB.S_MIN, math.min(NB.S_MAX, (e and num(e.s)) or 100)) / 100
     local ours, hud = NB.topOurs(force)
+    local cbg, mid = ours.cb, ours.mid                                 -- nbar18: our cast bar's spot and the block's own middle
     local bx, by = NB.lay.base()
     -- nbar8: placed = the entry MOVES the piece (a size alone is the Wings' scale, Auto stays on)
     local dx, dy = (e and num(e.dx)) or 0, (e and num(e.dy)) or 0
@@ -4115,7 +4141,7 @@ function NB.topInputs(force)
     -- nbar14: the band's match (MATCH_S px per unit) times the piece's size step - the stock bar's scale and the UI scale no longer in it
     local s = NB.TOP.MATCH_S * sc
     return { W = W, H = H, s = s, fsc = s / kk, kk = kk, size = sc, hud = hud, ours = ours, game = NB.top.game or {}, band = NB.topBand(),
-             placed = placed, stock = { x = bx, y = by } }
+             placed = placed, stock = { x = bx, y = by }, cb = cbg, hudMid = mid }
 end
 -- the solve's inputs as one string (nil = not keyable)
 function NB.inputKey(inp)
@@ -4166,6 +4192,7 @@ function NB.topSolve(fresh)
         T.cdx = cdx
     end
     T.inKey, T.err = key, nil
+    T.cbAt = inp.cb                                                     -- nbar18: our cast bar's spot, from the inputs this spot was solved on
     local k = r.k or 1                                                  -- nbar11: the solver's shrink on the bar's scale
     r.fsc, r.s, r.kk, r.H = inp.fsc * k, inp.s * k, inp.kk, inp.H
     T.n = T.n + 1
@@ -4286,10 +4313,11 @@ end
 -- the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): PadMap
 -- m187's per-character flag (combatCastTopOn, the app's "Cast bar in fights"), read with ctop every FLAG_S. Bottom screen (the default,
 -- flag off): the Wings draw NO swing lines - the app's strip across the top of the bottom screen carries the cast bar and the swing
--- timer, so neither shows in both places. Top screen (flag on): the Wings keep their split swing lines under the faces (the add-on's own
--- top-screen swing timer, in its usual place: no re-made bar above the HUD) and their fight's start / end is told to Hub hub76
--- (WC.hubCastFight(true / false)), which lets the game's OWN casting bar show for the fight (alpha only) and puts the player's Hide back
--- after it. The game's own swing timer (Blizzard_SwingTimer, its "showSwingTimer" option) is never touched here: no CVar is written.
+-- timer, so neither shows in both places. Top screen (flag on): nbar13-17 kept the Wings' swing lines and told Hub hub76 to show the
+-- game's OWN casting bar for the fight. nbar18 (the user's reversal 2026-11-24): Top screen is OUR OWN bar above the HUD with the swing
+-- line(s) over it ("nbar18 THE TOP CAST BAR" below); the game's casting bar is never shown again (no WC.hubCastFight), the Wings draw no
+-- swing line on either choice (one place), and nbar14's gate on the game's own swing timer (PadMap m188's gameSwingOn) is gone - the
+-- swing now goes where the cast bar goes, whatever the game's own swing timer option says; the game's swing timer is never touched.
 -- nbar13: "Cast bar in fights: Top screen" for this character (PadMap m187; an older PadMap: off = the bottom screen's strip)
 function NB.castTopFlag()
     local pm = rawget(WC, "padMap")
@@ -4299,26 +4327,15 @@ function NB.castTopFlag()
     end
     return false
 end
--- nbar14 (the user's pick 11-23, "Keep ours on the bottom"): the game's own swing timer on (PadMap m188's read-only gameSwingOn: Edit
--- Mode's account setting ShowSwingTimer) - with the cast bar on the top screen the Wings draw their swing lines only then; off (or an
--- older PadMap: unknown), the app's strip keeps the swing on the bottom screen
-function NB.gameSwingOn()
+-- nbar18: the app's Swing timer for our top bar (PadMap m190 combatCastSwingOn: the app's Settings > Home "Swing timer", sent with the
+-- cast bar's flag; an older PadMap without it: on, the swing's default)
+function NB.castSwingFlag()
     local pm = rawget(WC, "padMap")
-    if type(pm) == "table" and type(pm.gameSwingOn) == "function" then
-        local ok, v = pcall(pm.gameSwingOn)
-        return ok and v == true
+    if type(pm) == "table" and type(pm.combatCastSwingOn) == "function" then
+        local ok, v = pcall(pm.combatCastSwingOn)
+        return not (ok and v == false)
     end
-    return false
-end
--- nbar13: the Wings' fight with the cast bar on the top screen -> Hub hub76 shows the game's own casting bar for it (and hides it again
--- after): told once per change, [want] the Wings' switch
-function NB.castFight(want)
-    local T = NB.top
-    local on = want == true and T.castTop == true
-    if (T.cfOn == true) == on then return end                         -- (never told yet = off: nothing to undo)
-    T.cfOn = on
-    local f = rawget(WC, "hubCastFight")
-    if type(f) == "function" then pcall(f, on) end
+    return true
 end
 -- the router's own fight switch (the fight or an attack / auto-repeat armed, not given back by B), else the fight itself
 -- nbar11: Party mode on - the bottom band keeps the controls (ruling R0: no takeover in Party mode), so the Wings stay off: the bar is
@@ -4682,28 +4699,14 @@ function NB.topChords(ctx)
     end
 end
 -- the split swing lines under the faces (WC.swingDoc: plain numbers of our own; a line shows while its swing runs)
--- nbar13: only with "Cast bar in fights: Top screen" (the default Bottom screen: the app's strip carries the swing timer). nbar14: and
+-- (before nbar18:) nbar13: only with "Cast bar in fights: Top screen" (the default Bottom screen: the app's strip carries the swing timer). nbar14: and
 -- only while the game's own swing timer is on (off: the app's strip keeps the swing on the bottom screen - one place)
+-- nbar18: the Wings' own swing lines never show now - the swing goes where the cast bar goes (Bottom screen: the app's strip; Top
+-- screen: over our top cast bar, NB.cbSwing). The frames stay built (the half box keeps their room: no geometry change)
 function NB.topSwing()
     local f = NB.f
     if not (f and f.sw) then return end
-    if NB.top.castTop ~= true or NB.top.gsw ~= true then
-        for i = 1, 2 do if f.sw[i] then f.sw[i].k = nil; f.sw[i]:Hide() end end
-        return
-    end
-    local now = SN(GetTime) or 0
-    local ok, sw, so = pcall(WC.swingDoc, now)
-    for i, r in ipairs({ ok and sw or false, ok and so or false }) do
-        local b = f.sw[i]
-        if type(r) == "table" and type(r.s) == "number" and type(r.d) == "number" and r.d > 0 and now < r.s + r.d + 0.3 then
-            b.k = math.max(0, math.min(1, (now - r.s) / r.d))
-            b.fill:SetWidth(math.max(0.01, b.k * b.w))
-            b:Show()
-        else
-            b.k = nil
-            b:Hide()
-        end
-    end
+    for i = 1, 2 do if f.sw[i] and (f.sw[i].k ~= nil or f.sw[i]:IsShown()) then f.sw[i].k = nil; f.sw[i]:Hide() end end
 end
 -- the halves at [at] (two centres, px): the frame at their middle, each half's buttons round its own centre. nbar14 [m]: this frame's
 -- scale over the spot's (the slide easing a shrunk spot from k 1, the glide from the Nintendo bar's size; 1 = the spot's)
@@ -4885,12 +4888,16 @@ function NB.topTick(el)
     T.flagAcc = (T.flagAcc or 0) + el
     if T.flag == nil or T.flagAcc >= NB.TOP.FLAG_S then
         T.flagAcc = 0; T.flag = NB.topFlag()
-        T.castTop = T.flag and NB.castTopFlag() or false                 -- nbar13: the cast bar's screen, read with the flag
-        T.gsw = T.castTop and NB.gameSwingOn() or false                  -- nbar14: the game's own swing timer (read-only)
-        if T.want ~= nil then NB.castFight(T.want) end
+        local ct = T.flag and NB.castTopFlag() or false                  -- nbar13: the cast bar's screen, read with the flag
+        if ct ~= (T.castTop == true) then T.dirty, T.inKey = true, nil end   -- nbar18: the bar's room in or out of the HUD block: re-fit
+        T.castTop = ct
+        T.castSw = NB.castSwingFlag()                                    -- nbar18: the app's Swing timer for the top bar
     end
     local flag = T.flag
-    if not flag and not T.want and not T.shown and not T.edit and T.dir == 0 and T.t <= 0 then return end
+    if not flag and not T.want and not T.shown and not T.edit and T.dir == 0 and T.t <= 0 then
+        if NB.cb and NB.cb.vis then pcall(NB.cbTick, el) end            -- nbar18: a bar still fading out goes on to its end
+        return
+    end
     T.solveAcc, T.gameAcc = T.solveAcc + el, T.gameAcc + el
     local combat = S(InCombatLockdown) == true
     -- nbar9: built in a fight too (a /reload or a login inside combat, the key arriving mid-fight): NB.build makes only plain frames,
@@ -4931,7 +4938,6 @@ function NB.topTick(el)
     local want = flag and NB.built and T.spot ~= nil and sw
     if want ~= T.want then
         T.want = want
-        NB.castFight(want)                                               -- nbar13: the game's cast bar for the Wings' fight (Hub hub76)
         local was = T.dir
         T.dir = want and 1 or -1
         if want then
@@ -4985,6 +4991,373 @@ function NB.topTick(el)
     if T.mt < 1 then T.mt = math.min(1, T.mt + el / (T.mtS or NB.TOP.IN_S)) end           -- nbar17: a block's move: its fade's time
     NB.topEdit(flag, combat)
     NB.topApply()
+    local okC, errC = pcall(NB.cbTick, el)                               -- nbar18: our top cast bar, on the same switch
+    if not okC then noteError(errC) end
+end
+---------------------------------------------------------------------------------------------------
+-- nbar18 THE TOP CAST BAR (the user, 2026-11-24; see the file's head). WHEN: "Cast bar in fights: Top screen" (PadMap m187's
+-- combatCastTopOn, read with ctop every FLAG_S) AND the Wings' switch on (NB.top.want: the takeover - the fight, or an attack armed
+-- before it; B's give-back drops it, the next harmful press re-arms it; Party mode: its fights) - shown on the switch's FIRST frame
+-- (a cast that starts the takeover is on the top screen at once, not after the Wings' 80 ms hold), out over OUT_S with the Wings. A
+-- cast outside the takeover (disenchanting, opening, gathering, crafting, the Hearthstone, a mount) is never shown here: the bottom
+-- screen's band has it, as ever (the app lays the band's line away only while the band is away: TopCombatBar.lineAt). Bottom screen
+-- (the default): nothing here, the app's strip across the bottom screen's top carries the cast AND the swing.
+-- WHAT: the player's own cast as noteCast keeps it (UNIT_SPELLCAST_* for "player" only - a pet's or a vehicle's never; read-only):
+-- the game's casting bar at its own size (208 x 11 units at the UI scale, as PlayerCastingBarFrame), in its own art by atlas name
+-- (UI-CastingBar-*: the Background, the standard fill growing, the channel fill draining, the uninterruptible fill, the Frame border,
+-- the Pip spark on the fill's edge; the success's full bar with its glow in over 0.2 s, held 0.2 s then faded by 0.5 s; the
+-- interrupted bar full with the game's INTERRUPTED / FAILED word, held 1 s, faded by 1.3 s - CastFx's times on the bottom), an atlas
+-- the client refuses = the game's classic tint; the cast's display text UNDER the bar on the game's TextBox plate (no plate for a
+-- blank one: "Opening - No Text"), the remaining time beside it only while the game's own player bar shows its cast time
+-- (PlayerCastingBarFrame.showCastTimeSetting, a plain read of the game's field).
+-- THE SWING (the user's pick "With the cast bar on top"): the swing line(s) just OVER the bar, as wide as it - the main hand's on top,
+-- the off hand's thinner under it hugging the bar (the bottom strip's order), one hand: one line hugging the bar; the bottom band's
+-- grey swing look (the standard fill desaturated). Over, not under: the name plate owns the room under the bar, and a line between the
+-- plate and the HUD would read as the HUD's own; over it the cast, its name and its swing stay one block. Only with the app's Swing
+-- timer on (PadMap m190 combatCastSwingOn) and only here - never the Wings' own lines, never both screens (one place).
+-- WHERE: centred on the HUD block (our bars and what hangs on them; Party mode's rows with it; the rows alone with our bars off), its
+-- bottom GAP px over the block's top (under it when no room is left above); no block: the game's own spot (centred, FLOOR over the
+-- bottom). Its room is PART of the HUD block for the Wings' solver (NB.cbRoom: HUD_MARGIN off it, the joined bar above it, the Wings'
+-- level still the block's own middle), from the first solve with the flag on - so nothing moves when a cast starts. Party mode's
+-- centring: the bar glides to the centred block over GLIDE_S (the HUD's fade out + in) while the Wings keep clear of it where it stands
+-- too ("hudnow"). COMBAT LEGALITY: plain frames, textures and font strings of our own (no template, never the mouse), anchored to
+-- UIParent, built in a fight too; only Show / Hide / SetPoint / SetAlpha / SetValue in a fight - nothing secure, no binding, no CVar,
+-- nothing of the game's written (the game's casting bar stays as the player set it: Hub's Hide, hub11).
+---------------------------------------------------------------------------------------------------
+NB.CB = { W = 208, H = 11, BG = 1, BORDER = 2, SPARK_W = 8, SPARK_H = 20, PLATE_W = 166, PLATE_H = 18, NAME_W = 156,
+          SW_GAP = 2, SW_H = 4, SW_OFF_H = 3, SW_SEP = 1, TIME_X = 4, TIME_W = 30, GAP = 12, FLOOR = 250,
+          OK_HOLD = 0.2, OK_S = 0.5, FAIL_HOLD = 1.0, FAIL_S = 1.3, GLOW_IN = 0.2, END_WAIT = 0.4, OUT_S = 0.2, GLIDE_S = 0.4,
+          SW_GRACE = 0.3, SW_OFF_A = 200 / 255, SW_RGB = { 0.59, 0.57, 0.54 },
+          A = { bg = "UI-CastingBar-Background", frame = "UI-CastingBar-Frame", plate = "UI-CastingBar-TextBox", spark = "UI-CastingBar-Pip",
+                c = "UI-CastingBar-Filling-Standard", h = "UI-CastingBar-Filling-Channel", ni = "UI-CastingBar-Uninterruptable",
+                fail = "UI-CastingBar-Interrupted", ok = "UI-CastingBar-Full-Standard", okh = "UI-CastingBar-Full-Channel",
+                glow = "UI-CastingBar-Full-Glow-Standard", glowh = "UI-CastingBar-Full-Glow-Channel" },
+          -- the game's classic tints (CastingBarFrame's start / channel / non-interruptible / failed / finished colours): a refused atlas
+          RGB = { c = { 1, 0.7, 0 }, h = { 0, 1, 0 }, ni = { 0.7, 0.7, 0.7 }, fail = { 1, 0, 0 }, ok = { 0, 1, 0 } } }
+-- the swing room over the bar, the border box, the plate under it (units, top to bottom)
+function NB.cbUnits()
+    local C = NB.CB
+    local sw = C.SW_GAP + C.SW_H + C.SW_SEP + C.SW_OFF_H
+    return sw, C.H + 2 * C.BORDER, C.PLATE_H
+end
+-- our bar wanted on the top screen in the takeover (the flag and Cast bar = Top screen)
+function NB.cbWanted()
+    local T = NB.top
+    return T.flag == true and T.castTop == true
+end
+-- the game's own player bar shows its cast time (Edit Mode's "Show Cast Time": the bar's own field, a plain read)
+function NB.cbTimeOn()
+    local f = rawget(_G, "PlayerCastingBarFrame")
+    if type(f) ~= "table" then return false end
+    local ok, v = pcall(rawget, f, "showCastTimeSetting")
+    return ok and v == true
+end
+-- THE SPOT (pure): the block [b] (1080-line px from the top-left; nil = none) on a [W] x [H] screen at [kk] px a UI unit -> the box
+-- { x, y, w, h } (the swing room, the bar's border, the plate; [timeOn]: the cast time's room past the right end), the bar's centre
+-- cx / cy, kk, H
+function NB.cbGeo(b, W, H, kk, timeOn)
+    local C = NB.CB
+    W, H = W or 1920, H or 1080
+    kk = (type(kk) == "number" and kk > 0) and kk or 1
+    local swu, bbu, plu = NB.cbUnits()
+    local bw = (C.W + 2 * C.BORDER) * kk
+    local tw = timeOn and (C.TIME_X + C.TIME_W) * kk or 0
+    local h = (swu + bbu + plu) * kk
+    local cx = b and (b.x + b.w / 2) or W / 2
+    local y = b and (b.y - C.GAP - h) or (H - C.FLOOR - h)
+    if b and y < 0 then y = b.y + b.h + C.GAP end                      -- no room left above the block: under it
+    y = math.max(0, math.min(H - h, y))
+    local x = math.max(0, math.min(W - bw - tw, cx - bw / 2))
+    return { x = x, y = y, w = bw + tw, h = h, cx = x + bw / 2, cy = y + (swu + C.BORDER + C.H / 2) * kk, kk = kk, H = H }
+end
+-- the block [b] with the bar's room over it (only while wanted): the union, the bar's spot, the block's own middle
+function NB.cbRoom(b)
+    if not (b and NB.cbWanted()) then return b, nil, nil end
+    local W, H, kk = NB.topScreen()
+    local g = NB.cbGeo(b, W, H, kk, NB.cbTimeOn())
+    return NB.union(b, g), g, b.y + b.h / 2
+end
+-- the bar's box where it stands NOW (shown, mid-glide: Party mode's centring) - kept clear too; nil when not shown
+function NB.cbNowRect()
+    local cb, at = NB.cb, NB.top.cbAt
+    if not (cb and cb.vis and cb.x and cb.y and at) then return nil end
+    return { x = at.x + (cb.x - at.cx), y = at.y + (cb.y - at.cy), w = at.w, h = at.h }
+end
+-- the parts as laid now (px from the top-left): bar (the fill's 208 x 11), border, plate, sw1 / sw2, time - shown ones (the bar and its
+-- border always while shown); nil when not shown
+function NB.cbRects()
+    local cb, at, C = NB.cb, NB.top.cbAt, NB.CB
+    if not (cb and cb.vis and cb.x and cb.y and at) then return nil end
+    local u = at.kk or 1
+    local bx, by = cb.x - C.W / 2 * u, cb.y - C.H / 2 * u
+    local out = { bar = { x = bx, y = by, w = C.W * u, h = C.H * u },
+                  border = { x = bx - C.BORDER * u, y = by - C.BORDER * u, w = (C.W + 2 * C.BORDER) * u, h = (C.H + 2 * C.BORDER) * u } }
+    if cb.bodyOn and cb.plate:IsShown() then
+        out.plate = { x = cb.x - C.PLATE_W / 2 * u, y = by + (C.H + C.BORDER) * u, w = C.PLATE_W * u, h = C.PLATE_H * u }
+    end
+    if cb.bodyOn and cb.time:IsShown() then out.time = { x = bx + (C.W + C.BORDER + C.TIME_X) * u, y = cb.y - 6 * u, w = C.TIME_W * u, h = 12 * u } end
+    for i = 1, 2 do
+        local s = cb.sw[i]
+        if s.on and s.up then out["sw" .. i] = { x = bx, y = by - s.up * u - s.hh * u, w = C.W * u, h = s.hh * u } end
+    end
+    return out
+end
+-- an atlas on [t]; false when the client refuses it (the real client answers false without raising)
+function NB.cbAtlas(t, a)
+    local ok, r = pcall(t.SetAtlas, t, a)
+    if not ok or r == false then return false end
+    t.cbA = a
+    return true
+end
+-- the frames (plain, our own; built on the first wanted frame, in a fight too)
+function NB.cbBuild()
+    local C = NB.CB
+    local ok, err = pcall(function()
+        local cb = { a = 0, vis = false, bodyOn = false, sw = {} }
+        local r = CreateFrame("Frame", nil, UIParent)
+        pcall(r.EnableMouse, r, false)
+        r:SetSize(C.W, C.H)
+        cb.root = r
+        local body = CreateFrame("Frame", nil, r)                     -- the cast's parts (the finish fades them, never the swing)
+        pcall(body.EnableMouse, body, false)
+        body:SetAllPoints(r)
+        cb.body = body
+        local bg = body:CreateTexture(nil, "BACKGROUND")
+        bg:SetPoint("TOPLEFT", body, "TOPLEFT", -C.BG, C.BG)
+        bg:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", C.BG, -C.BG)
+        if not NB.cbAtlas(bg, C.A.bg) then pcall(bg.SetColorTexture, bg, 0, 0, 0, 0.6) end
+        cb.bg = bg
+        local pl = body:CreateTexture(nil, "BACKGROUND")
+        pl:SetSize(C.PLATE_W, C.PLATE_H)
+        pl:SetPoint("TOP", body, "BOTTOM", 0, -C.BORDER)
+        if not NB.cbAtlas(pl, C.A.plate) then pcall(pl.SetColorTexture, pl, 0, 0, 0, 0.45) end
+        cb.plate = pl
+        local sb = CreateFrame("StatusBar", nil, body)
+        pcall(sb.EnableMouse, sb, false)
+        sb:SetAllPoints(body)
+        pcall(sb.SetMinMaxValues, sb, 0, 1)
+        pcall(sb.SetValue, sb, 0)
+        cb.sb = sb
+        local top = CreateFrame("Frame", nil, body)                   -- over the fill: the glow, the spark, the border, the words
+        pcall(top.EnableMouse, top, false)
+        top:SetAllPoints(body)
+        local okL, lv = pcall(sb.GetFrameLevel, sb)
+        pcall(top.SetFrameLevel, top, ((okL and type(lv) == "number") and lv or 1) + 2)
+        local gl = top:CreateTexture(nil, "ARTWORK")
+        gl:SetAllPoints(body)
+        pcall(gl.SetBlendMode, gl, "ADD")
+        gl:Hide()
+        cb.glow = gl
+        local sp = top:CreateTexture(nil, "OVERLAY")
+        sp:SetSize(C.SPARK_W, C.SPARK_H)
+        if not NB.cbAtlas(sp, C.A.spark) then pcall(sp.SetColorTexture, sp, 1, 1, 1, 0.85); sp:SetSize(2, C.H + 4) end
+        sp:Hide()
+        cb.spark = sp
+        local bd = top:CreateTexture(nil, "OVERLAY", nil, -1)
+        bd:SetPoint("TOPLEFT", body, "TOPLEFT", -C.BORDER, C.BORDER)
+        bd:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", C.BORDER, -C.BORDER)
+        if not NB.cbAtlas(bd, C.A.frame) then bd:Hide() end
+        cb.border = bd
+        local nm = top:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        nm:SetPoint("CENTER", pl, "CENTER", 0, 0)
+        pcall(nm.SetWidth, nm, C.NAME_W)
+        pcall(nm.SetWordWrap, nm, false)
+        nm:SetText("")
+        cb.name = nm
+        local tm = top:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        tm:SetPoint("LEFT", body, "RIGHT", C.BORDER + C.TIME_X, 0)
+        tm:SetText("")
+        tm:Hide()
+        cb.time = tm
+        -- the swing lines (on the root: a cast's finish never fades them), placed by NB.cbSwing
+        for i = 1, 2 do
+            local b = CreateFrame("Frame", nil, r)
+            pcall(b.EnableMouse, b, false)
+            b.hh = (i == 1) and C.SW_H or C.SW_OFF_H
+            b:SetSize(C.W, b.hh)
+            b.bg = b:CreateTexture(nil, "BACKGROUND")
+            b.bg:SetAllPoints(b)
+            pcall(b.bg.SetColorTexture, b.bg, 0, 0, 0, 0.6)
+            b.fill = b:CreateTexture(nil, "ARTWORK")
+            b.fill:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+            b.fill:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
+            b.fill:SetWidth(1)
+            if NB.cbAtlas(b.fill, C.A.c) then pcall(b.fill.SetDesaturated, b.fill, true)
+            else pcall(b.fill.SetColorTexture, b.fill, C.SW_RGB[1], C.SW_RGB[2], C.SW_RGB[3], 1) end
+            if i == 2 then pcall(b.SetAlpha, b, C.SW_OFF_A) end
+            b:Hide()
+            cb.sw[i] = b
+        end
+        body:Hide()
+        r:Hide()
+        NB.cb = cb
+    end)
+    if not ok then noteError(err) end
+    return ok and NB.cb ~= nil
+end
+-- THE LOOK at [now] (GetTime) from noteCast's state: nil = nothing to show; else { kind = "c" cast / "h" channel / "ok" / "fail", p
+-- (the fill 0..1), atlas, rgb, name, left (s, a running cast), spark, glow (0..1), glowA (its atlas), alpha (the cast parts') }
+function NB.cbLook(now)
+    local C = NB.CB
+    local cn, ce = castNow, castEnd
+    if type(cn) == "table" then
+        if type(cn.s) ~= "number" or type(cn.e) ~= "number" or cn.e <= cn.s or now > cn.e + C.END_WAIT then return nil end
+        local p = math.max(0, math.min(1, (now - cn.s) / (cn.e - cn.s)))
+        local ch = cn.k == "h"
+        local key = (cn.n == 1) and "ni" or (ch and "h" or "c")
+        NB.cbName = realStr(cn.nm) or ""
+        local fill = ch and (1 - p) or p
+        return { kind = ch and "h" or "c", p = fill, atlas = C.A[key], rgb = C.RGB[key], name = NB.cbName, left = math.max(0, cn.e - now),
+                 spark = ch and fill > 0.001 or (fill > 0.001 and fill < 0.999), glow = 0, alpha = 1 }
+    end
+    if type(ce) ~= "table" or type(ce.t) ~= "number" then return nil end
+    local age = now - ce.t
+    if age < 0 then return nil end
+    if ce.x == 1 then
+        if age >= C.OK_S then return nil end
+        local ch = ce.h == 1
+        return { kind = "ok", p = 1, atlas = ch and C.A.okh or C.A.ok, rgb = C.RGB.ok, name = NB.cbName or "", spark = false,
+                 glow = math.min(1, age / C.GLOW_IN), glowA = ch and C.A.glowh or C.A.glow,
+                 alpha = (age <= C.OK_HOLD) and 1 or math.max(0, 1 - (age - C.OK_HOLD) / (C.OK_S - C.OK_HOLD)) }
+    end
+    if age >= C.FAIL_S then return nil end
+    local w = (ce.f == 1) and (realStr(rawget(_G, "FAILED")) or "Failed") or (realStr(rawget(_G, "INTERRUPTED")) or "Interrupted")
+    return { kind = "fail", p = 1, atlas = C.A.fail, rgb = C.RGB.fail, name = w, spark = false, glow = 0,
+             alpha = (age <= C.FAIL_HOLD) and 1 or math.max(0, 1 - (age - C.FAIL_HOLD) / (C.FAIL_S - C.FAIL_HOLD)) }
+end
+-- the fill's art [a] (the game's atlas; refused: the classic bar texture tinted [rgb]) - set only on a change
+function NB.cbFill(a, rgb)
+    local cb = NB.cb
+    if cb.fillAsk == a then return end
+    cb.fillAsk = a
+    local sb = cb.sb
+    local ok = pcall(sb.SetStatusBarTexture, sb, a)
+    local okT, t = pcall(sb.GetStatusBarTexture, sb)
+    if ok and okT and type(t) == "table" and type(t.GetAtlas) == "function" then
+        local okA, got = pcall(t.GetAtlas, t)
+        if okA and (type(got) ~= "string" or got:lower() ~= a:lower()) then
+            local okS, r = pcall(t.SetAtlas, t, a)
+            ok = okS and r ~= false
+        end
+    end
+    if not ok and rgb then
+        pcall(sb.SetStatusBarTexture, sb, "Interface\\TargetingFrame\\UI-StatusBar")
+        pcall(sb.SetStatusBarColor, sb, rgb[1], rgb[2], rgb[3], 1)
+    elseif rgb then
+        pcall(sb.SetStatusBarColor, sb, 1, 1, 1, 1)
+    end
+end
+-- [lk] onto the frames (the cast's parts; nil = none of them)
+function NB.cbPaint(lk)
+    local cb, C = NB.cb, NB.CB
+    if not lk then
+        if cb.bodyOn then cb.bodyOn = false; cb.body:Hide(); cb.spark:Hide(); cb.sparkX = nil end
+        return
+    end
+    if not cb.bodyOn then cb.bodyOn = true; cb.body:Show() end
+    NB.cbFill(lk.atlas, lk.rgb)
+    pcall(cb.sb.SetValue, cb.sb, lk.p)
+    if lk.spark then
+        pcall(cb.spark.ClearAllPoints, cb.spark)
+        cb.spark:SetPoint("CENTER", cb.body, "LEFT", lk.p * C.W, 0)
+        cb.spark:Show()
+        local u = (NB.top.cbAt and NB.top.cbAt.kk) or 1
+        cb.sparkX = cb.x - C.W / 2 * u + lk.p * C.W * u
+    else
+        cb.spark:Hide(); cb.sparkX = nil
+    end
+    if (lk.glow or 0) > 0 and lk.glowA then
+        if cb.glow.cbA ~= lk.glowA and not NB.cbAtlas(cb.glow, lk.glowA) then pcall(cb.glow.SetColorTexture, cb.glow, 1, 1, 1, 0.5) end
+        pcall(cb.glow.SetAlpha, cb.glow, lk.glow)
+        cb.glow:Show()
+    else
+        cb.glow:Hide()
+    end
+    local nm = lk.name or ""
+    if cb.nameWas ~= nm then cb.nameWas = nm; cb.name:SetText(nm) end
+    if nm ~= "" then cb.plate:Show(); cb.name:Show() else cb.plate:Hide(); cb.name:Hide() end
+    if lk.left and NB.cbTimeOn() then
+        cb.time:SetText(string.format("%.1f", lk.left)); cb.time:Show()
+    else
+        cb.time:Hide()
+    end
+    pcall(cb.body.SetAlpha, cb.body, lk.alpha or 1)
+end
+-- the swing line(s) over the bar (see the section's note): the off hand hugging the bar under the main hand's; one hand: it hugs it
+function NB.cbSwing(now)
+    local cb, C, T = NB.cb, NB.CB, NB.top
+    local ok, sw, so = false, nil, nil
+    if T.castSw ~= false then ok, sw, so = pcall(WC.swingDoc, now) end
+    for i, r in ipairs({ ok and sw or false, ok and so or false }) do
+        local b = cb.sw[i]
+        if type(r) == "table" and type(r.s) == "number" and type(r.d) == "number" and r.d > 0 and now >= r.s and now < r.s + r.d + C.SW_GRACE then
+            b.k = math.max(0, math.min(1, (now - r.s) / r.d))
+            b.fill:SetWidth(math.max(0.01, b.k * C.W))
+            b.on = true
+        else
+            b.k, b.on = nil, false
+        end
+    end
+    local base = C.BORDER + C.SW_GAP                                    -- from the bar's top edge up to the lowest line's bottom
+    local dual = cb.sw[1].on and cb.sw[2].on
+    local ups = { dual and (base + C.SW_OFF_H + C.SW_SEP) or base, base }
+    for i = 1, 2 do
+        local b = cb.sw[i]
+        if b.on then
+            if b.up ~= ups[i] then
+                b.up = ups[i]
+                pcall(b.ClearAllPoints, b)
+                b:SetPoint("BOTTOM", cb.root, "TOP", 0, b.up)
+            end
+            if not b:IsShown() then b:Show() end
+        elseif b:IsShown() then
+            b:Hide()
+        end
+    end
+end
+-- every frame (NB.topTick): shown on the switch's first frame, out over OUT_S; the spot (a glide when it moves while shown); the look
+function NB.cbTick(el)
+    local C, T = NB.CB, NB.top
+    el = el or 0
+    local on = NB.cbWanted() and T.want == true and T.cbAt ~= nil
+    local cb = NB.cb
+    if not cb then
+        if not on or not NB.cbBuild() then return end
+        cb = NB.cb
+    end
+    if on then cb.a = 1 else cb.a = math.max(0, (cb.a or 0) - el / C.OUT_S) end
+    local at = T.cbAt
+    if cb.a <= 0 or not at then
+        if cb.vis then
+            cb.vis, cb.look, cb.x, cb.y, cb.gTo, cb.key = false, nil, nil, nil, nil, nil
+            for i = 1, 2 do cb.sw[i].on, cb.sw[i].k = false, nil; cb.sw[i]:Hide() end
+            cb.root:Hide()
+        end
+        return
+    end
+    if not cb.vis or cb.x == nil then
+        cb.x, cb.y, cb.gTo = at.cx, at.cy, nil
+    elseif math.abs(cb.x - at.cx) + math.abs(cb.y - at.cy) > 0.05 then
+        if not cb.gTo or cb.gTo.x ~= at.cx or cb.gTo.y ~= at.cy then cb.gFrom, cb.gTo, cb.gt = { x = cb.x, y = cb.y }, { x = at.cx, y = at.cy }, 0 end
+        cb.gt = math.min(1, cb.gt + el / C.GLIDE_S)
+        local e = NB.ease(cb.gt)
+        cb.x, cb.y = cb.gFrom.x + (cb.gTo.x - cb.gFrom.x) * e, cb.gFrom.y + (cb.gTo.y - cb.gFrom.y) * e
+        if cb.gt >= 1 then cb.x, cb.y, cb.gTo = at.cx, at.cy, nil end
+    end
+    local kk, H = at.kk or 1, at.H or 1080
+    local key = string.format("%.2f %.2f %.4f", cb.x, cb.y, kk)
+    if key ~= cb.key then
+        cb.key = key
+        pcall(cb.root.ClearAllPoints, cb.root)
+        cb.root:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cb.x / kk, (H - cb.y) / kk)
+    end
+    local now = SN(GetTime) or 0
+    local lk = NB.cbLook(now)
+    cb.look = lk
+    NB.cbPaint(lk)
+    NB.cbSwing(now)
+    pcall(cb.root.SetAlpha, cb.root, cb.a)
+    if not cb.vis then cb.vis = true; cb.root:Show() end
 end
 function NB.topEvent(e)
     local T = NB.top

@@ -17,6 +17,7 @@ package com.jrees.wowcompanion
  *                                 rbm (movable Home, PadMap m178: the toolbar's mirror bit; a reset = Left is the chat again, mirror 0),
  *                                 ctop (movable Home phase 3, PadMap m179: the top-screen combat bar's flag; a reset = off, the band grows)
  *                                 ctcb (PadMap m187: "Cast bar in fights: Top screen"; a reset = Bottom screen)
+ *                                 ctsw (PadMap m190: the swing with our top cast bar; a reset = on)
  *                        NEVER   formSlotsBy, smartModel, cdLearn, petSpellBy, petDeadBy (learned / remembered game facts); dpadZL,
  *                                 srGone, srBy, srMacros, genUse, fix181, keyProbe, aclOurs, aclReset1 (one-time clean-ups / probes: a
  *                                 reset would run them again); faceSwap, faceCd, combatFace (crash recovery / learned, never synced);
@@ -103,6 +104,7 @@ object ResetPlan {
         SvKey(SPELLS, "rbm", Kind.LAYOUTS, true),                                   // movable Home: the DS toolbar's mirror bit (none = off)
         SvKey(SPELLS, "ctop", Kind.LAYOUTS, true),                                  // movable Home phase 3: the top-screen combat bar (none = off)
         SvKey(SPELLS, "ctcb", Kind.LAYOUTS, true),                                  // PadMap m187: "Cast bar in fights" (none = Bottom screen)
+        SvKey(SPELLS, "ctsw", Kind.LAYOUTS, true),                                  // PadMap m190: the swing with our top cast bar (none = on)
         *listOf("lay", "hubSw", "hubLy", "meters", "prdY", "prdS", "prdW").map { SvKey(DB, it, Kind.LAYOUTS, true) }.toTypedArray(),
         SvKey(DB, "bagBinds", Kind.SKILLS, true),
         *listOf("compass", "hideTips", "aggroRings", "lootTop").map { SvKey(DB, it, Kind.SETTINGS, false) }.toTypedArray(),

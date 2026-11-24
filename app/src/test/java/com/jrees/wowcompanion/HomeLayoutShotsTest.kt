@@ -873,9 +873,9 @@ class HomeLayoutShotsTest {
             assertTrue("cut at $cutAt: the band left the page's top ($bandB)", bandB.first() < rb.bottom + 0.01f)
             assertEquals("cut at $cutAt: landed away", -16f, boxes(home).getValue("BARS").bottom, 0.01f)
             assertTrue("cut at $cutAt: the band's view is away (it gives up its cast bar)", p.cast.away)
-            // Cast bar in fights = Top screen (this page's record, cc 1): the game's own bar shows the cast on the top screen, so the
-            // rooms' bar leaves it out too (CastView.lineTop: Home "has" it) - nothing of it on the bottom screen
-            assertTrue("cut at $cutAt: the game's bar up top: the rooms' bar leaves the cast out", p.cast.lineTop && p.cast.ownCastBarShown())
+            // Cast bar in fights = Top screen (this page's record, cc 1): our own bar above the HUD shows the cast on the top screen
+            // (feat/top-castbar), so the band's line is away and the rooms' bar leaves it out too - nothing of it on the bottom screen
+            assertTrue("cut at $cutAt: our bar up top: the rooms' bar leaves the cast out", p.cast.lineAway && p.cast.ownCastBarShown())
             // a re-lay once landed (laid away already): away stays
             applyNow(home, home.flow.screen, animate = true)
             for (i in 0 until 20) frame()

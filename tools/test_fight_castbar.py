@@ -6,7 +6,8 @@ the swing timer."
 
     python -B tools/test_fight_castbar.py
 
-Proven here:
+Proven here (nbar18 / hub78 / m190 / b78, the user's reversal 2026-11-24: our own top bar; the game's casting bar never shown
+again; the swing follows the cast bar and the app's Swing timer):
   1 PadMap m187: by default `cc` = 0 and combatCastTopOn() false (Bottom screen); the app's page-3 code 25 (padtab 39, 38, 37 then 25;
     Book b77) turns this character's flag on (WowCompanionSpellsDB.ctcb[name-realm] = 1, `cc` = 1, a padmap sent), 24 off; a code in a
     fight is remembered at once (a display flag: nothing protected); per character; `ct` (22 / 23) untouched by it and it by them; the
@@ -67,10 +68,12 @@ def sent_cc(L, n0):
 
 
 # ------------------------------------------------------------------------------------------------ 0 the tags
-check('local PV = "m189"' in SRC["padmap"] and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
-      and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap m188 (m187's and m179's notes kept)")
-check('local BV = "b77"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]
-      and "for k = 0, 1 do P3[24 + k]" in SRC["book"], "0. Book b77 and its codes 24 / 25")
+check('local PV = "m190"' in SRC["padmap"] and "m190 THE SWING WITH OUR TOP CAST BAR" in SRC["padmap"]
+      and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
+      and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap m190 (m187's and m179's notes kept)")
+check('local BV = "b78"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]
+      and "for k = 0, 1 do P3[24 + k]" in SRC["book"] and "b78 THE SWING WITH OUR TOP CAST BAR" in SRC["book"]
+      and "for k = 0, 1 do P3[26 + k]" in SRC["book"], "0. Book b78 (b77's codes 24 / 25 kept) and its codes 26 / 27")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")
 
 W = boot()
@@ -114,6 +117,46 @@ W.execute('WowCompanion.dsfReset(21)')
 check(W.eval('(WowCompanionSpellsDB.ctcb or {})[WHO .. "-" .. REALM]') is None and st(W)[1] == 0, "1. Layouts reset: the flag gone (Bottom)")
 clean(W, "1 (reset)")
 
+# ------------------------------------------------------------------------------------------------ 1b PadMap m190 / Book b78: the swing
+def cs(Lx):
+    return Lx.eval('WowCompanion.padMap.dpadState()')['cs']
+
+
+check(cs(W) == 1 and W.eval(pm + '.combatCastSwingOn()') is True, "1b. no flag: cs = 1 (the swing with our top bar on: the default)", cs(W))
+n0 = int(W.eval('#SENT'))
+padtab(W, 39, 38, 37, 26)
+W.execute('runTimers(NOW + 1)')
+check(W.eval('(WowCompanionSpellsDB.ctsw or {})[WHO .. "-" .. REALM]') == 0 and W.eval(pm + '.combatCastSwingOn()') is False and cs(W) == 0,
+      "1b. code 26: this character's swing off (ctsw[name-realm] = 0, cs = 0)", cs(W))
+sw_sent = []
+for i in range(n0 + 1, int(W.eval('#SENT')) + 1):
+    try:
+        d = json.loads(W.eval('SENT[%d]' % i))
+    except Exception:      # noqa: BLE001
+        continue
+    if isinstance(d, dict) and d.get('type') == 'padmap':
+        sw_sent.append(((d.get('m') or {}).get('dpad') or {}).get('cs'))
+check(0 in sw_sent, "1b. a padmap with cs = 0 sent (the app stops re-sending)", sw_sent)
+check(st(W) == (0, 0), "1b. ... ct and cc untouched", st(W))
+padtab(W, 39, 38, 37, 25)
+W.execute('runTimers(NOW + 1)')
+check(cs(W) == 0 and st(W)[1] == 1, "1b. code 25 (cc on) leaves cs as it was", (cs(W), st(W)))
+W.execute('fightOn()')
+padtab(W, 39, 38, 37, 27)
+W.execute('tick(0.5)')
+check(W.eval(pm + '.combatCastSwingOn()') is True, "1b. code 27 in a fight: on again at once (a display flag)")
+clean(W, "1b (in the fight)")
+W.execute('fightOff(); tick(0.5); runTimers(NOW + 2); tick(0.5)')
+W.execute('WowCompanionSpellsDB.ctsw["Other-" .. REALM] = 0')
+check(cs(W) == 1, "1b. per character (another's off: mine on)")
+padtab(W, 39, 38, 37, 26)
+W.execute('runTimers(NOW + 1)')
+keys = W.eval('WowCompanion.dsfResetKeys.spells.layouts')
+check(keys is not None and "ctsw" in [keys[i] for i in range(1, len(keys) + 1)], "1b. ctsw is in the add-on's Layouts list (= ResetPlan's)")
+W.execute('WowCompanion.dsfReset(21)')
+check(W.eval('(WowCompanionSpellsDB.ctsw or {})[WHO .. "-" .. REALM]') is None and cs(W) == 1, "1b. Layouts reset: the flag gone (on)")
+clean(W, "1b (reset)")
+
 # ------------------------------------------------------------------------------------------------ 3 PadMap m188 (ActionBar nbar14's reads)
 check("m188 THE B RULE AND THE GAME'S SWING TIMER" in SRC["padmap"], "3. PadMap m188's note")
 W3 = boot()
@@ -130,38 +173,23 @@ W3.execute('IN_SECURE = true; local names = %s.routerButtons(); for _, n in pair
            'b:SetAttribute("wc-given", false) end end; IN_SECURE = false' % pm)
 check(W3.eval(pm + '.fightSw()') is True, "3. ... re-armed (nothing given back again): on")
 W3.execute('fightOff(); tick(0.5); runTimers(NOW + 2)')
-# the game's own swing timer: Edit Mode's account setting, read-only; unknown = off (the stub's Enum makes a table for any key and
-# drops plain assignments: rawset, so the client's own enum entry is what is read)
-check(W3.eval(pm + '.gameSwingOn()') is False and W3.eval(pm + '.dpadState().gsw') == 0, "3. m188 no C_EditMode: the game's swing timer unknown = off (gsw 0)")
+# m190: m188's read of the GAME's own swing timer is gone (the swing goes where the cast bar goes): no gameSwingOn, no `gsw`, no Edit
+# Mode read, a change of it sends nothing
+check(W3.eval('type(%s.gameSwingOn)' % pm) == "nil" and W3.eval(pm + '.dpadState().gsw') is None,
+      "3. m190: no gameSwingOn export, no gsw in dpadState")
 n0 = int(W3.eval('#SENT'))
-W3.execute('C_EditMode = { GetAccountSettings = function() return { { setting = 36, value = 0 }, { setting = 37, value = 1 } } end }; '
+W3.execute('EDITREADS = 0; C_EditMode = { GetAccountSettings = function() EDITREADS = EDITREADS + 1; return { { setting = 37, value = 1 } } end }; '
            'Enum = Enum or {}; rawset(Enum, "EditModeAccountSetting", { ShowSwingTimer = 37 }); fire("EDIT_MODE_LAYOUTS_UPDATED"); runTimers(NOW + 1)')
-check(W3.eval(pm + '.gameSwingOn()') is True and W3.eval(pm + '.dpadState().gsw') == 1, "3. m188 ShowSwingTimer 1: gsw 1")
-gs = []
-for i in range(n0 + 1, int(W3.eval('#SENT')) + 1):
-    try:
-        d = json.loads(W3.eval('SENT[%d]' % i))
-    except Exception:      # noqa: BLE001
-        continue
-    if isinstance(d, dict) and d.get('type') == 'padmap':
-        gs.append(((d.get('m') or {}).get('dpad') or {}).get('gsw'))
-check(1 in gs, "3. ... the change sends a padmap with gsw 1 (the app's strip follows)", gs)
-W3.execute('C_EditMode.GetAccountSettings = function() return { { setting = 37, value = 0 } } end; fightOn(); fire("EDIT_MODE_LAYOUTS_UPDATED"); tick(0.5)')
-check(W3.eval(pm + '.gameSwingOn()') is True, "3. ... in a fight nothing is read again (the value kept)")
-W3.execute('fightOff(); fire("PLAYER_REGEN_ENABLED"); tick(0.5); runTimers(NOW + 2)')
-check(W3.eval(pm + '.gameSwingOn()') is False, "3. ... read again after it (0: off)")
-# the review (11-23): a client whose Enum has no ShowSwingTimer entry - no hard-coded number (it would read ANOTHER setting): off
-W3.execute('C_EditMode.GetAccountSettings = function() return { { setting = 37, value = 1 } } end; '
-           'rawset(Enum, "EditModeAccountSetting", { ShowGrid = 0 }); fire("EDIT_MODE_LAYOUTS_UPDATED"); tick(0.5); runTimers(NOW + 3)')
-check(W3.eval(pm + '.gameSwingOn()') is False, "3. ... no ShowSwingTimer in the client's Enum: off (setting 37 = 1 not read as it)")
+check(W3.eval('EDITREADS') == 0, "3. m190: Edit Mode's account settings never read", W3.eval('EDITREADS'))
 clean(W3, "3")
 
 # ------------------------------------------------------------------------------------------------ 2 Hub hub76
 from wowstub import ADDONS, boot_world      # noqa: E402
 
 HUB = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
-check(re.search(r'local HV = "hub77"', HUB) is not None and "hub76 THE GAME'S CAST BAR BACK FOR A TOP-SCREEN FIGHT" in HUB
-      and "hub75 THE GAME'S LATENCY" in HUB, "2. Hub hub76 and its note (hub75's kept)")
+check(re.search(r'local HV = "hub78"', HUB) is not None and "hub78 THE GAME'S CAST BAR STAYS AS THE PLAYER SET IT" in HUB
+      and "hub76 THE GAME'S CAST BAR BACK FOR A TOP-SCREEN FIGHT" in HUB and "hub75 THE GAME'S LATENCY" in HUB,
+      "2. Hub hub78 and its note (hub76's / hub75's kept)")
 
 # the game's casting bar: a plain table with the methods Hub uses; every other call is logged (none may come)
 PRE = r'''
@@ -208,40 +236,28 @@ def hubdoc():
     return None
 
 
-check(L.eval('type(WowCompanion.hubCastFight)') == "function", "2. Hub hands ActionBar its word: WC.hubCastFight")
+check(L.eval('type(WowCompanion.hubCastFight)') == "nil" and L.eval('type(WowCompanion.hub.cbFight)') == "nil",
+      "2. hub78: no WC.hubCastFight / hub.cbFight (the game's cast bar is never shown for a fight any more)")
 L.execute('WowCompanion.hub.cbSet(true)')
 check(L.eval('CBF.alpha') == 0, "2. the player's Hide: the game's casting bar at alpha 0", L.eval('CBF.alpha'))
 L.execute('CBF.casting = true; CBF:ApplyAlpha(1)')       # a cast starts: the game puts its alpha back; hub11's post-hook zeroes it
 L.execute('if CBF.hooks.OnShow then CBF.hooks.OnShow(CBF) end')
 check(L.eval('CBF.alpha') == 0, "2. ... a cast while hidden stays at 0 (hub11's hooks)", L.eval('CBF.alpha'))
-# the Wings' Top-screen fight with "Cast bar in fights: Top screen"
-L.execute('WowCompanion.hubCastFight(true)')
-check(L.eval('CBF.alpha') == 1, "2. the fight's word: the casting bar shown at once (alpha 1)", L.eval('CBF.alpha'))
-L.execute('CBF:ApplyAlpha(1); if CBF.hooks.OnShow then CBF.hooks.OnShow(CBF) end; WowCompanion.hub.cbCheck()')
-check(L.eval('CBF.alpha') == 1, "2. ... the game's own ApplyAlpha / OnShow and the heartbeat no longer zero it", L.eval('CBF.alpha'))
+L.execute('_G.InCombatLockdown = function() return true end; CBF:ApplyAlpha(1); if CBF.hooks.OnShow then CBF.hooks.OnShow(CBF) end; '
+          'WowCompanion.hub.cbCheck()')
+check(L.eval('CBF.alpha') == 0, "2. ... in a fight too (no fight reveal): still 0", L.eval('CBF.alpha'))
 d = hubdoc()
 cbd = (d or {}).get("cb") or {}
-check(cbd.get("hidden") is True and cbd.get("ft") == 1, "2. the document: cb.hidden stays the player's word (true), ft = 1", cbd)
-# the fight's end: the player's Hide back, a cast still running zeroed at once
-L.execute('WowCompanion.hubCastFight(false)')
-check(L.eval('CBF.alpha') == 0, "2. the fight's end: back at alpha 0 (a cast still running too)", L.eval('CBF.alpha'))
-L.execute('CBF:ApplyAlpha(1)')
-check(L.eval('CBF.alpha') == 0, "2. ... and the hooks zero it again", L.eval('CBF.alpha'))
-# hub76 review: the fight ends while the last cast's fade plays (an interrupt's HoldFadeOutAnim drives the alpha itself): stopped at once
-L.execute('WowCompanion.hubCastFight(true); CBF.alpha = 1; CBF.HoldFadeOutAnim.playing = true; ANIM_STOPS = 0')
-L.execute('WowCompanion.hubCastFight(false)')
+check(cbd.get("hidden") is True and "ft" not in cbd, "2. the document: cb.hidden the player's word, no ft (hub76's reveal gone)", cbd)
+# hidden again while a fade plays (an interrupt's HoldFadeOutAnim drives the alpha itself): stopped at once (hub76 review, kept)
+L.execute('WowCompanion.hub.cbSet(false); CBF.alpha = 1; CBF.HoldFadeOutAnim.playing = true; ANIM_STOPS = 0')
+L.execute('WowCompanion.hub.cbSet(true)')
 check(L.eval('CBF.HoldFadeOutAnim.playing') is False and L.eval('ANIM_STOPS') == 1 and L.eval('CBF.alpha') == 0,
-      "2. the fight's end stops a fade already playing (no lingering bar) and zeroes the bar",
+      "2. Hide while a fade plays stops it (no lingering bar) and zeroes the bar",
       (L.eval('CBF.HoldFadeOutAnim.playing'), L.eval('ANIM_STOPS'), L.eval('CBF.alpha')))
-L.execute('ANIM_STOPS = 0; WowCompanion.hubCastFight(true); WowCompanion.hubCastFight(false)')
-check(L.eval('ANIM_STOPS') == 0, "2. ... nothing stopped when no fade plays", L.eval('ANIM_STOPS'))
-d = hubdoc()
-cbd = (d or {}).get("cb") or {}
-check(cbd.get("hidden") is True and "ft" not in cbd, "2. the document: no ft after the fight", cbd)
-# the player SHOWS the game's bar: the fight's word changes nothing
-L.execute('WowCompanion.hub.cbSet(false); CBF.casting = false; CBF.alpha = 0.7')
-L.execute('WowCompanion.hubCastFight(true); WowCompanion.hubCastFight(false)')
-check(L.eval('CBF.alpha') == 0.7, "2. the player's Show: the fight's word never touches the bar (alpha as the game left it)", L.eval('CBF.alpha'))
+# the player SHOWS the game's bar: left alone (alpha as the game left it), in fights too
+L.execute('WowCompanion.hub.cbSet(false); CBF.casting = false; CBF.alpha = 0.7; WowCompanion.hub.cbCheck()')
+check(L.eval('CBF.alpha') == 0.7, "2. the player's Show: the bar never touched (alpha as the game left it)", L.eval('CBF.alpha'))
 calls = [L.eval('CB_CALLS[%d]' % i) for i in range(1, int(L.eval('#CB_CALLS')) + 1)]
 check(set(calls) <= {"SetAlpha"}, "2. only SetAlpha ever called on the game's bar (no Hide / Show / SetParent / SetPoint)", sorted(set(calls)))
 check(L.eval('__writes') == 0, "2. no CVar or binding written", L.eval('__writes'))
