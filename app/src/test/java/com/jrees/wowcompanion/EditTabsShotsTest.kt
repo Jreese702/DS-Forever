@@ -266,6 +266,32 @@ class EditTabsShotsTest {
         assertNull("the zoom goes with the chrome", p.home.pageZoom())
     }
 
+    /** the review: a finger reaches the page's very edges through the zoom (the bar's far corner, the chat's first px) and the tab row's
+     *  ends off its tabs do nothing */
+    @Test fun aFingerReachesThePagesEdgesThroughTheZoom() {
+        val p = page(REC, party = false)
+        p.home.editOpen(EditStop.CHAT); settle(40)
+        val m = model(p)
+        val zz = p.home.pageZoom()!!
+        val zm = android.graphics.Matrix().apply { postScale(zz.first, zz.first, W / 2f, 0f); postTranslate(0f, zz.second) }
+        fun at(x: Float, y: Float): FloatArray = floatArrayOf(x, y).also { zm.mapPoints(it) }
+        val bar = boxes(p.home).getValue("STRIP")
+        at(bar.right - 3f, bar.bottom - 3f).let { tap(p, it[0], it[1]) }
+        assertEquals("the bar's far corner", EditStop.CAST, m.cursor)
+        val chat = boxes(p.home).getValue("CHAT")
+        at(chat.left + 3f, chat.top + 3f).let { tap(p, it[0], it[1]) }
+        assertEquals("the chat's first px", EditStop.CHAT, m.cursor)
+        // the row's ends (the L / R glyphs, off every tab): nothing - the tab and the cursor stay
+        for (x in listOf(3f, W - 3f)) { tap(p, x, HomeEditView.TAB_ROW / 2f); assertEquals(HomeTab.OUT, m.tab); assertEquals(EditStop.CHAT, m.cursor) }
+        // the tab row's own last px is the row's, the page's first px the page's (the band: no tab change)
+        val t = p.home.editChrome.tabRects(W.toFloat())[2]
+        tap(p, t.centerX(), HomeEditView.TAB_ROW - 1f)
+        assertEquals(HomeTab.PARTY, m.tab)
+        tap(p, p.home.editChrome.tabRects(W.toFloat())[0].centerX(), HomeEditView.TAB_ROW + 1f)
+        assertEquals("under the row: the page's", HomeTab.PARTY, m.tab)
+        p.home.editCancel()
+    }
+
     /** Combat bars = Top screen on the In combat tab: the band away, the Cast bar row; and Grow on / off for the three bar shapes */
     @Test fun topScreenAndGrowOnOff() {
         val top = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
@@ -323,6 +349,22 @@ class EditTabsShotsTest {
         fightWord(off.home, off.cast, true); settle(40)
         assertEquals("slid away below the page", H.toFloat(), boxes(off.home).getValue("STRIP").top, 0.5f)
         shot(off, "05d_fight_bar_off_on_in_combat_slid_away")
+    }
+
+    /** the review: Home shows a fight tab's OWN badges as Edit Home shows them - its list, not Settings' rows (the Out of combat tab's):
+     *  Party mode's own Hearthstone shows with Settings' row Off, and its own empty list shows none with the row On */
+    @Test fun aFightTabsOwnBadgesShowOnHome() {
+        val items = HomeView::class.java.getDeclaredMethod("bandItems").apply { isAccessible = true }
+        fun n(h: HomeView) = (items.invoke(h) as List<*>).size
+        ItemCd.reset()                                                      // (the Hearthstone known, no teleport, no pet: only it can show)
+        val p = page(HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT).withBadges(HomeTab.PARTY, listOf("gold", "hearth")), partyOn = true)
+        HomeSettings.clockHearth = false
+        assertEquals("Party mode's own Hearthstone", 1, n(p.home))
+        HomeLayoutStore.update { it.withBadges(HomeTab.PARTY, emptyList()) }
+        HomeSettings.clockHearth = true
+        assertEquals("Party mode's own list has none", 0, n(p.home))
+        HomeLayoutStore.update { it.withBadges(HomeTab.PARTY, null) }
+        assertEquals("none of its own: Settings' rows", 1, n(p.home))
     }
 
     /** Party mode on lays Party mode's page (solo too); its own Bottom screen grows the band in its fight, Party mode's controls on it */

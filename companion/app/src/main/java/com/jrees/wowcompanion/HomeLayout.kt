@@ -288,6 +288,10 @@ data class HomeLayout(
             CastStripModel.Side.LEFT -> if (chatSide == Side.LEFT) CastDock.UNDER_CHAT else CastDock.UNDER_MAP
             CastStripModel.Side.RIGHT -> if (chatSide == Side.LEFT) CastDock.UNDER_MAP else CastDock.UNDER_CHAT
         }.withTop(keepTop)
+        /** EDIT TABS (the review): clock badge [key] shown on a tab whose own list is [mine] - exactly that list when it has one (Edit Home
+         *  shows a fight tab's own list whatever Settings says, so the fight shows the same), else Settings' row ([settingsOn]: the Out
+         *  of combat tab's badges) */
+        fun badgeOn(key: String, mine: List<String>?, settingsOn: Boolean): Boolean = mine?.contains(key) ?: settingsOn
     }
 }
 
@@ -318,7 +322,10 @@ object HomeLayoutJson {
         .also { o -> tabs(o, l, full) }
         .toString()
 
-    /** the tabs' flat keys (see [json]) */
+    /** the tabs' flat keys (see [json]). THE DOWNGRADE (the review): an older build reads the Out of combat tab and In combat's Combat bars
+     *  / Cast bar as it always did and ignores these keys, but its next save of the record writes them away - the fight tabs read as
+     *  copies of the Out of combat places again after an upgrade (the one-time migration does not run twice: HomeLayoutStore's
+     *  KEY_TABS_MIGRATED), with Party mode's Combat bars following In combat's (R0). Nothing else of the record is lost */
     private fun tabs(o: JSONObject, l: HomeLayout, full: Boolean) {
         for ((pre, t) in listOf("c." to HomeTab.COMBAT, "p." to HomeTab.PARTY)) {
             val own = l.own(t).places
@@ -413,6 +420,9 @@ object HomeLayoutMigration {
  */
 enum class HomeTab(val word: String, val view: String) {
     OUT("Out of combat", "normal"), COMBAT("In combat", "combat"), PARTY("Party mode", "party");
+
+    /** the Controller room's bar of this situation (its Edit slots opens it: ControllerView.openOnCastBar) */
+    val bar: String get() = PadMapModel.barOf(view) ?: "castbar"
 
     /** a fight tab (the Combat bars, Cast bar and Slots rows; its own badges) */
     val fight: Boolean get() = this != OUT

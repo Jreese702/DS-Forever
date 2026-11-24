@@ -306,6 +306,10 @@ object HomeSettings {
             prefs?.edit()?.putString(KEY_CAST_SIDE, layout.copy(cast = v).castSide.name)?.remove(KEY_CAST_STRIP)?.apply()
             if (!HomeLayoutStore.update { it.copy(cast = v) }) for (l in listeners) l()
         }
+    /** EDIT TABS (the review): the bar has a place on some tab of this character's Home (Out of combat's, In combat's or Party mode's own).
+     *  "The bar is Off" - the Controller room's and the Spells bind box's veil with "Turn on" - means Off on EVERY tab: a bar laid only on
+     *  a fight tab (Edit Home's own layouts) is a bar the player fills and uses ([castBarSide] is the Out of combat tab's alone) */
+    val castBarOnAnyTab: Boolean get() = HomeTab.values().any { layout.own(it).places.cast != HomeLayout.CastDock.OFF }
     /** THE TAP-TO-CAST BAR IN A FIGHT (the user, 2026-11-13: "there should be a settings toggle to make them Hide/stay in combat"; the
      *  picks: its own section's row, "Hide in combat" by default): HIDE fades the bar out while Home shows a fight, STAY keeps it */
     /** EDIT TABS (2026-11-24, the proposal's decision 5 A: the Controller room's "Show tap-to-cast" stays as a MIRROR): a facade on this

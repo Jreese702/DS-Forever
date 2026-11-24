@@ -1288,7 +1288,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         homeView.editRibbonRedraw = { strip.invalidate() }
         homeView.onEditPress = { key, k -> BottomTiles.press("", key, k, BottomTiles.Env(lastDpad, GameUi.character)) { on -> dpadSet(on) } }
-        homeView.onEditSlots = { controllerView.openOnCastBar(); pickRoom(Room.CONTROLLER) }
+        // (edit tabs, the review: each tab's Edit slots opens that situation's bar - In combat's, Party mode's, else WoW Defaults')
+        homeView.onEditSlots = { t -> controllerView.openOnCastBar(t.bar); pickRoom(Room.CONTROLLER) }
         homeView.onEditFilters = { show(Room.CHAT); chatView.post { chatView.openFilters() } }
         // 1518 (the autosave): the add-on hears the record's D-pad sides and fight bar only once edit mode is not live (Done, Discard,
         // a fight, another room); while it is, the pictures preview the draft

@@ -506,9 +506,52 @@ class HomeEditTabsTest {
         assertEquals(listOf("gold", "hearth", "bags"), m.extrasOn)
         val o = m.hideExtra("bags")
         assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Press("bags", 1)), o)
-        assertNull("Party mode: Settings' badges (none of its own)", m.draft.badges(P))
+        // (the review: "Fully separate" - Party mode showed Settings' badges; Out of combat's change leaves it the ones it showed)
+        assertEquals("Party mode keeps what it showed", listOf("gold", "hearth", "bags"), m.draft.badges(P))
         assertEquals("In combat's own untouched", listOf("gold", "bags", "ammo"), m.draft.badges(C))
         m.discard()
         assertNull(m.draft.badges(C)); assertNull(m.draft.badges(P))
+    }
+
+    /** the review: a tab's own list keeps the extras edit mode does not offer now (the pet's face while no pet is out): a badge never
+     *  lost because it could not be seen when another one was changed */
+    @Test fun aTabsOwnBadgesKeepTheOnesNotOfferedNow() {
+        val m = HomeEditModel(classic, EditStop.CHAT)
+        m.bandIs(listOf("hearth", "gold", "bags"), listOf("ammo"), hiddenOn = listOf("pet"))
+        m.tabTo(C)
+        assertEquals(listOf("gold", "hearth", "bags"), m.extrasOn)
+        m.hideExtra("hearth")
+        assertEquals(listOf("gold", "bags", "pet"), m.draft.badges(C))
+        m.unhideExtra("ammo")
+        assertEquals("the pet's kept again", setOf("gold", "bags", "ammo", "pet"), m.draft.badges(C)!!.toSet())
+        m.tabTo(O)
+        m.hideExtra("gold")
+        assertEquals("Party mode's copy: what it showed, the pet's face too", listOf("gold", "hearth", "bags", "pet"), m.draft.badges(P))
+    }
+
+    /** the review: the fight shows a fight tab's OWN list exactly as Edit Home shows it - not filtered by Settings' rows (they are the
+     *  Out of combat tab's): a badge put back on In combat with Settings' row Off shows in the fight; none of its own = Settings' */
+    @Test fun aFightTabsOwnBadgesAreWhatItsFightShows() {
+        assertTrue(HomeLayout.badgeOn("ammo", listOf("gold", "ammo"), settingsOn = false))
+        assertFalse(HomeLayout.badgeOn("hearth", listOf("gold", "ammo"), settingsOn = true))
+        assertTrue(HomeLayout.badgeOn("hearth", null, settingsOn = true))
+        assertFalse(HomeLayout.badgeOn("hearth", null, settingsOn = false))
+        assertFalse("an empty list of its own: none", HomeLayout.badgeOn("gold", emptyList(), settingsOn = true))
+    }
+
+    /** the review: a bar laid only on a fight tab (the Out of combat tab without one) is a bar that is ON - the Controller room and the
+     *  Spells bind box veil it ("Turn on") only when it is Off on every tab; Edit slots opens each tab's own bar */
+    @Test fun aBarOnAFightTabAloneIsOn() {
+        fresh()
+        HomeLayoutStore.character("Korvash-Realm")
+        assertFalse(HomeSettings.castBarOnAnyTab)
+        HomeLayoutStore.update { it.onTab(C) { p -> p.copy(cast = HomeLayout.CastDock.UNDER_CHAT) } }
+        assertEquals(CastStripModel.Side.OFF, HomeSettings.castBarSide)
+        assertTrue("In combat's own bar", HomeSettings.castBarOnAnyTab)
+        HomeLayoutStore.update { it.onTab(C) { p -> p.copy(cast = HomeLayout.CastDock.OFF) }.onTab(P) { p -> p.copy(cast = HomeLayout.CastDock.ACROSS) } }
+        assertTrue("Party mode's own bar", HomeSettings.castBarOnAnyTab)
+        HomeSettings.castBarSide = CastStripModel.Side.OFF
+        assertFalse(HomeSettings.castBarOnAnyTab)
+        assertEquals(listOf("castbar", "cbfight", "pbar"), HomeTab.values().map { it.bar })
     }
 }

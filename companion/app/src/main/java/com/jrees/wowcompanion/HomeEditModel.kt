@@ -210,8 +210,8 @@ class HomeEditModel(
     private fun extraMax(): Int = (extrasOn.size - 1 + (if (extraPlus) 1 else 0)).coerceAtLeast(0)
     /** the host's feed: the extras Settings turns [on] and [off] now (Settings may have changed them meanwhile) - the Out of combat
      *  tab's; a fight tab with badges of its own (HomeLayout.badges, edit tabs) shows those of the same extras */
-    fun bandIs(on: List<String>, off: List<String>) {
-        appOn = on; appOff = off
+    fun bandIs(on: List<String>, off: List<String>, hiddenOn: List<String> = emptyList()) {
+        appOn = on; appOff = off; appHiddenOn = hiddenOn.filter { it !in on && it !in off }
         val walk = extraWalk()
         val mine = draft.badges(tab)
         val all = on + off
@@ -224,6 +224,9 @@ class HomeEditModel(
     /** the host's last feed (Settings' clock rows): the Out of combat tab's badges */
     private var appOn: List<String> = EXTRA_KEYS
     private var appOff: List<String> = emptyList()
+    /** (the review of the edit tabs) Settings' clock rows that are On but not offered now - the pet's face while no pet with happiness is
+     *  out: never shown or arranged in edit mode, yet part of what a tab shows once the pet comes out ([badgesTo] keeps them) */
+    private var appHiddenOn: List<String> = emptyList()
     /** feat/extras-polish: the extras' walk - the gold line (the chip's, over the row), then the row in the draft's order */
     private fun extraWalk(): List<String> = listOf("gold") + ClockBand.order(page.extras)
     /** the row's extras as edit mode draws them (the shown ones, the gold line not: it is the chip's), left to right */
@@ -272,7 +275,7 @@ class HomeEditModel(
         return if (tab !in tabs) { val was = parked; parked = false; tabTo(HomeTab.OUT).also { parked = was } } else emptyList()
     }
     /** the badges of [tab] again from the host's last feed (a tab switch, a change of the tab's own) */
-    private fun extrasRefresh() = bandIs(appOn, appOff)
+    private fun extrasRefresh() = bandIs(appOn, appOff, appHiddenOn)
 
     /** "+" shows: the bar or the card is off Home */
     val plusShown: Boolean get() = page.cast == HomeLayout.CastDock.OFF || page.card == HomeLayout.CardDock.OFF
@@ -442,15 +445,21 @@ class HomeEditModel(
     /**
      * EDIT TABS' BADGES (the user's pick 2026-11-24: the clock's badges per tab): a fight tab's change is its OWN list in the draft (a
      * layout change: Discard puts it back); the Out of combat tab's is Settings' own row (the press: app-wide, every character's, a
-     * behaviour row Discard leaves) - a fight tab with no badges of its own shows Settings' ones, as it was made: a copy of them
+     * behaviour row Discard leaves) - a fight tab with no badges of its own shows Settings' ones, as it was made: a copy of them.
+     * The review of the edit tabs ("Fully separate": a change on one tab never moves another): an Out of combat change leaves every
+     * fight tab still showing Settings' badges with the ones it showed (its copy is made now, as [HomeLayout.withTab] does for the
+     * places); and a list written for a tab keeps the extras the host does not offer now ([appHiddenOn]: the pet's face with no pet out)
      */
-    @Suppress("UNUSED_PARAMETER")
     private fun badgesTo(before: List<String>, now: List<String>): List<Fx> {
-        if (!tab.fight) return emptyList()
-        val to = draft.withBadges(tab, now)
+        val offered = appOn + appOff
+        val to = if (tab.fight) {
+            val keep = (draft.badges(tab) ?: (appOn + appHiddenOn)).filter { it !in offered && it !in now }
+            draft.withBadges(tab, now + keep)
+        } else HomeTab.values().filter { it.fight && draft.badges(it) == null }
+            .fold(draft) { r, t -> r.withBadges(t, before + appHiddenOn) }
         if (to == draft) return emptyList()
         draft = to
-        return listOf(Fx.Relay(Motion.MODULE_OPEN))
+        return if (tab.fight) listOf(Fx.Relay(Motion.MODULE_OPEN)) else emptyList()
     }
 
     /** P2: "+" at the extras' end: the small tray of the hidden ones (A / a tap puts one back) */

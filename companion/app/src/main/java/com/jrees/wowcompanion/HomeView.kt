@@ -1663,17 +1663,20 @@ class HomeView(
      * under the battery ([chipGold]; the user, 2026-11-13: "lets ditch the Icon for the gold and just list our total gold under the battery").
      */
     private fun bandItems(): List<UiKit.BandItem> {
-        val hs = HomeSettings.clockHearth && ItemCd.hearthHave != false
-        val tp = ItemCd.teleport.takeIf { HomeSettings.clockTeleport }
-        val bags = HomeSettings.clockBags && bagCount != null
-        val am = ammo.takeIf { HomeSettings.clockAmmo }
-        // feat/extras-polish: the pet's happiness face while a pet with happiness is out (ItemCd.petMood), in the player's order
-        val pet = HomeSettings.clockPet && ItemCd.petMood != null
-        val on = setOfNotNull(ClockBand.Kind.HEARTH.takeIf { hs }, ClockBand.Kind.TELEPORT.takeIf { tp != null },
-            ClockBand.Kind.BAGS.takeIf { bags }, ClockBand.Kind.AMMO.takeIf { am != null }, ClockBand.Kind.PET.takeIf { pet })
-        // EDIT TABS (the user's pick 2026-11-24: the clock's badges per tab): a fight tab with its own badges shows only those
+        // EDIT TABS (the user's pick 2026-11-24: the clock's badges per tab): a fight tab with its own badges shows exactly those - its
+        // own list, not Settings' rows (the review: Edit Home shows a fight tab's own list whatever Settings says, so the fight must too;
+        // Settings' rows are the Out of combat tab's): HomeLayout.badgeOn
         val mine = badgesNow()
-        return ClockBand.kinds(extrasOrder(), on.filter { mine == null || it.key in mine }.toSet()).mapNotNull { k -> bandItem(k) }
+        fun on(k: String) = HomeLayout.badgeOn(k, mine, BottomTiles.clockOn(k))
+        val hs = on("hearth") && ItemCd.hearthHave != false
+        val tp = ItemCd.teleport.takeIf { on("teleport") }
+        val bags = on("bags") && bagCount != null
+        val am = ammo.takeIf { on("ammo") }
+        // feat/extras-polish: the pet's happiness face while a pet with happiness is out (ItemCd.petMood), in the player's order
+        val pet = on("pet") && ItemCd.petMood != null
+        val shown = setOfNotNull(ClockBand.Kind.HEARTH.takeIf { hs }, ClockBand.Kind.TELEPORT.takeIf { tp != null },
+            ClockBand.Kind.BAGS.takeIf { bags }, ClockBand.Kind.AMMO.takeIf { am != null }, ClockBand.Kind.PET.takeIf { pet })
+        return ClockBand.kinds(extrasOrder(), shown).mapNotNull { k -> bandItem(k) }
     }
     /** EDIT TABS: the badges of the tab Home lays now (null = Settings' own, the Out of combat tab's); a Settings picture: Settings' */
     private fun badgesNow(): List<String>? = if (renderLook != null) null else HomeSettings.layout.badges(tabNow())
@@ -1783,7 +1786,7 @@ class HomeView(
     }
 
     /** the purse under the battery (the Gold row On and the bags said), else null: no line, the chip as before */
-    private fun chipGold(): Long? = goldCopper.takeIf { HomeSettings.clockGold && badgesNow()?.contains("gold") != false }
+    private fun chipGold(): Long? = goldCopper.takeIf { HomeLayout.badgeOn("gold", badgesNow(), HomeSettings.clockGold) }
 
     /** feat/clock-extras-v2: the extras row under the triggers (ZL / ZR held = fading out, let go = back), Home's own fade; the clock chip keeps its own rules */
     private var trigHeld = false
@@ -3379,7 +3382,7 @@ class HomeView(
     /** the host's hooks: the ribbon + the disc's tick (the chrome, null = gone), the bar's slots (the Controller room's Tap-to-cast
      *  tab), the chat's filters (the Chat room's checklist) */
     var onEditChrome: ((HomeEditView?) -> Unit)? = null
-    var onEditSlots: (() -> Unit)? = null
+    var onEditSlots: ((HomeTab) -> Unit)? = null
     var onEditFilters: (() -> Unit)? = null
     /** a behaviour row's press with the host's env (BottomTiles.press); null = Home presses it itself (the off-device renders) */
     var onEditPress: ((String, Int) -> Unit)? = null
@@ -3573,7 +3576,9 @@ class HomeView(
     private fun editBandFeed(m: HomeEditModel? = edit) {
         m ?: return
         val (on, off) = editExtras()
-        m.bandIs(on, off)
+        // (the review of the edit tabs: Settings' rows On that edit mode does not offer now - the pet's face with no pet out - so a tab's
+        // own list written now keeps them)
+        m.bandIs(on, off, HomeEditModel.EXTRA_KEYS.filter { it !in on && it !in off && BottomTiles.clockOn(it) })
     }
     private val editView: HomeEditView by lazy { HomeEditView(context, editHost) }
     /** the host's Strip draws the ribbon through this */
@@ -3911,7 +3916,7 @@ class HomeView(
             // the bar's slots / the chat's filters (another room): the draft is saved first; a session that changed nothing ends, one
             // that did WAITS (the room's giveBack parks it, editAwayPark) so Discard can still put it back, and edit mode is back where
             // it was with Home
-            HomeEditModel.Fx.EditSlots -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditSlots?.invoke(); return }
+            HomeEditModel.Fx.EditSlots -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditSlots?.invoke(m?.tab ?: HomeTab.OUT); return }
             HomeEditModel.Fx.Filters -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditFilters?.invoke(); return }
             is HomeEditModel.Fx.Refuse -> editRefuse(f.stop)
             HomeEditModel.Fx.Lift -> editLift(m?.lifted)
