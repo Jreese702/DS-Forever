@@ -2563,6 +2563,96 @@ local NB = { V = "nbar18", on = false, built = false, B = 46, BC = 44, INSET = 3
              dirs = nil }
 WC.nbar = NB
 WC.nbarOn = false
+-- nbar18 HOLD TO CAST (PadMap m190; the user's pick 2026-11-24 "A: corner badge"): a button with a hold spell wears it as a small round
+-- badge on the OUTER side of its diamond (the top button's upper left, the left / bottom ones' lower left, the right one's lower right:
+-- never over a neighbour's glyph) with its OWN sweep (the game's duration object straight to the swipe, as the big buttons'); when the
+-- router runs a hold spell (WC.holdFired, its post-click) the hold spell takes the big face for NB.HOLD_FLASH s. Plain textures on our
+-- own frames; nothing secure. (The held press's gold arc is the bottom screen's: the game sees no press until the hold fires.)
+NB.HOLD_R, NB.HOLD_FLASH = 17, 0.15
+NB.HOLD_OUT = { [0] = { -1, -1 }, [1] = { -1, 1 }, [2] = { 1, 1 } }          -- by the drawn spot: up, left / down, right (y down)
+function NB.holdSpot(b, lay)
+    local a = (lay == "swap" and NB.AT_SWAP[b.p]) or NB.AT[b.p]
+    local k = (a[2] == 1 and 0) or (a[1] == 1 and 2) or 1                  -- top / up; right; left / bottom / down
+    local o = NB.HOLD_OUT[k]
+    local d = b.circle and 0.30 or 0.32
+    return o[1] * b.sz * d, -o[2] * b.sz * d
+end
+function NB.holdBadge(b)
+    if b.hb then return b.hb end
+    local hb = CreateFrame("Frame", nil, b.top)
+    pcall(hb.EnableMouse, hb, false)
+    hb:SetSize(NB.HOLD_R, NB.HOLD_R)
+    pcall(function() hb:SetFrameLevel(b.top:GetFrameLevel() + 1) end)
+    hb.disc = hb:CreateTexture(nil, "OVERLAY", nil, 3)
+    hb.disc:SetAllPoints(hb)
+    pcall(hb.disc.SetColorTexture, hb.disc, 110 / 255, 89 / 255, 66 / 255, 1)     -- the brown ring (the band's BADGE_RING)
+    hb.icon = hb:CreateTexture(nil, "OVERLAY", nil, 4)
+    hb.icon:SetPoint("TOPLEFT", hb, "TOPLEFT", 1.5, -1.5)
+    hb.icon:SetPoint("BOTTOMRIGHT", hb, "BOTTOMRIGHT", -1.5, 1.5)
+    for _, t in ipairs({ hb.disc, hb.icon }) do
+        local okM, m = pcall(function() return hb:CreateMaskTexture() end)
+        if okM and type(m) == "table" then
+            pcall(m.SetAllPoints, m, t)
+            if pcall(m.SetTexture, m, NB.MASK_FILE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE") then pcall(t.AddMaskTexture, t, m) end
+        end
+    end
+    hb.cd = CreateFrame("Cooldown", nil, hb, "CooldownFrameTemplate")
+    hb.cd:SetAllPoints(hb.icon)
+    pcall(hb.cd.EnableMouse, hb.cd, false)
+    pcall(hb.cd.SetDrawEdge, hb.cd, false)
+    pcall(hb.cd.SetSwipeTexture, hb.cd, NB.MASK_FILE)
+    pcall(hb.cd.SetUseCircularEdge, hb.cd, true)
+    pcall(hb.cd.SetHideCountdownNumbers, hb.cd, true)
+    -- the flash: the hold spell over the big face
+    b.hflash = b.top:CreateTexture(nil, "OVERLAY", nil, 0)
+    b.hflash:SetAllPoints(b.icon)
+    if b.mask then pcall(b.hflash.AddMaskTexture, b.hflash, b.mask) end
+    b.hflash:Hide()
+    hb:Hide()
+    b.hb = hb
+    return hb
+end
+-- the hold entry at the button now (PadMap's holdAt: the page / layer the bar shows), its badge and sweep
+function NB.holdShow(b, set, page)
+    local pm = rawget(WC, "padMap")
+    local e = nil
+    if type(pm) == "table" and type(pm.holdOn) == "function" and type(pm.holdAt) == "function" then
+        local okOn, on = pcall(pm.holdOn)
+        if okOn and on then local ok, r = pcall(pm.holdAt, page, set, b.p); if ok and type(r) == "table" then e = r end end
+    end
+    if not e then if b.hb then b.hb:Hide() end b.hold = nil return end
+    local hb = NB.holdBadge(b)
+    local x, y = NB.holdSpot(b, NB.layout())
+    pcall(hb.ClearAllPoints, hb)
+    hb:SetPoint("CENTER", b, "CENTER", x, y)
+    NB.paint(hb.icon, e.i or (e.t == nil and e.id and select(2, CALL(api("C_Spell", "GetSpellTexture"), e.id))) or nil)
+    b.hold = e
+    local get = api("C_Spell", "GetSpellCooldownDuration")
+    local setDur = type(field(hb.cd, "SetCooldownFromDurationObject")) == "function"
+    local okd = false
+    if setDur and get and e.t == nil and type(e.id) == "number" then
+        local ok, obj = pcall(get, e.id, false)
+        okd = ok and type(obj) ~= "nil" and pcall(hb.cd.SetCooldownFromDurationObject, hb.cd, obj, true) or false
+    end
+    if not okd then pcall(hb.cd.Clear, hb.cd) end
+    hb:Show()
+end
+-- the router ran a hold spell at game position [pos] (PadMap m190's post-click): the big face shows it for NB.HOLD_FLASH s
+WC.holdFired = function(pos)
+    local f = NB.f
+    local b = f and f.btn and f.btn[pos]
+    if not (b and b.hold and b.hflash) then return end
+    if NB.paint(b.hflash, b.hold.i) then b.hflash:Show(); b.hflashAt = SN(GetTime) end
+end
+function NB.holdTick()
+    local f = NB.f
+    if not (f and f.btn) then return end
+    local now = SN(GetTime) or 0
+    for p = 1, 8 do
+        local b = f.btn[p]
+        if b and b.hflashAt and now - b.hflashAt >= NB.HOLD_FLASH then b.hflash:Hide(); b.hflashAt = nil end
+    end
+end
 
 -- nbar2 THE ONE GLYPH RULE (NB and Hub share it; PadMap m119 / m120 draw the same): a face button wears ITS OWN letter (PAD1 A, PAD2 B,
 -- PAD3 X, PAD4 Y - the user, m119: "the inspect glyph is Y not X"; the app's harvested rev_a / rev_b / rev_x / rev_y art is keyed the
@@ -3269,6 +3359,7 @@ function NB.refresh()
         b.kind = e.kind
         NB.well(b, e.kind == "empty")                     -- nbar11: an empty slot wears its own art, its ring disabled
         NB.ring(b)
+        if pic then if b.hb then b.hb:Hide() end b.hold = nil else pcall(NB.holdShow, b, set, page) end     -- nbar18: its hold spell
         NB.shown[p] = { kind = e.kind, icon = e.icon, id = e.id, s = e.d and e.d.s or nil, route = route }
     end
     NB.probe(fight)
@@ -3305,6 +3396,7 @@ function NB.tick(el)
     if held ~= (NB.heldWas or 0) then NB.heldWas = held; pcall(NB.pressLook, held) end     -- nbar11: the pressed rings at once
     if NB.top.shown or NB.top.edit then pcall(NB.topPlates, (bu ~= false) and NB.sh or nil, set ~= 1) end  -- nbar12: the L / R plates
     if NB.focusAt then pcall(NB.focusTick) end
+    pcall(NB.holdTick)                                   -- nbar18: a hold spell's flash on the big face ends
     if set ~= NB.set or NB.accS >= NB.STATE_S then
         NB.accS = 0
         local ok, err = pcall(NB.refresh)

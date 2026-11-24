@@ -480,7 +480,18 @@ class SpellsOverlay(
             !lt && !rt -> UiKit.hints(c, box.right - 80f, HINT_Y, back to "Back")
             else -> null
         }
+        // Book b78 HOLD TO CAST (the study's "Place as hold"): in this box the pressed button IS the place, so holding it for the hold
+        // time places the spell as that button's hold spell; said at the foot's left while the controller waits and hold to cast works
+        if ((r == null || !r.ok) && !cbOn && !party && padMap?.holdOn == true && HoldCast.usable)
+            holdHint(c, box.left + 80f, HINT_Y)
         if (hx != null && ctl?.hosted == true) hostHits.add(RectF(hx - 24f, HINT_Y - 48f, box.right - 40f, HINT_Y + 48f) to "b")
+    }
+
+    /** Book b78: "Hold a button: place as hold" with the hold mark (the room's), at the foot's left */
+    private fun holdHint(c: Canvas, x: Float, cy: Float) {
+        HoldArt.mark(c, x + 16f, cy, 16f, Theme.gold)
+        val p = UiKit.bodyPaint(28f, Theme.text)
+        c.drawText(Tr.t(HOLD_HINT), x + 44f, cy - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /** b71: the situation's bar takes nothing now (the bar Off, Show in combat off, Bar in Party mode off) */
@@ -669,12 +680,15 @@ class SpellsOverlay(
         /** the answer's line: where it went, or (Book b59, an item already there) where it came off */
         fun answerWord(r: SpellsModel.BindResult): String = when {
             r.cleared -> "Cleared from"
+            r.hold -> "Hold spell on"                                   // Book b78: the button was held
             r.fight -> "In combat on"
             else -> "Bound to"
         }
         /** Book b59: the box's question after a press that took (a clear asks to keep it cleared) */
         fun keepQuestion(r: SpellsModel.BindResult): String = if (r.cleared) "Keep it cleared?" else "Keep this binding?"
         private const val SHOW_MS = 1500L
+        /** Book b78: the foot's hold line */
+        const val HOLD_HINT = "Hold a button: place as hold"
         /** b71 (Option C) THE BOX, top to bottom: the thing's line, the situations' row, the answer's line, the Controller heading and its
          *  picture (at [CTL_K], centred on [CTL_CY]), the triggers' chips, the bar's heading and its 8 slots, the hints */
         private const val THING_Y = 180f

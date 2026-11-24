@@ -107,7 +107,9 @@ object SpellsModel {
                           /** Book b59: the box was a bag item's ([spellId] is the item's id) */
                           val item: Boolean = false,
                           /** Book b59 (issue #213's rule): the press CLEARED the item from that button (it was on it already) */
-                          val cleared: Boolean = false)
+                          val cleared: Boolean = false,
+                          /** Book b78 HOLD TO CAST: the button was HELD, so the spell went on as its hold spell (no game slot) */
+                          val hold: Boolean = false)
 
     fun parseCtl(msg: JSONObject): Ctl? {
         if (msg.optString("type") != "spellsctl") return null
@@ -203,12 +205,14 @@ object SpellsModel {
         val pad = p?.let {
             val st = it.optInt("s", 0); val pg = it.optInt("pg", 0); val b = it.optInt("b", 0); val ps = it.optInt("p", 0)
             val fight = it.optBoolean("fight", false)                       // b37: an In combat bind has no game slot
+            val hold = it.optBoolean("hold", false)                         // Book b78: a hold spell has none either
             // Book b57: L3 / R3 (9 / 10) have no bar slot (PadMap m157: the stick's own button)
-            if ((st > 0 || fight || PadMapModel.isStick(ps)) && pg in 1..3 && b in 1..4 && ps in 1..10) PadSlot(st, pg, b, ps) else null
+            if ((st > 0 || fight || hold || PadMapModel.isStick(ps)) && pg in 1..3 && b in 1..4 && ps in 1..10) PadSlot(st, pg, b, ps) else null
         }
         val ok = msg.optBoolean("ok", false) && pad != null
         return BindResult(id, ok, if (ok) null else msg.optString("why", "failed").ifEmpty { "failed" }, pad,
-            p?.optBoolean("fight", false) == true, item = msg.optBoolean("item", false), cleared = ok && msg.optBoolean("clr", false))
+            p?.optBoolean("fight", false) == true, item = msg.optBoolean("item", false), cleared = ok && msg.optBoolean("clr", false),
+            hold = ok && p?.optBoolean("hold", false) == true)
     }
 
     /**

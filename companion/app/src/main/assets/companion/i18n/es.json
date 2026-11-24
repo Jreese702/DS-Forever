@@ -1,5 +1,12 @@
 {
 "plain": {
+"Hold spell": "Hechizo al mantener",
+"Hold to cast isn't available yet": "Mantener para lanzar aún no está disponible",
+"Clear hold spell": "Quitar hechizo al mantener",
+"Hold spell on": "Hechizo al mantener en",
+"Hold a button: place as hold": "Mantén un botón: colocar al mantener",
+"Hold time": "Tiempo de mantener",
+"Normal": "Normal",
 "Graphics": "Gráficos",
 "Graphics driver": "Controlador gráfico",
 "Recommended (graphics driver)": "Recomendado",
@@ -2405,6 +2412,7 @@
 "In the row under the clock, with a hunter's pet.": "En la fila bajo el reloj, con la mascota de un cazador."
 },
 "templates": {
+"hold %s": "mantener %s",
 "DS Forever's %s runs here, over your macro": "%s de DS Forever se usa aquí, por encima de tu macro",
 "In combat: %s casts here in fights, over your macro": "En combate: %s se lanza aquí en los combates, por encima de tu macro",
 "%s/%s ready": "%s/%s listos",

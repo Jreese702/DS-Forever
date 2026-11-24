@@ -59,7 +59,10 @@ object PadMapModel {
                     val game: Bind? = null,
                     /** m188 SHOW WHAT'S ON TOP (the user's pick 2026-11-23): the game's slot holds the player's OWN macro under our overlay
                      *  (an In combat entry, [Kind.COMBAT] with [ov], or a command, [Kind.COMMAND]); the padmap's `um` */
-                    val overMacro: Boolean = false)
+                    val overMacro: Boolean = false,
+                    /** m190 HOLD TO CAST (the user, 2026-11-24: "hold to cast on a button so that we can have 2 spells per button"): the
+                     *  place's HOLD spell (the padmap's `h`: a spell by its id, or a whole-button thing by `t` / `key`); null = none */
+                    val hold: Ref? = null)
     /** m13 START ATTACK ON CAST (the user 2026-10-01): [on]; [n] buttons converted; [full] / [user] / [refused] buttons left plain (no
      *  Character Macro free / a macro of that name is the user's own / the game refused); [pending] waits for the fight to end; [colOn] /
      *  [colOff] the `spells` row's columns Home's Settings room taps (no-action notes, idempotent) */
@@ -162,6 +165,8 @@ object PadMapModel {
         /** m177 (PadTabCtl p58): the player's own saved macros (by name, the icon our buttons show), the chooser's Macros grid in the
          *  add-on's order (its touch page counts alike); empty = none or an add-on before m177 */
         val macs: List<Mac> = emptyList(),
+        /** m190 HOLD TO CAST: hold spells may be set (the add-on's probe saw the Guide marker, unbound); null = an add-on before m190 */
+        val holdOn: Boolean? = null,
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -224,7 +229,7 @@ object PadMapModel {
                 PadSet(s.optInt("set", 0), objects(s.optJSONArray("slots")).map { o ->
                     Slot(o.optInt("pos", 0), intOrNull(o, "s"), kind(o.optString("kind", "")), intOrNull(o, "id"), textOrNull(o, "n"), o.optInt("i", 0),
                         ref(o.optJSONObject("c")), ref(o.optJSONObject("o")), ref(o.optJSONObject("cf")), o.optBoolean("sa", false), key = textOrNull(o, "key"),
-                        ov = o.optBoolean("ov", false), overMacro = o.optBoolean("um", false))
+                        ov = o.optBoolean("ov", false), overMacro = o.optBoolean("um", false), hold = ref(o.optJSONObject("h")))
                 })
             },
             general = count(macros?.optJSONObject("general")),
@@ -248,6 +253,7 @@ object PadMapModel {
             mounts = objects(m.optJSONArray("mounts")).mapNotNull { o -> extra(o) },
             items = objects(m.optJSONArray("items")).mapNotNull { o -> extra(o) },
             macs = objects(m.optJSONArray("macs")).mapNotNull { o -> textOrNull(o, "n")?.let { Mac(it, o.optInt("i", 0)) } },   // m177
+            holdOn = m.optJSONObject("hold")?.optBoolean("on", false),                                                          // m190
             forms = objects(m.optJSONArray("forms")).mapNotNull { o ->
                 val id = o.optInt("id", 0)
                 if (id <= 0) null else Form(o.optInt("x", 0), id, o.optString("n", ""), o.optInt("i", 0), o.optBoolean("on", false),
@@ -414,6 +420,27 @@ object PadMapModel {
         }.toMap()
     }
 
+    /**
+     * m190 HOLD TO CAST: the `holdcd` message - each hold spell's running cooldown by its place ("<layer>:<pos>", layer bare / lt / rt /
+     * ltrt) -> the key layer * 8 + position - 1 (Home's band index); EMPTY = none runs. Null when it is not one. The whole state each time.
+     */
+    fun parseHoldCd(msg: JSONObject): kotlin.collections.Map<Int, FaceCd>? {
+        if (msg.optString("type") != "holdcd") return null
+        val k = msg.optJSONObject("k") ?: return emptyMap()
+        val out = HashMap<Int, FaceCd>()
+        for (place in k.keys()) {
+            val parts = place.split(':')
+            val key = parts.takeIf { it.size == 2 }?.let { HoldGate.keyOf(it[0], it[1].toIntOrNull() ?: 0) } ?: continue
+            val o = k.optJSONObject(place) ?: continue
+            val d = o.optDouble("d", 0.0); val l = o.optDouble("l", 0.0)
+            if (d > 0 && l > 0 && l <= d + 0.001) out[key] = FaceCd(d, l, false, o.optBoolean("e", false))
+        }
+        return out
+    }
+
+    /** m190: the hold spell at set (1-4) / position (1-8) of [map] (its slot's `h`), or null */
+    fun holdAt(map: Map, set: Int, pos: Int): Ref? = slot(map, set, pos)?.hold
+
     /** Home's mapping onto the app's clock: the cooldown started (dur - left) before the message ARRIVED ([arrivalMs], elapsedRealtime) */
     fun cdStartMs(cd: FaceCd, arrivalMs: Long): Long = arrivalMs - Math.round((cd.dur - cd.left) * 1000.0)
     fun cdDurMs(cd: FaceCd): Long = Math.round(cd.dur * 1000.0)
@@ -538,7 +565,9 @@ object PadMapModel {
     /** p11: [list] "spells" / "general" / "extra" (an older addon's "commands" is read as "extra"); [tabs] = the cursor on its tab row */
     data class Chooser(val list: String, val row: Int, val id: String?, val tabs: Boolean = false,
                        /** p26 (b-bind-combat-toggle): the chooser puts on the In combat layout (true) or the normal one; null = an older add-on */
-                       val fight: Boolean? = null)
+                       val fight: Boolean? = null,
+                       /** p59 HOLD TO CAST: the chooser puts the button's HOLD spell (Y on a button) */
+                       val hold: Boolean = false)
 
     /** A box the controller opened: [kind] "replace" / "make" / "clear" / "full"; [what] a spell id as text or a command key;
      *  [thing] "spell" / "command" / "clear". */
@@ -629,7 +658,7 @@ object PadMapModel {
             page = c.optInt("page", 1).coerceIn(1, 3),
             chooser = ch?.let { Chooser(it.optString("list", "spells").let { l -> if (l == "commands" || l == "dstool") "extra" else l },   // p58: DS is Extra's
                 it.optInt("row", 1).coerceAtLeast(1), textOrNull(it, "id"), it.optBoolean("tabs", false),
-                if (it.has("fight")) it.optBoolean("fight", false) else null) },
+                if (it.has("fight")) it.optBoolean("fight", false) else null, hold = it.optBoolean("hold", false)) },   // p59
             box = bx?.let { b -> textOrNull(b, "kind")?.let { Box(it, textOrNull(b, "what"), textOrNull(b, "thing")) } },
             swap = c.optString("lay", "swap") != "plain",
             note = textOrNull(c, "note"),
@@ -766,6 +795,12 @@ object PadMapModel {
     fun overMacroKeys(map: Map): Set<Int> = map.sets.filter { it.set in 1..4 }.flatMap { st ->
         st.slots.filter { it.pos in 1..8 && overMacro(it) != null }.map { (st.set - 1) * 8 + (it.pos - 1) }
     }.toSet()
+
+    /** m190 HOLD TO CAST: every place's hold spell on the page shown, by Home's band key (layer * 8 + position - 1; layer 0 none, 1 LT,
+     *  2 RT, 3 LT + RT): the corner badge's picture */
+    fun holdRefs(map: Map): kotlin.collections.Map<Int, Ref> = map.sets.filter { it.set in 1..4 }.flatMap { st ->
+        st.slots.filter { it.pos in 1..8 && it.hold != null }.map { (st.set - 1) * 8 + (it.pos - 1) to it.hold!! }
+    }.toMap()
 
     /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null */
     fun formFight(map: Map, form: Int, pos: Int): Ref? = map.formFights.firstOrNull { it.form == form && it.pos == pos }?.ref

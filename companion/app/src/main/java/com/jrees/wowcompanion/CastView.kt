@@ -716,6 +716,69 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * cooldown over its icon until it runs out. A new call replaces the old one (a longer cooldown after a GCD, a reset).
      * [pos] = game position 5 / 6 / 8. durMs <= 0 clears it.
      */
+    // ================================================================ m190 HOLD TO CAST (the user's pick 2026-11-24, "A: corner badge")
+    /** every place's hold spell (PadMapModel.holdRefs: layer * 8 + position - 1); the button wears it as a corner badge (HoldArt) */
+    var holdRefs: Map<Int, PadMapModel.Ref>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val holdCdStart = LongArray(32)
+    private val holdCdDur = LongArray(32)
+    /** every CURRENT `holdcd` (PadMap m190, the whole state): each hold spell's cooldown onto its badge's sweep, on the app's clock */
+    fun holdCooldowns(cds: Map<Int, PadMapModel.FaceCd>, arrivalMs: Long) {
+        holdCdDur.fill(0L)
+        for ((key, cd) in cds) if (key in 0..31) { holdCdStart[key] = PadMapModel.cdStartMs(cd, arrivalMs); holdCdDur[key] = PadMapModel.cdDurMs(cd) }
+        invalidate()
+    }
+    private fun holdCdLeft(key: Int, now: Long): Float {
+        val d = holdCdDur.getOrNull(key) ?: return -1f
+        if (d <= 0L) {
+            val item = holdRefs?.get(key)?.takeIf { it.layer == "item" }?.key?.removePrefix("i:")?.toIntOrNull() ?: return -1f
+            val len = ItemCd.len(item); val l = ItemCd.left(item)                // a bag item's hold: the item's own cooldown
+            return if (len > 0.0 && l > 0.0) (l / len).toFloat().coerceIn(0f, 1f) else -1f
+        }
+        val left = holdCdStart[key] + d - now
+        return if (left > 0L) (left.toFloat() / d).coerceIn(0f, 1f) else -1f
+    }
+
+    /**
+     * The hold spell on the button just drawn (the canvas at its centre, the slot's scale): while held the gold arc fills its ring over
+     * the hold time (HoldCast's gate: the press held back now, on this layer); at the hold time the hold spell takes the big face for
+     * [HoldArt.FLASH_MS] in a bright ring; the corner badge (the hold spell, its own sweep; the tap spell while the hold takes the face)
+     * on the cluster's outer side. [drawn] the slot drawn (0..3 the D-pad, 4..7 the faces), [src] its game position - 1, [b] the button.
+     */
+    private fun drawHold(c: Canvas, drawn: Int, src: Int, li: Int, circle: Boolean, b: Btn?, now: Long): Long {
+        if (li !in 0 until STATE_LAYERS || drawCollapsed || quietPresses) return Long.MAX_VALUE
+        val key = li * 8 + src
+        val ref = holdRefs?.get(key)
+        val up = SystemClock.uptimeMillis()
+        val pos = src + 1
+        val g = HoldCast.gate
+        val prog = if (g.pendingLayer(pos) == li) g.progress(pos, up) else -1f
+        val fire = g.lastFire?.takeIf { it.first == pos && up - it.second in 0 until HoldArt.FLASH_MS }
+        if (ref == null && prog < 0f) return Long.MAX_VALUE
+        val half = (if (circle) 38f else 40f) * k / 2f
+        val iconHalf = half - 3f * k
+        var next = Long.MAX_VALUE
+        if (fire != null && ref != null) {
+            HoldArt.bigFace(c, 0f, 0f, iconHalf, Icons.get(ref.icon), circle)
+            HoldArt.fired(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, circle)
+            next = HoldArt.FLASH_MS - (up - fire.second)
+        } else if (prog >= 0f) {
+            HoldArt.progress(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, prog, circle)
+            next = 16L
+        }
+        if (ref != null) {
+            val (ox, oy) = HoldArt.outer(drawn)
+            val bx = ox * (if (circle) 0.703f else 0.662f) * iconHalf
+            val by = oy * (if (circle) 0.581f else 0.727f) * iconHalf
+            val r = (if (circle) 0.486f else 0.468f) * iconHalf
+            val icon = if (fire != null) b?.icon?.takeIf { it > 0 }?.let { Icons.get(it) } else Icons.get(ref.icon)
+            val sw = if (fire != null) -1f else holdCdLeft(key, now)
+            HoldArt.badge(c, bx, by, r, icon, sw, lit = prog >= 0f)
+            if (sw > 0f) next = min(next, 33L)
+        }
+        return next
+    }
+
     fun fightCooldown(pos: Int, startMs: Long, durMs: Long) {
         if (pos !in 1..8) return
         fightCdStart[pos - 1] = startMs; fightCdDur[pos - 1] = durMs
@@ -3403,6 +3466,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
                 if (fb != null && fb.k == "spell" && !isTrigFight(fb)) fightCdLeft(src, now) else -1f))
+            next = min(next, drawHold(c, pos, src, li, circle, b, now))         // m190: the hold spell's badge, the hold's arc and flash
             c.restoreToCount(slotSave)
         }
         // Edit Home: the L / R plates (and their bumper glyphs) and the ZL / ZR chips fade out with the chrome, at 0 not drawn at all

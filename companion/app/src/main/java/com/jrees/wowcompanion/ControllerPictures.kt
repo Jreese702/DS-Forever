@@ -42,11 +42,13 @@ object ControllerPictures {
 
     /** the ids with a picture of their own (every Controller tile) */
     val IDS = setOf(ABXY, GLYPHS, PET_B, SMART_Y, PAUSE, ITEM, SPELL, CLASS_L, CLASS_R, GameUi.PMODE_ID, GameUi.SRES_ID, GameUi.ATK_ID,
-        ATTACK_CAST, GameUi.SHOT_ID)
+        ATTACK_CAST, GameUi.SHOT_ID, HOLD_TIME)
 
     const val ABXY = "abxy"; const val GLYPHS = "glyphs"; const val PET_B = "petb"; const val SMART_Y = "smarty"
     const val PAUSE = "pause"; const val ITEM = "item"; const val SPELL = "spell"; const val CLASS_L = "classL"; const val CLASS_R = "classR"
     const val ATTACK_CAST = "attackcast"
+    /** m190 HOLD TO CAST: Settings' "Hold time" tile (Short / Normal / Long) */
+    const val HOLD_TIME = "holdtime"
 
     /** sample icons (icons.pak file ids; never the player's own): food, water and three buffs for Smart Y, a few consumables and spells
      *  for the wheels, the res, the pet, Auto Shot, a harmful spell */
@@ -111,7 +113,27 @@ object ControllerPictures {
             GameUi.ATK_ID -> startAttack(c, look)
             ATTACK_CAST -> attackCast(c, look)
             GameUi.SHOT_ID -> autoShot(c, look)
+            HOLD_TIME -> holdTime(c, look)
         }
+    }
+
+    /** m190 Hold time: a face button with its hold spell's badge, the gold arc filling round it (the hold time's share: Short a quarter
+     *  less than Normal, Long a third more), the chosen time written under it */
+    private fun holdTime(c: Canvas, look: Look) {
+        val cx = 84f; val cy = 52f; val r = 30f
+        pF.color = Color.rgb(16, 16, 18); c.drawCircle(cx, cy, r + 5f, pF)
+        val spells = SAMPLE_SPELLS
+        Icons.get(spells[1])?.let { bm ->
+            val s = c.save(); path.reset(); path.addCircle(cx, cy, r, Path.Direction.CW); c.clipPath(path)
+            c.drawBitmap(bm, null, RectF(cx - r, cy - r, cx + r, cy + r), pB); c.restoreToCount(s)
+        }
+        val frac = when (CastSettings.holdTime) { CastSettings.HoldTime.SHORT -> 0.55f; CastSettings.HoldTime.NORMAL -> 0.73f; else -> 1f }
+        val run = if (look.t > 0f) ((look.t % 2.2f) / 1.6f).coerceIn(0f, 1f) else 0.75f
+        HoldArt.progress(c, cx, cy, r + 1f, r + 6f, run * frac / 1f, true)
+        HoldArt.badge(c, cx - r * 0.72f, cy + r * 0.62f, 13f, Icons.get(spells[4]), -1f, lit = run > 0f)
+        glyph(c, "a", cx + r * 0.75f, cy - r * 0.62f, 22f)
+        pF.color = Color.rgb(236, 224, 196); pF.textSize = 22f; pF.textAlign = Paint.Align.LEFT
+        c.drawText(HoldCast.holdWord(), 136f, cy + 8f, pF)
     }
 
     // ---------------------------------------------------------------- Buttons

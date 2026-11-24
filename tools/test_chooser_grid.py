@@ -158,7 +158,7 @@ def clean(L, name):
 
 
 # ================================================================ a. tags
-check('local CV = "p58"' in SRC["padtabctl"] and "p58 THE CHOOSER AS A GRID" in SRC["padtabctl"] and "p57 A FINGER ON A CHOOSER TAB" in SRC["padtabctl"],
+check('local CV = "p59"' in SRC["padtabctl"] and "p58 THE CHOOSER AS A GRID" in SRC["padtabctl"] and "p57 A FINGER ON A CHOOSER TAB" in SRC["padtabctl"],
       "a. PadTabCtl p58 and its note (p57's kept)")
 check('local BV = "b78"' in SRC["book"] and "b73 THE CHOOSER AS A GRID" in SRC["book"] and "b72 A FINGER ON A TAB" in SRC["book"],
       "a. Book b73 and its note (b72's kept)")

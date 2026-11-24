@@ -125,6 +125,7 @@ class HomeView(
         HomeSettings.init(context)
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
+        HoldCast.onChange = { castView.postInvalidateOnAnimation() }      // m190: a held press's gold arc / the hold's flash (the gate)
         HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
         HomeLayoutStore.onOwner { editUi.post { editOwnerCheck("the character changed") } }
@@ -1080,7 +1081,11 @@ class HomeView(
         topFightSync(fightWas, map.fight, map.combat)                    // the 11-23 B rule: the band follows the add-on's give-back / re-arm
         castView.commands = HomeFightFace.commandIcons(map)             // Track C: the companion's commands (overlays: the game's slot is empty)
         castView.overMacro = PadMapModel.overMacroKeys(map)            // PadMap m188: our overlay over the player's own macro (a corner mark)
+        castView.holdRefs = PadMapModel.holdRefs(map).takeIf { HoldCast.usable && map.holdOn != false }   // m190: the hold spells' badges
     }
+
+    /** every CURRENT `holdcd` (PadMap m190): the hold spells' own cooldowns onto their badges */
+    fun onHoldCd(cds: Map<Int, PadMapModel.FaceCd>) = castView.holdCooldowns(cds, android.os.SystemClock.elapsedRealtime())
 
     /** the fight as the latest word says it: the padmap's `combat`, or a newer CURRENT `facewatch`'s `fight` (Tracking after test18:
      *  "have the app also honour the fight flag from faceswap/facewatch"; faceswap carries none) */

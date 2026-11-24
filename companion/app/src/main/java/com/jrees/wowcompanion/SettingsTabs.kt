@@ -142,7 +142,7 @@ object SettingsTabs {
             // hub61: the damage meter, the Cooldown Manager and its four parts (its band's lines)
             "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"), Drawer.GAME_UI),
         // ---- Controller
-        CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs")),
+        CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs", "Hold time")),     // m190: hold to cast's hold time (its tile last, after Smart Y)
         // the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet
         // attacking"): B on Home's rest, per character; shown only for a pet class. 2026-11-17 ("to be clear I think this should just be a
         // smart pet feature that includes both of those settings in one"): the one Smart pet row replaces B: pet follow. 2026-11-18 ("I
