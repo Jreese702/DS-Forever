@@ -5,8 +5,8 @@ package com.jrees.wowcompanion
  * top right corner of the screen I want to add some kind of power button that effectively opens a prompt to close DS forever. When
  * streaming this should also close wow on the PC and revert everything back and be the clean way to disconnect").
  *
- * [Flow] is the button's prompt, pure (HomePauseView drives it): Y on the pad or a tap on the button asks ("Close DS Forever?" and one
- * line of what else closes); A / Close confirms, B / Cancel / a tap outside the box goes back to the wheel (B one step back, the wheel's
+ * [Flow] is the button's prompt, pure (HomePauseView drives it): Select / Minus on the pad (Y before 2026-11-24) or a tap on the
+ * button asks ("Close DS Forever?" and one line of what else closes); A / Close confirms, B / Cancel / a tap outside the box goes back to the wheel (B one step back, the wheel's
  * own B then closes it: the "B in sub-screens" rule); once confirmed the prompt says the close is under way and takes no more input.
  * feat/exit-now (the user's pick 2026-11-24, "Keep the confirm, allow in fights"): Close runs [ExitNow] - DS Forever closes at once,
  * no Exit Game first, in a fight too (the host passes no refusal; [Flow.press] still takes one).
@@ -54,7 +54,7 @@ object PausePower {
 
         fun reset() { state = State.NONE }
 
-        /** Y, or a tap on the button; [refusal] = why it can't be used now (a fight), null = it can */
+        /** Select / Minus, or a tap on the button; [refusal] = why it can't be used now (a fight), null = it can */
         fun press(refusal: String?): Act {
             if (state != State.NONE) return Act.None
             if (refusal != null) return Act.Refused(refusal)

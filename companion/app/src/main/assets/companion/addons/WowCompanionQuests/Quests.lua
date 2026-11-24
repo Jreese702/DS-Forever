@@ -2014,7 +2014,9 @@ local EXTRA = {
     -- the consumables radial pages with LB / RB (the user's signed design, tracking 2026-10-06); q34 (Home's ask 2026-10-08, the user's
     -- signed radial PAUSE menu, which reuses this guest): Start while either wheel is open closes it -- the capture keeps Start from
     -- the game (whose own radial would open over the wheel) and hands it to the app as a press
-    radial = { "PADLSHOULDER", "PADRSHOULDER", "PADFORWARD" },
+    -- the pause wheel's corners (the app's, 2026-11-24): Select / Minus = its power button, so Select never reaches the game while
+    -- either wheel holds (X, a face button, is held already)
+    radial = { "PADLSHOULDER", "PADRSHOULDER", "PADFORWARD", "PADBACK" },
     -- the Track Pad & Keyboard: LB / RB its tabs, ZL / ZR the left / right click (never a game action while the tool holds)
     tool = { "PADLSHOULDER", "PADRSHOULDER", "PADLTRIGGER", "PADRTRIGGER", "PADFORWARD" },
     -- q44: the class wheel (the chord itself, and Start, never reach the game while the app's wheel holds)

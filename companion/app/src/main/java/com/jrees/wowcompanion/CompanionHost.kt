@@ -2126,6 +2126,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             HomePauseModel.Kind.ROOM -> s.room?.let { name -> runCatching { Room.valueOf(name) }.getOrNull() }?.let { r -> pickRoom(r) }
             HomePauseModel.Kind.HOME -> when (s.key) {
                 "buffs" -> homeView.openAuras(debuff = false)
+                // the corner's Edit (the user, 2026-11-24: X "puts them into the home edit mode"): Edit Home's own entry (Home first from
+                // a room; a fight: Edit Home's refusal, its pencils flash)
+                HomePauseModel.EDIT.key -> editHome("the pause wheel's Edit")
                 // f-trackpad-keyboard: the pause wheel's D-pad Left; on Home (from a room: Home first)
                 // the pause wheel's D-pad Left / Right (the user, 2026-10-16): the Track Pad / the Keyboard, the same tool on its tab
                 "trackpad", "typetool" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(0) } }

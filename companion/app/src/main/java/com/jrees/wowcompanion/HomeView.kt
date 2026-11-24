@@ -2214,7 +2214,8 @@ class HomeView(
         partyDpadWas = mask
         // party_design.md E: a Select press the reader sees flashes the tab's pressed look (the add-on's document turns it on / off)
         val sel = PadInput.isHeld(held, PadInput.SLOT_SELECT)
-        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown) partyView.selectPressed()
+        // (never under a wheel: the pause wheel's Select is its power button, 2026-11-24)
+        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown && overlayOpen?.invoke() != true) partyView.selectPressed()
         partySelWas = sel
         // b-class-takeover: the class wheel's D-pad never reaches the game (its guest keeps it), so the box's optimistic move would part
         // from the game's - the wheel's presses are the wheel's
