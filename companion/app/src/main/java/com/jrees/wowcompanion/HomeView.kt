@@ -512,10 +512,13 @@ class HomeView(
         // (full width in Party mode, 2026-11-23: the list across both columns stays - the wheel in its column's part under a top list,
         // over a foot one; the 1523 merge: both of the radial's squares, kept and full, are cut the same way)
         val pw = now[Part.PARTY]?.takeIf { laidPartyWide && views[Part.PARTY]?.visibility == View.VISIBLE }
-        val clip = { a: ClassSlot.Area -> if (pw == null) a else if (pw.centerY() < h / 2f) a.copy(top = maxOf(a.top, pw.bottom + g))
-            else a.copy(bottom = minOf(a.bottom, pw.top - g)) }
-        val kept = ClassSlot.inColumn(clip(ClassSlot.column(parts, bb, h, g, left, w)))
-        val full = ClassSlot.inColumn(clip(ClassSlot.column(parts, bb, h, g, left, w, reach = across?.bottom ?: 0f)))
+        // (fix/party-drop-wheels, the user's pick "List drops with the bar": a foot list right over Across's bar goes down with it into
+        // its place with the bar Off - the full square is cut over it THERE, the size the wheel has with no bar)
+        val pd = partyDrop(now)
+        val clip = { a: ClassSlot.Area, dy: Float -> if (pw == null) a else if (pw.centerY() < h / 2f) a.copy(top = maxOf(a.top, pw.bottom + g))
+            else a.copy(bottom = minOf(a.bottom, pw.top + dy - g)) }
+        val kept = ClassSlot.inColumn(clip(ClassSlot.column(parts, bb, h, g, left, w), 0f))
+        val full = ClassSlot.inColumn(clip(ClassSlot.column(parts, bb, h, g, left, w, reach = across?.bottom ?: 0f), pd))
         if (open) classDrop = HomeSlide.makesRoom(across?.top, kept.side, full.side, kept.top + kept.side, g)
         val slot = if (classDrop) full else kept
         classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + slot.side).toInt(), (slot.top + slot.side).toInt())
@@ -523,7 +526,7 @@ class HomeView(
         // slides back OVER it (the frozen picture rides it out, CastView), and the wheel goes when it is covered (a dropped bar the same)
         for ((p, v) in views) if (!bandPart(p)) {
             val r = now[p]
-            val mine = r != null && (halfOf(p, r, w) == half || classDrop && barDrop(p, r) > 0f)
+            val mine = r != null && (halfOf(p, r, w) == half || classDrop && (barDrop(p, r) > 0f || p == Part.PARTY && pd > 0f))
             v.translationZ = if (mine && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
         }
         if (open) {
@@ -556,10 +559,14 @@ class HomeView(
         // feat/radial-castbar: the dropped bar on the column's motion (down on the open, back up on the release); the middle wheel's own
         // drop (wheelPart) is left as it is
         val riding = col.map { it.first }
+        // (fix/party-drop-wheels: the foot list over Across's bar with it, the same motion and distance)
         val drops = if (!open || !classDrop) emptyList()
-            else views.mapNotNull { (p, v) -> barDrop(p, now[p]).takeIf { it > 0f && v.visibility == View.VISIBLE && v !in riding }?.let { v to it } }
+            else views.mapNotNull { (p, v) -> barDrop(p, now[p]).takeIf { it > 0f && v.visibility == View.VISIBLE && v !in riding }?.let { v to it } } +
+                listOfNotNull(pd.takeIf { it > 0f }?.let { partyView as View to it })
+        if (!open && barsBack) partyRiding = false
         val back = if (!barsBack) emptyList()
-            else strips.filter { it !in riding && (it.translationY != 0f || it.translationX != 0f) }.map { it as View to 0f }
+            else strips.filter { it !in riding && (it.translationY != 0f || it.translationX != 0f) }.map { it as View to 0f } +
+                listOfNotNull((partyView as View).takeIf { it.translationY != 0f && pauseT <= 0f }?.let { it to 0f })
         for ((v, to) in if (open) drops else back) {
             v.animate().cancel()
             val a = v.animate().translationY(to)
@@ -588,7 +595,8 @@ class HomeView(
      *  its centre ([HomeSlide.half]) */
     private fun halfOf(p: Part, r: RectF, w: Float): HomeSlide.Half =
         // FULL WIDTH (Party mode, 2026-11-23): a party list across both columns is neither column's, as Both's bar (it stays: the class
-        // wheel takes its own column's area under / over it, the middle wheel sits under / over it - wheelFit)
+        // wheel takes its own column's area under / over it, the middle wheel sits under / over it - wheelFit; fix/party-drop-wheels: a
+        // foot one right over Across's bar goes DOWN with that bar when it drops for a radial - partyDrop)
         if (p == Part.PARTY && laidPartyWide) HomeSlide.Half.NONE
         else HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w, split = laidSplit)
     /** the party list was laid across both columns ([HomeLayoutSolver.wideParty]) */
@@ -628,6 +636,14 @@ class HomeView(
         }
         return out
     }
+    /** fix/party-drop-wheels: how far Party mode's full-width list at the foot, right over Across's bar, slides down with that bar for a
+     *  radial that asked for the room, on the page laid as [places] (HomeSlide.partyDrop: the wheels' by the bar's own distance, [below]
+     *  the LB picture's and the full slides' off the page); 0 = it stays (a top list, no Across bar under it, not shown) */
+    private fun partyDrop(places: Map<Part, RectF>, below: Boolean = false): Float {
+        if (!laidPartyWide || views[Part.PARTY]?.visibility != View.VISIBLE) return 0f
+        val pw = places[Part.PARTY] ?: return 0f
+        return HomeSlide.partyDrop(true, pw.top, pw.bottom, acrossBox(places)?.top, frameH, below)
+    }
     /** feat/radial-castbar: what each open radial asked of Across's bar (it drops only when the radial needs the room) */
     private var wheelDrop = false
     private var classDrop = false
@@ -658,7 +674,9 @@ class HomeView(
         val pw = places[Part.PARTY]?.takeIf { laidPartyWide }
         val bb = maxOf(barsFoot(places), pw?.takeIf { it.centerY() < h / 2f }?.bottom ?: 0f)   // (feat/fight-castbar: under a fight's strip)
         val pwFoot = pw?.takeIf { it.centerY() >= h / 2f }?.let { it.top - g }
-        val fullFoot = if (pwFoot == null) h - g else minOf(h - g, pwFoot)
+        // (fix/party-drop-wheels, the user's pick "List drops with the bar": a foot list right over Across's bar goes down with it,
+        // into its place with the bar Off - the full square ends over it there, the size the wheel has with no bar)
+        val fullFoot = if (pwFoot == null) h - g else minOf(h - g, pwFoot + partyDrop(places))
         val keptFoot = HomeSlide.stayFoot(across?.top, h, g).let { if (pwFoot == null) it else minOf(it, pwFoot) }
         val full = ClassSlot.middle(w, h, bb, g, w * WHEEL_SLOT_MAX, bottom = fullFoot, mid = mid)
         val kept = ClassSlot.middle(w, h, bb, g, w * WHEEL_SLOT_MAX, bottom = keptFoot, mid = mid)
@@ -678,7 +696,7 @@ class HomeView(
         if (!wheelOpen || width == 0) return
         val was = RectF(wheelRect)
         wheelFit(places)
-        wheelPart(places, true)
+        wheelPart(places, true, refit = true)
         barAwaySync()
         if (was != wheelRect) onWheelSlot?.invoke(RectF(wheelRect))
     }
@@ -694,9 +712,27 @@ class HomeView(
         if (!classOpen || width == 0) return
         val w = width.toFloat(); val g = UiKit.MODULE_GAP
         val half = if (classLeft) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
+        // fix/party-drop-wheels: Party mode's foot list dropped with Across's bar stays down by the drop the page as it will be gives it
+        // (0 once the bar is laid below the page for a fight: the list lies on the page's foot then), riding the page's own motion
+        // ([partyRide]); one the page would lay back up into the held wheel (a fight's end: the bar coming back under it) stays down
+        // with the bar the same way. The square is cut over the list as drawn
+        var listDown = false
         places[Part.PARTY]?.takeIf { laidPartyWide && views[Part.PARTY]?.visibility == View.VISIBLE }?.let { pw ->
+            var dy = 0f
+            if (pw.centerY() >= frameH / 2f) {
+                val pd = partyDrop(places)
+                // (only with the bar coming back from below the page under it - a bar on the page now would have the list ride down onto
+                // it: that list cuts the square instead, the 1523 audit's way)
+                val returning = strips.any { v -> val r = places[if (v === castStrip) Part.STRIP else Part.CAST2]; val cur = now[if (v === castStrip) Part.STRIP else Part.CAST2]
+                    v.visibility == View.VISIBLE && r != null && cur != null && cur.top + v.translationY >= frameH - 0.5f && r.top < frameH - 0.5f }
+                if (!classDrop && returning && pd > 0f && pw.top < classRect.bottom + g - 0.5f && pw.left < classRect.right && pw.right > classRect.left) classDrop = true
+                dy = if (classDrop) pd else 0f
+                listDown = dy > 0f
+                if (dy != partyView.translationY || partyRiding) { partyView.animate().cancel(); partyRide(dy) }
+                if (listDown) partyView.translationZ = CLASS_COVER_Z
+            }
             val a = ClassSlot.Area(classRect.left.toFloat(), classRect.top.toFloat(), classRect.right.toFloat(), classRect.bottom.toFloat())
-            val cut = if (pw.centerY() < frameH / 2f) a.copy(top = maxOf(a.top, pw.bottom + g)) else a.copy(bottom = minOf(a.bottom, pw.top - g))
+            val cut = if (pw.centerY() < frameH / 2f) a.copy(top = maxOf(a.top, pw.bottom + g)) else a.copy(bottom = minOf(a.bottom, pw.top + dy - g))
             if (cut == a || cut.bottom - cut.top < 1f) return@let
             val s = ClassSlot.inColumn(cut)
             classRect.set(s.left.toInt(), s.top.toInt(), (s.left + s.side).toInt(), (s.top + s.side).toInt())
@@ -711,7 +747,8 @@ class HomeView(
             // only a bar below the page now (as drawn) that the page lays back on it
             if (cur.top + v.translationY < frameH - 0.5f || r.top >= frameH - 0.5f) continue
             val dy = barDrop(p, r)
-            if (dy > 0f && RectF.intersects(sq, r)) { v.animate().cancel(); v.translationY = dy; classDrop = true }
+            // (fix/party-drop-wheels: under a party list held down, the bar stays down too - it would come up into the list)
+            if (dy > 0f && (RectF.intersects(sq, r) || listDown)) { v.animate().cancel(); v.translationY = dy; classDrop = true }
             else if (dy <= 0f && halfOf(p, r, w) == half) { v.animate().cancel(); v.translationX = ClassSlot.away(classLeft, r.left, r.right, w, g) }
             else continue
             v.translationZ = CLASS_COVER_Z
@@ -721,11 +758,11 @@ class HomeView(
     /** fix/radials-clip-castbar: the open wheel's square changed ([wheelRefit]), in Home's coordinates */
     var onWheelSlot: ((RectF) -> Unit)? = null
     /** the columns part for the middle wheel ([open]) by [places], or come back */
-    private fun wheelPart(places: Map<Part, RectF>, open: Boolean) {
+    private fun wheelPart(places: Map<Part, RectF>, open: Boolean, refit: Boolean = false) {
         val w = width.toFloat()
         for ((p, v) in views) {
             if (bandPart(p)) continue
-            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f; if (v is CastStripView) v.translationY = 0f }; continue }
+            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f; if (v is CastStripView || p == Part.PARTY) v.translationY = 0f }; continue }
             val r = places[p] ?: continue
             val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush, wheelPushR)
             v.animate().cancel()
@@ -741,12 +778,38 @@ class HomeView(
                 // curve, a Top screen slide's) never lifts it into sight on the way
                 if (!(open && dy == 0f && below && r.top >= frameH - 0.5f)) a.translationY(dy)
             }
+            // fix/party-drop-wheels (the user's pick "List drops with the bar"): Party mode's full-width list at the foot, right over
+            // Across's bar, goes down with it on the same motion, by the same distance (into its place with the bar Off); back up on
+            // the close. Laid again under the open wheel (a fight's start / end: [wheelRefit]) it rides the page's own motion instead
+            if (p == Part.PARTY) {
+                val dy = if (open && wheelDrop) partyDrop(places) else 0f
+                if (refit) partyRide(dy) else { partyRiding = false; a.translationY(dy) }
+            }
             // the map's well edge and zone band are Home's own paint (dispatchDraw): a redraw per frame of ITS slide (no layout)
             if (v === mapSlot) a.setUpdateListener { invalidate() } else a.setUpdateListener(null)
             a.setListener(null)
             a.start()
         }
     }
+    /**
+     * fix/party-drop-wheels: the dropped party list's offset when the page is laid again under a held wheel (a fight's start / end: its
+     * box grows, or moves to the page's foot with the bar slid away, or back up over it): from where it is drawn now to [to], on the
+     * page's OWN motion - each frame of [apply]'s animator eases it by the same fraction as the list's box ([partyRideFrame]), so the
+     * list as drawn goes straight from where it was to where it lands, never past it (a view animator of its own, on another time or
+     * curve, lifted it over the held wheel for a few frames). Laid at once (no motion): there at once ([partyRideEnd])
+     */
+    private fun partyRide(to: Float) {
+        val v = partyView
+        partyRideFrom = v.translationY; partyRideTo = to
+        partyRiding = partyRideFrom != to
+        if (!partyRiding) v.translationY = to
+    }
+    private var partyRiding = false
+    private var partyRideFrom = 0f
+    private var partyRideTo = 0f
+    /** one frame of the page's motion at [k] (the list box's own fraction) */
+    private fun partyRideFrame(k: Float) { if (partyRiding) partyView.translationY = partyRideFrom + (partyRideTo - partyRideFrom) * k }
+    private fun partyRideEnd() { if (partyRiding) { partyRiding = false; partyView.translationY = partyRideTo } }
     /**
      * f-radial-behind (1.0.9, the user: "the radial needs to look like its behind the Map and Chat modules, not slide up in front of it"):
      * the item / spell wheel is drawn by HomeRadialView into THIS layer, which lies over the bars but UNDER every column (the chat, the
@@ -820,10 +883,17 @@ class HomeView(
             val v = views[p] ?: continue
             val r = now[p] ?: continue
             val below = r.top + v.translationY >= frameH - 0.5f
-            val y = if (drop) barDrop(p, r) * ee else if (!settled && below) v.translationY.also { if (it > 0f) down = true } else 0f
+            val y = if (drop) slideDrop(p, r) * ee else if (!settled && below) v.translationY.also { if (it > 0f) down = true } else 0f
             val half = halfOf(p, r, w)
             val x = if (half == HomeSlide.Half.NONE) v.translationX else HomeSlide.dx(half, lbPushL, lbPushR)
             if (v.translationX != x || v.translationY != y) { v.animate().cancel(); v.translationX = x; v.translationY = y }
+        }
+        // fix/party-drop-wheels: the foot list that goes down with the bar for this picture ([pauseParty]) the same way
+        if (pauseParty) now[Part.PARTY]?.let { r ->
+            val v = partyView
+            val below = r.top + v.translationY >= frameH - 0.5f
+            val y = if (drop) (frameH - r.top).coerceAtLeast(0f) * ee else if (!settled && below) v.translationY.also { if (it > 0f) down = true } else 0f
+            if (v.translationX != 0f || v.translationY != y) { v.animate().cancel(); v.translationX = 0f; v.translationY = y }
         }
         lbDrop = down
         barAwaySync()
@@ -834,6 +904,17 @@ class HomeView(
         val line = columnsLine(w)
         fun at(bottom: Float) = LbFit.place(w, barsBottom(), line.first, line.second, bottom, classicLook(), UiKit.pauseBarsBottom)
         val full = at(frameH - g)
+        // fix/party-drop-wheels (the user's pick "List drops with the bar"; "Stay when it fits" kept): Party mode's foot list right over
+        // Across's bar ([pauseParty]) no longer leaves sideways for the picture - it stays with the bar when the picture fits over both at
+        // its full size, else it goes straight down below the page with the bar (lbBars / pauseSlide), and the picture takes the page
+        // down to its foot, its size with the bar Off (where the list leaves sideways)
+        val list = if (if (pauseT > 0f) pauseParty else partyDrop(now, below = true) > 0f) now[Part.PARTY] else null
+        if (list != null) {
+            val kept = at(minOf(HomeSlide.stayFoot(acrossBox(now)?.top, frameH, g), list.top - g))
+            val drop = HomeSlide.makesRoom(list.top, kept.k * LbPartyView.PICT_H, full.k * LbPartyView.PICT_H,
+                LbFit.bars(kept).values.maxOf { it.b }, g)
+            return (if (drop) full else kept) to drop
+        }
         val across = acrossBox(now) ?: return full to false
         val kept = at(HomeSlide.stayFoot(across.top, frameH, g))
         val drop = HomeSlide.makesRoom(across.top, kept.k * LbPartyView.PICT_H, full.k * LbPartyView.PICT_H,
@@ -2426,6 +2507,7 @@ class HomeView(
         // ... and with the game's swing timer off, the strip keeps the swing alone (its cast is the game's bar's)
         if (lent(castView)) castView.stripNoCast = stripRec && swingOnlyNow
         if (!animate || before == null) {
+            partyRideEnd()                                                     // (fix/party-drop-wheels: laid at once, the list's drop too)
             if (lent(castView)) castView.away = away                           // laid at once (no motion): away now
             fightLine(stripRec && away)
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
@@ -2550,6 +2632,8 @@ class HomeView(
                 if (overlayFrom != overlayTo) invalidate()
                 // only parts whose box moved are measured / placed (fix/controller placeFrame); a fade alone touches no layout (fix/rooms)
                 if (moving) placeFrame()
+                // fix/party-drop-wheels: a dropped party list laid again under a held wheel rides the list box's own fraction
+                partyRideFrame(if (sliding) TopSlide.resumeK(a.animatedFraction, slideFrom, away, band = false) else if (springs) a.animatedFraction else k)
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationCancel(a: Animator) {
@@ -2563,6 +2647,8 @@ class HomeView(
                 override fun onAnimationEnd(a: Animator) {
                     // a spring glide cut short keeps its parts' speeds for the next one; landed, they are still
                     if (!cancelled) partVel.clear()
+                    // (fix/party-drop-wheels: landed - the list's drop where it lands; cut short - the next apply's refit rides on from here)
+                    if (!cancelled) partyRideEnd() else partyRiding = false
                     if (sliding) partyView.stretch = false                 // (landed or cut: the next motion sets it again)
                     // the motion landed with the band laid above the page: it draws nothing more (CastView.away). Any motion that lands
                     // there, not only a whole up-slide (the 11-22 review: a re-lay inside the slide's 240 ms cancelled it, and the glide
@@ -2934,6 +3020,18 @@ class HomeView(
     private var pauseUp = false
     /** feat/radial-castbar: how far along the full slide's drop of Across's bar is (0 .. 1, the chat's curve: pauseSlide) */
     private var pauseDropK = 0f
+    /** fix/party-drop-wheels: this slide (the LB picture's, the pause wheel's, the target radial's) takes Party mode's foot list right
+     *  over Across's bar DOWN with the bar (chosen at its open: [pauseSlide]) */
+    private var pauseParty = false
+    /** fix/party-drop-wheels: how far Across's bar part [p] laid at [r] goes down in this slide: [barDrop], or - with the foot list going
+     *  down with it ([pauseParty]) - as far as the list does (below the page), so the two go down as one block on the same curve (the list
+     *  over the bar all the way; on its own distance the list, going further, ran down over the bar mid-slide) */
+    private fun slideDrop(p: Part, r: RectF?, places: Map<Part, RectF> = now): Float {
+        val d = barDrop(p, r)
+        if (d <= 0f || !pauseParty) return d
+        val list = places[Part.PARTY] ?: return d
+        return maxOf(d, frameH - list.top)
+    }
     /**
      * feat/radial-castbar: the page laid again under the pause wheel's / the target radial's full slide (a fight beginning or ending
      * while it is open, as [wheelRefit] / [classRefit] for the other wheels): Across's bar laid on the page as it will be ([places])
@@ -2944,9 +3042,13 @@ class HomeView(
         if (pauseT <= 0f || pauseSide > 0f) return
         for (p in listOf(Part.STRIP, Part.CAST2)) {
             val v = views[p] ?: continue
-            val dy = barDrop(p, places[p])
+            val dy = slideDrop(p, places[p], places)
             if (dy <= 0f) continue
             v.animate().cancel(); v.translationX = 0f; v.translationY = dy * pauseDropK
+        }
+        // fix/party-drop-wheels: the foot list that went down with the bar, from its new place
+        if (pauseParty) places[Part.PARTY]?.let { r ->
+            partyView.animate().cancel(); partyView.translationX = 0f; partyView.translationY = (frameH - r.top).coerceAtLeast(0f) * pauseDropK
         }
         barAwaySync(places)
     }
@@ -2957,6 +3059,10 @@ class HomeView(
         if (t == pauseT && sidePx == pauseSide && barsUp == pauseUp) return
         // (the way the slide goes this frame: on its open (or still) Across's bar only ever goes down, on its close only up)
         val opening = t >= pauseT
+        // fix/party-drop-wheels: Party mode's foot list right over Across's bar goes DOWN with the bar in this slide (its way chosen at
+        // the open, kept to its close: a fight laying the page again meanwhile never switches it to the sideways one mid-way)
+        if (pauseT <= 0f && t > 0f) pauseParty = partyDrop(now, below = true) > 0f
+        if (pauseParty && t > 0f) partyRiding = false
         pauseT = t; pauseSide = sidePx; pauseUp = barsUp
         val screen = RectF(0f, 0f, width.toFloat(), frameH)
         // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
@@ -3017,13 +3123,22 @@ class HomeView(
             if (sidePx <= 0f && (p == Part.STRIP || p == Part.CAST2)) {
                 // (a bar still on its way back from a wheel just closed - its animator - is stopped: this slide places it now)
                 if (t > 0f) v.animate().cancel()
-                val dy = barDrop(p, r)
+                val dy = slideDrop(p, r)
                 if (dy > 0f || r != null && laidSide == CastStripModel.Side.BOTH && !laidSplit) {
                     val to = dy * pauseDropK
                     val at = y0.coerceAtLeast(0f)
                     v.translationX = 0f
                     v.translationY = if (t <= 0f) 0f else if (opening) maxOf(at, to) else minOf(at, to)
                 }
+            }
+            // fix/party-drop-wheels (the user's pick "List drops with the bar"): the foot list right over Across's bar goes straight down
+            // below the page with the bar, on the same curve (no longer off with its column's side); t = 0 brings it back up
+            if (sidePx <= 0f && p == Part.PARTY && pauseParty) {
+                if (t > 0f) v.animate().cancel()
+                val to = (frameH - (r?.top ?: frameH)).coerceAtLeast(0f) * pauseDropK
+                val at = y0.coerceAtLeast(0f)
+                v.translationX = 0f
+                v.translationY = if (t <= 0f) 0f else if (opening) maxOf(at, to) else minOf(at, to)
             }
             if (sidePx > 0f && !bandPart(p)) {
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
@@ -3042,10 +3157,18 @@ class HomeView(
                 // way on the sides' curve when the picture needs the room (lbFit), so it keeps its full size
                 // (a bar still on its way back from a wheel just closed - its animator - is stopped: this slide places it now)
                 if (bar && t > 0f) v.animate().cancel()
-                v.translationY = if (lbDrop) barDrop(p, r) * ee else 0f
+                v.translationY = if (lbDrop) slideDrop(p, r) * ee else 0f
+                // fix/party-drop-wheels: the foot list over Across's bar ([pauseParty]) never sideways here: it stays with the bar when the
+                // picture fits over both, else goes straight down below the page with it on the sides' curve ([lbFit])
+                if (p == Part.PARTY && pauseParty) {
+                    if (t > 0f) v.animate().cancel()
+                    v.translationX = 0f
+                    v.translationY = if (lbDrop && r != null) (frameH - r.top).coerceAtLeast(0f) * ee else 0f
+                }
                 if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
             }
         }
+        if (t <= 0f) pauseParty = false
         invalidate()
         barAwaySync()
         // 1.0.20: the class wheel that waited for the LB picture's sides opens now they are back
@@ -4626,7 +4749,7 @@ class HomeView(
         if (flow.full == HomeModule.BARS || barsSlot.visibility != View.VISIBLE) return false
         // the (-) Party mode tag stands over the bars' foot: its touch is the tag's
         if (e.actionMasked == MotionEvent.ACTION_DOWN) barsDown = inBars(e) &&
-            !(partyView.visibility == View.VISIBLE && partyView.tagAt(e.x - partyView.left - partyView.translationX, e.y - partyView.top))
+            !(partyView.visibility == View.VISIBLE && partyView.tagAt(e.x - partyView.left - partyView.translationX, e.y - partyView.top - partyView.translationY))
         return barsDown
     }
 
@@ -5918,6 +6041,20 @@ internal object HomeSlide {
      */
     fun makesRoom(barTop: Float?, kept: Float, full: Float, keptBottom: Float, gap: Float): Boolean =
         barTop != null && (kept < full - 0.5f || keptBottom + gap > barTop + 0.5f)
+    /**
+     * fix/party-drop-wheels (the user's pick 2026-11-23, "List drops with the bar": "While a wheel is open, the party list and the Across
+     * bar both slide down out of the way, so the wheel gets full size. Both come back when it closes."): how far DOWN Party mode's
+     * full-width list laid at [top]..[bottom] ([wide]) slides with Across's bar laid from [barTop] when that bar drops for a radial. Only
+     * a list at the FOOT, right over the bar (the solver lays it there; a top list, or one with no bar laid under it, never moves: 0).
+     * The middle and class wheels: by the bar's own drop ([barDrop]: the same motion, the same distance), so the list lands where it lies
+     * with the bar Off - its well on the page's foot - and the wheel is the size it has then. [below] (the LB picture, the pause wheel's
+     * and the target radial's full slides, where with the bar Off the list leaves the page sideways): on down below the page, as the bar
+     */
+    fun partyDrop(wide: Boolean, top: Float, bottom: Float, barTop: Float?, h: Float, below: Boolean = false): Float = when {
+        !wide || barTop == null || barTop >= h || (top + bottom) / 2f < h / 2f || bottom > barTop + 0.5f -> 0f
+        below -> h - top
+        else -> h - barTop
+    }
 }
 
 /** p-card-invisible: the quest card's state in words, for the WCHOME "quest card:" line (pure, so the JVM tests read it) */
