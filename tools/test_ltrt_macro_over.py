@@ -138,7 +138,7 @@ ab = open(os.path.join(ROOT, "companion", "app", "src", "main", "assets", "compa
 pv = int(pm.split('local PV = "m', 1)[1].split('"', 1)[0])
 check(pv >= 188 and "m188 THE LT / RT MACRO FIXES" in pm and "m187 THE ROUTER FOLLOWS THE GAME'S STANCE / POSSESS BAR" in pm,
       "0. PadMap m188 and its note (m187's kept)", pv)
-check('V = "nbar18"' in ab and "nbar13 THE CONTROLLER CHANGED" in ab and "nbar12 THE WINGS' PLATES AND PARTY MODE" in ab, "0. ActionBar nbar13 and its note")
+check('V = "nbar19"' in ab and "nbar13 THE CONTROLLER CHANGED" in ab and "nbar12 THE WINGS' PLATES AND PARTY MODE" in ab, "0. ActionBar nbar13 and its note")
 check(all(e in pm for e in ("GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED")),
       "0. the game's controller events (GamePadDocumentation.lua's names) are listened to")
 check(not clean(), "0. the world loads clean", clean())

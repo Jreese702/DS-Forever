@@ -711,7 +711,7 @@ def plate_checks(chk):
     G = L.globals()
     W = G.WowCompanion
     NB = W.nbar
-    chk("nbar18: the version tag", NB.V == "nbar18", NB.V)
+    chk("nbar19: the version tag (the 1528 merge of the three nbar18s)", NB.V == "nbar19", NB.V)
     G.ROWS["uisw"](None, 35)
     f = NB.f
     MEDIA_ = "Interface\\AddOns\\WowCompanion\\Media\\"

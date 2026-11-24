@@ -143,7 +143,7 @@ class ExitNowTest {
             IndoorSchedulerStep.on(IndoorSchedulerStep.Event.GAME_CLOSED, exiting = true))
         assertEquals(IndoorSchedulerStep.Action.KEEP, IndoorSchedulerStep.on(IndoorSchedulerStep.Event.COMPANION_UP, exiting = true))
         assertEquals(IndoorSchedulerStep.Action.STOP, IndoorSchedulerStep.on(IndoorSchedulerStep.Event.APP_EXIT, exiting = true))
-        val s = IndoorKeepAlive.State(setting = true, hasWork = true, gameActive = false, streaming = false, playedThisRun = true, shown = false)
+        val s = IndoorKeepAlive.State(setting = true, hasWork = true, gameActive = false, streaming = false, shown = false)
         assertTrue(IndoorKeepAlive.wanted(s))
         assertFalse("no foreground service asked for as DS Forever goes", IndoorKeepAlive.wanted(s.copy(exiting = true)))
     }

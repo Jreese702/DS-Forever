@@ -46,7 +46,7 @@ UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { Ge
 '''
 Q = boot(["safety", "tappad", "quests"], pre=PRE)
 
-check("local QV = \"q70\"" in SRC["quests"] and "q70 THE WHEEL'S CONFIRMED RUNS LAND" in SRC["quests"] and "q68 ABANDON PET" in SRC["quests"] and "q67 THE 1489 TEST BUILD MERGE" in SRC["quests"],
+check("local QV = \"q71\"" in SRC["quests"] and "q70 THE WHEEL'S CONFIRMED RUNS LAND" in SRC["quests"] and "q68 ABANDON PET" in SRC["quests"] and "q67 THE 1489 TEST BUILD MERGE" in SRC["quests"],
       "Quests says q70 (q68, q67 kept below it)")
 
 

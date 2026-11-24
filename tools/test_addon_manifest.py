@@ -51,7 +51,7 @@ def src(rel):
 
 
 check('local HV = "hub78"' in src("WowCompanionHub/Hub.lua"), "d. Hub hub78 (feat/top-castbar: the game's cast bar never shown for a fight)")
-check('local PV = "m190"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m190 (feat/top-castbar: the swing with our top cast bar)")
+check('local PV = "m191"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m191 (the 1528 merge of feat/top-castbar's, feat/smarty-campfire's and feat/hold-cast's m190s)")
 check('local IV = "i173"' in src("WowCompanionInteract/Interact.lua"), "d. Interact i173")
 check("-- bags-kit6 " in src("WowCompanion/Bags.lua"), "d. Bags bags-kit6")
 

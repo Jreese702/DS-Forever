@@ -29,7 +29,7 @@ default "Recommended" is the four archives above, exactly as before.
 
 | Archive | Observed provenance and terms | Remaining source/notice work |
 |---|---|---|
-| turnip-test-mesa-26.3.1.zip | Official Mesa 26.3.1 ([archive.mesa3d.org](https://archive.mesa3d.org/mesa-26.3.1.tar.xz), sha256 4e4e438e...8961, the 26.3.1 release notes' value) + one local patch exporting the vk_icd* entrypoints on Android (tools/turnip-test/ and in the zip). NDK r27c, API 29, KGSL only; no Meson subproject linked. Archive includes Mesa's licence texts (licenses/turnip-test-mesa-26.3.1/). | Source, patch and recipe recorded. Verify the tarball's release signature (key 4C95FAAB3EB073EC, not yet checked) before public redistribution. |
+| turnip-test-mesa-26.3.1.zip | Official Mesa 26.3.1 ([archive.mesa3d.org](https://archive.mesa3d.org/mesa-26.3.1.tar.xz), sha256 4e4e438e...8961, the 26.3.1 release notes' value) + one local patch exporting the vk_icd* entrypoints on Android (tools/turnip-test/ and in the zip). NDK r27c, API 29, KGSL only; no Meson subproject linked. Archive includes Mesa's licence texts (licenses/turnip-test-mesa-26.3.1/). | Source, patch and recipe recorded. The tarball's detached release signature was verified on 2026-11-24 (gpg: Good signature, Dylan Baker, key 71C4B75620BC75708B4BDB254C95FAAB3EB073EC); its sha256 matches the release notes. |
 
 Banners-Turnip Standard v27.0.0-20261123 was downloaded and inspected but is NOT
 bundled: it lacks the vk_icd* exports, needs API 30 symbols despite minApi 28,

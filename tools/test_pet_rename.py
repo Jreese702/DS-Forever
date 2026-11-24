@@ -57,7 +57,7 @@ WowCompanion.chatField = {
   name = function() return FIELD and FIELD.name or nil end,
 }''')
 
-check('local QV = "q70"' in SRC["quests"] and "q69 THE PET'S RENAME" in SRC["quests"] and "q68 ABANDON PET" in SRC["quests"],
+check('local QV = "q71"' in SRC["quests"] and "q69 THE PET'S RENAME" in SRC["quests"] and "q68 ABANDON PET" in SRC["quests"],
       "Quests says q70 (q68 kept below it)")
 
 

@@ -149,8 +149,9 @@ other bytes: the release check then fails and the pin must be renewed from a ver
 
 Source: the official Mesa 26.3.1 release tarball, https://archive.mesa3d.org/mesa-26.3.1.tar.xz,
 SHA-256 4e4e438eac7b840a9383988cbb7c08dad8041da544b9319fc26d319fa7348961 (the value in
-https://docs.mesa3d.org/relnotes/26.3.1.html). Its detached signature (key 4C95FAAB3EB073EC) was
-downloaded but not verified. ONE local change: `tools/turnip-test/0001-android-export-vk_icd-entrypoints.diff`
+https://docs.mesa3d.org/relnotes/26.3.1.html). Its detached signature was verified on
+2026-11-24: gpg "Good signature" from Dylan Baker, key 71C4B75620BC75708B4BDB254C95FAAB3EB073EC (4C95FAAB3EB073EC); the
+tarball's SHA-256 matches the release notes' value. ONE local change: `tools/turnip-test/0001-android-export-vk_icd-entrypoints.diff`
 (made by `mkpatch.py`): vulkan-android.sym / vulkan-icd-android-symbols.txt also export the three
 vk_icd* loader entrypoints the Vulkan wrapper loads through. The IR3 scheduler fix our default driver
 carries by hand is upstream (2f8dc9eaba06, in 26.3.0; ir3_sched.c:531 in 26.3.1) and is not re-applied;

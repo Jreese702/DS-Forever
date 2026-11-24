@@ -180,7 +180,7 @@ OURS_B = "CLICK WowCompanionFaceB:LeftButton"
 # ---------------------------------------------------------------- (0) the versions, the notes, nothing of the attack half left
 PM = SRC["padmap"]
 CODE = re.sub(r'--[^\n]*', '', PM)          # the code without its comments (the notes name what is gone)
-check(int(PM.split('local PV = "m', 1)[1].split('"', 1)[0]) >= 174 and 'local BV = "b78"' in SRC["book"], "PadMap m174, Book b68")
+check(int(PM.split('local PV = "m', 1)[1].split('"', 1)[0]) >= 174 and 'local BV = "b79"' in SRC["book"], "PadMap m174, Book b68")
 Q = "I like the pet recall but I think we need to remove the pet smart attack, its obnoxious"
 check(Q in PM and Q in SRC["book"], "the header notes quote the user (2026-11-18)")
 check("/petattack [pet" not in CODE and "OV.SPET" not in CODE and "smartPet" not in CODE and "spResync" not in CODE

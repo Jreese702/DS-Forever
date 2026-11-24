@@ -153,16 +153,16 @@ def macrolines(p):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m190"' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m190 and its note (m189 kept)')
+check('local PV = "m191"' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m190 and its note (m189 kept)')
 check('local CV = "p59"' in ptc and 'p59 HOLD TO CAST' in ptc and 'p58 THE CHOOSER AS A GRID' in ptc, '0. PadTabCtl p59 and its note')
-check('local BV = "b78"' in bk and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b78 and its note')
-check('local NB = { V = "nbar18"' in ab and 'nbar18 HOLD TO CAST' in ab, '0. ActionBar nbar18 and its note')
+check('local BV = "b79"' in bk and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b78 and its note')
+check('local NB = { V = "nbar19"' in ab and 'nbar18 HOLD TO CAST' in ab, '0. ActionBar nbar18 and its note')
 
 # ---------------------------------------------------------------- (1) THE PROBE
 L = world()
 check(not clean(L), '1. the world loads clean', clean(L))
 ready = last(L, 'holdprobe')
-check(ready.get('st') == 'ready' and ready.get('bound') is None and ready.get('v') == 'm190',
+check(ready.get('st') == 'ready' and ready.get('bound') is None and ready.get('v') == 'm191',
       '1. a few seconds after the login: "ready", nothing bound on the Guide\'s names (READ first)', ready)
 H = L.eval('WowCompanion.padMapHold()')
 check(H.w is not None and H.f is not None, '1. the watch is open (its frame polls the controller)')
