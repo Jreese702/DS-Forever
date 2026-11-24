@@ -510,7 +510,16 @@ class HomeEditTabsTest {
         assertEquals("Party mode keeps what it showed", listOf("gold", "hearth", "bags"), m.draft.badges(P))
         assertEquals("In combat's own untouched", listOf("gold", "bags", "ammo"), m.draft.badges(C))
         m.discard()
-        assertNull(m.draft.badges(C)); assertNull(m.draft.badges(P))
+        // (Discard puts the session's own lists back; the Settings row it leaves keeps every fight tab as it showed before that row
+        // changed - In combat's own list of the session gone, its copy of Settings' badges of then in its place)
+        assertEquals("In combat: Settings' badges as they were", listOf("gold", "hearth", "bags"), m.draft.badges(C))
+        assertEquals("Party mode's copy stays with the Settings row Discard leaves", listOf("gold", "hearth", "bags"), m.draft.badges(P))
+        // Out of combat's badge alone: Settings' row (1518's ruling: a behaviour row) - nothing for Discard, the copies made all the same
+        val n = HomeEditModel(classic, EditStop.CHAT)
+        n.bandIs(listOf("hearth", "gold"), emptyList())
+        n.hideExtra("hearth")
+        assertFalse(n.changed)
+        assertEquals(listOf("gold", "hearth"), n.draft.badges(C)); assertEquals(listOf("gold", "hearth"), n.draft.badges(P))
     }
 
     /** the review: a tab's own list keeps the extras edit mode does not offer now (the pet's face while no pet is out): a badge never

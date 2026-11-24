@@ -452,11 +452,13 @@ class HomeEditModel(
      */
     private fun badgesTo(before: List<String>, now: List<String>): List<Fx> {
         val offered = appOn + appOff
+        // (Out of combat's change is Settings' row - a behaviour row Discard leaves, 1518's ruling - so the fight tabs' copies it makes
+        // are kept by Discard too: made on the record Discard puts back as well, never a change of the session's own)
+        fun pin(l: HomeLayout) = HomeTab.values().filter { it.fight && l.badges(it) == null }.fold(l) { r, t -> r.withBadges(t, before + appHiddenOn) }
         val to = if (tab.fight) {
             val keep = (draft.badges(tab) ?: (appOn + appHiddenOn)).filter { it !in offered && it !in now }
             draft.withBadges(tab, now + keep)
-        } else HomeTab.values().filter { it.fight && draft.badges(it) == null }
-            .fold(draft) { r, t -> r.withBadges(t, before + appHiddenOn) }
+        } else pin(draft).also { saved = pin(saved) }
         if (to == draft) return emptyList()
         draft = to
         return if (tab.fight) listOf(Fx.Relay(Motion.MODULE_OPEN)) else emptyList()
