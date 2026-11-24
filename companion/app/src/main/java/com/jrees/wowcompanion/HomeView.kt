@@ -1107,6 +1107,15 @@ class HomeView(
      * Nothing is sent: the app follows the add-on, never the reverse. Party mode has no takeover (R0): nothing here
      */
     private fun topFightSync(was: Boolean, isNow: Boolean, combat: Boolean?) {
+        // nbar17 (the user, 11-23, testing 1523: "the top slides out faster than the bottom slides up"): the router's switch is the
+        // Wings' own start - with Top screen live it starts the band too (HomeGrow.noteArmed), so a caster's opener (no auto-attack, no
+        // combat word until the cast lands) slides the band away WITH the Wings instead of 1.5-3 s after them
+        val live = TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct) && !partyOnHere() && !editLive()
+        if (grow.noteArmed(live && isNow)) {
+            val t = System.currentTimeMillis()
+            if (live && isNow) Log.i("WCLOG", "home: top fight armed by the game (padmap fight 1): the band slides away with the Wings")
+            if (flow.combat(takeoverWanted(t))) { if (flow.takeover) grewAt = t; changed() }
+        }
         if (was == isNow || !TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct) || partyOnHere() || editLive()) return
         val t = System.currentTimeMillis()
         if (!grow.fighting(t)) return
@@ -2662,10 +2671,14 @@ class HomeView(
         val springs = !morphing && !combat && !sliding && !gliding && editGlides() && motion.on && motion.scale > 0f
         if (!springs) partVel.clear()
         val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
+        // nbar17: a Top-screen slide runs on the wall clock as the add-on's Wings do (they never follow the system's animator duration
+        // scale): its duration divided by that scale (0 = "Animations off": still one frame), the scale logged once per slide
+        val animScale = if (sliding) systemAnimScale() else 1f
+        if (sliding) Log.i("WCLOG", "home: top slide ${if (away) "up" else "down"} ${ms} ms, animator scale $animScale")
         val dur = if (springs) HomeEditMotion.glideMs(ms) else ms          // (a hold waits before start(), on the wall clock: below)
         var cancelled = false
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = dur
+            duration = if (sliding) TopSlide.wallClockMs(dur, animScale) else dur    // (its fraction still over [dur]: the slide's own time)
             // the slide: linear time, every part on the way's curve (TopSlide.partK: ease-in up / ease-out down; the columns ride the band's foot)
             interpolator = if (springs || sliding) android.view.animation.LinearInterpolator() else Motion.curve()
             addUpdateListener { a ->

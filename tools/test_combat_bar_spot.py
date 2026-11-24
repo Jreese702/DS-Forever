@@ -302,7 +302,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar13 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar16"' in src
+    chk("0. ActionBar's tag nbar13 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar17"' in src
         and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)
@@ -315,12 +315,16 @@ def main():
     # the 11-22 review: the box holds what a half DRAWS - the slots' focus glow on its top and its inner side, the glow + the 2-unit press
     # below it; nbar12 (ruling A): the outer column - the L / R plate, the chip under it, Party mode's chord row. nbar14 THE BAND'S SHAPE:
     # the flattened diamond (OFF_X 47.5 across, OFF_Y 25 up / down): the inner glow 47.5 + 23 + 15 = 85.5, up 25 + 23 + 15 = 63; the
-    # plate 64 x 50 at 70.5 + 6 + 34 = 110.5 (out to 142.5); down: the swing lines 48 + 8 + 6 + 4 + 6 = 72
-    chk("A. nbar14 one half: outer 142.5 (the 64-wide plate at 110.5), inner 85.5 / up 63 (the focus glow of the flattened diamond), down 72 "
-        "(the swing lines); the diamond's centre", (hw, hh, ax, ay) == (228, 135, 142.5, 63), (hw, hh, ax, ay))
+    # plate 64 x 50 at 70.5 + 6 + 34 = 110.5 (out to 142.5); down: the swing lines 48 + 8 + 6 + 4 + 6 = 72. nbar17: the band's own plate
+    # 62 x 49.28 at 110.5 (out to 141.5), the chip (its 25.8 glyph) 42.4 under the plate's centre (the band's 84.7 bottom px)
+    chk("A. nbar17 one half: outer 141.5 (the band's 62-wide plate at 110.5), inner 85.5 / up 63 (the focus glow of the flattened "
+        "diamond), down 72 (the swing lines); the diamond's centre", (hw, hh, ax, ay) == (227, 135, 141.5, 63), (hw, hh, ax, ay))
     og = todict(L.eval("WowCompanion.nbar.outerGeo")())
-    chk("A. nbar14 the outer column: x 110.5, the plate at +23 (its top level with the diamond's top slot), the chip at -20, the chord "
-        "row at -46", og == {"x": 110.5, "plateY": 23, "chipY": -20, "chordY": -46, "chordDX": 19}, og)
+    py_ = 48 - 62 * 31 / 39 / 2
+    cy_ = py_ - 62 * 31 / 39 / 2 - 4.86 - 25.8 / 2
+    chk("A. nbar17 the outer column: x 110.5, the plate at +23.36 (its top level with the diamond's top slot), the chip 42.4 under it "
+        "(-19.04), the chord row under that (-43.94)", og["x"] == 110.5 and abs(og["plateY"] - py_) < 1e-9 and abs(og["chipY"] - cy_) < 1e-9
+        and abs(og["chordY"] - (cy_ - 12.9 - 4 - 8)) < 1e-9 and og["chordDX"] == 19 and abs((py_ - cy_) - 42.4) < 0.01, og)
     chk("A. nbar14 the band's size and shape: MATCH_S 1.75, OFF_X 47.5 / OFF_Y 25, GAP 60, HUD_MARGIN 60, MIN_K 0.8, PUSH_MAX 228",
         (NB.TOP.MATCH_S, NB.TOP.OFF_X, NB.TOP.OFF_Y, NB.TOP.GAP, NB.TOP.HUD_MARGIN, NB.TOP.MIN_K, NB.TOP.PUSH_MAX) == (1.75, 47.5, 25, 60, 60, 0.8, 228))
     hud = R(820, 890, 280, 58)                                   # the bars + the aura host
@@ -396,19 +400,20 @@ def main():
     chk("A5. a placed spot over the tap pad band: moved under it", r["case"] == "placed" and not any(over(rect(x), BAND) for x in r["rects"].values())
         and r["rects"][1]["y"] >= 22 + 158, r["rects"])
     # nbar10: the screen clamp runs BEFORE the band test (a top-left spot the clamp moves right never lands on the band), at MARGIN 24.
-    # The editor keeps the piece (nbar14: the Wings' joined bar, 2 x (160 + 142.5) = 605 units wide) on the screen, so its centre x >= 302.5 s
+    # The editor keeps the piece (nbar14: the Wings' joined bar, 2 x (160 + 141.5) = 603 units wide, nbar17) on the screen, so its centre
+    # x >= 301.5 s
     bad = []
     for s in (1.0, 1.281, 1.3, 1.336, 1.36, 1.392, 1.4, 1.406, 1.5, 1.75):
-        for cx in range(int(302.5 * s) + 1, 720, 4):
+        for cx in range(int(301.5 * s) + 1, 720, 4):
             for cy in (int(73 * s) + 1, 100, 150, 200):
                 rr = fsolve(L, s=s, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(cx, cy, 0, 0))
-                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 142.5 * s < -1e-6:
+                if any(over(rect(x), BAND_SPEC, 24) for x in rr["rects"].values()) or rr["l"]["x"] - 141.5 * s < -1e-6:
                     bad.append((s, cx, cy))
     chk("A5. nbar10: a placed spot near the left edge at band height, s 1.0-1.75 (the match x size): never within 24 px of the band, on screen",
         not bad, bad[:5])
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[], stock=R(960, 984, 0, 0), placed=R(312, 150, 0, 0))
-    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 302.5 s: nbar14's half)",
-        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 302.5 * 1.336) < 1e-6
+    chk("A5. nbar10: the review's case (s 1.336, placed 312,150): pushed under the band, still left (x clamped to 301.5 s: nbar17's half)",
+        rr["case"] == "placed" and abs((rr["l"]["x"] + rr["r"]["x"]) / 2 - 301.5 * 1.336) < 1e-6
         and rr["rects"][1]["y"] >= 24 + 154 + 24 - 1e-6, rr)
     # case 5 (the stock fallback) too: a stock spot moved to the top-left (the whole screen taken, so the grid finds nothing)
     rr = fsolve(L, s=1.336, hud=None, ours=[], game=[R(0, 0, 1920, 1080, "g.Wall")], stock=R(300, 150, 0, 0))
@@ -437,7 +442,7 @@ def main():
     chk("A6. the HUD at the left edge: no room for the D-pad's half beside it nor joined above it -> the grid's spot (case 4), never the stock "
         "fallback", edge["case"] == 4, edge["case"])
     big = fsolve(L, hud=hud, ours=ours, game=game, stock=R(960, 984, 0, 0), s=1.5)
-    chk("A6. the size scales the halves (150 %: 342 x 202.5)", abs(big["rects"][1]["w"] - 342) < 0.01 and abs(big["rects"][1]["h"] - 202.5) < 0.01
+    chk("A6. the size scales the halves (150 %: 340.5 x 202.5)", abs(big["rects"][1]["w"] - 340.5) < 0.01 and abs(big["rects"][1]["h"] - 202.5) < 0.01
         and big["k"] == 1, big["rects"][1])
     chk("A7. the solver is pure: no frame read, no event, nothing created", G.RAISED == 0 and NB.top.reads == 0 and G.RECTNOW == 0)
 
@@ -457,8 +462,8 @@ def main():
     G.CTOP = True
     chk("B. the flag on: the piece is listed in the top layout editor (so it can be placed)", NB.lay.want() is True and NB.lay.on() is False)
     pw, ph = L.eval("WowCompanion.nbar.lay.size")(None)
-    chk("B. nbar14: the piece is the Wings' joined bar at the match size while the flag is on (2 x (160 + 142.5) x 1.75 wide, the "
-        "flattened diamonds' 96 x 1.75 high)", abs(pw - 605 * 1.75) < 1e-6 and abs(ph - 96 * 1.75) < 1e-6, (pw, ph))
+    chk("B. nbar14: the piece is the Wings' joined bar at the match size while the flag is on (2 x (160 + 141.5) x 1.75 wide, the "
+        "flattened diamonds' 96 x 1.75 high)", abs(pw - 603 * 1.75) < 1e-6 and abs(ph - 96 * 1.75) < 1e-6, (pw, ph))
 
     # ------------------------------------------------------------------------------------------------ C the live bar
     L.execute('RUN(0.6)')                                         # nbar9: the flag is read every FLAG_S (0.5 s)
@@ -478,9 +483,9 @@ def main():
     chk("C. nbar11: the lane under both halves clear -> the slide", sp["lane"] is True)
     L.execute('RUN(0.04, 0.02)')
     f = NB.f
-    chk("C. nbar11: the 60 ms hold first (the band's first frames go first): nothing shown yet", not NB.top.shown and NB.top.form == "slide"
+    chk("C. nbar17: the 80 ms hold first (the band's first frames go first): nothing shown yet", not NB.top.shown and NB.top.form == "slide"
         and NB.top.hold is not None, (NB.top.shown, NB.top.form))
-    L.execute('RUN(0.04, 0.02)')
+    L.execute('RUN(0.06, 0.02)')                                  # (nbar17: the hold counts from the frame after the switch's)
     lx, ly = L.eval("DIAMOND")(1)
     rx, ry = L.eval("DIAMOND")(2)
     hb = L.eval("WowCompanion.nbar.halfBox")()
@@ -496,21 +501,23 @@ def main():
         seq.append(L.eval("DIAMOND")(1)[1])
     t_ = NB.top.t
     k_ = L.eval("WowCompanion.nbar.slideIn")(t_)
-    chk("C. ... rising every frame (straight up, x fixed), on nbar14's IN_C (1/3, 0.5, 2/3, 1)", all(b < a for a, b in zip(seq, seq[1:]))
+    chk("C. ... rising every frame (straight up, x fixed), on nbar17's way up (the band's own curve, then the even brake)", all(b < a for a, b in zip(seq, seq[1:]))
         and abs(seq[-1] - (sp["l"]["y"] + d0 * (1 - k_))) < 0.6 and abs(L.eval("DIAMOND")(1)[0] - sp["l"]["x"]) < 0.01, (seq, t_, k_))
     chk("C. ... alpha 1 all the way (the slide is the cue, no fade)", abs(f.alpha - 1) < 1e-6, f.alpha)
-    L.execute('RUN(0.14, 0.02)')
+    L.execute('RUN(0.22, 0.02)')
     lx, ly = L.eval("DIAMOND")(1)
     rx, ry = L.eval("DIAMOND")(2)
-    chk("C. in by 0.32 s (hold 0.06 + 0.26): alpha 1, settled", abs(f.alpha - 1) < 1e-6 and NB.top.t == 1, (f.alpha, NB.top.t))
+    chk("C. nbar17 in by ~0.41 s (hold 0.08 + the band's way up ~0.31 at this drop): alpha 1, settled", abs(f.alpha - 1) < 1e-6
+        and NB.top.t == 1 and abs(NB.top.plan.ms - 312) < 25, (f.alpha, NB.top.t, NB.top.plan.ms))
     chk("C. the D-pad's diamond at the left spot, the faces' at the right (px)", abs(lx - sp["l"]["x"]) < 0.01 and abs(ly - sp["l"]["y"]) < 0.01
         and abs(rx - sp["r"]["x"]) < 0.01 and abs(ry - sp["r"]["y"]) < 0.01, ((lx, ly), (rx, ry), sp["l"], sp["r"]))
     zl = L.eval("PARTCENTRE")(f.chip[1])
     zr = L.eval("PARTCENTRE")(f.chip[2])
     pl = L.eval("PARTCENTRE")(f.plate[1])
     chk("C. nbar14 the ZL / ZR chips at the outer ends (past the flattened diamond's 70.5), under the L / R plates, the plates' tops level "
-        "with the diamond's top slot", zl[0] < lx - 70.5 * 1.75 and zr[0] > rx + 70.5 * 1.75 and zl[1] > pl[1] and abs(zl[1] - (ly + 20 * 1.75)) < 0.01
-        and abs(pl[1] - (ly - 23 * 1.75)) < 0.01 and f.chip[1].shown and f.chip[2].shown, (zl, zr, pl, (lx, ly)))
+        "with the diamond's top slot", zl[0] < lx - 70.5 * 1.75 and zr[0] > rx + 70.5 * 1.75 and zl[1] > pl[1]
+        and abs(zl[1] - (ly - og["chipY"] * 1.75)) < 0.01 and abs(pl[1] - (ly - og["plateY"] * 1.75)) < 0.01 and f.chip[1].shown
+        and f.chip[2].shown, (zl, zr, pl, (lx, ly)))
     b2 = L.eval("BCENTRE")(2)
     b1 = L.eval("BCENTRE")(1)
     chk("C. nbar14 the flattened diamond: Up 25 units over the centre, Left 47.5 across (x 1.75)", abs(b2[1] - (ly - 25 * 1.75)) < 0.01
@@ -583,9 +590,9 @@ def main():
     chk("C. nbar14 ... the game's cast bar handed back to the player's Hide with them (WC.hubCastFight(false))",
         list(L.eval("HUBCF").values()) == [True, False], todict(L.eval("HUBCF")))
     G.TG = True
-    L.execute('RUN(0.4, 0.02)')
+    L.execute('RUN(0.5, 0.02)')
     chk("C. nbar14 a harmful press re-arms the router (its switch true again, still in the fight): the Wings slide back up, settled",
-        NB.top.shown and NB.top.t == 1 and abs(L.eval("DIAMOND")(1)[1] - spb["l"]["y"]) < 0.01, (NB.top.shown, NB.top.t))
+        NB.top.shown and NB.top.t == 1 and abs(L.eval("DIAMOND")(1)[1] - spb["l"]["y"]) < 0.05, (NB.top.shown, NB.top.t))     # (topPlace's 0.1-px key)
     chk("C. nbar14 ... and Hub asked again for the game's cast bar", list(L.eval("HUBCF").values()) == [True, False, True], todict(L.eval("HUBCF")))
     # PadMap m188's fightSw (the router's switch over every button) wins over tgGrown (Y's alone): false there -> down, whatever Y says
     G.FSW = False
@@ -739,9 +746,9 @@ def main():
     L.execute('EV("PLAYER_REGEN_DISABLED"); RUN(0.4)')
     lx, ly = L.eval("DIAMOND")(1)
     rx, ry = L.eval("DIAMOND")(2)
-    # (the spot dx -500 from the stock centre 960 = 460, kept on the screen: the joined bar's half width (160 + 142.5) x 1.75 = 529.375)
+    # (the spot dx -500 from the stock centre 960 = 460, kept on the screen: the joined bar's half width (160 + 141.5) x 1.75 = 527.625)
     chk("E. a placed spot (Auto off) wins in the fight: the joined bar there (kept on the screen at the match size)", todict(NB.top.spot)["case"] == "placed"
-        and abs((lx + rx) / 2 - 302.5 * 1.75) < 0.01 and abs(ly - 684) < 0.01 and abs(rx - lx - 2 * NB.DX * 1.75) < 0.01, ((lx, ly), (rx, ry)))
+        and abs((lx + rx) / 2 - 301.5 * 1.75) < 0.01 and abs(ly - 684) < 0.01 and abs(rx - lx - 2 * NB.DX * 1.75) < 0.01, ((lx, ly), (rx, ry)))
     G.TG, G.COMBAT = False, False
     L.execute('EV("PLAYER_REGEN_ENABLED"); RUN(0.4); LAYE.nbar = nil; WowCompanion.nbar.lay.apply(); RUN(0.1)')
     chk("E. Reset in the editor (no entry) = Auto again", todict(NB.top.spot)["case"] == 1, todict(NB.top.spot)["case"])
@@ -1013,7 +1020,7 @@ def party_fight_checks():
     ours, hud = L.eval("WowCompanion.nbar.topOurs")()
     hd = todict(hud)
     rim = NB.TOP.HUB_RIM
-    dxc = L.eval("WowCompanion.nbar.centreDx")()
+    dxc = NB.top.cdxWant                                         # nbar17: worked out here, told after the solve
     chk("I. Hub's rows (with their %d px rim) and its Select tab (alpha 0 too) in the HUD block (nbar14: at the centred place, %+d px)"
         % (rim, dxc), hd["x"] <= 700 + dxc + 1e-6 and hd["x"] + hd["w"] >= 740 + 330 + 300 + rim + dxc - 1e-6
         and hd["y"] + hd["h"] >= 870 + 76 + 64 + rim - 1e-6, hd)
@@ -1022,9 +1029,10 @@ def party_fight_checks():
     x0 = min(700, 740 - rim, 820)
     x1 = max(740 + 330 + 300 + rim, 1100)
     want = math.floor(960 - (x0 + x1) / 2 + 0.5)
-    chk("I. nbar14 Party mode's Top fight: NB.top.centre on, the shift told to Trail (NB.centreDx = 960 - the block's centre = %+d)" % want,
-        NB.top.centre is True and dxc == want and abs(hd["x"] + hd["w"] / 2 - 960) <= 0.5, (NB.top.centre, dxc, want, hd))
     spc = todict(L.eval("WowCompanion.nbar.topSolve")(False))
+    chk("I. nbar14 Party mode's Top fight: NB.top.centre on, the shift told to Trail after the solve (NB.centreDx = 960 - the block's "
+        "centre = %+d)" % want, NB.top.centre is True and dxc == want and L.eval("WowCompanion.nbar.centreDx")() == want
+        and abs(hd["x"] + hd["w"] / 2 - 960) <= 0.5, (NB.top.centre, dxc, want, hd))
     chk("I. nbar14 ... the Wings either side of the centred block, 60 px clear (case %s)" % spc["case"], spc["form"] == "wings"
         and spc["rects"][1]["x"] + spc["rects"][1]["w"] <= hd["x"] - 60 + 1e-6 and spc["rects"][2]["x"] >= hd["x"] + hd["w"] + 60 - 1e-6, spc)
     # Trail applies it (prd22: P.cx, our frames moved with Hub's rows): the block read there, the shift stays the same (no feedback)
@@ -1106,8 +1114,13 @@ def party_fight_checks():
         % want5, L.eval("WowCompanion.nbar.centreDx")() == want5 and abs(hd6["x"] - hd5["x"]) < 1e-6 and abs(hd6["w"] - hd5["w"]) < 1e-6,
         (hd6, hd5))
     sp6 = todict(L.eval("WowCompanion.nbar.topSolve")(False))
-    chk("I. nbar15 ... the same spot (no re-fit loop)", abs(sp6["l"]["x"] - sp5["l"]["x"]) < 1e-6 and abs(sp6["r"]["x"] - sp5["r"]["x"]) < 1e-6,
-        (sp6["l"], sp5["l"]))
+    # nbar17: sp5 was solved while the rows still stood uncentred (in transit: kept clear where they stood too, "hudnow"); landed, the
+    # Wings beside the centred rows at the 60 px gap - and solving again gives the same spot (no re-fit loop)
+    sp6b = todict(L.eval("WowCompanion.nbar.topSolve")(False))
+    chk("I. nbar17 ... landed: the Wings beside the centred rows (60 px clear), the same spot solved again (no re-fit loop)",
+        abs(sp6["rects"][1]["x"] + sp6["rects"][1]["w"] - (hd5["x"] - NB.TOP.HUD_MARGIN)) < 1e-6
+        and abs(sp6["rects"][2]["x"] - (hd5["x"] + hd5["w"] + NB.TOP.HUD_MARGIN)) < 1e-6
+        and abs(sp6b["l"]["x"] - sp6["l"]["x"]) < 1e-6 and abs(sp6b["r"]["x"] - sp6["r"]["x"]) < 1e-6, (sp6["rects"], hd5))
     # mid-fade the other way: PF.g says the new shift, the frames still where they were (Hub moves them at its fade's bottom) - each
     # stage less its own drawn shift: still the same block
     L.execute('local d = %d; local function mv(f) f.r.l = f.r.l - d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
@@ -1124,19 +1137,18 @@ def party_fight_checks():
     L.execute('local d = %.6f; local function mv(f) f.r.l = f.r.l + d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
               'mv(WowCompanion.uf.pf.tab)' % n8)
     L.eval("WowCompanion.nbar.topOurs")()
-    dx8 = L.eval("WowCompanion.nbar.centreDx")()
+    dx8 = NB.top.cdxWant                                         # nbar17: the shift worked out (told after the solve)
     chk("I. review NB.centreKeep: the rows read back 0.9 px off their centre: the shift told kept (%+d, not %+d)" % (want5, want5 - 1),
         dx8 == want5, (dx8, want5, raw5))
     L.execute('local d = 0.3; local function mv(f) f.r.l = f.r.l + d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
               'mv(WowCompanion.uf.pf.tab)')
     L.eval("WowCompanion.nbar.topOurs")()
-    dx9 = L.eval("WowCompanion.nbar.centreDx")()
+    dx9 = NB.top.cdxWant
     chk("I. review NB.centreKeep: ... 1.2 px off: the new shift told (%+d)" % (want5 - 1), dx9 == want5 - 1, (dx9, want5))
     L.execute('local d = %.6f; local function mv(f) f.r.l = f.r.l - d end; for i = 1, 4 do mv(WowCompanion.uf.pf.frames[i]) end; '
               'mv(WowCompanion.uf.pf.tab)' % (n8 + 0.3))
     L.eval("WowCompanion.nbar.topOurs")()
-    chk("I. review NB.centreKeep: ... back where they stood: %+d again" % want5, L.eval("WowCompanion.nbar.centreDx")() == want5,
-        L.eval("WowCompanion.nbar.centreDx")())
+    chk("I. review NB.centreKeep: ... back where they stood: %+d again" % want5, NB.top.cdxWant == want5, NB.top.cdxWant)
     L.execute('WowCompanion.uf.pf.g = nil; WowCompanion.prd.cx = 0')
     G.HUD_ON = True
     # the fight's end: gone
@@ -1173,17 +1185,24 @@ def hold_pin():
         "val WINGS_OUT = floatArrayOf(0.4f, 0f, 1f, 1f)" in kt and "function NB.easeIn(u) return NB.cubic(u, 0.4, 0, 1, 1) end" in ab)
     # the 11-22 review: a reversal of the way up holds by how far in the Wings had got - TopSlide's copy of their way up is the add-on's
     hold_in = re.search(r"NB\.TOP = \{[^}]*?HOLD_IN = ([0-9.]+)", ab)
-    in_s = re.search(r"NB\.TOP = \{[^}]*?IN_S = ([0-9.]+)", ab)
     k_hold = re.search(r"const val WINGS_HOLD_IN_MS = (\d+)L", kt)
-    k_in = re.search(r"const val WINGS_IN_MS = (\d+)L", kt)
-    chk("C. hold pin: TopSlide.WINGS_HOLD_IN_MS / WINGS_IN_MS are the add-on's NB.TOP.HOLD_IN / IN_S",
-        None not in (hold_in, in_s, k_hold, k_in) and abs(float(hold_in.group(1)) * 1000 - int(k_hold.group(1))) < 0.5
-        and abs(float(in_s.group(1)) * 1000 - int(k_in.group(1))) < 0.5,
-        (hold_in and hold_in.group(1), in_s and in_s.group(1), k_hold and k_hold.group(1), k_in and k_in.group(1)))
-    chk("C. hold pin: TopSlide.WINGS_IN is nbar14's NB.TOP.IN_C (1/3, 0.5, 2/3, 1: the way up's curve, NB.slideIn)",
-        "val WINGS_IN = floatArrayOf(1f / 3f, 0.5f, 2f / 3f, 1f)" in kt and "IN_C = { 1 / 3, 0.5, 2 / 3, 1 }" in ab
-        and "function NB.slideIn(u) local c = NB.TOP.IN_C; return NB.cubic(u, c[1], c[2], c[3], c[4]) end" in ab
-        and "return NB.slideIn(t)" in ab)
+    chk("C. hold pin: TopSlide.WINGS_HOLD_IN_MS is the add-on's NB.TOP.HOLD_IN (nbar17: 80 ms)",
+        None not in (hold_in, k_hold) and abs(float(hold_in.group(1)) * 1000 - int(k_hold.group(1))) < 0.5 and int(k_hold.group(1)) == 80,
+        (hold_in and hold_in.group(1), k_hold and k_hold.group(1)))
+    # nbar17 THE WAY UP RIDES THE BAND: TopSlide's copy of the Wings' way up (wingsPx at the default drop) is the add-on's NB.inPlan /
+    # NB.inPx - the same band (242 bottom px in top px, its exit at 226 / 242, Motion's 240 ms on UP), the same default drop
+    # (NB.drop0), the same whole time
+    chk("C. hold pin: nbar17 the band in both (BAND_TOP_PX 242 x 0.06055 / 0.06918, BAND_EXIT_K 226 / 242, the band's own (0.4, 0, 1, 1)), "
+        "the default drop FLOOR 16 + 135 x MATCH_S 1.75 + 2",
+        "const val BAND_TOP_PX = 242.0 * 0.06055 / 0.06918" in kt and "BAND_TOP_PX = 242 * 0.06055 / 0.06918" in ab
+        and "const val BAND_EXIT_K = 226.0 / 242.0" in kt and "BAND_EXIT_K = 226 / 242" in ab and "BAND_C = { 0.4, 0, 1, 1 }" in ab
+        and "const val WINGS_DROP0_PX = 16.0 + 135.0 * 1.75 + 2.0" in kt and "function NB.slideIn(u, p)" in ab and "return NB.slideIn(t)" in ab)
+    Lp = boot()
+    d0 = Lp.eval("WowCompanion.nbar.drop0")()
+    plan = Lp.eval("WowCompanion.nbar.inPlan")(d0)
+    chk("C. hold pin: nbar17 the add-on's default drop %.2f px (TopSlide's 254.25), its way up %.1f ms (TopSlide.WINGS_IN_MS: the bottom's own ~311, the "
+        "band's exit %.1f ms in)" % (d0, plan.ms, plan.tx), abs(d0 - 254.25) < 1e-9 and 300 <= plan.ms <= 318 and 225 <= plan.tx <= 235
+        and plan.cruise == 0 and plan.sc == 1, (d0, plan.ms, plan.tx))
     chk("C. hold pin: nbar14's B hold - TopSlide.B_HOLD_MS = WINGS_OUT_MS - START_FRAMES_MS - OVERLAP_MS (no channel: the add-on's B "
         "hands the Wings back at the same press)", "const val B_HOLD_MS = WINGS_OUT_MS - START_FRAMES_MS - OVERLAP_MS" in kt)
     # nbar12 / ruling D THE HAND-BACK: the hold is the Wings' whole way down less the fastest channel, the animator's start and one frame

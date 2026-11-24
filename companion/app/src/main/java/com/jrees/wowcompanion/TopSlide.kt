@@ -8,7 +8,7 @@ package com.jrees.wowcompanion
  * Motion.curveOut) and the chat / map / card columns grow up into the freed strip on the SAME curve, so their tops stay under the band's
  * foot every frame (the build's frames showed the columns on Motion.curve overtaking the band and covering its lower half mid-way: the
  * page then read as two objects); at the fight's end the reverse - the band comes back down, the columns with it. The add-on's Wings
- * slide in upward from the top screen's bottom edge at the same moment (ActionBar nbar11: a 60 ms hold, 0.26 s ease-out), so the band
+ * slide in upward from the top screen's bottom edge at the same moment (ActionBar nbar17: an 80 ms hold, then the band's own curve and an even brake: [wingsPx]), so the band
  * reads as one object crossing the seam: accelerating off the bottom screen, decelerating onto the top one. THE 11-22 POLISH (the
  * user's ruling D): the columns no longer stop dead in the top gap - past [BRAKE_AT_MS] they brake evenly ([kAt]); the way down hands
  * back continuously - a [HAND_BACK_MS] hold, then the band from the page's top edge ([edgeShift]) on a slow-start curve ([DOWN]); a
@@ -60,6 +60,11 @@ object TopSlide {
 
     /** the whole motion's length (every part): up [COLS_UP_MS], down [Motion.TOP_SLIDE_DOWN] */
     fun totalMs(up: Boolean): Long = if (up) COLS_UP_MS else Motion.TOP_SLIDE_DOWN
+
+    /** nbar17: an animator duration that runs [ms] on the WALL CLOCK under the system's animator duration [scale] (ValueAnimator
+     *  multiplies its duration by it; the add-on's Wings never do): [ms] / [scale], at least 1 ms; 0 ("Animations off") or 1: as given */
+    fun wallClockMs(ms: Long, scale: Float): Long =
+        if (scale > 0f && scale != 1f) Math.round(ms / scale.toDouble()).coerceAtLeast(1L) else ms
 
     /** a part's progress (0..1) [ms] into the slide: the [band] on its own curve (up: [UP] over 240 ms; down: [DOWN]), every other part
      *  (the columns, the card, the party module, a bar above a column) on the columns' (up: the band's curve, then the even brake) */
@@ -148,16 +153,52 @@ object TopSlide {
     fun wingsOff(ms: Long): Float = cubic(ms / WINGS_OUT_MS.toFloat(), WINGS_OUT)
     fun wingsOff(ms: Float): Float = cubic(ms / WINGS_OUT_MS.toFloat(), WINGS_OUT)
 
-    /** the Wings' way up: ActionBar NB.TOP.HOLD_IN (0.06 s) then NB.TOP.IN_S (0.26 s) on nbar14's NB.TOP.IN_C (1/3, 0.5, 2/3, 1) - the
-     *  user's pick 2026-11-23 "Even it out": 1.5 u - 0.5 u^3, its first speed the band's exit speed at the seam (~0.10 mm / ms), only
-     *  slower after; the same total time (the old ease-out (0, 0, 0.2, 1) entered ~3x faster than the band left) */
-    const val WINGS_HOLD_IN_MS = 60L
-    const val WINGS_IN_MS = 260L
-    val WINGS_IN = floatArrayOf(1f / 3f, 0.5f, 2f / 3f, 1f)
+    /**
+     * THE WINGS' WAY UP RIDES THE BAND (ActionBar nbar17 NB.inPlan / NB.inPx; the user, 2026-11-23, testing 1523: "It also looks like
+     * the top slides out faster than the bottom slides up"): nbar14's IN_C started the Wings at the band's EXIT speed while the band was
+     * only starting (the two curves mirror images, run at once: the Wings 83 % in when the band was 32 % up). Now: an 80 ms hold
+     * ([WINGS_HOLD_IN_MS]: the channel's middle and the animator's first frame), then the band's own curve ([UP] over
+     * [Motion.TOP_SLIDE_UP]) mm for mm on the top panel ([BAND_TOP_PX]: its 242 bottom px in top px) until the band's last pixel leaves
+     * the bottom screen ([BAND_EXIT_MS], ~230 ms in), then an even brake from that speed to the spot - the default drop
+     * ([WINGS_DROP0_PX], the halves on the floor at the match size) in [WINGS_IN_MS] (~312 ms, the bottom's own way up [COLS_UP_MS]
+     * ~311). A longer drop cruises / scales in the add-on (its own plan per spot); this copy is the default's, for the reversal hold.
+     */
+    const val WINGS_HOLD_IN_MS = 80L
+    /** the band's whole travel up (HomeLayoutSolver: restBottom 226 + AWAY_PAST 16 = 242 bottom px) in top-panel px (0.06055 / 0.06918 mm) */
+    const val BAND_TOP_PX = 242.0 * 0.06055 / 0.06918
+    /** the band's progress as its last pixel leaves the bottom screen (226 of its 242) */
+    const val BAND_EXIT_K = 226.0 / 242.0
+    /** ActionBar NB.drop0: FLOOR 16 + one half's 135 units x MATCH_S 1.75 + 2 */
+    const val WINGS_DROP0_PX = 16.0 + 135.0 * 1.75 + 2.0
+    /** when the band's last pixel leaves the bottom screen (ms into its slide) */
+    val BAND_EXIT_MS: Double = run {
+        var lo = 0.0; var hi = Motion.TOP_SLIDE_UP.toDouble()
+        repeat(60) { val mid = (lo + hi) / 2; if (cubicD(mid / Motion.TOP_SLIDE_UP, UP) < BAND_EXIT_K) lo = mid else hi = mid }
+        (lo + hi) / 2
+    }
+    /** the band's displacement in top px [ms] into its slide */
+    fun bandTopPx(ms: Double): Double = BAND_TOP_PX * cubicD(ms / Motion.TOP_SLIDE_UP, UP)
+    /** its speed (top px / ms), as the add-on works it (a 1 ms difference) */
+    private fun bandTopV(ms: Double): Double = bandTopPx(ms + 0.5) - bandTopPx(ms - 0.5)
+    private val WINGS_SX: Double = bandTopPx(BAND_EXIT_MS)
+    private val WINGS_VX: Double = bandTopV(BAND_EXIT_MS)
+    /** the even brake's length at the default drop (~79 ms) */
+    private val WINGS_TB: Double = 2.0 * (WINGS_DROP0_PX - WINGS_SX) / WINGS_VX
+    /** the Wings' whole way up at the default drop, past the hold (~312 ms) */
+    val WINGS_IN_MS: Long = Math.round(BAND_EXIT_MS + WINGS_TB)
+    /** the Wings' px up from their start [ms] into the way up (the default drop) */
+    fun wingsPx(ms: Double): Double = when {
+        ms <= 0.0 -> 0.0
+        ms <= BAND_EXIT_MS -> bandTopPx(ms)
+        else -> {
+            val s = (ms - BAND_EXIT_MS).coerceAtMost(WINGS_TB)
+            (WINGS_SX + WINGS_VX * s - 0.5 * (WINGS_VX / WINGS_TB) * s * s).coerceAtMost(WINGS_DROP0_PX)
+        }
+    }
     /** how far in the Wings are (0 under the edge .. 1 at their spot) [upMs] after the fight's start, counted on the band's clock: the
      *  add-on hears both edges of the fight before the app by about the same channel delay, so the Wings' age at their reversal is the
      *  band's up-slide age at its own */
-    fun wingsIn(upMs: Long): Float = cubic((upMs - WINGS_HOLD_IN_MS) / WINGS_IN_MS.toFloat(), WINGS_IN)
+    fun wingsIn(upMs: Long): Float = (wingsPx((upMs - WINGS_HOLD_IN_MS).toDouble()) / WINGS_DROP0_PX).toFloat().coerceIn(0f, 1f)
     /** where on a whole way down ([wingsOff]'s ms) the Wings reversed from [k] in stand: the add-on goes on from where they are (NB.slideT) */
     fun wingsOutAt(k: Float): Long = (0L..WINGS_OUT_MS).first { 1f - wingsOff(it) <= k }
     /** an up-slide [upMs] old (wall clock) turned back down by the fight's end: the hand-back from where the Wings, reversed, stood -
@@ -220,7 +261,7 @@ object TopSlide {
         return bz((lo + hi) / 2, c[1], c[3]).toFloat()
     }
     /** [cubic] in doubles (the brake's constants) */
-    private fun cubicD(u: Double, c: FloatArray): Double {
+    internal fun cubicD(u: Double, c: FloatArray): Double {
         if (u <= 0.0) return 0.0
         if (u >= 1.0) return 1.0
         fun bz(t: Double, a: Float, b: Float): Double { val m = 1.0 - t; return 3 * m * m * t * a + 3 * m * t * t * b + t * t * t }

@@ -209,6 +209,7 @@ class HomeGrow(staleMs: Long = 20_000L) {
     private var attackWas = false                   // the last word of each, to see a START (false -> true)
     private var fightWas = false
     private var minimized = false
+    private var armed = false                       // Top screen live: the router's own switch (the padmap's `fight`, the Wings' word)
 
     /** a document said the auto-attack is [on] at [now] */
     fun noteAttack(on: Boolean, current: Boolean, now: Long) {
@@ -226,7 +227,22 @@ class HomeGrow(staleMs: Long = 20_000L) {
         fight.note(on, current, now)
     }
 
-    private fun on(now: Long) = attack.shown(now) || fight.shown(now)
+    private fun on(now: Long) = attack.shown(now) || fight.shown(now) || armed
+
+    /**
+     * THE WINGS' OWN START (In fights = Top screen, ActionBar nbar17; the user, 2026-11-23, testing 1523: "It also looks like the top
+     * slides out faster than the bottom slides up"): the Wings rise on the router's switch (the padmap's `fight`: a harmful press on a
+     * hostile target, PadMap's fightSw), the band only on an auto-attack / auto-repeat / combat word - for a caster that is the cast
+     * landing, 1.5-3 s after the Wings were up. With Top screen live (and not Party mode: its fights only) the switch is a THIRD start:
+     * on (0 -> 1) the grow shows as at a new start; off (1 -> 0) it no longer holds it (B / the give-back; the fight's own word still
+     * does). [on] = live && the switch. -> true when it changed
+     */
+    fun noteArmed(on: Boolean): Boolean {
+        if (on == armed) return false
+        if (on) minimized = false                   // a new start (as the router's re-arm)
+        armed = on
+        return true
+    }
 
     /** B while the big controller shows: shrink it until the next start. False when there was nothing to shrink. */
     fun minimize(now: Long): Boolean {

@@ -121,7 +121,7 @@ function F:RegisterEvent(e) EVENTS[e] = EVENTS[e] or {}; table.insert(EVENTS[e],
 function F:RegisterUnitEvent(e) return self:RegisterEvent(e) end
 function F:UnregisterEvent() end
 function F:GetEffectiveScale() return 1 end
-function F:SetTexture(t) self.tex = t; self.atlas = nil end
+function F:SetTexture(t) if NOMEDIA and NOMEDIA[t] then return false end; self.tex = t; self.atlas = nil end   -- (nbar17: our media refused)
 function F:SetAtlas(a)
     if NOATLAS then error("no atlas") end
     if REFUSED and REFUSED[a] then return false end       -- the real client: an unknown atlas is refused WITHOUT raising
@@ -711,28 +711,46 @@ def plate_checks(chk):
     G = L.globals()
     W = G.WowCompanion
     NB = W.nbar
-    chk("nbar13: the version tag", NB.V == "nbar16", NB.V)
+    chk("nbar17: the version tag", NB.V == "nbar17", NB.V)
     G.ROWS["uisw"](None, 35)
     f = NB.f
-    chk("nbar14 plates: built with the bar, one per half (64 x 50: the band's plate size), never the mouse", f.plate is not None and f.plate[1].w == 64 and f.plate[1].h == 50
-        and f.plate[1].mouse is False and f.plate[2].mouse is False)
-    chk("nbar12 plates: the game's shoulder plates (left / right -shoulder-bg) and their -pressed overlays",
-        f.plate[1].bg.atlas == "gamepad-targeting-left-shoulder-bg" and f.plate[2].bg.atlas == "gamepad-targeting-right-shoulder-bg"
-        and f.plate[1].held.atlas == "gamepad-targeting-left-shoulder-pressed" and f.plate[1].held.shown is False,
-        (f.plate[1].bg.atlas, f.plate[2].bg.atlas, f.plate[1].held.atlas))
+    MEDIA_ = "Interface\\AddOns\\WowCompanion\\Media\\"
+    chk("nbar17 plates: built with the bar, one per half (62 x 49.28: the band's 39 x 31 plate, 124 bottom px), never the mouse",
+        f.plate is not None and f.plate[1].w == 62 and abs(f.plate[1].h - 62 * 31 / 39) < 1e-9
+        and f.plate[1].mouse is False and f.plate[2].mouse is False, (f.plate[1].w, f.plate[1].h))
+    tl = [f.plate[1].bg.tcoord[k] for k in range(1, 5)] if f.plate[1].bg.tcoord else None
+    tr = [f.plate[2].bg.tcoord[k] for k in range(1, 5)] if f.plate[2].bg.tcoord else None
+    chk("nbar17 plates: the band's own plate (our wings_plate: its used 234 x 186 of 256), the R one mirrored; the held one "
+        "wings_plate_held, hidden at rest",
+        f.plate[1].bg.tex == MEDIA_ + "wings_plate" and f.plate[2].bg.tex == MEDIA_ + "wings_plate"
+        and tl == [0, 234 / 256, 0, 186 / 256] and tr == [234 / 256, 0, 0, 186 / 256]
+        and f.plate[1].held.tex == MEDIA_ + "wings_plate_held" and f.plate[1].held.shown is False, (tl, tr, f.plate[1].bg.tex))
     chk("nbar12 plates: hidden out of the Wings (the Nintendo bar alone keeps today's look)", f.plate[1].shown is False and f.plate[2].shown is False)
     # the places (bar units from the bar's centre; the halves at -DX / +DX out of the Wings)
     NB.topDeco()
     p1, p2 = f.plate[1].pts[1], f.plate[2].pts[1]
     c1 = f.chip[1].pts[1]
     t1 = [f.chord[1][j].pts[1] for j in (1, 2, 3)]
-    chk("nbar14 places: the plate at each half's outer top (x 160 + 110.5, y +23: the flattened diamond's top), the chip under it (-20), "
-        "the chord row (-46, 19 apart)",
-        (p1[4], p1[5]) == (-270.5, 23) and (p2[4], p2[5]) == (270.5, 23) and (c1[4], c1[5]) == (-270.5, -20)
-        and [(t[4], t[5]) for t in t1] == [(-289.5, -46), (-270.5, -46), (-251.5, -46)], ((p1[4], p1[5]), (c1[4], c1[5]), [(t[4], t[5]) for t in t1]))
+    py = 48 - 62 * 31 / 39 / 2
+    cy = py - 62 * 31 / 39 / 2 - 4.86 - 25.8 / 2
+    chk("nbar17 places: the plate at each half's outer top (x 160 + 110.5, its top level with the diamond's top slot: +23.36), the chip "
+        "42.4 under its centre (the band's 84.7 bottom px), the chord row under that",
+        (p1[4], round(p1[5], 6)) == (-270.5, round(py, 6)) and (p2[4], round(p2[5], 6)) == (270.5, round(py, 6))
+        and (c1[4], round(c1[5], 6)) == (-270.5, round(cy, 6)) and abs((py - cy) - 42.4) < 0.01
+        and [t[4] for t in t1] == [-289.5, -270.5, -251.5], ((p1[4], p1[5]), (c1[4], c1[5]), [(t[4], t[5]) for t in t1]))
     g1 = f.plate[1].glyph.pts[1]
-    chk("nbar14 places: the bumper glyph (17) at the plate's inner bottom corner (19.2 in, 15 down: the 64 x 50 plate's 0.6)", (g1[4], g1[5]) == (19.2, -15)
-        and f.plate[2].glyph.pts[1][4] == -19.2, (g1[4], g1[5]))
+    chk("nbar17 places: the bumper glyph (23 square: the band's 46 px) at the plate's inner bottom corner (26 in, 20.15 down: the band's "
+        "inner edge - 10, bottom - 9)", (g1[4], g1[5]) == (26, -20.15) and f.plate[2].glyph.pts[1][4] == -26
+        and f.plate[1].glyph.w == 23 and f.plate[1].glyph.h == 23, (g1[4], g1[5]))
+    ic = f.plate[1].icon
+    chk("nbar17 places: the reticle square (18 plate units = 28.6) raised one plate unit (the band's (0, -1)), never SetAllPoints",
+        abs(ic.w - 18 * 62 / 39) < 1e-9 and ic.w == ic.h and ic.pts[1][1] == "CENTER" and abs(ic.pts[1][5] - 62 / 39) < 1e-9,
+        (ic.w, ic.h, list(ic.pts[1].values())))
+    cg = f.chip[1].g
+    chk("nbar17 chips: the trigger glyph square (25.8: the band's 51.5 px), centred, the band's Gamepad_Rev_LTrigger_64 / RTrigger at "
+        "0.55; the held glow our soft disc (50.4)", cg.w == 25.8 and cg.h == 25.8 and cg.pts[1][1] == "CENTER"
+        and cg.atlas == "Gamepad_Rev_LTrigger_64" and f.chip[2].g.atlas == "Gamepad_Rev_RTrigger_64" and cg.alpha == 0.55
+        and f.chip[1].disc.tex == MEDIA_ + "wings_glow" and f.chip[1].disc.w == 50.4, (cg.w, cg.h, cg.atlas, cg.alpha, f.chip[1].disc.tex))
     # the pictures: the band's table
     kinds = L.eval("WowCompanion.nbar.plateKinds")
     want = {(False, False, False): ("friendly", "hostile"), (True, False, False): ("friendly", "shortcuts"),
@@ -749,23 +767,26 @@ def plate_checks(chk):
     chk("nbar12 plates: shown with the Wings (NB.topShow)", f.plate[1].shown and f.plate[2].shown)
     G.LB = True
     NB.tick(0.06)
-    chk("nbar12 plates: LB held (the tick's poll) -> the left plate pressed (overlay shown), the right one Shortcuts",
-        NB.sh.l is True and f.plate[1].held.shown and f.plate[1].icon.atlas == "gamepad-targeting-friendly"
-        and f.plate[2].icon.atlas == "gamepad-targeting-shortcuts" and f.plate[1].glyph.atlas == "gamepad-switch-128x-shoulder-l-pressed",
-        (NB.sh.l, f.plate[1].held.shown, f.plate[1].icon.atlas, f.plate[2].icon.atlas, f.plate[1].glyph.atlas))
+    chk("nbar17 plates: LB held (the tick's poll) -> the left plate held (its gold plate shown), the band's reticles (friendly / "
+        "shortcuts), the band's bumper glyph",
+        NB.sh.l is True and f.plate[1].held.shown and f.plate[1].icon.tex == MEDIA_ + "wings_ret_friendly"
+        and f.plate[2].icon.tex == MEDIA_ + "wings_ret_shortcuts" and f.plate[1].glyph.atlas == "Gamepad_Rev_LShoulder_64",
+        (NB.sh.l, f.plate[1].held.shown, f.plate[1].icon.tex, f.plate[2].icon.tex, f.plate[1].glyph.atlas))
     G.LB = False
     NB.tick(0.06)
-    chk("nbar12 plates: let go -> friendly / hostile, no overlay, the normal glyph", not f.plate[1].held.shown
-        and f.plate[1].icon.atlas == "gamepad-targeting-friendly" and f.plate[2].icon.atlas == "gamepad-targeting-hostile"
-        and f.plate[2].glyph.atlas == "gamepad-switch-128x-shoulder-r-normal")
+    chk("nbar17 plates: let go -> friendly / hostile, no held plate, the band's glyph", not f.plate[1].held.shown
+        and f.plate[1].icon.tex == MEDIA_ + "wings_ret_friendly" and f.plate[2].icon.tex == MEDIA_ + "wings_ret_hostile"
+        and f.plate[2].glyph.atlas == "Gamepad_Rev_RShoulder_64")
     L.execute('WowCompanionSpellsDB = { padLayout = "plain" }')
     NB.tick(0.06)
-    chk("nbar12 plates: the plain layout -> the xbox bumpers", f.plate[1].glyph.atlas == "gamepad-xbox1-trigger-lb-normal", f.plate[1].glyph.atlas)
+    chk("nbar17 plates: the plain layout -> the band's xbox set (Gamepad_Gen_*)", f.plate[1].glyph.atlas == "Gamepad_Gen_LShoulder_64", f.plate[1].glyph.atlas)
     L.execute('WowCompanionSpellsDB = nil')
     NB.topHide()
     chk("nbar12 plates: hidden with the Wings (NB.topHide)", f.plate[1].shown is False and f.plate[2].shown is False)
-    # refused atlases: the fallback plate and letters
-    L2 = boot(pre=pre + '; REFUSED = { ["gamepad-targeting-left-shoulder-bg"] = true, ["gamepad-targeting-right-shoulder-bg"] = true, '
+    # refused: our plate texture and the glyphs (every name the client might lack) -> the fallback plate and letters
+    L2 = boot(pre=pre + '; NOMEDIA = { ["Interface\\\\AddOns\\\\WowCompanion\\\\Media\\\\wings_plate"] = true, '
+                        '["Interface\\\\AddOns\\\\WowCompanion\\\\Media\\\\wings_ret_hostile"] = true }; '
+                        'REFUSED = { ["Gamepad_Rev_LShoulder_64"] = true, '
                         '["gamepad-switch-128x-shoulder-l-normal"] = true, ["gamepad-switch-128x-shoulder-l-pressed"] = true, '
                         '["gamepad-targeting-hostile"] = true }')
     G2 = L2.globals()
@@ -776,7 +797,7 @@ def plate_checks(chk):
     NB2.topShow()
     NB2.tick(0.06)
     pl, pr = f2.plate[1], f2.plate[2]
-    chk("nbar12 plates refused: a dark plate (the chip's colour), no overlay atlas", pl.bgOn is False and pl.bg.color is not None
+    chk("nbar12 plates refused: a dark plate (the chip's colour), no held texture", pl.bgOn is False and pl.bg.color is not None
         and abs(pl.bg.color[1] - 0.08) < 1e-6 and pl.heldOn is False, (pl.bgOn, pl.bg.color and list(pl.bg.color.values())))
     chk("nbar12 plates refused: the glyph refused -> \"L\" on the plate; the right one keeps its glyph", pl.word.text == "L"
         and pl.glyph.shown is False and pr.word.text == "" and pr.glyph.shown, (pl.word.text, pr.word.text))

@@ -156,4 +156,22 @@ class HomeTouchTest {
         grow.noteFight(true, true, t0 + 9)
         assertTrue("a new fight grows again", grow.shown(t0 + 9))
     }
+
+    /** nbar17: the Wings' own start (the router's switch, the padmap's `fight`) is a third start of the grow while Top screen is live -
+     *  a caster's opener (no auto-attack, no combat word yet) takes the band away with the Wings; the switch off lets it go; B still
+     *  minimizes; a new arm clears the minimize (the re-arm) */
+    @Test fun theWingsSwitchStartsTheGrow() {
+        val grow = HomeGrow()
+        assertFalse("nothing yet", grow.shown(t0))
+        assertTrue(grow.noteArmed(true)); assertFalse("no change twice", grow.noteArmed(true))
+        assertTrue("armed alone: the grow shows (the band leaves with the Wings)", grow.shown(t0 + 1))
+        assertFalse("no fight word: B's red reminder is the fight's only", grow.fighting(t0 + 1))
+        assertTrue(grow.minimize(t0 + 2)); assertFalse(grow.shown(t0 + 2))
+        assertTrue(grow.noteArmed(false)); assertTrue(grow.noteArmed(true))
+        assertTrue("armed again: a new start", grow.shown(t0 + 3))
+        assertTrue(grow.noteArmed(false))
+        assertFalse("the switch off, no attack, no fight: gone", grow.shown(t0 + 4))
+        grow.noteFight(true, true, t0 + 5)
+        assertTrue("the fight word still grows it", grow.shown(t0 + 5))
+    }
 }
