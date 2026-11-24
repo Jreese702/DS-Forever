@@ -1531,6 +1531,11 @@ fun XServerScreen(
             // presses: a release always passes, so nothing sticks down. DS Forever's own copy (PadFeed, above) still gets them
             if (it.event.repeatCount == 0) com.jrees.wowcompanion.SetupBridge.log?.invoke("pop-up: ${KeyEvent.keyCodeToString(it.event.keyCode)} held back from the game")
             true
+        } else if (isGamepad && com.jrees.wowcompanion.LaunchLoad.holdsPad() && it.event.action == KeyEvent.ACTION_DOWN) {
+            // DS FOREVER (the launch screen, 2026-11-24): until the game's first picture nothing of the game shows, so a press never
+            // reaches it (a stray A at its login screen); a release always passes, so nothing sticks down. The abort chord and DS
+            // Forever's own copy (PadFeed, above) still get every press
+            true
         } else {
             var handled = false
             if (isGamepad) {
@@ -1594,6 +1599,10 @@ fun XServerScreen(
         } else if (isGamepad && it.event != null && com.jrees.wowcompanion.PopupHold.holdsHat(
                 com.jrees.wowcompanion.SetupBridge.holdsGamePad(), it.event.getAxisValue(MotionEvent.AXIS_HAT_X), it.event.getAxisValue(MotionEvent.AXIS_HAT_Y))) {
             // the D-pad as the hat axis (the Thor), held back like the keys above while a pop-up of ours asks; its centring passes
+            true
+        } else if (isGamepad && com.jrees.wowcompanion.LaunchLoad.holdsPad()) {
+            // DS FOREVER (the launch screen): sticks, hat and triggers stay ours until the game's first picture (the next motion after
+            // the hand-over gives the game the pad's state again)
             true
         } else {
             var handled = false

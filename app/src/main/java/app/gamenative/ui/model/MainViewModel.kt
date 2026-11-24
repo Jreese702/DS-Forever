@@ -73,6 +73,9 @@ class MainViewModel @Inject constructor(
     private val onSetBootingSplashText: (AndroidEvent.SetBootingSplashText) -> Unit = {
         if (_state.value.showBootingSplash) {
             setBootingSplashText(it.text)
+        } else {
+            // DS Forever: a step said before GameNative's splash state is up (the pre-launch) still reaches our launch screen
+            com.jrees.wowcompanion.LaunchLoad.step(it.text, android.os.SystemClock.uptimeMillis())
         }
     }
 
@@ -115,10 +118,13 @@ class MainViewModel @Inject constructor(
 
     fun setLoadingDialogProgress(value: Float) {
         _state.update { it.copy(loadingDialogProgress = value) }
+        // DS Forever: the pre-launch's progress goes to our launch screen's bar (LaunchLoad; nothing while no launch shows)
+        com.jrees.wowcompanion.LaunchLoad.progress(value, android.os.SystemClock.uptimeMillis())
     }
 
     fun setLoadingDialogMessage(value: String) {
         _state.update { it.copy(loadingDialogMessage = value) }
+        com.jrees.wowcompanion.LaunchLoad.step(value, android.os.SystemClock.uptimeMillis())
     }
 
     fun setHasLaunched(value: Boolean) {
@@ -132,6 +138,8 @@ class MainViewModel @Inject constructor(
 
     fun setBootingSplashText(value: String) {
         _state.update { it.copy(bootingSplashText = value) }
+        // DS Forever: GameNative's splash texts are our launch screen's steps, terse (LaunchLoad.terse); the splash itself never shows
+        com.jrees.wowcompanion.LaunchLoad.step(value, android.os.SystemClock.uptimeMillis())
     }
 
     fun setCurrentScreen(currentScreen: String?) {
@@ -165,6 +173,7 @@ class MainViewModel @Inject constructor(
         PrefManager.hasAttemptedGameLaunch = true
         launchAppJob?.cancel()
         launchAppJob = viewModelScope.launch {
+            com.jrees.wowcompanion.LaunchLoad.begin(android.os.SystemClock.uptimeMillis())     // (already up since Play: goes on)
             setShowBootingSplash(true)
             PluviaApp.events.emit(AndroidEvent.SetAllowedOrientation(PrefManager.allowedOrientation))
 
@@ -183,6 +192,7 @@ class MainViewModel @Inject constructor(
     fun exitApp(context: Context, appId: String, onComplete: (() -> Unit)? = null) {
         viewModelScope.launch {
             try {
+                com.jrees.wowcompanion.LaunchLoad.end(android.os.SystemClock.uptimeMillis(), "the game screen closed")
                 bootingSplashTimeoutJob?.cancel()
                 bootingSplashTimeoutJob = null
                 setShowBootingSplash(false)
@@ -194,6 +204,9 @@ class MainViewModel @Inject constructor(
     }
 
     fun onWindowMapped(context: Context, window: Window, appId: String) {
+        // DS Forever: the game's window is up, but its first picture is still to come: our launch screen stays until it (LaunchLoad,
+        // the user's pick "The game's first real picture"); GameNative's splash state goes as before
+        com.jrees.wowcompanion.LaunchLoad.windowMapped(android.os.SystemClock.uptimeMillis())
         viewModelScope.launch {
             bootingSplashTimeoutJob?.cancel()
             bootingSplashTimeoutJob = null
@@ -203,6 +216,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun onGameLaunchError(error: String) {
+        com.jrees.wowcompanion.LaunchLoad.end(android.os.SystemClock.uptimeMillis(), "launch error: $error")
         viewModelScope.launch {
             // Hide the splash screen if it's still showing
             bootingSplashTimeoutJob?.cancel()
@@ -217,6 +231,7 @@ class MainViewModel @Inject constructor(
 
     /** The splash's back button: hide the splash and close the guest the way a blocked session does. */
     fun abortBoot() {
+        com.jrees.wowcompanion.LaunchLoad.end(android.os.SystemClock.uptimeMillis(), "the abort chord")
         launchAppJob?.cancel()
         launchAppJob = null
         viewModelScope.launch {

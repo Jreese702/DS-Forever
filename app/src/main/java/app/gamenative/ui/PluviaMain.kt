@@ -59,7 +59,6 @@ import app.gamenative.events.AndroidEvent
 import app.gamenative.ui.component.dialog.LoadingDialog
 import app.gamenative.ui.component.dialog.MessageDialog
 import app.gamenative.ui.component.dialog.state.MessageDialogState
-import app.gamenative.ui.components.BootingSplash
 import app.gamenative.ui.enums.DialogType
 import app.gamenative.ui.enums.Orientation
 import app.gamenative.ui.model.MainViewModel
@@ -250,8 +249,10 @@ fun PluviaMain(
 
     PluviaTheme {
         Box(modifier = Modifier.fillMaxSize()) {
+            // DS Forever: our launch screen (LaunchLoad) shows the launch's steps and progress instead of GameNative's dialog and splash
+            var launchCovers by remember { mutableStateOf(com.jrees.wowcompanion.LaunchLoad.covers()) }
             LoadingDialog(
-                visible = state.loadingDialogVisible,
+                visible = state.loadingDialogVisible && !launchCovers,
                 progress = state.loadingDialogProgress,
                 message = state.loadingDialogMessage,
             )
@@ -278,6 +279,25 @@ fun PluviaMain(
             var preLaunchJob by remember { mutableStateOf<Job?>(null) }
 
             DisposableEffect(Unit) {
+                // the launch screen's state into this composition (any thread -> the main one); its end ends the start's splash too, so
+                // nothing is left covering the game (the window-mapped "clear" may never come, e.g. a game window not recognised)
+                val main = android.os.Handler(android.os.Looper.getMainLooper())
+                val launchChange: () -> Unit = {
+                    main.post {
+                        val covers = com.jrees.wowcompanion.LaunchLoad.covers()
+                        if (com.jrees.wowcompanion.LaunchLoad.phase == com.jrees.wowcompanion.LaunchLoad.Phase.FADING || (launchCovers && !covers)) {
+                            initialSplash = false
+                        }
+                        launchCovers = covers
+                    }
+                }
+                // its lines in DS Forever's own log, written from the main thread (the hand-over comes on the X server's thread)
+                com.jrees.wowcompanion.LaunchLoad.log = { line ->
+                    Timber.tag("LaunchLoad").i(line)
+                    main.post { runCatching { com.jrees.wowcompanion.DiagLog.event("app", line) } }
+                }
+                com.jrees.wowcompanion.LaunchLoad.onChange(launchChange)
+                launchCovers = com.jrees.wowcompanion.LaunchLoad.covers()
                 val clearSplash: (AndroidEvent.ClearBootingSplash) -> Unit = { initialSplash = false }
                 val forceClose: (AndroidEvent.ForceCloseApp) -> Unit = {
                     // browser login (upstream v2.4.5): the attempt goes with the game screen; a failure's words stay on show
@@ -286,19 +306,25 @@ fun PluviaMain(
                     preLaunchJob?.cancel()
                     preLaunchJob = null
                     WoWLauncherState.shouldAutoLaunch = false
+                    com.jrees.wowcompanion.LaunchLoad.end(android.os.SystemClock.uptimeMillis(), "the game was closed")
                 }
                 PluviaApp.events.on<AndroidEvent.ClearBootingSplash, Unit>(clearSplash)
                 PluviaApp.events.on<AndroidEvent.ForceCloseApp, Unit>(forceClose)
                 onDispose {
                     PluviaApp.events.off<AndroidEvent.ClearBootingSplash, Unit>(clearSplash)
                     PluviaApp.events.off<AndroidEvent.ForceCloseApp, Unit>(forceClose)
+                    com.jrees.wowcompanion.LaunchLoad.offChange(launchChange)
+                    // the launcher's screen went (the activity): no launch screen is left for the next one
+                    com.jrees.wowcompanion.LaunchLoad.end(android.os.SystemClock.uptimeMillis(), "the launcher's screen went")
                 }
             }
 
             Box(modifier = Modifier.zIndex(10f)) {
-                BootingSplash(
-                    visible = state.showBootingSplash || initialSplash,
-                    text = if (state.showBootingSplash) state.bootingSplashText else "Booting into World of Warcraft...",
+                // DS FOREVER (the user, 2026-11-24: "instead of showing the game native loading screen ... our own loading screen"): the
+                // swirl loading screen from Play until the game's first real picture (LaunchLoad), in place of GameNative's BootingSplash;
+                // the same abort chord. GameNative's splash state still drives the navigation, never the picture
+                app.gamenative.ui.components.LaunchLoadingScreen(
+                    visible = launchCovers || initialSplash,
                     onAbort = {
                         app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.cancel()
                         initialSplash = false
@@ -306,7 +332,7 @@ fun PluviaMain(
                         preLaunchJob = null
                         viewModel.setLoadingDialogVisible(false)
                         WoWLauncherState.shouldAutoLaunch = false
-                        viewModel.abortBoot()
+                        viewModel.abortBoot()             // (ends the launch screen: LaunchLoad.end)
                     },
                 )
             }
@@ -337,6 +363,8 @@ fun PluviaMain(
                         onLaunch = { appId ->
                             viewModel.setLaunchedAppId(appId)
                             viewModel.setOffline(true)
+                            // our launch screen from here (Play's container start) until the game's first picture
+                            com.jrees.wowcompanion.LaunchLoad.begin(android.os.SystemClock.uptimeMillis())
                             preLaunchJob?.cancel()
                             preLaunchJob = preLaunchApp(
                                 context = context,
@@ -344,7 +372,11 @@ fun PluviaMain(
                                 setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
                                 setLoadingProgress = viewModel::setLoadingDialogProgress,
                                 setLoadingMessage = viewModel::setLoadingDialogMessage,
-                                setMessageDialogState = { msgDialogState = it },
+                                // a pre-launch failure's dialog: the launch is over, our screen goes so the dialog's words are seen
+                                setMessageDialogState = {
+                                    if (it.visible) com.jrees.wowcompanion.LaunchLoad.end(android.os.SystemClock.uptimeMillis(), "pre-launch failed: ${it.title}")
+                                    msgDialogState = it
+                                },
                                 onSuccess = viewModel::launchApp,
                             )
                         },
@@ -395,6 +427,10 @@ fun PluviaMain(
                             viewModel.onGameLaunchError(error)
                         },
                     )
+                    // the game screen went (back to the launcher, whatever the way): no launch screen outlives it
+                    DisposableEffect(Unit) {
+                        onDispose { com.jrees.wowcompanion.LaunchLoad.end(android.os.SystemClock.uptimeMillis(), "the game screen went") }
+                    }
                 }
             }
 
@@ -428,6 +464,17 @@ fun PluviaMain(
 
             // browser login (upstream v2.4.5, opt-in): its page on the bottom screen, or here without one
             app.gamenative.ui.screen.wow.auth.BattleNetBrowserLoginHost()
+            // our launch screen waits with it (no timeout while the player signs in) and says where to sign in
+            LaunchedEffect(Unit) {
+                app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.ui.collect { u ->
+                    com.jrees.wowcompanion.LaunchLoad.signInWait(
+                        waiting = u is app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.Ui.Browser ||
+                            u is app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.Ui.Waiting,
+                        page = u is app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.Ui.Browser,
+                        now = android.os.SystemClock.uptimeMillis(),
+                    )
+                }
+            }
         }
     }
 }

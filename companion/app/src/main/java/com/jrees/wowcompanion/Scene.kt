@@ -118,6 +118,7 @@ object Scene {
     fun letGo(): Long {
         val b = held
         pics.clear(); held = 0L
+        LoadingScene.letGoKept()             // PAINTED STAYS (2026-11-24): the screens' kept pictures go with them
         return b
     }
 

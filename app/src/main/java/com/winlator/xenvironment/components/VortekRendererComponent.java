@@ -145,6 +145,7 @@ public class VortekRendererComponent extends EnvironmentComponent implements Con
             synchronized (drawable.renderLock) {
                 drawable.forceUpdate();
             }
+            com.winlator.xserver.extensions.LaunchFrameWatch.offer(drawable);   // DS Forever: the launch screen's hand-over
         }
     }
 

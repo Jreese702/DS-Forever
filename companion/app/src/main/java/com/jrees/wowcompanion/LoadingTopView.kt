@@ -112,34 +112,6 @@ class LoadingTopView(context: Context) : View(context) {
         }
     }
 
-    private val pBar = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    /**
-     * A row's thin bar, gold (the user: the game's look, not Material): the kit's bar ground, the filled share in gold, the kit's
-     * border; [f] = [SetupFlow.BAR_MOVING] = a gold stretch running along it (an amount not known yet).
-     */
-    private fun bar(c: Canvas, r: RectF, f: Float) {
-        pBar.style = Paint.Style.FILL; pBar.color = Color.argb(220, 6, 5, 4)
-        c.drawRoundRect(r, r.height() / 2f, r.height() / 2f, pBar)
-        val inner = RectF(r.left + 2f, r.top + 2f, r.right - 2f, r.bottom - 2f)
-        pBar.shader = android.graphics.LinearGradient(0f, inner.top, 0f, inner.bottom, Color.rgb(255, 222, 120), Color.rgb(196, 140, 20),
-            android.graphics.Shader.TileMode.CLAMP)
-        if (f == SetupFlow.BAR_MOVING) {
-            val ph = (android.os.SystemClock.uptimeMillis() % 1600L) / 1600f
-            val w = inner.width() * 0.25f
-            val l = inner.left - w + (inner.width() + w) * ph
-            c.save(); c.clipRect(inner)
-            c.drawRoundRect(RectF(l, inner.top, l + w, inner.bottom), inner.height() / 2f, inner.height() / 2f, pBar)
-            c.restore()
-        } else if (f > 0f) {
-            c.drawRoundRect(RectF(inner.left, inner.top, inner.left + inner.width() * f.coerceIn(0f, 1f), inner.bottom),
-                inner.height() / 2f, inner.height() / 2f, pBar)
-        }
-        pBar.shader = null
-        pBar.style = Paint.Style.STROKE; pBar.strokeWidth = 2f; pBar.color = Theme.bronze
-        c.drawRoundRect(r, r.height() / 2f, r.height() / 2f, pBar)
-    }
-
     /** a row's mark: the kit's tick (OK), a dim diamond (waiting / optional), a red disc (wrong) */
     private fun mark(c: Canvas, m: SetupFlow.Mark, x: Float, y: Float, k: Float) {
         when (m) {
@@ -180,6 +152,34 @@ class LoadingTopView(context: Context) : View(context) {
     }
 
     companion object {
+        private val pBar = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        /**
+         * A row's thin bar, gold (the user: the game's look, not Material): the kit's bar ground, the filled share in gold, the kit's
+         * border; [f] = [SetupFlow.BAR_MOVING] = a gold stretch running along it (an amount not known yet).
+         */
+        fun bar(c: Canvas, r: RectF, f: Float) {
+            pBar.style = Paint.Style.FILL; pBar.color = Color.argb(220, 6, 5, 4)
+            c.drawRoundRect(r, r.height() / 2f, r.height() / 2f, pBar)
+            val inner = RectF(r.left + 2f, r.top + 2f, r.right - 2f, r.bottom - 2f)
+            pBar.shader = android.graphics.LinearGradient(0f, inner.top, 0f, inner.bottom, Color.rgb(255, 222, 120), Color.rgb(196, 140, 20),
+                android.graphics.Shader.TileMode.CLAMP)
+            if (f == SetupFlow.BAR_MOVING) {
+                val ph = (android.os.SystemClock.uptimeMillis() % 1600L) / 1600f
+                val w = inner.width() * 0.25f
+                val l = inner.left - w + (inner.width() + w) * ph
+                c.save(); c.clipRect(inner)
+                c.drawRoundRect(RectF(l, inner.top, l + w, inner.bottom), inner.height() / 2f, inner.height() / 2f, pBar)
+                c.restore()
+            } else if (f > 0f) {
+                c.drawRoundRect(RectF(inner.left, inner.top, inner.left + inner.width() * f.coerceIn(0f, 1f), inner.bottom),
+                    inner.height() / 2f, inner.height() / 2f, pBar)
+            }
+            pBar.shader = null
+            pBar.style = Paint.Style.STROKE; pBar.strokeWidth = 2f; pBar.color = Theme.bronze
+            c.drawRoundRect(r, r.height() / 2f, r.height() / 2f, pBar)
+        }
+
         /** the report's last press, by a finger here or Select on the bottom (SetupPanel): its pushed-in look, then a short wait */
         val reportPress = StartPress()
         const val BAR_ROW = 22f

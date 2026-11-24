@@ -276,11 +276,17 @@ object LoadingMath {
 
     // ------------------------------------------------------------------ the passes
 
-    /** one pass: when it starts (s, on the scene's clock), where the swirl sits, its turn and mirror, its picture's index */
-    data class Pass(val k: Int, val start: Float, val cx: Float, val cy: Float, val angle: Float, val mirror: Boolean, val picture: Int) {
+    /**
+     * one pass: when it starts (s, on the scene's clock), where the swirl sits, its turn and mirror, its picture's index. [solo] = the
+     * BOTTOM SCREEN ALONE (the launch's hand-over, the user 2026-11-24: "Once it transitions to one screen I want the swirl on the bottom
+     * screen to be smaller to fit on that screen"): its virtual canvas is [SOLO] (the bottom screen itself, not its part of the two
+     * screens) and the swirl is [scale] x [SWIRL] ([SOLO_SCALE]); the light's band, the spark and the motes shrink with it.
+     */
+    data class Pass(val k: Int, val start: Float, val cx: Float, val cy: Float, val angle: Float, val mirror: Boolean, val picture: Int,
+                    val solo: Boolean = false, val scale: Float = 1f) {
         private val ca = cos(angle); private val sa = sin(angle)
         /** map px per virtual px */
-        private val k1 = N / SWIRL
+        private val k1 = N / (SWIRL * scale)
 
         /** a virtual point -> the maps' square (px, may be outside) */
         fun toMap(x: Float, y: Float, out: FloatArray) {
@@ -300,17 +306,76 @@ object LoadingMath {
 
         fun end() = start + JOURNEY + HOLD + FADE
         fun alive(t: Float) = t >= start && t < end()
+        /** PAINTED STAYS: from here on its light never changes (every arm point risen and grown in full): the picture can be kept as it is */
+        fun settled() = start + JOURNEY + max(RISE, HOLD + FADE * 0.5f)
+        /** the canvas this pass lives on: both screens, or the bottom screen alone */
+        val canvasW get() = if (solo) SOLO.width else VW
+        val canvasH get() = if (solo) SOLO.height else VH
     }
 
     /** pass [k] of a run with [seed]: its place ±[PLACE] round the middle, any turn, a mirror half the time; pictures in turn from [first] */
-    fun pass(seed: Long, k: Int, pictures: Int, first: Int): Pass {
+    fun pass(seed: Long, k: Int, pictures: Int, first: Int): Pass = pass(seed, k, pictures, first, k * EVERY - LEAD, false)
+
+    /** pass [k] starting at [start]; [solo] = on the bottom screen alone ([SOLO], the swirl at [SOLO_SCALE]) */
+    fun pass(seed: Long, k: Int, pictures: Int, first: Int, start: Float, solo: Boolean): Pass {
         val r = java.util.Random(seed * 1_000_003L + k * 7919L)
-        val cx = VW / 2f + (r.nextFloat() * 2 - 1) * PLACE * VW
-        val cy = VH / 2f + (r.nextFloat() * 2 - 1) * PLACE * VH
+        val w = if (solo) SOLO.width else VW; val h = if (solo) SOLO.height else VH
+        val cx = w / 2f + (r.nextFloat() * 2 - 1) * PLACE * w
+        val cy = h / 2f + (r.nextFloat() * 2 - 1) * PLACE * h
         val angle = r.nextFloat() * 2f * PI.toFloat()
         val mirror = r.nextBoolean()
-        return Pass(k, k * EVERY - LEAD, cx, cy, angle, mirror, if (pictures > 0) (first + k) % pictures else 0)
+        return Pass(k, start, cx, cy, angle, mirror, if (pictures > 0) (first + k) % pictures else 0, solo, if (solo) SOLO_SCALE else 1f)
     }
+
+    /**
+     * THE BOTTOM SCREEN ALONE (the user, 2026-11-24): its own canvas, the bottom screen's size, and the swirl scaled so it covers that
+     * screen as the big one covers both (by the diagonals: 4000 over both screens' 2996 = 1.34; 1.34 x 1644 = 2195, x 0.55)
+     */
+    val SOLO = Region(0f, 0f, 1240f, 1080f)
+    const val SOLO_SCALE = 0.55f
+
+    /**
+     * PAINTED STAYS (the user's experiment, 2026-11-24: "I also want to try keeping the swirls painted backgrounds instead of fading
+     * them to black to see how it looks"): true = the picture a spark reveals STAYS painted (each pass adds more painted area; a newer
+     * picture covers the older where its light is) instead of going dark again in the order it was lit. THE USER'S PICK (2026-11-24,
+     * after the side-by-side gifs: "Painted stays", everywhere - DS Forever's own start-up loading and the game's launch, both screens
+     * and the bottom alone): on by default. LoadingScene keeps what settled ([Pass.settled]) in a picture of its own per screen and
+     * makes the spark readable on the painting (LoadingScene.sparkReadable); false = the 2026-10-28 fade ("I love this").
+     */
+    const val PAINTED_STAYS_DEFAULT = true
+    @Volatile @JvmField var paintedStays = PAINTED_STAYS_DEFAULT
+
+    /**
+     * THE PASSES AS THEY COME (2026-11-24): each pass is made as it starts, so it can start on both screens or on the bottom alone
+     * (whether a top screen draws the scene then) and keeps that for its whole life - the passes already running when the top hands over
+     * to the game end on the bottom as they began (no jump, no black), and the next one starts smaller on the bottom alone. A top screen
+     * that comes back ([restart]) gets a pass at once (it would be black until the next one otherwise). Without either, exactly
+     * [passes]' passes (k x EVERY - LEAD). Not thread-safe: the views' draws (the main thread).
+     */
+    class Schedule(val seed: Long, val first: Int) {
+        private val live = ArrayList<Pass>(4)
+        private var nextK = 0
+        /** the cadence: pass [baseK] starts at [baseStart], each next one [EVERY] s later (as [passes]: k x EVERY - LEAD) */
+        private var baseK = 0
+        private var baseStart = -LEAD
+        private var rebased = false
+        private fun startOf(k: Int) = if (!rebased) k * EVERY - LEAD else baseStart + (k - baseK) * EVERY
+
+        /** the passes alive at [t], oldest first; a pass that starts now is [solo] or not. [stays] keeps a pass until it settled */
+        fun at(t: Float, pictures: Int, solo: Boolean, stays: Boolean = paintedStays): List<Pass> {
+            // a long gap (nothing drew): straight to the passes that can still be alive
+            val skip = ((t - startOf(nextK)) / EVERY).toInt() - 3
+            if (skip > 0) nextK += skip
+            while (startOf(nextK) <= t) { live += pass(seed, nextK, pictures, first, startOf(nextK), solo); nextK++ }
+            live.removeAll { t >= if (stays) it.settled() + KEEP_SETTLED else it.end() }
+            return live.filter { t >= it.start }
+        }
+
+        /** a top screen draws the scene again after a gap: the next pass starts now (its spark already [LEAD] s on its way) */
+        fun restart(t: Float) { if (startOf(nextK) > t - LEAD) { baseK = nextK; baseStart = t - LEAD; rebased = true } }
+    }
+    /** PAINTED STAYS: a settled pass stays this long (s) for the screens to keep its picture */
+    const val KEEP_SETTLED = 1.5f
 
     /** the passes alive at [t] (oldest first: the newer is drawn over it) */
     fun passes(seed: Long, t: Float, pictures: Int, first: Int): List<Pass> {
@@ -320,10 +385,11 @@ object LoadingMath {
         return out
     }
 
-    /** the light's life at [age] s after the spark passed: rises in [RISE] (eased), holds [HOLD], dies in [FADE] */
-    fun life(age: Float): Float {
+    /** the light's life at [age] s after the spark passed: rises in [RISE] (eased), holds [HOLD], dies in [FADE] ([stays]: never dies) */
+    fun life(age: Float, stays: Boolean = false): Float {
         if (age < 0f) return 0f
         val up = Math.pow(min(1f, age / RISE).toDouble(), 1.5).toFloat()
+        if (stays) return up
         val down = (1f - (age - HOLD) / FADE).coerceIn(0f, 1f)
         return up * down
     }
@@ -346,13 +412,13 @@ object LoadingMath {
      * How lit the virtual point (x, y) is by pass [p] at [t] (0..1). v10: a band round the arm, its half-width growing after the spark
      * passed (quickly at first) until the turns meet, a soft edge, the whole fading with [life].
      */
-    fun lit(m: Maps, p: Pass, t: Float, x: Float, y: Float, tmp: FloatArray): Float {
+    fun lit(m: Maps, p: Pass, t: Float, x: Float, y: Float, tmp: FloatArray, stays: Boolean = false): Float {
         p.toMap(x, y, tmp)
         val d = sample(m.dist, tmp[0], tmp[1], FAR)
         if (d > REACH) return 0f
         val tn = sample(m.near, tmp[0], tmp[1], 1f)
         val a2 = t - p.start - arrive(tn)
-        val w = life(a2)
+        val w = life(a2, stays)
         if (w <= 0f) return 0f
         return w * band(d, tn, a2)
     }
@@ -391,7 +457,7 @@ object LoadingMath {
         if (age < 0f || age >= MOTE_LIFE) return false
         head(m, p, along(born), out)
         val r = java.util.Random(p.k * 92821L + i * 31L + 17L)
-        val a = r.nextFloat() * 2f * PI.toFloat(); val v = 100f + r.nextFloat() * 225f
+        val a = r.nextFloat() * 2f * PI.toFloat(); val v = (100f + r.nextFloat() * 225f) * p.scale
         out[0] += cos(a) * v * age; out[1] += sin(a) * v * age
         out[2] = 1f - age / MOTE_LIFE
         return true
@@ -411,4 +477,7 @@ object LoadingMath {
 
     /** the scene's region of a screen: [TOP] or [BOTTOM] */
     fun region(top: Boolean) = if (top) TOP else BOTTOM
+
+    /** where a screen sits on [p]'s canvas: the bottom screen alone is the whole of a solo pass's; a solo pass has no top part (null) */
+    fun region(top: Boolean, p: Pass): Region? = if (!p.solo) region(top) else if (top) null else SOLO
 }
