@@ -812,7 +812,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var fightItems: Map<Int, Int>? = null
         set(v) { if (field != v) { field = v; invalidate() } }
-    init { ItemCd.onChange { postInvalidate() } }
+    init { ItemCd.onChange(weakly(this) { v -> v.postInvalidate() }) }       // weakly: [weakly]
 
     /**
      * THE D-PAD'S IN-COMBAT SPELLS (Track C; the user after test15: "The DS toolbar buttons are still not changing in combat like they

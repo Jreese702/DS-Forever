@@ -95,7 +95,8 @@ class HomeEditWiringTest {
         assertTrue("the Layouts reset cancels edit mode", cancel > 0)
         assertTrue("before HomeSettings.resetDone(", cancel < reset.indexOf("HomeSettings.resetDone(ResetPlan.Kind.LAYOUTS in kinds)"))
         // the owner: recorded at the open, checked when the store's owner changes, a park's resume and Save
-        assertTrue(home.contains("HomeLayoutStore.onOwner { editUi.post { editOwnerCheck(\"the character changed\") } }"))
+        // (held weakly since the 1528 leak fix: HomeViewsReleasedTest)
+        assertTrue(home.contains("HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck(\"the character changed\") } })"))
         assertTrue(body(home, "fun editOpen(").contains("editOwner = HomeLayoutStore.owner()"))
         assertTrue(body(home, "private fun editAwayBack()").contains("editOwnerCheck("))
         // the hold: cancelled when another room opens, its gates again at the fire
