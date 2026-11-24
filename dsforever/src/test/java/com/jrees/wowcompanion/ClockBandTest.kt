@@ -291,4 +291,61 @@ class ClockBandTest {
         assertEquals(mine.extras, HomeLayoutStore.layOn(other, classic, mine).extras)
         assertEquals(HomeLayout.Side.RIGHT, HomeLayoutStore.layOn(other, classic, mine).chatSide)
     }
+
+    /**
+     * fix/badges-cast (the user on 1523, 2026-11-23: "The icons shift smaller when casting but still overlap with the cast text instead of
+     * shifting up"): on the Thor's real band (1240 x 226, the 18 px strip) the cast's name plate stands on the bar from 178 down (the
+     * lane's top, 226 - 2 - 14 - 2 - 30): a row lifted for a cast ends just over it (the clearance), rises into the neck between the
+     * D-pad's Right and the faces' left button, keeps today's small size for the rows players have (1 .. 5 extras, gold on or off), stays
+     * under the chip and on no button; a ready Hearthstone's glow at an end keeps off the buttons too; only a row that cannot pass the
+     * neck is scaled down to fit it
+     */
+    @Test fun aCastLiftsTheRowOverTheNameIntoTheNeck() {
+        val h = 226f
+        val sp = CastBarPlace.clockSpot(1240f, h, CastBarPlace.REST_STRIP)
+        val laneTop = h - (CastBarPlace.GAP + CastBarPlace.BAR) - 2f - CastBarPlace.PLATE_H
+        assertEquals(178f, laneTop, 0.01f)
+        val keep = laneTop - CastBarPlace.CLOCK_PAD
+        val rows = listOf(floatArrayOf(52f), floatArrayOf(28f, 52f), floatArrayOf(28f, 52f, 86f), floatArrayOf(28f, 46f, 52f, 86f),
+            floatArrayOf(28f, 46f, 52f, 86f, 28f))
+        val dRight = 6 + 4 * 2; val fLeft = 6 + 4 * 4
+        // the neck: between the D-pad's Right and the faces' left button with the clearance, centred on the clock
+        val neck = 2f * minOf(sp[4] - (sp[dRight + 2] + CastBarPlace.CLOCK_PAD), (sp[fLeft] - CastBarPlace.CLOCK_PAD) - sp[4])
+        assertTrue("the neck ($neck) holds today's 1 .. 3 extras", neck > 3 * 52f + 2 * ClockBand.GAP_MIN)
+        for (fl in listOf(floor, goldFloor)) for (w in rows) {
+            val (pl, top) = ClockBand.lift(sp, w, ClockBand.CELL_H, fl, keep)
+            val what = "n=${w.size} floor=$fl"
+            // today's small size, unless even the closest even pitch is wider than the neck: then just as small as passes it
+            val tight = (w.size - 1) * (ClockBand.pairWidth(w) + ClockBand.GAP_MIN) + 2f * ClockBand.edgeHalf(w)
+            assertEquals("$what: today's small size, or the neck's", minOf(1f, neck / tight), pl.scale, 0.001f)
+            if (w.size <= 3) assertEquals("$what: today's small size", 1f, pl.scale, 0.001f)
+            assertEquals("$what: just over the name", keep, top + ClockBand.CELL_H * pl.scale, 0.01f)
+            assertTrue("$what: under the chip", top >= fl - 0.01f)
+            val x0 = pl.lefts[0]; val x1 = pl.lefts.last() + w.last() * pl.scale
+            // the even pitch's end slots stand symmetric round the clock's centre
+            assertEquals("$what: centred under the clock", 2f * sp[4], pl.lefts[0] + w[0] * pl.scale / 2f + pl.lefts.last() + w.last() * pl.scale / 2f, 0.01f)
+            for (q in 0 until 8) {
+                val o = 6 + 4 * q
+                assertFalse("$what: on button $q", sp[o] < x1 + CastBarPlace.CLOCK_PAD - 0.01f && sp[o + 2] > x0 - CastBarPlace.CLOCK_PAD + 0.01f &&
+                    sp[o + 1] < top + ClockBand.CELL_H && sp[o + 3] > top)
+            }
+        }
+        // a glowing Hearthstone at the left end: its halo (1.1 icons round the icon's middle) off the D-pad's Right as well
+        val w = floatArrayOf(28f, 46f, 52f, 86f, 28f)
+        val reach = ClockBand.ICON * 1.1f - 14f
+        val (pl, top) = ClockBand.lift(sp, w, ClockBand.CELL_H, goldFloor, keep, reach)
+        val right = dRight
+        assertTrue("the halo off the D-pad's Right", pl.lefts[0] + 14f * pl.scale - ClockBand.ICON * 1.1f * pl.scale >= sp[right + 2] - 0.01f ||
+            top >= sp[right + 3])
+        // a row wider than the neck: scaled down to pass it, still just over the name
+        val wide = FloatArray(5) { 90f }
+        val (wp, wt) = ClockBand.lift(sp, wide, ClockBand.CELL_H, goldFloor, keep)
+        assertTrue(wp.scale < 1f)
+        assertEquals(keep, wt + ClockBand.CELL_H * wp.scale, 0.01f)
+        assertTrue(wp.lefts[0] >= sp[right + 2] + CastBarPlace.CLOCK_PAD - 0.01f)
+        // no room between the chip and the name for a whole cell: squeezed to the room left, never onto the chip
+        val (sq, st) = ClockBand.lift(sp, floatArrayOf(28f, 52f), ClockBand.CELL_H, keep - 30f, keep)
+        assertEquals(keep - 30f, st, 0.01f)
+        assertEquals(30f / ClockBand.CELL_H, sq.scale, 0.001f)
+    }
 }

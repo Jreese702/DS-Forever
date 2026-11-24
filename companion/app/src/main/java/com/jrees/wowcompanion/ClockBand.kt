@@ -149,6 +149,28 @@ object ClockBand {
     }
 
     /**
+     * THE ROW LIFTED CLEAR OF A CAST'S NAME (fix/badges-cast; the user on 1523, 2026-11-23: "The icons shift smaller when casting but still
+     * overlap with the cast text instead of shifting up"): at rest the cast's name stands ON the bar in its TextBox plate, in the gap
+     * between the two button groups - higher than the bar's strip the [spot]'s bottom clears, so the small row (under the D-pad's Right
+     * and the faces' left button, down to the strip) sat on the name. While a cast shows the row's bottom stays over [keep] (the name's
+     * lane's top, less the clearance): bottom-aligned just over it, so it rises into the hourglass's neck between the D-pad's Right and the
+     * faces' left button - as wide as that neck lets it (each cell centred on the even pitch, [place]'s rule) and never above [floor] (the
+     * chip's bottom + [CHIP_PAD]). Its size is today's small one; only a row that cannot pass otherwise (wider than the neck, or taller
+     * than the room between the chip and the name) is scaled down to fit. [widths] = each cell's width, [cellH] its height (at the row's
+     * own fit); [reach] = how far an end cell's soft glow (a ready Hearthstone's) spreads past its cell, kept off the buttons too.
+     * Returns the placement (its [Placement.scale] the whole scale on [widths]) and the row's top.
+     */
+    fun lift(spot: FloatArray, widths: FloatArray, cellH: Float, floor: Float, keep: Float, reach: Float = 0f): Pair<Placement, Float> {
+        val n = widths.size
+        if (n == 0) return Placement(FloatArray(0), 0f, 1f) to keep
+        val q = if (keep - floor < cellH) ((keep - floor) / cellH).coerceAtLeast(0.1f) else 1f
+        val span = room(spot, keep - cellH * q, keep)
+        val pl = place(FloatArray(n) { widths[it] * q }, span[0] + reach * q, span[1] - reach * q, spot[4])
+        val k = q * pl.scale
+        return Placement(pl.lefts, pl.gap, k) to keep - cellH * k
+    }
+
+    /**
      * The row's alpha under the triggers (1 = shown): from [from] toward hidden while [held], back while let go, linear over [ms]
      * (Home's own overlay fade, HomeView.FADE_MS), [elapsed] ms since the last change
      */
@@ -247,7 +269,9 @@ object ClockBand {
         val to = if (grown) 1f else 0f
         val ms = if (grown) GROW_MS_IN else GROW_MS_OUT
         val k = (elapsed / ms).coerceIn(0f, 1f)
-        return from + (to - from) * k
+        // fix/badges-cast: exactly its end once there (from a turn half way, from + (to - from) can miss it by a float's last bit, and
+        // Home asks for a frame for as long as the grow is not at its end)
+        return if (k >= 1f) to else from + (to - from) * k
     }
 
     /** the purse the game's way (the gold line): (amount, 0 gold / 1 silver / 2 copper), the leading zero units left out (34s 56c under a gold; 0c) */
