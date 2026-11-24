@@ -383,18 +383,17 @@ class HomeEditShotsTest {
 
     /** a D-pad Left with an In-combat spell (PadMap m44: the bare set's COMBAT overlay slot): Lightning Bolt in fights, Healing Wave else */
     private val fightSets = """[{"set":1,"slots":[{"pos":1,"s":1,"kind":"combat","ov":true,"base":"spell","c":{"n":"Lightning Bolt","id":403,"i":136048},"o":{"n":"Healing Wave","id":331,"i":136052}}]}]"""
-    private fun padMapDoc(ct: Int? = null, sets: String = "[]", cc: Int? = null, gsw: Int? = null) = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":$sets,"dpad":{"on":true,"want":true,
+    private fun padMapDoc(ct: Int? = null, sets: String = "[]", cc: Int? = null) = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":$sets,"dpad":{"on":true,"want":true,
         "cols":{"on":1,"off":2},"d":{"1":"chat","2":"radial","3":"map","4":"home"},"who":{"n":"Korvash","r":"Realm","rs":"guid"}${if (ct != null) ",\"ct\":$ct" else ""}${
-        if (cc != null) ",\"cc\":$cc" else ""}${if (gsw != null) ",\"gsw\":$gsw" else ""}}}}"""))!!
+        if (cc != null) ",\"cc\":$cc" else ""}}}}"""))!!
     /** a page whose band has the toolbar's word (a character's key, the DS WoW toolbar on), Diamonds at rest unless [l] says */
     private fun bandPage(l: HomeLayout = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT), ct: Int? = null, roomBar: Boolean = false,
-                         sets: String = "[]", party: Boolean = false, partyOn: Boolean = true, fight: Boolean = false, cc: Int? = null,
-                         gsw: Int? = null): Page {
+                         sets: String = "[]", party: Boolean = false, partyOn: Boolean = true, fight: Boolean = false, cc: Int? = null): Page {
         ItemCd.reset()                                                      // the extras' own data: none (another test's must not show)
         val p = page(l, fight = fight, roomBar = roomBar, party = party, partyOn = partyOn)
         HomeLayoutStore.character("Korvash-Realm")
         HomeLayoutStore.set(l)
-        p.home.onPadMap(padMapDoc(ct, sets, cc, gsw))
+        p.home.onPadMap(padMapDoc(ct, sets, cc))
         setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
         settle()
         return p
@@ -890,13 +889,12 @@ class HomeEditShotsTest {
         // the places are gathered (every case drawn first), the rest asserted as it goes
         val fails = ArrayList<String>()
         fun at(msg: String, ok: Boolean) { if (!ok) fails += msg }
-        // Cast bar in fights: Bottom screen (the strip), Top screen confirmed by the add-on (`cc` 1: no strip), Top screen with the game's
-        // swing timer off (`gsw` 0: the strip for the swing alone, TopCombatBar.swingOnly)
-        val casts = listOf(Triple("bottom", HomeLayout.FightCast.BOTTOM, null as Int?), Triple("top", HomeLayout.FightCast.TOP, 1),
-            Triple("swingonly", HomeLayout.FightCast.TOP, 0))
-        for (rest in HomeRest.values()) for (side in HomeLayout.Side.values()) for (party in listOf(false, true)) for ((cw, fc, gsw) in casts) {
+        // Cast bar in fights: Bottom screen (the strip), Top screen confirmed by the add-on (`cc` 1: no strip - our own bar above the HUD;
+        // feat/top-castbar: 1523's swing-alone strip, the game's swing timer off, is gone)
+        val casts = listOf("bottom" to HomeLayout.FightCast.BOTTOM, "top" to HomeLayout.FightCast.TOP)
+        for (rest in HomeRest.values()) for (side in HomeLayout.Side.values()) for (party in listOf(false, true)) for ((cw, fc) in casts) {
             val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, rest = rest, chatSide = side, fightCast = fc)
-            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = if (fc == HomeLayout.FightCast.TOP) 1 else null, gsw = gsw)
+            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = if (fc == HomeLayout.FightCast.TOP) 1 else null)
             val n = "${rest.name.lowercase()} chat ${side.name.lowercase()} ${if (party) "party" else "solo"} cast $cw"
             assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
             p.home.editKey("PAD1"); settle(40)
@@ -984,16 +982,16 @@ class HomeEditShotsTest {
         val changes = listOf(
             Change("cast_to_top", HomeLayout.FightCast.BOTTOM, 1, true, BottomTiles.FIGHT_CAST, 1),       // the strip goes
             Change("cast_to_bottom", HomeLayout.FightCast.TOP, 1, true, BottomTiles.FIGHT_CAST, 0),       // the strip comes
-            Change("swing_off", HomeLayout.FightCast.TOP, 0, true, BottomTiles.SWING, 1, strip = false),  // the swing-alone strip stays
-            Change("swing_on", HomeLayout.FightCast.TOP, 0, false, BottomTiles.SWING, 0, strip = false),
-            Change("game_swing_off", HomeLayout.FightCast.TOP, 1, true, null, 0, gswTo = 0),              // the swing-alone strip comes
-            Change("game_swing_on", HomeLayout.FightCast.TOP, 0, true, null, 0, gswTo = 1))               // ... and goes
+            // feat/top-castbar: Top screen's swing goes with our top bar - Swing timer never lays a strip (1523's swing-alone strip,
+            // the game's own swing timer, is gone with its padmap word)
+            Change("swing_off", HomeLayout.FightCast.TOP, 0, true, BottomTiles.SWING, 1, strip = false),
+            Change("swing_on", HomeLayout.FightCast.TOP, 0, false, BottomTiles.SWING, 0, strip = false))
         var n = 0; var shots = 0
         // (live: Home on the screen - its changes glide, each frame checked; else laid at once)
         for (live in listOf(false, true)) for (rest in HomeRest.values()) for (side in HomeLayout.Side.values()) for (party in listOf(false, true)) for (c in changes) {
             val byPad = n % 2 == 0; n++
             val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, rest = rest, chatSide = side, fightCast = c.fc)
-            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = 1, gsw = c.gsw)
+            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = 1)
             HomeSettings.swingTimer = c.swing
             p.home.forceLive = live
             val tag = "${if (live) "live " else ""}${rest.name.lowercase()} chat ${side.name.lowercase()} ${if (party) "party" else "solo"} ${c.name} (${if (byPad) "pad" else "finger"})"
@@ -1017,8 +1015,7 @@ class HomeEditShotsTest {
                 @Suppress("UNCHECKED_CAST") val rows = (rowsOf.invoke(p.home, EditStop.FIGHT_PEN) as List<*>).filterIsInstance<MenuRow>()
                 val ri = if (c.key == null) 0 else rows.indexOfFirst { it.key == c.key }
                 assertTrue("$tag: the row ${c.key} in ${rows.map { it.key }}", ri >= 0)
-                if (c.gswTo != null) p.home.onPadMap(padMapDoc(1, cc = 1, gsw = c.gswTo))
-                else if (byPad) {
+                if (byPad) {
                     // the D-pad walks to the row and steps its pick
                     while (model(p).menuRow < ri) { p.home.editKey("PADDDOWN"); settle(1) }
                     p.home.editKey(if (c.pick > rows[ri].picked) "PADDRIGHT" else "PADDLEFT")
@@ -1072,7 +1069,7 @@ class HomeEditShotsTest {
         for (rest in HomeRest.values()) for (party in listOf(false, true)) for (fc in HomeLayout.FightCast.values()) {
             val tag = "${rest.name.lowercase()} ${if (party) "party" else "solo"} Cast bar ${fc.name.lowercase()}"
             val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP, rest = rest, fightCast = fc)
-            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = 1, gsw = 1)
+            val p = bandPage(l, ct = 1, party = party, roomBar = true, cc = 1)
             p.home.forceLive = true                                          // (Home on the screen: its changes glide)
             try {
                 assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)

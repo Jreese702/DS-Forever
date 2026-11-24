@@ -302,7 +302,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar13 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar17"' in src
+    chk("0. ActionBar's tag nbar18 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar18"' in src
         and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)
@@ -528,18 +528,15 @@ def main():
         not f.sw[1].shown and not f.sw[2].shown and len(list(L.eval("HUBCF").values())) == 0, (f.sw[1].shown, todict(L.eval("HUBCF"))))
     G.CCB = True
     L.execute('RUN(0.6, 0.02)')                                   # the flag is read every FLAG_S (0.5 s)
-    chk("C. nbar13 Top screen: Hub told once that the Wings' fight shows the game's cast bar (WC.hubCastFight(true))",
-        list(L.eval("HUBCF").values()) == [True], todict(L.eval("HUBCF")))
-    # nbar14 (the user's pick "Keep ours on the bottom"): the game's own swing timer OFF -> no swing line on the Wings (the app's strip
-    # keeps the swing on the bottom screen: one place)
-    chk("C. nbar14 Top screen, the game's swing timer off (PadMap's gameSwingOn false): no swing line on the Wings (the bottom strip has it)",
-        not f.sw[1].shown and not f.sw[2].shown and NB.top.gsw is False, (f.sw[1].shown, NB.top.gsw))
+    # nbar18 (the user's reversal 11-24): Top screen = OUR bar above the HUD with the swing over it - the game's own casting bar never
+    # asked for (no WC.hubCastFight), and the Wings draw no swing line on either choice (one place; nbar14's game-swing gate gone)
+    chk("C. nbar18 Top screen: the game's cast bar never asked for (Hub told nothing), the Wings draw no swing line, OUR bar's swing runs",
+        len(list(L.eval("HUBCF").values())) == 0 and not f.sw[1].shown and not f.sw[2].shown and NB.cb is not None
+        and bool(NB.cb.sw[1].on), (todict(L.eval("HUBCF")), f.sw[1].shown, NB.cb is not None and NB.cb.sw[1].on))
     G.GSW = True
-    L.execute('RUN(0.6, 0.02)')                                   # (read with the flag every FLAG_S)
-    chk("C. nbar14 ... the game's swing timer on: the Wings' swing line under the faces runs (main hand), as built",
-        f.sw[1].shown and 0 < f.sw[1].k < 1 and not f.sw[2].shown and NB.top.gsw is True, (f.sw[1].shown, f.sw[1].k))
-    sx, sy = L.eval("PARTCENTRE")(f.sw[1])
-    chk("C. ... under the faces' diamond", abs(sx - rx) < 0.01 and sy > ry + 73, (sx, sy, rx, ry))
+    L.execute('RUN(0.6, 0.02)')                                   # (nbar14's read of the game's own swing timer: gone)
+    chk("C. nbar18 ... the game's own swing timer on or off makes no difference (no Wings swing line, ours over our bar)",
+        not f.sw[1].shown and bool(NB.cb.sw[1].on) and NB.top.gsw is None, (f.sw[1].shown, NB.top.gsw))
     G.LT = True
     L.execute('RUN(0.1)')
     chk("C. ZL held: the ZL chip lit, ZR not", f.chip[1].lit is True and f.chip[2].lit is False and NB.set == 2, (f.chip[1].lit, f.chip[2].lit, NB.set))
@@ -587,13 +584,14 @@ def main():
     L.execute('RUN(0.14, 0.02)')
     chk("C. nbar14 ... gone after 0.2 s though the fight goes on (the lockdown still true)", not NB.top.shown and f.shown is False
         and G.COMBAT is True, (NB.top.shown, f.shown))
-    chk("C. nbar14 ... the game's cast bar handed back to the player's Hide with them (WC.hubCastFight(false))",
-        list(L.eval("HUBCF").values()) == [True, False], todict(L.eval("HUBCF")))
+    chk("C. nbar18 ... our top bar gone with them (the takeover's end), the game's cast bar never told",
+        len(list(L.eval("HUBCF").values())) == 0 and not (NB.cb.vis and NB.cb.a > 0), todict(L.eval("HUBCF")))
     G.TG = True
     L.execute('RUN(0.5, 0.02)')
     chk("C. nbar14 a harmful press re-arms the router (its switch true again, still in the fight): the Wings slide back up, settled",
         NB.top.shown and NB.top.t == 1 and abs(L.eval("DIAMOND")(1)[1] - spb["l"]["y"]) < 0.05, (NB.top.shown, NB.top.t))     # (topPlace's 0.1-px key)
-    chk("C. nbar14 ... and Hub asked again for the game's cast bar", list(L.eval("HUBCF").values()) == [True, False, True], todict(L.eval("HUBCF")))
+    chk("C. nbar18 ... and our top bar back with them (Hub still never asked)", len(list(L.eval("HUBCF").values())) == 0 and NB.cb.vis
+        and NB.cb.a == 1, todict(L.eval("HUBCF")))
     # PadMap m188's fightSw (the router's switch over every button) wins over tgGrown (Y's alone): false there -> down, whatever Y says
     G.FSW = False
     L.execute('RUN(0.3, 0.02)')
@@ -616,8 +614,8 @@ def main():
     L.execute('RUN(0.12, 0.02)')
     chk("C. ... gone after 0.2 s (below the edge): hidden, the chips and swing lines too", not NB.top.shown and f.shown is False and not f.chip[1].shown
         and not f.sw[1].shown, (NB.top.shown, f.shown))
-    chk("C. nbar13: the fight's end told Hub once (WC.hubCastFight(false): the player's Hide back on the game's cast bar)",
-        list(L.eval("HUBCF").values()) == [True, False, True, False, True, False], todict(L.eval("HUBCF")))
+    chk("C. nbar18: the fight's end - our top bar gone, the game's cast bar never told anything (no WC.hubCastFight)",
+        len(list(L.eval("HUBCF").values())) == 0 and not (NB.cb.vis and NB.cb.a > 0), todict(L.eval("HUBCF")))
     G.CCB = False
     L.execute('RUN(0.6, 0.02)')
     L.execute('RUN(0.1)')

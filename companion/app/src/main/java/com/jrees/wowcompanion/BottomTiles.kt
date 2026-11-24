@@ -126,7 +126,8 @@ object BottomTiles {
         REST -> listOf(Line(REST, null, listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest)))
         // movable Home phase 3 (SPEC section 11, final_11; the user's D1: Grow the default, Top screen opt-in): the old Combat layout tile
         COMBAT -> listOfNotNull(Line(COMBAT, null, FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)),
-            // the user's ruling 2026-11-23: with Top screen, the cast bar and swing timer on the bottom screen's top or the game's own
+            // the user's ruling 2026-11-23: with Top screen, the cast bar and swing timer on the bottom screen's top or (feat/top-castbar)
+            // our own bar above the HUD on the top screen, together
             if (HomeSettings.fightBand == HomeLayout.FightBand.TOP)
                 Line(FIGHT_CAST, "Cast bar", FIGHT_CAST_WORDS, HomeLayout.FightCast.values().indexOf(HomeSettings.fightCast)) else null)
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))

@@ -34,38 +34,46 @@ object TopCombatBar {
      */
     fun live(l: HomeLayout, ct: Int?): Boolean = wanted(l) && ct == 1
     /** [l] as the bottom screen lays it now: Top screen kept only when [live], else Grow; Cast bar in fights = Top screen kept only
-     *  while the add-on SAYS so ([cc] 1, PadMap m187: it shows the game's own casting bar then), else the bottom screen's strip - a cast
-     *  bar never left on neither screen */
-    fun honoured(l: HomeLayout, ct: Int?, cc: Int? = null, gsw: Int? = null): HomeLayout {
+     *  while the add-on SAYS so ([cc] 1, PadMap m187: its own bar above the HUD then, ActionBar nbar18), else the bottom screen's strip -
+     *  a cast bar never left on neither screen. feat/top-castbar (the user's reversal 2026-11-24): the 1523 rule on the GAME's own swing
+     *  timer (`gsw`, "Keep ours on the bottom": the strip kept for the swing alone while the game's bar had the cast) is gone - the swing
+     *  goes where the cast bar goes (the add-on draws its swing line over our top bar; PadMap m190 stopped reading the game's setting) */
+    fun honoured(l: HomeLayout, ct: Int?, cc: Int? = null): HomeLayout {
         val r = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
-        // the user's pick 2026-11-23 ("Keep ours on the bottom"): Top screen's cast bar with the GAME's own swing timer off ([gsw] 0,
-        // PadMap m188) keeps the bottom screen's strip for the swing ([swingOnly]: the strip paints no cast, the game's bar has it)
-        return if (r.fightCast == HomeLayout.FightCast.TOP && (cc != 1 || gsw == 0)) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
+        return if (r.fightCast == HomeLayout.FightCast.TOP && cc != 1) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
     }
+
     /**
-     * THE SWING IN ONE PLACE (the user's picks 2026-11-23: with the cast bar on the Top screen and WoW's own swing timer off, "Keep ours
-     * on the bottom" - "When WoW's own swing timer is off, our swing strip stays across the top of the bottom screen"; and "One place"):
-     * Cast bar in fights = Top screen confirmed ([cc] 1) with the game's swing timer OFF ([gsw] 0, PadMap m188's read-only gameSwingOn)
-     * - the bottom screen's fight strip stays and paints the SWING only (the cast is the game's own bar on the top screen), and the Wings
-     * draw no swing line (ActionBar nbar14). With the game's swing timer on ([gsw] 1) or an older add-on (null): as built - no strip.
-     * [l] the layout as the player set it (not [honoured])
+     * WHERE THE BAND'S CAST LINE IS (feat/top-castbar; the user, 2026-11-24: "I only want to see it on the top screen when everything else
+     * is also on the top screen during or engaging in combat. Not with stuff like dienchanting or opening shit, that can stay on the bottom
+     * screen"; then "I kind of want the option for the cast bar and swing timer to appear on the bottom screen if everything else is on
+     * top"): [l] the record as the page lays it ([honoured] / [previewed]), [away] the page laid with the band above it (the takeover's
+     * Top screen: TopSlide), [sliding] a Top-screen slide running (either way).
+     * - [Line.STRIP]: Cast bar in fights = Bottom screen (the default) in the takeover - the fight strip across the bottom screen's top
+     *   carries the band's WHOLE line, the cast AND the swing (HomeLayoutSolver.hasFightStrip), away and all through both slides.
+     * - [Line.TOP]: Cast bar in fights = Top screen in the takeover (away: from the up-slide's first frame, so a cast that starts the
+     *   takeover never shows on the bottom screen after it) - nothing of the line on the bottom screen: the add-on's own bar above the HUD
+     *   has the cast and the swing (ActionBar nbar18, on the Wings' same switch); the rooms' bar leaves it out too.
+     * - [Line.BAND]: everything else - out of the takeover (disenchanting, opening, gathering, crafting, the Hearthstone: the band's own
+     *   line on the bottom screen, whatever the setting), Grow / Same size, and the way down (the band brings the line back with it).
+     * The swing never in two places: wherever the cast is, the swing is.
      */
-    fun swingOnly(l: HomeLayout, ct: Int?, cc: Int?, gsw: Int?): Boolean =
-        live(l, ct) && l.fightCast == HomeLayout.FightCast.TOP && cc == 1 && gsw == 0
-    /** [swingOnly] for edit mode's Fight preview (Top screen and its cast bar whenever the add-on HAS the flags, as [previewed]) */
-    fun swingOnlyPreview(l: HomeLayout, ct: Int?, cc: Int?, gsw: Int?): Boolean =
-        wanted(l) && ct != null && l.fightCast == HomeLayout.FightCast.TOP && cc != null && gsw == 0
+    enum class Line { BAND, STRIP, TOP }
+    fun lineAt(l: HomeLayout, away: Boolean, sliding: Boolean): Line = when {
+        HomeLayoutSolver.hasFightStrip(l) && (away || sliding) -> Line.STRIP
+        l.fight == HomeLayout.FightBand.TOP && l.fightCast == HomeLayout.FightCast.TOP && away -> Line.TOP
+        else -> Line.BAND
+    }
     /**
      * the 1519 audit: edit mode's FIGHT PREVIEW shows "what a fight would" - the first fight after Done. A character that never used Top
      * screen has the add-on's flag off (`ct` 0): the menu offers Top screen (only `ct` null greys it), and CompanionHost.topCheck sends
      * nothing while edit mode is live, so `ct` turns 1 only after Done (within a resend). The preview therefore keeps Top screen whenever
      * the add-on HAS the flag ([ct] not null); with no flag (no key, an older add-on) the Wings cannot show, so Grow as [honoured]
      */
-    fun previewed(l: HomeLayout, ct: Int?, cc: Int? = null, gsw: Int? = null): HomeLayout {
+    fun previewed(l: HomeLayout, ct: Int?, cc: Int? = null): HomeLayout {
         val r = if (wanted(l) && ct == null) l.copy(fight = HomeLayout.FightBand.GROW) else l
-        // (the same rule for the cast bar's screen: Top screen previewed whenever the add-on HAS the flag, cc not null; the game's swing
-        // timer off keeps the swing strip, as [honoured])
-        return if (r.fightCast == HomeLayout.FightCast.TOP && (cc == null || gsw == 0)) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
+        // (the same rule for the cast bar's screen: Top screen previewed whenever the add-on HAS the flag, cc not null)
+        return if (r.fightCast == HomeLayout.FightCast.TOP && cc == null) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
     }
 
     // ---------------------------------------------------------------- the cast bar in a Top-screen fight (the user's ruling 2026-11-23)
@@ -75,14 +83,25 @@ object TopCombatBar {
      * bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically instead of trying to remake
      * ours and position it just above the health hud. Same thing with the swing timer"): only with In fights = Top screen.
      * BOTTOM (the default): our cast bar and swing timer run across the top of the bottom screen in the fight (HomeLayoutSolver's fight
-     * strip), the Wings draw no swing line. TOP: nothing of ours on the bottom screen; the add-on shows the GAME'S OWN casting bar for
-     * the Wings' fight (Hub hub76, alpha only, the player's Hide back after it) and the Wings keep their own swing lines under the faces
-     * (ActionBar nbar13). THE CHANNEL: a second per-character flag beside `ct` (PadMap m187 ctcb, `cc` in the padmap), page-3 codes 24
-     * (Bottom) / 25 (Top) (Book b77), sent as `ct` is: out of combat, re-sent until `cc` says it ([decide] with `cc`)
+     * strip), the Wings draw no swing line. TOP (feat/top-castbar, the user's reversal 2026-11-24: "I want to build our own that appears
+     * right above the HUD"): in the takeover nothing of the line on the bottom screen ([lineAt]); the add-on draws OUR OWN cast bar right
+     * above the HUD block with the swing line(s) over it (ActionBar nbar18; the 1523 path that showed the game's own casting bar - Hub
+     * hub76 - is gone, hub78), out of the takeover the band's own line as ever. THE CHANNEL: a second per-character flag beside `ct`
+     * (PadMap m187 ctcb, `cc` in the padmap), page-3 codes 24 (Bottom) / 25 (Top) (Book b77), sent as `ct` is: out of combat, re-sent
+     * until `cc` says it ([decide] with `cc`)
      */
     fun castWanted(l: HomeLayout): Boolean = wanted(l) && l.fightCast == HomeLayout.FightCast.TOP
     /** the taps for "Cast bar in fights" [top] */
     fun castCells(top: Boolean): List<Pair<String, Int>> = PadMapModel.fightCastCells(top)
+    /**
+     * THE SWING WITH OUR TOP BAR (feat/top-castbar): the add-on draws the swing over our top cast bar, so the app's Settings > Home "Swing
+     * timer" goes to it too - a third per-character flag (PadMap m190 ctsw, `cs` in the padmap; none = on), page-3 codes 26 (off) / 27
+     * (on) (Book b78), sent as `cc` is and only while it matters ([castWanted]: Bottom screen paints the swing on this screen, by the same
+     * setting). null = nothing to send ([decide]'s Matched)
+     */
+    fun swingWanted(l: HomeLayout, swingOn: Boolean): Boolean? = if (castWanted(l)) swingOn else null
+    /** the taps for the top bar's swing [on] */
+    fun swingCells(on: Boolean): List<Pair<String, Int>> = PadMapModel.fightSwingCells(on)
 
     /**
      * PARTY MODE KEEPS THE TOP SCREEN (the user's ruling C, 11-22: "It should stay at the top in party mode but the party bars should fill

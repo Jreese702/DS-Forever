@@ -170,8 +170,8 @@ class TopCombatBarTest {
         // HomeView lays and shrinks by the CURRENT padmap's flag (no cue any more: the band slides)
         val home = java.io.File(listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion"),
             java.io.File("companion/app/src/main/java/com/jrees/wowcompanion")).first { it.isDirectory }, "HomeView.kt").readText()
-        assertTrue(home.contains("if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, d?.ct, d?.cc, d?.gsw)"))
-        assertTrue(home.contains("else TopCombatBar.honoured(l, d?.ct, d?.cc, d?.gsw)"))
+        assertTrue(home.contains("if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, d?.ct, d?.cc)"))
+        assertTrue(home.contains("else TopCombatBar.honoured(l, d?.ct, d?.cc)"))
         assertFalse(home.contains("cueStarts")); assertFalse(home.contains("topCueAlpha"))
         assertTrue(home.contains("TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)"))
         // the 11-23 B rule: no grace for Top screen (the add-on has none), a touch keeps the grow, the padmap's edges keep both in step
@@ -222,7 +222,9 @@ class TopCombatBarTest {
         assertNull("a reset = off (no entry): the band grows", k.default)
         // the add-on's own Layouts reset clears it too (PadMap m179)
         val pm = java.io.File(addons(), "WowCompanionSpells/PadMap.lua").readText()
-        assertTrue(pm.contains("layouts = { \"dpad\", \"rbm\", \"ctop\", \"ctcb\" }"))           // m187: the fight cast bar's flag too
+        assertTrue(pm.contains("layouts = { \"dpad\", \"rbm\", \"ctop\", \"ctcb\", \"ctsw\" }"))   // m187: the fight cast bar's flag too; m190: its swing
+        val sw = ResetPlan.SV_KEYS.first { it.top == "ctsw" }
+        assertEquals(ResetPlan.Kind.LAYOUTS, sw.kind); assertTrue(sw.perChar); assertNull("a reset = on (no entry)", sw.default)
     }
 
     @Test fun theWordsAreTranslated() {

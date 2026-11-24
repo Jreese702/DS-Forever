@@ -1329,8 +1329,8 @@ object HomeWidgetMenus {
             // Top screen needs the add-on's Wings word (TopCombatBar: no `ct` = laid as Grow); the preview shows what a fight would
             add(MenuRow(BottomTiles.COMBAT, "In fights", BottomTiles.FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(v.fightBand),
                 off = if (v.ct == null && v.fightBand != HomeLayout.FightBand.TOP) setOf(HomeLayout.FightBand.TOP.ordinal) else emptySet()))
-            // the user's ruling 2026-11-23: with Top screen, the cast bar and swing timer across the bottom screen's top or the game's own
-            // on the top screen (Top screen needs the add-on's `cc`, as Top screen above needs `ct`)
+            // the user's ruling 2026-11-23: with Top screen, the cast bar and swing timer across the bottom screen's top or (feat/top-castbar)
+            // our own bar above the HUD on the top screen (Top screen needs the add-on's `cc`, as Top screen above needs `ct`)
             if (v.fightBand == HomeLayout.FightBand.TOP)
                 add(MenuRow(BottomTiles.FIGHT_CAST, "Cast bar", BottomTiles.FIGHT_CAST_WORDS, HomeLayout.FightCast.values().indexOf(v.fightCast),
                     off = if (v.cc == null && v.fightCast != HomeLayout.FightCast.TOP) setOf(HomeLayout.FightCast.TOP.ordinal) else emptySet()))

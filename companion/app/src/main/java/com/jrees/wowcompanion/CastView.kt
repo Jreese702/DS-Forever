@@ -286,16 +286,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         set(v) { if (field != v) { field = v; invalidate(); onCastState?.invoke(); onLine?.invoke() } }
     /** the line's state moved (a hud state document, a flash, a predicted cast): Home's fight strip redraws */
     var onLine: (() -> Unit)? = null
-    /** Cast bar in fights = Top screen in a Top-screen fight (the band away, no fight strip): the GAME's own casting bar shows the cast on
-     *  the top screen (the add-on, Hub hub76), so nothing of ours on the bottom screen - the rooms' bar leaves it out ([ownCastBarShown]).
-     *  Set by Home */
-    var lineTop = false
-        set(v) { if (field != v) { field = v; onCastState?.invoke() } }
-    /** THE SWING ALONE (the user's pick 2026-11-23, "Keep ours on the bottom": Cast bar in fights = Top screen with the GAME's own swing
-     *  timer off - TopCombatBar.swingOnly): Home's fight strip paints the swing timer only ([drawFightStrip]), the cast being the game's
-     *  own casting bar on the top screen (the rooms' bar quiet too: [lineAway]). Set by Home */
-    var stripNoCast = false
-        set(v) { if (field != v) { field = v; invalidate(); onLine?.invoke() } }
+    // feat/top-castbar: Cast bar in fights = Top screen in the takeover is [lineAway] with no strip (TopCombatBar.lineAt's TOP: the
+    // add-on's own bar above the HUD has the cast and the swing) - the 1523 lineTop (the game's own casting bar) and stripNoCast (the
+    // strip's swing alone while the game's swing timer was off) are gone with that path
 
     /** while true the band draws NO presses (no push-down, no flash): Home's Select cursor owns the pad then
      *  (user 2026-09-30, LATER item 23a). Layers and the triggers still follow the pad. */
@@ -3691,13 +3684,6 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val bh0 = curBh; val pl0 = curPlate
         into = true; intoSwing = true; intoW = r.width(); intoH = r.height()
         curPlate = false
-        // [stripNoCast]: the swing alone - the cast, its prediction and its finish / fail flash left out for this paint only (the game's
-        // own bar on the top screen has them); restored after, so the band and the rooms' bar keep the real state
-        val cs0 = castStartMs; val ce0 = castEndMs; val pr0 = predOn; val fk0 = flashKind
-        if (stripNoCast) {
-            castStartMs = Double.NaN; castEndMs = Double.NaN; predOn = false
-            if (flashKind == FLASH_CAST || flashKind == FLASH_FAIL) flashKind = 0
-        }
         val save = c.save()
         try {
             if (dualShown(now)) {
@@ -3722,7 +3708,6 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         } finally {
             c.restoreToCount(save)
             into = false; intoSwing = false; curBh = bh0; curPlate = pl0
-            if (stripNoCast) { castStartMs = cs0; castEndMs = ce0; predOn = pr0; flashKind = fk0 }
         }
     }
     /** [drawFightStrip] is painting: the swing comes too ([drawCastInto] paints the cast only) */
@@ -3812,7 +3797,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var roomNamePaint: Paint? = null
 
     /** Home draws this cast bar itself now (on screen, its band layout, a layout to draw): the rooms' bar leaves it out */
-    fun ownCastBarShown(): Boolean = isShown && (!away || lineAway || lineTop) && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
+    fun ownCastBarShown(): Boolean = isShown && (!away || lineAway) && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
 
     /**
      * review fix: when this view leaves the screen or comes back (a room opens, a Home module covers the band, Home returns) the answer

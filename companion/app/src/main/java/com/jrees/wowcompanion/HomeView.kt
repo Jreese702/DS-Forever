@@ -296,7 +296,6 @@ class HomeView(
         if (lent(castView)) {
             castView.away = false                                        // (Top screen's fight: the Cast room draws it again)
             castView.lineAway = false; fightStrip.on = false; castView.onLine = null   // (the fight strip's line: back on the band)
-            castView.lineTop = false; castView.stripNoCast = false
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
             castView.onClassRadial = null; castView.onClassStick = null; classLayerShow(false)   // the Cast room draws its own radial
             castView.onTriggers = null; trigHold(false)
@@ -1064,11 +1063,10 @@ class HomeView(
     fun onPadMap(map: PadMapModel.Map) {
         val ctWas = padMap?.dpad?.ct
         val ccWas = padMap?.dpad?.cc
-        val gswWas = padMap?.dpad?.gsw
         padMap = map
         // the 1515 merge's review: the Wings' flag changed (the add-on said it, or a key came / went) - Top screen's band follows it;
-        // the cast bar's screen (`cc`) and the game's swing timer (`gsw`, PadMap m188: the swing strip) the same way
-        if ((map.dpad?.ct != ctWas || map.dpad?.cc != ccWas || map.dpad?.gsw != gswWas) && laidLayout != null && laidLayout != layoutNow()
+        // the cast bar's screen (`cc`) the same way
+        if ((map.dpad?.ct != ctWas || map.dpad?.cc != ccWas) && laidLayout != null && laidLayout != layoutNow()
             && shown?.let { it.full == null || it.takeover } == true)
             shown?.let { apply(it, animate = isShown) }
         HomeAttackSwitch.note(map)                      // Spells' start-attack switch, drawn in Home's Settings section
@@ -2236,6 +2234,7 @@ class HomeView(
      */
     private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
         val l = layoutNow(s)
+        placedRec = l                                                        // feat/top-castbar: the record [apply]'s line rule reads
         val full = s.full != null && !s.takeover
         var partyIn: HomeLayoutSolver.Party? = null
         if (!full) {
@@ -2286,10 +2285,12 @@ class HomeView(
         for ((p, b) in r.boxes) PART_OF[p]?.let { out[it] = RectF(b.l, b.t, b.r, b.b) }
         return out
     }
-    /** the fight strip carries the band's cast bar and swing timer ([on]) or the band draws them itself */
-    private fun fightLine(on: Boolean) {
-        if (lent(castView)) castView.lineAway = on
-        fightStrip.on = on && lent(castView)
+    /** where the band's line is ([TopCombatBar.lineAt]): the fight strip carries the band's cast bar and swing timer (STRIP), the add-on's
+     *  own bar above the HUD has them on the top screen (TOP: nothing of the line on this screen, the rooms' bar quiet too), or the band
+     *  draws them itself (BAND) */
+    private fun fightLine(at: TopCombatBar.Line) {
+        if (lent(castView)) castView.lineAway = at != TopCombatBar.Line.BAND
+        fightStrip.on = at == TopCombatBar.Line.STRIP && lent(castView)
     }
     /** the layout record the page was last laid with (a change of it glides the page there) */
     private var laidLayout: HomeLayout? = null
@@ -2297,6 +2298,8 @@ class HomeView(
      *  [placedAway] the last [places]' answer (chatPaneBox asks places too: only apply moves [laidAway]) */
     private var laidAway = false
     private var placedAway = false
+    /** feat/top-castbar: the record the last [places] laid (TopCombatBar.lineAt: where the band's cast line is) */
+    private var placedRec: HomeLayout? = null
     /** the overall fraction (0..1) a Top-screen slide had reached when the next apply cancelled it, and its way; -1 = none */
     private var slideCutAt = -1f
     private var slideCutUp = false
@@ -2317,8 +2320,7 @@ class HomeView(
     private var slideByB = false
     private var holdByB = false
     private var slideCutByB = false
-    /** the last [layoutNow]: the fight strip paints the swing alone (TopCombatBar.swingOnly: the cast is the game's own bar on top) */
-    private var swingOnlyNow = false
+
     /** a held slide this apply cuts inside its hold: never started (a cancel would tell its listeners nothing), it is ended as a
      *  running one is - its cancel and end run (the motion's clean-up), then the hold it had left is noted for the next motion */
     private fun holdCut() {
@@ -2357,12 +2359,8 @@ class HomeView(
         // the 1515 merge's review (P5): Top screen only while the add-on's Wings are on (`ct` 1); no key / not confirmed = Grow. The
         // Fight preview (the 1519 audit) lays what the first fight after Done lays: Top screen whenever the add-on has the flag
         val d = padMap?.dpad
-        // the user's pick 2026-11-23 ("Keep ours on the bottom"): the cast bar on the Top screen with the game's swing timer off keeps the
-        // bottom strip for the swing alone (TopCombatBar.swingOnly; `gsw` PadMap m188)
-        swingOnlyNow = look == null && (if (editFightLook()) TopCombatBar.swingOnlyPreview(l, d?.ct, d?.cc, d?.gsw)
-            else TopCombatBar.swingOnly(l, d?.ct, d?.cc, d?.gsw))
-        if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, d?.ct, d?.cc, d?.gsw)
-            else TopCombatBar.honoured(l, d?.ct, d?.cc, d?.gsw)
+        if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, d?.ct, d?.cc)
+            else TopCombatBar.honoured(l, d?.ct, d?.cc)
         if (look != null) {
             l = l.copy(fight = if (look.grow) HomeLayout.FightBand.GROW
                 else (if (l.fight == HomeLayout.FightBand.GROW) HomeLayout.FightBand.SAME else l.fight))
@@ -2537,6 +2535,7 @@ class HomeView(
         if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
         val wasAway = laidAway
         val to = places(s, w, h)
+        val laidRec = placedRec ?: layoutNow(s)
         laidAway = placedAway
         val away = laidAway
         // the fight strip (HomeLayoutSolver.hasFightStrip): this record has one; it carries the band's line while the page is away and
@@ -2573,19 +2572,17 @@ class HomeView(
         }
         // the 1523 audit: the fight strip's line first - the refits below fit under it (barsFoot reads fightStrip.on: set after them, a
         // middle wheel held into a Top-screen fight was refitted as if there were no strip, its square from the page's top gap)
-        fightLine(stripRec && (away || sliding))
+        // feat/top-castbar: Cast bar = Top screen leaves the bottom screen from the up-slide's first frame (the add-on's bar has it at once)
+        fightLine(TopCombatBar.lineAt(laidRec, away, sliding))
         // fix/radials-clip-castbar: an open middle wheel follows the page laid again (a fight's start / end), never over the bar
         if (s.full == null || s.takeover) wheelRefit(to)
         if (s.full == null || s.takeover) classRefit(to)
         if (s.full == null || s.takeover) pauseRefit(to)
-        // Cast bar in fights = Top screen: the game's own bar on the top screen for the fight; the rooms' bar shows nothing of it meanwhile
-        if (lent(castView)) castView.lineTop = away && !stripRec
-        // ... and with the game's swing timer off, the strip keeps the swing alone (its cast is the game's bar's)
-        if (lent(castView)) castView.stripNoCast = stripRec && swingOnlyNow
+
         if (!animate || before == null) {
             partyRideEnd()                                                     // (fix/party-drop-wheels: laid at once, the list's drop too)
             if (lent(castView)) castView.away = away                           // laid at once (no motion): away now
-            fightLine(stripRec && away)
+            fightLine(TopCombatBar.lineAt(laidRec, away, false))
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
             chatReturn()
@@ -2734,7 +2731,7 @@ class HomeView(
                     // there, not only a whole up-slide (the 11-22 review: a re-lay inside the slide's 240 ms cancelled it, and the glide
                     // that took over never set it - the band sat off the page with its cast bar claimed, the bottom screen had none)
                     if (!cancelled && lent(castView)) castView.away = away
-                    if (!cancelled) fightLine(stripRec && away)                  // the fight strip: landed back on the page = the band's line again
+                    if (!cancelled) fightLine(TopCombatBar.lineAt(laidRec, away, false))   // landed back on the page = the band's line again
                     // fires on cancel too: the morph always ends (Map's safety net would after 700 ms anyway)
                     if (morphing) { mapView.morph(1f, mFrom!!, mTo!!, isMap, card); flightClip(false) }
                     if (gliding) { chatGlideBox.setEmpty(); chatSlot.clipToOutline = false; chatSlot.invalidateOutline() }

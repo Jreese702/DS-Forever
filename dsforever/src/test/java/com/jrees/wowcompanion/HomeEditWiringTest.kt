@@ -162,7 +162,9 @@ class HomeEditWiringTest {
         // the add-on hears the record's sides / fight bar only once edit mode is not live
         assertTrue(body(host, "private fun mirrorCheck(").contains("if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }"))
         assertTrue(body(host, "private fun topCheck(").contains("if (homeView.editing) { ui.removeCallbacks(topAgain); return }"))
-        assertTrue(host.contains("homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it) } } }"))
+        assertTrue(host.contains("homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it); swingCheck(it) } } }"))
+        // feat/top-castbar: the top bar's swing flag (PadMap m190) waits for Done too
+        assertTrue(body(host, "private fun swingCheck(").contains("if (homeView.editing) { ui.removeCallbacks(swingAgain); return }"))
         // the fight cast bar's flag (PadMap m187) waits for Done as the top flag does
         assertTrue(body(host, "private fun castCheck(").contains("if (homeView.editing) { ui.removeCallbacks(castAgain); return }"))
         // a held B on the direct feed (press and release) is Discard; the relayed guest's B stays the plain ladder
