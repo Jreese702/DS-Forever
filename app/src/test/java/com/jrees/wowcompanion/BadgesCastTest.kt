@@ -59,6 +59,11 @@ class BadgesCastTest {
     @After fun down() {
         ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, artWas)
         setField(PartyModel.live, "party", null); HomeLayoutStore.character(null); HomeLayoutStore.set(HomeLayout()); ItemCd.reset()
+        // 1524 final: the extras switches back to their defaults (all on). HomeSettings keeps the FIRST test's prefs (init sets them only
+        // while null), so page()'s clear of this test's "home" file never reaches them: the pet switch this class turns off stayed off for
+        // the next class (BottomTilesTest.theModel counted "4 / 6", not "5 / 6", in one JVM after this class)
+        HomeSettings.clockHearth = true; HomeSettings.clockTeleport = true; HomeSettings.clockGold = true; HomeSettings.clockBags = true
+        setting("clockAmmo", true); setting("clockPet", true)
     }
 
     private fun art() {
