@@ -18,7 +18,7 @@ package com.jrees.wowcompanion
  *                                 ctop (movable Home phase 3, PadMap m179: the top-screen combat bar's flag; a reset = off, the band grows)
  *                                 ctcb (PadMap m187: "Cast bar in fights: Top screen"; a reset = Bottom screen)
  *                        NEVER   formSlotsBy, smartModel, cdLearn, petSpellBy, petDeadBy (learned / remembered game facts); dpadZL,
- *                                 srGone, srBy, srMacros, genUse, fix181, keyProbe, aclOurs, aclReset1, holdGuide (one-time clean-ups / probes: a
+ *                                 srGone, srBy, srMacros, genUse, fix181, keyProbe, aclOurs, aclReset1, holdGuide, holdN (one-time clean-ups / probes / the app's copies: a
  *                                 reset would run them again); faceSwap, faceCd, combatFace (crash recovery / learned, never synced);
  *                                 macroRoom (the Macros room's last tab); attack (legacy shared record); padLayout, startOver, castBarTab,
  *                                 castBarShow (cb14: the add-on's copy of castBarCombat, home LAYOUTS), castBarPShow (cb15: the add-on's
@@ -112,7 +112,8 @@ object ResetPlan {
     val SV_NEVER: Map<String, Set<String>> = mapOf(
         SPELLS to setOf("formSlotsBy", "smartModel", "cdLearn", "petSpellBy", "petDeadBy", "dpadZL", "srGone", "srBy", "srMacros", "genUse",
             "fix181", "keyProbe", "aclOurs", "aclReset1", "faceSwap", "faceCd", "combatFace", "macroRoom", "attack", "padLayout", "startOver",
-            "castBarTab", "castBarShow", "castBarPShow", "holdGuide"),       // m190: hold to cast's probe answer (a game fact)
+            "castBarTab", "castBarShow", "castBarPShow", "holdGuide",       // m190: hold to cast's probe answer (m194: dropped at load)
+            "holdN"),                                                       // m194: the add-on's copy of Settings' Hold time (the app re-sends it)
         DB to setOf("pqol", "pskip", "npEnemies", "npFriends", "npFriendsOff", "npFriendsSet", "routeWp", "chatTop", "compassCal",
             "compassCam", "layV", "prdYv", "prdCurve", "camProbe", "calProbe", "qtDefaults", "chatStyleSet2", "cursorSoftSet",
             "realmOf", "realmFixBak", "who"),     // Safety k6: the realms each name was seen with, and the orphan keys' fold backups;

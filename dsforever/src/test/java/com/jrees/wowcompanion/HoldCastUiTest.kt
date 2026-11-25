@@ -38,7 +38,7 @@ class HoldCastUiTest {
         }
         val m = JSONObject().put("page", 1).put("pages", 3).put("sets", sets)
         if (holdOn != null) m.put("hold", JSONObject().put("on", holdOn))
-        return PadMapModel.parse(JSONObject().put("type", "padmap").put("v", "m190").put("m", m))!!
+        return PadMapModel.parse(JSONObject().put("type", "padmap").put("v", "m194").put("m", m))!!
     }
 
     @Test fun thePadmapCarriesEachPlacesHold() {
@@ -65,6 +65,8 @@ class HoldCastUiTest {
         val empty = PadMapModel.Slot(3, 3, PadMapModel.Kind.NONE, null, null, 0)
         assertFalse("never B (the user: \"remove the hold option on B\")", PadMapModel.holdable(PadMapModel.Slot(7, 19, PadMapModel.Kind.SPELL, 1, "x", 1)))
         assertFalse("an empty button", PadMapModel.holdable(empty))
+        // m194: a game binding on the button is the game's own command - the add-on's router never hears that press
+        assertFalse("never a game binding", PadMapModel.holdable(PadMapModel.Slot(5, 17, PadMapModel.Kind.BIND, null, "Jump", 0)))
         assertFalse(PadMapModel.holdable(null))
         val room = kt("PadTabPage.kt")
         assertTrue("no Bind hold button on an empty one", room.contains("&& PadMapModel.holdable(slotOf(m, shown(), pos))"))
@@ -77,9 +79,9 @@ class HoldCastUiTest {
             .put("bare:8", JSONObject().put("d", 30).put("l", 2).put("e", true))
             .put("odd:3", JSONObject().put("d", 3).put("l", 1))
             .put("rt:2", JSONObject().put("d", 3).put("l", 4))))!!
-        assertEquals(setOf(HoldGate.key(1, 6), HoldGate.key(0, 8)), cd.keys)
-        assertEquals(5.5, cd.getValue(HoldGate.key(1, 6)).left, 0.0)
-        assertTrue(cd.getValue(HoldGate.key(0, 8)).estimated)
+        assertEquals(setOf(HoldCast.key(1, 6), HoldCast.key(0, 8)), cd.keys)
+        assertEquals(5.5, cd.getValue(HoldCast.key(1, 6)).left, 0.0)
+        assertTrue(cd.getValue(HoldCast.key(0, 8)).estimated)
         assertEquals(emptyMap<Int, PadMapModel.FaceCd>(), PadMapModel.parseHoldCd(JSONObject().put("type", "holdcd")))
         assertNull(PadMapModel.parseHoldCd(JSONObject().put("type", "facecd")))
     }
@@ -105,15 +107,16 @@ class HoldCastUiTest {
 
     @Test fun theBadgeSitsOnTheClustersOuterSide() {
         // drawn 0..3 the D-pad left / up / right / down, 4..7 the faces left / top / right / bottom (y down)
-        assertEquals(-1f to 1f, HoldGate.badgeSide(0)); assertEquals(-1f to -1f, HoldGate.badgeSide(1))
-        assertEquals(1f to 1f, HoldGate.badgeSide(2)); assertEquals(-1f to 1f, HoldGate.badgeSide(3))
-        assertEquals(-1f to 1f, HoldGate.badgeSide(4)); assertEquals(-1f to -1f, HoldGate.badgeSide(5))
-        assertEquals(1f to 1f, HoldGate.badgeSide(6)); assertEquals(-1f to 1f, HoldGate.badgeSide(7))
+        assertEquals(-1f to 1f, HoldCast.badgeSide(0)); assertEquals(-1f to -1f, HoldCast.badgeSide(1))
+        assertEquals(1f to 1f, HoldCast.badgeSide(2)); assertEquals(-1f to 1f, HoldCast.badgeSide(3))
+        assertEquals(-1f to 1f, HoldCast.badgeSide(4)); assertEquals(-1f to -1f, HoldCast.badgeSide(5))
+        assertEquals(1f to 1f, HoldCast.badgeSide(6)); assertEquals(-1f to 1f, HoldCast.badgeSide(7))
         assertEquals(150L, HoldArt.FLASH_MS)
     }
 
     @Test fun settingsHoldTimeTile() {
         assertEquals(listOf("Short", "Normal", "Long"), CastSettings.HoldTime.values().map { it.label })
+        assertEquals("m194: the add-on's looks", listOf(2, 3, 4), CastSettings.HoldTime.values().map { it.ticks })
         assertTrue(SettingsTabs.Block.CONTROLLER.rows.contains("Hold time"))
         val t = kt("ControllerTiles.kt")
         assertTrue(t.contains("Slot(ControllerPictures.HOLD_TIME)"))
@@ -126,9 +129,11 @@ class HoldCastUiTest {
         assertTrue("Home's band draws the hold after each button", cast.contains("next = min(next, drawHold(c, pos, src, li, circle, b, now))"))
         assertTrue(cast.contains("HoldArt.progress(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, prog, circle)"))
         assertTrue(cast.contains("HoldArt.bigFace(c, 0f, 0f, iconHalf, Icons.get(ref.icon), circle)"))
+        assertTrue("m194: the band's own pad reading drives the arc", cast.contains("holdWatch(mask, down, wheel)")
+            && cast.contains("val prog = if (w.layerOf(pos) == li) w.progress(pos, up) else -1f"))
         val home = kt("HomeView.kt")
         assertTrue("PER TAB: the badges are the holds that would fire now",
-            home.contains("castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false }")
+            home.contains("castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { map.holdOn != false }")
                 && home.contains("fightNow = fight; applyDpad(); holdApply()"))
         assertTrue(home.contains("HoldCast.onChange = { castView.postInvalidateOnAnimation() }"))
         val room = kt("PadTabPage.kt")
@@ -152,13 +157,13 @@ class HoldCastUiTest {
         assertTrue("the room shows each tab's own Hold row", room.contains("val hr = sl?.holdOf(fightTab)"))
         assertTrue(kt("SpellsOverlay.kt").contains("holdHint(c, box.left + 80f, HINT_Y)"))
         val host = kt("CompanionHost.kt")
-        assertTrue(host.contains("\"holdmap\" -> if (current) HoldCast.onMap(msg)") && host.contains("\"holdprobe\" -> if (current) HoldCast.onProbe(msg)")
+        assertTrue(host.contains("\"holdmap\" -> if (current) HoldCast.onMap(msg)") && !host.contains("holdprobe") && host.contains("HoldCast.onFacecast(msg)")
             && host.contains("\"holdcd\" -> if (current) PadMapModel.parseHoldCd(msg)?.let { homeView.onHoldCd(it) }"))
         assertTrue("the press log knows the hold way", PressLog.PATHS.contains("slothold"))
     }
 
     @Test fun spanishAndFrench() {
-        val words = listOf(PadTabPage.HOLD_BIND, "Bind", "Bind combat spell", PadTabPage.HOLD_OFF_LINE, "Clear hold spell", "Hold spell on",
+        val words = listOf(PadTabPage.HOLD_BIND, "Bind", "Bind combat spell", ControllerPictures.LET_GO, "Clear hold spell", "Hold spell on",
             SpellsOverlay.HOLD_HINT, "Hold time", "Normal", "Short", "Long", "Hold", "hold", "Press",
             "Fight buttons unavailable: the game is not taking key changes right now")
         for (l in listOf("es", "fr")) {
@@ -166,6 +171,8 @@ class HoldCastUiTest {
             val plain = o.getJSONObject("plain")
             for (w in words) assertTrue("$l: $w", plain.has(w))
             assertTrue("$l: hold %s", o.getJSONObject("templates").has("hold %s"))
+            assertTrue("$l: ${PadTabPage.HOLD_POINT}", o.getJSONObject("templates").has(PadTabPage.HOLD_POINT))
+            assertFalse("$l: no probe line any more", plain.has("Hold to cast isn't available yet"))
             assertTrue("$l keeps CRLF", File(i18n, "$l.json").readText().contains("\r\n"))
         }
         Tr.load("es", File(i18n, "es.json").readText())

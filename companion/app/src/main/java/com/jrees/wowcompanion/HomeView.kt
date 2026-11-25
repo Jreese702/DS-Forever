@@ -125,7 +125,7 @@ class HomeView(
         HomeSettings.init(context)
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
-        HoldCast.onChange = { castView.postInvalidateOnAnimation() }      // m190: a held press's gold arc / the hold's flash (the gate)
+        HoldCast.onChange = { castView.postInvalidateOnAnimation() }      // m194: the hold's flash on the add-on's word (its release)
         HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
         HomeLayoutStore.onOwner { editUi.post { editOwnerCheck("the character changed") } }
@@ -1090,7 +1090,7 @@ class HomeView(
      *  the fight switch takes the press (the padmap's `fight`, Combat controls on), else Out of combat's */
     private fun holdApply() {
         val map = padMap ?: return
-        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false }
+        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { map.holdOn != false }
     }
 
     /** every CURRENT `holdcd` (PadMap m190): the hold spells' own cooldowns onto their badges */

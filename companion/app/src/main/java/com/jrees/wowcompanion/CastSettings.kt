@@ -92,11 +92,14 @@ object CastSettings {
         @Suppress("UNUSED_PARAMETER") set(v) {}
 
     /**
-     * HOLD TO CAST'S HOLD TIME (the user's pick 2026-11-24, "At the hold time, Settings: 0.3/0.4/0.55 s"): how long a button with a hold
-     * spell must be held for the hold spell; it fires at that moment, still held. Normal by default. The Settings row "Hold time".
+     * HOLD TO CAST'S HOLD TIME (the Settings row "Hold time"; Normal by default). PadMap m194 (the user's pick on test 1529: "Yes, rebuild
+     * it that way"): the add-on decides at the RELEASE, by the game's 0.2 s state-driver looks counted while the press was kept - [ticks]
+     * looks = the hold: Short 2 (a hold from 0.2 - 0.4 s held), Normal 3 (0.4 - 0.6 s), Long 4 (0.6 - 0.8 s); the phase of the game's
+     * clock decides inside each range (HoldCast's timing note). The stored names are test 1528's (its 0.3 / 0.4 / 0.55 s): each keeps its
+     * place, so a kept SHORT / NORMAL / LONG reads as 2 / 3 / 4 looks with nothing to convert
      */
-    enum class HoldTime(val label: String, val ms: Long) {
-        SHORT("Short", HoldGate.SHORT_MS), NORMAL("Normal", HoldGate.NORMAL_MS), LONG("Long", HoldGate.LONG_MS)
+    enum class HoldTime(val label: String, val ticks: Int) {
+        SHORT("Short", 2), NORMAL("Normal", 3), LONG("Long", 4)
     }
     var holdTime: HoldTime
         get() = enumOr(prefs?.getString("holdTime", null), HoldTime.NORMAL)

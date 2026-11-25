@@ -747,10 +747,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     /**
-     * The hold spell on the button just drawn (the canvas at its centre, the slot's scale): while held the gold arc fills its ring over
-     * the hold time (HoldCast's gate: the press held back now, on this layer); at the hold time the hold spell takes the big face for
-     * [HoldArt.FLASH_MS] in a bright ring; the corner badge (the hold spell, its own sweep; the tap spell while the hold takes the face)
-     * on the cluster's outer side. [drawn] the slot drawn (0..3 the D-pad, 4..7 the faces), [src] its game position - 1, [b] the button.
+     * The hold spell on the button just drawn (the canvas at its centre, the slot's scale): while held the gold arc fills its ring to the
+     * hold point (PadMap m194: HoldCast.watch, the app's own reading of the pad for a place the add-on keeps now, on this layer - full =
+     * let go now and it is the hold); when a release runs the hold the hold spell takes the big face for [HoldArt.FLASH_MS] in a bright
+     * ring; the corner badge (the hold spell, its own sweep; the tap spell while the hold takes the face) on the cluster's outer side.
+     * [drawn] the slot drawn (0..3 the D-pad, 4..7 the faces), [src] its game position - 1, [b] the button.
      */
     private fun drawHold(c: Canvas, drawn: Int, src: Int, li: Int, circle: Boolean, b: Btn?, now: Long): Long {
         if (li !in 0 until STATE_LAYERS || drawCollapsed || quietPresses) return Long.MAX_VALUE
@@ -758,9 +759,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val ref = holdRefs?.get(key)
         val up = SystemClock.uptimeMillis()
         val pos = src + 1
-        val g = HoldCast.gate
-        val prog = if (g.pendingLayer(pos) == li) g.progress(pos, up) else -1f
-        val fire = g.lastFire?.takeIf { it.first == pos && up - it.second in 0 until HoldArt.FLASH_MS }
+        val w = HoldCast.watch
+        val prog = if (w.layerOf(pos) == li) w.progress(pos, up) else -1f
+        val fire = w.lastFire?.takeIf { it.first == pos && up - it.second in 0 until HoldArt.FLASH_MS }
         if (ref == null && prog < 0f) return Long.MAX_VALUE
         val half = (if (circle) 38f else 40f) * k / 2f
         val iconHalf = half - 3f * k
@@ -1896,8 +1897,24 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             // bars (and a pick that closed the wheel must not look like a bar press either)
             for (pos in 0 until 8) if (down and (1 shl pos) != 0) { pressAtMs[pos] = now; if (!wheel) predictCast(pos, now) }
         }
+        holdWatch(mask, down, wheel)
         held = mask and 0xFF
         invalidate()
+    }
+
+    /** PadMap m194: the presses and releases of the eight onto HoldCast.watch (the gold arc, the hold's flash): the held bit IS the game
+     *  position under the thumb (bit src = position src + 1, as the band's own pressed look reads it), on the layer the triggers make at
+     *  the press; a press the class wheel takes is not the game's (no arc). Display only: nothing here reaches the game */
+    private fun holdWatch(mask: Int, down: Int, wheel: Boolean) {
+        val up = held and mask.inv() and 0xFF
+        if (down == 0 && up == 0) return
+        val now = SystemClock.uptimeMillis()
+        val layer = (if (padLt) 1 else 0) + (if (padRt) 2 else 0)
+        for (p in 0 until 8) {
+            val pos = p + 1
+            if (up and (1 shl p) != 0) HoldCast.watch.release(pos, now)
+            if (down and (1 shl p) != 0 && !wheel) HoldCast.watch.press(pos, layer, now)
+        }
     }
 
     // ---------------------------------------------------------------- b-cast-bar-late: the predictive cast bar

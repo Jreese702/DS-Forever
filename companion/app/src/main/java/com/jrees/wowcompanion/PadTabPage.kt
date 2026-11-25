@@ -1019,7 +1019,7 @@ class PadTabPage(
             UiKit.pad(c, glyph(p), r.centerX() + 36f * k, r.centerY() - 36f * k, 40f * k)
         }
         // m190 HOLD TO CAST: a button with a hold spell wears it as a small round badge at its top left (the study's room mockup)
-        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true && HoldCast.usable) for (p in 1..8) PadMapModel.slot(m, s, p)?.holdOf(cv() == "combat")?.let { hr ->
+        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true) for (p in 1..8) PadMapModel.slot(m, s, p)?.holdOf(cv() == "combat")?.let { hr ->
             val r = ctlSquare(p); val k = r.width() / 80f
             HoldArt.badge(c, r.left + 12f * k, r.top + 12f * k, 15f * k, Icons.get(hr.icon), -1f, lit = false)
         }
@@ -1770,8 +1770,8 @@ class PadTabPage(
     /** the hold pane belongs on this page: WoW Defaults / In combat's eight buttons (never a bar page, the radial, Party mode, a stick); an
      *  add-on before m190 (no `hold` in its padmap) keeps the pages as they were */
     private fun holdHere(m: PadMapModel.Map): Boolean = m.holdOn != null && !castBar() && cv() != "party" && view != "radial" && pos in 1..8
-    /** hold to cast works now (the add-on's word and the app's probe) */
-    private fun holdOn(m: PadMapModel.Map): Boolean = m.holdOn == true && HoldCast.usable
+    /** hold to cast works now (the add-on's word; PadMap m194: always, no probe) */
+    private fun holdOn(m: PadMapModel.Map): Boolean = m.holdOn == true
     /** the Hold spell button is on the page now: the pane's, nothing carried, the toolbar not on the button */
     private fun holdButtonShown(m: PadMapModel.Map): Boolean =
         holdHere(m) && holdOn(m) && talkKind() == TALK_NONE && carryNow() == null && toolAt(shown(), pos) == null && chooserList() == null
@@ -1838,10 +1838,9 @@ class PadTabPage(
             c.drawText(holdWord, x0 + 112f, r2 + 34f, pl)
             val markX = x0 + 112f + pl.measureText(holdWord) + 22f
             HoldArt.mark(c, markX, r2 + 26f, 11f, HOLD_MARK)
-            c.drawText(HoldCast.holdWord(), markX + 22f, r2 + 34f, pd)              // the hold time ("0.4 s"), beside its mark
+            // m194: the hold point and the release ("0.6 s, then let go": the hold spell fires when you let go after it)
+            c.drawText(Tr.t(HOLD_POINT.replace("%s", HoldCast.holdWord())), markX + 22f, r2 + 34f, pd)
             if (hr != null) c.drawText(TextUtils.ellipsize(Tr.t(hr.name), TextPaint(ps), x1 - x0 - 128f, TextUtils.TruncateAt.END).toString(), x0 + 112f, r2 + 80f, ps)
-        } else if (!holdOn(m)) {
-            c.drawText(Tr.t(HOLD_OFF_LINE), x0 + 8f, r2 + 50f, pd)
         }
         // the red line over the buttons: a note (a refusal, a fight), else a real problem of a base face
         val act = actRect(w, h)
@@ -2790,7 +2789,8 @@ class PadTabPage(
         private val HOLD_MARK = Color.rgb(150, 110, 40)
         /** the user, 2026-11-24: "Use the word bind instead of change" - one word for the button, set or not */
         const val HOLD_BIND = "Bind hold"
-        const val HOLD_OFF_LINE = "Hold to cast isn't available yet"
+        /** m194: the Hold row's hint - the hold point, then the release (the hold spell fires when you let go) */
+        const val HOLD_POINT = "%s, then let go"
         /** m190: the Hold spell button (touch: Book b79's page-3 code 26 opens the add-on's hold chooser) */
         private const val DOWN_HOLD = 970
     }

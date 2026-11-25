@@ -134,7 +134,7 @@ OURS_B = "CLICK WowCompanionFaceB:LeftButton"
 BACK_PRESS = ['GPTop7+', 'GPTop7-']            # Forever's Back: its down and up edges, as the router's native press makes them
 
 # ---------------------------------------------------------------- (0) the versions
-check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 174 and 'local BV = "b79"' in SRC["book"],
+check(int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 174 and 'local BV = "b82"' in SRC["book"],
       "PadMap m174 or later, Book b68 (B: pet recall; m173 one B does both)")
 check("One B does both" in SRC["padmap"] and "Off as picked" in SRC["padmap"], "m173: PadMap's header note quotes the user's picks (2026-11-17)")
 check("I want a pet class specific option where pressing B in the out of combat home menu basically stops the pet attacking" in SRC["padmap"]

@@ -158,11 +158,11 @@ def clean(L, name):
 
 
 # ================================================================ a. tags
-check('local CV = "p60"' in SRC["padtabctl"] and "p58 THE CHOOSER AS A GRID" in SRC["padtabctl"] and "p57 A FINGER ON A CHOOSER TAB" in SRC["padtabctl"],
+check('local CV = "p62"' in SRC["padtabctl"] and "p58 THE CHOOSER AS A GRID" in SRC["padtabctl"] and "p57 A FINGER ON A CHOOSER TAB" in SRC["padtabctl"],
       "a. PadTabCtl p58 and its note (p57's kept)")
-check('local BV = "b79"' in SRC["book"] and "b73 THE CHOOSER AS A GRID" in SRC["book"] and "b72 A FINGER ON A TAB" in SRC["book"],
+check('local BV = "b82"' in SRC["book"] and "b73 THE CHOOSER AS A GRID" in SRC["book"] and "b72 A FINGER ON A TAB" in SRC["book"],
       "a. Book b73 and its note (b72's kept)")
-check('local PV = "m190"' in SRC["padmap"] and "m177 MACROS IN THE CONTROLLER ROOM'S CHOOSER" in SRC["padmap"], "a. PadMap m182 (m177's note kept)")
+check('local PV = "m194"' in SRC["padmap"] and "m177 MACROS IN THE CONTROLLER ROOM'S CHOOSER" in SRC["padmap"], "a. PadMap m182 (m177's note kept)")
 check('"dstool"' not in SRC["padtabctl"].split("local CTABS", 1)[1].split("--", 1)[0], "a. CTABS has no dstool")
 
 W = boot()

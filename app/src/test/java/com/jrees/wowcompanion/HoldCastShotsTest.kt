@@ -23,10 +23,11 @@ import java.io.File
 import java.time.Duration
 
 /**
- * HOLD TO CAST, THE REAL RENDERS (PadMap m190; the user's picks 2026-11-24: "A: corner badge", "At the hold time, Settings: 0.3/0.4/0.55 s",
- * "Every button incl. B"): the Controller room's Hold row and hint line (WoW Defaults, In combat, a base face, unavailable, the hold
- * chooser; es / fr), its left page's hold badges; Home's band and diamonds with the badge and its own sweep (both ready, the tap
- * cooling, the hold cooling), the gold arc while a press is held back (the gate's own state) and the flash when the hold fires; the
+ * HOLD TO CAST, THE REAL RENDERS (PadMap m190 / m194; the user's picks 2026-11-24: "A: corner badge", and on test 1529 "Yes, rebuild it
+ * that way" - the hold spell fires when you let go after the hold time): the Controller room's Hold row and its hint ("0.6 s, then let
+ * go"; WoW Defaults, In combat, a base face, an add-on that says off, the hold chooser; es / fr), its left page's hold badges; Home's
+ * band and diamonds with the badge and its own sweep (both ready, the tap cooling, the hold cooling), the gold arc while a kept press is
+ * held (HoldCast.watch: the band's own reading of the pad, timed to the add-on's looks) and the flash when a release runs the hold; the
  * Bind box's foot line; Settings' Hold time picture. Pixel checks prove the badge, the arc and the flash are drawn; with HOLD_SHOTS_DIR
  * set the renders are saved there (CLOCK_ART_ROOT: the art root, laid out like the app's).
  */
@@ -44,13 +45,11 @@ class HoldCastShotsTest {
             val f = ArtHarvest::class.java.getDeclaredField("rootDir"); f.isAccessible = true; f.set(null, File(root))
         }
         HomeSettings.init(app); CastSettings.init(app)
-        HoldCast.Store.init(app); HoldCast.Store.result = "seen"
         ShadowSystemClock.advanceBy(Duration.ofSeconds(10))
     }
     @After fun down() {
         Tr.setChoice(app, "auto")
-        HoldCast.Store.result = null
-        HoldCast.gate.reset(); HoldCast.gate.configure(false, emptySet(), SystemClock.uptimeMillis())
+        HoldCast.watch.reset(); HoldCast.watch.map = emptySet()
     }
 
     private val book = """{"type":"spells","v":"s9","s":{"lines":[{"k":1,"n":"General","i":136048},{"k":2,"n":"Restoration","i":136052}],
@@ -84,7 +83,7 @@ class HoldCastShotsTest {
         }
         val m = JSONObject().put("page", 1).put("pages", 3).put("sets", sets).put("face", JSONObject().put("cc", true))
             .put("hold", JSONObject().put("on", holdOn))
-        return JSONObject().put("type", "padmap").put("v", "m190").put("m", m)
+        return JSONObject().put("type", "padmap").put("v", "m194").put("m", m)
     }
 
     private fun ctl(view: String, set: Int, pos: Int, chooser: JSONObject? = null): PadMapModel.Ctl {
@@ -152,17 +151,20 @@ class HoldCastShotsTest {
             shot(v, "r6_room_hold_chooser")
         }
         lang("en")
+        // m194: no probe - the Hold row whenever the add-on has hold to cast (an add-on that says off: no row)
         val off = room(holdOn = false)
-        off.onPadTabCtl(ctl("normal", 2, 6)); val b1 = shot(off, "r7_room_unavailable")
-        HoldCast.Store.result = "not seen"
-        val off2 = room(holdOn = true)
-        off2.onPadTabCtl(ctl("normal", 2, 6)); val b2 = shot(off2, "r8_room_unavailable_app_probe")
-        HoldCast.Store.result = "seen"
-        val on = room(); on.onPadTabCtl(ctl("normal", 2, 6)); val b3 = shot(on, "r9_room_on_again")
-        assertTrue("the Hold row and hint differ from the unavailable line", differs(b1, b3) && differs(b2, b3))
+        off.onPadTabCtl(ctl("normal", 2, 6)); val b1 = shot(off, "r7_room_addon_says_off_no_row")
+        val on = room(); on.onPadTabCtl(ctl("normal", 2, 6)); val b3 = shot(on, "r9_room_hold_row")
+        assertTrue("the Hold row and its hint show with hold to cast on", differs(b1, b3))
+        for (t in CastSettings.HoldTime.values()) {
+            CastSettings.holdTime = t
+            val v = room(); v.onPadTabCtl(ctl("normal", 2, 6)); shot(v, "r11_room_hold_hint_${t.name.lowercase()}")
+        }
+        CastSettings.holdTime = CastSettings.HoldTime.NORMAL
     }
 
-    /** Home's bars (Cast) with the hold badges; [prog] / [fire]: the gate's own state for the bare A (a held press / the hold firing) */
+    /** Home's bars (Cast) with the hold badges; [prog] / [fire]: the bare A held [prog] ms (its arc) / let go past the hold point (the
+     *  flash), through the band's own pad reading (CastView's onButtons) and HoldCast.watch, as on the device */
     private fun bars(name: String, lt: Boolean, layout: CastView.Layout?, tapCd: Boolean = false, holdCd: Boolean = false,
                      prog: Long = -1L, fire: Boolean = false): Bitmap {
         val cast = CastView(app) { }
@@ -182,29 +184,26 @@ class HoldCastShotsTest {
         val map = PadMapModel.parse(padmap())!!
         cast.holdRefs = PadMapModel.holdRefs(map)
         val now = SystemClock.elapsedRealtime()
-        if (holdCd) cast.holdCooldowns(mapOf(HoldGate.key(if (lt) 1 else 0, if (lt) 8 else 8) to PadMapModel.FaceCd(10.0, 6.5, false, false),
-            HoldGate.key(0, 2) to PadMapModel.FaceCd(20.0, 15.0, false, false)), now)
+        if (holdCd) cast.holdCooldowns(mapOf(HoldCast.key(if (lt) 1 else 0, if (lt) 8 else 8) to PadMapModel.FaceCd(10.0, 6.5, false, false),
+            HoldCast.key(0, 2) to PadMapModel.FaceCd(20.0, 15.0, false, false)), now)
         if (tapCd) cast.fightCooldown(8, now - 2000L, 8000L)
         CastView::class.java.getDeclaredMethod("onPad", Boolean::class.java, Boolean::class.java, Boolean::class.java, Boolean::class.java)
             .apply { isAccessible = true }.invoke(cast, lt, false, false, false)
         ShadowSystemClock.advanceBy(Duration.ofSeconds(2))
-        // the gate: a press of A held back now (its arc), or fired at the hold time (its flash)
-        val g = HoldCast.gate
-        g.update(0, 0f, 0f, SystemClock.uptimeMillis())                    // the last shot's press let go
-        g.reset(); g.configure(true, setOf(HoldGate.key(if (lt) 1 else 0, 8)), SystemClock.uptimeMillis())
+        // the add-on keeps the A's press on this layer now (its holdmap); the band's own pad reading: A down, held, (let go)
+        HoldCast.watch.reset(); HoldCast.watch.map = setOf(HoldCast.key(if (lt) 1 else 0, 8))
+        val buttons = CastView::class.java.getDeclaredMethod("onButtons", Int::class.java).apply { isAccessible = true }
+        val aBit = 1 shl PadInput.SLOT_FACE_BOTTOM
         if (prog >= 0 || fire) {
-            val t0 = SystemClock.uptimeMillis()
-            g.update(1 shl HoldGate.A, if (lt) 1f else 0f, 0f, t0)
-            val at = if (fire) g.holdMs else prog
-            ShadowSystemClock.advanceBy(Duration.ofMillis(at))
-            g.update(1 shl HoldGate.A, if (lt) 1f else 0f, 0f, SystemClock.uptimeMillis())
-            if (fire) ShadowSystemClock.advanceBy(Duration.ofMillis(40))
+            buttons.invoke(cast, aBit)
+            ShadowSystemClock.advanceBy(Duration.ofMillis(if (fire) HoldCast.holdFromMs(CastSettings.holdTime.ticks) + 10L else prog))
+            if (fire) { buttons.invoke(cast, 0); ShadowSystemClock.advanceBy(Duration.ofMillis(40)) }
         }
         val b = Bitmap.createBitmap(ww, hh, Bitmap.Config.ARGB_8888)
         val c = Canvas(b); c.drawColor(Theme.ink); cast.draw(c)
         save(b, name)
-        g.update(0, 0f, 0f, SystemClock.uptimeMillis() + 1000L)
-        g.reset(); g.configure(false, emptySet(), SystemClock.uptimeMillis())
+        if (prog >= 0 && !fire) buttons.invoke(cast, 0)
+        HoldCast.watch.reset(); HoldCast.watch.map = emptySet()
         return b
     }
 
@@ -214,8 +213,8 @@ class HoldCastShotsTest {
             val ready = bars("h1_${tag}_both_ready", lt = false, layout = lay)
             bars("h2_${tag}_tap_cooling", lt = false, layout = lay, tapCd = true)
             val hc = bars("h3_${tag}_hold_cooling", lt = false, layout = lay, holdCd = true)
-            val held = bars("h4_${tag}_held_200ms_gold_arc", lt = false, layout = lay, prog = 200L)
-            val fired = bars("h5_${tag}_hold_fires_flash", lt = false, layout = lay, fire = true)
+            val held = bars("h4_${tag}_held_300ms_gold_arc", lt = false, layout = lay, prog = 300L)
+            val fired = bars("h5_${tag}_let_go_past_the_hold_point_flash", lt = false, layout = lay, fire = true)
             bars("h6_${tag}_lt_layer_badges", lt = true, layout = lay, holdCd = true)
             assertTrue("$tag: the hold's own sweep changes the badge", differs(ready, hc))
             val all = RectF(0f, 0f, ready.width.toFloat(), ready.height.toFloat())
@@ -239,11 +238,10 @@ class HoldCastShotsTest {
         o.layout(0, 0, w, hh)
         val withHint = Bitmap.createBitmap(w, hh, Bitmap.Config.ARGB_8888).also { Canvas(it).apply { drawColor(Theme.ink); o.draw(this) } }
         save(withHint, "b1_bindbox_hold_a_button_place_as_hold")
-        HoldCast.Store.result = "not seen"
+        o.onPadMap(PadMapModel.parse(padmap(holdOn = false))!!)
         val without = Bitmap.createBitmap(w, hh, Bitmap.Config.ARGB_8888).also { Canvas(it).apply { drawColor(Theme.ink); o.draw(this) } }
-        save(without, "b2_bindbox_unavailable_no_hold_line")
-        HoldCast.Store.result = "seen"
-        assertTrue("the foot's hold line shows only while hold to cast works", differs(withHint, without))
+        save(without, "b2_bindbox_addon_says_off_no_hold_line")
+        assertTrue("the foot's hold line shows while the add-on has hold to cast", differs(withHint, without))
         // Settings > Controller: the Hold time picture, each choice
         for (t in CastSettings.HoldTime.values()) {
             CastSettings.holdTime = t

@@ -480,9 +480,9 @@ class SpellsOverlay(
             !lt && !rt -> UiKit.hints(c, box.right - 80f, HINT_Y, back to "Back")
             else -> null
         }
-        // Book b78 HOLD TO CAST (the study's "Place as hold"): in this box the pressed button IS the place, so holding it for the hold
-        // time places the spell as that button's hold spell; said at the foot's left while the controller waits and hold to cast works
-        if ((r == null || !r.ok) && !cbOn && !party && padMap?.holdOn == true && HoldCast.usable)
+        // Book b78 / b82 HOLD TO CAST (the study's "Place as hold"): in this box the pressed button IS the place, so holding it for the
+        // hold time places the spell as that button's hold spell (the box times it itself); said at the foot's left while the controller waits
+        if ((r == null || !r.ok) && !cbOn && !party && padMap?.holdOn == true)
             holdHint(c, box.left + 80f, HINT_Y)
         if (hx != null && ctl?.hosted == true) hostHits.add(RectF(hx - 24f, HINT_Y - 48f, box.right - 40f, HINT_Y + 48f) to "b")
     }

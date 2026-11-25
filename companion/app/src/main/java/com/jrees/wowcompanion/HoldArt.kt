@@ -14,8 +14,9 @@ import android.graphics.RectF
  * left page, the Bind box's foot).
  *   - [badge]: the hold spell as a small round badge on the OUTER side of its cluster ([outer]: never over a neighbour's glyph), with its
  *     OWN cooldown sweep (the same dark pie as the tap spell's, clockwise from 12 o'clock);
- *   - [progress]: while the button is held a gold arc fills the button's ring over the hold time (the badge's ring lights gold too);
- *   - [fired]: at the hold time the hold spell takes the big face for [FLASH_MS] inside a bright gold ring;
+ *   - [progress]: while the button is held a gold arc fills the button's ring to the hold point (PadMap m194: the hold fires when you
+ *     let go past it; the badge's ring lights gold too);
+ *   - [fired]: when a release runs the hold the hold spell takes the big face for [FLASH_MS] inside a bright gold ring;
  *   - [mark]: the hold mark (a ring three quarters filled: the progress arc in miniature) for the room's Hold row and the Bind box.
  * Pure drawing, no allocation per frame beyond the first.
  */
@@ -43,7 +44,7 @@ object HoldArt {
      * right / bottom), as a unit offset (x, y; y down) of the button's glyph-corner distance: the outer side of its cluster - the top
      * button's upper left, the left and bottom buttons' lower left, the right button's lower right (the glyph keeps the upper right).
      */
-    fun outer(drawn: Int): Pair<Float, Float> = HoldGate.badgeSide(drawn)
+    fun outer(drawn: Int): Pair<Float, Float> = HoldCast.badgeSide(drawn)
 
     /** the hold mark: a ring with three quarters of it filled from 12 o'clock, a dot at its centre */
     fun mark(c: Canvas, cx: Float, cy: Float, r: Float, color: Int) {

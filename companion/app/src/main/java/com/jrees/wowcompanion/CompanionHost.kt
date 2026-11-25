@@ -633,7 +633,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         castView.onCastState = { strip.castChanged() }
         ItemCd.init(this)                                   // r20: the Hearthstone's kept end time (per character)
-        CastSettings.init(this); HoldCast.init(this)        // hold to cast (PadMap m190): the hold time, the probe's kept outcome
+        CastSettings.init(this)                             // hold to cast (PadMap m190 / m194): the hold time
+        // m194: Settings' Hold time to the add-on (Book b82's codes 29-31); the host held weakly (a replaced host is never kept by it)
+        run { val me = java.lang.ref.WeakReference(this); HoldCast.onTicksWanted = { me.get()?.let { h -> h.ui.post { h.lastPadMap?.let { m -> h.holdTicksCheck(m) } } } } }
         bagsView = BagsView(this)
         // bags controller mode (bags session, AGENT_LOG 2026-09-28): the Bags room while the addon holds the controller
         bagsView.onController = { on, why -> onBagsController(on, why) }
@@ -3591,7 +3593,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // set further down, so a first padmap after a start / a character switch read the default or the last character's setting)
                 if (current) { petBNow = it.petB; petBWho = PetRecall.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
-                if (current) HoldCast.fighting = it.combat                   // hold to cast: the probe pulses out of fights only
+                if (current) holdTicksCheck(it)                              // m194: the hold time the add-on counts (Book b82's codes)
                 // the k6 review round 2: a realm seen in a current padmap counts against every other realm of its name (before any fold)
                 if (current) RealmFix.saw(CharKey.of(it.dpad?.name, it.dpad?.realm))
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
@@ -3660,10 +3662,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "facewatch" -> if (current) homeView.onFightWord(msg.optBoolean("fight", false))
             // issues 580 / 539 (11-23): where each press went (the last 30 for the report; one WCLOG line for a press that did nothing),
             // and whether the fight buttons are ours (one line when it changes); logging only (WCPAD: off the start-up log's 200 lines)
+            // (m194: and a kept press's release that ran its hold: the flash on Home's band, HoldCast.onFacecast)
             "facecast" -> if (current) PressLog.press(msg, System.currentTimeMillis())?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
-            // HOLD TO CAST (PadMap m190): the places the router turns into the hold spell now (the launcher's gate), and the probe
+                .also { HoldCast.onFacecast(msg) }
+            // HOLD TO CAST (PadMap m190 / m194): the places whose press the router keeps for a hold now (the gold arc's; display only)
             "holdmap" -> if (current) HoldCast.onMap(msg)
-            "holdprobe" -> if (current) HoldCast.onProbe(msg)
             "holdcd" -> if (current) PadMapModel.parseHoldCd(msg)?.let { homeView.onHoldCd(it) }
             "faceswap" -> if (current) PressLog.swap(msg)?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
             // m127: Smart Y's list edits answered (a refusal said on its Add row; the user, 2026-11-11: it was never read)
@@ -5284,6 +5287,30 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (++castTries < MIRROR_TRIES) ui.postDelayed(castAgain, TopCombatBar.RESEND_MS + 200L)
             }
         }
+    }
+
+    // ---------------------------------------------------------------- m194 THE HOLD TIME TO THE ADD-ON (Book b82, PadMap holdTicks)
+    private var holdSentAt: Long? = null
+    private var holdSentWant: Int? = null
+    private var holdTries = 0
+    private val holdAgain = Runnable { lastPadMap?.let { holdTicksCheck(it) } }
+
+    /** Settings > Controller > Hold time (the app's, CastSettings) vs the add-on's `hold.n`: [castCheck]'s rules - out of combat, re-sent
+     *  every TopCombatBar.RESEND_MS until `hold.n` says it (at most [MIRROR_TRIES] per wish), an older add-on without it: nothing */
+    private fun holdTicksCheck(m: PadMapModel.Map) {
+        val want = CastSettings.holdTime.ticks
+        if (holdSentWant != want) { holdSentAt = null; holdTries = 0 }
+        val now = SystemClock.elapsedRealtime()
+        ui.removeCallbacks(holdAgain)
+        if (m.holdN == null || m.holdN == want) { if (m.holdN == want) { holdSentAt = null; holdSentWant = null; holdTries = 0 }; return }
+        // another page-3 batch just went (the same first cells: TapPad's 0.25 s repeat guard would swallow this batch's first 39)
+        if (listOf(topSentAt, castSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS }) { ui.postDelayed(holdAgain, CAST_AFTER_TOP_MS); return }
+        val send = HoldCast.ticksToSend(want, m.holdN, m.combat || homeView.inFight(), holdSentAt?.let { now - it })
+        if (send == null) { if (holdTries < MIRROR_TRIES) ui.postDelayed(holdAgain, TopCombatBar.RESEND_MS); return }
+        holdSentAt = now; holdSentWant = want
+        val sent = padTabTap(PadMapModel.holdTimeCells(send))
+        Log.i(HoldCast.TAG, "hold time: $send looks ${if (sent) "sent" else "not sent"}")
+        if (++holdTries < MIRROR_TRIES) ui.postDelayed(holdAgain, TopCombatBar.RESEND_MS + 200L)
     }
 
     // ---------------------------------------------------------------- Safety k10 THE STICKY REALM'S ONE-TIME QUESTION (KeyPick)
