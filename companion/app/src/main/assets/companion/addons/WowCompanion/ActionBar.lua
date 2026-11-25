@@ -2713,19 +2713,30 @@ function NB.holdBadge(b)
     b.hflash:Hide()
     -- nbar25 THE GOLDEN RING (the user: "When the ability is casting it should show the ability with a golden ring, a great example of
     -- this is raptor strikes normal behavior"): the game's own CHECKED ring (actionbarbutton.lua's CheckedTexture on its gamepad bar) over
-    -- the takeover's face, 4 units beyond the button, easing with it
+    -- the takeover's face, 4 units beyond the button, easing with it. The fix pass: the atlas refused, a RING all the same, never a disc
+    -- over the face - the button's own border ring (a ring of the game's art: its middle is clear) at the checked ring's size, gold;
+    -- that refused too, a gold plate of the button's shape (the circle mask on the faces, square on the D-pad) UNDER the face (sublevel
+    -- -1: the hold spell's picture, sublevel 0, covers its middle - the gold shows only round it)
     b.hsel = b.top:CreateTexture(nil, "OVERLAY", nil, 1)
     b.hsel:SetPoint("CENTER", b, "CENTER", 0, 0)
     b.hsel:SetSize(b.sz + 8, b.sz + 8)
     if not NB.atlasOn(b.hsel, "gamepad-actionbar-" .. (b.circle and "circleslot" or "squareslot") .. "-border-selected") then
-        -- refused: a gold ring of the circle mask (the face's own picture covers its middle)
-        pcall(b.hsel.SetColorTexture, b.hsel, 1, 0.86, 0.45, 0.9)
-        local okM, m = pcall(function() return b.top:CreateMaskTexture() end)
-        if okM and type(m) == "table" then
-            pcall(m.SetAllPoints, m, b.hsel)
-            if pcall(m.SetTexture, m, NB.MASK_FILE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE") then pcall(b.hsel.AddMaskTexture, b.hsel, m) end
+        if NB.atlasOn(b.hsel, NB.ringAtlas(b.circle, "normal")) then
+            pcall(b.hsel.SetDesaturated, b.hsel, true)
+            pcall(b.hsel.SetVertexColor, b.hsel, 1, 0.86, 0.45)
+            b.hselFallback = "ring"
+        else
+            pcall(b.hsel.SetDrawLayer, b.hsel, "OVERLAY", -1)
+            pcall(b.hsel.SetColorTexture, b.hsel, 1, 0.86, 0.45, 0.9)
+            if b.circle then
+                local okM, m = pcall(function() return b.top:CreateMaskTexture() end)
+                if okM and type(m) == "table" then
+                    pcall(m.SetAllPoints, m, b.hsel)
+                    if pcall(m.SetTexture, m, NB.MASK_FILE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE") then pcall(b.hsel.AddMaskTexture, b.hsel, m) end
+                end
+            end
+            b.hselFallback = "under"
         end
-        b.hselFallback = true
     end
     b.hsel:Hide()
     hb:Hide()
@@ -2830,7 +2841,8 @@ function NB.holdHere(b)
     return k ~= nil and k[NB.set or 1] == true
 end
 -- PadMap m195's word on the fired hold's own cast at [pos]: "cast" (d = its seconds left), "ok", "fail"; m199 (nbar25): "q" queued for
--- the next swing (kept until it lands or is unqueued), "none" (no GCD, no cast, no queue: back at once), "gcd" (gl = the GCD's seconds left)
+-- the next swing (kept until it lands or is unqueued), "none" (no GCD, no cast, no queue: back at once; the fix pass: also a hold that
+-- went off - a queued one too - with no GCD of its own), "gcd" (gl = the GCD's seconds left)
 WC.holdCast = function(pos, st, d, gl)
     local f = NB.f
     local b = f and f.btn and f.btn[pos]
@@ -2842,29 +2854,36 @@ WC.holdCast = function(pos, st, d, gl)
     elseif st == "ok" then o.okAt = now; if o.q and not o.qOff then o.qOff = now end
     elseif st == "fail" then o.fail = now
     elseif st == "q" then o.q = true
-    elseif st == "none" then if not o.q then o.fail = now end
+    elseif st == "none" then o.fail = now                                 -- (the fix pass: queued too - it went off with no GCD)
     elseif st == "gcd" then o.gcdEnd = now + (tonumber(gl) or 0) end
 end
 -- when the takeover at [b] ends (game time): at a "fail" at once; else the latest of its cast's end, the GCD that started with it and
 -- an instant's success (+0.3 s), none of them known = NB.HOLD_FALLBACK s after the fire; never later than NB.HOLD_FALLBACK s past its
--- last word (its cast's end for a cast) nor 15 s past the fire
+-- last word (its cast's end for a cast) nor 15 s past the fire (a queued one's: past its queue's end)
+-- nbar25 (the fix pass): the GCD that started WITH the fire - o.t is the click's own frame (WC.holdFired runs in the post-click of the
+-- press that cast), so the look-back is PadMap's 0.05 s, not 0.5 (a D-pad spell's GCD 0.3 s before an interrupt's fire is not the
+-- interrupt's)
+NB.HOLD_QGRACE, NB.HOLD_GCD_BACK = 0.2, 0.05
 function NB.holdEnd(o)
     if o.fail then return o.fail end
-    -- nbar25: queued for the next swing - kept (no fallback) until it lands or is unqueued, at most NB.HOLD_QCAP s; then at the swing's
-    -- success + 0.3 s, or at once when it was unqueued
+    -- nbar25: queued for the next swing - kept (no fallback) until it lands or is unqueued, at most NB.HOLD_QCAP s. The fix pass: its end
+    -- (no longer current) waits NB.HOLD_QGRACE s for the landing's ok (PadMap's own wait for its SUCCEEDED: no ease-and-pop when the live
+    -- read flips first), at once on PadMap's fail; LANDED (ok) it ends as any hold - the GCD it started counts (a spell queued in the
+    -- game's spell-queue window that goes off at the last GCD's end keeps the face through its own GCD, as Home's takeover)
+    local base = o.t
     if o.q then
         if not o.qOff then return o.t + NB.HOLD_QCAP end
-        if o.okAt then return math.min(o.okAt + 0.3, o.t + NB.HOLD_QCAP) end
-        return o.qOff
+        if not o.okAt then return math.min(o.qOff + NB.HOLD_QGRACE, o.t + NB.HOLD_QCAP) end
+        base = math.max(o.t, o.qOff)
     end
     local g = rawget(WC, "gcdRun")
-    if type(g) == "table" and type(g.s) == "number" and type(g.d) == "number" and g.s >= o.t - 0.5 then o.gcdEnd = g.s + g.d end
+    if type(g) == "table" and type(g.s) == "number" and type(g.d) == "number" and g.s >= o.t - NB.HOLD_GCD_BACK then o.gcdEnd = g.s + g.d end
     local known = nil
     for _, v in ipairs({ o.castEnd or false, o.gcdEnd or false, o.okAt and (o.okAt + 0.3) or false }) do
         if v and (not known or v > known) then known = v end
     end
-    local e = known or (o.t + NB.HOLD_FALLBACK)
-    return math.min(e, math.max(o.castEnd or 0, o.last) + NB.HOLD_FALLBACK, o.t + 15)
+    local e = known or (base + NB.HOLD_FALLBACK)
+    return math.min(e, math.max(o.castEnd or 0, o.last) + NB.HOLD_FALLBACK, base + 15)
 end
 function NB.holdOver(b, now)
     local o = b.hto

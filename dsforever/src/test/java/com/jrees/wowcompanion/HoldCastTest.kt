@@ -409,8 +409,12 @@ class HoldCastTest {
         t.start(8, 0, 2_000); t.gcdFor(1_400, 2_050)
         assertEquals("gcd gl 1.4: on the face for 1.4 s", 1f, t.alpha(3_449), 0f)
         assertEquals(0f, t.alpha(3_450 + HoldCast.EASE_MS), 0f)
-        t.start(8, 0, 5_000); t.queue(5_010); t.none(5_150)
-        assertEquals("queued: a none is not for it", 1f, t.alpha(8_000), 0f)
+        // the fix pass: PadMap says none for a hold that WENT OFF with no GCD of its own - a queued one too (a next-swing ability that
+        // landed: the game's own checked ring clears then)
+        t.start(8, 0, 5_000); t.queue(5_010); t.none(7_000)
+        assertTrue("queued, then none (it landed, no GCD of its own): easing at once", t.alpha(7_000 + HoldCast.EASE_MS / 2) < 1f)
+        assertEquals(0f, t.alpha(7_000 + HoldCast.EASE_MS), 0f)
+        assertFalse(t.queued)
         var now = 200_000L
         HoldCast.bandClock = { now }
         HoldCast.takeover.start(5, 0, now)
@@ -422,6 +426,123 @@ class HoldCastTest {
         now += HoldCast.EASE_MS
         assertEquals("none (the word): back", 0f, HoldCast.takeover.alpha(now), 0f)
         HoldCast.takeover.clear(); HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }
+    }
+
+    // ---------------------------------------------------------------- the fix pass (two reviews of round 1533)
+
+    /** 18: a TAP of the same button leaves a takeover the FIRE started (a queued Raptor Strike, kept up to 30 s): the game keeps it
+     *  queued, the top screen keeps it; only the takeover a release started by itself ("sure", no early fire) goes back on its tap word */
+    @Test fun aTapOfTheSameButtonLeavesTheFiresQueuedTakeover() {
+        HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = setOf(bareA)
+        var now = 300_000L
+        HoldCast.clock = { now }; HoldCast.bandClock = { now }
+        // the hold fired at the fill (the launcher's early release): the takeover starts there, the swing is queued
+        HoldCast.watch.press(8, 0, now); now += HoldCast.watch.fullMs(8)
+        HoldCast.watch.fired(8, now); HoldCast.takeover.start(8, 0, now)
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slothold").put("hk", "rel").put("down", true))
+        HoldCast.onHoldCast(JSONObject().put("type", "holdcast").put("pos", 8).put("st", "q"))
+        now += 200; HoldCast.watch.release(8, now)                      // let go after the fire: nothing
+        // 2 s later, still queued: a TAP of the same button (its normal spell), its release word the tap's
+        now += 2_000
+        HoldCast.watch.press(8, 0, now); now += 150
+        assertFalse(HoldCast.watch.release(8, now))
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slotfight").put("hk", "rel").put("down", true))
+        now += HoldCast.EASE_MS + 50
+        assertEquals("the tap's word: the queued takeover stays (was cancelled at once)", 1f, HoldCast.takeover.alpha(now), 0f)
+        assertTrue(HoldCast.takeover.queued)
+        // the release's own "sure" takeover still goes back on its tap word
+        HoldCast.takeover.clear()
+        HoldCast.watch.press(8, 0, now); now += HoldCast.watch.fullMs(8)
+        assertTrue(HoldCast.watch.release(8, now))
+        assertEquals(8, HoldCast.takeover.pos)
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "native").put("hk", "rel").put("down", true))
+        assertEquals("a sure release whose tap ran: back", 0f, HoldCast.takeover.alpha(now + HoldCast.EASE_MS), 0f)
+        // ... and a takeover the rel word started (a release before the fire point): a LATER tap leaves it
+        HoldCast.takeover.clear()
+        HoldCast.watch.press(8, 0, now); now += 600
+        assertFalse(HoldCast.watch.release(8, now))
+        now += 100
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slothold").put("hk", "rel").put("down", true))
+        HoldCast.onHoldCast(JSONObject().put("type", "holdcast").put("pos", 8).put("st", "q"))
+        now += 1_000
+        HoldCast.watch.press(8, 0, now); now += 100
+        HoldCast.watch.release(8, now)
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slotfight").put("hk", "rel").put("down", true))
+        assertEquals("the rel word's queued takeover: a later tap leaves it", 1f, HoldCast.takeover.alpha(now + HoldCast.EASE_MS + 50), 0f)
+        HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = emptySet()
+        HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }; HoldCast.clock = { android.os.SystemClock.uptimeMillis() }
+    }
+
+    /** 19: after a SHORT fire the launcher fires at F + the bump: the ring is full exactly then (was full at F: "charged" for up to
+     *  102 ms before the cast), frozen at the press like the fire point */
+    @Test fun theRingIsFullWhenTheLauncherFiresAfterAShort() {
+        HoldCast.release.reset(); HoldCast.release.cn = 3; HoldCast.release.ft = 17
+        HoldCast.release.short()
+        HoldCast.watch.reset(); HoldCast.watch.map = setOf(bareA)
+        val f = HoldCast.fireMs(3, 17) + 34
+        HoldCast.watch.press(8, 0, 1_000)
+        assertEquals("the fire point: F(3, 17) + 34", f, HoldCast.watch.fullMs(8))
+        HoldCast.release.short()
+        assertEquals("frozen at the press", f, HoldCast.watch.fullMs(8))
+        assertTrue("not full at F", HoldCast.watch.charge(8, 1_000 + HoldCast.fireMs(3, 17)) < 1f)
+        assertFalse("... not charged at F", HoldCast.watch.charged(8, 1_000 + HoldCast.fireMs(3, 17)))
+        assertEquals("full at F + the bump", 1f, HoldCast.watch.charge(8, 1_000 + f), 0f)
+        assertTrue(HoldCast.watch.charged(8, 1_000 + f))
+        HoldCast.release.reset(); HoldCast.release.cn = null; HoldCast.release.ft = null
+        HoldCast.watch.reset(); HoldCast.watch.map = emptySet()
+    }
+
+    /** 20: the GCD that counts is the one that started with the hold's CAST - from the fire (which now comes before the game's cast) less
+     *  a frame's slack, not 0.5 s before it: an interrupt fired 0.3 s after a D-pad spell's GCD began does not wear that GCD; a takeover
+     *  the add-on's rel word starts (a release before the fire point) looks back to that physical release */
+    @Test fun theGcdThatCountsStartedWithTheHoldsCast() {
+        val t = HoldCast.Takeover()
+        t.start(8, 0, 1_000); t.gcd(700, 1_500); t.ok(1_080)
+        assertEquals("a GCD 0.3 s before the fire is not the hold's: ok + 0.3 s, back", 0f, t.alpha(1_380 + HoldCast.EASE_MS), 0f)
+        t.start(8, 0, 1_000); t.gcd(950, 1_500); t.ok(1_080)
+        assertEquals("one 50 ms before (the frame, the clocks): its own", 1f, t.alpha(2_400), 0f)
+        t.start(8, 0, 5_000); t.gcd(5_010, 1_500)
+        assertEquals(1f, t.alpha(6_400), 0f)
+        // through HoldCast: a release past the N-th look but before the fire point, the add-on's word 0.4 s later - the GCD that began
+        // with that release counts
+        HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = setOf(bareA)
+        var now = 400_000L
+        HoldCast.clock = { now }; HoldCast.bandClock = { now + 7 }
+        HoldCast.watch.press(8, 0, now); now += 600
+        assertFalse(HoldCast.watch.release(8, now))
+        val rel = now
+        now += 400
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slothold").put("hk", "rel").put("down", true))
+        assertEquals(8, HoldCast.takeover.pos)
+        HoldCast.takeover.gcd(rel + 7 + 5, 1_500)                       // the GCD began with the release (the band's clock)
+        HoldCast.takeover.ok(now + 7 + 20)
+        assertEquals("its GCD counts (began 0.4 s before the start)", 1f, HoldCast.takeover.alpha(rel + 7 + 1_400), 0f)
+        assertEquals(0f, HoldCast.takeover.alpha(rel + 7 + 1_505 + HoldCast.EASE_MS), 0f)
+        // ... and a D-pad spell's GCD 0.3 s before that release is not its own
+        HoldCast.takeover.clear()
+        now += 5_000
+        HoldCast.watch.press(8, 0, now); now += 600
+        HoldCast.watch.release(8, now)
+        val rel2 = now
+        now += 400
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slothold").put("hk", "rel").put("down", true))
+        HoldCast.takeover.gcd(rel2 + 7 - 300, 1_500)
+        HoldCast.takeover.ok(now + 7 + 20)
+        assertEquals("a GCD 0.3 s before the release: ok + 0.3 s, back", 0f, HoldCast.takeover.alpha(now + 7 + 320 + HoldCast.EASE_MS), 0f)
+        HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = emptySet()
+        HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }; HoldCast.clock = { android.os.SystemClock.uptimeMillis() }
+    }
+
+    /** 21: a long queue that goes off: its caps (the fallback, 15 s) count from the queue's end, not from the fire */
+    @Test fun aLongQueueCountsItsCapsFromItsEnd() {
+        val t = HoldCast.Takeover()
+        t.start(8, 0, 1_000); t.queue(1_100)
+        t.ok(20_000); t.gcd(19_900, 1_500)
+        assertEquals("queued 19 s, then off with its GCD: on through it", 1f, t.alpha(21_300), 0f)
+        assertEquals(0f, t.alpha(21_400 + HoldCast.EASE_MS), 0f)
+        t.start(8, 0, 1_000); t.queue(1_100); t.ok(20_000)
+        assertEquals("... with no GCD known: ok + 0.3 s", 1f, t.alpha(20_299), 0f)
+        assertEquals(0f, t.alpha(20_300 + HoldCast.EASE_MS), 0f)
     }
 
     // ---------------------------------------------------------------- (3) the hold time to the add-on

@@ -104,7 +104,8 @@ object HoldCast {
      * for the game at its fire point (round 1533); the ring reads from it. The fire point is frozen at the press (the ring never changes
      * pace mid-press): [ticksOf] the clock's looks (the add-on's `cn`, else Settings), [ftOf] the game's frame (the add-on's `ft`).
      */
-    class Watch(private val ticksOf: () -> Int = { need() }, private val ftOf: () -> Int? = { release.ft }) {
+    class Watch(private val ticksOf: () -> Int = { need() }, private val ftOf: () -> Int? = { release.ft },
+                private val bumpOf: () -> Long = { release.bump }) {
         /** the places the add-on keeps now (the `holdmap`) */
         var map: Set<Int> = emptySet()
         /** the hold time's looks (read each time, so Settings and a reset are followed at once) */
@@ -115,24 +116,32 @@ object HoldCast {
         private val firedAt = LongArray(9) { -1L }
         private val relAt = LongArray(9) { -1L }
         private val relLay = IntArray(9) { -1 }
+        /** the fix pass: the last release at each position started the takeover by itself (its own timing said "sure") */
+        private val relSure = BooleanArray(9)
         /** the last hold that fired: (game position, when) */
         var lastFire: Pair<Int, Long>? = null
             private set
         /** a hold fired at (game position, its layer) on the release (the fallback: no early fire): the takeover starts */
         var onFire: ((Int, Int) -> Unit)? = null
+        /** the fix pass: how long before [onFire] the physical release it answers came (0 for a sure release, the rel word's lag for
+         *  [confirm]) - the takeover's GCD look-back starts there */
+        var fireLag = 0L
+            private set
         /** the 1531 audit: the map is the Bind box's (why "box": its own timing - a long press places a hold, it casts nothing): the
          *  ring as always, no takeover */
         var box: Boolean = false
 
-        /** the button at [pos] went down on layer [layer] at [now]: tracked only when the add-on keeps that place's press now */
+        /** the button at [pos] went down on layer [layer] at [now]: tracked only when the add-on keeps that place's press now. The fix
+         *  pass: the fire point is the launcher's own - F plus the session's bump after a SHORT fire ([HoldRelease.bump], frozen at the
+         *  press as its fireAt), so the ring is full exactly when the hold casts */
         fun press(pos: Int, layer: Int, now: Long) {
             if (pos !in 1..8 || pos == 7) return
             firedAt[pos] = -1L
-            if (key(layer, pos) in map) { t0[pos] = now; lay[pos] = layer; full[pos] = HoldRelease.fireMs(ticks, ftOf()) }
+            if (key(layer, pos) in map) { t0[pos] = now; lay[pos] = layer; full[pos] = HoldRelease.fireMs(ticks, ftOf()) + bumpOf().coerceAtLeast(0L) }
             else { t0[pos] = -1L; lay[pos] = -1 }
         }
 
-        /** the fire point of the press held at [pos] (ms after its press), frozen at the press */
+        /** the fire point of the press held at [pos] (ms after its press, the bump in it), frozen at the press */
         fun fullMs(pos: Int): Long = full.getOrElse(pos) { HoldRelease.fireMs(3, null) }
 
         /** round 1533: the launcher let the press at [pos] go for the game at its fire point (the takeover is HoldCast's): its release
@@ -151,11 +160,21 @@ object HoldCast {
             val l = lay[pos]
             val was = firedAt[pos] >= 0L && s >= 0L && firedAt[pos] >= s
             t0[pos] = -1L; lay[pos] = -1
+            relSure[pos] = false
             if (s < 0L) return false
             if (was) { relAt[pos] = -1L; return false }                    // fired at the fill: letting go does nothing
             relAt[pos] = now; relLay[pos] = l
-            if (now - s >= full[pos]) { lastFire = pos to now; if (!box) onFire?.invoke(pos, l); return true }
+            if (now - s >= full[pos]) { lastFire = pos to now; relSure[pos] = !box; fireLag = 0L; if (!box) onFire?.invoke(pos, l); return true }
             return false
+        }
+
+        /** the fix pass: the takeover at [pos] is the one the release just before [now] started by itself (no early fire; its own timing
+         *  said "sure") - the only one the add-on's TAP word for that release may take back (a takeover the fire started - a queued
+         *  Raptor Strike - is not that release's: a later tap of the same button leaves it) */
+        fun sureRelease(pos: Int, now: Long): Boolean {
+            if (pos !in 1..8) return false
+            val r = relAt[pos]
+            return relSure[pos] && r >= 0L && now - r <= CONFIRM_MS && lastFire?.let { it.first == pos && it.second == r } == true
         }
 
         /** the add-on's word: the release at [pos] ran its hold spell (its facecast). A release that was not surely long enough starts
@@ -166,6 +185,7 @@ object HoldCast {
             if (r < 0L || now - r > CONFIRM_MS) return false
             if (lastFire?.let { it.first == pos && it.second >= r } == true) return false
             lastFire = pos to now
+            fireLag = (now - r).coerceIn(0L, CONFIRM_MS)
             onFire?.invoke(pos, relLay[pos])
             return true
         }
@@ -197,7 +217,7 @@ object HoldCast {
         fun layerOf(pos: Int): Int = if (t0.getOrElse(pos) { -1L } >= 0L) lay[pos] else -1
 
         /** nothing held any more, nothing just released (the pad went away; tests) */
-        fun reset() { t0.fill(-1L); lay.fill(-1); relAt.fill(-1L); relLay.fill(-1); firedAt.fill(-1L); lastFire = null; box = false }
+        fun reset() { t0.fill(-1L); lay.fill(-1); relAt.fill(-1L); relLay.fill(-1); relSure.fill(false); firedAt.fill(-1L); lastFire = null; box = false }
     }
 
     val watch = Watch()
@@ -219,27 +239,33 @@ object HoldCast {
         private var t = 0L; private var last = 0L
         private var castEnd = -1L; private var gcdEnd = -1L; private var okAt = -1L; private var failAt = -1L
         private var noneAt = -1L; private var chk0 = -1L
+        /** the fix pass: the earliest the hold's cast can have started (the fire / the release: [t]; the add-on's rel word: the physical
+         *  release before it), the GCD look-back's anchor; when its queue ended, -1 none */
+        private var castFrom = 0L; private var qEnd = -1L
         /** queued for the next swing (or its target / cursor) now */
         var queued = false
             private set
 
         /** when it started (the band's clock): a takeover's identity (CastView keeps the spell that fired by it) */
         val startedAt: Long get() = t
-        fun start(pos: Int, layer: Int, now: Long) {
-            this.pos = pos; this.layer = layer; t = now; last = now
-            castEnd = -1L; gcdEnd = -1L; okAt = -1L; failAt = -1L; noneAt = -1L; chk0 = -1L; queued = false
+        /** [castFrom] the earliest the hold's cast can have started (the fix pass: the rel word's start passes the physical release it
+         *  answers; the fire and a sure release start before the game's cast: [now]) */
+        fun start(pos: Int, layer: Int, now: Long, castFrom: Long = now) {
+            this.pos = pos; this.layer = layer; t = now; last = now; this.castFrom = minOf(castFrom, now)
+            castEnd = -1L; gcdEnd = -1L; okAt = -1L; failAt = -1L; noneAt = -1L; chk0 = -1L; qEnd = -1L; queued = false
         }
         /** the hold's cast began: [leftMs] of it to run */
         fun cast(leftMs: Long, now: Long) { if (pos < 0) return; last = now; castEnd = now + leftMs.coerceAtLeast(0L); queued = false }
-        /** an instant hold went off (or a channel ended, or the queued swing landed) */
-        fun ok(now: Long) { if (pos < 0) return; last = now; okAt = now; queued = false }
+        /** an instant hold went off with its GCD (or a channel ended, or the queued swing / spell went off) */
+        fun ok(now: Long) { if (pos < 0) return; last = now; okAt = now; if (queued) qEnd = now; queued = false }
         /** refused / interrupted / unqueued / not the hold after all: back at once */
         fun fail(now: Long) { if (pos < 0) return; last = now; failAt = now; queued = false }
         fun cancel(now: Long) = fail(now)
         /** round 1533: queued for the next swing (the add-on's `q`): kept until it lands or is unqueued */
         fun queue(now: Long) { if (pos < 0) return; last = now; queued = true; chk0 = -1L }
-        /** round 1533: no GCD, no cast and no queue came (the add-on's `none`): back at once */
-        fun none(now: Long) { if (pos < 0 || queued) return; last = now; noneAt = now }
+        /** round 1533: no GCD, no cast and no queue came (the add-on's `none`): back at once. The fix pass: queued too - PadMap m199
+         *  says it for a hold that WENT OFF with no GCD of its own (an interrupt, a trinket; a next-swing ability that landed) */
+        fun none(now: Long) { if (pos < 0) return; last = now; noneAt = now; queued = false }
         /** round 1533: the GCD the hold started has [leftMs] to run (the add-on's `gcd`: known before the state document's `gd`) */
         fun gcdFor(leftMs: Long, now: Long) { if (pos < 0) return; last = now; gcdEnd = now + leftMs.coerceAtLeast(0L) }
         /** belt and braces: the hold spell's own "checked" state as the state document read it ([chk] 1 / 0) at [now]: queued with it 0
@@ -259,18 +285,21 @@ object HoldCast {
          * ever ([endAt]: its cast / GCD, a fail, [FALLBACK_MS], 15 s), whatever the layer
          */
         fun showsOn(li: Int): Boolean = pos >= 0 && layer in 0..3 && li in 0..3 && (li and layer.inv()) == 0
-        /** the running GCD ([startMs], [durMs]): the one that started with the hold counts */
-        fun gcd(startMs: Long, durMs: Long) { if (pos >= 0 && durMs > 0L && startMs >= t - 500L) gcdEnd = startMs + durMs }
+        /** the running GCD ([startMs], [durMs]): the one that started with the hold counts. The fix pass: from [castFrom] -
+         *  [GCD_BACK_MS] (the game's frame and the clocks' slack), not 0.5 s before the start (the fire comes BEFORE the game's cast now:
+         *  a D-pad spell's GCD 0.3 s before an interrupt's fire is not the interrupt's) */
+        fun gcd(startMs: Long, durMs: Long) { if (pos >= 0 && durMs > 0L && startMs >= castFrom - GCD_BACK_MS) gcdEnd = startMs + durMs }
 
         /** when the hold spell leaves the face */
         fun endAt(): Long {
             if (failAt >= 0L) return failAt
             if (noneAt >= 0L) return noneAt
             if (queued) return t + QUEUE_CAP_MS                        // queued: no fallback, until it lands or is unqueued
+            val base = if (qEnd >= 0L) maxOf(t, qEnd) else t           // (a queue that went off: its caps from then, as the top screen's)
             var known = -1L
             for (v in longArrayOf(castEnd, gcdEnd, if (okAt >= 0L) okAt + 300L else -1L)) if (v >= 0L && v > known) known = v
-            val e = if (known >= 0L) known else t + FALLBACK_MS
-            return minOf(e, maxOf(castEnd, last) + FALLBACK_MS, t + 15_000L)
+            val e = if (known >= 0L) known else base + FALLBACK_MS
+            return minOf(e, maxOf(castEnd, last) + FALLBACK_MS, base + 15_000L)
         }
         /** 1 while it has the face, easing to 0 after [endAt]; 0 (and cleared) when it is over */
         fun alpha(now: Long): Float {
@@ -286,6 +315,8 @@ object HoldCast {
     }
     const val FALLBACK_MS = 2_000L
     const val EASE_MS = 200L
+    /** the fix pass: a GCD that started up to this long before the hold's cast could have is still its own (a game frame, the clocks) */
+    const val GCD_BACK_MS = 100L
     /** a queued next-swing ability keeps the face at most this long */
     const val QUEUE_CAP_MS = 30_000L
     /** the state document saying "not checked" this long while the takeover is queued, with no word: the queue's end was lost */
@@ -295,7 +326,14 @@ object HoldCast {
     /** the band's clock (elapsedRealtime ms: the cast and GCD times'); tests set their own */
     internal var bandClock: () -> Long = { SystemClock.elapsedRealtime() }
 
-    init { watch.onFire = { pos, layer -> takeover.start(pos, layer, bandClock()); onChange?.invoke() } }
+    init {
+        watch.onFire = { pos, layer ->
+            // (the fix pass) the cast began at the physical release this start answers: a sure release is now, the rel word's after it
+            val band = bandClock()
+            takeover.start(pos, layer, band, band - watch.fireLag)
+            onChange?.invoke()
+        }
+    }
 
     /** CompanionHost: a CURRENT `holdcast` (PadMap m195 / m199: the fired hold's own cast - "cast" with d its seconds left, "ok",
      *  "fail"; m199: "q" queued for the next swing, "gcd" with gl the GCD's seconds left, "none") */
@@ -365,8 +403,10 @@ object HoldCast {
             return
         }
         if (msg.optString("kind") != "slothold") {
-            // the kept press's release ran the TAP: a takeover the app started by itself (its own timing said "sure") goes back at once
-            if (takeover.pos == pos) { takeover.cancel(bandClock()); onChange?.invoke() }
+            // the kept press's release ran the TAP: a takeover the app started by itself on THAT release (its own timing said "sure") goes
+            // back at once. The fix pass: only that one - a hold's takeover the fire started (a queued Raptor Strike, for up to 30 s) is
+            // not this tap's; the game keeps it queued, the top screen keeps it, so does Home
+            if (takeover.pos == pos && watch.sureRelease(pos, now)) { takeover.cancel(bandClock()); onChange?.invoke() }
             return
         }
         watch.confirm(pos, now)                                         // (a confirm starts the takeover: onFire tells the drawing)

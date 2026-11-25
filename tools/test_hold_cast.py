@@ -667,10 +667,11 @@ K.execute('advance(4); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gx", 8042)')
 check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q'] and a(K, 'WowCompanion.padMapHold().fire ~= nil'),
       '12. ... 4 s queued: no none, no cut at 3 s (the follow waits for the swing)', docs(K, n0, 'holdcast'))
 K.execute('CURRENT[331] = nil; fire("CURRENT_SPELL_CAST_CHANGED"); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g9", 331)')
-check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'ok'] and a(K, 'WowCompanion.padMapHold().fire') is None,
-      '12. ... the swing landed (no longer current, its SUCCEEDED): ok, the follow ends', docs(K, n0, 'holdcast'))
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'none'] and a(K, 'WowCompanion.padMapHold().fire') is None,
+      '12. ... the swing landed (no longer current, its SUCCEEDED) with no GCD of its own: none - back at once, as the game\'s own '
+      'checked ring (the fix pass; was ok + 0.3 s), the follow ends', docs(K, n0, 'holdcast'))
 K.execute('advance(1)')
-check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'ok'], '12. ... no fail after it', docs(K, n0, 'holdcast'))
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'none'], '12. ... no fail after it', docs(K, n0, 'holdcast'))
 K.execute('CURRENT[331] = true')
 n0, u = fire_hold(K)
 K.execute('advance(1); CURRENT[331] = nil; fire("CURRENT_SPELL_CAST_CHANGED")')
@@ -709,6 +710,111 @@ w = [x.get('st') for x in docs(K, n0, 'holdcast')]
 K.execute('advance(0.1)')
 check(w == [] and [x.get('st') for x in docs(K, n0, 'holdcast')] == ['none'], '12. ... no START by 0.5 s: none then', (w, docs(K, n0, 'holdcast')))
 K.execute('CASTTIME[331] = nil')
+# 26. THE FIX PASS (two reviews of round 1533)
+# (a) the fired hold's first words FOLLOW the press's rel word, on both post-click hooks (the face buttons' and the D-pad's): Home's
+# takeover for a release before the fire point is started by the rel word, a q said before it was dropped (a queued Raptor Strike's
+# face went at the 2 s fallback)
+def order(L, n0):
+    return [(x.get('type'), x.get('hk') or x.get('st')) for x in docs(L, n0) if x.get('type') in ('facecast', 'holdcast')]
+
+
+K.execute('CURRENT[331] = true')
+n0, u = fire_hold(K)
+o = order(K, n0)
+check(u['kind'] == 'slothold' and o == [('facecast', 'rel'), ('holdcast', 'q')],
+      '26. LT + Y (the face buttons\' hook): its rel word, THEN the hold\'s q', o)
+K.execute('CURRENT[331] = nil; fire("CURRENT_SPELL_CAST_CHANGED"); advance(0.3); WowCompanion.padMapHold().fire = nil')
+K.execute('CURRENT[324] = true')
+edge(K, 'PADDUP', True, lt=True); K.execute('LOOK(3)')
+n0 = nsent(K)
+u = edge(K, 'PADDUP', False, lt=True)
+o = order(K, n0)
+check(u['kind'] == 'slothold' and o == [('facecast', 'rel'), ('holdcast', 'q')],
+      '26. LT + D-pad Up (the D-pad\'s hook): its rel word, THEN the hold\'s q', o)
+K.execute('CURRENT[324] = nil; fire("CURRENT_SPELL_CAST_CHANGED"); advance(0.3); WowCompanion.padMapHold().fire = nil')
+n0, u = fire_hold(K)
+K.execute('CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW }')
+K.execute('fire("SPELL_UPDATE_COOLDOWN")')
+o = order(K, n0)
+check(o[:2] == [('facecast', 'rel'), ('holdcast', 'gcd')], '26. ... an immediate gcd follows the rel word too', o)
+K.execute('fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gg", 331)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['gcd', 'ok'], '26. an instant ON the GCD that went off: gcd, then ok (its GCD keeps the face)',
+      docs(K, n0, 'holdcast'))
+K.execute('CD[331] = nil; NOW = NOW + 2; fire("SPELL_UPDATE_COOLDOWN"); WowCompanion.padMapHold().fire = nil')
+# (b) an instant OFF the GCD whose SUCCEEDED comes fast (a normal connection: under the 0.15 s none check): none, never ok (+0.3 s)
+n0, u = fire_hold(K)
+K.execute('advance(0.05); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gq", 331)')
+early = [x.get('st') for x in docs(K, n0, 'holdcast')]
+K.execute('advance(0.15)')
+hc = [x.get('st') for x in docs(K, n0, 'holdcast')]
+check(early == [] and hc == ['none'] and a(K, 'WowCompanion.padMapHold().fire') is None,
+      '26. an interrupt (off the GCD) that went off at 0.05 s: none at the 0.15 s check, no ok (no linger)', (early, hc))
+K.execute('advance(1)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['none'], '26. ... nothing after it', docs(K, n0, 'holdcast'))
+# ... its SUCCEEDED after the check (a slow server): none at the check, the late SUCCEEDED says nothing
+n0, u = fire_hold(K)
+K.execute('advance(0.3); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gr", 331)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['none'], '26. ... a slow server: none at 0.15 s, the late SUCCEEDED nothing', docs(K, n0, 'holdcast'))
+# ... another spell's GCD that started 0.3 s BEFORE the fire (a D-pad tap) is not the interrupt's
+K.execute('CD[331] = { isActive = true, isOnGCD = false, duration = 15, startTime = NOW }; WowCompanion.gcdRun = { s = NOW - 0.3, d = 1.5 }')
+n0, u = fire_hold(K)
+K.execute('advance(0.05); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gs", 331); advance(0.15)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['none'], "26. ... a D-pad spell's GCD 0.3 s before the fire: still none", docs(K, n0, 'holdcast'))
+K.execute('CD[331] = nil; WowCompanion.gcdRun = nil')
+# ... its SUCCEEDED before the GCD read showed (the check at 0.15 s sees it): gcd, ok
+n0, u = fire_hold(K)
+K.execute('advance(0.02); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gt", 331)')
+K.execute('CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW - 0.02 }; advance(0.15)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['gcd', 'ok'], '26. ... SUCCEEDED before its GCD read: the 0.15 s check says gcd, ok',
+      docs(K, n0, 'holdcast'))
+K.execute('CD[331] = nil; NOW = NOW + 2; fire("SPELL_UPDATE_COOLDOWN"); WowCompanion.padMapHold().fire = nil')
+# (c) a QUEUED on-GCD spell that goes off (the game's spell-queue window: queued in the last GCD's end, current, its GCD read in the
+# SPELL_UPDATE_COOLDOWN handler): gcd, then ok - its own GCD keeps the face; another spell's GCD while a next-swing one waits is not its
+K.execute('CURRENT[331] = true')
+n0, u = fire_hold(K)
+K.execute('CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW - 1.2 }; fire("SPELL_UPDATE_COOLDOWN")')
+mid = [x.get('st') for x in docs(K, n0, 'holdcast')]
+K.execute('advance(0.3); CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW }; CURRENT[331] = nil; '
+          'fire("CURRENT_SPELL_CAST_CHANGED"); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gu", 331)')
+hc = docs(K, n0, 'holdcast')
+check(mid == ['q'] and [x.get('st') for x in hc] == ['q', 'gcd', 'ok'] and abs((hc[1].get('gl') or 0) - 1.5) < 0.01,
+      '26. queued in the spell-queue window (the last GCD running: no gcd word for it), then off: gcd 1.5, ok', (mid, hc))
+K.execute('CD[331] = nil; NOW = NOW + 2; fire("SPELL_UPDATE_COOLDOWN"); WowCompanion.padMapHold().fire = nil')
+K.execute('CURRENT[331] = true')
+n0, u = fire_hold(K)
+K.execute('advance(1); WowCompanion.gcdRun = { s = NOW, d = 1.5 }; CURRENT[331] = nil; fire("CURRENT_SPELL_CAST_CHANGED"); '
+          'fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gv", 331)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'none'],
+      "26. a next-swing spell landing while ANOTHER spell's GCD runs (started while it waited): none (that GCD is not its own)",
+      docs(K, n0, 'holdcast'))
+K.execute('WowCompanion.gcdRun = nil; advance(0.3)')
+# (d) THE GAME'S FRAME: no cap at 50 ms (a sustained 12 fps took the tap: F(3, 50) 810 ms < the 3rd look's 849 ms)
+frames(K, 83, 2.5)
+check(a(K, 'WowCompanion.padMapHold().ft') == 84 and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.946) < 1e-9,
+      '26. a sustained 12 fps (83 ms frames): ft 84, F(3, 84) = 0.946 s (past the 3rd look\'s 3 x 283 = 0.849 s)',
+      (a(K, 'WowCompanion.padMapHold().ft'), a(K, 'WowCompanion.padMap.holdSecs()')))
+frames(K, 300, 0.3)
+check(a(K, 'WowCompanion.padMapHold().ft') == 134, '26. ... a 300 ms frame: the last bucket, 134', a(K, 'WowCompanion.padMapHold().ft'))
+frames(K, 16, 7)
+check(a(K, 'WowCompanion.padMapHold().ft') == 17, '26. ... 60 fps again for 7 s: 17', a(K, 'WowCompanion.padMapHold().ft'))
+# ... the meter runs whenever a hold exists on EITHER tab (holds only on In combat: "none" out of combat, the pull read a stale ft)
+FT = world()
+FT.execute('WowCompanion.padMap.putHold(1, 2, 6, "spell", 2, "combat"); advance(1); WowCompanion.padMapHold().tick(true)')
+hm = last(FT, 'holdmap')
+check(hm.get('why') == 'none' and a(FT, 'WowCompanion.padMapHold().ftf ~= nil') and a(FT, 'WowCompanion.padMapHold().ftf:IsShown()') is True,
+      '26. a hold only on In combat, out of combat (why none): the frame meter runs (ft current at the pull)',
+      (hm, a(FT, 'WowCompanion.padMapHold().ftf ~= nil')))
+frames(FT, 33, 2.5)
+FT.execute('WowCompanion.padMapHold().tick(true)')
+check(last(FT, 'holdmap').get('ft') == 34, '26. ... measured out of combat: the holdmap says ft 34 before the fight', last(FT, 'holdmap'))
+FT.execute('fire("LOADING_SCREEN_ENABLED")')
+check(a(FT, 'WowCompanion.padMapHold().ftf:IsShown()') is False, '26. ... a loading screen: the meter stops')
+FT.execute('fire("LOADING_SCREEN_DISABLED")')
+check(a(FT, 'WowCompanion.padMapHold().ftf:IsShown()') is True, '26. ... after it: on again')
+FT.execute('local t = WowCompanionSpellsDB.holdBy; for k, r in pairs(t or {}) do r.combat = nil; r.normal = nil end; WowCompanion.padMapHold().tick(true)')
+check(a(FT, 'WowCompanion.padMapHold().ftf:IsShown()') is False, '26. no hold on either tab: the meter stops')
+check(not lst(FT, 'VIOL') and not lst(FT, 'SNIPERR') and not lst(FT, 'ERRS'), '26. nothing blocked, no error', clean(FT))
+
 # 25. nothing secure added: no blocked call, no snippet / handle error, no CVar / binding / macro write; the hook only on our buttons
 check(not lst(K, 'VIOL') and not lst(K, 'SNIPERR') and not lst(K, 'HANDLEERR') and not lst(K, 'ERRS'), '12. nothing blocked, no error', clean(K))
 check(not lst(K, 'SPY'), '12. no SetBinding / SetCVar / macro write', lst(K, 'SPY'))

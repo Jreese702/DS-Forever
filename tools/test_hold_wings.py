@@ -61,6 +61,10 @@ FM.SetReverse = function(self, v) self.reverse = v end
 FM.SetSwipeColor = function(self, r, g, b, a) self.swipeColor = { r, g, b, a } end
 CURRENT = {}
 C_Spell.IsCurrentSpell = function(id) return CURRENT[id] == true end
+-- the fix pass: a texture's draw layer and sublevel as the client takes them
+local ctex = FM.CreateTexture
+FM.CreateTexture = function(self, name, layer, tpl, sub) local t = ctex(self, name, layer); t.sub = sub; return t end
+FM.SetDrawLayer = function(self, layer, sub) self.layer, self.sub = layer, sub end
 '''
 POST = r'''
 local pm = WowCompanion.padMap
@@ -77,8 +81,8 @@ end
 '''
 
 
-def boot():
-    L = tnb.boot(pre=PRE)
+def boot(pre=""):
+    L = tnb.boot(pre=PRE + pre)
     L.execute(POST)
     G = L.globals()
     G.ROWS["uisw"](None, 35)                          # the Nintendo bar on (Hub's switch)
@@ -214,8 +218,11 @@ def main():
     mid = b[2].hto is not None and b[2].hflash.alpha == 1
     L.execute('TICK(0.35)')
     chk("3. ... the swing landed (no longer current, ok): on for 0.3 s more, then back", mid and b[2].hto is None and not b[2].hsel.shown, mid)
-    L.execute('CURRENT[403] = true; WC.holdFired(2); TICK(1); CURRENT[403] = nil; TICK(0.35)')
-    chk("3. queued by the bar's own read, then unqueued with no swing: back at once", b[2].hto is None, b[2].hto is not None)
+    L.execute('CURRENT[403] = true; WC.holdFired(2); TICK(1); CURRENT[403] = nil; TICK(0.15)')
+    grace = b[2].hto is not None and b[2].hflash.alpha == 1
+    L.execute('TICK(0.35)')
+    chk("3. queued by the bar's own read, then unqueued with no swing: on for PadMap's 0.2 s wait for the landing's word (the fix pass), "
+        "then back", grace and b[2].hto is None, (grace, b[2].hto is not None))
     # nbar25: an instant that gave no GCD, no cast and no queue: PadMap's none - back at once
     L.execute('WC.holdFired(2); TICK(0.15); WC.holdCast(2, "none"); TICK(0.25)')
     chk("3. none (no GCD, no cast, no queue at 0.15 s): back at once", b[2].hto is None and not b[2].hflash.shown)
@@ -239,6 +246,39 @@ def main():
     # a GCD older than the fire is not the hold's
     L.execute('WC.gcdRun = { s = NOW - 3, d = 10 }; WC.holdFired(2); TICK(2.3)')
     chk("3. an older GCD does not keep it", b[2].hto is None)
+    # THE FIX PASS (two reviews of round 1533)
+    # a hold QUEUED in the game's spell-queue window (an instant fired in the last GCD's end: current, PadMap's q) that goes off: its ok,
+    # then its OWN GCD keeps the face (as Home's takeover) - not ok + 0.3 s
+    L.execute('WC.gcdRun = nil; CURRENT[403] = true; WC.holdFired(2); WC.holdCast(2, "q"); TICK(0.3); CURRENT[403] = nil; '
+              'WC.gcdRun = { s = NOW, d = 1.5 }; WC.holdCast(2, "ok"); TICK(1.3)')
+    chk("3. queued, then off with its own GCD: on the face through that GCD (1.3 s of 1.5; was gone at ok + 0.3 s)",
+        b[2].hto is not None and b[2].hflash.alpha == 1 and b[2].hsel.shown, (b[2].hto is not None, b[2].hflash.alpha))
+    L.execute('TICK(0.45)')
+    chk("3. ... its GCD done: back", b[2].hto is None)
+    # the live read flips first (no longer current a tick before the landing's ok): no ease-and-pop - the face stays, then its GCD
+    L.execute('WC.gcdRun = nil; CURRENT[403] = true; WC.holdFired(2); TICK(1); CURRENT[403] = nil; TICK(0.1)')
+    flick = b[2].hto is not None and b[2].hflash.alpha == 1
+    L.execute('WC.gcdRun = { s = NOW, d = 1.5 }; WC.holdCast(2, "ok"); TICK(1.3)')
+    chk("3. the live read off a tick before ok: no flicker (alpha 1 throughout), then the GCD keeps it", flick and b[2].hto is not None
+        and b[2].hflash.alpha == 1, (flick, b[2].hto is not None))
+    L.execute('TICK(0.45)')
+    # a queued hold that went off with no GCD of its own (a next-swing ability that landed): PadMap's none - back at once
+    L.execute('WC.gcdRun = nil; CURRENT[403] = true; WC.holdFired(2); WC.holdCast(2, "q"); TICK(1); CURRENT[403] = nil; '
+              'WC.holdCast(2, "none"); TICK(0.25)')
+    chk("3. queued, then none (it landed with no GCD of its own): back at once", b[2].hto is None and not b[2].hsel.shown)
+    # a long queue that lands: its caps from the landing (not 15 s from the fire)
+    L.execute('WC.gcdRun = nil; CURRENT[403] = true; WC.holdFired(2); WC.holdCast(2, "q"); TICK(16); CURRENT[403] = nil; '
+              'WC.gcdRun = { s = NOW, d = 1.5 }; WC.holdCast(2, "ok"); TICK(1)')
+    chk("3. queued 16 s, then off with its GCD: still on 1 s later (the 15 s cap counts from the queue's end)",
+        b[2].hto is not None and b[2].hflash.alpha == 1, b[2].hto is not None)
+    L.execute('TICK(0.75)')
+    # the GCD look-back: an interrupt (off the GCD) fired 0.3 s after a D-pad spell's GCD began - that GCD is not the hold's
+    L.execute('WC.gcdRun = { s = NOW - 0.3, d = 1.5 }; WC.holdFired(2); TICK(0.1); WC.holdCast(2, "ok"); TICK(0.55)')
+    chk("3. a GCD that began 0.3 s before the fire is not the hold's (the look-back is the click's own frame, 0.05 s): ok + 0.3 s, back",
+        b[2].hto is None, b[2].hto is not None)
+    L.execute('WC.gcdRun = { s = NOW - 0.02, d = 1.5 }; WC.holdFired(2); WC.holdCast(2, "ok"); TICK(1.3)')
+    chk("3. ... one that began in the fire's own frame is", b[2].hto is not None and b[2].hflash.alpha == 1)
+    L.execute('WC.gcdRun = nil; TICK(0.5)')
     # the 1531 audit: THE TAKEOVER IS THE FIRED LAYER'S (PadMap passes it: WC.holdFired(pos, lay)) - LT + X's hold fired with LT let go
     # a moment before X: the face never shows the bare X's hold; it shows LT + X's own hold while the bar shows the LT layer (as Home's
     # band: HoldCast.takeover is per layer), and it still ends on time
@@ -279,6 +319,28 @@ WC.gcdRun = nil; LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
     chk("2. the ring is the press's layer's (bare X kept, LT held after: no ring on LT + X's badge, back on the bare one)",
         nb and not nl and nb2, (nb, nl, nb2))
     L.execute('HELD.PAD3 = nil; KEPT[5] = nil; TICK(0.1)')
+
+    # THE FIX PASS: the checked ring's fallbacks - never a disc over the face. The selected atlas refused: the button's own border ring at
+    # the checked ring's size, desaturated and gold; that refused too: a gold plate UNDER the face (sublevel -1 < its 0), round only on
+    # the faces (the D-pad a square)
+    L2, G2 = boot('REFUSED = { ["gamepad-actionbar-circleslot-border-selected"] = true, ["gamepad-actionbar-squareslot-border-selected"] = true }')
+    f2 = G2.WowCompanion.nbar.f
+    r6, r2 = f2.btn[6].hsel, f2.btn[2].hsel
+    chk("3. the selected atlas refused: the border ring (circle / square), desaturated, gold, at the checked ring's size - a ring",
+        r6.atlas == "gamepad-actionbar-circleslot-border-normal" and r2.atlas == "gamepad-actionbar-squareslot-border-normal"
+        and r6.desat is True and [round(float(v), 2) for v in r6.vc.values()] == [1.0, 0.86, 0.45] and r6.color is None
+        and r6.w == f2.btn[6].sz + 8 and f2.btn[6].hselFallback == "ring", (r6.atlas, r2.atlas, r6.color))
+    L2.execute('WowCompanion.holdFired(6); TICK(0.1)')
+    chk("3. ... shown with the face", f2.btn[6].hflash.shown and r6.shown)
+    L3, G3 = boot('REFUSED = { ["gamepad-actionbar-circleslot-border-selected"] = true, ["gamepad-actionbar-squareslot-border-selected"] = true, '
+                  '["gamepad-actionbar-circleslot-border-normal"] = true, ["gamepad-actionbar-squareslot-border-normal"] = true }')
+    f3 = G3.WowCompanion.nbar.f
+    b6, b2 = f3.btn[6], f3.btn[2]
+    chk("3. both refused: a gold plate UNDER the face (OVERLAY -1 below the hold icon's 0), round on Y (the circle mask), square on the D-pad",
+        b6.hselFallback == "under" and [round(float(v), 2) for v in b6.hsel.color.values()][:3] == [1.0, 0.86, 0.45]
+        and b6.hsel.layer == "OVERLAY" and b6.hsel.sub == -1 and b6.hflash.sub == 0 and b6.hsel.sub < b6.hflash.sub
+        and b6.hsel.masks is not None and b2.hsel.masks is None and b2.hsel.sub == -1,
+        (b6.hselFallback, b6.hsel.layer, b6.hsel.sub, b6.hflash.sub, b6.hsel.masks is not None, b2.hsel.masks is not None))
 
     # ------------------------------------------------------------------------------------------------ (4) nothing secure
     chk("4. plain frames only (no Secure template), nothing bound or set", list(G.BADTPL.values()) == [] and list(G.SPY.values()) == [],
