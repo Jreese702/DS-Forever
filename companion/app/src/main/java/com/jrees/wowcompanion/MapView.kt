@@ -32,6 +32,12 @@ import kotlin.math.*
  */
 class MapView(context: Context) : View(context) {
 
+    // 1529 PERFORMANCE MODE (FramePace): this view's animation frames, paced to ~30 Hz while the player moves or fights on Home. The
+    // field is nullable on purpose: View's constructor runs before it is set
+    private val pace: FramePace.Gate? = FramePace.gate(this) { vsyncFrame() }
+    private fun vsyncFrame() = super.postInvalidateOnAnimation()
+    override fun postInvalidateOnAnimation() { pace?.frame() ?: super.postInvalidateOnAnimation() }
+
     private var map: JSONObject? = null
     private var staleMs: Long = 0
 
@@ -415,6 +421,8 @@ class MapView(context: Context) : View(context) {
         return floatArrayOf((dispX / ydW).toFloat(), (dispY / ydH).toFloat(), dispF)
     }
 
+    /** 1529 (FramePace): the player is moving (the trail is live) */
+    fun movingNow(): Boolean = trailLive()
     private fun trailLive() = trail.size >= 2 && clkOff != Long.MIN_VALUE &&
         android.os.SystemClock.elapsedRealtime() - clkOff - trail.last().g < STALE_MS.toLong()
 

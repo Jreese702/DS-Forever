@@ -3,7 +3,7 @@ set 427
 fa7c9554ace1e551fa2c9c02411b05c6  WowCompanion/Bags.lua
 46f82d8e20a3c731f5f0b8983c8d2820  WowCompanion/Chat.lua
 737413c5fe597fe3a9182316cea7ad04  WowCompanion/Coords.lua
-94ab6334f7648beadf40f0b71e3585f2  WowCompanion/Core.lua
+3bb2790dbc1822acddd0c40c79a930f6  WowCompanion/Core.lua
 01f00d72f7bd444422c0724aa84069df  WowCompanion/Harvest.lua
 9be6c87c8af15125b63829b6f304528e  WowCompanion/Map.lua
 4ed262b33e624e55e68fb4c82b620ac8  WowCompanion/MapArt.lua
@@ -28,9 +28,9 @@ dbe39cd0183421e3ad2932ab35223f93  WowCompanion/Media/wings_ret_hostile.tga
 022690b387bcea1b3301c24cdb136021  WowCompanion/Media/wings_ret_shortcuts.tga
 b714c4048d5fd47aec1a857c174cc433  WowCompanion/Media/wings_glow.tga
 a9fe89d8b05c4d32bd12e127ea5e5076  WowCompanion/Safety.lua
-e36c702e1102a9204bb7613d520a8991  WowCompanion/Sink.lua
+6427d1430ed3f3f0ed77e4acc88932a6  WowCompanion/Sink.lua
 d07cc1cd2d1035f4ca30861e9efd2823  WowCompanion/TapPad.lua
-9b41052160fe4f80511ff5fbb0ca76ce  WowCompanion/Trail.lua
+47c974eb7ad6df81cc7215563286db53  WowCompanion/Trail.lua
 1f451f59482a41ec050d6638d447a8b8  WowCompanion/WowCompanion.toc
 59e1503bbc64dc8979541aef55c8c469  WowCompanionCalendar/Calendar.lua
 a7d06de919def0bf991adf33511ad24c  WowCompanionCalendar/WowCompanionCalendar.toc

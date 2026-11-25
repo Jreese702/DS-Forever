@@ -610,15 +610,17 @@ object LsfgVkManager {
         else mapOf(EXTRA_FPS_LIMITER_ENABLED to "true", EXTRA_FPS_LIMITER_TARGET to limit.toString())
 
     /**
-     * Write DS Forever's Frame generation settings into [container]; the frame limit: 40 once at the first start of 1.0.8 (every
-     * container, board n-fps-40), then a limit picked in DS Forever's Settings since the last start (the container's own limit
-     * otherwise stays as it is); then tell Settings what the container holds (the launcher, at each game start; the caller saves).
+     * Write DS Forever's Frame generation settings into [container]; the frame limit: 60 once at the first start of test build 1529
+     * for a new install and for a container still at 1.0.8's 40 that nobody picked (FrameGen.limit60), then a limit picked in DS
+     * Forever's Settings since the last start (the container's own limit otherwise stays as it is); then tell Settings what the
+     * container holds (the launcher, at each game start; the caller saves).
      */
     @JvmStatic
     fun applyDsForever(container: Container) {
         val fg = com.jrees.wowcompanion.FrameGen
-        if (fg.migrateLimit { lim -> for ((k, v) in dsForeverLimitExtras(lim)) container.putExtra(k, v) })
-            Timber.tag(TAG).i("DS Forever frame limit: set to %d once (1.0.8)", fg.LIMIT_MIGRATED)
+        val before = fg.containerLimit(container.getExtra(EXTRA_FPS_LIMITER_ENABLED, null), container.getExtra(EXTRA_FPS_LIMITER_TARGET, null))
+        if (fg.migrateLimit(before) { lim -> for ((k, v) in dsForeverLimitExtras(lim)) container.putExtra(k, v) })
+            Timber.tag(TAG).i("DS Forever frame limit: %d -> %d once (1529: the new default)", before, fg.LIMIT_DEFAULT)
         val extras = dsForeverExtras(fg.snapshot(), isDllAvailable()) + (fg.takeAsk()?.let { dsForeverLimitExtras(it) } ?: emptyMap())
         for ((k, v) in extras) container.putExtra(k, v)
         fg.noteContainer(fg.containerLimit(container.getExtra(EXTRA_FPS_LIMITER_ENABLED, null), container.getExtra(EXTRA_FPS_LIMITER_TARGET, null)))

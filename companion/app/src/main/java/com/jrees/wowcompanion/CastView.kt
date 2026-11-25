@@ -74,6 +74,12 @@ import kotlin.math.sin
  */
 class CastView(context: Context, private val onCast: (String) -> Unit) : View(context) {
 
+    // 1529 PERFORMANCE MODE (FramePace): this view's animation frames, paced to ~30 Hz while the player moves or fights on Home. The
+    // field is nullable on purpose: View's constructor runs before it is set
+    private val pace: FramePace.Gate? = FramePace.gate(this) { vsyncFrame() }
+    private fun vsyncFrame() = super.postInvalidateOnAnimation()
+    override fun postInvalidateOnAnimation() { pace?.frame() ?: super.postInvalidateOnAnimation() }
+
     // =================================================================== model
 
     private class Btn {

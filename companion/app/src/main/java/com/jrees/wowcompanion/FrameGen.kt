@@ -47,45 +47,62 @@ object FrameGen {
     // not wow"). It IS the launcher's own limiter (GameNative's quick-menu FPS limit: XServerScreen paces the renderer, the Present
     // extension and the SHM path; with frame generation on, the lsfg-vk layer takes it as its base fps, so it limits the GAME's
     // frames: 40 x2 = 80 shown). It lives in the container's fpsLimiterEnabled / fpsLimiterTarget extras. ONCE, at the first game start
-    // of 1.0.8, every container is set to 40, new and existing alike (the user's pick: "Set once on update"; [LimitMigration]); after
-    // that the player's own value sticks. DS Forever's Settings row shows the container's
-    // value ([noteContainer], from the launcher at each start and from the quick menu) and a pick there is written into the container
-    // at the next game start ([takeAsk]). No game CVar, nothing in the game's files.
+    // of 1.0.8, every container was set to 40 (the user's pick then: "Set once on update"). TEST BUILD 1529 (the user, 2026-11-24, after
+    // players saw better performance in another launcher at 60: "60 by default (Recommended)" = "New default 60 for everyone who never
+    // changed it; anyone who picked a value keeps it"): [LIMIT_DEFAULT] 60 is the new default, and ONCE ([limit60]) a container still at
+    // the 1.0.8 value whose player never picked a limit goes to 60. DS Forever's Settings row shows the container's value
+    // ([noteContainer], from the launcher at each start and from the quick menu) and a pick there is written into the container at the
+    // next game start ([takeAsk]). No game CVar, nothing in the game's files.
 
     /** Settings' choices: 40, 60, Off (0); the quick menu may hold any other value, shown as it is */
     val LIMITS = listOf(40, 60, 0)
-    /** the one-time 1.0.8 limit, for every container */
+    /** the one-time 1.0.8 limit (every container then); 1529 moves a container still at it to [LIMIT_DEFAULT] when nobody picked it */
     const val LIMIT_MIGRATED = 40
+    /** 1529: the default frame limit (a new install's containers, and the 1.0.8 value nobody picked) */
+    const val LIMIT_DEFAULT = 60
     /** the launcher's limit for a container that never set one (XServerScreen: on, 60) */
     const val LIMIT_ENGINE_DEFAULT = 60
     private const val KEY_LIMIT = "fpsLimitContainer"
     private const val KEY_ASK = "fpsLimitAsk"
     private const val KEY_MIGRATED = "fpsLimit108"
+    /**
+     * set by the 1.0.8 migration, removed by the player's own pick: in Settings ([askLimit], since 1.0.8) and in the launcher's quick
+     * menu ([noteContainer] fromQuickMenu, since 1529). So "still there" = the player never picked a limit in Settings since 1.0.8
+     */
     private const val KEY_NOTE = "fpsLimitNote"
+    /** 1529: the 60 migration ran (or a new install started at 60) */
+    private const val KEY_60 = "fpsLimit60"
 
     /**
-     * THE ONE-TIME 1.0.8 MIGRATION: runs [write] with [LIMIT_MIGRATED] the first time only, then never again ([isDone] / [markDone]
-     * keep the flag). Pure, so the off-device test proves "exactly once".
+     * THE ONE-TIME 1529 MIGRATION TO 60, pure (the off-device test): the limit to write into the container now, null = leave it.
+     *  - [done] (it ran before): null, never again;
+     *  - the 1.0.8 migration never ran ([migrated108] false: a new install, or one that never started a game): [LIMIT_DEFAULT], every
+     *    container as 1.0.8 did (and 1.0.8's 40 never comes);
+     *  - the container still holds 1.0.8's [LIMIT_MIGRATED] AND [noteLeft] (no Settings pick since 1.0.8): [LIMIT_DEFAULT];
+     *  - anything else (a Settings pick of any value, 40 included; a quick-menu value other than 40; Off): null, the player's own.
+     * The one case it cannot tell: a player who set 40 again in the launcher's quick menu (40 -> other -> 40) before 1529, with no
+     * Settings pick: there is no record of it, so that container goes to 60 once (a pick in Settings or the quick menu sets it back).
      */
-    class LimitMigration(private val isDone: () -> Boolean, private val markDone: () -> Unit) {
-        /** true = it ran now */
-        fun run(write: (Int) -> Unit): Boolean {
-            if (isDone()) return false
-            write(LIMIT_MIGRATED)
-            markDone()
-            return true
-        }
+    fun limit60(done: Boolean, migrated108: Boolean, noteLeft: Boolean, containerLimit: Int): Int? = when {
+        done -> null
+        !migrated108 -> LIMIT_DEFAULT
+        noteLeft && containerLimit == LIMIT_MIGRATED -> LIMIT_DEFAULT
+        else -> null
     }
 
-    /** the migration on this install's flag (the launcher, at each game start); [write] puts the limit into the container */
-    fun migrateLimit(write: (Int) -> Unit): Boolean {
+    /**
+     * the migration on this install's flags (the launcher, at each game start): [current] = the container's limit now ([containerLimit]);
+     * [write] puts a limit into the container. Marks it done (and 1.0.8's, so it never writes 40 after) whatever it decided; the 1.0.8
+     * note goes (its words were about 40). true = it wrote now
+     */
+    fun migrateLimit(current: Int, write: (Int) -> Unit): Boolean {
         val p = prefs ?: return false
-        return LimitMigration({ p.getBoolean(KEY_MIGRATED, false) },
-            { p.edit().putBoolean(KEY_MIGRATED, true).putBoolean(KEY_NOTE, true).apply() }).run(write)
+        if (p.getBoolean(KEY_60, false)) return false
+        val v = limit60(false, p.getBoolean(KEY_MIGRATED, false), p.getBoolean(KEY_NOTE, false), current)
+        if (v != null) write(v)
+        p.edit().putBoolean(KEY_60, true).putBoolean(KEY_MIGRATED, true).remove(KEY_NOTE).apply()
+        return v != null
     }
-
-    /** Settings says once why the limit is 40 (until the player picks a limit there) */
-    val limitNote: Boolean get() = prefs?.getBoolean(KEY_NOTE, false) ?: false
 
     /** the container's limit from its extras (absent = the launcher's own default: on, 60); 0 = Off */
     fun containerLimit(enabledExtra: String?, targetExtra: String?): Int {
@@ -99,7 +116,10 @@ object FrameGen {
         get() {
             val ask = prefs?.getInt(KEY_ASK, -1) ?: -1
             if (ask in LIMITS) return ask
-            return (prefs?.getInt(KEY_LIMIT, LIMIT_ENGINE_DEFAULT) ?: LIMIT_ENGINE_DEFAULT).coerceAtLeast(0)
+            val p = prefs ?: return LIMIT_ENGINE_DEFAULT
+            val stored = p.getInt(KEY_LIMIT, LIMIT_ENGINE_DEFAULT).coerceAtLeast(0)
+            // 1529: before the first game start of this build Settings already shows what that start will set (the 60 migration)
+            return limit60(p.getBoolean(KEY_60, false), p.getBoolean(KEY_MIGRATED, false), p.getBoolean(KEY_NOTE, false), stored) ?: stored
         }
 
     /** Settings' pick: written into the container at the next game start */
@@ -121,7 +141,8 @@ object FrameGen {
     fun noteContainer(limit: Int, fromQuickMenu: Boolean = false) {
         val e = prefs?.edit() ?: return
         e.putInt(KEY_LIMIT, limit.coerceAtLeast(0))
-        if (fromQuickMenu) { e.remove(KEY_ASK); launchedLimit = limit.coerceAtLeast(0) }   // the quick menu applies it to the running game
+        // the quick menu applies it to the running game; and it is the player's own pick (1529: the 60 migration leaves it alone)
+        if (fromQuickMenu) { e.remove(KEY_ASK).remove(KEY_NOTE); launchedLimit = limit.coerceAtLeast(0) }
         e.apply(); changed()
     }
 

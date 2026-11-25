@@ -10,7 +10,12 @@ local WC = _G.WowCompanion
 -- throttled push: the push's C_Timer may not run until the load is over, which is the moment the app must hear it before); the end
 -- goes out with the next push. One extra pad burst per loading screen. Nothing is written to the game (no binding, CVar, macro).
 -- (Core.lua had no version tag before core1; it is sent in the document so a stale build is visible in the app's log.)
-local COREV = "core1"
+-- core2 (test build 1529, the user's pick 2026-11-24: "Lighter add-ons + log" = "... no 15 s snapshot mid-fight ..."): the 15 s heartbeat's
+-- FULL snapshot (the action bar, the map, the bags, the player: the heaviest Lua work the add-on does, every 15 s) is not built in a fight
+-- (InCombatLockdown). In its place a tiny {"type":"beat","v":COREV} keeps the app's "the game is live" clock (InputGate: 25 s; the
+-- indoor builder: 30 s) going in a long fight with no other document; the full snapshot owed goes out at the fight's end
+-- (PLAYER_REGEN_ENABLED), so the app's map / bags heal at once after the fight. Out of a fight nothing changed.
+local COREV = "core2"
 function WC.onLoadingScreen(on)
     WC.send(WC.encode({ type = "load", on = on and true or false, v = COREV }))
     if on then WC.flush() else WC.push() end
@@ -173,7 +178,17 @@ local function start()
     -- rotates immediately. Position updates alone cannot rebuild the map -- they carry no
     -- quests, POIs or services -- so the room sat on "Waiting for the game" until the player
     -- happened to change zone. 15 s costs one flush; the alternative is a blank map.
-    C_Timer.NewTicker(15.0, function() WC.snapshot("heartbeat") end)
+    C_Timer.NewTicker(15.0, function()
+        local icl = _G.InCombatLockdown
+        if type(icl) == "function" and icl() then                    -- core2: no full snapshot mid-fight (see COREV)
+            WC.heartOwed = true
+            WC.send(WC.encode({ type = "beat", v = COREV }))
+            WC.pushThrottled()
+            return
+        end
+        WC.heartOwed = false
+        WC.snapshot("heartbeat")
+    end)
 
     -- Chat: buffered, not per-message. The General channel alone can produce several lines a
     -- second and each emit would otherwise cost its own pad burst.
@@ -208,6 +223,8 @@ f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4, a5, a6, a7, a8, a9, a1
     elseif event == "LOADING_SCREEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
         pcall(WC.onLoadingScreen, event == "LOADING_SCREEN_ENABLED")             -- core1: never a snapshot (see the top)
     elseif started then
+        -- core2: the heartbeat a fight held back goes out as the fight ends
+        if event == "PLAYER_REGEN_ENABLED" and WC.heartOwed then WC.heartOwed = false; WC.snapshot("heartbeat"); return end
         WC.snapshot(event)
     end
 end)

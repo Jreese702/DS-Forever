@@ -81,8 +81,8 @@ class ResetPlanTest {
         assertEquals(setOf("lighterMode", "lowMemGraphics", "theme", "swapScreens"),
             ResetPlan.prefKeys("settings", settings, setOf(ResetPlan.Kind.SETTINGS), me, false))
         assertTrue(ResetPlan.prefKeys("settings", settings, setOf(ResetPlan.Kind.LAYOUTS, ResetPlan.Kind.SKILLS), me, true).isEmpty())
-        val fg = setOf("enabled", "multiplier", "flowScale", "performance", "fpsLimitContainer", "fpsLimitAsk", "fpsLimit108", "fpsLimitNote")
-        assertEquals(fg - setOf("fpsLimit108", "fpsLimitNote"), ResetPlan.prefKeys("framegen", fg, setOf(ResetPlan.Kind.SETTINGS), me, false))
+        val fg = setOf("enabled", "multiplier", "flowScale", "performance", "fpsLimitContainer", "fpsLimitAsk", "fpsLimit108", "fpsLimitNote", "fpsLimit60")
+        assertEquals(fg - setOf("fpsLimit108", "fpsLimitNote", "fpsLimit60"), ResetPlan.prefKeys("framegen", fg, setOf(ResetPlan.Kind.SETTINGS), me, false))
         val gu = setOf("mode.hud", "mode.chat", "sw.pmode", "castbar.hide", "sw.player.$me", "sw.np.$other", "hud.$me", "prdy.$me", "prdw.$other",
             "mt.dmg.$me", "mt.cdm.$other")
         assertEquals(setOf("mode.hud", "mode.chat", "sw.pmode", "castbar.hide"), ResetPlan.prefKeys("gameui", gu, setOf(ResetPlan.Kind.SETTINGS), me, false))

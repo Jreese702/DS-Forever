@@ -70,8 +70,11 @@ class LogTail(
         override fun run() {
             if (!running) return
             try { follow(); poll() } catch (t: Throwable) { onStatus("tail error: ${t.message}") }
-            // smoothness B: every 20 ms inside the launcher (plain IO there is cheap), 50 ms in the app as before
-            if (running) handler.postDelayed(this, if (RootPolicy.allowed) POLL_MS else 20L)
+            // smoothness B had it every 20 ms inside the launcher (plain IO there is cheap). TEST BUILD 1529 (the user's pick 2026-11-24,
+            // "Lighter add-ons + log" = "Slower log polling, ..."): [POLL_MS] everywhere - 20 wake-ups a second instead of 50 on the
+            // big cores beside the game; a document waits 25 ms on average for its read instead of 10 (LogTailPollTest measures it), under
+            // the add-on's own 0.2 s flush and the bottom screen's paced 33 ms frame
+            if (running) handler.postDelayed(this, POLL_MS)
         }
     }
 

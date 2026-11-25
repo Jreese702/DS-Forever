@@ -243,14 +243,28 @@ class GamePageOutTest {
             G.passLine(2, "free 340 MB < 359", w, -1, -1, -1, -1, "stopped: loading screen", threadChanged = true))
         assertEquals("pageout (game, check after charselect 1): came back 12 MB of 240 MB in 15 s",
             G.checkLine(GamePageOut.Phase.CHARSELECT, 1, 12 * 1024, 240 * 1024, 15_000))
+        assertEquals("; WoW (cold only): 2 passes, 400 MB paged", G.reportPart(true, 2, 400 * 1024, gameOn = true))
+        // 1529: off in this build, so the report says so
         assertEquals("Compress idle memory: on (this Thor's default); Wine helpers: 3 requests, 54 MB paged; ours: 2 requests, 30 MB paged; " +
-            "WoW (cold only): 2 passes, 400 MB paged", PageOut.reportLine(true, true, true, 3, 54 * 1024, 2, 30 * 1024, false, 2, 400 * 1024))
+            "WoW: not paged (off in this build)", PageOut.reportLine(true, true, true, 3, 54 * 1024, 2, 30 * 1024, false, 2, 400 * 1024))
+    }
+
+    /** 1529 (the user's pick 2026-11-24: "stop paging the game's own memory until we've measured it"): off on every Thor, behind its switch */
+    @Test fun theGamesOwnMemoryIsNotPagedInThisBuild() {
+        assertFalse(G.ON_BY_DEFAULT)
+        assertFalse(G.on)
+        val po = src("../companion/app/src/main/java/com/jrees/wowcompanion/PageOut.kt", "companion/app/src/main/java/com/jrees/wowcompanion/PageOut.kt")
+        assertTrue("the game client's mode only while on", "GamePageOut.ENV_MODE to (if (game) \"1\" else \"0\")" in po)
+        assertTrue("no pass asked for while off", "armedDir?.let { d -> if (GamePageOut.on) runCatching { GamePageOut.tick(s, h, d, warnAgo) } }" in po)
+        // the preload's own check: the mode is on for exactly "1"
+        val hook = src("../dsforever/src/main/jni/dsf/dsf_pageout_hook.c", "dsforever/src/main/jni/dsf/dsf_pageout_hook.c")
+        assertTrue("g_game_mode = gm && gm[0] == '1' && gm[1] == 0;" in hook)
     }
 
     /** the launch turns the game mode on with the same switch, and the launcher passes it on */
     @Test fun theLaunchTurnsTheGameModeOn() {
         val po = src("../companion/app/src/main/java/com/jrees/wowcompanion/PageOut.kt", "companion/app/src/main/java/com/jrees/wowcompanion/PageOut.kt")
-        assertTrue("GamePageOut.ENV_MODE to \"1\"" in po)
+        assertTrue("GamePageOut.ENV_MODE to (if (game) \"1\" else \"0\")" in po)
         assertTrue("if (!on || unsupported) return null" in po)
         val f = src("../app/src/main/java/com/winlator/xenvironment/components/BionicProgramLauncherComponent.java",
             "app/src/main/java/com/winlator/xenvironment/components/BionicProgramLauncherComponent.java")

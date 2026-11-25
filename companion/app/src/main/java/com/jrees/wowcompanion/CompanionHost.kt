@@ -872,6 +872,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.fightNow = { homeView.inFight() || lastBook?.combat == true }   // #56: the timed relief waits out a fight (UI thread)
+        // 1529 PERFORMANCE MODE (FramePace, the user's pick 2026-11-24): Home's animations at ~30 Hz while the player moves or fights on
+        // Home (no room open); full rate at rest, in the rooms and for a moment after a touch (the root's dispatchTouchEvent)
+        FramePace.probe = { room == Room.HOME && homeView.isShown && (homeView.inFight() || lastBook?.combat == true || mapView.movingNow()) }
         // #24 (11-23): the game's exact memory walk only while the add-ons are silent (their silence check reads it); else counters
         MemWatch.gameWalkWanted = { silence.silent }
         MemWatch.start(this)                                              // WCMEM: where the memory goes (the 1.0.17 low-memory kills); 1.0.28: Android's trims
@@ -1417,6 +1420,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // b-release-spirit (test16: a bottom-screen dialog press reached nothing, not even the dialog's own view): while a dialog
             // shows, a finger's DOWN says which view on top took it, so one log read tells "covered" from "pressed"
             override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+                FramePace.touched(android.os.SystemClock.uptimeMillis())          // 1529: a touch = full rate for a moment
                 val r = super.dispatchTouchEvent(e)
                 if (e.actionMasked == MotionEvent.ACTION_DOWN && ::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) {
                     val above = (indexOfChild(dialogView) + 1 until childCount).map { getChildAt(it) }

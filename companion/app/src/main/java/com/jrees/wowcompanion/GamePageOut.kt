@@ -40,6 +40,16 @@ import java.io.File
  * swap used before and after, its phase) and [CHECK_AFTER_MS] later one more ([checkLine]): what of it came back by then.
  */
 object GamePageOut {
+    /**
+     * TEST BUILD 1529: OFF ON EVERY THOR (the user's pick 2026-11-24, "8 GB memory fixes (Recommended)" = "... stop paging the game's own
+     * memory until we've measured it"; the 1529 performance comparison: a pass at character select pages up to [PASS_KIB] of the game's
+     * memory into zram, and what the world then touches comes back as page-in stalls - not measured yet). Compress idle memory keeps the
+     * Wine helpers and DS Forever's own memory; the game client's mode switch ([ENV_MODE]) is "0" at the launch, so the preload installs
+     * nothing in the game, and [tick] is never asked. Everything below stays for the measurement build, which turns this on.
+     */
+    const val ON_BY_DEFAULT = false
+    /** the game's cold-only passes in this build ([ON_BY_DEFAULT]; the tests' seam) */
+    @Volatile var on: Boolean = ON_BY_DEFAULT
     /** a commit request's cap (the preload holds the same: PO_G_REQ_MAX) */
     const val REQ_KIB = 32 * 1024
     /** a pass's cap, its samples included (PO_G_PASS_MAX) */
@@ -490,6 +500,6 @@ object GamePageOut {
     }
 
     /** the problem report's part: "; WoW (cold only): 2 passes, 400 MB paged" (pure) */
-    fun reportPart(armed: Boolean, n: Int, kb: Long): String =
-        if (!armed) "" else "; WoW (cold only): $n passes, ${MemWatch.mb(kb)} MB paged"
+    fun reportPart(armed: Boolean, n: Int, kb: Long, gameOn: Boolean = on): String =
+        if (!armed) "" else if (!gameOn) "; WoW: not paged (off in this build)" else "; WoW (cold only): $n passes, ${MemWatch.mb(kb)} MB paged"
 }

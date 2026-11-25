@@ -253,9 +253,13 @@ object PageOut {
         runCatching { dir.mkdirs(); dir.listFiles()?.forEach { it.delete() } }
         if (!dir.isDirectory) return null
         armedDir = dir
-        MemWatch.note("launch: compress idle memory on (Wine helpers, at most ${CAP_KIB / 1024} MB each per request; the game's cold " +
-            "memory at character select and when critically low, at most ${GamePageOut.PASS_KIB / 1024} MB a pass)")
-        return mapOf("preload" to lib.path, ENV_DIR to dir.path, ENV_GAME to gameNames().joinToString(":"), GamePageOut.ENV_MODE to "1")
+        val game = GamePageOut.on
+        MemWatch.note("launch: compress idle memory on (Wine helpers, at most ${CAP_KIB / 1024} MB each per request; " + (if (game)
+            "the game's cold memory at character select and when critically low, at most ${GamePageOut.PASS_KIB / 1024} MB a pass)"
+            else "the game's own memory: not paged, 1529)"))
+        // 1529: the game client's mode only while GamePageOut is on ("0": the preload installs nothing in the game)
+        return mapOf("preload" to lib.path, ENV_DIR to dir.path, ENV_GAME to gameNames().joinToString(":"),
+            GamePageOut.ENV_MODE to (if (game) "1" else "0"))
     }
 
     /** Android's warning (MemWatch.trimmed, any thread): running-critical or onLowMemory */
@@ -270,7 +274,7 @@ object PageOut {
         val now = SystemClock.uptimeMillis()
         val warnAgo = if (warnAt == 0L) -1L else now - warnAt
         // the game client's cold-only passes (character select; critically low in the world): their own triggers, before the helpers'
-        armedDir?.let { d -> runCatching { GamePageOut.tick(s, h, d, warnAgo) } }
+        armedDir?.let { d -> if (GamePageOut.on) runCatching { GamePageOut.tick(s, h, d, warnAgo) } }
         val why = pressure(s.availKb, s.fileKb, s.swapFreeKb, DeviceTier.totalMb, warnAgo) ?: return
         if (armedDir != null && !collecting && helperLimit.due(now) && runCatching { LauncherHooks.gameUp() }.getOrDefault(false))
             runCatching { askHelpers(why, h, now) }.onFailure { collecting = false; helperLimit.done(now, 0, 0) }

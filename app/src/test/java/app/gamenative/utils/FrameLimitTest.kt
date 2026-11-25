@@ -3,31 +3,52 @@ package app.gamenative.utils
 import com.jrees.wowcompanion.FrameGen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The frame limit (board n-fps-40), off-device: the one-time 1.0.8 migration to 40, the container's limit, the restart rule */
+/** The frame limit (board n-fps-40), off-device: the one-time 1529 move to 60 (1.0.8's 40 nobody picked), the container's limit, the restart rule */
 class FrameLimitTest {
-    @Test fun theMigrationRunsExactlyOnce() {
-        var done = false
-        val written = ArrayList<Int>()
-        val m = FrameGen.LimitMigration({ done }, { done = true })
-        assertTrue(m.run { written.add(it) })            // the first start of 1.0.8: every container to 40
-        assertFalse(m.run { written.add(it) })           // the next start: nothing
-        assertFalse(m.run { written.add(it) })
-        assertEquals(listOf(40), written)
+    // test build 1529 (the user, 2026-11-24: "60 by default" = "New default 60 for everyone who never changed it; anyone who picked a
+    // value keeps it"): the one-time move to 60 (FrameGen.limit60)
+    @Test fun aNewInstallStartsAtSixtyNeverForty() {
+        assertEquals(60, FrameGen.LIMIT_DEFAULT)
+        assertEquals(60, FrameGen.limit60(done = false, migrated108 = false, noteLeft = false, containerLimit = 60))
+        assertEquals(60, FrameGen.limit60(done = false, migrated108 = false, noteLeft = false, containerLimit = 30))   // every container, as 1.0.8
     }
 
-    @Test fun aMigrationDoneBeforeNeverRuns() {
-        val written = ArrayList<Int>()
-        assertFalse(FrameGen.LimitMigration({ true }, { throw AssertionError("marked again") }).run { written.add(it) })
-        assertTrue(written.isEmpty())
+    @Test fun fortyFromTheOldMigrationThatNobodyPickedGoesToSixty() {
+        assertEquals(60, FrameGen.limit60(done = false, migrated108 = true, noteLeft = true, containerLimit = 40))
     }
 
-    @Test fun theMigratedLimitIsFortyAndASettingsChoice() {
+    @Test fun aPlayersOwnPickIsKept() {
+        // a Settings pick (of 40 too) removed the note: kept
+        assertNull(FrameGen.limit60(done = false, migrated108 = true, noteLeft = false, containerLimit = 40))
+        assertNull(FrameGen.limit60(done = false, migrated108 = true, noteLeft = false, containerLimit = 60))
+        assertNull(FrameGen.limit60(done = false, migrated108 = true, noteLeft = false, containerLimit = 0))
+        // the quick menu's own value (the note still there from 1.0.8, the value not 40): kept
+        assertNull(FrameGen.limit60(done = false, migrated108 = true, noteLeft = true, containerLimit = 45))
+        assertNull(FrameGen.limit60(done = false, migrated108 = true, noteLeft = true, containerLimit = 0))       // Off
+    }
+
+    @Test fun theMoveRunsOnlyOnce() {
+        assertNull(FrameGen.limit60(done = true, migrated108 = true, noteLeft = true, containerLimit = 40))
+        assertNull(FrameGen.limit60(done = true, migrated108 = false, noteLeft = false, containerLimit = 40))
+    }
+
+    @Test fun theOldLimitIsStillASettingsChoice() {
         assertEquals(40, FrameGen.LIMIT_MIGRATED)
         assertTrue(FrameGen.LIMIT_MIGRATED in FrameGen.LIMITS)
+        assertTrue(FrameGen.LIMIT_DEFAULT in FrameGen.LIMITS)
         assertEquals(listOf(40, 60, 0), FrameGen.LIMITS)
+    }
+
+    @Test fun theLaunchersMigrationReadsTheContainerAndAQuickMenuPickClearsTheNote() {
+        val fg = java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion/FrameGen.kt").readText()
+        assertTrue(fg.contains("if (fromQuickMenu) { e.remove(KEY_ASK).remove(KEY_NOTE);"))
+        assertTrue(fg.contains("p.edit().putBoolean(KEY_60, true).putBoolean(KEY_MIGRATED, true).remove(KEY_NOTE).apply()"))
+        val lm = java.io.File("src/main/java/app/gamenative/utils/LsfgVkManager.kt").readText()
+        assertTrue(lm.contains("if (fg.migrateLimit(before) {"))
     }
 
     @Test fun theContainersLimitFromItsExtras() {
