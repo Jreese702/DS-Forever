@@ -31,6 +31,7 @@ class HoldCastUiTest {
                     .put("n", "S$set$p").put("id", 100 + p).put("i", 1000 + p)
                 if (set == 2 && p == 6) o.put("h", JSONObject().put("n", "Chain Heal").put("id", 1064).put("i", 136042))
                 if (set == 1 && p == 8) o.put("h", JSONObject().put("n", "Hearthstone").put("t", "item").put("key", "i:6948").put("i", 134414))
+                if (set == 3 && p == 1) o.put("hc", JSONObject().put("n", "Frost Shock").put("id", 8056).put("i", 135849))
                 a.put(o)
             }
             sets.put(JSONObject().put("set", set).put("slots", a))
@@ -49,6 +50,10 @@ class HoldCastUiTest {
         assertEquals("item", a.layer); assertEquals("i:6948", a.key); assertNull("an item is no spell", a.spellId)
         assertNull(PadMapModel.holdAt(m, 1, 6))
         assertEquals("Home's band keys (layer * 8 + position - 1)", setOf(1 * 8 + 5, 0 * 8 + 7), PadMapModel.holdRefs(m).keys)
+        // PER TAB (the user on test 1528: "the hold buttons are showing on my out of combat bar? It should be seperate")
+        assertEquals("In combat's holds are their own", setOf(2 * 8 + 0), PadMapModel.holdRefs(m, combat = true).keys)
+        assertEquals("Frost Shock", PadMapModel.slot(m, 3, 1)!!.holdOf(true)!!.name)
+        assertNull("Out of combat's LT + Y is not In combat's", PadMapModel.slot(m, 2, 6)!!.holdOf(true))
         assertNull("an add-on before m190 says nothing", padmap(null).holdOn)
     }
 
@@ -58,6 +63,7 @@ class HoldCastUiTest {
         assertTrue("a spell", PadMapModel.holdable(PadMapModel.slot(m, 2, 6)))
         assertTrue("a base face: its game action (a tap does it)", PadMapModel.holdable(PadMapModel.slot(m, 1, 8)))
         val empty = PadMapModel.Slot(3, 3, PadMapModel.Kind.NONE, null, null, 0)
+        assertFalse("never B (the user: \"remove the hold option on B\")", PadMapModel.holdable(PadMapModel.Slot(7, 19, PadMapModel.Kind.SPELL, 1, "x", 1)))
         assertFalse("an empty button", PadMapModel.holdable(empty))
         assertFalse(PadMapModel.holdable(null))
         val room = kt("PadTabPage.kt")
@@ -121,7 +127,9 @@ class HoldCastUiTest {
         assertTrue(cast.contains("HoldArt.progress(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, prog, circle)"))
         assertTrue(cast.contains("HoldArt.bigFace(c, 0f, 0f, iconHalf, Icons.get(ref.icon), circle)"))
         val home = kt("HomeView.kt")
-        assertTrue(home.contains("castView.holdRefs = PadMapModel.holdRefs(map).takeIf { HoldCast.usable && map.holdOn != false }"))
+        assertTrue("PER TAB: the badges are the holds that would fire now",
+            home.contains("castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false }")
+                && home.contains("fightNow = fight; applyDpad(); holdApply()"))
         // (the 1528 merge of feat/exit-now's view release: held weakly - HoldCast is an object, the Home it drew for is let go)
         assertTrue(home.contains("HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }"))
         val room = kt("PadTabPage.kt")
@@ -137,11 +145,12 @@ class HoldCastUiTest {
         assertTrue("the order: X Move above Y Bind hold above A Bind (the hold in Move's own place, Move one step up)",
             room.contains("private fun holdRect(m: PadMapModel.Map, w: Float, h: Float): RectF = moveRect(w, h)")
                 && pane.contains("UiKit.button(c, moveAt(w, h), \"Move\""))
-        assertTrue("its touch: Book b80's page-3 code 28",
+        assertTrue("its touch: Book b81's page-3 code 28",
             room.contains("tap(PadMapModel.holdCells())") && PadMapModel.holdCells().last() == (PadMapModel.ROW_PADTAB to 28))
         assertTrue("the controller's Y pushes it", room.contains("return DOWN_HOLD   // m190: Y Hold spell, pushed at the press"))
         assertTrue(room.contains("HoldArt.badge(c, r.left + 12f * k, r.top + 12f * k, 15f * k, Icons.get(hr.icon), -1f, lit = false)"))
-        assertTrue(room.contains("if (holdChooser()) return if (sl?.hold != null) Thing.Unhold else null"))
+        assertTrue("the chooser's Clear: the tab's own hold", room.contains("if (holdChooser()) return if (sl?.holdOf(fight()) != null) Thing.Unhold else null"))
+        assertTrue("the room shows each tab's own Hold row", room.contains("val hr = sl?.holdOf(fightTab)"))
         assertTrue(kt("SpellsOverlay.kt").contains("holdHint(c, box.left + 80f, HINT_Y)"))
         val host = kt("CompanionHost.kt")
         assertTrue(host.contains("\"holdmap\" -> if (current) HoldCast.onMap(msg)") && host.contains("\"holdprobe\" -> if (current) HoldCast.onProbe(msg)")

@@ -2,6 +2,9 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar20 THE 1528b MERGE OF feat/hold-cast's PER-TAB HOLDS (the user on test 1528: "It should be seperate"): a button's
+-- hold badge is the hold that would fire now (In combat's while the fight switch takes the press, else Out of combat's; PadMap
+-- m193 holdTab); nothing else changed.
 -- nbar19 THE 1528 TEST BUILD MERGE: three branches took nbar18 at once, all kept, their notes as each wrote them: feat/top-castbar's
 -- (our own cast bar above the HUD, below), fix/wings-triggers-smaller's (the L / R plates and ZL / ZR chips 0.75 x, below) and
 -- feat/hold-cast's (the top bar's hold badge with its own sweep, the 150 ms flash, at "nbar18 HOLD TO CAST"); the Wings' solver
@@ -2549,7 +2552,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar19", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar20", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -2625,7 +2628,9 @@ function NB.holdShow(b, set, page)
     local e = nil
     if type(pm) == "table" and type(pm.holdOn) == "function" and type(pm.holdAt) == "function" then
         local okOn, on = pcall(pm.holdOn)
-        if okOn and on then local ok, r = pcall(pm.holdAt, page, set, b.p); if ok and type(r) == "table" then e = r end end
+        -- PER TAB: the hold that would fire now (In combat's while the fight switch takes the press, else Out of combat's)
+        local okT, tab = pcall(pm.holdTab)
+        if okOn and on then local ok, r = pcall(pm.holdAt, page, set, b.p, okT and tab or nil); if ok and type(r) == "table" then e = r end end
     end
     if not e then if b.hb then b.hb:Hide() end b.hold = nil return end
     local hb = NB.holdBadge(b)

@@ -137,7 +137,7 @@ def bar_union(G):
 # ------------------------------------------------------------------------------------------------------------------------ 0 the tags
 def part_0():
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar nbar18 and its note (nbar13 / nbar14 / nbar17 notes kept)", 'local NB = { V = "nbar19"' in src
+    chk("0. ActionBar nbar18 and its note (nbar13 / nbar14 / nbar17 notes kept)", 'local NB = { V = "nbar20"' in src
         and "nbar18 OUR OWN CAST BAR ABOVE THE HUD" in src and "nbar13 THE CAST BAR IN A TOP-SCREEN FIGHT" in src
         and "nbar14 THE WINGS MATCH THE BAND" in src and "nbar17 THE WINGS AS THE BAND ON THE DEVICE" in src)
     code = "\n".join(l.split("--", 1)[0] for l in src.splitlines())
