@@ -67,6 +67,10 @@ function IsMounted() return MOUNTED end
 function IsFlying() return false end
 function IsSwimming() return false end
 SPELLNAME[8042] = "Earth Shock"
+-- the player's own bar (the slots that HAVE something: LT + X 17, LT + Y 18, LT + A 20; LT + B 19 and the rest empty)
+ACTIONINFO = { [17] = { "spell", 403 }, [18] = { "spell", 331 }, [20] = { "spell", 403 } }
+function GetActionInfo(s) local a = ACTIONINFO[s]; if a then return a[1], a[2] end end
+function GetActionTexture(s) local a = ACTIONINFO[s]; return a and 130000 + a[2] or nil end
 '''
 AFTER = r'''
 WowCompanion.spellsStorageFor = function(page, set, pos) return (page - 1) * 48 + (set - 1) * 12 + pos end
@@ -153,16 +157,16 @@ def macrolines(p):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m191"' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m190 and its note (m189 kept)')
-check('local CV = "p59"' in ptc and 'p59 HOLD TO CAST' in ptc and 'p58 THE CHOOSER AS A GRID' in ptc, '0. PadTabCtl p59 and its note')
-check('local BV = "b79"' in bk and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b78 and its note')
+check('local PV = "m192"' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m190 and its note (m189 kept)')
+check('local CV = "p60"' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'p59 HOLD TO CAST' in ptc and 'p58 THE CHOOSER AS A GRID' in ptc, '0. PadTabCtl p59 and its note')
+check('local BV = "b80"' in bk and 'b80 THE 1529 TEST BUILD MERGE' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk and 'P3[28] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end' in bk and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b78 and its note')
 check('local NB = { V = "nbar19"' in ab and 'nbar18 HOLD TO CAST' in ab, '0. ActionBar nbar18 and its note')
 
 # ---------------------------------------------------------------- (1) THE PROBE
 L = world()
 check(not clean(L), '1. the world loads clean', clean(L))
 ready = last(L, 'holdprobe')
-check(ready.get('st') == 'ready' and ready.get('bound') is None and ready.get('v') == 'm191',
+check(ready.get('st') == 'ready' and ready.get('bound') is None and ready.get('v') == 'm192',
       '1. a few seconds after the login: "ready", nothing bound on the Guide\'s names (READ first)', ready)
 H = L.eval('WowCompanion.padMapHold()')
 check(H.w is not None and H.f is not None, '1. the watch is open (its frame polls the controller)')
@@ -361,7 +365,11 @@ check(L.eval('HDB()["f8"]') is None and last(L, 'padack').get('op') == 'unhold',
 # a finger on the hold chooser puts the hold too
 L.execute('WowCompanion.padTabCtl.press("PAD4"); WowCompanion.padTabCtl.touchSpell(403)')
 check(L.eval('HDB()["f8"].n') == 'Lightning Bolt', '7. a finger on a spell of the hold chooser: the hold (never the button\'s own)')
-L.execute('WowCompanion.padTabCtl.leave()')
+# p60: the app's "Hold spell" button by touch (Book b79's code 26) = Y on the button the cursor is on
+L.execute('WowCompanion.padMapHold(); WowCompanion.padTabCtl.press("PAD2")')
+L.execute('WowCompanion.padTabCtl.holdOpen()')
+check((ctl(L).get('chooser') or {}).get('hold') is True, '7. the Hold spell button by touch (holdOpen): the same hold chooser', ctl(L).get('chooser'))
+L.execute('WowCompanion.padTabCtl.press("PAD2"); WowCompanion.padTabCtl.leave()')
 L3.execute('local ctl = WowCompanion._spellsBook.ctl; ctl.croom, ctl.ctrlTab, ctl.onTabs = true, true, true; WowCompanion.padTabCtl.enter(); WowCompanion.padTabCtl.press("PAD4")')
 check(ctl(L3).get('note') == 'hold-off' and ctl(L3).get('chooser') is None, '7. unavailable: Y says hold-off, nothing opens', ctl(L3))
 
@@ -390,6 +398,37 @@ L7.execute('OTHER = {}; SetOverrideBinding(OTHER, false, "PADSYSTEM", "TOGGLEGAM
 check(last(L7, 'holdmap').get('why') == 'bound' and last(L7, 'holdmap').get('on') is None and L7.eval('WowCompanionSpellsDB.holdGuide') is None
       and L7.eval('HB("WowCompanionCombatFace6").a["wc-gd"]') is None,
       '8b. a binding put on PADSYSTEM mid-session: the map off at once ("bound"), the kept answer and the marker number dropped', last(L7, 'holdmap'))
+
+# ---------------------------------------------------------------- (10) A HOLD ONLY ON A BUTTON THAT HAS SOMETHING (the user, 2026-11-24:
+# "You should only be able to bind a hold on a button that has something already")
+check(L.eval('(WowCompanion.padMap.putHold(1, 2, 7, "spell", 2))') is False and last(L, 'padack').get('why') == 'empty',
+      '10. an empty button (LT + B, slot 19): no hold (refused: empty)', last(L, 'padack'))
+check(L.eval('(WowCompanion.padMap.putHold(1, 1, 7, "spell", 3))') is True, '10. a base face (B: the game own Back) counts as something')
+check('if not (pm and type(pm.holdOk) == "function" and pm.holdOk(pm.page(), shownSet(), tc.pos)) then report("hold-empty") return true end' in ptc,
+      '10. the room: Y on an empty button says hold-empty, nothing opens')
+check(L.eval('WowCompanion.padMap.holdOk(1, 2, 7)') is False and L.eval('WowCompanion.padMap.holdOk(1, 2, 6)') is True
+      and L.eval('WowCompanion.padMap.holdOk(1, 1, 8)') is True, '10. holdOk: empty no, a spell yes, a base face yes')
+# the press taken off (here: the game's own bar emptied; Clear / Move do the same): its hold goes too
+check(L.eval('WowCompanion.padMap.holdAt(1, 2, 6) ~= nil'), '10. (LT + Y has its hold)')
+L.execute('ACTIONINFO[18] = nil; fire("ACTIONBAR_SLOT_CHANGED", 18); WowCompanion.padMapHold().tick(); advance(1)')
+check(L.eval('HDB()[18]') is None and L.eval('HDR("wc-ht-18")') is None, '10. the press gone: its hold dropped (store and router)',
+      (L.eval('HDB()[18]'), L.eval('HDR("wc-ht-18")')))
+L.execute('ACTIONINFO[18] = { "spell", 331 }')
+# an orphan saved before this rule (a hold on an empty slot): dropped at the login
+L9 = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM", holdBy = { ["Korvash-Realm"] = { [19] = { id = 331, n = "Healing Wave", i = 1, page = 1, set = 2, pos = 7 }, [18] = { id = 1064, n = "Chain Heal", i = 1, page = 1, set = 2, pos = 6 } } } }')
+L9.execute('WowCompanion.padMapHold().tick(); advance(1)')
+check(L9.eval('HDB()[19]') is None and L9.eval('HDB()[18] ~= nil'), '10. a saved orphan (empty slot 19) dropped at the login; slot 18 (a spell) kept')
+# the Bind box: HOLDING an empty button places the spell as its normal press (never a hold on nothing)
+LB = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM" }; C_GamepadUI = { GetFirstGamepadActionBarStorageSlotIndexForActiveStance = function() return 0 end, IsValidGamepadActionStorageSlotIndex = function() return true end }; CURSOR = nil; function GetCursorInfo() if CURSOR then return CURSOR[1], CURSOR[2] end end; function ClearCursor() CURSOR = nil end; C_SpellBook.PickupSpellBookItem = function(slot) local id = BOOK[slot]; if id then CURSOR = { "spell", id } end end')
+LB.execute('BK = WowCompanion._spellsBook; BK.ctl.on = true; BK.ctl.pg = "book"; BK.startBind({ t = 1, slot = 1, id = 403 })')
+nb = nsent(LB)
+LB.execute('PADSTATE = { [LT_I] = true, [17] = true }; BK.press("PADDLEFT"); PADSTATE = {}')
+ab = [d for d in docs(LB, nb, 'spellsack') if d.get('op') == 'bind']
+ab = ab[-1] if ab else {}
+# (this stub game has no cursor road: the normal bind's own pick-up answers "failed" - what matters is the road it took)
+check(ab.get('op') == 'bind' and not (ab.get('pad') or {}).get('hold') and (ab.get('probe') or {}).get('slotSrc') == 'formula'
+      and (ab.get('probe') or {}).get('pad') == 2 and LB.eval('HDB() == nil or HDB()[13] == nil'),
+      '10. Bind box: LT + D-pad Left (empty) HELD = the normal bind road (the bar slot), never a hold', ab)
 
 # ---------------------------------------------------------------- (9) no trace
 check(not lst(L, 'SPY'), '9. no SetBinding / SetCVar / macro write / game window call', lst(L, 'SPY'))

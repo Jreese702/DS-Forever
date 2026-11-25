@@ -191,7 +191,7 @@ F.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(0.3); MerchantF
 settle(F)
 
 # ---------------------------------------------------------------- m161: the setting (the user: "Make it a setting toggle defaulted to our wheel")
-check('local BV = "b79"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172, "Book b62, PadMap m162 (b61 / m161 + the 1.0.32 merge)")
+check('local BV = "b80"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172, "Book b62, PadMap m162 (b61 / m161 + the 1.0.32 merge)")
 
 
 def padtab(L, *cols):
