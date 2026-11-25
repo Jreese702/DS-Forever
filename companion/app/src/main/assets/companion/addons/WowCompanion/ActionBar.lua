@@ -2,6 +2,22 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar25 HOLD TO CAST'S VISUALS, ROUND 1533 (PadMap m199; the user on test 1532, 2026-11-25: "The red outline is an eyesore we
+-- should just shade the ability like we do with the glyphs. And same with the charge up dots, it should be a glowing ring around the
+-- skill. When the ability is casting it should show the ability with a golden ring, a great example of this is raptor strikes normal
+-- behavior"): (1) the hold badge's state is ONE shade of its icon (NB.holdLook: grey unusable, then RED out of range, then blue not
+-- enough mana; its disc always brown - no red ring); (2) the twelve beads are gone: a GLOWING gold ring fills round the badge (hb.ring:
+-- the game's circle glow, a dark track and a plain Cooldown's gold wedge from 12 o'clock, all on our own frames) to the fire point
+-- (WC.padMap.holdSecs: where the hold now casts), "charged" full and bright only while a fire waits; (3) the takeover's face wears the
+-- game's own gold CHECKED ring (b.hsel: gamepad-actionbar-*slot-border-selected, the art a queued Raptor Strike wears), and a hold that
+-- is QUEUED for the next swing keeps the face (PadMap's "q", and the bar's own live C_Spell.IsCurrentSpell read) until the swing lands
+-- or it is unqueued, up to 30 s; an instant that gives no GCD, no cast and no queue leaves at once (PadMap's "none", in game 0.15 s
+-- after the fire); a "gcd" word gives the GCD's end at once. Plain frames and reads only, legal in fights.
+-- nbar25, THE FACE SAYS THE SPELL IT SHOWS (the user on test 1532, 2026-11-25: "When using hold to cast it will show the button glyph
+-- as red if the original spell was not usable, I want that to also shift with the ability that its showing casting so its not
+-- confusing"): while a hold's takeover has the face, the glyph / word red (range only), b.range, the face's own shade (b.hflash: blue
+-- not enough mana, grey unusable) and the count are the HOLD spell's (NB.faceLook: switched at the fire, back at the end at once); the
+-- badge fades out (1 - the face's alpha) and always wears its hold spell - never the tap spell (nbar21's swap retired).
 -- nbar24 RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)"): a trigger layer's hold (LT + X) keeps its
 -- takeover on the main circle after the trigger is let go - drawn on its fired layer and on any layer that only lacks one of its
 -- triggers (the bare one after LT + X; LT or RT alone after LT + RT + X), never on a layer with a trigger the press did not have;
@@ -2566,7 +2582,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar24", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar25", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -2608,7 +2624,10 @@ WC.nbarOn = false
 --     the tap spell on the badge until the hold's cast and the GCD after it end (WC.holdCast's "cast" / "ok" from PadMap's cast events,
 --     WC.gcdRun), at once on "fail", NB.HOLD_FALLBACK s after the last word if nothing more comes (never stuck); it eases back over
 --     NB.HOLD_EASE s.
-NB.HOLD_R, NB.HOLD_FALLBACK, NB.HOLD_EASE, NB.HOLD_DELAY, NB.HOLD_BEADS = 17, 2.0, 0.2, 0.25, 12
+NB.HOLD_R, NB.HOLD_FALLBACK, NB.HOLD_EASE, NB.HOLD_DELAY = 17, 2.0, 0.2, 0.25
+-- nbar25: a queued next-swing hold keeps the face at most this long; the glowing ring's gold (Home's CHARGE / CHARGED / glow)
+NB.HOLD_QCAP = 30
+NB.HOLD_GOLD, NB.HOLD_FULL, NB.HOLD_GLOW = { 1, 0.78, 0.3 }, { 1, 0.94, 0.62 }, { 1, 0.78, 0.3 }
 NB.HOLD_OUT = { [0] = { -1, -1 }, [1] = { -1, 1 }, [2] = { 1, 1 } }          -- by the drawn spot: up, left / down, right (y down)
 function NB.holdSpot(b, lay)
     local a = (lay == "swap" and NB.AT_SWAP[b.p]) or NB.AT[b.p]
@@ -2622,7 +2641,7 @@ function NB.holdBadge(b)
     local hb = CreateFrame("Frame", nil, b.top)
     pcall(hb.EnableMouse, hb, false)
     hb:SetSize(NB.HOLD_R, NB.HOLD_R)
-    pcall(function() hb:SetFrameLevel(b.top:GetFrameLevel() + 1) end)
+    pcall(function() hb:SetFrameLevel(b.top:GetFrameLevel() + 2) end)       -- nbar25: over its glowing ring
     hb.disc = hb:CreateTexture(nil, "OVERLAY", nil, 3)
     hb.disc:SetAllPoints(hb)
     pcall(hb.disc.SetColorTexture, hb.disc, 110 / 255, 89 / 255, 66 / 255, 1)     -- the brown ring (the band's BADGE_RING)
@@ -2643,26 +2662,101 @@ function NB.holdBadge(b)
     pcall(hb.cd.SetSwipeTexture, hb.cd, NB.MASK_FILE)
     pcall(hb.cd.SetUseCircularEdge, hb.cd, true)
     pcall(hb.cd.SetHideCountdownNumbers, hb.cd, true)
-    -- nbar21: the charge ring's beads, round the badge (hidden until 0.25 s held)
-    hb.beads = {}
-    for i = 1, NB.HOLD_BEADS do
-        local t = hb:CreateTexture(nil, "OVERLAY", nil, 6)
-        local a = (i - 0.5) / NB.HOLD_BEADS * 2 * math.pi              -- clockwise from 12 o'clock (y up)
-        local r = NB.HOLD_R / 2 + 3
-        t:SetSize(3.2, 3.2)
-        t:SetPoint("CENTER", hb, "CENTER", r * math.sin(a), r * math.cos(a))
-        pcall(t.SetColorTexture, t, 1, 0.78, 0.3, 0.95)
-        t:Hide()
-        hb.beads[i] = t
+    -- nbar25 THE GLOWING RING round the badge (the user: "it should be a glowing ring around the skill"; hidden until 0.25 s held): its
+    -- own frame under the badge - the game's circle glow, a dark track, and a plain Cooldown whose gold wedge grows clockwise from 12
+    -- o'clock to the fire point (started once when it shows); the badge over its middle leaves a ring; "full" when charged
+    local rg = CreateFrame("Frame", nil, b.top)
+    pcall(rg.EnableMouse, rg, false)
+    rg:SetSize(NB.HOLD_R + 8, NB.HOLD_R + 8)
+    rg:SetPoint("CENTER", hb, "CENTER", 0, 0)
+    pcall(function() rg:SetFrameLevel(b.top:GetFrameLevel() + 1) end)
+    local function circled(t)
+        local okM, m = pcall(function() return rg:CreateMaskTexture() end)
+        if okM and type(m) == "table" then
+            pcall(m.SetAllPoints, m, t)
+            if pcall(m.SetTexture, m, NB.MASK_FILE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE") then pcall(t.AddMaskTexture, t, m) end
+        end
     end
+    rg.glow = rg:CreateTexture(nil, "BACKGROUND", nil, 0)
+    rg.glow:SetPoint("CENTER", rg, "CENTER", 0, 0)
+    rg.glow:SetSize((NB.HOLD_R + 8) * 1.7, (NB.HOLD_R + 8) * 1.7)
+    if NB.atlasOn(rg.glow, "gamepad-actionbar-fx-circglw") then
+        pcall(rg.glow.SetVertexColor, rg.glow, NB.HOLD_GLOW[1], NB.HOLD_GLOW[2], NB.HOLD_GLOW[3])
+        rg.glowAtlas = true
+    else
+        -- no atlas: a soft gold disc of the circle mask under the ring
+        rg.glow:SetSize(NB.HOLD_R + 14, NB.HOLD_R + 14)
+        pcall(rg.glow.SetColorTexture, rg.glow, NB.HOLD_GLOW[1], NB.HOLD_GLOW[2], NB.HOLD_GLOW[3], 1)
+        circled(rg.glow)
+    end
+    rg.trk = rg:CreateTexture(nil, "ARTWORK", nil, 0)
+    rg.trk:SetPoint("CENTER", rg, "CENTER", 0, 0)
+    rg.trk:SetSize(NB.HOLD_R + 7, NB.HOLD_R + 7)
+    pcall(rg.trk.SetColorTexture, rg.trk, 30 / 255, 22 / 255, 12 / 255, 0.45)
+    circled(rg.trk)
+    rg.cd = CreateFrame("Cooldown", nil, rg, "CooldownFrameTemplate")
+    rg.cd:SetAllPoints(rg.trk)
+    pcall(rg.cd.EnableMouse, rg.cd, false)
+    pcall(rg.cd.SetSwipeTexture, rg.cd, NB.MASK_FILE)
+    pcall(rg.cd.SetSwipeColor, rg.cd, NB.HOLD_GOLD[1], NB.HOLD_GOLD[2], NB.HOLD_GOLD[3], 0.95)
+    pcall(rg.cd.SetUseCircularEdge, rg.cd, true)
+    pcall(rg.cd.SetReverse, rg.cd, true)                                -- the gold part grows (the wedge left is the unfilled)
+    pcall(rg.cd.SetDrawEdge, rg.cd, false)
+    pcall(rg.cd.SetDrawBling, rg.cd, false)
+    pcall(rg.cd.SetHideCountdownNumbers, rg.cd, true)
+    rg.full = rg:CreateTexture(nil, "ARTWORK", nil, 1)
+    rg.full:SetAllPoints(rg.trk)
+    pcall(rg.full.SetColorTexture, rg.full, NB.HOLD_FULL[1], NB.HOLD_FULL[2], NB.HOLD_FULL[3], 1)
+    circled(rg.full)
+    rg.full:Hide()
+    rg:Hide()
+    hb.ring = rg
     -- the takeover: the hold spell over the big face
     b.hflash = b.top:CreateTexture(nil, "OVERLAY", nil, 0)
     b.hflash:SetAllPoints(b.icon)
     if b.mask then pcall(b.hflash.AddMaskTexture, b.hflash, b.mask) end
     b.hflash:Hide()
+    -- nbar25 THE GOLDEN RING (the user: "When the ability is casting it should show the ability with a golden ring, a great example of
+    -- this is raptor strikes normal behavior"): the game's own CHECKED ring (actionbarbutton.lua's CheckedTexture on its gamepad bar) over
+    -- the takeover's face, 4 units beyond the button, easing with it. The fix pass: the atlas refused, a RING all the same, never a disc
+    -- over the face - the button's own border ring (a ring of the game's art: its middle is clear) at the checked ring's size, gold;
+    -- that refused too, a gold plate of the button's shape (the circle mask on the faces, square on the D-pad) UNDER the face (sublevel
+    -- -1: the hold spell's picture, sublevel 0, covers its middle - the gold shows only round it)
+    b.hsel = b.top:CreateTexture(nil, "OVERLAY", nil, 1)
+    b.hsel:SetPoint("CENTER", b, "CENTER", 0, 0)
+    b.hsel:SetSize(b.sz + 8, b.sz + 8)
+    if not NB.atlasOn(b.hsel, "gamepad-actionbar-" .. (b.circle and "circleslot" or "squareslot") .. "-border-selected") then
+        if NB.atlasOn(b.hsel, NB.ringAtlas(b.circle, "normal")) then
+            pcall(b.hsel.SetDesaturated, b.hsel, true)
+            pcall(b.hsel.SetVertexColor, b.hsel, 1, 0.86, 0.45)
+            b.hselFallback = "ring"
+        else
+            pcall(b.hsel.SetDrawLayer, b.hsel, "OVERLAY", -1)
+            pcall(b.hsel.SetColorTexture, b.hsel, 1, 0.86, 0.45, 0.9)
+            if b.circle then
+                local okM, m = pcall(function() return b.top:CreateMaskTexture() end)
+                if okM and type(m) == "table" then
+                    pcall(m.SetAllPoints, m, b.hsel)
+                    if pcall(m.SetTexture, m, NB.MASK_FILE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE") then pcall(b.hsel.AddMaskTexture, b.hsel, m) end
+                end
+            end
+            b.hselFallback = "under"
+        end
+    end
+    b.hsel:Hide()
     hb:Hide()
     b.hb = hb
     return hb
+end
+-- nbar25: the takeover's face and its golden ring shown / hidden together, at [a]
+function NB.holdFace(b, show, a)
+    if show then
+        b.hflash:Show(); pcall(b.hflash.SetAlpha, b.hflash, a or 1)
+        if b.hsel then b.hsel:Show(); pcall(b.hsel.SetAlpha, b.hsel, a or 1) end
+    else
+        b.hflash:Hide()
+        if b.hsel then b.hsel:Hide() end
+    end
 end
 -- the hold entry at the button now (PadMap's holdAt: the page / layer the bar shows), its badge and sweep
 function NB.holdShow(b, set, page)
@@ -2681,7 +2775,9 @@ function NB.holdShow(b, set, page)
     pcall(hb.ClearAllPoints, hb)
     hb:SetPoint("CENTER", b, "CENTER", x, y)
     b.hold = e
-    NB.paint(hb.icon, NB.holdHere(b) and b.tapIcon or NB.holdIcon(e))   -- nbar21: the tap spell on the badge while the hold has the face
+    -- nbar25 (the user on test 1532: "... so its not confusing"): always the hold spell on its badge - while its takeover has the face the
+    -- badge FADES OUT (NB.holdOver: 1 - the face's alpha), never the tap spell on it (nbar21's swap retired)
+    NB.paint(hb.icon, NB.holdIcon(e))
     pcall(NB.holdLook, b, e)
     local get = api("C_Spell", "GetSpellCooldownDuration")
     local setDur = type(field(hb.cd, "SetCooldownFromDurationObject")) == "function"
@@ -2696,17 +2792,22 @@ end
 function NB.holdIcon(e)
     return e and (e.i or (e.t == nil and e.id and select(2, CALL(api("C_Spell", "GetSpellTexture"), e.id)))) or nil
 end
--- nbar21: the badge's states (the big buttons' reads): blue = not enough mana, grey = not usable, the ring red = out of range only
+-- nbar21: the badge's states (the big buttons' reads). nbar25 (the user: "The red outline is an eyesore we should just shade the
+-- ability like we do with the glyphs"): ONE shade of the badge's icon, in Home's order - GREY when not usable for a reason other than
+-- mana (usableMana's u 0, m not 1), else RED out of range (red is range only), else BLUE for not enough mana; its disc always brown
+NB.HOLD_SHADE = { unusable = { 0.45, 0.45, 0.45, true }, range = { 1, 0.32, 0.30, false }, mana = { 0.45, 0.55, 1, false },
+                  ok = { 1, 1, 1, false } }
 function NB.holdLook(b, e)
     local hb = b.hb
     local st = (e.t == nil and type(e.id) == "number") and spellState(e.id, S(UnitExists, "target") == true) or nil
     local u, m, r = st and st.u, st and st.m, st and st.r
-    if m == 1 then pcall(hb.icon.SetDesaturated, hb.icon, false); hb.icon:SetVertexColor(0.45, 0.55, 1); b.hlook = "mana"
-    elseif u == 0 then pcall(hb.icon.SetDesaturated, hb.icon, true); hb.icon:SetVertexColor(0.45, 0.45, 0.45); b.hlook = "unusable"
-    else pcall(hb.icon.SetDesaturated, hb.icon, false); hb.icon:SetVertexColor(1, 1, 1); b.hlook = "ok" end
+    local look = (u == 0 and m ~= 1 and "unusable") or (r == 0 and "range") or (m == 1 and "mana") or "ok"
+    local sh = NB.HOLD_SHADE[look]
+    pcall(hb.icon.SetDesaturated, hb.icon, sh[4])
+    hb.icon:SetVertexColor(sh[1], sh[2], sh[3])
+    b.hlook = look
     b.hrange = r ~= 0
-    if r == 0 then pcall(hb.disc.SetColorTexture, hb.disc, 1, 0.2, 0.2, 1)
-    else pcall(hb.disc.SetColorTexture, hb.disc, 110 / 255, 89 / 255, 66 / 255, 1) end
+    pcall(hb.disc.SetColorTexture, hb.disc, 110 / 255, 89 / 255, 66 / 255, 1)
 end
 -- the router ran a hold spell at game position [pos] (PadMap's post-click on the kept press's release): THE TAKEOVER starts
 -- nbar22 (the 1531 audit): [lay] = the layer the press took (PadMap's "bare" / "lt" / "rt" / "ltrt"): the takeover is THAT layer's hold
@@ -2730,8 +2831,10 @@ WC.holdFired = function(pos, lay)
     local now = SN(GetTime) or 0
     b.hto = { t = now, last = now, e = e, set = set, pic = NB.paint(b.hflash, NB.holdIcon(e)) }
     local here = NB.holdHere(b)                                         -- nbar24 (ruling A): its layer, or one lacking only its triggers
-    if b.hto.pic and here then pcall(b.hflash.SetAlpha, b.hflash, 1); b.hflash:Show() else b.hflash:Hide() end
-    if here and b.hb and b.tapIcon then NB.paint(b.hb.icon, b.tapIcon) end
+    NB.holdFace(b, b.hto.pic and here, 1)                               -- nbar25: in the game's gold checked ring
+    -- nbar25: at once - the glyph's red, b.range, the count and the face's shade the hold spell's; its badge out (the face has it)
+    pcall(NB.faceLook, b)
+    if b.hb then pcall(b.hb.SetAlpha, b.hb, (b.hto.pic and here) and 0 or 1) end
     pcall(NB.holdCharge, b, now, 1)                                     -- the charge ring goes with the release
 end
 -- nbar22: the takeover at [b] drawn on the layer the bar shows now. nbar24 RULING A (the user's pick 2026-11-25, "Stay until it ends"):
@@ -2746,31 +2849,55 @@ function NB.holdHere(b)
     local k = NB.SET_KEEPS[o.set]
     return k ~= nil and k[NB.set or 1] == true
 end
--- PadMap m195's word on the fired hold's own cast at [pos]: "cast" (d = its seconds left), "ok", "fail"
-WC.holdCast = function(pos, st, d)
+-- PadMap m195's word on the fired hold's own cast at [pos]: "cast" (d = its seconds left), "ok", "fail"; m199 (nbar25): "q" queued for
+-- the next swing (kept until it lands or is unqueued), "none" (no GCD, no cast, no queue: back at once; the fix pass: also a hold that
+-- went off - a queued one too - with no GCD of its own), "gcd" (gl = the GCD's seconds left)
+WC.holdCast = function(pos, st, d, gl)
     local f = NB.f
     local b = f and f.btn and f.btn[pos]
     local o = b and b.hto
     if not o then return end
     local now = SN(GetTime) or 0
     o.last = now
-    if st == "cast" then o.castEnd = now + (tonumber(d) or 0)
-    elseif st == "ok" then o.okAt = now
-    elseif st == "fail" then o.fail = now end
+    if st == "cast" then o.castEnd = now + (tonumber(d) or 0); o.q = nil; o.qOff = nil      -- a cast (its START): not a queue
+    elseif st == "ok" then o.okAt = now; if o.q and not o.qOff then o.qOff = now end
+    elseif st == "fail" then o.fail = now
+    elseif st == "q" then o.q = true
+    elseif st == "none" then o.fail = now                                 -- (the fix pass: queued too - it went off with no GCD)
+    elseif st == "gcd" then o.gcdEnd = now + (tonumber(gl) or 0) end
 end
 -- when the takeover at [b] ends (game time): at a "fail" at once; else the latest of its cast's end, the GCD that started with it and
 -- an instant's success (+0.3 s), none of them known = NB.HOLD_FALLBACK s after the fire; never later than NB.HOLD_FALLBACK s past its
--- last word (its cast's end for a cast) nor 15 s past the fire
+-- last word (its cast's end for a cast) nor 15 s past the fire (a queued one's: past its queue's end)
+-- nbar25 (the fix pass): the GCD that started WITH the fire - o.t is the click's own frame (WC.holdFired runs in the post-click of the
+-- press that cast), so the look-back is PadMap's 0.05 s, not 0.5 (a D-pad spell's GCD 0.3 s before an interrupt's fire is not the
+-- interrupt's)
+-- nbar25 (the glyph follow-up): and no later than the game's spell-queue window after it (NB.HOLD_GCD_AHEAD: an instant queued there goes
+-- off when the last GCD ends) or, for a queue that went off, its end's - the NEXT spell's GCD (the player's next press, off at the
+-- hold's GCD's end while the face eases out) is not the hold's: no pop back
+NB.HOLD_QGRACE, NB.HOLD_GCD_BACK, NB.HOLD_GCD_AHEAD = 0.2, 0.05, 0.45
 function NB.holdEnd(o)
     if o.fail then return o.fail end
+    -- nbar25: queued for the next swing - kept (no fallback) until it lands or is unqueued, at most NB.HOLD_QCAP s. The fix pass: its end
+    -- (no longer current) waits NB.HOLD_QGRACE s for the landing's ok (PadMap's own wait for its SUCCEEDED: no ease-and-pop when the live
+    -- read flips first), at once on PadMap's fail; LANDED (ok) it ends as any hold - the GCD it started counts (a spell queued in the
+    -- game's spell-queue window that goes off at the last GCD's end keeps the face through its own GCD, as Home's takeover)
+    local base = o.t
+    if o.q then
+        if not o.qOff then return o.t + NB.HOLD_QCAP end
+        if not o.okAt then return math.min(o.qOff + NB.HOLD_QGRACE, o.t + NB.HOLD_QCAP) end
+        base = math.max(o.t, o.qOff)
+    end
     local g = rawget(WC, "gcdRun")
-    if type(g) == "table" and type(g.s) == "number" and type(g.d) == "number" and g.s >= o.t - 0.5 then o.gcdEnd = g.s + g.d end
+    if type(g) == "table" and type(g.s) == "number" and type(g.d) == "number"
+        and ((g.s >= o.t - NB.HOLD_GCD_BACK and g.s <= o.t + NB.HOLD_GCD_AHEAD)
+             or (o.qOff and g.s >= o.qOff - 0.5 and g.s <= o.qOff + NB.HOLD_GCD_AHEAD)) then o.gcdEnd = g.s + g.d end
     local known = nil
     for _, v in ipairs({ o.castEnd or false, o.gcdEnd or false, o.okAt and (o.okAt + 0.3) or false }) do
         if v and (not known or v > known) then known = v end
     end
-    local e = known or (o.t + NB.HOLD_FALLBACK)
-    return math.min(e, math.max(o.castEnd or 0, o.last) + NB.HOLD_FALLBACK, o.t + 15)
+    local e = known or (base + NB.HOLD_FALLBACK)
+    return math.min(e, math.max(o.castEnd or 0, o.last) + NB.HOLD_FALLBACK, base + 15)
 end
 function NB.holdOver(b, now)
     local o = b.hto
@@ -2780,34 +2907,66 @@ function NB.holdOver(b, now)
     if now >= e then a = 1 - (now - e) / NB.HOLD_EASE end
     if a <= 0 then
         b.hto = nil
-        b.hflash:Hide()
-        if b.hb and b.hold then NB.paint(b.hb.icon, NB.holdIcon(b.hold)) end      -- the badge: the hold spell again
+        NB.holdFace(b, false)
+        if b.hb and b.hold then NB.paint(b.hb.icon, NB.holdIcon(b.hold)) end      -- the badge: the hold spell
+        if b.hb then pcall(b.hb.SetAlpha, b.hb, 1) end                  -- nbar25: back in full
+        pcall(NB.faceLook, b)                                           -- nbar25: the tap's glyph / count again at once
         return
     end
-    if not (o.pic and NB.holdHere(b)) then b.hflash:Hide(); return end  -- nbar22 / nbar24: a layer with a trigger the press lacked
-    b.hflash:Show()
-    pcall(b.hflash.SetAlpha, b.hflash, a)
+    if not (o.pic and NB.holdHere(b)) then                              -- nbar22 / nbar24: a layer with a trigger the press lacked
+        NB.holdFace(b, false)
+        if b.hb then pcall(b.hb.SetAlpha, b.hb, 1) end
+        return
+    end
+    NB.holdFace(b, true, a)                                             -- nbar25: the face and its golden ring ease together
+    if b.hb then pcall(b.hb.SetAlpha, b.hb, 1 - a) end                  -- nbar25: the badge out while the face has it, back as it eases
 end
--- the charge ring at [b] now: hidden before NB.HOLD_DELAY s held, filling to [sure] s, all bright from it; only while the router keeps
--- that press (its badge shown, no takeover running)
+-- nbar25: the fired hold's spell is CURRENT now (queued for the next swing, waiting for its target / cursor: the game's checked look),
+-- the bar's own read (plain, in-game truth, legal in fights); nil when it has no spell id or the read is refused
+function NB.holdCurrent(o)
+    local id = o and o.e and o.e.t == nil and type(o.e.id) == "number" and o.e.id or nil
+    if not id then return nil end
+    local f = api("C_Spell", "IsCurrentSpell")
+    if not f then return nil end
+    local ok, v = pcall(f, id)
+    if not ok or (v ~= true and v ~= false) then return nil end
+    return v
+end
+-- the charge ring at [b] now: hidden before NB.HOLD_DELAY s held, filling to [sure] s (the fire point), all bright from it; only while
+-- the router keeps that press (its badge shown, no takeover running). nbar25: THE GLOWING RING (hb.ring) - b.hcharge = 0..1 of the way
+-- (or "charged"); its Cooldown started once as it appears (from NB.HOLD_DELAY s after the press to [sure]), the glow brightening
 function NB.holdCharge(b, now, sure)
     local hb = b.hb
-    if not (hb and hb.beads) then return end
+    local rg = hb and hb.ring
+    if not rg then return end
     local t = (b.hdDown and b.hdAt) and (now - b.hdAt) or -1
     local kept = type(WC.padMapKept) ~= "function" or WC.padMapKept(b.p) == true
-    local lit, charged = 0, false
+    local frac, charged = nil, false
     -- (nbar22, the 1531 audit: only on the layer the press took - the router keeps that layer's press, its release runs that hold)
     if b.hold and not b.hto and kept and t >= NB.HOLD_DELAY and hb:IsShown() and (b.hdSet == nil or b.hdSet == (NB.set or 1)) then
-        if t >= sure then charged, lit = true, NB.HOLD_BEADS
-        else lit = math.floor((t - NB.HOLD_DELAY) / math.max(0.01, sure - NB.HOLD_DELAY) * NB.HOLD_BEADS + 1e-6) end
+        if t >= sure then charged, frac = true, 1
+        else frac = math.max(0, math.min(1, (t - NB.HOLD_DELAY) / math.max(0.01, sure - NB.HOLD_DELAY))) end
     end
-    for i, bead in ipairs(hb.beads) do
-        if i <= lit then
-            if charged then pcall(bead.SetColorTexture, bead, 1, 0.94, 0.62, 1) else pcall(bead.SetColorTexture, bead, 1, 0.78, 0.3, 0.95) end
-            bead:Show()
-        else bead:Hide() end
+    if not frac then
+        if rg.on then rg.on = nil; rg.charged = nil; pcall(rg.cd.Clear, rg.cd); rg.full:Hide(); rg:Hide() end
+        b.hcharge = 0
+        return
     end
-    b.hcharge = charged and "charged" or lit
+    if not rg.on then
+        rg.on = true
+        rg:Show()
+        pcall(rg.cd.SetCooldown, rg.cd, b.hdAt + NB.HOLD_DELAY, math.max(0.01, sure - NB.HOLD_DELAY))
+        rg.cd:Show()
+    end
+    if charged and not rg.charged then
+        rg.charged = true
+        pcall(rg.cd.Clear, rg.cd)
+        rg.full:Show()
+    end
+    local ga = charged and 0.95 or (0.25 + 0.55 * frac)
+    if not rg.glowAtlas then ga = charged and 0.5 or (0.3 * frac) end
+    pcall(rg.glow.SetAlpha, rg.glow, ga)
+    b.hcharge = charged and "charged" or frac
 end
 -- [held] the tick's own read (nbar22, the 1531 audit: 0 while a window owns the pad - NB.held keeps its last read then, and the
 -- router's kept flag can stay up while the window has the release: the ring would have filled on)
@@ -2825,6 +2984,13 @@ function NB.holdTick(held)
             if down and not b.hdDown then b.hdAt = now - NB.POLL_S * 0.5; b.hdSet = NB.set or 1 end   -- pressed within the last poll: its middle; its layer (nbar22)
             b.hdDown = down
             pcall(NB.holdCharge, b, now, sure)
+            -- nbar25: a takeover whose hold is queued (the game's own current read): kept while it is, its end when it stops
+            local o = b.hto
+            if o and not o.fail and not o.castEnd then                -- (a cast's own "current" is its cast, not a queue)
+                local cur = NB.holdCurrent(o)
+                if cur == true then o.q = true; o.qOff = nil
+                elseif cur == false and o.q and not o.qOff then o.qOff = now end
+            end
             pcall(NB.holdOver, b, now)
         end
     end
@@ -3420,20 +3586,49 @@ function NB.cool(b, e, st)
 end
 
 -- the tints: unusable grey, not enough mana blue (never red); out of range = the glyph red (range only, the user's ruling)
-function NB.tint(b, st)
-    local u, m, r = st and st.u, st and st.m, st and st.r
+-- nbar25 THE FACE SAYS THE SPELL IT SHOWS (the user on test 1532, 2026-11-25: "When using hold to cast it will show the button glyph as
+-- red if the original spell was not usable, I want that to also shift with the ability that its showing casting so its not confusing"):
+-- the icon's shade (NB.shade) and the glyph's red (NB.glyphTint) apart - while a hold's takeover has the face, the glyph / word red,
+-- b.range, the face's own picture (b.hflash) and the count are the HOLD spell's (NB.faceLook); the takeover over, the tap's again
+function NB.shade(tx, st)
+    local u, m = st and st.u, st and st.m
     if m == 1 then
-        pcall(b.icon.SetDesaturated, b.icon, false); b.icon:SetVertexColor(0.45, 0.55, 1)
-        b.look = "mana"
+        pcall(tx.SetDesaturated, tx, false); tx:SetVertexColor(0.45, 0.55, 1)
+        return "mana"
     elseif u == 0 then
-        pcall(b.icon.SetDesaturated, b.icon, true); b.icon:SetVertexColor(0.45, 0.45, 0.45)
-        b.look = "unusable"
-    else
-        pcall(b.icon.SetDesaturated, b.icon, false); b.icon:SetVertexColor(1, 1, 1)
-        b.look = "ok"
+        pcall(tx.SetDesaturated, tx, true); tx:SetVertexColor(0.45, 0.45, 0.45)
+        return "unusable"
     end
-    if r == 0 then b.glyph:SetVertexColor(1, 0.2, 0.2); b.word:SetTextColor(1, 0.2, 0.2); b.range = false
+    pcall(tx.SetDesaturated, tx, false); tx:SetVertexColor(1, 1, 1)
+    return "ok"
+end
+function NB.glyphTint(b, st)
+    if st and st.r == 0 then b.glyph:SetVertexColor(1, 0.2, 0.2); b.word:SetTextColor(1, 0.2, 0.2); b.range = false
     else b.glyph:SetVertexColor(1, 1, 1); b.word:SetTextColor(1, 1, 1); b.range = true end
+end
+function NB.tint(b, st)
+    b.look = NB.shade(b.icon, st)
+    NB.glyphTint(b, st)
+end
+-- nbar25: the state the button's face shows now - its hold spell's while the takeover has the face on this layer (spellState, the big
+-- buttons' own reads; none for a hold that is no spell: neutral), else the tap's (NB.refresh's read, b.tapSt); [true] = the hold's
+function NB.faceState(b)
+    local o = b.hto
+    if o and o.pic and NB.holdHere(b) then
+        local e = o.e
+        local st = (type(e) == "table" and e.t == nil and type(e.id) == "number") and spellState(e.id, S(UnitExists, "target") == true) or nil
+        return st, true
+    end
+    return b.tapSt, false
+end
+-- nbar25: the glyph / word red, b.range and the count as the spell the face shows; the takeover's face (b.hflash) in its hold spell's
+-- shade (grey not usable, blue not enough mana: NB.tint's own) - plain textures of our own, legal in fights
+function NB.faceLook(b)
+    local st, hold = NB.faceState(b)
+    if hold and b.hflash then b.hlookFace = NB.shade(b.hflash, st) end
+    NB.glyphTint(b, st)
+    local cnt = st and (num(st.cnt) or num(st.ch)) or nil
+    b.count:SetText(cnt and tostring(cnt) or "")
 end
 
 function NB.glyph(b)
@@ -3527,6 +3722,7 @@ function NB.refresh()
         local rot, ia = (pic and pic.rot) or 0, (pic and pic.alpha) or 1
         if b.rot ~= rot then b.rot = rot; pcall(b.icon.SetRotation, b.icon, rot) end
         if b.ia ~= ia then b.ia = ia; pcall(b.icon.SetAlpha, b.icon, ia) end
+        b.tapSt = st                                                                 -- nbar25: the tap's own (the face's after a takeover)
         NB.tint(b, st)
         -- nbar21: while the hold spell has the face, its own cooldown / GCD sweep is the face's
         local he = NB.holdHere(b) and b.hto.e or nil                                 -- nbar22: the fired layer's hold
@@ -3534,9 +3730,9 @@ function NB.refresh()
         local route = NB.cool(b, ho or e, st)
         if route then NB.stats.n = NB.stats.n + 1 end
         if route == "dim" then NB.stats.dim = NB.stats.dim + 1 end
-        -- an item's count (consumables), else a multi-charge spell's charges (both plain or absent: buttonState's own reads)
-        local cnt = st and (num(st.cnt) or num(st.ch)) or nil
-        b.count:SetText(cnt and tostring(cnt) or "")
+        -- an item's count (consumables), else a multi-charge spell's charges (both plain or absent: buttonState's own reads); nbar25: the
+        -- glyph's red, b.range and the count as the spell the face shows (a takeover's: its hold spell's; NB.faceLook)
+        pcall(NB.faceLook, b)
         b.kind = e.kind
         NB.well(b, e.kind == "empty")                     -- nbar11: an empty slot wears its own art, its ring disabled
         NB.ring(b)

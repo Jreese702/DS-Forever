@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m198"               -- bump on every change; m198 EDIT HOME'S TOP-SCREEN PREVIEW (the user on test 1530, 2026-11-25: "When choosing the top screen options in combat it should also display the top screen ui so that its easy to visualize. Likewise the party mode should show a full party on the top screen"): Book b85's page-3 codes 32-39 set the preview Edit Home asks for (R.editPreview / WC.padMap.preview(), `pv` in the dpad state) - in memory only, display only, refused in a fight, dropped when one starts, a PV_TTL lease; read by ActionBar nbar23, Hub hub79, Trail prd25 (at "m198 EDIT HOME'S TOP-SCREEN PREVIEW" below); m197 THE 1531 MERGE OF feat/hold-cast's REBUILD (the user on test 1529, 2026-11-24: "When I use ours it feels baggy because of how its delayed for the normal spell buttons", then "Yes, rebuild it that way"; test 1531 = the 1530 build (int/1529) with feat/hold-cast's rebuild merged in): m194 / m195 (the router keeps the press, the hold clock counts it, the release decides; the hold spell's state, its cast followed, WC.padMapKept) and m196 (the 1530 merge) both kept, their notes below as each wrote them; the holds stay per tab (Out of combat / In combat), none in Party mode or room mode, never on B; the 1531 follow-up: Smart Y's Sit by the fire knows WoW Forever's camp buff, Campfire Nearby (spell 1283391; OV.FIRE_IDS); the 1531 audit: Smart Y's fight buff on a Y with a hold is worked out for the kept press too (its tap casts it at the release, a hold leaves it for the next press: wc-hs-cb), and Y's sit / Manners' post-clicks follow the press that acted (OV.hold.edge: a kept Y's release); m195 THE HOLD SPELL TAKES THE BUTTON (the user on test 1529, 2026-11-24: "When casting a hold spell its not clear, I think it needs to take over the main spell circle until the [GCD] completes following it or if its canceled for whatever reason. Also they look like they are ready to cast in conditions that they are not like when mana is low or its out of range"; "after like .25s of holding I want a charge up circle to appear around the little hold icon"; "that also needs to appear on the top screen ui"): (1) the hold spells of both tabs ride WC.padMapFightSpells, so ActionBar's hudS.fs carries their usable / not enough mana / range state by spell id (the badges' tints, read-only, in fights too); (2) a kept press's release that ran its hold (OV.hold.fired) is followed through the player's own cast events for that spell (UNIT_SPELLCAST_START / CHANNEL_START / SUCCEEDED / FAILED / INTERRUPTED / CHANNEL_STOP, read only): `holdcast` { pos, lay, st = cast / ok / fail, d = the cast's seconds left } to the app and WC.holdCast to the top bar, which keep the hold spell on the button until its cast and the GCD after it end (fail: at once); (3) WC.padMapKept(pos): the router button at [pos] keeps a press now (its wc-hk; a read, for the top bar's charge ring); m194 HOLD TO CAST IN THE GAME (the user on test 1529, 2026-11-24: "When I use ours it feels baggy because of how its delayed for the normal spell buttons"; the pick "Yes, rebuild it that way"; after 1529's m191-m193): the app's launcher gate, its Guide marker and the probe are gone - every press reaches the game as it is made; the router KEEPS the press of a place whose tab has a hold text (nothing acts on the key-down), the hold clock (a secure state driver the game looks at every 0.2 s, in fights too) counts while it is kept, and the click acts on the RELEASE: OV.hold.ticks() looks (Short 2 / Normal 3 / Long 4, Book b82's page-3 codes 29-31) or more = the hold text, else the press the snippet worked out (the tap); every other press acts on the key-down exactly as before; the padmap's hold says n and lk; no hold where a game binding sits; facecast hk; m196 THE 1530 MERGE OF TEST 1529 (m194 and m195 are feat/hold-cast's rebuild of hold to cast, made meanwhile on its branch, so this merge sits above them; the user on test 1529, 2026-11-24: "Where's my edit mode tabs?"; test 1529 = int/1528b, the 1530 build = int/1529 (Edit Home tabs, performance, the sign-in Menu) with it merged in): both sides took m192 for feat/hold-cast's Bind follow-up (a hold only on a button that has something), and test 1529's m193 (per-tab holds, never on B) came on top; the code is one (the same follow-up on both sides); all notes kept below as each wrote them (1529's m192 after 1528b's); nothing else changed; m193 THE 1528b MERGE OF feat/hold-cast's PER-TAB HOLDS (the user on test 1528: "Wait the hold buttons are showing on my out of combat bar? It should be seperate"; and "I want to remove the hold option on B it conflicts too hard and does weird shit"): a hold belongs to its tab (the store's normal / combat; Party mode none), holdAt / holdTab read the tab on show, test 1528's flat holds move onto In combat at their read, and B (position 7) never takes a hold (ack hold false "b"); m192 THE 1528b TEST BUILD MERGE: feat/hold-cast's follow-up (the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"): OV.hold.has / holdOk = a place takes a hold only with a press of its own or as a base face, the hold place refuses an empty one (ack hold false "empty"), OV.hold.sweep drops a hold whose button has nothing any more (out of combat, once the bars are loaded); the app's Hold spell touch is Book b80's page-3 code 28; nothing else changed; m192 THE 1529 TEST BUILD MERGE: feat/hold-cast's Bind follow-up (a hold only on a button that has something: OV.hold.has, putHold refuses "empty", holdOk, OV.hold.sweep at the login / once the bars are loaded) came without a tag of its own over m190, merged into the 1528 merge's m191; the hold chooser's touch is Book b80's page-3 code 28 (26 on its branch, which is feat/top-castbar's swing off); nothing else changed; m191 THE 1528 TEST BUILD MERGE: three branches took m190 at once, all kept, their notes below as each wrote them: feat/top-castbar's m190 (the swing with our top cast bar: ctsw / `cs`), feat/smarty-campfire's m190 (Smart Y's Sit by the fire row: kind "fire", fireOff) and feat/hold-cast's m190 (hold to cast: holdBy, the router's hold texts, the holdmap, holdcd, `h` / hold.on); the app reads m191 as all of them (each read is a field of its own, none keyed on one number); nothing else changed; m190 THE SWING WITH OUR TOP CAST BAR (the user, 2026-11-24: our own cast bar above the HUD with the swing over it): this character's ctsw flag (Book b78's page-3 codes 26 / 27, `cs` in dpadState, combatCastSwingOn for ActionBar nbar18; the Layouts reset clears it); m188's read of the game's own swing timer (`gsw`, gameSwingOn) removed; m190 SIT BY THE FIRE (the user, 2026-11-24: "I want to add a smart y option to sit when the player has the nearby campfire buff"): a Smart Y row of its own (kind "fire", Add's select cell sel0 + 3), added once at the end of every list (removable: fireOff; never while the list is full); due out of combat while the player wears Cozy Fire (by spell id: 7353 Basic Campfire, 7358 Bright Campfire; by the names those ids give only when an aura's id is not readable), stands (our seat tracker: Y's own sit, an eating / drinking aura, the game's sit / stand / jump, a move, a cast, a fight, a mount), is not mounted / on a taxi / in a vehicle / flying / swimming / moving / casting / dead; Y then runs the client's own sit emote command as a secure macro (type macro, the command armed out of combat; mounted / swimming / channeling at the press: never); nothing saved but our list, no macro, binding or CVar written; m190 HOLD TO CAST (the user, 2026-11-24: "give another option in the controller menu to "hold to cast" on a button so that we can have 2 spells per button"; OV.hold below: the app times the press, the Guide button is its marker, the router runs the place's hold text; the probe first); m189 THE 1523 TEST BUILD MERGE: five branches took the next numbers from m186 at once, all kept, their notes below as each wrote them: feat/stream-smooth's m187 (the saved-settings pack only after a change), fix/lbrb-wheels' m187 (the friendly bumper: lbmap swap / fb), fix/ltrt-stancebar's m187 + m188 (the router follows the game's Stance / Possess Bar; the LT / RT macro fixes: the press log, the over-macro marks) and feat/fight-castbar's m187 + m188 (the cast bar in a Top-screen fight: ctcb / cc; the B rule and the game's swing timer: fightSw / gsw); the app reads m189 as all of them (each read is a field of its own, none keyed on one number); nothing else changed; m187 THE SAVED-SETTINGS PACK ONLY AFTER A CHANGE (stream smoothness, a tester's "stutters every few seconds" while streaming, the user's pick 2026-11-23): m51's svkeep serialized and sorted ALL of both saved tables every 5 s whatever happened - a few ms each time inside the PC's game, a hitch at 120 fps (8 ms a frame). Now the 5 s tick packs only when something may have changed since the last pack: a tap from the app (TapPad's landed count, WC.pad.rx.n: every room's action is one), a mouse click in the game (GLOBAL_MOUSE_UP), a fight's end (the work a fight queued), a new world or a spec change; never in a fight (it waits for the fight's end, then packs); and once every 30 s out of combat whatever happened (the net for a write by any other route); send(true) (login, a reset) is unchanged, and so is the "only when the text changed" rule. Nothing of the game's is written (no CVar, binding, macro); m187 THE FRIENDLY BUMPER (fix/lbrb-wheels, a tester 2026-11-23 with the game's target bumpers swapped: "LB ... is now target enemy for me"): the lbmap document follows GamepadSwapTargetModifiers (read only) - the party-target buttons are read under the FRIENDLY bumper's modifier (RB while swapped; LB's when no GamePadEmulate* CVar names RB), its tap is that bumper's binding, the document says swap / fb ("LB" / "RB") and OV.lbmap.last.fb tells Hub's party frames the word; a change of the swap CVar resends it (the CVAR_UPDATE filter is case-blind now); nothing of the game's is written; m188 THE LT / RT MACRO FIXES (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's picks: "Re-read the controller", "Say what was pressed", "Show what's on top", and "In combat wins" - the fight order is kept): (1) GAME_PAD_CONNECTED / GAME_PAD_DISCONNECTED / GAME_PAD_CONFIGS_CHANGED wire every routed button again and GAME_PAD_ACTIVE_CHANGED does when the triggers' button numbers differ from the ones wired (R.padEvent, R.trWired; Party mode's pad too; out of combat, a fight waits for PLAYER_REGEN_ENABLED; read only); (2) each routed key-down's facecast also says the two triggers as the snippet read them (tr: "L1R0", "-" = no button number, "none" = no controller state), the press's way (path: slotfight / slotmacro / native / command / room / none) and om (one of ours ran over the player's own macro on that slot); a slotfight names its bar now (not "ours"); (3) the padmap's combat and command views carry um (the slot holds the player's own macro under our In combat entry / command: Home and the Controller room mark it); m187 THE ROUTER FOLLOWS THE GAME'S STANCE / POSSESS BAR (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's question: a WoW setting for LT + RT): the game's Gamepad settings Stance Bar / Possess Bar move that bar to the LT / RT / LT + RT layer at once, and the router kept its last wiring until a form change or a fight's end - now GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED / GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED and CVAR_UPDATE for GamepadStanceBarOverride / GamepadPossessBarOverride / GamepadUseCompactActionBar wire every routed button again (R.rewireAll: out of combat; in a fight at PLAYER_REGEN_ENABLED; read only, nothing written), and each routed press's facecast says its layer (lay: bare / lt / rt / ltrt), the bar it clicked (bar: page<N> / stance / possess / override / ours / room / none) and that button's slot (OV.pressAt; the app's PressLog); (feat/fight-castbar's follow-up may take m187 too: the integration renumbers); m188 THE B RULE AND THE GAME'S SWING TIMER (the user, 2026-11-23: "The controller bar top grow is working off of being in combat again instead of our combat ruls where we press B and it grows back downwards"; the swing pick "Keep ours on the bottom"): WC.padMap.fightSw - the router's own switch (fightNow.now: the fight or an attack / auto-repeat armed, nothing given back by B over every router button), read by ActionBar nbar14's Wings so B hands them back in a fight too; WC.padMap.gameSwingOn + dpadState `gsw` - the game's own swing timer shown (Edit Mode's account setting ShowSwingTimer, read-only, out of combat, kept), so the Wings and the app's strip keep the swing in one place; nothing written; m187 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): a second per-character flag beside ctop, WowCompanionSpellsDB.ctcb[name-realm] = 1 (Top screen) / 0 (Bottom screen, the default; none = off), set by Book b77's page-3 codes 24 off / 25 on, read ONLY by ActionBar nbar13 (the Wings' swing lines and the fight's word to Hub hub76, which shows the game's own casting bar for the fight) - display only, no binding, no attribute, nothing secure: remembered at once, in a fight too; `cc` in dpadState says it (nil while no key, as `ct`); the Layouts reset clears it with ctop; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m199"               -- bump on every change; m199 HOLD TO CAST ROUND 1533, THE FIRE AT THE THRESHOLD (the user on test 1532, 2026-11-25: "I also want this to cast right when the hold bar is filled, not when its released"; "When the ability is casting it should show the ability with a golden ring, a great example of this is raptor strikes normal behavior ... with instant cast abilities if I dont instantly get a [gcd] then [don't] linger on it"): (1) THE KEEP WORD - a kept key-down now says so, facecast { hk = "keep", kind = "holdkeep", pos, lay, key, t, need, hid } with a push (both post-click hooks; no `down`, so the press log ignores it, nothing else runs on it): DS Forever's launcher writes that press's RELEASE to the game at its fire point while the button is still held, so the release path below runs the hold text in the secure click exactly as before, the moment the ring fills; a tap (released before) and every press with no hold are untouched; (2) the clock's REAL need (`cn` = its wc-hn) and the game's longest recent frame (`ft`: our plain frame's OnUpdate, the longest elapsed over two 1 s buckets, 17 / 20 / 25 / 34 / 50 ms, raised at once, lowered 5 s after the last long frame, shown only while the holdmap says on) in the holdmap and the padmap's hold; holdSecs = the fire point F = cn x (0.2 s + ft) + ft + 10 ms (Normal 0.678 s at 60 fps; 0.710 s with ft unknown); (3) the rel word's hn (the looks counted), need and sl (the seconds from the need-th look to the release: an insecure OnAttributeChanged hook on our own router buttons, made out of combat, notes when wc-hk-t reaches the need); (4) holdcast's new states: "q" (the hold spell is CURRENT at the fire: queued for the next swing - Raptor Strike, Heroic Strike, Cleave, Maul - or waiting for its target / ground cursor; the follow waits up to 30 s, the queue's end (CURRENT_SPELL_CAST_CHANGED / PLAYER_SWING with it no longer current) is "ok" when its SUCCEEDED came, else "fail" 0.2 s later), "gcd" (gl = the GCD the fire started, seconds left: the first SPELL_UPDATE_COOLDOWN that shows it), "none" (0.15 s after the fire no GCD, no cast, not current: the takeover goes at once; a spell with a cast time waits up to 0.5 s for its START); OV.hold.spellOf split out of follow. Reads only: no new secure attribute, CVar, binding or macro; m199's FIX PASS (two reviews of round 1533): the fired hold's first words (q / gcd) are said AFTER the press's rel word (both post-click hooks: Home starts the takeover of a release before the fire point on that word, a q before it was lost); a hold that WENT OFF with no cast is ok only with a GCD of its own, else none (an instant off the GCD whose SUCCEEDED beat the none check, a next-swing ability that landed); ft's buckets go on to 67 / 84 / 100 / 134 ms (no cap at 50: a sustained 12 fps took the tap) and the frame meter runs whenever a hold exists on either tab (no loading screen), so ft is current at a fight's first press; m198 EDIT HOME'S TOP-SCREEN PREVIEW (the user on test 1530, 2026-11-25: "When choosing the top screen options in combat it should also display the top screen ui so that its easy to visualize. Likewise the party mode should show a full party on the top screen"): Book b85's page-3 codes 32-39 set the preview Edit Home asks for (R.editPreview / WC.padMap.preview(), `pv` in the dpad state) - in memory only, display only, refused in a fight, dropped when one starts, a PV_TTL lease; read by ActionBar nbar23, Hub hub79, Trail prd25 (at "m198 EDIT HOME'S TOP-SCREEN PREVIEW" below); m197 THE 1531 MERGE OF feat/hold-cast's REBUILD (the user on test 1529, 2026-11-24: "When I use ours it feels baggy because of how its delayed for the normal spell buttons", then "Yes, rebuild it that way"; test 1531 = the 1530 build (int/1529) with feat/hold-cast's rebuild merged in): m194 / m195 (the router keeps the press, the hold clock counts it, the release decides; the hold spell's state, its cast followed, WC.padMapKept) and m196 (the 1530 merge) both kept, their notes below as each wrote them; the holds stay per tab (Out of combat / In combat), none in Party mode or room mode, never on B; the 1531 follow-up: Smart Y's Sit by the fire knows WoW Forever's camp buff, Campfire Nearby (spell 1283391; OV.FIRE_IDS); the 1531 audit: Smart Y's fight buff on a Y with a hold is worked out for the kept press too (its tap casts it at the release, a hold leaves it for the next press: wc-hs-cb), and Y's sit / Manners' post-clicks follow the press that acted (OV.hold.edge: a kept Y's release); m195 THE HOLD SPELL TAKES THE BUTTON (the user on test 1529, 2026-11-24: "When casting a hold spell its not clear, I think it needs to take over the main spell circle until the [GCD] completes following it or if its canceled for whatever reason. Also they look like they are ready to cast in conditions that they are not like when mana is low or its out of range"; "after like .25s of holding I want a charge up circle to appear around the little hold icon"; "that also needs to appear on the top screen ui"): (1) the hold spells of both tabs ride WC.padMapFightSpells, so ActionBar's hudS.fs carries their usable / not enough mana / range state by spell id (the badges' tints, read-only, in fights too); (2) a kept press's release that ran its hold (OV.hold.fired) is followed through the player's own cast events for that spell (UNIT_SPELLCAST_START / CHANNEL_START / SUCCEEDED / FAILED / INTERRUPTED / CHANNEL_STOP, read only): `holdcast` { pos, lay, st = cast / ok / fail, d = the cast's seconds left } to the app and WC.holdCast to the top bar, which keep the hold spell on the button until its cast and the GCD after it end (fail: at once); (3) WC.padMapKept(pos): the router button at [pos] keeps a press now (its wc-hk; a read, for the top bar's charge ring); m194 HOLD TO CAST IN THE GAME (the user on test 1529, 2026-11-24: "When I use ours it feels baggy because of how its delayed for the normal spell buttons"; the pick "Yes, rebuild it that way"; after 1529's m191-m193): the app's launcher gate, its Guide marker and the probe are gone - every press reaches the game as it is made; the router KEEPS the press of a place whose tab has a hold text (nothing acts on the key-down), the hold clock (a secure state driver the game looks at every 0.2 s, in fights too) counts while it is kept, and the click acts on the RELEASE: OV.hold.ticks() looks (Short 2 / Normal 3 / Long 4, Book b82's page-3 codes 29-31) or more = the hold text, else the press the snippet worked out (the tap); every other press acts on the key-down exactly as before; the padmap's hold says n and lk; no hold where a game binding sits; facecast hk; m196 THE 1530 MERGE OF TEST 1529 (m194 and m195 are feat/hold-cast's rebuild of hold to cast, made meanwhile on its branch, so this merge sits above them; the user on test 1529, 2026-11-24: "Where's my edit mode tabs?"; test 1529 = int/1528b, the 1530 build = int/1529 (Edit Home tabs, performance, the sign-in Menu) with it merged in): both sides took m192 for feat/hold-cast's Bind follow-up (a hold only on a button that has something), and test 1529's m193 (per-tab holds, never on B) came on top; the code is one (the same follow-up on both sides); all notes kept below as each wrote them (1529's m192 after 1528b's); nothing else changed; m193 THE 1528b MERGE OF feat/hold-cast's PER-TAB HOLDS (the user on test 1528: "Wait the hold buttons are showing on my out of combat bar? It should be seperate"; and "I want to remove the hold option on B it conflicts too hard and does weird shit"): a hold belongs to its tab (the store's normal / combat; Party mode none), holdAt / holdTab read the tab on show, test 1528's flat holds move onto In combat at their read, and B (position 7) never takes a hold (ack hold false "b"); m192 THE 1528b TEST BUILD MERGE: feat/hold-cast's follow-up (the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"): OV.hold.has / holdOk = a place takes a hold only with a press of its own or as a base face, the hold place refuses an empty one (ack hold false "empty"), OV.hold.sweep drops a hold whose button has nothing any more (out of combat, once the bars are loaded); the app's Hold spell touch is Book b80's page-3 code 28; nothing else changed; m192 THE 1529 TEST BUILD MERGE: feat/hold-cast's Bind follow-up (a hold only on a button that has something: OV.hold.has, putHold refuses "empty", holdOk, OV.hold.sweep at the login / once the bars are loaded) came without a tag of its own over m190, merged into the 1528 merge's m191; the hold chooser's touch is Book b80's page-3 code 28 (26 on its branch, which is feat/top-castbar's swing off); nothing else changed; m191 THE 1528 TEST BUILD MERGE: three branches took m190 at once, all kept, their notes below as each wrote them: feat/top-castbar's m190 (the swing with our top cast bar: ctsw / `cs`), feat/smarty-campfire's m190 (Smart Y's Sit by the fire row: kind "fire", fireOff) and feat/hold-cast's m190 (hold to cast: holdBy, the router's hold texts, the holdmap, holdcd, `h` / hold.on); the app reads m191 as all of them (each read is a field of its own, none keyed on one number); nothing else changed; m190 THE SWING WITH OUR TOP CAST BAR (the user, 2026-11-24: our own cast bar above the HUD with the swing over it): this character's ctsw flag (Book b78's page-3 codes 26 / 27, `cs` in dpadState, combatCastSwingOn for ActionBar nbar18; the Layouts reset clears it); m188's read of the game's own swing timer (`gsw`, gameSwingOn) removed; m190 SIT BY THE FIRE (the user, 2026-11-24: "I want to add a smart y option to sit when the player has the nearby campfire buff"): a Smart Y row of its own (kind "fire", Add's select cell sel0 + 3), added once at the end of every list (removable: fireOff; never while the list is full); due out of combat while the player wears Cozy Fire (by spell id: 7353 Basic Campfire, 7358 Bright Campfire; by the names those ids give only when an aura's id is not readable), stands (our seat tracker: Y's own sit, an eating / drinking aura, the game's sit / stand / jump, a move, a cast, a fight, a mount), is not mounted / on a taxi / in a vehicle / flying / swimming / moving / casting / dead; Y then runs the client's own sit emote command as a secure macro (type macro, the command armed out of combat; mounted / swimming / channeling at the press: never); nothing saved but our list, no macro, binding or CVar written; m190 HOLD TO CAST (the user, 2026-11-24: "give another option in the controller menu to "hold to cast" on a button so that we can have 2 spells per button"; OV.hold below: the app times the press, the Guide button is its marker, the router runs the place's hold text; the probe first); m189 THE 1523 TEST BUILD MERGE: five branches took the next numbers from m186 at once, all kept, their notes below as each wrote them: feat/stream-smooth's m187 (the saved-settings pack only after a change), fix/lbrb-wheels' m187 (the friendly bumper: lbmap swap / fb), fix/ltrt-stancebar's m187 + m188 (the router follows the game's Stance / Possess Bar; the LT / RT macro fixes: the press log, the over-macro marks) and feat/fight-castbar's m187 + m188 (the cast bar in a Top-screen fight: ctcb / cc; the B rule and the game's swing timer: fightSw / gsw); the app reads m189 as all of them (each read is a field of its own, none keyed on one number); nothing else changed; m187 THE SAVED-SETTINGS PACK ONLY AFTER A CHANGE (stream smoothness, a tester's "stutters every few seconds" while streaming, the user's pick 2026-11-23): m51's svkeep serialized and sorted ALL of both saved tables every 5 s whatever happened - a few ms each time inside the PC's game, a hitch at 120 fps (8 ms a frame). Now the 5 s tick packs only when something may have changed since the last pack: a tap from the app (TapPad's landed count, WC.pad.rx.n: every room's action is one), a mouse click in the game (GLOBAL_MOUSE_UP), a fight's end (the work a fight queued), a new world or a spec change; never in a fight (it waits for the fight's end, then packs); and once every 30 s out of combat whatever happened (the net for a write by any other route); send(true) (login, a reset) is unchanged, and so is the "only when the text changed" rule. Nothing of the game's is written (no CVar, binding, macro); m187 THE FRIENDLY BUMPER (fix/lbrb-wheels, a tester 2026-11-23 with the game's target bumpers swapped: "LB ... is now target enemy for me"): the lbmap document follows GamepadSwapTargetModifiers (read only) - the party-target buttons are read under the FRIENDLY bumper's modifier (RB while swapped; LB's when no GamePadEmulate* CVar names RB), its tap is that bumper's binding, the document says swap / fb ("LB" / "RB") and OV.lbmap.last.fb tells Hub's party frames the word; a change of the swap CVar resends it (the CVAR_UPDATE filter is case-blind now); nothing of the game's is written; m188 THE LT / RT MACRO FIXES (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's picks: "Re-read the controller", "Say what was pressed", "Show what's on top", and "In combat wins" - the fight order is kept): (1) GAME_PAD_CONNECTED / GAME_PAD_DISCONNECTED / GAME_PAD_CONFIGS_CHANGED wire every routed button again and GAME_PAD_ACTIVE_CHANGED does when the triggers' button numbers differ from the ones wired (R.padEvent, R.trWired; Party mode's pad too; out of combat, a fight waits for PLAYER_REGEN_ENABLED; read only); (2) each routed key-down's facecast also says the two triggers as the snippet read them (tr: "L1R0", "-" = no button number, "none" = no controller state), the press's way (path: slotfight / slotmacro / native / command / room / none) and om (one of ours ran over the player's own macro on that slot); a slotfight names its bar now (not "ours"); (3) the padmap's combat and command views carry um (the slot holds the player's own macro under our In combat entry / command: Home and the Controller room mark it); m187 THE ROUTER FOLLOWS THE GAME'S STANCE / POSSESS BAR (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's question: a WoW setting for LT + RT): the game's Gamepad settings Stance Bar / Possess Bar move that bar to the LT / RT / LT + RT layer at once, and the router kept its last wiring until a form change or a fight's end - now GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED / GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED and CVAR_UPDATE for GamepadStanceBarOverride / GamepadPossessBarOverride / GamepadUseCompactActionBar wire every routed button again (R.rewireAll: out of combat; in a fight at PLAYER_REGEN_ENABLED; read only, nothing written), and each routed press's facecast says its layer (lay: bare / lt / rt / ltrt), the bar it clicked (bar: page<N> / stance / possess / override / ours / room / none) and that button's slot (OV.pressAt; the app's PressLog); (feat/fight-castbar's follow-up may take m187 too: the integration renumbers); m188 THE B RULE AND THE GAME'S SWING TIMER (the user, 2026-11-23: "The controller bar top grow is working off of being in combat again instead of our combat ruls where we press B and it grows back downwards"; the swing pick "Keep ours on the bottom"): WC.padMap.fightSw - the router's own switch (fightNow.now: the fight or an attack / auto-repeat armed, nothing given back by B over every router button), read by ActionBar nbar14's Wings so B hands them back in a fight too; WC.padMap.gameSwingOn + dpadState `gsw` - the game's own swing timer shown (Edit Mode's account setting ShowSwingTimer, read-only, out of combat, kept), so the Wings and the app's strip keep the swing in one place; nothing written; m187 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): a second per-character flag beside ctop, WowCompanionSpellsDB.ctcb[name-realm] = 1 (Top screen) / 0 (Bottom screen, the default; none = off), set by Book b77's page-3 codes 24 off / 25 on, read ONLY by ActionBar nbar13 (the Wings' swing lines and the fight's word to Hub hub76, which shows the game's own casting bar for the fight) - display only, no binding, no attribute, nothing secure: remembered at once, in a fight too; `cc` in dpadState says it (nil while no key, as `ct`); the Layouts reset clears it with ctop; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -535,7 +535,8 @@ function WC.collectPadMap()
     -- m190: hold to cast may be set (m194: always); m194: n = the hold time's looks (2 / 3 / 4), lk = the looks the hold clock was given
     -- since the load (a number that grows while presses are kept: the device check that the game's 0.2 s looks run the clock)
     doc.hold = { on = OV.hold.usable() or nil, n = OV.hold.ticks(),
-                 lk = OV.hold.ck and tonumber(TS(function() return tostring(OV.hold.ck:GetAttribute("wc-hl") or 0) end)) or nil }
+                 lk = OV.hold.ck and tonumber(TS(function() return tostring(OV.hold.ck:GetAttribute("wc-hl") or 0) end)) or nil,
+                 cn = OV.hold.need(), ft = OV.hold.ft }                -- m199: the clock's real looks, the game's longest frame (ms)
     local a = attackDB()
     local nslots = 0
     for _ in pairs(a.slots) do nslots = nslots + 1 end
@@ -2229,11 +2230,12 @@ local function routerMake(pos, name, role, why)
         -- the post-click: B's padmap at once (why); m26: a press that REACHES B or the D-pad says where it went (as A / X / Y do)
         b:HookScript("PostClick", function(_, _, edge)
             if why then pcall(routerAfterClick, why) end
-            -- m194: the press that acted now - a key-down, or a kept press's release (its tap or its hold); a kept key-down says nothing
+            -- m194: the press that acted now - a key-down, or a kept press's release (its tap or its hold); m199: a kept key-down says
+            -- only the keep word (the launcher's fire at the fill), nothing else
             local okE, down, hk = pcall(OV.hold.edge, b, edge)
             if not okE then down, hk = edge, nil end
-            if hk == "keep" then return end
-            if down then pcall(OV.hold.fired, b, pos) end                -- m190: a hold spell ran (the top bar's flash)
+            if hk == "keep" then pcall(OV.hold.keepSay, b, pos) return end
+            local hx = (hk == "rel") and OV.hold.relSafe(pos, b) or nil   -- m199: the looks counted, the need, the slack
             pcall(function()
                 local lay, bar, slot, tr, path, om = nil, nil, nil, nil, nil, nil
                 if down then lay, bar, slot, tr, path, om = OV.pressAt(b) end   -- m187: the layer, the bar, the slot; m188: tr / path / om
@@ -2241,9 +2243,16 @@ local function routerMake(pos, name, role, why)
                                     kind = TS(function() return b:GetAttribute("wc-kind") end),
                                     at = TS(function() return b:GetAttribute("wc-at") end), holder = capHolder(),
                                     pf = (down and TB(function() return b:GetAttribute("wc-pf") end)) or nil,     -- m165
-                                    lay = lay, bar = bar, slot = slot, tr = tr, path = path, om = om }))
+                                    lay = lay, bar = bar, slot = slot, tr = tr, path = path, om = om,
+                                    hn = hx and hx.hn, need = hx and hx.need, sl = hx and hx.sl }))
             end)
+            -- m190: a hold spell ran (the top bar's flash). m199 (the fix pass): AFTER the press's own word - the fired hold's first
+            -- holdcast words (q / gcd, said in this click) follow its rel word, so the app has the takeover that word starts when they come
+            -- (a release before the fire point: the rel word starts it; before, Home dropped a queued Raptor Strike's q)
+            if down then pcall(OV.hold.fired, b, pos) end
         end)
+        -- m199: when the clock's count on this button reaches its need (the rel word's slack; insecure, read only, our own button)
+        if pos ~= 7 then pcall(function() b:HookScript("OnAttributeChanged", function(_, name, value) if name == "wc-hk-t" then pcall(OV.hold.looked, pos, value) end end) end) end
         made = b
     end)
     return ok and made or nil
@@ -3098,12 +3107,13 @@ faceSetup = function()
                         -- a press that REACHES our button says so (a post-hook on our own button: runs after the secure click, changes nothing)
                         pcall(function()
                             b:HookScript("PostClick", function(_, button, edge)
-                                -- m194: the press that acted now (a key-down, or a kept press's release); a kept key-down says nothing
+                                -- m194: the press that acted now (a key-down, or a kept press's release); m199: a kept key-down says
+                                -- only the keep word (the launcher's fire at the fill)
                                 local okE, down, hk = pcall(OV.hold.edge, b, edge)
                                 if not okE then down, hk = edge, nil end
-                                if hk == "keep" then return end
+                                if hk == "keep" then pcall(OV.hold.keepSay, b, p) return end
+                                local hx = (hk == "rel") and OV.hold.relSafe(p, b) or nil     -- m199: the looks, the need, the slack
                                 if down then pcall(routerAfterClick, "rearm") end
-                                if down then pcall(OV.hold.fired, b, p) end      -- m190: a hold spell ran (the top bar's flash)
                                 pcall(function()
                                     local lay, bar, slot, tr, path, om = nil, nil, nil, nil, nil, nil
                                     if down then lay, bar, slot, tr, path, om = OV.pressAt(b) end    -- m187 / m188 (PressLog)
@@ -3112,10 +3122,16 @@ faceSetup = function()
                                                         kind = TS(function() return b:GetAttribute("wc-kind") end),
                                                         at = TS(function() return b:GetAttribute("wc-at") end),
                                                         holder = capHolder(), lay = lay, bar = bar, slot = slot,
-                                                        tr = tr, path = path, om = om }))
+                                                        tr = tr, path = path, om = om,
+                                                        hn = hx and hx.hn, need = hx and hx.need, sl = hx and hx.sl }))
                                     WC.push()
                                 end)
+                                -- m190: a hold spell ran (the top bar's flash); m199 (the fix pass): after the press's own word, so the
+                                -- fired hold's q / gcd follow its rel word (the app's takeover is there for them)
+                                if down then pcall(OV.hold.fired, b, p) end
                             end)
+                            -- m199: the clock's count reaching its need on this button (the rel word's slack; insecure, read only)
+                            b:HookScript("OnAttributeChanged", function(_, name, value) if name == "wc-hk-t" then pcall(OV.hold.looked, p, value) end end)
                         end)
                     end
                 end
@@ -5201,7 +5217,7 @@ WC.padMap = {
     -- point where the router's hold is SURE whatever the clock's phase (each look 0.2 s and up to a frame), as the app's arc fills to it
     holdTicks = function(n) return OV.hold.setTicks(n) end,
     holdTicksNow = function() return OV.hold.ticks() end,
-    holdSecs = function() return OV.hold.ticks() * 0.217 end,
+    holdSecs = function() return OV.hold.fireSecs() end,               -- m199: the fire point F (the app's ring and early release)
     emit = function(force) if emit(force) then WC.push() end end,
     showPage = function(page)
         if type(page) ~= "number" or page < 1 or page > PAGES then return false, "bad page" end
@@ -9169,13 +9185,60 @@ end
 function OV.hold.tick(force)
     pcall(OV.hold.sweep)
     local b, why = OV.hold.mapNow()
-    local word = (b or "") .. "|" .. why
+    -- m199: the frame meter. The fix pass: whenever a hold exists on EITHER tab and no loading screen is up (not only while the holdmap
+    -- says on: holds only on In combat are "none" out of combat, and the pull's first presses read a frame time from the last fight)
+    pcall(OV.hold.ftOn, not OV.hold.loading and (next(OV.hold.db(false, "normal")) ~= nil or next(OV.hold.db(false, "combat")) ~= nil))
+    local cn, ft = OV.hold.need(), OV.hold.ft
+    local word = (b or "") .. "|" .. why .. "|" .. tostring(cn) .. "|" .. tostring(ft)
     local now = GetTime()
     if force or word ~= OV.hold.sent or now - (OV.hold.sentAt or 0) >= 15 then
         OV.hold.sent, OV.hold.sentAt = word, now
-        WC.send(WC.encode({ type = "holdmap", v = PV, on = b and true or nil, b = b, why = why }))
+        WC.send(WC.encode({ type = "holdmap", v = PV, on = b and true or nil, b = b, why = why, cn = cn, ft = ft }))
         WC.push()
     end
+end
+-- m199 THE GAME'S FRAME (the app's fire point F = cn x (0.2 s + ft) + ft + 10 ms): our own PLAIN frame's OnUpdate (legal in fights),
+-- shown while a hold exists on either tab (no loading screen) - the longest elapsed over a sliding 2 s window (two 1 s buckets), rounded
+-- UP to 17 / 20 / 25 / 34 / 50 / 67 / 84 / 100 / 134 ms; raised at once, lowered only when no frame as long as the current value came
+-- for 5 s (the holdmap does not flap). The fix pass: no cap at 50 ms - F must bound the frames, a sustained 12 fps (83 ms) took the tap
+-- (F(3, 50) 810 ms < the 3rd look's 849); 134 ms (7.5 fps) is the last bucket
+OV.hold.FTB = { 17, 20, 25, 34, 50, 67, 84, 100, 134 }
+function OV.hold.ftBucket(ms)
+    for _, v in ipairs(OV.hold.FTB) do if ms <= v then return v end end
+    return OV.hold.FTB[#OV.hold.FTB]
+end
+function OV.hold.ftOn(on)
+    if on and not OV.hold.ftf then
+        local m = CreateFrame("Frame")
+        m.cur, m.prev, m.bt, m.hiAt = 0, 0, GetTime(), GetTime()
+        m:SetScript("OnUpdate", function(_, el) pcall(OV.hold.ftStep, m, el) end)
+        OV.hold.ftf = m
+    end
+    local m = OV.hold.ftf
+    if m then if on then m:Show() else m:Hide() end end
+end
+function OV.hold.ftStep(m, el)
+    local now = GetTime()
+    local ms = (tonumber(el) or 0) * 1000
+    if ms > m.cur then m.cur = ms end
+    if now - m.bt >= 1 then m.prev, m.cur, m.bt = m.cur, 0, now end
+    local b = OV.hold.ftBucket(math.max(m.cur, m.prev))
+    local ft = OV.hold.ft
+    if OV.hold.ftBucket(ms) >= (ft or 0) then m.hiAt = now end
+    if not ft or b > ft then OV.hold.ft = b; m.hiAt = now
+    elseif b < ft and now - m.hiAt >= 5 then OV.hold.ft = b end
+end
+-- the clock's real need (its wc-hn: the hold time it was given out of combat), nil before the clock exists
+function OV.hold.need()
+    local ck = OV.hold.ck
+    return ck and TN(function() return ck:GetAttribute("wc-hn") end) or nil
+end
+-- m199 THE FIRE POINT in seconds: F = n x (0.2 + f) + f + 0.010 (n the clock's need, else the stored wish; f the game's longest frame,
+-- 25 ms unknown) - the app's ring fills to it and its launcher lets the kept press go for the game then; the Bind box times to it
+function OV.hold.fireSecs()
+    local n = OV.hold.need() or OV.hold.ticks()
+    local f = OV.hold.ft or 25
+    return (n * (200 + f) + f + 10) / 1000
 end
 
 -- m190 THE HOLD SPELLS' COOLDOWNS (the user's pick "A: corner badge": the hold spell's own sweep on its badge): every hold spell of the
@@ -9247,12 +9310,17 @@ function OV.hold.fired(b, pos)
     local lay = OV.LAYW[TS(function() return b:GetAttribute("wc-lay") end) or ""] or "bare"
     pcall(OV.hold.follow, b, pos, lay)                                  -- m195: its cast, followed (before the top bar hears the fire)
     if type(WC.holdFired) == "function" then pcall(WC.holdFired, pos, lay) end
+    pcall(OV.hold.afterFire)                                            -- m199: queued at once? the GCD? the none check armed
 end
 -- m195 THE HOLD SPELL'S OWN CAST, FOLLOWED: the spell the release ran (the place's hold on the tab the press took: a base face's own,
 -- else the slot under the press on its layer; a macro's spell now) is watched in the player's cast events for OV.hold.FOLLOW s (a
--- cast / channel: to its end). Read only; plain documents
+-- cast / channel: to its end; m199: while it is QUEUED, up to OV.hold.QCAP s). Read only; plain documents
 OV.hold.FOLLOW = 3
-function OV.hold.follow(b, pos, lay)
+-- m199: the none check's wait after the fire, a cast-time spell's wait for its START, a queued spell's longest follow
+OV.hold.NONE_S, OV.hold.CT_WAIT, OV.hold.QCAP = 0.15, 0.5, 30
+-- m199: the hold entry and its spell for a press of router button [b] at [pos] (the place's hold on the tab the press takes: a base
+-- face's own, else the slot under the press on its layer; a macro's spell now); read only (the keep word's hid, the follow)
+function OV.hold.spellOf(b, pos)
     local tab = OV.hold.tabOf(b)
     local anchor = TS(function() return b:GetAttribute("wc-lay") end)
     local e = (anchor == "top" and pos >= 5) and OV.hold.at("f" .. pos, tab) or nil
@@ -9261,7 +9329,149 @@ function OV.hold.follow(b, pos, lay)
         e = slot and OV.hold.at(slot, tab) or nil
     end
     local c = e and ((OV.ftKind(e) == "spell" and e) or (OV.ftKind(e) == "macro" and OV.macSpell(e.n))) or nil
-    OV.hold.fire = { pos = pos, lay = lay, id = c and c.id or nil, n = c and c.n or nil, t = GetTime() }
+    return e, c
+end
+function OV.hold.follow(b, pos, lay)
+    local _, c = OV.hold.spellOf(b, pos)
+    local id = c and c.id or nil
+    local ct = id and SN(function() local i = C_Spell.GetSpellInfo(id); return i and i.castTime end) or nil
+    OV.hold.fire = { pos = pos, lay = lay, id = id, n = c and c.n or nil, t = GetTime(), ct = ct }
+end
+-- m199 THE KEEP WORD (a kept key-down, the router's post-click): the launcher lets this press go for the game at its fire point
+function OV.hold.keepSay(b, pos)
+    local okS, _, c = pcall(OV.hold.spellOf, b, pos)
+    WC.send(WC.encode({ type = "facecast", v = PV, pos = pos, hk = "keep", kind = "holdkeep",
+                        lay = OV.LAYW[TS(function() return b:GetAttribute("wc-lay") end) or ""] or "bare", key = R.keys[pos],
+                        t = GetTime(), need = OV.hold.need(), hid = (okS and type(c) == "table" and c.id) or nil, fight = inCombat() or nil }))
+    WC.push()
+end
+-- m199: the clock's count on the router button at [pos] became [n] (its OnAttributeChanged): the need-th look's time (the slack)
+OV.hold.needAt = {}
+function OV.hold.looked(pos, n)
+    if type(n) ~= "number" or n <= 0 then OV.hold.needAt[pos] = nil return end
+    if n == (OV.hold.need() or 3) then OV.hold.needAt[pos] = GetTime() end
+end
+-- m199: a kept press's release at [pos]: hn = the looks counted, need = the clock's, sl = the seconds since the need-th look (a hold)
+function OV.hold.relInfo(pos, b)
+    local hn = TN(function() return b:GetAttribute("wc-hk-t") end)
+    local need = OV.hold.need()
+    local at = OV.hold.needAt[pos]
+    OV.hold.needAt[pos] = nil
+    local sl = (at and hn and need and hn >= need) and math.floor(math.max(0, GetTime() - at) * 1000 + 0.5) / 1000 or nil
+    return { hn = hn, need = need, sl = sl }
+end
+function OV.hold.relSafe(pos, b)
+    local ok, r = pcall(OV.hold.relInfo, pos, b)
+    return (ok and type(r) == "table") and r or nil
+end
+-- m199: one word on the fired hold [f]: to the app (holdcast) and the top bar (WC.holdCast)
+function OV.hold.say(f, st, d, gl)
+    pcall(function()
+        WC.send(WC.encode({ type = "holdcast", v = PV, pos = f.pos, lay = f.lay, st = st,
+                            d = d and math.floor(d * 1000 + 0.5) / 1000 or nil, gl = gl and math.floor(gl * 1000 + 0.5) / 1000 or nil }))
+        WC.push()
+    end)
+    if type(WC.holdCast) == "function" then pcall(WC.holdCast, f.pos, st, d, gl) end
+end
+-- the fired hold's spell is CURRENT (queued for the next swing, or waiting for its target / ground cursor: the game's checked look)
+function OV.hold.current(f)
+    if not f.id then return false end
+    return TB(function() return C_Spell.IsCurrentSpell(f.id) end) == true
+end
+-- the player is casting / channelling the fired hold (no id: any cast that started since the fire)
+function OV.hold.casting(f)
+    if f.id then
+        return SN(function() return select(9, UnitCastingInfo("player")) end) == f.id
+            or SN(function() return select(8, UnitChannelInfo("player")) end) == f.id
+    end
+    local st = SN(function() return select(4, UnitCastingInfo("player")) end) or SN(function() return select(4, UnitChannelInfo("player")) end)
+    return st ~= nil and st >= (f.t - 0.05) * 1000
+end
+-- the GCD the fired hold started, its seconds left (nil: none seen): the hold spell's cooldown on the GCD (isOnGCD: never secret), a
+-- cooldown of at most 2 s that started with it, or the bar's own GCD read (WC.gcdRun) since the fire. [own] (the fix pass: a queued
+-- hold that went off): the hold spell's own reads only - another spell's GCD that started while it waited for the swing is not its own
+function OV.hold.gcdLeft(f, own)
+    local now = GetTime()
+    local g = rawget(WC, "gcdRun")
+    local run = (type(g) == "table" and type(g.s) == "number" and type(g.d) == "number" and g.s >= f.t - 0.05) and (g.s + g.d - now) or nil
+    local gsc = type(C_Spell) == "table" and C_Spell.GetSpellCooldown or nil
+    if f.id and gsc then
+        local ok, info = pcall(gsc, f.id)
+        if ok and type(info) == "table" then
+            local st = SN(function() return info.startTime end)
+            local du = SN(function() return info.duration end)
+            local on = TB(function() return info.isOnGCD end) == true
+            if st and du and du > 0 and du <= 2 and st >= f.t - 0.05 then return math.max(0, st + du - now) end
+            if on then return math.max(0, run or ((st and du and du > 0) and (st + du - now)) or (WC.gcdLearn or 1.5)) end
+        end
+    end
+    if not own and run and run > 0 then return run end
+    return nil
+end
+function OV.hold.gcdCheck()
+    local f = OV.hold.fire
+    if not f or f.gcd then return end
+    if f.q then
+        -- the fix pass: queued - no word (a GCD running now may be the last spell's); the hold spell's own "on the GCD" read noted
+        -- (trustworthy inside SPELL_UPDATE_COOLDOWN, where the event frame calls this): an on-GCD spell that goes off from the queue (the
+        -- game's spell-queue window) starts its own, castEv's success says it
+        local gsc = f.id and type(C_Spell) == "table" and C_Spell.GetSpellCooldown or nil
+        if gsc then
+            local ok, info = pcall(gsc, f.id)
+            if ok and type(info) == "table" and TB(function() return info.isOnGCD end) == true then f.ongcd = true end
+        end
+        return
+    end
+    local gl = OV.hold.gcdLeft(f)
+    if gl then f.gcd = true; OV.hold.say(f, "gcd", nil, gl) end
+end
+-- right after the fire (the post-click): queued now? the GCD already? and the none check in OV.hold.NONE_S
+function OV.hold.afterFire()
+    local f = OV.hold.fire
+    if not f then return end
+    if OV.hold.casting(f) then f.cast = true                           -- a cast already running (its own "current"): not a queue
+    elseif OV.hold.current(f) then f.q = true; f.span = OV.hold.QCAP; OV.hold.say(f, "q") end
+    pcall(OV.hold.gcdCheck)
+    if C_Timer and C_Timer.After then C_Timer.After(OV.hold.NONE_S, function() pcall(OV.hold.noneCheck, f) end) end
+end
+-- THE NONE CHECK (the user: "with instant cast abilities if I dont instantly get a [gcd] then [don't] linger on it"): no GCD, no cast,
+-- not current, not yet ok / failed - the takeover goes at once ("none"); a spell with a cast time waits for its START up to
+-- OV.hold.CT_WAIT s (the server's round trip)
+-- (the fix pass) [f.okd]: it already went off (its SUCCEEDED came before this check, castEv): its ok now when a GCD showed, else none
+function OV.hold.noneCheck(f)
+    if OV.hold.fire ~= f or f.q or f.cast then return end
+    pcall(OV.hold.gcdCheck)
+    if f.gcd then
+        if f.okd then OV.hold.fire = nil; OV.hold.say(f, "ok") end
+        return
+    end
+    if not f.okd then
+        if OV.hold.casting(f) then return end                           -- its START word comes / came
+        if OV.hold.current(f) then f.q = true; f.span = OV.hold.QCAP; OV.hold.say(f, "q") return end
+    end
+    local now = GetTime()
+    if not f.okd and (f.ct or 0) > 0 and now - f.t < OV.hold.CT_WAIT - 1e-6 then
+        if C_Timer and C_Timer.After then C_Timer.After(OV.hold.CT_WAIT - (now - f.t), function() pcall(OV.hold.noneCheck, f) end) end
+        return
+    end
+    OV.hold.fire = nil
+    OV.hold.say(f, "none")
+end
+-- the queue changed (CURRENT_SPELL_CAST_CHANGED, PLAYER_SWING): queued now (a frame after the fire), or no longer - its swing's
+-- SUCCEEDED gets 0.2 s to come ("ok", castEv), else it was unqueued ("fail": cancelled, the target died, not enough rage)
+function OV.hold.qCheck()
+    local f = OV.hold.fire
+    if not f then return end
+    local cur = OV.hold.current(f)
+    if not f.q then
+        if cur and not f.cast and not OV.hold.casting(f) then f.q = true; f.span = OV.hold.QCAP; OV.hold.say(f, "q") end
+        return
+    end
+    if cur or f.qEnd then return end
+    f.qEnd = GetTime()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.2, function() if OV.hold.fire == f then OV.hold.fire = nil; OV.hold.say(f, "fail") end end)
+    end
 end
 -- one of the player's cast events [e] for spell id [sid] (nil: secret / none): our fired hold's -> its word to the app and the top bar
 function OV.hold.castEv(e, sid)
@@ -9279,6 +9489,27 @@ function OV.hold.castEv(e, sid)
         f.span = (now - f.t) + (d or 0) + 1
     elseif e == "UNIT_SPELLCAST_SUCCEEDED" then
         if f.ch then return end                                         -- a channel succeeds at its start: its stop ends it
+        -- the fix pass (the user: "if I dont instantly get a [gcd] then [don't] linger on it"): a hold that WENT OFF with no cast (an
+        -- instant, or a queued swing / spell landing) is ok only with a GCD of its own (its gcd word first) - else none, back at once (an
+        -- interrupt, a trinket, a racial off the GCD; a next-swing Raptor Strike that landed: the game's own checked ring clears then too).
+        -- An unqueued instant's SUCCEEDED before the none check (OV.hold.NONE_S after the fire): that check says which (f.okd)
+        if not f.cast then
+            if f.q then
+                if not f.gcd then
+                    local gl = OV.hold.gcdLeft(f, true)
+                    if not gl and f.ongcd then gl = OV.hold.gcdLeft(f) or (WC.gcdLearn or 1.5) end
+                    if gl then f.gcd = true; OV.hold.say(f, "gcd", nil, gl) end
+                end
+            else
+                pcall(OV.hold.gcdCheck)
+                if not f.gcd and now - f.t < OV.hold.NONE_S then f.okd = true return end
+            end
+            if not f.gcd then
+                OV.hold.fire = nil
+                OV.hold.say(f, "none")
+                return
+            end
+        end
         st = "ok"
     elseif e == "UNIT_SPELLCAST_CHANNEL_STOP" then
         st = "ok"
@@ -9288,11 +9519,7 @@ function OV.hold.castEv(e, sid)
         return
     end
     if st ~= "cast" then OV.hold.fire = nil end
-    pcall(function()
-        WC.send(WC.encode({ type = "holdcast", v = PV, pos = f.pos, lay = f.lay, st = st, d = d and math.floor(d * 1000 + 0.5) / 1000 or nil }))
-        WC.push()
-    end)
-    if type(WC.holdCast) == "function" then pcall(WC.holdCast, f.pos, st, d) end
+    OV.hold.say(f, st, d)
 end
 -- m195: the router button at game position [pos] keeps a press now (a read of its wc-hk: the top bar's charge ring)
 WC.padMapKept = function(pos)
@@ -9303,12 +9530,16 @@ WC.padMapHold = function() return OV.hold end                          -- the of
 do
     local hf = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED",
-                         "SPELL_UPDATE_COOLDOWN", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR" }) do pcall(hf.RegisterEvent, hf, e) end
+                         "SPELL_UPDATE_COOLDOWN", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR",
+                         "CURRENT_SPELL_CAST_CHANGED", "PLAYER_SWING" }) do pcall(hf.RegisterEvent, hf, e) end   -- m199: the queue's end
     pcall(function() hf:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
     -- m195: the fired hold's own cast (OV.hold.castEv; one word each, only while a fired hold is followed)
     for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED",
                          "UNIT_SPELLCAST_CHANNEL_STOP" }) do pcall(function() hf:RegisterUnitEvent(e, "player") end) end
     hf:SetScript("OnEvent", function(_, e, a1, a2, a3)
+        -- m199: a fired hold's queue (queued / its end) and its GCD
+        if e == "CURRENT_SPELL_CAST_CHANGED" or e == "PLAYER_SWING" then if OV.hold.fire then pcall(OV.hold.qCheck) end return end
+        if e == "SPELL_UPDATE_COOLDOWN" and OV.hold.fire then pcall(OV.hold.gcdCheck) end
         if e:sub(1, 15) == "UNIT_SPELLCAST_" and OV.hold.fire then pcall(OV.hold.castEv, e, SN(function() return a3 end)) end
         if e:sub(1, 15) == "UNIT_SPELLCAST_" and e ~= "UNIT_SPELLCAST_SUCCEEDED" then return end
         if e == "PLAYER_ENTERING_WORLD" then

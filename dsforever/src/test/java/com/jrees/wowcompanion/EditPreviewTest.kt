@@ -119,7 +119,7 @@ class EditPreviewTest {
     @Test fun theChannel() {
         assertEquals(listOf("padtab" to 39, "padtab" to 38, "padtab" to 37, "padtab" to 35), EditPreview.cells(35).map { it.first to it.second })
         assertEquals(32..39, PadMapModel.PAGE3_CODES["edit preview"])
-        val d = PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","v":"m198","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":1,"pv":37}}}"""))!!.dpad!!
+        val d = PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","v":"m199","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":1,"pv":37}}}"""))!!.dpad!!
         assertEquals(37, d.pv)
         val old = PadMapModel.parse(org.json.JSONObject("""{"type":"padmap","v":"m197","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":1}}}"""))!!.dpad!!
         assertNull("an older add-on: no pv", old.pv)

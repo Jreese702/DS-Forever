@@ -118,7 +118,8 @@ object ControllerPictures {
     }
 
     /** m190 Hold time: a face button with its hold spell's badge and (m195) the charge ring filling round the badge (the hold time's
-     *  share: m194's 2 / 3 / 4 looks), the hold point written beside it and, under it, that the hold spell fires on the release */
+     *  share: m194's 2 / 3 / 4 looks), the fire point written beside it and, under it, that the hold spell casts when it is full (round
+     *  1533: the cast at the fill, not on the release) */
     private fun holdTime(c: Canvas, look: Look) {
         val cx = 84f; val cy = 52f; val r = 30f
         pF.color = Color.rgb(16, 16, 18); c.drawCircle(cx, cy, r + 5f, pF)
@@ -136,14 +137,14 @@ object ControllerPictures {
         glyph(c, "a", cx + r * 0.75f, cy - r * 0.62f, 22f)
         pF.color = Color.rgb(236, 224, 196); pF.textSize = 22f; pF.textAlign = Paint.Align.LEFT
         c.drawText(HoldCast.holdWord(), 136f, cy + 8f, pF)
-        // m194: the hold spell fires when you let go - fitted to the well's width (W) in every language
+        // round 1533: the hold spell casts when the ring is full - fitted to the well's width (W) in every language
         val letGo = Tr.t(LET_GO)
         pF.color = Color.rgb(196, 184, 160); pF.textSize = 18f
         while (pF.textSize > 11f && pF.measureText(letGo) > W - 136f - 6f) pF.textSize -= 1f
         c.drawText(letGo, 136f, cy + 34f, pF)
     }
-    /** m194: the Hold time tile's second line */
-    const val LET_GO = "then let go"
+    /** m194 / round 1533: the Hold time tile's second line */
+    const val LET_GO = "casts when full"
 
     // ---------------------------------------------------------------- Buttons
 

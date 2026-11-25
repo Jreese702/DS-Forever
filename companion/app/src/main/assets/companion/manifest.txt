@@ -1,5 +1,5 @@
 set 431
-9332e451cfe4fb516cd2810ccef11d29  WowCompanion/ActionBar.lua
+b924356c049c15c3f86a7927e400c3da  WowCompanion/ActionBar.lua
 fa7c9554ace1e551fa2c9c02411b05c6  WowCompanion/Bags.lua
 46f82d8e20a3c731f5f0b8983c8d2820  WowCompanion/Chat.lua
 737413c5fe597fe3a9182316cea7ad04  WowCompanion/Coords.lua
@@ -54,7 +54,7 @@ f1840c7e91c2adfc61dc1260c9f1c75f  WowCompanionProfessions/WowCompanionProfession
 7cae6895d42cba3a4a2cd3f925bcaf86  WowCompanionSocial/Social.lua
 38cf4918272df95d07b567a546751a46  WowCompanionSocial/WowCompanionSocial.toc
 55d69f984b1ebba81cc7a96fc2ff91c8  WowCompanionSpells/Book.lua
-c8fce2c80a65b2ad340b50398c556c36  WowCompanionSpells/PadMap.lua
+a73fcc4d278a2c32ecd31008c43dd806  WowCompanionSpells/PadMap.lua
 6c5d58e64ad480dad19f8403b4dffc28  WowCompanionSpells/PadTabCtl.lua
 d186209188cee2623517add47e309db3  WowCompanionSpells/Radial.lua
 96b3692ce7dd4b14a3c59cf0d853b19e  WowCompanionSpells/Spells.lua

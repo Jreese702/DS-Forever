@@ -1715,6 +1715,8 @@ fun XServerScreen(
                     Lifecycle.Event.ON_RESUME -> {
                         Timber.d("Synchronizing XServerView renderer for lifecycle event: $event")
                         syncRendererToCurrentLifecycleState()
+                        // DS Forever, hold to cast round 1533: away from the game screen nothing fires early; back, a forced button that reads up is let go
+                        if (event == Lifecycle.Event.ON_PAUSE) com.jrees.wowcompanion.HoldCast.focusLost() else com.jrees.wowcompanion.HoldCast.focusBack()
                         if (event == Lifecycle.Event.ON_RESUME) {
                             xServerView?.getxServer()?.winHandler?.reassertPrimaryController()
                         }

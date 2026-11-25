@@ -30,6 +30,7 @@ object PressLog {
 
     private val presses = ArrayDeque<String>()
     private val refusals = ArrayDeque<String>()
+    private val holds = ArrayDeque<String>()
     private val noneAt = HashMap<String, Long>()
     private val routedAt = HashMap<String, Long>()
     private val refusedAt = HashMap<String, Long>()
@@ -134,14 +135,22 @@ object PressLog {
         return l
     }
 
-    /** the problem report's section: the last presses, then the last refusals, oldest first */
+    /** round 1533 (hold to cast fires at the fill): one of HoldCast's WCHOLD lines ("fire ok n=3 ft=17 slack=40ms", "fire SHORT ...",
+     *  "fire unanswered ..."), kept for the report next to the presses (our own words and numbers only) */
+    @Synchronized fun hold(line: String, nowMs: Long = System.currentTimeMillis()) {
+        holds.addLast("${hms(nowMs)} ${line.filter { it.code in 32..126 }.take(120)}"); while (holds.size > KEEP_REFUSED) holds.removeFirst()
+    }
+
+    /** the problem report's section: the last presses, the hold fires, then the last refusals, oldest first */
     @Synchronized fun lines(): List<String> = buildList {
         add("Presses that reached our buttons (the last ${presses.size} of at most $KEEP, key-downs, oldest first):")
         if (presses.isEmpty()) add("  (none this run)") else presses.forEach { add("  $it") }
+        add("Hold to cast fires at the fill (the last ${holds.size}):")
+        if (holds.isEmpty()) add("  (none this run)") else holds.forEach { add("  $it") }
         add("Changes the game's add-on refused (the last ${refusals.size}):")
         if (refusals.isEmpty()) add("  (none this run)") else refusals.forEach { add("  $it") }
     }
 
     /** tests */
-    @Synchronized internal fun reset() { presses.clear(); refusals.clear(); noneAt.clear(); routedAt.clear(); refusedAt.clear(); refusedCount.clear(); swapLast = null }
+    @Synchronized internal fun reset() { presses.clear(); refusals.clear(); holds.clear(); noneAt.clear(); routedAt.clear(); refusedAt.clear(); refusedCount.clear(); swapLast = null }
 }

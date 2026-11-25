@@ -23,6 +23,13 @@ facecast (hk, path slothold); (4) the app's map (`holdmap`: display only now); (
 cooldowns; (7) the Controller room (Y = the hold chooser; a game binding on the button: hold-bind, no hold, its old hold dropped);
 (8) THE BIND BOX times its own press: a face button held for the hold time (its release brings it) = its hold spell, a short one the
 normal bind; a D-pad press waits for its release / the hold time; (9) no trace.
+ROUND 1533 (PadMap m199; the user on test 1532, 2026-11-25: "I also want this to cast right when the hold bar is filled, not when its
+released"; "When the ability is casting it should show the ability with a golden ring, a great example of this is raptor strikes normal
+behavior ... with instant cast abilities if I dont instantly get a [gcd] then [don't] linger on it"), section (12): the KEEP WORD (a
+kept key-down says facecast hk keep - pos, lay, key, t, need, hid - and pushes, on both post-click hooks: Y and LT + D-pad Up; never a
+down); the rel word's hn / need / sl; cn and ft in the padmap's hold and the holdmap, ft's buckets and its hysteresis, holdSecs = the
+fire point F; a fight keeps cn the clock's; holdcast's q (a queued next-swing spell, no cut at 3 s; its end: ok with its SUCCEEDED,
+else fail), gcd (gl), none (0.15 s: no GCD, no cast, not queued), a cast-time spell's wait for its START; nothing secure added.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -187,9 +194,10 @@ def tapped(u, btn):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m198"' in pm and 'm197 THE 1531 MERGE OF feat/hold-cast' in pm and 'm196 THE 1530 MERGE OF TEST 1529' in pm
+check('local PV = "m199"' in pm and 'm199 HOLD TO CAST ROUND 1533, THE FIRE AT THE THRESHOLD' in pm and 'm198 EDIT HOME' in pm
+      and 'm197 THE 1531 MERGE OF feat/hold-cast' in pm and 'm196 THE 1530 MERGE OF TEST 1529' in pm
       and 'm195 THE HOLD SPELL TAKES THE BUTTON' in pm and 'm194 HOLD TO CAST IN THE GAME' in pm and 'm193 THE 1528b MERGE OF feat/hold-cast' in pm
-      and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m197 above both sides (m196, m195 / m194, m193, m190, m189 kept)')
+      and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m199 (m198, m197, m196, m195 / m194, m193, m190, m189 kept)')
 check('local CV = "p63"' in ptc and 'p63 THE 1531 MERGE OF feat/hold-cast' in ptc and 'p62 HOLD TO CAST IN THE GAME' in ptc
       and 'p61 THE 1528b MERGE OF feat/hold-cast' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'p59 HOLD TO CAST' in ptc,
       '0. PadTabCtl p63 (p62, p61, p60, p59 kept)')
@@ -199,9 +207,9 @@ check('local BV = "b85"' in bk and 'b84 THE 1531 MERGE OF feat/hold-cast' in bk 
       and 'for k = 0, 1 do P3[26 + k]' in bk
       and 'for k = 0, 2 do P3[29 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdTicks) == "function" then pcall(pm.holdTicks, 2 + k) end end end' in bk,
       '0. Book b84 (b83, b82, b81 kept): the swing 26 / 27, the hold chooser 28, the hold time 29 / 30 / 31')
-check('local NB = { V = "nbar24"' in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
+check('local NB = { V = "nbar25"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
       and 'nbar20 THE 1528b MERGE OF feat/hold-cast' in ab and 'nbar18 HOLD TO CAST' in ab,
-      '0. ActionBar nbar22 (nbar21, nbar20, nbar18 kept): tools/test_hold_wings.py tests it')
+      '0. ActionBar nbar25 (nbar22, nbar21, nbar20, nbar18 kept): tools/test_hold_wings.py tests it')
 
 # ---------------------------------------------------------------- (1) NO PROBE, THE CLOCK
 L = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM" }')
@@ -271,7 +279,9 @@ check(u['kind'] == 'slothold' and (macrolines(u) or [''])[-1] == '/cast Healing 
 fc = [x for x in docs(L, 0, 'facecast') if x.get('hk') == 'rel']
 check(fc and fc[-1].get('path') == 'slothold' and fc[-1].get('down') is True and fc[-1].get('kind') == 'slothold',
       '3. the release\'s facecast: the press that acted (down, hk rel, path slothold)', fc[-1:] if fc else None)
-check(not [x for x in docs(L, 0, 'facecast') if x.get('kind') == 'holdkeep'], '3. a kept key-down says nothing to the press log')
+keeps = [x for x in docs(L, 0, 'facecast') if x.get('kind') == 'holdkeep']
+check(keeps and all(x.get('hk') == 'keep' and x.get('down') is None for x in keeps),
+      '3. m199: a kept key-down says only the keep word (hk keep, kind holdkeep), never a down (the press log ignores it)', keeps[-1:])
 # the bare A: a tap is the game's own Jump button, pressed and let go at the release
 d, u = hold(L, 'PAD1', 1)
 check(d['kind'] == 'holdkeep' and not d['acts'] and tapped(u, 'GPTop8'), '3. the bare A tapped (1 look): the game\'s own A (Jump) at the release', u)
@@ -477,8 +487,9 @@ LB.execute('BK.startBind({ t = 1, slot = 1, id = 403 }); WowCompanion.padMapHold
 mb = last(LB, 'holdmap', n0)
 check(mb.get('why') == 'box' and 'ltrt:6' in (mb.get('b') or '') and 'bare:7' not in (mb.get('b') or ''),
       '8. the Bind box waiting: every place may be held (the plain B is its way out)', mb)
-# LT + X held 0.7 s (more than Normal's 0.6 s), its release brings it to the box
-LB.execute('PADSTATE = { [LT_I] = true, [3] = true }; BOXRUN(0.7, 0.05); PADSTATE = { [LT_I] = true }; BK.press("PAD3"); PADSTATE = {}')
+# LT + X held 0.75 s (more than Normal's fire point: 0.71 s with the game's frame unknown, m199), its release brings it to the box
+check(abs(a(LB, 'WowCompanion.padMap.holdSecs()') - 0.71) < 1e-9, "8. (m199: the box's hold time is the fire point F, 0.71 s)", a(LB, 'WowCompanion.padMap.holdSecs()'))
+LB.execute('PADSTATE = { [LT_I] = true, [3] = true }; BOXRUN(0.75, 0.05); PADSTATE = { [LT_I] = true }; BK.press("PAD3"); PADSTATE = {}')
 acks = [x for x in docs(LB, n0, 'spellsack') if x.get('op') == 'bind']
 x = acks[-1] if acks else {}
 check(x.get('ok') is True and (x.get('pad') or {}).get('hold') is True and (x.get('pad') or {}).get('b') == 2 and (x.get('pad') or {}).get('p') == 5,
@@ -557,6 +568,262 @@ LT_.execute('WowCompanion.padMapHold().fire = nil')
 edge(LT_, 'PAD4', True, lt=True); edge(LT_, 'PAD4', False, lt=True)
 check(a(LT_, 'WowCompanion.padMapHold().fire') is None, '11. a tap follows nothing')
 check(not lst(LT_, 'VIOL') and not lst(LT_, 'SNIPERR') and not lst(LT_, 'ERRS'), '11. nothing blocked, no error', clean(LT_))
+
+# ---------------------------------------------------------------- (12) m199: THE FIRE AT THE THRESHOLD (the add-on's half)
+K = world('C_Spell.IsCurrentSpell = function(id) return CURRENT[id] == true end; CURRENT = {}; '
+          'C_Spell.GetSpellInfo = function(id) return { castTime = CASTTIME[id] or 0 } end; CASTTIME = {}')
+K.execute('WowCompanion.padMap.putHold(1, 2, 6, "spell", 2); WowCompanion.padMap.putHold(1, 1, 8, "spell", 1); ACTIONINFO[14] = { "spell", 403 }')
+check(a(K, 'WowCompanion.padMap.putHold(1, 2, 2, "spell", 3)') is True, '12. (LT + D-pad Up: Lightning Shield as its hold)')
+K.execute('advance(1)')
+# 21. THE KEEP WORD, on both post-click hooks (the face buttons' and the D-pad's)
+for key, lt, pos, hid, nm in (('PAD4', True, 6, 331, 'LT + Y'), ('PADDUP', True, 2, 324, 'LT + D-pad Up')):
+    n0, p0 = nsent(K), a(K, 'PUSHES')
+    d = edge(K, key, True, lt=lt)
+    fc = docs(K, n0, 'facecast')
+    kw = fc[0] if fc else {}
+    check(d['kind'] == 'holdkeep' and len(fc) == 1 and kw.get('hk') == 'keep' and kw.get('kind') == 'holdkeep' and kw.get('pos') == pos
+          and kw.get('lay') == 'lt' and kw.get('key') == key and isinstance(kw.get('t'), (int, float)) and kw.get('need') == 3
+          and kw.get('hid') == hid and kw.get('down') is None and a(K, 'PUSHES') > p0,
+          '12. %s kept: ONE facecast, the keep word (hk keep, pos %d, lay lt, key %s, t, need 3, hid %d), no down, pushed' % (nm, pos, key, hid),
+          (d['kind'], fc))
+    check(not d['acts'], '12. ... nothing acts on its key-down (as before)', d['acts'])
+    K.execute('LOOK(3); NOW = NOW + 0.05')
+    n1 = nsent(K)
+    u = edge(K, key, False, lt=lt)
+    rel = [x for x in docs(K, n1, 'facecast') if x.get('hk') == 'rel']
+    rw = rel[-1] if rel else {}
+    # 22. the rel word's hn / need / sl
+    check(u['kind'] == 'slothold' and rw.get('hn') == 3 and rw.get('need') == 3 and isinstance(rw.get('sl'), (int, float)) and rw['sl'] >= 0.05 - 1e-6,
+          '12. %s released after 3 looks: the rel word says hn 3, need 3, sl (the seconds since the 3rd look, >= 0.05)' % nm, rw)
+# a tap: the keep word, then the rel word of the tap (no slack: the need never came)
+n0 = nsent(K)
+edge(K, 'PAD4', True, lt=True); K.execute('LOOK(1)'); u = edge(K, 'PAD4', False, lt=True)
+fc = docs(K, n0, 'facecast')
+check([x.get('hk') for x in fc] == ['keep', 'rel'] and fc[-1].get('kind') == 'native' and fc[-1].get('hn') == 1 and fc[-1].get('sl') is None,
+      '12. a tap: its keep word, then its release (the tap: hn 1, no slack) - the app closes the press on it', fc)
+# a press the router does not keep: a down word, never a keep
+n0 = nsent(K)
+edge(K, 'PAD4', True); edge(K, 'PAD4', False)
+fc = docs(K, n0, 'facecast')
+check(fc and not [x for x in fc if x.get('hk') == 'keep'] and fc[0].get('down') is True, '12. the bare Y (no hold): no keep word, its down as before', fc)
+# 23. cn / ft: the padmap's hold and the holdmap; the frame meter; holdSecs = F
+K.execute('WowCompanion.padMap.emit(true)')
+hd = (last(K, 'padmap').get('m') or {}).get('hold') or {}
+check(hd.get('cn') == 3 and hd.get('n') == 3 and hd.get('ft') is None, "12. the padmap's hold: cn (the clock's looks) 3; ft none measured yet", hd)
+check(abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.710) < 1e-9, '12. holdSecs with ft unknown: F(3, 25) = 0.710 s', a(K, 'WowCompanion.padMap.holdSecs()'))
+K.execute('WowCompanion.padMapHold().tick(true)')
+ftf = 'WowCompanion.padMapHold().ftf'
+check(a(K, ftf + ' ~= nil') and a(K, ftf + ':IsShown()') is True, '12. the frame meter: our own plain frame, shown while the holdmap says on', a(K, ftf + ' ~= nil'))
+check(a(K, ftf + '._tpl') == '' and 'Secure' not in (a(K, ftf + '._tpl') or ''), '12. ... a plain frame (no template)')
+
+
+def frames(L, ms, secs):
+    L.execute('local f = WowCompanion.padMapHold().ftf; local t = 0; while t < %f - 1e-9 do NOW = NOW + %f; f.scripts.OnUpdate(f, %f); t = t + %f end'
+              % (secs, ms / 1000.0, ms / 1000.0, ms / 1000.0))
+
+
+frames(K, 16, 2.5)
+check(a(K, 'WowCompanion.padMapHold().ft') == 17, '12. 60 fps (16 ms frames): ft 17', a(K, 'WowCompanion.padMapHold().ft'))
+check(abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.678) < 1e-9, '12. holdSecs = F(3, 17) = 0.678 s (60 fps)', a(K, 'WowCompanion.padMap.holdSecs()'))
+frames(K, 40, 0.04)
+check(a(K, 'WowCompanion.padMapHold().ft') == 50, '12. one 40 ms frame: raised AT ONCE (the next bucket up: 50)', a(K, 'WowCompanion.padMapHold().ft'))
+frames(K, 16, 3)
+still = a(K, 'WowCompanion.padMapHold().ft')
+frames(K, 16, 3)
+check(still == 50 and a(K, 'WowCompanion.padMapHold().ft') == 17, '12. ... lowered only after 5 s of short frames (3 s: still 50; 6 s: 17)',
+      (still, a(K, 'WowCompanion.padMapHold().ft')))
+n0 = nsent(K)
+K.execute('tick(0.25)')
+hm = last(K, 'holdmap', n0) or last(K, 'holdmap')
+K.execute('WowCompanion.padMapHold().tick(true)')
+hm = last(K, 'holdmap')
+check(hm.get('cn') == 3 and hm.get('ft') == 17 and hm.get('why') == 'on', '12. the holdmap says cn 3 and ft 17', hm)
+check(a(K, 'WowCompanion.padMap.holdTicks(2)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.461) < 1e-9
+      and a(K, 'WowCompanion.padMap.holdTicks(4)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.895) < 1e-9,
+      '12. Short / Long at 60 fps: 0.461 / 0.895 s', a(K, 'WowCompanion.padMap.holdSecs()'))
+K.execute('WowCompanion.padMap.holdTicks(3)')
+# a fight with the hold time changed: cn stays the clock's (the wish waits for the fight's end)
+K.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; driveStates(); advance(1); WowCompanion.padMap.holdTicks(2); WowCompanion.padMapHold().tick(true)')
+hm = last(K, 'holdmap')
+check(hm.get('cn') == 3 and a(K, 'WowCompanion.padMap.holdTicksNow()') == 2 and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.678) < 1e-9,
+      "12. in a fight a new hold time is the wish only: cn (the clock's) stays 3, holdSecs F(3)", (hm, a(K, 'WowCompanion.padMap.holdTicksNow()')))
+K.execute('COMBAT = false; driveStates(); fire("PLAYER_REGEN_ENABLED"); advance(1); WowCompanion.padMapHold().tick(true)')
+check(last(K, 'holdmap').get('cn') == 2, "12. ... the fight's end: the clock takes it, cn 2", last(K, 'holdmap'))
+K.execute('WowCompanion.padMap.holdTicks(3); WowCompanion.padMapHold().tick(true)')
+# 24. THE FOLLOW: q / ok / fail / none / gcd / a cast's START
+def fire_hold(L):
+    edge(L, 'PAD4', True, lt=True); L.execute('LOOK(3)')
+    n = nsent(L)
+    u = edge(L, 'PAD4', False, lt=True)
+    return n, u
+
+
+K.execute('CURRENT[331] = true')
+n0, u = fire_hold(K)
+hc = docs(K, n0, 'holdcast')
+check(u['kind'] == 'slothold' and [x.get('st') for x in hc] == ['q'] and hc[0].get('pos') == 6 and hc[0].get('lay') == 'lt',
+      '12. a next-swing hold (Healing Wave current at the fire: queued): holdcast q at once', hc)
+K.execute('advance(4); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gx", 8042)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q'] and a(K, 'WowCompanion.padMapHold().fire ~= nil'),
+      '12. ... 4 s queued: no none, no cut at 3 s (the follow waits for the swing)', docs(K, n0, 'holdcast'))
+K.execute('CURRENT[331] = nil; fire("CURRENT_SPELL_CAST_CHANGED"); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g9", 331)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'none'] and a(K, 'WowCompanion.padMapHold().fire') is None,
+      '12. ... the swing landed (no longer current, its SUCCEEDED) with no GCD of its own: none - back at once, as the game\'s own '
+      'checked ring (the fix pass; was ok + 0.3 s), the follow ends', docs(K, n0, 'holdcast'))
+K.execute('advance(1)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'none'], '12. ... no fail after it', docs(K, n0, 'holdcast'))
+K.execute('CURRENT[331] = true')
+n0, u = fire_hold(K)
+K.execute('advance(1); CURRENT[331] = nil; fire("CURRENT_SPELL_CAST_CHANGED")')
+mid = [x.get('st') for x in docs(K, n0, 'holdcast')]
+K.execute('advance(0.3)')
+check(mid == ['q'] and [x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'fail'],
+      '12. unqueued (no longer current, no SUCCEEDED within 0.2 s): fail', (mid, docs(K, n0, 'holdcast')))
+# an instant with no GCD and no queue: none at 0.15 s
+n0, u = fire_hold(K)
+K.execute('advance(0.1)')
+early = [x.get('st') for x in docs(K, n0, 'holdcast')]
+K.execute('advance(0.1)')
+hc = docs(K, n0, 'holdcast')
+check(early == [] and [x.get('st') for x in hc] == ['none'] and a(K, 'WowCompanion.padMapHold().fire') is None,
+      '12. no GCD, no cast, not queued: none 0.15 s after the fire (nothing at 0.1 s)', (early, hc))
+# an instant on the GCD: gcd with gl at the first SPELL_UPDATE_COOLDOWN that shows it
+n0, u = fire_hold(K)
+K.execute('CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW }; NOW = NOW + 0.05; fire("SPELL_UPDATE_COOLDOWN")')
+hc = docs(K, n0, 'holdcast')
+check([x.get('st') for x in hc] == ['gcd'] and abs((hc[0].get('gl') or 0) - 1.45) < 0.01, '12. its GCD shown: holdcast gcd, gl = 1.45 s left', hc)
+K.execute('advance(0.3)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['gcd'], '12. ... no none after a GCD', docs(K, n0, 'holdcast'))
+K.execute('CD[331] = nil; NOW = NOW + 2; fire("SPELL_UPDATE_COOLDOWN"); WowCompanion.padMapHold().fire = nil')
+# a spell with a cast time: waits for its START up to 0.5 s
+K.execute('CASTTIME[331] = 2500')
+n0, u = fire_hold(K)
+K.execute('advance(0.3)')
+w = [x.get('st') for x in docs(K, n0, 'holdcast')]
+K.execute('CASTEND = NOW + 2.2; fire("UNIT_SPELLCAST_START", "player", "g5", 331); advance(0.5)')
+hc = docs(K, n0, 'holdcast')
+check(w == [] and [x.get('st') for x in hc] == ['cast'], '12. a 2.5 s cast: no none while its START is awaited (0.3 s), then cast', (w, hc))
+K.execute('CASTEND = nil; WowCompanion.padMapHold().fire = nil')
+n0, u = fire_hold(K)
+K.execute('advance(0.45)')
+w = [x.get('st') for x in docs(K, n0, 'holdcast')]
+K.execute('advance(0.1)')
+check(w == [] and [x.get('st') for x in docs(K, n0, 'holdcast')] == ['none'], '12. ... no START by 0.5 s: none then', (w, docs(K, n0, 'holdcast')))
+K.execute('CASTTIME[331] = nil')
+# 26. THE FIX PASS (two reviews of round 1533)
+# (a) the fired hold's first words FOLLOW the press's rel word, on both post-click hooks (the face buttons' and the D-pad's): Home's
+# takeover for a release before the fire point is started by the rel word, a q said before it was dropped (a queued Raptor Strike's
+# face went at the 2 s fallback)
+def order(L, n0):
+    return [(x.get('type'), x.get('hk') or x.get('st')) for x in docs(L, n0) if x.get('type') in ('facecast', 'holdcast')]
+
+
+K.execute('CURRENT[331] = true')
+n0, u = fire_hold(K)
+o = order(K, n0)
+check(u['kind'] == 'slothold' and o == [('facecast', 'rel'), ('holdcast', 'q')],
+      '26. LT + Y (the face buttons\' hook): its rel word, THEN the hold\'s q', o)
+K.execute('CURRENT[331] = nil; fire("CURRENT_SPELL_CAST_CHANGED"); advance(0.3); WowCompanion.padMapHold().fire = nil')
+K.execute('CURRENT[324] = true')
+edge(K, 'PADDUP', True, lt=True); K.execute('LOOK(3)')
+n0 = nsent(K)
+u = edge(K, 'PADDUP', False, lt=True)
+o = order(K, n0)
+check(u['kind'] == 'slothold' and o == [('facecast', 'rel'), ('holdcast', 'q')],
+      '26. LT + D-pad Up (the D-pad\'s hook): its rel word, THEN the hold\'s q', o)
+K.execute('CURRENT[324] = nil; fire("CURRENT_SPELL_CAST_CHANGED"); advance(0.3); WowCompanion.padMapHold().fire = nil')
+n0, u = fire_hold(K)
+K.execute('CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW }')
+K.execute('fire("SPELL_UPDATE_COOLDOWN")')
+o = order(K, n0)
+check(o[:2] == [('facecast', 'rel'), ('holdcast', 'gcd')], '26. ... an immediate gcd follows the rel word too', o)
+K.execute('fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gg", 331)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['gcd', 'ok'], '26. an instant ON the GCD that went off: gcd, then ok (its GCD keeps the face)',
+      docs(K, n0, 'holdcast'))
+K.execute('CD[331] = nil; NOW = NOW + 2; fire("SPELL_UPDATE_COOLDOWN"); WowCompanion.padMapHold().fire = nil')
+# (b) an instant OFF the GCD whose SUCCEEDED comes fast (a normal connection: under the 0.15 s none check): none, never ok (+0.3 s)
+n0, u = fire_hold(K)
+K.execute('advance(0.05); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gq", 331)')
+early = [x.get('st') for x in docs(K, n0, 'holdcast')]
+K.execute('advance(0.15)')
+hc = [x.get('st') for x in docs(K, n0, 'holdcast')]
+check(early == [] and hc == ['none'] and a(K, 'WowCompanion.padMapHold().fire') is None,
+      '26. an interrupt (off the GCD) that went off at 0.05 s: none at the 0.15 s check, no ok (no linger)', (early, hc))
+K.execute('advance(1)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['none'], '26. ... nothing after it', docs(K, n0, 'holdcast'))
+# ... its SUCCEEDED after the check (a slow server): none at the check, the late SUCCEEDED says nothing
+n0, u = fire_hold(K)
+K.execute('advance(0.3); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gr", 331)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['none'], '26. ... a slow server: none at 0.15 s, the late SUCCEEDED nothing', docs(K, n0, 'holdcast'))
+# ... another spell's GCD that started 0.3 s BEFORE the fire (a D-pad tap) is not the interrupt's
+K.execute('CD[331] = { isActive = true, isOnGCD = false, duration = 15, startTime = NOW }; WowCompanion.gcdRun = { s = NOW - 0.3, d = 1.5 }')
+n0, u = fire_hold(K)
+K.execute('advance(0.05); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gs", 331); advance(0.15)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['none'], "26. ... a D-pad spell's GCD 0.3 s before the fire: still none", docs(K, n0, 'holdcast'))
+K.execute('CD[331] = nil; WowCompanion.gcdRun = nil')
+# ... its SUCCEEDED before the GCD read showed (the check at 0.15 s sees it): gcd, ok
+n0, u = fire_hold(K)
+K.execute('advance(0.02); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gt", 331)')
+K.execute('CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW - 0.02 }; advance(0.15)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['gcd', 'ok'], '26. ... SUCCEEDED before its GCD read: the 0.15 s check says gcd, ok',
+      docs(K, n0, 'holdcast'))
+K.execute('CD[331] = nil; NOW = NOW + 2; fire("SPELL_UPDATE_COOLDOWN"); WowCompanion.padMapHold().fire = nil')
+# (c) a QUEUED on-GCD spell that goes off (the game's spell-queue window: queued in the last GCD's end, current, its GCD read in the
+# SPELL_UPDATE_COOLDOWN handler): gcd, then ok - its own GCD keeps the face; another spell's GCD while a next-swing one waits is not its
+K.execute('CURRENT[331] = true')
+n0, u = fire_hold(K)
+K.execute('CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW - 1.2 }; fire("SPELL_UPDATE_COOLDOWN")')
+mid = [x.get('st') for x in docs(K, n0, 'holdcast')]
+K.execute('advance(0.3); CD[331] = { isActive = true, isOnGCD = true, duration = 1.5, startTime = NOW }; CURRENT[331] = nil; '
+          'fire("CURRENT_SPELL_CAST_CHANGED"); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gu", 331)')
+hc = docs(K, n0, 'holdcast')
+check(mid == ['q'] and [x.get('st') for x in hc] == ['q', 'gcd', 'ok'] and abs((hc[1].get('gl') or 0) - 1.5) < 0.01,
+      '26. queued in the spell-queue window (the last GCD running: no gcd word for it), then off: gcd 1.5, ok', (mid, hc))
+K.execute('CD[331] = nil; NOW = NOW + 2; fire("SPELL_UPDATE_COOLDOWN"); WowCompanion.padMapHold().fire = nil')
+K.execute('CURRENT[331] = true')
+n0, u = fire_hold(K)
+K.execute('advance(1); WowCompanion.gcdRun = { s = NOW, d = 1.5 }; CURRENT[331] = nil; fire("CURRENT_SPELL_CAST_CHANGED"); '
+          'fire("UNIT_SPELLCAST_SUCCEEDED", "player", "gv", 331)')
+check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'none'],
+      "26. a next-swing spell landing while ANOTHER spell's GCD runs (started while it waited): none (that GCD is not its own)",
+      docs(K, n0, 'holdcast'))
+K.execute('WowCompanion.gcdRun = nil; advance(0.3)')
+# (d) THE GAME'S FRAME: no cap at 50 ms (a sustained 12 fps took the tap: F(3, 50) 810 ms < the 3rd look's 849 ms)
+frames(K, 83, 2.5)
+check(a(K, 'WowCompanion.padMapHold().ft') == 84 and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.946) < 1e-9,
+      '26. a sustained 12 fps (83 ms frames): ft 84, F(3, 84) = 0.946 s (past the 3rd look\'s 3 x 283 = 0.849 s)',
+      (a(K, 'WowCompanion.padMapHold().ft'), a(K, 'WowCompanion.padMap.holdSecs()')))
+frames(K, 300, 0.3)
+check(a(K, 'WowCompanion.padMapHold().ft') == 134, '26. ... a 300 ms frame: the last bucket, 134', a(K, 'WowCompanion.padMapHold().ft'))
+frames(K, 16, 7)
+check(a(K, 'WowCompanion.padMapHold().ft') == 17, '26. ... 60 fps again for 7 s: 17', a(K, 'WowCompanion.padMapHold().ft'))
+# ... the meter runs whenever a hold exists on EITHER tab (holds only on In combat: "none" out of combat, the pull read a stale ft)
+FT = world()
+FT.execute('WowCompanion.padMap.putHold(1, 2, 6, "spell", 2, "combat"); advance(1); WowCompanion.padMapHold().tick(true)')
+hm = last(FT, 'holdmap')
+check(hm.get('why') == 'none' and a(FT, 'WowCompanion.padMapHold().ftf ~= nil') and a(FT, 'WowCompanion.padMapHold().ftf:IsShown()') is True,
+      '26. a hold only on In combat, out of combat (why none): the frame meter runs (ft current at the pull)',
+      (hm, a(FT, 'WowCompanion.padMapHold().ftf ~= nil')))
+frames(FT, 33, 2.5)
+FT.execute('WowCompanion.padMapHold().tick(true)')
+check(last(FT, 'holdmap').get('ft') == 34, '26. ... measured out of combat: the holdmap says ft 34 before the fight', last(FT, 'holdmap'))
+FT.execute('fire("LOADING_SCREEN_ENABLED")')
+check(a(FT, 'WowCompanion.padMapHold().ftf:IsShown()') is False, '26. ... a loading screen: the meter stops')
+FT.execute('fire("LOADING_SCREEN_DISABLED")')
+check(a(FT, 'WowCompanion.padMapHold().ftf:IsShown()') is True, '26. ... after it: on again')
+FT.execute('local t = WowCompanionSpellsDB.holdBy; for k, r in pairs(t or {}) do r.combat = nil; r.normal = nil end; WowCompanion.padMapHold().tick(true)')
+check(a(FT, 'WowCompanion.padMapHold().ftf:IsShown()') is False, '26. no hold on either tab: the meter stops')
+check(not lst(FT, 'VIOL') and not lst(FT, 'SNIPERR') and not lst(FT, 'ERRS'), '26. nothing blocked, no error', clean(FT))
+
+# 25. nothing secure added: no blocked call, no snippet / handle error, no CVar / binding / macro write; the hook only on our buttons
+check(not lst(K, 'VIOL') and not lst(K, 'SNIPERR') and not lst(K, 'HANDLEERR') and not lst(K, 'ERRS'), '12. nothing blocked, no error', clean(K))
+check(not lst(K, 'SPY'), '12. no SetBinding / SetCVar / macro write', lst(K, 'SPY'))
+hooked = a(K, '(function() local n = 0; for _, f in ipairs(ALLF) do if f.hooks and f.hooks.OnAttributeChanged then '
+              'local nm = f._name or ""; if not (nm:match("^WowCompanionCombatFace%d$") or nm:match("^WowCompanionFaceD%d$")) then return "other " .. nm end; n = n + 1 end end; return n end)()')
+check(hooked == 7, "12. OnAttributeChanged hooked on our own router buttons only (A / X / Y, the D-pad's four; never B)", hooked)
+check('HookScript("OnAttributeChanged"' in pm and pm.count('HookScript("OnAttributeChanged"') == 2
+      and 'if pos ~= 7 then pcall(function() b:HookScript("OnAttributeChanged"' in pm,
+      '12. ... added where the buttons are made (out of combat), never on B')
 
 # ---------------------------------------------------------------- (9) no trace
 check(not lst(L, 'SPY'), '9. no SetBinding / SetCVar / macro write / game window call', lst(L, 'SPY'))
