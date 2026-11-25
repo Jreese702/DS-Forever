@@ -191,6 +191,14 @@ object HoldCast {
         fun cancel(now: Long) = fail(now)
         /** nothing on any face (tests; a new session) */
         fun clear() { pos = -1; layer = -1 }
+        /**
+         * RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)": a trigger-layer hold - LT + X - keeps its takeover on
+         * the main circle after the trigger is let go, until its cast and GCD end or it fails): the band showing layer [li] (0 none,
+         * 1 LT, 2 RT, 3 LT + RT) draws it when [li] only LACKS some of the fired layer's triggers - its own layer, the bare one after
+         * LT + X, any after LT + RT + X - never a layer with a trigger the press did not have (that layer's own buttons). It ends as
+         * ever ([endAt]: its cast / GCD, a fail, [FALLBACK_MS], 15 s), whatever the layer
+         */
+        fun showsOn(li: Int): Boolean = pos >= 0 && layer in 0..3 && li in 0..3 && (li and layer.inv()) == 0
         /** the running GCD ([startMs], [durMs]): the one that started with the hold counts */
         fun gcd(startMs: Long, durMs: Long) { if (pos >= 0 && durMs > 0L && startMs >= t - 500L) gcdEnd = startMs + durMs }
 

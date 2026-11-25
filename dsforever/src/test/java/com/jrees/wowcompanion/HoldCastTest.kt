@@ -186,6 +186,38 @@ class HoldCastTest {
         assertEquals(0f, t.alpha(45_000 + HoldCast.EASE_MS), 0f)
     }
 
+    /**
+     * RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)"): a TRIGGER layer's hold (LT + X) keeps its takeover on the
+     * main circle after the trigger is let go - the band back on the bare layer still shows LT + X's hold spell on that button's face
+     * until its cast and GCD end (or it fails, or the existing timeouts); a layer with a trigger the press did not have (RT, LT + RT) is
+     * that layer's own buttons. LT + RT's hold: either trigger let go (LT alone, RT alone) or both. A bare hold: the bare layer only
+     */
+    @Test fun aTriggerLayersTakeoverStaysOnTheMainCircleAfterTheTriggerIsLetGo() {
+        val t = HoldCast.Takeover()
+        assertFalse("nothing running: on no layer", (0..3).any { t.showsOn(it) })
+        t.start(5, 1, 1_000)                                            // LT + X's hold fired
+        assertTrue("LT held: its own layer", t.showsOn(1))
+        assertTrue("LT let go: the bare layer's main circle keeps it", t.showsOn(0))
+        assertFalse("RT held instead: RT's own buttons", t.showsOn(2))
+        assertFalse("LT + RT held: that layer's own", t.showsOn(3))
+        t.cast(1_800, 1_050); t.gcd(1_050, 1_500)
+        assertEquals("LT let go mid-cast: still on the face", 1f, t.alpha(2_500), 0f)
+        assertEquals("the cast over: back (the takeover's own end, whatever the layer)", 0f, t.alpha(2_850 + HoldCast.EASE_MS), 0f)
+        assertFalse("ended: on no layer", t.showsOn(0))
+        t.start(5, 3, 5_000)                                            // LT + RT + X
+        assertTrue((0..3).all { t.showsOn(it) })
+        t.start(5, 2, 6_000)                                            // RT + X
+        assertTrue(t.showsOn(2) && t.showsOn(0)); assertFalse(t.showsOn(1) || t.showsOn(3))
+        t.start(5, 0, 7_000)                                            // the bare X
+        assertTrue(t.showsOn(0)); assertFalse((1..3).any { t.showsOn(it) })
+        t.fail(7_100)
+        assertEquals("a fail: back at once (no layer keeps it)", 0f, t.alpha(7_100 + HoldCast.EASE_MS), 0f)
+        // the band draws it there: CastView asks showsOn for the layer it shows, and the hold refs of the FIRED layer
+        val cast = src("companion/app/src/main/java/com/jrees/wowcompanion/CastView.kt")
+        assertTrue(cast.contains("if (t.pos != src + 1 || !t.showsOn(li)) return Long.MAX_VALUE"))
+        assertTrue("the fired layer's hold spell, not the shown layer's", cast.contains("val key = t.layer * 8 + src"))
+    }
+
     @Test fun theTakeoverFollowsTheAddonsWords() {
         HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = setOf(bareA)
         var now = 100_000L

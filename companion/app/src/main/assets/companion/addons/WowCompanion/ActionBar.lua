@@ -2,6 +2,10 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar24 RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)"): a trigger layer's hold (LT + X) keeps its
+-- takeover on the main circle after the trigger is let go - drawn on its fired layer and on any layer that only lacks one of its
+-- triggers (the bare one after LT + X; LT or RT alone after LT + RT + X), never on a layer with a trigger the press did not have;
+-- it still ends with its cast and GCD, a fail or NB.HOLD_FALLBACK / 15 s (NB.holdHere; Home's band: HoldCast.Takeover.showsOn).
 -- nbar23 EDIT HOME'S TOP-SCREEN PREVIEW (the user on test 1530, 2026-11-25: "When choosing the top screen options in combat it should
 -- also display the top screen ui so that its easy to visualize"): PadMap m198's preview stands in for the saved flags and the fight's
 -- switch out of combat - the Wings, our top bar with a sample cast and swing, Party mode's lay - at "nbar23 EDIT HOME'S TOP-SCREEN
@@ -2561,7 +2565,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar23", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar24", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -2724,12 +2728,23 @@ WC.holdFired = function(pos, lay)
     if not e then return end
     local now = SN(GetTime) or 0
     b.hto = { t = now, last = now, e = e, set = set, pic = NB.paint(b.hflash, NB.holdIcon(e)) }
-    if b.hto.pic and set == (NB.set or 1) then pcall(b.hflash.SetAlpha, b.hflash, 1); b.hflash:Show() else b.hflash:Hide() end
-    if set == (NB.set or 1) and b.hb and b.tapIcon then NB.paint(b.hb.icon, b.tapIcon) end
+    local here = NB.holdHere(b)                                         -- nbar24 (ruling A): its layer, or one lacking only its triggers
+    if b.hto.pic and here then pcall(b.hflash.SetAlpha, b.hflash, 1); b.hflash:Show() else b.hflash:Hide() end
+    if here and b.hb and b.tapIcon then NB.paint(b.hb.icon, b.tapIcon) end
     pcall(NB.holdCharge, b, now, 1)                                     -- the charge ring goes with the release
 end
--- nbar22: the takeover at [b] drawn on the layer the bar shows now (its own fired layer only)
-function NB.holdHere(b) return b.hto ~= nil and (b.hto.set == nil or b.hto.set == (NB.set or 1)) end
+-- nbar22: the takeover at [b] drawn on the layer the bar shows now. nbar24 RULING A (the user's pick 2026-11-25, "Stay until it ends"):
+-- its own fired layer, or a layer that only LACKS some of its triggers (a trigger let go: the bare one after LT + X / RT + X; the bare,
+-- LT and RT ones after LT + RT + X) - never one with a trigger the press did not have (that layer's own buttons)
+NB.SET_KEEPS = { [1] = { [1] = true }, [2] = { [1] = true, [2] = true }, [3] = { [1] = true, [3] = true },
+    [4] = { [1] = true, [2] = true, [3] = true, [4] = true } }
+function NB.holdHere(b)
+    local o = b.hto
+    if o == nil then return false end
+    if o.set == nil then return true end
+    local k = NB.SET_KEEPS[o.set]
+    return k ~= nil and k[NB.set or 1] == true
+end
 -- PadMap m195's word on the fired hold's own cast at [pos]: "cast" (d = its seconds left), "ok", "fail"
 WC.holdCast = function(pos, st, d)
     local f = NB.f
@@ -2768,7 +2783,7 @@ function NB.holdOver(b, now)
         if b.hb and b.hold then NB.paint(b.hb.icon, NB.holdIcon(b.hold)) end      -- the badge: the hold spell again
         return
     end
-    if not (o.pic and NB.holdHere(b)) then b.hflash:Hide(); return end  -- nbar22: another layer on the bar now
+    if not (o.pic and NB.holdHere(b)) then b.hflash:Hide(); return end  -- nbar22 / nbar24: a layer with a trigger the press lacked
     b.hflash:Show()
     pcall(b.hflash.SetAlpha, b.hflash, a)
 end

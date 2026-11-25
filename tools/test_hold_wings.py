@@ -74,7 +74,7 @@ def boot():
 
 def main():
     ab = open(tnb.AB, encoding="utf-8").read()
-    chk("0. ActionBar nbar21 and its note (nbar18 kept)", 'local NB = { V = "nbar23"' in ab and "nbar21 THE HOLD SPELL ON THE TOP SCREEN" in ab
+    chk("0. ActionBar nbar21 and its note (nbar18 kept)", 'local NB = { V = "nbar24"' in ab and "nbar21 THE HOLD SPELL ON THE TOP SCREEN" in ab
         and "nbar18 HOLD TO CAST" in ab)
     L, G = boot()
     NB = G.WowCompanion.nbar
@@ -177,13 +177,24 @@ def main():
 local pm = WowCompanion.padMap
 pm.holdAt = function(page, set, pos, tab) if set == 1 then return HOLDS[pos] elseif set == 2 then return HOLDS2[pos] end end
 WC.gcdRun = nil; LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
-    chk("3. LT + X's hold fired with the bare layer on the bar: no takeover drawn there (never the bare X's hold spell)",
-        b[5].hto is not None and not b[5].hflash.shown, (b[5].hto is not None, b[5].hflash.shown, b[5].hflash.tex))
+    # RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)"): a trigger layer's hold keeps its takeover on the main
+    # circle after the trigger is let go - the bare layer on the bar shows LT + X's OWN hold spell (never the bare X's) until it ends
+    chk("3. LT + X's hold fired with the bare layer on the bar (LT let go): LT + X's own hold spell keeps the face (ruling A)",
+        b[5].hto is not None and b[5].hflash.shown and b[5].hflash.tex == 136015, (b[5].hto is not None, b[5].hflash.shown, b[5].hflash.tex))
     L.execute('LT = true; TICK(0.1)')
     chk("3. ... the LT layer on the bar: LT + X's own hold spell has the face", b[5].hflash.shown and b[5].hflash.tex == 136015,
         (b[5].hflash.shown, b[5].hflash.tex))
-    L.execute('TICK(2.5)')
+    L.execute('LT = nil; TICK(0.1)')
+    chk("3. ... LT let go again: still on the face (ruling A)", b[5].hflash.shown and b[5].hflash.tex == 136015, (b[5].hflash.shown, b[5].hflash.tex))
+    L.execute('RT = true; TICK(0.1)')
+    chk("3. ... RT held instead: RT's own buttons (a trigger the press did not have)", not b[5].hflash.shown, b[5].hflash.shown)
+    L.execute('RT = nil; TICK(2.3)')
     chk("3. ... and it ends on time (no word: 2 s)", b[5].hto is None and not b[5].hflash.shown)
+    # the badge while the takeover has the bare layer's face: the bare X's TAP spell on it (the face's own picture is under the takeover)
+    L.execute('WC.holdFired(5, "lt"); TICK(0.1)')
+    chk("3. LT + X fired, the bare layer on the bar: the bare badge wears the tap spell", b[5].hb.icon.tex == b[5].tapIcon, (b[5].hb.icon.tex, b[5].tapIcon))
+    L.execute('TICK(2.5)')
+    chk("3. ... ended: the bare badge back to the bare X's hold spell", b[5].hto is None and b[5].hb.icon.tex == 135825, b[5].hb.icon.tex)
     L.execute('LT = nil; TICK(0.1)')
     L.execute('WC.holdFired(5, "bare"); TICK(0.1)')
     chk("3. the bare X's own hold, fired on the bare layer: its spell on the face", b[5].hflash.shown and b[5].hflash.tex == 135825, b[5].hflash.tex)

@@ -765,7 +765,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val heldHere = w.layerOf(pos) == li
         val ch = if (heldHere) w.charge(pos, up) else -1f
         val charged = ch >= 0f && w.charged(pos, up)
-        val tk = HoldCast.takeover.let { if (it.pos == pos && it.layer == li) it.alpha(now) else 0f }
+        val tk = HoldCast.takeover.let { if (it.pos == pos && it.showsOn(li)) it.alpha(now) else 0f }     // (ruling A: a trigger let go)
         val half = (if (circle) 38f else 40f) * k / 2f
         val iconHalf = half - 3f * k
         var next = if (heldHere) 16L else Long.MAX_VALUE                 // held: the ring may appear / fill on the next frames
@@ -805,11 +805,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun drawTakeover(c: Canvas, pos: Int, src: Int, li: Int, circle: Boolean, now: Long): Long {
         if (li !in 0 until STATE_LAYERS || drawCollapsed || quietPresses) return Long.MAX_VALUE
         val t = HoldCast.takeover
-        if (t.pos != src + 1 || t.layer != li) return Long.MAX_VALUE
+        // RULING A (the user's pick 2026-11-25, "Stay until it ends"): on its fired layer, and on a layer that only lacks its triggers -
+        // LT + X's hold stays on the bare layer's main circle after LT is let go (HoldCast.Takeover.showsOn)
+        if (t.pos != src + 1 || !t.showsOn(li)) return Long.MAX_VALUE
         if (!gcdStartS.isNaN() && !gcdDurS.isNaN()) t.gcd((gcdStartS * 1000.0).toLong(), (gcdDurS * 1000.0).toLong())
         val a = t.alpha(now)
         if (a <= 0f) return Long.MAX_VALUE
-        val key = li * 8 + src
+        val key = t.layer * 8 + src                                         // the FIRED layer's hold spell, not the shown layer's
         val ref = holdRefs?.get(key) ?: return Long.MAX_VALUE
         val tb = takeoverBtn(key, src, ref)
         val gl = if (gcdDurS.isNaN()) -1f else t.gcdLeft(now, (gcdDurS * 1000.0).toLong())

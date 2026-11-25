@@ -199,7 +199,7 @@ check('local BV = "b85"' in bk and 'b84 THE 1531 MERGE OF feat/hold-cast' in bk 
       and 'for k = 0, 1 do P3[26 + k]' in bk
       and 'for k = 0, 2 do P3[29 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdTicks) == "function" then pcall(pm.holdTicks, 2 + k) end end end' in bk,
       '0. Book b84 (b83, b82, b81 kept): the swing 26 / 27, the hold chooser 28, the hold time 29 / 30 / 31')
-check('local NB = { V = "nbar23"' in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
+check('local NB = { V = "nbar24"' in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
       and 'nbar20 THE 1528b MERGE OF feat/hold-cast' in ab and 'nbar18 HOLD TO CAST' in ab,
       '0. ActionBar nbar22 (nbar21, nbar20, nbar18 kept): tools/test_hold_wings.py tests it')
 

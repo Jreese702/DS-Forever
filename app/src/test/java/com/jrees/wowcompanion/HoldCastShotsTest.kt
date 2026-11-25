@@ -168,7 +168,7 @@ class HoldCastShotsTest {
     /** m195: [states] the hold spell's (Lightning Shield, 324) state as the add-on's hudS.fs says it ("mana" / "range" / "both");
      *  [take] after the fire: "cast" (mid a 1.8 s cast), "gcd" (an instant, inside its GCD), "back" (all of it over) */
     private fun bars(name: String, lt: Boolean, layout: CastView.Layout?, tapCd: Boolean = false, holdCd: Boolean = false,
-                     prog: Long = -1L, fire: Boolean = false, states: String? = null, take: String? = null): Bitmap {
+                     prog: Long = -1L, fire: Boolean = false, states: String? = null, take: String? = null, ltUp: Boolean = false): Bitmap {
         val cast = CastView(app) { }
         if (layout != null) cast.layout = layout
         // 1:1 with the Thor's bottom screen: the band 1240 wide (its 112-unit row at rest, 215 px with its room), the diamonds 354 tall
@@ -205,6 +205,12 @@ class HoldCastShotsTest {
             buttons.invoke(cast, aBit)
             ShadowSystemClock.advanceBy(Duration.ofMillis(if (fire) HoldCast.holdFromMs(CastSettings.holdTime.ticks) + 10L else prog))
             if (fire) { buttons.invoke(cast, 0); ShadowSystemClock.advanceBy(Duration.ofMillis(40)) }
+        }
+        // ruling A: the trigger let go after the fire - the band back on the bare layer
+        if (ltUp) {
+            CastView::class.java.getDeclaredMethod("onPad", Boolean::class.java, Boolean::class.java, Boolean::class.java, Boolean::class.java)
+                .apply { isAccessible = true }.invoke(cast, false, false, false, false)
+            ShadowSystemClock.advanceBy(Duration.ofMillis(120))
         }
         // m195: the takeover's course, as the add-on's holdcast and the state document's GCD say it
         val tk = { st: String, d: Double -> HoldCast.onHoldCast(JSONObject().put("type", "holdcast").put("pos", 8).put("st", st).put("d", d)) }
@@ -255,6 +261,27 @@ class HoldCastShotsTest {
         val ready = bars("h7_band_ready_again", lt = false, layout = CastView.Layout.ROW)
         val idle = bars("h7_band_nothing_held_no_arc", lt = false, layout = CastView.Layout.ROW)
         assertFalse("nothing held: no arc", differs(ready, idle))
+    }
+
+    /**
+     * RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)"): LT + A's hold (Chain Lightning) fired, then LT let go -
+     * the band back on the bare layer, the bare A's own face (Jump) under it: the takeover STAYS on that main circle (the hold spell's
+     * picture in the gold ring) through the cast and the GCD after it, and goes when they end. HOLD_SHOTS_DIR: the renders
+     */
+    @Test fun anLtHoldKeepsTheMainCircleAfterLtIsLetGo() {
+        lang("en")
+        for ((tag, lay) in listOf("band" to CastView.Layout.ROW, "diamonds" to CastView.Layout.DIAMONDS)) {
+            val all = RectF(0f, 0f, 1240f, if (lay == CastView.Layout.DIAMONDS) 354f else 215f)
+            val bare = bars("a0_${tag}_bare_layer_ready", lt = false, layout = lay)
+            val held = bars("a1_${tag}_lt_a_hold_fired_lt_held", lt = true, layout = lay, fire = true, take = "cast")
+            val up = bars("a2_${tag}_lt_let_go_the_takeover_stays", lt = true, layout = lay, fire = true, take = "cast", ltUp = true)
+            val gcd = bars("a3_${tag}_lt_let_go_through_the_gcd", lt = true, layout = lay, fire = true, take = "gcd", ltUp = true)
+            val back = bars("a4_${tag}_lt_let_go_back_after_it_ends", lt = true, layout = lay, fire = true, take = "back", ltUp = true)
+            assertTrue("$tag: LT held, the takeover's gold ring", gold(held, all) > gold(bare, all) + 40)
+            assertTrue("$tag: LT let go mid-cast: the takeover stays on the bare layer's main circle", gold(up, all) > gold(bare, all) + 40)
+            assertTrue("$tag: ... and through its GCD", gold(gcd, all) > gold(bare, all) + 40)
+            assertFalse("$tag: it ended: the bare layer's ready picture again", differs(bare, back))
+        }
     }
 
     @Test fun theBindBoxAndSettings() {
