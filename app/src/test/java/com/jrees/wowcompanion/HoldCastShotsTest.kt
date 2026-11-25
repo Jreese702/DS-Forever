@@ -30,6 +30,12 @@ import java.time.Duration
  * held (HoldCast.watch: the band's own reading of the pad, timed to the add-on's looks) and the flash when a release runs the hold; the
  * Bind box's foot line; Settings' Hold time picture. Pixel checks prove the badge, the arc and the flash are drawn; with HOLD_SHOTS_DIR
  * set the renders are saved there (CLOCK_ART_ROOT: the art root, laid out like the app's).
+ * ROUND 1533 (PadMap m199; the user on test 1532, 2026-11-25: "The red outline is an eyesore we should just shade the ability like we
+ * do with the glyphs. And same with the charge up dots, it should be a glowing ring around the skill. When the ability is casting it
+ * should show the ability with a golden ring, a great example of this is raptor strikes normal behavior ... I also want this to cast
+ * right when the hold bar is filled"): the fire is now the launcher's at the fire point (the add-on's keep word, HoldCast.fireNow), the
+ * takeover's face is drawn CHECKED (the game's gold frame_*_selected ring), the badge's state is a shade of its icon, the charge ring
+ * glows; [round1533Shots] renders the spec's set (home_badge_states, home_ring_*, home_raptor_queued_*, home_instant_*).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -50,6 +56,7 @@ class HoldCastShotsTest {
     @After fun down() {
         Tr.setChoice(app, "auto")
         HoldCast.watch.reset(); HoldCast.watch.map = emptySet(); HoldCast.takeover.clear()
+        HoldCast.padReset(true); HoldCast.release.cn = null; HoldCast.release.ft = null
     }
 
     private val book = """{"type":"spells","v":"s9","s":{"lines":[{"k":1,"n":"General","i":136048},{"k":2,"n":"Restoration","i":136052}],
@@ -126,10 +133,24 @@ class HoldCastShotsTest {
         for (y in r.top.toInt().coerceAtLeast(0) until r.bottom.toInt().coerceAtMost(b.height))
             for (x in r.left.toInt().coerceAtLeast(0) until r.right.toInt().coerceAtMost(b.width)) {
                 val c = b.getPixel(x, y)
-                if (Color.red(c) > 220 && Color.green(c) > 180 && Color.blue(c) in 60..190) n++
+                // (round 1533: the game's checked ring is a deeper gold, blue ~40: any warm gold counts)
+                if (Color.red(c) > 190 && Color.green(c) > 150 && Color.blue(c) < 190 && Color.red(c) > Color.blue(c) + 60) n++
             }
         return n
     }
+    /** round 1533: the takeover's gold ring - the pixels that turned gold between [base] and [take] lying on a ring (within 0.7 - 1.05
+     *  of their 90th-percentile distance from their box's centre: the checked ring is the outermost gold the takeover draws) */
+    private fun ringGold(base: Bitmap, take: Bitmap): Int {
+        val xs = ArrayList<Int>(); val ys = ArrayList<Int>()
+        for (y in 0 until base.height) for (x in 0 until base.width) if (isGoldPx(take.getPixel(x, y)) && !isGoldPx(base.getPixel(x, y))) { xs += x; ys += y }
+        if (xs.size < 20) return 0
+        val cx = (xs.min() + xs.max()) / 2.0; val cy = (ys.min() + ys.max()) / 2.0
+        val ds = xs.indices.map { Math.hypot(xs[it] - cx, ys[it] - cy) }.sorted()
+        val r = ds[(ds.size * 0.9).toInt()]
+        return ds.count { it >= r * 0.7 && it <= r * 1.05 }
+    }
+    /** a warm gold (the checked ring's art, also where it is dimmer at its rim) */
+    private fun isGoldPx(c: Int) = Color.red(c) > 140 && Color.green(c) > 110 && Color.blue(c) < 120 && Color.red(c) > Color.blue(c) + 70
     private fun differs(a: Bitmap, b: Bitmap): Boolean {
         for (y in 0 until a.height step 2) for (x in 0 until a.width step 2) if (a.getPixel(x, y) != b.getPixel(x, y)) return true
         return false
@@ -165,8 +186,10 @@ class HoldCastShotsTest {
 
     /** Home's bars (Cast) with the hold badges; [prog] / [fire]: the bare A held [prog] ms (its arc) / let go past the hold point (the
      *  flash), through the band's own pad reading (CastView's onButtons) and HoldCast.watch, as on the device */
-    /** m195: [states] the hold spell's (Lightning Shield, 324) state as the add-on's hudS.fs says it ("mana" / "range" / "both");
-     *  [take] after the fire: "cast" (mid a 1.8 s cast), "gcd" (an instant, inside its GCD), "back" (all of it over) */
+    /** m195: [states] the hold spell's (Lightning Shield, 324) state as the add-on's hudS.fs says it ("mana" / "range" / "both" /
+     *  round 1533 "unusable" / "unusable_range"); [take] after the fire: "cast" (mid a 1.8 s cast), "gcd" (an instant, inside its GCD),
+     *  "back" (all of it over); round 1533: "q0" / "q25" (queued for the next swing: at the fire / 2.5 s on), "swing" (its swing landed,
+     *  + 0.5 s), "gcd01" / "gcd12" / "gcd17" (an instant with a 1.5 s GCD, 0.1 / 1.2 / 1.7 s on), "nogcd01" / "nogcd04" (no GCD: none) */
     private fun bars(name: String, lt: Boolean, layout: CastView.Layout?, tapCd: Boolean = false, holdCd: Boolean = false,
                      prog: Long = -1L, fire: Boolean = false, states: String? = null, take: String? = null, ltUp: Boolean = false,
                      refsAfter: Map<Int, PadMapModel.Ref>? = null): Bitmap {
@@ -191,7 +214,11 @@ class HoldCastShotsTest {
             HoldCast.key(0, 2) to PadMapModel.FaceCd(20.0, 15.0, false, false)), now)
         if (tapCd) cast.fightCooldown(8, now - 2000L, 8000L)
         if (states != null) {
-            val fs = JSONObject().put("i", 324).put("u", 1).put("m", if (states != "range") 1 else 0).put("r", if (states != "mana") 0 else 1)
+            val (u, m, r) = when (states) {
+                "mana" -> Triple(1, 1, 1); "range" -> Triple(1, 0, 0); "both" -> Triple(1, 1, 0)
+                "unusable" -> Triple(0, 0, 1); "unusable_range" -> Triple(0, 0, 0); else -> Triple(1, 0, 1)
+            }
+            val fs = JSONObject().put("i", 324).put("u", u).put("m", m).put("r", r)
             cast.update(JSONObject().put("hudS", JSONObject().put("g", 500.0).put("fs", JSONArray().put(fs))))
         }
         CastView::class.java.getDeclaredMethod("onPad", Boolean::class.java, Boolean::class.java, Boolean::class.java, Boolean::class.java)
@@ -202,10 +229,22 @@ class HoldCastShotsTest {
         val buttons = CastView::class.java.getDeclaredMethod("onButtons", Int::class.java).apply { isAccessible = true }
         val aBit = 1 shl PadInput.SLOT_FACE_BOTTOM
         HoldCast.takeover.clear()
+        // round 1533: the add-on's clock (Normal, 3 looks) and the game at 60 fps: the fire point F = 678 ms
+        HoldCast.release.cn = 3; HoldCast.release.ft = 17
+        HoldCast.schedule = { }; HoldCast.later = { _, _ -> }; HoldCast.gates = { true }
         if (prog >= 0 || fire) {
             buttons.invoke(cast, aBit)
-            ShadowSystemClock.advanceBy(Duration.ofMillis(if (fire) HoldCast.holdFromMs(CastSettings.holdTime.ticks) + 10L else prog))
-            if (fire) { buttons.invoke(cast, 0); ShadowSystemClock.advanceBy(Duration.ofMillis(40)) }
+            if (fire) {
+                // the launcher writes A's down (bit 0), the add-on keeps it (its keep word), the fire point comes: A up for the game
+                HoldCast.padIn(1, false, false, false, false, SystemClock.uptimeMillis())
+                HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("hk", "keep").put("kind", "holdkeep")
+                    .put("lay", if (lt) "lt" else "bare").put("key", "PAD1").put("need", 3))
+                ShadowSystemClock.advanceBy(Duration.ofMillis(HoldCast.fireMs(3, 17)))
+                HoldCast.fireNow(SystemClock.uptimeMillis())
+                ShadowSystemClock.advanceBy(Duration.ofMillis(40))
+                // let go a moment later: nothing new for the game (the fire was at the fill)
+                buttons.invoke(cast, 0); HoldCast.padIn(0, false, false, false, false, SystemClock.uptimeMillis())
+            } else ShadowSystemClock.advanceBy(Duration.ofMillis(prog))
         }
         // the 1532 audit: the band draws the fired spell once (its first frame), then the hold refs change (a fight's In combat tab)
         if (refsAfter != null) {
@@ -228,6 +267,16 @@ class HoldCastShotsTest {
                 ShadowSystemClock.advanceBy(Duration.ofMillis(600))
             }
             "back" -> { tk("ok", 0.0); ShadowSystemClock.advanceBy(Duration.ofMillis(2600)) }
+            "q0" -> { tk("q", 0.0); ShadowSystemClock.advanceBy(Duration.ofMillis(60)) }
+            "q25" -> { tk("q", 0.0); ShadowSystemClock.advanceBy(Duration.ofMillis(2500)) }
+            "swing" -> { tk("q", 0.0); ShadowSystemClock.advanceBy(Duration.ofMillis(2500)); tk("ok", 0.0); ShadowSystemClock.advanceBy(Duration.ofMillis(500)) }
+            "gcd01", "gcd12", "gcd17" -> {
+                // the GCD the fire started (1.5 s from the fire, 0.04 s of it gone)
+                HoldCast.onHoldCast(JSONObject().put("type", "holdcast").put("pos", 8).put("st", "gcd").put("gl", 1.46))
+                ShadowSystemClock.advanceBy(Duration.ofMillis(when (take) { "gcd01" -> 60L; "gcd12" -> 1160L; else -> 1660L }))
+            }
+            "nogcd01" -> ShadowSystemClock.advanceBy(Duration.ofMillis(60))
+            "nogcd04" -> { ShadowSystemClock.advanceBy(Duration.ofMillis(110)); tk("none", 0.0); ShadowSystemClock.advanceBy(Duration.ofMillis(250)) }
         }
         val b = Bitmap.createBitmap(ww, hh, Bitmap.Config.ARGB_8888)
         val c = Canvas(b); c.drawColor(Theme.ink); cast.draw(c)
@@ -245,8 +294,8 @@ class HoldCastShotsTest {
             val hc = bars("h3_${tag}_hold_cooling", lt = false, layout = lay, holdCd = true)
             val early = bars("h4a_${tag}_held_200ms_no_ring_yet", lt = false, layout = lay, prog = 200L)
             val held = bars("h4_${tag}_held_500ms_charge_ring_on_the_badge", lt = false, layout = lay, prog = 500L)
-            val charged = bars("h4c_${tag}_held_800ms_charged", lt = false, layout = lay, prog = 800L)
-            val fired = bars("h5_${tag}_let_go_charged_hold_takes_the_face", lt = false, layout = lay, fire = true)
+            val charged = bars("h4c_${tag}_held_800ms_charged_no_keep_word", lt = false, layout = lay, prog = 800L)
+            val fired = bars("h5_${tag}_fired_at_the_fill_hold_takes_the_face", lt = false, layout = lay, fire = true)
             bars("t1_${tag}_takeover_mid_cast", lt = false, layout = lay, fire = true, take = "cast")
             bars("t2_${tag}_takeover_during_gcd", lt = false, layout = lay, fire = true, take = "gcd")
             val back = bars("t3_${tag}_takeover_back_to_the_tap", lt = false, layout = lay, fire = true, take = "back")
@@ -261,7 +310,7 @@ class HoldCastShotsTest {
             assertTrue("$tag: the hold's own sweep changes the badge", differs(ready, hc))
             val all = RectF(0f, 0f, ready.width.toFloat(), ready.height.toFloat())
             assertTrue("$tag: the held press's charge ring round the badge (gold)", gold(held, all) > gold(ready, all) + 40)
-            assertTrue("$tag: the takeover's gold ring round the big face", gold(fired, all) > gold(ready, all) + 40)
+            assertTrue("$tag: the takeover's gold (checked) ring round the big face", ringGold(ready, fired) > 150)
         }
         // nothing held back: exactly the ready picture (no arc, no flash)
         val ready = bars("h7_band_ready_again", lt = false, layout = CastView.Layout.ROW)
@@ -283,9 +332,10 @@ class HoldCastShotsTest {
             val up = bars("a2_${tag}_lt_let_go_the_takeover_stays", lt = true, layout = lay, fire = true, take = "cast", ltUp = true)
             val gcd = bars("a3_${tag}_lt_let_go_through_the_gcd", lt = true, layout = lay, fire = true, take = "gcd", ltUp = true)
             val back = bars("a4_${tag}_lt_let_go_back_after_it_ends", lt = true, layout = lay, fire = true, take = "back", ltUp = true)
-            assertTrue("$tag: LT held, the takeover's gold ring", gold(held, all) > gold(bare, all) + 40)
-            assertTrue("$tag: LT let go mid-cast: the takeover stays on the bare layer's main circle", gold(up, all) > gold(bare, all) + 40)
-            assertTrue("$tag: ... and through its GCD", gold(gcd, all) > gold(bare, all) + 40)
+            // round 1533: the game's gold checked ring round the face (counted in its ring band: the face's own icon changes too)
+            assertTrue("$tag: LT held, the takeover's gold ring", ringGold(bare, held) > 150)
+            assertTrue("$tag: LT let go mid-cast: the takeover stays on the bare layer's main circle", ringGold(bare, up) > 150)
+            assertTrue("$tag: ... and through its GCD", ringGold(bare, gcd) > 150)
             assertFalse("$tag: it ended: the bare layer's ready picture again", differs(bare, back))
         }
     }
@@ -301,6 +351,107 @@ class HoldCastShotsTest {
             refsAfter = combatRefs)
         assertFalse("the fired spell stays on the face (In combat's refs have another there)", differs(kept, swapped))
     }
+
+    // ======================================================================================== round 1533: the spec's shots
+
+    private fun kOf(v: CastView): Float = CastView::class.java.getDeclaredField("k").apply { isAccessible = true }.getFloat(v)
+    /** the bounding box of the pixels that differ between [a] and [b] (null: none) */
+    private fun diffBox(a: Bitmap, b: Bitmap, pred: (Int) -> Boolean = { true }): android.graphics.Rect? {
+        var l = Int.MAX_VALUE; var t = Int.MAX_VALUE; var r = -1; var bt = -1
+        for (y in 0 until a.height) for (x in 0 until a.width) {
+            val q = b.getPixel(x, y)
+            if (a.getPixel(x, y) != q && pred(q)) { if (x < l) l = x; if (x > r) r = x; if (y < t) t = y; if (y > bt) bt = y }
+        }
+        return if (r < 0) null else android.graphics.Rect(l, t, r + 1, bt + 1)
+    }
+    private fun isGold(c: Int) = Color.red(c) > 200 && Color.green(c) > 150 && Color.blue(c) in 30..200
+    /** the old badge's out-of-range ring red (230, 52, 40) */
+    private fun isRingRed(c: Int) = Color.red(c) > 190 && Color.green(c) < 90 && Color.blue(c) < 90
+    private fun crop(b: Bitmap, r: android.graphics.Rect): Bitmap = Bitmap.createBitmap(b, r.left.coerceAtLeast(0), r.top.coerceAtLeast(0),
+        (r.width()).coerceAtMost(b.width - r.left.coerceAtLeast(0)), r.height().coerceAtMost(b.height - r.top.coerceAtLeast(0)))
+    private fun strip(name: String, tiles: List<Bitmap>, scale: Int) {
+        val w0 = tiles.maxOf { it.width } * scale; val h0 = tiles.maxOf { it.height } * scale
+        val out = Bitmap.createBitmap(w0 * tiles.size + 8 * (tiles.size + 1), h0 + 16, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out); c.drawColor(Theme.ink)
+        val pnt = android.graphics.Paint().apply { isFilterBitmap = false }
+        tiles.forEachIndexed { i, t ->
+            c.drawBitmap(t, null, RectF(8f + i * (w0 + 8f), 8f, 8f + i * (w0 + 8f) + t.width * scale, 8f + t.height * scale), pnt)
+        }
+        save(out, name)
+    }
+
+    @Test fun round1533Shots() {
+        lang("en")
+        val lay = CastView.Layout.DIAMONDS
+        // 1. THE BADGE'S STATES: one shade of its icon, no red ring anywhere (ready / mana / unusable / range / mana + range / unusable + range)
+        val names = listOf("ready" to null, "mana" to "mana", "unusable" to "unusable", "range" to "range", "mana_range" to "both", "unusable_range" to "unusable_range")
+        val shots = names.map { (n, st) -> bars("home_badge_state_$n", lt = false, layout = lay, states = st) }
+        val ready = shots[0]; val range = shots[3]
+        val box = diffBox(ready, range) ?: error("the out-of-range shade changed nothing")
+        val pad = android.graphics.Rect(box.left - 8, box.top - 8, box.right + 8, box.bottom + 8)
+        strip("home_badge_states", shots.map { crop(it, pad) }, 1)
+        strip("home_badge_states_x3", shots.map { crop(it, pad) }, 3)
+        // no red ring: what changes is the ICON's disc only (the shade) - nothing at the badge's border (its brown ring) or outside it
+        val bcx = (box.left + box.right) / 2f; val bcy = (box.top + box.bottom) / 2f; val ir = box.width() / 2f
+        var outside = 0
+        for (x in pad.left until pad.right) for (y in pad.top until pad.bottom) {
+            if (x !in 0 until range.width || y !in 0 until range.height) continue
+            val d = Math.hypot((x - bcx).toDouble(), (y - bcy).toDouble())
+            if (d > ir + 1.5 && range.getPixel(x, y) != ready.getPixel(x, y)) outside++
+        }
+        assertTrue("no red ring: the out-of-range shade changes nothing outside the icon's disc (the border stays brown) - $outside px", outside <= 4)
+        assertFalse("no ring-red pixel at the badge's border", (0 until 32).any { i ->
+            val a = Math.PI * 2 * i / 32; val rr = ir / 0.87f * 0.935f
+            val x = (bcx + rr * Math.cos(a)).toInt(); val y = (bcy + rr * Math.sin(a)).toInt()
+            isRingRed(range.getPixel(x, y)) })
+        var dr = 0L; var dgb = 0L; var n = 0
+        for (x in box.left until box.right) for (y in box.top until box.bottom) {
+            val a = ready.getPixel(x, y); val b = range.getPixel(x, y)
+            if (a != b) { dr += Color.red(b) - Color.red(a); dgb += Color.green(b) - Color.green(a) + Color.blue(b) - Color.blue(a); n++ }
+        }
+        assertTrue("out of range: the badge's ICON is shaded red (red kept, green and blue cut): dR ${dr / n.coerceAtLeast(1)}, dG+dB ${dgb / n.coerceAtLeast(1)}",
+            n > 20 && dr / n.toFloat() > -10f && dgb / n.toFloat() < -40f)
+        // its border stays brown: the ring's pixels (the badge's outer edge) the same in both
+        val cx = (box.left + box.right) / 2; val cy = (box.top + box.bottom) / 2
+        val manaRange = shots[4]; val unusableRange = shots[5]
+        assertTrue("mana + range: red like range (red is range)", !differs(range, manaRange))
+        assertTrue("unusable + range: grey like unusable", !differs(shots[2], unusableRange))
+        // 2. THE GLOWING RING: 0 % (just shown, 0.25 s), 50 %, 100 % (the fire point: full, no keep word)
+        val f = HoldCast.fireMs(3, 17)
+        val r0 = bars("home_ring_000", lt = false, layout = lay, prog = 250L)
+        val r50 = bars("home_ring_050", lt = false, layout = lay, prog = 250L + (f - 250L) / 2)
+        val r100 = bars("home_ring_100", lt = false, layout = lay, prog = f)
+        val ringBox = android.graphics.Rect(cx - 60, cy - 60, cx + 60, cy + 60)
+        fun count(b: Bitmap, p: (Int) -> Boolean): Int { var k = 0; for (x in ringBox.left until ringBox.right) for (y in ringBox.top until ringBox.bottom)
+            if (x in 0 until b.width && y in 0 until b.height && p(b.getPixel(x, y))) k++; return k }
+        val glowish = { c: Int -> Color.red(c) in 70..235 && Color.green(c) in 40..200 && Color.blue(c) < 110 && Color.red(c) > Color.blue(c) + 40 }
+        assertTrue("50 %: the ring's GLOW pixels round the badge (soft gold under the fill)", count(r50, glowish) > count(ready, glowish) + 30)
+        assertTrue("50 % fills more than 0 %, 100 % more than 50 %", count(r50, ::isGold) > count(r0, ::isGold) && count(r100, ::isGold) > count(r50, ::isGold))
+        // 3. RAPTOR STRIKE'S NORMAL LOOK: queued for the next swing - the face in the game's gold checked ring at the fire, still there at
+        // 2.5 s (past 1532's 2 s fallback), gone after the swing's ok (+0.3 s)
+        val q0 = bars("home_raptor_queued_t0", lt = false, layout = lay, fire = true, take = "q0")
+        val q25 = bars("home_raptor_queued_t2_5s", lt = false, layout = lay, fire = true, take = "q25")
+        val sw = bars("home_raptor_queued_swing", lt = false, layout = lay, fire = true, take = "swing")
+        assertTrue("queued at the fire: the takeover's gold checked ring", ringGold(ready, q0) > 150)
+        assertTrue("2.5 s queued: still there", ringGold(ready, q25) > 150)
+        assertFalse("the swing landed: back to the ready picture", differs(ready, sw))
+        // the checked ring is gold AT ITS RADIUS: the new gold pixels span the button plus 4 units each side (the game's CheckedTexture)
+        val k = kOf(CastView(app) { }.also { v -> v.layout = lay; v.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(354, View.MeasureSpec.EXACTLY)); v.layout(0, 0, 1240, 354) })
+        val gb = diffBox(ready, q0) { isGold(it) } ?: error("no new gold")
+        assertTrue("the gold ring's span ~ (38 + 8) units (${gb.width()} px at k $k)", gb.width() >= 38f * k && gb.width() <= 60f * k)
+        // 4. AN INSTANT WITH A GCD: on the face through the GCD, then back; WITHOUT one: shown, then gone after "none"
+        val g01 = bars("home_instant_gcd_t01", lt = false, layout = lay, fire = true, take = "gcd01")
+        val g12 = bars("home_instant_gcd_t12", lt = false, layout = lay, fire = true, take = "gcd12")
+        val g16 = bars("home_instant_gcd_t17", lt = false, layout = lay, fire = true, take = "gcd17")
+        val n01 = bars("home_instant_nogcd_t01", lt = false, layout = lay, fire = true, take = "nogcd01")
+        val n04 = bars("home_instant_nogcd_t04", lt = false, layout = lay, fire = true, take = "nogcd04")
+        assertTrue(ringGold(ready, g01) > 150 && ringGold(ready, g12) > 150)
+        assertFalse("the GCD over (1.5 s + the 0.2 s ease): back", differs(ready, g16))
+        assertTrue(ringGold(ready, n01) > 150)
+        assertFalse("no GCD: gone after none (0.36 s)", differs(ready, n04))
+    }
+    private fun all(b: Bitmap) = RectF(0f, 0f, b.width.toFloat(), b.height.toFloat())
 
     @Test fun theBindBoxAndSettings() {
         lang("en")

@@ -150,8 +150,8 @@ class HoldCastUiTest {
         assertTrue("Home's band draws the hold after each button", cast.contains("next = min(next, drawHold(c, pos, src, li, circle, b, now))"))
         assertFalse("m195: no arc on the big button (the charge ring is the badge's)", cast.contains("HoldArt.progress("))
         assertTrue("m195: the charge ring round the badge", cast.contains("HoldArt.chargeRing(c, bx, by, r, ch, charged)"))
-        assertTrue("m195: the badge's states (mana blue, not usable grey, range red)",
-            cast.contains("HoldArt.badge(c, bx, by, r, icon, sw, lit = ch >= 0f, filter = filter, outOfRange = hst?.r == 0)"))
+        assertTrue("round 1533: the badge's state is ONE shade of its icon (HoldArt.stateFilter: grey, red range, blue mana), no red ring",
+            cast.contains("HoldArt.badge(c, bx, by, r, icon, sw, lit = ch >= 0f, filter = hst?.let { HoldArt.stateFilter(it.u, it.m, it.r) })"))
         assertTrue("m195: the takeover before the badge", cast.contains("next = min(next, drawTakeover(c, pos, src, li, circle, now))"))
         assertTrue("the band's own pad reading drives the ring", cast.contains("holdWatch(mask, down, wheel)"))
         val home = kt("HomeView.kt")
@@ -187,6 +187,52 @@ class HoldCastUiTest {
             && host.contains("\"holdcd\" -> if (current) PadMapModel.parseHoldCd(msg)?.let { homeView.onHoldCd(it) }")
             && host.contains("\"holdcast\" -> if (current) HoldCast.onHoldCast(msg)"))
         assertTrue("the press log knows the hold way", PressLog.PATHS.contains("slothold"))
+    }
+
+    /** 19: round 1533 (the user: "The red outline is an eyesore we should just shade the ability like we do with the glyphs"): one shade
+     *  of the badge's icon - grey when not usable for another reason than power, else red out of range, else blue for power */
+    @Test fun theBadgesShadeIsOneOfGreyRedBlue() {
+        assertEquals(HoldCast.Shade.UNUSABLE, HoldCast.badgeShade(0, 0, 1))
+        assertEquals(HoldCast.Shade.RANGE, HoldCast.badgeShade(1, 0, 0))
+        assertEquals(HoldCast.Shade.MANA, HoldCast.badgeShade(0, 1, 1))
+        assertEquals("power + range: red (red is range)", HoldCast.Shade.RANGE, HoldCast.badgeShade(0, 1, 0))
+        assertEquals("unusable + range: grey", HoldCast.Shade.UNUSABLE, HoldCast.badgeShade(0, 0, 0))
+        assertEquals(HoldCast.Shade.NONE, HoldCast.badgeShade(1, 0, 1))
+        assertEquals("range unknown (-1): no red", HoldCast.Shade.NONE, HoldCast.badgeShade(1, 0, -1))
+        val art = kt("HoldArt.kt")
+        assertTrue("stateFilter maps the shade to CastView's own grey / blue and the range red",
+            art.contains("HoldCast.Shade.UNUSABLE -> cfUnusable") && art.contains("HoldCast.Shade.RANGE -> cfRange") && art.contains("HoldCast.Shade.MANA -> cfMana")
+                && art.contains("val cfUnusable = android.graphics.LightingColorFilter(0x666666, 0)") && art.contains("val cfMana = android.graphics.LightingColorFilter(0x8080FF, 0)")
+                && art.contains("val cfRange = android.graphics.LightingColorFilter(0xFF524C, 0)"))
+    }
+
+    /** 20: round 1533's drawing pins: no red ring, the takeover drawn CHECKED (the game's gold ring) with no ring of our own, the
+     *  charge ring's glow under its fill */
+    @Test fun theNewLookIsWired() {
+        val art = kt("HoldArt.kt")
+        assertFalse("no red ring on the badge", art.contains("RANGE_RED") || art.contains("outOfRange"))
+        assertFalse("no takeover ring of our own", art.contains("fun fired("))
+        val ring = art.substringAfter("fun chargeRing(").substringBefore("\n    }\n")
+        assertTrue("the charge ring GLOWS: a blurred gold arc under the fill, then the fill, a bright head",
+            ring.indexOf("pGlow.maskFilter = blur(") in 0 until ring.indexOf("pStroke.color = CHARGE; pStroke.strokeWidth = w")
+                && ring.contains("Color.argb((90 + 130 * f).toInt(), 255, 200, 80)") && ring.contains("CHARGE_HEAD"))
+        val cast = kt("CastView.kt")
+        val take = cast.substringAfter("private fun drawTakeover(").substringBefore("\n    }\n")
+        assertTrue("the takeover's face drawn checked (the game's gold ring, 4 units beyond)", take.contains("takeSt.copyFrom(hst); takeSt.chk = 1")
+            && take.contains("drawSlot(c, pos, 0f, 0f, circle, tb, takeSt, -1, now, false, 0f, null, sweep)"))
+        assertFalse("no HoldArt.fired", take.contains("HoldArt.fired"))
+        assertTrue("D3: a fired hold draws as the game has it (up)", cast.contains("((held and (1 shl src)) != 0 && !HoldCast.forced(src + 1))"))
+        assertEquals("the takeover and the badge still drawn per button", true,
+            cast.contains("next = min(next, drawTakeover(c, pos, src, li, circle, now))") && cast.contains("HoldArt.chargeRing(c, bx, by, r, ch, charged)"))
+        // the hint: the fire point and that it casts when full (es / fr)
+        assertEquals("%s, casts when full", PadTabPage.HOLD_POINT)
+        assertEquals("casts when full", ControllerPictures.LET_GO)
+        for ((l, a, b) in listOf(Triple("es", "se lanza al llenarse", "%s, se lanza al llenarse"), Triple("fr", "se lance une fois plein", "%s, se lance une fois plein"))) {
+            val o = JSONObject(File(i18n, "$l.json").readText())
+            assertEquals(a, o.getJSONObject("plain").getString("casts when full"))
+            assertEquals(b, o.getJSONObject("templates").getString("%s, casts when full"))
+            assertFalse("$l: the old words gone", File(i18n, "$l.json").readText().contains("then let go"))
+        }
     }
 
     @Test fun spanishAndFrench() {

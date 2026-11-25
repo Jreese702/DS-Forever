@@ -1838,7 +1838,7 @@ class PadTabPage(
             c.drawText(holdWord, x0 + 112f, r2 + 34f, pl)
             val markX = x0 + 112f + pl.measureText(holdWord) + 22f
             HoldArt.mark(c, markX, r2 + 26f, 11f, HOLD_MARK)
-            // m194: the hold point and the release ("0.6 s, then let go": the hold spell fires when you let go after it)
+            // round 1533: the fire point ("0.7 s, casts when full": the hold spell casts the moment the ring fills, while still held)
             c.drawText(Tr.t(HOLD_POINT.replace("%s", HoldCast.holdWord())), markX + 22f, r2 + 34f, pd)
             if (hr != null) c.drawText(TextUtils.ellipsize(Tr.t(hr.name), TextPaint(ps), x1 - x0 - 128f, TextUtils.TruncateAt.END).toString(), x0 + 112f, r2 + 80f, ps)
         }
@@ -2789,8 +2789,8 @@ class PadTabPage(
         private val HOLD_MARK = Color.rgb(150, 110, 40)
         /** the user, 2026-11-24: "Use the word bind instead of change" - one word for the button, set or not */
         const val HOLD_BIND = "Bind hold"
-        /** m194: the Hold row's hint - the hold point, then the release (the hold spell fires when you let go) */
-        const val HOLD_POINT = "%s, then let go"
+        /** m194 / round 1533: the Hold row's hint - the fire point, and that the hold spell casts there (the ring full, still held) */
+        const val HOLD_POINT = "%s, casts when full"
         /** m190: the Hold spell button (touch: Book b80's page-3 code 28 opens the add-on's hold chooser) */
         private const val DOWN_HOLD = 970
     }

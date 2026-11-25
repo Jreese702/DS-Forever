@@ -11,7 +11,7 @@
 "Hold spell on": "Sort maintenu sur",
 "Hold a button: place as hold": "Maintenez un bouton : placer en maintien",
 "Hold time": "Durée de maintien",
-"then let go": "puis relâchez",
+"casts when full": "se lance une fois plein",
 "Normal": "Normal",
 "Combat bars": "Barres de combat",
 "No grow": "Sans agrandir",
@@ -2408,7 +2408,7 @@
 "templates": {
 "The game has no key on %s now: check the game's controller keys": "Le jeu n'a pas de touche sur %s : vérifiez les touches de manette du jeu",
 "hold %s": "maintien %s",
-"%s, then let go": "%s, puis relâchez",
+"%s, casts when full": "%s, se lance une fois plein",
 "DS Forever's %s runs here, over your macro": "%s de DS Forever s’utilise ici, par-dessus votre macro",
 "In combat: %s casts here in fights, over your macro": "En combat : %s est lancé ici pendant les combats, par-dessus votre macro",
 "%s/%s ready": "%s/%s prêtes",
