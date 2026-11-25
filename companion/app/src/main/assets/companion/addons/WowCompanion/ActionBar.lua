@@ -2,6 +2,10 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar23 EDIT HOME'S TOP-SCREEN PREVIEW (the user on test 1530, 2026-11-25: "When choosing the top screen options in combat it should
+-- also display the top screen ui so that its easy to visualize"): PadMap m198's preview stands in for the saved flags and the fight's
+-- switch out of combat - the Wings, our top bar with a sample cast and swing, Party mode's lay - at "nbar23 EDIT HOME'S TOP-SCREEN
+-- PREVIEW" below. Display only, never in a fight.
 -- nbar22 THE 1531 MERGE OF feat/hold-cast's REBUILD (the user on test 1529: "And that also needs to appear on the top screen
 -- ui"): nbar21 (the hold spell takes the face until its cast / GCD end, the badge's states, the charge ring's twelve beads, at
 -- "nbar21 THE HOLD SPELL ON THE TOP SCREEN") and nbar20 (the 1528b per-tab badges) both kept. The 1531 audit: no hold badges
@@ -2557,7 +2561,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar22", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar23", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -4569,7 +4573,28 @@ function NB.wingsProbe(inp)
 end
 
 -- ---------------------------------------------------------------- the switch, the motion, the frames
+-- nbar23 EDIT HOME'S TOP-SCREEN PREVIEW (the user on test 1530, 2026-11-25: "When choosing the top screen options in combat it should
+-- also display the top screen ui so that its easy to visualize. Likewise the party mode should show a full party on the top screen"):
+-- PadMap m198's preview (Book b85's page-3 codes 32-39, the picks being edited in the app's Edit Home - never the saved flags) stands in
+-- for the saved flags and the fight's switch while it lasts: its Wings word for ctop and the switch (the Wings up as a Top fight lays
+-- them, no fight), its cast bar and swing words for ctcb / ctsw, its party word for Party mode (the Party layer, the centred block -
+-- Hub hub79 draws four placeholder rows, Trail prd25 lays the HUD as Party mode does), and our top bar shows a sample cast (NB.PV_CAST,
+-- the swing line at NB.PV_SWING) so its place reads. OUT OF COMBAT ONLY: nil in the lockdown or with the player in combat (PadMap drops
+-- it then too), so a fight shows only itself - from its first frame. The same plain frames as ever (Show / Hide / SetPoint / SetAlpha);
+-- nothing secure, no binding, nothing saved.
+NB.PV_CAST, NB.PV_SWING, NB.PV_LEFT = 0.62, 0.45, 1.2
+function NB.pv()
+    if S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true then return nil end
+    local pm = rawget(WC, "padMap")
+    local fn = type(pm) == "table" and pm.preview or nil
+    if type(fn) ~= "function" then return nil end
+    local ok, v = pcall(fn)
+    if ok and type(v) == "table" then return v end
+    return nil
+end
 function NB.topFlag()
+    local pv = NB.pv()
+    if pv then return pv.wings == true end                              -- nbar23: the preview's Wings word
     local pm = rawget(WC, "padMap")
     if type(pm) == "table" and type(pm.combatTopOn) == "function" then
         local ok, v = pcall(pm.combatTopOn)
@@ -4589,6 +4614,8 @@ end
 -- swing now goes where the cast bar goes, whatever the game's own swing timer option says; the game's swing timer is never touched.
 -- nbar13: "Cast bar in fights: Top screen" for this character (PadMap m187; an older PadMap: off = the bottom screen's strip)
 function NB.castTopFlag()
+    local pv = NB.pv()
+    if pv then return pv.cast == true end                               -- nbar23
     local pm = rawget(WC, "padMap")
     if type(pm) == "table" and type(pm.combatCastTopOn) == "function" then
         local ok, v = pcall(pm.combatCastTopOn)
@@ -4599,6 +4626,8 @@ end
 -- nbar18: the app's Swing timer for our top bar (PadMap m190 combatCastSwingOn: the app's Settings > Home "Swing timer", sent with the
 -- cast bar's flag; an older PadMap without it: on, the swing's default)
 function NB.castSwingFlag()
+    local pv = NB.pv()
+    if pv then return pv.swing == true end                              -- nbar23
     local pm = rawget(WC, "padMap")
     if type(pm) == "table" and type(pm.combatCastSwingOn) == "function" then
         local ok, v = pcall(pm.combatCastSwingOn)
@@ -4613,6 +4642,8 @@ end
 -- P.partyModeOn drops raids for the HUD's lift; the app never did, so in a raid the Wings showed while the band stayed below), and an
 -- out-of-combat aside counts as off on both sides. An older PadMap without `live`: its plain on()
 function NB.partyOn()
+    local pv = NB.pv()
+    if pv then return pv.party == true end                              -- nbar23: Party mode's preview (Party mode's lay, solo or not)
     local pm = rawget(WC, "padMap")
     local p = type(pm) == "table" and pm.party or nil
     if type(p) ~= "table" then return false end
@@ -4625,6 +4656,8 @@ end
 -- player in combat): the Wings carry the Party layer up top while the app's band slides away on the same fight word (TopCombatBar.
 -- partyTop); out of a fight nothing (no takeover in Party mode: an attack armed before the pull keeps the band below, so no Wings)
 function NB.topSwitch(party)
+    local pv = NB.pv()
+    if pv then return pv.wings == true end                              -- nbar23: the preview lays the Wings with no fight
     if party == nil then party = NB.partyOn() end
     if party then return S(InCombatLockdown) == true or S(UnitAffectingCombat, "player") == true end
     -- nbar14 THE B RULE (the user, 11-23: "our combat ruls where we press B and it grows back downwards"): the router's own switch in
@@ -5155,6 +5188,10 @@ function NB.topTick(el)
     -- nbar9: the flag (PadMap's ctop under the character key) read at the first tick, then every FLAG_S, never every frame (it
     -- changes only on a padtab code or a key that arrives late); with it off and nothing shown, fading or previewed: nothing more
     T.flagAcc = (T.flagAcc or 0) + el
+    -- nbar23: the preview asked, changed or gone (a fight's first frame too): the flags read again THIS frame, the spot re-fitted
+    local pv = NB.pv()
+    local pvc = pv and pv.c or 0
+    if pvc ~= (T.pvc or 0) then T.pvc, T.flag, T.dirty, T.inKey = pvc, nil, true, nil end
     if T.flag == nil or T.flagAcc >= NB.TOP.FLAG_S then
         T.flagAcc = 0; T.flag = NB.topFlag()
         local ct = T.flag and NB.castTopFlag() or false                  -- nbar13: the cast bar's screen, read with the flag
@@ -5469,6 +5506,16 @@ end
 function NB.cbLook(now)
     local C = NB.CB
     local cn, ce = castNow, castEnd
+    -- nbar23: Edit Home's preview - a sample cast part way (the standard fill, its spark, the game's own "Cast Bar" words on the plate)
+    if NB.pv() then
+        local lk = NB.pvLook
+        if not lk then
+            lk = { kind = "c", p = NB.PV_CAST, atlas = C.A.c, rgb = C.RGB.c, left = NB.PV_LEFT, spark = true, glow = 0, alpha = 1 }
+            NB.pvLook = lk                                               -- (made once: asked every frame)
+        end
+        lk.name = realStr(rawget(_G, "HUD_EDIT_MODE_CAST_BAR_LABEL")) or "Cast Bar"
+        return lk
+    end
     if type(cn) == "table" then
         if type(cn.s) ~= "number" or type(cn.e) ~= "number" or cn.e <= cn.s or now > cn.e + C.END_WAIT then return nil end
         local p = math.max(0, math.min(1, (now - cn.s) / (cn.e - cn.s)))
@@ -5556,7 +5603,9 @@ end
 function NB.cbSwing(now)
     local cb, C, T = NB.cb, NB.CB, NB.top
     local ok, sw, so = false, nil, nil
-    if T.castSw ~= false then ok, sw, so = pcall(WC.swingDoc, now) end
+    -- nbar23: the preview's swing (the main hand's line part way), never the real one's
+    if NB.pv() then ok, sw, so = true, (T.castSw ~= false) and NB.pvSwing(now) or false, false
+    elseif T.castSw ~= false then ok, sw, so = pcall(WC.swingDoc, now) end
     for i, r in ipairs({ ok and sw or false, ok and so or false }) do
         local b = cb.sw[i]
         if type(r) == "table" and type(r.s) == "number" and type(r.d) == "number" and r.d > 0 and now >= r.s and now < r.s + r.d + C.SW_GRACE then
@@ -5583,6 +5632,13 @@ function NB.cbSwing(now)
             b:Hide()
         end
     end
+end
+-- nbar23: the preview's swing record (as WC.swingDoc's: started so that it stands at PV_SWING now), one table reused
+NB.pvSw = { s = 0, d = 2 }
+function NB.pvSwing(now)
+    local r = NB.pvSw
+    r.d = 2; r.s = now - NB.PV_SWING * r.d
+    return r
 end
 -- every frame (NB.topTick): shown on the switch's first frame, out over OUT_S; the spot (a glide when it moves while shown); the look
 function NB.cbTick(el)

@@ -80,7 +80,7 @@ pm = SRC["padmap"]
 rad = open(os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanionSpells", "Radial.lua"),
            encoding="utf-8").read()
 # (0) the versions and the route
-check('local PV = "m197"' in pm and 'm176 THE TAP-TO-CAST BAR' in pm, '(0) PadMap tag m182 (the m176 note kept)')
+check('local PV = "m198"' in pm and 'm176 THE TAP-TO-CAST BAR' in pm, '(0) PadMap tag m182 (the m176 note kept)')
 check('local RV = "r28"' in rad and 'local PRV = "pr3"' in rad, '(0) Radial tags r27 / pr3')
 check(re.search(r'elseif col >= 20 and col <= 27 then\s*\n\s*--[^\n]*\n\s*if type\(WC\.dsfReset\) == "function" then WC\.dsfReset\(col\)', rad)
       is not None, '(0) the pause row hands columns 20-27 to WC.dsfReset')
@@ -88,7 +88,7 @@ check(re.search(r'elseif col >= 20 and col <= 27 then\s*\n\s*--[^\n]*\n\s*if typ
 # (1) Layouts, this character
 L = world()
 a, ds = reset(L, 21)
-check(a and a['ok'] is True and a['col'] == 21 and a['v'] == 'm197', '(1) layouts answered ok', a)
+check(a and a['ok'] is True and a['col'] == 21 and a['v'] == 'm198', '(1) layouts answered ok', a)
 check(val(L, 'WowCompanionDB.lay["%s"]' % ME) is None and val(L, 'WowCompanionDB.hubSw["%s"]' % ME) is None and
       val(L, 'WowCompanionDB.prdY["%s"]' % ME) is None and val(L, 'WowCompanionDB.meters["%s"]' % ME) is None, '(1) my layout stores gone')
 check(val(L, 'WowCompanionSpellsDB.dpad["%s"]' % ME) is True, '(1) my toolbar back to its default ON')

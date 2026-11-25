@@ -3422,6 +3422,15 @@ class HomeView(
     /** 1518: edit mode is LIVE (open, not parked) or not any more (Done, Discard, a fight, another room): the host tells the add-on the
      *  record's D-pad sides and fight bar only while it is not live (the autosave writes every change; the pictures preview it meanwhile) */
     var onEditLive: ((Boolean) -> Unit)? = null
+    /** EDIT HOME'S TOP-SCREEN PREVIEW: a change edit mode made (a tab, a pick, the Swing timer): the host checks [editPreviewCode] again */
+    var onEditPreview: (() -> Unit)? = null
+    /** EDIT HOME'S TOP-SCREEN PREVIEW ([EditPreview]): the code the top screen should show now - the live session's tab and its page (the
+     *  draft), the app's Swing timer and the add-on's words; [EditPreview.OFF] with edit mode closed, parked (a fight, another room) */
+    fun editPreviewCode(): Int {
+        val m = edit?.takeIf { !it.parked && !editAway } ?: return EditPreview.OFF
+        val d = padMap?.dpad
+        return EditPreview.code(m.tab, m.page, HomeSettings.swingTimer, d?.ct, d?.cc)
+    }
 
     private fun editDraft(): HomeLayout? = edit?.takeIf { !it.parked || editBackDue }?.draft
     /** fix round 3: Home is back over a room-parked session and its resume is posted ([borrow]): the page is laid with the draft already */
@@ -3583,7 +3592,11 @@ class HomeView(
         val pieces = BandEdit.place(HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom), slots,
             chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview,
             away = b.bottom <= 0f,                                        // Top screen's preview: the band above the page
-            strip = now[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) })
+            strip = now[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) },
+            // (test 1530: the bigger strip pencil keeps clear of the party list's pencil on the Party mode tab)
+            // (its own map: host.parts() hands back one shared map a reader may be walking while the band is laid)
+            avoid = if (m.tab != HomeTab.PARTY) null else now[Part.PARTY]?.takeIf { views[Part.PARTY]?.visibility == View.VISIBLE }?.let { r ->
+                editView.partyPenBox(mapOf(HomePart.PARTY to RectF(r)))?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) } })
         fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
         // fix/fight-pencil-strip (the user's pick 2026-11-23, "Hold still until closed"): with the fight pencil's bubble open the pencil
         // stays where it was at the open (HomeEditModel.fightPenHold) - the strip laid or taken away by the bubble's Cast bar / Swing timer
@@ -3980,6 +3993,7 @@ class HomeView(
         editDecor()
         editView.invalidate()
         invalidate()
+        onEditPreview?.invoke()                                           // EditPreview: the tab or a pick may have changed
     }
 
     // ---------------------------------------------------------------- the motion's hooks (HomeEditMotion)

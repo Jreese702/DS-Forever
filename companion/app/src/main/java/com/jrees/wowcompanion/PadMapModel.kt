@@ -335,6 +335,7 @@ object PadMapModel {
                     ct = if (d.has("ct")) d.optInt("ct", 0).coerceIn(0, 1) else null,
                     cc = if (d.has("cc")) d.optInt("cc", 0).coerceIn(0, 1) else null,
                     cs = if (d.has("cs")) d.optInt("cs", 1).coerceIn(0, 1) else null,
+                    pv = if (d.has("pv")) d.optInt("pv", 0).let { if (it in PadMapModel.P3_PV_OFF + 1..PadMapModel.P3_PV_LAST) it else 0 } else null,
                     realmSource = who?.let { textOrNull(it, "rs") },
                     realmHint = who?.let { textOrNull(it, "rh") },
                     cls = who?.let { textOrNull(it, "c") },
@@ -381,6 +382,8 @@ object PadMapModel {
                     val want: Boolean?, val colOn: Int?, val colOff: Int?, val name: String?, val realm: String?,
                     val dirs: kotlin.collections.Map<Int, String> = emptyMap(), val aside: String? = null,
                     val undone: List<String> = emptyList(), val ct: Int? = null, val cc: Int? = null, val cs: Int? = null,
+                    /** PadMap m198: Edit Home's top-screen preview the add-on shows now (EditPreview's code, 0 = none); null = an older add-on */
+                    val pv: Int? = null,
                     /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"; m180, Safety k10: "guid", "guid-id",
                      *  "sticky", "live", "hint", "picked", "new", "ask", "none"), null from an older add-on. [realm] is the STORED key's */
                     val realmSource: String? = null,
@@ -862,6 +865,11 @@ object PadMapModel {
      *  - the app's Settings > Home "Swing timer" (TopCombatBar.swingWanted) */
     const val P3_SWING_OFF = 26
     const val P3_SWING_ON = 27
+    /** EDIT HOME'S TOP-SCREEN PREVIEW (Book b85, PadMap m198): page-3 codes 32 (none) / 33-35 In combat / 36-39 Party mode
+     *  ([EditPreview.code]) - the page's last free codes */
+    const val P3_PV_OFF = 32
+    const val P3_PV_LAST = 39
+    fun previewCells(code: Int): List<Pair<String, Int>> = page3(code.coerceIn(P3_PV_OFF, P3_PV_LAST))
     /** the sticky realm question's codes (Book b74, test build 1515): [KeyPick.NEW_CODE] 9 = "a new character", [KeyPick.FIRST_CODE] 10
      *  .. 19 = the add-on's candidates 1-10 (KeyPick sends them; HomeLayoutStoreTest keeps these two equal to KeyPick's) */
     const val P3_KEY_NEW = 9
@@ -873,7 +881,8 @@ object PadMapModel {
         "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
         "fight cast bar" to P3_CAST_OFF..P3_CAST_ON, "top bar swing" to P3_SWING_OFF..P3_SWING_ON,
         "hold chooser" to P3_HOLD..P3_HOLD,       // m190 / Book b79; b80: code 28, off the swing's 26
-        "hold time" to P3_HOLD_SHORT..P3_HOLD_LONG)                                              // m194 / Book b82
+        "hold time" to P3_HOLD_SHORT..P3_HOLD_LONG,                                              // m194 / Book b82
+        "edit preview" to P3_PV_OFF..P3_PV_LAST)                                                 // m198 / Book b85
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
     fun fightCastCells(top: Boolean): List<Pair<String, Int>> = page3(if (top) P3_CAST_ON else P3_CAST_OFF)

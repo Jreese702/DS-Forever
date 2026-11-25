@@ -1,5 +1,5 @@
 set 430
-9f6811ef29907cef3b27e2798b5cd9f3  WowCompanion/ActionBar.lua
+3f347a1f5c574811883de816eb13b374  WowCompanion/ActionBar.lua
 fa7c9554ace1e551fa2c9c02411b05c6  WowCompanion/Bags.lua
 46f82d8e20a3c731f5f0b8983c8d2820  WowCompanion/Chat.lua
 737413c5fe597fe3a9182316cea7ad04  WowCompanion/Coords.lua
@@ -30,7 +30,7 @@ b714c4048d5fd47aec1a857c174cc433  WowCompanion/Media/wings_glow.tga
 a9fe89d8b05c4d32bd12e127ea5e5076  WowCompanion/Safety.lua
 6427d1430ed3f3f0ed77e4acc88932a6  WowCompanion/Sink.lua
 d07cc1cd2d1035f4ca30861e9efd2823  WowCompanion/TapPad.lua
-47c974eb7ad6df81cc7215563286db53  WowCompanion/Trail.lua
+4c5e6c140831f0a01e11d4446421290b  WowCompanion/Trail.lua
 6c123706de6d6a71b0f4c7f39006caa4  WowCompanion/WowCompanion.toc
 59e1503bbc64dc8979541aef55c8c469  WowCompanionCalendar/Calendar.lua
 727d6c8d56a910c956c6688568192c53  WowCompanionCalendar/WowCompanionCalendar.toc
@@ -39,7 +39,7 @@ ab252523014baac213a236ee7cac20f8  WowCompanionCharacter/Auras.lua
 b254873811395572ee1de1908eb6047f  WowCompanionCharacter/WowCompanionCharacter.toc
 1b55cf058195ec65d741efb8a4df82fa  WowCompanionGroupFinder/GroupFinder.lua
 cea6e08b27066d8d3cb2a82d57fa85ed  WowCompanionGroupFinder/WowCompanionGroupFinder.toc
-4adb6842445ca322d202d40a034cf7ac  WowCompanionHub/Hub.lua
+71295a17a50b650416fd24261750b8a6  WowCompanionHub/Hub.lua
 98c55c67111de3555994d4efb4f4b241  WowCompanionHub/WowCompanionHub.toc
 0b8878996466e09b56c969f7602a9016  WowCompanionInteract/Dialogs.lua
 8ec80124318e0b4861f6b6668a41f64f  WowCompanionInteract/Interact.lua
@@ -53,8 +53,8 @@ cea6e08b27066d8d3cb2a82d57fa85ed  WowCompanionGroupFinder/WowCompanionGroupFinde
 f68ef2cf15bfba9133d3d8db1d6ef661  WowCompanionQuests/WowCompanionQuests.toc
 7cae6895d42cba3a4a2cd3f925bcaf86  WowCompanionSocial/Social.lua
 2f2c762cabc26039ed878bbbf23d0c24  WowCompanionSocial/WowCompanionSocial.toc
-952f1a7adec22b1f554aaee522c126a6  WowCompanionSpells/Book.lua
-29f65821b9053ff064d60c7de5e51038  WowCompanionSpells/PadMap.lua
+55d69f984b1ebba81cc7a96fc2ff91c8  WowCompanionSpells/Book.lua
+c8fce2c80a65b2ad340b50398c556c36  WowCompanionSpells/PadMap.lua
 6c5d58e64ad480dad19f8403b4dffc28  WowCompanionSpells/PadTabCtl.lua
 d186209188cee2623517add47e309db3  WowCompanionSpells/Radial.lua
 96b3692ce7dd4b14a3c59cf0d853b19e  WowCompanionSpells/Spells.lua

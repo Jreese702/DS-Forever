@@ -22,7 +22,7 @@ def check(ok, what):
 
 
 HUB = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
-check(re.search(r'local HV = "hub78"', HUB) is not None and "hub74 THE 1514" in HUB, "a. the tag: Hub hub76 (hub74's note kept)")
+check(re.search(r'local HV = "hub79"', HUB) is not None and "hub74 THE 1514" in HUB, "a. the tag: Hub hub76 (hub74's note kept)")
 check("doc.shotlog, doc.rx, doc.net = nil, nil, nil" in HUB, "a. net is out of the change key, beside the shot log and the presses")
 
 L, errs = boot_world(strict=False)
@@ -67,7 +67,7 @@ check(h2 and h2[0].get("net") == {"h": 300, "w": 320}, "c. the next heartbeat ca
 # no call, or one that throws: no `net`, the document as before
 L.execute('_G.GetNetStats = nil')
 h3 = hubs(sends('WowCompanion.snapshot("manual")'))
-check(h3 and "net" not in h3[0] and h3[0].get("hv") == "hub78", "d. no GetNetStats: no net (%s)" % (h3 and sorted(h3[0].keys())[:6]))
+check(h3 and "net" not in h3[0] and h3[0].get("hv") == "hub79", "d. no GetNetStats: no net (%s)" % (h3 and sorted(h3[0].keys())[:6]))
 L.execute('_G.GetNetStats = function() error("nope") end')
 h4 = hubs(sends('WowCompanion.snapshot("manual")'))
 check(h4 and "net" not in h4[0], "d. a throwing GetNetStats: no net")

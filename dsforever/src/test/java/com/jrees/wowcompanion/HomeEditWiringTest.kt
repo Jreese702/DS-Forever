@@ -167,7 +167,10 @@ class HomeEditWiringTest {
         // the add-on hears the record's sides / fight bar only once edit mode is not live
         assertTrue(body(host, "private fun mirrorCheck(").contains("if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }"))
         assertTrue(body(host, "private fun topCheck(").contains("if (homeView.editing) { ui.removeCallbacks(topAgain); return }"))
-        assertTrue(host.contains("homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it); swingCheck(it) } } }"))
+        // (EditPreview: the top screen's preview checked first, on and off; the flags only once edit mode is not live)
+        val live = host.substring(host.indexOf("homeView.onEditLive = { on ->")).substringBefore("homeView.onEditPreview")
+        assertTrue(live.contains("ui.post { lastDpad?.let { previewCheck(it) } }"))
+        assertTrue(live.contains("if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it); swingCheck(it) } }"))
         // feat/top-castbar: the top bar's swing flag (PadMap m190) waits for Done too
         assertTrue(body(host, "private fun swingCheck(").contains("if (homeView.editing) { ui.removeCallbacks(swingAgain); return }"))
         // the 1529 integration (feat/top-castbar x feat/edit-tabs): the swing flag follows the NEXT fight's tab as `ct` / `cc` do (its

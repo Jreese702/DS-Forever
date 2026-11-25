@@ -878,8 +878,11 @@ class HomeEditShotsTest {
             assertNotNull("$n: the fight pencil stays reachable", pen)
             // (the fight strip there - Cast bar in fights = Bottom screen, the default: on the strip's left end, the user's pick
             // 2026-11-23; theFightPencilSitsAtTheStripsLeftEnd has the cases)
-            assertEquals("$n: on the fight strip's left end", BandEdit.onStrip(HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)), pen)
-            assertTrue("$n: on the page's top ($pen)", pen!!.t >= 0f && pen.b <= 60f)
+            // (test 1530: BandEdit.onStrip's bigger pencil, or 1530's beside the party list's pencil: onStripSmall)
+            val sb = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
+            assertTrue("$n: on the fight strip's left end ($pen)", pen == BandEdit.onStrip(sb) || (party && pen == BandEdit.onStripSmall(sb)))
+            // (test 1530, "way to small": the strip's pencil PEN_ON_STRIP now - it hangs from the strip's left end, 1530's 32 px stood in it)
+            assertTrue("$n: on the page's top ($pen)", pen!!.t >= 0f && pen.b <= BandEdit.RING + BandEdit.PEN_ON_STRIP + 0.5f)
             p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
             assertEquals(EditStop.FIGHT_PEN, model(p).menu)
             val bubble = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
@@ -939,8 +942,8 @@ class HomeEditShotsTest {
             if (strip != null) {
                 at("$n: the fight strip ($strip)", strip == RectF(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H))
                 at("$n: the pencil at the strip's left end ($pen / $strip)", pen.cx >= strip.left && pen.cx <= strip.left + 64f)
-                val cy = (pen.t + pen.b) / 2f
-                at("$n: its centre on the strip's height ($pen / $strip)", cy > strip.top && cy < strip.bottom)
+                // (test 1530: the bigger pencil hangs from the strip's left end, over the strip's whole height)
+                at("$n: over the strip's height ($pen / $strip)", pen.t < strip.bottom && pen.b > strip.bottom && pen.t <= strip.top + BandEdit.RING)
                 at("$n: the strip's middle clear ($pen / $strip)", pen.r < strip.centerX() - strip.width() / 4f)
                 at("$n: the cursor round it on the page ($pen)", pen.l - BandEdit.RING >= -0.01f && pen.t - BandEdit.RING >= -0.01f)
             } else {
@@ -997,7 +1000,8 @@ class HomeEditShotsTest {
         val stripBox = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
         // its own place (theFightPencilSitsAtTheStripsLeftEnd): the strip's left end, or the page's top centre AWAY_TOP down
         fun ownPlace(pen: HomeLayoutSolver.Box?, strip: Boolean): Boolean = pen != null &&
-            if (strip) pen == BandEdit.onStrip(stripBox) else kotlin.math.abs(pen.cx - W / 2f) <= 1f && kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f
+            // (test 1530: the bigger strip pencil, or 1530's beside the party list's pencil on the Party mode tab: BandEdit.onStrip's avoid)
+            if (strip) pen == BandEdit.onStrip(stripBox) || pen == BandEdit.onStripSmall(stripBox) else kotlin.math.abs(pen.cx - W / 2f) <= 1f && kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f
         // the changes: (name, the record's Cast bar in fights, the game's swing timer `gsw` at the open, Swing timer at the open, the row's
         // key and pick - or, [gswTo], the add-on's padmap saying the game's own swing timer went on / off: the swing-alone strip comes or
         // goes; [strip] = the change lays or takes away the strip (Swing timer, ours, paints the strip's swing only)

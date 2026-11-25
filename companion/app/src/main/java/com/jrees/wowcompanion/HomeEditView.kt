@@ -259,12 +259,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (host.model?.tab != HomeTab.PARTY) return null
         val b = p[HomePart.PARTY] ?: return null
         if (b.width() < BandEdit.PEN * 2f || b.height() < BandEdit.PEN) return null
+        // (test 1530, "way to small": [BandEdit.PEN_PARTY] where the list has the room, its touch box 48 dp: [penTouch])
+        val pp = if (b.width() >= BandEdit.PEN_PARTY * 2f && b.height() >= BandEdit.PEN_PARTY + 2f * PARTY_PEN_IN) BandEdit.PEN_PARTY else BandEdit.PEN
         val tabLeft = b.left <= 0.5f
         penPt[0] = if (tabLeft) b.right else b.left; penPt[1] = b.top
         if (host.pose(HomePart.PARTY, penMtx)) penMtx.mapPoints(penPt)
-        val l = if (tabLeft) penPt[0] - PARTY_PEN_IN - BandEdit.PEN else penPt[0] + PARTY_PEN_IN
+        val l = if (tabLeft) penPt[0] - PARTY_PEN_IN - pp else penPt[0] + PARTY_PEN_IN
         val t = penPt[1] + PARTY_PEN_IN
-        return RectF(l, t, l + BandEdit.PEN, t + BandEdit.PEN)
+        return RectF(l, t, l + pp, t + pp)
     }
     private val penPt = FloatArray(2)
     private val penMtx = android.graphics.Matrix()
@@ -1137,11 +1139,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
      *  only its tip red) - a fight-red disc and ring, the pencil's tip red too, so it reads as the fight's own at a glance */
     private fun pencil(c: Canvas, r: RectF, open: Boolean, fight: Boolean = false) {
         val cx = r.centerX(); val cy = r.centerY(); val rad = min(r.width(), r.height()) / 2f
-        pFill.style = Paint.Style.FILL; pFill.color = if (fight) FIGHT_INK else Theme.ink; pFill.alpha = 235
+        // (test 1530: the disc opaque - a badge, nothing under it shows through or moves it)
+        pFill.style = Paint.Style.FILL; pFill.color = if (fight) FIGHT_INK else Theme.ink; pFill.alpha = 255
         c.drawCircle(cx, cy, rad, pFill)
-        pLine.pathEffect = null; pLine.strokeWidth = if (fight) 3f else 2.5f
+        // test 1530 (the bigger pencils): the comic-ink kit's thick dark outline round the disc, the ring and the pencil's lines grown with it
+        val k = (rad / 20f).coerceAtLeast(1f)
+        pLine.pathEffect = null; pLine.strokeWidth = 2.5f * k; pLine.color = Theme.ink; pLine.alpha = 255
+        c.drawCircle(cx, cy, rad + 0.5f * k, pLine)
+        pLine.strokeWidth = (if (fight) 3f else 2.5f) * k
         pLine.color = if (open) Theme.gold else if (fight) FIGHT_RED else Theme.bronze; pLine.alpha = 255
-        c.drawCircle(cx, cy, rad - 1.5f, pLine)
+        c.drawCircle(cx, cy, rad - 1.5f * k, pLine)
         val sv = c.save()
         c.rotate(-45f, cx, cy)
         val len = rad * 1.15f; val th = rad * 0.30f
@@ -1796,6 +1803,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
         val m = host.model
         val shared = m?.tab?.fight != true                                  // (edit tabs: the shared pieces sit still on the fight tabs)
+        // test 1530 ("way to small"): a finger ON a piece first, then the pieces' grown boxes (TOUCH_MIN); the pencils' 48 dp boxes
+        // (BandEdit.PEN_TOUCH) are tapAt's, after these - so a pencil's bigger box never takes a tap meant for the piece beside it
+        if (shared && hit(g.padPen, grow = false)) return EditStop.PAD_PEN to null
+        if (shared && hit(g.facePen, grow = false)) return EditStop.FACE_PEN to null
+        if (shared && hit(g.look, grow = false)) return EditStop.LOOK to null
+        if (hit(g.fightPen, grow = false)) return EditStop.FIGHT_PEN to null
         if (shared && hit(g.padPen)) return EditStop.PAD_PEN to null
         if (shared && hit(g.facePen)) return EditStop.FACE_PEN to null
         if (shared && hit(g.look)) return EditStop.LOOK to null
@@ -1813,6 +1826,22 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (shared && hit(g.face, grow = false)) return EditStop.FACE_PEN to null
         return null
     }
+
+    /** the band's pencils a finger can reach now (the shared ones on Out of combat only) */
+    private fun bandPens(g: BandGeo): List<Pair<EditStop, RectF>> {
+        val shared = host.model?.tab?.fight != true
+        return listOfNotNull(g.fightPen?.let { EditStop.FIGHT_PEN to it }, if (shared) EditStop.PAD_PEN to g.padPen else null,
+            if (shared) EditStop.FACE_PEN to g.facePen else null)
+    }
+
+    /** a pencil's touch box (BandEdit.touchBox: 48 dp on the screen at edit mode's zoom) holds ([x], [y]) */
+    private fun penTouch(r: RectF, x: Float, y: Float): Boolean {
+        val t = BandEdit.touchBox(HomeLayoutSolver.Box(r.left, r.top, r.right, r.bottom))
+        return x >= t.l && x <= t.r && y >= t.t && y <= t.b
+    }
+    /** how far ([x], [y]) is from [r] (0 on it) */
+    private fun offBy(r: RectF, x: Float, y: Float): Float =
+        kotlin.math.hypot(max(0f, max(r.left - x, x - r.right)), max(0f, max(r.top - y, y - r.bottom)))
 
     /** EDIT TABS: the ribbon's Fight toggle is offered (the Party mode tab's alone) */
     private fun fightToggle(): Boolean = host.model?.tab == HomeTab.PARTY
@@ -1904,13 +1933,18 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             return
         }
         // PARTY SIZING: the party list's pencil opens (or closes) its bubble
-        if ((m.menu == null || m.menu!!.pencil) && partyPenBox()?.let { r ->
+        val pensOk = m.menu == null || m.menu!!.pencil
+        val partyPen = partyPenBox()
+        if (pensOk && partyPen?.let { r ->
                 val dx = max(0f, (TOUCH_MIN - r.width()) / 2f); val dy = max(0f, (TOUCH_MIN - r.height()) / 2f)
                 x >= r.left - dx && x <= r.right + dx && y >= r.top - dy && y <= r.bottom + dy } == true) {
             host.run(m.pencilTap(EditStop.PARTY_PEN)); return
         }
         // THE TOP BAR (P1 - P4): a pencil or its buttons open the bubble, the Look chip flips, a "-" hides, an extra is selected, "+" its tray
-        if (m.menu == null || m.menu!!.pencil) host.band()?.let { g -> bandAt(g, x, y) }?.let { (s, what) ->
+        // test 1530 ("way to small"): then every pencil's 48 dp touch box (BandEdit.PEN_TOUCH) - the party list's and the band's - the
+        // NEAREST pencil's, never over an open bubble (its rows keep their taps)
+        val g = host.band()
+        if (pensOk) g?.let { bandAt(it, x, y) }?.let { (s, what) ->
             when {
                 s.pencil -> host.run(m.pencilTap(s))
                 s == EditStop.LOOK -> host.run(m.closeMenu() + m.lookFlip())
@@ -1940,6 +1974,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             if (RectF(removeChip(last)).apply { inset(-10f, -10f) }.contains(x, y) ||
                 (m.removeAsk == sel && removePill(last).contains(x, y))) { host.run(m.removeChip(sel)); return }
         }
+        // test 1530 ("way to small"): every pencil's 48 dp touch box (BandEdit.PEN_TOUCH) - the party list's and the band's - the NEAREST
+        // pencil's; after a finger ON a piece, an open bubble's rows and the red X chip (they keep their taps), before the widgets
+        (listOfNotNull(partyPen?.let { EditStop.PARTY_PEN to it }) + (g?.let { bandPens(it) } ?: emptyList()))
+            .filter { penTouch(it.second, x, y) }.minByOrNull { offBy(it.second, x, y) }?.let { host.run(m.pencilTap(it.first)); return }
         val s = stopAt(x, y)
         if (s == null) { m.cancelRemove(); return }
         host.run(m.tap(s))

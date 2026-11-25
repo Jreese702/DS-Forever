@@ -74,7 +74,7 @@ def boot():
 
 def main():
     ab = open(tnb.AB, encoding="utf-8").read()
-    chk("0. ActionBar nbar21 and its note (nbar18 kept)", 'local NB = { V = "nbar22"' in ab and "nbar21 THE HOLD SPELL ON THE TOP SCREEN" in ab
+    chk("0. ActionBar nbar21 and its note (nbar18 kept)", 'local NB = { V = "nbar23"' in ab and "nbar21 THE HOLD SPELL ON THE TOP SCREEN" in ab
         and "nbar18 HOLD TO CAST" in ab)
     L, G = boot()
     NB = G.WowCompanion.nbar

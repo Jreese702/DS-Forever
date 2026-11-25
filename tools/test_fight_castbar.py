@@ -68,10 +68,10 @@ def sent_cc(L, n0):
 
 
 # ------------------------------------------------------------------------------------------------ 0 the tags
-check('local PV = "m197"' in SRC["padmap"] and "m190 THE SWING WITH OUR TOP CAST BAR" in SRC["padmap"]
+check('local PV = "m198"' in SRC["padmap"] and "m190 THE SWING WITH OUR TOP CAST BAR" in SRC["padmap"]
       and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
       and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap m190 (m187's and m179's notes kept)")
-check('local BV = "b84"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]
+check('local BV = "b85"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]
       and "for k = 0, 1 do P3[24 + k]" in SRC["book"] and "b78 THE SWING WITH OUR TOP CAST BAR" in SRC["book"]
       and "for k = 0, 1 do P3[26 + k]" in SRC["book"], "0. Book b78 (b77's codes 24 / 25 kept) and its codes 26 / 27")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")
@@ -187,7 +187,7 @@ clean(W3, "3")
 from wowstub import ADDONS, boot_world      # noqa: E402
 
 HUB = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
-check(re.search(r'local HV = "hub78"', HUB) is not None and "hub78 THE GAME'S CAST BAR STAYS AS THE PLAYER SET IT" in HUB
+check(re.search(r'local HV = "hub79"', HUB) is not None and "hub78 THE GAME'S CAST BAR STAYS AS THE PLAYER SET IT" in HUB
       and "hub76 THE GAME'S CAST BAR BACK FOR A TOP-SCREEN FIGHT" in HUB and "hub75 THE GAME'S LATENCY" in HUB,
       "2. Hub hub78 and its note (hub76's / hub75's kept)")
 

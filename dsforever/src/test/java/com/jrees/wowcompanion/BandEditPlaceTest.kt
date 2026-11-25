@@ -88,8 +88,9 @@ class BandEditPlaceTest {
             val sl = slots(diamonds, h, band.t, false)
             val p = BandEdit.place(band, sl, null, diamonds, false, true, away = true)
             val f = p.fightPen!!
+            // (test 1530, "way to small": PEN_FIGHT square now, PEN before)
             assertTrue("diamonds=$diamonds: at the page's top centre ($f)", kotlin.math.abs(f.cx - W / 2f) < 0.5f && f.t == BandEdit.AWAY_TOP &&
-                kotlin.math.abs(f.w - BandEdit.PEN) < 0.5f && kotlin.math.abs(f.h - BandEdit.PEN) < 0.5f)
+                kotlin.math.abs(f.w - BandEdit.PEN_FIGHT) < 0.5f && kotlin.math.abs(f.h - BandEdit.PEN_FIGHT) < 0.5f)
             assertNull(p.look)
             assertTrue("the band's pencils above the page with it", p.padPen.b <= 0f && p.facePen.b <= 0f)
             // the band on the page: away changes nothing; out of the preview: no fight pencil
@@ -116,14 +117,15 @@ class BandEditPlaceTest {
             val f = BandEdit.place(band, sl, null, diamonds, false, true, away = true, strip = strip).fightPen!!
             val n = "diamonds=$diamonds: $f on the strip $strip"
             assertTrue("$n: at its left end", f.cx >= strip.l && f.cx <= strip.l + END && f.r <= strip.l + END + f.w / 2f)
-            assertTrue("$n: its centre on the strip's height", (f.t + f.b) / 2f > strip.t && (f.t + f.b) / 2f < strip.b)
+            // (test 1530: the bigger pencil is taller than the strip - it hangs from the strip's left end, over its whole height)
+            assertTrue("$n: over the strip's height", f.t < strip.b && f.b > strip.b && f.t <= strip.t + BandEdit.RING)
             assertTrue("$n: the strip's middle clear (${f.r} vs ${strip.cx})", f.r < strip.cx - strip.w / 4f)
             assertTrue("$n: the cursor round it on the page", f.l - BandEdit.RING >= -0.01f && f.t - BandEdit.RING >= -0.01f)
-            assertTrue("$n: a pencil's size", f.w >= BandEdit.PEN_ROW - 0.5f && f.h >= BandEdit.PEN_ROW - 0.5f && f.w <= BandEdit.PEN + 0.5f)
+            assertTrue("$n: the strip pencil's size", kotlin.math.abs(f.w - BandEdit.PEN_ON_STRIP) < 0.5f && kotlin.math.abs(f.h - BandEdit.PEN_ON_STRIP) < 0.5f)
             // no strip: the page's top centre, PEN square, AWAY_TOP down (today's)
             val c = BandEdit.place(band, sl, null, diamonds, false, true, away = true, strip = null).fightPen!!
             assertTrue("diamonds=$diamonds: no strip - the page's top centre ($c)", kotlin.math.abs(c.cx - W / 2f) < 0.5f && c.t == BandEdit.AWAY_TOP &&
-                kotlin.math.abs(c.w - BandEdit.PEN) < 0.5f)
+                kotlin.math.abs(c.w - BandEdit.PEN_FIGHT) < 0.5f)
             // the band on the page (out of Top screen's preview): a strip changes nothing
             val on = HomeLayoutSolver.Box(0f, 8f, W, 8f + h)
             val os = slots(diamonds, h, 8f, false)
@@ -131,6 +133,52 @@ class BandEditPlaceTest {
                 BandEdit.place(on, os, null, diamonds, false, true, strip = strip).fightPen!!.toString())
         }
     }
+    /**
+     * THE PENCILS ARE BIG ENOUGH TO TAP (the user on test 1530, 2026-11-25: "The in fight pencil is way to small in edit mode to reasonably
+     * expect someone to try tapping it"): the fight pencil DRAWN at least 48 px (twice 1530's 24 px floor; 56 on the strip, 64 where the
+     * band went) wherever it stands - the thin row's gap, the diamonds' notch, the grown band's top, the page's top centre, the strip's left
+     * end - and EVERY pencil's TOUCH box (the D-pad's, the ABXY's, the fight one, the party list's) at least 48 dp on the screen: 110.7 px on
+     * the Thor's 369 dpi bottom panel, through edit mode's page zoom (HomeView.pageMatrix: (frame - TAB_ROW) / frame). 1530 drew the fight
+     * pencil 28-40 px and touched it in a 48 px box (HomeEditView.TOUCH_MIN): 19 dp
+     */
+    @Test fun thePencilsAreBigEnoughToTap() {
+        val frame = 1080f - Strip.HEIGHT
+        val zoom = (frame - HomeEditView.TAB_ROW) / frame
+        val floor = BandEdit.TOUCH_DP * BandEdit.PANEL_DPI / 160f
+        assertTrue("the page zoom ${zoom} within the touch floor's reach", zoom >= BandEdit.TOUCH_ZOOM_MIN)
+        assertTrue("PEN_TOUCH ${BandEdit.PEN_TOUCH} Home px = ${BandEdit.PEN_TOUCH * zoom} screen px >= 48 dp ($floor)",
+            BandEdit.PEN_TOUCH * BandEdit.TOUCH_ZOOM_MIN >= floor)
+        val top = 8f
+        val cases = ArrayList<Pair<String, BandEdit.Pieces>>()
+        cases += "row" to BandEdit.place(HomeLayoutSolver.Box(0f, top, W, top + CastBarPlace.ROW_H), slots(false, CastBarPlace.ROW_H, top, false), null, false, false, true)
+        val ch = UiKitSizes.chip(true)
+        val clock = HomeLayoutSolver.Box(W / 2f - 78f, top + ClockBand.CHIP_TOP, W / 2f + 78f, top + ClockBand.CHIP_TOP + ch)
+        cases += "diamonds" to BandEdit.place(HomeLayoutSolver.Box(0f, top, W, top + 200f), slots(true, 200f, top, false), clock, true, false, true)
+        cases += "grown" to BandEdit.place(HomeLayoutSolver.Box(0f, top, W, top + 380f), slots(true, 380f, top, true), null, true, true, true)
+        val away = HomeLayoutSolver.Box(0f, 8f - (8f + 200f + HomeLayoutSolver.AWAY_PAST), W, -HomeLayoutSolver.AWAY_PAST)
+        val asl = slots(true, 200f, away.t, false)
+        cases += "away" to BandEdit.place(away, asl, null, true, false, true, away = true)
+        cases += "strip" to BandEdit.place(away, asl, null, true, false, true, away = true,
+            strip = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H))
+        for ((n, p) in cases) {
+            val f = p.fightPen!!
+            assertTrue("$n: the fight pencil drawn ${f.w} x ${f.h} >= 48", f.w >= 48f && f.h >= 48f)
+            for ((pn, b) in listOf("fight" to f, "pad" to p.padPen, "face" to p.facePen)) {
+                val t = BandEdit.touchBox(b)
+                assertTrue("$n: the $pn pencil's touch box ${t.w} x ${t.h} (screen ${t.w * zoom}) >= 48 dp", t.w * zoom >= floor && t.h * zoom >= floor)
+                assertTrue("$n: the $pn pencil's touch box holds the pencil", t.l <= b.l && t.r >= b.r && t.t <= b.t && t.b >= b.b)
+            }
+        }
+        assertTrue("the strip's pencil", cases.first { it.first == "strip" }.second.fightPen!!.w >= BandEdit.PEN_ON_STRIP - 0.5f)
+        assertTrue("where the band went", cases.first { it.first == "away" }.second.fightPen!!.w >= BandEdit.PEN_FIGHT - 0.5f)
+        // the party list's pencil (HomeEditView.partyPenBox: PEN_PARTY with the room, PEN on a small list): its touch box too
+        for (side in listOf(BandEdit.PEN_PARTY, BandEdit.PEN)) {
+            val t = BandEdit.touchBox(HomeLayoutSolver.Box(100f, 100f, 100f + side, 100f + side))
+            assertTrue("the party list's pencil ($side): touch ${t.w * zoom} >= 48 dp", t.w * zoom >= floor && t.h * zoom >= floor)
+        }
+        assertTrue("the party list's pencil drawn bigger than 1530's", BandEdit.PEN_PARTY > BandEdit.PEN)
+    }
+
     /** the strip's "left end": its first 64 px (5 % of the 1224 px strip) */
     private val END = 64f
 

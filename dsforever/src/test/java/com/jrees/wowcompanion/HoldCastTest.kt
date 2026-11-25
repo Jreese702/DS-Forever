@@ -257,7 +257,7 @@ class HoldCastTest {
      *  padmap's D-pad checks (posted), so a batch they just sent is one it sees; before, a login after a reset could have both in 0.25 s */
     @Test fun theHoldTimeWaitsOutEveryOtherPage3Batch() {
         val host = src("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")
-        assertTrue(host.contains("if (listOf(mirrorSentAt, topSentAt, castSentAt, swingSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS })"))
+        assertTrue(host.contains("if (listOf(mirrorSentAt, topSentAt, castSentAt, swingSentAt, pvSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS })"))   // (+ EditPreview's)
         assertTrue("the padmap's check posted after its D-pad checks",
             host.contains("if (current) ui.post { lastPadMap?.let { m -> if (m === it) holdTicksCheck(m) } }"))
         assertFalse(host.contains("if (current) holdTicksCheck(it)"))
