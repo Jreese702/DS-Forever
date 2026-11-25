@@ -26,7 +26,8 @@ face past the 2 s fallback until it stops being current; "none" ends it at once;
 as red if the original spell was not usable, I want that to also shift with the ability that its showing casting so its not
 confusing"): while the takeover has the face the glyph's red (range only), b.range, the face's own shade (b.hflash: blue mana, grey
 unusable) and the count are the HOLD spell's, switched at the fire and back at the end at once; the badge fades out (1 - the face's
-alpha), never wearing the tap spell.
+alpha), never wearing the tap spell. The NEXT spell's GCD (begun at the hold's GCD's end, the game's spell-queue window) is not the
+hold's: the face does not pop back while it eases out; a GCD up to 0.45 s after the fire (an instant queued in that window) is.
 --shots DIR renders the four faces with the real art (the game's ring / glyph art from the art root, the icons from its icons.pak).
 Needs lupa (PIL for --shots). Exit code 1 on any failure."""
 import bisect
@@ -287,6 +288,14 @@ def main():
     L.execute('WC.gcdRun = { s = NOW - 0.02, d = 1.5 }; WC.holdFired(2); WC.holdCast(2, "ok"); TICK(1.3)')
     chk("3. ... one that began in the fire's own frame is", b[2].hto is not None and b[2].hflash.alpha == 1)
     L.execute('WC.gcdRun = nil; TICK(0.5)')
+    # the NEXT spell's GCD (the player's next press goes off right at the hold's GCD's end, the game's spell-queue window) is not the
+    # hold's: no pop back to the face while it eases out
+    L.execute('WC.holdFired(2); WC.gcdRun = { s = NOW, d = 1.5 }; WC.holdCast(2, "ok"); TICK(1.55); WC.gcdRun = { s = NOW, d = 1.5 }; TICK(0.3)')
+    chk("3. the next spell's GCD, begun at the hold's GCD's end: not the hold's (back, no pop)", b[2].hto is None, b[2].hto is not None)
+    # ... an instant queued in the spell-queue window, off 0.4 s after the fire: its own GCD
+    L.execute('WC.gcdRun = nil; TICK(0.5); WC.holdFired(2); TICK(0.4); WC.gcdRun = { s = NOW, d = 1.5 }; WC.holdCast(2, "ok"); TICK(1.3)')
+    chk("3. ... a GCD 0.4 s after the fire (the spell-queue window): its own", b[2].hto is not None and b[2].hflash.alpha == 1)
+    L.execute('WC.gcdRun = nil; TICK(0.6)')
     # the 1531 audit: THE TAKEOVER IS THE FIRED LAYER'S (PadMap passes it: WC.holdFired(pos, lay)) - LT + X's hold fired with LT let go
     # a moment before X: the face never shows the bare X's hold; it shows LT + X's own hold while the bar shows the LT layer (as Home's
     # band: HoldCast.takeover is per layer), and it still ends on time

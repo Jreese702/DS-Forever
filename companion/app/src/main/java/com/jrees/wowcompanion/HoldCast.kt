@@ -288,7 +288,15 @@ object HoldCast {
         /** the running GCD ([startMs], [durMs]): the one that started with the hold counts. The fix pass: from [castFrom] -
          *  [GCD_BACK_MS] (the game's frame and the clocks' slack), not 0.5 s before the start (the fire comes BEFORE the game's cast now:
          *  a D-pad spell's GCD 0.3 s before an interrupt's fire is not the interrupt's) */
-        fun gcd(startMs: Long, durMs: Long) { if (pos >= 0 && durMs > 0L && startMs >= castFrom - GCD_BACK_MS) gcdEnd = startMs + durMs }
+        fun gcd(startMs: Long, durMs: Long) {
+            if (pos < 0 || durMs <= 0L) return
+            // the glyph follow-up: and no later than the game's spell-queue window after it ([GCD_AHEAD_MS]: an instant queued there goes
+            // off when the last GCD ends), or near a queue's end ([qEnd]: the GCD it went off with; its word comes after it) - the NEXT
+            // spell's GCD (the player's next press, off at the hold's GCD's end while the face eases out) is not the hold's: no pop back
+            val withCast = startMs >= castFrom - GCD_BACK_MS && startMs <= castFrom + GCD_AHEAD_MS
+            val withQueue = qEnd >= 0L && startMs >= qEnd - QEND_BACK_MS && startMs <= qEnd + GCD_BACK_MS
+            if (withCast || withQueue) gcdEnd = startMs + durMs
+        }
 
         /** when the hold spell leaves the face */
         fun endAt(): Long {
@@ -317,6 +325,11 @@ object HoldCast {
     const val EASE_MS = 200L
     /** the fix pass: a GCD that started up to this long before the hold's cast could have is still its own (a game frame, the clocks) */
     const val GCD_BACK_MS = 100L
+    /** the glyph follow-up: the hold's own GCD starts no later than this after its cast could have (the game's spell-queue window, 0.4 s,
+     *  and the clocks) */
+    const val GCD_AHEAD_MS = 600L
+    /** ... or up to this long before its queue's end word (the swing's / spell's SUCCEEDED, then the channel) */
+    const val QEND_BACK_MS = 1_000L
     /** a queued next-swing ability keeps the face at most this long */
     const val QUEUE_CAP_MS = 30_000L
     /** the state document saying "not checked" this long while the takeover is queued, with no word: the queue's end was lost */

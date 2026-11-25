@@ -2872,7 +2872,10 @@ end
 -- nbar25 (the fix pass): the GCD that started WITH the fire - o.t is the click's own frame (WC.holdFired runs in the post-click of the
 -- press that cast), so the look-back is PadMap's 0.05 s, not 0.5 (a D-pad spell's GCD 0.3 s before an interrupt's fire is not the
 -- interrupt's)
-NB.HOLD_QGRACE, NB.HOLD_GCD_BACK = 0.2, 0.05
+-- nbar25 (the glyph follow-up): and no later than the game's spell-queue window after it (NB.HOLD_GCD_AHEAD: an instant queued there goes
+-- off when the last GCD ends) or, for a queue that went off, its end's - the NEXT spell's GCD (the player's next press, off at the
+-- hold's GCD's end while the face eases out) is not the hold's: no pop back
+NB.HOLD_QGRACE, NB.HOLD_GCD_BACK, NB.HOLD_GCD_AHEAD = 0.2, 0.05, 0.45
 function NB.holdEnd(o)
     if o.fail then return o.fail end
     -- nbar25: queued for the next swing - kept (no fallback) until it lands or is unqueued, at most NB.HOLD_QCAP s. The fix pass: its end
@@ -2886,7 +2889,9 @@ function NB.holdEnd(o)
         base = math.max(o.t, o.qOff)
     end
     local g = rawget(WC, "gcdRun")
-    if type(g) == "table" and type(g.s) == "number" and type(g.d) == "number" and g.s >= o.t - NB.HOLD_GCD_BACK then o.gcdEnd = g.s + g.d end
+    if type(g) == "table" and type(g.s) == "number" and type(g.d) == "number"
+        and ((g.s >= o.t - NB.HOLD_GCD_BACK and g.s <= o.t + NB.HOLD_GCD_AHEAD)
+             or (o.qOff and g.s >= o.qOff - 0.5 and g.s <= o.qOff + NB.HOLD_GCD_AHEAD)) then o.gcdEnd = g.s + g.d end
     local known = nil
     for _, v in ipairs({ o.castEnd or false, o.gcdEnd or false, o.okAt and (o.okAt + 0.3) or false }) do
         if v and (not known or v > known) then known = v end

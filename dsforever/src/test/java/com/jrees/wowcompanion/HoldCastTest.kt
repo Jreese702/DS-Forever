@@ -533,6 +533,24 @@ class HoldCastTest {
         HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }; HoldCast.clock = { android.os.SystemClock.uptimeMillis() }
     }
 
+    /** 22: the NEXT spell's GCD is not the hold's - the player's next press goes off right at the hold's GCD's end (the game's spell-queue
+     *  window), while the takeover eases out: the face does not pop back for that GCD; a GCD counts from the hold's cast (up to the
+     *  game's spell-queue window after it) or from its queue's end */
+    @Test fun theNextSpellsGcdIsNotTheHolds() {
+        val t = HoldCast.Takeover()
+        t.start(8, 0, 1_000); t.gcd(1_010, 1_500); t.ok(1_060)
+        assertEquals("through its own GCD", 1f, t.alpha(2_400), 0f)
+        t.gcd(2_510, 1_500)                                             // the next spell's, begun at the hold's GCD's end (mid ease)
+        assertEquals("the next spell's GCD: no pop back, gone after the ease", 0f, t.alpha(2_510 + HoldCast.EASE_MS + 10), 0f)
+        // an instant queued in the spell-queue window goes off 0.4 s after the fire: its own GCD then counts
+        t.start(8, 0, 5_000); t.gcd(5_400, 1_500); t.ok(5_450)
+        assertEquals("a GCD 0.4 s after the fire (the spell-queue window): its own", 1f, t.alpha(6_850), 0f)
+        // a queue that went off much later: the GCD it started then counts (the state document's), not one from the queue's middle
+        t.start(8, 0, 10_000); t.queue(10_050); t.ok(20_000); t.gcd(19_900, 1_500)
+        assertEquals(1f, t.alpha(21_300), 0f)
+        assertEquals(0f, t.alpha(21_400 + HoldCast.EASE_MS), 0f)
+    }
+
     /** 21: a long queue that goes off: its caps (the fallback, 15 s) count from the queue's end, not from the fire */
     @Test fun aLongQueueCountsItsCapsFromItsEnd() {
         val t = HoldCast.Takeover()
