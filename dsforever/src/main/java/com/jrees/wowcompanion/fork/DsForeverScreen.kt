@@ -99,6 +99,7 @@ class DsForeverScreen(private val context: Context) {
         LauncherHooks.inFront = { (context as? Activity)?.hasWindowFocus() == true }
         running = true
         SingleScreen.request = singleHook                    // single screen mode: the wheel's button asks this DS Forever
+        SingleScreen.keysAgain = keysAgainHook               // NPC: our activity on the other screen closed: the keys looked at again
         dm?.registerDisplayListener(listener, main)
         main.postDelayed({ update() }, SHOW_AFTER_MS)
         Log.i(TAG, "start (launcher on display ${gameDisplay()})")
@@ -113,6 +114,7 @@ class DsForeverScreen(private val context: Context) {
         shown?.close(); shown = null; companionGone()
         if (ScreenSwap.restart === restartHook) ScreenSwap.restart = null
         if (SingleScreen.request === singleHook) SingleScreen.request = null
+        if (SingleScreen.keysAgain === keysAgainHook) SingleScreen.keysAgain = null
         keysCancel()
         Log.i(TAG, "stop")
     }
@@ -204,6 +206,7 @@ class DsForeverScreen(private val context: Context) {
         RootPolicy.allowed = false
         TapSinks.wire(PlayMode.LOCAL, if (gameOn) input else null, null)
         SingleScreen.request = singleHook                    // the launcher's own DS Forever answers the wheel's button again
+        SingleScreen.keysAgain = keysAgainHook
     }
 
     /** the launcher came back to the front: the bottom screen is DS Forever's again */
@@ -546,6 +549,7 @@ class DsForeverScreen(private val context: Context) {
      * R1 B ([SingleScreen.KEYS_BACK] false): that hint at once, nothing moved. Two screens / Swap screens: nothing here runs
      */
     internal fun keysTop(top: Boolean) {
+        topNow = top
         if (top) {
             if (!keysAway) return
             keysAway = false
@@ -568,6 +572,11 @@ class DsForeverScreen(private val context: Context) {
             KeysStep.HINT_NOW -> { keysHintStuck = true; (shown as? TopWindow)?.hint(SingleScreen.TAP_FOR_KEYS) }
         }
     }
+    /** the launcher's activity is the top resumed one (its last onTopResumedActivityChanged answer) */
+    private var topNow = true
+    /** NPC (spec 8.4): one of our activities on the other screen closed (SingleScreen.keysPaused off): Android leaves the keys where they
+     *  were and sends no new answer, so the last one is acted on again - taken back only while the game is not on top */
+    private val keysAgainHook: () -> Unit = { main.post { if (!topNow) keysTop(false) } }
     private val keysBackRun = Runnable {
         if (!keysAway || !SingleScreen.inUse) return@Runnable
         if (gameToFront("one screen: the other screen took the controller")) {

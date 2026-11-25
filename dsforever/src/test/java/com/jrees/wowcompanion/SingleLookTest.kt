@@ -78,8 +78,10 @@ class SingleLookTest {
         }
         val r = SingleLook.of(play.copy(fightRolls = true))
         assertEquals(Frame.HIDDEN, r.frame); assertEquals("rolls", r.strip); assertTrue(r.docks); assertFalse(r.play)
+        // (NPC's refinement: the LB picture in the strip window over the left dock, no window over the whole screen - SingleLookNpcTest)
         val lb = SingleLook.of(play.copy(lb = true))
-        assertEquals(Frame.FULL, lb.frame); assertEquals(0f, lb.dim); assertFalse("display only", lb.touchable); assertTrue(lb.docks)
+        assertEquals(Frame.HIDDEN, lb.frame); assertEquals(0f, lb.dim); assertFalse("display only", lb.touchable); assertTrue(lb.docks)
+        assertEquals("lb", lb.strip)
     }
 
     @Test fun firstMatchWins() {

@@ -10,13 +10,16 @@ package com.jrees.wowcompanion
  *  2 start pages, the report, an NPC window, a game dialog,
  *    the Spellbook's Bind box                                 FULL 0.55, touch, the room column if a room is open (else Home's glance)
  *  3 the pause wheel                                          FULL 0.55, touch, the same
+ *  4 the top-screen layout editor (over Settings)            FULL 0.25, touch, ROOM: the pieces it moves show at the sides (NPC)
  *  4 a room (not Home)                                        FULL 0.55, touch, ROOM
  *  5 Home with its page as a glance, or a Home sub-state      FULL 0.55, touch, HOME
  *  6 a quick wheel (consumables / target / spell radials)     FULL 0.25, touch, nothing under it          (NPC)
  *  7 the class wheel                                          FULL 0.25, touch, Home's layers only        (NPC)
  *  8 the Track Pad / Keyboard tool                            HIDDEN, the strip "tool"                     (NPC)
- *  9 the fight's loot rolls                                   HIDDEN, the left dock only, the strip "rolls" (NPC)
- * 10 LB's party picture                                       FULL 0, display only, the docks             (NPC)
+ *  9 LB's party picture                                       HIDDEN, the docks, the strip "lb" over the left dock's party place:
+ *                                                            display only, no window over the whole screen for a held button; a
+ *                                                            held button's moment wins over the rolls' strip (NPC)
+ * 10 the fight's loot rolls                                   HIDDEN, the left dock only, the strip "rolls" (NPC)
  * 11 else = PLAY: the game, nothing of ours but the docks     HIDDEN
  *
  * Rows marked NPC are the NPC builder's to refine (CORE's defaults here).
@@ -32,9 +35,11 @@ object SingleLook {
         val npc: Boolean = false, val dialog: Boolean = false, val fightRolls: Boolean = false, val spells: Boolean = false,
         val pause: Boolean = false, val glanceHub: Boolean = false, val homeSub: Boolean = false, val quick: Boolean = false,
         val classWheel: Boolean = false, val lb: Boolean = false, val tool: Int = -1,
+        /** NPC: the top-screen layout editor (LayoutView) is open over the Settings room */
+        val layoutEdit: Boolean = false,
     )
 
-    /** what the top window does: [strip] = null, "tool" or "rolls" (NPC) */
+    /** what the top window does: [strip] = null, "tool", "rolls" or "lb" (NPC: SingleNpc's strip window) */
     data class Look(val frame: Frame, val dim: Float, val touchable: Boolean, val root: Root, val docks: Boolean, val strip: String? = null) {
         /** the PLAY state: nothing of ours over the game */
         val play: Boolean get() = frame == Frame.HIDDEN && strip == null && root == Root.GONE && docks
@@ -56,13 +61,14 @@ object SingleLook {
             i.startPages || i.report || i.npc || (i.dialog && !i.fightRolls) || i.spells ->
                 Look(Frame.FULL, DIM_PANEL, true, under, docks = false)                                       // 2
             i.pause -> Look(Frame.FULL, DIM_PANEL, true, under, docks = false)                                // 3
+            inRoom && i.layoutEdit -> Look(Frame.FULL, DIM_QUICK, true, Root.ROOM, docks = false)             // 4 NPC (the layout editor)
             inRoom -> Look(Frame.FULL, DIM_PANEL, true, Root.ROOM, docks = false)                             // 4
             i.glanceHub || i.homeSub -> Look(Frame.FULL, DIM_PANEL, true, Root.HOME, docks = false)           // 5
             i.quick -> Look(Frame.FULL, DIM_QUICK, true, Root.GONE, docks = false)                            // 6 NPC
             i.classWheel -> Look(Frame.FULL, DIM_QUICK, true, Root.HOME_LAYERS, docks = false)                // 7 NPC
             i.tool >= 0 -> Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = false, strip = "tool")            // 8 NPC
-            i.fightRolls -> Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = true, strip = "rolls")           // 9 NPC (the left dock only)
-            i.lb -> Look(Frame.FULL, 0f, false, Root.GONE, docks = true)                                      // 10 NPC
+            i.lb -> Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = true, strip = "lb")                      // 9 NPC (display only)
+            i.fightRolls -> Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = true, strip = "rolls")           // 10 NPC (the left dock only)
             else -> PLAY                                                                                      // 11
         }
     }

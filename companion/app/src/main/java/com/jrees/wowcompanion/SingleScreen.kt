@@ -87,6 +87,9 @@ object SingleScreen {
 
     /** one of our own activities is up on the other screen (the host's openOnBottom, NPC): the keys are not taken back meanwhile */
     @Volatile var keysPaused = false
+    /** NPC: that activity closed - the keys looked at again (DsForeverScreen: taken back if the other screen still has them; it sends no
+     *  word of its own when it closes, and Android leaves the keys on the screen that had them) */
+    @Volatile var keysAgain: (() -> Unit)? = null
 
     /** the problem report's counts: the bottom screen took the keys / they were brought back / they stayed away */
     @Volatile var keysAway = 0; private set
@@ -141,6 +144,6 @@ object SingleScreen {
     /** tests */
     internal fun reset() {
         inUse = false; why = null; offered = false; fightNow = { false }; request = null; listeners.clear(); changes = 0; changedAt = 0L
-        keysAway = 0; keysBack = 0; keysStuck = 0; keysPaused = false
+        keysAway = 0; keysBack = 0; keysStuck = 0; keysPaused = false; keysAgain = null
     }
 }
