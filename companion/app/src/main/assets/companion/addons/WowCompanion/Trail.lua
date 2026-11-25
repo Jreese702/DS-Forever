@@ -5916,7 +5916,13 @@ end
 --   CVars READ only), a smoothstep to 1 at SHOW_HI (0.97). A plain multiply alone would still show a faint, smaller copy far out;
 --   the gate keeps it off until the plate is (nearly) fully in, as the user asked, and the multiply keeps it matched after.
 --   Plain reads only (no taint); a secret or missing value counts as 1 (as before). The plate is still never written or hooked.
-WC.rings = { V = "at10", SHOW_LO = 0.9, SHOW_HI = 0.97, BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+-- at11 (test build 1529, the user's pick 2026-11-24: "Lighter add-ons + log" = "... less per-frame Lua work"): the tint's tick ran at
+--   EVERY frame and made new tables (the seen set, the why list, the CVar pair) and a dozen closures (one per pcall'd read) per mob per
+--   frame - garbage the game's collector then pays for in the frame. Now its tables are kept and wiped, every read is a named function
+--   made once (pcall(fn, args): the same reads, the same protection), and it runs at most every TICK_S (0.03 s: ~30 times a second, the
+--   elapsed time summed so the smoothing and the fade keep their speed). The tint is anchored to its plate (the engine moves it every
+--   frame), so only the fade and a state change land up to one 30 Hz step later. tools/test_tint_alloc.py measures it.
+WC.rings = { V = "at11", TICK_S = 0.03, SHOW_LO = 0.9, SHOW_HI = 0.97, BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TOP_IN = 4, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -5953,14 +5959,15 @@ do
         return true
     end
     -- the state for a distance d and a radius r, with the last state's margin (a state changes only HYST yd past its line)
+    -- at11: made once (they were made at every call)
+    local function at(st) return st == "inside" and 0 or st == "near" and R.NEAR or st == "approach" and R.APPROACH or nil end
+    local ORDER = { inside = 1, near = 2, approach = 3, far = 4 }
     function R.state(d, r, last)
         local e = d - r
-        local function at(st) return st == "inside" and 0 or st == "near" and R.NEAR or st == "approach" and R.APPROACH or nil end
         local raw = (e <= 0 and "inside") or (e <= R.NEAR and "near") or (e <= R.APPROACH and "approach") or "far"
         if last and last ~= raw then
             -- leaving a closer state for a farther one needs HYST more; a closer state is taken at once
-            local order = { inside = 1, near = 2, approach = 3, far = 4 }
-            if order[raw] > order[last] and at(last) and e <= at(last) + R.HYST then return last end
+            if ORDER[raw] > ORDER[last] and at(last) and e <= at(last) + R.HYST then return last end
         end
         return raw
     end
@@ -6023,8 +6030,10 @@ do
     -- at10: the plate's part of the tint's alpha: its effective alpha (pa) x the gate (0 below SHOW_LO of its full, smoothstep to 1
     -- at SHOW_HI). Its full: nameplateMaxAlpha, x nameplateNotSelectedAlpha while another unit is the target (READ only; 1 when
     -- unreadable). A secret / missing alpha = 1 (the tint as before at9)
+    local function getCVar(k) return C_CVar.GetCVar(k) end                    -- at11: made once
+    local function hasTarget() return UnitExists("target") == true end
     local function cvn(k)
-        local ok, v = pcall(function() return C_CVar.GetCVar(k) end)
+        local ok, v = pcall(getCVar, k)
         v = ok and type(v) == "string" and tonumber(v) or nil
         return (v and v > 0) and v or nil
     end
@@ -6036,8 +6045,11 @@ do
         if pa <= 0 then return 0 end
         local c = R.full
         if not c then                                                -- read once a tick (R.tick clears it)
-            local okT, hasT = pcall(function() return UnitExists("target") == true end)
-            c = { max = cvn("nameplateMaxAlpha") or 1, ns = (okT and hasT) and (cvn("nameplateNotSelectedAlpha") or 1) or 1 }
+            local okT, hasT = pcall(hasTarget)
+            c = R.fullT or {}                                        -- at11: one table, refilled
+            R.fullT = c
+            c.max = cvn("nameplateMaxAlpha") or 1
+            c.ns = (okT and hasT) and (cvn("nameplateNotSelectedAlpha") or 1) or 1
             R.full = c
         end
         local full = isTarget and c.max or c.max * c.ns
@@ -6047,13 +6059,28 @@ do
         return math.min(1, pa) * x * x * (3 - 2 * x)
     end
 
+    -- at11: the tick's reads, each a function made once (each was a new closure per mob per frame); the same bodies under the same pcall
+    local function plateOf(tok) return C_NamePlate.GetNamePlateForUnit(tok) end
+    local function isTargetUnit(tok) return UnitIsUnit(tok, "target") == true end
+    local function ufFlying() return type(WC.uf) == "table" and WC.uf.flying and WC.uf.flying() end
+    local function targetBarHp()
+        local uf = WC.uf
+        return type(uf) == "table" and uf.target and uf.tb and uf.tb.f and uf.tb.f:IsShown() and uf.tb.f.hp or nil
+    end
+    local function healthBarOf(plate) return plate.UnitFrame and plate.UnitFrame.HealthBarsContainer end
+    local function unitFrameOf(plate) return plate and plate.UnitFrame end
+    local function strataOf(ref) return ref:GetFrameStrata() end
+    local function levelOf(ref) return ref:GetFrameLevel() end
+    local seen = {}                                                  -- at11: kept, wiped each tick
+    local function wipe(t) for k in pairs(t) do t[k] = nil end end
+
     function R.tick(dt)
         local rec = A and A.last
         R.full = nil
         local on = R.wanted() and rec and type(rec.m) == "table" and not A.off
-        local seen = {}
+        wipe(seen)
         R.n = 0
-        R.why = {}
+        if type(R.why) == "table" then wipe(R.why) else R.why = {} end
         if on then
             local plv = A.pv and A.pv(UnitLevel, "player")
             for _, m in ipairs(rec.m) do
@@ -6062,7 +6089,7 @@ do
                 if st then okE, whyE = R.eligible(m, st.tok) end
                 local plate
                 if okE then
-                    local okP, p = pcall(function() return C_NamePlate.GetNamePlateForUnit(st.tok) end)
+                    local okP, p = pcall(plateOf, st.tok)
                     plate = okP and p or nil
                     if not plate then okE, whyE = false, "no plate" end
                 end
@@ -6086,18 +6113,16 @@ do
                     local o = tint(m.s)
                     -- at7 (the user: "The aggro tint is still showing hovering over targeted mobs instead of on the target frame"): the
                     -- TARGET's tint goes round Hub's target bar while it shows (the same HUD bar outline), never over its plate
-                    local okT, isT = pcall(function() return UnitIsUnit(st.tok, "target") == true end)
+                    local okT, isT = pcall(isTargetUnit, st.tok)
                     local tbHp = nil
                     -- at9 (the user, 2026-11-13: the target's plate "transitions ... to the top of the screen"): while Hub's copy flies up
                     -- (WC.uf.flying) the target's tint is down - on neither the hidden plate nor a bar not shown yet - and fades in on
                     -- the bar once it lands
-                    local okF, fly = pcall(function() return okT and isT and type(WC.uf) == "table" and WC.uf.flying and WC.uf.flying() end)
+                    local okF, fly = true, false
+                    if okT and isT then okF, fly = pcall(ufFlying) end
                     local held = okF and fly == true
                     if okT and isT and not held then
-                        local okH, hp = pcall(function()
-                            local uf = WC.uf
-                            return type(uf) == "table" and uf.target and uf.tb and uf.tb.f and uf.tb.f:IsShown() and uf.tb.f.hp or nil
-                        end)
+                        local okH, hp = pcall(targetBarHp)
                         tbHp = okH and type(hp) == "table" and hp or nil
                     end
                     if tbHp then
@@ -6120,7 +6145,7 @@ do
                         o.f:ClearAllPoints()
                         -- at3: anchored to the plate's health bar, PAD out (only anchored to: never read or written); a plate
                         -- without one (another style, another add-on's plates): the plate itself, OUTSET out, as before
-                        local okB, bar = pcall(function() return plate.UnitFrame and plate.UnitFrame.HealthBarsContainer end)
+                        local okB, bar = pcall(healthBarOf, plate)
                         bar = okB and type(bar) == "table" and bar or nil
                         local to, pad = bar or plate, bar and R.PAD or R.OUTSET
                         -- at6: the top TOP_IN in, clear of the name's letters (at5's layering below the plate's strata is GONE: the
@@ -6134,10 +6159,10 @@ do
                     -- at4: under the plate's UnitFrame (its name, level, bar fill): its strata, one level below (re-read each
                     -- tick: a targeted plate is raised)
                     -- at7: on the target bar, under the bar's own frame (its strata, one level below)
-                    local okU, uf = pcall(function() return plate and plate.UnitFrame end)
+                    local okU, uf = pcall(unitFrameOf, plate)
                     local ref = (o.onBar and tbHp:GetParent()) or (okU and type(uf) == "table" and uf) or plate
-                    local okS, strata = pcall(function() return ref:GetFrameStrata() end)
-                    local okL, lvl = pcall(function() return ref:GetFrameLevel() end)
+                    local okS, strata = pcall(strataOf, ref)
+                    local okL, lvl = pcall(levelOf, ref)
                     strata = okS and type(strata) == "string" and strata or "BACKGROUND"
                     lvl = okL and num(lvl) or 1
                     if o.strata ~= strata then o.f:SetFrameStrata(strata); o.strata = strata end
@@ -6173,6 +6198,15 @@ do
         end
     end
 
+    -- at11: at most every TICK_S, with the time since the last tick (so its smoothing and fade keep their speed)
+    local acc = 0
+    local function onUpdate(_, elapsed)
+        acc = acc + (tonumber(elapsed) or 0)
+        if acc < R.TICK_S then return end
+        local dt = acc
+        acc = 0
+        pcall(R.tick, dt)
+    end
     local f = CreateFrame("Frame")
-    f:SetScript("OnUpdate", function(_, elapsed) pcall(R.tick, elapsed) end)
+    f:SetScript("OnUpdate", onUpdate)
 end

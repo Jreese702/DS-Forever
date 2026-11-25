@@ -55,7 +55,11 @@ end
 -- MAX_LINE BYTES, so a letter of two or more bytes (Cyrillic, accents, CJK) could be split between two lines; the app decodes each
 -- line's bytes on their own, and both halves became U+FFFD ("?"). A cut now steps back off UTF-8 continuation bytes (0x80-0xBF), so
 -- every part holds whole letters (a part is at most 3 bytes shorter). An ASCII document is cut exactly where it was.
-WC.SINKV = "sink1"
+-- sink2 (test build 1529, the user's pick 2026-11-24: "Lighter add-ons + log" = "... fewer add-on flushes in fights ..."): in a fight
+-- (InCombatLockdown) the throttle's interval is FLUSH_COMBAT 0.3 s instead of 0.2 s - each flush is ~60 KB of pad lines whatever it
+-- carries, so a walking fight paid five a second; now three. Out of a fight nothing changed. And WC.push makes no closure per call
+-- (one function, made once). A flush the player waits for in a fight (a loading screen's word: WC.flush) is not throttled, as before.
+WC.SINKV = "sink2"
 -- the parts of [json], each at most MAX_LINE bytes, never ending inside a UTF-8 letter
 function WC.cuts(json, max)
     max = max or MAX_LINE
@@ -145,6 +149,14 @@ local lastFlushAt = 0
 -- often enough to keep END-TO-END LATENCY down -- and the app hides the rest of that in its
 -- playback buffer. Going the other way from here costs frames in the game, not just bytes.
 local FLUSH_INTERVAL = 0.2
+-- sink2: in a fight (see WC.SINKV)
+local FLUSH_COMBAT = 0.3
+local function flushInterval()
+    local icl = _G.InCombatLockdown
+    if type(icl) == "function" and icl() then return FLUSH_COMBAT end
+    return FLUSH_INTERVAL
+end
+WC.flushInterval = flushInterval            -- (the harness reads it)
 
 -- Throttled push: call it as often as you like. It flushes at most every FLUSH_INTERVAL,
 -- which bounds both the latency AND the log volume (~24 KB/s at 2 s).
@@ -175,9 +187,10 @@ local function retry()
     retryQueued = false
     if pendingBytes <= 0 then return end
     local quiet = GetTime() - lastRefusedAt
-    if quiet < FLUSH_INTERVAL then
+    local iv = flushInterval()
+    if quiet < iv then
         retryQueued = true
-        C_Timer.After(FLUSH_INTERVAL - quiet, retry)
+        C_Timer.After(iv - quiet, retry)
         return
     end
     WC.pushThrottled()
@@ -186,11 +199,12 @@ end
 function WC.pushThrottled()
     if pendingBytes <= 0 then return end
     local now = GetTime()
-    if now - lastFlushAt < FLUSH_INTERVAL then
+    local iv = flushInterval()
+    if now - lastFlushAt < iv then
         lastRefusedAt = now
         if not retryQueued then
             retryQueued = true
-            C_Timer.After(FLUSH_INTERVAL, retry)
+            C_Timer.After(iv, retry)
         end
         return
     end
@@ -199,6 +213,11 @@ function WC.pushThrottled()
 end
 
 local flushQueued = false
+-- sink2: the end-of-frame push, made once (it was a new closure per WC.push)
+local function pushNow()
+    flushQueued = false
+    WC.pushThrottled()
+end
 -- Ask for a push. Many callers in one frame produce exactly one pad burst.
 --
 -- THIS GOES THROUGH THE THROTTLE TOO. It did not, and that is why the measured flush rate was
@@ -207,10 +226,7 @@ local flushQueued = false
 function WC.push()
     if flushQueued then return end
     flushQueued = true
-    C_Timer.After(0, function()
-        flushQueued = false
-        WC.pushThrottled()
-    end)
+    C_Timer.After(0, pushNow)
 end
 
 -- Send now, push at end of frame.
