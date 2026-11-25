@@ -339,7 +339,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s18"' in SRC["spells"] and 'local BV = "b82"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
+check('local SV = "s18"' in SRC["spells"] and 'local BV = "b83"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
       "a. the versions: Spells s14, Book b65, PadMap m166")
 check('s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room\'s recipes "make no sense"' in SRC["spells"],
       "a. Spells s14's header note quotes the user")

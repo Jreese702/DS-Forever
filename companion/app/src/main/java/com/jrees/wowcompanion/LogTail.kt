@@ -40,6 +40,8 @@ class LogTail(
     private val thread = HandlerThread("logtail").apply { start() }
     private val handler = Handler(thread.looper)
     private var offset = 0L
+    /** the last plain read filled [MAX_READ] (a backlog still to read: [delayAfter]) */
+    private var filled = false
     private var carry = ""                       // partial trailing line between reads
     /** #358: the first bytes of a UTF-8 letter the last read cut short (Utf8Cut), joined to the next read before it is decoded */
     private var byteCarry = Utf8Cut.EMPTY
@@ -74,7 +76,9 @@ class LogTail(
             // "Lighter add-ons + log" = "Slower log polling, ..."): [POLL_MS] everywhere - 20 wake-ups a second instead of 50 on the
             // big cores beside the game; a document waits 25 ms on average for its read instead of 10 (LogTailPollTest measures it), under
             // the add-on's own 0.2 s flush and the bottom screen's paced 33 ms frame
-            if (running) handler.postDelayed(this, POLL_MS)
+            // (the 1530 audit: a read that filled MAX_READ is a backlog - a fresh tail on a long log - and the next comes at 1528's 20 ms,
+            // so catching up is not 2.5x slower; the steady state stays [POLL_MS])
+            if (running) handler.postDelayed(this, delayAfter(filled))
         }
     }
 
@@ -240,6 +244,7 @@ class LogTail(
     private val watchdog = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "logtail-dog").apply { isDaemon = true } }
 
     private fun poll() {
+        filled = false                            // (set again only by a plain read that fills MAX_READ)
         // a path plain IO cannot open (another app's /data/data) is root's only; a shared-storage one falls back after ROOT_GIVE_UP
         // failed root reads in a row (su denied or gone), once said in the status line
         if (needsRoot && (rootFails < ROOT_GIVE_UP || path.startsWith("/data/"))) { pollRoot(); return }
@@ -257,6 +262,7 @@ class LogTail(
             val buf = ByteArray((len - offset).coerceAtMost(MAX_READ).toInt())
             val n = raf.read(buf)
             if (n <= 0) return
+            filled = n.toLong() >= MAX_READ
             offset += n
             feed(buf, n)
         }
@@ -374,6 +380,9 @@ class LogTail(
         // shorter poll bought nothing. A quiet poll is now one stat (~11 ms) and a flush-sized
         // read ~44 ms, so halving this takes up to 50 ms off the arrow's lag for free.
         const val POLL_MS = 50L
+        /** the 1530 audit: the next poll after a read that filled [MAX_READ] (a backlog: 1528's launcher pace, 20 ms), else [POLL_MS] */
+        fun delayAfter(filled: Boolean): Long = if (filled) BACKLOG_POLL_MS else POLL_MS
+        const val BACKLOG_POLL_MS = 20L
         // 2026-11-07 (the Thor: "Waiting for a blocking GC" every poll, logtail 74 % CPU on the start screen): an 8 MB read made an 8 MB
         // buffer, a 16 MB string and more copies per poll; every GC froze the screen. 1 MB a poll (50 ms polls still read 20 MB/s), and
         // the start's backlog is the log's last 1 MB

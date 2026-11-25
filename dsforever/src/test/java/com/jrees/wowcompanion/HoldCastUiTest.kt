@@ -127,8 +127,8 @@ class HoldCastUiTest {
         assertTrue(cast.contains("HoldArt.progress(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, prog, circle)"))
         assertTrue(cast.contains("HoldArt.bigFace(c, 0f, 0f, iconHalf, Icons.get(ref.icon), circle)"))
         val home = kt("HomeView.kt")
-        assertTrue("PER TAB: the badges are the holds that would fire now",
-            home.contains("castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false }")
+        assertTrue("PER TAB: the badges are the holds that would fire now (none while Party mode is on: the 1530 audit)",
+            home.contains("castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false && !partyOnHere() }")
                 && home.contains("fightNow = fight; applyDpad(); holdApply()"))
         // (the 1528 merge of feat/exit-now's view release: held weakly - HoldCast is an object, the Home it drew for is let go)
         assertTrue(home.contains("HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }"))
@@ -145,7 +145,7 @@ class HoldCastUiTest {
         assertTrue("the order: X Move above Y Bind hold above A Bind (the hold in Move's own place, Move one step up)",
             room.contains("private fun holdRect(m: PadMapModel.Map, w: Float, h: Float): RectF = moveRect(w, h)")
                 && pane.contains("UiKit.button(c, moveAt(w, h), \"Move\""))
-        assertTrue("its touch: Book b82's page-3 code 28 (b80 on the 1528b and 1529 merges: 26 / 27 are feat/top-castbar's swing off / on)",
+        assertTrue("its touch: Book b83's page-3 code 28 (b80 on the 1528b and 1529 merges: 26 / 27 are feat/top-castbar's swing off / on)",
             room.contains("tap(PadMapModel.holdCells())") && PadMapModel.holdCells().last() == (PadMapModel.ROW_PADTAB to 28))
         assertEquals("the hold chooser's code is its own", 28..28, PadMapModel.PAGE3_CODES["hold chooser"])
         assertEquals("the swing keeps 26 / 27", 26..27, PadMapModel.PAGE3_CODES["top bar swing"])

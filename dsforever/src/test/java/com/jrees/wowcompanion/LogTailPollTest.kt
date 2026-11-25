@@ -42,7 +42,7 @@ class LogTailPollTest {
         val src = listOf(File("../companion/app/src/main/java/com/jrees/wowcompanion"), File("companion/app/src/main/java/com/jrees/wowcompanion"))
             .first { it.isDirectory }
         val t = File(src, "LogTail.kt").readText()
-        assertTrue(t.contains("if (running) handler.postDelayed(this, POLL_MS)"))
+        assertTrue(t.contains("if (running) handler.postDelayed(this, delayAfter(filled))") && LogTail.delayAfter(false) == LogTail.POLL_MS)   // (the 1530 audit: a backlog at 20 ms, Audit1530Test)
         assertTrue(!t.contains("else 20L)"))
     }
 }

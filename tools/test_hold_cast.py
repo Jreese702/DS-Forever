@@ -160,19 +160,19 @@ def macrolines(p):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m194"' in pm and 'm194 THE 1530 MERGE OF TEST 1529' in pm and 'm193 THE 1528b MERGE OF feat/hold-cast' in pm and 'm192 THE 1528b TEST BUILD MERGE' in pm and 'm192 THE 1529 TEST BUILD MERGE' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m194 (both m192s, m193, m190 and m189 kept)')
+check('local PV = "m196"' in pm and 'm196 THE 1530 MERGE OF TEST 1529' in pm and 'm194 and m195 are feat/hold-cast' in pm and 'm193 THE 1528b MERGE OF feat/hold-cast' in pm and 'm192 THE 1528b TEST BUILD MERGE' in pm and 'm192 THE 1529 TEST BUILD MERGE' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m196, above feat/hold-cast\'s m194 / m195 (both m192s, m193, m190 and m189 kept)')
 check('local CV = "p61"' in ptc and 'p61 THE 1528b MERGE OF feat/hold-cast' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'Book b80 page-3 code 28' in ptc and 'p59 HOLD TO CAST' in ptc and 'p58 THE CHOOSER AS A GRID' in ptc, '0. PadTabCtl p61 (p60 kept)')
-check('local BV = "b82"' in bk and 'b82 THE 1530 MERGE OF TEST 1529' in bk and 'b81 THE 1528b MERGE OF feat/hold-cast' in bk and 'b80 THE 1528b TEST BUILD MERGE' in bk and 'b80 THE 1529 TEST BUILD MERGE' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk and 'b79 THE 1528 TEST BUILD MERGE' in bk
+check('local BV = "b83"' in bk and 'b83 THE 1530 MERGE OF TEST 1529' in bk and 'b82 is feat/hold-cast' in bk and 'b81 THE 1528b MERGE OF feat/hold-cast' in bk and 'b80 THE 1528b TEST BUILD MERGE' in bk and 'b80 THE 1529 TEST BUILD MERGE' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk and 'b79 THE 1528 TEST BUILD MERGE' in bk
       and 'P3[28] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end' in bk
       and 'for k = 0, 1 do P3[26 + k]' in bk and 'P3[26] = function' not in bk
-      and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b82 (b81, both b80s kept): the hold chooser on code 28, the swing keeps 26 / 27')
+      and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b83, above feat/hold-cast\'s b82 (b81, both b80s kept): the hold chooser on code 28, the swing keeps 26 / 27')
 check('local NB = { V = "nbar20"' in ab and 'nbar20 THE 1528b MERGE OF feat/hold-cast' in ab and 'nbar18 HOLD TO CAST' in ab, '0. ActionBar nbar20 (nbar19, nbar18 kept)')
 
 # ---------------------------------------------------------------- (1) THE PROBE
 L = world()
 check(not clean(L), '1. the world loads clean', clean(L))
 ready = last(L, 'holdprobe')
-check(ready.get('st') == 'ready' and ready.get('bound') is None and ready.get('v') == 'm194',
+check(ready.get('st') == 'ready' and ready.get('bound') is None and ready.get('v') == 'm196',
       '1. a few seconds after the login: "ready", nothing bound on the Guide\'s names (READ first)', ready)
 H = L.eval('WowCompanion.padMapHold()')
 check(H.w is not None and H.f is not None, '1. the watch is open (its frame polls the controller)')

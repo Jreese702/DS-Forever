@@ -5295,7 +5295,10 @@ internal object CastDiag {
  * game's real start; then it is dropped quietly.
  */
 internal object CastPredict {
-    const val CONFIRM_MS = 500L
+    // 700 ms (the 1530 audit; was 500): test build 1529's lighter add-ons flush every 0.3 s in a fight (Sink sink2, the walking ticker
+    // lands it 0.3 or 0.4 s after the last) and the log is read every 50 ms, so a fight's slowest real start reaches us ~530 ms after
+    // the press - past 500 the predicted bar dropped and the real one came in part-way (Audit1530Test keeps the margin)
+    const val CONFIRM_MS = 700L
     const val PENDING_ALPHA = 150
     fun start(ctMs: Int, casting: Boolean, usable: Boolean): Boolean = ctMs > 0 && !casting && usable
     fun alive(pressAt: Long, now: Long): Boolean = pressAt > 0L && now - pressAt in 0 until CONFIRM_MS

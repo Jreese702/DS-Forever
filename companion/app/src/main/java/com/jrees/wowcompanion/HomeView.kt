@@ -1100,10 +1100,11 @@ class HomeView(
     }
 
     /** m190 PER TAB (the user on test 1528: "It should be seperate"): the badges are the holds that would fire NOW - In combat's while
-     *  the fight switch takes the press (the padmap's `fight`, Combat controls on), else Out of combat's */
+     *  the fight switch takes the press (the padmap's `fight`, Combat controls on), else Out of combat's; none while Party mode is on
+     *  (the 1530 audit: Party mode has no holds - PadMap's OV.hold.mapNow says "party" - so a badge there would promise nothing) */
     private fun holdApply() {
         val map = padMap ?: return
-        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false }
+        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false && !partyOnHere() }
     }
 
     /** every CURRENT `holdcd` (PadMap m190): the hold spells' own cooldowns onto their badges */
@@ -2226,6 +2227,7 @@ class HomeView(
         partyView.invalidate()
         shown?.let { partyStripSync(it) }
         castStripFight()                                                  // cb15: Party mode on / off: the bar's Party layer and its fight rule
+        holdApply()                                                       // the 1530 audit: Party mode on / off: the hold badges go / come back
         onStateChanged?.invoke()                                          // the disc's red B follows
     }
 
