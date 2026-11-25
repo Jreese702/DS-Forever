@@ -375,7 +375,9 @@ class ControllerTapTabsTest {
         v.update(b)
         val tabs = SpellsModel.tabs(b)
         assertTrue("the book has two tabs or more", tabs.size >= 2)
-        fun tabAt(i: Int) = RectF(36f + i * 124f, 66f, 36f + i * 124f + 116f, 166f)
+        // the book's own tab boxes (its row narrowed for its L / R glyphs, 2026-11-25), never a copy of the numbers
+        fun tabAt(i: Int) = SpellbookView::class.java.getDeclaredMethod("tabRect", Int::class.javaPrimitiveType)
+            .also { it.isAccessible = true }.invoke(v, i) as RectF
         fun line(key: String) = if (key == "pet") SpellsModel.PET_LINE else key.removePrefix("line:").toInt()
         // not held: the finger's tab only
         touch(v, tabAt(1).centerX(), tabAt(1).centerY())

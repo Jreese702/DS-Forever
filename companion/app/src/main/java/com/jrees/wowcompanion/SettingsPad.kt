@@ -112,7 +112,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         page.addView(ground, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         page.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        pad = SettingsPad(context, scroll, sections, gameUis, padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) },
+        pad = SettingsPad(context, scroll, sections, gameUis, padSource, tabBar, { dir -> SettingsTabs.step(tab, dir)?.let { show(it) } },
             { v, r -> rowOf(v, r.centerX(), r.centerY()) })
         // Top screen's tiles (2026-11-16): ONE band open in the room - a tile's band opening closes any other part's - and the cursor
         // and the band follow it (a tap and A alike)
