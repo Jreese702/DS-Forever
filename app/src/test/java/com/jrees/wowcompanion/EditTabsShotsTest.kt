@@ -266,6 +266,60 @@ class EditTabsShotsTest {
         assertNull("the zoom goes with the chrome", p.home.pageZoom())
     }
 
+    /** the user's pick 2026-11-24, "Follow the layout on screen": Edit Home's D-pad pictures say each tab's own chat / map sides - Out of
+     *  combat's, Party mode's; In combat's the sides its fights keep (Out of combat's: the D-pad is re-bound out of fights only) */
+    @Test fun theDpadPicturesFollowEachTabsSides() {
+        val rec = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT)
+            .onTab(HomeTab.PARTY) { it.swapped() }.onTab(HomeTab.COMBAT) { it.swapped() }
+        val p = page(rec, party = false)
+        p.home.editOpen(EditStop.CHAT); settle(40)
+        val m = model(p)
+        assertEquals("Out of combat: Left = the chat", "chat", p.cast.roomBar?.get(1))
+        m.let { p.home.editAct { e -> e.tabTo(HomeTab.PARTY) } }; settle(30)
+        assertEquals("Party mode's own sides: Left = the map", "map", p.cast.roomBar?.get(1))
+        assertEquals("map", p.cast.roomBar?.get(1)); assertEquals("chat", p.cast.roomBar?.get(3))
+        shot(p, "07a_party_mode_tab_dpad_swapped")
+        p.home.editAct { e -> e.tabTo(HomeTab.COMBAT) }; settle(30)
+        assertEquals("In combat: the sides its fights keep (Out of combat's)", "chat", p.cast.roomBar?.get(1))
+        p.home.editAct { e -> e.tabTo(HomeTab.OUT) }; settle(30)
+        assertEquals("chat", p.cast.roomBar?.get(1))
+        p.home.editCancel()
+    }
+
+    /** the user's pick 2026-11-24, "A short line in the Fight bubble": the Cast bar row (Top screen fights) carries feat/top-castbar's
+     *  meaning in one terse line under it, whole on the bubble, in each language; and the D-pad's sides at runtime follow the page Home
+     *  lays out of a fight (Party mode's while Party mode is on) */
+    @Test fun theFightBubblesCastBarLineAndTheRuntimeDpadSides() {
+        val top = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT).onTab(HomeTab.COMBAT) { it.copy(fight = HomeLayout.FightBand.TOP) }
+        val p = page(top)
+        p.home.editOpen(EditStop.CHAT); settle(40)
+        key(p, "PADRSHOULDER", 40)
+        p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(20)
+        @Suppress("UNCHECKED_CAST")
+        val rows = HomeView::class.java.getDeclaredMethod("editMenuRows", EditStop::class.java).apply { isAccessible = true }
+            .invoke(p.home, EditStop.FIGHT_PEN) as List<MenuRow>
+        assertEquals(HomeWidgetMenus.FIGHT_CAST_NOTE, rows.single { it.key == BottomTiles.FIGHT_CAST }.note)
+        assertNull(rows.single { it.key == BottomTiles.COMBAT }.note)
+        shot(p, "02f_in_combat_fight_bubble_cast_bar_line")
+        for (lang in listOf("auto", "es", "fr")) try {
+            Tr.setChoice(app, lang)
+            if (lang != "auto") assertTrue("$lang has the line", Tr.t(HomeWidgetMenus.FIGHT_CAST_NOTE) != HomeWidgetMenus.FIGHT_CAST_NOTE)
+            val b = Bitmap.createBitmap(W, 1080, Bitmap.Config.ARGB_8888)
+            p.home.draw(Canvas(b)); b.recycle()
+            assertTrue("$lang: the line whole on the bubble", p.home.editChrome.noteFits)
+            if (lang != "auto") shot(p, "02g_in_combat_fight_bubble_cast_bar_line_$lang")
+        } finally { Tr.setChoice(app, "auto") }
+        val box = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
+        assertTrue("the bubble on the page ($box)", box.bottom <= H && box.left >= 0f && box.right <= W)
+        p.home.editCancel()
+        // runtime: the D-pad's sides are the page Home lays out of a fight
+        val sw = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT).onTab(HomeTab.PARTY) { it.swapped() }
+        val off = page(sw, partyOn = false)
+        assertEquals(HomeTab.OUT, off.home.dpadTab()); assertEquals(0, off.home.mirrorWant())
+        val on = page(sw, partyOn = true)
+        assertEquals(HomeTab.PARTY, on.home.dpadTab()); assertEquals("Party mode's sides: Left = the map", 1, on.home.mirrorWant())
+    }
+
     /** the review: a finger reaches the page's very edges through the zoom (the bar's far corner, the chat's first px) and the tab row's
      *  ends off its tabs do nothing */
     @Test fun aFingerReachesThePagesEdgesThroughTheZoom() {

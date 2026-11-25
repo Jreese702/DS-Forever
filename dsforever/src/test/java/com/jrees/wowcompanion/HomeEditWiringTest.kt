@@ -158,7 +158,10 @@ class HomeEditWiringTest {
         // 1518 build 3: no toolbar switch in edit mode (the band's menu is gone: Settings > Bottom screen has it); the record's sides
         // (its mirror bit) are held on the pictures until the add-on's `d` says them
         assertFalse(home.contains("onEditToolbar"))
-        assertTrue(end.contains("roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null"))
+        // (edit tabs, "Follow the layout on screen": the sides of the page Home lays out of a fight - HomeView.mirrorWant)
+        assertTrue(end.contains("roomBarHold = if (write) mirrorWant() else null"))
+        assertTrue(body(home, "fun mirrorWant(").contains("HomeTab.mirrorBit(HomeSettings.layout, partyOnHere())"))
+        assertTrue(body(host, "private fun mirrorCheck(").contains("val want = homeView.mirrorWant()"))
         assertFalse("no All characters from edit mode", end.contains("all ="))
         // the add-on hears the record's sides / fight bar only once edit mode is not live
         assertTrue(body(host, "private fun mirrorCheck(").contains("if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }"))

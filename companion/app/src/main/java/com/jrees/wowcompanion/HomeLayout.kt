@@ -440,6 +440,22 @@ enum class HomeTab(val word: String, val view: String) {
             else -> OUT
         }
 
+        /**
+         * THE D-PAD'S SIDES (the user's pick 2026-11-24, "Follow the layout on screen"): the tab whose chat / map sides the DS toolbar's
+         * D-pad Left / Right (and their pictures) follow - the page Home lays OUT OF A FIGHT: Party mode's whenever Party mode is on, else
+         * Out of combat's. The add-on re-binds the D-pad out of combat only (PadMap m178) and the app sends the sides only while Home shows
+         * no fight (ToolbarMirror.decide; HomeView.inFight = our takeover or Party mode's fight), so a switch - Party mode on / off, a
+         * change of either tab's sides - lands at once at rest and waits for a fight's end otherwise. A fight keeps the sides it began
+         * with: In combat's page (laid only in a fight) never re-binds the D-pad, its pictures say what the keys do (P5: the pictures
+         * never lie)
+         */
+        fun dpad(partyOn: Boolean): HomeTab = if (partyOn) PARTY else OUT
+        /** the add-on's mirror bit record [l] asks for now (HomeLayoutSolver.mirrorBit of [dpad]'s page) */
+        fun mirrorBit(l: HomeLayout, partyOn: Boolean): Int = HomeLayoutSolver.mirrorBit(l.forTab(dpad(partyOn)))
+        /** the D-pad sides Edit Home previews on tab [t]: its own on Out of combat and Party mode; on In combat the sides its fights keep
+         *  (Out of combat's: the page they begin from) - In combat's own sides cannot re-bind the D-pad in a fight */
+        fun dpadPreview(t: HomeTab): HomeTab = if (t == COMBAT) OUT else t
+
         /** the tab Edit Home opens on: what Home shows now (Party mode on = Party mode; it never opens in a fight) */
         fun opening(partyOn: Boolean): HomeTab = if (partyOn) PARTY else OUT
 

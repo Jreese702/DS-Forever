@@ -1337,7 +1337,10 @@ class HomeEditModel(
 data class MenuRow(val key: String, val label: String, val words: List<String>, val picked: Int, val kind: Kind = Kind.SEG,
                    val value: String? = null, val enabled: Boolean = true,
                    /** the words that cannot be picked now (dimmed; a press on one is refused: In fights' Top screen with no Wings word) */
-                   val off: Set<Int> = emptySet()) {
+                   val off: Set<Int> = emptySet(),
+                   /** a terse line drawn under the row (edit tabs: the fight bubble's Cast bar - the user's pick 2026-11-24, "A short line in
+                    *  the Fight bubble"); null = none */
+                   val note: String? = null) {
     enum class Kind { SEG, STEP, BUTTON }
 }
 
@@ -1442,7 +1445,8 @@ object HomeWidgetMenus {
             // on the top screen (Top screen needs the add-on's `cc`, as Top screen above needs `ct`)
             if (l.fight == HomeLayout.FightBand.TOP)
                 add(MenuRow(BottomTiles.FIGHT_CAST, "Cast bar", BottomTiles.FIGHT_CAST_WORDS, HomeLayout.FightCast.values().indexOf(l.fightCast),
-                    off = if (v.cc == null && l.fightCast != HomeLayout.FightCast.TOP) setOf(HomeLayout.FightCast.TOP.ordinal) else emptySet()))
+                    off = if (v.cc == null && l.fightCast != HomeLayout.FightCast.TOP) setOf(HomeLayout.FightCast.TOP.ordinal) else emptySet(),
+                    note = FIGHT_CAST_NOTE))
             add(onOff(BottomTiles.SWING, "Swing timer", v.swing))
         }
         // PARTY SIZING (2026-11-23): the party list's pencil bubble - its two picks (the record's, this character's). EDIT TABS: on the
@@ -1454,6 +1458,9 @@ object HomeWidgetMenus {
      *  slides up), Bottom screen = the band grows (today's Grow, the default), No grow = today's Same size */
     val COMBAT_BARS = listOf(HomeLayout.FightBand.TOP, HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)
     val COMBAT_BARS_WORDS = listOf("Top screen", "Bottom screen", "No grow")
+    /** EDIT TABS (the user's pick 2026-11-24, "A short line in the Fight bubble"): the Cast bar row's line - feat/top-castbar's meaning
+     *  (Top screen = our own bar above the HUD, the swing with it; other casts stay on the bottom screen), terse */
+    const val FIGHT_CAST_NOTE = "Moves with the swing timer. Other casts stay on the bottom."
     /** EDIT TABS: the bar's "Slots" on a fight tab (the pick "8 slots, fill the width") */
     val SLOTS_WORDS = listOf("Grow", "Same size")
     /** party sizing's words (Settings > Bottom screen > Party's lines too: BottomTiles), in the record's enums' order */

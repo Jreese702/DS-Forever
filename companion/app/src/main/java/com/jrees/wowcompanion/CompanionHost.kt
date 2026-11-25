@@ -1974,9 +1974,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private fun partyRedraw() {
         homeView.partyChanged()
-        // EDIT TABS: Party mode on / off changes which tab the next fight lays - the add-on's Top screen / Cast bar flags follow it
+        // EDIT TABS: Party mode on / off changes which tab the next fight lays - the add-on's Top screen / Cast bar flags follow it - and
+        // the page Home lays out of fights: the D-pad's sides follow it ("Follow the layout on screen"; out of fights only: mirrorCheck)
         val ft = homeView.fightTab()
-        if (ft != lastFightTab) { lastFightTab = ft; lastDpad?.let { topCheck(it); castCheck(it) } }
+        if (ft != lastFightTab) { lastFightTab = ft; lastDpad?.let { fightFlagsCheck(it) } }
+        val dt = homeView.dpadTab()
+        if (dt != lastDpadTab) { lastDpadTab = dt; lastDpad?.let { mirrorCheck(it) } }
         castView.partyChanged()
         controllerView.partyChanged()
         settingsView.partyChanged()
@@ -5190,7 +5193,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the last send of a wish went unanswered: Home's Save hold on the D-pad pictures ends (a cross-fade back to the add-on's `d`) */
     private val mirrorGiveUp = Runnable {
         val d = lastDpad
-        if (d == null || ToolbarMirror.bitOf(d.dirs) != HomeLayoutSolver.mirrorBit(HomeSettings.layout)) homeView.roomBarHoldEnd()
+        if (d == null || ToolbarMirror.bitOf(d.dirs) != homeView.mirrorWant()) homeView.roomBarHoldEnd()
     }
 
     /** SPEC section 6 "SYNC": the layout's mirror bit vs the add-on's `d`; out of combat a pending wish is tapped (padtab 39, 38, 37 then 20 /
@@ -5206,7 +5209,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // 1518 (edit mode saves as it goes): nothing is sent while edit mode is live - the D-pad pictures preview the draft - and the
         // record's sides go to the add-on once it is not (onEditLive: Done, Discard, a fight, another room)
         if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }
-        val want = HomeLayoutSolver.mirrorBit(HomeSettings.layout)
+        val want = homeView.mirrorWant()                                // (edit tabs: the page Home lays out of a fight - HomeTab.dpad)
         if (mirrorSentWant != want) { mirrorSentAt = null; mirrorTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp)
@@ -5230,6 +5233,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  screen flag (`ct`) and ONE Cast bar flag (`cc`) per character and switches by itself in a fight; the app sets them out of combat
      *  only, so they follow the tab the next fight will use (a Party mode toggled mid-fight waits for the fight's end, as any change) */
     private fun fightPage(): HomeLayout = HomeSettings.layout.forTab(homeView.fightTab())
+    /** EDIT TABS: the D-pad's tab the mirror bit was last checked for (HomeView.dpadTab) */
+    private var lastDpadTab: HomeTab? = null
+    /** EDIT TABS: every add-on flag that follows the NEXT fight's tab, checked again (Party mode on / off). (The 1529 integration: the
+     *  swing flag's check - feat/top-castbar's swingCheck, TopCombatBar.swingWanted(fightPage(), ...) - belongs here too) */
+    private fun fightFlagsCheck(d: PadMapModel.Dpad) { topCheck(d); castCheck(d) }
     private var topSentAt: Long? = null
     private var topSentWant: Boolean? = null
     private var topTries = 0

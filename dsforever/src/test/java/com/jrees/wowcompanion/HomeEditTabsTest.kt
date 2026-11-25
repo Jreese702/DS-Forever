@@ -563,4 +563,32 @@ class HomeEditTabsTest {
         assertFalse(HomeSettings.castBarOnAnyTab)
         assertEquals(listOf("castbar", "cbfight", "pbar"), HomeTab.values().map { it.bar })
     }
+
+    /** the user's pick 2026-11-24, "Follow the layout on screen": the D-pad's sides are the page Home lays OUT OF A FIGHT - Party mode's
+     *  while Party mode is on, else Out of combat's; In combat's own sides never re-bind it (its page is a fight's, the add-on re-binds
+     *  out of combat only), so Edit Home previews the sides its fights keep; a fight waits for its end (ToolbarMirror) */
+    @Test fun theDpadFollowsThePageOutOfAFight() {
+        val l = classic.onTab(P) { it.swapped() }.onTab(C) { it.copy(chatSide = HomeLayout.Side.RIGHT) }
+        assertEquals(O, HomeTab.dpad(false)); assertEquals(P, HomeTab.dpad(true))
+        assertEquals(0, HomeTab.mirrorBit(l, partyOn = false))
+        assertEquals("Party mode's page: Left = the map", 1, HomeTab.mirrorBit(l, partyOn = true))
+        val o = classic.onTab(O) { it.swapped() }
+        assertEquals(1, HomeTab.mirrorBit(o, partyOn = false)); assertEquals("Party mode's own copy kept its sides", 0, HomeTab.mirrorBit(o, partyOn = true))
+        assertEquals(listOf(O, O, P), HomeTab.values().map { HomeTab.dpadPreview(it) })
+        val left = mapOf(1 to "chat", 3 to "map")
+        assertEquals(ToolbarMirror.Act.Send(true), ToolbarMirror.decide(HomeTab.mirrorBit(l, true), left, inFight = false, sinceSendMs = null))
+        assertEquals("a fight waits", ToolbarMirror.Act.Wait, ToolbarMirror.decide(HomeTab.mirrorBit(l, true), left, inFight = true, sinceSendMs = null))
+    }
+
+    /** the user's pick 2026-11-24, "A short line in the Fight bubble": the Cast bar row (Top screen only) carries its line; no other row */
+    @Test fun theFightBubblesCastBarHasItsLine() {
+        val v = HomeWidgetMenus.Values()
+        for (t in listOf(C, P)) {
+            val top = classic.copy(fight = HomeLayout.FightBand.TOP, partyFight = HomeLayout.FightBand.TOP).forTab(t)
+            val rows = HomeWidgetMenus.rows(EditStop.FIGHT_PEN, top, v, t)
+            assertEquals(t.name, HomeWidgetMenus.FIGHT_CAST_NOTE, rows.single { it.key == BottomTiles.FIGHT_CAST }.note)
+            assertTrue(t.name, rows.filter { it.key != BottomTiles.FIGHT_CAST }.all { it.note == null })
+            assertTrue(HomeWidgetMenus.rows(EditStop.FIGHT_PEN, classic.forTab(t), v, t).all { it.note == null })
+        }
+    }
 }

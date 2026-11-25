@@ -816,7 +816,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 }
             }
         }
-        val unit = wrap.map { if (it) MENU_ROW * WRAP_K else MENU_ROW }
+        val unit = wrap.mapIndexed { i, wr -> (if (wr) MENU_ROW * WRAP_K else MENU_ROW) + (if (rows[i].note != null) NOTE_H else 0f) }
         val sum = unit.sum()
         // short of room: the rows tighten (to MENU_K_MIN); past that the menu runs on below its column (the words stay readable)
         val k = if (MENU_HEAD + sum + 24f <= avail || sum <= 0f) 1f else ((avail - MENU_HEAD - 24f) / sum).coerceIn(MENU_K_MIN, 1f)
@@ -898,9 +898,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         c.drawText(Tr.t(HomeWidgetMenus.title(s)), box.left + 28f, box.top + 56f, tp)
         UiKit.paneRule(c, box.left + 20f, box.top + MENU_HEAD - 12f, box.right - 20f)
         for ((i, r) in rows.withIndex()) {
-            val rr = lay.rows[i]
+            val full = lay.rows[i]
             pFill.color = Theme.raised; pFill.alpha = 220
-            c.drawRoundRect(rr, 8f, 8f, pFill)
+            c.drawRoundRect(full, 8f, 8f, pFill)
+            // (edit tabs: a row's note - the fight bubble's Cast bar line - along its foot, the row's label and buttons above it)
+            val rr = r.note?.let { n ->
+                val nh = min(NOTE_H, full.height() * 0.4f)
+                val body = RectF(full.left, full.top, full.right, full.bottom - nh)
+                drawNote(c, Tr.t(n), RectF(full.left + 18f, body.bottom - 6f, full.right - 18f, full.bottom - 4f))
+                body
+            } ?: full
             val lp = bodyP(28f, if (r.enabled) Theme.text else Theme.dim)
             val btns = ArrayList<RectF>()
             // a wrapped row: the label on its upper line, the buttons along its foot
@@ -939,12 +946,25 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                     }
                 }
             }
-            if (i == m.menuRow) UiKit.focus(c, rr)
+            if (i == m.menuRow) UiKit.focus(c, full)
             menuBoxes += btns
-            menuRowBoxes += rr
+            menuRowBoxes += full
         }
         lastMenuBox.set(box)
     }
+    /** a row's note in [r]: dim, one line - its text a little smaller until it fits (to [NOTE_TEXT_MIN]), else cut with an ellipsis */
+    private fun drawNote(c: Canvas, text: String, r: RectF) {
+        var size = NOTE_TEXT
+        var p = bodyP(size, Theme.dim)
+        while (size > NOTE_TEXT_MIN && p.measureText(text) > r.width()) { size -= 1f; p = bodyP(size, Theme.dim) }
+        val shown = if (p.measureText(text) > r.width()) android.text.TextUtils.ellipsize(text, p, r.width(),
+            android.text.TextUtils.TruncateAt.END).toString() else text
+        c.drawText(shown, r.left, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        noteFits = shown == text
+    }
+    /** the last note drawn showed whole (the tests) */
+    var noteFits = true
+        private set
     /** the last drawn menu's buttons per row (touch) */
     private val menuBoxes = ArrayList<List<RectF>>()
     private val menuRowBoxes = ArrayList<RectF>()
@@ -1968,6 +1988,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val CHIP_R = 26f
         const val MENU_HEAD = 92f
         const val MENU_ROW = 84f
+        /** a row's note line (edit tabs: the fight bubble's Cast bar line) and its text size */
+        const val NOTE_H = 34f
+        const val NOTE_TEXT = 23f
+        const val NOTE_TEXT_MIN = 18f
         /** a column menu's least width (narrower columns: it overhangs its own widget towards the middle) */
         const val MENU_MIN_W = 600f
         /** a wrapped row (label above its buttons) is this many rows tall */

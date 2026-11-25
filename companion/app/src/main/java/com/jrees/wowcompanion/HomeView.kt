@@ -2399,6 +2399,10 @@ class HomeView(
     /** the fight tab the NEXT fight lays (the add-on's Top screen / Cast bar flags follow it, CompanionHost.topCheck): Party mode's while
      *  Party mode is on, else In combat's */
     fun fightTab(): HomeTab = if (partyOnHere()) HomeTab.PARTY else HomeTab.COMBAT
+    /** EDIT TABS (the user's pick "Follow the layout on screen"): the DS toolbar's D-pad sides now - the page Home lays out of a fight
+     *  (HomeTab.dpad: Party mode's while Party mode is on, else Out of combat's); sent to the add-on out of fights only (CompanionHost) */
+    fun dpadTab(): HomeTab = HomeTab.dpad(partyOnHere())
+    fun mirrorWant(): Int = HomeTab.mirrorBit(HomeSettings.layout, partyOnHere())
 
     /** the tap-to-cast bar's place laid by the last [places] (a change of the choice lays the page again) */
     private var laidSide = CastStripModel.Side.OFF
@@ -3411,8 +3415,9 @@ class HomeView(
     fun roomBarFor(dirs: Map<Int, String>?): Map<Int, String>? { roomBarReal = dirs; roomBarKept = true; return editRoomBar(dirs) }
     private fun editRoomBar(dirs: Map<Int, String>?): Map<Int, String>? {
         val draft = editDraft()
-        val want = draft?.let { HomeLayoutSolver.mirrorBit(it) }
-            ?: roomBarHold?.takeIf { it == HomeLayoutSolver.mirrorBit(HomeSettings.layout) }
+        // (edit tabs: the edited tab's own sides - HomeTab.dpadPreview; outside edit mode the page Home lays out of a fight: mirrorWant)
+        val want = draft?.let { d -> HomeLayoutSolver.mirrorBit(d.forTab(HomeTab.dpadPreview(edit?.tab ?: HomeTab.OUT))) }
+            ?: roomBarHold?.takeIf { it == mirrorWant() }
             ?: run { roomBarHold = null; return dirs }
         val have = dirs?.let { ToolbarMirror.bitOf(it) } ?: return dirs
         if (have == want) { if (draft == null) roomBarHold = null; return dirs }
@@ -3767,7 +3772,7 @@ class HomeView(
         edit = null
         editBackDue = false
         editPersisted = null; editLate = null
-        roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null   // fix round 3: the record's sides until `d` says them
+        roomBarHold = if (write) mirrorWant() else null                   // fix round 3: the record's sides until `d` says them
         editOwner = null
         liveDraft = null
         editRestSync()                                                    // the record's rest
@@ -3934,6 +3939,7 @@ class HomeView(
                 applyDpad()
                 editBandFeed(m)
                 shown?.let { partyStripSync(it) }
+                editRoomBarSync()                                           // (the D-pad's pictures: that tab's sides - HomeTab.dpadPreview)
                 editRelay(Motion.MODULE_OPEN, force = true)
             }
         }
