@@ -322,10 +322,15 @@ class CharacterModel {
         controllerVia = if (controller) j.optString("via", "window") else ""
         controllerWaiting = controller && j.optBoolean("pend")
         if (gameOpen) {
-            CharTab.of(j.optString("tab"))?.let { tab = it }
+            // the room follows the game's window when ITS tab changes (its opening, the game's own switch), never the same report again:
+            // Character.lua re-sends `win` on every 15 s heartbeat, which undid a tab the room chose itself (a finger, the D-pad, and
+            // since the tabs moved on top the room's own L / R, which no longer reach the game's window: the user, 2026-11-25)
+            CharTab.of(j.optString("tab"))?.let { if (it != gameTab) { gameTab = it; tab = it } }
             CharSide.of(j.optString("side"))?.let { side = it }
-        }
+        } else gameTab = null                         // shut: its next opening is followed again
     }
+    /** the game's window's tab as last reported (null while it is shut) */
+    private var gameTab: CharTab? = null
 
     private fun readWho(j: JSONObject) = CharWho(
         name = j.optString("name"), title = j.optString("title"), level = j.optInt("lvl"), line = j.optString("line"),

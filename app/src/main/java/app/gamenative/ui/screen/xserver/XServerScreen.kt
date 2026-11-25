@@ -1531,6 +1531,13 @@ fun XServerScreen(
             // presses: a release always passes, so nothing sticks down. DS Forever's own copy (PadFeed, above) still gets them
             if (it.event.repeatCount == 0) com.jrees.wowcompanion.SetupBridge.log?.invoke("pop-up: ${KeyEvent.keyCodeToString(it.event.keyCode)} held back from the game")
             true
+        } else if (isGamepad && com.jrees.wowcompanion.PopupHold.holdsKey(false, it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN,
+                room = com.jrees.wowcompanion.SetupBridge.roomShoulderPress(it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN,
+                    it.event.repeatCount))) {
+            // DS FOREVER (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"): a tabbed room (Character,
+            // Group Finder, Professions, Social) owns L / R - they step its tab row from DS Forever's own copy (PadFeed, above) - so the
+            // game never gets the bumper press too (LB is its emulated Ctrl, RB its targeting / bar paging). A release always passes
+            true
         } else if (isGamepad && com.jrees.wowcompanion.LaunchLoad.holdsPad() && it.event.action == KeyEvent.ACTION_DOWN) {
             // DS FOREVER (the launch screen, 2026-11-24): until the game's first picture nothing of the game shows, so a press never
             // reaches it (a stray A at its login screen); a release always passes, so nothing sticks down. The abort chord and DS

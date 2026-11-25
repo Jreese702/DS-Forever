@@ -2557,6 +2557,64 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the Track Pad & Keyboard: LB / RB the tabs, ZL / ZR the clicks (the user, 2026-10-16)
         DirectPad.register(DirectPad.Reg("tool", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT), active = live("tool"),
             onKey = synth("tool") { homeView.toolPad(it) }))
+        // THE ROOMS' TABS ON TOP (the user, 2026-11-25: "On all of the rooms that have the tabs on the right side we need to move the test
+        // to the top and make them so that L and R shift the tabs left and right"): in Character, Group Finder, Professions and Social
+        // L / R come from the app's own reader and step the room's tab row (RoomTabRow); the same in the rooms whose tabs were on top
+        // already with no L / R (the Spellbook's book, Talents, the Macros grid: RoomTabsPad.idOf). While this is live the launcher holds both
+        // bumpers back from the game (SetupBridge.roomShoulderPress -> PopupHold.holdsKey): LB is the game's emulated Ctrl and RB its
+        // target / bar paging, so a bumper meant for the room never also targets or pages in the game. Each press is decided ONCE, there
+        // (RoomTabsPad.decide): the reader acts on it only when it was held for the room (RoomTabsPad.take); a press the game got reaches
+        // the room only as its relayed copy (Group Finder's / Social's / Professions' capture extras: gfpad / socialpad / profpad), as before
+        DirectPad.register(DirectPad.Reg(RoomTabsPad.ID, lr,
+            active = { roomTabsLive() || RoomTabsPad.heldWaiting(SystemClock.uptimeMillis()) }) { k, down, _ ->
+            if (down && RoomTabsPad.take(k, roomTabsLive(), SystemClock.uptimeMillis())) roomTabsShoulder(k == DirectPadKeys.RB)
+        })
+        // the launcher's key callback asks (main thread); the host only weakly (a static never keeps it: Weakly.kt)
+        val me = java.lang.ref.WeakReference(this)
+        SetupBridge.roomShoulders = { me.get()?.let { h -> !h.shell.hostGone() && DirectPad.healthy && h.roomTabsLive() } == true }
+    }
+
+    /** the guest id of the room whose tab row L / R step now, or null ([RoomTabsPad.idOf]: the room shown) */
+    private fun roomTabsGuest(): String? = RoomTabsPad.idOf(room.name)
+
+    /**
+     * L / R are the shown room's now: one of the tabbed rooms shows and holds the controller (its capture's holder, or a fight's
+     * room mode: [PadOwnerSync.directLive], DirectPad's own rule for the generic guests), with nothing of ours over it that reads the pad
+     * itself (an NPC window, a dialog, a wheel, the pause or target radial, the Bind box, the bar cursor)
+     */
+    private fun roomTabsLive(): Boolean {
+        val id = roomTabsGuest() ?: return false
+        if (!::interactView.isInitialized || !::radialView.isInitialized || !::spellsOverlay.isInitialized || !::barSelect.isInitialized) return false
+        return RoomTabsPad.live(
+            shown = true, holder = capHolder == id, roomMode = padOwner.roomMode(),
+            covered = (::interactView.isInitialized && interactView.visibility == View.VISIBLE) ||
+                (::dialogView.isInitialized && dialogView.covers()) || radialView.isOpen ||
+                (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || spellsOverlay.visibility == View.VISIBLE || barSelect.open,
+            free = when (room) {
+                Room.SPELLBOOK -> spellbookView.shouldersFree()
+                Room.TALENTS -> talentsView.held && talentsView.shouldersFree()
+                Room.MACROS -> macrosView.shouldersFree()
+                else -> true
+            })
+    }
+
+    /** a relayed LB / RB (a room capture's extra: the game got that press) that the reader already acted on without the key path's
+     *  decision (RoomTabsPad.relayDropped: the same press, later); never a "lost" */
+    private fun relayedShoulderDropped(msg: JSONObject): Boolean =
+        !msg.has("lost") && msg.optString("k").let { (it == DirectPadKeys.LB || it == DirectPadKeys.RB) && RoomTabsPad.relayDropped(it, SystemClock.uptimeMillis()) }
+
+    /** L / R ([right]) to the shown tabbed room's own step (each room keeps its own gates: a menu open, its keyboard ...) */
+    private fun roomTabsShoulder(right: Boolean) {
+        when (room) {
+            Room.CHARACTER -> characterView.shoulder(right)
+            Room.GROUPFINDER -> groupFinderView.shoulder(right)
+            Room.PROFESSIONS -> professionsView.shoulder(right)
+            Room.SOCIAL -> socialView.shoulder(right)
+            Room.SPELLBOOK -> spellbookView.shoulder(right)
+            Room.TALENTS -> talentsView.shoulder(right)
+            Room.MACROS -> macrosView.shoulder(right)
+            else -> {}
+        }
     }
 
     /** b98: a press NO registered room takes (DirectPad.unclaimed); the hold to talk's pending press passes its other keys here too */
@@ -3500,7 +3558,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 }
             }
             "socialack" -> socialView.onDoc(msg)
-            "socialpad" -> if (room == Room.SOCIAL) socialView.onPad(msg)
+            // the rooms' tabs on top: a relayed L / R (the game got that press) acts, unless the reader acted on it already (RoomTabsPad)
+            "socialpad" -> if (room == Room.SOCIAL && !relayedShoulderDropped(msg)) socialView.onPad(msg)
             // the Group Finder room (groupfinder session): its catalogue, its state and the answers to its taps; the controller's
             // presses while it shows. When the GAME opens its own Looking For Group window, the room comes up (the end-goal ruling), only on
             // a CURRENT document (Home's rule, AGENT_LOG 9596d1a: a replayed one is history)
@@ -3512,7 +3571,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             "gfcat", "gfack" -> groupFinderView.onDoc(msg)
             // b90: a press that reached the room while it is NOT on screen = proof it still holds (a lost release): let go at once
-            "gfpad" -> if (current && room == Room.GROUPFINDER) groupFinderView.onPad(msg)
+            "gfpad" -> if (current && room == Room.GROUPFINDER) { if (!relayedShoulderDropped(msg)) groupFinderView.onPad(msg) }
                 else if (current && !msg.has("lost")) freeHidden("groupfinder", press = true)
             // the Spellbook (spells session): the book, who holds the controller, the answer to a Bind press. Leaving it with B goes
             // Home through the capture's release ("B") and the home session's route, as for Bags
@@ -3576,7 +3635,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "profmade" -> { ProfessionsStore.onMade(msg); professionsView.refresh() }
             // never an old, replayed press; a live press while the room is not shown (the addon still holds the controller for it,
             // e.g. after the app was killed) hands the controller back: the player's own press, one no-action tap
-            "profpad" -> if (current) { if (room == Room.PROFESSIONS) professionsView.onPad(msg) else professionsView.orphanPress() }
+            "profpad" -> if (current) { if (room == Room.PROFESSIONS) { if (!relayedShoulderDropped(msg)) professionsView.onPad(msg) } else professionsView.orphanPress() }
             // the Calendar room (calendar session): its document, the answers to its taps, the controller's presses while it
             // shows; the bar's mark while an invitation waits (SPEC 6). When the GAME opens its own calendar window, the room
             // comes up (the end-goal ruling); the game's window itself is never touched

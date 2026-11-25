@@ -2,6 +2,7 @@ package com.jrees.wowcompanion
 
 import android.content.Context
 import android.util.Log
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -143,7 +144,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 v.clearFocus(); true
             }
         }
-        addView(search, LayoutParams(SPLIT.toInt() - 134 - 16, 72).apply { leftMargin = 16; topMargin = 74 })
+        // the page is drawn RoomTabRow.DY lower (the tabs on top): the box at the page's 74
+        addView(search, LayoutParams(SPLIT.toInt() - 134 - 16, 72).apply { leftMargin = 16; topMargin = 74 + RoomTabRow.DY.toInt() })
         search.visibility = GONE
         addView(kb, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         kb.text = { search.text?.toString() ?: "" }
@@ -420,15 +422,28 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             val note = if (viewed != 0) M.seenAgo(System.currentTimeMillis(), ProfessionsStore.seenAt(viewed), live(viewed)) else null
             UiKit.header(c, w, title, note)
             if (viewed == 0) gatherNote(c, ov, title, w)
-            val tabsX = w - 118f
-            val right = tabsX - 4f
-            UiKit.professionGround(c, RectF(0f, 62f, right, h), page = viewed != 0)
-            drawTabs(c, ov, tabsX, w)
-            if (viewed == 0) drawBook(c, ov, right, h)
-            else if (prof != null) drawPage(c, ov, prof, book, right, h)
+            // THE TABS ON TOP (the user, 2026-11-25: "On all of the rooms that have the tabs on the right side we need to move the test
+            // to the top and make them so that L and R shift the tabs left and right"): one row under the header (RoomTabRow), drawn
+            // before the page (its top edge covers their feet); the page under it the whole width, drawn RoomTabRow.DY lower
+            val ids = M.tabOrder(ov)
+            tabRow.draw(c, w, ids.map { tabIcon(it) }, ids.indexOf(viewed).coerceAtLeast(0),
+                (focus as? Fk.Tab)?.takeIf { ov?.held == true }?.let { f -> ids.indexOf(f.id).takeIf { it >= 0 } })
+            c.save(); c.translate(0f, RoomTabRow.DY)
+            val ph = h - RoomTabRow.DY
+            val right = w
+            UiKit.professionGround(c, RectF(0f, 62f, right, ph), page = viewed != 0)
+            drawTabs(ids, w)
+            if (viewed == 0) drawBook(c, ov, right, ph)
+            else if (prof != null) drawPage(c, ov, prof, book, right, ph)
             if (message != null && SystemClock.uptimeMillis() - messageAt > MESSAGE_MS) message = null
             drawGlow(c, ov)
+            c.restore()
+            // the row was drawn before the glow came to rest: a cursor that moved onto / off a tab is lit on the next frame
+            val lit = (focus as? Fk.Tab)?.takeIf { ov?.held == true }?.let { f -> ids.indexOf(f.id).takeIf { it >= 0 } }
+            if (lit != tabRow.cursorDrawn) postInvalidateOnAnimation()
         }
+
+        private val tabRow = RoomTabRow(this)
 
         /**
          * The glow round what the controller is on (SPEC 5), only while the room holds the controller. It is THERE from the start,
@@ -453,20 +468,18 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             }
         }
 
-        // ---- the tabs down the right edge: the book, then every profession with a crafting page (SPEC 2)
-        private fun drawTabs(c: Canvas, ov: M.Overview?, tabsX: Float, w: Float) {
-            val tabs = listOf(0) + (ov?.tabs?.map { it.id } ?: emptyList())
-            // b120 (the user on side tabs: "(a) No glyphs"): the tabs sit together, no gap and no LB/RB glyph; LB/RB still switch them
-            val boxes = UiKit.tabColumn(tabs.size, tabsX, 72f, height - 8f, gap = 2f)
-            for ((i, id) in tabs.withIndex()) {
-                val r = boxes[i]
-                val icon = if (id == 0) UiKit.tex("prof_overview") else Icons.get(profession(id)?.icon)
-                UiKit.sideTab(c, r, icon, id == viewed, cursor = ov?.held == true && focus == Fk.Tab(id))
-                hits.add(Hit(RectF(tabsX - 6f, r.top, w, r.bottom + 2f)) { select(id) })
-                // the glow's box, kept on screen (SPEC 5.1): the plain tab box puts the frame past the right edge
-                nav(Fk.Tab(id), RectF(tabsX + 2f, r.top + 4f, w - 10f, r.bottom - 4f), { select(id); focus = Fk.Tab(id) })
+        // ---- the tabs, in the row on top (drawn by [tabRow] before the page): the book, then every profession with a crafting page
+        // (SPEC 2). Their boxes in the page's coordinates
+        @Suppress("UNUSED_PARAMETER")
+        private fun drawTabs(ids: List<Int>, w: Float) {
+            for ((i, id) in ids.withIndex()) {
+                val r = tabRow.pageBox(i) ?: continue
+                hits.add(Hit(RectF(r.left - 4f, r.top, r.right + 4f, r.bottom)) { select(id) })
+                nav(Fk.Tab(id), RectF(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - RoomTabRow.FEET), { select(id); focus = Fk.Tab(id) })
             }
         }
+
+        private fun tabIcon(id: Int): Bitmap? = if (id == 0) UiKit.tex("prof_overview") else Icons.get(profession(id)?.icon)
 
         // ---- the book (SPEC 3)
         private fun drawBook(c: Canvas, ov: M.Overview?, right: Float, h: Float) {
@@ -531,19 +544,33 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
 
         private fun smallCard(c: Canvas, r: RectF, p: M.Profession) {
             UiKit.professionCard(c, r, p.id, small = true)
-            val pt = fitted(p.name, UiKit.titlePaint(36f), r.width() - 24f, 28f).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(p.name), r.centerX(), r.top + 44f - (pt.ascent() + pt.descent()) / 2f, pt)
-            UiKit.skillBar(c, RectF(r.left + 30f, r.top + 78f, r.right - 30f, r.top + 120f), fill(p.rank, p.max), skillLabel(p.rank, p.max, p.mod), 24f)
-            val (note, colour) = noteOf(p)
-            val pn = UiKit.bodyPaint(26f, colour).apply { textAlign = Paint.Align.CENTER }
             val two = p.btn.size >= 2
-            c.drawText(Tr.t(note), r.centerX(), r.top + (if (two) 140f else 152f) - (pn.ascent() + pn.descent()) / 2f, pn)
+            // TIGHT (the tabs on top took RoomTabRow.DY of the page, the small cards are 297 px, not 385): a card with two buttons (Cooking
+            // and its Basic Campfire) packs its name, bar and note closer and its buttons a little shorter (the game's 88 px icons still
+            // clear each other), so nothing overlaps; one button fits as before
+            val tight = two && r.height() < SMALL_TWO_H
+            val pt = fitted(p.name, UiKit.titlePaint(if (tight) 32f else 36f), r.width() - 24f, 26f).apply { textAlign = Paint.Align.CENTER }
+            c.drawText(Tr.t(p.name), r.centerX(), r.top + (if (tight) 30f else 44f) - (pt.ascent() + pt.descent()) / 2f, pt)
+            val bar = if (tight) RectF(r.left + 30f, r.top + 52f, r.right - 30f, r.top + 86f) else RectF(r.left + 30f, r.top + 78f, r.right - 30f, r.top + 120f)
+            UiKit.skillBar(c, bar, fill(p.rank, p.max), skillLabel(p.rank, p.max, p.mod), if (tight) 22f else 24f)
+            val (note, colour) = noteOf(p)
+            val pn = UiKit.bodyPaint(if (tight) 22f else 26f, colour).apply { textAlign = Paint.Align.CENTER }
+            c.drawText(Tr.t(note), r.centerX(), r.top + (if (tight) 100f else if (two) 140f else 152f) - (pn.ascent() + pn.descent()) / 2f, pn)
+            if (tight) {
+                val bh = (r.bottom - 10f - (r.top + 112f) - 4f) / 2f
+                spellButton(c, RectF(r.left + 14f, r.bottom - 10f - 2 * bh - 4f, r.right - 14f, r.bottom - 10f - bh - 4f), p, 0, p.btn[0])
+                spellButton(c, RectF(r.left + 14f, r.bottom - 10f - bh, r.right - 14f, r.bottom - 10f), p, 1, p.btn[1])
+                return
+            }
             val low = RectF(r.left + 14f, r.bottom - 125f, r.right - 14f, r.bottom - 14f)
             if (two) {
                 spellButton(c, RectF(r.left + 14f, r.bottom - 236f, r.right - 14f, r.bottom - 125f), p, 0, p.btn[0])
                 spellButton(c, low, p, 1, p.btn[1])
             } else p.btn.firstOrNull()?.let { spellButton(c, low, p, 0, it) }
         }
+
+        /** a small card with two buttons needs this much height for the roomy layout (the note at 140, two 111 px buttons) */
+        private val SMALL_TWO_H = 388f
 
         /**
          * One of the game's spell buttons. LIVE = the one that opens the profession's recipes (the game's own cast, through the
@@ -617,7 +644,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         // ---- a crafting page (SPEC 4)
         private fun drawPage(c: Canvas, ov: M.Overview?, prof: M.Profession, book: M.Book?, right: Float, h: Float) {
             val rank = book?.rank ?: prof.rank; val max = book?.max ?: prof.max; val mod = book?.mod ?: prof.mod
-            UiKit.skillBar(c, RectF(right - 430f, 10f, right - 20f, 52f), fill(rank, max), skillLabel(rank, max, mod), 24f)
+            // in the header (the page is drawn RoomTabRow.DY lower: the bar stays where the header is)
+            UiKit.skillBar(c, RectF(right - 430f, 10f - RoomTabRow.DY, right - 20f, 52f - RoomTabRow.DY), fill(rank, max), skillLabel(rank, max, mod), 24f)
             val foot = h - 158f                     // SPEC 4 (UI Art 3ccc4af): the foot ends 35 px over the bar, clear of Home's raised button
             UiKit.paneDivider(c, SPLIT, 62f, foot)
             val rows = if (book != null) rows(book) else emptyList()
@@ -879,7 +907,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 Triple(ov?.word("makeable", "Have Materials") ?: "Have Materials", onlyMakeable) { onlyMakeable = !onlyMakeable })
             val box = RectF(16f, 156f, SPLIT - 16f, 156f + 24f + lines.size * 111f)
             // a touch anywhere else closes it (added first, so the rows below win)
-            hits.add(Hit(RectF(0f, 0f, width.toFloat(), height.toFloat())) { filterOpen = false; invalidate() })
+            hits.add(Hit(RectF(0f, -RoomTabRow.DY, width.toFloat(), height.toFloat())) { filterOpen = false; invalidate() })   // the whole view
             val inner = UiKit.menu(c, box, solid = true)
             for ((i, l) in lines.withIndex()) {
                 val r = RectF(inner.left, inner.top + i * 111f, inner.right, inner.top + (i + 1) * 111f)
@@ -897,7 +925,13 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         private var dragging = false; private var dragPane = 0
         private val slop = ViewConfiguration.get(c).scaledTouchSlop
 
-        override fun onTouchEvent(e: MotionEvent): Boolean {
+        /** a finger, in the page's coordinates (the page is drawn [RoomTabRow.DY] lower; the tab row's boxes are kept in the same ones) */
+        override fun onTouchEvent(ev: MotionEvent): Boolean {
+            val e = MotionEvent.obtain(ev).apply { offsetLocation(0f, -RoomTabRow.DY) }
+            try { return touch(e) } finally { e.recycle() }
+        }
+
+        private fun touch(e: MotionEvent): Boolean {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.x; downY = e.y; lastY = e.y; dragging = false
@@ -1055,11 +1089,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         if (k == "BACK") { leftByB = true; closeKb(); onLeave(); return }
         // the keyboard (its voice page) is up: its presses are the app's own reader's ([onPadKey]); the relayed copy is dropped
         if (kbOpen) return
-        // LB / RB: the next tab, as the game's own tab indicators (capture version 4)
-        if (k == "PADLSHOULDER" || k == "PADRSHOULDER") {
-            M.nextTab(ProfessionsStore.overview, viewed, if (k == "PADLSHOULDER") -1 else 1)?.let { select(it) }
-            board.invalidate(); return
-        }
+        // LB / RB: the next tab, as the game's own tab indicators (capture version 4); the host drops this relayed copy while the app's
+        // own reader delivers them ([shoulder])
+        if (k == "PADLSHOULDER" || k == "PADRSHOULDER") { shoulder(k == "PADRSHOULDER"); return }
         if (focus == null || board.nav.none { it.key == focus }) {       // not drawn yet (the glow is drawn from the start)
             focus = startTarget()
             if (focus is Fk.Rec) lastRow = focus
@@ -1075,6 +1107,20 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 else if (viewed != 0) board.nav.firstOrNull { it.key == Fk.Create }?.act?.let { board.flash(Fk.Create); it() }   // X = Create
             "PAD4" -> if (viewed != 0) board.nav.firstOrNull { it.key == Fk.Track }?.act?.let { board.flash(Fk.Track); it() }     // Y = Track
         }
+        board.invalidate()
+    }
+
+    /**
+     * L / R from the app's own reader (the host's direct route; a relayed LB / RB the same): the tab before / after, no wrap (the game's
+     * tab indicators stop at the ends: [M.nextTab]), never while the keyboard is up. From the tab row the cursor moves with the tab;
+     * from the page it goes to the new page's own start ([startTarget], at the next draw)
+     */
+    fun shoulder(right: Boolean) {
+        if (kbOpen) return
+        val to = M.nextTab(ProfessionsStore.overview, viewed, if (right) 1 else -1) ?: return
+        val onRow = focus is Fk.Tab
+        select(to)
+        focus = if (RoomTabRow.lands(onRow, to) != null) Fk.Tab(to) else null
         board.invalidate()
     }
 
@@ -1102,7 +1148,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         val was = focus
         move(dx, dy)
         val now = focus
-        if (now is Fk.Tab && now != was && now.id != viewed) select(now.id)
+        // the cursor stays on the tab it landed on (goTo forgets the page's cursor: its start would be the page's chosen recipe)
+        if (now is Fk.Tab && now != was && now.id != viewed) { select(now.id); focus = now }
     }
 
     private fun move(dx: Int, dy: Int) {
@@ -1112,52 +1159,59 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         fun has(k: Fk) = nav.any { it.key == k }
         fun toFoot() { focus = listOf(Fk.All, Fk.Create).firstOrNull { has(it) } ?: f }
         fun toRows() { focus = lastRow?.takeIf { has(it) } ?: rows.firstOrNull()?.key ?: f }
+        // THE TABS ON TOP (RoomTabRow): Up from the page's top reaches the open tab; nothing on the page leads sideways to them any more
+        fun toTabs() { focus = Fk.Tab(viewed).takeIf { has(it) } ?: f }
         when (f) {
             is Fk.Btn -> {                                     // the book's live buttons, in the order drawn
                 val btns = nav.filter { it.key is Fk.Btn }
                 val i = btns.indexOfFirst { it.key == f }
                 val next = btns.getOrNull(i + 1)?.key as? Fk.Btn
                 when {
-                    // right: its neighbour, else the card's Forget (p23), else the tabs
-                    dx > 0 -> focus = if (next != null && next.id == f.id) next else Fk.Forget(f.id).takeIf { has(it) } ?: Fk.Tab(viewed)
+                    // right: its neighbour, else the card's Forget (p23)
+                    dx > 0 -> focus = if (next != null && next.id == f.id) next else Fk.Forget(f.id).takeIf { has(it) } ?: f
                     dy > 0 -> btns.getOrNull(i + 1)?.let { focus = it.key }
+                    dy < 0 -> btns.getOrNull(i - 1)?.let { focus = it.key } ?: toTabs()
                     else -> btns.getOrNull(i - 1)?.let { focus = it.key }
                 }
             }
-            is Fk.Forget -> {                                  // p23: a main card's Forget - left its card's buttons, right the tabs
+            is Fk.Forget -> {                                  // p23: a main card's Forget - left its card's buttons
                 val forgets = nav.filter { it.key is Fk.Forget }
                 val i = forgets.indexOfFirst { it.key == f }
                 when {
                     dx < 0 -> focus = nav.lastOrNull { (it.key as? Fk.Btn)?.id == f.id }?.key ?: f
-                    dx > 0 -> focus = Fk.Tab(viewed)
+                    dy < 0 && i == 0 -> toTabs()
                     dy != 0 -> forgets.getOrNull(i + dy)?.let { focus = it.key }
                 }
             }
-            is Fk.Tab -> {                                     // the glow walks the tabs; landing opens the tab (moveOpen, b117)
+            is Fk.Tab -> {                                     // the glow walks the row; landing opens the tab (moveOpen, b117)
                 val tabs = nav.filter { it.key is Fk.Tab }
                 val i = tabs.indexOfFirst { it.key == f }
                 when {
-                    dy != 0 -> tabs.getOrNull(i + dy)?.let { focus = it.key }
-                    dx < 0 -> focus = if (viewed == 0) nav.firstOrNull { it.key is Fk.Btn }?.key ?: f
-                                      else if (has(Fk.Track)) Fk.Track else rows.firstOrNull()?.key ?: f
+                    dx != 0 -> tabs.getOrNull(i + dx)?.let { focus = it.key }          // along the row, no wrap
+                    // Down into the page: the book's first button; a page's search box, else its list, else Track (Up: nothing)
+                    dy > 0 -> focus = if (viewed == 0) nav.firstOrNull { it.key is Fk.Btn }?.key ?: f
+                                      else if (has(Fk.Search)) Fk.Search else rows.firstOrNull()?.key
+                                          ?: if (has(Fk.Track)) Fk.Track else firstTarget() ?: f
                 }
             }
-            Fk.Search -> when {                                // the search box: down to the list, right to Track / the tabs
+            Fk.Search -> when {                                // the search box: down to the list, right to Track, up to the tabs
                 dy > 0 -> toRows()
-                dx > 0 -> focus = if (has(Fk.Track)) Fk.Track else Fk.Tab(viewed)
+                dy < 0 -> toTabs()
+                dx > 0 -> if (has(Fk.Track)) focus = Fk.Track
             }
             is Fk.Head, is Fk.Rec -> {
                 val i = rows.indexOfFirst { it.key == f }
                 when {
                     dy < 0 && i == 0 && has(Fk.Search) -> { lastRow = f; focus = Fk.Search }
+                    dy < 0 && i == 0 -> { lastRow = f; toTabs() }
                     dy < 0 -> rows.getOrNull(i - 1)?.let { focus = it.key }
                     dy > 0 -> { val next = rows.getOrNull(i + 1); if (next != null) focus = next.key else { lastRow = f; toFoot() } }
-                    dx > 0 -> { lastRow = f; focus = if (has(Fk.Track)) Fk.Track else Fk.Tab(viewed) }
+                    dx > 0 -> if (has(Fk.Track)) { lastRow = f; focus = Fk.Track }
                 }
             }
             Fk.Track -> when {
                 dx < 0 -> toRows()
-                dx > 0 -> focus = Fk.Tab(viewed)
+                dy < 0 -> toTabs()
                 dy > 0 -> toFoot()
             }
             Fk.All -> when { dx > 0 && has(Fk.Count) -> focus = Fk.Count; dy < 0 -> toRows() }

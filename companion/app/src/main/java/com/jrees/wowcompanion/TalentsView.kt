@@ -72,6 +72,23 @@ class TalentsView(
         invalidate()
     }
 
+    /** L / R step the school tabs across the top now (not while the Apply / Undo box is up: B cancels it) */
+    fun shouldersFree(): Boolean = ctl?.box == null && touchBox == null
+
+    /**
+     * L / R (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"; every tabbed room alike): the school
+     * before / after, no wrap (the Controller room's LB / RB), from the app's own reader. The same as a finger on that school's tab: the
+     * room shows it and the add-on's cursor is told (its PAD_SCHOOL cell, no game action)
+     */
+    fun shoulder(right: Boolean) {
+        val t = tree ?: return
+        if (!shouldersFree()) return
+        val to = RoomTabRow.step(school - 1, minOf(3, t.schools.size), if (right) 1 else -1) ?: return
+        school = to + 1; scroll = 0f; touched = null
+        onTap(TalentsModel.ROW_ACTIONS, TalentsModel.PAD_SCHOOL_1 + to)
+        invalidate()
+    }
+
     /** the page comes up or goes: nothing a finger left half done stays */
     fun reset() {
         touchBox = null; touched = null; applying = false

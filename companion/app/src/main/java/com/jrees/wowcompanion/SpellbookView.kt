@@ -195,6 +195,31 @@ class SpellbookView(
         }
     }
 
+    /** L / R step the book's tabs now: the book itself shows (no Controller page in it, not the Controller room's hold, no Bind box) */
+    fun shouldersFree(): Boolean = !tabOpen && ctl?.croom != true && (ctl?.on != true || ctl?.mode == "book")
+
+    /**
+     * L / R (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"; every tabbed room alike): the book's tab
+     * before / after, no wrap (the Controller room's LB / RB), from the app's own reader. The same as a finger on that tab (its first
+     * page, its first known spell; the controller's cursor told the tab, Book b72), but a controller press: the add-on's cursor stays drawn
+     */
+    fun shoulder(right: Boolean) {
+        val b = book ?: return
+        if (!shouldersFree()) return
+        val tabs = SpellsModel.tabs(b).take(8)
+        val at = tabs.indexOfFirst { it.key == tabKey }
+        if (at < 0) return
+        val t = tabs[RoomTabRow.step(at, tabs.size, if (right) 1 else -1) ?: return]
+        tabKey = t.key; page = 1; descScroll = 0f
+        val onPage = pageOf(t)
+        chosenId = onPage.getOrNull(SpellsModel.firstKnown(b, onPage))?.let { idOf(it) }
+        if (held && ctl?.mode == "book") lineOf(t.key)?.let { CastStripModel.bookTabCells(it) }?.let { cells ->
+            val sent = padTabCells(cells)
+            Log.i(TAG, "tab '${t.key}' by ${if (right) "R" else "L"}: ${cells.joinToString { "${it.first} ${it.second}" }} ${if (sent) "tapped" else "not sent"}")
+        }
+        invalidate()
+    }
+
     /** a tab key's skill line ("line:3" -> 3, "pet" -> the pet's book), as Book's tabs carry it (`k`) */
     private fun lineOf(key: String): Int? = if (key == "pet") SpellsModel.PET_LINE else key.removePrefix("line:").toIntOrNull()
 

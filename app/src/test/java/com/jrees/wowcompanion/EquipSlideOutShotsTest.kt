@@ -279,7 +279,9 @@ class EquipSlideOutShotsTest {
         }
     }
 
-    private fun tap(v: CharacterView, x: Float, y: Float) {
+    /** a finger at the room's own box ([x], [y] in its page's coordinates: the page is drawn RoomTabRow.DY lower, under the tabs on top) */
+    private fun tap(v: CharacterView, x: Float, y0: Float) {
+        val y = y0 + RoomTabRow.DY
         val t = android.os.SystemClock.uptimeMillis()
         v.onTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
         v.onTouchEvent(android.view.MotionEvent.obtain(t, t + 50, android.view.MotionEvent.ACTION_UP, x, y, 0))
