@@ -3,8 +3,8 @@ nearby campfire buff"), off-device, in Lua with the game stubbed:
 
 - the router's REAL secure pre-click snippet (PRE): a "sit" pick is a macro of the client's own sit command, on a bare Y out of combat
   with nothing targeted; mounted, swimming or channeling at the press: never the sit (Y falls through as with no pick);
-- the pure blocks between PadMap.lua's FIRE-BEGIN / FIRE-END: the Cozy Fire aura by spell id (7353 Basic Campfire, 7358 Bright
-  Campfire), by the ids' own names only when the aura's id is not readable; when the row is due (out of combat, standing, not eating /
+- the pure blocks between PadMap.lua's FIRE-BEGIN / FIRE-END: the campfire aura by spell id (1283391 Campfire Nearby, WoW Forever's; 7353 Basic
+  Campfire, 7358 Bright Campfire), by the ids' own names only when the aura's id is not readable; when the row is due (out of combat, standing, not eating /
   drinking, not mounted / on a taxi / in a vehicle / flying / swimming / moving / casting / dead); the seat tracker; the sit command;
 - the list: the new "fire" kind in the migration (added once at the end, removable, kept out while the list is full), the edits (Add
   then select cell sel0 + 3), the ordered walk;
@@ -98,7 +98,7 @@ if fire is None:
 F = lupa.LuaRuntime(unpack_returned_tuples=True)
 F.execute('OV = {}\n' + fire)
 ids = list(F.eval('OV.FIRE_IDS').values())
-check(ids == [7353, 7358], "2a. Cozy Fire by id: 7353 (Basic Campfire, +4 Spirit) and 7358 (Bright Campfire, +8)", ids)
+check(ids == [1283391, 7353, 7358], "2a. by id: Campfire Nearby 1283391 (WoW Forever's camp buff, first: the row's icon), Cozy Fire 7353 (Basic Campfire, +4 Spirit) and 7358 (Bright Campfire, +8)", ids)
 F.execute('''
 function aura(list, names) return OV.fireAura(list, names) end
 NAMES = { ["Cozy Fire"] = 7353 }
@@ -118,6 +118,22 @@ check(au(A('{ n = "Feu douillet" }'), F.eval('NAMES')) is None, "2f. ... and nev
 check(au(A(), F.eval('NAMES')) is None and au(A('{ n = "Cozy Fire" }'), None) is None, "2g. no auras / no names: nothing", "")
 
 due = F.eval('function(s) local ok, why = OV.fireDue(s); return ok, why end')
+# the 1531 follow-up (the user on the Thor: "I'm near a campfire and smart y is not triggering"; the buff on their bar: "Its called
+# "campfire nearby""): WoW Forever's camp buff is Campfire Nearby, spell 1283391 - by its id, and by the name its id gives when the id is
+# hidden (OV.fireNames, the real function, the ids' names read through a stubbed OV.sbName)
+check(1283391 in ids and 7353 in ids and 7358 in ids, "2k. Campfire Nearby (1283391, WoW Forever's camp buff) with Cozy Fire's 7353 / 7358", ids)
+fn = re.search(r'\nfunction OV\.fireNames\(\)\n.*?\nend\n', SRC, re.S)
+check(fn is not None, "2k. OV.fireNames is there")
+F.execute('SPELLN = { [7353] = "Cozy Fire", [7358] = "Cozy Fire", [1283391] = "Campfire Nearby" }\n'
+          'function OV.sbName(id) return SPELLN[id] end\nfunction TS(f) local ok, v = pcall(f); if ok then return v end end\n'
+          + (fn.group(0) if fn else ''))
+fdue = F.eval('function(auras) local id = OV.fireAura(auras, OV.fireNames()); local ok = OV.fireDue({ fire = id ~= nil }); return ok, id end')
+ok, fid = fdue(A('{ id = 1283391, n = "Campfire Nearby" }'))
+check(ok is True and fid == 1283391, "2k. the Campfire Nearby aura by its id: due", (ok, fid))
+ok, fid = fdue(A('{ n = "Campfire Nearby" }'))
+check(ok is True and fid == 1283391, "2k. ... its id hidden: by the name its id gives (Campfire Nearby): due", (ok, fid))
+ok, fid = fdue(A('{ id = 1459, n = "Arcane Intellect" }'))
+check(ok is False and fid is None, "2k. no camp buff: not due", (ok, fid))
 def S(**k):
     base = dict(fire=True)
     base.update(k)

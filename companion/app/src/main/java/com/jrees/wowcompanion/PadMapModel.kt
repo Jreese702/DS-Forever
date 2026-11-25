@@ -872,7 +872,7 @@ object PadMapModel {
         "key question" to P3_KEY_NEW..P3_KEY_LAST,
         "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
         "fight cast bar" to P3_CAST_OFF..P3_CAST_ON, "top bar swing" to P3_SWING_OFF..P3_SWING_ON,
-        "hold chooser" to P3_HOLD..P3_HOLD,       // m190 / Book b79 (b80: code 28, off the swing's 26)
+        "hold chooser" to P3_HOLD..P3_HOLD,       // m190 / Book b79; b80: code 28, off the swing's 26
         "hold time" to P3_HOLD_SHORT..P3_HOLD_LONG)                                              // m194 / Book b82
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
