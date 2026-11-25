@@ -40,19 +40,17 @@ public class XServerView extends SurfaceView implements SurfaceHolder.Callback, 
     }
 
     /**
-     * custom-thor: the surface's buffers are the X screen's size (the game's 1280x720 on the Thor's 1080p top screen), so the renderer's
-     * composite, frame generation and present work at 720p and the display hardware scales to the panel for free. The view itself stays
-     * full size, so touch mapping (which uses the view's size) is unchanged. The game folder's ".ds-fullsurface" switch file turns it off.
+     * The surface's buffers are the X screen's size (e.g. the game's 1280x720 on a 1080p panel), so the renderer's composite, frame
+     * generation and present work at the game's size and the display hardware scales to the panel for free. Without it the surface
+     * followed the view: everything after the game ran at the panel's 1920x1080 (2.25x the pixels; LSFG's flow pass too). The view
+     * itself stays full size, so touch mapping (which uses the view's size) is unchanged. Checked in SurfaceFlinger on a Thor:
+     * swapchain 1280x720, scaled by the display controller.
      */
     private void fixSurfaceToScreen(XServer xServer) {
         int w = xServer.screenInfo.width, h = xServer.screenInfo.height;
         if (w <= 0 || h <= 0) return;
-        if (new java.io.File("/storage/emulated/0/WoW Forever", ".ds-fullsurface").isFile()) {
-            timber.log.Timber.i("custom-thor: surface follows the view (.ds-fullsurface)");
-            return;
-        }
         getHolder().setFixedSize(w, h);
-        timber.log.Timber.i("custom-thor: surface fixed at the X screen's %dx%d", w, h);
+        timber.log.Timber.i("surface fixed at the X screen's %dx%d", w, h);
     }
 
     public XServer getxServer() {
