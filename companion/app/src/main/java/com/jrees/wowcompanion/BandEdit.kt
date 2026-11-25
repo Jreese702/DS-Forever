@@ -72,44 +72,33 @@ object BandEdit {
      * ([onStrip])
      */
     fun place(band: HomeLayoutSolver.Box, slots: List<HomeLayoutSolver.Box>, clock: HomeLayoutSolver.Box?, diamonds: Boolean,
-              grown: Boolean, preview: Boolean, away: Boolean = false, strip: HomeLayoutSolver.Box? = null,
-              avoid: HomeLayoutSolver.Box? = null): Pieces {
+              grown: Boolean, preview: Boolean, away: Boolean = false, strip: HomeLayoutSolver.Box? = null): Pieces {
         val on = placeOn(band, slots, clock, diamonds, grown, preview)
         if (!(preview && away)) return on
         val s = (band.r - band.l) / CastBarPlace.FRAME_W
-        if (strip != null) return Pieces(on.padPen, on.facePen, null, onStrip(strip, s, avoid))
+        if (strip != null) return Pieces(on.padPen, on.facePen, null, onStrip(strip, s))
         val pp = PEN_FIGHT * s
         return Pieces(on.padPen, on.facePen, null, box((band.l + band.r) / 2f - pp / 2f, AWAY_TOP, pp, pp))
     }
 
     /**
      * THE FIGHT PENCIL ON THE FIGHT STRIP'S LEFT END (the user's pick 2026-11-23, "Left end of the strip": at the page's top centre it
-     * covered the middle of the strip - the cast's name and the swing's run). [PEN_ROW] square (the thin row's pencil: the strip is only
-     * FIGHT_STRIP_H tall), over the strip's rounded left end cap, as near the strip's middle height as the controller's cursor round it
+     * covered the middle of the strip - the cast's name and the swing's run). [PEN_ON_STRIP] square (since test 1530; 1530's [PEN_ROW] the
+     * thin row's size, the strip only FIGHT_STRIP_H tall), over the strip's rounded left end cap, as near the strip's middle height as the controller's cursor round it
      * ([RING]) lets it stand on the page: the strip lies [RING] or less from the page's top and left, so the pencil's top and left are
      * [RING] in - its centre still on the strip's height, the strip's first few dozen px under it (the only place the cast's fill and the
      * swing start from, briefly) and the rest of the bar, its name and its swing clear. The strip itself never moves for it (the preview
      * shows the fight as it is laid)
      */
-    fun onStrip(strip: HomeLayoutSolver.Box, s: Float = 1f, avoid: HomeLayoutSolver.Box? = null): HomeLayoutSolver.Box {
+    fun onStrip(strip: HomeLayoutSolver.Box, s: Float = 1f): HomeLayoutSolver.Box {
         // (test 1530: [PEN_ON_STRIP] - taller than the strip, so it hangs from the strip's left end, its top [RING] in, over the strip's
-        // height and a little of the page under it; the strip's middle still clear. [avoid] = another piece under the strip's left end
-        // (the party list's pencil, the Party mode tab, the list at the top of the left column): there 1530's [PEN_ROW] pencil on the
-        // strip ([onStripSmall]) - one size or the other, never one that follows the other piece's motion)
+        // height and a little of the page under it; the strip's middle still clear. RULING D (the user's pick 2026-11-25, "Party pencil
+        // to the right (Recommended)"): always this size - the party list's pencil sits at the list's RIGHT end (HomeEditView.partyPenBox),
+        // so nothing else is ever under the strip's left end; 1530's 32 px fallback beside it is gone)
         val p = PEN_ON_STRIP * s
-        if (avoid != null) {
-            val l0 = maxOf(strip.l, RING); val t0 = maxOf((strip.t + strip.b) / 2f - p / 2f, RING)
-            if (l0 < avoid.r + PAD * s && avoid.l < l0 + p + PAD * s && t0 < avoid.b + PAD * s && avoid.t < t0 + p + PAD * s) return onStripSmall(strip, s)
-        }
         val l = maxOf(strip.l, RING)
         val t = maxOf((strip.t + strip.b) / 2f - p / 2f, RING)
         return box(l, t, p, p)
-    }
-
-    /** 1530's strip pencil: [PEN_ROW] square on the strip's left end, its centre on the strip's height as the cursor's [RING] lets it */
-    fun onStripSmall(strip: HomeLayoutSolver.Box, s: Float = 1f): HomeLayoutSolver.Box {
-        val p = PEN_ROW * s
-        return box(maxOf(strip.l, RING), maxOf((strip.t + strip.b) / 2f - p / 2f, RING), p, p)
     }
 
     private fun placeOn(band: HomeLayoutSolver.Box, slots: List<HomeLayoutSolver.Box>, clock: HomeLayoutSolver.Box?, diamonds: Boolean,

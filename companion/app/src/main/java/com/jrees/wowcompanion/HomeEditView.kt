@@ -248,9 +248,11 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     }
 
     /**
-     * PARTY SIZING (the user's pick 2026-11-23): the party list's pencil in Home's px - [BandEdit.PEN] square on the list's far top
-     * corner from its Select tab (the tab on the screen's left edge: the box starts at x 0 - the pencil at its right), [PARTY_PEN_IN] in
-     * from its edges, over the corner plate like a badge; null = no party list on Home. (Review: the corner as DRAWN - the list's pose,
+     * PARTY SIZING (the user's pick 2026-11-23): the party list's pencil in Home's px - [BandEdit.PEN] square on the list's top RIGHT
+     * corner ([PARTY_PEN_IN] in from its edges, over the corner plate like a badge): RULING D (the user's pick 2026-11-25, "Party pencil
+     * to the right (Recommended)") - with the Select tab on the screen's left edge (the box starts at x 0) the box's right end; with the
+     * tab on the right edge the well's right end, left of the tab (1530 put it on the list's LEFT end then, under the fight strip's
+     * pencil: that pencil shrank to 32 px beside it). Null = no party list on Home. (Review: the corner as DRAWN - the list's pose,
      * edit mode's REST_SCALE 0.94 springs, its lift - so the pencil rides the drawn list and never hangs off its edge; the pencil
      * itself never turns. Its taps read this same box)
      */
@@ -258,18 +260,25 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         // EDIT TABS: the party list's sizing is Party mode's - its pencil on the Party mode tab only
         if (host.model?.tab != HomeTab.PARTY) return null
         val b = p[HomePart.PARTY] ?: return null
-        if (b.width() < BandEdit.PEN * 2f || b.height() < BandEdit.PEN) return null
-        // (test 1530, "way to small": [BandEdit.PEN_PARTY] where the list has the room, its touch box 48 dp: [penTouch])
-        val pp = if (b.width() >= BandEdit.PEN_PARTY * 2f && b.height() >= BandEdit.PEN_PARTY + 2f * PARTY_PEN_IN) BandEdit.PEN_PARTY else BandEdit.PEN
-        val tabLeft = b.left <= 0.5f
-        penPt[0] = if (tabLeft) b.right else b.left; penPt[1] = b.top
+        val pp = partyPenSide(b) ?: return null
+        // (ruling D: always the right end - the well's, left of a Select tab on the right edge)
+        penPt[0] = partyRowsRight(b); penPt[1] = b.top
         if (host.pose(HomePart.PARTY, penMtx)) penMtx.mapPoints(penPt)
-        val l = if (tabLeft) penPt[0] - PARTY_PEN_IN - pp else penPt[0] + PARTY_PEN_IN
+        val l = penPt[0] - PARTY_PEN_IN - pp
         val t = penPt[1] + PARTY_PEN_IN
         return RectF(l, t, l + pp, t + pp)
     }
     private val penPt = FloatArray(2)
     private val penMtx = android.graphics.Matrix()
+    /** the party list's pencil's side on box [b] (null: too small for one) - (test 1530, "way to small": [BandEdit.PEN_PARTY] where the
+     *  list has the room, its touch box 48 dp: [penTouch]) */
+    private fun partyPenSide(b: RectF): Float? {
+        if (b.width() < BandEdit.PEN * 2f || b.height() < BandEdit.PEN) return null
+        return if (b.width() >= BandEdit.PEN_PARTY * 2f && b.height() >= BandEdit.PEN_PARTY + 2f * PARTY_PEN_IN) BandEdit.PEN_PARTY else BandEdit.PEN
+    }
+    /** the party list's rows' right end on box [b]: the box's (the Select tab on the screen's left edge: the box starts at x 0), else
+     *  left of the tab on the right edge (PartyLayout's) */
+    private fun partyRowsRight(b: RectF): Float = if (b.left <= 0.5f) b.right else b.right - PartyLayout.TAB_W - PartyLayout.TAB_GAP
     /** the extras' cells and their "+" spot as one box (null = no extras row shown) */
     private fun extrasUnion(g: BandGeo): RectF? {
         if (g.extras.isEmpty() && g.plus == null) return null
@@ -510,12 +519,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             }
         }
     }
-    /** the party list's box less its Select tab (its tag on the rows' end, clear of the tab on the screen's edge: PartyLayout's) */
+    /** the party list's box less its Select tab (its tag on the rows' end, clear of the tab on the screen's edge: PartyLayout's) and, on
+     *  the Party mode tab, less its pencil at the rows' right end (ruling D, 2026-11-25: the tag left of it, never under it) */
     private fun partyRows(r: RectF): RectF {
         val inner = scratch3; inner.set(r)
-        val w = width.toFloat().takeIf { it > 0f } ?: 1240f
-        if (r.right > w - UiKit.MODULE_GAP - 8f) inner.right -= PartyLayout.TAB_W + PartyLayout.TAB_GAP
-        else if (r.left < UiKit.MODULE_GAP + 8f) inner.left += PartyLayout.TAB_W + PartyLayout.TAB_GAP
+        if (r.left <= 0.5f) inner.left += PartyLayout.TAB_W + PartyLayout.TAB_GAP else inner.right = partyRowsRight(r)
+        if (host.model?.tab == HomeTab.PARTY) partyPenSide(r)?.let { inner.right -= it + PARTY_PEN_IN }
         return inner
     }
     private val scratch3 = RectF()

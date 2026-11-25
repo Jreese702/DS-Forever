@@ -3592,11 +3592,8 @@ class HomeView(
         val pieces = BandEdit.place(HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom), slots,
             chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview,
             away = b.bottom <= 0f,                                        // Top screen's preview: the band above the page
-            strip = now[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) },
-            // (test 1530: the bigger strip pencil keeps clear of the party list's pencil on the Party mode tab)
-            // (its own map: host.parts() hands back one shared map a reader may be walking while the band is laid)
-            avoid = if (m.tab != HomeTab.PARTY) null else now[Part.PARTY]?.takeIf { views[Part.PARTY]?.visibility == View.VISIBLE }?.let { r ->
-                editView.partyPenBox(mapOf(HomePart.PARTY to RectF(r)))?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) } })
+            // (ruling D 2026-11-25: the strip pencil full size everywhere - the party list's pencil is at the list's right end)
+            strip = now[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) })
         fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
         // fix/fight-pencil-strip (the user's pick 2026-11-23, "Hold still until closed"): with the fight pencil's bubble open the pencil
         // stays where it was at the open (HomeEditModel.fightPenHold) - the strip laid or taken away by the bubble's Cast bar / Swing timer

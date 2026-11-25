@@ -357,7 +357,10 @@ class PartySizingShotsTest {
         val fd = HomeEditView::class.java.getDeclaredMethod("posedRect", EditStop::class.java, RectF::class.java, RectF::class.java)
             .apply { isAccessible = true }.invoke(editView(f), EditStop.PARTY, RectF(fp), RectF()) as RectF
         val fpen = editView(f).partyPenBox()!!
-        assertTrue("the pencil on the drawn list's far (left) corner ($fpen / $fd)", fd.contains(fpen) && fpen.right < fd.centerX())
+        // (ruling D, the user's pick 2026-11-25 "Party pencil to the right": the list's right end - left of its Select tab, on the right
+        // here - so the fight pencil keeps its full size on the strip's left end)
+        assertTrue("the pencil on the drawn list's right end, left of its Select tab ($fpen / $fd)", fd.contains(fpen) && fpen.left > fd.centerX() &&
+            fpen.right <= fd.right - PartyLayout.TAB_W)
         render(f, "edit_party_bubble_foot_list")
         f.home.editCancel(); settle(40)
         // Party mode off (edit tabs): Edit Home opens on Out of combat (the list in its column, no party pencil there); the Party mode tab

@@ -878,9 +878,10 @@ class HomeEditShotsTest {
             assertNotNull("$n: the fight pencil stays reachable", pen)
             // (the fight strip there - Cast bar in fights = Bottom screen, the default: on the strip's left end, the user's pick
             // 2026-11-23; theFightPencilSitsAtTheStripsLeftEnd has the cases)
-            // (test 1530: BandEdit.onStrip's bigger pencil, or 1530's beside the party list's pencil: onStripSmall)
+            // (ruling D, the user's pick 2026-11-25 "Party pencil to the right": BandEdit.onStrip's full-size pencil everywhere - the
+            // Party mode tab's too: the party list's pencil is at the list's right end, 1530's 32 px fallback gone)
             val sb = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
-            assertTrue("$n: on the fight strip's left end ($pen)", pen == BandEdit.onStrip(sb) || (party && pen == BandEdit.onStripSmall(sb)))
+            assertEquals("$n: on the fight strip's left end, full size", BandEdit.onStrip(sb), pen)
             // (test 1530, "way to small": the strip's pencil PEN_ON_STRIP now - it hangs from the strip's left end, 1530's 32 px stood in it)
             assertTrue("$n: on the page's top ($pen)", pen!!.t >= 0f && pen.b <= BandEdit.RING + BandEdit.PEN_ON_STRIP + 0.5f)
             p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
@@ -951,6 +952,22 @@ class HomeEditShotsTest {
                 at("$n: no strip - AWAY_TOP down ($pen)", kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f)
             }
             stops[EditStop.PARTY_PEN]?.let { q -> at("$n: clear of the party list's pencil ($pen / $q)", !pen.overlaps(q)) }
+            // RULING D (the user's pick 2026-11-25, "Party pencil to the right (Recommended)"): the fight pencil full size everywhere -
+            // the Party mode tab's too, the list at the top of the left column under the strip - and the party list's pencil at the
+            // list's RIGHT end (left of its Select tab when the tab is on the right), never on the strip's pencil
+            if (strip != null) at("$n: the fight pencil full size (${pen.w})", pen.w >= BandEdit.PEN_ON_STRIP - 0.5f && pen == BandEdit.onStrip(
+                HomeLayoutSolver.Box(strip.left, strip.top, strip.right, strip.bottom)))
+            if (party) {
+                val q = stops[EditStop.PARTY_PEN]
+                val pl = b.getValue("PARTY")
+                at("$n: the party list's pencil there", q != null)
+                if (q != null) {
+                    at("$n: the party list's pencil at the list's right end ($q / $pl)", q.cx > pl.centerX())
+                    val tabRight = pl.left > 0.5f
+                    if (tabRight) at("$n: ... left of the Select tab on the right ($q / $pl)", q.r <= pl.right - PartyLayout.TAB_W)
+                    at("$n: the party list's pencil full size (${q.w})", q.w >= BandEdit.PEN_PARTY - 0.5f)
+                }
+            }
             // back Down off it, and a tap on it opens its bubble
             p.home.editKey("PADDDOWN"); settle(4)
             assertNotEquals("$n: Down leaves the pencil", EditStop.FIGHT_PEN, model(p).cursor)
@@ -1000,8 +1017,8 @@ class HomeEditShotsTest {
         val stripBox = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
         // its own place (theFightPencilSitsAtTheStripsLeftEnd): the strip's left end, or the page's top centre AWAY_TOP down
         fun ownPlace(pen: HomeLayoutSolver.Box?, strip: Boolean): Boolean = pen != null &&
-            // (test 1530: the bigger strip pencil, or 1530's beside the party list's pencil on the Party mode tab: BandEdit.onStrip's avoid)
-            if (strip) pen == BandEdit.onStrip(stripBox) || pen == BandEdit.onStripSmall(stripBox) else kotlin.math.abs(pen.cx - W / 2f) <= 1f && kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f
+            // (ruling D 2026-11-25: the full-size strip pencil everywhere, the Party mode tab's too)
+            if (strip) pen == BandEdit.onStrip(stripBox) else kotlin.math.abs(pen.cx - W / 2f) <= 1f && kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f
         // the changes: (name, the record's Cast bar in fights, the game's swing timer `gsw` at the open, Swing timer at the open, the row's
         // key and pick - or, [gswTo], the add-on's padmap saying the game's own swing timer went on / off: the swing-alone strip comes or
         // goes; [strip] = the change lays or takes away the strip (Swing timer, ours, paints the strip's swing only)
