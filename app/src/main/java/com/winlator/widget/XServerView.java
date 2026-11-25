@@ -29,6 +29,7 @@ public class XServerView extends SurfaceView implements SurfaceHolder.Callback, 
         setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         getHolder().addCallback(this);
         this.xServer = xServer;
+        fixSurfaceToScreen(xServer);
         if (selectedRenderer.equalsIgnoreCase("vulkan")) {
             Drawable.DRAWABLE_ASR_MODE(false);
             renderer = new VulkanRenderer(this, xServer);
@@ -36,6 +37,22 @@ public class XServerView extends SurfaceView implements SurfaceHolder.Callback, 
             Drawable.DRAWABLE_ASR_MODE(true);
             renderer = new ASurfaceRenderer(this, xServer);
         }
+    }
+
+    /**
+     * custom-thor: the surface's buffers are the X screen's size (the game's 1280x720 on the Thor's 1080p top screen), so the renderer's
+     * composite, frame generation and present work at 720p and the display hardware scales to the panel for free. The view itself stays
+     * full size, so touch mapping (which uses the view's size) is unchanged. The game folder's ".ds-fullsurface" switch file turns it off.
+     */
+    private void fixSurfaceToScreen(XServer xServer) {
+        int w = xServer.screenInfo.width, h = xServer.screenInfo.height;
+        if (w <= 0 || h <= 0) return;
+        if (new java.io.File("/storage/emulated/0/WoW Forever", ".ds-fullsurface").isFile()) {
+            timber.log.Timber.i("custom-thor: surface follows the view (.ds-fullsurface)");
+            return;
+        }
+        getHolder().setFixedSize(w, h);
+        timber.log.Timber.i("custom-thor: surface fixed at the X screen's %dx%d", w, h);
     }
 
     public XServer getxServer() {

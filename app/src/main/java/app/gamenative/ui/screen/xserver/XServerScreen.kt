@@ -686,9 +686,16 @@ fun XServerScreen(
         // (measured as constant multi-exposure ghosting on the X11/turnip
         // present path).
         xServerView?.setFrameRateLimit(if (isLsfgAvailable && lsfgMultiplier >= 2) 0 else limit)
+        // Only the lsfg-vk LAYER reads the limit (its conf.toml). With the NATIVE backend (frames made in our renderer, the guest
+        // presents once per real frame) nothing else did, so with frame generation on the game ran uncapped (measured on an Adreno 740
+        // Thor: guest 33-40 fps with a 30 limit, "PANEL-BOUND"). Here the Present extension keeps pacing the guest at the limit unless
+        // the layer really paces it; the renderer's display hint above stays off.
+        val layerPaces = isLsfgAvailable && lsfgMultiplier >= 2 && !LsfgVkManager.isNativeBackend(container)
+        Timber.i("frame limit %d, frame gen x%d, guest paced by %s", limit, lsfgMultiplier,
+            if (layerPaces) "the lsfg-vk layer" else if (limit > 0) "the Present extension" else "nothing (Off)")
         xServerView?.getxServer()
             ?.getExtension<PresentExtension>(PresentExtension.MAJOR_OPCODE.toInt())
-            ?.setFrameRateLimit(if (isLsfgAvailable && lsfgMultiplier >= 2) 0 else limit)
+            ?.setFrameRateLimit(if (layerPaces) 0 else limit)
         // Not disarmed with LSFG: the layer only multiplies Vulkan-swapchain
         // presents, so SHM-presenting games never pass through it and would
         ShmFramePacer.setFrameRateLimit(limit)
