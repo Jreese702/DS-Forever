@@ -55,6 +55,12 @@ class HomeView(
     private val openRoom: (Room) -> Unit = {},
 ) : ViewGroup(context) {
 
+    // 1529 PERFORMANCE MODE (FramePace): this view's animation frames, paced to ~30 Hz while the player moves or fights on Home. The
+    // field is nullable on purpose: View's constructor runs before it is set
+    private val pace: FramePace.Gate? = FramePace.gate(this) { vsyncFrame() }
+    private fun vsyncFrame() = super.postInvalidateOnAnimation()
+    override fun postInvalidateOnAnimation() { pace?.frame() ?: super.postInvalidateOnAnimation() }
+
     val flow = HomeFlow()
     private val grow = HomeGrow()
     private val auras = HomeAuras()
