@@ -280,7 +280,8 @@ class HoldGate {
         const val TRIG_OFF = 0.30f
 
         /** the gated bits and their game positions (the router's: D-pad 1 left, 2 up, 3 right, 4 down; 5 X, 6 Y, 7 B, 8 A) */
-        val GATED: List<Pair<Int, Int>> = listOf(LEFT to 1, UP to 2, RIGHT to 3, DOWN to 4, X to 5, Y to 6, B to 7, A to 8)
+        // B is NEVER held back (the user, 2026-11-24: "I want to remove the hold option on B it conflicts too hard and does weird shit")
+        val GATED: List<Pair<Int, Int>> = listOf(LEFT to 1, UP to 2, RIGHT to 3, DOWN to 4, X to 5, Y to 6, A to 8)
         private val GATE_MASK = GATED.fold(0) { m, (bit, _) -> m or (1 shl bit) }
         /** LB, RB, Select, Start: held at a press, the press is a chord (never held back) */
         private const val MOD_MASK = (1 shl 4) or (1 shl 5) or (1 shl 6) or (1 shl 7)

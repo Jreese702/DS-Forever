@@ -1096,7 +1096,14 @@ class HomeView(
         topFightSync(fightWas, map.fight, map.combat)                    // the 11-23 B rule: the band follows the add-on's give-back / re-arm
         castView.commands = HomeFightFace.commandIcons(map)             // Track C: the companion's commands (overlays: the game's slot is empty)
         castView.overMacro = PadMapModel.overMacroKeys(map)            // PadMap m188: our overlay over the player's own macro (a corner mark)
-        castView.holdRefs = PadMapModel.holdRefs(map).takeIf { HoldCast.usable && map.holdOn != false }   // m190: the hold spells' badges
+        holdApply()                                                     // m190: the hold spells' badges (the state's tab)
+    }
+
+    /** m190 PER TAB (the user on test 1528: "It should be seperate"): the badges are the holds that would fire NOW - In combat's while
+     *  the fight switch takes the press (the padmap's `fight`, Combat controls on), else Out of combat's */
+    private fun holdApply() {
+        val map = padMap ?: return
+        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false }
     }
 
     /** every CURRENT `holdcd` (PadMap m190): the hold spells' own cooldowns onto their badges */
@@ -1110,7 +1117,7 @@ class HomeView(
     fun onFightWord(fight: Boolean) {
         if (fight == fightNow) return
         val was = fightNow
-        fightNow = fight; applyDpad()
+        fightNow = fight; applyDpad(); holdApply()
         topFightSync(was, fight, null)                                   // (facewatch carries no combat word: its re-arm edge only)
     }
 

@@ -62,7 +62,13 @@ object PadMapModel {
                     val overMacro: Boolean = false,
                     /** m190 HOLD TO CAST (the user, 2026-11-24: "hold to cast on a button so that we can have 2 spells per button"): the
                      *  place's HOLD spell (the padmap's `h`: a spell by its id, or a whole-button thing by `t` / `key`); null = none */
-                    val hold: Ref? = null)
+                    val hold: Ref? = null,
+                    /** m190 PER TAB (the user on test 1528: "It should be seperate"): In combat's hold spell (the padmap's `hc`); [hold] is
+                     *  Out of combat's */
+                    val holdCombat: Ref? = null) {
+        /** the hold spell of tab [combat] (In combat / Out of combat) */
+        fun holdOf(combat: Boolean): Ref? = if (combat) holdCombat else hold
+    }
     /** m13 START ATTACK ON CAST (the user 2026-10-01): [on]; [n] buttons converted; [full] / [user] / [refused] buttons left plain (no
      *  Character Macro free / a macro of that name is the user's own / the game refused); [pending] waits for the fight to end; [colOn] /
      *  [colOff] the `spells` row's columns Home's Settings room taps (no-action notes, idempotent) */
@@ -229,7 +235,7 @@ object PadMapModel {
                 PadSet(s.optInt("set", 0), objects(s.optJSONArray("slots")).map { o ->
                     Slot(o.optInt("pos", 0), intOrNull(o, "s"), kind(o.optString("kind", "")), intOrNull(o, "id"), textOrNull(o, "n"), o.optInt("i", 0),
                         ref(o.optJSONObject("c")), ref(o.optJSONObject("o")), ref(o.optJSONObject("cf")), o.optBoolean("sa", false), key = textOrNull(o, "key"),
-                        ov = o.optBoolean("ov", false), overMacro = o.optBoolean("um", false), hold = ref(o.optJSONObject("h")))
+                        ov = o.optBoolean("ov", false), overMacro = o.optBoolean("um", false), hold = ref(o.optJSONObject("h")), holdCombat = ref(o.optJSONObject("hc")))
                 })
             },
             general = count(macros?.optJSONObject("general")),
@@ -440,7 +446,7 @@ object PadMapModel {
 
     /** m190 (the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"): the button does
      *  something - its own spell / item / macro / command / binding, an In combat entry, or a base face's game action (PadMap holdOk) */
-    fun holdable(sl: Slot?): Boolean = sl != null && (sl.kind != Kind.NONE || sl.fight != null || sl.combat != null)
+    fun holdable(sl: Slot?): Boolean = sl != null && sl.pos != 7 && (sl.kind != Kind.NONE || sl.fight != null || sl.combat != null)   // never B
 
     /** m190: the hold spell at set (1-4) / position (1-8) of [map] (its slot's `h`), or null */
     fun holdAt(map: Map, set: Int, pos: Int): Ref? = slot(map, set, pos)?.hold
@@ -802,8 +808,8 @@ object PadMapModel {
 
     /** m190 HOLD TO CAST: every place's hold spell on the page shown, by Home's band key (layer * 8 + position - 1; layer 0 none, 1 LT,
      *  2 RT, 3 LT + RT): the corner badge's picture */
-    fun holdRefs(map: Map): kotlin.collections.Map<Int, Ref> = map.sets.filter { it.set in 1..4 }.flatMap { st ->
-        st.slots.filter { it.pos in 1..8 && it.hold != null }.map { (st.set - 1) * 8 + (it.pos - 1) to it.hold!! }
+    fun holdRefs(map: Map, combat: Boolean = false): kotlin.collections.Map<Int, Ref> = map.sets.filter { it.set in 1..4 }.flatMap { st ->
+        st.slots.filter { it.pos in 1..8 && it.holdOf(combat) != null }.map { (st.set - 1) * 8 + (it.pos - 1) to it.holdOf(combat)!! }
     }.toMap()
 
     /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null */
@@ -821,8 +827,8 @@ object PadMapModel {
     /** p58: the player's macro [index] (0-based in [Map.macs]): its page pick (0-3 = from 0 / 40 / 80 / 120), then the "extra" row's column */
     fun macroCells(index: Int): List<Pair<String, Int>> = page3((index / 40).coerceIn(0, 3)) + (ROW_EXTRA to index % 40)
     /** m190 (Book b79): the Controller room's Y Hold spell by touch - the add-on's hold chooser for the button the cursor is on
-     *  (PadTabCtl p60 holdOpen), page-3 code 28 (the 1529 merge, Book b80: 26 on feat/hold-cast, but 26 / 27 are feat/top-castbar's
-     *  swing line off / on, P3_SWING_OFF / P3_SWING_ON) */
+     *  (PadTabCtl p60 holdOpen), page-3 code 28 (Book b80 on both the 1528b and 1529 merges: 26 on feat/hold-cast, but 26 / 27 are
+     *  feat/top-castbar's swing line off / on, P3_SWING_OFF / P3_SWING_ON) */
     const val P3_HOLD = 28
     fun holdCells(): List<Pair<String, Int>> = page3(P3_HOLD)
     /** p58: Extra's category [k] (1-based, ChooserTabs.CATS) folded / opened by touch (codes 4-8) */
@@ -853,7 +859,7 @@ object PadMapModel {
         "key question" to P3_KEY_NEW..P3_KEY_LAST,
         "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
         "fight cast bar" to P3_CAST_OFF..P3_CAST_ON, "top bar swing" to P3_SWING_OFF..P3_SWING_ON,
-        "hold chooser" to P3_HOLD..P3_HOLD)        // m190 / Book b79 (b80: code 28)
+        "hold chooser" to P3_HOLD..P3_HOLD)        // m190 / Book b79 (b80: code 28, off the swing's 26)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
     fun fightCastCells(top: Boolean): List<Pair<String, Int>> = page3(if (top) P3_CAST_ON else P3_CAST_OFF)

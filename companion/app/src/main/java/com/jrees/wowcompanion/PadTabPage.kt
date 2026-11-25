@@ -862,7 +862,7 @@ class PadTabPage(
     private fun pinned(m: PadMapModel.Map): Thing? {
         if (view == "radial") return if (radId(pos) != 0) Thing.Clear else null            // p16: "Clear this slice"
         val sl = slotOf(m, shown(), pos)
-        if (holdChooser()) return if (sl?.hold != null) Thing.Unhold else null              // p59: the hold's own Clear
+        if (holdChooser()) return if (sl?.holdOf(fight()) != null) Thing.Unhold else null   // p59: the hold's own Clear (the tab's)
         return if (fight()) when {
             sl?.kind == PadMapModel.Kind.COMBAT -> Thing.Uncombat
             PadMapModel.isFace(sl) && sl!!.fight != null -> Thing.Unface
@@ -1019,7 +1019,7 @@ class PadTabPage(
             UiKit.pad(c, glyph(p), r.centerX() + 36f * k, r.centerY() - 36f * k, 40f * k)
         }
         // m190 HOLD TO CAST: a button with a hold spell wears it as a small round badge at its top left (the study's room mockup)
-        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true && HoldCast.usable) for (p in 1..8) PadMapModel.slot(m, s, p)?.hold?.let { hr ->
+        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true && HoldCast.usable) for (p in 1..8) PadMapModel.slot(m, s, p)?.holdOf(cv() == "combat")?.let { hr ->
             val r = ctlSquare(p); val k = r.width() / 80f
             HoldArt.badge(c, r.left + 12f * k, r.top + 12f * k, 15f * k, Icons.get(hr.icon), -1f, lit = false)
         }
@@ -1832,7 +1832,7 @@ class PadTabPage(
         // HOLD: its hold spell (an empty row when none), or the line while hold to cast is not available
         val r2 = r1 + PANE_ROW_STEP
         if (holdOn(m) && PadMapModel.holdable(sl)) {                      // (an empty button: no Hold row, no Bind hold)
-            val hr = sl?.hold
+            val hr = sl?.holdOf(fightTab)                                   // PER TAB: this tab's own hold (the user on 1528)
             UiKit.spell(c, hr?.let { Icons.get(it.icon) }, x0 + 8f, r2 + 8f, 80f, UiKit.Spell.KNOWN, rank = SpellRanks.of(hr?.spellId))
             val holdWord = Tr.t("Hold")
             c.drawText(holdWord, x0 + 112f, r2 + 34f, pl)
@@ -2468,7 +2468,7 @@ class PadTabPage(
         if (was == DOWN_CANCEL && moveRect(w, h).contains(x, y)) {
             tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CANCEL)); localFirst(DOWN_CANCEL); return
         }
-        // m190: Y Hold spell by touch: the add-on's hold chooser for the button the cursor is on (Book b79 page-3 code 26; no game action)
+        // m190: Y Hold spell by touch: the add-on's hold chooser for the button the cursor is on (Book b80 page-3 code 28; no game action)
         if (was == DOWN_HOLD && holdButtonShown(m) && holdRect(m, w, h).contains(x, y)) {
             if (m.combat) say(COMBAT) else tap(PadMapModel.holdCells())
             return
@@ -2791,7 +2791,7 @@ class PadTabPage(
         /** the user, 2026-11-24: "Use the word bind instead of change" - one word for the button, set or not */
         const val HOLD_BIND = "Bind hold"
         const val HOLD_OFF_LINE = "Hold to cast isn't available yet"
-        /** m190: the Hold spell button (touch: Book b79's page-3 code 26 opens the add-on's hold chooser) */
+        /** m190: the Hold spell button (touch: Book b80's page-3 code 28 opens the add-on's hold chooser) */
         private const val DOWN_HOLD = 970
     }
 }

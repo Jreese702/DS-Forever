@@ -74,7 +74,8 @@ class HoldCastShotsTest {
                 }
                 2 -> {
                     a.put(5, JSONObject().put("pos", 6).put("s", 18).put("kind", "combat").put("ov", true).put("base", "spell")
-                        .put("c", h("Healing Wave", 331, 136052)).put("o", h("Lesser Healing Wave", 8004, 136043)).put("h", h("Chain Heal", 1064, 136042)))
+                        .put("c", h("Healing Wave", 331, 136052)).put("o", h("Lesser Healing Wave", 8004, 136043)).put("h", h("Chain Heal", 1064, 136042))
+                        .put("hc", h("Lightning Shield", 324, 136051)))          // PER TAB: In combat's own hold
                     a.put(7, JSONObject().put("pos", 8).put("s", 20).put("kind", "spell").put("n", "Lightning Bolt").put("id", 403).put("i", 136048)
                         .put("h", h("Chain Lightning", 421, 136015)))
                 }
