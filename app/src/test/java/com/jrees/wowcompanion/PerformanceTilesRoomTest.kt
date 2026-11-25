@@ -250,8 +250,9 @@ class PerformanceTilesRoomTest {
             assertEquals(2, link.opens)
             assertTrue(!r.pad.onTabRow)
             assertEquals(tiles(r).getValue(PerformanceTileModel.STREAM), r.pad.focusBox())
-            // a tab step closes it (and tells the stream)
-            press(r, "PADRSHOULDER")
+            // a tab step closes it (and tells the stream); L: Performance is the last tab and L / R stop at the ends (the user's pick
+            // 2026-11-25, "Stop everywhere"), so R there steps nowhere
+            press(r, "PADLSHOULDER")
             assertNull(r.perf.openTile); assertEquals(2, link.closes)
             // the stream gone (back to Local): an open band closes with it
             r.openStreamSettings(); lay(r)
@@ -368,10 +369,10 @@ class PerformanceTilesRoomTest {
         assertTrue(r.streamHelp.isOpen)
         tap(r.streamHelp, StreamHelpHost.BACK.centerX(), StreamHelpHost.BACK.centerY()); lay(r)
         assertTrue(!r.streamHelp.isOpen)
-        // L / R: it closes and the tab steps
+        // L / R: it closes and the tab steps (L: the last tab's R steps nowhere since L / R stop at the ends, 2026-11-25)
         press(r, "PADDDOWN"); repeat(3) { if (r.pad.focusBox() != st) press(r, "PADDDOWN") }; press(r, "PAD1")
         assertTrue(r.streamHelp.isOpen)
-        press(r, "PADRSHOULDER")
+        press(r, "PADLSHOULDER")
         assertTrue(!r.streamHelp.isOpen)
         assertTrue(r.tab != SettingsTabs.Tab.PERFORMANCE)
         // a tab shown afresh: never open

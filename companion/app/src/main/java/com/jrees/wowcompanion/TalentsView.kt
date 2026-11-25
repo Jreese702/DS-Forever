@@ -72,6 +72,23 @@ class TalentsView(
         invalidate()
     }
 
+    /** L / R step the school tabs across the top now (not while the Apply / Undo box is up: B cancels it) */
+    fun shouldersFree(): Boolean = ctl?.box == null && touchBox == null
+
+    /**
+     * L / R (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"; every tabbed room alike): the school
+     * before / after, no wrap (the Controller room's LB / RB), from the app's own reader. The same as a finger on that school's tab: the
+     * room shows it and the add-on's cursor is told (its PAD_SCHOOL cell, no game action)
+     */
+    fun shoulder(right: Boolean) {
+        val t = tree ?: return
+        if (!shouldersFree()) return
+        val to = RoomTabRow.step(school - 1, minOf(3, t.schools.size), if (right) 1 else -1) ?: return
+        school = to + 1; scroll = 0f; touched = null
+        onTap(TalentsModel.ROW_ACTIONS, TalentsModel.PAD_SCHOOL_1 + to)
+        invalidate()
+    }
+
     /** the page comes up or goes: nothing a finger left half done stays */
     fun reset() {
         touchBox = null; touched = null; applying = false
@@ -86,9 +103,12 @@ class TalentsView(
     private fun ny(row: Int) = 230f + row * 116f - scroll
     private fun ground() = RectF(10f, 158f, split - 10f, height - 6f)
     // NO DOOR (the user 2026-09-30: Talents has its own button on the bar): the school tabs span the row again (SPEC 2 as first written)
+    // L / R step the schools (the user, 2026-11-25) and the row shows them, L far left and R far right (the user's pick, "Add them": the
+    // tabs a little narrower, UiKit.TAB_END_W kept at each end for the glyph, as every tabbed room's row)
     private fun tabRect(i: Int): RectF {
-        val tw = (width - 40f) / 3f
-        return RectF(12f + i * (tw + 8f), 72f, 12f + i * (tw + 8f) + tw, 146f)
+        val x0 = 12f + UiKit.TAB_END_W
+        val tw = (width - 2f * x0 - 16f) / 3f
+        return RectF(x0 + i * (tw + 8f), 72f, x0 + i * (tw + 8f) + tw, 146f)
     }
     private val specRects = listOf(RectF(330f, 8f, 500f, 54f), RectF(512f, 8f, 762f, 54f))
     private fun x0() = split + 26f
@@ -162,6 +182,7 @@ class TalentsView(
             UiKit.schoolTab(c, tabRect(i), s?.let { Icons.get(it.icon) }, s?.name ?: "", if (low()) 0 else s?.spent ?: 0, i + 1 == school,
                 cursor = focus == "schools" && (ctl?.tab ?: 1) == i + 1)
         }
+        UiKit.tabEnds(c, tabRect(0), tabRect(2))                   // L / R on the row's outsides, always (the house rule, 15 Oct)
 
         val g = ground()
         UiKit.talentGround(c, g, (t?.cls ?: "").lowercase(), TalentsModel.schoolPicture(t?.cls, school) ?: "")

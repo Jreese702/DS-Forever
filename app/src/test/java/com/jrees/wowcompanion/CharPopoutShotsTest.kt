@@ -206,7 +206,9 @@ class CharPopoutShotsTest {
         return m.invoke(v, slot) as List<SlideOut.Entry>
     }
 
-    private fun touch(v: CharacterView, x: Float, y: Float, holdMs: Long = 50L) {
+    /** a finger at the room's own box ([x], [y] in its page's coordinates: the page is drawn RoomTabRow.DY lower, under the tabs on top) */
+    private fun touch(v: CharacterView, x: Float, y0: Float, holdMs: Long = 50L) {
+        val y = y0 + RoomTabRow.DY
         val t = android.os.SystemClock.uptimeMillis()
         v.onTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x, y, 0))
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(holdMs))

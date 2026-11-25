@@ -195,6 +195,31 @@ class SpellbookView(
         }
     }
 
+    /** L / R step the book's tabs now: the book itself shows (no Controller page in it, not the Controller room's hold, no Bind box) */
+    fun shouldersFree(): Boolean = !tabOpen && ctl?.croom != true && (ctl?.on != true || ctl?.mode == "book")
+
+    /**
+     * L / R (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"; every tabbed room alike): the book's tab
+     * before / after, no wrap (the Controller room's LB / RB), from the app's own reader. The same as a finger on that tab (its first
+     * page, its first known spell; the controller's cursor told the tab, Book b72), but a controller press: the add-on's cursor stays drawn
+     */
+    fun shoulder(right: Boolean) {
+        val b = book ?: return
+        if (!shouldersFree()) return
+        val tabs = SpellsModel.tabs(b).take(8)
+        val at = tabs.indexOfFirst { it.key == tabKey }
+        if (at < 0) return
+        val t = tabs[RoomTabRow.step(at, tabs.size, if (right) 1 else -1) ?: return]
+        tabKey = t.key; page = 1; descScroll = 0f
+        val onPage = pageOf(t)
+        chosenId = onPage.getOrNull(SpellsModel.firstKnown(b, onPage))?.let { idOf(it) }
+        if (held && ctl?.mode == "book") lineOf(t.key)?.let { CastStripModel.bookTabCells(it) }?.let { cells ->
+            val sent = padTabCells(cells)
+            Log.i(TAG, "tab '${t.key}' by ${if (right) "R" else "L"}: ${cells.joinToString { "${it.first} ${it.second}" }} ${if (sent) "tapped" else "not sent"}")
+        }
+        invalidate()
+    }
+
     /** a tab key's skill line ("line:3" -> 3, "pet" -> the pet's book), as Book's tabs carry it (`k`) */
     private fun lineOf(key: String): Int? = if (key == "pet") SpellsModel.PET_LINE else key.removePrefix("line:").toIntOrNull()
 
@@ -234,7 +259,10 @@ class SpellbookView(
 
     // ---------------------------------------------------------------- geometry (SPEC 2)
 
-    private fun tabRect(i: Int) = RectF(36f + i * 124f, 66f, 36f + i * 124f + 116f, 166f)
+    // L / R step the book's tabs (the user, 2026-11-25) and the row shows them, L far left and R far right (the user's pick, "Add
+    // them"): the tabs a little narrower (108 x 93, the art's aspect, their feet still under the page), UiKit.TAB_END_W kept left of
+    // the first for the L glyph, the R glyph right of the last
+    private fun tabRect(i: Int) = RectF(TAB_X0 + i * TAB_PITCH, 73f, TAB_X0 + i * TAB_PITCH + 108f, 166f)
     /** the Controller tab's place: right after the last skill line's tab (the addon's "Right past the last line") */
     private fun ctrlIndex(lines: Int) = lines.coerceAtMost(8)
     private fun rh(h: Float) = ((h - 111f - Y0) / 5f).coerceIn(111f, 118f)
@@ -273,6 +301,7 @@ class SpellbookView(
             if (i >= 8) break
             UiKit.bookTab(c, tabRect(i), tabIcon(t), !tabOpen && t.key == tab?.key, cursor = onTabs && !tabOpen && t.key == tab?.key)
         }
+        if (tabs.isNotEmpty()) UiKit.tabEnds(c, tabRect(0), tabRect(minOf(tabs.size, 8) - 1))     // L / R on the row's outsides, always
         if (onDoor != null) UiKit.door(c, "talents", w - 74f, 116f, 88f, doorDown)
 
         UiKit.bookPage(c, RectF(8f, 158f, SPLIT, h - 4f))
@@ -671,6 +700,9 @@ class SpellbookView(
         private const val BUSY_MS = 5000L
         const val PER_PAGE = 10
         private const val SPLIT = 740f
+        /** the book's tab row: the first tab's left (the L glyph's room before it) and the tabs' pitch */
+        private const val TAB_X0 = 16f + UiKit.TAB_END_W
+        private const val TAB_PITCH = 116f
         private const val Y0 = 250f
         private const val CW = 334f
         private const val SLOP = 18f

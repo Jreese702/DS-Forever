@@ -27,9 +27,17 @@ object PopupHold {
         gameUp && !loginFormOpen && (noticeAsking || signIn in SIGN_IN_ASKS)
 
     /** a key press the game must not get now ([holding] = [holds]); releases always pass. [wheel]: one of the context wheel's pop-ups
-     *  is up ([Wheel]): every face button, the D-pad, the shoulders, Start and Select are held ([WHEEL_KEYS]) */
-    fun holdsKey(holding: Boolean, keyCode: Int, down: Boolean, wheel: Boolean = false): Boolean =
-        down && ((holding && keyCode in HELD_KEYS) || (wheel && keyCode in WHEEL_KEYS))
+     *  is up ([Wheel]): every face button, the D-pad, the shoulders, Start and Select are held ([WHEEL_KEYS]). [room]: a tabbed room
+     *  owns L / R ([ROOM_KEYS]: its tab row, the app's own reader; SetupBridge.roomShoulders) */
+    fun holdsKey(holding: Boolean, keyCode: Int, down: Boolean, wheel: Boolean = false, room: Boolean = false): Boolean =
+        down && ((holding && keyCode in HELD_KEYS) || (wheel && keyCode in WHEEL_KEYS) || (room && keyCode in ROOM_KEYS))
+
+    /**
+     * THE ROOMS' TABS ON TOP (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"): the bumpers a tabbed
+     * room owns. Held from the game so a bumper meant for the room's tabs never also reaches it (LB is the game's emulated Ctrl, RB its
+     * target / bar paging); only presses: a release always passes, so a bumper held before the room came up lets go in the game too
+     */
+    val ROOM_KEYS = setOf(KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)
 
     /** the keys a wheel pop-up holds: its Yes / No and its keyboard use A, B, X, Y, the D-pad and Start; nothing of the pad reaches the game */
     val WHEEL_KEYS = HELD_KEYS + setOf(

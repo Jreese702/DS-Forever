@@ -42,7 +42,9 @@ import org.json.JSONObject
  *   between rooms).
  * B that leaves the room goes HOME (user, 2026-09-28 23:12). While the game's own window is open (every Who answer opens it),
  * B is the game's own close, pressed by the capture (the addon's spec.back); the next B is the room's (UI Art, told to the user).
- * LB / RB switch the tabs; the cursor reaches the tabs and A opens one (the Professions room's rule).
+ * THE TABS STAND ON TOP (the user, 2026-11-25: "On all of the rooms that have the tabs on the right side we need to move the test to the
+ * top and make them so that L and R shift the tabs left and right"): one row under the header ([RoomTabRow]), the page the whole width
+ * under it; L / R ([shoulder], the app's own reader) step them, no wrap; a cursor landing on a tab opens it.
  *
  * The data is [GroupFinderModel] (the addon's `gfcat` / `gf` documents). Every game action is ONE tap on a pad row: `gf`
  * (search, invite, delist), `gfl` (the listing's roles and Post), `gfw` (the Who search and its invite), `gfclose` (the SECURE
@@ -459,33 +461,57 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
         val w = width.toFloat(); val h = height.toFloat()
         c.drawColor(Theme.ink)
         UiKit.header(c, w, "Looking For Group")                 // the game's title
-        val tabsX = w - 118f
-        val right = tabsX - 4f
+        // the tabs on top (RoomTabRow), before the page: its top edge covers their feet; the page below is drawn RoomTabRow.DY lower
+        tabRow.draw(c, w, TAB_ICONS.map { UiKit.tex(it) }, tab, (focus as? Fk.Tab)?.i)
+        c.save(); c.translate(0f, RoomTabRow.DY)
+        val ph = h - RoomTabRow.DY
+        val tabsX = w
+        val right = w
         when (tab) {
-            LISTING -> drawListing(c, w, h, tabsX, right)
-            WHO -> drawWho(c, w, h, tabsX, right)
-            else -> drawBrowse(c, w, h, tabsX, right)
+            LISTING -> drawListing(c, w, ph, tabsX, right)
+            WHO -> drawWho(c, w, ph, tabsX, right)
+            else -> drawBrowse(c, w, ph, tabsX, right)
         }
         pendingFocus?.let { want -> want()?.let { f -> focus = f; pendingFocus = null } }
         drawFocus(c)
+        c.restore()
+        // the row was drawn before the cursor came to rest: a cursor that moved onto / off a tab is lit on the next frame
+        if ((focus as? Fk.Tab)?.i != tabRow.cursorDrawn) postInvalidateOnAnimation()
         tellB()
     }
 
+    private val tabRow = RoomTabRow(this)
+    /** Create Listing: the foot's buttons' top in the page's coordinates (drawListing sets it each frame) */
+    private var listFoot = 817f
+    /** Create Listing: the description box's top this far over the foot (742 over 817 before the tabs moved on top: unchanged there) */
+    private val DESC_GAP = 75f
+
     /**
-     * the game's three tabs: Create Listing, Group Browser, Who List. The cursor reaches them and A opens one (the glow never
-     * switches); LB / RB step through them, with the game's shoulder glyphs above the column while the capture delivers them
+     * the game's three tabs: Create Listing, Group Browser, Who List, in the row on top (drawn by [tabRow] before the page). The cursor
+     * reaches them (Up from the page) and landing opens one; L / R step through them. Their boxes in the page's coordinates
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun tabs(c: Canvas, w: Float, tabsX: Float) {
-        // b120 (the user on side tabs: "(a) No glyphs"): the tabs sit together, no gap and no LB/RB glyph; LB/RB still switch them
-        val boxes = UiKit.tabColumn(TAB_ICONS.size, tabsX, 72f, height - 8f, gap = 2f)
-        for ((i, t) in TAB_ICONS.withIndex()) {
-            val r = boxes[i]
+        for (i in TAB_ICONS.indices) {
+            val r = tabRow.pageBox(i) ?: continue
             // LATER 19 (the user's pick): the tab cursor is the tab's own lit frame, never the gold box (drawFocus skips tabs)
-            UiKit.sideTab(c, r, UiKit.tex(t), i == tab, cursor = focus == Fk.Tab(i))
-            // the glow's box kept on the screen (WHO_SPEC 5); the finger's box a little larger
-            nav += Nav(Fk.Tab(i), RectF(tabsX + 2f, r.top + 4f, w - 10f, r.bottom - 4f)) { showTab(i) }
-            hits += Nav(Fk.Tab(i), RectF(tabsX - 6f, r.top, w, r.bottom + 2f)) { showTab(i) }
+            nav += Nav(Fk.Tab(i), RectF(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - RoomTabRow.FEET)) { showTab(i) }
+            hits += Nav(Fk.Tab(i), RectF(r.left - 4f, r.top, r.right + 4f, r.bottom)) { showTab(i) }
         }
+    }
+
+    /**
+     * L / R from the app's own reader (the host's direct route; a relayed LB / RB the same): the tab before / after, no wrap, never while
+     * a menu is open (the Professions room's rule). From the row the cursor moves with the tab; from the page it goes to the new page's
+     * own start ([firstTarget]: the chosen line, else the tab)
+     */
+    fun shoulder(right: Boolean) {
+        if (open != null) return
+        val to = RoomTabRow.step(tab, TAB_ICONS.size, if (right) 1 else -1) ?: return
+        val onRow = focus is Fk.Tab
+        showTab(to)
+        if (RoomTabRow.lands(onRow, to) == null) { focus = null; pendingFocus = { firstTarget() } }
+        invalidate()
     }
 
     // ================================================================ tab 2: the Group Browser (SPEC 2 .. 5)
@@ -799,7 +825,8 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
     /** an open menu: a touch outside it, or B, goes one step back (a sub-menu to its parent, else closed, without a search) */
     private fun menuCatcher() {
         nav.clear(); hits.clear()
-        hits.add(Nav(Fk.No, RectF(0f, 0f, width.toFloat(), height.toFloat())) { menuBack(); invalidate() })
+        // the whole view, the tab row above the page too (the page is drawn RoomTabRow.DY lower)
+        hits.add(Nav(Fk.No, RectF(0f, -RoomTabRow.DY, width.toFloat(), height.toFloat())) { menuBack(); invalidate() })
     }
 
     private fun categoryMenu(c: Canvas, split: Float, right: Float, h: Float) {
@@ -891,6 +918,8 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
         val v = listingView(s)
         if (v == ListingView.LOCKED) { locked(c, s); return }
         roles(c, right, s)
+        // the tabs on top took RoomTabRow.DY of the page: the column fits above the foot's buttons ([listFoot]: Back / Post's top)
+        listFoot = h - 118f
         if (v == ListingView.CATEGORIES) listingCategories(c, right, s) else activities(c, right, s)
         foot(c, right, h, s, v)
     }
@@ -932,8 +961,11 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
     private fun listingCategories(c: Canvas, right: Float, s: GroupFinderModel.State) {
         val bw = 620f
         val x = (right - bw) / 2f
-        for ((i, lc) in GroupFinderModel.listingCategories(catalogue, s).withIndex()) {
-            val r = RectF(x, 280f + i * 104f, x + bw, 280f + i * 104f + 96f)
+        val cats = GroupFinderModel.listingCategories(catalogue, s)
+        // 104 apart, closer when they would reach the foot (the page is RoomTabRow.DY shorter with the tabs on top)
+        val pitch = if (cats.isEmpty()) 104f else minOf(104f, (listFoot - 12f - 280f) / cats.size)
+        for ((i, lc) in cats.withIndex()) {
+            val r = RectF(x, 280f + i * pitch, x + bw, 280f + i * pitch + pitch - 8f)
             val id = lc.category.id
             val off = lc.needsDescription
             pushed(c, r, !off && lc.slot != null, Fk.Cat(id)) {
@@ -963,8 +995,11 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
         text(c, "Show All Level Ranges", right - 84f, 296f, ps)
         UiKit.check(c, right - 45f, 296f, 42f, catalogue?.noLevelFilter == true)
         c.drawRect(12f, 326f, right - 22f, 328f, rule)
-        // whole rows only (LISTING_SPEC 4b: "while y + 64 <= 700"): five show above the description's label, the rest drag into view
-        val area = RectF(12f, 336f, right - 30f, 336f + ((700f - 336f) / 64f).toInt() * 64f)
+        // whole rows only (LISTING_SPEC 4b: "while y + 64 <= 700"): five show above the description's label, the rest drag into view.
+        // With the tabs on top the page is RoomTabRow.DY shorter: the description sits [DESC_GAP] over the foot and the rows end above it
+        val descTop = minOf(742f, listFoot - DESC_GAP)
+        val rowsEnd = minOf(700f, descTop - 42f)
+        val area = RectF(12f, 336f, right - 30f, 336f + ((rowsEnd - 336f) / 64f).toInt().coerceAtLeast(1) * 64f)
         actBox = area
         if (cat != null && foldedFor != cat.id) { foldedGroups = GroupFinderModel.foldedAtStart(cat, catalogue?.level); foldedFor = cat.id }
         val rows = GroupFinderModel.listingRows(cat, foldedGroups)
@@ -1004,10 +1039,10 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
         actContent = rows.size * 64f
         if (actContent > area.height()) {
             actScroll = actScroll.coerceIn(0f, actContent - area.height())
-            UiKit.scrollBar(c, RectF(right - 20f, 336f, right - 8f, 700f), actScroll / actContent, (actScroll + area.height()) / actContent)
+            UiKit.scrollBar(c, RectF(right - 20f, 336f, right - 8f, rowsEnd), actScroll / actContent, (actScroll + area.height()) / actContent)
         } else actScroll = 0f
         // the game protects the box: the room never shows or writes the text, it only says whether the game's window holds some
-        UiKit.descriptionBox(c, RectF(180f, 742f, right - 180f, 808f), "More details about your group (optional)", d.descriptionTyped)
+        UiKit.descriptionBox(c, RectF(180f, descTop, right - 180f, descTop + 66f), "More details about your group (optional)", d.descriptionTyped)
     }
 
     /** the game's words for a grey Post (LISTING_SPEC 6); null when Post works */
@@ -1256,7 +1291,13 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
 
     private fun scrolledMenu(): Boolean = open != null && open != "category" && open != "wfilter"
 
-    override fun onTouchEvent(e: MotionEvent): Boolean {
+    /** a finger, in the page's coordinates (the page is drawn [RoomTabRow.DY] lower; the tab row's boxes are kept in the same ones) */
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        val e = MotionEvent.obtain(ev).apply { offsetLocation(0f, -RoomTabRow.DY) }
+        try { return touch(e) } finally { e.recycle() }
+    }
+
+    private fun touch(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y; lastY = e.y; moved = false
@@ -1309,14 +1350,9 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
         lastPadN = n
         if (msg.has("lost")) { invalidate(); return }
         val k = msg.optString("k")
-        // LB / RB: the previous / next tab, from anywhere but an open menu (the Professions room's rule; no wrap)
-        if (k == "PADLSHOULDER" || k == "PADRSHOULDER") {
-            if (open == null) {
-                val to = tab + if (k == "PADLSHOULDER") -1 else 1
-                if (to in LISTING..WHO) showTab(to)
-            }
-            invalidate(); return
-        }
+        // LB / RB: the previous / next tab, from anywhere but an open menu (the Professions room's rule; no wrap); the host drops this
+        // relayed copy while the app's own reader delivers them ([shoulder])
+        if (k == "PADLSHOULDER" || k == "PADRSHOULDER") { shoulder(k == "PADRSHOULDER"); return }
         if (focus == null || nav.none { it.key == focus }) {
             focus = firstTarget()
             if (k.startsWith("PADD")) { invalidate(); return }      // the first press only shows where the glow is
@@ -1373,6 +1409,8 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
         var best: Nav? = null; var bestD = Float.MAX_VALUE
         for (n in nav) {
             if (n.key == f || n.key == Fk.No) continue
+            // the tab row on top: along it Left / Right only, Down leaves it, Up from the page reaches it (RoomTabRow.mayLand)
+            if (!RoomTabRow.mayLand(f is Fk.Tab, n.key is Fk.Tab, dx, dy, toOpen = n.key == Fk.Tab(tab))) continue
             val ex = n.r.centerX() - cx; val ey = n.r.centerY() - cy
             val along = if (dx != 0) ex * dx else ey * dy
             if (along <= 4f) continue
