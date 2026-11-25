@@ -89,12 +89,37 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
     }
     private var lastN = -1
 
+    /**
+     * SINGLE SCREEN MODE (SingleNpc, spec 8.3): the tool in the strip window over the game instead of Home's whole page - the Keyboard a
+     * strip along the top screen's foot (the game's text box above it), the Track Pad a pad in its bottom-right corner (the rest of the
+     * screen the game's, fingers too): a short head ([SingleNpc.TOOL_HEAD], the typed line beside the tabs), the keyboard at the box's
+     * scale ([stripScale]: its window is not the screen, ChatKeyboard would size itself by the strip), the pad's compact well. Off = the
+     * page exactly as before
+     */
+    var strip = false
+        set(v) { if (field == v) return; field = v; restrip() }
+    var stripScale = 1f
+        set(v) { if (field == v) return; field = v; if (strip) restrip() }
+    /** the tab changed (0 the Track Pad, 1 the Keyboard): the strip window takes the tab's own place */
+    var onTab: ((Int) -> Unit)? = null
+    val tabNow: Int get() = tab
+
     init {
         ThemeLive.bg(this, Tok.INK)
         addView(head, LayoutParams(LayoutParams.MATCH_PARENT, HEAD_H))
         addView(pad, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply { topMargin = HEAD_H })
         addView(kb, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = HEAD_H + 90 })
         showTab(0)
+    }
+
+    private fun restrip() {
+        val hh = if (strip) SingleNpc.TOOL_HEAD else HEAD_H
+        (head.layoutParams as LayoutParams).height = hh
+        (pad.layoutParams as LayoutParams).topMargin = hh
+        (kb.layoutParams as LayoutParams).topMargin = if (strip) hh else HEAD_H + 90
+        kb.scaleOverride = if (strip) stripScale else null
+        pad.compact = strip
+        requestLayout(); head.invalidate(); pad.invalidate()
     }
 
     /** open on tab [startTab] (0 Track Pad, 1 Keyboard: the pause wheel's D-pad Left / Right) */
@@ -110,6 +135,7 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
         pad.visibility = if (t == 0) View.VISIBLE else View.GONE
         kb.visibility = if (t == 1) View.VISIBLE else View.GONE
         head.invalidate()
+        onTab?.invoke(t)                                       // single screen mode's strip: the tab's own place
     }
 
     /** one press from Home's guest "home" while the tool holds the controller ({"k": key, "n": count}) */
@@ -129,15 +155,25 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
 
     /** the tabs (the game's tab look) and, on the keyboard, what has been typed into the game since it opened */
     private inner class Head(c: Context) : View(c) {
-        private fun tabRect(i: Int) = RectF(width / 2f - 360f + i * 370f, 18f, width / 2f - 10f + i * 370f, 98f)
+        // single screen mode's strip: the two tabs side by side at the head's left (the Track Pad's corner is 600 wide)
+        private fun tabRect(i: Int) = if (strip) RectF(12f + i * 272f, 8f, 272f + i * 272f, 64f)
+            else RectF(width / 2f - 360f + i * 370f, 18f, width / 2f - 10f + i * 370f, 98f)
         override fun onDraw(c: Canvas) {
             UiKit.tab(c, tabRect(0), "Trackpad", tab == 0)
             UiKit.tab(c, tabRect(1), "Keyboard", tab == 1)
-            UiKit.pad(c, "${TrackpadView.glyphSet()}_lshoulder", tabRect(0).left + 40f, tabRect(0).centerY(), 44f)
-            UiKit.pad(c, "${TrackpadView.glyphSet()}_rshoulder", tabRect(1).right - 40f, tabRect(1).centerY(), 44f)
-            val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
+            val g = if (strip) 34f else 44f; val gi = if (strip) 30f else 40f
+            UiKit.pad(c, "${TrackpadView.glyphSet()}_lshoulder", tabRect(0).left + gi, tabRect(0).centerY(), g)
+            UiKit.pad(c, "${TrackpadView.glyphSet()}_rshoulder", tabRect(1).right - gi, tabRect(1).centerY(), g)
             // the user (1.0.8): "remove the text on it" - the trackpad has no words; the keyboard keeps what it typed
-            if (tab == 1) c.drawText(Tr.t(if (typed.isEmpty()) "Typing into the game's text box" else "Typed: $typed"), width / 2f, 140f, p)
+            if (tab != 1) return
+            val words = Tr.t(if (typed.isEmpty()) "Typing into the game's text box" else "Typed: $typed")
+            if (strip) {
+                // the strip: the typed line beside the tabs, its newest end kept
+                val p = UiKit.bodyPaint(26f, Theme.dim)
+                val x = tabRect(1).right + 28f
+                c.drawText(android.text.TextUtils.ellipsize(words, android.text.TextPaint(p), width - x - 16f,
+                    android.text.TextUtils.TruncateAt.START).toString(), x, tabRect(1).centerY() + 9f, p)
+            } else c.drawText(words, width / 2f, 140f, UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
         }
         override fun onTouchEvent(e: MotionEvent): Boolean {
             if (e.actionMasked == MotionEvent.ACTION_UP) for (i in 0..1) if (tabRect(i).contains(e.x, e.y)) { showTab(i); break }
@@ -155,8 +191,13 @@ class TrackpadView(c: Context) : View(c) {
     private var lastX = 0f; private var lastY = 0f; private var downX = 0f; private var downY = 0f
     private var downAt = 0L; private var onButton = -1; private var accX = 0f; private var accY = 0f
     private var moves = 0; private var sumX = 0; private var sumY = 0
-    private fun well() = RectF(40f, 70f, width - 40f, height - 170f)
-    private fun button(i: Int): RectF { val w = (width - 100f) / 2f; val l = 40f + i * (w + 20f); return RectF(l, height - 150f, l + w, height - 40f) }
+    /** single screen mode's corner pad (TypeToolView.strip): the well and the two click buttons in its 600 x 288 place */
+    var compact = false
+    private fun well() = if (compact) RectF(16f, 8f, width - 16f, height - 88f) else RectF(40f, 70f, width - 40f, height - 170f)
+    private fun button(i: Int): RectF {
+        if (compact) { val w = (width - 52f) / 2f; val l = 16f + i * (w + 20f); return RectF(l, height - 76f, l + w, height - 12f) }
+        val w = (width - 100f) / 2f; val l = 40f + i * (w + 20f); return RectF(l, height - 150f, l + w, height - 40f)
+    }
 
     /** one controller press (the button's name) */
     fun press(k: String) {

@@ -3021,7 +3021,7 @@ class HomeView(
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
-        if (typeWanted) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
+        if (typeWanted && typeTool.parent === this) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         val cw = if (classRect.isEmpty) MeasureSpec.getSize(wSpec) else classRect.width()
         val ch = if (classRect.isEmpty) frameOf(hSpec) else classRect.height()
@@ -3069,9 +3069,10 @@ class HomeView(
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        if (typeWanted) typeTool.layout(0, 0, r - l, b - t - bottomInset)                  // f-trackpad-keyboard: the whole page
-        // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
-        if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
+        if (typeWanted && typeTool.parent === this) typeTool.layout(0, 0, r - l, b - t - bottomInset)   // f-trackpad-keyboard: the whole page
+        // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint (single screen mode: centred)
+        if (singleLayersOnly) singleLayersLayout(r - l, b - t - bottomInset)
+        else if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
         // fix/menus-fit: over the party list's column as laid (any share, either side: the chat's for Classic's dock; after 1518 the
         // map's when it sits there), under the band as it is now
@@ -4608,6 +4609,7 @@ class HomeView(
     fun pageZoom(): Pair<Float, Float>? = if (pageMatrix(pageM)) FloatArray(9).also { pageM.getValues(it) }.let { it[0] to it[5] } else null
 
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (singleLayersOnly) return singleLayersTouch(e)                           // single screen mode's class wheel: its layer alone
         // EDIT TABS: the tab row over the zoomed page (its own finger), and every other touch mapped into Home's px through the zoom
         if (edit?.parked == false && pageMatrix(pageM)) {
             if (e.actionMasked == MotionEvent.ACTION_DOWN) tabFinger = e.y < HomeEditView.TAB_ROW && !holdTakes
@@ -4835,6 +4837,7 @@ class HomeView(
 
     /** P2: edit mode's chrome is drawn LAST, over Home's own paint (the zone band, the clock block, the wells' edges) */
     override fun dispatchDraw(c: Canvas) {
+        if (singleLayersOnly) { singleLayersDraw(c); return }                       // single screen mode's class wheel: its layer alone
         // EDIT TABS: the page (and the chrome over it) zoomed out under the tab row while edit mode's chrome shows ([pageMatrix])
         val zoomed = pageMatrix(pageM)
         val z = if (zoomed) c.save() else -1
@@ -4846,7 +4849,7 @@ class HomeView(
         if (z >= 0) c.restoreToCount(z)
         if (zoomed && editView.visibility == View.VISIBLE) editView.drawTabs(c, width.toFloat(), chromeA.coerceIn(0f, 1f))
     }
-    override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView) false else super.drawChild(c, child, drawingTime)
+    override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView || (singleLayersOnly && child !== classLayer)) false else super.drawChild(c, child, drawingTime)
 
     /** fix/menus-fit: the map's own paint follows the map view's real move during the pause / LB slides (Classic too: the user's pick
      *  2026-11-21, "Fix in Classic too") */
@@ -6117,8 +6120,62 @@ class HomeView(
     }
 
     // ===== SINGLE: NPC =====
-    /** NPC (builder npc): HomeView draws only its overlay layers (the class wheel) over the game; CORE's stub */
+    /**
+     * NPC (single screen mode's class wheel, SingleLook row 7 HOME_LAYERS): Home draws ONLY its class wheel's layer over the game - no
+     * page, no modules, no ground of its own (the rooms column's is the host's), the layer laid as a centred square of its slot's size;
+     * a touch outside it is taken (nothing of Home's under it is pressed). False (two screens, always): Home exactly as before
+     */
     var singleLayersOnly = false
+        set(v) {
+            if (field == v) return
+            field = v
+            background?.alpha = if (v) 0 else 255
+            requestLayout(); invalidate()
+        }
+
+    private fun singleLayersDraw(c: Canvas) {
+        if (classLayer.parent === this && classLayer.visibility == View.VISIBLE) drawChild(c, classLayer, drawingTime)
+    }
+
+    private fun singleLayersLayout(w: Int, h: Int) {
+        val side = (if (classRect.isEmpty) minOf(w, h) else minOf(classRect.width(), w, h)).coerceAtLeast(1)
+        val l = (w - side) / 2; val t = (h - side) / 2
+        classLayer.layout(l, t, l + side, t + side)
+    }
+
+    private fun singleLayersTouch(e: MotionEvent): Boolean {
+        if (classLayer.parent !== this || classLayer.visibility != View.VISIBLE) return true
+        val t = MotionEvent.obtain(e)
+        t.offsetLocation(-classLayer.left.toFloat(), -classLayer.top.toFloat())
+        try { classLayer.dispatchTouchEvent(t) } finally { t.recycle() }
+        return true
+    }
+
+    /** the Keyboard & Trackpad tool's tab while it is open (0 the Track Pad, 1 the Keyboard), else -1 */
+    fun toolTab(): Int = if (typeWanted) typeTool.tabNow else -1
+
+    /** Home's sub-states but the tool (SingleLook: the tool is the strip over the game, not Home's page) */
+    fun subBesidesTool(): Boolean = flow.full != null || auraPane.open != null || mailOpen
+
+    /** single screen mode (SingleNpc, spec 8.3): the open tool lent to the strip window (its strip look); null = none open / lent already */
+    fun singleToolLend(scale: Float): TypeToolView? {
+        if (!typeWanted || typeTool.parent !== this) return null
+        removeView(typeTool)
+        typeTool.translationZ = 0f
+        typeTool.stripScale = scale
+        typeTool.strip = true
+        return typeTool
+    }
+
+    /** the tool back on Home's page (the strip closed, or Home's page shows) */
+    fun singleToolBack() {
+        typeTool.onTab = null
+        typeTool.strip = false
+        if (typeTool.parent !== this) { (typeTool.parent as? ViewGroup)?.removeView(typeTool); addView(typeTool) }
+        typeTool.translationZ = TYPE_Z
+        if (typeWanted) typeTool.bringToFront()
+        requestLayout()
+    }
 
     companion object {
         /** chat40: the refresh notice's "!" waits this long for the game's answer before it can be pressed again */

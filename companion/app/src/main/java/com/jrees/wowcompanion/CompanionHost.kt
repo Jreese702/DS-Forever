@@ -466,7 +466,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         for (w in notes) {
             val l = PadLayerNote.logLine(w)
             Log.i("WCSETUP", l); DiagLog.event("pad", l)
-            ui.post { homeView.padNote(w) }
+            ui.post { if (!singleNote(w)) homeView.padNote(w) }
         }
     }
 
@@ -501,6 +501,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * True = it is up on the bottom screen and this window hidden until it closes (voice: its buttons are the activity's meanwhile).
      */
     private fun openOnBottom(cls: Class<*>, tag: String, setClosed: ((() -> Unit)?) -> Unit): Boolean {
+        singleOpenOnBottom(cls, tag, setClosed)?.let { return it }
         val i = android.content.Intent(this, cls).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         val displayId = runCatching {
             (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.displayId
@@ -2484,15 +2485,203 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     // ===== SINGLE: NPC (builder npc edits only here) =====
+    // SINGLE SCREEN MODE, THE NPC PART (SingleNpc; the user's picks 2026-11-25 "Ours over the game", "Centred panel"): our NPC windows,
+    // the game's pop-ups and every room are the panel over the dim (SingleLook rows 2 / 4: nothing to do here but the inputs); the quick
+    // wheels draw whole over a light dim (Home's page is not drawn: the wheel never goes into Home's slot then) and close at a tap on
+    // the dim; the class wheel is Home's layer alone (HomeView.singleLayersOnly: no page, no ground, no bar); the type tool, the
+    // fight's small rolls and LB's picture go into ONE strip window over the game with the rest of the screen the game's; our own
+    // activities open on the other screen; Home's notes are the hint plate while Home's page is not drawn. Two screens: nothing here
+    // runs (every entry is `single`'s).
+
+    /** the strip window's kind now (SingleLook.Look.strip: SingleNpc.TOOL / ROLLS / LB) and the view it hosts */
+    private var stripKind: String? = null
+    private var stripView: View? = null
+    /** where the lent view came from (the host's content: its place in the z-order and its boxed params), to go back exactly there */
+    private var stripFrom: ViewGroup? = null
+    private var stripIndex = -1
+    private var stripLp: ViewGroup.LayoutParams? = null
+    /** LB's picture's plate in the strip (over the left dock's party list: the picture on a solid ground) */
+    private val lbHolder: FrameLayout by lazy {
+        object : FrameLayout(this@CompanionHost) {
+            private val r = android.graphics.RectF()
+            init { setWillNotDraw(false) }
+            override fun onDraw(c: android.graphics.Canvas) { r.set(0f, 0f, width.toFloat(), height.toFloat()); UiKit.menu(c, r, solid = true) }
+        }
+    }
+
+    /** Home's page is not drawn now (the rooms column GONE: the PLAY state, a quick wheel, the strip) */
+    private fun singleHomeHidden(): Boolean = single != null && roomsRoot?.visibility != View.VISIBLE
+
     /** NPC: its wiring (end of onCreate) */
-    private fun singleNpcWire() {}
-    /** NPC: the inputs it adds to the look (fight rolls, the tool's tab ...) */
-    private fun singleNpcIn(i: SingleLook.In): SingleLook.In = i
-    /** NPC: the look applied (after the top window has it) */
-    @Suppress("UNUSED_PARAMETER")
-    private fun singleNpcLook(l: SingleLook.Look) {}
-    /** NPC: a tap on the dim; true = handled */
-    private fun singleNpcDim(): Boolean = false
+    private fun singleNpcWire() {
+        single ?: return
+        radialView.single = true
+        targetRadial.single = true
+        // the consumables / spell wheel takes Home's middle slot only while Home's page is drawn (its glance); over the game it draws whole
+        val slot0 = radialView.homeSlot
+        radialView.homeSlot = { open -> if (open && singleHomeHidden()) null else slot0?.invoke(open) }
+        // the fight's small roll panel in the strip: the strip's whole window is its "minimap"
+        val box0 = dialogView.mapBox
+        dialogView.mapBox = {
+            if (stripView === dialogView) android.graphics.RectF(0f, 0f, dialogView.width.toFloat(), dialogView.height.toFloat()) else box0()
+        }
+        // LB's picture in the strip: centred in its plate, scaled to the left dock's columns
+        val place0 = lbView.place
+        lbView.place = {
+            if (stripView === lbHolder && lbView.width > 0) single?.let { s ->
+                val f = SingleNpc.lbFit(lbView.width, s.screenH)
+                LbFit.Place(f[0], f[1], f[2], 0f, 0f)
+            } else place0?.invoke()
+        }
+        // LB held / let go: the look at once (not at the next safety poll)
+        val shoulders0 = castView.onShoulders
+        castView.onShoulders = { lb, rb -> shoulders0?.invoke(lb, rb); singleSync("the shoulders") }
+    }
+
+    /** NPC: the inputs it adds to the look: the fight's small rolls, the tool's tab (the tool alone is no Home sub-state: it is the
+     *  strip), the layout editor */
+    private fun singleNpcIn(i: SingleLook.In): SingleLook.In {
+        if (single == null) return i
+        val m = if (::dialogView.isInitialized) dialogView.rollMode() else DialogView.RollMode.NONE
+        val rolls = ::dialogView.isInitialized && SingleNpc.rollsSmall(dialogView.showing(), dialogView.covers(),
+            m == DialogView.RollMode.COMPACT, m == DialogView.RollMode.PILL)
+        val tab = homeView.toolTab()
+        var o = i.copy(fightRolls = rolls, tool = tab, layoutEdit = ::layoutPage.isInitialized && layoutPage.visibility == View.VISIBLE)
+        if (tab >= 0) o = o.copy(homeSub = homeView.subBesidesTool() || barSelect.open || homeView.editing ||
+            homeView.partyMenu.visibility == View.VISIBLE || homeView.targetMenu.visibility == View.VISIBLE)
+        return o
+    }
+
+    /** NPC: the look applied (after the top window has it): the class wheel's layers alone, the strip */
+    private fun singleNpcLook(l: SingleLook.Look) {
+        single ?: return
+        val layers = l.root == SingleLook.Root.HOME_LAYERS
+        if (homeView.singleLayersOnly != layers) {
+            homeView.singleLayersOnly = layers
+            // the rooms column's own ground and the room bar go with Home's page: the class wheel alone over the game
+            roomsRoot?.background?.alpha = if (layers) 0 else 255
+            strip.visibility = if (layers) View.INVISIBLE else View.VISIBLE
+            Log.i("WCHOME", "one screen: the class wheel ${if (layers) "alone over the game" else "back on Home's page"}")
+        }
+        stripSync(l.strip)
+    }
+
+    /** the strip window hosts [kind]'s view (null = nothing: the view back where it came from, the window gone) */
+    private fun stripSync(kind: String?) {
+        val s = single ?: return
+        if (kind == stripKind && stripView != null) { stripPlace(); return }
+        stripBack()
+        val v: View = when (kind) {
+            SingleNpc.TOOL -> homeView.singleToolLend(SingleNpc.boxScale(s.screenW, s.screenH))?.also { t ->
+                t.onTab = { _ -> if (stripView === t) stripPlace() }
+            }
+            SingleNpc.ROLLS -> dialogView.takeIf { it.parent != null }
+            SingleNpc.LB -> lbView.takeIf { it.parent != null }
+            else -> null
+        } ?: run { if (kind != null) Log.i("WCHOME", "one screen: the strip's $kind has nothing to show"); return }
+        stripKind = kind
+        if (kind != SingleNpc.TOOL) {                         // (the tool: Home's own, lent by HomeView.singleToolLend)
+            val from = v.parent as ViewGroup
+            stripFrom = from; stripIndex = from.indexOfChild(v); stripLp = v.layoutParams
+            from.removeView(v)
+        }
+        if (kind == SingleNpc.LB) {
+            lbHolder.removeAllViews()
+            val pad = Math.round(SingleNpc.LB_PAD * s.screenH / 1080f)
+            lbHolder.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply { setMargins(pad, 0, pad, 0) })
+            stripView = lbHolder
+        } else stripView = v
+        s.sub(SingleNpc.STRIP).put(stripView)
+        stripPlace()
+        Log.i("WCHOME", "one screen: the strip shows $kind")
+    }
+
+    /** the strip window's place for what it hosts now (the tool's tab, the fight for LB's picture) */
+    private fun stripPlace() {
+        val s = single ?: return
+        val kind = stripKind ?: return
+        val w = s.screenW; val h = s.screenH
+        val r = when (kind) {
+            SingleNpc.TOOL -> SingleNpc.toolRect(homeView.toolTab(), w, h, ChatKeyboard.fullHeight(SingleNpc.boxScale(w, h)))
+            SingleNpc.ROLLS -> SingleNpc.rollsRect(w, h)
+            else -> SingleNpc.lbRect(w, h, homeView.inFight())
+        }
+        val sub = s.sub(SingleNpc.STRIP)
+        sub.place(r[0], r[1], r[2], r[3])
+        sub.touchable(kind != SingleNpc.LB)                     // LB's picture: display only (the game keeps every touch)
+        sub.shown(true)
+    }
+
+    /** the strip's view back where it came from (the host's content at its own place in the z-order; the tool on Home's page) */
+    private fun stripBack() {
+        val v = stripView ?: run { stripKind = null; return }
+        val s = single
+        s?.sub(SingleNpc.STRIP)?.let { it.put(null); it.shown(false) }
+        val lent = if (v === lbHolder) lbView.also { lbHolder.removeView(it) } else v
+        if (stripKind == SingleNpc.TOOL) homeView.singleToolBack()
+        else stripFrom?.let { f ->
+            (lent.parent as? ViewGroup)?.removeView(lent)
+            f.addView(lent, stripIndex.coerceIn(0, f.childCount), stripLp ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        Log.i("WCHOME", "one screen: the strip's $stripKind back")
+        stripView = null; stripKind = null; stripFrom = null; stripIndex = -1; stripLp = null
+    }
+
+    /** NPC: a tap on the dim; true = handled (a quick wheel closes; an NPC window, a dialog, the class wheel keep it) */
+    private fun singleNpcDim(): Boolean {
+        if (single == null || !singleReady) return false
+        return when (SingleNpc.dimTap(singleIn())) {
+            SingleNpc.Dim.CORE -> false
+            SingleNpc.Dim.KEEP -> true
+            SingleNpc.Dim.CLOSE_QUICK -> {
+                Log.i("WCHOME", "one screen: a tap on the dim closes the wheel")
+                if (radialView.isOpen) radialView.close()
+                if (tradOpen()) targetRadial.close("a tap on the dim")
+                true
+            }
+        }
+    }
+
+    /** Home's pad-layer note while Home's page is not drawn (single screen mode): the plate over the game for the note's time; false =
+     *  Home's own note (two screens, Home's glance) */
+    private fun singleNote(words: String): Boolean {
+        val s = single ?: return false
+        if (!singleHomeHidden()) return false
+        s.hint(words, PadLayerNote.SHOW_MS)
+        return true
+    }
+
+    /**
+     * our own activities in single screen mode (spec 8.4): null = two screens (openOnBottom's own lines). A two-screen device: on the
+     * other screen (Android's launcher is the bottom screen now), the top window never hidden for it, the controller's keys left alone
+     * while it is up (SingleScreen.keysPaused) and looked at again at its close hook, the plate "On the bottom screen". A one-screen
+     * device: on this screen (the launcher pauses: the top window goes and comes back with its resume)
+     */
+    private fun singleOpenOnBottom(cls: Class<*>, tag: String, setClosed: ((() -> Unit)?) -> Unit): Boolean? {
+        val s = single ?: return null
+        val i = android.content.Intent(this, cls).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        val other = s.otherDisplay
+        if (SingleNpc.bottomRoute(true, s.otherDisplay) != SingleNpc.Bottom.OTHER || other == null) {
+            setClosed(null)
+            runCatching { shell.startHostActivity(i) }.onFailure { android.util.Log.w(tag, "${cls.simpleName}: ${it.message}") }
+            android.util.Log.i(tag, "${cls.simpleName} on this screen (one screen: the launcher pauses meanwhile)")
+            return false
+        }
+        SingleScreen.keysPaused = true
+        setClosed { ui.post { SingleScreen.keysPaused = false; SingleScreen.keysAgain?.invoke(); setClosed(null) } }
+        val ok = runCatching {
+            startActivity(i, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(other).toBundle())
+        }.onFailure { android.util.Log.w(tag, "${cls.simpleName} on display $other: ${it.message}") }.isSuccess
+        if (!ok) {
+            SingleScreen.keysPaused = false
+            setClosed(null)
+            runCatching { shell.startHostActivity(i) }.onFailure { android.util.Log.w(tag, "${cls.simpleName}: ${it.message}") }
+            return false
+        }
+        s.hint(SingleNpc.ON_BOTTOM, SingleNpc.ON_BOTTOM_MS)
+        android.util.Log.i(tag, "${cls.simpleName} on the other screen ($other); the top window stays")
+        return true
+    }
 
     /** a pause-menu pick, once the wheel has folded: a ROOM opens as the bar opens it; View Buffs = Home's buff list */
     private fun pausePick(s: HomePauseModel.Slice) {
