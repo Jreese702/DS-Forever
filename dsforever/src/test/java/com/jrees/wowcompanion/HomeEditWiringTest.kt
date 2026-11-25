@@ -170,6 +170,10 @@ class HomeEditWiringTest {
         assertTrue(host.contains("homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it); swingCheck(it) } } }"))
         // feat/top-castbar: the top bar's swing flag (PadMap m190) waits for Done too
         assertTrue(body(host, "private fun swingCheck(").contains("if (homeView.editing) { ui.removeCallbacks(swingAgain); return }"))
+        // the 1529 integration (feat/top-castbar x feat/edit-tabs): the swing flag follows the NEXT fight's tab as `ct` / `cc` do (its
+        // own Cast bar, not Out of combat's record), and Party mode on / off checks it again with them
+        assertTrue(body(host, "private fun swingCheck(").contains("TopCombatBar.swingWanted(fightPage(), HomeSettings.swingTimer)"))
+        assertTrue(body(host, "private fun fightFlagsCheck(").contains("{ topCheck(d); castCheck(d); swingCheck(d) }"))
         // the fight cast bar's flag (PadMap m187) waits for Done as the top flag does
         assertTrue(body(host, "private fun castCheck(").contains("if (homeView.editing) { ui.removeCallbacks(castAgain); return }"))
         // a held B on the direct feed (press and release) is Discard; the relayed guest's B stays the plain ladder

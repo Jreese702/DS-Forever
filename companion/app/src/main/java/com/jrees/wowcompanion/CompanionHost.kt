@@ -5281,9 +5281,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun fightPage(): HomeLayout = HomeSettings.layout.forTab(homeView.fightTab())
     /** EDIT TABS: the D-pad's tab the mirror bit was last checked for (HomeView.dpadTab) */
     private var lastDpadTab: HomeTab? = null
-    /** EDIT TABS: every add-on flag that follows the NEXT fight's tab, checked again (Party mode on / off). (The 1529 integration: the
-     *  swing flag's check - feat/top-castbar's swingCheck, TopCombatBar.swingWanted(fightPage(), ...) - belongs here too) */
-    private fun fightFlagsCheck(d: PadMapModel.Dpad) { topCheck(d); castCheck(d) }
+    /** EDIT TABS: every add-on flag that follows the NEXT fight's tab, checked again (Party mode on / off). The 1529 integration:
+     *  feat/top-castbar's swing flag too ([swingCheck] reads TopCombatBar.swingWanted(fightPage(), ...): the next fight's own Cast bar) */
+    private fun fightFlagsCheck(d: PadMapModel.Dpad) { topCheck(d); castCheck(d); swingCheck(d) }
     private var topSentAt: Long? = null
     private var topSentWant: Boolean? = null
     private var topTries = 0
@@ -5358,7 +5358,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!mirrorCurrent) return
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(swingAgain); return }
         if (homeView.editing) { ui.removeCallbacks(swingAgain); return }
-        val want = TopCombatBar.swingWanted(HomeSettings.layout, HomeSettings.swingTimer)
+        // the 1529 integration: the NEXT fight's page (edit tabs: In combat's or Party mode's own Cast bar), as topCheck / castCheck read
+        val want = TopCombatBar.swingWanted(fightPage(), HomeSettings.swingTimer)
         ui.removeCallbacks(swingAgain)
         if (want == null) { swingSentAt = null; swingSentWant = null; swingTries = 0; return }
         if (swingSentWant != want) { swingSentAt = null; swingTries = 0 }
