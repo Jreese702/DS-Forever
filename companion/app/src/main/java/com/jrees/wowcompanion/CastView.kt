@@ -747,44 +747,83 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     /**
-     * The hold spell on the button just drawn (the canvas at its centre, the slot's scale): while held the gold arc fills its ring to the
-     * hold point (PadMap m194: HoldCast.watch, the app's own reading of the pad for a place the add-on keeps now, on this layer - full =
-     * let go now and it is the hold); when a release runs the hold the hold spell takes the big face for [HoldArt.FLASH_MS] in a bright
-     * ring; the corner badge (the hold spell, its own sweep; the tap spell while the hold takes the face) on the cluster's outer side.
-     * [drawn] the slot drawn (0..3 the D-pad, 4..7 the faces), [src] its game position - 1, [b] the button.
+     * The hold spell's BADGE on the button just drawn (the canvas at its centre, the slot's scale), on the cluster's outer side: the hold
+     * spell with its own sweep and (m195, the user on test 1529: "they look like they are ready to cast in conditions that they are not
+     * like when mana is low or its out of range") its state by spell id (the add-on's hudS.fs, as the fight spells' - not enough mana
+     * blue, not usable grey, out of range a RED ring: red is range only); THE CHARGE RING round it ("after like .25s of holding I want a
+     * charge up circle to appear around the little hold icon": HoldCast.watch, the app's own reading of the pad, for a place the add-on
+     * keeps now on this layer - from 0.25 s filling to the hold point, then charged); while the hold has taken the big face
+     * ([drawTakeover]) the badge wears the TAP spell. [drawn] the slot drawn (0..3 the D-pad, 4..7 the faces), [src] its game position
+     * - 1, [b] the button.
      */
     private fun drawHold(c: Canvas, drawn: Int, src: Int, li: Int, circle: Boolean, b: Btn?, now: Long): Long {
         if (li !in 0 until STATE_LAYERS || drawCollapsed || quietPresses) return Long.MAX_VALUE
         val key = li * 8 + src
-        val ref = holdRefs?.get(key)
+        val ref = holdRefs?.get(key) ?: return Long.MAX_VALUE
         val up = SystemClock.uptimeMillis()
         val pos = src + 1
         val w = HoldCast.watch
-        val prog = if (w.layerOf(pos) == li) w.progress(pos, up) else -1f
-        val fire = w.lastFire?.takeIf { it.first == pos && up - it.second in 0 until HoldArt.FLASH_MS }
-        if (ref == null && prog < 0f) return Long.MAX_VALUE
+        val heldHere = w.layerOf(pos) == li
+        val ch = if (heldHere) w.charge(pos, up) else -1f
+        val charged = ch >= 0f && w.charged(pos, up)
+        val tk = HoldCast.takeover.let { if (it.pos == pos && it.layer == li) it.alpha(now) else 0f }
         val half = (if (circle) 38f else 40f) * k / 2f
         val iconHalf = half - 3f * k
-        var next = Long.MAX_VALUE
-        if (fire != null && ref != null) {
-            HoldArt.bigFace(c, 0f, 0f, iconHalf, Icons.get(ref.icon), circle)
-            HoldArt.fired(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, circle)
-            next = HoldArt.FLASH_MS - (up - fire.second)
-        } else if (prog >= 0f) {
-            HoldArt.progress(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, prog, circle)
-            next = 16L
-        }
-        if (ref != null) {
-            val (ox, oy) = HoldArt.outer(drawn)
-            val bx = ox * (if (circle) 0.703f else 0.662f) * iconHalf
-            val by = oy * (if (circle) 0.581f else 0.727f) * iconHalf
-            val r = (if (circle) 0.486f else 0.468f) * iconHalf
-            val icon = if (fire != null) b?.icon?.takeIf { it > 0 }?.let { Icons.get(it) } else Icons.get(ref.icon)
-            val sw = if (fire != null) -1f else holdCdLeft(key, now)
-            HoldArt.badge(c, bx, by, r, icon, sw, lit = prog >= 0f)
-            if (sw > 0f) next = min(next, 33L)
-        }
+        var next = if (heldHere) 16L else Long.MAX_VALUE                 // held: the ring may appear / fill on the next frames
+        val (ox, oy) = HoldArt.outer(drawn)
+        val bx = ox * (if (circle) 0.703f else 0.662f) * iconHalf
+        val by = oy * (if (circle) 0.581f else 0.727f) * iconHalf
+        val r = (if (circle) 0.486f else 0.468f) * iconHalf
+        val onFace = tk >= 0.5f
+        val icon = if (onFace) b?.icon?.takeIf { it > 0 }?.let { Icons.get(it) } else Icons.get(ref.icon)
+        val hst = if (onFace) null else ref.stateId?.let { fightStates[it] }
+        val filter = when { hst == null -> null; hst.m == 1 -> cfMana; hst.u == 0 -> cfUnusable; else -> null }
+        val sw = if (onFace) -1f else holdCdLeft(key, now)
+        HoldArt.badge(c, bx, by, r, icon, sw, lit = ch >= 0f, filter = filter, outOfRange = hst?.r == 0)
+        HoldArt.chargeRing(c, bx, by, r, ch, charged)
+        if (sw > 0f) next = min(next, 33L)
         return next
+    }
+
+    /** m195: the hold spell's picture for the takeover (a button of its own, so the big face is drawn as any spell's: ring, glyph, tints) */
+    private val takeBtns = arrayOfNulls<Btn>(32)
+    private fun takeoverBtn(key: Int, src: Int, ref: PadMapModel.Ref): Btn {
+        val cached = takeBtns[key]
+        if (cached != null && cached.icon == ref.icon && cached.id == (ref.id ?: 0)) { if (cached.shader == null) resolve(cached, src >= 4); return cached }
+        val b = Btn().apply { p = src + 1; k = "spell"; id = ref.id ?: 0; this.icon = ref.icon; e = true }
+        classify(b)
+        resolve(b, src >= 4)
+        takeBtns[key] = b
+        return b
+    }
+
+    /**
+     * m195 THE TAKEOVER (the user on test 1529: "When casting a hold spell its not clear, I think it needs to take over the main spell circle
+     * until the [GCD] completes following it or if its canceled for whatever reason"): while HoldCast.takeover holds this button (its
+     * position and layer) the big face is the HOLD spell - its icon, its state's tints, its own cooldown or the GCD after it as the
+     * face's sweep - in a gold ring, over the tap spell, easing back when it ends. Drawn after the tap's own slot, before the badge.
+     */
+    private fun drawTakeover(c: Canvas, pos: Int, src: Int, li: Int, circle: Boolean, now: Long): Long {
+        if (li !in 0 until STATE_LAYERS || drawCollapsed || quietPresses) return Long.MAX_VALUE
+        val t = HoldCast.takeover
+        if (t.pos != src + 1 || t.layer != li) return Long.MAX_VALUE
+        if (!gcdStartS.isNaN() && !gcdDurS.isNaN()) t.gcd((gcdStartS * 1000.0).toLong(), (gcdDurS * 1000.0).toLong())
+        val a = t.alpha(now)
+        if (a <= 0f) return Long.MAX_VALUE
+        val key = li * 8 + src
+        val ref = holdRefs?.get(key) ?: return Long.MAX_VALUE
+        val tb = takeoverBtn(key, src, ref)
+        val gl = if (gcdDurS.isNaN()) -1f else t.gcdLeft(now, (gcdDurS * 1000.0).toLong())
+        val sweep = maxOf(gl, holdCdLeft(key, now))
+        val half = (if (circle) 38f else 40f) * k / 2f
+        val iconHalf = half - 3f * k
+        val layerSave = if (a < 1f) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * a).toInt()) else c.save()
+        drawSlot(c, pos, 0f, 0f, circle, tb, ref.stateId?.let { fightStates[it] }, -1, now, false, 0f, null, sweep)
+        // its masked picture is built off the UI thread on first use: until it lands, the icon straight from the cache (never a dark face)
+        if (tb.shader == null) HoldArt.bigFace(c, 0f, 0f, iconHalf, Icons.get(ref.icon), circle, sweep = sweep)
+        HoldArt.fired(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, circle)
+        c.restoreToCount(layerSave)
+        return 33L
     }
 
     fun fightCooldown(pos: Int, startMs: Long, durMs: Long) {
@@ -3490,7 +3529,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
                 if (fb != null && fb.k == "spell" && !isTrigFight(fb)) fightCdLeft(src, now) else -1f))
-            next = min(next, drawHold(c, pos, src, li, circle, b, now))         // m190: the hold spell's badge, the hold's arc and flash
+            next = min(next, drawTakeover(c, pos, src, li, circle, now))     // m195: a fired hold has the big face until its GCD ends
+            next = min(next, drawHold(c, pos, src, li, circle, b, now))         // m190 / m195: the hold spell's badge, its charge ring
             c.restoreToCount(slotSave)
         }
         // Edit Home: the L / R plates (and their bumper glyphs) and the ZL / ZR chips fade out with the chrome, at 0 not drawn at all

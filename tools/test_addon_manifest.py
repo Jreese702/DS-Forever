@@ -51,7 +51,7 @@ def src(rel):
 
 
 check('local HV = "hub77"' in src("WowCompanionHub/Hub.lua"), "d. Hub hub77 (the 1523 merge of both hub76s)")
-check('local PV = "m194"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m194 (feat/hold-cast: hold to cast in the game, after 1529's m193)")
+check('local PV = "m195"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m195 (feat/hold-cast: hold to cast in the game + the takeover, after 1529's m193)")
 check('local IV = "i173"' in src("WowCompanionInteract/Interact.lua"), "d. Interact i173")
 check("-- bags-kit6 " in src("WowCompanion/Bags.lua"), "d. Bags bags-kit6")
 

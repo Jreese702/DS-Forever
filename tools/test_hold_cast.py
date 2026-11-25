@@ -72,6 +72,10 @@ function SecureCmdOptionParse(s)
     return rawParse(s)
 end
 SPELLNAME[8042] = "Earth Shock"
+-- the player's cast (UnitCastingInfo's 5th return: its end, ms)
+CASTEND = nil
+function UnitCastingInfo(u) if CASTEND then return "Healing Wave", "", 136052, NOW * 1000, CASTEND * 1000 end end
+function UnitChannelInfo(u) return nil end
 -- the player's own bar (the slots that HAVE something: LT + X 17, LT + Y 18, LT + A 20; LT + B 19 and the rest empty)
 ACTIONINFO = { [17] = { "spell", 403 }, [18] = { "spell", 331 }, [20] = { "spell", 403 } }
 function GetActionInfo(s) local a = ACTIONINFO[s]; if a then return a[1], a[2] end end
@@ -183,14 +187,15 @@ def tapped(u, btn):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m194"' in pm and 'm194 HOLD TO CAST IN THE GAME' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm,
-      '0. PadMap m194 and its note (m190 / m189 kept)')
+check('local PV = "m195"' in pm and 'm195 THE HOLD SPELL TAKES THE BUTTON' in pm and 'm194 HOLD TO CAST IN THE GAME' in pm
+      and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m195 and its note (m194 / m190 / m189 kept)')
 check('local CV = "p62"' in ptc and 'p62 HOLD TO CAST IN THE GAME' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'p59 HOLD TO CAST' in ptc,
       '0. PadTabCtl p62 and its note')
 check('local BV = "b82"' in bk and 'b82 HOLD TO CAST IN THE GAME' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk
       and 'for k = 0, 2 do P3[29 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdTicks) == "function" then pcall(pm.holdTicks, 2 + k) end end end' in bk,
       '0. Book b82 and its note; the hold time\'s page-3 codes 29 / 30 / 31')
-check('local NB = { V = "nbar18"' in ab and 'nbar18 HOLD TO CAST' in ab, '0. ActionBar untouched (nbar18 here; its flash comes from the release now)')
+check('local NB = { V = "nbar21"' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab and 'nbar18 HOLD TO CAST' in ab,
+      '0. ActionBar nbar21 and its note (nbar18 kept): tools/test_hold_wings.py tests it')
 
 # ---------------------------------------------------------------- (1) NO PROBE, THE CLOCK
 L = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM" }')
@@ -469,6 +474,45 @@ x = acks[-1] if acks else {}
 check(x and not (x.get('pad') or {}).get('hold') and (x.get('probe') or {}).get('pad') == 2 and a(LB, 'HDB() == nil or HDB()[13] == nil'),
       '8. LT + D-pad Left (empty) held: the normal bind road at once, never a hold', x)
 check(not clean(LB), '8. no error in the box\'s watch', clean(LB))
+
+# ---------------------------------------------------------------- (11) m195: THE HOLD SPELL TAKES THE BUTTON (the add-on's half)
+LT_ = world()
+LT_.execute('WowCompanion.padMap.putHold(1, 2, 6, "spell", 2); WowCompanion.padMap.putHold(1, 2, 6, "spell", 3, "combat")')
+fsp = sorted(int(v) for v in (LT_.eval('WowCompanion.padMapFightSpells()') or {}).values())
+check(331 in fsp and 324 in fsp, '11. the hold spells of both tabs ride padMapFightSpells (hudS.fs: their usable / mana / range by spell id)', fsp)
+# the kept press: WC.padMapKept says it while it is kept (the top bar's charge ring reads it)
+edge(LT_, 'PAD4', True, lt=True)
+kept = a(LT_, 'WowCompanion.padMapKept(6)')
+LT_.execute('LOOK(3)')
+n0 = nsent(LT_)
+u = edge(LT_, 'PAD4', False, lt=True)
+check(kept is True and a(LT_, 'WowCompanion.padMapKept(6)') is False and u['kind'] == 'slothold',
+      '11. padMapKept: true while LT + Y is kept, false after its release (the hold ran)', (kept, u['kind']))
+check(not docs(LT_, n0, 'holdcast'), '11. the release itself says nothing yet (its cast events do)')
+LT_.execute('CASTEND = NOW + 2.5; fire("UNIT_SPELLCAST_START", "player", "g1", 331)')
+hc = last(LT_, 'holdcast', n0)
+check(hc.get('st') == 'cast' and hc.get('pos') == 6 and hc.get('lay') == 'lt' and abs((hc.get('d') or 0) - 2.5) < 0.01,
+      '11. its cast began: holdcast cast, the seconds left (2.5)', hc)
+LT_.execute('fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g2", 8042)')
+check(last(LT_, 'holdcast', n0).get('st') == 'cast', '11. another spell\'s event: nothing')
+LT_.execute('NOW = NOW + 2.5; CASTEND = nil; fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g1", 331)')
+check(last(LT_, 'holdcast', n0).get('st') == 'ok' and a(LT_, 'WowCompanion.padMapHold().fire') is None,
+      '11. it went off: holdcast ok, the follow ends', last(LT_, 'holdcast', n0))
+# refused (no mana / out of range): fail at once
+edge(LT_, 'PAD4', True, lt=True); LT_.execute('LOOK(3)'); edge(LT_, 'PAD4', False, lt=True)
+n1 = nsent(LT_)
+LT_.execute('fire("UNIT_SPELLCAST_FAILED", "player", "g3", 331)')
+check(last(LT_, 'holdcast', n1).get('st') == 'fail', '11. the game refused it: holdcast fail', last(LT_, 'holdcast', n1))
+# nothing within 3 s: the follow drops by itself (no word: the app's / the top bar's 2 s fallback)
+edge(LT_, 'PAD4', True, lt=True); LT_.execute('LOOK(3)'); edge(LT_, 'PAD4', False, lt=True)
+n2 = nsent(LT_)
+LT_.execute('NOW = NOW + 4; fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g4", 331)')
+check(not docs(LT_, n2, 'holdcast') and a(LT_, 'WowCompanion.padMapHold().fire') is None, '11. an event 4 s later: not ours (dropped)')
+# a tap: no follow at all
+LT_.execute('WowCompanion.padMapHold().fire = nil')
+edge(LT_, 'PAD4', True, lt=True); edge(LT_, 'PAD4', False, lt=True)
+check(a(LT_, 'WowCompanion.padMapHold().fire') is None, '11. a tap follows nothing')
+check(not lst(LT_, 'VIOL') and not lst(LT_, 'SNIPERR') and not lst(LT_, 'ERRS'), '11. nothing blocked, no error', clean(LT_))
 
 # ---------------------------------------------------------------- (9) no trace
 check(not lst(L, 'SPY'), '9. no SetBinding / SetCVar / macro write / game window call', lst(L, 'SPY'))

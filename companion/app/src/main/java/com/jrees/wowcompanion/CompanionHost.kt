@@ -3667,6 +3667,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 .also { HoldCast.onFacecast(msg) }
             // HOLD TO CAST (PadMap m190 / m194): the places whose press the router keeps for a hold now (the gold arc's; display only)
             "holdmap" -> if (current) HoldCast.onMap(msg)
+            "holdcast" -> if (current) HoldCast.onHoldCast(msg)             // m195: the fired hold's own cast (the takeover's end)
             "holdcd" -> if (current) PadMapModel.parseHoldCd(msg)?.let { homeView.onHoldCd(it) }
             "faceswap" -> if (current) PressLog.swap(msg)?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
             // m127: Smart Y's list edits answered (a refusal said on its Add row; the user, 2026-11-11: it was never read)

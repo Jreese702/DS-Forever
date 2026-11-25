@@ -114,7 +114,7 @@ class HoldCastTest {
     @Test fun theAddonsWordFlashesOnlyAKeptReleasesHold() {
         HoldCast.watch.reset(); HoldCast.watch.map = setOf(bareA)
         val now = 50_000L
-        HoldCast.clock = { now }
+        HoldCast.clock = { now }; HoldCast.bandClock = { now }
         HoldCast.watch.press(8, 0, now - 500); HoldCast.watch.release(8, now - 100)
         var told = 0
         HoldCast.onChange = { told++ }
@@ -122,8 +122,97 @@ class HoldCastTest {
         assertEquals("a key-down's word: nothing", 0, told)
         HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slothold").put("hk", "rel").put("down", true))
         assertEquals("the kept release ran its hold: the flash", 1, told)
-        HoldCast.onChange = null; HoldCast.watch.reset(); HoldCast.watch.map = emptySet()
-        HoldCast.clock = { android.os.SystemClock.uptimeMillis() }
+        HoldCast.onChange = null; HoldCast.watch.reset(); HoldCast.watch.map = emptySet(); HoldCast.takeover.clear()
+        HoldCast.clock = { android.os.SystemClock.uptimeMillis() }; HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }
+    }
+
+    // ---------------------------------------------------------------- (2b) m195: the charge ring round the badge
+
+    @Test fun theChargeRingShowsFromAQuarterSecondAndFillsToTheHoldPoint() {
+        for ((n, full) in listOf(2 to 434L, 3 to 651L, 4 to 868L)) {
+            val w = watch(n, bareA)
+            w.press(8, 0, 1000)
+            assertEquals("$n: hidden at 0.2 s (quick taps show nothing)", -1f, w.charge(8, 1200), 0f)
+            assertEquals("$n: hidden just before 0.25 s", -1f, w.charge(8, 1249), 0f)
+            assertEquals("$n: appears at 0.25 s, empty", 0f, w.charge(8, 1250), 0f)
+            assertEquals("$n: half way to the hold point", 0.5f, w.charge(8, 1000 + 250 + (full - 250) / 2), 0.01f)
+            assertFalse("$n: not charged before the hold point", w.charged(8, 1000 + full - 1))
+            assertEquals("$n: full at the hold point", 1f, w.charge(8, 1000 + full), 0f)
+            assertTrue("$n: charged from it", w.charged(8, 1000 + full))
+            w.release(8, 1000 + full + 50)
+            assertEquals("$n: let go: gone", -1f, w.charge(8, 1000 + full + 60), 0f)
+        }
+        val e = watch(3, bareA)
+        e.press(8, 0, 0)
+        assertFalse("an early release (0.4 s): a tap", e.release(8, 400))
+        assertEquals("... the ring gone", -1f, e.charge(8, 410), 0f)
+        assertNull(e.lastFire)
+        val nk = watch(3)
+        nk.press(8, 0, 0)
+        assertEquals("a place the add-on does not keep: never a ring", -1f, nk.charge(8, 600), 0f)
+    }
+
+    // ---------------------------------------------------------------- (2c) m195: the takeover
+
+    @Test fun theTakeoverHoldsTheFaceToTheCastAndTheGcdThenGoesBack() {
+        val t = HoldCast.Takeover()
+        assertEquals("nothing yet", 0f, t.alpha(0), 0f)
+        // a 1.8 s cast with a 1.5 s GCD: to the cast's end, then eased back over 0.2 s
+        t.start(8, 0, 1000)
+        assertEquals(1f, t.alpha(1000), 0f)
+        t.cast(1800, 1050); t.gcd(1050, 1500)
+        assertEquals("mid cast", 1f, t.alpha(2500), 0f)
+        assertEquals("the GCD over, the cast still running", 1f, t.alpha(2800), 0f)
+        assertEquals("the cast ended: easing", 0.5f, t.alpha(2850 + HoldCast.EASE_MS / 2), 0.01f)
+        assertEquals("back", 0f, t.alpha(2850 + HoldCast.EASE_MS), 0f)
+        assertEquals("cleared", -1, t.pos)
+        // an instant: to its GCD's end
+        t.start(8, 0, 5000); t.ok(5040); t.gcd(5040, 1500)
+        assertEquals(1f, t.alpha(6500), 0f)
+        assertEquals("the GCD done: back", 0f, t.alpha(6540 + HoldCast.EASE_MS), 0f)
+        // refused / interrupted / cancelled: back at once
+        t.start(8, 0, 8000); t.cast(2000, 8050); t.fail(8300)
+        assertTrue("fail: easing at once", t.alpha(8300 + HoldCast.EASE_MS / 2) < 1f)
+        assertEquals(0f, t.alpha(8300 + HoldCast.EASE_MS), 0f)
+        // no word at all: the fallback (never stuck)
+        t.start(8, 0, 10_000)
+        assertEquals(1f, t.alpha(10_000 + HoldCast.FALLBACK_MS - 1), 0f)
+        assertEquals(0f, t.alpha(10_000 + HoldCast.FALLBACK_MS + HoldCast.EASE_MS), 0f)
+        // a GCD that started before the fire is not the hold's
+        t.start(8, 0, 20_000); t.gcd(19_000, 5_000)
+        assertEquals(0f, t.alpha(20_000 + HoldCast.FALLBACK_MS + HoldCast.EASE_MS), 0f)
+        // a very long cast still ends (15 s cap)
+        t.start(8, 0, 30_000); t.cast(60_000, 30_000)
+        assertEquals(0f, t.alpha(45_000 + HoldCast.EASE_MS), 0f)
+    }
+
+    @Test fun theTakeoverFollowsTheAddonsWords() {
+        HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = setOf(bareA)
+        var now = 100_000L
+        HoldCast.bandClock = { now }; HoldCast.clock = { now }
+        HoldCast.watch.press(8, 0, now); now += HoldCast.holdFromMs(CastSettings.holdTime.ticks)
+        assertTrue(HoldCast.watch.release(8, now))
+        assertEquals("a sure release starts the takeover on that button and layer", 8, HoldCast.takeover.pos)
+        HoldCast.onHoldCast(JSONObject().put("type", "holdcast").put("pos", 8).put("st", "cast").put("d", 3.0))
+        now += 2500
+        assertEquals("its 3 s cast keeps it", 1f, HoldCast.takeover.alpha(now), 0f)
+        HoldCast.onHoldCast(JSONObject().put("type", "holdcast").put("pos", 8).put("st", "fail"))
+        now += HoldCast.EASE_MS
+        assertEquals("interrupted: back", 0f, HoldCast.takeover.alpha(now), 0f)
+        // the app's own timing said "sure" but the add-on's release ran the TAP: back at once
+        HoldCast.watch.press(8, 0, now); now += HoldCast.holdFromMs(CastSettings.holdTime.ticks)
+        HoldCast.watch.release(8, now)
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "native").put("hk", "rel").put("down", true))
+        now += HoldCast.EASE_MS
+        assertEquals("the release was the tap: no takeover", 0f, HoldCast.takeover.alpha(now), 0f)
+        // a release in the phase window: the add-on's word starts it
+        HoldCast.watch.press(8, 0, now); now += 500
+        assertFalse(HoldCast.watch.release(8, now))
+        assertEquals(-1, HoldCast.takeover.pos)
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slothold").put("hk", "rel").put("down", true))
+        assertEquals("the add-on said the hold ran: the takeover", 8, HoldCast.takeover.pos)
+        HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = emptySet()
+        HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }; HoldCast.clock = { android.os.SystemClock.uptimeMillis() }
     }
 
     // ---------------------------------------------------------------- (3) the hold time to the add-on

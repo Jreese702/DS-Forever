@@ -111,7 +111,7 @@ class HoldCastUiTest {
         assertEquals(1f to 1f, HoldCast.badgeSide(2)); assertEquals(-1f to 1f, HoldCast.badgeSide(3))
         assertEquals(-1f to 1f, HoldCast.badgeSide(4)); assertEquals(-1f to -1f, HoldCast.badgeSide(5))
         assertEquals(1f to 1f, HoldCast.badgeSide(6)); assertEquals(-1f to 1f, HoldCast.badgeSide(7))
-        assertEquals(150L, HoldArt.FLASH_MS)
+        assertFalse("m195: no 150 ms flash any more (the takeover)", kt("HoldArt.kt").contains("FLASH_MS"))
     }
 
     @Test fun settingsHoldTimeTile() {
@@ -127,10 +127,12 @@ class HoldCastUiTest {
     @Test fun theDrawingHooks() {
         val cast = kt("CastView.kt")
         assertTrue("Home's band draws the hold after each button", cast.contains("next = min(next, drawHold(c, pos, src, li, circle, b, now))"))
-        assertTrue(cast.contains("HoldArt.progress(c, 0f, 0f, iconHalf - 0.5f * k, half + 1f * k, prog, circle)"))
-        assertTrue(cast.contains("HoldArt.bigFace(c, 0f, 0f, iconHalf, Icons.get(ref.icon), circle)"))
-        assertTrue("m194: the band's own pad reading drives the arc", cast.contains("holdWatch(mask, down, wheel)")
-            && cast.contains("val prog = if (w.layerOf(pos) == li) w.progress(pos, up) else -1f"))
+        assertFalse("m195: no arc on the big button (the charge ring is the badge's)", cast.contains("HoldArt.progress("))
+        assertTrue("m195: the charge ring round the badge", cast.contains("HoldArt.chargeRing(c, bx, by, r, ch, charged)"))
+        assertTrue("m195: the badge's states (mana blue, not usable grey, range red)",
+            cast.contains("HoldArt.badge(c, bx, by, r, icon, sw, lit = ch >= 0f, filter = filter, outOfRange = hst?.r == 0)"))
+        assertTrue("m195: the takeover before the badge", cast.contains("next = min(next, drawTakeover(c, pos, src, li, circle, now))"))
+        assertTrue("the band's own pad reading drives the ring", cast.contains("holdWatch(mask, down, wheel)"))
         val home = kt("HomeView.kt")
         assertTrue("PER TAB: the badges are the holds that would fire now",
             home.contains("castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { map.holdOn != false }")
@@ -158,7 +160,8 @@ class HoldCastUiTest {
         assertTrue(kt("SpellsOverlay.kt").contains("holdHint(c, box.left + 80f, HINT_Y)"))
         val host = kt("CompanionHost.kt")
         assertTrue(host.contains("\"holdmap\" -> if (current) HoldCast.onMap(msg)") && !host.contains("holdprobe") && host.contains("HoldCast.onFacecast(msg)")
-            && host.contains("\"holdcd\" -> if (current) PadMapModel.parseHoldCd(msg)?.let { homeView.onHoldCd(it) }"))
+            && host.contains("\"holdcd\" -> if (current) PadMapModel.parseHoldCd(msg)?.let { homeView.onHoldCd(it) }")
+            && host.contains("\"holdcast\" -> if (current) HoldCast.onHoldCast(msg)"))
         assertTrue("the press log knows the hold way", PressLog.PATHS.contains("slothold"))
     }
 

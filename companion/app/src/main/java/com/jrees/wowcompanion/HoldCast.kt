@@ -11,9 +11,13 @@ import org.json.JSONObject
  * state-driver looks while it is kept, and on the release casts the hold spell (that many looks: [ticks]) or the button's own (the tap).
  *
  * What is left here is the picture: [watch] follows the app's OWN reading of the pad (PadInput, the copy the launcher hands us; the
- * game still gets every press untouched) for the places the add-on keeps now (its `holdmap`), draws the gold arc filling to the hold
- * point while such a button is held ([Watch.progress]) and the short flash when a release runs the hold ([Watch.lastFire]: at once when
- * the press was surely long enough, else on the add-on's word, its release's facecast). And the hold time to the add-on ([ticksToSend]).
+ * game still gets every press untouched) for the places the add-on keeps now (its `holdmap`). m195 (the user on test 1529: "after like
+ * .25s of holding I want a charge up circle to appear around the little hold icon"; "it needs to take over the main spell circle until
+ * the [GCD] completes following it or if its canceled"): the CHARGE RING round the small hold badge ([Watch.charge]: nothing before
+ * [RING_DELAY_MS], then filling clockwise to the hold point, then "charged"), and THE TAKEOVER ([takeover]): a release that ran the hold
+ * (at once when the press was surely long enough, else on the add-on's word, its release's facecast) puts the hold spell on the big
+ * face until its cast and the GCD after it end, at once back on a fail / a cancel (the add-on's `holdcast`), never stuck ([Takeover]).
+ * And the hold time to the add-on ([ticksToSend]).
  *
  * THE TIMING (exact): the game looks every 0.2 s (SecureStateDriver's throttle, the first frame past it); a press made between two looks
  * gets its first one 0 - 0.2 s later. N looks ([CastSettings.HoldTime.ticks]: Short 2, Normal 3, Long 4) = a hold when held from
@@ -29,6 +33,8 @@ object HoldCast {
     const val FRAME_MS = 17L
     /** the add-on's word that a release ran the hold, waited for this long after it */
     const val CONFIRM_MS = 1_500L
+    /** the charge ring shows from this long held (quick taps show nothing) */
+    const val RING_DELAY_MS = 250L
 
     /** held less than this: always the tap (the N-th look cannot have come) */
     fun tapBelowMs(n: Int): Long = (n - 1) * TICK_MS
@@ -87,9 +93,12 @@ object HoldCast {
         private val t0 = LongArray(9) { -1L }
         private val lay = IntArray(9) { -1 }
         private val relAt = LongArray(9) { -1L }
-        /** the last hold that fired: (game position, when) - the 150 ms flash */
+        private val relLay = IntArray(9) { -1 }
+        /** the last hold that fired: (game position, when) */
         var lastFire: Pair<Int, Long>? = null
             private set
+        /** a hold fired at (game position, its layer): the takeover starts */
+        var onFire: ((Int, Int) -> Unit)? = null
 
         /** the button at [pos] went down on layer [layer] at [now]: tracked only when the add-on keeps that place's press now */
         fun press(pos: Int, layer: Int, now: Long) {
@@ -101,10 +110,11 @@ object HoldCast {
         fun release(pos: Int, now: Long): Boolean {
             if (pos !in 1..8) return false
             val s = t0[pos]
+            val l = lay[pos]
             t0[pos] = -1L; lay[pos] = -1
             if (s < 0L) return false
-            relAt[pos] = now
-            if (now - s >= holdFromMs(ticks)) { lastFire = pos to now; return true }
+            relAt[pos] = now; relLay[pos] = l
+            if (now - s >= holdFromMs(ticks)) { lastFire = pos to now; onFire?.invoke(pos, l); return true }
             return false
         }
 
@@ -116,6 +126,7 @@ object HoldCast {
             if (r < 0L || now - r > CONFIRM_MS) return false
             if (lastFire?.let { it.first == pos && it.second >= r } == true) return false
             lastFire = pos to now
+            onFire?.invoke(pos, relLay[pos])
             return true
         }
 
@@ -126,14 +137,103 @@ object HoldCast {
             return ((now - s).toFloat() / holdFromMs(ticks)).coerceIn(0f, 1f)
         }
 
+        /**
+         * THE CHARGE RING round the small badge (m195): -1 while hidden (not held, not kept, or held under [RING_DELAY_MS]), else 0..1 of
+         * the way from [RING_DELAY_MS] to the hold point ([holdFromMs]); 1 = charged (held past it: let go now and it is the hold)
+         */
+        fun charge(pos: Int, now: Long): Float {
+            val s = t0.getOrElse(pos) { -1L }
+            if (s < 0L) return -1f
+            val held = now - s
+            if (held < RING_DELAY_MS) return -1f
+            val full = holdFromMs(ticks)
+            return ((held - RING_DELAY_MS).toFloat() / (full - RING_DELAY_MS).coerceAtLeast(1L)).coerceIn(0f, 1f)
+        }
+        /** held past the hold point (the ring's "charged" look) */
+        fun charged(pos: Int, now: Long): Boolean = t0.getOrElse(pos) { -1L }.let { it >= 0L && now - it >= holdFromMs(ticks) }
+
         /** the layer the held button at [pos] was pressed on, -1 when none */
         fun layerOf(pos: Int): Int = if (t0.getOrElse(pos) { -1L } >= 0L) lay[pos] else -1
 
-        /** nothing held any more (the pad went away) */
-        fun reset() { t0.fill(-1L); lay.fill(-1) }
+        /** nothing held any more, nothing just released (the pad went away; tests) */
+        fun reset() { t0.fill(-1L); lay.fill(-1); relAt.fill(-1L); relLay.fill(-1); lastFire = null }
     }
 
     val watch = Watch()
+
+    /**
+     * THE TAKEOVER (m195): after a hold fires the button's big face shows the HOLD spell until its cast and the GCD that follows end
+     * (the add-on's `holdcast`: "cast" with its seconds left, "ok"; the GCD from the state document's `gd`), at once on a "fail" (the
+     * cast refused, interrupted) or a [cancel], and [FALLBACK_MS] after the last word if nothing more comes; it eases back over [EASE_MS].
+     * Pure, on the band's clock (elapsedRealtime ms, the cast / GCD times' own).
+     */
+    class Takeover {
+        var pos = -1
+            private set
+        var layer = -1
+            private set
+        private var t = 0L; private var last = 0L
+        private var castEnd = -1L; private var gcdEnd = -1L; private var okAt = -1L; private var failAt = -1L
+
+        fun start(pos: Int, layer: Int, now: Long) {
+            this.pos = pos; this.layer = layer; t = now; last = now
+            castEnd = -1L; gcdEnd = -1L; okAt = -1L; failAt = -1L
+        }
+        /** the hold's cast began: [leftMs] of it to run */
+        fun cast(leftMs: Long, now: Long) { if (pos < 0) return; last = now; castEnd = now + leftMs.coerceAtLeast(0L) }
+        /** an instant hold went off (or a channel ended) */
+        fun ok(now: Long) { if (pos < 0) return; last = now; okAt = now }
+        /** refused / interrupted / not the hold after all: back at once */
+        fun fail(now: Long) { if (pos < 0) return; last = now; failAt = now }
+        fun cancel(now: Long) = fail(now)
+        /** nothing on any face (tests; a new session) */
+        fun clear() { pos = -1; layer = -1 }
+        /** the running GCD ([startMs], [durMs]): the one that started with the hold counts */
+        fun gcd(startMs: Long, durMs: Long) { if (pos >= 0 && durMs > 0L && startMs >= t - 500L) gcdEnd = startMs + durMs }
+
+        /** when the hold spell leaves the face */
+        fun endAt(): Long {
+            if (failAt >= 0L) return failAt
+            var known = -1L
+            for (v in longArrayOf(castEnd, gcdEnd, if (okAt >= 0L) okAt + 300L else -1L)) if (v >= 0L && v > known) known = v
+            val e = if (known >= 0L) known else t + FALLBACK_MS
+            return minOf(e, maxOf(castEnd, last) + FALLBACK_MS, t + 15_000L)
+        }
+        /** 1 while it has the face, easing to 0 after [endAt]; 0 (and cleared) when it is over */
+        fun alpha(now: Long): Float {
+            if (pos < 0) return 0f
+            val e = endAt()
+            if (now < e) return 1f
+            val a = 1f - (now - e).toFloat() / EASE_MS
+            if (a <= 0f) { pos = -1; layer = -1; return 0f }
+            return a
+        }
+        /** how far the GCD after it has run down (1 = all left), -1 none known */
+        fun gcdLeft(now: Long, durMs: Long): Float = if (gcdEnd < 0L || durMs <= 0L || now >= gcdEnd) -1f else ((gcdEnd - now).toFloat() / durMs).coerceIn(0f, 1f)
+    }
+    const val FALLBACK_MS = 2_000L
+    const val EASE_MS = 200L
+
+    val takeover = Takeover()
+    /** the band's clock (elapsedRealtime ms: the cast and GCD times'); tests set their own */
+    internal var bandClock: () -> Long = { SystemClock.elapsedRealtime() }
+
+    init { watch.onFire = { pos, layer -> takeover.start(pos, layer, bandClock()); onChange?.invoke() } }
+
+    /** CompanionHost: a CURRENT `holdcast` (PadMap m195: the fired hold's own cast - "cast" with d its seconds left, "ok", "fail") */
+    fun onHoldCast(msg: JSONObject) {
+        if (msg.optString("type") != "holdcast") return
+        val pos = msg.optInt("pos", 0)
+        if (pos != takeover.pos) return
+        val now = bandClock()
+        when (msg.optString("st")) {
+            "cast" -> takeover.cast((msg.optDouble("d", 0.0) * 1000.0).toLong(), now)
+            "ok" -> takeover.ok(now)
+            "fail" -> takeover.fail(now)
+            else -> return
+        }
+        onChange?.invoke()
+    }
 
     /** the drawing's clock (uptime ms; the band draws on it); tests set their own */
     internal var clock: () -> Long = { SystemClock.uptimeMillis() }
@@ -149,8 +249,14 @@ object HoldCast {
 
     /** CompanionHost: a CURRENT `facecast` (main thread): a kept press's release that ran its hold ("hk" rel, path slothold) */
     fun onFacecast(msg: JSONObject) {
-        if (msg.optString("hk") != "rel" || msg.optString("kind") != "slothold") return
-        if (watch.confirm(msg.optInt("pos", 0), clock())) onChange?.invoke()
+        if (msg.optString("hk") != "rel") return
+        val pos = msg.optInt("pos", 0)
+        if (msg.optString("kind") != "slothold") {
+            // the kept press's release ran the TAP: a takeover the app started by itself (its own timing said "sure") goes back at once
+            if (takeover.pos == pos) { takeover.cancel(bandClock()); onChange?.invoke() }
+            return
+        }
+        watch.confirm(pos, clock())                                     // (a confirm starts the takeover: onFire tells the drawing)
     }
 
     // ------------------------------------------------------------------------------------------------------------------ the hold time
