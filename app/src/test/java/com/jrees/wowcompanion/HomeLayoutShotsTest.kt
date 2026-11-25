@@ -102,8 +102,10 @@ class HomeLayoutShotsTest {
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
         home.borrow()
-        // (cc: PadMap m187's "Cast bar in fights" as the add-on says it - the same as ct here: Top screen's pages keep the game's own bar)
-        ct?.let { home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m187","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":$it,"cc":$it}}}"""))!!) }
+        // (cc: PadMap m187's "Cast bar in fights" as the add-on says it - the layout's own Cast bar in fights, synced: the 1528 audit's
+        //  TopCombatBar.honoured follows the add-on's cc both ways with the Wings on, so a cc 1 under a Bottom-screen record lays Top screen)
+        val cc = if (layout.fightCast == HomeLayout.FightCast.TOP) ct else 0
+        ct?.let { home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m187","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":$it,"cc":$cc}}}"""))!!) }
         lay(home)
         cast.roomBarOn = true
         cast.roomBar = dirs ?: HoldTalk.DEFAULT_DIRS
