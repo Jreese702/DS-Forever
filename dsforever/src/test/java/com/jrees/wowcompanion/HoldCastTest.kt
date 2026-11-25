@@ -99,6 +99,24 @@ class HoldCastTest {
 
     // ---------------------------------------------------------------- the launcher's road
 
+    /**
+     * the 1528 audit: the winhandler packets' buttons for player 1 kept GamepadState's digital L2 / R2 (bits 10 / 11: ExternalController
+     * and PhysicalControllerHandler set them) - the gated copy cut them to 0x3FF on every send, the gate off too, so a game reading the
+     * triggers as buttons from the packets lost them. Now: as the controller has them while the triggers go as they are, else from the
+     * triggers the gate sends; the gate's own D-pad / marker bits (10..15 of its output) never in them
+     */
+    @Test fun thePacketsKeepTheDigitalTriggers() {
+        val l2 = 1 shl 10; val r2 = 1 shl 11
+        assertEquals("the gate off / nothing held back: as the controller has them", 1 or l2 or r2,
+            HoldCast.packetButtons(1, 1 or l2 or r2, 1f, 0.6f, 1f, 0.6f))
+        assertEquals("the gate sends a press's own layer (no LT): no L2", 0, HoldCast.packetButtons(0, l2, 1f, 0f, 0f, 0f))
+        assertEquals("the gate sends LT held: L2", l2, HoldCast.packetButtons(0, 0, 0f, 0f, 1f, 0f))
+        assertEquals("the gate's D-pad / marker bits stay out", 0, HoldCast.packetButtons((1 shl 10) or (1 shl 12) or (1 shl 15), 0, 0f, 0f, 0f, 0f))
+        val w = src("app/src/main/java/com/winlator/winhandler/WinHandler.java")
+        assertTrue("WinHandler's gated copy uses it", w.contains("holdOut.buttons = (short) com.jrees.wowcompanion.HoldCast.packetButtons(o, s.buttons & 0xFFFF,"))
+        assertFalse(w.contains("holdOut.buttons = (short) (o & 0x3FF);"))
+    }
+
     @Test fun theLauncherSendsPlayerOneThroughTheGate() {
         val w = src("app/src/main/java/com/winlator/winhandler/WinHandler.java")
         assertTrue(w.contains("GamepadState state = holdGated(controller, slot);"))

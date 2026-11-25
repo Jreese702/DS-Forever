@@ -42,6 +42,7 @@ class HoldGate {
         var upAt = 0L          // a tap's end / the earliest up of a hold or a plain press (the game must see it down)
         var released = false   // let go (HOLD / PLAIN: up once past upAt)
         var reEdge = -1L       // pressed again while the last press was still going to the game
+        var reUp = false       // ... and let go again before it had gone (the 1528 audit: a quick second tap, mashing)
         var trigFrom = Long.MAX_VALUE   // the triggers as at the press, sent over [trigFrom, trigTo)
         var trigTo = Long.MIN_VALUE
     }
@@ -91,7 +92,7 @@ class HoldGate {
         for (c in chs) {
             val down = (prevRaw and (1 shl c.bit)) != 0
             if (c.st != St.IDLE && c.st != St.PASS) c.st = if (down) St.SWALLOW else St.IDLE
-            c.reEdge = -1L
+            c.reEdge = -1L; c.reUp = false
             c.trigFrom = Long.MAX_VALUE; c.trigTo = Long.MIN_VALUE
             if (c.st != St.PASS) out = out and (1 shl c.bit).inv()
         }
@@ -123,13 +124,22 @@ class HoldGate {
             val m = 1 shl c.bit
             val down = (raw and m) != 0
             val was = (prevRaw and m) != 0
-            if (down && !was && c.st != St.IDLE && c.st != St.PASS && c.st != St.SWALLOW) c.reEdge = now
+            if (down && !was && c.st != St.IDLE && c.st != St.PASS && c.st != St.SWALLOW) { c.reEdge = now; c.reUp = false }
+            if (!down && was && c.reEdge >= 0L) c.reUp = true
             step(c, down, was, layer, mods, now)
             if (c.st == St.IDLE && c.reEdge >= 0L && down) {   // pressed again while the last one was still going to the game
-                val at = c.reEdge; c.reEdge = -1L
+                val at = c.reEdge; c.reEdge = -1L; c.reUp = false
                 begin(c, layer, mods, at)
                 step(c, true, true, layer, mods, now)
-            } else if (c.st == St.IDLE) c.reEdge = -1L
+            } else if (c.st == St.IDLE && c.reEdge >= 0L && c.reUp) {
+                // the 1528 audit: pressed AND let go again while the last one was still going: a tap of its own (it was lost), sent
+                // GAP_MS after the last one went up so the game sees the button up between the two
+                val at = c.reEdge; c.reEdge = -1L; c.reUp = false
+                begin(c, layer, mods, at)
+                if (c.st == St.PENDING) tap(c, now) else plain(c, now, false)
+                val d = now + GAP_MS - c.downAt
+                if (d > 0L) { c.downAt += d; c.upAt += d; c.trigTo = maxOf(c.trigTo, c.upAt) }
+            } else if (c.st == St.IDLE) { c.reEdge = -1L; c.reUp = false }
         }
         var o = raw and GATE_MASK.inv()                        // the shoulders, Select, Start, the sticks: never touched
         for (c in chs) if (shows(c, (raw and (1 shl c.bit)) != 0, now)) o = o or (1 shl c.bit)
@@ -216,9 +226,18 @@ class HoldGate {
         }
     }
 
+    /** when a press without the marker may go to the game: now, or [GAP_MS] past a marker down now - a hold's, or the probe's pulse (the
+     *  1528 audit: a tap let go during the pulse went with the Guide down and read as the hold) */
+    private fun clearOfMarker(now: Long): Long {
+        var at = now
+        if (guideTo != Long.MIN_VALUE && now < guideTo) at = maxOf(at, guideTo + GAP_MS)
+        if (probeTo != Long.MIN_VALUE && now < probeTo) at = maxOf(at, probeTo + GAP_MS)
+        return at
+    }
+
     /** the tap: the press to the game now (or once the marker is up), [TAP_MS] long */
     private fun tap(c: Ch, now: Long) {
-        c.downAt = if (guideTo != Long.MIN_VALUE && now < guideTo) guideTo + GAP_MS else now
+        c.downAt = clearOfMarker(now)
         c.upAt = c.downAt + TAP_MS
         c.st = St.TAP
         c.trigFrom = now; c.trigTo = c.upAt
@@ -227,7 +246,7 @@ class HoldGate {
 
     /** a waiting press the gate let go of (turned off / the place lost its hold spell): to the game now, no marker */
     private fun plain(c: Ch, now: Long, down: Boolean) {
-        c.downAt = if (guideTo != Long.MIN_VALUE && now < guideTo) guideTo + GAP_MS else now
+        c.downAt = clearOfMarker(now)
         c.upAt = c.downAt + TAP_MS
         c.released = !down
         c.st = St.PLAIN

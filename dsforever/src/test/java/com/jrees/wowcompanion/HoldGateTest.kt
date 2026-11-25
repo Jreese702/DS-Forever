@@ -235,6 +235,29 @@ class HoldGateTest {
         assertFalse("never while a press is held back", busy.probePulse(1001))
     }
 
+    /** the 1528 audit: a tap let go during the probe's pulse waits for the pulse to end - with the Guide down it read as the hold */
+    @Test fun aTapNeverGoesWithTheProbesPulse() {
+        val g = gate(bareA)
+        assertTrue(g.probePulse(1000))                                  // the marker alone 1000..1200
+        assertEquals("pressed in the pulse: held back", G, g.update(A, 0f, 0f, 1010))
+        val seen = g.run(0, 1050, 1500)                                 // let go at 1050: a tap
+        for ((t, o) in seen) assertFalse("A with the marker at $t: $seen", o and A != 0 && o and G != 0)
+        assertEquals("the tap goes GAP_MS after the pulse", 1000L + HoldGate.PROBE_MS + HoldGate.GAP_MS, seen.first { it.second and A != 0 }.first)
+        assertFalse(g.busy())
+    }
+
+    /** the 1528 audit: a quick second tap, pressed AND let go while the first still goes to the game, is not lost (mashing) */
+    @Test fun aQuickSecondTapInsideTheFirstsPulseIsNotLost() {
+        val g = gate(bareA)
+        g.update(A, 0f, 0f, 1000)
+        assertEquals("tap: sent 1080..1150", A, g.update(0, 0f, 0f, 1080))
+        g.update(A, 0f, 0f, 1110)                                       // pressed again inside it
+        val seen = g.run(0, 1140, 1500)                                 // and let go at 1140, before the first one's pulse ends
+        assertEquals("the first goes up, the second follows GAP_MS later for TAP_MS",
+            listOf(1150L to 0, (1150L + HoldGate.GAP_MS) to A, (1150L + HoldGate.GAP_MS + HoldGate.TAP_MS) to 0), seen)
+        assertFalse(g.busy())
+    }
+
     @Test fun theAddOnsWords() {
         assertEquals(HoldGate.key(0, 8), HoldGate.keyOf("bare", 8))
         assertEquals(HoldGate.key(3, 1), HoldGate.keyOf("ltrt", 1))

@@ -130,13 +130,15 @@ public class WinHandler {
         }
         synchronized (holdOut) {
             holdOut.copy(s);
-            holdOut.buttons = (short) (o & 0x3FF);
             holdOut.dpad[0] = (o & (1 << 10)) != 0;
             holdOut.dpad[1] = (o & (1 << 11)) != 0;
             holdOut.dpad[2] = (o & (1 << 12)) != 0;
             holdOut.dpad[3] = (o & (1 << 13)) != 0;
             holdOut.triggerL = com.jrees.wowcompanion.HoldCast.ltOut();
             holdOut.triggerR = com.jrees.wowcompanion.HoldCast.rtOut();
+            // the 1528 audit: GamepadState's digital L2 / R2 (bits 10 / 11) kept for the packets (o's 10..13 are the gate's D-pad)
+            holdOut.buttons = (short) com.jrees.wowcompanion.HoldCast.packetButtons(o, s.buttons & 0xFFFF,
+                    s.triggerL, s.triggerR, holdOut.triggerL, holdOut.triggerR);
         }
         holdGuide = (o & (1 << 15)) != 0;
         holdLastState = s;

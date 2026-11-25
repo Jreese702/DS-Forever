@@ -219,6 +219,25 @@ class FightCastBarTest {
      * strip carries the cast AND the swing in the takeover; Top screen = nothing of the line on the bottom screen in the takeover (the
      * add-on's own bar above the HUD has both); out of the takeover the band's own line whatever the choice; never both screens.
      */
+    /**
+     * the 1528 audit: Cast bar in fights switched Top screen -> Bottom screen MID-FIGHT. The add-on keeps its own top bar until the fight
+     * ends (castCheck sends nothing in a fight: its taps would be pad presses), and the bottom screen followed the record at once - the
+     * cast and the swing on BOTH screens for the rest of the fight. While the Wings are on, the bottom screen now follows the add-on's
+     * word (cc) both ways; the record's choice lands when castCheck delivers it after the fight
+     */
+    @Test fun aSwitchMidFightNeverShowsTheCastOnBothScreens() {
+        val bottomRec = TOP                                              // the record: Bottom screen (switched mid-fight)
+        val stillTop = TopCombatBar.honoured(bottomRec, 1, 1)            // the add-on still draws its own bar (cc 1)
+        assertEquals(HomeLayout.FightCast.TOP, stillTop.fightCast)
+        assertEquals("nothing of the line on the bottom screen while the add-on's bar has it", TopCombatBar.Line.TOP,
+            TopCombatBar.lineAt(stillTop, away = true, sliding = false))
+        // the add-on took it (cc 0): the strip
+        assertEquals(TopCombatBar.Line.STRIP, TopCombatBar.lineAt(TopCombatBar.honoured(bottomRec, 1, 0), away = true, sliding = false))
+        // the Wings not on: Grow as ever, whatever cc says
+        assertEquals(HomeLayout.FightBand.GROW, TopCombatBar.honoured(bottomRec, 0, 1).fight)
+        assertEquals(TopCombatBar.Line.BAND, TopCombatBar.lineAt(TopCombatBar.honoured(bottomRec, 0, 1), away = false, sliding = false))
+    }
+
     @Test fun whichCastsGoWhere() {
         val bottom = TopCombatBar.honoured(TOP, 1, 0)
         val top = TopCombatBar.honoured(TOP.copy(fightCast = HomeLayout.FightCast.TOP), 1, 1)

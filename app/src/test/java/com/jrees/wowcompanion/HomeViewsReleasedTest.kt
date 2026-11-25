@@ -5,6 +5,7 @@ import android.widget.FrameLayout
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -80,5 +81,23 @@ class HomeViewsReleasedTest {
         val held = refs.mapNotNull { it.get() }.toSet()
         val path = if (kept.isEmpty()) null else RetainedPath.find({ o -> o in held })
         assertEquals("views still reachable after the Home pages went: $kept; held by:\n  $path", emptyList<String>(), kept)
+    }
+
+    /**
+     * the 1528 audit: the HOST's own static listeners (HomeSettings, HomeLayoutStore, RadialMeta, DiagLog) still held the CompanionHost
+     * strongly - and through its homeView the whole old Home - when the bottom screen's host is made again (DsForeverScreen); a replaced
+     * host also kept acting on each change (feat/top-castbar's new swingCheck listener and the layout one sent the add-on page-3 taps
+     * from it). Each now holds the host weakly and does nothing once its screen is gone
+     */
+    @Test fun theHostsOwnStaticListenersHoldItWeakly() {
+        val f = listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt"),
+            java.io.File("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")).first { it.isFile }
+        val src = f.readText()
+        val strong = Regex("""\b(HomeSettings|HomeLayoutStore|RadialMeta|DiagLog)\.onChange\s*\{""").findAll(src).map { it.value }.toList()
+        assertEquals("strong host listeners left: $strong", emptyList<String>(), strong)
+        val weak = Regex("""\b(HomeSettings|HomeLayoutStore|RadialMeta|DiagLog)\.onChange\(weakly\(this\) \{ h ->""").findAll(src).count()
+        assertEquals("every one of them weakly", 7, weak)
+        assertTrue("a gone host's layout listener sends nothing",
+            src.contains("HomeLayoutStore.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let {"))
     }
 }

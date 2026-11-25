@@ -40,6 +40,9 @@ object TopCombatBar {
      *  goes where the cast bar goes (the add-on draws its swing line over our top bar; PadMap m190 stopped reading the game's setting) */
     fun honoured(l: HomeLayout, ct: Int?, cc: Int? = null): HomeLayout {
         val r = if (wanted(l) && ct != 1) l.copy(fight = HomeLayout.FightBand.GROW) else l
+        // the 1528 audit: with the Wings on, the add-on's word both ways - Top screen -> Bottom screen switched MID-FIGHT left the add-on's
+        // own bar up until the fight's end (castCheck sends nothing in a fight) while the strip took the line at once: both screens
+        if (r.fight == HomeLayout.FightBand.TOP && cc == 1) return if (r.fightCast == HomeLayout.FightCast.TOP) r else r.copy(fightCast = HomeLayout.FightCast.TOP)
         return if (r.fightCast == HomeLayout.FightCast.TOP && cc != 1) r.copy(fightCast = HomeLayout.FightCast.BOTTOM) else r
     }
 

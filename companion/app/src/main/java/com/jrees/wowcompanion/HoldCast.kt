@@ -185,6 +185,19 @@ object HoldCast {
         if (wasBusy != gate.busy() || gate.busy()) onChange?.invoke()
         return o
     }
+    /**
+     * THE WINHANDLER PACKETS' BUTTONS for player 1 (the 1528 audit): [gated] the gate's output (its bits 0..9; 10..13 its D-pad and 15
+     * its marker never go here), [raw] GamepadState's own buttons, whose bits 10 / 11 are the digital L2 / R2 (ExternalController /
+     * PhysicalControllerHandler set them): kept as the controller has them while the triggers go as they are ([ltOut] == [lt]), else from
+     * the triggers the gate sends (a held-back press's own layer). Cutting them to 0x3FF lost them on every send, the gate off too
+     */
+    @JvmStatic fun packetButtons(gated: Int, raw: Int, lt: Float, rt: Float, ltOut: Float, rtOut: Float): Int {
+        val l2 = if (ltOut == lt) raw and L2_BIT else if (ltOut > 0f) L2_BIT else 0
+        val r2 = if (rtOut == rt) raw and R2_BIT else if (rtOut > 0f) R2_BIT else 0
+        return (gated and 0x3FF) or l2 or r2
+    }
+    private const val L2_BIT = 1 shl 10
+    private const val R2_BIT = 1 shl 11
     @JvmStatic fun ltOut(): Float = gate.ltOut
     @JvmStatic fun rtOut(): Float = gate.rtOut
     /** when the launcher must send again (uptime ms), or Long.MAX_VALUE */

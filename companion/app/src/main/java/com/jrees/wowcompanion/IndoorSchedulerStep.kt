@@ -370,6 +370,12 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** the builder holds the game files now (between its open and its close) */
     @Volatile internal var filesOpen = false
         private set
+    /** the 1528 audit: the builder is OPENING the game files (CascLib's open: ~5 s, +500 MB) - Play's wait counts it as open */
+    @Volatile private var filesOpening = false
+
+    /** the 1528 audit: right after the open, [why] the pause reason now and [stopping]: Play pressed during the open (or a stop) lets the
+     *  files go at once, before any building (they went on into one beside the booting game); any other pause is the scheduler's own */
+    internal fun letGoAfterOpen(why: String?, stopping: Boolean): Boolean = stopping || why == PlayGate.GAME_RUNNING
     /** when it last let them go (epoch ms) */
     @Volatile private var closedAt = 0L
 
@@ -384,11 +390,12 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     fun letGoForPlay(maxMs: Long = PLAY_WAIT_MS): Long {
         val t0 = System.currentTimeMillis()
         nudge()
-        while (filesOpen && System.currentTimeMillis() - t0 < maxMs) runCatching { Thread.sleep(10) }
+        while ((filesOpen || filesOpening) && System.currentTimeMillis() - t0 < maxMs) runCatching { Thread.sleep(10) }
         val waited = System.currentTimeMillis() - t0
         val press = LauncherHooks.playPressAtMs
         runCatching {
-            if (filesOpen) Log.w(TAG, "interiors: Play waited $waited ms and goes on; the builder is still letting go of the game files")
+            if (filesOpen || filesOpening) Log.w(TAG, "interiors: Play waited $waited ms and goes on; the builder is still " +
+                if (filesOpen) "letting go of the game files" else "opening the game files (they go right after the open)")
             else Log.i(TAG, "interiors: Play waited $waited ms; the game files " +
                 if (press > 0L && closedAt >= press) "were let go ${closedAt - press} ms after Play" else "were not open")
         }
@@ -495,15 +502,24 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** one run with the game files open; the outcome, or null after a failure (logged and shown) */
     private fun runOnce(ctx: Context, factory: IndoorGenerator.Factory, signals: AndroidSignals): IndoorScheduler.Outcome? {
         try {
-            val game = GameFiles.open(ctx) ?: run {
+            // the 1528 audit: the open itself counts for Play's wait (it saw "not open" and the builder went on into a building)
+            filesOpening = true
+            val game = try { GameFiles.open(ctx) } catch (e: Throwable) { filesOpening = false; throw e } ?: run {
+                filesOpening = false
                 // fix 2: a failure keeps the count on the row (never 0/0)
                 publishStatus(ctx, failedStatus(countedStatus(ctx), GameFiles.lastWhy ?: "the game files could not be read", finishKey(ctx)))
                 return null
             }
             filesOpen = true
+            filesOpening = false
             // 2026-11-24: a damaged read beside the running game (Build now; the game may write its Data then) is not marked as damage
             game.besideGame = { LauncherHooks.gameUp() && !PlayGate.streamingNow() }
             return try { game.use { g ->
+                // the 1528 audit: Play (or a stop) came while the files opened: they go now, before any building
+                if (letGoAfterOpen(runCatching { IndoorScheduler.pauseReason(signals) }.getOrNull(), stopping)) {
+                    Log.i(TAG, "interiors: Play or a stop came during the game files' open: let go at once")
+                    return@use IndoorScheduler.Outcome.RELEASED
+                }
                 factory.open(g).use { gen ->
                     val root = ArtHarvest.root(ctx)
                     // 1.0.22 (the user: "the indoor maps are just not completing ... it does not progress" - 1616/1837, all 221 left DEFERRED by

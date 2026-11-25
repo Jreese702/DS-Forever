@@ -455,6 +455,28 @@ class IndoorBuildAnywhereTest {
         assertEquals(1_000L, IndoorSchedulerStep.PLAY_WAIT_MS)
     }
 
+    /**
+     * the 1528 audit: Play pressed while the builder OPENS the game files (CascLib's ~5 s, +500 MB; on the start screen that is right
+     * after the app opens) - Play's wait saw nothing open ("were not open") and the builder went on into its first building beside the
+     * booting game. Now the open counts for Play's bounded wait, and once it returns a Play (or a stop) since lets the files go at once
+     */
+    @Test fun playDuringTheOpenWaitsForItAndTheFilesGoRightAfter() {
+        val f = IndoorSchedulerStep::class.java.getDeclaredField("filesOpening").apply { isAccessible = true }
+        f.setBoolean(IndoorSchedulerStep, true)
+        try {
+            val waited = IndoorSchedulerStep.letGoForPlay(maxMs = 300L)
+            assertTrue("an open under way: Play waits (bounded): $waited ms", waited in 300L..600L)
+        } finally { f.setBoolean(IndoorSchedulerStep, false) }
+        assertTrue("Play since the open: let go", IndoorSchedulerStep.letGoAfterOpen(PlayGate.GAME_RUNNING, stopping = false))
+        assertTrue("a stop since the open: let go", IndoorSchedulerStep.letGoAfterOpen(null, stopping = true))
+        assertFalse("nothing since: it builds", IndoorSchedulerStep.letGoAfterOpen(null, stopping = false))
+        assertFalse("a pause as ever (the scheduler's own gate)", IndoorSchedulerStep.letGoAfterOpen(PlayGate.PLAYER_MOVING, stopping = false))
+        val run = src("companion/app/src/main/java/com/jrees/wowcompanion/IndoorSchedulerStep.kt")
+            .substringAfter("private fun runOnce(").substringBefore("factory.open(g)")
+        assertTrue("the open is marked before it starts", run.indexOf("filesOpening = true") in 0 until run.indexOf("GameFiles.open(ctx)"))
+        assertTrue("and checked right after it", run.indexOf("letGoAfterOpen(") > run.indexOf("GameFiles.open(ctx)"))
+    }
+
     // ------------------------------------------------------------------ the wiring (source pins)
 
     private fun src(rel: String): String = listOf(File("../$rel"), File(rel)).first { it.isFile }.readText()
