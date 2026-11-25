@@ -239,4 +239,21 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
             return true
         }
     }
+
+    companion object {
+        /**
+         * Home never laid yet: a fresh host in single screen mode (the switch, every launcher resume) starts on the game with the rooms
+         * column GONE, so no layout pass ever reaches [home] and its places - what the docks show (HomeView.dockLaid) - are never worked
+         * out until Home's page shows once. [column] (the rooms column holding Home) is measured and laid ONCE at the panel's ([l], [t],
+         * [r], [b]) out of the window's own passes (it stays GONE); Home works its places out at its first size (its onSizeChanged).
+         * True = laid now; a Home laid already is left alone
+         */
+        fun layHomeOnce(home: View, column: View, l: Int, t: Int, r: Int, b: Int): Boolean {
+            if (home.width > 0 && home.height > 0) return false
+            if (r <= l || b <= t) return false
+            column.measure(View.MeasureSpec.makeMeasureSpec(r - l, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(b - t, View.MeasureSpec.EXACTLY))
+            column.layout(l, t, r, b)
+            return home.width > 0 && home.height > 0
+        }
+    }
 }

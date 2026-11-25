@@ -2387,6 +2387,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the top panel runs up to 120 Hz: Home's frames (the docked map's trail above all) paced while moving / fighting with Home's rest
         // being the game, not only while Home's page shows (the two-screen probe above stays as it was)
         FramePace.probe = playProbe
+        // the host's first look (onCreate's show(Room.HOME), before this wiring: no docks yet) given to the docks now - else they would
+        // wait for the look's next change (a fresh host after the switch starts on PLAY and stays there)
+        singleLookNow?.let { singlePlayLook(it) }
     }
 
     /** PLAY: the look applied (before the rooms column shows): the docks up with Home's views lent in the PLAY state, else gone and the
@@ -2395,13 +2398,20 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val d = docks ?: return
         playLook = l
         val play = l.docks && room == Room.HOME
-        castView.readAway = play
+        // the band's controller reader runs whenever Home is the room, as with two screens (Home's page is under every overlay there):
+        // never stopped at a look's edge on Home - the class wheel opened from the game (NPC's Home layers), Home's glance, a quick
+        // wheel - since a stop lets every held button and stick go at once (PadInput.stop), which would end the class wheel's chord
+        castView.readAway = room == Room.HOME
         if (!play) {
             ui.removeCallbacks(playTick)
             d.show(false)
             homeView.reclaimFromDocks()
             return
         }
+        // a fresh host starts here with Home never laid (its rooms column GONE from the first look): laid once at the panel's place
+        val b = single?.box
+        if (b != null && roomsRoot != null && SingleDocks.layHomeOnce(homeView, roomsRoot!!, b[0], b[1], b[2], b[3]))
+            Log.i("WCHOME", "one screen: Home laid once for the docks (${homeView.width} x ${homeView.height})")
         homeView.lendToDocks(d.chat, d.party, d.map)
         val was = d.up
         d.show(true)
@@ -2419,12 +2429,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val hud = SinglePlayLayout.Hud(GameUi.hudHeight() ?: SinglePlayLayout.Y_DEF, GameUi.hudWidth() ?: SinglePlayLayout.W_DEF,
             GameUi.hudScale() ?: SinglePlayLayout.S_DEF)
         val p = SinglePlayLayout.plan(SinglePlayLayout.arr(homeView.fightShown()), laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH())
-        val hide = HashSet<SinglePlayLayout.Piece>()
-        if (!laid.chat) hide += SinglePlayLayout.Piece.CHAT
-        if (!laid.map) hide += SinglePlayLayout.Piece.MAP
+        // the fight's rolls in the map's place, LB's party picture over the party list (NPC's strip, SingleLook rows 9 / 10)
         val l = playLook
-        if (l?.strip == "rolls") hide += SinglePlayLayout.Piece.MAP
-        if (l?.frame == SingleLook.Frame.FULL) hide += SinglePlayLayout.Piece.PARTY
+        val hide = SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map)
         val before = d.plan?.arr
         d.arrange(p, animate && before != null, hide)
         if (before != null && before != p.arr) Log.i("WCHOME", "one screen: the docks ${if (p.arr == SinglePlayLayout.Arr.IN) "into the fight" else "out of the fight"} " +

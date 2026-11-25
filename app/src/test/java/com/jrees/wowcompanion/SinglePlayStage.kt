@@ -18,7 +18,7 @@ import java.time.Duration
  * party of four, ten chat lines, a focused quest, the Elwynn map) lent to the REAL SingleDocks, whose top-screen windows are
  * [FakeShell]'s: each sub a FrameLayout placed by its bounds in a 1920 x 1080 "screen" (as fork/SubWindow places its window).
  */
-class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1920, val h: Int = 1080) {
+class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1920, val h: Int = 1080, laid: Boolean = true) {
     val holder = FrameLayout(app)
     val map = MapView(app)
     val cast = CastView(app) { }
@@ -116,7 +116,7 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
         home.forceLive = true
         home.borrow()
         home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m199","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":0,"cc":0,"pv":0,"ss":1}}}"""))!!)
-        lay(home, HW, HH)
+        if (laid) lay(home, HW, HH)
         cast.roomBarOn = true
         cast.roomBar = HoldTalk.DEFAULT_DIRS
         cast.update(JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1)
@@ -131,10 +131,10 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
         home.partyChanged()
         home.tick()
         ShadowLooper.idleMainLooper()
-        lay(home, HW, HH)
+        if (laid) lay(home, HW, HH)
         HomeView::class.java.getDeclaredMethod("changed").apply { isAccessible = true }.invoke(home)
         settle()
-        lay(home, HW, HH)
+        if (laid) lay(home, HW, HH)
         docks = SingleDocks(app, shell, cast)
     }
 
@@ -153,10 +153,7 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
         docks.show(true)
         val laid = home.dockLaid()
         val p = SinglePlayLayout.plan(arr, laid.party, SinglePlayLayout.Hud(), w, h, home.dockPartyH())
-        val hide = HashSet<SinglePlayLayout.Piece>()
-        if (!laid.chat) hide += SinglePlayLayout.Piece.CHAT
-        if (!laid.map) hide += SinglePlayLayout.Piece.MAP
-        docks.arrange(p, animate, hide)
+        docks.arrange(p, animate, SinglePlayLayout.hidden(null, false, laid.chat, laid.map))
         return p
     }
 

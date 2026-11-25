@@ -259,6 +259,21 @@ object SinglePlayLayout {
         return Box(m(a.l, b.l), m(a.t, b.t), m(a.r, b.r), m(a.b, b.b))
     }
 
+    // ---------------------------------------------------------------- what the docks leave out now
+
+    /**
+     * the dock pieces not shown now: what Home does not lay ([chatLaid] / [mapLaid] false), the map while the fight's rolls stand in its
+     * place (NPC's strip [SingleNpc.ROLLS]), the party list while LB's party picture stands over it (NPC's strip [SingleNpc.LB], display
+     * only) or while our window covers the screen ([fullFrame])
+     */
+    fun hidden(strip: String?, fullFrame: Boolean, chatLaid: Boolean, mapLaid: Boolean): Set<Piece> {
+        val h = HashSet<Piece>()
+        if (!chatLaid) h += Piece.CHAT
+        if (!mapLaid || strip == SingleNpc.ROLLS) h += Piece.MAP
+        if (strip == SingleNpc.LB || fullFrame) h += Piece.PARTY
+        return h
+    }
+
     // ---------------------------------------------------------------- the frame pace (FramePace.probe in single screen mode)
 
     /**
