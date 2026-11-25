@@ -56,11 +56,11 @@ object PerformanceTileModel {
 
     /** what the tiles show and their lines offer, read once per draw from FrameGen / Settings / the bake's status */
     data class State(
-        val limit: Int = 40,
+        val limit: Int = FrameGen.LIMIT_DEFAULT,
         /** a restart would change the running game's frame limit / frame generation (the game runs, no restart under way) */
         val limitWaits: Boolean = false, val fgWaits: Boolean = false,
         val hasDll: Boolean = false, val fgOn: Boolean = false, val multiplier: Int = 2, val flow: Float = FrameGen.FLOW_DEFAULT,
-        val perfMode: Boolean = true, val lastPick: String = "", val limitNote: Boolean = false,
+        val perfMode: Boolean = true, val lastPick: String = "",
         val lighter: Boolean = false, val lighterFixed: Boolean = false, val lowGfx: Boolean = false, val mapFull: Boolean = false,
         /** Settings > Performance > Map style when zoomed out: true = Terrain (the default), false = Painted */
         val mapTerrain: Boolean = true,
@@ -213,7 +213,6 @@ object PerformanceTileModel {
         LIMIT -> when {
             s.limitWaits || s.fgWaits -> ""
             s.limit > 0 && s.limit !in FrameGen.LIMITS -> "${s.limit} fps, set in the launcher's menu"
-            s.limitNote && s.limit == FrameGen.LIMIT_MIGRATED -> "Set to 40 for battery and heat"
             else -> ""
         }
         FG -> when {
@@ -498,7 +497,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             limitWaits = up && !restarting && FrameGen.limitNeedsRestart(FrameGen.launchedLimit, lim),
             fgWaits = FrameGen.showRestart(up, restarting, FrameGen.launched, FrameGen.current()),
             hasDll = FrameGen.hasDll(), fgOn = FrameGen.enabled, multiplier = FrameGen.multiplier, flow = FrameGen.flowScale,
-            perfMode = FrameGen.performance, lastPick = FrameGen.lastPick, limitNote = FrameGen.limitNote,
+            perfMode = FrameGen.performance, lastPick = FrameGen.lastPick,
             lighter = Settings.lighterMode, lighterFixed = DeviceTier.smallModel(), lowGfx = Settings.lowMemGraphics,
             mapFull = Settings.homeMapFull, mapTerrain = Settings.homeMapTerrain, lowGfxChanged = lowGfxChanged,
             vramCap = Settings.vramCap, vramChanged = vramChanged, pageOut = Settings.pageOut, pageOutChanged = pageOutChanged,
