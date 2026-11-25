@@ -52,6 +52,19 @@ class HoldCastUiTest {
         assertNull("an add-on before m190 says nothing", padmap(null).holdOn)
     }
 
+    @Test fun aHoldOnlyOnAButtonThatHasSomething() {
+        // the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"
+        val m = padmap()
+        assertTrue("a spell", PadMapModel.holdable(PadMapModel.slot(m, 2, 6)))
+        assertTrue("a base face: its game action (a tap does it)", PadMapModel.holdable(PadMapModel.slot(m, 1, 8)))
+        val empty = PadMapModel.Slot(3, 3, PadMapModel.Kind.NONE, null, null, 0)
+        assertFalse("an empty button", PadMapModel.holdable(empty))
+        assertFalse(PadMapModel.holdable(null))
+        val room = kt("PadTabPage.kt")
+        assertTrue("no Bind hold button on an empty one", room.contains("&& PadMapModel.holdable(slotOf(m, shown(), pos))"))
+        assertTrue("no Hold row on an empty one", room.contains("if (holdOn(m) && PadMapModel.holdable(sl)) {"))
+    }
+
     @Test fun theHoldCooldowns() {
         val cd = PadMapModel.parseHoldCd(JSONObject().put("type", "holdcd").put("k", JSONObject()
             .put("lt:6", JSONObject().put("d", 8).put("l", 5.5))
@@ -112,7 +125,21 @@ class HoldCastUiTest {
         // (the 1528 merge of feat/exit-now's view release: held weakly - HoldCast is an object, the Home it drew for is let go)
         assertTrue(home.contains("HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }"))
         val room = kt("PadTabPage.kt")
-        assertEquals("the Hold block on the three right pages", 3, Regex("drawHoldBlock\\(c, m, sl, w, above").findAll(room).count())
+        // the user's follow-up (2026-11-24): the pane = Press + Hold only, no In combat / Otherwise pair; Y Hold spell a real button
+        assertTrue(room.contains("if (holdHere(m) && talkKind() == TALK_NONE) { drawHoldPane(c, m, s, slc, w, h); return }"))
+        val pane = room.substringAfter("private fun drawHoldPane(").substringBefore("\n    }\n")
+        assertFalse("no Otherwise row in the pane", pane.contains("\"Otherwise\""))
+        assertFalse("no over-macro line in the pane (the grid's mark says it)", pane.contains("overMacro"))
+        assertTrue(pane.contains("Tr.t(\"Press\")") && pane.contains("Tr.t(\"Hold\")"))
+        // the user, 2026-11-24: "Use the word bind instead of change"; "the bind hold should be under the move"
+        assertTrue("Y Bind hold: the kit's button", pane.contains("UiKit.button(c, holdRect(m, w, h), HOLD_BIND, glyph(6)"))
+        assertTrue("A Bind", pane.contains("if (fightTab) \"Bind combat spell\" else \"Bind\", glyph(8)") && !pane.contains("\"Change"))
+        assertTrue("the order: X Move above Y Bind hold above A Bind (the hold in Move's own place, Move one step up)",
+            room.contains("private fun holdRect(m: PadMapModel.Map, w: Float, h: Float): RectF = moveRect(w, h)")
+                && pane.contains("UiKit.button(c, moveAt(w, h), \"Move\""))
+        assertTrue("its touch: Book b80's page-3 code 28",
+            room.contains("tap(PadMapModel.holdCells())") && PadMapModel.holdCells().last() == (PadMapModel.ROW_PADTAB to 28))
+        assertTrue("the controller's Y pushes it", room.contains("return DOWN_HOLD   // m190: Y Hold spell, pushed at the press"))
         assertTrue(room.contains("HoldArt.badge(c, r.left + 12f * k, r.top + 12f * k, 15f * k, Icons.get(hr.icon), -1f, lit = false)"))
         assertTrue(room.contains("if (holdChooser()) return if (sl?.hold != null) Thing.Unhold else null"))
         assertTrue(kt("SpellsOverlay.kt").contains("holdHint(c, box.left + 80f, HINT_Y)"))
@@ -123,8 +150,9 @@ class HoldCastUiTest {
     }
 
     @Test fun spanishAndFrench() {
-        val words = listOf(PadTabPage.HOLD_HINT, PadTabPage.HOLD_OFF_LINE, "Clear hold spell", "Hold spell on", SpellsOverlay.HOLD_HINT,
-            "Hold time", "Normal", "Short", "Long", "Hold")
+        val words = listOf(PadTabPage.HOLD_BIND, "Bind", "Bind combat spell", PadTabPage.HOLD_OFF_LINE, "Clear hold spell", "Hold spell on",
+            SpellsOverlay.HOLD_HINT, "Hold time", "Normal", "Short", "Long", "Hold", "hold", "Press",
+            "Fight buttons unavailable: the game is not taking key changes right now")
         for (l in listOf("es", "fr")) {
             val o = JSONObject(File(i18n, "$l.json").readText())
             val plain = o.getJSONObject("plain")

@@ -1,5 +1,11 @@
 {
 "plain": {
+"Bind hold": "Asignar al mantener",
+"Bind combat spell": "Asignar hechizo de combate",
+"Bind puts a spell from your book, or one of the game's commands, on this button.": "Asignar pone un hechizo de tu libro, o uno de los comandos del juego, en este botón.",
+"hold": "mantener",
+"Change hold": "Cambiar al mantener",
+"Fight buttons unavailable: the game is not taking key changes right now": "Botones de combate no disponibles: el juego no acepta cambios de teclas ahora",
 "Hold spell": "Hechizo al mantener",
 "Hold to cast isn't available yet": "Mantener para lanzar aún no está disponible",
 "Clear hold spell": "Quitar hechizo al mantener",
@@ -2412,6 +2418,7 @@
 "In the row under the clock, with a hunter's pet.": "En la fila bajo el reloj, con la mascota de un cazador."
 },
 "templates": {
+"The game has no key on %s now: check the game's controller keys": "El juego no tiene tecla en %s ahora: revisa las teclas del mando del juego",
 "hold %s": "mantener %s",
 "DS Forever's %s runs here, over your macro": "%s de DS Forever se usa aquí, por encima de tu macro",
 "In combat: %s casts here in fights, over your macro": "En combate: %s se lanza aquí en los combates, por encima de tu macro",

@@ -38,7 +38,7 @@ def block(begin, end):
 
 
 # ---------------------------------------------------------------- 0. the tag
-check('local PV = "m191"' in SRC and 'm190 SIT BY THE FIRE' in SRC, "0. PadMap's tag m190 and its note")
+check('local PV = "m192"' in SRC and 'm190 SIT BY THE FIRE' in SRC, "0. PadMap's tag m190 and its note")
 
 # ---------------------------------------------------------------- 1. the snippet
 L = lupa.LuaRuntime(unpack_returned_tuples=True)

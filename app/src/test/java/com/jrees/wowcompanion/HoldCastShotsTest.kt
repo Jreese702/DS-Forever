@@ -145,7 +145,8 @@ class HoldCastShotsTest {
             v.onPadTabCtl(ctl("combat", 2, 6)); shot(v, "r2_room_in_combat_lt_y_hold_row")
             v.onPadTabCtl(ctl("normal", 1, 8)); shot(v, "r3_room_base_a_hold_row")
             v.onPadTabCtl(ctl("normal", 2, 8)); shot(v, "r4_room_lt_a_hold_row")
-            v.onPadTabCtl(ctl("normal", 1, 6)); shot(v, "r5_room_base_y_no_hold_hint_only")
+            v.onPadTabCtl(ctl("normal", 1, 6)); shot(v, "r5_room_base_y_no_hold_bind_hold")
+            v.onPadTabCtl(ctl("normal", 2, 7)); shot(v, "r10_room_empty_button_no_hold")
             v.onPadTabCtl(ctl("normal", 2, 6, JSONObject().put("list", "spells").put("row", 3).put("id", "1064").put("hold", true)))
             shot(v, "r6_room_hold_chooser")
         }
