@@ -413,8 +413,21 @@ class HomeEditShotsTest {
         settle()
         return p
     }
-    /** the band's pixels as Home draws it now */
+    /**
+     * The band's art and icons decode on CastView's ART_EXEC (a real background thread) and land through the main looper: a capture taken
+     * while a decode is in flight draws the vector stand-ins, the next one the art - two "wiggle times" that differ all over the band
+     * (theTopBarStaysStillOutsideItsPieces failed so, alongside other tests: the decode's real time against the shadow clock). Drained
+     * here: every task handed to the executor done (it is single-threaded: a no-op submitted after them runs last), its results posted
+     * and run, twice over (a landing may ask for more)
+     */
+    private fun drainArt() {
+        val ex = CastView::class.java.getDeclaredField("ART_EXEC").apply { isAccessible = true }.get(null) as java.util.concurrent.ExecutorService
+        repeat(3) { ex.submit { }.get(10, java.util.concurrent.TimeUnit.SECONDS); ShadowLooper.idleMainLooper() }
+    }
+
+    /** the band's pixels as Home draws it now (its art landed first: [drainArt]) */
     private fun bandPx(p: Page, bars: RectF): IntArray {
+        drainArt()
         setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
         // the band's own clock: its hud as just received (a hud older than CastView's STALE_MS draws the bar greyed; a new hud document
         // would play its own focus glow)
