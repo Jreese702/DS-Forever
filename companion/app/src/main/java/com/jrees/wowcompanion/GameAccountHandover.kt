@@ -11,7 +11,7 @@ import java.util.Locale
  * launcher credential the helper writes GAME_ACCOUNT and REGION in the Wine registry (HKCU\Software\Blizzard Entertainment\Battle.net\
  * Launch Options\WoW), and the game skips its "Select an account" list itself. No key presses, no Config.wtf or CVar write.
  *
- *  - ONLY Browser login (opt-in), ONLY with Game account = "Remembered" (shown "Skip (Browser login)"); "Ask each time" hands nothing
+ *  - ONLY Browser login (opt-in), ONLY with Game account = "Remembered" (shown "Skip (Blizzard's page)"); "Ask each time" hands nothing
  *    over (the list shows, as before). The saved login (login.txt) is the game's kiosk login: it never takes an account, so it still
  *    shows the list.
  *  - WHICH ACCOUNT: the player's remembered one (Settings.gameAccountPick), and only when Battle.net lists it for THIS login

@@ -58,8 +58,9 @@ class BrowserLoginTest {
     // ---- the Settings row
 
     @Test fun theSettingsRowAndItsRestart() {
-        assertEquals("Browser login", BrowserLogin.ROW_ID)
-        assertEquals(listOf("Off", "On"), BrowserLogin.SEGMENTS)
+        // 2026-11-24: the row reads as the start screen Menu's button (SignInMenuTest): Off = Saved login, On = Blizzard's page
+        assertEquals("Battle.net sign-in", BrowserLogin.ROW_ID)
+        assertEquals(listOf("Saved login", "Blizzard's page"), BrowserLogin.SEGMENTS)
         assertFalse("no game started: nothing to restart", BrowserLogin.showRestart(true, false, null, true))
         BrowserLogin.markLaunched(false)
         assertTrue("the running game used the saved login, On chosen", BrowserLogin.showRestart(true, false, BrowserLogin.launched, true))

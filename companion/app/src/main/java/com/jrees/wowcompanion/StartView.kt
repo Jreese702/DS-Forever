@@ -26,6 +26,14 @@ class StartView(context: Context) : View(context) {
         set(v) { if (field != v) { field = v; invalidate() } }
 
     /**
+     * ONE TERSE LINE UNDER THE LINE, in the same panel (the user, 2026-11-24: advise Blizzard's page after other sign-in errors;
+     * BrowserLogin.startHint): "Try Battle.net sign-in: Blizzard's page (Menu)" under the error, or the Menu's Restart game while the
+     * running game signed in the other way. Words only: no button. null = the line alone. Never with the add-ons' card.
+     */
+    var hint: String? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /**
      * OUR OWN BATTLE.NET SIGN-IN (LATER 29; the user, 2026-10-05: "I want the Bnet login to basically show the first time and then after
      * the details are entered, then I want it to have a notmal login button and then like a gear to the left of it which just reopens
      * the login prompts"). Only while the game's login screen is up: FIRST = no saved login, one "Battle.net login" button; SAVED =
@@ -107,7 +115,10 @@ class StartView(context: Context) : View(context) {
         val panel = RectF(SIDE_M + SIDE_W + GAP, sideTop, width - SIDE_M - SIDE_W - GAP, sideTop + BUTTON_H)
         UiKit.module(c, panel)
         val card = addons?.takeIf { addonsShown }
-        if (card != null) drawCard(c, panel, card) else {
+        val under = hint
+        if (card != null) drawCard(c, panel, card)
+        else if (under != null) drawHint(c, panel, under)
+        else {
             val words = UiKit.bodyPaint(LINE_SIZE)
             while (words.measureText(line) > panel.width() - LINE_PAD * 2 && words.textSize > LINE_MIN) words.textSize -= 1f
             UiKit.outlined(c, line, cx, panel.centerY() - (words.ascent() + words.descent()) / 2f, words.textSize, Theme.text)
@@ -167,6 +178,20 @@ class StartView(context: Context) : View(context) {
         else UiKit.button(c, go, "Login", GLYPH_A, if (pressed == CURSOR_LOGIN) UiKit.Button.DOWN else UiKit.Button.UP)
         hits += gear to CURSOR_GEAR
         hits += go to CURSOR_LOGIN
+    }
+
+    /** the line and [hint] under it in the line's panel, each translated and shrunk to fit on one line (the hint in gold) */
+    private fun drawHint(c: Canvas, panel: RectF, under: String) {
+        val w = panel.width() - LINE_PAD * 2
+        val top = Tr.t(line); val low = Tr.t(under)
+        val tp = UiKit.bodyPaint(HINT_LINE)
+        while (tp.measureText(top) > w && tp.textSize > CARD_MIN) tp.textSize -= 1f
+        val hp = UiKit.bodyPaint(HINT_SIZE)
+        while (hp.measureText(low) > w && hp.textSize > CARD_MIN) hp.textSize -= 1f
+        val th = tp.textSize * 1.2f; val hh = hp.textSize * 1.2f
+        val y = panel.centerY() - (th + hh) / 2f
+        UiKit.outlined(c, top, panel.centerX(), y + th / 2f, tp.textSize, Theme.text)
+        UiKit.outlined(c, low, panel.centerX(), y + th + hh / 2f, hp.textSize, Theme.gold)
     }
 
     /**
@@ -251,6 +276,9 @@ class StartView(context: Context) : View(context) {
         const val CARD_TEXT = 24f
         const val CARD_MIN = 18f
         const val CARD_LINES = 3
+        /** the line and the hint under it ([hint]): their sizes (each shrinks to CARD_MIN at the least) */
+        const val HINT_LINE = 30f
+        const val HINT_SIZE = 26f
         const val HOW_W = 260f
         /** Report and Keyboard, in the row's line at the screen's two ends */
         const val SIDE_M = 40f

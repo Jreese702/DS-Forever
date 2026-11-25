@@ -8,6 +8,10 @@ package com.jrees.wowcompanion
  * restarts the game. Issue 569: also when a captcha ran out of time (the game's refusal 325 right after a captcha): Blizzard's own page
  * takes the captcha by touch on the bottom screen.
  *
+ * THE MENU AND THE ADVICE (the user, 2026-11-24): the row is now "Battle.net sign-in: Saved login / Blizzard's page", the same setting
+ * as the start screen Menu's button (StartMenu.SIGNIN). After any OTHER refusal it could fix ([advise]), the start screen says so in one
+ * line under the error ([ADVICE_LINE]); never a button, never a switch by itself.
+ *
  * The launcher (app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin) reads [Settings.browserLogin] at each game start and says which
  * way that start signed in ([markLaunched]): the Settings row offers "Restart the game" while the running game started the other way.
  * Nothing of an account, a ticket, a token or an address ever passes through here. Pure, but for the volatile fields the launcher sets.
@@ -16,9 +20,16 @@ object BrowserLogin {
     /** the saved choice's key (Settings' prefs) */
     const val KEY = "browserLogin"
 
-    /** the Settings row's own words (SettingsTabs, GeneralTiles) */
-    const val ROW_ID = "Browser login"
-    val SEGMENTS = listOf("Off", "On")
+    /**
+     * the Settings row's own words (SettingsTabs, GeneralTiles) AND the start screen Menu's button (StartMenu.SIGNIN): ONE saved setting,
+     * read the same in both places (the user, 2026-11-24: "Maybe we add a battlenet sign in setting to the menu"). Off = "Saved login",
+     * On = "Blizzard's page"; the key ([KEY]) is the old one, so a choice made before keeps
+     */
+    const val ROW_ID = "Battle.net sign-in"
+    val SEGMENTS = listOf("Saved login", "Blizzard's page")
+
+    /** a choice's words: [SEGMENTS] (English: the drawing translates) */
+    fun words(browser: Boolean): String = SEGMENTS[if (browser) 1 else 0]
 
     /** the start screen's one button after a BLZ51914400 refusal, and the line over it */
     const val OFFER_BUTTON = "Sign in with Blizzard's page"
@@ -55,6 +66,59 @@ object BrowserLogin {
     fun isBlz14400(reason: String?): Boolean {
         val r = reason ?: return false
         return "BLZ51914400" in r || Regex("""\(\s*$BLZ_14400\s*\)""").containsMatchIn(r)
+    }
+
+    // ---- the advice after another refusal (the user, 2026-11-24: "we can advise people with other login errors to try it"; picked
+    // "Offer, never switch by itself"): one line under the error on the start screen, no button, nothing switched
+
+    /** the line under the error: where the choice is (the start screen's Menu) */
+    const val ADVICE_LINE = "Try Battle.net sign-in: Blizzard's page (Menu)"
+
+    /** the line under the start screen's line while the running game started the other way ([showRestart]): the Menu's Restart game */
+    const val RESTART_PAGE = "Restart game (Menu) to use Blizzard's page"
+    const val RESTART_SAVED = "Restart game (Menu) to use the saved login"
+
+    /** the game's result code for a wrong email or password (measured 2026-10-05 on the wrong-password path: "WOW_ERROR (14500)") */
+    const val WRONG_LOGIN_14500 = "14500"
+
+    /**
+     * a refusal the other sign-in way cannot fix, so no advice: the login itself is wrong (14500, a password / credential / authenticator
+     * word: the fix is Change login or the right code, not Blizzard's page), or the account cannot play (banned, suspended, locked,
+     * cancelled, parental controls, no game account, licence or subscription words). Pure.
+     */
+    fun notTheWay(reason: String): Boolean {
+        if (Regex("""\(\s*$WRONG_LOGIN_14500\s*\)""").containsMatchIn(reason)) return true
+        val r = reason.lowercase()
+        return NOT_THE_WAY.any { it in r }
+    }
+    private val NOT_THE_WAY = listOf("password", "credential", "authenticator", "incorrect", "banned", "suspend", "locked", "cancel",
+        "parental", "no_game_account", "no game account", "license", "licence", "subscription")
+
+    /**
+     * the start screen advises Blizzard's page ([ADVICE_LINE] under [failedLine]): the game refused this run's sign-in ([failed]) for a
+     * reason ([reason], HomeLogin's short one) other than the two that offer the button ([offer]: BLZ51914400, the captcha's 325) and
+     * other than one the other way cannot fix ([notTheWay]); the choice is the saved login ([browserOn] = false: never while Blizzard's
+     * page is chosen or this run uses it), a saved login exists ([saved]: else the first-time Save row keeps the place) and no restart is
+     * under way. Pure.
+     */
+    fun advise(failed: Boolean, reason: String?, browserOn: Boolean, restarting: Boolean, captcha: Boolean = false, saved: Boolean = true): Boolean {
+        if (!failed || browserOn || restarting || !saved) return false
+        val r = reason?.takeIf { it.isNotBlank() } ?: return false
+        return !offer(true, r, false, false, captcha) && !notTheWay(r)
+    }
+
+    /** the start screen's line for an advised refusal (the game's short reason; English: the drawing translates). Pure. */
+    fun failedLine(reason: String): String = "Sign-in failed: $reason"
+
+    /**
+     * the one line under the start screen's line, or null: [RESTART_PAGE] / [RESTART_SAVED] while the running game started the other
+     * way ([showRestart]: the Menu's Restart game is the way, nothing restarts by itself), else [ADVICE_LINE] when [advise]. Pure.
+     */
+    fun startHint(failed: Boolean, reason: String?, captcha: Boolean, browserOn: Boolean, restarting: Boolean, saved: Boolean,
+                  gameUp: Boolean, launched: Boolean?, chosen: Boolean): String? = when {
+        showRestart(gameUp, restarting, launched, chosen) -> if (chosen) RESTART_PAGE else RESTART_SAVED
+        advise(failed, reason, browserOn, restarting, captcha, saved) -> ADVICE_LINE
+        else -> null
     }
 
     /** the saved login for a login.txt ([saved]), or null WITHOUT asking it in browser login ([browser]): NativeLogin's one gate. Pure. */

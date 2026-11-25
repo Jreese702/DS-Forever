@@ -1042,6 +1042,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         StartMenu.region = { GameRegion.chosen(this) ?: regionNow ?: runCatching { GameRegion.current(this, GameFiles.gameRoot(this)) }.getOrDefault("us").also { regionNow = it } }
         // (the choice is read first by StartMenu.region: regionNow stays the folder's own, for a Stop that forgets the choice again)
         StartMenu.onRegion = { code -> GameRegion.choose(this, code, GameRegion.BY_MENU) }
+        // the Menu's Battle.net sign-in (the user, 2026-11-24): Settings.browserLogin itself, saved by the Menu; the sign-in log says so
+        // (states only) and the start screen's lines follow at once (the advice goes, or the Restart game line comes)
+        StartMenu.onSignIn = { on ->
+            NativeLogin.logEvent("sign-in: Battle.net sign-in set to ${BrowserLogin.words(on)} (the Menu), from the next game start")
+            if (::loginWatch.isInitialized) loginShow()
+        }
         // the region card's second line (the user, 2026-11-17): the launcher compares that region's build with the install's
         StartMenu.regionPreview = { code, answer ->
             val check = SetupBridge.regionCheck
@@ -4097,6 +4103,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (nativePreview) return
         regionShow()                                         // the region line goes once this run reaches the world
         val s = loginWatch.state
+        signInHint(s)
         // INSIDE THE ONE APP: the row only while it has something to say ([nativeRow]); a just-saved note shows once
         val native = if (LauncherHooks.pkg == null) null else nativeRow(s)
         val oneApp = LauncherHooks.pkg != null
@@ -4147,6 +4154,19 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // a failure shows the reason and does not retry by itself (the user's pick; the gold box itself is gone, 2026-10-05)
     }
     private var lineWritten: String? = null
+
+    /**
+     * THE LINE UNDER THE START SCREEN'S LINE (the user, 2026-11-24; BrowserLogin.startHint), inside the one app only: the Menu's Restart
+     * game while the running game started the other way, else the advice to try Blizzard's page after a refusal it could fix (the same
+     * test as [nativeRow]'s error line). Never during a reload, never a button, never a switch.
+     */
+    private fun signInHint(s: HomeLogin.State) {
+        startView.hint = if (LauncherHooks.pkg == null || reloadAt != 0L || s.realm) null else BrowserLogin.startHint(
+            failed = s.clientUp && s.phase == HomeLogin.Phase.FAILED, reason = s.reason, captcha = s.captcha,
+            browserOn = Settings.browserLogin || NativeLogin.browserMode, restarting = SetupBridge.restarting,
+            saved = HomeLoginStore.has(this), gameUp = LauncherHooks.gameUp(), launched = BrowserLogin.launched,
+            chosen = Settings.browserLogin)
+    }
 
     /**
      * B ON THE PRESS FRAME (the user 2026-10-09, "Now, before release": the flash and the B glyph's removal came only after the screen
@@ -4713,6 +4733,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // with the game still at its login screen (1.0.37 / 1.0.38), and the game's refusal itself says it is back there
         BrowserLogin.offer(s.phase == HomeLogin.Phase.FAILED, s.reason, Settings.browserLogin || NativeLogin.browserMode, SetupBridge.restarting,
             s.captcha) -> StartView.Login.BROWSER to BrowserLogin.offerLine(s.reason, s.captcha)
+        // the user, 2026-11-24: any OTHER refusal Blizzard's page could fix shows the error, and the advice under it (signInHint) - no
+        // button, nothing switched; asked before NativeLogin.pastLogin for the same reason as the offer
+        BrowserLogin.advise(s.phase == HomeLogin.Phase.FAILED, s.reason, Settings.browserLogin || NativeLogin.browserMode,
+            SetupBridge.restarting, s.captcha, HomeLoginStore.has(this)) -> StartView.Login.NONE to BrowserLogin.failedLine(s.reason)
         NativeLogin.pastLogin -> null
         // browser login: no saved-login row (the sign-in is Blizzard's page on this screen, BattleNetBrowserLogin)
         NativeLogin.browserMode -> null
@@ -4733,7 +4757,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!::startView.isInitialized) return "not up yet"
         fun shown(v: View?) = v != null && v.visibility == View.VISIBLE
         val start = if (shown(startView)) "start screen '${startView.line}' (row ${startView.login.name.lowercase()}${if (loginRevealed) ", for the row" else ""}" +
-            "${if (startView.addonsShown) ", the add-ons' word shown${if (startHow) " with How" else ""}" else ""})"
+            "${if (startView.addonsShown) ", the add-ons' word shown${if (startHow) " with How" else ""}" else ""}" +
+            "${startView.hint?.let { ", under it '$it'" } ?: ""})"
             else "no start screen${if (reloadAt != 0L) " (reload)" else ""}"
         val over = buildList {
             if (::setupView.isInitialized && shown(setupView)) add("setup")
