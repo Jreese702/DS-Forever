@@ -3621,7 +3621,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // set further down, so a first padmap after a start / a character switch read the default or the last character's setting)
                 if (current) { petBNow = it.petB; petBWho = PetRecall.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
-                if (current) holdTicksCheck(it)                              // m194: the hold time the add-on counts (Book b82's codes)
+                // m194: the hold time the add-on counts (Book b82's codes); the 1531 audit: posted, so it runs after this padmap's D-pad
+                // checks below (their page-3 batches go first, this one waits them out: TapPad's 0.25 s repeat guard)
+                if (current) ui.post { lastPadMap?.let { m -> if (m === it) holdTicksCheck(m) } }
                 // the k6 review round 2: a realm seen in a current padmap counts against every other realm of its name (before any fold)
                 if (current) RealmFix.saw(CharKey.of(it.dpad?.name, it.dpad?.realm))
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
@@ -5397,7 +5399,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ui.removeCallbacks(holdAgain)
         if (m.holdN == null || m.holdN == want) { if (m.holdN == want) { holdSentAt = null; holdSentWant = null; holdTries = 0 }; return }
         // another page-3 batch just went (the same first cells: TapPad's 0.25 s repeat guard would swallow this batch's first 39)
-        if (listOf(topSentAt, castSentAt, swingSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS }) { ui.postDelayed(holdAgain, CAST_AFTER_TOP_MS); return }
+        if (listOf(mirrorSentAt, topSentAt, castSentAt, swingSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS }) { ui.postDelayed(holdAgain, CAST_AFTER_TOP_MS); return }
         val send = HoldCast.ticksToSend(want, m.holdN, m.combat || homeView.inFight(), holdSentAt?.let { now - it })
         if (send == null) { if (holdTries < MIRROR_TRIES) ui.postDelayed(holdAgain, TopCombatBar.RESEND_MS); return }
         holdSentAt = now; holdSentWant = want

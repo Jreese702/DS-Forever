@@ -360,6 +360,44 @@ check(d['kind'] != 'holdkeep' and a(L, 'HB("WowCompanionCombatFace8").a["wc-give
       '3. B in a fight (even a stray hold text): never kept - its give-back on the press', d)
 edge(L, 'PAD2', False)
 L.execute('HDR_SET["wc-hf-7"] = nil; HDR_SET["wc-hfc-7"] = nil; for _, n in ipairs({ "WowCompanionCombatFace5", "WowCompanionCombatFace6", "WowCompanionCombatFace8" }) do local b = HB(n); if b then b.a["wc-given"] = nil end end')
+# the 1531 audit: SMART Y's IN-FIGHT BUFF (m93 / m99: a bare Y given back in a fight casts the Smart buff list's top buff, once a fight)
+# on a Y that has a hold: a TAP casts the buff at the release (the keep put it aside), a HOLD runs the hold spell and leaves the buff
+# for the next press (1530's guard `not htxt` was the old gate's "the hold fires" - with the keep it dropped the buff on every tap)
+L.execute('COMBAT = false; driveStates(); fire("PLAYER_REGEN_ENABLED"); advance(1)')
+check(a(L, 'WowCompanion.padMap.putHold(1, 1, 6, "spell", 2)') is True, "3. (the bare Y: Healing Wave, Out of combat's)")
+L.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; driveStates(); advance(1)')
+L.execute('local b = HB("WowCompanionCombatFace6"); b.a["wc-state"] = "fight"; b.a["wc-given"] = true; b.a["wc-smarty-cb"] = "Lightning Shield"')
+d, u = hold(L, 'PAD4', 1)
+cast = [x for x in u['acts'] if x.get('kind') in ('spell', 'cast')]
+check(d['kind'] == 'holdkeep' and a(L, 'HB("WowCompanionCombatFace6").a["wc-smarty-cb"]') is None and u['kind'] == 'smarty'
+      and cast and 'Lightning Shield' in str(cast[-1]),
+      "3. in a fight, Y given back and tapped: Smart Y's buff (Lightning Shield) at the release, used once", (d['kind'], u))
+L.execute('HB("WowCompanionCombatFace6").a["wc-smarty-cb"] = "Lightning Shield"')
+d, u = hold(L, 'PAD4', 3)
+check(u['kind'] == 'slothold' and (macrolines(u) or [''])[-1] == '/cast Healing Wave'
+      and a(L, 'HB("WowCompanionCombatFace6").a["wc-smarty-cb"]') == 'Lightning Shield',
+      '3. ... held: the hold spell (Healing Wave), the buff left for the next press', u)
+L.execute('HB("WowCompanionCombatFace6").a["wc-smarty-cb"] = nil; COMBAT = false; driveStates(); fire("PLAYER_REGEN_ENABLED"); advance(1)')
+# the 1531 audit: Y's own SIT (1530's m190 sit by the fire) on a Y that has a hold - the seat tracker hears the tap that sits (its
+# release), never the kept key-down, nor a hold that ran its hold spell (1530's hook read the raw key-down: a kept Y never told it)
+L.execute('''
+SEATS = {}
+local b = HB("WowCompanionCombatFace6")
+for _, fn in ipairs(b.hooks.PostClick or {}) do
+    for i = 1, 60 do local n, v = debug.getupvalue(fn, i); if not n then break end; if n == "OV" and type(v) == "table" then SEATOV = v end end
+end
+local orig = SEATOV.seatOn
+SEATOV.seatOn = function(ev) SEATS[#SEATS + 1] = ev; return orig(ev) end
+b.a["wc-smarty"] = "/sit"; b.a["wc-smarty-t"] = "sit"; b.a["wc-state"] = "idle"; b.a["wc-given"] = nil
+''')
+d, u = hold(L, 'PAD4', 1)
+check(d['kind'] == 'holdkeep' and u['kind'] == 'smarty' and lst(L, 'SEATS') == ['sit'],
+      "3. Y's sit with a hold on Y, tapped: the sit at the release, the seat tracker told then (once)", (d['kind'], u['kind'], lst(L, 'SEATS')))
+d, u = hold(L, 'PAD4', 3)
+check(u['kind'] == 'slothold' and lst(L, 'SEATS') == ['sit'], "3. ... held: the hold spell, no sit told", lst(L, 'SEATS'))
+L.execute('local b = HB("WowCompanionCombatFace6"); b.a["wc-smarty"] = nil; b.a["wc-smarty-t"] = nil')
+L.execute('WowCompanion.padMap.clearHold(1, 1, 6); fire("PLAYER_REGEN_DISABLED"); COMBAT = true; driveStates(); advance(1)')
+L.execute('for _, n in ipairs({ "WowCompanionCombatFace5", "WowCompanionCombatFace6", "WowCompanionCombatFace8", "WowCompanionFaceB" }) do local b = HB(n); if b then b.a["wc-state"] = "fight"; b.a["wc-given"] = nil end end')
 check(a(L, 'WowCompanion.padMap.holdTicks(2)') is True and a(L, 'CLOCK().a["wc-hn"]') == 3,
       '3. a new hold time in a fight: kept, the clock untouched in the lockdown')
 check(len(lst(L, 'VIOL')) == v0 and not lst(L, 'SNIPERR') and not lst(L, 'HANDLEERR'),

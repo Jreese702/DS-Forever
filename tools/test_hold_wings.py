@@ -96,6 +96,14 @@ def main():
     L.execute('TARGET = false; TICK(0.25)')
     chk("1. no target: no range to say (the ring brown again)", b[6].hrange is True)
     L.execute('TARGET = true; TICK(0.25)')
+    # the 1531 audit: PARTY MODE has no holds (PadMap's OV.hold.mapNow says "party"; 1530 took Home's badges off for it): none on the
+    # top screen either, back when it ends
+    L.execute('WowCompanion.padMap.party = { live = function() return PARTYON == true end }; PARTYON = true; TICK(0.25)')
+    chk("1. Party mode on: no hold badge on the top screen (Party mode never fires a hold)",
+        all(b[p].hb is None or not b[p].hb.shown for p in (2, 5, 6, 8)) and all(b[p].hold is None for p in (2, 5, 6, 8)),
+        [bool(b[p].hb and b[p].hb.shown) for p in (2, 5, 6, 8)])
+    L.execute('PARTYON = false; TICK(0.25)')
+    chk("1. ... Party mode off: the badges back", all(b[p].hb is not None and b[p].hb.shown for p in (2, 5, 6, 8)))
 
     # ------------------------------------------------------------------------------------------------ (2) the charge ring
     def lit(p):
@@ -124,6 +132,13 @@ def main():
     L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.868; HELD.PADDUP = true; TICK(0.7)')
     chk("2. Long (0.87 s): still filling at 0.7 s", isinstance(b[2].hcharge, (int, float)) and 0 < b[2].hcharge < 12, b[2].hcharge)
     L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.651')
+    # the 1531 audit: a WINDOW taking the pad (the bars unusable: the bar reads no buttons then) mid-press: the ring goes, it never
+    # keeps filling on the last read (the router's kept flag can stay up while the window has the release)
+    L.execute('KEPT[2] = true; HELD.PADDUP = true; TICK(0.4)')
+    n0 = lit(2)
+    L.execute('CORE_ONLY = false; TICK(0.5)')
+    chk("2. a window took the pad mid-press: the ring gone, not charged", n0 > 0 and lit(2) == 0 and b[2].hcharge == 0, (n0, lit(2), b[2].hcharge))
+    L.execute('CORE_ONLY = true; HELD.PADDUP = nil; TICK(0.1)')
 
     # ------------------------------------------------------------------------------------------------ (3) the takeover
     tap_icon = b[2].tapIcon
@@ -155,6 +170,35 @@ def main():
     # a GCD older than the fire is not the hold's
     L.execute('WC.gcdRun = { s = NOW - 3, d = 10 }; WC.holdFired(2); TICK(2.3)')
     chk("3. an older GCD does not keep it", b[2].hto is None)
+    # the 1531 audit: THE TAKEOVER IS THE FIRED LAYER'S (PadMap passes it: WC.holdFired(pos, lay)) - LT + X's hold fired with LT let go
+    # a moment before X: the face never shows the bare X's hold; it shows LT + X's own hold while the bar shows the LT layer (as Home's
+    # band: HoldCast.takeover is per layer), and it still ends on time
+    L.execute('''HOLDS2 = { [5] = { n = "Chain Lightning", id = 421, i = 136015 } }
+local pm = WowCompanion.padMap
+pm.holdAt = function(page, set, pos, tab) if set == 1 then return HOLDS[pos] elseif set == 2 then return HOLDS2[pos] end end
+WC.gcdRun = nil; LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
+    chk("3. LT + X's hold fired with the bare layer on the bar: no takeover drawn there (never the bare X's hold spell)",
+        b[5].hto is not None and not b[5].hflash.shown, (b[5].hto is not None, b[5].hflash.shown, b[5].hflash.tex))
+    L.execute('LT = true; TICK(0.1)')
+    chk("3. ... the LT layer on the bar: LT + X's own hold spell has the face", b[5].hflash.shown and b[5].hflash.tex == 136015,
+        (b[5].hflash.shown, b[5].hflash.tex))
+    L.execute('TICK(2.5)')
+    chk("3. ... and it ends on time (no word: 2 s)", b[5].hto is None and not b[5].hflash.shown)
+    L.execute('LT = nil; TICK(0.1)')
+    L.execute('WC.holdFired(5, "bare"); TICK(0.1)')
+    chk("3. the bare X's own hold, fired on the bare layer: its spell on the face", b[5].hflash.shown and b[5].hflash.tex == 135825, b[5].hflash.tex)
+    L.execute('TICK(2.5)')
+    # the 1531 audit: the charge ring is the PRESS's layer's: X kept on the bare layer, then LT held - the LT + X badge never charges
+    # (the release will run the bare X's hold), the bare one again once LT is let go
+    L.execute('KEPT[5] = true; HELD.PAD3 = true; TICK(0.4)')
+    nb = sum(1 for i in range(1, 13) if b[5].hb.beads[i].shown)
+    L.execute('LT = true; TICK(0.1)')
+    nl = sum(1 for i in range(1, 13) if b[5].hb.beads[i].shown)
+    L.execute('LT = nil; TICK(0.1)')
+    nb2 = sum(1 for i in range(1, 13) if b[5].hb.beads[i].shown)
+    chk("2. the ring is the press's layer's (bare X kept, LT held after: no ring on LT + X's badge, back on the bare one)",
+        nb > 0 and nl == 0 and nb2 > 0, (nb, nl, nb2))
+    L.execute('HELD.PAD3 = nil; KEPT[5] = nil; TICK(0.1)')
 
     # ------------------------------------------------------------------------------------------------ (4) nothing secure
     chk("4. plain frames only (no Secure template), nothing bound or set", list(G.BADTPL.values()) == [] and list(G.SPY.values()) == [],

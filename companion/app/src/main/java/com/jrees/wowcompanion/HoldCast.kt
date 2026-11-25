@@ -99,6 +99,9 @@ object HoldCast {
             private set
         /** a hold fired at (game position, its layer): the takeover starts */
         var onFire: ((Int, Int) -> Unit)? = null
+        /** the 1531 audit: the map is the Bind box's (why "box": its own timing - a long press places a hold, it casts nothing): the
+         *  ring as always, no takeover */
+        var box: Boolean = false
 
         /** the button at [pos] went down on layer [layer] at [now]: tracked only when the add-on keeps that place's press now */
         fun press(pos: Int, layer: Int, now: Long) {
@@ -114,7 +117,7 @@ object HoldCast {
             t0[pos] = -1L; lay[pos] = -1
             if (s < 0L) return false
             relAt[pos] = now; relLay[pos] = l
-            if (now - s >= holdFromMs(ticks)) { lastFire = pos to now; onFire?.invoke(pos, l); return true }
+            if (now - s >= holdFromMs(ticks)) { lastFire = pos to now; if (!box) onFire?.invoke(pos, l); return true }
             return false
         }
 
@@ -156,7 +159,7 @@ object HoldCast {
         fun layerOf(pos: Int): Int = if (t0.getOrElse(pos) { -1L } >= 0L) lay[pos] else -1
 
         /** nothing held any more, nothing just released (the pad went away; tests) */
-        fun reset() { t0.fill(-1L); lay.fill(-1); relAt.fill(-1L); relLay.fill(-1); lastFire = null }
+        fun reset() { t0.fill(-1L); lay.fill(-1); relAt.fill(-1L); relLay.fill(-1); lastFire = null; box = false }
     }
 
     val watch = Watch()
@@ -245,6 +248,7 @@ object HoldCast {
     fun onMap(msg: JSONObject) {
         val m = parseMap(msg) ?: return
         watch.map = if (PlayModes.current == PlayMode.STREAM) emptySet() else m      // a PC game's presses: not this pad's
+        watch.box = msg.optString("why") == "box"
     }
 
     /** CompanionHost: a CURRENT `facecast` (main thread): a kept press's release that ran its hold ("hk" rel, path slothold) */

@@ -4,7 +4,9 @@
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
 -- nbar22 THE 1531 MERGE OF feat/hold-cast's REBUILD (the user on test 1529: "And that also needs to appear on the top screen
 -- ui"): nbar21 (the hold spell takes the face until its cast / GCD end, the badge's states, the charge ring's twelve beads, at
--- "nbar21 THE HOLD SPELL ON THE TOP SCREEN") and nbar20 (the 1528b per-tab badges) both kept; nothing else changed.
+-- "nbar21 THE HOLD SPELL ON THE TOP SCREEN") and nbar20 (the 1528b per-tab badges) both kept. The 1531 audit: no hold badges
+-- while Party mode is on (as Home), the takeover is the FIRED layer's hold (WC.holdFired's lay; drawn while the bar shows that
+-- layer, as Home's band), the charge ring the press's layer's and gone while a window owns the pad (NB.holdTick's read).
 -- nbar20 THE 1528b MERGE OF feat/hold-cast's PER-TAB HOLDS (the user on test 1528: "It should be seperate"): a button's
 -- hold badge is the hold that would fire now (In combat's while the fight switch takes the press, else Out of combat's; PadMap
 -- m193 holdTab); nothing else changed.
@@ -2657,7 +2659,8 @@ end
 function NB.holdShow(b, set, page)
     local pm = rawget(WC, "padMap")
     local e = nil
-    if type(pm) == "table" and type(pm.holdOn) == "function" and type(pm.holdAt) == "function" then
+    -- nbar22 (the 1531 audit): none while Party mode is on - its presses are the party pad's, PadMap never fires a hold then (as Home)
+    if type(pm) == "table" and type(pm.holdOn) == "function" and type(pm.holdAt) == "function" and not NB.partyOn() then
         local okOn, on = pcall(pm.holdOn)
         -- PER TAB: the hold that would fire now (In combat's while the fight switch takes the press, else Out of combat's)
         local okT, tab = pcall(pm.holdTab)
@@ -2669,7 +2672,7 @@ function NB.holdShow(b, set, page)
     pcall(hb.ClearAllPoints, hb)
     hb:SetPoint("CENTER", b, "CENTER", x, y)
     b.hold = e
-    NB.paint(hb.icon, b.hto and b.tapIcon or NB.holdIcon(e))          -- nbar21: the tap spell on the badge while the hold has the face
+    NB.paint(hb.icon, NB.holdHere(b) and b.tapIcon or NB.holdIcon(e))   -- nbar21: the tap spell on the badge while the hold has the face
     pcall(NB.holdLook, b, e)
     local get = api("C_Spell", "GetSpellCooldownDuration")
     local setDur = type(field(hb.cd, "SetCooldownFromDurationObject")) == "function"
@@ -2697,16 +2700,32 @@ function NB.holdLook(b, e)
     else pcall(hb.disc.SetColorTexture, hb.disc, 110 / 255, 89 / 255, 66 / 255, 1) end
 end
 -- the router ran a hold spell at game position [pos] (PadMap's post-click on the kept press's release): THE TAKEOVER starts
-WC.holdFired = function(pos)
+-- nbar22 (the 1531 audit): [lay] = the layer the press took (PadMap's "bare" / "lt" / "rt" / "ltrt"): the takeover is THAT layer's hold
+-- (a trigger let go a moment before the button: the bar may already show the bare layer) and is drawn while the bar shows that layer,
+-- as Home's band does (HoldCast.takeover is per layer); its clock runs either way
+NB.SET_OF_LAY = { bare = 1, lt = 2, rt = 3, ltrt = 4 }
+function NB.holdOfSet(pos, set)
+    local pm = rawget(WC, "padMap")
+    if NB.partyOn() or type(pm) ~= "table" or type(pm.holdAt) ~= "function" then return nil end
+    local okT, tab = pcall(pm.holdTab)
+    local ok, r = pcall(pm.holdAt, NB.page or 1, set, pos, okT and tab or nil)
+    return (ok and type(r) == "table") and r or nil
+end
+WC.holdFired = function(pos, lay)
     local f = NB.f
     local b = f and f.btn and f.btn[pos]
-    if not (b and b.hold and b.hflash) then return end
+    if not (b and b.hflash) then return end
+    local set = NB.SET_OF_LAY[lay or ""] or NB.set or 1
+    local e = (set == (NB.set or 1)) and b.hold or NB.holdOfSet(pos, set)
+    if not e then return end
     local now = SN(GetTime) or 0
-    b.hto = { t = now, last = now }
-    if NB.paint(b.hflash, NB.holdIcon(b.hold)) then pcall(b.hflash.SetAlpha, b.hflash, 1); b.hflash:Show() end
-    if b.hb and b.tapIcon then NB.paint(b.hb.icon, b.tapIcon) end
+    b.hto = { t = now, last = now, e = e, set = set, pic = NB.paint(b.hflash, NB.holdIcon(e)) }
+    if b.hto.pic and set == (NB.set or 1) then pcall(b.hflash.SetAlpha, b.hflash, 1); b.hflash:Show() else b.hflash:Hide() end
+    if set == (NB.set or 1) and b.hb and b.tapIcon then NB.paint(b.hb.icon, b.tapIcon) end
     pcall(NB.holdCharge, b, now, 1)                                     -- the charge ring goes with the release
 end
+-- nbar22: the takeover at [b] drawn on the layer the bar shows now (its own fired layer only)
+function NB.holdHere(b) return b.hto ~= nil and (b.hto.set == nil or b.hto.set == (NB.set or 1)) end
 -- PadMap m195's word on the fired hold's own cast at [pos]: "cast" (d = its seconds left), "ok", "fail"
 WC.holdCast = function(pos, st, d)
     local f = NB.f
@@ -2745,6 +2764,8 @@ function NB.holdOver(b, now)
         if b.hb and b.hold then NB.paint(b.hb.icon, NB.holdIcon(b.hold)) end      -- the badge: the hold spell again
         return
     end
+    if not (o.pic and NB.holdHere(b)) then b.hflash:Hide(); return end  -- nbar22: another layer on the bar now
+    b.hflash:Show()
     pcall(b.hflash.SetAlpha, b.hflash, a)
 end
 -- the charge ring at [b] now: hidden before NB.HOLD_DELAY s held, filling to [sure] s, all bright from it; only while the router keeps
@@ -2755,7 +2776,8 @@ function NB.holdCharge(b, now, sure)
     local t = (b.hdDown and b.hdAt) and (now - b.hdAt) or -1
     local kept = type(WC.padMapKept) ~= "function" or WC.padMapKept(b.p) == true
     local lit, charged = 0, false
-    if b.hold and not b.hto and kept and t >= NB.HOLD_DELAY and hb:IsShown() then
+    -- (nbar22, the 1531 audit: only on the layer the press took - the router keeps that layer's press, its release runs that hold)
+    if b.hold and not b.hto and kept and t >= NB.HOLD_DELAY and hb:IsShown() and (b.hdSet == nil or b.hdSet == (NB.set or 1)) then
         if t >= sure then charged, lit = true, NB.HOLD_BEADS
         else lit = math.floor((t - NB.HOLD_DELAY) / math.max(0.01, sure - NB.HOLD_DELAY) * NB.HOLD_BEADS + 1e-6) end
     end
@@ -2767,18 +2789,20 @@ function NB.holdCharge(b, now, sure)
     end
     b.hcharge = charged and "charged" or lit
 end
-function NB.holdTick()
+-- [held] the tick's own read (nbar22, the 1531 audit: 0 while a window owns the pad - NB.held keeps its last read then, and the
+-- router's kept flag can stay up while the window has the release: the ring would have filled on)
+function NB.holdTick(held)
     local f = NB.f
     if not (f and f.btn) then return end
     local now = SN(GetTime) or 0
-    local held = NB.held or 0
+    held = held or NB.held or 0
     local pm = rawget(WC, "padMap")
     local sure = (type(pm) == "table" and type(pm.holdSecs) == "function" and tonumber((select(2, pcall(pm.holdSecs))))) or 0.65
     for p = 1, 8 do
         local b = f.btn[p]
         if b then
             local down = (math.floor(held / 2 ^ (p - 1)) % 2) == 1
-            if down and not b.hdDown then b.hdAt = now - NB.POLL_S * 0.5 end   -- pressed within the last poll: its middle
+            if down and not b.hdDown then b.hdAt = now - NB.POLL_S * 0.5; b.hdSet = NB.set or 1 end   -- pressed within the last poll: its middle; its layer (nbar22)
             b.hdDown = down
             pcall(NB.holdCharge, b, now, sure)
             pcall(NB.holdOver, b, now)
@@ -3433,6 +3457,7 @@ function NB.refresh()
     local layers = resolveAll(pu)
     local lay = layers[NB.LAYER_OF[set]]
     local page = currentPage(pu) or 1
+    NB.page = page                                                      -- nbar22: a fired hold's own layer is read on it
     local dpadOn = false
     local pm = rawget(WC, "padMap")
     if type(pm) == "table" and type(pm.dpadState) == "function" then
@@ -3484,7 +3509,8 @@ function NB.refresh()
         if b.ia ~= ia then b.ia = ia; pcall(b.icon.SetAlpha, b.icon, ia) end
         NB.tint(b, st)
         -- nbar21: while the hold spell has the face, its own cooldown / GCD sweep is the face's
-        local ho = b.hto and b.hold and b.hold.t == nil and type(b.hold.id) == "number" and { kind = "spell", id = b.hold.id } or nil
+        local he = NB.holdHere(b) and b.hto.e or nil                                 -- nbar22: the fired layer's hold
+        local ho = he and he.t == nil and type(he.id) == "number" and { kind = "spell", id = he.id } or nil
         local route = NB.cool(b, ho or e, st)
         if route then NB.stats.n = NB.stats.n + 1 end
         if route == "dim" then NB.stats.dim = NB.stats.dim + 1 end
@@ -3531,7 +3557,7 @@ function NB.tick(el)
     if held ~= (NB.heldWas or 0) then NB.heldWas = held; pcall(NB.pressLook, held) end     -- nbar11: the pressed rings at once
     if NB.top.shown or NB.top.edit then pcall(NB.topPlates, (bu ~= false) and NB.sh or nil, set ~= 1) end  -- nbar12: the L / R plates
     if NB.focusAt then pcall(NB.focusTick) end
-    pcall(NB.holdTick)                                   -- nbar21: the charge rings, the takeovers (start / ease back)
+    pcall(NB.holdTick, held)                             -- nbar21: the charge rings, the takeovers (start / ease back)
     if set ~= NB.set or NB.accS >= NB.STATE_S then
         NB.accS = 0
         local ok, err = pcall(NB.refresh)

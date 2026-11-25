@@ -215,6 +215,25 @@ class HoldCastTest {
         HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }; HoldCast.clock = { android.os.SystemClock.uptimeMillis() }
     }
 
+    /** the 1531 audit: the Bind box's holdmap (why "box": every place, for the ring of its own timing) - a long press there places the
+     *  box's spell as a hold, it casts nothing, so no takeover; out of the box the same long press is one */
+    @Test fun aLongPressInTheBindBoxIsNoTakeover() {
+        HoldCast.takeover.clear(); HoldCast.watch.reset()
+        val band = HoldCast.bandClock
+        HoldCast.bandClock = { 1_000L }
+        fun map(why: String) = HoldCast.onMap(JSONObject().put("type", "holdmap").put("on", true).put("b", "bare:8").put("why", why))
+        map("box")
+        var now = 50_000L
+        HoldCast.watch.press(8, 0, now); now += HoldCast.holdFromMs(HoldCast.watch.ticks) + 10L
+        HoldCast.watch.release(8, now)
+        assertEquals("the box's long press: no takeover", -1, HoldCast.takeover.pos)
+        map("on")
+        HoldCast.watch.press(8, 0, now); now += HoldCast.holdFromMs(HoldCast.watch.ticks) + 10L
+        HoldCast.watch.release(8, now)
+        assertEquals("a kept press's sure hold: the takeover", 8, HoldCast.takeover.pos)
+        HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = emptySet(); HoldCast.bandClock = band
+    }
+
     // ---------------------------------------------------------------- (3) the hold time to the add-on
 
     @Test fun theHoldTimeIsSentOutOfCombatUntilTheAddonSaysIt() {
@@ -231,5 +250,16 @@ class HoldCastTest {
         val m = PadMapModel.parse(JSONObject().put("type", "padmap").put("v", "m194").put("m", JSONObject().put("page", 1).put("pages", 3)
             .put("sets", org.json.JSONArray()).put("hold", JSONObject().put("on", true).put("n", 4).put("lk", 12))))!!
         assertEquals(4, m.holdN); assertEquals(12, m.holdLooks)
+    }
+
+    /** the 1531 audit: the hold time's page-3 batch never lands inside another batch's TapPad repeat guard (the same first cells 39 / 38 /
+     *  37) - it waits out the toolbar mirror's, the top bar's, the cast bar's and the swing's sends, and a padmap's check runs AFTER that
+     *  padmap's D-pad checks (posted), so a batch they just sent is one it sees; before, a login after a reset could have both in 0.25 s */
+    @Test fun theHoldTimeWaitsOutEveryOtherPage3Batch() {
+        val host = src("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")
+        assertTrue(host.contains("if (listOf(mirrorSentAt, topSentAt, castSentAt, swingSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS })"))
+        assertTrue("the padmap's check posted after its D-pad checks",
+            host.contains("if (current) ui.post { lastPadMap?.let { m -> if (m === it) holdTicksCheck(m) } }"))
+        assertFalse(host.contains("if (current) holdTicksCheck(it)"))
     }
 }
