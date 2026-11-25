@@ -184,6 +184,22 @@ class CastBarTabShotsTest {
         assertFalse("the next open is the usual one", r.cells.first().contains("padtab" to 29))
     }
 
+    /** edit tabs (the review): each Edit Home tab's "Edit slots" opens that situation's bar - In combat's (padtab 39 then 1), Party
+     *  mode's (39, 38 then 1) - by the same one-time open, slot 1 */
+    @Test fun editSlotsOpensTheTabsOwnBar() {
+        val r = rig(JSONObject("""{"type":"castbar","v":"cb9","n":8,"any":1,"e":[]}"""))
+        for ((tab, cells) in listOf(HomeTab.COMBAT to CastStripModel.ctlFightCells(), HomeTab.PARTY to CastStripModel.ctlPartyCells(),
+                HomeTab.OUT to CastStripModel.ctlTabCells())) {
+            r.cells.clear()
+            r.v.openOnCastBar(tab.bar)
+            assertTrue(r.v.enterRoom())
+            val open = r.cells.first { it.contains("spells" to 5) }
+            val i = open.indexOf("spells" to 5)
+            assertEquals(tab.name, cells + (PadMapModel.ROW to PadMapModel.colPos(1)), open.subList(i + 1, open.size))
+            assertEquals(tab.name, tab.bar, r.v.page().currentView())
+        }
+    }
+
     @Test fun shots() {
         if (out == null) return
         val r = rig()

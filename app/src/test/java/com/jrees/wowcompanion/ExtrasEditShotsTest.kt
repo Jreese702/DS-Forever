@@ -85,6 +85,7 @@ class ExtrasEditShotsTest {
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
+        home.pageZoomOn = false                                       // (edit tabs: this suite samples Home's own px; the zoom + tab row: EditTabsShotsTest)
         homes += home
         home.borrow()
         lay(home)
@@ -134,7 +135,9 @@ class ExtrasEditShotsTest {
     private var downAt = 0L
     private fun touch(home: HomeView, action: Int, x: Float, y: Float) {
         if (action == MotionEvent.ACTION_DOWN) downAt = android.os.SystemClock.uptimeMillis()
-        val e = MotionEvent.obtain(downAt, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+        // (edit tabs: Home's px as the screen shows them - the page zoomed under the tab row while editing)
+        val q = home.screenOf(x, y)
+        val e = MotionEvent.obtain(downAt, android.os.SystemClock.uptimeMillis(), action, q[0], q[1], 0)
         home.dispatchTouchEvent(e); e.recycle()
     }
 

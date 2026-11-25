@@ -104,10 +104,11 @@ class PartyDropShotsTest {
             ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, File(root)) }
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app); Tr.init(app)
-        HomeSettings.castBarCombat = if (stay) CastStripModel.Combat.STAY else CastStripModel.Combat.HIDE
-        HomeSettings.castBarPartyShow = stay                                  // (Party mode's own "the bar shows in fights" too)
         HomeLayoutStore.character(null)
         HomeLayoutStore.set(layout)
+        // (edit tabs: the In combat tab's bar is "Show in combat" now, set on the record; Party mode's bar is its tab's place, laid at
+        // rest and in its fights alike - there is no "hidden in Party mode's fights only" any more)
+        HomeSettings.castBarCombat = if (stay) CastStripModel.Combat.STAY else CastStripModel.Combat.HIDE
         CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null
         UiKit.pauseBarsBottom = 0f
         setField(PartyModel.live, "party", null)
@@ -208,8 +209,8 @@ class PartyDropShotsTest {
         // (the user's pick 2026-11-23, "Split bar too": the list over Split's halves the same as over Across's bar)
         for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP))
             for ((bn, base) in listOf("" to HomeLayout(), " swapped" to HomeLayout().swapped(), " third" to HomeLayout(chatShare = HomeLayout.Share.THIRD)))
-            for (size in HomeLayout.SlotSize.values())
-                out += "${cast.name.lowercase()} ${dock.name.lowercase()}$bn ${size.name}" to base.copy(party = dock, cast = cast, castSize = size)
+            for (grow in listOf(false, true))      // (edit tabs: S / M / L gone; a fight tab's Grow)
+                out += "${cast.name.lowercase()} ${dock.name.lowercase()}$bn ${if (grow) "grow" else "same"}" to base.copy(party = dock, cast = cast, grow = grow)
         out
     }
 
@@ -309,9 +310,10 @@ class PartyDropShotsTest {
     }
 
     /** "Stay when it fits": an LB picture that fits over the list and the bar both moves neither */
+    @org.junit.Ignore("edit tabs, 2026-11-24: the S size (the small bar that let the picture fit over a one-row list) is gone - every bar is L")
     @Test fun anLbPictureThatFitsMovesNothing() = BARS.forEach { cast ->
         // Classic's held LB place (1516's, chat left, half) over a one-row list and a small bar (Across's, Split's halves)
-        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = cast, castSize = HomeLayout.SlotSize.S)
+        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = cast)
         val p = page(l, 1)
         assertTrue(bad.joinToString(), footOverAcross("fits $cast", p))
         val list = boxes(p.home).getValue("PARTY")
@@ -330,7 +332,7 @@ class PartyDropShotsTest {
     @Test fun aTopListIsNotMoved() {
         for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.ABOVE_CHAT, HomeLayout.PartyDock.ABOVE_MAP)) {
             val tag = "$cast ${dock.name.lowercase()}"
-            val l = HomeLayout(party = dock, cast = cast, castSize = HomeLayout.SlotSize.L)
+            val l = HomeLayout(party = dock, cast = cast)
             val ref = sizes(page(l.copy(cast = HomeLayout.CastDock.OFF)))
             val p = page(l)
             val list = boxes(p.home).getValue("PARTY")
@@ -356,7 +358,7 @@ class PartyDropShotsTest {
         for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP)) for (stay in listOf(true, false))
             for (what in listOf("middle wheel", "LB+LT", "RB+RT")) for (n in listOf(3, 5)) {
                 val tag = "$cast ${dock.name.lowercase()} ${if (stay) "shown" else "hidden"} in fights, $n, $what"
-                val l = HomeLayout(party = dock, cast = cast, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW)
+                val l = HomeLayout(party = dock, cast = cast, fight = HomeLayout.FightBand.GROW)
                 val p = page(l, n, stay)
                 if (!footOverAcross(tag, p)) continue
                 val rest = boxes(p.home).getValue("PARTY")
@@ -389,7 +391,7 @@ class PartyDropShotsTest {
             for (sz in HomeLayout.PartySize.values())
             for (stay in listOf(true, false)) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
                 val tag = "$cast $band/$fc/$sz ${if (stay) "shown" else "hidden"} in fights, $what"
-                val base = HomeLayout(party = HomeLayout.PartyDock.UNDER_MAP, cast = cast, castSize = HomeLayout.SlotSize.L,
+                val base = HomeLayout(party = HomeLayout.PartyDock.UNDER_MAP, cast = cast,
                     fight = band, fightCast = fc)
                 val l = base.copy(partySize = sz)
                 val p = page(l, 5, stay)
@@ -417,7 +419,7 @@ class PartyDropShotsTest {
     @Test fun theListComingUnderAHeldWheelNeverCoversIt() {
         for (cast in BARS) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
             val tag = "$cast $what"
-            val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = cast, castSize = HomeLayout.SlotSize.L)
+            val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = cast)
             val p = page(l, 3)
             val pv = partyView(p.home)
             GameUi.init(app); GameUi.setSwitch(GameUi.SW_PMODE, false); p.home.partyChanged(); settle(60); lay(p.home)
@@ -443,10 +445,11 @@ class PartyDropShotsTest {
 
     /** a wheel opened in a Grow fight with the bar hidden (the list on the page's foot), held as the fight ends: the bar comes back
      *  under it - the list stays down with the bar (no frame with the list or the bar over the wheel), the wheel keeps its size */
+    @org.junit.Ignore("edit tabs, 2026-11-24: with Party mode on its tab's bar is laid at rest and in its fights alike - no bar hidden only in a Party fight")
     @Test fun aFightEndingUnderAHeldWheelKeepsTheListDown() {
         for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP)) for (what in listOf("middle wheel", "LB+LT", "RB+RT")) {
             val tag = "$cast ${dock.name.lowercase()}, $what"
-            val l = HomeLayout(party = dock, cast = cast, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW)
+            val l = HomeLayout(party = dock, cast = cast, fight = HomeLayout.FightBand.GROW)
             val p = page(l, 3, stay = false)
             fightWord(p.home, p.cast, true); p.home.tick(); settle(60); lay(p.home)
             if (barDrawn(p.home) != null) { no(tag, "the bar not slid away in the fight"); continue }
@@ -526,12 +529,13 @@ class PartyDropShotsTest {
     /** review: an LB picture opened in a Grow fight with the bar hidden (Hide in combat: the list on the page's foot, the picture fitting
      *  over it - the list stays), held as the fight ends: the bar comes back under the list and the list rises over it - on no frame the
      *  list or the bar drawn over the picture's bars (the picture shrinks over them, as a held wheel does); both back after the close */
+    @org.junit.Ignore("edit tabs, 2026-11-24: with Party mode on its tab's bar is laid at rest and in its fights alike - no bar hidden only in a Party fight")
     @Test fun anLbPictureHeldThroughAFightsEndKeepsClearOfTheList() {
         var held = 0; var rose = 0
         for (cast in BARS) for (dock in listOf(HomeLayout.PartyDock.UNDER_CHAT, HomeLayout.PartyDock.UNDER_MAP)) for (n in listOf(1, 2))
-            for (size in HomeLayout.SlotSize.values()) {
-            val tag = "$cast ${dock.name.lowercase()} ${size.name}, $n in the party"
-            val l = HomeLayout(party = dock, cast = cast, castSize = size, fight = HomeLayout.FightBand.GROW)
+            for (grow in listOf(false, true)) {
+            val tag = "$cast ${dock.name.lowercase()} grow $grow, $n in the party"
+            val l = HomeLayout(party = dock, cast = cast, fight = HomeLayout.FightBand.GROW).onTab(HomeTab.COMBAT) { it.copy(grow = grow) }
             val p = page(l, n, stay = false)
             fightWord(p.home, p.cast, true); p.home.tick(); settle(60); lay(p.home)
             if (barDrawn(p.home) != null) { no(tag, "the bar not slid away in the fight"); continue }
@@ -595,7 +599,7 @@ class PartyDropShotsTest {
      *  wheel, a class wheel, the LB picture; with the bar Off the LB picture over a list it fits over (it stays) and one it does not */
     @Test fun shotsSplitAndBarOff() {
         if (out == null) return
-        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = HomeLayout.CastDock.SPLIT, castSize = HomeLayout.SlotSize.L)
+        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = HomeLayout.CastDock.SPLIT)
         var p = page(l)
         save(p, "s1_split_rest", "Party mode, list Under chat, Split L: at rest")
         val slot = p.home.wheelSlot(true)!!
@@ -633,7 +637,7 @@ class PartyDropShotsTest {
 
     @Test fun shots() {
         if (out == null) return
-        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L)
+        val l = HomeLayout(party = HomeLayout.PartyDock.UNDER_CHAT, cast = HomeLayout.CastDock.ACROSS)
         var p = page(l)
         save(p, "1_rest", "Party mode, list Under chat, Across L: at rest")
         val slot = p.home.wheelSlot(true)!!

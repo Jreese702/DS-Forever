@@ -17,8 +17,7 @@ class HomeArrangementsTest {
             HomeArrangements.BIG_MAP to b.copy(name = HomeArrangements.BIG_MAP, chatShare = HomeLayout.Share.THIRD,
                 card = HomeLayout.CardDock.ABOVE_CHAT, cast = HomeLayout.CastDock.UNDER_MAP),
             HomeArrangements.BIG_CHAT to b.copy(name = HomeArrangements.BIG_CHAT, chatShare = HomeLayout.Share.TWO_THIRDS),
-            HomeArrangements.COMPACT to b.copy(name = HomeArrangements.COMPACT, rest = HomeRest.ROW, cast = HomeLayout.CastDock.ACROSS,
-                castSize = HomeLayout.SlotSize.M),
+            HomeArrangements.COMPACT to b.copy(name = HomeArrangements.COMPACT, rest = HomeRest.ROW, cast = HomeLayout.CastDock.ACROSS),
             HomeArrangements.FIGHTER to b.copy(name = HomeArrangements.FIGHTER, fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.SPLIT),
         )
         assertEquals(want, HomeArrangements.ALL)

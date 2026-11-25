@@ -130,9 +130,10 @@ class HomePlacesGoldenTest {
         HomeLayoutStore.character(null); HomeLayoutStore.set(HomeLayout())
         HomeSettings.rest = s.rest
         HomeSettings.combatGrow = s.fight != Fight.SAME
+        // (edit tabs: the card first - Show in combat Off is the In combat tab's own bar Off, a copy of the places as they are then)
+        HomeSettings.questOverMap = s.card != Card.ABOVE
         HomeSettings.castBarSide = s.side
         HomeSettings.castBarCombat = s.combat
-        HomeSettings.questOverMap = s.card != Card.ABOVE
         CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null
         setField(PartyModel.live, "party", null)
         val fight = s.fight != Fight.NONE

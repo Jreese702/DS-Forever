@@ -42,8 +42,12 @@ object HomeLayoutSolver {
                       val barsBottom: Float = 0f, val castTop: Boolean = false, val f3: Boolean = false, val away: Boolean = false,
                       val fightStrip: Boolean = false, val partyWide: Boolean = false, val partyRowH: Float = 0f)
 
-    /** the band's bottom: the fight's grow (only GROW, never with Party mode on: R0), the diamonds or the thin row at rest */
-    fun big(l: HomeLayout, s: State): Boolean = s.takeover && l.fight == HomeLayout.FightBand.GROW && !s.partyOn
+    /** the band's bottom: the fight's grow (only GROW), the diamonds or the thin row at rest. EDIT TABS (the user, 2026-11-24: the Party
+     *  mode tab gets "Combat bars: Top screen / Bottom screen / No grow" as In combat's): R0 is lifted for the Party mode tab's own
+     *  Bottom screen - its FIGHT grows the band ([State.partyFight]: Party mode has no takeover), carrying Party mode's controls; a
+     *  record from before the tabs never asks it there (its Party mode Combat bars read Top screen or No grow: HomeLayout.partyFightNow) */
+    fun big(l: HomeLayout, s: State): Boolean = l.fight == HomeLayout.FightBand.GROW &&
+        ((s.takeover && !s.partyOn) || (l.partyBand && s.partyOn && s.partyFight && !s.takeover && s.full == null))
     /**
      * IN FIGHTS = TOP SCREEN (TopSlide; the user 2026-11-22: "slides up to the top screen", the pick "Chat and map grow up"): the fight's
      * takeover with Top screen lays the band ABOVE the page - its rest size, its bottom 16 px over the frame's top edge - and the columns
@@ -89,7 +93,39 @@ object HomeLayoutSolver {
         return (gap to leftR) to (leftR + COLUMN_GAP to w - gap)
     }
 
+    /**
+     * EDIT TABS' "SLOTS: GROW" (the user's pick 2026-11-24, "8 slots, fill the width"): a fight tab's bar fills its width - the slots as big
+     * as the width allows with the normal gap, up to [CastStripModel.GROW_MAX], the bar taller to match. "If the map would drop under its
+     * 240 px minimum, Grow steps back toward Same size first, before any fallback hides the bar": the cap comes down in [GROW_STEP]s until
+     * the page holds (Same size's [CastStripModel.MAX_SIDE] at the least; then the page's own fallbacks)
+     */
     fun places(l0: HomeLayout, s: State): Result {
+        if (!l0.grow || l0.cast == HomeLayout.CastDock.OFF) return placesAt(l0, s, CastStripModel.MAX_SIDE)
+        val same = placesAt(l0, s, CastStripModel.MAX_SIDE)
+        var cap = CastStripModel.GROW_MAX
+        while (cap > CastStripModel.MAX_SIDE) {
+            val r = placesAt(l0, s, cap)
+            if (growHolds(s, r, same)) return r
+            cap -= GROW_STEP
+        }
+        return same
+    }
+    /** the grown bar keeps the page's minimums: no fallback fires that Same size's page [same] does not, the map stays at
+     *  [HomeLayoutRules.MAP_MIN] (a map already under it with Same size is not Grow's doing), the chat over Party mode's hard floor */
+    private fun growHolds(s: State, r: Result, same: Result): Boolean {
+        if (s.full != null && !s.takeover) return true
+        if (r.f1 != same.f1 || r.f2 != same.f2 || r.f3 != same.f3) return false
+        val m = r.boxes[HomePart.MAP]; val m0 = same.boxes[HomePart.MAP]
+        if (m != null && m0 != null && m.h < HomeLayoutRules.MAP_MIN - 0.01f && m.h < m0.h - 0.01f) return false
+        // (the chat too: never under its 5 lines for Grow - HomeLayoutRules.CHAT_MIN - unless Same size is under them already)
+        val c = r.boxes[HomePart.CHAT]; val c0 = same.boxes[HomePart.CHAT]
+        if (c != null && c0 != null && c.h < minOf(HomeLayoutRules.CHAT_MIN, c0.h) - 0.01f) return false
+        return true
+    }
+    /** Grow's step back toward Same size (px of the slot's cap) */
+    const val GROW_STEP = 8f
+
+    private fun placesAt(l0: HomeLayout, s: State, cap: Float): Result {
         // THE PARTY BARS FILL THE STRIP (ruling C; the 1519 integration: for EVERY party dock): the Party-mode fight's page with the
         // band on it first (b1e28506's: the module's rows FIGHT_ON high, its F1 / F2 / F3), then the band away - the strip the band freed
         // goes to the party list in ITS column (the chat's or the map's, either side), the column's other part keeps the height it had
@@ -100,26 +136,26 @@ object HomeLayoutSolver {
         // (party sizing, 2026-11-23: only with "Size in fights" = Grow - today's - and the list growing; Same size or Grows = Off lay
         // the away page with the record's rest rows, the columns growing up as in any Top fight)
         if (partyAway(l0, s) && s.party != null && s.party.rowH == null && PartyLayout.sizedH(s.party.mode, s.partyOn, l0) == null) {
-            val ref = places(l0, s.copy(partyFight = false, party = s.party.copy(mode = PartyLayout.Mode.FIGHT_ON, rowH = PartyLayout.FIGHT_H)))
-            return solve(l0, s, ref.f1, ref.f2, ref.f3, fill = ref)
+            val ref = placesAt(l0, s.copy(partyFight = false, party = s.party.copy(mode = PartyLayout.Mode.FIGHT_ON, rowH = PartyLayout.FIGHT_H)), cap)
+            return solve(l0, s, ref.f1, ref.f2, ref.f3, fill = ref, cap = cap)
         }
-        val r = placesF12(l0, s)
+        val r = placesF12(l0, s, cap)
         // F3 (after 1518: the party list in the map's column): the map under its 240 minimum (the takeover's party rows over a bar shown
         // in combat in the map's column, or across): the bar's part in the map's column slides away until the fight ends. Never with the
         // party list in the chat's column (Classic: the golden's 630 states)
         if (!HomeLayoutRules.mapShort(l0, r, s)) return r
-        return solve(l0, s, f1 = r.f1, f2 = r.f2, f3 = true)
+        return solve(l0, s, f1 = r.f1, f2 = r.f2, f3 = true, cap = cap)
     }
 
-    private fun placesF12(l0: HomeLayout, s: State): Result {
-        val first = solve(l0, s, f1 = false, f2 = false)
+    private fun placesF12(l0: HomeLayout, s: State, cap: Float): Result {
+        val first = solve(l0, s, f1 = false, f2 = false, cap = cap)
         if (!HomeLayoutRules.cramped(first, s)) return first
         // F1: an "Above chat" card shows on the map while Party mode is on and the chat's column is too short
-        val withF1 = if (l0.card == HomeLayout.CardDock.ABOVE_CHAT) solve(l0, s, f1 = true, f2 = false) else first
+        val withF1 = if (l0.card == HomeLayout.CardDock.ABOVE_CHAT) solve(l0, s, f1 = true, f2 = false, cap = cap) else first
         if (!HomeLayoutRules.cramped(withF1, s)) return withF1
         // F2: still too short: the bar's part in the chat's column slides away (under it: behind the room bar, today's hide motion; above
         // it: up behind the band) until Party mode ends
-        return if (HomeLayoutRules.cutsChat(l0)) solve(l0, s, f1 = withF1.f1, f2 = true) else withF1
+        return if (HomeLayoutRules.cutsChat(l0)) solve(l0, s, f1 = withF1.f1, f2 = true, cap = cap) else withF1
     }
 
     /**
@@ -145,7 +181,8 @@ object HomeLayoutSolver {
     fun partyRight(l: HomeLayout): Boolean = (l.party.column == HomeModule.CHAT) == (l.chatSide == HomeLayout.Side.RIGHT)
 
     /** [fill] = the Party-mode Top fight's reference page (the band on it): the party list fills the strip the band freed (ruling C) */
-    private fun solve(l: HomeLayout, s: State, f1: Boolean, f2: Boolean, f3: Boolean = false, fill: Result? = null): Result {
+    private fun solve(l: HomeLayout, s: State, f1: Boolean, f2: Boolean, f3: Boolean = false, fill: Result? = null,
+                      cap: Float = CastStripModel.MAX_SIDE): Result {
         val w = s.w; val h = s.h; val g = s.gap
         val chatLeft = l.chatSide == HomeLayout.Side.LEFT
         val pRight = partyRight(l)
@@ -191,7 +228,7 @@ object HomeLayoutSolver {
         // THE TOP BAR (Above chat / Above map): first under the band in its column (under a full-width party list), the column's parts
         // stacked under it (the card, the party module, the chat); hidden in a fight (or by F2 / F3) it slides up behind the band and the
         // column keeps the band's top
-        val aboveBar = if (l.cast.top) castBoxes(l, w, h, g, colTop).firstOrNull() else null
+        val aboveBar = if (l.cast.top) castBoxes(l, w, h, g, colTop, cap).firstOrNull() else null
         val aboveCol = l.cast.column
         val lift = if (aboveBar != null && !hidden) aboveBar.h + g else 0f
         var map = Box(mapCol.first, colTop + if (aboveCol == HomeModule.MAP) lift else 0f, mapCol.second, h - g)
@@ -239,14 +276,14 @@ object HomeLayoutSolver {
         if (aboveBar != null) {
             // (hidden under the fight strip: from where it would lie without the strip, so it still goes wholly above the page)
             // (and under a full-width party list: from its place without the list, so it goes up behind the band, never onto the list)
-            val hideFrom = if (strip || colTop != top) castBoxes(l, w, h, g, if (strip) bb + g else top).first() else aboveBar
+            val hideFrom = if (strip || colTop != top) castBoxes(l, w, h, g, if (strip) bb + g else top, cap).first() else aboveBar
             out[HomePart.STRIP] = if (hidden) CastStripModel.hiddenAbove(CastStripModel.Box(hideFrom.l, hideFrom.t, hideFrom.r, hideFrom.b), g)
                 .let { Box(it.l, it.t, it.r, it.b) } else aboveBar
             partyUnder(l, s, out, pRight, w, fill, rowH)
             return Result(out, side, pRight, card, hidden, f1, f2, bb, castTop = true, f3 = f3, away = away, fightStrip = strip,
                 partyWide = wide, partyRowH = laidRowH(party, out, rowH))
         }
-        val bars = castBoxes(l, w, h, g)
+        val bars = castBoxes(l, w, h, g, cap = cap)
         if (bars.isEmpty()) { partyUnder(l, s, out, pRight, w, fill, rowH); return Result(out, side, pRight, card, false, f1, f2, bb, f3 = f3,
             away = away, fightStrip = strip, partyWide = wide, partyRowH = laidRowH(party, out, rowH)) }
         val base = LinkedHashMap(out)
@@ -351,15 +388,18 @@ object HomeLayoutSolver {
 
     /** the bar's box(es) laid (not hidden): one under its column, one across, or Split's two (slots 1-4 left, 5-8 right); a top dock's
      *  one box starts at [top] (the columns' top: the band's bottom + a gap) */
-    fun castBoxes(l: HomeLayout, w: Float, h: Float, g: Float, top: Float = 0f): List<Box> {
+    fun castBoxes(l: HomeLayout, w: Float, h: Float, g: Float, top: Float = 0f,
+                  cap: Float = if (l.grow) CastStripModel.GROW_MAX else CastStripModel.MAX_SIDE): List<Box> {
         val (lc, rc) = columns(l, w, g)
         val chatLeft = l.chatSide == HomeLayout.Side.LEFT
+        // (edit tabs: every bar is Same size's L; a fight tab's Grow fills its width up to [cap] - the bar as tall as its slots)
+        val max = if (l.grow) cap else CastStripModel.MAX_SIDE
         fun bar(col: Pair<Float, Float>, n: Int): Box {
-            val bh = CastStripModel.slotSide(n, col.second - col.first, l.castSize.px) + 2 * CastStripModel.PAD
+            val bh = CastStripModel.slotSide(n, col.second - col.first, max) + 2 * CastStripModel.PAD
             return Box(col.first, h - g - bh, col.second, h - g)
         }
         fun barTop(col: Pair<Float, Float>): Box {
-            val bh = CastStripModel.slotSide(CastStripModel.VISIBLE, col.second - col.first, l.castSize.px) + 2 * CastStripModel.PAD
+            val bh = CastStripModel.slotSide(CastStripModel.VISIBLE, col.second - col.first, max) + 2 * CastStripModel.PAD
             return Box(col.first, top, col.second, top + bh)
         }
         return when (l.cast) {
@@ -475,14 +515,15 @@ object HomeLayoutRules {
 
     fun valid(l: HomeLayout, s: HomeLayoutSolver.State): Boolean = problems(l, s, HomeLayoutSolver.places(l, s)).isEmpty()
 
-    /** every record the editor can make (SPEC section 2: 2 sides x 3 widths x 3 card docks x 7 bar docks x 3 slot sizes x 2 rests x
-     *  3 fight modes = 2,268; the 7 docks count Above chat / Above map; after 1518 x the party list's 4 docks = 9,072) */
+    /** every PAGE the editor can make (SPEC section 2: 2 sides x 3 widths x 3 card docks x 7 bar docks x 2 rests x 3 fight modes; the 7
+     *  docks count Above chat / Above map; after 1518 x the party list's 4 docks; edit tabs, 2026-11-24: the S / M / L sizes gone, x the
+     *  fight tabs' Slots Grow / Same size = 6,048. A tab's page is one of these: HomeLayout.forTab) */
     fun all(): List<HomeLayout> {
-        val out = ArrayList<HomeLayout>(9072)
+        val out = ArrayList<HomeLayout>(6048)
         for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values()) for (card in HomeLayout.CardDock.values())
-            for (cast in HomeLayout.CastDock.values()) for (size in HomeLayout.SlotSize.values()) for (rest in HomeRest.values())
+            for (cast in HomeLayout.CastDock.values()) for (grow in listOf(false, true)) for (rest in HomeRest.values())
                 for (fight in HomeLayout.FightBand.values()) for (party in HomeLayout.PartyDock.values())
-                    out += HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, castSize = size, rest = rest, fight = fight,
+                    out += HomeLayout(chatSide = side, chatShare = share, card = card, cast = cast, grow = grow, rest = rest, fight = fight,
                         party = party)
         return out
     }

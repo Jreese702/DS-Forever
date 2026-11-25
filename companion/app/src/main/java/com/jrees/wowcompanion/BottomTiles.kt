@@ -57,11 +57,13 @@ object BottomTiles {
     /** what the tiles read besides the settings: Spells' D-pad state (the DS WoW toolbar; null = an older add-on), the character */
     data class Env(val dpad: PadMapModel.Dpad?, val who: String?)
 
-    /** Home's 12 (critic C6: Tap-to-cast moved in, it lives on Home; 2026-11-20: Spell rank badges; 1518: Reset Home last, the XP bar
-     *  before it) and Map & chat's 3 */
-    val HOME_TILES = listOf(LAYOUT, REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR, RANK, XP, HOME_RESET)
+    /** Home's 9 (critic C6; 2026-11-20: Spell rank badges; 1518: Reset Home last, the XP bar before it) and Map & chat's 3. EDIT TABS
+     *  (2026-11-24, the proposal's decision 5 A): In fights, Focused quest and Tap-to-cast bar left Settings - they are each tab's own now,
+     *  Edit Home is their one place (its In combat / Party mode tabs); the Party group's one tile (Party list) went the same way, so the
+     *  group shows no more (a group with no tiles draws no heading) */
+    val HOME_TILES = listOf(LAYOUT, REST, SWING, CLOCK, TOOLBAR, TALK, RANK, XP, HOME_RESET)
     val MAP_TILES = listOf(ZOOM, WORLD, INPUT)
-    val PARTY_TILES = listOf(PARTY)
+    val PARTY_TILES = emptyList<String>()
 
     /** the group's fixed tile list. Until the core lands the Bottom screen's two groups (Home, Map & chat) the old four are mapped: Home
      *  draws Home's 8, Map draws Map & chat's 3; Tap-to-cast bar and Chat draw none (their headings are not shown) */
@@ -78,6 +80,8 @@ object BottomTiles {
 
     /** every tile, both groups */
     val ALL: List<String> get() = HOME_TILES + PARTY_TILES + MAP_TILES
+    /** the tiles that left Settings with the edit tabs (their lines and pictures kept for the Home edit's own words) */
+    val TAB_TILES = listOf(COMBAT, QUEST, CASTBAR, PARTY)
 
     /** [g]'s tiles now: the fixed list, less a tile that does not apply */
     fun slots(g: SettingsTabs.Group, env: Env): List<String> = tiles(g).filter { applies(it, env) }
@@ -153,7 +157,6 @@ object BottomTiles {
             // a column's bar: above or below that column (Across and Split stay at the foot)
             cast.column?.let { c -> out += Line(CAST_EDGE, if (c == HomeModule.CHAT) "Chat" else "Map", HomeWidgetMenus.EDGE_WORDS, if (cast.top) 0 else 1) }
             if (HomeSettings.castBarSide != CastStripModel.Side.OFF) {
-                out += Line("castsize", "Size", SIZE_WORDS, HomeLayout.SlotSize.values().indexOf(HomeSettings.layout.castSize))
                 val m = CastStripModel.Combat.values()
                 // cb14 (D5b): the same setting as the Controller room's In combat > "Show tap-to-cast" check box (D4), its mirror here
                 out += Line("castcombat", "Show in combat", m.map { it.label }, m.indexOf(HomeSettings.castBarCombat))
@@ -238,7 +241,6 @@ object BottomTiles {
      * the tile opens its (empty) band. The tile wears the A glyph while it does.
      */
     @JvmStatic var editHome: (() -> Unit)? = null
-    val SIZE_WORDS = listOf("S", "M", "L")
     /** "In fights" in [HomeLayout.FightBand]'s order */
     val FIGHT_WORDS = listOf("Grow", "Same size", "Top screen")
     /** the In fights band's second line with Top screen: "Cast bar" in [HomeLayout.FightCast]'s order */
@@ -263,7 +265,6 @@ object BottomTiles {
         when (key) {
             HOME_CLASSIC -> if (HomeLayoutStore.who != null) HomeSettings.resetHomeToClassic()
             ALL_CHARS -> if (HomeLayoutStore.who != null) HomeLayoutStore.set(HomeSettings.layout, all = true)
-            "castsize" -> HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.values()[k]) }
             REST -> HomeSettings.rest = HomeRest.values()[k]
             COMBAT -> HomeLayout.FightBand.values().getOrNull(k)?.let { HomeSettings.fightBand = it }
             FIGHT_CAST -> HomeLayout.FightCast.values().getOrNull(k)?.let { HomeSettings.fightCast = it }

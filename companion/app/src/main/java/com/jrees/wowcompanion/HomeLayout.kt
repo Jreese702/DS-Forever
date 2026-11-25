@@ -30,7 +30,11 @@ data class HomeLayout(
     /** the tap-to-cast bar: off, under or above the chat, under or above the map (both follow a swap: they name a module, not a side),
      *  one bar across both, or two halves (one under each column); Across and Split stay at the foot */
     val cast: CastDock = CastDock.OFF,
-    val castSize: SlotSize = SlotSize.L,
+    /** EDIT TABS (the user, 2026-11-24: "I dont like the sizes for the tap to cast bar and I kind of want tor remove that but in party and
+     *  combat mode I DO want an option to gro those options to fill the space of the bar better"; the pick "8 slots, fill the width"):
+     *  the S / M / L sizes are gone (every bar draws today's L); a FIGHT tab's "Slots: Grow" fills the bar's width instead ([growSide]).
+     *  The PAGE's value ([forTab]): the Out of combat tab never grows; the record keeps each fight tab's own ([combat] / [partyTab]) */
+    val grow: Boolean = false,
     /** the controller band at rest: the diamonds or the thin row */
     val rest: HomeRest = HomeRest.DIAMONDS,
     /** the band in fights: grow down (today's, D1's default), the rest size, or the top screen (phase 3: the bottom keeps its rest box
@@ -69,7 +73,116 @@ data class HomeLayout(
      *  88 px rows with it staying on the bottom screen; SAME: the list keeps its rest size in every fight. (1523's two rows "Controller
      *  on top / on bottom (fights)" - their Grow a bit / Shrink to make room gone - are read once into it: [HomeLayoutJson.parse]) */
     val partySize: PartySize = PartySize.GROW,
+    /** EDIT TABS (the user, 2026-11-24: "tabs to the top of edit mode for out of combat, in combat and party mode ... have custom layouts
+     *  for each mode"; the pick "Fully separate": each tab keeps its own places, changing one never changes another): the In combat tab's
+     *  own places ([TabPlaces]; null = still a copy of the Out of combat places above - nothing of its own yet). Its Combat bars and Cast
+     *  bar are [fight] / [fightCast] (today's In fights, so an older build reads them) */
+    val combat: TabPlaces? = null,
+    /** the Party mode tab's own places (null = a copy of the Out of combat places) */
+    val partyTab: TabPlaces? = null,
+    /** the Party mode tab's Combat bars (the user, 2026-11-24: "the party mode tab should kind of operate similar to the combat mode tab
+     *  ... having settings to like grow or got to top screen"); null = what Party mode did before the tabs: Top screen when In fights is
+     *  Top screen, else No grow (R0: Party mode never grew the band) */
+    val partyFight: FightBand? = null,
+    /** the Party mode tab's Cast bar (Top screen fights); null = the In combat tab's ([fightCast]) */
+    val partyCast: FightCast? = null,
+    /** a PAGE's flag (never in a record: [forTab] sets it, [canonical] clears it, JSON never writes it): the Party mode tab's Combat bars
+     *  is its own Bottom screen - its fight grows the band (HomeLayoutSolver.big: R0 lifted for this pick only; a record's own Grow laid
+     *  with Party mode on keeps R0, as before the tabs) */
+    val partyBand: Boolean = false,
 ) {
+    /**
+     * A FIGHT TAB'S OWN PLACES (edit tabs, 2026-11-24): the page's places (chat side and width, the quest card, the tap-to-cast bar and
+     * the party list's docks), the bar's "Slots: Grow" ([grow]) and the clock's badges shown on that tab ([badges]: the extras' keys,
+     * ClockBand's and "gold"; null = the ones Settings > Clock band turns on, as the Out of combat tab shows them)
+     */
+    data class TabPlaces(val chatSide: Side = Side.LEFT, val chatShare: Share = Share.HALF, val card: CardDock = CardDock.ON_MAP,
+                         val cast: CastDock = CastDock.OFF, val party: PartyDock = PartyDock.ABOVE_CHAT, val grow: Boolean = false,
+                         val badges: List<String>? = null) {
+        companion object {
+            /** [l]'s Out of combat places as a fight tab's (a fresh copy: no Grow, the badges as Settings has them) */
+            fun of(l: HomeLayout): TabPlaces = TabPlaces(l.chatSide, l.chatShare, l.card, l.cast, l.party)
+        }
+    }
+
+    /** what one tab owns ([own] / [withOwn]): its places, and (the fight tabs) its Combat bars and Cast bar */
+    data class Own(val places: TabPlaces, val fight: FightBand?, val fightCast: FightCast?)
+
+    /** the Party mode tab's Combat bars as the page lays them */
+    val partyFightNow: FightBand get() = partyFight ?: if (fight == FightBand.TOP) FightBand.TOP else FightBand.SAME
+    /** the Party mode tab's Cast bar */
+    val partyCastNow: FightCast get() = partyCast ?: fightCast
+
+    /** [t]'s own values (a null copy read as the Out of combat places it still is) */
+    fun own(t: HomeTab): Own = when (t) {
+        HomeTab.OUT -> Own(TabPlaces.of(this), null, null)
+        HomeTab.COMBAT -> Own(combat ?: TabPlaces.of(this), fight, fightCast)
+        HomeTab.PARTY -> Own(partyTab ?: TabPlaces.of(this), partyFightNow, partyCastNow)
+    }
+
+    /** [t]'s own values set to [o] (raw: nothing else pinned; [withTab] is the editor's way) */
+    fun withOwn(t: HomeTab, o: Own): HomeLayout = when (t) {
+        HomeTab.OUT -> copy(chatSide = o.places.chatSide, chatShare = o.places.chatShare, card = o.places.card, cast = o.places.cast,
+            party = o.places.party)
+        HomeTab.COMBAT -> copy(combat = o.places, fight = o.fight ?: fight, fightCast = o.fightCast ?: fightCast)
+        HomeTab.PARTY -> copy(partyTab = o.places, partyFight = o.fight ?: partyFight, partyCast = o.fightCast ?: partyCast)
+    }.canonical()
+
+    /**
+     * THE PAGE OF TAB [t]: the record as the solver lays it while that tab is Home's - the shared fields as they are, the tab's own places
+     * over them (the Out of combat tab: the record's own; it never grows its slots), the Party mode tab's Combat bars and Cast bar as
+     * [fight] / [fightCast]. The page's [combat] / [partyTab] stay the record's (a page written back is [withTab]'s)
+     */
+    fun forTab(t: HomeTab): HomeLayout {
+        if (t == HomeTab.OUT) return if (grow || partyBand) copy(grow = false, partyBand = false) else this
+        val o = own(t)
+        val p = o.places
+        return copy(chatSide = p.chatSide, chatShare = p.chatShare, card = p.card, cast = p.cast, party = p.party, grow = p.grow,
+            fight = o.fight ?: fight, fightCast = o.fightCast ?: fightCast, partyBand = t == HomeTab.PARTY && o.fight == FightBand.GROW)
+    }
+
+    /**
+     * EDIT TAB [t]'s PAGE [page] WRITTEN BACK (the user's pick 2026-11-24, "Fully separate": a change on one tab never changes another):
+     * the shared fields from [page] (the rest look, the room bar, the extras' order, the party list's sizing), [t]'s own from [page]; any
+     * OTHER tab whose values that would change (a fight tab still a copy of the Out of combat places, or Party mode's Combat bars still
+     * following In combat's) keeps what it had - its copy is made now
+     */
+    fun withTab(t: HomeTab, page: HomeLayout): HomeLayout {
+        val before = HomeTab.values().associateWith { own(it) }
+        val mine = Own(TabPlaces(page.chatSide, page.chatShare, page.card, page.cast, page.party, page.grow && t != HomeTab.OUT,
+            (if (t == HomeTab.OUT) null else own(t).places.badges)),
+            if (t == HomeTab.OUT) null else page.fight, if (t == HomeTab.OUT) null else page.fightCast)
+        var r = copy(rest = page.rest, xpBar = page.xpBar, rooms = page.rooms, hidden = page.hidden, extras = page.extras,
+            partyGrow = page.partyGrow, partySize = page.partySize).withOwn(t, mine)
+        for (o in HomeTab.values()) if (o != t && r.own(o) != before.getValue(o)) r = r.withOwn(o, before.getValue(o))
+        return r
+    }
+
+    /** [f] applied to tab [t]'s page and written back ([withTab]) */
+    fun onTab(t: HomeTab, f: (HomeLayout) -> HomeLayout): HomeLayout = withTab(t, f(forTab(t)))
+
+    /** tab [t]'s badges (null = the ones Settings > Clock band turns on: the Out of combat tab's always) */
+    fun badges(t: HomeTab): List<String>? = if (t == HomeTab.OUT) null else own(t).places.badges
+    /** tab [t]'s badges set to [b] (a fight tab only; nothing else changes) */
+    fun withBadges(t: HomeTab, b: List<String>?): HomeLayout =
+        if (t == HomeTab.OUT) this else withOwn(t, own(t).let { it.copy(places = it.places.copy(badges = b)) })
+
+    /** one form for one meaning: a fight tab that is the Out of combat places' own copy (nothing of its own) is null, Party mode's
+     *  Combat bars / Cast bar that say what they would follow are null */
+    fun canonical(): HomeLayout {
+        val base = TabPlaces.of(this)
+        val c = combat?.takeIf { it != base }
+        val p = partyTab?.takeIf { it != base }
+        val pf = partyFight?.takeIf { it != (if (fight == FightBand.TOP) FightBand.TOP else FightBand.SAME) }
+        val pc = partyCast?.takeIf { it != fightCast }
+        return if (c === combat && p === partyTab && pf == partyFight && pc == partyCast && !grow && !partyBand) this
+            else copy(combat = c, partyTab = p, partyFight = pf, partyCast = pc, grow = false, partyBand = false)
+    }
+
+    /** every tab's bar at dock [d] (the one-time question's Yes, the Controller room's Turn on: "the bar on in all three tabs at the same
+     *  place") */
+    fun castEverywhere(d: CastDock): HomeLayout = HomeTab.values().fold(this) { r, t ->
+        r.withOwn(t, r.own(t).let { it.copy(places = it.places.copy(cast = d)) }) }
     /** "Grows": never (the rows keep the rest's 64 px - a shrink still shrinks), in fights (today's), whenever Party mode is on (the
      *  fight's 88 px rows at rest too) */
     enum class PartyGrow { OFF, FIGHTS, ALWAYS }
@@ -117,8 +230,6 @@ data class HomeLayout(
                 else (if (top) ABOVE_CHAT else UNDER_CHAT)
         }
     }
-    /** the tap-to-cast slot's side (L = CastStripModel.MAX_SIDE, today's) */
-    enum class SlotSize(val px: Float) { S(88f), M(100f), L(112f) }
     enum class FightBand { GROW, SAME, TOP }
     /** "Cast bar in fights" (Top-screen fights only): the bottom screen's strip, or the top screen (the game's own bar) */
     enum class FightCast { BOTTOM, TOP }
@@ -152,12 +263,18 @@ data class HomeLayout(
      * room on it - none hidden - and the XP track shown), the party list back above the chat and the clock's extras in today's order
      * (feat/extras-polish; which of them are on is Settings', untouched)
      */
-    fun classic(): HomeLayout = copy(name = LEGACY_CLASSIC, chatSide = Side.LEFT, chatShare = Share.HALF, card = CardDock.ON_MAP,
-        rest = HomeRest.DIAMONDS, castSize = SlotSize.L,
-        cast = if (cast == CastDock.SPLIT) CastDock.UNDER_CHAT else cast.withTop(false),
-        fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList(),
-        party = PartyDock.ABOVE_CHAT, extras = ClockBand.DEFAULT, fightCast = FightCast.BOTTOM, partyGrow = PartyGrow.FIGHTS,
-        partySize = PartySize.GROW)
+    fun classic(): HomeLayout {
+        // EDIT TABS (2026-11-24): all three tabs back to Classic - each fight tab's own bar kept in its column (Off stays Off), its
+        // Slots back to Same size, its badges back to Settings' own; Party mode's Combat bars / Cast bar follow In combat's again
+        fun bar(c: CastDock) = if (c == CastDock.SPLIT) CastDock.UNDER_CHAT else c.withTop(false)
+        fun tab(p: TabPlaces?) = p?.let { TabPlaces(cast = bar(it.cast)) }
+        return copy(name = LEGACY_CLASSIC, chatSide = Side.LEFT, chatShare = Share.HALF, card = CardDock.ON_MAP,
+            rest = HomeRest.DIAMONDS, cast = bar(cast),
+            fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList(),
+            party = PartyDock.ABOVE_CHAT, extras = ClockBand.DEFAULT, fightCast = FightCast.BOTTOM, partyGrow = PartyGrow.FIGHTS,
+            partySize = PartySize.GROW, grow = false, combat = tab(combat), partyTab = tab(partyTab), partyFight = null, partyCast = null)
+            .canonical()
+    }
 
     companion object {
         const val VERSION = 1
@@ -171,14 +288,20 @@ data class HomeLayout(
             CastStripModel.Side.LEFT -> if (chatSide == Side.LEFT) CastDock.UNDER_CHAT else CastDock.UNDER_MAP
             CastStripModel.Side.RIGHT -> if (chatSide == Side.LEFT) CastDock.UNDER_MAP else CastDock.UNDER_CHAT
         }.withTop(keepTop)
+        /** EDIT TABS (the review): clock badge [key] shown on a tab whose own list is [mine] - exactly that list when it has one (Edit Home
+         *  shows a fight tab's own list whatever Settings says, so the fight shows the same), else Settings' row ([settingsOn]: the Out
+         *  of combat tab's badges) */
+        fun badgeOn(key: String, mine: List<String>?, settingsOn: Boolean): Boolean = mine?.contains(key) ?: settingsOn
     }
 }
 
 /** the record as JSON in the "home" prefs; tolerant: anything unreadable (bad JSON, a future version, unknown words) -> [fallback] */
 object HomeLayoutJson {
-    fun json(l: HomeLayout): String = JSONObject()
+    fun json(l: HomeLayout, full: Boolean = false): String = JSONObject()
         .put("v", l.v).put("name", l.name).put("chat", l.chatSide.name).put("share", l.chatShare.name).put("card", l.card.name)
-        .put("cast", l.cast.name).put("size", l.castSize.name).put("rest", l.rest.name).put("fight", l.fight.name).put("xp", l.xpBar)
+        // (the tap-to-cast sizes are gone - edit tabs, 2026-11-24 - and every bar draws L: "size" is still written as L, so a Classic
+        // record's text is unchanged and an older build reads L)
+        .put("cast", l.cast.name).put("size", "L").put("rest", l.rest.name).put("fight", l.fight.name).put("xp", l.xpBar)
         // phase 4: the room bar's order only when it is not today's (a Classic record's text is unchanged)
         .also { o -> if (!RoomBar.isDefault(l.rooms)) o.put("rooms", org.json.JSONArray(RoomBar.normalize(l.rooms))) }
         // 1518 build 2: the hidden rooms only when there are some (a Classic record's text is unchanged)
@@ -193,7 +316,31 @@ object HomeLayoutJson {
         .also { o -> if (l.partyGrow != HomeLayout.PartyGrow.FIGHTS) o.put("pgrow", l.partyGrow.name) }
         // (the one "Size in fights"; 1523's "ptop" / "pbot" are never written again: [partySizeOf])
         .also { o -> if (l.partySize != HomeLayout.PartySize.GROW) o.put("psize", l.partySize.name) }
+        // EDIT TABS (2026-11-24): each fight tab's own values, flat keys ("c.chat", "p.cast" ...) written only where they differ from
+        // what they would be with nothing of their own - a Classic record's text is unchanged, an older build reads the Out of combat
+        // tab as the record it always was; [full] writes them all (the store's field-by-field lay-on: HomeLayoutStore.layOn)
+        .also { o -> tabs(o, l, full) }
         .toString()
+
+    /** the tabs' flat keys (see [json]). THE DOWNGRADE (the review): an older build reads the Out of combat tab and In combat's Combat bars
+     *  / Cast bar as it always did and ignores these keys, but its next save of the record writes them away - the fight tabs read as
+     *  copies of the Out of combat places again after an upgrade (the one-time migration does not run twice: HomeLayoutStore's
+     *  KEY_TABS_MIGRATED), with Party mode's Combat bars following In combat's (R0). Nothing else of the record is lost */
+    private fun tabs(o: JSONObject, l: HomeLayout, full: Boolean) {
+        for ((pre, t) in listOf("c." to HomeTab.COMBAT, "p." to HomeTab.PARTY)) {
+            val own = l.own(t).places
+            val base = HomeLayout.TabPlaces.of(l)
+            if (full || own.chatSide != base.chatSide) o.put(pre + "chat", own.chatSide.name)
+            if (full || own.chatShare != base.chatShare) o.put(pre + "share", own.chatShare.name)
+            if (full || own.card != base.card) o.put(pre + "card", own.card.name)
+            if (full || own.cast != base.cast) o.put(pre + "cast", own.cast.name)
+            if (full || own.party != base.party) o.put(pre + "party", own.party.name)
+            if (full || own.grow) o.put(pre + "grow", own.grow)
+            own.badges?.let { b -> o.put(pre + "badges", org.json.JSONArray(b)) } ?: run { if (full) o.put(pre + "badges", "") }
+        }
+        if (full || l.partyFight != null) o.put("p.fight", l.partyFightNow.name)
+        if (full || l.partyCast != null) o.put("p.fcast", l.partyCastNow.name)
+    }
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
         if (s.isNullOrBlank()) return fallback
@@ -210,7 +357,6 @@ object HomeLayoutJson {
                 chatShare = en(HomeLayout.Share.values(), "share", d.chatShare),
                 card = en(HomeLayout.CardDock.values(), "card", d.card),
                 cast = en(HomeLayout.CastDock.values(), "cast", d.cast),
-                castSize = en(HomeLayout.SlotSize.values(), "size", d.castSize),
                 rest = en(HomeRest.values(), "rest", d.rest),
                 fight = en(HomeLayout.FightBand.values(), "fight", d.fight),
                 xpBar = o.optBoolean("xp", d.xpBar),
@@ -221,8 +367,25 @@ object HomeLayoutJson {
                 fightCast = en(HomeLayout.FightCast.values(), "fcast", d.fightCast),
                 partyGrow = en(HomeLayout.PartyGrow.values(), "pgrow", d.partyGrow),
                 partySize = partySizeOf(o),
-            )
+            ).let { base -> tabsOf(o, base) }
         } catch (e: Exception) { fallback }
+    }
+
+    /** EDIT TABS: the fight tabs' own values over [base] (a tab with no key of its own: still the Out of combat places' copy) */
+    private fun tabsOf(o: JSONObject, base: HomeLayout): HomeLayout {
+        fun <E : Enum<E>> en(values: Array<E>, key: String, def: E): E = o.optString(key, "").let { w -> values.firstOrNull { it.name == w } } ?: def
+        fun places(pre: String): HomeLayout.TabPlaces? {
+            if (o.keys().asSequence().none { it.startsWith(pre) && it != "p.fight" && it != "p.fcast" }) return null
+            val b = HomeLayout.TabPlaces.of(base)
+            val badges = o.optJSONArray(pre + "badges")?.let { a -> (0 until a.length()).map { a.optString(it, "") }
+                .filter { it in HomeEditModel.EXTRA_KEYS }.distinct() }
+            return HomeLayout.TabPlaces(en(HomeLayout.Side.values(), pre + "chat", b.chatSide), en(HomeLayout.Share.values(), pre + "share", b.chatShare),
+                en(HomeLayout.CardDock.values(), pre + "card", b.card), en(HomeLayout.CastDock.values(), pre + "cast", b.cast),
+                en(HomeLayout.PartyDock.values(), pre + "party", b.party), o.optBoolean(pre + "grow", false), badges)
+        }
+        return base.copy(combat = places("c."), partyTab = places("p."),
+            partyFight = if (o.has("p.fight")) en(HomeLayout.FightBand.values(), "p.fight", base.partyFightNow) else null,
+            partyCast = if (o.has("p.fcast")) en(HomeLayout.FightCast.values(), "p.fcast", base.partyCastNow) else null).canonical()
     }
 
     /** "Size in fights" from the record: its own "psize" when it has one; else, ONCE, test 1523's two picks - Same size or Shrink to make
@@ -245,6 +408,95 @@ object HomeLayoutMigration {
     fun fromToday(rest: HomeRest, combatGrow: Boolean, questOverMap: Boolean, castSide: CastStripModel.Side): HomeLayout = HomeLayout(
         name = HomeLayout.LEGACY_CLASSIC, chatSide = HomeLayout.Side.LEFT, chatShare = HomeLayout.Share.HALF,
         card = if (questOverMap) HomeLayout.CardDock.ON_MAP else HomeLayout.CardDock.ABOVE_CHAT,
-        cast = HomeLayout.dockOf(castSide, HomeLayout.Side.LEFT), castSize = HomeLayout.SlotSize.L, rest = rest,
+        cast = HomeLayout.dockOf(castSide, HomeLayout.Side.LEFT), rest = rest,
         fight = if (combatGrow) HomeLayout.FightBand.GROW else HomeLayout.FightBand.SAME)
+}
+
+/**
+ * EDIT HOME'S THREE TABS (the user, 2026-11-24: "I want to add tabs to the top of edit mode for out of combat, in combat and party mode,
+ * so that we can consolidate some of our edit mode settings into each tab as well as have custom layouts for each mode"; the picks:
+ * "Fully separate", per tab the places + the fight rows + the clock's badges, the Party mode layout "Whenever Party mode is on"). Not
+ * presets (the 11-21 "no layouts" ruling stands): no names, no slots, no picking - each tab is tied to its situation ([active]).
+ */
+enum class HomeTab(val word: String, val view: String) {
+    OUT("Out of combat", "normal"), COMBAT("In combat", "combat"), PARTY("Party mode", "party");
+
+    /** the Controller room's bar of this situation (its Edit slots opens it: ControllerView.openOnCastBar) */
+    val bar: String get() = PadMapModel.barOf(view) ?: "castbar"
+
+    /** a fight tab (the Combat bars, Cast bar and Slots rows; its own badges) */
+    val fight: Boolean get() = this != OUT
+
+    companion object {
+        /**
+         * WHICH TAB'S LAYOUT HOME LAYS NOW: Party mode's whenever Party mode is on (solo or grouped, at rest and in its fights: the user's
+         * pick "Whenever Party mode is on"); In combat's on OUR takeover (the same trigger as Grow / Top screen: up on the takeover, B on
+         * Home brings the Out of combat layout back mid-fight, the next attack re-arms it - never the game's combat flag); else Out of
+         * combat's
+         */
+        fun active(partyOn: Boolean, takeover: Boolean): HomeTab = when {
+            partyOn -> PARTY
+            takeover -> COMBAT
+            else -> OUT
+        }
+
+        /**
+         * THE D-PAD'S SIDES (the user's pick 2026-11-24, "Follow the layout on screen"): the tab whose chat / map sides the DS toolbar's
+         * D-pad Left / Right (and their pictures) follow - the page Home lays OUT OF A FIGHT: Party mode's whenever Party mode is on, else
+         * Out of combat's. The add-on re-binds the D-pad out of combat only (PadMap m178) and the app sends the sides only while Home shows
+         * no fight (ToolbarMirror.decide; HomeView.inFight = our takeover or Party mode's fight), so a switch - Party mode on / off, a
+         * change of either tab's sides - lands at once at rest and waits for a fight's end otherwise. A fight keeps the sides it began
+         * with: In combat's page (laid only in a fight) never re-binds the D-pad, its pictures say what the keys do (P5: the pictures
+         * never lie)
+         */
+        fun dpad(partyOn: Boolean): HomeTab = if (partyOn) PARTY else OUT
+        /** the add-on's mirror bit record [l] asks for now (HomeLayoutSolver.mirrorBit of [dpad]'s page) */
+        fun mirrorBit(l: HomeLayout, partyOn: Boolean): Int = HomeLayoutSolver.mirrorBit(l.forTab(dpad(partyOn)))
+        /** the D-pad sides Edit Home previews on tab [t]: its own on Out of combat and Party mode; on In combat the sides its fights keep
+         *  (Out of combat's: the page they begin from) - In combat's own sides cannot re-bind the D-pad in a fight */
+        fun dpadPreview(t: HomeTab): HomeTab = if (t == COMBAT) OUT else t
+
+        /** the tab Edit Home opens on: what Home shows now (Party mode on = Party mode; it never opens in a fight) */
+        fun opening(partyOn: Boolean): HomeTab = if (partyOn) PARTY else OUT
+
+        /** the tabs Edit Home offers: Party mode's only while Party mode is allowed (QOL > Party), as the Controller room's */
+        fun shown(partyAllowed: Boolean): List<HomeTab> = if (partyAllowed) values().toList() else listOf(OUT, COMBAT)
+
+        /**
+         * THE PAGE HOME LAYS AT RUNTIME for record [l] on tab [t], and whether its tap-to-cast bar lies slid away: a fight tab whose bar
+         * is Off while the Out of combat tab has one keeps that bar's dock HIDDEN (cb7's slide behind the room bar, or up behind the band
+         * for a top dock: "a bar that is Off on the new tab slides down behind the room bar"), so the switch glides it away and back
+         */
+        fun page(l: HomeLayout, t: HomeTab): Pair<HomeLayout, Boolean> {
+            val p = l.forTab(t)
+            if (t == OUT || p.cast != HomeLayout.CastDock.OFF || l.cast == HomeLayout.CastDock.OFF) return p to false
+            // the Out of combat bar's dock in this tab's columns (a column's bar follows its module; Across / Split stay at the foot)
+            return p.copy(cast = l.cast, grow = false) to true
+        }
+    }
+}
+
+/**
+ * EDIT TABS' MIGRATION (PROPOSAL section 2 "Migration"; nothing changes on screen on day one): a record of before the tabs gets its In
+ * combat and Party mode tabs as COPIES of its places with the app-wide fight settings mapped on: In combat's Combat bars = today's In
+ * fights (the same field: Grow = Bottom screen, Same size = No grow, Top screen = Top screen), its bar Off when "Show in combat" was Off
+ * - except with Top screen, where the bar stayed (the user's "Always stay" pick); Party mode's Combat bars = Top screen when In fights is
+ * Top screen, else No grow (R0: [HomeLayout.partyFightNow]), its bar Off when "Bar in Party mode" was Off; Slots = Same size everywhere.
+ * The app-wide keys are read once here and become each character's (HomeSettings' castBarCombat / castBarPartyShow are facades now)
+ */
+object HomeTabsMigration {
+    /** HomeSettings' old app-wide keys (still written by the facades for an older build) */
+    const val KEY_CAST_COMBAT = "castBarCombat"
+    const val KEY_CAST_PARTY = "castBarPartyShow"
+
+    /** [l] with its fight tabs mapped from [showInCombat] / [barInParty] (a record that already has a tab of its own keeps it) */
+    fun tabs(l: HomeLayout, showInCombat: Boolean, barInParty: Boolean): HomeLayout {
+        if (l.cast == HomeLayout.CastDock.OFF) return l
+        var r = l
+        if (l.combat == null && !showInCombat && l.fight != HomeLayout.FightBand.TOP)
+            r = r.withOwn(HomeTab.COMBAT, r.own(HomeTab.COMBAT).let { it.copy(places = it.places.copy(cast = HomeLayout.CastDock.OFF)) })
+        if (l.partyTab == null && !barInParty)
+            r = r.withOwn(HomeTab.PARTY, r.own(HomeTab.PARTY).let { it.copy(places = it.places.copy(cast = HomeLayout.CastDock.OFF)) })
+        return r
+    }
 }

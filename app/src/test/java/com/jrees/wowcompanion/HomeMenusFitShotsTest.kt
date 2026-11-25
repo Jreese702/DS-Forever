@@ -115,6 +115,7 @@ class HomeMenusFitShotsTest {
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
+        home.pageZoomOn = false                                       // (edit tabs: this suite samples Home's own px; the zoom + tab row: EditTabsShotsTest)
         home.borrow()
         ct?.let { home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":$it}}}"""))!!) }
         lay(home)
@@ -389,10 +390,10 @@ class HomeMenusFitShotsTest {
         }
         for (f in HomeLayout.FightBand.values()) {
             p.home.editAct { listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, f.ordinal)) }; settle(4)
-            p.home.editAct { it.toggleFight() }; settle(30)
+            p.home.fightToggle(); settle(30)
             p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(4)
             check("fight ${f.name.lowercase()}", ev.menuBox(EditStop.FIGHT_PEN))
-            p.home.editAct { it.closeMenu(); it.toggleFight() }; settle(30)
+            p.home.editAct { it.closeMenu() }; p.home.fightToggle(); settle(30)
         }
         p.home.editCancel(); settle()
     }
@@ -551,5 +552,16 @@ class HomeMenusFitShotsTest {
             } finally { stay = false }
         }
         sheet("toast_top_bar")
+    }
+
+    /** EDIT TABS (2026-11-24): the fight look - solo the In combat tab, with Party mode on its own tab's Fight toggle */
+    private fun HomeView.fightLookOn() {
+        val m = editModel() ?: return
+        if (m.tab == HomeTab.PARTY) { if (!m.fightPreview) editKey("PAD1") } else editAct { it.tabTo(HomeTab.COMBAT) }
+    }
+    @Suppress("unused")
+    private fun HomeView.fightToggle() {
+        val m = editModel() ?: return
+        if (m.tab == HomeTab.PARTY) editAct { it.toggleFight() } else editAct { it.tabTo(if (m.tab == HomeTab.COMBAT) HomeTab.OUT else HomeTab.COMBAT) }
     }
 }

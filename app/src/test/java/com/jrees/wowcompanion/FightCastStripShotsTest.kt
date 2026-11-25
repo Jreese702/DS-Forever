@@ -99,6 +99,7 @@ class FightCastStripShotsTest {
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
+        home.pageZoomOn = false                                       // (edit tabs: this suite samples Home's own px; the zoom + tab row: EditTabsShotsTest)
         home.borrow()
         val ccJson = if (cc == null) "" else ",\"cc\":$cc"
         home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m188","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":1$ccJson}}}"""))!!)
@@ -284,7 +285,7 @@ class FightCastStripShotsTest {
         val l = HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT, fight = HomeLayout.FightBand.TOP)
         val p = page(l, fight = false)
         assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
-        p.home.editKey("PAD1"); settle(40)
+        p.home.fightLookOn(); settle(40)
         val b = boxes(p.home)
         assertEquals("the Fight preview: the band away", -HomeLayoutSolver.AWAY_PAST, b.getValue("BARS").bottom, 0.01f)
         assertEquals("the Fight preview lays the strip", STRIP, b.getValue("FIGHT_CAST"))
@@ -316,7 +317,7 @@ class FightCastStripShotsTest {
                     .firstOrNull { it.canRead() }?.let { Tr.load(lang, it.readText()) }
                 Tr.setChoice(app, lang)
                 assertTrue(p.home.editOpen(EditStop.FIGHT)); settle(20)
-                p.home.editKey("PAD1"); settle(40)
+                p.home.fightLookOn(); settle(40)
                 p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
                 render(p, "fight_preview_bubble_$lang")
                 val ev = p.home.editChrome
@@ -340,5 +341,16 @@ class FightCastStripShotsTest {
                 p.home.editCancel()
             }
         } finally { Tr.setChoice(app, "auto") }
+    }
+
+    /** EDIT TABS (2026-11-24): the fight look - solo the In combat tab, with Party mode on its own tab's Fight toggle */
+    private fun HomeView.fightLookOn() {
+        val m = editModel() ?: return
+        if (m.tab == HomeTab.PARTY) { if (!m.fightPreview) editKey("PAD1") } else editAct { it.tabTo(HomeTab.COMBAT) }
+    }
+    @Suppress("unused")
+    private fun HomeView.fightToggle() {
+        val m = editModel() ?: return
+        if (m.tab == HomeTab.PARTY) editAct { it.toggleFight() } else editAct { it.tabTo(if (m.tab == HomeTab.COMBAT) HomeTab.OUT else HomeTab.COMBAT) }
     }
 }

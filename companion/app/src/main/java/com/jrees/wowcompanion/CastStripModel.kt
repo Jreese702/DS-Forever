@@ -264,8 +264,9 @@ object CastStripModel {
         var hidden = false
             private set
         var sliding = false
-        fun note(mode: Combat, fighting: Boolean): Boolean {
-            val h = hiddenIn(mode, fighting)
+        fun note(mode: Combat, fighting: Boolean): Boolean = noteHidden(hiddenIn(mode, fighting))
+        /** edit tabs: hidden as Home lays it ([h]: the tab's bar Off); true = it changed */
+        fun noteHidden(h: Boolean): Boolean {
             if (h == hidden) return false
             hidden = h
             return true
@@ -345,8 +346,11 @@ object CastStripModel {
     /** the right column (the minimap, its auras, the quest card over it) ends above the bar */
     fun cutsRight(side: Side): Boolean = side == Side.RIGHT || side == Side.BOTH
 
-    /** the slot side inside a bar [bw] x [bh] */
-    private fun sideIn(side: Side, bw: Float, bh: Float): Float = minOf(slotSide(side, bw), bh - 2 * PAD).coerceAtLeast(MIN_SIDE)
+    /** the slot side inside a bar [bw] x [bh]: as big as the bar's height lets it (Home lays the bar exactly as tall as its slots - Same
+     *  size's [MAX_SIDE], or a fight tab's Grow up to [GROW_MAX], edit tabs 2026-11-24 - so a glide between the two scales the slots with
+     *  the bar), never wider than the width allows */
+    private fun sideIn(side: Side, bw: Float, bh: Float): Float =
+        minOf(slotSide(maxOf(1, visible(side)), bw, GROW_MAX), bh - 2 * PAD).coerceAtLeast(MIN_SIDE)
 
     /** cb5: one slot's share across a bar [bw] wide: the slot and an even gap (the slots in view spread evenly, the same room at each
      *  end as half the room between two: BOTH's look, LEFT / RIGHT alike with 4 in view). cb8: BOTH's 8 across the one bar */
@@ -568,6 +572,9 @@ object CastStripModel {
     const val VISIBLE = 4
     /** every mode's slot side (cb4: LEFT / RIGHT the same as BOTH's; cb3's LEFT / RIGHT were 84 at most, 78 on the Thor) */
     const val MAX_SIDE = 112f
+    /** EDIT TABS' "Slots: Grow" (the user's pick 2026-11-24, "8 slots, fill the width"): a fight tab's grown bar's largest slot - its side
+     *  (bar width - 2 PAD - GAP x (slots in view - 1)) / slots in view, at most this ([slotSide]; HomeLayoutSolver.castBoxes) */
+    const val GROW_MAX = 144f
     const val MIN_SIDE = 8f
     const val GAP = 8f
     const val PAD = 10f

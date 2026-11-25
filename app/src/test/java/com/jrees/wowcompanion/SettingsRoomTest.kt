@@ -178,7 +178,9 @@ class SettingsRoomTest {
         val r = room()
         // beautify/bottom: Bottom screen > Home is ONE tile part (Home's 8 tiles; the attack row is Controller's Combat helpers tile now)
         val home = box(r, SettingsTabs.Group.HOME).parts.single() as BottomTilesView
-        assertTrue(home.tileIds().containsAll(listOf(BottomTiles.REST, BottomTiles.QUEST, BottomTiles.CASTBAR)))
+        // (edit tabs, 2026-11-24: Focused quest and the Tap-to-cast bar are each Edit Home tab's own now - no tiles of theirs)
+        assertTrue(home.tileIds().containsAll(listOf(BottomTiles.REST, BottomTiles.CLOCK, BottomTiles.XP)))
+        assertTrue(home.tileIds().none { it in BottomTiles.TAB_TILES })
         // the beautify pass: the Controller tab's groups are ONE tile part each (Combat helpers' tiles take Home's attack row and the
         // two GameUi parts); Smart Y's own group has none (its tile is in Buttons, its list a sub-page)
         val combat = box(r, SettingsTabs.Group.COMBAT).parts

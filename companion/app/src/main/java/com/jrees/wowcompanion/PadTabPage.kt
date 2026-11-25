@@ -576,7 +576,7 @@ class PadTabPage(
     /** p56: Party mode's bar */
     private fun cbParty() = barView() == "pbar"
     /** p55 (D2): the bar is Off in Settings: the bar veiled, "Turn on" */
-    private fun barOffNow() = CastStripModel.barOff(HomeSettings.castBarSide)
+    private fun barOffNow() = !HomeSettings.castBarOnAnyTab                 // (edit tabs: Off on every tab of Home - the review)
     private fun cbOff() = castBar() && barOffNow()
     /** p55 (D5): Show in combat off: In combat's bar is locked ("Hidden in fights"); p56: Bar in Party mode off: Party mode's */
     private fun barHidden() = (cbFight() && !CastStripModel.showOf(HomeSettings.castBarCombat)) || (cbParty() && !HomeSettings.castBarPartyShow)

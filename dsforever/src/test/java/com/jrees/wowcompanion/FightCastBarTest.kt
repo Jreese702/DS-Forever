@@ -69,14 +69,15 @@ class FightCastBarTest {
         BottomTiles.press(BottomTiles.COMBAT, BottomTiles.FIGHT_CAST, 0, env) { }
         assertEquals(HomeLayout.FightCast.BOTTOM, HomeSettings.fightCast)
         // Edit Home's fight pencil: In fights, then Cast bar (Top screen only), then the swing timer
-        fun rows(v: HomeWidgetMenus.Values) = HomeWidgetMenus.rows(EditStop.FIGHT_PEN, HomeLayout(), v).map { it.key }
+        // (edit tabs: the bubble's rows read the tab's page - its own Combat bars)
+        fun rows(v: HomeWidgetMenus.Values) = HomeWidgetMenus.rows(EditStop.FIGHT_PEN, HomeLayout(fight = v.fightBand), v).map { it.key }
         assertEquals(listOf(BottomTiles.COMBAT, BottomTiles.SWING), rows(HomeWidgetMenus.Values(ct = 1)))
         val top = HomeWidgetMenus.Values(fightBand = HomeLayout.FightBand.TOP, ct = 1, cc = 0)
         assertEquals(listOf(BottomTiles.COMBAT, BottomTiles.FIGHT_CAST, BottomTiles.SWING), rows(top))
-        val row = HomeWidgetMenus.rows(EditStop.FIGHT_PEN, HomeLayout(), top)[1]
+        val row = HomeWidgetMenus.rows(EditStop.FIGHT_PEN, HomeLayout(fight = top.fightBand), top)[1]
         assertEquals(emptySet<Int>(), row.off)
         // an add-on without the flag (cc null): Top screen cannot be picked (the bar stays on the bottom screen)
-        assertEquals(setOf(1), HomeWidgetMenus.rows(EditStop.FIGHT_PEN, HomeLayout(), top.copy(cc = null))[1].off)
+        assertEquals(setOf(1), HomeWidgetMenus.rows(EditStop.FIGHT_PEN, HomeLayout(fight = top.fightBand), top.copy(cc = null))[1].off)
     }
 
     // ---------------------------------------------------------------- the solver's fight strip

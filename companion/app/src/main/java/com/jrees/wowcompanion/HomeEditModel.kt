@@ -94,13 +94,31 @@ class HomeEditModel(
     saved: HomeLayout,
     /** where the cursor starts: Chat from Settings and Y on the disc, the held widget from a hold */
     start: EditStop = EditStop.CHAT,
+    /** EDIT TABS (the user, 2026-11-24): the tab it opens on - what Home shows now (HomeTab.opening: Party mode on = Party mode) */
+    tab: HomeTab = HomeTab.OUT,
+    /** the Party mode tab is offered (QOL > Party allows Party mode: HomeTab.shown) */
+    partyTabShown: Boolean = true,
 ) {
     // ---------------------------------------------------------------- the state
     /** the record Home showed when edit mode opened: Discard puts it back ([rebase] lays a change made while edit mode waited onto it) */
     var saved: HomeLayout = saved
         private set
+    /** the whole record being edited (every tab's places): what is saved, what Discard compares */
     var draft: HomeLayout = saved
         private set
+    /**
+     * EDIT TABS (the user, 2026-11-24: "I want to add tabs to the top of edit mode for out of combat, in combat and party mode"; the picks:
+     * each tab its own places - "Fully separate" -, its own fight rows and badges): the tab being edited. Its PAGE ([page]) is what Home
+     * shows and every widget, menu and drag reads; a change is written back to that tab only (HomeLayout.withTab). LB / RB and a finger on
+     * the tab row switch ([tabTo]); the tabs are tied to their situations - no names, no slots, no picking (the 11-21 "no layouts" ruling)
+     */
+    var tab: HomeTab = tab.takeIf { it != HomeTab.PARTY || partyTabShown } ?: HomeTab.OUT
+        private set
+    /** the tabs offered now (Party mode's only while Party mode is allowed: [tabsAre]) */
+    var tabs: List<HomeTab> = HomeTab.shown(partyTabShown)
+        private set
+    /** the tab's page: [draft] as Home lays it while [tab] is Home's (HomeLayout.forTab) */
+    val page: HomeLayout get() = draft.forTab(tab)
     var cursor: EditStop = start
         private set
     /** the widget lifted now (A, a drag or the entry hold), null = none */
@@ -142,10 +160,19 @@ class HomeEditModel(
     var parked = false
         private set
     /** the bar's / the card's last dock, for "+" (they come back where they were) */
-    private var lastCast = if (saved.cast != HomeLayout.CastDock.OFF) saved.cast else HomeLayout.CastDock.UNDER_CHAT
+    private var lastCast = HomeLayout.CastDock.UNDER_CHAT
     /** the column the bar last sat in (its ladder's way back up from Across) */
-    private var barColumn: HomeModule = saved.cast.column ?: HomeModule.CHAT
-    private var lastCard = if (saved.card != HomeLayout.CardDock.OFF) saved.card else HomeLayout.CardDock.ON_MAP
+    private var barColumn: HomeModule = HomeModule.CHAT
+    private var lastCard = HomeLayout.CardDock.ON_MAP
+    /** the bar's and the card's "+" memory from tab [t]'s page (a tab switch takes the new tab's: "+" brings them back where THAT tab had
+     *  them - else the Out of combat tab's place) */
+    private fun lastsFrom(t: HomeTab) {
+        val p = draft.forTab(t)
+        lastCast = p.cast.takeIf { it != HomeLayout.CastDock.OFF } ?: draft.cast.takeIf { it != HomeLayout.CastDock.OFF } ?: HomeLayout.CastDock.UNDER_CHAT
+        barColumn = lastCast.column ?: HomeModule.CHAT
+        lastCard = p.card.takeIf { it != HomeLayout.CardDock.OFF } ?: draft.card.takeIf { it != HomeLayout.CardDock.OFF } ?: HomeLayout.CardDock.ON_MAP
+    }
+    init { lastsFrom(this.tab) }
     /** THE ROOM BAR: its own cursor - an index into the VISIBLE rooms ([barRooms]), or [barRooms].size = the "+" spot while it shows
      *  ([barPlus]); Left / Right while the cursor is on the bar */
     var barSel = 0
@@ -154,15 +181,15 @@ class HomeEditModel(
     var barLifted: String? = null
         private set
     /** the rooms the bar shows now (the draft's whole order less its hidden rooms), left to right */
-    val barRooms: List<String> get() = RoomBar.visible(draft.rooms, draft.hidden)
+    val barRooms: List<String> get() = RoomBar.visible(page.rooms, page.hidden)
     /** the "+" spot at the bar's end shows: a room is hidden */
-    val barPlus: Boolean get() = draft.hidden.isNotEmpty()
+    val barPlus: Boolean get() = page.hidden.isNotEmpty()
     /** the room under the bar's cursor (null: the "+" spot) */
     val barRoom: String? get() = barRooms.getOrNull(barSel)
     /** the bar's cursor is on its "+" spot */
     val barOnPlus: Boolean get() = barPlus && barSel == barRooms.size
     /** the hidden rooms in the bar's whole order (the tray's list) */
-    val hiddenRooms: List<String> get() = RoomBar.normalize(draft.rooms).filter { it in draft.hidden }
+    val hiddenRooms: List<String> get() = RoomBar.normalize(page.rooms).filter { it in page.hidden }
     /** the bar cursor's last place: the last room, or "+" after it */
     private fun barMax(): Int = barRooms.size - 1 + (if (barPlus) 1 else 0)
 
@@ -181,24 +208,36 @@ class HomeEditModel(
     /** the extra under the stop's cursor (null: the "+" spot) */
     val extra: String? get() = extrasOn.getOrNull(extraSel)
     private fun extraMax(): Int = (extrasOn.size - 1 + (if (extraPlus) 1 else 0)).coerceAtLeast(0)
-    /** the host's feed: the extras [on] and [off] now (Settings may have changed them meanwhile) */
-    fun bandIs(on: List<String>, off: List<String>) {
+    /** the host's feed: the extras Settings turns [on] and [off] now (Settings may have changed them meanwhile) - the Out of combat
+     *  tab's; a fight tab with badges of its own (HomeLayout.badges, edit tabs) shows those of the same extras */
+    fun bandIs(on: List<String>, off: List<String>, hiddenOn: List<String> = emptyList()) {
+        appOn = on; appOff = off; appHiddenOn = hiddenOn.filter { it !in on && it !in off }
         val walk = extraWalk()
-        extrasOn = walk.filter { it in on }; extrasOff = walk.filter { it in off }
+        val mine = draft.badges(tab)
+        val all = on + off
+        extrasOn = walk.filter { if (mine == null) it in on else it in mine && it in all }
+        extrasOff = walk.filter { it in all && it !in extrasOn }
         extraLifted?.let { k -> if (k in extrasOn) extraSel = extrasOn.indexOf(k) else { lifted = null; liftFrom = null; extraLifted = null } }
         extraSel = extraSel.coerceIn(0, extraMax())
         if (sheet == Sheet.EXTRAS && extrasOff.isEmpty()) sheet = null
     }
+    /** the host's last feed (Settings' clock rows): the Out of combat tab's badges */
+    private var appOn: List<String> = EXTRA_KEYS
+    private var appOff: List<String> = emptyList()
+    /** (the review of the edit tabs) Settings' clock rows that are On but not offered now - the pet's face while no pet with happiness is
+     *  out: never shown or arranged in edit mode, yet part of what a tab shows once the pet comes out ([badgesTo] keeps them) */
+    private var appHiddenOn: List<String> = emptyList()
     /** feat/extras-polish: the extras' walk - the gold line (the chip's, over the row), then the row in the draft's order */
-    private fun extraWalk(): List<String> = listOf("gold") + ClockBand.order(draft.extras)
+    private fun extraWalk(): List<String> = listOf("gold") + ClockBand.order(page.extras)
     /** the row's extras as edit mode draws them (the shown ones, the gold line not: it is the chip's), left to right */
     val extraRow: List<String> get() = extrasOn.filter { it != "gold" }
     /** feat/extras-polish (the user, 2026-11-23: "I also want to be able to change the order on these"): the extra lifted on the row (A,
      *  a finger), as a room is on the room bar: Left / Right carry it, A drops, B puts the order back ([liftFrom]); null = none */
     var extraLifted: String? = null
         private set
-    /** P4: the ribbon's Fight toggle - Home shows the top bar's combat look while editing (a preview only: no fight state, nothing sent) */
-    var fightPreview = false
+    /** P4: the fight look while editing (a preview only: no fight state, nothing sent). EDIT TABS: the In combat tab always shows it,
+     *  the Party mode tab by the ribbon's Fight toggle (its only home now), the Out of combat tab never */
+    var fightPreview = this.tab == HomeTab.COMBAT
         private set
 
     /** the session changed something against the record it opened on (Discard has something to put back) */
@@ -207,12 +246,43 @@ class HomeEditModel(
     /** nothing is lifted and no finger is down: the draft is settled (the view saves it now) */
     val settled: Boolean get() = lifted == null && drag == null
 
+    /**
+     * EDIT TABS: tab [t] (LB / RB, a finger on the tab row): a lifted widget drops where it is, an open bubble / tray closes, the page
+     * glides to that tab's layout in one motion ([Fx.Tab]); the In combat tab shows the fight look, Party mode its own look (its Fight
+     * toggle off). The cursor stays on a widget the new page has, else the chat. Not while parked, nor to a tab not offered
+     */
+    fun tabTo(t: HomeTab): List<Fx> {
+        if (parked || t == tab || t !in tabs) return emptyList()
+        val dropped = if (lifted != null) drop() else emptyList()
+        drag = null; menu = null; sheet = null; removeAsk = null; bubbleFight = false
+        tab = t
+        fightPreview = t == HomeTab.COMBAT
+        lastsFrom(t)
+        extrasRefresh()
+        // the shared pieces sit still on the fight tabs (the proposal's decision 7: edited on Out of combat): never the cursor's there
+        if (cursor in SHARED_STOPS && t.fight || cursor == EditStop.FIGHT && t != HomeTab.PARTY || cursor == EditStop.FIGHT_PEN ||
+            cursor == EditStop.PARTY_PEN || cursor == EditStop.EXTRAS) cursor = EditStop.CHAT
+        return dropped + Fx.Tab(t)
+    }
+    /** LB / RB: the tab to the left / right ([d] -1 / +1; no wrap) */
+    fun tabStep(d: Int): List<Fx> {
+        val i = tabs.indexOf(tab) + d
+        return tabs.getOrNull(i)?.let { tabTo(it) } ?: emptyList()
+    }
+    /** the host's: the tabs offered now ([partyShown]: QOL > Party allows Party mode). The Party mode tab gone while open: Out of combat */
+    fun tabsAre(partyShown: Boolean): List<Fx> {
+        tabs = HomeTab.shown(partyShown)
+        return if (tab !in tabs) { val was = parked; parked = false; tabTo(HomeTab.OUT).also { parked = was } } else emptyList()
+    }
+    /** the badges of [tab] again from the host's last feed (a tab switch, a change of the tab's own) */
+    private fun extrasRefresh() = bandIs(appOn, appOff, appHiddenOn)
+
     /** "+" shows: the bar or the card is off Home */
-    val plusShown: Boolean get() = draft.cast == HomeLayout.CastDock.OFF || draft.card == HomeLayout.CardDock.OFF
+    val plusShown: Boolean get() = page.cast == HomeLayout.CastDock.OFF || page.card == HomeLayout.CardDock.OFF
     /** what the Add tray lists */
     val removed: List<EditStop> get() = buildList {
-        if (draft.cast == HomeLayout.CastDock.OFF) add(EditStop.CAST)
-        if (draft.card == HomeLayout.CardDock.OFF) add(EditStop.QUEST)
+        if (page.cast == HomeLayout.CastDock.OFF) add(EditStop.CAST)
+        if (page.card == HomeLayout.CardDock.OFF) add(EditStop.QUEST)
     }
 
     /** the effects of one input, for the view (HomeView's edit controller) */
@@ -237,6 +307,8 @@ class HomeEditModel(
         object Lift : Fx()
         /** P4: the fight preview on / off ([fightPreview]): Home lays the band's combat look (or its rest look again), nothing is sent */
         data class Preview(val on: Boolean) : Fx()
+        /** EDIT TABS: tab [tab] is edited now - Home glides to its page (its look: the fight's on In combat, Party mode's on Party mode) */
+        data class Tab(val tab: HomeTab) : Fx()
     }
 
     // ---------------------------------------------------------------- the controller
@@ -249,6 +321,8 @@ class HomeEditModel(
     fun key(k: String, stops: Map<EditStop, HomeLayoutSolver.Box>, menuRows: (EditStop) -> List<MenuRow> = { emptyList() }): List<Fx> {
         if (parked) return emptyList()
         removeAsk = null
+        // EDIT TABS: LB / RB switch the tab (no wrap) from any state - a lift drops, a bubble or tray closes (the Controller room's way)
+        if (k == "PADLSHOULDER" || k == "PADRSHOULDER") return tabStep(if (k == "PADLSHOULDER") -1 else 1)
         if (sheet != null) return trayKey(k)
         menu?.let { return menuKey(it, k, menuRows(it)) }
         lifted?.let { return liftedKey(it, k) }
@@ -347,10 +421,10 @@ class HomeEditModel(
 
     /** P3: the Look chip - the other resting look (Thin row <-> Diamonds), the same setter as Settings' Rest controller */
     fun lookFlip(): List<Fx> {
-        if (parked) return emptyList()
+        if (parked || tab.fight) return emptyList()
         val dropped = if (lifted != null) drop() else emptyList()          // a lifted widget stays where the draft put it
         menu = null; sheet = null; removeAsk = null
-        val to = HomeRest.values().first { it != draft.rest }
+        val to = HomeRest.values().first { it != page.rest }
         cursor = EditStop.LOOK
         return dropped + Fx.Press(BottomTiles.REST, HomeRest.values().indexOf(to))
     }
@@ -363,9 +437,31 @@ class HomeEditModel(
         val at = extrasOn.indexOf(k)
         menu = null; sheet = null; removeAsk = null
         cursor = EditStop.EXTRAS
+        val before = extrasOn
         extrasOn = extrasOn - k; extrasOff = extraWalk().filter { it in extrasOff || it == k }
         extraSel = at.coerceIn(0, extraMax())
-        return dropped + Fx.Press(k, 1)
+        return dropped + badgesTo(before, extrasOn) + if (tab.fight) emptyList() else listOf(Fx.Press(k, 1))
+    }
+    /**
+     * EDIT TABS' BADGES (the user's pick 2026-11-24: the clock's badges per tab): a fight tab's change is its OWN list in the draft (a
+     * layout change: Discard puts it back); the Out of combat tab's is Settings' own row (the press: app-wide, every character's, a
+     * behaviour row Discard leaves) - a fight tab with no badges of its own shows Settings' ones, as it was made: a copy of them.
+     * The review of the edit tabs ("Fully separate": a change on one tab never moves another): an Out of combat change leaves every
+     * fight tab still showing Settings' badges with the ones it showed (its copy is made now, as [HomeLayout.withTab] does for the
+     * places); and a list written for a tab keeps the extras the host does not offer now ([appHiddenOn]: the pet's face with no pet out)
+     */
+    private fun badgesTo(before: List<String>, now: List<String>): List<Fx> {
+        val offered = appOn + appOff
+        // (Out of combat's change is Settings' row - a behaviour row Discard leaves, 1518's ruling - so the fight tabs' copies it makes
+        // are kept by Discard too: made on the record Discard puts back as well, never a change of the session's own)
+        fun pin(l: HomeLayout) = HomeTab.values().filter { it.fight && l.badges(it) == null }.fold(l) { r, t -> r.withBadges(t, before + appHiddenOn) }
+        val to = if (tab.fight) {
+            val keep = (draft.badges(tab) ?: (appOn + appHiddenOn)).filter { it !in offered && it !in now }
+            draft.withBadges(tab, now + keep)
+        } else pin(draft).also { saved = pin(saved) }
+        if (to == draft) return emptyList()
+        draft = to
+        return if (tab.fight) listOf(Fx.Relay(Motion.MODULE_OPEN)) else emptyList()
     }
 
     /** P2: "+" at the extras' end: the small tray of the hidden ones (A / a tap puts one back) */
@@ -383,9 +479,10 @@ class HomeEditModel(
         sheet = null
         if (parked || k == null || k !in extrasOff) return emptyList()
         cursor = EditStop.EXTRAS
+        val before = extrasOn
         extrasOff = extrasOff - k; extrasOn = extraWalk().filter { it in extrasOn || it == k }
         extraSel = extrasOn.indexOf(k).coerceIn(0, extraMax())
-        return listOf(Fx.Press(k, 0))
+        return badgesTo(before, extrasOn) + if (tab.fight) emptyList() else listOf(Fx.Press(k, 0))
     }
 
     /** a finger on extra [i] of the shown ones (or the "+" spot: [extrasOn].size): the cursor goes there; an open tray / menu closes */
@@ -409,22 +506,14 @@ class HomeEditModel(
 
     /** P4: the ribbon's Fight toggle (A on it, its tap): the preview on / off; the cursor on the toggle. Nothing is sent to the game */
     fun toggleFight(): List<Fx> {
-        if (parked) return emptyList()
+        // EDIT TABS: the Fight toggle is the Party mode tab's alone (In combat always shows the fight, Out of combat never)
+        if (parked || tab != HomeTab.PARTY) return emptyList()
         val dropped = if (lifted != null) drop() else emptyList()
         bubbleFight = false                                                // the toggle flips the preview as it is (never the bubble's close)
         menu = null; sheet = null; removeAsk = null
         fightPreview = !fightPreview
         cursor = EditStop.FIGHT
         return dropped + Fx.Preview(fightPreview)
-    }
-
-    /** the party list's bubble's Preview row (Rest / Fight): the ribbon's fight preview on / off with the bubble kept open (the cursor
-     *  stays on its row) - the page lays the list in its fight size; nothing is sent to the game */
-    private fun partyPreview(on: Boolean): List<Fx> {
-        if (parked || fightPreview == on) return emptyList()
-        fightPreview = on
-        bubbleFight = on
-        return listOf(Fx.Preview(on))
     }
 
     /** B one step back at the top level: Done (every change is saved already) */
@@ -486,7 +575,7 @@ class HomeEditModel(
         val i = vis.indexOf(r)
         val j = i + d
         if (i < 0 || j !in vis.indices) return emptyList()
-        return change(draft.copy(rooms = RoomBar.moveVisible(draft.rooms, draft.hidden, i, j)), EDIT_STEP)
+        return change(page.copy(rooms = RoomBar.moveVisible(page.rooms, page.hidden, i, j)), EDIT_STEP)
     }
 
     /** feat/extras-polish: the lifted extra one place left / right along the row (EDIT_STEP: the others glide; never onto "+" nor the
@@ -497,7 +586,7 @@ class HomeEditModel(
         val i = row.indexOf(k)
         val j = i + d
         if (i < 0 || j !in row.indices) return emptyList()
-        return change(draft.copy(extras = ClockBand.moveShown(draft.extras, row, k, j)), EDIT_STEP)
+        return change(page.copy(extras = ClockBand.moveShown(page.extras, row, k, j)), EDIT_STEP)
     }
 
     /** the walk again in the draft's order (the same extras on and off) */
@@ -515,12 +604,12 @@ class HomeEditModel(
     fun hideRoom(r: String): List<Fx> {
         if (parked) return emptyList()
         if (!RoomBar.canHide(r)) return listOf(Fx.Refuse(EditStop.ROOMS))
-        if (r in draft.hidden) return emptyList()
+        if (r in page.hidden) return emptyList()
         val dropped = if (lifted != null) drop() else emptyList()
         menu = null; sheet = null; removeAsk = null
         val at = barRooms.indexOf(r)
         cursor = EditStop.ROOMS
-        val fx = change(draft.copy(hidden = RoomBar.hide(draft.hidden, r)), Motion.MODULE_OPEN)
+        val fx = change(page.copy(hidden = RoomBar.hide(page.hidden, r)), Motion.MODULE_OPEN)
         if (at >= 0) barSel = at.coerceIn(0, barMax().coerceAtLeast(0))
         return dropped + fx
     }
@@ -538,9 +627,9 @@ class HomeEditModel(
     /** the tray's pick: [r] back on the bar where it was in the order (MODULE_OPEN), the cursor on it; the tray closes */
     fun unhideRoom(r: String?): List<Fx> {
         sheet = null
-        if (parked || r == null || r !in draft.hidden) return emptyList()
+        if (parked || r == null || r !in page.hidden) return emptyList()
         cursor = EditStop.ROOMS
-        val fx = change(draft.copy(hidden = RoomBar.unhide(draft.hidden, r)), Motion.MODULE_OPEN)
+        val fx = change(page.copy(hidden = RoomBar.unhide(page.hidden, r)), Motion.MODULE_OPEN)
         barRooms.indexOf(r).takeIf { it >= 0 }?.let { barSel = it }
         return fx
     }
@@ -565,7 +654,7 @@ class HomeEditModel(
 
     /** a lifted widget's next dock with the D-pad (EDIT_STEP: the glide of one controller step) */
     private fun step(s: EditStop, d: Int, horizontal: Boolean): List<Fx> {
-        val to = nextDock(s, draft, d, horizontal) ?: return emptyList()
+        val to = nextDock(s, page, d, horizontal) ?: return emptyList()
         return change(to, EDIT_STEP)
     }
 
@@ -610,29 +699,33 @@ class HomeEditModel(
 
     /** Y: the widget's size step (chat / map width, the card folded, the bar's slots; the band's rest look is Settings') */
     fun sizeStep(s: EditStop): List<Fx> = when (s) {
-        EditStop.CHAT -> change(draft.copy(chatShare = SHARES[(SHARES.indexOf(draft.chatShare) + 1) % SHARES.size]), Motion.MODULE_OPEN)
-        EditStop.MAP -> change(draft.copy(chatShare = SHARES[(SHARES.indexOf(draft.chatShare) + SHARES.size - 1) % SHARES.size]), Motion.MODULE_OPEN)
+        EditStop.CHAT -> change(page.copy(chatShare = SHARES[(SHARES.indexOf(page.chatShare) + 1) % SHARES.size]), Motion.MODULE_OPEN)
+        EditStop.MAP -> change(page.copy(chatShare = SHARES[(SHARES.indexOf(page.chatShare) + SHARES.size - 1) % SHARES.size]), Motion.MODULE_OPEN)
         EditStop.QUEST -> listOf(Fx.Press(K_FOLD, -1))                 // the fold is app-wide (the card's own tap): -1 = toggle
-        EditStop.CAST -> if (draft.cast == HomeLayout.CastDock.OFF) emptyList()
-            else change(draft.copy(castSize = SIZES[(SIZES.indexOf(draft.castSize) + 1) % SIZES.size]), Motion.MODULE_OPEN)
+        // EDIT TABS (the sizes gone): Y on the bar flips a fight tab's Slots (Grow <-> Same size); the Out of combat tab has none
+        EditStop.CAST -> if (page.cast == HomeLayout.CastDock.OFF || !tab.fight) emptyList()
+            else change(page.copy(grow = !page.grow), Motion.MODULE_OPEN)
         else -> emptyList()
     }
 
     /** Select: chat and map swap (#552's one press), from any stop */
-    fun swap(): List<Fx> = change(draft.swapped(), Motion.MODULE_OPEN)
+    fun swap(): List<Fx> = change(page.swapped(), Motion.MODULE_OPEN)
 
     /** the divider's Left / Right: the LEFT column one step narrower / wider */
     fun widthStep(d: Int): List<Fx> {
-        val leftIsChat = draft.chatSide == HomeLayout.Side.LEFT
-        val i = SHARES.indexOf(draft.chatShare) + if (leftIsChat) d else -d
+        val leftIsChat = page.chatSide == HomeLayout.Side.LEFT
+        val i = SHARES.indexOf(page.chatShare) + if (leftIsChat) d else -d
         if (i !in SHARES.indices) return emptyList()
-        return change(draft.copy(chatShare = SHARES[i]), Motion.MODULE_OPEN)
+        return change(page.copy(chatShare = SHARES[i]), Motion.MODULE_OPEN)
     }
 
     /** one draft change: the effects ([ms] its glide); nothing when it changes nothing */
     private fun change(to: HomeLayout, ms: Long): List<Fx> {
-        if (to == draft) return emptyList()
-        draft = to
+        // (EDIT TABS: [to] is the tab's PAGE - written back to that tab only, the others keep theirs: HomeLayout.withTab)
+        if (to == page) return emptyList()
+        val rec = draft.withTab(tab, to)
+        if (rec == draft) return emptyList()
+        draft = rec
         if (to.cast != HomeLayout.CastDock.OFF) lastCast = to.cast
         to.cast.column?.let { barColumn = it }
         if (to.card != HomeLayout.CardDock.OFF) lastCard = to.card
@@ -709,16 +802,16 @@ class HomeEditModel(
     /** row [r] set to choice [k]: a layout row changes the draft (live, the glide), a behaviour row is one press of its setter */
     private fun row(s: EditStop, r: MenuRow, k: Int): List<Fx> {
         if (!r.enabled || k in r.off) return listOf(Fx.Refuse(s))
-        val l = draft
+        val l = page
         return when (r.key) {
             K_CHAT_SIDE -> change(l.copy(chatSide = HomeLayout.Side.values()[k]), Motion.MODULE_OPEN)
             K_MAP_SIDE -> change(l.copy(chatSide = HomeLayout.Side.values()[k].other()), Motion.MODULE_OPEN)
             K_CHAT_WIDTH -> change(l.copy(chatShare = SHARES[k]), Motion.MODULE_OPEN)
             K_MAP_WIDTH -> change(l.copy(chatShare = SHARES[SHARES.size - 1 - k]), Motion.MODULE_OPEN)
-            K_CARD -> change(l.copy(card = HomeWidgetMenus.CARD_DOCKS[k]), Motion.MODULE_OPEN).also { offed(s, EditStop.QUEST, draft.card == HomeLayout.CardDock.OFF) }
+            K_CARD -> change(l.copy(card = HomeWidgetMenus.CARD_DOCKS[k]), Motion.MODULE_OPEN).also { offed(s, EditStop.QUEST, page.card == HomeLayout.CardDock.OFF) }
             // Chat / Map keep the bar's edge (above or under that column); Off, Across and Split lie at the foot
             K_PLACE -> HomeWidgetMenus.CAST_DOCKS[k].let { c -> change(l.copy(cast = c.column?.let { l.cast.withColumn(it) } ?: c), Motion.MODULE_OPEN) }
-                .also { offed(s, EditStop.CAST, draft.cast == HomeLayout.CastDock.OFF) }
+                .also { offed(s, EditStop.CAST, page.cast == HomeLayout.CastDock.OFF) }
             K_CAST_EDGE -> change(l.copy(cast = l.cast.withTop(k == 0)), Motion.MODULE_OPEN)
             // the party list's column (its edge kept) and its edge in that column
             K_PARTY_PLACE -> change(l.copy(party = l.party.withColumn(if (k == 0) HomeModule.CHAT else HomeModule.MAP)), Motion.MODULE_OPEN)
@@ -726,8 +819,10 @@ class HomeEditModel(
             // party sizing (2026-11-23): the record's picks (this character's; Discard puts them back), and the bubble's preview
             K_PARTY_GROW -> change(l.copy(partyGrow = HomeLayout.PartyGrow.values()[k]), Motion.MODULE_OPEN)
             K_PARTY_SIZE -> change(l.copy(partySize = HomeLayout.PartySize.values()[k]), Motion.MODULE_OPEN)
-            K_PARTY_PREVIEW -> partyPreview(k == 1)
-            K_SIZE -> change(l.copy(castSize = SIZES[k]), Motion.MODULE_OPEN)
+            // EDIT TABS: a fight tab's Slots (Grow / Same size) and its Combat bars / Cast bar - the TAB's own (Discard puts them back)
+            K_GROW -> change(l.copy(grow = k == 0), Motion.MODULE_OPEN)
+            BottomTiles.COMBAT -> HomeWidgetMenus.COMBAT_BARS.getOrNull(k)?.let { change(l.copy(fight = it), Motion.MODULE_OPEN) } ?: emptyList()
+            BottomTiles.FIGHT_CAST -> HomeLayout.FightCast.values().getOrNull(k)?.let { change(l.copy(fightCast = it), Motion.MODULE_OPEN) } ?: emptyList()
             K_SLOTS -> { menu = null; listOf(Fx.EditSlots) }
             K_FILTERS -> { menu = null; listOf(Fx.Filters) }
             else -> listOf(Fx.Press(r.key, k))
@@ -753,10 +848,19 @@ class HomeEditModel(
         // THE TOP BAR's pieces come and go with the look (the extras with Diamonds at rest, the fight pencil with the preview): the cursor
         // to the Look chip, else the D-pad's pencil (the band laid: its pencils always have a box)
         if (c.band) {
-            if (c in stops || EditStop.PAD_PEN !in stops) return false
+            if (c in stops) return false
+            // (EDIT TABS: the fight tabs have no shared pencils - the stops are laid once the chat has its box)
+            if (if (tab.fight) EditStop.CHAT !in stops else EditStop.PAD_PEN !in stops) return false
+            // (the fight pencil off the page mid-motion - the band sliding away or back - is still there: it lands with the page)
+            if (c == EditStop.FIGHT_PEN && fightPreview) return false
             if (menu == c) menu = null
             if (lifted == c) drop()                                       // feat/extras-polish: a lifted extra (the row went) drops
-            cursor = if (EditStop.LOOK in stops) EditStop.LOOK else EditStop.PAD_PEN
+            cursor = when {
+                EditStop.LOOK in stops -> EditStop.LOOK
+                EditStop.PAD_PEN in stops -> EditStop.PAD_PEN
+                tab == HomeTab.PARTY && EditStop.FIGHT in stops -> EditStop.FIGHT
+                else -> EditStop.CHAT
+            }
             return true
         }
         // [stops] laid (the chat always has a box on Home; with the Fight preview none of the page's has, the ribbon's Fight always
@@ -800,13 +904,11 @@ class HomeEditModel(
     fun addBack(s: EditStop?): List<Fx> {
         sheet = null
         val fx = when (s) {
-            EditStop.CAST -> { cursor = EditStop.CAST; change(draft.copy(cast = lastCast), Motion.MODULE_OPEN) }
-            EditStop.QUEST -> { cursor = EditStop.QUEST; change(draft.copy(card = lastCard), Motion.MODULE_OPEN) }
+            EditStop.CAST -> { cursor = EditStop.CAST; change(page.copy(cast = lastCast), Motion.MODULE_OPEN) }
+            EditStop.QUEST -> { cursor = EditStop.QUEST; change(page.copy(card = lastCard), Motion.MODULE_OPEN) }
             else -> emptyList()
         }
-        // fix round 3 (the review): during the Fight preview the page's widgets have no stop (D4): the cursor stays on "+" while it is
-        // shown, else on the ribbon's Fight - never on the widget just brought back (A would lift it, Y resize it under the grown band)
-        if (fightPreview && (s == EditStop.CAST || s == EditStop.QUEST)) cursor = if (plusShown) EditStop.PLUS else EditStop.FIGHT
+        // (EDIT TABS: the widgets are movable in the fight look too now - D4's "no columns in the preview" went with the tabs)
         return fx
     }
 
@@ -825,8 +927,8 @@ class HomeEditModel(
         val dropped = if (lifted != null) drop() else emptyList()          // 1518: a lift ends with its drop's effects (the view plops it)
         menu = null
         val fx = when (s) {
-            EditStop.CAST -> change(draft.copy(cast = HomeLayout.CastDock.OFF), Motion.MODULE_OPEN)
-            EditStop.QUEST -> change(draft.copy(card = HomeLayout.CardDock.OFF), Motion.MODULE_OPEN)
+            EditStop.CAST -> change(page.copy(cast = HomeLayout.CastDock.OFF), Motion.MODULE_OPEN)
+            EditStop.QUEST -> change(page.copy(card = HomeLayout.CardDock.OFF), Motion.MODULE_OPEN)
             else -> emptyList()
         }
         if (cursor == s) cursor = if (plusShown) EditStop.PLUS else EditStop.CHAT
@@ -849,7 +951,7 @@ class HomeEditModel(
         lifted = null; liftFrom = null; barLifted = null; extraLifted = null; drag = null; menu = null; sheet = null; removeAsk = null
         fightPreview = false
         draft = saved
-        extrasRewalk()
+        extrasRefresh()
         return listOf(Fx.Relay(Motion.MODULE_CLOSE), Fx.Discard)
     }
 
@@ -860,11 +962,12 @@ class HomeEditModel(
      */
     fun rebase(now: HomeLayout, savedNow: HomeLayout) {
         draft = now; saved = savedNow
-        if (now.cast != HomeLayout.CastDock.OFF) lastCast = now.cast
-        now.cast.column?.let { barColumn = it }
-        if (now.card != HomeLayout.CardDock.OFF) lastCard = now.card
+        val p = page
+        if (p.cast != HomeLayout.CastDock.OFF) lastCast = p.cast
+        p.cast.column?.let { barColumn = it }
+        if (p.card != HomeLayout.CardDock.OFF) lastCard = p.card
         barSel = barSel.coerceIn(0, barMax().coerceAtLeast(0))
-        extrasRewalk()
+        extrasRefresh()
     }
     /** 1518: the record Discard puts back is [s] now (the pending name's key came: the character's real record, HomeLayoutStore.lateAdopt);
      *  the draft stays as it is */
@@ -950,7 +1053,7 @@ class HomeEditModel(
     fun dragStart(s: EditStop, x: Float, y: Float, box: HomeLayoutSolver.Box): List<Fx> {
         if (parked || (!s.movable && s != EditStop.DIVIDER && s != EditStop.ROOMS && s != EditStop.EXTRAS)) return emptyList()
         menu = null; sheet = null; removeAsk = null
-        val mid = if (draft.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.SPLIT else HomeLayout.CastDock.ACROSS
+        val mid = if (page.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.SPLIT else HomeLayout.CastDock.ACROSS
         // 1518: the divider's drag ends a lift (with its drop's effects); a widget's lift(s) drops another itself
         val dropped = if (s == EditStop.DIVIDER && lifted != null) drop() else emptyList()
         drag = Drag(s, x, y, box, mid)
@@ -963,8 +1066,8 @@ class HomeEditModel(
         val d = drag ?: return emptyList()
         d.x = x; d.y = y
         if (!d.moved && (abs(x - d.downX) > DRAG_SLOP || abs(y - d.downY) > DRAG_SLOP)) d.moved = true
-        val want = dockUnder(d, draft, geo)
-        if (want == null || want == draft) { d.cand = null; d.bad = false; return emptyList() }
+        val want = dockUnder(d, page, geo)
+        if (want == null || want == page) { d.cand = null; d.bad = false; return emptyList() }
         d.bad = !geo.valid(want)
         if (d.bad) { d.cand = want; return emptyList() }
         if (d.stop == EditStop.DIVIDER) { d.cand = null; return change(want, Motion.MODULE_OPEN) }
@@ -987,8 +1090,8 @@ class HomeEditModel(
         d.x = x; d.y = y
         drag = null
         val out = ArrayList<Fx>()
-        val want = if (d.moved) dockUnder(d, draft, geo) else null
-        if (want != null && want != draft && geo.valid(want)) out += change(want, Motion.MODULE_CLOSE)
+        val want = if (d.moved) dockUnder(d, page, geo) else null
+        if (want != null && want != page && geo.valid(want)) out += change(want, Motion.MODULE_CLOSE)
         else out += Fx.Relay(Motion.MODULE_CLOSE)                          // the widget slides back into its dock
         if (d.stop != EditStop.DIVIDER) { lifted = null; liftFrom = null; barLifted = null; extraLifted = null; out += Fx.Lift }
         return out
@@ -1103,11 +1206,11 @@ class HomeEditModel(
         if (sheet == Sheet.ROOMS || sheet == Sheet.EXTRAS) sheet = null       // the bar's tray: the rooms open as always in a fight
         // P4: a real fight (or another room) ends the preview: back, edit mode shows the band's rest look again
         fightPreview = false
-        if (cursor == EditStop.FIGHT_PEN) cursor = EditStop.FIGHT
+        if (cursor == EditStop.FIGHT_PEN) cursor = if (tab == HomeTab.PARTY) EditStop.FIGHT else EditStop.CHAT
         if (menu == EditStop.FIGHT_PEN) menu = null
     }
-    /** the fight ended with Home on screen: edit mode where it was left */
-    fun resume() { parked = false }
+    /** the fight ended with Home on screen: edit mode where it was left (EDIT TABS: the In combat tab's fight look again) */
+    fun resume() { parked = false; if (tab == HomeTab.COMBAT) fightPreview = true }
 
     /** the cursor's start (a hold lifts the held widget; Settings and the disc start on Chat) */
     fun startOn(s: EditStop, lift: Boolean): List<Fx> { cursor = s; return if (lift) lift(s) else emptyList() }
@@ -1152,7 +1255,11 @@ class HomeEditModel(
         const val DISCARD_HOLD_MS = 600L
 
         val SHARES = HomeLayout.Share.values().toList()
-        val SIZES = HomeLayout.SlotSize.values().toList()
+        /** EDIT TABS: the bar menu's "Slots: Grow | Same size" (a fight tab's: HomeLayout.grow) */
+        const val K_GROW = "slotsgrow"
+        /** the pieces every tab shares (the rest look, the D-pad / ABXY pencils, the room bar): edited on Out of combat, still on the fight
+         *  tabs (the proposal's decision 7 A) */
+        val SHARED_STOPS = setOf(EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.LOOK, EditStop.ROOMS)
         /** the bar's Above / Below row (column docks only) */
         const val K_CAST_EDGE = "castedge"
 
@@ -1163,7 +1270,6 @@ class HomeEditModel(
         const val K_MAP_WIDTH = "mapwidth"
         const val K_CARD = "card"
         const val K_PLACE = "place"
-        const val K_SIZE = "size"
         const val K_FOLD = "fold"
         /** the stops whose box can go while edit mode is open (the cursor on one is moved by [cursorCheck]) */
         val GONE_CHECKED = setOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.LOOK,
@@ -1231,7 +1337,10 @@ class HomeEditModel(
 data class MenuRow(val key: String, val label: String, val words: List<String>, val picked: Int, val kind: Kind = Kind.SEG,
                    val value: String? = null, val enabled: Boolean = true,
                    /** the words that cannot be picked now (dimmed; a press on one is refused: In fights' Top screen with no Wings word) */
-                   val off: Set<Int> = emptySet()) {
+                   val off: Set<Int> = emptySet(),
+                   /** a terse line drawn under the row (edit tabs: the fight bubble's Cast bar - the user's pick 2026-11-24, "A short line in
+                    *  the Fight bubble"); null = none */
+                   val note: String? = null) {
     enum class Kind { SEG, STEP, BUTTON }
 }
 
@@ -1272,8 +1381,8 @@ object HomeWidgetMenus {
     private val SHOW_HIDE = listOf("Show", "Hide")
     private fun onOff(key: String, label: String, on: Boolean, enabled: Boolean = true) = MenuRow(key, label, ON_OFF, if (on) 0 else 1, enabled = enabled)
 
-    /** [s]'s rows for the draft [l] */
-    fun rows(s: EditStop, l: HomeLayout, v: Values): List<MenuRow> = when (s) {
+    /** [s]'s rows for tab [tab]'s page [l] (edit tabs, 2026-11-24: each tab's own rows) */
+    fun rows(s: EditStop, l: HomeLayout, v: Values, tab: HomeTab = HomeTab.OUT): List<MenuRow> = when (s) {
         EditStop.CHAT -> buildList {
             add(MenuRow(HomeEditModel.K_CHAT_SIDE, "Side", listOf("Left", "Right"), HomeLayout.Side.values().indexOf(l.chatSide)))
             add(MenuRow(HomeEditModel.K_CHAT_WIDTH, "Width", listOf("1/3", "1/2", "2/3"), HomeEditModel.SHARES.indexOf(l.chatShare)))
@@ -1300,11 +1409,11 @@ object HomeWidgetMenus {
             add(MenuRow(HomeEditModel.K_PLACE, "Place", CAST_WORDS, CAST_DOCKS.indexOf(l.cast.withTop(false))))
             // a column's bar: above or below that column (Across and Split stay at the foot)
             l.cast.column?.let { c -> add(MenuRow(HomeEditModel.K_CAST_EDGE, if (c == HomeModule.CHAT) "Chat" else "Map", EDGE_WORDS, if (l.cast.top) 0 else 1)) }
-            if (l.cast != HomeLayout.CastDock.OFF) {
-                add(MenuRow(HomeEditModel.K_SIZE, "Size", listOf("S", "M", "L"), HomeEditModel.SIZES.indexOf(l.castSize)))
-                add(MenuRow(HomeEditModel.K_CAST_FIGHT, "In fights", SHOW_HIDE, if (v.castShowInFight) 0 else 1))
-                add(MenuRow(HomeEditModel.K_CAST_PARTY, "Party mode", SHOW_HIDE, if (v.castParty) 0 else 1))
-            }
+            // EDIT TABS (the user, 2026-11-24: "I dont like the sizes for the tap to cast bar ... but in party and combat mode I DO want an
+            // option to gro those options to fill the space of the bar better"): no sizes; a fight tab's Slots (Y flips it). The old In
+            // fights / Party mode Show / Hide rows are the fight tabs' own places now (Off is a place: Place's "Off" on that tab)
+            if (l.cast != HomeLayout.CastDock.OFF && tab.fight)
+                add(MenuRow(HomeEditModel.K_GROW, "Slots", SLOTS_WORDS, if (l.grow) 0 else 1))
             add(MenuRow(HomeEditModel.K_SLOTS, "Edit slots", listOf("Edit slots"), -1, MenuRow.Kind.BUTTON))
         }
         // the party list (after 1518): its column and its edge there, as the bar's Place and edge rows
@@ -1325,24 +1434,35 @@ object HomeWidgetMenus {
             MenuRow(BottomTiles.REST, "Rest controller", REST_WORDS, HomeRest.values().indexOf(v.rest)),
             onOff(BottomTiles.RANK, "Spell rank badges", v.rankBadges),
         )
+        // EDIT TABS (the user, 2026-11-24: "In combat and party mode we need to have a setting in the combat bar area to toggle top screen or
+        // bottom screen or no grow for the combat bars"): the fight pencil's bubble on the In combat and Party mode tabs - the TAB's own
+        // Combat bars and Cast bar (its page [l]), the swing timer shared (app-wide)
         EditStop.FIGHT_PEN -> buildList {
-            // Top screen needs the add-on's Wings word (TopCombatBar: no `ct` = laid as Grow); the preview shows what a fight would
-            add(MenuRow(BottomTiles.COMBAT, "In fights", BottomTiles.FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(v.fightBand),
-                off = if (v.ct == null && v.fightBand != HomeLayout.FightBand.TOP) setOf(HomeLayout.FightBand.TOP.ordinal) else emptySet()))
+            // Top screen needs the add-on's Wings word (TopCombatBar: no `ct` = laid as Bottom screen); the preview shows what a fight would
+            add(MenuRow(BottomTiles.COMBAT, "Combat bars", COMBAT_BARS_WORDS, COMBAT_BARS.indexOf(l.fight),
+                off = if (v.ct == null && l.fight != HomeLayout.FightBand.TOP) setOf(COMBAT_BARS.indexOf(HomeLayout.FightBand.TOP)) else emptySet()))
             // the user's ruling 2026-11-23: with Top screen, the cast bar and swing timer across the bottom screen's top or (feat/top-castbar)
             // our own bar above the HUD on the top screen (Top screen needs the add-on's `cc`, as Top screen above needs `ct`)
-            if (v.fightBand == HomeLayout.FightBand.TOP)
-                add(MenuRow(BottomTiles.FIGHT_CAST, "Cast bar", BottomTiles.FIGHT_CAST_WORDS, HomeLayout.FightCast.values().indexOf(v.fightCast),
-                    off = if (v.cc == null && v.fightCast != HomeLayout.FightCast.TOP) setOf(HomeLayout.FightCast.TOP.ordinal) else emptySet()))
+            if (l.fight == HomeLayout.FightBand.TOP)
+                add(MenuRow(BottomTiles.FIGHT_CAST, "Cast bar", BottomTiles.FIGHT_CAST_WORDS, HomeLayout.FightCast.values().indexOf(l.fightCast),
+                    off = if (v.cc == null && l.fightCast != HomeLayout.FightCast.TOP) setOf(HomeLayout.FightCast.TOP.ordinal) else emptySet(),
+                    note = FIGHT_CAST_NOTE))
             add(onOff(BottomTiles.SWING, "Swing timer", v.swing))
         }
-        // PARTY SIZING (2026-11-23): the party list's pencil bubble - its two picks (the record's, this character's) and the preview
-        EditStop.PARTY_PEN -> partySizingRows(l) +
-            MenuRow(HomeEditModel.K_PARTY_PREVIEW, "Preview", PREVIEW_WORDS, if (v.fightPreview) 1 else 0)
+        // PARTY SIZING (2026-11-23): the party list's pencil bubble - its two picks (the record's, this character's). EDIT TABS: on the
+        // Party mode tab only; its Preview row went (the ribbon's Fight toggle shows the fight there)
+        EditStop.PARTY_PEN -> partySizingRows(l)
         else -> emptyList()
     }
-    /** the party list's bubble's Preview row: the rest, or the fight (the ribbon's Fight toggle) */
-    val PREVIEW_WORDS = listOf("Rest", "Fight")
+    /** EDIT TABS: "Combat bars" (the user, 2026-11-24: "toggle top screen or bottom screen or no grow"): Top screen = the Wings (the band
+     *  slides up), Bottom screen = the band grows (today's Grow, the default), No grow = today's Same size */
+    val COMBAT_BARS = listOf(HomeLayout.FightBand.TOP, HomeLayout.FightBand.GROW, HomeLayout.FightBand.SAME)
+    val COMBAT_BARS_WORDS = listOf("Top screen", "Bottom screen", "No grow")
+    /** EDIT TABS (the user's pick 2026-11-24, "A short line in the Fight bubble"): the Cast bar row's line - feat/top-castbar's meaning
+     *  (Top screen = our own bar above the HUD, the swing with it; other casts stay on the bottom screen), terse */
+    const val FIGHT_CAST_NOTE = "Moves with the swing timer. Other casts stay on the bottom."
+    /** EDIT TABS: the bar's "Slots" on a fight tab (the pick "8 slots, fill the width") */
+    val SLOTS_WORDS = listOf("Grow", "Same size")
     /** party sizing's words (Settings > Bottom screen > Party's lines too: BottomTiles), in the record's enums' order */
     val PARTY_GROW_WORDS = listOf("Off", "In fights", "Whenever Party mode is on")
     /** "Size in fights" (ONE setting since test 1523, the user: "just consolidate that into one setting"; the pick "Grow / Same size"):

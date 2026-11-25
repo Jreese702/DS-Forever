@@ -115,9 +115,10 @@ class RadialCastBarShotsTest {
             ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }.set(null, File(root)) }
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app)
-        HomeSettings.castBarCombat = if (st.stay) CastStripModel.Combat.STAY else CastStripModel.Combat.HIDE
         HomeLayoutStore.character(null)
         HomeLayoutStore.set(st.band?.let { layout.copy(fight = it) } ?: layout)
+        // (edit tabs: "Show in combat" is the In combat tab's bar, set on the record; Top screen keeps its bar as the migration does)
+        HomeSettings.castBarCombat = if (st.stay || st.band == HomeLayout.FightBand.TOP) CastStripModel.Combat.STAY else CastStripModel.Combat.HIDE
         CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null
         UiKit.pauseBarsBottom = 0f
         setField(PartyModel.live, "party", null)
@@ -282,9 +283,9 @@ class RadialCastBarShotsTest {
     private fun matrix(base: HomeLayout, st: St) {
         val off = base.copy(cast = HomeLayout.CastDock.OFF)
         val ref = places(page(off, st))
-        for (d in DOCKS) for (size in if (d == HomeLayout.CastDock.ACROSS) HomeLayout.SlotSize.values().toList() else listOf(HomeLayout.SlotSize.L)) {
-            val l = base.copy(cast = d, castSize = size)
-            check("${d.name.lowercase()} ${size.name}${if (base.mirrored) " swapped" else ""}${if (base.chatShare != HomeLayout.Share.HALF) " ${base.chatShare}" else ""} ${st.name}",
+        for (d in DOCKS) for (grow in if (d == HomeLayout.CastDock.ACROSS) listOf(false, true) else listOf(false)) {
+            val l = base.copy(cast = d).let { if (grow) it.onTab(HomeTab.COMBAT) { p -> p.copy(grow = true) } else it }
+            check("${d.name.lowercase()} ${if (grow) "grow" else "L"}${if (base.mirrored) " swapped" else ""}${if (base.chatShare != HomeLayout.Share.HALF) " ${base.chatShare}" else ""} ${st.name}",
                 st.band?.let { l.copy(fight = it) } ?: l, st, ref)
         }
     }
@@ -367,7 +368,7 @@ class RadialCastBarShotsTest {
                 val tag = "${d.name.lowercase()} ${if (top) "Top screen" else "grown"} fight, ${if (stay) "shown" else "hidden"} in it, " +
                     "${if (inFight) "opened in a fight, the fight ends" else "opened at rest, a fight begins"} $what"
                 val band = if (top) HomeLayout.FightBand.TOP else HomeLayout.FightBand.GROW
-                val l = HomeLayout(cast = d, castSize = HomeLayout.SlotSize.L, fight = band)
+                val l = HomeLayout(cast = d, fight = band)
                 val p = page(l, St(if (inFight) "fight" else "rest", fight = inFight, stay = stay, ct = if (top) 1 else null, band = band))
                 val home = p.home
                 fun clear(when_: String) {
@@ -420,7 +421,7 @@ class RadialCastBarShotsTest {
     @Test fun aBarSlidAwayForAFightStaysPut() {
         for (d in DOCKS) {
             val tag = "${d.name.lowercase()} hidden in a grown fight"
-            val p = page(HomeLayout(cast = d, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW),
+            val p = page(HomeLayout(cast = d, fight = HomeLayout.FightBand.GROW),
                 St("fight_grow_hidden", fight = true, band = HomeLayout.FightBand.GROW))
             fun still(what: String) { for (s in strips(p.home)) if (s.visibility == View.VISIBLE && (s.translationX != 0f || s.translationY != 0f))
                 no(tag, "$what: the bar moved (${s.translationX}, ${s.translationY})") }
@@ -451,7 +452,7 @@ class RadialCastBarShotsTest {
     @Test fun theSlideNeverLiftsAcrossBar() {
         for (up in listOf(true, false)) {
             val nm = if (up) "pause" else "target radial"
-            var p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW))
+            var p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS, fight = HomeLayout.FightBand.GROW))
             var s = strips(p.home)[0]
             s.translationY = 70f                                         // (a wheel's bar on its way back up)
             p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * 0.05f, barsUp = up)
@@ -466,7 +467,7 @@ class RadialCastBarShotsTest {
             p.home.pauseSlide(0f, barsUp = up)
             back(nm, "after the close", p.home, true)
             // a fight beginning mid-open, Hide in combat
-            p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L, fight = HomeLayout.FightBand.GROW))
+            p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS, fight = HomeLayout.FightBand.GROW))
             s = strips(p.home)[0]
             val home = p.home
             fun drawnTop() = boxes(home).getValue("STRIP").top + s.translationY
@@ -531,7 +532,7 @@ class RadialCastBarShotsTest {
         val docks = listOf("bottom_under_chat" to HomeLayout.CastDock.UNDER_CHAT, "across" to HomeLayout.CastDock.ACROSS,
             "above_chat" to HomeLayout.CastDock.ABOVE_CHAT, "above_map" to HomeLayout.CastDock.ABOVE_MAP)
         for ((tag, d) in docks) {
-            val l = HomeLayout(cast = d, castSize = HomeLayout.SlotSize.L)
+            val l = HomeLayout(cast = d)
             var p = page(l)
             save(p, "${tag}_0_rest", "$tag, L: at rest")
             val slot = p.home.wheelSlot(true)!!
@@ -567,14 +568,14 @@ class RadialCastBarShotsTest {
         }
         // partway through the pause wheel's slide (Across, L: the bar on its way straight down, the chat's curve)
         run {
-            val p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L))
+            val p = page(HomeLayout(cast = HomeLayout.CastDock.ACROSS))
             p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * 0.3f, barsUp = true)
             save(p, "across_7_pause_slide_midslide", "across, L: pause wheel's slide (30 %)")
         }
         // halfway through the LB picture's open (Across, L, a grown fight with the bar shown: it drops on the sides' curve). The
         // middle and class wheels' opens run on view animators, which the off-device clock does not stop halfway
         run {
-            val l = HomeLayout(cast = HomeLayout.CastDock.ACROSS, castSize = HomeLayout.SlotSize.L)
+            val l = HomeLayout(cast = HomeLayout.CastDock.ACROSS)
             val p = page(l, STATES[1])
             p.home.pauseSlide(UiKit.PAUSE_OPEN_MS * 0.35f, LbPartyView.SIDE_PX)
             val pl = p.home.lbPlace()

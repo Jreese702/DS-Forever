@@ -1681,16 +1681,23 @@ class HomeView(
      * under the battery ([chipGold]; the user, 2026-11-13: "lets ditch the Icon for the gold and just list our total gold under the battery").
      */
     private fun bandItems(): List<UiKit.BandItem> {
-        val hs = HomeSettings.clockHearth && ItemCd.hearthHave != false
-        val tp = ItemCd.teleport.takeIf { HomeSettings.clockTeleport }
-        val bags = HomeSettings.clockBags && bagCount != null
-        val am = ammo.takeIf { HomeSettings.clockAmmo }
+        // EDIT TABS (the user's pick 2026-11-24: the clock's badges per tab): a fight tab with its own badges shows exactly those - its
+        // own list, not Settings' rows (the review: Edit Home shows a fight tab's own list whatever Settings says, so the fight must too;
+        // Settings' rows are the Out of combat tab's): HomeLayout.badgeOn
+        val mine = badgesNow()
+        fun on(k: String) = HomeLayout.badgeOn(k, mine, BottomTiles.clockOn(k))
+        val hs = on("hearth") && ItemCd.hearthHave != false
+        val tp = ItemCd.teleport.takeIf { on("teleport") }
+        val bags = on("bags") && bagCount != null
+        val am = ammo.takeIf { on("ammo") }
         // feat/extras-polish: the pet's happiness face while a pet with happiness is out (ItemCd.petMood), in the player's order
-        val pet = HomeSettings.clockPet && ItemCd.petMood != null
-        val on = setOfNotNull(ClockBand.Kind.HEARTH.takeIf { hs }, ClockBand.Kind.TELEPORT.takeIf { tp != null },
+        val pet = on("pet") && ItemCd.petMood != null
+        val shown = setOfNotNull(ClockBand.Kind.HEARTH.takeIf { hs }, ClockBand.Kind.TELEPORT.takeIf { tp != null },
             ClockBand.Kind.BAGS.takeIf { bags }, ClockBand.Kind.AMMO.takeIf { am != null }, ClockBand.Kind.PET.takeIf { pet })
-        return ClockBand.kinds(extrasOrder(), on).mapNotNull { k -> bandItem(k) }      // ItemCd is written off the main thread
+        return ClockBand.kinds(extrasOrder(), shown).mapNotNull { k -> bandItem(k) }
     }
+    /** EDIT TABS: the badges of the tab Home lays now (null = Settings' own, the Out of combat tab's); a Settings picture: Settings' */
+    private fun badgesNow(): List<String>? = if (renderLook != null) null else HomeSettings.layout.badges(tabNow())
     /** feat/extras-polish: the row's order now - edit mode's draft while it runs (each change glides), else this character's record */
     private fun extrasOrder(): List<String> = (edit?.takeIf { !it.parked }?.draft ?: HomeSettings.layout).extras
     /** one extra as the row draws it from its data now (null = no data: the row leaves it out) */
@@ -1719,8 +1726,8 @@ class HomeView(
      */
     private fun editRowKeys(): List<String> = buildList {
         // feat/extras-polish: in the draft's order (a drag or a step glides there); the pet's face only for a character with a pet that
-        // has happiness out (never a dimmed paw on a mage's row: [editExtras])
-        val (on, off) = editExtras()
+        // has happiness out (never a dimmed paw on a mage's row: [editExtras]). EDIT TABS: the tab's own badges (the model's)
+        val (on, off) = edit?.let { it.extrasOn to it.extrasOff } ?: editExtras()
         for (k in ClockBand.order(extrasOrder())) if (k in on) add(k)
         if (off.isNotEmpty()) add(EDIT_PLUS)
     }
@@ -1735,10 +1742,10 @@ class HomeView(
         kind?.let { bandItem(it) } ?: UiKit.BandItem.Icon(if (k == EDIT_PLUS) null else UiKit.clockLinePicture(k), "", cooling = true)
     }
     /** edit mode's gold line: the purse while Gold is on (0 until the bags say it: the line still shows, wiggles and hides) */
-    private fun editChipGold(): Long? = if (HomeSettings.clockGold) (goldCopper ?: 0L) else null
+    private fun editChipGold(): Long? = if (edit?.let { "gold" in it.extrasOn } ?: HomeSettings.clockGold) (goldCopper ?: 0L) else null
     /** the clock block is edit mode's now (live, not parked): its extras as apps. P4 fix round (the review): not while the fight preview
      *  shows - the block is then drawn exactly as a fight draws it (the extras with data only, no "+" cell, nothing wiggling) */
-    private fun editClock(): Boolean = edit?.let { !it.parked && !it.fightPreview } == true
+    private fun editClock(): Boolean = edit?.let { !it.parked && (!it.fightPreview || it.tab.fight) } == true
     /** the row's keys the last edit-mode clock block drew (its cells' poses: [extraPoser]) */
     private var editRowDrawn: List<String> = emptyList()
     /** P2: each extra's wiggle on its own key (the gold line -1), about its cell's centre; nothing outside edit mode */
@@ -1797,7 +1804,7 @@ class HomeView(
     }
 
     /** the purse under the battery (the Gold row On and the bags said), else null: no line, the chip as before */
-    private fun chipGold(): Long? = goldCopper.takeIf { HomeSettings.clockGold }
+    private fun chipGold(): Long? = goldCopper.takeIf { HomeLayout.badgeOn("gold", badgesNow(), HomeSettings.clockGold) }
 
     /** feat/clock-extras-v2: the extras row under the triggers (ZL / ZR held = fading out, let go = back), Home's own fade; the clock chip keeps its own rules */
     private var trigHeld = false
@@ -2171,8 +2178,13 @@ class HomeView(
      *  preview lays each as its fight does (the 1519 audit: the solo preview hands the solver the takeover, so the takeover's rows) */
     private fun partyModeNow(s: HomeScreen): PartyLayout.Mode = when {
         s.takeover || previewTakeover() -> PartyLayout.Mode.FIGHT_OFF
-        partyFightNow() || previewPartyFight() ->
-            if (layoutNow(s).fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
+        // (edit tabs: the Party mode tab's own Bottom screen grows the band - the list takes the takeover's rows: the proposal's
+        // decision 4 A)
+        partyFightNow() || previewPartyFight() -> layoutNow(s).let { l -> when {
+            l.fight == HomeLayout.FightBand.TOP -> PartyLayout.Mode.FIGHT_TOP
+            l.partyBand -> PartyLayout.Mode.FIGHT_OFF
+            else -> PartyLayout.Mode.FIGHT_ON
+        } }
         else -> PartyLayout.Mode.REST
     }
     /** Party mode on in a fight (the add-on's fight word: never an attack armed before the pull - no takeover in Party mode) */
@@ -2185,7 +2197,11 @@ class HomeView(
     private var laidPartyModule = false
     init {
         // QOL > Party > Party mode flipped: the module comes or goes at once
-        GameUi.onChange(weakly(this) { v -> v.post { if (v.PARTY_MODULE != v.laidPartyModule) v.partyChanged() } })   // weakly: [weakly]
+        GameUi.onChange(weakly(this) { v -> v.post {
+            if (v.PARTY_MODULE != v.laidPartyModule) v.partyChanged()
+            // EDIT TABS: the Party mode tab comes and goes with QOL > Party (open on it when it goes: Out of combat)
+            v.edit?.let { m -> if (m.tabs.contains(HomeTab.PARTY) != v.PARTY_MODULE) v.editRun(m.tabsAre(v.PARTY_MODULE)) }
+        } })   // weakly: [weakly]
     }
 
     /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
@@ -2209,7 +2225,8 @@ class HomeView(
     /** the strip's party layout (PARTY_BUILD.md 4.3) while Party mode is on and Home's rest page shows (no takeover then) */
     private fun partyStripSync(s: HomeScreen) {
         if (!lent(castView)) return
-        castView.partyStrip = partyOnHere() && !s.takeover && s.full == null
+        // (edit tabs: in Edit Home only on the Party mode tab - the Out of combat and In combat tabs show their own looks)
+        castView.partyStrip = partyOnHere() && partyLaidOn() && !s.takeover && !previewTakeover() && s.full == null
         castView.partyFight = grow.fighting(System.currentTimeMillis())
         // the trigger plates at frame y 124 (v13), in the band's own px (the band starts at y 8 at rest)
         castView.partyPlateTop = (124f - (if (big(s)) 10f else 8f)) * (width.takeIf { it > 0 }?.let { it / 1240f } ?: 1f)
@@ -2372,8 +2389,11 @@ class HomeView(
      */
     private fun layoutNow(s: HomeScreen? = shown): HomeLayout {
         val look = renderLook
-        // P2: while edit mode runs (not parked by a fight), Home is laid with its draft: every change glides there
-        var l = HomeLayoutRules.shown(look?.layout ?: editDraft() ?: HomeSettings.layout)
+        // P2: while edit mode runs (not parked by a fight), Home is laid with its draft: every change glides there. EDIT TABS (the user,
+        // 2026-11-24): the PAGE of a tab - edit mode's tab, else the situation's ([tabNow]: Party mode on = Party mode's, our takeover =
+        // In combat's, else Out of combat's; a fight tab's bar that is Off lies slid away at the Out of combat bar's dock: [tabPage])
+        val rec = look?.layout ?: editDraft()?.let { d -> edit?.tab?.let { d.forTab(it) } ?: d } ?: tabPage(s).first
+        var l = HomeLayoutRules.shown(rec)
             // P4: the room bar's fields are the bar's, not the page's (its order glides in the Strip; the XP track's place is [trackInset])
             .copy(rooms = RoomBar.DEFAULT, xpBar = true, hidden = emptyList())
         if (s != null) l = l.copy(rest = s.rest)
@@ -2390,6 +2410,18 @@ class HomeView(
         }
         return l
     }
+
+    /** EDIT TABS: the tab whose layout Home lays now outside edit mode (HomeTab.active: Party mode on, our takeover, else Out of combat) */
+    private fun tabNow(s: HomeScreen? = shown): HomeTab = HomeTab.active(partyOnHere(), (s ?: flow.screen).takeover)
+    /** the record's page for [tabNow] and whether its bar lies slid away (HomeTab.page) */
+    private fun tabPage(s: HomeScreen? = shown): Pair<HomeLayout, Boolean> = HomeTab.page(HomeSettings.layout, tabNow(s))
+    /** the fight tab the NEXT fight lays (the add-on's Top screen / Cast bar flags follow it, CompanionHost.topCheck): Party mode's while
+     *  Party mode is on, else In combat's */
+    fun fightTab(): HomeTab = if (partyOnHere()) HomeTab.PARTY else HomeTab.COMBAT
+    /** EDIT TABS (the user's pick "Follow the layout on screen"): the DS toolbar's D-pad sides now - the page Home lays out of a fight
+     *  (HomeTab.dpad: Party mode's while Party mode is on, else Out of combat's); sent to the add-on out of fights only (CompanionHost) */
+    fun dpadTab(): HomeTab = HomeTab.dpad(partyOnHere())
+    fun mirrorWant(): Int = HomeTab.mirrorBit(HomeSettings.layout, partyOnHere())
 
     /** the tap-to-cast bar's place laid by the last [places] (a change of the choice lays the page again) */
     private var laidSide = CastStripModel.Side.OFF
@@ -2428,7 +2460,7 @@ class HomeView(
     }
 
     /** the bar's touch gate for Home's fight now (no re-lay: [apply] calls this before it lays the page) */
-    private fun castStripGate() { for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep()) }
+    private fun castStripGate() { val h = castHiddenNow(); for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep(), h) }
     /** cb15 (Option C, Bar in Party mode): Party mode on and its bar setting on: the bar stays in fights and its Party layer shows */
     private fun castPartyKeep(): Boolean = renderLook?.castSide == null && party.party?.onLive == true && HomeSettings.castBarPartyShow
 
@@ -2440,13 +2472,20 @@ class HomeView(
     private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE
         else TopCombatBar.stripCombat(layoutNow(), HomeSettings.castBarCombat)
 
-    /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
-    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
+    /** cb7: the bar is slid away now. EDIT TABS (2026-11-24): the tab Home lays has its bar Off while the Out of combat tab has one (the
+     *  In combat tab in our takeover, the Party mode tab whenever Party mode is on - "Show in combat" / "Bar in Party mode" ARE those
+     *  tabs' places now); never in edit mode (Off there is no place: "+" brings it back); a Settings picture keeps its own rule */
+    private fun castHiddenNow(): Boolean = when {
+        renderLook?.castSide != null -> CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
+        renderLook != null -> CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
+        editDraft() != null -> false
+        else -> tabPage().second
+    }
 
     /** the layout record changed in more than the bar since the page was laid */
     private fun layoutMoved(): Boolean {
         val was = laidLayout ?: return false
-        fun core(l: HomeLayout) = l.copy(cast = HomeLayout.CastDock.OFF, castSize = HomeLayout.SlotSize.L, name = "")
+        fun core(l: HomeLayout) = l.copy(cast = HomeLayout.CastDock.OFF, grow = false, name = "")
         return core(was) != core(layoutNow())
     }
 
@@ -2832,7 +2871,8 @@ class HomeView(
     private val RIDER_HOST: Map<Part, Part> = mapOf(Part.QUESTS to Part.MAP, Part.AURAS to Part.MAP)
 
     /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
-    private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover || editFightLook(), partyOn = partyLaidOn()))
+    private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover || previewTakeover(),
+        partyOn = partyLaidOn(), partyFight = partyFightNow() || previewPartyFight(), full = s.full))
 
     /**
      * P4 (the user's ruling 2026-11-22): edit mode's fight PREVIEW is on (the ribbon's Fight toggle; live, not parked): the band, its
@@ -2848,9 +2888,10 @@ class HomeView(
      *  list's pencil bubble is open in edit mode (live) - the page lays the list as Party mode lays it (full width, the picks' rows) so
      *  the player sees what the picks do, with Party mode off too; display only (the add-on, the Select tab's look and the taps hear
      *  nothing of it) */
-    private fun editPartyLook(): Boolean = edit?.let { !it.parked && it.menu == EditStop.PARTY_PEN } == true
-    /** Party mode as the page is laid: live, or [editPartyLook]'s preview */
-    private fun partyLaidOn(): Boolean = partyOnHere() || editPartyLook()
+    private fun editPartyLook(): Boolean = edit?.let { !it.parked && it.tab == HomeTab.PARTY } == true
+    /** Party mode as the page is laid: live, or [editPartyLook]'s preview. EDIT TABS: in edit mode the TAB decides - the Party mode tab
+     *  lays Party mode's look (with Party mode off too), the Out of combat and In combat tabs lay theirs (with Party mode live too) */
+    private fun partyLaidOn(): Boolean = edit?.takeIf { !it.parked }?.let { it.tab == HomeTab.PARTY } ?: partyOnHere()
     /** [editPartyLook] as [places] last laid it (the bubble opened or closed: the page is laid again) */
     private var laidPartyPen = false
     /** P4 fix round: the preview's look was given to the D-pad and the band (the toggle's Fx.Preview) and not taken back yet */
@@ -3363,7 +3404,7 @@ class HomeView(
     /** the host's hooks: the ribbon + the disc's tick (the chrome, null = gone), the bar's slots (the Controller room's Tap-to-cast
      *  tab), the chat's filters (the Chat room's checklist) */
     var onEditChrome: ((HomeEditView?) -> Unit)? = null
-    var onEditSlots: (() -> Unit)? = null
+    var onEditSlots: ((HomeTab) -> Unit)? = null
     var onEditFilters: (() -> Unit)? = null
     /** a behaviour row's press with the host's env (BottomTiles.press); null = Home presses it itself (the off-device renders) */
     var onEditPress: ((String, Int) -> Unit)? = null
@@ -3392,8 +3433,9 @@ class HomeView(
     fun roomBarFor(dirs: Map<Int, String>?): Map<Int, String>? { roomBarReal = dirs; roomBarKept = true; return editRoomBar(dirs) }
     private fun editRoomBar(dirs: Map<Int, String>?): Map<Int, String>? {
         val draft = editDraft()
-        val want = draft?.let { HomeLayoutSolver.mirrorBit(it) }
-            ?: roomBarHold?.takeIf { it == HomeLayoutSolver.mirrorBit(HomeSettings.layout) }
+        // (edit tabs: the edited tab's own sides - HomeTab.dpadPreview; outside edit mode the page Home lays out of a fight: mirrorWant)
+        val want = draft?.let { d -> HomeLayoutSolver.mirrorBit(d.forTab(HomeTab.dpadPreview(edit?.tab ?: HomeTab.OUT))) }
+            ?: roomBarHold?.takeIf { it == mirrorWant() }
             ?: run { roomBarHold = null; return dirs }
         val have = dirs?.let { ToolbarMirror.bitOf(it) } ?: return dirs
         if (have == want) { if (draft == null) roomBarHold = null; return dirs }
@@ -3447,13 +3489,14 @@ class HomeView(
         override fun holdK(): Float? = editHoldK()
         override fun holdDone(down: Boolean): Boolean = if (down) { editHoldDown(); false } else editHoldUp()
         override fun roomPose(r: Room, out: FloatArray): Boolean {
-            if (!motion.on) return false
+            // (edit tabs: the room bar is shared - it sits still on the In combat and Party mode tabs: decision 7 A)
+            if (!motion.on || edit?.tab?.fight == true) return false
             motion.pose(HomeEditMotion.roomKey(r.ordinal), motionNow(), ROOM_HALF_DIAG, pose)
             out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
             return !pose.isIdentity
         }
         override fun plusPose(out: FloatArray): Boolean {
-            if (!motion.on) return false
+            if (!motion.on || edit?.tab?.fight == true) return false
             motion.pose(HomeEditMotion.PLUS_ROOM, motionNow(), ROOM_HALF_DIAG, pose)
             out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
             return !pose.isIdentity
@@ -3523,7 +3566,7 @@ class HomeView(
             gb?.let { byKey["gold"] = it }
             for ((i, k) in keys.withIndex()) cells.getOrNull(i)?.let { byKey[k] = it }
             bandCells.putAll(byKey)
-            if (!m.fightPreview) {
+            if (ed) {
                 for (k in HomeEditModel.EXTRA_KEYS) byKey[k]?.let { extras += k to RectF(it) }
                 plus = byKey[EDIT_PLUS]?.let { RectF(it) }
             }
@@ -3556,7 +3599,9 @@ class HomeView(
     private fun editBandFeed(m: HomeEditModel? = edit) {
         m ?: return
         val (on, off) = editExtras()
-        m.bandIs(on, off)
+        // (the review of the edit tabs: Settings' rows On that edit mode does not offer now - the pet's face with no pet out - so a tab's
+        // own list written now keeps them)
+        m.bandIs(on, off, HomeEditModel.EXTRA_KEYS.filter { it !in on && it !in off && BottomTiles.clockOn(it) })
     }
     private val editView: HomeEditView by lazy { HomeEditView(context, editHost) }
     /** the host's Strip draws the ribbon through this */
@@ -3588,9 +3633,10 @@ class HomeView(
     private fun solveState(l: HomeLayout): HomeLayoutSolver.State {
         val p = party.party
         val partyIn = if (PARTY_MODULE && p != null) HomeLayoutSolver.Party(partyModeNow(flow.screen), p.view.size, p.viewPet) else null
-        return HomeLayoutSolver.State(width.toFloat(), frameH, UiKit.MODULE_GAP, takeover = flow.takeover,
+        // (edit tabs: the tab's own state - In combat's takeover, Party mode's fight preview - since its widgets are moved there too)
+        return HomeLayoutSolver.State(width.toFloat(), frameH, UiKit.MODULE_GAP, takeover = flow.takeover || previewTakeover(),
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
-            partyOn = partyLaidOn(), castHidden = castHiddenNow(), partyFight = partyFightNow())
+            partyOn = partyLaidOn(), castHidden = castHiddenNow(), partyFight = partyFightNow() || previewPartyFight())
     }
     private fun solveFor(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> =
         HomeLayoutSolver.places(HomeLayoutRules.shown(l.copy(rest = flow.rest)), solveState(l)).boxes
@@ -3615,7 +3661,7 @@ class HomeView(
     }
     private fun editMenuRows(s: EditStop): List<MenuRow> {
         val m = edit ?: chromeModel ?: return emptyList()
-        return HomeWidgetMenus.rows(s, m.draft, editValues())
+        return HomeWidgetMenus.rows(s, m.page, editValues(), m.tab)
     }
 
     /**
@@ -3632,7 +3678,7 @@ class HomeView(
         if (classOpen) classLayerShow(false)
         val saved = HomeSettings.layout
         chromeModel = null
-        val m = HomeEditModel(saved, start)
+        val m = HomeEditModel(saved, start, HomeTab.opening(partyOnHere()), PARTY_MODULE)
         editBandFeed(m)
         edit = m
         editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (it is saved only there)
@@ -3744,7 +3790,7 @@ class HomeView(
         edit = null
         editBackDue = false
         editPersisted = null; editLate = null
-        roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null   // fix round 3: the record's sides until `d` says them
+        roomBarHold = if (write) mirrorWant() else null                   // fix round 3: the record's sides until `d` says them
         editOwner = null
         liveDraft = null
         editRestSync()                                                    // the record's rest
@@ -3893,7 +3939,7 @@ class HomeView(
             // the bar's slots / the chat's filters (another room): the draft is saved first; a session that changed nothing ends, one
             // that did WAITS (the room's giveBack parks it, editAwayPark) so Discard can still put it back, and edit mode is back where
             // it was with Home
-            HomeEditModel.Fx.EditSlots -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditSlots?.invoke(); return }
+            HomeEditModel.Fx.EditSlots -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditSlots?.invoke(m?.tab ?: HomeTab.OUT); return }
             HomeEditModel.Fx.Filters -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditFilters?.invoke(); return }
             is HomeEditModel.Fx.Refuse -> editRefuse(f.stop)
             HomeEditModel.Fx.Lift -> editLift(m?.lifted)
@@ -3903,6 +3949,16 @@ class HomeView(
                 previewLaid = editFightLook()
                 applyDpad()
                 editRelay(if (f.on) Motion.COMBAT_GROW else Motion.COMBAT_SHRINK, force = true)
+            }
+            // EDIT TABS: another tab - its look (the fight's pictures on In combat) and its page in the one motion; the band's party faces
+            is HomeEditModel.Fx.Tab -> {
+                Log.i(TAG, "home edit: tab ${f.tab.name.lowercase()}")
+                previewLaid = editFightLook()
+                applyDpad()
+                editBandFeed(m)
+                shown?.let { partyStripSync(it) }
+                editRoomBarSync()                                           // (the D-pad's pictures: that tab's sides - HomeTab.dpadPreview)
+                editRelay(Motion.MODULE_OPEN, force = true)
             }
         }
         m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
@@ -4265,6 +4321,8 @@ class HomeView(
             if (editOwnerCheck("the fight ended on another character")) return
             editRebase(m)
             m.resume(); liveDraft = m.draft
+            // (edit tabs: back on the In combat tab - its fight look's pictures again, as the tab switch gives them)
+            if (editFightLook()) { previewLaid = true; applyDpad() }
             editRestSync()
             editRoomBarSync(); editBarSync(Motion.COMBAT_SHRINK)
             editGuest(true)
@@ -4304,6 +4362,7 @@ class HomeView(
         }
         editRebase(m)
         m.resume(); liveDraft = m.draft
+        if (editFightLook()) { previewLaid = true; applyDpad() }       // (edit tabs: the In combat tab's fight pictures again)
         editRestSync()
         editGuest(true)
         onEditChrome?.invoke(editView)
@@ -4501,7 +4560,53 @@ class HomeView(
         return null
     }
 
+    /**
+     * EDIT TABS (the proposal: "the row takes the top 76 px; the live page is drawn at about 0.92 under it - the iPhone zoom out"): while
+     * edit mode's chrome shows, the whole page (its views, Home's own paint and the chrome over it) is drawn scaled about the frame's top
+     * centre and moved down by the tab row ([HomeEditView.TAB_ROW]), so it fills the frame under the row; the room bar and the ribbon
+     * (the host's Strip) stay full size. It rides the chrome's fade ([chromeA]: in as edit mode opens, out at a fight's park or the
+     * end). Touches map through it ([dispatchTouchEvent]): every hit test stays in Home's px. False = none (identity)
+     */
+    private fun pageMatrix(out: android.graphics.Matrix): Boolean {
+        if (!pageZoomOn) return false
+        val k = if (edit != null || chromeModel != null) chromeA.coerceIn(0f, 1f) else 0f
+        if (k <= 0.001f || frameH <= 0f) return false
+        val row = HomeEditView.TAB_ROW * k
+        val s = (frameH - row) / frameH
+        out.reset(); out.postScale(s, s, width / 2f, 0f); out.postTranslate(0f, row)
+        return true
+    }
+    private val pageM = android.graphics.Matrix()
+    private val pageInv = android.graphics.Matrix()
+    /** the off-device renders that sample the page in Home's own px (the older edit-mode suites): the page unzoomed, no tab row */
+    var pageZoomOn = true
+    /** the tab row has the finger (its DOWN came on the row) */
+    private var tabFinger = false
+    /** Home's px [x], [y] as the screen shows them now (the page zoomed under the tab row while editing; else the same point) */
+    fun screenOf(x: Float, y: Float): FloatArray { val pt = floatArrayOf(x, y); if (pageMatrix(pageM)) pageM.mapPoints(pt); return pt }
+    /** the off-device tests: the page's zoom now (scale, dy), null = none */
+    fun pageZoom(): Pair<Float, Float>? = if (pageMatrix(pageM)) FloatArray(9).also { pageM.getValues(it) }.let { it[0] to it[5] } else null
+
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        // EDIT TABS: the tab row over the zoomed page (its own finger), and every other touch mapped into Home's px through the zoom
+        if (edit?.parked == false && pageMatrix(pageM)) {
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) tabFinger = e.y < HomeEditView.TAB_ROW && !holdTakes
+            if (tabFinger) {
+                val up = e.actionMasked == MotionEvent.ACTION_UP
+                editView.tabTouch(e.x, e.y, up)
+                if (up || e.actionMasked == MotionEvent.ACTION_CANCEL) tabFinger = false
+                return true
+            }
+            if (pageM.invert(pageInv)) {
+                val t = MotionEvent.obtain(e)
+                t.transform(pageInv)
+                try { return dispatchPage(t) } finally { t.recycle() }
+            }
+        } else tabFinger = false
+        return dispatchPage(e)
+    }
+
+    private fun dispatchPage(e: MotionEvent): Boolean {
         // the hold fired: the child that had the touch is cancelled once (no Chat room, no map module), the rest is edit mode's
         if (holdTakes || holdSwallow) {
             if (!holdChildCancelled) {
@@ -4710,10 +4815,16 @@ class HomeView(
 
     /** P2: edit mode's chrome is drawn LAST, over Home's own paint (the zone band, the clock block, the wells' edges) */
     override fun dispatchDraw(c: Canvas) {
+        // EDIT TABS: the page (and the chrome over it) zoomed out under the tab row while edit mode's chrome shows ([pageMatrix])
+        val zoomed = pageMatrix(pageM)
+        val z = if (zoomed) c.save() else -1
+        if (zoomed) c.concat(pageM)
         dispatchDrawHome(c)
         if (editView.visibility == View.VISIBLE && editView.width > 0) {
             val s = c.save(); c.translate(editView.left.toFloat(), editView.top.toFloat()); editView.draw(c); c.restoreToCount(s)
         }
+        if (z >= 0) c.restoreToCount(z)
+        if (zoomed && editView.visibility == View.VISIBLE) editView.drawTabs(c, width.toFloat(), chromeA.coerceIn(0f, 1f))
     }
     override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView) false else super.drawChild(c, child, drawingTime)
 

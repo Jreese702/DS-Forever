@@ -54,6 +54,9 @@ object HomeLayoutStore {
     const val KEY_MIGRATED = "homeLayoutMigrated"
     /** the pending names' held edits, kept across an app restart (the 1515 merge's review): {"<Name>": {"base": .., "edit": ..}} */
     const val KEY_HELD = "homeLayoutHeld"
+    /** EDIT TABS (2026-11-24): the one-time copy of the app-wide "Show in combat" / "Bar in Party mode" into every record's fight tabs
+     *  ([migrateTabs]; NEVER reset, as [KEY_MIGRATED]) */
+    const val KEY_TABS_MIGRATED = "homeTabsMigrated"
 
     internal var prefs: SharedPreferences? = null
     /** the character now ("Name-Realm"), null = none known yet (the default record is the active one) */
@@ -177,7 +180,7 @@ object HomeLayoutStore {
 
     /** today's keys, read once (the first run of the new build), as the Classic record */
     private fun migrate(p: SharedPreferences) {
-        if (p.getBoolean(KEY_MIGRATED, false)) return
+        if (p.getBoolean(KEY_MIGRATED, false)) { migrateTabs(p); return }
         val today = HomeLayoutMigration.fromToday(
             rest = p.getString("rest", null)?.let { runCatching { HomeRest.valueOf(it) }.getOrNull() } ?: HomeRest.DIAMONDS,
             combatGrow = p.getBoolean("combatGrow", true),
@@ -186,6 +189,39 @@ object HomeLayoutStore {
         val e = p.edit()
         if (!p.contains(KEY_DEFAULT)) e.putString(KEY_DEFAULT, HomeLayoutJson.json(today))
         e.putBoolean(KEY_MIGRATED, true).commit()
+        migrateTabs(p)
+    }
+
+    /**
+     * EDIT TABS' MIGRATION (the first run of the tabs build; nothing changes on screen on day one): every record's fight tabs start as
+     * copies of its places (a record with nothing of its own needs no key: [HomeLayout.combat] / [HomeLayout.partyTab] null) with the
+     * fight settings that were app-wide mapped onto them ([HomeTabsMigration]) - the default, every character's record and the held
+     * edits alike. Once, app-wide ([KEY_TABS_MIGRATED]); a Classic record's text is unchanged (no bar: nothing to hide)
+     */
+    private fun migrateTabs(p: SharedPreferences) {
+        if (p.getBoolean(KEY_TABS_MIGRATED, false)) return
+        val show = CastStripModel.showOf(CastStripModel.combatOf(p.getString(HomeTabsMigration.KEY_CAST_COMBAT, null)))
+        val pshow = p.getBoolean(HomeTabsMigration.KEY_CAST_PARTY, true)
+        fun mig(raw: String?): String? = raw?.let { r ->
+            val l = HomeLayoutJson.parse(r, HomeLayout(v = -1)).takeIf { it.v > 0 } ?: return@let null
+            val m = HomeTabsMigration.tabs(l, show, pshow)
+            if (m == l) null else HomeLayoutJson.json(m)
+        }
+        val e = p.edit()
+        for ((k, v) in p.all) if (k == KEY_DEFAULT || isCharRecord(k)) (v as? String)?.let { mig(it) }?.let { e.putString(k, it) }
+        // the held edits: their base and edit alike (the held change's own fields stay the change)
+        p.getString(KEY_HELD, null)?.let { raw ->
+            runCatching {
+                val all = org.json.JSONObject(raw)
+                for (n in all.keys().asSequence().toList()) {
+                    val o = all.optJSONObject(n) ?: continue
+                    for (f in listOf("base", "edit")) o.optJSONObject(f)?.let { r -> mig(r.toString())?.let { o.put(f, org.json.JSONObject(it)) } }
+                }
+                e.putString(KEY_HELD, all.toString())
+            }
+        }
+        e.putBoolean(KEY_TABS_MIGRATED, true).commit()
+        cacheRaw = null; cache = null
     }
 
     /** the default record (Classic when none is kept) */
@@ -292,9 +328,11 @@ object HomeLayoutStore {
 
     /** [real] with only the fields [base] -> [edit] changed laid on top (this session's own changes; every other field stays [real]'s) */
     internal fun layOn(real: HomeLayout, base: HomeLayout, edit: HomeLayout): HomeLayout {
-        val b = org.json.JSONObject(HomeLayoutJson.json(base))
-        val e = org.json.JSONObject(HomeLayoutJson.json(edit))
-        val r = org.json.JSONObject(HomeLayoutJson.json(real))
+        // (edit tabs: every tab's own values written out - a fight tab that is still the Out of combat places' copy too - so a change
+        // of one tab lays on that tab only, and an Out of combat change never moves a fight tab that kept its own copy)
+        val b = org.json.JSONObject(HomeLayoutJson.json(base, full = true))
+        val e = org.json.JSONObject(HomeLayoutJson.json(edit, full = true))
+        val r = org.json.JSONObject(HomeLayoutJson.json(real, full = true))
         val keys = (b.keys().asSequence() + e.keys().asSequence()).toSet() - setOf("v", "name")
         for (f in keys) {
             if (b.opt(f)?.toString() == e.opt(f)?.toString()) continue

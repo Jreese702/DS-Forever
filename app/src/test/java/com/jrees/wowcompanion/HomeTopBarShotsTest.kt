@@ -91,12 +91,14 @@ class HomeTopBarShotsTest {
         HomeSettings.init(app); Settings.init(app)
         HomeLayoutStore.character(null)
         HomeLayoutStore.set(layout)
+        HomeSettings.castBarCombat = CastStripModel.Combat.HIDE               // (edit tabs: Hide in combat - the default - is the In combat tab's bar Off)
         CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null
         setField(PartyModel.live, "party", null)
         val holder = FrameLayout(app)
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
+        home.pageZoomOn = false                                       // (edit tabs: this suite samples Home's own px; the zoom + tab row: EditTabsShotsTest)
         homes += home
         home.borrow()
         lay(home)
@@ -147,7 +149,8 @@ class HomeTopBarShotsTest {
         a.setCurrentFraction(k)
     }
     private fun touch(p: Page, action: Int, x: Float, y: Float, down: Long) {
-        val e = MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+        val q = p.home.screenOf(x, y)                                   // (edit tabs: the page zoomed under the tab row)
+        val e = MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action, q[0], q[1], 0)
         p.home.dispatchTouchEvent(e); e.recycle()
     }
 

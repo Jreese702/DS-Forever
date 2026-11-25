@@ -87,12 +87,15 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     private val fightGate = CastStripModel.FightGate()
 
     /** Home's fight now ([fighting] = HomeView.fightShown()) with the choice [mode]; true = hidden changed (Home lays the page again) */
-    fun fight(mode: CastStripModel.Combat, fighting: Boolean, partyKeep: Boolean = false): Boolean {
+    fun fight(mode: CastStripModel.Combat, fighting: Boolean, partyKeep: Boolean = false, hidden: Boolean? = null): Boolean {
         val fn = fighting && CastStripModel.showOf(mode)                  // cb14: Show in combat on and Home shows a fight
         if (fn != fightNow) { fightNow = fn; invalidate() }
         if (partyKeep != partyNow) { partyNow = partyKeep; invalidate() }
-        // cb15: Party mode on with Bar in Party mode on: the bar stays in fights (party heals reachable) whatever Show in combat says
-        if (!fightGate.note(if (partyKeep) CastStripModel.Combat.STAY else mode, fighting)) return false
+        // cb15: Party mode on with Bar in Party mode on: the bar stays in fights (party heals reachable) whatever Show in combat says.
+        // EDIT TABS (2026-11-24): Home says whether the bar lies slid away ([hidden]: the tab it lays has its bar Off) - the gate follows it
+        val changed = if (hidden != null) fightGate.noteHidden(hidden)
+            else fightGate.note(if (partyKeep) CastStripModel.Combat.STAY else mode, fighting)
+        if (!changed) return false
         if (fightGate.hidden) dropTouch()
         invalidate()
         return true

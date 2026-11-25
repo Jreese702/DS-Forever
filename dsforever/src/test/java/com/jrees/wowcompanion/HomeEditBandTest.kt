@@ -21,11 +21,13 @@ class HomeEditBandTest {
 
     /** Home's stops as the edit view gives them: the page's (the solver's boxes), the ribbon's ("+", Fight, Done), the room bar, and the
      *  band's pieces for the look (Diamonds at rest: the extras' row; the thin row: none; the preview: the fight pencil, no page) */
-    private fun stops(l: HomeLayout, m: HomeEditModel): Map<EditStop, HomeLayoutSolver.Box> {
+    private fun stops(l0: HomeLayout, m: HomeEditModel): Map<EditStop, HomeLayoutSolver.Box> {
+        // (edit tabs: the tab's page; its widgets are stops in the fight look too - D4 went with the tabs)
+        val l = if (l0 === m.draft) m.page else l0
         val r = HomeLayoutSolver.places(HomeLayoutRules.shown(l), HomeLayoutSolver.State(card = true, cardH = 118f, takeover = m.fightPreview))
         val b = r.boxes
         val out = LinkedHashMap<EditStop, HomeLayoutSolver.Box>()
-        if (!m.fightPreview) {
+        run {
             out[EditStop.CHAT] = b.getValue(HomePart.CHAT)
             out[EditStop.MAP] = b.getValue(HomePart.MAP)
             b[HomePart.QUESTS]?.let { out[EditStop.QUEST] = it }
@@ -36,27 +38,31 @@ class HomeEditBandTest {
             out[EditStop.DIVIDER] = B(x - 2f, top, x + 2f, top + 40f)
         }
         if (m.plusShown) out[EditStop.PLUS] = B(14f, 937f, 60f, 967f)
-        out[EditStop.FIGHT] = B(426f, 937f, 536f, 967f)                     // fix round: left of the disc (the hints keep their room)
+        if (m.tab == HomeTab.PARTY) out[EditStop.FIGHT] = B(426f, 937f, 536f, 967f)   // the Party mode tab's alone (edit tabs)
         out[EditStop.DONE] = B(1080f, 937f, 1230f, 967f)
-        out[EditStop.ROOMS] = B(8f, 969f, 1232f, 1080f)
+        val shared = !m.tab.fight                                            // (edit tabs: the shared pieces sit still on the fight tabs)
+        if (shared) out[EditStop.ROOMS] = B(8f, 969f, 1232f, 1080f)
         val diamonds = l.rest == HomeRest.DIAMONDS
         if (diamonds) {
-            out[EditStop.PAD_PEN] = B(379f, 12f, 419f, 52f); out[EditStop.FACE_PEN] = B(804f, 14f, 844f, 54f)
+            if (shared) { out[EditStop.PAD_PEN] = B(379f, 12f, 419f, 52f); out[EditStop.FACE_PEN] = B(804f, 14f, 844f, 54f) }
             if (m.fightPreview) out[EditStop.FIGHT_PEN] = B(450f, 12f, 490f, 52f)
-            else { out[EditStop.LOOK] = B(450f, 14f, 514f, 50f); out[EditStop.EXTRAS] = B(440f, 100f, 800f, 198f) }
+            else { if (shared) out[EditStop.LOOK] = B(450f, 14f, 514f, 50f); out[EditStop.EXTRAS] = B(440f, 100f, 800f, 198f) }
         } else {
-            out[EditStop.PAD_PEN] = B(582f, 24f, 618f, 60f); out[EditStop.FACE_PEN] = B(622f, 24f, 658f, 60f)
-            if (m.fightPreview) out[EditStop.FIGHT_PEN] = B(588f, 66f, 652f, 102f) else out[EditStop.LOOK] = B(588f, 66f, 652f, 102f)
+            if (shared) { out[EditStop.PAD_PEN] = B(582f, 24f, 618f, 60f); out[EditStop.FACE_PEN] = B(622f, 24f, 658f, 60f) }
+            if (m.fightPreview) out[EditStop.FIGHT_PEN] = B(588f, 66f, 652f, 102f) else if (shared) out[EditStop.LOOK] = B(588f, 66f, 652f, 102f)
         }
         return out
     }
     private val values = HomeWidgetMenus.Values(toolbarOn = true, toolbarAvail = true, talk = true, ct = null)
     private fun HomeEditModel.press(vararg keys: String, v: HomeWidgetMenus.Values = values): List<HomeEditModel.Fx> {
         val out = ArrayList<HomeEditModel.Fx>()
-        for (k in keys) out += key(k, stops(draft, this)) { s -> HomeWidgetMenus.rows(s, draft, v) }
+        for (k in keys) out += key(k, stops(draft, this)) { s -> HomeWidgetMenus.rows(s, page, v, tab) }
         return out
     }
-    private fun model(l: HomeLayout = classic, start: EditStop = EditStop.CHAT) = HomeEditModel(l, start).also { it.bandIs(HomeEditModel.EXTRA_KEYS, emptyList()) }
+    private fun model(l: HomeLayout = classic, start: EditStop = EditStop.CHAT, tab: HomeTab = HomeTab.OUT) =
+        HomeEditModel(l, start, tab).also { it.bandIs(HomeEditModel.EXTRA_KEYS, emptyList()) }
+    /** the ribbon's Fight toggle and its preview: the Party mode tab's (edit tabs) */
+    private fun party(l: HomeLayout = classic, start: EditStop = EditStop.CHAT) = model(l, start, HomeTab.PARTY)
 
     @Test fun theBandsPiecesAreStopsWithFreeKeys() {
         val band = listOf(EditStop.PAD_PEN, EditStop.FACE_PEN, EditStop.LOOK, EditStop.EXTRAS, EditStop.FIGHT_PEN)
@@ -94,32 +100,36 @@ class HomeEditBandTest {
         val d = model(start = EditStop.DIVIDER)
         d.press("PADDUP"); assertTrue(d.cursor.band)
         // every look, every stop, every press
-        for (l in listOf(classic, classic.copy(rest = HomeRest.ROW))) for (preview in listOf(false, true)) {
-            val probe = model(l)
+        // (edit tabs: every tab - In combat always in the fight look, Party mode with its Fight toggle off and on)
+        for (l in listOf(classic, classic.copy(rest = HomeRest.ROW))) for (tab in HomeTab.values()) for (preview in listOf(false, true)) {
+            if (preview && tab != HomeTab.PARTY) continue
+            val probe = model(l, tab = tab)
             if (preview) probe.toggleFight()
             for (s in stops(l, probe).keys) for (k in listOf("PADDLEFT", "PADDRIGHT", "PADDUP", "PADDDOWN")) {
-                val t = model(l, start = s)
+                val t = model(l, start = s, tab = tab)
                 if (preview) { t.toggleFight(); t.startOn(s, false) }
                 if (s == EditStop.DONE || s == EditStop.ROOMS || s == EditStop.DIVIDER) continue   // their own rules: below
                 t.press(k)
-                assertTrue("${l.rest} preview=$preview: $s $k -> ${t.cursor} (no box)", t.cursor in stops(t.draft, t))
+                assertTrue("${l.rest} $tab preview=$preview: $s $k -> ${t.cursor} (no box)", t.cursor in stops(t.draft, t))
             }
         }
     }
 
     /** the ribbon's row: "+" <-> Fight <-> Done; Up from the room bar is Fight, Down from Fight the room bar, Left from Done is Fight */
     @Test fun theRibbonRowWalksPlusFightDone() {
-        val m = model(classic.copy(card = HomeLayout.CardDock.OFF), start = EditStop.PLUS)
+        val m = party(classic.copy(card = HomeLayout.CardDock.OFF), start = EditStop.PLUS)
         assertTrue(m.plusShown)
         m.press("PADDRIGHT"); assertEquals(EditStop.FIGHT, m.cursor)
         m.press("PADDRIGHT"); assertEquals(EditStop.DONE, m.cursor)
         m.press("PADDLEFT"); assertEquals(EditStop.FIGHT, m.cursor)
         m.press("PADDLEFT"); assertEquals(EditStop.PLUS, m.cursor)
-        m.press("PADDRIGHT", "PADDDOWN"); assertEquals(EditStop.ROOMS, m.cursor)
-        m.press("PADDUP"); assertEquals(EditStop.FIGHT, m.cursor)
-        m.press("PADDUP"); assertFalse("Up from Fight: the page", m.cursor == EditStop.FIGHT || m.cursor == EditStop.ROOMS)
+        // (edit tabs: the room bar sits still on the Party mode tab - Up from Fight goes to the page)
+        m.press("PADDRIGHT", "PADDUP"); assertFalse("Up from Fight: the page", m.cursor == EditStop.FIGHT || m.cursor == EditStop.ROOMS)
         val d = model(start = EditStop.DONE)
         d.press("PADDDOWN"); assertEquals("Done + Down: the room bar's end", EditStop.ROOMS, d.cursor)
+        // (edit tabs: no Fight toggle on Out of combat - "+" goes straight to Done along the ribbon)
+        val o = model(classic.copy(card = HomeLayout.CardDock.OFF), start = EditStop.PLUS)
+        o.press("PADDRIGHT"); assertEquals(EditStop.DONE, o.cursor)
     }
 
     /** A on a pencil (or X) opens its bubble with Settings' rows; the toolbar's talk rows only while it is on; Top screen cannot be picked
@@ -143,37 +153,36 @@ class HomeEditBandTest {
         m.press("PADDDOWN")
         assertEquals("rank badges On", listOf(HomeEditModel.Fx.Press(BottomTiles.RANK, 0)), m.press("PADDLEFT"))
         m.press("PAD2"); assertNull(m.menu)
-        // the fight pencil (the preview only)
-        m.toggleFight(); m.startOn(EditStop.FIGHT_PEN, false)
+        // the fight pencil (edit tabs: the In combat tab's - its Combat bars a layout row of the tab, never a press)
+        m.tabTo(HomeTab.COMBAT); m.startOn(EditStop.FIGHT_PEN, false)
         m.press("PAD1"); assertEquals(EditStop.FIGHT_PEN, m.menu)
-        val f = HomeWidgetMenus.rows(EditStop.FIGHT_PEN, m.draft, values)
+        val f = HomeWidgetMenus.rows(EditStop.FIGHT_PEN, m.page, values, m.tab)
         assertEquals(listOf(BottomTiles.COMBAT, BottomTiles.SWING), f.map { it.key })
-        assertEquals("no Wings word: Top screen dimmed", setOf(HomeLayout.FightBand.TOP.ordinal), f[0].off)
-        assertEquals(listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, 1)), m.press("PADDRIGHT"))
-        assertEquals("Top screen refused", listOf(HomeEditModel.Fx.Refuse(EditStop.FIGHT_PEN)),
-            m.press("PADDRIGHT", v = values.copy(fightBand = HomeLayout.FightBand.SAME)))
-        assertTrue("with the Wings word: pickable", HomeWidgetMenus.rows(EditStop.FIGHT_PEN, m.draft, values.copy(ct = 1))[0].off.isEmpty())
+        assertEquals("no Wings word: Top screen dimmed", setOf(0), f[0].off)
+        assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Relay(Motion.MODULE_OPEN)), m.press("PADDRIGHT"))       // No grow
+        assertEquals(HomeLayout.FightBand.SAME, m.page.fight)
+        m.press("PADDLEFT"); assertEquals(HomeLayout.FightBand.GROW, m.page.fight)
+        assertEquals("Top screen refused", listOf(HomeEditModel.Fx.Refuse(EditStop.FIGHT_PEN)), m.press("PADDLEFT"))
+        assertTrue("with the Wings word: pickable", HomeWidgetMenus.rows(EditStop.FIGHT_PEN, m.page, values.copy(ct = 1), m.tab)[0].off.isEmpty())
     }
 
     /** fix round (the review: with no Wings word A on In fights went Grow -> Same size, then stuck on the dimmed Top screen, refused every
      *  time): A's cycle steps over a dimmed word and wraps; Left / Right step over it too, and only dimmed words that way is refused */
     @Test fun aSkipsADimmedWordAndWraps() {
-        val m = model(start = EditStop.FIGHT)
+        // (edit tabs: the Party mode tab's Fight toggle, its Combat bars Top screen | Bottom screen | No grow - the tab's own)
+        val m = party(start = EditStop.FIGHT)
         m.press("PAD1"); m.startOn(EditStop.FIGHT_PEN, false); m.press("PAD1")
         assertEquals(EditStop.FIGHT_PEN, m.menu)
-        val same = values.copy(fightBand = HomeLayout.FightBand.SAME)
-        assertEquals("Grow -> Same size", listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, HomeLayout.FightBand.SAME.ordinal)), m.press("PAD1"))
-        assertEquals("Same size -> past the dimmed Top screen -> Grow",
-            listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, HomeLayout.FightBand.GROW.ordinal)), m.press("PAD1", v = same))
-        assertEquals("with the Wings word Top screen is next",
-            listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, HomeLayout.FightBand.TOP.ordinal)), m.press("PAD1", v = same.copy(ct = 1)))
-        // a row whose middle word is dimmed: Left / Right step over it
-        val mid = MenuRow(BottomTiles.COMBAT, "In fights", BottomTiles.FIGHT_WORDS, 0, off = setOf(1))
-        val rows = listOf(mid)
+        assertEquals(HomeLayout.FightBand.SAME, m.page.fight)                // No grow (R0's, a record of before the tabs)
+        m.press("PAD1"); assertEquals("No grow -> past the dimmed Top screen -> Bottom screen", HomeLayout.FightBand.GROW, m.page.fight)
+        m.press("PAD1"); assertEquals("Bottom screen -> No grow", HomeLayout.FightBand.SAME, m.page.fight)
+        m.press("PAD1", v = values.copy(ct = 1)); assertEquals("with the Wings word Top screen is next", HomeLayout.FightBand.TOP, m.page.fight)
+        // a row whose middle word is dimmed: Left / Right step over it (Top screen -> No grow)
+        val mid = MenuRow(BottomTiles.COMBAT, "Combat bars", HomeWidgetMenus.COMBAT_BARS_WORDS, 0, off = setOf(1))
         fun k(key: String, r: MenuRow) = m.key(key, stops(m.draft, m)) { listOf(r) }
-        assertEquals(listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, 2)), k("PADDRIGHT", rows[0]))
-        assertEquals(listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, 0)), k("PADDLEFT", mid.copy(picked = 2)))
-        assertEquals("A from Grow: past the dimmed middle", listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, 2)), k("PAD1", mid))
+        k("PADDRIGHT", mid); assertEquals(HomeLayout.FightBand.SAME, m.page.fight)
+        k("PADDLEFT", mid.copy(picked = 2)); assertEquals(HomeLayout.FightBand.TOP, m.page.fight)
+        k("PAD1", mid); assertEquals("A from Top screen: past the dimmed middle", HomeLayout.FightBand.SAME, m.page.fight)
         // every other word dimmed: refused (nothing to pick)
         assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.FIGHT_PEN)), k("PAD1", mid.copy(off = setOf(1, 2))))
         assertEquals(listOf(HomeEditModel.Fx.Refuse(EditStop.FIGHT_PEN)), k("PADDRIGHT", mid.copy(off = setOf(1, 2))))
@@ -189,6 +198,8 @@ class HomeEditBandTest {
         assertFalse(m.extraPlus)
         assertEquals("gold", m.extra)
         assertEquals(listOf(HomeEditModel.Fx.Press("gold", 1)), m.press("PAD3"))
+        // (edit tabs: Settings' own row; the review - "Fully separate" - a fight tab that showed Settings' badges keeps the ones it showed)
+        assertEquals(WALK, m.draft.badges(HomeTab.COMBAT))
         assertEquals(listOf("gold"), m.extrasOff); assertEquals("hearth", m.extra)
         m.press("PADDRIGHT", "PADDRIGHT"); assertEquals("bags", m.extra)
         assertEquals(listOf(HomeEditModel.Fx.Press("hearth", 1)), m.hideExtra("hearth"))
@@ -293,7 +304,7 @@ class HomeEditBandTest {
         assertEquals(listOf(HomeEditModel.Fx.Press(BottomTiles.REST, HomeRest.ROW.ordinal)), m.press("PAD1"))
         assertEquals("the draft is the store's: the host rebases it", classic, m.draft)
         assertFalse(m.changed)
-        val f = model(start = EditStop.FIGHT)
+        val f = party(start = EditStop.FIGHT)
         assertEquals(listOf(HomeEditModel.Fx.Preview(true)), f.press("PAD1"))
         assertTrue(f.fightPreview)
         assertFalse("the preview is no change to undo", f.changed)
@@ -301,7 +312,7 @@ class HomeEditBandTest {
         assertFalse("a real fight ends the preview", f.fightPreview); assertEquals(EditStop.FIGHT, f.cursor)
         f.resume(); f.toggleFight()
         assertTrue(f.discard().contains(HomeEditModel.Fx.Discard)); assertFalse(f.fightPreview)
-        val g = model(start = EditStop.FIGHT); g.press("PAD1"); g.done(); assertFalse(g.fightPreview)
+        val g = party(start = EditStop.FIGHT); g.press("PAD1"); g.done(); assertFalse(g.fightPreview)
     }
 
     /** a piece gone (the look changed, the preview off): the cursor to the Look chip, else the D-pad's pencil */
@@ -310,52 +321,40 @@ class HomeEditBandTest {
         val row = classic.copy(rest = HomeRest.ROW)
         val thin = HomeEditModel(row, EditStop.EXTRAS)
         assertTrue(thin.cursorCheck(stops(row, thin))); assertEquals(EditStop.LOOK, thin.cursor)
-        m.toggleFight(); m.startOn(EditStop.EXTRAS, false)
-        assertTrue(m.cursorCheck(stops(classic, m))); assertEquals("no Look chip in the preview", EditStop.PAD_PEN, m.cursor)
-        assertNotNull(stops(classic, m)[EditStop.FIGHT_PEN])
+        // (edit tabs: the preview is Party mode's - no shared pieces there: the ribbon's Fight; In combat's: the chat)
+        val p = party(start = EditStop.EXTRAS)
+        p.toggleFight(); p.startOn(EditStop.EXTRAS, false)
+        assertTrue(p.cursorCheck(stops(classic, p))); assertEquals("no extras in the preview", EditStop.FIGHT, p.cursor)
+        assertNotNull(stops(classic, p)[EditStop.FIGHT_PEN])
+        m.tabTo(HomeTab.COMBAT); m.startOn(EditStop.EXTRAS, false)
+        assertTrue(m.cursorCheck(stops(classic, m))); assertEquals(EditStop.CHAT, m.cursor)
     }
 
-    /** fix round 3 (the review: the Add tray during the Fight preview put the cursor on the bar or card it brought back - no stop then,
-     *  D4 - so A lifted it, Y resized it and the D-pad jumped anywhere): the cursor stays on a stop that exists ("+" while shown, else
-     *  the ribbon's Fight), and a cursor left on a page widget the preview hides goes there too */
-    @Test fun addingAWidgetBackInThePreviewKeepsTheCursorOnAStop() {
-        for (w in listOf(EditStop.CAST, EditStop.QUEST)) {
-            for (bothOff in listOf(false, true)) {
-                val l = when {
-                    bothOff -> classic.copy(cast = HomeLayout.CastDock.OFF, card = HomeLayout.CardDock.OFF)
-                    w == EditStop.CAST -> classic.copy(cast = HomeLayout.CastDock.OFF)
-                    else -> classic.copy(card = HomeLayout.CardDock.OFF)
-                }
-                val m = model(l, start = EditStop.FIGHT)
-                m.press("PAD1")                                                 // the preview on
-                assertTrue(m.fightPreview)
-                m.press("PADDLEFT"); assertEquals("$w: Left from Fight to \"+\"", EditStop.PLUS, m.cursor)
-                m.press("PAD1"); assertEquals(HomeEditModel.Sheet.ADD, m.sheet)
-                val sel = m.removed.indexOf(w); assertTrue(sel >= 0)
-                repeat(sel) { m.press("PADDDOWN") }
-                m.press("PAD1")
-                assertNull(m.sheet)
-                assertFalse("$w back on Home", w in m.removed)
-                val st = stops(m.draft, m)
-                assertTrue("$w (both off $bothOff): the cursor on a stop that exists (${m.cursor})", m.cursor in st)
-                assertEquals(if (m.plusShown) EditStop.PLUS else EditStop.FIGHT, m.cursor)
-                assertFalse("nothing to move it to", m.cursorCheck(st))
-                val size = m.draft.castSize
-                m.press("PAD4"); assertEquals("$w: Y resizes nothing", size, m.draft.castSize)
-                if (m.cursor == EditStop.PLUS) m.press("PAD2") else m.press("PADDRIGHT")
-                assertNull("$w: nothing lifted", m.lifted)
+    /** EDIT TABS (D4 went: each fight tab's widgets are moved in its fight look): the Add tray in the Fight preview brings the bar or the
+     *  card back ON the tab and the cursor onto it - a stop that exists - and Y on the bar flips the tab's Slots only */
+    @Test fun addingAWidgetBackInThePreviewPutsTheCursorOnIt() {
+        for (w in listOf(EditStop.CAST, EditStop.QUEST)) for (bothOff in listOf(false, true)) {
+            val l = when {
+                bothOff -> classic.copy(cast = HomeLayout.CastDock.OFF, card = HomeLayout.CardDock.OFF)
+                w == EditStop.CAST -> classic.copy(cast = HomeLayout.CastDock.OFF)
+                else -> classic.copy(card = HomeLayout.CardDock.OFF)
             }
-            // a cursor left on a page widget the preview hides: to "+" when shown, else to the ribbon's Fight
-            for (plus in listOf(false, true)) {
-                val l = if (plus) classic.copy(card = if (w == EditStop.CAST) HomeLayout.CardDock.OFF else classic.card,
-                    cast = if (w == EditStop.QUEST) HomeLayout.CastDock.OFF else classic.cast) else classic
-                val m = model(l, start = EditStop.FIGHT)
-                m.press("PAD1"); m.startOn(w, false)
-                val st = stops(m.draft, m)
-                assertFalse(w in st)
-                assertTrue("$w: the cursor moves", m.cursorCheck(st))
-                assertEquals("$w (plus $plus)", if (plus) EditStop.PLUS else EditStop.FIGHT, m.cursor)
-            }
+            val m = party(l, start = EditStop.FIGHT)
+            m.press("PAD1")                                                     // the preview on
+            assertTrue(m.fightPreview)
+            m.press("PADDLEFT"); assertEquals("$w: Left from Fight to the plus", EditStop.PLUS, m.cursor)
+            m.press("PAD1"); assertEquals(HomeEditModel.Sheet.ADD, m.sheet)
+            val sel = m.removed.indexOf(w); assertTrue(sel >= 0)
+            repeat(sel) { m.press("PADDDOWN") }
+            m.press("PAD1")
+            assertNull(m.sheet)
+            assertFalse("$w back on Home", w in m.removed)
+            assertEquals(w, m.cursor); assertTrue(m.cursor in stops(m.draft, m))
+            assertTrue("$w: only the Party mode tab's", w in HomeEditModel(m.draft, EditStop.CHAT).removed)
+            val g = m.page.grow
+            m.press("PAD4")
+            assertEquals("$w: Y flips the bar's Slots only", if (w == EditStop.CAST) !g else g, m.page.grow)
         }
     }
+
 }

@@ -167,14 +167,17 @@ class PartySizingTest {
 
     /** Settings > Bottom screen > Party: one tile, its band's two lines the bubble's rows, each press this character's record only */
     @Test fun theSettingsTileWritesThisCharactersRecord() {
-        assertEquals(listOf(BottomTiles.PARTY), BottomTiles.tiles(SettingsTabs.Group.PARTY_LIST))
+        // (edit tabs, the proposal's decision 5 A: the tile left Settings - Edit Home's Party mode tab is its one place; its lines and
+        // press stay the bubble's words)
+        assertEquals(emptyList<String>(), BottomTiles.tiles(SettingsTabs.Group.PARTY_LIST))
+        assertTrue(BottomTiles.PARTY in BottomTiles.TAB_TILES)
         assertEquals(SettingsTabs.Tab.BOTTOM, SettingsTabs.Group.PARTY_LIST.tab)
         // (headed "Party list": Top screen has its own "Party" group, the game's party frames)
         assertEquals("Party list", SettingsTabs.Group.PARTY_LIST.heading)
         assertEquals("Party", SettingsTabs.Group.PARTY.heading)
         assertEquals("Party list", SettingsTabs.Block.PARTY_LIST.heading)
         assertEquals("Party list", BottomTiles.NAMES[BottomTiles.PARTY])
-        assertTrue(BottomTiles.PARTY in BottomTiles.ALL)
+        assertFalse(BottomTiles.PARTY in BottomTiles.ALL)
         val p = HomeLayoutStoreTest.Prefs()
         HomeSettings.startForTest(p)
         HomeLayoutStore.character("Korvash-Realm")
@@ -215,12 +218,12 @@ class PartySizingTest {
         assertTrue(EditStop.PARTY_PEN in HomeEditModel.GONE_CHECKED)
         assertTrue(m.pencilTap(EditStop.PARTY_PEN).isEmpty())
         assertEquals(EditStop.PARTY_PEN, m.menu); assertEquals(EditStop.PARTY_PEN, m.cursor)
+        // (edit tabs: no Preview row - the Party mode tab's ribbon Fight toggle shows the fight)
         val rows = { HomeWidgetMenus.rows(EditStop.PARTY_PEN, m.draft, HomeWidgetMenus.Values(fightPreview = m.fightPreview)) }
-        assertEquals(listOf(HomeEditModel.K_PARTY_GROW, HomeEditModel.K_PARTY_SIZE, HomeEditModel.K_PARTY_PREVIEW), rows().map { it.key })
-        assertEquals(listOf("Grows", "Size in fights", "Preview"), rows().map { it.label })
-        assertEquals(listOf(listOf("Off", "In fights", "Whenever Party mode is on"), listOf("Grow", "Same size"), listOf("Rest", "Fight")),
-            rows().map { it.words })
-        assertEquals(listOf(1, 0, 0), rows().map { it.picked })
+        assertEquals(listOf(HomeEditModel.K_PARTY_GROW, HomeEditModel.K_PARTY_SIZE), rows().map { it.key })
+        assertEquals(listOf("Grows", "Size in fights"), rows().map { it.label })
+        assertEquals(listOf(listOf("Off", "In fights", "Whenever Party mode is on"), listOf("Grow", "Same size")), rows().map { it.words })
+        assertEquals(listOf(1, 0), rows().map { it.picked })
         assertEquals("Party list", HomeWidgetMenus.title(EditStop.PARTY_PEN))
         // a pick: the draft, a Relay (the glide)
         val fx = m.menuTouch(0, 2, rows())
@@ -229,15 +232,9 @@ class PartySizingTest {
         assertTrue(m.changed)
         assertTrue(m.menuTouch(1, 1, rows()).any { it is HomeEditModel.Fx.Relay })
         assertEquals(SAME, m.draft.partySize)
-        assertEquals(listOf(2, 1, 0), rows().map { it.picked })
-        // the preview: on with the bubble open, off again
-        assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Preview(true)), m.menuTouch(2, 1, rows()))
-        assertTrue(m.fightPreview); assertEquals(EditStop.PARTY_PEN, m.menu)
-        assertEquals(1, rows()[2].picked)
-        assertTrue("the same pick again: nothing", m.menuTouch(2, 1, rows()).isEmpty())
-        assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Preview(false)), m.menuTouch(2, 0, rows()))
-        assertFalse(m.fightPreview)
-        // the controller: Down / A walk and cycle the rows (three stops: Grows, Size in fights, Preview), B closes the bubble
+        assertEquals(listOf(2, 1), rows().map { it.picked })
+        assertTrue("the same pick again: nothing", m.menuTouch(1, 1, rows()).isEmpty())
+        // the controller: Down / A walk and cycle the rows (two stops: Grows, Size in fights), B closes the bubble
         m.menuRow = 0
         m.key("PADDDOWN", emptyMap()) { rows() }
         assertEquals(1, m.menuRow)
@@ -246,10 +243,8 @@ class PartySizingTest {
         m.key("PADDRIGHT", emptyMap()) { rows() }
         assertEquals(SAME, m.draft.partySize)
         m.key("PADDDOWN", emptyMap()) { rows() }
-        assertEquals(2, m.menuRow)
-        m.key("PADDDOWN", emptyMap()) { rows() }
-        assertEquals("the Preview row is the last", 2, m.menuRow)
-        m.key("PADDUP", emptyMap()) { rows() }; m.key("PADDUP", emptyMap()) { rows() }
+        assertEquals("Size in fights is the last", 1, m.menuRow)
+        m.key("PADDUP", emptyMap()) { rows() }
         assertEquals(0, m.menuRow)
         m.key("PAD2", emptyMap()) { rows() }
         assertNull(m.menu)
@@ -295,7 +290,7 @@ class PartySizingTest {
         m.pencilTap(EditStop.PARTY_PEN)
         val rows = { HomeWidgetMenus.rows(EditStop.PARTY_PEN, m.draft, HomeWidgetMenus.Values(fightPreview = m.fightPreview)) }
         val refused = listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Refuse(EditStop.PARTY_PEN))
-        assertEquals(listOf(0, 1, 0), rows().map { it.picked })
+        assertEquals(listOf(0, 1), rows().map { it.picked })
         assertEquals(refused, m.menuTouch(1, 0, rows()))
         assertEquals("the record keeps its pick", GROW, m.draft.partySize)
         m.menuRow = 1
@@ -303,15 +298,15 @@ class PartySizingTest {
         assertEquals(refused, m.key("PADDLEFT", emptyMap()) { rows() })
         assertTrue(m.key("PADDRIGHT", emptyMap()) { rows() }.none { it is HomeEditModel.Fx.Relay })
         assertEquals(GROW, m.draft.partySize)
-        // the cursor still walks past the row to the preview
+        // (edit tabs: no Preview row under it - the row is the bubble's last)
         m.key("PADDDOWN", emptyMap()) { rows() }
-        assertEquals(2, m.menuRow)
+        assertEquals(1, m.menuRow)
         // Grows back on: both words, the record's pick lit (Grow kept)
         m.menuRow = 0
         m.key("PADDRIGHT", emptyMap()) { rows() }
         assertEquals(HomeLayout.PartyGrow.FIGHTS, m.draft.partyGrow)
         assertTrue(rows()[1].off.isEmpty())
-        assertEquals(listOf(1, 0, 0), rows().map { it.picked })
+        assertEquals(listOf(1, 0), rows().map { it.picked })
         // Settings' tile: the same dimmed word, a press on it writes nothing; Same size writes
         HomeSettings.startForTest(HomeLayoutStoreTest.Prefs())
         HomeLayoutStore.character("Korvash-Realm")
@@ -332,58 +327,19 @@ class PartySizingTest {
     }
 
     /**
-     * OFF ON CLOSE (the user's pick 2026-11-23): Fight chosen in the party bubble's Preview row ends when the bubble closes - B, X, the
-     * same pencil again, a tap off it (closeMenu), another pencil, the Look chip, Done; a preview the ribbon's Fight toggle turned on stays
-     * when the bubble closes; the ribbon's toggle while the bubble's Fight is on turns it off (never on again)
+     * EDIT TABS (2026-11-24): the party bubble's Preview row went - the Party mode tab's ribbon Fight toggle shows the fight; the bubble
+     * opening or closing never changes the preview (the 11-23 "Off on close" had nothing to end any more)
      */
-    @Test fun theBubblesFightPreviewEndsWithTheBubble() {
-        val box = mapOf(EditStop.PARTY_PEN to HomeLayoutSolver.Box(1180f, 240f, 1220f, 280f))
-        fun model(): Pair<HomeEditModel, () -> List<MenuRow>> {
-            val m = HomeEditModel(HomeLayout(), EditStop.CHAT)
-            return m to { HomeWidgetMenus.rows(EditStop.PARTY_PEN, m.draft, HomeWidgetMenus.Values(fightPreview = m.fightPreview)) }
-        }
-        val closes: List<Pair<String, (HomeEditModel) -> Unit>> = listOf(
-            "B" to { m -> m.key("PAD2", emptyMap()) { emptyList() } },
-            "X" to { m -> m.key("PAD3", emptyMap()) { emptyList() } },
-            "the pencil again" to { m -> m.pencilTap(EditStop.PARTY_PEN) },
-            "a tap off it" to { m -> m.closeMenu() },
-            "another pencil" to { m -> m.pencilTap(EditStop.FIGHT_PEN) },
-            "the Look chip" to { m -> m.lookFlip() })
-        for ((how, close) in closes) {
-            val (m, rows) = model()
-            m.pencilTap(EditStop.PARTY_PEN)
-            m.menuTouch(2, 1, rows())
-            assertTrue(how, m.fightPreview)
-            close(m)
-            assertTrue(how, m.menu != EditStop.PARTY_PEN)
-            assertFalse("$how: the preview off with the bubble", m.fightPreview)
-            // opened again: Rest lit
-            m.pencilTap(EditStop.PARTY_PEN)
-            assertEquals(how, EditStop.PARTY_PEN, m.menu)
-            assertEquals(how, 0, rows()[2].picked)
-        }
-        // Done ends it too (as before)
-        model().let { (m, rows) -> m.pencilTap(EditStop.PARTY_PEN); m.menuTouch(2, 1, rows()); m.done(); assertFalse(m.fightPreview) }
-        // the bubble's Rest, then closing: nothing to end
-        model().let { (m, rows) ->
-            m.pencilTap(EditStop.PARTY_PEN); m.menuTouch(2, 1, rows()); m.menuTouch(2, 0, rows())
-            m.key("PAD2", emptyMap()) { rows() }; assertFalse(m.fightPreview); assertNull(m.menu)
-        }
-        // the ribbon's Fight first: the bubble opened over it and closed again leaves it on
-        model().let { (m, rows) ->
-            assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Preview(true)), m.toggleFight())
-            m.pencilTap(EditStop.PARTY_PEN)
-            assertEquals(EditStop.PARTY_PEN, m.menu); assertEquals(1, rows()[2].picked)
-            m.key("PAD2", box) { rows() }
-            assertNull(m.menu)
-            assertTrue("the ribbon's preview stays", m.fightPreview)
-        }
-        // the ribbon's toggle with the bubble's Fight on: the preview off (the bubble closes), not on again
-        model().let { (m, rows) ->
-            m.pencilTap(EditStop.PARTY_PEN); m.menuTouch(2, 1, rows())
-            assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Preview(false)), m.toggleFight())
-            assertFalse(m.fightPreview); assertNull(m.menu)
-        }
+    @Test fun theBubbleLeavesTheFightToggleAlone() {
+        val m = HomeEditModel(HomeLayout(), EditStop.CHAT, HomeTab.PARTY)
+        val rows = { HomeWidgetMenus.rows(EditStop.PARTY_PEN, m.page, HomeWidgetMenus.Values(), m.tab) }
+        assertTrue(rows().none { it.key == HomeEditModel.K_PARTY_PREVIEW })
+        assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Preview(true)), m.toggleFight())
+        m.pencilTap(EditStop.PARTY_PEN); assertEquals(EditStop.PARTY_PEN, m.menu)
+        m.key("PAD2", emptyMap()) { rows() }
+        assertNull(m.menu); assertTrue("the ribbon's preview stays", m.fightPreview)
+        m.pencilTap(EditStop.PARTY_PEN); m.closeMenu(); assertTrue(m.fightPreview)
+        m.toggleFight(); m.pencilTap(EditStop.PARTY_PEN); m.closeMenu(); assertFalse(m.fightPreview)
     }
 
     /**

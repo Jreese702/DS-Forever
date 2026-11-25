@@ -126,7 +126,8 @@ class HomeEditWiringTest {
         assertTrue(cancel > 0 && cancel < reset.indexOf("resetRun.run(b, who, all, localGame)"))
         // 1518: no layouts - edit mode opens on the record only (no flips, no slots, no fold of a preset's); the band has no pieces
         // to move (the user's ruling 2026-11-22: the top bar stays still)
-        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start)"))
+        // (edit tabs: it opens on the tab of what Home shows - Party mode on = Party mode's)
+        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start, HomeTab.opening(partyOnHere()), PARTY_MODULE)"))
         assertFalse(home.contains("editPiece"))
         assertFalse(body(home, "fun editOpen(").contains("foldOpen"))
         // the cursor's widget gone: the card and the bar (the model's set)
@@ -158,7 +159,10 @@ class HomeEditWiringTest {
         // 1518 build 3: no toolbar switch in edit mode (the band's menu is gone: Settings > Bottom screen has it); the record's sides
         // (its mirror bit) are held on the pictures until the add-on's `d` says them
         assertFalse(home.contains("onEditToolbar"))
-        assertTrue(end.contains("roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null"))
+        // (edit tabs, "Follow the layout on screen": the sides of the page Home lays out of a fight - HomeView.mirrorWant)
+        assertTrue(end.contains("roomBarHold = if (write) mirrorWant() else null"))
+        assertTrue(body(home, "fun mirrorWant(").contains("HomeTab.mirrorBit(HomeSettings.layout, partyOnHere())"))
+        assertTrue(body(host, "private fun mirrorCheck(").contains("val want = homeView.mirrorWant()"))
         assertFalse("no All characters from edit mode", end.contains("all ="))
         // the add-on hears the record's sides / fight bar only once edit mode is not live
         assertTrue(body(host, "private fun mirrorCheck(").contains("if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }"))

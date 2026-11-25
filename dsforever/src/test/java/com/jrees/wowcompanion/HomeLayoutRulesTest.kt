@@ -41,14 +41,14 @@ class HomeLayoutRulesTest {
 
     /** the chat's height Classic gives in [s] for [l]'s rest / fight / card / bar dock (side and width move nothing vertical) */
     private fun classicChat(l: HomeLayout, s: HomeLayoutSolver.State): Float {
-        val c = HomeLayout(rest = l.rest, fight = l.fight, card = l.card, castSize = HomeLayout.SlotSize.L,
+        val c = HomeLayout(rest = l.rest, fight = l.fight, card = l.card,
             cast = if (l.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.UNDER_CHAT else l.cast)
         return S.places(c, s).boxes.getValue(HomePart.CHAT).h
     }
 
     @Test fun everyLayoutIsValidInEveryState() {
         val all = HomeLayoutRules.all()
-        assertEquals("2 x 3 x 3 x 7 x 3 x 2 x 3 x 4", 9072, all.size)
+        assertEquals("2 x 3 x 3 x 7 x 2 (Slots Grow / Same size) x 2 x 3 x 4", 6048, all.size)
         val st = states()
         var n = 0
         val bad = ArrayList<String>()
@@ -69,7 +69,7 @@ class HomeLayoutRulesTest {
             if (r.f3 && l.party.column != HomeModule.MAP && !r.partyWide && bad.size < 10) bad += "F3 with the party list in the chat's column: $l / $s"
         }
         assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
-        assertTrue(n > 9072 * 100)
+        assertTrue(n > 6048 * 100)
     }
 
     @Test fun columnsTileTheInnerWidthForEveryShareAndSide() {
@@ -108,8 +108,8 @@ class HomeLayoutRulesTest {
     }
 
     @Test fun theBarDockFollowsTheWidgetsAndItsSize() {
-        for (side in HomeLayout.Side.values()) for (dock in HomeLayout.CastDock.values()) for (size in HomeLayout.SlotSize.values()) {
-            val l = HomeLayout(chatSide = side, cast = dock, castSize = size)
+        for (side in HomeLayout.Side.values()) for (dock in HomeLayout.CastDock.values()) for (grow in listOf(false, true)) {
+            val l = HomeLayout(chatSide = side, cast = dock, grow = grow)
             val r = S.places(l, HomeLayoutSolver.State())
             val b = r.boxes
             if (dock == HomeLayout.CastDock.OFF) { assertFalse(HomePart.STRIP in b); continue }
@@ -130,7 +130,8 @@ class HomeLayoutRulesTest {
                 }
                 else -> {}
             }
-            assertTrue("$dock $size: the slot no bigger than its size", strip.h <= size.px + 2 * CastStripModel.PAD + 0.01f)
+            val cap = if (grow) CastStripModel.GROW_MAX else CastStripModel.MAX_SIDE
+            assertTrue("$dock grow $grow: the slot no bigger than its cap", strip.h <= cap + 2 * CastStripModel.PAD + 0.01f)
             // the geometric side the view scrolls by: Right (under the right column) rests at its end
             assertEquals(dock.top, r.castTop)
             val want = when (dock) {
@@ -401,7 +402,7 @@ class HomeLayoutRulesTest {
         assertEquals(a, b)
         assertTrue(b.mirrored)
         for (t in listOf(HomeLayoutJson.json(b), HomeLayoutJson.json(HomeLayoutStore.layOn(b, b, b.swapped())),
-                HomeLayoutJson.json(HomeLayoutStore.layOn(b.copy(castSize = HomeLayout.SlotSize.M), b, b.copy(xpBar = false))))) {
+                HomeLayoutJson.json(HomeLayoutStore.layOn(b.copy(card = HomeLayout.CardDock.OFF), b, b.copy(xpBar = false))))) {
             assertFalse(t, t.contains("\"pad\"")); assertFalse(t, t.contains("\"clock\""))
         }
         // junk values never throw (and never cost the record its other fields)
@@ -544,7 +545,7 @@ class HomeLayoutRulesTest {
         var n = 0
         val bad = ArrayList<String>()
         for (l0 in HomeLayoutRules.all()) {
-            if (l0.castSize != HomeLayout.SlotSize.L) continue
+            if (l0.grow) continue
             val def = l0
             for (g in HomeLayout.PartyGrow.values()) for (z in HomeLayout.PartySize.values()) {
                 val l = l0.copy(partyGrow = g, partySize = z)

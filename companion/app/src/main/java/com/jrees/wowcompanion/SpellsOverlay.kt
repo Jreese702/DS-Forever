@@ -96,7 +96,7 @@ class SpellsOverlay(
      *  dimmed, with the note (never a stop: nothing can be placed on a bar the PC's add-on cannot take) */
     private fun olderTab(): Boolean = !three() && DesktopAddons.older(PlayGate.streamingNow(), padMap?.version, CastStripModel.Live.bar?.version)
     /** b70 (D2): the bar is Off in Settings: the bar veiled, "Turn on" */
-    private fun barOff(): Boolean = CastStripModel.barOff(HomeSettings.castBarSide)
+    private fun barOff(): Boolean = !HomeSettings.castBarOnAnyTab          // (edit tabs: Off on every tab of Home - the review)
     /** b70 (D5): Show in combat off: In combat's bar locked */
     private fun fightHidden(): Boolean = !CastStripModel.showOf(HomeSettings.castBarCombat)
     /** b71: Bar in Party mode off: Party mode's bar locked */
