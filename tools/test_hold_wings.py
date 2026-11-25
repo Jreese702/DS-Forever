@@ -102,6 +102,13 @@ def main():
     chk("1. Party mode on: no hold badge on the top screen (Party mode never fires a hold)",
         all(b[p].hb is None or not b[p].hb.shown for p in (2, 5, 6, 8)) and all(b[p].hold is None for p in (2, 5, 6, 8)),
         [bool(b[p].hb and b[p].hb.shown) for p in (2, 5, 6, 8)])
+    # the 1532 audit: Edit Home's In combat preview (PadMap m198's pv, party = false) while Party mode is really on: still no hold badge
+    # (the preview lays the In combat look; the real Party mode still fires no hold)
+    L.execute('WowCompanion.padMap.preview = function() return PV end; PV = { wings = true, party = false }; TICK(0.25)')
+    chk("1. Party mode on, the In combat tab's preview up: still no hold badge on the top screen (the 1532 audit)",
+        all(b[p].hb is None or not b[p].hb.shown for p in (2, 5, 6, 8)) and all(b[p].hold is None for p in (2, 5, 6, 8)),
+        [bool(b[p].hb and b[p].hb.shown) for p in (2, 5, 6, 8)])
+    L.execute('PV = nil; TICK(0.25)')
     L.execute('PARTYON = false; TICK(0.25)')
     chk("1. ... Party mode off: the badges back", all(b[p].hb is not None and b[p].hb.shown for p in (2, 5, 6, 8)))
 

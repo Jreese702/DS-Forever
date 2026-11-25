@@ -784,6 +784,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return next
     }
 
+    /** the 1532 audit: the takeover's fired spell, taken at its first frame ([drawTakeover]) */
+    private var takeRef: PadMapModel.Ref? = null
+    private var takeRefAt = Long.MIN_VALUE
+    private var takeRefKey = -1
     /** m195: the hold spell's picture for the takeover (a button of its own, so the big face is drawn as any spell's: ring, glyph, tints) */
     private val takeBtns = arrayOfNulls<Btn>(32)
     private fun takeoverBtn(key: Int, src: Int, ref: PadMapModel.Ref): Btn {
@@ -812,7 +816,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val a = t.alpha(now)
         if (a <= 0f) return Long.MAX_VALUE
         val key = t.layer * 8 + src                                         // the FIRED layer's hold spell, not the shown layer's
-        val ref = holdRefs?.get(key) ?: return Long.MAX_VALUE
+        // the 1532 audit: the spell that FIRED, kept by the takeover's start - a fight the hold's own cast starts hands the band In combat's
+        // hold refs (another spell, or none, on that place) while the takeover still runs
+        if (takeRefAt != t.startedAt || takeRefKey != key) { takeRefAt = t.startedAt; takeRefKey = key; takeRef = holdRefs?.get(key) }
+        val ref = takeRef ?: return Long.MAX_VALUE
         val tb = takeoverBtn(key, src, ref)
         val gl = if (gcdDurS.isNaN()) -1f else t.gcdLeft(now, (gcdDurS * 1000.0).toLong())
         val sweep = maxOf(gl, holdCdLeft(key, now))

@@ -82,6 +82,20 @@ class EditPreviewTest {
      * The preview's batch is SPACED: every tap TapSpacing.MIN_MS apart (the 0.25 s plus a slow frame's margin), so every code's repeat
      * of a prefix cell is at least that far from it; and its send stamp is the batch's END, so the other page-3 checks wait it out
      */
+    /** the 1532 audit: a preview still wanted is renewed RENEW_MS after its SEND (or after it was first seen up), never RENEW_MS after
+     *  the latest check - a check at send + 599 s used to push the renewal to about 1199 s, past PadMap's 900 s lease */
+    @Test fun theRenewalCountsFromTheSend() {
+        val s = 50_000L
+        assertEquals(EditPreview.RENEW_MS - 100L, EditPreview.renewDelay(s + 100L, s))
+        assertEquals("a check just before it: a second later, not 600 s", 1_000L, EditPreview.renewDelay(s + 599_500L, s))
+        assertEquals("past it: soon", 1_000L, EditPreview.renewDelay(s + 700_000L, s))
+        assertEquals("never sent: from now", EditPreview.RENEW_MS, EditPreview.renewDelay(s, null))
+        assertTrue("before the add-on's 900 s lease", EditPreview.RENEW_MS + 1_000L < 900_000L)
+        val host = File(listOf(File("../app"), File("app")).first { it.isDirectory }.parentFile!!.absoluteFile,
+            "companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt").readText()
+        assertTrue("CompanionHost renews from the send", host.contains("ui.postDelayed(pvAgain, EditPreview.renewDelay(now, pvSentAt ?: pvUpAt))"))
+    }
+
     @Test fun thePreviewsBatchIsSpacedPastTheRepeatGuard() {
         assertTrue(EditPreview.GAP_MS >= TapSpacing.MIN_MS && TapSpacing.MIN_MS >= 250L)
         for (code in EditPreview.OFF..PadMapModel.P3_PV_LAST) {
@@ -96,8 +110,10 @@ class EditPreviewTest {
         val body = host.substring(host.indexOf("private fun previewCheck(")).substringBefore("\n    }\n")
         assertTrue("sent spaced", body.contains("TapBridge.tapsSpaced(this, talentsPad ?: spellsPad, EditPreview.cells(a.code), EditPreview.GAP_MS)"))
         assertTrue("stamped at the batch's end", body.contains("pvSentAt = now + EditPreview.BATCH_MS"))
+        // (the 1532 audit: one guard over every page-3 sender's stamp - HoldCastTest.everyPageThreeSenderWaitsOutEveryOther)
+        assertTrue("the guard reads the preview's stamp", host.substringAfter("private fun page3Busy(").substringBefore("\n\n").contains("\"pv\" to pvSentAt"))
         for (check in listOf("mirrorCheck", "topCheck", "castCheck", "swingCheck", "holdTicksCheck"))
-            assertTrue("$check waits out the preview's batch", host.substring(host.indexOf("private fun $check(")).substringBefore("\n    }\n").contains("pvSentAt"))
+            assertTrue("$check waits out the preview's batch", host.substring(host.indexOf("private fun $check(")).substringBefore("\n    }\n").contains("page3Busy(now, "))
     }
 
     @Test fun theChannel() {

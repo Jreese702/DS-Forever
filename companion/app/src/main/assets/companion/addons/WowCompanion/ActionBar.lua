@@ -6,6 +6,7 @@
 -- takeover on the main circle after the trigger is let go - drawn on its fired layer and on any layer that only lacks one of its
 -- triggers (the bare one after LT + X; LT or RT alone after LT + RT + X), never on a layer with a trigger the press did not have;
 -- it still ends with its cast and GCD, a fail or NB.HOLD_FALLBACK / 15 s (NB.holdHere; Home's band: HoldCast.Takeover.showsOn).
+-- The 1532 audit: the hold badges read Party mode as it really is (NB.partyReal) - an In combat preview never brings them back.
 -- nbar23 EDIT HOME'S TOP-SCREEN PREVIEW (the user on test 1530, 2026-11-25: "When choosing the top screen options in combat it should
 -- also display the top screen ui so that its easy to visualize"): PadMap m198's preview stands in for the saved flags and the fight's
 -- switch out of combat - the Wings, our top bar with a sample cast and swing, Party mode's lay - at "nbar23 EDIT HOME'S TOP-SCREEN
@@ -2668,7 +2669,7 @@ function NB.holdShow(b, set, page)
     local pm = rawget(WC, "padMap")
     local e = nil
     -- nbar22 (the 1531 audit): none while Party mode is on - its presses are the party pad's, PadMap never fires a hold then (as Home)
-    if type(pm) == "table" and type(pm.holdOn) == "function" and type(pm.holdAt) == "function" and not NB.partyOn() then
+    if type(pm) == "table" and type(pm.holdOn) == "function" and type(pm.holdAt) == "function" and not NB.partyOn() and not NB.partyReal() then
         local okOn, on = pcall(pm.holdOn)
         -- PER TAB: the hold that would fire now (In combat's while the fight switch takes the press, else Out of combat's)
         local okT, tab = pcall(pm.holdTab)
@@ -2714,7 +2715,7 @@ end
 NB.SET_OF_LAY = { bare = 1, lt = 2, rt = 3, ltrt = 4 }
 function NB.holdOfSet(pos, set)
     local pm = rawget(WC, "padMap")
-    if NB.partyOn() or type(pm) ~= "table" or type(pm.holdAt) ~= "function" then return nil end
+    if NB.partyOn() or NB.partyReal() or type(pm) ~= "table" or type(pm.holdAt) ~= "function" then return nil end
     local okT, tab = pcall(pm.holdTab)
     local ok, r = pcall(pm.holdAt, NB.page or 1, set, pos, okT and tab or nil)
     return (ok and type(r) == "table") and r or nil
@@ -4659,6 +4660,11 @@ end
 function NB.partyOn()
     local pv = NB.pv()
     if pv then return pv.party == true end                              -- nbar23: Party mode's preview (Party mode's lay, solo or not)
+    return NB.partyReal()
+end
+-- nbar24 (the 1532 audit): Party mode as it really is, whatever Edit Home's preview lays - the hold badges read it too (an In combat
+-- preview while Party mode is on must not bring hold badges back: Party mode never fires a hold)
+function NB.partyReal()
     local pm = rawget(WC, "padMap")
     local p = type(pm) == "table" and pm.party or nil
     if type(p) ~= "table" then return false end

@@ -57,6 +57,27 @@ class HoldCastUiTest {
         assertNull("an add-on before m190 says nothing", padmap(null).holdOn)
     }
 
+    /** the 1532 audit: B (position 7) never carries a hold in the app's drawing either - a padmap that says one (an older or a broken
+     *  add-on) puts no badge, ring or takeover on B */
+    @Test fun bNeverCarriesAHoldInTheDrawing() {
+        val sets = org.json.JSONArray()
+        for (set in 1..4) {
+            val a = org.json.JSONArray()
+            for (p in 1..8) {
+                val o = JSONObject().put("pos", p).put("kind", "spell").put("s", (set - 1) * 12 + p)
+                if (set == 1 && (p == 7 || p == 8)) o.put("h", JSONObject().put("n", "Chain Heal").put("id", 1064).put("i", 136042))
+                a.put(o)
+            }
+            sets.put(JSONObject().put("set", set).put("slots", a))
+        }
+        val m = PadMapModel.parse(JSONObject().put("type", "padmap").put("v", "m194").put("m", JSONObject().put("page", 1).put("pages", 3)
+            .put("sets", sets).put("hold", JSONObject().put("on", true))))!!
+        assertEquals("A's hold kept, B's never", setOf(0 * 8 + 7), PadMapModel.holdRefs(m).keys)
+        val page = File(listOf(File("../app"), File("app")).first { it.isDirectory }.parentFile!!.absoluteFile,
+            "companion/app/src/main/java/com/jrees/wowcompanion/PadTabPage.kt").readText()
+        assertTrue("the Controller room's badges skip B", page.contains("for (p in 1..8) if (p != 7) PadMapModel.slot(m, s, p)?.holdOf("))
+    }
+
     @Test fun aHoldOnlyOnAButtonThatHasSomething() {
         // the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"
         val m = padmap()

@@ -263,7 +263,41 @@ class HoldCastTest {
         HoldCast.watch.press(8, 0, now); now += HoldCast.holdFromMs(HoldCast.watch.ticks) + 10L
         HoldCast.watch.release(8, now)
         assertEquals("a kept press's sure hold: the takeover", 8, HoldCast.takeover.pos)
+        HoldCast.takeover.clear(); HoldCast.watch.reset()
+        // the 1532 audit: the add-on's word (a slothold facecast) for a release in the Bind box is no takeover either
+        map("box")
+        HoldCast.watch.press(8, 0, now); now += 300L
+        HoldCast.watch.release(8, now)
+        HoldCast.clock = { now }
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("kind", "slothold").put("hk", "rel").put("down", true))
+        assertEquals("the box: the add-on's word starts nothing", -1, HoldCast.takeover.pos)
+        HoldCast.clock = { android.os.SystemClock.uptimeMillis() }
         HoldCast.takeover.clear(); HoldCast.watch.reset(); HoldCast.watch.map = emptySet(); HoldCast.bandClock = band
+    }
+
+    /**
+     * THE 1532 AUDIT - every page-3 sender waits out every OTHER one's batch (TapPad's 0.25 s repeat guard swallows a batch's first 39
+     * when another batch's 39 just went): the toolbar mirror, the top flag, the fight cast bar, the swing, Edit Home's preview and the hold
+     * time all read one guard over all six stamps (1531: the mirror / top / cast / swing checks did not wait for the hold time's batch,
+     * which Settings > Hold time sends at once)
+     */
+    @Test fun everyPageThreeSenderWaitsOutEveryOther() {
+        val host = src("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")
+        val guard = host.substringAfter("private fun page3Busy(").substringBefore("\n    }").substringBefore("\n\n")
+        for (st in listOf("mirrorSentAt", "topSentAt", "castSentAt", "swingSentAt", "pvSentAt", "holdSentAt"))
+            assertTrue("the guard reads $st", guard.contains(st))
+        for ((fn, mine) in listOf("mirrorCheck" to "mirror", "topCheck" to "top", "castCheck" to "cast", "swingCheck" to "swing",
+                "previewCheck" to "pv", "holdTicksCheck" to "hold")) {
+            val body = host.substringAfter("private fun $fn(").substringBefore("\n    private fun ")
+            assertTrue("$fn waits out the others", body.contains("page3Busy(now, \"$mine\")"))
+        }
+    }
+
+    /** the 1532 audit: the hold time's sends stop after [HoldCast.SEND_TRIES] for one wish (a later padmap no longer sends it again) */
+    @Test fun theHoldTimeSendsStopAfterItsTries() {
+        assertEquals(3, HoldCast.ticksToSend(3, 2, false, null, tries = 0))
+        assertEquals(3, HoldCast.ticksToSend(3, 2, false, 5_000L, tries = HoldCast.SEND_TRIES - 1))
+        assertNull("its tries spent: no more", HoldCast.ticksToSend(3, 2, false, 5_000L, tries = HoldCast.SEND_TRIES))
     }
 
     // ---------------------------------------------------------------- (3) the hold time to the add-on
@@ -289,7 +323,7 @@ class HoldCastTest {
      *  padmap's D-pad checks (posted), so a batch they just sent is one it sees; before, a login after a reset could have both in 0.25 s */
     @Test fun theHoldTimeWaitsOutEveryOtherPage3Batch() {
         val host = src("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")
-        assertTrue(host.contains("if (listOf(mirrorSentAt, topSentAt, castSentAt, swingSentAt, pvSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS })"))   // (+ EditPreview's)
+        assertTrue(host.contains("if (page3Busy(now, \"hold\")) { ui.postDelayed(holdAgain, CAST_AFTER_TOP_MS); return }"))   // (every other page-3 batch: the 1532 audit)
         assertTrue("the padmap's check posted after its D-pad checks",
             host.contains("if (current) ui.post { lastPadMap?.let { m -> if (m === it) holdTicksCheck(m) } }"))
         assertFalse(host.contains("if (current) holdTicksCheck(it)"))

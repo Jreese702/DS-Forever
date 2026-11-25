@@ -168,7 +168,8 @@ class HoldCastShotsTest {
     /** m195: [states] the hold spell's (Lightning Shield, 324) state as the add-on's hudS.fs says it ("mana" / "range" / "both");
      *  [take] after the fire: "cast" (mid a 1.8 s cast), "gcd" (an instant, inside its GCD), "back" (all of it over) */
     private fun bars(name: String, lt: Boolean, layout: CastView.Layout?, tapCd: Boolean = false, holdCd: Boolean = false,
-                     prog: Long = -1L, fire: Boolean = false, states: String? = null, take: String? = null, ltUp: Boolean = false): Bitmap {
+                     prog: Long = -1L, fire: Boolean = false, states: String? = null, take: String? = null, ltUp: Boolean = false,
+                     refsAfter: Map<Int, PadMapModel.Ref>? = null): Bitmap {
         val cast = CastView(app) { }
         if (layout != null) cast.layout = layout
         // 1:1 with the Thor's bottom screen: the band 1240 wide (its 112-unit row at rest, 215 px with its room), the diamonds 354 tall
@@ -205,6 +206,11 @@ class HoldCastShotsTest {
             buttons.invoke(cast, aBit)
             ShadowSystemClock.advanceBy(Duration.ofMillis(if (fire) HoldCast.holdFromMs(CastSettings.holdTime.ticks) + 10L else prog))
             if (fire) { buttons.invoke(cast, 0); ShadowSystemClock.advanceBy(Duration.ofMillis(40)) }
+        }
+        // the 1532 audit: the band draws the fired spell once (its first frame), then the hold refs change (a fight's In combat tab)
+        if (refsAfter != null) {
+            val c0 = Canvas(Bitmap.createBitmap(ww, hh, Bitmap.Config.ARGB_8888)); cast.draw(c0)
+            cast.holdRefs = refsAfter
         }
         // ruling A: the trigger let go after the fire - the band back on the bare layer
         if (ltUp) {
@@ -282,6 +288,18 @@ class HoldCastShotsTest {
             assertTrue("$tag: ... and through its GCD", gold(gcd, all) > gold(bare, all) + 40)
             assertFalse("$tag: it ended: the bare layer's ready picture again", differs(bare, back))
         }
+    }
+
+    /** THE 1532 AUDIT: the takeover keeps the spell that FIRED - a fight that starts with the hold's own cast hands the band In combat's
+     *  hold refs (another spell, or none, on that place), and the face still shows the hold that was cast until it ends */
+    @Test fun theTakeoverKeepsTheFiredSpellWhenTheTabChanges() {
+        lang("en")
+        // In combat's refs: another hold on the bare A (LT + Y's Chain Heal), the rest as they were (the badge wears the tap spell meanwhile)
+        val combatRefs = PadMapModel.holdRefs(PadMapModel.parse(padmap())!!).toMutableMap().also { it[HoldCast.key(0, 8)] = it.getValue(HoldCast.key(1, 6)) }
+        val kept = bars("k1_takeover_fired_spell", lt = false, layout = CastView.Layout.DIAMONDS, fire = true, take = "cast")
+        val swapped = bars("k2_takeover_after_the_fight_tab", lt = false, layout = CastView.Layout.DIAMONDS, fire = true, take = "cast",
+            refsAfter = combatRefs)
+        assertFalse("the fired spell stays on the face (In combat's refs have another there)", differs(kept, swapped))
     }
 
     @Test fun theBindBoxAndSettings() {

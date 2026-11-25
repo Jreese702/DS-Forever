@@ -5270,8 +5270,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (mirrorSentWant != want) { mirrorSentAt = null; mirrorTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp)
-        // EditPreview's page-3 taps just went (TapPad's 0.25 s repeat guard would swallow this batch's first 39)
-        if (pvSentAt?.let { now - it < CAST_AFTER_TOP_MS } == true) { ui.postDelayed(mirrorAgain, CAST_AFTER_TOP_MS); return }
+        // another page-3 batch just went (TapPad's 0.25 s repeat guard would swallow this batch's first 39)
+        if (page3Busy(now, "mirror")) { ui.postDelayed(mirrorAgain, CAST_AFTER_TOP_MS); return }
         when (val a = ToolbarMirror.decide(want, d.dirs, homeView.inFight(), mirrorSentAt?.let { now - it })) {
             ToolbarMirror.Act.Matched -> { mirrorSentAt = null; mirrorSentWant = null; mirrorTries = 0 }
             ToolbarMirror.Act.Wait -> if (!d.dirs.isNullOrEmpty()) ui.postDelayed(mirrorAgain, ToolbarMirror.RESEND_MS)
@@ -5313,7 +5313,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (topSentWant != want) { topSentAt = null; topTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(topAgain)
-        if (listOf(pvSentAt, mirrorSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS }) { ui.postDelayed(topAgain, CAST_AFTER_TOP_MS); return }
+        if (page3Busy(now, "top")) { ui.postDelayed(topAgain, CAST_AFTER_TOP_MS); return }
         when (val a = TopCombatBar.decide(want, d.ct, homeView.inFight(), topSentAt?.let { now - it })) {
             TopCombatBar.Act.Matched -> { topSentAt = null; topSentWant = null; topTries = 0 }
             TopCombatBar.Act.Wait -> if (d.ct != null) ui.postDelayed(topAgain, TopCombatBar.RESEND_MS)
@@ -5333,6 +5333,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val castAgain = Runnable { lastDpad?.let { castCheck(it) } }
     private val CAST_AFTER_TOP_MS = 1_000L
 
+    /** THE 1532 AUDIT: another page-3 batch than [mine]'s ("mirror", "top", "cast", "swing", "pv", "hold") went less than CAST_AFTER_TOP_MS
+     *  ago - they all start with the same prefix cells, and TapPad's 0.25 s repeat guard would swallow this batch's first 39. Every page-3
+     *  sender reads this one guard (1531: the mirror / top / cast / swing checks never waited for the hold time's batch) */
+    private fun page3Busy(now: Long, mine: String): Boolean =
+        listOf("mirror" to mirrorSentAt, "top" to topSentAt, "cast" to castSentAt, "swing" to swingSentAt, "pv" to pvSentAt, "hold" to holdSentAt)
+            .any { (k, t) -> k != mine && t != null && now - t < CAST_AFTER_TOP_MS }
+
     /** TopCombatBar.castWanted ("Cast bar in fights: Top screen" with In fights = Top screen) vs the add-on's `cc`: [topCheck]'s rules
      *  (out of combat, re-sent every TopCombatBar.RESEND_MS until `cc` says it, nothing while edit mode is live or with no key; an older
      *  add-on without `cc`: nothing to send - the bottom screen's strip carries the bar, TopCombatBar.honoured) */
@@ -5345,7 +5352,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(castAgain)
         // the top flag's own taps just went (the same page-3 cells: TapPad's 0.25 s repeat guard would swallow this batch's first 39)
-        if (listOf(topSentAt, pvSentAt, mirrorSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS }) { ui.postDelayed(castAgain, CAST_AFTER_TOP_MS); return }
+        if (page3Busy(now, "cast")) { ui.postDelayed(castAgain, CAST_AFTER_TOP_MS); return }
         when (val a = TopCombatBar.decide(want, d.cc, homeView.inFight(), castSentAt?.let { now - it })) {
             TopCombatBar.Act.Matched -> { castSentAt = null; castSentWant = null; castTries = 0 }
             TopCombatBar.Act.Wait -> if (d.cc != null) ui.postDelayed(castAgain, TopCombatBar.RESEND_MS)
@@ -5378,8 +5385,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (want == null) { swingSentAt = null; swingSentWant = null; swingTries = 0; return }
         if (swingSentWant != want) { swingSentAt = null; swingTries = 0 }
         val now = SystemClock.elapsedRealtime()
-        val after = listOfNotNull(topSentAt, castSentAt, pvSentAt, mirrorSentAt).maxOrNull()
-        if (after != null && now - after < CAST_AFTER_TOP_MS) { ui.postDelayed(swingAgain, CAST_AFTER_TOP_MS); return }
+        if (page3Busy(now, "swing")) { ui.postDelayed(swingAgain, CAST_AFTER_TOP_MS); return }
         when (val a = TopCombatBar.decide(want, d.cs, homeView.inFight(), swingSentAt?.let { now - it })) {
             TopCombatBar.Act.Matched -> { swingSentAt = null; swingSentWant = null; swingTries = 0 }
             TopCombatBar.Act.Wait -> if (d.cs != null) ui.postDelayed(swingAgain, TopCombatBar.RESEND_MS)
@@ -5396,6 +5402,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the preview's last send - stamped at its batch's END (EditPreview.BATCH_MS ahead: the taps are spaced), so every other page-3
      *  batch's guard waits out the whole batch */
     private var pvSentAt: Long? = null
+    /** the 1532 audit: when a wanted preview was first seen up with no send of ours (renewed RENEW_MS after it: EditPreview.renewDelay) */
+    private var pvUpAt: Long? = null
     private var pvSentWant: Int? = null
     private var pvTries = 0
     private val pvAgain = Runnable { lastDpad?.let { previewCheck(it) } }
@@ -5406,16 +5414,22 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun previewCheck(d: PadMapModel.Dpad) {
         if (!mirrorCurrent) return
         val want = homeView.editPreviewCode()
-        if (pvSentWant != want) { pvSentAt = null; pvTries = 0 }
+        if (pvSentWant != want) { pvSentAt = null; pvUpAt = null; pvTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(pvAgain)
         if (d.pv == null) return
-        if (listOf(mirrorSentAt, topSentAt, castSentAt, swingSentAt, holdSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS }) {
-            ui.postDelayed(pvAgain, CAST_AFTER_TOP_MS); return
-        }
-        when (val a = EditPreview.decide(want, d.pv, homeView.inFight(), pvSentAt?.let { now - it })) {
-            // (matched: the tries start again; a preview still up is renewed before the add-on's lease ends)
-            EditPreview.Act.Matched -> { pvTries = 0; if (want != EditPreview.OFF) ui.postDelayed(pvAgain, EditPreview.RENEW_MS) else pvSentWant = null }
+        if (page3Busy(now, "pv")) { ui.postDelayed(pvAgain, CAST_AFTER_TOP_MS); return }
+        when (val a = EditPreview.decide(want, d.pv, homeView.inFight(), (pvSentAt ?: pvUpAt)?.let { now - it })) {
+            // (matched: the tries start again; a preview still up is renewed before the add-on's lease ends - RENEW_MS after its send or
+            // after it was first seen up, never after the latest check: the 1532 audit)
+            EditPreview.Act.Matched -> {
+                pvTries = 0
+                if (want != EditPreview.OFF) {
+                    pvSentWant = want
+                    if (pvSentAt == null && pvUpAt == null) pvUpAt = now
+                    ui.postDelayed(pvAgain, EditPreview.renewDelay(now, pvSentAt ?: pvUpAt))
+                } else { pvSentWant = null; pvUpAt = null }
+            }
             EditPreview.Act.Wait -> if (!homeView.inFight()) ui.postDelayed(pvAgain, EditPreview.RESEND_MS)
             is EditPreview.Act.Send -> {
                 if (pvTries >= EditPreview.TRIES) return
@@ -5435,7 +5449,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val holdAgain = Runnable { lastPadMap?.let { holdTicksCheck(it) } }
 
     /** Settings > Controller > Hold time (the app's, CastSettings) vs the add-on's `hold.n`: [castCheck]'s rules - out of combat, re-sent
-     *  every TopCombatBar.RESEND_MS until `hold.n` says it (at most [MIRROR_TRIES] per wish), an older add-on without it: nothing */
+     *  every TopCombatBar.RESEND_MS until `hold.n` says it (HoldCast.SEND_TRIES per wish), an older add-on without it: nothing */
     private fun holdTicksCheck(m: PadMapModel.Map) {
         val want = CastSettings.holdTime.ticks
         if (holdSentWant != want) { holdSentAt = null; holdTries = 0 }
@@ -5443,13 +5457,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ui.removeCallbacks(holdAgain)
         if (m.holdN == null || m.holdN == want) { if (m.holdN == want) { holdSentAt = null; holdSentWant = null; holdTries = 0 }; return }
         // another page-3 batch just went (the same first cells: TapPad's 0.25 s repeat guard would swallow this batch's first 39)
-        if (listOf(mirrorSentAt, topSentAt, castSentAt, swingSentAt, pvSentAt).any { it != null && now - it < CAST_AFTER_TOP_MS }) { ui.postDelayed(holdAgain, CAST_AFTER_TOP_MS); return }
-        val send = HoldCast.ticksToSend(want, m.holdN, m.combat || homeView.inFight(), holdSentAt?.let { now - it })
-        if (send == null) { if (holdTries < MIRROR_TRIES) ui.postDelayed(holdAgain, TopCombatBar.RESEND_MS); return }
+        if (page3Busy(now, "hold")) { ui.postDelayed(holdAgain, CAST_AFTER_TOP_MS); return }
+        val send = HoldCast.ticksToSend(want, m.holdN, m.combat || homeView.inFight(), holdSentAt?.let { now - it }, holdTries)
+        if (send == null) { if (holdTries < HoldCast.SEND_TRIES) ui.postDelayed(holdAgain, TopCombatBar.RESEND_MS); return }
         holdSentAt = now; holdSentWant = want
         val sent = padTabTap(PadMapModel.holdTimeCells(send))
         Log.i(HoldCast.TAG, "hold time: $send looks ${if (sent) "sent" else "not sent"}")
-        if (++holdTries < MIRROR_TRIES) ui.postDelayed(holdAgain, TopCombatBar.RESEND_MS + 200L)
+        if (++holdTries < HoldCast.SEND_TRIES) ui.postDelayed(holdAgain, TopCombatBar.RESEND_MS + 200L)
     }
 
     // ---------------------------------------------------------------- Safety k10 THE STICKY REALM'S ONE-TIME QUESTION (KeyPick)

@@ -69,6 +69,10 @@ object EditPreview {
         return Act.Send(want)
     }
 
+    /** THE 1532 AUDIT: how long from [now] until a preview still wanted is renewed - [RENEW_MS] after its send / first sighting [since]
+     *  (null: from now), at least a second; never RENEW_MS after the latest check (that could pass PadMap's 900 s lease) */
+    fun renewDelay(now: Long, since: Long?): Long = maxOf(1_000L, (since ?: now) + RENEW_MS - now)
+
     /** the taps for [code] */
     fun cells(code: Int): List<Pair<String, Int>> = PadMapModel.previewCells(code)
 }

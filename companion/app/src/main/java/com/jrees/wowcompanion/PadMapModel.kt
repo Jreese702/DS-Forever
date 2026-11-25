@@ -821,7 +821,8 @@ object PadMapModel {
     /** m190 HOLD TO CAST: every place's hold spell on the page shown, by Home's band key (layer * 8 + position - 1; layer 0 none, 1 LT,
      *  2 RT, 3 LT + RT): the corner badge's picture */
     fun holdRefs(map: Map, combat: Boolean = false): kotlin.collections.Map<Int, Ref> = map.sets.filter { it.set in 1..4 }.flatMap { st ->
-        st.slots.filter { it.pos in 1..8 && it.holdOf(combat) != null }.map { (st.set - 1) * 8 + (it.pos - 1) to it.holdOf(combat)!! }
+        // (never B, position 7: the 1532 audit - the add-on never exports one, and the drawing never shows one either)
+        st.slots.filter { it.pos in 1..8 && it.pos != 7 && it.holdOf(combat) != null }.map { (st.set - 1) * 8 + (it.pos - 1) to it.holdOf(combat)!! }
     }.toMap()
 
     /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null */

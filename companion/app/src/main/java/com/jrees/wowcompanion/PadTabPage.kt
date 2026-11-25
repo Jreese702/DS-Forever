@@ -1019,7 +1019,7 @@ class PadTabPage(
             UiKit.pad(c, glyph(p), r.centerX() + 36f * k, r.centerY() - 36f * k, 40f * k)
         }
         // m190 HOLD TO CAST: a button with a hold spell wears it as a small round badge at its top left (the study's room mockup)
-        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true) for (p in 1..8) PadMapModel.slot(m, s, p)?.holdOf(cv() == "combat")?.let { hr ->
+        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true) for (p in 1..8) if (p != 7) PadMapModel.slot(m, s, p)?.holdOf(cv() == "combat")?.let { hr ->
             val r = ctlSquare(p); val k = r.width() / 80f
             HoldArt.badge(c, r.left + 12f * k, r.top + 12f * k, 15f * k, Icons.get(hr.icon), -1f, lit = false)
         }

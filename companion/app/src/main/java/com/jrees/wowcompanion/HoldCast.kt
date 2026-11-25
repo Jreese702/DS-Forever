@@ -124,7 +124,7 @@ object HoldCast {
         /** the add-on's word: the release at [pos] ran its hold spell (its facecast). A release that was not surely long enough flashes
          *  now; one already flashed, or no release of ours just before, nothing */
         fun confirm(pos: Int, now: Long): Boolean {
-            if (pos !in 1..8) return false
+            if (pos !in 1..8 || box) return false                       // (the 1532 audit: the Bind box's release casts nothing)
             val r = relAt[pos]
             if (r < 0L || now - r > CONFIRM_MS) return false
             if (lastFire?.let { it.first == pos && it.second >= r } == true) return false
@@ -178,6 +178,8 @@ object HoldCast {
         private var t = 0L; private var last = 0L
         private var castEnd = -1L; private var gcdEnd = -1L; private var okAt = -1L; private var failAt = -1L
 
+        /** when it started (the band's clock): a takeover's identity (CastView keeps the spell that fired by it) */
+        val startedAt: Long get() = t
         fun start(pos: Int, layer: Int, now: Long) {
             this.pos = pos; this.layer = layer; t = now; last = now
             castEnd = -1L; gcdEnd = -1L; okAt = -1L; failAt = -1L
@@ -275,6 +277,8 @@ object HoldCast {
 
     /** Settings' row changed the hold time (the picture follows CastSettings by itself): the add-on, through [onTicksWanted] */
     fun holdTimeChanged() { onTicksWanted?.invoke() }
+    /** the hold time's sends of one wish (CompanionHost's MIRROR_TRIES) */
+    const val SEND_TRIES = 3
     /** CompanionHost's sender (weakly held there) */
     @Volatile var onTicksWanted: (() -> Unit)? = null
 
@@ -283,8 +287,9 @@ object HoldCast {
      * an add-on before m194: nothing to send), [inFight] (the add-on takes it out of combat only: wait), [sinceSendMs] since the last send
      * of this wish (null = none). The looks to send, or null
      */
-    fun ticksToSend(want: Int, have: Int?, inFight: Boolean, sinceSendMs: Long?): Int? {
+    fun ticksToSend(want: Int, have: Int?, inFight: Boolean, sinceSendMs: Long?, tries: Int = 0): Int? {
         if (have == null || have == want || want !in 2..4) return null
+        if (tries >= SEND_TRIES) return null                            // the 1532 audit: this wish's sends spent (a later padmap: none)
         if (inFight || (sinceSendMs != null && sinceSendMs < TopCombatBar.RESEND_MS)) return null
         return want
     }
