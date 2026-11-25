@@ -425,7 +425,7 @@ class PerformanceTilesRoomTest {
         open(r, PerformanceTileModel.LIMIT)
         assertEquals(PerformanceTileModel.LIMIT, r.perf.openTile)
         val b = bandButtons(r)
-        assertEquals("40 / 60 / Off", 3, b.size)
+        assertEquals("30 / 40 / 60 / Off", FrameGen.LIMITS.size, b.size)
         for (x in b) assertTrue(x.height() >= 110f)
         val was = FrameGen.fpsLimit
         val k = if (was == 60) 0 else 1

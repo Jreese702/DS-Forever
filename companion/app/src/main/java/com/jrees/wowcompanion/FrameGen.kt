@@ -54,8 +54,11 @@ object FrameGen {
     // ([noteContainer], from the launcher at each start and from the quick menu) and a pick there is written into the container at the
     // next game start ([takeAsk]). No game CVar, nothing in the game's files.
 
-    /** Settings' choices: 40, 60, Off (0); the quick menu may hold any other value, shown as it is */
-    val LIMITS = listOf(40, 60, 0)
+    /**
+     * Settings' choices: 30, 40, 60, Off (0); the quick menu may hold any other value, shown as it is. 30 is the base for frame
+     * generation x2 on the Thor's 60 Hz panel (30 x2 = exactly 60 shown; 40 x2 = 80 can't be shown)
+     */
+    val LIMITS = listOf(30, 40, 60, 0)
     /** the one-time 1.0.8 limit (every container then); 1529 moves a container still at it to [LIMIT_DEFAULT] when nobody picked it */
     const val LIMIT_MIGRATED = 40
     /** 1529: the default frame limit (a new install's containers, and the 1.0.8 value nobody picked) */
