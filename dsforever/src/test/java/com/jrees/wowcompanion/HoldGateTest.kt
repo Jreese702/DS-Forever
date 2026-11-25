@@ -174,10 +174,12 @@ class HoldGateTest {
         assertEquals("A alone: held back as always", 0, g.update(A, 0f, 0f, 1400))
     }
 
-    @Test fun bAndTheDpadToo() {
-        val g = gate(HoldGate.key(0, 7), HoldGate.key(0, 2))
-        assertEquals(0, g.update(Bb or UP, 0f, 0f, 1000))
-        assertEquals(Bb or UP, g.update(0, 0f, 0f, 1100))
+    @Test fun theDpadTooButNeverB() {
+        // the user, 2026-11-24: "I want to remove the hold option on B it conflicts too hard and does weird shit"
+        val g = gate(HoldGate.key(0, 7), HoldGate.key(1, 7), HoldGate.key(0, 2))
+        assertEquals("B passes at once even with a (stray) place in the map; the D-pad is held back", Bb, g.update(Bb or UP, 0f, 0f, 1000))
+        assertEquals(UP, g.update(0, 0f, 0f, 1100))
+        assertEquals("LT + B too", Bb, g.update(Bb, 1f, 0f, 1200))
     }
 
     @Test fun aHoldDuringALoadingScreen() {

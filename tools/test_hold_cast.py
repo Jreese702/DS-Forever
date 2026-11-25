@@ -109,7 +109,10 @@ function WATCH(s, step)
         NOW = NOW + step; t = t + step
     end
 end
-function HDB() local t = (WowCompanionSpellsDB.holdBy or {})[WHO .. "-" .. REALM]; return t end
+-- PER TAB: Out of combat's holds (HDB) and In combat's (HDBC); HROOT the character's whole table
+function HROOT() return (WowCompanionSpellsDB.holdBy or {})[WHO .. "-" .. REALM] end
+function HDB() local r = HROOT(); return r and r.normal end
+function HDBC() local r = HROOT(); return r and r.combat end
 -- the book the room's chooser lists (book order: Lightning Bolt, Healing Wave, Lightning Shield)
 WowCompanion.spellsBindableList = function() local out = {}; for i, id in ipairs(BOOK) do out[#out + 1] = { id = id, slot = i } end; return out end
 WowCompanion.spellsBookSlotOf = function(id) for i, x in ipairs(BOOK) do if x == id then return i end end end
@@ -159,7 +162,7 @@ ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main',
                        'ActionBar.lua'), encoding='utf-8').read()
 check('local PV = "m190"' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m190 and its note (m189 kept)')
 check('local CV = "p60"' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'p59 HOLD TO CAST' in ptc and 'p58 THE CHOOSER AS A GRID' in ptc, '0. PadTabCtl p59 and its note')
-check('local BV = "b79"' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk and 'P3[26] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end' in bk and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b78 and its note')
+check('local BV = "b79"' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk and 'P3[28] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end' in bk and 'b78 HOLD TO CAST IN THE BIND BOX' in bk and 'b77 THE CAST BAR' in bk, '0. Book b78 and its note')
 check('local NB = { V = "nbar18"' in ab and 'nbar18 HOLD TO CAST' in ab, '0. ActionBar nbar18 and its note')
 
 # ---------------------------------------------------------------- (1) THE PROBE
@@ -224,18 +227,25 @@ check(last(L6, 'holdprobe').get('st') == 'ready' and not lst(L6, 'VIOL'), '1. ..
 n0 = nsent(L)
 check(L.eval('WowCompanion.padMap.putHold(1, 2, 6, "spell", 2)') is True, '2. LT + Y: Healing Wave (book slot 2) as the hold spell')
 check(L.eval('WowCompanion.padMap.putHold(1, 1, 8, "spell", 1)') is True, '2. the bare A: Lightning Bolt')
-check(L.eval('WowCompanion.padMap.putHold(1, 1, 7, "spell", 3)') is True, '2. B: Lightning Shield (every button incl. B)')
+check(L.eval('(WowCompanion.padMap.putHold(1, 1, 7, "spell", 3))') is False and last(L, 'padack').get('why') == 'b',
+      '2. B: NEVER a hold (the user: "remove the hold option on B"): refused, b', last(L, 'padack'))
+check(L.eval('(WowCompanion.padMap.putHold(1, 2, 7, "spell", 3))') is False and last(L, 'padack').get('why') == 'b',
+      '2. ... LT + B neither (B is the router\'s back button on every layer)', last(L, 'padack'))
+check(L.eval('WowCompanion.padMap.putHold(1, 2, 6, "spell", 3, "combat")') is True, '2. LT + Y on the IN COMBAT tab: Lightning Shield (its own)')
 hdb = L.eval('HDB()')
-check(hdb is not None and hdb[18] is not None and hdb[18].n == 'Healing Wave' and hdb['f8'].n == 'Lightning Bolt'
-      and hdb['f7'].n == 'Lightning Shield', '2. stored per character: slot 18, the base faces by position (f8 / f7)')
+check(hdb is not None and hdb[18] is not None and hdb[18].n == 'Healing Wave' and hdb['f8'].n == 'Lightning Bolt' and hdb['f7'] is None
+      and L.eval('HDBC()[18].n') == 'Lightning Shield' and L.eval('HDBC()["f8"]') is None,
+      '2. stored per character PER TAB: Out of combat slot 18 / f8; In combat slot 18 its own; no B')
 acks = [d for d in docs(L, n0, 'padack') if d.get('op') == 'hold']
-check(len(acks) == 3 and all(a.get('ok') for a in acks) and acks[0].get('s') == 18, '2. each answered (padack hold, its slot)', acks)
+check(len(acks) == 5 and [a.get('ok') for a in acks] == [True, True, False, False, True] and acks[0].get('s') == 18,
+      '2. each answered (padack hold, its slot)', acks)
 check((L.eval('HDR("wc-ht-18")') or '').endswith('/cast Healing Wave') and (L.eval('HDR("wc-hf-8")') or '').endswith('/cast Lightning Bolt')
-      and (L.eval('HDR("wc-hf-7")') or '').endswith('/cast Lightning Shield'),
-      '2. the header\'s hold texts (wc-ht-<slot>, wc-hf-<pos>)', (L.eval('HDR("wc-ht-18")'), L.eval('HDR("wc-hf-8")')))
-check(L.eval('BIND.PAD1') == 'CLICK WowCompanionCombatFace8:LeftButton' and L.eval('BIND.PAD4') == 'CLICK WowCompanionCombatFace6:LeftButton'
-      and L.eval('BIND.PAD2') == 'CLICK WowCompanionFaceB:LeftButton',
-      '2. out of combat the router carries A, Y and B (their places have a hold spell)', (L.eval('BIND.PAD1'), L.eval('BIND.PAD4'), L.eval('BIND.PAD2')))
+      and L.eval('HDR("wc-hf-7")') is None and (L.eval('HDR("wc-htc-18")') or '').endswith('/cast Lightning Shield')
+      and L.eval('HDR("wc-hcc")') is True,
+      '2. the header\'s hold texts per tab (wc-ht / wc-hf Out of combat, wc-htc In combat), none for B',
+      (L.eval('HDR("wc-ht-18")'), L.eval('HDR("wc-hf-8")'), L.eval('HDR("wc-htc-18")')))
+check(L.eval('BIND.PAD1') == 'CLICK WowCompanionCombatFace8:LeftButton' and L.eval('BIND.PAD4') == 'CLICK WowCompanionCombatFace6:LeftButton',
+      '2. out of combat the router carries A and Y (their places have a hold spell)', (L.eval('BIND.PAD1'), L.eval('BIND.PAD4')))
 check(L.eval('(WowCompanion.padMap.putHold(1, 2, 5, "bind", "JUMP"))') is False and last(L, 'padack').get('why') == 'bind',
       '2. a game binding is no hold (refused: bind)', last(L, 'padack'))
 L.execute('COMBAT = true')
@@ -271,26 +281,35 @@ v0 = len(lst(L, 'VIOL'))
 L.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; driveStates(); advance(1)')
 L.execute('for _, n in ipairs({ "WowCompanionCombatFace5", "WowCompanionCombatFace6", "WowCompanionCombatFace8", "WowCompanionFaceB" }) do local b = HB(n); if b then b.a["wc-state"] = "fight" end end')
 p = press(L, 'PAD4', lt=True, marker=True)
-check(p['kind'] == 'slothold' and p['mt'].endswith('/cast Healing Wave'), '3. in a fight: LT + Y held = Healing Wave', p)
+check(p['kind'] == 'slothold' and p['mt'].endswith('/cast Lightning Shield'),
+      '3. in a fight: LT + Y held = IN COMBAT\'s hold (Lightning Shield), never Out of combat\'s', p)
+p = press(L, 'PAD1', marker=True)
+check(p['kind'] != 'slothold', '3. in a fight: the bare A held has no In combat hold: the press as always (Out of combat\'s never fires here)', p)
 given0 = L.eval('HB("WowCompanionCombatFace8").a["wc-given"]')
+L.execute('HDR_SET = rawget(_G, "WowCompanionFaceRouter").a; HDR_SET["wc-hf-7"] = "/cast Lightning Shield"; HDR_SET["wc-hfc-7"] = "/cast Lightning Shield"')
 p = press(L, 'PAD2', marker=True)
-check(p['kind'] == 'slothold' and p['mt'].endswith('/cast Lightning Shield') and L.eval('HB("WowCompanionCombatFace8").a["wc-given"]') == given0,
-      '3. B held in a fight: Lightning Shield alone (A / X / Y not given back)', p)
+check(p['kind'] != 'slothold' and L.eval('HB("WowCompanionCombatFace8").a["wc-given"]') is True,
+      '3. B with the marker in a fight (even a stray hold text): never a hold - the give-back as always', p)
+L.execute('HDR_SET["wc-hf-7"] = nil; HDR_SET["wc-hfc-7"] = nil; for _, n in ipairs({ "WowCompanionCombatFace5", "WowCompanionCombatFace6", "WowCompanionCombatFace8" }) do local b = HB(n); if b then b.a["wc-given"] = nil end end')
 p = press(L, 'PAD2')
 check(p['kind'] != 'slothold', '3. B tapped in a fight: B as always (the give-back)', p)
+L.execute('for _, n in ipairs({ "WowCompanionCombatFace5", "WowCompanionCombatFace6", "WowCompanionCombatFace8" }) do local b = HB(n); if b then b.a["wc-given"] = nil end end; WowCompanion.padMapHold().tick(true)')
+mf = last(L, 'holdmap')
+check(mf.get('on') is True and 'lt:6' in (mf.get('b') or '') and 'bare:8' not in (mf.get('b') or ''),
+      '3. the app\'s map in the fight: In combat\'s places only (LT + Y), not Out of combat\'s bare A', mf)
 check(len(lst(L, 'VIOL')) == v0 and not lst(L, 'SNIPERR') and not lst(L, 'HANDLEERR'),
       '3. no blocked call, no snippet / handle error in the fight', (lst(L, 'VIOL')[v0:], lst(L, 'SNIPERR'), lst(L, 'HANDLEERR')))
 L.execute('COMBAT = false; driveStates(); fire("PLAYER_REGEN_ENABLED"); advance(1)')
 L.execute('for _, n in ipairs({ "WowCompanionCombatFace5", "WowCompanionCombatFace6", "WowCompanionCombatFace8", "WowCompanionFaceB" }) do local b = HB(n); if b then b.a["wc-state"] = "idle"; b.a["wc-given"] = nil end end')
-check('trs = "L" .. (li and (lt and "1" or "0") or "-")' in pm and 'if gd and bt and bt[gd] and dest and mode ~= "room" and not pdest then' in pm,
+check('trs = "L" .. (li and (lt and "1" or "0") or "-")' in pm and 'if gd and bt and bt[gd] and dest and mode ~= "room" and not pdest and self:GetAttribute("wc-role") ~= "back" then' in pm,
       '3. the layer is the triggers at the press (the app sends them as held then: HoldGate), the marker read the same way')
 
 # ---------------------------------------------------------------- (4) THE APP'S MAP
 L.execute('WowCompanion.padMapHold().tick(true)')
 m = last(L, 'holdmap')
 places = set((m.get('b') or '').split(','))
-check(m.get('on') is True and {'lt:6', 'bare:8', 'bare:7'} <= places and 'bare:6' not in places and 'lt:8' not in places,
-      '4. the places the router turns into a hold now (LT + Y, the bare A and B), none other', m)
+check(m.get('on') is True and {'lt:6', 'bare:8'} <= places and 'bare:7' not in places and 'bare:6' not in places and 'lt:8' not in places,
+      '4. the places the router turns into a hold now, Out of combat\'s (LT + Y, the bare A), never B', m)
 L.execute('MOUNTED = true; WowCompanion.padMapHold().tick(true)')
 check('bare:8' not in (last(L, 'holdmap').get('b') or ''), '4. mounted: the bare A left out (Jump / ascend is held there)', last(L, 'holdmap'))
 L.execute('MOUNTED = false')
@@ -316,6 +335,8 @@ s18 = doc['sets'][0]['slots'][7]
 check(s26.get('h', {}).get('n') == 'Healing Wave' and s26['h'].get('id') == 331 and s18.get('h', {}).get('n') == 'Lightning Bolt'
       and doc.get('hold', {}).get('on') is True, '5. each place\'s hold (h: its name, id, icon), the base A\'s too; hold.on', (s26.get('h'), s18.get('h'), doc.get('hold')))
 check(L.eval('WowCompanion.padMap.slotAt(1, 2, 6).h.n') == 'Healing Wave', '5. slotAt carries it (the room, the top bar)')
+check(s26.get('hc', {}).get('n') == 'Lightning Shield' and not s18.get('hc'), '5. PER TAB: hc = In combat\'s hold (LT + Y), none on the bare A', (s26.get('hc'), s18.get('hc')))
+check(L.eval('WowCompanion.padMap.holdTab()') == 'normal', '5. the hold that would fire now: Out of combat\'s (the top bar\'s badge)')
 
 # ---------------------------------------------------------------- (6) the hold spells' cooldowns
 n0 = nsent(L)
@@ -401,12 +422,12 @@ check(last(L7, 'holdmap').get('why') == 'bound' and last(L7, 'holdmap').get('on'
 
 # ---------------------------------------------------------------- (10) A HOLD ONLY ON A BUTTON THAT HAS SOMETHING (the user, 2026-11-24:
 # "You should only be able to bind a hold on a button that has something already")
-check(L.eval('(WowCompanion.padMap.putHold(1, 2, 7, "spell", 2))') is False and last(L, 'padack').get('why') == 'empty',
-      '10. an empty button (LT + B, slot 19): no hold (refused: empty)', last(L, 'padack'))
-check(L.eval('(WowCompanion.padMap.putHold(1, 1, 7, "spell", 3))') is True, '10. a base face (B: the game own Back) counts as something')
+check(L.eval('(WowCompanion.padMap.putHold(1, 2, 1, "spell", 2))') is False and last(L, 'padack').get('why') == 'empty',
+      '10. an empty button (LT + D-pad Left, slot 13): no hold (refused: empty)', last(L, 'padack'))
+check(L.eval('(WowCompanion.padMap.putHold(1, 1, 5, "spell", 3))') is True, '10. a base face (X: the game own Interact) counts as something')
 check('if not (pm and type(pm.holdOk) == "function" and pm.holdOk(pm.page(), shownSet(), tc.pos)) then report("hold-empty") return true end' in ptc,
       '10. the room: Y on an empty button says hold-empty, nothing opens')
-check(L.eval('WowCompanion.padMap.holdOk(1, 2, 7)') is False and L.eval('WowCompanion.padMap.holdOk(1, 2, 6)') is True
+check(L.eval('WowCompanion.padMap.holdOk(1, 2, 1)') is False and L.eval('WowCompanion.padMap.holdOk(1, 1, 7)') is False and L.eval('WowCompanion.padMap.holdOk(1, 2, 6)') is True
       and L.eval('WowCompanion.padMap.holdOk(1, 1, 8)') is True, '10. holdOk: empty no, a spell yes, a base face yes')
 # the press taken off (here: the game's own bar emptied; Clear / Move do the same): its hold goes too
 check(L.eval('WowCompanion.padMap.holdAt(1, 2, 6) ~= nil'), '10. (LT + Y has its hold)')
@@ -415,9 +436,13 @@ check(L.eval('HDB()[18]') is None and L.eval('HDR("wc-ht-18")') is None, '10. th
       (L.eval('HDB()[18]'), L.eval('HDR("wc-ht-18")')))
 L.execute('ACTIONINFO[18] = { "spell", 331 }')
 # an orphan saved before this rule (a hold on an empty slot): dropped at the login
-L9 = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM", holdBy = { ["Korvash-Realm"] = { [19] = { id = 331, n = "Healing Wave", i = 1, page = 1, set = 2, pos = 7 }, [18] = { id = 1064, n = "Chain Heal", i = 1, page = 1, set = 2, pos = 6 } } } }')
+# test 1528's FLAT store (one hold per button, every tab): onto the In combat tab only; its orphans and B's dropped
+L9 = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM", holdBy = { ["Korvash-Realm"] = { [19] = { id = 331, n = "Healing Wave", i = 1, page = 1, set = 2, pos = 7 }, [18] = { id = 1064, n = "Chain Heal", i = 1, page = 1, set = 2, pos = 6 }, [13] = { id = 403, n = "Lightning Bolt", i = 1, page = 1, set = 2, pos = 1 }, f7 = { id = 324, n = "Lightning Shield", i = 1, page = 1, set = 1, pos = 7 }, f8 = { id = 403, n = "Lightning Bolt", i = 1, page = 1, set = 1, pos = 8 } } } }')
 L9.execute('WowCompanion.padMapHold().tick(); advance(1)')
-check(L9.eval('HDB()[19]') is None and L9.eval('HDB()[18] ~= nil'), '10. a saved orphan (empty slot 19) dropped at the login; slot 18 (a spell) kept')
+check(L9.eval('HDB() == nil or next(HDB()) == nil') and L9.eval('HDBC()[18] ~= nil') and L9.eval('HDBC()["f8"] ~= nil'),
+      '10. MIGRATION: test 1528\'s holds are In combat\'s only (Out of combat has none)')
+check(L9.eval('HDBC()[19]') is None and L9.eval('HDBC()[13]') is None and L9.eval('HDBC()["f7"]') is None,
+      '10. ... its orphans (empty slots 19 / 13) and B\'s (f7) dropped')
 # the Bind box: HOLDING an empty button places the spell as its normal press (never a hold on nothing)
 LB = world('WowCompanionSpellsDB = { holdGuide = "PADSYSTEM" }; C_GamepadUI = { GetFirstGamepadActionBarStorageSlotIndexForActiveStance = function() return 0 end, IsValidGamepadActionStorageSlotIndex = function() return true end }; CURSOR = nil; function GetCursorInfo() if CURSOR then return CURSOR[1], CURSOR[2] end end; function ClearCursor() CURSOR = nil end; C_SpellBook.PickupSpellBookItem = function(slot) local id = BOOK[slot]; if id then CURSOR = { "spell", id } end end')
 LB.execute('BK = WowCompanion._spellsBook; BK.ctl.on = true; BK.ctl.pg = "book"; BK.startBind({ t = 1, slot = 1, id = 403 })')

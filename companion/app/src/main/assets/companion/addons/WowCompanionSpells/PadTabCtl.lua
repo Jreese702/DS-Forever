@@ -401,7 +401,7 @@ rows = function()
     end
     if hold then                                                        -- p59: Clear the hold (pinned), only where there is one
         local pm = PM()
-        if pm and type(pm.holdAt) == "function" and pm.holdAt(pm.page(), shownSet(), tc.pos) then out[#out + 1] = { kind = "unhold", hold = true } end
+        if pm and type(pm.holdAt) == "function" and pm.holdAt(pm.page(), shownSet(), tc.pos, fightView() and "combat" or "normal") then out[#out + 1] = { kind = "unhold", hold = true } end
         return out
     end
     if fightView() then
@@ -443,10 +443,11 @@ local function act(thing, fightTouch)
     local page, set, pos = pm.page(), shownSet(), tc.pos
     -- p59 HOLD TO CAST (PadMap m190): the place's hold spell / thing (putHold / clearHold answer with padack "hold" / "unhold")
     if thing.hold then
-        if thing.kind == "unhold" then pm.clearHold(page, set, pos)
-        elseif SPELLISH[thing.kind] then pm.putHold(page, set, pos, "spell", thing.slot)
-        elseif thing.kind == "command" or thing.kind == "macro" then pm.putHold(page, set, pos, thing.kind, thing.key)
-        elseif thing.kind == "item" or thing.kind == "mount" then pm.putHold(page, set, pos, thing.kind, thing.id) end
+        local htab = fightView() and "combat" or "normal"               -- PER TAB (the user on 1528): the tab on show's own hold
+        if thing.kind == "unhold" then pm.clearHold(page, set, pos, htab)
+        elseif SPELLISH[thing.kind] then pm.putHold(page, set, pos, "spell", thing.slot, htab)
+        elseif thing.kind == "command" or thing.kind == "macro" then pm.putHold(page, set, pos, thing.kind, thing.key, htab)
+        elseif thing.kind == "item" or thing.kind == "mount" then pm.putHold(page, set, pos, thing.kind, thing.id, htab) end
         tc.box, tc.chooser, tc.focus = nil, nil, "buttons"
         return
     end
@@ -862,6 +863,7 @@ local function pressButtons(key)
     if key == "PAD4" then
         if cbView() or tc.view == "radial" or tc.view == "party" then return true end
         if GRIDS.STICK[tc.pos] then report("hold-stick") return true end
+        if tc.pos == 7 then report("hold-b") return true end                    -- never on B (the user, 2026-11-24)
         if toolbarHas(tc.pos) then report("dpad-bar") return true end          -- the DS toolbar's D-pad (its own Y: the talk rows)
         local pm = PM()
         if not (pm and type(pm.holdOn) == "function" and pm.holdOn()) then report("hold-off") return true end
@@ -1382,7 +1384,7 @@ WC.padTabCtl = {
             tc.combatAt = nil
             if inCombat() then refusedCombat() return end
             local pm = PM()
-            if pm and type(pm.holdAt) == "function" and pm.holdAt(pm.page(), shownSet(), tc.pos) then act({ kind = "unhold", hold = true }); report("cleared") end
+            if pm and type(pm.holdAt) == "function" and pm.holdAt(pm.page(), shownSet(), tc.pos, fightView() and "combat" or "normal") then act({ kind = "unhold", hold = true }); report("cleared") end
             return
         end
         local combat = tc.combatAt and GetTime() - tc.combatAt <= COMBAT_PICK_S

@@ -2605,7 +2605,9 @@ function NB.holdShow(b, set, page)
     local e = nil
     if type(pm) == "table" and type(pm.holdOn) == "function" and type(pm.holdAt) == "function" then
         local okOn, on = pcall(pm.holdOn)
-        if okOn and on then local ok, r = pcall(pm.holdAt, page, set, b.p); if ok and type(r) == "table" then e = r end end
+        -- PER TAB: the hold that would fire now (In combat's while the fight switch takes the press, else Out of combat's)
+        local okT, tab = pcall(pm.holdTab)
+        if okOn and on then local ok, r = pcall(pm.holdAt, page, set, b.p, okT and tab or nil); if ok and type(r) == "table" then e = r end end
     end
     if not e then if b.hb then b.hb:Hide() end b.hold = nil return end
     local hb = NB.holdBadge(b)

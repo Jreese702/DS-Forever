@@ -472,12 +472,14 @@ function WC.collectPadMap()
         local row = { set = set, slots = {} }
         for pos = 1, POSITIONS do
             if fixed(set, pos) then
-                row.slots[pos] = { pos = pos, kind = "fixed", n = word(FIXED[pos]), cf = faceRef(pos), h = OV.hold.ref(OV.hold.at("f" .. pos)) }
+                row.slots[pos] = { pos = pos, kind = "fixed", n = word(FIXED[pos]), cf = faceRef(pos), h = OV.hold.ref(OV.hold.at("f" .. pos)),
+                                   hc = OV.hold.ref(OV.hold.at("f" .. pos, "combat")) }
             else
                 local s = storage(page, set, pos)
                 local slot = OV.view(set, pos, s)                     -- m43: a binding, a command, the bar; a fight spell over it
                 slot.pos = pos
-                slot.h = OV.hold.ref(OV.hold.at(s))                       -- m190: the place's hold spell
+                slot.h = OV.hold.ref(OV.hold.at(s))                       -- m190: the place's hold spell (Out of combat)
+                slot.hc = OV.hold.ref(OV.hold.at(s, "combat"))            -- m190: In combat's
                 row.slots[pos] = slot
             end
         end
@@ -1140,18 +1142,43 @@ OV.hold = { WATCH = 12, DELAY = 4, SETTLE = 1.5, NAMES = { "PADSYSTEM", "PADSOCI
                     PADLTRIGGER = true, PADRTRIGGER = true, PADFORWARD = true, PADBACK = true },
             cdNow = {}, sent = nil, sentAt = 0, loading = false }
 -- [create] = a put is about to write (only then is the character's table made: a read leaves no empty store behind)
-function OV.hold.db(create)
+-- m190 PER TAB (the user on test 1528: "Wait the hold buttons are showing on my out of combat bar? It should be seperate"): a hold
+-- spell belongs to a TAB as the press does - holdBy[name-realm] = { normal = { [key] = entry }, combat = { ... } }: Out of combat's
+-- holds fire when the press is Out of combat's (the slot's own), In combat's when the press is the fight layer's (the router's fight
+-- switch, Combat controls on: exactly where "slotfight" / a face's fight action take the press). Party mode's presses are its pad's:
+-- no hold there (its tab has none). The flat store of test 1528 (one hold per button, every tab) is moved onto In combat at its read
+OV.hold.TABS = { "normal", "combat" }
+function OV.hold.root(create)
     local k = whoKey()
-    if not k then return {} end
+    if not k then return nil end
     local db = _G.WowCompanionSpellsDB
     local t = type(db) == "table" and type(db.holdBy) == "table" and db.holdBy[k] or nil
-    if type(t) == "table" then return t end
-    if not create then return {} end
+    if type(t) == "table" then
+        if t.normal == nil and t.combat == nil and next(t) ~= nil then          -- test 1528's flat store: onto the In combat tab
+            local flat = {}
+            for key, e in pairs(t) do flat[key] = e; t[key] = nil end
+            t.combat = flat
+        end
+        return t
+    end
+    if not create then return nil end
     if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
     db = _G.WowCompanionSpellsDB
     if type(db.holdBy) ~= "table" then db.holdBy = {} end
     db.holdBy[k] = {}
     return db.holdBy[k]
+end
+-- [create] = a put is about to write (only then is the character's table made: a read leaves no empty store behind); [tab] "normal"
+-- (Out of combat, the default) / "combat" (In combat)
+function OV.hold.db(create, tab)
+    tab = tab == "combat" and "combat" or "normal"
+    local r = OV.hold.root(create)
+    if not r then return {} end
+    if type(r[tab]) ~= "table" then
+        if not create then return {} end
+        r[tab] = {}
+    end
+    return r[tab]
 end
 -- the Guide's name in this client while the last probe said "seen, unbound" (the client's, so account-wide), else nil
 function OV.hold.guide()
@@ -1174,8 +1201,13 @@ function OV.hold.key(page, set, pos)
     if type(page) ~= "number" or type(set) ~= "number" or type(pos) ~= "number" or pos < 1 or pos > POSITIONS then return nil end
     return storage(page, set, pos)
 end
-function OV.hold.at(k)
-    local e = k ~= nil and OV.hold.db()[k] or nil
+-- NEVER ON B (the user, 2026-11-24: "I want to remove the hold option on B it conflicts too hard and does weird shit"): position 7 takes
+-- no hold on any tab or layer (B is the router's "back" button on every layer: its give-back / pet recall / pull close / room escape);
+-- a saved one is ignored here and dropped by the sweep
+function OV.hold.noB(k, e) return k == "f7" or (type(e) == "table" and e.pos == 7) end
+function OV.hold.at(k, tab)
+    local e = k ~= nil and OV.hold.db(false, tab)[k] or nil
+    if OV.hold.noB(k, e) then return nil end
     return (type(e) == "table" and type(e.n) == "string" and OV.ftKind(e) ~= "bind") and e or nil
 end
 -- what the documents carry for an entry (OV.ftRef: a spell by its id; a whole-button thing by `t` / `key`), or nil
@@ -1188,6 +1220,7 @@ function OV.hold.body(e) return e and OV.ftBody(e, attackOn()) or nil end
 -- its own (a spell, an item, a macro, a mount, a command, a binding, an In combat entry over it) or is a base face (its game action:
 -- Jump / Interact / Inspect / Back - a tap does that, so a hold there is the second action the feature is for)
 function OV.hold.has(page, set, pos)
+    if pos == 7 then return false end                                   -- never on B
     if set == 1 and type(pos) == "number" and pos >= FIRST_RESERVED and pos <= 8 then return true end
     local s = type(page) == "number" and storage(page, set, pos) or nil
     if not s then return false end
@@ -1197,8 +1230,10 @@ end
 function OV.hold.positions()
     local out = {}
     if not OV.hold.usable() then return out end
-    for k, e in pairs(OV.hold.db()) do
-        if OV.hold.at(k) and type(e.pos) == "number" and e.pos >= 1 and e.pos <= 8 then out[e.pos] = true end
+    for _, tab in ipairs(OV.hold.TABS) do
+        for k, e in pairs(OV.hold.db(false, tab)) do
+            if OV.hold.at(k, tab) and type(e.pos) == "number" and e.pos >= 1 and e.pos <= 8 then out[e.pos] = true end
+        end
     end
     return out
 end
@@ -1557,15 +1592,19 @@ local PRE = [=[
         -- text there = the press is what it always is. Never in room / Party mode (that press is the room's)
         local htxt = nil
         local gd = self:GetAttribute("wc-gd")
-        if gd and bt and bt[gd] and dest and mode ~= "room" and not pdest then
+        if gd and bt and bt[gd] and dest and mode ~= "room" and not pdest and self:GetAttribute("wc-role") ~= "back" then   -- never B
             local hh = self:GetFrameRef("wc-hdr")
             local hp = self:GetAttribute("wc-pos")
             if hh then
-                if anchor == "top" and hp and hp >= 5 then htxt = hh:GetAttribute("wc-hf-" .. hp) end
+                -- PER TAB: In combat's hold while the press is the fight layer's (the fight switch the fight spells use, not given
+                -- back, Combat controls on), else Out of combat's
+                local hsw = (self:GetAttribute("wc-state") == "fight" or self:GetAttribute("wc-pre")) and not self:GetAttribute("wc-given")
+                local sfx = (hsw and hh:GetAttribute("wc-hcc")) and "c" or ""
+                if anchor == "top" and hp and hp >= 5 then htxt = hh:GetAttribute("wc-hf" .. sfx .. "-" .. hp) end
                 if not htxt then
                     local hb = self:GetFrameRef("wc-btn-" .. anchor .. "-" .. at)
                     local hid = hb and hb.GetID and hb:GetID()
-                    if hid and hid > 0 then htxt = hh:GetAttribute("wc-ht-" .. hid) end
+                    if hid and hid > 0 then htxt = hh:GetAttribute("wc-ht" .. sfx .. "-" .. hid) end
                 end
             end
         end
@@ -2372,15 +2411,23 @@ local function routerMacros()
         if R.ft[slot] ~= body then pcall(function() hdr:SetAttribute("wc-ft-" .. slot, body) end); R.ft[slot] = body; changed = true end
     end
     -- m190 HOLD TO CAST: the hold texts ("wc-ht-<slot>", a base face's "wc-hf-<pos>"), only while the probe said the marker works
+    -- m190 PER TAB: Out of combat's "wc-ht-<slot>" / "wc-hf-<pos>", In combat's "wc-htc-<slot>" / "wc-hfc-<pos>" (with Combat controls
+    -- on: "wc-hcc", the snippet's switch, as the fight spells are armed only then)
     local wantH = {}
     if OV.hold.usable() then
-        for k, e in pairs(OV.hold.db()) do
-            local body = OV.hold.at(k) and OV.hold.body(e) or nil
-            if body and #body <= 1023 then
-                if type(k) == "number" then wantH["wc-ht-" .. k] = body
-                elseif type(k) == "string" and k:match("^f[5-8]$") then wantH["wc-hf-" .. k:sub(2)] = body end
+        for _, tab in ipairs(OV.hold.TABS) do
+            local sfx = tab == "combat" and "c" or ""
+            if tab ~= "combat" or combatOn() then
+                for k, e in pairs(OV.hold.db(false, tab)) do
+                    local body = OV.hold.at(k, tab) and OV.hold.body(e) or nil
+                    if body and #body <= 1023 then
+                        if type(k) == "number" then wantH["wc-ht" .. sfx .. "-" .. k] = body
+                        elseif type(k) == "string" and k:match("^f[5-8]$") then wantH["wc-hf" .. sfx .. "-" .. k:sub(2)] = body end
+                    end
+                end
             end
         end
+        if combatOn() then wantH["wc-hcc"] = true end
     end
     R.ht = R.ht or {}
     for k in pairs(R.ht) do
@@ -4937,12 +4984,13 @@ WC.padMap = {
     version = 1,
     -- m190 HOLD TO CAST: a place's hold spell / thing (out of combat; this character; only while the probe said the marker works).
     -- [kind] / [v] as OV.hold.entry. Answer: padack "hold" / "unhold"
-    putHold = function(page, set, pos, kind, v)
+    putHold = function(page, set, pos, kind, v, tab)
         if inCombat() then ack("hold", false, "combat") return false, "combat" end
         if not OV.hold.usable() then ack("hold", false, "unavailable") return false, "unavailable" end
         if type(set) ~= "number" or set < 1 or set > SETS or type(pos) ~= "number" or pos < 1 or pos > POSITIONS then
             ack("hold", false, "bad place") return false, "bad place"
         end
+        if pos == 7 then ack("hold", false, "b") return false, "b" end      -- never on B (the user, 2026-11-24)
         local k = OV.hold.key(page, set, pos)
         if k == nil then ack("hold", false, "no slot") return false, "no slot" end
         if not OV.hold.has(page, set, pos) then ack("hold", false, "empty") return false, "empty" end      -- a hold needs a press
@@ -4950,23 +4998,24 @@ WC.padMap = {
         local e, why = OV.hold.entry(kind, v)
         if not e then ack("hold", false, why) return false, why end
         e.page, e.set, e.pos = page, set, pos
-        OV.hold.db(true)[k] = e
+        OV.hold.db(true, tab)[k] = e
         pcall(routerMacros); pcall(routerBind, "hold")
         ack("hold", true, nil, type(k) == "number" and k or nil)
         soon(); pcall(OV.hold.tick, true)
         return true
     end,
-    clearHold = function(page, set, pos)
+    clearHold = function(page, set, pos, tab)
         if inCombat() then ack("unhold", false, "combat") return false, "combat" end
         local k = OV.hold.key(page, set, pos)
-        if k == nil or OV.hold.db()[k] == nil then ack("unhold", false, "none") return false, "none" end
-        OV.hold.db()[k] = nil
+        if k == nil or OV.hold.db(false, tab)[k] == nil then ack("unhold", false, "none") return false, "none" end
+        OV.hold.db(false, tab)[k] = nil
         pcall(routerMacros); pcall(routerBind, "hold")
         ack("unhold", true, nil, type(k) == "number" and k or nil)
         soon(); pcall(OV.hold.tick, true)
         return true
     end,
-    holdAt = function(page, set, pos) return OV.hold.at(OV.hold.key(page, set, pos)) end,
+    holdAt = function(page, set, pos, tab) return OV.hold.at(OV.hold.key(page, set, pos), tab) end,
+    holdTab = function() return OV.hold.tabNow() end,                    -- the tab whose holds would fire now (the top bar's badges)
     holdOk = function(page, set, pos) return OV.hold.has(page, set, pos) end,            -- the place may take a hold (it has a press)
     -- the app's hold marker is down NOW (add-on code's read of the controller; the Bind box asks at the press: Book b78)
     holdMarked = function()
@@ -4990,10 +5039,10 @@ WC.padMap = {
     slotAt = function(page, set, pos)
         if BINDS.STICK[pos] then return OV.stk.view(set, pos) end      -- m150: L3 / R3 (no bar slot)
         if fixed(set, pos) then return { kind = "fixed", n = word(FIXED[pos]), pos = pos, face = FACE[pos] or nil, cf = faceRef(pos),
-                                         h = OV.hold.ref(OV.hold.at("f" .. pos)) } end                  -- m190: its hold spell
+                                         h = OV.hold.ref(OV.hold.at("f" .. pos)), hc = OV.hold.ref(OV.hold.at("f" .. pos, "combat")) } end   -- m190: its holds
         local s = storage(page, set, pos)
         local v = OV.view(set, pos, s)                                 -- m41 / m43: the overlay's command, its fight spell
-        if type(v) == "table" then v.h = OV.hold.ref(OV.hold.at(s)) end -- m190: its hold spell
+        if type(v) == "table" then v.h = OV.hold.ref(OV.hold.at(s)); v.hc = OV.hold.ref(OV.hold.at(s, "combat")) end   -- m190: its holds
         return v
     end,
     -- m34 a game binding onto a button (out of combat; the place must allow it): stored for the character, the router binds it
@@ -8758,6 +8807,19 @@ end
 -- back. Two of the game's own holds keep their button: the bare A while mounted, flying or swimming (Jump / ascend is held there) and,
 -- out of combat, the bare X while the game has something to interact with (its Interact, and its hold, on what is there). Sent when
 -- it changes (and every 15 s: an app that came up mid-game), on a 0.25 s ticker; read only.
+-- the tab a press of router button [b] takes its source from NOW (the router's own fight switch, as its snippet decides slotfight:
+-- [combat] or an attack running, not given back by B; Combat controls on), or of the game now without one
+function OV.hold.tabOf(b)
+    if not combatOn() then return "normal" end
+    if b then
+        local st = TS(function() return b:GetAttribute("wc-state") end)
+        local pre = TB(function() return b:GetAttribute("wc-pre") end) == true
+        local given = TB(function() return b:GetAttribute("wc-given") end) == true
+        return ((st == "fight" or pre) and not given) and "combat" or "normal"
+    end
+    return (fighting() and not face.given) and "combat" or "normal"
+end
+function OV.hold.tabNow() return OV.hold.tabOf(face.buttons[6] or face.buttons[8] or face.buttons[5]) end
 function OV.hold.mapNow()
     if OV.hold.bound then return nil, "bound" end
     if not OV.hold.usable() then return nil, "off" end
@@ -8774,7 +8836,7 @@ function OV.hold.mapNow()
         end
         return table.concat(all, ","), "box"
     end
-    if next(OV.hold.db()) == nil then return nil, "none" end
+    if next(OV.hold.db(false, "normal")) == nil and next(OV.hold.db(false, "combat")) == nil then return nil, "none" end
     local bars = routerBars()
     local fight = inCombat()
     local air = TB(function() return IsMounted() end) == true or TB(function() return IsFlying() end) == true
@@ -8782,13 +8844,14 @@ function OV.hold.mapNow()
     local soft = not fight and TB(function() return UnitExists("softinteract") end) == true
     local out = {}
     for pos = 1, 8 do
-        local b = (FACE[pos] and face.buttons[pos]) or (pos == 7 and R.bbtn) or (pos <= 4 and R.dbtn[pos]) or nil
+        local b = (pos ~= 7) and ((FACE[pos] and face.buttons[pos]) or (pos <= 4 and R.dbtn[pos])) or nil   -- never B
         local key = R.keys[pos]
         local carried = b and key and TS(function() return GetBindingAction(key, true) end) == routerAct(b:GetName())
         if carried and TS(function() return b:GetAttribute("wc-mode") end) ~= "room" then
+            local tab = OV.hold.tabOf(b)                                -- PER TAB: the state this button's press uses now
             for si, lay in ipairs(OV.hold.LAYN) do
                 local anchor = ({ "top", "left", "right", "bottom" })[si]
-                local has = (anchor == "top" and pos >= 5) and OV.hold.at("f" .. pos) or nil
+                local has = (anchor == "top" and pos >= 5) and OV.hold.at("f" .. pos, tab) or nil
                 if not has then
                     local list, slot = bars[anchor] or {}, nil
                     for i = #list, 1, -1 do
@@ -8798,7 +8861,7 @@ function OV.hold.mapNow()
                             break
                         end
                     end
-                    has = (slot and slot > 0) and OV.hold.at(slot) or nil
+                    has = (slot and slot > 0) and OV.hold.at(slot, tab) or nil
                 end
                 if has and anchor == "top" and pos == 8 and air then has = nil end
                 if has and anchor == "top" and pos == 5 and soft then has = nil end
@@ -8813,15 +8876,18 @@ end
 -- dropped with it, out of combat, once the bars are loaded (a login's first reads are empty): store, router texts, keys
 function OV.hold.sweep()
     if inCombat() or not barsLoaded() then return false end
-    local t = OV.hold.db()
     local gone = false
+    for _, tab in ipairs(OV.hold.TABS) do
+    local t = OV.hold.db(false, tab)
     for k, e in pairs(t) do
         local keep
-        if type(k) == "number" then
+        if OV.hold.noB(k, e) then keep = false                          -- never on B: a saved one goes
+        elseif type(k) == "number" then
             keep = type(e) == "table" and type(e.set) == "number" and type(e.pos) == "number"
                 and (function() local ok, v = pcall(OV.view, e.set, e.pos, k); return ok and type(v) == "table" and v.kind ~= nil and v.kind ~= "none" end)()
         else keep = type(k) == "string" and k:match("^f[5-8]$") ~= nil end
         if not keep then t[k] = nil; gone = true end
+    end
     end
     if gone then pcall(routerMacros); pcall(routerBind, "hold"); soon() end
     return gone
@@ -8855,9 +8921,10 @@ function OV.hold.cds(cast)
     local now, learned, changed = GetTime(), cdLearned(), false
     local page = gamePage()
     local seen = {}
+    local tab = OV.hold.tabNow()                                        -- PER TAB: the holds that would fire now
     for set = 1, SETS do
         for pos = 1, POSITIONS do
-            local e = OV.hold.at(OV.hold.key(page, set, pos))
+            local e = OV.hold.at(OV.hold.key(page, set, pos), tab)
             local c = e and ((OV.ftKind(e) == "spell" and e) or (OV.ftKind(e) == "macro" and OV.macSpell(e.n))) or nil
             local place = OV.hold.LAYN[set] .. ":" .. pos
             local cur = OV.hold.cdNow[place]

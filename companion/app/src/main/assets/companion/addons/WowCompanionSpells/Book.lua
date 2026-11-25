@@ -768,7 +768,7 @@ function UNDO.holdPlace(b, key, probe)
     if type(pm) ~= "table" or type(pm.putHold) ~= "function" then ack(false, b.id, "failed", nil, probe) return "failed" end
     local kind, v = "spell", b.slot
     if b.item then kind, v = "item", b.item elseif b.mac then kind, v = "macro", b.mac end
-    local okp, ok, why = pcall(pm.putHold, gamePage(), set, pos, kind, v)
+    local okp, ok, why = pcall(pm.putHold, gamePage(), set, pos, kind, v, b.fight and "combat" or "normal")   -- PER TAB: the box's tab
     if okp and ok then
         ack(true, b.id, nil, { pg = gamePage(), b = set, p = pos, hold = true }, probe)
         return nil
@@ -1996,8 +1996,9 @@ for k = 0, 1 do P3[20 + k] = function() local pm = WC.padMap; if type(pm) == "ta
 for k = 0, 1 do P3[22 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.combatTop) == "function" then pcall(pm.combatTop, k == 1) end end end
 -- b77 (PadMap m187): "Cast bar in fights" Bottom screen / Top screen for this character, codes 24 / 25 (ActionBar nbar13, Hub hub76); no room, no controller needed
 for k = 0, 1 do P3[24 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.combatCastTop) == "function" then pcall(pm.combatCastTop, k == 1) end end end
--- b79 (PadMap m190, PadTabCtl p60): the Controller room's "Hold spell" button by touch, code 26 = its hold chooser (as Y there)
-P3[26] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end
+-- b79 (PadMap m190, PadTabCtl p60): the Controller room's "Bind hold" button by touch, code 28 = its hold chooser (as Y there; the
+-- 1528 integration's number: 26 / 27 went to another branch)
+P3[28] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end
 if type(pad) == "table" and type(pad.op) == "function" then
     pcall(pad.op, "padtab", "padtab", function(_, col)
         local fn = type(col) == "number" and PADTAB[col]
