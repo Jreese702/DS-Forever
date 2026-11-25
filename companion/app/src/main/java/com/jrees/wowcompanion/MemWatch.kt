@@ -757,10 +757,37 @@ object MemWatch {
     internal fun mb(kb: Long) = (kb + 512) / 1024
     internal fun mbB(b: Long) = (b + 512 * 1024) / (1024 * 1024)
 
+    /**
+     * TEST BUILD 1529 (the user's pick 2026-11-24, "8 GB memory fixes" = "... read our own memory less often"): Debug.getMemoryInfo walks
+     * DS Forever's own memory map (its smaps: ~500 MB of mappings, holding our process's map lock while it walks - every allocation of the
+     * bottom screen waits on it). While the game is in the world it is read every [MEMINFO_WORLD_MS]; in between, the 5 s line keeps the
+     * last split and says how old it is, with our resident size from the status file (no walk): ", split 15 s old, own rss 612 MB".
+     * Out of the world (the menus, character select, the launch, a load) every line, as before. The native heap, free memory, swap and
+     * the killer's numbers stay every line (no walk).
+     */
+    const val MEMINFO_WORLD_MS = 30_000L
+    /** a fresh Debug.getMemoryInfo is due (pure: the tests): none yet, out of the world, or [MEMINFO_WORLD_MS] since the last */
+    fun memInfoDue(nowMs: Long, lastAtMs: Long, inWorld: Boolean): Boolean =
+        lastAtMs <= 0L || !inWorld || nowMs - lastAtMs >= MEMINFO_WORLD_MS || nowMs < lastAtMs
+    /** the line's note for a kept split (pure): ", split 15 s old, own rss 612 MB"; "" for a fresh one */
+    fun splitNote(fresh: Boolean, ageMs: Long, rssKb: Long?): String =
+        if (fresh) "" else ", split ${ageMs.coerceAtLeast(0L) / 1000} s old" + (rssKb?.let { ", own rss ${mb(it)} MB" } ?: "")
+    @Volatile private var lastMi: Debug.MemoryInfo? = null
+    @Volatile private var miAt = 0L
+    /** our own resident size (kB) from /proc/self/status: VmRSS, no page walk; null = unreadable */
+    private fun ownRssKb(): Long? = runCatching {
+        java.io.File("/proc/self/status").readLines().firstOrNull { it.startsWith("VmRSS:") }
+            ?.substringAfter(':')?.trim()?.split(SPACES)?.firstOrNull()?.toLongOrNull()
+    }.getOrNull()
+
     /** one line: "pss 1187 MB (java 29, native 974, gfx 146, code 19) heap 1061/1179 MB | minimap 22, icons 9, ... | art kit, game up" */
     fun line(): String {
-        val mi = Debug.MemoryInfo()
-        Debug.getMemoryInfo(mi)
+        val nowUp = SystemClock.uptimeMillis()
+        val inWorld = runCatching { worldNow().let { it.first && !it.second } }.getOrDefault(false)     // in the world, no load up
+        val kept = lastMi
+        val fresh = kept == null || memInfoDue(nowUp, miAt, inWorld)
+        val mi = if (fresh) Debug.MemoryInfo().also { Debug.getMemoryInfo(it); lastMi = it; miAt = nowUp } else kept!!
+        val split = splitNote(fresh, nowUp - miAt, if (fresh) null else ownRssKb())
         fun stat(k: String) = mi.getMemoryStat(k)?.toLongOrNull() ?: 0L
         val pss = mi.totalPss.toLong()
         lastPssMb = mb(pss)
@@ -786,7 +813,8 @@ object MemWatch {
         }.joinToString(", ")
         val rt = Runtime.getRuntime()
         val low = lowKb; lowKb = -1L                                  // the low since the last line, then the next window
-        val dev = device() + if (l8) gameAge(gameSample?.second, SystemClock.uptimeMillis()) else ""
+        // 1529: Light 8's game age counts from the game's last read of any kind (the status file's counters every 30 s, a walk at a relief)
+        val dev = device() + if (l8) gameAge(gameReadAt, SystemClock.uptimeMillis()) else ""
         runCatching {
             val epoch = System.currentTimeMillis() / 1000
             val gpuMb = gpuBytes()?.let { mbB(it) } ?: -1L
@@ -805,8 +833,8 @@ object MemWatch {
             if (trimAt > 0L) SystemClock.uptimeMillis() - trimAt else 0L, lmk)
         val bm = beatMax; beatMax = 0L                                // issue #230: the main thread's worst beat and touch since the last line
         val lag = listOf(beatNote(bm), runCatching { TouchLag.take() }.getOrDefault("")).filter { it.isNotEmpty() }.joinToString(", ")
-        if (lag.isNotEmpty()) return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more, $lag"
-        return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more"
+        if (lag.isNotEmpty()) return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more$split, $lag"
+        return "pss ${mb(pss)} MB ($parts) $heap | $dev | $caches | $doing | $more$split"
     }
 
     /**
@@ -831,17 +859,24 @@ object MemWatch {
      * (smaps_rollup holds that process's memory-map lock while it walks, and Wine / box64 map and unmap all the time). Now the 30 s
      * trend is the kernel's own counters from the status file the walk already read (RssAnon + RssShmem: no walk) - "game 3900 MB
      * (13, rss)" - and the exact walk ("game 2850 MB (13, pss 42 ms)", timed) runs only while this says so (the host: the add-ons are
-     * silent, so the add-ons' silence check reads the same PSS as before, AddonSilence.WorldByMemory), on Light 8 (its game age counts
-     * from the walk, as before), and at each relief ([gameWalkNote]). Only a walk's number is a [gameSample]. Default (no host): walk.
+     * silent, so the add-ons' silence check reads the same PSS as before, AddonSilence.WorldByMemory) and at each relief ([gameWalkNote]);
+     * Light 8 forced it every 30 s until 1529 (below). Only a walk's number is a [gameSample]. Default (no host): walk.
      */
     @Volatile var gameWalkWanted: () -> Boolean = { true }
     @Volatile private var gameHow = ""
+    /**
+     * TEST BUILD 1529 (the user's pick 2026-11-24, "8 GB memory fixes" = "Drop the 30 s game memory walk"): Light 8 no longer forces the
+     * walk every 30 s - the 8 GB Thors read the status file's counters like every other Thor (the walk holds the game's memory-map lock
+     * while it runs: a possible hitch every 30 s, on the Thors with the least room). The walk runs when the host asks (the add-ons are
+     * silent) and at each relief, as on the others. Light 8's game age is now the age of the last read of either kind ([gameReadAt])
+     */
+    @Volatile private var gameReadAt: Long? = null
     private fun device(): String {
         val now = android.os.SystemClock.uptimeMillis()
         if (now - gameAt >= GAME_EVERY_MS || gameAt == 0L) {
             gameAt = now
-            val walk = light8() || runCatching { gameWalkWanted() }.getOrDefault(true)
-            runCatching { gameNow(walk); if (walk) gameSample = gameMb to now }
+            val walk = runCatching { gameWalkWanted() }.getOrDefault(true)
+            runCatching { gameNow(walk); gameReadAt = now; if (walk) gameSample = gameMb to now }
         }
         val mem = runCatching { java.io.File("/proc/meminfo").readLines() }.getOrDefault(emptyList())
         fun kb(k: String) = mem.firstOrNull { it.startsWith("$k:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()
@@ -886,7 +921,7 @@ object MemWatch {
         val t0 = now
         gameNow(true)
         if (gameN == 0) return@runCatching ""
-        gameAt = now; gameSample = gameMb to now
+        gameAt = now; gameSample = gameMb to now; gameReadAt = now
         "game pss $gameMb MB ($gameN, walk ${SystemClock.uptimeMillis() - t0} ms)"
     }.getOrDefault("")
 }

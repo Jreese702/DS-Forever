@@ -224,7 +224,8 @@ object PerformanceTileModel {
             s.lighterFixed -> "Lighter mode: always on for this Thor"
             s.lowGfxChanged -> "Low-memory graphics: from the next game start"
             s.vramChanged -> "Video memory cap: from the next game start"
-            s.pageOutChanged -> "Compress idle memory, the game's too: from the next game start"
+            s.pageOutChanged -> if (GamePageOut.on) "Compress idle memory, the game's too: from the next game start"
+                else "Compress idle memory: from the next game start"
             else -> ""
         }
         INDOOR -> listOfNotNull(s.progress.takeIf { it.isNotEmpty() }, s.terrain).joinToString(" · ")

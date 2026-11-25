@@ -291,7 +291,7 @@ class Light8Test {
         assertTrue(mem.contains("val swp = mb(stat(\"summary.total-swap\"))"))
         assertTrue(mem.contains("sources.toList() + if (l8) sources8.toList() else emptyList()"))
         assertTrue(mem.contains("light8Mark(l8)?.let { add(it) }"))
-        assertTrue(mem.contains("val dev = device() + if (l8) gameAge(gameSample?.second, SystemClock.uptimeMillis()) else \"\""))
+        assertTrue(mem.contains("val dev = device() + if (l8) gameAge(gameReadAt, SystemClock.uptimeMillis()) else \"\""))
         // every warning Android sends is logged (test build 1516's trimmed(), at every level)
         val trimmed = mem.substring(mem.indexOf("fun trimmed(level: Int)"), mem.indexOf("fun pressure(level: Int)"))
         assertTrue(trimmed.contains("trimLine(\"trim from Android: \${trimName(level)}\""))

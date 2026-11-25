@@ -193,8 +193,10 @@ class MemKillerNumbersTest {
         // the page walk (smaps_rollup) only when [walk]: the host's silence, Light 8, a relief; the counters otherwise
         assertTrue(mem.contains("val v = if (walk) runCatching { java.io.File(d, \"smaps_rollup\").readLines() }"))
         assertTrue(mem.contains("else statusKb(st)"))
-        assertTrue(mem.contains("val walk = light8() || runCatching { gameWalkWanted() }.getOrDefault(true)"))
-        assertTrue(mem.contains("runCatching { gameNow(walk); if (walk) gameSample = gameMb to now }"))   // only a walk feeds the silence check
+        // 1529 (the user's pick 2026-11-24, "Drop the 30 s game memory walk"): Light 8 no longer forces it
+        assertTrue(mem.contains("val walk = runCatching { gameWalkWanted() }.getOrDefault(true)"))
+        assertFalse(mem.contains("light8() || runCatching { gameWalkWanted() }"))
+        assertTrue(mem.contains("runCatching { gameNow(walk); gameReadAt = now; if (walk) gameSample = gameMb to now }"))   // only a walk feeds the silence check
         val host = File(src, "CompanionHost.kt").readText()
         assertTrue(host.contains("MemWatch.gameWalkWanted = { silence.silent }"))
         assertTrue(host.contains("MemWatch.gameWalkWanted = { true }"))
