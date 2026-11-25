@@ -333,9 +333,13 @@ object HomeSettings {
             HomeTab.PARTY -> prefs?.getBoolean(KEY_CAST_PARTY, true) ?: true
             HomeTab.OUT -> true
         })
+        // RULING B (the user's pick 2026-11-25, "Keep my pick here too"): a Party mode bar of its own (set on its tab: partyPicked) stays
+        // where it was put - Settings' bar to another place never carries it along (a following one moves with Out of combat's; Off: [castEverywhere])
+        fun kept(t: HomeTab): Boolean = t == HomeTab.PARTY && l.partyPicked && l.partyTab?.let { it.cast != HomeLayout.CastDock.OFF } == true
         // (Out of combat first: a fight tab still its copy reads its other places from it - only the bar's place changed there)
         return HomeTab.values().fold(l) { r, t ->
-            r.withOwn(t, r.own(t).let { it.copy(places = it.places.copy(cast = if (t == HomeTab.OUT || on(t)) d else HomeLayout.CastDock.OFF)) })
+            if (kept(t)) r
+            else r.withOwn(t, r.own(t).let { it.copy(places = it.places.copy(cast = if (t == HomeTab.OUT || on(t)) d else HomeLayout.CastDock.OFF)) })
         }
     }
     /** tab [t]'s bar on (at the Out of combat tab's place, else under the chat) or Off, nothing else of any tab changed; true = the

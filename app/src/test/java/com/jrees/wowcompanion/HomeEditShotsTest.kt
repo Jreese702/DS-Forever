@@ -1775,7 +1775,9 @@ class HomeEditShotsTest {
         touch(p, MotionEvent.ACTION_DOWN, x1, y1)
         for (i in 1..12) { touch(p, MotionEvent.ACTION_MOVE, x1 - 52f * i, y1 - 48f * i); settle(2) }
         touch(p, MotionEvent.ACTION_UP, x1 - 52f * 12, y1 - 48f * 12); settle(40)
-        assertEquals(classic, HomeSettings.layout)
+        // (ruling B, the user's pick 2026-11-25 "Keep my pick here too": moved on the Party mode tab, the list's place is Party mode's own
+        // even back above the chat, where Out of combat has it)
+        assertEquals(classic.copy(partyTab = HomeLayout.TabPlaces.of(classic), partyPicked = true), HomeSettings.layout)
         party = boxes(p.home).getValue("PARTY")
         assertEquals(0f, party.left, 0.5f)
         assertEquals(party.bottom + PartyLayout.CHAT_GAP, boxes(p.home).getValue("CHAT").top, 0.5f)

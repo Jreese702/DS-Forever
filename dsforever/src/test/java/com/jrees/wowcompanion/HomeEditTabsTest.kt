@@ -83,6 +83,12 @@ class HomeEditTabsTest {
         assertEquals("Party mode's pick back on In combat's value: still its own", HomeLayout.FightCast.BOTTOM, pick.partyCast)
         assertEquals(pick, HomeLayoutJson.parse(HomeLayoutJson.json(pick)))
         assertEquals(HomeLayout.FightCast.BOTTOM, pick.copy(fightCast = HomeLayout.FightCast.TOP).forTab(P).fightCast)
+        // ruling B (the user's pick 2026-11-25, "Keep my pick here too"): NOT Party mode's places either - set back to Out of combat's,
+        // they are still its own (In combat's are folded as before)
+        val pp = classic.onTab(P) { it.copy(cast = HomeLayout.CastDock.ACROSS) }.onTab(P) { it.copy(cast = HomeLayout.CastDock.UNDER_CHAT) }
+        assertEquals("Party mode's places back on Out of combat's: still its own", HomeLayout.TabPlaces.of(classic), pp.partyTab)
+        assertEquals(pp, HomeLayoutJson.parse(HomeLayoutJson.json(pp)))
+        assertEquals(HomeLayout.CastDock.UNDER_CHAT, pp.copy(cast = HomeLayout.CastDock.ACROSS).forTab(P).cast)
         val recs = listOf(classic, a, classic.onTab(P) { it.copy(fight = HomeLayout.FightBand.GROW, grow = true, card = HomeLayout.CardDock.OFF) },
             classic.onTab(O) { it.swapped() }.onTab(C) { it.copy(chatShare = HomeLayout.Share.TWO_THIRDS, fightCast = HomeLayout.FightCast.TOP) }
                 .withBadges(C, listOf("gold", "hearth")).withBadges(P, emptyList()))

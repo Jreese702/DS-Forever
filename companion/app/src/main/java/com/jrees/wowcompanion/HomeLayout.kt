@@ -90,6 +90,13 @@ data class HomeLayout(
      *  is its own Bottom screen - its fight grows the band (HomeLayoutSolver.big: R0 lifted for this pick only; a record's own Grow laid
      *  with Party mode on keeps R0, as before the tabs) */
     val partyBand: Boolean = false,
+    /** RULING B (the user's pick 2026-11-25, "Keep my pick here too (Recommended)": anything set on the Party mode tab stays its own,
+     *  even when it matches Out of combat): the Party mode tab's places ([partyTab]) were SET on that tab (Edit Home's Party mode tab,
+     *  [withTab] of that tab with its places changed) - Party mode's own from then on, never folded into "follows Out of combat"
+     *  ([canonical]) even when they equal Out of combat's, never carried along by Settings' bar (HomeSettings.barEverywhere). A copy
+     *  another tab's change made ("Fully separate": [withTab] keeps a following tab where it was) is not a pick: it folds back into
+     *  following once it equals Out of combat's places again, as before. False with [partyTab] null; Reset Home to Classic clears it */
+    val partyPicked: Boolean = false,
 ) {
     /**
      * A FIGHT TAB'S OWN PLACES (edit tabs, 2026-11-24): the page's places (chat side and width, the quest card, the tap-to-cast bar and
@@ -128,6 +135,7 @@ data class HomeLayout(
         // "KEEP MY PICK" (the user's ruling, 2026-11-25): a Combat bars / Cast bar that still follows In combat (null) stays following
         // when [o] carries what it follows now (every road that writes the tab's places back reads it through [own]); anything else is
         // Party mode's own - kept, even when it equals In combat's ([canonical] never folds it)
+        // (its places: [canonical] folds a copy equal to Out of combat's back into following - never a pick, [partyPicked])
         HomeTab.PARTY -> copy(partyTab = o.places,
             partyFight = if (o.fight == null || (partyFight == null && o.fight == partyFightNow)) partyFight else o.fight,
             partyCast = if (o.fightCast == null || (partyCast == null && o.fightCast == partyCastNow)) partyCast else o.fightCast)
@@ -162,8 +170,10 @@ data class HomeLayout(
         val mine = Own(TabPlaces(page.chatSide, page.chatShare, page.card, page.cast, page.party, page.grow && t != HomeTab.OUT,
             (if (t == HomeTab.OUT) null else own(t).places.badges)),
             if (t == HomeTab.OUT) null else page.fight, if (t == HomeTab.OUT) null else page.fightCast)
+        // RULING B (2026-11-25, "Keep my pick here too"): the Party mode tab's places changed on that tab are its pick ([partyPicked])
+        val picked = partyPicked || (t == HomeTab.PARTY && mine.places != before.getValue(HomeTab.PARTY).places)
         var r = copy(rest = page.rest, xpBar = page.xpBar, rooms = page.rooms, hidden = page.hidden, extras = page.extras,
-            partyGrow = page.partyGrow, partySize = page.partySize).withOwn(t, mine)
+            partyGrow = page.partyGrow, partySize = page.partySize, partyPicked = picked).withOwn(t, mine)
         for (o in HomeTab.values()) if (o != t && r.own(o) != before.getValue(o)) r = r.withOwn(o, before.getValue(o))
         return r
     }
@@ -177,17 +187,20 @@ data class HomeLayout(
     fun withBadges(t: HomeTab, b: List<String>?): HomeLayout =
         if (t == HomeTab.OUT) this else withOwn(t, own(t).let { it.copy(places = it.places.copy(badges = b)) })
 
-    /** one form for one meaning: a fight tab that is the Out of combat places' own copy (nothing of its own) is null. Party mode's
-     *  Combat bars / Cast bar are NOT folded: one set on its tab is Party mode's own even when it equals what it would follow (the
-     *  user's ruling 2026-11-25, "Keep my pick": "Anything you set on the Party mode tab stays its own, even when it happens to match In
-     *  combat. Settings > Home changes In combat only." - folded, a later Settings > Home change carried it along); null = never set,
-     *  follows In combat */
+    /** one form for one meaning: the In combat tab that is the Out of combat places' own copy (nothing of its own) is null. Party
+     *  mode's Combat bars / Cast bar are NOT folded: one set on its tab is Party mode's own even when it equals what it would follow
+     *  (the user's ruling 2026-11-25, "Keep my pick": "Anything you set on the Party mode tab stays its own, even when it happens to
+     *  match In combat. Settings > Home changes In combat only." - folded, a later Settings > Home change carried it along); null =
+     *  never set, follows In combat. RULING B (the user's pick 2026-11-25, "Keep my pick here too (Recommended)"): nor are its PLACES
+     *  once SET on its tab ([partyPicked]) - Party mode's own even when they equal Out of combat's (folded, a later Out of combat change
+     *  in Settings carried them along); a copy another tab's change made folds as before. null = follows Out of combat */
     fun canonical(): HomeLayout {
         val base = TabPlaces.of(this)
         val c = combat?.takeIf { it != base }
-        val p = partyTab?.takeIf { it != base }
-        return if (c === combat && p === partyTab && !grow && !partyBand) this
-            else copy(combat = c, partyTab = p, grow = false, partyBand = false)
+        val p = partyTab?.takeIf { it != base || partyPicked }
+        val pk = partyPicked && p != null
+        return if (c === combat && p === partyTab && pk == partyPicked && !grow && !partyBand) this
+            else copy(combat = c, partyTab = p, partyPicked = pk, grow = false, partyBand = false)
     }
 
     /** every tab's bar at dock [d] (the one-time question's Yes, the Controller room's Turn on: "the bar on in all three tabs at the same
@@ -283,7 +296,8 @@ data class HomeLayout(
             rest = HomeRest.DIAMONDS, cast = bar(cast),
             fight = if (fight == FightBand.TOP) FightBand.GROW else fight, xpBar = true, rooms = RoomBar.DEFAULT, hidden = emptyList(),
             party = PartyDock.ABOVE_CHAT, extras = ClockBand.DEFAULT, fightCast = FightCast.BOTTOM, partyGrow = PartyGrow.FIGHTS,
-            partySize = PartySize.GROW, grow = false, combat = tab(combat), partyTab = tab(partyTab), partyFight = null, partyCast = null)
+            partySize = PartySize.GROW, grow = false, combat = tab(combat), partyTab = tab(partyTab), partyFight = null, partyCast = null,
+            partyPicked = false)                                          // (ruling B: no pick after a reset - a tab equal to it follows)
             .canonical()
     }
 
@@ -339,13 +353,16 @@ object HomeLayoutJson {
      *  KEY_TABS_MIGRATED), with Party mode's Combat bars following In combat's (R0). Nothing else of the record is lost */
     private fun tabs(o: JSONObject, l: HomeLayout, full: Boolean) {
         for ((pre, t) in listOf("c." to HomeTab.COMBAT, "p." to HomeTab.PARTY)) {
+            // RULING B (2026-11-25, "Keep my pick here too"): a Party mode pick ([HomeLayout.partyPicked]) writes all its places (one
+            // equal to Out of combat's has no key that differs) and "p.pick"; a copy only the keys that differ, as before
+            val all = full || (t == HomeTab.PARTY && l.partyPicked)
             val own = l.own(t).places
             val base = HomeLayout.TabPlaces.of(l)
-            if (full || own.chatSide != base.chatSide) o.put(pre + "chat", own.chatSide.name)
-            if (full || own.chatShare != base.chatShare) o.put(pre + "share", own.chatShare.name)
-            if (full || own.card != base.card) o.put(pre + "card", own.card.name)
-            if (full || own.cast != base.cast) o.put(pre + "cast", own.cast.name)
-            if (full || own.party != base.party) o.put(pre + "party", own.party.name)
+            if (all || own.chatSide != base.chatSide) o.put(pre + "chat", own.chatSide.name)
+            if (all || own.chatShare != base.chatShare) o.put(pre + "share", own.chatShare.name)
+            if (all || own.card != base.card) o.put(pre + "card", own.card.name)
+            if (all || own.cast != base.cast) o.put(pre + "cast", own.cast.name)
+            if (all || own.party != base.party) o.put(pre + "party", own.party.name)
             if (full || own.grow) o.put(pre + "grow", own.grow)
             own.badges?.let { b -> o.put(pre + "badges", org.json.JSONArray(b)) } ?: run { if (full) o.put(pre + "badges", "") }
         }
@@ -353,6 +370,7 @@ object HomeLayoutJson {
         // so the store's lay-on never turns a following tab into a pick, and lays an edit's pick on or a reset's follow back)
         l.partyFight?.let { o.put("p.fight", it.name) }
         l.partyCast?.let { o.put("p.fcast", it.name) }
+        if (l.partyPicked) o.put("p.pick", true)
     }
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {
@@ -388,7 +406,7 @@ object HomeLayoutJson {
     private fun tabsOf(o: JSONObject, base: HomeLayout): HomeLayout {
         fun <E : Enum<E>> en(values: Array<E>, key: String, def: E): E = o.optString(key, "").let { w -> values.firstOrNull { it.name == w } } ?: def
         fun places(pre: String): HomeLayout.TabPlaces? {
-            if (o.keys().asSequence().none { it.startsWith(pre) && it != "p.fight" && it != "p.fcast" }) return null
+            if (o.keys().asSequence().none { it.startsWith(pre) && it != "p.fight" && it != "p.fcast" && it != "p.pick" }) return null
             val b = HomeLayout.TabPlaces.of(base)
             val badges = o.optJSONArray(pre + "badges")?.let { a -> (0 until a.length()).map { a.optString(it, "") }
                 .filter { it in HomeEditModel.EXTRA_KEYS }.distinct() }
@@ -396,7 +414,8 @@ object HomeLayoutJson {
                 en(HomeLayout.CardDock.values(), pre + "card", b.card), en(HomeLayout.CastDock.values(), pre + "cast", b.cast),
                 en(HomeLayout.PartyDock.values(), pre + "party", b.party), o.optBoolean(pre + "grow", false), badges)
         }
-        return base.copy(combat = places("c."), partyTab = places("p."),
+        val pt = places("p.")
+        return base.copy(combat = places("c."), partyTab = pt, partyPicked = pt != null && o.optBoolean("p.pick", false),
             partyFight = if (o.has("p.fight")) en(HomeLayout.FightBand.values(), "p.fight", base.partyFightNow) else null,
             partyCast = if (o.has("p.fcast")) en(HomeLayout.FightCast.values(), "p.fcast", base.partyCastNow) else null).canonical()
     }
