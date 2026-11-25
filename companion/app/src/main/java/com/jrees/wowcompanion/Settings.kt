@@ -232,6 +232,15 @@ object Settings {
         set(v) { if (v != vramCap) { prefs?.edit()?.putBoolean("vramCap", v)?.apply(); changed() } }
 
     /**
+     * RENDER SIZE (test build 1529, the user's pick 2026-11-24: "Default stays full size; players on a base Thor can pick 900p or 720p
+     * for more FPS"; RenderSize): the container screen's size for the game, "1600x900" / "1280x720"; "" (unset) = Full size, the
+     * profile's own as before. This Thor's own setting; from the next Play.
+     */
+    var renderSize: String
+        get() = prefs?.getString("renderSize", "") ?: ""
+        set(v) { if (v != renderSize) { prefs?.edit()?.putString("renderSize", v)?.apply(); changed() } }
+
+    /**
      * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
      * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
      * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered"
