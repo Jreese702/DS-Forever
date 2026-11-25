@@ -186,8 +186,8 @@ def party_on(L, on=True):
 
 # ================================================================ a. versions, the note, no trace
 check('local CBV = "cb16"' in BLOCK and "cb15 THE PARTY MODE LAYER" in AB, "a. ActionBar cb16 (cb15's header note kept)")
-check('local CV = "p61"' in SRC["padtabctl"] and "p56 SITUATIONS FIRST" in SRC["padtabctl"], "a. PadTabCtl p56 and its note")
-check('local BV = "b83"' in SRC["book"] and "b71 SITUATIONS FIRST" in SRC["book"], "a. Book b71 and its note")
+check('local CV = "p63"' in SRC["padtabctl"] and "p56 SITUATIONS FIRST" in SRC["padtabctl"], "a. PadTabCtl p56 and its note")
+check('local BV = "b84"' in SRC["book"] and "b71 SITUATIONS FIRST" in SRC["book"], "a. Book b71 and its note")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
       and 'EditMacro' not in code and 'PlaceAction' not in code and 'SetCVar' not in code and 'PickupAction' not in code

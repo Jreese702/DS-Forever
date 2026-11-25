@@ -171,8 +171,12 @@ object PadMapModel {
         /** m177 (PadTabCtl p58): the player's own saved macros (by name, the icon our buttons show), the chooser's Macros grid in the
          *  add-on's order (its touch page counts alike); empty = none or an add-on before m177 */
         val macs: List<Mac> = emptyList(),
-        /** m190 HOLD TO CAST: hold spells may be set (the add-on's probe saw the Guide marker, unbound); null = an add-on before m190 */
+        /** m190 HOLD TO CAST: hold spells may be set (m194: always, no probe); null = an add-on before m190 */
         val holdOn: Boolean? = null,
+        /** m194: the hold time the add-on's hold clock counts now (2 / 3 / 4 looks: the padmap's `hold.n`); null = an add-on before m194 */
+        val holdN: Int? = null,
+        /** m194: the looks the add-on's hold clock was given since its load (`hold.lk`; grows while presses are kept: the device check) */
+        val holdLooks: Int? = null,
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -260,6 +264,8 @@ object PadMapModel {
             items = objects(m.optJSONArray("items")).mapNotNull { o -> extra(o) },
             macs = objects(m.optJSONArray("macs")).mapNotNull { o -> textOrNull(o, "n")?.let { Mac(it, o.optInt("i", 0)) } },   // m177
             holdOn = m.optJSONObject("hold")?.optBoolean("on", false),                                                          // m190
+            holdN = m.optJSONObject("hold")?.optInt("n", 0)?.takeIf { it in 2..4 },                                              // m194
+            holdLooks = m.optJSONObject("hold")?.takeIf { it.has("lk") }?.optInt("lk", 0),                                        // m194
             forms = objects(m.optJSONArray("forms")).mapNotNull { o ->
                 val id = o.optInt("id", 0)
                 if (id <= 0) null else Form(o.optInt("x", 0), id, o.optString("n", ""), o.optInt("i", 0), o.optBoolean("on", false),
@@ -436,7 +442,7 @@ object PadMapModel {
         val out = HashMap<Int, FaceCd>()
         for (place in k.keys()) {
             val parts = place.split(':')
-            val key = parts.takeIf { it.size == 2 }?.let { HoldGate.keyOf(it[0], it[1].toIntOrNull() ?: 0) } ?: continue
+            val key = parts.takeIf { it.size == 2 }?.let { HoldCast.keyOf(it[0], it[1].toIntOrNull() ?: 0) } ?: continue
             val o = k.optJSONObject(place) ?: continue
             val d = o.optDouble("d", 0.0); val l = o.optDouble("l", 0.0)
             if (d > 0 && l > 0 && l <= d + 0.001) out[key] = FaceCd(d, l, false, o.optBoolean("e", false))
@@ -445,8 +451,11 @@ object PadMapModel {
     }
 
     /** m190 (the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"): the button does
-     *  something - its own spell / item / macro / command / binding, an In combat entry, or a base face's game action (PadMap holdOk) */
-    fun holdable(sl: Slot?): Boolean = sl != null && sl.pos != 7 && (sl.kind != Kind.NONE || sl.fight != null || sl.combat != null)   // never B
+     *  something - its own spell / item / macro / command, an In combat entry, or a base face's game action (PadMap holdOk). m194: never
+     *  a game binding there (Bind's "a binding on a button": its chord is the game's own command, the add-on's router never hears that
+     *  press, so a hold could never fire) and never B */
+    fun holdable(sl: Slot?): Boolean = sl != null && sl.pos != 7 && sl.kind != Kind.BIND &&
+        (sl.kind != Kind.NONE || sl.fight != null || sl.combat != null)
 
     /** m190: the hold spell at set (1-4) / position (1-8) of [map] (its slot's `h`), or null */
     fun holdAt(map: Map, set: Int, pos: Int): Ref? = slot(map, set, pos)?.hold
@@ -831,6 +840,10 @@ object PadMapModel {
      *  feat/top-castbar's swing line off / on, P3_SWING_OFF / P3_SWING_ON) */
     const val P3_HOLD = 28
     fun holdCells(): List<Pair<String, Int>> = page3(P3_HOLD)
+    /** m194 (Book b82): the hold time, page-3 codes 29 / 30 / 31 = Short / Normal / Long (the add-on's hold clock: 2 / 3 / 4 looks) */
+    const val P3_HOLD_SHORT = 29
+    const val P3_HOLD_LONG = 31
+    fun holdTimeCells(ticks: Int): List<Pair<String, Int>> = page3(P3_HOLD_SHORT + (ticks.coerceIn(2, 4) - 2))
     /** p58: Extra's category [k] (1-based, ChooserTabs.CATS) folded / opened by touch (codes 4-8) */
     fun foldCells(k: Int): List<Pair<String, Int>> = page3(3 + k.coerceIn(1, 5))
     /** movable Home (Book b74; b76 the 1515 merge: off the sticky realm question's 9-19): the DS toolbar's mirror bit for this character,
@@ -859,7 +872,8 @@ object PadMapModel {
         "key question" to P3_KEY_NEW..P3_KEY_LAST,
         "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
         "fight cast bar" to P3_CAST_OFF..P3_CAST_ON, "top bar swing" to P3_SWING_OFF..P3_SWING_ON,
-        "hold chooser" to P3_HOLD..P3_HOLD)        // m190 / Book b79 (b80: code 28, off the swing's 26)
+        "hold chooser" to P3_HOLD..P3_HOLD,       // m190 / Book b79 (b80: code 28, off the swing's 26)
+        "hold time" to P3_HOLD_SHORT..P3_HOLD_LONG)                                              // m194 / Book b82
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
     fun fightCastCells(top: Boolean): List<Pair<String, Int>> = page3(if (top) P3_CAST_ON else P3_CAST_OFF)

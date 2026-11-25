@@ -238,7 +238,10 @@ end
 local function secureAct(f, button, down)
     local t = f.a["type"]
     local hold = f.a["pressAndHoldAction"]
+    -- the button's own "useOnKeyDown" (true / false) over the game's ActionButtonUseKeyDown; none = the game's (PadMap m194's release)
+    local uk = f.a["useOnKeyDown"]
     local onDown = ACT_ON_DOWN or hold
+    if uk ~= nil then onDown = (uk and true or false) or hold end
     local act
     if (down and onDown) or ((not down) and not onDown) then act = t
     elseif (not down) and hold and f.a["typerelease"] then act = f.a["typerelease"] end

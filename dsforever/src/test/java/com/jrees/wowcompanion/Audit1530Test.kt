@@ -50,7 +50,7 @@ class Audit1530Test {
     @Test fun noHoldBadgesWhilePartyModeIsOn() {
         val home = kt("HomeView.kt")
         assertTrue(home.contains("castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false)" +
-            ".takeIf { HoldCast.usable && map.holdOn != false && !partyOnHere() }"))
+            ".takeIf { map.holdOn != false && !partyOnHere() }"))
         val changed = home.substringAfter("fun partyChanged() {").substringBefore("\n    }\n")
         assertTrue("partyChanged re-applies the badges", changed.contains("holdApply()"))
     }

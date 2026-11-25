@@ -132,7 +132,7 @@ class HomeView(
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
         // every static listener here holds this Home WEAKLY ([weakly], the 1528 blocker): a Home made again never keeps the old one
-        HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }   // m190: a held press's gold arc / the hold's flash (the gate)
+        HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }   // m194: the hold's flash on the add-on's word (its release)
         HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } })  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
         HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } })
@@ -1104,7 +1104,7 @@ class HomeView(
      *  (the 1530 audit: Party mode has no holds - PadMap's OV.hold.mapNow says "party" - so a badge there would promise nothing) */
     private fun holdApply() {
         val map = padMap ?: return
-        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false && !partyOnHere() }
+        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { map.holdOn != false && !partyOnHere() }
     }
 
     /** every CURRENT `holdcd` (PadMap m190): the hold spells' own cooldowns onto their badges */

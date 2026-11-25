@@ -117,8 +117,8 @@ object ControllerPictures {
         }
     }
 
-    /** m190 Hold time: a face button with its hold spell's badge, the gold arc filling round it (the hold time's share: Short a quarter
-     *  less than Normal, Long a third more), the chosen time written under it */
+    /** m190 Hold time: a face button with its hold spell's badge and (m195) the charge ring filling round the badge (the hold time's
+     *  share: m194's 2 / 3 / 4 looks), the hold point written beside it and, under it, that the hold spell fires on the release */
     private fun holdTime(c: Canvas, look: Look) {
         val cx = 84f; val cy = 52f; val r = 30f
         pF.color = Color.rgb(16, 16, 18); c.drawCircle(cx, cy, r + 5f, pF)
@@ -127,14 +127,23 @@ object ControllerPictures {
             val s = c.save(); path.reset(); path.addCircle(cx, cy, r, Path.Direction.CW); c.clipPath(path)
             c.drawBitmap(bm, null, RectF(cx - r, cy - r, cx + r, cy + r), pB); c.restoreToCount(s)
         }
-        val frac = when (CastSettings.holdTime) { CastSettings.HoldTime.SHORT -> 0.55f; CastSettings.HoldTime.NORMAL -> 0.73f; else -> 1f }
+        // m195: the charge ring round the small hold badge (the big button wears no arc): Long takes its whole loop, Short half of it
+        val frac = CastSettings.holdTime.ticks / 4f
         val run = if (look.t > 0f) ((look.t % 2.2f) / 1.6f).coerceIn(0f, 1f) else 0.75f
-        HoldArt.progress(c, cx, cy, r + 1f, r + 6f, run * frac / 1f, true)
+        val fill = (run / frac).coerceIn(0f, 1f)
         HoldArt.badge(c, cx - r * 0.72f, cy + r * 0.62f, 13f, Icons.get(spells[4]), -1f, lit = run > 0f)
+        HoldArt.chargeRing(c, cx - r * 0.72f, cy + r * 0.62f, 13f, fill, fill >= 1f)
         glyph(c, "a", cx + r * 0.75f, cy - r * 0.62f, 22f)
         pF.color = Color.rgb(236, 224, 196); pF.textSize = 22f; pF.textAlign = Paint.Align.LEFT
         c.drawText(HoldCast.holdWord(), 136f, cy + 8f, pF)
+        // m194: the hold spell fires when you let go - fitted to the well's width (W) in every language
+        val letGo = Tr.t(LET_GO)
+        pF.color = Color.rgb(196, 184, 160); pF.textSize = 18f
+        while (pF.textSize > 11f && pF.measureText(letGo) > W - 136f - 6f) pF.textSize -= 1f
+        c.drawText(letGo, 136f, cy + 34f, pF)
     }
+    /** m194: the Hold time tile's second line */
+    const val LET_GO = "then let go"
 
     // ---------------------------------------------------------------- Buttons
 
