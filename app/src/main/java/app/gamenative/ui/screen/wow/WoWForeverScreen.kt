@@ -101,7 +101,6 @@ fun WoWForeverScreen(
         val renderer = withContext(Dispatchers.IO) {
             runCatching { "${com.winlator.core.GPUInformation.getRenderer(context)} (${com.winlator.core.GPUInformation.getVersion(context)})" }.getOrDefault("?")
         }
-        com.jrees.wowcompanion.LauncherHooks.renderFull = gpu.screenSize          // 1529: Settings' Render size offers what is smaller
         com.jrees.wowcompanion.LauncherHooks.gpuLine = "${gpu.edition}: recommended driver ${gpu.driver}, TU_DEBUG ${gpu.tuDebug}, screen ${gpu.screenSize}; " +
             "GPU $renderer; DXVK $DXVK_VERSION, Wine $PROTON_VERSION"
     }
@@ -1307,15 +1306,7 @@ private fun prepareLaunch(context: Context, gameRoot: File, profile: GpuProfile,
     installBundledComponents(context, onStatus)
     // 2026-11-23: Settings > General > Graphics driver (Recommended = the profile's own driver, exactly as before; a test driver only
     // on the profiles that take one), logged as REQUESTED; the watch below logs what the game's processes really LOADED
-    val (driverGpu, driverLaunch) = withDriverChoice(context, profile, onStatus)
-    // 1529 RENDER SIZE (the user's pick 2026-11-24: "Default stays full size; players on a base Thor can pick 900p or 720p for more FPS";
-    // RenderSize): the container's X screen at the chosen 16:9 size (the launcher draws it scaled up to the top screen, the touch
-    // transform scales back), and Config.wtf's gxWindowedResolution the same size below. Full size / Swap screens = exactly as before
-    val renderFull = driverGpu.screenSize
-    val render = com.jrees.wowcompanion.RenderSize.effective(renderFull, com.jrees.wowcompanion.Settings.renderSize,
-        com.jrees.wowcompanion.Settings.swapScreens)
-    val gpu = if (render == renderFull) driverGpu else driverGpu.copy(screenSize = render)
-    com.jrees.wowcompanion.RenderSize.line(renderFull, render).let { Timber.i("Container screen: %s", it); com.jrees.wowcompanion.MemWatch.note("launch: $it") }
+    val (gpu, driverLaunch) = withDriverChoice(context, profile, onStatus)
     // b-dxvk-load-crash: the last run's DXVK log is kept (DXVK truncates it at start: a restart after a crash would erase it)
     runCatching { com.jrees.wowcompanion.DxvkLogs.rotate(com.jrees.wowcompanion.DxvkLogs.dir(context.dataDir)) }
     runCatching { com.jrees.wowcompanion.DxvkLogs.cacheDir(context.dataDir).mkdirs() }       // issue #12: DXVK's state cache
@@ -1342,8 +1333,7 @@ private fun prepareLaunch(context: Context, gameRoot: File, profile: GpuProfile,
         // the log names the keys cleared, never a value (a value is an account name)
         // #305 (the user's pick 2026-11-16: "force the game to fill the top screen at EVERY start"): gxMaximize 1 and gxWindowedResolution
         // the size of the screen the game shows on, at every start
-        // 1529: a smaller Render size is the game's window size too (its maximized window = the container's screen)
-        val screen = if (render != renderFull) render else gameScreenSize(context)
+        val screen = gameScreenSize(context)
         Timber.i("Config.wtf: the game's window fills its screen (gxMaximize 1, gxWindowedResolution %s)", screen ?: "1920x1080: size unread")
         // A (the user's ruling 2026-11-20): the game account the game itself marked after the last login, learned BEFORE anything is
         // written (both routes: saved login and Browser login), kept as a label in the app's private settings; never logged.

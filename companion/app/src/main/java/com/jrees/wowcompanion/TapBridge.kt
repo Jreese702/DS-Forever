@@ -232,7 +232,7 @@ object TapBridge {
         // The game fills the top screen (960x540 scaled 2x), so both must have the SAME SHAPE. A mismatch
         // means the size is wrong -- the old bug gave 1240x1080 (1.15) against the game's 1.78 -- and a tap
         // would land on the game world instead of the grid. Refuse rather than misfire.
-        if (!TapShape.sameShape(pw, ph, d.x, d.y)) {
+        if (abs(d.x.toDouble() / d.y - pw / ph) > 0.02) {
             Log.w(TAG, "refused: display ${d.x}x${d.y} does not match the game's ${pw.toInt()}x${ph.toInt()}")
             // #305 (1.0.32: "controls not working on bottom screen"; its pad said pw=1542 ph=1080 on a 1920x1080 top screen): every tap
             // refused here, so no room could take the controller - and the report never said why (TapBridge's tag is not in it)

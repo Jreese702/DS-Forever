@@ -37,8 +37,6 @@ object LauncherHooks {
     @Volatile var exitNow: ((why: String) -> Unit)? = null
     /** the container's graphics profile as the launcher picked it (the problem report's GPU / driver line), "" = not known yet */
     @Volatile var gpuLine: String = ""
-    /** 1529 (RenderSize): the launcher's profile container size ("1920x1080"), the render size's Full size; null in the app */
-    @Volatile var renderFull: String? = null
     /** the launch's last step and its result ("preparing the container", "booting", "launch failed: ..."), "" = no launch yet */
     @Volatile var launchState: String = ""
     /** a launch step (the launcher's): kept as [launchState] and as a start-up stage ([StartupTrace]) */

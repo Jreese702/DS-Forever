@@ -13,12 +13,6 @@ object TapShape {
     private var top = ""
 
     /** one refused tap: the game's [gw] x [gh] against the top screen's [dw] x [dh]; true = a pair not seen just before (log it) */
-    /**
-     * TapBridge's rule: the game's pw x ph pixels and the dw x dh display have the same shape (within 0.02 of the aspect), so a tap maps
-     * by plain scaling. Pure (RenderSizeTest: 1529's 1600x900 / 1280x720 render sizes on the 1920x1080 top screen)
-     */
-    fun sameShape(pw: Double, ph: Double, dw: Int, dh: Int): Boolean = kotlin.math.abs(dw.toDouble() / dh - pw / ph) <= 0.02
-
     @Synchronized fun refuse(gw: Int, gh: Int, dw: Int, dh: Int): Boolean {
         refused++
         val g = "${gw}x$gh"; val t = "${dw}x$dh"

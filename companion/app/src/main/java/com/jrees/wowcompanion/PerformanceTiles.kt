@@ -68,8 +68,6 @@ object PerformanceTileModel {
         val lowGfxChanged: Boolean = false,
         /** #56 G1: the video memory cap (Settings.vramCap) and whether it was changed in this visit (from the next game start) */
         val vramCap: Boolean = true, val vramChanged: Boolean = false,
-        /** 1529: the render size's choices (RenderSize: none or one = no line), the one in use, a change in this visit */
-        val renderSizes: List<String> = emptyList(), val render: Int = 0, val renderChanged: Boolean = false,
         /** 2026-11-23: Compress idle memory (Settings.pageOut, PageOut) and whether it was changed in this visit */
         val pageOut: Boolean = false, val pageOutChanged: Boolean = false,
         /** [progress] the bake's phase only (the count is the tile's value and the ring, the deferred count its own line) */
@@ -104,7 +102,7 @@ object PerformanceTileModel {
                     val off: Set<Int> = emptySet())
 
     // the lines' keys (the view's presses)
-    const val L_LIMIT = "limit"; const val L_RESTART = "restart"; const val L_RENDER = "render"
+    const val L_LIMIT = "limit"; const val L_RESTART = "restart"
     const val L_FG = "fg"; const val L_MULT = "mult"; const val L_FLOW = "flow"; const val L_PERF = "perf"; const val L_DLL = "dll"
     const val L_LIGHTER = "lighter"; const val L_LOWGFX = "lowgfx"; const val L_MAP = "homemap"; const val L_STYLE = "homestyle"
     const val L_VRAM = "vram"; const val L_PAGEOUT = "pageout"
@@ -127,8 +125,6 @@ object PerformanceTileModel {
     fun lines(id: String, s: State, deferredOpen: Boolean = false): List<Line> = when (id) {
         LIMIT -> buildList {
             add(Line(L_LIMIT, null, null, FrameGen.LIMITS.map { FrameGen.limitLabel(it) }, FrameGen.LIMITS.indexOf(s.limit), Kind.CHOICE))
-            // 1529 (the user's pick: "Render size" setting, RenderSize): only where a smaller size exists (the Thor's 1080p top screen)
-            if (s.renderSizes.size > 1) add(Line(L_RENDER, "Render size", null, s.renderSizes, s.render, Kind.CHOICE))
             if (s.limitWaits || s.fgWaits) add(restart())
         }
         FG -> buildList {
@@ -216,7 +212,6 @@ object PerformanceTileModel {
         // a waiting change: the Restart line and the hourglass say it, no line under them
         LIMIT -> when {
             s.limitWaits || s.fgWaits -> ""
-            s.renderChanged -> "Render size: from the next game start"
             s.limit > 0 && s.limit !in FrameGen.LIMITS -> "${s.limit} fps, set in the launcher's menu"
             else -> ""
         }
@@ -444,8 +439,6 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
     private var vramChanged = false
     /** Compress idle memory pressed this visit (PageOut) */
     private var pageOutChanged = false
-    /** 1529: Render size pressed this visit */
-    private var renderChanged = false
     private var progress: IndoorScheduler.Status? = null
     private var downX = 0f
     private var downY = 0f
@@ -509,8 +502,6 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             lighter = Settings.lighterMode, lighterFixed = DeviceTier.smallModel(), lowGfx = Settings.lowMemGraphics,
             mapFull = Settings.homeMapFull, mapTerrain = Settings.homeMapTerrain, lowGfxChanged = lowGfxChanged,
             vramCap = Settings.vramCap, vramChanged = vramChanged, pageOut = Settings.pageOut, pageOutChanged = pageOutChanged,
-            renderSizes = RenderSize.choices(LauncherHooks.renderFull).map { it.label }.takeIf { LauncherHooks.renderFull != null }.orEmpty(),
-            render = RenderSize.index(LauncherHooks.renderFull, Settings.renderSize), renderChanged = renderChanged,
             indoorOn = Settings.indoorBuild, ready = p?.ready ?: 0, total = p?.total ?: 0,
             buildNow = M.buildNowLine(Settings.indoorBuild, p?.phase == IndoorScheduler.Phase.DONE, up, IndoorSchedulerStep.armed),
             deferred = if (p == null || p.list.isEmpty()) 0 else maxOf(p.deferred, p.list.size),
@@ -680,7 +671,6 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
             M.L_STYLE -> Settings.homeMapTerrain = k == 0
             M.L_VRAM -> { Settings.vramCap = k == 0; vramChanged = true }
             M.L_PAGEOUT -> { Settings.pageOut = k == 0; pageOutChanged = true }
-            M.L_RENDER -> RenderSize.choices(LauncherHooks.renderFull).getOrNull(k)?.let { Settings.renderSize = it.size ?: ""; renderChanged = true }
             M.L_BUILD -> if (k == 0) { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() } else {
                 Settings.indoorBuild = false
                 IndoorKeepAlive.update(context, why = "off in Settings")         // issue 568: the quiet service goes at once
