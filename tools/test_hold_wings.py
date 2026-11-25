@@ -357,6 +357,17 @@ def shots(out):
     frame("w6_takeover_easing_back", [(bt[2], 2, "easing back")], 1)
     L.execute('TICK(0.3)')
     frame("w7_back_to_the_tap", [(bt[2], 2, "back")], 1)
+    # ruling A (the user's pick 2026-11-25, "Stay until it ends"): LT + X's hold fired with LT held, then LT let go - the bare layer on
+    # the bar keeps LT + X's hold spell on X's face until it ends
+    L.execute('''HOLDS2 = { [5] = { n = "Chain Lightning", id = 421, i = 136015 } }
+local pm = WowCompanion.padMap
+pm.holdAt = function(page, set, pos, tab) if set == 1 then return HOLDS[pos] elseif set == 2 then return HOLDS2[pos] end end
+WC.gcdRun = nil; LT = true; TICK(0.1); WC.holdFired(5, "lt"); WC.holdCast(5, "cast", 1.8); TICK(0.3)''')
+    frame("w8_lt_x_takeover_lt_held", [(bt[5], 5, "LT + X hold, LT held")], 1)
+    L.execute('LT = nil; TICK(0.3)')
+    frame("w9_lt_let_go_takeover_stays", [(bt[5], 5, "LT let go: it stays")], 1)
+    L.execute('TICK(1.6)')
+    frame("w10_cast_over_back_to_bare_x", [(bt[5], 5, "cast over: back")], 1)
     print("shots in", out)
 
 
