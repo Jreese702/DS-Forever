@@ -28,6 +28,8 @@ object FramePace {
     const val SLACK_MS = 4L
     /** a touch on the bottom screen gives full rate for this long (a pan, a drag, a press's ripple) */
     const val TOUCH_HOLD_MS = 1_500L
+    /** a paced tick not run this long after it was posted is taken as lost (its view's queue dropped it): the next request asks again */
+    const val LOST_MS = 250L
     /** the moving / fighting read is cached this long (it is asked by every animation request) */
     const val PROBE_MS = 100L
 
@@ -68,6 +70,8 @@ object FramePace {
         private val redraw: () -> Unit,
     ) {
         private var pending = false
+        /** when the pending tick was posted: one not run after [LOST_MS] (a view detached, its queue dropped) no longer blocks the view */
+        private var pendingAt = 0L
         /** the last frame drawn for a request let through (the draw's own request, at its time: the next interval counts from it) */
         private var lastAt = Long.MIN_VALUE / 2
         /** a request was let through ([firedAt]) and its draw has not asked again yet */
@@ -82,10 +86,11 @@ object FramePace {
             // (a request long after it is not that draw's: a view that stopped animating, asked again later - it counts from the let-through)
             if (fired) { fired = false; lastAt = if (now - firedAt <= INTERVAL_MS) now else firedAt }
             if (!busy(now)) { lastAt = now; fired = true; firedAt = now; vsync(); return }
-            if (pending) return                                  // coalesced: the tick already asked for covers this request
+            if (pending && now - pendingAt < LOST_MS) return       // coalesced: the tick already asked for covers this request
             val due = lastAt + INTERVAL_MS - SLACK_MS
-            if (now >= due) { lastAt = now; fired = true; firedAt = now; vsync(); return }    // nothing drawn for an interval: at once
+            if (now >= due) { pending = false; lastAt = now; fired = true; firedAt = now; vsync(); return }    // nothing drawn for an interval: at once
             pending = true
+            pendingAt = now
             pacedFrames++
             later(tick, due - now)
         }

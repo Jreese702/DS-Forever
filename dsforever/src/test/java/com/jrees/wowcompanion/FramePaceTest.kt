@@ -100,6 +100,18 @@ class FramePaceTest {
         assertTrue("at once, not a paced wait", s.dirty)
     }
 
+    @Test fun aLostTickNeverStopsTheView() {
+        // the posted tick dropped (a detached view's queue): the view still animates once LOST_MS has passed
+        var t = 0L
+        var asked = 0; var drawn = 0
+        val g = FramePace.Gate({ t }, { true }, { drawn++ }, { _, _ -> asked++ }, { drawn++ })
+        g.frame(); assertEquals(1, drawn)                     // at once (nothing drawn before)
+        t = 5; g.frame(); assertEquals(1, asked)              // paced: a tick posted ... and lost
+        t = 100; g.frame(); assertEquals("still waiting on it", 1, asked)
+        t = 5 + FramePace.LOST_MS; g.frame()
+        assertTrue("asked again or drawn ($asked, $drawn)", asked == 2 || drawn == 2)
+    }
+
     @Test fun aTouchGivesFullRateForAMoment() {
         var p = true
         FramePace.probe = { p }
