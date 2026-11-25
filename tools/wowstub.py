@@ -114,7 +114,12 @@ function CreateFrame(kind, name, parent, tpl)
     return f
 end
 function Frame:GetName() return self._name end
-function Frame:SetAttribute(k, v) if self._secure then blocked("SetAttribute " .. tostring(self._name) .. " " .. tostring(k)) end; self.a[k] = v end
+function Frame:SetAttribute(k, v)
+    if self._secure then blocked("SetAttribute " .. tostring(self._name) .. " " .. tostring(k)) end
+    self.a[k] = v
+    -- the game runs OnAttributeChanged (the script, then its hooks) on every change (PadMap m199's insecure hook on our router buttons)
+    for _, fn in ipairs(self.hooks and self.hooks.OnAttributeChanged or {}) do local ok, err = pcall(fn, self, k, v); if not ok then ERRS[#ERRS + 1] = "OnAttributeChanged: " .. tostring(err) end end
+end
 function Frame:GetAttribute(k) return self.a[k] end
 function Frame:GetFrameRef(k) return self.refs[k] end
 function Frame:RegisterEvent(e) EVT[e] = EVT[e] or {}; table.insert(EVT[e], self); return true end
@@ -262,17 +267,23 @@ function doClick(f, button, down)
     -- the game runs PreClick (the script, then its hooks) before the click's own handlers (q65: Quests' quest-item cell)
     if f.scripts.PreClick then f.scripts.PreClick(f, button, down) end
     for _, fn in ipairs(f.hooks.PreClick or {}) do fn(f, button, down) end
+    -- a wrap's pre-body returning false stops the button's own OnClick (the wrapped handler) only: the click's OnClick hooks and its
+    -- PostClick still run, as the game's Button:Click does around the wrapper (PadMap m199's keep word is said there)
+    local go = true
     for _, w in ipairs(f.wraps.OnClick or {}) do
         local r = runSecure(w.pre, f, button, down)
-        if r == false then return end
+        if r == false then go = false break end
     end
-    if f._tpl:find("SecureHandlerClickTemplate") and f.a["_onclick"] then
-        runSecure(compileSnippet(f.a["_onclick"], "self, button, down"), f, button, down)
+    if go then
+        if f._tpl:find("SecureHandlerClickTemplate") and f.a["_onclick"] then
+            runSecure(compileSnippet(f.a["_onclick"], "self, button, down"), f, button, down)
+        end
+        if f.scripts.OnClick then f.scripts.OnClick(f, button, down) end
+        if f._tpl:find("SecureActionButtonTemplate") then secureAct(f, button, down) end
     end
-    if f.scripts.OnClick then f.scripts.OnClick(f, button, down) end
-    if f._tpl:find("SecureActionButtonTemplate") then secureAct(f, button, down) end
-    for _, fn in ipairs(f.hooks.OnClick or {}) do fn(f, button, down) end
-    for _, fn in ipairs(f.hooks.PostClick or {}) do fn(f, button, down) end
+    local hk = f.hooks or {}
+    for _, fn in ipairs(hk.OnClick or {}) do fn(f, button, down) end
+    for _, fn in ipairs(hk.PostClick or {}) do fn(f, button, down) end
 end
 
 -- ---------------------------------------------------------------- bindings (override only; a spy table)
@@ -444,6 +455,8 @@ local function unwrap(v) if type(v) == "table" and rawget(v, "__frame") then ret
 function Frame:SetAttribute(k, v)
     if isProtected(self) then blocked("SetAttribute " .. tostring(self._name) .. " " .. tostring(k)) end
     self.a[k] = unwrap(v)
+    -- the game runs OnAttributeChanged's hooks on every change (PadMap m199's insecure hook on our router buttons)
+    for _, fn in ipairs(self.hooks and self.hooks.OnAttributeChanged or {}) do local ok, err = pcall(fn, self, k, self.a[k]); if not ok then ERRS[#ERRS + 1] = "OnAttributeChanged: " .. tostring(err) end end
 end
 local rawShow, rawHide = Frame.Show, Frame.Hide
 local function fireHooks(f, ev)
