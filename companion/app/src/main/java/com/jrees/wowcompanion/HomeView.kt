@@ -3029,7 +3029,7 @@ class HomeView(
         wheelLayer?.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue                 // (single screen mode: a piece in a play dock is laid there)
             val r = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             v.measure(MeasureSpec.makeMeasureSpec(max(1, r.width().toInt()), MeasureSpec.EXACTLY),
                       MeasureSpec.makeMeasureSpec(max(1, r.height().toInt()), MeasureSpec.EXACTLY))
@@ -3045,7 +3045,7 @@ class HomeView(
      */
     private fun placeFrame() {
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue
             val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             val x1 = max(x0 + 1, f.right.toInt()); val y1 = max(y0 + 1, f.bottom.toInt())
@@ -3083,7 +3083,7 @@ class HomeView(
             targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
         }
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue
             val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             v.layout(x0, y0, max(x0 + 1, f.right.toInt()), max(y0 + 1, f.bottom.toInt()))
@@ -6049,9 +6049,72 @@ class HomeView(
     var restElsewhere = false
 
     // ===== SINGLE: PLAY =====
-    /** PLAY (builder play): Home's chat column, party list and map lent to the play docks while playing on one screen; CORE's stubs */
-    fun lendToDocks(left: ViewGroup, right: ViewGroup) {}
-    fun reclaimFromDocks() {}
+    /**
+     * SINGLE SCREEN MODE WHILE PLAYING (SingleDocks; the user's pick "1, 2, and also the chat on the left thr ds toolbar should have the
+     * same functionality in single screen mode"): Home's rest IS the game there (not drawn), so its own chat pane, party list and map
+     * stand over the game in the play docks - LENT, not copied (one map, one chat): [lendToDocks] moves them into the docks' slots,
+     * [reclaimFromDocks] puts them back exactly where they were BEFORE Home's page shows (a panel, Home's glance, a room). While lent,
+     * Home's layout passes leave them alone ([docked]: onMeasure / placeFrame / onLayout skip them); Home's own state still decides
+     * whether each is laid at all ([dockLaid]). The map is lent only while Home holds it (borrow); another room taking it back
+     * (giveBack) needs nothing from here.
+     */
+    private class DockLoan(val view: View, val parent: ViewGroup, val index: Int, val lp: ViewGroup.LayoutParams?, val alpha: Float,
+                           val tx: Float, val ty: Float, val cover: Float, val keepOut: List<RectF>)
+    private val dockLoans = ArrayList<DockLoan>()
+    /** [v] stands in a play dock now */
+    fun docked(v: View): Boolean = dockLoans.any { it.view === v }
+    /** something of Home's is in the docks */
+    val dockedNow: Boolean get() = dockLoans.isNotEmpty()
+
+    /** what Home's rest page lays now - the pieces the docks show: its chat, Party mode's list, the map (Home holding it) */
+    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean)
+    fun dockLaid(): DockLaid = DockLaid(chatPane.visibility == View.VISIBLE && now.containsKey(Part.CHAT),
+        partyView.visibility == View.VISIBLE && now.containsKey(Part.PARTY), lent(mapView) && mapSlot.visibility == View.VISIBLE)
+
+    /** Party mode's list as drawn: its height (the well and the Select tab) at the list's own row size; null in a Party-mode Top fight
+     *  (its rows fill whatever box they get) */
+    fun dockPartyH(): Int? {
+        if (partyView.mode == PartyLayout.Mode.FIGHT_TOP) return null
+        val m = partyView.module()
+        return (maxOf(m.well.b, m.tag.b) - minOf(m.well.t, m.tag.t)).toInt() + 4
+    }
+
+    /** Home's chat pane, party list and map into the docks' slots [chat], [party], [map] (each the slot's only child) */
+    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup) {
+        dockLend(chatPane, chat)
+        dockLend(partyView, party)
+        if (lent(mapView) && mapView.parent === mapSlot) {
+            dockLend(mapView, map)
+            mapView.compactCover = 0f; mapView.rimKeepOut = emptyList()       // (Home's card and buffs are not over it there)
+        }
+    }
+
+    private fun dockLend(v: View, into: ViewGroup) {
+        if (docked(v)) { if (v.parent !== into) { (v.parent as? ViewGroup)?.removeView(v); into.addView(v) }; return }
+        val parent = v.parent as? ViewGroup ?: return
+        val mv = v as? MapView
+        dockLoans.add(DockLoan(v, parent, parent.indexOfChild(v), v.layoutParams, v.alpha, v.translationX, v.translationY,
+            mv?.compactCover ?: 0f, mv?.rimKeepOut ?: emptyList()))
+        parent.removeView(v)
+        into.addView(v, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        v.translationX = 0f; v.translationY = 0f; v.alpha = 1f
+    }
+
+    /** every lent view back where it came from (last lent first), as it was; Home lays its page again */
+    fun reclaimFromDocks() {
+        if (dockLoans.isEmpty()) return
+        while (dockLoans.isNotEmpty()) {
+            val l = dockLoans.removeAt(dockLoans.size - 1)
+            val v = l.view
+            // the map given back to its room meanwhile (another room opened: giveBack): it is that room's now
+            if (v === mapView && !lent(mapView)) continue
+            (v.parent as? ViewGroup)?.removeView(v)
+            if (l.lp != null) l.parent.addView(v, min(l.index, l.parent.childCount), l.lp) else l.parent.addView(v, min(l.index, l.parent.childCount))
+            v.translationX = l.tx; v.translationY = l.ty; v.alpha = l.alpha
+            if (v === mapView) { mapView.compactCover = l.cover; mapView.rimKeepOut = l.keepOut }
+        }
+        requestLayout(); invalidate()
+    }
 
     // ===== SINGLE: NPC =====
     /** NPC (builder npc): HomeView draws only its overlay layers (the class wheel) over the game; CORE's stub */

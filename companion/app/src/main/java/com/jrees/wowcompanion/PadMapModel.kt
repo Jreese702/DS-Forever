@@ -336,6 +336,7 @@ object PadMapModel {
                     cc = if (d.has("cc")) d.optInt("cc", 0).coerceIn(0, 1) else null,
                     cs = if (d.has("cs")) d.optInt("cs", 1).coerceIn(0, 1) else null,
                     pv = if (d.has("pv")) d.optInt("pv", 0).let { if (it in PadMapModel.P3_PV_OFF + 1..PadMapModel.P3_PV_LAST) it else 0 } else null,
+                    ss = if (d.has("ss")) d.optInt("ss", 0).coerceIn(0, 1) else null,
                     realmSource = who?.let { textOrNull(it, "rs") },
                     realmHint = who?.let { textOrNull(it, "rh") },
                     cls = who?.let { textOrNull(it, "c") },
@@ -384,6 +385,9 @@ object PadMapModel {
                     val undone: List<String> = emptyList(), val ct: Int? = null, val cc: Int? = null, val cs: Int? = null,
                     /** PadMap m198: Edit Home's top-screen preview the add-on shows now (EditPreview's code, 0 = none); null = an older add-on */
                     val pv: Int? = null,
+                    /** PadMap m199: single screen mode as the add-on has it now (1 on: the Wings and our top cast bar in fights, our top cast bar
+                     *  for every cast out of fights - SingleTop; 0 off); null = an older add-on without it */
+                    val ss: Int? = null,
                     /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"; m180, Safety k10: "guid", "guid-id",
                      *  "sticky", "live", "hint", "picked", "new", "ask", "none"), null from an older add-on. [realm] is the STORED key's */
                     val realmSource: String? = null,
@@ -884,6 +888,14 @@ object PadMapModel {
         "hold chooser" to P3_HOLD..P3_HOLD,       // m190 / Book b79; b80: code 28, off the swing's 26
         "hold time" to P3_HOLD_SHORT..P3_HOLD_LONG,                                              // m194 / Book b82
         "edit preview" to P3_PV_OFF..P3_PV_LAST)                                                 // m198 / Book b85
+    /** SINGLE SCREEN MODE (Book b86, PadMap m199): THE FOURTH PAGE - padtab 39, 38, 0, then N (the second page's 0 is its pick; the third
+     *  page's 0-39 are all taken): 0 / 1 = the app's single screen mode off / on ([SingleTop]: in memory only on the add-on's side) */
+    const val P4_SINGLE_OFF = 0
+    const val P4_SINGLE_ON = 1
+    fun page4(code: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 39, ROW_PADTAB to 38, ROW_PADTAB to 0, ROW_PADTAB to code)
+    /** every page-4 code in use: SingleTopTest keeps them apart */
+    val PAGE4_CODES: kotlin.collections.Map<String, IntRange> = mapOf("single screen mode" to P4_SINGLE_OFF..P4_SINGLE_ON)
+    fun singleCells(on: Boolean): List<Pair<String, Int>> = page4(if (on) P4_SINGLE_ON else P4_SINGLE_OFF)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
     fun fightCastCells(top: Boolean): List<Pair<String, Int>> = page3(if (top) P3_CAST_ON else P3_CAST_OFF)
