@@ -5645,7 +5645,7 @@ object UiKit {
      * point 2 px lower with a shade at its lower edge (Strip.pushNow), [gold] 0..1 its press flash (Strip.goldNow: the gold light, brighter)
      */
     private fun pauseHubAt(c: Canvas, g: PauseGeo, cx: Float, cy: Float, size: Float, red: Float, b: Float, push: Float, gold: Float,
-                           alpha: Int = 255) {
+                           alpha: Int = 255, glyph: String? = null) {
         val box = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
         val p = push.coerceIn(0f, 1f)
         val l = c.saveLayerAlpha(RectF(box).apply { inset(-4f, -4f) }, alpha)
@@ -5653,7 +5653,7 @@ object UiKit {
         if (red < 1f) crDisc(c, box, false, 255)
         if (red > 0f) crDisc(c, box, true, (255 * red.coerceIn(0f, 1f)).toInt())
         if (gold > 0f) crDiscGold(c, box, gold.coerceIn(0f, 1f))
-        if (b > 0f) pad(c, backGlyph(), cx, cy, size * 0.30f, (255 * b.coerceIn(0f, 1f)).toInt())
+        if (b > 0f) pad(c, glyph ?: backGlyph(), cx, cy, size * 0.30f, (255 * b.coerceIn(0f, 1f)).toInt())
         if (p > 0f) {
             val r = size / 2f
             pCrShade.shader = RadialGradient(cx, cy - r * 0.35f, r * 1.25f, intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT,
@@ -5753,7 +5753,7 @@ object UiKit {
                     pointed: Int, heldOption: Int = -1, t: Float = PAUSE_OPEN_MS, hubDown: Float = 0f, line: String? = null,
                     lineAlpha: Float = 1f, glyphs: Boolean = true, up: String? = "Emotes", down: String? = "Sit / Stand",
                     pickGlyph: Boolean = false, left: String? = null, right: String? = null, hubGold: Float = 0f,
-                    title: String? = null): Boolean {
+                    title: String? = null, hubGlyph: String? = null): Boolean {
         val g = pauseGeo(screen)
         val tt = t.coerceIn(0f, PAUSE_OPEN_MS)
         // the game's order from here on
@@ -5775,7 +5775,7 @@ object UiKit {
         pauseDpadBar(c, screen, g, tt, heldOption, up, down, left, right)
         // the disc (the hub): Home's own disc turning RED as it lands, its B, its press
         val d = pauseDisc(screen, disc, discSize, tt)
-        pauseHubAt(c, g, d.cx, d.cy, d.size, d.red, if (glyphs) d.b else 0f, hubDown, hubGold)
+        pauseHubAt(c, g, d.cx, d.cy, d.size, d.red, if (glyphs) d.b else 0f, hubDown, hubGold, glyph = hubGlyph)
         val b = pSpan(tt, 440f, 600f)
         if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)), title)
         if (line != null && lineAlpha > 0f)
@@ -6052,6 +6052,99 @@ object UiKit {
         }
         if (glyph) pad(c, xGlyph(), r.left + r.width() * 0.08f, r.bottom - r.height() * 0.08f, r.width() * 0.46f)
         c.restoreToCount(l)
+    }
+
+    // ---------------------------------------------------------------- single screen mode: THE ONE SCREEN / TWO SCREENS BUTTON
+    //
+    // The user, 2026-11-25: "The button to shift it needs to be in the pause menu below the edit mode button"; the pick "Icon on Y": the
+    // power / Edit red plate, below Edit (Edit's box moved down by its size and the margin: HomePauseModel.screensBox), Y's glyph on its
+    // inner corner, its gold mark two screens: with two screens it shows "One screen" (the lower screen faint, an arrow rising into the
+    // upper one), in single screen mode "Two screens" (both solid, the arrow going down into the lower one).
+
+    /** the button's box below Edit: (1107, 149)-(1224, 266) on the bottom screen, (1787, 149)-(1904, 266) on the 1920 x 1080 top screen */
+    fun pauseScreensBox(screen: RectF): RectF {
+        val b = HomePauseModel.screensBox(screen.left, screen.top, screen.right, screen.bottom)
+        return RectF(b[0], b[1], b[2], b[3])
+    }
+
+    /** a finger on the button: its box grown as Edit's */
+    fun pauseScreensHit(screen: RectF, x: Float, y: Float): Boolean {
+        val b = pauseScreensBox(screen)
+        val grow = maxOf(0f, (96f - b.width()) / 2f) + 8f
+        return x >= b.left - grow && x <= b.right + grow && y >= b.top - grow && y <= b.bottom + grow
+    }
+
+    /**
+     * THE ONE SCREEN / TWO SCREENS BUTTON below Edit while the pause menu is open: [alpha] / [down] as Edit's; [single] = single screen
+     * mode is on (the picture = "Two screens"), else "One screen"; [glyph] = Y's glyph on its lower-left (inner) corner, the chosen set's
+     */
+    fun pauseScreens(c: Canvas, screen: RectF, alpha: Float = 1f, down: Boolean = false, single: Boolean = false, glyph: Boolean = true) {
+        if (alpha <= 0f) return
+        val r = pauseScreensBox(screen)
+        val l = c.saveLayerAlpha(RectF(r.left - 60f, r.top - 20f, r.right + 20f, r.bottom + 60f), (255 * alpha.coerceIn(0f, 1f)).toInt())
+        pressed(c, r, down) {
+            buttonPlate(c, r, if (down) Button.DOWN else Button.UP)
+            screensMark(c, r, POWER_GOLD, single)
+        }
+        if (glyph) pad(c, yGlyph(), r.left + r.width() * 0.08f, r.bottom - r.height() * 0.08f, r.width() * 0.46f)
+        c.restoreToCount(l)
+    }
+
+    /** two stacked screen outlines in [r] (the upper 0.56 x 0.30 of it, the lower 0.40 x 0.26, 0.06 apart) and a gold arrow: [single]
+     *  = both solid, the arrow down into the lower (the picture "Two screens"); else the lower at 45 %, the arrow rising into the upper
+     *  ("One screen"); in [colour] with the dark outline of the kit's marks (the power mark's) */
+    private fun screensMark(c: Canvas, r: RectF, colour: Int, single: Boolean) {
+        val w = r.width(); val h = r.height(); val d = minOf(w, h)
+        val cx = r.centerX()
+        val uw = w * 0.56f; val uh = h * 0.30f; val lw = w * 0.40f; val lh = h * 0.26f; val gap = h * 0.06f
+        val top = r.centerY() - (uh + gap + lh) / 2f - h * 0.02f
+        val up = RectF(cx - uw / 2f, top, cx + uw / 2f, top + uh)
+        val lo = RectF(cx - lw / 2f, up.bottom + gap, cx + lw / 2f, up.bottom + gap + lh)
+        val sw = d * 0.055f; val o = d * 0.03f; val rad = d * 0.035f
+        val dark = Color.argb(220, 20, 6, 4)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeJoin = Paint.Join.ROUND; pFlat.strokeCap = Paint.Cap.ROUND
+        for ((box, a) in listOf(lo to (if (single) 255 else 115), up to 255)) {
+            pFlat.strokeWidth = sw + 2f * o; pFlat.color = Color.argb(a * 220 / 255, 20, 6, 4)
+            c.drawRoundRect(box, rad, rad, pFlat)
+            pFlat.strokeWidth = sw; pFlat.color = Color.argb(a, Color.red(colour), Color.green(colour), Color.blue(colour))
+            c.drawRoundRect(box, rad, rad, pFlat)
+        }
+        // the arrow: up from the lower screen's middle into the upper one (One screen), or down from the upper into the lower (Two screens)
+        val from = if (single) up.centerY() - uh * 0.15f else lo.centerY() + lh * 0.15f
+        val to = if (single) lo.centerY() + lh * 0.12f else up.centerY() - uh * 0.12f
+        val head = d * 0.10f
+        val dir = if (to < from) -1f else 1f
+        val shaftEnd = to - dir * head * 0.8f
+        val arrow = Path().apply {
+            moveTo(cx, to); lineTo(cx - head, to - dir * head); lineTo(cx + head, to - dir * head); close()
+        }
+        pFlat.strokeWidth = d * 0.07f + 2f * o; pFlat.color = dark
+        c.drawLine(cx, from, cx, shaftEnd, pFlat)
+        pFlat.style = Paint.Style.FILL_AND_STROKE; pFlat.strokeWidth = 2f * o
+        c.drawPath(arrow, pFlat)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = d * 0.07f; pFlat.color = colour
+        c.drawLine(cx, from, cx, shaftEnd, pFlat)
+        pFlat.style = Paint.Style.FILL
+        c.drawPath(arrow, pFlat)
+        pFlat.strokeCap = Paint.Cap.BUTT; pFlat.strokeJoin = Paint.Join.MITER; pFlat.style = Paint.Style.FILL
+    }
+
+    /**
+     * single screen mode's HINT PLATE over the game (the top window's "hint" sub: "Controller back", "Tap the game for the controller"):
+     * the kit's dark plate with its bronze edge and the words in the body font, white with the kit's shadow, Tr'd here
+     */
+    fun singleHint(c: Canvas, r: RectF, text: String) {
+        val k = r.height() / 72f
+        val rad = 14f * k
+        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(232, 13, 12, 14)
+        c.drawRoundRect(r, rad, rad, pFlat)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f * k; pFlat.color = Theme.bronze
+        c.drawRoundRect(RectF(r).apply { inset(2f * k, 2f * k) }, rad, rad, pFlat)
+        pFlat.style = Paint.Style.FILL
+        val tp = bodyPaint(30f * k, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+        val words = Tr.t(text)
+        while (tp.measureText(words) > r.width() - 40f * k && tp.textSize > 14f * k) tp.textSize -= 1f
+        c.drawText(words, r.centerX(), r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
     }
 
     /** a pencil across [r] (Edit Home's badge pencil: the body, the ferrule, the sharpened tip and its lead), in [colour] with the dark

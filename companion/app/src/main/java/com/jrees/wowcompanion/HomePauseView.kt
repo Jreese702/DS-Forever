@@ -22,7 +22,11 @@ import org.json.JSONObject
  * and then an edit button added on the right set to the x button that puts them into the home edit mode. Change the power button to
  * select or minus"): Select / Minus (or a tap on the top-LEFT corner's power button) asks "Close DS Forever?" ([PausePower]): A closes
  * DS Forever at once (ExitNow, in a fight too), B goes back; X (or a tap on the top-RIGHT corner's pencil) folds the wheel and opens
- * Edit Home ([HomePauseModel.EDIT]; a fight: Edit Home's own refusal, its pencils flash). Y does nothing on the wheel.
+ * Edit Home ([HomePauseModel.EDIT]; a fight: Edit Home's own refusal, its pencils flash). SINGLE SCREEN MODE (the user, 2026-11-25: "The
+ * button to shift it needs to be in the pause menu below the edit mode button"; the pick "Icon on Y"): Y (or a tap below Edit) switches One screen / Two screens
+ * ([HomePauseModel.SCREENS]: the wheel folds, then the host switches; a refusal stays on the wheel's red line), only while a second
+ * screen exists (SingleScreen.offered). In single screen mode the wheel spans the top screen, its hub is Home's glance (A with nothing
+ * lit, a tap on it: [HomePauseModel.HOME_GLANCE]) and a tap on the dim beside the panel closes it.
  *
  * THE CONTROLLER: while open it holds the guest "radial" (the consumables wheel's; never both open: the router only sends "pause" when
  * no guest holds), so the game acts on none of it; Quests q34 adds Start to that guest's keys.
@@ -65,6 +69,12 @@ class HomePauseView(
     private var powerDown = false
     /** a finger held on the Edit button */
     private var editDown = false
+    /** single screen mode: a finger held on the One screen / Two screens button */
+    private var screensDown = false
+    /** single screen mode is on (the host's: its top window): the hub is Home's glance, the corners at the top screen's corners */
+    var single = false
+    /** the host's: why the One screen / Two screens switch can't go now (SingleScreen.refusal), null = it can */
+    var screensRefusal: () -> String? = { null }
     private var powerPressed = -1
     /** the prompt's line, fixed when it opened (a stream ending meanwhile doesn't change the question asked) */
     private var powerStream = false
@@ -117,6 +127,8 @@ class HomePauseView(
      */
     private var freeOutAt = 0L
     fun awaitsFree(now: Long = SystemClock.uptimeMillis()): Boolean = !isOpen && freeOutAt != 0L && !freed && now - freeOutAt < FREE_ANSWER_MS
+    /** single screen mode's switch waits for the wheel's controller free: its stick wait, or its free not yet answered */
+    fun freePending(now: Long = SystemClock.uptimeMillis()): Boolean = stickWait || awaitsFree(now)
 
     init { visibility = GONE; isClickable = true }
 
@@ -133,13 +145,15 @@ class HomePauseView(
             val a = IntArray(2); val b = IntArray(2)
             strip.getLocationOnScreen(a); getLocationOnScreen(b)
             // P4: the XP track hidden on Home is Home's place, not the bar's: the bar starts under it
-            if (strip.height > 0) (a[1] - b[1]).toFloat() - strip.translationY + strip.trackGone else 0f
+            // (single screen mode with no room under the wheel: the bar is not shown, the D-pad bar its own height)
+            if (strip.height > 0 && (!single || strip.isShown)) (a[1] - b[1]).toFloat() - strip.translationY + strip.trackGone else 0f
         }
         openByStart = byStart
         UiKit.pauseRoomy = true                                             // feat/pause-power: Home's controller goes up, the wheel grows
-        power.reset(); powerDown = false; powerPressed = -1; editDown = false
+        power.reset(); powerDown = false; powerPressed = -1; editDown = false; screensDown = false
         LatLog.mark("wheel", "pause open")
         flow.reset(); flow.holdOpen = !HomeSettings.pauseTap; flow.pickA = HomeSettings.pausePickA      // its own pair (the user, 2026-10-09)
+        flow.single = single
         psState()
         flow.armMs = RadialModel.ARM_MS; flow.openAt = SystemClock.uptimeMillis(); stickWait = false; removeCallbacks(stickBack)
         afterStick = null
@@ -381,6 +395,8 @@ class HomePauseView(
             // the corners (the user, 2026-11-24): Select / Minus = the power button (left), X = Edit (right); their glyphs on the buttons
             pressed(PadInput.SLOT_SELECT) -> { powerAct(power.press(powerRefusal()), "Select"); return }
             pressed(PadInput.SLOT_FACE_LEFT) -> { editPress("X"); return }
+            // single screen mode (the user's pick "Icon on Y"): Y = the One screen / Two screens button below Edit
+            pressed(PadInput.SLOT_FACE_TOP) -> { screensPress("Y"); return }
             pressed(PadInput.SLOT_FACE_RIGHT) -> { if (flow.b() == HomePauseModel.Act.Close) pressHub() else invalidate(); return }
             pressed(PadInput.SLOT_RSTICK) -> { flow.cancel(); invalidate() }
             pressed(PadInput.SLOT_FACE_BOTTOM) -> act(flow.a())
@@ -442,6 +458,21 @@ class HomePauseView(
         editDown = false
         after = HomePauseModel.EDIT
         close("Edit ($how)")
+    }
+
+    /** the button below Edit (Y or a touch): nothing without a second screen, a refusal on the red line (the wheel stays), else the
+     *  wheel folds and the host switches ([HomePauseModel.SCREENS]) */
+    private fun screensPress(how: String) {
+        screensDown = false
+        when (val a = HomePauseModel.screensAct(SingleScreen.offered, screensRefusal())) {
+            HomePauseModel.Act.None -> { Log.i("WCLOG", "pause: Screens ($how): no second screen, nothing"); invalidate() }
+            is HomePauseModel.Act.Refuse -> say(a.slice.offLine ?: "").also { Log.i("WCLOG", "pause: Screens ($how) refused (${a.slice.offLine})") }
+            else -> {
+                Log.i("WCLOG", "pause: Screens ($how): the wheel folds, ${if (single) "two screens" else "one screen"} next")
+                after = HomePauseModel.SCREENS
+                close("Screens ($how)")
+            }
+        }
     }
 
     /** the preview / tests only: the prompt up ([closing] = the close under way), as Select would open it */
@@ -705,7 +736,7 @@ class HomePauseView(
         val (disc, size) = discHere()
         val moving = UiKit.pauseRadial(c, screen, disc, size, slices(), flow.page, flow.pointed, flow.heldOption, tt, hubDown(), line,
             lineAlpha = lineAlpha, pickGlyph = flow.pickA, left = HomePauseModel.TRACKPAD_WORD, right = HomePauseModel.KEYBOARD_WORD,
-            hubGold = hubGold())
+            hubGold = hubGold(), hubGlyph = if (single) UiKit.okGlyph() else null)
         // feat/pause-power: the power button in the top-right corner, in with the top row (440 .. 600 of the open); its prompt over all
         // (the prompt dims the stage; the button stays bright over it, in its gold box, while its prompt is up)
         if (power.busy) UiKit.pausePowerPrompt(c, screen, PausePower.context(powerStream),
@@ -714,6 +745,8 @@ class HomePauseView(
         UiKit.pausePower(c, screen, cornersIn, down = powerDown, lit = power.busy)
         // the corners (the user, 2026-11-24): Edit in the top-right corner, under the prompt's dim while it asks
         if (!power.busy) UiKit.pauseEdit(c, screen, cornersIn, down = editDown)
+        // single screen mode's button below Edit (the user, 2026-11-25), only while a second screen exists; its picture = where it goes
+        if (!power.busy && SingleScreen.offered) UiKit.pauseScreens(c, screen, cornersIn, down = screensDown, single = single)
         if (power.state == PausePower.State.CLOSING) postInvalidateDelayed(50L)       // the spinner turns
         // the open runs to its end whatever the kit says (its "moving" covers the wheel only, the panels slide too)
         if (moving || tt < UiKit.PAUSE_OPEN_MS || closingFrom >= 0f || hubPressAt != 0L || hubHeldAt != 0L || line != null) postInvalidateOnAnimation()
@@ -721,6 +754,8 @@ class HomePauseView(
 
     /** the bar's Home disc, in this view's coordinates: its middle and its width (the hub rises from it) */
     private fun discHere(): Pair<PointF, Float> {
+        // single screen mode with no room under the wheel (the bar is not shown): the hub rises from the screen's bottom middle
+        if (single && !strip.isShown) return PointF(width / 2f, height - Strip.HEIGHT / 2f) to 140f
         val r = strip.place(Room.HOME) ?: return PointF(width / 2f, height - 80f) to 140f
         val a = IntArray(2); val b = IntArray(2)
         strip.getLocationOnScreen(a); getLocationOnScreen(b)
@@ -775,6 +810,17 @@ class HomePauseView(
             }
             return true
         }
+        // single screen mode's button below Edit: a finger lifted on it = Y (only while it is drawn: a second screen exists)
+        val onScreens = SingleScreen.offered && UiKit.pauseScreensHit(scr, e.x, e.y)
+        if (screensDown || (onScreens && e.actionMasked == MotionEvent.ACTION_DOWN)) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { screensDown = true; invalidate() }
+                MotionEvent.ACTION_MOVE -> if (!onScreens) { screensDown = false; invalidate() }
+                MotionEvent.ACTION_UP -> { screensDown = false; if (onScreens) screensPress("touch") else invalidate() }
+                MotionEvent.ACTION_CANCEL -> { screensDown = false; invalidate() }
+            }
+            return true
+        }
         val onPower = UiKit.pausePowerHit(scr, e.x, e.y)
         if (powerDown || (onPower && e.actionMasked == MotionEvent.ACTION_DOWN)) {
             when (e.actionMasked) {
@@ -802,13 +848,21 @@ class HomePauseView(
                 turn != 0 -> flow.turn(turn)
                 else -> {
                     val s = UiKit.pauseRadialHit(screen, e.x, e.y)
-                    act(flow.touch(if (s == UiKit.PAUSE_HUB) HomePauseModel.HUB else s))
+                    // single screen mode: a tap on the dim beside the centred panel (the game's side strips) closes the wheel
+                    if (single && s == -1 && dimAt(e.x)) close("the dim")
+                    else act(flow.touch(if (s == UiKit.PAUSE_HUB) HomePauseModel.HUB else s))
                 }
             }
             hubHeldAt = 0L
             invalidate()
         }
         return true        // the wheel takes every touch while it shows
+    }
+
+    /** single screen mode: [x] lies on the dim beside the centred 1240-wide panel (SingleScreen.panelBox's sides) */
+    private fun dimAt(x: Float): Boolean {
+        val b = SingleScreen.panelBox(width, height)
+        return x < b[0] || x >= b[2]
     }
 
     companion object {

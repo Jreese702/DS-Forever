@@ -2176,7 +2176,7 @@ class HomeView(
     private val PARTY_MODULE get() = GameUi.partyModeOn()
     /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
      *  the user: "pushing down on the Dpad makes the cursor also appear on the bottom bar menu") */
-    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted && !editLive()
+    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && (isShown || restElsewhere) && !typeWanted && !editLive()
     /** Party mode on with Home's rest page shown (no module full screen): the disc's touch = Party mode off */
     fun partyOnRest(): Boolean = partyOnHere() && flow.full == null
 
@@ -2259,11 +2259,11 @@ class HomeView(
         // party_design.md E: a Select press the reader sees flashes the tab's pressed look (the add-on's document turns it on / off)
         val sel = PadInput.isHeld(held, PadInput.SLOT_SELECT)
         // (never under a wheel: the pause wheel's Select is its power button, 2026-11-24)
-        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown && overlayOpen?.invoke() != true) partyView.selectPressed()
+        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && (isShown || restElsewhere) && overlayOpen?.invoke() != true) partyView.selectPressed()
         partySelWas = sel
         // b-class-takeover: the class wheel's D-pad never reaches the game (its guest keeps it), so the box's optimistic move would part
         // from the game's - the wheel's presses are the wheel's
-        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted || editLive() || (lent(castView) && castView.classRadialOpen())) return
+        if (fresh == 0 || !partyOnHere() || flow.full != null || !(isShown || restElsewhere) || typeWanted || editLive() || (lent(castView) && castView.classRadialOpen())) return
         for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) { partyView.invalidate(); castView.partyChanged() }
     }
 
@@ -6039,6 +6039,23 @@ class HomeView(
         QuestTier.IMPOSSIBLE -> Theme.questRed
         QuestTier.UNKNOWN -> Theme.gameGold
     }
+
+    // ===== SINGLE: CORE =====
+    /**
+     * single screen mode's PLAY state (SingleLook: the game alone, Home's page not drawn): Home's rest page IS the player's screen though
+     * not shown, so Party mode's D-pad hold and Select read as on Home ([partyHoldsDpad], [onPadHeld]'s Select). Set by the host from
+     * the look; false on two screens (always): nothing changes there
+     */
+    var restElsewhere = false
+
+    // ===== SINGLE: PLAY =====
+    /** PLAY (builder play): Home's chat column, party list and map lent to the play docks while playing on one screen; CORE's stubs */
+    fun lendToDocks(left: ViewGroup, right: ViewGroup) {}
+    fun reclaimFromDocks() {}
+
+    // ===== SINGLE: NPC =====
+    /** NPC (builder npc): HomeView draws only its overlay layers (the class wheel) over the game; CORE's stub */
+    var singleLayersOnly = false
 
     companion object {
         /** chat40: the refresh notice's "!" waits this long for the game's answer before it can be pressed again */
