@@ -13,6 +13,11 @@
 -- is QUEUED for the next swing keeps the face (PadMap's "q", and the bar's own live C_Spell.IsCurrentSpell read) until the swing lands
 -- or it is unqueued, up to 30 s; an instant that gives no GCD, no cast and no queue leaves at once (PadMap's "none", in game 0.15 s
 -- after the fire); a "gcd" word gives the GCD's end at once. Plain frames and reads only, legal in fights.
+-- nbar25, THE FACE SAYS THE SPELL IT SHOWS (the user on test 1532, 2026-11-25: "When using hold to cast it will show the button glyph
+-- as red if the original spell was not usable, I want that to also shift with the ability that its showing casting so its not
+-- confusing"): while a hold's takeover has the face, the glyph / word red (range only), b.range, the face's own shade (b.hflash: blue
+-- not enough mana, grey unusable) and the count are the HOLD spell's (NB.faceLook: switched at the fire, back at the end at once); the
+-- badge fades out (1 - the face's alpha) and always wears its hold spell - never the tap spell (nbar21's swap retired).
 -- nbar24 RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)"): a trigger layer's hold (LT + X) keeps its
 -- takeover on the main circle after the trigger is let go - drawn on its fired layer and on any layer that only lacks one of its
 -- triggers (the bare one after LT + X; LT or RT alone after LT + RT + X), never on a layer with a trigger the press did not have;
@@ -2770,7 +2775,9 @@ function NB.holdShow(b, set, page)
     pcall(hb.ClearAllPoints, hb)
     hb:SetPoint("CENTER", b, "CENTER", x, y)
     b.hold = e
-    NB.paint(hb.icon, NB.holdHere(b) and b.tapIcon or NB.holdIcon(e))   -- nbar21: the tap spell on the badge while the hold has the face
+    -- nbar25 (the user on test 1532: "... so its not confusing"): always the hold spell on its badge - while its takeover has the face the
+    -- badge FADES OUT (NB.holdOver: 1 - the face's alpha), never the tap spell on it (nbar21's swap retired)
+    NB.paint(hb.icon, NB.holdIcon(e))
     pcall(NB.holdLook, b, e)
     local get = api("C_Spell", "GetSpellCooldownDuration")
     local setDur = type(field(hb.cd, "SetCooldownFromDurationObject")) == "function"
@@ -2825,7 +2832,9 @@ WC.holdFired = function(pos, lay)
     b.hto = { t = now, last = now, e = e, set = set, pic = NB.paint(b.hflash, NB.holdIcon(e)) }
     local here = NB.holdHere(b)                                         -- nbar24 (ruling A): its layer, or one lacking only its triggers
     NB.holdFace(b, b.hto.pic and here, 1)                               -- nbar25: in the game's gold checked ring
-    if here and b.hb and b.tapIcon then NB.paint(b.hb.icon, b.tapIcon) end
+    -- nbar25: at once - the glyph's red, b.range, the count and the face's shade the hold spell's; its badge out (the face has it)
+    pcall(NB.faceLook, b)
+    if b.hb then pcall(b.hb.SetAlpha, b.hb, (b.hto.pic and here) and 0 or 1) end
     pcall(NB.holdCharge, b, now, 1)                                     -- the charge ring goes with the release
 end
 -- nbar22: the takeover at [b] drawn on the layer the bar shows now. nbar24 RULING A (the user's pick 2026-11-25, "Stay until it ends"):
@@ -2894,11 +2903,18 @@ function NB.holdOver(b, now)
     if a <= 0 then
         b.hto = nil
         NB.holdFace(b, false)
-        if b.hb and b.hold then NB.paint(b.hb.icon, NB.holdIcon(b.hold)) end      -- the badge: the hold spell again
+        if b.hb and b.hold then NB.paint(b.hb.icon, NB.holdIcon(b.hold)) end      -- the badge: the hold spell
+        if b.hb then pcall(b.hb.SetAlpha, b.hb, 1) end                  -- nbar25: back in full
+        pcall(NB.faceLook, b)                                           -- nbar25: the tap's glyph / count again at once
         return
     end
-    if not (o.pic and NB.holdHere(b)) then NB.holdFace(b, false); return end  -- nbar22 / nbar24: a layer with a trigger the press lacked
+    if not (o.pic and NB.holdHere(b)) then                              -- nbar22 / nbar24: a layer with a trigger the press lacked
+        NB.holdFace(b, false)
+        if b.hb then pcall(b.hb.SetAlpha, b.hb, 1) end
+        return
+    end
     NB.holdFace(b, true, a)                                             -- nbar25: the face and its golden ring ease together
+    if b.hb then pcall(b.hb.SetAlpha, b.hb, 1 - a) end                  -- nbar25: the badge out while the face has it, back as it eases
 end
 -- nbar25: the fired hold's spell is CURRENT now (queued for the next swing, waiting for its target / cursor: the game's checked look),
 -- the bar's own read (plain, in-game truth, legal in fights); nil when it has no spell id or the read is refused
@@ -3565,20 +3581,49 @@ function NB.cool(b, e, st)
 end
 
 -- the tints: unusable grey, not enough mana blue (never red); out of range = the glyph red (range only, the user's ruling)
-function NB.tint(b, st)
-    local u, m, r = st and st.u, st and st.m, st and st.r
+-- nbar25 THE FACE SAYS THE SPELL IT SHOWS (the user on test 1532, 2026-11-25: "When using hold to cast it will show the button glyph as
+-- red if the original spell was not usable, I want that to also shift with the ability that its showing casting so its not confusing"):
+-- the icon's shade (NB.shade) and the glyph's red (NB.glyphTint) apart - while a hold's takeover has the face, the glyph / word red,
+-- b.range, the face's own picture (b.hflash) and the count are the HOLD spell's (NB.faceLook); the takeover over, the tap's again
+function NB.shade(tx, st)
+    local u, m = st and st.u, st and st.m
     if m == 1 then
-        pcall(b.icon.SetDesaturated, b.icon, false); b.icon:SetVertexColor(0.45, 0.55, 1)
-        b.look = "mana"
+        pcall(tx.SetDesaturated, tx, false); tx:SetVertexColor(0.45, 0.55, 1)
+        return "mana"
     elseif u == 0 then
-        pcall(b.icon.SetDesaturated, b.icon, true); b.icon:SetVertexColor(0.45, 0.45, 0.45)
-        b.look = "unusable"
-    else
-        pcall(b.icon.SetDesaturated, b.icon, false); b.icon:SetVertexColor(1, 1, 1)
-        b.look = "ok"
+        pcall(tx.SetDesaturated, tx, true); tx:SetVertexColor(0.45, 0.45, 0.45)
+        return "unusable"
     end
-    if r == 0 then b.glyph:SetVertexColor(1, 0.2, 0.2); b.word:SetTextColor(1, 0.2, 0.2); b.range = false
+    pcall(tx.SetDesaturated, tx, false); tx:SetVertexColor(1, 1, 1)
+    return "ok"
+end
+function NB.glyphTint(b, st)
+    if st and st.r == 0 then b.glyph:SetVertexColor(1, 0.2, 0.2); b.word:SetTextColor(1, 0.2, 0.2); b.range = false
     else b.glyph:SetVertexColor(1, 1, 1); b.word:SetTextColor(1, 1, 1); b.range = true end
+end
+function NB.tint(b, st)
+    b.look = NB.shade(b.icon, st)
+    NB.glyphTint(b, st)
+end
+-- nbar25: the state the button's face shows now - its hold spell's while the takeover has the face on this layer (spellState, the big
+-- buttons' own reads; none for a hold that is no spell: neutral), else the tap's (NB.refresh's read, b.tapSt); [true] = the hold's
+function NB.faceState(b)
+    local o = b.hto
+    if o and o.pic and NB.holdHere(b) then
+        local e = o.e
+        local st = (type(e) == "table" and e.t == nil and type(e.id) == "number") and spellState(e.id, S(UnitExists, "target") == true) or nil
+        return st, true
+    end
+    return b.tapSt, false
+end
+-- nbar25: the glyph / word red, b.range and the count as the spell the face shows; the takeover's face (b.hflash) in its hold spell's
+-- shade (grey not usable, blue not enough mana: NB.tint's own) - plain textures of our own, legal in fights
+function NB.faceLook(b)
+    local st, hold = NB.faceState(b)
+    if hold and b.hflash then b.hlookFace = NB.shade(b.hflash, st) end
+    NB.glyphTint(b, st)
+    local cnt = st and (num(st.cnt) or num(st.ch)) or nil
+    b.count:SetText(cnt and tostring(cnt) or "")
 end
 
 function NB.glyph(b)
@@ -3672,6 +3717,7 @@ function NB.refresh()
         local rot, ia = (pic and pic.rot) or 0, (pic and pic.alpha) or 1
         if b.rot ~= rot then b.rot = rot; pcall(b.icon.SetRotation, b.icon, rot) end
         if b.ia ~= ia then b.ia = ia; pcall(b.icon.SetAlpha, b.icon, ia) end
+        b.tapSt = st                                                                 -- nbar25: the tap's own (the face's after a takeover)
         NB.tint(b, st)
         -- nbar21: while the hold spell has the face, its own cooldown / GCD sweep is the face's
         local he = NB.holdHere(b) and b.hto.e or nil                                 -- nbar22: the fired layer's hold
@@ -3679,9 +3725,9 @@ function NB.refresh()
         local route = NB.cool(b, ho or e, st)
         if route then NB.stats.n = NB.stats.n + 1 end
         if route == "dim" then NB.stats.dim = NB.stats.dim + 1 end
-        -- an item's count (consumables), else a multi-charge spell's charges (both plain or absent: buttonState's own reads)
-        local cnt = st and (num(st.cnt) or num(st.ch)) or nil
-        b.count:SetText(cnt and tostring(cnt) or "")
+        -- an item's count (consumables), else a multi-charge spell's charges (both plain or absent: buttonState's own reads); nbar25: the
+        -- glyph's red, b.range and the count as the spell the face shows (a takeover's: its hold spell's; NB.faceLook)
+        pcall(NB.faceLook, b)
         b.kind = e.kind
         NB.well(b, e.kind == "empty")                     -- nbar11: an empty slot wears its own art, its ring disabled
         NB.ring(b)

@@ -781,11 +781,19 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val bx = ox * (if (circle) 0.703f else 0.662f) * iconHalf
         val by = oy * (if (circle) 0.581f else 0.727f) * iconHalf
         val r = (if (circle) 0.486f else 0.468f) * iconHalf
-        val onFace = tk >= 0.5f
-        val icon = if (onFace) b?.icon?.takeIf { it > 0 }?.let { Icons.get(it) } else Icons.get(ref.icon)
-        val hst = if (onFace) null else ref.stateId?.let { fightStates[it] }
-        val sw = if (onFace) -1f else holdCdLeft(key, now)
-        HoldArt.badge(c, bx, by, r, icon, sw, lit = ch >= 0f, filter = hst?.let { HoldArt.stateFilter(it.u, it.m, it.r) })
+        // round 1533 (the user on test 1532: "When using hold to cast it will show the button glyph as red if the original spell was not
+        // usable, I want that to also shift with the ability that its showing casting so its not confusing"): always the HOLD spell on its
+        // badge, in its own shade - while the takeover has the face the badge FADES OUT (1 - the face's alpha) and comes back as it eases
+        // out; the tap spell is never on it (m195's swap retired; the top screen's nbar25 does the same)
+        val ba = 1f - tk
+        val icon = Icons.get(ref.icon)
+        val hst = ref.stateId?.let { fightStates[it] }
+        val sw = holdCdLeft(key, now)
+        if (ba > 0.004f) {
+            val bs = if (ba < 1f) c.saveLayerAlpha(bx - 2f * r, by - 2f * r, bx + 2f * r, by + 2f * r, (255 * ba).toInt()) else -1
+            HoldArt.badge(c, bx, by, r, icon, sw, lit = ch >= 0f, filter = hst?.let { HoldArt.stateFilter(it.u, it.m, it.r) })
+            if (bs >= 0) c.restoreToCount(bs)
+        }
         HoldArt.chargeRing(c, bx, by, r, ch, charged)
         if (sw > 0f) next = min(next, 33L)
         return next
@@ -855,6 +863,26 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
     /** round 1533: the takeover's copy of the hold spell's state (drawn checked) */
     private val takeSt = St()
+    /** round 1533: the tap slot's state under a takeover (no halo, no count, the hold spell's range for its glyph); a hold that is no
+     *  spell: neutral */
+    private val tapUnder = St()
+    private val neutralSt = St()
+    /**
+     * round 1533: the state the takeover's face shows over the tap's slot at [src] on layer [li] now - the fired hold spell's (the state
+     * document's fs, as [drawTakeover] draws it), neutral for a hold that is no spell - or null when no takeover is drawn there (the same
+     * gates as [drawTakeover]; its GCD read first, as there)
+     */
+    private fun takeoverStateOver(src: Int, li: Int, now: Long): St? {
+        if (li !in 0 until STATE_LAYERS || drawCollapsed || quietPresses) return null
+        val t = HoldCast.takeover
+        if (t.pos != src + 1 || !t.showsOn(li)) return null
+        if (!gcdStartS.isNaN() && !gcdDurS.isNaN()) t.gcd((gcdStartS * 1000.0).toLong(), (gcdDurS * 1000.0).toLong())
+        if (t.alpha(now) <= 0f) return null
+        val key = t.layer * 8 + src
+        if (takeRefAt != t.startedAt || takeRefKey != key) { takeRefAt = t.startedAt; takeRefKey = key; takeRef = holdRefs?.get(key) }
+        val ref = takeRef ?: return null
+        return ref.stateId?.let { fightStates[it] } ?: neutralSt.also { it.reset() }
+    }
     /** the game's checked ring round the slot at the canvas's centre (drawSlot's own, for the cache's face drawn over it) */
     private fun drawChecked(c: Canvas, circle: Boolean) {
         val fr = if (circle) ci else sq
@@ -3573,7 +3601,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             c.scale(scale, scale)
             if (rk != null && !roomSwap) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * rk).toInt())
             if (fb != null && fb.drawAlpha < 255) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, fb.drawAlpha)
-            next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
+            // round 1533 (the user on test 1532: "When using hold to cast it will show the button glyph as red if the original spell was not
+            // usable, I want that to also shift with the ability that its showing casting so its not confusing"): under a takeover the tap's
+            // slot says nothing of its own - no proc halo round the hold's face, no count, its glyph in the HOLD spell's range (the takeover's
+            // face drawn over it has the rest: the hold spell's icon, shade and glyph)
+            val over = takeoverStateOver(src, li, now)
+            val stDraw = if (over != null) tapUnder.also { it.copyFrom(st); it.gl = 0; it.r = over.r; it.countText = null } else st
+            next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, stDraw,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
                 if (fb != null && fb.k == "spell" && !isTrigFight(fb)) fightCdLeft(src, now) else -1f))
             next = min(next, drawTakeover(c, pos, src, li, circle, now))     // m195: a fired hold has the big face until its GCD ends

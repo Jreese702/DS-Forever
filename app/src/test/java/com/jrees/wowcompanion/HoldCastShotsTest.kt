@@ -192,14 +192,14 @@ class HoldCastShotsTest {
      *  + 0.5 s), "gcd01" / "gcd12" / "gcd17" (an instant with a 1.5 s GCD, 0.1 / 1.2 / 1.7 s on), "nogcd01" / "nogcd04" (no GCD: none) */
     private fun bars(name: String, lt: Boolean, layout: CastView.Layout?, tapCd: Boolean = false, holdCd: Boolean = false,
                      prog: Long = -1L, fire: Boolean = false, states: String? = null, take: String? = null, ltUp: Boolean = false,
-                     refsAfter: Map<Int, PadMapModel.Ref>? = null): Bitmap {
+                     refsAfter: Map<Int, PadMapModel.Ref>? = null, tap: JSONObject? = null, tapIcon: Int? = null): Bitmap {
         val cast = CastView(app) { }
         if (layout != null) cast.layout = layout
         // 1:1 with the Thor's bottom screen: the band 1240 wide (its 112-unit row at rest, 215 px with its room), the diamonds 354 tall
         val ww = 1240; val hh = if (layout == CastView.Layout.DIAMONDS) 354 else 215
         cast.measure(View.MeasureSpec.makeMeasureSpec(ww, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(hh, View.MeasureSpec.EXACTLY))
         cast.layout(0, 0, ww, hh)
-        val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
+        val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, tapIcon ?: 136075)
         fun layer() = JSONArray().apply { for (p in 1..8) put(JSONObject().put("p", p).put("k", "spell").put("id", 400 + p).put("i", icons[p - 1])) }
         val hud = JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1).put("pages", JSONArray().put(true).put(true).put(true))
             .put("L", JSONObject().put("n", layer()).put("lt", layer()).put("rt", layer()).put("lr", layer())))
@@ -213,13 +213,18 @@ class HoldCastShotsTest {
         if (holdCd) cast.holdCooldowns(mapOf(HoldCast.key(if (lt) 1 else 0, if (lt) 8 else 8) to PadMapModel.FaceCd(10.0, 6.5, false, false),
             HoldCast.key(0, 2) to PadMapModel.FaceCd(20.0, 15.0, false, false)), now)
         if (tapCd) cast.fightCooldown(8, now - 2000L, 8000L)
-        if (states != null) {
-            val (u, m, r) = when (states) {
-                "mana" -> Triple(1, 1, 1); "range" -> Triple(1, 0, 0); "both" -> Triple(1, 1, 0)
-                "unusable" -> Triple(0, 0, 1); "unusable_range" -> Triple(0, 0, 0); else -> Triple(1, 0, 1)
+        if (states != null || tap != null) {
+            val hs = JSONObject().put("g", 500.0)
+            if (states != null) {
+                val (u, m, r) = when (states) {
+                    "mana" -> Triple(1, 1, 1); "range" -> Triple(1, 0, 0); "both" -> Triple(1, 1, 0)
+                    "unusable" -> Triple(0, 0, 1); "unusable_range" -> Triple(0, 0, 0); else -> Triple(1, 0, 1)
+                }
+                hs.put("fs", JSONArray().put(JSONObject().put("i", 324).put("u", u).put("m", m).put("r", r)))
             }
-            val fs = JSONObject().put("i", 324).put("u", u).put("m", m).put("r", r)
-            cast.update(JSONObject().put("hudS", JSONObject().put("g", 500.0).put("fs", JSONArray().put(fs))))
+            // round 1533: the tap's own state on the bare A (the state document's n layer, slot 8)
+            if (tap != null) hs.put("L", JSONObject().put("n", JSONArray().apply { for (p in 1..8) put(if (p == 8) tap else JSONObject()) }))
+            cast.update(JSONObject().put("hudS", hs))
         }
         CastView::class.java.getDeclaredMethod("onPad", Boolean::class.java, Boolean::class.java, Boolean::class.java, Boolean::class.java)
             .apply { isAccessible = true }.invoke(cast, lt, false, false, false)
@@ -344,7 +349,7 @@ class HoldCastShotsTest {
      *  hold refs (another spell, or none, on that place), and the face still shows the hold that was cast until it ends */
     @Test fun theTakeoverKeepsTheFiredSpellWhenTheTabChanges() {
         lang("en")
-        // In combat's refs: another hold on the bare A (LT + Y's Chain Heal), the rest as they were (the badge wears the tap spell meanwhile)
+        // In combat's refs: another hold on the bare A (LT + Y's Chain Heal), the rest as they were (the badge faded out meanwhile)
         val combatRefs = PadMapModel.holdRefs(PadMapModel.parse(padmap())!!).toMutableMap().also { it[HoldCast.key(0, 8)] = it.getValue(HoldCast.key(1, 6)) }
         val kept = bars("k1_takeover_fired_spell", lt = false, layout = CastView.Layout.DIAMONDS, fire = true, take = "cast")
         val swapped = bars("k2_takeover_after_the_fight_tab", lt = false, layout = CastView.Layout.DIAMONDS, fire = true, take = "cast",
@@ -452,6 +457,44 @@ class HoldCastShotsTest {
         assertFalse("no GCD: gone after none (0.36 s)", differs(ready, n04))
     }
     private fun all(b: Bitmap) = RectF(0f, 0f, b.width.toFloat(), b.height.toFloat())
+
+    /**
+     * ROUND 1533, THE FACE SAYS THE SPELL IT SHOWS (the user on test 1532, 2026-11-25: "When using hold to cast it will show the button glyph
+     * as red if the original spell was not usable, I want that to also shift with the ability that its showing casting so its not
+     * confusing"): while the hold's takeover has the A's face, its glyph is red only for the HOLD spell's range (the tap out of range: not
+     * red; the hold out of range: red), the tap's proc halo is not round it and the badge is faded out - the takeover's picture does not
+     * depend on the tap spell at all (its icon, range, halo); back after it ends
+     */
+    @Test fun theFaceSaysTheSpellItShows() {
+        lang("en")
+        val lay = CastView.Layout.DIAMONDS
+        val tapOut = JSONObject().put("u", 1).put("m", 0).put("r", 0)
+        val tapIn = JSONObject().put("u", 1).put("m", 0).put("r", 1)
+        val ready = bars("home_glyph_tap_in_range", lt = false, layout = lay, states = "ok", tap = tapIn)
+        val red = bars("home_glyph_tap_out_of_range", lt = false, layout = lay, states = "ok", tap = tapOut)
+        val gbox = diffBox(ready, red) ?: error("the tap out of range changed nothing (no red glyph)")
+        fun reds(b: Bitmap): Int { var n = 0; for (x in gbox.left until gbox.right) for (y in gbox.top until gbox.bottom) {
+            val c = b.getPixel(x, y); if (Color.red(c) > 150 && Color.green(c) < 110 && Color.blue(c) < 110) n++ }; return n }
+        assertTrue("the tap out of range: its glyph red (${reds(red)} red px)", reds(red) > 20 && reds(ready) < 3)
+        // the takeover: the tap out of range, the hold (Lightning Shield) in range - the glyph NOT red
+        val t1 = bars("home_glyph_hold_in_range_takeover", lt = false, layout = lay, fire = true, take = "cast", states = "ok", tap = tapOut)
+        assertTrue("the hold in range has the face: its glyph not red (${reds(t1)} red px)", reds(t1) < 3)
+        // the hold out of range, the tap in range: red while the takeover has the face
+        val t2 = bars("home_glyph_hold_out_of_range_takeover", lt = false, layout = lay, fire = true, take = "cast", states = "range", tap = tapIn)
+        assertTrue("the hold out of range has the face: its glyph red (${reds(t2)} red px)", reds(t2) > 20)
+        // the takeover's picture says nothing of the tap: another tap icon, out of range, with a proc halo - the same picture (no halo round
+        // the hold's face, no tap spell on the badge: it is faded out, no red glyph)
+        val other = bars("home_glyph_takeover_other_tap_halo", lt = false, layout = lay, fire = true, take = "cast", states = "ok",
+            tap = JSONObject().put("u", 1).put("m", 0).put("r", 0).put("gl", 1), tapIcon = 135990)
+        assertFalse("the takeover's picture does not depend on the tap spell (icon, range, halo)", differs(t1, other))
+        // without a takeover that tap is drawn (halo, icon, red glyph): the comparison above is not vacuous
+        val otherIdle = bars("home_glyph_other_tap_halo_no_takeover", lt = false, layout = lay, states = "ok",
+            tap = JSONObject().put("u", 1).put("m", 0).put("r", 0).put("gl", 1), tapIcon = 135990)
+        assertTrue(differs(red, otherIdle))
+        // the takeover over: the tap's red glyph again
+        val back = bars("home_glyph_back_to_the_tap", lt = false, layout = lay, fire = true, take = "back", states = "ok", tap = tapOut)
+        assertTrue("the takeover over: the tap's red glyph again (${reds(back)} red px)", reds(back) > 20)
+    }
 
     @Test fun theBindBoxAndSettings() {
         lang("en")

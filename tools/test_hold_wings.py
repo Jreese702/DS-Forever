@@ -22,6 +22,11 @@ SHADES the badge's icon red (its disc stays brown), mana + range red, unusable +
 circle glow, a track, one Cooldown started once from 0.25 s to the fire point, reversed so the gold grows; "full" when charged); (3)
 the takeover's face wears the game's gold checked ring (b.hsel), eased with it; a queued hold (IsCurrentSpell, PadMap's "q") keeps the
 face past the 2 s fallback until it stops being current; "none" ends it at once; "gcd" gives its end.
+(5) THE FACE SAYS THE SPELL IT SHOWS (nbar25; the user on test 1532, 2026-11-25: "When using hold to cast it will show the button glyph
+as red if the original spell was not usable, I want that to also shift with the ability that its showing casting so its not
+confusing"): while the takeover has the face the glyph's red (range only), b.range, the face's own shade (b.hflash: blue mana, grey
+unusable) and the count are the HOLD spell's, switched at the fire and back at the end at once; the badge fades out (1 - the face's
+alpha), never wearing the tap spell.
 --shots DIR renders the four faces with the real art (the game's ring / glyph art from the art root, the icons from its icons.pak).
 Needs lupa (PIL for --shots). Exit code 1 on any failure."""
 import bisect
@@ -191,8 +196,11 @@ def main():
     # ------------------------------------------------------------------------------------------------ (3) the takeover
     tap_icon = b[2].tapIcon
     L.execute('WC = WowCompanion; WC.gcdRun = nil; WC.holdFired(2)')
-    chk("3. the hold fired: the hold spell takes the big face; the badge wears the tap spell", b[2].hto is not None and b[2].hflash.shown
-        and b[2].hflash.tex == 136048 and b[2].hb.icon.tex == tap_icon and b[2].hflash.alpha == 1, (b[2].hflash.tex, b[2].hb.icon.tex, tap_icon))
+    # nbar25 (the user on test 1532: "... so its not confusing"): the badge FADES OUT while the face has the hold spell - never the tap
+    # spell on it (nbar21's swap retired)
+    chk("3. the hold fired: the hold spell takes the big face; the badge faded out (its own hold spell, never the tap spell)",
+        b[2].hto is not None and b[2].hflash.shown and b[2].hflash.tex == 136048 and b[2].hb.icon.tex == 136048 and b[2].hb.icon.tex != tap_icon
+        and b[2].hb.alpha == 0 and b[2].hflash.alpha == 1, (b[2].hflash.tex, b[2].hb.icon.tex, tap_icon, b[2].hb.alpha))
     chk("3. nbar25: in the game's gold CHECKED ring (b.hsel: the squareslot's border-selected atlas, 4 units beyond), shown with the face",
         b[2].hsel is not None and b[2].hsel.shown and b[2].hsel.atlas == "gamepad-actionbar-squareslot-border-selected" and b[2].hsel.alpha == 1
         and b[2].hsel.w == b[2].sz + 8, (b[2].hsel and b[2].hsel.atlas, b[2].hsel and b[2].hsel.shown))
@@ -205,8 +213,8 @@ def main():
     chk("3. the cast ended: easing back (0 < alpha < 1)", b[2].hto is not None and 0 < b[2].hflash.alpha < 1, b[2].hflash.alpha)
     chk("3. ... its golden ring eases with it", b[2].hsel.shown and b[2].hsel.alpha == b[2].hflash.alpha, (b[2].hsel.alpha, b[2].hflash.alpha))
     L.execute('TICK(0.25)')
-    chk("3. ... back: the tap spell on the face, the hold spell on the badge again", b[2].hto is None and not b[2].hflash.shown
-        and b[2].hb.icon.tex == 136048, (b[2].hto, b[2].hb.icon.tex))
+    chk("3. ... back: the tap spell on the face, the hold spell's badge in full again", b[2].hto is None and not b[2].hflash.shown
+        and b[2].hb.icon.tex == 136048 and b[2].hb.alpha == 1, (b[2].hto, b[2].hb.icon.tex, b[2].hb.alpha))
     chk("3. ... and no golden ring", not b[2].hsel.shown)
     # nbar25: A QUEUED next-swing hold (Raptor Strike's normal look): kept past the 2 s fallback while the game says it is current
     L.execute('WC.gcdRun = nil; CURRENT[403] = true; WC.holdFired(2); WC.holdCast(2, "q"); TICK(2.3)')
@@ -301,9 +309,11 @@ WC.gcdRun = nil; LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
     chk("3. ... and it ends on time (no word: 2 s)", b[5].hto is None and not b[5].hflash.shown)
     # the badge while the takeover has the bare layer's face: the bare X's TAP spell on it (the face's own picture is under the takeover)
     L.execute('WC.holdFired(5, "lt"); TICK(0.1)')
-    chk("3. LT + X fired, the bare layer on the bar: the bare badge wears the tap spell", b[5].hb.icon.tex == b[5].tapIcon, (b[5].hb.icon.tex, b[5].tapIcon))
+    chk("3. LT + X fired, the bare layer on the bar: the bare badge faded out (nbar25: never the tap spell on it)",
+        b[5].hb.alpha == 0 and b[5].hb.icon.tex == 135825, (b[5].hb.icon.tex, b[5].hb.alpha))
     L.execute('TICK(2.5)')
-    chk("3. ... ended: the bare badge back to the bare X's hold spell", b[5].hto is None and b[5].hb.icon.tex == 135825, b[5].hb.icon.tex)
+    chk("3. ... ended: the bare badge back in full, the bare X's hold spell", b[5].hto is None and b[5].hb.icon.tex == 135825 and b[5].hb.alpha == 1,
+        (b[5].hb.icon.tex, b[5].hb.alpha))
     L.execute('LT = nil; TICK(0.1)')
     L.execute('WC.holdFired(5, "bare"); TICK(0.1)')
     chk("3. the bare X's own hold, fired on the bare layer: its spell on the face", b[5].hflash.shown and b[5].hflash.tex == 135825, b[5].hflash.tex)
@@ -346,11 +356,97 @@ WC.gcdRun = nil; LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
     chk("4. plain frames only (no Secure template), nothing bound or set", list(G.BADTPL.values()) == [] and list(G.SPY.values()) == [],
         (list(G.BADTPL.values()), list(G.SPY.values())))
 
+    face_follows_the_hold()
+
     if "--shots" in sys.argv:
         shots(sys.argv[sys.argv.index("--shots") + 1])
 
     print("\n%d failure(s)" % len(FAILS))
     return 1 if FAILS else 0
+
+
+# the tap at Y (6) is Flame Shock (8050) and its hold Lightning Bolt (403): NB.resolve's pick for Y, PadMap's hold view
+FACE_PRE = '''WC = WowCompanion; WC.gcdRun = nil
+local old = WC.nbar.resolve
+WC.nbar.resolve = function(set, p, ...) if p == 6 then return { kind = "spell", id = 8050, icon = 135813 } end return old(set, p, ...) end
+HOLDS[6] = { n = "Lightning Bolt", id = 403, i = 136048 }
+'''
+
+
+def face_follows_the_hold():
+    """(5) THE FACE SAYS THE SPELL IT SHOWS (nbar25; the user on test 1532, 2026-11-25: "When using hold to cast it will show the button
+    glyph as red if the original spell was not usable, I want that to also shift with the ability that its showing casting so its not
+    confusing"): while the takeover has the face, the glyph / word red, b.range, the face's own shade (b.hflash) and the count are the
+    HOLD spell's; the badge fades out (the tap spell is never on it); the takeover over, the tap's again at once"""
+    L, G = boot()
+    NB = G.WowCompanion.nbar
+    L.execute(FACE_PRE + 'SPELLS[8050].range = false; SPELLS[403].range = nil; TICK(0.3)')
+    b6 = NB.f.btn[6]
+
+    def gvc(bt):
+        return tuple(round(float(v), 2) for v in bt.glyph.vc.values()) if bt.glyph.vc else None
+
+    def fvc(bt):
+        return tuple(round(float(v), 2) for v in bt.hflash.vc.values()) if bt.hflash is not None and bt.hflash.vc else None
+
+    red, white = (1.0, 0.2, 0.2), (1.0, 1.0, 1.0)
+    chk("5. the tap (Flame Shock) out of range, no takeover: the glyph red", b6.range is False and gvc(b6) == red, (b6.range, gvc(b6)))
+    L.execute('WC.holdFired(6)')
+    chk("5. the hold fired (Lightning Bolt in range): the glyph white AT ONCE - the hold spell's range (b.range true)",
+        b6.hto is not None and b6.hflash.shown and b6.range is True and gvc(b6) == white, (b6.range, gvc(b6)))
+    chk("5. ... the badge FADES OUT (alpha 0) and keeps the hold spell's own icon (never the tap spell)",
+        b6.hb.alpha == 0 and b6.hb.icon.tex == 136048, (b6.hb.alpha, b6.hb.icon.tex))
+    L.execute('TICK(0.3)')
+    chk("5. ... after the bar's own redraws: still the hold's (white), the badge still out", b6.range is True and gvc(b6) == white
+        and b6.hb.alpha == 0 and b6.hb.icon.tex == 136048, (b6.range, gvc(b6), b6.hb.alpha, b6.hb.icon.tex))
+    chk("5. ... the face (b.hflash) wears the hold's shade: plain (ready)", fvc(b6) == white and b6.hflash.desat is False, (fvc(b6), b6.hflash.desat))
+    L.execute('SPELLS[403].nomana = true; TICK(0.3)')
+    chk("5. the hold without the mana: the FACE blue (0.45, 0.55, 1), the glyph not red", fvc(b6) == (0.45, 0.55, 1.0) and gvc(b6) == white,
+        (fvc(b6), gvc(b6)))
+    L.execute('SPELLS[403].nomana = nil; SPELLS[403].usable = false; TICK(0.3)')
+    chk("5. the hold not usable: the face grey, desaturated", fvc(b6) == (0.45, 0.45, 0.45) and b6.hflash.desat is True, (fvc(b6), b6.hflash.desat))
+    L.execute('SPELLS[403].usable = nil; SPELLS[403].range = false; TICK(0.3)')
+    chk("5. the hold out of range: the glyph red (the hold's range)", b6.range is False and gvc(b6) == red, (b6.range, gvc(b6)))
+    L.execute('SPELLS[403].range = nil; TICK(0.3)')
+    # the count: the hold spell's (none) over its face, never the tap's
+    L.execute('local b = WC.nbar.f.btn[6]; b.tapSt = { cnt = 3 }; WC.nbar.faceLook(b)')
+    chk("5. the count over the hold's face is the hold spell's (none), not the tap's 3", b6.count.text == "", b6.count.text)
+    L.execute('TICK(2.5)')
+    chk("5. the takeover over: the tap's red glyph again, the badge back (alpha 1, the hold spell's icon)",
+        b6.hto is None and b6.range is False and gvc(b6) == red and b6.hb.alpha == 1 and b6.hb.icon.tex == 136048,
+        (b6.hto is not None, b6.range, gvc(b6), b6.hb.alpha, b6.hb.icon.tex))
+    L.execute('local b = WC.nbar.f.btn[6]; b.tapSt = { cnt = 3, r = 0 }; WC.nbar.faceLook(b)')
+    chk("5. ... and the tap's count", b6.count.text == "3", b6.count.text)
+    L.execute('TICK(0.3)')
+    # the other way round: the tap in range, the hold out of range - red only while the takeover has the face
+    L.execute('SPELLS[8050].range = nil; SPELLS[403].range = false; TICK(0.3)')
+    chk("5. the tap in range: white", b6.range is True and gvc(b6) == white, gvc(b6))
+    L.execute('WC.holdFired(6)')
+    chk("5. ... the hold (out of range) fired: red at once", b6.range is False and gvc(b6) == red, gvc(b6))
+    L.execute('TICK(1.0)')
+    mid = gvc(b6)
+    L.execute('TICK(1.5)')
+    chk("5. ... red through the takeover, white again after it", mid == red and b6.hto is None and gvc(b6) == white and b6.range is True,
+        (mid, gvc(b6)))
+    # easing back: the badge comes back as the face goes (1 - the face's alpha)
+    L.execute('WC.holdFired(6); TICK(2.1)')
+    ea = (float(b6.hflash.alpha), float(b6.hb.alpha)) if b6.hto is not None else None
+    chk("5. easing back: the badge fades in as the face fades out (alpha 1 - the face's)", ea is not None and 0 < ea[0] < 1
+        and abs(ea[1] - (1 - ea[0])) < 1e-9, ea)
+    L.execute('TICK(0.5)')
+    # a trigger layer's takeover (ruling A) shown on the bare layer: the bare badge out too; a layer that does not show it: the badge in
+    L.execute('''HOLDS2 = { [5] = { n = "Chain Lightning", id = 421, i = 136015 } }
+local pm = WowCompanion.padMap
+pm.holdAt = function(page, set, pos, tab) if set == 1 then return HOLDS[pos] elseif set == 2 then return HOLDS2[pos] end end
+LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
+    b5 = NB.f.btn[5]
+    out5 = b5.hb.alpha
+    L.execute('RT = true; TICK(0.1)')
+    in5 = b5.hb.alpha
+    L.execute('RT = nil; TICK(2.5)')
+    chk("5. LT + X's takeover on the bare layer: the bare badge out; RT's layer (no takeover there): its badge in", out5 == 0 and in5 == 1,
+        (out5, in5))
+    chk("5. nothing secure, nothing bound or set", list(G.BADTPL.values()) == [] and list(G.SPY.values()) == [])
 
 
 # ==================================================================================================== the renders (real art)
@@ -416,6 +512,9 @@ def shots(out):
         if ic is not None:
             icd = int(38 * SC["S"])
             base = circ(ic, icd)
+            face = bt.hto is not None and bt.hflash.shown
+            fx = bt.hflash if face else bt.icon                                     # nbar25: the face's own shade (the hold's in a takeover)
+            base = tint(base, [float(v) for v in fx.vc.values()] if fx.vc else None, fx.desat is True)
             if bt.hto is not None and bt.hflash.shown and bt.hflash.alpha < 1:      # easing: the tap under the hold
                 tp = pak.get(int(bt.icon.tex))
                 if tp is not None:
@@ -431,9 +530,13 @@ def shots(out):
                 si = tint(si, None, False, float(bt.hsel.alpha))
                 img.alpha_composite(si, (int(cx - ds / 2), int(cy - ds / 2)))
         g = Image.open(os.path.join(ui, GL[p])).convert("RGBA").resize((int(15 * SC["S"]), int(15 * SC["S"])), Image.LANCZOS)
+        if bt.glyph.vc:                                                             # the glyph's red (range only)
+            g = tint(g, [float(v) for v in bt.glyph.vc.values()], False)
         img.alpha_composite(g, (int(cx + 13.2 * SC["S"] - 7.5 * SC["S"]), int(cy - 13.2 * SC["S"] - 7.5 * SC["S"])))
         hb = bt.hb
-        if hb is not None and hb.shown:
+        hba = 1.0 if hb is None or hb.alpha is None else float(hb.alpha)            # nbar25: faded out while the face has the hold
+        if hb is not None and hb.shown and hba > 0:
+            under = img.copy()
             pt = hb.pts[1]
             bx, by = cx + float(pt[4]) * SC["S"], cy - float(pt[5]) * SC["S"]
             R = 17 * SC["S"] / 2
@@ -470,6 +573,8 @@ def shots(out):
                 ii = circ(hi, int(2 * (R - 1.5 * SC["S"])))
                 ii = tint(ii, [float(v) for v in hb.icon.vc.values()] if hb.icon.vc else None, hb.icon.desat is True)
                 img.alpha_composite(ii, (int(bx - ii.width / 2), int(by - ii.height / 2)))
+            if hba < 1:
+                img.paste(Image.blend(under, img, hba))
         if title:
             ImageDraw.Draw(img).text((cx - 46 * SC["S"] / 2, cy + 30 * SC["S"]), title, fill=(236, 224, 196, 255), font=font(18))
 
@@ -569,6 +674,21 @@ WC.gcdRun = nil; LT = true; TICK(0.1); WC.holdFired(5, "lt"); WC.holdCast(5, "ca
     frame("top_instant_nogcd_t01", [(bt[2], 2, "no GCD: 0.1 s")], 1)
     L.execute('WC.holdCast(2, "none"); TICK(0.3)')
     frame("top_instant_nogcd_t04", [(bt[2], 2, "none: back")], 1)
+    # nbar25 THE FACE SAYS THE SPELL IT SHOWS: Y's tap Flame Shock out of range (its glyph red), its hold Lightning Bolt in range - the
+    # glyph white while the hold has the face, the badge out; then the other way round
+    L, G = boot()
+    f = G.WowCompanion.nbar.f
+    bt = {p: f.btn[p] for p in range(1, 9)}
+    L.execute(FACE_PRE + 'SPELLS[8050].range = false; SPELLS[403].range = nil; TICK(0.3)')
+    frame("top_glyph_tap_out_of_range", [(bt[6], 6, "tap out of range")], 1)
+    L.execute('WC.holdFired(6); WC.holdCast(6, "cast", 1.8); TICK(0.3)')
+    frame("top_glyph_hold_in_range_takeover", [(bt[6], 6, "hold in range: white")], 1)
+    L.execute('SPELLS[403].nomana = true; TICK(0.3)')
+    frame("top_glyph_hold_no_mana_takeover", [(bt[6], 6, "hold, no mana: blue")], 1)
+    L.execute('SPELLS[403].nomana = nil; TICK(2.0)')
+    frame("top_glyph_back_to_the_tap", [(bt[6], 6, "back: the tap's red")], 1)
+    L.execute('SPELLS[8050].range = nil; SPELLS[403].range = false; TICK(0.3); WC.holdFired(6); WC.holdCast(6, "cast", 1.8); TICK(0.3)')
+    frame("top_glyph_hold_out_of_range_takeover", [(bt[6], 6, "hold out of range: red")], 1)
     print("shots in", out)
 
 
