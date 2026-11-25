@@ -171,3 +171,26 @@ driverVersion "26.3.1-dsf-icd", minApi 29. The launcher's TU_DEBUG=noconform (ke
 between A/B runs) names no option in 26.3.1: `parse_debug_string` (src/util/u_debug.c) skips unknown names silently,
 and 26.3.1 reports Vulkan 1.4 on every a7xx and 1.3 on a6xx without it (src/freedreno/vulkan/tu_device.cc).
 The C++ runtime (LLVM libc++) is linked statically from the NDK (`-static-libstdc++`; licenses/ndk/).
+
+### Rebuilt without android-strict, 2026-11-24
+
+DXVK 3.1.1 refused the GPU on this driver ("Your 3D accelerator card is not supported"; its log: "Device does not support
+required feature 'khrLoadStoreOpNone'"). Mesa's Android build with `android-strict` on (the default) offers only the device
+extensions its allowlist permits at the target API (vk_android_allowed_device_extensions), and VK_KHR_load_store_op_none is
+allowed from API 35, not 29. The SAME tarball, patch and NDK, with `-Dandroid-strict=false` added to build_mesa.sh, on CachyOS
+Linux (meson 1.12.1, ninja 1.13.2). pack.py reproduces the shipped zip byte-for-byte.
+
+Output: libvulkan_freedreno.so 03d86a9f117960637adee77a83ac72d588215b8cb165835d886d088cb941b2dc (14,422,384 B); zip
+95a028aeb061263868e828a06f873151151fd54939d19bf8ca4d56bfd4000e94 (2,687,936 B), pinned in tools/components-test-drivers.sha256.
+meta.json name "Turnip-Test-Mesa-26.3.1-nostrict" (a new unpack folder, so a phone holding the first build unpacks this one),
+driverVersion "26.3.1-dsf-icd-nostrict". With it DXVK 3.1.1 starts (tiler mode on). On an Adreno 740 Thor some UI elements (the
+personal resource bars) have been seen drawing flat grey with this driver and DXVK 3.1.1; Recommended is unaffected.
+
+## DXVK 3.1.1 (dxvk-3.1.1-wow-aarch64-diag2.wcp), 2026-11-24
+
+Source: https://github.com/doitsujin/dxvk tag v3.1.1 (b1a1c99), zlib/libpng, plus `tools/dxvk/dxvk-3.1.1-wow.patch` (no
+mutable-format swapchain: the Winlator wrapper's swapchain images are not mutable and Turnip aborts at vk_image.c:569; two log
+lines). Toolchain: llvm-mingw 20261104 (ucrt, x86_64 Linux host), cross file tools/dxvk/aarch64-windows.ini.in, meson release
+build, stripped. Recipe: `tools/dxvk/build.sh`. Pinned in tools/components-dxvk.sha256
+(e4bd1c6f3a79ce7220281650ae4938aa4937695c161fce9a4819948db3db2539, 2,315,248 B), checked by app/build.gradle.kts and
+tools/build_release.py; notices in licenses/dxvk-3.1.1/.

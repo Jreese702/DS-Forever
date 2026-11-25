@@ -1,0 +1,14 @@
+[binaries]
+c = '@LLVM_MINGW@/bin/aarch64-w64-mingw32-clang'
+cpp = '@LLVM_MINGW@/bin/aarch64-w64-mingw32-clang++'
+ar = '@LLVM_MINGW@/bin/aarch64-w64-mingw32-ar'
+strip = '@LLVM_MINGW@/bin/aarch64-w64-mingw32-strip'
+windres = '@LLVM_MINGW@/bin/aarch64-w64-mingw32-windres'
+widl = '@LLVM_MINGW@/bin/aarch64-w64-mingw32-widl'
+glslang = '/usr/bin/glslangValidator'
+
+[host_machine]
+system = 'windows'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'

@@ -22,7 +22,10 @@ COMPONENT_PREFIX = "assets/bundled_components/"
 # OPT-IN TEST DRIVERS (2026-11-23; GraphicsDriver.kt): extra bundled components built by DS Forever itself (tools/turnip-test/),
 # pinned in their own tools/components-test-drivers.sha256 so the original manifest and fetch script stay byte-for-byte upstream's.
 TEST_DRIVERS = ("turnip-test-mesa-26.3.1.zip",)
-BUNDLED = COMPONENT_NAMES + TEST_DRIVERS
+# DXVK 3.1.1 (2026-11-24; WoWForeverScreen.kt DXVK_3, the Adreno 740 profile's DXVK): built by tools/dxvk/build.sh, pinned in its own
+# tools/components-dxvk.sha256 for the same reason as the test drivers.
+EXTRA_DXVK = ("dxvk-3.1.1-wow-aarch64-diag2.wcp",)
+BUNDLED = COMPONENT_NAMES + TEST_DRIVERS + EXTRA_DXVK
 # The Proton package ships trimmed of its unused 32-bit Windows files (tools/trim_proton_i386.py, after WoW Forever for Android
 # v2.4.4 55b0bd23): tools/components.sha256 still pins the original download, tools/components-trimmed.sha256 the shipped file.
 TRIMMED = ("proton-11.0-90624-arm64ec.wcp",)
@@ -70,9 +73,20 @@ def verified_components(launcher):
     if set(tests) != set(TEST_DRIVERS):
         raise ValueError("components-test-drivers.sha256 must pin every test driver")
     pinned.update(tests)
+    extra = {}
+    for line in (launcher / "tools/components-dxvk.sha256").read_text(encoding="ascii").splitlines():
+        if not line.strip():
+            continue
+        match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *]([^/\\\s]+)", line)
+        if not match or match[2] not in EXTRA_DXVK or match[2] in extra or match[2] in pinned:
+            raise ValueError("Invalid or duplicate DXVK entry")
+        extra[match[2]] = match[1].lower()
+    if set(extra) != set(EXTRA_DXVK):
+        raise ValueError("components-dxvk.sha256 must pin every extra DXVK")
+    pinned.update(extra)
     folder = launcher / "app/src/main/assets/bundled_components"
     if not folder.is_dir() or {path.name for path in folder.iterdir()} != set(BUNDLED):
-        raise ValueError("Expected exactly the four bundled runtime files and the test drivers")
+        raise ValueError("Expected exactly the four bundled runtime files, the test drivers and DXVK 3.1.1")
     components = []
     for name in BUNDLED:
         source = folder / name
@@ -117,7 +131,7 @@ def verify_packaged_components(archive, components):
     names = [name for name in archive.namelist() if name.startswith(COMPONENT_PREFIX)]
     expected = {COMPONENT_PREFIX + name for name in BUNDLED}
     if set(names) != expected or len(names) != len(expected):
-        raise ValueError("APK must contain exactly the four bundled runtime files and the test drivers")
+        raise ValueError("APK must contain exactly the four bundled runtime files, the test drivers and DXVK 3.1.1")
     for component in components:
         entry = COMPONENT_PREFIX + component["file"]
         with archive.open(entry) as stream:
@@ -141,7 +155,7 @@ def source_stamp(launcher, companion):
                                                   "dsforever/build.gradle.kts", "gradle.properties", "local.properties",
                                                   "tools/components.sha256", "tools/fetch_components.sh",
                                                   "tools/components-trimmed.sha256", "tools/trim_proton_i386.py",
-                                                  "tools/components-test-drivers.sha256")
+                                                  "tools/components-test-drivers.sha256", "tools/components-dxvk.sha256")
                          if (root / name).is_file())
         for path in sorted(files):
             with path.open("rb") as source:

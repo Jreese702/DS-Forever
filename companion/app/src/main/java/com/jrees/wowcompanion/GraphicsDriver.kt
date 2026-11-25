@@ -49,7 +49,9 @@ object GraphicsDriver {
      */
     enum class Choice(val id: String, val label: String, val folder: String?, val asset: String?, val version: String?) {
         RECOMMENDED("recommended", "Recommended", null, null, null),
-        TEST_MESA("test-mesa-26.3.1", "Test: Mesa 26.3.1", "Turnip-Test-Mesa-26.3.1", "turnip-test-mesa-26.3.1.zip", "26.3.1-dsf-icd"),
+        // 2026-11-24: built with -Dandroid-strict=false (tools/turnip-test/build_mesa.sh) so it offers VK_KHR_load_store_op_none, which
+        // DXVK 3.1.1 requires; a new folder, so a phone holding the first (strict) build unpacks this one instead of keeping the old one
+        TEST_MESA("test-mesa-26.3.1", "Test: Mesa 26.3.1", "Turnip-Test-Mesa-26.3.1-nostrict", "turnip-test-mesa-26.3.1.zip", "26.3.1-dsf-icd-nostrict"),
     }
 
     val DEFAULT = Choice.RECOMMENDED
