@@ -1,0 +1,258 @@
+"""SINGLE SCREEN MODE, THE ADD-ON'S HALF (the user, 2026-11-25: "a single screen mode where the game shifts to the top screen when a button
+is pushed. We need to rebuild all of our menus and features to work on the top screen when single screen mode is selected"; the pick for
+"While playing": the game's HUD and our Nintendo bar, in fights the Wings and our top cast bar - the cast bar out of fights too, as no
+bottom screen carries it now), off-device: the REAL add-on files under the stub games the other suites use.
+
+    python -B tools/test_single_top.py
+
+  A THE CHANNEL (Book b86 / PadMap m199, test_edit_preview.py's world): the FOURTH page (padtab 39, 38, 0 then N) sets the app's mode -
+    0 off, 1 on; WC.padMap.single() says it, the padmap's dpad state says it (`ss`, 1 / 0) and is sent again; while on, combatTopOn /
+    combatCastTopOn answer true (the Wings, our top bar in fights) while the padmap's ct / cc still say the SAVED flags (0 here) and the
+    saved variables never change; IN MEMORY ONLY: a lease of SS_TTL s (gone after it with no word from the app; an expired lease in a
+    fight lasts until the fight's end), none after a /reload; the fourth page's pick lasts 2 s; the earlier pages still their own
+    (the third page's 27 the swing, the second page's codes); no spied call (no CVar / binding / macro), Lua 5.1's 200 locals kept.
+  B OUR TOP CAST BAR FOR EVERY CAST (ActionBar nbar25, test_top_castbar.py's scene): the saved flags OFF and no fight - the mode off: a
+    Hearthstone shows nothing on top (two screens: the bottom band has it); the mode on: our top cast bar shows the Hearthstone at once
+    (the fill part way, its name), no Wings out of the fight, gone after its finish; no cast: nothing; a fight with the mode on: the
+    Wings and our bar (as a Top-screen fight); Edit Home's preview still its own; plain frames only, nothing secure or written.
+  C NO TRACE (the source): the new code calls no SetCVar / SetBinding / macro API and no Alt / F-key chord.
+No device is read. Needs lupa. Exit code 1 on any failure."""
+import json
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from lupa import lua51 as lupa  # noqa: E402,F401
+
+import test_edit_preview as tep  # noqa: E402
+
+ROOT = os.path.dirname(HERE)
+ADDONS = os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons")
+fails = []
+passes = 0
+
+
+def chk(name, ok, got=""):
+    global passes
+    print(("PASS " if ok else "FAIL ") + name + ((" -> " + str(got)) if got != "" and not ok else ""))
+    if ok:
+        passes += 1
+    else:
+        fails.append(name)
+
+
+def src(*p):
+    return open(os.path.join(ADDONS, *p), encoding="utf-8").read()
+
+
+SER = ('(function() local function ser(v, d) if type(v) ~= "table" then return tostring(v) end; if d > 8 then return "?" end; '
+       'local ks = {}; for k in pairs(v) do ks[#ks + 1] = tostring(k) end; table.sort(ks); local o = {}; '
+       'for _, k in ipairs(ks) do local x = v[k]; if x == nil then x = v[tonumber(k)] end; o[#o + 1] = k .. "=" .. ser(x, d + 1) end; '
+       'return "{" .. table.concat(o, ",") .. "}" end; SER = ser; return ser(WowCompanionSpellsDB, 0) end)()')
+
+
+# ------------------------------------------------------------------------------------------------------------ A the channel
+def part_a():
+    print("\n-- A the channel (Book b86 / PadMap m199)")
+    pm_src = src("WowCompanionSpells", "PadMap.lua")
+    bk_src = src("WowCompanionSpells", "Book.lua")
+    chk("A0. PadMap m199, Book b86 and their notes", 'local PV = "m199"' in pm_src and "m199 SINGLE SCREEN MODE" in pm_src
+        and 'local BV = "b86"' in bk_src and "b86 SINGLE SCREEN MODE" in bk_src and "b86 THE FOURTH PAGE" in bk_src)
+    W = tep.tct.boot()
+    pm = 'WowCompanion.padMap'
+    chk("A1. the API is there (single / singleSet / SS_TTL)",
+        W.eval('type(%s.single) == "function" and type(%s.singleSet) == "function" and type(%s.SS_TTL) == "number"' % (pm, pm, pm)) is True)
+    if W.eval('type(%s.single) ~= "function"' % pm):
+        return
+    W.execute(pm + '.dpadBar(true); runTimers(NOW + 1)')
+
+    def st():
+        d = W.eval(pm + '.dpadState()')
+        return d.ss, d.ct, d.cc
+
+    def on():
+        return W.eval(pm + '.single()') is True
+
+    def tops():
+        return W.eval(pm + '.combatTopOn()') is True, W.eval(pm + '.combatCastTopOn()') is True
+
+    db0 = W.eval(SER)
+    chk("A2. off at first: ss 0, single() false, the Wings / top bar flags as saved (off)", st()[0] == 0 and not on() and tops() == (False, False),
+        (st(), on(), tops()))
+    n0 = int(W.eval('#SENT'))
+    tep.tct.padtab(W, 39, 38, 0, 1)
+    W.execute('runTimers(NOW + 1)')
+    chk("A3. 39, 38, 0, 1: on - ss 1, single() true", st()[0] == 1 and on(), (st(), on()))
+    chk("A4. ... combatTopOn / combatCastTopOn true (the Wings and our bar take the fights)", tops() == (True, True), tops())
+    chk("A5. ... the padmap's ct / cc still the SAVED flags (0): the app's two-screen Home stays honest", st()[1] == 0 and st()[2] == 0, st())
+    sent = []
+    for i in range(n0 + 1, int(W.eval('#SENT')) + 1):
+        try:
+            d = json.loads(W.eval('SENT[%d]' % i))
+        except Exception:      # noqa: BLE001
+            continue
+        if isinstance(d, dict) and d.get('type') == 'padmap':
+            sent.append(((d.get('m') or {}).get('dpad') or {}).get('ss'))
+    chk("A6. a padmap with ss = 1 sent (the app stops re-sending)", 1 in sent, sent)
+    chk("A7. nothing saved: the saved variables as they were", W.eval('SER(WowCompanionSpellsDB, 0)') == db0)
+    tep.tct.padtab(W, 39, 38, 0, 0)
+    W.execute('runTimers(NOW + 1)')
+    chk("A8. 39, 38, 0, 0: off (ss 0, the flags as saved again)", st()[0] == 0 and not on() and tops() == (False, False), (st(), tops()))
+    # the fourth page's pick lasts 2 s
+    tep.tct.padtab(W, 39, 38, 0)
+    W.execute('NOW = NOW + 3; runTimers(NOW + 1)')
+    tep.tct.padtab(W, 1)
+    W.execute('runTimers(NOW + 1)')
+    chk("A9. the fourth page's pick goes stale after 2 s (a late 1 is not the mode)", st()[0] == 0 and not on(), st())
+    # the earlier pages still their own
+    tep.tct.padtab(W, 39, 38, 37, 26)
+    W.execute('runTimers(NOW + 1)')
+    cs0 = W.eval(pm + '.dpadState().cs')
+    tep.tct.padtab(W, 39, 38, 37, 27)
+    W.execute('runTimers(NOW + 1)')
+    chk("A10. the third page still its own (26 / 27 the swing: cs %s -> %s), the mode untouched" % (cs0, W.eval(pm + '.dpadState().cs')),
+        cs0 == 0 and W.eval(pm + '.dpadState().cs') == 1 and st()[0] == 0)
+    # the lease
+    tep.tct.padtab(W, 39, 38, 0, 1)
+    W.execute('runTimers(NOW + 1)')
+    ttl = W.eval(pm + '.SS_TTL')
+    chk("A11. a lease of SS_TTL %s s (the app renews every 600 s)" % ttl, ttl == 900, ttl)
+    W.execute('NOW = NOW + %f; runTimers(NOW + 1)' % (ttl - 5))
+    still = on()
+    W.execute('NOW = NOW + 10; runTimers(NOW + 1)')
+    chk("A12. still on just before the lease ends, off after it (no word from the app)", still and not on() and st()[0] == 0, (still, on()))
+    # an expired lease in a fight: kept until the fight's end
+    tep.tct.padtab(W, 39, 38, 0, 1)
+    W.execute('runTimers(NOW + 1)')
+    W.execute('fightOn(); tick(0.5)')
+    W.execute('NOW = NOW + %f' % (ttl + 30))
+    inside = on() and tops() == (True, True)
+    W.execute('fightOff(); tick(0.5); runTimers(NOW + 2); tick(0.5)')
+    chk("A13. an expired lease in a fight: on to the fight's end (the Wings stay), off after it", inside and not on(), (inside, on()))
+    # (from here: the saved variables as the swing codes 26 / 27 and the stub fight left them - dpadZL's record is the fight's own)
+    db1 = W.eval('SER(WowCompanionSpellsDB, 0)')
+    # renewed: a fresh 1 restarts the lease
+    tep.tct.padtab(W, 39, 38, 0, 1)
+    W.execute('runTimers(NOW + 1); NOW = NOW + 600')
+    tep.tct.padtab(W, 39, 38, 0, 1)
+    W.execute('runTimers(NOW + 1); NOW = NOW + 600; runTimers(NOW + 1)')
+    chk("A14. renewed at 600 s: still on at 1200 s", on())
+    chk("A15. nothing saved by the mode's renewals", W.eval('SER(WowCompanionSpellsDB, 0)') == db1)
+    tep.tct.clean(W, "A15")
+    W2 = tep.tct.boot()
+    chk("A16. a /reload (a fresh run): off (in memory only)", W2.eval(pm + '.dpadState().ss') == 0 and W2.eval(pm + '.single()') is False)
+    chk("A17. PadMap's main chunk keeps to Lua 5.1's 200 locals", len(re.findall(r'(?m)^local ', pm_src)) <= 200)
+    chk("A18. Book's main chunk adds no local (the codes' table on P2)", len(re.findall(r'(?m)^local ', bk_src)) == 114,
+        len(re.findall(r'(?m)^local ', bk_src)))
+
+
+# ------------------------------------------------------------------------------------------------------------ B our top bar for every cast
+def part_b():
+    print("\n-- B our top cast bar for every cast (ActionBar nbar25)")
+    import test_top_castbar as ttc
+    ab = src("WowCompanion", "ActionBar.lua")
+    chk("B0. ActionBar nbar25 and its note", 'local NB = { V = "nbar25"' in ab and "nbar25 SINGLE SCREEN MODE" in ab)
+    L = ttc.boot()
+    G = L.globals()
+    L.execute('''
+local pm = WowCompanion.padMap
+SS, TOPF = false, false
+CCB = false
+pm.single = function() return SS end
+pm.combatTopOn = function() return TOPF or SS end
+pm.combatCastTopOn = function() return CCB or SS end
+PV = nil
+pm.preview = function() return PV end
+TEMPLATES = {}
+local cf = CreateFrame
+function CreateFrame(kind, name, parent, tmpl, ...) if tmpl then TEMPLATES[#TEMPLATES + 1] = tostring(tmpl) end; return cf(kind, name, parent, tmpl, ...) end
+''')
+    tick = ttc.tick_fn(L)
+    NB = G.WowCompanion.nbar
+    tick(60)
+    L.execute('CASTSTART("Hearthstone", "Hearthstone", 10.0)')
+    tick(30)
+    chk("B1. the mode off, the saved flags off, no fight: a Hearthstone shows nothing on top (the bottom band has it)", not ttc.shown(G))
+    L.execute('CAST = nil; CASTCUT()')
+    tick(120)
+    G.SS = True
+    tick(60)
+    chk("B2. the mode on, no cast: nothing on top", not ttc.shown(G), (ttc.shown(G),))
+    chk("B3. ... no Wings out of a fight", NB.top.want is not True and not (NB.f and NB.f.shown))
+    L.execute('CASTSTART("Hearthstone", "Hearthstone", 10.0)')
+    tick(2)
+    lk = ttc.look(G)
+    chk("B4. the mode on: our top cast bar shows the Hearthstone at once (out of the takeover)", ttc.shown(G) and lk is not None
+        and str(lk.name) == "Hearthstone", (ttc.shown(G), lk and lk.name))
+    tick(240)
+    lk = ttc.look(G)
+    chk("B5. ... the fill part way at 4 s of 10 (the cast's own clock)", lk is not None and 0.3 < float(lk.p) < 0.5, lk and lk.p)
+    rs = ttc.rects(G)
+    hud = None
+    for nm, r in ttc.twm.drawn_parts(G):
+        if nm == "bars":
+            hud = r
+    bar = rs.get("bar")
+    chk("B6. ... at its place above the HUD block (nbar18's spot)", bar is not None and hud is not None and bar[1] + bar[3] <= hud[1] + 0.01,
+        (bar, hud))
+    chk("B7. ... and still no Wings (no fight)", NB.top.want is not True)
+    L.execute('CASTDONE()')
+    tick(90)
+    chk("B8. the cast done: the bar gone after its finish", not ttc.shown(G))
+    L.execute('CASTSTART("Disenchant", "Disenchant", 3.0)')
+    tick(30)
+    chk("B9. a Disenchant too (every cast)", ttc.shown(G) and str(ttc.look(G).name) == "Disenchant")
+    L.execute('CASTDONE()')
+    tick(90)
+    G.COMBAT = True
+    tick(60)
+    chk("B10. a fight with the mode on: the Wings up and our bar (a Top-screen fight)", NB.top.want is True and ttc.shown(G),
+        (NB.top.want, ttc.shown(G)))
+    G.COMBAT = False
+    tick(120)
+    L.execute('PV = { c = 33, wings = true }')
+    tick(60)
+    L.execute('CASTSTART("Hearthstone", "Hearthstone", 10.0)')
+    tick(10)
+    chk("B11. Edit Home's preview (Cast bar Bottom) is its own: no bar for a cast under it", not ttc.shown(G))
+    L.execute('PV = nil; CAST = nil; CASTCUT()')
+    tick(120)
+    G.SS = False
+    tick(60)
+    L.execute('CASTSTART("Hearthstone", "Hearthstone", 10.0)')
+    tick(30)
+    chk("B12. the mode off again: nothing for a cast out of fights", not ttc.shown(G))
+    chk("B13. plain frames only (no Secure template), never the mouse",
+        all("Secure" not in str(L.eval('TEMPLATES[%d]' % i)) for i in range(1, int(L.eval('#TEMPLATES')) + 1)))
+    chk("B14. no SetCVar / SetBinding / macro / state driver call", len(list(G.SPY.values())) == 0, list(G.SPY.values()))
+
+
+# ------------------------------------------------------------------------------------------------------------ C no trace
+def part_c():
+    print("\n-- C no trace (the source)")
+    bad = re.compile(r'SetCVar|SetBinding|SetOverrideBinding|CreateMacro|EditMacro|DeleteMacro|RegisterStateDriver|SaveBindings|ALT-|F1[0-2]?\b')
+    pm = src("WowCompanionSpells", "PadMap.lua")
+    blk = pm[pm.index("-- m199 SINGLE SCREEN MODE (the user"):pm.index("-- the switch: true / false for this character")]
+    bk = src("WowCompanionSpells", "Book.lua")
+    bkb = bk[bk.index("-- b86 THE FOURTH PAGE"):bk.index("if type(pad) == \"table\" and type(pad.op) == \"function\" then")]
+    ab = src("WowCompanion", "ActionBar.lua")
+    abb = ab[ab.index("-- nbar25 SINGLE SCREEN MODE (PadMap m199; the user, 2026-11-25: \"We need"):ab.index("-- our bar wanted on the top screen in the takeover")]
+    code = "\n".join(l.split("--", 1)[0] for l in (blk + bkb + abb).splitlines())
+    chk("C1. the new code calls no CVar / binding / macro API, no Alt / F-key chord", not bad.search(code), bad.findall(code)[:3])
+    chk("C2. PadMap's mode is never in WowCompanionSpellsDB", "WowCompanionSpellsDB" not in code)
+
+
+def main():
+    for fn in (part_a, part_b, part_c):
+        try:
+            fn()
+        except Exception as e:      # noqa: BLE001
+            chk("%s ran without a Lua / Python error" % fn.__name__, False, repr(e)[:400])
+    print("passes: %d  failed: %d" % (passes, len(fails)))
+    sys.exit(1 if fails else 0)
+
+
+if __name__ == "__main__":
+    main()

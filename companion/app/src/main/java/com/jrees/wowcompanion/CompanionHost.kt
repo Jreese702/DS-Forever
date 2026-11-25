@@ -2345,11 +2345,143 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val HEAL_IDS = setOf("radial", "bar", "home", "tool", "class")
 
     // ===== SINGLE: PLAY (builder play edits only here) =====
+    // SINGLE SCREEN MODE WHILE PLAYING (the user's pick 2026-11-25 for "While playing": "1, 2, and also the chat on the left thr ds toolbar
+    // should have the same functionality in single screen mode. We can shift those panels ine and out of combat to all fit better"): the
+    // game's own HUD and our Nintendo bar (GameUi's preset, SingleUi), in fights the Wings and our top cast bar, our top cast bar for every
+    // cast out of fights too (the add-on told the mode: SingleTop, PadMap m199 / ActionBar nbar25), and over the game Home's own map,
+    // Party mode's list and chat in small windows (SingleDocks, SinglePlayLayout: out of combat / in combat, clear of the add-ons' HUD),
+    // hold to talk's pop-up over them. The DS toolbar is the router's as ever (Left the Chat room, Up the consumables wheel, Right Home's
+    // map module, Down the bar): each opens its panel over the game, and the docks give Home's views back first.
+
+    private var docks: SingleDocks? = null
+    /** the look applied last (the docks follow it) */
+    private var playLook: SingleLook.Look? = null
+    private val PLAY_TICK_MS = 100L
+    /** while the docks are up: Home's fight word (the shift), Party mode, the live HUD and hold to talk followed (pure reads) */
+    private val playTick = object : Runnable {
+        override fun run() {
+            ui.removeCallbacks(this)
+            val d = docks ?: return
+            if (!d.up || shell.hostGone()) return
+            playStep(animate = true)
+            ui.postDelayed(this, PLAY_TICK_MS)
+        }
+    }
+
+    /** 1529's performance mode on the top screen (held weakly: a replaced host is never kept by it) */
+    private val playProbe: () -> Boolean = run {
+        val me = java.lang.ref.WeakReference(this)
+        val f: () -> Boolean = {
+            me.get()?.let { h -> SinglePlayLayout.paced(h.room == Room.HOME, h.homeView.isShown, h.homeView.restElsewhere,
+                h.homeView.inFight() || h.lastBook?.combat == true, h.mapView.movingNow()) } ?: false
+        }
+        f
+    }
+
     /** PLAY: the play docks, the add-on's single flag, the frame pace (end of onCreate) */
-    private fun singlePlayWire() {}
-    /** PLAY: the look applied (before the rooms column shows) */
-    @Suppress("UNUSED_PARAMETER")
-    private fun singlePlayLook(l: SingleLook.Look) {}
+    private fun singlePlayWire() {
+        val s = single ?: return
+        docks = SingleDocks(this, s, castView)
+        SingleUi.docks = true                                            // the game's minimap and chat give way to Home's
+        // the top panel runs up to 120 Hz: Home's frames (the docked map's trail above all) paced while moving / fighting with Home's rest
+        // being the game, not only while Home's page shows (the two-screen probe above stays as it was)
+        FramePace.probe = playProbe
+    }
+
+    /** PLAY: the look applied (before the rooms column shows): the docks up with Home's views lent in the PLAY state, else gone and the
+     *  views given back before Home's page / a panel shows; the band's controller reader kept running while Home's rest is the game */
+    private fun singlePlayLook(l: SingleLook.Look) {
+        val d = docks ?: return
+        playLook = l
+        val play = l.docks && room == Room.HOME
+        castView.readAway = play
+        if (!play) {
+            ui.removeCallbacks(playTick)
+            d.show(false)
+            homeView.reclaimFromDocks()
+            return
+        }
+        homeView.lendToDocks(d.chat, d.party, d.map)
+        val was = d.up
+        d.show(true)
+        playStep(animate = was)
+        ui.removeCallbacks(playTick); ui.postDelayed(playTick, PLAY_TICK_MS)
+    }
+
+    /** the docks laid for now: the arrangement (Home's fight word), what Home lays (its chat, Party mode's list, its map), the live HUD;
+     *  the fight's rolls stand at the map's place (NPC's strip), LB's party picture over the party list; hold to talk's pop-up */
+    private fun playStep(animate: Boolean) {
+        val d = docks ?: return
+        val s = single ?: return
+        if (!d.up || shell.hostGone()) return
+        val laid = homeView.dockLaid()
+        val hud = SinglePlayLayout.Hud(GameUi.hudHeight() ?: SinglePlayLayout.Y_DEF, GameUi.hudWidth() ?: SinglePlayLayout.W_DEF,
+            GameUi.hudScale() ?: SinglePlayLayout.S_DEF)
+        val p = SinglePlayLayout.plan(SinglePlayLayout.arr(homeView.fightShown()), laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH())
+        val hide = HashSet<SinglePlayLayout.Piece>()
+        if (!laid.chat) hide += SinglePlayLayout.Piece.CHAT
+        if (!laid.map) hide += SinglePlayLayout.Piece.MAP
+        val l = playLook
+        if (l?.strip == "rolls") hide += SinglePlayLayout.Piece.MAP
+        if (l?.frame == SingleLook.Frame.FULL) hide += SinglePlayLayout.Piece.PARTY
+        val before = d.plan?.arr
+        d.arrange(p, animate && before != null, hide)
+        if (before != null && before != p.arr) Log.i("WCHOME", "one screen: the docks ${if (p.arr == SinglePlayLayout.Arr.IN) "into the fight" else "out of the fight"} " +
+            "(chat ${p.chatLines} lines${if (p.party != null) ", the party list" else ""})")
+        d.talkSync()
+    }
+
+    /** the host goes (onDestroy): nothing of the docks left running or held */
+    private fun singlePlayEnd() {
+        ui.removeCallbacks(playTick); ui.removeCallbacks(ssAgain)
+        docks?.close(); docks = null
+        if (single != null) {
+            SingleUi.docks = false
+            if (::castView.isInitialized) castView.readAway = false
+        }
+        if (FramePace.probe === playProbe) FramePace.probe = null
+    }
+
+    // ---- the add-on told the mode (SingleTop: Book b86's fourth page, PadMap m199's `ss`)
+    private var ssSentAt: Long? = null
+    /** a mode still on first seen with no send of ours (renewed RENEW_MS after it) */
+    private var ssUpAt: Long? = null
+    private var ssSentWant: Boolean? = null
+    private var ssTries = 0
+    private val ssAgain = Runnable { lastDpad?.let { singleTopCheck(it) } }
+
+    /** [SingleTop]: SingleScreen.inUse vs the add-on's `ss` on every current dpad state, EVERY host (two screens: OFF while the add-on still
+     *  has it); out of combat, re-sent until `ss` says it, renewed inside the add-on's lease, never beside another page-3 batch */
+    private fun singleTopCheck(d: PadMapModel.Dpad) {
+        SingleUi.addonSingle = d.ss == 1
+        if (!mirrorCurrent) return
+        val want = SingleScreen.inUse
+        if (ssSentWant != want) { ssSentAt = null; ssUpAt = null; ssTries = 0 }
+        val now = SystemClock.elapsedRealtime()
+        ui.removeCallbacks(ssAgain)
+        if (d.ss == null) return
+        if (page3Busy(now, "ss")) { ui.postDelayed(ssAgain, CAST_AFTER_TOP_MS); return }
+        val fight = homeView.inFight() || lastBook?.combat == true
+        when (val a = SingleTop.decide(want, d.ss, fight, (ssSentAt ?: ssUpAt)?.let { now - it })) {
+            SingleTop.Act.Matched -> {
+                ssTries = 0
+                if (want) {
+                    ssSentWant = want
+                    if (ssSentAt == null && ssUpAt == null) ssUpAt = now
+                    ui.postDelayed(ssAgain, SingleTop.renewDelay(now, ssSentAt ?: ssUpAt))
+                } else { ssSentWant = null; ssUpAt = null }
+            }
+            SingleTop.Act.Wait -> ui.postDelayed(ssAgain, SingleTop.RESEND_MS)      // a fight: looked at again after it
+            is SingleTop.Act.Send -> {
+                if (ssTries >= SingleTop.TRIES) return
+                ssSentAt = now + SingleTop.BATCH_MS; ssSentWant = want
+                // spaced: code 0 taps the cell the prefix's 0 just tapped (TapPad's repeat guard)
+                val sent = TapBridge.tapsSpaced(this, talentsPad ?: spellsPad, SingleTop.cells(a.on), SingleTop.GAP_MS)
+                Log.i(HomeView.TAG, "one screen: the add-on's single mode ${if (a.on) "on" else "off"} ${if (sent) "sent" else "not sent"}")
+                if (++ssTries < SingleTop.TRIES) ui.postDelayed(ssAgain, SingleTop.BATCH_MS + SingleTop.RESEND_MS + 200L)
+            }
+        }
+    }
 
     // ===== SINGLE: NPC (builder npc edits only here) =====
     /** NPC: its wiring (end of onCreate) */
@@ -3885,7 +4017,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the 1514 merge (CharKey): the WHOLE key only; named with no realm = pending (no record read or written, the
                     // previous character's key let go; an edit meanwhile is laid on the real record once the key comes)
                     if (current && named) HomeLayoutStore.character(ck, d.name)
-                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d); castCheck(d); swingCheck(d); previewCheck(d) }
+                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d); castCheck(d); swingCheck(d); previewCheck(d); singleTopCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
                     // issue 588 (the user's ruling 2026-11-23): with PadMap m186+ Start is our wheel with the toolbar off too: always 36
@@ -4307,6 +4439,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     fun onDestroy() {
         Voice.stopAll()
         ui.removeCallbacks(singlePoll)
+        singlePlayEnd()
         if (SingleScreen.fightNow === singleFight) SingleScreen.fightNow = { false }
         Theme.removeListener(themeChanged)
         ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
@@ -5558,7 +5691,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  ago - they all start with the same prefix cells, and TapPad's 0.25 s repeat guard would swallow this batch's first 39. Every page-3
      *  sender reads this one guard (1531: the mirror / top / cast / swing checks never waited for the hold time's batch) */
     private fun page3Busy(now: Long, mine: String): Boolean =
-        listOf("mirror" to mirrorSentAt, "top" to topSentAt, "cast" to castSentAt, "swing" to swingSentAt, "pv" to pvSentAt, "hold" to holdSentAt)
+        listOf("mirror" to mirrorSentAt, "top" to topSentAt, "cast" to castSentAt, "swing" to swingSentAt, "pv" to pvSentAt, "hold" to holdSentAt,
+            "ss" to ssSentAt)
             .any { (k, t) -> k != mine && t != null && now - t < CAST_AFTER_TOP_MS }
 
     /** TopCombatBar.castWanted ("Cast bar in fights: Top screen" with In fights = Top screen) vs the add-on's `cc`: [topCheck]'s rules
