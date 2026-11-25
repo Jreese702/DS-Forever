@@ -125,8 +125,18 @@ data class HomeLayout(
         HomeTab.OUT -> copy(chatSide = o.places.chatSide, chatShare = o.places.chatShare, card = o.places.card, cast = o.places.cast,
             party = o.places.party)
         HomeTab.COMBAT -> copy(combat = o.places, fight = o.fight ?: fight, fightCast = o.fightCast ?: fightCast)
-        HomeTab.PARTY -> copy(partyTab = o.places, partyFight = o.fight ?: partyFight, partyCast = o.fightCast ?: partyCast)
+        // "KEEP MY PICK" (the user's ruling, 2026-11-25): a Combat bars / Cast bar that still follows In combat (null) stays following
+        // when [o] carries what it follows now (every road that writes the tab's places back reads it through [own]); anything else is
+        // Party mode's own - kept, even when it equals In combat's ([canonical] never folds it)
+        HomeTab.PARTY -> copy(partyTab = o.places,
+            partyFight = if (o.fight == null || (partyFight == null && o.fight == partyFightNow)) partyFight else o.fight,
+            partyCast = if (o.fightCast == null || (partyCast == null && o.fightCast == partyCastNow)) partyCast else o.fightCast)
     }.canonical()
+
+    /** the Party mode tab's Combat bars ([fight]) and / or Cast bar ([cast]) as they show now, made Party mode's own (Edit Home's pick on
+     *  that tab: a pick of the value it followed is a pick too - "Keep my pick") */
+    fun pinParty(fight: Boolean, cast: Boolean): HomeLayout =
+        copy(partyFight = if (fight) partyFightNow else partyFight, partyCast = if (cast) partyCastNow else partyCast)
 
     /**
      * THE PAGE OF TAB [t]: the record as the solver lays it while that tab is Home's - the shared fields as they are, the tab's own places
@@ -167,16 +177,17 @@ data class HomeLayout(
     fun withBadges(t: HomeTab, b: List<String>?): HomeLayout =
         if (t == HomeTab.OUT) this else withOwn(t, own(t).let { it.copy(places = it.places.copy(badges = b)) })
 
-    /** one form for one meaning: a fight tab that is the Out of combat places' own copy (nothing of its own) is null, Party mode's
-     *  Combat bars / Cast bar that say what they would follow are null */
+    /** one form for one meaning: a fight tab that is the Out of combat places' own copy (nothing of its own) is null. Party mode's
+     *  Combat bars / Cast bar are NOT folded: one set on its tab is Party mode's own even when it equals what it would follow (the
+     *  user's ruling 2026-11-25, "Keep my pick": "Anything you set on the Party mode tab stays its own, even when it happens to match In
+     *  combat. Settings > Home changes In combat only." - folded, a later Settings > Home change carried it along); null = never set,
+     *  follows In combat */
     fun canonical(): HomeLayout {
         val base = TabPlaces.of(this)
         val c = combat?.takeIf { it != base }
         val p = partyTab?.takeIf { it != base }
-        val pf = partyFight?.takeIf { it != (if (fight == FightBand.TOP) FightBand.TOP else FightBand.SAME) }
-        val pc = partyCast?.takeIf { it != fightCast }
-        return if (c === combat && p === partyTab && pf == partyFight && pc == partyCast && !grow && !partyBand) this
-            else copy(combat = c, partyTab = p, partyFight = pf, partyCast = pc, grow = false, partyBand = false)
+        return if (c === combat && p === partyTab && !grow && !partyBand) this
+            else copy(combat = c, partyTab = p, grow = false, partyBand = false)
     }
 
     /** every tab's bar at dock [d] (the one-time question's Yes, the Controller room's Turn on: "the bar on in all three tabs at the same
@@ -338,8 +349,10 @@ object HomeLayoutJson {
             if (full || own.grow) o.put(pre + "grow", own.grow)
             own.badges?.let { b -> o.put(pre + "badges", org.json.JSONArray(b)) } ?: run { if (full) o.put(pre + "badges", "") }
         }
-        if (full || l.partyFight != null) o.put("p.fight", l.partyFightNow.name)
-        if (full || l.partyCast != null) o.put("p.fcast", l.partyCastNow.name)
+        // ("Keep my pick", 2026-11-25: written only when Party mode's own - in the full form too: its absence IS "follows In combat",
+        // so the store's lay-on never turns a following tab into a pick, and lays an edit's pick on or a reset's follow back)
+        l.partyFight?.let { o.put("p.fight", it.name) }
+        l.partyCast?.let { o.put("p.fcast", it.name) }
     }
 
     fun parse(s: String?, fallback: HomeLayout = HomeLayout()): HomeLayout {

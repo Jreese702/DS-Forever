@@ -71,12 +71,18 @@ class HomeEditTabsTest {
             assertEquals(t.name, cast, e.forTab(t).cast)
     }
 
-    /** one form for one meaning: a tab set back to its copy is null again (no key written), and the JSON round trip holds */
+    /** one form for one meaning: a tab's places set back to their copy are null again (no key written), and the JSON round trip holds.
+     *  NOT Party mode's Combat bars / Cast bar (the user's ruling 2026-11-25, "Keep my pick": one set on its tab stays its own, even
+     *  when it comes to equal In combat's - 1530 folded it into "follows In combat"; PartyKeepPickTest) */
     @Test fun theTabsAreCanonicalAndRoundTrip() {
         val a = classic.onTab(C) { it.copy(cast = HomeLayout.CastDock.ACROSS) }
         assertTrue(a.combat != null)
         val back = a.onTab(C) { it.copy(cast = HomeLayout.CastDock.UNDER_CHAT) }
         assertEquals(classic, back); assertNull(back.combat)
+        val pick = classic.onTab(P) { it.copy(fightCast = HomeLayout.FightCast.TOP) }.onTab(P) { it.copy(fightCast = HomeLayout.FightCast.BOTTOM) }
+        assertEquals("Party mode's pick back on In combat's value: still its own", HomeLayout.FightCast.BOTTOM, pick.partyCast)
+        assertEquals(pick, HomeLayoutJson.parse(HomeLayoutJson.json(pick)))
+        assertEquals(HomeLayout.FightCast.BOTTOM, pick.copy(fightCast = HomeLayout.FightCast.TOP).forTab(P).fightCast)
         val recs = listOf(classic, a, classic.onTab(P) { it.copy(fight = HomeLayout.FightBand.GROW, grow = true, card = HomeLayout.CardDock.OFF) },
             classic.onTab(O) { it.swapped() }.onTab(C) { it.copy(chatShare = HomeLayout.Share.TWO_THIRDS, fightCast = HomeLayout.FightCast.TOP) }
                 .withBadges(C, listOf("gold", "hearth")).withBadges(P, emptyList()))

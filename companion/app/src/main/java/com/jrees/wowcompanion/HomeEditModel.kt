@@ -719,6 +719,18 @@ class HomeEditModel(
         return change(page.copy(chatShare = SHARES[i]), Motion.MODULE_OPEN)
     }
 
+    /** a fight tab's Combat bars ([fight]) / Cast bar pick ([to] = the page with it). "KEEP MY PICK" (the user's ruling 2026-11-25:
+     *  "Anything you set on the Party mode tab stays its own, even when it happens to match In combat"): on the Party mode tab the pick
+     *  is Party mode's own even when it is the value it followed (the page unchanged) - Settings > Home's rows never carry it along */
+    private fun fightPick(to: HomeLayout, fight: Boolean): List<Fx> {
+        val fx = change(to, Motion.MODULE_OPEN)
+        if (tab != HomeTab.PARTY) return fx
+        val pinned = draft.pinParty(fight = fight, cast = !fight)
+        if (pinned == draft) return fx
+        draft = pinned
+        return fx.ifEmpty { listOf(Fx.Relay(Motion.MODULE_OPEN)) }
+    }
+
     /** one draft change: the effects ([ms] its glide); nothing when it changes nothing */
     private fun change(to: HomeLayout, ms: Long): List<Fx> {
         // (EDIT TABS: [to] is the tab's PAGE - written back to that tab only, the others keep theirs: HomeLayout.withTab)
@@ -821,8 +833,8 @@ class HomeEditModel(
             K_PARTY_SIZE -> change(l.copy(partySize = HomeLayout.PartySize.values()[k]), Motion.MODULE_OPEN)
             // EDIT TABS: a fight tab's Slots (Grow / Same size) and its Combat bars / Cast bar - the TAB's own (Discard puts them back)
             K_GROW -> change(l.copy(grow = k == 0), Motion.MODULE_OPEN)
-            BottomTiles.COMBAT -> HomeWidgetMenus.COMBAT_BARS.getOrNull(k)?.let { change(l.copy(fight = it), Motion.MODULE_OPEN) } ?: emptyList()
-            BottomTiles.FIGHT_CAST -> HomeLayout.FightCast.values().getOrNull(k)?.let { change(l.copy(fightCast = it), Motion.MODULE_OPEN) } ?: emptyList()
+            BottomTiles.COMBAT -> HomeWidgetMenus.COMBAT_BARS.getOrNull(k)?.let { fightPick(l.copy(fight = it), fight = true) } ?: emptyList()
+            BottomTiles.FIGHT_CAST -> HomeLayout.FightCast.values().getOrNull(k)?.let { fightPick(l.copy(fightCast = it), fight = false) } ?: emptyList()
             K_SLOTS -> { menu = null; listOf(Fx.EditSlots) }
             K_FILTERS -> { menu = null; listOf(Fx.Filters) }
             else -> listOf(Fx.Press(r.key, k))
