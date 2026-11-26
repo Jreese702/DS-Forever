@@ -2,9 +2,11 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
--- nbar29 THE 1535 MERGE (test build 1535, 2026-11-26; PadMap m205): fix/druid-combat-forms' and fix/hold-tweaks' nbar28s
--- together, their notes below as each wrote them (the Druid's first): a form's own trigger-layer entry drawn in a fight, and the
--- hold ring's gold glow on the ring, timed to the ring's full point R. Nothing else changed.
+-- nbar29 THE 1535 MERGE (test build 1535, 2026-11-26; PadMap m205): the three nbar28s together - fix/druid-combat-forms',
+-- fix/hold-tweaks' and feat/single-polish's - their notes below as each wrote them, in that order: a form's own trigger-layer entry
+-- drawn in a fight; the hold ring's gold glow on the ring, timed to the ring's full point R; the Wings at rest out of fights in
+-- single screen mode and every icon cropped. The rest spot moves the Wings' frames only; the ring, the badges and the form's
+-- faces ride them as before. Nothing else changed.
 -- nbar28 A FORM'S OWN IN-COMBAT SET ON EVERY LAYER (PadMap m204; a Druid's field report, 2026-11-26): in a fight in a form, ZL /
 -- ZR / ZL + ZR show that form's own In-combat entry for the place (PadMap formFight with the set), as the router casts it; the bare
 -- set as before. Nothing else changed.
@@ -16,6 +18,17 @@
 -- gold (the casting ring's yellow, frame_*_selected: about 0.965, 0.84, 0.22), not orange; (3) holdSecs is now PadMap m204's ring
 -- full point R (Normal 0.37 s at 60 fps, was F 0.68: a release before it is always the tap; after it the app holds the release down
 -- for the game to F, so the button reads held and the ring stays full until the hold casts) and the ring shows from 0.1 s (was 0.25).
+-- nbar28 THE SINGLE SCREEN POLISH (test build 1535; the user on test 1533, 2026-11-26: "the Nintendo bar is BAD and I hate it. I love the
+-- top screen bar that we just built"; "out of combat it just shifts up the controller buttons a bit and moves them closer together and
+-- makes them smaller when the Healthbars hide and slides up the home row from the bottom"; "In general the top screen icons all look
+-- worse then the ones we made for the bottom screen because they have like squares in them"): (1) THE WINGS AT REST - while the app's
+-- single screen mode is on (WC.padMap.single) the Wings stay up OUT of the takeover too (the app hides the Nintendo bar and the stock bar
+-- there), at the fight spot x REST_K (0.8), REST_IN (60 px) closer together, REST_UP (84 px) higher and never under REST_FLOOR (114 px:
+-- the app's room row slides up there), gliding there over REST_OUT_S as the fight ends and back to the fight spot over REST_IN_S as one
+-- starts (NB.restSpot; the cast bar still shows only the takeover's and every cast of the player's: NB.top.takeover); (2) THE ICONS
+-- CROPPED - every icon we paint (the faces, the hold badge and its flash, Party mode's chord icons) samples the inner 0.07..0.93 of the
+-- picture, as the bottom band does (CastView ICON_CROP), so the icon's own baked square bevel no longer shows inside the round mask.
+-- Plain frames only (SetPoint / SetScale / SetTexCoord on our own frames and textures: legal in a fight, as ever); nothing written.
 -- nbar27 THE int/1533 REVIEW, THE RING FILLS WHEN THE HOLD CASTS (PadMap m202; the user: "I also want this to cast right when the
 -- hold bar is filled"): the glowing ring's fill point is taken ONCE, at the press (b.hdSure), as the app's launcher freezes its fire
 -- point at the press - a frame time that changed mid-hold no more moved the fill off the cast; holdSecs holds the app's session bump
@@ -3139,13 +3152,26 @@ function NB.heldSet()
 end
 
 -- a texture value (a file id, "atlas:<name>", "tex:<path>") onto a texture; false = nothing to show
+-- nbar28: an icon's picture sampled inside its baked square bevel (the bottom band's CastView ICON_CROP); an atlas keeps its own
+-- coordinates, our own media (AddOns\WowCompanion) is drawn whole
+NB.ICON_TC = 0.07
+function NB.crop(tx, on)
+    local c = on and NB.ICON_TC or 0
+    pcall(tx.SetTexCoord, tx, c, 1 - c, c, 1 - c)
+end
 function NB.paint(tx, v)
     if v == nil or v == false then pcall(tx.SetTexture, tx, nil); return false end
-    if type(v) == "number" then return (pcall(tx.SetTexture, tx, v)) end
+    if type(v) == "number" then
+        local ok = pcall(tx.SetTexture, tx, v)
+        if ok then NB.crop(tx, true) end
+        return ok
+    end
     if type(v) == "string" then
         if v:sub(1, 6) == "atlas:" then return (pcall(tx.SetAtlas, tx, v:sub(7))) end
-        if v:sub(1, 4) == "tex:" then return (pcall(tx.SetTexture, tx, v:sub(5))) end
-        return (pcall(tx.SetTexture, tx, v))
+        local p = (v:sub(1, 4) == "tex:") and v:sub(5) or v
+        local ok = pcall(tx.SetTexture, tx, p)
+        if ok then NB.crop(tx, not p:lower():find("addons\\wowcompanion", 1, true)) end
+        return ok
     end
     return false
 end
@@ -3984,7 +4010,12 @@ NB.TOP = { HOLD_IN = 0.08, IN_S = 0.26, OUT_S = 0.20, RISE = 24, KS = { 1, 0.9, 
            CHIP_G = 25.8 * 0.75, CHIP_GLOW = 50.4 * 0.75, PLATE_GLYPH = 23 * 0.75, PLATE_RET = 18 * 62 * 0.75 / 39,
            PLATE_RET_DY = 62 * 0.75 / 39,
            MEDIA = "Interface\\AddOns\\WowCompanion\\Media\\", PLATE_TC = { 0, 234 / 256, 0, 186 / 256 },
-           RET_TEX = { friendly = "wings_ret_friendly", hostile = "wings_ret_hostile", shortcuts = "wings_ret_shortcuts" } }
+           RET_TEX = { friendly = "wings_ret_friendly", hostile = "wings_ret_hostile", shortcuts = "wings_ret_shortcuts" },
+           -- nbar28 THE WINGS AT REST (single screen mode out of the takeover; the app's SinglePlayLayout.WINGS_REST_* say the same): the
+           -- fight spot's scale x REST_K, each half REST_IN closer to the middle, REST_UP higher, the halves' feet REST_FLOOR over the
+           -- bottom edge at least (the app's room row), their inner glows REST_SEP apart at least (1080-line px); the glide into the rest
+           -- (the fight's end, with the app's row sliding up: Motion.COMBAT_SHRINK) and out of it (a fight: COMBAT_GROW)
+           REST_K = 0.8, REST_IN = 60, REST_UP = 84, REST_FLOOR = 114, REST_SEP = 24, REST_OUT_S = 0.20, REST_IN_S = 0.24 }
 -- nbar17 THE PLATES AND THE CHIPS AS THE BAND DRAWS THEM (the user, 2026-11-23, testing 1523: "The triggers look weird and stretched
 -- on both sides and nothing like the bottom"): nbar12-16 drew Blizzard's shoulder plate (a 50 x 45 atlas: a rounded, gold-rimmed,
 -- shadowed tile) and the gold-brown switch-128x glyphs, each SetAllPoints into a box of another shape - the plate 1.15x wide (its body
@@ -5317,6 +5348,32 @@ function NB.topHide()
     end
 end
 -- one frame of the motion: in / out, a re-fit's glide, the dip
+-- nbar28 THE WINGS AT REST: [sp] (the fight spot) eased [rk] (0 fight .. 1 rest) toward its resting place - the same table while rk is
+-- 0 or unchanged (the settled check compares it), the spot's other fields read through (setmetatable __index: the solver's case, k, lane)
+function NB.restSpot(sp, rk)
+    if not sp or not rk or rk <= 0 then return sp end
+    local T, TT = NB.top, NB.TOP
+    if T.rsp and T.rspOf == sp and T.rspK == rk then return T.rsp end
+    local e = NB.ease(math.min(1, rk))
+    local H = sp.H or 1080
+    local px = H / 1080
+    local s0 = sp.s or 1
+    local sR = s0 * TT.REST_K
+    local _, hh, _, up = NB.halfBox()
+    local down = hh - up
+    local floorY = H - TT.REST_FLOOR * px - down * sR
+    local lxR, rxR = sp.l.x + TT.REST_IN * px, sp.r.x - TT.REST_IN * px
+    local gap = 2 * NB.halfArt().inner * sR + TT.REST_SEP * px
+    if rxR - lxR < gap then local c = (lxR + rxR) / 2; lxR, rxR = c - gap / 2, c + gap / 2 end
+    local lyR = math.min(sp.l.y - TT.REST_UP * px, floorY)
+    local ryR = math.min(sp.r.y - TT.REST_UP * px, floorY)
+    local m = 1 + (TT.REST_K - 1) * e
+    local r = setmetatable({ l = { x = sp.l.x + (lxR - sp.l.x) * e, y = sp.l.y + (lyR - sp.l.y) * e },
+                             r = { x = sp.r.x + (rxR - sp.r.x) * e, y = sp.r.y + (ryR - sp.r.y) * e },
+                             s = s0 * m, fsc = sp.fsc and sp.fsc * m or nil, rest = e }, { __index = sp })
+    T.rsp, T.rspOf, T.rspK = r, sp, rk
+    return r
+end
 function NB.topApply()
     local T, f = NB.top, NB.f
     if not f or not f.chip then return end
@@ -5324,7 +5381,7 @@ function NB.topApply()
         if T.shown then NB.topHide() end
         return
     end
-    local sp = T.spot
+    local sp = NB.restSpot(T.spot, T.rk)                                 -- nbar28: the Wings at rest (single screen mode)
     if not sp then return end
     -- nbar8: settled (in, no glide, nothing re-solved, the dip as it was): nothing to place this frame
     local dip = NB.chatUp()
@@ -5469,13 +5526,16 @@ function NB.topTick(el)
     -- block; the fade-out's end: the rows laid under the HUD at alpha 0, then faded in) - a re-fit on the tick each move shows
     if NB.topMoved() then T.dirty = true end
     local sw = NB.topSwitch(party)
+    -- nbar28 THE WINGS AT REST: single screen mode (no preview) keeps them up out of the takeover, at their resting place
+    local restOn = T.single == true and not NB.pv() and not sw
+    local up = sw or restOn
     -- nbar14 PARTY MODE CENTRED: Party mode's Top-screen fight centres the HUD block (NB.centreDx) - a change re-fits this tick
     local centre = flag == true and party == true and sw == true and NB.built == true
     if centre ~= (T.centre == true) then
         T.centre, T.dirty, T.inKey = centre, true, nil
         if not centre then T.cdx, T.cdxWant, T.transit, T.probed = nil, nil, nil, nil end
     end
-    local leaving = T.shown and not sw
+    local leaving = T.shown and not up
     if flag and NB.built and not leaving then
         -- the game's frames read again only out of combat, on their events or every SOLVE_S; ours on a change (a layout save, the
         -- editor's view) or every REFIT_S (in a fight: our frames only, the game's as frozen)
@@ -5487,7 +5547,15 @@ function NB.topTick(el)
             NB.topSolve(false)
         end
     end
-    local want = flag and NB.built and T.spot ~= nil and sw
+    local want = flag and NB.built and T.spot ~= nil and up
+    T.takeover = want and sw                                              -- nbar28: the takeover alone (the cast bar's word)
+    -- nbar28: the rest's ease (0 the fight spot .. 1 at rest); Wings not shown yet start where they will stand
+    local rt = restOn and 1 or 0
+    if not T.shown and T.t <= 0 then T.rk = rt
+    elseif (T.rk or 0) ~= rt then
+        local k = T.rk or 0
+        if rt > k then T.rk = math.min(1, k + el / NB.TOP.REST_OUT_S) else T.rk = math.max(0, k - el / NB.TOP.REST_IN_S) end
+    end
     if want ~= T.want then
         T.want = want
         local was = T.dir
@@ -5910,7 +5978,8 @@ end
 function NB.cbTick(el)
     local C, T = NB.CB, NB.top
     el = el or 0
-    local on = NB.cbWanted() and (T.want == true or NB.cbSingle()) and T.cbAt ~= nil      -- nbar25: every cast in single screen mode
+    -- nbar25: every cast in single screen mode; nbar28: the takeover's own word (the Wings at rest are no takeover)
+    local on = NB.cbWanted() and (T.takeover == true or NB.cbSingle()) and T.cbAt ~= nil
     local cb = NB.cb
     if not cb then
         if not on or not NB.cbBuild() then return end

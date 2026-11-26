@@ -71,6 +71,8 @@ class InteractView(context: Context) : View(context) {
     private var doc: JSONObject? = null
     private var docGt = -1L
     private var kind = Kind.NONE
+    /** the window shown is the LOOT window (single screen mode leaves the game undimmed under it: SingleLook.DIM_LOOT) */
+    fun looting(): Boolean = kind == Kind.LOOT
     private var sig = ""
     private var dismissedSig: String? = null
     private var dismissedAt = 0L                        // when close() hid this window (the game's own may refuse to close)
@@ -3974,7 +3976,9 @@ class InteractView(context: Context) : View(context) {
         val x = (t / dur).coerceIn(0f, 1f)
         val k = if (closing) 1f - lootCurve.getInterpolation(x) else lootCurve.getInterpolation(x)
         if (x < 1f) postInvalidateOnAnimation()
-        UiKit.cover(c, full, 0.45f * k)
+        // the 1535 polish (the user on test 1533: "When looting the screen dims but thats excessive"): over the game in single screen mode
+        // the window's own cover goes too (SingleLook.DIM_LOOT: the game undimmed); over Home on the bottom screen as ever
+        if (!SingleScreen.inUse) UiKit.cover(c, full, 0.45f * k)
         val items = arr(lt, "items").filter { it.optInt("i") != landHideFrom && vanishes.none { v -> v.i == it.optInt("i") } }
         val shownN = min(5, max(1, items.size))
         if (lootOpenAt != fxOpenSeen) { fxOpenSeen = lootOpenAt; slides.clear() }

@@ -196,7 +196,9 @@ function CreateFrame(kind, name, parent, tmpl, ...) if tmpl then TEMPLATES[#TEMP
     G.SS = True
     tick(60)
     chk("B2. the mode on, no cast: nothing on top", not ttc.shown(G), (ttc.shown(G),))
-    chk("B3. ... no Wings out of a fight", NB.top.want is not True and not (NB.f and NB.f.shown))
+    # nbar28 (the 1535 polish, the user: "out of combat it just shifts up the controller buttons a bit ... and makes them smaller"): the
+    # Wings stay up out of a fight at their resting place - no takeover (tools/test_wings_rest.py has the rest itself)
+    chk("B3. ... the Wings at rest out of a fight, no takeover (nbar28)", NB.top.want is True and NB.top.takeover is not True)
     L.execute('CASTSTART("Hearthstone", "Hearthstone", 10.0)')
     tick(2)
     lk = ttc.look(G)
@@ -213,7 +215,7 @@ function CreateFrame(kind, name, parent, tmpl, ...) if tmpl then TEMPLATES[#TEMP
     bar = rs.get("bar")
     chk("B6. ... at its place above the HUD block (nbar18's spot)", bar is not None and hud is not None and bar[1] + bar[3] <= hud[1] + 0.01,
         (bar, hud))
-    chk("B7. ... and still no Wings (no fight)", NB.top.want is not True)
+    chk("B7. ... and still no takeover (no fight: the Wings at rest)", NB.top.takeover is not True)
     L.execute('CASTDONE()')
     tick(90)
     chk("B8. the cast done: the bar gone after its finish", not ttc.shown(G))
@@ -315,16 +317,15 @@ def part_d():
         return tuple(int(m.group(i)) for i in range(1, 5)) if m else None
 
     k3 = box("K3")
-    outs = {n: box(n) for n in ("CHAT_OUT_PARTY", "CHAT_OUT_SOLO", "PARTY_OUT", "MAP_OUT_BOX")}
+    outs = {n: box(n) for n in ("CHAT_OUT", "PARTY_OUT", "MAP_OUT_BOX")}
     chk("D4. SinglePlayLayout's K3 and OUT boxes read", k3 is not None and all(outs.values()), (k3, outs))
     if k3 and all(outs.values()):
-        margin = focus * 1.322                      # past K3's slot edges, px (the bar at 100 %: k x 1.322 a unit)
-        grown = (k3[0] - margin, k3[1] - margin, k3[2] + margin, k3[3] + margin)
-
+        # nbar28 (the 1535 polish): K3 is the Wings AT REST - their half boxes (NB.halfArt: the glow and every hold piece inside, D1 / D2),
+        # which tools/test_wings_rest.py keeps inside K3; no Nintendo bar in single screen mode any more
         def apart(b):
-            return b[2] <= grown[0] or grown[2] <= b[0] or b[3] <= grown[1] or grown[3] <= b[1]
-        chk("D5. ... K3 grown by that reach meets no OUT dock (the chat, the party list, the map)", all(apart(b) for b in outs.values()),
-            {n: apart(b) for n, b in outs.items()})
+            return b[2] <= k3[0] or k3[2] <= b[0] or b[3] <= k3[1] or k3[3] <= b[1]
+        chk("D5. ... K3 (the Wings at rest, their glow inside) meets no OUT dock (the chat, the party list, the map)",
+            all(apart(b) for b in outs.values()), {n: apart(b) for n, b in outs.items()})
 
 
 # ------------------------------------------------------------------------------------------------------------ E the hold's bump

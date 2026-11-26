@@ -553,6 +553,24 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         icon(c, Room.MAP, homeX, homeY, true, home = true)
     }
 
+    /**
+     * THE 1535 POLISH (single screen mode's swirl corner button, SingleDocks.CornerButton): Home's own disc - the stone button with its
+     * swirl, its live light, its B look - drawn at ([cx], [cy]) [d] px across on another view's canvas; false = its pieces are not on the
+     * device (the caller draws its stand-in). The bar's own place for the disc is untouched (restored after)
+     */
+    private val discClip = Path()
+    fun drawDiscAt(c: Canvas, cx: Float, cy: Float, d: Float): Boolean {
+        val hx = homeX; val hy = homeY; val anim = animating
+        val k = d / (HOME + 2f * RING)
+        val save = c.save()
+        c.translate(cx, cy); c.scale(k, k)
+        // round, as the bar shows it (the live light's square pictures never past the stone's edge)
+        discClip.reset(); discClip.addCircle(0f, 0f, HOME / 2f + RING, Path.Direction.CW); c.clipPath(discClip)
+        homeX = 0f; homeY = 0f
+        val ok = try { drawKitHome(c) } finally { homeX = hx; homeY = hy; animating = anim; c.restoreToCount(save) }
+        return ok
+    }
+
     /** P2: edit mode's gold tick over the disc (a touch on it saves and leaves); the game's tick art, else a drawn one */
     private fun drawEditTick(c: Canvas) {
         val s = HOME * 0.62f

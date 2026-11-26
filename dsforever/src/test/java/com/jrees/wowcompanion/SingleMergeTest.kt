@@ -38,7 +38,7 @@ class SingleMergeTest {
         assertEquals("PLAY: every piece Home lays", emptySet<Piece>(), SinglePlayLayout.hidden(play.strip, false, chatLaid = true, mapLaid = true))
         assertEquals(setOf(Piece.CHAT, Piece.MAP), SinglePlayLayout.hidden(null, false, chatLaid = false, mapLaid = false))
         assertTrue(Piece.PARTY in SinglePlayLayout.hidden(null, fullFrame = true, chatLaid = true, mapLaid = true))
-        assertTrue("the host uses the rule", fn("playStep").contains("SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map)"))
+        assertTrue("the host uses the rule", fn("playStep").contains("SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map, laid.quest)"))
     }
 
     @Test fun theBandsReaderRunsWheneverHomeIsTheRoom() {

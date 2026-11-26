@@ -673,7 +673,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // Home's own cast bar is not on screen (any room; a Home module over the band), the rooms' bar draws the player's cast in its
         // tracking band - Bags' Use, Character's Enchant / kit pick / Feed Pet, the Spellbook, Macros, every room the same
         strip.castBand = object : Strip.CastBand {
-            override fun state(): Int = if (castView.ownCastBarShown()) RoomCast.NONE else castView.roomCastState()
+            // the 1535 polish: single screen mode's top cast bar (ActionBar nbar25) has every cast - the row never draws a second one
+            override fun state(): Int = if (castView.ownCastBarShown() || single != null) RoomCast.NONE else castView.roomCastState()
             override fun draw(c: android.graphics.Canvas, bar: android.graphics.RectF, nameL: Float, nameR: Float): Long =
                 castView.drawRoomCast(c, bar, nameL, nameR)
         }
@@ -1544,6 +1545,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 return r
             }
         }.apply {
+            singleHostRoot = this
             addView(root, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // the bar selector's cursor and hint plate: over the rooms and the bar (it takes no touch)
@@ -2564,6 +2566,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         report = (::reportPage.isInitialized && reportPage.isOpen) || (::pathReview.isInitialized && pathReview.isOpen) ||
             (::reportNotice.isInitialized && reportNotice.asking),
         npc = ::interactView.isInitialized && interactView.visibility == View.VISIBLE,
+        loot = ::interactView.isInitialized && interactView.visibility == View.VISIBLE && interactView.looting(),
         dialog = ::dialogView.isInitialized && dialogView.covers(),
         spells = spellsOverlay.visibility == View.VISIBLE,
         pause = ::pauseView.isInitialized && pauseView.isOpen,
@@ -2584,7 +2587,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!singleReady || shell.hostGone()) return
         val look = SingleLook.of(singleIn())
         homeView.restElsewhere = look.root == SingleLook.Root.GONE && room == Room.HOME
+        // the 1535 polish (SingleFade): while the window shows, what it shows is noted (every sync and the 100 ms poll) - its picture is
+        // what fades out when it closes (the views are already the next state's by then: a room left, Home's views lent to the docks)
+        if (look.frame == SingleLook.Frame.FULL) singleGhostNote()
         if (look == singleLookNow) return
+        if (singleLookNow?.frame == SingleLook.Frame.FULL && look.frame == SingleLook.Frame.HIDDEN) s.ghost(singleGhost())
         singleLookNow = look
         singlePlayLook(look)
         roomsRoot?.let { r -> val v = if (look.root == SingleLook.Root.GONE) View.GONE else View.VISIBLE; if (r.visibility != v) r.visibility = v }
@@ -2592,6 +2599,41 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         singleNpcLook(look)
         Log.i("WCHOME", "one screen: ${look.frame.name.lowercase()}" + (if (look.frame == SingleLook.Frame.FULL) " dim ${look.dim}" else "") +
             ", ${look.root.name.lowercase()}" + (if (look.docks) ", docks" else "") + (look.strip?.let { ", strip $it" } ?: "") + " ($why)")
+    }
+
+    /** the host's content root (the top window's) */
+    private var singleHostRoot: FrameLayout? = null
+    /** what the top window showed at its last FULL look: the content's shown children (the rooms column as its ground, its bar and the
+     *  room then shown) */
+    private var ghostViews: List<View> = emptyList()
+    private var ghostGround: View? = null
+
+    private fun singleGhostNote() {
+        val r = singleHostRoot ?: return
+        val out = ArrayList<View>(8)
+        var ground: View? = null
+        for (i in 0 until r.childCount) {
+            val v = r.getChildAt(i)
+            if (v.visibility != View.VISIBLE) continue
+            val rr = v as? ViewGroup
+            if (v === roomsRoot && rr != null) {
+                ground = v
+                for (j in 0 until rr.childCount) {
+                    val c = rr.getChildAt(j)
+                    if (c.visibility != View.VISIBLE) continue
+                    if (c === content) shownView?.let { out += it } else out += c
+                }
+            } else out += v
+        }
+        ghostViews = out; ghostGround = ground
+    }
+
+    /** the picture of what the window showed (null: nothing noted) */
+    private fun singleGhost(): android.graphics.Picture? {
+        val r = singleHostRoot ?: return null
+        val p = SingleFade.record(r, ghostViews, ghostGround)
+        ghostViews = emptyList(); ghostGround = null
+        return p
     }
 
     /** the look's safety poll while single screen mode is on: a pure call, applied only on a change ([SingleScreen.LOOK_POLL_MS]) */
@@ -2727,7 +2769,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** PLAY: the play docks, the add-on's single flag, the frame pace (end of onCreate) */
     private fun singlePlayWire() {
         val s = single ?: return
-        docks = SingleDocks(this, s, castView)
+        docks = SingleDocks(this, s, castView).also { d ->
+            // the 1535 polish's corner buttons (the user: "In the bottom left it should slide open our touch to cast menu and then the bottom
+            // right we could have our spiral button and slide open the home menu bar when touched"): touch only, each a toggle
+            d.btnL.onTap = { cornerCast() }
+            d.btnR.onTap = { cornerRow() }
+            d.btnR.art = { c, cx, cy, dd -> strip.drawDiscAt(c, cx, cy, dd) }
+        }
+        // B shuts the corner's bar (its press through Home's guest "home" while it holds, else Home's own B watch)
+        homeView.onDockCastClose = { if (castOpen) { castSet(false, "B"); playStep(animate = true) } }
         SingleUi.docks = true                                            // the game's minimap and chat give way to Home's
         // the top panel runs up to 120 Hz: Home's frames (the docked map's trail above all) paced while moving / fighting with Home's rest
         // being the game, not only while Home's page shows (the two-screen probe above stays as it was)
@@ -2751,6 +2801,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!play) {
             ui.removeCallbacks(playTick)
             d.show(false)
+            castSet(false, "the play docks went"); rowAsk = null         // the corner buttons' asks end with the play docks
+            rowReclaim()
             homeView.reclaimFromDocks()
             return
         }
@@ -2758,7 +2810,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val b = single?.box
         if (b != null && roomsRoot != null && SingleDocks.layHomeOnce(homeView, roomsRoot!!, b[0], b[1], b[2], b[3]))
             Log.i("WCHOME", "one screen: Home laid once for the docks (${homeView.width} x ${homeView.height})")
-        homeView.lendToDocks(d.chat, d.party, d.map)
+        homeView.lendToDocks(d.chat, d.party, d.map, d.quest, d.castBar)
+        rowLend(d.row)
         val was = d.up
         d.show(true)
         playStep(animate = was)
@@ -2774,10 +2827,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val laid = homeView.dockLaid()
         val hud = SinglePlayLayout.Hud(GameUi.hudHeight() ?: SinglePlayLayout.Y_DEF, GameUi.hudWidth() ?: SinglePlayLayout.W_DEF,
             GameUi.hudScale() ?: SinglePlayLayout.S_DEF)
-        val p = SinglePlayLayout.plan(SinglePlayLayout.arr(homeView.fightShown()), laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH())
+        val arr = SinglePlayLayout.arr(homeView.fightShown())
+        // the swirl button's ask lasts until the next fight edge (the rule takes the row back then)
+        if (d.plan?.arr != null && d.plan?.arr != arr) rowAsk = null
+        if (!laid.cast) castSet(false, "no tap-to-cast bar set up")
+        val p = SinglePlayLayout.plan(arr, laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH(),
+            questH = homeView.dockQuestH(fold = arr == SinglePlayLayout.Arr.IN),
+            castH = if (castOpen) (homeView.dockCastH() ?: SinglePlayLayout.CAST_H_DEF) else null, rowAsk = rowAsk, castBtn = laid.cast)
+        d.btnL.lit = castOpen
+        d.btnR.lit = rowAsk == true
         // the fight's rolls in the map's place, LB's party picture over the party list (NPC's strip, SingleLook rows 9 / 10)
         val l = playLook
-        val hide = SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map)
+        val hide = SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map, laid.quest)
         val before = d.plan?.arr
         d.arrange(p, animate && before != null, hide)
         if (before != null && before != p.arr) Log.i("WCHOME", "one screen: the docks ${if (p.arr == SinglePlayLayout.Arr.IN) "into the fight" else "out of the fight"} " +
@@ -2785,9 +2846,73 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         d.talkSync()
     }
 
+    /**
+     * THE CORNER BUTTONS (the 1535 polish; the user, 2026-11-26: "I was thinking maybe we could add some touch buttons in the bottome left
+     * and right. In the bottom left it should slide open our touch to cast menu and then the bottom right we could have our spiral button
+     * and slide open the home menu bar when touched"). Touch only, toggles, in and out of fights alike:
+     *  - LEFT: Home's tap-to-cast bar slides in from the left edge over the button (its slots cast on a tap, as on Home; its own fight
+     *    rule), a second tap slides it out; it stays open across fight edges and goes with the docks (a panel, a room);
+     *  - RIGHT (Home's swirl): the room row slides up on demand - in a fight and in Party mode too - or down when it is up; the ask lasts
+     *    until the next fight edge, when the rule (up out of fights) takes it back.
+     */
+    private var castOpen = false
+    private var rowAsk: Boolean? = null
+
+    private fun cornerCast() {
+        castSet(!castOpen, "the corner button")
+        playStep(animate = true)
+    }
+
+    /** the bar open / shut, and B with it (the user's pick: "Yes, B closes it"): Home holds the guest "home" exactly while it is open
+     *  (HomeView.dockCast) - every way it shuts frees it at once */
+    private fun castSet(open: Boolean, why: String) {
+        if (castOpen != open) Log.i("WCHOME", "one screen: the tap-to-cast bar ${if (open) "open" else "shut"} ($why)")
+        castOpen = open
+        if (::homeView.isInitialized) homeView.dockCast(open)
+    }
+
+    private fun cornerRow() {
+        val up = docks?.plan?.row != null
+        rowAsk = !up
+        Log.i("WCHOME", "one screen: the room row ${if (!up) "up" else "down"} (the swirl button)")
+        playStep(animate = true)
+    }
+
+    /**
+     * THE ROOM ROW OVER THE GAME (the 1535 polish; the user on test 1533, 2026-11-26: "We need to hide the top screen xp bar so that we
+     * can recreate our home screen row buttons. These hide in combat and out of combat it just ... slides up the home row from the
+     * bottom"): while playing, the rooms column's own bar (the Strip: its rooms, Home's disc, our XP track, its touches) is LENT to the
+     * docks' row window - one bar, never a copy, exactly as Home lends its map and chat - and given back before any panel shows.
+     */
+    private class RowLoan(val parent: ViewGroup, val index: Int, val lp: ViewGroup.LayoutParams?, val ty: Float, val vis: Int)
+    private var rowLoan: RowLoan? = null
+
+    private fun rowLend(into: ViewGroup) {
+        if (strip.parent === into) return
+        val parent = strip.parent as? ViewGroup ?: return
+        if (rowLoan == null) rowLoan = RowLoan(parent, parent.indexOfChild(strip), strip.layoutParams, strip.translationY, strip.visibility)
+        stripBack?.cancel()
+        parent.removeView(strip)
+        into.addView(strip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        strip.translationY = 0f
+        strip.visibility = View.VISIBLE
+    }
+
+    private fun rowReclaim() {
+        val l = rowLoan ?: return
+        rowLoan = null
+        (strip.parent as? ViewGroup)?.removeView(strip)
+        strip.scaleX = 1f; strip.scaleY = 1f; strip.pivotX = 0f; strip.pivotY = 0f
+        if (l.lp != null) l.parent.addView(strip, minOf(l.index, l.parent.childCount), l.lp) else l.parent.addView(strip, minOf(l.index, l.parent.childCount))
+        strip.translationY = l.ty
+        strip.visibility = l.vis
+    }
+
     /** the host goes (onDestroy): nothing of the docks left running or held */
     private fun singlePlayEnd() {
         ui.removeCallbacks(playTick); ui.removeCallbacks(ssAgain)
+        if (castOpen) castSet(false, "the host goes")
+        rowReclaim()
         docks?.close(); docks = null
         if (single != null) {
             SingleUi.docks = false

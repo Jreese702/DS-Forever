@@ -30,11 +30,24 @@ import com.jrees.wowcompanion.SinglePlayLayout.Step
  *
  * Touch on a piece = Home's own handlers (the chat -> the Chat room; the map -> Home's map module; a party plate -> its target / Smart Res
  * / its menu): those open a panel, and the docks give the views back.
+ *
+ * THE 1535 POLISH: two more pieces - Home's focused-quest card ([quest], lent as the map is) under the map, and the room row ([row]: the
+ * host's own Strip, laid at its rooms-column size and drawn at SinglePlayLayout.ROW_K) out of fights only, SLIDING up from under the
+ * screen's bottom edge and back down (SinglePlayLayout.SLIDES: no fade, the row whole all the way).
  */
 class SingleDocks(context: Context, private val shell: SingleShell, private val cast: CastView) {
     val chat = Slot(context, Piece.CHAT, edge = false)
     val party = Slot(context, Piece.PARTY, edge = false)
     val map = Slot(context, Piece.MAP, edge = true)
+    val quest = Slot(context, Piece.QUEST, edge = false)
+    val row = Slot(context, Piece.ROW, edge = false).also { it.scale = SinglePlayLayout.ROW_K }
+    /** the 1535 polish's corner buttons (the user: "touch buttons in the bottome left and right"): the tap-to-cast bar's (Home's own
+     *  CastStripView, lent into [castBar] while it is open) and the swirl's (the room row on demand) */
+    val castBar = Slot(context, Piece.CAST, edge = false)
+    val btnL = CornerButton(context, swirl = false)
+    val btnR = CornerButton(context, swirl = true)
+    private val btnLSlot = Slot(context, Piece.BTN_L, edge = false).also { it.addView(btnL) }
+    private val btnRSlot = Slot(context, Piece.BTN_R, edge = false).also { it.addView(btnR) }
     val talk = TalkDock(context, cast)
 
     /** each piece's window bounds now (screen px), its box now (where the piece is drawn), its alpha (a fade in / out) */
@@ -50,7 +63,10 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
     /** the windows' updates so far (the tests: two a piece a fight edge) */
     var places = 0; private set
 
-    private fun slot(p: Piece): View = when (p) { Piece.MAP -> map; Piece.PARTY -> party; Piece.CHAT -> chat; Piece.TALK -> talk }
+    private fun slot(p: Piece): View = when (p) {
+        Piece.MAP -> map; Piece.PARTY -> party; Piece.CHAT -> chat; Piece.TALK -> talk; Piece.QUEST -> quest; Piece.ROW -> row
+        Piece.CAST -> castBar; Piece.BTN_L -> btnLSlot; Piece.BTN_R -> btnRSlot
+    }
 
     private fun sub(p: Piece): SingleSub = shell.sub(p.sub).also { it.put(slot(p)) }
 
@@ -78,14 +94,16 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
         anim?.cancel(); anim = null
         val steps = SinglePlayLayout.steps(from, to, p.arr)
         if (!animate || steps.isEmpty()) {
-            for (k in listOf(Piece.MAP, Piece.PARTY, Piece.CHAT)) land(k, to[k])
+            for (k in LAID) land(k, to[k])
             return
         }
         val glides = steps.filterIsInstance<Step.Glide>()
         for (g in glides) if (g.from == null) slot(g.piece).alpha = 0f                                  // (one coming fades in)
         for (st in steps.filterIsInstance<Step.Place>().distinctBy { it.piece }) place(st.piece, st.box)   // the grow: the union
-        for (k in listOf(Piece.MAP, Piece.PARTY, Piece.CHAT)) if (glides.none { it.piece == k }) land(k, to[k])
+        for (k in LAID) if (glides.none { it.piece == k }) land(k, to[k])
         val curve = Motion.curve()
+        // a sliding piece starts where its glide does (under the screen's edge), drawn whole from the first frame
+        for (g in glides) if (g.piece in SinglePlayLayout.SLIDES) frame(g.piece, g.from, g.to, 0f)
         val ms = glides.maxOfOrNull { it.ms } ?: SinglePlayLayout.SHRINK_MS
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = ms
@@ -99,14 +117,15 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
                 override fun onAnimationEnd(animation: android.animation.Animator) {
                     if (cut) return
                     anim = null
-                    for (g in glides) land(g.piece, g.to)                                                   // the shrink
+                    for (g in glides) land(g.piece, to[g.piece])         // the shrink (a sliding piece's end under the edge: gone)
                 }
             })
             start()
         }
     }
 
-    /** one frame of [k]'s glide at [f] (the curve applied): its box inside its (grown) window, a fade for one coming / going */
+    /** one frame of [k]'s glide at [f] (the curve applied): its box inside its (grown) window, a fade for one coming / going (a sliding
+     *  piece's ends are never null: it moves whole) */
     private fun frame(k: Piece, a: Box?, b: Box?, f: Float) {
         val box = SinglePlayLayout.at(a, b, f) ?: return
         val v = slot(k)
@@ -167,6 +186,61 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
     // ---------------------------------------------------------------- the views
 
     /**
+     * A CORNER BUTTON (the 1535 polish): the bottom screen's own round button - the game's circle slot ring (the band's frame_circle art,
+     * its pressed / selected states) round a dark well and its picture: the tap-to-cast bar's (the Spellbook room's icon) or, [swirl],
+     * Home's own stone disc ([art]: the Strip's drawing). A tap = [onTap]; [lit] = what it opens is open (the ring's selected gold);
+     * the press sinks it (0.92), as the band's buttons.
+     */
+    class CornerButton(ctx: Context, val swirl: Boolean) : View(ctx) {
+        var onTap: (() -> Unit)? = null
+        var lit = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+        /** the swirl's own drawing (CompanionHost: the Strip's disc at this size): false = the drawn stand-in */
+        var art: ((Canvas, Float, Float, Float) -> Boolean)? = null
+        private var down = false
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+        private val box = RectF()
+
+        override fun onDraw(c: Canvas) {
+            val w = width.toFloat(); val h = height.toFloat()
+            val d = minOf(w, h)
+            val cx = w / 2f; val cy = h / 2f
+            val save = c.save()
+            if (down) c.scale(0.92f, 0.92f, cx, cy + 2f)
+            if (swirl && art?.invoke(c, cx, cy, d) == true) {
+                if (lit) { p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = 3f; p.color = Theme.gold; c.drawCircle(cx, cy, d / 2f - 2f, p) }
+                c.restoreToCount(save); return
+            }
+            val r = d / 2f
+            p.style = android.graphics.Paint.Style.FILL; p.color = android.graphics.Color.argb(230, 10, 8, 6)
+            c.drawCircle(cx, cy, r * 0.84f, p)
+            val pic = if (swirl) null else UiKit.tex("ricon_spellbook")
+            if (pic != null) { box.set(cx - r * 0.56f, cy - r * 0.56f, cx + r * 0.56f, cy + r * 0.56f); c.drawBitmap(pic, null, box, p) }
+            else if (swirl) {
+                p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = 3f; p.color = Theme.gold
+                c.drawArc(RectF(cx - r * 0.5f, cy - r * 0.5f, cx + r * 0.5f, cy + r * 0.5f), 0f, 300f, false, p)
+            }
+            val ring = Icons.ui(if (lit) "cast/frame_circle_selected" else if (down) "cast/frame_circle_pressed" else "cast/frame_circle_normal")
+                ?: Icons.ui("cast/frame_circle_normal")
+            if (ring != null) { box.set(0f, 0f, w, h); c.drawBitmap(ring, null, box, p) }
+            else {
+                p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = 4f; p.color = if (lit) Theme.gold else Theme.bronze
+                c.drawCircle(cx, cy, r - 3f, p)
+            }
+            c.restoreToCount(save)
+        }
+
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { down = true; invalidate() }
+                MotionEvent.ACTION_UP -> { val was = down; down = false; invalidate(); if (was && e.x in 0f..width.toFloat() && e.y in 0f..height.toFloat()) onTap?.invoke() }
+                MotionEvent.ACTION_CANCEL -> { down = false; invalidate() }
+            }
+            return true
+        }
+    }
+
+    /**
      * ONE PIECE'S WINDOW CONTENT: it lays its one child (Home's lent view) at [box] in the window's own px, measured only when its size
      * changed - the glide's frames lay it here directly (no layout pass through the window). The map's: clipped round and the module's
      * edge drawn over it (Home's well language: UiKit.module).
@@ -175,30 +249,39 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
         private var at: Box? = null
         private val clip = Path()
         private val r = RectF()
+        /** the 1535 polish: the child laid at its box / [scale] and drawn at [scale] (the room row: the Strip at its own size, smaller) */
+        var scale = 1f
 
         init { clipChildren = true; setWillNotDraw(!edge) }
+
+        private fun cw(b: Box) = maxOf(1, Math.round(b.w / scale))
+        private fun ch(b: Box) = maxOf(1, Math.round(b.h / scale))
+        private fun lay(c: View, b: Box) {
+            c.layout(b.l, b.t, b.l + cw(b), b.t + ch(b))
+            if (scale != 1f) { c.pivotX = 0f; c.pivotY = 0f; c.scaleX = scale; c.scaleY = scale }
+        }
 
         fun box(b: Box) {
             if (at == b) return
             at = b
             val c = getChildAt(0)
             if (c == null || width == 0) { requestLayout(); invalidate(); return }
-            if (c.width != b.w || c.height != b.h) c.measure(MeasureSpec.makeMeasureSpec(maxOf(1, b.w), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(maxOf(1, b.h), MeasureSpec.EXACTLY))
-            c.layout(b.l, b.t, b.l + maxOf(1, b.w), b.t + maxOf(1, b.h))
+            if (c.width != cw(b) || c.height != ch(b)) c.measure(MeasureSpec.makeMeasureSpec(cw(b), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(ch(b), MeasureSpec.EXACTLY))
+            lay(c, b)
             invalidate()
         }
 
         override fun onMeasure(wSpec: Int, hSpec: Int) {
             setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
             val b = at ?: Box(0, 0, MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
-            for (i in 0 until childCount) getChildAt(i).measure(MeasureSpec.makeMeasureSpec(maxOf(1, b.w), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(maxOf(1, b.h), MeasureSpec.EXACTLY))
+            for (i in 0 until childCount) getChildAt(i).measure(MeasureSpec.makeMeasureSpec(cw(b), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(ch(b), MeasureSpec.EXACTLY))
         }
 
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
             val a = at ?: Box(0, 0, r - l, b - t)
-            for (i in 0 until childCount) getChildAt(i).layout(a.l, a.t, a.l + maxOf(1, a.w), a.t + maxOf(1, a.h))
+            for (i in 0 until childCount) lay(getChildAt(i), a)
         }
 
         override fun dispatchDraw(c: Canvas) {
@@ -241,6 +324,9 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
     }
 
     companion object {
+        /** the pieces laid by the arrangement (the talk pop-up has its own [talkSync]) */
+        private val LAID = listOf(Piece.MAP, Piece.PARTY, Piece.CHAT, Piece.QUEST, Piece.ROW, Piece.CAST, Piece.BTN_L, Piece.BTN_R)
+
         /**
          * Home never laid yet: a fresh host in single screen mode (the switch, every launcher resume) starts on the game with the rooms
          * column GONE, so no layout pass ever reaches [home] and its places - what the docks show (HomeView.dockLaid) - are never worked

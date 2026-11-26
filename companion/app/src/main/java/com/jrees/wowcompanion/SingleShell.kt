@@ -20,6 +20,8 @@ interface SingleShell {
     fun look(l: SingleLook.Look)
     /** a sub window ("dockL", "dockR" (PLAY), "strip" (NPC), "hint" (CORE)): made on the first ask, gone with the top window */
     fun sub(id: String): SingleSub
+    /** the 1535 polish (SingleFade): the picture the window's next fade-out shows - what it showed as it closes (null = the dim alone) */
+    fun ghost(p: android.graphics.Picture?) {}
     /** the plate at the top screen's top centre (not touchable): [text] (Tr'd here), null = off; [ms] 0 = until cleared */
     fun hint(text: String?, ms: Long = 0L)
 }

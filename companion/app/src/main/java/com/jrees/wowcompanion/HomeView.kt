@@ -985,6 +985,8 @@ class HomeView(
 
     private fun onB() {
         if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
+        // the 1535 polish: the corner's tap-to-cast bar open and its hold not given (a fight): B closes it here (the game has the press too)
+        if (dockCastOpen && !dockCastHeld) { onDockCastClose?.invoke(); return }
         if (editLive()) return                                            // P2: edit mode's B comes through the guest "home" (its B ladder)
         // #540 (1.0.34: "Bar would not go back to combat mode while in combat and got stuck"): the B that closes one of the app's
         // overlays over Home (a wheel, the pause / context radial, the bar cursor) is that overlay's, never Home's shrink or close
@@ -1236,6 +1238,7 @@ class HomeView(
     fun auraPad(msg: JSONObject) {
         if (typeWanted) return                                            // the tool holds its own guest ("tool")
         if (editLive()) { editPad(msg); return }                          // P2: edit mode holds the guest "home" while it runs
+        if (dockCastOpen && !mapWanted && !chatWanted && auraPane.open == null) { dockCastPad(msg); return }   // the 1535 polish
         if (mapWanted) { mapPad(msg); return }
         if (!chatWanted) { auraPane.onPad(msg); return }
         if (msg.has("lost")) chatHeld = false else chatHeld = true
@@ -1381,6 +1384,7 @@ class HomeView(
             if (msg.optString("op") == "hold" && !msg.optBoolean("ok")) Log.i(TAG, "type tool: hold refused (${msg.optString("why")})")
             return
         }
+        if (dockCastOpen && !mapWanted && !chatWanted && auraPane.open == null && !editLive()) { dockCastAck(msg); return }
         if (mapWanted) {
             when (msg.optString("op")) {
                 // combat_nav Step 1 (the user, 2026-11-11): "pending" (a fight's take until the ENTER tap) is NOT held: the guard reads B
@@ -1416,7 +1420,55 @@ class HomeView(
     /** Home is busy with a controller layer of its own: its guest "home" (chat / map / aura list) or the tool's "tool" */
     fun homeGuestWanted(): Boolean = typeWanted || homeOwnGuestWanted()
     /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
-    fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false
+    fun homeOwnGuestWanted(): Boolean = homeOwnBesidesDockCast() || dockCastOpen
+    private fun homeOwnBesidesDockCast(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false
+
+    /**
+     * THE TAP-TO-CAST BAR'S B (single screen mode's bottom-left corner button; the user's pick 2026-11-26: "Yes, B closes it"): while the
+     * corner's bar is open Home holds the controller as the generic guest "home" - the key path every Home window over the game takes (the
+     * map module, the buff list) - so B reaches the app and not the game, and B closes the bar ([onDockCastClose]: the host slides it out).
+     * Taken ONLY while the bar is open: [dockCast] false frees it at once (never a held B or D-pad with the bar shut). A hold the game
+     * refuses (a fight's lockdown) leaves B the game's; Home's own B watch ([onB]) still closes the bar then. Its other presses are dropped
+     * while it holds (the bar is touch only). [dockCastAsks]: the holds / frees asked (tests).
+     */
+    var dockCastOpen = false; private set
+    var dockCastHeld = false; private set
+    private var dockCastN = -1
+    var onDockCastClose: (() -> Unit)? = null
+    val dockCastAsks = ArrayList<String>()
+
+    fun dockCast(open: Boolean) {
+        if (open == dockCastOpen) return
+        dockCastOpen = open
+        val others = homeOwnBesidesDockCast()
+        if (!open) dockCastHeld = false
+        if (others) return                                                // another of Home's windows holds the guest "home": it keeps it
+        dockCastN = -1
+        dockCastAsks += if (open) "hold" else "free"
+        val sent = homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = open))
+        Log.i(TAG, "tap-to-cast bar (one screen): ${if (open) "hold" else "free"} ${if (sent) "asked" else "not sent"}")
+    }
+
+    /** one press of the guest "home" while the corner's bar holds it: B closes the bar, the rest are dropped */
+    private fun dockCastPad(msg: JSONObject) {
+        if (msg.has("lost")) { dockCastHeld = false; return }
+        val n = msg.optInt("n", -1)
+        if (n == dockCastN) return
+        dockCastN = n
+        dockCastHeld = true
+        if (msg.optString("k") == "PAD2") onDockCastClose?.invoke()
+    }
+
+    private fun dockCastAck(msg: JSONObject) {
+        when (msg.optString("op")) {
+            "hold" -> if (msg.optBoolean("ok") && msg.optString("why") != "pending") dockCastHeld = true
+                else if (!msg.optBoolean("ok")) {
+                    Log.i(TAG, "tap-to-cast bar: hold refused (${msg.optString("why")}): B stays the game's, Home's watch closes the bar")
+                    dockCastHeld = false; dockCastAsks += "free"; homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))
+                }
+            "free", "leave" -> dockCastHeld = false
+        }
+    }
     /** B: pet recall's rest-layout B (PetRecall; was Smart pet / B: pet follow): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
      *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B. The 1.0.33 merge review (feat/wk-mail x
      *  feat/wk-b-pet-follow): the mail card too - its B "closes it first, and does nothing else of Home's", so it never calls the pet */
@@ -5142,6 +5194,13 @@ class HomeView(
 
         fun note(s: String) { noteText = s; noteUntil = System.currentTimeMillis() + NOTE_MS; invalidate() }
 
+        /** the 1535 polish: standing in single screen mode's quest dock - its plate see-through over the game ([dockFold]: its title row
+         *  only, the dock's in-fight size) */
+        var docked = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+        var dockFold = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+
         private fun state(q: HomeQuest) = if (q.ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS
 
         private val pGround by themed { Paint().apply { color = Theme.panel } }
@@ -5171,12 +5230,13 @@ class HomeView(
             // b125: minimized = the title row only once the shrink has landed; while the box eases the kit fades the objective lines
             // with the room they have (UI Art), so no half line peeks
             val q = homeCard()
-            val folded = HomeSettings.questMin &&
+            val folded = (HomeSettings.questMin || (docked && dockFold)) &&
                 h <= UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = true) + 0.5f
             // q64 (the user, 2026-11-17: "I didnt want the rewards on the quests in the home page ... showing the Icon for if there is a
             // usable quest Item"): no reward line; the quest's item at the card's right edge, redrawn while its cooldown runs
             if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = UiKit.CARD_HOME_SCALE,
-                bgAlpha = if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
+                bgAlpha = if (docked) SinglePlayLayout.CARD_ALPHA
+                    else if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
                 collapsed = folded, itemButton = true)
             if (!cardHidden && q?.item?.let { QuestItem.Cd.left(it.id) > 0.0 } == true) postInvalidateDelayed(250L)
             val n = noteText
@@ -5258,11 +5318,16 @@ class HomeView(
 
         init { context.atHostEnd(ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() })) }       // weakly: [weakly]
 
+        /** the 1535 polish: standing in single screen mode's chat dock over the game - a see-through well, the words shadowed to read */
+        var dockGround = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()
             UiKit.asBody(tp)
             // the chat's WELL (the harmony pass: every module the same well), the log inside its padding, from the bottom
-            UiKit.module(c, RectF(0f, 0f, w, h))
+            if (dockGround) UiKit.dockWell(c, RectF(0f, 0f, w, h)) else UiKit.module(c, RectF(0f, 0f, w, h))
+            if (dockGround) tp.setShadowLayer(4f, 0f, 1.5f, Color.BLACK) else tp.clearShadowLayer()
             // no "General" tab (user, 15:15: "remove the general tab from the chat ... just visual clutter")
             val pad = UiKit.MODULE_PAD
             // the game's world notice (the shard transfer's countdown) pinned at the top of the well; the log starts under it
@@ -6143,7 +6208,7 @@ class HomeView(
      * (giveBack) needs nothing from here.
      */
     private class DockLoan(val view: View, val parent: ViewGroup, val index: Int, val lp: ViewGroup.LayoutParams?, val alpha: Float,
-                           val tx: Float, val ty: Float, val cover: Float, val keepOut: List<RectF>)
+                           val tx: Float, val ty: Float, val cover: Float, val keepOut: List<RectF>, val vis: Int = View.VISIBLE)
     private val dockLoans = ArrayList<DockLoan>()
     /** [v] stands in a play dock now */
     fun docked(v: View): Boolean = dockLoans.any { it.view === v }
@@ -6151,9 +6216,25 @@ class HomeView(
     val dockedNow: Boolean get() = dockLoans.isNotEmpty()
 
     /** what Home's rest page lays now - the pieces the docks show: its chat, Party mode's list, the map (Home holding it) */
-    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean)
+    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean, val quest: Boolean = false, val cast: Boolean = false)
     fun dockLaid(): DockLaid = DockLaid(chatPane.visibility == View.VISIBLE && now.containsKey(Part.CHAT),
-        partyView.visibility == View.VISIBLE && now.containsKey(Part.PARTY), lent(mapView) && mapSlot.visibility == View.VISIBLE)
+        partyView.visibility == View.VISIBLE && now.containsKey(Part.PARTY), lent(mapView) && mapSlot.visibility == View.VISIBLE,
+        quest = homeCard() != null, cast = castSideNow() != CastStripModel.Side.OFF)
+
+    /** the 1535 polish (the corner button's tap-to-cast bar): the bar's height as Home lays it (its own rows), else null */
+    fun dockCastH(): Int? = now[Part.STRIP]?.height()?.toInt()?.takeIf { it > 0 }
+
+    /** the tap-to-cast bar's own lay while it stands in the corner's window (Home's side and half, given back with it) */
+    private var castLoanSide: CastStripModel.Side? = null
+    private var castLoanHalf = 0
+
+    /** the 1535 polish (the user: "instead it should show our focused quest box like it does on the bottom screen"): the focused quest's
+     *  card's height for the quest dock - its title row only when [fold] (a fight) or minimized as on Home; null = no focused quest */
+    fun dockQuestH(fold: Boolean): Int? {
+        val q = homeCard() ?: return null
+        questPane.dockFold = fold
+        return kotlin.math.ceil(UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = fold || HomeSettings.questMin)).toInt()
+    }
 
     /** Party mode's list as drawn: its height (the well and the Select tab) at the list's own row size; null in a Party-mode Top fight
      *  (its rows fill whatever box they get) */
@@ -6164,9 +6245,20 @@ class HomeView(
     }
 
     /** Home's chat pane, party list and map into the docks' slots [chat], [party], [map] (each the slot's only child) */
-    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup) {
+    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup, quest: ViewGroup? = null, cast: ViewGroup? = null) {
         dockLend(chatPane, chat)
         dockLend(partyView, party)
+        if (quest != null) { dockLend(questPane, quest); questPane.translationZ = 0f }
+        // the 1535 polish: the tap-to-cast bar (Home's own, its slots, scroll, cooldowns and fight rule) into the corner's window, as
+        // one scrolling bar (LEFT: four in view) whatever Home's split; its touches its own (TapBridge on the add-on's castbar row)
+        if (cast != null && !docked(castStrip)) {
+            castLoanSide = castStrip.side; castLoanHalf = castStrip.splitHalf
+            dockLend(castStrip, cast)
+            castStrip.splitHalf = 0; castStrip.side = CastStripModel.Side.LEFT
+            castStrip.visibility = View.VISIBLE
+        }
+        // the 1535 polish (the user: "The party mode box and text box bot have solid backgrounds and it needs to be way more see through")
+        chatPane.dockGround = true; partyView.dockGround = true; questPane.docked = quest != null
         if (lent(mapView) && mapView.parent === mapSlot) {
             dockLend(mapView, map)
             mapView.compactCover = 0f; mapView.rimKeepOut = emptyList()       // (Home's card and buffs are not over it there)
@@ -6178,14 +6270,18 @@ class HomeView(
         val parent = v.parent as? ViewGroup ?: return
         val mv = v as? MapView
         dockLoans.add(DockLoan(v, parent, parent.indexOfChild(v), v.layoutParams, v.alpha, v.translationX, v.translationY,
-            mv?.compactCover ?: 0f, mv?.rimKeepOut ?: emptyList()))
+            mv?.compactCover ?: 0f, mv?.rimKeepOut ?: emptyList(), v.visibility))
         parent.removeView(v)
         into.addView(v, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         v.translationX = 0f; v.translationY = 0f; v.alpha = 1f
+        if (v === questPane) v.visibility = View.VISIBLE                 // (a Home layout without the card still has it in the dock)
     }
 
     /** every lent view back where it came from (last lent first), as it was; Home lays its page again */
     fun reclaimFromDocks() {
+        chatPane.dockGround = false; partyView.dockGround = false; questPane.docked = false; questPane.dockFold = false
+        castLoanSide?.let { castStrip.side = it; castStrip.splitHalf = castLoanHalf; castLoanSide = null }
+        questPane.translationZ = restZ(Part.QUESTS)
         if (dockLoans.isEmpty()) return
         while (dockLoans.isNotEmpty()) {
             val l = dockLoans.removeAt(dockLoans.size - 1)
@@ -6195,6 +6291,7 @@ class HomeView(
             (v.parent as? ViewGroup)?.removeView(v)
             if (l.lp != null) l.parent.addView(v, min(l.index, l.parent.childCount), l.lp) else l.parent.addView(v, min(l.index, l.parent.childCount))
             v.translationX = l.tx; v.translationY = l.ty; v.alpha = l.alpha
+            if (v.visibility != l.vis) v.visibility = l.vis
             if (v === mapView) { mapView.compactCover = l.cover; mapView.rimKeepOut = l.keepOut }
         }
         requestLayout(); invalidate()

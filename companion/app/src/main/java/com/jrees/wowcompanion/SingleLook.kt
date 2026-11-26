@@ -9,6 +9,8 @@ package com.jrees.wowcompanion
  *  1 the launch swirl covers the screen                       HIDDEN
  *  2 start pages, the report, an NPC window, a game dialog,
  *    the Spellbook's Bind box                                 FULL 0.55, touch, the room column if a room is open (else Home's glance)
+ *    - the loot window alone over the game                    FULL, NO dim ([DIM_LOOT]; the user on 1533, 2026-11-26: "When looting
+ *                                                            the screen dims but thats excessive")
  *  2b the waiting page with the game screen up (a logout,
  *    a disconnect, a reload, "Loading your character")       HIDDEN, the strip "start": the page's own row (its line, Menu, Keyboard,
  *                                                            the sign-in row) at the screen's TOP - the game's login screen and
@@ -45,6 +47,8 @@ object SingleLook {
         val layoutEdit: Boolean = false,
         /** the waiting page (StartView) with the game screen up and its Menu shut (the host's singleWaiting) */
         val waiting: Boolean = false,
+        /** the NPC window open is the LOOT window (InteractView.looting) */
+        val loot: Boolean = false,
     )
 
     /** what the top window does: [strip] = null, "tool", "rolls", "lb" (NPC: SingleNpc's strip window) or "start" (the waiting page) */
@@ -55,6 +59,8 @@ object SingleLook {
 
     const val DIM_PANEL = 0.55f
     const val DIM_QUICK = 0.25f
+    /** the loot window alone over the game: no dim (the 1535 polish) */
+    const val DIM_LOOT = 0f
     const val HOME = "HOME"
 
     val PLAY = Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = true)
@@ -68,10 +74,13 @@ object SingleLook {
         val inRoom = i.room != HOME
         // pause / NPC over Home: Home's page shows only while it is up as a glance
         val under = if (inRoom) Root.ROOM else if (i.glanceHub || i.homeSub) Root.HOME else Root.GONE
+        // the loot window with nothing else of ours open over the game (no room, no glance, no page, no pop-up): the game undimmed
+        val lootOnly = i.npc && i.loot && !inRoom && under == Root.GONE && !i.startPages && !i.report && !(i.dialog && !i.fightRolls) &&
+            !i.spells && !i.pause
         return when {
             i.launchCover -> COVERED                                                                          // 1
             i.startPages || i.report || i.npc || (i.dialog && !i.fightRolls) || i.spells ->
-                Look(Frame.FULL, DIM_PANEL, true, under, docks = false)                                       // 2
+                Look(Frame.FULL, if (lootOnly) DIM_LOOT else DIM_PANEL, true, under, docks = false)          // 2
             i.waiting -> Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = false, strip = SingleNpc.START)     // 2b
             i.pause -> Look(Frame.FULL, DIM_PANEL, true, under, docks = false)                                // 3
             inRoom && i.layoutEdit -> Look(Frame.FULL, DIM_QUICK, true, Root.ROOM, docks = false)             // 4 NPC (the layout editor)

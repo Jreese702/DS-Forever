@@ -30,7 +30,9 @@ class NoDisplayModeTest {
         val top = code("TopWindow.kt")
         assertTrue("named for the ANR lines", top.contains("WinTitle.apply(w, com.jrees.wowcompanion.WinTitle.SINGLE)"))
         assertTrue("the host is never \"gone\" while its decor is hidden", top.contains("override fun hostGone(): Boolean = !up"))
-        assertTrue("HIDDEN = the decor GONE (no surface)", top.contains("val v = if (on) View.VISIBLE else View.GONE"))
+        // the 1535 polish (SingleFade): HIDDEN = the decor GONE (no surface) once its fade-out lands (or at once before it is on screen)
+        assertTrue("HIDDEN = the decor GONE (no surface)", top.contains("d.visibility = View.GONE") &&
+            top.contains("if (!d.isAttachedToWindow) { d.visibility = if (on) View.VISIBLE else View.GONE; return }"))
         assertTrue("the host's onStop / onDestroy with the window", top.substringAfter("override fun onStop() {").substringBefore("\n    }")
             .contains("host?.let { it.onStop(); it.onDestroy() }"))
         assertTrue("its typing: the bottom window's own rules", top.contains("BottomTyping(context, { window })"))

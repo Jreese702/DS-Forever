@@ -21,8 +21,11 @@ class SingleUiTest {
         SingleUi.docks = true
         assertEquals("the docks built: Home's map instead", UiMode.OFF, GameUi.effMode("minimap"))
         assertEquals("Home's chat on the left instead", UiMode.OFF, GameUi.effMode("chat"))
-        assertEquals("the tracker stays the game's", UiMode.ON, GameUi.effMode("tracker"))
-        assertEquals(UiMode.NINTENDO, GameUi.effMode("hud"))
+        // the 1535 polish (the user: "The normal quest list should stay hidden and instead it should show our focused quest box")
+        assertEquals("Home's quest card under the map instead of the game's tracker", UiMode.OFF, GameUi.effMode("tracker"))
+        assertEquals("no Nintendo bar (the user: \"the Nintendo bar is BAD\")", UiMode.OFF, GameUi.effMode("hud"))
+        assertEquals("the XP bar gives its place to the room row", UiMode.OFF, GameUi.effMode(HudSplit.XP_ID))
+        assertEquals(UiMode.ON, GameUi.effMode(HudSplit.BUFFS_ID))
         assertEquals("the saved choice is untouched", UiMode.OFF, GameUi.mode("minimap"))
     }
 
