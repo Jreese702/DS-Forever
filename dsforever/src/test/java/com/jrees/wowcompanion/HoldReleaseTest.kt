@@ -144,30 +144,47 @@ class HoldReleaseTest {
         val src = java.io.File(listOf(java.io.File("../companion"), java.io.File("companion")).first { it.isDirectory },
             "app/src/main/java/com/jrees/wowcompanion/HoldCast.kt").readText()
         val g = src.substringAfter("var gates: () -> Boolean = {").substringBefore("\n    }")
-        assertTrue("the real gates: STREAM, party / box / loading, our pop-ups and wheels, a tabbed room owning the pad",
+        assertTrue("the real gates: STREAM, party / box / loading, our pop-ups and wheels",
             g.contains("PlayModes.current != PlayMode.STREAM") && g.contains("mapWhy != \"party\"") && g.contains("mapWhy != \"box\"")
-                && g.contains("mapWhy != \"loading\"") && g.contains("SetupBridge.holdsGamePad()") && g.contains("SetupBridge.roomHoldsPad()"))
+                && g.contains("mapWhy != \"loading\"") && g.contains("SetupBridge.holdsGamePad()"))
+        assertFalse("no room's answer among them (8b)", g.contains("room", ignoreCase = true))
     }
 
-    // 8b int/1533: the rooms' tabs on top - a tabbed room owning the pad closes the REAL gates like a pop-up (the release decides)
-    @Test fun aTabbedRoomOwningThePadClosesTheRealGates() {
-        val was = SetupBridge.roomHoldsPad
+    // 8b int/1533 fix pass (the rooms' tabs on top x the fire): NO ROOM CLOSES THE REAL GATES. A press the add-on keeps is the game's (it
+    // never keeps in room mode or under a capture), and its release casts the hold wherever a room is (the router's release path asks no
+    // mode), so a room's gate could only move the cast from the ring's fill to the physical release (the user: "cast right when the hold
+    // bar is filled, not when its released") - in Character / Group Finder / Professions / Social even while the game holds the pad, and
+    // with a capture landing before the release the hold would be lost. Every room hook SetupBridge has answers "the room's": X still
+    // fires at F
+    @Test fun noRoomClosesTheRealGates() {
+        val hooks = SetupBridge::class.java.methods.filter { m ->
+            m.name.startsWith("setRoom") && m.parameterTypes.size == 1 && m.parameterTypes[0] == Function0::class.java
+        }
+        assertTrue("the rooms' L / R hook at least (SetupBridge.roomShoulders)", hooks.any { it.name == "setRoomShoulders" })
+        val was = hooks.associateWith { h -> SetupBridge::class.java.getMethod("g" + h.name.substring(1)).invoke(SetupBridge) }
+        val log0 = HoldCast.log
         try {
             HoldCast.gates = gates0
             HoldCast.mapWhy = "on"
+            assertTrue("the test's own state: nothing of ours holds the pad", HoldCast.gates())
+            val always: () -> Boolean = { true }
+            for (h in hooks) h.invoke(SetupBridge, always)
+            assertTrue("a tabbed room owning the pad or its bumpers: the gates stay open", HoldCast.gates())
+            HoldCast.clock = { 1678L }; HoldCast.bandClock = { 1678L }
+            val lines = ArrayList<String>()
+            HoldCast.log = { lines += it }
             val e = HoldCast.release
-            SetupBridge.roomHoldsPad = { false }
-            val open = HoldCast.gates()
-            SetupBridge.roomHoldsPad = { true }
-            assertFalse("a room owns the pad: closed", HoldCast.gates())
             e.reset(); e.cn = 3; e.ft = 17
-            e.edge(X, true, 1000); e.keep("PAD3", 5, 0, 3, 1100)
-            assertFalse("a room owns the pad: no fire, the release decides", e.due(1678)); assertTrue(xDown(e))
-            assertEquals(HoldRelease.GAVE_UP, e.state(X))
-            SetupBridge.roomHoldsPad = { throw IllegalStateException("the host went away") }
-            assertEquals("a throwing hook is no room", open, HoldCast.gates())
+            e.edge(X, true, 1000); assertTrue(e.keep("PAD3", 5, 0, 3, 1100))
+            assertTrue("the ring's fill: X let go for the game at F", e.due(1678)); assertFalse(xDown(e))
+            assertEquals(HoldRelease.FORCED, e.state(X))
+            // the add-on's answer: its release path cast the hold (and the fire's wait for it ends here, nothing left for the next test)
+            HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "rel").put("kind", "slothold").put("down", true)
+                .put("hn", 3).put("need", 3).put("sl", 0.04))
+            assertTrue(lines.toString(), lines.any { it == "fire ok n=3 ft=17 slack=40ms" })
         } finally {
-            SetupBridge.roomHoldsPad = was
+            for ((h, v) in was) h.invoke(SetupBridge, v)
+            HoldCast.log = log0
         }
     }
 

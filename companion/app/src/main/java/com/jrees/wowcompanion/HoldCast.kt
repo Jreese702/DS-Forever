@@ -432,12 +432,12 @@ object HoldCast {
     /** the holdmap's why ("on" / "box" / "party" / "loading" / "none") */
     @Volatile var mapWhy = ""
     /** the gates at the fire moment (true = open): not a PC game's presses, not the Bind box / Party mode / a loading screen, none of our
-     *  pop-ups or wheels holding the pad, no tabbed room owning it (int/1533: SetupBridge.roomHoldsPad, RoomTabsPad.blocksHoldFire);
-     *  tests set their own */
+     *  pop-ups or wheels holding the pad; tests set their own. NO ROOM GATE (int/1533 fix pass): a press the add-on keeps is the game's
+     *  (it never keeps in room mode or under a capture) and its release casts the hold wherever a room is, so a room's gate could only
+     *  move the cast from the ring's fill to the release (HoldReleaseTest.noRoomClosesTheRealGates) */
     var gates: () -> Boolean = {
         PlayModes.current != PlayMode.STREAM && mapWhy != "party" && mapWhy != "box" && mapWhy != "loading" &&
-            !runCatching { SetupBridge.holdsGamePad() }.getOrDefault(false) &&
-            !runCatching { SetupBridge.roomHoldsPad() }.getOrDefault(false)
+            !runCatching { SetupBridge.holdsGamePad() }.getOrDefault(false)
     }
     /** the fire's timer (main looper, uptime) - [HoldRelease.NEVER] = none; tests set their own */
     var schedule: (Long) -> Unit = { at -> post(at) }

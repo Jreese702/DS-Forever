@@ -117,27 +117,25 @@ class RoomTabsPadTest {
         assertFalse(RoomTabsPad.live(shown = false, holder = true, roomMode = true, covered = false))
     }
 
-    /** int/1533: hold to cast's fire at its threshold is off while a tabbed room owns the pad (HoldCast.gates via SetupBridge.roomHoldsPad) */
-    @Test fun holdToCastsFireIsOffWhileATabbedRoomOwnsThePad() {
-        for (r in listOf("CHARACTER", "GROUPFINDER", "PROFESSIONS", "SOCIAL")) {
-            assertTrue("$r shows, the capture not named yet: off", RoomTabsPad.blocksHoldFire(r, holder = false, roomMode = false))
-            assertTrue("$r holding: off", RoomTabsPad.blocksHoldFire(r, holder = true, roomMode = false))
-            assertTrue("$r in a fight's room mode: off", RoomTabsPad.blocksHoldFire(r, holder = false, roomMode = true))
+    /**
+     * int/1533 fix pass: THE ROOMS' TABS NEVER TOUCH HOLD TO CAST'S FIRE. A tabbed room shown while the game holds the pad (no capture
+     * named, no fight's room mode: the hold ask gave up, the reconciler STUCK, the moment before the hold lands) leaves L / R to the game,
+     * and its hold too - the add-on keeps the press, the ring fills, it casts there; a room that holds the pad gets no kept press at all,
+     * and one kept just before it took the pad casts on its release anyway. So no room's answer is wired into the fire's gates
+     * (HoldReleaseTest.noRoomClosesTheRealGates: the behaviour)
+     */
+    @Test fun theRoomsTabsNeverTouchHoldToCastsFire() {
+        for (r in listOf("CHARACTER", "GROUPFINDER", "PROFESSIONS", "SOCIAL", "SPELLBOOK", "TALENTS", "MACROS")) {
+            assertTrue(r, RoomTabsPad.idOf(r) != null)
         }
-        for (r in listOf("SPELLBOOK", "TALENTS", "MACROS")) {
-            assertTrue("$r holding: off", RoomTabsPad.blocksHoldFire(r, holder = true, roomMode = false))
-            assertTrue("$r in a fight's room mode: off", RoomTabsPad.blocksHoldFire(r, holder = false, roomMode = true))
-            assertFalse("$r not holding: the gate stays as it was", RoomTabsPad.blocksHoldFire(r, holder = false, roomMode = false))
-        }
-        // Home and the rooms that are not the rooms' tabs' keep the gates they had
-        for (r in listOf("HOME", "MAP", "QUESTS", "CONTROLLER", "BAGS", "CHAT", "CALENDAR", "SETTINGS"))
-            assertFalse(r, RoomTabsPad.blocksHoldFire(r, holder = true, roomMode = true))
-        // the gate is wired: HoldCast.gates asks SetupBridge.roomHoldsPad, the host answers with blocksHoldFire (weakly)
+        assertFalse("shown, the game holding the pad: L / R the game's",
+            RoomTabsPad.live(shown = true, holder = false, roomMode = false, covered = false))
         val dir = listOf(java.io.File("../companion"), java.io.File("companion")).first { it.isDirectory }
         val src = { n: String -> java.io.File(dir, "app/src/main/java/com/jrees/wowcompanion/$n").readText() }
-        assertTrue(src("HoldCast.kt").substringAfter("var gates: () -> Boolean = {").substringBefore("\n    }").contains("SetupBridge.roomHoldsPad()"))
-        val host = src("CompanionHost.kt")
-        assertTrue(host.contains("SetupBridge.roomHoldsPad = { me.get()?.let"))
-        assertTrue(host.substringAfter("private fun roomHoldsPad(): Boolean {").substringBefore("\n    }").contains("RoomTabsPad.blocksHoldFire("))
+        assertFalse("the fire's gates ask no room",
+            src("HoldCast.kt").substringAfter("var gates: () -> Boolean = {").substringBefore("\n    }").contains("room", ignoreCase = true))
+        assertFalse("no hold gate hook on the bridge", src("SetupBridge.kt").contains("roomHoldsPad"))
+        assertFalse("the host answers none", src("CompanionHost.kt").contains("roomHoldsPad"))
+        assertFalse("no room rule for the fire", src("RoomTabRow.kt").contains("blocksHoldFire"))
     }
 }

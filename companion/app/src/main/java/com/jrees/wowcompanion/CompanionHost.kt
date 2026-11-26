@@ -2572,19 +2572,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the launcher's key callback asks (main thread); the host only weakly (a static never keeps it: Weakly.kt)
         val me = java.lang.ref.WeakReference(this)
         SetupBridge.roomShoulders = { me.get()?.let { h -> !h.shell.hostGone() && DirectPad.healthy && h.roomTabsLive() } == true }
-        // int/1533, hold to cast x the rooms' tabs: while a tabbed room owns the pad the hold's fire at its threshold is off (HoldCast.gates,
-        // like our pop-ups and wheels; the release decides). Asked by the fire's timer (main thread); the host only weakly
-        SetupBridge.roomHoldsPad = { me.get()?.let { h -> !h.shell.hostGone() && h.roomHoldsPad() } == true }
     }
 
     /** the guest id of the room whose tab row L / R step now, or null ([RoomTabsPad.idOf]: the room shown) */
     private fun roomTabsGuest(): String? = RoomTabsPad.idOf(room.name)
-
-    /** hold to cast's gate: the shown tabbed room owns the pad ([RoomTabsPad.blocksHoldFire]: one of the four, or one holding it) */
-    private fun roomHoldsPad(): Boolean {
-        val id = roomTabsGuest() ?: return false
-        return RoomTabsPad.blocksHoldFire(room.name, holder = capHolder == id, roomMode = padOwner.roomMode())
-    }
 
     /**
      * L / R are the shown room's now: one of the tabbed rooms shows and holds the controller (its capture's holder, or a fight's

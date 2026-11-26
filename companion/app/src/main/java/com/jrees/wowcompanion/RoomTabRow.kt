@@ -50,22 +50,6 @@ object RoomTabsPad {
     fun live(shown: Boolean, holder: Boolean, roomMode: Boolean, covered: Boolean, free: Boolean = true): Boolean =
         PadOwnerSync.directLive(shown, holder, roomMode) && !covered && free
 
-    /** the four rooms whose side tabs moved on top (their Room names) */
-    val TOP_FOUR = setOf("CHARACTER", "GROUPFINDER", "PROFESSIONS", "SOCIAL")
-
-    /**
-     * HOLD TO CAST'S GATE (int/1533: the rooms' tabs on top meet hold to cast round 1533; HoldCast.gates through SetupBridge.roomHoldsPad):
-     * the launcher never lets a kept press go for the game at its fire point while a tabbed room owns the pad, like our pop-ups and wheels -
-     * one of the four rooms whose tabs moved on top shows ([room], whoever the capture names yet: its presses are the room's), or another
-     * tabbed room shows and holds the controller ([holder]: the capture names it; [roomMode]: a fight's room mode), covered or not (what
-     * covers it reads the pad itself). Closed = no early release, the release decides as in 1532; the add-on keeps no press there anyway
-     * (room mode and a capture never keep), so this only stops a press kept just before the room took the pad
-     */
-    fun blocksHoldFire(room: String, holder: Boolean, roomMode: Boolean): Boolean {
-        if (idOf(room) == null) return false
-        return room in TOP_FOUR || PadOwnerSync.directLive(true, holder, roomMode)
-    }
-
     /** the capture's name of a bumper's key code (L1 -> PADLSHOULDER, R1 -> PADRSHOULDER), null for any other key */
     fun keyName(keyCode: Int): String? = when (keyCode) {
         android.view.KeyEvent.KEYCODE_BUTTON_L1 -> DirectPadKeys.LB
