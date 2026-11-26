@@ -122,7 +122,11 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
      *  while B leads Home - B closes the cursor */
     var barB = false
         set(v) { if (field != v) { val t = now(); val was = redB; val from = redNow(t); field = v; flowIf(was, from, t) } }
-    private val redB get() = bGoesHome || barB
+    /** THE DS MENU's swirl (single screen mode, SingleMenu.swirlRed): true = red with B (a fight: B goes straight back to the game),
+     *  false = its blue at rest (a room on the stage: B folds into the row), null = the bar's own rule ([bGoesHome] / [barB]) */
+    var menuRed: Boolean? = null
+        set(v) { if (field != v) { val t = now(); val was = redB; val from = redNow(t); field = v; flowIf(was, from, t) } }
+    private val redB get() = menuRed ?: (bGoesHome || barB)
     /** test26: the red / B look goes to its target AT ONCE, no flow (a wheel's close: the disc comes back from under the hub blue) */
     fun snapRed() { redAt = 0L; invalidate() }
     /** the red / B state changed ([was] -> [redB]): its flow starts from where the red stood ([from]) */

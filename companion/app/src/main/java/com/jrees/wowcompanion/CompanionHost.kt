@@ -833,7 +833,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // want that to open the pause menu"; "Wheel everywhere"); a room slice switches rooms. B on the swirl is no pick (BarB, the user
         // 2026-11-16: "it should just be closing the dpad select"): from a room it goes Home (2026-10-01: "Yes, B on the Home disc goes
         // Home"), on Home the cursor only closes and nothing comes here
-        barSelect = HomeBarSelect(this, strip, { questsPad }) { r, go -> if (go == BarB.Go.PAUSE) openPause("the bar's swirl", byStart = false) else pickRoom(r) }
+        // the 1536 DS menu (single screen mode): A on the row's swirl opens the Home stage (Home's page on the stage), not the wheel
+        barSelect = HomeBarSelect(this, strip, { questsPad }) { r, go ->
+            if (go == BarB.Go.PAUSE) { if (menu != null) menuHomeStage("A on the row's swirl") else openPause("the bar's swirl", byStart = false) }
+            else pickRoom(r)
+        }
         // LATER item 23a (the user: "the buttons at the top still show their presses, and that's confusing"): quiet while the cursor is up
         // p35: while the bar holds the controller its D-pad Left / Right move it: Cast shows the bar's arrows there
         barSelect.onOpenChanged = { open -> castView.quietPresses = open; castView.barArrows = open; if (!open) homeView.overlayClosed(); singleSync("the bar cursor") }
@@ -1595,6 +1599,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         singleCoreWire()
         singlePlayWire()
         singleNpcWire()
+        singleMenuWire()
         ui.post(object : Runnable {
             override fun run() {
                 // Home holds the same map (compact), so it is fed there too
@@ -1639,8 +1644,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         barSelect.appAway()
     }
 
-    private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
+    private fun show(r: Room, byB: Boolean = false, motion0: Boolean = true) {
         MemWatch.room = r.name.lowercase()                                // WCMEM: what is on show
+        // the 1536 DS menu: a room on the stage is pictured as it leaves (it folds into its disc / slides out); the rooms' own open /
+        // close motion is the menu's there
+        if (r != room) menuRecord()
+        val motion = motion0 && !(menu != null && single != null)
         if (r != Room.HOME) glanceHub = false                             // single screen mode: a room ends Home's glance (B -> the game)
         if (r != Room.HOME) talkReset("room $r")                          // hold to talk: a room change ends a hold, nothing sent
         flushBLeave(entering = r)
@@ -1783,6 +1792,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // in a fight the pad follows the room shown now (PadOwnerSync)
         padOwnerStep()
         GameUi.onRoom(r)
+        if (r == Room.HOME && was != Room.HOME) menuFoldBack(was)
         singleSync("room ${r.name}")
     }
 
@@ -2219,7 +2229,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** Home's sub-states that show Home's page in the panel and end with what opened them (a module full screen, the buff list, the tool,
      *  the mail card, the bar cursor, edit mode, Party mode's menus) */
-    private fun singleHomeSub(): Boolean = homeView.bClosesSomething() || barSelect.open || homeView.editing ||
+    private fun singleHomeSub(): Boolean = homeView.bClosesSomething() || (barSelect.open && menu == null) || homeView.editing ||
         homeView.partyMenu.visibility == View.VISIBLE || homeView.targetMenu.visibility == View.VISIBLE
 
     /**
@@ -2252,6 +2262,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         lb = ::lbView.isInitialized && lbView.isShown2,
         tool = if (homeView.toolWanted()) 0 else -1,
         waiting = singleWaiting(),
+        menuRow = menuState().let { it == MenuRow.UP || it == MenuRow.HELD },
+        menuHome = glanceMenu,
+        menuDrop = menuRowNow == MenuRow.DROP,
     ))
 
     /** the look now applied to the top window (single screen mode; two screens: nothing). The rooms column shows only for a room or Home's
@@ -2262,16 +2275,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!singleReady || shell.hostGone()) return
         val look = SingleLook.of(singleIn())
         homeView.restElsewhere = look.root == SingleLook.Root.GONE && room == Room.HOME
+        if (!look.menu) menuStripHide(false)                              // the bar back before the docks lend it (the 1536 DS menu)
         // the 1535 polish (SingleFade): while the window shows, what it shows is noted (every sync and the 100 ms poll) - its picture is
         // what fades out when it closes (the views are already the next state's by then: a room left, Home's views lent to the docks)
         if (look.frame == SingleLook.Frame.FULL) singleGhostNote()
-        if (look == singleLookNow) return
+        if (look == singleLookNow) { singleMenuLook(look); return }
         if (singleLookNow?.frame == SingleLook.Frame.FULL && look.frame == SingleLook.Frame.HIDDEN) s.ghost(singleGhost())
         singleLookNow = look
         singlePlayLook(look)
         roomsRoot?.let { r -> val v = if (look.root == SingleLook.Root.GONE) View.GONE else View.VISIBLE; if (r.visibility != v) r.visibility = v }
         s.look(look)
         singleNpcLook(look)
+        singleMenuLook(look)
         Log.i("WCHOME", "one screen: ${look.frame.name.lowercase()}" + (if (look.frame == SingleLook.Frame.FULL) " dim ${look.dim}" else "") +
             ", ${look.root.name.lowercase()}" + (if (look.docks) ", docks" else "") + (look.strip?.let { ", strip $it" } ?: "") + " ($why)")
     }
@@ -2368,6 +2383,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** Home's page as a glance over the game (the wheel's hub; [on] false = back to the game: B, a tap on the dim) */
     private fun singleGlance(on: Boolean, why: String) {
         if (single == null) return
+        if (!on && glanceHub && glanceMenu) {
+            menuRecord()                                                  // Home's stage folds into the swirl
+            glanceMenu = false
+            glanceHub = false
+            if (!menuNoFold && !singleFight()) barSelect.openMenuAt(Room.HOME, SingleMenu.FOLD_HOLD_MS)
+        }
+        if (!on) glanceMenu = false
         glanceHub = on
         Log.i("WCHOME", "one screen: Home's glance ${if (on) "on" else "off"} ($why)")
         if (on && room != Room.HOME) show(Room.HOME) else singleSync("Home's glance ($why)")
@@ -2383,10 +2405,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (singleNpcDim()) return
         val i = singleIn()
         if (i.startPages || i.report || i.npc || i.dialog || i.spells || i.pause || i.quick || i.classWheel || i.waiting) return
-        when {
-            room != Room.HOME -> { Log.i("WCHOME", "one screen: a tap on the dim: ${room.name} -> the game"); pickRoom(Room.HOME) }
-            glanceHub -> singleGlance(false, "a tap on the dim")
-        }
+        menuNoFold = true
+        try {
+            when {
+                room != Room.HOME -> { Log.i("WCHOME", "one screen: a tap on the dim: ${room.name} -> the game"); pickRoom(Room.HOME) }
+                glanceHub -> singleGlance(false, "a tap on the dim")
+                menu != null && barSelect.open -> { Log.i("WCHOME", "one screen: a tap on the dim: the menu's row drops"); barSelect.close() }
+            }
+        } finally { menuNoFold = false }
     }
 
     /**
@@ -2474,6 +2500,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         castView.readAway = room == Room.HOME
         if (!play) {
             ui.removeCallbacks(playTick)
+            d.plan?.row?.let { b -> menuRiseDock = SingleMenu.Box(b.l.toFloat(), b.t.toFloat(), b.r.toFloat(), b.b.toFloat()) }
             d.show(false)
             castSet(false, "the play docks went"); rowAsk = null         // the corner buttons' asks end with the play docks
             rowReclaim()
@@ -2510,6 +2537,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             castH = if (castOpen) (homeView.dockCastH() ?: SinglePlayLayout.CAST_H_DEF) else null, rowAsk = rowAsk, castBtn = laid.cast)
         d.btnL.lit = castOpen
         d.btnR.lit = rowAsk == true
+        p.row?.let { b -> menuLastRow = SingleMenu.Box(b.l.toFloat(), b.t.toFloat(), b.r.toFloat(), b.b.toFloat()) }
         // the fight's rolls in the map's place, LB's party picture over the party list (NPC's strip, SingleLook rows 9 / 10)
         val l = playLook
         val hide = SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map, laid.quest)
@@ -2546,6 +2574,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     private fun cornerRow() {
+        // the 1536 DS menu (the task: "Down, or the swirl button, lifts the row into the fan"): the row rises with the cursor on the swirl,
+        // asking for the controller as Down's command does; a second touch (the row up) drops it
+        if (menu != null) {
+            if (barSelect.open) { Log.i("WCHOME", "one screen: the swirl button drops the menu's row"); barSelect.close(); return }
+            Log.i("WCHOME", "one screen: the swirl button lifts the menu's row")
+            barSelect.openOnHome(room, blocked = (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || dialogView.covers())
+            return
+        }
         val up = docks?.plan?.row != null
         rowAsk = !up
         Log.i("WCHOME", "one screen: the room row ${if (!up) "up" else "down"} (the swirl button)")
@@ -2640,6 +2676,246 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
     }
 
+    // ===== SINGLE: MENU (the 1536 DS menu, pass 1) =====
+    // THE DS MENU MADE FOR THE TOP SCREEN (SingleMenu; the user on test 1533, 2026-11-26: "When pressing down to open the ds menu in full
+    // screen its like opening the ds menu bottom screen on the top screen ... I want it to be its own experience that feels like it was
+    // made for the top screen"; the picks: direction C "the row rises", the cursor on the swirl, ship in passes, fights as on two screens
+    // with the red swirl and B and the red edges). The input is the bar cursor's, unchanged: D-pad Down from the game (the app's own
+    // reader opens it at once, the add-on's "home" command confirms it and the guest "bar" holds the controller - b98 / hub7), the
+    // bottom-right swirl button (a touch: the same hold), a fold after a room's B. The row is SingleMenuView's (round icons round Home's
+    // swirl); A on a room unfolds it onto the stage (the rooms column laid there: SingleMenu.place); B folds it back into its disc and
+    // the cursor comes up on it; B again drops the row. ZL / ZR step room to room from the app's own reader (never in the Controller
+    // room). Every key of ours goes back the moment the menu closes: the bar's free (HomeBarSelect.close), the rooms' own leaves.
+
+    private var menu: SingleMenuView? = null
+    private val menuMachine = SingleMenu.Machine()
+    /** Home's glance came from the row's swirl: Home's page on the stage, B folds it back into the swirl */
+    private var glanceMenu = false
+    /** a route straight to the game (a tap on the dim): nothing folds back into the row */
+    private var menuNoFold = false
+    /** the row drops after its last B until then (uptime ms; the look's row 5c) */
+    private var menuDropUntil = 0L
+    /** the room just left as it looked (the fold's / the slide's ghost), in the column's own px */
+    private var menuPic: android.graphics.Picture? = null
+    private var menuPicSrc: SingleMenu.Box? = null
+    /** the rooms column's place on the stage (null = the centred panel, as before) */
+    private var menuPlace: SingleMenu.Place? = null
+    /** the docked row's place as the docks went (the fan rises from it), and its last place (a drop out of a fight lands there) */
+    private var menuRiseDock: SingleMenu.Box? = null
+    private var menuLastRow: SingleMenu.Box? = null
+    /** the bar (the rooms column's Strip) hidden under the menu: the row is the menu's */
+    private var menuHidStrip = false
+
+    /** MENU: its wiring (end of onCreate, single screen mode only): the two layers round the rooms column, the bar cursor as its row */
+    private fun singleMenuWire() {
+        val s = single ?: return
+        val r = singleHostRoot ?: return
+        val m = SingleMenuView(this)
+        m.w = s.screenW; m.h = s.screenH
+        m.order = SingleMenu.order(strip.order)
+        m.cursorOf = { if (barSelect.open) barSelect.cursor else null }
+        m.fightNow = singleFight
+        m.triggersOn = { SingleMenu.triggersStep(room, true, room == Room.SPELLBOOK && !spellbookView.shouldersFree()) }
+        m.drawRoom = { c, rm, cx, cy, size -> strip.drawRoomPicture(c, rm, cx, cy, size) }
+        m.drawSwirl = { c, cx, cy, d -> strip.drawDiscAt(c, cx, cy, d) }
+        m.onDisc = { rm -> menuDisc(rm) }
+        m.onPage = { box, a -> menuPage(box, a) }
+        val fill = { FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) }
+        m.back.visibility = View.GONE; m.front.visibility = View.GONE
+        r.addView(m.back, 0, fill())                                       // under the rooms column: the stage's frame
+        r.addView(m.front, r.indexOfChild(barSelect) + 1, fill())          // over it: the row, the ghost, the red edges
+        menu = m
+        barSelect.menuOrder = { SingleMenu.order(strip.order) }
+        barSelect.sticky = { menu != null }
+        barSelect.drawn = { menu == null }
+        // the row comes / goes in the next frame's look (posted: a pick closes the cursor a moment before its room shows)
+        barSelect.onShown = { _ -> ui.post { if (!shell.hostGone()) singleSync("the menu's row") } }
+        barSelect.onMoved = { menu?.front?.invalidate() }
+        singleLookNow?.let { singleMenuLook(it) }
+    }
+
+    /** MENU: the look applied (after the rest of single screen mode's): the machine's motion, the column on the stage, the swirl's look */
+    private fun singleMenuLook(look: SingleLook.Look) {
+        val m = menu ?: return
+        val s = single ?: return
+        m.order = SingleMenu.order(strip.order)
+        val shown: Room? = if (!look.menu) null else when (look.root) {
+            SingleLook.Root.ROOM -> room
+            SingleLook.Root.HOME -> Room.HOME
+            else -> null
+        }
+        // a pick / a fold closes the cursor a moment before what follows shows: that frame changes nothing ([menuState]'s HELD)
+        if (look.menu && menuRowNow == MenuRow.HELD) return
+        val rowUp = look.menu && (shown != null || menuRowNow == MenuRow.UP)
+        val from = menuMachine.phase
+        val mv = menuMachine.sync(rowUp, shown)
+        val phase = menuMachine.phase
+        if (phase != SingleMenu.Phase.CLOSED) { menuDropUntil = 0L; menuGoneAt = 0L; menuGoneLooked = false }
+        strip.menuRed = if (look.menu) SingleMenu.swirlRed(singleFight(), phase) else null
+        if (look.menu) menuStripHide(true)
+        menuColumn(shown?.let { SingleMenu.place(it, s.screenW, s.screenH) })
+        val vis = if (look.menu) View.VISIBLE else View.GONE
+        if (m.back.visibility != vis) m.back.visibility = vis
+        if (m.front.visibility != vis) m.front.visibility = vis
+        if (mv == SingleMenu.Move.NONE && m.phase == phase && m.room == shown) return
+        val dock = when (mv) {
+            SingleMenu.Move.RISE, SingleMenu.Move.RISE_UNFOLD -> menuRiseDock
+            SingleMenu.Move.DROP, SingleMenu.Move.FOLD_DROP -> if (homeView.fightShown()) null else menuLastRow
+            else -> null
+        }
+        menuRiseDock = null
+        m.play(mv, phase, shown, menuPic, menuPicSrc, dock)
+        menuPic = null; menuPicSrc = null
+        if (mv != SingleMenu.Move.NONE) Log.i("WCHOME", "one screen: the DS menu ${from.name.lowercase()} -> ${phase.name.lowercase()}" +
+            (shown?.let { " (${it.name})" } ?: "") + ": ${mv.name.lowercase()} ${SingleMenu.ms(mv)} ms")
+    }
+
+    /** the row for the look: none, up (the bar cursor), HELD (the menu with nothing of it open, for one frame: a pick closes the cursor a
+     *  moment before its room shows, a room's leave goes Home a moment before the fold reopens the row), DROP (its drop's time: row 5c) */
+    private enum class MenuRow { NONE, UP, HELD, DROP }
+    private var menuRowNow = MenuRow.NONE
+    /** the menu was first seen with nothing of it open (uptime ms, 0 = not), and the next frame has looked again */
+    private var menuGoneAt = 0L
+    private var menuGoneLooked = false
+
+    /** MENU: the row's state now (read by every look); a drop starts only when the next frame still has nothing of the menu open */
+    private fun menuState(): MenuRow {
+        menuRowNow = menuStateNow()
+        return menuRowNow
+    }
+
+    private fun menuStateNow(): MenuRow {
+        if (menu == null) return MenuRow.NONE
+        val now = SystemClock.uptimeMillis()
+        if (barSelect.open) { menuGoneAt = 0L; menuGoneLooked = false; return MenuRow.UP }
+        val closing = menuMachine.phase != SingleMenu.Phase.CLOSED && room == Room.HOME && !glanceHub
+        if (!closing) { menuGoneAt = 0L; menuGoneLooked = false; return if (now < menuDropUntil) MenuRow.DROP else MenuRow.NONE }
+        if (menuDropUntil != 0L) return if (now < menuDropUntil) MenuRow.DROP else MenuRow.NONE
+        if (!menuGoneLooked) {
+            if (menuGoneAt == 0L) {
+                menuGoneAt = now
+                ui.post { if (!shell.hostGone()) { menuGoneLooked = true; singleSync("the menu: nothing of it open") } }
+            }
+            return MenuRow.HELD
+        }
+        val ms = SingleMenu.ms(if (menuMachine.phase == SingleMenu.Phase.ROOM) SingleMenu.Move.FOLD_DROP else SingleMenu.Move.DROP)
+        menuDropUntil = now + ms
+        ui.postDelayed({ if (!shell.hostGone()) singleSync("the menu's row dropped") }, ms + 16L)
+        return MenuRow.DROP
+    }
+
+    /** MENU: the room on the stage pictured as it is now (before a room change takes its views): the fold's / the slide's ghost */
+    private fun menuRecord() {
+        if (menu == null || menuMachine.phase != SingleMenu.Phase.ROOM) return
+        val col = roomsRoot ?: return
+        val p = menuPlace ?: return
+        if (col.width <= 0 || col.visibility != View.VISIBLE) return
+        menuPic = try {
+            android.graphics.Picture().also { pic ->
+                val c = pic.beginRecording(p.colW, SingleMenu.ROOM_H)
+                c.clipRect(0, 0, p.colW, SingleMenu.ROOM_H)
+                col.draw(c)
+                pic.endRecording()
+            }
+        } catch (t: Throwable) { null }
+        menuPicSrc = SingleMenu.Box(0f, 0f, p.colW.toFloat(), SingleMenu.ROOM_H.toFloat())
+    }
+
+    /** MENU: a room on the stage was left for Home (B, its own leave, the swirl): out of a fight it folds into its disc, the row's cursor
+     *  up on it (SingleMenu.back); in a fight, or a room not on the row, straight to the game (the row drops) */
+    private fun menuFoldBack(was: Room) {
+        if (single == null || menu == null || menuNoFold) return
+        if (menuMachine.phase != SingleMenu.Phase.ROOM) return
+        if (SingleMenu.back(singleFight(), was, SingleMenu.order(strip.order)) != SingleMenu.Back.ROW) return
+        barSelect.openMenuAt(was, SingleMenu.FOLD_HOLD_MS)
+    }
+
+    /** MENU: Home's stage (A on the row's swirl): Home's page as a glance on the stage; B folds it back into the swirl */
+    private fun menuHomeStage(why: String) {
+        if (single == null) return
+        if (barSelect.open) barSelect.close()
+        glanceMenu = true
+        singleGlance(true, why)
+    }
+
+    /** MENU: a finger on a disc of the row: the row's A (the swirl: Home's stage); with a room on the stage another room is a room change,
+     *  the swirl B's own route (a fold out of a fight, the game in one) */
+    private fun menuDisc(r: Room) {
+        if (single == null || shell.hostGone()) return
+        when (menuMachine.phase) {
+            SingleMenu.Phase.ROW -> if (r == Room.HOME) menuHomeStage("a touch on the row's swirl") else pickRoom(r)
+            SingleMenu.Phase.ROOM -> when {
+                r != Room.HOME -> if (r != room) pickRoom(r)
+                room == Room.HOME -> singleGlance(false, "a touch on the swirl")
+                else -> {
+                    val toGame = SingleMenu.back(singleFight(), room, SingleMenu.order(strip.order)) == SingleMenu.Back.GAME
+                    menuNoFold = toGame
+                    try { pickRoom(Room.HOME) } finally { menuNoFold = false }
+                }
+            }
+            SingleMenu.Phase.CLOSED -> {}
+        }
+    }
+
+    /** MENU: ZL / ZR in a room on the stage: the room before / after it on the row (SingleMenu.triggersStep: not in the Controller room,
+     *  not while a Spellbook page holds the shoulders, only while the controller is ours; nothing of ours over the room) */
+    private fun menuTrigger(right: Boolean) {
+        if (menu == null || single == null || menuMachine.phase != SingleMenu.Phase.ROOM || room == Room.HOME) return
+        val held = capHolder.isNotEmpty() || padOwner.roomMode()
+        if (!SingleMenu.triggersStep(room, held, room == Room.SPELLBOOK && !spellbookView.shouldersFree())) return
+        if ((::interactView.isInitialized && interactView.visibility == View.VISIBLE) || dialogView.covers() || radialView.isOpen ||
+            (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || spellsOverlay.visibility == View.VISIBLE || barSelect.open) return
+        val next = SingleMenu.step(SingleMenu.order(strip.order), room, if (right) 1 else -1) ?: return
+        Log.i("WCHOME", "one screen: ${if (right) "ZR" else "ZL"} in ${room.name} -> ${next.name}")
+        pickRoom(next)
+    }
+
+    /** MENU: the room's page now ([box] on the screen, its [alpha]): the rooms column drawn there (one transform, no layout) */
+    private fun menuPage(box: SingleMenu.Box?, alpha: Float) {
+        val col = roomsRoot ?: return
+        val p = menuPlace ?: return
+        if (box == null) return
+        val k = box.w / p.colW
+        col.pivotX = 0f; col.pivotY = 0f
+        col.scaleX = k; col.scaleY = k
+        col.translationX = box.l - col.left; col.translationY = box.t - col.top
+        col.alpha = alpha
+    }
+
+    /** MENU: the rooms column on the stage ([place]: laid at its size, cut at the room's foot - the bar's place is the row's) or back in
+     *  the centred panel (null: exactly as boxAll laid it); Bags' 16:9 layout with it */
+    private fun menuColumn(place: SingleMenu.Place?) {
+        val col = roomsRoot ?: return
+        val s = single ?: return
+        if (place == null) {
+            if (menuPlace == null) return
+            menuPlace = null
+            val mg = SingleScreen.boxMargins(intArrayOf(0, 0, 0, 0), s.box, s.screenW, s.screenH)
+            col.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                .apply { setMargins(mg[0], mg[1], mg[2], mg[3]) }
+            col.scaleX = 1f; col.scaleY = 1f; col.translationX = 0f; col.translationY = 0f; col.alpha = 1f; col.clipBounds = null
+            if (::bagsView.isInitialized) bagsView.wideLeft = 0
+            return
+        }
+        if (place != menuPlace) {
+            menuPlace = place
+            col.layoutParams = FrameLayout.LayoutParams(place.colW, place.colH)
+            col.clipBounds = android.graphics.Rect(0, 0, place.colW, SingleMenu.ROOM_H)
+            menuPage(place.drawn, col.alpha)
+        }
+        if (::bagsView.isInitialized) bagsView.wideLeft = if (place.wide && room == Room.BAGS) SingleMenu.PANEL_W else 0
+    }
+
+    /** MENU: the rooms column's bar hidden while the menu shows (its row is the menu's), shown again after (Home's layers keep it hidden) */
+    private fun menuStripHide(on: Boolean) {
+        if (on) {
+            if (strip.parent === roomsRoot && strip.visibility == View.VISIBLE) { strip.visibility = View.INVISIBLE; menuHidStrip = true }
+        } else if (menuHidStrip) {
+            menuHidStrip = false
+            strip.visibility = if (homeView.singleLayersOnly) View.INVISIBLE else View.VISIBLE
+        }
+    }
+
     // ===== SINGLE: NPC (builder npc edits only here) =====
     // SINGLE SCREEN MODE, THE NPC PART (SingleNpc; the user's picks 2026-11-25 "Ours over the game", "Centred panel"): our NPC windows,
     // the game's pop-ups and every room are the panel over the dim (SingleLook rows 2 / 4: nothing to do here but the inputs); the quick
@@ -2703,7 +2979,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             m == DialogView.RollMode.COMPACT, m == DialogView.RollMode.PILL)
         val tab = homeView.toolTab()
         var o = i.copy(fightRolls = rolls, tool = tab, layoutEdit = ::layoutPage.isInitialized && layoutPage.visibility == View.VISIBLE)
-        if (tab >= 0) o = o.copy(homeSub = homeView.subBesidesTool() || barSelect.open || homeView.editing ||
+        if (tab >= 0) o = o.copy(homeSub = homeView.subBesidesTool() || (barSelect.open && menu == null) || homeView.editing ||
             homeView.partyMenu.visibility == View.VISIBLE || homeView.targetMenu.visibility == View.VISIBLE)
         return o
     }
@@ -3326,6 +3602,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (room == Room.PROFESSIONS) professionsView.onPadKey(k, down)     // voice (11-16): the search's keyboard, only while it is up
         if (k == "PADFORWARD" && down) startPressed()
         if (k == "PAD2" && down) bPressed()
+        if (down && (k == DirectPadKeys.LT || k == DirectPadKeys.RT)) menuTrigger(k == DirectPadKeys.RT)
         // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
         // a half second"): only while the bare Down IS the Home bar - the toolbar on, or the Home Bar command put on it
         if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld() && downIsHomeBar()
@@ -4294,7 +4571,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     val inBook = room == Room.SPELLBOOK || room == Room.TALENTS || room == Room.CONTROLLER
                     if (room != want && (c.via == "button" || c.via == "trainer" || inBook)) {
                         Log.i("WCHOME", "spellsctl: the book's page picks ${want.name} (from ${room.name}, via ${c.via}, croom=${c.croom})")
-                        show(want, motion = !inBook)
+                        show(want, motion0 = !inBook)
                     }
                 }
             }
@@ -4569,7 +4846,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // a new client run starts clean
             if (LauncherHooks.gameStartSec != signInRun) {
                 // a new client run (any restart route): nothing of a room's hold survives it, so the bottom screen is Home again
-                if (signInRun != 0L && room != Room.HOME) { Log.i("WCHOME", "new game run: $room -> HOME"); show(Room.HOME, motion = false) }
+                if (signInRun != 0L && room != Room.HOME) { Log.i("WCHOME", "new game run: $room -> HOME"); show(Room.HOME, motion0 = false) }
                 // the restart notice ends with the new run (the new game's first current word takes the start view away)
                 if (restartNoticeAt != 0L) { restartNoticeAt = 0L; Log.i("WCSETUP", "restart from Settings: the new game run attached") }
                 // the sign-in triage (2026-11-16: #289 #399 #424 #423 sat at the login screen under the restart's line, #312 / #313 under
