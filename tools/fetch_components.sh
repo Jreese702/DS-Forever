@@ -34,7 +34,7 @@ done
 # DXVK 3.1.1 (the Adreno 740 profile's DXVK; tools/dxvk/build.sh builds it): optional, pinned in its own tools/components-dxvk.sha256.
 # Without it the launcher uses the bundled 2.4.1 everywhere.
 DXVK3=dxvk-3.1.1-wow-aarch64-diag2.wcp
-DXVK3_URL="${DXVK3_URL:-https://github.com/RenaeTheRaven/DS-Forever/releases/download/v1.0.40-custom-thor/$DXVK3}"
+DXVK3_URL="${DXVK3_URL:-https://github.com/RenaeTheRaven/DS-Forever/releases/download/v1.0.41-custom-thor/$DXVK3}"
 if [ -s "$DEST/$DXVK3" ]; then
     echo "have $DXVK3"
 elif [ -n "${1:-}" ] && [ -s "$1/$DXVK3" ]; then
